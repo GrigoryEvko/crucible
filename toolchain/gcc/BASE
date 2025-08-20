@@ -1,5 +1,0 @@
-# The upstream GCC commit that the files in patches/ apply to.
-# The commit is on the releases/gcc-16 branch.  build.sh reads the two
-# lines below.  Each line is a key and a value.
-url https://github.com/gcc-mirror/gcc.git
-commit 61bc257e5e02e48952ebc4e25a730c4a49794df1
