@@ -122,11 +122,11 @@ struct BackgroundThread {
   static constexpr uint32_t PTR_MAP_CAP = 8192;
 
   struct PtrSlot {
-    void* key;        // 8B
-    OpIndex op_index;  // 4B
-    SlotId slot_id;    // 4B — tensor slot assigned to this storage
-    uint8_t port;      // 1B
-    uint8_t pad[7];    // 7B — align to 24B
+    void* key = nullptr; // 8B
+    OpIndex op_index;    // 4B — default = none (UINT32_MAX)
+    SlotId slot_id;      // 4B — default = none (UINT32_MAX)
+    uint8_t port = 0;    // 1B
+    uint8_t pad[7]{};    // 7B — align to 24B
   };
 
   static_assert(sizeof(PtrSlot) == 24, "PtrSlot should be 24 bytes");

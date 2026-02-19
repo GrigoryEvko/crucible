@@ -23,12 +23,12 @@ enum class EdgeKind : uint8_t {
 // One edge in the property graph. Port-level granularity:
 // src_port = which output of src, dst_port = which input of dst.
 struct Edge {
-  uint32_t src;       // 4B — source op index
-  uint32_t dst;       // 4B — destination op index
-  uint8_t src_port;   // 1B — output index of src
-  uint8_t dst_port;   // 1B — input index of dst
-  EdgeKind kind;      // 1B
-  uint8_t pad;        // 1B
+  uint32_t src = 0;     // 4B — source op index
+  uint32_t dst = 0;     // 4B — destination op index
+  uint8_t src_port = 0; // 1B — output index of src
+  uint8_t dst_port = 0; // 1B — input index of dst
+  EdgeKind kind = EdgeKind::DATA_FLOW; // 1B
+  uint8_t pad = 0;      // 1B
 };
 
 static_assert(sizeof(Edge) == 12, "Edge must be 12 bytes");
@@ -49,22 +49,22 @@ static_assert(sizeof(Edge) == 12, "Edge must be 12 bytes");
 
 struct TraceGraph {
   // Nodes (ops in trace order).
-  TraceEntry* ops;
-  uint32_t num_ops;
+  TraceEntry* ops = nullptr;
+  uint32_t num_ops = 0;
 
   // Forward CSR: edges sorted by src.
-  Edge* fwd_edges;
-  uint32_t* fwd_offsets; // num_ops + 1 entries
+  Edge* fwd_edges = nullptr;
+  uint32_t* fwd_offsets = nullptr; // num_ops + 1 entries
 
   // Reverse CSR: edges sorted by dst.
-  Edge* rev_edges;
-  uint32_t* rev_offsets; // num_ops + 1 entries
+  Edge* rev_edges = nullptr;
+  uint32_t* rev_offsets = nullptr; // num_ops + 1 entries
 
-  uint32_t num_edges;
+  uint32_t num_edges = 0;
 
   // Liveness analysis results (populated by build_trace Phase 3).
-  TensorSlot* slots;        // arena-allocated array of all tensor slots
-  uint32_t num_slots;       // total unique storages identified
+  TensorSlot* slots = nullptr;    // arena-allocated array of all tensor slots
+  uint32_t num_slots = 0;         // total unique storages identified
 
   // ── Forward queries (src → dst): "who consumes op i's outputs?" ──
   [[nodiscard]] const Edge* fwd_begin(uint32_t i) const {

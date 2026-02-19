@@ -35,7 +35,9 @@ struct MetaLog {
 
   MetaLog()
       : entries(static_cast<TensorMeta*>(
-            std::malloc(CAPACITY * sizeof(TensorMeta)))) {}
+            std::malloc(CAPACITY * sizeof(TensorMeta)))) {
+    if (!entries) [[unlikely]] std::abort(); // 144MB alloc failed — unrecoverable
+  }
 
   ~MetaLog() { std::free(entries); }
 
