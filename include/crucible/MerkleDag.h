@@ -46,15 +46,15 @@ struct CompiledKernel;
 // ═══════════════════════════════════════════════════════════════════
 
 struct TensorMeta {
-  int64_t sizes[8];    // 64B
-  int64_t strides[8];  // 64B
-  void* data_ptr;      // 8B — tensor data pointer (for dataflow tracking)
-  uint8_t ndim;        // 1B — dimensions used (0-8)
-  int8_t dtype;        // 1B — c10::ScalarType ordinal
-  int8_t device_type;  // 1B — c10::DeviceType ordinal (0=CPU, 1=CUDA, 20=HIP)
-  int8_t device_idx;   // 1B — -1 = CPU, 0+ = device index
-  int8_t layout;       // 1B — c10::Layout ordinal (0=Strided, 1=Sparse, 2=SparseCsr, ...)
-  uint8_t pad[3];      // 3B — padding to 8-byte alignment
+  int64_t sizes[8];      // 64B
+  int64_t strides[8];    // 64B
+  void* data_ptr;        // 8B — tensor data pointer (for dataflow tracking)
+  uint8_t ndim;          // 1B — dimensions used (0-8)
+  ScalarType dtype;      // 1B — tensor element type
+  DeviceType device_type;// 1B — device kind (CPU=0, CUDA=1, HIP=20)
+  int8_t device_idx;     // 1B — -1 = CPU, 0+ = device index
+  Layout layout;         // 1B — tensor layout (Strided/Sparse/SparseCsr/...)
+  uint8_t pad[3];        // 3B — padding to 8-byte alignment
 };
 
 static_assert(sizeof(TensorMeta) == 144, "TensorMeta layout check");
@@ -68,17 +68,17 @@ static_assert(sizeof(TensorMeta) == 144, "TensorMeta layout check");
 // ═══════════════════════════════════════════════════════════════════
 
 struct TensorSlot {
-  uint64_t offset_bytes;  // 8B — assigned position in the memory pool (supports >4GB)
-  uint64_t nbytes;        // 8B — storage size in bytes
-  uint32_t slot_id;       // 4B — sequential ID within iteration
-  uint32_t birth_op;      // 4B — op that first creates this storage (0 if external)
-  uint32_t death_op;      // 4B — last op that reads/writes this storage
-  int8_t dtype;           // 1B — c10::ScalarType ordinal
-  int8_t device_type;     // 1B — c10::DeviceType ordinal
-  int8_t device_idx;      // 1B — device index (-1 = CPU)
-  int8_t layout;          // 1B — c10::Layout ordinal (Strided/Sparse/SparseCsr/...)
-  bool is_external;       // 1B — model param / input from outside iteration
-  uint8_t pad[3];         // 3B — pad to 40B
+  uint64_t offset_bytes;    // 8B — assigned position in the memory pool (supports >4GB)
+  uint64_t nbytes;          // 8B — storage size in bytes
+  SlotId slot_id;           // 4B — sequential ID within iteration
+  OpIndex birth_op;         // 4B — op that first creates this storage (OpIndex{} if external)
+  OpIndex death_op;         // 4B — last op that reads/writes this storage
+  ScalarType dtype;         // 1B — tensor element type
+  DeviceType device_type;   // 1B — device kind
+  int8_t device_idx;        // 1B — device index (-1 = CPU)
+  Layout layout;            // 1B — tensor layout
+  bool is_external;         // 1B — model param / input from outside iteration
+  uint8_t pad[3];           // 3B — pad to 40B
 };
 
 static_assert(sizeof(TensorSlot) == 40, "TensorSlot must be 40 bytes");
@@ -103,7 +103,7 @@ struct MemoryPlan {
   uint32_t num_external;       // 4B — how many are external (not in pool)
 
   // Device context: which device this plan targets.
-  int8_t device_type;          // 1B — c10::DeviceType (CPU=0, CUDA=1, HIP=20)
+  DeviceType device_type;      // 1B — device kind (CPU=0, CUDA=1, HIP=20)
   int8_t device_idx;           // 1B — device index
   uint8_t pad0[2];             // 2B — alignment
   uint64_t device_capability;  // 8B — SM version or equivalent (from CrucibleContext)
@@ -116,14 +116,13 @@ struct MemoryPlan {
 // Compute storage size in bytes from TensorMeta (max extent * element size).
 [[nodiscard]] constexpr uint64_t compute_storage_nbytes(const TensorMeta& m) {
   if (m.ndim == 0)
-    return crucible::element_size(static_cast<crucible::ScalarType>(m.dtype));
+    return element_size(m.dtype);
   int64_t max_offset = 0;
   for (uint8_t d = 0; d < m.ndim; d++) {
     if (m.sizes[d] > 0)
       max_offset = std::max(max_offset, (m.sizes[d] - 1) * m.strides[d]);
   }
-  return static_cast<uint64_t>(max_offset + 1) *
-         crucible::element_size(static_cast<crucible::ScalarType>(m.dtype));
+  return static_cast<uint64_t>(max_offset + 1) * element_size(m.dtype);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -160,9 +159,9 @@ struct TraceEntry {
   uint8_t   pad_te;           // 1B — alignment
 
   // Tensor identity tracking (for dataflow edges between ops)
-  uint32_t* input_trace_indices;  // 8B — which previous op produced each input
-  uint32_t* input_slot_ids;       // 8B — which pool slot each input reads from
-  uint32_t* output_slot_ids;      // 8B — slot ID assigned to each output tensor
+  OpIndex* input_trace_indices;   // 8B — which previous op produced each input
+  SlotId* input_slot_ids;         // 8B — which pool slot each input reads from
+  SlotId* output_slot_ids;        // 8B — slot ID assigned to each output tensor
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -180,14 +179,14 @@ struct Guard {
 
   Kind kind;           // 1B
   uint8_t pad[3];      // 3B — alignment
-  uint32_t op_index;   // 4B — which op in the trace produces the guard value
+  OpIndex op_index;    // 4B — which op in the trace produces the guard value
   uint16_t arg_index;  // 2B — which argument (for SHAPE_DIM, DTYPE, DEVICE)
   uint16_t dim_index;  // 2B — which dimension (for SHAPE_DIM)
 
   uint64_t hash() const {
     return detail::fmix64(
         std::to_underlying(kind) |
-        (static_cast<uint64_t>(op_index) << 8) |
+        (static_cast<uint64_t>(op_index.raw()) << 8) |
         (static_cast<uint64_t>(arg_index) << 40) |
         (static_cast<uint64_t>(dim_index) << 56));
   }

@@ -25,10 +25,10 @@ static crucible::TensorMeta make_meta() {
     m.ndim        = 1;
     m.sizes[0]    = 8;
     m.strides[0]  = 1;
-    m.dtype       = static_cast<int8_t>(crucible::ScalarType::Float);
-    m.device_type = 0;   // CPU
+    m.dtype       = crucible::ScalarType::Float;
+    m.device_type = crucible::DeviceType::CPU;
     m.device_idx  = -1;
-    m.layout      = 0;   // Strided
+    m.layout      = crucible::Layout::Strided;
     m.data_ptr    = nullptr;
     return m;
 }
