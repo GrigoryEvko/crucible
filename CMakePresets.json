@@ -30,16 +30,27 @@
         "CMAKE_CXX_COMPILER": "g++",
         "CMAKE_BUILD_TYPE": "Debug"
       }
+    },
+    {
+      "name": "gcc16",
+      "displayName": "GCC 16 + libstdc++ 16 (C++26, bleeding-edge)",
+      "binaryDir": "${sourceDir}/build-gcc16",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "/home/grigory/.local/gcc16/usr/bin/g++",
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
     }
   ],
   "buildPresets": [
     { "name": "default", "configurePreset": "default" },
     { "name": "release", "configurePreset": "release" },
-    { "name": "gcc",     "configurePreset": "gcc" }
+    { "name": "gcc",     "configurePreset": "gcc" },
+    { "name": "gcc16",   "configurePreset": "gcc16" }
   ],
   "testPresets": [
     { "name": "default", "configurePreset": "default", "output": { "outputOnFailure": true } },
     { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
-    { "name": "gcc",     "configurePreset": "gcc",     "output": { "outputOnFailure": true } }
+    { "name": "gcc",     "configurePreset": "gcc",     "output": { "outputOnFailure": true } },
+    { "name": "gcc16",   "configurePreset": "gcc16",   "output": { "outputOnFailure": true } }
   ]
 }

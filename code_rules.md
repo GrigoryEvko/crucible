@@ -11,15 +11,22 @@ to achieve both.
 
 ## Toolchain
 
-| Preset    | Compiler                 | Stdlib    | Flags                       |
-|-----------|--------------------------|-----------|-----------------------------|
-| `default` | Clang 22.1.0 + libc++ 22 | libc++   | `-std=c++26 -O0 -g`        |
-| `release` | Clang 22.1.0 + libc++ 22 | libc++   | `-std=c++26 -O3 -march=native -DNDEBUG` |
-| `gcc`     | GCC 15.2.1               | libstdc++ | `-std=c++26 -O0 -g`        |
+Three compilers, different strengths:
 
-All code must compile clean on both Clang 22 and GCC 15 with zero
-warnings. If a C++26 library feature is only available in libc++ 22,
-guard it or avoid it in headers that GCC must parse.
+| Preset    | Compiler                  | Stdlib      | Role                                          |
+|-----------|---------------------------|-------------|-----------------------------------------------|
+| `default` | Clang 22.1.0 + libc++ 22  | libc++ 22   | Primary dev build. Best diagnostics, fastest compile. |
+| `release` | Clang 22.1.0 + libc++ 22  | libc++ 22   | Production. `-O3 -march=native -DNDEBUG`      |
+| `gcc`     | GCC 15.2.1                | libstdc++ 15| Conservative fallback. Stable, well-tested.    |
+| `gcc16`   | GCC 16.0.1 (rawhide)      | libstdc++ 16| Bleeding-edge. Reflection, `inplace_vector`, expansion statements. |
+
+**Core headers** (everything in `include/crucible/`) must compile
+clean on **all three compilers** with zero warnings. The intersection
+of features across all three is the baseline.
+
+Compiler-specific features (`-freflection`, trivial relocatability,
+`std::inplace_vector`) are used behind `#ifdef` guards or in
+non-header code only.
 
 ---
 
@@ -518,38 +525,131 @@ The `CRUCIBLE_STRONG_ID` macro enforces this.
 
 ---
 
-## C++26 Features We Use
+## C++26 Feature Map — What We Use From Where
 
-| Feature | Macro | How we use it |
-|---------|-------|---------------|
-| NSDMI | `__cpp_aggregate_nsdmi` | Default member initializers on all structs |
-| `= delete("reason")` | `__cpp_deleted_function = 202403` | Documenting why copies/moves are forbidden |
-| `std::span` | `__cpp_lib_span = 202002` | Safe pointer+count accessors on TraceEntry, Graph |
+Three compilers make different bets. We pick the best of each.
+
+### Baseline Features (all three compilers)
+
+These are safe to use unconditionally in any header:
+
+| Feature | Crucible usage |
+|---------|----------------|
+| NSDMI (`= value` on fields) | InitSafe: every struct field has a default |
+| `= delete("reason")` | Document why copies/moves forbidden |
+| `std::span` | Safe pointer+count accessors |
+| `std::to_underlying()` | Safe enum→int conversion |
+| `std::unreachable()` | Impossible branches after switches |
+| `std::bit_cast<T>()` | Type-safe bitwise reinterpretation |
+| `std::expected<T,E>` | Typed error returns for fallible ops |
+| `std::countr_zero()` | Branchless lowest-set-bit in BitMask |
+| `std::saturation_arithmetic` | Overflow-safe size computations |
+| `operator<=>` | Defaulted comparison in strong IDs |
+| `constexpr` (extended) | Compile-time UB detection |
+| `[[likely]]`/`[[unlikely]]` | Branch hints on hot paths |
+| `[[nodiscard]]` | All query functions |
+| `alignas(64)` | Cache-line isolation for SPSC atomics |
+| Pack indexing `Ts...[0]` | Direct type-safe pack access |
+| Structured binding packs | Safer destructuring |
+
+### Clang 22 Exclusive (libc++ 22)
+
+Available only in the `default`/`release` presets. Guard with `#ifdef`
+or use only in non-header code:
+
+| Feature | Macro | Crucible usage |
+|---------|-------|----------------|
+| Trivial relocatability | `__cpp_trivial_relocatability = 202502` | `static_assert` that Arena memcpy patterns are sound |
 | `std::span::at()` | `__cpp_lib_span_at = 202311` | Debug-mode bounds checking |
-| `std::to_underlying()` | `__cpp_lib_to_underlying = 202102` | Safe enum→int conversion |
-| `std::unreachable()` | `__cpp_lib_unreachable = 202202` | Marking impossible branches after switches |
-| `std::bit_cast<T>()` | `__cpp_lib_bit_cast = 201806` | Type-safe bitwise reinterpretation |
-| `std::expected<T,E>` | `__cpp_lib_expected = 202211` | Typed error returns (planned for fallible ops) |
-| `std::countr_zero()` | `<bit>` | Branchless lowest-set-bit in BitMask |
-| `std::saturation_arithmetic` | `__cpp_lib_saturation_arithmetic = 202311` | Overflow-safe size computations |
-| `[[likely]]` / `[[unlikely]]` | C++20 attributes | Branch hints on hot paths |
-| `[[nodiscard]]` | C++17 attribute | All query functions |
-| `alignas(64)` | C++11 specifier | Cache-line isolation for SPSC atomics |
-| `operator<=>` | `__cpp_three_way_comparison` | Defaulted comparison in strong IDs |
-| `constexpr` (extended) | `__cpp_constexpr = 202406` | Compile-time UB detection |
-| Trivial relocatability | `__cpp_trivial_relocatability = 202502` | Proving memcpy safety of arena types |
+| `std::flat_map` | `__cpp_lib_flat_map = 202511` | Cache-friendly sorted containers (not for hot hash lookups) |
 
-## C++26 Features We Avoid
+**Why Clang leads here:** Trivial relocatability (P2786) grew from
+Clang's existing `[[clang::trivial_abi]]` extension. `std::flat_map`
+shipped in libc++ 22 before libstdc++. `span::at()` is a libc++ 22
+library addition.
 
-| Feature | Why |
-|---------|-----|
-| `std::format` / `std::print` | Not in hot paths. `fprintf` is fine for debug output. |
-| `std::ranges` (pipelines) | Range adaptor chains add compile time. Raw loops are clearer for simple iteration. |
-| `std::mdspan` | Our tensor metadata is fixed 8-dim arrays, not arbitrary multi-dimensional views. |
-| `std::optional` | Arena-allocated pointers use nullptr as "absent". Optional adds 1 byte overhead per value for the engaged flag. |
-| `std::variant` | Kind enum + static_cast is zero-cost. variant adds type-index storage and visitation overhead. |
-| RTTI (`dynamic_cast`, `typeid`) | Disabled at compile level. Zero runtime type info. Use kind enums. |
-| Exceptions (hot path) | `-fno-exceptions` in release. assert/abort for unrecoverable. Return values for expected failures. |
+### GCC 16 Exclusive (libstdc++ 16)
+
+Available only in the `gcc16` preset. Guard with `#ifdef` or use
+only in tests/tools:
+
+| Feature | Macro | Crucible usage |
+|---------|-------|----------------|
+| **Static reflection** | `__cpp_impl_reflection = 202506` | Auto-generated hash, serialize, compare for all structs. Requires `-freflection`. |
+| **Expansion statements** | `__cpp_expansion_statements = 202506` | `template for` over packs — reflection iteration |
+| **`std::inplace_vector`** | `__cpp_lib_inplace_vector = 202406` | Bounds-checked fixed-capacity arrays (planned: TensorMeta sizes/strides) |
+| **constexpr exceptions** | `__cpp_constexpr_exceptions = 202411` | Meaningful compile-time errors from consteval functions |
+| `std::indirect<T>` | `__cpp_lib_indirect = 202502` | Value-semantic heap pointer (limited use — Arena is faster) |
+| `std::polymorphic<T>` | `__cpp_lib_polymorphic = 202502` | Value-semantic polymorphism (avoid — kind enum is zero-cost) |
+| `std::function_ref` | `__cpp_lib_function_ref = 202306` | Lightweight non-owning callable reference |
+| `std::copyable_function` | `__cpp_lib_copyable_function = 202306` | Copyable type-erased callable |
+| `<debugging>` | `__cpp_lib_debugging = 202403` | `std::breakpoint()`, `std::is_debugger_present()` |
+
+**Why GCC leads here:** Reflection (P2996) was co-authored by
+EDG/Bloomberg contributors who collaborated with the GCC team.
+`std::inplace_vector` shipped in libstdc++ 16 before libc++.
+Expansion statements (P1306) are a prerequisite for usable reflection.
+
+### Neither Has Yet
+
+| Feature | Status | Impact when available |
+|---------|--------|----------------------|
+| Contracts (`pre`/`post`/`assert`) | No compiler ships it | Compiler-checked preconditions — biggest single safety win |
+| Pattern matching (`inspect`) | Committee stage | Exhaustive matching on enums — eliminates missed cases |
+| `std::simd` | GCC experimental only | Replaces SwissCtrl.h's 5 SIMD backends with one |
+| Lifetime annotations | Not proposed for C++ | Rust's `'a` — would prove Arena borrowing safe |
+
+### Feature Decision Matrix
+
+When choosing between alternatives:
+
+| Need | Clang 22 choice | GCC 16 choice | Baseline choice |
+|------|-----------------|---------------|-----------------|
+| "Is memcpy safe for this type?" | `static_assert(is_trivially_relocatable_v<T>)` | Not available | `static_assert(is_trivially_copyable_v<T>)` |
+| Auto-generate struct hash | Not available | `reflect_hash<T>(obj)` via `<meta>` | Hand-written `hash()` with NSDMI ensuring all fields initialized |
+| Fixed-capacity array | `T arr[N]{}` + separate count | `std::inplace_vector<T, N>` | `T arr[N]{}` + separate count |
+| Bounds-checked span access | `span.at(i)` | `span[i]` (no `.at()` in libstdc++) | `assert(i < span.size()); span[i]` |
+| Non-owning callable | Template parameter | `std::function_ref<Sig>` | Template parameter |
+| Sorted flat container | `std::flat_map` | `std::flat_map` (different version) | `std::flat_map` (both have it) |
+
+### Conditional Feature Guard Pattern
+
+```cpp
+// Trivial relocatability — Clang 22 only
+#if __has_cpp_attribute(__cpp_trivial_relocatability)
+static_assert(std::is_trivially_relocatable_v<GraphNode>,
+              "GraphNode must be trivially relocatable for Arena memcpy");
+#endif
+
+// Reflection — GCC 16 with -freflection only
+#ifdef __cpp_impl_reflection
+#include <meta>
+template <typename T>
+uint64_t reflect_hash(const T& obj) { /* ... */ }
+#endif
+
+// inplace_vector — GCC 16 libstdc++ only
+#ifdef __cpp_lib_inplace_vector
+#include <inplace_vector>
+using Dims = std::inplace_vector<int64_t, 8>;
+#else
+// Fallback: raw array + count
+struct Dims { int64_t data[8]{}; uint8_t n = 0; };
+#endif
+```
+
+## C++26 Features We Deliberately Avoid
+
+| Feature | Available? | Why we don't use it |
+|---------|-----------|---------------------|
+| `std::format` / `std::print` | Both | Not in hot paths. `fprintf` is fine for debug output. |
+| `std::ranges` (pipelines) | Both | Range adaptor chains add compile time. Raw loops are clearer for simple iteration. |
+| `std::mdspan` | Both | Our tensor metadata is fixed 8-dim arrays, not arbitrary multi-dimensional views. |
+| `std::optional` | Both | Arena pointers use nullptr as "absent". Optional adds 1 byte overhead per value. |
+| `std::variant` | Both | Kind enum + static_cast is zero-cost. Variant adds type-index storage + visitation overhead. |
+| `std::indirect`/`polymorphic` | GCC 16 | Arena allocation is faster. Value-semantic heap wrappers add per-object overhead. |
+| RTTI (`dynamic_cast`, `typeid`) | Both | Disabled at compile level. Zero runtime type info. Use kind enums. |
+| Exceptions (hot path) | Both | `-fno-exceptions` in release. assert/abort for unrecoverable. Return values for expected failures. |
 
 ---
 
