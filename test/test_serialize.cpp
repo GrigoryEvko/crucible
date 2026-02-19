@@ -2,6 +2,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstring>
+#include <span>
 
 // Helper: build a minimal TensorMeta for testing.
 static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
@@ -82,12 +83,12 @@ int main() {
 
     // ── Serialize ───────────────────────────────────────────────────
     uint8_t buf[65536];
-    const size_t n = crucible::serialize_region(region, nullptr, buf, sizeof(buf));
+    const size_t n = crucible::serialize_region(region, nullptr, std::span<uint8_t>{buf, sizeof(buf)});
     assert(n > 0 && "serialize_region returned 0 — buffer too small or bad region");
 
     // ── Deserialize into a fresh arena ──────────────────────────────
     crucible::Arena arena2(1 << 16);
-    crucible::RegionNode* loaded = crucible::deserialize_region(buf, n, arena2);
+    crucible::RegionNode* loaded = crucible::deserialize_region(std::span<const uint8_t>{buf, n}, arena2);
     assert(loaded != nullptr && "deserialize_region returned nullptr");
 
     // ── Verify round-trip ───────────────────────────────────────────
@@ -134,17 +135,17 @@ int main() {
     // ── Verify content_hash is deterministic ────────────────────────
     // Recompute from the loaded ops — must match original.
     const uint64_t recomputed = crucible::compute_content_hash(
-        loaded->ops, loaded->num_ops);
+        std::span{loaded->ops, loaded->num_ops});
     assert(recomputed == original_content_hash);
 
     // ── Buffer-overflow safety: serializing into too-small a buffer ─
     uint8_t tiny_buf[4];
-    const size_t n_tiny = crucible::serialize_region(region, nullptr, tiny_buf, 4);
+    const size_t n_tiny = crucible::serialize_region(region, nullptr, std::span<uint8_t>{tiny_buf, 4});
     assert(n_tiny == 0 && "serialize_region must return 0 on buffer overflow");
 
     // ── Corrupt-data safety: truncated buffer for deserialize ───────
     crucible::Arena arena3(1 << 16);
-    crucible::RegionNode* bad = crucible::deserialize_region(buf, 10, arena3);
+    crucible::RegionNode* bad = crucible::deserialize_region(std::span<const uint8_t>{buf, 10}, arena3);
     assert(bad == nullptr && "deserialize_region must return nullptr on truncated input");
 
     std::printf("test_serialize: all tests passed\n");

@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <span>
 
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
@@ -66,29 +67,29 @@ struct TraceGraph {
   uint32_t num_slots;       // total unique storages identified
 
   // ── Forward queries (src → dst): "who consumes op i's outputs?" ──
-  const Edge* fwd_begin(uint32_t i) const {
+  [[nodiscard]] const Edge* fwd_begin(uint32_t i) const {
     return fwd_edges + fwd_offsets[i];
   }
-  const Edge* fwd_end(uint32_t i) const {
+  [[nodiscard]] const Edge* fwd_end(uint32_t i) const {
     return fwd_edges + fwd_offsets[i + 1];
   }
-  uint32_t out_degree(uint32_t i) const {
+  [[nodiscard]] uint32_t out_degree(uint32_t i) const {
     return fwd_offsets[i + 1] - fwd_offsets[i];
   }
 
   // ── Reverse queries (dst → src): "who produces op i's inputs?" ──
-  const Edge* rev_begin(uint32_t i) const {
+  [[nodiscard]] const Edge* rev_begin(uint32_t i) const {
     return rev_edges + rev_offsets[i];
   }
-  const Edge* rev_end(uint32_t i) const {
+  [[nodiscard]] const Edge* rev_end(uint32_t i) const {
     return rev_edges + rev_offsets[i + 1];
   }
-  uint32_t in_degree(uint32_t i) const {
+  [[nodiscard]] uint32_t in_degree(uint32_t i) const {
     return rev_offsets[i + 1] - rev_offsets[i];
   }
 
   // ── Node access ──
-  const TraceEntry& op(uint32_t i) const { return ops[i]; }
+  [[nodiscard]] const TraceEntry& op(uint32_t i) const { return ops[i]; }
 };
 
 // ═══════════════════════════════════════════════════════════════════

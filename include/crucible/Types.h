@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <utility>
 
 namespace crucible {
 
@@ -28,7 +29,7 @@ enum class ScalarType : int8_t {
 };
 
 // Byte size per dtype.
-constexpr uint8_t element_size(ScalarType t) {
+[[nodiscard]] constexpr uint8_t element_size(ScalarType t) {
   switch (t) {
     case ScalarType::Bool:
     case ScalarType::Byte:
@@ -52,9 +53,10 @@ constexpr uint8_t element_size(ScalarType t) {
       return 8;
     case ScalarType::ComplexDouble:
       return 16;
-    default:
+    case ScalarType::Undefined:
       return 0;
   }
+  std::unreachable();
 }
 
 // Mirror c10::DeviceType ordinals.

@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <ranges>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -208,13 +210,13 @@ class ExprPool {
 
   // ---- Atom construction ----
 
-  const Expr* integer(int64_t val) {
+  [[nodiscard]] const Expr* integer(int64_t val) {
     if (val >= kIntCacheLow && val <= kIntCacheHigh)
       return int_cache_[static_cast<size_t>(val - kIntCacheLow)];
     return make_integer(val);
   }
 
-  const Expr* float_(double val) {
+  [[nodiscard]] const Expr* float_(double val) {
     int64_t payload = std::bit_cast<int64_t>(val);
     uint16_t f =
         ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
@@ -228,7 +230,7 @@ class ExprPool {
     return intern_node(Op::FLOAT, nullptr, 0, f, 0, payload);
   }
 
-  const Expr* symbol(const char* name, uint32_t id, uint16_t assumption_flags) {
+  [[nodiscard]] const Expr* symbol(const char* name, uint32_t id, uint16_t assumption_flags) {
     if (id >= symbol_names_.size())
       symbol_names_.resize(id + 1, nullptr);
     if (symbol_names_[id] == nullptr) {
@@ -243,16 +245,16 @@ class ExprPool {
         assumption_flags | ExprFlags::IS_SYMBOL, id, payload);
   }
 
-  const Expr* bool_true() const {
+  [[nodiscard]] const Expr* bool_true() const {
     return true_;
   }
-  const Expr* bool_false() const {
+  [[nodiscard]] const Expr* bool_false() const {
     return false_;
   }
 
   // ---- Arithmetic ----
 
-  const Expr* add(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* add(const Expr* a, const Expr* b) {
     // Constant folding
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
       return integer(a->payload + b->payload);
@@ -265,10 +267,10 @@ class ExprPool {
       return a;
     // Flatten + fold + sort
     const Expr* inputs[] = {a, b};
-    return add_n(inputs, 2);
+    return add_n(inputs);
   }
 
-  const Expr* mul(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* mul(const Expr* a, const Expr* b) {
     // Constant folding
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
       return integer(a->payload * b->payload);
@@ -284,10 +286,10 @@ class ExprPool {
       return a;
     // Flatten + fold + sort
     const Expr* inputs[] = {a, b};
-    return mul_n(inputs, 2);
+    return mul_n(inputs);
   }
 
-  const Expr* pow(const Expr* base, const Expr* exp) {
+  [[nodiscard]] const Expr* pow(const Expr* base, const Expr* exp) {
     // x^0 → 1
     if (exp->is_zero_int())
       return integer(1);
@@ -308,7 +310,7 @@ class ExprPool {
   }
 
   // Canonical form: MUL(-1, x). No NEG nodes in output.
-  const Expr* neg(const Expr* a) {
+  [[nodiscard]] const Expr* neg(const Expr* a) {
     if (a->op == Op::INTEGER)
       return integer(-a->payload);
     if (a->op == Op::FLOAT)
@@ -318,7 +320,7 @@ class ExprPool {
 
   // ---- Relational ----
 
-  const Expr* eq(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* eq(const Expr* a, const Expr* b) {
     if (a == b)
       return true_;
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
@@ -330,7 +332,7 @@ class ExprPool {
     return intern_node(Op::EQ, args, 2, ExprFlags::IS_BOOLEAN, 0, 0);
   }
 
-  const Expr* ne(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* ne(const Expr* a, const Expr* b) {
     if (a == b)
       return false_;
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
@@ -341,7 +343,7 @@ class ExprPool {
     return intern_node(Op::NE, args, 2, ExprFlags::IS_BOOLEAN, 0, 0);
   }
 
-  const Expr* lt(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* lt(const Expr* a, const Expr* b) {
     if (a == b)
       return false_;
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
@@ -350,7 +352,7 @@ class ExprPool {
     return intern_node(Op::LT, args, 2, ExprFlags::IS_BOOLEAN, 0, 0);
   }
 
-  const Expr* le(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* le(const Expr* a, const Expr* b) {
     if (a == b)
       return true_;
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
@@ -359,7 +361,7 @@ class ExprPool {
     return intern_node(Op::LE, args, 2, ExprFlags::IS_BOOLEAN, 0, 0);
   }
 
-  const Expr* gt(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* gt(const Expr* a, const Expr* b) {
     if (a == b)
       return false_;
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
@@ -368,7 +370,7 @@ class ExprPool {
     return intern_node(Op::GT, args, 2, ExprFlags::IS_BOOLEAN, 0, 0);
   }
 
-  const Expr* ge(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* ge(const Expr* a, const Expr* b) {
     if (a == b)
       return true_;
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
@@ -379,7 +381,7 @@ class ExprPool {
 
   // ---- Logic ----
 
-  const Expr* and_(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* and_(const Expr* a, const Expr* b) {
     if (a == false_ || b == false_)
       return false_;
     if (a == true_)
@@ -389,10 +391,10 @@ class ExprPool {
     if (a == b)
       return a;
     const Expr* inputs[] = {a, b};
-    return and_n(inputs, 2);
+    return and_n(inputs);
   }
 
-  const Expr* or_(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* or_(const Expr* a, const Expr* b) {
     if (a == true_ || b == true_)
       return true_;
     if (a == false_)
@@ -402,10 +404,10 @@ class ExprPool {
     if (a == b)
       return a;
     const Expr* inputs[] = {a, b};
-    return or_n(inputs, 2);
+    return or_n(inputs);
   }
 
-  const Expr* not_(const Expr* a) {
+  [[nodiscard]] const Expr* not_(const Expr* a) {
     if (a == true_)
       return false_;
     if (a == false_)
@@ -419,7 +421,7 @@ class ExprPool {
 
   // ---- Division / Modular ----
 
-  const Expr* floor_div(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* floor_div(const Expr* a, const Expr* b) {
     if (a->op == Op::INTEGER && b->op == Op::INTEGER && b->as_int() != 0) {
       int64_t av = a->as_int(), bv = b->as_int();
       int64_t q = av / bv, r = av % bv;
@@ -447,10 +449,11 @@ class ExprPool {
           remainders[nr++] = a->arg(i);
       }
       if (nq > 0) {
-        const Expr* qsum = (nq == 1) ? quotients[0] : add_n(quotients, nq);
+        const Expr* qsum = (nq == 1) ? quotients[0]
+            : add_n(std::span{quotients, nq});
         if (nr == 0) return qsum;
-        const Expr* rsum =
-            (nr == 1) ? remainders[0] : add_n(remainders, nr);
+        const Expr* rsum = (nr == 1) ? remainders[0]
+            : add_n(std::span{remainders, nr});
         return add(qsum, floor_div(rsum, b));
       }
     }
@@ -468,11 +471,11 @@ class ExprPool {
     return intern_node(Op::FLOOR_DIV, args, 2, f, 0, 0);
   }
 
-  const Expr* clean_div(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* clean_div(const Expr* a, const Expr* b) {
     return floor_div(a, b);
   }
 
-  const Expr* ceil_div(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* ceil_div(const Expr* a, const Expr* b) {
     if (a->op == Op::INTEGER && b->op == Op::INTEGER && b->as_int() != 0) {
       int64_t av = a->as_int(), bv = b->as_int();
       int64_t q = av / bv, r = av % bv;
@@ -483,7 +486,7 @@ class ExprPool {
     return floor_div(add(a, add(b, integer(-1))), b);
   }
 
-  const Expr* mod(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* mod(const Expr* a, const Expr* b) {
     if (a->op == Op::INTEGER && b->op == Op::INTEGER && b->as_int() > 0)
       return integer(a->as_int() % b->as_int());
     if (a->is_zero_int() || a == b || b->is_one()) return integer(0);
@@ -496,7 +499,7 @@ class ExprPool {
     return intern_node(Op::MOD, args, 2, f, 0, 0);
   }
 
-  const Expr* python_mod(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* python_mod(const Expr* a, const Expr* b) {
     if (a->op == Op::INTEGER && b->op == Op::INTEGER && b->as_int() != 0) {
       int64_t av = a->as_int(), bv = b->as_int();
       int64_t r = av % bv;
@@ -513,7 +516,7 @@ class ExprPool {
     return intern_node(Op::PYTHON_MOD, args, 2, f, 0, 0);
   }
 
-  const Expr* modular_indexing(
+  [[nodiscard]] const Expr* modular_indexing(
       const Expr* base,
       const Expr* div,
       const Expr* modulus) {
@@ -555,7 +558,7 @@ class ExprPool {
         if (dropped) {
           if (nk == 0) return integer(0);
           const Expr* nb =
-              (nk == 1) ? kept[0] : add_n(kept, nk);
+              (nk == 1) ? kept[0] : add_n(std::span{kept, nk});
           return modular_indexing(nb, div, modulus);
         }
       }
@@ -571,7 +574,7 @@ class ExprPool {
 
   // ---- Conditional ----
 
-  const Expr* where(const Expr* cond, const Expr* t, const Expr* f) {
+  [[nodiscard]] const Expr* where(const Expr* cond, const Expr* t, const Expr* f) {
     if (cond == true_) return t;
     if (cond == false_) return f;
     if (t == f) return t;
@@ -582,35 +585,36 @@ class ExprPool {
 
   // ---- Min / Max ----
 
-  const Expr* min_expr(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* min_expr(const Expr* a, const Expr* b) {
     if (a == b) return a;
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
       return integer(std::min(a->as_int(), b->as_int()));
     const Expr* inputs[] = {a, b};
-    return min_n(inputs, 2);
+    return min_n(inputs);
   }
 
-  const Expr* max_expr(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* max_expr(const Expr* a, const Expr* b) {
     if (a == b) return a;
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
       return integer(std::max(a->as_int(), b->as_int()));
     const Expr* inputs[] = {a, b};
-    return max_n(inputs, 2);
+    return max_n(inputs);
   }
 
   // ---- Generic construction ----
   // Dispatches to canonical constructors for ops that have them,
   // generic interning for everything else.
-  const Expr* make(Op op, const Expr* const* args, uint8_t nargs) {
+  [[nodiscard]] const Expr* make(
+      Op op, std::span<const Expr* const> args) {
     switch (op) {
       case Op::ADD:
-        return add_n(args, nargs);
+        return add_n(args);
       case Op::MUL:
-        return mul_n(args, nargs);
+        return mul_n(args);
       case Op::AND:
-        return and_n(args, nargs);
+        return and_n(args);
       case Op::OR:
-        return or_n(args, nargs);
+        return or_n(args);
       case Op::POW:
         return pow(args[0], args[1]);
       case Op::NEG:
@@ -644,28 +648,30 @@ class ExprPool {
       case Op::WHERE:
         return where(args[0], args[1], args[2]);
       case Op::MIN:
-        return min_n(args, nargs);
+        return min_n(args);
       case Op::MAX:
-        return max_n(args, nargs);
+        return max_n(args);
       default:
         break;
     }
-    uint16_t f = detail::composite_flags(op, args, nargs);
-    return intern_node(op, args, nargs, f, 0, 0);
+    uint16_t f = detail::composite_flags(op, args.data(),
+                                         static_cast<uint8_t>(args.size()));
+    return intern_node(op, args.data(),
+                       static_cast<uint8_t>(args.size()), f, 0, 0);
   }
 
   // ---- Stats ----
 
-  size_t intern_size() const {
+  [[nodiscard]] size_t intern_size() const {
     return intern_count_;
   }
-  size_t intern_capacity() const {
+  [[nodiscard]] size_t intern_capacity() const {
     return capacity_;
   }
-  size_t arena_bytes() const {
+  [[nodiscard]] size_t arena_bytes() const {
     return arena_.total_allocated();
   }
-  const char* symbol_name(uint32_t id) const {
+  [[nodiscard]] const char* symbol_name(uint32_t id) const {
     return (id < symbol_names_.size()) ? symbol_names_[id] : nullptr;
   }
 
@@ -732,7 +738,7 @@ class ExprPool {
           uint8_t n = 0;
           for (uint8_t j = 0; j < e->nargs; ++j)
             buf[n++] = (j == i) ? integer(new_coeff) : e->args[j];
-          return mul_n(buf, n);
+          return mul_n(std::span{buf, n});
         }
       }
       return e; // no integer factor
@@ -741,24 +747,24 @@ class ExprPool {
       const Expr* buf[255];
       for (uint8_t i = 0; i < e->nargs; ++i)
         buf[i] = divide_coefficients_(e->args[i], g);
-      return add_n(buf, e->nargs);
+      return add_n(std::span{buf, e->nargs});
     }
     return e;
   }
 
   // Flatten MIN/MAX + dedup + sort
-  const Expr* min_n(const Expr* const* inputs, uint8_t count) {
+  const Expr* min_n(std::span<const Expr* const> inputs) {
     const Expr* buf[64];
     uint8_t n = 0;
-    for (uint8_t j = 0; j < count; ++j) {
-      if (inputs[j]->op == Op::MIN) {
-        for (uint8_t i = 0; i < inputs[j]->nargs; ++i)
-          buf[n++] = inputs[j]->arg(i);
+    for (auto* e : inputs) {
+      if (e->op == Op::MIN) {
+        for (uint8_t i = 0; i < e->nargs; ++i)
+          buf[n++] = e->arg(i);
       } else {
-        buf[n++] = inputs[j];
+        buf[n++] = e;
       }
     }
-    std::sort(buf, buf + n);
+    std::ranges::sort(std::span{buf, n});
     uint8_t m = 1;
     for (uint8_t i = 1; i < n; ++i)
       if (buf[i] != buf[m - 1]) buf[m++] = buf[i];
@@ -767,18 +773,18 @@ class ExprPool {
     return intern_node(Op::MIN, buf, m, f, 0, 0);
   }
 
-  const Expr* max_n(const Expr* const* inputs, uint8_t count) {
+  const Expr* max_n(std::span<const Expr* const> inputs) {
     const Expr* buf[64];
     uint8_t n = 0;
-    for (uint8_t j = 0; j < count; ++j) {
-      if (inputs[j]->op == Op::MAX) {
-        for (uint8_t i = 0; i < inputs[j]->nargs; ++i)
-          buf[n++] = inputs[j]->arg(i);
+    for (auto* e : inputs) {
+      if (e->op == Op::MAX) {
+        for (uint8_t i = 0; i < e->nargs; ++i)
+          buf[n++] = e->arg(i);
       } else {
-        buf[n++] = inputs[j];
+        buf[n++] = e;
       }
     }
-    std::sort(buf, buf + n);
+    std::ranges::sort(std::span{buf, n});
     uint8_t m = 1;
     for (uint8_t i = 1; i < n; ++i)
       if (buf[i] != buf[m - 1]) buf[m++] = buf[i];
@@ -790,14 +796,13 @@ class ExprPool {
   // Flatten ADD children, fold integer constants, combine like terms,
   // sort, intern. Term combining: ADD(MUL(a,b), MUL(3,a,b)) → ADD(MUL(4,a,b)).
   // Critical for expand(): (a+b)^n produces n+1 binomial terms, not 2^n.
-  const Expr* add_n(const Expr* const* inputs, uint8_t count) {
+  const Expr* add_n(std::span<const Expr* const> inputs) {
     const Expr* buf[256];
     uint8_t n = 0;
     int64_t int_sum = 0;
 
     // Phase 1: Flatten nested ADD, separate integer constants
-    for (uint8_t j = 0; j < count; ++j) {
-      const Expr* e = inputs[j];
+    for (auto* e : inputs) {
       if (e->op == Op::ADD) {
         for (uint8_t i = 0; i < e->nargs; ++i) {
           if (e->args[i]->op == Op::INTEGER)
@@ -862,9 +867,11 @@ class ExprPool {
     }
 
     // Phase 3: Sort by base pointer, merge adjacent same-base entries
-    std::sort(terms, terms + nt, [](const CoeffTerm& a, const CoeffTerm& b) {
-      return a.base < b.base;
-    });
+    std::ranges::sort(
+        std::span{terms, nt},
+        [](const CoeffTerm& a, const CoeffTerm& b) {
+          return a.base < b.base;
+        });
 
     const Expr* collected[256];
     uint8_t cn = 0;
@@ -884,7 +891,7 @@ class ExprPool {
         collected[cn++] = base;
       } else {
         const Expr* mul_args[] = {integer(total_coeff), base};
-        collected[cn++] = mul_n(mul_args, 2);
+        collected[cn++] = mul_n(mul_args);
       }
       i = j;
     }
@@ -898,19 +905,18 @@ class ExprPool {
       return collected[0];
 
     // Final sort for canonical ordering
-    std::sort(collected, collected + cn);
+    std::ranges::sort(std::span{collected, cn});
     uint16_t f = detail::composite_flags(Op::ADD, collected, cn);
     return intern_node(Op::ADD, collected, cn, f, 0, 0);
   }
 
   // Flatten MUL children, fold integer constants, sort, intern.
-  const Expr* mul_n(const Expr* const* inputs, uint8_t count) {
+  const Expr* mul_n(std::span<const Expr* const> inputs) {
     const Expr* buf[256];
     uint8_t n = 0;
     int64_t int_prod = 1;
 
-    for (uint8_t j = 0; j < count; ++j) {
-      const Expr* e = inputs[j];
+    for (auto* e : inputs) {
       if (e->op == Op::MUL) {
         for (uint8_t i = 0; i < e->nargs; ++i) {
           if (e->args[i]->op == Op::INTEGER)
@@ -938,18 +944,17 @@ class ExprPool {
     if (n == 1)
       return buf[0];
 
-    std::sort(buf, buf + n);
+    std::ranges::sort(std::span{buf, n});
     uint16_t f = detail::composite_flags(Op::MUL, buf, n);
     return intern_node(Op::MUL, buf, n, f, 0, 0);
   }
 
   // Flatten AND children, short-circuit on FALSE, filter TRUE, sort, intern.
-  const Expr* and_n(const Expr* const* inputs, uint8_t count) {
+  const Expr* and_n(std::span<const Expr* const> inputs) {
     const Expr* buf[64];
     uint8_t n = 0;
 
-    for (uint8_t j = 0; j < count; ++j) {
-      const Expr* e = inputs[j];
+    for (auto* e : inputs) {
       if (e == false_)
         return false_;
       if (e == true_)
@@ -973,17 +978,16 @@ class ExprPool {
       return true_;
     if (n == 1)
       return buf[0];
-    std::sort(buf, buf + n);
+    std::ranges::sort(std::span{buf, n});
     return intern_node(Op::AND, buf, n, ExprFlags::IS_BOOLEAN, 0, 0);
   }
 
   // Flatten OR children, short-circuit on TRUE, filter FALSE, sort, intern.
-  const Expr* or_n(const Expr* const* inputs, uint8_t count) {
+  const Expr* or_n(std::span<const Expr* const> inputs) {
     const Expr* buf[64];
     uint8_t n = 0;
 
-    for (uint8_t j = 0; j < count; ++j) {
-      const Expr* e = inputs[j];
+    for (auto* e : inputs) {
       if (e == true_)
         return true_;
       if (e == false_)
@@ -1007,7 +1011,7 @@ class ExprPool {
       return false_;
     if (n == 1)
       return buf[0];
-    std::sort(buf, buf + n);
+    std::ranges::sort(std::span{buf, n});
     return intern_node(Op::OR, buf, n, ExprFlags::IS_BOOLEAN, 0, 0);
   }
 

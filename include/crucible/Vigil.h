@@ -80,8 +80,8 @@ class Vigil {
 
     ~Vigil() = default; // bg_ is declared last → destroyed first → stops thread
 
-    Vigil(const Vigil&)             = delete;
-    Vigil& operator=(const Vigil&)  = delete;
+    Vigil(const Vigil&)             = delete("Vigil owns the runtime organism; not copyable");
+    Vigil& operator=(const Vigil&)  = delete("Vigil owns the runtime organism; not copyable");
 
     // ─── Hot path: record one op (RECORDING mode) ──────────────────
     //
@@ -91,7 +91,7 @@ class Vigil {
     // next iteration re-records everything).
     //
     // Hot path: ~5ns + MetaLog write (~10ns for metas) = ~15ns total.
-    bool record_op(
+    [[nodiscard]] bool record_op(
         const TraceRing::Entry& e,
         const TensorMeta*       metas,
         uint32_t                n_metas,
@@ -107,24 +107,20 @@ class Vigil {
 
     // ─── Queries (lock-free reads) ─────────────────────────────────
 
-    Mode mode() const {
+    [[nodiscard]] Mode mode() const {
         return mode_.load(std::memory_order_relaxed);
     }
-    bool is_compiled() const { return mode() == Mode::COMPILED; }
+    [[nodiscard]] bool is_compiled() const { return mode() == Mode::COMPILED; }
 
-    // Latest active RegionNode (null until first iteration completes).
-    // Written by background thread via std::memory_order_release;
-    // reading with acquire gives a consistent view.
-    const RegionNode* active_region() const {
+    [[nodiscard]] const RegionNode* active_region() const {
         return bg_.active_region.load(std::memory_order_acquire);
     }
 
-    uint64_t current_step() const {
+    [[nodiscard]] uint64_t current_step() const {
         return step_.load(std::memory_order_relaxed);
     }
 
-    // content_hash of the most recently persisted region (0 if no Cipher).
-    uint64_t head_hash() const {
+    [[nodiscard]] uint64_t head_hash() const {
         return cipher_.has_value() ? cipher_->head() : 0;
     }
 
@@ -144,7 +140,7 @@ class Vigil {
 
     // Restore the previous SUPERSEDED transaction as the active one.
     // Returns true if rollback succeeded.
-    bool rollback() {
+    [[nodiscard]] bool rollback() {
         if (!tx_log_.rollback()) return false;
         // Restore active region pointer from the rolled-back transaction.
         const Transaction* tx = tx_log_.active();
@@ -161,7 +157,7 @@ class Vigil {
     //
     // Returns true if replay completed without guard mismatches.
     template <typename GuardEval, typename RegionExec>
-    bool replay(GuardEval&& eval_guard, RegionExec&& exec_region) {
+    [[nodiscard]] bool replay(GuardEval&& eval_guard, RegionExec&& exec_region) {
         const RegionNode* r = active_region();
         if (!r) return false;
         // crucible::replay() is defined in MerkleDag.h.
@@ -177,7 +173,7 @@ class Vigil {
     // Serialize the active region to Cipher and advance HEAD.
     // No-op if cipher_path was not set in Config.
     // Returns true if the region was successfully stored.
-    bool persist() {
+    [[nodiscard]] bool persist() {
         if (!cipher_.has_value()) return false;
         const RegionNode* r = active_region();
         if (!r) return false;
@@ -190,7 +186,7 @@ class Vigil {
 
     // Load the most recent region from Cipher and activate it.
     // No-op if no Cipher or the Cipher is empty.
-    bool load() {
+    [[nodiscard]] bool load() {
         if (!cipher_.has_value() || cipher_->empty()) return false;
         RegionNode* r = cipher_->load(cipher_->head(), load_arena_);
         if (!r) return false;
@@ -218,13 +214,13 @@ class Vigil {
         tx_log_.commit(tx, region,
                        region->content_hash,
                        region->merkle_hash);
-        tx_log_.activate(tx);
+        (void)tx_log_.activate(tx);
 
         mode_.store(Mode::COMPILED, std::memory_order_release);
 
         // Pre-store the object (idempotent) so persist() is instant later.
         if (cipher_.has_value()) {
-            cipher_->store(region, meta_log_.get());
+            (void)cipher_->store(region, meta_log_.get());
         }
     }
 

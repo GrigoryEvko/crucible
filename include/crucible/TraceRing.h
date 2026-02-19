@@ -77,7 +77,11 @@ struct TraceRing {
   // meta_start is the index into MetaLog for this entry's tensor metadata.
   // scope_hash is the current module hierarchy hash from CrucibleContext.
   // callsite_hash identifies the Python source location.
-  CRUCIBLE_INLINE bool try_append(
+  TraceRing() = default;
+  TraceRing(const TraceRing&) = delete("SPSC ring is pinned to producer/consumer thread pair");
+  TraceRing& operator=(const TraceRing&) = delete("SPSC ring is pinned to producer/consumer thread pair");
+
+  [[nodiscard]] CRUCIBLE_INLINE bool try_append(
       const Entry& e,
       uint32_t meta_start = UINT32_MAX,
       uint64_t scope_hash = 0,
@@ -102,7 +106,7 @@ struct TraceRing {
   // Copies up to max_count entries into `out` and their corresponding
   // parallel arrays into output buffers (any may be null).
   // Returns the number of entries actually drained.
-  uint32_t drain(Entry* out, uint32_t max_count,
+  [[nodiscard]] uint32_t drain(Entry* out, uint32_t max_count,
                  uint32_t* out_meta_starts = nullptr,
                  uint64_t* out_scope_hashes = nullptr,
                  uint64_t* out_callsite_hashes = nullptr) {
@@ -127,7 +131,7 @@ struct TraceRing {
   }
 
   // Number of entries currently in the ring (approximate — racy).
-  uint32_t size() const {
+  [[nodiscard]] uint32_t size() const {
     return static_cast<uint32_t>(
         head.load(std::memory_order_relaxed) -
         tail.load(std::memory_order_relaxed));

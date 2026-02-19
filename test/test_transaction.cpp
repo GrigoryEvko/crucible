@@ -89,7 +89,7 @@ int main() {
         e.schema_hash = i;
         auto* r = crucible::make_region(arena, &e, 1);
         log.commit(tx, r, r->content_hash, r->merkle_hash);
-        log.activate(tx);
+        (void)log.activate(tx);
     }
     // The active tx must be the last one (step_id == 32).
     assert(log.active() != nullptr);

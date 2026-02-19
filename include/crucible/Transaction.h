@@ -70,8 +70,10 @@ class TransactionLog {
     static constexpr uint32_t MASK = N - 1;
 
  public:
-    // Begin a new RECORDING transaction. Returns pointer to the allocated slot.
-    // The slot is valid until the ring wraps (N transactions later).
+    TransactionLog() = default;
+    TransactionLog(const TransactionLog&)            = delete("TransactionLog holds ring-internal pointers");
+    TransactionLog& operator=(const TransactionLog&) = delete("TransactionLog holds ring-internal pointers");
+
     Transaction* begin_tx(uint64_t step_id) {
         auto* tx   = &entries_[head_ & MASK];
         std::memset(tx, 0, sizeof(Transaction));
@@ -102,7 +104,7 @@ class TransactionLog {
     // Transition COMMITTED → ACTIVE. Marks the previous ACTIVE as SUPERSEDED.
     // Returns the previously ACTIVE transaction (the rollback target), or nullptr
     // if no previous ACTIVE existed.
-    Transaction* activate(Transaction* tx) {
+    [[nodiscard]] Transaction* activate(Transaction* tx) {
         if (tx->status != TxStatus::COMMITTED) return nullptr;
 
         // Demote the current active transaction.
@@ -138,11 +140,9 @@ class TransactionLog {
 
     // Latest ACTIVE transaction, or nullptr.
     // Non-const: callers may mutate the returned transaction (e.g. rollback).
-    Transaction* active()   { return active_tx_; }
+    [[nodiscard]] Transaction* active()   { return active_tx_; }
 
-    // Most recent SUPERSEDED transaction (the rollback target), or nullptr.
-    // Non-const: callers modify the returned transaction's status.
-    Transaction* previous() {
+    [[nodiscard]] Transaction* previous() {
         // Walk the ring backward from head to find the most recent SUPERSEDED entry.
         for (uint32_t i = 0; i < count_; i++) {
             Transaction* e = &entries_[(head_ - 1 - i) & MASK];
@@ -151,8 +151,7 @@ class TransactionLog {
         return nullptr;
     }
 
-    // Number of entries currently in the ring (0..N).
-    uint32_t size() const { return count_; }
+    [[nodiscard]] uint32_t size() const { return count_; }
 
  private:
     // Nanosecond timestamp from the monotonic clock.

@@ -3,6 +3,7 @@
 #include <crucible/Types.h>
 #include <cassert>
 #include <cstdio>
+#include <span>
 
 int main() {
     crucible::ExprPool pool;
@@ -85,21 +86,21 @@ int main() {
 
     // Node 0: INPUT (external weight tensor, slot 0)
     auto* inp0 = graph.add_input(
-        static_cast<int8_t>(crucible::ScalarType::Float), 0, sizes, 2);
+        static_cast<int8_t>(crucible::ScalarType::Float), 0, std::span{sizes, 2u});
     assert(inp0->id == 0);
 
     // Node 1: INPUT (external activation tensor, slot 1)
     auto* inp1 = graph.add_input(
-        static_cast<int8_t>(crucible::ScalarType::Float), 0, sizes, 2);
+        static_cast<int8_t>(crucible::ScalarType::Float), 0, std::span{sizes, 2u});
     assert(inp1->id == 1);
 
     // Node 2: POINTWISE add(inp0, inp1) — output slot 2, reads from slots 0 and 1
     crucible::GraphNode* add_inputs[2] = {inp0, inp1};
     auto* add_node = graph.add_pointwise(
-        sizes, 2,
+        std::span{sizes, 2u},
         static_cast<int8_t>(crucible::ScalarType::Float), 0,
-        nullptr,  // body not needed for slot test
-        add_inputs, 2);
+        nullptr,
+        std::span{add_inputs, 2u});
     assert(add_node->id == 2);
     assert(add_node->num_inputs == 2);
 
@@ -108,14 +109,14 @@ int main() {
     // Input nodes: no input slots (they ARE the inputs), output slot is their own
     uint32_t inp0_out_slots[] = {0};
     uint32_t inp1_out_slots[] = {1};
-    graph.set_output_slots(0, inp0_out_slots, 1);
-    graph.set_output_slots(1, inp1_out_slots, 1);
+    graph.set_output_slots(0, inp0_out_slots);
+    graph.set_output_slots(1, inp1_out_slots);
 
     // Add node: reads from slots 0 and 1, writes to slot 2
     uint32_t add_in_slots[] = {0, 1};
     uint32_t add_out_slots[] = {2};
-    graph.set_input_slots(2, add_in_slots, 2);
-    graph.set_output_slots(2, add_out_slots, 1);
+    graph.set_input_slots(2, add_in_slots);
+    graph.set_output_slots(2, add_out_slots);
 
     // ── Verify slot IDs survive ─────────────────────────────────────
 
@@ -145,7 +146,7 @@ int main() {
     // DCE should not affect slot tables (add_node has uses from nothing,
     // but graph outputs keep it alive)
     uint32_t out_ids[] = {2};
-    graph.set_graph_outputs(out_ids, 1);
+    graph.set_graph_outputs(out_ids);
     graph.eliminate_dead_nodes();
 
     // Slots survive DCE

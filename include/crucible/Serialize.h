@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <span>
 #include <utility>
 
 namespace crucible {
@@ -61,7 +62,7 @@ struct Reader {
     }
 
     template <typename T>
-    T r() { T v{}; read_bytes(&v, sizeof(T)); return v; }
+    [[nodiscard]] T r() { T v{}; read_bytes(&v, sizeof(T)); return v; }
 };
 
 // Write TensorMeta with data_ptr zeroed (runtime address is not meaningful).
@@ -87,7 +88,7 @@ inline TensorMeta read_meta(Reader& r) {
     TensorMeta m{};
     r.read_bytes(m.sizes,   sizeof(m.sizes));
     r.read_bytes(m.strides, sizeof(m.strides));
-    r.r<uint64_t>(); // data_ptr (discarded)
+    (void)r.r<uint64_t>(); // data_ptr (discarded)
     m.data_ptr   = nullptr;
     m.ndim       = r.r<uint8_t>();
     m.dtype      = r.r<int8_t>();
@@ -139,14 +140,13 @@ inline Header read_header(Reader& r) {
 // meta_log is reserved for future use (metas already inlined in TraceEntry).
 // ═══════════════════════════════════════════════════════════════════
 
-inline size_t serialize_region(
+[[nodiscard]] inline size_t serialize_region(
     const RegionNode* region,
     const MetaLog*    /*meta_log*/,
-    uint8_t*          buf,
-    size_t            max_bytes)
+    std::span<uint8_t> buf)
 {
     using namespace detail_ser;
-    Writer w{buf, 0, max_bytes};
+    Writer w{buf.data(), 0, buf.size()};
 
     write_header(w, TraceNodeKind::REGION,
                  region->merkle_hash, region->content_hash);
@@ -229,13 +229,12 @@ inline size_t serialize_region(
 // All structures are arena-allocated; data_ptr is always null.
 // ═══════════════════════════════════════════════════════════════════
 
-inline RegionNode* deserialize_region(
-    const uint8_t* buf,
-    size_t         len,
-    Arena&         arena)
+[[nodiscard]] inline RegionNode* deserialize_region(
+    std::span<const uint8_t> buf,
+    Arena&                   arena)
 {
     using namespace detail_ser;
-    Reader r{buf, 0, len};
+    Reader r{buf.data(), 0, buf.size()};
 
     const Header hdr = read_header(r);
     if (!r.ok
@@ -354,13 +353,12 @@ inline RegionNode* deserialize_region(
 // Returns bytes written, or 0 on overflow.
 // ═══════════════════════════════════════════════════════════════════
 
-inline size_t serialize_branch(
+[[nodiscard]] inline size_t serialize_branch(
     const BranchNode* branch,
-    uint8_t*          buf,
-    size_t            max_bytes)
+    std::span<uint8_t> buf)
 {
     using namespace detail_ser;
-    Writer w{buf, 0, max_bytes};
+    Writer w{buf.data(), 0, buf.size()};
 
     // For BRANCH nodes, the second 8B slot in the header stores the
     // continuation's merkle_hash (shared suffix after all arms merge).
@@ -388,14 +386,13 @@ inline size_t serialize_branch(
 // Returns nullptr on parse error.
 // ═══════════════════════════════════════════════════════════════════
 
-inline BranchNode* deserialize_branch(
-    const uint8_t*                              buf,
-    size_t                                      len,
-    Arena&                                      arena,
-    std::function<TraceNode*(uint64_t)>         resolve)
+[[nodiscard]] inline BranchNode* deserialize_branch(
+    std::span<const uint8_t>               buf,
+    Arena&                                 arena,
+    std::function<TraceNode*(uint64_t)>    resolve)
 {
     using namespace detail_ser;
-    Reader r{buf, 0, len};
+    Reader r{buf.data(), 0, buf.size()};
 
     const Header hdr = read_header(r);
     if (!r.ok

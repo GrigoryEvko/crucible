@@ -107,8 +107,8 @@ struct BackgroundThread {
   }
 
   BackgroundThread() = default;
-  BackgroundThread(const BackgroundThread&) = delete;
-  BackgroundThread& operator=(const BackgroundThread&) = delete;
+  BackgroundThread(const BackgroundThread&) = delete("BackgroundThread owns a std::thread");
+  BackgroundThread& operator=(const BackgroundThread&) = delete("BackgroundThread owns a std::thread");
 
  private:
   static constexpr uint32_t BATCH_SIZE = 4096;
@@ -131,7 +131,7 @@ struct BackgroundThread {
 
   static_assert(sizeof(PtrSlot) == 24, "PtrSlot should be 24 bytes");
 
-  static uint32_t hash_ptr(void* p) {
+  [[nodiscard]] static uint32_t hash_ptr(void* p) {
     return static_cast<uint32_t>(
         reinterpret_cast<uintptr_t>(p) * 0x9E3779B97F4A7C15ULL >> 32);
   }
@@ -179,7 +179,7 @@ struct BackgroundThread {
     uint8_t port;
   };
 
-  static PtrLookup ptr_map_lookup(const PtrSlot* map, void* key) {
+  [[nodiscard]] static PtrLookup ptr_map_lookup(const PtrSlot* map, void* key) {
     if (!key) return {UINT32_MAX, 0, 0};
     uint32_t idx = hash_ptr(key) & (PTR_MAP_CAP - 1);
     for (uint32_t probe = 0; probe < PTR_MAP_CAP; probe++) {
@@ -292,7 +292,7 @@ struct BackgroundThread {
   // Single pass builds TraceEntries, collects DFG + ALIAS edges,
   // assigns tensor slot IDs, and tracks liveness (birth/death ops).
   // Returns nullptr on MetaLog overflow.
-  TraceGraph* build_trace(uint32_t count) {
+  [[nodiscard]] TraceGraph* build_trace(uint32_t count) {
     // Check for MetaLog overflow.
     uint32_t max_meta_end = 0;
     uint32_t total_inputs = 0;
@@ -509,7 +509,7 @@ struct BackgroundThread {
   // For each internal (non-external) slot, compute a byte offset
   // in a single pre-allocated pool using best-fit allocation.
   // Alignment: 256 bytes (CUDA coalescing).
-  MemoryPlan* compute_memory_plan(TensorSlot* slots, uint32_t num_slots) {
+  [[nodiscard]] MemoryPlan* compute_memory_plan(TensorSlot* slots, uint32_t num_slots) {
     static constexpr uint32_t ALIGNMENT = 256;
 
     auto* plan = arena.alloc_obj<MemoryPlan>();

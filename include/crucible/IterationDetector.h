@@ -37,7 +37,7 @@ struct IterationDetector {
 
   // Check if this op triggers an iteration boundary.
   // Returns true exactly at the boundary — the FIRST op of the new iteration.
-  bool check(uint64_t schema_hash) {
+  [[nodiscard]] bool check(uint64_t schema_hash) {
     recent[recent_pos % K] = schema_hash;
     recent_pos++;
     ops_since_boundary++;

@@ -29,53 +29,53 @@ struct Expr {
 
   // ---- Payload accessors ----
 
-  int64_t as_int() const {
+  [[nodiscard]] constexpr int64_t as_int() const {
     return payload;
   }
 
-  double as_float() const {
+  [[nodiscard]] double as_float() const {
     return std::bit_cast<double>(payload);
   }
 
-  const char* as_symbol_name() const {
+  [[nodiscard]] const char* as_symbol_name() const {
     return std::bit_cast<const char*>(payload);
   }
 
   // ---- Flag queries (branchless, single AND instruction) ----
 
-  bool is_integer() const { return flags & ExprFlags::IS_INTEGER; }
-  bool is_real() const { return flags & ExprFlags::IS_REAL; }
-  bool is_finite() const { return flags & ExprFlags::IS_FINITE; }
-  bool is_positive() const { return flags & ExprFlags::IS_POSITIVE; }
-  bool is_negative() const { return flags & ExprFlags::IS_NEGATIVE; }
-  bool is_nonnegative() const { return flags & ExprFlags::IS_NONNEGATIVE; }
-  bool is_nonpositive() const { return flags & ExprFlags::IS_NONPOSITIVE; }
-  bool is_zero() const { return flags & ExprFlags::IS_ZERO; }
-  bool is_even() const { return flags & ExprFlags::IS_EVEN; }
-  bool is_odd() const { return flags & ExprFlags::IS_ODD; }
-  bool is_number() const { return flags & ExprFlags::IS_NUMBER; }
-  bool is_symbol() const { return flags & ExprFlags::IS_SYMBOL; }
-  bool is_boolean() const { return flags & ExprFlags::IS_BOOLEAN; }
+  [[nodiscard]] constexpr bool is_integer() const { return flags & ExprFlags::IS_INTEGER; }
+  [[nodiscard]] constexpr bool is_real() const { return flags & ExprFlags::IS_REAL; }
+  [[nodiscard]] constexpr bool is_finite() const { return flags & ExprFlags::IS_FINITE; }
+  [[nodiscard]] constexpr bool is_positive() const { return flags & ExprFlags::IS_POSITIVE; }
+  [[nodiscard]] constexpr bool is_negative() const { return flags & ExprFlags::IS_NEGATIVE; }
+  [[nodiscard]] constexpr bool is_nonnegative() const { return flags & ExprFlags::IS_NONNEGATIVE; }
+  [[nodiscard]] constexpr bool is_nonpositive() const { return flags & ExprFlags::IS_NONPOSITIVE; }
+  [[nodiscard]] constexpr bool is_zero() const { return flags & ExprFlags::IS_ZERO; }
+  [[nodiscard]] constexpr bool is_even() const { return flags & ExprFlags::IS_EVEN; }
+  [[nodiscard]] constexpr bool is_odd() const { return flags & ExprFlags::IS_ODD; }
+  [[nodiscard]] constexpr bool is_number() const { return flags & ExprFlags::IS_NUMBER; }
+  [[nodiscard]] constexpr bool is_symbol() const { return flags & ExprFlags::IS_SYMBOL; }
+  [[nodiscard]] constexpr bool is_boolean() const { return flags & ExprFlags::IS_BOOLEAN; }
 
   // ---- Structural queries ----
 
-  bool is_atom() const { return nargs == 0; }
+  [[nodiscard]] constexpr bool is_atom() const { return nargs == 0; }
 
-  bool is_one() const {
+  [[nodiscard]] constexpr bool is_one() const {
     return op == Op::INTEGER && payload == 1;
   }
 
-  bool is_neg_one() const {
+  [[nodiscard]] constexpr bool is_neg_one() const {
     return op == Op::INTEGER && payload == -1;
   }
 
-  bool is_zero_int() const {
+  [[nodiscard]] constexpr bool is_zero_int() const {
     return op == Op::INTEGER && payload == 0;
   }
 
   // ---- Child access ----
 
-  const Expr* arg(uint8_t i) const {
+  [[nodiscard]] const Expr* arg(uint8_t i) const {
     return args[i];
   }
 };

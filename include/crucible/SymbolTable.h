@@ -13,6 +13,7 @@
 #include <bit>
 #include <cstdint>
 #include <limits>
+#include <utility>
 #include <vector>
 
 namespace crucible {
@@ -58,7 +59,7 @@ class SymbolTable {
 
   // Register a new symbol. Returns the assigned ID.
   // Caller provides assumptions as ExprFlags bits (IS_INTEGER, IS_POSITIVE, etc).
-  uint32_t add(SymKind kind, uint16_t expr_flags, bool is_backed = true) {
+  [[nodiscard]] uint32_t add(SymKind kind, uint16_t expr_flags, bool is_backed = true) {
     uint32_t id = static_cast<uint32_t>(entries_.size());
     SymbolEntry e{};
     e.hint = kNoHint;
@@ -118,72 +119,72 @@ class SymbolTable {
 
   // ---- Queries ----
 
-  const SymbolEntry& operator[](uint32_t id) const {
+  [[nodiscard]] const SymbolEntry& operator[](uint32_t id) const {
     return entries_[id];
   }
 
-  bool has_hint(uint32_t id) const {
+  [[nodiscard]] bool has_hint(uint32_t id) const {
     return entries_[id].sym_flags & SymFlags::HAS_HINT;
   }
 
-  int64_t hint(uint32_t id) const {
+  [[nodiscard]] int64_t hint(uint32_t id) const {
     return entries_[id].hint;
   }
 
-  double hint_float(uint32_t id) const {
+  [[nodiscard]] double hint_float(uint32_t id) const {
     return bitcast_to_double(entries_[id].hint);
   }
 
-  int64_t lower(uint32_t id) const {
+  [[nodiscard]] int64_t lower(uint32_t id) const {
     return entries_[id].range_lower;
   }
 
-  int64_t upper(uint32_t id) const {
+  [[nodiscard]] int64_t upper(uint32_t id) const {
     return entries_[id].range_upper;
   }
 
-  bool is_size_like(uint32_t id) const {
+  [[nodiscard]] bool is_size_like(uint32_t id) const {
     return entries_[id].sym_flags & SymFlags::IS_SIZE_LIKE;
   }
 
-  bool is_backed(uint32_t id) const {
+  [[nodiscard]] bool is_backed(uint32_t id) const {
     return entries_[id].sym_flags & SymFlags::IS_BACKED;
   }
 
-  SymKind kind(uint32_t id) const {
+  [[nodiscard]] SymKind kind(uint32_t id) const {
     return entries_[id].kind;
   }
 
-  uint16_t expr_flags(uint32_t id) const {
+  [[nodiscard]] uint16_t expr_flags(uint32_t id) const {
     return entries_[id].expr_flags;
   }
 
   // Range check: is value guaranteed to be in [lo, hi]?
-  bool range_contains(uint32_t id, int64_t lo, int64_t hi) const {
+  [[nodiscard]] bool range_contains(uint32_t id, int64_t lo, int64_t hi) const {
     const auto& e = entries_[id];
     return e.range_lower >= lo && e.range_upper <= hi;
   }
 
   // Is the symbol guaranteed positive (lower bound > 0)?
-  bool is_positive(uint32_t id) const {
+  [[nodiscard]] bool is_positive(uint32_t id) const {
     return entries_[id].range_lower > 0;
   }
 
   // Is the symbol guaranteed nonnegative (lower bound >= 0)?
-  bool is_nonnegative(uint32_t id) const {
+  [[nodiscard]] bool is_nonnegative(uint32_t id) const {
     return entries_[id].range_lower >= 0;
   }
 
-  size_t size() const {
+  [[nodiscard]] size_t size() const {
     return entries_.size();
   }
 
  private:
-  static int64_t bitcast_double(double d) {
+  [[nodiscard]] static int64_t bitcast_double(double d) {
     return std::bit_cast<int64_t>(d);
   }
 
-  static double bitcast_to_double(int64_t v) {
+  [[nodiscard]] static double bitcast_to_double(int64_t v) {
     return std::bit_cast<double>(v);
   }
 

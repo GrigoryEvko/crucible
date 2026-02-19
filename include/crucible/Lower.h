@@ -73,8 +73,8 @@ inline void lower_trace_to_graph(
       for (uint8_t d = 0; d < ndim; d++)
         sizes[d] = pool.integer(m.sizes[d]);
 
-      auto* inp = graph.add_input(m.dtype, m.device_idx, sizes, ndim);
-      graph.set_output_slots(inp->id, &sid, 1);
+      auto* inp = graph.add_input(m.dtype, m.device_idx, std::span{sizes, ndim});
+      graph.set_output_slots(inp->id, std::span{&sid, 1u});
       extern_map[sid] = inp;
     }
   }
@@ -146,17 +146,18 @@ inline void lower_trace_to_graph(
     GraphNode* node;
     if (kind == NodeKind::POINTWISE) {
       node = graph.add_pointwise(
-          sizes, ndim, dtype, dev,
-          nullptr, // body built by Tier 2+
-          deps, real_count);
+          std::span{sizes, ndim}, dtype, dev,
+          nullptr,
+          std::span{deps, real_count});
     } else {
       // EXTERN for everything else (REDUCTION, NOP, MUTATION, SCAN, EXTERN).
       // add_extern provides the structural shell; kind is patched below.
       node = graph.add_extern(
           ckernel_name(te.kernel_id),
           ckernel_name(te.kernel_id),
-          dtype, dev, sizes, ndim,
-          deps, real_count);
+          dtype, dev,
+          std::span{sizes, ndim},
+          std::span{deps, real_count});
       node->kind = kind;
     }
 
@@ -166,9 +167,9 @@ inline void lower_trace_to_graph(
 
     // Carry slot IDs into Graph's side-tables.
     if (real_count > 0)
-      graph.set_input_slots(node->id, in_slots, real_count);
+      graph.set_input_slots(node->id, std::span{in_slots, real_count});
     if (te.output_slot_ids && te.num_outputs > 0)
-      graph.set_output_slots(node->id, te.output_slot_ids, te.num_outputs);
+      graph.set_output_slots(node->id, std::span{te.output_slot_ids, te.num_outputs});
 
     op_to_node[i] = node;
   }
@@ -183,7 +184,7 @@ inline void lower_trace_to_graph(
       input_ids[n_inputs++] = extern_map[s]->id;
   }
   if (n_inputs > 0)
-    graph.set_graph_inputs(input_ids, n_inputs);
+    graph.set_graph_inputs(std::span{input_ids, n_inputs});
 
   // Graph outputs: ops whose outputs are not consumed by any
   // DATA_FLOW edge within this iteration (terminal values).
@@ -201,7 +202,7 @@ inline void lower_trace_to_graph(
       output_ids[n_outputs++] = op_to_node[i]->id;
   }
   if (n_outputs > 0)
-    graph.set_graph_outputs(output_ids, n_outputs);
+    graph.set_graph_outputs(std::span{output_ids, n_outputs});
 }
 
 } // namespace crucible

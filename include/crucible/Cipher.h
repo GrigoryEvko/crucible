@@ -22,10 +22,9 @@
 #include <crucible/Serialize.h>
 
 #include <chrono>
-#include <cinttypes>
 #include <cstdint>
-#include <cstdio>
 #include <filesystem>
+#include <format>
 #include <fstream>
 #include <string>
 #include <vector>
@@ -60,12 +59,14 @@ class Cipher {
     }
 
     Cipher() = default;
+    Cipher(const Cipher&)            = delete("Cipher holds mutable log state; move instead");
+    Cipher& operator=(const Cipher&) = delete("Cipher holds mutable log state; move instead");
+    Cipher(Cipher&&)                 = default;
+    Cipher& operator=(Cipher&&)      = default;
 
     // ─── Store ──────────────────────────────────────────────────────
 
-    // Serialize `region` and write to objects/<hash>. Idempotent.
-    // Returns content_hash on success, 0 on error.
-    uint64_t store(const RegionNode* region, const MetaLog* meta_log) {
+    [[nodiscard]] uint64_t store(const RegionNode* region, const MetaLog* meta_log) {
         if (!region) return 0;
         const uint64_t hash = region->content_hash;
         if (hash == 0) return 0;
@@ -78,7 +79,7 @@ class Cipher {
         // Estimate serialization size conservatively.
         const size_t cap = estimate_serial_size(region);
         std::vector<uint8_t> buf(cap);
-        const size_t n = serialize_region(region, meta_log, buf.data(), cap);
+        const size_t n = serialize_region(region, meta_log, std::span<uint8_t>{buf});
         if (n == 0) return 0;
 
         // Ensure shard directory exists.
@@ -96,7 +97,7 @@ class Cipher {
 
     // Deserialize a RegionNode from objects/<content_hash>.
     // All structures are arena-allocated. Returns nullptr if not found.
-    RegionNode* load(uint64_t content_hash, Arena& arena) const {
+    [[nodiscard]] RegionNode* load(uint64_t content_hash, Arena& arena) const {
         if (content_hash == 0) return nullptr;
         const std::string path = obj_path(content_hash);
         if (!std::filesystem::exists(path)) return nullptr;
@@ -113,7 +114,7 @@ class Cipher {
                static_cast<std::streamsize>(len));
         if (!f) return nullptr;
 
-        return deserialize_region(buf.data(), len, arena);
+        return deserialize_region(std::span<const uint8_t>{buf}, arena);
     }
 
     // ─── HEAD management ────────────────────────────────────────────
@@ -125,9 +126,7 @@ class Cipher {
         // Overwrite HEAD file (truncate to hex + newline).
         {
             std::ofstream hf(root_ + "/HEAD");
-            char hex[17];
-            std::snprintf(hex, sizeof(hex), "%016" PRIx64, content_hash);
-            hf << hex << "\n";
+            hf << std::format("{:016x}", content_hash) << "\n";
         }
 
         // Append log entry.
@@ -135,9 +134,7 @@ class Cipher {
         log_.push_back({step_id, content_hash, ts});
         {
             std::ofstream lf(root_ + "/log", std::ios::app);
-            char hex[17];
-            std::snprintf(hex, sizeof(hex), "%016" PRIx64, content_hash);
-            lf << step_id << "," << hex << "," << ts << "\n";
+            lf << std::format("{},{:016x},{}", step_id, content_hash, ts) << "\n";
         }
     }
 
@@ -146,7 +143,7 @@ class Cipher {
     // Returns the content_hash committed at or before `step_id`.
     // Binary-searches the in-memory log (steps are monotonically increasing).
     // Returns 0 if no commit at or before that step exists.
-    uint64_t hash_at_step(uint64_t step_id) const {
+    [[nodiscard]] uint64_t hash_at_step(uint64_t step_id) const {
         if (log_.empty()) return 0;
 
         // Find last entry with log_[mid].step_id <= step_id.
@@ -168,9 +165,9 @@ class Cipher {
 
     // ─── Queries ────────────────────────────────────────────────────
 
-    uint64_t           head()  const { return head_; }
-    bool               empty() const { return head_ == 0; }
-    const std::string& root()  const { return root_; }
+    [[nodiscard]] uint64_t           head()  const { return head_; }
+    [[nodiscard]] bool               empty() const { return head_ == 0; }
+    [[nodiscard]] const std::string& root()  const { return root_; }
 
  private:
     struct LogEntry {
@@ -185,9 +182,8 @@ class Cipher {
 
     // Path: root_/objects/<first2hex>/<remaining14hex>
     std::string obj_path(uint64_t hash) const {
-        char hex[17];
-        std::snprintf(hex, sizeof(hex), "%016" PRIx64, hash);
-        return root_ + "/objects/" + std::string(hex, 2) + "/" + (hex + 2);
+        auto hex = std::format("{:016x}", hash);
+        return root_ + "/objects/" + hex.substr(0, 2) + "/" + hex.substr(2);
     }
 
     // Load the log file into memory.
