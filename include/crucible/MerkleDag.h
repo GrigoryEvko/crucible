@@ -1,0 +1,646 @@
+#pragma once
+
+// Merkle DAG: Execute-and-record trace graph with content-addressable
+// kernel caching, branch/merge detection, and DAG replay.
+//
+// Implements Crucible.md Part 2 (sections 2.1-2.9).
+//
+// Core types:
+//   TraceEntry    — one recorded ATen op (shapes, dtypes, scalar args)
+//   RegionNode    — compilable sequence of ops, linked to cached kernel
+//   BranchNode    — guard point routing to different execution arms
+//   KernelCache   — global lock-free content_hash -> CompiledKernel* map
+//
+// TraceRing and IterationDetector live in their own headers
+// (TraceRing.h, IterationDetector.h) because they're also used by
+// CrucibleContext and BackgroundThread without pulling in the full DAG.
+//
+// All nodes are arena-allocated.
+
+#include <crucible/Arena.h>
+#include <crucible/Expr.h>
+#include <crucible/IterationDetector.h>
+#include <crucible/TraceRing.h>
+
+#include <crucible/Types.h>
+
+#include <atomic>
+#include <cassert>
+#include <cstdint>
+#include <cstring>
+
+namespace crucible {
+
+// Opaque compiled kernel handle (implemented by codegen backend)
+struct CompiledKernel;
+
+// ═══════════════════════════════════════════════════════════════════
+// TensorMeta: Compact metadata for one tensor (no actual data)
+//
+// Sizes and strides inlined for up to 8 dimensions, covering 99.9%
+// of real tensors. Arena-allocated when > 8 dims needed (via indirection
+// at a higher level, not inside this struct).
+// ═══════════════════════════════════════════════════════════════════
+
+struct TensorMeta {
+  int64_t sizes[8];    // 64B
+  int64_t strides[8];  // 64B
+  void* data_ptr;      // 8B — tensor data pointer (for dataflow tracking)
+  uint8_t ndim;        // 1B — dimensions used (0-8)
+  int8_t dtype;        // 1B — c10::ScalarType ordinal
+  int8_t device_type;  // 1B — c10::DeviceType ordinal (0=CPU, 1=CUDA, 20=HIP)
+  int8_t device_idx;   // 1B — -1 = CPU, 0+ = device index
+  int8_t layout;       // 1B — c10::Layout ordinal (0=Strided, 1=Sparse, 2=SparseCsr, ...)
+  uint8_t pad[3];      // 3B — padding to 8-byte alignment
+};
+
+static_assert(sizeof(TensorMeta) == 144, "TensorMeta layout check");
+
+// ═══════════════════════════════════════════════════════════════════
+// TensorSlot: One unique storage in a recorded iteration
+//
+// Identifies a distinct tensor storage, tracks its live range
+// (birth_op..death_op), and holds the assigned offset within
+// the pre-allocated memory pool.
+// ═══════════════════════════════════════════════════════════════════
+
+struct TensorSlot {
+  uint64_t offset_bytes;  // 8B — assigned position in the memory pool (supports >4GB)
+  uint64_t nbytes;        // 8B — storage size in bytes
+  uint32_t slot_id;       // 4B — sequential ID within iteration
+  uint32_t birth_op;      // 4B — op that first creates this storage (0 if external)
+  uint32_t death_op;      // 4B — last op that reads/writes this storage
+  int8_t dtype;           // 1B — c10::ScalarType ordinal
+  int8_t device_type;     // 1B — c10::DeviceType ordinal
+  int8_t device_idx;      // 1B — device index (-1 = CPU)
+  int8_t layout;          // 1B — c10::Layout ordinal (Strided/Sparse/SparseCsr/...)
+  bool is_external;       // 1B — model param / input from outside iteration
+  uint8_t pad[3];         // 3B — pad to 40B
+};
+
+static_assert(sizeof(TensorSlot) == 40, "TensorSlot must be 40 bytes");
+
+// ═══════════════════════════════════════════════════════════════════
+// MemoryPlan: Result of liveness analysis + offset assignment
+//
+// Maps each tensor slot to a byte offset within a single pool.
+// External slots (params, data loader outputs) are excluded from
+// the pool — they keep their existing allocations.
+//
+// Carries device and distributed context so each plan is
+// self-describing — critical for heterogeneous multi-device
+// execution where different devices get different compiled kernels
+// and different memory layouts.
+// ═══════════════════════════════════════════════════════════════════
+
+struct MemoryPlan {
+  TensorSlot* slots;           // 8B — arena-allocated array
+  uint64_t pool_bytes;         // 8B — total pool size needed
+  uint32_t num_slots;          // 4B — total unique storages
+  uint32_t num_external;       // 4B — how many are external (not in pool)
+
+  // Device context: which device this plan targets.
+  int8_t device_type;          // 1B — c10::DeviceType (CPU=0, CUDA=1, HIP=20)
+  int8_t device_idx;           // 1B — device index
+  uint8_t pad0[2];             // 2B — alignment
+  uint64_t device_capability;  // 8B — SM version or equivalent (from CrucibleContext)
+
+  // Distributed topology: for multi-device memory coordination.
+  int32_t rank;                // 4B — global rank (-1 = not distributed)
+  int32_t world_size;          // 4B — total processes (0 = not distributed)
+};
+
+// Compute storage size in bytes from TensorMeta (max extent * element size).
+inline uint64_t compute_storage_nbytes(const TensorMeta& m) {
+  if (m.ndim == 0)
+    return crucible::element_size(static_cast<crucible::ScalarType>(m.dtype));
+  int64_t max_offset = 0;
+  for (uint8_t d = 0; d < m.ndim; d++) {
+    if (m.sizes[d] > 0)
+      max_offset = std::max(max_offset, (m.sizes[d] - 1) * m.strides[d]);
+  }
+  return static_cast<uint64_t>(max_offset + 1) *
+         crucible::element_size(static_cast<crucible::ScalarType>(m.dtype));
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TraceEntry: One recorded ATen op
+//
+// Captures everything needed to reconstruct the op for compilation:
+// op identity, input/output tensor metadata, scalar arguments,
+// context flags, and tensor identity tracking for dataflow edges.
+// All variable-length arrays are arena-allocated.
+// ═══════════════════════════════════════════════════════════════════
+
+struct TraceEntry {
+  uint64_t schema_hash;       // 8B — op identity (OperatorHandle schema hash)
+  uint64_t shape_hash;        // 8B — quick hash of all input shapes
+  uint64_t scope_hash;        // 8B — module hierarchy path hash (AST layer)
+  uint64_t callsite_hash;     // 8B — Python source location identity
+
+  TensorMeta* input_metas;    // 8B — arena-allocated array
+  TensorMeta* output_metas;   // 8B — arena-allocated array
+  uint16_t num_inputs;        // 2B
+  uint16_t num_outputs;       // 2B
+
+  int64_t* scalar_args;       // 8B — arena-allocated array
+  uint16_t num_scalar_args;   // 2B
+
+  bool grad_enabled;          // 1B — GradMode::is_enabled()
+  bool inference_mode;        // 1B — InferenceMode active?
+
+  // Tensor identity tracking (for dataflow edges between ops)
+  uint32_t* input_trace_indices;  // 8B — which previous op produced each input
+  uint32_t* output_slot_ids;      // 8B — slot ID assigned to each output tensor
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// Guard: Condition that determines branch selection at a BranchNode
+// ═══════════════════════════════════════════════════════════════════
+
+struct Guard {
+  enum class Kind : uint8_t {
+    SHAPE_DIM,     // A specific dimension of a specific input
+    SCALAR_VALUE,  // A scalar produced by a specific op
+    DTYPE,         // Input tensor dtype
+    DEVICE,        // Input tensor device
+    OP_SEQUENCE,   // The op at position N matches expected schema
+  };
+
+  Kind kind;           // 1B
+  uint8_t pad[3];      // 3B — alignment
+  uint32_t op_index;   // 4B — which op in the trace produces the guard value
+  uint16_t arg_index;  // 2B — which argument (for SHAPE_DIM, DTYPE, DEVICE)
+  uint16_t dim_index;  // 2B — which dimension (for SHAPE_DIM)
+
+  uint64_t hash() const {
+    return detail::fmix64(
+        static_cast<uint64_t>(kind) |
+        (static_cast<uint64_t>(op_index) << 8) |
+        (static_cast<uint64_t>(arg_index) << 40) |
+        (static_cast<uint64_t>(dim_index) << 56));
+  }
+};
+
+static_assert(sizeof(Guard) == 12, "Guard must be 12 bytes");
+
+// ═══════════════════════════════════════════════════════════════════
+// DAG Node Types
+// ═══════════════════════════════════════════════════════════════════
+
+enum class TraceNodeKind : uint8_t {
+  REGION,    // A sequence of fusible ops -> compiled kernel
+  BRANCH,    // A guard check -> routes to different arms
+  TERMINAL,  // End of trace
+};
+
+// Base node in the Merkle DAG. Arena-allocated, never freed individually.
+struct TraceNode {
+  TraceNodeKind kind;     // 1B
+  uint8_t pad[7];         // 7B — alignment for merkle_hash
+  uint64_t merkle_hash;   // 8B — subtree identity (includes all descendants)
+  TraceNode* next;        // 8B — continuation (null for TERMINAL)
+};
+
+static_assert(sizeof(TraceNode) == 24, "TraceNode must be 24 bytes");
+
+// ═══════════════════════════════════════════════════════════════════
+// RegionNode: A compilable sequence of ops
+//
+// Contains the recorded ops and a pointer to the compiled kernel
+// (if available). The compiled field is atomic because the background
+// thread writes it and the foreground thread reads it.
+// ═══════════════════════════════════════════════════════════════════
+
+struct RegionNode : TraceNode {
+  uint64_t content_hash;                  // 8B — kernel identity (this region)
+  std::atomic<CompiledKernel*> compiled;  // 8B — from global cache, null until ready
+
+  TraceEntry* ops;          // 8B — arena-allocated array
+  uint32_t num_ops;         // 4B
+
+  uint64_t first_op_schema; // 8B — quick mismatch detection
+
+  float measured_ms;        // 4B — last measured execution time
+  uint32_t variant_id;      // 4B — which compiled variant is active
+
+  MemoryPlan* plan;         // 8B — liveness analysis result (null until computed)
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// BranchNode: A guard point where execution can diverge
+//
+// Arms are value -> target pairs. The next field (from TraceNode)
+// points to the merge point where all arms reconverge.
+// ═══════════════════════════════════════════════════════════════════
+
+struct BranchNode : TraceNode {
+  Guard guard;              // 12B — what to check
+
+  struct Arm {
+    int64_t value;          // 8B — the observed guard outcome
+    TraceNode* target;      // 8B — the path for this outcome
+  };
+
+  Arm* arms;                // 8B — arena-allocated array
+  uint32_t num_arms;        // 4B
+  uint32_t pad1;            // 4B — alignment
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// Content and Merkle hash functions
+//
+// Content hash: identity of THIS node's ops only (cache key for kernels).
+// Merkle hash: identity of the entire subtree from this node downward.
+// Both use detail::fmix64 from Expr.h.
+// ═══════════════════════════════════════════════════════════════════
+
+inline uint64_t compute_content_hash(const TraceEntry* ops, uint32_t n) {
+  uint64_t h = 0x9E3779B97F4A7C15ULL;
+  for (uint32_t i = 0; i < n; i++) {
+    h ^= detail::fmix64(ops[i].schema_hash);
+    h *= 0x9E3779B97F4A7C15ULL;
+
+    // Input shapes + strides + dtype + device contribute to content identity.
+    for (uint16_t j = 0; j < ops[i].num_inputs; j++) {
+      const TensorMeta& m = ops[i].input_metas[j];
+      for (uint8_t d = 0; d < m.ndim; d++) {
+        h ^= detail::fmix64(static_cast<uint64_t>(m.sizes[d]));
+        h *= 0x100000001b3ULL; // FNV prime
+      }
+      // Strides determine memory layout (contiguous vs transposed vs channels_last).
+      for (uint8_t d = 0; d < m.ndim; d++) {
+        h ^= detail::fmix64(static_cast<uint64_t>(m.strides[d]));
+        h *= 0x100000001b3ULL;
+      }
+      // Dtype + device_type + device_idx
+      h ^= detail::fmix64(
+          static_cast<uint64_t>(static_cast<uint8_t>(m.dtype)) |
+          (static_cast<uint64_t>(static_cast<uint8_t>(m.device_type)) << 8) |
+          (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16));
+    }
+
+    // Scalar args differentiate e.g. add(x,y,alpha=0.5) from add(x,y,alpha=2.0).
+    if (ops[i].scalar_args) {
+      uint16_t n_scalars = std::min(ops[i].num_scalar_args, uint16_t(5));
+      for (uint16_t s = 0; s < n_scalars; s++) {
+        h ^= detail::fmix64(static_cast<uint64_t>(ops[i].scalar_args[s]));
+        h *= 0x100000001b3ULL;
+      }
+    }
+  }
+  return detail::fmix64(h);
+}
+
+inline uint64_t compute_merkle_hash(TraceNode* node) {
+  if (!node)
+    return 0;
+
+  uint64_t h;
+  if (node->kind == TraceNodeKind::REGION) {
+    h = static_cast<RegionNode*>(node)->content_hash;
+  } else if (node->kind == TraceNodeKind::BRANCH) {
+    auto* b = static_cast<BranchNode*>(node);
+    h = detail::fmix64(b->guard.hash());
+    for (uint32_t i = 0; i < b->num_arms; i++) {
+      h ^= detail::fmix64(b->arms[i].target->merkle_hash);
+      h *= 0x9E3779B97F4A7C15ULL;
+    }
+  } else {
+    // TERMINAL
+    return 0;
+  }
+
+  // Include continuation's merkle hash (this is what makes it Merkle)
+  if (node->next)
+    h = detail::fmix64(h ^ node->next->merkle_hash);
+
+  return h;
+}
+
+// Content hash for a branched kernel (all arms fused into one kernel)
+inline uint64_t branched_content_hash(BranchNode* branch) {
+  uint64_t h = detail::fmix64(branch->guard.hash());
+  for (uint32_t i = 0; i < branch->num_arms; i++) {
+    if (branch->arms[i].target->kind == TraceNodeKind::REGION) {
+      h ^= detail::fmix64(
+          static_cast<RegionNode*>(branch->arms[i].target)->content_hash);
+      h *= 0x9E3779B97F4A7C15ULL;
+    }
+  }
+  return detail::fmix64(h);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KernelCache: Global thread-safe content_hash -> CompiledKernel* map
+//
+// Open-addressing hash map. Lock-free reads via atomic pointers.
+// Thread-safe inserts via CAS on the content_hash slot. Capacity
+// must be a power of two.
+// ═══════════════════════════════════════════════════════════════════
+
+class KernelCache {
+ public:
+  explicit KernelCache(uint32_t capacity = 4096) : capacity_(capacity) {
+    assert((capacity & (capacity - 1)) == 0 && "capacity must be power of 2");
+    table_ = static_cast<Entry*>(std::calloc(capacity_, sizeof(Entry)));
+    size_.store(0, std::memory_order_relaxed);
+  }
+
+  ~KernelCache() { std::free(table_); }
+
+  KernelCache(const KernelCache&) = delete;
+  KernelCache& operator=(const KernelCache&) = delete;
+
+  // Lock-free lookup. Returns nullptr on miss.
+  CompiledKernel* lookup(uint64_t content_hash) const {
+    uint32_t mask = capacity_ - 1;
+    uint32_t idx = static_cast<uint32_t>(content_hash) & mask;
+    for (uint32_t probe = 0; probe < capacity_; probe++) {
+      auto& entry = table_[(idx + probe) & mask];
+      uint64_t key = entry.content_hash.load(std::memory_order_acquire);
+      if (key == content_hash)
+        return entry.kernel.load(std::memory_order_acquire);
+      if (key == 0)
+        return nullptr; // empty slot -> miss
+    }
+    return nullptr;
+  }
+
+  // Thread-safe insert via CAS. Overwrites if key already exists.
+  void insert(uint64_t content_hash, CompiledKernel* kernel) {
+    assert(content_hash != 0 && "zero is the sentinel for empty slots");
+    uint32_t mask = capacity_ - 1;
+    uint32_t idx = static_cast<uint32_t>(content_hash) & mask;
+    for (uint32_t probe = 0; probe < capacity_; probe++) {
+      auto& entry = table_[(idx + probe) & mask];
+      uint64_t expected = 0;
+      if (entry.content_hash.compare_exchange_strong(
+              expected, content_hash, std::memory_order_acq_rel)) {
+        entry.kernel.store(kernel, std::memory_order_release);
+        size_.fetch_add(1, std::memory_order_relaxed);
+        return;
+      }
+      if (expected == content_hash) {
+        // Already exists -- update to newer variant
+        entry.kernel.store(kernel, std::memory_order_release);
+        return;
+      }
+    }
+    // Table full -- should not happen with proper sizing
+    assert(false && "KernelCache table full");
+  }
+
+  uint32_t size() const { return size_.load(std::memory_order_relaxed); }
+  uint32_t capacity() const { return capacity_; }
+
+ private:
+  struct Entry {
+    std::atomic<uint64_t> content_hash{0};
+    std::atomic<CompiledKernel*> kernel{nullptr};
+  };
+
+  Entry* table_;
+  uint32_t capacity_;
+  std::atomic<uint32_t> size_;
+};
+
+// TraceRing and IterationDetector are defined in their own headers
+// (included above). They're also used standalone by CrucibleContext.h
+// and BackgroundThread.h without needing the full DAG infrastructure.
+
+// ═══════════════════════════════════════════════════════════════════
+// Merkle DAG construction and traversal
+// ═══════════════════════════════════════════════════════════════════
+
+// Create a RegionNode from a span of TraceEntries.
+// Cannot memset because std::atomic is non-trivially-copyable;
+// each field is initialized explicitly.
+inline RegionNode* make_region(
+    Arena& arena,
+    TraceEntry* ops,
+    uint32_t num_ops) {
+  auto* node = new (arena.alloc(sizeof(RegionNode), alignof(RegionNode)))
+      RegionNode{};
+  node->kind = TraceNodeKind::REGION;
+  node->merkle_hash = 0;
+  node->next = nullptr;
+  node->ops = ops;
+  node->num_ops = num_ops;
+  node->content_hash = compute_content_hash(ops, num_ops);
+  node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : 0;
+  node->compiled.store(nullptr, std::memory_order_relaxed);
+  node->measured_ms = 0.0f;
+  node->variant_id = 0;
+  node->plan = nullptr;
+  return node;
+}
+
+// Create a terminal node.
+inline TraceNode* make_terminal(Arena& arena) {
+  auto* node = arena.alloc_obj<TraceNode>();
+  std::memset(node, 0, sizeof(TraceNode));
+  node->kind = TraceNodeKind::TERMINAL;
+  node->next = nullptr;
+  node->merkle_hash = 0;
+  return node;
+}
+
+// Recompute Merkle hashes bottom-up from a node.
+// Assumes all descendants already have correct merkle_hash values.
+inline void recompute_merkle(TraceNode* node) {
+  if (!node)
+    return;
+  // Must recompute children first (bottom-up)
+  if (node->kind == TraceNodeKind::BRANCH) {
+    auto* b = static_cast<BranchNode*>(node);
+    for (uint32_t i = 0; i < b->num_arms; i++)
+      recompute_merkle(b->arms[i].target);
+  }
+  if (node->next)
+    recompute_merkle(node->next);
+
+  node->merkle_hash = compute_merkle_hash(node);
+}
+
+// Collect all RegionNodes into an output array. Returns count.
+// Used to find uncompiled regions after DAG mutation.
+inline uint32_t collect_regions(
+    TraceNode* node,
+    RegionNode** out,
+    uint32_t max_count,
+    uint32_t count = 0) {
+  while (node && count < max_count) {
+    if (node->kind == TraceNodeKind::REGION) {
+      out[count++] = static_cast<RegionNode*>(node);
+    } else if (node->kind == TraceNodeKind::BRANCH) {
+      auto* b = static_cast<BranchNode*>(node);
+      for (uint32_t i = 0; i < b->num_arms; i++)
+        count = collect_regions(b->arms[i].target, out, max_count, count);
+    }
+    node = node->next;
+  }
+  return count;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Merge detection: scan bottom-up for shared suffixes
+//
+// Walks the existing continuation and compares content hashes with
+// new ops from the tail. Returns the first existing node where
+// content matches (the merge point).
+// ═══════════════════════════════════════════════════════════════════
+
+inline TraceNode* find_merge_point(
+    TraceEntry* new_ops,
+    uint32_t new_n,
+    TraceNode* existing_continuation) {
+  // Collect existing regions into a flat array for reverse scanning
+  constexpr uint32_t MAX_REGIONS = 1024;
+  RegionNode* existing_regions[MAX_REGIONS];
+  uint32_t num_existing = 0;
+
+  TraceNode* walk = existing_continuation;
+  while (walk && walk->kind == TraceNodeKind::REGION &&
+         num_existing < MAX_REGIONS) {
+    existing_regions[num_existing++] = static_cast<RegionNode*>(walk);
+    walk = walk->next;
+  }
+
+  if (num_existing == 0)
+    return nullptr;
+
+  // Scan from the tail of both sequences, comparing content hashes.
+  // The deepest match is the merge point.
+  TraceNode* merge = nullptr;
+  uint32_t new_pos = new_n;
+  uint32_t ex_idx = num_existing;
+
+  while (ex_idx > 0 && new_pos > 0) {
+    ex_idx--;
+    RegionNode* region = existing_regions[ex_idx];
+    if (new_pos < region->num_ops)
+      break;
+
+    uint64_t new_hash =
+        compute_content_hash(&new_ops[new_pos - region->num_ops], region->num_ops);
+
+    if (new_hash == region->content_hash) {
+      merge = region;
+      new_pos -= region->num_ops;
+    } else {
+      break; // Divergence -- merge point is after this node
+    }
+  }
+
+  return merge;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Branch creation: DAG mutation when divergence detected
+//
+// Splits a straight-line trace at the divergence point, creating a
+// BranchNode with two arms (existing + new), merging where the
+// continuations become identical.
+// ═══════════════════════════════════════════════════════════════════
+
+inline BranchNode* add_branch(
+    Arena& arena,
+    KernelCache& kernel_cache,
+    TraceNode* divergence_point,
+    TraceEntry* new_ops,
+    uint32_t new_n,
+    int64_t old_guard_value,
+    int64_t new_guard_value,
+    Guard guard,
+    TraceNode* existing_suffix) {
+  // 1. Create new RegionNode for the divergent segment
+  auto* new_region = make_region(arena, new_ops, new_n);
+
+  // 2. Find merge point
+  TraceNode* merge = find_merge_point(new_ops, new_n, existing_suffix);
+
+  // 3. Wire new arm's tail to the merge point
+  new_region->next = merge;
+
+  // 4. Look up compiled kernel from global cache (may already exist)
+  new_region->compiled.store(
+      kernel_cache.lookup(new_region->content_hash),
+      std::memory_order_relaxed);
+
+  // 5. Create BranchNode
+  auto* branch = arena.alloc_obj<BranchNode>();
+  std::memset(branch, 0, sizeof(BranchNode));
+  branch->kind = TraceNodeKind::BRANCH;
+  branch->guard = guard;
+  branch->num_arms = 2;
+  branch->arms = arena.alloc_array<BranchNode::Arm>(2);
+  branch->arms[0] = {old_guard_value, divergence_point};
+  branch->arms[1] = {new_guard_value, new_region};
+  branch->next = merge; // Shared continuation after merge
+
+  // 6. Recompute Merkle hashes bottom-up
+  recompute_merkle(branch);
+
+  return branch;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Replay: Traverse the compiled Merkle DAG during execution.
+//
+// The live tensor pack and guard evaluator are provided as callbacks.
+// This function is called from the foreground thread during replay
+// mode (after the DAG is compiled).
+//
+// GuardEval signature: int64_t(const Guard&)
+// RegionExec signature: void(RegionNode*)
+// ═══════════════════════════════════════════════════════════════════
+
+template <typename GuardEval, typename RegionExec>
+inline bool replay(
+    TraceNode* node,
+    GuardEval&& eval_guard,
+    RegionExec&& exec_region) {
+  while (node) {
+    switch (node->kind) {
+
+    case TraceNodeKind::REGION: {
+      auto* region = static_cast<RegionNode*>(node);
+      exec_region(region);
+      node = node->next;
+      break;
+    }
+
+    case TraceNodeKind::BRANCH: {
+      auto* branch = static_cast<BranchNode*>(node);
+      int64_t val = eval_guard(branch->guard);
+
+      // Find the matching arm
+      TraceNode* arm = nullptr;
+      for (uint32_t i = 0; i < branch->num_arms; i++) {
+        if (branch->arms[i].value == val) {
+          arm = branch->arms[i].target;
+          break;
+        }
+      }
+
+      if (!arm)
+        return false; // Unseen guard value -- fall back to recording
+
+      // Execute the arm's branch-specific regions
+      if (!replay(arm, eval_guard, exec_region))
+        return false;
+
+      // Continue from the merge point (shared suffix)
+      node = branch->next;
+      break;
+    }
+
+    case TraceNodeKind::TERMINAL:
+      return true;
+    }
+  }
+  return true;
+}
+
+} // namespace crucible
