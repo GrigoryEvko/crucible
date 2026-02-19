@@ -2,13 +2,14 @@
 
 // SymbolTable: per-symbol metadata storage.
 //
-// Maps symbol_id → (kind, hint, range, flags). Compact vector layout
-// indexed by the same uint32_t id used in Expr::symbol_id.
+// Maps SymbolId → (kind, hint, range, flags). Compact vector layout
+// indexed by the same SymbolId used in Expr::symbol_id.
 //
 // Designed to hold everything the Simplifier needs for range-based
 // rewriting without calling back into Python.
 
 #include <crucible/Ops.h>
+#include <crucible/Types.h>
 
 #include <bit>
 #include <cstdint>
@@ -59,8 +60,8 @@ class SymbolTable {
 
   // Register a new symbol. Returns the assigned ID.
   // Caller provides assumptions as ExprFlags bits (IS_INTEGER, IS_POSITIVE, etc).
-  [[nodiscard]] uint32_t add(SymKind kind, uint16_t expr_flags, bool is_backed = true) {
-    uint32_t id = static_cast<uint32_t>(entries_.size());
+  [[nodiscard]] SymbolId add(SymKind kind, uint16_t expr_flags, bool is_backed = true) {
+    auto id = SymbolId{static_cast<uint32_t>(entries_.size())};
     SymbolEntry e{};
     e.hint = kNoHint;
     e.kind = kind;
@@ -89,90 +90,90 @@ class SymbolTable {
     }
 
     entries_.push_back(e);
-    return id;
+    return id;  // SymbolId
   }
 
   // Set the concrete hint for a backed symbol.
-  void set_hint(uint32_t id, int64_t hint) {
-    entries_[id].hint = hint;
-    entries_[id].sym_flags |= SymFlags::HAS_HINT;
+  void set_hint(SymbolId id, int64_t hint) {
+    entries_[id.raw()].hint = hint;
+    entries_[id.raw()].sym_flags |= SymFlags::HAS_HINT;
   }
 
   // Set float hint (bitcast to int64_t).
-  void set_hint_float(uint32_t id, double hint) {
-    entries_[id].hint = bitcast_double(hint);
-    entries_[id].sym_flags |= SymFlags::HAS_HINT;
+  void set_hint_float(SymbolId id, double hint) {
+    entries_[id.raw()].hint = bitcast_double(hint);
+    entries_[id.raw()].sym_flags |= SymFlags::HAS_HINT;
   }
 
   // Tighten the integer range. Only narrows, never widens.
-  void tighten_range(uint32_t id, int64_t lower, int64_t upper) {
-    auto& e = entries_[id];
+  void tighten_range(SymbolId id, int64_t lower, int64_t upper) {
+    auto& e = entries_[id.raw()];
     if (lower > e.range_lower)
       e.range_lower = lower;
     if (upper < e.range_upper)
       e.range_upper = upper;
   }
 
-  void set_size_like(uint32_t id) {
-    entries_[id].sym_flags |= SymFlags::IS_SIZE_LIKE;
+  void set_size_like(SymbolId id) {
+    entries_[id.raw()].sym_flags |= SymFlags::IS_SIZE_LIKE;
   }
 
   // ---- Queries ----
 
-  [[nodiscard]] const SymbolEntry& operator[](uint32_t id) const {
-    return entries_[id];
+  [[nodiscard]] const SymbolEntry& operator[](SymbolId id) const {
+    return entries_[id.raw()];
   }
 
-  [[nodiscard]] bool has_hint(uint32_t id) const {
-    return entries_[id].sym_flags & SymFlags::HAS_HINT;
+  [[nodiscard]] bool has_hint(SymbolId id) const {
+    return entries_[id.raw()].sym_flags & SymFlags::HAS_HINT;
   }
 
-  [[nodiscard]] int64_t hint(uint32_t id) const {
-    return entries_[id].hint;
+  [[nodiscard]] int64_t hint(SymbolId id) const {
+    return entries_[id.raw()].hint;
   }
 
-  [[nodiscard]] double hint_float(uint32_t id) const {
-    return bitcast_to_double(entries_[id].hint);
+  [[nodiscard]] double hint_float(SymbolId id) const {
+    return bitcast_to_double(entries_[id.raw()].hint);
   }
 
-  [[nodiscard]] int64_t lower(uint32_t id) const {
-    return entries_[id].range_lower;
+  [[nodiscard]] int64_t lower(SymbolId id) const {
+    return entries_[id.raw()].range_lower;
   }
 
-  [[nodiscard]] int64_t upper(uint32_t id) const {
-    return entries_[id].range_upper;
+  [[nodiscard]] int64_t upper(SymbolId id) const {
+    return entries_[id.raw()].range_upper;
   }
 
-  [[nodiscard]] bool is_size_like(uint32_t id) const {
-    return entries_[id].sym_flags & SymFlags::IS_SIZE_LIKE;
+  [[nodiscard]] bool is_size_like(SymbolId id) const {
+    return entries_[id.raw()].sym_flags & SymFlags::IS_SIZE_LIKE;
   }
 
-  [[nodiscard]] bool is_backed(uint32_t id) const {
-    return entries_[id].sym_flags & SymFlags::IS_BACKED;
+  [[nodiscard]] bool is_backed(SymbolId id) const {
+    return entries_[id.raw()].sym_flags & SymFlags::IS_BACKED;
   }
 
-  [[nodiscard]] SymKind kind(uint32_t id) const {
-    return entries_[id].kind;
+  [[nodiscard]] SymKind kind(SymbolId id) const {
+    return entries_[id.raw()].kind;
   }
 
-  [[nodiscard]] uint16_t expr_flags(uint32_t id) const {
-    return entries_[id].expr_flags;
+  [[nodiscard]] uint16_t expr_flags(SymbolId id) const {
+    return entries_[id.raw()].expr_flags;
   }
 
   // Range check: is value guaranteed to be in [lo, hi]?
-  [[nodiscard]] bool range_contains(uint32_t id, int64_t lo, int64_t hi) const {
-    const auto& e = entries_[id];
+  [[nodiscard]] bool range_contains(SymbolId id, int64_t lo, int64_t hi) const {
+    const auto& e = entries_[id.raw()];
     return e.range_lower >= lo && e.range_upper <= hi;
   }
 
   // Is the symbol guaranteed positive (lower bound > 0)?
-  [[nodiscard]] bool is_positive(uint32_t id) const {
-    return entries_[id].range_lower > 0;
+  [[nodiscard]] bool is_positive(SymbolId id) const {
+    return entries_[id.raw()].range_lower > 0;
   }
 
   // Is the symbol guaranteed nonnegative (lower bound >= 0)?
-  [[nodiscard]] bool is_nonnegative(uint32_t id) const {
-    return entries_[id].range_lower >= 0;
+  [[nodiscard]] bool is_nonnegative(SymbolId id) const {
+    return entries_[id.raw()].range_lower >= 0;
   }
 
   [[nodiscard]] size_t size() const {

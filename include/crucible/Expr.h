@@ -1,6 +1,7 @@
 #pragma once
 
 #include <crucible/Ops.h>
+#include <crucible/Types.h>
 
 #include <bit>
 #include <cstdint>
@@ -20,7 +21,7 @@ struct Expr {
   Op op;               // 1 byte  — node type
   uint8_t nargs;       // 1 byte  — number of children (0-255)
   uint16_t flags;      // 2 bytes — ExprFlags bitfield
-  uint32_t symbol_id;  // 4 bytes — unique id for symbols (0 for non-symbols)
+  SymbolId symbol_id;  // 4 bytes — unique id for symbols (SymbolId{} for non-symbols)
   uint64_t hash;       // 8 bytes — precomputed hash for intern table
   int64_t payload;     // 8 bytes — integer value, or bitcast double, or symbol name ptr
   const Expr** args;   // 8 bytes — pointer to arena-allocated array of children
