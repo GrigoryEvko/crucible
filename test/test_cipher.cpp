@@ -29,6 +29,9 @@ static crucible::RegionNode* make_test_region(crucible::Arena& arena) {
         ops[i].input_trace_indices = arena.alloc_array<uint32_t>(1);
         ops[i].input_trace_indices[0] = UINT32_MAX;
 
+        ops[i].input_slot_ids = arena.alloc_array<uint32_t>(1);
+        ops[i].input_slot_ids[0] = UINT32_MAX;
+
         ops[i].output_slot_ids = arena.alloc_array<uint32_t>(1);
         ops[i].output_slot_ids[0] = i;
     }
