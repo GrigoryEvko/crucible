@@ -251,10 +251,11 @@ enum class CKernelId : uint8_t {
     SDDMM_GNN,     // sampled dense-dense matmul: edge score computation
     SINKHORN,       // iterative optimal transport (log-domain stabilized Sinkhorn-Knopp)
 
-    // ── Collective Communication (7) ────────────────────────────────────
+    // ── Collective Communication (10) ───────────────────────────────────
     // Device-agnostic names (NCCL on NVIDIA, RCCL on AMD, Gloo on CPU).
-    // These are the most expensive ops in multi-GPU workloads. Crucible must
-    // know about them for compute-communication overlap scheduling.
+    // Transport layer (IB verbs, RoCE, NVLink, TCP) is invisible — libraries
+    // auto-negotiate. These are the most expensive ops in multi-GPU workloads.
+    // Crucible must know about them for compute-communication overlap scheduling.
     //
     // Refs: NCCL, c10d::ProcessGroup, FSDP, DeepSpeed, Megatron-LM
     COMM_ALLREDUCE,     // gradient synchronization (DDP, FSDP, ZeRO)
@@ -264,6 +265,9 @@ enum class CKernelId : uint8_t {
     COMM_ALL_TO_ALL,    // token permutation across ranks (MoE expert routing)
     COMM_SEND,          // point-to-point send (pipeline parallel, inter-stage)
     COMM_RECV,          // point-to-point receive (pipeline parallel, inter-stage)
+    COMM_REDUCE,        // root-only reduction (parameter server, metric aggregation)
+    COMM_GATHER,        // root-only gather (centralized logging, eval collection)
+    COMM_SCATTER,       // root-only scatter (data distribution from coordinator)
 
     // ── I/O (4) ─────────────────────────────────────────────────────────
     // Data pipeline and checkpoint operations. These dominate wall-clock time
@@ -282,7 +286,7 @@ enum class CKernelId : uint8_t {
     // ── Synchronization (1) ─────────────────────────────────────────────
     COMM_BARRIER,       // all-rank barrier (phase boundary in distributed training)
 
-    NUM_KERNELS     // sentinel — must be last; value == 144
+    NUM_KERNELS     // sentinel — must be last; value == 147
 };
 
 // ── Registration table ──────────────────────────────────────────────────────
@@ -518,6 +522,9 @@ inline const char* ckernel_name(CKernelId id) {
     case CKernelId::COMM_ALL_TO_ALL:    return "COMM_ALL_TO_ALL";
     case CKernelId::COMM_SEND:          return "COMM_SEND";
     case CKernelId::COMM_RECV:          return "COMM_RECV";
+    case CKernelId::COMM_REDUCE:        return "COMM_REDUCE";
+    case CKernelId::COMM_GATHER:        return "COMM_GATHER";
+    case CKernelId::COMM_SCATTER:       return "COMM_SCATTER";
     // I/O
     case CKernelId::IO_LOAD:            return "IO_LOAD";
     case CKernelId::IO_PREFETCH:        return "IO_PREFETCH";
