@@ -220,8 +220,9 @@ class Cipher {
             sz += 40; // fixed per-op header
             sz += (te.num_inputs + te.num_outputs) * sizeof(TensorMeta);
             sz += te.num_scalar_args * sizeof(int64_t);
-            sz += te.num_inputs  * sizeof(uint32_t);
-            sz += te.num_outputs * sizeof(uint32_t);
+            sz += te.num_inputs  * sizeof(uint32_t); // input_trace_indices
+            sz += te.num_inputs  * sizeof(uint32_t); // input_slot_ids
+            sz += te.num_outputs * sizeof(uint32_t); // output_slot_ids
         }
         return sz + 256; // headroom
     }

@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 #include <vector>
 
 namespace crucible {
@@ -26,7 +27,7 @@ inline uint64_t expr_hash(
     const Expr* const* args,
     uint8_t nargs) {
   uint64_t h = 0x9E3779B97F4A7C15ULL; // golden ratio constant
-  h ^= static_cast<uint64_t>(op) * 0x517CC1B727220A95ULL;
+  h ^= std::to_underlying(op) * 0x517CC1B727220A95ULL;
   h ^= fmix64(static_cast<uint64_t>(payload));
   h ^= static_cast<uint64_t>(symbol_id) * 0x6C62272E07BB0142ULL;
   h ^= static_cast<uint64_t>(flags) * 0x85EBCA6BULL;
@@ -37,7 +38,7 @@ inline uint64_t expr_hash(
   return fmix64(h);
 }
 
-inline uint16_t integer_flags(int64_t val) {
+constexpr uint16_t integer_flags(int64_t val) {
   uint16_t f = ExprFlags::IS_INTEGER | ExprFlags::IS_REAL |
                ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
   if (val > 0)
@@ -52,7 +53,7 @@ inline uint16_t integer_flags(int64_t val) {
 }
 
 // Derive flags for a composite node from its op and children.
-inline uint16_t composite_flags(
+constexpr uint16_t composite_flags(
     Op op,
     const Expr* const* args,
     uint8_t nargs) {
@@ -214,8 +215,7 @@ class ExprPool {
   }
 
   const Expr* float_(double val) {
-    int64_t payload;
-    std::memcpy(&payload, &val, sizeof(payload));
+    int64_t payload = std::bit_cast<int64_t>(val);
     uint16_t f =
         ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
     if (val > 0)
@@ -237,9 +237,7 @@ class ExprPool {
       std::memcpy(buf, name, len);
       symbol_names_[id] = buf;
     }
-    int64_t payload;
-    const char* ptr = symbol_names_[id];
-    std::memcpy(&payload, &ptr, sizeof(payload));
+    int64_t payload = std::bit_cast<int64_t>(symbol_names_[id]);
     return intern_node(
         Op::SYMBOL, nullptr, 0,
         assumption_flags | ExprFlags::IS_SYMBOL, id, payload);

@@ -51,7 +51,7 @@ static constexpr size_t kGroupWidth = 16;
 // H2 tag: top 7 bits of hash → [0, 127].
 // Always non-negative as int8_t (bit 7 cleared).
 // Independent from H1 (lower bits) due to fmix64 avalanche.
-inline int8_t h2_tag(uint64_t hash) {
+constexpr int8_t h2_tag(uint64_t hash) {
   return static_cast<int8_t>(hash >> 57);
 }
 

@@ -10,8 +10,8 @@
 
 #include <crucible/Ops.h>
 
+#include <bit>
 #include <cstdint>
-#include <cstring>
 #include <limits>
 #include <vector>
 
@@ -180,15 +180,11 @@ class SymbolTable {
 
  private:
   static int64_t bitcast_double(double d) {
-    int64_t v;
-    std::memcpy(&v, &d, sizeof(v));
-    return v;
+    return std::bit_cast<int64_t>(d);
   }
 
   static double bitcast_to_double(int64_t v) {
-    double d;
-    std::memcpy(&d, &v, sizeof(d));
-    return d;
+    return std::bit_cast<double>(v);
   }
 
   std::vector<SymbolEntry> entries_;
