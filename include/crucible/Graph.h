@@ -203,8 +203,8 @@ struct GraphNode {
   uint8_t nred;         // 1B — reduction dimensions (0 for non-reductions)
 
   // ── Layout scalars (8B) ───────────────────────────
-  int8_t dtype;         // 1B — output dtype (at::ScalarType ordinal)
-  int8_t src_dtype;     // 1B — source dtype (reductions only)
+  ScalarType dtype;     // 1B — output dtype
+  ScalarType src_dtype; // 1B — source dtype (reductions only)
   int8_t device_idx;    // 1B — (-1 = CPU, 0+ = CUDA device)
   ReduceOp reduce_op;   // 1B
   ReduceHint reduce_hint; // 1B
@@ -273,7 +273,7 @@ class Graph {
   // ── Node construction ──────────────────────────────────────────
 
   [[nodiscard]] GraphNode* add_input(
-      int8_t dtype, int8_t device_idx,
+      ScalarType dtype, int8_t device_idx,
       std::span<const Expr* const> size) {
     GraphNode* n = alloc_node_();
     n->kind = NodeKind::INPUT;
@@ -286,7 +286,7 @@ class Graph {
 
   [[nodiscard]] GraphNode* add_pointwise(
       std::span<const Expr* const> ranges,
-      int8_t dtype, int8_t device_idx,
+      ScalarType dtype, int8_t device_idx,
       ComputeBody* body,
       std::span<GraphNode* const> inputs) {
     GraphNode* n = alloc_node_();
@@ -304,7 +304,7 @@ class Graph {
       std::span<const Expr* const> ranges,
       std::span<const Expr* const> red_ranges,
       ReduceOp reduce_op, ReduceHint hint,
-      int8_t dtype, int8_t src_dtype,
+      ScalarType dtype, ScalarType src_dtype,
       int8_t device_idx,
       ComputeBody* body,
       std::span<GraphNode* const> inputs) {
@@ -332,7 +332,7 @@ class Graph {
 
   [[nodiscard]] GraphNode* add_extern(
       const char* py_name, const char* cpp_name,
-      int8_t dtype, int8_t device_idx,
+      ScalarType dtype, int8_t device_idx,
       std::span<const Expr* const> size,
       std::span<GraphNode* const> inputs,
       std::span<const int64_t> constant_args = {}) {
@@ -402,26 +402,26 @@ class Graph {
   // only accessed during buffer allocation and code emission, not
   // during hot graph traversals like DCE or topological sort).
 
-  void set_input_slots(uint32_t node_id, std::span<const uint32_t> slots) {
+  void set_input_slots(uint32_t node_id, std::span<const SlotId> slots) {
     assert(node_id < num_nodes_);
     if (slots.empty()) { input_slots_[node_id] = nullptr; return; }
-    input_slots_[node_id] = arena_.alloc_array<uint32_t>(slots.size());
+    input_slots_[node_id] = arena_.alloc_array<SlotId>(slots.size());
     std::memcpy(input_slots_[node_id], slots.data(), slots.size_bytes());
   }
 
-  void set_output_slots(uint32_t node_id, std::span<const uint32_t> slots) {
+  void set_output_slots(uint32_t node_id, std::span<const SlotId> slots) {
     assert(node_id < num_nodes_);
     if (slots.empty()) { output_slots_[node_id] = nullptr; return; }
-    output_slots_[node_id] = arena_.alloc_array<uint32_t>(slots.size());
+    output_slots_[node_id] = arena_.alloc_array<SlotId>(slots.size());
     std::memcpy(output_slots_[node_id], slots.data(), slots.size_bytes());
   }
 
-  [[nodiscard]] const uint32_t* input_slots(uint32_t node_id) const {
+  [[nodiscard]] const SlotId* input_slots(uint32_t node_id) const {
     assert(node_id < num_nodes_);
     return input_slots_[node_id];
   }
 
-  [[nodiscard]] const uint32_t* output_slots(uint32_t node_id) const {
+  [[nodiscard]] const SlotId* output_slots(uint32_t node_id) const {
     assert(node_id < num_nodes_);
     return output_slots_[node_id];
   }
@@ -587,16 +587,16 @@ class Graph {
 
   void grow_(uint32_t new_cap) {
     auto** buf = arena_.alloc_array<GraphNode*>(new_cap);
-    auto** is_buf = arena_.alloc_array<uint32_t*>(new_cap);
-    auto** os_buf = arena_.alloc_array<uint32_t*>(new_cap);
+    auto** is_buf = arena_.alloc_array<SlotId*>(new_cap);
+    auto** os_buf = arena_.alloc_array<SlotId*>(new_cap);
     if (nodes_) {
       std::memcpy(buf, nodes_, num_nodes_ * sizeof(GraphNode*));
-      std::memcpy(is_buf, input_slots_, num_nodes_ * sizeof(uint32_t*));
-      std::memcpy(os_buf, output_slots_, num_nodes_ * sizeof(uint32_t*));
+      std::memcpy(is_buf, input_slots_, num_nodes_ * sizeof(SlotId*));
+      std::memcpy(os_buf, output_slots_, num_nodes_ * sizeof(SlotId*));
     }
     // Zero-fill new entries so unset slots read as nullptr.
-    std::memset(is_buf + num_nodes_, 0, (new_cap - num_nodes_) * sizeof(uint32_t*));
-    std::memset(os_buf + num_nodes_, 0, (new_cap - num_nodes_) * sizeof(uint32_t*));
+    std::memset(is_buf + num_nodes_, 0, (new_cap - num_nodes_) * sizeof(SlotId*));
+    std::memset(os_buf + num_nodes_, 0, (new_cap - num_nodes_) * sizeof(SlotId*));
     nodes_ = buf;
     input_slots_ = is_buf;
     output_slots_ = os_buf;
@@ -654,8 +654,8 @@ class Graph {
   SymbolTable* tab_;
 
   GraphNode** nodes_;
-  uint32_t** input_slots_;   // [node_id] → per-node input slot ID array (or nullptr)
-  uint32_t** output_slots_;  // [node_id] → per-node output slot ID array (or nullptr)
+  SlotId** input_slots_;   // [node_id] → per-node input slot ID array (or nullptr)
+  SlotId** output_slots_;  // [node_id] → per-node output slot ID array (or nullptr)
   uint32_t num_nodes_;
   uint32_t capacity_;
 

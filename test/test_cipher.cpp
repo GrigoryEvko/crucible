@@ -21,19 +21,19 @@ static crucible::RegionNode* make_test_region(crucible::Arena& arena) {
         ops[i].input_metas[0].ndim    = 1;
         ops[i].input_metas[0].sizes[0]   = 16;
         ops[i].input_metas[0].strides[0] = 1;
-        ops[i].input_metas[0].dtype = static_cast<int8_t>(crucible::ScalarType::Float);
+        ops[i].input_metas[0].dtype = crucible::ScalarType::Float;
 
         ops[i].output_metas  = arena.alloc_array<crucible::TensorMeta>(1);
         ops[i].output_metas[0] = ops[i].input_metas[0];
 
-        ops[i].input_trace_indices = arena.alloc_array<uint32_t>(1);
-        ops[i].input_trace_indices[0] = UINT32_MAX;
+        ops[i].input_trace_indices = arena.alloc_array<crucible::OpIndex>(1);
+        ops[i].input_trace_indices[0] = crucible::OpIndex{};
 
-        ops[i].input_slot_ids = arena.alloc_array<uint32_t>(1);
-        ops[i].input_slot_ids[0] = UINT32_MAX;
+        ops[i].input_slot_ids = arena.alloc_array<crucible::SlotId>(1);
+        ops[i].input_slot_ids[0] = crucible::SlotId{};
 
-        ops[i].output_slot_ids = arena.alloc_array<uint32_t>(1);
-        ops[i].output_slot_ids[0] = i;
+        ops[i].output_slot_ids = arena.alloc_array<crucible::SlotId>(1);
+        ops[i].output_slot_ids[0] = crucible::SlotId{i};
     }
 
     auto* region = crucible::make_region(arena, ops, NUM_OPS);

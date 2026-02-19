@@ -18,10 +18,10 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         m.sizes[0]   = size0;
         m.strides[0] = 1;
     }
-    m.dtype       = static_cast<int8_t>(crucible::ScalarType::Float);
-    m.device_type = 0;   // CPU
+    m.dtype       = crucible::ScalarType::Float;
+    m.device_type = crucible::DeviceType::CPU;
     m.device_idx  = -1;
-    m.layout      = 0;   // Strided
+    m.layout      = crucible::Layout::Strided;
     m.data_ptr    = reinterpret_cast<void*>(0xDEADBEEF); // must become null on reload
     return m;
 }
@@ -60,16 +60,16 @@ int main() {
         ops[i].scalar_args      = arena.alloc_array<int64_t>(1);
         ops[i].scalar_args[0]   = static_cast<int64_t>(i * 42);
 
-        ops[i].input_trace_indices  = arena.alloc_array<uint32_t>(2);
-        ops[i].input_trace_indices[0] = (i > 0) ? i - 1 : UINT32_MAX;
-        ops[i].input_trace_indices[1] = UINT32_MAX;
+        ops[i].input_trace_indices  = arena.alloc_array<crucible::OpIndex>(2);
+        ops[i].input_trace_indices[0] = (i > 0) ? crucible::OpIndex{i - 1} : crucible::OpIndex{};
+        ops[i].input_trace_indices[1] = crucible::OpIndex{};
 
-        ops[i].input_slot_ids  = arena.alloc_array<uint32_t>(2);
-        ops[i].input_slot_ids[0] = (i > 0) ? (i - 1) * 10 : UINT32_MAX;
-        ops[i].input_slot_ids[1] = UINT32_MAX;
+        ops[i].input_slot_ids  = arena.alloc_array<crucible::SlotId>(2);
+        ops[i].input_slot_ids[0] = (i > 0) ? crucible::SlotId{(i - 1) * 10} : crucible::SlotId{};
+        ops[i].input_slot_ids[1] = crucible::SlotId{};
 
-        ops[i].output_slot_ids  = arena.alloc_array<uint32_t>(1);
-        ops[i].output_slot_ids[0] = i * 10;
+        ops[i].output_slot_ids  = arena.alloc_array<crucible::SlotId>(1);
+        ops[i].output_slot_ids[0] = crucible::SlotId{i * 10};
     }
 
     // Build RegionNode.

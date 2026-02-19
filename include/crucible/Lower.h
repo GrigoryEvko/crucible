@@ -61,10 +61,10 @@ inline void lower_trace_to_graph(
     if (!te.input_trace_indices || !te.input_slot_ids) continue;
 
     for (uint16_t j = 0; j < te.num_inputs; j++) {
-      if (te.input_trace_indices[j] != UINT32_MAX) continue;
-      const uint32_t sid = te.input_slot_ids[j];
-      if (sid == UINT32_MAX || sid >= num_slots) continue;
-      if (extern_map[sid]) continue; // already created
+      if (te.input_trace_indices[j].is_valid()) continue;
+      const SlotId sid = te.input_slot_ids[j];
+      if (!sid.is_valid() || sid.raw() >= num_slots) continue;
+      if (extern_map[sid.raw()]) continue; // already created
 
       // Create INPUT node with symbolic sizes from the TensorMeta.
       const TensorMeta& m = te.input_metas[j];
@@ -75,7 +75,7 @@ inline void lower_trace_to_graph(
 
       auto* inp = graph.add_input(m.dtype, m.device_idx, std::span{sizes, ndim});
       graph.set_output_slots(inp->id, std::span{&sid, 1u});
-      extern_map[sid] = inp;
+      extern_map[sid.raw()] = inp;
     }
   }
 
@@ -89,7 +89,7 @@ inline void lower_trace_to_graph(
 
     // Output metadata from primary output tensor.
     uint8_t ndim = 0;
-    int8_t dtype = 0;
+    ScalarType dtype = ScalarType::Undefined;
     int8_t dev = -1;
     const Expr* sizes[8] = {};
 
@@ -106,34 +106,34 @@ inline void lower_trace_to_graph(
     // Two passes: count real inputs, then collect.
     uint16_t real_count = 0;
     for (uint16_t j = 0; j < te.num_inputs; j++) {
-      const uint32_t tidx = te.input_trace_indices
-          ? te.input_trace_indices[j] : UINT32_MAX;
-      const uint32_t sid = te.input_slot_ids
-          ? te.input_slot_ids[j] : UINT32_MAX;
+      const OpIndex tidx = te.input_trace_indices
+          ? te.input_trace_indices[j] : OpIndex{};
+      const SlotId sid = te.input_slot_ids
+          ? te.input_slot_ids[j] : SlotId{};
 
-      if (tidx != UINT32_MAX && tidx < num_ops) {
+      if (tidx.is_valid() && tidx.raw() < num_ops) {
         real_count++;
-      } else if (sid != UINT32_MAX && sid < num_slots && extern_map[sid]) {
+      } else if (sid.is_valid() && sid.raw() < num_slots && extern_map[sid.raw()]) {
         real_count++;
       }
     }
 
     const uint16_t alloc_n = (real_count > 0) ? real_count : 1;
     auto** deps = arena.alloc_array<GraphNode*>(alloc_n);
-    auto* in_slots = arena.alloc_array<uint32_t>(alloc_n);
+    auto* in_slots = arena.alloc_array<SlotId>(alloc_n);
     uint16_t k = 0;
 
     for (uint16_t j = 0; j < te.num_inputs; j++) {
-      const uint32_t tidx = te.input_trace_indices
-          ? te.input_trace_indices[j] : UINT32_MAX;
-      const uint32_t sid = te.input_slot_ids
-          ? te.input_slot_ids[j] : UINT32_MAX;
+      const OpIndex tidx = te.input_trace_indices
+          ? te.input_trace_indices[j] : OpIndex{};
+      const SlotId sid = te.input_slot_ids
+          ? te.input_slot_ids[j] : SlotId{};
 
       GraphNode* dep = nullptr;
-      if (tidx != UINT32_MAX && tidx < num_ops) {
-        dep = op_to_node[tidx];
-      } else if (sid != UINT32_MAX && sid < num_slots) {
-        dep = extern_map[sid];
+      if (tidx.is_valid() && tidx.raw() < num_ops) {
+        dep = op_to_node[tidx.raw()];
+      } else if (sid.is_valid() && sid.raw() < num_slots) {
+        dep = extern_map[sid.raw()];
       }
 
       if (!dep) continue;
@@ -169,7 +169,7 @@ inline void lower_trace_to_graph(
     if (real_count > 0)
       graph.set_input_slots(node->id, std::span{in_slots, real_count});
     if (te.output_slot_ids && te.num_outputs > 0)
-      graph.set_output_slots(node->id, std::span{te.output_slot_ids, te.num_outputs});
+      graph.set_output_slots(node->id, std::span<const SlotId>{te.output_slot_ids, te.num_outputs});
 
     op_to_node[i] = node;
   }

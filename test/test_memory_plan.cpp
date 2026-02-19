@@ -16,10 +16,12 @@ int main() {
   crucible::TensorSlot slots[N];
   std::memset(slots, 0, sizeof(slots));
 
-  slots[0] = {0, 1024, 0, 0, 5, 6, 0, 0, 0, false, {}};  // internal
-  slots[1] = {0, 2048, 1, 1, 3, 6, 0, 0, 0, false, {}};  // internal
-  slots[2] = {0, 1024, 2, 4, 7, 6, 0, 0, 0, false, {}};  // internal, can reuse slot 1
-  slots[3] = {0, 512,  3, 0, 7, 6, 0, 0, 0, true,  {}};  // external
+  using crucible::SlotId; using crucible::OpIndex;
+  using crucible::ScalarType; using crucible::DeviceType; using crucible::Layout;
+  slots[0] = {0, 1024, SlotId{0}, OpIndex{0}, OpIndex{5}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
+  slots[1] = {0, 2048, SlotId{1}, OpIndex{1}, OpIndex{3}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
+  slots[2] = {0, 1024, SlotId{2}, OpIndex{4}, OpIndex{7}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
+  slots[3] = {0, 512,  SlotId{3}, OpIndex{0}, OpIndex{7}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true,  {}};
 
   auto* plan = bt.compute_memory_plan(slots, N);
   assert(plan != nullptr);

@@ -13,7 +13,7 @@ int main() {
   m.sizes[1] = 64;
   m.strides[0] = 64;
   m.strides[1] = 1;
-  m.dtype = static_cast<int8_t>(crucible::ScalarType::Float);
+  m.dtype = crucible::ScalarType::Float;
   uint64_t nbytes = crucible::compute_storage_nbytes(m);
   // max((32-1)*64, (64-1)*1) + 1 = 1985, * 4 bytes = 7940
   assert(nbytes == 7940);

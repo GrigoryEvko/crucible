@@ -91,10 +91,10 @@ inline TensorMeta read_meta(Reader& r) {
     (void)r.r<uint64_t>(); // data_ptr (discarded)
     m.data_ptr   = nullptr;
     m.ndim       = r.r<uint8_t>();
-    m.dtype      = r.r<int8_t>();
-    m.device_type = r.r<int8_t>();
+    m.dtype      = r.r<ScalarType>();
+    m.device_type = r.r<DeviceType>();
     m.device_idx  = r.r<int8_t>();
-    m.layout      = r.r<int8_t>();
+    m.layout      = r.r<Layout>();
     uint8_t ignored_pad[3];
     r.read_bytes(ignored_pad, 3);
     return m;
@@ -205,17 +205,17 @@ inline Header read_header(Reader& r) {
         }
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             const uint32_t idx = te.input_trace_indices
-                ? te.input_trace_indices[j] : UINT32_MAX;
+                ? te.input_trace_indices[j].raw() : UINT32_MAX;
             w.w(idx);
         }
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             const uint32_t sid = te.input_slot_ids
-                ? te.input_slot_ids[j] : UINT32_MAX;
+                ? te.input_slot_ids[j].raw() : UINT32_MAX;
             w.w(sid);
         }
         for (uint16_t j = 0; j < te.num_outputs; j++) {
             const uint32_t sid = te.output_slot_ids
-                ? te.output_slot_ids[j] : UINT32_MAX;
+                ? te.output_slot_ids[j].raw() : UINT32_MAX;
             w.w(sid);
         }
     }
@@ -257,7 +257,7 @@ inline Header read_header(Reader& r) {
         plan->pool_bytes        = r.r<uint64_t>();
         plan->num_slots         = r.r<uint32_t>();
         plan->num_external      = r.r<uint32_t>();
-        plan->device_type       = r.r<int8_t>();
+        plan->device_type       = r.r<DeviceType>();
         plan->device_idx        = r.r<int8_t>();
         r.read_bytes(plan->pad0, sizeof(plan->pad0));
         plan->device_capability = r.r<uint64_t>();
@@ -310,21 +310,21 @@ inline Header read_header(Reader& r) {
         }
 
         te.input_trace_indices = (te.num_inputs > 0)
-            ? arena.alloc_array<uint32_t>(te.num_inputs) : nullptr;
+            ? arena.alloc_array<OpIndex>(te.num_inputs) : nullptr;
         for (uint16_t j = 0; j < te.num_inputs; j++) {
-            te.input_trace_indices[j] = r.r<uint32_t>();
+            te.input_trace_indices[j] = OpIndex{r.r<uint32_t>()};
         }
 
         te.input_slot_ids = (te.num_inputs > 0)
-            ? arena.alloc_array<uint32_t>(te.num_inputs) : nullptr;
+            ? arena.alloc_array<SlotId>(te.num_inputs) : nullptr;
         for (uint16_t j = 0; j < te.num_inputs; j++) {
-            te.input_slot_ids[j] = r.r<uint32_t>();
+            te.input_slot_ids[j] = SlotId{r.r<uint32_t>()};
         }
 
         te.output_slot_ids = (te.num_outputs > 0)
-            ? arena.alloc_array<uint32_t>(te.num_outputs) : nullptr;
+            ? arena.alloc_array<SlotId>(te.num_outputs) : nullptr;
         for (uint16_t j = 0; j < te.num_outputs; j++) {
-            te.output_slot_ids[j] = r.r<uint32_t>();
+            te.output_slot_ids[j] = SlotId{r.r<uint32_t>()};
         }
     }
 
