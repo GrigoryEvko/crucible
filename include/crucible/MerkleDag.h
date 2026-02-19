@@ -58,6 +58,7 @@ struct TensorMeta {
 };
 
 static_assert(sizeof(TensorMeta) == 144, "TensorMeta layout check");
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TensorMeta);
 
 // ═══════════════════════════════════════════════════════════════════
 // TensorSlot: One unique storage in a recorded iteration
@@ -82,6 +83,7 @@ struct TensorSlot {
 };
 
 static_assert(sizeof(TensorSlot) == 40, "TensorSlot must be 40 bytes");
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TensorSlot);
 
 // ═══════════════════════════════════════════════════════════════════
 // MemoryPlan: Result of liveness analysis + offset assignment
@@ -230,6 +232,7 @@ struct Guard {
 };
 
 static_assert(sizeof(Guard) == 12, "Guard must be 12 bytes");
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Guard);
 
 // ═══════════════════════════════════════════════════════════════════
 // DAG Node Types
