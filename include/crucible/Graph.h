@@ -139,9 +139,9 @@ enum class MicroOp : uint8_t {
 // ═══════════════════════════════════════════════════════════════════
 
 struct Inst {
-  MicroOp op;           // 1B
-  int8_t dtype;         // 1B — result dtype (at::ScalarType ordinal)
-  uint16_t operands[3]; // 6B — SSA references
+  MicroOp op{};                    // 1B — zero = LOAD (overwritten before use)
+  ScalarType dtype = ScalarType::Undefined; // 1B — result dtype
+  uint16_t operands[3]{};          // 6B — SSA references
 };
 
 static_assert(sizeof(Inst) == 8, "Inst must be 8 bytes");
@@ -161,15 +161,15 @@ static_assert(sizeof(Inst) == 8, "Inst must be 8 bytes");
 // ═══════════════════════════════════════════════════════════════════
 
 struct ComputeBody {
-  Inst* ops;          // Arena-allocated instruction array
-  uint16_t num_ops;   // Total instructions
-  uint16_t num_loads; // LOAD count (= distinct input buffers)
-  uint16_t store_op;  // Index of the STORE instruction
-  uint16_t pad;
-  int64_t* aux;       // Per-instruction auxiliary data (arena-allocated).
-                      // Non-zero for: CONSTANT (value), TO_DTYPE (target),
-                      // INDEX_EXPR (reinterpret_cast<int64_t>(Expr*)).
-                      // nullptr until first CONSTANT/TO_DTYPE/INDEX_EXPR.
+  Inst* ops = nullptr;      // Arena-allocated instruction array
+  uint16_t num_ops = 0;     // Total instructions
+  uint16_t num_loads = 0;   // LOAD count (= distinct input buffers)
+  uint16_t store_op = 0;    // Index of the STORE instruction
+  uint16_t pad = 0;
+  int64_t* aux = nullptr;   // Per-instruction auxiliary data (arena-allocated).
+                             // Non-zero for: CONSTANT (value), TO_DTYPE (target),
+                             // INDEX_EXPR (reinterpret_cast<int64_t>(Expr*)).
+                             // nullptr until first CONSTANT/TO_DTYPE/INDEX_EXPR.
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -177,10 +177,10 @@ struct ComputeBody {
 // ═══════════════════════════════════════════════════════════════════
 
 struct ExternInfo {
-  const char* python_kernel_name; // e.g., "aten.mm.default"
-  const char* cpp_kernel_name;    // e.g., "at::mm"
-  int64_t* constant_args;         // Non-tensor constant arguments
-  uint16_t num_constant_args;
+  const char* python_kernel_name = nullptr; // e.g., "aten.mm.default"
+  const char* cpp_kernel_name = nullptr;    // e.g., "at::mm"
+  int64_t* constant_args = nullptr;         // Non-tensor constant arguments
+  uint16_t num_constant_args = 0;
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -196,35 +196,35 @@ struct ExternInfo {
 
 struct GraphNode {
   // ── Identity + type (8B) ──────────────────────────
-  uint32_t id;          // Unique ID (= buffer name "buf{id}")
-  NodeKind kind;        // 1B
-  uint8_t flags;        // 1B — NodeFlags bits
-  uint8_t ndim;         // 1B — output dimensions
-  uint8_t nred;         // 1B — reduction dimensions (0 for non-reductions)
+  uint32_t id = 0;              // Unique ID (= buffer name "buf{id}")
+  NodeKind kind = NodeKind::NOP; // 1B
+  uint8_t flags = 0;            // 1B — NodeFlags bits
+  uint8_t ndim = 0;             // 1B — output dimensions
+  uint8_t nred = 0;             // 1B — reduction dimensions (0 for non-reductions)
 
   // ── Layout scalars (8B) ───────────────────────────
-  ScalarType dtype;     // 1B — output dtype
-  ScalarType src_dtype; // 1B — source dtype (reductions only)
-  int8_t device_idx;    // 1B — (-1 = CPU, 0+ = CUDA device)
-  ReduceOp reduce_op;   // 1B
-  ReduceHint reduce_hint; // 1B
-  uint8_t pad0;         // 1B
-  uint16_t num_inputs;  // 2B
+  ScalarType dtype = ScalarType::Undefined;     // 1B — output dtype
+  ScalarType src_dtype = ScalarType::Undefined; // 1B — source dtype (reductions only)
+  int8_t device_idx = -1;       // 1B — (-1 = CPU, 0+ = CUDA device)
+  ReduceOp reduce_op{};             // 1B — zero = SUM (only meaningful for REDUCTION kind)
+  ReduceHint reduce_hint{};         // 1B — zero = DEFAULT
+  uint8_t pad0 = 0;             // 1B
+  uint16_t num_inputs = 0;      // 2B
 
   // ── Pointers (32B) ───────────────────────────────
-  const Expr** size;    // ndim (+ nred for reductions) symbolic sizes
-  const Expr** stride;  // nullptr until layout frozen by scheduler
-  void* body;           // ComputeBody* (pw/red) or ExternInfo* (extern)
-  GraphNode** inputs;   // Array of num_inputs dependency nodes
+  const Expr** size = nullptr;    // ndim (+ nred for reductions) symbolic sizes
+  const Expr** stride = nullptr;  // nullptr until layout frozen by scheduler
+  void* body = nullptr;           // ComputeBody* (pw/red) or ExternInfo* (extern)
+  GraphNode** inputs = nullptr;   // Array of num_inputs dependency nodes
 
   // ── Use tracking (8B) ────────────────────────────
-  uint16_t num_uses;    // Live consumer count (for DCE)
-  uint16_t num_outputs; // Output buffers produced (usually 1)
-  uint32_t schedule_order; // Topological order (set by scheduler)
+  uint16_t num_uses = 0;        // Live consumer count (for DCE)
+  uint16_t num_outputs = 1;     // Output buffers produced (usually 1)
+  uint32_t schedule_order = 0;  // Topological order (set by scheduler)
 
   // ── Scheduler metadata (8B) ──────────────────────
-  uint32_t group_hash;     // Hash of (device, ranges) for fusion
-  uint32_t fused_group_id; // Fused group ID (0 = unfused)
+  uint32_t group_hash = 0;      // Hash of (device, ranges) for fusion
+  uint32_t fused_group_id = 0;  // Fused group ID (0 = unfused)
 
   // ── Accessors ──
 

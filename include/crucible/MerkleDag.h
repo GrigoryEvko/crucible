@@ -46,15 +46,15 @@ struct CompiledKernel;
 // ═══════════════════════════════════════════════════════════════════
 
 struct TensorMeta {
-  int64_t sizes[8];      // 64B
-  int64_t strides[8];    // 64B
-  void* data_ptr;        // 8B — tensor data pointer (for dataflow tracking)
-  uint8_t ndim;          // 1B — dimensions used (0-8)
-  ScalarType dtype;      // 1B — tensor element type
-  DeviceType device_type;// 1B — device kind (CPU=0, CUDA=1, HIP=20)
-  int8_t device_idx;     // 1B — -1 = CPU, 0+ = device index
-  Layout layout;         // 1B — tensor layout (Strided/Sparse/SparseCsr/...)
-  uint8_t pad[3];        // 3B — padding to 8-byte alignment
+  int64_t sizes[8]{};        // 64B — zero-init prevents hash instability
+  int64_t strides[8]{};      // 64B
+  void* data_ptr = nullptr;  // 8B — tensor data pointer (for dataflow tracking)
+  uint8_t ndim = 0;          // 1B — dimensions used (0-8)
+  ScalarType dtype = ScalarType::Undefined; // 1B
+  DeviceType device_type = DeviceType::CPU; // 1B
+  int8_t device_idx = -1;   // 1B — -1 = CPU, 0+ = device index
+  Layout layout = Layout::Strided; // 1B
+  uint8_t pad[3]{};          // 3B — padding to 8-byte alignment
 };
 
 static_assert(sizeof(TensorMeta) == 144, "TensorMeta layout check");
@@ -68,17 +68,17 @@ static_assert(sizeof(TensorMeta) == 144, "TensorMeta layout check");
 // ═══════════════════════════════════════════════════════════════════
 
 struct TensorSlot {
-  uint64_t offset_bytes;    // 8B — assigned position in the memory pool (supports >4GB)
-  uint64_t nbytes;          // 8B — storage size in bytes
-  SlotId slot_id;           // 4B — sequential ID within iteration
-  OpIndex birth_op;         // 4B — op that first creates this storage (OpIndex{} if external)
-  OpIndex death_op;         // 4B — last op that reads/writes this storage
-  ScalarType dtype;         // 1B — tensor element type
-  DeviceType device_type;   // 1B — device kind
-  int8_t device_idx;        // 1B — device index (-1 = CPU)
-  Layout layout;            // 1B — tensor layout
-  bool is_external;         // 1B — model param / input from outside iteration
-  uint8_t pad[3];           // 3B — pad to 40B
+  uint64_t offset_bytes = 0;  // 8B — assigned position in the memory pool (supports >4GB)
+  uint64_t nbytes = 0;        // 8B — storage size in bytes
+  SlotId slot_id;              // 4B — default = none (UINT32_MAX)
+  OpIndex birth_op;            // 4B — default = none (UINT32_MAX)
+  OpIndex death_op;            // 4B — default = none (UINT32_MAX)
+  ScalarType dtype = ScalarType::Undefined; // 1B
+  DeviceType device_type = DeviceType::CPU; // 1B
+  int8_t device_idx = -1;     // 1B
+  Layout layout = Layout::Strided; // 1B
+  bool is_external = false;   // 1B
+  uint8_t pad[3]{};           // 3B — pad to 40B
 };
 
 static_assert(sizeof(TensorSlot) == 40, "TensorSlot must be 40 bytes");
@@ -97,20 +97,20 @@ static_assert(sizeof(TensorSlot) == 40, "TensorSlot must be 40 bytes");
 // ═══════════════════════════════════════════════════════════════════
 
 struct MemoryPlan {
-  TensorSlot* slots;           // 8B — arena-allocated array
-  uint64_t pool_bytes;         // 8B — total pool size needed
-  uint32_t num_slots;          // 4B — total unique storages
-  uint32_t num_external;       // 4B — how many are external (not in pool)
+  TensorSlot* slots = nullptr; // 8B — arena-allocated array
+  uint64_t pool_bytes = 0;     // 8B — total pool size needed
+  uint32_t num_slots = 0;      // 4B — total unique storages
+  uint32_t num_external = 0;   // 4B — how many are external (not in pool)
 
   // Device context: which device this plan targets.
-  DeviceType device_type;      // 1B — device kind (CPU=0, CUDA=1, HIP=20)
-  int8_t device_idx;           // 1B — device index
-  uint8_t pad0[2];             // 2B — alignment
-  uint64_t device_capability;  // 8B — SM version or equivalent (from CrucibleContext)
+  DeviceType device_type = DeviceType::CPU; // 1B
+  int8_t device_idx = -1;     // 1B — device index
+  uint8_t pad0[2]{};          // 2B — alignment
+  uint64_t device_capability = 0; // 8B — SM version or equivalent (from CrucibleContext)
 
   // Distributed topology: for multi-device memory coordination.
-  int32_t rank;                // 4B — global rank (-1 = not distributed)
-  int32_t world_size;          // 4B — total processes (0 = not distributed)
+  int32_t rank = -1;           // 4B — global rank (-1 = not distributed)
+  int32_t world_size = 0;     // 4B — total processes (0 = not distributed)
 };
 
 // Compute storage size in bytes from TensorMeta (max extent * element size).
@@ -135,33 +135,33 @@ struct MemoryPlan {
 // ═══════════════════════════════════════════════════════════════════
 
 struct TraceEntry {
-  uint64_t schema_hash;       // 8B — op identity (OperatorHandle schema hash)
-  uint64_t shape_hash;        // 8B — quick hash of all input shapes
-  uint64_t scope_hash;        // 8B — module hierarchy path hash (AST layer)
-  uint64_t callsite_hash;     // 8B — Python source location identity
+  uint64_t schema_hash = 0;     // 8B — op identity (OperatorHandle schema hash)
+  uint64_t shape_hash = 0;      // 8B — quick hash of all input shapes
+  uint64_t scope_hash = 0;      // 8B — module hierarchy path hash (AST layer)
+  uint64_t callsite_hash = 0;   // 8B — Python source location identity
 
-  TensorMeta* input_metas;    // 8B — arena-allocated array
-  TensorMeta* output_metas;   // 8B — arena-allocated array
-  uint16_t num_inputs;        // 2B
-  uint16_t num_outputs;       // 2B
+  TensorMeta* input_metas = nullptr;   // 8B — arena-allocated array
+  TensorMeta* output_metas = nullptr;  // 8B — arena-allocated array
+  uint16_t num_inputs = 0;      // 2B
+  uint16_t num_outputs = 0;     // 2B
 
-  int64_t* scalar_args;       // 8B — arena-allocated array
-  uint16_t num_scalar_args;   // 2B
+  int64_t* scalar_args = nullptr; // 8B — arena-allocated (null when num_scalar_args==0)
+  uint16_t num_scalar_args = 0; // 2B
 
-  bool grad_enabled;          // 1B — GradMode::is_enabled()
-  bool inference_mode;        // 1B — InferenceMode active?
+  bool grad_enabled = false;    // 1B — GradMode::is_enabled()
+  bool inference_mode = false;  // 1B — InferenceMode active?
 
   // Op classification: populated by BackgroundThread during build_trace()
   // by calling classify_kernel(schema_hash). OPAQUE until the Vessel has
   // registered schema_hash → CKernelId mappings. Used by Tier 2+ replay
   // to dispatch directly without going through the Vessel dispatcher.
-  CKernelId kernel_id;        // 1B — Crucible compute-op class
-  uint8_t   pad_te;           // 1B — alignment
+  CKernelId kernel_id = CKernelId::OPAQUE; // 1B
+  uint8_t   pad_te = 0;        // 1B — alignment
 
   // Tensor identity tracking (for dataflow edges between ops)
-  OpIndex* input_trace_indices;   // 8B — which previous op produced each input
-  SlotId* input_slot_ids;         // 8B — which pool slot each input reads from
-  SlotId* output_slot_ids;        // 8B — slot ID assigned to each output tensor
+  OpIndex* input_trace_indices = nullptr; // 8B — which previous op produced each input
+  SlotId* input_slot_ids = nullptr;       // 8B — which pool slot each input reads from
+  SlotId* output_slot_ids = nullptr;      // 8B — slot ID assigned to each output tensor
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -177,12 +177,14 @@ struct Guard {
     OP_SEQUENCE,   // The op at position N matches expected schema
   };
 
-  Kind kind;           // 1B
-  uint8_t pad[3];      // 3B — alignment
-  OpIndex op_index;    // 4B — which op in the trace produces the guard value
-  uint16_t arg_index;  // 2B — which argument (for SHAPE_DIM, DTYPE, DEVICE)
-  uint16_t dim_index;  // 2B — which dimension (for SHAPE_DIM)
+  Kind kind = Kind::SHAPE_DIM; // 1B
+  uint8_t pad[3]{};    // 3B — alignment
+  OpIndex op_index;    // 4B — default = none (UINT32_MAX)
+  uint16_t arg_index = 0; // 2B — which argument (for SHAPE_DIM, DTYPE, DEVICE)
+  uint16_t dim_index = 0; // 2B — which dimension (for SHAPE_DIM)
 
+  // Note: arg_index and dim_index are included in the hash for ALL guard
+  // kinds, so they MUST be initialized even when semantically unused.
   uint64_t hash() const {
     return detail::fmix64(
         std::to_underlying(kind) |
@@ -354,6 +356,7 @@ class KernelCache {
   explicit KernelCache(uint32_t capacity = 4096) : capacity_(capacity) {
     assert((capacity & (capacity - 1)) == 0 && "capacity must be power of 2");
     table_ = static_cast<Entry*>(std::calloc(capacity_, sizeof(Entry)));
+    if (!table_) [[unlikely]] std::abort(); // OOM is unrecoverable
     size_.store(0, std::memory_order_relaxed);
   }
 
