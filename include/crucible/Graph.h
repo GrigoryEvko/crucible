@@ -12,6 +12,7 @@
 // emittable to CUDA C++.
 
 #include <crucible/Arena.h>
+#include <crucible/CKernel.h>
 #include <crucible/Expr.h>
 
 #include <cassert>
@@ -53,6 +54,40 @@ struct NodeFlags {
   static constexpr uint8_t FUSED    = 1 << 2;
   static constexpr uint8_t REALIZED = 1 << 3;
 };
+
+// ═══════════════════════════════════════════════════════════════════
+// CKernelId → NodeKind classification
+//
+// Maps the 146-op CKernel taxonomy to Graph IR node kinds.
+// Used by the lowering pass from TraceEntry to Graph.
+// ═══════════════════════════════════════════════════════════════════
+
+inline NodeKind classify_node_kind(CKernelId kid) {
+  // Specific overrides before range checks.
+  if (kid == CKernelId::REDUCE_CUMSUM || kid == CKernelId::ASSOC_SCAN)
+    return NodeKind::SCAN;
+  if (kid == CKernelId::COPY_)
+    return NodeKind::MUTATION;
+
+  // Activations + all elementwise (ACT_RELU..EWISE_FILL) → POINTWISE.
+  // These ranges are contiguous in the CKernelId enum.
+  if (kid >= CKernelId::ACT_RELU && kid <= CKernelId::EWISE_FILL)
+    return NodeKind::POINTWISE;
+
+  // Reductions (SUM, MEAN, MAX, MIN, ARGMAX, ARGMIN, TOPK) → REDUCTION.
+  // REDUCE_CUMSUM already handled above as SCAN.
+  if (kid >= CKernelId::REDUCE_SUM && kid <= CKernelId::REDUCE_TOPK)
+    return NodeKind::REDUCTION;
+
+  // Data movement (VIEW..UNFOLD) → NOP (no computation, metadata only).
+  if (kid >= CKernelId::VIEW && kid <= CKernelId::UNFOLD)
+    return NodeKind::NOP;
+
+  // Everything else: GEMM, conv, attention, normalization, pooling,
+  // embedding, fused, linalg, SSM, inference, 3D, graph, comms, I/O,
+  // RNG, OPAQUE → EXTERN (opaque external kernel).
+  return NodeKind::EXTERN;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // Micro-op instruction set for kernel bodies
@@ -223,8 +258,10 @@ static_assert(sizeof(GraphNode) == 64, "GraphNode must be 64 bytes");
 class Graph {
  public:
   explicit Graph(ExprPool* pool, SymbolTable* tab = nullptr)
-      : pool_(pool), tab_(tab), num_nodes_(0), capacity_(0),
-        nodes_(nullptr), input_ids_(nullptr), num_inputs_(0),
+      : pool_(pool), tab_(tab),
+        nodes_(nullptr), input_slots_(nullptr), output_slots_(nullptr),
+        num_nodes_(0), capacity_(0),
+        input_ids_(nullptr), num_inputs_(0),
         output_ids_(nullptr), num_outputs_(0) {
     grow_(1024);
   }
@@ -352,6 +389,38 @@ class Graph {
     output_ids_ = arena_.alloc_array<uint32_t>(count);
     std::memcpy(output_ids_, ids, count * sizeof(uint32_t));
     num_outputs_ = count;
+  }
+
+  // ── Slot ID side-tables ────────────────────────────────────────
+  //
+  // Parallel to nodes_[], indexed by GraphNode::id. Populated by the
+  // lowering pass from TraceEntry; null until set. Kept separate from
+  // GraphNode to preserve its 64B cache-line alignment (slot IDs are
+  // only accessed during buffer allocation and code emission, not
+  // during hot graph traversals like DCE or topological sort).
+
+  void set_input_slots(uint32_t node_id, const uint32_t* slots, uint16_t count) {
+    assert(node_id < num_nodes_);
+    if (count == 0) { input_slots_[node_id] = nullptr; return; }
+    input_slots_[node_id] = arena_.alloc_array<uint32_t>(count);
+    std::memcpy(input_slots_[node_id], slots, count * sizeof(uint32_t));
+  }
+
+  void set_output_slots(uint32_t node_id, const uint32_t* slots, uint16_t count) {
+    assert(node_id < num_nodes_);
+    if (count == 0) { output_slots_[node_id] = nullptr; return; }
+    output_slots_[node_id] = arena_.alloc_array<uint32_t>(count);
+    std::memcpy(output_slots_[node_id], slots, count * sizeof(uint32_t));
+  }
+
+  const uint32_t* input_slots(uint32_t node_id) const {
+    assert(node_id < num_nodes_);
+    return input_slots_[node_id];
+  }
+
+  const uint32_t* output_slots(uint32_t node_id) const {
+    assert(node_id < num_nodes_);
+    return output_slots_[node_id];
   }
 
   // ── Transforms ─────────────────────────────────────────────────
@@ -516,9 +585,19 @@ class Graph {
 
   void grow_(uint32_t new_cap) {
     auto** buf = arena_.alloc_array<GraphNode*>(new_cap);
-    if (nodes_)
+    auto** is_buf = arena_.alloc_array<uint32_t*>(new_cap);
+    auto** os_buf = arena_.alloc_array<uint32_t*>(new_cap);
+    if (nodes_) {
       std::memcpy(buf, nodes_, num_nodes_ * sizeof(GraphNode*));
+      std::memcpy(is_buf, input_slots_, num_nodes_ * sizeof(uint32_t*));
+      std::memcpy(os_buf, output_slots_, num_nodes_ * sizeof(uint32_t*));
+    }
+    // Zero-fill new entries so unset slots read as nullptr.
+    std::memset(is_buf + num_nodes_, 0, (new_cap - num_nodes_) * sizeof(uint32_t*));
+    std::memset(os_buf + num_nodes_, 0, (new_cap - num_nodes_) * sizeof(uint32_t*));
     nodes_ = buf;
+    input_slots_ = is_buf;
+    output_slots_ = os_buf;
     capacity_ = new_cap;
   }
 
@@ -574,6 +653,8 @@ class Graph {
   SymbolTable* tab_;
 
   GraphNode** nodes_;
+  uint32_t** input_slots_;   // [node_id] → per-node input slot ID array (or nullptr)
+  uint32_t** output_slots_;  // [node_id] → per-node output slot ID array (or nullptr)
   uint32_t num_nodes_;
   uint32_t capacity_;
 
