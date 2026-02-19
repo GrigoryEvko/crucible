@@ -352,6 +352,8 @@ struct BackgroundThread {
       te.num_scalar_args = re.num_scalar_args;
       te.grad_enabled = re.grad_enabled;
       te.inference_mode = re.inference_mode;
+      te.kernel_id = classify_kernel(re.schema_hash);
+      te.pad_te = 0;
       // Copy scalar values from ring entry to arena-allocated array.
       uint16_t n_scalars = std::min(re.num_scalar_args, uint16_t(5));
       if (n_scalars > 0) {

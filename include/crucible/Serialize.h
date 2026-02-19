@@ -23,7 +23,7 @@
 namespace crucible {
 
 static constexpr uint32_t CDAG_MAGIC   = 0x43444147u; // 'GDAG' LE
-static constexpr uint32_t CDAG_VERSION = 1u;
+static constexpr uint32_t CDAG_VERSION = 2u;           // v2: added kernel_id
 
 // ═══════════════════════════════════════════════════════════════════
 // Internal Writer/Reader — linear cursor with overflow detection.
@@ -189,6 +189,8 @@ inline size_t serialize_region(
         w.w(te.num_scalar_args);
         w.w(te.grad_enabled);
         w.w(te.inference_mode);
+        w.w(static_cast<uint8_t>(te.kernel_id));
+        w.w(te.pad_te);
 
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             write_meta(w, te.input_metas ? te.input_metas[j] : TensorMeta{});
@@ -281,6 +283,8 @@ inline RegionNode* deserialize_region(
         te.num_scalar_args  = r.r<uint16_t>();
         te.grad_enabled     = r.r<bool>();
         te.inference_mode   = r.r<bool>();
+        te.kernel_id        = static_cast<CKernelId>(r.r<uint8_t>());
+        te.pad_te           = r.r<uint8_t>();
 
         te.input_metas = (te.num_inputs > 0)
             ? arena.alloc_array<TensorMeta>(te.num_inputs) : nullptr;
