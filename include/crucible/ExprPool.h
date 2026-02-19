@@ -24,14 +24,14 @@ namespace detail {
 inline uint64_t expr_hash(
     Op op,
     int64_t payload,
-    uint32_t symbol_id,
+    SymbolId symbol_id,
     uint16_t flags,
     const Expr* const* args,
     uint8_t nargs) {
   uint64_t h = 0x9E3779B97F4A7C15ULL; // golden ratio constant
   h ^= std::to_underlying(op) * 0x517CC1B727220A95ULL;
   h ^= fmix64(static_cast<uint64_t>(payload));
-  h ^= static_cast<uint64_t>(symbol_id) * 0x6C62272E07BB0142ULL;
+  h ^= static_cast<uint64_t>(symbol_id.raw()) * 0x6C62272E07BB0142ULL;
   h ^= static_cast<uint64_t>(flags) * 0x85EBCA6BULL;
   for (uint8_t i = 0; i < nargs; ++i) {
     h ^= fmix64(reinterpret_cast<uintptr_t>(args[i]));
@@ -189,9 +189,9 @@ class ExprPool {
     intern_count_ = 0;
 
     // Boolean singletons
-    true_ = intern_node(Op::BOOL_TRUE, nullptr, 0, ExprFlags::IS_BOOLEAN, 0, 0);
+    true_ = intern_node(Op::BOOL_TRUE, nullptr, 0, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
     false_ =
-        intern_node(Op::BOOL_FALSE, nullptr, 0, ExprFlags::IS_BOOLEAN, 0, 0);
+        intern_node(Op::BOOL_FALSE, nullptr, 0, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
 
     // Integer cache: -128..127 for O(1) access to common constants
     for (int64_t i = kIntCacheLow; i <= kIntCacheHigh; ++i)
@@ -227,19 +227,19 @@ class ExprPool {
     else if (val == 0.0)
       f |= ExprFlags::IS_ZERO | ExprFlags::IS_NONNEGATIVE |
            ExprFlags::IS_NONPOSITIVE;
-    return intern_node(Op::FLOAT, nullptr, 0, f, 0, payload);
+    return intern_node(Op::FLOAT, nullptr, 0, f, SymbolId{}, payload);
   }
 
-  [[nodiscard]] const Expr* symbol(const char* name, uint32_t id, uint16_t assumption_flags) {
-    if (id >= symbol_names_.size())
-      symbol_names_.resize(id + 1, nullptr);
-    if (symbol_names_[id] == nullptr) {
+  [[nodiscard]] const Expr* symbol(const char* name, SymbolId id, uint16_t assumption_flags) {
+    if (id.raw() >= symbol_names_.size())
+      symbol_names_.resize(id.raw() + 1, nullptr);
+    if (symbol_names_[id.raw()] == nullptr) {
       size_t len = std::strlen(name) + 1;
       char* buf = static_cast<char*>(arena_.alloc(len, 1));
       std::memcpy(buf, name, len);
-      symbol_names_[id] = buf;
+      symbol_names_[id.raw()] = buf;
     }
-    int64_t payload = std::bit_cast<int64_t>(symbol_names_[id]);
+    int64_t payload = std::bit_cast<int64_t>(symbol_names_[id.raw()]);
     return intern_node(
         Op::SYMBOL, nullptr, 0,
         assumption_flags | ExprFlags::IS_SYMBOL, id, payload);
@@ -306,7 +306,7 @@ class ExprPool {
     }
     const Expr* args[] = {base, exp};
     uint16_t f = detail::composite_flags(Op::POW, args, 2);
-    return intern_node(Op::POW, args, 2, f, 0, 0);
+    return intern_node(Op::POW, args, 2, f, SymbolId{}, 0);
   }
 
   // Canonical form: MUL(-1, x). No NEG nodes in output.
@@ -329,7 +329,7 @@ class ExprPool {
     if (a > b)
       std::swap(a, b);
     const Expr* args[] = {a, b};
-    return intern_node(Op::EQ, args, 2, ExprFlags::IS_BOOLEAN, 0, 0);
+    return intern_node(Op::EQ, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   [[nodiscard]] const Expr* ne(const Expr* a, const Expr* b) {
@@ -340,7 +340,7 @@ class ExprPool {
     if (a > b)
       std::swap(a, b);
     const Expr* args[] = {a, b};
-    return intern_node(Op::NE, args, 2, ExprFlags::IS_BOOLEAN, 0, 0);
+    return intern_node(Op::NE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   [[nodiscard]] const Expr* lt(const Expr* a, const Expr* b) {
@@ -349,7 +349,7 @@ class ExprPool {
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
       return (a->payload < b->payload) ? true_ : false_;
     const Expr* args[] = {a, b};
-    return intern_node(Op::LT, args, 2, ExprFlags::IS_BOOLEAN, 0, 0);
+    return intern_node(Op::LT, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   [[nodiscard]] const Expr* le(const Expr* a, const Expr* b) {
@@ -358,7 +358,7 @@ class ExprPool {
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
       return (a->payload <= b->payload) ? true_ : false_;
     const Expr* args[] = {a, b};
-    return intern_node(Op::LE, args, 2, ExprFlags::IS_BOOLEAN, 0, 0);
+    return intern_node(Op::LE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   [[nodiscard]] const Expr* gt(const Expr* a, const Expr* b) {
@@ -367,7 +367,7 @@ class ExprPool {
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
       return (a->payload > b->payload) ? true_ : false_;
     const Expr* args[] = {a, b};
-    return intern_node(Op::GT, args, 2, ExprFlags::IS_BOOLEAN, 0, 0);
+    return intern_node(Op::GT, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   [[nodiscard]] const Expr* ge(const Expr* a, const Expr* b) {
@@ -376,7 +376,7 @@ class ExprPool {
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
       return (a->payload >= b->payload) ? true_ : false_;
     const Expr* args[] = {a, b};
-    return intern_node(Op::GE, args, 2, ExprFlags::IS_BOOLEAN, 0, 0);
+    return intern_node(Op::GE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   // ---- Logic ----
@@ -416,7 +416,7 @@ class ExprPool {
     if (a->op == Op::NOT)
       return a->args[0];
     const Expr* args[] = {a};
-    return intern_node(Op::NOT, args, 1, ExprFlags::IS_BOOLEAN, 0, 0);
+    return intern_node(Op::NOT, args, 1, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   // ---- Division / Modular ----
@@ -468,7 +468,7 @@ class ExprPool {
     uint16_t f = ExprFlags::IS_INTEGER;
     if (a->is_nonnegative() && b->is_positive())
       f |= ExprFlags::IS_NONNEGATIVE;
-    return intern_node(Op::FLOOR_DIV, args, 2, f, 0, 0);
+    return intern_node(Op::FLOOR_DIV, args, 2, f, SymbolId{}, 0);
   }
 
   [[nodiscard]] const Expr* clean_div(const Expr* a, const Expr* b) {
@@ -496,7 +496,7 @@ class ExprPool {
     }
     const Expr* args[] = {a, b};
     uint16_t f = ExprFlags::IS_INTEGER | ExprFlags::IS_NONNEGATIVE;
-    return intern_node(Op::MOD, args, 2, f, 0, 0);
+    return intern_node(Op::MOD, args, 2, f, SymbolId{}, 0);
   }
 
   [[nodiscard]] const Expr* python_mod(const Expr* a, const Expr* b) {
@@ -513,7 +513,7 @@ class ExprPool {
     }
     const Expr* args[] = {a, b};
     uint16_t f = ExprFlags::IS_INTEGER;
-    return intern_node(Op::PYTHON_MOD, args, 2, f, 0, 0);
+    return intern_node(Op::PYTHON_MOD, args, 2, f, SymbolId{}, 0);
   }
 
   [[nodiscard]] const Expr* modular_indexing(
@@ -569,7 +569,7 @@ class ExprPool {
 
     const Expr* args[] = {base, div, modulus};
     uint16_t f = ExprFlags::IS_INTEGER | ExprFlags::IS_NONNEGATIVE;
-    return intern_node(Op::MODULAR_INDEXING, args, 3, f, 0, 0);
+    return intern_node(Op::MODULAR_INDEXING, args, 3, f, SymbolId{}, 0);
   }
 
   // ---- Conditional ----
@@ -580,7 +580,7 @@ class ExprPool {
     if (t == f) return t;
     const Expr* args[] = {cond, t, f};
     uint16_t fl = t->flags & f->flags;
-    return intern_node(Op::WHERE, args, 3, fl, 0, 0);
+    return intern_node(Op::WHERE, args, 3, fl, SymbolId{}, 0);
   }
 
   // ---- Min / Max ----
@@ -657,7 +657,7 @@ class ExprPool {
     uint16_t f = detail::composite_flags(op, args.data(),
                                          static_cast<uint8_t>(args.size()));
     return intern_node(op, args.data(),
-                       static_cast<uint8_t>(args.size()), f, 0, 0);
+                       static_cast<uint8_t>(args.size()), f, SymbolId{}, 0);
   }
 
   // ---- Stats ----
@@ -671,8 +671,8 @@ class ExprPool {
   [[nodiscard]] size_t arena_bytes() const {
     return arena_.total_allocated();
   }
-  [[nodiscard]] const char* symbol_name(uint32_t id) const {
-    return (id < symbol_names_.size()) ? symbol_names_[id] : nullptr;
+  [[nodiscard]] const char* symbol_name(SymbolId id) const {
+    return (id.raw() < symbol_names_.size()) ? symbol_names_[id.raw()] : nullptr;
   }
 
  private:
@@ -683,7 +683,7 @@ class ExprPool {
 
   const Expr* make_integer(int64_t val) {
     return intern_node(
-        Op::INTEGER, nullptr, 0, detail::integer_flags(val), 0, val);
+        Op::INTEGER, nullptr, 0, detail::integer_flags(val), SymbolId{}, val);
   }
 
   // ---- GCD / coefficient helpers for division rules ----
@@ -770,7 +770,7 @@ class ExprPool {
       if (buf[i] != buf[m - 1]) buf[m++] = buf[i];
     if (m == 1) return buf[0];
     uint16_t f = detail::composite_flags(Op::MIN, buf, m);
-    return intern_node(Op::MIN, buf, m, f, 0, 0);
+    return intern_node(Op::MIN, buf, m, f, SymbolId{}, 0);
   }
 
   const Expr* max_n(std::span<const Expr* const> inputs) {
@@ -790,7 +790,7 @@ class ExprPool {
       if (buf[i] != buf[m - 1]) buf[m++] = buf[i];
     if (m == 1) return buf[0];
     uint16_t f = detail::composite_flags(Op::MAX, buf, m);
-    return intern_node(Op::MAX, buf, m, f, 0, 0);
+    return intern_node(Op::MAX, buf, m, f, SymbolId{}, 0);
   }
 
   // Flatten ADD children, fold integer constants, combine like terms,
@@ -860,7 +860,7 @@ class ExprPool {
           // Re-intern coefficient-free MUL as the grouping key.
           // factors[] are already sorted (came from a canonical MUL).
           uint16_t f = detail::composite_flags(Op::MUL, factors, nf);
-          base = intern_node(Op::MUL, factors, nf, f, 0, 0);
+          base = intern_node(Op::MUL, factors, nf, f, SymbolId{}, 0);
         }
       }
       terms[nt++] = {coeff, base};
@@ -907,7 +907,7 @@ class ExprPool {
     // Final sort for canonical ordering
     std::ranges::sort(std::span{collected, cn});
     uint16_t f = detail::composite_flags(Op::ADD, collected, cn);
-    return intern_node(Op::ADD, collected, cn, f, 0, 0);
+    return intern_node(Op::ADD, collected, cn, f, SymbolId{}, 0);
   }
 
   // Flatten MUL children, fold integer constants, sort, intern.
@@ -946,7 +946,7 @@ class ExprPool {
 
     std::ranges::sort(std::span{buf, n});
     uint16_t f = detail::composite_flags(Op::MUL, buf, n);
-    return intern_node(Op::MUL, buf, n, f, 0, 0);
+    return intern_node(Op::MUL, buf, n, f, SymbolId{}, 0);
   }
 
   // Flatten AND children, short-circuit on FALSE, filter TRUE, sort, intern.
@@ -979,7 +979,7 @@ class ExprPool {
     if (n == 1)
       return buf[0];
     std::ranges::sort(std::span{buf, n});
-    return intern_node(Op::AND, buf, n, ExprFlags::IS_BOOLEAN, 0, 0);
+    return intern_node(Op::AND, buf, n, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   // Flatten OR children, short-circuit on TRUE, filter FALSE, sort, intern.
@@ -1012,7 +1012,7 @@ class ExprPool {
     if (n == 1)
       return buf[0];
     std::ranges::sort(std::span{buf, n});
-    return intern_node(Op::OR, buf, n, ExprFlags::IS_BOOLEAN, 0, 0);
+    return intern_node(Op::OR, buf, n, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   // Swiss table probe + insert. Returns existing interned node or creates new.
@@ -1026,7 +1026,7 @@ class ExprPool {
       const Expr* const* args,
       uint8_t nargs,
       uint16_t flags,
-      uint32_t symbol_id,
+      SymbolId symbol_id,
       int64_t payload) {
     // Load factor 87.5% (7/8). Swiss table tolerates higher load than
     // linear probing because SIMD amortizes the cost of denser groups.

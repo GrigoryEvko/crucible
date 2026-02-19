@@ -77,4 +77,44 @@ enum class Layout : int8_t {
   SparseBsc = 5,
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// Strong ID types — Rust-style newtypes over uint32_t
+//
+// Prevents mixing op indices, slot IDs, node IDs, symbol IDs at
+// compile time. Same codegen as raw uint32_t (single register).
+//
+// Design:
+//   - explicit ctor: no implicit conversion from uint32_t
+//   - .raw(): explicit unwrap (like Rust's .0 or .into())
+//   - .none(): named sentinel replacing bare UINT32_MAX
+//   - .is_valid(): sentinel check
+//   - operator<=>: full comparison support
+//   - No arithmetic: must unwrap, compute, rewrap (intentional)
+// ═══════════════════════════════════════════════════════════════════
+
+#define CRUCIBLE_STRONG_ID(Name)                                           \
+  struct Name {                                                            \
+    uint32_t v;                                                            \
+    constexpr explicit Name(uint32_t val) : v(val) {}                      \
+    constexpr Name() : v(UINT32_MAX) {}                                    \
+    [[nodiscard]] static constexpr Name none() { return Name{UINT32_MAX}; }\
+    [[nodiscard]] constexpr bool is_valid() const {                        \
+      return v != UINT32_MAX;                                              \
+    }                                                                      \
+    [[nodiscard]] constexpr explicit operator bool() const {               \
+      return is_valid();                                                   \
+    }                                                                      \
+    [[nodiscard]] constexpr uint32_t raw() const { return v; }             \
+    constexpr auto operator<=>(const Name&) const = default;               \
+  };                                                                       \
+  static_assert(sizeof(Name) == sizeof(uint32_t))
+
+CRUCIBLE_STRONG_ID(OpIndex);    // index into TraceEntry[] ops array
+CRUCIBLE_STRONG_ID(SlotId);     // index into TensorSlot[] slots array
+CRUCIBLE_STRONG_ID(NodeId);     // index into Graph node array
+CRUCIBLE_STRONG_ID(SymbolId);   // index into SymbolTable entries
+CRUCIBLE_STRONG_ID(MetaIndex);  // index into MetaLog buffer
+
+#undef CRUCIBLE_STRONG_ID
+
 } // namespace crucible
