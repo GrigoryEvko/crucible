@@ -162,6 +162,41 @@ struct TraceEntry {
   OpIndex* input_trace_indices = nullptr; // 8B — which previous op produced each input
   SlotId* input_slot_ids = nullptr;       // 8B — which pool slot each input reads from
   SlotId* output_slot_ids = nullptr;      // 8B — slot ID assigned to each output tensor
+
+  // ── Span accessors (NullSafe: bounds-checked access to variable-length arrays) ──
+
+  [[nodiscard]] std::span<const TensorMeta> input_span() const {
+    return input_metas ? std::span{input_metas, num_inputs}
+                       : std::span<const TensorMeta>{};
+  }
+  [[nodiscard]] std::span<TensorMeta> input_span() {
+    return input_metas ? std::span{input_metas, num_inputs}
+                       : std::span<TensorMeta>{};
+  }
+  [[nodiscard]] std::span<const TensorMeta> output_span() const {
+    return output_metas ? std::span{output_metas, num_outputs}
+                        : std::span<const TensorMeta>{};
+  }
+  [[nodiscard]] std::span<TensorMeta> output_span() {
+    return output_metas ? std::span{output_metas, num_outputs}
+                        : std::span<TensorMeta>{};
+  }
+  [[nodiscard]] std::span<const int64_t> scalar_span() const {
+    return scalar_args ? std::span{scalar_args, num_scalar_args}
+                       : std::span<const int64_t>{};
+  }
+  [[nodiscard]] std::span<const OpIndex> trace_index_span() const {
+    return input_trace_indices ? std::span{input_trace_indices, num_inputs}
+                               : std::span<const OpIndex>{};
+  }
+  [[nodiscard]] std::span<const SlotId> input_slot_span() const {
+    return input_slot_ids ? std::span{input_slot_ids, num_inputs}
+                          : std::span<const SlotId>{};
+  }
+  [[nodiscard]] std::span<const SlotId> output_slot_span() const {
+    return output_slot_ids ? std::span{output_slot_ids, num_outputs}
+                           : std::span<const SlotId>{};
+  }
 };
 
 // ═══════════════════════════════════════════════════════════════════

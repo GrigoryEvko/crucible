@@ -196,7 +196,7 @@ struct ExternInfo {
 
 struct GraphNode {
   // ── Identity + type (8B) ──────────────────────────
-  uint32_t id = 0;              // Unique ID (= buffer name "buf{id}")
+  NodeId id;                    // Unique ID (= buffer name "buf{id}")
   NodeKind kind = NodeKind::NOP; // 1B
   uint8_t flags = 0;            // 1B — NodeFlags bits
   uint8_t ndim = 0;             // 1B — output dimensions
@@ -382,14 +382,14 @@ class Graph {
 
   // ── Graph I/O ──────────────────────────────────────────────────
 
-  void set_graph_inputs(std::span<const uint32_t> ids) {
-    input_ids_ = arena_.alloc_array<uint32_t>(ids.size());
+  void set_graph_inputs(std::span<const NodeId> ids) {
+    input_ids_ = arena_.alloc_array<NodeId>(ids.size());
     std::memcpy(input_ids_, ids.data(), ids.size_bytes());
     num_inputs_ = static_cast<uint32_t>(ids.size());
   }
 
-  void set_graph_outputs(std::span<const uint32_t> ids) {
-    output_ids_ = arena_.alloc_array<uint32_t>(ids.size());
+  void set_graph_outputs(std::span<const NodeId> ids) {
+    output_ids_ = arena_.alloc_array<NodeId>(ids.size());
     std::memcpy(output_ids_, ids.data(), ids.size_bytes());
     num_outputs_ = static_cast<uint32_t>(ids.size());
   }
@@ -402,28 +402,28 @@ class Graph {
   // only accessed during buffer allocation and code emission, not
   // during hot graph traversals like DCE or topological sort).
 
-  void set_input_slots(uint32_t node_id, std::span<const SlotId> slots) {
-    assert(node_id < num_nodes_);
-    if (slots.empty()) { input_slots_[node_id] = nullptr; return; }
-    input_slots_[node_id] = arena_.alloc_array<SlotId>(slots.size());
-    std::memcpy(input_slots_[node_id], slots.data(), slots.size_bytes());
+  void set_input_slots(NodeId node_id, std::span<const SlotId> slots) {
+    assert(node_id.raw() < num_nodes_);
+    if (slots.empty()) { input_slots_[node_id.raw()] = nullptr; return; }
+    input_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(slots.size());
+    std::memcpy(input_slots_[node_id.raw()], slots.data(), slots.size_bytes());
   }
 
-  void set_output_slots(uint32_t node_id, std::span<const SlotId> slots) {
-    assert(node_id < num_nodes_);
-    if (slots.empty()) { output_slots_[node_id] = nullptr; return; }
-    output_slots_[node_id] = arena_.alloc_array<SlotId>(slots.size());
-    std::memcpy(output_slots_[node_id], slots.data(), slots.size_bytes());
+  void set_output_slots(NodeId node_id, std::span<const SlotId> slots) {
+    assert(node_id.raw() < num_nodes_);
+    if (slots.empty()) { output_slots_[node_id.raw()] = nullptr; return; }
+    output_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(slots.size());
+    std::memcpy(output_slots_[node_id.raw()], slots.data(), slots.size_bytes());
   }
 
-  [[nodiscard]] const SlotId* input_slots(uint32_t node_id) const {
-    assert(node_id < num_nodes_);
-    return input_slots_[node_id];
+  [[nodiscard]] const SlotId* input_slots(NodeId node_id) const {
+    assert(node_id.raw() < num_nodes_);
+    return input_slots_[node_id.raw()];
   }
 
-  [[nodiscard]] const SlotId* output_slots(uint32_t node_id) const {
-    assert(node_id < num_nodes_);
-    return output_slots_[node_id];
+  [[nodiscard]] const SlotId* output_slots(NodeId node_id) const {
+    assert(node_id.raw() < num_nodes_);
+    return output_slots_[node_id.raw()];
   }
 
   // ── Transforms ─────────────────────────────────────────────────
@@ -494,7 +494,7 @@ class Graph {
         GraphNode* dep = n->inputs[j];
         if (!(dep->flags & NodeFlags::DEAD)) {
           ++in_deg[i];
-          ++succ_cnt[dep->id];
+          ++succ_cnt[dep->id.raw()];
           ++total_edges;
         }
       }
@@ -514,7 +514,7 @@ class Graph {
       if (n->flags & NodeFlags::DEAD)
         continue;
       for (uint16_t j = 0; j < n->num_inputs; ++j) {
-        uint32_t dep_id = n->inputs[j]->id;
+        uint32_t dep_id = n->inputs[j]->id.raw();
         if (!(nodes_[dep_id]->flags & NodeFlags::DEAD))
           succs[offset[dep_id] + succ_cnt[dep_id]++] = i;
       }
@@ -556,6 +556,11 @@ class Graph {
 
   // ── Accessors ──────────────────────────────────────────────────
 
+  [[nodiscard]] GraphNode* node(NodeId id) const {
+    assert(id.raw() < num_nodes_);
+    return nodes_[id.raw()];
+  }
+
   [[nodiscard]] GraphNode* node(uint32_t id) const {
     assert(id < num_nodes_);
     return nodes_[id];
@@ -564,8 +569,8 @@ class Graph {
   [[nodiscard]] uint32_t num_nodes() const { return num_nodes_; }
   [[nodiscard]] uint32_t num_graph_inputs() const { return num_inputs_; }
   [[nodiscard]] uint32_t num_graph_outputs() const { return num_outputs_; }
-  [[nodiscard]] const uint32_t* graph_input_ids() const { return input_ids_; }
-  [[nodiscard]] const uint32_t* graph_output_ids() const { return output_ids_; }
+  [[nodiscard]] const NodeId* graph_input_ids() const { return input_ids_; }
+  [[nodiscard]] const NodeId* graph_output_ids() const { return output_ids_; }
 
   [[nodiscard]] ExprPool* pool() const { return pool_; }
   [[nodiscard]] SymbolTable* tab() const { return tab_; }
@@ -578,7 +583,7 @@ class Graph {
       grow_(capacity_ * 2);
     auto* n = static_cast<GraphNode*>(arena_.alloc(64, 64));
     std::memset(n, 0, 64);
-    n->id = num_nodes_;
+    n->id = NodeId{num_nodes_};
     n->device_idx = -1;
     n->num_outputs = 1;
     nodes_[num_nodes_++] = n;
@@ -644,8 +649,8 @@ class Graph {
     }
     // Graph outputs are roots: keep them alive
     for (uint32_t i = 0; i < num_outputs_; ++i) {
-      if (!(nodes_[output_ids_[i]]->flags & NodeFlags::DEAD))
-        ++nodes_[output_ids_[i]]->num_uses;
+      if (!(nodes_[output_ids_[i].raw()]->flags & NodeFlags::DEAD))
+        ++nodes_[output_ids_[i].raw()]->num_uses;
     }
   }
 
@@ -659,9 +664,9 @@ class Graph {
   uint32_t num_nodes_;
   uint32_t capacity_;
 
-  uint32_t* input_ids_;
+  NodeId* input_ids_;
   uint32_t num_inputs_;
-  uint32_t* output_ids_;
+  NodeId* output_ids_;
   uint32_t num_outputs_;
 };
 
