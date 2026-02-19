@@ -6,7 +6,8 @@
 // CKernelId. Used by the background thread to annotate TraceEntry at build time
 // so Tier 2+ replay can dispatch directly without going through the Vessel.
 //
-// Design: ~100 device-agnostic ops covering all transformer / vision workloads.
+// Design: ~130 device-agnostic ops covering transformers, vision, SSMs, 3D
+// rendering, linear algebra decompositions, and production inference patterns.
 // Multiple Vessel dispatch names can map to one CKernelId (e.g., "softmax" and
 // "_softmax" both register to ACT_SOFTMAX; all 5 SDPA backend variants → SDPA).
 // Everything else → CKernelId::OPAQUE (fallback to full Vessel dispatch).
@@ -29,7 +30,7 @@ namespace crucible {
 // ── Compute-op taxonomy ─────────────────────────────────────────────────────
 //
 // Organized by compute family. OPAQUE = 0 so zero-initialized TraceEntry
-// fields are correct before classification. All values fit in uint8_t (< 128).
+// fields are correct before classification. All values fit in uint8_t.
 //
 // Inplace variants (add_, relu_) are folded into their out-of-place counterparts.
 // Memory aliasing is tracked separately in TraceEntry flags; the kernel compute
@@ -37,6 +38,10 @@ namespace crucible {
 
 enum class CKernelId : uint8_t {
     OPAQUE = 0,     // Unknown op — fallback to Vessel dispatch (always correct)
+
+    // ═══════════════════════════════════════════════════════════════════
+    // SECTION 1: Core DNN Ops (values 1–99, ordinals frozen since v3)
+    // ═══════════════════════════════════════════════════════════════════
 
     // ── Linear Algebra (8) ──────────────────────────────────────────────────
     // Hot path for every linear layer. Tier 2: cuBLAS/cuBLASLt direct call.
@@ -181,7 +186,72 @@ enum class CKernelId : uint8_t {
     FUSED_NORM_LINEAR,  // pre-norm + linear (T5/LLaMA fused blocks)
     FUSED_SOFTMAX_DROP, // softmax + dropout (attention score path)
 
-    NUM_KERNELS     // sentinel — must be last; value == 100
+    // ═══════════════════════════════════════════════════════════════════
+    // SECTION 2: Extended Ops (values 100+, added in v4)
+    // ═══════════════════════════════════════════════════════════════════
+
+    // ── Linear Algebra Decompositions (9) ───────────────────────────────────
+    // cuSOLVER / MAGMA primitives. Each has a fundamentally different algorithm
+    // from GEMM (Jacobi, Householder, etc.) and numerically fragile backward pass.
+    LINALG_SVD,     // A = UΣVᵀ — LoRA, spectral norm, compression, low-rank approx
+    LINALG_CHOLESKY,// A = LLᵀ for pos-def — Gaussian processes, Bayesian DL
+    LINALG_QR,      // A = QR — orthogonal init, Gram-Schmidt, 3DGS-LM Jacobian
+    LINALG_SOLVE,   // Ax = b (+ triangular solve) — GP inference, Kalman, physics NN
+    LINALG_EIGH,    // A = QΛQᵀ symmetric — spectral graph conv, PCA layers, SSM init
+    LINALG_NORM,    // vector/matrix norms (L2, Frobenius, nuclear, spectral)
+    LINALG_CROSS,   // 3D cross product (batched) — normals, areas, torques
+    CDIST,          // pairwise distance matrix (B×N×D, B×M×D → B×N×M)
+    FFT,            // fast Fourier transform (1D/nD, complex) — also IFFT
+
+    // ── SSM / Recurrence Primitives (6) ─────────────────────────────────────
+    // The post-attention revolution. Each has a parallel associative scan at its
+    // core but differs in operator structure (scalar, matrix, affine, gated).
+    //
+    // Refs: Mamba (Gu & Dao 2023), Mamba-2 SSD (Dao & Gu 2024),
+    //       RWKV (Peng 2023), RetNet (Sun 2023), xLSTM (Beck 2024)
+    ASSOC_SCAN,     // generic parallel prefix scan with associative operator
+    SELECTIVE_SCAN, // Mamba S6: input-dependent affine recurrence, SRAM-resident state
+    SSD_CHUNK,      // Mamba-2: chunked semiseparable matmul (tensor-core-friendly scan)
+    WKV_RECURRENCE, // RWKV: exponentially-decayed prefix sum with normalizer
+    RETENTION,      // RetNet: decay-masked semi-attention (parallel + recurrent dual)
+    MLSTM_RECURRENCE, // xLSTM: matrix-memory covariance update, exponential gating
+
+    // ── Production Inference Primitives (6) ─────────────────────────────────
+    // Found in every production LLM serving stack (vLLM, SGLang, TRT-LLM).
+    // Each has a fused compute+memory pattern that cannot be decomposed efficiently.
+    //
+    // Refs: Marlin (IST-DASLab 2024), Megablocks (Gale 2022),
+    //       PagedAttention (Kwon, SOSP 2023), Liger Kernel (LinkedIn 2024),
+    //       GLA (Yang 2024), cuDNN THD layout
+    DEQUANT_GEMM,       // INT4/FP8 dequant fused with tensor core GEMM (Marlin/AWQ)
+    MOE_ROUTE_GEMM,     // top-k routing + permute + grouped GEMM (MoE dispatch)
+    PAGED_ATTENTION,    // page-table-indirect KV gather + tiled attention (vLLM)
+    FUSED_CROSS_ENTROPY,// tiled matmul + online softmax + log-sum-exp (Liger)
+    LINEAR_ATTN_CAUSAL, // chunked cumulative outer-product reduction (GLA/Based)
+    RAGGED_ATTN,        // variable-length packed sequences, no padding waste (THD)
+
+    // ── 3D / Neural Rendering (4) ───────────────────────────────────────────
+    // Entirely novel access patterns with no tensor algebra analog.
+    //
+    // Refs: 3DGS (Kerbl, SIGGRAPH 2023), Instant-NGP (Mueller, SIGGRAPH 2022),
+    //       NeRF (Mildenhall 2020), gsplat, NerfAcc
+    GAUSSIAN_RASTERIZE, // 3DGS: tile-sort-alpha-blend, per-pixel sequential compositing
+    HASH_GRID_ENCODE,   // Instant-NGP: multi-resolution hash + trilinear interp
+    VOLUME_RENDER,      // NeRF: per-ray irregular compositing with early termination
+    SH_EVAL,            // spherical harmonics basis evaluation (fused with rasterize)
+
+    // ── Structured Matrix / Graph (5) ───────────────────────────────────────
+    // Specialized matrix structure or graph topology determines memory access pattern.
+    //
+    // Refs: Monarch (Dao, ICML 2022), FlashConv/H3 (Fu, ICML 2023),
+    //       Hyena (Poli, ICML 2023), DGL g-SpMM, Sinkhorn (Cuturi 2013)
+    FFT_CONV,       // fused FFT + pointwise mul + IFFT (Hyena/H3 long convolution)
+    MONARCH_MATMUL, // block-diagonal GEMM + permutation + block-diagonal GEMM
+    SPMM_GNN,       // graph message passing: generalized SpMM with custom aggregation
+    SDDMM_GNN,     // sampled dense-dense matmul: edge score computation
+    SINKHORN,       // iterative optimal transport (log-domain stabilized Sinkhorn-Knopp)
+
+    NUM_KERNELS     // sentinel — must be last; value == 130
 };
 
 // ── Registration table ──────────────────────────────────────────────────────
@@ -189,8 +259,9 @@ enum class CKernelId : uint8_t {
 // Sorted array of (schema_hash, CKernelId) pairs.
 // Written once at startup (Vessel registration), then read-only forever.
 //
-// 256 slots: ~99 canonical ops × up to 2-3 ATen dispatch name aliases each
-// (e.g. softmax + _softmax, layer_norm + native_layer_norm, 5 SDPA variants).
+// 256 slots: ~130 canonical ops, most with 1 registration, ATen ops with 2-3
+// aliases (e.g. softmax + _softmax, layer_norm + native_layer_norm, 5 SDPA
+// variants). The SSM/rendering/inference ops typically have 1 registration each.
 
 static constexpr uint32_t CKERNEL_TABLE_CAP = 256;
 
@@ -256,6 +327,8 @@ inline CKernelId classify_kernel(uint64_t schema_hash) {
 inline const char* ckernel_name(CKernelId id) {
     switch (id) {
     case CKernelId::OPAQUE:             return "OPAQUE";
+
+    // ── Section 1: Core DNN Ops ─────────────────────────────────────────
     // Linear Algebra
     case CKernelId::GEMM_MM:            return "GEMM_MM";
     case CKernelId::GEMM_BMM:           return "GEMM_BMM";
@@ -369,6 +442,44 @@ inline const char* ckernel_name(CKernelId id) {
     case CKernelId::FUSED_LINEAR_ACT:   return "FUSED_LINEAR_ACT";
     case CKernelId::FUSED_NORM_LINEAR:  return "FUSED_NORM_LINEAR";
     case CKernelId::FUSED_SOFTMAX_DROP: return "FUSED_SOFTMAX_DROP";
+
+    // ── Section 2: Extended Ops ─────────────────────────────────────────
+    // Linear Algebra Decompositions
+    case CKernelId::LINALG_SVD:         return "LINALG_SVD";
+    case CKernelId::LINALG_CHOLESKY:    return "LINALG_CHOLESKY";
+    case CKernelId::LINALG_QR:          return "LINALG_QR";
+    case CKernelId::LINALG_SOLVE:       return "LINALG_SOLVE";
+    case CKernelId::LINALG_EIGH:        return "LINALG_EIGH";
+    case CKernelId::LINALG_NORM:        return "LINALG_NORM";
+    case CKernelId::LINALG_CROSS:       return "LINALG_CROSS";
+    case CKernelId::CDIST:              return "CDIST";
+    case CKernelId::FFT:                return "FFT";
+    // SSM / Recurrence
+    case CKernelId::ASSOC_SCAN:         return "ASSOC_SCAN";
+    case CKernelId::SELECTIVE_SCAN:     return "SELECTIVE_SCAN";
+    case CKernelId::SSD_CHUNK:          return "SSD_CHUNK";
+    case CKernelId::WKV_RECURRENCE:     return "WKV_RECURRENCE";
+    case CKernelId::RETENTION:          return "RETENTION";
+    case CKernelId::MLSTM_RECURRENCE:   return "MLSTM_RECURRENCE";
+    // Production Inference
+    case CKernelId::DEQUANT_GEMM:       return "DEQUANT_GEMM";
+    case CKernelId::MOE_ROUTE_GEMM:     return "MOE_ROUTE_GEMM";
+    case CKernelId::PAGED_ATTENTION:    return "PAGED_ATTENTION";
+    case CKernelId::FUSED_CROSS_ENTROPY:return "FUSED_CROSS_ENTROPY";
+    case CKernelId::LINEAR_ATTN_CAUSAL: return "LINEAR_ATTN_CAUSAL";
+    case CKernelId::RAGGED_ATTN:        return "RAGGED_ATTN";
+    // 3D / Neural Rendering
+    case CKernelId::GAUSSIAN_RASTERIZE: return "GAUSSIAN_RASTERIZE";
+    case CKernelId::HASH_GRID_ENCODE:   return "HASH_GRID_ENCODE";
+    case CKernelId::VOLUME_RENDER:      return "VOLUME_RENDER";
+    case CKernelId::SH_EVAL:            return "SH_EVAL";
+    // Structured Matrix / Graph
+    case CKernelId::FFT_CONV:           return "FFT_CONV";
+    case CKernelId::MONARCH_MATMUL:     return "MONARCH_MATMUL";
+    case CKernelId::SPMM_GNN:           return "SPMM_GNN";
+    case CKernelId::SDDMM_GNN:         return "SDDMM_GNN";
+    case CKernelId::SINKHORN:           return "SINKHORN";
+
     default:                            return "<unknown>";
     }
 }
