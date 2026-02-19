@@ -6,8 +6,8 @@
 // CKernelId. Used by the background thread to annotate TraceEntry at build time
 // so Tier 2+ replay can dispatch directly without going through the Vessel.
 //
-// Design: ~130 device-agnostic ops covering transformers, vision, SSMs, 3D
-// rendering, linear algebra decompositions, and production inference patterns.
+// Design: ~143 device-agnostic ops covering transformers, vision, SSMs, 3D
+// rendering, linear algebra, production inference, distributed comms, and I/O.
 // Multiple Vessel dispatch names can map to one CKernelId (e.g., "softmax" and
 // "_softmax" both register to ACT_SOFTMAX; all 5 SDPA backend variants → SDPA).
 // Everything else → CKernelId::OPAQUE (fallback to full Vessel dispatch).
@@ -251,7 +251,38 @@ enum class CKernelId : uint8_t {
     SDDMM_GNN,     // sampled dense-dense matmul: edge score computation
     SINKHORN,       // iterative optimal transport (log-domain stabilized Sinkhorn-Knopp)
 
-    NUM_KERNELS     // sentinel — must be last; value == 130
+    // ── Collective Communication (7) ────────────────────────────────────
+    // Device-agnostic names (NCCL on NVIDIA, RCCL on AMD, Gloo on CPU).
+    // These are the most expensive ops in multi-GPU workloads. Crucible must
+    // know about them for compute-communication overlap scheduling.
+    //
+    // Refs: NCCL, c10d::ProcessGroup, FSDP, DeepSpeed, Megatron-LM
+    COMM_ALLREDUCE,     // gradient synchronization (DDP, FSDP, ZeRO)
+    COMM_ALLGATHER,     // weight gathering (FSDP forward, tensor parallel column)
+    COMM_REDUCE_SCATTER,// gradient reduce + scatter (FSDP backward, ZeRO-3)
+    COMM_BROADCAST,     // parameter broadcast (model init, checkpoint load)
+    COMM_ALL_TO_ALL,    // token permutation across ranks (MoE expert routing)
+    COMM_SEND,          // point-to-point send (pipeline parallel, inter-stage)
+    COMM_RECV,          // point-to-point receive (pipeline parallel, inter-stage)
+
+    // ── I/O (4) ─────────────────────────────────────────────────────────
+    // Data pipeline and checkpoint operations. These dominate wall-clock time
+    // in training when compute is fast enough (the "data loading bottleneck").
+    IO_LOAD,            // batch load from storage (DataLoader → CPU tensor)
+    IO_PREFETCH,        // async CPU→GPU data prefetch (pinned memory DMA)
+    IO_CHECKPOINT_SAVE, // model state serialization to persistent storage
+    IO_CHECKPOINT_LOAD, // model state deserialization from persistent storage
+
+    // ── RNG (2) ─────────────────────────────────────────────────────────
+    // ATen-dispatched cuRAND kernels. Non-deterministic by default; distinct
+    // compute pattern (philox PRNG state) from elementwise ops.
+    RNG_UNIFORM,        // rand / randint / bernoulli (uniform distribution)
+    RNG_NORMAL,         // randn / normal_ (Gaussian distribution)
+
+    // ── Synchronization (1) ─────────────────────────────────────────────
+    COMM_BARRIER,       // all-rank barrier (phase boundary in distributed training)
+
+    NUM_KERNELS     // sentinel — must be last; value == 144
 };
 
 // ── Registration table ──────────────────────────────────────────────────────
@@ -259,9 +290,9 @@ enum class CKernelId : uint8_t {
 // Sorted array of (schema_hash, CKernelId) pairs.
 // Written once at startup (Vessel registration), then read-only forever.
 //
-// 256 slots: ~130 canonical ops, most with 1 registration, ATen ops with 2-3
+// 256 slots: ~143 canonical ops, most with 1 registration, ATen ops with 2-3
 // aliases (e.g. softmax + _softmax, layer_norm + native_layer_norm, 5 SDPA
-// variants). The SSM/rendering/inference ops typically have 1 registration each.
+// variants). SSM/rendering/inference/comm ops typically have 1 registration each.
 
 static constexpr uint32_t CKERNEL_TABLE_CAP = 256;
 
@@ -479,6 +510,24 @@ inline const char* ckernel_name(CKernelId id) {
     case CKernelId::SPMM_GNN:           return "SPMM_GNN";
     case CKernelId::SDDMM_GNN:         return "SDDMM_GNN";
     case CKernelId::SINKHORN:           return "SINKHORN";
+    // Collective Communication
+    case CKernelId::COMM_ALLREDUCE:     return "COMM_ALLREDUCE";
+    case CKernelId::COMM_ALLGATHER:     return "COMM_ALLGATHER";
+    case CKernelId::COMM_REDUCE_SCATTER:return "COMM_REDUCE_SCATTER";
+    case CKernelId::COMM_BROADCAST:     return "COMM_BROADCAST";
+    case CKernelId::COMM_ALL_TO_ALL:    return "COMM_ALL_TO_ALL";
+    case CKernelId::COMM_SEND:          return "COMM_SEND";
+    case CKernelId::COMM_RECV:          return "COMM_RECV";
+    // I/O
+    case CKernelId::IO_LOAD:            return "IO_LOAD";
+    case CKernelId::IO_PREFETCH:        return "IO_PREFETCH";
+    case CKernelId::IO_CHECKPOINT_SAVE: return "IO_CHECKPOINT_SAVE";
+    case CKernelId::IO_CHECKPOINT_LOAD: return "IO_CHECKPOINT_LOAD";
+    // RNG
+    case CKernelId::RNG_UNIFORM:        return "RNG_UNIFORM";
+    case CKernelId::RNG_NORMAL:         return "RNG_NORMAL";
+    // Synchronization
+    case CKernelId::COMM_BARRIER:       return "COMM_BARRIER";
 
     default:                            return "<unknown>";
     }
