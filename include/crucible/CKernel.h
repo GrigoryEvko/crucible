@@ -24,6 +24,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <span>
 
 namespace crucible {
 
@@ -322,15 +323,11 @@ struct CKernelTable {
         }
         if (size >= CKERNEL_TABLE_CAP) return;
         entries[size++] = {schema_hash, id};
-        // Keep sorted by schema_hash for O(log n) classify().
-        std::sort(entries, entries + size,
-                  [](const CKernelEntry& a, const CKernelEntry& b) {
-                      return a.schema_hash < b.schema_hash;
-                  });
+        std::ranges::sort(std::span{entries, size},
+                          {}, &CKernelEntry::schema_hash);
     }
 
-    // Binary search: returns CKernelId::OPAQUE if not registered.
-    CKernelId classify(uint64_t schema_hash) const {
+    [[nodiscard]] CKernelId classify(uint64_t schema_hash) const {
         uint32_t lo = 0, hi = size;
         while (lo < hi) {
             const uint32_t mid = lo + (hi - lo) / 2;
@@ -342,8 +339,7 @@ struct CKernelTable {
     }
 };
 
-// Process-wide singleton — magic-static init, thread-safe in C++11.
-inline CKernelTable& global_ckernel_table() {
+[[nodiscard]] inline CKernelTable& global_ckernel_table() {
     static CKernelTable table;
     return table;
 }
@@ -353,13 +349,11 @@ inline void register_schema_hash(uint64_t schema_hash, CKernelId id) {
     global_ckernel_table().register_op(schema_hash, id);
 }
 
-// Called by BackgroundThread during build_trace() for each ring entry.
-inline CKernelId classify_kernel(uint64_t schema_hash) {
+[[nodiscard]] inline CKernelId classify_kernel(uint64_t schema_hash) {
     return global_ckernel_table().classify(schema_hash);
 }
 
-// Human-readable name — for logging and introspection only.
-inline const char* ckernel_name(CKernelId id) {
+[[nodiscard]] constexpr const char* ckernel_name(CKernelId id) {
     switch (id) {
     case CKernelId::OPAQUE:             return "OPAQUE";
 

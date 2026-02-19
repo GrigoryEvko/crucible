@@ -29,6 +29,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <span>
 #include <utility>
 
 namespace crucible {
@@ -113,7 +114,7 @@ struct MemoryPlan {
 };
 
 // Compute storage size in bytes from TensorMeta (max extent * element size).
-inline uint64_t compute_storage_nbytes(const TensorMeta& m) {
+[[nodiscard]] constexpr uint64_t compute_storage_nbytes(const TensorMeta& m) {
   if (m.ndim == 0)
     return crucible::element_size(static_cast<crucible::ScalarType>(m.dtype));
   int64_t max_offset = 0;
@@ -265,9 +266,9 @@ struct BranchNode : TraceNode {
 // Both use detail::fmix64 from Expr.h.
 // ═══════════════════════════════════════════════════════════════════
 
-inline uint64_t compute_content_hash(const TraceEntry* ops, uint32_t n) {
+[[nodiscard]] inline uint64_t compute_content_hash(std::span<const TraceEntry> ops) {
   uint64_t h = 0x9E3779B97F4A7C15ULL;
-  for (uint32_t i = 0; i < n; i++) {
+  for (uint32_t i = 0; i < ops.size(); i++) {
     h ^= detail::fmix64(ops[i].schema_hash);
     h *= 0x9E3779B97F4A7C15ULL;
 
@@ -302,7 +303,7 @@ inline uint64_t compute_content_hash(const TraceEntry* ops, uint32_t n) {
   return detail::fmix64(h);
 }
 
-inline uint64_t compute_merkle_hash(TraceNode* node) {
+[[nodiscard]] inline uint64_t compute_merkle_hash(TraceNode* node) {
   if (!node)
     return 0;
 
@@ -329,7 +330,7 @@ inline uint64_t compute_merkle_hash(TraceNode* node) {
 }
 
 // Content hash for a branched kernel (all arms fused into one kernel)
-inline uint64_t branched_content_hash(BranchNode* branch) {
+[[nodiscard]] inline uint64_t branched_content_hash(BranchNode* branch) {
   uint64_t h = detail::fmix64(branch->guard.hash());
   for (uint32_t i = 0; i < branch->num_arms; i++) {
     if (branch->arms[i].target->kind == TraceNodeKind::REGION) {
@@ -359,11 +360,11 @@ class KernelCache {
 
   ~KernelCache() { std::free(table_); }
 
-  KernelCache(const KernelCache&) = delete;
-  KernelCache& operator=(const KernelCache&) = delete;
+  KernelCache(const KernelCache&) = delete("lock-free hash map with atomic state cannot be copied");
+  KernelCache& operator=(const KernelCache&) = delete("lock-free hash map with atomic state cannot be copied");
 
   // Lock-free lookup. Returns nullptr on miss.
-  CompiledKernel* lookup(uint64_t content_hash) const {
+  [[nodiscard]] CompiledKernel* lookup(uint64_t content_hash) const {
     uint32_t mask = capacity_ - 1;
     uint32_t idx = static_cast<uint32_t>(content_hash) & mask;
     for (uint32_t probe = 0; probe < capacity_; probe++) {
@@ -401,8 +402,8 @@ class KernelCache {
     assert(false && "KernelCache table full");
   }
 
-  uint32_t size() const { return size_.load(std::memory_order_relaxed); }
-  uint32_t capacity() const { return capacity_; }
+  [[nodiscard]] uint32_t size() const { return size_.load(std::memory_order_relaxed); }
+  [[nodiscard]] uint32_t capacity() const { return capacity_; }
 
  private:
   struct Entry {
@@ -426,7 +427,7 @@ class KernelCache {
 // Create a RegionNode from a span of TraceEntries.
 // Cannot memset because std::atomic is non-trivially-copyable;
 // each field is initialized explicitly.
-inline RegionNode* make_region(
+[[nodiscard]] inline RegionNode* make_region(
     Arena& arena,
     TraceEntry* ops,
     uint32_t num_ops) {
@@ -437,7 +438,7 @@ inline RegionNode* make_region(
   node->next = nullptr;
   node->ops = ops;
   node->num_ops = num_ops;
-  node->content_hash = compute_content_hash(ops, num_ops);
+  node->content_hash = compute_content_hash(std::span{ops, num_ops});
   node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : 0;
   node->compiled.store(nullptr, std::memory_order_relaxed);
   node->measured_ms = 0.0f;
@@ -447,7 +448,7 @@ inline RegionNode* make_region(
 }
 
 // Create a terminal node.
-inline TraceNode* make_terminal(Arena& arena) {
+[[nodiscard]] inline TraceNode* make_terminal(Arena& arena) {
   auto* node = arena.alloc_obj<TraceNode>();
   std::memset(node, 0, sizeof(TraceNode));
   node->kind = TraceNodeKind::TERMINAL;
@@ -475,18 +476,17 @@ inline void recompute_merkle(TraceNode* node) {
 
 // Collect all RegionNodes into an output array. Returns count.
 // Used to find uncompiled regions after DAG mutation.
-inline uint32_t collect_regions(
+[[nodiscard]] inline uint32_t collect_regions(
     TraceNode* node,
-    RegionNode** out,
-    uint32_t max_count,
+    std::span<RegionNode*> out,
     uint32_t count = 0) {
-  while (node && count < max_count) {
+  while (node && count < out.size()) {
     if (node->kind == TraceNodeKind::REGION) {
       out[count++] = static_cast<RegionNode*>(node);
     } else if (node->kind == TraceNodeKind::BRANCH) {
       auto* b = static_cast<BranchNode*>(node);
       for (uint32_t i = 0; i < b->num_arms; i++)
-        count = collect_regions(b->arms[i].target, out, max_count, count);
+        count = collect_regions(b->arms[i].target, out, count);
     }
     node = node->next;
   }
@@ -501,11 +501,9 @@ inline uint32_t collect_regions(
 // content matches (the merge point).
 // ═══════════════════════════════════════════════════════════════════
 
-inline TraceNode* find_merge_point(
-    TraceEntry* new_ops,
-    uint32_t new_n,
+[[nodiscard]] inline TraceNode* find_merge_point(
+    std::span<TraceEntry> new_ops,
     TraceNode* existing_continuation) {
-  // Collect existing regions into a flat array for reverse scanning
   constexpr uint32_t MAX_REGIONS = 1024;
   RegionNode* existing_regions[MAX_REGIONS];
   uint32_t num_existing = 0;
@@ -520,10 +518,8 @@ inline TraceNode* find_merge_point(
   if (num_existing == 0)
     return nullptr;
 
-  // Scan from the tail of both sequences, comparing content hashes.
-  // The deepest match is the merge point.
   TraceNode* merge = nullptr;
-  uint32_t new_pos = new_n;
+  uint32_t new_pos = static_cast<uint32_t>(new_ops.size());
   uint32_t ex_idx = num_existing;
 
   while (ex_idx > 0 && new_pos > 0) {
@@ -533,13 +529,13 @@ inline TraceNode* find_merge_point(
       break;
 
     uint64_t new_hash =
-        compute_content_hash(&new_ops[new_pos - region->num_ops], region->num_ops);
+        compute_content_hash(new_ops.subspan(new_pos - region->num_ops, region->num_ops));
 
     if (new_hash == region->content_hash) {
       merge = region;
       new_pos -= region->num_ops;
     } else {
-      break; // Divergence -- merge point is after this node
+      break;
     }
   }
 
@@ -554,7 +550,7 @@ inline TraceNode* find_merge_point(
 // continuations become identical.
 // ═══════════════════════════════════════════════════════════════════
 
-inline BranchNode* add_branch(
+[[nodiscard]] inline BranchNode* add_branch(
     Arena& arena,
     KernelCache& kernel_cache,
     TraceNode* divergence_point,
@@ -564,11 +560,9 @@ inline BranchNode* add_branch(
     int64_t new_guard_value,
     Guard guard,
     TraceNode* existing_suffix) {
-  // 1. Create new RegionNode for the divergent segment
   auto* new_region = make_region(arena, new_ops, new_n);
 
-  // 2. Find merge point
-  TraceNode* merge = find_merge_point(new_ops, new_n, existing_suffix);
+  TraceNode* merge = find_merge_point(std::span{new_ops, new_n}, existing_suffix);
 
   // 3. Wire new arm's tail to the merge point
   new_region->next = merge;
@@ -607,7 +601,7 @@ inline BranchNode* add_branch(
 // ═══════════════════════════════════════════════════════════════════
 
 template <typename GuardEval, typename RegionExec>
-inline bool replay(
+[[nodiscard]] inline bool replay(
     TraceNode* node,
     GuardEval&& eval_guard,
     RegionExec&& exec_region) {

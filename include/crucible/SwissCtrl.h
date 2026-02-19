@@ -51,7 +51,7 @@ static constexpr size_t kGroupWidth = 16;
 // H2 tag: top 7 bits of hash → [0, 127].
 // Always non-negative as int8_t (bit 7 cleared).
 // Independent from H1 (lower bits) due to fmix64 avalanche.
-constexpr int8_t h2_tag(uint64_t hash) {
+[[nodiscard]] constexpr int8_t h2_tag(uint64_t hash) {
   return static_cast<int8_t>(hash >> 57);
 }
 
@@ -61,12 +61,12 @@ constexpr int8_t h2_tag(uint64_t hash) {
 struct BitMask {
   uint64_t mask;
 
-  explicit operator bool() const {
+  [[nodiscard]] explicit operator bool() const {
     return mask != 0;
   }
 
   // Index of lowest set bit. Undefined if mask == 0.
-  uint32_t lowest() const {
+  [[nodiscard]] uint32_t lowest() const {
     return static_cast<uint32_t>(std::countr_zero(mask));
   }
 
@@ -85,33 +85,33 @@ struct CtrlGroup {
 #if defined(__AVX512BW__)
   __m512i ctrl;
 
-  static CtrlGroup load(const int8_t* pos) {
+  [[nodiscard]] static CtrlGroup load(const int8_t* pos) {
     return {_mm512_loadu_si512(reinterpret_cast<const __m512i*>(pos))};
   }
 
-  BitMask match(int8_t h2) const {
+  [[nodiscard]] BitMask match(int8_t h2) const {
     return {_mm512_cmpeq_epi8_mask(ctrl, _mm512_set1_epi8(h2))};
   }
 
-  BitMask match_empty() const {
+  [[nodiscard]] BitMask match_empty() const {
     return {_mm512_cmpeq_epi8_mask(ctrl, _mm512_set1_epi8(kEmpty))};
   }
 
 #elif defined(__AVX2__)
   __m256i ctrl;
 
-  static CtrlGroup load(const int8_t* pos) {
+  [[nodiscard]] static CtrlGroup load(const int8_t* pos) {
     return {_mm256_loadu_si256(reinterpret_cast<const __m256i*>(pos))};
   }
 
-  BitMask match(int8_t h2) const {
+  [[nodiscard]] BitMask match(int8_t h2) const {
     auto cmp = _mm256_cmpeq_epi8(ctrl, _mm256_set1_epi8(h2));
     // Double-cast prevents sign-extension of negative int
     return {static_cast<uint64_t>(
         static_cast<uint32_t>(_mm256_movemask_epi8(cmp)))};
   }
 
-  BitMask match_empty() const {
+  [[nodiscard]] BitMask match_empty() const {
     auto cmp = _mm256_cmpeq_epi8(ctrl, _mm256_set1_epi8(kEmpty));
     return {static_cast<uint64_t>(
         static_cast<uint32_t>(_mm256_movemask_epi8(cmp)))};
@@ -120,17 +120,17 @@ struct CtrlGroup {
 #elif defined(__SSE2__)
   __m128i ctrl;
 
-  static CtrlGroup load(const int8_t* pos) {
+  [[nodiscard]] static CtrlGroup load(const int8_t* pos) {
     return {_mm_loadu_si128(reinterpret_cast<const __m128i*>(pos))};
   }
 
-  BitMask match(int8_t h2) const {
+  [[nodiscard]] BitMask match(int8_t h2) const {
     auto cmp = _mm_cmpeq_epi8(ctrl, _mm_set1_epi8(h2));
     return {static_cast<uint64_t>(
         static_cast<uint32_t>(_mm_movemask_epi8(cmp)))};
   }
 
-  BitMask match_empty() const {
+  [[nodiscard]] BitMask match_empty() const {
     auto cmp = _mm_cmpeq_epi8(ctrl, _mm_set1_epi8(kEmpty));
     return {static_cast<uint64_t>(
         static_cast<uint32_t>(_mm_movemask_epi8(cmp)))};
@@ -141,16 +141,16 @@ struct CtrlGroup {
   // NEON lacks movemask — we synthesize it via AND + pairwise-add reduction.
   int8x16_t ctrl;
 
-  static CtrlGroup load(const int8_t* pos) {
+  [[nodiscard]] static CtrlGroup load(const int8_t* pos) {
     return {vld1q_s8(pos)};
   }
 
-  BitMask match(int8_t h2) const {
+  [[nodiscard]] BitMask match(int8_t h2) const {
     uint8x16_t cmp = vceqq_s8(ctrl, vdupq_n_s8(h2));
     return {neon_movemask(cmp)};
   }
 
-  BitMask match_empty() const {
+  [[nodiscard]] BitMask match_empty() const {
     uint8x16_t cmp = vceqq_s8(ctrl, vdupq_n_s8(kEmpty));
     return {neon_movemask(cmp)};
   }
@@ -160,7 +160,7 @@ struct CtrlGroup {
   // 2. Three vpaddl reductions (16×u8 → 8×u16 → 4×u32 → 2×u64)
   // 3. Combine two 8-bit halves → 16-bit bitmask
   // ~9 instructions vs. x86's single pmovmskb.
-  static uint64_t neon_movemask(uint8x16_t cmp) {
+  [[nodiscard]] static uint64_t neon_movemask(uint8x16_t cmp) {
     static constexpr uint8_t kBits[16] = {
         0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80,
         0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80};
@@ -176,20 +176,20 @@ struct CtrlGroup {
   // Portable fallback: byte-by-byte comparison.
   int8_t bytes[16];
 
-  static CtrlGroup load(const int8_t* pos) {
+  [[nodiscard]] static CtrlGroup load(const int8_t* pos) {
     CtrlGroup g;
     std::memcpy(g.bytes, pos, 16);
     return g;
   }
 
-  BitMask match(int8_t h2) const {
+  [[nodiscard]] BitMask match(int8_t h2) const {
     uint64_t m = 0;
     for (size_t i = 0; i < 16; ++i)
       m |= static_cast<uint64_t>(bytes[i] == h2) << i;
     return {m};
   }
 
-  BitMask match_empty() const {
+  [[nodiscard]] BitMask match_empty() const {
     return match(kEmpty);
   }
 #endif

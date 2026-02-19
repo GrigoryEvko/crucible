@@ -39,13 +39,13 @@ struct MetaLog {
 
   ~MetaLog() { std::free(entries); }
 
-  MetaLog(const MetaLog&) = delete;
-  MetaLog& operator=(const MetaLog&) = delete;
+  MetaLog(const MetaLog&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
+  MetaLog& operator=(const MetaLog&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
 
   // ── Producer (foreground): append n consecutive TensorMetas ──
   //
   // Returns the start index, or UINT32_MAX if the buffer is full.
-  CRUCIBLE_INLINE uint32_t try_append(const TensorMeta* metas, uint32_t n) {
+  [[nodiscard]] CRUCIBLE_INLINE uint32_t try_append(const TensorMeta* metas, uint32_t n) {
     if (n == 0) [[unlikely]] return UINT32_MAX;
     uint32_t h = head.load(std::memory_order_relaxed);
     uint32_t t = tail.load(std::memory_order_relaxed);
@@ -60,7 +60,7 @@ struct MetaLog {
   }
 
   // ── Consumer (background): read meta at absolute index ──
-  const TensorMeta& at(uint32_t idx) const {
+  [[nodiscard]] const TensorMeta& at(uint32_t idx) const {
     return entries[idx & MASK];
   }
 
@@ -69,7 +69,7 @@ struct MetaLog {
     tail.store(new_tail, std::memory_order_relaxed);
   }
 
-  uint32_t size() const {
+  [[nodiscard]] uint32_t size() const {
     return head.load(std::memory_order_relaxed) -
            tail.load(std::memory_order_relaxed);
   }

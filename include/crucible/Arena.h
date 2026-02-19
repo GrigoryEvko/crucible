@@ -27,14 +27,14 @@ class Arena {
   }
 
   // Non-copyable, non-movable (pointers into arena must remain valid)
-  Arena(const Arena&) = delete;
-  Arena& operator=(const Arena&) = delete;
-  Arena(Arena&&) = delete;
-  Arena& operator=(Arena&&) = delete;
+  Arena(const Arena&) = delete("Arena is non-copyable: interior pointers would dangle");
+  Arena& operator=(const Arena&) = delete("Arena is non-copyable: interior pointers would dangle");
+  Arena(Arena&&) = delete("Arena is non-movable: interior pointers would dangle");
+  Arena& operator=(Arena&&) = delete("Arena is non-movable: interior pointers would dangle");
 
   // Allocate `size` bytes with `align` alignment.
   // Returns a pointer guaranteed to be aligned to `align`.
-  void* alloc(size_t size, size_t align = alignof(std::max_align_t)) {
+  [[nodiscard]] void* alloc(size_t size, size_t align = alignof(std::max_align_t)) {
     // Align the current offset
     size_t aligned = (offset_ + align - 1) & ~(align - 1);
 
@@ -55,19 +55,19 @@ class Arena {
 
   // Typed allocation helper
   template <typename T>
-  T* alloc_obj() {
+  [[nodiscard]] T* alloc_obj() {
     return static_cast<T*>(alloc(sizeof(T), alignof(T)));
   }
 
   // Allocate an array of N elements
   template <typename T>
-  T* alloc_array(size_t n) {
+  [[nodiscard]] T* alloc_array(size_t n) {
     if (n == 0) return nullptr;
     return static_cast<T*>(alloc(sizeof(T) * n, alignof(T)));
   }
 
   // Total bytes allocated across all blocks
-  size_t total_allocated() const {
+  [[nodiscard]] size_t total_allocated() const {
     return (blocks_.size() - 1) * block_size_ + offset_;
   }
 

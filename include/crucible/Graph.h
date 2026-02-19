@@ -18,6 +18,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <span>
 
 namespace crucible {
 
@@ -62,7 +63,7 @@ struct NodeFlags {
 // Used by the lowering pass from TraceEntry to Graph.
 // ═══════════════════════════════════════════════════════════════════
 
-inline NodeKind classify_node_kind(CKernelId kid) {
+[[nodiscard]] inline NodeKind classify_node_kind(CKernelId kid) {
   // Specific overrides before range checks.
   if (kid == CKernelId::REDUCE_CUMSUM || kid == CKernelId::ASSOC_SCAN)
     return NodeKind::SCAN;
@@ -266,99 +267,101 @@ class Graph {
     grow_(1024);
   }
 
-  Graph(const Graph&) = delete;
-  Graph& operator=(const Graph&) = delete;
+  Graph(const Graph&) = delete("Graph owns an arena; copy would alias or double-free");
+  Graph& operator=(const Graph&) = delete("Graph owns an arena; copy would alias or double-free");
 
   // ── Node construction ──────────────────────────────────────────
 
-  GraphNode* add_input(int8_t dtype, int8_t device_idx,
-                       const Expr** size, uint8_t ndim) {
+  [[nodiscard]] GraphNode* add_input(
+      int8_t dtype, int8_t device_idx,
+      std::span<const Expr* const> size) {
     GraphNode* n = alloc_node_();
     n->kind = NodeKind::INPUT;
     n->dtype = dtype;
     n->device_idx = device_idx;
-    n->ndim = ndim;
-    n->size = copy_exprs_(size, ndim);
+    n->ndim = static_cast<uint8_t>(size.size());
+    n->size = copy_exprs_(size);
     return n;
   }
 
-  GraphNode* add_pointwise(const Expr** ranges, uint8_t ndim,
-                           int8_t dtype, int8_t device_idx,
-                           ComputeBody* body,
-                           GraphNode** inputs, uint16_t ninputs) {
+  [[nodiscard]] GraphNode* add_pointwise(
+      std::span<const Expr* const> ranges,
+      int8_t dtype, int8_t device_idx,
+      ComputeBody* body,
+      std::span<GraphNode* const> inputs) {
     GraphNode* n = alloc_node_();
     n->kind = NodeKind::POINTWISE;
     n->dtype = dtype;
     n->device_idx = device_idx;
-    n->ndim = ndim;
-    n->size = copy_exprs_(ranges, ndim);
+    n->ndim = static_cast<uint8_t>(ranges.size());
+    n->size = copy_exprs_(ranges);
     n->body = body;
-    set_inputs_(n, inputs, ninputs);
+    set_inputs_(n, inputs);
     return n;
   }
 
-  GraphNode* add_reduction(const Expr** ranges, uint8_t ndim,
-                           const Expr** red_ranges, uint8_t nred,
-                           ReduceOp reduce_op, ReduceHint hint,
-                           int8_t dtype, int8_t src_dtype,
-                           int8_t device_idx,
-                           ComputeBody* body,
-                           GraphNode** inputs, uint16_t ninputs) {
+  [[nodiscard]] GraphNode* add_reduction(
+      std::span<const Expr* const> ranges,
+      std::span<const Expr* const> red_ranges,
+      ReduceOp reduce_op, ReduceHint hint,
+      int8_t dtype, int8_t src_dtype,
+      int8_t device_idx,
+      ComputeBody* body,
+      std::span<GraphNode* const> inputs) {
     GraphNode* n = alloc_node_();
     n->kind = NodeKind::REDUCTION;
     n->dtype = dtype;
     n->src_dtype = src_dtype;
     n->device_idx = device_idx;
-    n->ndim = ndim;
-    n->nred = nred;
+    n->ndim = static_cast<uint8_t>(ranges.size());
+    n->nred = static_cast<uint8_t>(red_ranges.size());
     n->reduce_op = reduce_op;
     n->reduce_hint = hint;
-    // Concatenate output + reduction ranges in one array
-    uint8_t total = ndim + nred;
+    const uint8_t total = n->ndim + n->nred;
     n->size = arena_.alloc_array<const Expr*>(total);
     std::memcpy(
-        const_cast<const Expr**>(n->size), ranges,
-        ndim * sizeof(const Expr*));
+        const_cast<const Expr**>(n->size), ranges.data(),
+        ranges.size_bytes());
     std::memcpy(
-        const_cast<const Expr**>(n->size) + ndim, red_ranges,
-        nred * sizeof(const Expr*));
+        const_cast<const Expr**>(n->size) + n->ndim, red_ranges.data(),
+        red_ranges.size_bytes());
     n->body = body;
-    set_inputs_(n, inputs, ninputs);
+    set_inputs_(n, inputs);
     return n;
   }
 
-  GraphNode* add_extern(const char* py_name, const char* cpp_name,
-                        int8_t dtype, int8_t device_idx,
-                        const Expr** size, uint8_t ndim,
-                        GraphNode** inputs, uint16_t ninputs,
-                        int64_t* constant_args = nullptr,
-                        uint16_t nconst = 0) {
+  [[nodiscard]] GraphNode* add_extern(
+      const char* py_name, const char* cpp_name,
+      int8_t dtype, int8_t device_idx,
+      std::span<const Expr* const> size,
+      std::span<GraphNode* const> inputs,
+      std::span<const int64_t> constant_args = {}) {
     GraphNode* n = alloc_node_();
     n->kind = NodeKind::EXTERN;
     n->dtype = dtype;
     n->device_idx = device_idx;
-    n->ndim = ndim;
-    n->size = copy_exprs_(size, ndim);
+    n->ndim = static_cast<uint8_t>(size.size());
+    n->size = copy_exprs_(size);
 
     auto* info = arena_.alloc_obj<ExternInfo>();
     info->python_kernel_name = copy_string_(py_name);
     info->cpp_kernel_name = copy_string_(cpp_name);
-    info->num_constant_args = nconst;
-    if (nconst > 0) {
-      info->constant_args = arena_.alloc_array<int64_t>(nconst);
-      std::memcpy(
-          info->constant_args, constant_args, nconst * sizeof(int64_t));
+    info->num_constant_args = static_cast<uint16_t>(constant_args.size());
+    if (!constant_args.empty()) {
+      info->constant_args = arena_.alloc_array<int64_t>(constant_args.size());
+      std::memcpy(info->constant_args, constant_args.data(),
+                  constant_args.size_bytes());
     } else {
       info->constant_args = nullptr;
     }
     n->body = info;
-    set_inputs_(n, inputs, ninputs);
+    set_inputs_(n, inputs);
     return n;
   }
 
   // ── ComputeBody helpers ────────────────────────────────────────
 
-  ComputeBody* alloc_body(uint16_t num_ops) {
+  [[nodiscard]] ComputeBody* alloc_body(uint16_t num_ops) {
     auto* b = arena_.alloc_obj<ComputeBody>();
     b->ops = arena_.alloc_array<Inst>(num_ops);
     b->num_ops = num_ops;
@@ -379,16 +382,16 @@ class Graph {
 
   // ── Graph I/O ──────────────────────────────────────────────────
 
-  void set_graph_inputs(const uint32_t* ids, uint32_t count) {
-    input_ids_ = arena_.alloc_array<uint32_t>(count);
-    std::memcpy(input_ids_, ids, count * sizeof(uint32_t));
-    num_inputs_ = count;
+  void set_graph_inputs(std::span<const uint32_t> ids) {
+    input_ids_ = arena_.alloc_array<uint32_t>(ids.size());
+    std::memcpy(input_ids_, ids.data(), ids.size_bytes());
+    num_inputs_ = static_cast<uint32_t>(ids.size());
   }
 
-  void set_graph_outputs(const uint32_t* ids, uint32_t count) {
-    output_ids_ = arena_.alloc_array<uint32_t>(count);
-    std::memcpy(output_ids_, ids, count * sizeof(uint32_t));
-    num_outputs_ = count;
+  void set_graph_outputs(std::span<const uint32_t> ids) {
+    output_ids_ = arena_.alloc_array<uint32_t>(ids.size());
+    std::memcpy(output_ids_, ids.data(), ids.size_bytes());
+    num_outputs_ = static_cast<uint32_t>(ids.size());
   }
 
   // ── Slot ID side-tables ────────────────────────────────────────
@@ -399,26 +402,26 @@ class Graph {
   // only accessed during buffer allocation and code emission, not
   // during hot graph traversals like DCE or topological sort).
 
-  void set_input_slots(uint32_t node_id, const uint32_t* slots, uint16_t count) {
+  void set_input_slots(uint32_t node_id, std::span<const uint32_t> slots) {
     assert(node_id < num_nodes_);
-    if (count == 0) { input_slots_[node_id] = nullptr; return; }
-    input_slots_[node_id] = arena_.alloc_array<uint32_t>(count);
-    std::memcpy(input_slots_[node_id], slots, count * sizeof(uint32_t));
+    if (slots.empty()) { input_slots_[node_id] = nullptr; return; }
+    input_slots_[node_id] = arena_.alloc_array<uint32_t>(slots.size());
+    std::memcpy(input_slots_[node_id], slots.data(), slots.size_bytes());
   }
 
-  void set_output_slots(uint32_t node_id, const uint32_t* slots, uint16_t count) {
+  void set_output_slots(uint32_t node_id, std::span<const uint32_t> slots) {
     assert(node_id < num_nodes_);
-    if (count == 0) { output_slots_[node_id] = nullptr; return; }
-    output_slots_[node_id] = arena_.alloc_array<uint32_t>(count);
-    std::memcpy(output_slots_[node_id], slots, count * sizeof(uint32_t));
+    if (slots.empty()) { output_slots_[node_id] = nullptr; return; }
+    output_slots_[node_id] = arena_.alloc_array<uint32_t>(slots.size());
+    std::memcpy(output_slots_[node_id], slots.data(), slots.size_bytes());
   }
 
-  const uint32_t* input_slots(uint32_t node_id) const {
+  [[nodiscard]] const uint32_t* input_slots(uint32_t node_id) const {
     assert(node_id < num_nodes_);
     return input_slots_[node_id];
   }
 
-  const uint32_t* output_slots(uint32_t node_id) const {
+  [[nodiscard]] const uint32_t* output_slots(uint32_t node_id) const {
     assert(node_id < num_nodes_);
     return output_slots_[node_id];
   }
@@ -542,8 +545,7 @@ class Graph {
       nodes_[i]->flags &= ~NodeFlags::VISITED;
   }
 
-  // Count live (non-DEAD) nodes
-  uint32_t count_live() const {
+  [[nodiscard]] uint32_t count_live() const {
     uint32_t count = 0;
     for (uint32_t i = 0; i < num_nodes_; ++i) {
       if (!(nodes_[i]->flags & NodeFlags::DEAD))
@@ -554,20 +556,20 @@ class Graph {
 
   // ── Accessors ──────────────────────────────────────────────────
 
-  GraphNode* node(uint32_t id) const {
+  [[nodiscard]] GraphNode* node(uint32_t id) const {
     assert(id < num_nodes_);
     return nodes_[id];
   }
 
-  uint32_t num_nodes() const { return num_nodes_; }
-  uint32_t num_graph_inputs() const { return num_inputs_; }
-  uint32_t num_graph_outputs() const { return num_outputs_; }
-  const uint32_t* graph_input_ids() const { return input_ids_; }
-  const uint32_t* graph_output_ids() const { return output_ids_; }
+  [[nodiscard]] uint32_t num_nodes() const { return num_nodes_; }
+  [[nodiscard]] uint32_t num_graph_inputs() const { return num_inputs_; }
+  [[nodiscard]] uint32_t num_graph_outputs() const { return num_outputs_; }
+  [[nodiscard]] const uint32_t* graph_input_ids() const { return input_ids_; }
+  [[nodiscard]] const uint32_t* graph_output_ids() const { return output_ids_; }
 
-  ExprPool* pool() const { return pool_; }
-  SymbolTable* tab() const { return tab_; }
-  Arena& arena() { return arena_; }
+  [[nodiscard]] ExprPool* pool() const { return pool_; }
+  [[nodiscard]] SymbolTable* tab() const { return tab_; }
+  [[nodiscard]] Arena& arena() { return arena_; }
 
  private:
   // Allocate a zeroed, 64-byte-aligned GraphNode
@@ -601,22 +603,21 @@ class Graph {
     capacity_ = new_cap;
   }
 
-  // Wire inputs and increment use counts
-  void set_inputs_(GraphNode* n, GraphNode** inputs, uint16_t count) {
-    n->num_inputs = count;
-    if (count > 0) {
-      n->inputs = arena_.alloc_array<GraphNode*>(count);
-      std::memcpy(n->inputs, inputs, count * sizeof(GraphNode*));
-      for (uint16_t i = 0; i < count; ++i)
-        ++inputs[i]->num_uses;
+  void set_inputs_(GraphNode* n, std::span<GraphNode* const> inputs) {
+    n->num_inputs = static_cast<uint16_t>(inputs.size());
+    if (!inputs.empty()) {
+      n->inputs = arena_.alloc_array<GraphNode*>(inputs.size());
+      std::memcpy(n->inputs, inputs.data(), inputs.size_bytes());
+      for (auto* inp : inputs)
+        ++inp->num_uses;
     }
   }
 
-  const Expr** copy_exprs_(const Expr** src, uint8_t count) {
-    if (count == 0)
+  const Expr** copy_exprs_(std::span<const Expr* const> src) {
+    if (src.empty())
       return nullptr;
-    auto** dst = arena_.alloc_array<const Expr*>(count);
-    std::memcpy(dst, src, count * sizeof(const Expr*));
+    auto** dst = arena_.alloc_array<const Expr*>(src.size());
+    std::memcpy(dst, src.data(), src.size_bytes());
     return dst;
   }
 

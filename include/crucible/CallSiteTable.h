@@ -32,7 +32,7 @@ struct CallSiteTable {
   static constexpr uint32_t SET_MASK = SET_CAP - 1;
   uint64_t seen[SET_CAP] = {};
 
-  bool has(uint64_t hash) const {
+  [[nodiscard]] bool has(uint64_t hash) const {
     uint32_t idx = static_cast<uint32_t>(hash) & SET_MASK;
     for (uint32_t p = 0; p < SET_CAP; p++) {
       const auto& h = seen[(idx + p) & SET_MASK];
@@ -60,7 +60,7 @@ struct CallSiteTable {
     }
   }
 
-  uint32_t size() const { return static_cast<uint32_t>(entries.size()); }
+  [[nodiscard]] uint32_t size() const { return static_cast<uint32_t>(entries.size()); }
 };
 
 } // namespace crucible
