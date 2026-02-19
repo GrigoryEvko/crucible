@@ -23,7 +23,7 @@
 namespace crucible {
 
 static constexpr uint32_t CDAG_MAGIC   = 0x43444147u; // 'GDAG' LE
-static constexpr uint32_t CDAG_VERSION = 4u;           // v4: extended CKernel (129 ops)
+static constexpr uint32_t CDAG_VERSION = 5u;           // v5: +comms, I/O, RNG (143 ops)
 
 // ═══════════════════════════════════════════════════════════════════
 // Internal Writer/Reader — linear cursor with overflow detection.
