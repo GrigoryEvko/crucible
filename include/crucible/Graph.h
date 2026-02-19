@@ -14,6 +14,7 @@
 #include <crucible/Arena.h>
 #include <crucible/CKernel.h>
 #include <crucible/Expr.h>
+#include <crucible/Platform.h>
 
 #include <cassert>
 #include <cstdint>
@@ -145,6 +146,7 @@ struct Inst {
 };
 
 static_assert(sizeof(Inst) == 8, "Inst must be 8 bytes");
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Inst);
 
 // ═══════════════════════════════════════════════════════════════════
 // ComputeBody: Kernel body as micro-op DAG
@@ -243,6 +245,7 @@ struct GraphNode {
 };
 
 static_assert(sizeof(GraphNode) == 64, "GraphNode must be 64 bytes");
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(GraphNode);
 
 // ═══════════════════════════════════════════════════════════════════
 // Graph: Arena-owned computation graph

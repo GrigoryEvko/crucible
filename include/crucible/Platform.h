@@ -82,3 +82,14 @@
 #else
   #define CRUCIBLE_HAS_DEBUGGING 0
 #endif
+
+// ── Trivial relocatability assert (Clang 22) ──
+// Verifies that a type can be safely memcpy'd (critical for Arena).
+// No-op on compilers without the builtin.
+#if CRUCIBLE_HAS_TRIVIAL_RELOC
+  #define CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(T) \
+    static_assert(__builtin_is_cpp_trivially_relocatable(T), \
+                  #T " must be trivially relocatable for Arena memcpy safety")
+#else
+  #define CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(T) /* no-op */
+#endif
