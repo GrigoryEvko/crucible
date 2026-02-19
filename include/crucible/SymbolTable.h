@@ -12,6 +12,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 namespace crucible {
@@ -80,9 +81,9 @@ class SymbolTable {
       case SymKind::UNBACKED_FLOAT:
         // Float ranges: store as bitcast doubles
         e.range_lower = bitcast_double(
-            -__builtin_inf());
+            -std::numeric_limits<double>::infinity());
         e.range_upper = bitcast_double(
-            __builtin_inf());
+            std::numeric_limits<double>::infinity());
         break;
     }
 

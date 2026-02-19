@@ -46,10 +46,10 @@ struct MetaLog {
   //
   // Returns the start index, or UINT32_MAX if the buffer is full.
   CRUCIBLE_INLINE uint32_t try_append(const TensorMeta* metas, uint32_t n) {
-    if (CRUCIBLE_UNLIKELY(n == 0)) return UINT32_MAX;
+    if (n == 0) [[unlikely]] return UINT32_MAX;
     uint32_t h = head.load(std::memory_order_relaxed);
     uint32_t t = tail.load(std::memory_order_relaxed);
-    if (CRUCIBLE_UNLIKELY(h - t + n > CAPACITY)) {
+    if (h - t + n > CAPACITY) [[unlikely]] {
       return UINT32_MAX;
     }
     for (uint32_t i = 0; i < n; i++) {

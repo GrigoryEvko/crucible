@@ -21,6 +21,7 @@
 // H2 tags are always non-negative as int8_t, kEmpty is always negative.
 // No ambiguity, no sentinel collision.
 
+#include <bit>
 #include <cstdint>
 #include <cstring>
 
@@ -66,7 +67,7 @@ struct BitMask {
 
   // Index of lowest set bit. Undefined if mask == 0.
   uint32_t lowest() const {
-    return static_cast<uint32_t>(__builtin_ctzll(mask));
+    return static_cast<uint32_t>(std::countr_zero(mask));
   }
 
   // Clear lowest set bit (branchless).
