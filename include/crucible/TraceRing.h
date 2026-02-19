@@ -86,7 +86,7 @@ struct TraceRing {
     // Stale tail read is safe: worst case we think there's less space
     // than there actually is (conservative).
     uint64_t t = tail.load(std::memory_order_relaxed);
-    if (CRUCIBLE_UNLIKELY(h - t >= CAPACITY)) {
+    if (h - t >= CAPACITY) [[unlikely]] {
       return false;
     }
     entries[h & MASK] = e;
