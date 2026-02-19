@@ -37,7 +37,8 @@
       "binaryDir": "${sourceDir}/build-gcc16",
       "cacheVariables": {
         "CMAKE_CXX_COMPILER": "/home/grigory/.local/gcc16/usr/bin/g++",
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-freflection"
       }
     }
   ],
