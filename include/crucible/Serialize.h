@@ -10,7 +10,7 @@
 // BranchNode arm targets are encoded as merkle_hash references, resolved on load
 // via a caller-supplied callback.
 //
-// Zero external dependencies: C++17 + <cstring> + <cstdint> + <functional>.
+// Zero external dependencies: C++26 standard library only.
 
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <utility>
 
 namespace crucible {
 
@@ -103,7 +104,7 @@ inline void write_header(Writer& w, TraceNodeKind kind,
                          uint64_t merkle_hash, uint64_t content_hash) {
     w.w(CDAG_MAGIC);
     w.w(CDAG_VERSION);
-    w.w(static_cast<uint8_t>(kind));
+    w.w(std::to_underlying(kind));
     const uint8_t pad7[7] = {};
     w.write_bytes(pad7, 7);
     w.w(merkle_hash);
@@ -189,7 +190,7 @@ inline size_t serialize_region(
         w.w(te.num_scalar_args);
         w.w(te.grad_enabled);
         w.w(te.inference_mode);
-        w.w(static_cast<uint8_t>(te.kernel_id));
+        w.w(std::to_underlying(te.kernel_id));
         w.w(te.pad_te);
 
         for (uint16_t j = 0; j < te.num_inputs; j++) {
@@ -240,7 +241,7 @@ inline RegionNode* deserialize_region(
     if (!r.ok
         || hdr.magic   != CDAG_MAGIC
         || hdr.version != CDAG_VERSION
-        || hdr.kind    != static_cast<uint8_t>(TraceNodeKind::REGION)) {
+        || hdr.kind    != std::to_underlying(TraceNodeKind::REGION)) {
         return nullptr;
     }
 
@@ -400,7 +401,7 @@ inline BranchNode* deserialize_branch(
     if (!r.ok
         || hdr.magic   != CDAG_MAGIC
         || hdr.version != CDAG_VERSION
-        || hdr.kind    != static_cast<uint8_t>(TraceNodeKind::BRANCH)) {
+        || hdr.kind    != std::to_underlying(TraceNodeKind::BRANCH)) {
         return nullptr;
     }
     // hdr.content_hash holds the continuation's merkle_hash (see serialize_branch)

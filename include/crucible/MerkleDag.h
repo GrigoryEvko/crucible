@@ -29,6 +29,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 
 namespace crucible {
 
@@ -184,7 +185,7 @@ struct Guard {
 
   uint64_t hash() const {
     return detail::fmix64(
-        static_cast<uint64_t>(kind) |
+        std::to_underlying(kind) |
         (static_cast<uint64_t>(op_index) << 8) |
         (static_cast<uint64_t>(arg_index) << 40) |
         (static_cast<uint64_t>(dim_index) << 56));

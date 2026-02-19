@@ -2,8 +2,8 @@
 
 #include <crucible/Ops.h>
 
+#include <bit>
 #include <cstdint>
-#include <cstring>
 
 namespace crucible {
 
@@ -34,15 +34,11 @@ struct Expr {
   }
 
   double as_float() const {
-    double d;
-    std::memcpy(&d, &payload, sizeof(d));
-    return d;
+    return std::bit_cast<double>(payload);
   }
 
   const char* as_symbol_name() const {
-    const char* name;
-    std::memcpy(&name, &payload, sizeof(name));
-    return name;
+    return std::bit_cast<const char*>(payload);
   }
 
   // ---- Flag queries (branchless, single AND instruction) ----
@@ -91,7 +87,7 @@ namespace detail {
 
 // MurmurHash3 64-bit finalizer — proven avalanche properties.
 // Shared by ExprPool (structural hashing) and ExprMap (pointer hashing).
-inline uint64_t fmix64(uint64_t k) {
+constexpr uint64_t fmix64(uint64_t k) {
   k ^= k >> 33;
   k *= 0xff51afd7ed558ccdULL;
   k ^= k >> 33;
