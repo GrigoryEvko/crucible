@@ -1,0 +1,10 @@
+function(crucible_test name)
+  add_executable(${name} ${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+crucible_test(test_arena)
+crucible_test(test_trace_ring)
+crucible_test(test_merkle_dag)
+crucible_test(test_memory_plan)
