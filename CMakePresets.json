@@ -1,0 +1,45 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 25, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "default",
+      "displayName": "Clang 22 + libc++ (C++26)",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "/home/grigory/.local/llvm/bin/clang++",
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-stdlib=libc++",
+        "CMAKE_EXE_LINKER_FLAGS": "-L/home/grigory/.local/llvm/lib/x86_64-unknown-linux-gnu -lc++abi -Wl,-rpath,/home/grigory/.local/llvm/lib/x86_64-unknown-linux-gnu"
+      }
+    },
+    {
+      "name": "release",
+      "inherits": "default",
+      "displayName": "Clang 22 + libc++ (C++26, Release)",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_FLAGS": "-stdlib=libc++ -O3 -march=native -DNDEBUG"
+      }
+    },
+    {
+      "name": "gcc",
+      "displayName": "GCC 15 + libstdc++ (C++26)",
+      "binaryDir": "${sourceDir}/build-gcc",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "default", "configurePreset": "default" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "gcc",     "configurePreset": "gcc" }
+  ],
+  "testPresets": [
+    { "name": "default", "configurePreset": "default", "output": { "outputOnFailure": true } },
+    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "gcc",     "configurePreset": "gcc",     "output": { "outputOnFailure": true } }
+  ]
+}
