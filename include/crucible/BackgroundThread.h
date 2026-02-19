@@ -383,7 +383,8 @@ struct BackgroundThread {
           // Known tensor: emit DFG edge and extend liveness.
           te.input_slot_ids[j] = lookup.slot_id;
           edge_buf[num_edges++] = {
-              lookup.op_index.raw(), i, lookup.port, static_cast<uint8_t>(j),
+              OpIndex{lookup.op_index.raw()}, OpIndex{i},
+              lookup.port, static_cast<uint8_t>(j),
               EdgeKind::DATA_FLOW, 0};
           if (lookup.slot_id.raw() < MAX_SLOTS)
             slot_death[lookup.slot_id.raw()] = std::max(slot_death[lookup.slot_id.raw()], OpIndex{i});
@@ -439,7 +440,8 @@ struct BackgroundThread {
           // (not an external with OpIndex{}).
           if (old_op.is_valid()) {
             edge_buf[num_edges++] = {
-                old_op.raw(), i, old_port, static_cast<uint8_t>(j),
+                OpIndex{old_op.raw()}, OpIndex{i},
+                old_port, static_cast<uint8_t>(j),
                 EdgeKind::ALIAS, 0};
           }
         } else if (next_slot_raw < MAX_SLOTS) {
