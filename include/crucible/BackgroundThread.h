@@ -374,12 +374,14 @@ struct BackgroundThread {
 
       // Build DFG edges + track input liveness.
       te.input_trace_indices = arena.alloc_array<uint32_t>(re.num_inputs);
+      te.input_slot_ids = arena.alloc_array<uint32_t>(re.num_inputs);
       for (uint16_t j = 0; j < re.num_inputs; j++) {
         void* ptr = te.input_metas[j].data_ptr;
         auto lookup = ptr_map_lookup(map, ptr);
         te.input_trace_indices[j] = lookup.op_index;
         if (lookup.op_index != UINT32_MAX) {
           // Known tensor: emit DFG edge and extend liveness.
+          te.input_slot_ids[j] = lookup.slot_id;
           edge_buf[num_edges++] = {
               lookup.op_index, i, lookup.port, static_cast<uint8_t>(j),
               EdgeKind::DATA_FLOW, 0};
@@ -388,6 +390,7 @@ struct BackgroundThread {
         } else if (ptr != nullptr && next_slot_id < MAX_SLOTS) {
           // External tensor (param, data loader output): first encounter.
           uint32_t sid = next_slot_id++;
+          te.input_slot_ids[j] = sid;
           slot_birth[sid] = 0;
           slot_death[sid] = i;
           slot_external[sid] = true;
@@ -402,6 +405,8 @@ struct BackgroundThread {
           uint32_t dummy_slot;
           ptr_map_insert(map, ptr, UINT32_MAX, 0, sid,
                          dummy_op, dummy_port, dummy_slot);
+        } else {
+          te.input_slot_ids[j] = UINT32_MAX;
         }
       }
 

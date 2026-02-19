@@ -159,6 +159,7 @@ struct TraceEntry {
 
   // Tensor identity tracking (for dataflow edges between ops)
   uint32_t* input_trace_indices;  // 8B — which previous op produced each input
+  uint32_t* input_slot_ids;       // 8B — which pool slot each input reads from
   uint32_t* output_slot_ids;      // 8B — slot ID assigned to each output tensor
 };
 

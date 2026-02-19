@@ -23,7 +23,7 @@
 namespace crucible {
 
 static constexpr uint32_t CDAG_MAGIC   = 0x43444147u; // 'GDAG' LE
-static constexpr uint32_t CDAG_VERSION = 5u;           // v5: +comms, I/O, RNG (143 ops)
+static constexpr uint32_t CDAG_VERSION = 6u;           // v6: +input_slot_ids on TraceEntry
 
 // ═══════════════════════════════════════════════════════════════════
 // Internal Writer/Reader — linear cursor with overflow detection.
@@ -207,6 +207,11 @@ inline size_t serialize_region(
                 ? te.input_trace_indices[j] : UINT32_MAX;
             w.w(idx);
         }
+        for (uint16_t j = 0; j < te.num_inputs; j++) {
+            const uint32_t sid = te.input_slot_ids
+                ? te.input_slot_ids[j] : UINT32_MAX;
+            w.w(sid);
+        }
         for (uint16_t j = 0; j < te.num_outputs; j++) {
             const uint32_t sid = te.output_slot_ids
                 ? te.output_slot_ids[j] : UINT32_MAX;
@@ -308,6 +313,12 @@ inline RegionNode* deserialize_region(
             ? arena.alloc_array<uint32_t>(te.num_inputs) : nullptr;
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             te.input_trace_indices[j] = r.r<uint32_t>();
+        }
+
+        te.input_slot_ids = (te.num_inputs > 0)
+            ? arena.alloc_array<uint32_t>(te.num_inputs) : nullptr;
+        for (uint16_t j = 0; j < te.num_inputs; j++) {
+            te.input_slot_ids[j] = r.r<uint32_t>();
         }
 
         te.output_slot_ids = (te.num_outputs > 0)
