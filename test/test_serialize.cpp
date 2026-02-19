@@ -63,6 +63,10 @@ int main() {
         ops[i].input_trace_indices[0] = (i > 0) ? i - 1 : UINT32_MAX;
         ops[i].input_trace_indices[1] = UINT32_MAX;
 
+        ops[i].input_slot_ids  = arena.alloc_array<uint32_t>(2);
+        ops[i].input_slot_ids[0] = (i > 0) ? (i - 1) * 10 : UINT32_MAX;
+        ops[i].input_slot_ids[1] = UINT32_MAX;
+
         ops[i].output_slot_ids  = arena.alloc_array<uint32_t>(1);
         ops[i].output_slot_ids[0] = i * 10;
     }
@@ -119,9 +123,11 @@ int main() {
         // Scalar args round-trip.
         assert(loaded->ops[i].scalar_args[0] == ops[i].scalar_args[0]);
 
-        // Trace indices round-trip.
+        // Trace indices + slot IDs round-trip.
         assert(loaded->ops[i].input_trace_indices[0]
                == ops[i].input_trace_indices[0]);
+        assert(loaded->ops[i].input_slot_ids[0] == ops[i].input_slot_ids[0]);
+        assert(loaded->ops[i].input_slot_ids[1] == ops[i].input_slot_ids[1]);
         assert(loaded->ops[i].output_slot_ids[0] == ops[i].output_slot_ids[0]);
     }
 
