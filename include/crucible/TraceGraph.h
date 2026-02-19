@@ -23,12 +23,12 @@ enum class EdgeKind : uint8_t {
 // One edge in the property graph. Port-level granularity:
 // src_port = which output of src, dst_port = which input of dst.
 struct Edge {
-  uint32_t src = 0;     // 4B — source op index
-  uint32_t dst = 0;     // 4B — destination op index
-  uint8_t src_port = 0; // 1B — output index of src
-  uint8_t dst_port = 0; // 1B — input index of dst
+  OpIndex src;            // 4B — source op index (default = none)
+  OpIndex dst;            // 4B — destination op index (default = none)
+  uint8_t src_port = 0;  // 1B — output index of src
+  uint8_t dst_port = 0;  // 1B — input index of dst
   EdgeKind kind = EdgeKind::DATA_FLOW; // 1B
-  uint8_t pad = 0;      // 1B
+  uint8_t pad = 0;       // 1B
 };
 
 static_assert(sizeof(Edge) == 12, "Edge must be 12 bytes");
@@ -119,8 +119,8 @@ inline void build_csr(
   std::memset(graph->rev_offsets, 0, (num_ops + 1) * sizeof(uint32_t));
 
   for (uint32_t e = 0; e < num_edges; e++) {
-    graph->fwd_offsets[edges[e].src + 1]++;
-    graph->rev_offsets[edges[e].dst + 1]++;
+    graph->fwd_offsets[edges[e].src.raw() + 1]++;
+    graph->rev_offsets[edges[e].dst.raw() + 1]++;
   }
 
   // Prefix sum → offsets.
@@ -136,8 +136,8 @@ inline void build_csr(
   std::memcpy(rev_cursor, graph->rev_offsets, num_ops * sizeof(uint32_t));
 
   for (uint32_t e = 0; e < num_edges; e++) {
-    graph->fwd_edges[fwd_cursor[edges[e].src]++] = edges[e];
-    graph->rev_edges[rev_cursor[edges[e].dst]++] = edges[e];
+    graph->fwd_edges[fwd_cursor[edges[e].src.raw()]++] = edges[e];
+    graph->rev_edges[rev_cursor[edges[e].dst.raw()]++] = edges[e];
   }
 }
 

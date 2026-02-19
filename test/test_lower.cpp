@@ -120,8 +120,8 @@ int main() {
 
     // ── Build DFG edges: op0→op1, op1→op2 ───────────────────────
     crucible::Edge edges[2] = {
-        {0, 1, 0, 0, crucible::EdgeKind::DATA_FLOW, 0}, // op0 output0 → op1 input0
-        {1, 2, 0, 0, crucible::EdgeKind::DATA_FLOW, 0}, // op1 output0 → op2 input0
+        {crucible::OpIndex{0}, crucible::OpIndex{1}, 0, 0, crucible::EdgeKind::DATA_FLOW, 0},
+        {crucible::OpIndex{1}, crucible::OpIndex{2}, 0, 0, crucible::EdgeKind::DATA_FLOW, 0},
     };
 
     // ── Build TensorSlots ───────────────────────────────────────
