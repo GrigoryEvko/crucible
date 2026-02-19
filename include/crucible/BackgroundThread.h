@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <thread>
 #include <vector>
 
@@ -44,6 +45,11 @@ struct BackgroundThread {
   // Active region pointer (written by background, read by foreground).
   // In standalone mode, the Vessel adapter polls this.
   std::atomic<RegionNode*> active_region{nullptr};
+
+  // Optional callback invoked on the background thread whenever a new
+  // RegionNode becomes available. Used by Vigil to update transactions
+  // and trigger persistence without polling.
+  std::function<void(RegionNode*)> region_ready_cb;
 
   // Iteration detection.
   IterationDetector detector;
@@ -249,6 +255,9 @@ struct BackgroundThread {
 
         // Signal foreground: stable iteration detected.
         active_region.store(region, std::memory_order_release);
+
+        // Notify Vigil (or any other observer) that a region is ready.
+        if (region_ready_cb) region_ready_cb(region);
       }
     }
 

@@ -1,0 +1,146 @@
+#include <crucible/Serialize.h>
+#include <cassert>
+#include <cstdio>
+#include <cstring>
+
+// Helper: build a minimal TensorMeta for testing.
+static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
+    crucible::TensorMeta m{};
+    if (size1 > 0) {
+        m.ndim       = 2;
+        m.sizes[0]   = size0;
+        m.sizes[1]   = size1;
+        m.strides[0] = size1;
+        m.strides[1] = 1;
+    } else {
+        m.ndim       = 1;
+        m.sizes[0]   = size0;
+        m.strides[0] = 1;
+    }
+    m.dtype       = static_cast<int8_t>(crucible::ScalarType::Float);
+    m.device_type = 0;   // CPU
+    m.device_idx  = -1;
+    m.layout      = 0;   // Strided
+    m.data_ptr    = reinterpret_cast<void*>(0xDEADBEEF); // must become null on reload
+    return m;
+}
+
+int main() {
+    crucible::Arena arena(1 << 16);
+
+    // ── Build a 3-op RegionNode ─────────────────────────────────────
+    // Op 0: schema=0xAA, 2 inputs (4×8 float, 4×8 float), 1 output (4×8 float)
+    // Op 1: schema=0xBB, 2 inputs, 1 output
+    // Op 2: schema=0xCC, 2 inputs, 1 output
+
+    constexpr uint32_t NUM_OPS = 3;
+    auto* ops = arena.alloc_array<crucible::TraceEntry>(NUM_OPS);
+    std::memset(ops, 0, NUM_OPS * sizeof(crucible::TraceEntry));
+
+    // Set up metas: 2 inputs + 1 output per op.
+    for (uint32_t i = 0; i < NUM_OPS; i++) {
+        ops[i].schema_hash      = 0xAA + i * 0x11;
+        ops[i].shape_hash       = 0x100 + i;
+        ops[i].scope_hash       = 0x200 + i;
+        ops[i].callsite_hash    = 0x300 + i;
+        ops[i].num_inputs       = 2;
+        ops[i].num_outputs      = 1;
+        ops[i].num_scalar_args  = 1;
+        ops[i].grad_enabled     = (i % 2 == 0);
+        ops[i].inference_mode   = false;
+
+        ops[i].input_metas      = arena.alloc_array<crucible::TensorMeta>(2);
+        ops[i].input_metas[0]   = make_meta(4, 8);
+        ops[i].input_metas[1]   = make_meta(4, 8);
+
+        ops[i].output_metas     = arena.alloc_array<crucible::TensorMeta>(1);
+        ops[i].output_metas[0]  = make_meta(4, 8);
+
+        ops[i].scalar_args      = arena.alloc_array<int64_t>(1);
+        ops[i].scalar_args[0]   = static_cast<int64_t>(i * 42);
+
+        ops[i].input_trace_indices  = arena.alloc_array<uint32_t>(2);
+        ops[i].input_trace_indices[0] = (i > 0) ? i - 1 : UINT32_MAX;
+        ops[i].input_trace_indices[1] = UINT32_MAX;
+
+        ops[i].output_slot_ids  = arena.alloc_array<uint32_t>(1);
+        ops[i].output_slot_ids[0] = i * 10;
+    }
+
+    // Build RegionNode.
+    auto* region = crucible::make_region(arena, ops, NUM_OPS);
+    assert(region != nullptr);
+    assert(region->num_ops == NUM_OPS);
+
+    const uint64_t original_content_hash = region->content_hash;
+    const uint64_t original_merkle_hash  = region->merkle_hash;
+    assert(original_content_hash != 0);
+
+    // ── Serialize ───────────────────────────────────────────────────
+    uint8_t buf[65536];
+    const size_t n = crucible::serialize_region(region, nullptr, buf, sizeof(buf));
+    assert(n > 0 && "serialize_region returned 0 — buffer too small or bad region");
+
+    // ── Deserialize into a fresh arena ──────────────────────────────
+    crucible::Arena arena2(1 << 16);
+    crucible::RegionNode* loaded = crucible::deserialize_region(buf, n, arena2);
+    assert(loaded != nullptr && "deserialize_region returned nullptr");
+
+    // ── Verify round-trip ───────────────────────────────────────────
+    assert(loaded->content_hash == original_content_hash);
+    assert(loaded->merkle_hash  == original_merkle_hash);
+    assert(loaded->num_ops      == NUM_OPS);
+    assert(loaded->kind         == crucible::TraceNodeKind::REGION);
+
+    // Schema hashes must round-trip exactly.
+    for (uint32_t i = 0; i < NUM_OPS; i++) {
+        assert(loaded->ops[i].schema_hash  == ops[i].schema_hash);
+        assert(loaded->ops[i].shape_hash   == ops[i].shape_hash);
+        assert(loaded->ops[i].scope_hash   == ops[i].scope_hash);
+        assert(loaded->ops[i].num_inputs   == ops[i].num_inputs);
+        assert(loaded->ops[i].num_outputs  == ops[i].num_outputs);
+        assert(loaded->ops[i].num_scalar_args == ops[i].num_scalar_args);
+
+        // data_ptr MUST be null after deserialization (not a meaningful address).
+        for (uint16_t j = 0; j < ops[i].num_inputs; j++) {
+            assert(loaded->ops[i].input_metas[j].data_ptr == nullptr
+                   && "data_ptr must be null after deserialization");
+            assert(loaded->ops[i].input_metas[j].ndim     == ops[i].input_metas[j].ndim);
+            assert(loaded->ops[i].input_metas[j].dtype    == ops[i].input_metas[j].dtype);
+            assert(loaded->ops[i].input_metas[j].sizes[0] == ops[i].input_metas[j].sizes[0]);
+            assert(loaded->ops[i].input_metas[j].sizes[1] == ops[i].input_metas[j].sizes[1]);
+            assert(loaded->ops[i].input_metas[j].strides[0] == ops[i].input_metas[j].strides[0]);
+            assert(loaded->ops[i].input_metas[j].strides[1] == ops[i].input_metas[j].strides[1]);
+        }
+        for (uint16_t j = 0; j < ops[i].num_outputs; j++) {
+            assert(loaded->ops[i].output_metas[j].data_ptr == nullptr);
+        }
+
+        // Scalar args round-trip.
+        assert(loaded->ops[i].scalar_args[0] == ops[i].scalar_args[0]);
+
+        // Trace indices round-trip.
+        assert(loaded->ops[i].input_trace_indices[0]
+               == ops[i].input_trace_indices[0]);
+        assert(loaded->ops[i].output_slot_ids[0] == ops[i].output_slot_ids[0]);
+    }
+
+    // ── Verify content_hash is deterministic ────────────────────────
+    // Recompute from the loaded ops — must match original.
+    const uint64_t recomputed = crucible::compute_content_hash(
+        loaded->ops, loaded->num_ops);
+    assert(recomputed == original_content_hash);
+
+    // ── Buffer-overflow safety: serializing into too-small a buffer ─
+    uint8_t tiny_buf[4];
+    const size_t n_tiny = crucible::serialize_region(region, nullptr, tiny_buf, 4);
+    assert(n_tiny == 0 && "serialize_region must return 0 on buffer overflow");
+
+    // ── Corrupt-data safety: truncated buffer for deserialize ───────
+    crucible::Arena arena3(1 << 16);
+    crucible::RegionNode* bad = crucible::deserialize_region(buf, 10, arena3);
+    assert(bad == nullptr && "deserialize_region must return nullptr on truncated input");
+
+    std::printf("test_serialize: all tests passed\n");
+    return 0;
+}
