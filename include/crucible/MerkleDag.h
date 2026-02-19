@@ -18,6 +18,7 @@
 // All nodes are arena-allocated.
 
 #include <crucible/Arena.h>
+#include <crucible/CKernel.h>
 #include <crucible/Expr.h>
 #include <crucible/IterationDetector.h>
 #include <crucible/TraceRing.h>
@@ -148,6 +149,13 @@ struct TraceEntry {
 
   bool grad_enabled;          // 1B — GradMode::is_enabled()
   bool inference_mode;        // 1B — InferenceMode active?
+
+  // Op classification: populated by BackgroundThread during build_trace()
+  // by calling classify_kernel(schema_hash). OPAQUE until the Vessel has
+  // registered schema_hash → CKernelId mappings. Used by Tier 2+ replay
+  // to dispatch directly without going through the Vessel dispatcher.
+  CKernelId kernel_id;        // 1B — Crucible compute-op class
+  uint8_t   pad_te;           // 1B — alignment
 
   // Tensor identity tracking (for dataflow edges between ops)
   uint32_t* input_trace_indices;  // 8B — which previous op produced each input
