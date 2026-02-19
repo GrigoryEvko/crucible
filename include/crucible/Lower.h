@@ -177,7 +177,7 @@ inline void lower_trace_to_graph(
   // ── Phase 3: Graph inputs and outputs ─────────────────────────
 
   // Graph inputs: all INPUT nodes, ordered by slot_id.
-  auto* input_ids = arena.alloc_array<uint32_t>(map_size);
+  auto* input_ids = arena.alloc_array<NodeId>(map_size);
   uint32_t n_inputs = 0;
   for (uint32_t s = 0; s < num_slots; s++) {
     if (extern_map[s])
@@ -188,7 +188,7 @@ inline void lower_trace_to_graph(
 
   // Graph outputs: ops whose outputs are not consumed by any
   // DATA_FLOW edge within this iteration (terminal values).
-  auto* output_ids = arena.alloc_array<uint32_t>(num_ops);
+  auto* output_ids = arena.alloc_array<NodeId>(num_ops);
   uint32_t n_outputs = 0;
   for (uint32_t i = 0; i < num_ops; i++) {
     bool has_df_consumer = false;

@@ -163,10 +163,11 @@ int main() {
     assert(graph.node(2)->kind == crucible::NodeKind::INPUT);
 
     // INPUT output slot IDs match external slot_ids.
-    assert(graph.output_slots(0) != nullptr);
-    assert(graph.output_slots(0)[0] == SlotId{0});
-    assert(graph.output_slots(1)[0] == SlotId{1});
-    assert(graph.output_slots(2)[0] == SlotId{4});
+    using crucible::NodeId;
+    assert(graph.output_slots(NodeId{0}) != nullptr);
+    assert(graph.output_slots(NodeId{0})[0] == SlotId{0});
+    assert(graph.output_slots(NodeId{1})[0] == SlotId{1});
+    assert(graph.output_slots(NodeId{2})[0] == SlotId{4});
 
     // ── Verify compute nodes ────────────────────────────────────
     // Node 3: EWISE_ADD → POINTWISE
@@ -175,42 +176,42 @@ int main() {
     assert(graph.node(3)->ndim == 2);
 
     // Input slots: reads from slot 0 and slot 1
-    assert(graph.input_slots(3) != nullptr);
-    assert(graph.input_slots(3)[0] == SlotId{0});
-    assert(graph.input_slots(3)[1] == SlotId{1});
+    assert(graph.input_slots(NodeId{3}) != nullptr);
+    assert(graph.input_slots(NodeId{3})[0] == SlotId{0});
+    assert(graph.input_slots(NodeId{3})[1] == SlotId{1});
 
     // Output slots: writes to slot 2
-    assert(graph.output_slots(3) != nullptr);
-    assert(graph.output_slots(3)[0] == SlotId{2});
+    assert(graph.output_slots(NodeId{3}) != nullptr);
+    assert(graph.output_slots(NodeId{3})[0] == SlotId{2});
 
     // Node 4: ACT_RELU → POINTWISE
     assert(graph.node(4)->kind == crucible::NodeKind::POINTWISE);
     assert(graph.node(4)->num_inputs == 1);
 
     // Reads from slot 2 (output of EWISE_ADD)
-    assert(graph.input_slots(4) != nullptr);
-    assert(graph.input_slots(4)[0] == SlotId{2});
-    assert(graph.output_slots(4)[0] == SlotId{3});
+    assert(graph.input_slots(NodeId{4}) != nullptr);
+    assert(graph.input_slots(NodeId{4})[0] == SlotId{2});
+    assert(graph.output_slots(NodeId{4})[0] == SlotId{3});
 
     // Node 5: GEMM_MM → EXTERN
     assert(graph.node(5)->kind == crucible::NodeKind::EXTERN);
     assert(graph.node(5)->num_inputs == 2);
 
     // Reads from slot 3 (relu output) and slot 4 (external weight)
-    assert(graph.input_slots(5) != nullptr);
-    assert(graph.input_slots(5)[0] == SlotId{3});
-    assert(graph.input_slots(5)[1] == SlotId{4});
-    assert(graph.output_slots(5)[0] == SlotId{5});
+    assert(graph.input_slots(NodeId{5}) != nullptr);
+    assert(graph.input_slots(NodeId{5})[0] == SlotId{3});
+    assert(graph.input_slots(NodeId{5})[1] == SlotId{4});
+    assert(graph.output_slots(NodeId{5})[0] == SlotId{5});
 
     // ── Verify graph inputs: 3 INPUT nodes ──────────────────────
     assert(graph.num_graph_inputs() == 3);
-    assert(graph.graph_input_ids()[0] == 0);
-    assert(graph.graph_input_ids()[1] == 1);
-    assert(graph.graph_input_ids()[2] == 2);
+    assert(graph.graph_input_ids()[0] == NodeId{0});
+    assert(graph.graph_input_ids()[1] == NodeId{1});
+    assert(graph.graph_input_ids()[2] == NodeId{2});
 
     // ── Verify graph outputs: only GEMM_MM (no DFG consumers) ───
     assert(graph.num_graph_outputs() == 1);
-    assert(graph.graph_output_ids()[0] == 5);
+    assert(graph.graph_output_ids()[0] == NodeId{5});
 
     // ── Verify input wiring (GraphNode.inputs pointers) ─────────
     // EWISE_ADD inputs should point to INPUT nodes 0 and 1.
@@ -303,9 +304,9 @@ int main() {
     assert(graph2.node(2)->num_inputs == 2); // null bias filtered out
 
     // Input slots on the compute node: only the 2 real inputs.
-    assert(graph2.input_slots(2) != nullptr);
-    assert(graph2.input_slots(2)[0] == SlotId{0});
-    assert(graph2.input_slots(2)[1] == SlotId{1});
+    assert(graph2.input_slots(NodeId{2}) != nullptr);
+    assert(graph2.input_slots(NodeId{2})[0] == SlotId{0});
+    assert(graph2.input_slots(NodeId{2})[1] == SlotId{1});
 
     std::printf("test_lower: all tests passed\n");
     return 0;
