@@ -76,7 +76,7 @@ static void test_activate() {
   TensorSlot slots[1];
   auto plan = make_simple_plan(slots, 1);
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 2, &plan);
 
   CrucibleContext ctx;
@@ -95,7 +95,7 @@ static void test_activate() {
 static void test_activate_no_plan() {
   TraceEntry ops[1]{};
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 1, nullptr);
 
   CrucibleContext ctx;
@@ -126,11 +126,11 @@ static void test_full_replay() {
   TensorSlot slots[2];
   auto plan = make_simple_plan(slots, 2);
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 2, &plan);
 
   CrucibleContext ctx;
-  ctx.activate(&region);
+  assert(ctx.activate(&region));
 
   // First iteration.
   assert(ctx.advance(100, 200) == ReplayStatus::MATCH);
@@ -170,11 +170,11 @@ static void test_divergence() {
   TensorSlot slots[1];
   auto plan = make_simple_plan(slots, 1);
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 3, &plan);
 
   CrucibleContext ctx;
-  ctx.activate(&region);
+  assert(ctx.activate(&region));
 
   // Op 0: matches.
   assert(ctx.advance(100, 200) == ReplayStatus::MATCH);
@@ -206,7 +206,7 @@ static void test_reactivate() {
   TensorSlot slots_a[1];
   auto plan_a = make_simple_plan(slots_a, 1);
 
-  RegionNode region_a;
+  RegionNode region_a{};
   init_region(&region_a, ops_a, 1, &plan_a);
 
   // Region B: 2 ops with different hashes.
@@ -225,18 +225,18 @@ static void test_reactivate() {
   TensorSlot slots_b[2];
   auto plan_b = make_simple_plan(slots_b, 2);
 
-  RegionNode region_b;
+  RegionNode region_b{};
   init_region(&region_b, ops_b, 2, &plan_b);
 
   CrucibleContext ctx;
 
   // Activate region A, run one iteration.
-  ctx.activate(&region_a);
+  assert(ctx.activate(&region_a));
   assert(ctx.advance(10, 20) == ReplayStatus::COMPLETE);
   assert(ctx.compiled_iterations() == 1);
 
   // Re-activate with region B (implicitly deactivates A).
-  ctx.activate(&region_b);
+  assert(ctx.activate(&region_b));
   assert(ctx.active_region() == &region_b);
   assert(ctx.advance(30, 40) == ReplayStatus::MATCH);
   assert(ctx.advance(31, 41) == ReplayStatus::COMPLETE);
@@ -274,11 +274,11 @@ static void test_external_slots() {
   plan.device_type = DeviceType::CPU;
   plan.device_idx = 0;
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 1, &plan);
 
   CrucibleContext ctx;
-  ctx.activate(&region);
+  assert(ctx.activate(&region));
 
   // Register external param.
   alignas(256) char fake_param[128];
@@ -332,11 +332,11 @@ static void test_integration_sweep_line() {
   ops[1].num_inputs = 1;
   ops[1].input_slot_ids = op1_in;
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 2, plan);
 
   CrucibleContext ctx;
-  ctx.activate(&region);
+  assert(ctx.activate(&region));
 
   // Register external.
   alignas(256) char fake_param[128];
@@ -395,26 +395,26 @@ static void test_divergence_counter() {
   TensorSlot slots[1];
   auto plan = make_simple_plan(slots, 1);
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 2, &plan);
 
   CrucibleContext ctx;
 
   // Cycle 1: activate → diverge → deactivate.
-  ctx.activate(&region);
+  assert(ctx.activate(&region));
   assert(ctx.advance(10, 20) == ReplayStatus::MATCH);
   assert(ctx.advance(99, 99) == ReplayStatus::DIVERGED);
   assert(ctx.diverged_count() == 1);
   ctx.deactivate();
 
   // Cycle 2: activate → diverge → deactivate.
-  ctx.activate(&region);
+  assert(ctx.activate(&region));
   assert(ctx.advance(99, 20) == ReplayStatus::DIVERGED);
   assert(ctx.diverged_count() == 2);
   ctx.deactivate();
 
   // Cycle 3: activate → full iteration → no diverge.
-  ctx.activate(&region);
+  assert(ctx.activate(&region));
   assert(ctx.advance(10, 20) == ReplayStatus::MATCH);
   assert(ctx.advance(11, 21) == ReplayStatus::COMPLETE);
   assert(ctx.diverged_count() == 2);  // unchanged

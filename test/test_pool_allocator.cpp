@@ -18,7 +18,7 @@ using crucible::Layout;
 // Does NOT call compute_memory_plan — tests PoolAllocator in isolation.
 static MemoryPlan make_manual_plan(TensorSlot* slots, uint32_t n,
                                    uint64_t pool_bytes, uint32_t num_ext) {
-  MemoryPlan plan;
+  MemoryPlan plan{};
   plan.slots = slots;
   plan.num_slots = n;
   plan.num_external = num_ext;
