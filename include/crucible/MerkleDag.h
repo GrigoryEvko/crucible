@@ -495,6 +495,23 @@ class KernelCache {
   return node;
 }
 
+// Overload: accept a pre-computed content hash (from build_trace's fused
+// streaming hash). Eliminates the redundant second pass over all ops.
+[[nodiscard]] inline RegionNode* make_region(
+    Arena& arena,
+    TraceEntry* ops,
+    uint32_t num_ops,
+    ContentHash precomputed_hash) {
+  auto* node = new (arena.alloc(sizeof(RegionNode), alignof(RegionNode)))
+      RegionNode{};
+  node->kind = TraceNodeKind::REGION;
+  node->ops = ops;
+  node->num_ops = num_ops;
+  node->content_hash = precomputed_hash;
+  node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
+  return node;
+}
+
 // Create a terminal node. NSDMI handles zero-init; just set kind.
 [[nodiscard]] inline TraceNode* make_terminal(Arena& arena) {
   auto* node = new (arena.alloc(sizeof(TraceNode), alignof(TraceNode)))

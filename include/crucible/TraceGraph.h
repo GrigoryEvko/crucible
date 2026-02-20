@@ -67,6 +67,15 @@ struct TraceGraph {
   TensorSlot* slots = nullptr;    // arena-allocated array of all tensor slots
   uint32_t num_slots = 0;         // total unique storages identified
 
+  // Fused content hash — computed during build_trace as a streaming
+  // accumulator, avoiding a redundant second pass over all ops.
+  ContentHash content_hash;       // 8B
+
+  // Maximum MetaLog index consumed by this trace. Caller advances
+  // MetaLog tail AFTER all meta reads are complete (zero-copy safety).
+  uint32_t max_meta_end = 0;      // 4B
+  uint32_t pad_tg = 0;            // 4B — alignment
+
   // ── Forward queries (src → dst): "who consumes op i's outputs?" ──
   [[nodiscard]] const Edge* fwd_begin(uint32_t i) const {
     return fwd_edges + fwd_offsets[i];
