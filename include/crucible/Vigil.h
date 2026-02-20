@@ -26,6 +26,7 @@
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/Cipher.h>
+#include <crucible/CrucibleContext.h>
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/TraceRing.h>
@@ -105,6 +106,49 @@ class Vigil {
         return ring_->try_append(e, meta_start, scope_hash, callsite_hash);
     }
 
+    // ─── Per-op dispatch (Tier 1 entry point) ─────────────────────
+    //
+    // The Vessel adapter calls this once per ATen op. Returns:
+    //   RECORD   → execute eagerly, Vigil recorded the op
+    //   COMPILED → outputs pre-allocated, use output_ptr(j) / input_ptr(j)
+    //
+    // On divergence: deactivates CrucibleContext, falls back to RECORD,
+    //   records the divergent op so the bg thread sees it.
+    // On activation: the op that triggers try_activate_ is recorded
+    //   normally (one-op delay); the NEXT op enters COMPILED mode.
+    [[nodiscard]] DispatchResult dispatch_op(
+        const TraceRing::Entry& entry,
+        const TensorMeta*       metas,
+        uint32_t                n_metas,
+        uint64_t                scope_hash    = 0,
+        uint64_t                callsite_hash = 0)
+    {
+        // ── COMPILED path ──
+        if (ctx_.is_compiled()) [[likely]] {
+            auto status = ctx_.advance(entry.schema_hash, entry.shape_hash);
+
+            if (status == ReplayStatus::DIVERGED) [[unlikely]] {
+                ctx_.deactivate();
+                mode_.store(Mode::RECORDING, std::memory_order_relaxed);
+                (void)record_op(entry, metas, n_metas, scope_hash, callsite_hash);
+                return {DispatchResult::Action::RECORD, status, {}, 0};
+            }
+
+            return {DispatchResult::Action::COMPILED, status, {},
+                    ctx_.engine().ops_matched()};
+        }
+
+        // ── RECORDING path ──
+        (void)record_op(entry, metas, n_metas, scope_hash, callsite_hash);
+
+        // Check if background thread signaled a ready region.
+        auto* pending = pending_region_.load(std::memory_order_acquire);
+        if (pending) [[unlikely]]
+            try_activate_(pending);
+
+        return {DispatchResult::Action::RECORD, ReplayStatus::MATCH, {}, 0};
+    }
+
     // ─── Queries (lock-free reads) ─────────────────────────────────
 
     [[nodiscard]] Mode mode() const {
@@ -139,13 +183,20 @@ class Vigil {
     }
 
     // Restore the previous SUPERSEDED transaction as the active one.
+    // Also deactivates/re-activates CrucibleContext as needed.
     // Returns true if rollback succeeded.
     [[nodiscard]] bool rollback() {
         if (!tx_log_.rollback()) return false;
+        // Deactivate current per-op replay state.
+        if (ctx_.is_compiled())
+            ctx_.deactivate();
         // Restore active region pointer from the rolled-back transaction.
         const Transaction* tx = tx_log_.active();
         if (tx && tx->region) {
             bg_.active_region.store(tx->region, std::memory_order_release);
+            // Re-activate CrucibleContext with the rolled-back region.
+            if (ctx_.activate(tx->region))
+                register_externals_from_region_(tx->region);
         }
         return true;
     }
@@ -186,14 +237,39 @@ class Vigil {
 
     // Load the most recent region from Cipher and activate it.
     // No-op if no Cipher or the Cipher is empty.
+    // Also activates CrucibleContext if the region has a MemoryPlan.
     [[nodiscard]] bool load() {
         if (!cipher_.has_value() || cipher_->empty()) return false;
         RegionNode* r = cipher_->load(cipher_->head(), load_arena_);
         if (!r) return false;
         bg_.active_region.store(r, std::memory_order_release);
         mode_.store(Mode::COMPILED, std::memory_order_release);
+        // Activate per-op replay if the loaded region has a plan.
+        if (ctx_.activate(r))
+            register_externals_from_region_(r);
         return true;
     }
+
+    // ─── CrucibleContext forwarding (Tier 1 compiled replay) ───────
+
+    // Pre-allocated output pointer for output j of the current op.
+    // Valid only after dispatch_op() returned COMPILED with MATCH/COMPLETE.
+    [[nodiscard]] void* output_ptr(uint16_t j) const { return ctx_.output_ptr(j); }
+
+    // Pre-allocated input pointer for input j of the current op.
+    [[nodiscard]] void* input_ptr(uint16_t j) const { return ctx_.input_ptr(j); }
+
+    // Register an external tensor's data pointer with the pool.
+    void register_external(SlotId sid, void* ptr) { ctx_.register_external(sid, ptr); }
+
+    // Number of complete iterations replayed in COMPILED mode.
+    [[nodiscard]] uint32_t compiled_iterations() const { return ctx_.compiled_iterations(); }
+
+    // Number of divergences detected during COMPILED replay.
+    [[nodiscard]] uint32_t diverged_count() const { return ctx_.diverged_count(); }
+
+    // Direct access to the CrucibleContext (diagnostics, not hot path).
+    [[nodiscard]] const CrucibleContext& context() const { return ctx_; }
 
     // ─── Introspection ─────────────────────────────────────────────
 
@@ -216,11 +292,63 @@ class Vigil {
                        region->merkle_hash);
         (void)tx_log_.activate(tx);
 
+        // Signal fg thread: a region with a MemoryPlan is available.
+        // fg thread picks it up in dispatch_op() via try_activate_().
+        // Also set mode_=COMPILED for backward compat — existing code/tests
+        // poll is_compiled() without calling dispatch_op().
+        pending_region_.store(region, std::memory_order_release);
         mode_.store(Mode::COMPILED, std::memory_order_release);
 
         // Pre-store the object (idempotent) so persist() is instant later.
         if (cipher_.has_value()) {
             (void)cipher_->store(region, meta_log_.get());
+        }
+    }
+
+    // ─── Private helpers ────────────────────────────────────────────
+
+    // Try to activate CrucibleContext with a pending region.
+    // Called on the foreground thread from dispatch_op() when a
+    // pending region is detected.
+    void try_activate_(RegionNode* /*hint*/) {
+        // Atomically consume the pending region (another dispatch_op
+        // call might race, though in practice we're single-threaded fg).
+        auto* region = pending_region_.exchange(nullptr,
+                                                std::memory_order_acq_rel);
+        if (!region) return;
+
+        // activate() returns false if no plan → stay RECORDING.
+        if (!ctx_.activate(region)) return;
+
+        register_externals_from_region_(region);
+        mode_.store(Mode::COMPILED, std::memory_order_relaxed);
+    }
+
+    // Walk region ops to find external slot data_ptrs from recorded
+    // TensorMeta. O(num_ext × num_ops × max_inputs) — cold path,
+    // runs once per activation.
+    void register_externals_from_region_(const RegionNode* region) {
+        if (!region->plan) return;
+
+        for (uint32_t s = 0; s < region->plan->num_slots; s++) {
+            if (!region->plan->slots[s].is_external) continue;
+
+            SlotId target = region->plan->slots[s].slot_id;
+            void* ptr = nullptr;
+
+            // Search region ops for the first input that reads from this slot.
+            for (uint32_t i = 0; i < region->num_ops && !ptr; i++) {
+                const auto& te = region->ops[i];
+                if (!te.input_slot_ids) continue;
+                for (uint16_t j = 0; j < te.num_inputs; j++) {
+                    if (te.input_slot_ids[j] == target) {
+                        ptr = te.input_metas[j].data_ptr;
+                        break;
+                    }
+                }
+            }
+
+            if (ptr) ctx_.register_external(target, ptr);
         }
     }
 
@@ -237,6 +365,12 @@ class Vigil {
     std::atomic<Mode>               mode_{Mode::RECORDING};
     std::atomic<uint64_t>           step_{0};
     Arena                           load_arena_{1 << 20}; // for Cipher::load()
+
+    // ─── Tier 1 dispatch state (fg thread only, except pending_region_) ─
+
+    std::atomic<RegionNode*>        pending_region_{nullptr}; // bg→fg signal
+    CrucibleContext                 ctx_;                     // fg-only replay
+
     BackgroundThread                bg_;  // MUST be declared last
 };
 
