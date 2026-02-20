@@ -36,8 +36,6 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -481,129 +479,32 @@ class Vigil {
 
     // ─── Region switching (divergence recovery via cache) ────────
     //
-    // Attempt to switch from the current compiled region to an alternate
-    // cached region at the given divergence position.
-    //
-    // For div_pos=0: instant switch (no data written to pool yet).
-    // For div_pos>0: verifies prefix compatibility (ops 0..div_pos-1 have
-    //   identical schema+shape hashes in both regions), snapshots old pool,
-    //   activates new region, migrates output slot data from old layout to
-    //   new layout, advances engine past the prefix.
+    // Verifies prefix compatibility, then delegates to
+    // CrucibleContext::switch_region() which handles pool detach,
+    // selective slot migration, and engine advancement.
     //
     // Returns true if switch succeeded and engine is at position div_pos.
-    // On failure, the old CrucibleContext may be deactivated (caller must
-    // handle fallback to RECORDING regardless).
     [[nodiscard]] bool try_switch_region_(const RegionNode* alt, uint32_t div_pos) {
         assert(alt && "null alternate region");
         if (!alt->plan) return false;
 
-        const auto* old_region = ctx_.active_region();
-        assert(old_region && "no active region to switch from");
+        // For div_pos>0, verify prefix compatibility: ops 0..div_pos-1
+        // must have identical schema+shape in both regions.
+        if (div_pos > 0) {
+            const auto* old_region = ctx_.active_region();
+            assert(old_region && "no active region to switch from");
 
-        // ── pos=0: instant switch, no data migration ──
-        if (div_pos == 0) {
-            if (!ctx_.activate(alt)) return false;
-            register_externals_from_region_(alt);
-            return true;
-        }
+            if (div_pos > alt->num_ops) return false;
 
-        // ── pos>0: verify prefix + snapshot + migrate ──
-
-        // Alternate must have at least div_pos ops.
-        if (div_pos > alt->num_ops) return false;
-
-        // Verify prefix compatibility: ops 0..div_pos-1 must have
-        // identical schema+shape in both regions (same computation
-        // produces same-size outputs → safe to copy slot data).
-        for (uint32_t i = 0; i < div_pos; i++) {
-            if (old_region->ops[i].schema_hash != alt->ops[i].schema_hash ||
-                old_region->ops[i].shape_hash  != alt->ops[i].shape_hash)
-                return false;
-        }
-
-        // Snapshot old pool before activate destroys it.
-        const void* old_pool_base = ctx_.pool().pool_base();
-        const uint64_t old_pool_bytes = ctx_.pool().pool_bytes();
-        const MemoryPlan* old_plan = old_region->plan;
-
-        void* snapshot = nullptr;
-        if (old_pool_bytes > 0) {
-            snapshot = std::malloc(static_cast<size_t>(old_pool_bytes));
-            if (!snapshot) [[unlikely]] return false;
-            std::memcpy(snapshot, old_pool_base, static_cast<size_t>(old_pool_bytes));
-        }
-
-        // Activate new region (destroys old pool, creates new).
-        if (!ctx_.activate(alt)) {
-            std::free(snapshot);
-            return false;
-        }
-        register_externals_from_region_(alt);
-
-        // ── Migrate output slot data from old layout to new layout ──
-        //
-        // For each prefix op's outputs, copy data from the old pool
-        // offset to the new pool offset.  Uses a bitset to avoid
-        // double-copying aliased slots (in-place ops share slot IDs).
-        const MemoryPlan* new_plan = alt->plan;
-
-        static constexpr uint32_t MAX_MIGRATE_SLOTS = 1024;
-        assert(new_plan->num_slots <= MAX_MIGRATE_SLOTS
-               && "slot count exceeds migration capacity");
-        uint64_t visited[(MAX_MIGRATE_SLOTS + 63) / 64]{};
-
-        for (uint32_t i = 0; i < div_pos; i++) {
-            const auto& old_te = old_region->ops[i];
-            const auto& new_te = alt->ops[i];
-
-            // Skip ops without assigned output slots (zero-tensor ops).
-            if (!old_te.output_slot_ids || !new_te.output_slot_ids)
-                continue;
-
-            assert(old_te.num_outputs == new_te.num_outputs
-                   && "prefix ops with identical hashes must have equal output counts");
-
-            for (uint16_t j = 0; j < old_te.num_outputs; j++) {
-                const SlotId old_sid = old_te.output_slot_ids[j];
-                const SlotId new_sid = new_te.output_slot_ids[j];
-
-                if (!old_sid.is_valid() || !new_sid.is_valid()) continue;
-
-                // External slots keep their existing allocations —
-                // register_externals_from_region_ handles them.
-                if (old_plan->slots[old_sid.raw()].is_external ||
-                    new_plan->slots[new_sid.raw()].is_external)
-                    continue;
-
-                // Avoid double-copy for aliased outputs (in-place ops).
-                const uint32_t ns = new_sid.raw();
-                if (visited[ns / 64] & (uint64_t{1} << (ns % 64))) continue;
-                visited[ns / 64] |= uint64_t{1} << (ns % 64);
-
-                const uint64_t old_offset = old_plan->slots[old_sid.raw()].offset_bytes;
-                const uint64_t new_offset = new_plan->slots[ns].offset_bytes;
-                const uint64_t nbytes = old_plan->slots[old_sid.raw()].nbytes;
-
-                if (nbytes > 0 && snapshot) {
-                    std::memcpy(
-                        static_cast<char*>(ctx_.pool().pool_base()) + new_offset,
-                        static_cast<const char*>(snapshot) + old_offset,
-                        static_cast<size_t>(nbytes));
-                }
+            for (uint32_t i = 0; i < div_pos; i++) {
+                if (old_region->ops[i].schema_hash != alt->ops[i].schema_hash ||
+                    old_region->ops[i].shape_hash  != alt->ops[i].shape_hash)
+                    return false;
             }
         }
 
-        std::free(snapshot);
-
-        // Advance engine past prefix ops (already matched during
-        // the previous region's execution — verified by prefix check).
-        for (uint32_t i = 0; i < div_pos; i++) {
-            auto s = ctx_.advance(alt->ops[i].schema_hash,
-                                  alt->ops[i].shape_hash);
-            assert(s == ReplayStatus::MATCH || s == ReplayStatus::COMPLETE);
-            (void)s;
-        }
-
+        if (!ctx_.switch_region(alt, div_pos)) return false;
+        register_externals_from_region_(alt);
         return true;
     }
 

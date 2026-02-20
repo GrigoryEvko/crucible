@@ -128,6 +128,42 @@ struct PoolAllocator {
   // Critical for CUDA coalescing and AVX-512 vector loads.
   static constexpr uint32_t ALIGNMENT = 256;
 
+  // ── DetachedPool: RAII handle for a pool buffer detached from this allocator ──
+  //
+  // Returned by detach().  Owns the raw aligned allocation and frees it
+  // on destruction.  Non-copyable, non-movable — consumed at the detach
+  // site via guaranteed copy elision (C++17 P0135).
+  struct DetachedPool {
+    void* base = nullptr;
+    uint64_t bytes = 0;
+
+    DetachedPool() = default;
+    DetachedPool(void* b, uint64_t n) : base(b), bytes(n) {}
+    ~DetachedPool() { std::free(base); }
+
+    DetachedPool(const DetachedPool&)            = delete("would double-free the pool buffer");
+    DetachedPool& operator=(const DetachedPool&) = delete("would double-free the pool buffer");
+    DetachedPool(DetachedPool&&)                 = delete("consumed at detach site via guaranteed elision");
+    DetachedPool& operator=(DetachedPool&&)      = delete("consumed at detach site via guaranteed elision");
+  };
+
+  // ── Detach: release ownership of the pool buffer ──
+  //
+  // Returns a DetachedPool holding the raw allocation.  The allocator
+  // is reset to empty (ptr_table freed, counters zeroed).  The caller
+  // can read from the detached buffer, then let it destruct to free.
+  //
+  // Used by CrucibleContext::switch_region() to keep old pool data
+  // alive while initializing a new pool for the alternate region.
+  [[nodiscard]] DetachedPool detach() {
+    assert(pool_ && "detaching an uninitialized pool");
+    void* p = pool_;
+    uint64_t n = pool_bytes_;
+    pool_ = nullptr;   // prevent destroy() from freeing the buffer
+    destroy();          // frees ptr_table_, zeros counters
+    return DetachedPool{p, n};  // prvalue: guaranteed copy elision (P0135)
+  }
+
  private:
   void* pool_ = nullptr;           // one big aligned allocation
   void** ptr_table_ = nullptr;     // SlotId → data pointer (pre-built)
