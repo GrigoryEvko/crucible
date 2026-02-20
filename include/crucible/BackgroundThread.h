@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <cstring>
 #include <functional>
+#include <numeric>
 #include <thread>
 #include <vector>
 
@@ -231,8 +232,29 @@ struct BackgroundThread {
 
   void on_iteration_boundary() {
     uint32_t total = static_cast<uint32_t>(current_trace.size());
-    uint32_t completed_len = total - IterationDetector::K;
+    uint32_t iter_len = detector.last_completed_len;
 
+    // Discard warmup ops from the first boundary's accumulation.
+    // The first confirmed boundary accumulates iter 0 (signature build) +
+    // iter 1 (candidate) + trigger (confirmation). The region should only
+    // contain the last complete iteration, not the warmup.
+    // For subsequent boundaries: warmup = 0 (no discard).
+    uint32_t warmup = std::sub_sat(
+        std::sub_sat(total, static_cast<uint32_t>(IterationDetector::K)),
+        iter_len);
+    if (warmup > 0) [[unlikely]] {
+      current_trace.erase(current_trace.begin(),
+                          current_trace.begin() + warmup);
+      current_meta_starts.erase(current_meta_starts.begin(),
+                                current_meta_starts.begin() + warmup);
+      current_scope_hashes.erase(current_scope_hashes.begin(),
+                                 current_scope_hashes.begin() + warmup);
+      current_callsite_hashes.erase(current_callsite_hashes.begin(),
+                                    current_callsite_hashes.begin() + warmup);
+      total -= warmup;
+    }
+
+    uint32_t completed_len = total - IterationDetector::K;
     last_iteration_length = completed_len;
     iterations_completed++;
 

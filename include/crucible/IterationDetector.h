@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <numeric>
 
 namespace crucible {
 
@@ -34,6 +35,12 @@ struct IterationDetector {
 
   // Number of boundaries detected so far.
   uint32_t boundaries_detected = 0;
+
+  // Length of the last completed iteration (set at each confirmed boundary).
+  // Computed as ops_since_boundary - K just before the reset.
+  // The BackgroundThread uses this to discard warmup ops from the
+  // first boundary's accumulated trace.
+  uint32_t last_completed_len = 0;
 
   // Check if this op triggers an iteration boundary.
   // Returns true exactly at the boundary — the FIRST op of the new iteration.
@@ -75,6 +82,7 @@ struct IterationDetector {
         return false;
       }
       // Second+ match — confirmed iteration boundary.
+      last_completed_len = std::sub_sat(ops_since_boundary, K);
       recent_pos = 0;
       ops_since_boundary = K;
       boundaries_detected++;
@@ -90,6 +98,7 @@ struct IterationDetector {
     recent_pos = 0;
     ops_since_boundary = 0;
     boundaries_detected = 0;
+    last_completed_len = 0;
   }
 };
 
