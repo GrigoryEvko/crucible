@@ -4,7 +4,7 @@
 #include <crucible/Expr.h>
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
-#include <crucible/SwissCtrl.h>
+#include <crucible/SwissTable.h>
 
 #include <algorithm>
 #include <cassert>
