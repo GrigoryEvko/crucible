@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
@@ -11,7 +12,7 @@ namespace crucible {
 
 // Lock-free SPSC ring buffer for op recording.
 //
-// Foreground thread writes one entry per ATen op (~5ns).
+// Foreground thread writes one entry per ATen op (~5ns target).
 // Background thread drains in batches and builds the trace.
 //
 // Entry is exactly 64 bytes (one cache line). Layout:
@@ -27,6 +28,14 @@ namespace crucible {
 // The ring is pre-allocated (~5.25MB total) and never resized.
 // If the background thread falls behind, entries are silently
 // dropped — the next iteration will re-record everything.
+//
+// Performance optimization: cached_tail_ avoids reading the consumer's
+// atomic tail on every try_append(). The producer caches the last-read
+// tail and only re-reads the atomic when the cache shows the ring full.
+// Since drain() only advances tail forward, a stale cache is conservative
+// (shows less space than actually available). This eliminates cross-core
+// cache-line traffic on the common path: ~20,000 appends between drains
+// at 5ns/op and 100us drain interval.
 struct TraceRing {
   struct alignas(64) Entry {
     SchemaHash schema_hash;              // 8B — op identity
@@ -46,12 +55,24 @@ struct TraceRing {
   static constexpr uint32_t CAPACITY = 1 << 16; // 65536 entries = 4MB
   static constexpr uint32_t MASK = CAPACITY - 1;
 
+  // ── Cache-line-isolated atomics ──
+  // head and tail MUST be on separate cache lines to prevent false sharing.
+  // Producer writes head, consumer writes tail — if they shared a cache
+  // line, every write would bounce the line between cores (~40ns penalty).
+
   // Producer state (foreground thread writes, consumer reads).
   alignas(64) std::atomic<uint64_t> head{0};
 
   // Consumer state (consumer reads/writes, producer reads for fullness).
   // Must be atomic: producer reads in try_append, consumer writes in drain.
   alignas(64) std::atomic<uint64_t> tail{0};
+
+  // Producer-local cache of tail. Lives on the producer's cache line,
+  // never written by the consumer. Avoids atomic load of tail on the
+  // fast path (~20,000 appends avoid cross-core read per drain cycle).
+  // Same cache line as head would cause false sharing, so we give it
+  // its own line. Pad to 64B to prevent sharing with entries[].
+  alignas(64) uint64_t cached_tail_ = 0;
 
   // The ring buffer itself (4MB contiguous, cache-line aligned).
   alignas(64) Entry entries[CAPACITY];
@@ -70,7 +91,7 @@ struct TraceRing {
   // this op. Default (0) means no callsite captured (e.g., pure C++).
   CallsiteHash callsite_hashes[CAPACITY];
 
-  // ── Producer (foreground): ~5 ns, never blocks ──
+  // ── Producer (foreground): ~3-5 ns, never blocks ──
   //
   // Returns true if the entry was written, false if the ring is full.
   // A full ring means the background thread is behind — we silently
@@ -91,16 +112,37 @@ struct TraceRing {
       ScopeHash scope_hash = {},
       CallsiteHash callsite_hash = {}) {
     uint64_t h = head.load(std::memory_order_relaxed);
-    // Stale tail read is safe: worst case we think there's less space
-    // than there actually is (conservative).
-    uint64_t t = tail.load(std::memory_order_relaxed);
-    if (h - t >= CAPACITY) [[unlikely]] {
-      return false;
+    // Fast path: check against cached tail (producer-local, no atomic load).
+    // Stale cached tail is conservative — shows less space than reality.
+    if (h - cached_tail_ >= CAPACITY) [[unlikely]] {
+      // Slow path: re-read the real tail from the consumer's atomic.
+      // This crosses cache lines but happens at most once per drain cycle
+      // (every ~20,000 appends at 5ns/op with 100us drain interval).
+      cached_tail_ = tail.load(std::memory_order_relaxed);
+      if (h - cached_tail_ >= CAPACITY) [[unlikely]] {
+        return false;
+      }
     }
-    entries[h & MASK] = e;
-    meta_starts[h & MASK] = meta_start;
-    scope_hashes[h & MASK] = scope_hash;
-    callsite_hashes[h & MASK] = callsite_hash;
+    uint32_t slot = static_cast<uint32_t>(h) & MASK;
+    entries[slot] = e;
+    meta_starts[slot] = meta_start;
+    scope_hashes[slot] = scope_hash;
+    callsite_hashes[slot] = callsite_hash;
+
+    // Prefetch the NEXT write slot into L1d before publishing head.
+    // The next try_append() will find its destination cache-hot.
+    // Without this, each write hits cold cache lines in the 4MB ring,
+    // costing ~100+ cycles for DRAM→L1d. The prefetch fires now and
+    // completes during the caller's other work (Python dispatch, etc).
+    {
+      uint32_t next_slot = (slot + 1) & MASK;
+      __builtin_prefetch(&entries[next_slot], 1 /*write*/, 3 /*L1*/);
+      // Parallel arrays: each in a separate memory region, prefetch all.
+      __builtin_prefetch(&meta_starts[next_slot], 1, 3);
+      __builtin_prefetch(&scope_hashes[next_slot], 1, 3);
+      __builtin_prefetch(&callsite_hashes[next_slot], 1, 3);
+    }
+
     head.store(h + 1, std::memory_order_release);
     return true;
   }
@@ -110,6 +152,8 @@ struct TraceRing {
   // Copies up to max_count entries into `out` and their corresponding
   // parallel arrays into output buffers (any may be null).
   // Returns the number of entries actually drained.
+  // Uses memcpy for contiguous runs to exploit hardware prefetch and
+  // SIMD store forwarding.
   [[nodiscard]] uint32_t drain(Entry* out, uint32_t max_count,
                  MetaIndex* out_meta_starts = nullptr,
                  ScopeHash* out_scope_hashes = nullptr,
@@ -118,18 +162,35 @@ struct TraceRing {
     uint64_t t = tail.load(std::memory_order_relaxed);
     uint32_t available = static_cast<uint32_t>(h - t);
     uint32_t count = std::min(available, max_count);
-    for (uint32_t i = 0; i < count; i++) {
-      out[i] = entries[(t + i) & MASK];
-      if (out_meta_starts) {
-        out_meta_starts[i] = meta_starts[(t + i) & MASK];
-      }
-      if (out_scope_hashes) {
-        out_scope_hashes[i] = scope_hashes[(t + i) & MASK];
-      }
-      if (out_callsite_hashes) {
-        out_callsite_hashes[i] = callsite_hashes[(t + i) & MASK];
-      }
+    if (count == 0) [[unlikely]] {
+      return 0;
     }
+
+    // Split into at most two contiguous runs (wrap-around at CAPACITY).
+    uint32_t start = static_cast<uint32_t>(t) & MASK;
+    uint32_t first = std::min(count, CAPACITY - start);
+    uint32_t second = count - first;
+
+    // First contiguous run: [start, start + first).
+    std::memcpy(out, &entries[start], first * sizeof(Entry));
+    if (out_meta_starts)
+      std::memcpy(out_meta_starts, &meta_starts[start], first * sizeof(MetaIndex));
+    if (out_scope_hashes)
+      std::memcpy(out_scope_hashes, &scope_hashes[start], first * sizeof(ScopeHash));
+    if (out_callsite_hashes)
+      std::memcpy(out_callsite_hashes, &callsite_hashes[start], first * sizeof(CallsiteHash));
+
+    // Second contiguous run (wrap-around): [0, second).
+    if (second > 0) [[unlikely]] {
+      std::memcpy(out + first, &entries[0], second * sizeof(Entry));
+      if (out_meta_starts)
+        std::memcpy(out_meta_starts + first, &meta_starts[0], second * sizeof(MetaIndex));
+      if (out_scope_hashes)
+        std::memcpy(out_scope_hashes + first, &scope_hashes[0], second * sizeof(ScopeHash));
+      if (out_callsite_hashes)
+        std::memcpy(out_callsite_hashes + first, &callsite_hashes[0], second * sizeof(CallsiteHash));
+    }
+
     tail.store(t + count, std::memory_order_relaxed);
     return count;
   }
@@ -144,6 +205,7 @@ struct TraceRing {
   void reset() {
     head.store(0, std::memory_order_relaxed);
     tail.store(0, std::memory_order_relaxed);
+    cached_tail_ = 0;
   }
 };
 
