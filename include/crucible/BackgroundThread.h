@@ -83,6 +83,12 @@ struct BackgroundThread {
   std::atomic<bool> running{false};
   std::thread thread;
 
+  // Divergence signal: fg thread sets this when compiled replay diverges.
+  // bg thread checks at the start of each drain cycle and resets its
+  // accumulated trace + detector, discarding stale data that would
+  // produce garbage regions from leftover signature ops + divergent ops.
+  std::atomic<bool> reset_requested{false};
+
   // Start the background thread. ring/meta_log must be set first.
   void start(TraceRing* r, MetaLog* ml,
              int32_t rank_ = -1, int32_t world_size_ = 0,
@@ -201,6 +207,19 @@ struct BackgroundThread {
     CallsiteHash callsite_batch[BATCH_SIZE];
 
     while (running.load(std::memory_order_relaxed)) {
+      // Check for divergence reset signal from fg thread.
+      // Discard accumulated trace + reset detector so stale data
+      // (leftover signature ops, divergent ops) doesn't produce
+      // garbage regions when new clean data arrives.
+      if (reset_requested.load(std::memory_order_acquire)) [[unlikely]] {
+        detector.reset();
+        current_trace.clear();
+        current_meta_starts.clear();
+        current_scope_hashes.clear();
+        current_callsite_hashes.clear();
+        reset_requested.store(false, std::memory_order_release);
+      }
+
       uint32_t n = ring->drain(
           batch, BATCH_SIZE, meta_batch, scope_batch, callsite_batch);
       if (n == 0) {

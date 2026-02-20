@@ -56,6 +56,10 @@ class Vigil {
         std::string cipher_path;   // empty = no persistence
     };
 
+    // Number of consecutive op matches required to confirm an iteration
+    // boundary before activating CrucibleContext.  Matches IterationDetector::K.
+    static constexpr uint32_t ALIGNMENT_K = 5;
+
     // ─── Construction / Destruction ────────────────────────────────
 
     // Default constructor: no persistence, no distributed context.
@@ -137,7 +141,14 @@ class Vigil {
             if (status == ReplayStatus::DIVERGED) [[unlikely]] {
                 ctx_.deactivate();
                 mode_.store(Mode::RECORDING, std::memory_order_relaxed);
-                (void)record_op(entry, metas, n_metas, scope_hash, callsite_hash);
+                // Signal bg thread to reset its detector and accumulated trace.
+                // Without this, leftover signature ops + the divergent op
+                // would cause the detector to produce garbage regions when
+                // new clean data arrives after recovery.
+                bg_.reset_requested.store(true, std::memory_order_release);
+                // Don't record the divergent op — it's noise that poisons
+                // the bg thread's iteration detector.  Subsequent ops in
+                // RECORDING mode will be recorded normally.
                 return {DispatchResult::Action::RECORD, status, {}, 0};
             }
 
@@ -146,12 +157,19 @@ class Vigil {
         }
 
         // ── RECORDING path ──
-        (void)record_op(entry, metas, n_metas, scope_hash, callsite_hash);
 
         // Check if background thread signaled a ready region.
         auto* pending = pending_region_.load(std::memory_order_acquire);
         if (pending) [[unlikely]]
             consume_pending_region_();
+
+        // During alignment, skip recording: the bg thread already built the
+        // region from prior data.  Recording alignment ops to the ring would
+        // cause the bg thread to detect a false iteration boundary (K ops
+        // matching the signature) and produce a garbage region that overwrites
+        // the valid one.
+        if (!pending_activation_)
+            (void)record_op(entry, metas, n_metas, scope_hash, callsite_hash);
 
         // ── Alignment phase (seek iteration boundary) ──
         if (pending_activation_) [[unlikely]]
@@ -369,7 +387,6 @@ class Vigil {
 
         // Once K consecutive ops match (or entire region if smaller),
         // we've confirmed the iteration boundary. Activate and advance.
-        static constexpr uint32_t ALIGNMENT_K = 5;
         const uint32_t threshold = (region->num_ops < ALIGNMENT_K)
                                  ? region->num_ops : ALIGNMENT_K;
 
