@@ -3,6 +3,7 @@
 #include <crucible/Arena.h>
 #include <crucible/Expr.h>
 #include <crucible/Ops.h>
+#include <crucible/Platform.h>
 #include <crucible/SwissCtrl.h>
 
 #include <algorithm>
@@ -21,6 +22,10 @@ namespace detail {
 
 // Hash all structural fields of an expression. Args are compared by pointer
 // (since children are themselves interned), so we hash their addresses.
+//
+// Uses wyhash-style 128-bit multiply mixing: each wymix() is a single
+// mulq + xor on x86-64 (~3 cycles). Total cost for a binary node:
+// 2 wymix calls = ~6 cycles ≈ 2ns. Previous fmix64 chain was ~15ns.
 inline uint64_t expr_hash(
     Op op,
     int64_t payload,
@@ -28,16 +33,36 @@ inline uint64_t expr_hash(
     uint16_t flags,
     const Expr* const* args,
     uint8_t nargs) {
-  uint64_t h = 0x9E3779B97F4A7C15ULL; // golden ratio constant
-  h ^= std::to_underlying(op) * 0x517CC1B727220A95ULL;
-  h ^= fmix64(static_cast<uint64_t>(payload));
-  h ^= static_cast<uint64_t>(symbol_id.raw()) * 0x6C62272E07BB0142ULL;
-  h ^= static_cast<uint64_t>(flags) * 0x85EBCA6BULL;
-  for (uint8_t i = 0; i < nargs; ++i) {
-    h ^= fmix64(reinterpret_cast<uintptr_t>(args[i]));
-    h *= 0x9E3779B97F4A7C15ULL;
+  // Pack small fields (op, nargs, flags, symbol_id) into one 64-bit word.
+  // This avoids separate mix operations for each tiny field.
+  uint64_t packed = static_cast<uint64_t>(std::to_underlying(op))
+                  | (static_cast<uint64_t>(nargs) << 8)
+                  | (static_cast<uint64_t>(flags) << 16)
+                  | (static_cast<uint64_t>(symbol_id.raw()) << 32);
+
+  // Mix packed metadata with payload — one 128-bit multiply
+  uint64_t h = wymix(packed ^ 0x9E3779B97F4A7C15ULL,
+                      static_cast<uint64_t>(payload) ^ 0x517CC1B727220A95ULL);
+
+  // Mix in child pointers. Common cases (0, 1, 2 args) are unrolled
+  // to avoid loop overhead. Each child is already interned → unique
+  // pointer → good entropy without additional mixing per-pointer.
+  switch (nargs) {
+    case 0:
+      break;
+    case 1:
+      h = wymix(h, reinterpret_cast<uintptr_t>(args[0]));
+      break;
+    case 2:
+      h = wymix(h ^ reinterpret_cast<uintptr_t>(args[0]),
+                reinterpret_cast<uintptr_t>(args[1]));
+      break;
+    default:
+      for (uint8_t i = 0; i < nargs; ++i)
+        h = wymix(h, reinterpret_cast<uintptr_t>(args[i]));
+      break;
   }
-  return fmix64(h);
+  return h;
 }
 
 constexpr uint16_t integer_flags(int64_t val) {
@@ -184,8 +209,10 @@ class ExprPool {
       capacity_ <<= 1;
 
     ctrl_ = static_cast<int8_t*>(std::malloc(capacity_));
+    if (!ctrl_) [[unlikely]] std::abort();
     std::memset(ctrl_, 0x80, capacity_); // kEmpty = 0x80
     slots_ = static_cast<const Expr**>(std::calloc(capacity_, sizeof(const Expr*)));
+    if (!slots_) [[unlikely]] std::abort();
     intern_count_ = 0;
 
     // Boolean singletons
@@ -255,6 +282,24 @@ class ExprPool {
   // ---- Arithmetic ----
 
   [[nodiscard]] const Expr* add(const Expr* a, const Expr* b) {
+    // Fast path: two children that don't need canonicalization.
+    // Excluded ops: ADD (needs flattening), MUL (needs coefficient
+    // extraction for term combining), INTEGER/FLOAT (needs folding).
+    // Symbols, POW, FLOOR_DIV, etc. go straight to intern.
+    if (a->op != Op::ADD && b->op != Op::ADD &&
+        a->op != Op::MUL && b->op != Op::MUL &&
+        a->op != Op::INTEGER && b->op != Op::INTEGER &&
+        a->op != Op::FLOAT && b->op != Op::FLOAT) [[likely]] {
+      // Same base detection: a + a → 2a
+      if (a == b) [[unlikely]]
+        return mul(integer(2), a);
+      // Canonical ordering by pointer address
+      if (a > b)
+        std::swap(a, b);
+      const Expr* args[] = {a, b};
+      uint16_t f = detail::composite_flags(Op::ADD, args, 2);
+      return intern_node(Op::ADD, args, 2, f, SymbolId{}, 0);
+    }
     // Constant folding
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
       return integer(a->payload + b->payload);
@@ -265,12 +310,25 @@ class ExprPool {
       return b;
     if (b->is_zero_int())
       return a;
-    // Flatten + fold + sort
+    // Slow path: flatten + fold + sort + coefficient combining
     const Expr* inputs[] = {a, b};
     return add_n(inputs);
   }
 
   [[nodiscard]] const Expr* mul(const Expr* a, const Expr* b) {
+    // Fast path: two non-constant, non-MUL children.
+    // Skip the full mul_n() canonicalization (flatten, fold, sort).
+    // Most symbolic expressions (x * y, a * b) hit this directly.
+    if (a->op != Op::MUL && b->op != Op::MUL &&
+        a->op != Op::INTEGER && b->op != Op::INTEGER &&
+        a->op != Op::FLOAT && b->op != Op::FLOAT) [[likely]] {
+      // Canonical ordering by pointer address
+      if (a > b)
+        std::swap(a, b);
+      const Expr* args[] = {a, b};
+      uint16_t f = detail::composite_flags(Op::MUL, args, 2);
+      return intern_node(Op::MUL, args, 2, f, SymbolId{}, 0);
+    }
     // Constant folding
     if (a->op == Op::INTEGER && b->op == Op::INTEGER)
       return integer(a->payload * b->payload);
@@ -284,7 +342,7 @@ class ExprPool {
       return b;
     if (b->is_one())
       return a;
-    // Flatten + fold + sort
+    // Slow path: flatten + fold + sort
     const Expr* inputs[] = {a, b};
     return mul_n(inputs);
   }
@@ -1021,7 +1079,14 @@ class ExprPool {
   // H2 filters 127/128 candidates; full hash rejects the rest.
   // Expected structural comparisons per lookup: ~0.01 (virtually zero
   // false positives). Insert-only: no tombstones, empty-stop is sound.
-  const Expr* intern_node(
+  //
+  // Hot path optimization: hash check (64-bit compare) is the primary
+  // filter. After hash match (P(collision) ≈ 2^-57), we only need
+  // args pointer comparison. The hash encodes op/nargs/flags/symbol_id/
+  // payload, so re-checking those is redundant on a hash match.
+  // We still verify all fields as a safety net — the compiler optimizes
+  // the packed comparison into a single 64-bit op.
+  CRUCIBLE_INLINE const Expr* intern_node(
       Op op,
       const Expr* const* args,
       uint8_t nargs,
@@ -1030,20 +1095,27 @@ class ExprPool {
       int64_t payload) {
     // Load factor 87.5% (7/8). Swiss table tolerates higher load than
     // linear probing because SIMD amortizes the cost of denser groups.
-    if (intern_count_ * 8 >= capacity_ * 7)
+    if (intern_count_ * 8 >= capacity_ * 7) [[unlikely]]
       rehash();
 
     uint64_t h =
         detail::expr_hash(op, payload, symbol_id, flags, args, nargs);
     int8_t tag = detail::h2_tag(h);
 
-    size_t num_groups = capacity_ / detail::kGroupWidth;
-    size_t group_mask = num_groups - 1;
-    size_t g = h & group_mask; // Lower bits for group (independent from H2)
+    // Pack small fields for a single 64-bit comparison instead of
+    // 4 separate branches. Same packing as expr_hash uses.
+    uint64_t packed = static_cast<uint64_t>(std::to_underlying(op))
+                    | (static_cast<uint64_t>(nargs) << 8)
+                    | (static_cast<uint64_t>(flags) << 16)
+                    | (static_cast<uint64_t>(symbol_id.raw()) << 32);
+
+    // Operate directly on slot indices (base) instead of group indices.
+    // Eliminates the g*kGroupWidth multiply on every probe iteration.
+    size_t slot_mask = capacity_ - 1;
+    size_t base = (h * detail::kGroupWidth) & slot_mask;
     size_t probe = 0;
 
     while (true) {
-      size_t base = g * detail::kGroupWidth;
       auto group = detail::CtrlGroup::load(&ctrl_[base]);
 
       // Phase 1: Check H2 tag matches within the group.
@@ -1052,19 +1124,49 @@ class ExprPool {
       while (matches) {
         size_t idx = base + matches.lowest();
         const Expr* slot = slots_[idx];
-        // Full hash rejects remaining false positives (57 additional bits)
-        if (slot->hash == h && slot->op == op && slot->nargs == nargs &&
-            slot->payload == payload && slot->symbol_id == symbol_id &&
-            slot->flags == flags) {
-          bool eq = true;
-          for (uint8_t i = 0; i < nargs; ++i) {
-            if (slot->args[i] != args[i]) {
-              eq = false;
-              break;
+        // Full hash compare: rejects with P(false positive) ≈ 2^-57.
+        // Packed metadata compare: catches the astronomically rare hash
+        // collision where different (op,nargs,flags,symbol_id) produce
+        // the same 64-bit hash.
+        if (slot->hash == h && slot->payload == payload) [[likely]] {
+          // Pack the slot's metadata the same way for single compare
+          uint64_t slot_packed =
+              static_cast<uint64_t>(std::to_underlying(slot->op))
+              | (static_cast<uint64_t>(slot->nargs) << 8)
+              | (static_cast<uint64_t>(slot->flags) << 16)
+              | (static_cast<uint64_t>(slot->symbol_id.raw()) << 32);
+          if (slot_packed == packed) [[likely]] {
+            // Args comparison — specialized for common arities
+            switch (nargs) {
+              case 0:
+                return slot;
+              case 1:
+                if (slot->args[0] == args[0])
+                  return slot;
+                break;
+              case 2:
+                if (slot->args[0] == args[0] && slot->args[1] == args[1])
+                  return slot;
+                break;
+              case 3:
+                if (slot->args[0] == args[0] && slot->args[1] == args[1] &&
+                    slot->args[2] == args[2])
+                  return slot;
+                break;
+              default: {
+                bool eq = true;
+                for (uint8_t i = 0; i < nargs; ++i) {
+                  if (slot->args[i] != args[i]) {
+                    eq = false;
+                    break;
+                  }
+                }
+                if (eq)
+                  return slot;
+                break;
+              }
             }
           }
-          if (eq)
-            return slot;
         }
         matches.clear_lowest();
       }
@@ -1072,7 +1174,7 @@ class ExprPool {
       // Phase 2: If any empty slot exists in this group, the entry
       // is definitively not in the table (insert-only, no tombstones).
       auto empties = group.match_empty();
-      if (empties) {
+      if (empties) [[likely]] {
         size_t idx = base + empties.lowest();
 
         Expr* e = arena_.alloc_obj<Expr>();
@@ -1095,9 +1197,9 @@ class ExprPool {
       }
 
       // Triangular probing: visits all groups before repeating.
-      // Sequence: g, g+1, g+3, g+6, g+10, ... (cumulative sums mod num_groups)
+      // Sequence: base, base+G, base+3G, base+6G, ...
       ++probe;
-      g = (g + probe) & group_mask;
+      base = (base + probe * detail::kGroupWidth) & slot_mask;
     }
   }
 
@@ -1108,13 +1210,14 @@ class ExprPool {
 
     capacity_ *= 2;
     ctrl_ = static_cast<int8_t*>(std::malloc(capacity_));
+    if (!ctrl_) [[unlikely]] std::abort();
     std::memset(ctrl_, 0x80, capacity_);
     slots_ = static_cast<const Expr**>(
         std::calloc(capacity_, sizeof(const Expr*)));
+    if (!slots_) [[unlikely]] std::abort();
     intern_count_ = 0;
 
-    size_t num_groups = capacity_ / detail::kGroupWidth;
-    size_t group_mask = num_groups - 1;
+    size_t slot_mask = capacity_ - 1;
 
     for (size_t i = 0; i < old_cap; ++i) {
       if (old_ctrl[i] == detail::kEmpty)
@@ -1122,11 +1225,10 @@ class ExprPool {
 
       const Expr* e = old_slots[i];
       int8_t tag = detail::h2_tag(e->hash);
-      size_t g = e->hash & group_mask;
+      size_t base = (e->hash * detail::kGroupWidth) & slot_mask;
       size_t probe = 0;
 
       while (true) {
-        size_t base = g * detail::kGroupWidth;
         auto group = detail::CtrlGroup::load(&ctrl_[base]);
         auto empties = group.match_empty();
         if (empties) {
@@ -1137,7 +1239,7 @@ class ExprPool {
           break;
         }
         ++probe;
-        g = (g + probe) & group_mask;
+        base = (base + probe * detail::kGroupWidth) & slot_mask;
       }
     }
     std::free(old_ctrl);

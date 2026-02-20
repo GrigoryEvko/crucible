@@ -100,6 +100,20 @@ constexpr uint64_t fmix64(uint64_t k) {
   return k;
 }
 
+// wyhash-style 64-bit mix: one 128-bit multiply, XOR halves.
+// ~2 instructions on x86-64 (mulq + xor). Superior avalanche to
+// XOR-shift chains when inputs are already somewhat random (pointers).
+// Used on the intern() hot path where every nanosecond matters.
+inline uint64_t wymix(uint64_t a, uint64_t b) {
+#ifdef __SIZEOF_INT128__
+  __uint128_t full = static_cast<__uint128_t>(a) * b;
+  return static_cast<uint64_t>(full) ^ static_cast<uint64_t>(full >> 64);
+#else
+  // Fallback: fmix64 when 128-bit multiply unavailable
+  return fmix64(a ^ b);
+#endif
+}
+
 } // namespace detail
 
 } // namespace crucible
