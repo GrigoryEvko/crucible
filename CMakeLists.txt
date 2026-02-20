@@ -9,6 +9,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(crucible INTERFACE)
 target_include_directories(crucible INTERFACE include/)
 
+# Vessel adapter (shared library for Python/ctypes)
+add_subdirectory(vessel/torch)
+
 # Tests
 enable_testing()
 add_subdirectory(test)
