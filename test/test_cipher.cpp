@@ -12,7 +12,7 @@ static crucible::RegionNode* make_test_region(crucible::Arena& arena) {
     std::memset(ops, 0, NUM_OPS * sizeof(crucible::TraceEntry));
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
-        ops[i].schema_hash  = 0xCAFE0000 + i;
+        ops[i].schema_hash  = crucible::SchemaHash{0xCAFE0000 + i};
         ops[i].num_inputs   = 1;
         ops[i].num_outputs  = 1;
 
@@ -59,17 +59,17 @@ int main() {
 
     // ── store() + verify file on disk ───────────────────────────────
     auto* region = make_test_region(arena);
-    const uint64_t expected_hash = region->content_hash;
-    assert(expected_hash != 0);
+    const crucible::ContentHash expected_hash = region->content_hash;
+    assert(static_cast<bool>(expected_hash));
 
     {
         auto cipher = crucible::Cipher::open(dir);
-        const uint64_t stored_hash = cipher.store(region, nullptr);
+        const crucible::ContentHash stored_hash = cipher.store(region, nullptr);
         assert(stored_hash == expected_hash);
 
         // Object file must exist at the expected shard path.
         char hex[17];
-        std::snprintf(hex, sizeof(hex), "%016" PRIx64, expected_hash);
+        std::snprintf(hex, sizeof(hex), "%016" PRIx64, expected_hash.raw());
         const std::string expected_path =
             std::string(dir) + "/objects/" +
             std::string(hex, 2) + "/" + (hex + 2);
@@ -77,7 +77,7 @@ int main() {
                && "serialized object file must exist after store()");
 
         // Idempotent: second store() must be a no-op (same hash).
-        const uint64_t second_hash = cipher.store(region, nullptr);
+        const crucible::ContentHash second_hash = cipher.store(region, nullptr);
         assert(second_hash == expected_hash);
     }
 
@@ -85,7 +85,7 @@ int main() {
     {
         auto cipher = crucible::Cipher::open(dir);
         crucible::Arena arena2(1 << 16);
-        crucible::RegionNode* loaded = cipher.load(expected_hash, arena2);
+        auto* loaded = cipher.load(expected_hash, arena2);
         assert(loaded != nullptr && "load() must succeed for a stored hash");
         assert(loaded->content_hash == expected_hash);
         assert(loaded->num_ops == region->num_ops);
@@ -94,7 +94,7 @@ int main() {
     // ── advance_head() × 2, verify HEAD file ─────────────────────────
     {
         auto cipher = crucible::Cipher::open(dir);
-        cipher.store(region, nullptr);  // ensure object exists
+        (void)cipher.store(region, nullptr);  // ensure object exists
 
         cipher.advance_head(expected_hash, 10);
         assert(cipher.head() == expected_hash);
@@ -104,11 +104,11 @@ int main() {
         std::string head_str;
         std::getline(hf, head_str);
         char hex[17];
-        std::snprintf(hex, sizeof(hex), "%016" PRIx64, expected_hash);
+        std::snprintf(hex, sizeof(hex), "%016" PRIx64, expected_hash.raw());
         assert(head_str == hex && "HEAD file must contain the hex hash");
 
         // Advance to a different (fake) hash.
-        const uint64_t hash2 = 0xDEADBEEF12345678ULL;
+        const crucible::ContentHash hash2{0xDEADBEEF12345678ULL};
         cipher.advance_head(hash2, 50);
         assert(cipher.head() == hash2);
     }
@@ -119,11 +119,11 @@ int main() {
         auto cipher = crucible::Cipher::open(dir);
 
         // The log has entries at step 10 (expected_hash) and 50 (hash2).
-        const uint64_t hash2 = 0xDEADBEEF12345678ULL;
+        const crucible::ContentHash hash2{0xDEADBEEF12345678ULL};
 
-        // Step 0 is before any commit → 0.
-        assert(cipher.hash_at_step(0) == 0
-               && "hash_at_step before first commit must return 0");
+        // Step 0 is before any commit → default (0).
+        assert(!cipher.hash_at_step(0)
+               && "hash_at_step before first commit must return default");
 
         // Step 10 → expected_hash.
         assert(cipher.hash_at_step(10) == expected_hash);
@@ -142,7 +142,7 @@ int main() {
     {
         auto cipher = crucible::Cipher::open(dir);
         crucible::Arena arena3(1 << 16);
-        assert(cipher.load(0xBADBADBADBADBAD0ULL, arena3) == nullptr);
+        assert(cipher.load(crucible::ContentHash{0xBADBADBADBADBAD0ULL}, arena3) == nullptr);
     }
 
     // Cleanup temp dir.

@@ -19,6 +19,8 @@ using crucible::OpIndex;
 using crucible::ScalarType;
 using crucible::DeviceType;
 using crucible::Layout;
+using crucible::SchemaHash;
+using crucible::ShapeHash;
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -56,8 +58,8 @@ static void test_linear_match() {
 
   TraceEntry ops[3]{};
   for (uint32_t i = 0; i < 3; i++) {
-    ops[i].schema_hash = 100 + i;
-    ops[i].shape_hash = 200 + i;
+    ops[i].schema_hash = SchemaHash{100 + i};
+    ops[i].shape_hash = ShapeHash{200 + i};
     ops[i].num_outputs = 1;
     ops[i].output_slot_ids = out_slots[i];
     ops[i].num_inputs = 0;
@@ -83,7 +85,7 @@ static void test_linear_match() {
 
   // Advance through all 3 ops.
   for (uint32_t i = 0; i < 3; i++) {
-    auto status = engine.advance(100 + i, 200 + i);
+    auto status = engine.advance(SchemaHash{100 + i}, ShapeHash{200 + i});
     assert(status == ReplayStatus::MATCH);
     assert(engine.ops_matched() == i + 1);
     assert(engine.matched_op_index() == OpIndex{i});
@@ -95,7 +97,7 @@ static void test_linear_match() {
 
   // After all ops: COMPLETE.
   assert(engine.is_complete());
-  auto status = engine.advance(999, 999);
+  auto status = engine.advance(SchemaHash{999}, ShapeHash{999});
   assert(status == ReplayStatus::COMPLETE);
 
   std::printf("  test_linear_match: PASSED\n");
@@ -107,8 +109,8 @@ static void test_schema_divergence() {
 
   TraceEntry ops[3]{};
   for (uint32_t i = 0; i < 3; i++) {
-    ops[i].schema_hash = 100 + i;
-    ops[i].shape_hash = 200;
+    ops[i].schema_hash = SchemaHash{100 + i};
+    ops[i].shape_hash = ShapeHash{200};
     ops[i].num_outputs = 1;
     ops[i].output_slot_ids = out_slot;
   }
@@ -125,15 +127,15 @@ static void test_schema_divergence() {
   engine.init(&region, &pool);
 
   // Op 0: matches.
-  assert(engine.advance(100, 200) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{100}, ShapeHash{200}) == ReplayStatus::MATCH);
 
   // Op 1: wrong schema_hash (expected 101, got 999).
-  assert(engine.advance(999, 200) == ReplayStatus::DIVERGED);
+  assert(engine.advance(SchemaHash{999}, ShapeHash{200}) == ReplayStatus::DIVERGED);
   assert(engine.diverged_op_index() == OpIndex{1});
   assert(engine.ops_matched() == 1);
 
   // Position stays at the diverged op — subsequent advance still diverges.
-  assert(engine.advance(999, 200) == ReplayStatus::DIVERGED);
+  assert(engine.advance(SchemaHash{999}, ShapeHash{200}) == ReplayStatus::DIVERGED);
   assert(engine.diverged_op_index() == OpIndex{1});
 
   std::printf("  test_schema_divergence: PASSED\n");
@@ -144,12 +146,12 @@ static void test_shape_divergence() {
   SlotId out_slot[1] = {SlotId{0}};
 
   TraceEntry ops[2]{};
-  ops[0].schema_hash = 100;
-  ops[0].shape_hash = 200;
+  ops[0].schema_hash = SchemaHash{100};
+  ops[0].shape_hash = ShapeHash{200};
   ops[0].num_outputs = 1;
   ops[0].output_slot_ids = out_slot;
-  ops[1].schema_hash = 101;
-  ops[1].shape_hash = 201;
+  ops[1].schema_hash = SchemaHash{101};
+  ops[1].shape_hash = ShapeHash{201};
   ops[1].num_outputs = 1;
   ops[1].output_slot_ids = out_slot;
 
@@ -165,10 +167,10 @@ static void test_shape_divergence() {
   engine.init(&region, &pool);
 
   // Op 0: matches.
-  assert(engine.advance(100, 200) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{100}, ShapeHash{200}) == ReplayStatus::MATCH);
 
   // Op 1: correct schema, wrong shape.
-  assert(engine.advance(101, 999) == ReplayStatus::DIVERGED);
+  assert(engine.advance(SchemaHash{101}, ShapeHash{999}) == ReplayStatus::DIVERGED);
   assert(engine.diverged_op_index() == OpIndex{1});
 
   std::printf("  test_shape_divergence: PASSED\n");
@@ -179,12 +181,12 @@ static void test_reset() {
   SlotId out_slot[1] = {SlotId{0}};
 
   TraceEntry ops[2]{};
-  ops[0].schema_hash = 10;
-  ops[0].shape_hash = 20;
+  ops[0].schema_hash = SchemaHash{10};
+  ops[0].shape_hash = ShapeHash{20};
   ops[0].num_outputs = 1;
   ops[0].output_slot_ids = out_slot;
-  ops[1].schema_hash = 11;
-  ops[1].shape_hash = 21;
+  ops[1].schema_hash = SchemaHash{11};
+  ops[1].shape_hash = ShapeHash{21};
   ops[1].num_outputs = 1;
   ops[1].output_slot_ids = out_slot;
 
@@ -200,8 +202,8 @@ static void test_reset() {
   engine.init(&region, &pool);
 
   // Full walk.
-  assert(engine.advance(10, 20) == ReplayStatus::MATCH);
-  assert(engine.advance(11, 21) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{10}, ShapeHash{20}) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{11}, ShapeHash{21}) == ReplayStatus::MATCH);
   assert(engine.is_complete());
 
   // Reset and walk again.
@@ -209,8 +211,8 @@ static void test_reset() {
   assert(!engine.is_complete());
   assert(engine.ops_matched() == 0);
 
-  assert(engine.advance(10, 20) == ReplayStatus::MATCH);
-  assert(engine.advance(11, 21) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{10}, ShapeHash{20}) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{11}, ShapeHash{21}) == ReplayStatus::MATCH);
   assert(engine.is_complete());
 
   std::printf("  test_reset: PASSED\n");
@@ -225,15 +227,15 @@ static void test_input_ptr() {
   SlotId in1[1]  = {SlotId{0}};
 
   TraceEntry ops[2]{};
-  ops[0].schema_hash = 50;
-  ops[0].shape_hash = 60;
+  ops[0].schema_hash = SchemaHash{50};
+  ops[0].shape_hash = ShapeHash{60};
   ops[0].num_outputs = 1;
   ops[0].output_slot_ids = out0;
   ops[0].num_inputs = 0;
   ops[0].input_slot_ids = nullptr;
 
-  ops[1].schema_hash = 51;
-  ops[1].shape_hash = 61;
+  ops[1].schema_hash = SchemaHash{51};
+  ops[1].shape_hash = ShapeHash{61};
   ops[1].num_outputs = 1;
   ops[1].output_slot_ids = out1;
   ops[1].num_inputs = 1;
@@ -251,11 +253,11 @@ static void test_input_ptr() {
   engine.init(&region, &pool);
 
   // Advance op 0.
-  assert(engine.advance(50, 60) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{50}, ShapeHash{60}) == ReplayStatus::MATCH);
   assert(engine.output_ptr(0) == pool.slot_ptr(SlotId{0}));
 
   // Advance op 1.
-  assert(engine.advance(51, 61) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{51}, ShapeHash{61}) == ReplayStatus::MATCH);
   assert(engine.output_ptr(0) == pool.slot_ptr(SlotId{1}));
   assert(engine.input_ptr(0) == pool.slot_ptr(SlotId{0}));
 
@@ -270,8 +272,8 @@ static void test_invalid_slot() {
   SlotId out[2] = {SlotId{0}, SlotId::none()};
 
   TraceEntry ops[1]{};
-  ops[0].schema_hash = 77;
-  ops[0].shape_hash = 88;
+  ops[0].schema_hash = SchemaHash{77};
+  ops[0].shape_hash = ShapeHash{88};
   ops[0].num_outputs = 2;
   ops[0].output_slot_ids = out;
 
@@ -286,7 +288,7 @@ static void test_invalid_slot() {
   ReplayEngine engine;
   engine.init(&region, &pool);
 
-  assert(engine.advance(77, 88) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{77}, ShapeHash{88}) == ReplayStatus::MATCH);
 
   // Valid slot returns pool pointer.
   assert(engine.output_ptr(0) != nullptr);
@@ -302,8 +304,8 @@ static void test_current_entry() {
 
   TraceEntry ops[3]{};
   for (uint32_t i = 0; i < 3; i++) {
-    ops[i].schema_hash = 300 + i;
-    ops[i].shape_hash = 400 + i;
+    ops[i].schema_hash = SchemaHash{300 + i};
+    ops[i].shape_hash = ShapeHash{400 + i};
     ops[i].num_outputs = 1;
     ops[i].output_slot_ids = out;
   }
@@ -320,11 +322,11 @@ static void test_current_entry() {
   engine.init(&region, &pool);
 
   for (uint32_t i = 0; i < 3; i++) {
-    auto s = engine.advance(300 + i, 400 + i);
+    auto s = engine.advance(SchemaHash{300 + i}, ShapeHash{400 + i});
     assert(s == ReplayStatus::MATCH);
     const auto& entry = engine.current_entry();
-    assert(entry.schema_hash == 300 + i);
-    assert(entry.shape_hash == 400 + i);
+    assert(entry.schema_hash == SchemaHash{300 + i});
+    assert(entry.shape_hash == ShapeHash{400 + i});
   }
 
   std::printf("  test_current_entry: PASSED\n");
@@ -370,15 +372,15 @@ static void test_integration_with_pool() {
   SlotId op1_in[1]  = {SlotId{0}};
 
   TraceEntry ops[2]{};
-  ops[0].schema_hash = 0xAAAA;
-  ops[0].shape_hash  = 0xBBBB;
+  ops[0].schema_hash = SchemaHash{0xAAAA};
+  ops[0].shape_hash  = ShapeHash{0xBBBB};
   ops[0].num_outputs = 1;
   ops[0].output_slot_ids = op0_out;
   ops[0].num_inputs = 1;
   ops[0].input_slot_ids = op0_in;
 
-  ops[1].schema_hash = 0xCCCC;
-  ops[1].shape_hash  = 0xDDDD;
+  ops[1].schema_hash = SchemaHash{0xCCCC};
+  ops[1].shape_hash  = ShapeHash{0xDDDD};
   ops[1].num_outputs = 1;
   ops[1].output_slot_ids = op1_out;
   ops[1].num_inputs = 1;
@@ -391,7 +393,7 @@ static void test_integration_with_pool() {
   engine.init(&region, &pool);
 
   // Replay op 0.
-  assert(engine.advance(0xAAAA, 0xBBBB) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}) == ReplayStatus::MATCH);
   assert(engine.output_ptr(0) == pool.slot_ptr(SlotId{0}));
   assert(engine.input_ptr(0) == fake_param);  // external
 
@@ -399,7 +401,7 @@ static void test_integration_with_pool() {
   std::memset(engine.output_ptr(0), 0x11, 512);
 
   // Replay op 1.
-  assert(engine.advance(0xCCCC, 0xDDDD) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{0xCCCC}, ShapeHash{0xDDDD}) == ReplayStatus::MATCH);
   assert(engine.output_ptr(0) == pool.slot_ptr(SlotId{1}));
   assert(engine.input_ptr(0) == pool.slot_ptr(SlotId{0}));
 
@@ -412,8 +414,8 @@ static void test_integration_with_pool() {
   // Reset and replay again.
   engine.reset();
   assert(!engine.is_complete());
-  assert(engine.advance(0xAAAA, 0xBBBB) == ReplayStatus::MATCH);
-  assert(engine.advance(0xCCCC, 0xDDDD) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{0xCCCC}, ShapeHash{0xDDDD}) == ReplayStatus::MATCH);
   assert(engine.is_complete());
 
   std::printf("  test_integration_with_pool: PASSED\n");

@@ -17,9 +17,9 @@
 
 using namespace crucible;
 
-static constexpr uint64_t H_CONV = 0xB001, H_BN = 0xB002, H_RELU = 0xB003,
-    H_MAXPOOL = 0xB004, H_ADD = 0xB005, H_AVGPOOL = 0xB006,
-    H_MM = 0xB007, H_SOFTMAX = 0xB008;
+static constexpr SchemaHash H_CONV{0xB001}, H_BN{0xB002}, H_RELU{0xB003},
+    H_MAXPOOL{0xB004}, H_ADD{0xB005}, H_AVGPOOL{0xB006},
+    H_MM{0xB007}, H_SOFTMAX{0xB008};
 
 static constexpr uint16_t PARAM = 0x8000;
 
@@ -30,7 +30,8 @@ static constexpr uint16_t PARAM = 0x8000;
 struct TRef { uint16_t ref = 0; uint8_t ndim = 0; int64_t d[4]{}; };
 
 struct OpDef {
-    uint64_t schema = 0, shape = 0;
+    SchemaHash schema;
+    ShapeHash shape;
     uint8_t n_in = 0, n_out = 0;
     TRef t[6]{};
 };
@@ -66,10 +67,13 @@ struct ResNet50 {
         return r;
     }
 
-    void emit(uint64_t sch, int ni, int no,
+    void emit(SchemaHash sch, int ni, int no,
               TRef t0 = {}, TRef t1 = {}, TRef t2 = {}, TRef t3 = {}) {
-        OpDef op{}; op.schema = sch; op.shape = 0xC000 + ops.size();
-        op.n_in = uint8_t(ni); op.n_out = uint8_t(no);
+        OpDef op{};
+        op.schema = sch;
+        op.shape = ShapeHash{static_cast<uint64_t>(0xC000 + ops.size())};
+        op.n_in = static_cast<uint8_t>(ni);
+        op.n_out = static_cast<uint8_t>(no);
         op.t[0] = t0; op.t[1] = t1; op.t[2] = t2; op.t[3] = t3;
         ops.push_back(op);
     }
@@ -258,8 +262,10 @@ int main() {
     ResNet50 net;
     net.build(2);
     std::printf("  %zu ops, %llu params, %u param tensors, %u activations\n",
-                net.ops.size(), (unsigned long long)net.params,
-                uint32_t(net.np - 1), uint32_t(net.na));
+                net.ops.size(),
+                static_cast<unsigned long long>(net.params),
+                static_cast<uint32_t>(net.np - 1),
+                static_cast<uint32_t>(net.na));
 
     assert(net.ops.size() == 175 && "ResNet-50 forward = 175 ops");
     assert(net.params == 25557032 && "must match torchvision resnet50");
@@ -277,7 +283,7 @@ int main() {
     assert(region && region->plan);
     std::printf("  region: %u ops, pool %llu B, %u slots (%u ext)\n",
                 region->num_ops,
-                (unsigned long long)region->plan->pool_bytes,
+                static_cast<unsigned long long>(region->plan->pool_bytes),
                 region->plan->num_slots, region->plan->num_external);
 
     // ── Activate: first dispatch_op returns RECORD, ctx becomes COMPILED ──
@@ -304,7 +310,8 @@ int main() {
     double ns_op = double(us) * 1000.0 / double(total);
 
     std::printf("  %llu dispatches in %lld us (%.1f ns/op)\n",
-                (unsigned long long)total, (long long)us, ns_op);
+                static_cast<unsigned long long>(total),
+                static_cast<long long>(us), ns_op);
     assert(vigil.compiled_iterations() == 1000);
     assert(vigil.diverged_count() == 0);
 

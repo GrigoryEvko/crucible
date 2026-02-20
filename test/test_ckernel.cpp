@@ -5,13 +5,13 @@
 #include <cstring>
 
 // Fake schema hashes — real values come from the Vessel's hash function.
-// We use arbitrary uint64_t values to test the table mechanics.
-static constexpr uint64_t HASH_LINEAR    = 0xAAAA000000000001ULL;
-static constexpr uint64_t HASH_CONV2D    = 0xBBBB000000000002ULL;
-static constexpr uint64_t HASH_SDPA      = 0xCCCC000000000003ULL;
-static constexpr uint64_t HASH_RELU      = 0xDDDD000000000004ULL;
-static constexpr uint64_t HASH_EWISE_ADD = 0xEEEE000000000005ULL;
-static constexpr uint64_t HASH_UNKNOWN   = 0xDEAD000000000000ULL;
+// We use arbitrary values to test the table mechanics.
+static const crucible::SchemaHash HASH_LINEAR   {0xAAAA000000000001ULL};
+static const crucible::SchemaHash HASH_CONV2D   {0xBBBB000000000002ULL};
+static const crucible::SchemaHash HASH_SDPA     {0xCCCC000000000003ULL};
+static const crucible::SchemaHash HASH_RELU     {0xDDDD000000000004ULL};
+static const crucible::SchemaHash HASH_EWISE_ADD{0xEEEE000000000005ULL};
+static const crucible::SchemaHash HASH_UNKNOWN  {0xDEAD000000000000ULL};
 
 int main() {
     using namespace crucible;
@@ -37,14 +37,14 @@ int main() {
 
     // ── Unknown hash still returns OPAQUE ───────────────────────────────
     assert(classify_kernel(HASH_UNKNOWN)   == CKernelId::OPAQUE);
-    assert(classify_kernel(0ULL)           == CKernelId::OPAQUE);
-    assert(classify_kernel(UINT64_MAX)     == CKernelId::OPAQUE);
+    assert(classify_kernel(SchemaHash{0ULL})           == CKernelId::OPAQUE);
+    assert(classify_kernel(SchemaHash{UINT64_MAX})     == CKernelId::OPAQUE);
 
     // ── Binary search boundary: hash smaller than all registered ────────
-    assert(classify_kernel(0x0001ULL)      == CKernelId::OPAQUE);
+    assert(classify_kernel(SchemaHash{0x0001ULL})      == CKernelId::OPAQUE);
 
     // ── Binary search boundary: hash larger than all registered ─────────
-    assert(classify_kernel(0xFFFF000000000010ULL) == CKernelId::OPAQUE);
+    assert(classify_kernel(SchemaHash{0xFFFF000000000010ULL}) == CKernelId::OPAQUE);
 
     // ── Idempotent re-registration (same hash, same id) ─────────────────
     // Second registration of same hash: table should still return correct id.

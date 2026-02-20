@@ -28,11 +28,11 @@ using namespace crucible;
 // Schema hashes
 // ═══════════════════════════════════════════════════════════════════
 
-static constexpr uint64_t CONV = 0xD001, RESHAPE = 0xD002, ADD = 0xD003,
-    LN = 0xD004, MM = 0xD005, SDPA = 0xD006, GELU = 0xD007,
-    INDEX = 0xD008, XENT = 0xD009, LOSS_BWD = 0xD00A, MM_BWD = 0xD00B,
-    SCATTER = 0xD00C, LN_BWD = 0xD00D, GELU_BWD = 0xD00E,
-    SDPA_BWD = 0xD00F;
+static constexpr SchemaHash CONV{0xD001}, RESHAPE{0xD002}, ADD{0xD003},
+    LN{0xD004}, MM{0xD005}, SDPA{0xD006}, GELU{0xD007},
+    INDEX{0xD008}, XENT{0xD009}, LOSS_BWD{0xD00A}, MM_BWD{0xD00B},
+    SCATTER{0xD00C}, LN_BWD{0xD00D}, GELU_BWD{0xD00E},
+    SDPA_BWD{0xD00F};
 
 // ═══════════════════════════════════════════════════════════════════
 // Tensor reference encoding (same as test_imagenet.cpp)
@@ -59,7 +59,8 @@ static constexpr TSpec ac(uint8_t id, uint8_t n,
 // ═══════════════════════════════════════════════════════════════════
 
 struct OpDef {
-    uint64_t schema, shape;
+    SchemaHash schema;
+    ShapeHash shape;
     uint8_t n_in, n_out;
     TSpec t[6]; // max: sdpa_bwd has 4 inputs + 1 output = 5
 };
@@ -79,66 +80,66 @@ static constexpr int64_t B = 2, SEQ = 4, D = 16, MLP = 32, CL = 10;
 static const OpDef OPS[] = {
     // ── Forward (19 ops) ─────────────────────────────────────────
     //   Patch embedding
-    /*  0 */ {CONV,    0xD101, 2,1, {pr(0,4,B,3,8,8), pr(1,4,D,3,4,4),
-                                     ac(0,4,B,D,2,2)}},
-    /*  1 */ {RESHAPE, 0xD102, 1,1, {ac(0,4,B,D,2,2), ac(1,3,B,SEQ,D)}},
-    /*  2 */ {ADD,     0xD103, 2,1, {ac(1,3,B,SEQ,D), pr(2,3,1,SEQ,D),
-                                     ac(2,3,B,SEQ,D)}},
+    /*  0 */ {CONV,    ShapeHash{0xD101}, 2,1, {pr(0,4,B,3,8,8), pr(1,4,D,3,4,4),
+                                                ac(0,4,B,D,2,2)}},
+    /*  1 */ {RESHAPE, ShapeHash{0xD102}, 1,1, {ac(0,4,B,D,2,2), ac(1,3,B,SEQ,D)}},
+    /*  2 */ {ADD,     ShapeHash{0xD103}, 2,1, {ac(1,3,B,SEQ,D), pr(2,3,1,SEQ,D),
+                                                ac(2,3,B,SEQ,D)}},
 
     //   Transformer layer: self-attention
-    /*  3 */ {LN,      0xD104, 3,1, {ac(2,3,B,SEQ,D), pr(3,1,D), pr(4,1,D),
-                                     ac(3,3,B,SEQ,D)}},
-    /*  4 */ {MM,      0xD105, 2,1, {ac(3,3,B,SEQ,D), pr(5,2,D,D),
-                                     ac(4,3,B,SEQ,D)}},   // Q
-    /*  5 */ {MM,      0xD106, 2,1, {ac(3,3,B,SEQ,D), pr(6,2,D,D),
-                                     ac(5,3,B,SEQ,D)}},   // K
-    /*  6 */ {MM,      0xD107, 2,1, {ac(3,3,B,SEQ,D), pr(7,2,D,D),
-                                     ac(6,3,B,SEQ,D)}},   // V
-    /*  7 */ {SDPA,    0xD108, 3,1, {ac(4,3,B,SEQ,D), ac(5,3,B,SEQ,D),
-                                     ac(6,3,B,SEQ,D), ac(7,3,B,SEQ,D)}},
-    /*  8 */ {MM,      0xD109, 2,1, {ac(7,3,B,SEQ,D), pr(8,2,D,D),
-                                     ac(8,3,B,SEQ,D)}},   // out proj
-    /*  9 */ {ADD,     0xD10A, 2,1, {ac(8,3,B,SEQ,D), ac(2,3,B,SEQ,D),
-                                     ac(9,3,B,SEQ,D)}},   // residual 1
+    /*  3 */ {LN,      ShapeHash{0xD104}, 3,1, {ac(2,3,B,SEQ,D), pr(3,1,D), pr(4,1,D),
+                                                ac(3,3,B,SEQ,D)}},
+    /*  4 */ {MM,      ShapeHash{0xD105}, 2,1, {ac(3,3,B,SEQ,D), pr(5,2,D,D),
+                                                ac(4,3,B,SEQ,D)}},   // Q
+    /*  5 */ {MM,      ShapeHash{0xD106}, 2,1, {ac(3,3,B,SEQ,D), pr(6,2,D,D),
+                                                ac(5,3,B,SEQ,D)}},   // K
+    /*  6 */ {MM,      ShapeHash{0xD107}, 2,1, {ac(3,3,B,SEQ,D), pr(7,2,D,D),
+                                                ac(6,3,B,SEQ,D)}},   // V
+    /*  7 */ {SDPA,    ShapeHash{0xD108}, 3,1, {ac(4,3,B,SEQ,D), ac(5,3,B,SEQ,D),
+                                                ac(6,3,B,SEQ,D), ac(7,3,B,SEQ,D)}},
+    /*  8 */ {MM,      ShapeHash{0xD109}, 2,1, {ac(7,3,B,SEQ,D), pr(8,2,D,D),
+                                                ac(8,3,B,SEQ,D)}},   // out proj
+    /*  9 */ {ADD,     ShapeHash{0xD10A}, 2,1, {ac(8,3,B,SEQ,D), ac(2,3,B,SEQ,D),
+                                                ac(9,3,B,SEQ,D)}},   // residual 1
 
     //   Transformer layer: MLP
-    /* 10 */ {LN,      0xD10B, 3,1, {ac(9,3,B,SEQ,D), pr(9,1,D), pr(10,1,D),
-                                     ac(10,3,B,SEQ,D)}},
-    /* 11 */ {MM,      0xD10C, 2,1, {ac(10,3,B,SEQ,D), pr(11,2,D,MLP),
-                                     ac(11,3,B,SEQ,MLP)}}, // expand
-    /* 12 */ {GELU,    0xD10D, 1,1, {ac(11,3,B,SEQ,MLP), ac(12,3,B,SEQ,MLP)}},
-    /* 13 */ {MM,      0xD10E, 2,1, {ac(12,3,B,SEQ,MLP), pr(12,2,MLP,D),
-                                     ac(13,3,B,SEQ,D)}},   // contract
-    /* 14 */ {ADD,     0xD10F, 2,1, {ac(13,3,B,SEQ,D), ac(9,3,B,SEQ,D),
-                                     ac(14,3,B,SEQ,D)}},   // residual 2
+    /* 10 */ {LN,      ShapeHash{0xD10B}, 3,1, {ac(9,3,B,SEQ,D), pr(9,1,D), pr(10,1,D),
+                                                ac(10,3,B,SEQ,D)}},
+    /* 11 */ {MM,      ShapeHash{0xD10C}, 2,1, {ac(10,3,B,SEQ,D), pr(11,2,D,MLP),
+                                                ac(11,3,B,SEQ,MLP)}}, // expand
+    /* 12 */ {GELU,    ShapeHash{0xD10D}, 1,1, {ac(11,3,B,SEQ,MLP), ac(12,3,B,SEQ,MLP)}},
+    /* 13 */ {MM,      ShapeHash{0xD10E}, 2,1, {ac(12,3,B,SEQ,MLP), pr(12,2,MLP,D),
+                                                ac(13,3,B,SEQ,D)}},   // contract
+    /* 14 */ {ADD,     ShapeHash{0xD10F}, 2,1, {ac(13,3,B,SEQ,D), ac(9,3,B,SEQ,D),
+                                                ac(14,3,B,SEQ,D)}},   // residual 2
 
     //   Classification head
-    /* 15 */ {LN,      0xD110, 3,1, {ac(14,3,B,SEQ,D), pr(13,1,D), pr(14,1,D),
-                                     ac(15,3,B,SEQ,D)}},
-    /* 16 */ {INDEX,   0xD111, 1,1, {ac(15,3,B,SEQ,D), ac(16,2,B,D)}},
-    /* 17 */ {MM,      0xD112, 2,1, {ac(16,2,B,D), pr(15,2,CL,D),
-                                     ac(17,2,B,CL)}},
-    /* 18 */ {XENT,    0xD113, 1,1, {ac(17,2,B,CL), ac(18,2,B,CL)}},
+    /* 15 */ {LN,      ShapeHash{0xD110}, 3,1, {ac(14,3,B,SEQ,D), pr(13,1,D), pr(14,1,D),
+                                                ac(15,3,B,SEQ,D)}},
+    /* 16 */ {INDEX,   ShapeHash{0xD111}, 1,1, {ac(15,3,B,SEQ,D), ac(16,2,B,D)}},
+    /* 17 */ {MM,      ShapeHash{0xD112}, 2,1, {ac(16,2,B,D), pr(15,2,CL,D),
+                                                ac(17,2,B,CL)}},
+    /* 18 */ {XENT,    ShapeHash{0xD113}, 1,1, {ac(17,2,B,CL), ac(18,2,B,CL)}},
 
     // ── Backward (11 ops) ────────────────────────────────────────
-    /* 19 */ {LOSS_BWD, 0xD114, 1,1, {ac(18,2,B,CL), ac(19,2,B,CL)}},
-    /* 20 */ {MM_BWD,   0xD115, 2,1, {ac(19,2,B,CL), pr(15,2,CL,D),
-                                      ac(20,2,B,D)}},
-    /* 21 */ {SCATTER,  0xD116, 1,1, {ac(20,2,B,D), ac(21,3,B,SEQ,D)}},
-    /* 22 */ {LN_BWD,   0xD117, 1,1, {ac(21,3,B,SEQ,D), ac(22,3,B,SEQ,D)}},
-    /* 23 */ {MM_BWD,   0xD118, 2,1, {ac(22,3,B,SEQ,D), pr(12,2,MLP,D),
-                                      ac(23,3,B,SEQ,MLP)}},
-    /* 24 */ {GELU_BWD, 0xD119, 2,1, {ac(23,3,B,SEQ,MLP), ac(11,3,B,SEQ,MLP),
-                                      ac(24,3,B,SEQ,MLP)}},
-    /* 25 */ {MM_BWD,   0xD11A, 2,1, {ac(24,3,B,SEQ,MLP), pr(11,2,D,MLP),
-                                      ac(25,3,B,SEQ,D)}},
-    /* 26 */ {LN_BWD,   0xD11B, 1,1, {ac(25,3,B,SEQ,D), ac(26,3,B,SEQ,D)}},
-    /* 27 */ {MM_BWD,   0xD11C, 2,1, {ac(26,3,B,SEQ,D), pr(8,2,D,D),
-                                      ac(27,3,B,SEQ,D)}},
-    /* 28 */ {SDPA_BWD, 0xD11D, 4,1, {ac(27,3,B,SEQ,D), ac(4,3,B,SEQ,D),
-                                      ac(5,3,B,SEQ,D), ac(6,3,B,SEQ,D),
-                                      ac(28,3,B,SEQ,D)}},
-    /* 29 */ {LN_BWD,   0xD11E, 1,1, {ac(28,3,B,SEQ,D), ac(29,3,B,SEQ,D)}},
+    /* 19 */ {LOSS_BWD, ShapeHash{0xD114}, 1,1, {ac(18,2,B,CL), ac(19,2,B,CL)}},
+    /* 20 */ {MM_BWD,   ShapeHash{0xD115}, 2,1, {ac(19,2,B,CL), pr(15,2,CL,D),
+                                                  ac(20,2,B,D)}},
+    /* 21 */ {SCATTER,  ShapeHash{0xD116}, 1,1, {ac(20,2,B,D), ac(21,3,B,SEQ,D)}},
+    /* 22 */ {LN_BWD,   ShapeHash{0xD117}, 1,1, {ac(21,3,B,SEQ,D), ac(22,3,B,SEQ,D)}},
+    /* 23 */ {MM_BWD,   ShapeHash{0xD118}, 2,1, {ac(22,3,B,SEQ,D), pr(12,2,MLP,D),
+                                                  ac(23,3,B,SEQ,MLP)}},
+    /* 24 */ {GELU_BWD, ShapeHash{0xD119}, 2,1, {ac(23,3,B,SEQ,MLP), ac(11,3,B,SEQ,MLP),
+                                                  ac(24,3,B,SEQ,MLP)}},
+    /* 25 */ {MM_BWD,   ShapeHash{0xD11A}, 2,1, {ac(24,3,B,SEQ,MLP), pr(11,2,D,MLP),
+                                                  ac(25,3,B,SEQ,D)}},
+    /* 26 */ {LN_BWD,   ShapeHash{0xD11B}, 1,1, {ac(25,3,B,SEQ,D), ac(26,3,B,SEQ,D)}},
+    /* 27 */ {MM_BWD,   ShapeHash{0xD11C}, 2,1, {ac(26,3,B,SEQ,D), pr(8,2,D,D),
+                                                  ac(27,3,B,SEQ,D)}},
+    /* 28 */ {SDPA_BWD, ShapeHash{0xD11D}, 4,1, {ac(27,3,B,SEQ,D), ac(4,3,B,SEQ,D),
+                                                  ac(5,3,B,SEQ,D), ac(6,3,B,SEQ,D),
+                                                  ac(28,3,B,SEQ,D)}},
+    /* 29 */ {LN_BWD,   ShapeHash{0xD11E}, 1,1, {ac(28,3,B,SEQ,D), ac(29,3,B,SEQ,D)}},
 };
 
 static constexpr uint32_t NUM_OPS = sizeof(OPS) / sizeof(OPS[0]);
@@ -225,8 +226,8 @@ int main() {
     std::printf("═══ ViT Training Simulation ═══\n\n");
     std::printf("Mini-ViT: patch_embed → 1 transformer layer → cls_head\n");
     std::printf("  batch=%lld  seq=%lld  hidden=%lld  mlp=%lld  classes=%lld\n",
-                (long long)B, (long long)SEQ, (long long)D,
-                (long long)MLP, (long long)CL);
+                static_cast<long long>(B), static_cast<long long>(SEQ), static_cast<long long>(D),
+                static_cast<long long>(MLP), static_cast<long long>(CL));
     std::printf("Ops/iteration: %u (19 fwd + 11 bwd)\n\n", NUM_OPS);
 
     Vigil vigil;
@@ -244,7 +245,7 @@ int main() {
 
     std::printf("── Region ──\n");
     std::printf("   %u ops | pool %llu bytes\n",
-                region->num_ops, (unsigned long long)plan->pool_bytes);
+                region->num_ops, static_cast<unsigned long long>(plan->pool_bytes));
     std::printf("   %u slots: %u external + %u internal\n",
                 plan->num_slots, plan->num_external,
                 plan->num_slots - plan->num_external);
@@ -257,7 +258,7 @@ int main() {
         if (!sl.is_external && sl.death_op.raw() - sl.birth_op.raw() > 10)
             std::printf("     slot %u: birth=op%u death=op%u (%llu bytes)\n",
                         s, sl.birth_op.raw(), sl.death_op.raw(),
-                        (unsigned long long)sl.nbytes);
+                        static_cast<unsigned long long>(sl.nbytes));
     }
 
     // ── Phase 2: Activate ────────────────────────────────────────
@@ -286,7 +287,7 @@ int main() {
     double ns_op = double(us) * 1000.0 / double(total_ops);
 
     std::printf("   %llu dispatches in %lld μs (%.1f ns/op)\n",
-                (unsigned long long)total_ops, (long long)us, ns_op);
+                static_cast<unsigned long long>(total_ops), static_cast<long long>(us), ns_op);
     std::printf("   compiled_iterations=%u  diverged=%u\n",
                 vigil.compiled_iterations(), vigil.diverged_count());
 
@@ -327,7 +328,7 @@ int main() {
     // ── Summary ──────────────────────────────────────────────────
     std::printf("\n═══ Summary ═══\n");
     std::printf("Pool: %llu bytes | Compiled: %u iters | %.1f ns/op\n",
-                (unsigned long long)plan->pool_bytes,
+                static_cast<unsigned long long>(plan->pool_bytes),
                 vigil.compiled_iterations(), ns_op);
     std::printf("\ntest_vit: PASSED\n");
     return 0;

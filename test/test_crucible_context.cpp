@@ -18,6 +18,8 @@ using crucible::OpIndex;
 using crucible::ScalarType;
 using crucible::DeviceType;
 using crucible::Layout;
+using crucible::SchemaHash;
+using crucible::ShapeHash;
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -64,12 +66,12 @@ static void test_activate() {
   SlotId out[1] = {SlotId{0}};
 
   TraceEntry ops[2]{};
-  ops[0].schema_hash = 100;
-  ops[0].shape_hash = 200;
+  ops[0].schema_hash = SchemaHash{100};
+  ops[0].shape_hash = ShapeHash{200};
   ops[0].num_outputs = 1;
   ops[0].output_slot_ids = out;
-  ops[1].schema_hash = 101;
-  ops[1].shape_hash = 201;
+  ops[1].schema_hash = SchemaHash{101};
+  ops[1].shape_hash = ShapeHash{201};
   ops[1].num_outputs = 1;
   ops[1].output_slot_ids = out;
 
@@ -111,14 +113,14 @@ static void test_full_replay() {
   SlotId out1[1] = {SlotId{1}};
 
   TraceEntry ops[2]{};
-  ops[0].schema_hash = 100;
-  ops[0].shape_hash = 200;
+  ops[0].schema_hash = SchemaHash{100};
+  ops[0].shape_hash = ShapeHash{200};
   ops[0].num_outputs = 1;
   ops[0].output_slot_ids = out0;
   ops[0].num_inputs = 0;
 
-  ops[1].schema_hash = 101;
-  ops[1].shape_hash = 201;
+  ops[1].schema_hash = SchemaHash{101};
+  ops[1].shape_hash = ShapeHash{201};
   ops[1].num_outputs = 1;
   ops[1].output_slot_ids = out1;
   ops[1].num_inputs = 0;
@@ -133,11 +135,11 @@ static void test_full_replay() {
   assert(ctx.activate(&region));
 
   // First iteration.
-  assert(ctx.advance(100, 200) == ReplayStatus::MATCH);
+  assert(ctx.advance(SchemaHash{100}, ShapeHash{200}) == ReplayStatus::MATCH);
   void* p0 = ctx.output_ptr(0);
   assert(p0 == ctx.pool().slot_ptr(SlotId{0}));
 
-  assert(ctx.advance(101, 201) == ReplayStatus::COMPLETE);
+  assert(ctx.advance(SchemaHash{101}, ShapeHash{201}) == ReplayStatus::COMPLETE);
   assert(ctx.compiled_iterations() == 1);
 
   // output_ptr() is valid after COMPLETE (lazy reset — engine not
@@ -148,8 +150,8 @@ static void test_full_replay() {
   // COMPLETE — next advance() auto-resets for second iteration.
   assert(ctx.is_compiled());  // still compiled
 
-  assert(ctx.advance(100, 200) == ReplayStatus::MATCH);
-  assert(ctx.advance(101, 201) == ReplayStatus::COMPLETE);
+  assert(ctx.advance(SchemaHash{100}, ShapeHash{200}) == ReplayStatus::MATCH);
+  assert(ctx.advance(SchemaHash{101}, ShapeHash{201}) == ReplayStatus::COMPLETE);
   assert(ctx.compiled_iterations() == 2);
 
   std::printf("  test_full_replay: PASSED\n");
@@ -161,8 +163,8 @@ static void test_divergence() {
 
   TraceEntry ops[3]{};
   for (uint32_t i = 0; i < 3; i++) {
-    ops[i].schema_hash = 100 + i;
-    ops[i].shape_hash = 200 + i;
+    ops[i].schema_hash = SchemaHash{100 + i};
+    ops[i].shape_hash = ShapeHash{200 + i};
     ops[i].num_outputs = 1;
     ops[i].output_slot_ids = out;
   }
@@ -177,10 +179,10 @@ static void test_divergence() {
   assert(ctx.activate(&region));
 
   // Op 0: matches.
-  assert(ctx.advance(100, 200) == ReplayStatus::MATCH);
+  assert(ctx.advance(SchemaHash{100}, ShapeHash{200}) == ReplayStatus::MATCH);
 
   // Op 1: wrong schema.
-  assert(ctx.advance(999, 201) == ReplayStatus::DIVERGED);
+  assert(ctx.advance(SchemaHash{999}, ShapeHash{201}) == ReplayStatus::DIVERGED);
   assert(ctx.diverged_count() == 1);
   assert(ctx.is_compiled());  // mode unchanged — caller decides
 
@@ -198,8 +200,8 @@ static void test_reactivate() {
 
   // Region A: 1 op.
   TraceEntry ops_a[1]{};
-  ops_a[0].schema_hash = 10;
-  ops_a[0].shape_hash = 20;
+  ops_a[0].schema_hash = SchemaHash{10};
+  ops_a[0].shape_hash = ShapeHash{20};
   ops_a[0].num_outputs = 1;
   ops_a[0].output_slot_ids = out;
 
@@ -213,12 +215,12 @@ static void test_reactivate() {
   SlotId out_b[2] = {SlotId{0}, SlotId{1}};
 
   TraceEntry ops_b[2]{};
-  ops_b[0].schema_hash = 30;
-  ops_b[0].shape_hash = 40;
+  ops_b[0].schema_hash = SchemaHash{30};
+  ops_b[0].shape_hash = ShapeHash{40};
   ops_b[0].num_outputs = 1;
   ops_b[0].output_slot_ids = &out_b[0];
-  ops_b[1].schema_hash = 31;
-  ops_b[1].shape_hash = 41;
+  ops_b[1].schema_hash = SchemaHash{31};
+  ops_b[1].shape_hash = ShapeHash{41};
   ops_b[1].num_outputs = 1;
   ops_b[1].output_slot_ids = &out_b[1];
 
@@ -232,14 +234,14 @@ static void test_reactivate() {
 
   // Activate region A, run one iteration.
   assert(ctx.activate(&region_a));
-  assert(ctx.advance(10, 20) == ReplayStatus::COMPLETE);
+  assert(ctx.advance(SchemaHash{10}, ShapeHash{20}) == ReplayStatus::COMPLETE);
   assert(ctx.compiled_iterations() == 1);
 
   // Re-activate with region B (implicitly deactivates A).
   assert(ctx.activate(&region_b));
   assert(ctx.active_region() == &region_b);
-  assert(ctx.advance(30, 40) == ReplayStatus::MATCH);
-  assert(ctx.advance(31, 41) == ReplayStatus::COMPLETE);
+  assert(ctx.advance(SchemaHash{30}, ShapeHash{40}) == ReplayStatus::MATCH);
+  assert(ctx.advance(SchemaHash{31}, ShapeHash{41}) == ReplayStatus::COMPLETE);
   assert(ctx.compiled_iterations() == 2);
 
   std::printf("  test_reactivate: PASSED\n");
@@ -251,8 +253,8 @@ static void test_external_slots() {
   SlotId in[1] = {SlotId{1}};
 
   TraceEntry ops[1]{};
-  ops[0].schema_hash = 50;
-  ops[0].shape_hash = 60;
+  ops[0].schema_hash = SchemaHash{50};
+  ops[0].shape_hash = ShapeHash{60};
   ops[0].num_outputs = 1;
   ops[0].output_slot_ids = out;
   ops[0].num_inputs = 1;
@@ -285,7 +287,7 @@ static void test_external_slots() {
   ctx.register_external(SlotId{1}, fake_param);
 
   // Advance — input points to registered external.
-  assert(ctx.advance(50, 60) == ReplayStatus::COMPLETE);
+  assert(ctx.advance(SchemaHash{50}, ShapeHash{60}) == ReplayStatus::COMPLETE);
   // Can't call input_ptr after COMPLETE (engine auto-reset), so test
   // via pool directly.
   assert(ctx.pool().slot_ptr(SlotId{1}) == fake_param);
@@ -318,15 +320,15 @@ static void test_integration_sweep_line() {
   SlotId op1_in[1]  = {SlotId{0}};
 
   TraceEntry ops[2]{};
-  ops[0].schema_hash = 0xAA;
-  ops[0].shape_hash  = 0xBB;
+  ops[0].schema_hash = SchemaHash{0xAA};
+  ops[0].shape_hash  = ShapeHash{0xBB};
   ops[0].num_outputs = 1;
   ops[0].output_slot_ids = op0_out;
   ops[0].num_inputs = 1;
   ops[0].input_slot_ids = op0_in;
 
-  ops[1].schema_hash = 0xCC;
-  ops[1].shape_hash  = 0xDD;
+  ops[1].schema_hash = SchemaHash{0xCC};
+  ops[1].shape_hash  = ShapeHash{0xDD};
   ops[1].num_outputs = 1;
   ops[1].output_slot_ids = op1_out;
   ops[1].num_inputs = 1;
@@ -344,7 +346,7 @@ static void test_integration_sweep_line() {
   ctx.register_external(SlotId{2}, fake_param);
 
   // Replay iteration 1.
-  assert(ctx.advance(0xAA, 0xBB) == ReplayStatus::MATCH);
+  assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}) == ReplayStatus::MATCH);
   // Op 0: output → slot 0, input → slot 2 (external).
   assert(ctx.output_ptr(0) == ctx.pool().slot_ptr(SlotId{0}));
   assert(ctx.input_ptr(0) == fake_param);
@@ -352,23 +354,23 @@ static void test_integration_sweep_line() {
   // Write to output.
   std::memset(ctx.output_ptr(0), 0x11, 512);
 
-  assert(ctx.advance(0xCC, 0xDD) == ReplayStatus::COMPLETE);
+  assert(ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}) == ReplayStatus::COMPLETE);
   assert(ctx.compiled_iterations() == 1);
 
   // Replay iteration 2 (auto-reset happened).
-  assert(ctx.advance(0xAA, 0xBB) == ReplayStatus::MATCH);
+  assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}) == ReplayStatus::MATCH);
   // Op 1's input (slot 0) still has data from iteration 1.
   // (In Tier 1, the op executes eagerly and overwrites, but the
   // pointer is still valid from the previous write.)
   auto* p = static_cast<uint8_t*>(ctx.output_ptr(0));
   assert(p == ctx.pool().slot_ptr(SlotId{0}));
 
-  assert(ctx.advance(0xCC, 0xDD) == ReplayStatus::COMPLETE);
+  assert(ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}) == ReplayStatus::COMPLETE);
   assert(ctx.compiled_iterations() == 2);
 
   // Diverge on iteration 3.
-  assert(ctx.advance(0xAA, 0xBB) == ReplayStatus::MATCH);
-  assert(ctx.advance(0xFF, 0xFF) == ReplayStatus::DIVERGED);
+  assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}) == ReplayStatus::MATCH);
+  assert(ctx.advance(SchemaHash{0xFF}, ShapeHash{0xFF}) == ReplayStatus::DIVERGED);
   assert(ctx.diverged_count() == 1);
 
   // Deactivate.
@@ -383,12 +385,12 @@ static void test_divergence_counter() {
   SlotId out[1] = {SlotId{0}};
 
   TraceEntry ops[2]{};
-  ops[0].schema_hash = 10;
-  ops[0].shape_hash = 20;
+  ops[0].schema_hash = SchemaHash{10};
+  ops[0].shape_hash = ShapeHash{20};
   ops[0].num_outputs = 1;
   ops[0].output_slot_ids = out;
-  ops[1].schema_hash = 11;
-  ops[1].shape_hash = 21;
+  ops[1].schema_hash = SchemaHash{11};
+  ops[1].shape_hash = ShapeHash{21};
   ops[1].num_outputs = 1;
   ops[1].output_slot_ids = out;
 
@@ -402,21 +404,21 @@ static void test_divergence_counter() {
 
   // Cycle 1: activate → diverge → deactivate.
   assert(ctx.activate(&region));
-  assert(ctx.advance(10, 20) == ReplayStatus::MATCH);
-  assert(ctx.advance(99, 99) == ReplayStatus::DIVERGED);
+  assert(ctx.advance(SchemaHash{10}, ShapeHash{20}) == ReplayStatus::MATCH);
+  assert(ctx.advance(SchemaHash{99}, ShapeHash{99}) == ReplayStatus::DIVERGED);
   assert(ctx.diverged_count() == 1);
   ctx.deactivate();
 
   // Cycle 2: activate → diverge → deactivate.
   assert(ctx.activate(&region));
-  assert(ctx.advance(99, 20) == ReplayStatus::DIVERGED);
+  assert(ctx.advance(SchemaHash{99}, ShapeHash{20}) == ReplayStatus::DIVERGED);
   assert(ctx.diverged_count() == 2);
   ctx.deactivate();
 
   // Cycle 3: activate → full iteration → no diverge.
   assert(ctx.activate(&region));
-  assert(ctx.advance(10, 20) == ReplayStatus::MATCH);
-  assert(ctx.advance(11, 21) == ReplayStatus::COMPLETE);
+  assert(ctx.advance(SchemaHash{10}, ShapeHash{20}) == ReplayStatus::MATCH);
+  assert(ctx.advance(SchemaHash{11}, ShapeHash{21}) == ReplayStatus::COMPLETE);
   assert(ctx.diverged_count() == 2);  // unchanged
   assert(ctx.compiled_iterations() == 1);
 

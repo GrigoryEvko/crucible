@@ -38,38 +38,38 @@ static constexpr int N_CLS = 3;   // number of classes
 static constexpr uint32_t N_OPS = 15;
 
 // Schema hashes (unique per op type)
-static constexpr uint64_t H_LN1     = 0x100;
-static constexpr uint64_t H_MMQ     = 0x200;
-static constexpr uint64_t H_MMK     = 0x300;
-static constexpr uint64_t H_MMV     = 0x400;
-static constexpr uint64_t H_SDPA    = 0x500;
-static constexpr uint64_t H_MMOUT   = 0x600;
-static constexpr uint64_t H_ADD1    = 0x700;
-static constexpr uint64_t H_LN2     = 0x800;
-static constexpr uint64_t H_MMFF1   = 0x900;
-static constexpr uint64_t H_RELU    = 0xA00;
-static constexpr uint64_t H_MMFF2   = 0xB00;
-static constexpr uint64_t H_ADD2    = 0xC00;
-static constexpr uint64_t H_IDXSEL  = 0xD00;
-static constexpr uint64_t H_MMHEAD  = 0xE00;
-static constexpr uint64_t H_SOFTMAX = 0xF00;
+static constexpr SchemaHash H_LN1     {0x100};
+static constexpr SchemaHash H_MMQ     {0x200};
+static constexpr SchemaHash H_MMK     {0x300};
+static constexpr SchemaHash H_MMV     {0x400};
+static constexpr SchemaHash H_SDPA    {0x500};
+static constexpr SchemaHash H_MMOUT   {0x600};
+static constexpr SchemaHash H_ADD1    {0x700};
+static constexpr SchemaHash H_LN2     {0x800};
+static constexpr SchemaHash H_MMFF1   {0x900};
+static constexpr SchemaHash H_RELU    {0xA00};
+static constexpr SchemaHash H_MMFF2   {0xB00};
+static constexpr SchemaHash H_ADD2    {0xC00};
+static constexpr SchemaHash H_IDXSEL  {0xD00};
+static constexpr SchemaHash H_MMHEAD  {0xE00};
+static constexpr SchemaHash H_SOFTMAX {0xF00};
 
 // Shape hashes (unique per op)
-static constexpr uint64_t S_LN1     = 0x1100;
-static constexpr uint64_t S_MMQ     = 0x1200;
-static constexpr uint64_t S_MMK     = 0x1300;
-static constexpr uint64_t S_MMV     = 0x1400;
-static constexpr uint64_t S_SDPA    = 0x1500;
-static constexpr uint64_t S_MMOUT   = 0x1600;
-static constexpr uint64_t S_ADD1    = 0x1700;
-static constexpr uint64_t S_LN2     = 0x1800;
-static constexpr uint64_t S_MMFF1   = 0x1900;
-static constexpr uint64_t S_RELU    = 0x1A00;
-static constexpr uint64_t S_MMFF2   = 0x1B00;
-static constexpr uint64_t S_ADD2    = 0x1C00;
-static constexpr uint64_t S_IDXSEL  = 0x1D00;
-static constexpr uint64_t S_MMHEAD  = 0x1E00;
-static constexpr uint64_t S_SOFTMAX = 0x1F00;
+static constexpr ShapeHash S_LN1     {0x1100};
+static constexpr ShapeHash S_MMQ     {0x1200};
+static constexpr ShapeHash S_MMK     {0x1300};
+static constexpr ShapeHash S_MMV     {0x1400};
+static constexpr ShapeHash S_SDPA    {0x1500};
+static constexpr ShapeHash S_MMOUT   {0x1600};
+static constexpr ShapeHash S_ADD1    {0x1700};
+static constexpr ShapeHash S_LN2     {0x1800};
+static constexpr ShapeHash S_MMFF1   {0x1900};
+static constexpr ShapeHash S_RELU    {0x1A00};
+static constexpr ShapeHash S_MMFF2   {0x1B00};
+static constexpr ShapeHash S_ADD2    {0x1C00};
+static constexpr ShapeHash S_IDXSEL  {0x1D00};
+static constexpr ShapeHash S_MMHEAD  {0x1E00};
+static constexpr ShapeHash S_SOFTMAX {0x1F00};
 
 // ─── Slot IDs ────────────────────────────────────────────────────────
 // External: 12 parameter slots (0–11)
@@ -104,7 +104,7 @@ static constexpr uint32_t SL_LOGITS = 25;  // logits [B,N_cls]
 static constexpr uint32_t SL_PROBS  = 26;  // softmax probs [B,N_cls]
 
 static constexpr uint32_t N_SLOTS = 27;
-static constexpr uint32_t N_EXT   = 12;
+[[maybe_unused]] static constexpr uint32_t N_EXT = 12;
 
 // Byte sizes for float tensors
 static constexpr uint64_t SZ_BSD    = B * S * D * 4;       // 256
@@ -280,7 +280,7 @@ int main() {
 
     // Populate TraceEntry array
     struct OpDef {
-        uint64_t schema, shape;
+        SchemaHash schema; ShapeHash shape;
         SlotId* in; uint16_t n_in;
         SlotId* out; uint16_t n_out;
     };
@@ -508,7 +508,7 @@ int main() {
         max_err = std::max(max_err, err);
     }
 
-    std::printf("  max_error vs reference: %.2e\n", max_err);
+    std::printf("  max_error vs reference: %.2e\n", static_cast<double>(max_err));
     assert(max_err < 1e-5f && "ViT output diverged from reference");
 
     // Verify softmax properties
@@ -530,14 +530,18 @@ int main() {
         float err = std::abs(pool_res2[i] - ref_res2[i]);
         max_res2_err = std::max(max_res2_err, err);
     }
-    std::printf("  resid2 max_error: %.2e\n", max_res2_err);
+    std::printf("  resid2 max_error: %.2e\n", static_cast<double>(max_res2_err));
     assert(max_res2_err < 1e-5f && "residual output diverged from reference");
 
     // Print outputs
     std::printf("  probs[0] = [%.4f, %.4f, %.4f]\n",
-                pool_probs[0], pool_probs[1], pool_probs[2]);
+                static_cast<double>(pool_probs[0]),
+                static_cast<double>(pool_probs[1]),
+                static_cast<double>(pool_probs[2]));
     std::printf("  probs[1] = [%.4f, %.4f, %.4f]\n",
-                pool_probs[3], pool_probs[4], pool_probs[5]);
+                static_cast<double>(pool_probs[3]),
+                static_cast<double>(pool_probs[4]),
+                static_cast<double>(pool_probs[5]));
     std::printf("  50 iterations, %u ops/iter, compiled_iters=%u\n",
                 N_OPS, ctx.compiled_iterations());
 

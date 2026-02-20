@@ -21,11 +21,13 @@ using namespace crucible;
 
 static constexpr uint32_t NUM_OPS = 8;
 
-static constexpr uint64_t SCHEMA[NUM_OPS] = {
-    0x100, 0x101, 0x102, 0x103, 0x104, 0x105, 0x106, 0x107
+static constexpr SchemaHash SCHEMA[NUM_OPS] = {
+    SchemaHash{0x100}, SchemaHash{0x101}, SchemaHash{0x102}, SchemaHash{0x103},
+    SchemaHash{0x104}, SchemaHash{0x105}, SchemaHash{0x106}, SchemaHash{0x107}
 };
-static constexpr uint64_t SHAPE[NUM_OPS] = {
-    0x200, 0x201, 0x202, 0x203, 0x204, 0x205, 0x206, 0x207
+static constexpr ShapeHash SHAPE[NUM_OPS] = {
+    ShapeHash{0x200}, ShapeHash{0x201}, ShapeHash{0x202}, ShapeHash{0x203},
+    ShapeHash{0x204}, ShapeHash{0x205}, ShapeHash{0x206}, ShapeHash{0x207}
 };
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -190,7 +192,7 @@ static void test_dispatch_divergence() {
 
     // Op 3: wrong schema → DIVERGED.
     TraceRing::Entry bad_entry{};
-    bad_entry.schema_hash = 0xBAD;
+    bad_entry.schema_hash = SchemaHash{0xBAD};
     bad_entry.shape_hash = SHAPE[3];
     bad_entry.num_inputs = 1;
     bad_entry.num_outputs = 1;
@@ -243,7 +245,7 @@ static void test_dispatch_recovery() {
 
     // Diverge at op 3.
     TraceRing::Entry bad{};
-    bad.schema_hash = 0xBAD;
+    bad.schema_hash = SchemaHash{0xBAD};
     bad.shape_hash = SHAPE[3];
     bad.num_inputs = 1;
     bad.num_outputs = 1;

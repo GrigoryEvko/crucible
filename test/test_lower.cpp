@@ -46,7 +46,7 @@ int main() {
     // ── Op 0: EWISE_ADD(ext_slot0, ext_slot1) → slot 2 ─────────
     {
         auto& te = ops[0];
-        te.schema_hash = 0xAA;
+        te.schema_hash = crucible::SchemaHash{0xAA};
         te.kernel_id = crucible::CKernelId::EWISE_ADD;
         te.num_inputs = 2;
         te.num_outputs = 1;
@@ -72,7 +72,7 @@ int main() {
     // ── Op 1: ACT_RELU(op0_out) → slot 3 ───────────────────────
     {
         auto& te = ops[1];
-        te.schema_hash = 0xBB;
+        te.schema_hash = crucible::SchemaHash{0xBB};
         te.kernel_id = crucible::CKernelId::ACT_RELU;
         te.num_inputs = 1;
         te.num_outputs = 1;
@@ -95,7 +95,7 @@ int main() {
     // ── Op 2: GEMM_MM(op1_out, ext_slot4) → slot 5 ─────────────
     {
         auto& te = ops[2];
-        te.schema_hash = 0xCC;
+        te.schema_hash = crucible::SchemaHash{0xCC};
         te.kernel_id = crucible::CKernelId::GEMM_MM;
         te.num_inputs = 2;
         te.num_outputs = 1;
@@ -254,7 +254,7 @@ int main() {
     auto* ops2 = arena2.alloc_array<crucible::TraceEntry>(1);
     std::memset(ops2, 0, sizeof(crucible::TraceEntry));
 
-    ops2[0].schema_hash = 0xDD;
+    ops2[0].schema_hash = crucible::SchemaHash{0xDD};
     ops2[0].kernel_id = crucible::CKernelId::GEMM_ADDMM;
     ops2[0].num_inputs = 3;
     ops2[0].num_outputs = 1;

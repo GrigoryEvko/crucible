@@ -241,7 +241,8 @@ inline void sdpa(const float* Q, const float* K, const float* V,
 
     // Temp attention weights [S,S] — stack-allocate for small S.
     float stack_attn[128 * 128];
-    float* attn = (S <= 128) ? stack_attn : new float[S * S];
+    float* attn = (S <= 128) ? stack_attn
+        : new float[static_cast<size_t>(S) * static_cast<size_t>(S)];
 
     for (int b = 0; b < B; b++) {
         const float* q = Q + b * S * D;

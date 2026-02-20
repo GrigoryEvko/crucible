@@ -31,11 +31,13 @@ using namespace crucible;
 
 static constexpr uint32_t NUM_OPS = 8;
 
-static constexpr uint64_t SCHEMA[NUM_OPS] = {
-    0x100, 0x101, 0x102, 0x103, 0x104, 0x105, 0x106, 0x107
+static constexpr SchemaHash SCHEMA[NUM_OPS] = {
+    SchemaHash{0x100}, SchemaHash{0x101}, SchemaHash{0x102}, SchemaHash{0x103},
+    SchemaHash{0x104}, SchemaHash{0x105}, SchemaHash{0x106}, SchemaHash{0x107}
 };
-static constexpr uint64_t SHAPE[NUM_OPS] = {
-    0x200, 0x201, 0x202, 0x203, 0x204, 0x205, 0x206, 0x207
+static constexpr ShapeHash SHAPE[NUM_OPS] = {
+    ShapeHash{0x200}, ShapeHash{0x201}, ShapeHash{0x202}, ShapeHash{0x203},
+    ShapeHash{0x204}, ShapeHash{0x205}, ShapeHash{0x206}, ShapeHash{0x207}
 };
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -76,9 +78,9 @@ static void feed_iteration(TraceRing* ring, MetaLog* meta_log, uint32_t iter) {
       metas[idx++] = make_meta(fake_ptr(iter, i - 1));
     metas[idx++] = make_meta(fake_ptr(iter, i));
 
-    uint32_t ms = meta_log->try_append(metas, n_metas);
-    assert(ms != UINT32_MAX && "MetaLog overflow");
-    assert(ring->try_append(e, ms, 0, 0) && "TraceRing full");
+    auto ms = meta_log->try_append(metas, n_metas);
+    assert(ms.is_valid() && "MetaLog overflow");
+    assert(ring->try_append(e, ms) && "TraceRing full");
   }
 }
 
@@ -98,9 +100,9 @@ static void feed_trigger(TraceRing* ring, MetaLog* meta_log, uint32_t iter) {
       metas[idx++] = make_meta(fake_ptr(iter, i - 1));
     metas[idx++] = make_meta(fake_ptr(iter, i));
 
-    uint32_t ms = meta_log->try_append(metas, n_metas);
-    assert(ms != UINT32_MAX);
-    assert(ring->try_append(e, ms, 0, 0));
+    auto ms = meta_log->try_append(metas, n_metas);
+    assert(ms.is_valid());
+    assert(ring->try_append(e, ms));
   }
 }
 
@@ -232,12 +234,12 @@ static void test_pipeline_divergence() {
   }
 
   // Op 3: wrong schema → DIVERGED.
-  assert(ctx.advance(0xBAD, SHAPE[3]) == ReplayStatus::DIVERGED);
+  assert(ctx.advance(SchemaHash{0xBAD}, SHAPE[3]) == ReplayStatus::DIVERGED);
   assert(ctx.diverged_count() == 1);
   assert(ctx.is_compiled()); // mode unchanged — caller decides
 
   // Op 3 again: wrong shape → still DIVERGED (position unchanged).
-  assert(ctx.advance(SCHEMA[3], 0xBAD) == ReplayStatus::DIVERGED);
+  assert(ctx.advance(SCHEMA[3], ShapeHash{0xBAD}) == ReplayStatus::DIVERGED);
   assert(ctx.diverged_count() == 2);
 
   ctx.deactivate();
@@ -409,9 +411,9 @@ static void test_pipeline_multi_iteration() {
     metas[0] = make_meta(fake_ptr(2, i - 1));
     metas[1] = make_meta(fake_ptr(2, i));
 
-    uint32_t ms = meta_log->try_append(metas, 2);
-    assert(ms != UINT32_MAX);
-    assert(ring->try_append(e, ms, 0, 0));
+    auto ms = meta_log->try_append(metas, 2);
+    assert(ms.is_valid());
+    assert(ring->try_append(e, ms));
   }
 
   // Full iteration 3 + trigger for iteration 4.
