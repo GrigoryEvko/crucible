@@ -341,6 +341,9 @@ struct BranchNode : TraceNode {
     }
 
     // Scalar args differentiate e.g. add(x,y,alpha=0.5) from add(x,y,alpha=2.0).
+    // LIMITATION: only the first 5 scalars are hashed (TraceRing inline limit).
+    // Ops with >5 scalar args (conv2d: 8) are under-discriminated until
+    // the scalar overflow mechanism is implemented.
     if (ops[i].scalar_args) {
       uint16_t n_scalars = std::min(ops[i].num_scalar_args, uint16_t(5));
       for (uint16_t s = 0; s < n_scalars; s++) {

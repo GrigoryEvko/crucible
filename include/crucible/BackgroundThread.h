@@ -377,6 +377,12 @@ struct BackgroundThread {
       te.kernel_id = classify_kernel(re.schema_hash);
       te.pad_te = 0;
       // Copy scalar values from ring entry to arena-allocated array.
+      // TraceRing::Entry stores at most 5 inline scalars. If the Vessel
+      // records more, they're silently truncated and won't appear in
+      // content_hash — two ops differing only in scalar arg 6+ will
+      // hash identically. Assert during development to catch this.
+      assert(re.num_scalar_args <= 5 &&
+             "op has >5 scalar args — truncated in TraceRing (see Task #18)");
       uint16_t n_scalars = std::min(re.num_scalar_args, uint16_t(5));
       if (n_scalars > 0) {
         te.scalar_args = arena.alloc_array<int64_t>(n_scalars);
