@@ -154,6 +154,22 @@ struct MetaLog {
     return entries[idx & MASK];
   }
 
+  // ── Consumer (background): zero-copy contiguous span access ──
+  //
+  // Returns a direct pointer into the buffer if the range [start, start+count)
+  // doesn't wrap around the circular boundary. Returns nullptr if it wraps
+  // (caller must fall back to per-element at() copies).
+  //
+  // 99.99% of calls succeed (1M capacity, typical iteration ~1500 metas).
+  // Saves ~144B × count memcpy per op when successful.
+  [[nodiscard]] TensorMeta* try_contiguous(uint32_t start, uint32_t count) const {
+    if (count == 0) [[unlikely]] return nullptr;
+    uint32_t start_pos = start & MASK;
+    if (start_pos + count <= CAPACITY) [[likely]]
+      return &entries[start_pos];
+    return nullptr; // wraps — caller must copy
+  }
+
   // ── Consumer (background): advance tail past consumed entries ──
   void advance_tail(uint32_t new_tail) {
     tail.store(new_tail, std::memory_order_relaxed);

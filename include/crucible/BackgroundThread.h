@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <numeric>
@@ -22,15 +23,15 @@ namespace crucible {
 // feeds them to the IterationDetector, and accumulates the linear
 // trace for each iteration.
 //
-// Phases implemented here:
-//   1. Drain ring buffer (batch of up to 4096 entries)
-//   2. Append to linear trace + feed IterationDetector
-//   3. On iteration boundary: finalize trace
-//   4. Build TraceGraph (CSR property graph with DFG + alias edges)
-//   5. Create RegionNode, compute content + Merkle hashes
-//
-// Phases 5-7 (compilation, verification, activation) will be added
-// when those components are built.
+// Performance design:
+//   - Scratch buffers (PtrMap, SlotInfo, Edge) are allocated ONCE
+//     and reused across iterations. Zero per-call allocation.
+//   - PtrMap uses a generation counter: no memset between calls.
+//   - MetaLog access is zero-copy: one bulk memcpy of the entire
+//     contiguous range, then pointer arithmetic per op.
+//   - Content hash is fused into the main loop (streaming accumulator),
+//     eliminating the redundant second pass in make_region.
+//   - Memory plan uses counting sort O(n+k) instead of insertion sort O(n²).
 struct BackgroundThread {
   // The ring buffer to drain from. Not owned.
   TraceRing* ring = nullptr;
@@ -112,6 +113,9 @@ struct BackgroundThread {
 
   ~BackgroundThread() {
     stop();
+    std::free(scratch_map_);
+    std::free(scratch_slots_);
+    std::free(scratch_edges_);
   }
 
   BackgroundThread() = default;
@@ -123,64 +127,115 @@ struct BackgroundThread {
  private:
   static constexpr uint32_t BATCH_SIZE = 4096;
 
-  // ── PtrMap: open-addressing hash map for dataflow + alias tracking ──
+  // ── Scratch buffer capacities ──────────────────────────────────────
   //
-  // Maps data_ptr → (op_index, output_port). When a collision occurs
-  // (same data_ptr, different op), that's an alias — the old entry
-  // is returned for alias edge emission before being overwritten.
+  // Allocated ONCE (calloc), reused every build_trace call.
+  // PtrMap: gen-counter cleared (zero memset per call).
+  // SlotInfo: memset only the used portion each call.
+  // Edges: no init needed (written before read).
 
-  static constexpr uint32_t PTR_MAP_CAP = 8192;
+  static constexpr uint32_t PTR_MAP_CAP = 4096;   // 96KB, L2-friendly
+  static constexpr uint32_t PTR_MASK = PTR_MAP_CAP - 1;
+  static constexpr uint32_t SCRATCH_SLOT_CAP = 8192;
+  static constexpr uint32_t SCRATCH_EDGE_CAP = 16384;
+
+  // ── PtrMap: open-addressing hash map with generation counter ──────
+  //
+  // Maps data_ptr → (op_index, output_port, slot_id).
+  // Generation counter eliminates memset: a slot is "empty" if
+  // slot.gen != map_gen_. Bumping map_gen_ clears the entire table
+  // in O(1). Every 255 calls, wrap-around triggers a real memset.
 
   struct PtrSlot {
-    void* key = nullptr; // 8B
-    OpIndex op_index;    // 4B — default = none (UINT32_MAX)
-    SlotId slot_id;      // 4B — default = none (UINT32_MAX)
-    uint8_t port = 0;    // 1B
-    uint8_t pad[7]{};    // 7B — align to 24B
+    void* key = nullptr;      // 8B
+    OpIndex op_index;          // 4B — default = none (UINT32_MAX)
+    SlotId slot_id;            // 4B — default = none (UINT32_MAX)
+    uint8_t port = 0;         // 1B
+    uint8_t gen = 0;          // 1B — generation counter
+    uint8_t pad[6]{};         // 6B — align to 24B
   };
 
   static_assert(sizeof(PtrSlot) == 24, "PtrSlot should be 24 bytes");
+
+  // ── SlotInfo: compact per-slot metadata for liveness tracking ─────
+
+  struct SlotInfo {
+    OpIndex birth_op;            // 4B
+    OpIndex death_op;            // 4B
+    uint64_t nbytes = 0;        // 8B
+    ScalarType dtype = ScalarType::Undefined; // 1B
+    DeviceType device_type = DeviceType::CPU; // 1B
+    int8_t device_idx = -1;     // 1B
+    Layout layout = Layout::Strided; // 1B
+    bool is_external = false;   // 1B
+    uint8_t pad[3]{};           // 3B
+  };
+
+  static_assert(sizeof(SlotInfo) == 24, "SlotInfo: compact slot metadata");
+
+  // ── PtrMap insert result ──────────────────────────────────────────
+
+  struct InsertResult {
+    PtrSlot* slot = nullptr;   // the inserted/matched slot (for patching)
+    bool was_alias = false;    // true if key existed with different op
+    OpIndex old_op;            // previous op (valid only if was_alias)
+    uint8_t old_port = 0;     // previous port (valid only if was_alias)
+    SlotId old_slot;           // previous slot_id (valid only if was_alias)
+  };
+
+  // ── Scratch buffers (allocated once, reused forever) ──────────────
+
+  PtrSlot* scratch_map_ = nullptr;
+  SlotInfo* scratch_slots_ = nullptr;
+  Edge* scratch_edges_ = nullptr;
+  uint8_t map_gen_ = 0;
+
+  void ensure_scratch_buffers() {
+    if (scratch_map_) [[likely]] return;
+    scratch_map_ = static_cast<PtrSlot*>(
+        std::calloc(PTR_MAP_CAP, sizeof(PtrSlot)));
+    if (!scratch_map_) [[unlikely]] std::abort();
+    scratch_slots_ = static_cast<SlotInfo*>(
+        std::calloc(SCRATCH_SLOT_CAP, sizeof(SlotInfo)));
+    if (!scratch_slots_) [[unlikely]] std::abort();
+    scratch_edges_ = static_cast<Edge*>(
+        std::calloc(SCRATCH_EDGE_CAP, sizeof(Edge)));
+    if (!scratch_edges_) [[unlikely]] std::abort();
+  }
+
+  // ── PtrMap operations ─────────────────────────────────────────────
 
   [[nodiscard]] static uint32_t hash_ptr(void* p) {
     return static_cast<uint32_t>(
         reinterpret_cast<uintptr_t>(p) * 0x9E3779B97F4A7C15ULL >> 32);
   }
 
-  // Insert into PtrMap. If key already existed with a different op,
-  // sets old_op/old_port/old_slot to the previous entry (for alias detection)
-  // and returns true. Otherwise returns false.
-  static bool ptr_map_insert(
-      PtrSlot* map,
-      void* key,
-      OpIndex op_index,
-      uint8_t port,
-      SlotId slot_id,
-      OpIndex& old_op,
-      uint8_t& old_port,
-      SlotId& old_slot) {
-    uint32_t idx = hash_ptr(key) & (PTR_MAP_CAP - 1);
-    for (uint32_t probe = 0; probe < PTR_MAP_CAP; probe++) {
-      auto& s = map[(idx + probe) & (PTR_MAP_CAP - 1)];
-      if (s.key == nullptr) {
+  [[nodiscard]] static InsertResult ptr_map_insert(
+      PtrSlot* map, uint8_t gen,
+      void* key, OpIndex op_index, uint8_t port, SlotId slot_id) {
+    uint32_t idx = hash_ptr(key) & PTR_MASK;
+    for (uint32_t probe = 0; probe <= PTR_MASK; probe++) {
+      auto& s = map[(idx + probe) & PTR_MASK];
+      if (s.gen != gen) {
+        // Stale generation → empty slot. Claim it.
         s.key = key;
         s.op_index = op_index;
         s.port = port;
         s.slot_id = slot_id;
-        return false;
+        s.gen = gen;
+        return {&s, false, {}, 0, {}};
       }
       if (s.key == key) {
-        // Collision: same data_ptr, possibly different op → alias
-        bool is_alias = (s.op_index != op_index);
-        old_op = s.op_index;
-        old_port = s.port;
-        old_slot = s.slot_id;
+        // Existing entry. Alias if op differs.
+        InsertResult r{&s, s.op_index != op_index,
+                       s.op_index, s.port, s.slot_id};
         s.op_index = op_index;
         s.port = port;
         // Keep the same slot_id for aliases (shared storage)
-        return is_alias;
+        return r;
       }
     }
-    return false; // table full — shouldn't happen
+    return {nullptr, false, {}, 0, {}}; // table full
   }
 
   struct PtrLookup {
@@ -189,13 +244,16 @@ struct BackgroundThread {
     uint8_t port;
   };
 
-  [[nodiscard]] static PtrLookup ptr_map_lookup(const PtrSlot* map, void* key) {
+  [[nodiscard]] static PtrLookup ptr_map_lookup(
+      const PtrSlot* map, uint8_t gen, void* key) {
     if (!key) return {OpIndex{}, SlotId{}, 0};
-    uint32_t idx = hash_ptr(key) & (PTR_MAP_CAP - 1);
-    for (uint32_t probe = 0; probe < PTR_MAP_CAP; probe++) {
-      auto& s = map[(idx + probe) & (PTR_MAP_CAP - 1)];
-      if (s.key == key) return {s.op_index, s.slot_id, s.port};
-      if (s.key == nullptr) return {OpIndex{}, SlotId{}, 0};
+    uint32_t idx = hash_ptr(key) & PTR_MASK;
+    for (uint32_t probe = 0; probe <= PTR_MASK; probe++) {
+      auto& s = map[(idx + probe) & PTR_MASK];
+      if (s.gen == gen && s.key == key)
+        return {s.op_index, s.slot_id, s.port};
+      if (s.gen != gen)
+        return {OpIndex{}, SlotId{}, 0}; // empty → miss
     }
     return {OpIndex{}, SlotId{}, 0};
   }
@@ -210,9 +268,6 @@ struct BackgroundThread {
 
     while (running.load(std::memory_order_relaxed)) {
       // Check for divergence reset signal from fg thread.
-      // Discard accumulated trace + reset detector so stale data
-      // (leftover signature ops, divergent ops) doesn't produce
-      // garbage regions when new clean data arrives.
       if (reset_requested.load(std::memory_order_acquire)) [[unlikely]] {
         detector.reset();
         current_trace.clear();
@@ -256,23 +311,25 @@ struct BackgroundThread {
     uint32_t total = static_cast<uint32_t>(current_trace.size());
     uint32_t iter_len = detector.last_completed_len;
 
-    // Discard warmup ops from the first boundary's accumulation.
-    // The first confirmed boundary accumulates iter 0 (signature build) +
-    // iter 1 (candidate) + trigger (confirmation). The region should only
-    // contain the last complete iteration, not the warmup.
-    // For subsequent boundaries: warmup = 0 (no discard).
     uint32_t warmup = std::sub_sat(
         std::sub_sat(total, IterationDetector::K),
         iter_len);
     if (warmup > 0) [[unlikely]] {
-      current_trace.erase(current_trace.begin(),
-                          current_trace.begin() + warmup);
-      current_meta_starts.erase(current_meta_starts.begin(),
-                                current_meta_starts.begin() + warmup);
-      current_scope_hashes.erase(current_scope_hashes.begin(),
-                                 current_scope_hashes.begin() + warmup);
-      current_callsite_hashes.erase(current_callsite_hashes.begin(),
-                                    current_callsite_hashes.begin() + warmup);
+      // Shift data: memmove remaining to front (no alloc).
+      auto shift = [warmup](auto& vec) {
+        auto n = vec.size();
+        if (warmup < n) {
+          std::memmove(vec.data(), vec.data() + warmup,
+                       (n - warmup) * sizeof(vec[0]));
+          vec.resize(n - warmup);
+        } else {
+          vec.clear();
+        }
+      };
+      shift(current_trace);
+      shift(current_meta_starts);
+      shift(current_scope_hashes);
+      shift(current_callsite_hashes);
       total = std::sub_sat(total, warmup);
     }
 
@@ -280,52 +337,46 @@ struct BackgroundThread {
     last_iteration_length = completed_len;
     iterations_completed++;
 
-    // Build property graph, compute memory plan, create DAG region.
     if (meta_log && completed_len > 0) {
       TraceGraph* graph = build_trace(completed_len);
       if (graph) {
         iteration_graphs.push_back(graph);
 
-        auto* region = make_region(arena, graph->ops, graph->num_ops);
+        // Use pre-computed content hash — no redundant second pass.
+        auto* region = make_region(
+            arena, graph->ops, graph->num_ops, graph->content_hash);
 
-        // Phase 3: compute memory plan from slot liveness data.
         if (graph->slots && graph->num_slots > 0) {
           region->plan = compute_memory_plan(
               graph->slots, graph->num_slots);
         }
 
+        // Advance MetaLog tail AFTER all reads are done (zero-copy safety).
+        if (graph->max_meta_end > 0)
+          meta_log->advance_tail(graph->max_meta_end);
+
         recompute_merkle(region);
         uncompiled_regions.push_back(region);
 
-        // Signal foreground: stable iteration detected.
         active_region.store(region, std::memory_order_release);
-
-        // Notify Vigil (or any other observer) that a region is ready.
         if (region_ready_cb) region_ready_cb(region);
       }
     }
 
-    // TODO Phase 5: Compile new regions.
-    // TODO Phase 6: Verify compiled kernels.
-    // TODO Phase 7: Atomic swap to activate compiled DAG.
-
-    // Keep the K signature ops as the start of the new iteration.
-    std::vector<TraceRing::Entry> new_trace(
-        current_trace.end() - IterationDetector::K,
-        current_trace.end());
-    std::vector<MetaIndex> new_meta_starts(
-        current_meta_starts.end() - IterationDetector::K,
-        current_meta_starts.end());
-    std::vector<ScopeHash> new_scope_hashes(
-        current_scope_hashes.end() - IterationDetector::K,
-        current_scope_hashes.end());
-    std::vector<CallsiteHash> new_callsite_hashes(
-        current_callsite_hashes.end() - IterationDetector::K,
-        current_callsite_hashes.end());
-    current_trace = std::move(new_trace);
-    current_meta_starts = std::move(new_meta_starts);
-    current_scope_hashes = std::move(new_scope_hashes);
-    current_callsite_hashes = std::move(new_callsite_hashes);
+    // Keep the K signature ops. Memmove to front + resize (no alloc).
+    auto retain_tail = [](auto& vec) {
+      constexpr uint32_t K = IterationDetector::K;
+      auto n = vec.size();
+      if (n > K) {
+        std::memmove(vec.data(), vec.data() + n - K,
+                     K * sizeof(vec[0]));
+        vec.resize(K);
+      }
+    };
+    retain_tail(current_trace);
+    retain_tail(current_meta_starts);
+    retain_tail(current_scope_hashes);
+    retain_tail(current_callsite_hashes);
   }
 
  public:
@@ -334,19 +385,23 @@ struct BackgroundThread {
 
   // ── Build TraceGraph: ring entries + MetaLog → CSR property graph ──
   //
-  // Single pass builds TraceEntries, collects DFG + ALIAS edges,
-  // assigns tensor slot IDs, and tracks liveness (birth/death ops).
+  // Squatted scratch buffers + gen-counter PtrMap + bulk MetaLog copy
+  // + streaming content hash + zero per-op arena calls = minimum
+  // possible instructions on the hot path.
+  //
   // Returns nullptr on MetaLog overflow.
   //
   // Public: called by on_iteration_boundary() and benchmarks.
   [[nodiscard]] TraceGraph* build_trace(uint32_t count) {
-    // Check for MetaLog overflow.
-    // MetaIndex::none() is normal for ops with zero tensor arguments
-    // (profiler hooks, control flow). Only abort if the op HAD tensors
-    // but we lost them to MetaLog overflow.
+    ensure_scratch_buffers();
+
+    // ── Phase 0: Scan — compute totals, check MetaLog overflow ──
+
     uint32_t max_meta_end = 0;
+    uint32_t first_meta = UINT32_MAX;
     uint32_t total_inputs = 0;
     uint32_t total_outputs = 0;
+    uint32_t total_scalars = 0;
     for (uint32_t i = 0; i < count; i++) {
       MetaIndex ms = current_meta_starts[i];
       const auto& re = current_trace[i];
@@ -357,47 +412,77 @@ struct BackgroundThread {
         return nullptr;
       }
       if (ms.is_valid()) {
+        if (first_meta == UINT32_MAX) first_meta = ms.raw();
         uint32_t end = ms.raw() + re.num_inputs + re.num_outputs;
         if (end > max_meta_end) max_meta_end = end;
       }
       total_inputs += re.num_inputs;
       total_outputs += re.num_outputs;
+      total_scalars += std::min(re.num_scalar_args, uint16_t(5));
     }
 
-    // Allocate TraceEntries.
+    // ── Phase 1: Bulk allocations (3 arena allocs for entire loop) ──
+
+    // 1. TraceEntry array.
     auto* ops = arena.alloc_array<TraceEntry>(count);
 
-    // Overallocate edge buffer (max: one DFG per input + one alias per output).
-    uint32_t max_edges = total_inputs + total_outputs;
-    auto* edge_buf = arena.alloc_array<Edge>(max_edges);
+    // 2. Bulk MetaLog copy: one memcpy of ALL metas across ALL ops.
+    //    Then per-op meta pointers are pure arithmetic into this block.
+    TensorMeta* arena_metas = nullptr;
+    if (first_meta != UINT32_MAX) {
+      uint32_t total_metas = max_meta_end - first_meta;
+      arena_metas = arena.alloc_array<TensorMeta>(total_metas);
+      TensorMeta* log_ptr = meta_log->try_contiguous(first_meta, total_metas);
+      if (log_ptr) [[likely]] {
+        std::memcpy(arena_metas, log_ptr,
+                    total_metas * sizeof(TensorMeta));
+      } else {
+        // Wrap case (extremely rare with 1M capacity).
+        for (uint32_t m = 0; m < total_metas; m++)
+          arena_metas[m] = meta_log->at(first_meta + m);
+      }
+    }
+
+    // 3. Bulk auxiliary block: scalars + trace indices + slot IDs.
+    //    Layout (all naturally aligned):
+    //      [int64_t scalars]  align 8
+    //      [OpIndex indices]  align 4
+    //      [SlotId in_slots]  align 4
+    //      [SlotId out_slots] align 4
+    size_t aux_bytes =
+        static_cast<size_t>(total_scalars) * sizeof(int64_t) +
+        static_cast<size_t>(total_inputs) * sizeof(OpIndex) +
+        static_cast<size_t>(total_inputs) * sizeof(SlotId) +
+        static_cast<size_t>(total_outputs) * sizeof(SlotId);
+    char* aux_cursor = (aux_bytes > 0) ?
+        static_cast<char*>(arena.alloc(aux_bytes, alignof(int64_t))) :
+        nullptr;
+
+    // ── PtrMap: bump generation (zero memset) ──
+
+    map_gen_++;
+    if (map_gen_ == 0) [[unlikely]] {
+      // Wrap-around every 255 calls: full reset.
+      std::memset(scratch_map_, 0, PTR_MAP_CAP * sizeof(PtrSlot));
+      map_gen_ = 1;
+    }
+
+    // ── SlotInfo: memset only the portion we'll use ──
+
+    uint32_t slot_cap = std::min(SCRATCH_SLOT_CAP,
+        std::max(uint32_t{256}, total_inputs + total_outputs));
+    std::memset(scratch_slots_, 0, slot_cap * sizeof(SlotInfo));
+    uint32_t next_slot_raw = 0;
+
+    // ── Edge buffer: scratch, no init needed ──
+
     uint32_t num_edges = 0;
 
-    // PtrMap for dataflow + alias tracking.
-    PtrSlot map[PTR_MAP_CAP];
-    std::memset(map, 0, sizeof(map));
+    // ── Streaming content hash ──
 
-    // Slot tracking: compact struct array sized to actual need.
-    // total_inputs + total_outputs is an upper bound on unique slots.
-    // Old code: 8 arrays × 65536 entries = 1.3MB memset.
-    // New code: one array × actual_slots entries = typically ~12-24KB.
-    struct SlotInfo {
-      OpIndex birth_op;            // 4B
-      OpIndex death_op;            // 4B
-      uint64_t nbytes = 0;        // 8B
-      ScalarType dtype = ScalarType::Undefined; // 1B
-      DeviceType device_type = DeviceType::CPU; // 1B
-      int8_t device_idx = -1;     // 1B
-      Layout layout = Layout::Strided; // 1B
-      bool is_external = false;   // 1B
-      uint8_t pad[3]{};           // 3B
-    };
-    static_assert(sizeof(SlotInfo) == 24, "SlotInfo: compact slot metadata");
+    uint64_t content_h = 0x9E3779B97F4A7C15ULL;
 
-    uint32_t next_slot_raw = 0;
-    uint32_t slot_cap = std::min(MAX_SLOTS,
-        std::max(uint32_t{256}, total_inputs + total_outputs));
-    auto* slot_info = arena.alloc_array<SlotInfo>(slot_cap);
-    std::memset(slot_info, 0, slot_cap * sizeof(SlotInfo));
+    // ── Phase 2: Main loop — zero arena allocs, zero MetaLog copies ──
 
     for (uint32_t i = 0; i < count; i++) {
       const auto& re = current_trace[i];
@@ -410,62 +495,61 @@ struct BackgroundThread {
       te.callsite_hash = current_callsite_hashes[i];
       te.num_inputs = re.num_inputs;
       te.num_outputs = re.num_outputs;
-      te.num_scalar_args = re.num_scalar_args;
       te.grad_enabled = re.grad_enabled;
       te.inference_mode = re.inference_mode;
       te.kernel_id = classify_kernel(re.schema_hash);
       te.pad_te = 0;
-      // Copy scalar values from ring entry to arena-allocated array.
-      // TraceRing::Entry stores at most 5 inline scalars. If the Vessel
-      // records more, they're silently truncated and won't appear in
-      // content_hash — two ops differing only in scalar arg 6+ will
-      // hash identically. Assert during development to catch this.
       assert(re.num_scalar_args <= 5 &&
              "op has >5 scalar args — truncated in TraceRing (see Task #18)");
       uint16_t n_scalars = std::min(re.num_scalar_args, uint16_t(5));
       te.num_scalar_args = n_scalars;
 
-      // Read TensorMetas from MetaLog (skip ops with no tensor arguments).
       if (ms.is_valid()) {
-        // Batch arena alloc: merge 6 per-op allocations into 1.
-        // Layout (all naturally aligned):
-        //   [input_metas: TensorMeta × num_in]      align 8, size 144*n
-        //   [output_metas: TensorMeta × num_out]    align 8, size 144*n
-        //   [scalar_args: int64_t × n_scalars]      align 8, size 8*n
-        //   [input_trace_indices: OpIndex × num_in]  align 4, size 4*n
-        //   [input_slot_ids: SlotId × num_in]        align 4, size 4*n
-        //   [output_slot_ids: SlotId × num_out]      align 4, size 4*n
         uint16_t n_in = re.num_inputs;
         uint16_t n_out = re.num_outputs;
-        size_t block_bytes =
-            static_cast<size_t>(n_in + n_out) * sizeof(TensorMeta) +
-            static_cast<size_t>(n_scalars) * sizeof(int64_t) +
-            static_cast<size_t>(n_in) * sizeof(OpIndex) +
-            static_cast<size_t>(n_in) * sizeof(SlotId) +
-            static_cast<size_t>(n_out) * sizeof(SlotId);
 
-        auto* block = static_cast<char*>(arena.alloc(block_bytes, alignof(TensorMeta)));
-        te.input_metas = reinterpret_cast<TensorMeta*>(block);
-        block += n_in * sizeof(TensorMeta);
-        te.output_metas = reinterpret_cast<TensorMeta*>(block);
-        block += n_out * sizeof(TensorMeta);
-        te.scalar_args = (n_scalars > 0) ? reinterpret_cast<int64_t*>(block) : nullptr;
-        block += n_scalars * sizeof(int64_t);
-        te.input_trace_indices = reinterpret_cast<OpIndex*>(block);
-        block += n_in * sizeof(OpIndex);
-        te.input_slot_ids = reinterpret_cast<SlotId*>(block);
-        block += n_in * sizeof(SlotId);
-        te.output_slot_ids = reinterpret_cast<SlotId*>(block);
+        // Meta pointers: pure arithmetic into bulk arena copy.
+        uint32_t meta_offset = ms.raw() - first_meta;
+        te.input_metas = arena_metas + meta_offset;
+        te.output_metas = arena_metas + meta_offset + n_in;
 
-        // Copy metas from MetaLog.
-        for (uint16_t j = 0; j < n_in; j++)
-          te.input_metas[j] = meta_log->at(ms.raw() + j);
-        for (uint16_t j = 0; j < n_out; j++)
-          te.output_metas[j] = meta_log->at(ms.raw() + n_in + j);
+        // Aux pointers: cursor advance into bulk block.
+        te.scalar_args = (n_scalars > 0) ?
+            reinterpret_cast<int64_t*>(aux_cursor) : nullptr;
+        aux_cursor += n_scalars * sizeof(int64_t);
+        te.input_trace_indices = reinterpret_cast<OpIndex*>(aux_cursor);
+        aux_cursor += n_in * sizeof(OpIndex);
+        te.input_slot_ids = reinterpret_cast<SlotId*>(aux_cursor);
+        aux_cursor += n_in * sizeof(SlotId);
+        te.output_slot_ids = reinterpret_cast<SlotId*>(aux_cursor);
+        aux_cursor += n_out * sizeof(SlotId);
 
-        // Copy scalars from ring entry.
         if (n_scalars > 0)
-          std::memcpy(te.scalar_args, re.scalar_values, n_scalars * sizeof(int64_t));
+          std::memcpy(te.scalar_args, re.scalar_values,
+                      n_scalars * sizeof(int64_t));
+
+        // ── Streaming content hash: fold this op's contribution ──
+
+        content_h = detail::wymix(content_h, te.schema_hash.raw());
+        for (uint16_t j = 0; j < n_in; j++) {
+          const TensorMeta& m = te.input_metas[j];
+          for (uint8_t d = 0; d < m.ndim; d++) {
+            content_h = detail::wymix(
+                content_h ^ static_cast<uint64_t>(m.sizes[d]),
+                static_cast<uint64_t>(m.strides[d]));
+          }
+          content_h ^=
+              static_cast<uint64_t>(std::to_underlying(m.dtype)) |
+              (static_cast<uint64_t>(std::to_underlying(m.device_type)) << 8) |
+              (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16);
+          content_h *= 0x9E3779B97F4A7C15ULL;
+        }
+        if (n_scalars > 0) {
+          for (uint16_t s = 0; s < n_scalars; s++) {
+            content_h ^= static_cast<uint64_t>(te.scalar_args[s]);
+            content_h *= 0x100000001b3ULL;
+          }
+        }
       } else {
         te.input_metas = nullptr;
         te.output_metas = nullptr;
@@ -475,48 +559,50 @@ struct BackgroundThread {
         te.output_slot_ids = nullptr;
         te.num_inputs = 0;
         te.num_outputs = 0;
+
+        // Still hash schema for no-tensor ops (profiler hooks).
+        content_h = detail::wymix(content_h, te.schema_hash.raw());
       }
 
-      // Build DFG edges + track input liveness.
-      // Use te.num_inputs (validated count) — 0 for no-metadata ops.
+      // ── DFG edges + input slot tracking ──
+
       for (uint16_t j = 0; j < te.num_inputs; j++) {
         void* ptr = te.input_metas[j].data_ptr;
-        auto lookup = ptr_map_lookup(map, ptr);
+        auto lookup = ptr_map_lookup(scratch_map_, map_gen_, ptr);
         te.input_trace_indices[j] = lookup.op_index;
         if (lookup.op_index.is_valid()) {
-          // Known tensor: emit DFG edge and extend liveness.
           te.input_slot_ids[j] = lookup.slot_id;
-          edge_buf[num_edges++] = {
+          assert(num_edges < SCRATCH_EDGE_CAP);
+          scratch_edges_[num_edges++] = {
               OpIndex{lookup.op_index.raw()}, OpIndex{i},
               lookup.port, static_cast<uint8_t>(j),
               EdgeKind::DATA_FLOW, 0};
-          if (lookup.slot_id.raw() < slot_cap)
-            slot_info[lookup.slot_id.raw()].death_op = std::max(slot_info[lookup.slot_id.raw()].death_op, OpIndex{i});
+          if (lookup.slot_id.raw() < slot_cap) {
+            auto& si = scratch_slots_[lookup.slot_id.raw()];
+            si.death_op = std::max(si.death_op, OpIndex{i});
+          }
         } else if (ptr != nullptr && next_slot_raw < slot_cap) {
           // External tensor (param, data loader output): first encounter.
           SlotId sid{next_slot_raw++};
           te.input_slot_ids[j] = sid;
-          slot_info[sid.raw()].birth_op = OpIndex{0};
-          slot_info[sid.raw()].death_op = OpIndex{i};
-          slot_info[sid.raw()].is_external = true;
-          slot_info[sid.raw()].nbytes = compute_storage_nbytes(te.input_metas[j]);
-          slot_info[sid.raw()].dtype = te.input_metas[j].dtype;
-          slot_info[sid.raw()].device_type = te.input_metas[j].device_type;
-          slot_info[sid.raw()].device_idx = te.input_metas[j].device_idx;
-          slot_info[sid.raw()].layout = te.input_metas[j].layout;
-          // Insert with OpIndex{} to mark as external producer.
-          OpIndex dummy_op;
-          uint8_t dummy_port;
-          SlotId dummy_slot;
-          ptr_map_insert(map, ptr, OpIndex{}, 0, sid,
-                         dummy_op, dummy_port, dummy_slot);
+          auto& si = scratch_slots_[sid.raw()];
+          si.birth_op = OpIndex{0};
+          si.death_op = OpIndex{i};
+          si.is_external = true;
+          si.nbytes = compute_storage_nbytes(te.input_metas[j]);
+          si.dtype = te.input_metas[j].dtype;
+          si.device_type = te.input_metas[j].device_type;
+          si.device_idx = te.input_metas[j].device_idx;
+          si.layout = te.input_metas[j].layout;
+          (void)ptr_map_insert(scratch_map_, map_gen_,
+              ptr, OpIndex{}, 0, sid);
         } else {
           te.input_slot_ids[j] = SlotId{};
         }
       }
 
-      // Register outputs: assign slot IDs + detect aliases.
-      // output_slot_ids already allocated in batch block above.
+      // ── Output slot tracking + alias detection ──
+
       for (uint16_t j = 0; j < te.num_outputs; j++) {
         void* ptr = te.output_metas[j].data_ptr;
         if (!ptr) {
@@ -524,67 +610,53 @@ struct BackgroundThread {
           continue;
         }
 
-        OpIndex old_op;
-        uint8_t old_port;
-        SlotId old_slot;
-        // Insert with temporary slot_id; patched below for new keys.
-        bool alias = ptr_map_insert(
-            map, ptr, OpIndex{i}, static_cast<uint8_t>(j), SlotId{0},
-            old_op, old_port, old_slot);
+        auto result = ptr_map_insert(scratch_map_, map_gen_,
+            ptr, OpIndex{i}, static_cast<uint8_t>(j), SlotId{0});
 
-        if (alias) {
-          // Same data_ptr from a different op → alias. Reuse slot_id.
-          te.output_slot_ids[j] = old_slot;
-          if (old_slot.raw() < slot_cap) {
-            slot_info[old_slot.raw()].death_op = std::max(slot_info[old_slot.raw()].death_op, OpIndex{i});
+        if (result.was_alias) {
+          te.output_slot_ids[j] = result.old_slot;
+          if (result.old_slot.raw() < slot_cap) {
+            auto& si = scratch_slots_[result.old_slot.raw()];
+            si.death_op = std::max(si.death_op, OpIndex{i});
             uint64_t nb = compute_storage_nbytes(te.output_metas[j]);
-            slot_info[old_slot.raw()].nbytes = std::max(slot_info[old_slot.raw()].nbytes, nb);
+            si.nbytes = std::max(si.nbytes, nb);
           }
-          // Only emit ALIAS edge if the prior entry was from a real op
-          // (not an external with OpIndex{}).
-          if (old_op.is_valid()) {
-            edge_buf[num_edges++] = {
-                OpIndex{old_op.raw()}, OpIndex{i},
-                old_port, static_cast<uint8_t>(j),
+          if (result.old_op.is_valid()) {
+            assert(num_edges < SCRATCH_EDGE_CAP);
+            scratch_edges_[num_edges++] = {
+                OpIndex{result.old_op.raw()}, OpIndex{i},
+                result.old_port, static_cast<uint8_t>(j),
                 EdgeKind::ALIAS, 0};
           }
         } else if (next_slot_raw < slot_cap) {
-          // New unique storage: assign fresh slot and patch PtrMap.
           SlotId sid{next_slot_raw++};
-          slot_info[sid.raw()].birth_op = OpIndex{i};
-          slot_info[sid.raw()].death_op = OpIndex{i};
-          slot_info[sid.raw()].is_external = false;
-          slot_info[sid.raw()].nbytes = compute_storage_nbytes(te.output_metas[j]);
-          slot_info[sid.raw()].dtype = te.output_metas[j].dtype;
-          slot_info[sid.raw()].device_type = te.output_metas[j].device_type;
-          slot_info[sid.raw()].device_idx = te.output_metas[j].device_idx;
-          slot_info[sid.raw()].layout = te.output_metas[j].layout;
+          auto& si = scratch_slots_[sid.raw()];
+          si.birth_op = OpIndex{i};
+          si.death_op = OpIndex{i};
+          si.is_external = false;
+          si.nbytes = compute_storage_nbytes(te.output_metas[j]);
+          si.dtype = te.output_metas[j].dtype;
+          si.device_type = te.output_metas[j].device_type;
+          si.device_idx = te.output_metas[j].device_idx;
+          si.layout = te.output_metas[j].layout;
           te.output_slot_ids[j] = sid;
-          // Patch PtrMap entry with correct slot_id.
-          uint32_t pidx = hash_ptr(ptr) & (PTR_MAP_CAP - 1);
-          for (uint32_t probe = 0; probe < PTR_MAP_CAP; probe++) {
-            auto& s = map[(pidx + probe) & (PTR_MAP_CAP - 1)];
-            if (s.key == ptr) {
-              s.slot_id = sid;
-              break;
-            }
-          }
+          // Patch the PtrMap slot's slot_id via returned pointer.
+          if (result.slot) result.slot->slot_id = sid;
         } else {
           te.output_slot_ids[j] = SlotId{};
         }
       }
     }
 
-    // Advance MetaLog tail.
-    meta_log->advance_tail(max_meta_end);
+    // ── Phase 3: Build outputs ──
 
-    // Build arena-allocated TensorSlot array from compact SlotInfo.
+    // Build arena-allocated TensorSlot array from scratch slots.
     uint32_t num_slots = std::min(next_slot_raw, slot_cap);
     TensorSlot* slots = nullptr;
     if (num_slots > 0) {
       slots = arena.alloc_array<TensorSlot>(num_slots);
       for (uint32_t s = 0; s < num_slots; s++) {
-        const auto& si = slot_info[s];
+        const auto& si = scratch_slots_[s];
         slots[s].offset_bytes = 0; // assigned by compute_memory_plan()
         slots[s].nbytes = si.nbytes;
         slots[s].slot_id = SlotId{s};
@@ -605,18 +677,21 @@ struct BackgroundThread {
     graph->num_ops = count;
     graph->slots = slots;
     graph->num_slots = num_slots;
-    build_csr(arena, graph, edge_buf, num_edges, count);
+    graph->content_hash = ContentHash{detail::fmix64(content_h)};
+    graph->max_meta_end = max_meta_end;
+    build_csr(arena, graph, scratch_edges_, num_edges, count);
 
     return graph;
   }
 
  public:
-  // ── Compute memory plan: sweep-line offset assignment ──
+  // ── Compute memory plan: counting sort + sweep-line offset ────────
   //
-  // For each internal (non-external) slot, compute a byte offset
-  // in a single pre-allocated pool using best-fit allocation.
+  // O(n + k) counting sort replaces O(n²) insertion sort for event
+  // ordering. Sweep-line best-fit allocation is unchanged.
   // Alignment: 256 bytes (CUDA coalescing).
-  [[nodiscard]] MemoryPlan* compute_memory_plan(TensorSlot* slots, uint32_t num_slots) {
+  [[nodiscard]] MemoryPlan* compute_memory_plan(
+      TensorSlot* slots, uint32_t num_slots) {
     static constexpr uint32_t ALIGNMENT = 256;
 
     auto* plan = arena.alloc_obj<MemoryPlan>();
@@ -625,11 +700,9 @@ struct BackgroundThread {
     plan->num_external = 0;
     plan->pool_bytes = 0;
 
-    // Populate device/distributed context.
     plan->rank = rank;
     plan->world_size = world_size;
     plan->device_capability = device_capability;
-    // Infer target device from the first non-external slot.
     plan->device_type = DeviceType::CPU;
     plan->device_idx = -1;
     std::memset(plan->pad0, 0, sizeof(plan->pad0));
@@ -637,83 +710,97 @@ struct BackgroundThread {
     if (num_slots == 0)
       return plan;
 
-    // Count externals and find target device.
+    // Count externals, find target device, and compute max op index.
+    uint32_t max_op = 0;
     for (uint32_t s = 0; s < num_slots; s++) {
       if (slots[s].is_external) {
         plan->num_external++;
-      } else if (plan->device_type == DeviceType::CPU && slots[s].device_type != DeviceType::CPU) {
-        // First non-CPU internal slot determines the plan's target device.
-        plan->device_type = slots[s].device_type;
-        plan->device_idx = slots[s].device_idx;
+      } else {
+        if (plan->device_type == DeviceType::CPU &&
+            slots[s].device_type != DeviceType::CPU) {
+          plan->device_type = slots[s].device_type;
+          plan->device_idx = slots[s].device_idx;
+        }
+        if (slots[s].death_op.raw() + 1 > max_op)
+          max_op = slots[s].death_op.raw() + 1;
       }
     }
-
-    // Build event list for sweep-line.
-    // Each internal slot generates two events: ALLOC at birth, FREE at death+1.
-    struct Event {
-      uint32_t op = 0;      // sweep position
-      bool is_free = false;  // true = FREE, false = ALLOC
-      uint32_t slot_id = 0; // which slot
-    };
 
     uint32_t num_internal = num_slots - plan->num_external;
     if (num_internal == 0)
       return plan;
 
-    auto* events = arena.alloc_array<Event>(num_internal * 2);
-    uint32_t num_events = 0;
+    // ── Counting sort: bucket slots by birth_op and death_op+1 ──
+
+    uint32_t num_ops = max_op + 1; // sweep range [0, max_op]
+    auto* birth_count = arena.alloc_array<uint32_t>(num_ops);
+    auto* death_count = arena.alloc_array<uint32_t>(num_ops);
+    std::memset(birth_count, 0, num_ops * sizeof(uint32_t));
+    std::memset(death_count, 0, num_ops * sizeof(uint32_t));
+
     for (uint32_t s = 0; s < num_slots; s++) {
-      if (slots[s].is_external)
-        continue;
-      events[num_events++] = {slots[s].birth_op.raw(), false, s};
-      events[num_events++] = {slots[s].death_op.raw() + 1, true, s};
+      if (slots[s].is_external) continue;
+      birth_count[slots[s].birth_op.raw()]++;
+      uint32_t free_at = slots[s].death_op.raw() + 1;
+      if (free_at < num_ops) death_count[free_at]++;
     }
 
-    // Sort: by op_index, ties: FREE before ALLOC.
-    // Simple insertion sort — num_events is typically < 1000.
-    for (uint32_t i = 1; i < num_events; i++) {
-      Event tmp = events[i];
-      uint32_t j = i;
-      while (j > 0 && (events[j - 1].op > tmp.op ||
-                        (events[j - 1].op == tmp.op &&
-                         !events[j - 1].is_free && tmp.is_free))) {
-        events[j] = events[j - 1];
-        j--;
-      }
-      events[j] = tmp;
+    // Prefix sum → offsets.
+    auto* birth_off = arena.alloc_array<uint32_t>(num_ops + 1);
+    auto* death_off = arena.alloc_array<uint32_t>(num_ops + 1);
+    birth_off[0] = 0;
+    death_off[0] = 0;
+    for (uint32_t o = 0; o < num_ops; o++) {
+      birth_off[o + 1] = birth_off[o] + birth_count[o];
+      death_off[o + 1] = death_off[o] + death_count[o];
     }
 
-    // Free-list: sorted by offset for best-fit.
+    // Scatter slot indices into sorted order.
+    auto* born_slots = arena.alloc_array<uint32_t>(num_internal);
+    auto* dead_slots = arena.alloc_array<uint32_t>(num_internal);
+    // Cursor arrays: copy of offsets, incremented during scatter.
+    auto* birth_cur = arena.alloc_array<uint32_t>(num_ops);
+    auto* death_cur = arena.alloc_array<uint32_t>(num_ops);
+    std::memcpy(birth_cur, birth_off, num_ops * sizeof(uint32_t));
+    std::memcpy(death_cur, death_off, num_ops * sizeof(uint32_t));
+
+    for (uint32_t s = 0; s < num_slots; s++) {
+      if (slots[s].is_external) continue;
+      born_slots[birth_cur[slots[s].birth_op.raw()]++] = s;
+      uint32_t free_at = slots[s].death_op.raw() + 1;
+      if (free_at < num_ops)
+        dead_slots[death_cur[free_at]++] = s;
+    }
+
+    // ── Sweep-line: process ops in order, FREE then ALLOC ──
+
     struct FreeBlock {
       uint64_t offset;
       uint64_t size;
     };
-    // Stack-allocated free list (generous upper bound).
     constexpr uint32_t MAX_FREE = 4096;
     FreeBlock free_list[MAX_FREE];
     uint32_t num_free = 0;
-
     uint64_t pool_end = 0;
 
-    // Sweep through events.
-    for (uint32_t e = 0; e < num_events; e++) {
-      auto& ev = events[e];
-      if (ev.is_free) {
-        // Return slot to free list.
-        uint64_t offset = slots[ev.slot_id].offset_bytes;
-        uint64_t size = (slots[ev.slot_id].nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1);
+    for (uint32_t op = 0; op < num_ops; op++) {
+      // Free slots that die at this op (death_op + 1 == op).
+      for (uint32_t d = death_off[op]; d < death_off[op + 1]; d++) {
+        uint32_t s = dead_slots[d];
+        uint64_t offset = slots[s].offset_bytes;
+        uint64_t size = (slots[s].nbytes + ALIGNMENT - 1) &
+                        ~uint64_t(ALIGNMENT - 1);
 
-        // Try to merge with adjacent blocks.
+        // Merge with adjacent blocks.
         bool merged = false;
         for (uint32_t f = 0; f < num_free; f++) {
           if (free_list[f].offset + free_list[f].size == offset) {
-            // Merge: extend existing block forward.
             free_list[f].size += size;
-            // Check if we can also merge with the next block.
+            // Check if we can also merge forward.
             for (uint32_t g = 0; g < num_free; g++) {
-              if (g != f && free_list[f].offset + free_list[f].size == free_list[g].offset) {
+              if (g != f && free_list[f].offset + free_list[f].size ==
+                                free_list[g].offset) {
                 free_list[f].size += free_list[g].size;
-                // Remove block g.
                 free_list[g] = free_list[--num_free];
                 break;
               }
@@ -722,7 +809,6 @@ struct BackgroundThread {
             break;
           }
           if (offset + size == free_list[f].offset) {
-            // Merge: extend existing block backward.
             free_list[f].offset = offset;
             free_list[f].size += size;
             merged = true;
@@ -732,9 +818,13 @@ struct BackgroundThread {
         if (!merged && num_free < MAX_FREE) {
           free_list[num_free++] = {offset, size};
         }
-      } else {
-        // Allocate: best-fit from free list.
-        uint64_t aligned_size = (slots[ev.slot_id].nbytes + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1);
+      }
+
+      // Allocate slots born at this op.
+      for (uint32_t b = birth_off[op]; b < birth_off[op + 1]; b++) {
+        uint32_t s = born_slots[b];
+        uint64_t aligned_size = (slots[s].nbytes + ALIGNMENT - 1) &
+                                ~uint64_t(ALIGNMENT - 1);
         uint32_t best = UINT32_MAX;
         uint64_t best_waste = UINT64_MAX;
         for (uint32_t f = 0; f < num_free; f++) {
@@ -747,19 +837,15 @@ struct BackgroundThread {
           }
         }
         if (best != UINT32_MAX) {
-          // Use best-fit block.
-          slots[ev.slot_id].offset_bytes = free_list[best].offset;
+          slots[s].offset_bytes = free_list[best].offset;
           if (best_waste == 0) {
-            // Exact fit: remove block.
             free_list[best] = free_list[--num_free];
           } else {
-            // Shrink block.
             free_list[best].offset += aligned_size;
             free_list[best].size -= aligned_size;
           }
         } else {
-          // Extend pool.
-          slots[ev.slot_id].offset_bytes = pool_end;
+          slots[s].offset_bytes = pool_end;
           pool_end += aligned_size;
         }
       }
