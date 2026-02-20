@@ -83,22 +83,27 @@ static void test_linear_match() {
   assert(engine.ops_matched() == 0);
   assert(!engine.is_complete());
 
-  // Advance through all 3 ops.
-  for (uint32_t i = 0; i < 3; i++) {
+  // Advance through first 2 ops (non-last → MATCH).
+  for (uint32_t i = 0; i < 2; i++) {
     auto status = engine.advance(SchemaHash{100 + i}, ShapeHash{200 + i});
     assert(status == ReplayStatus::MATCH);
     assert(engine.ops_matched() == i + 1);
     assert(engine.matched_op_index() == OpIndex{i});
 
-    // Output pointer resolves to pool slot.
     void* ptr = engine.output_ptr(0);
     assert(ptr == pool.slot_ptr(SlotId{i}));
   }
 
-  // After all ops: COMPLETE.
+  // Last op (i=2) returns COMPLETE directly.
+  {
+    auto status = engine.advance(SchemaHash{102}, ShapeHash{202});
+    assert(status == ReplayStatus::COMPLETE);
+    assert(engine.ops_matched() == 3);
+    assert(engine.matched_op_index() == OpIndex{2});
+    void* ptr = engine.output_ptr(0);
+    assert(ptr == pool.slot_ptr(SlotId{2}));
+  }
   assert(engine.is_complete());
-  auto status = engine.advance(SchemaHash{999}, ShapeHash{999});
-  assert(status == ReplayStatus::COMPLETE);
 
   std::printf("  test_linear_match: PASSED\n");
 }
@@ -201,9 +206,9 @@ static void test_reset() {
   ReplayEngine engine;
   engine.init(&region, &pool);
 
-  // Full walk.
+  // Full walk: first op MATCH, last op COMPLETE.
   assert(engine.advance(SchemaHash{10}, ShapeHash{20}) == ReplayStatus::MATCH);
-  assert(engine.advance(SchemaHash{11}, ShapeHash{21}) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{11}, ShapeHash{21}) == ReplayStatus::COMPLETE);
   assert(engine.is_complete());
 
   // Reset and walk again.
@@ -212,7 +217,7 @@ static void test_reset() {
   assert(engine.ops_matched() == 0);
 
   assert(engine.advance(SchemaHash{10}, ShapeHash{20}) == ReplayStatus::MATCH);
-  assert(engine.advance(SchemaHash{11}, ShapeHash{21}) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{11}, ShapeHash{21}) == ReplayStatus::COMPLETE);
   assert(engine.is_complete());
 
   std::printf("  test_reset: PASSED\n");
@@ -252,12 +257,12 @@ static void test_input_ptr() {
   ReplayEngine engine;
   engine.init(&region, &pool);
 
-  // Advance op 0.
+  // Advance op 0 (MATCH — not last).
   assert(engine.advance(SchemaHash{50}, ShapeHash{60}) == ReplayStatus::MATCH);
   assert(engine.output_ptr(0) == pool.slot_ptr(SlotId{0}));
 
-  // Advance op 1.
-  assert(engine.advance(SchemaHash{51}, ShapeHash{61}) == ReplayStatus::MATCH);
+  // Advance op 1 (COMPLETE — last op).
+  assert(engine.advance(SchemaHash{51}, ShapeHash{61}) == ReplayStatus::COMPLETE);
   assert(engine.output_ptr(0) == pool.slot_ptr(SlotId{1}));
   assert(engine.input_ptr(0) == pool.slot_ptr(SlotId{0}));
 
@@ -288,7 +293,8 @@ static void test_invalid_slot() {
   ReplayEngine engine;
   engine.init(&region, &pool);
 
-  assert(engine.advance(SchemaHash{77}, ShapeHash{88}) == ReplayStatus::MATCH);
+  // Single-op region: last (only) op returns COMPLETE.
+  assert(engine.advance(SchemaHash{77}, ShapeHash{88}) == ReplayStatus::COMPLETE);
 
   // Valid slot returns pool pointer.
   assert(engine.output_ptr(0) != nullptr);
@@ -323,7 +329,8 @@ static void test_current_entry() {
 
   for (uint32_t i = 0; i < 3; i++) {
     auto s = engine.advance(SchemaHash{300 + i}, ShapeHash{400 + i});
-    assert(s == ReplayStatus::MATCH);
+    // Last op (i==2) returns COMPLETE, others MATCH.
+    assert(s == (i < 2 ? ReplayStatus::MATCH : ReplayStatus::COMPLETE));
     const auto& entry = engine.current_entry();
     assert(entry.schema_hash == SchemaHash{300 + i});
     assert(entry.shape_hash == ShapeHash{400 + i});
@@ -392,7 +399,7 @@ static void test_integration_with_pool() {
   ReplayEngine engine;
   engine.init(&region, &pool);
 
-  // Replay op 0.
+  // Replay op 0 (MATCH — not last).
   assert(engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}) == ReplayStatus::MATCH);
   assert(engine.output_ptr(0) == pool.slot_ptr(SlotId{0}));
   assert(engine.input_ptr(0) == fake_param);  // external
@@ -400,8 +407,8 @@ static void test_integration_with_pool() {
   // Write to op 0's output.
   std::memset(engine.output_ptr(0), 0x11, 512);
 
-  // Replay op 1.
-  assert(engine.advance(SchemaHash{0xCCCC}, ShapeHash{0xDDDD}) == ReplayStatus::MATCH);
+  // Replay op 1 (COMPLETE — last op).
+  assert(engine.advance(SchemaHash{0xCCCC}, ShapeHash{0xDDDD}) == ReplayStatus::COMPLETE);
   assert(engine.output_ptr(0) == pool.slot_ptr(SlotId{1}));
   assert(engine.input_ptr(0) == pool.slot_ptr(SlotId{0}));
 
@@ -415,7 +422,7 @@ static void test_integration_with_pool() {
   engine.reset();
   assert(!engine.is_complete());
   assert(engine.advance(SchemaHash{0xAAAA}, ShapeHash{0xBBBB}) == ReplayStatus::MATCH);
-  assert(engine.advance(SchemaHash{0xCCCC}, ShapeHash{0xDDDD}) == ReplayStatus::MATCH);
+  assert(engine.advance(SchemaHash{0xCCCC}, ShapeHash{0xDDDD}) == ReplayStatus::COMPLETE);
   assert(engine.is_complete());
 
   std::printf("  test_integration_with_pool: PASSED\n");
