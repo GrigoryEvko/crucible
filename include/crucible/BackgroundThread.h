@@ -423,33 +423,62 @@ struct BackgroundThread {
       assert(re.num_scalar_args <= 5 &&
              "op has >5 scalar args — truncated in TraceRing (see Task #18)");
       uint16_t n_scalars = std::min(re.num_scalar_args, uint16_t(5));
-      if (n_scalars > 0) {
-        te.scalar_args = arena.alloc_array<int64_t>(n_scalars);
-        std::memcpy(te.scalar_args, re.scalar_values, n_scalars * sizeof(int64_t));
-      } else {
-        te.scalar_args = nullptr;
-      }
       te.num_scalar_args = n_scalars;
 
       // Read TensorMetas from MetaLog (skip ops with no tensor arguments).
       if (ms.is_valid()) {
-        te.input_metas = arena.alloc_array<TensorMeta>(re.num_inputs);
-        te.output_metas = arena.alloc_array<TensorMeta>(re.num_outputs);
-        for (uint16_t j = 0; j < re.num_inputs; j++)
+        // Batch arena alloc: merge 6 per-op allocations into 1.
+        // Layout (all naturally aligned):
+        //   [input_metas: TensorMeta × num_in]      align 8, size 144*n
+        //   [output_metas: TensorMeta × num_out]    align 8, size 144*n
+        //   [scalar_args: int64_t × n_scalars]      align 8, size 8*n
+        //   [input_trace_indices: OpIndex × num_in]  align 4, size 4*n
+        //   [input_slot_ids: SlotId × num_in]        align 4, size 4*n
+        //   [output_slot_ids: SlotId × num_out]      align 4, size 4*n
+        uint16_t n_in = re.num_inputs;
+        uint16_t n_out = re.num_outputs;
+        size_t block_bytes =
+            static_cast<size_t>(n_in + n_out) * sizeof(TensorMeta) +
+            static_cast<size_t>(n_scalars) * sizeof(int64_t) +
+            static_cast<size_t>(n_in) * sizeof(OpIndex) +
+            static_cast<size_t>(n_in) * sizeof(SlotId) +
+            static_cast<size_t>(n_out) * sizeof(SlotId);
+
+        auto* block = static_cast<char*>(arena.alloc(block_bytes, alignof(TensorMeta)));
+        te.input_metas = reinterpret_cast<TensorMeta*>(block);
+        block += n_in * sizeof(TensorMeta);
+        te.output_metas = reinterpret_cast<TensorMeta*>(block);
+        block += n_out * sizeof(TensorMeta);
+        te.scalar_args = (n_scalars > 0) ? reinterpret_cast<int64_t*>(block) : nullptr;
+        block += n_scalars * sizeof(int64_t);
+        te.input_trace_indices = reinterpret_cast<OpIndex*>(block);
+        block += n_in * sizeof(OpIndex);
+        te.input_slot_ids = reinterpret_cast<SlotId*>(block);
+        block += n_in * sizeof(SlotId);
+        te.output_slot_ids = reinterpret_cast<SlotId*>(block);
+
+        // Copy metas from MetaLog.
+        for (uint16_t j = 0; j < n_in; j++)
           te.input_metas[j] = meta_log->at(ms.raw() + j);
-        for (uint16_t j = 0; j < re.num_outputs; j++)
-          te.output_metas[j] = meta_log->at(ms.raw() + re.num_inputs + j);
+        for (uint16_t j = 0; j < n_out; j++)
+          te.output_metas[j] = meta_log->at(ms.raw() + n_in + j);
+
+        // Copy scalars from ring entry.
+        if (n_scalars > 0)
+          std::memcpy(te.scalar_args, re.scalar_values, n_scalars * sizeof(int64_t));
       } else {
         te.input_metas = nullptr;
         te.output_metas = nullptr;
+        te.scalar_args = nullptr;
+        te.input_trace_indices = nullptr;
+        te.input_slot_ids = nullptr;
+        te.output_slot_ids = nullptr;
         te.num_inputs = 0;
         te.num_outputs = 0;
       }
 
       // Build DFG edges + track input liveness.
       // Use te.num_inputs (validated count) — 0 for no-metadata ops.
-      te.input_trace_indices = arena.alloc_array<OpIndex>(te.num_inputs);
-      te.input_slot_ids = arena.alloc_array<SlotId>(te.num_inputs);
       for (uint16_t j = 0; j < te.num_inputs; j++) {
         void* ptr = te.input_metas[j].data_ptr;
         auto lookup = ptr_map_lookup(map, ptr);
@@ -487,7 +516,7 @@ struct BackgroundThread {
       }
 
       // Register outputs: assign slot IDs + detect aliases.
-      te.output_slot_ids = arena.alloc_array<SlotId>(te.num_outputs);
+      // output_slot_ids already allocated in batch block above.
       for (uint16_t j = 0; j < te.num_outputs; j++) {
         void* ptr = te.output_metas[j].data_ptr;
         if (!ptr) {
