@@ -424,3 +424,9 @@ add_subdirectory(vessel/torch)
 # Tests
 enable_testing()
 add_subdirectory(test)
+
+# Benchmarks (opt-in: only built if -DCRUCIBLE_BENCH=ON)
+option(CRUCIBLE_BENCH "Build benchmark executables" OFF)
+if(CRUCIBLE_BENCH)
+  add_subdirectory(bench)
+endif()
