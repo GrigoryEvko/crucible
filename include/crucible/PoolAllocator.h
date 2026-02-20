@@ -117,6 +117,20 @@ struct PoolAllocator {
     ptr_table_[sid.raw()] = ptr;
   }
 
+  // ── Raw table access for hot inner loops ──
+  //
+  // Returns the raw pointer table so callers (ReplayEngine) can
+  // capture it into a local, eliminating a level of indirection:
+  //
+  //   void* const* tbl = pool.table();
+  //   for (...) { void* p = tbl[sid.raw()]; }  // one load per call
+  //
+  // vs the two-load path through slot_ptr() when the compiler cannot
+  // prove that ptr_table_ doesn't change across loop iterations.
+  [[nodiscard]] CRUCIBLE_INLINE void* const* table() const {
+    return ptr_table_;
+  }
+
   // ── Queries ──
   [[nodiscard]] void* pool_base() const { return pool_; }
   [[nodiscard]] uint64_t pool_bytes() const { return pool_bytes_; }
