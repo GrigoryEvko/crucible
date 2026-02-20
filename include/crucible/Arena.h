@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <vector>
 
@@ -17,7 +18,9 @@ class Arena {
  public:
   explicit Arena(size_t block_size = 1 << 20) // 1MB default blocks
       : block_size_(block_size), offset_(0) {
-    blocks_.push_back(static_cast<char*>(std::malloc(block_size_)));
+    auto* p = static_cast<char*>(std::malloc(block_size_));
+    if (!p) [[unlikely]] std::abort();
+    blocks_.push_back(p);
   }
 
   ~Arena() {
@@ -34,18 +37,29 @@ class Arena {
 
   // Allocate `size` bytes with `align` alignment.
   // Returns a pointer guaranteed to be aligned to `align`.
+  //
+  // Alignment is computed against the absolute address, not the
+  // block-relative offset. std::malloc only guarantees
+  // alignof(std::max_align_t) = 16B, so larger alignments (64B for
+  // cache-line, 256B for PoolAllocator) require address-aware math.
   [[nodiscard]] void* alloc(size_t size, size_t align = alignof(std::max_align_t)) {
-    // Align the current offset
-    size_t aligned = (offset_ + align - 1) & ~(align - 1);
+    uintptr_t base = reinterpret_cast<uintptr_t>(blocks_.back());
+    uintptr_t aligned_addr = (base + offset_ + align - 1) & ~(align - 1);
+    size_t aligned = static_cast<size_t>(aligned_addr - base);
 
     if (aligned + size > block_size_) {
-      // Current block is full. Allocate a new one.
-      // If the request is larger than block_size_, allocate an oversized block.
-      size_t new_block_size = (size > block_size_) ? size + align : block_size_;
-      blocks_.push_back(static_cast<char*>(std::malloc(new_block_size)));
-      block_size_ = (new_block_size > block_size_) ? block_size_ : new_block_size;
+      // Current block exhausted (or alignment padding pushed past end).
+      // Oversized requests get their own block with room for alignment.
+      size_t new_size = (size + align > block_size_) ? size + align : block_size_;
+      auto* p = static_cast<char*>(std::malloc(new_size));
+      if (!p) [[unlikely]] std::abort();
+      blocks_.push_back(p);
       offset_ = 0;
-      aligned = 0; // fresh block, already aligned for any type
+
+      // Re-compute alignment for the fresh block.
+      base = reinterpret_cast<uintptr_t>(p);
+      aligned_addr = (base + align - 1) & ~(align - 1);
+      aligned = static_cast<size_t>(aligned_addr - base);
     }
 
     void* ptr = blocks_.back() + aligned;

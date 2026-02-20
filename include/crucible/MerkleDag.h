@@ -115,16 +115,26 @@ struct MemoryPlan {
   int32_t world_size = 0;     // 4B — total processes (0 = not distributed)
 };
 
-// Compute storage size in bytes from TensorMeta (max extent * element size).
+// Compute storage size in bytes from TensorMeta.
+//
+// The total storage span is the sum of per-dimension extents (not the
+// max). For contiguous [3,4] strides [4,1]: (2*4)+(3*1)+1 = 12 elements.
+// Handles negative strides (e.g. torch.flip, as_strided) by tracking
+// both max and min offset contributions separately.
 [[nodiscard]] constexpr uint64_t compute_storage_nbytes(const TensorMeta& m) {
   if (m.ndim == 0)
     return element_size(m.dtype);
   int64_t max_offset = 0;
+  int64_t min_offset = 0;
   for (uint8_t d = 0; d < m.ndim; d++) {
-    if (m.sizes[d] > 0)
-      max_offset = std::max(max_offset, (m.sizes[d] - 1) * m.strides[d]);
+    if (m.sizes[d] == 0) return 0; // zero-size tensor
+    int64_t extent = (m.sizes[d] - 1) * m.strides[d];
+    if (extent > 0)
+      max_offset += extent;
+    else
+      min_offset += extent;
   }
-  return static_cast<uint64_t>(max_offset + 1) * element_size(m.dtype);
+  return static_cast<uint64_t>(max_offset - min_offset + 1) * element_size(m.dtype);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -246,10 +256,10 @@ enum class TraceNodeKind : uint8_t {
 
 // Base node in the Merkle DAG. Arena-allocated, never freed individually.
 struct TraceNode {
-  TraceNodeKind kind;     // 1B
-  uint8_t pad[7];         // 7B — alignment for merkle_hash
-  uint64_t merkle_hash;   // 8B — subtree identity (includes all descendants)
-  TraceNode* next;        // 8B — continuation (null for TERMINAL)
+  TraceNodeKind kind{};     // 1B
+  uint8_t pad[7]{};         // 7B — alignment for merkle_hash
+  uint64_t merkle_hash = 0; // 8B — subtree identity (includes all descendants)
+  TraceNode* next = nullptr; // 8B — continuation (null for TERMINAL)
 };
 
 static_assert(sizeof(TraceNode) == 24, "TraceNode must be 24 bytes");
@@ -263,18 +273,18 @@ static_assert(sizeof(TraceNode) == 24, "TraceNode must be 24 bytes");
 // ═══════════════════════════════════════════════════════════════════
 
 struct RegionNode : TraceNode {
-  uint64_t content_hash;                  // 8B — kernel identity (this region)
-  std::atomic<CompiledKernel*> compiled;  // 8B — from global cache, null until ready
+  uint64_t content_hash = 0;                  // 8B — kernel identity (this region)
+  std::atomic<CompiledKernel*> compiled{nullptr}; // 8B — from global cache, null until ready
 
-  TraceEntry* ops;          // 8B — arena-allocated array
-  uint32_t num_ops;         // 4B
+  TraceEntry* ops = nullptr;  // 8B — arena-allocated array
+  uint32_t num_ops = 0;      // 4B
 
-  uint64_t first_op_schema; // 8B — quick mismatch detection
+  uint64_t first_op_schema = 0; // 8B — quick mismatch detection
 
-  float measured_ms;        // 4B — last measured execution time
-  uint32_t variant_id;      // 4B — which compiled variant is active
+  float measured_ms = 0.0f;  // 4B — last measured execution time
+  uint32_t variant_id = 0;   // 4B — which compiled variant is active
 
-  MemoryPlan* plan;         // 8B — liveness analysis result (null until computed)
+  MemoryPlan* plan = nullptr; // 8B — liveness analysis result (null until computed)
 };
 
 // ═══════════════════════════════════════════════════════════════════
