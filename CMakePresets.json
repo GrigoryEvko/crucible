@@ -23,6 +23,15 @@
       }
     },
     {
+      "name": "bench",
+      "inherits": "release",
+      "displayName": "Clang 22 + libc++ (C++26, Bench)",
+      "binaryDir": "${sourceDir}/build-bench",
+      "cacheVariables": {
+        "CRUCIBLE_BENCH": "ON"
+      }
+    },
+    {
       "name": "gcc",
       "displayName": "GCC 15 + libstdc++ (C++26)",
       "binaryDir": "${sourceDir}/build-gcc",
@@ -45,6 +54,7 @@
   "buildPresets": [
     { "name": "default", "configurePreset": "default" },
     { "name": "release", "configurePreset": "release" },
+    { "name": "bench",   "configurePreset": "bench" },
     { "name": "gcc",     "configurePreset": "gcc" },
     { "name": "gcc16",   "configurePreset": "gcc16" }
   ],
