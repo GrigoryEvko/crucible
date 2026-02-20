@@ -14,6 +14,7 @@
 #include <crucible/BackgroundThread.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
+#include <crucible/TraceLoader.h>
 #include <crucible/TraceRing.h>
 
 #include <cstdio>
@@ -334,7 +335,55 @@ static void bench_memory_plan() {
     });
 }
 
-int main() {
+static void bench_build_trace_from_file(const char* path) {
+    std::printf("\n--- build_trace (loaded from %s) ---\n", path);
+
+    auto trace = load_trace(path);
+    if (!trace) {
+        std::printf("  SKIP: could not load %s\n", path);
+        return;
+    }
+
+    std::printf("  %u ops, %u metas\n", trace->num_ops, trace->num_metas);
+
+    // Setup: MetaLog with the loaded metas.
+    MetaLog meta_log;
+    meta_log.reset();
+
+    // Pre-populate MetaLog with loaded metas.
+    auto repopulate = [&]() {
+        meta_log.reset();
+        uint32_t cursor = 0;
+        for (uint32_t i = 0; i < trace->num_ops; i++) {
+            uint16_t n = trace->entries[i].num_inputs +
+                         trace->entries[i].num_outputs;
+            if (n > 0 && cursor + n <= trace->num_metas) {
+                meta_log.try_append(&trace->metas[cursor], n);
+                cursor += n;
+            }
+        }
+    };
+
+    BackgroundThread bg;
+    bg.meta_log = &meta_log;
+
+    char label[128];
+    std::snprintf(label, sizeof(label),
+                  "build_trace (%u ops, real ViT-B)", trace->num_ops);
+    BENCH(label, 1'000, {
+        bg.current_trace.assign(trace->entries.begin(), trace->entries.end());
+        bg.current_meta_starts.assign(trace->meta_starts.begin(), trace->meta_starts.end());
+        bg.current_scope_hashes.assign(trace->scope_hashes.begin(), trace->scope_hashes.end());
+        bg.current_callsite_hashes.assign(trace->callsite_hashes.begin(), trace->callsite_hashes.end());
+        bg.arena.~Arena();
+        new (&bg.arena) Arena{1 << 20};
+        repopulate();
+        auto* graph = bg.build_trace(trace->num_ops);
+        bench::DoNotOptimize(graph);
+    });
+}
+
+int main(int argc, char* argv[]) {
     std::printf("=== Crucible MerkleDag Benchmark Suite ===\n");
 
     bench_content_hash_small();
@@ -347,6 +396,11 @@ int main() {
 
     // build_trace is the big one — run last.
     bench_build_trace();
+
+    // If a .crtrace file is given, benchmark with real trace data.
+    if (argc > 1) {
+        bench_build_trace_from_file(argv[1]);
+    }
 
     std::printf("\nDone.\n");
     return 0;
