@@ -15,7 +15,7 @@
 
 #include "bench_harness.h"
 
-#include <crucible/SwissCtrl.h>
+#include <crucible/SwissTable.h>
 #include <crucible/Expr.h>
 
 #include <cassert>
