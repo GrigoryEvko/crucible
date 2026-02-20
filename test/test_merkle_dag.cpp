@@ -15,8 +15,8 @@ int main() {
   m.strides[1] = 1;
   m.dtype = crucible::ScalarType::Float;
   uint64_t nbytes = crucible::compute_storage_nbytes(m);
-  // max((32-1)*64, (64-1)*1) + 1 = 1985, * 4 bytes = 7940
-  assert(nbytes == 7940);
+  // (31*64 + 63*1 + 1) * 4 = 2048 * 4 = 8192 (= 32 * 64 * sizeof(float))
+  assert(nbytes == 8192);
 
   // Test make_region
   crucible::TraceEntry ops[3];
