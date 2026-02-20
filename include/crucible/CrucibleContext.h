@@ -33,6 +33,30 @@ enum class ContextMode : uint8_t {
   COMPILED,  // Foreground replays with pre-allocated outputs
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// DispatchResult: Return value from Vigil::dispatch_op()
+//
+// Tells the Vessel adapter what happened with this op:
+//   RECORD   → execute eagerly (normal allocation path)
+//   COMPILED → outputs are pre-allocated, use output_ptr(j)
+//
+// 8 bytes: fits in a single register on x86-64.
+// ═══════════════════════════════════════════════════════════════════
+
+struct DispatchResult {
+  enum class Action : uint8_t {
+    RECORD,    // Execute eagerly (normal allocation)
+    COMPILED,  // Execute into pre-allocated output pointers
+  };
+
+  Action action = Action::RECORD;
+  ReplayStatus status = ReplayStatus::MATCH;
+  uint8_t pad[2]{};
+  uint32_t op_index = 0;  // position in region (diagnostics only)
+};
+
+static_assert(sizeof(DispatchResult) == 8, "DispatchResult: 1+1+2+4 = 8 bytes");
+
 struct CrucibleContext {
   CrucibleContext() = default;
 
