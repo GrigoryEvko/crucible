@@ -1,5 +1,7 @@
 #pragma once
 
+#include <crucible/Types.h>
+
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -19,39 +21,40 @@ namespace crucible {
 // stays small. After the first iteration, has() always returns true.
 struct CallSiteTable {
   struct Entry {
-    uint64_t hash;
+    CallsiteHash hash;           // strong-typed callsite identity
     std::string filename;
     std::string funcname;
-    int32_t lineno;
+    int32_t lineno = 0;
   };
 
   std::vector<Entry> entries;
 
   // Open-addressing hash set for fast "already seen" check.
+  // Sentinel: CallsiteHash{} (raw 0) means empty slot.
   static constexpr uint32_t SET_CAP = 4096;
   static constexpr uint32_t SET_MASK = SET_CAP - 1;
-  uint64_t seen[SET_CAP] = {};
+  CallsiteHash seen[SET_CAP]{};
 
-  [[nodiscard]] bool has(uint64_t hash) const {
-    uint32_t idx = static_cast<uint32_t>(hash) & SET_MASK;
+  [[nodiscard]] bool has(CallsiteHash hash) const {
+    uint32_t idx = static_cast<uint32_t>(hash.raw()) & SET_MASK;
     for (uint32_t p = 0; p < SET_CAP; p++) {
       const auto& h = seen[(idx + p) & SET_MASK];
       if (h == hash) return true;
-      if (h == 0) return false;
+      if (h == CallsiteHash{}) return false;
     }
     return false;
   }
 
   void insert(
-      uint64_t hash,
+      CallsiteHash hash,
       std::string filename,
       std::string funcname,
       int32_t lineno) {
     if (has(hash)) return;
-    uint32_t idx = static_cast<uint32_t>(hash) & SET_MASK;
+    uint32_t idx = static_cast<uint32_t>(hash.raw()) & SET_MASK;
     for (uint32_t p = 0; p < SET_CAP; p++) {
       auto& h = seen[(idx + p) & SET_MASK];
-      if (h == 0) {
+      if (h == CallsiteHash{}) {
         h = hash;
         entries.push_back(
             {hash, std::move(filename), std::move(funcname), lineno});

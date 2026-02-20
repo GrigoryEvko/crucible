@@ -203,10 +203,10 @@ class ExprPool {
     std::free(slots_);
   }
 
-  ExprPool(const ExprPool&) = delete;
-  ExprPool& operator=(const ExprPool&) = delete;
-  ExprPool(ExprPool&&) = delete;
-  ExprPool& operator=(ExprPool&&) = delete;
+  ExprPool(const ExprPool&) = delete("ExprPool owns arena + Swiss table with interior pointers");
+  ExprPool& operator=(const ExprPool&) = delete("ExprPool owns arena + Swiss table with interior pointers");
+  ExprPool(ExprPool&&) = delete("interned Expr* pointers would dangle after arena move");
+  ExprPool& operator=(ExprPool&&) = delete("interned Expr* pointers would dangle after arena move");
 
   // ---- Atom construction ----
 

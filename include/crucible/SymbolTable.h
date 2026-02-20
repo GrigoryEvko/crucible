@@ -36,14 +36,14 @@ struct SymFlags {
 };
 
 struct SymbolEntry {
-  int64_t hint;         // concrete value from tracing run (valid only if HAS_HINT)
-  int64_t range_lower;  // lower bound (kIntNegInf = unknown)
-  int64_t range_upper;  // upper bound (kIntPosInf = unknown)
-  SymKind kind;         // 1 byte
-  uint8_t sym_flags;    // SymFlags bitfield
-  uint16_t expr_flags;  // ExprFlags to stamp on Expr nodes (IS_INTEGER, IS_POSITIVE, etc.)
+  int64_t hint = INT64_MIN;        // concrete value from tracing run (INT64_MIN = no hint)
+  int64_t range_lower = 0;        // lower bound (kIntNegInf = unknown)
+  int64_t range_upper = 0;        // upper bound (kIntPosInf = unknown)
+  SymKind kind = SymKind::SIZE;   // 1 byte
+  uint8_t sym_flags = 0;          // SymFlags bitfield
+  uint16_t expr_flags = 0;        // ExprFlags to stamp on Expr nodes (IS_INTEGER, IS_POSITIVE, etc.)
   // 4 bytes padding to align to 32 bytes (3 × int64_t + 4 × uint8/16)
-  uint32_t _pad;
+  uint32_t _pad = 0;
 };
 
 static_assert(sizeof(SymbolEntry) == 32, "SymbolEntry should be 32 bytes");

@@ -43,6 +43,8 @@ struct MetaLog {
 
   MetaLog(const MetaLog&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
   MetaLog& operator=(const MetaLog&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
+  MetaLog(MetaLog&&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
+  MetaLog& operator=(MetaLog&&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
 
   // ── Producer (foreground): append n consecutive TensorMetas ──
   //

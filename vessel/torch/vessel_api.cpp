@@ -101,7 +101,7 @@ CrucibleDispatchResult crucible_dispatch_op(
     CrucibleDispatchResult cr{};
     cr.action = static_cast<uint8_t>(result.action);
     cr.status = static_cast<uint8_t>(result.status);
-    cr.op_index = result.op_index;
+    cr.op_index = result.op_index.raw();
     return cr;
 }
 
@@ -137,7 +137,7 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
     CrucibleDispatchResult cr{};
     cr.action = static_cast<uint8_t>(result.action);
     cr.status = static_cast<uint8_t>(result.status);
-    cr.op_index = result.op_index;
+    cr.op_index = result.op_index.raw();
     return cr;
 }
 

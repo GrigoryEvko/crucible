@@ -29,16 +29,16 @@ namespace crucible {
 // dropped — the next iteration will re-record everything.
 struct TraceRing {
   struct alignas(64) Entry {
-    SchemaHash schema_hash;    // 8B — op identity
-    ShapeHash shape_hash;      // 8B — quick hash of input shapes
-    uint16_t num_inputs;       // 2B
-    uint16_t num_outputs;      // 2B
-    uint16_t num_scalar_args;  // 2B
-    bool grad_enabled;         // 1B
-    bool inference_mode;       // 1B
+    SchemaHash schema_hash;              // 8B — op identity
+    ShapeHash shape_hash;                // 8B — quick hash of input shapes
+    uint16_t num_inputs = 0;             // 2B
+    uint16_t num_outputs = 0;            // 2B
+    uint16_t num_scalar_args = 0;        // 2B
+    bool grad_enabled = false;           // 1B
+    bool inference_mode = false;         // 1B
     // Scalar argument values (int64_t bitcast for doubles/bools/enums).
     // 5 slots cover 99.9% of ops. Overflow counted in num_scalar_args.
-    int64_t scalar_values[5];  // 40B
+    int64_t scalar_values[5]{};          // 40B — zero-init prevents hash instability
   };
 
   static_assert(sizeof(Entry) == 64, "Entry must be exactly one cache line");
@@ -82,6 +82,8 @@ struct TraceRing {
   TraceRing() = default;
   TraceRing(const TraceRing&) = delete("SPSC ring is pinned to producer/consumer thread pair");
   TraceRing& operator=(const TraceRing&) = delete("SPSC ring is pinned to producer/consumer thread pair");
+  TraceRing(TraceRing&&) = delete("SPSC ring is pinned to producer/consumer thread pair");
+  TraceRing& operator=(TraceRing&&) = delete("SPSC ring is pinned to producer/consumer thread pair");
 
   [[nodiscard]] CRUCIBLE_INLINE bool try_append(
       const Entry& e,

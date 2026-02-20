@@ -4,6 +4,7 @@
 #include <crucible/Types.h>
 
 #include <bit>
+#include <cassert>
 #include <cstdint>
 
 namespace crucible {
@@ -18,15 +19,15 @@ namespace crucible {
 //
 // 32 bytes on 64-bit systems. Fits in half a cache line.
 struct Expr {
-  Op op;               // 1 byte  — node type
-  uint8_t nargs;       // 1 byte  — number of children (0-255)
-  uint16_t flags;      // 2 bytes — ExprFlags bitfield
-  SymbolId symbol_id;  // 4 bytes — unique id for symbols (SymbolId{} for non-symbols)
-  uint64_t hash;       // 8 bytes — precomputed hash for intern table
-  int64_t payload;     // 8 bytes — integer value, or bitcast double, or symbol name ptr
-  const Expr** args;   // 8 bytes — pointer to arena-allocated array of children
-                       // ──────────
-                       // 32 bytes total
+  Op op = Op::INTEGER;         // 1 byte  — node type
+  uint8_t nargs = 0;           // 1 byte  — number of children (0-255)
+  uint16_t flags = 0;          // 2 bytes — ExprFlags bitfield
+  SymbolId symbol_id;          // 4 bytes — unique id for symbols (SymbolId{} for non-symbols)
+  uint64_t hash = 0;           // 8 bytes — precomputed hash for intern table
+  int64_t payload = 0;         // 8 bytes — integer value, or bitcast double, or symbol name ptr
+  const Expr** args = nullptr; // 8 bytes — pointer to arena-allocated array of children
+                               // ──────────
+                               // 32 bytes total
 
   // ---- Payload accessors ----
 
@@ -77,6 +78,8 @@ struct Expr {
   // ---- Child access ----
 
   [[nodiscard]] const Expr* arg(uint8_t i) const {
+    assert(i < nargs && "Expr::arg() index out of bounds");
+    assert(args && "Expr::arg() called on atom with no args");
     return args[i];
   }
 };
