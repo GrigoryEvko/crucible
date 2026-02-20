@@ -240,7 +240,7 @@ struct BackgroundThread {
     // contain the last complete iteration, not the warmup.
     // For subsequent boundaries: warmup = 0 (no discard).
     uint32_t warmup = std::sub_sat(
-        std::sub_sat(total, static_cast<uint32_t>(IterationDetector::K)),
+        std::sub_sat(total, IterationDetector::K),
         iter_len);
     if (warmup > 0) [[unlikely]] {
       current_trace.erase(current_trace.begin(),
@@ -251,10 +251,10 @@ struct BackgroundThread {
                                  current_scope_hashes.begin() + warmup);
       current_callsite_hashes.erase(current_callsite_hashes.begin(),
                                     current_callsite_hashes.begin() + warmup);
-      total -= warmup;
+      total = std::sub_sat(total, warmup);
     }
 
-    uint32_t completed_len = total - IterationDetector::K;
+    uint32_t completed_len = std::sub_sat(total, IterationDetector::K);
     last_iteration_length = completed_len;
     iterations_completed++;
 

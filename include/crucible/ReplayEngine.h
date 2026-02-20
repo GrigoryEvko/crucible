@@ -33,6 +33,8 @@ struct ReplayEngine {
 
   ReplayEngine(const ReplayEngine&) = delete("ReplayEngine tracks mutable position state");
   ReplayEngine& operator=(const ReplayEngine&) = delete("ReplayEngine tracks mutable position state");
+  ReplayEngine(ReplayEngine&&) = delete("non-owning pointers would alias with independent op_index");
+  ReplayEngine& operator=(ReplayEngine&&) = delete("non-owning pointers would alias with independent op_index");
 
   // ── Init: bind to a compiled region + pool ──
   //
@@ -88,6 +90,7 @@ struct ReplayEngine {
     assert(op_index_ > 0 && "no matched entry — call advance() first");
     const auto& entry = ops_[op_index_ - 1];
     assert(j < entry.num_outputs && "output index out of bounds");
+    assert(entry.output_slot_ids && "null output_slot_ids");
     SlotId sid = entry.output_slot_ids[j];
     return sid.is_valid() ? pool_->slot_ptr(sid) : nullptr;
   }
@@ -100,6 +103,7 @@ struct ReplayEngine {
     assert(op_index_ > 0 && "no matched entry — call advance() first");
     const auto& entry = ops_[op_index_ - 1];
     assert(j < entry.num_inputs && "input index out of bounds");
+    assert(entry.input_slot_ids && "null input_slot_ids");
     SlotId sid = entry.input_slot_ids[j];
     return sid.is_valid() ? pool_->slot_ptr(sid) : nullptr;
   }
@@ -113,13 +117,13 @@ struct ReplayEngine {
   }
 
   // Position of the last matched op (valid after MATCH).
-  [[nodiscard]] uint32_t matched_op_index() const {
+  [[nodiscard]] OpIndex matched_op_index() const {
     assert(op_index_ > 0 && "no matched entry");
-    return op_index_ - 1;
+    return OpIndex{op_index_ - 1};
   }
 
   // Position where divergence occurred (valid after DIVERGED).
-  [[nodiscard]] uint32_t diverged_op_index() const { return op_index_; }
+  [[nodiscard]] OpIndex diverged_op_index() const { return OpIndex{op_index_}; }
 
   // Number of ops successfully matched so far.
   [[nodiscard]] uint32_t ops_matched() const { return op_index_; }

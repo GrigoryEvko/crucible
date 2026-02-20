@@ -38,6 +38,8 @@ struct CrucibleContext {
 
   CrucibleContext(const CrucibleContext&) = delete("owns PoolAllocator with interior pointers");
   CrucibleContext& operator=(const CrucibleContext&) = delete("owns PoolAllocator with interior pointers");
+  CrucibleContext(CrucibleContext&&) = delete("PoolAllocator has interior pointers into pool");
+  CrucibleContext& operator=(CrucibleContext&&) = delete("PoolAllocator has interior pointers into pool");
 
   // ── Activate compiled mode ──
   //
@@ -49,7 +51,7 @@ struct CrucibleContext {
   // Returns false if the region has no plan (not ready for Tier 1).
   // The region and its plan must outlive the CrucibleContext (or until
   // deactivate() is called).
-  bool activate(const RegionNode* region) {
+  [[nodiscard]] bool activate(const RegionNode* region) {
     assert(region && "null RegionNode");
     if (!region->plan) [[unlikely]]
       return false;
@@ -160,5 +162,7 @@ struct CrucibleContext {
   PoolAllocator pool_;                        // 32B — pre-allocated memory
   ReplayEngine engine_;                       // 24B — per-op walker
 };
+
+static_assert(sizeof(CrucibleContext) == 80, "CrucibleContext: 1+3+4+4+8+32+24 padded to 80");
 
 } // namespace crucible

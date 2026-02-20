@@ -64,7 +64,7 @@ static void test_linear_match() {
     ops[i].input_slot_ids = nullptr;
   }
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 3);
 
   // Build pool with 3 slots.
@@ -86,7 +86,7 @@ static void test_linear_match() {
     auto status = engine.advance(100 + i, 200 + i);
     assert(status == ReplayStatus::MATCH);
     assert(engine.ops_matched() == i + 1);
-    assert(engine.matched_op_index() == i);
+    assert(engine.matched_op_index() == OpIndex{i});
 
     // Output pointer resolves to pool slot.
     void* ptr = engine.output_ptr(0);
@@ -113,7 +113,7 @@ static void test_schema_divergence() {
     ops[i].output_slot_ids = out_slot;
   }
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 3);
 
   TensorSlot slots[1];
@@ -129,12 +129,12 @@ static void test_schema_divergence() {
 
   // Op 1: wrong schema_hash (expected 101, got 999).
   assert(engine.advance(999, 200) == ReplayStatus::DIVERGED);
-  assert(engine.diverged_op_index() == 1);
+  assert(engine.diverged_op_index() == OpIndex{1});
   assert(engine.ops_matched() == 1);
 
   // Position stays at the diverged op — subsequent advance still diverges.
   assert(engine.advance(999, 200) == ReplayStatus::DIVERGED);
-  assert(engine.diverged_op_index() == 1);
+  assert(engine.diverged_op_index() == OpIndex{1});
 
   std::printf("  test_schema_divergence: PASSED\n");
 }
@@ -153,7 +153,7 @@ static void test_shape_divergence() {
   ops[1].num_outputs = 1;
   ops[1].output_slot_ids = out_slot;
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 2);
 
   TensorSlot slots[1];
@@ -169,7 +169,7 @@ static void test_shape_divergence() {
 
   // Op 1: correct schema, wrong shape.
   assert(engine.advance(101, 999) == ReplayStatus::DIVERGED);
-  assert(engine.diverged_op_index() == 1);
+  assert(engine.diverged_op_index() == OpIndex{1});
 
   std::printf("  test_shape_divergence: PASSED\n");
 }
@@ -188,7 +188,7 @@ static void test_reset() {
   ops[1].num_outputs = 1;
   ops[1].output_slot_ids = out_slot;
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 2);
 
   TensorSlot slots[1];
@@ -239,7 +239,7 @@ static void test_input_ptr() {
   ops[1].num_inputs = 1;
   ops[1].input_slot_ids = in1;
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 2);
 
   TensorSlot slots[2];
@@ -275,7 +275,7 @@ static void test_invalid_slot() {
   ops[0].num_outputs = 2;
   ops[0].output_slot_ids = out;
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 1);
 
   TensorSlot slots[1];
@@ -308,7 +308,7 @@ static void test_current_entry() {
     ops[i].output_slot_ids = out;
   }
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 3);
 
   TensorSlot slots[1];
@@ -384,7 +384,7 @@ static void test_integration_with_pool() {
   ops[1].num_inputs = 1;
   ops[1].input_slot_ids = op1_in;
 
-  RegionNode region;
+  RegionNode region{};
   init_region(&region, ops, 2);
 
   ReplayEngine engine;
