@@ -490,6 +490,17 @@ struct BackgroundThread {
 
     uint32_t num_edges = 0;
 
+    // ── Hoist scratch buffer pointers into locals ──────────────────
+    //
+    // Same aliasing issue as the vector data pointers: the compiler
+    // reloads scratch_map_/scratch_slots_/scratch_edges_/map_gen_
+    // from this->member on every access because it can't prove arena
+    // writes don't alias *this.  Local copies → register-resident.
+    PtrSlot* const local_map = scratch_map_;
+    SlotInfo* const local_slots = scratch_slots_;
+    Edge* const local_edges = scratch_edges_;
+    const uint8_t local_gen = map_gen_;
+
     // ── Streaming content hash ──
 
     uint64_t content_h = 0x9E3779B97F4A7C15ULL;
@@ -580,24 +591,24 @@ struct BackgroundThread {
 
       for (uint16_t j = 0; j < te.num_inputs; j++) {
         void* ptr = te.input_metas[j].data_ptr;
-        auto lookup = ptr_map_lookup(scratch_map_, map_gen_, ptr);
+        auto lookup = ptr_map_lookup(local_map, local_gen, ptr);
         te.input_trace_indices[j] = lookup.op_index;
         if (lookup.op_index.is_valid()) {
           te.input_slot_ids[j] = lookup.slot_id;
           assert(num_edges < SCRATCH_EDGE_CAP);
-          scratch_edges_[num_edges++] = {
+          local_edges[num_edges++] = {
               OpIndex{lookup.op_index.raw()}, OpIndex{i},
               lookup.port, static_cast<uint8_t>(j),
               EdgeKind::DATA_FLOW, 0};
           if (lookup.slot_id.raw() < slot_cap) {
-            auto& si = scratch_slots_[lookup.slot_id.raw()];
+            auto& si = local_slots[lookup.slot_id.raw()];
             si.death_op = std::max(si.death_op, OpIndex{i});
           }
         } else if (ptr != nullptr && next_slot_raw < slot_cap) {
           // External tensor (param, data loader output): first encounter.
           SlotId sid{next_slot_raw++};
           te.input_slot_ids[j] = sid;
-          auto& si = scratch_slots_[sid.raw()];
+          auto& si = local_slots[sid.raw()];
           si.birth_op = OpIndex{0};
           si.death_op = OpIndex{i};
           si.is_external = true;
@@ -606,7 +617,7 @@ struct BackgroundThread {
           si.device_type = te.input_metas[j].device_type;
           si.device_idx = te.input_metas[j].device_idx;
           si.layout = te.input_metas[j].layout;
-          (void)ptr_map_insert(scratch_map_, map_gen_,
+          (void)ptr_map_insert(local_map, local_gen,
               ptr, OpIndex{}, 0, sid);
         } else {
           te.input_slot_ids[j] = SlotId{};
@@ -622,27 +633,27 @@ struct BackgroundThread {
           continue;
         }
 
-        auto result = ptr_map_insert(scratch_map_, map_gen_,
+        auto result = ptr_map_insert(local_map, local_gen,
             ptr, OpIndex{i}, static_cast<uint8_t>(j), SlotId{0});
 
         if (result.was_alias) {
           te.output_slot_ids[j] = result.old_slot;
           if (result.old_slot.raw() < slot_cap) {
-            auto& si = scratch_slots_[result.old_slot.raw()];
+            auto& si = local_slots[result.old_slot.raw()];
             si.death_op = std::max(si.death_op, OpIndex{i});
             uint64_t nb = compute_storage_nbytes(te.output_metas[j]);
             si.nbytes = std::max(si.nbytes, nb);
           }
           if (result.old_op.is_valid()) {
             assert(num_edges < SCRATCH_EDGE_CAP);
-            scratch_edges_[num_edges++] = {
+            local_edges[num_edges++] = {
                 OpIndex{result.old_op.raw()}, OpIndex{i},
                 result.old_port, static_cast<uint8_t>(j),
                 EdgeKind::ALIAS, 0};
           }
         } else if (next_slot_raw < slot_cap) {
           SlotId sid{next_slot_raw++};
-          auto& si = scratch_slots_[sid.raw()];
+          auto& si = local_slots[sid.raw()];
           si.birth_op = OpIndex{i};
           si.death_op = OpIndex{i};
           si.is_external = false;
@@ -668,7 +679,7 @@ struct BackgroundThread {
     if (num_slots > 0) {
       slots = arena.alloc_array<TensorSlot>(num_slots);
       for (uint32_t s = 0; s < num_slots; s++) {
-        const auto& si = scratch_slots_[s];
+        const auto& si = local_slots[s];
         slots[s].offset_bytes = 0; // assigned by compute_memory_plan()
         slots[s].nbytes = si.nbytes;
         slots[s].slot_id = SlotId{s};
@@ -691,7 +702,7 @@ struct BackgroundThread {
     graph->num_slots = num_slots;
     graph->content_hash = ContentHash{detail::fmix64(content_h)};
     graph->max_meta_end = max_meta_end;
-    build_csr(arena, graph, scratch_edges_, num_edges, count);
+    build_csr(arena, graph, local_edges, num_edges, count);
 
     return graph;
   }
