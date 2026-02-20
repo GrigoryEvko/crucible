@@ -10,6 +10,11 @@ Usage:
         for i in range(10):
             y = model(x)
             print(f"iter {i}: compiled={mode.is_compiled()}")
+
+    # Export one iteration's trace for C++ benchmarking:
+    with CrucibleMode(record_trace=True) as mode:
+        train_step(model, x)       # iteration 1 — recorded
+        mode.export_trace("vit_b.crtrace")
 """
 
 import ctypes
@@ -166,7 +171,7 @@ class CrucibleMode(TorchDispatchMode):
     this proof-of-concept — pre-allocated outputs require Tier 2).
     """
 
-    def __init__(self, lib_path=None, verbose=False):
+    def __init__(self, lib_path=None, verbose=False, record_trace=False):
         super().__init__()
         self._vessel = _VesselLib(lib_path)
         self._handle = self._vessel.crucible_create()
@@ -174,6 +179,10 @@ class CrucibleMode(TorchDispatchMode):
         self._op_count = 0
         self._schema_cache = {}
         self._prev_compiled = False
+        # Trace recording: capture per-op data for binary export.
+        self._record_trace = record_trace
+        self._trace_ops = []   # list of (schema_hash, shape_hash, scalars, n_in, n_out, n_scalars, grad, infer)
+        self._trace_metas = bytearray()  # concatenated 144B TensorMeta records
 
     def __del__(self):
         if hasattr(self, "_handle") and self._handle:
@@ -193,6 +202,62 @@ class CrucibleMode(TorchDispatchMode):
 
     def flush(self):
         self._vessel.crucible_flush(self._handle)
+
+    # ── Trace export ─────────────────────────────────────────────────
+
+    def clear_trace(self):
+        """Clear the recorded trace buffer (start fresh for next iteration)."""
+        self._trace_ops.clear()
+        self._trace_metas = bytearray()
+
+    def export_trace(self, path):
+        """Write recorded ops to a .crtrace binary file.
+
+        File format (all little-endian):
+          Header (16B):
+            char[4]  magic    = "CRTR"
+            uint32   version  = 1
+            uint32   num_ops
+            uint32   num_metas (total across all ops)
+
+          Op records (num_ops × 80B each):
+            uint64   schema_hash
+            uint64   shape_hash
+            uint64   scope_hash     (= 0, Vessel doesn't set it yet)
+            uint64   callsite_hash  (= 0, Vessel doesn't set it yet)
+            int64[5] scalar_values
+            uint16   num_inputs
+            uint16   num_outputs
+            uint16   num_scalars
+            uint8    grad_enabled
+            uint8    inference_mode
+
+          Meta records (num_metas × 144B each):
+            Raw TensorMeta structs, same layout as CrucibleMeta.
+        """
+        num_ops = len(self._trace_ops)
+        num_metas = len(self._trace_metas) // 144
+        assert len(self._trace_metas) % 144 == 0, \
+            f"meta buffer size {len(self._trace_metas)} not multiple of 144"
+
+        with open(path, "wb") as f:
+            # Header
+            f.write(b"CRTR")
+            f.write(struct.pack("<III", 1, num_ops, num_metas))
+
+            # Op records (80B each)
+            for (sh, hsh, sv, n_in, n_out, n_sc, grad, infer) in self._trace_ops:
+                f.write(struct.pack("<QQ", sh, hsh))
+                f.write(struct.pack("<QQ", 0, 0))  # scope_hash, callsite_hash
+                f.write(struct.pack("<5q", *sv))
+                f.write(struct.pack("<HHH", n_in, n_out, n_sc))
+                f.write(struct.pack("<BB", grad, infer))
+
+            # Meta records (raw bytes, already in CrucibleMeta layout)
+            f.write(self._trace_metas)
+
+        print(f"  [crucible] Exported {num_ops} ops, {num_metas} metas "
+              f"({16 + num_ops * 80 + num_metas * 144} bytes) → {path}")
 
     # ── Dispatch interception ───────────────────────────────────────
 
@@ -239,6 +304,17 @@ class CrucibleMode(TorchDispatchMode):
         # Grad/inference mode flags
         grad_on = 1 if torch.is_grad_enabled() else 0
         infer_on = 1 if torch.is_inference_mode_enabled() else 0
+
+        # Record trace data before dispatch (captures real data_ptrs).
+        if self._record_trace:
+            sv = [scalar_buf[i] for i in range(5)]
+            self._trace_ops.append((
+                schema_hash, shape_hash, sv,
+                num_inputs, num_outputs, num_scalars,
+                grad_on, infer_on,
+            ))
+            if n_metas > 0:
+                self._trace_metas.extend(bytes(metas))
 
         # Dispatch to Vigil
         dr = self._vessel.crucible_dispatch_op_ex(
