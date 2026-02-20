@@ -117,7 +117,7 @@ class Vigil {
     //   COMPILED → outputs pre-allocated, use output_ptr(j) / input_ptr(j)
     //
     // On divergence: deactivates CrucibleContext, falls back to RECORD,
-    //   records the divergent op so the bg thread sees it.
+    //   resets bg thread detector (divergent op is NOT recorded).
     //
     // Activation lifecycle:
     //   1. bg thread signals pending_region_ (atomic)
