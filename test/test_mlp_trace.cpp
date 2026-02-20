@@ -321,20 +321,36 @@ int main() {
         std::printf("\n");
     }
 
-    // ── Phase 2: Activate COMPILED mode via dispatch_op ────────────
+    // ── Phase 2: Activate COMPILED mode via K-op alignment ─────────
     //
-    // One dispatch_op call triggers try_activate_ (one-op delay).
-    // After this, CrucibleContext has the PoolAllocator initialized
-    // and ReplayEngine ready to walk the compiled region.
+    // K=5 dispatch_op calls align the CrucibleContext to the iteration
+    // boundary. These ops go through RECORDING (one-op alignment delay).
+    // Once aligned, remaining ops in the partial iteration go COMPILED.
 
-    std::printf("\n── Activating COMPILED mode ──\n");
-    auto act_pkt = build_op(2, 0);
-    auto act_result = vigil.dispatch_op(act_pkt.entry, act_pkt.metas, act_pkt.n_metas);
-    assert(act_result.action == DispatchResult::Action::RECORD);
+    std::printf("\n── Activating COMPILED mode (K=%u alignment) ──\n",
+                Vigil::ALIGNMENT_K);
+
+    static constexpr uint32_t AK = Vigil::ALIGNMENT_K;
+
+    // Alignment phase: K ops return RECORD.
+    for (uint32_t i = 0; i < AK; i++) {
+        auto pkt = build_op(3, i);
+        auto r = vigil.dispatch_op(pkt.entry, pkt.metas, pkt.n_metas);
+        assert(r.action == DispatchResult::Action::RECORD);
+    }
     assert(vigil.context().is_compiled());
-    std::printf("   Activation op returned RECORD (one-op delay)\n");
-    std::printf("   CrucibleContext: COMPILED, pool %llu bytes allocated\n",
+    std::printf("   Aligned after %u ops. CrucibleContext: COMPILED\n", AK);
+    std::printf("   Pool: %llu bytes allocated\n",
                 static_cast<unsigned long long>(vigil.context().pool().pool_bytes()));
+
+    // Complete the partial iteration: ops AK..NUM_OPS-1 in COMPILED.
+    for (uint32_t i = AK; i < NUM_OPS; i++) {
+        auto pkt = build_op(3, i);
+        auto r = vigil.dispatch_op(pkt.entry, pkt.metas, pkt.n_metas);
+        assert(r.action == DispatchResult::Action::COMPILED);
+    }
+    std::printf("   Partial iteration completed (ops %u-%u COMPILED)\n",
+                AK, NUM_OPS - 1);
 
     // ── Phase 3: COMPILED iterations ───────────────────────────────
     //
@@ -342,7 +358,7 @@ int main() {
     // uses output_ptr()/input_ptr() for pre-allocated storage.
     // No per-op allocation, no allocator contention.
 
-    for (uint32_t iter = 3; iter <= 5; iter++) {
+    for (uint32_t iter = 4; iter <= 6; iter++) {
         std::printf("\n── Iteration %u: COMPILED ──\n", iter);
 
         for (uint32_t i = 0; i < NUM_OPS; i++) {
@@ -396,16 +412,16 @@ int main() {
     // (they share the same pool slot). This proves the DFG edges +
     // PoolAllocator + ReplayEngine wiring is correct.
 
-    std::printf("\n── Data flow verification (iteration 6) ──\n");
+    std::printf("\n── Data flow verification (iteration 7) ──\n");
 
     // Op 0: write known pattern to output
-    auto p0 = build_op(6, 0);
+    auto p0 = build_op(7, 0);
     auto r0 = vigil.dispatch_op(p0.entry, p0.metas, p0.n_metas);
     assert(r0.action == DispatchResult::Action::COMPILED);
     std::memset(vigil.output_ptr(0), 0xAB, BATCH * HIDDEN * 4);
 
     // Op 1: verify input carries op 0's output
-    auto p1 = build_op(6, 1);
+    auto p1 = build_op(7, 1);
     auto r1 = vigil.dispatch_op(p1.entry, p1.metas, p1.n_metas);
     assert(r1.action == DispatchResult::Action::COMPILED);
     auto* in_data = static_cast<uint8_t*>(vigil.input_ptr(0));
@@ -416,7 +432,7 @@ int main() {
 
     // Complete the iteration for clean state.
     for (uint32_t i = 2; i < NUM_OPS; i++) {
-        auto pkt = build_op(6, i);
+        auto pkt = build_op(7, i);
         (void)vigil.dispatch_op(pkt.entry, pkt.metas, pkt.n_metas);
     }
 

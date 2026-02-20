@@ -261,19 +261,28 @@ int main() {
                         static_cast<unsigned long long>(sl.nbytes));
     }
 
-    // ── Phase 2: Activate ────────────────────────────────────────
-    auto ap = build_op(0, 2);
-    auto ar = vigil.dispatch_op(ap.entry, ap.metas, ap.n_metas);
-    assert(ar.action == DispatchResult::Action::RECORD);
+    // ── Phase 2: Activate via K-op alignment ────────────────────
+    static constexpr uint32_t AK = Vigil::ALIGNMENT_K;
+    for (uint32_t i = 0; i < AK; i++) {
+        auto ap = build_op(i, 3);
+        auto ar = vigil.dispatch_op(ap.entry, ap.metas, ap.n_metas);
+        assert(ar.action == DispatchResult::Action::RECORD);
+    }
     assert(vigil.context().is_compiled());
-    std::printf("\n   CrucibleContext: COMPILED\n\n");
+    // Complete partial iteration.
+    for (uint32_t i = AK; i < NUM_OPS; i++) {
+        auto ap = build_op(i, 3);
+        auto ar = vigil.dispatch_op(ap.entry, ap.metas, ap.n_metas);
+        assert(ar.action == DispatchResult::Action::COMPILED);
+    }
+    std::printf("\n   CrucibleContext: COMPILED (aligned after %u ops)\n\n", AK);
 
     // ── Phase 3: 1000 compiled iterations ────────────────────────
     std::printf("── 1000 compiled iterations ──\n");
 
     auto t0 = std::chrono::steady_clock::now();
 
-    for (uint32_t iter = 3; iter < 1003; iter++) {
+    for (uint32_t iter = 4; iter < 1004; iter++) {
         for (uint32_t i = 0; i < NUM_OPS; i++) {
             auto p = build_op(i, iter);
             auto r = vigil.dispatch_op(p.entry, p.metas, p.n_metas);
