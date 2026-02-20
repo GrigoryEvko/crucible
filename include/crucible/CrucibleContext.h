@@ -26,6 +26,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 
 namespace crucible {
 
@@ -164,6 +165,65 @@ struct CrucibleContext {
     pool_.register_external(sid, ptr);
   }
 
+  // ── Switch to a different compiled region (mid-iteration safe) ──
+  //
+  // Switches from the current region to `alt` at divergence position
+  // `div_pos`.  For div_pos=0 this is a plain re-activation (no data
+  // to migrate).  For div_pos>0:
+  //
+  //   1. Detach old pool buffer (keeps memory alive, resets allocator)
+  //   2. Init new pool from alt's plan
+  //   3. Copy only the output slots produced by prefix ops 0..div_pos-1
+  //      from old layout offsets to new layout offsets
+  //   4. Old buffer freed (RAII via DetachedPool)
+  //   5. Engine initialized on new region, advanced past prefix
+  //
+  // Caller must have verified prefix compatibility: ops 0..div_pos-1
+  // have identical schema_hash+shape_hash in both regions.
+  //
+  // External slots must be re-registered by the caller after success.
+  //
+  // Returns false if alt has no plan.  On failure, the context is
+  // deactivated — caller must handle fallback to RECORDING.
+  [[nodiscard]] bool switch_region(const RegionNode* alt, uint32_t div_pos) {
+    assert(mode_ == ContextMode::COMPILED && "switch_region requires COMPILED mode");
+    assert(alt && "null alternate region");
+    if (!alt->plan) [[unlikely]]
+      return false;
+
+    // pos=0: no prefix data written — plain re-activation.
+    if (div_pos == 0)
+      return activate(alt);
+
+    const auto* old_region = active_region_;
+    assert(old_region && old_region->plan && "no active region to switch from");
+
+    // Detach old pool: keeps the buffer alive, resets allocator state.
+    auto old_pool = pool_.detach();
+
+    // Create new pool from alternate's plan.
+    pool_.init(alt->plan);
+
+    // Copy only the prefix output slot data from old → new layout.
+    migrate_prefix_slots_(old_region, alt, old_pool.base, div_pos);
+
+    // old_pool destructor frees the detached buffer here.
+    // (scope exit, or we can be explicit for clarity)
+
+    // Engine → new region, advance past verified prefix.
+    engine_.init(alt, &pool_);
+    active_region_ = alt;
+
+    for (uint32_t i = 0; i < div_pos; i++) {
+      auto s = engine_.advance(alt->ops[i].schema_hash,
+                               alt->ops[i].shape_hash);
+      assert(s == ReplayStatus::MATCH || s == ReplayStatus::COMPLETE);
+      (void)s;
+    }
+
+    return true;
+  }
+
   // ── Queries ──
 
   [[nodiscard]] ContextMode mode() const { return mode_; }
@@ -179,6 +239,65 @@ struct CrucibleContext {
   [[nodiscard]] const PoolAllocator& pool() const { return pool_; }
 
  private:
+  // Copy output slot data for prefix ops (0..div_pos-1) from old pool
+  // layout to new pool layout.  Only copies internal slots; external
+  // slots keep their existing allocations.  Bitset prevents double-
+  // copying aliased slots (in-place ops share SlotIds).
+  void migrate_prefix_slots_(
+      const RegionNode* old_region,
+      const RegionNode* alt,
+      const void* old_pool_base,
+      uint32_t div_pos)
+  {
+    const auto* old_plan = old_region->plan;
+    const auto* new_plan = alt->plan;
+
+    // 1024-bit bitset: tracks which new-side slots we've already copied.
+    static constexpr uint32_t MAX_SLOTS = 1024;
+    assert(new_plan->num_slots <= MAX_SLOTS
+           && "slot count exceeds migration bitset capacity");
+    uint64_t visited[(MAX_SLOTS + 63) / 64]{};
+
+    for (uint32_t i = 0; i < div_pos; i++) {
+      const auto& old_te = old_region->ops[i];
+      const auto& new_te = alt->ops[i];
+
+      if (!old_te.output_slot_ids || !new_te.output_slot_ids)
+        continue;
+
+      assert(old_te.num_outputs == new_te.num_outputs
+             && "prefix ops with identical hashes must have equal output counts");
+
+      for (uint16_t j = 0; j < old_te.num_outputs; j++) {
+        const SlotId old_sid = old_te.output_slot_ids[j];
+        const SlotId new_sid = new_te.output_slot_ids[j];
+
+        if (!old_sid.is_valid() || !new_sid.is_valid()) continue;
+
+        // External slots are registered separately by the caller.
+        if (old_plan->slots[old_sid.raw()].is_external ||
+            new_plan->slots[new_sid.raw()].is_external)
+          continue;
+
+        // Deduplicate aliased outputs (in-place ops).
+        const uint32_t ns = new_sid.raw();
+        if (visited[ns / 64] & (uint64_t{1} << (ns % 64))) continue;
+        visited[ns / 64] |= uint64_t{1} << (ns % 64);
+
+        const uint64_t old_offset = old_plan->slots[old_sid.raw()].offset_bytes;
+        const uint64_t new_offset = new_plan->slots[ns].offset_bytes;
+        const uint64_t nbytes     = old_plan->slots[old_sid.raw()].nbytes;
+
+        if (nbytes > 0 && old_pool_base) {
+          std::memcpy(
+              static_cast<char*>(pool_.pool_base()) + new_offset,
+              static_cast<const char*>(old_pool_base) + old_offset,
+              static_cast<size_t>(nbytes));
+        }
+      }
+    }
+  }
+
   ContextMode mode_ = ContextMode::RECORD;
   [[maybe_unused]] uint8_t pad_[3]{};          // alignment for pool_
   uint32_t compiled_iterations_ = 0;
