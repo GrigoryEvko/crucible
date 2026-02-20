@@ -9,12 +9,12 @@ int main() {
 
     // ── build a dummy RegionNode for use in transactions ────────────
     crucible::TraceEntry ops[1]{};
-    ops[0].schema_hash = 0xFEED;
+    ops[0].schema_hash = crucible::SchemaHash{0xFEED};
     auto* region1 = crucible::make_region(arena, ops, 1);
     assert(region1 != nullptr);
 
     crucible::TraceEntry ops2[1]{};
-    ops2[0].schema_hash = 0xBEEF;
+    ops2[0].schema_hash = crucible::SchemaHash{0xBEEF};
     auto* region2 = crucible::make_region(arena, ops2, 1);
     assert(region2 != nullptr);
 
@@ -30,8 +30,8 @@ int main() {
     assert(log.size() == 1);
 
     // ── commit(tx1, region, hash, merkle) → COMMITTED ───────────────
-    const uint64_t hash1   = region1->content_hash;
-    const uint64_t merkle1 = region1->merkle_hash;
+    const crucible::ContentHash hash1   = region1->content_hash;
+    const crucible::MerkleHash  merkle1 = region1->merkle_hash;
     const bool committed = log.commit(tx1, region1, hash1, merkle1);
     assert(committed);
     assert(tx1->status       == crucible::TxStatus::COMMITTED);
@@ -57,8 +57,8 @@ int main() {
     assert(tx2->status  == crucible::TxStatus::RECORDING);
     assert(log.size() == 2);
 
-    const uint64_t hash2   = region2->content_hash;
-    const uint64_t merkle2 = region2->merkle_hash;
+    const crucible::ContentHash hash2   = region2->content_hash;
+    const crucible::MerkleHash  merkle2 = region2->merkle_hash;
     log.commit(tx2, region2, hash2, merkle2);
     assert(tx2->status == crucible::TxStatus::COMMITTED);
 
@@ -86,7 +86,7 @@ int main() {
     for (uint32_t i = 3; i <= 32; i++) {
         auto* tx = log.begin_tx(i);
         crucible::TraceEntry e{};
-        e.schema_hash = i;
+        e.schema_hash = crucible::SchemaHash{static_cast<uint64_t>(i)};
         auto* r = crucible::make_region(arena, &e, 1);
         log.commit(tx, r, r->content_hash, r->merkle_hash);
         (void)log.activate(tx);

@@ -13,7 +13,7 @@ int main() {
   // Array allocation
   double* arr = arena.alloc_array<double>(100);
   for (int i = 0; i < 100; i++) arr[i] = i * 1.5;
-  assert(arr[99] == 99 * 1.5);
+  assert(arr[99] >= 148.4 && arr[99] <= 148.6);  // 99 * 1.5 = 148.5
 
   // Alignment: 16-byte aligned allocation (max_align_t guarantee)
   void* aligned = arena.alloc(128, 16);
@@ -39,7 +39,7 @@ int main() {
   // total_allocated grows
   crucible::Arena tracker(1024);
   size_t before = tracker.total_allocated();
-  tracker.alloc(256, 1);
+  (void)tracker.alloc(256, 1);
   assert(tracker.total_allocated() > before);
 
   std::printf("test_arena: all tests passed\n");

@@ -113,7 +113,7 @@ static void test_uniform() {
     for (int i = 0; i < 1000; i++) {
         auto r = Philox::generate(static_cast<uint64_t>(i), 0xABCDEF00ULL);
         for (int j = 0; j < 4; j++) {
-            float u = Philox::to_uniform(r[j]);
+            float u = Philox::to_uniform(r[static_cast<size_t>(j)]);
             assert(u >= 0.0f && u < 1.0f);
         }
     }
@@ -131,8 +131,9 @@ static void test_normal() {
         auto r = Philox::generate(static_cast<uint64_t>(i), 0xCAFEBABEULL);
         auto [n0, n1] = Philox::box_muller(r[0], r[1]);
 
-        sum += n0 + n1;
-        sum_sq += static_cast<double>(n0) * n0 + static_cast<double>(n1) * n1;
+        sum += static_cast<double>(n0) + static_cast<double>(n1);
+        sum_sq += static_cast<double>(n0) * static_cast<double>(n0)
+                + static_cast<double>(n1) * static_cast<double>(n1);
     }
 
     int total = N * 2;
@@ -162,8 +163,8 @@ static void test_op_keys() {
     std::printf("  per-op key derivation...\n");
 
     uint64_t master = 42;
-    uint64_t hash_a = 0x1234;
-    uint64_t hash_b = 0x5678;
+    crucible::ContentHash hash_a{0x1234};
+    crucible::ContentHash hash_b{0x5678};
 
     // Different ops → different keys
     uint64_t k0 = Philox::op_key(master, 0, hash_a);
@@ -194,7 +195,10 @@ static void test_pipeline() {
     // Verify: same iteration+op+element → same value.
     // Verify: different iterations → different values.
 
-    uint64_t content_hashes[3] = {0xAABB, 0xCCDD, 0xEEFF};
+    crucible::ContentHash content_hashes[3] = {
+        crucible::ContentHash{0xAABB},
+        crucible::ContentHash{0xCCDD},
+        crucible::ContentHash{0xEEFF}};
 
     for (uint64_t iter = 0; iter < 2; iter++) {
         for (uint32_t op = 0; op < 3; op++) {
@@ -234,7 +238,7 @@ static void test_constexpr() {
     static constexpr auto r2 = Philox::generate(0ULL, 0ULL);
     static_assert(r2[0] == r[0]);
 
-    static constexpr uint64_t key = Philox::op_key(42, 7, 0x1234);
+    static constexpr uint64_t key = Philox::op_key(42, 7, ContentHash{0x1234});
     static_assert(key != 0);
 
     static constexpr float u = Philox::to_uniform(r[0]);

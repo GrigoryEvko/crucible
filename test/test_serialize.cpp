@@ -40,10 +40,10 @@ int main() {
 
     // Set up metas: 2 inputs + 1 output per op.
     for (uint32_t i = 0; i < NUM_OPS; i++) {
-        ops[i].schema_hash      = 0xAA + i * 0x11;
-        ops[i].shape_hash       = 0x100 + i;
-        ops[i].scope_hash       = 0x200 + i;
-        ops[i].callsite_hash    = 0x300 + i;
+        ops[i].schema_hash      = crucible::SchemaHash{0xAA + i * 0x11};
+        ops[i].shape_hash       = crucible::ShapeHash{0x100 + i};
+        ops[i].scope_hash       = crucible::ScopeHash{0x200 + i};
+        ops[i].callsite_hash    = crucible::CallsiteHash{0x300 + i};
         ops[i].num_inputs       = 2;
         ops[i].num_outputs      = 1;
         ops[i].num_scalar_args  = 1;
@@ -77,9 +77,9 @@ int main() {
     assert(region != nullptr);
     assert(region->num_ops == NUM_OPS);
 
-    const uint64_t original_content_hash = region->content_hash;
-    const uint64_t original_merkle_hash  = region->merkle_hash;
-    assert(original_content_hash != 0);
+    const crucible::ContentHash original_content_hash = region->content_hash;
+    const crucible::MerkleHash  original_merkle_hash  = region->merkle_hash;
+    assert(static_cast<bool>(original_content_hash));
 
     // ── Serialize ───────────────────────────────────────────────────
     uint8_t buf[65536];
@@ -134,7 +134,7 @@ int main() {
 
     // ── Verify content_hash is deterministic ────────────────────────
     // Recompute from the loaded ops — must match original.
-    const uint64_t recomputed = crucible::compute_content_hash(
+    const crucible::ContentHash recomputed = crucible::compute_content_hash(
         std::span{loaded->ops, loaded->num_ops});
     assert(recomputed == original_content_hash);
 

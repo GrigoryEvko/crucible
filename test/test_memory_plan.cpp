@@ -48,11 +48,11 @@ int main() {
   assert(no_overlap_01);
 
   std::printf("test_memory_plan: all tests passed\n");
-  std::printf("  pool_bytes: %lu\n", (unsigned long)plan->pool_bytes);
+  std::printf("  pool_bytes: %lu\n", static_cast<unsigned long>(plan->pool_bytes));
   std::printf("  slot offsets: [%lu, %lu, %lu, %lu]\n",
-              (unsigned long)slots[0].offset_bytes,
-              (unsigned long)slots[1].offset_bytes,
-              (unsigned long)slots[2].offset_bytes,
-              (unsigned long)slots[3].offset_bytes);
+              static_cast<unsigned long>(slots[0].offset_bytes),
+              static_cast<unsigned long>(slots[1].offset_bytes),
+              static_cast<unsigned long>(slots[2].offset_bytes),
+              static_cast<unsigned long>(slots[3].offset_bytes));
   return 0;
 }

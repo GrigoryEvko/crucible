@@ -6,11 +6,14 @@
 #include <filesystem>
 #include <thread>
 
+using crucible::SchemaHash;
+using crucible::ShapeHash;
+
 // Build a minimal TraceRing::Entry for testing.
-static crucible::TraceRing::Entry make_entry(uint64_t schema_hash) {
+static crucible::TraceRing::Entry make_entry(SchemaHash schema_hash) {
     crucible::TraceRing::Entry e{};
     e.schema_hash      = schema_hash;
-    e.shape_hash       = 0x1234;
+    e.shape_hash       = ShapeHash{0x1234};
     e.num_inputs       = 1;
     e.num_outputs      = 1;
     e.num_scalar_args  = 0;
@@ -58,7 +61,10 @@ int main() {
     // Each op carries 2 TensorMeta (1 input + 1 output) so build_trace()
     // can reconstruct a valid TraceGraph without a MetaLog miss.
 
-    const uint64_t schemas[5] = {0xAA01, 0xBB02, 0xCC03, 0xDD04, 0xEE05};
+    const SchemaHash schemas[5] = {
+        SchemaHash{0xAA01}, SchemaHash{0xBB02}, SchemaHash{0xCC03},
+        SchemaHash{0xDD04}, SchemaHash{0xEE05}
+    };
     const crucible::TensorMeta meta = make_meta();
     const crucible::TensorMeta io_metas[2] = {meta, meta}; // [0]=input, [1]=output
 
@@ -88,7 +94,7 @@ int main() {
     // ── persist() → Cipher HEAD must be non-zero ─────────────────────
     const bool persisted = vigil.persist();
     assert(persisted && "persist() must succeed with a cipher_path set");
-    assert(vigil.head_hash() != 0 && "Cipher HEAD must be non-zero after persist()");
+    assert(static_cast<bool>(vigil.head_hash()) && "Cipher HEAD must be non-zero after persist()");
 
     // Verify the HEAD file was actually written to disk.
     std::ifstream hf(std::string(dir) + "/HEAD");

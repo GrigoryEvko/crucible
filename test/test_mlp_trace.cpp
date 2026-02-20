@@ -38,20 +38,20 @@ using namespace crucible;
 // ═══════════════════════════════════════════════════════════════════
 
 // Schema hashes (would be OperatorHandle::schema().hash() in real ATen)
-static constexpr uint64_t OP_MM         = 0xA001; // aten::mm
-static constexpr uint64_t OP_ADD        = 0xA002; // aten::add.Tensor
-static constexpr uint64_t OP_RELU       = 0xA003; // aten::relu
-static constexpr uint64_t OP_LOSS_BWD   = 0xA004; // aten::mse_loss_backward
-static constexpr uint64_t OP_RELU_BWD   = 0xA005; // aten::threshold_backward
-static constexpr uint64_t OP_MM_BWD     = 0xA006; // aten::mm (backward uses same op, different shapes)
-static constexpr uint64_t OP_ACCUM_GRAD = 0xA007; // aten::add_ (gradient accumulation)
+static constexpr SchemaHash OP_MM         {0xA001}; // aten::mm
+static constexpr SchemaHash OP_ADD        {0xA002}; // aten::add.Tensor
+static constexpr SchemaHash OP_RELU       {0xA003}; // aten::relu
+static constexpr SchemaHash OP_LOSS_BWD   {0xA004}; // aten::mse_loss_backward
+static constexpr SchemaHash OP_RELU_BWD   {0xA005}; // aten::threshold_backward
+static constexpr SchemaHash OP_MM_BWD     {0xA006}; // aten::mm (backward uses same op, different shapes)
+static constexpr SchemaHash OP_ACCUM_GRAD {0xA007}; // aten::add_ (gradient accumulation)
 
 // Each op in the MLP iteration, declared statically.
 // shape_hash is a fingerprint of input tensor geometry — unique per op position.
 struct MlpOp {
     const char* name;       // human-readable
-    uint64_t schema_hash;   // op identity
-    uint64_t shape_hash;    // geometry fingerprint (unique per position)
+    SchemaHash schema_hash; // op identity
+    ShapeHash shape_hash;   // geometry fingerprint (unique per position)
     uint16_t num_inputs;    // how many tensor inputs
     uint16_t num_outputs;   // how many tensor outputs (always 1 here)
 };
@@ -61,17 +61,17 @@ static constexpr uint32_t NUM_OPS = 10;
 
 static constexpr MlpOp MLP_OPS[NUM_OPS] = {
     // ── Forward pass ──
-    {"mm(input, W1)",       OP_MM,         0xF001, 2, 1}, // [4,8]×[8,4] → [4,4]
-    {"add(hidden, B1)",     OP_ADD,        0xF002, 2, 1}, // [4,4]+[4] → [4,4]
-    {"relu(biased)",        OP_RELU,       0xF003, 1, 1}, // [4,4] → [4,4]
-    {"mm(act, W2)",         OP_MM,         0xF004, 2, 1}, // [4,4]×[4,2] → [4,2]
-    {"add(logits, B2)",     OP_ADD,        0xF005, 2, 1}, // [4,2]+[2] → [4,2]
+    {"mm(input, W1)",       OP_MM,         ShapeHash{0xF001}, 2, 1}, // [4,8]×[8,4] → [4,4]
+    {"add(hidden, B1)",     OP_ADD,        ShapeHash{0xF002}, 2, 1}, // [4,4]+[4] → [4,4]
+    {"relu(biased)",        OP_RELU,       ShapeHash{0xF003}, 1, 1}, // [4,4] → [4,4]
+    {"mm(act, W2)",         OP_MM,         ShapeHash{0xF004}, 2, 1}, // [4,4]×[4,2] → [4,2]
+    {"add(logits, B2)",     OP_ADD,        ShapeHash{0xF005}, 2, 1}, // [4,2]+[2] → [4,2]
     // ── Backward pass ──
-    {"loss_bwd(output)",    OP_LOSS_BWD,   0xF006, 1, 1}, // [4,2] → [4,2]
-    {"mm(grad, W2.T)",      OP_MM_BWD,     0xF007, 2, 1}, // [4,2]×[2,4] → [4,4]
-    {"relu_bwd(grad, act)", OP_RELU_BWD,   0xF008, 2, 1}, // [4,4]×[4,4] → [4,4]
-    {"mm(input.T, grad)",   OP_MM_BWD,     0xF009, 2, 1}, // [8,4]×[4,4] → [8,4] (dW1)
-    {"accum_grad(W1, dW1)", OP_ACCUM_GRAD, 0xF00A, 2, 1}, // [8,4]+[8,4] → [8,4]
+    {"loss_bwd(output)",    OP_LOSS_BWD,   ShapeHash{0xF006}, 1, 1}, // [4,2] → [4,2]
+    {"mm(grad, W2.T)",      OP_MM_BWD,     ShapeHash{0xF007}, 2, 1}, // [4,2]×[2,4] → [4,4]
+    {"relu_bwd(grad, act)", OP_RELU_BWD,   ShapeHash{0xF008}, 2, 1}, // [4,4]×[4,4] → [4,4]
+    {"mm(input.T, grad)",   OP_MM_BWD,     ShapeHash{0xF009}, 2, 1}, // [8,4]×[4,4] → [8,4] (dW1)
+    {"accum_grad(W1, dW1)", OP_ACCUM_GRAD, ShapeHash{0xF00A}, 2, 1}, // [8,4]+[8,4] → [8,4]
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -215,6 +215,7 @@ static OpPacket build_op(uint32_t iter, uint32_t op_idx) {
         p.metas[m++] = make_2d(act_ptr(iter, ACT_GRAD_W1), IN_DIM, HIDDEN);
         p.metas[m++] = make_2d(act_ptr(iter, ACT_W1_UPDATED), IN_DIM, HIDDEN);
         break;
+    default: break;
     }
 
     p.n_metas = m;
@@ -259,8 +260,8 @@ static void wait_mode(Vigil& vigil) {
 int main() {
     std::printf("═══ Crucible MLP Training Simulation ═══\n\n");
     std::printf("Model: input[%lld,%lld] -> mm -> relu -> mm -> output[%lld,%lld]\n",
-                (long long)BATCH, (long long)IN_DIM,
-                (long long)BATCH, (long long)OUT_DIM);
+                static_cast<long long>(BATCH), static_cast<long long>(IN_DIM),
+                static_cast<long long>(BATCH), static_cast<long long>(OUT_DIM));
     std::printf("Ops per iteration: %u (5 forward + 5 backward)\n\n", NUM_OPS);
 
     Vigil vigil;
@@ -300,7 +301,7 @@ int main() {
     const auto* plan = region->plan;
 
     std::printf("\n── Memory Plan ──\n");
-    std::printf("   Pool size: %llu bytes\n", (unsigned long long)plan->pool_bytes);
+    std::printf("   Pool size: %llu bytes\n", static_cast<unsigned long long>(plan->pool_bytes));
     std::printf("   Total slots: %u\n", plan->num_slots);
     std::printf("   External slots: %u (parameters)\n", plan->num_external);
     std::printf("   Internal slots: %u (activations — pre-allocated)\n",
@@ -312,11 +313,11 @@ int main() {
         std::printf("     [%2u] %s  %6llu bytes  birth=op%u  death=op%u",
                     s,
                     slot.is_external ? "EXTERN" : "INTERN",
-                    (unsigned long long)slot.nbytes,
+                    static_cast<unsigned long long>(slot.nbytes),
                     slot.birth_op.raw(),
                     slot.death_op.raw());
         if (!slot.is_external)
-            std::printf("  offset=%llu", (unsigned long long)slot.offset_bytes);
+            std::printf("  offset=%llu", static_cast<unsigned long long>(slot.offset_bytes));
         std::printf("\n");
     }
 
@@ -333,7 +334,7 @@ int main() {
     assert(vigil.context().is_compiled());
     std::printf("   Activation op returned RECORD (one-op delay)\n");
     std::printf("   CrucibleContext: COMPILED, pool %llu bytes allocated\n",
-                (unsigned long long)vigil.context().pool().pool_bytes());
+                static_cast<unsigned long long>(vigil.context().pool().pool_bytes()));
 
     // ── Phase 3: COMPILED iterations ───────────────────────────────
     //
@@ -373,6 +374,7 @@ int main() {
                 tensor_bytes = BATCH * OUT_DIM * 4; break;
             case 8: case 9:                      // [8,4] float
                 tensor_bytes = IN_DIM * HIDDEN * 4; break;
+            default: break;
             }
             std::memset(out, static_cast<int>(0x10 + i), tensor_bytes);
 
@@ -428,8 +430,8 @@ int main() {
     std::printf("Total compiled iterations: %u\n", vigil.compiled_iterations());
     std::printf("Divergences: %u\n", vigil.diverged_count());
     std::printf("Pool bytes: %llu (vs eager: ~%llu per iteration)\n",
-                (unsigned long long)plan->pool_bytes,
-                (unsigned long long)(plan->num_slots - plan->num_external) *
+                static_cast<unsigned long long>(plan->pool_bytes),
+                static_cast<unsigned long long>(plan->num_slots - plan->num_external) *
                     BATCH * HIDDEN * 4);
     std::printf("Mode: %s\n",
                 vigil.context().is_compiled() ? "COMPILED" : "RECORDING");

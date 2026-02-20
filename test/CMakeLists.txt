@@ -1,6 +1,234 @@
+# ═══════════════════════════════════════════════════════════════
+# Test targets — inherit 200+ warning/hardening flags from the
+# crucible INTERFACE library, plus sanitizers below.
+# ═══════════════════════════════════════════════════════════════
+
+option(CRUCIBLE_SANITIZE "Enable sanitizers in Debug test builds" ON)
+option(CRUCIBLE_ANALYZER "Enable GCC -fanalyzer (slow, thorough)" OFF)
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION 8: Clang sanitizers — Debug test builds only
+#
+# -fsanitize=undefined (15 sub-checks):
+#   225. alignment               misaligned pointer deref
+#   226. bool                    bool with invalid value
+#   227. builtin                 __builtin with bad args
+#   228. enum                    enum with invalid value
+#   229. float-cast-overflow     float→int overflow
+#   230. float-divide-by-zero    float /0
+#   231. integer-divide-by-zero  int /0
+#   232. nonnull-attribute       null to [[nonnull]]
+#   233. null                    null pointer deref
+#   234. pointer-overflow        ptr arithmetic overflow
+#   235. return                  missing return in non-void
+#   236. shift                   shift ≥ bitwidth
+#   237. signed-integer-overflow signed overflow
+#   238. unreachable             __builtin_unreachable hit
+#   239. vla-bound               VLA with bad size
+#
+# -fsanitize=integer (5 sub-checks):
+#   240. unsigned-integer-overflow     unsigned wrap
+#   241. implicit-unsigned-integer-truncation
+#   242. implicit-signed-integer-truncation
+#   243. implicit-integer-sign-change  sign flip
+#   244. unsigned-shift-base           unsigned shift oflow
+#
+# -fsanitize=nullability (3 sub-checks):
+#   245. nullability-arg         null to _Nonnull param
+#   246. nullability-assign      null to _Nonnull var
+#   247. nullability-return      null from _Nonnull func
+#
+# -fsanitize=implicit-conversion (4 sub-checks):
+#   248. implicit-integer-truncation (combined)
+#   249. implicit-integer-sign-change (combined)
+#   250. implicit-integer-arithmetic-value-change
+#   251. implicit-integer-bitfield-truncation
+#
+# Additional:
+#   252. float-divide-by-zero (explicit standalone)
+#   253. local-bounds           array bounds check
+#
+# ═══════════════════════════════════════════════════════════════
+# SECTION 9: GCC sanitizers — Debug test builds only
+#
+# -fsanitize=undefined (GCC sub-checks):
+#   254. alignment
+#   255. bool
+#   256. enum
+#   257. float-cast-overflow
+#   258. float-divide-by-zero
+#   259. integer-divide-by-zero
+#   260. nonnull-attribute
+#   261. null
+#   262. pointer-overflow
+#   263. return
+#   264. returns-nonnull-attribute
+#   265. shift
+#   266. signed-integer-overflow
+#   267. unreachable
+#   268. vla-bound
+#   269. object-size
+#
+# Additional GCC-only:
+#   270. bounds-strict          strict array bounds
+#   271. pointer-compare        pointer comparison UB
+#   272. pointer-subtract       pointer subtract UB
+#
+# ═══════════════════════════════════════════════════════════════
+# SECTION 10: GCC static analyzer (opt-in, 30+ checks)
+#
+#   273. -fanalyzer                    interprocedural analysis
+#   274. -Wanalyzer-double-free        double free
+#   275. -Wanalyzer-double-fclose      double fclose
+#   276. -Wanalyzer-free-of-non-heap   free(stack_ptr)
+#   277. -Wanalyzer-null-dereference   null deref paths
+#   278. -Wanalyzer-possible-null-dereference
+#   279. -Wanalyzer-null-argument      null arg
+#   280. -Wanalyzer-possible-null-argument
+#   281. -Wanalyzer-use-after-free     use-after-free
+#   282. -Wanalyzer-malloc-leak        malloc without free
+#   283. -Wanalyzer-file-leak          FILE* leak
+#   284. -Wanalyzer-fd-leak            fd leak
+#   285. -Wanalyzer-fd-use-after-close fd use after close
+#   286. -Wanalyzer-fd-double-close    double close fd
+#   287. -Wanalyzer-fd-access-mode-mismatch  wrong mode
+#   288. -Wanalyzer-fd-type-mismatch   wrong fd type
+#   289. -Wanalyzer-fd-phase-mismatch  socket phase error
+#   290. -Wanalyzer-fd-use-without-check  fd without check
+#   291. -Wanalyzer-tainted-array-index    tainted index
+#   292. -Wanalyzer-tainted-allocation-size tainted alloc
+#   293. -Wanalyzer-tainted-divisor        tainted divisor
+#   294. -Wanalyzer-tainted-offset         tainted offset
+#   295. -Wanalyzer-tainted-size           tainted size
+#   296. -Wanalyzer-tainted-assertion      tainted assert
+#   297. -Wanalyzer-shift-count-negative   neg shift
+#   298. -Wanalyzer-shift-count-overflow   shift overflow
+#   299. -Wanalyzer-deref-before-check     deref then check
+#   300. -Wanalyzer-undefined-behavior-ptrdiff  UB ptrdiff
+#   301. -Wanalyzer-infinite-loop          infinite loop
+#   302. -Wanalyzer-infinite-recursion     infinite recursion
+#   303. -Wanalyzer-va-arg-type-mismatch   va_arg type
+#   304. -Wanalyzer-va-list-exhausted      va_list done
+#   305. -Wanalyzer-va-list-leak           va_list leak
+#   306. -Wanalyzer-va-list-use-after-va-end  va_list UAF
+#   307. -Wanalyzer-out-of-bounds          OOB access
+#   308. -Wanalyzer-overlapping-buffers    overlap
+#   309. -Wanalyzer-exposure-through-output-file  info leak
+#   310. -Wanalyzer-exposure-through-uninit-copy  uninit copy
+#   311. -Wanalyzer-write-to-const         write to const
+#   312. -Wanalyzer-write-to-string-literal string write
+#   313. -Wanalyzer-use-of-uninitialized-value  uninit
+#   314. -Wanalyzer-use-of-pointer-in-stale-stack-frame  stale
+#   315. -Wanalyzer-mismatching-deallocation  wrong free
+#   316. -Wanalyzer-allocation-size        alloc size mismatch
+#   317. -Wanalyzer-stale-setjmp-buffer    stale setjmp
+#   318. -Wanalyzer-jump-through-null      null function call
+#   319. -Wanalyzer-putenv-of-auto-var     putenv(local)
+#   320. -Wanalyzer-throw-of-unexpected-type  bad throw
+#   321. -Wanalyzer-unsafe-call-within-signal-handler
+#   322. -Wanalyzer-imprecise-fp-arithmetic  fp precision
+#   323. -Wanalyzer-symbol-too-complex     analysis limit
+#   324. -Wanalyzer-undefined-behavior-strtok  strtok UB
+#
+# ═══════════════════════════════════════════════════════════════
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(CRUCIBLE_SAN_COMPILE_FLAGS
+      -fsanitize=undefined,integer,nullability,float-divide-by-zero,implicit-conversion,local-bounds
+      -fno-sanitize=unsigned-integer-overflow  # hash functions + Philox use intentional wrap
+      -fno-sanitize-recover=all         # abort on first violation
+      -fno-omit-frame-pointer           # readable stack traces
+    )
+    set(CRUCIBLE_SAN_LINK_FLAGS
+      -fsanitize=undefined,integer,nullability,float-divide-by-zero,implicit-conversion,local-bounds
+      -fno-sanitize=unsigned-integer-overflow
+    )
+  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set(CRUCIBLE_SAN_COMPILE_FLAGS
+      -fsanitize=undefined,bounds-strict
+      -fno-sanitize-recover=all         # abort on first violation
+      -fno-omit-frame-pointer           # readable stack traces
+    )
+    set(CRUCIBLE_SAN_LINK_FLAGS
+      -fsanitize=undefined,bounds-strict
+    )
+  endif()
+endif()
+
+# GCC static analyzer (opt-in).
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND CRUCIBLE_ANALYZER)
+  set(CRUCIBLE_ANALYZER_FLAGS
+    -fanalyzer
+    -Wanalyzer-double-free
+    -Wanalyzer-double-fclose
+    -Wanalyzer-free-of-non-heap
+    -Wanalyzer-null-dereference
+    -Wanalyzer-possible-null-dereference
+    -Wanalyzer-null-argument
+    -Wanalyzer-possible-null-argument
+    -Wanalyzer-use-after-free
+    -Wanalyzer-malloc-leak
+    -Wanalyzer-file-leak
+    -Wanalyzer-fd-leak
+    -Wanalyzer-fd-use-after-close
+    -Wanalyzer-fd-double-close
+    -Wanalyzer-fd-access-mode-mismatch
+    -Wanalyzer-fd-type-mismatch
+    -Wanalyzer-fd-phase-mismatch
+    -Wanalyzer-fd-use-without-check
+    -Wanalyzer-tainted-array-index
+    -Wanalyzer-tainted-allocation-size
+    -Wanalyzer-tainted-divisor
+    -Wanalyzer-tainted-offset
+    -Wanalyzer-tainted-size
+    -Wanalyzer-tainted-assertion
+    -Wanalyzer-shift-count-negative
+    -Wanalyzer-shift-count-overflow
+    -Wanalyzer-deref-before-check
+    -Wanalyzer-undefined-behavior-ptrdiff
+    -Wanalyzer-infinite-loop
+    -Wanalyzer-infinite-recursion
+    -Wanalyzer-va-arg-type-mismatch
+    -Wanalyzer-va-list-exhausted
+    -Wanalyzer-va-list-leak
+    -Wanalyzer-va-list-use-after-va-end
+    -Wanalyzer-out-of-bounds
+    -Wanalyzer-overlapping-buffers
+    -Wanalyzer-exposure-through-output-file
+    -Wanalyzer-exposure-through-uninit-copy
+    -Wanalyzer-write-to-const
+    -Wanalyzer-write-to-string-literal
+    -Wanalyzer-use-of-uninitialized-value
+    -Wanalyzer-use-of-pointer-in-stale-stack-frame
+    -Wanalyzer-mismatching-deallocation
+    -Wanalyzer-allocation-size
+    -Wanalyzer-stale-setjmp-buffer
+    -Wanalyzer-jump-through-null
+    -Wanalyzer-putenv-of-auto-var
+    -Wanalyzer-throw-of-unexpected-type
+    -Wanalyzer-unsafe-call-within-signal-handler
+    -Wanalyzer-imprecise-fp-arithmetic
+    -Wanalyzer-undefined-behavior-strtok
+  )
+endif()
+
+# ── Test target factory ──────────────────────────────────────
 function(crucible_test name)
   add_executable(${name} ${name}.cpp)
   target_link_libraries(${name} PRIVATE crucible)
+
+  # Sanitizers — test targets only (not the shared library).
+  if(CRUCIBLE_SAN_COMPILE_FLAGS)
+    target_compile_options(${name} PRIVATE ${CRUCIBLE_SAN_COMPILE_FLAGS})
+    target_link_options(${name} PRIVATE ${CRUCIBLE_SAN_LINK_FLAGS})
+  endif()
+
+  # GCC static analyzer.
+  if(CRUCIBLE_ANALYZER_FLAGS)
+    target_compile_options(${name} PRIVATE ${CRUCIBLE_ANALYZER_FLAGS})
+  endif()
+
   add_test(NAME ${name} COMMAND ${name})
 endfunction()
 

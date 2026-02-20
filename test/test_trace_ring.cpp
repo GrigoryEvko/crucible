@@ -2,6 +2,12 @@
 #include <cassert>
 #include <cstdio>
 
+using crucible::SchemaHash;
+using crucible::ShapeHash;
+using crucible::ScopeHash;
+using crucible::CallsiteHash;
+using crucible::MetaIndex;
+
 int main() {
   auto* ring = new crucible::TraceRing();
 
@@ -10,30 +16,30 @@ int main() {
 
   // Single append + drain
   crucible::TraceRing::Entry e{};
-  e.schema_hash = 0xDEADBEEF;
+  e.schema_hash = SchemaHash{0xDEADBEEF};
   e.num_inputs = 2;
   e.num_outputs = 1;
-  assert(ring->try_append(e, 42, 0x1234, 0x5678));
+  assert(ring->try_append(e, MetaIndex{42}, ScopeHash{0x1234}, CallsiteHash{0x5678}));
   assert(ring->size() == 1);
 
   crucible::TraceRing::Entry out[1];
-  uint32_t meta[1];
-  uint64_t scope[1];
-  uint64_t callsite[1];
+  MetaIndex meta[1];
+  ScopeHash scope[1];
+  CallsiteHash callsite[1];
   uint32_t n = ring->drain(out, 1, meta, scope, callsite);
   assert(n == 1);
-  assert(out[0].schema_hash == 0xDEADBEEF);
+  assert(out[0].schema_hash == SchemaHash{0xDEADBEEF});
   assert(out[0].num_inputs == 2);
   assert(out[0].num_outputs == 1);
-  assert(meta[0] == 42);
-  assert(scope[0] == 0x1234);
-  assert(callsite[0] == 0x5678);
+  assert(meta[0] == MetaIndex{42});
+  assert(scope[0] == ScopeHash{0x1234});
+  assert(callsite[0] == CallsiteHash{0x5678});
   assert(ring->size() == 0);
 
   // Batch append + drain
   for (uint32_t i = 0; i < 1000; i++) {
     crucible::TraceRing::Entry entry{};
-    entry.schema_hash = i;
+    entry.schema_hash = SchemaHash{i};
     assert(ring->try_append(entry));
   }
   assert(ring->size() == 1000);
@@ -42,7 +48,7 @@ int main() {
   n = ring->drain(batch, 2048);
   assert(n == 1000);
   for (uint32_t i = 0; i < 1000; i++)
-    assert(batch[i].schema_hash == i);
+    assert(batch[i].schema_hash == SchemaHash{i});
 
   // Reset
   ring->reset();

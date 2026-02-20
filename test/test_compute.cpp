@@ -31,16 +31,16 @@ static constexpr int HIDDEN = 8;
 static constexpr int OUT_DIM = 3;
 
 // Schema hashes (unique per op type)
-static constexpr uint64_t H_MM1     = 0x100;
-static constexpr uint64_t H_RELU    = 0x200;
-static constexpr uint64_t H_MM2     = 0x300;
-static constexpr uint64_t H_SOFTMAX = 0x400;
+static const SchemaHash H_MM1    {0x100};
+static const SchemaHash H_RELU   {0x200};
+static const SchemaHash H_MM2    {0x300};
+static const SchemaHash H_SOFTMAX{0x400};
 
 // Shape hashes (unique per op)
-static constexpr uint64_t S_MM1     = 0x1100;
-static constexpr uint64_t S_RELU    = 0x1200;
-static constexpr uint64_t S_MM2     = 0x1300;
-static constexpr uint64_t S_SOFTMAX = 0x1400;
+static const ShapeHash S_MM1    {0x1100};
+static const ShapeHash S_RELU   {0x1200};
+static const ShapeHash S_MM2    {0x1300};
+static const ShapeHash S_SOFTMAX{0x1400};
 
 // Slot IDs — 3 external (params/input) + 4 internal (activations)
 static constexpr uint32_t SL_X   = 0;  // input [2,4]
@@ -225,7 +225,7 @@ int main() {
         max_err = std::max(max_err, err);
     }
 
-    std::printf("  max_error vs reference: %.2e\n", max_err);
+    std::printf("  max_error vs reference: %.2e\n", static_cast<double>(max_err));
     assert(max_err < 1e-5f && "softmax output diverged from reference");
 
     // Verify softmax properties: rows sum to 1, values in [0,1]
@@ -241,9 +241,11 @@ int main() {
 
     // Print the actual outputs for visual inspection
     std::printf("  softmax[0] = [%.4f, %.4f, %.4f]\n",
-                pool_sm[0], pool_sm[1], pool_sm[2]);
+                static_cast<double>(pool_sm[0]), static_cast<double>(pool_sm[1]),
+                static_cast<double>(pool_sm[2]));
     std::printf("  softmax[1] = [%.4f, %.4f, %.4f]\n",
-                pool_sm[3], pool_sm[4], pool_sm[5]);
+                static_cast<double>(pool_sm[3]), static_cast<double>(pool_sm[4]),
+                static_cast<double>(pool_sm[5]));
     std::printf("  100 iterations, %u ops/iter, compiled_iters=%u\n",
                 N_OPS, ctx.compiled_iterations());
 
