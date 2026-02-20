@@ -316,42 +316,41 @@ struct BranchNode : TraceNode {
 // ═══════════════════════════════════════════════════════════════════
 
 [[nodiscard]] inline ContentHash compute_content_hash(std::span<const TraceEntry> ops) {
+  // Streaming hash: wymix pairs sizes[d]+strides[d] per dimension in
+  // one 128-bit multiply (2 instructions on x86-64) instead of separate
+  // fmix64 calls (8 instructions each).  Final fmix64 ensures full
+  // avalanche.  For a 4-dim input: 4 wymix = ~12 instructions vs
+  // 9 fmix64 = 72 instructions in the old code.
   uint64_t h = 0x9E3779B97F4A7C15ULL;
-  for (uint32_t i = 0; i < ops.size(); i++) {
-    h ^= detail::fmix64(ops[i].schema_hash.raw());
-    h *= 0x9E3779B97F4A7C15ULL;
 
-    // Input shapes + strides + dtype + device contribute to content identity.
-    for (uint16_t j = 0; j < ops[i].num_inputs; j++) {
-      const TensorMeta& m = ops[i].input_metas[j];
+  for (const auto& op : ops) {
+    // Op identity: wymix schema_hash into accumulator.
+    h = detail::wymix(h, op.schema_hash.raw());
+
+    // Input tensor geometry: pair sizes[d] and strides[d] per dimension.
+    for (uint16_t j = 0; j < op.num_inputs; j++) {
+      const TensorMeta& m = op.input_metas[j];
       for (uint8_t d = 0; d < m.ndim; d++) {
-        h ^= detail::fmix64(static_cast<uint64_t>(m.sizes[d]));
-        h *= 0x100000001b3ULL; // FNV prime
+        h = detail::wymix(h ^ static_cast<uint64_t>(m.sizes[d]),
+                           static_cast<uint64_t>(m.strides[d]));
       }
-      // Strides determine memory layout (contiguous vs transposed vs channels_last).
-      for (uint8_t d = 0; d < m.ndim; d++) {
-        h ^= detail::fmix64(static_cast<uint64_t>(m.strides[d]));
-        h *= 0x100000001b3ULL;
-      }
-      // Dtype + device_type + device_idx
-      h ^= detail::fmix64(
-          static_cast<uint64_t>(static_cast<uint8_t>(m.dtype)) |
-          (static_cast<uint64_t>(static_cast<uint8_t>(m.device_type)) << 8) |
-          (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16));
+      // Dtype + device_type + device_idx packed into one multiply.
+      h ^= static_cast<uint64_t>(std::to_underlying(m.dtype)) |
+           (static_cast<uint64_t>(std::to_underlying(m.device_type)) << 8) |
+           (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16);
+      h *= 0x9E3779B97F4A7C15ULL;
     }
 
-    // Scalar args differentiate e.g. add(x,y,alpha=0.5) from add(x,y,alpha=2.0).
-    // LIMITATION: only the first 5 scalars are hashed (TraceRing inline limit).
-    // Ops with >5 scalar args (conv2d: 8) are under-discriminated until
-    // the scalar overflow mechanism is implemented.
-    if (ops[i].scalar_args) {
-      uint16_t n_scalars = std::min(ops[i].num_scalar_args, uint16_t(5));
-      for (uint16_t s = 0; s < n_scalars; s++) {
-        h ^= detail::fmix64(static_cast<uint64_t>(ops[i].scalar_args[s]));
+    // Scalar args (max 5 inline from TraceRing).
+    if (op.scalar_args) {
+      uint16_t n = std::min(op.num_scalar_args, uint16_t{5});
+      for (uint16_t s = 0; s < n; s++) {
+        h ^= static_cast<uint64_t>(op.scalar_args[s]);
         h *= 0x100000001b3ULL;
       }
     }
   }
+
   return ContentHash{detail::fmix64(h)};
 }
 
@@ -480,8 +479,8 @@ class KernelCache {
 // ═══════════════════════════════════════════════════════════════════
 
 // Create a RegionNode from a span of TraceEntries.
-// Cannot memset because std::atomic is non-trivially-copyable;
-// each field is initialized explicitly.
+// Placement-new with RegionNode{} zero-initializes via NSDMI.
+// Only set the fields that differ from defaults.
 [[nodiscard]] inline RegionNode* make_region(
     Arena& arena,
     TraceEntry* ops,
@@ -489,26 +488,18 @@ class KernelCache {
   auto* node = new (arena.alloc(sizeof(RegionNode), alignof(RegionNode)))
       RegionNode{};
   node->kind = TraceNodeKind::REGION;
-  node->merkle_hash = MerkleHash{};
-  node->next = nullptr;
   node->ops = ops;
   node->num_ops = num_ops;
   node->content_hash = compute_content_hash(std::span{ops, num_ops});
   node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
-  node->compiled.store(nullptr, std::memory_order_relaxed);
-  node->measured_ms = 0.0f;
-  node->variant_id = 0;
-  node->plan = nullptr;
   return node;
 }
 
-// Create a terminal node.
+// Create a terminal node. NSDMI handles zero-init; just set kind.
 [[nodiscard]] inline TraceNode* make_terminal(Arena& arena) {
-  auto* node = arena.alloc_obj<TraceNode>();
-  std::memset(node, 0, sizeof(TraceNode));
+  auto* node = new (arena.alloc(sizeof(TraceNode), alignof(TraceNode)))
+      TraceNode{};
   node->kind = TraceNodeKind::TERMINAL;
-  node->next = nullptr;
-  node->merkle_hash = MerkleHash{};
   return node;
 }
 

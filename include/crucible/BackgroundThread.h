@@ -328,6 +328,7 @@ struct BackgroundThread {
     current_callsite_hashes = std::move(new_callsite_hashes);
   }
 
+ public:
   // Maximum tensor slots per iteration. Generous cap for large MoE models.
   static constexpr uint32_t MAX_SLOTS = 65536;
 
@@ -336,6 +337,8 @@ struct BackgroundThread {
   // Single pass builds TraceEntries, collects DFG + ALIAS edges,
   // assigns tensor slot IDs, and tracks liveness (birth/death ops).
   // Returns nullptr on MetaLog overflow.
+  //
+  // Public: called by on_iteration_boundary() and benchmarks.
   [[nodiscard]] TraceGraph* build_trace(uint32_t count) {
     // Check for MetaLog overflow.
     // MetaIndex::none() is normal for ops with zero tensor arguments
@@ -373,20 +376,28 @@ struct BackgroundThread {
     PtrSlot map[PTR_MAP_CAP];
     std::memset(map, 0, sizeof(map));
 
-    // Slot tracking: arena-allocated parallel arrays for liveness analysis.
+    // Slot tracking: compact struct array sized to actual need.
+    // total_inputs + total_outputs is an upper bound on unique slots.
+    // Old code: 8 arrays × 65536 entries = 1.3MB memset.
+    // New code: one array × actual_slots entries = typically ~12-24KB.
+    struct SlotInfo {
+      OpIndex birth_op;            // 4B
+      OpIndex death_op;            // 4B
+      uint64_t nbytes = 0;        // 8B
+      ScalarType dtype = ScalarType::Undefined; // 1B
+      DeviceType device_type = DeviceType::CPU; // 1B
+      int8_t device_idx = -1;     // 1B
+      Layout layout = Layout::Strided; // 1B
+      bool is_external = false;   // 1B
+      uint8_t pad[3]{};           // 3B
+    };
+    static_assert(sizeof(SlotInfo) == 24, "SlotInfo: compact slot metadata");
+
     uint32_t next_slot_raw = 0;
-    auto* slot_birth = arena.alloc_array<OpIndex>(MAX_SLOTS);
-    auto* slot_death = arena.alloc_array<OpIndex>(MAX_SLOTS);
-    auto* slot_nbytes_arr = arena.alloc_array<uint64_t>(MAX_SLOTS);
-    auto* slot_dtype = arena.alloc_array<ScalarType>(MAX_SLOTS);
-    auto* slot_device_type = arena.alloc_array<DeviceType>(MAX_SLOTS);
-    auto* slot_device_idx = arena.alloc_array<int8_t>(MAX_SLOTS);
-    auto* slot_layout = arena.alloc_array<Layout>(MAX_SLOTS);
-    auto* slot_external = arena.alloc_array<bool>(MAX_SLOTS);
-    std::memset(slot_birth, 0, MAX_SLOTS * sizeof(OpIndex));
-    std::memset(slot_death, 0, MAX_SLOTS * sizeof(OpIndex));
-    std::memset(slot_nbytes_arr, 0, MAX_SLOTS * sizeof(uint64_t));
-    std::memset(slot_external, 0, MAX_SLOTS * sizeof(bool));
+    uint32_t slot_cap = std::min(MAX_SLOTS,
+        std::max(uint32_t{256}, total_inputs + total_outputs));
+    auto* slot_info = arena.alloc_array<SlotInfo>(slot_cap);
+    std::memset(slot_info, 0, slot_cap * sizeof(SlotInfo));
 
     for (uint32_t i = 0; i < count; i++) {
       const auto& re = current_trace[i];
@@ -450,20 +461,20 @@ struct BackgroundThread {
               OpIndex{lookup.op_index.raw()}, OpIndex{i},
               lookup.port, static_cast<uint8_t>(j),
               EdgeKind::DATA_FLOW, 0};
-          if (lookup.slot_id.raw() < MAX_SLOTS)
-            slot_death[lookup.slot_id.raw()] = std::max(slot_death[lookup.slot_id.raw()], OpIndex{i});
-        } else if (ptr != nullptr && next_slot_raw < MAX_SLOTS) {
+          if (lookup.slot_id.raw() < slot_cap)
+            slot_info[lookup.slot_id.raw()].death_op = std::max(slot_info[lookup.slot_id.raw()].death_op, OpIndex{i});
+        } else if (ptr != nullptr && next_slot_raw < slot_cap) {
           // External tensor (param, data loader output): first encounter.
           SlotId sid{next_slot_raw++};
           te.input_slot_ids[j] = sid;
-          slot_birth[sid.raw()] = OpIndex{0};
-          slot_death[sid.raw()] = OpIndex{i};
-          slot_external[sid.raw()] = true;
-          slot_nbytes_arr[sid.raw()] = compute_storage_nbytes(te.input_metas[j]);
-          slot_dtype[sid.raw()] = te.input_metas[j].dtype;
-          slot_device_type[sid.raw()] = te.input_metas[j].device_type;
-          slot_device_idx[sid.raw()] = te.input_metas[j].device_idx;
-          slot_layout[sid.raw()] = te.input_metas[j].layout;
+          slot_info[sid.raw()].birth_op = OpIndex{0};
+          slot_info[sid.raw()].death_op = OpIndex{i};
+          slot_info[sid.raw()].is_external = true;
+          slot_info[sid.raw()].nbytes = compute_storage_nbytes(te.input_metas[j]);
+          slot_info[sid.raw()].dtype = te.input_metas[j].dtype;
+          slot_info[sid.raw()].device_type = te.input_metas[j].device_type;
+          slot_info[sid.raw()].device_idx = te.input_metas[j].device_idx;
+          slot_info[sid.raw()].layout = te.input_metas[j].layout;
           // Insert with OpIndex{} to mark as external producer.
           OpIndex dummy_op;
           uint8_t dummy_port;
@@ -495,10 +506,10 @@ struct BackgroundThread {
         if (alias) {
           // Same data_ptr from a different op → alias. Reuse slot_id.
           te.output_slot_ids[j] = old_slot;
-          if (old_slot.raw() < MAX_SLOTS) {
-            slot_death[old_slot.raw()] = std::max(slot_death[old_slot.raw()], OpIndex{i});
+          if (old_slot.raw() < slot_cap) {
+            slot_info[old_slot.raw()].death_op = std::max(slot_info[old_slot.raw()].death_op, OpIndex{i});
             uint64_t nb = compute_storage_nbytes(te.output_metas[j]);
-            slot_nbytes_arr[old_slot.raw()] = std::max(slot_nbytes_arr[old_slot.raw()], nb);
+            slot_info[old_slot.raw()].nbytes = std::max(slot_info[old_slot.raw()].nbytes, nb);
           }
           // Only emit ALIAS edge if the prior entry was from a real op
           // (not an external with OpIndex{}).
@@ -508,17 +519,17 @@ struct BackgroundThread {
                 old_port, static_cast<uint8_t>(j),
                 EdgeKind::ALIAS, 0};
           }
-        } else if (next_slot_raw < MAX_SLOTS) {
+        } else if (next_slot_raw < slot_cap) {
           // New unique storage: assign fresh slot and patch PtrMap.
           SlotId sid{next_slot_raw++};
-          slot_birth[sid.raw()] = OpIndex{i};
-          slot_death[sid.raw()] = OpIndex{i};
-          slot_external[sid.raw()] = false;
-          slot_nbytes_arr[sid.raw()] = compute_storage_nbytes(te.output_metas[j]);
-          slot_dtype[sid.raw()] = te.output_metas[j].dtype;
-          slot_device_type[sid.raw()] = te.output_metas[j].device_type;
-          slot_device_idx[sid.raw()] = te.output_metas[j].device_idx;
-          slot_layout[sid.raw()] = te.output_metas[j].layout;
+          slot_info[sid.raw()].birth_op = OpIndex{i};
+          slot_info[sid.raw()].death_op = OpIndex{i};
+          slot_info[sid.raw()].is_external = false;
+          slot_info[sid.raw()].nbytes = compute_storage_nbytes(te.output_metas[j]);
+          slot_info[sid.raw()].dtype = te.output_metas[j].dtype;
+          slot_info[sid.raw()].device_type = te.output_metas[j].device_type;
+          slot_info[sid.raw()].device_idx = te.output_metas[j].device_idx;
+          slot_info[sid.raw()].layout = te.output_metas[j].layout;
           te.output_slot_ids[j] = sid;
           // Patch PtrMap entry with correct slot_id.
           uint32_t pidx = hash_ptr(ptr) & (PTR_MAP_CAP - 1);
@@ -538,22 +549,23 @@ struct BackgroundThread {
     // Advance MetaLog tail.
     meta_log->advance_tail(max_meta_end);
 
-    // Build arena-allocated TensorSlot array.
-    uint32_t num_slots = std::min(next_slot_raw, MAX_SLOTS);
+    // Build arena-allocated TensorSlot array from compact SlotInfo.
+    uint32_t num_slots = std::min(next_slot_raw, slot_cap);
     TensorSlot* slots = nullptr;
     if (num_slots > 0) {
       slots = arena.alloc_array<TensorSlot>(num_slots);
       for (uint32_t s = 0; s < num_slots; s++) {
+        const auto& si = slot_info[s];
         slots[s].offset_bytes = 0; // assigned by compute_memory_plan()
-        slots[s].nbytes = slot_nbytes_arr[s];
+        slots[s].nbytes = si.nbytes;
         slots[s].slot_id = SlotId{s};
-        slots[s].birth_op = slot_birth[s];
-        slots[s].death_op = slot_death[s];
-        slots[s].dtype = slot_dtype[s];
-        slots[s].device_type = slot_device_type[s];
-        slots[s].device_idx = slot_device_idx[s];
-        slots[s].layout = slot_layout[s];
-        slots[s].is_external = slot_external[s];
+        slots[s].birth_op = si.birth_op;
+        slots[s].death_op = si.death_op;
+        slots[s].dtype = si.dtype;
+        slots[s].device_type = si.device_type;
+        slots[s].device_idx = si.device_idx;
+        slots[s].layout = si.layout;
+        slots[s].is_external = si.is_external;
         std::memset(slots[s].pad, 0, sizeof(slots[s].pad));
       }
     }
