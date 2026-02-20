@@ -99,7 +99,7 @@ class Vigil {
     // next iteration re-records everything).
     //
     // Hot path: ~5ns + MetaLog write (~10ns for metas) = ~15ns total.
-    [[nodiscard]] bool record_op(
+    [[nodiscard]] CRUCIBLE_INLINE bool record_op(
         const TraceRing::Entry& e,
         const TensorMeta*       metas,
         uint32_t                n_metas,
