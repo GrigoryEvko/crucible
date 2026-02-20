@@ -104,6 +104,41 @@ CrucibleDispatchResult crucible_dispatch_op(
     return cr;
 }
 
+CrucibleDispatchResult crucible_dispatch_op_ex(
+    CrucibleHandle handle,
+    uint64_t schema_hash, uint64_t shape_hash,
+    uint16_t num_inputs, uint16_t num_outputs,
+    const CrucibleMeta* metas, uint32_t n_metas,
+    const int64_t* scalar_values, uint16_t num_scalars,
+    uint8_t grad_enabled, uint8_t inference_mode)
+{
+    auto* vigil = static_cast<crucible::Vigil*>(handle);
+
+    crucible::TraceRing::Entry entry{};
+    entry.schema_hash = schema_hash;
+    entry.shape_hash = shape_hash;
+    entry.num_inputs = num_inputs;
+    entry.num_outputs = num_outputs;
+    entry.num_scalar_args = num_scalars;
+    entry.grad_enabled = grad_enabled != 0;
+    entry.inference_mode = inference_mode != 0;
+
+    uint16_t n = num_scalars < 5 ? num_scalars : 5;
+    for (uint16_t i = 0; i < n; i++)
+        entry.scalar_values[i] = scalar_values[i];
+
+    auto result = vigil->dispatch_op(
+        entry,
+        reinterpret_cast<const crucible::TensorMeta*>(metas),
+        n_metas);
+
+    CrucibleDispatchResult cr{};
+    cr.action = static_cast<uint8_t>(result.action);
+    cr.status = static_cast<uint8_t>(result.status);
+    cr.op_index = result.op_index;
+    return cr;
+}
+
 void crucible_flush(CrucibleHandle h) {
     static_cast<crucible::Vigil*>(h)->flush();
 }

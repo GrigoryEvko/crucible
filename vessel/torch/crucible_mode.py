@@ -13,8 +13,7 @@ Usage:
 """
 
 import ctypes
-import os
-import sys
+import struct
 from pathlib import Path
 
 import torch
@@ -33,7 +32,6 @@ def _find_vessel_lib():
     for p in candidates:
         if p.exists():
             return str(p)
-    # Fall back to LD_LIBRARY_PATH
     return "libcrucible_vessel.so"
 
 
@@ -42,7 +40,6 @@ def _find_vessel_lib():
 class _VesselLib:
     """Thin ctypes wrapper around libcrucible_vessel.so."""
 
-    # Binary-compatible with crucible::TensorMeta (144 bytes)
     class Meta(ctypes.Structure):
         _fields_ = [
             ("sizes", ctypes.c_int64 * 8),
@@ -83,13 +80,13 @@ class _VesselLib:
 
         lib.crucible_hash_shapes.restype = ctypes.c_uint64
         lib.crucible_hash_shapes.argtypes = [
-            ctypes.POINTER(ctypes.c_int64),  # all_sizes
-            ctypes.POINTER(ctypes.c_uint8),  # ndims
-            ctypes.c_uint32,                 # n_tensors
+            ctypes.POINTER(ctypes.c_int64),
+            ctypes.POINTER(ctypes.c_uint8),
+            ctypes.c_uint32,
         ]
 
-        lib.crucible_dispatch_op.restype = self.DispatchResult
-        lib.crucible_dispatch_op.argtypes = [
+        lib.crucible_dispatch_op_ex.restype = self.DispatchResult
+        lib.crucible_dispatch_op_ex.argtypes = [
             ctypes.c_void_p,                  # handle
             ctypes.c_uint64,                  # schema_hash
             ctypes.c_uint64,                  # shape_hash
@@ -97,6 +94,10 @@ class _VesselLib:
             ctypes.c_uint16,                  # num_outputs
             ctypes.POINTER(self.Meta),        # metas
             ctypes.c_uint32,                  # n_metas
+            ctypes.POINTER(ctypes.c_int64),   # scalar_values
+            ctypes.c_uint16,                  # num_scalars
+            ctypes.c_uint8,                   # grad_enabled
+            ctypes.c_uint8,                   # inference_mode
         ]
 
         lib.crucible_flush.restype = None
@@ -116,9 +117,6 @@ class _VesselLib:
 
 
 # ─── Dtype mapping ──────────────────────────────────────────────────
-#
-# crucible::ScalarType mirrors c10::ScalarType ordinals.
-# Map PyTorch dtypes to the int8_t values.
 
 _DTYPE_MAP = {
     torch.uint8: 0,
@@ -144,6 +142,20 @@ _DEVICE_MAP = {
 }
 
 
+# ─── Scalar encoding ───────────────────────────────────────────────
+
+def _scalar_to_int64(val):
+    """Bitcast a Python scalar to int64 for TraceRing::Entry::scalar_values."""
+    if isinstance(val, bool):
+        return 1 if val else 0
+    if isinstance(val, int):
+        return val & 0xFFFFFFFFFFFFFFFF  # truncate to uint64 bits
+    if isinstance(val, float):
+        # Bitcast float64 → int64 via struct pack/unpack
+        return struct.unpack("q", struct.pack("d", val))[0]
+    return 0
+
+
 # ─── CrucibleMode ──────────────────────────────────────────────────
 
 class CrucibleMode(TorchDispatchMode):
@@ -160,7 +172,7 @@ class CrucibleMode(TorchDispatchMode):
         self._handle = self._vessel.crucible_create()
         self._verbose = verbose
         self._op_count = 0
-        self._schema_cache = {}  # op name → schema_hash
+        self._schema_cache = {}
         self._prev_compiled = False
 
     def __del__(self):
@@ -187,27 +199,25 @@ class CrucibleMode(TorchDispatchMode):
     def __torch_dispatch__(self, func, types, args=(), kwargs=None):
         kwargs = kwargs or {}
 
-        # Execute the actual op first (always eager in this POC).
+        # Execute eagerly first (always, in this POC).
         result = func(*args, **kwargs)
 
-        # Extract op identity
+        # Op identity
         op_name = func.name()
         schema_hash = self._get_schema_hash(op_name)
 
-        # Collect tensor inputs and outputs
+        # Tensor inputs/outputs
         input_tensors = self._extract_tensors(args, kwargs)
         output_tensors = self._extract_tensors_from_result(result)
-
         num_inputs = len(input_tensors)
         num_outputs = len(output_tensors)
 
-        # Compute shape_hash from input shapes
+        # Shape hash from input shapes
         shape_hash = self._compute_shape_hash(input_tensors)
 
         # Build TensorMeta array: [inputs..., outputs...]
         all_tensors = input_tensors + output_tensors
         n_metas = len(all_tensors)
-
         if n_metas > 0:
             MetaArray = _VesselLib.Meta * n_metas
             metas = MetaArray()
@@ -217,12 +227,27 @@ class CrucibleMode(TorchDispatchMode):
         else:
             metas_ptr = None
 
+        # Extract scalar arguments from args and kwargs
+        scalars = self._extract_scalars(args, kwargs)
+        num_scalars = min(len(scalars), 5)
+        ScalarArray = ctypes.c_int64 * 5
+        scalar_buf = ScalarArray()
+        for i in range(num_scalars):
+            scalar_buf[i] = scalars[i]
+        scalars_ptr = ctypes.cast(scalar_buf, ctypes.POINTER(ctypes.c_int64))
+
+        # Grad/inference mode flags
+        grad_on = 1 if torch.is_grad_enabled() else 0
+        infer_on = 1 if torch.is_inference_mode_enabled() else 0
+
         # Dispatch to Vigil
-        dr = self._vessel.crucible_dispatch_op(
+        dr = self._vessel.crucible_dispatch_op_ex(
             self._handle,
             schema_hash, shape_hash,
             num_inputs, num_outputs,
             metas_ptr, n_metas,
+            scalars_ptr, num_scalars,
+            grad_on, infer_on,
         )
 
         self._op_count += 1
@@ -238,15 +263,15 @@ class CrucibleMode(TorchDispatchMode):
         if self._verbose:
             action_str = "COMPILED" if dr.action == 1 else "RECORD"
             status_str = ["MATCH", "DIVERGED", "COMPLETE"][dr.status]
+            extra = f" scalars={scalars[:num_scalars]}" if num_scalars > 0 else ""
             print(f"  [{action_str}:{status_str}] {op_name} "
-                  f"in={num_inputs} out={num_outputs}")
+                  f"in={num_inputs} out={num_outputs}{extra}")
 
         return result
 
     # ── Helpers ──────────────────────────────────────────────────────
 
     def _get_schema_hash(self, op_name):
-        """Cache FNV-1a hash of op name string."""
         h = self._schema_cache.get(op_name)
         if h is None:
             h = self._vessel.crucible_hash_string(op_name.encode("ascii"))
@@ -254,11 +279,8 @@ class CrucibleMode(TorchDispatchMode):
         return h
 
     def _compute_shape_hash(self, tensors):
-        """FNV-1a hash of input tensor shapes."""
         if not tensors:
             return 0
-
-        # Flatten all sizes into a contiguous array
         total_dims = sum(t.dim() for t in tensors)
         if total_dims == 0:
             return 0
@@ -283,13 +305,11 @@ class CrucibleMode(TorchDispatchMode):
 
     @staticmethod
     def _fill_meta(meta, tensor):
-        """Fill a CrucibleMeta struct from a PyTorch tensor."""
         ndim = tensor.dim()
         meta.ndim = ndim
         for d in range(ndim):
             meta.sizes[d] = tensor.size(d)
             meta.strides[d] = tensor.stride(d)
-        # Zero out unused dims
         for d in range(ndim, 8):
             meta.sizes[d] = 0
             meta.strides[d] = 0
@@ -298,11 +318,10 @@ class CrucibleMode(TorchDispatchMode):
         dev = tensor.device
         meta.device_type = _DEVICE_MAP.get(dev.type, 0)
         meta.device_idx = dev.index if dev.index is not None else -1
-        meta.layout = 0  # Strided
+        meta.layout = 0
 
     @staticmethod
     def _extract_tensors(args, kwargs):
-        """Extract all tensor arguments (flat)."""
         tensors = []
         for a in args:
             if isinstance(a, torch.Tensor):
@@ -318,9 +337,20 @@ class CrucibleMode(TorchDispatchMode):
 
     @staticmethod
     def _extract_tensors_from_result(result):
-        """Extract tensors from an op result."""
         if isinstance(result, torch.Tensor):
             return [result]
         if isinstance(result, (list, tuple)):
             return [x for x in result if isinstance(x, torch.Tensor)]
         return []
+
+    @staticmethod
+    def _extract_scalars(args, kwargs):
+        """Extract scalar arguments as int64 bitcast values."""
+        scalars = []
+        for a in args:
+            if isinstance(a, (int, float, bool)) and not isinstance(a, torch.Tensor):
+                scalars.append(_scalar_to_int64(a))
+        for v in kwargs.values():
+            if isinstance(v, (int, float, bool)) and not isinstance(v, torch.Tensor):
+                scalars.append(_scalar_to_int64(v))
+        return scalars
