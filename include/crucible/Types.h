@@ -142,6 +142,15 @@ CRUCIBLE_STRONG_ID(MetaIndex);  // index into MetaLog buffer
     [[nodiscard]] constexpr explicit operator bool() const {               \
       return v != 0;                                                       \
     }                                                                      \
+    /* Sentinel: impossible value used as end-of-region marker.            \
+     * No real hash can be UINT64_MAX — hash functions produce             \
+     * uniformly distributed values, and we reserve this one. */           \
+    [[nodiscard]] static constexpr Name sentinel() {                       \
+      return Name{UINT64_MAX};                                             \
+    }                                                                      \
+    [[nodiscard]] constexpr bool is_sentinel() const {                     \
+      return v == UINT64_MAX;                                              \
+    }                                                                      \
     constexpr auto operator<=>(const Name&) const = default;               \
   };                                                                       \
   static_assert(sizeof(Name) == sizeof(uint64_t))
