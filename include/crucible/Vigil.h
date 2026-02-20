@@ -114,8 +114,15 @@ class Vigil {
     //
     // On divergence: deactivates CrucibleContext, falls back to RECORD,
     //   records the divergent op so the bg thread sees it.
-    // On activation: the op that triggers try_activate_ is recorded
-    //   normally (one-op delay); the NEXT op enters COMPILED mode.
+    //
+    // Activation lifecycle:
+    //   1. bg thread signals pending_region_ (atomic)
+    //   2. fg thread consumes it into pending_activation_ (fg-only)
+    //   3. Alignment phase: scan for K consecutive matches against
+    //      region ops[0..K-1] to find the iteration boundary
+    //   4. Once aligned: activate CrucibleContext, advance engine
+    //      past already-matched ops, enter COMPILED mode
+    //   5. Subsequent ops take the fast COMPILED path (~2ns)
     [[nodiscard]] DispatchResult dispatch_op(
         const TraceRing::Entry& entry,
         const TensorMeta*       metas,
@@ -123,7 +130,7 @@ class Vigil {
         ScopeHash               scope_hash    = {},
         CallsiteHash            callsite_hash = {})
     {
-        // ── COMPILED path ──
+        // ── COMPILED path (confirmed alignment, hot) ──
         if (ctx_.is_compiled()) [[likely]] {
             auto status = ctx_.advance(entry.schema_hash, entry.shape_hash);
 
@@ -144,7 +151,11 @@ class Vigil {
         // Check if background thread signaled a ready region.
         auto* pending = pending_region_.load(std::memory_order_acquire);
         if (pending) [[unlikely]]
-            try_activate_(pending);
+            consume_pending_region_();
+
+        // ── Alignment phase (seek iteration boundary) ──
+        if (pending_activation_) [[unlikely]]
+            try_align_(entry.schema_hash, entry.shape_hash);
 
         return {DispatchResult::Action::RECORD, ReplayStatus::MATCH, {}, 0};
     }
@@ -313,21 +324,79 @@ class Vigil {
 
     // ─── Private helpers ────────────────────────────────────────────
 
-    // Try to activate CrucibleContext with a pending region.
-    // Called on the foreground thread from dispatch_op() when a
-    // pending region is detected.
-    void try_activate_(RegionNode* /*hint*/) {
-        // Atomically consume the pending region (another dispatch_op
-        // call might race, though in practice we're single-threaded fg).
+    // Consume the bg→fg pending region into fg-only alignment state.
+    // Does NOT activate CrucibleContext — alignment phase handles that.
+    void consume_pending_region_() {
         auto* region = pending_region_.exchange(nullptr,
                                                 std::memory_order_acq_rel);
         if (!region) return;
+        if (region->num_ops == 0) return;  // degenerate region
 
-        // activate() returns false if no plan → stay RECORDING.
-        if (!ctx_.activate(region)) return;
+        // Start alignment phase: scan for iteration boundary.
+        pending_activation_ = region;
+        alignment_pos_ = 0;
+    }
 
-        register_externals_from_region_(region);
-        mode_.store(Mode::COMPILED, std::memory_order_relaxed);
+    // Alignment phase: sliding window match against region ops[0..K-1].
+    //
+    // When the bg thread signals a region, we don't know where in the
+    // iteration the fg thread currently is. We scan incoming ops for K
+    // consecutive matches against the region's first K ops to find the
+    // iteration boundary. Once found, activate CrucibleContext and
+    // advance the engine past the matched ops.
+    //
+    // K=5 matches the IterationDetector's signature length — sufficient
+    // to avoid false positives from a single op coincidence.
+    void try_align_(SchemaHash schema, ShapeHash shape) {
+        assert(pending_activation_ && "try_align_ called without pending region");
+        const auto* region = pending_activation_;
+
+        // Check if current op matches the expected alignment position.
+        if (schema == region->ops[alignment_pos_].schema_hash &&
+            shape  == region->ops[alignment_pos_].shape_hash)
+        {
+            alignment_pos_++;
+        } else {
+            // Mismatch — reset. But check if this op could be a new start (op 0).
+            alignment_pos_ = 0;
+            if (region->num_ops > 0 &&
+                schema == region->ops[0].schema_hash &&
+                shape  == region->ops[0].shape_hash)
+            {
+                alignment_pos_ = 1;
+            }
+        }
+
+        // Once K consecutive ops match (or entire region if smaller),
+        // we've confirmed the iteration boundary. Activate and advance.
+        static constexpr uint32_t ALIGNMENT_K = 5;
+        const uint32_t threshold = (region->num_ops < ALIGNMENT_K)
+                                 ? region->num_ops : ALIGNMENT_K;
+
+        if (alignment_pos_ >= threshold) {
+            if (!ctx_.activate(region)) {
+                // No plan → can't compile. Clear pending state.
+                pending_activation_ = nullptr;
+                return;
+            }
+
+            register_externals_from_region_(region);
+
+            // Advance the engine past the ops we already matched during
+            // alignment. These ops executed eagerly; the engine needs to
+            // be at position alignment_pos_ so the NEXT op checks against
+            // the correct region op.
+            for (uint32_t i = 0; i < alignment_pos_; i++) {
+                auto s = ctx_.advance(region->ops[i].schema_hash,
+                                      region->ops[i].shape_hash);
+                // Must match — we verified these during alignment.
+                assert(s == ReplayStatus::MATCH || s == ReplayStatus::COMPLETE);
+                (void)s;
+            }
+
+            mode_.store(Mode::COMPILED, std::memory_order_relaxed);
+            pending_activation_ = nullptr;
+        }
     }
 
     // Walk region ops to find external slot data_ptrs from recorded
@@ -375,7 +444,9 @@ class Vigil {
     // ─── Tier 1 dispatch state (fg thread only, except pending_region_) ─
 
     std::atomic<RegionNode*>        pending_region_{nullptr}; // bg→fg signal
-    CrucibleContext                 ctx_;                     // fg-only replay
+    RegionNode*                     pending_activation_{nullptr}; // fg-only: waiting for alignment
+    uint32_t                        alignment_pos_{0};  // consecutive matched ops from region start
+    CrucibleContext                 ctx_;               // fg-only replay
 
     BackgroundThread                bg_;  // MUST be declared last
 };
