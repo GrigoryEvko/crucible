@@ -119,90 +119,52 @@ class Vigil {
     //   RECORD   → execute eagerly, Vigil recorded the op
     //   COMPILED → outputs pre-allocated, use output_ptr(j) / input_ptr(j)
     //
-    // On divergence: deactivates CrucibleContext, falls back to RECORD,
-    //   resets bg thread detector (divergent op is NOT recorded).
+    // Thin inline wrapper: only the hot paths live here. Cold paths
+    // (divergence recovery, pending-region consume, alignment) are
+    // in NOINLINE helpers so the compiler doesn't need callee-saved
+    // registers for the hot path.
     //
-    // Activation lifecycle:
-    //   1. bg thread signals pending_region_ (atomic)
-    //   2. fg thread consumes it into pending_activation_ (fg-only)
-    //   3. Alignment phase: scan for K consecutive matches against
-    //      region ops[0..K-1] to find the iteration boundary
-    //   4. Once aligned: activate CrucibleContext, advance engine
-    //      past already-matched ops, enter COMPILED mode
-    //   5. Subsequent ops take the fast COMPILED path (~2ns)
-    [[nodiscard]] DispatchResult dispatch_op(
+    // COMPILED hot path:
+    //   is_compiled() → ctx_.advance() → return result
+    //   No OpIndex computation (would require division by 96).
+    //
+    // RECORDING hot path:
+    //   is_compiled() → pending check → record_op() → return result
+    //   Relaxed atomic load on pending_region_: on x86 the hardware
+    //   provides acquire semantics anyway; acquire fence deferred to
+    //   the cold transition path.
+    [[nodiscard]] CRUCIBLE_INLINE DispatchResult dispatch_op(
         const TraceRing::Entry& entry,
         const TensorMeta*       metas,
         uint32_t                n_metas,
         ScopeHash               scope_hash    = {},
         CallsiteHash            callsite_hash = {})
     {
-        // ── COMPILED path (confirmed alignment, hot) ──
+        // ── COMPILED path (hot) ──
         if (ctx_.is_compiled()) [[likely]] {
             auto status = ctx_.advance(entry.schema_hash, entry.shape_hash);
-
-            if (status == ReplayStatus::DIVERGED) [[unlikely]] {
-                const uint32_t div_pos = ctx_.engine().ops_matched();
-
-                // Cache the diverging region for future shape switches.
-                region_cache_.insert(ctx_.active_region());
-
-                // Try to find a cached region that matches at the
-                // divergence position.  Excludes the current region.
-                auto* alt = region_cache_.find_alternate(
-                    div_pos, entry.schema_hash, entry.shape_hash,
-                    ctx_.active_region());
-
-                if (alt && try_switch_region_(alt, div_pos)) {
-                    // Switched successfully.  Advance past the divergent op.
-                    auto s = ctx_.advance(entry.schema_hash, entry.shape_hash);
-                    if (s != ReplayStatus::DIVERGED) {
-                        return {DispatchResult::Action::COMPILED, s, {},
-                                OpIndex{ctx_.engine().ops_matched()}};
-                    }
-                    // Double divergence — shouldn't happen.  Fall through.
-                }
-
-                // No cached alternate, switch failed, or double divergence.
-                if (ctx_.is_compiled())
-                    ctx_.deactivate();
-
-                mode_.store(Mode::RECORDING, std::memory_order_relaxed);
-                // Signal bg thread to reset its detector and accumulated trace.
-                // Without this, leftover signature ops + the divergent op
-                // would cause the detector to produce garbage regions when
-                // new clean data arrives after recovery.
-                bg_.reset_requested.store(true, std::memory_order_release);
-                // Don't record the divergent op — it's noise that poisons
-                // the bg thread's iteration detector.  Subsequent ops in
-                // RECORDING mode will be recorded normally.
-                return {DispatchResult::Action::RECORD, status, {}, OpIndex{}};
-            }
-
-            return {DispatchResult::Action::COMPILED, status, {},
-                    OpIndex{ctx_.engine().ops_matched()}};
+            if (status == ReplayStatus::DIVERGED) [[unlikely]]
+                return handle_divergence_(entry, metas, n_metas,
+                                          scope_hash, callsite_hash);
+            return {DispatchResult::Action::COMPILED, status, {}, OpIndex{}};
         }
 
-        // ── RECORDING path ──
+        // ── RECORDING fast path (hot) ──
+        //
+        // Relaxed load: if the bg thread just stored a region, we might
+        // miss it for this one op and catch it next call. That's a ~2ns
+        // latency blip, not a correctness issue.  The cold path uses
+        // acquire to see the region data before acting on it.
+        if (pending_region_.load(std::memory_order_relaxed) ||
+            pending_activation_) [[unlikely]]
+        {
+            return dispatch_transition_(entry, metas, n_metas,
+                                        scope_hash, callsite_hash);
+        }
 
-        // Check if background thread signaled a ready region.
-        auto* pending = pending_region_.load(std::memory_order_acquire);
-        if (pending) [[unlikely]]
-            consume_pending_region_();
-
-        // During alignment, skip recording: the bg thread already built the
-        // region from prior data.  Recording alignment ops to the ring would
-        // cause the bg thread to detect a false iteration boundary (K ops
-        // matching the signature) and produce a garbage region that overwrites
-        // the valid one.
-        if (!pending_activation_)
-            (void)record_op(entry, metas, n_metas, scope_hash, callsite_hash);
-
-        // ── Alignment phase (seek iteration boundary) ──
-        if (pending_activation_) [[unlikely]]
-            try_align_(entry.schema_hash, entry.shape_hash);
-
-        return {DispatchResult::Action::RECORD, ReplayStatus::MATCH, {}, OpIndex{}};
+        (void)record_op(entry, metas, n_metas, scope_hash, callsite_hash);
+        return {DispatchResult::Action::RECORD, ReplayStatus::MATCH, {},
+                OpIndex{}};
     }
 
     // ─── Queries (lock-free reads) ─────────────────────────────────
@@ -370,6 +332,78 @@ class Vigil {
         if (cipher_.has_value()) {
             (void)cipher_->store(region, meta_log_.get());
         }
+    }
+
+    // ─── Cold dispatch paths (NOINLINE to keep hot path register-light) ─
+
+    // Divergence handler: region cache lookup, switch attempt, fallback.
+    // Called when ctx_.advance() returns DIVERGED.  ~50-400ns cold path.
+    CRUCIBLE_NOINLINE DispatchResult handle_divergence_(
+        const TraceRing::Entry& entry,
+        [[maybe_unused]] const TensorMeta* metas,
+        [[maybe_unused]] uint32_t          n_metas,
+        [[maybe_unused]] ScopeHash         scope_hash,
+        [[maybe_unused]] CallsiteHash      callsite_hash)
+    {
+        const uint32_t div_pos = ctx_.engine().ops_matched();
+
+        // Cache the diverging region for future shape switches.
+        region_cache_.insert(ctx_.active_region());
+
+        // Try to find a cached region that matches at the divergence
+        // position.  Excludes the current region.
+        auto* alt = region_cache_.find_alternate(
+            div_pos, entry.schema_hash, entry.shape_hash,
+            ctx_.active_region());
+
+        if (alt && try_switch_region_(alt, div_pos)) {
+            // Switched successfully.  Advance past the divergent op.
+            auto s = ctx_.advance(entry.schema_hash, entry.shape_hash);
+            if (s != ReplayStatus::DIVERGED) {
+                return {DispatchResult::Action::COMPILED, s, {},
+                        OpIndex{ctx_.engine().ops_matched()}};
+            }
+            // Double divergence — shouldn't happen.  Fall through.
+        }
+
+        // No cached alternate, switch failed, or double divergence.
+        if (ctx_.is_compiled())
+            ctx_.deactivate();
+
+        mode_.store(Mode::RECORDING, std::memory_order_relaxed);
+        // Signal bg thread to reset its detector and accumulated trace.
+        bg_.reset_requested.store(true, std::memory_order_release);
+        // Don't record the divergent op — it poisons the bg thread's
+        // iteration detector.
+        return {DispatchResult::Action::RECORD,
+                ReplayStatus::DIVERGED, {}, OpIndex{}};
+    }
+
+    // Transition handler: consume pending region, run alignment, or
+    // record while a transition is in progress.  Called when
+    // pending_region_ or pending_activation_ is non-null.
+    CRUCIBLE_NOINLINE DispatchResult dispatch_transition_(
+        const TraceRing::Entry& entry,
+        const TensorMeta*       metas,
+        uint32_t                n_metas,
+        ScopeHash               scope_hash,
+        CallsiteHash            callsite_hash)
+    {
+        // Acquire: must see region data written by bg thread before
+        // consume_pending_region_() reads it.
+        if (pending_region_.load(std::memory_order_acquire))
+            consume_pending_region_();
+
+        if (pending_activation_) {
+            // Alignment phase: don't record (prevents false iteration
+            // boundaries in the bg thread's detector).
+            try_align_(entry.schema_hash, entry.shape_hash);
+        } else {
+            (void)record_op(entry, metas, n_metas, scope_hash, callsite_hash);
+        }
+
+        return {DispatchResult::Action::RECORD, ReplayStatus::MATCH, {},
+                OpIndex{}};
     }
 
     // ─── Private helpers ────────────────────────────────────────────

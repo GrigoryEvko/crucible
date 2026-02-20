@@ -10,9 +10,11 @@
 
 #if defined(_MSC_VER)
   #define CRUCIBLE_INLINE __forceinline
+  #define CRUCIBLE_NOINLINE __declspec(noinline)
   #define CRUCIBLE_API __declspec(dllexport)
 #else
   #define CRUCIBLE_INLINE __attribute__((always_inline)) inline
+  #define CRUCIBLE_NOINLINE __attribute__((noinline))
   #define CRUCIBLE_API __attribute__((visibility("default")))
 #endif
 
