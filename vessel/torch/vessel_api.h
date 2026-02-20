@@ -75,6 +75,17 @@ CrucibleDispatchResult crucible_dispatch_op(
     uint16_t num_inputs, uint16_t num_outputs,
     const CrucibleMeta* metas, uint32_t n_metas);
 
+// Extended dispatch with scalar arguments and grad/inference flags.
+// scalar_values: up to 5 int64_t values (floats bitcast via memcpy).
+// num_scalars: number of valid entries in scalar_values (0-5).
+CrucibleDispatchResult crucible_dispatch_op_ex(
+    CrucibleHandle h,
+    uint64_t schema_hash, uint64_t shape_hash,
+    uint16_t num_inputs, uint16_t num_outputs,
+    const CrucibleMeta* metas, uint32_t n_metas,
+    const int64_t* scalar_values, uint16_t num_scalars,
+    uint8_t grad_enabled, uint8_t inference_mode);
+
 // ── Control ──────────────────────────────────────────────────────────
 
 // Spin-wait until TraceRing is drained (1s timeout).
