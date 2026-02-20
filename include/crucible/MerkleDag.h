@@ -147,10 +147,10 @@ struct MemoryPlan {
 // ═══════════════════════════════════════════════════════════════════
 
 struct TraceEntry {
-  uint64_t schema_hash = 0;     // 8B — op identity (OperatorHandle schema hash)
-  uint64_t shape_hash = 0;      // 8B — quick hash of all input shapes
-  uint64_t scope_hash = 0;      // 8B — module hierarchy path hash (AST layer)
-  uint64_t callsite_hash = 0;   // 8B — Python source location identity
+  SchemaHash schema_hash;        // 8B — op identity (OperatorHandle schema hash)
+  ShapeHash shape_hash;          // 8B — quick hash of all input shapes
+  ScopeHash scope_hash;          // 8B — module hierarchy path hash (AST layer)
+  CallsiteHash callsite_hash;    // 8B — Python source location identity
 
   TensorMeta* input_metas = nullptr;   // 8B — arena-allocated array
   TensorMeta* output_metas = nullptr;  // 8B — arena-allocated array
@@ -258,7 +258,7 @@ enum class TraceNodeKind : uint8_t {
 struct TraceNode {
   TraceNodeKind kind{};     // 1B
   uint8_t pad[7]{};         // 7B — alignment for merkle_hash
-  uint64_t merkle_hash = 0; // 8B — subtree identity (includes all descendants)
+  MerkleHash merkle_hash;   // 8B — subtree identity (includes all descendants)
   TraceNode* next = nullptr; // 8B — continuation (null for TERMINAL)
 };
 
@@ -273,13 +273,13 @@ static_assert(sizeof(TraceNode) == 24, "TraceNode must be 24 bytes");
 // ═══════════════════════════════════════════════════════════════════
 
 struct RegionNode : TraceNode {
-  uint64_t content_hash = 0;                  // 8B — kernel identity (this region)
+  ContentHash content_hash;                       // 8B — kernel identity (this region)
   std::atomic<CompiledKernel*> compiled{nullptr}; // 8B — from global cache, null until ready
 
   TraceEntry* ops = nullptr;  // 8B — arena-allocated array
   uint32_t num_ops = 0;      // 4B
 
-  uint64_t first_op_schema = 0; // 8B — quick mismatch detection
+  SchemaHash first_op_schema;   // 8B — quick mismatch detection
 
   float measured_ms = 0.0f;  // 4B — last measured execution time
   uint32_t variant_id = 0;   // 4B — which compiled variant is active
@@ -315,10 +315,10 @@ struct BranchNode : TraceNode {
 // Both use detail::fmix64 from Expr.h.
 // ═══════════════════════════════════════════════════════════════════
 
-[[nodiscard]] inline uint64_t compute_content_hash(std::span<const TraceEntry> ops) {
+[[nodiscard]] inline ContentHash compute_content_hash(std::span<const TraceEntry> ops) {
   uint64_t h = 0x9E3779B97F4A7C15ULL;
   for (uint32_t i = 0; i < ops.size(); i++) {
-    h ^= detail::fmix64(ops[i].schema_hash);
+    h ^= detail::fmix64(ops[i].schema_hash.raw());
     h *= 0x9E3779B97F4A7C15ULL;
 
     // Input shapes + strides + dtype + device contribute to content identity.
@@ -352,46 +352,46 @@ struct BranchNode : TraceNode {
       }
     }
   }
-  return detail::fmix64(h);
+  return ContentHash{detail::fmix64(h)};
 }
 
-[[nodiscard]] inline uint64_t compute_merkle_hash(TraceNode* node) {
+[[nodiscard]] inline MerkleHash compute_merkle_hash(TraceNode* node) {
   if (!node)
-    return 0;
+    return MerkleHash{};
 
   uint64_t h;
   if (node->kind == TraceNodeKind::REGION) {
-    h = static_cast<RegionNode*>(node)->content_hash;
+    h = static_cast<RegionNode*>(node)->content_hash.raw();
   } else if (node->kind == TraceNodeKind::BRANCH) {
     auto* b = static_cast<BranchNode*>(node);
     h = detail::fmix64(b->guard.hash());
     for (uint32_t i = 0; i < b->num_arms; i++) {
-      h ^= detail::fmix64(b->arms[i].target->merkle_hash);
+      h ^= detail::fmix64(b->arms[i].target->merkle_hash.raw());
       h *= 0x9E3779B97F4A7C15ULL;
     }
   } else {
     // TERMINAL
-    return 0;
+    return MerkleHash{};
   }
 
   // Include continuation's merkle hash (this is what makes it Merkle)
   if (node->next)
-    h = detail::fmix64(h ^ node->next->merkle_hash);
+    h = detail::fmix64(h ^ node->next->merkle_hash.raw());
 
-  return h;
+  return MerkleHash{h};
 }
 
 // Content hash for a branched kernel (all arms fused into one kernel)
-[[nodiscard]] inline uint64_t branched_content_hash(BranchNode* branch) {
+[[nodiscard]] inline ContentHash branched_content_hash(BranchNode* branch) {
   uint64_t h = detail::fmix64(branch->guard.hash());
   for (uint32_t i = 0; i < branch->num_arms; i++) {
     if (branch->arms[i].target->kind == TraceNodeKind::REGION) {
       h ^= detail::fmix64(
-          static_cast<RegionNode*>(branch->arms[i].target)->content_hash);
+          static_cast<RegionNode*>(branch->arms[i].target)->content_hash.raw());
       h *= 0x9E3779B97F4A7C15ULL;
     }
   }
-  return detail::fmix64(h);
+  return ContentHash{detail::fmix64(h)};
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -417,13 +417,13 @@ class KernelCache {
   KernelCache& operator=(const KernelCache&) = delete("lock-free hash map with atomic state cannot be copied");
 
   // Lock-free lookup. Returns nullptr on miss.
-  [[nodiscard]] CompiledKernel* lookup(uint64_t content_hash) const {
+  [[nodiscard]] CompiledKernel* lookup(ContentHash content_hash) const {
     uint32_t mask = capacity_ - 1;
-    uint32_t idx = static_cast<uint32_t>(content_hash) & mask;
+    uint32_t idx = static_cast<uint32_t>(content_hash.raw()) & mask;
     for (uint32_t probe = 0; probe < capacity_; probe++) {
       auto& entry = table_[(idx + probe) & mask];
       uint64_t key = entry.content_hash.load(std::memory_order_acquire);
-      if (key == content_hash)
+      if (key == content_hash.raw())
         return entry.kernel.load(std::memory_order_acquire);
       if (key == 0)
         return nullptr; // empty slot -> miss
@@ -432,20 +432,20 @@ class KernelCache {
   }
 
   // Thread-safe insert via CAS. Overwrites if key already exists.
-  void insert(uint64_t content_hash, CompiledKernel* kernel) {
-    assert(content_hash != 0 && "zero is the sentinel for empty slots");
+  void insert(ContentHash content_hash, CompiledKernel* kernel) {
+    assert(content_hash.raw() != 0 && "zero is the sentinel for empty slots");
     uint32_t mask = capacity_ - 1;
-    uint32_t idx = static_cast<uint32_t>(content_hash) & mask;
+    uint32_t idx = static_cast<uint32_t>(content_hash.raw()) & mask;
     for (uint32_t probe = 0; probe < capacity_; probe++) {
       auto& entry = table_[(idx + probe) & mask];
       uint64_t expected = 0;
       if (entry.content_hash.compare_exchange_strong(
-              expected, content_hash, std::memory_order_acq_rel)) {
+              expected, content_hash.raw(), std::memory_order_acq_rel)) {
         entry.kernel.store(kernel, std::memory_order_release);
         size_.fetch_add(1, std::memory_order_relaxed);
         return;
       }
-      if (expected == content_hash) {
+      if (expected == content_hash.raw()) {
         // Already exists -- update to newer variant
         entry.kernel.store(kernel, std::memory_order_release);
         return;
@@ -487,12 +487,12 @@ class KernelCache {
   auto* node = new (arena.alloc(sizeof(RegionNode), alignof(RegionNode)))
       RegionNode{};
   node->kind = TraceNodeKind::REGION;
-  node->merkle_hash = 0;
+  node->merkle_hash = MerkleHash{};
   node->next = nullptr;
   node->ops = ops;
   node->num_ops = num_ops;
   node->content_hash = compute_content_hash(std::span{ops, num_ops});
-  node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : 0;
+  node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
   node->compiled.store(nullptr, std::memory_order_relaxed);
   node->measured_ms = 0.0f;
   node->variant_id = 0;
@@ -506,7 +506,7 @@ class KernelCache {
   std::memset(node, 0, sizeof(TraceNode));
   node->kind = TraceNodeKind::TERMINAL;
   node->next = nullptr;
-  node->merkle_hash = 0;
+  node->merkle_hash = MerkleHash{};
   return node;
 }
 
@@ -581,7 +581,7 @@ inline void recompute_merkle(TraceNode* node) {
     if (new_pos < region->num_ops)
       break;
 
-    uint64_t new_hash =
+    ContentHash new_hash =
         compute_content_hash(new_ops.subspan(new_pos - region->num_ops, region->num_ops));
 
     if (new_hash == region->content_hash) {
@@ -695,6 +695,9 @@ template <typename GuardEval, typename RegionExec>
 
     case TraceNodeKind::TERMINAL:
       return true;
+
+    default:
+      std::unreachable();
     }
   }
   return true;

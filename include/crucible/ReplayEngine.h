@@ -5,7 +5,7 @@
 //
 // Used by CrucibleContext during COMPILED mode. For each op the
 // Vessel adapter intercepts:
-//   1. advance(schema_hash, shape_hash) → guard check + position advance
+//   1. advance(SchemaHash, ShapeHash) → guard check + position advance
 //   2. If MATCH: output_ptr(j) → pre-allocated storage for output j
 //   3. Caller executes the op writing into that storage (Tier 1: eager)
 //
@@ -63,7 +63,7 @@ struct ReplayEngine {
   //
   // Returns COMPLETE when all ops have been matched.
   [[nodiscard]] CRUCIBLE_INLINE ReplayStatus
-  advance(uint64_t schema_hash, uint64_t shape_hash) {
+  advance(SchemaHash schema_hash, ShapeHash shape_hash) {
     if (op_index_ >= num_ops_) [[unlikely]]
       return ReplayStatus::COMPLETE;
 

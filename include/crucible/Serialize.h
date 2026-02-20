@@ -102,22 +102,22 @@ inline TensorMeta read_meta(Reader& r) {
 
 // Write the common CDAG header (32B).
 inline void write_header(Writer& w, TraceNodeKind kind,
-                         uint64_t merkle_hash, uint64_t content_hash) {
+                         MerkleHash merkle_hash, ContentHash content_hash) {
     w.w(CDAG_MAGIC);
     w.w(CDAG_VERSION);
     w.w(std::to_underlying(kind));
     const uint8_t pad7[7] = {};
     w.write_bytes(pad7, 7);
-    w.w(merkle_hash);
-    w.w(content_hash);
+    w.w(merkle_hash.raw());
+    w.w(content_hash.raw());
 }
 
 struct Header {
-    uint32_t magic;
-    uint32_t version;
-    uint8_t  kind;
-    uint64_t merkle_hash;
-    uint64_t content_hash;
+    uint32_t    magic;
+    uint32_t    version;
+    uint8_t     kind;
+    MerkleHash  merkle_hash;
+    ContentHash content_hash;
 };
 
 inline Header read_header(Reader& r) {
@@ -127,8 +127,8 @@ inline Header read_header(Reader& r) {
     h.kind    = r.r<uint8_t>();
     uint8_t pad7[7];
     r.read_bytes(pad7, 7);
-    h.merkle_hash  = r.r<uint64_t>();
-    h.content_hash = r.r<uint64_t>();
+    h.merkle_hash  = MerkleHash{r.r<uint64_t>()};
+    h.content_hash = ContentHash{r.r<uint64_t>()};
     return h;
 }
 
@@ -153,7 +153,7 @@ inline Header read_header(Reader& r) {
 
     // Region fixed fields
     w.w(region->num_ops);
-    w.w(region->first_op_schema);
+    w.w(region->first_op_schema.raw());
     w.w(region->measured_ms);
     w.w(region->variant_id);
 
@@ -181,10 +181,10 @@ inline Header read_header(Reader& r) {
     for (uint32_t i = 0; i < region->num_ops; i++) {
         const TraceEntry& te = region->ops[i];
 
-        w.w(te.schema_hash);
-        w.w(te.shape_hash);
-        w.w(te.scope_hash);
-        w.w(te.callsite_hash);
+        w.w(te.schema_hash.raw());
+        w.w(te.shape_hash.raw());
+        w.w(te.scope_hash.raw());
+        w.w(te.callsite_hash.raw());
         w.w(te.num_inputs);
         w.w(te.num_outputs);
         w.w(te.num_scalar_args);
@@ -244,10 +244,10 @@ inline Header read_header(Reader& r) {
         return nullptr;
     }
 
-    const uint32_t num_ops         = r.r<uint32_t>();
-    const uint64_t first_op_schema = r.r<uint64_t>();
-    const float    measured_ms     = r.r<float>();
-    const uint32_t variant_id      = r.r<uint32_t>();
+    const uint32_t   num_ops         = r.r<uint32_t>();
+    const SchemaHash first_op_schema = SchemaHash{r.r<uint64_t>()};
+    const float      measured_ms     = r.r<float>();
+    const uint32_t   variant_id      = r.r<uint32_t>();
 
     // MemoryPlan
     MemoryPlan* plan    = nullptr;
@@ -279,10 +279,10 @@ inline Header read_header(Reader& r) {
 
     for (uint32_t i = 0; i < num_ops; i++) {
         TraceEntry& te      = ops[i];
-        te.schema_hash      = r.r<uint64_t>();
-        te.shape_hash       = r.r<uint64_t>();
-        te.scope_hash       = r.r<uint64_t>();
-        te.callsite_hash    = r.r<uint64_t>();
+        te.schema_hash      = SchemaHash{r.r<uint64_t>()};
+        te.shape_hash       = ShapeHash{r.r<uint64_t>()};
+        te.scope_hash       = ScopeHash{r.r<uint64_t>()};
+        te.callsite_hash    = CallsiteHash{r.r<uint64_t>()};
         te.num_inputs       = r.r<uint16_t>();
         te.num_outputs      = r.r<uint16_t>();
         te.num_scalar_args  = r.r<uint16_t>();
@@ -362,8 +362,10 @@ inline Header read_header(Reader& r) {
 
     // For BRANCH nodes, the second 8B slot in the header stores the
     // continuation's merkle_hash (shared suffix after all arms merge).
-    const uint64_t cont_hash = branch->next ? branch->next->merkle_hash : 0;
-    write_header(w, TraceNodeKind::BRANCH, branch->merkle_hash, cont_hash);
+    // Note: content_hash slot is repurposed for continuation merkle_hash.
+    const MerkleHash cont_hash = branch->next ? branch->next->merkle_hash : MerkleHash{};
+    write_header(w, TraceNodeKind::BRANCH, branch->merkle_hash,
+                 ContentHash{cont_hash.raw()});
 
     // Guard (12B verbatim — no pointers)
     w.write_bytes(&branch->guard, sizeof(Guard));
@@ -373,7 +375,7 @@ inline Header read_header(Reader& r) {
     for (uint32_t i = 0; i < branch->num_arms; i++) {
         w.w(branch->arms[i].value);
         const uint64_t target_hash = branch->arms[i].target
-            ? branch->arms[i].target->merkle_hash : 0;
+            ? branch->arms[i].target->merkle_hash.raw() : uint64_t{0};
         w.w(target_hash);
     }
 
@@ -387,9 +389,9 @@ inline Header read_header(Reader& r) {
 // ═══════════════════════════════════════════════════════════════════
 
 [[nodiscard]] inline BranchNode* deserialize_branch(
-    std::span<const uint8_t>               buf,
-    Arena&                                 arena,
-    std::function<TraceNode*(uint64_t)>    resolve)
+    std::span<const uint8_t>                  buf,
+    Arena&                                    arena,
+    std::function<TraceNode*(MerkleHash)>     resolve)
 {
     using namespace detail_ser;
     Reader r{buf.data(), 0, buf.size()};
@@ -420,9 +422,9 @@ inline Header read_header(Reader& r) {
     if (num_arms > 0) {
         node->arms = arena.alloc_array<BranchNode::Arm>(num_arms);
         for (uint32_t i = 0; i < num_arms; i++) {
-            node->arms[i].value       = r.r<int64_t>();
-            const uint64_t target_h   = r.r<uint64_t>();
-            node->arms[i].target      = resolve ? resolve(target_h) : nullptr;
+            node->arms[i].value          = r.r<int64_t>();
+            const MerkleHash target_h    = MerkleHash{r.r<uint64_t>()};
+            node->arms[i].target         = resolve ? resolve(target_h) : nullptr;
         }
     } else {
         node->arms = nullptr;

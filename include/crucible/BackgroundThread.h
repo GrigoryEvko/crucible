@@ -58,11 +58,12 @@ struct BackgroundThread {
   // Accumulated ring entries for the current iteration.
   std::vector<TraceRing::Entry> current_trace;
   // Parallel: MetaLog start index for each entry in current_trace.
-  std::vector<uint32_t> current_meta_starts;
+  // MetaIndex::none() for ops with zero tensor arguments.
+  std::vector<MetaIndex> current_meta_starts;
   // Parallel: module scope hash for each entry in current_trace.
-  std::vector<uint64_t> current_scope_hashes;
+  std::vector<ScopeHash> current_scope_hashes;
   // Parallel: Python callsite hash for each entry in current_trace.
-  std::vector<uint64_t> current_callsite_hashes;
+  std::vector<CallsiteHash> current_callsite_hashes;
 
   // Completed iteration stats.
   uint32_t iterations_completed = 0;
@@ -195,9 +196,9 @@ struct BackgroundThread {
 
   void run() {
     TraceRing::Entry batch[BATCH_SIZE];
-    uint32_t meta_batch[BATCH_SIZE];
-    uint64_t scope_batch[BATCH_SIZE];
-    uint64_t callsite_batch[BATCH_SIZE];
+    MetaIndex meta_batch[BATCH_SIZE];
+    ScopeHash scope_batch[BATCH_SIZE];
+    CallsiteHash callsite_batch[BATCH_SIZE];
 
     while (running.load(std::memory_order_relaxed)) {
       uint32_t n = ring->drain(
@@ -291,13 +292,13 @@ struct BackgroundThread {
     std::vector<TraceRing::Entry> new_trace(
         current_trace.end() - IterationDetector::K,
         current_trace.end());
-    std::vector<uint32_t> new_meta_starts(
+    std::vector<MetaIndex> new_meta_starts(
         current_meta_starts.end() - IterationDetector::K,
         current_meta_starts.end());
-    std::vector<uint64_t> new_scope_hashes(
+    std::vector<ScopeHash> new_scope_hashes(
         current_scope_hashes.end() - IterationDetector::K,
         current_scope_hashes.end());
-    std::vector<uint64_t> new_callsite_hashes(
+    std::vector<CallsiteHash> new_callsite_hashes(
         current_callsite_hashes.end() - IterationDetector::K,
         current_callsite_hashes.end());
     current_trace = std::move(new_trace);
@@ -316,19 +317,25 @@ struct BackgroundThread {
   // Returns nullptr on MetaLog overflow.
   [[nodiscard]] TraceGraph* build_trace(uint32_t count) {
     // Check for MetaLog overflow.
+    // MetaIndex::none() is normal for ops with zero tensor arguments
+    // (profiler hooks, control flow). Only abort if the op HAD tensors
+    // but we lost them to MetaLog overflow.
     uint32_t max_meta_end = 0;
     uint32_t total_inputs = 0;
     uint32_t total_outputs = 0;
     for (uint32_t i = 0; i < count; i++) {
-      uint32_t ms = current_meta_starts[i];
-      if (ms == UINT32_MAX) {
+      MetaIndex ms = current_meta_starts[i];
+      const auto& re = current_trace[i];
+      if (!ms.is_valid() && (re.num_inputs + re.num_outputs) > 0) {
+        // Genuine MetaLog overflow on an op that had tensors.
         if (max_meta_end > 0)
           meta_log->advance_tail(max_meta_end);
         return nullptr;
       }
-      const auto& re = current_trace[i];
-      uint32_t end = ms + re.num_inputs + re.num_outputs;
-      if (end > max_meta_end) max_meta_end = end;
+      if (ms.is_valid()) {
+        uint32_t end = ms.raw() + re.num_inputs + re.num_outputs;
+        if (end > max_meta_end) max_meta_end = end;
+      }
       total_inputs += re.num_inputs;
       total_outputs += re.num_outputs;
     }
@@ -362,7 +369,7 @@ struct BackgroundThread {
 
     for (uint32_t i = 0; i < count; i++) {
       const auto& re = current_trace[i];
-      uint32_t ms = current_meta_starts[i];
+      MetaIndex ms = current_meta_starts[i];
       auto& te = ops[i];
 
       te.schema_hash = re.schema_hash;
@@ -392,18 +399,26 @@ struct BackgroundThread {
       }
       te.num_scalar_args = n_scalars;
 
-      // Read TensorMetas from MetaLog.
-      te.input_metas = arena.alloc_array<TensorMeta>(re.num_inputs);
-      te.output_metas = arena.alloc_array<TensorMeta>(re.num_outputs);
-      for (uint16_t j = 0; j < re.num_inputs; j++)
-        te.input_metas[j] = meta_log->at(ms + j);
-      for (uint16_t j = 0; j < re.num_outputs; j++)
-        te.output_metas[j] = meta_log->at(ms + re.num_inputs + j);
+      // Read TensorMetas from MetaLog (skip ops with no tensor arguments).
+      if (ms.is_valid()) {
+        te.input_metas = arena.alloc_array<TensorMeta>(re.num_inputs);
+        te.output_metas = arena.alloc_array<TensorMeta>(re.num_outputs);
+        for (uint16_t j = 0; j < re.num_inputs; j++)
+          te.input_metas[j] = meta_log->at(ms.raw() + j);
+        for (uint16_t j = 0; j < re.num_outputs; j++)
+          te.output_metas[j] = meta_log->at(ms.raw() + re.num_inputs + j);
+      } else {
+        te.input_metas = nullptr;
+        te.output_metas = nullptr;
+        te.num_inputs = 0;
+        te.num_outputs = 0;
+      }
 
       // Build DFG edges + track input liveness.
-      te.input_trace_indices = arena.alloc_array<OpIndex>(re.num_inputs);
-      te.input_slot_ids = arena.alloc_array<SlotId>(re.num_inputs);
-      for (uint16_t j = 0; j < re.num_inputs; j++) {
+      // Use te.num_inputs (validated count) — 0 for no-metadata ops.
+      te.input_trace_indices = arena.alloc_array<OpIndex>(te.num_inputs);
+      te.input_slot_ids = arena.alloc_array<SlotId>(te.num_inputs);
+      for (uint16_t j = 0; j < te.num_inputs; j++) {
         void* ptr = te.input_metas[j].data_ptr;
         auto lookup = ptr_map_lookup(map, ptr);
         te.input_trace_indices[j] = lookup.op_index;
@@ -440,8 +455,8 @@ struct BackgroundThread {
       }
 
       // Register outputs: assign slot IDs + detect aliases.
-      te.output_slot_ids = arena.alloc_array<SlotId>(re.num_outputs);
-      for (uint16_t j = 0; j < re.num_outputs; j++) {
+      te.output_slot_ids = arena.alloc_array<SlotId>(te.num_outputs);
+      for (uint16_t j = 0; j < te.num_outputs; j++) {
         void* ptr = te.output_metas[j].data_ptr;
         if (!ptr) {
           te.output_slot_ids[j] = SlotId{};

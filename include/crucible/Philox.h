@@ -22,6 +22,7 @@
 // that reproduces identically across CPU/CUDA/ROCm/XLA.
 
 #include <crucible/Platform.h>
+#include <crucible/Types.h>
 
 #include <array>
 #include <cmath>
@@ -122,13 +123,13 @@ struct Philox {
     // Different ops or iterations → statistically independent.
 
     [[nodiscard]] static constexpr uint64_t
-    op_key(uint64_t master_counter, uint32_t op_index, uint64_t content_hash) {
+    op_key(uint64_t master_counter, uint32_t op_index, ContentHash content_hash) {
         // FNV-1a–style mixing. Not cryptographic, but sufficient
         // for decorrelating Philox streams across ops.
         uint64_t h = 0xcbf29ce484222325ULL;
         h = fnv_mix_(h, master_counter);
         h = fnv_mix_(h, static_cast<uint64_t>(op_index));
-        h = fnv_mix_(h, content_hash);
+        h = fnv_mix_(h, content_hash.raw());
         return h;
     }
 

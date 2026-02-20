@@ -96,10 +96,10 @@ class Vigil {
         const TraceRing::Entry& e,
         const TensorMeta*       metas,
         uint32_t                n_metas,
-        uint64_t                scope_hash    = 0,
-        uint64_t                callsite_hash = 0)
+        ScopeHash               scope_hash    = {},
+        CallsiteHash            callsite_hash = {})
     {
-        uint32_t meta_start = UINT32_MAX;
+        MetaIndex meta_start;  // default = none()
         if (metas && n_metas > 0) {
             meta_start = meta_log_->try_append(metas, n_metas);
         }
@@ -120,8 +120,8 @@ class Vigil {
         const TraceRing::Entry& entry,
         const TensorMeta*       metas,
         uint32_t                n_metas,
-        uint64_t                scope_hash    = 0,
-        uint64_t                callsite_hash = 0)
+        ScopeHash               scope_hash    = {},
+        CallsiteHash            callsite_hash = {})
     {
         // ── COMPILED path ──
         if (ctx_.is_compiled()) [[likely]] {
@@ -164,8 +164,8 @@ class Vigil {
         return step_.load(std::memory_order_relaxed);
     }
 
-    [[nodiscard]] uint64_t head_hash() const {
-        return cipher_.has_value() ? cipher_->head() : 0;
+    [[nodiscard]] ContentHash head_hash() const {
+        return cipher_.has_value() ? cipher_->head() : ContentHash{};
     }
 
     // ─── Control ───────────────────────────────────────────────────
@@ -228,8 +228,8 @@ class Vigil {
         if (!cipher_.has_value()) return false;
         const RegionNode* r = active_region();
         if (!r) return false;
-        const uint64_t hash = cipher_->store(r, meta_log_.get());
-        if (hash == 0) return false;
+        const ContentHash hash = cipher_->store(r, meta_log_.get());
+        if (!hash) return false;
         cipher_->advance_head(hash,
                               step_.load(std::memory_order_relaxed));
         return true;
@@ -276,6 +276,12 @@ class Vigil {
     const TransactionLog<16>& tx_log()   const { return tx_log_; }
     TraceRing&                ring()           { return *ring_; }
     MetaLog&                  meta_log()       { return *meta_log_; }
+
+    // Background thread diagnostics.
+    [[nodiscard]] uint32_t bg_iterations_completed() const { return bg_.iterations_completed; }
+    [[nodiscard]] uint32_t bg_last_iteration_length() const { return bg_.last_iteration_length; }
+    [[nodiscard]] uint32_t bg_detector_boundaries() const { return bg_.detector.boundaries_detected; }
+    [[nodiscard]] bool     bg_detector_confirmed() const { return bg_.detector.confirmed; }
 
  private:
     // ─── Background thread callback ────────────────────────────────
