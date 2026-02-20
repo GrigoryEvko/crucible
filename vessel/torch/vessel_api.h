@@ -100,6 +100,17 @@ uint32_t crucible_compiled_iterations(CrucibleHandle h);
 // Number of divergences detected.
 uint32_t crucible_diverged_count(CrucibleHandle h);
 
+// ── Diagnostics ──────────────────────────────────────────────────────
+
+// Number of iteration boundaries detected by the background thread.
+uint32_t crucible_bg_iterations(CrucibleHandle h);
+
+// Number of entries currently in the ring buffer (approximate).
+uint32_t crucible_ring_size(CrucibleHandle h);
+
+// Number of entries in the MetaLog (approximate).
+uint32_t crucible_metalog_size(CrucibleHandle h);
+
 // ── Compiled mode accessors ──────────────────────────────────────────
 
 // Pre-allocated output pointer for output j of the current op.

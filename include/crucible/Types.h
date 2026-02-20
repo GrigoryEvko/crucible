@@ -55,8 +55,9 @@ enum class ScalarType : int8_t {
       return 16;
     case ScalarType::Undefined:
       return 0;
+    default:
+      std::unreachable();
   }
-  std::unreachable();
 }
 
 // Mirror c10::DeviceType ordinals.
@@ -116,5 +117,42 @@ CRUCIBLE_STRONG_ID(SymbolId);   // index into SymbolTable entries
 CRUCIBLE_STRONG_ID(MetaIndex);  // index into MetaLog buffer
 
 #undef CRUCIBLE_STRONG_ID
+
+// ═══════════════════════════════════════════════════════════════════
+// Strong hash types — Rust-style newtypes over uint64_t
+//
+// Prevents mixing schema hashes, shape hashes, scope hashes, and
+// callsite hashes at compile time. Same codegen as raw uint64_t.
+//
+// Design:
+//   - explicit ctor: no implicit conversion from uint64_t
+//   - .raw(): explicit unwrap for hashing/indexing
+//   - Default: 0 (no hash / unset)
+//   - operator bool: true if non-zero
+//   - operator<=>: full comparison support
+//   - No arithmetic: must unwrap, compute, rewrap (intentional)
+// ═══════════════════════════════════════════════════════════════════
+
+#define CRUCIBLE_STRONG_HASH(Name)                                         \
+  struct Name {                                                            \
+    uint64_t v;                                                            \
+    constexpr explicit Name(uint64_t val) : v(val) {}                      \
+    constexpr Name() : v(0) {}                                             \
+    [[nodiscard]] constexpr uint64_t raw() const { return v; }             \
+    [[nodiscard]] constexpr explicit operator bool() const {               \
+      return v != 0;                                                       \
+    }                                                                      \
+    constexpr auto operator<=>(const Name&) const = default;               \
+  };                                                                       \
+  static_assert(sizeof(Name) == sizeof(uint64_t))
+
+CRUCIBLE_STRONG_HASH(SchemaHash);    // op identity (OperatorHandle schema)
+CRUCIBLE_STRONG_HASH(ShapeHash);     // quick hash of input tensor shapes
+CRUCIBLE_STRONG_HASH(ScopeHash);     // module hierarchy path hash
+CRUCIBLE_STRONG_HASH(CallsiteHash);  // Python source location identity
+CRUCIBLE_STRONG_HASH(ContentHash);   // region content identity (kernel cache key)
+CRUCIBLE_STRONG_HASH(MerkleHash);    // subtree identity (includes all descendants)
+
+#undef CRUCIBLE_STRONG_HASH
 
 } // namespace crucible

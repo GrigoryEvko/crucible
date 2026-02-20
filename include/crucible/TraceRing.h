@@ -5,6 +5,7 @@
 #include <cstdint>
 
 #include <crucible/Platform.h>
+#include <crucible/Types.h>
 
 namespace crucible {
 
@@ -19,17 +20,17 @@ namespace crucible {
 //   + scalar_values[5](40) = 64 bytes
 //
 // Parallel arrays alongside entries[]:
-//   meta_starts[] — MetaLog index for tensor metadata (uint32_t, 256KB)
+//   meta_starts[] — MetaLog index for tensor metadata (MetaIndex, 256KB)
 //   scope_hashes[] — module hierarchy hash from CrucibleContext (uint64_t, 512KB)
-//   callsite_hashes[] — Python source location identity (uint64_t, 512KB)
+//   callsite_hashes[] — Python callsite identity (uint64_t, 512KB)
 //
 // The ring is pre-allocated (~5.25MB total) and never resized.
 // If the background thread falls behind, entries are silently
 // dropped — the next iteration will re-record everything.
 struct TraceRing {
   struct alignas(64) Entry {
-    uint64_t schema_hash;      // 8B — op identity
-    uint64_t shape_hash;       // 8B — quick hash of input shapes
+    SchemaHash schema_hash;    // 8B — op identity
+    ShapeHash shape_hash;      // 8B — quick hash of input shapes
     uint16_t num_inputs;       // 2B
     uint16_t num_outputs;      // 2B
     uint16_t num_scalar_args;  // 2B
@@ -57,35 +58,36 @@ struct TraceRing {
 
   // Parallel array: MetaLog start index for each ring entry.
   // Written by foreground alongside entries[], read by background.
-  // UINT32_MAX means no metadata (MetaLog overflow or not recording metas).
-  uint32_t meta_starts[CAPACITY];
+  // MetaIndex::none() means no metadata (zero-tensor op or MetaLog overflow).
+  MetaIndex meta_starts[CAPACITY];
 
   // Parallel array: module scope hash for each ring entry.
-  // 0 means no scope (op at top level, outside any nn.Module).
-  uint64_t scope_hashes[CAPACITY];
+  // Default (0) means no scope (op at top level, outside any nn.Module).
+  ScopeHash scope_hashes[CAPACITY];
 
   // Parallel array: Python callsite hash for each ring entry.
   // Identifies the Python source location (file:func:line) that triggered
-  // this op. 0 means no callsite captured (e.g., called from pure C++).
-  uint64_t callsite_hashes[CAPACITY];
+  // this op. Default (0) means no callsite captured (e.g., pure C++).
+  CallsiteHash callsite_hashes[CAPACITY];
 
   // ── Producer (foreground): ~5 ns, never blocks ──
   //
   // Returns true if the entry was written, false if the ring is full.
   // A full ring means the background thread is behind — we silently
   // drop the entry. The next iteration will re-record everything.
-  // meta_start is the index into MetaLog for this entry's tensor metadata.
-  // scope_hash is the current module hierarchy hash from CrucibleContext.
-  // callsite_hash identifies the Python source location.
+  // meta_start: MetaLog index for this entry's tensor metadata.
+  //   MetaIndex::none() if op has no tensors or MetaLog is full.
+  // scope_hash: current module hierarchy hash from CrucibleContext.
+  // callsite_hash: Python source location identity.
   TraceRing() = default;
   TraceRing(const TraceRing&) = delete("SPSC ring is pinned to producer/consumer thread pair");
   TraceRing& operator=(const TraceRing&) = delete("SPSC ring is pinned to producer/consumer thread pair");
 
   [[nodiscard]] CRUCIBLE_INLINE bool try_append(
       const Entry& e,
-      uint32_t meta_start = UINT32_MAX,
-      uint64_t scope_hash = 0,
-      uint64_t callsite_hash = 0) {
+      MetaIndex meta_start = MetaIndex::none(),
+      ScopeHash scope_hash = {},
+      CallsiteHash callsite_hash = {}) {
     uint64_t h = head.load(std::memory_order_relaxed);
     // Stale tail read is safe: worst case we think there's less space
     // than there actually is (conservative).
@@ -107,9 +109,9 @@ struct TraceRing {
   // parallel arrays into output buffers (any may be null).
   // Returns the number of entries actually drained.
   [[nodiscard]] uint32_t drain(Entry* out, uint32_t max_count,
-                 uint32_t* out_meta_starts = nullptr,
-                 uint64_t* out_scope_hashes = nullptr,
-                 uint64_t* out_callsite_hashes = nullptr) {
+                 MetaIndex* out_meta_starts = nullptr,
+                 ScopeHash* out_scope_hashes = nullptr,
+                 CallsiteHash* out_callsite_hashes = nullptr) {
     uint64_t h = head.load(std::memory_order_acquire);
     uint64_t t = tail.load(std::memory_order_relaxed);
     uint32_t available = static_cast<uint32_t>(h - t);

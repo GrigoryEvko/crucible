@@ -86,9 +86,10 @@ CrucibleDispatchResult crucible_dispatch_op(
 {
     auto* vigil = static_cast<crucible::Vigil*>(handle);
 
+    // C→C++ boundary: wrap raw uint64_t into strong hash types.
     crucible::TraceRing::Entry entry{};
-    entry.schema_hash = schema_hash;
-    entry.shape_hash = shape_hash;
+    entry.schema_hash = crucible::SchemaHash{schema_hash};
+    entry.shape_hash = crucible::ShapeHash{shape_hash};
     entry.num_inputs = num_inputs;
     entry.num_outputs = num_outputs;
 
@@ -114,9 +115,10 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
 {
     auto* vigil = static_cast<crucible::Vigil*>(handle);
 
+    // C→C++ boundary: wrap raw uint64_t into strong hash types.
     crucible::TraceRing::Entry entry{};
-    entry.schema_hash = schema_hash;
-    entry.shape_hash = shape_hash;
+    entry.schema_hash = crucible::SchemaHash{schema_hash};
+    entry.shape_hash = crucible::ShapeHash{shape_hash};
     entry.num_inputs = num_inputs;
     entry.num_outputs = num_outputs;
     entry.num_scalar_args = num_scalars;
@@ -153,6 +155,18 @@ uint32_t crucible_compiled_iterations(CrucibleHandle h) {
 
 uint32_t crucible_diverged_count(CrucibleHandle h) {
     return static_cast<crucible::Vigil*>(h)->diverged_count();
+}
+
+uint32_t crucible_bg_iterations(CrucibleHandle h) {
+    return static_cast<crucible::Vigil*>(h)->bg_iterations_completed();
+}
+
+uint32_t crucible_ring_size(CrucibleHandle h) {
+    return static_cast<crucible::Vigil*>(h)->ring().size();
+}
+
+uint32_t crucible_metalog_size(CrucibleHandle h) {
+    return static_cast<crucible::Vigil*>(h)->meta_log().size();
 }
 
 void* crucible_output_ptr(CrucibleHandle h, uint16_t j) {

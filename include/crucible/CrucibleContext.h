@@ -22,6 +22,7 @@
 #include <crucible/Platform.h>
 #include <crucible/PoolAllocator.h>
 #include <crucible/ReplayEngine.h>
+#include <crucible/Types.h>
 
 #include <cassert>
 #include <cstdint>
@@ -115,7 +116,7 @@ struct CrucibleContext {
   //
   // Calling in RECORD mode is a bug (asserts in debug, UB in release).
   [[nodiscard]] CRUCIBLE_INLINE ReplayStatus
-  advance(uint64_t schema_hash, uint64_t shape_hash) {
+  advance(SchemaHash schema_hash, ShapeHash shape_hash) {
     assert(mode_ == ContextMode::COMPILED && "advance() requires COMPILED mode");
 
     // If the previous advance() returned COMPLETE, the engine is
@@ -179,7 +180,7 @@ struct CrucibleContext {
 
  private:
   ContextMode mode_ = ContextMode::RECORD;
-  uint8_t pad_[3]{};                          // alignment for pool_
+  [[maybe_unused]] uint8_t pad_[3]{};          // alignment for pool_
   uint32_t compiled_iterations_ = 0;
   uint32_t diverged_count_ = 0;
   const RegionNode* active_region_ = nullptr;

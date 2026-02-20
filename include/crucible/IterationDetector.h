@@ -3,6 +3,8 @@
 #include <cstdint>
 #include <numeric>
 
+#include <crucible/Types.h>
+
 namespace crucible {
 
 // Detects iteration boundaries in a continuous stream of op schema hashes.
@@ -21,13 +23,13 @@ struct IterationDetector {
   static constexpr uint32_t K = 5;
 
   // First K schema hashes of the current trace.
-  uint64_t signature[K]{};
+  SchemaHash signature[K]{};
   uint32_t signature_len = 0;
   bool signature_locked = false;
   bool confirmed = false; // true after first match (candidate)
 
   // Circular buffer of the most recent K schema hashes.
-  uint64_t recent[K]{};
+  SchemaHash recent[K]{};
   uint32_t recent_pos = 0;
 
   // How many ops since the last boundary (= current iteration length).
@@ -44,7 +46,7 @@ struct IterationDetector {
 
   // Check if this op triggers an iteration boundary.
   // Returns true exactly at the boundary — the FIRST op of the new iteration.
-  [[nodiscard]] bool check(uint64_t schema_hash) {
+  [[nodiscard]] bool check(SchemaHash schema_hash) {
     recent[recent_pos % K] = schema_hash;
     recent_pos++;
     ops_since_boundary++;

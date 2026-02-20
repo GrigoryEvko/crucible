@@ -47,13 +47,13 @@ enum class TxStatus : uint8_t {
 //                      total 48B
 
 struct Transaction {
-    uint64_t    step_id;       // monotonically increasing
-    uint64_t    content_hash;  // 0 until COMMITTED
-    uint64_t    merkle_root;   // 0 until COMMITTED
-    RegionNode* region;        // null until COMMITTED; arena-owned
-    uint64_t    ts_ns;         // timestamp of last state change
-    TxStatus    status;
-    uint8_t     pad[7];
+    uint64_t     step_id;       // monotonically increasing
+    ContentHash  content_hash;  // default (0) until COMMITTED
+    MerkleHash   merkle_root;   // default (0) until COMMITTED
+    RegionNode*  region;        // null until COMMITTED; arena-owned
+    uint64_t     ts_ns;         // timestamp of last state change
+    TxStatus     status;
+    uint8_t      pad[7];
 };
 
 static_assert(sizeof(Transaction) == 48, "Transaction layout must be 48 bytes");
@@ -88,7 +88,7 @@ class TransactionLog {
     // Transition RECORDING (or CLOSED) → COMMITTED, attach region.
     // Returns false if tx is not in a committable state (logic error).
     bool commit(Transaction* tx, RegionNode* region,
-                uint64_t content_hash, uint64_t merkle_root) {
+                ContentHash content_hash, MerkleHash merkle_root) {
         if (tx->status != TxStatus::RECORDING
             && tx->status != TxStatus::CLOSED) {
             return false;

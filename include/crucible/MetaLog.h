@@ -19,7 +19,7 @@ namespace crucible {
 // Same SPSC protocol as TraceRing:
 //   - Foreground thread writes at head
 //   - Background thread reads and advances tail
-//   - Overflow → meta_start = UINT32_MAX (entry still works for
+//   - Overflow → MetaIndex::none() (entry still works for
 //     iteration detection; background skips DAG building for that op)
 struct MetaLog {
   static constexpr uint32_t CAPACITY = 1 << 20; // 1M entries (~144MB)
@@ -46,19 +46,19 @@ struct MetaLog {
 
   // ── Producer (foreground): append n consecutive TensorMetas ──
   //
-  // Returns the start index, or UINT32_MAX if the buffer is full.
-  [[nodiscard]] CRUCIBLE_INLINE uint32_t try_append(const TensorMeta* metas, uint32_t n) {
-    if (n == 0) [[unlikely]] return UINT32_MAX;
+  // Returns the start index, or MetaIndex::none() if the buffer is full.
+  [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append(const TensorMeta* metas, uint32_t n) {
+    if (n == 0) [[unlikely]] return MetaIndex::none();
     uint32_t h = head.load(std::memory_order_relaxed);
     uint32_t t = tail.load(std::memory_order_relaxed);
     if (h - t + n > CAPACITY) [[unlikely]] {
-      return UINT32_MAX;
+      return MetaIndex::none();
     }
     for (uint32_t i = 0; i < n; i++) {
       entries[(h + i) & MASK] = metas[i];
     }
     head.store(h + n, std::memory_order_release);
-    return h;
+    return MetaIndex{h};
   }
 
   // ── Consumer (background): read meta at absolute index ──

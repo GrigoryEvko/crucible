@@ -2,7 +2,7 @@
 
 // CKernel: Crucible abstract compute-op taxonomy.
 //
-// Maps Vessel op identity (schema_hash, an opaque uint64) to a Crucible-native
+// Maps Vessel op identity (SchemaHash, a strong-typed uint64) to a Crucible-native
 // CKernelId. Used by the background thread to annotate TraceEntry at build time
 // so Tier 2+ replay can dispatch directly without going through the Vessel.
 //
@@ -21,6 +21,8 @@
 //
 // Thread safety: all registrations MUST complete before BackgroundThread::start()
 // is called. After that the table is read-only (no locking needed).
+
+#include <crucible/Types.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -302,8 +304,8 @@ enum class CKernelId : uint8_t {
 static constexpr uint32_t CKERNEL_TABLE_CAP = 256;
 
 struct CKernelEntry {
-    uint64_t  schema_hash;
-    CKernelId id;
+    SchemaHash schema_hash;
+    CKernelId  id;
 };
 
 struct CKernelTable {
@@ -313,7 +315,7 @@ struct CKernelTable {
     // Register a schema_hash → CKernelId mapping. Idempotent: re-registering
     // the same hash updates the entry in-place (later registration wins).
     // Silently no-ops beyond CKERNEL_TABLE_CAP (never happens in practice).
-    void register_op(uint64_t schema_hash, CKernelId id) {
+    void register_op(SchemaHash schema_hash, CKernelId id) {
         // Check for existing entry first (idempotent / alias update).
         for (uint32_t i = 0; i < size; i++) {
             if (entries[i].schema_hash == schema_hash) {
@@ -327,7 +329,7 @@ struct CKernelTable {
                           {}, &CKernelEntry::schema_hash);
     }
 
-    [[nodiscard]] CKernelId classify(uint64_t schema_hash) const {
+    [[nodiscard]] CKernelId classify(SchemaHash schema_hash) const {
         uint32_t lo = 0, hi = size;
         while (lo < hi) {
             const uint32_t mid = lo + (hi - lo) / 2;
@@ -345,11 +347,11 @@ struct CKernelTable {
 }
 
 // Called by Vessel at startup, before BackgroundThread::start().
-inline void register_schema_hash(uint64_t schema_hash, CKernelId id) {
+inline void register_schema_hash(SchemaHash schema_hash, CKernelId id) {
     global_ckernel_table().register_op(schema_hash, id);
 }
 
-[[nodiscard]] inline CKernelId classify_kernel(uint64_t schema_hash) {
+[[nodiscard]] inline CKernelId classify_kernel(SchemaHash schema_hash) {
     return global_ckernel_table().classify(schema_hash);
 }
 
@@ -530,6 +532,7 @@ inline void register_schema_hash(uint64_t schema_hash, CKernelId id) {
     // Synchronization
     case CKernelId::COMM_BARRIER:       return "COMM_BARRIER";
 
+    case CKernelId::NUM_KERNELS:        std::unreachable();
     default:                            return "<unknown>";
     }
 }
