@@ -298,13 +298,13 @@ struct BranchNode : TraceNode {
   Guard guard;              // 12B — what to check
 
   struct Arm {
-    int64_t value;          // 8B — the observed guard outcome
-    TraceNode* target;      // 8B — the path for this outcome
+    int64_t value = 0;      // 8B — the observed guard outcome
+    TraceNode* target = nullptr; // 8B — the path for this outcome
   };
 
-  Arm* arms;                // 8B — arena-allocated array
-  uint32_t num_arms;        // 4B
-  uint32_t pad1;            // 4B — alignment
+  Arm* arms = nullptr;      // 8B — arena-allocated array
+  uint32_t num_arms = 0;    // 4B
+  uint32_t pad1 = 0;        // 4B — alignment
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -415,6 +415,8 @@ class KernelCache {
 
   KernelCache(const KernelCache&) = delete("lock-free hash map with atomic state cannot be copied");
   KernelCache& operator=(const KernelCache&) = delete("lock-free hash map with atomic state cannot be copied");
+  KernelCache(KernelCache&&) = delete("lock-free hash map with atomic state cannot be moved");
+  KernelCache& operator=(KernelCache&&) = delete("lock-free hash map with atomic state cannot be moved");
 
   // Lock-free lookup. Returns nullptr on miss.
   [[nodiscard]] CompiledKernel* lookup(ContentHash content_hash) const {

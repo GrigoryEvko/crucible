@@ -34,9 +34,9 @@ static constexpr uint32_t CDAG_VERSION = 6u;           // v6: +input_slot_ids on
 namespace detail_ser {
 
 struct Writer {
-    uint8_t* buf;
-    size_t   pos;
-    size_t   max;
+    uint8_t* buf = nullptr;
+    size_t   pos = 0;
+    size_t   max = 0;
     bool     ok = true;
 
     void write_bytes(const void* src, size_t n) {
@@ -50,9 +50,9 @@ struct Writer {
 };
 
 struct Reader {
-    const uint8_t* buf;
-    size_t         pos;
-    size_t         len;
+    const uint8_t* buf = nullptr;
+    size_t         pos = 0;
+    size_t         len = 0;
     bool           ok = true;
 
     void read_bytes(void* dst, size_t n) {
@@ -113,19 +113,19 @@ inline void write_header(Writer& w, TraceNodeKind kind,
 }
 
 struct Header {
-    uint32_t    magic;
-    uint32_t    version;
-    uint8_t     kind;
-    MerkleHash  merkle_hash;
-    ContentHash content_hash;
+    uint32_t      magic = 0;
+    uint32_t      version = 0;
+    TraceNodeKind kind{};            // strong-typed (was raw uint8_t)
+    MerkleHash    merkle_hash;
+    ContentHash   content_hash;
 };
 
 inline Header read_header(Reader& r) {
     Header h{};
     h.magic   = r.r<uint32_t>();
     h.version = r.r<uint32_t>();
-    h.kind    = r.r<uint8_t>();
-    uint8_t pad7[7];
+    h.kind    = static_cast<TraceNodeKind>(r.r<uint8_t>());
+    uint8_t pad7[7]{};
     r.read_bytes(pad7, 7);
     h.merkle_hash  = MerkleHash{r.r<uint64_t>()};
     h.content_hash = ContentHash{r.r<uint64_t>()};
@@ -240,7 +240,7 @@ inline Header read_header(Reader& r) {
     if (!r.ok
         || hdr.magic   != CDAG_MAGIC
         || hdr.version != CDAG_VERSION
-        || hdr.kind    != std::to_underlying(TraceNodeKind::REGION)) {
+        || hdr.kind    != TraceNodeKind::REGION) {
         return nullptr;
     }
 
@@ -400,7 +400,7 @@ inline Header read_header(Reader& r) {
     if (!r.ok
         || hdr.magic   != CDAG_MAGIC
         || hdr.version != CDAG_VERSION
-        || hdr.kind    != std::to_underlying(TraceNodeKind::BRANCH)) {
+        || hdr.kind    != TraceNodeKind::BRANCH) {
         return nullptr;
     }
     // hdr.content_hash holds the continuation's merkle_hash (see serialize_branch)

@@ -117,6 +117,8 @@ struct BackgroundThread {
   BackgroundThread() = default;
   BackgroundThread(const BackgroundThread&) = delete("BackgroundThread owns a std::thread");
   BackgroundThread& operator=(const BackgroundThread&) = delete("BackgroundThread owns a std::thread");
+  BackgroundThread(BackgroundThread&&) = delete("BackgroundThread owns a std::thread with captured this");
+  BackgroundThread& operator=(BackgroundThread&&) = delete("BackgroundThread owns a std::thread with captured this");
 
  private:
   static constexpr uint32_t BATCH_SIZE = 4096;
@@ -608,9 +610,9 @@ struct BackgroundThread {
     // Build event list for sweep-line.
     // Each internal slot generates two events: ALLOC at birth, FREE at death+1.
     struct Event {
-      uint32_t op;        // sweep position
-      bool is_free;       // true = FREE, false = ALLOC
-      uint32_t slot_id;   // which slot
+      uint32_t op = 0;      // sweep position
+      bool is_free = false;  // true = FREE, false = ALLOC
+      uint32_t slot_id = 0; // which slot
     };
 
     uint32_t num_internal = num_slots - plan->num_external;

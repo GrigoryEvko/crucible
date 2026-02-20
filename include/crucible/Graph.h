@@ -230,16 +230,16 @@ struct GraphNode {
 
   // ── Accessors ──
 
-  bool is_dead() const { return flags & NodeFlags::DEAD; }
+  [[nodiscard]] bool is_dead() const { return flags & NodeFlags::DEAD; }
 
   // Reduction range expressions (valid only for REDUCTION kind)
-  const Expr** reduction_ranges() const { return size + ndim; }
+  [[nodiscard]] const Expr** reduction_ranges() const { return size + ndim; }
 
-  ComputeBody* compute_body() const {
+  [[nodiscard]] ComputeBody* compute_body() const {
     return static_cast<ComputeBody*>(body);
   }
 
-  ExternInfo* extern_info() const {
+  [[nodiscard]] ExternInfo* extern_info() const {
     return static_cast<ExternInfo*>(body);
   }
 };
@@ -272,6 +272,8 @@ class Graph {
 
   Graph(const Graph&) = delete("Graph owns an arena; copy would alias or double-free");
   Graph& operator=(const Graph&) = delete("Graph owns an arena; copy would alias or double-free");
+  Graph(Graph&&) = delete("interior GraphNode* pointers into arena would dangle");
+  Graph& operator=(Graph&&) = delete("interior GraphNode* pointers into arena would dangle");
 
   // ── Node construction ──────────────────────────────────────────
 

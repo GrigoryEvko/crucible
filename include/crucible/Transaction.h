@@ -20,7 +20,6 @@
 #include <cassert>
 #include <chrono>
 #include <cstdint>
-#include <cstring>
 #include <limits>
 
 namespace crucible {
@@ -47,13 +46,13 @@ enum class TxStatus : uint8_t {
 //                      total 48B
 
 struct Transaction {
-    uint64_t     step_id;       // monotonically increasing
-    ContentHash  content_hash;  // default (0) until COMMITTED
-    MerkleHash   merkle_root;   // default (0) until COMMITTED
-    RegionNode*  region;        // null until COMMITTED; arena-owned
-    uint64_t     ts_ns;         // timestamp of last state change
-    TxStatus     status;
-    uint8_t      pad[7];
+    uint64_t     step_id = 0;         // monotonically increasing
+    ContentHash  content_hash;        // default (0) until COMMITTED
+    MerkleHash   merkle_root;         // default (0) until COMMITTED
+    RegionNode*  region = nullptr;    // null until COMMITTED; arena-owned
+    uint64_t     ts_ns = 0;           // timestamp of last state change
+    TxStatus     status = TxStatus::RECORDING;
+    uint8_t      pad[7]{};
 };
 
 static_assert(sizeof(Transaction) == 48, "Transaction layout must be 48 bytes");
@@ -73,12 +72,13 @@ class TransactionLog {
     TransactionLog() = default;
     TransactionLog(const TransactionLog&)            = delete("TransactionLog holds ring-internal pointers");
     TransactionLog& operator=(const TransactionLog&) = delete("TransactionLog holds ring-internal pointers");
+    TransactionLog(TransactionLog&&)                 = delete("interior pointers into entries_ would dangle");
+    TransactionLog& operator=(TransactionLog&&)      = delete("interior pointers into entries_ would dangle");
 
     Transaction* begin_tx(uint64_t step_id) {
         auto* tx   = &entries_[head_ & MASK];
-        std::memset(tx, 0, sizeof(Transaction));
+        *tx = Transaction{};   // value-init via NSDMI defaults (no memset on non-trivial type)
         tx->step_id = step_id;
-        tx->status  = TxStatus::RECORDING;
         tx->ts_ns   = now_ns();
         head_++;
         if (count_ < N) count_++;

@@ -87,6 +87,8 @@ class Vigil {
 
     Vigil(const Vigil&)             = delete("Vigil owns the runtime organism; not copyable");
     Vigil& operator=(const Vigil&)  = delete("Vigil owns the runtime organism; not copyable");
+    Vigil(Vigil&&)                  = delete("interior pointers from CrucibleContext and ring would dangle");
+    Vigil& operator=(Vigil&&)       = delete("interior pointers from CrucibleContext and ring would dangle");
 
     // ─── Hot path: record one op (RECORDING mode) ──────────────────
     //
@@ -149,11 +151,11 @@ class Vigil {
                 // Don't record the divergent op — it's noise that poisons
                 // the bg thread's iteration detector.  Subsequent ops in
                 // RECORDING mode will be recorded normally.
-                return {DispatchResult::Action::RECORD, status, {}, 0};
+                return {DispatchResult::Action::RECORD, status, {}, OpIndex{}};
             }
 
             return {DispatchResult::Action::COMPILED, status, {},
-                    ctx_.engine().ops_matched()};
+                    OpIndex{ctx_.engine().ops_matched()}};
         }
 
         // ── RECORDING path ──
@@ -175,7 +177,7 @@ class Vigil {
         if (pending_activation_) [[unlikely]]
             try_align_(entry.schema_hash, entry.shape_hash);
 
-        return {DispatchResult::Action::RECORD, ReplayStatus::MATCH, {}, 0};
+        return {DispatchResult::Action::RECORD, ReplayStatus::MATCH, {}, OpIndex{}};
     }
 
     // ─── Queries (lock-free reads) ─────────────────────────────────

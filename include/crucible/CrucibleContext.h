@@ -53,7 +53,7 @@ struct DispatchResult {
   Action action = Action::RECORD;
   ReplayStatus status = ReplayStatus::MATCH;
   uint8_t pad[2]{};
-  uint32_t op_index = 0;  // position in region (diagnostics only)
+  OpIndex op_index;  // position in region (diagnostics); none() for RECORD
 };
 
 static_assert(sizeof(DispatchResult) == 8, "DispatchResult: 1+1+2+4 = 8 bytes");
