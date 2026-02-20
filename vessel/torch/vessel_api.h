@@ -15,6 +15,13 @@ extern "C" {
 
 #include <stdint.h>
 
+// Symbol visibility — must be visible for ctypes/dlsym.
+#ifdef _MSC_VER
+  #define CRUCIBLE_VESSEL_API __declspec(dllexport)
+#else
+  #define CRUCIBLE_VESSEL_API __attribute__((visibility("default")))
+#endif
+
 // Opaque handle to a crucible::Vigil instance.
 typedef void* CrucibleHandle;
 
@@ -44,32 +51,32 @@ typedef struct {
 // ── Lifecycle ────────────────────────────────────────────────────────
 
 // Create a Vigil instance. Starts the background thread.
-CrucibleHandle crucible_create(void);
+CRUCIBLE_VESSEL_API CrucibleHandle crucible_create(void);
 
 // Destroy a Vigil instance. Joins the background thread.
-void crucible_destroy(CrucibleHandle h);
+CRUCIBLE_VESSEL_API void crucible_destroy(CrucibleHandle h);
 
 // ── Hashing ──────────────────────────────────────────────────────────
 
 // FNV-1a 64-bit hash of a null-terminated string.
 // Use for: op name → schema_hash.
-uint64_t crucible_hash_string(const char* s);
+CRUCIBLE_VESSEL_API uint64_t crucible_hash_string(const char* s);
 
 // FNV-1a hash of tensor shapes. Concatenates (ndim, sizes[0..ndim-1])
 // for each tensor. Use for: input shapes → shape_hash.
 // all_sizes: flat array of sizes for all tensors concatenated.
 // ndims: array of ndim values, one per tensor.
 // n_tensors: number of tensors.
-uint64_t crucible_hash_shapes(const int64_t* all_sizes,
-                              const uint8_t* ndims,
-                              uint32_t n_tensors);
+CRUCIBLE_VESSEL_API uint64_t crucible_hash_shapes(const int64_t* all_sizes,
+                                                   const uint8_t* ndims,
+                                                   uint32_t n_tensors);
 
 // ── Dispatch ─────────────────────────────────────────────────────────
 
 // Unified dispatch: records in RECORDING mode, checks guards in COMPILED.
 // metas: array of CrucibleMeta, [inputs..., outputs...].
 // n_metas: num_inputs + num_outputs.
-CrucibleDispatchResult crucible_dispatch_op(
+CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op(
     CrucibleHandle h,
     uint64_t schema_hash, uint64_t shape_hash,
     uint16_t num_inputs, uint16_t num_outputs,
@@ -78,7 +85,7 @@ CrucibleDispatchResult crucible_dispatch_op(
 // Extended dispatch with scalar arguments and grad/inference flags.
 // scalar_values: up to 5 int64_t values (floats bitcast via memcpy).
 // num_scalars: number of valid entries in scalar_values (0-5).
-CrucibleDispatchResult crucible_dispatch_op_ex(
+CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op_ex(
     CrucibleHandle h,
     uint64_t schema_hash, uint64_t shape_hash,
     uint16_t num_inputs, uint16_t num_outputs,
@@ -89,36 +96,36 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
 // ── Control ──────────────────────────────────────────────────────────
 
 // Spin-wait until TraceRing is drained (1s timeout).
-void crucible_flush(CrucibleHandle h);
+CRUCIBLE_VESSEL_API void crucible_flush(CrucibleHandle h);
 
 // Query mode: 1 if COMPILED, 0 if RECORDING/DIVERGED.
-int crucible_is_compiled(CrucibleHandle h);
+CRUCIBLE_VESSEL_API int crucible_is_compiled(CrucibleHandle h);
 
 // Number of complete iterations in COMPILED mode.
-uint32_t crucible_compiled_iterations(CrucibleHandle h);
+CRUCIBLE_VESSEL_API uint32_t crucible_compiled_iterations(CrucibleHandle h);
 
 // Number of divergences detected.
-uint32_t crucible_diverged_count(CrucibleHandle h);
+CRUCIBLE_VESSEL_API uint32_t crucible_diverged_count(CrucibleHandle h);
 
 // ── Diagnostics ──────────────────────────────────────────────────────
 
 // Number of iteration boundaries detected by the background thread.
-uint32_t crucible_bg_iterations(CrucibleHandle h);
+CRUCIBLE_VESSEL_API uint32_t crucible_bg_iterations(CrucibleHandle h);
 
 // Number of entries currently in the ring buffer (approximate).
-uint32_t crucible_ring_size(CrucibleHandle h);
+CRUCIBLE_VESSEL_API uint32_t crucible_ring_size(CrucibleHandle h);
 
 // Number of entries in the MetaLog (approximate).
-uint32_t crucible_metalog_size(CrucibleHandle h);
+CRUCIBLE_VESSEL_API uint32_t crucible_metalog_size(CrucibleHandle h);
 
 // ── Compiled mode accessors ──────────────────────────────────────────
 
 // Pre-allocated output pointer for output j of the current op.
 // Valid only after dispatch returned COMPILED with MATCH/COMPLETE.
-void* crucible_output_ptr(CrucibleHandle h, uint16_t j);
+CRUCIBLE_VESSEL_API void* crucible_output_ptr(CrucibleHandle h, uint16_t j);
 
 // Pre-allocated input pointer for input j of the current op.
-void* crucible_input_ptr(CrucibleHandle h, uint16_t j);
+CRUCIBLE_VESSEL_API void* crucible_input_ptr(CrucibleHandle h, uint16_t j);
 
 #ifdef __cplusplus
 }
