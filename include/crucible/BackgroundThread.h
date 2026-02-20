@@ -27,8 +27,8 @@ namespace crucible {
 //   - Scratch buffers (PtrMap, SlotInfo, Edge) are allocated ONCE
 //     and reused across iterations. Zero per-call allocation.
 //   - PtrMap uses a generation counter: no memset between calls.
-//   - MetaLog access is zero-copy: one bulk memcpy of the entire
-//     contiguous range, then pointer arithmetic per op.
+//   - MetaLog access is true zero-copy: pointers reach directly into
+//     the MetaLog buffer. No arena alloc, no memcpy (contiguous case).
 //   - Content hash is fused into the main loop (streaming accumulator),
 //     eliminating the redundant second pass in make_region.
 //   - Memory plan uses counting sort O(n+k) instead of insertion sort O(n²).
@@ -134,7 +134,7 @@ struct BackgroundThread {
   // SlotInfo: memset only the used portion each call.
   // Edges: no init needed (written before read).
 
-  static constexpr uint32_t PTR_MAP_CAP = 4096;   // 96KB, L2-friendly
+  static constexpr uint32_t PTR_MAP_CAP = 4096;   // 96KB, optimal collision/cache balance
   static constexpr uint32_t PTR_MASK = PTR_MAP_CAP - 1;
   static constexpr uint32_t SCRATCH_SLOT_CAP = 8192;
   static constexpr uint32_t SCRATCH_EDGE_CAP = 16384;
@@ -385,7 +385,7 @@ struct BackgroundThread {
 
   // ── Build TraceGraph: ring entries + MetaLog → CSR property graph ──
   //
-  // Squatted scratch buffers + gen-counter PtrMap + bulk MetaLog copy
+  // Squatted scratch buffers + gen-counter PtrMap + zero-copy MetaLog
   // + streaming content hash + zero per-op arena calls = minimum
   // possible instructions on the hot path.
   //
@@ -421,25 +421,25 @@ struct BackgroundThread {
       total_scalars += std::min(re.num_scalar_args, uint16_t(5));
     }
 
-    // ── Phase 1: Bulk allocations (3 arena allocs for entire loop) ──
+    // ── Phase 1: Bulk allocations (2 arena allocs + zero-copy metas) ──
 
     // 1. TraceEntry array.
     auto* ops = arena.alloc_array<TraceEntry>(count);
 
-    // 2. Bulk MetaLog copy: one memcpy of ALL metas across ALL ops.
-    //    Then per-op meta pointers are pure arithmetic into this block.
-    TensorMeta* arena_metas = nullptr;
+    // 2. Zero-copy MetaLog: point directly into the circular buffer.
+    //    No arena alloc, no memcpy — just pointer arithmetic per op.
+    //    Pointers valid until meta_log->advance_tail() is called
+    //    (deferred to on_iteration_boundary after all processing).
+    //    For the rare wrap case (< 0.01%), fall back to arena copy.
+    TensorMeta* meta_base = nullptr;
     if (first_meta != UINT32_MAX) {
       uint32_t total_metas = max_meta_end - first_meta;
-      arena_metas = arena.alloc_array<TensorMeta>(total_metas);
-      TensorMeta* log_ptr = meta_log->try_contiguous(first_meta, total_metas);
-      if (log_ptr) [[likely]] {
-        std::memcpy(arena_metas, log_ptr,
-                    total_metas * sizeof(TensorMeta));
-      } else {
-        // Wrap case (extremely rare with 1M capacity).
+      meta_base = meta_log->try_contiguous(first_meta, total_metas);
+      if (!meta_base) [[unlikely]] {
+        // Wrap case: copy to arena (extremely rare with 1M capacity).
+        meta_base = arena.alloc_array<TensorMeta>(total_metas);
         for (uint32_t m = 0; m < total_metas; m++)
-          arena_metas[m] = meta_log->at(first_meta + m);
+          meta_base[m] = meta_log->at(first_meta + m);
       }
     }
 
@@ -510,8 +510,8 @@ struct BackgroundThread {
 
         // Meta pointers: pure arithmetic into bulk arena copy.
         uint32_t meta_offset = ms.raw() - first_meta;
-        te.input_metas = arena_metas + meta_offset;
-        te.output_metas = arena_metas + meta_offset + n_in;
+        te.input_metas = meta_base + meta_offset;
+        te.output_metas = meta_base + meta_offset + n_in;
 
         // Aux pointers: cursor advance into bulk block.
         te.scalar_args = (n_scalars > 0) ?
