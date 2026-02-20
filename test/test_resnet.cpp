@@ -286,16 +286,26 @@ int main() {
                 static_cast<unsigned long long>(region->plan->pool_bytes),
                 region->plan->num_slots, region->plan->num_external);
 
-    // ── Activate: first dispatch_op returns RECORD, ctx becomes COMPILED ──
-    auto ap = build_pkt(net.ops[0], 2);
-    auto ar = vigil.dispatch_op(ap.entry, ap.metas, ap.n_metas);
-    assert(ar.action == DispatchResult::Action::RECORD);
+    // ── Activate via K-op alignment ──
+    static constexpr uint32_t AK = Vigil::ALIGNMENT_K;
+    for (uint32_t i = 0; i < AK; i++) {
+        auto ap = build_pkt(net.ops[i], 3);
+        auto ar = vigil.dispatch_op(ap.entry, ap.metas, ap.n_metas);
+        assert(ar.action == DispatchResult::Action::RECORD);
+    }
     assert(vigil.context().is_compiled());
+    // Complete partial iteration (ops AK..N-1).
+    for (size_t i = AK; i < net.ops.size(); i++) {
+        auto ap = build_pkt(net.ops[i], 3);
+        auto ar = vigil.dispatch_op(ap.entry, ap.metas, ap.n_metas);
+        assert(ar.action == DispatchResult::Action::COMPILED);
+    }
+    std::printf("  aligned (%u ops) + partial iteration compiled\n", AK);
 
     // ── 1000 compiled iterations ──
     auto t0 = std::chrono::steady_clock::now();
 
-    for (uint32_t iter = 3; iter < 1003; iter++) {
+    for (uint32_t iter = 4; iter < 1004; iter++) {
         for (size_t i = 0; i < net.ops.size(); i++) {
             auto p = build_pkt(net.ops[i], iter);
             auto r = vigil.dispatch_op(p.entry, p.metas, p.n_metas);
@@ -312,7 +322,7 @@ int main() {
     std::printf("  %llu dispatches in %lld us (%.1f ns/op)\n",
                 static_cast<unsigned long long>(total),
                 static_cast<long long>(us), ns_op);
-    assert(vigil.compiled_iterations() == 1000);
+    assert(vigil.compiled_iterations() == 1001);  // 1 partial + 1000 full
     assert(vigil.diverged_count() == 0);
 
     // ── Data flow: stem conv(op 0) output → stem bn(op 1) input ──
