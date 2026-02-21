@@ -104,14 +104,14 @@ struct CRUCIBLE_OWNER MetaLog {
       CRUCIBLE_NO_THREAD_SAFETY {
     if (n == 0) [[unlikely]] return MetaIndex::none();
 
-    uint32_t h = head.load(std::memory_order_relaxed);
+    uint32_t h = head.load(std::memory_order_acquire);
 
     // Fast path: check against cached (possibly stale) tail.
     // Stale tail is conservative — if it says "not full", it's guaranteed
     // correct because the real tail only advances (consumer frees space).
     if (h - cached_tail_ + n > CAPACITY) [[unlikely]] {
       // Slow path: reload actual tail from consumer's cache line.
-      cached_tail_ = tail.load(std::memory_order_relaxed);
+      cached_tail_ = tail.load(std::memory_order_acquire);
       if (h - cached_tail_ + n > CAPACITY) [[unlikely]] {
         return MetaIndex::none();
       }
@@ -181,19 +181,19 @@ struct CRUCIBLE_OWNER MetaLog {
 
   // Background thread only (SPSC consumer): advance tail past consumed entries.
   void advance_tail(uint32_t new_tail) CRUCIBLE_NO_THREAD_SAFETY {
-    tail.store(new_tail, std::memory_order_relaxed);
+    tail.store(new_tail, std::memory_order_release);
   }
 
   // Approximate count — deliberately racy (diagnostic only).
   [[nodiscard]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY {
-    return head.load(std::memory_order_relaxed) -
-           tail.load(std::memory_order_relaxed);
+    return head.load(std::memory_order_acquire) -
+           tail.load(std::memory_order_acquire);
   }
 
   // Only when both threads are quiescent (join/stop).
   void reset() CRUCIBLE_NO_THREAD_SAFETY {
-    head.store(0, std::memory_order_relaxed);
-    tail.store(0, std::memory_order_relaxed);
+    head.store(0, std::memory_order_release);
+    tail.store(0, std::memory_order_release);
     cached_tail_ = 0;
   }
 };

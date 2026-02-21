@@ -151,11 +151,11 @@ class Vigil {
 
         // ── RECORDING fast path (hot) ──
         //
-        // Relaxed load: if the bg thread just stored a region, we might
-        // miss it for this one op and catch it next call. That's a ~2ns
-        // latency blip, not a correctness issue.  The cold path uses
-        // acquire to see the region data before acting on it.
-        if (pending_region_.load(std::memory_order_relaxed) ||
+        // Acquire load: must see the region stored by the bg thread.
+        // A relaxed load could miss it for one op, causing that op to
+        // be recorded instead of aligned — which breaks alignment (one
+        // fewer op matched → threshold not reached → ctx_ never activates).
+        if (pending_region_.load(std::memory_order_acquire) ||
             pending_activation_) [[unlikely]]
         {
             return dispatch_transition_(entry, metas, n_metas,
@@ -170,7 +170,7 @@ class Vigil {
     // ─── Queries (lock-free reads) ─────────────────────────────────
 
     [[nodiscard]] Mode mode() const {
-        return mode_.load(std::memory_order_relaxed);
+        return mode_.load(std::memory_order_acquire);
     }
     [[nodiscard]] bool is_compiled() const { return mode() == Mode::COMPILED; }
 
@@ -179,7 +179,7 @@ class Vigil {
     }
 
     [[nodiscard]] uint64_t current_step() const {
-        return step_.load(std::memory_order_relaxed);
+        return step_.load(std::memory_order_acquire);
     }
 
     [[nodiscard]] ContentHash head_hash() const {
@@ -267,7 +267,7 @@ class Vigil {
         const ContentHash hash = cipher_->store(r, meta_log_.get());
         if (!hash) return false;
         cipher_->advance_head(hash,
-                              step_.load(std::memory_order_relaxed));
+                              step_.load(std::memory_order_acquire));
         return true;
     }
 
@@ -331,7 +331,7 @@ class Vigil {
     // Transitions the transaction to ACTIVE, updates the execution mode,
     // and optionally pre-stores the object in the Cipher.
     void on_region_ready(RegionNode* region) {
-        const uint64_t step = step_.fetch_add(1, std::memory_order_relaxed);
+        const uint64_t step = step_.fetch_add(1, std::memory_order_acq_rel);
 
         auto* tx = tx_log_.begin_tx(step);
         tx_log_.commit(tx, region,
@@ -388,7 +388,7 @@ class Vigil {
         if (ctx_.is_compiled())
             ctx_.deactivate();
 
-        mode_.store(Mode::RECORDING, std::memory_order_relaxed);
+        mode_.store(Mode::RECORDING, std::memory_order_release);
         // Signal bg thread to reset its detector and accumulated trace.
         bg_.reset_requested.store(true, std::memory_order_release);
         // Don't record the divergent op — it poisons the bg thread's
@@ -496,7 +496,7 @@ class Vigil {
                 (void)s;
             }
 
-            mode_.store(Mode::COMPILED, std::memory_order_relaxed);
+            mode_.store(Mode::COMPILED, std::memory_order_release);
             pending_activation_ = nullptr;
         }
     }

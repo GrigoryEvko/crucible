@@ -343,7 +343,7 @@ inline Header read_header(Reader& r) {
     node->measured_ms     = measured_ms;
     node->variant_id      = variant_id;
     node->plan            = plan;
-    node->compiled.store(nullptr, std::memory_order_relaxed);
+    node->compiled.store(nullptr, std::memory_order_release);
     return node;
 }
 

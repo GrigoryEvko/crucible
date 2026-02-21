@@ -115,14 +115,14 @@ struct CRUCIBLE_OWNER TraceRing {
       MetaIndex meta_start = MetaIndex::none(),
       ScopeHash scope_hash = {},
       CallsiteHash callsite_hash = {}) CRUCIBLE_NO_THREAD_SAFETY {
-    uint64_t h = head.load(std::memory_order_relaxed);
+    uint64_t h = head.load(std::memory_order_acquire);
     // Fast path: check against cached tail (producer-local, no atomic load).
     // Stale cached tail is conservative — shows less space than reality.
     if (h - cached_tail_ >= CAPACITY) [[unlikely]] {
       // Slow path: re-read the real tail from the consumer's atomic.
       // This crosses cache lines but happens at most once per drain cycle
       // (every ~20,000 appends at 5ns/op with 100us drain interval).
-      cached_tail_ = tail.load(std::memory_order_relaxed);
+      cached_tail_ = tail.load(std::memory_order_acquire);
       if (h - cached_tail_ >= CAPACITY) [[unlikely]] {
         return false;
       }
@@ -166,7 +166,7 @@ struct CRUCIBLE_OWNER TraceRing {
                  ScopeHash* out_scope_hashes = nullptr,
                  CallsiteHash* out_callsite_hashes = nullptr) CRUCIBLE_NO_THREAD_SAFETY {
     uint64_t h = head.load(std::memory_order_acquire);
-    uint64_t t = tail.load(std::memory_order_relaxed);
+    uint64_t t = tail.load(std::memory_order_acquire);
     uint32_t available = static_cast<uint32_t>(h - t);
     uint32_t count = std::min(available, max_count);
     if (count == 0) [[unlikely]] {
@@ -198,15 +198,15 @@ struct CRUCIBLE_OWNER TraceRing {
         std::memcpy(out_callsite_hashes + first, &callsite_hashes[0], second * sizeof(CallsiteHash));
     }
 
-    tail.store(t + count, std::memory_order_relaxed);
+    tail.store(t + count, std::memory_order_release);
     return count;
   }
 
   // Approximate count — deliberately racy (diagnostic only).
   [[nodiscard]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY {
     return static_cast<uint32_t>(
-        head.load(std::memory_order_relaxed) -
-        tail.load(std::memory_order_relaxed));
+        head.load(std::memory_order_acquire) -
+        tail.load(std::memory_order_acquire));
   }
 
   // Total entries ever produced (monotonic).  Acquire: synchronizes with
@@ -218,8 +218,8 @@ struct CRUCIBLE_OWNER TraceRing {
 
   // Only when both threads are quiescent (join/stop).
   void reset() CRUCIBLE_NO_THREAD_SAFETY {
-    head.store(0, std::memory_order_relaxed);
-    tail.store(0, std::memory_order_relaxed);
+    head.store(0, std::memory_order_release);
+    tail.store(0, std::memory_order_release);
     cached_tail_ = 0;
   }
 };

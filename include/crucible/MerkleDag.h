@@ -409,7 +409,7 @@ class CRUCIBLE_OWNER KernelCache {
     assert((capacity & (capacity - 1)) == 0 && "capacity must be power of 2");
     table_ = static_cast<Entry*>(std::calloc(capacity_, sizeof(Entry)));
     if (!table_) [[unlikely]] std::abort(); // OOM is unrecoverable
-    size_.store(0, std::memory_order_relaxed);
+    size_.store(0, std::memory_order_release);
   }
 
   ~KernelCache() { std::free(table_); }
@@ -449,7 +449,7 @@ class CRUCIBLE_OWNER KernelCache {
       if (entry.content_hash.compare_exchange_strong(
               expected, content_hash.raw(), std::memory_order_acq_rel)) {
         entry.kernel.store(kernel, std::memory_order_release);
-        size_.fetch_add(1, std::memory_order_relaxed);
+        size_.fetch_add(1, std::memory_order_acq_rel);
         return;
       }
       if (expected == content_hash.raw()) {
@@ -463,7 +463,7 @@ class CRUCIBLE_OWNER KernelCache {
   }
 
   [[nodiscard]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY {
-    return size_.load(std::memory_order_relaxed);
+    return size_.load(std::memory_order_acquire);
   }
   [[nodiscard]] uint32_t capacity() const { return capacity_; }
 
@@ -641,7 +641,7 @@ inline void recompute_merkle(TraceNode* node) {
   // 4. Look up compiled kernel from global cache (may already exist)
   new_region->compiled.store(
       kernel_cache.lookup(new_region->content_hash),
-      std::memory_order_relaxed);
+      std::memory_order_release);
 
   // 5. Create BranchNode
   auto* branch = arena.alloc_obj<BranchNode>();
