@@ -201,6 +201,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     -Wno-nrvo                           #  95  Cipher early-return copy
 
     # ── 2.3  Extra Clang hardening flags ─────────────────────
+    -fsafe-buffer-usage-suggestions     #  96a suggest span/at() for unsafe bufs
     -fstrict-enums                      #  96  assume valid enum values
     -fstrict-return                     #  97  UB on missing return
     -fstrict-vtable-pointers            #  98  devirt optimization
