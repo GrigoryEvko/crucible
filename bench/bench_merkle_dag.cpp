@@ -367,16 +367,20 @@ static void bench_build_trace_from_file(const char* path) {
     BackgroundThread bg;
     bg.meta_log = &meta_log;
 
+    // Scale arena to workload: ~256B per op is generous.
+    size_t arena_bytes = std::max(size_t{1} << 20,
+        static_cast<size_t>(trace->num_ops) * 256);
+
     char label[128];
     std::snprintf(label, sizeof(label),
-                  "build_trace (%u ops, real ViT-B)", trace->num_ops);
+                  "build_trace (%u ops, from file)", trace->num_ops);
     BENCH(label, 1'000, {
         bg.current_trace.assign(trace->entries.begin(), trace->entries.end());
         bg.current_meta_starts.assign(trace->meta_starts.begin(), trace->meta_starts.end());
         bg.current_scope_hashes.assign(trace->scope_hashes.begin(), trace->scope_hashes.end());
         bg.current_callsite_hashes.assign(trace->callsite_hashes.begin(), trace->callsite_hashes.end());
         bg.arena.~Arena();
-        new (&bg.arena) Arena{1 << 20};
+        new (&bg.arena) Arena{arena_bytes};
         repopulate();
         auto* graph = bg.build_trace(trace->num_ops);
         bench::DoNotOptimize(graph);
@@ -397,9 +401,9 @@ int main(int argc, char* argv[]) {
     // build_trace is the big one — run last.
     bench_build_trace();
 
-    // If a .crtrace file is given, benchmark with real trace data.
-    if (argc > 1) {
-        bench_build_trace_from_file(argv[1]);
+    // Benchmark with real trace data from .crtrace files.
+    for (int i = 1; i < argc; i++) {
+        bench_build_trace_from_file(argv[i]);
     }
 
     std::printf("\nDone.\n");
