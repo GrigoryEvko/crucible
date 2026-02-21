@@ -4,10 +4,32 @@
 # ═══════════════════════════════════════════════════════════════
 
 option(CRUCIBLE_SANITIZE "Enable sanitizers in Debug test builds" ON)
+option(CRUCIBLE_TSAN "Enable ThreadSanitizer (AxRaceFree, mutually exclusive with CRUCIBLE_SANITIZE)" OFF)
 option(CRUCIBLE_ANALYZER "Enable GCC -fanalyzer (slow, thorough)" OFF)
 
+if(CRUCIBLE_TSAN AND CRUCIBLE_SANITIZE)
+  message(FATAL_ERROR "CRUCIBLE_TSAN and CRUCIBLE_SANITIZE are mutually exclusive (TSan cannot coexist with ASan/UBSan)")
+endif()
+
 # ═══════════════════════════════════════════════════════════════
-# SECTION 8: Clang sanitizers — Debug test builds only
+# SECTION 8: Sanitizers — Debug test builds only
+#
+# AxMemSafe:  ASan detects buffer overflow, use-after-free,
+#             double-free, stack-use-after-scope, heap-use-after-free
+# AxLeakFree: LeakSan (integrated into ASan on Linux) detects
+#             memory leaks at process exit
+# AxInitSafe: ASan's use-after-scope catches scoped variable misuse
+#
+# -fsanitize=address (ASan + LeakSan):
+#   325. heap-buffer-overflow    OOB heap access
+#   326. stack-buffer-overflow   OOB stack access
+#   327. global-buffer-overflow  OOB global access
+#   328. use-after-free          heap use after free
+#   329. use-after-scope         scoped var use after scope exit
+#   330. double-free             free same pointer twice
+#   331. alloc-dealloc-mismatch  new[] with delete (not delete[])
+#   332. stack-use-after-return  return addr of local
+#   333. memory-leaks            LeakSan at exit (Linux only)
 #
 # -fsanitize=undefined (15 sub-checks):
 #   225. alignment               misaligned pointer deref
@@ -135,25 +157,51 @@ option(CRUCIBLE_ANALYZER "Enable GCC -fanalyzer (slow, thorough)" OFF)
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
   if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(CRUCIBLE_SAN_COMPILE_FLAGS
+      # AxMemSafe: ASan — buffer overflow, use-after-free, double-free, stack-use-after-return
+      # AxLeakFree: LeakSan — integrated into ASan on Linux (default on)
+      # AxInitSafe: use-after-scope detection
+      -fsanitize=address
+      -fsanitize-address-use-after-scope     # detect use-after-scope
+      # UBSan + integer + nullability — existing checks
       -fsanitize=undefined,integer,nullability,float-divide-by-zero,implicit-conversion,local-bounds
       -fno-sanitize=unsigned-integer-overflow  # hash functions + Philox use intentional wrap
       -fno-sanitize-recover=all         # abort on first violation
       -fno-omit-frame-pointer           # readable stack traces
     )
     set(CRUCIBLE_SAN_LINK_FLAGS
-      -fsanitize=undefined,integer,nullability,float-divide-by-zero,implicit-conversion,local-bounds
+      -fsanitize=address,undefined,integer,nullability,float-divide-by-zero,implicit-conversion,local-bounds
       -fno-sanitize=unsigned-integer-overflow
     )
   elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CRUCIBLE_SAN_COMPILE_FLAGS
+      # AxMemSafe: ASan — buffer overflow, use-after-free, double-free
+      # AxLeakFree: LeakSan — integrated into ASan on Linux
+      -fsanitize=address
+      # UBSan — existing checks
       -fsanitize=undefined,bounds-strict
       -fno-sanitize-recover=all         # abort on first violation
       -fno-omit-frame-pointer           # readable stack traces
     )
     set(CRUCIBLE_SAN_LINK_FLAGS
-      -fsanitize=undefined,bounds-strict
+      -fsanitize=address,undefined,bounds-strict
     )
   endif()
+endif()
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION 8.5: ThreadSanitizer — AxRaceFree (opt-in)
+#
+# Detects data races at runtime. Mutually exclusive with ASan/UBSan.
+#   cmake --preset tsan && cmake --build --preset tsan && ctest --preset tsan
+# ═══════════════════════════════════════════════════════════════
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_TSAN)
+  set(CRUCIBLE_SAN_COMPILE_FLAGS
+    -fsanitize=thread
+    -fno-omit-frame-pointer
+  )
+  set(CRUCIBLE_SAN_LINK_FLAGS
+    -fsanitize=thread
+  )
 endif()
 
 # GCC static analyzer (opt-in).

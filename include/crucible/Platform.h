@@ -19,6 +19,72 @@
 #endif
 
 // ═══════════════════════════════════════════════════════════════════
+// Thread safety annotations — Clang's -Wthread-safety (P1179R1)
+//
+// Compile-time data race detection via capability annotations.
+// -Wthread-safety is already enabled (part of -Weverything).
+// These macros make the analysis effective by annotating ownership.
+//
+// Usage:
+//   class CRUCIBLE_CAPABILITY("mutex") SpinLock { ... };
+//   int counter CRUCIBLE_GUARDED_BY(mu);
+//   void inc() CRUCIBLE_REQUIRES(mu) { counter++; }
+//
+// For SPSC patterns (no mutex, safe by design), use:
+//   void try_append(...) CRUCIBLE_NO_THREAD_SAFETY { ... }
+//
+// GCC silently ignores all of these.
+// ═══════════════════════════════════════════════════════════════════
+
+#if defined(__clang__)
+  // Mark a type as a mutex/lock capability.
+  #define CRUCIBLE_CAPABILITY(name) \
+    __attribute__((capability(name)))
+
+  // Data protected by a capability.
+  #define CRUCIBLE_GUARDED_BY(cap) \
+    __attribute__((guarded_by(cap)))
+  #define CRUCIBLE_PT_GUARDED_BY(cap) \
+    __attribute__((pt_guarded_by(cap)))
+
+  // Function requires capability held / not held.
+  #define CRUCIBLE_REQUIRES(...) \
+    __attribute__((requires_capability(__VA_ARGS__)))
+  #define CRUCIBLE_REQUIRES_SHARED(...) \
+    __attribute__((requires_shared_capability(__VA_ARGS__)))
+  #define CRUCIBLE_EXCLUDES(...) \
+    __attribute__((locks_excluded(__VA_ARGS__)))
+
+  // Function acquires / releases / tries to acquire.
+  #define CRUCIBLE_ACQUIRE(...) \
+    __attribute__((acquire_capability(__VA_ARGS__)))
+  #define CRUCIBLE_RELEASE(...) \
+    __attribute__((release_capability(__VA_ARGS__)))
+  #define CRUCIBLE_TRY_ACQUIRE(...) \
+    __attribute__((try_acquire_capability(__VA_ARGS__)))
+
+  // Escape hatch for SPSC / atomic patterns safe by design.
+  #define CRUCIBLE_NO_THREAD_SAFETY \
+    __attribute__((no_thread_safety_analysis))
+
+  // Assert capability held at a point (runtime no-op, static check).
+  #define CRUCIBLE_ASSERT_CAPABILITY(cap) \
+    __attribute__((assert_capability(cap)))
+#else
+  #define CRUCIBLE_CAPABILITY(name)
+  #define CRUCIBLE_GUARDED_BY(cap)
+  #define CRUCIBLE_PT_GUARDED_BY(cap)
+  #define CRUCIBLE_REQUIRES(...)
+  #define CRUCIBLE_REQUIRES_SHARED(...)
+  #define CRUCIBLE_EXCLUDES(...)
+  #define CRUCIBLE_ACQUIRE(...)
+  #define CRUCIBLE_RELEASE(...)
+  #define CRUCIBLE_TRY_ACQUIRE(...)
+  #define CRUCIBLE_NO_THREAD_SAFETY
+  #define CRUCIBLE_ASSERT_CAPABILITY(cap)
+#endif
+
+// ═══════════════════════════════════════════════════════════════════
 // C++26 feature detection
 //
 // Three-compiler strategy: Clang 22 (primary), GCC 15 (fallback),
