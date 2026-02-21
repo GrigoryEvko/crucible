@@ -53,7 +53,8 @@ struct ReplayEngine {
   ReplayEngine& operator=(ReplayEngine&&) = delete("non-owning pointers would alias with moved-from cursor");
 
   // ── Init: bind to a compiled region + pool ──
-  void init(const RegionNode* region, const PoolAllocator* pool) {
+  void init(const RegionNode* region, const PoolAllocator* pool)
+      CRUCIBLE_NO_THREAD_SAFETY {
     assert(region && "null RegionNode");
     assert(pool && pool->is_initialized() && "pool not initialized");
     ops_ = region->ops;

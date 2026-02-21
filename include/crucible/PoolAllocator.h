@@ -39,7 +39,7 @@ struct PoolAllocator {
   //
   // Aborts on OOM — a Crucible runtime that can't allocate the pool
   // is unrecoverable (the whole point is pre-allocation).
-  void init(const MemoryPlan* plan) {
+  void init(const MemoryPlan* plan) CRUCIBLE_NO_THREAD_SAFETY {
     assert(plan && "null MemoryPlan");
     assert(!ptr_table_ && "already initialized — call destroy() first");
 

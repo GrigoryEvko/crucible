@@ -97,7 +97,10 @@ struct MetaLog {
   //   - head release store: ~1ns
   //   Total: ~12ns for 1 meta, ~33ns for 3 metas (measured)
   //   Baseline: memcpy alone to advancing dst = 8.6ns (1 meta) / 10ns (3 metas)
-  [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append(const TensorMeta* metas, uint32_t n) {
+  // Foreground thread only (SPSC producer).
+  // Safe by protocol: only one thread writes head + entries[head..head+n].
+  [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append(const TensorMeta* metas, uint32_t n)
+      CRUCIBLE_NO_THREAD_SAFETY {
     if (n == 0) [[unlikely]] return MetaIndex::none();
 
     uint32_t h = head.load(std::memory_order_relaxed);
@@ -149,8 +152,8 @@ struct MetaLog {
     return MetaIndex{h};
   }
 
-  // ── Consumer (background): read meta at absolute index ──
-  [[nodiscard]] const TensorMeta& at(uint32_t idx) const {
+  // Background thread only (SPSC consumer): read meta at absolute index.
+  [[nodiscard]] const TensorMeta& at(uint32_t idx) const CRUCIBLE_NO_THREAD_SAFETY {
     return entries[idx & MASK];
   }
 
@@ -162,7 +165,9 @@ struct MetaLog {
   //
   // 99.99% of calls succeed (1M capacity, typical iteration ~1500 metas).
   // Saves ~144B × count memcpy per op when successful.
-  [[nodiscard]] TensorMeta* try_contiguous(uint32_t start, uint32_t count) const {
+  // Background thread only (SPSC consumer): zero-copy span into buffer.
+  [[nodiscard]] TensorMeta* try_contiguous(uint32_t start, uint32_t count) const
+      CRUCIBLE_NO_THREAD_SAFETY {
     if (count == 0) [[unlikely]] return nullptr;
     uint32_t start_pos = start & MASK;
     if (start_pos + count <= CAPACITY) [[likely]]
@@ -170,17 +175,19 @@ struct MetaLog {
     return nullptr; // wraps — caller must copy
   }
 
-  // ── Consumer (background): advance tail past consumed entries ──
-  void advance_tail(uint32_t new_tail) {
+  // Background thread only (SPSC consumer): advance tail past consumed entries.
+  void advance_tail(uint32_t new_tail) CRUCIBLE_NO_THREAD_SAFETY {
     tail.store(new_tail, std::memory_order_relaxed);
   }
 
-  [[nodiscard]] uint32_t size() const {
+  // Approximate count — deliberately racy (diagnostic only).
+  [[nodiscard]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY {
     return head.load(std::memory_order_relaxed) -
            tail.load(std::memory_order_relaxed);
   }
 
-  void reset() {
+  // Only when both threads are quiescent (join/stop).
+  void reset() CRUCIBLE_NO_THREAD_SAFETY {
     head.store(0, std::memory_order_relaxed);
     tail.store(0, std::memory_order_relaxed);
     cached_tail_ = 0;

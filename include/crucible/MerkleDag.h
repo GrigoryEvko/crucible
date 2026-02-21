@@ -420,8 +420,9 @@ class KernelCache {
   KernelCache(KernelCache&&) = delete("lock-free hash map with atomic state cannot be moved");
   KernelCache& operator=(KernelCache&&) = delete("lock-free hash map with atomic state cannot be moved");
 
-  // Lock-free lookup. Returns nullptr on miss.
-  [[nodiscard]] CompiledKernel* lookup(ContentHash content_hash) const {
+  // Lock-free lookup via atomic load. Any thread, safe by CAS protocol.
+  [[nodiscard]] CompiledKernel* lookup(ContentHash content_hash) const
+      CRUCIBLE_NO_THREAD_SAFETY {
     uint32_t mask = capacity_ - 1;
     uint32_t idx = static_cast<uint32_t>(content_hash.raw()) & mask;
     for (uint32_t probe = 0; probe < capacity_; probe++) {
@@ -436,7 +437,8 @@ class KernelCache {
   }
 
   // Thread-safe insert via CAS. Overwrites if key already exists.
-  void insert(ContentHash content_hash, CompiledKernel* kernel) {
+  // Background thread primary writer, safe by atomic CAS protocol.
+  void insert(ContentHash content_hash, CompiledKernel* kernel) CRUCIBLE_NO_THREAD_SAFETY {
     assert(content_hash.raw() != 0 && "zero is the sentinel for empty slots");
     uint32_t mask = capacity_ - 1;
     uint32_t idx = static_cast<uint32_t>(content_hash.raw()) & mask;
@@ -459,7 +461,9 @@ class KernelCache {
     assert(false && "KernelCache table full");
   }
 
-  [[nodiscard]] uint32_t size() const { return size_.load(std::memory_order_relaxed); }
+  [[nodiscard]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY {
+    return size_.load(std::memory_order_relaxed);
+  }
   [[nodiscard]] uint32_t capacity() const { return capacity_; }
 
  private:
