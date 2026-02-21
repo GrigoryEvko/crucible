@@ -78,22 +78,23 @@ int main() {
     TensorSlot slots[N_SLOTS]{};
 
     // External: live for the entire iteration
-    slots[SL_X]  = {0, BATCH*IN_DIM*4,  SlotId{SL_X},  OpIndex{0}, OpIndex{N_OPS},
-                    ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}};
-    slots[SL_W1] = {0, IN_DIM*HIDDEN*4,  SlotId{SL_W1}, OpIndex{0}, OpIndex{N_OPS},
-                    ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}};
-    slots[SL_W2] = {0, HIDDEN*OUT_DIM*4, SlotId{SL_W2}, OpIndex{0}, OpIndex{N_OPS},
-                    ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}};
+    //  {offset_bytes, nbytes, birth_op, death_op, dtype, device_type, device_idx, layout, is_external, pad[3], slot_id, pad2[4]}
+    slots[SL_X]  = {0, BATCH*IN_DIM*4,  OpIndex{0}, OpIndex{N_OPS},
+                    ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{SL_X}, {}};
+    slots[SL_W1] = {0, IN_DIM*HIDDEN*4,  OpIndex{0}, OpIndex{N_OPS},
+                    ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{SL_W1}, {}};
+    slots[SL_W2] = {0, HIDDEN*OUT_DIM*4, OpIndex{0}, OpIndex{N_OPS},
+                    ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{SL_W2}, {}};
 
     // Internal: assigned by sweep-line
-    slots[SL_MM1] = {0, BATCH*HIDDEN*4,  SlotId{SL_MM1}, OpIndex{0}, OpIndex{1},
-                     ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-    slots[SL_REL] = {0, BATCH*HIDDEN*4,  SlotId{SL_REL}, OpIndex{1}, OpIndex{2},
-                     ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-    slots[SL_MM2] = {0, BATCH*OUT_DIM*4, SlotId{SL_MM2}, OpIndex{2}, OpIndex{3},
-                     ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-    slots[SL_SM]  = {0, BATCH*OUT_DIM*4, SlotId{SL_SM},  OpIndex{3}, OpIndex{3},
-                     ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
+    slots[SL_MM1] = {0, BATCH*HIDDEN*4,  OpIndex{0}, OpIndex{1},
+                     ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{SL_MM1}, {}};
+    slots[SL_REL] = {0, BATCH*HIDDEN*4,  OpIndex{1}, OpIndex{2},
+                     ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{SL_REL}, {}};
+    slots[SL_MM2] = {0, BATCH*OUT_DIM*4, OpIndex{2}, OpIndex{3},
+                     ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{SL_MM2}, {}};
+    slots[SL_SM]  = {0, BATCH*OUT_DIM*4, OpIndex{3}, OpIndex{3},
+                     ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{SL_SM}, {}};
 
     // Sweep-line offset assignment
     BackgroundThread bt;

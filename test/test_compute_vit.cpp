@@ -167,12 +167,12 @@ int main() {
     TensorSlot slots[N_SLOTS]{};
 
     auto make_ext = [](uint32_t id, uint64_t sz) -> TensorSlot {
-        return {0, sz, SlotId{id}, OpIndex{0}, OpIndex{N_OPS},
-                ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}};
+        return {0, sz, OpIndex{0}, OpIndex{N_OPS},
+                ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{id}, {}};
     };
     auto make_int = [](uint32_t id, uint64_t sz, uint32_t birth, uint32_t death) -> TensorSlot {
-        return {0, sz, SlotId{id}, OpIndex{birth}, OpIndex{death},
-                ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
+        return {0, sz, OpIndex{birth}, OpIndex{death},
+                ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{id}, {}};
     };
 
     // External parameters (alive entire iteration)
