@@ -207,7 +207,9 @@ int main() {
     slots[SL_FF1]    = make_int(SL_FF1,    SZ_BSDFF, 8,  9);
     slots[SL_RELU]   = make_int(SL_RELU,   SZ_BSDFF, 9, 10);
     slots[SL_FF2]    = make_int(SL_FF2,    SZ_BSD,  10, 11);
-    slots[SL_RES2]   = make_int(SL_RES2,   SZ_BSD,  11, 12);
+    // death_op=14 (last op): keep alive so post-iteration read is valid.
+    // RES2 is consumed at op 12, but we verify it after the iteration.
+    slots[SL_RES2]   = make_int(SL_RES2,   SZ_BSD,  11, 14);
     slots[SL_CLS]    = make_int(SL_CLS,    SZ_BD,   12, 13);
     slots[SL_LOGITS] = make_int(SL_LOGITS, SZ_BNCLS,13, 14);
     slots[SL_PROBS]  = make_int(SL_PROBS,  SZ_BNCLS,14, 14);
