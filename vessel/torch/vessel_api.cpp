@@ -41,6 +41,13 @@ static uint64_t fnv1a_bytes(const void* data, size_t len, uint64_t h) {
 
 static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
 
+// ── Handle validation ────────────────────────────────────────────────
+
+static crucible::Vigil* as_vigil(CrucibleHandle h) {
+    assert(h && "CrucibleHandle is null — did you call crucible_create()?");
+    return static_cast<crucible::Vigil*>(h);
+}
+
 // ── C API implementation ─────────────────────────────────────────────
 
 extern "C" {
@@ -66,6 +73,7 @@ uint64_t crucible_hash_string(const char* s) {
 uint64_t crucible_hash_shapes(const int64_t* all_sizes,
                               const uint8_t* ndims,
                               uint32_t n_tensors) {
+    if (n_tensors == 0 || !all_sizes || !ndims) return FNV_OFFSET;
     uint64_t h = FNV_OFFSET;
     uint32_t offset = 0;
     for (uint32_t t = 0; t < n_tensors; t++) {
@@ -84,7 +92,7 @@ CrucibleDispatchResult crucible_dispatch_op(
     uint16_t num_inputs, uint16_t num_outputs,
     const CrucibleMeta* metas, uint32_t n_metas)
 {
-    auto* vigil = static_cast<crucible::Vigil*>(handle);
+    auto* vigil = as_vigil(handle);
 
     // C→C++ boundary: wrap raw uint64_t into strong hash types.
     crucible::TraceRing::Entry entry{};
@@ -113,7 +121,7 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
     const int64_t* scalar_values, uint16_t num_scalars,
     uint8_t grad_enabled, uint8_t inference_mode)
 {
-    auto* vigil = static_cast<crucible::Vigil*>(handle);
+    auto* vigil = as_vigil(handle);
 
     // C→C++ boundary: wrap raw uint64_t into strong hash types.
     crucible::TraceRing::Entry entry{};
@@ -142,39 +150,39 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
 }
 
 void crucible_flush(CrucibleHandle h) {
-    static_cast<crucible::Vigil*>(h)->flush();
+    as_vigil(h)->flush();
 }
 
 int crucible_is_compiled(CrucibleHandle h) {
-    return static_cast<crucible::Vigil*>(h)->is_compiled() ? 1 : 0;
+    return as_vigil(h)->is_compiled() ? 1 : 0;
 }
 
 uint32_t crucible_compiled_iterations(CrucibleHandle h) {
-    return static_cast<crucible::Vigil*>(h)->compiled_iterations();
+    return as_vigil(h)->compiled_iterations();
 }
 
 uint32_t crucible_diverged_count(CrucibleHandle h) {
-    return static_cast<crucible::Vigil*>(h)->diverged_count();
+    return as_vigil(h)->diverged_count();
 }
 
 uint32_t crucible_bg_iterations(CrucibleHandle h) {
-    return static_cast<crucible::Vigil*>(h)->bg_iterations_completed();
+    return as_vigil(h)->bg_iterations_completed();
 }
 
 uint32_t crucible_ring_size(CrucibleHandle h) {
-    return static_cast<crucible::Vigil*>(h)->ring().size();
+    return as_vigil(h)->ring().size();
 }
 
 uint32_t crucible_metalog_size(CrucibleHandle h) {
-    return static_cast<crucible::Vigil*>(h)->meta_log().size();
+    return as_vigil(h)->meta_log().size();
 }
 
 void* crucible_output_ptr(CrucibleHandle h, uint16_t j) {
-    return static_cast<crucible::Vigil*>(h)->output_ptr(j);
+    return as_vigil(h)->output_ptr(j);
 }
 
 void* crucible_input_ptr(CrucibleHandle h, uint16_t j) {
-    return static_cast<crucible::Vigil*>(h)->input_ptr(j);
+    return as_vigil(h)->input_ptr(j);
 }
 
 } // extern "C"
