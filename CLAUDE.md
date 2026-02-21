@@ -1151,8 +1151,12 @@ BANNED — NEVER USE THESE:
 - `futex` / `eventfd` — syscall, 1-5μs. We don't talk to the kernel.
 - `condition_variable` — mutex + futex. 3-10μs. Double the crime.
 - `atomic::wait()/notify_one()` — futex fallback. Unacceptable.
-- ANY timeout — timeouts HIDE BUGS. If bg is stuck, spin hangs,
-  and that IS the signal. Timeouts are lies.
+- ANY timeout — EVERY TIMEOUT IS A RACE CONDITION. If you need a
+  timeout, your synchronization is broken. The 5000ms timeout in
+  flush() masked a race condition for MONTHS. A timeout means "I
+  don't actually know when this completes, so I'll guess." That's
+  not engineering, that's prayer. Spin on the actual completion
+  signal or admit you have a race condition and fix it.
 
 WHY: the bg thread is dedicated. It spins on drain(). MESI delivers
 cache-line invalidations in 10-40ns. Producer stores with release,
