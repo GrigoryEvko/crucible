@@ -130,13 +130,13 @@ int main() {
     using crucible::SlotId; using crucible::OpIndex;
     using crucible::ScalarType; using crucible::DeviceType; using crucible::Layout;
     // External slots
-    slots[0] = {0, 128, SlotId{0}, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}};
-    slots[1] = {0, 128, SlotId{1}, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}};
-    slots[4] = {0, 512, SlotId{4}, OpIndex{0}, OpIndex{2}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}};
+    slots[0] = {0, 128, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{0}, {}};
+    slots[1] = {0, 128, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{1}, {}};
+    slots[4] = {0, 512, OpIndex{0}, OpIndex{2}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{4}, {}};
     // Internal slots
-    slots[2] = {0, 128, SlotId{2}, OpIndex{0}, OpIndex{1}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-    slots[3] = {0, 128, SlotId{3}, OpIndex{1}, OpIndex{2}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-    slots[5] = {0, 256, SlotId{5}, OpIndex{2}, OpIndex{2}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
+    slots[2] = {0, 128, OpIndex{0}, OpIndex{1}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{2}, {}};
+    slots[3] = {0, 128, OpIndex{1}, OpIndex{2}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{3}, {}};
+    slots[5] = {0, 256, OpIndex{2}, OpIndex{2}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{5}, {}};
 
     // ── Assemble TraceGraph with CSR ────────────────────────────
     auto* graph_tg = arena.alloc_obj<crucible::TraceGraph>();
@@ -282,9 +282,9 @@ int main() {
 
     auto* slots2 = arena2.alloc_array<crucible::TensorSlot>(3);
     std::memset(slots2, 0, 3 * sizeof(crucible::TensorSlot));
-    slots2[0] = {0, 128, SlotId{0}, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}};
-    slots2[1] = {0, 256, SlotId{1}, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}};
-    slots2[2] = {0, 128, SlotId{2}, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
+    slots2[0] = {0, 128, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{0}, {}};
+    slots2[1] = {0, 256, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{1}, {}};
+    slots2[2] = {0, 128, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{2}, {}};
 
     auto* tg2 = arena2.alloc_obj<crucible::TraceGraph>();
     tg2->ops = ops2;

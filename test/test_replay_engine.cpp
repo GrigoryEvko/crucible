@@ -38,8 +38,8 @@ static void init_region(RegionNode* r, TraceEntry* ops, uint32_t n) {
 // All slots are internal with 256B each at sequential offsets.
 static MemoryPlan make_simple_plan(TensorSlot* slots, uint32_t n) {
   for (uint32_t i = 0; i < n; i++) {
-    slots[i] = {i * 256, 256, SlotId{i}, OpIndex{0}, OpIndex{n},
-                 ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
+    slots[i] = {i * 256, 256, OpIndex{0}, OpIndex{n},
+                 ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{i}, {}};
   }
   MemoryPlan plan{};
   plan.slots = slots;
@@ -353,12 +353,12 @@ static void test_integration_with_pool() {
   constexpr uint32_t NSLOTS = 3;
   TensorSlot slots[NSLOTS];
   std::memset(slots, 0, sizeof(slots));
-  slots[0] = {0, 512, SlotId{0}, OpIndex{0}, OpIndex{2},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-  slots[1] = {0, 256, SlotId{1}, OpIndex{1}, OpIndex{2},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-  slots[2] = {0, 128, SlotId{2}, OpIndex{0}, OpIndex{2},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true,  {}};
+  slots[0] = {0, 512, OpIndex{0}, OpIndex{2},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{0}, {}};
+  slots[1] = {0, 256, OpIndex{1}, OpIndex{2},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{1}, {}};
+  slots[2] = {0, 128, OpIndex{0}, OpIndex{2},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true,  {}, SlotId{2}, {}};
 
   auto* plan = bt.compute_memory_plan(slots, NSLOTS);
   assert(plan != nullptr);

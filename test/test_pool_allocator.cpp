@@ -36,12 +36,12 @@ static void test_basic_init() {
   //   Slot 2: external
   TensorSlot slots[3];
   std::memset(slots, 0, sizeof(slots));
-  slots[0] = {0,    1024, SlotId{0}, OpIndex{0}, OpIndex{5},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-  slots[1] = {1024, 2048, SlotId{1}, OpIndex{1}, OpIndex{4},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-  slots[2] = {0,    512,  SlotId{2}, OpIndex{0}, OpIndex{7},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true,  {}};
+  slots[0] = {0,    1024, OpIndex{0}, OpIndex{5},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{0}, {}};
+  slots[1] = {1024, 2048, OpIndex{1}, OpIndex{4},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{1}, {}};
+  slots[2] = {0,    512,  OpIndex{0}, OpIndex{7},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true,  {}, SlotId{2}, {}};
 
   MemoryPlan plan = make_manual_plan(slots, 3, 3072, 1);
 
@@ -76,10 +76,10 @@ static void test_basic_init() {
 static void test_external_registration() {
   TensorSlot slots[2];
   std::memset(slots, 0, sizeof(slots));
-  slots[0] = {0, 1024, SlotId{0}, OpIndex{0}, OpIndex{3},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-  slots[1] = {0, 512,  SlotId{1}, OpIndex{0}, OpIndex{3},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true,  {}};
+  slots[0] = {0, 1024, OpIndex{0}, OpIndex{3},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{0}, {}};
+  slots[1] = {0, 512,  OpIndex{0}, OpIndex{3},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true,  {}, SlotId{1}, {}};
 
   MemoryPlan plan = make_manual_plan(slots, 2, 1024, 1);
 
@@ -107,12 +107,12 @@ static void test_write_read_isolation() {
   //   Slot 2: offset=768, 256 bytes
   TensorSlot slots[3];
   std::memset(slots, 0, sizeof(slots));
-  slots[0] = {0,   256, SlotId{0}, OpIndex{0}, OpIndex{3},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-  slots[1] = {256, 512, SlotId{1}, OpIndex{1}, OpIndex{4},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-  slots[2] = {768, 256, SlotId{2}, OpIndex{2}, OpIndex{5},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
+  slots[0] = {0,   256, OpIndex{0}, OpIndex{3},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{0}, {}};
+  slots[1] = {256, 512, OpIndex{1}, OpIndex{4},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{1}, {}};
+  slots[2] = {768, 256, OpIndex{2}, OpIndex{5},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{2}, {}};
 
   MemoryPlan plan = make_manual_plan(slots, 3, 1024, 0);
 
@@ -140,10 +140,10 @@ static void test_write_read_isolation() {
 static void test_all_external() {
   TensorSlot slots[2];
   std::memset(slots, 0, sizeof(slots));
-  slots[0] = {0, 1024, SlotId{0}, OpIndex{0}, OpIndex{3},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}};
-  slots[1] = {0, 2048, SlotId{1}, OpIndex{0}, OpIndex{5},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}};
+  slots[0] = {0, 1024, OpIndex{0}, OpIndex{3},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{0}, {}};
+  slots[1] = {0, 2048, OpIndex{0}, OpIndex{5},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{1}, {}};
 
   MemoryPlan plan = make_manual_plan(slots, 2, 0, 2);
 
@@ -174,8 +174,8 @@ static void test_all_external() {
 static void test_reinit() {
   TensorSlot slots_a[1];
   std::memset(slots_a, 0, sizeof(slots_a));
-  slots_a[0] = {0, 512, SlotId{0}, OpIndex{0}, OpIndex{3},
-                 ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
+  slots_a[0] = {0, 512, OpIndex{0}, OpIndex{3},
+                 ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{0}, {}};
 
   MemoryPlan plan_a = make_manual_plan(slots_a, 1, 512, 0);
 
@@ -190,10 +190,10 @@ static void test_reinit() {
 
   TensorSlot slots_b[2];
   std::memset(slots_b, 0, sizeof(slots_b));
-  slots_b[0] = {0,    1024, SlotId{0}, OpIndex{0}, OpIndex{5},
-                 ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-  slots_b[1] = {1024, 2048, SlotId{1}, OpIndex{1}, OpIndex{4},
-                 ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
+  slots_b[0] = {0,    1024, OpIndex{0}, OpIndex{5},
+                 ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{0}, {}};
+  slots_b[1] = {1024, 2048, OpIndex{1}, OpIndex{4},
+                 ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{1}, {}};
 
   MemoryPlan plan_b = make_manual_plan(slots_b, 2, 3072, 0);
   pool.init(&plan_b);
@@ -227,14 +227,14 @@ static void test_integration_with_sweep_line() {
   constexpr uint32_t N = 4;
   TensorSlot slots[N];
   std::memset(slots, 0, sizeof(slots));
-  slots[0] = {0, 1024, SlotId{0}, OpIndex{0}, OpIndex{5},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-  slots[1] = {0, 2048, SlotId{1}, OpIndex{1}, OpIndex{3},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-  slots[2] = {0, 1024, SlotId{2}, OpIndex{4}, OpIndex{7},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-  slots[3] = {0, 512,  SlotId{3}, OpIndex{0}, OpIndex{7},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true,  {}};
+  slots[0] = {0, 1024, OpIndex{0}, OpIndex{5},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{0}, {}};
+  slots[1] = {0, 2048, OpIndex{1}, OpIndex{3},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{1}, {}};
+  slots[2] = {0, 1024, OpIndex{4}, OpIndex{7},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{2}, {}};
+  slots[3] = {0, 512,  OpIndex{0}, OpIndex{7},
+               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true,  {}, SlotId{3}, {}};
 
   auto* plan = bt.compute_memory_plan(slots, N);
   assert(plan != nullptr);

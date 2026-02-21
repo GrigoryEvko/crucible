@@ -18,10 +18,10 @@ int main() {
 
   using crucible::SlotId; using crucible::OpIndex;
   using crucible::ScalarType; using crucible::DeviceType; using crucible::Layout;
-  slots[0] = {0, 1024, SlotId{0}, OpIndex{0}, OpIndex{5}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-  slots[1] = {0, 2048, SlotId{1}, OpIndex{1}, OpIndex{3}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-  slots[2] = {0, 1024, SlotId{2}, OpIndex{4}, OpIndex{7}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}};
-  slots[3] = {0, 512,  SlotId{3}, OpIndex{0}, OpIndex{7}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true,  {}};
+  slots[0] = {0, 1024, OpIndex{0}, OpIndex{5}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{0}, {}};
+  slots[1] = {0, 2048, OpIndex{1}, OpIndex{3}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{1}, {}};
+  slots[2] = {0, 1024, OpIndex{4}, OpIndex{7}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{2}, {}};
+  slots[3] = {0, 512,  OpIndex{0}, OpIndex{7}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true,  {}, SlotId{3}, {}};
 
   auto* plan = bt.compute_memory_plan(slots, N);
   assert(plan != nullptr);
