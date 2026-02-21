@@ -277,6 +277,8 @@ static_assert(sizeof(TraceNode) == 24, "TraceNode must be 24 bytes");
 
 struct RegionNode : TraceNode {
   ContentHash content_hash;                       // 8B — kernel identity (this region)
+  // NOT relaxed: publish pattern — bg writes compiled kernel data, then
+  // stores pointer with release. Fg loads with acquire to see the data.
   std::atomic<CompiledKernel*> compiled{nullptr}; // 8B — from global cache, null until ready
 
   TraceEntry* ops = nullptr;  // 8B — arena-allocated array
@@ -409,7 +411,7 @@ class CRUCIBLE_OWNER KernelCache {
     assert((capacity & (capacity - 1)) == 0 && "capacity must be power of 2");
     table_ = static_cast<Entry*>(std::calloc(capacity_, sizeof(Entry)));
     if (!table_) [[unlikely]] std::abort(); // OOM is unrecoverable
-    size_.store(0, std::memory_order_release);
+    size_.store(0, std::memory_order_relaxed);
   }
 
   ~KernelCache() { std::free(table_); }
@@ -449,7 +451,9 @@ class CRUCIBLE_OWNER KernelCache {
       if (entry.content_hash.compare_exchange_strong(
               expected, content_hash.raw(), std::memory_order_acq_rel)) {
         entry.kernel.store(kernel, std::memory_order_release);
-        size_.fetch_add(1, std::memory_order_acq_rel);
+        // Relaxed: size_ is informational only (no control flow depends
+        // on its exact value). The real synchronization is content_hash CAS.
+        size_.fetch_add(1, std::memory_order_relaxed);
         return;
       }
       if (expected == content_hash.raw()) {
@@ -462,13 +466,19 @@ class CRUCIBLE_OWNER KernelCache {
     assert(false && "KernelCache table full");
   }
 
+  // Relaxed: informational counter, no ordering dependency.
   [[nodiscard]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY {
-    return size_.load(std::memory_order_acquire);
+    return size_.load(std::memory_order_relaxed);
   }
   [[nodiscard]] uint32_t capacity() const { return capacity_; }
 
  private:
   struct Entry {
+    // NOT relaxed: lock-free hash table protocol.
+    // content_hash CAS(acq_rel) claims the slot; kernel.store(release)
+    // publishes the compiled kernel. Readers load both with acquire
+    // to see consistent (hash, kernel) pairs. Relaxed = reader sees
+    // a hash match but loads a stale/null kernel pointer.
     std::atomic<uint64_t> content_hash{0};
     std::atomic<CompiledKernel*> kernel{nullptr};
   };

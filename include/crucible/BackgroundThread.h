@@ -47,7 +47,9 @@ struct BackgroundThread {
   uint64_t device_capability = 0;
 
   // Active region pointer (written by background, read by foreground).
-  // In standalone mode, the Vessel adapter polls this.
+  // NOT relaxed: store(release) publishes region data (ops, plan, merkle
+  // hash) written before it. Fg's load(acquire) must see that data.
+  // Relaxed = fg dereferences pointer to region with stale/garbage fields.
   std::atomic<RegionNode*> active_region{nullptr};
 
   // Optional callback invoked on the background thread whenever a new
@@ -82,15 +84,18 @@ struct BackgroundThread {
   // Per-iteration property graphs (for future fusion/scheduling).
   std::vector<TraceGraph*> iteration_graphs;
 
-  // Thread control.
+  // Thread control — relaxed ordering.
+  // std::thread ctor (in start()) provides happens-before for init data.
+  // thread::join() (in stop()) provides happens-before for teardown.
+  // The flag is just a loop-termination signal with no data dependencies;
+  // worst case the bg thread spins one extra iteration before seeing false.
   std::atomic<bool> running{false};
   std::thread thread;
 
   // Total entries fully processed by the bg thread (monotonic).
-  // Incremented (release) after each drain+process cycle completes,
-  // including all on_iteration_boundary() calls and region_ready_cb
-  // invocations. Read (acquire) by Vigil::flush() to determine
-  // whether all entries produced before flush() have been handled.
+  // Release on fetch_add: fg must see all prior bg writes (pending_region_,
+  // active_region, region data) when flush()'s acquire load sees the count.
+  // Not acq_rel: bg doesn't need to acquire anything from fg at this point.
   // Own cache line: fg reads, bg writes — false sharing otherwise.
   alignas(64) std::atomic<uint64_t> total_processed{0};
 
@@ -109,13 +114,13 @@ struct BackgroundThread {
     rank = rank_;
     world_size = world_size_;
     device_capability = device_cap;
-    running.store(true, std::memory_order_release);
+    running.store(true, std::memory_order_relaxed);
     thread = std::thread([this] { run(); });
   }
 
   // Signal the thread to stop and join.
   void stop() CRUCIBLE_NO_THREAD_SAFETY {
-    running.store(false, std::memory_order_release);
+    running.store(false, std::memory_order_relaxed);
     if (thread.joinable()) {
       thread.join();
     }
@@ -323,9 +328,12 @@ struct BackgroundThread {
     ScopeHash scope_batch[BATCH_SIZE];
     CallsiteHash callsite_batch[BATCH_SIZE];
 
-    while (running.load(std::memory_order_acquire)) {
+    while (running.load(std::memory_order_relaxed)) {
       // Check for divergence reset signal from fg thread.
-      if (reset_requested.load(std::memory_order_acquire)) [[unlikely]] {
+      // Relaxed: just testing a flag. Acquire fence deferred to the rare
+      // true path (same pattern as the inner-loop check below).
+      if (reset_requested.load(std::memory_order_relaxed)) [[unlikely]] {
+        std::atomic_thread_fence(std::memory_order_acquire);
         detector.reset();
         current_trace.clear();
         current_meta_starts.clear();
@@ -377,6 +385,9 @@ struct BackgroundThread {
       // Signal: all entries in this batch are fully processed, including
       // any on_iteration_boundary() calls (build_trace, make_region,
       // region_ready_cb). Release pairs with acquire in Vigil::flush().
+      // Release: publishes all bg side effects (pending_region_,
+      // active_region, region data) to fg thread's acquire in flush().
+      // Not acq_rel: bg has no reads that depend on fg writes here.
       total_processed.fetch_add(n, std::memory_order_release);
     }
 

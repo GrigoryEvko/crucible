@@ -167,8 +167,11 @@ class Vigil {
 
     // ─── Queries (lock-free reads) ─────────────────────────────────
 
+    // Relaxed: mode_ is set and read primarily by fg thread. Tests spin
+    // on it cross-thread but only need eventual visibility (relaxed
+    // guarantees this). The real synchronization is pending_region_ acquire.
     [[nodiscard]] Mode mode() const {
-        return mode_.load(std::memory_order_acquire);
+        return mode_.load(std::memory_order_relaxed);
     }
     [[nodiscard]] bool is_compiled() const { return mode() == Mode::COMPILED; }
 
@@ -176,8 +179,10 @@ class Vigil {
         return bg_.active_region.load(std::memory_order_acquire);
     }
 
+    // Relaxed: monotonic fg-thread counter. bg thread never reads it.
+    // Cross-thread readers (tests, persist) only need an approximate value.
     [[nodiscard]] uint64_t current_step() const {
-        return step_.load(std::memory_order_acquire);
+        return step_.load(std::memory_order_relaxed);
     }
 
     [[nodiscard]] ContentHash head_hash() const {
@@ -265,7 +270,7 @@ class Vigil {
         const ContentHash hash = cipher_->store(r, meta_log_.get());
         if (!hash) return false;
         cipher_->advance_head(hash,
-                              step_.load(std::memory_order_acquire));
+                              step_.load(std::memory_order_relaxed));
         return true;
     }
 
@@ -277,7 +282,7 @@ class Vigil {
         RegionNode* r = cipher_->load(cipher_->head(), load_arena_);
         if (!r) return false;
         bg_.active_region.store(r, std::memory_order_release);
-        mode_.store(Mode::COMPILED, std::memory_order_release);
+        mode_.store(Mode::COMPILED, std::memory_order_relaxed);
         // Activate per-op replay if the loaded region has a plan.
         if (ctx_.activate(r)) {
             register_externals_from_region_(r);
@@ -329,7 +334,11 @@ class Vigil {
     // Transitions the transaction to ACTIVE, updates the execution mode,
     // and optionally pre-stores the object in the Cipher.
     void on_region_ready(RegionNode* region) {
-        const uint64_t step = step_.fetch_add(1, std::memory_order_acq_rel);
+        // Relaxed: step_ is a monotonic counter for tx_log sequencing.
+        // bg thread never reads data ordered by this; fg thread is the
+        // only writer. On x86 lock-xadd is full fence regardless, but
+        // relaxed avoids dmb barriers on ARM.
+        const uint64_t step = step_.fetch_add(1, std::memory_order_relaxed);
 
         auto* tx = tx_log_.begin_tx(step);
         tx_log_.commit(tx, region,
@@ -342,7 +351,7 @@ class Vigil {
         // Also set mode_=COMPILED for backward compat — existing code/tests
         // poll is_compiled() without calling dispatch_op().
         pending_region_.store(region, std::memory_order_release);
-        mode_.store(Mode::COMPILED, std::memory_order_release);
+        mode_.store(Mode::COMPILED, std::memory_order_relaxed);
 
         // Pre-store the object (idempotent) so persist() is instant later.
         if (cipher_.has_value()) {
@@ -386,7 +395,7 @@ class Vigil {
         if (ctx_.is_compiled())
             ctx_.deactivate();
 
-        mode_.store(Mode::RECORDING, std::memory_order_release);
+        mode_.store(Mode::RECORDING, std::memory_order_relaxed);
         // Signal bg thread to reset its detector and accumulated trace.
         bg_.reset_requested.store(true, std::memory_order_release);
         // Don't record the divergent op — it poisons the bg thread's
@@ -498,7 +507,7 @@ class Vigil {
                 (void)s;
             }
 
-            mode_.store(Mode::COMPILED, std::memory_order_release);
+            mode_.store(Mode::COMPILED, std::memory_order_relaxed);
             pending_activation_ = nullptr;
         }
     }
@@ -572,13 +581,18 @@ class Vigil {
     std::unique_ptr<MetaLog>        meta_log_;
     TransactionLog<16>              tx_log_;
     std::optional<Cipher>           cipher_;
+    // Relaxed ordering on both: fg-thread-primary, no data dependencies.
+    // mode_ is a status flag — real sync is pending_region_ acquire.
+    // step_ is a monotonic counter — bg never reads, tests need only approx.
     std::atomic<Mode>               mode_{Mode::RECORDING};
     std::atomic<uint64_t>           step_{0};
     Arena                           load_arena_{1 << 20}; // for Cipher::load()
 
     // ─── Tier 1 dispatch state (fg thread only, except pending_region_) ─
 
-    std::atomic<RegionNode*>        pending_region_{nullptr}; // bg→fg signal
+    // NOT relaxed: bg→fg publish. bg writes region data, then
+    // store(release). fg's load(acquire) in dispatch_op must see it.
+    std::atomic<RegionNode*>        pending_region_{nullptr};
     RegionNode*                     pending_activation_{nullptr}; // fg-only: waiting for alignment
     uint32_t                        alignment_pos_{0};  // consecutive matched ops from region start
     CrucibleContext                 ctx_;               // fg-only replay

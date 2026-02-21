@@ -56,6 +56,8 @@ struct CRUCIBLE_OWNER MetaLog {
   // cached_tail_: producer-local copy of tail. Avoids cross-core atomic load
   // on every call. Stale value is conservative — if it says "full" we reload
   // the real tail (slow path), which may have advanced.
+  // NOT relaxed: same SPSC publish pattern as TraceRing.
+  // head.store(release) publishes TensorMeta entries to consumer.
   alignas(64) std::atomic<uint32_t> head{0};   // 4B — producer writes, consumer reads
   uint32_t cached_tail_ = 0;                    // 4B — producer-only (never touched by consumer)
   TensorMeta* entries = nullptr;                // 8B — producer-only read
@@ -65,6 +67,7 @@ struct CRUCIBLE_OWNER MetaLog {
   // tail lives alone on its own cache line to prevent false sharing with
   // the producer's head/cached_tail_/entries. The consumer (background thread)
   // writes tail; the producer only reads it on the rare slow path.
+  // NOT relaxed: tail.store(release) signals that consumer finished reading.
   alignas(64) std::atomic<uint32_t> tail{0};   // 4B — consumer writes, producer reads (rare)
 
   MetaLog() {

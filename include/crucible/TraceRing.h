@@ -62,10 +62,14 @@ struct CRUCIBLE_OWNER TraceRing {
   // line, every write would bounce the line between cores (~40ns penalty).
 
   // Producer state (foreground thread writes, consumer reads).
+  // NOT relaxed: head.store(release) publishes entry data written before it.
+  // Consumer's head.load(acquire) must see that data. Relaxed = torn reads.
   alignas(64) std::atomic<uint64_t> head{0};
 
   // Consumer state (consumer reads/writes, producer reads for fullness).
-  // Must be atomic: producer reads in try_append, consumer writes in drain.
+  // NOT relaxed: tail.store(release) publishes that the consumer is done
+  // reading entries. Producer's tail.load(acquire) must see this before
+  // overwriting those slots. Relaxed = producer overwrites live data.
   alignas(64) std::atomic<uint64_t> tail{0};
 
   // Producer-local cache of tail. Lives on the producer's cache line,
