@@ -4,6 +4,7 @@ project(crucible LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 26)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Header-only library
 add_library(crucible INTERFACE)
@@ -209,11 +210,20 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     -fconstexpr-steps=10000000          # 103  generous constexpr budget
     -fbracket-depth=1024                # 104  deep template nesting
 
-    # ── 2.4  Clang-only linker hardening ─────────────────────
-    -fcf-protection=full                # 105  control-flow integrity
+    # ── 2.4  Lifetime safety — intra-procedural borrow check ──
+    #
+    # CFG-based analysis: catches use-after-free, dangling
+    # references, returning pointers to locals. Tested on our
+    # codebase — zero warnings (Arena ownership model is clean).
+    # In Clang trunk (post-22): promoted to -flifetime-safety.
+    "SHELL:-Xclang -fexperimental-lifetime-safety"  # 105
+    -Wexperimental-lifetime-safety      # 106  lifetime violation warnings
+
+    # ── 2.5  Clang-only linker hardening ─────────────────────
+    -fcf-protection=full                # 107  control-flow integrity
   )
 
-  # ── 2.5  Library hardening — libc++ ────────────────────────
+  # ── 2.6  Library hardening — libc++ ────────────────────────
   target_compile_definitions(crucible INTERFACE
     # 102: libc++ bounds checks, null checks, type checks
     $<$<CONFIG:Debug>:_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE>
@@ -417,6 +427,31 @@ target_link_options(crucible INTERFACE
   "LINKER:--gc-sections"               # 223  garbage-collect sections
   "LINKER:-z,defs"                     # 224  no undefined symbols
 )
+
+# ═══════════════════════════════════════════════════════════════
+# SECTION 8: clang-tidy integration (opt-in)
+#
+# Runs clang-tidy on every translation unit during compilation.
+# Finds clang-tidy next to the active compiler (Clang 22 → v22).
+# Uses .clang-tidy config at project root for check selection.
+#
+#   cmake --preset tidy && cmake --build --preset tidy
+# ═══════════════════════════════════════════════════════════════
+option(CRUCIBLE_TIDY "Run clang-tidy during compilation (slow)" OFF)
+if(CRUCIBLE_TIDY)
+  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(WARNING "CRUCIBLE_TIDY only supported with Clang builds")
+  else()
+    get_filename_component(_compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    find_program(CLANG_TIDY_EXE NAMES clang-tidy HINTS "${_compiler_dir}")
+    if(CLANG_TIDY_EXE)
+      set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
+      message(STATUS "clang-tidy enabled: ${CLANG_TIDY_EXE}")
+    else()
+      message(WARNING "CRUCIBLE_TIDY=ON but clang-tidy not found")
+    endif()
+  endif()
+endif()
 
 # Vessel adapter (shared library for Python/ctypes)
 add_subdirectory(vessel/torch)

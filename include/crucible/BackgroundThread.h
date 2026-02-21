@@ -249,7 +249,7 @@ struct BackgroundThread {
   struct PtrLookup {
     OpIndex op_index;
     SlotId slot_id;
-    uint8_t port;
+    uint8_t port = 0;
   };
 
   [[nodiscard]] static PtrLookup ptr_map_lookup(
