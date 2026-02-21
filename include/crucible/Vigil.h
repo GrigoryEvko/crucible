@@ -155,12 +155,10 @@ class Vigil {
         // A relaxed load could miss it for one op, causing that op to
         // be recorded instead of aligned — which breaks alignment (one
         // fewer op matched → threshold not reached → ctx_ never activates).
-        if (pending_region_.load(std::memory_order_acquire) ||
-            pending_activation_) [[unlikely]]
-        {
+        auto* pr = pending_region_.load(std::memory_order_acquire);
+        if (pr || pending_activation_) [[unlikely]]
             return dispatch_transition_(entry, metas, n_metas,
                                         scope_hash, callsite_hash);
-        }
 
         (void)record_op(entry, metas, n_metas, scope_hash, callsite_hash);
         return {.action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {},
@@ -407,8 +405,12 @@ class Vigil {
         ScopeHash               scope_hash,
         CallsiteHash            callsite_hash)
     {
-        // Acquire: must see region data written by bg thread before
-        // consume_pending_region_() reads it.
+        // Always try to consume pending_region_.
+        // If a newer region arrives while alignment is in progress,
+        // consume_pending_region_ replaces pending_activation_ and
+        // resets alignment_pos_ to 0. This is correct: the newer
+        // region may have different ops (e.g. after a divergence
+        // recovery cycle), so we must re-align from scratch.
         if (pending_region_.load(std::memory_order_acquire))
             consume_pending_region_();
 
