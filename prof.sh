@@ -1317,6 +1317,154 @@ cmd_hotlines() {
     fi
 }
 
+# ── Intel PT per-instruction profiling (perf) ────────────────────────
+#
+# Intel PT traces EVERY branch and gives per-instruction sample data.
+# Address filters break the PT decoder (it loses state when execution
+# leaves the filter range), so we record the FULL trace and filter
+# during analysis with perf report --symbol-filter / perf annotate.
+#
+# The trace is large (~500MB/s) but decode is one-time. The injected
+# file is much smaller and fast to re-analyze.
+
+do_perf_pt_collect() {
+    local outdir="$1"
+    local pt_dir="$outdir/pt"
+    mkdir -p "$pt_dir"
+
+    info "Recording Intel PT (full trace, single run)"
+    printf "  ${DIM}PT traces every branch — expect ~1-3 GB. Decode takes a few minutes.${RESET}\n"
+
+    # Record full trace — no address filter (filters break the decoder)
+    if [ "$TARGET" = "bench_merkle_dag" ]; then
+        perf record \
+            -e intel_pt//u \
+            -o "$pt_dir/pt.data" \
+            -- taskset -c "$PCPU" "$BINARY" "$TRACE" 2>/dev/null || true
+    else
+        perf record \
+            -e intel_pt//u \
+            -o "$pt_dir/pt.data" \
+            -- taskset -c "$PCPU" "$BINARY" 2>/dev/null || true
+    fi
+
+    local pt_size
+    pt_size="$(du -sh "$pt_dir/pt.data" 2>/dev/null | cut -f1)"
+    info "PT trace: $pt_dir/pt.data ($pt_size)"
+
+    # Inject: decode PT packets into synthesized instruction samples.
+    # This is the slow part (~1min/GB), but only needs to be done once.
+    # i100us = one sample per ~100μs, l = last branch records
+    info "Decoding PT trace (perf inject --itrace=i100usl) — this takes a few minutes"
+    local t0
+    t0="$(date +%s)"
+    perf inject \
+        -i "$pt_dir/pt.data" \
+        -o "$pt_dir/pt_decoded.data" \
+        --itrace=i100usl 2>/dev/null || true
+    local t1
+    t1="$(date +%s)"
+
+    local decoded_size elapsed
+    decoded_size="$(du -sh "$pt_dir/pt_decoded.data" 2>/dev/null | cut -f1)"
+    elapsed="$(( t1 - t0 ))"
+    info "Decoded: $pt_dir/pt_decoded.data ($decoded_size) in ${elapsed}s"
+
+    # Remove the raw trace to save disk (decoded file has everything we need)
+    rm -f "$pt_dir/pt.data"
+    info "Removed raw trace (keeping decoded only)"
+}
+
+do_perf_pt_report() {
+    local pt_dir="$1"
+    local decoded="$pt_dir/pt_decoded.data"
+    [ -f "$decoded" ] || { warn "No decoded PT data at $decoded"; return 0; }
+
+    # ── Function-level breakdown ──────────────────────────────────
+    printf "\n"
+    info "Function-level instruction profile"
+    printf "\n"
+
+    local tmpf
+    tmpf="$(make_tmp)"
+    perf report \
+        -i "$decoded" \
+        --stdio \
+        --no-children \
+        -g none \
+        --sort dso,symbol \
+        --percent-limit 0.3 \
+        2>/dev/null > "$tmpf" || true
+
+    if [ ! -s "$tmpf" ]; then
+        printf "  ${YELLOW}No PT data. Check: perf record -e intel_pt//u works?${RESET}\n\n"
+        return 0
+    fi
+
+    # Extract the overhead table
+    printf "  ${BOLD}%8s  %-20s  %-s${RESET}\n" "Insn%" "Library" "Symbol"
+    grep -E '^\s+[0-9]+\.[0-9]+%' "$tmpf" | head -20 | while IFS= read -r line; do
+        # Extract: overhead% dso symbol
+        local pct dso sym
+        pct="$(echo "$line" | awk '{ print $1 }')"
+        dso="$(echo "$line" | awk '{ print $3 }')"
+        sym="$(echo "$line" | sed 's/.*\[.\] //')"
+        printf "  %8s  %-20s  %s\n" "$pct" "$dso" "$sym"
+    done
+
+    # ── Per-source-line for target function ───────────────────────
+    # perf annotate needs the full demangled symbol (with parameter types).
+    # Extract the exact symbol from perf report output.
+    local full_sym
+    full_sym="$(grep -oP '\[\.\] \K'"$FUNC"'\([^)]*\)' "$tmpf" | head -1)"
+    if [ -z "$full_sym" ]; then
+        full_sym="$FUNC"
+    fi
+
+    printf "\n"
+    info "Per-source-line: $full_sym"
+    printf "\n"
+
+    perf annotate \
+        -i "$decoded" \
+        --stdio \
+        --symbol="$full_sym" \
+        --percent-type=global-period \
+        2>/dev/null \
+    | awk '
+        # Print source lines and hot instructions (>0.1% global)
+        /^[[:space:]]*:.*\.h:/ || /^[[:space:]]*:.*\.cpp:/ { print "  " $0; next }
+        $1+0 > 0.10 { printf "  %s\n", $0 }
+    ' | head -100 || true
+
+    printf "\n"
+}
+
+cmd_pt() {
+    do_build
+    print_func_info
+    printf "\n"
+
+    local tag
+    tag="$(resolve_tag "${1:-}")"
+    local outdir="$PROF_DIR/$tag"
+    mkdir -p "$outdir"
+
+    do_perf_pt_collect "$outdir"
+    do_perf_pt_report "$outdir/pt"
+
+    save_meta "$outdir"
+    info "PT results: $outdir/pt"
+    printf "  ${DIM}Re-display: ./prof.sh pt-show $tag${RESET}\n"
+}
+
+cmd_pt_show() {
+    local tag
+    tag="$(resolve_tag "${1:-}")"
+    local outdir="$PROF_DIR/$tag/pt"
+    do_perf_pt_report "$outdir"
+}
+
 cmd_clean() {
     if [ -d "$PROF_DIR" ]; then
         local size
@@ -1384,6 +1532,8 @@ Commands:
   show     [tag] [func]   Show source-line hotspots from existing VTune result
   asm      [tag] [func]   Show assembly hotspots from existing VTune result
   hotlines [tag]          Show top-N hottest source lines across ALL functions
+  pt       [tag] [func]   Intel PT per-instruction profile (address-filtered, fast)
+  pt-show  [tag] [func]   Re-display PT results from existing collection
   list                    List all saved profiling runs
   clean                   Remove all profiling data
 
@@ -1479,13 +1629,15 @@ parse_args() {
         show)     cmd_show "$tag_arg" ;;
         asm)      cmd_asm "$tag_arg" ;;
         hotlines) cmd_hotlines "$tag_arg" ;;
+        pt)       cmd_pt "$tag_arg" ;;
+        pt-show)  cmd_pt_show "$tag_arg" ;;
         list)     cmd_list ;;
         clean)    cmd_clean ;;
     esac
 }
 
 case "${1:-}" in
-    bench|baseline|compare|profile|tma|tma-show|show|asm|hotlines)
+    bench|baseline|compare|profile|tma|tma-show|show|asm|hotlines|pt|pt-show)
         CMD="$1"; shift; parse_args "$CMD" "$@" ;;
     list)     cmd_list ;;
     clean)    cmd_clean ;;
