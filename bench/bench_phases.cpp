@@ -256,6 +256,13 @@ static void bench_phase2_subparts(
       static_cast<size_t>(trace.num_ops) * 256);
   uint32_t count = trace.num_ops;
 
+  // Pre-compute totals (used for scratch buffer sizing).
+  uint32_t trace_total_inputs = 0, trace_total_outputs = 0;
+  for (uint32_t i = 0; i < count; i++) {
+    trace_total_inputs += trace.entries[i].num_inputs;
+    trace_total_outputs += trace.entries[i].num_outputs;
+  }
+
   auto repopulate = [&]() {
     meta_log.reset();
     uint32_t cursor = 0;
@@ -346,8 +353,8 @@ static void bench_phase2_subparts(
     char* aux = (aux_bytes > 0) ?
         static_cast<char*>(bg.arena.alloc(aux_bytes, alignof(int64_t))) :
         nullptr;
-    bg.ensure_scratch_buffers();
-    uint32_t slot_cap = std::min(BackgroundThread::SCRATCH_SLOT_CAP,
+    bg.ensure_scratch_buffers(total_inputs, total_outputs);
+    uint32_t slot_cap = std::min(bg.slot_cap_max_,
         std::max(uint32_t{256}, total_inputs + total_outputs));
     std::memset(bg.scratch_slots_, 0,
                 slot_cap * sizeof(BackgroundThread::SlotInfo));
@@ -530,19 +537,20 @@ static void bench_phase2_subparts(
     auto* ref_graph = bg.build_trace(count);
     TraceEntry* ref_ops = ref_graph->ops;
 
-    bg.ensure_scratch_buffers();
+    // build_trace above already sized scratch buffers.
 
     for (uint32_t iter = 0; iter < iters; iter++) {
       // Reset PtrMap + populate with outputs (so lookups hit)
       bg.map_gen_++;
       if (bg.map_gen_ == 0) {
         std::memset(bg.scratch_map_, 0,
-                    BackgroundThread::PTR_MAP_CAP *
+                    bg.map_cap_ *
                     sizeof(BackgroundThread::PtrSlot));
         bg.map_gen_ = 1;
       }
       auto* local_map = bg.scratch_map_;
       uint8_t local_gen = bg.map_gen_;
+      uint32_t local_mask = bg.ptr_mask_;
 
       // Insert all outputs so lookups can find them
       for (uint32_t i = 0; i < count; i++) {
@@ -551,7 +559,7 @@ static void bench_phase2_subparts(
           void* ptr = te.output_metas[j].data_ptr;
           if (ptr)
             (void)BackgroundThread::ptr_map_insert(
-                local_map, local_gen, ptr, OpIndex{i},
+                local_map, local_gen, local_mask, ptr, OpIndex{i},
                 static_cast<uint8_t>(j), SlotId{0});
         }
       }
@@ -566,7 +574,7 @@ static void bench_phase2_subparts(
         for (uint16_t j = 0; j < te.num_inputs; j++) {
           void* ptr = te.input_metas[j].data_ptr;
           auto lookup = BackgroundThread::ptr_map_lookup(
-              local_map, local_gen, ptr);
+              local_map, local_gen, local_mask, ptr);
           if (lookup.op_index.is_valid()) dummy_edges++;
         }
       }
@@ -592,19 +600,20 @@ static void bench_phase2_subparts(
     auto* ref_graph = bg.build_trace(count);
     TraceEntry* ref_ops = ref_graph->ops;
 
-    bg.ensure_scratch_buffers();
+    // build_trace above already sized scratch buffers.
 
     for (uint32_t iter = 0; iter < iters; iter++) {
       // Fresh PtrMap each iteration
       bg.map_gen_++;
       if (bg.map_gen_ == 0) {
         std::memset(bg.scratch_map_, 0,
-                    BackgroundThread::PTR_MAP_CAP *
+                    bg.map_cap_ *
                     sizeof(BackgroundThread::PtrSlot));
         bg.map_gen_ = 1;
       }
       auto* local_map = bg.scratch_map_;
       uint8_t local_gen = bg.map_gen_;
+      uint32_t local_mask = bg.ptr_mask_;
 
       bench::ClobberMemory();
       uint64_t t0 = bench::rdtsc();
@@ -616,7 +625,7 @@ static void bench_phase2_subparts(
           void* ptr = te.output_metas[j].data_ptr;
           if (!ptr) continue;
           auto result = BackgroundThread::ptr_map_insert(
-              local_map, local_gen, ptr, OpIndex{i},
+              local_map, local_gen, local_mask, ptr, OpIndex{i},
               static_cast<uint8_t>(j), SlotId{0});
           if (result.was_alias) aliases++;
         }
@@ -633,7 +642,7 @@ static void bench_phase2_subparts(
 
   double ns_p3 = 0;
   {
-    bg.ensure_scratch_buffers();
+    // build_trace below will size scratch buffers.
     // Set up realistic slot data
     bg.current_trace.assign(trace.entries.begin(), trace.entries.end());
     bg.current_meta_starts.assign(trace.meta_starts.begin(), trace.meta_starts.end());

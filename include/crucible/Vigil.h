@@ -188,16 +188,34 @@ class Vigil {
 
     // ─── Control ───────────────────────────────────────────────────
 
-    // Spin-wait until TraceRing is drained (background thread has consumed
-    // all pending entries). Useful in tests and after the last forward pass.
-    // Returns when the ring is empty or after a 1-second timeout.
+    // Wait until the background thread has FULLY PROCESSED all entries
+    // that were in the ring at the time of this call.
+    //
+    // "Fully processed" = drained from ring + fed to IterationDetector
+    // + on_iteration_boundary() completed (build_trace, make_region,
+    // region_ready_cb all finished).
+    //
+    // Previous implementation waited for ring_->size() == 0, which is
+    // wrong: drain() empties the ring BEFORE processing starts, so
+    // flush() could return while the bg thread was still building the
+    // trace/region. Under CPU contention (parallel ctest), this race
+    // caused test_vigil_dispatch to see mode_ == RECORDING after flush.
+    //
+    // New: snapshot total_produced, wait until total_processed catches up.
+    // Release/acquire on total_processed ensures all bg side effects
+    // (pending_region_, mode_) are visible to fg after flush returns.
     void flush() {
-        using namespace std::chrono;
-        const auto deadline = steady_clock::now() + seconds(1);
-        while (ring_->size() > 0) {
-            if (steady_clock::now() > deadline) break;
-            std::this_thread::sleep_for(microseconds(100));
+        const uint64_t target = ring_->total_produced();
+        while (bg_.total_processed.load(std::memory_order_acquire) < target) {
+            CRUCIBLE_SPIN_PAUSE;
         }
+    }
+
+    // Query: has the bg thread fully processed all entries ever produced?
+    // Tests use this to verify flush() semantics explicitly.
+    [[nodiscard]] bool flush_complete() const {
+        return bg_.total_processed.load(std::memory_order_acquire)
+            >= ring_->total_produced();
     }
 
     // Restore the previous SUPERSEDED transaction as the active one.

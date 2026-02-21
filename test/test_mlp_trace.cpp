@@ -25,11 +25,10 @@
 //   }
 
 #include <crucible/Vigil.h>
+#include "test_harness.h"
 #include <cassert>
-#include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <thread>
 
 using namespace crucible;
 
@@ -243,15 +242,7 @@ static void feed_trigger(Vigil& vigil, uint32_t iter) {
     }
 }
 
-// Wait helpers.
-static void wait_mode(Vigil& vigil) {
-    auto deadline = std::chrono::steady_clock::now() +
-                    std::chrono::milliseconds(5000);
-    while (!vigil.is_compiled()) {
-        assert(std::chrono::steady_clock::now() < deadline);
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-}
+using test::flush_and_wait_compiled;
 
 // ═══════════════════════════════════════════════════════════════════
 // Main: simulate 5 training iterations through Crucible
@@ -288,8 +279,7 @@ int main() {
     feed_trigger(vigil, 2);
 
     // Wait for background thread to process everything.
-    vigil.flush();
-    wait_mode(vigil);
+    flush_and_wait_compiled(vigil);
 
     std::printf("\n   >>> Iteration boundary detected! <<<\n");
     std::printf("   BackgroundThread built RegionNode with %u ops\n",

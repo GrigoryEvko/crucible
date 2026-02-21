@@ -85,6 +85,13 @@
     { "name": "tidy",    "configurePreset": "tidy",    "output": { "outputOnFailure": true } },
     { "name": "tsan",    "configurePreset": "tsan",    "output": { "outputOnFailure": true } },
     { "name": "gcc",     "configurePreset": "gcc",     "output": { "outputOnFailure": true } },
-    { "name": "gcc16",   "configurePreset": "gcc16",   "output": { "outputOnFailure": true } }
+    { "name": "gcc16",   "configurePreset": "gcc16",   "output": { "outputOnFailure": true } },
+    {
+      "name": "stress",
+      "configurePreset": "default",
+      "displayName": "Repeat-until-fail ×50 (race condition detector)",
+      "output": { "outputOnFailure": true },
+      "execution": { "repeat": { "mode": "until-fail", "count": 50 } }
+    }
   ]
 }

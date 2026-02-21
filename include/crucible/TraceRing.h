@@ -209,6 +209,13 @@ struct CRUCIBLE_OWNER TraceRing {
         tail.load(std::memory_order_relaxed));
   }
 
+  // Total entries ever produced (monotonic).  Acquire: synchronizes with
+  // producer's release store in try_append().  Used by Vigil::flush() to
+  // snapshot the high-water mark before waiting for full processing.
+  [[nodiscard]] uint64_t total_produced() const CRUCIBLE_NO_THREAD_SAFETY {
+    return head.load(std::memory_order_acquire);
+  }
+
   // Only when both threads are quiescent (join/stop).
   void reset() CRUCIBLE_NO_THREAD_SAFETY {
     head.store(0, std::memory_order_relaxed);

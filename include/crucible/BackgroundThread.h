@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <bit>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -85,6 +86,14 @@ struct BackgroundThread {
   std::atomic<bool> running{false};
   std::thread thread;
 
+  // Total entries fully processed by the bg thread (monotonic).
+  // Incremented (release) after each drain+process cycle completes,
+  // including all on_iteration_boundary() calls and region_ready_cb
+  // invocations. Read (acquire) by Vigil::flush() to determine
+  // whether all entries produced before flush() have been handled.
+  // Own cache line: fg reads, bg writes — false sharing otherwise.
+  alignas(64) std::atomic<uint64_t> total_processed{0};
+
   // Divergence signal: fg thread sets this when compiled replay diverges.
   // bg thread checks at the start of each drain cycle and resets its
   // accumulated trace + detector, discarding stale data that would
@@ -134,15 +143,15 @@ struct BackgroundThread {
 
   // ── Scratch buffer capacities ──────────────────────────────────────
   //
-  // Allocated ONCE (calloc), reused every build_trace call.
+  // Dynamically sized to the workload. Grown (never shrunk) as needed.
   // PtrMap: gen-counter cleared (zero memset per call).
   // SlotInfo: memset only the used portion each call.
   // Edges: no init needed (written before read).
 
-  static constexpr uint32_t PTR_MAP_CAP = 4096;   // 96KB, optimal collision/cache balance
-  static constexpr uint32_t PTR_MASK = PTR_MAP_CAP - 1;
-  static constexpr uint32_t SCRATCH_SLOT_CAP = 8192;
-  static constexpr uint32_t SCRATCH_EDGE_CAP = 16384;
+  static constexpr uint32_t MIN_PTR_MAP_CAP = 4096;    // minimum PtrMap (small models)
+  static constexpr uint32_t MIN_SCRATCH_SLOT_CAP = 8192;
+  static constexpr uint32_t MIN_SCRATCH_EDGE_CAP = 16384;
+  static constexpr uint32_t MAX_PTR_MAP_CAP = uint32_t{1} << 30; // 1B entries; bit_ceil UB at 2^31
 
   // ── PtrMap: open-addressing hash map with generation counter ──────
   //
@@ -192,24 +201,63 @@ struct BackgroundThread {
     SlotId old_slot;           // previous slot_id (valid only if was_alias)
   };
 
-  // ── Scratch buffers (allocated once, reused forever) ──────────────
+  // ── Scratch buffers (dynamically sized, grown as needed) ──────────
 
   PtrSlot* scratch_map_ = nullptr;
   SlotInfo* scratch_slots_ = nullptr;
   Edge* scratch_edges_ = nullptr;
   uint8_t map_gen_ = 0;
 
-  void ensure_scratch_buffers() {
-    if (scratch_map_) [[likely]] return;
-    scratch_map_ = static_cast<PtrSlot*>(
-        std::calloc(PTR_MAP_CAP, sizeof(PtrSlot)));
-    if (!scratch_map_) [[unlikely]] std::abort();
-    scratch_slots_ = static_cast<SlotInfo*>(
-        std::calloc(SCRATCH_SLOT_CAP, sizeof(SlotInfo)));
-    if (!scratch_slots_) [[unlikely]] std::abort();
-    scratch_edges_ = static_cast<Edge*>(
-        std::calloc(SCRATCH_EDGE_CAP, sizeof(Edge)));
-    if (!scratch_edges_) [[unlikely]] std::abort();
+  // Current capacities (0 = not yet allocated).
+  uint32_t map_cap_ = 0;        // PtrMap capacity (always power of 2)
+  uint32_t ptr_mask_ = 0;       // map_cap_ - 1
+  uint32_t slot_cap_max_ = 0;   // SlotInfo buffer capacity
+  uint32_t edge_cap_max_ = 0;   // Edge buffer capacity
+
+  // Ensure scratch buffers are large enough for the given workload.
+  // Called after Phase 0 scan, which provides exact counts.
+  // Grows buffers if needed (never shrinks — amortized over iterations).
+  void ensure_scratch_buffers(uint32_t total_inputs, uint32_t total_outputs) {
+    // PtrMap: power-of-two, load factor < 50%.
+    // Unique ptrs ≈ total_outputs + external_inputs (small fraction).
+    uint32_t raw_map = std::max(MIN_PTR_MAP_CAP,
+        std::mul_sat(std::add_sat(total_outputs, uint32_t{256}), uint32_t{2}));
+    uint32_t needed_map = (raw_map >= MAX_PTR_MAP_CAP) ?
+        MAX_PTR_MAP_CAP : std::bit_ceil(raw_map);
+
+    // Slots: unique storages bounded by outputs + external headroom.
+    uint32_t needed_slots = std::max(MIN_SCRATCH_SLOT_CAP,
+        std::add_sat(total_outputs, uint32_t{1024}));
+
+    // Edges: DATA_FLOW (≤ total_inputs) + ALIAS (≤ total_outputs).
+    uint32_t needed_edges = std::max(MIN_SCRATCH_EDGE_CAP,
+        std::add_sat(total_inputs, total_outputs));
+
+    if (needed_map > map_cap_) {
+      std::free(scratch_map_);
+      map_cap_ = needed_map;
+      ptr_mask_ = map_cap_ - 1;
+      scratch_map_ = static_cast<PtrSlot*>(
+          std::calloc(map_cap_, sizeof(PtrSlot)));
+      if (!scratch_map_) [[unlikely]] std::abort();
+      map_gen_ = 0; // fresh buffer, reset gen
+    }
+
+    if (needed_slots > slot_cap_max_) {
+      std::free(scratch_slots_);
+      slot_cap_max_ = needed_slots;
+      scratch_slots_ = static_cast<SlotInfo*>(
+          std::calloc(slot_cap_max_, sizeof(SlotInfo)));
+      if (!scratch_slots_) [[unlikely]] std::abort();
+    }
+
+    if (needed_edges > edge_cap_max_) {
+      std::free(scratch_edges_);
+      edge_cap_max_ = needed_edges;
+      scratch_edges_ = static_cast<Edge*>(
+          std::calloc(edge_cap_max_, sizeof(Edge)));
+      if (!scratch_edges_) [[unlikely]] std::abort();
+    }
   }
 
   // ── PtrMap operations ─────────────────────────────────────────────
@@ -220,11 +268,11 @@ struct BackgroundThread {
   }
 
   [[nodiscard]] static InsertResult ptr_map_insert(
-      PtrSlot* map, uint8_t gen,
+      PtrSlot* map, uint8_t gen, uint32_t mask,
       void* key, OpIndex op_index, uint8_t port, SlotId slot_id) {
-    uint32_t idx = hash_ptr(key) & PTR_MASK;
-    for (uint32_t probe = 0; probe <= PTR_MASK; probe++) {
-      auto& s = map[(idx + probe) & PTR_MASK];
+    uint32_t idx = hash_ptr(key) & mask;
+    for (uint32_t probe = 0; probe <= mask; probe++) {
+      auto& s = map[(idx + probe) & mask];
       if (s.gen != gen) {
         // Stale generation → empty slot. Claim it.
         s.key = key;
@@ -254,11 +302,11 @@ struct BackgroundThread {
   };
 
   [[nodiscard]] static PtrLookup ptr_map_lookup(
-      const PtrSlot* map, uint8_t gen, void* key) {
+      const PtrSlot* map, uint8_t gen, uint32_t mask, void* key) {
     if (!key) return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};
-    uint32_t idx = hash_ptr(key) & PTR_MASK;
-    for (uint32_t probe = 0; probe <= PTR_MASK; probe++) {
-      auto& s = map[(idx + probe) & PTR_MASK];
+    uint32_t idx = hash_ptr(key) & mask;
+    for (uint32_t probe = 0; probe <= mask; probe++) {
+      auto& s = map[(idx + probe) & mask];
       if (s.gen == gen && s.key == key)
         return {.op_index = s.op_index, .slot_id = s.slot_id, .port = s.port};
       if (s.gen != gen)
@@ -289,7 +337,7 @@ struct BackgroundThread {
       uint32_t n = ring->drain(
           batch, BATCH_SIZE, meta_batch, scope_batch, callsite_batch);
       if (n == 0) {
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
+        CRUCIBLE_SPIN_PAUSE;
         continue;
       }
 
@@ -303,6 +351,11 @@ struct BackgroundThread {
           on_iteration_boundary();
         }
       }
+
+      // Signal: all entries in this batch are fully processed, including
+      // any on_iteration_boundary() calls (build_trace, make_region,
+      // region_ready_cb). Release pairs with acquire in Vigil::flush().
+      total_processed.fetch_add(n, std::memory_order_release);
     }
 
     // Drain remaining on shutdown.
@@ -404,8 +457,6 @@ struct BackgroundThread {
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] TraceGraph* build_trace(uint32_t count)
       CRUCIBLE_NO_THREAD_SAFETY {
-    ensure_scratch_buffers();
-
     // ── Hoist vector data pointers into locals ─────────────────────
     //
     // vector::operator[] reloads base+end from this->member on every
@@ -443,6 +494,10 @@ struct BackgroundThread {
       total_outputs += re.num_outputs;
       total_scalars += std::min(re.num_scalar_args, uint16_t(5));
     }
+
+    // ── Size scratch buffers to this workload (grow-only, no shrink) ──
+
+    ensure_scratch_buffers(total_inputs, total_outputs);
 
     // ── Phase 1: Bulk allocations (2 arena allocs + zero-copy metas) ──
 
@@ -486,13 +541,13 @@ struct BackgroundThread {
     map_gen_++;
     if (map_gen_ == 0) [[unlikely]] {
       // Wrap-around every 255 calls: full reset.
-      std::memset(scratch_map_, 0, PTR_MAP_CAP * sizeof(PtrSlot));
+      std::memset(scratch_map_, 0, map_cap_ * sizeof(PtrSlot));
       map_gen_ = 1;
     }
 
     // ── SlotInfo: memset only the portion we'll use ──
 
-    uint32_t slot_cap = std::min(SCRATCH_SLOT_CAP,
+    uint32_t slot_cap = std::min(slot_cap_max_,
         std::max(uint32_t{256}, total_inputs + total_outputs));
     std::memset(scratch_slots_, 0, slot_cap * sizeof(SlotInfo));
     uint32_t next_slot_raw = 0;
@@ -511,6 +566,7 @@ struct BackgroundThread {
     SlotInfo* const local_slots = scratch_slots_;
     Edge* const local_edges = scratch_edges_;
     const uint8_t local_gen = map_gen_;
+    const uint32_t local_mask = ptr_mask_;
 
     // ── Streaming content hash ──
 
@@ -602,11 +658,11 @@ struct BackgroundThread {
 
       for (uint16_t j = 0; j < te.num_inputs; j++) {
         void* ptr = te.input_metas[j].data_ptr;
-        auto lookup = ptr_map_lookup(local_map, local_gen, ptr);
+        auto lookup = ptr_map_lookup(local_map, local_gen, local_mask, ptr);
         te.input_trace_indices[j] = lookup.op_index;
         if (lookup.op_index.is_valid()) {
           te.input_slot_ids[j] = lookup.slot_id;
-          assert(num_edges < SCRATCH_EDGE_CAP);
+          assert(num_edges < edge_cap_max_);
           local_edges[num_edges++] = {
               .src = OpIndex{lookup.op_index.raw()}, .dst = OpIndex{i},
               .src_port = lookup.port, .dst_port = static_cast<uint8_t>(j),
@@ -628,7 +684,7 @@ struct BackgroundThread {
           si.device_type = te.input_metas[j].device_type;
           si.device_idx = te.input_metas[j].device_idx;
           si.layout = te.input_metas[j].layout;
-          (void)ptr_map_insert(local_map, local_gen,
+          (void)ptr_map_insert(local_map, local_gen, local_mask,
               ptr, OpIndex{}, 0, sid);
         } else {
           te.input_slot_ids[j] = SlotId{};
@@ -644,7 +700,7 @@ struct BackgroundThread {
           continue;
         }
 
-        auto result = ptr_map_insert(local_map, local_gen,
+        auto result = ptr_map_insert(local_map, local_gen, local_mask,
             ptr, OpIndex{i}, static_cast<uint8_t>(j), SlotId{0});
 
         if (result.was_alias) {
@@ -656,7 +712,7 @@ struct BackgroundThread {
             si.nbytes = std::max(si.nbytes, nb);
           }
           if (result.old_op.is_valid()) {
-            assert(num_edges < SCRATCH_EDGE_CAP);
+            assert(num_edges < edge_cap_max_);
             local_edges[num_edges++] = {
                 .src = OpIndex{result.old_op.raw()}, .dst = OpIndex{i},
                 .src_port = result.old_port, .dst_port = static_cast<uint8_t>(j),

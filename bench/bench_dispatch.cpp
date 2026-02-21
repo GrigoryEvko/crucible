@@ -23,10 +23,8 @@
 #include <crucible/Vigil.h>
 
 #include <cassert>
-#include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <thread>
 
 using namespace crucible;
 
@@ -99,13 +97,12 @@ static void feed_trigger(Vigil& vigil, uint32_t iter) {
     }
 }
 
-static void wait_mode_compiled(Vigil& vigil, uint32_t timeout_ms = 5000) {
-    [[maybe_unused]] auto deadline = std::chrono::steady_clock::now() +
-                                     std::chrono::milliseconds(timeout_ms);
+static void wait_mode_compiled(Vigil& vigil) {
+    uint64_t spins = 0;
     while (!vigil.is_compiled()) {
-        assert(std::chrono::steady_clock::now() < deadline
-               && "Vigil did not reach COMPILED mode in time");
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        assert(++spins < 100'000'000
+               && "Vigil did not reach COMPILED mode");
+        CRUCIBLE_SPIN_PAUSE;
     }
 }
 

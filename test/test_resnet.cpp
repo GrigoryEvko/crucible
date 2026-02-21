@@ -8,11 +8,10 @@
 // record 2 iterations → BackgroundThread detects boundary → 1000 compiled iters.
 
 #include <crucible/Vigil.h>
+#include "test_harness.h"
 #include <cassert>
-#include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <thread>
 #include <vector>
 
 using namespace crucible;
@@ -246,13 +245,7 @@ static void feed_trigger(Vigil& v, const std::vector<OpDef>& ops,
     }
 }
 
-static void wait_compiled(Vigil& v) {
-    auto dl = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (!v.is_compiled()) {
-        assert(std::chrono::steady_clock::now() < dl && "timeout");
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-}
+using test::flush_and_wait_compiled;
 
 // ═══════════════════════════════════════════════════════════════════
 
@@ -276,8 +269,7 @@ int main() {
     feed_iter(vigil, net.ops, 0);
     feed_iter(vigil, net.ops, 1);
     feed_trigger(vigil, net.ops, 2);
-    vigil.flush();
-    wait_compiled(vigil);
+    flush_and_wait_compiled(vigil);
 
     const auto* region = vigil.active_region();
     assert(region && region->plan);

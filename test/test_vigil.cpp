@@ -1,10 +1,9 @@
 #include <crucible/Vigil.h>
+#include "test_harness.h"
 #include <cassert>
-#include <chrono>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
-#include <thread>
 
 using crucible::SchemaHash;
 using crucible::ShapeHash;
@@ -76,16 +75,8 @@ int main() {
         }
     }
 
-    // ── flush() + wait for COMPILED mode (≤100ms) ────────────────────
-    vigil.flush();
-
-    using namespace std::chrono;
-    const auto deadline = steady_clock::now() + milliseconds(100);
-    while (!vigil.is_compiled()) {
-        assert(steady_clock::now() < deadline
-               && "Vigil did not reach COMPILED mode within 100ms");
-        std::this_thread::sleep_for(milliseconds(1));
-    }
+    // ── flush + wait for COMPILED mode ───────────────────────────────
+    crucible::test::flush_and_wait_compiled(vigil);
 
     assert(vigil.is_compiled());
     assert(vigil.active_region() != nullptr);

@@ -11,11 +11,9 @@
 #include <crucible/CrucibleContext.h>
 #include <crucible/BackgroundThread.h>
 #include <cassert>
-#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <thread>
 
 using namespace crucible;
 
@@ -106,17 +104,16 @@ static void feed_trigger(TraceRing* ring, MetaLog* meta_log, uint32_t iter) {
   }
 }
 
-// Poll active_region until set (or timeout).
-static RegionNode* wait_for_region(BackgroundThread& bt,
-                                   uint32_t timeout_ms = 5000) {
-  auto deadline = std::chrono::steady_clock::now() +
-                  std::chrono::milliseconds(timeout_ms);
-  while (std::chrono::steady_clock::now() < deadline) {
-    auto* r = bt.active_region.load(std::memory_order_acquire);
-    if (r) return r;
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+// Wait until bg thread has fully processed all entries produced so far.
+// Pure spin on atomic::load(acquire) — MESI delivers in 10-40ns.
+static void wait_processed(BackgroundThread& bt, TraceRing& ring) {
+  const uint64_t target = ring.total_produced();
+  uint64_t spins = 0;
+  while (bt.total_processed.load(std::memory_order_acquire) < target) {
+    assert(++spins < 100'000'000
+           && "bg thread did not finish processing");
+    CRUCIBLE_SPIN_PAUSE;
   }
-  return nullptr;
 }
 
 // ── Test 1: Full pipeline — record → detect → plan → replay ──
@@ -143,7 +140,8 @@ static void test_pipeline_basic() {
 
   bt.start(ring, meta_log);
 
-  auto* region = wait_for_region(bt);
+  wait_processed(bt, *ring);
+  auto* region = bt.active_region.load(std::memory_order_acquire);
   assert(region != nullptr && "BackgroundThread did not produce a region");
 
   // ── Verify region structure ──
@@ -222,7 +220,8 @@ static void test_pipeline_divergence() {
 
   bt.start(ring, meta_log);
 
-  auto* region = wait_for_region(bt);
+  wait_processed(bt, *ring);
+  auto* region = bt.active_region.load(std::memory_order_acquire);
   assert(region != nullptr);
 
   CrucibleContext ctx;
@@ -270,7 +269,8 @@ static void test_pipeline_data_flow() {
 
   bt.start(ring, meta_log);
 
-  auto* region = wait_for_region(bt);
+  wait_processed(bt, *ring);
+  auto* region = bt.active_region.load(std::memory_order_acquire);
   assert(region != nullptr);
 
   CrucibleContext ctx;
@@ -326,7 +326,8 @@ static void test_pipeline_pool_bounds() {
 
   bt.start(ring, meta_log);
 
-  auto* region = wait_for_region(bt);
+  wait_processed(bt, *ring);
+  auto* region = bt.active_region.load(std::memory_order_acquire);
   assert(region != nullptr);
 
   CrucibleContext ctx;
@@ -393,8 +394,9 @@ static void test_pipeline_multi_iteration() {
 
   bt.start(ring, meta_log);
 
-  // Wait for first region.
-  auto* region1 = wait_for_region(bt);
+  // Wait for bg to fully process first batch.
+  wait_processed(bt, *ring);
+  auto* region1 = bt.active_region.load(std::memory_order_acquire);
   assert(region1 != nullptr);
   assert(region1->num_ops == NUM_OPS);
 
@@ -420,15 +422,9 @@ static void test_pipeline_multi_iteration() {
   feed_iteration(ring, meta_log, 3);
   feed_trigger(ring, meta_log, 4);
 
-  // Wait for second region (active_region gets overwritten).
-  auto deadline = std::chrono::steady_clock::now() +
-                  std::chrono::milliseconds(5000);
-  RegionNode* region2 = nullptr;
-  while (std::chrono::steady_clock::now() < deadline) {
-    region2 = bt.active_region.load(std::memory_order_acquire);
-    if (region2 && region2 != region1) break;
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
+  // Wait for bg to fully process second batch.
+  wait_processed(bt, *ring);
+  auto* region2 = bt.active_region.load(std::memory_order_acquire);
   assert(region2 != nullptr && region2 != region1 &&
          "Second boundary did not fire");
   assert(region2->num_ops == NUM_OPS);
