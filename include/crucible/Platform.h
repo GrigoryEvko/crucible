@@ -19,6 +19,29 @@
 #endif
 
 // ═══════════════════════════════════════════════════════════════════
+// Spin-pause hint — the ONLY cross-thread synchronization primitive.
+//
+// Pure atomic::load(acquire) spin is how we wait. MESI cache-line
+// invalidation delivers writes in 10-40ns. No OS, no kernel, no
+// syscall. Just transistors talking to transistors.
+//
+// _mm_pause() / __yield tells the CPU "I'm spinning" — saves power,
+// avoids pipeline flush penalty on loop exit. Costs zero latency.
+//
+// NEVER use sleep_for, yield(), futex, condition_variable, or any
+// other OS-mediated wait. They add microseconds of jitter minimum.
+// ═══════════════════════════════════════════════════════════════════
+
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+  #include <immintrin.h>
+  #define CRUCIBLE_SPIN_PAUSE _mm_pause()
+#elif defined(__aarch64__) || defined(_M_ARM64)
+  #define CRUCIBLE_SPIN_PAUSE __asm__ volatile("yield")
+#else
+  #define CRUCIBLE_SPIN_PAUSE ((void)0)
+#endif
+
+// ═══════════════════════════════════════════════════════════════════
 // Thread safety annotations — Clang's -Wthread-safety (P1179R1)
 //
 // Compile-time data race detection via capability annotations.

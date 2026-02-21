@@ -9,11 +9,10 @@
 //   5. Repeated alternation (A→B→A→B)
 
 #include <crucible/Vigil.h>
+#include "test_harness.h"
 #include <cassert>
-#include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <thread>
 
 using namespace crucible;
 
@@ -114,15 +113,7 @@ static void feed_trigger(Vigil& vigil, const ShapeHash* shapes,
     }
 }
 
-static void wait_mode_compiled(Vigil& vigil, uint32_t timeout_ms = 5000) {
-    auto deadline = std::chrono::steady_clock::now() +
-                    std::chrono::milliseconds(timeout_ms);
-    while (!vigil.is_compiled()) {
-        assert(std::chrono::steady_clock::now() < deadline
-               && "Vigil did not reach COMPILED mode in time");
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-}
+using test::flush_and_wait_compiled;
 
 static void align_and_activate(Vigil& vigil, const ShapeHash* shapes,
                                 uint32_t variant, uint32_t iter) {
@@ -154,8 +145,7 @@ static void test_cache_switch_mid_iter() {
     feed_record(vigil, SHAPE_A, 0, 1);
     feed_trigger(vigil, SHAPE_A, 0, 2);
 
-    vigil.flush();
-    wait_mode_compiled(vigil);
+    flush_and_wait_compiled(vigil);
     align_and_activate(vigil, SHAPE_A, 0, 3);
 
     assert(vigil.region_cache().size() == 1);
@@ -183,8 +173,7 @@ static void test_cache_switch_mid_iter() {
         feed_record(vigil, SHAPE_B, 1, iter);
     feed_trigger(vigil, SHAPE_B, 1, 16);
 
-    vigil.flush();
-    wait_mode_compiled(vigil);
+    flush_and_wait_compiled(vigil);
 
     // Activate B via alignment.
     align_and_activate(vigil, SHAPE_B, 1, 17);
@@ -236,8 +225,7 @@ static void test_cache_data_migration() {
     feed_record(vigil, SHAPE_A, 0, 1);
     feed_trigger(vigil, SHAPE_A, 0, 2);
 
-    vigil.flush();
-    wait_mode_compiled(vigil);
+    flush_and_wait_compiled(vigil);
     align_and_activate(vigil, SHAPE_A, 0, 3);
 
     // Diverge from A to trigger fallback.
@@ -254,8 +242,7 @@ static void test_cache_data_migration() {
         feed_record(vigil, SHAPE_B, 1, iter);
     feed_trigger(vigil, SHAPE_B, 1, 16);
 
-    vigil.flush();
-    wait_mode_compiled(vigil);
+    flush_and_wait_compiled(vigil);
     align_and_activate(vigil, SHAPE_B, 1, 17);
 
     assert(vigil.region_cache().size() == 2);
@@ -301,8 +288,7 @@ static void test_cache_miss_fallback() {
     feed_record(vigil, SHAPE_A, 0, 1);
     feed_trigger(vigil, SHAPE_A, 0, 2);
 
-    vigil.flush();
-    wait_mode_compiled(vigil);
+    flush_and_wait_compiled(vigil);
     align_and_activate(vigil, SHAPE_A, 0, 3);
 
     // Diverge with a completely different schema — no cache match.
@@ -378,8 +364,7 @@ static void test_cache_repeated_switching() {
     feed_record(vigil, SHAPE_A, 0, 1);
     feed_trigger(vigil, SHAPE_A, 0, 2);
 
-    vigil.flush();
-    wait_mode_compiled(vigil);
+    flush_and_wait_compiled(vigil);
     align_and_activate(vigil, SHAPE_A, 0, 3);
 
     // Full A iteration.
@@ -400,8 +385,7 @@ static void test_cache_repeated_switching() {
         feed_record(vigil, SHAPE_B, 1, iter);
     feed_trigger(vigil, SHAPE_B, 1, 16);
 
-    vigil.flush();
-    wait_mode_compiled(vigil);
+    flush_and_wait_compiled(vigil);
     align_and_activate(vigil, SHAPE_B, 1, 17);
 
     assert(vigil.region_cache().size() == 2);

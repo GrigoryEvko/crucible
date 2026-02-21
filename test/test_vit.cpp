@@ -16,11 +16,10 @@
 //   - CLS token extraction (index_select)
 
 #include <crucible/Vigil.h>
+#include "test_harness.h"
 #include <cassert>
-#include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <thread>
 
 using namespace crucible;
 
@@ -220,13 +219,7 @@ static void feed_trigger(Vigil& v, uint32_t iter) {
     }
 }
 
-static void wait_compiled(Vigil& v) {
-    auto dl = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-    while (!v.is_compiled()) {
-        assert(std::chrono::steady_clock::now() < dl && "timeout");
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-}
+using test::flush_and_wait_compiled;
 
 // ═══════════════════════════════════════════════════════════════════
 // Main
@@ -246,8 +239,7 @@ int main() {
     feed_iteration(vigil, 0);
     feed_iteration(vigil, 1);
     feed_trigger(vigil, 2);
-    vigil.flush();
-    wait_compiled(vigil);
+    flush_and_wait_compiled(vigil);
 
     const auto* region = vigil.active_region();
     assert(region && region->plan);

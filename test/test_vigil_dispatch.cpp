@@ -9,11 +9,10 @@
 //   5. Pool bounds + activation wiring
 
 #include <crucible/Vigil.h>
+#include "test_harness.h"
 #include <cassert>
-#include <chrono>
 #include <cstdio>
 #include <cstring>
-#include <thread>
 
 using namespace crucible;
 
@@ -87,15 +86,7 @@ static void feed_trigger(Vigil& vigil, uint32_t iter) {
     }
 }
 
-static void wait_mode_compiled(Vigil& vigil, uint32_t timeout_ms = 5000) {
-    auto deadline = std::chrono::steady_clock::now() +
-                    std::chrono::milliseconds(timeout_ms);
-    while (!vigil.is_compiled()) {
-        assert(std::chrono::steady_clock::now() < deadline
-               && "Vigil did not reach COMPILED mode in time");
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-}
+using test::flush_and_wait_compiled;
 
 // Align CrucibleContext via K dispatch_op calls + complete the partial
 // iteration.  After return, engine is at position 0, ready for full
@@ -136,8 +127,7 @@ static void test_dispatch_basic() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    vigil.flush();
-    wait_mode_compiled(vigil);
+    flush_and_wait_compiled(vigil);
 
     align_and_activate(vigil, 3);
     assert(vigil.compiled_iterations() == 1);
@@ -176,8 +166,7 @@ static void test_dispatch_divergence() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    vigil.flush();
-    wait_mode_compiled(vigil);
+    flush_and_wait_compiled(vigil);
     align_and_activate(vigil, 3);
 
     // First few ops of new iteration match.
@@ -223,8 +212,7 @@ static void test_dispatch_recovery() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    vigil.flush();
-    wait_mode_compiled(vigil);
+    flush_and_wait_compiled(vigil);
 
     // Activate and immediately diverge.
     align_and_activate(vigil, 3);
@@ -248,11 +236,10 @@ static void test_dispatch_recovery() {
         feed_record(vigil, iter);
     feed_trigger(vigil, 16);
 
-    vigil.flush();
     // bg thread sets mode_=COMPILED and pending_region_ when it finds
     // a boundary in the clean data.  After divergence, mode_ was set
-    // to RECORDING, so wait_mode_compiled detects the new transition.
-    wait_mode_compiled(vigil);
+    // to RECORDING, so flush_and_wait detects the new transition.
+    flush_and_wait_compiled(vigil);
 
     // Re-align and activate.
     align_and_activate(vigil, 17);
@@ -279,8 +266,7 @@ static void test_dispatch_data_flow() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    vigil.flush();
-    wait_mode_compiled(vigil);
+    flush_and_wait_compiled(vigil);
     align_and_activate(vigil, 3);
 
     // Op 0: write pattern to output.
@@ -334,8 +320,7 @@ static void test_dispatch_pool_bounds() {
     feed_record(vigil, 1);
     feed_trigger(vigil, 2);
 
-    vigil.flush();
-    wait_mode_compiled(vigil);
+    flush_and_wait_compiled(vigil);
     align_and_activate(vigil, 3);
 
     auto& pool = vigil.context().pool();
