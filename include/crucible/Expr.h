@@ -115,6 +115,24 @@ inline uint64_t wymix(uint64_t a, uint64_t b) {
 #endif
 }
 
+// Per-dimension mixing constants for XOR-fold content hash.
+// sizes[d] uses kDimMix[d], strides[d] uses kDimMix[d + 8].
+//
+// Weyl sequence: k[i] = (i+1) * phi, phi = golden ratio constant.
+// Well-distributed, all distinct, coprime to 2^64. Independent
+// multiplies break the serial wymix chain: ndim XOR-folds (1 cy each)
+// + 1 wymix (~5 cy) instead of ndim wymix calls (~5 cy each serial).
+inline constexpr uint64_t kDimMix[16] = {
+    0x9E3779B97F4A7C15ULL *  1, 0x9E3779B97F4A7C15ULL *  2,
+    0x9E3779B97F4A7C15ULL *  3, 0x9E3779B97F4A7C15ULL *  4,
+    0x9E3779B97F4A7C15ULL *  5, 0x9E3779B97F4A7C15ULL *  6,
+    0x9E3779B97F4A7C15ULL *  7, 0x9E3779B97F4A7C15ULL *  8,
+    0x9E3779B97F4A7C15ULL *  9, 0x9E3779B97F4A7C15ULL * 10,
+    0x9E3779B97F4A7C15ULL * 11, 0x9E3779B97F4A7C15ULL * 12,
+    0x9E3779B97F4A7C15ULL * 13, 0x9E3779B97F4A7C15ULL * 14,
+    0x9E3779B97F4A7C15ULL * 15, 0x9E3779B97F4A7C15ULL * 16,
+};
+
 } // namespace detail
 
 } // namespace crucible

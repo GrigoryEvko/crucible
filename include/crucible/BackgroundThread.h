@@ -618,21 +618,25 @@ struct BackgroundThread {
           std::memcpy(te.scalar_args, re.scalar_values,
                       n_scalars * sizeof(int64_t));
 
-        // ── Streaming content hash: fold this op's contribution ──
+        // ── Streaming content hash: XOR-fold dimensions ──
+        //
+        // Independent multiplies (sizes[d] * kDimMix[d]) break the serial
+        // wymix chain. CPU pipelines all multiplies in parallel; XOR chain
+        // at 1 cy/op is the critical path. One wymix per tensor merges.
 
         content_h = detail::wymix(content_h, te.schema_hash.raw());
         for (uint16_t j = 0; j < n_in; j++) {
           const TensorMeta& m = te.input_metas[j];
+          uint64_t dim_h = 0;
           for (uint8_t d = 0; d < m.ndim; d++) {
-            content_h = detail::wymix(
-                content_h ^ static_cast<uint64_t>(m.sizes[d]),
-                static_cast<uint64_t>(m.strides[d]));
+            dim_h ^= static_cast<uint64_t>(m.sizes[d]) * detail::kDimMix[d];
+            dim_h ^= static_cast<uint64_t>(m.strides[d]) * detail::kDimMix[d + 8];
           }
-          content_h ^=
+          uint64_t meta_packed =
               static_cast<uint64_t>(std::to_underlying(m.dtype)) |
               (static_cast<uint64_t>(std::to_underlying(m.device_type)) << 8) |
               (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16);
-          content_h *= 0x9E3779B97F4A7C15ULL;
+          content_h = detail::wymix(content_h ^ dim_h, meta_packed);
         }
         if (n_scalars > 0) {
           for (uint16_t s = 0; s < n_scalars; s++) {
@@ -652,6 +656,29 @@ struct BackgroundThread {
 
         // Still hash schema for no-tensor ops (profiler hooks).
         content_h = detail::wymix(content_h, te.schema_hash.raw());
+      }
+
+      // ── PtrMap prefetch: hide L3 latency for next op's probes ──
+      //
+      // Prefetch the PtrMap slot for op i+1's first input and first
+      // output. ~200 cycles of current-op processing gives the
+      // prefetch time to bring the cache lines from L3 into L2.
+
+      if (i + 1 < count) {
+        MetaIndex next_ms = meta_data[i + 1];
+        if (next_ms.is_valid()) {
+          uint32_t next_off = next_ms.raw() - first_meta;
+          const auto& next_re = trace_data[i + 1];
+          if (next_re.num_inputs > 0) {
+            uint32_t idx = hash_ptr(meta_base[next_off].data_ptr) & local_mask;
+            __builtin_prefetch(&local_map[idx], 0, 1);
+          }
+          if (next_re.num_outputs > 0) {
+            uint32_t out_off = next_off + next_re.num_inputs;
+            uint32_t idx = hash_ptr(meta_base[out_off].data_ptr) & local_mask;
+            __builtin_prefetch(&local_map[idx], 1, 1);
+          }
+        }
       }
 
       // ── DFG edges + input slot tracking ──

@@ -497,19 +497,20 @@ static void bench_phase2_subparts(
         content_h = detail::wymix(content_h, te.schema_hash.raw());
         for (uint16_t j = 0; j < te.num_inputs; j++) {
           const TensorMeta& m = te.input_metas[j];
+          uint64_t dim_h = 0;
           for (uint8_t d = 0; d < m.ndim; d++) {
-            content_h = detail::wymix(
-                content_h ^ static_cast<uint64_t>(m.sizes[d]),
-                static_cast<uint64_t>(m.strides[d]));
+            dim_h ^= static_cast<uint64_t>(m.sizes[d]) * detail::kDimMix[d];
+            dim_h ^= static_cast<uint64_t>(m.strides[d]) * detail::kDimMix[d + 8];
           }
-          content_h ^=
+          uint64_t meta_packed =
               static_cast<uint64_t>(std::to_underlying(m.dtype)) |
               (static_cast<uint64_t>(std::to_underlying(m.device_type)) << 8) |
               (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16);
-          content_h *= 0x9E3779B97F4A7C15ULL;
+          content_h = detail::wymix(content_h ^ dim_h, meta_packed);
         }
         if (te.num_scalar_args > 0) {
-          for (uint16_t s = 0; s < te.num_scalar_args; s++) {
+          uint16_t n = std::min(te.num_scalar_args, uint16_t{5});
+          for (uint16_t s = 0; s < n; s++) {
             content_h ^= static_cast<uint64_t>(te.scalar_args[s]);
             content_h *= 0x100000001b3ULL;
           }

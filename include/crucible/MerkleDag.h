@@ -319,32 +319,31 @@ struct BranchNode : TraceNode {
 // ═══════════════════════════════════════════════════════════════════
 
 [[nodiscard]] inline ContentHash compute_content_hash(std::span<const TraceEntry> ops) {
-  // Streaming hash: wymix pairs sizes[d]+strides[d] per dimension in
-  // one 128-bit multiply (2 instructions on x86-64) instead of separate
-  // fmix64 calls (8 instructions each).  Final fmix64 ensures full
-  // avalanche.  For a 4-dim input: 4 wymix = ~12 instructions vs
-  // 9 fmix64 = 72 instructions in the old code.
+  // XOR-fold content hash: for each tensor, fold all dimensions into a
+  // single accumulator via independent multiplies (sizes[d] * kDimMix[d]),
+  // then one wymix per tensor. Breaks the serial wymix-per-dimension
+  // dependency chain: ndim XOR-folds (1 cy each, multiplies pipelined)
+  // + 1 wymix (~5 cy) instead of ndim × wymix (~5 cy each, serial).
+  // For ndim=4: ~13 cy vs ~22 cy per tensor (~40% faster).
   uint64_t h = 0x9E3779B97F4A7C15ULL;
 
   for (const auto& op : ops) {
-    // Op identity: wymix schema_hash into accumulator.
     h = detail::wymix(h, op.schema_hash.raw());
 
-    // Input tensor geometry: pair sizes[d] and strides[d] per dimension.
     for (uint16_t j = 0; j < op.num_inputs; j++) {
       const TensorMeta& m = op.input_metas[j];
+      uint64_t dim_h = 0;
       for (uint8_t d = 0; d < m.ndim; d++) {
-        h = detail::wymix(h ^ static_cast<uint64_t>(m.sizes[d]),
-                           static_cast<uint64_t>(m.strides[d]));
+        dim_h ^= static_cast<uint64_t>(m.sizes[d]) * detail::kDimMix[d];
+        dim_h ^= static_cast<uint64_t>(m.strides[d]) * detail::kDimMix[d + 8];
       }
-      // Dtype + device_type + device_idx packed into one multiply.
-      h ^= static_cast<uint64_t>(std::to_underlying(m.dtype)) |
-           (static_cast<uint64_t>(std::to_underlying(m.device_type)) << 8) |
-           (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16);
-      h *= 0x9E3779B97F4A7C15ULL;
+      uint64_t meta_packed =
+          static_cast<uint64_t>(std::to_underlying(m.dtype)) |
+          (static_cast<uint64_t>(std::to_underlying(m.device_type)) << 8) |
+          (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16);
+      h = detail::wymix(h ^ dim_h, meta_packed);
     }
 
-    // Scalar args (max 5 inline from TraceRing).
     if (op.scalar_args) {
       uint16_t n = std::min(op.num_scalar_args, uint16_t{5});
       for (uint16_t s = 0; s < n; s++) {
