@@ -19,7 +19,7 @@
       "displayName": "Clang 22 + libc++ (C++26, Release)",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_FLAGS": "-stdlib=libc++ -O3 -march=native -DNDEBUG"
+        "CMAKE_CXX_FLAGS": "-stdlib=libc++ -O3 -march=native -DNDEBUG -g"
       }
     },
     {
