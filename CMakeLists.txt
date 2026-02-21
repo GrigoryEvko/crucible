@@ -218,8 +218,10 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     # references, returning pointers to locals. Tested on our
     # codebase — zero warnings (Arena ownership model is clean).
     # In Clang trunk (post-22): promoted to -flifetime-safety.
-    "SHELL:-Xclang -fexperimental-lifetime-safety"  # 105
-    -Wexperimental-lifetime-safety      # 106  lifetime violation warnings
+    "SHELL:-Xclang -fexperimental-lifetime-safety"            # 105
+    "SHELL:-Xclang -fexperimental-lifetime-safety-inference"  # 105a auto-infer lifetimebound
+    -Wexperimental-lifetime-safety                            # 106  lifetime violation warnings
+    -Wexperimental-lifetime-safety-intra-tu-suggestions       # 106a suggest [[clang::lifetimebound]]
 
     # ── 2.5  Clang-only linker hardening ─────────────────────
     -fcf-protection=full                # 107  control-flow integrity
