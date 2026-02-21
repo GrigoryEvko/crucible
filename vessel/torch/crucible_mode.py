@@ -123,6 +123,7 @@ class _VesselLib:
 
 # ─── Dtype mapping ──────────────────────────────────────────────────
 
+# c10::ScalarType ordinals — must match Types.h exactly.
 _DTYPE_MAP = {
     torch.uint8: 0,
     torch.int8: 1,
@@ -138,13 +139,38 @@ _DTYPE_MAP = {
     torch.bool: 11,
     torch.bfloat16: 15,
 }
+# Add FP8/extended types if available in this PyTorch build.
+for _name, _ord in [
+    ("float8_e5m2", 23), ("float8_e4m3fn", 24),
+    ("float8_e5m2fnuz", 25), ("float8_e4m3fnuz", 26),
+    ("uint16", 27), ("uint32", 28), ("uint64", 29),
+]:
+    _dt = getattr(torch, _name, None)
+    if _dt is not None:
+        _DTYPE_MAP[_dt] = _ord
 
+# c10::DeviceType ordinals — must match Types.h exactly.
 _DEVICE_MAP = {
     "cpu": 0,
     "cuda": 1,
+    "mkldnn": 2,
+    "hip": 6,
     "xla": 9,
-    "hip": 20,
+    "mps": 13,
+    "privateuseone": 18,
 }
+
+# c10::Layout ordinals.
+_LAYOUT_MAP = {
+    torch.strided: 0,
+    torch.sparse_coo: 1,
+}
+# Add layouts that may not exist in all builds.
+for _name, _ord in [("sparse_csr", 2), ("sparse_csc", 3),
+                     ("sparse_bsr", 4), ("sparse_bsc", 5)]:
+    _ly = getattr(torch, _name, None)
+    if _ly is not None:
+        _LAYOUT_MAP[_ly] = _ord
 
 
 # ─── Scalar encoding ───────────────────────────────────────────────
@@ -382,19 +408,27 @@ class CrucibleMode(TorchDispatchMode):
     @staticmethod
     def _fill_meta(meta, tensor):
         ndim = tensor.dim()
-        meta.ndim = ndim
-        for d in range(ndim):
-            meta.sizes[d] = tensor.size(d)
-            meta.strides[d] = tensor.stride(d)
-        for d in range(ndim, 8):
+        # TensorMeta.sizes/strides are fixed [8]. Clamp to avoid OOB.
+        clamped = min(ndim, 8)
+        meta.ndim = clamped
+        if tensor.layout == torch.strided:
+            for d in range(clamped):
+                meta.sizes[d] = tensor.size(d)
+                meta.strides[d] = tensor.stride(d)
+        else:
+            # Sparse tensors: sizes available, strides not.
+            for d in range(clamped):
+                meta.sizes[d] = tensor.size(d)
+                meta.strides[d] = 0
+        for d in range(clamped, 8):
             meta.sizes[d] = 0
             meta.strides[d] = 0
-        meta.data_ptr = tensor.data_ptr()
+        meta.data_ptr = tensor.data_ptr() if tensor.layout == torch.strided else 0
         meta.dtype = _DTYPE_MAP.get(tensor.dtype, -1)
         dev = tensor.device
         meta.device_type = _DEVICE_MAP.get(dev.type, 0)
         meta.device_idx = dev.index if dev.index is not None else -1
-        meta.layout = 0
+        meta.layout = _LAYOUT_MAP.get(tensor.layout, 0)
 
     @staticmethod
     def _extract_tensors(args, kwargs):
@@ -409,6 +443,10 @@ class CrucibleMode(TorchDispatchMode):
         for v in kwargs.values():
             if isinstance(v, torch.Tensor):
                 tensors.append(v)
+            elif isinstance(v, (list, tuple)):
+                for x in v:
+                    if isinstance(x, torch.Tensor):
+                        tensors.append(x)
         return tensors
 
     @staticmethod
