@@ -98,7 +98,7 @@ struct RegionCache {
     [[nodiscard]] const RegionNode* find_alternate(
         uint32_t pos,
         SchemaHash schema, ShapeHash shape,
-        const RegionNode* exclude = nullptr) const
+        const RegionNode* exclude = nullptr) const CRUCIBLE_LIFETIMEBOUND
     {
         for (uint32_t i = 0; i < count_; i++) {
             const uint32_t idx = (head_ - 1 - i) & MASK;
@@ -117,7 +117,7 @@ struct RegionCache {
 
     // Find by exact content hash.  Scans inline content_hashes_ —
     // zero pointer chasing into RegionNode.
-    [[nodiscard]] const RegionNode* find(ContentHash hash) const {
+    [[nodiscard]] const RegionNode* find(ContentHash hash) const CRUCIBLE_LIFETIMEBOUND {
         for (uint32_t i = 0; i < count_; i++) {
             const uint32_t idx = (head_ - 1 - i) & MASK;
             if (content_hashes_[idx] == hash) return regions_[idx];

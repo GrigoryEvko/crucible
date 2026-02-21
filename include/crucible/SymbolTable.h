@@ -9,6 +9,7 @@
 // rewriting without calling back into Python.
 
 #include <crucible/Ops.h>
+#include <crucible/Platform.h>
 #include <crucible/Types.h>
 
 #include <bit>
@@ -47,8 +48,9 @@ struct SymbolEntry {
 };
 
 static_assert(sizeof(SymbolEntry) == 32, "SymbolEntry should be 32 bytes");
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SymbolEntry);
 
-class SymbolTable {
+class CRUCIBLE_OWNER SymbolTable {
  public:
   // Sentinel values for integer ranges.
   // INT64_MIN is reserved as "no hint" sentinel, so -int_oo uses MIN+1.
@@ -120,7 +122,7 @@ class SymbolTable {
 
   // ---- Queries ----
 
-  [[nodiscard]] const SymbolEntry& operator[](SymbolId id) const {
+  [[nodiscard]] const SymbolEntry& operator[](SymbolId id) const CRUCIBLE_LIFETIMEBOUND {
     return entries_[id.raw()];
   }
 

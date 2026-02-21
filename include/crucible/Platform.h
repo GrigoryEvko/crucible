@@ -85,6 +85,38 @@
 #endif
 
 // ═══════════════════════════════════════════════════════════════════
+// D3390 "Safe C++" annotations — Clang 22 approximations
+//
+// Borrow checking:  CRUCIBLE_LIFETIMEBOUND marks functions whose
+//   return value's lifetime is bounded by `*this` or a parameter.
+//   Clang emits -Wdangling when temporaries outlive the binding.
+//
+// Unsafe context:   CRUCIBLE_UNSAFE_BUFFER_USAGE marks functions that
+//   intentionally use raw ptr[i] / ptr+n. Suppresses -Wunsafe-buffer-usage
+//   inside the function body; warns at call sites instead.
+//
+// Ownership model:  CRUCIBLE_OWNER marks types that own heap memory.
+//   Enables -Wdangling-gsl to catch dangling from owner temporaries.
+//   CRUCIBLE_POINTER would mark borrowing types — deferred (Arena
+//   borrowing model doesn't fit the GSL Owner→Pointer pattern cleanly).
+//
+// GCC warns on unknown [[clang::*]] / [[gsl::*]] via -Wattributes,
+// so the #ifdef guard is mandatory.
+// ═══════════════════════════════════════════════════════════════════
+
+#if defined(__clang__)
+  #define CRUCIBLE_LIFETIMEBOUND [[clang::lifetimebound]]
+  #define CRUCIBLE_OWNER [[gsl::Owner]]
+  #define CRUCIBLE_POINTER [[gsl::Pointer]]
+  #define CRUCIBLE_UNSAFE_BUFFER_USAGE [[clang::unsafe_buffer_usage]]
+#else
+  #define CRUCIBLE_LIFETIMEBOUND
+  #define CRUCIBLE_OWNER
+  #define CRUCIBLE_POINTER
+  #define CRUCIBLE_UNSAFE_BUFFER_USAGE
+#endif
+
+// ═══════════════════════════════════════════════════════════════════
 // C++26 feature detection
 //
 // Three-compiler strategy: Clang 22 (primary), GCC 15 (fallback),

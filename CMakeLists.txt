@@ -185,7 +185,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
 
     # Disabled warnings that conflict with our patterns
     -Wno-missing-field-initializers     #  90  we use {} init, not all fields
-    -Wno-unsafe-buffer-usage            #  91  too noisy for arena code (re-enable later)
+    # -Wno-unsafe-buffer-usage removed: D3390 unsafe context enabled.
+    # Functions doing intentional ptr[i]/ptr+n are marked CRUCIBLE_UNSAFE_BUFFER_USAGE.
 
     # libc++ marks printf as __attribute__((unused)), then we use it
     -Wno-used-but-marked-unused         #  92  false positive on std::printf

@@ -22,7 +22,7 @@
 
 namespace crucible {
 
-struct PoolAllocator {
+struct CRUCIBLE_OWNER PoolAllocator {
   PoolAllocator() = default;
   ~PoolAllocator() { destroy(); }
 
@@ -101,7 +101,7 @@ struct PoolAllocator {
   // this returns whatever was registered via register_external().
   //
   // Single 8-byte load — the entire point of pre-building the table.
-  [[nodiscard]] CRUCIBLE_INLINE void* slot_ptr(SlotId sid) const {
+  [[nodiscard]] CRUCIBLE_INLINE void* slot_ptr(SlotId sid) const CRUCIBLE_LIFETIMEBOUND {
     assert(sid.raw() < num_slots_ && "SlotId out of bounds");
     return ptr_table_[sid.raw()];
   }
@@ -127,12 +127,12 @@ struct PoolAllocator {
   //
   // vs the two-load path through slot_ptr() when the compiler cannot
   // prove that ptr_table_ doesn't change across loop iterations.
-  [[nodiscard]] CRUCIBLE_INLINE void* const* table() const {
+  [[nodiscard]] CRUCIBLE_INLINE void* const* table() const CRUCIBLE_LIFETIMEBOUND {
     return ptr_table_;
   }
 
   // ── Queries ──
-  [[nodiscard]] void* pool_base() const { return pool_; }
+  [[nodiscard]] void* pool_base() const CRUCIBLE_LIFETIMEBOUND { return pool_; }
   [[nodiscard]] uint64_t pool_bytes() const { return pool_bytes_; }
   [[nodiscard]] uint32_t num_slots() const { return num_slots_; }
   [[nodiscard]] uint32_t num_external() const { return num_external_; }

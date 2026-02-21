@@ -401,6 +401,7 @@ struct BackgroundThread {
   // Returns nullptr on MetaLog overflow.
   //
   // Public: called by on_iteration_boundary() and benchmarks.
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] TraceGraph* build_trace(uint32_t count)
       CRUCIBLE_NO_THREAD_SAFETY {
     ensure_scratch_buffers();
@@ -721,6 +722,7 @@ struct BackgroundThread {
   // O(n + k) counting sort replaces O(n²) insertion sort for event
   // ordering. Sweep-line best-fit allocation is unchanged.
   // Alignment: 256 bytes (CUDA coalescing).
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] MemoryPlan* compute_memory_plan(
       TensorSlot* slots, uint32_t num_slots)
       CRUCIBLE_NO_THREAD_SAFETY {

@@ -200,7 +200,7 @@ constexpr uint16_t composite_flags(
 //   - Constant collection: add(a, 3, b, 5) → add(a, b, 8)
 //   - Canonical ordering: add(b, a) → add(a, b) by pointer
 //   - Term combining: add(a, 2a) → 3a (via coefficient decomposition)
-class ExprPool {
+class CRUCIBLE_OWNER ExprPool {
  public:
   explicit ExprPool(size_t initial_capacity = 1 << 16) : arena_() {
     // Round up to power of 2, minimum one full SIMD group
@@ -729,7 +729,7 @@ class ExprPool {
   [[nodiscard]] size_t arena_bytes() const {
     return arena_.total_allocated();
   }
-  [[nodiscard]] const char* symbol_name(SymbolId id) const {
+  [[nodiscard]] const char* symbol_name(SymbolId id) const CRUCIBLE_LIFETIMEBOUND {
     return (id.raw() < symbol_names_.size()) ? symbol_names_[id.raw()] : nullptr;
   }
 
@@ -1086,6 +1086,7 @@ class ExprPool {
   // payload, so re-checking those is redundant on a hash match.
   // We still verify all fields as a safety net — the compiler optimizes
   // the packed comparison into a single 64-bit op.
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
   CRUCIBLE_INLINE const Expr* intern_node(
       Op op,
       const Expr* const* args,
@@ -1203,6 +1204,7 @@ class ExprPool {
     }
   }
 
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
   void rehash() {
     size_t old_cap = capacity_;
     int8_t* old_ctrl = ctrl_;
