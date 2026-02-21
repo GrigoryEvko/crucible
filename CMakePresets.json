@@ -41,6 +41,16 @@
       }
     },
     {
+      "name": "tsan",
+      "inherits": "default",
+      "displayName": "Clang 22 + ThreadSanitizer (AxRaceFree)",
+      "binaryDir": "${sourceDir}/build-tsan",
+      "cacheVariables": {
+        "CRUCIBLE_SANITIZE": "OFF",
+        "CRUCIBLE_TSAN": "ON"
+      }
+    },
+    {
       "name": "gcc",
       "displayName": "GCC 15 + libstdc++ (C++26)",
       "binaryDir": "${sourceDir}/build-gcc",
@@ -65,6 +75,7 @@
     { "name": "release", "configurePreset": "release" },
     { "name": "bench",   "configurePreset": "bench" },
     { "name": "tidy",    "configurePreset": "tidy" },
+    { "name": "tsan",    "configurePreset": "tsan" },
     { "name": "gcc",     "configurePreset": "gcc" },
     { "name": "gcc16",   "configurePreset": "gcc16" }
   ],
@@ -72,6 +83,7 @@
     { "name": "default", "configurePreset": "default", "output": { "outputOnFailure": true } },
     { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
     { "name": "tidy",    "configurePreset": "tidy",    "output": { "outputOnFailure": true } },
+    { "name": "tsan",    "configurePreset": "tsan",    "output": { "outputOnFailure": true } },
     { "name": "gcc",     "configurePreset": "gcc",     "output": { "outputOnFailure": true } },
     { "name": "gcc16",   "configurePreset": "gcc16",   "output": { "outputOnFailure": true } }
   ]
