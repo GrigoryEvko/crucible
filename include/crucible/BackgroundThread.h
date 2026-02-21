@@ -342,6 +342,28 @@ struct BackgroundThread {
       }
 
       for (uint32_t i = 0; i < n; i++) {
+        // Check for divergence reset INSIDE the drain loop.
+        //
+        // Race without this: fg sets reset_requested AFTER the top-of-loop
+        // check but BEFORE/DURING this drain batch. The bg thread then
+        // processes new post-divergence entries with stale retained-tail
+        // entries and an old detector state. The detector fires a false
+        // boundary from the stale + new entries, building a region whose
+        // ops are shifted from the true iteration start.
+        //
+        // Cost: one relaxed atomic load per entry (~1ns). Acceptable on
+        // the bg thread (~50-100ns/entry). Acquire fence deferred to the
+        // rare case where the flag is true.
+        if (reset_requested.load(std::memory_order_relaxed)) [[unlikely]] {
+          std::atomic_thread_fence(std::memory_order_acquire);
+          detector.reset();
+          current_trace.clear();
+          current_meta_starts.clear();
+          current_scope_hashes.clear();
+          current_callsite_hashes.clear();
+          reset_requested.store(false, std::memory_order_release);
+        }
+
         current_trace.push_back(batch[i]);
         current_meta_starts.push_back(meta_batch[i]);
         current_scope_hashes.push_back(scope_batch[i]);
