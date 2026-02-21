@@ -159,10 +159,14 @@ struct BackgroundThread {
 
   // ── SlotInfo: compact per-slot metadata for liveness tracking ─────
 
+  // Layout matches TensorSlot's bulk-copyable region (offset 8..31):
+  //   nbytes | birth_op | death_op | dtype | device_type |
+  //   device_idx | layout | is_external | pad
+  // Enables single memcpy(24) in Phase 3 instead of 10 field copies.
   struct SlotInfo {
-    OpIndex birth_op;            // 4B
-    OpIndex death_op;            // 4B
-    uint64_t nbytes = 0;        // 8B
+    uint64_t nbytes = 0;        // 8B — matches TensorSlot::nbytes
+    OpIndex birth_op;            // 4B — matches TensorSlot::birth_op
+    OpIndex death_op;            // 4B — matches TensorSlot::death_op
     ScalarType dtype = ScalarType::Undefined; // 1B
     DeviceType device_type = DeviceType::CPU; // 1B
     int8_t device_idx = -1;     // 1B
@@ -171,7 +175,7 @@ struct BackgroundThread {
     uint8_t pad[3]{};           // 3B
   };
 
-  static_assert(sizeof(SlotInfo) == 24, "SlotInfo: compact slot metadata");
+  static_assert(sizeof(SlotInfo) == 24, "SlotInfo: matches TensorSlot bulk region");
 
   // ── PtrMap insert result ──────────────────────────────────────────
 
@@ -678,19 +682,17 @@ struct BackgroundThread {
     TensorSlot* slots = nullptr;
     if (num_slots > 0) {
       slots = arena.alloc_array<TensorSlot>(num_slots);
+      static_assert(sizeof(SlotInfo) == 24);
+      static_assert(offsetof(TensorSlot, nbytes) == 8);
+      static_assert(offsetof(SlotInfo, nbytes) == 0);
       for (uint32_t s = 0; s < num_slots; s++) {
-        const auto& si = local_slots[s];
-        slots[s].offset_bytes = 0; // assigned by compute_memory_plan()
-        slots[s].nbytes = si.nbytes;
+        slots[s].offset_bytes = 0;  // assigned by compute_memory_plan()
+        // Bulk-copy 24B: nbytes|birth|death|dtype|dev|idx|layout|ext|pad
+        std::memcpy(&slots[s].nbytes, &local_slots[s], sizeof(SlotInfo));
         slots[s].slot_id = SlotId{s};
-        slots[s].birth_op = si.birth_op;
-        slots[s].death_op = si.death_op;
-        slots[s].dtype = si.dtype;
-        slots[s].device_type = si.device_type;
-        slots[s].device_idx = si.device_idx;
-        slots[s].layout = si.layout;
-        slots[s].is_external = si.is_external;
-        std::memset(slots[s].pad, 0, sizeof(slots[s].pad));
+        // pad2 is zero from NSDMI + arena alloc_array returns unzeroed,
+        // but TensorSlot has NSDMI pad2[4]{} so placement-new is fine.
+        std::memset(slots[s].pad2, 0, sizeof(slots[s].pad2));
       }
     }
 
