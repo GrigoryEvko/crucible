@@ -10,7 +10,22 @@
 #include <cassert>
 #include <cstdint>
 
+#ifdef __linux__
+#include <sched.h>
+#include <sys/resource.h>
+#endif
+
 namespace crucible::test {
+
+inline void elevate_priority() {
+#ifdef __linux__
+    setpriority(PRIO_PROCESS, 0, -10);
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(sched_getcpu(), &cpuset);
+    sched_setaffinity(0, sizeof(cpuset), &cpuset);
+#endif
+}
 
 // Wait until Vigil reaches COMPILED mode.
 // Pure spin — after flush(), mode_ is already visible (release/acquire

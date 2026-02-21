@@ -102,7 +102,7 @@ static void bench_content_hash_small() {
     for (uint32_t i = 0; i < N; i++)
         ops[i] = make_synthetic_entry(arena, 2, 1, 2, 4);
 
-    BENCH("content_hash (8 ops, 2in/1out, 4d)", 100'000, {
+    BENCH_CHECK("content_hash (8 ops, 2in/1out, 4d)", 100'000, 145.5, {
         auto h = compute_content_hash(std::span{ops, N});
         bench::DoNotOptimize(h);
     });
@@ -120,7 +120,7 @@ static void bench_content_hash_resnet() {
         ops[i] = make_synthetic_entry(arena, n_in, n_out, 1, 4);
     }
 
-    BENCH("content_hash (481 ops, ResNet-like)", 1'000, {
+    BENCH_CHECK("content_hash (481 ops, ResNet-like)", 1'000, 9153.3, {
         auto h = compute_content_hash(std::span{ops, N});
         bench::DoNotOptimize(h);
     });
@@ -138,7 +138,7 @@ static void bench_content_hash_gpt() {
         ops[i] = make_synthetic_entry(arena, n_in, n_out, 2, 4);
     }
 
-    BENCH("content_hash (1110 ops, GPT-like)", 1'000, {
+    BENCH_CHECK("content_hash (1110 ops, GPT-like)", 1'000, 30528.6, {
         auto h = compute_content_hash(std::span{ops, N});
         bench::DoNotOptimize(h);
     });
@@ -155,7 +155,7 @@ static void bench_make_region() {
     for (uint32_t i = 0; i < N; i++)
         ops[i] = make_synthetic_entry(data_arena, 2, 1, 1, 4);
 
-    BENCH("make_region (481 ops)", 10'000, {
+    BENCH_CHECK("make_region (481 ops)", 10'000, 9816.8, {
         Arena region_arena{1 << 20};
         auto* r = make_region(region_arena, ops, N);
         bench::DoNotOptimize(r);
@@ -174,7 +174,7 @@ static void bench_merkle_hash() {
 
     auto* region = make_region(arena, ops, N);
 
-    BENCH("compute_merkle_hash (RegionNode)", 1'000'000, {
+    BENCH_CHECK("compute_merkle_hash (RegionNode)", 1'000'000, 0.8, {
         auto h = compute_merkle_hash(region);
         bench::DoNotOptimize(h);
     });
@@ -259,7 +259,7 @@ static void bench_build_trace() {
         }
     };
 
-    BENCH("build_trace (481 ops, full pipeline)", 1'000, {
+    BENCH_CHECK("build_trace (481 ops, full pipeline)", 1'000, 37621.7, {
         // Reset bg state for each iteration.
         bg.current_trace = saved_trace;
         bg.current_meta_starts = saved_meta;
@@ -292,7 +292,7 @@ static void bench_build_csr() {
         edges[e] = {.src = OpIndex{src}, .dst = OpIndex{dst}, .src_port = 0, .dst_port = 0, .kind = EdgeKind::DATA_FLOW, .pad = 0};
     }
 
-    BENCH("build_csr (481 ops, 900 edges)", 10'000, {
+    BENCH_CHECK("build_csr (481 ops, 900 edges)", 10'000, 2542.1, {
         Arena csr_arena{1 << 16};
         auto* graph = csr_arena.alloc_obj<TraceGraph>();
         graph->ops = nullptr;
@@ -324,7 +324,7 @@ static void bench_memory_plan() {
     }
 
     BackgroundThread bg;
-    BENCH("compute_memory_plan (300 slots)", 10'000, {
+    BENCH_CHECK("compute_memory_plan (300 slots)", 10'000, 10243.7, {
         bg.arena.~Arena();
         new (&bg.arena) Arena{1 << 20};
         // Copy slots into bg arena.

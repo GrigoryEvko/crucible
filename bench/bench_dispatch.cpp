@@ -146,7 +146,7 @@ static void bench_tracering_raw() {
 
     // Pre-drain: keep tail moving so ring doesn't fill.
     // We'll manually advance tail between rounds.
-    BENCH("TraceRing::try_append (raw)", 1'000'000, {
+    BENCH_CHECK("TraceRing::try_append (raw)", 1'000'000, 0.8, {
         bench::DoNotOptimize(ring.try_append(entry));
     });
 
@@ -164,7 +164,7 @@ static void bench_metalog_raw() {
     metas[0] = make_meta(fake_ptr(0, 0));
     metas[1] = make_meta(fake_ptr(0, 1));
 
-    BENCH("MetaLog::try_append (2 metas)", 1'000'000, {
+    BENCH_CHECK("MetaLog::try_append (2 metas)", 1'000'000, 0.8, {
         bench::DoNotOptimize(&meta_log);
         bench::DoNotOptimize(meta_log.try_append(metas, 2));
     });
@@ -177,7 +177,7 @@ static void bench_record_op() {
 
     auto d = make_op(0, 1);  // 1 input, 1 output -> 2 metas
 
-    BENCH("Vigil::record_op (2 metas)", 1'000'000, {
+    BENCH_CHECK("Vigil::record_op (2 metas)", 1'000'000, 2.1, {
         bench::DoNotOptimize(
             vigil.record_op(d.entry, d.metas, d.n_metas));
     });
@@ -190,7 +190,7 @@ static void bench_dispatch_recording() {
 
     auto d = make_op(0, 1);  // 1 input, 1 output
 
-    BENCH("dispatch_op [RECORDING, no pending]", 1'000'000, {
+    BENCH_CHECK("dispatch_op [RECORDING, no pending]", 1'000'000, 2.0, {
         bench::DoNotOptimize(
             vigil.dispatch_op(d.entry, d.metas, d.n_metas));
     });
@@ -282,7 +282,7 @@ static void bench_replay_engine() {
     // DoNotOptimize(&engine) forces the compiler to assume engine's state
     // may have been modified by "external" code between iterations.
     uint32_t op_idx = 0;
-    BENCH("ReplayEngine::advance (cyclic)", 10'000'000, {
+    BENCH_CHECK("ReplayEngine::advance (cyclic)", 10'000'000, 1.8, {
         bench::DoNotOptimize(&engine);
         auto s = engine.advance(SCHEMA[op_idx], SHAPE[op_idx]);
         bench::DoNotOptimize(s);
@@ -310,7 +310,7 @@ static void bench_crucible_context() {
     // Without this, the compiler sees ctx is a local with no aliasing and
     // optimizes the advance() chain to near-zero by hoisting loads.
     uint32_t op_idx = 0;
-    BENCH("CrucibleContext::advance (cyclic)", 10'000'000, {
+    BENCH_CHECK("CrucibleContext::advance (cyclic)", 10'000'000, 1.2, {
         bench::DoNotOptimize(&ctx);
         auto s = ctx.advance(SCHEMA[op_idx], SHAPE[op_idx]);
         bench::DoNotOptimize(s);
@@ -332,7 +332,7 @@ static void bench_dispatch_compiled() {
         ops[i] = make_op(10, i);
 
     uint32_t op_idx = 0;
-    BENCH("dispatch_op [COMPILED, cyclic]", 10'000'000, {
+    BENCH_CHECK("dispatch_op [COMPILED, cyclic]", 10'000'000, 2.6, {
         auto& d = ops[op_idx];
         auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
         bench::DoNotOptimize(r);
@@ -351,7 +351,7 @@ static void bench_dispatch_compiled_with_output() {
         ops[i] = make_op(10, i);
 
     uint32_t op_idx = 0;
-    BENCH("dispatch_op [COMPILED + output_ptr]", 10'000'000, {
+    BENCH_CHECK("dispatch_op [COMPILED + output_ptr]", 10'000'000, 3.0, {
         auto& d = ops[op_idx];
         auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
         if (r.action == DispatchResult::Action::COMPILED)
@@ -372,7 +372,7 @@ static void bench_dispatch_full_iteration() {
         ops[i] = make_op(10, i);
 
     // Amortized per-op cost: one full 8-op iteration.
-    BENCH("dispatch_op [full 8-op iteration]", 1'000'000, {
+    BENCH_CHECK("dispatch_op [full 8-op iteration]", 1'000'000, 19.1, {
         for (uint32_t i = 0; i < NUM_OPS; i++) {
             auto& d = ops[i];
             auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
@@ -399,7 +399,7 @@ static void bench_dispatch_compiled_match_only() {
     // Actually: we need sequential ops. Measure ops 0..6 per round.
 
     uint32_t op_idx = 0;
-    BENCH("dispatch_op [COMPILED, MATCH only]", 10'000'000, {
+    BENCH_CHECK("dispatch_op [COMPILED, MATCH only]", 10'000'000, 2.7, {
         auto& d = ops[op_idx];
         auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
         bench::DoNotOptimize(r);
@@ -437,12 +437,12 @@ static void bench_dispatch_vs_record() {
 
     auto d = make_op(0, 1);
 
-    BENCH("record_op alone (2 metas)", 1'000'000, {
+    BENCH_CHECK("record_op alone (2 metas)", 1'000'000, 2.4, {
         bench::DoNotOptimize(
             vigil_record.record_op(d.entry, d.metas, d.n_metas));
     });
 
-    BENCH("dispatch_op [RECORDING] (2 metas)", 1'000'000, {
+    BENCH_CHECK("dispatch_op [RECORDING] (2 metas)", 1'000'000, 2.4, {
         bench::DoNotOptimize(
             vigil_dispatch.dispatch_op(d.entry, d.metas, d.n_metas));
     });
@@ -459,7 +459,7 @@ static void bench_record_op_zero_metas() {
     e.num_inputs = 0;
     e.num_outputs = 0;
 
-    BENCH("record_op (0 metas, profiler hook)", 1'000'000, {
+    BENCH_CHECK("record_op (0 metas, profiler hook)", 1'000'000, 0.8, {
         bench::DoNotOptimize(vigil.record_op(e, nullptr, 0));
     });
 }
@@ -562,7 +562,7 @@ static void bench_region_cache_lookup() {
     SchemaHash target_schema = SCHEMA[3];
     ShapeHash target_shape{SHAPE[3].raw() + 2 * 0x100};
 
-    BENCH("RegionCache::find_alternate (4 entries)", 10'000'000, {
+    BENCH_CHECK("RegionCache::find_alternate (4 entries)", 10'000'000, 0.9, {
         auto* found = cache.find_alternate(3, target_schema, target_shape, regions[0]);
         bench::DoNotOptimize(found);
     });
@@ -574,7 +574,7 @@ static void bench_is_compiled_check() {
     Vigil vigil;
     setup_compiled_vigil(vigil);
 
-    BENCH("Vigil::is_compiled() [true]", 100'000'000, {
+    BENCH_CHECK("Vigil::is_compiled() [true]", 100'000'000, 0.6, {
         bench::DoNotOptimize(&vigil);
         bench::DoNotOptimize(vigil.context().is_compiled());
     });
@@ -602,7 +602,7 @@ static void bench_dispatch_compiled_single_op() {
     assert(ctx.activate(br.region));
 
     uint32_t op_idx = 0;
-    BENCH("CrucibleContext::advance (32-op cyclic)", 10'000'000, {
+    BENCH_CHECK("CrucibleContext::advance (32-op cyclic)", 10'000'000, 1.5, {
         bench::DoNotOptimize(&ctx);
         auto s = ctx.advance(big_schema[op_idx], big_shape[op_idx]);
         bench::DoNotOptimize(s);
@@ -643,7 +643,7 @@ static void bench_pool_slot_ptr() {
     pool.init(plan);
 
     uint32_t slot_idx = 0;
-    BENCH("PoolAllocator::slot_ptr (cyclic)", 100'000'000, {
+    BENCH_CHECK("PoolAllocator::slot_ptr (cyclic)", 100'000'000, 0.6, {
         bench::DoNotOptimize(pool.slot_ptr(SlotId{slot_idx}));
         slot_idx = (slot_idx + 1) & (NSLOTS - 1);
     });
