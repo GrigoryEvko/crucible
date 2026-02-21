@@ -70,8 +70,8 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TensorMeta);
 
 struct TensorSlot {
   uint64_t offset_bytes = 0;  // 8B — assigned position in the memory pool (supports >4GB)
+  // ── 24B bulk-copyable region (matches SlotInfo layout) ──────────
   uint64_t nbytes = 0;        // 8B — storage size in bytes
-  SlotId slot_id;              // 4B — default = none (UINT32_MAX)
   OpIndex birth_op;            // 4B — default = none (UINT32_MAX)
   OpIndex death_op;            // 4B — default = none (UINT32_MAX)
   ScalarType dtype = ScalarType::Undefined; // 1B
@@ -79,7 +79,10 @@ struct TensorSlot {
   int8_t device_idx = -1;     // 1B
   Layout layout = Layout::Strided; // 1B
   bool is_external = false;   // 1B
-  uint8_t pad[3]{};           // 3B — pad to 40B
+  uint8_t pad[3]{};           // 3B
+  // ── end bulk-copyable region ────────────────────────────────────
+  SlotId slot_id;              // 4B — after bulk region for memcpy alignment
+  uint8_t pad2[4]{};           // 4B — pad to 40B (implicit alignment pad, explicit for InitSafe)
 };
 
 static_assert(sizeof(TensorSlot) == 40, "TensorSlot must be 40 bytes");
