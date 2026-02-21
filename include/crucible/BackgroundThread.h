@@ -862,114 +862,122 @@ struct BackgroundThread {
         dead_slots[death_cur[free_at]++] = s;
     }
 
-    // ── Sweep-line: process ops in order, FREE then ALLOC ──
+    // ── Sweep-line: process ops in order ──
     //
-    // Free list is kept sorted by offset so that merge-on-free is O(log n)
-    // (binary search for insertion point, then check left/right neighbors)
-    // instead of the previous O(n^2) nested scan. Best-fit allocation is
-    // still O(n) linear scan but benefits from sorted cache-friendly access.
+    // Unsorted SoA free list: sizes[] and offsets[] as separate arrays
+    // for cache-friendly first-fit scanning (8 sizes per cache line).
+    // O(1) free (append), O(f) first-fit scan, O(1) swap-remove.
+    // No merge, no memmove, no sorted insertion.
+    //
+    // Direct reuse at each op boundary captures most same-size matches,
+    // keeping f small. First-fit scan handles the rest.
 
-    struct FreeBlock {
-      uint64_t offset = 0;  // InitSafe
-      uint64_t size = 0;    // InitSafe
-    };
     constexpr uint32_t MAX_FREE = 4096;
-    // free_list is NOT zero-initialized: num_free bounds all access, and
-    // zeroing 64KB (4096 × 16B) per call is pure overhead on the hot path.
-    // FreeBlock fields have NSDMI documenting the intended zero state.
-    FreeBlock free_list[MAX_FREE];
+    // SoA layout: sizes[] contiguous for fast scanning, offsets[]
+    // only touched on hit. NOT zero-init: num_free bounds all access.
+    uint64_t fl_sizes[MAX_FREE];
+    uint64_t fl_offsets[MAX_FREE];
     uint32_t num_free = 0;
     uint64_t pool_end = 0;
 
-    for (uint32_t op = 0; op < num_ops; op++) {
-      // Free slots that die at this op (death_op + 1 == op).
-      for (uint32_t d = death_off[op]; d < death_off[op + 1]; d++) {
-        uint32_t s = dead_slots[d];
-        uint64_t offset = slots[s].offset_bytes;
-        uint64_t size = (slots[s].nbytes + ALIGNMENT - 1) &
-                        ~uint64_t(ALIGNMENT - 1);
+    // Free: O(1) append.
+    auto free_block = [&](uint64_t offset, uint64_t size) {
+      if (num_free < MAX_FREE) [[likely]] {
+        fl_offsets[num_free] = offset;
+        fl_sizes[num_free] = size;
+        ++num_free;
+      }
+    };
 
-        // Binary search: find first block with offset > freed offset.
-        // Invariant: free_list[0..num_free) sorted by .offset ascending.
-        uint32_t lo = 0;
-        uint32_t hi = num_free;
-        while (lo < hi) {
-          uint32_t mid = lo + (hi - lo) / 2;
-          if (free_list[mid].offset <= offset)
-            lo = mid + 1;
-          else
-            hi = mid;
+    // Alloc: first-fit scan over sizes[] + O(1) swap-remove.
+    auto alloc_slot = [&](uint32_t s, uint64_t aligned_size) {
+      for (uint32_t f = 0; f < num_free; f++) {
+        if (fl_sizes[f] >= aligned_size) {
+          slots[s].offset_bytes = fl_offsets[f];
+          if (fl_sizes[f] == aligned_size) {
+            // Swap-remove: move last entry into this slot.
+            fl_sizes[f] = fl_sizes[--num_free];
+            fl_offsets[f] = fl_offsets[num_free];
+          } else {
+            fl_offsets[f] += aligned_size;
+            fl_sizes[f] -= aligned_size;
+          }
+          return;
         }
-        // lo = insertion point: all blocks [0..lo) have offset <= freed offset.
-        // left neighbor = lo-1, right neighbor = lo.
+      }
+      slots[s].offset_bytes = pool_end;
+      pool_end += aligned_size;
+    };
 
-        bool merge_left = (lo > 0) &&
-            (free_list[lo - 1].offset + free_list[lo - 1].size == offset);
-        bool merge_right = (lo < num_free) &&
-            (offset + size == free_list[lo].offset);
+    // ── Direct reuse matching (per-op, stack-allocated) ──
 
-        if (merge_left && merge_right) [[unlikely]] {
-          // Three-way merge: left + freed + right coalesce into one block.
-          free_list[lo - 1].size += size + free_list[lo].size;
-          // Remove the right block by shifting everything after it left.
-          uint32_t tail = num_free - lo - 1;
-          if (tail > 0)
-            std::memmove(&free_list[lo], &free_list[lo + 1],
-                         tail * sizeof(FreeBlock));
-          --num_free;
-        } else if (merge_left) {
-          // Extend left neighbor forward.
-          free_list[lo - 1].size += size;
-        } else if (merge_right) {
-          // Extend right neighbor backward.
-          free_list[lo].offset = offset;
-          free_list[lo].size += size;
-        } else if (num_free < MAX_FREE) [[likely]] {
-          // Insert new block at position lo, shifting right.
-          uint32_t tail = num_free - lo;
-          if (tail > 0)
-            std::memmove(&free_list[lo + 1], &free_list[lo],
-                         tail * sizeof(FreeBlock));
-          free_list[lo] = {.offset = offset, .size = size};
-          ++num_free;
+    struct DyingInfo {
+      uint64_t aligned_size = 0;  // InitSafe
+      uint64_t offset = 0;        // InitSafe
+    };
+    constexpr uint32_t MAX_PER_OP = 64;
+
+    for (uint32_t op = 0; op < num_ops; op++) {
+      uint32_t d_beg = death_off[op], d_end = death_off[op + 1];
+      uint32_t b_beg = birth_off[op], b_end = birth_off[op + 1];
+      uint32_t nd = d_end - d_beg;
+      uint32_t nb = b_end - b_beg;
+
+      // ── Direct reuse: match dying→born to skip free list ──
+      uint32_t nd_cap = nd < MAX_PER_OP ? nd : MAX_PER_OP;
+      uint32_t nb_cap = nb < MAX_PER_OP ? nb : MAX_PER_OP;
+      bool d_used[MAX_PER_OP]{};
+      bool b_used[MAX_PER_OP]{};
+
+      if (nd_cap > 0 && nb_cap > 0) {
+        DyingInfo d_info[MAX_PER_OP];
+        for (uint32_t i = 0; i < nd_cap; i++) {
+          uint32_t ds = dead_slots[d_beg + i];
+          d_info[i] = {
+            .aligned_size = (slots[ds].nbytes + ALIGNMENT - 1) &
+                            ~uint64_t(ALIGNMENT - 1),
+            .offset = slots[ds].offset_bytes
+          };
+        }
+
+        for (uint32_t bi = 0; bi < nb_cap; bi++) {
+          uint32_t bs = born_slots[b_beg + bi];
+          uint64_t b_sz = (slots[bs].nbytes + ALIGNMENT - 1) &
+                          ~uint64_t(ALIGNMENT - 1);
+
+          uint32_t best_d = UINT32_MAX;
+          uint64_t best_waste = UINT64_MAX;
+          for (uint32_t di = 0; di < nd_cap; di++) {
+            if (!d_used[di] && d_info[di].aligned_size >= b_sz) {
+              uint64_t w = d_info[di].aligned_size - b_sz;
+              if (w < best_waste) { best_d = di; best_waste = w; }
+            }
+          }
+          if (best_d != UINT32_MAX) {
+            slots[bs].offset_bytes = d_info[best_d].offset;
+            d_used[best_d] = true;
+            b_used[bi] = true;
+            if (best_waste > 0)
+              free_block(d_info[best_d].offset + b_sz, best_waste);
+          }
         }
       }
 
-      // Allocate slots born at this op (best-fit scan).
-      for (uint32_t b = birth_off[op]; b < birth_off[op + 1]; b++) {
-        uint32_t s = born_slots[b];
-        uint64_t aligned_size = (slots[s].nbytes + ALIGNMENT - 1) &
-                                ~uint64_t(ALIGNMENT - 1);
-        uint32_t best = UINT32_MAX;
-        uint64_t best_waste = UINT64_MAX;
-        for (uint32_t f = 0; f < num_free; f++) {
-          if (free_list[f].size >= aligned_size) {
-            uint64_t waste = free_list[f].size - aligned_size;
-            if (waste < best_waste) {
-              best = f;
-              best_waste = waste;
-            }
-          }
-        }
-        if (best != UINT32_MAX) {
-          slots[s].offset_bytes = free_list[best].offset;
-          if (best_waste == 0) {
-            // Exact match: remove block, shift left to maintain sort.
-            uint32_t tail = num_free - best - 1;
-            if (tail > 0)
-              std::memmove(&free_list[best], &free_list[best + 1],
-                           tail * sizeof(FreeBlock));
-            --num_free;
-          } else {
-            // Partial use: shrink block from the front. Offset increases,
-            // which preserves sorted order (block was at this position).
-            free_list[best].offset += aligned_size;
-            free_list[best].size -= aligned_size;
-          }
-        } else {
-          slots[s].offset_bytes = pool_end;
-          pool_end += aligned_size;
-        }
+      // ── Free unmatched dying slots ──
+      for (uint32_t i = 0; i < nd; i++) {
+        if (i < nd_cap && d_used[i]) continue;
+        uint32_t ds = dead_slots[d_beg + i];
+        free_block(slots[ds].offset_bytes,
+                   (slots[ds].nbytes + ALIGNMENT - 1) &
+                       ~uint64_t(ALIGNMENT - 1));
+      }
+
+      // ── Alloc unmatched born slots ──
+      for (uint32_t i = 0; i < nb; i++) {
+        if (i < nb_cap && b_used[i]) continue;
+        uint32_t bs = born_slots[b_beg + i];
+        alloc_slot(bs, (slots[bs].nbytes + ALIGNMENT - 1) &
+                           ~uint64_t(ALIGNMENT - 1));
       }
     }
 
