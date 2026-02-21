@@ -390,7 +390,7 @@ inline Header read_header(Reader& r) {
 
 [[nodiscard]] inline BranchNode* deserialize_branch(
     std::span<const uint8_t>                  buf,
-    Arena&                                    arena,
+    Arena&                                    arena CRUCIBLE_LIFETIMEBOUND,
     std::function<TraceNode*(MerkleHash)>     resolve)
 {
     using namespace detail_ser;
