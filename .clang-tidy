@@ -1,0 +1,60 @@
+# ═══════════════════════════════════════════════════════════════
+# Crucible — clang-tidy configuration
+#
+# Enforces the four safety axioms at build time:
+#   InitSafe — every field initialized before read
+#   TypeSafe — strong types prevent category errors
+#   NullSafe — no null dereference in correct usage
+#   MemSafe  — no use-after-free, no double-free
+#
+# Run:  cmake --preset tidy && cmake --build --preset tidy
+# Or:   /home/grigory/.local/llvm/bin/clang-tidy -p build <file>
+# ═══════════════════════════════════════════════════════════════
+
+# Only analyze our headers, not system/third-party.
+HeaderFilterRegex: 'include/crucible/.*'
+
+Checks: >
+  -*,
+
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  -bugprone-implicit-widening-of-multiplication-result,
+
+  clang-analyzer-core.*,
+  clang-analyzer-cplusplus.*,
+  clang-analyzer-deadcode.*,
+  clang-analyzer-optin.cplusplus.UninitializedObject,
+
+  cppcoreguidelines-narrowing-conversions,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-slicing,
+
+  misc-redundant-expression,
+  misc-unused-using-decls,
+
+  modernize-use-designated-initializers,
+
+  performance-*,
+
+  readability-container-size-empty,
+  readability-make-member-function-const,
+
+CheckOptions:
+  # InitSafe: prefer NSDMI over constructor init-lists
+  - key: cppcoreguidelines-pro-type-member-init.UseAssignment
+    value: 'false'
+
+  # TypeSafe: don't flag single-element aggregates like SchemaHash{0x100}
+  - key: modernize-use-designated-initializers.IgnoreSingleElementAggregates
+    value: 'true'
+
+# Hard errors — these are non-negotiable safety violations.
+WarningsAsErrors: >
+  bugprone-use-after-move,
+  bugprone-dangling-handle,
+  clang-analyzer-core.NullDereference,
+  clang-analyzer-cplusplus.NewDelete,
+  clang-analyzer-cplusplus.NewDeleteLeaks,
+  clang-analyzer-optin.cplusplus.UninitializedObject,

@@ -32,6 +32,15 @@
       }
     },
     {
+      "name": "tidy",
+      "inherits": "default",
+      "displayName": "Clang 22 + clang-tidy (C++26)",
+      "binaryDir": "${sourceDir}/build-tidy",
+      "cacheVariables": {
+        "CRUCIBLE_TIDY": "ON"
+      }
+    },
+    {
       "name": "gcc",
       "displayName": "GCC 15 + libstdc++ (C++26)",
       "binaryDir": "${sourceDir}/build-gcc",
@@ -55,12 +64,14 @@
     { "name": "default", "configurePreset": "default" },
     { "name": "release", "configurePreset": "release" },
     { "name": "bench",   "configurePreset": "bench" },
+    { "name": "tidy",    "configurePreset": "tidy" },
     { "name": "gcc",     "configurePreset": "gcc" },
     { "name": "gcc16",   "configurePreset": "gcc16" }
   ],
   "testPresets": [
     { "name": "default", "configurePreset": "default", "output": { "outputOnFailure": true } },
     { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
+    { "name": "tidy",    "configurePreset": "tidy",    "output": { "outputOnFailure": true } },
     { "name": "gcc",     "configurePreset": "gcc",     "output": { "outputOnFailure": true } },
     { "name": "gcc16",   "configurePreset": "gcc16",   "output": { "outputOnFailure": true } }
   ]
