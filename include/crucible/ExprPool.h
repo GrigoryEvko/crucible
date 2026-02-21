@@ -921,7 +921,7 @@ class ExprPool {
           base = intern_node(Op::MUL, factors, nf, f, SymbolId{}, 0);
         }
       }
-      terms[nt++] = {coeff, base};
+      terms[nt++] = {.coeff = coeff, .base = base};
     }
 
     // Phase 3: Sort by base pointer, merge adjacent same-base entries

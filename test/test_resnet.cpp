@@ -83,19 +83,19 @@ struct ResNet50 {
     Tens conv(Tens in, int co, int k, int s, int p) {
         int oh = (in.h + 2 * p - k) / s + 1;
         int ow = (in.w + 2 * p - k) / s + 1;
-        Tens out{na++, 4, co, oh, ow};
+        Tens out{.ref = na++, .ndim = 4, .ch = co, .h = oh, .w = ow};
         emit(H_CONV, 2, 1, tref(in), pr(4, co, in.ch, k, k), tref(out));
         return out;
     }
 
     Tens bn(Tens in) {
-        Tens out{na++, in.ndim, in.ch, in.h, in.w};
+        Tens out{.ref = na++, .ndim = in.ndim, .ch = in.ch, .h = in.h, .w = in.w};
         emit(H_BN, 3, 1, tref(in), pr(1, in.ch), pr(1, in.ch), tref(out));
         return out;
     }
 
     Tens relu(Tens in) {
-        Tens out{na++, in.ndim, in.ch, in.h, in.w};
+        Tens out{.ref = na++, .ndim = in.ndim, .ch = in.ch, .h = in.h, .w = in.w};
         emit(H_RELU, 1, 1, tref(in), tref(out));
         return out;
     }
@@ -103,32 +103,32 @@ struct ResNet50 {
     Tens maxpool(Tens in, int k, int s, int p) {
         int oh = (in.h + 2 * p - k) / s + 1;
         int ow = (in.w + 2 * p - k) / s + 1;
-        Tens out{na++, 4, in.ch, oh, ow};
+        Tens out{.ref = na++, .ndim = 4, .ch = in.ch, .h = oh, .w = ow};
         emit(H_MAXPOOL, 1, 1, tref(in), tref(out));
         return out;
     }
 
     Tens add(Tens a, Tens b) {
-        Tens out{na++, a.ndim, a.ch, a.h, a.w};
+        Tens out{.ref = na++, .ndim = a.ndim, .ch = a.ch, .h = a.h, .w = a.w};
         emit(H_ADD, 2, 1, tref(a), tref(b), tref(out));
         return out;
     }
 
     Tens avgpool(Tens in) {
-        Tens out{na++, 2, in.ch, 0, 0};
+        Tens out{.ref = na++, .ndim = 2, .ch = in.ch, .h = 0, .w = 0};
         emit(H_AVGPOOL, 1, 1, tref(in), tref(out));
         return out;
     }
 
     Tens linear(Tens in, int out_ch) {
-        Tens out{na++, 2, out_ch, 0, 0};
+        Tens out{.ref = na++, .ndim = 2, .ch = out_ch, .h = 0, .w = 0};
         emit(H_MM, 3, 1, tref(in), pr(2, out_ch, in.ch),
              pr(1, out_ch), tref(out));
         return out;
     }
 
     Tens softmax(Tens in) {
-        Tens out{na++, 2, in.ch, 0, 0};
+        Tens out{.ref = na++, .ndim = 2, .ch = in.ch, .h = 0, .w = 0};
         emit(H_SOFTMAX, 1, 1, tref(in), tref(out));
         return out;
     }
@@ -153,7 +153,7 @@ struct ResNet50 {
         N = batch; ops.clear(); np = 0; na = 0; params = 0;
 
         // External input [N,3,224,224] — not counted in model params
-        Tens x{uint16_t(PARAM | np++), 4, 3, 224, 224};
+        Tens x{.ref = uint16_t(PARAM | np++), .ndim = 4, .ch = 3, .h = 224, .w = 224};
 
         // Stem: conv7×7/s2 → BN → ReLU → maxpool3×3/s2
         x = maxpool(relu(bn(conv(x, 64, 7, 2, 3))), 3, 2, 1);

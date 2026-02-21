@@ -324,7 +324,7 @@ struct CKernelTable {
             }
         }
         if (size >= CKERNEL_TABLE_CAP) return;
-        entries[size++] = {schema_hash, id};
+        entries[size++] = {.schema_hash = schema_hash, .id = id};
         std::ranges::sort(std::span{entries, size},
                           {}, &CKernelEntry::schema_hash);
     }

@@ -146,7 +146,7 @@ inline Header read_header(Reader& r) {
     std::span<uint8_t> buf)
 {
     using namespace detail_ser;
-    Writer w{buf.data(), 0, buf.size()};
+    Writer w{.buf = buf.data(), .pos = 0, .max = buf.size()};
 
     write_header(w, TraceNodeKind::REGION,
                  region->merkle_hash, region->content_hash);
@@ -234,7 +234,7 @@ inline Header read_header(Reader& r) {
     Arena&                   arena)
 {
     using namespace detail_ser;
-    Reader r{buf.data(), 0, buf.size()};
+    Reader r{.buf = buf.data(), .pos = 0, .len = buf.size()};
 
     const Header hdr = read_header(r);
     if (!r.ok
@@ -358,7 +358,7 @@ inline Header read_header(Reader& r) {
     std::span<uint8_t> buf)
 {
     using namespace detail_ser;
-    Writer w{buf.data(), 0, buf.size()};
+    Writer w{.buf = buf.data(), .pos = 0, .max = buf.size()};
 
     // For BRANCH nodes, the second 8B slot in the header stores the
     // continuation's merkle_hash (shared suffix after all arms merge).
@@ -394,7 +394,7 @@ inline Header read_header(Reader& r) {
     std::function<TraceNode*(MerkleHash)>     resolve)
 {
     using namespace detail_ser;
-    Reader r{buf.data(), 0, buf.size()};
+    Reader r{.buf = buf.data(), .pos = 0, .len = buf.size()};
 
     const Header hdr = read_header(r);
     if (!r.ok

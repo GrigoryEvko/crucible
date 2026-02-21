@@ -289,7 +289,7 @@ static void bench_build_csr() {
     for (uint32_t e = 0; e < NUM_EDGES; e++) {
         uint32_t src = static_cast<uint32_t>(bench_rand() % NUM_OPS);
         uint32_t dst = std::min(src + 1 + static_cast<uint32_t>(bench_rand() % 5), NUM_OPS - 1);
-        edges[e] = {OpIndex{src}, OpIndex{dst}, 0, 0, EdgeKind::DATA_FLOW, 0};
+        edges[e] = {.src = OpIndex{src}, .dst = OpIndex{dst}, .src_port = 0, .dst_port = 0, .kind = EdgeKind::DATA_FLOW, .pad = 0};
     }
 
     BENCH("build_csr (481 ops, 900 edges)", 10'000, {

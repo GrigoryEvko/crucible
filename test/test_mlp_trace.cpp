@@ -61,17 +61,17 @@ static constexpr uint32_t NUM_OPS = 10;
 
 static constexpr MlpOp MLP_OPS[NUM_OPS] = {
     // ── Forward pass ──
-    {"mm(input, W1)",       OP_MM,         ShapeHash{0xF001}, 2, 1}, // [4,8]×[8,4] → [4,4]
-    {"add(hidden, B1)",     OP_ADD,        ShapeHash{0xF002}, 2, 1}, // [4,4]+[4] → [4,4]
-    {"relu(biased)",        OP_RELU,       ShapeHash{0xF003}, 1, 1}, // [4,4] → [4,4]
-    {"mm(act, W2)",         OP_MM,         ShapeHash{0xF004}, 2, 1}, // [4,4]×[4,2] → [4,2]
-    {"add(logits, B2)",     OP_ADD,        ShapeHash{0xF005}, 2, 1}, // [4,2]+[2] → [4,2]
+    {.name = "mm(input, W1)",       .schema_hash = OP_MM,         .shape_hash = ShapeHash{0xF001}, .num_inputs = 2, .num_outputs = 1}, // [4,8]×[8,4] → [4,4]
+    {.name = "add(hidden, B1)",     .schema_hash = OP_ADD,        .shape_hash = ShapeHash{0xF002}, .num_inputs = 2, .num_outputs = 1}, // [4,4]+[4] → [4,4]
+    {.name = "relu(biased)",        .schema_hash = OP_RELU,       .shape_hash = ShapeHash{0xF003}, .num_inputs = 1, .num_outputs = 1}, // [4,4] → [4,4]
+    {.name = "mm(act, W2)",         .schema_hash = OP_MM,         .shape_hash = ShapeHash{0xF004}, .num_inputs = 2, .num_outputs = 1}, // [4,4]×[4,2] → [4,2]
+    {.name = "add(logits, B2)",     .schema_hash = OP_ADD,        .shape_hash = ShapeHash{0xF005}, .num_inputs = 2, .num_outputs = 1}, // [4,2]+[2] → [4,2]
     // ── Backward pass ──
-    {"loss_bwd(output)",    OP_LOSS_BWD,   ShapeHash{0xF006}, 1, 1}, // [4,2] → [4,2]
-    {"mm(grad, W2.T)",      OP_MM_BWD,     ShapeHash{0xF007}, 2, 1}, // [4,2]×[2,4] → [4,4]
-    {"relu_bwd(grad, act)", OP_RELU_BWD,   ShapeHash{0xF008}, 2, 1}, // [4,4]×[4,4] → [4,4]
-    {"mm(input.T, grad)",   OP_MM_BWD,     ShapeHash{0xF009}, 2, 1}, // [8,4]×[4,4] → [8,4] (dW1)
-    {"accum_grad(W1, dW1)", OP_ACCUM_GRAD, ShapeHash{0xF00A}, 2, 1}, // [8,4]+[8,4] → [8,4]
+    {.name = "loss_bwd(output)",    .schema_hash = OP_LOSS_BWD,   .shape_hash = ShapeHash{0xF006}, .num_inputs = 1, .num_outputs = 1}, // [4,2] → [4,2]
+    {.name = "mm(grad, W2.T)",      .schema_hash = OP_MM_BWD,     .shape_hash = ShapeHash{0xF007}, .num_inputs = 2, .num_outputs = 1}, // [4,2]×[2,4] → [4,4]
+    {.name = "relu_bwd(grad, act)", .schema_hash = OP_RELU_BWD,   .shape_hash = ShapeHash{0xF008}, .num_inputs = 2, .num_outputs = 1}, // [4,4]×[4,4] → [4,4]
+    {.name = "mm(input.T, grad)",   .schema_hash = OP_MM_BWD,     .shape_hash = ShapeHash{0xF009}, .num_inputs = 2, .num_outputs = 1}, // [8,4]×[4,4] → [8,4] (dW1)
+    {.name = "accum_grad(W1, dW1)", .schema_hash = OP_ACCUM_GRAD, .shape_hash = ShapeHash{0xF00A}, .num_inputs = 2, .num_outputs = 1}, // [8,4]+[8,4] → [8,4]
 };
 
 // ═══════════════════════════════════════════════════════════════════
