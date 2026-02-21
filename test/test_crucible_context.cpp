@@ -34,8 +34,11 @@ static void init_region(RegionNode* r, TraceEntry* ops, uint32_t n,
 
 static MemoryPlan make_simple_plan(TensorSlot* slots, uint32_t n) {
   for (uint32_t i = 0; i < n; i++) {
-    slots[i] = {i * 256, 256, OpIndex{0}, OpIndex{n},
-                 ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{i}, {}};
+    slots[i] = {.offset_bytes=i * 256, .nbytes=256,
+                 .birth_op=OpIndex{0}, .death_op=OpIndex{n},
+                 .dtype=ScalarType::Float, .device_type=DeviceType::CPU,
+                 .device_idx=0, .layout=Layout::Strided,
+                 .is_external=false, .pad={}, .slot_id=SlotId{i}, .pad2={}};
   }
   MemoryPlan plan{};
   plan.slots = slots;
@@ -263,10 +266,16 @@ static void test_external_slots() {
   // Slot 0: internal, slot 1: external.
   TensorSlot slots[2];
   std::memset(slots, 0, sizeof(slots));
-  slots[0] = {0, 256, OpIndex{0}, OpIndex{1},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{0}, {}};
-  slots[1] = {0, 128, OpIndex{0}, OpIndex{1},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{1}, {}};
+  slots[0] = {.offset_bytes=0, .nbytes=256,
+               .birth_op=OpIndex{0}, .death_op=OpIndex{1},
+               .dtype=ScalarType::Float, .device_type=DeviceType::CPU,
+               .device_idx=0, .layout=Layout::Strided,
+               .is_external=false, .pad={}, .slot_id=SlotId{0}, .pad2={}};
+  slots[1] = {.offset_bytes=0, .nbytes=128,
+               .birth_op=OpIndex{0}, .death_op=OpIndex{1},
+               .dtype=ScalarType::Float, .device_type=DeviceType::CPU,
+               .device_idx=0, .layout=Layout::Strided,
+               .is_external=true, .pad={}, .slot_id=SlotId{1}, .pad2={}};
 
   MemoryPlan plan{};
   plan.slots = slots;
@@ -303,12 +312,21 @@ static void test_integration_sweep_line() {
   constexpr uint32_t NSLOTS = 3;
   TensorSlot slots[NSLOTS];
   std::memset(slots, 0, sizeof(slots));
-  slots[0] = {0, 512, OpIndex{0}, OpIndex{2},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{0}, {}};
-  slots[1] = {0, 256, OpIndex{1}, OpIndex{2},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{1}, {}};
-  slots[2] = {0, 128, OpIndex{0}, OpIndex{2},
-               ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true,  {}, SlotId{2}, {}};
+  slots[0] = {.offset_bytes=0, .nbytes=512,
+               .birth_op=OpIndex{0}, .death_op=OpIndex{2},
+               .dtype=ScalarType::Float, .device_type=DeviceType::CPU,
+               .device_idx=0, .layout=Layout::Strided,
+               .is_external=false, .pad={}, .slot_id=SlotId{0}, .pad2={}};
+  slots[1] = {.offset_bytes=0, .nbytes=256,
+               .birth_op=OpIndex{1}, .death_op=OpIndex{2},
+               .dtype=ScalarType::Float, .device_type=DeviceType::CPU,
+               .device_idx=0, .layout=Layout::Strided,
+               .is_external=false, .pad={}, .slot_id=SlotId{1}, .pad2={}};
+  slots[2] = {.offset_bytes=0, .nbytes=128,
+               .birth_op=OpIndex{0}, .death_op=OpIndex{2},
+               .dtype=ScalarType::Float, .device_type=DeviceType::CPU,
+               .device_idx=0, .layout=Layout::Strided,
+               .is_external=true, .pad={}, .slot_id=SlotId{2}, .pad2={}};
 
   auto* plan = bt.compute_memory_plan(slots, NSLOTS);
   assert(plan != nullptr);

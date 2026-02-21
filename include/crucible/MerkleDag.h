@@ -649,8 +649,8 @@ inline void recompute_merkle(TraceNode* node) {
   branch->guard = guard;
   branch->num_arms = 2;
   branch->arms = arena.alloc_array<BranchNode::Arm>(2);
-  branch->arms[0] = {old_guard_value, divergence_point};
-  branch->arms[1] = {new_guard_value, new_region};
+  branch->arms[0] = {.value = old_guard_value, .target = divergence_point};
+  branch->arms[1] = {.value = new_guard_value, .target = new_region};
   branch->next = merge; // Shared continuation after merge
 
   // 6. Recompute Merkle hashes bottom-up

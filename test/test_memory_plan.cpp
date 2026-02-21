@@ -18,10 +18,26 @@ int main() {
 
   using crucible::SlotId; using crucible::OpIndex;
   using crucible::ScalarType; using crucible::DeviceType; using crucible::Layout;
-  slots[0] = {0, 1024, OpIndex{0}, OpIndex{5}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{0}, {}};
-  slots[1] = {0, 2048, OpIndex{1}, OpIndex{3}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{1}, {}};
-  slots[2] = {0, 1024, OpIndex{4}, OpIndex{7}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{2}, {}};
-  slots[3] = {0, 512,  OpIndex{0}, OpIndex{7}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true,  {}, SlotId{3}, {}};
+  slots[0] = {.offset_bytes = 0, .nbytes = 1024,
+              .birth_op = OpIndex{0}, .death_op = OpIndex{5},
+              .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+              .device_idx = 0, .layout = Layout::Strided,
+              .is_external = false, .pad = {}, .slot_id = SlotId{0}, .pad2 = {}};
+  slots[1] = {.offset_bytes = 0, .nbytes = 2048,
+              .birth_op = OpIndex{1}, .death_op = OpIndex{3},
+              .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+              .device_idx = 0, .layout = Layout::Strided,
+              .is_external = false, .pad = {}, .slot_id = SlotId{1}, .pad2 = {}};
+  slots[2] = {.offset_bytes = 0, .nbytes = 1024,
+              .birth_op = OpIndex{4}, .death_op = OpIndex{7},
+              .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+              .device_idx = 0, .layout = Layout::Strided,
+              .is_external = false, .pad = {}, .slot_id = SlotId{2}, .pad2 = {}};
+  slots[3] = {.offset_bytes = 0, .nbytes = 512,
+              .birth_op = OpIndex{0}, .death_op = OpIndex{7},
+              .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+              .device_idx = 0, .layout = Layout::Strided,
+              .is_external = true, .pad = {}, .slot_id = SlotId{3}, .pad2 = {}};
 
   auto* plan = bt.compute_memory_plan(slots, N);
   assert(plan != nullptr);

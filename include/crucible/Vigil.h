@@ -146,7 +146,7 @@ class Vigil {
             if (status == ReplayStatus::DIVERGED) [[unlikely]]
                 return handle_divergence_(entry, metas, n_metas,
                                           scope_hash, callsite_hash);
-            return {DispatchResult::Action::COMPILED, status, {}, OpIndex{}};
+            return {.action = DispatchResult::Action::COMPILED, .status = status, .pad = {}, .op_index = OpIndex{}};
         }
 
         // ── RECORDING fast path (hot) ──
@@ -163,8 +163,8 @@ class Vigil {
         }
 
         (void)record_op(entry, metas, n_metas, scope_hash, callsite_hash);
-        return {DispatchResult::Action::RECORD, ReplayStatus::MATCH, {},
-                OpIndex{}};
+        return {.action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {},
+                .op_index = OpIndex{}};
     }
 
     // ─── Queries (lock-free reads) ─────────────────────────────────
@@ -360,8 +360,8 @@ class Vigil {
             // Switched successfully.  Advance past the divergent op.
             auto s = ctx_.advance(entry.schema_hash, entry.shape_hash);
             if (s != ReplayStatus::DIVERGED) {
-                return {DispatchResult::Action::COMPILED, s, {},
-                        OpIndex{ctx_.engine().ops_matched()}};
+                return {.action = DispatchResult::Action::COMPILED, .status = s, .pad = {},
+                        .op_index = OpIndex{ctx_.engine().ops_matched()}};
             }
             // Double divergence — shouldn't happen.  Fall through.
         }
@@ -375,8 +375,8 @@ class Vigil {
         bg_.reset_requested.store(true, std::memory_order_release);
         // Don't record the divergent op — it poisons the bg thread's
         // iteration detector.
-        return {DispatchResult::Action::RECORD,
-                ReplayStatus::DIVERGED, {}, OpIndex{}};
+        return {.action = DispatchResult::Action::RECORD,
+                .status = ReplayStatus::DIVERGED, .pad = {}, .op_index = OpIndex{}};
     }
 
     // Transition handler: consume pending region, run alignment, or
@@ -402,8 +402,8 @@ class Vigil {
             (void)record_op(entry, metas, n_metas, scope_hash, callsite_hash);
         }
 
-        return {DispatchResult::Action::RECORD, ReplayStatus::MATCH, {},
-                OpIndex{}};
+        return {.action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {},
+                .op_index = OpIndex{}};
     }
 
     // ─── Private helpers ────────────────────────────────────────────

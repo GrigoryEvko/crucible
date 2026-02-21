@@ -120,8 +120,12 @@ int main() {
 
     // ── Build DFG edges: op0→op1, op1→op2 ───────────────────────
     crucible::Edge edges[2] = {
-        {crucible::OpIndex{0}, crucible::OpIndex{1}, 0, 0, crucible::EdgeKind::DATA_FLOW, 0},
-        {crucible::OpIndex{1}, crucible::OpIndex{2}, 0, 0, crucible::EdgeKind::DATA_FLOW, 0},
+        {.src = crucible::OpIndex{0}, .dst = crucible::OpIndex{1},
+         .src_port = 0, .dst_port = 0,
+         .kind = crucible::EdgeKind::DATA_FLOW, .pad = 0},
+        {.src = crucible::OpIndex{1}, .dst = crucible::OpIndex{2},
+         .src_port = 0, .dst_port = 0,
+         .kind = crucible::EdgeKind::DATA_FLOW, .pad = 0},
     };
 
     // ── Build TensorSlots ───────────────────────────────────────
@@ -130,13 +134,37 @@ int main() {
     using crucible::SlotId; using crucible::OpIndex;
     using crucible::ScalarType; using crucible::DeviceType; using crucible::Layout;
     // External slots
-    slots[0] = {0, 128, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{0}, {}};
-    slots[1] = {0, 128, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{1}, {}};
-    slots[4] = {0, 512, OpIndex{0}, OpIndex{2}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{4}, {}};
+    slots[0] = {.offset_bytes = 0, .nbytes = 128,
+                .birth_op = OpIndex{0}, .death_op = OpIndex{0},
+                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+                .device_idx = 0, .layout = Layout::Strided,
+                .is_external = true, .pad = {}, .slot_id = SlotId{0}, .pad2 = {}};
+    slots[1] = {.offset_bytes = 0, .nbytes = 128,
+                .birth_op = OpIndex{0}, .death_op = OpIndex{0},
+                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+                .device_idx = 0, .layout = Layout::Strided,
+                .is_external = true, .pad = {}, .slot_id = SlotId{1}, .pad2 = {}};
+    slots[4] = {.offset_bytes = 0, .nbytes = 512,
+                .birth_op = OpIndex{0}, .death_op = OpIndex{2},
+                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+                .device_idx = 0, .layout = Layout::Strided,
+                .is_external = true, .pad = {}, .slot_id = SlotId{4}, .pad2 = {}};
     // Internal slots
-    slots[2] = {0, 128, OpIndex{0}, OpIndex{1}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{2}, {}};
-    slots[3] = {0, 128, OpIndex{1}, OpIndex{2}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{3}, {}};
-    slots[5] = {0, 256, OpIndex{2}, OpIndex{2}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{5}, {}};
+    slots[2] = {.offset_bytes = 0, .nbytes = 128,
+                .birth_op = OpIndex{0}, .death_op = OpIndex{1},
+                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+                .device_idx = 0, .layout = Layout::Strided,
+                .is_external = false, .pad = {}, .slot_id = SlotId{2}, .pad2 = {}};
+    slots[3] = {.offset_bytes = 0, .nbytes = 128,
+                .birth_op = OpIndex{1}, .death_op = OpIndex{2},
+                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+                .device_idx = 0, .layout = Layout::Strided,
+                .is_external = false, .pad = {}, .slot_id = SlotId{3}, .pad2 = {}};
+    slots[5] = {.offset_bytes = 0, .nbytes = 256,
+                .birth_op = OpIndex{2}, .death_op = OpIndex{2},
+                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+                .device_idx = 0, .layout = Layout::Strided,
+                .is_external = false, .pad = {}, .slot_id = SlotId{5}, .pad2 = {}};
 
     // ── Assemble TraceGraph with CSR ────────────────────────────
     auto* graph_tg = arena.alloc_obj<crucible::TraceGraph>();
@@ -282,9 +310,21 @@ int main() {
 
     auto* slots2 = arena2.alloc_array<crucible::TensorSlot>(3);
     std::memset(slots2, 0, 3 * sizeof(crucible::TensorSlot));
-    slots2[0] = {0, 128, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{0}, {}};
-    slots2[1] = {0, 256, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{1}, {}};
-    slots2[2] = {0, 128, OpIndex{0}, OpIndex{0}, ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{2}, {}};
+    slots2[0] = {.offset_bytes = 0, .nbytes = 128,
+                 .birth_op = OpIndex{0}, .death_op = OpIndex{0},
+                 .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+                 .device_idx = 0, .layout = Layout::Strided,
+                 .is_external = true, .pad = {}, .slot_id = SlotId{0}, .pad2 = {}};
+    slots2[1] = {.offset_bytes = 0, .nbytes = 256,
+                 .birth_op = OpIndex{0}, .death_op = OpIndex{0},
+                 .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+                 .device_idx = 0, .layout = Layout::Strided,
+                 .is_external = true, .pad = {}, .slot_id = SlotId{1}, .pad2 = {}};
+    slots2[2] = {.offset_bytes = 0, .nbytes = 128,
+                 .birth_op = OpIndex{0}, .death_op = OpIndex{0},
+                 .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+                 .device_idx = 0, .layout = Layout::Strided,
+                 .is_external = false, .pad = {}, .slot_id = SlotId{2}, .pad2 = {}};
 
     auto* tg2 = arena2.alloc_obj<crucible::TraceGraph>();
     tg2->ops = ops2;

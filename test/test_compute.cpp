@@ -79,22 +79,43 @@ int main() {
 
     // External: live for the entire iteration
     //  {offset_bytes, nbytes, birth_op, death_op, dtype, device_type, device_idx, layout, is_external, pad[3], slot_id, pad2[4]}
-    slots[SL_X]  = {0, BATCH*IN_DIM*4,  OpIndex{0}, OpIndex{N_OPS},
-                    ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{SL_X}, {}};
-    slots[SL_W1] = {0, IN_DIM*HIDDEN*4,  OpIndex{0}, OpIndex{N_OPS},
-                    ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{SL_W1}, {}};
-    slots[SL_W2] = {0, HIDDEN*OUT_DIM*4, OpIndex{0}, OpIndex{N_OPS},
-                    ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{SL_W2}, {}};
+    slots[SL_X]  = {.offset_bytes=0, .nbytes=BATCH*IN_DIM*4,
+                    .birth_op=OpIndex{0}, .death_op=OpIndex{N_OPS},
+                    .dtype=ScalarType::Float, .device_type=DeviceType::CPU,
+                    .device_idx=0, .layout=Layout::Strided,
+                    .is_external=true, .pad={}, .slot_id=SlotId{SL_X}, .pad2={}};
+    slots[SL_W1] = {.offset_bytes=0, .nbytes=IN_DIM*HIDDEN*4,
+                    .birth_op=OpIndex{0}, .death_op=OpIndex{N_OPS},
+                    .dtype=ScalarType::Float, .device_type=DeviceType::CPU,
+                    .device_idx=0, .layout=Layout::Strided,
+                    .is_external=true, .pad={}, .slot_id=SlotId{SL_W1}, .pad2={}};
+    slots[SL_W2] = {.offset_bytes=0, .nbytes=HIDDEN*OUT_DIM*4,
+                    .birth_op=OpIndex{0}, .death_op=OpIndex{N_OPS},
+                    .dtype=ScalarType::Float, .device_type=DeviceType::CPU,
+                    .device_idx=0, .layout=Layout::Strided,
+                    .is_external=true, .pad={}, .slot_id=SlotId{SL_W2}, .pad2={}};
 
     // Internal: assigned by sweep-line
-    slots[SL_MM1] = {0, BATCH*HIDDEN*4,  OpIndex{0}, OpIndex{1},
-                     ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{SL_MM1}, {}};
-    slots[SL_REL] = {0, BATCH*HIDDEN*4,  OpIndex{1}, OpIndex{2},
-                     ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{SL_REL}, {}};
-    slots[SL_MM2] = {0, BATCH*OUT_DIM*4, OpIndex{2}, OpIndex{3},
-                     ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{SL_MM2}, {}};
-    slots[SL_SM]  = {0, BATCH*OUT_DIM*4, OpIndex{3}, OpIndex{3},
-                     ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{SL_SM}, {}};
+    slots[SL_MM1] = {.offset_bytes=0, .nbytes=BATCH*HIDDEN*4,
+                     .birth_op=OpIndex{0}, .death_op=OpIndex{1},
+                     .dtype=ScalarType::Float, .device_type=DeviceType::CPU,
+                     .device_idx=0, .layout=Layout::Strided,
+                     .is_external=false, .pad={}, .slot_id=SlotId{SL_MM1}, .pad2={}};
+    slots[SL_REL] = {.offset_bytes=0, .nbytes=BATCH*HIDDEN*4,
+                     .birth_op=OpIndex{1}, .death_op=OpIndex{2},
+                     .dtype=ScalarType::Float, .device_type=DeviceType::CPU,
+                     .device_idx=0, .layout=Layout::Strided,
+                     .is_external=false, .pad={}, .slot_id=SlotId{SL_REL}, .pad2={}};
+    slots[SL_MM2] = {.offset_bytes=0, .nbytes=BATCH*OUT_DIM*4,
+                     .birth_op=OpIndex{2}, .death_op=OpIndex{3},
+                     .dtype=ScalarType::Float, .device_type=DeviceType::CPU,
+                     .device_idx=0, .layout=Layout::Strided,
+                     .is_external=false, .pad={}, .slot_id=SlotId{SL_MM2}, .pad2={}};
+    slots[SL_SM]  = {.offset_bytes=0, .nbytes=BATCH*OUT_DIM*4,
+                     .birth_op=OpIndex{3}, .death_op=OpIndex{3},
+                     .dtype=ScalarType::Float, .device_type=DeviceType::CPU,
+                     .device_idx=0, .layout=Layout::Strided,
+                     .is_external=false, .pad={}, .slot_id=SlotId{SL_SM}, .pad2={}};
 
     // Sweep-line offset assignment
     BackgroundThread bt;

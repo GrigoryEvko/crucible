@@ -131,7 +131,7 @@ class Cipher {
 
         // Append log entry.
         const uint64_t ts = now_ns();
-        log_.push_back({step_id, content_hash, ts});
+        log_.push_back({.step_id = step_id, .hash = content_hash, .ts_ns = ts});
         {
             std::ofstream lf(root_ + "/log", std::ios::app);
             lf << std::format("{},{:016x},{}", step_id, content_hash.raw(), ts) << "\n";
@@ -200,7 +200,7 @@ class Cipher {
             const ContentHash hash{std::stoull(line.substr(p1 + 1, p2 - p1 - 1),
                                                   nullptr, 16)};
             const uint64_t    ts_ns   = std::stoull(line.substr(p2 + 1));
-            log_.push_back({step_id, hash, ts_ns});
+            log_.push_back({.step_id = step_id, .hash = hash, .ts_ns = ts_ns});
         }
     }
 

@@ -167,12 +167,18 @@ int main() {
     TensorSlot slots[N_SLOTS]{};
 
     auto make_ext = [](uint32_t id, uint64_t sz) -> TensorSlot {
-        return {0, sz, OpIndex{0}, OpIndex{N_OPS},
-                ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, true, {}, SlotId{id}, {}};
+        return {.offset_bytes = 0, .nbytes = sz,
+                .birth_op = OpIndex{0}, .death_op = OpIndex{N_OPS},
+                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+                .device_idx = 0, .layout = Layout::Strided,
+                .is_external = true, .pad = {}, .slot_id = SlotId{id}, .pad2 = {}};
     };
     auto make_int = [](uint32_t id, uint64_t sz, uint32_t birth, uint32_t death) -> TensorSlot {
-        return {0, sz, OpIndex{birth}, OpIndex{death},
-                ScalarType::Float, DeviceType::CPU, 0, Layout::Strided, false, {}, SlotId{id}, {}};
+        return {.offset_bytes = 0, .nbytes = sz,
+                .birth_op = OpIndex{birth}, .death_op = OpIndex{death},
+                .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
+                .device_idx = 0, .layout = Layout::Strided,
+                .is_external = false, .pad = {}, .slot_id = SlotId{id}, .pad2 = {}};
     };
 
     // External parameters (alive entire iteration)
@@ -285,21 +291,21 @@ int main() {
         SlotId* out; uint16_t n_out;
     };
     OpDef defs[N_OPS] = {
-        {H_LN1,     S_LN1,     op0_in,  3, op0_out,  1},
-        {H_MMQ,     S_MMQ,     op1_in,  2, op1_out,  1},
-        {H_MMK,     S_MMK,     op2_in,  2, op2_out,  1},
-        {H_MMV,     S_MMV,     op3_in,  2, op3_out,  1},
-        {H_SDPA,    S_SDPA,    op4_in,  3, op4_out,  1},
-        {H_MMOUT,   S_MMOUT,   op5_in,  2, op5_out,  1},
-        {H_ADD1,    S_ADD1,    op6_in,  2, op6_out,  1},
-        {H_LN2,     S_LN2,     op7_in,  3, op7_out,  1},
-        {H_MMFF1,   S_MMFF1,   op8_in,  2, op8_out,  1},
-        {H_RELU,    S_RELU,    op9_in,  1, op9_out,  1},
-        {H_MMFF2,   S_MMFF2,   op10_in, 2, op10_out, 1},
-        {H_ADD2,    S_ADD2,    op11_in, 2, op11_out, 1},
-        {H_IDXSEL,  S_IDXSEL,  op12_in, 1, op12_out, 1},
-        {H_MMHEAD,  S_MMHEAD,  op13_in, 2, op13_out, 1},
-        {H_SOFTMAX, S_SOFTMAX, op14_in, 1, op14_out, 1},
+        {.schema = H_LN1,     .shape = S_LN1,     .in = op0_in,  .n_in = 3, .out = op0_out,  .n_out = 1},
+        {.schema = H_MMQ,     .shape = S_MMQ,     .in = op1_in,  .n_in = 2, .out = op1_out,  .n_out = 1},
+        {.schema = H_MMK,     .shape = S_MMK,     .in = op2_in,  .n_in = 2, .out = op2_out,  .n_out = 1},
+        {.schema = H_MMV,     .shape = S_MMV,     .in = op3_in,  .n_in = 2, .out = op3_out,  .n_out = 1},
+        {.schema = H_SDPA,    .shape = S_SDPA,    .in = op4_in,  .n_in = 3, .out = op4_out,  .n_out = 1},
+        {.schema = H_MMOUT,   .shape = S_MMOUT,   .in = op5_in,  .n_in = 2, .out = op5_out,  .n_out = 1},
+        {.schema = H_ADD1,    .shape = S_ADD1,    .in = op6_in,  .n_in = 2, .out = op6_out,  .n_out = 1},
+        {.schema = H_LN2,     .shape = S_LN2,     .in = op7_in,  .n_in = 3, .out = op7_out,  .n_out = 1},
+        {.schema = H_MMFF1,   .shape = S_MMFF1,   .in = op8_in,  .n_in = 2, .out = op8_out,  .n_out = 1},
+        {.schema = H_RELU,    .shape = S_RELU,    .in = op9_in,  .n_in = 1, .out = op9_out,  .n_out = 1},
+        {.schema = H_MMFF2,   .shape = S_MMFF2,   .in = op10_in, .n_in = 2, .out = op10_out, .n_out = 1},
+        {.schema = H_ADD2,    .shape = S_ADD2,    .in = op11_in, .n_in = 2, .out = op11_out, .n_out = 1},
+        {.schema = H_IDXSEL,  .shape = S_IDXSEL,  .in = op12_in, .n_in = 1, .out = op12_out, .n_out = 1},
+        {.schema = H_MMHEAD,  .shape = S_MMHEAD,  .in = op13_in, .n_in = 2, .out = op13_out, .n_out = 1},
+        {.schema = H_SOFTMAX, .shape = S_SOFTMAX, .in = op14_in, .n_in = 1, .out = op14_out, .n_out = 1},
     };
 
     TraceEntry ops[N_OPS]{};

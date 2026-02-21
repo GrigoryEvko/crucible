@@ -47,11 +47,11 @@ struct TSpec {
 
 static constexpr TSpec pr(uint8_t id, uint8_t n,
     int64_t a=0, int64_t b=0, int64_t c=0, int64_t e=0) {
-    return {uint8_t(P | id), n, {a, b, c, e}};
+    return {.ref = uint8_t(P | id), .ndim = n, .d = {a, b, c, e}};
 }
 static constexpr TSpec ac(uint8_t id, uint8_t n,
     int64_t a=0, int64_t b=0, int64_t c=0, int64_t e=0) {
-    return {id, n, {a, b, c, e}};
+    return {.ref = id, .ndim = n, .d = {a, b, c, e}};
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -80,66 +80,76 @@ static constexpr int64_t B = 2, SEQ = 4, D = 16, MLP = 32, CL = 10;
 static const OpDef OPS[] = {
     // ── Forward (19 ops) ─────────────────────────────────────────
     //   Patch embedding
-    /*  0 */ {CONV,    ShapeHash{0xD101}, 2,1, {pr(0,4,B,3,8,8), pr(1,4,D,3,4,4),
-                                                ac(0,4,B,D,2,2)}},
-    /*  1 */ {RESHAPE, ShapeHash{0xD102}, 1,1, {ac(0,4,B,D,2,2), ac(1,3,B,SEQ,D)}},
-    /*  2 */ {ADD,     ShapeHash{0xD103}, 2,1, {ac(1,3,B,SEQ,D), pr(2,3,1,SEQ,D),
-                                                ac(2,3,B,SEQ,D)}},
+    /*  0 */ {.schema = CONV,    .shape = ShapeHash{0xD101}, .n_in = 2, .n_out = 1,
+              .t = {pr(0,4,B,3,8,8), pr(1,4,D,3,4,4), ac(0,4,B,D,2,2)}},
+    /*  1 */ {.schema = RESHAPE, .shape = ShapeHash{0xD102}, .n_in = 1, .n_out = 1,
+              .t = {ac(0,4,B,D,2,2), ac(1,3,B,SEQ,D)}},
+    /*  2 */ {.schema = ADD,     .shape = ShapeHash{0xD103}, .n_in = 2, .n_out = 1,
+              .t = {ac(1,3,B,SEQ,D), pr(2,3,1,SEQ,D), ac(2,3,B,SEQ,D)}},
 
     //   Transformer layer: self-attention
-    /*  3 */ {LN,      ShapeHash{0xD104}, 3,1, {ac(2,3,B,SEQ,D), pr(3,1,D), pr(4,1,D),
-                                                ac(3,3,B,SEQ,D)}},
-    /*  4 */ {MM,      ShapeHash{0xD105}, 2,1, {ac(3,3,B,SEQ,D), pr(5,2,D,D),
-                                                ac(4,3,B,SEQ,D)}},   // Q
-    /*  5 */ {MM,      ShapeHash{0xD106}, 2,1, {ac(3,3,B,SEQ,D), pr(6,2,D,D),
-                                                ac(5,3,B,SEQ,D)}},   // K
-    /*  6 */ {MM,      ShapeHash{0xD107}, 2,1, {ac(3,3,B,SEQ,D), pr(7,2,D,D),
-                                                ac(6,3,B,SEQ,D)}},   // V
-    /*  7 */ {SDPA,    ShapeHash{0xD108}, 3,1, {ac(4,3,B,SEQ,D), ac(5,3,B,SEQ,D),
-                                                ac(6,3,B,SEQ,D), ac(7,3,B,SEQ,D)}},
-    /*  8 */ {MM,      ShapeHash{0xD109}, 2,1, {ac(7,3,B,SEQ,D), pr(8,2,D,D),
-                                                ac(8,3,B,SEQ,D)}},   // out proj
-    /*  9 */ {ADD,     ShapeHash{0xD10A}, 2,1, {ac(8,3,B,SEQ,D), ac(2,3,B,SEQ,D),
-                                                ac(9,3,B,SEQ,D)}},   // residual 1
+    /*  3 */ {.schema = LN,      .shape = ShapeHash{0xD104}, .n_in = 3, .n_out = 1,
+              .t = {ac(2,3,B,SEQ,D), pr(3,1,D), pr(4,1,D), ac(3,3,B,SEQ,D)}},
+    /*  4 */ {.schema = MM,      .shape = ShapeHash{0xD105}, .n_in = 2, .n_out = 1,
+              .t = {ac(3,3,B,SEQ,D), pr(5,2,D,D), ac(4,3,B,SEQ,D)}},   // Q
+    /*  5 */ {.schema = MM,      .shape = ShapeHash{0xD106}, .n_in = 2, .n_out = 1,
+              .t = {ac(3,3,B,SEQ,D), pr(6,2,D,D), ac(5,3,B,SEQ,D)}},   // K
+    /*  6 */ {.schema = MM,      .shape = ShapeHash{0xD107}, .n_in = 2, .n_out = 1,
+              .t = {ac(3,3,B,SEQ,D), pr(7,2,D,D), ac(6,3,B,SEQ,D)}},   // V
+    /*  7 */ {.schema = SDPA,    .shape = ShapeHash{0xD108}, .n_in = 3, .n_out = 1,
+              .t = {ac(4,3,B,SEQ,D), ac(5,3,B,SEQ,D),
+                    ac(6,3,B,SEQ,D), ac(7,3,B,SEQ,D)}},
+    /*  8 */ {.schema = MM,      .shape = ShapeHash{0xD109}, .n_in = 2, .n_out = 1,
+              .t = {ac(7,3,B,SEQ,D), pr(8,2,D,D), ac(8,3,B,SEQ,D)}},   // out proj
+    /*  9 */ {.schema = ADD,     .shape = ShapeHash{0xD10A}, .n_in = 2, .n_out = 1,
+              .t = {ac(8,3,B,SEQ,D), ac(2,3,B,SEQ,D), ac(9,3,B,SEQ,D)}},   // residual 1
 
     //   Transformer layer: MLP
-    /* 10 */ {LN,      ShapeHash{0xD10B}, 3,1, {ac(9,3,B,SEQ,D), pr(9,1,D), pr(10,1,D),
-                                                ac(10,3,B,SEQ,D)}},
-    /* 11 */ {MM,      ShapeHash{0xD10C}, 2,1, {ac(10,3,B,SEQ,D), pr(11,2,D,MLP),
-                                                ac(11,3,B,SEQ,MLP)}}, // expand
-    /* 12 */ {GELU,    ShapeHash{0xD10D}, 1,1, {ac(11,3,B,SEQ,MLP), ac(12,3,B,SEQ,MLP)}},
-    /* 13 */ {MM,      ShapeHash{0xD10E}, 2,1, {ac(12,3,B,SEQ,MLP), pr(12,2,MLP,D),
-                                                ac(13,3,B,SEQ,D)}},   // contract
-    /* 14 */ {ADD,     ShapeHash{0xD10F}, 2,1, {ac(13,3,B,SEQ,D), ac(9,3,B,SEQ,D),
-                                                ac(14,3,B,SEQ,D)}},   // residual 2
+    /* 10 */ {.schema = LN,      .shape = ShapeHash{0xD10B}, .n_in = 3, .n_out = 1,
+              .t = {ac(9,3,B,SEQ,D), pr(9,1,D), pr(10,1,D), ac(10,3,B,SEQ,D)}},
+    /* 11 */ {.schema = MM,      .shape = ShapeHash{0xD10C}, .n_in = 2, .n_out = 1,
+              .t = {ac(10,3,B,SEQ,D), pr(11,2,D,MLP), ac(11,3,B,SEQ,MLP)}}, // expand
+    /* 12 */ {.schema = GELU,    .shape = ShapeHash{0xD10D}, .n_in = 1, .n_out = 1,
+              .t = {ac(11,3,B,SEQ,MLP), ac(12,3,B,SEQ,MLP)}},
+    /* 13 */ {.schema = MM,      .shape = ShapeHash{0xD10E}, .n_in = 2, .n_out = 1,
+              .t = {ac(12,3,B,SEQ,MLP), pr(12,2,MLP,D), ac(13,3,B,SEQ,D)}},   // contract
+    /* 14 */ {.schema = ADD,     .shape = ShapeHash{0xD10F}, .n_in = 2, .n_out = 1,
+              .t = {ac(13,3,B,SEQ,D), ac(9,3,B,SEQ,D), ac(14,3,B,SEQ,D)}},   // residual 2
 
     //   Classification head
-    /* 15 */ {LN,      ShapeHash{0xD110}, 3,1, {ac(14,3,B,SEQ,D), pr(13,1,D), pr(14,1,D),
-                                                ac(15,3,B,SEQ,D)}},
-    /* 16 */ {INDEX,   ShapeHash{0xD111}, 1,1, {ac(15,3,B,SEQ,D), ac(16,2,B,D)}},
-    /* 17 */ {MM,      ShapeHash{0xD112}, 2,1, {ac(16,2,B,D), pr(15,2,CL,D),
-                                                ac(17,2,B,CL)}},
-    /* 18 */ {XENT,    ShapeHash{0xD113}, 1,1, {ac(17,2,B,CL), ac(18,2,B,CL)}},
+    /* 15 */ {.schema = LN,      .shape = ShapeHash{0xD110}, .n_in = 3, .n_out = 1,
+              .t = {ac(14,3,B,SEQ,D), pr(13,1,D), pr(14,1,D), ac(15,3,B,SEQ,D)}},
+    /* 16 */ {.schema = INDEX,   .shape = ShapeHash{0xD111}, .n_in = 1, .n_out = 1,
+              .t = {ac(15,3,B,SEQ,D), ac(16,2,B,D)}},
+    /* 17 */ {.schema = MM,      .shape = ShapeHash{0xD112}, .n_in = 2, .n_out = 1,
+              .t = {ac(16,2,B,D), pr(15,2,CL,D), ac(17,2,B,CL)}},
+    /* 18 */ {.schema = XENT,    .shape = ShapeHash{0xD113}, .n_in = 1, .n_out = 1,
+              .t = {ac(17,2,B,CL), ac(18,2,B,CL)}},
 
     // ── Backward (11 ops) ────────────────────────────────────────
-    /* 19 */ {LOSS_BWD, ShapeHash{0xD114}, 1,1, {ac(18,2,B,CL), ac(19,2,B,CL)}},
-    /* 20 */ {MM_BWD,   ShapeHash{0xD115}, 2,1, {ac(19,2,B,CL), pr(15,2,CL,D),
-                                                  ac(20,2,B,D)}},
-    /* 21 */ {SCATTER,  ShapeHash{0xD116}, 1,1, {ac(20,2,B,D), ac(21,3,B,SEQ,D)}},
-    /* 22 */ {LN_BWD,   ShapeHash{0xD117}, 1,1, {ac(21,3,B,SEQ,D), ac(22,3,B,SEQ,D)}},
-    /* 23 */ {MM_BWD,   ShapeHash{0xD118}, 2,1, {ac(22,3,B,SEQ,D), pr(12,2,MLP,D),
-                                                  ac(23,3,B,SEQ,MLP)}},
-    /* 24 */ {GELU_BWD, ShapeHash{0xD119}, 2,1, {ac(23,3,B,SEQ,MLP), ac(11,3,B,SEQ,MLP),
-                                                  ac(24,3,B,SEQ,MLP)}},
-    /* 25 */ {MM_BWD,   ShapeHash{0xD11A}, 2,1, {ac(24,3,B,SEQ,MLP), pr(11,2,D,MLP),
-                                                  ac(25,3,B,SEQ,D)}},
-    /* 26 */ {LN_BWD,   ShapeHash{0xD11B}, 1,1, {ac(25,3,B,SEQ,D), ac(26,3,B,SEQ,D)}},
-    /* 27 */ {MM_BWD,   ShapeHash{0xD11C}, 2,1, {ac(26,3,B,SEQ,D), pr(8,2,D,D),
-                                                  ac(27,3,B,SEQ,D)}},
-    /* 28 */ {SDPA_BWD, ShapeHash{0xD11D}, 4,1, {ac(27,3,B,SEQ,D), ac(4,3,B,SEQ,D),
-                                                  ac(5,3,B,SEQ,D), ac(6,3,B,SEQ,D),
-                                                  ac(28,3,B,SEQ,D)}},
-    /* 29 */ {LN_BWD,   ShapeHash{0xD11E}, 1,1, {ac(28,3,B,SEQ,D), ac(29,3,B,SEQ,D)}},
+    /* 19 */ {.schema = LOSS_BWD, .shape = ShapeHash{0xD114}, .n_in = 1, .n_out = 1,
+              .t = {ac(18,2,B,CL), ac(19,2,B,CL)}},
+    /* 20 */ {.schema = MM_BWD,   .shape = ShapeHash{0xD115}, .n_in = 2, .n_out = 1,
+              .t = {ac(19,2,B,CL), pr(15,2,CL,D), ac(20,2,B,D)}},
+    /* 21 */ {.schema = SCATTER,  .shape = ShapeHash{0xD116}, .n_in = 1, .n_out = 1,
+              .t = {ac(20,2,B,D), ac(21,3,B,SEQ,D)}},
+    /* 22 */ {.schema = LN_BWD,   .shape = ShapeHash{0xD117}, .n_in = 1, .n_out = 1,
+              .t = {ac(21,3,B,SEQ,D), ac(22,3,B,SEQ,D)}},
+    /* 23 */ {.schema = MM_BWD,   .shape = ShapeHash{0xD118}, .n_in = 2, .n_out = 1,
+              .t = {ac(22,3,B,SEQ,D), pr(12,2,MLP,D), ac(23,3,B,SEQ,MLP)}},
+    /* 24 */ {.schema = GELU_BWD, .shape = ShapeHash{0xD119}, .n_in = 2, .n_out = 1,
+              .t = {ac(23,3,B,SEQ,MLP), ac(11,3,B,SEQ,MLP), ac(24,3,B,SEQ,MLP)}},
+    /* 25 */ {.schema = MM_BWD,   .shape = ShapeHash{0xD11A}, .n_in = 2, .n_out = 1,
+              .t = {ac(24,3,B,SEQ,MLP), pr(11,2,D,MLP), ac(25,3,B,SEQ,D)}},
+    /* 26 */ {.schema = LN_BWD,   .shape = ShapeHash{0xD11B}, .n_in = 1, .n_out = 1,
+              .t = {ac(25,3,B,SEQ,D), ac(26,3,B,SEQ,D)}},
+    /* 27 */ {.schema = MM_BWD,   .shape = ShapeHash{0xD11C}, .n_in = 2, .n_out = 1,
+              .t = {ac(26,3,B,SEQ,D), pr(8,2,D,D), ac(27,3,B,SEQ,D)}},
+    /* 28 */ {.schema = SDPA_BWD, .shape = ShapeHash{0xD11D}, .n_in = 4, .n_out = 1,
+              .t = {ac(27,3,B,SEQ,D), ac(4,3,B,SEQ,D),
+                    ac(5,3,B,SEQ,D), ac(6,3,B,SEQ,D), ac(28,3,B,SEQ,D)}},
+    /* 29 */ {.schema = LN_BWD,   .shape = ShapeHash{0xD11E}, .n_in = 1, .n_out = 1,
+              .t = {ac(28,3,B,SEQ,D), ac(29,3,B,SEQ,D)}},
 };
 
 static constexpr uint32_t NUM_OPS = sizeof(OPS) / sizeof(OPS[0]);

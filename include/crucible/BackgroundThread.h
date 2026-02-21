@@ -232,19 +232,19 @@ struct BackgroundThread {
         s.port = port;
         s.slot_id = slot_id;
         s.gen = gen;
-        return {&s, false, {}, 0, {}};
+        return {.slot = &s, .was_alias = false, .old_op = {}, .old_port = 0, .old_slot = {}};
       }
       if (s.key == key) {
         // Existing entry. Alias if op differs.
-        InsertResult r{&s, s.op_index != op_index,
-                       s.op_index, s.port, s.slot_id};
+        InsertResult r{.slot = &s, .was_alias = (s.op_index != op_index),
+                       .old_op = s.op_index, .old_port = s.port, .old_slot = s.slot_id};
         s.op_index = op_index;
         s.port = port;
         // Keep the same slot_id for aliases (shared storage)
         return r;
       }
     }
-    return {nullptr, false, {}, 0, {}}; // table full
+    return {.slot = nullptr, .was_alias = false, .old_op = {}, .old_port = 0, .old_slot = {}}; // table full
   }
 
   struct PtrLookup {
@@ -255,16 +255,16 @@ struct BackgroundThread {
 
   [[nodiscard]] static PtrLookup ptr_map_lookup(
       const PtrSlot* map, uint8_t gen, void* key) {
-    if (!key) return {OpIndex{}, SlotId{}, 0};
+    if (!key) return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};
     uint32_t idx = hash_ptr(key) & PTR_MASK;
     for (uint32_t probe = 0; probe <= PTR_MASK; probe++) {
       auto& s = map[(idx + probe) & PTR_MASK];
       if (s.gen == gen && s.key == key)
-        return {s.op_index, s.slot_id, s.port};
+        return {.op_index = s.op_index, .slot_id = s.slot_id, .port = s.port};
       if (s.gen != gen)
-        return {OpIndex{}, SlotId{}, 0}; // empty → miss
+        return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0}; // empty → miss
     }
-    return {OpIndex{}, SlotId{}, 0};
+    return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};
   }
 
   // ── Main loop ──
@@ -607,9 +607,9 @@ struct BackgroundThread {
           te.input_slot_ids[j] = lookup.slot_id;
           assert(num_edges < SCRATCH_EDGE_CAP);
           local_edges[num_edges++] = {
-              OpIndex{lookup.op_index.raw()}, OpIndex{i},
-              lookup.port, static_cast<uint8_t>(j),
-              EdgeKind::DATA_FLOW, 0};
+              .src = OpIndex{lookup.op_index.raw()}, .dst = OpIndex{i},
+              .src_port = lookup.port, .dst_port = static_cast<uint8_t>(j),
+              .kind = EdgeKind::DATA_FLOW, .pad = 0};
           if (lookup.slot_id.raw() < slot_cap) {
             auto& si = local_slots[lookup.slot_id.raw()];
             si.death_op = std::max(si.death_op, OpIndex{i});
@@ -657,9 +657,9 @@ struct BackgroundThread {
           if (result.old_op.is_valid()) {
             assert(num_edges < SCRATCH_EDGE_CAP);
             local_edges[num_edges++] = {
-                OpIndex{result.old_op.raw()}, OpIndex{i},
-                result.old_port, static_cast<uint8_t>(j),
-                EdgeKind::ALIAS, 0};
+                .src = OpIndex{result.old_op.raw()}, .dst = OpIndex{i},
+                .src_port = result.old_port, .dst_port = static_cast<uint8_t>(j),
+                .kind = EdgeKind::ALIAS, .pad = 0};
           }
         } else if (next_slot_raw < slot_cap) {
           SlotId sid{next_slot_raw++};
@@ -848,7 +848,7 @@ struct BackgroundThread {
           }
         }
         if (!merged && num_free < MAX_FREE) {
-          free_list[num_free++] = {offset, size};
+          free_list[num_free++] = {.offset = offset, .size = size};
         }
       }
 
