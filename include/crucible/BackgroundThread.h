@@ -12,6 +12,7 @@
 
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
+#include <crucible/Platform.h>
 #include <crucible/TraceGraph.h>
 
 namespace crucible {
@@ -93,7 +94,7 @@ struct BackgroundThread {
   // Start the background thread. ring/meta_log must be set first.
   void start(TraceRing* r, MetaLog* ml,
              int32_t rank_ = -1, int32_t world_size_ = 0,
-             uint64_t device_cap = 0) {
+             uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY {
     ring = r;
     meta_log = ml;
     rank = rank_;
@@ -104,14 +105,14 @@ struct BackgroundThread {
   }
 
   // Signal the thread to stop and join.
-  void stop() {
+  void stop() CRUCIBLE_NO_THREAD_SAFETY {
     running.store(false, std::memory_order_relaxed);
     if (thread.joinable()) {
       thread.join();
     }
   }
 
-  ~BackgroundThread() {
+  ~BackgroundThread() CRUCIBLE_NO_THREAD_SAFETY {
     stop();
     std::free(scratch_map_);
     std::free(scratch_slots_);
@@ -268,7 +269,7 @@ struct BackgroundThread {
 
   // ── Main loop ──
 
-  void run() {
+  void run() CRUCIBLE_NO_THREAD_SAFETY {
     TraceRing::Entry batch[BATCH_SIZE];
     MetaIndex meta_batch[BATCH_SIZE];
     ScopeHash scope_batch[BATCH_SIZE];
@@ -315,7 +316,7 @@ struct BackgroundThread {
     }
   }
 
-  void on_iteration_boundary() {
+  void on_iteration_boundary() CRUCIBLE_NO_THREAD_SAFETY {
     uint32_t total = static_cast<uint32_t>(current_trace.size());
     uint32_t iter_len = detector.last_completed_len;
 
@@ -400,7 +401,8 @@ struct BackgroundThread {
   // Returns nullptr on MetaLog overflow.
   //
   // Public: called by on_iteration_boundary() and benchmarks.
-  [[nodiscard]] TraceGraph* build_trace(uint32_t count) {
+  [[nodiscard]] TraceGraph* build_trace(uint32_t count)
+      CRUCIBLE_NO_THREAD_SAFETY {
     ensure_scratch_buffers();
 
     // ── Hoist vector data pointers into locals ─────────────────────
@@ -720,7 +722,8 @@ struct BackgroundThread {
   // ordering. Sweep-line best-fit allocation is unchanged.
   // Alignment: 256 bytes (CUDA coalescing).
   [[nodiscard]] MemoryPlan* compute_memory_plan(
-      TensorSlot* slots, uint32_t num_slots) {
+      TensorSlot* slots, uint32_t num_slots)
+      CRUCIBLE_NO_THREAD_SAFETY {
     static constexpr uint32_t ALIGNMENT = 256;
 
     auto* plan = arena.alloc_obj<MemoryPlan>();

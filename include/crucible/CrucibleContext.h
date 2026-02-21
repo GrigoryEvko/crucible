@@ -50,7 +50,8 @@ struct CrucibleContext {
   CrucibleContext& operator=(CrucibleContext&&) = delete("PoolAllocator has interior pointers into pool");
 
   // ── Activate compiled mode ──
-  [[nodiscard]] bool activate(const RegionNode* region) {
+  [[nodiscard]] bool activate(const RegionNode* region)
+      CRUCIBLE_NO_THREAD_SAFETY {
     assert(region && "null RegionNode");
     if (!region->plan) [[unlikely]]
       return false;
@@ -119,7 +120,8 @@ struct CrucibleContext {
   }
 
   // ── Switch to a different compiled region (mid-iteration safe) ──
-  [[nodiscard]] bool switch_region(const RegionNode* alt, uint32_t div_pos) {
+  [[nodiscard]] bool switch_region(const RegionNode* alt, uint32_t div_pos)
+      CRUCIBLE_NO_THREAD_SAFETY {
     assert(mode_ == ContextMode::COMPILED && "switch_region requires COMPILED mode");
     assert(alt && "null alternate region");
     if (!alt->plan) [[unlikely]]
@@ -167,7 +169,7 @@ struct CrucibleContext {
       const RegionNode* alt,
       const void* old_pool_base,
       uint32_t div_pos)
-  {
+      CRUCIBLE_NO_THREAD_SAFETY {
     const auto* old_plan = old_region->plan;
     const auto* new_plan = alt->plan;
 

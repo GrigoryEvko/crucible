@@ -106,11 +106,13 @@ struct TraceRing {
   TraceRing(TraceRing&&) = delete("SPSC ring is pinned to producer/consumer thread pair");
   TraceRing& operator=(TraceRing&&) = delete("SPSC ring is pinned to producer/consumer thread pair");
 
+  // Foreground thread only (SPSC producer).
+  // Safe by protocol: only one thread writes head + entries[head].
   [[nodiscard]] CRUCIBLE_INLINE bool try_append(
       const Entry& e,
       MetaIndex meta_start = MetaIndex::none(),
       ScopeHash scope_hash = {},
-      CallsiteHash callsite_hash = {}) {
+      CallsiteHash callsite_hash = {}) CRUCIBLE_NO_THREAD_SAFETY {
     uint64_t h = head.load(std::memory_order_relaxed);
     // Fast path: check against cached tail (producer-local, no atomic load).
     // Stale cached tail is conservative — shows less space than reality.
@@ -154,10 +156,12 @@ struct TraceRing {
   // Returns the number of entries actually drained.
   // Uses memcpy for contiguous runs to exploit hardware prefetch and
   // SIMD store forwarding.
+  // Background thread only (SPSC consumer).
+  // Safe by protocol: only one thread writes tail + reads entries[tail..head].
   [[nodiscard]] uint32_t drain(Entry* out, uint32_t max_count,
                  MetaIndex* out_meta_starts = nullptr,
                  ScopeHash* out_scope_hashes = nullptr,
-                 CallsiteHash* out_callsite_hashes = nullptr) {
+                 CallsiteHash* out_callsite_hashes = nullptr) CRUCIBLE_NO_THREAD_SAFETY {
     uint64_t h = head.load(std::memory_order_acquire);
     uint64_t t = tail.load(std::memory_order_relaxed);
     uint32_t available = static_cast<uint32_t>(h - t);
@@ -195,14 +199,15 @@ struct TraceRing {
     return count;
   }
 
-  // Number of entries currently in the ring (approximate — racy).
-  [[nodiscard]] uint32_t size() const {
+  // Approximate count — deliberately racy (diagnostic only).
+  [[nodiscard]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY {
     return static_cast<uint32_t>(
         head.load(std::memory_order_relaxed) -
         tail.load(std::memory_order_relaxed));
   }
 
-  void reset() {
+  // Only when both threads are quiescent (join/stop).
+  void reset() CRUCIBLE_NO_THREAD_SAFETY {
     head.store(0, std::memory_order_relaxed);
     tail.store(0, std::memory_order_relaxed);
     cached_tail_ = 0;
