@@ -67,7 +67,7 @@ int main() {
         const Expr* e42 = pool.integer(42);
         bench::DoNotOptimize(e42);
 
-        BENCH("  integer(42) [cached, hit]", 10'000'000, {
+        BENCH_CHECK("  integer(42) [cached, hit]", 10'000'000, 0.3, {
             const Expr* r = pool.integer(42);
             bench::DoNotOptimize(r);
         });
@@ -90,7 +90,7 @@ int main() {
             ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER);
         bench::DoNotOptimize(sx);
 
-        BENCH("  symbol('x') [hit]", 10'000'000, {
+        BENCH_CHECK("  symbol('x') [hit]", 10'000'000, 5.9, {
             const Expr* r = pool.symbol("x", SymbolId{0},
                 ExprFlags::IS_INTEGER | ExprFlags::IS_REAL |
                 ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER);
@@ -111,7 +111,7 @@ int main() {
         const Expr* sum = pool.add(x, y);
         bench::DoNotOptimize(sum);
 
-        BENCH("  add(x, y) [hit]", 10'000'000, {
+        BENCH_CHECK("  add(x, y) [hit]", 10'000'000, 7.4, {
             const Expr* r = pool.add(x, y);
             bench::DoNotOptimize(r);
         });
@@ -129,7 +129,7 @@ int main() {
         const Expr* prod = pool.mul(x, y);
         bench::DoNotOptimize(prod);
 
-        BENCH("  mul(x, y) [hit]", 10'000'000, {
+        BENCH_CHECK("  mul(x, y) [hit]", 10'000'000, 7.1, {
             const Expr* r = pool.mul(x, y);
             bench::DoNotOptimize(r);
         });
@@ -148,7 +148,7 @@ int main() {
         const Expr* w = pool.where(c, x, y);
         bench::DoNotOptimize(w);
 
-        BENCH("  where(c, x, y) [hit]", 10'000'000, {
+        BENCH_CHECK("  where(c, x, y) [hit]", 10'000'000, 6.3, {
             const Expr* r = pool.where(c, x, y);
             bench::DoNotOptimize(r);
         });
@@ -161,7 +161,7 @@ int main() {
         const Expr* a = pool.add(pool.integer(1), pool.integer(2));
         const Expr* b = pool.add(pool.integer(1), pool.integer(2));
 
-        BENCH("  ptr compare (a == b)", 100'000'000, {
+        BENCH_CHECK("  ptr compare (a == b)", 100'000'000, 0.3, {
             bool same = (a == b);
             bench::DoNotOptimize(same);
         });
@@ -175,17 +175,17 @@ int main() {
         for (int64_t i = -128; i <= 127; ++i)
             bench::DoNotOptimize(pool.integer(i));
 
-        BENCH("  integer(0) [int_cache hit]", 100'000'000, {
+        BENCH_CHECK("  integer(0) [int_cache hit]", 100'000'000, 0.3, {
             const Expr* r = pool.integer(0);
             bench::DoNotOptimize(r);
         });
 
-        BENCH("  integer(42) [int_cache hit]", 100'000'000, {
+        BENCH_CHECK("  integer(42) [int_cache hit]", 100'000'000, 0.3, {
             const Expr* r = pool.integer(42);
             bench::DoNotOptimize(r);
         });
 
-        BENCH("  integer(999) [uncached, intern]", 10'000'000, {
+        BENCH_CHECK("  integer(999) [uncached, intern]", 10'000'000, 2.0, {
             const Expr* r = pool.integer(999);
             bench::DoNotOptimize(r);
         });
@@ -205,7 +205,7 @@ int main() {
         char label[80];
         std::snprintf(label, sizeof(label),
                       "  integer(%ld) [hit, pool=%d]", target_val, n);
-        BENCH(label, 5'000'000, {
+        BENCH_CHECK(label, 5'000'000, 2.0, {
             const Expr* r = pool.integer(target_val);
             bench::DoNotOptimize(r);
         });
@@ -222,7 +222,9 @@ int main() {
         char label[80];
         std::snprintf(label, sizeof(label),
                       "  build_deep_tree(depth=%d) [all hits]", depth);
-        BENCH(label, 1'000'000, {
+        // Thresholds: depth 2 → 21.3, depth 4 → 252.0, depth 8 → 788.6
+        static constexpr double depth_max[] = {0, 0, 21.3, 0, 252.0, 0, 0, 0, 788.6};
+        BENCH_CHECK(label, 1'000'000, depth_max[depth], {
             const Expr* r = build_deep_tree(pool, depth);
             bench::DoNotOptimize(r);
         });
@@ -232,7 +234,7 @@ int main() {
     std::printf("\n── Cache miss: intern novel expressions ──\n");
     {
         // Each iteration creates a fresh pool to avoid growing too large
-        BENCH("  integer(novel) [miss]", 1'000'000, {
+        BENCH_CHECK("  integer(novel) [miss]", 1'000'000, 1919.4, {
             // Use a counter to generate unique values
             static int64_t counter = 100000;
             ExprPool pool(1 << 10); // small pool for quick construction
@@ -262,7 +264,7 @@ int main() {
         }
 
         uint32_t idx = 0;
-        BENCH("  mixed 90/10 hit/miss", 5'000'000, {
+        BENCH_CHECK("  mixed 90/10 hit/miss", 5'000'000, 47.4, {
             if (idx % 10 == 0) {
                 // Miss: create a new expression
                 const Expr* r = pool.mul(
@@ -311,7 +313,7 @@ int main() {
         const Expr* e = pool.make(Op::ADD, args);
         bench::DoNotOptimize(e);
 
-        BENCH("  make(ADD, {x, y}) [hit]", 10'000'000, {
+        BENCH_CHECK("  make(ADD, {x, y}) [hit]", 10'000'000, 67.2, {
             const Expr* r = pool.make(Op::ADD, args);
             bench::DoNotOptimize(r);
         });
@@ -324,12 +326,12 @@ int main() {
         const Expr* three = pool.integer(3);
         const Expr* five = pool.integer(5);
 
-        BENCH("  add(3, 5) [fold → 8]", 10'000'000, {
+        BENCH_CHECK("  add(3, 5) [fold → 8]", 10'000'000, 3.2, {
             const Expr* r = pool.add(three, five);
             bench::DoNotOptimize(r);
         });
 
-        BENCH("  mul(3, 5) [fold → 15]", 10'000'000, {
+        BENCH_CHECK("  mul(3, 5) [fold → 15]", 10'000'000, 3.3, {
             const Expr* r = pool.mul(three, five);
             bench::DoNotOptimize(r);
         });
@@ -345,12 +347,12 @@ int main() {
         const Expr* zero = pool.integer(0);
         const Expr* one = pool.integer(1);
 
-        BENCH("  add(x, 0) [identity → x]", 100'000'000, {
+        BENCH_CHECK("  add(x, 0) [identity → x]", 100'000'000, 3.3, {
             const Expr* r = pool.add(x, zero);
             bench::DoNotOptimize(r);
         });
 
-        BENCH("  mul(x, 1) [identity → x]", 100'000'000, {
+        BENCH_CHECK("  mul(x, 1) [identity → x]", 100'000'000, 3.6, {
             const Expr* r = pool.mul(x, one);
             bench::DoNotOptimize(r);
         });

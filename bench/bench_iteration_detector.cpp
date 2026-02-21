@@ -91,7 +91,7 @@ int main() {
         warmup_detector(d);
 
         uint32_t hash_idx = 0;
-        BENCH_ROUNDS("check() steady state (no match)", 10'000'000, 21, {
+        BENCH_ROUNDS_CHECK("check() steady state (no match)", 10'000'000, 21, 0.8, {
             bool b = d.check(random_hashes[hash_idx & (NUM_HASHES - 1)]);
             bench::DoNotOptimize(b);
             hash_idx++;
@@ -119,7 +119,7 @@ int main() {
 
         uint32_t pat_idx = 0;
         uint32_t boundary_count = 0;
-        BENCH_ROUNDS("check() with boundaries every 100 ops", TOTAL, 11, {
+        BENCH_ROUNDS_CHECK("check() with boundaries every 100 ops", TOTAL, 11, 2.1, {
             bool b = d.check(pattern[pat_idx]);
             if (b) boundary_count++;
             bench::DoNotOptimize(b);
@@ -133,7 +133,7 @@ int main() {
     // ────────────────────────────────────────────────────────
     {
         IterationDetector d;
-        BENCH_ROUNDS("check() signature build (K=5 cold start)", 1'000'000, 11, {
+        BENCH_ROUNDS_CHECK("check() signature build (K=5 cold start)", 1'000'000, 11, 0.3, {
             d.reset();
             for (uint32_t i = 0; i < IterationDetector::K; i++) {
                 bool b = d.check(SIG[i]);
@@ -151,7 +151,7 @@ int main() {
         warmup_detector(d);
 
         // Feed exactly the signature K times, measuring the match-advance path.
-        BENCH_ROUNDS("check() match advance (K=5 consecutive)", 1'000'000, 11, {
+        BENCH_ROUNDS_CHECK("check() match advance (K=5 consecutive)", 1'000'000, 11, 20.7, {
             for (uint32_t i = 0; i < IterationDetector::K; i++) {
                 bool b = d.check(SIG[i]);
                 bench::DoNotOptimize(b);
@@ -169,7 +169,7 @@ int main() {
     {
         IterationDetector d;
         warmup_detector(d);
-        BENCH_ROUNDS("reset()", 1'000'000, 11, {
+        BENCH_ROUNDS_CHECK("reset()", 1'000'000, 11, 1.4, {
             d.reset();
             bench::DoNotOptimize(d.signature_len);
             bench::ClobberMemory();
@@ -186,7 +186,7 @@ int main() {
 
         static constexpr uint32_t BATCH = 1000;
         uint32_t hash_idx = 0;
-        BENCH_ROUNDS("check() x1000 batch (sustained)", BATCH, 11, {
+        BENCH_ROUNDS_CHECK("check() x1000 batch (sustained)", BATCH, 11, 1818.0, {
             for (uint32_t i = 0; i < BATCH; i++) {
                 bool b = d.check(random_hashes[hash_idx & (NUM_HASHES - 1)]);
                 bench::DoNotOptimize(b);

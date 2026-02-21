@@ -1217,3 +1217,5 @@ ZERO COPY. ZERO ALLOC ON HOT PATH. EVERY INSTRUCTION JUSTIFIED.
 If you write something, compile it, and look at the assembly.
 L1d is 48KB. L2 is 2MB. That's your budget. Squat it upfront,
 point into it, write into it. No indirection. No heap churn. 
+
+IF YOU SEE VARIANCE > 5% IN BENCHES - IGNORE RESULTS, IT'S MY LAPTOP BEING THROTTLED
