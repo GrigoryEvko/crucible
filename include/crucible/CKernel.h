@@ -22,6 +22,7 @@
 // Thread safety: all registrations MUST complete before BackgroundThread::start()
 // is called. After that the table is read-only (no locking needed).
 
+#include <crucible/Platform.h>
 #include <crucible/Types.h>
 
 #include <algorithm>
@@ -307,6 +308,8 @@ struct CKernelEntry {
     SchemaHash schema_hash;
     CKernelId  id;
 };
+
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(CKernelEntry);
 
 struct CKernelTable {
     CKernelEntry entries[CKERNEL_TABLE_CAP]{};

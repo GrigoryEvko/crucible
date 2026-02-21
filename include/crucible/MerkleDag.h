@@ -180,35 +180,35 @@ struct TraceEntry {
 
   // ── Span accessors (NullSafe: bounds-checked access to variable-length arrays) ──
 
-  [[nodiscard]] std::span<const TensorMeta> input_span() const {
+  [[nodiscard]] std::span<const TensorMeta> input_span() const CRUCIBLE_LIFETIMEBOUND {
     return input_metas ? std::span{input_metas, num_inputs}
                        : std::span<const TensorMeta>{};
   }
-  [[nodiscard]] std::span<TensorMeta> input_span() {
+  [[nodiscard]] std::span<TensorMeta> input_span() CRUCIBLE_LIFETIMEBOUND {
     return input_metas ? std::span{input_metas, num_inputs}
                        : std::span<TensorMeta>{};
   }
-  [[nodiscard]] std::span<const TensorMeta> output_span() const {
+  [[nodiscard]] std::span<const TensorMeta> output_span() const CRUCIBLE_LIFETIMEBOUND {
     return output_metas ? std::span{output_metas, num_outputs}
                         : std::span<const TensorMeta>{};
   }
-  [[nodiscard]] std::span<TensorMeta> output_span() {
+  [[nodiscard]] std::span<TensorMeta> output_span() CRUCIBLE_LIFETIMEBOUND {
     return output_metas ? std::span{output_metas, num_outputs}
                         : std::span<TensorMeta>{};
   }
-  [[nodiscard]] std::span<const int64_t> scalar_span() const {
+  [[nodiscard]] std::span<const int64_t> scalar_span() const CRUCIBLE_LIFETIMEBOUND {
     return scalar_args ? std::span{scalar_args, num_scalar_args}
                        : std::span<const int64_t>{};
   }
-  [[nodiscard]] std::span<const OpIndex> trace_index_span() const {
+  [[nodiscard]] std::span<const OpIndex> trace_index_span() const CRUCIBLE_LIFETIMEBOUND {
     return input_trace_indices ? std::span{input_trace_indices, num_inputs}
                                : std::span<const OpIndex>{};
   }
-  [[nodiscard]] std::span<const SlotId> input_slot_span() const {
+  [[nodiscard]] std::span<const SlotId> input_slot_span() const CRUCIBLE_LIFETIMEBOUND {
     return input_slot_ids ? std::span{input_slot_ids, num_inputs}
                           : std::span<const SlotId>{};
   }
-  [[nodiscard]] std::span<const SlotId> output_slot_span() const {
+  [[nodiscard]] std::span<const SlotId> output_slot_span() const CRUCIBLE_LIFETIMEBOUND {
     return output_slot_ids ? std::span{output_slot_ids, num_outputs}
                            : std::span<const SlotId>{};
   }
@@ -404,7 +404,7 @@ struct BranchNode : TraceNode {
 // must be a power of two.
 // ═══════════════════════════════════════════════════════════════════
 
-class KernelCache {
+class CRUCIBLE_OWNER KernelCache {
  public:
   explicit KernelCache(uint32_t capacity = 4096) : capacity_(capacity) {
     assert((capacity & (capacity - 1)) == 0 && "capacity must be power of 2");
@@ -421,6 +421,7 @@ class KernelCache {
   KernelCache& operator=(KernelCache&&) = delete("lock-free hash map with atomic state cannot be moved");
 
   // Lock-free lookup via atomic load. Any thread, safe by CAS protocol.
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] CompiledKernel* lookup(ContentHash content_hash) const
       CRUCIBLE_NO_THREAD_SAFETY {
     uint32_t mask = capacity_ - 1;
@@ -438,6 +439,7 @@ class KernelCache {
 
   // Thread-safe insert via CAS. Overwrites if key already exists.
   // Background thread primary writer, safe by atomic CAS protocol.
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
   void insert(ContentHash content_hash, CompiledKernel* kernel) CRUCIBLE_NO_THREAD_SAFETY {
     assert(content_hash.raw() != 0 && "zero is the sentinel for empty slots");
     uint32_t mask = capacity_ - 1;
@@ -489,7 +491,7 @@ class KernelCache {
 // Placement-new with RegionNode{} zero-initializes via NSDMI.
 // Only set the fields that differ from defaults.
 [[nodiscard]] inline RegionNode* make_region(
-    Arena& arena,
+    Arena& arena CRUCIBLE_LIFETIMEBOUND,
     TraceEntry* ops,
     uint32_t num_ops) {
   auto* node = new (arena.alloc(sizeof(RegionNode), alignof(RegionNode)))
@@ -505,7 +507,7 @@ class KernelCache {
 // Overload: accept a pre-computed content hash (from build_trace's fused
 // streaming hash). Eliminates the redundant second pass over all ops.
 [[nodiscard]] inline RegionNode* make_region(
-    Arena& arena,
+    Arena& arena CRUCIBLE_LIFETIMEBOUND,
     TraceEntry* ops,
     uint32_t num_ops,
     ContentHash precomputed_hash) {

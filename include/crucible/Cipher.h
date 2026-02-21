@@ -31,7 +31,7 @@
 
 namespace crucible {
 
-class Cipher {
+class CRUCIBLE_OWNER Cipher {
  public:
     // Factory: open (or create) a Cipher rooted at `root`.
     // Creates the objects/ subdirectory if absent, loads HEAD + log from disk.
@@ -167,7 +167,7 @@ class Cipher {
 
     [[nodiscard]] ContentHash        head()  const { return head_; }
     [[nodiscard]] bool               empty() const { return !head_; }
-    [[nodiscard]] const std::string& root()  const { return root_; }
+    [[nodiscard]] const std::string& root()  const CRUCIBLE_LIFETIMEBOUND { return root_; }
 
  private:
     struct LogEntry {

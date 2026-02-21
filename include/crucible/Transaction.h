@@ -16,6 +16,7 @@
 // simple since both reader and writer are the same background thread).
 
 #include <crucible/MerkleDag.h>
+#include <crucible/Platform.h>
 
 #include <cassert>
 #include <chrono>
@@ -56,6 +57,7 @@ struct Transaction {
 };
 
 static_assert(sizeof(Transaction) == 48, "Transaction layout must be 48 bytes");
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Transaction);
 
 // ─── TransactionLog<N>: circular ring of the last N transactions ───
 //
@@ -140,9 +142,9 @@ class TransactionLog {
 
     // Latest ACTIVE transaction, or nullptr.
     // Non-const: callers may mutate the returned transaction (e.g. rollback).
-    [[nodiscard]] Transaction* active()   { return active_tx_; }
+    [[nodiscard]] Transaction* active() CRUCIBLE_LIFETIMEBOUND  { return active_tx_; }
 
-    [[nodiscard]] Transaction* previous() {
+    [[nodiscard]] Transaction* previous() CRUCIBLE_LIFETIMEBOUND {
         // Walk the ring backward from head to find the most recent SUPERSEDED entry.
         for (uint32_t i = 0; i < count_; i++) {
             Transaction* e = &entries_[(head_ - 1 - i) & MASK];

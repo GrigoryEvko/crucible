@@ -1,5 +1,7 @@
 #pragma once
 
+#include <crucible/Platform.h>
+
 #include <cstdint>
 #include <utility>
 
@@ -163,5 +165,19 @@ CRUCIBLE_STRONG_HASH(ContentHash);   // region content identity (kernel cache ke
 CRUCIBLE_STRONG_HASH(MerkleHash);    // subtree identity (includes all descendants)
 
 #undef CRUCIBLE_STRONG_HASH
+
+// Trivial relocatability: all strong ID/hash types are trivially copyable
+// PODs — safe for Arena memcpy, vector reallocation, flat array storage.
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(OpIndex);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SlotId);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(NodeId);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SymbolId);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(MetaIndex);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SchemaHash);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(ShapeHash);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(ScopeHash);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(CallsiteHash);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(ContentHash);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(MerkleHash);
 
 } // namespace crucible

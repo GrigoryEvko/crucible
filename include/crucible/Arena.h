@@ -24,7 +24,7 @@ namespace crucible {
 // are packed at the top of the struct, within a single cache line.
 // The cold vector and block_size_ are after them, accessed only on
 // the slow path (block exhaustion).
-class Arena {
+class CRUCIBLE_OWNER Arena {
  public:
   explicit Arena(size_t block_size = 1 << 20) // 1MB default blocks
       : block_size_(block_size) {
@@ -58,8 +58,9 @@ class Arena {
   //
   // Fast path: ~2ns (pointer bump + bitwise AND alignment).
   // Slow path: malloc + vector push (amortized across block_size_ bytes).
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] CRUCIBLE_INLINE
-  void* alloc(size_t size, size_t align = alignof(std::max_align_t)) {
+  void* alloc(size_t size, size_t align = alignof(std::max_align_t)) CRUCIBLE_LIFETIMEBOUND {
     // Compute aligned offset within the current block.
     // Uses absolute address for correctness with malloc's arbitrary base.
     uintptr_t aligned_addr = (cur_base_ + offset_ + align - 1) & ~(align - 1);
@@ -79,14 +80,14 @@ class Arena {
   // Typed allocation helper. For trivially-constructible types, this
   // compiles to exactly the same code as alloc(sizeof(T), alignof(T)).
   template <typename T>
-  [[nodiscard]] CRUCIBLE_INLINE T* alloc_obj() {
+  [[nodiscard]] CRUCIBLE_INLINE T* alloc_obj() CRUCIBLE_LIFETIMEBOUND {
     return static_cast<T*>(alloc(sizeof(T), alignof(T)));
   }
 
   // Allocate an array of N elements. Returns nullptr for n == 0.
   // Uses saturation arithmetic to prevent overflow on sizeof(T) * n.
   template <typename T>
-  [[nodiscard]] CRUCIBLE_INLINE T* alloc_array(size_t n) {
+  [[nodiscard]] CRUCIBLE_INLINE T* alloc_array(size_t n) CRUCIBLE_LIFETIMEBOUND {
     if (n == 0) [[unlikely]] return nullptr;
     size_t nbytes = std::mul_sat(n, sizeof(T));
     return static_cast<T*>(alloc(nbytes, alignof(T)));
@@ -95,7 +96,7 @@ class Arena {
   // Copy a null-terminated string into the arena. Returns nullptr for
   // null input. The returned pointer is valid for the lifetime of the
   // Arena. Alignment is 1 (chars don't need alignment padding).
-  [[nodiscard]] const char* copy_string(const char* src) {
+  [[nodiscard]] const char* copy_string(const char* src) CRUCIBLE_LIFETIMEBOUND {
     if (!src) return nullptr;
     size_t len = std::strlen(src) + 1;
     auto* dst = static_cast<char*>(alloc(len, 1));
@@ -113,6 +114,7 @@ class Arena {
   // Slow path: allocate a new block and retry alignment.
   // Separated from alloc() to keep the fast path's instruction footprint
   // small — fewer i-cache lines, better branch prediction.
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[gnu::noinline]]
   void* alloc_slow_(size_t size, size_t align) {
     // Oversized requests get their own block with room for alignment.

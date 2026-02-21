@@ -1,6 +1,7 @@
 #pragma once
 
 #include <crucible/Ops.h>
+#include <crucible/Platform.h>
 #include <crucible/Types.h>
 
 #include <bit>
@@ -77,7 +78,7 @@ struct Expr {
 
   // ---- Child access ----
 
-  [[nodiscard]] const Expr* arg(uint8_t i) const {
+  [[nodiscard]] const Expr* arg(uint8_t i) const CRUCIBLE_LIFETIMEBOUND {
     assert(i < nargs && "Expr::arg() index out of bounds");
     assert(args && "Expr::arg() called on atom with no args");
     return args[i];

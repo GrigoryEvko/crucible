@@ -103,12 +103,12 @@ struct CrucibleContext {
   }
 
   // ── Output/input pointer forwarding ──
-  [[nodiscard]] CRUCIBLE_INLINE void* output_ptr(uint16_t j) const {
+  [[nodiscard]] CRUCIBLE_INLINE void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
     assert(mode_ == ContextMode::COMPILED && "output_ptr() requires COMPILED mode");
     return engine_.output_ptr(j);
   }
 
-  [[nodiscard]] CRUCIBLE_INLINE void* input_ptr(uint16_t j) const {
+  [[nodiscard]] CRUCIBLE_INLINE void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
     assert(mode_ == ContextMode::COMPILED && "input_ptr() requires COMPILED mode");
     return engine_.input_ptr(j);
   }
@@ -158,10 +158,10 @@ struct CrucibleContext {
 
   [[nodiscard]] uint32_t compiled_iterations() const { return compiled_iterations_; }
   [[nodiscard]] uint32_t diverged_count() const { return diverged_count_; }
-  [[nodiscard]] const RegionNode* active_region() const { return active_region_; }
+  [[nodiscard]] const RegionNode* active_region() const CRUCIBLE_LIFETIMEBOUND { return active_region_; }
 
-  [[nodiscard]] const ReplayEngine& engine() const { return engine_; }
-  [[nodiscard]] const PoolAllocator& pool() const { return pool_; }
+  [[nodiscard]] const ReplayEngine& engine() const CRUCIBLE_LIFETIMEBOUND { return engine_; }
+  [[nodiscard]] const PoolAllocator& pool() const CRUCIBLE_LIFETIMEBOUND { return pool_; }
 
  private:
   void migrate_prefix_slots_(

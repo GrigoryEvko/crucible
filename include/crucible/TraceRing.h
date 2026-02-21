@@ -36,7 +36,7 @@ namespace crucible {
 // (shows less space than actually available). This eliminates cross-core
 // cache-line traffic on the common path: ~20,000 appends between drains
 // at 5ns/op and 100us drain interval.
-struct TraceRing {
+struct CRUCIBLE_OWNER TraceRing {
   struct alignas(64) Entry {
     SchemaHash schema_hash;              // 8B — op identity
     ShapeHash shape_hash;                // 8B — quick hash of input shapes
@@ -51,6 +51,7 @@ struct TraceRing {
   };
 
   static_assert(sizeof(Entry) == 64, "Entry must be exactly one cache line");
+  CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Entry);
 
   static constexpr uint32_t CAPACITY = 1 << 16; // 65536 entries = 4MB
   static constexpr uint32_t MASK = CAPACITY - 1;
@@ -108,6 +109,7 @@ struct TraceRing {
 
   // Foreground thread only (SPSC producer).
   // Safe by protocol: only one thread writes head + entries[head].
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] CRUCIBLE_INLINE bool try_append(
       const Entry& e,
       MetaIndex meta_start = MetaIndex::none(),
@@ -158,6 +160,7 @@ struct TraceRing {
   // SIMD store forwarding.
   // Background thread only (SPSC consumer).
   // Safe by protocol: only one thread writes tail + reads entries[tail..head].
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] uint32_t drain(Entry* out, uint32_t max_count,
                  MetaIndex* out_meta_starts = nullptr,
                  ScopeHash* out_scope_hashes = nullptr,

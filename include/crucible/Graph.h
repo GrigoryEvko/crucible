@@ -233,13 +233,13 @@ struct GraphNode {
   [[nodiscard]] bool is_dead() const { return flags & NodeFlags::DEAD; }
 
   // Reduction range expressions (valid only for REDUCTION kind)
-  [[nodiscard]] const Expr** reduction_ranges() const { return size + ndim; }
+  [[nodiscard]] const Expr** reduction_ranges() const CRUCIBLE_LIFETIMEBOUND { return size + ndim; }
 
-  [[nodiscard]] ComputeBody* compute_body() const {
+  [[nodiscard]] ComputeBody* compute_body() const CRUCIBLE_LIFETIMEBOUND {
     return static_cast<ComputeBody*>(body);
   }
 
-  [[nodiscard]] ExternInfo* extern_info() const {
+  [[nodiscard]] ExternInfo* extern_info() const CRUCIBLE_LIFETIMEBOUND {
     return static_cast<ExternInfo*>(body);
   }
 };
@@ -259,7 +259,7 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(GraphNode);
 //                 topological_sort (Kahn's, O(V+E))
 // ═══════════════════════════════════════════════════════════════════
 
-class Graph {
+class CRUCIBLE_OWNER Graph {
  public:
   explicit Graph(ExprPool* pool, SymbolTable* tab = nullptr)
       : pool_(pool), tab_(tab),
@@ -421,12 +421,12 @@ class Graph {
     std::memcpy(output_slots_[node_id.raw()], slots.data(), slots.size_bytes());
   }
 
-  [[nodiscard]] const SlotId* input_slots(NodeId node_id) const {
+  [[nodiscard]] const SlotId* input_slots(NodeId node_id) const CRUCIBLE_LIFETIMEBOUND {
     assert(node_id.raw() < num_nodes_);
     return input_slots_[node_id.raw()];
   }
 
-  [[nodiscard]] const SlotId* output_slots(NodeId node_id) const {
+  [[nodiscard]] const SlotId* output_slots(NodeId node_id) const CRUCIBLE_LIFETIMEBOUND {
     assert(node_id.raw() < num_nodes_);
     return output_slots_[node_id.raw()];
   }
@@ -561,12 +561,12 @@ class Graph {
 
   // ── Accessors ──────────────────────────────────────────────────
 
-  [[nodiscard]] GraphNode* node(NodeId id) const {
+  [[nodiscard]] GraphNode* node(NodeId id) const CRUCIBLE_LIFETIMEBOUND {
     assert(id.raw() < num_nodes_);
     return nodes_[id.raw()];
   }
 
-  [[nodiscard]] GraphNode* node(uint32_t id) const {
+  [[nodiscard]] GraphNode* node(uint32_t id) const CRUCIBLE_LIFETIMEBOUND {
     assert(id < num_nodes_);
     return nodes_[id];
   }
@@ -574,12 +574,12 @@ class Graph {
   [[nodiscard]] uint32_t num_nodes() const { return num_nodes_; }
   [[nodiscard]] uint32_t num_graph_inputs() const { return num_inputs_; }
   [[nodiscard]] uint32_t num_graph_outputs() const { return num_outputs_; }
-  [[nodiscard]] const NodeId* graph_input_ids() const { return input_ids_; }
-  [[nodiscard]] const NodeId* graph_output_ids() const { return output_ids_; }
+  [[nodiscard]] const NodeId* graph_input_ids() const CRUCIBLE_LIFETIMEBOUND { return input_ids_; }
+  [[nodiscard]] const NodeId* graph_output_ids() const CRUCIBLE_LIFETIMEBOUND { return output_ids_; }
 
-  [[nodiscard]] ExprPool* pool() const { return pool_; }
-  [[nodiscard]] SymbolTable* tab() const { return tab_; }
-  [[nodiscard]] Arena& arena() { return arena_; }
+  [[nodiscard]] ExprPool* pool() const CRUCIBLE_LIFETIMEBOUND { return pool_; }
+  [[nodiscard]] SymbolTable* tab() const CRUCIBLE_LIFETIMEBOUND { return tab_; }
+  [[nodiscard]] Arena& arena() CRUCIBLE_LIFETIMEBOUND { return arena_; }
 
  private:
   // Allocate a zeroed, 64-byte-aligned GraphNode

@@ -77,10 +77,10 @@ struct TraceGraph {
   uint32_t pad_tg = 0;            // 4B — alignment
 
   // ── Forward queries (src → dst): "who consumes op i's outputs?" ──
-  [[nodiscard]] const Edge* fwd_begin(uint32_t i) const {
+  [[nodiscard]] const Edge* fwd_begin(uint32_t i) const CRUCIBLE_LIFETIMEBOUND {
     return fwd_edges + fwd_offsets[i];
   }
-  [[nodiscard]] const Edge* fwd_end(uint32_t i) const {
+  [[nodiscard]] const Edge* fwd_end(uint32_t i) const CRUCIBLE_LIFETIMEBOUND {
     return fwd_edges + fwd_offsets[i + 1];
   }
   [[nodiscard]] uint32_t out_degree(uint32_t i) const {
@@ -88,10 +88,10 @@ struct TraceGraph {
   }
 
   // ── Reverse queries (dst → src): "who produces op i's inputs?" ──
-  [[nodiscard]] const Edge* rev_begin(uint32_t i) const {
+  [[nodiscard]] const Edge* rev_begin(uint32_t i) const CRUCIBLE_LIFETIMEBOUND {
     return rev_edges + rev_offsets[i];
   }
-  [[nodiscard]] const Edge* rev_end(uint32_t i) const {
+  [[nodiscard]] const Edge* rev_end(uint32_t i) const CRUCIBLE_LIFETIMEBOUND {
     return rev_edges + rev_offsets[i + 1];
   }
   [[nodiscard]] uint32_t in_degree(uint32_t i) const {
@@ -99,7 +99,7 @@ struct TraceGraph {
   }
 
   // ── Node access ──
-  [[nodiscard]] const TraceEntry& op(uint32_t i) const { return ops[i]; }
+  [[nodiscard]] const TraceEntry& op(uint32_t i) const CRUCIBLE_LIFETIMEBOUND { return ops[i]; }
 };
 
 // ═══════════════════════════════════════════════════════════════════

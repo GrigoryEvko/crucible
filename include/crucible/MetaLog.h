@@ -44,7 +44,7 @@ namespace crucible {
 //   5. Cache-line layout: head, cached_tail_, and entries pointer share one
 //      64-byte cache line (producer-only). tail on a separate line (consumer).
 //      Zero false sharing between threads.
-struct MetaLog {
+struct CRUCIBLE_OWNER MetaLog {
   static constexpr uint32_t CAPACITY = 1 << 20; // 1M entries (~144MB)
   static constexpr uint32_t MASK = CAPACITY - 1;
 
@@ -99,6 +99,7 @@ struct MetaLog {
   //   Baseline: memcpy alone to advancing dst = 8.6ns (1 meta) / 10ns (3 metas)
   // Foreground thread only (SPSC producer).
   // Safe by protocol: only one thread writes head + entries[head..head+n].
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append(const TensorMeta* metas, uint32_t n)
       CRUCIBLE_NO_THREAD_SAFETY {
     if (n == 0) [[unlikely]] return MetaIndex::none();
@@ -153,7 +154,9 @@ struct MetaLog {
   }
 
   // Background thread only (SPSC consumer): read meta at absolute index.
-  [[nodiscard]] const TensorMeta& at(uint32_t idx) const CRUCIBLE_NO_THREAD_SAFETY {
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
+  [[nodiscard]] const TensorMeta& at(uint32_t idx) const CRUCIBLE_LIFETIMEBOUND
+      CRUCIBLE_NO_THREAD_SAFETY {
     return entries[idx & MASK];
   }
 
@@ -166,8 +169,9 @@ struct MetaLog {
   // 99.99% of calls succeed (1M capacity, typical iteration ~1500 metas).
   // Saves ~144B × count memcpy per op when successful.
   // Background thread only (SPSC consumer): zero-copy span into buffer.
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] TensorMeta* try_contiguous(uint32_t start, uint32_t count) const
-      CRUCIBLE_NO_THREAD_SAFETY {
+      CRUCIBLE_LIFETIMEBOUND CRUCIBLE_NO_THREAD_SAFETY {
     if (count == 0) [[unlikely]] return nullptr;
     uint32_t start_pos = start & MASK;
     if (start_pos + count <= CAPACITY) [[likely]]

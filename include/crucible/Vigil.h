@@ -274,10 +274,10 @@ class Vigil {
 
     // Pre-allocated output pointer for output j of the current op.
     // Valid only after dispatch_op() returned COMPILED with MATCH/COMPLETE.
-    [[nodiscard]] void* output_ptr(uint16_t j) const { return ctx_.output_ptr(j); }
+    [[nodiscard]] void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND { return ctx_.output_ptr(j); }
 
     // Pre-allocated input pointer for input j of the current op.
-    [[nodiscard]] void* input_ptr(uint16_t j) const { return ctx_.input_ptr(j); }
+    [[nodiscard]] void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND { return ctx_.input_ptr(j); }
 
     // Register an external tensor's data pointer with the pool.
     void register_external(SlotId sid, void* ptr) { ctx_.register_external(sid, ptr); }
@@ -289,16 +289,16 @@ class Vigil {
     [[nodiscard]] uint32_t diverged_count() const { return ctx_.diverged_count(); }
 
     // Direct access to the CrucibleContext (diagnostics, not hot path).
-    [[nodiscard]] const CrucibleContext& context() const { return ctx_; }
+    [[nodiscard]] const CrucibleContext& context() const CRUCIBLE_LIFETIMEBOUND { return ctx_; }
 
     // Direct access to the RegionCache (diagnostics).
-    [[nodiscard]] const RegionCache& region_cache() const { return region_cache_; }
+    [[nodiscard]] const RegionCache& region_cache() const CRUCIBLE_LIFETIMEBOUND { return region_cache_; }
 
     // ─── Introspection ─────────────────────────────────────────────
 
-    const TransactionLog<16>& tx_log()   const { return tx_log_; }
-    TraceRing&                ring()           { return *ring_; }
-    MetaLog&                  meta_log()       { return *meta_log_; }
+    [[nodiscard]] const TransactionLog<16>& tx_log() const CRUCIBLE_LIFETIMEBOUND { return tx_log_; }
+    [[nodiscard]] TraceRing&               ring()       CRUCIBLE_LIFETIMEBOUND { return *ring_; }
+    [[nodiscard]] MetaLog&                 meta_log()   CRUCIBLE_LIFETIMEBOUND { return *meta_log_; }
 
     // Background thread diagnostics.
     [[nodiscard]] uint32_t bg_iterations_completed() const { return bg_.iterations_completed; }
