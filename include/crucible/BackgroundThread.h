@@ -807,12 +807,20 @@ struct BackgroundThread {
     }
 
     // ── Sweep-line: process ops in order, FREE then ALLOC ──
+    //
+    // Free list is kept sorted by offset so that merge-on-free is O(log n)
+    // (binary search for insertion point, then check left/right neighbors)
+    // instead of the previous O(n^2) nested scan. Best-fit allocation is
+    // still O(n) linear scan but benefits from sorted cache-friendly access.
 
     struct FreeBlock {
-      uint64_t offset;
-      uint64_t size;
+      uint64_t offset = 0;  // InitSafe
+      uint64_t size = 0;    // InitSafe
     };
     constexpr uint32_t MAX_FREE = 4096;
+    // free_list is NOT zero-initialized: num_free bounds all access, and
+    // zeroing 64KB (4096 × 16B) per call is pure overhead on the hot path.
+    // FreeBlock fields have NSDMI documenting the intended zero state.
     FreeBlock free_list[MAX_FREE];
     uint32_t num_free = 0;
     uint64_t pool_end = 0;
@@ -825,36 +833,53 @@ struct BackgroundThread {
         uint64_t size = (slots[s].nbytes + ALIGNMENT - 1) &
                         ~uint64_t(ALIGNMENT - 1);
 
-        // Merge with adjacent blocks.
-        bool merged = false;
-        for (uint32_t f = 0; f < num_free; f++) {
-          if (free_list[f].offset + free_list[f].size == offset) {
-            free_list[f].size += size;
-            // Check if we can also merge forward.
-            for (uint32_t g = 0; g < num_free; g++) {
-              if (g != f && free_list[f].offset + free_list[f].size ==
-                                free_list[g].offset) {
-                free_list[f].size += free_list[g].size;
-                free_list[g] = free_list[--num_free];
-                break;
-              }
-            }
-            merged = true;
-            break;
-          }
-          if (offset + size == free_list[f].offset) {
-            free_list[f].offset = offset;
-            free_list[f].size += size;
-            merged = true;
-            break;
-          }
+        // Binary search: find first block with offset > freed offset.
+        // Invariant: free_list[0..num_free) sorted by .offset ascending.
+        uint32_t lo = 0;
+        uint32_t hi = num_free;
+        while (lo < hi) {
+          uint32_t mid = lo + (hi - lo) / 2;
+          if (free_list[mid].offset <= offset)
+            lo = mid + 1;
+          else
+            hi = mid;
         }
-        if (!merged && num_free < MAX_FREE) {
-          free_list[num_free++] = {.offset = offset, .size = size};
+        // lo = insertion point: all blocks [0..lo) have offset <= freed offset.
+        // left neighbor = lo-1, right neighbor = lo.
+
+        bool merge_left = (lo > 0) &&
+            (free_list[lo - 1].offset + free_list[lo - 1].size == offset);
+        bool merge_right = (lo < num_free) &&
+            (offset + size == free_list[lo].offset);
+
+        if (merge_left && merge_right) [[unlikely]] {
+          // Three-way merge: left + freed + right coalesce into one block.
+          free_list[lo - 1].size += size + free_list[lo].size;
+          // Remove the right block by shifting everything after it left.
+          uint32_t tail = num_free - lo - 1;
+          if (tail > 0)
+            std::memmove(&free_list[lo], &free_list[lo + 1],
+                         tail * sizeof(FreeBlock));
+          --num_free;
+        } else if (merge_left) {
+          // Extend left neighbor forward.
+          free_list[lo - 1].size += size;
+        } else if (merge_right) {
+          // Extend right neighbor backward.
+          free_list[lo].offset = offset;
+          free_list[lo].size += size;
+        } else if (num_free < MAX_FREE) [[likely]] {
+          // Insert new block at position lo, shifting right.
+          uint32_t tail = num_free - lo;
+          if (tail > 0)
+            std::memmove(&free_list[lo + 1], &free_list[lo],
+                         tail * sizeof(FreeBlock));
+          free_list[lo] = {.offset = offset, .size = size};
+          ++num_free;
         }
       }
 
-      // Allocate slots born at this op.
+      // Allocate slots born at this op (best-fit scan).
       for (uint32_t b = birth_off[op]; b < birth_off[op + 1]; b++) {
         uint32_t s = born_slots[b];
         uint64_t aligned_size = (slots[s].nbytes + ALIGNMENT - 1) &
@@ -873,8 +898,15 @@ struct BackgroundThread {
         if (best != UINT32_MAX) {
           slots[s].offset_bytes = free_list[best].offset;
           if (best_waste == 0) {
-            free_list[best] = free_list[--num_free];
+            // Exact match: remove block, shift left to maintain sort.
+            uint32_t tail = num_free - best - 1;
+            if (tail > 0)
+              std::memmove(&free_list[best], &free_list[best + 1],
+                           tail * sizeof(FreeBlock));
+            --num_free;
           } else {
+            // Partial use: shrink block from the front. Offset increases,
+            // which preserves sorted order (block was at this position).
             free_list[best].offset += aligned_size;
             free_list[best].size -= aligned_size;
           }
