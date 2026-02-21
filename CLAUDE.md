@@ -1211,6 +1211,35 @@ Use the Edit tool. I can see the diff. sed/awk hide what changed
 and frequently mangle things. Every edit must be visible and
 reviewable.
 
+### HS11. No `std::memory_order_relaxed` — EVER
+`relaxed` is a bug waiting to happen. It means "the compiler and CPU
+can reorder this with anything." On ARM that's a data race. On x86
+it works by accident (TSO) until an optimizer hoists it past a branch.
+
+**The ONLY legal atomic pattern:**
+```cpp
+// Store: release — all prior writes visible before this one
+atomic_var.store(value, std::memory_order_release);
+
+// Load: acquire — all subsequent reads see stores before the release
+while (atomic_var.load(std::memory_order_acquire) != expected) {
+    CRUCIBLE_SPIN_PAUSE;  // _mm_pause — power hint, ~0 latency
+}
+
+// RMW: acq_rel — both sides in one instruction
+atomic_var.compare_exchange_strong(expected, desired, std::memory_order_acq_rel);
+atomic_var.fetch_add(n, std::memory_order_acq_rel);
+```
+
+**The ONLY exception:** same-thread reads of your own variable
+(producer reads its own `head`, consumer reads its own `tail`).
+These are sequenced, not cross-thread. Even then, prefer acquire
+for clarity unless profiling proves it's a bottleneck.
+
+**Cost:** acquire/release on x86 = same instructions as relaxed
+(MOV). On ARM = one extra `dmb` barrier (~5ns). We don't run on
+ARM yet. When we do, 5ns is nothing vs a silent data race.
+
 ---
 
 ZERO COPY. ZERO ALLOC ON HOT PATH. EVERY INSTRUCTION JUSTIFIED.

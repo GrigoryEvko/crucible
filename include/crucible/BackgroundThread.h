@@ -109,13 +109,13 @@ struct BackgroundThread {
     rank = rank_;
     world_size = world_size_;
     device_capability = device_cap;
-    running.store(true, std::memory_order_relaxed);
+    running.store(true, std::memory_order_release);
     thread = std::thread([this] { run(); });
   }
 
   // Signal the thread to stop and join.
   void stop() CRUCIBLE_NO_THREAD_SAFETY {
-    running.store(false, std::memory_order_relaxed);
+    running.store(false, std::memory_order_release);
     if (thread.joinable()) {
       thread.join();
     }
@@ -323,7 +323,7 @@ struct BackgroundThread {
     ScopeHash scope_batch[BATCH_SIZE];
     CallsiteHash callsite_batch[BATCH_SIZE];
 
-    while (running.load(std::memory_order_relaxed)) {
+    while (running.load(std::memory_order_acquire)) {
       // Check for divergence reset signal from fg thread.
       if (reset_requested.load(std::memory_order_acquire)) [[unlikely]] {
         detector.reset();
