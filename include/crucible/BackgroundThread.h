@@ -124,7 +124,11 @@ struct BackgroundThread {
   BackgroundThread(BackgroundThread&&) = delete("BackgroundThread owns a std::thread with captured this");
   BackgroundThread& operator=(BackgroundThread&&) = delete("BackgroundThread owns a std::thread with captured this");
 
+#ifdef CRUCIBLE_BENCH
+ public:  // Bench needs access to scratch buffers for isolated sub-phase timing.
+#else
  private:
+#endif
   static constexpr uint32_t BATCH_SIZE = 4096;
 
   // ── Scratch buffer capacities ──────────────────────────────────────
