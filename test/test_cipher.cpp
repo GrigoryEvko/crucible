@@ -1,14 +1,17 @@
 #include <crucible/Cipher.h>
+#include <crucible/Effects.h>
 #include <cassert>
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 
+static crucible::fx::Test g_test;
+
 // Build a minimal RegionNode suitable for Cipher round-trip tests.
 static crucible::RegionNode* make_test_region(crucible::Arena& arena) {
     constexpr uint32_t NUM_OPS = 2;
-    auto* ops = arena.alloc_array<crucible::TraceEntry>(NUM_OPS);
+    auto* ops = arena.alloc_array<crucible::TraceEntry>(g_test.alloc, NUM_OPS);
     std::memset(ops, 0, NUM_OPS * sizeof(crucible::TraceEntry));
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
@@ -16,27 +19,27 @@ static crucible::RegionNode* make_test_region(crucible::Arena& arena) {
         ops[i].num_inputs   = 1;
         ops[i].num_outputs  = 1;
 
-        ops[i].input_metas  = arena.alloc_array<crucible::TensorMeta>(1);
+        ops[i].input_metas  = arena.alloc_array<crucible::TensorMeta>(g_test.alloc, 1);
         ops[i].input_metas[0] = {};
         ops[i].input_metas[0].ndim    = 1;
         ops[i].input_metas[0].sizes[0]   = 16;
         ops[i].input_metas[0].strides[0] = 1;
         ops[i].input_metas[0].dtype = crucible::ScalarType::Float;
 
-        ops[i].output_metas  = arena.alloc_array<crucible::TensorMeta>(1);
+        ops[i].output_metas  = arena.alloc_array<crucible::TensorMeta>(g_test.alloc, 1);
         ops[i].output_metas[0] = ops[i].input_metas[0];
 
-        ops[i].input_trace_indices = arena.alloc_array<crucible::OpIndex>(1);
+        ops[i].input_trace_indices = arena.alloc_array<crucible::OpIndex>(g_test.alloc, 1);
         ops[i].input_trace_indices[0] = crucible::OpIndex{};
 
-        ops[i].input_slot_ids = arena.alloc_array<crucible::SlotId>(1);
+        ops[i].input_slot_ids = arena.alloc_array<crucible::SlotId>(g_test.alloc, 1);
         ops[i].input_slot_ids[0] = crucible::SlotId{};
 
-        ops[i].output_slot_ids = arena.alloc_array<crucible::SlotId>(1);
+        ops[i].output_slot_ids = arena.alloc_array<crucible::SlotId>(g_test.alloc, 1);
         ops[i].output_slot_ids[0] = crucible::SlotId{i};
     }
 
-    auto* region = crucible::make_region(arena, ops, NUM_OPS);
+    auto* region = crucible::make_region(g_test.alloc, arena, ops, NUM_OPS);
     assert(region != nullptr);
     return region;
 }
@@ -85,7 +88,7 @@ int main() {
     {
         auto cipher = crucible::Cipher::open(dir);
         crucible::Arena arena2(1 << 16);
-        auto* loaded = cipher.load(expected_hash, arena2);
+        auto* loaded = cipher.load(g_test.alloc, expected_hash, arena2);
         assert(loaded != nullptr && "load() must succeed for a stored hash");
         assert(loaded->content_hash == expected_hash);
         assert(loaded->num_ops == region->num_ops);
@@ -142,7 +145,7 @@ int main() {
     {
         auto cipher = crucible::Cipher::open(dir);
         crucible::Arena arena3(1 << 16);
-        assert(cipher.load(crucible::ContentHash{0xBADBADBADBADBAD0ULL}, arena3) == nullptr);
+        assert(cipher.load(g_test.alloc, crucible::ContentHash{0xBADBADBADBADBAD0ULL}, arena3) == nullptr);
     }
 
     // Cleanup temp dir.

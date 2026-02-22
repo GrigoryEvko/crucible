@@ -1,5 +1,6 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/BackgroundThread.h>
+#include <crucible/Effects.h>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -257,6 +258,7 @@ static void test_reinit() {
 // End-to-end: create realistic slots, run the sweep-line allocator,
 // then materialize with PoolAllocator and verify write isolation.
 static void test_integration_with_sweep_line() {
+  crucible::fx::Test test;
   crucible::BackgroundThread bt;
 
   // Slot 0: birth=0, death=5, 1024B (internal)
@@ -287,7 +289,7 @@ static void test_integration_with_sweep_line() {
               .device_idx = 0, .layout = Layout::Strided,
               .is_external = true, .pad = {}, .slot_id = SlotId{3}, .pad2 = {}};
 
-  auto* plan = bt.compute_memory_plan(slots, N);
+  auto* plan = bt.compute_memory_plan(test.alloc, slots, N);
   assert(plan != nullptr);
   assert(plan->pool_bytes > 0);
 

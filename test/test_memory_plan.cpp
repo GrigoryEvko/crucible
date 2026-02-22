@@ -1,10 +1,12 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/BackgroundThread.h>
+#include <crucible/Effects.h>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
 
 int main() {
+  crucible::fx::Test test;
   crucible::BackgroundThread bt;
 
   // Create slots with known liveness intervals for memory planning.
@@ -39,7 +41,7 @@ int main() {
               .device_idx = 0, .layout = Layout::Strided,
               .is_external = true, .pad = {}, .slot_id = SlotId{3}, .pad2 = {}};
 
-  auto* plan = bt.compute_memory_plan(slots, N);
+  auto* plan = bt.compute_memory_plan(test.alloc, slots, N);
   assert(plan != nullptr);
   assert(plan->num_slots == N);
   assert(plan->num_external == 1);

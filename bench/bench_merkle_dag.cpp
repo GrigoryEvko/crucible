@@ -12,6 +12,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/BackgroundThread.h>
+#include <crucible/Effects.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/TraceLoader.h>
@@ -35,7 +36,8 @@ static uint64_t bench_rand() {
 
 // Create a realistic TraceEntry with arena-allocated metas.
 static TraceEntry make_synthetic_entry(
-    Arena& arena, uint16_t n_in, uint16_t n_out, uint16_t n_scalar, uint8_t ndim)
+    fx::Alloc a, Arena& arena, uint16_t n_in, uint16_t n_out,
+    uint16_t n_scalar, uint8_t ndim)
 {
     TraceEntry te{};
     te.schema_hash = SchemaHash{bench_rand()};
@@ -49,7 +51,7 @@ static TraceEntry make_synthetic_entry(
     te.kernel_id = CKernelId::OPAQUE;
 
     if (n_in > 0) {
-        te.input_metas = arena.alloc_array<TensorMeta>(n_in);
+        te.input_metas = arena.alloc_array<TensorMeta>(a, n_in);
         for (uint16_t j = 0; j < n_in; j++) {
             auto& m = te.input_metas[j];
             m.ndim = ndim;
@@ -65,7 +67,7 @@ static TraceEntry make_synthetic_entry(
     }
 
     if (n_out > 0) {
-        te.output_metas = arena.alloc_array<TensorMeta>(n_out);
+        te.output_metas = arena.alloc_array<TensorMeta>(a, n_out);
         for (uint16_t j = 0; j < n_out; j++) {
             auto& m = te.output_metas[j];
             m.ndim = ndim;
@@ -81,7 +83,7 @@ static TraceEntry make_synthetic_entry(
     }
 
     if (n_scalar > 0) {
-        te.scalar_args = arena.alloc_array<int64_t>(n_scalar);
+        te.scalar_args = arena.alloc_array<int64_t>(a, n_scalar);
         for (uint16_t s = 0; s < n_scalar; s++)
             te.scalar_args[s] = static_cast<int64_t>(bench_rand());
     }
@@ -95,12 +97,13 @@ static void bench_content_hash_small() {
     std::printf("\n--- compute_content_hash ---\n");
 
     // Small region: 8 ops, 2 inputs/1 output each, 4 dims.
+    fx::Test test;
     Arena arena{1 << 16};
     constexpr uint32_t N = 8;
     TraceEntry ops[N];
     bench_rng_state = 0xDEADBEEFCAFEBABEULL;
     for (uint32_t i = 0; i < N; i++)
-        ops[i] = make_synthetic_entry(arena, 2, 1, 2, 4);
+        ops[i] = make_synthetic_entry(test.alloc, arena, 2, 1, 2, 4);
 
     BENCH_CHECK("content_hash (8 ops, 2in/1out, 4d)", 100'000, 145.5, {
         auto h = compute_content_hash(std::span{ops, N});
@@ -110,14 +113,15 @@ static void bench_content_hash_small() {
 
 static void bench_content_hash_resnet() {
     // ResNet-like: 481 ops, varying input counts.
+    fx::Test test;
     Arena arena{1 << 20};
     constexpr uint32_t N = 481;
-    auto* ops = arena.alloc_array<TraceEntry>(N);
+    auto* ops = arena.alloc_array<TraceEntry>(test.alloc, N);
     bench_rng_state = 0x12345678ABCDEF01ULL;
     for (uint32_t i = 0; i < N; i++) {
         uint16_t n_in = static_cast<uint16_t>(1 + (bench_rand() % 3));
         uint16_t n_out = static_cast<uint16_t>(1 + (bench_rand() % 2));
-        ops[i] = make_synthetic_entry(arena, n_in, n_out, 1, 4);
+        ops[i] = make_synthetic_entry(test.alloc, arena, n_in, n_out, 1, 4);
     }
 
     BENCH_CHECK("content_hash (481 ops, ResNet-like)", 1'000, 9153.3, {
@@ -128,14 +132,15 @@ static void bench_content_hash_resnet() {
 
 static void bench_content_hash_gpt() {
     // GPT-like: 1110 ops, more inputs (attention has many).
+    fx::Test test;
     Arena arena{1 << 20};
     constexpr uint32_t N = 1110;
-    auto* ops = arena.alloc_array<TraceEntry>(N);
+    auto* ops = arena.alloc_array<TraceEntry>(test.alloc, N);
     bench_rng_state = 0xABCDEF0123456789ULL;
     for (uint32_t i = 0; i < N; i++) {
         uint16_t n_in = static_cast<uint16_t>(1 + (bench_rand() % 4));
         uint16_t n_out = static_cast<uint16_t>(1 + (bench_rand() % 2));
-        ops[i] = make_synthetic_entry(arena, n_in, n_out, 2, 4);
+        ops[i] = make_synthetic_entry(test.alloc, arena, n_in, n_out, 2, 4);
     }
 
     BENCH_CHECK("content_hash (1110 ops, GPT-like)", 1'000, 30528.6, {
@@ -148,16 +153,17 @@ static void bench_make_region() {
     std::printf("\n--- make_region ---\n");
 
     // Pre-build ops, then benchmark just region creation.
+    fx::Test test;
     Arena data_arena{1 << 20};
     constexpr uint32_t N = 481;
-    auto* ops = data_arena.alloc_array<TraceEntry>(N);
+    auto* ops = data_arena.alloc_array<TraceEntry>(test.alloc, N);
     bench_rng_state = 0x12345678ABCDEF01ULL;
     for (uint32_t i = 0; i < N; i++)
-        ops[i] = make_synthetic_entry(data_arena, 2, 1, 1, 4);
+        ops[i] = make_synthetic_entry(test.alloc, data_arena, 2, 1, 1, 4);
 
     BENCH_CHECK("make_region (481 ops)", 10'000, 9816.8, {
         Arena region_arena{1 << 20};
-        auto* r = make_region(region_arena, ops, N);
+        auto* r = make_region(test.alloc, region_arena, ops, N);
         bench::DoNotOptimize(r);
     });
 }
@@ -165,14 +171,15 @@ static void bench_make_region() {
 static void bench_merkle_hash() {
     std::printf("\n--- compute_merkle_hash ---\n");
 
+    fx::Test test;
     Arena arena{1 << 20};
     constexpr uint32_t N = 481;
-    auto* ops = arena.alloc_array<TraceEntry>(N);
+    auto* ops = arena.alloc_array<TraceEntry>(test.alloc, N);
     bench_rng_state = 0xAAAABBBBCCCCDDDDULL;
     for (uint32_t i = 0; i < N; i++)
-        ops[i] = make_synthetic_entry(arena, 2, 1, 1, 4);
+        ops[i] = make_synthetic_entry(test.alloc, arena, 2, 1, 1, 4);
 
-    auto* region = make_region(arena, ops, N);
+    auto* region = make_region(test.alloc, arena, ops, N);
 
     BENCH_CHECK("compute_merkle_hash (RegionNode)", 1'000'000, 0.8, {
         auto h = compute_merkle_hash(region);
@@ -182,6 +189,8 @@ static void bench_merkle_hash() {
 
 static void bench_build_trace() {
     std::printf("\n--- build_trace (full pipeline) ---\n");
+
+    fx::Test test;
 
     // We can't easily benchmark build_trace directly because it reads from
     // current_trace vectors and MetaLog. Instead, simulate the setup.
@@ -271,7 +280,7 @@ static void bench_build_trace() {
 
         repopulate_meta_log();
 
-        auto* graph = bg.build_trace(N);
+        auto* graph = bg.build_trace(test.alloc, N);
         bench::DoNotOptimize(graph);
     });
 }
@@ -280,11 +289,12 @@ static void bench_build_csr() {
     std::printf("\n--- build_csr ---\n");
 
     // Synthetic edges for 481 ops with ~2 edges per op.
+    fx::Test test;
     Arena arena{1 << 20};
     constexpr uint32_t NUM_OPS = 481;
     constexpr uint32_t NUM_EDGES = 900;
 
-    auto* edges = arena.alloc_array<Edge>(NUM_EDGES);
+    auto* edges = arena.alloc_array<Edge>(test.alloc, NUM_EDGES);
     bench_rng_state = 0x5555666677778888ULL;
     for (uint32_t e = 0; e < NUM_EDGES; e++) {
         uint32_t src = static_cast<uint32_t>(bench_rand() % NUM_OPS);
@@ -294,10 +304,10 @@ static void bench_build_csr() {
 
     BENCH_CHECK("build_csr (481 ops, 900 edges)", 10'000, 2542.1, {
         Arena csr_arena{1 << 16};
-        auto* graph = csr_arena.alloc_obj<TraceGraph>();
+        auto* graph = csr_arena.alloc_obj<TraceGraph>(test.alloc);
         graph->ops = nullptr;
         graph->num_ops = NUM_OPS;
-        build_csr(csr_arena, graph, edges, NUM_EDGES, NUM_OPS);
+        build_csr(test.alloc, csr_arena, graph, edges, NUM_EDGES, NUM_OPS);
         bench::DoNotOptimize(graph);
     });
 }
@@ -306,9 +316,10 @@ static void bench_memory_plan() {
     std::printf("\n--- compute_memory_plan ---\n");
 
     // Synthetic slots for 300 unique tensors.
+    fx::Test test;
     Arena arena{1 << 20};
     constexpr uint32_t NUM_SLOTS = 300;
-    auto* slots = arena.alloc_array<TensorSlot>(NUM_SLOTS);
+    auto* slots = arena.alloc_array<TensorSlot>(test.alloc, NUM_SLOTS);
 
     bench_rng_state = 0x9999AAAABBBBCCCCULL;
     for (uint32_t s = 0; s < NUM_SLOTS; s++) {
@@ -328,9 +339,9 @@ static void bench_memory_plan() {
         bg.arena.~Arena();
         new (&bg.arena) Arena{1 << 20};
         // Copy slots into bg arena.
-        auto* s = bg.arena.alloc_array<TensorSlot>(NUM_SLOTS);
+        auto* s = bg.arena.alloc_array<TensorSlot>(test.alloc, NUM_SLOTS);
         std::memcpy(s, slots, NUM_SLOTS * sizeof(TensorSlot));
-        auto* plan = bg.compute_memory_plan(s, NUM_SLOTS);
+        auto* plan = bg.compute_memory_plan(test.alloc, s, NUM_SLOTS);
         bench::DoNotOptimize(plan);
     });
 }
@@ -338,6 +349,7 @@ static void bench_memory_plan() {
 static void bench_build_trace_from_file(const char* path) {
     std::printf("\n--- build_trace (loaded from %s) ---\n", path);
 
+    fx::Test test;
     auto trace = load_trace(path);
     if (!trace) {
         std::printf("  SKIP: could not load %s\n", path);
@@ -382,7 +394,7 @@ static void bench_build_trace_from_file(const char* path) {
         bg.arena.~Arena();
         new (&bg.arena) Arena{arena_bytes};
         repopulate();
-        auto* graph = bg.build_trace(trace->num_ops);
+        auto* graph = bg.build_trace(test.alloc, trace->num_ops);
         bench::DoNotOptimize(graph);
     });
 }

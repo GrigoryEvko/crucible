@@ -37,6 +37,7 @@ namespace crucible {
 // the Graph node will have fewer inputs than the TraceEntry. Slot
 // IDs are compacted to match the filtered input list.
 inline void lower_trace_to_graph(
+    fx::Alloc a,
     const TraceGraph& tg,
     ExprPool& pool,
     Graph& graph)
@@ -53,7 +54,7 @@ inline void lower_trace_to_graph(
   // with a valid slot_id). Create one INPUT node per unique slot_id.
 
   const uint32_t map_size = (num_slots > 0) ? num_slots : 1;
-  auto** extern_map = arena.alloc_array<GraphNode*>(map_size);
+  auto** extern_map = arena.alloc_array<GraphNode*>(a, map_size);
   std::memset(extern_map, 0, map_size * sizeof(GraphNode*));
 
   for (uint32_t i = 0; i < num_ops; i++) {
@@ -71,17 +72,17 @@ inline void lower_trace_to_graph(
       const Expr* sizes[8];
       const uint8_t ndim = (m.ndim <= 8) ? m.ndim : 8;
       for (uint8_t d = 0; d < ndim; d++)
-        sizes[d] = pool.integer(m.sizes[d]);
+        sizes[d] = pool.integer(a, m.sizes[d]);
 
-      auto* inp = graph.add_input(m.dtype, m.device_idx, std::span{sizes, ndim});
-      graph.set_output_slots(inp->id, std::span{&sid, 1u});
+      auto* inp = graph.add_input(a, m.dtype, m.device_idx, std::span{sizes, ndim});
+      graph.set_output_slots(a, inp->id, std::span{&sid, 1u});
       extern_map[sid.raw()] = inp;
     }
   }
 
   // ── Phase 2: Compute nodes for each TraceEntry ────────────────
 
-  auto** op_to_node = arena.alloc_array<GraphNode*>(num_ops);
+  auto** op_to_node = arena.alloc_array<GraphNode*>(a, num_ops);
 
   for (uint32_t i = 0; i < num_ops; i++) {
     const TraceEntry& te = tg.ops[i];
@@ -99,7 +100,7 @@ inline void lower_trace_to_graph(
       dtype = m.dtype;
       dev = m.device_idx;
       for (uint8_t d = 0; d < ndim; d++)
-        sizes[d] = pool.integer(m.sizes[d]);
+        sizes[d] = pool.integer(a, m.sizes[d]);
     }
 
     // Resolve input dependencies, filtering null inputs.
@@ -119,8 +120,8 @@ inline void lower_trace_to_graph(
     }
 
     const uint16_t alloc_n = (real_count > 0) ? real_count : 1;
-    auto** deps = arena.alloc_array<GraphNode*>(alloc_n);
-    auto* in_slots = arena.alloc_array<SlotId>(alloc_n);
+    auto** deps = arena.alloc_array<GraphNode*>(a, alloc_n);
+    auto* in_slots = arena.alloc_array<SlotId>(a, alloc_n);
     uint16_t k = 0;
 
     for (uint16_t j = 0; j < te.num_inputs; j++) {
@@ -146,6 +147,7 @@ inline void lower_trace_to_graph(
     GraphNode* node;
     if (kind == NodeKind::POINTWISE) {
       node = graph.add_pointwise(
+          a,
           std::span{sizes, ndim}, dtype, dev,
           nullptr,
           std::span{deps, real_count});
@@ -153,6 +155,7 @@ inline void lower_trace_to_graph(
       // EXTERN for everything else (REDUCTION, NOP, MUTATION, SCAN, EXTERN).
       // add_extern provides the structural shell; kind is patched below.
       node = graph.add_extern(
+          a,
           ckernel_name(te.kernel_id),
           ckernel_name(te.kernel_id),
           dtype, dev,
@@ -167,9 +170,9 @@ inline void lower_trace_to_graph(
 
     // Carry slot IDs into Graph's side-tables.
     if (real_count > 0)
-      graph.set_input_slots(node->id, std::span{in_slots, real_count});
+      graph.set_input_slots(a, node->id, std::span{in_slots, real_count});
     if (te.output_slot_ids && te.num_outputs > 0)
-      graph.set_output_slots(node->id, std::span<const SlotId>{te.output_slot_ids, te.num_outputs});
+      graph.set_output_slots(a, node->id, std::span<const SlotId>{te.output_slot_ids, te.num_outputs});
 
     op_to_node[i] = node;
   }
@@ -177,18 +180,18 @@ inline void lower_trace_to_graph(
   // ── Phase 3: Graph inputs and outputs ─────────────────────────
 
   // Graph inputs: all INPUT nodes, ordered by slot_id.
-  auto* input_ids = arena.alloc_array<NodeId>(map_size);
+  auto* input_ids = arena.alloc_array<NodeId>(a, map_size);
   uint32_t n_inputs = 0;
   for (uint32_t s = 0; s < num_slots; s++) {
     if (extern_map[s])
       input_ids[n_inputs++] = extern_map[s]->id;
   }
   if (n_inputs > 0)
-    graph.set_graph_inputs(std::span{input_ids, n_inputs});
+    graph.set_graph_inputs(a, std::span{input_ids, n_inputs});
 
   // Graph outputs: ops whose outputs are not consumed by any
   // DATA_FLOW edge within this iteration (terminal values).
-  auto* output_ids = arena.alloc_array<NodeId>(num_ops);
+  auto* output_ids = arena.alloc_array<NodeId>(a, num_ops);
   uint32_t n_outputs = 0;
   for (uint32_t i = 0; i < num_ops; i++) {
     bool has_df_consumer = false;
@@ -202,7 +205,7 @@ inline void lower_trace_to_graph(
       output_ids[n_outputs++] = op_to_node[i]->id;
   }
   if (n_outputs > 0)
-    graph.set_graph_outputs(std::span{output_ids, n_outputs});
+    graph.set_graph_outputs(a, std::span{output_ids, n_outputs});
 }
 
 } // namespace crucible

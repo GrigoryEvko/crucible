@@ -9,6 +9,7 @@
 //   5. Repeated alternation (A→B→A→B)
 
 #include <crucible/Vigil.h>
+#include <crucible/Effects.h>
 #include "test_harness.h"
 #include <cassert>
 #include <cstdio>
@@ -313,13 +314,14 @@ static void test_cache_miss_fallback() {
 
 // ── Test 4: Cache capacity and FIFO eviction ──────────────────────
 static void test_cache_dedup_and_cap() {
+    fx::Test test;
     RegionCache cache;
 
     assert(cache.size() == 0);
     assert(cache.empty());
 
     Arena arena(4096);
-    auto* region = make_region(arena, nullptr, 0);
+    auto* region = make_region(test.alloc, arena, nullptr, 0);
     region->content_hash = ContentHash{0x1234};
 
     cache.insert(region);
@@ -331,14 +333,14 @@ static void test_cache_dedup_and_cap() {
 
     // Insert different regions up to CAP.
     for (uint32_t i = 1; i < RegionCache::CAP; i++) {
-        auto* r = make_region(arena, nullptr, 0);
+        auto* r = make_region(test.alloc, arena, nullptr, 0);
         r->content_hash = ContentHash{0x1234 + i};
         cache.insert(r);
     }
     assert(cache.size() == RegionCache::CAP);
 
     // One more → evicts oldest, size stays at CAP.
-    auto* overflow = make_region(arena, nullptr, 0);
+    auto* overflow = make_region(test.alloc, arena, nullptr, 0);
     overflow->content_hash = ContentHash{0xFFFF};
     cache.insert(overflow);
     assert(cache.size() == RegionCache::CAP);

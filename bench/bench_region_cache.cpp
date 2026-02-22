@@ -9,6 +9,7 @@
 // Run:    ./build-bench/bench/bench_region_cache
 
 #include "bench_harness.h"
+#include <crucible/Effects.h>
 #include <crucible/RegionCache.h>
 
 #include <cstdio>
@@ -30,6 +31,7 @@ static constexpr uint32_t NUM_OPS = 128;  // realistic model op count
 static constexpr uint32_t NUM_REGIONS = 10;
 
 struct TestFixture {
+    fx::Test test;
     Arena arena{1 << 20};  // 1MB
     RegionNode* regions[NUM_REGIONS]{};
     MemoryPlan* plans[NUM_REGIONS]{};
@@ -37,7 +39,7 @@ struct TestFixture {
     TestFixture() {
         for (uint32_t r = 0; r < NUM_REGIONS; r++) {
             // Allocate TraceEntry array in arena (matches production layout).
-            auto* ops = arena.alloc_array<TraceEntry>(NUM_OPS);
+            auto* ops = arena.alloc_array<TraceEntry>(test.alloc, NUM_OPS);
             std::memset(ops, 0, NUM_OPS * sizeof(TraceEntry));
 
             for (uint32_t i = 0; i < NUM_OPS; i++) {
@@ -46,11 +48,11 @@ struct TestFixture {
             }
 
             // Allocate a MemoryPlan (just needs to be non-null for cache eligibility).
-            plans[r] = arena.alloc_obj<MemoryPlan>();
+            plans[r] = arena.alloc_obj<MemoryPlan>(test.alloc);
             std::memset(plans[r], 0, sizeof(MemoryPlan));
 
             // Build a RegionNode via make_region, then attach the plan.
-            regions[r] = make_region(arena, ops, NUM_OPS);
+            regions[r] = make_region(test.alloc, arena, ops, NUM_OPS);
             regions[r]->plan = plans[r];
         }
     }

@@ -1,4 +1,5 @@
 #include <crucible/Serialize.h>
+#include <crucible/Effects.h>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -27,6 +28,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 }
 
 int main() {
+    crucible::fx::Test test;
     crucible::Arena arena(1 << 16);
 
     // ── Build a 3-op RegionNode ─────────────────────────────────────
@@ -35,7 +37,7 @@ int main() {
     // Op 2: schema=0xCC, 2 inputs, 1 output
 
     constexpr uint32_t NUM_OPS = 3;
-    auto* ops = arena.alloc_array<crucible::TraceEntry>(NUM_OPS);
+    auto* ops = arena.alloc_array<crucible::TraceEntry>(test.alloc, NUM_OPS);
     std::memset(ops, 0, NUM_OPS * sizeof(crucible::TraceEntry));
 
     // Set up metas: 2 inputs + 1 output per op.
@@ -50,30 +52,30 @@ int main() {
         ops[i].grad_enabled     = (i % 2 == 0);
         ops[i].inference_mode   = false;
 
-        ops[i].input_metas      = arena.alloc_array<crucible::TensorMeta>(2);
+        ops[i].input_metas      = arena.alloc_array<crucible::TensorMeta>(test.alloc, 2);
         ops[i].input_metas[0]   = make_meta(4, 8);
         ops[i].input_metas[1]   = make_meta(4, 8);
 
-        ops[i].output_metas     = arena.alloc_array<crucible::TensorMeta>(1);
+        ops[i].output_metas     = arena.alloc_array<crucible::TensorMeta>(test.alloc, 1);
         ops[i].output_metas[0]  = make_meta(4, 8);
 
-        ops[i].scalar_args      = arena.alloc_array<int64_t>(1);
+        ops[i].scalar_args      = arena.alloc_array<int64_t>(test.alloc, 1);
         ops[i].scalar_args[0]   = static_cast<int64_t>(i * 42);
 
-        ops[i].input_trace_indices  = arena.alloc_array<crucible::OpIndex>(2);
+        ops[i].input_trace_indices  = arena.alloc_array<crucible::OpIndex>(test.alloc, 2);
         ops[i].input_trace_indices[0] = (i > 0) ? crucible::OpIndex{i - 1} : crucible::OpIndex{};
         ops[i].input_trace_indices[1] = crucible::OpIndex{};
 
-        ops[i].input_slot_ids  = arena.alloc_array<crucible::SlotId>(2);
+        ops[i].input_slot_ids  = arena.alloc_array<crucible::SlotId>(test.alloc, 2);
         ops[i].input_slot_ids[0] = (i > 0) ? crucible::SlotId{(i - 1) * 10} : crucible::SlotId{};
         ops[i].input_slot_ids[1] = crucible::SlotId{};
 
-        ops[i].output_slot_ids  = arena.alloc_array<crucible::SlotId>(1);
+        ops[i].output_slot_ids  = arena.alloc_array<crucible::SlotId>(test.alloc, 1);
         ops[i].output_slot_ids[0] = crucible::SlotId{i * 10};
     }
 
     // Build RegionNode.
-    auto* region = crucible::make_region(arena, ops, NUM_OPS);
+    auto* region = crucible::make_region(test.alloc, arena, ops, NUM_OPS);
     assert(region != nullptr);
     assert(region->num_ops == NUM_OPS);
 
@@ -88,7 +90,7 @@ int main() {
 
     // ── Deserialize into a fresh arena ──────────────────────────────
     crucible::Arena arena2(1 << 16);
-    crucible::RegionNode* loaded = crucible::deserialize_region(std::span<const uint8_t>{buf, n}, arena2);
+    crucible::RegionNode* loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{buf, n}, arena2);
     assert(loaded != nullptr && "deserialize_region returned nullptr");
 
     // ── Verify round-trip ───────────────────────────────────────────
@@ -145,7 +147,7 @@ int main() {
 
     // ── Corrupt-data safety: truncated buffer for deserialize ───────
     crucible::Arena arena3(1 << 16);
-    crucible::RegionNode* bad = crucible::deserialize_region(std::span<const uint8_t>{buf, 10}, arena3);
+    crucible::RegionNode* bad = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{buf, 10}, arena3);
     assert(bad == nullptr && "deserialize_region must return nullptr on truncated input");
 
     std::printf("test_serialize: all tests passed\n");

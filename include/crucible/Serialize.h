@@ -230,6 +230,7 @@ inline Header read_header(Reader& r) {
 // ═══════════════════════════════════════════════════════════════════
 
 [[nodiscard]] inline RegionNode* deserialize_region(
+    fx::Alloc                a,
     std::span<const uint8_t> buf,
     Arena&                   arena)
 {
@@ -253,7 +254,7 @@ inline Header read_header(Reader& r) {
     MemoryPlan* plan    = nullptr;
     const bool has_plan = r.r<bool>();
     if (has_plan) {
-        plan                   = arena.alloc_obj<MemoryPlan>();
+        plan                   = arena.alloc_obj<MemoryPlan>(a);
         plan->pool_bytes        = r.r<uint64_t>();
         plan->num_slots         = r.r<uint32_t>();
         plan->num_external      = r.r<uint32_t>();
@@ -264,7 +265,7 @@ inline Header read_header(Reader& r) {
         plan->rank              = r.r<int32_t>();
         plan->world_size        = r.r<int32_t>();
         if (plan->num_slots > 0) {
-            plan->slots = arena.alloc_array<TensorSlot>(plan->num_slots);
+            plan->slots = arena.alloc_array<TensorSlot>(a, plan->num_slots);
             for (uint32_t s = 0; s < plan->num_slots; s++) {
                 r.read_bytes(&plan->slots[s], sizeof(TensorSlot));
             }
@@ -275,7 +276,7 @@ inline Header read_header(Reader& r) {
 
     // TraceEntries
     TraceEntry* ops = (num_ops > 0)
-        ? arena.alloc_array<TraceEntry>(num_ops) : nullptr;
+        ? arena.alloc_array<TraceEntry>(a, num_ops) : nullptr;
 
     for (uint32_t i = 0; i < num_ops; i++) {
         TraceEntry& te      = ops[i];
@@ -292,37 +293,37 @@ inline Header read_header(Reader& r) {
         te.pad_te           = r.r<uint8_t>();
 
         te.input_metas = (te.num_inputs > 0)
-            ? arena.alloc_array<TensorMeta>(te.num_inputs) : nullptr;
+            ? arena.alloc_array<TensorMeta>(a, te.num_inputs) : nullptr;
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             te.input_metas[j] = read_meta(r);
         }
 
         te.output_metas = (te.num_outputs > 0)
-            ? arena.alloc_array<TensorMeta>(te.num_outputs) : nullptr;
+            ? arena.alloc_array<TensorMeta>(a, te.num_outputs) : nullptr;
         for (uint16_t j = 0; j < te.num_outputs; j++) {
             te.output_metas[j] = read_meta(r);
         }
 
         te.scalar_args = (te.num_scalar_args > 0)
-            ? arena.alloc_array<int64_t>(te.num_scalar_args) : nullptr;
+            ? arena.alloc_array<int64_t>(a, te.num_scalar_args) : nullptr;
         for (uint16_t j = 0; j < te.num_scalar_args; j++) {
             te.scalar_args[j] = r.r<int64_t>();
         }
 
         te.input_trace_indices = (te.num_inputs > 0)
-            ? arena.alloc_array<OpIndex>(te.num_inputs) : nullptr;
+            ? arena.alloc_array<OpIndex>(a, te.num_inputs) : nullptr;
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             te.input_trace_indices[j] = OpIndex{r.r<uint32_t>()};
         }
 
         te.input_slot_ids = (te.num_inputs > 0)
-            ? arena.alloc_array<SlotId>(te.num_inputs) : nullptr;
+            ? arena.alloc_array<SlotId>(a, te.num_inputs) : nullptr;
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             te.input_slot_ids[j] = SlotId{r.r<uint32_t>()};
         }
 
         te.output_slot_ids = (te.num_outputs > 0)
-            ? arena.alloc_array<SlotId>(te.num_outputs) : nullptr;
+            ? arena.alloc_array<SlotId>(a, te.num_outputs) : nullptr;
         for (uint16_t j = 0; j < te.num_outputs; j++) {
             te.output_slot_ids[j] = SlotId{r.r<uint32_t>()};
         }
@@ -331,7 +332,7 @@ inline Header read_header(Reader& r) {
     if (!r.ok) return nullptr;
 
     // Construct RegionNode in arena (atomic field requires placement new).
-    auto* node = new (arena.alloc(sizeof(RegionNode), alignof(RegionNode)))
+    auto* node = new (arena.alloc(a, sizeof(RegionNode), alignof(RegionNode)))
         RegionNode{};
     node->kind            = TraceNodeKind::REGION;
     node->merkle_hash     = hdr.merkle_hash;
@@ -389,6 +390,7 @@ inline Header read_header(Reader& r) {
 // ═══════════════════════════════════════════════════════════════════
 
 [[nodiscard]] inline BranchNode* deserialize_branch(
+    fx::Alloc                                 a,
     std::span<const uint8_t>                  buf,
     Arena&                                    arena CRUCIBLE_LIFETIMEBOUND,
     std::function<TraceNode*(MerkleHash)>     resolve)
@@ -410,7 +412,7 @@ inline Header read_header(Reader& r) {
 
     const uint32_t num_arms = r.r<uint32_t>();
 
-    auto* node = arena.alloc_obj<BranchNode>();
+    auto* node = arena.alloc_obj<BranchNode>(a);
     std::memset(node, 0, sizeof(BranchNode));
     node->kind        = TraceNodeKind::BRANCH;
     node->merkle_hash = hdr.merkle_hash;
@@ -420,7 +422,7 @@ inline Header read_header(Reader& r) {
     node->pad1        = 0;
 
     if (num_arms > 0) {
-        node->arms = arena.alloc_array<BranchNode::Arm>(num_arms);
+        node->arms = arena.alloc_array<BranchNode::Arm>(a, num_arms);
         for (uint32_t i = 0; i < num_arms; i++) {
             node->arms[i].value          = r.r<int64_t>();
             const MerkleHash target_h    = MerkleHash{r.r<uint64_t>()};
