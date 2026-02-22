@@ -500,10 +500,11 @@ class CRUCIBLE_OWNER KernelCache {
 // Placement-new with RegionNode{} zero-initializes via NSDMI.
 // Only set the fields that differ from defaults.
 [[nodiscard]] inline RegionNode* make_region(
+    fx::Alloc a,
     Arena& arena CRUCIBLE_LIFETIMEBOUND,
     TraceEntry* ops,
     uint32_t num_ops) {
-  auto* node = new (arena.alloc(sizeof(RegionNode), alignof(RegionNode)))
+  auto* node = new (arena.alloc(a, sizeof(RegionNode), alignof(RegionNode)))
       RegionNode{};
   node->kind = TraceNodeKind::REGION;
   node->ops = ops;
@@ -516,11 +517,12 @@ class CRUCIBLE_OWNER KernelCache {
 // Overload: accept a pre-computed content hash (from build_trace's fused
 // streaming hash). Eliminates the redundant second pass over all ops.
 [[nodiscard]] inline RegionNode* make_region(
+    fx::Alloc a,
     Arena& arena CRUCIBLE_LIFETIMEBOUND,
     TraceEntry* ops,
     uint32_t num_ops,
     ContentHash precomputed_hash) {
-  auto* node = new (arena.alloc(sizeof(RegionNode), alignof(RegionNode)))
+  auto* node = new (arena.alloc(a, sizeof(RegionNode), alignof(RegionNode)))
       RegionNode{};
   node->kind = TraceNodeKind::REGION;
   node->ops = ops;
@@ -531,8 +533,8 @@ class CRUCIBLE_OWNER KernelCache {
 }
 
 // Create a terminal node. NSDMI handles zero-init; just set kind.
-[[nodiscard]] inline TraceNode* make_terminal(Arena& arena) {
-  auto* node = new (arena.alloc(sizeof(TraceNode), alignof(TraceNode)))
+[[nodiscard]] inline TraceNode* make_terminal(fx::Alloc a, Arena& arena) {
+  auto* node = new (arena.alloc(a, sizeof(TraceNode), alignof(TraceNode)))
       TraceNode{};
   node->kind = TraceNodeKind::TERMINAL;
   return node;
@@ -632,6 +634,7 @@ inline void recompute_merkle(TraceNode* node) {
 // ═══════════════════════════════════════════════════════════════════
 
 [[nodiscard]] inline BranchNode* add_branch(
+    fx::Alloc a,
     Arena& arena,
     KernelCache& kernel_cache,
     TraceNode* divergence_point,
@@ -641,7 +644,7 @@ inline void recompute_merkle(TraceNode* node) {
     int64_t new_guard_value,
     Guard guard,
     TraceNode* existing_suffix) {
-  auto* new_region = make_region(arena, new_ops, new_n);
+  auto* new_region = make_region(a, arena, new_ops, new_n);
 
   TraceNode* merge = find_merge_point(std::span{new_ops, new_n}, existing_suffix);
 
@@ -654,12 +657,12 @@ inline void recompute_merkle(TraceNode* node) {
       std::memory_order_release);
 
   // 5. Create BranchNode
-  auto* branch = arena.alloc_obj<BranchNode>();
+  auto* branch = arena.alloc_obj<BranchNode>(a);
   std::memset(branch, 0, sizeof(BranchNode));
   branch->kind = TraceNodeKind::BRANCH;
   branch->guard = guard;
   branch->num_arms = 2;
-  branch->arms = arena.alloc_array<BranchNode::Arm>(2);
+  branch->arms = arena.alloc_array<BranchNode::Arm>(a, 2);
   branch->arms[0] = {.value = old_guard_value, .target = divergence_point};
   branch->arms[1] = {.value = new_guard_value, .target = new_region};
   branch->next = merge; // Shared continuation after merge

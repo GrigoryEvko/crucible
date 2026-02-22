@@ -1,5 +1,6 @@
 #include <crucible/CrucibleContext.h>
 #include <crucible/BackgroundThread.h>
+#include <crucible/Effects.h>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -306,6 +307,7 @@ static void test_external_slots() {
 
 // ── Test 8: Integration with sweep-line ──
 static void test_integration_sweep_line() {
+  crucible::fx::Test test;
   crucible::BackgroundThread bt;
 
   // 2 internal slots, 1 external.
@@ -328,7 +330,7 @@ static void test_integration_sweep_line() {
                .device_idx=0, .layout=Layout::Strided,
                .is_external=true, .pad={}, .slot_id=SlotId{2}, .pad2={}};
 
-  auto* plan = bt.compute_memory_plan(slots, NSLOTS);
+  auto* plan = bt.compute_memory_plan(test.alloc, slots, NSLOTS);
   assert(plan != nullptr);
 
   // Build ops with slot assignments.

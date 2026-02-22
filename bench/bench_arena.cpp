@@ -6,6 +6,8 @@
 #include "bench_harness.h"
 #include <crucible/Arena.h>
 
+#include <crucible/Effects.h>
+
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -22,6 +24,7 @@ static_assert(sizeof(Medium) == 256);
 static_assert(sizeof(Large) == 1024);
 
 int main() {
+    crucible::fx::Test test;
     std::printf("=== Arena Allocator Benchmarks ===\n");
     std::printf("    Target: alloc() <= 2ns, alloc_obj<T>() <= 3ns\n\n");
 
@@ -32,28 +35,28 @@ int main() {
         crucible::Arena arena(1 << 24);  // 16MB
 
         BENCH_CHECK("alloc(8)", 10'000'000, 1.2, {
-            auto* p = arena.alloc(8);
+            auto* p = arena.alloc(test.alloc, 8);
             bench::DoNotOptimize(p);
         });
     }
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("alloc(64)", 10'000'000, 1.2, {
-            auto* p = arena.alloc(64);
+            auto* p = arena.alloc(test.alloc, 64);
             bench::DoNotOptimize(p);
         });
     }
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("alloc(256)", 10'000'000, 1.2, {
-            auto* p = arena.alloc(256);
+            auto* p = arena.alloc(test.alloc, 256);
             bench::DoNotOptimize(p);
         });
     }
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("alloc(1024)", 5'000'000, 1.7, {
-            auto* p = arena.alloc(1024);
+            auto* p = arena.alloc(test.alloc, 1024);
             bench::DoNotOptimize(p);
         });
     }
@@ -63,14 +66,14 @@ int main() {
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("alloc(8, align=1)", 10'000'000, 0.8, {
-            auto* p = arena.alloc(8, 1);
+            auto* p = arena.alloc(test.alloc, 8, 1);
             bench::DoNotOptimize(p);
         });
     }
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("alloc(64, align=1)", 10'000'000, 0.8, {
-            auto* p = arena.alloc(64, 1);
+            auto* p = arena.alloc(test.alloc, 64, 1);
             bench::DoNotOptimize(p);
         });
     }
@@ -80,7 +83,7 @@ int main() {
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("alloc(64, align=64)", 10'000'000, 1.2, {
-            auto* p = arena.alloc(64, 64);
+            auto* p = arena.alloc(test.alloc, 64, 64);
             bench::DoNotOptimize(p);
         });
     }
@@ -90,28 +93,28 @@ int main() {
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("alloc_obj<Tiny> (8B)", 10'000'000, 1.2, {
-            auto* p = arena.alloc_obj<Tiny>();
+            auto* p = arena.alloc_obj<Tiny>(test.alloc);
             bench::DoNotOptimize(p);
         });
     }
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("alloc_obj<CacheLine> (64B)", 10'000'000, 1.2, {
-            auto* p = arena.alloc_obj<CacheLine>();
+            auto* p = arena.alloc_obj<CacheLine>(test.alloc);
             bench::DoNotOptimize(p);
         });
     }
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("alloc_obj<Medium> (256B)", 10'000'000, 1.4, {
-            auto* p = arena.alloc_obj<Medium>();
+            auto* p = arena.alloc_obj<Medium>(test.alloc);
             bench::DoNotOptimize(p);
         });
     }
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("alloc_obj<Large> (1024B)", 5'000'000, 1.7, {
-            auto* p = arena.alloc_obj<Large>();
+            auto* p = arena.alloc_obj<Large>(test.alloc);
             bench::DoNotOptimize(p);
         });
     }
@@ -121,21 +124,21 @@ int main() {
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("alloc_array<uint64_t>(8)", 10'000'000, 1.4, {
-            auto* p = arena.alloc_array<uint64_t>(8);
+            auto* p = arena.alloc_array<uint64_t>(test.alloc, 8);
             bench::DoNotOptimize(p);
         });
     }
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("alloc_array<uint64_t>(100)", 5'000'000, 1.5, {
-            auto* p = arena.alloc_array<uint64_t>(100);
+            auto* p = arena.alloc_array<uint64_t>(test.alloc, 100);
             bench::DoNotOptimize(p);
         });
     }
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("alloc_array<CacheLine>(10)", 5'000'000, 1.4, {
-            auto* p = arena.alloc_array<CacheLine>(10);
+            auto* p = arena.alloc_array<CacheLine>(test.alloc, 10);
             bench::DoNotOptimize(p);
         });
     }
@@ -145,7 +148,7 @@ int main() {
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("alloc_array<uint64_t>(0)", 10'000'000, 0.3, {
-            auto* p = arena.alloc_array<uint64_t>(0);
+            auto* p = arena.alloc_array<uint64_t>(test.alloc, 0);
             bench::DoNotOptimize(p);
         });
     }
@@ -156,7 +159,7 @@ int main() {
         crucible::Arena arena(1 << 24);
         const char* short_str = "relu";
         BENCH_CHECK("copy_string(4 chars)", 5'000'000, 2.9, {
-            auto* p = arena.copy_string(short_str);
+            auto* p = arena.copy_string(test.alloc, short_str);
             bench::DoNotOptimize(p);
         });
     }
@@ -164,14 +167,14 @@ int main() {
         crucible::Arena arena(1 << 24);
         const char* medium_str = "aten::native_layer_norm";
         BENCH_CHECK("copy_string(23 chars)", 5'000'000, 9.5, {
-            auto* p = arena.copy_string(medium_str);
+            auto* p = arena.copy_string(test.alloc, medium_str);
             bench::DoNotOptimize(p);
         });
     }
     {
         crucible::Arena arena(1 << 24);
         BENCH_CHECK("copy_string(nullptr)", 10'000'000, 0.3, {
-            auto* p = arena.copy_string(nullptr);
+            auto* p = arena.copy_string(test.alloc, nullptr);
             bench::DoNotOptimize(p);
         });
     }
@@ -189,7 +192,7 @@ int main() {
 
         crucible::Arena arena(BLOCK_SIZE);
         BENCH_ROUNDS_CHECK("alloc(64) amortized w/ block switch", TOTAL_ALLOCS, 11, 25.5, {
-            auto* p = arena.alloc(ALLOC_SIZE, 1);
+            auto* p = arena.alloc(test.alloc, ALLOC_SIZE, 1);
             bench::DoNotOptimize(p);
         });
 
@@ -203,11 +206,11 @@ int main() {
         // Simulate the pattern from build_trace: many small allocs
         // of different sizes in sequence.
         BENCH_CHECK("burst: 8+64+16+64+16 bytes", 2'000'000, 5.7, {
-            auto* a = arena.alloc(8, 8);
-            auto* b = arena.alloc(64, 8);
-            auto* c = arena.alloc(16, 8);
-            auto* d = arena.alloc(64, 8);
-            auto* e = arena.alloc(16, 8);
+            auto* a = arena.alloc(test.alloc, 8, 8);
+            auto* b = arena.alloc(test.alloc, 64, 8);
+            auto* c = arena.alloc(test.alloc, 16, 8);
+            auto* d = arena.alloc(test.alloc, 64, 8);
+            auto* e = arena.alloc(test.alloc, 16, 8);
             bench::DoNotOptimize(a);
             bench::DoNotOptimize(b);
             bench::DoNotOptimize(c);

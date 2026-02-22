@@ -1,4 +1,5 @@
 #include <crucible/MerkleDag.h>
+#include <crucible/Effects.h>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -8,6 +9,7 @@ using crucible::ContentHash;
 using crucible::MerkleHash;
 
 int main() {
+  crucible::fx::Test test;
   crucible::Arena arena(1 << 16);
 
   // Test compute_storage_nbytes
@@ -28,7 +30,7 @@ int main() {
   ops[0].schema_hash = SchemaHash{0xAABB};
   ops[1].schema_hash = SchemaHash{0xCCDD};
   ops[2].schema_hash = SchemaHash{0xEEFF};
-  auto* region = crucible::make_region(arena, ops, 3);
+  auto* region = crucible::make_region(test.alloc, arena, ops, 3);
   assert(region != nullptr);
   assert(region->kind == crucible::TraceNodeKind::REGION);
   assert(region->num_ops == 3);
@@ -39,11 +41,11 @@ int main() {
 
   // Test compute_content_hash determinism
   ContentHash h1 = region->content_hash;
-  auto* region2 = crucible::make_region(arena, ops, 3);
+  auto* region2 = crucible::make_region(test.alloc, arena, ops, 3);
   assert(region2->content_hash == h1);
 
   // Test make_terminal
-  auto* terminal = crucible::make_terminal(arena);
+  auto* terminal = crucible::make_terminal(test.alloc, arena);
   assert(terminal->kind == crucible::TraceNodeKind::TERMINAL);
   assert(terminal->next == nullptr);
 

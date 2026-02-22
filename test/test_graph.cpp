@@ -1,4 +1,5 @@
 #include <crucible/Graph.h>
+#include <crucible/Effects.h>
 #include <crucible/ExprPool.h>
 #include <crucible/Types.h>
 #include <cassert>
@@ -6,8 +7,9 @@
 #include <span>
 
 int main() {
-    crucible::ExprPool pool;
-    crucible::Graph graph(&pool);
+    crucible::fx::Test test;
+    crucible::ExprPool pool(test.alloc);
+    crucible::Graph graph(test.alloc, &pool);
 
     // ── classify_node_kind coverage ─────────────────────────────────
 
@@ -80,23 +82,23 @@ int main() {
     // ── Graph construction with slot ID side-tables ─────────────────
 
     // Create symbolic sizes: [32, 64]
-    const crucible::Expr* s0 = pool.integer(32);
-    const crucible::Expr* s1 = pool.integer(64);
+    const crucible::Expr* s0 = pool.integer(test.alloc, 32);
+    const crucible::Expr* s1 = pool.integer(test.alloc, 64);
     const crucible::Expr* sizes[2] = {s0, s1};
 
     // Node 0: INPUT (external weight tensor, slot 0)
-    auto* inp0 = graph.add_input(
+    auto* inp0 = graph.add_input(test.alloc,
         crucible::ScalarType::Float, 0, std::span{sizes, 2u});
     assert(inp0->id == crucible::NodeId{0});
 
     // Node 1: INPUT (external activation tensor, slot 1)
-    auto* inp1 = graph.add_input(
+    auto* inp1 = graph.add_input(test.alloc,
         crucible::ScalarType::Float, 0, std::span{sizes, 2u});
     assert(inp1->id == crucible::NodeId{1});
 
     // Node 2: POINTWISE add(inp0, inp1) — output slot 2, reads from slots 0 and 1
     crucible::GraphNode* add_inputs[2] = {inp0, inp1};
-    auto* add_node = graph.add_pointwise(
+    auto* add_node = graph.add_pointwise(test.alloc,
         std::span{sizes, 2u},
         crucible::ScalarType::Float, 0,
         nullptr,
@@ -109,14 +111,14 @@ int main() {
     // Input nodes: no input slots (they ARE the inputs), output slot is their own
     crucible::SlotId inp0_out_slots[] = {crucible::SlotId{0}};
     crucible::SlotId inp1_out_slots[] = {crucible::SlotId{1}};
-    graph.set_output_slots(crucible::NodeId{0}, inp0_out_slots);
-    graph.set_output_slots(crucible::NodeId{1}, inp1_out_slots);
+    graph.set_output_slots(test.alloc, crucible::NodeId{0}, inp0_out_slots);
+    graph.set_output_slots(test.alloc, crucible::NodeId{1}, inp1_out_slots);
 
     // Add node: reads from slots 0 and 1, writes to slot 2
     crucible::SlotId add_in_slots[] = {crucible::SlotId{0}, crucible::SlotId{1}};
     crucible::SlotId add_out_slots[] = {crucible::SlotId{2}};
-    graph.set_input_slots(crucible::NodeId{2}, add_in_slots);
-    graph.set_output_slots(crucible::NodeId{2}, add_out_slots);
+    graph.set_input_slots(test.alloc, crucible::NodeId{2}, add_in_slots);
+    graph.set_output_slots(test.alloc, crucible::NodeId{2}, add_out_slots);
 
     // ── Verify slot IDs survive ─────────────────────────────────────
 
@@ -146,7 +148,7 @@ int main() {
     // DCE should not affect slot tables (add_node has uses from nothing,
     // but graph outputs keep it alive)
     crucible::NodeId out_ids[] = {crucible::NodeId{2}};
-    graph.set_graph_outputs(out_ids);
+    graph.set_graph_outputs(test.alloc, out_ids);
     graph.eliminate_dead_nodes();
 
     // Slots survive DCE
@@ -155,7 +157,7 @@ int main() {
     assert(graph.output_slots(crucible::NodeId{2})[0] == crucible::SlotId{2});
 
     // Topo sort sets schedule_order but doesn't touch slots
-    graph.topological_sort();
+    graph.topological_sort(test.alloc);
     assert(graph.input_slots(crucible::NodeId{2})[0] == crucible::SlotId{0});
     assert(graph.output_slots(crucible::NodeId{0})[0] == crucible::SlotId{0});
 

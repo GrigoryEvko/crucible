@@ -323,6 +323,7 @@ struct BackgroundThread {
   // ── Main loop ──
 
   void run() CRUCIBLE_NO_THREAD_SAFETY {
+    fx::Bg bg;
     TraceRing::Entry batch[BATCH_SIZE];
     MetaIndex meta_batch[BATCH_SIZE];
     ScopeHash scope_batch[BATCH_SIZE];
@@ -378,7 +379,7 @@ struct BackgroundThread {
         current_callsite_hashes.push_back(callsite_batch[i]);
 
         if (detector.check(batch[i].schema_hash)) {
-          on_iteration_boundary();
+          on_iteration_boundary(bg.alloc);
         }
       }
 
@@ -402,7 +403,7 @@ struct BackgroundThread {
     }
   }
 
-  void on_iteration_boundary() CRUCIBLE_NO_THREAD_SAFETY {
+  void on_iteration_boundary(fx::Alloc a) CRUCIBLE_NO_THREAD_SAFETY {
     uint32_t total = static_cast<uint32_t>(current_trace.size());
     uint32_t iter_len = detector.last_completed_len;
 
@@ -433,17 +434,17 @@ struct BackgroundThread {
     iterations_completed++;
 
     if (meta_log && completed_len > 0) {
-      TraceGraph* graph = build_trace(completed_len);
+      TraceGraph* graph = build_trace(a, completed_len);
       if (graph) {
         iteration_graphs.push_back(graph);
 
         // Use pre-computed content hash — no redundant second pass.
         auto* region = make_region(
-            arena, graph->ops, graph->num_ops, graph->content_hash);
+            a, arena, graph->ops, graph->num_ops, graph->content_hash);
 
         if (graph->slots && graph->num_slots > 0) {
           region->plan = compute_memory_plan(
-              graph->slots, graph->num_slots);
+              a, graph->slots, graph->num_slots);
         }
 
         // Advance MetaLog tail AFTER all reads are done (zero-copy safety).
@@ -488,7 +489,7 @@ struct BackgroundThread {
   //
   // Public: called by on_iteration_boundary() and benchmarks.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
-  [[nodiscard]] TraceGraph* build_trace(uint32_t count)
+  [[nodiscard]] TraceGraph* build_trace(fx::Alloc a, uint32_t count)
       CRUCIBLE_NO_THREAD_SAFETY {
     // ── Hoist vector data pointers into locals ─────────────────────
     //
@@ -535,7 +536,7 @@ struct BackgroundThread {
     // ── Phase 1: Bulk allocations (2 arena allocs + zero-copy metas) ──
 
     // 1. TraceEntry array.
-    auto* ops = arena.alloc_array<TraceEntry>(count);
+    auto* ops = arena.alloc_array<TraceEntry>(a, count);
 
     // 2. Zero-copy MetaLog: point directly into the circular buffer.
     //    No arena alloc, no memcpy — just pointer arithmetic per op.
@@ -548,7 +549,7 @@ struct BackgroundThread {
       meta_base = meta_log->try_contiguous(first_meta, total_metas);
       if (!meta_base) [[unlikely]] {
         // Wrap case: copy to arena (extremely rare with 1M capacity).
-        meta_base = arena.alloc_array<TensorMeta>(total_metas);
+        meta_base = arena.alloc_array<TensorMeta>(a, total_metas);
         for (uint32_t m = 0; m < total_metas; m++)
           meta_base[m] = meta_log->at(first_meta + m);
       }
@@ -566,7 +567,7 @@ struct BackgroundThread {
         static_cast<size_t>(total_inputs) * sizeof(SlotId) +
         static_cast<size_t>(total_outputs) * sizeof(SlotId);
     char* aux_cursor = (aux_bytes > 0) ?
-        static_cast<char*>(arena.alloc(aux_bytes, alignof(int64_t))) :
+        static_cast<char*>(arena.alloc(a, aux_bytes, alignof(int64_t))) :
         nullptr;
 
     // ── PtrMap: bump generation (zero memset) ──
@@ -804,7 +805,7 @@ struct BackgroundThread {
     uint32_t num_slots = std::min(next_slot_raw, slot_cap);
     TensorSlot* slots = nullptr;
     if (num_slots > 0) {
-      slots = arena.alloc_array<TensorSlot>(num_slots);
+      slots = arena.alloc_array<TensorSlot>(a, num_slots);
       static_assert(sizeof(SlotInfo) == 24);
       static_assert(offsetof(TensorSlot, nbytes) == 8);
       static_assert(offsetof(SlotInfo, nbytes) == 0);
@@ -820,14 +821,14 @@ struct BackgroundThread {
     }
 
     // Build CSR property graph.
-    auto* graph = arena.alloc_obj<TraceGraph>();
+    auto* graph = arena.alloc_obj<TraceGraph>(a);
     graph->ops = ops;
     graph->num_ops = count;
     graph->slots = slots;
     graph->num_slots = num_slots;
     graph->content_hash = ContentHash{detail::fmix64(content_h)};
     graph->max_meta_end = max_meta_end;
-    build_csr(arena, graph, local_edges, num_edges, count);
+    build_csr(a, arena, graph, local_edges, num_edges, count);
 
     return graph;
   }
@@ -840,11 +841,11 @@ struct BackgroundThread {
   // Alignment: 256 bytes (CUDA coalescing).
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] MemoryPlan* compute_memory_plan(
-      TensorSlot* slots, uint32_t num_slots)
+      fx::Alloc a, TensorSlot* slots, uint32_t num_slots)
       CRUCIBLE_NO_THREAD_SAFETY {
     static constexpr uint32_t ALIGNMENT = 256;
 
-    auto* plan = arena.alloc_obj<MemoryPlan>();
+    auto* plan = arena.alloc_obj<MemoryPlan>(a);
     plan->slots = slots;
     plan->num_slots = num_slots;
     plan->num_external = 0;
@@ -883,8 +884,8 @@ struct BackgroundThread {
     // ── Counting sort: bucket slots by birth_op and death_op+1 ──
 
     uint32_t num_ops = max_op + 1; // sweep range [0, max_op]
-    auto* birth_count = arena.alloc_array<uint32_t>(num_ops);
-    auto* death_count = arena.alloc_array<uint32_t>(num_ops);
+    auto* birth_count = arena.alloc_array<uint32_t>(a, num_ops);
+    auto* death_count = arena.alloc_array<uint32_t>(a, num_ops);
     std::memset(birth_count, 0, num_ops * sizeof(uint32_t));
     std::memset(death_count, 0, num_ops * sizeof(uint32_t));
 
@@ -896,8 +897,8 @@ struct BackgroundThread {
     }
 
     // Prefix sum → offsets.
-    auto* birth_off = arena.alloc_array<uint32_t>(num_ops + 1);
-    auto* death_off = arena.alloc_array<uint32_t>(num_ops + 1);
+    auto* birth_off = arena.alloc_array<uint32_t>(a, num_ops + 1);
+    auto* death_off = arena.alloc_array<uint32_t>(a, num_ops + 1);
     birth_off[0] = 0;
     death_off[0] = 0;
     for (uint32_t o = 0; o < num_ops; o++) {
@@ -906,11 +907,11 @@ struct BackgroundThread {
     }
 
     // Scatter slot indices into sorted order.
-    auto* born_slots = arena.alloc_array<uint32_t>(num_internal);
-    auto* dead_slots = arena.alloc_array<uint32_t>(num_internal);
+    auto* born_slots = arena.alloc_array<uint32_t>(a, num_internal);
+    auto* dead_slots = arena.alloc_array<uint32_t>(a, num_internal);
     // Cursor arrays: copy of offsets, incremented during scatter.
-    auto* birth_cur = arena.alloc_array<uint32_t>(num_ops);
-    auto* death_cur = arena.alloc_array<uint32_t>(num_ops);
+    auto* birth_cur = arena.alloc_array<uint32_t>(a, num_ops);
+    auto* death_cur = arena.alloc_array<uint32_t>(a, num_ops);
     std::memcpy(birth_cur, birth_off, num_ops * sizeof(uint32_t));
     std::memcpy(death_cur, death_off, num_ops * sizeof(uint32_t));
 

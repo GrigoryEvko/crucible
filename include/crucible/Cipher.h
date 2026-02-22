@@ -97,7 +97,7 @@ class CRUCIBLE_OWNER Cipher {
 
     // Deserialize a RegionNode from objects/<content_hash>.
     // All structures are arena-allocated. Returns nullptr if not found.
-    [[nodiscard]] RegionNode* load(ContentHash content_hash, Arena& arena) const {
+    [[nodiscard]] RegionNode* load(fx::Alloc a, ContentHash content_hash, Arena& arena) const {
         if (!content_hash) return nullptr;
         const std::string path = obj_path(content_hash.raw());
         if (!std::filesystem::exists(path)) return nullptr;
@@ -114,7 +114,7 @@ class CRUCIBLE_OWNER Cipher {
                static_cast<std::streamsize>(len));
         if (!f) return nullptr;
 
-        return deserialize_region(std::span<const uint8_t>{buf}, arena);
+        return deserialize_region(a, std::span<const uint8_t>{buf}, arena);
     }
 
     // ─── HEAD management ────────────────────────────────────────────

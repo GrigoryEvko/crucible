@@ -20,6 +20,7 @@
 
 #include "bench_harness.h"
 
+#include <crucible/Effects.h>
 #include <crucible/Vigil.h>
 
 #include <cassert>
@@ -202,6 +203,7 @@ static void bench_dispatch_recording() {
 // compute_content_hash), slot IDs, and a MemoryPlan.  Each op has 1 output;
 // ops 1+ have 1 input from the previous op's output.
 struct BenchRegion {
+    fx::Test test;
     Arena arena{1 << 16};
     RegionNode* region = nullptr;
     MemoryPlan* plan = nullptr;
@@ -209,7 +211,7 @@ struct BenchRegion {
     void build(uint32_t n_ops,
                const SchemaHash* schemas,
                const ShapeHash* shapes) {
-        auto* ops = arena.alloc_array<TraceEntry>(n_ops);
+        auto* ops = arena.alloc_array<TraceEntry>(test.alloc, n_ops);
         for (uint32_t i = 0; i < n_ops; i++) {
             std::memset(&ops[i], 0, sizeof(TraceEntry));
             ops[i].schema_hash = schemas[i];
@@ -219,14 +221,14 @@ struct BenchRegion {
 
             // Allocate valid TensorMeta arrays (compute_content_hash reads these).
             if (i > 0) {
-                ops[i].input_metas = arena.alloc_array<TensorMeta>(1);
+                ops[i].input_metas = arena.alloc_array<TensorMeta>(test.alloc, 1);
                 std::memset(ops[i].input_metas, 0, sizeof(TensorMeta));
                 ops[i].input_metas[0].ndim = 1;
                 ops[i].input_metas[0].sizes[0] = 1024;
                 ops[i].input_metas[0].strides[0] = 1;
                 ops[i].input_metas[0].dtype = ScalarType::Float;
             }
-            ops[i].output_metas = arena.alloc_array<TensorMeta>(1);
+            ops[i].output_metas = arena.alloc_array<TensorMeta>(test.alloc, 1);
             std::memset(ops[i].output_metas, 0, sizeof(TensorMeta));
             ops[i].output_metas[0].ndim = 1;
             ops[i].output_metas[0].sizes[0] = 1024;
@@ -234,18 +236,18 @@ struct BenchRegion {
             ops[i].output_metas[0].dtype = ScalarType::Float;
 
             // Slot IDs for output_ptr/input_ptr to work.
-            ops[i].output_slot_ids = arena.alloc_array<SlotId>(1);
+            ops[i].output_slot_ids = arena.alloc_array<SlotId>(test.alloc, 1);
             ops[i].output_slot_ids[0] = SlotId{i};
             if (i > 0) {
-                ops[i].input_slot_ids = arena.alloc_array<SlotId>(1);
+                ops[i].input_slot_ids = arena.alloc_array<SlotId>(test.alloc, 1);
                 ops[i].input_slot_ids[0] = SlotId{i - 1};
             }
         }
 
-        region = make_region(arena, ops, n_ops);
+        region = make_region(test.alloc, arena, ops, n_ops);
 
         // Build MemoryPlan: one 4096B slot per op.
-        auto* slots = arena.alloc_array<TensorSlot>(n_ops);
+        auto* slots = arena.alloc_array<TensorSlot>(test.alloc, n_ops);
         for (uint32_t i = 0; i < n_ops; i++) {
             slots[i].offset_bytes = i * 4096;
             slots[i].nbytes = 4096;
@@ -256,7 +258,7 @@ struct BenchRegion {
             slots[i].is_external = false;
         }
 
-        plan = arena.alloc_obj<MemoryPlan>();
+        plan = arena.alloc_obj<MemoryPlan>(test.alloc);
         std::memset(plan, 0, sizeof(MemoryPlan));
         plan->slots = slots;
         plan->num_slots = n_ops;
@@ -529,6 +531,7 @@ static void bench_dispatch_divergence() {
 
 static void bench_region_cache_lookup() {
     // Isolated RegionCache::find_alternate benchmark.
+    fx::Test test;
     Arena arena{1 << 16};
 
     // Build 4 dummy regions with different shapes.
@@ -536,16 +539,16 @@ static void bench_region_cache_lookup() {
     const RegionNode* regions[NUM_REGIONS];
 
     for (uint32_t r = 0; r < NUM_REGIONS; r++) {
-        auto* ops = arena.alloc_array<TraceEntry>(NUM_OPS);
+        auto* ops = arena.alloc_array<TraceEntry>(test.alloc, NUM_OPS);
         for (uint32_t i = 0; i < NUM_OPS; i++) {
             std::memset(&ops[i], 0, sizeof(TraceEntry));
             ops[i].schema_hash = SCHEMA[i];
             ops[i].shape_hash = ShapeHash{SHAPE[i].raw() + r * 0x100};
         }
-        auto* region = make_region(arena, ops, NUM_OPS);
+        auto* region = make_region(test.alloc, arena, ops, NUM_OPS);
 
         // Add a plan so it's eligible.
-        auto* plan = arena.alloc_obj<MemoryPlan>();
+        auto* plan = arena.alloc_obj<MemoryPlan>(test.alloc);
         plan->slots = nullptr;
         plan->num_slots = 0;
         plan->pool_bytes = 0;
@@ -619,10 +622,11 @@ static void bench_dispatch_compiled_single_op() {
 // ── Benchmark 17: PoolAllocator::slot_ptr (isolated) ─────────────
 
 static void bench_pool_slot_ptr() {
+    fx::Test test;
     Arena arena{1 << 16};
     constexpr uint32_t NSLOTS = 16;
 
-    auto* slots = arena.alloc_array<TensorSlot>(NSLOTS);
+    auto* slots = arena.alloc_array<TensorSlot>(test.alloc, NSLOTS);
     for (uint32_t i = 0; i < NSLOTS; i++) {
         slots[i].offset_bytes = i * 256;
         slots[i].nbytes = 256;
@@ -633,7 +637,7 @@ static void bench_pool_slot_ptr() {
         slots[i].is_external = false;
     }
 
-    auto* plan = arena.alloc_obj<MemoryPlan>();
+    auto* plan = arena.alloc_obj<MemoryPlan>(test.alloc);
     plan->slots = slots;
     plan->num_slots = NSLOTS;
     plan->num_external = 0;

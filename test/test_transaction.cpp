@@ -1,21 +1,23 @@
 #include <crucible/Transaction.h>
+#include <crucible/Effects.h>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
 
 int main() {
+    crucible::fx::Test test;
     crucible::TransactionLog<16> log;
     crucible::Arena arena(1 << 12);
 
     // ── build a dummy RegionNode for use in transactions ────────────
     crucible::TraceEntry ops[1]{};
     ops[0].schema_hash = crucible::SchemaHash{0xFEED};
-    auto* region1 = crucible::make_region(arena, ops, 1);
+    auto* region1 = crucible::make_region(test.alloc, arena, ops, 1);
     assert(region1 != nullptr);
 
     crucible::TraceEntry ops2[1]{};
     ops2[0].schema_hash = crucible::SchemaHash{0xBEEF};
-    auto* region2 = crucible::make_region(arena, ops2, 1);
+    auto* region2 = crucible::make_region(test.alloc, arena, ops2, 1);
     assert(region2 != nullptr);
 
     // ── begin_tx(1) → RECORDING ─────────────────────────────────────
@@ -87,7 +89,7 @@ int main() {
         auto* tx = log.begin_tx(i);
         crucible::TraceEntry e{};
         e.schema_hash = crucible::SchemaHash{static_cast<uint64_t>(i)};
-        auto* r = crucible::make_region(arena, &e, 1);
+        auto* r = crucible::make_region(test.alloc, arena, &e, 1);
         log.commit(tx, r, r->content_hash, r->merkle_hash);
         (void)log.activate(tx);
     }

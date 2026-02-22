@@ -261,13 +261,13 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(GraphNode);
 
 class CRUCIBLE_OWNER Graph {
  public:
-  explicit Graph(ExprPool* pool, SymbolTable* tab = nullptr)
+  explicit Graph(fx::Alloc a, ExprPool* pool, SymbolTable* tab = nullptr)
       : pool_(pool), tab_(tab),
         nodes_(nullptr), input_slots_(nullptr), output_slots_(nullptr),
         num_nodes_(0), capacity_(0),
         input_ids_(nullptr), num_inputs_(0),
         output_ids_(nullptr), num_outputs_(0) {
-    grow_(1024);
+    grow_(a, 1024);
   }
 
   Graph(const Graph&) = delete("Graph owns an arena; copy would alias or double-free");
@@ -278,34 +278,37 @@ class CRUCIBLE_OWNER Graph {
   // ── Node construction ──────────────────────────────────────────
 
   [[nodiscard]] GraphNode* add_input(
+      fx::Alloc a,
       ScalarType dtype, int8_t device_idx,
       std::span<const Expr* const> size) {
-    GraphNode* n = alloc_node_();
+    GraphNode* n = alloc_node_(a);
     n->kind = NodeKind::INPUT;
     n->dtype = dtype;
     n->device_idx = device_idx;
     n->ndim = static_cast<uint8_t>(size.size());
-    n->size = copy_exprs_(size);
+    n->size = copy_exprs_(a, size);
     return n;
   }
 
   [[nodiscard]] GraphNode* add_pointwise(
+      fx::Alloc a,
       std::span<const Expr* const> ranges,
       ScalarType dtype, int8_t device_idx,
       ComputeBody* body,
       std::span<GraphNode* const> inputs) {
-    GraphNode* n = alloc_node_();
+    GraphNode* n = alloc_node_(a);
     n->kind = NodeKind::POINTWISE;
     n->dtype = dtype;
     n->device_idx = device_idx;
     n->ndim = static_cast<uint8_t>(ranges.size());
-    n->size = copy_exprs_(ranges);
+    n->size = copy_exprs_(a, ranges);
     n->body = body;
-    set_inputs_(n, inputs);
+    set_inputs_(a, n, inputs);
     return n;
   }
 
   [[nodiscard]] GraphNode* add_reduction(
+      fx::Alloc a,
       std::span<const Expr* const> ranges,
       std::span<const Expr* const> red_ranges,
       ReduceOp reduce_op, ReduceHint hint,
@@ -313,7 +316,7 @@ class CRUCIBLE_OWNER Graph {
       int8_t device_idx,
       ComputeBody* body,
       std::span<GraphNode* const> inputs) {
-    GraphNode* n = alloc_node_();
+    GraphNode* n = alloc_node_(a);
     n->kind = NodeKind::REDUCTION;
     n->dtype = dtype;
     n->src_dtype = src_dtype;
@@ -323,7 +326,7 @@ class CRUCIBLE_OWNER Graph {
     n->reduce_op = reduce_op;
     n->reduce_hint = hint;
     const uint8_t total = n->ndim + n->nred;
-    n->size = arena_.alloc_array<const Expr*>(total);
+    n->size = arena_.alloc_array<const Expr*>(a, total);
     std::memcpy(
         const_cast<const Expr**>(n->size), ranges.data(),
         ranges.size_bytes());
@@ -331,44 +334,45 @@ class CRUCIBLE_OWNER Graph {
         const_cast<const Expr**>(n->size) + n->ndim, red_ranges.data(),
         red_ranges.size_bytes());
     n->body = body;
-    set_inputs_(n, inputs);
+    set_inputs_(a, n, inputs);
     return n;
   }
 
   [[nodiscard]] GraphNode* add_extern(
+      fx::Alloc a,
       const char* py_name, const char* cpp_name,
       ScalarType dtype, int8_t device_idx,
       std::span<const Expr* const> size,
       std::span<GraphNode* const> inputs,
       std::span<const int64_t> constant_args = {}) {
-    GraphNode* n = alloc_node_();
+    GraphNode* n = alloc_node_(a);
     n->kind = NodeKind::EXTERN;
     n->dtype = dtype;
     n->device_idx = device_idx;
     n->ndim = static_cast<uint8_t>(size.size());
-    n->size = copy_exprs_(size);
+    n->size = copy_exprs_(a, size);
 
-    auto* info = arena_.alloc_obj<ExternInfo>();
-    info->python_kernel_name = copy_string_(py_name);
-    info->cpp_kernel_name = copy_string_(cpp_name);
+    auto* info = arena_.alloc_obj<ExternInfo>(a);
+    info->python_kernel_name = copy_string_(a, py_name);
+    info->cpp_kernel_name = copy_string_(a, cpp_name);
     info->num_constant_args = static_cast<uint16_t>(constant_args.size());
     if (!constant_args.empty()) {
-      info->constant_args = arena_.alloc_array<int64_t>(constant_args.size());
+      info->constant_args = arena_.alloc_array<int64_t>(a, constant_args.size());
       std::memcpy(info->constant_args, constant_args.data(),
                   constant_args.size_bytes());
     } else {
       info->constant_args = nullptr;
     }
     n->body = info;
-    set_inputs_(n, inputs);
+    set_inputs_(a, n, inputs);
     return n;
   }
 
   // ── ComputeBody helpers ────────────────────────────────────────
 
-  [[nodiscard]] ComputeBody* alloc_body(uint16_t num_ops) {
-    auto* b = arena_.alloc_obj<ComputeBody>();
-    b->ops = arena_.alloc_array<Inst>(num_ops);
+  [[nodiscard]] ComputeBody* alloc_body(fx::Alloc a, uint16_t num_ops) {
+    auto* b = arena_.alloc_obj<ComputeBody>(a);
+    b->ops = arena_.alloc_array<Inst>(a, num_ops);
     b->num_ops = num_ops;
     b->num_loads = 0;
     b->store_op = 0;
@@ -378,23 +382,23 @@ class CRUCIBLE_OWNER Graph {
   }
 
   // Lazily allocate aux array (only needed for CONSTANT/TO_DTYPE/INDEX_EXPR)
-  void alloc_body_aux(ComputeBody* body) {
+  void alloc_body_aux(fx::Alloc a, ComputeBody* body) {
     if (!body->aux) {
-      body->aux = arena_.alloc_array<int64_t>(body->num_ops);
+      body->aux = arena_.alloc_array<int64_t>(a, body->num_ops);
       std::memset(body->aux, 0, body->num_ops * sizeof(int64_t));
     }
   }
 
   // ── Graph I/O ──────────────────────────────────────────────────
 
-  void set_graph_inputs(std::span<const NodeId> ids) {
-    input_ids_ = arena_.alloc_array<NodeId>(ids.size());
+  void set_graph_inputs(fx::Alloc a, std::span<const NodeId> ids) {
+    input_ids_ = arena_.alloc_array<NodeId>(a, ids.size());
     std::memcpy(input_ids_, ids.data(), ids.size_bytes());
     num_inputs_ = static_cast<uint32_t>(ids.size());
   }
 
-  void set_graph_outputs(std::span<const NodeId> ids) {
-    output_ids_ = arena_.alloc_array<NodeId>(ids.size());
+  void set_graph_outputs(fx::Alloc a, std::span<const NodeId> ids) {
+    output_ids_ = arena_.alloc_array<NodeId>(a, ids.size());
     std::memcpy(output_ids_, ids.data(), ids.size_bytes());
     num_outputs_ = static_cast<uint32_t>(ids.size());
   }
@@ -407,17 +411,17 @@ class CRUCIBLE_OWNER Graph {
   // only accessed during buffer allocation and code emission, not
   // during hot graph traversals like DCE or topological sort).
 
-  void set_input_slots(NodeId node_id, std::span<const SlotId> slots) {
+  void set_input_slots(fx::Alloc a, NodeId node_id, std::span<const SlotId> slots) {
     assert(node_id.raw() < num_nodes_);
     if (slots.empty()) { input_slots_[node_id.raw()] = nullptr; return; }
-    input_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(slots.size());
+    input_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(a, slots.size());
     std::memcpy(input_slots_[node_id.raw()], slots.data(), slots.size_bytes());
   }
 
-  void set_output_slots(NodeId node_id, std::span<const SlotId> slots) {
+  void set_output_slots(fx::Alloc a, NodeId node_id, std::span<const SlotId> slots) {
     assert(node_id.raw() < num_nodes_);
     if (slots.empty()) { output_slots_[node_id.raw()] = nullptr; return; }
-    output_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(slots.size());
+    output_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(a, slots.size());
     std::memcpy(output_slots_[node_id.raw()], slots.data(), slots.size_bytes());
   }
 
@@ -483,9 +487,9 @@ class CRUCIBLE_OWNER Graph {
   // Topological sort via Kahn's algorithm. Sets schedule_order on
   // each live node. O(V + E) using a flat successor array built
   // from the nodes' inputs lists.
-  void topological_sort() {
-    auto* in_deg = arena_.alloc_array<uint32_t>(num_nodes_);
-    auto* succ_cnt = arena_.alloc_array<uint32_t>(num_nodes_);
+  void topological_sort(fx::Alloc a) {
+    auto* in_deg = arena_.alloc_array<uint32_t>(a, num_nodes_);
+    auto* succ_cnt = arena_.alloc_array<uint32_t>(a, num_nodes_);
     std::memset(in_deg, 0, num_nodes_ * sizeof(uint32_t));
     std::memset(succ_cnt, 0, num_nodes_ * sizeof(uint32_t));
 
@@ -506,13 +510,13 @@ class CRUCIBLE_OWNER Graph {
     }
 
     // Build flat successor array via prefix-sum offsets
-    auto* offset = arena_.alloc_array<uint32_t>(num_nodes_ + 1);
+    auto* offset = arena_.alloc_array<uint32_t>(a, num_nodes_ + 1);
     offset[0] = 0;
     for (uint32_t i = 0; i < num_nodes_; ++i)
       offset[i + 1] = offset[i] + succ_cnt[i];
 
     auto* succs =
-        arena_.alloc_array<uint32_t>(total_edges > 0 ? total_edges : 1);
+        arena_.alloc_array<uint32_t>(a, total_edges > 0 ? total_edges : 1);
     std::memset(succ_cnt, 0, num_nodes_ * sizeof(uint32_t));
     for (uint32_t i = 0; i < num_nodes_; ++i) {
       GraphNode* n = nodes_[i];
@@ -526,7 +530,7 @@ class CRUCIBLE_OWNER Graph {
     }
 
     // BFS from zero in-degree nodes
-    auto* queue = arena_.alloc_array<uint32_t>(num_nodes_);
+    auto* queue = arena_.alloc_array<uint32_t>(a, num_nodes_);
     uint32_t head = 0, tail = 0;
     for (uint32_t i = 0; i < num_nodes_; ++i) {
       if (!(nodes_[i]->flags & NodeFlags::DEAD) && in_deg[i] == 0)
@@ -583,10 +587,10 @@ class CRUCIBLE_OWNER Graph {
 
  private:
   // Allocate a zeroed, 64-byte-aligned GraphNode
-  GraphNode* alloc_node_() {
+  GraphNode* alloc_node_(fx::Alloc a) {
     if (num_nodes_ >= capacity_)
-      grow_(capacity_ * 2);
-    auto* n = static_cast<GraphNode*>(arena_.alloc(64, 64));
+      grow_(a, capacity_ * 2);
+    auto* n = static_cast<GraphNode*>(arena_.alloc(a, 64, 64));
     std::memset(n, 0, 64);
     n->id = NodeId{num_nodes_};
     n->device_idx = -1;
@@ -595,10 +599,10 @@ class CRUCIBLE_OWNER Graph {
     return n;
   }
 
-  void grow_(uint32_t new_cap) {
-    auto** buf = arena_.alloc_array<GraphNode*>(new_cap);
-    auto** is_buf = arena_.alloc_array<SlotId*>(new_cap);
-    auto** os_buf = arena_.alloc_array<SlotId*>(new_cap);
+  void grow_(fx::Alloc a, uint32_t new_cap) {
+    auto** buf = arena_.alloc_array<GraphNode*>(a, new_cap);
+    auto** is_buf = arena_.alloc_array<SlotId*>(a, new_cap);
+    auto** os_buf = arena_.alloc_array<SlotId*>(a, new_cap);
     if (nodes_) {
       std::memcpy(buf, nodes_, num_nodes_ * sizeof(GraphNode*));
       std::memcpy(is_buf, input_slots_, num_nodes_ * sizeof(SlotId*));
@@ -613,29 +617,29 @@ class CRUCIBLE_OWNER Graph {
     capacity_ = new_cap;
   }
 
-  void set_inputs_(GraphNode* n, std::span<GraphNode* const> inputs) {
+  void set_inputs_(fx::Alloc a, GraphNode* n, std::span<GraphNode* const> inputs) {
     n->num_inputs = static_cast<uint16_t>(inputs.size());
     if (!inputs.empty()) {
-      n->inputs = arena_.alloc_array<GraphNode*>(inputs.size());
+      n->inputs = arena_.alloc_array<GraphNode*>(a, inputs.size());
       std::memcpy(n->inputs, inputs.data(), inputs.size_bytes());
       for (auto* inp : inputs)
         ++inp->num_uses;
     }
   }
 
-  const Expr** copy_exprs_(std::span<const Expr* const> src) {
+  const Expr** copy_exprs_(fx::Alloc a, std::span<const Expr* const> src) {
     if (src.empty())
       return nullptr;
-    auto** dst = arena_.alloc_array<const Expr*>(src.size());
+    auto** dst = arena_.alloc_array<const Expr*>(a, src.size());
     std::memcpy(dst, src.data(), src.size_bytes());
     return dst;
   }
 
-  const char* copy_string_(const char* src) {
+  const char* copy_string_(fx::Alloc a, const char* src) {
     if (!src)
       return nullptr;
     size_t len = std::strlen(src) + 1;
-    auto* dst = static_cast<char*>(arena_.alloc(len, 1));
+    auto* dst = static_cast<char*>(arena_.alloc(a, len, 1));
     std::memcpy(dst, src, len);
     return dst;
   }

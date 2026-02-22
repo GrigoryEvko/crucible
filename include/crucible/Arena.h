@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Effects.h"
 #include "Platform.h"
 
 #include <cstddef>
@@ -51,6 +52,8 @@ class CRUCIBLE_OWNER Arena {
   // Allocate `size` bytes with `align` alignment.
   // Returns a pointer guaranteed to be aligned to `align`.
   //
+  // Requires fx::Alloc capability — cannot be called from hot path.
+  //
   // Alignment is computed against the absolute address, not the
   // block-relative offset. std::malloc only guarantees
   // alignof(std::max_align_t) = 16B, so larger alignments (64B for
@@ -60,7 +63,7 @@ class CRUCIBLE_OWNER Arena {
   // Slow path: malloc + vector push (amortized across block_size_ bytes).
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] CRUCIBLE_INLINE
-  void* alloc(size_t size, size_t align = alignof(std::max_align_t)) CRUCIBLE_LIFETIMEBOUND {
+  void* alloc(fx::Alloc, size_t size, size_t align = alignof(std::max_align_t)) CRUCIBLE_LIFETIMEBOUND {
     // Compute aligned offset within the current block.
     // Uses absolute address for correctness with malloc's arbitrary base.
     uintptr_t aligned_addr = (cur_base_ + offset_ + align - 1) & ~(align - 1);
@@ -80,26 +83,26 @@ class CRUCIBLE_OWNER Arena {
   // Typed allocation helper. For trivially-constructible types, this
   // compiles to exactly the same code as alloc(sizeof(T), alignof(T)).
   template <typename T>
-  [[nodiscard]] CRUCIBLE_INLINE T* alloc_obj() CRUCIBLE_LIFETIMEBOUND {
-    return static_cast<T*>(alloc(sizeof(T), alignof(T)));
+  [[nodiscard]] CRUCIBLE_INLINE T* alloc_obj(fx::Alloc a) CRUCIBLE_LIFETIMEBOUND {
+    return static_cast<T*>(alloc(a, sizeof(T), alignof(T)));
   }
 
   // Allocate an array of N elements. Returns nullptr for n == 0.
   // Uses saturation arithmetic to prevent overflow on sizeof(T) * n.
   template <typename T>
-  [[nodiscard]] CRUCIBLE_INLINE T* alloc_array(size_t n) CRUCIBLE_LIFETIMEBOUND {
+  [[nodiscard]] CRUCIBLE_INLINE T* alloc_array(fx::Alloc a, size_t n) CRUCIBLE_LIFETIMEBOUND {
     if (n == 0) [[unlikely]] return nullptr;
     size_t nbytes = std::mul_sat(n, sizeof(T));
-    return static_cast<T*>(alloc(nbytes, alignof(T)));
+    return static_cast<T*>(alloc(a, nbytes, alignof(T)));
   }
 
   // Copy a null-terminated string into the arena. Returns nullptr for
   // null input. The returned pointer is valid for the lifetime of the
   // Arena. Alignment is 1 (chars don't need alignment padding).
-  [[nodiscard]] const char* copy_string(const char* src) CRUCIBLE_LIFETIMEBOUND {
+  [[nodiscard]] const char* copy_string(fx::Alloc a, const char* src) CRUCIBLE_LIFETIMEBOUND {
     if (!src) return nullptr;
     size_t len = std::strlen(src) + 1;
-    auto* dst = static_cast<char*>(alloc(len, 1));
+    auto* dst = static_cast<char*>(alloc(a, len, 1));
     std::memcpy(dst, src, len);
     return dst;
   }

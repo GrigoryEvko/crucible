@@ -202,7 +202,7 @@ constexpr uint16_t composite_flags(
 //   - Term combining: add(a, 2a) → 3a (via coefficient decomposition)
 class CRUCIBLE_OWNER ExprPool {
  public:
-  explicit ExprPool(size_t initial_capacity = 1 << 16) : arena_() {
+  explicit ExprPool(fx::Alloc a, size_t initial_capacity = 1 << 16) : arena_() {
     // Round up to power of 2, minimum one full SIMD group
     capacity_ = detail::kGroupWidth;
     while (capacity_ < initial_capacity)
@@ -216,13 +216,13 @@ class CRUCIBLE_OWNER ExprPool {
     intern_count_ = 0;
 
     // Boolean singletons
-    true_ = intern_node(Op::BOOL_TRUE, nullptr, 0, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    true_ = intern_node(a, Op::BOOL_TRUE, nullptr, 0, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
     false_ =
-        intern_node(Op::BOOL_FALSE, nullptr, 0, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+        intern_node(a, Op::BOOL_FALSE, nullptr, 0, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
 
     // Integer cache: -128..127 for O(1) access to common constants
     for (int64_t i = kIntCacheLow; i <= kIntCacheHigh; ++i)
-      int_cache_[static_cast<size_t>(i - kIntCacheLow)] = make_integer(i);
+      int_cache_[static_cast<size_t>(i - kIntCacheLow)] = make_integer(a, i);
   }
 
   ~ExprPool() {
@@ -237,13 +237,13 @@ class CRUCIBLE_OWNER ExprPool {
 
   // ---- Atom construction ----
 
-  [[nodiscard]] const Expr* integer(int64_t val) {
+  [[nodiscard]] const Expr* integer(fx::Alloc a, int64_t val) {
     if (val >= kIntCacheLow && val <= kIntCacheHigh)
       return int_cache_[static_cast<size_t>(val - kIntCacheLow)];
-    return make_integer(val);
+    return make_integer(a, val);
   }
 
-  [[nodiscard]] const Expr* float_(double val) {
+  [[nodiscard]] const Expr* float_(fx::Alloc a, double val) {
     int64_t payload = std::bit_cast<int64_t>(val);
     uint16_t f =
         ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
@@ -254,21 +254,21 @@ class CRUCIBLE_OWNER ExprPool {
     else if (val == 0.0)
       f |= ExprFlags::IS_ZERO | ExprFlags::IS_NONNEGATIVE |
            ExprFlags::IS_NONPOSITIVE;
-    return intern_node(Op::FLOAT, nullptr, 0, f, SymbolId{}, payload);
+    return intern_node(a, Op::FLOAT, nullptr, 0, f, SymbolId{}, payload);
   }
 
-  [[nodiscard]] const Expr* symbol(const char* name, SymbolId id, uint16_t assumption_flags) {
+  [[nodiscard]] const Expr* symbol(fx::Alloc a, const char* name, SymbolId id, uint16_t assumption_flags) {
     if (id.raw() >= symbol_names_.size())
       symbol_names_.resize(id.raw() + 1, nullptr);
     if (symbol_names_[id.raw()] == nullptr) {
       size_t len = std::strlen(name) + 1;
-      char* buf = static_cast<char*>(arena_.alloc(len, 1));
+      char* buf = static_cast<char*>(arena_.alloc(a, len, 1));
       std::memcpy(buf, name, len);
       symbol_names_[id.raw()] = buf;
     }
     int64_t payload = std::bit_cast<int64_t>(symbol_names_[id.raw()]);
     return intern_node(
-        Op::SYMBOL, nullptr, 0,
+        a, Op::SYMBOL, nullptr, 0,
         assumption_flags | ExprFlags::IS_SYMBOL, id, payload);
   }
 
@@ -281,76 +281,76 @@ class CRUCIBLE_OWNER ExprPool {
 
   // ---- Arithmetic ----
 
-  [[nodiscard]] const Expr* add(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* add(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
     // Fast path: two children that don't need canonicalization.
     // Excluded ops: ADD (needs flattening), MUL (needs coefficient
     // extraction for term combining), INTEGER/FLOAT (needs folding).
     // Symbols, POW, FLOOR_DIV, etc. go straight to intern.
-    if (a->op != Op::ADD && b->op != Op::ADD &&
-        a->op != Op::MUL && b->op != Op::MUL &&
-        a->op != Op::INTEGER && b->op != Op::INTEGER &&
-        a->op != Op::FLOAT && b->op != Op::FLOAT) [[likely]] {
+    if (lhs->op != Op::ADD && rhs->op != Op::ADD &&
+        lhs->op != Op::MUL && rhs->op != Op::MUL &&
+        lhs->op != Op::INTEGER && rhs->op != Op::INTEGER &&
+        lhs->op != Op::FLOAT && rhs->op != Op::FLOAT) [[likely]] {
       // Same base detection: a + a → 2a
-      if (a == b) [[unlikely]]
-        return mul(integer(2), a);
+      if (lhs == rhs) [[unlikely]]
+        return mul(a, integer(a, 2), lhs);
       // Canonical ordering by pointer address
-      if (a > b)
-        std::swap(a, b);
-      const Expr* args[] = {a, b};
+      if (lhs > rhs)
+        std::swap(lhs, rhs);
+      const Expr* args[] = {lhs, rhs};
       uint16_t f = detail::composite_flags(Op::ADD, args, 2);
-      return intern_node(Op::ADD, args, 2, f, SymbolId{}, 0);
+      return intern_node(a, Op::ADD, args, 2, f, SymbolId{}, 0);
     }
     // Constant folding
-    if (a->op == Op::INTEGER && b->op == Op::INTEGER)
-      return integer(a->payload + b->payload);
-    if (a->op == Op::FLOAT && b->op == Op::FLOAT)
-      return float_(a->as_float() + b->as_float());
+    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
+      return integer(a, lhs->payload + rhs->payload);
+    if (lhs->op == Op::FLOAT && rhs->op == Op::FLOAT)
+      return float_(a, lhs->as_float() + rhs->as_float());
     // Identity
-    if (a->is_zero_int())
-      return b;
-    if (b->is_zero_int())
-      return a;
+    if (lhs->is_zero_int())
+      return rhs;
+    if (rhs->is_zero_int())
+      return lhs;
     // Slow path: flatten + fold + sort + coefficient combining
-    const Expr* inputs[] = {a, b};
-    return add_n(inputs);
+    const Expr* inputs[] = {lhs, rhs};
+    return add_n(a, inputs);
   }
 
-  [[nodiscard]] const Expr* mul(const Expr* a, const Expr* b) {
+  [[nodiscard]] const Expr* mul(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
     // Fast path: two non-constant, non-MUL children.
     // Skip the full mul_n() canonicalization (flatten, fold, sort).
     // Most symbolic expressions (x * y, a * b) hit this directly.
-    if (a->op != Op::MUL && b->op != Op::MUL &&
-        a->op != Op::INTEGER && b->op != Op::INTEGER &&
-        a->op != Op::FLOAT && b->op != Op::FLOAT) [[likely]] {
+    if (lhs->op != Op::MUL && rhs->op != Op::MUL &&
+        lhs->op != Op::INTEGER && rhs->op != Op::INTEGER &&
+        lhs->op != Op::FLOAT && rhs->op != Op::FLOAT) [[likely]] {
       // Canonical ordering by pointer address
-      if (a > b)
-        std::swap(a, b);
-      const Expr* args[] = {a, b};
+      if (lhs > rhs)
+        std::swap(lhs, rhs);
+      const Expr* args[] = {lhs, rhs};
       uint16_t f = detail::composite_flags(Op::MUL, args, 2);
-      return intern_node(Op::MUL, args, 2, f, SymbolId{}, 0);
+      return intern_node(a, Op::MUL, args, 2, f, SymbolId{}, 0);
     }
     // Constant folding
-    if (a->op == Op::INTEGER && b->op == Op::INTEGER)
-      return integer(a->payload * b->payload);
-    if (a->op == Op::FLOAT && b->op == Op::FLOAT)
-      return float_(a->as_float() * b->as_float());
+    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
+      return integer(a, lhs->payload * rhs->payload);
+    if (lhs->op == Op::FLOAT && rhs->op == Op::FLOAT)
+      return float_(a, lhs->as_float() * rhs->as_float());
     // Zero annihilation
-    if (a->is_zero_int() || b->is_zero_int())
-      return integer(0);
+    if (lhs->is_zero_int() || rhs->is_zero_int())
+      return integer(a, 0);
     // Identity
-    if (a->is_one())
-      return b;
-    if (b->is_one())
-      return a;
+    if (lhs->is_one())
+      return rhs;
+    if (rhs->is_one())
+      return lhs;
     // Slow path: flatten + fold + sort
-    const Expr* inputs[] = {a, b};
-    return mul_n(inputs);
+    const Expr* inputs[] = {lhs, rhs};
+    return mul_n(a, inputs);
   }
 
-  [[nodiscard]] const Expr* pow(const Expr* base, const Expr* exp) {
+  [[nodiscard]] const Expr* pow(fx::Alloc a, const Expr* base, const Expr* exp) {
     // x^0 → 1
     if (exp->is_zero_int())
-      return integer(1);
+      return integer(a, 1);
     // x^1 → x
     if (exp->is_one())
       return base;
@@ -360,225 +360,226 @@ class CRUCIBLE_OWNER ExprPool {
       int64_t result = 1, b = base->payload, e = exp->payload;
       for (int64_t i = 0; i < e; ++i)
         result *= b;
-      return integer(result);
+      return integer(a, result);
     }
     const Expr* args[] = {base, exp};
     uint16_t f = detail::composite_flags(Op::POW, args, 2);
-    return intern_node(Op::POW, args, 2, f, SymbolId{}, 0);
+    return intern_node(a, Op::POW, args, 2, f, SymbolId{}, 0);
   }
 
   // Canonical form: MUL(-1, x). No NEG nodes in output.
-  [[nodiscard]] const Expr* neg(const Expr* a) {
-    if (a->op == Op::INTEGER)
-      return integer(-a->payload);
-    if (a->op == Op::FLOAT)
-      return float_(-a->as_float());
-    return mul(integer(-1), a);
+  [[nodiscard]] const Expr* neg(fx::Alloc a, const Expr* e) {
+    if (e->op == Op::INTEGER)
+      return integer(a, -e->payload);
+    if (e->op == Op::FLOAT)
+      return float_(a, -e->as_float());
+    return mul(a, integer(a, -1), e);
   }
 
   // ---- Relational ----
 
-  [[nodiscard]] const Expr* eq(const Expr* a, const Expr* b) {
-    if (a == b)
+  [[nodiscard]] const Expr* eq(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    if (lhs == rhs)
       return true_;
-    if (a->op == Op::INTEGER && b->op == Op::INTEGER)
-      return (a->payload == b->payload) ? true_ : false_;
+    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
+      return (lhs->payload == rhs->payload) ? true_ : false_;
     // Eq is commutative: canonical order by pointer
-    if (a > b)
-      std::swap(a, b);
-    const Expr* args[] = {a, b};
-    return intern_node(Op::EQ, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    if (lhs > rhs)
+      std::swap(lhs, rhs);
+    const Expr* args[] = {lhs, rhs};
+    return intern_node(a, Op::EQ, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
-  [[nodiscard]] const Expr* ne(const Expr* a, const Expr* b) {
-    if (a == b)
+  [[nodiscard]] const Expr* ne(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    if (lhs == rhs)
       return false_;
-    if (a->op == Op::INTEGER && b->op == Op::INTEGER)
-      return (a->payload != b->payload) ? true_ : false_;
-    if (a > b)
-      std::swap(a, b);
-    const Expr* args[] = {a, b};
-    return intern_node(Op::NE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
+      return (lhs->payload != rhs->payload) ? true_ : false_;
+    if (lhs > rhs)
+      std::swap(lhs, rhs);
+    const Expr* args[] = {lhs, rhs};
+    return intern_node(a, Op::NE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
-  [[nodiscard]] const Expr* lt(const Expr* a, const Expr* b) {
-    if (a == b)
+  [[nodiscard]] const Expr* lt(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    if (lhs == rhs)
       return false_;
-    if (a->op == Op::INTEGER && b->op == Op::INTEGER)
-      return (a->payload < b->payload) ? true_ : false_;
-    const Expr* args[] = {a, b};
-    return intern_node(Op::LT, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
+      return (lhs->payload < rhs->payload) ? true_ : false_;
+    const Expr* args[] = {lhs, rhs};
+    return intern_node(a, Op::LT, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
-  [[nodiscard]] const Expr* le(const Expr* a, const Expr* b) {
-    if (a == b)
+  [[nodiscard]] const Expr* le(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    if (lhs == rhs)
       return true_;
-    if (a->op == Op::INTEGER && b->op == Op::INTEGER)
-      return (a->payload <= b->payload) ? true_ : false_;
-    const Expr* args[] = {a, b};
-    return intern_node(Op::LE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
+      return (lhs->payload <= rhs->payload) ? true_ : false_;
+    const Expr* args[] = {lhs, rhs};
+    return intern_node(a, Op::LE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
-  [[nodiscard]] const Expr* gt(const Expr* a, const Expr* b) {
-    if (a == b)
+  [[nodiscard]] const Expr* gt(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    if (lhs == rhs)
       return false_;
-    if (a->op == Op::INTEGER && b->op == Op::INTEGER)
-      return (a->payload > b->payload) ? true_ : false_;
-    const Expr* args[] = {a, b};
-    return intern_node(Op::GT, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
+      return (lhs->payload > rhs->payload) ? true_ : false_;
+    const Expr* args[] = {lhs, rhs};
+    return intern_node(a, Op::GT, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
-  [[nodiscard]] const Expr* ge(const Expr* a, const Expr* b) {
-    if (a == b)
+  [[nodiscard]] const Expr* ge(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    if (lhs == rhs)
       return true_;
-    if (a->op == Op::INTEGER && b->op == Op::INTEGER)
-      return (a->payload >= b->payload) ? true_ : false_;
-    const Expr* args[] = {a, b};
-    return intern_node(Op::GE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
+      return (lhs->payload >= rhs->payload) ? true_ : false_;
+    const Expr* args[] = {lhs, rhs};
+    return intern_node(a, Op::GE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   // ---- Logic ----
 
-  [[nodiscard]] const Expr* and_(const Expr* a, const Expr* b) {
-    if (a == false_ || b == false_)
+  [[nodiscard]] const Expr* and_(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    if (lhs == false_ || rhs == false_)
       return false_;
-    if (a == true_)
-      return b;
-    if (b == true_)
-      return a;
-    if (a == b)
-      return a;
-    const Expr* inputs[] = {a, b};
-    return and_n(inputs);
+    if (lhs == true_)
+      return rhs;
+    if (rhs == true_)
+      return lhs;
+    if (lhs == rhs)
+      return lhs;
+    const Expr* inputs[] = {lhs, rhs};
+    return and_n(a, inputs);
   }
 
-  [[nodiscard]] const Expr* or_(const Expr* a, const Expr* b) {
-    if (a == true_ || b == true_)
+  [[nodiscard]] const Expr* or_(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    if (lhs == true_ || rhs == true_)
       return true_;
-    if (a == false_)
-      return b;
-    if (b == false_)
-      return a;
-    if (a == b)
-      return a;
-    const Expr* inputs[] = {a, b};
-    return or_n(inputs);
+    if (lhs == false_)
+      return rhs;
+    if (rhs == false_)
+      return lhs;
+    if (lhs == rhs)
+      return lhs;
+    const Expr* inputs[] = {lhs, rhs};
+    return or_n(a, inputs);
   }
 
-  [[nodiscard]] const Expr* not_(const Expr* a) {
-    if (a == true_)
+  [[nodiscard]] const Expr* not_(fx::Alloc a, const Expr* e) {
+    if (e == true_)
       return false_;
-    if (a == false_)
+    if (e == false_)
       return true_;
     // Double negation elimination
-    if (a->op == Op::NOT)
-      return a->args[0];
-    const Expr* args[] = {a};
-    return intern_node(Op::NOT, args, 1, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    if (e->op == Op::NOT)
+      return e->args[0];
+    const Expr* args[] = {e};
+    return intern_node(a, Op::NOT, args, 1, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   // ---- Division / Modular ----
 
-  [[nodiscard]] const Expr* floor_div(const Expr* a, const Expr* b) {
-    if (a->op == Op::INTEGER && b->op == Op::INTEGER && b->as_int() != 0) {
-      int64_t av = a->as_int(), bv = b->as_int();
+  [[nodiscard]] const Expr* floor_div(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
+      int64_t av = lhs->as_int(), bv = rhs->as_int();
       int64_t q = av / bv, r = av % bv;
       if (r != 0 && ((r ^ bv) < 0)) --q;
-      return integer(q);
+      return integer(a, q);
     }
-    if (a->is_zero_int()) return integer(0);
-    if (b->is_one()) return a;
-    if (b->is_neg_one()) return neg(a);
-    if (a == b) return integer(1);
+    if (lhs->is_zero_int()) return integer(a, 0);
+    if (rhs->is_one()) return lhs;
+    if (rhs->is_neg_one()) return neg(a, lhs);
+    if (lhs == rhs) return integer(a, 1);
     // FloorDiv(FloorDiv(x, c1), c2) → FloorDiv(x, c1*c2)
-    if (a->op == Op::FLOOR_DIV || a->op == Op::CLEAN_DIV)
-      return floor_div(a->arg(0), mul(a->arg(1), b));
+    if (lhs->op == Op::FLOOR_DIV || lhs->op == Op::CLEAN_DIV)
+      return floor_div(a, lhs->arg(0), mul(a, lhs->arg(1), rhs));
     // Extract divisible terms from ADD when divisor is constant
-    if (a->op == Op::ADD && b->op == Op::INTEGER && b->as_int() != 0) {
-      int64_t d = b->as_int();
+    if (lhs->op == Op::ADD && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
+      int64_t d = rhs->as_int();
       const Expr* quotients[256];
       const Expr* remainders[256];
       uint8_t nq = 0, nr = 0;
-      for (uint8_t i = 0; i < a->nargs; ++i) {
-        int64_t c = integer_coefficient_(a->arg(i));
+      for (uint8_t i = 0; i < lhs->nargs; ++i) {
+        int64_t c = integer_coefficient_(lhs->arg(i));
         if (c != 0 && c % d == 0)
-          quotients[nq++] = divide_coefficients_(a->arg(i), d);
+          quotients[nq++] = divide_coefficients_(a, lhs->arg(i), d);
         else
-          remainders[nr++] = a->arg(i);
+          remainders[nr++] = lhs->arg(i);
       }
       if (nq > 0) {
         const Expr* qsum = (nq == 1) ? quotients[0]
-            : add_n(std::span{quotients, nq});
+            : add_n(a, std::span{quotients, nq});
         if (nr == 0) return qsum;
         const Expr* rsum = (nr == 1) ? remainders[0]
-            : add_n(std::span{remainders, nr});
-        return add(qsum, floor_div(rsum, b));
+            : add_n(a, std::span{remainders, nr});
+        return add(a, qsum, floor_div(a, rsum, rhs));
       }
     }
     // Integer GCD cancellation
     {
-      int64_t g = gcd_(integer_factor_(a), integer_factor_(b));
+      int64_t g = gcd_(integer_factor_(lhs), integer_factor_(rhs));
       if (g > 1)
-        return floor_div(
-            divide_coefficients_(a, g), divide_coefficients_(b, g));
+        return floor_div(a,
+            divide_coefficients_(a, lhs, g), divide_coefficients_(a, rhs, g));
     }
-    const Expr* args[] = {a, b};
+    const Expr* args[] = {lhs, rhs};
     uint16_t f = ExprFlags::IS_INTEGER;
-    if (a->is_nonnegative() && b->is_positive())
+    if (lhs->is_nonnegative() && rhs->is_positive())
       f |= ExprFlags::IS_NONNEGATIVE;
-    return intern_node(Op::FLOOR_DIV, args, 2, f, SymbolId{}, 0);
+    return intern_node(a, Op::FLOOR_DIV, args, 2, f, SymbolId{}, 0);
   }
 
-  [[nodiscard]] const Expr* clean_div(const Expr* a, const Expr* b) {
-    return floor_div(a, b);
+  [[nodiscard]] const Expr* clean_div(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    return floor_div(a, lhs, rhs);
   }
 
-  [[nodiscard]] const Expr* ceil_div(const Expr* a, const Expr* b) {
-    if (a->op == Op::INTEGER && b->op == Op::INTEGER && b->as_int() != 0) {
-      int64_t av = a->as_int(), bv = b->as_int();
+  [[nodiscard]] const Expr* ceil_div(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
+      int64_t av = lhs->as_int(), bv = rhs->as_int();
       int64_t q = av / bv, r = av % bv;
       if (r != 0 && ((r ^ bv) > 0)) ++q;
-      return integer(q);
+      return integer(a, q);
     }
     // ceil(a/b) = floor((a + b - 1) / b) for positive b
-    return floor_div(add(a, add(b, integer(-1))), b);
+    return floor_div(a, add(a, lhs, add(a, rhs, integer(a, -1))), rhs);
   }
 
-  [[nodiscard]] const Expr* mod(const Expr* a, const Expr* b) {
-    if (a->op == Op::INTEGER && b->op == Op::INTEGER && b->as_int() > 0)
-      return integer(a->as_int() % b->as_int());
-    if (a->is_zero_int() || a == b || b->is_one()) return integer(0);
-    if (b->op == Op::INTEGER && b->as_int() == 2) {
-      if (a->is_even()) return integer(0);
-      if (a->is_odd()) return integer(1);
+  [[nodiscard]] const Expr* mod(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() > 0)
+      return integer(a, lhs->as_int() % rhs->as_int());
+    if (lhs->is_zero_int() || lhs == rhs || rhs->is_one()) return integer(a, 0);
+    if (rhs->op == Op::INTEGER && rhs->as_int() == 2) {
+      if (lhs->is_even()) return integer(a, 0);
+      if (lhs->is_odd()) return integer(a, 1);
     }
-    const Expr* args[] = {a, b};
+    const Expr* args[] = {lhs, rhs};
     uint16_t f = ExprFlags::IS_INTEGER | ExprFlags::IS_NONNEGATIVE;
-    return intern_node(Op::MOD, args, 2, f, SymbolId{}, 0);
+    return intern_node(a, Op::MOD, args, 2, f, SymbolId{}, 0);
   }
 
-  [[nodiscard]] const Expr* python_mod(const Expr* a, const Expr* b) {
-    if (a->op == Op::INTEGER && b->op == Op::INTEGER && b->as_int() != 0) {
-      int64_t av = a->as_int(), bv = b->as_int();
+  [[nodiscard]] const Expr* python_mod(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
+      int64_t av = lhs->as_int(), bv = rhs->as_int();
       int64_t r = av % bv;
       if (r != 0 && ((r ^ bv) < 0)) r += bv;
-      return integer(r);
+      return integer(a, r);
     }
-    if (a->is_zero_int() || a == b || b->is_one()) return integer(0);
-    if (b->op == Op::INTEGER && b->as_int() == 2) {
-      if (a->is_even()) return integer(0);
-      if (a->is_odd()) return integer(1);
+    if (lhs->is_zero_int() || lhs == rhs || rhs->is_one()) return integer(a, 0);
+    if (rhs->op == Op::INTEGER && rhs->as_int() == 2) {
+      if (lhs->is_even()) return integer(a, 0);
+      if (lhs->is_odd()) return integer(a, 1);
     }
-    const Expr* args[] = {a, b};
+    const Expr* args[] = {lhs, rhs};
     uint16_t f = ExprFlags::IS_INTEGER;
-    return intern_node(Op::PYTHON_MOD, args, 2, f, SymbolId{}, 0);
+    return intern_node(a, Op::PYTHON_MOD, args, 2, f, SymbolId{}, 0);
   }
 
   [[nodiscard]] const Expr* modular_indexing(
+      fx::Alloc a,
       const Expr* base,
       const Expr* div,
       const Expr* modulus) {
-    if (base->is_zero_int() || modulus->is_one()) return integer(0);
+    if (base->is_zero_int() || modulus->is_one()) return integer(a, 0);
     // All concrete
     if (base->op == Op::INTEGER && div->op == Op::INTEGER &&
         modulus->op == Op::INTEGER && div->as_int() != 0 &&
@@ -588,15 +589,15 @@ class CRUCIBLE_OWNER ExprPool {
       if (r != 0 && ((r ^ dv) < 0)) --q;
       int64_t m = q % mv;
       if (m < 0) m += mv;
-      return integer(m);
+      return integer(a, m);
     }
     // GCD on (base, divisor)
     if (!(div->op == Op::INTEGER && div->as_int() == 1)) {
       int64_t g = gcd_(integer_factor_(base), integer_factor_(div));
       if (g > 1)
-        return modular_indexing(
-            divide_coefficients_(base, g),
-            divide_coefficients_(div, g), modulus);
+        return modular_indexing(a,
+            divide_coefficients_(a, base, g),
+            divide_coefficients_(a, div, g), modulus);
     }
     // Drop ADD terms divisible by modulus*divisor
     if (base->op == Op::ADD && modulus->op == Op::INTEGER &&
@@ -614,107 +615,107 @@ class CRUCIBLE_OWNER ExprPool {
             kept[nk++] = base->arg(i);
         }
         if (dropped) {
-          if (nk == 0) return integer(0);
+          if (nk == 0) return integer(a, 0);
           const Expr* nb =
-              (nk == 1) ? kept[0] : add_n(std::span{kept, nk});
-          return modular_indexing(nb, div, modulus);
+              (nk == 1) ? kept[0] : add_n(a, std::span{kept, nk});
+          return modular_indexing(a, nb, div, modulus);
         }
       }
     }
     // FloorDiv as base: ModIdx(x//a, d, m) → ModIdx(x, a*d, m)
     if (base->op == Op::FLOOR_DIV || base->op == Op::CLEAN_DIV)
-      return modular_indexing(base->arg(0), mul(base->arg(1), div), modulus);
+      return modular_indexing(a, base->arg(0), mul(a, base->arg(1), div), modulus);
 
     const Expr* args[] = {base, div, modulus};
     uint16_t f = ExprFlags::IS_INTEGER | ExprFlags::IS_NONNEGATIVE;
-    return intern_node(Op::MODULAR_INDEXING, args, 3, f, SymbolId{}, 0);
+    return intern_node(a, Op::MODULAR_INDEXING, args, 3, f, SymbolId{}, 0);
   }
 
   // ---- Conditional ----
 
-  [[nodiscard]] const Expr* where(const Expr* cond, const Expr* t, const Expr* f) {
+  [[nodiscard]] const Expr* where(fx::Alloc a, const Expr* cond, const Expr* t, const Expr* f) {
     if (cond == true_) return t;
     if (cond == false_) return f;
     if (t == f) return t;
     const Expr* args[] = {cond, t, f};
     uint16_t fl = t->flags & f->flags;
-    return intern_node(Op::WHERE, args, 3, fl, SymbolId{}, 0);
+    return intern_node(a, Op::WHERE, args, 3, fl, SymbolId{}, 0);
   }
 
   // ---- Min / Max ----
 
-  [[nodiscard]] const Expr* min_expr(const Expr* a, const Expr* b) {
-    if (a == b) return a;
-    if (a->op == Op::INTEGER && b->op == Op::INTEGER)
-      return integer(std::min(a->as_int(), b->as_int()));
-    const Expr* inputs[] = {a, b};
-    return min_n(inputs);
+  [[nodiscard]] const Expr* min_expr(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    if (lhs == rhs) return lhs;
+    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
+      return integer(a, std::min(lhs->as_int(), rhs->as_int()));
+    const Expr* inputs[] = {lhs, rhs};
+    return min_n(a, inputs);
   }
 
-  [[nodiscard]] const Expr* max_expr(const Expr* a, const Expr* b) {
-    if (a == b) return a;
-    if (a->op == Op::INTEGER && b->op == Op::INTEGER)
-      return integer(std::max(a->as_int(), b->as_int()));
-    const Expr* inputs[] = {a, b};
-    return max_n(inputs);
+  [[nodiscard]] const Expr* max_expr(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+    if (lhs == rhs) return lhs;
+    if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
+      return integer(a, std::max(lhs->as_int(), rhs->as_int()));
+    const Expr* inputs[] = {lhs, rhs};
+    return max_n(a, inputs);
   }
 
   // ---- Generic construction ----
   // Dispatches to canonical constructors for ops that have them,
   // generic interning for everything else.
   [[nodiscard]] const Expr* make(
-      Op op, std::span<const Expr* const> args) {
+      fx::Alloc a, Op op, std::span<const Expr* const> args) {
     switch (op) {
       case Op::ADD:
-        return add_n(args);
+        return add_n(a, args);
       case Op::MUL:
-        return mul_n(args);
+        return mul_n(a, args);
       case Op::AND:
-        return and_n(args);
+        return and_n(a, args);
       case Op::OR:
-        return or_n(args);
+        return or_n(a, args);
       case Op::POW:
-        return pow(args[0], args[1]);
+        return pow(a, args[0], args[1]);
       case Op::NEG:
-        return neg(args[0]);
+        return neg(a, args[0]);
       case Op::EQ:
-        return eq(args[0], args[1]);
+        return eq(a, args[0], args[1]);
       case Op::NE:
-        return ne(args[0], args[1]);
+        return ne(a, args[0], args[1]);
       case Op::LT:
-        return lt(args[0], args[1]);
+        return lt(a, args[0], args[1]);
       case Op::LE:
-        return le(args[0], args[1]);
+        return le(a, args[0], args[1]);
       case Op::GT:
-        return gt(args[0], args[1]);
+        return gt(a, args[0], args[1]);
       case Op::GE:
-        return ge(args[0], args[1]);
+        return ge(a, args[0], args[1]);
       case Op::NOT:
-        return not_(args[0]);
+        return not_(a, args[0]);
       case Op::FLOOR_DIV:
-        return floor_div(args[0], args[1]);
+        return floor_div(a, args[0], args[1]);
       case Op::CLEAN_DIV:
-        return clean_div(args[0], args[1]);
+        return clean_div(a, args[0], args[1]);
       case Op::CEIL_DIV:
-        return ceil_div(args[0], args[1]);
+        return ceil_div(a, args[0], args[1]);
       case Op::MOD:
-        return mod(args[0], args[1]);
+        return mod(a, args[0], args[1]);
       case Op::PYTHON_MOD:
-        return python_mod(args[0], args[1]);
+        return python_mod(a, args[0], args[1]);
       case Op::MODULAR_INDEXING:
-        return modular_indexing(args[0], args[1], args[2]);
+        return modular_indexing(a, args[0], args[1], args[2]);
       case Op::WHERE:
-        return where(args[0], args[1], args[2]);
+        return where(a, args[0], args[1], args[2]);
       case Op::MIN:
-        return min_n(args);
+        return min_n(a, args);
       case Op::MAX:
-        return max_n(args);
+        return max_n(a, args);
       default:
         break;
     }
     uint16_t f = detail::composite_flags(op, args.data(),
                                          static_cast<uint8_t>(args.size()));
-    return intern_node(op, args.data(),
+    return intern_node(a, op, args.data(),
                        static_cast<uint8_t>(args.size()), f, SymbolId{}, 0);
   }
 
@@ -739,9 +740,9 @@ class CRUCIBLE_OWNER ExprPool {
   static constexpr size_t kIntCacheSize =
       static_cast<size_t>(kIntCacheHigh - kIntCacheLow + 1);
 
-  const Expr* make_integer(int64_t val) {
+  const Expr* make_integer(fx::Alloc a, int64_t val) {
     return intern_node(
-        Op::INTEGER, nullptr, 0, detail::integer_flags(val), SymbolId{}, val);
+        a, Op::INTEGER, nullptr, 0, detail::integer_flags(val), SymbolId{}, val);
   }
 
   // ---- GCD / coefficient helpers for division rules ----
@@ -783,9 +784,9 @@ class CRUCIBLE_OWNER ExprPool {
   }
 
   // Divide all integer coefficients in expression by g
-  const Expr* divide_coefficients_(const Expr* e, int64_t g) {
+  const Expr* divide_coefficients_(fx::Alloc a, const Expr* e, int64_t g) {
     if (g <= 1) return e;
-    if (e->op == Op::INTEGER) return integer(e->as_int() / g);
+    if (e->op == Op::INTEGER) return integer(a, e->as_int() / g);
     if (e->op == Op::MUL) {
       for (uint8_t i = 0; i < e->nargs; ++i) {
         if (e->args[i]->op == Op::INTEGER) {
@@ -795,8 +796,8 @@ class CRUCIBLE_OWNER ExprPool {
           const Expr* buf[255];
           uint8_t n = 0;
           for (uint8_t j = 0; j < e->nargs; ++j)
-            buf[n++] = (j == i) ? integer(new_coeff) : e->args[j];
-          return mul_n(std::span{buf, n});
+            buf[n++] = (j == i) ? integer(a, new_coeff) : e->args[j];
+          return mul_n(a, std::span{buf, n});
         }
       }
       return e; // no integer factor
@@ -804,14 +805,14 @@ class CRUCIBLE_OWNER ExprPool {
     if (e->op == Op::ADD) {
       const Expr* buf[255];
       for (uint8_t i = 0; i < e->nargs; ++i)
-        buf[i] = divide_coefficients_(e->args[i], g);
-      return add_n(std::span{buf, e->nargs});
+        buf[i] = divide_coefficients_(a, e->args[i], g);
+      return add_n(a, std::span{buf, e->nargs});
     }
     return e;
   }
 
   // Flatten MIN/MAX + dedup + sort
-  const Expr* min_n(std::span<const Expr* const> inputs) {
+  const Expr* min_n(fx::Alloc a, std::span<const Expr* const> inputs) {
     const Expr* buf[64];
     uint8_t n = 0;
     for (auto* e : inputs) {
@@ -828,10 +829,10 @@ class CRUCIBLE_OWNER ExprPool {
       if (buf[i] != buf[m - 1]) buf[m++] = buf[i];
     if (m == 1) return buf[0];
     uint16_t f = detail::composite_flags(Op::MIN, buf, m);
-    return intern_node(Op::MIN, buf, m, f, SymbolId{}, 0);
+    return intern_node(a, Op::MIN, buf, m, f, SymbolId{}, 0);
   }
 
-  const Expr* max_n(std::span<const Expr* const> inputs) {
+  const Expr* max_n(fx::Alloc a, std::span<const Expr* const> inputs) {
     const Expr* buf[64];
     uint8_t n = 0;
     for (auto* e : inputs) {
@@ -848,13 +849,13 @@ class CRUCIBLE_OWNER ExprPool {
       if (buf[i] != buf[m - 1]) buf[m++] = buf[i];
     if (m == 1) return buf[0];
     uint16_t f = detail::composite_flags(Op::MAX, buf, m);
-    return intern_node(Op::MAX, buf, m, f, SymbolId{}, 0);
+    return intern_node(a, Op::MAX, buf, m, f, SymbolId{}, 0);
   }
 
   // Flatten ADD children, fold integer constants, combine like terms,
   // sort, intern. Term combining: ADD(MUL(a,b), MUL(3,a,b)) → ADD(MUL(4,a,b)).
   // Critical for expand(): (a+b)^n produces n+1 binomial terms, not 2^n.
-  const Expr* add_n(std::span<const Expr* const> inputs) {
+  const Expr* add_n(fx::Alloc a, std::span<const Expr* const> inputs) {
     const Expr* buf[256];
     uint8_t n = 0;
     int64_t int_sum = 0;
@@ -879,7 +880,7 @@ class CRUCIBLE_OWNER ExprPool {
     }
 
     if (n == 0)
-      return integer(int_sum);
+      return integer(a, int_sum);
 
     // Phase 2: Decompose each term into (coefficient, base).
     // MUL(3, a, b) → coeff=3, base=MUL(a,b)
@@ -918,7 +919,7 @@ class CRUCIBLE_OWNER ExprPool {
           // Re-intern coefficient-free MUL as the grouping key.
           // factors[] are already sorted (came from a canonical MUL).
           uint16_t f = detail::composite_flags(Op::MUL, factors, nf);
-          base = intern_node(Op::MUL, factors, nf, f, SymbolId{}, 0);
+          base = intern_node(a, Op::MUL, factors, nf, f, SymbolId{}, 0);
         }
       }
       terms[nt++] = {.coeff = coeff, .base = base};
@@ -927,8 +928,8 @@ class CRUCIBLE_OWNER ExprPool {
     // Phase 3: Sort by base pointer, merge adjacent same-base entries
     std::ranges::sort(
         std::span{terms, nt},
-        [](const CoeffTerm& a, const CoeffTerm& b) {
-          return a.base < b.base;
+        [](const CoeffTerm& lhs, const CoeffTerm& rhs) {
+          return lhs.base < rhs.base;
         });
 
     const Expr* collected[256];
@@ -948,8 +949,8 @@ class CRUCIBLE_OWNER ExprPool {
       } else if (total_coeff == 1) {
         collected[cn++] = base;
       } else {
-        const Expr* mul_args[] = {integer(total_coeff), base};
-        collected[cn++] = mul_n(mul_args);
+        const Expr* mul_args[] = {integer(a, total_coeff), base};
+        collected[cn++] = mul_n(a, mul_args);
       }
       i = j;
     }
@@ -957,7 +958,7 @@ class CRUCIBLE_OWNER ExprPool {
     // Reattach integer sum (omit zero unless it's the only term)
     if (int_sum != 0 || cn == 0) {
       assert(cn < 255);
-      collected[cn++] = integer(int_sum);
+      collected[cn++] = integer(a, int_sum);
     }
     if (cn == 1)
       return collected[0];
@@ -965,11 +966,11 @@ class CRUCIBLE_OWNER ExprPool {
     // Final sort for canonical ordering
     std::ranges::sort(std::span{collected, cn});
     uint16_t f = detail::composite_flags(Op::ADD, collected, cn);
-    return intern_node(Op::ADD, collected, cn, f, SymbolId{}, 0);
+    return intern_node(a, Op::ADD, collected, cn, f, SymbolId{}, 0);
   }
 
   // Flatten MUL children, fold integer constants, sort, intern.
-  const Expr* mul_n(std::span<const Expr* const> inputs) {
+  const Expr* mul_n(fx::Alloc a, std::span<const Expr* const> inputs) {
     const Expr* buf[256];
     uint8_t n = 0;
     int64_t int_prod = 1;
@@ -993,22 +994,22 @@ class CRUCIBLE_OWNER ExprPool {
     }
 
     if (int_prod == 0)
-      return integer(0);
+      return integer(a, 0);
     // Reattach integer product (omit 1 unless it's the only term)
     if (int_prod != 1 || n == 0) {
       assert(n < 255);
-      buf[n++] = integer(int_prod);
+      buf[n++] = integer(a, int_prod);
     }
     if (n == 1)
       return buf[0];
 
     std::ranges::sort(std::span{buf, n});
     uint16_t f = detail::composite_flags(Op::MUL, buf, n);
-    return intern_node(Op::MUL, buf, n, f, SymbolId{}, 0);
+    return intern_node(a, Op::MUL, buf, n, f, SymbolId{}, 0);
   }
 
   // Flatten AND children, short-circuit on FALSE, filter TRUE, sort, intern.
-  const Expr* and_n(std::span<const Expr* const> inputs) {
+  const Expr* and_n(fx::Alloc a, std::span<const Expr* const> inputs) {
     const Expr* buf[64];
     uint8_t n = 0;
 
@@ -1037,11 +1038,11 @@ class CRUCIBLE_OWNER ExprPool {
     if (n == 1)
       return buf[0];
     std::ranges::sort(std::span{buf, n});
-    return intern_node(Op::AND, buf, n, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    return intern_node(a, Op::AND, buf, n, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   // Flatten OR children, short-circuit on TRUE, filter FALSE, sort, intern.
-  const Expr* or_n(std::span<const Expr* const> inputs) {
+  const Expr* or_n(fx::Alloc a, std::span<const Expr* const> inputs) {
     const Expr* buf[64];
     uint8_t n = 0;
 
@@ -1070,7 +1071,7 @@ class CRUCIBLE_OWNER ExprPool {
     if (n == 1)
       return buf[0];
     std::ranges::sort(std::span{buf, n});
-    return intern_node(Op::OR, buf, n, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    return intern_node(a, Op::OR, buf, n, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   // Swiss table probe + insert. Returns existing interned node or creates new.
@@ -1088,6 +1089,7 @@ class CRUCIBLE_OWNER ExprPool {
   // the packed comparison into a single 64-bit op.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   CRUCIBLE_INLINE const Expr* intern_node(
+      fx::Alloc a,
       Op op,
       const Expr* const* args,
       uint8_t nargs,
@@ -1178,7 +1180,7 @@ class CRUCIBLE_OWNER ExprPool {
       if (empties) [[likely]] {
         size_t idx = base + empties.lowest();
 
-        Expr* e = arena_.alloc_obj<Expr>();
+        Expr* e = arena_.alloc_obj<Expr>(a);
         e->op = op;
         e->nargs = nargs;
         e->flags = flags;
@@ -1186,7 +1188,7 @@ class CRUCIBLE_OWNER ExprPool {
         e->hash = h;
         e->payload = payload;
         if (nargs > 0) {
-          e->args = arena_.alloc_array<const Expr*>(nargs);
+          e->args = arena_.alloc_array<const Expr*>(a, nargs);
           std::memcpy(e->args, args, nargs * sizeof(const Expr*));
         } else {
           e->args = nullptr;

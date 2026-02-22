@@ -15,6 +15,7 @@
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/CrucibleContext.h>
+#include <crucible/Effects.h>
 
 #include <cassert>
 #include <cmath>
@@ -54,6 +55,7 @@ static constexpr uint32_t N_SLOTS = 7;
 static constexpr uint32_t N_OPS = 4;
 
 int main() {
+    fx::Test test;
     std::printf("test_compute:\n");
 
     // ── Initialize parameters with seeded random values ──────────────
@@ -119,7 +121,7 @@ int main() {
 
     // Sweep-line offset assignment
     BackgroundThread bt;
-    auto* plan = bt.compute_memory_plan(slots, N_SLOTS);
+    auto* plan = bt.compute_memory_plan(test.alloc, slots, N_SLOTS);
     assert(plan != nullptr);
 
     std::printf("  plan: pool=%lu bytes, %u slots (%u external)\n",
