@@ -2,3 +2,19 @@ build/
 build-*/
 CMakeUserPresets.json
 .prof/
+
+# Editor backup files
+*~
+*.swp
+*.swo
+
+# Tool caches
+.cache/
+.playwright-mcp/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Binary artifacts
+*.pdf
