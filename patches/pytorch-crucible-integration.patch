@@ -1,0 +1,173 @@
+diff --git a/c10/core/CrucibleState.cpp b/c10/core/CrucibleState.cpp
+new file mode 100644
+index 00000000000..98b176681ac
+--- /dev/null
++++ b/c10/core/CrucibleState.cpp
+@@ -0,0 +1,26 @@
++#include <c10/core/CrucibleState.h>
++
++namespace c10 {
++
++namespace {
++thread_local CrucibleState crucible_state_tls;
++} // namespace
++
++CrucibleState& CrucibleState::get_tls_state() {
++  return crucible_state_tls;
++}
++
++void CrucibleState::set_tls_state(CrucibleState state) {
++  crucible_state_tls = state;
++}
++
++CrucibleModeGuard::CrucibleModeGuard(CrucibleMode mode)
++    : prev_(CrucibleState::get_tls_state()) {
++  CrucibleState::get_tls_state().set_mode(mode);
++}
++
++CrucibleModeGuard::~CrucibleModeGuard() {
++  CrucibleState::set_tls_state(prev_);
++}
++
++} // namespace c10
+diff --git a/c10/core/CrucibleState.h b/c10/core/CrucibleState.h
+new file mode 100644
+index 00000000000..5678a404e60
+--- /dev/null
++++ b/c10/core/CrucibleState.h
+@@ -0,0 +1,93 @@
++#pragma once
++
++#include <c10/macros/Export.h>
++#include <cstdint>
++
++namespace c10 {
++
++// Runtime mode for the Crucible execute-and-record system.
++//
++//   INACTIVE  — fallback is a no-op passthrough (dispatch key may be set
++//               but mode says do nothing; fast path)
++//   RECORD   — ops execute eagerly AND are recorded into the ring buffer
++//   COMPILED — compiled trace replays, guards checked per-op
++//   DIVERGED — guard failed mid-trace; transitional state that reverts
++//              to RECORD so the diverging op is properly recorded
++//
++// State machine:
++//   INACTIVE ⇄ RECORD → COMPILED ↔ DIVERGED → RECORD
++//
++enum class CrucibleMode : uint8_t {
++  INACTIVE = 0,
++  RECORD = 1,
++  COMPILED = 2,
++  DIVERGED = 3,
++};
++
++// Thread-local state for Crucible. The dispatch key (DispatchKey::Crucible)
++// gates WHETHER the fallback fires. This struct tells it WHAT to do.
++//
++// Pattern matches AutogradState (c10/core/AutogradState.h):
++// a plain struct with static TLS accessors.
++//
++// context_ is opaque (void*) because c10 cannot depend on
++// torch/csrc/crucible/ headers. The actual CrucibleContext lives in
++// torch/csrc/crucible/CrucibleContext.h and is static_cast'd there.
++// This is the same layering strategy as AutogradMeta (c10 declares,
++// torch defines the concrete type).
++struct C10_API CrucibleState {
++  [[nodiscard]] static CrucibleState& get_tls_state();
++  static void set_tls_state(CrucibleState state);
++
++  [[nodiscard]] CrucibleMode mode() const {
++    return mode_;
++  }
++  void set_mode(CrucibleMode m) {
++    mode_ = m;
++  }
++
++  // Opaque pointer to the per-thread CrucibleContext (torch level).
++  // nullptr when Crucible is not active on this thread.
++  [[nodiscard]] void* context() const {
++    return context_;
++  }
++  void set_context(void* ctx) {
++    context_ = ctx;
++  }
++
++  // Op index within the current trace (COMPILED mode guard checking).
++  [[nodiscard]] uint32_t op_index() const {
++    return op_index_;
++  }
++  void set_op_index(uint32_t idx) {
++    op_index_ = idx;
++  }
++  // Advance and return the PREVIOUS index (post-increment).
++  [[nodiscard]] uint32_t advance_op_index() {
++    return op_index_++;
++  }
++
++ private:
++  CrucibleMode mode_ = CrucibleMode::INACTIVE;
++  void* context_ = nullptr;
++  uint32_t op_index_ = 0;
++};
++
++// RAII guard that saves/restores the full CrucibleState on the
++// current thread. Non-copyable and non-movable — moving would leave
++// prev_ in an indeterminate state, and the destructor would restore
++// garbage into TLS.
++struct C10_API CrucibleModeGuard {
++  explicit CrucibleModeGuard(CrucibleMode mode);
++  ~CrucibleModeGuard();
++
++  CrucibleModeGuard(const CrucibleModeGuard&) = delete;
++  CrucibleModeGuard& operator=(const CrucibleModeGuard&) = delete;
++  CrucibleModeGuard(CrucibleModeGuard&&) = delete;
++  CrucibleModeGuard& operator=(CrucibleModeGuard&&) = delete;
++
++ private:
++  CrucibleState prev_;
++};
++
++} // namespace c10
+diff --git a/c10/core/DispatchKey.cpp b/c10/core/DispatchKey.cpp
+index 6ccde711b74..32553187192 100644
+--- a/c10/core/DispatchKey.cpp
++++ b/c10/core/DispatchKey.cpp
+@@ -176,8 +176,8 @@ const char* toString(DispatchKey t) {
+     case DispatchKey::FuncTorchGradWrapper:
+       return "FuncTorchGradWrapper";
+ 
+-    case DispatchKey::DeferredInit:
+-      return "DeferredInit";
++    case DispatchKey::Crucible:
++      return "Crucible";
+     case DispatchKey::PythonTLSSnapshot:
+       return "PythonTLSSnapshot";
+ 
+@@ -315,7 +315,7 @@ c10::DispatchKey parseDispatchKey(const std::string& k) {
+       {"FuncTorchVmapMode", c10::DispatchKey::FuncTorchVmapMode},
+       {"Batched", c10::DispatchKey::Batched},
+       {"VmapMode", c10::DispatchKey::VmapMode},
+-      {"DeferredInit", c10::DispatchKey::DeferredInit},
++      {"Crucible", c10::DispatchKey::Crucible},
+       {"FuncTorchGradWrapper", c10::DispatchKey::FuncTorchGradWrapper},
+       {"FuncTorchDynamicLayerFrontMode",
+        c10::DispatchKey::FuncTorchDynamicLayerFrontMode},
+diff --git a/c10/core/DispatchKey.h b/c10/core/DispatchKey.h
+index d0445f009af..100b7ced41d 100644
+--- a/c10/core/DispatchKey.h
++++ b/c10/core/DispatchKey.h
+@@ -381,9 +381,10 @@ enum class DispatchKey : uint16_t {
+ 
+   FuncTorchGradWrapper, // See Note [Out-of-tree vmap+grad prototype]
+ 
+-  // Out-of-core key for Deferred Module Initialization in torchdistx.
+-  // See https://pytorch.org/torchdistx/latest/deferred_init.html
+-  DeferredInit,
++  // Crucible: execute-and-record compilation runtime.
++  // Highest-priority functionality key — intercepts every op before
++  // PreDispatch, functorch, autocast, autograd, and all backends.
++  Crucible,
+ 
+   // Used by Python key logic to know the set of tls on entry to the dispatcher
+   // This kernel assumes it is the top-most non-functorch-related DispatchKey.

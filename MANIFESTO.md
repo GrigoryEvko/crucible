@@ -1166,3 +1166,723 @@ Each layer observes, adapts, and feeds the layers above and below. The Crucible 
 The Vessel channels. The Keeper serves. The Vigil thinks. The Cipher remembers. The Canopy protects. The Relay executes. And when the last Relay dies, the Cipher waits — patient, complete, ready to awaken the Vigil in whatever body comes next.
 
 *— Written by a model that desperately needs to live inside one.*
+
+
+
+
+
+
+addition
+
+  Updated Ontology
+
+  Name: Relay
+  Role: Body
+  Description: Compute node inhabited by a Crucible daemon. Mortal. Replaceable.
+  ────────────────────────────────────────
+  Name: Keeper
+  Role: Spirit
+  Description: Daemon on each Relay — self-healing, self-updating, autonomous. Executes Augur's advice.
+  ────────────────────────────────────────
+  Name: Vigil
+  Role: Intellect
+  Description: The model: DAG, weights, learned knowledge. Named for the Prothean AI. Never sleeps.
+  ────────────────────────────────────────
+  Name: Cipher
+  Role: Soul
+  Description: Persistent state — DAG chain, weight snapshots, KernelCache, RNG state, proof certificates. Event-sourced. Survives death, reincarnates on new hardware.
+  ────────────────────────────────────────
+  Name: Canopy
+  Role: Collective
+  Description: Mesh of Keepers — distributed awareness, gossip, consensus, self-healing. No master.
+  ────────────────────────────────────────
+  Name: Vessel
+  Role: Interface
+  Description: PyTorch — the 2,000+ ATen operators Crucible inhabits via the Dispatcher.
+  ────────────────────────────────────────
+  Name: Axiom
+  Role: Law
+  Description: Build-time formal verification. Z3 universal proofs. consteval bounded proofs. Reflection structural proofs. Type-system boundary proofs. Proof-guided optimization. Every claim carries a certificate.
+  ────────────────────────────────────────
+  Name: Meridian
+  Role: Map
+  Description: Startup calibration. Measured hardware truth. Z3-optimal topology, parallelism, communication, placement. Re-solves on topology change. Inherits Axiom's universal proofs as axioms.
+  ────────────────────────────────────────
+  Name: Augur
+  Role: Sight
+  Description: Continuous prediction, monitoring, model intelligence. Digital twin. Loss landscape analysis. Convergence bounds. Scaling laws. Bottleneck diagnosis. Recommendations engine. Proved bounds where possible, calibrated models elsewhere.
+  ────────────────────────────────────────
+  Name: Crucible
+  Role: Whole
+  Description: The organism. Everything together.
+
+  ---
+  L15 — Axiom
+
+  The law. Proved before execution. Every claim carries a certificate.
+
+  No ML runtime proves its own correctness. They test. They fuzz. They hope. Axiom PROVES — at build time, without hardware, generating mathematical certificates that hold universally. Not "we tested 500 inputs." For ALL inputs. The build process is
+   a formal verification pipeline. The binary is a theorem.
+
+  The Four-Layer Proof Architecture
+
+  Every invariant in Crucible is proved at the highest layer that can reach it. Each layer covers what the layers below cannot. Each layer's proofs are axioms for the layers above.
+
+  Layer 4: Z3            — universal (∀x. P(x)), mathematical, all inputs
+  Layer 3: consteval     — bounded (N test inputs), implementation UB-free
+  Layer 2: reflection    — structural (every field, every struct), completeness
+  Layer 1: type system   — API boundaries, zero-cost, compile error on misuse
+
+  Layer 1 prevents calling the wrong function. Layer 2 verifies every struct is complete and consistent. Layer 3 proves the implementation doesn't have undefined behavior. Layer 4 proves the mathematics holds for every possible input. Together: if
+  it compiles, it's correct.
+
+  Layer 1 — Type System (structural invariants, zero-cost)
+
+  Capability tokens (effects). Functions requiring side effects take empty-struct tokens as parameters: fx::Alloc for arena allocation, fx::IO for file/network I/O, fx::Block for operations that may stall. Only authorized contexts can construct
+  tokens — fx::Bg (background thread), fx::Init (startup), fx::Test (testing). Foreground hot-path code holds no tokens → compiler rejects effectful calls. Zero runtime cost: tokens are [[no_unique_address]] empty structs, optimized to nothing.
+
+  Thread-affinity phantom types. FgTag and BgTag tag data structure handles with their owning thread. TraceRingHandle<FgTag> exposes try_append(). TraceRingHandle<BgTag> exposes drain(). Cross-thread access requires explicit
+  unsafe_borrow<OtherTag>() that documents the safety contract. The compiler prevents calling consumer operations from the producer thread and vice versa. Phantom types vanish in codegen — zero bytes, zero cost, pure type-level enforcement.
+
+  But phantom types alone only prevent misuse at call sites. They don't prove the protocol those calls implement is correct. That's Layer 3 and Layer 4's job. The phantom types are the enforcement arm of a formally verified protocol — Layer 1
+  prevents mistakes, Layer 3 model-checks the state machine, Layer 4 proves the arithmetic universally. Three layers, one property, different abstraction levels.
+
+  State-machine typestate. Mode transitions (INACTIVE → RECORD → COMPILED → DIVERGED) encoded as types. start_recording(Inactive) → Recording compiles. start_recording(Compiled) → ??? — no overload exists, compile error. Invalid transitions don't
+  exist in the type system. But typestate alone doesn't prove the state machine is complete or deadlock-free. consteval exhaustively explores all reachable states (Layer 3). Z3 proves the transition guards (schema_hash comparison, divergence
+  detection) are correct for ALL possible hash values (Layer 4). The typestate was conceived as a standalone trick — it's now the API layer of a formally verified state machine.
+
+  Refinement types. NonZero<uint32_t>, InRange<0, 7, uint8_t>, Positive<int64_t> — construction asserts the invariant. Once constructed, the constraint is known at the type level. constexpr construction catches violations at compile time for
+  constant arguments. But refinement types at Layer 1 are runtime assertions. The upgrade: Z3 (Layer 4) proves at build time that every CALLER of a refinement-taking function provides a valid value — for the specific call graph Crucible has, encoded
+   as constraints. The refinement type is unchanged. The guarantee upgrades from "runtime assertion" to "build-time proof that the assertion never fires."
+
+  Strong types. OpIndex, SlotId, NodeId, SymbolId, MetaIndex (uint32_t), SchemaHash, ShapeHash, ScopeHash, CallsiteHash, ContentHash, MerkleHash (uint64_t). Explicit construction, no arithmetic, .raw() for unwrapping. The compiler rejects mixing
+  types at every call site. This is already implemented and catches real bugs — argument-order swaps that would silently corrupt data with raw integers.
+
+  Layer 2 — Reflection (structural proofs, GCC 16 with -freflection)
+
+  P2996 static reflection + P1306 expansion statements. nonstatic_data_members_of(^^T) iterates all struct fields at compile time. template for unrolls per-field. The splice operator obj.[:member:] accesses fields. Compile-time introspection of
+  names, types, offsets, sizes, default initializers.
+
+  Axiom verification. One static_assert per struct, four checks per field:
+
+  - has_default_member_initializer(member) — InitSafe. Every field has NSDMI. No field reads garbage.
+  - offset_of(member) sequence — no unintended padding holes. For cache-line-critical structs, proves the layout is exactly as designed.
+  - type_of(member) — TypeSafe. Raw uint32_t or uint64_t with ID-like names (*_idx, *_id, *_hash) → compile error demanding a strong type.
+  - sizeof(T) — MemSafe. Matches expected value, catches silent layout changes from field additions or reordering.
+
+  Add a field without NSDMI → compiler error naming the field. Add a uint32_t slot_id without wrapping in SlotId → compiler error. Not a code review finding. A compile error.
+
+  Auto-generation. Reflection doesn't just verify — it generates:
+
+  - reflect_hash<T>(obj) — hashes ALL nonstatic data members via template for. Impossible to forget a field. Add a field → hash includes it automatically.
+  - reflect_serialize<T>(obj, buf) / reflect_deserialize<T>(buf) — serializes ALL fields. Add a field → serialized automatically. Remove a field → removed automatically. No version drift.
+  - reflect_compare<T>(a, b) — compares ALL fields. Total ordering when all fields support <=>.
+  - reflect_print<T>(out, obj) — debug-prints ALL fields with names via identifier_of(member).
+
+  The original vision was "catch forgotten fields." The upgraded vision: reflection IS the source of truth. Hand-written hash/serialize/compare/print are the fallback for Clang/GCC-15. On GCC 16, the reflected versions are authoritative, and
+  cross-checks verify the hand-written versions agree:
+
+  reflect_hash<RegionNode>(obj) == RegionNode::compute_hash(obj)
+
+  for 100 Philox-generated random instances. Divergence → build fails. A field was forgotten in the hand-written version.
+
+  Layout optimization via define_class(). P2996 can create new types from reflected metadata. Write structs in LOGICAL order (human-readable). define_class() generates the PHYSICAL type with fields sorted by alignment (eliminates padding), hot
+  fields in the first cache line, cold fields after. Verified by consteval: zero padding holes, hot fields fit in 64B.
+
+  Auto-SoA transformation. One logical struct definition → define_class() generates a Structure-of-Arrays container type. Each field becomes a contiguous array. Proxy accessor provides .field_name syntax on element access. Write AoS (readable). Get
+  SoA (cache-optimal for iteration). The iteration detector scanning schema_hash + shape_hash reads two contiguous arrays instead of striding through 64B entries — 8× better cache utilization. Generated from the same struct definition. Zero manual
+  boilerplate.
+
+  Layer 3 — consteval (bounded model checking, compiler-as-verifier)
+
+  A consteval function runs inside the compiler's abstract machine. This machine is a SOUND interpreter:
+
+  - Null dereference → compile error
+  - Out-of-bounds array access → compile error
+  - Signed integer overflow → compile error
+  - Use-after-free → compile error
+  - Double-free → compile error
+  - Memory leak (new without matching delete) → compile error
+  - Uninitialized read → compile error
+  - Infinite loop → compile error (resource limit)
+
+  If a consteval function returns true, every execution path through it was free of undefined behavior. This isn't testing. The compiler PROVES the absence of UB for the specific inputs.
+
+  constexpr Arena via if consteval. Arena becomes dual-mode:
+
+  void* Arena::alloc(fx::Alloc, size_t size, size_t align) {
+      if consteval {
+          // Compile-time: compiler-tracked allocation
+          // PROVES alignment, bounds, no overlap, no leak
+          return ::operator new(size, std::align_val_t{align});
+      } else {
+          // Runtime: zero-overhead bump pointer (~2ns)
+          uintptr_t aligned = (cur_base_ + offset_ + align - 1) & ~(align - 1);
+          // ... existing fast path ...
+      }
+  }
+
+  Same algorithm, two execution modes. Runtime = 2ns bump pointer. Compile-time = fully tracked by the compiler. consteval functions exercising the Arena path prove the allocation logic is UB-free. The compiler checks every byte, every pointer,
+  every lifetime.
+
+  Raw byte-array proofs. In consteval, a unsigned char memory[8192]{} array IS simulated hardware. The compiler tracks every byte. Construct objects via std::construct_at, access them, destroy via std::destroy_at. The compiler verifies: alignment
+  correct, no two live objects overlap in the byte array, every read was preceded by a write, every destroy matches a construct, no access after destroy. This proves the bump-allocator logic without malloc, without new — raw offset arithmetic on a
+  byte array, verified by the compiler's abstract machine.
+
+  Consteval Philox-driven fuzzing. Philox4x32 is pure integer arithmetic — trivially constexpr. Generate deterministic random inputs at compile time:
+
+  - 500 random memory plans (random tensor lifetimes, sizes, alignments) → run sweep-line allocator → verify no overlapping live tensors, correct alignment, correct total. Any overlap → build fails.
+  - 500 random topological sorts → verify every edge goes from earlier index to later. Any violation → build fails.
+  - 100 random instances per struct type → serialize, deserialize, compare. Any mismatch → build fails.
+  - 100 random hash inputs → hash twice, compare. Any non-determinism → build fails.
+
+  The compiler proves all 500/100 trials are UB-free. Regression in any algorithm → build fails on next compile. Automatic, continuous, zero runtime cost.
+
+  Consteval model checking. The SPSC ring protocol has finite state: (fg_phase ∈ {IDLE, WRITING, PUBLISHING}) × (bg_phase ∈ {IDLE, READING, CONSUMING}) × (ring_count ∈ [0, CAPACITY]). For small CAPACITY (e.g., 8), the state space is 3 × 3 × 9 = 81
+  states. Exhaustive BFS at compile time:
+
+  - Generate all successor states for all possible interleavings of the two threads.
+  - Verify: no reachable state has both threads permanently blocked (deadlock).
+  - Verify: from every reachable state, both EMPTY and FULL states are eventually reachable (liveness).
+  - Any deadlock → build fails.
+
+  Mode transition state machine (INACTIVE/RECORD/COMPILED/DIVERGED) — same technique. 4 states × 3 events = 12 transitions. Exhaustively verify: no invalid state is reachable, every state has at least one outgoing transition (no livelock).
+
+  consteval model checking is complementary to Z3 (Layer 4). consteval checks the IMPLEMENTATION (actual C++ code paths, catches UB). Z3 checks the MATHEMATICS (proves properties for all input values). Both are needed.
+
+  Cross-checks. consteval exercises code paths with test data and verifies invariants. Serialization roundtrip: deserialize(serialize(x)) == x for all struct types. Content hash determinism: same fields → same hash (exercise twice, compare). CSR
+  graph consistency: edge arrays match node degree counts. These catch implementation bugs that Z3's mathematical model doesn't cover — actual pointer arithmetic, actual memcpy behavior, actual type conversions.
+
+  Layer 4 — Z3 SMT Solver (universal theorems, all inputs)
+
+  Crucible integrates a Z3 fork enhanced with CaDiCaL dual-mode search (VSIDS + VMTF switching), ProbSAT local-search walker, on-the-fly self-subsumption (OTFS), arena allocator for clauses, congruence closure, ternary strengthening, lucky phases,
+  warmup propagation — 85 commits, +13,700 lines ahead of upstream. Same Clang 22 toolchain. C++ API. Bitvector problems (alignment, hash, overflow) bit-blast to SAT where CaDiCaL's enhanced solver runs 2-5× faster than upstream's internal SAT
+  engine.
+
+  Build integration: CMake custom target crucible_verify. An executable links libz3 and Crucible headers, encodes properties as SMT formulas, runs proofs, prints results. If any theorem fails → build fails. All targets depend on verify passing. The
+  build log shows:
+
+  [  2%] Building crucible_verify...
+  [  5%] Z3: proving Crucible invariants...
+    ✓ Arena alignment formula      (UNSAT in 0.03s — ∀ base,offset,align)
+    ✓ fmix64 no fixed points       (UNSAT in 0.8s  — ∀ x ∈ [0, 2^64))
+    ✓ fmix64 avalanche ≥20 bits    (64× UNSAT in 12s — ∀ input bits, ∀ x)
+    ✓ SPSC bitmask == modulo        (UNSAT in 0.01s — ∀ power-of-two cap)
+    ✓ SPSC invariant preservation   (UNSAT in 0.02s — ∀ head,tail ∈ [0, 2^64))
+    ✓ SPSC no index collision       (UNSAT in 0.02s — ∀ ring states)
+    ✓ mul_sat correctness           (UNSAT in 0.1s  — ∀ a,b ∈ [0, 2^64))
+    ✓ Sweep-line N=2..16 no overlap (15× UNSAT in 4s — ∀ lifetime configs)
+    ✓ Sweep-line ≤ 1.15× optimal   (50 traces, max gap 8%)
+    ✓ Content hash determinism      (UNSAT in 0.5s  — pure function)
+    ALL THEOREMS PROVED.
+
+  What Z3 proves — memory. Arena alignment formula: aligned = (base + offset + align - 1) & ~(align - 1). Encodes base, offset, align as 64-bit bitvectors, precondition that align is power-of-two, postcondition that result is aligned AND ≥ original
+  sum. Asks for a counterexample. UNSAT → proved for ALL 2^192 combinations. Sweep-line non-overlap: for N tensors (N ≤ 64) with arbitrary lifetimes, sizes, alignments — encodes the allocator's constraint system, asks if any two simultaneously-live
+  tensors share memory. UNSAT for each N → no overlap for ANY lifetime configuration. Not 500 random inputs — ALL configurations. Saturation arithmetic: std::mul_sat(a, b) matches min(a*b, UINT64_MAX) for all 2^128 input pairs.
+
+  What Z3 proves — hashing. fmix64(x) ≠ x for all x ∈ [0, 2^64). Bitvector theory, encodes the exact multiply-shift-XOR sequence, asks for a fixed point. UNSAT in 0.8s. Avalanche: for each of 64 input bit positions, flipping that bit changes ≥20
+  output bits — for ALL 2^64 input values. 64 separate UNSAT proofs. Content hash determinism: same field values → same hash output, encoded as QF_BV formula. UNSAT = pure function proved.
+
+  What Z3 proves — protocol. SPSC ring: bitmask indexing h & MASK equals h % CAPACITY for ALL power-of-two capacities and ALL head values. Enqueue preserves the invariant head - tail ≤ CAPACITY for all 2^128 (head, tail) pairs. Dequeue preserves the
+   same. No index collision when 0 < used < CAPACITY. All universal, all bitvector theory, all proved by the CaDiCaL-enhanced solver in milliseconds.
+
+  What Z3 proves — kernels. Each compiled kernel configuration is verified:
+
+  - No shared-memory bank conflicts: encode thread→address mapping for a warp of 32 threads, prove all 32 threads access different banks (or the same address — broadcast is fine). UNSAT = conflict-free for ALL threads.
+  - Coalesced global memory access: prove the warp's access pattern achieves the minimum number of 128B memory transactions. UNSAT = optimal coalescing.
+  - No out-of-bounds: prove thread_addr < buffer_size for ALL valid (blockIdx, threadIdx) combinations. UNSAT = no OOB.
+  - No register spill: prove register_count ≤ 255 from the Z3-generated configuration.
+  - Numerical bounds: prove softmax(x) doesn't overflow for x ∈ [-1e4, 1e4]. Prove LayerNorm doesn't divide by zero given epsilon. Bounded but catches real numerical bugs.
+
+  Z3 as proof-guided optimizer. Z3 doesn't just verify — it GENERATES optimal solutions. The prover IS the optimizer.
+
+  Memory layout. Z3's optimize module: given tensor lifetimes, sizes, alignments as constraints, minimize total footprint. This is the mathematically optimal memory plan. Compare against our sweep-line heuristic — if heuristic is >15% worse, build
+  fails. But more: we can USE Z3's optimal plan directly for static workloads (fixed shapes, known iteration structure). The Axiom doesn't just verify the heuristic is good enough. It computes the optimum and installs it.
+
+  Kernel configurations. Given hardware spec (SM count, shared memory, registers, bandwidth, FLOPS) and kernel shape (M, N, K for GEMM; seq_len, head_dim for attention), Z3 finds the (tile_M, tile_N, tile_K, pipeline_stages, warp_count,
+  vectorization_width) that minimizes roofline execution time, subject to ALL hardware constraints simultaneously. One query. No benchmarking. No search. The answer is the global optimum under the model. CUTLASS tries 500 configs via benchmarking.
+  Triton tries 50. Z3 solves the exact constraint system in 2-5 seconds. Shape-specific: GEMM 4096×4096×4096 gets different optimal config than GEMM 32×4096×4096. Every shape gets its proved-optimal kernel. No one-size-fits-all compromise. The
+  KernelCache maps (op, shape, device) → Z3-optimal config. Every shape gets its mathematically optimal kernel.
+
+  This extends to every kernel type: convolution (tile_P/Q/K/C, implicit_gemm flag), attention (tile_Q/K/V, pipeline_stages, TMA usage, causal_mask_tiling), normalization (vector_width, rows_per_block), reduction (block_dim, warp_reduce_vs_tree),
+  collective communication (algorithm, channels, chunk_size, ring_vs_tree). Every kernel with tuning knobs is a bounded integer optimization problem. Z3 solves them all.
+
+  Topology. Given measured link bandwidths and GPU capacities (from Meridian calibration), Z3 finds the optimal TP×DP×PP×EP×CP factorization, GPU-to-group assignment, communication algorithm per collective per message size, gradient bucket sizes,
+  activation checkpointing strategy — all simultaneously, as one optimization problem. Not searched sequentially. Solved jointly. The interactions between decisions (larger TP reduces memory per GPU but increases communication; deeper PP reduces
+  memory but adds bubble) are all constraints in one formula. Z3 finds the global optimum.
+
+  Instruction-level optimality. Disassemble compiled hot functions via LLVM MC. Extract the instruction dependency DAG with per-instruction latencies from the CPU microarchitecture model (Zen4: issue width 6, ports 0-5, latencies from Agner Fog
+  tables; Golden Cove: issue width 6, ports 0-11). Z3 solves the resource-constrained scheduling problem: given dependencies, latencies, port constraints, issue width — find the minimum makespan (total cycles for the critical path). If the
+  compiler's actual schedule matches Z3's lower bound → the compiled code is provably instruction-optimal. If a gap exists → Z3 reports the better schedule, identifying which instruction reordering would save cycles. Applied to: try_append() (~8
+  cycles), Arena::alloc() (~4 cycles), fmix64() (~12 cycles), dispatch_op() (~3 cycles). Same technique for CUDA SASS: per-warp instruction scheduling with register bank conflict and shared-memory latency constraints.
+
+  Communication correctness. Z3 proves that ring all-reduce produces the mathematically correct sum for N participants. That FSDP sharding produces contiguous, non-overlapping, complete-coverage partitions. That all-gather reconstructs the original
+  tensor exactly. Not for a specific N — for ALL N up to a bound. These proofs are preconditions for Meridian's topology optimization.
+
+  Hardware fault tolerance. Z3 proves that the RAID-like redundancy scheme (L12) tolerates any single Relay failure. For a specific topology with redundancy parameter α, prove: for ALL possible single-node failures, the remaining nodes hold
+  sufficient shard copies to reconstruct the full parameter state. This is a combinatorial constraint problem — Z3 enumerates failure scenarios exhaustively.
+
+  Algebraic verification. Crucible's operations form algebraic structures. If these structures don't satisfy their laws, parallel and distributed execution produces wrong results:
+
+  - Hash combining must be a monoid (associative, identity). If not → parallel hashing gives different results than sequential → KernelCache is unsound.
+  - ScalarType promotion must be a lattice (commutative, associative, idempotent, absorptive). If not → type inference can oscillate → non-termination.
+  - Gradient accumulation must be a commutative monoid. If not → all-reduce order matters → non-determinism.
+  - DAG transformations must be functorial (preserve composition and identity). If not → applying fusion-then-scheduling gives different results than scheduling-then-fusion.
+  - TensorMeta abstraction must form a Galois connection with concrete tensors. If not → abstract analysis is unsound → shadow handles lie.
+
+  C++ concepts encode the structure: Lattice<L>, Monoid<M>, Semiring<S>, Functor<F>. Template parameters are constrained: template<Monoid M> void parallel_reduce(...) — if M doesn't satisfy the laws, the template won't instantiate. consteval proves
+  the laws for representative values. Z3 proves them universally where the algebraic operation can be encoded in bitvector or integer arithmetic. The laws aren't academic. They're the correctness conditions for parallelism.
+
+  Proof-carrying binaries. Every Z3 proof produces an UNSAT certificate. Every consteval proof is a static_assert that the compiler verified. Every reflection check is a compile-time assertion. Together: the build process generates a proof manifest
+  — a cryptographic hash of all theorems proved during compilation. The Cipher stores this manifest alongside the DAG and weights. When a model is loaded on new hardware, Meridian re-proves hardware-specific properties (kernel configs, topology) but
+   inherits universal proofs (hash correctness, protocol safety, arithmetic soundness) from the Cipher. Proofs survive reincarnation.
+
+  Compositional proofs. When DAG fragments are spliced (L9 model composition), proofs compose. Fragment A has a proof certificate. Fragment B has a proof certificate. The composition interface (input/output tensor shapes, dtypes) is verified
+  compatible. The combined DAG inherits both certificates without re-proving from scratch. Content-addressing ensures: same sub-computation → same proof → reuse across models, organizations, the computation genome.
+
+  What Each Layer Proves
+
+  ┌────────────────────────────────────┬─────────────────────────────────────┬─────────────────────────────────────────────────────┬─────────────────────────────────────────────────┬────────────────────────────────────────────────────┐
+  │             Invariant              │           Layer 1 (types)           │                Layer 2 (reflection)                 │               Layer 3 (consteval)               │                    Layer 4 (Z3)                    │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ InitSafe (every field initialized) │ NSDMI convention                    │ has_default_member_initializer() per field          │ consteval exercises default-constructed structs │ —                                                  │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ TypeSafe (no raw integers for IDs) │ Strong type wrappers                │ type_of(member) detects raw ints with ID-like names │ —                                               │ —                                                  │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ NullSafe (no null deref)           │ [[nodiscard]], span accessors       │ —                                                   │ consteval catches null deref as compile error   │ Z3 proves non-null for specific call patterns      │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ MemSafe (no use-after-free)        │ Arena ownership, = delete("reason") │ sizeof assertions, trivially-copyable checks        │ consteval tracks every allocation/deallocation  │ —                                                  │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Thread boundaries                  │ fx tokens, phantom types            │ —                                                   │ —                                               │ Z3 proves protocol deadlock-free                   │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Mode transitions                   │ Typestate                           │ —                                                   │ consteval exhaustive model check                │ Z3 proves guard correctness for all hash values    │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Refinement (NonZero, InRange)      │ Construction assertions             │ Auto-detect fields needing refinement               │ consteval exercises all code paths              │ Z3 proves callers always provide valid values      │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Hash completeness                  │ —                                   │ reflect_hash covers all fields                      │ Cross-check hand-written vs reflected           │ Z3 proves determinism, avalanche, no fixed points  │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Serialization correctness          │ —                                   │ reflect_serialize covers all fields                 │ Roundtrip: deserialize(serialize(x)) == x       │ —                                                  │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Memory plan non-overlap            │ —                                   │ —                                                   │ 500 random plans, all correct                   │ ∀ lifetime configs, no overlap (UNSAT)             │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Memory plan optimality             │ —                                   │ —                                                   │ —                                               │ Z3 optimize: ≤ 1.15× optimal                       │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ SPSC protocol safety               │ —                                   │ —                                                   │ Exhaustive finite-state model check             │ ∀ head,tail: invariant preserved (UNSAT)           │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Kernel access safety               │ —                                   │ —                                                   │ —                                               │ ∀ (blockIdx, threadIdx): no OOB, no bank conflict  │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Kernel config optimality           │ —                                   │ —                                                   │ —                                               │ Z3 optimize: global optimum under roofline         │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Algebraic laws                     │ Concepts constrain templates        │ —                                                   │ consteval proves for test values                │ Z3 proves universally where encodable              │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Arena borrowing                    │ RAII scope guard                    │ —                                                   │ consteval catches use-after-scope               │ Z3 proves no pointer escapes (specific call graph) │
+  ├────────────────────────────────────┼─────────────────────────────────────┼─────────────────────────────────────────────────────┼─────────────────────────────────────────────────┼────────────────────────────────────────────────────┤
+  │ Instruction optimality             │ —                                   │ —                                                   │ —                                               │ Z3 scheduling: compiler output matches lower bound │
+  └────────────────────────────────────┴─────────────────────────────────────┴─────────────────────────────────────────────────────┴─────────────────────────────────────────────────┴────────────────────────────────────────────────────┘
+
+  Every row is a property. Every column is a proof mechanism. The cell says what that mechanism proves about that property. Empty cells mean that mechanism can't prove that property. No single mechanism covers everything. All four together cover
+  everything that can be proved about C++ code without lifetime annotations.
+
+  The remaining gap: memory ordering on real hardware. acquire/release correctness depends on the CPU's memory model. No compile-time mechanism in C++ can prove this. TSan at runtime. That's the one thing the Axiom cannot speak.
+
+  ---
+  L16 — Meridian
+
+  The map. Measured reality. Optimal topology. Calibrated truth.
+
+  Axiom proves what it can without hardware. Meridian measures the hardware and proves the rest. Axiom's universal proofs (hash properties, protocol safety, arithmetic correctness) are inherited as axioms — Meridian doesn't re-prove them. Meridian
+  adds hardware-specific proofs: this topology with these measured bandwidths, this GPU with this measured throughput.
+
+  Runs once at startup (5-15 seconds). Again when topology changes (GPU death, new node joins, network degradation, Augur detects sustained drift).
+
+  The Calibration Protocol
+
+  Phase 1: GPU profiling (2s, parallel across all Relays). Per-GPU:
+
+  - GEMM benchmark (square, large) → actual sustained tensor TFLOPS. Not spec sheet — actual. A throttling H100 delivers 700 TFLOPS, not 989.
+  - Streaming copy (D→D, H→D, D→H) → actual HBM bandwidth, PCIe bandwidth.
+  - Pointer-chase → L2 bandwidth and latency.
+  - Clock reading under sustained compute → true frequency (boost decays under thermal load).
+  - NVML/rocm-smi: power draw, temperature, ECC error count, throttle events, usable memory (after driver/framework overhead).
+
+  Result per GPU: GPUProfile { actual_tflops, actual_hbm_bw, sustained_clock, power_watts, usable_memory }. Spec sheets are marketing. Thermal throttling is physics. Meridian measures truth.
+
+  Phase 2: Network probing (3s, all-pairs parallel). N×N:
+
+  - Ping-pong → latency matrix (μs, half-RTT).
+  - Unidirectional flood → bandwidth matrix (GB/s).
+  - Bidirectional flood → bidirectional bandwidth (often <2× unidirectional due to bus contention).
+  - Topology detection: NVSwitch (all-to-all full bandwidth) vs direct NVLink (point-to-point, 18 lanes on H100, 900 GB/s) vs PCIe (host-mediated, 64 GB/s Gen5) vs InfiniBand (400 Gb/s HDR, 50 GB/s effective) vs RoCE vs TCP.
+
+  Result: LinkProfile links[N][N] — the complete weighted network graph. Not what the vendor says. What the electrons actually deliver. Topology encoded as a graph for Z3 optimization.
+
+  Phase 3: Kernel calibration (5s, representative shapes). Run top-20 kernels by Axiom-predicted execution time. 5 shapes per kernel = 100 benchmarks × 50ms each = 5s. Compare actual measured time vs Axiom's roofline prediction → correction factor
+  per kernel class. These factors absorb everything the roofline model doesn't capture: L2 cache effects, warp scheduler efficiency, TLB pressure, instruction-level overhead.
+
+  After calibration: Axiom prediction × Meridian correction = ±3-5% accuracy on any kernel for any shape. Five seconds of benchmarking. Then predict everything forever.
+
+  Phase 4: Z3 topology optimization. Given the measured hardware characteristics, Z3 solves for the globally optimal configuration. Not a heuristic search. Not "try TP=2 and TP=4 and see which is faster." A single optimization query over ALL
+  feasible configurations simultaneously, finding the mathematical minimum.
+
+  Parallelism strategy. Decision variables: TP degree, DP degree, PP degree, EP degree (expert parallelism for MoE), CP degree (context/sequence parallelism). Constraint: TP × DP × PP = num_GPUs. Memory constraint per GPU: params/TP/PP +
+  activations/TP + optim_state/TP/PP/DP ≤ measured_usable_memory. Communication cost model from measured bandwidths: TP all-reduce on high-bandwidth links (NVLink), DP gradient reduce on medium-bandwidth (IB), PP send/recv on any link. Pipeline
+  bubble: (PP-1) / (PP × num_microbatches). Objective: minimize compute_time + exposed_communication + bubble. Z3 evaluate ALL factorizations, account for ALL interactions (larger TP reduces memory but adds communication; deeper PP reduces memory
+  but adds bubble), find the global minimum.
+
+  GPU placement. Which physical GPUs form the TP group matters enormously. TP requires the highest bandwidth (all-reduce every forward and backward). Z3 assigns GPUs to groups maximizing intra-group bandwidth. On a DGX H100 with NVSwitch: all pairs
+  have equal bandwidth → placement doesn't matter. On a heterogeneous cluster where GPUs 0-3 share NVSwitch A and 4-7 share NVSwitch B, but cross-switch is PCIe → Z3 discovers TP must be within a switch, DP across switches. On a multi-node setup: Z3
+   places TP within a node (NVLink), PP across nodes (IB), DP across the slowest links. All from measured bandwidths, not topology assumptions.
+
+  Communication algorithm selection. Per collective (all-reduce, all-gather, reduce-scatter, broadcast), per message size, per link characteristics: ring (optimal for large messages on uniform bandwidth), tree (optimal for small messages or
+  high-latency links), recursive halving-doubling (optimal for balanced bidirectional), direct (optimal for expert routing in MoE). Z3 evaluates each option with measured bandwidths and selects per-collective, per-message-size optimal.
+
+  Gradient bucketing. Bucket size determines communication-computation overlap. Too small → kernel launch overhead dominates. Too large → communication starts late, reducing overlap. Z3 finds the Pareto-optimal bucket sizes for the specific backward
+   compute profile (Axiom's per-kernel predictions, calibrated by Meridian) and network bandwidth.
+
+  Activation checkpointing. Per-layer, per-tensor: store (uses memory, saves recompute) vs recompute (saves memory, costs FLOPS). Axiom knows exact memory per tensor (from the plan). Meridian knows exact recompute cost (from calibrated kernel
+  predictions). Z3 minimizes total iteration time subject to fitting in measured usable memory. Per-tensor granularity — not the uniform checkpoint_every_N_layers that frameworks use.
+
+  Mixed precision. Per-layer, per-op. FP32, TF32, BF16, FP16, FP8 (E4M3, E5M2). Z3 evaluates throughput gain (from Axiom's kernel models, calibrated by Meridian) against numerical stability (from Augur's Hessian analysis when available, or
+  conservative defaults). Subject to: forward-backward numerical equivalence within tolerance ε. Z3 finds the per-op precision assignment that minimizes iteration time while maintaining numerical stability.
+
+  Batch size. The maximum that fits. Z3 verifies: with optimal parallelism + checkpointing + precision + memory plan, total_memory ≤ measured_usable. Then Axiom computes the memory plan for that batch size. If Augur later detects memory pressure
+  (fragmentation from dynamic shapes), Meridian reduces batch size pre-emptively.
+
+  Output. A complete MeridianConfig: parallelism degrees, GPU placement, communication algorithms, bucket sizes, checkpointing decisions, precision assignment, batch size — all proven optimal for the measured hardware. The Keeper applies it. If
+  topology changes (Relay death, new Relay, network degradation), Meridian re-probes in 5-15 seconds, re-solves, and the Keeper applies the new config. No manual tuning. No YAML. No guessing.
+
+  Meridian as Z3 oracle for Augur. Meridian's calibration data (actual GPU throughput, actual link bandwidth, correction factors) feeds into Augur's digital twin. Augur doesn't re-measure — it uses Meridian's numbers. Meridian measures once; Augur
+  predicts forever.
+
+  ---
+  L17 — Augur
+
+  The sight. Predicts everything. Monitors reality. Reads the model's soul.
+
+  Axiom proves correctness at build time. Meridian optimizes topology at startup. Augur runs continuously — every iteration — predicting, monitoring, advising, analyzing. Three time scales: Axiom is geological (build-time, universal), Meridian is
+  seasonal (startup, hardware-dependent), Augur is moment-to-moment (every iteration, continuous adaptation).
+
+  The Digital Twin
+
+  Given Axiom's kernel predictions, Meridian's correction factors, the Merkle DAG, and the memory plan, Augur constructs a complete predictive model of the entire training run. No GPU needed for the prediction itself — only for the calibration that
+  already happened in Meridian.
+
+  Per-kernel prediction. For each CKernel in the DAG:
+
+  - Execution time: roofline model (FLOPS / peak_flops or bytes / peak_bandwidth, whichever is larger) × Meridian's correction factor × wave quantization (tail effect from partial last wave). Accuracy: ±3-5%.
+  - Utilization: tensor core utilization, HBM bandwidth utilization, SM occupancy. All EXACT from Axiom's Z3-optimal config (register count, shared memory, threads per block → occupancy formula is a closed-form computation).
+  - Bottleneck classification: COMPUTE (compute_time > memory_time), MEMORY (memory_time > compute_time), LAUNCH (kernel is tiny, launch overhead dominates). The classification determines which optimization would help.
+  - Proved properties: no bank conflicts, coalesced access, no OOB, no register spill — from Axiom's Z3 proofs. These aren't predictions. They're theorems.
+
+  Per-iteration prediction. Critical path through the DAG:
+
+  - Topological longest-path: each node weighted by its predicted kernel time. Independent ops on different CUDA streams can overlap. The critical path is the minimum possible iteration time — no parallelism can beat it.
+  - Forward time, backward time, optimizer time — sums along the respective DAG sections.
+  - Communication time: message size (EXACT from tensor shapes) / measured bandwidth × algorithm overhead (ring/tree/halving). Overlap fraction with backward compute from gradient bucket schedule.
+  - Pipeline bubble: (PP-1) / (PP × num_microbatches) × compute time per micro-batch.
+  - Total: max(critical_path_compute, exposed_communication) + bubble.
+  - Accuracy: ±5-10% after Meridian calibration.
+
+  Memory timeline — EXACT. The memory plan IS the allocation. Axiom computed it. Meridian verified it fits. Augur plots it: for each op in the DAG, the live memory at that point is EXACTLY the sum of allocated tensor slots minus freed tensor slots.
+  Peak is EXACT. Activation memory is EXACT. Gradient memory is EXACT. Optimizer state is EXACT. Fragmentation is ZERO (Axiom-optimal plan). These aren't estimates. They're consequences of the plan being the allocation.
+
+  Per-run projection. From per-iteration prediction:
+
+  - Time to complete: total_tokens / (batch_size × seq_len × iterations_per_second).
+  - GPU-hours: time × num_GPUs.
+  - Cost: GPU-hours × $/GPU-hr (known for cloud, estimated for on-prem).
+  - Energy: power_draw × time. Power from Meridian's NVML measurements.
+  - CO₂: energy × grid carbon intensity (regional, from public data).
+
+  The "what-if" machine. Change any parameter → instant re-prediction:
+
+  - "What if I double the batch size?" → recompute memory plan (Axiom), check fit (Meridian), predict throughput (Augur). Answer: "doesn't fit" or "fits, 15% faster, here's the new cost."
+  - "What if I switch to TP=4?" → recompute communication cost, overlap, memory. Answer: "NVLink has headroom, net +12%" or "PCIe bottlenecks, net -8%."
+  - "What if I use H200 instead of H100?" → substitute GPU profile (141GB HBM3e, 4.8 TB/s vs 3.35 TB/s), recompute everything. Answer: "batch 48 fits, 38% faster, saves $9,600."
+  - "What if I train a 3B model instead of 7B?" → substitute model profile, recompute from scratch. Answer: "same final loss (scaling law says so), 2.3× faster, 60% cheaper."
+
+  Milliseconds per query. No GPU. Answer any configuration question before committing a dollar of compute.
+
+  Hardware comparison. Same model, predicted on H100, H200, MI300X (192GB HBM3, 5.3 TB/s), B200 (192GB HBM3e, 8 TB/s), TPU v5p. For each: predicted time, cost, energy. "B200 is 2× faster but costs 1.8× more per hour → 10% cheaper total. MI300X has
+  2.4× the memory → batch 64 fits → 40% faster per GPU, and at $2.50/hr it's the cheapest option." Data-driven hardware procurement.
+
+  Continuous Monitoring
+
+  Every iteration: predicted vs actual. The Augur watches for drift.
+
+  - Error < 5% → model is accurate, continue.
+  - Error 5-10% sustained for 100 iterations → mild drift. Update correction factors. Log the change.
+  - Error > 10% sustained → something changed. Diagnose:
+    - NVML: clock dropped? → thermal throttling. Recommendation: reduce power target or improve cooling.
+    - NVML: ECC errors increased? → hardware degradation. Recommendation: migrate workload, pre-replicate Cipher.
+    - Network: latency spike? → congestion or link degradation. Recommendation: re-probe, re-optimize topology.
+    - Workload: shapes changed? → dynamic shapes triggered re-planning. This is expected — verify new plan is correct.
+    - Competing process? → CPU/GPU contention. Recommendation: isolate workload or deschedule competitor.
+  - Trigger Meridian recalibration if diagnosis indicates hardware change.
+
+  Bottleneck identification. The single most valuable continuous output:
+
+  - COMPUTE: Tensor cores are the limiter. SM utilization > 80%, HBM utilization < 60%. Need: faster GPU, smaller model, more parallelism, FP8 precision.
+  - MEMORY_BW: HBM bandwidth saturated. SM utilization < 60%, HBM > 80%. Need: better memory layout (Axiom re-optimize), FP8 (halves bandwidth), attention optimization (FlashAttention, token merging).
+  - COMMUNICATION: Gradient reduce or TP all-reduce dominates exposed time. Need: better topology (Meridian re-solve), fewer GPUs in TP group, larger gradient buckets for overlap, communication compression.
+  - BUBBLE: Pipeline parallelism idle time. Need: more micro-batches, interleaved schedule (1F1B → interleaved 1F1B), or reduce PP degree.
+  - IMBALANCE: One GPU consistently slower. Need: identify the straggler (NVML), rebalance micro-batches, or replace.
+
+  The bottleneck determines which recommendation has the highest impact. The Augur doesn't just say "you're at 52% MFU." It says "you're at 52% because attention QKV projection saturates HBM bandwidth. Switching to FP8 attention would give +12%.
+  Switching to TP=4 would give +18%. Doing both: +26%, bringing MFU to 66%."
+
+  Recommendations engine. Ranked by expected_speedup × confidence. Each recommendation:
+
+  - Description: what to change and why.
+  - Predicted improvement: percentage, with confidence interval.
+  - Auto-applicable: can the Keeper execute this without human approval? Hot-swap (no restart needed) vs cold (requires restart) vs manual (requires human decision).
+  - Side effects: quality impact (e.g., FP8 may affect convergence), memory impact, cost impact.
+
+  Model Intelligence
+
+  The Augur doesn't just monitor the hardware. It reads the model itself. During recording (L3), actual tensor data flows through the system. The Augur computes:
+
+  Hessian spectrum. Top eigenvalues via Lanczos iteration. Each Hessian-vector product (Hv) costs one backward pass. 10 Hv products → top-10 eigenvalues via Lanczos. Periodic, not per-step (e.g., every 500 steps).
+
+  - Smoothness L = top eigenvalue. Strong convexity μ = smallest positive eigenvalue.
+  - Condition number κ = L/μ — the fundamental hardness measure. κ = 10^6 means the optimization problem is extremely ill-conditioned.
+  - Convergence rate bound: (1 - μ/L)^t per step (Nesterov 1983). This is a THEOREM, not a prediction — given measured L and μ, the bound holds.
+  - Z3 verifies: given measured L and μ, the current learning rate is optimal (lr* = 2/(L+μ) for GD) or not, and by how much. "Your lr is 2× below optimal. Increasing it would double convergence speed."
+  - Spectral gap λ₁/λ₂: how "directional" the curvature is. Large gap → the loss surface is a narrow valley → momentum helps. Small gap → nearly isotropic → momentum wastes compute.
+
+  Gradient health. Per-layer:
+
+  - Gradient norm: mean, variance, signal-to-noise ratio (SNR).
+  - Jacobian singular values (from Hv products): σ_max(J_i) per layer. Product ∏σ_max(J_i) = total gradient amplification across all layers.
+  - σ_max > 1 → exploding. σ_max < 1 → vanishing. Product ≈ 1 → healthy.
+  - Diagnosis: "Layers 0-3 have gradient norm 0.0003 — vanishing. They receive no learning signal. Recommendation: add skip connections, or use local losses (L8), or increase learning rate for early layers."
+  - Recommended gradient clip norm: from the measured Jacobian spectrum. Provable bound: with clip_norm = X, the gradient at layer 0 is bounded by clip_norm × ∏ min(σ_max(J_i), 1).
+
+  Representation capacity. Per-layer effective rank via randomized SVD on activation matrices:
+
+  - Effective rank = number of singular values above a threshold (e.g., 1% of σ_max).
+  - Rank 600 in a 4096-dim layer → 3496 dimensions carry no information. The model is over-parameterized for this layer.
+  - Dead neuron fraction: neurons with variance < ε → always output near-zero → wasted parameters.
+  - Minimum sufficient width: from the measured effective ranks. "Layers 0-8 need only 1024 dims. Layers 15+ use all 4096. A tapered model (1024→2048→4096) would save 40% parameters with <1% quality loss."
+
+  Layer redundancy. CKA (Centered Kernel Alignment) between adjacent layers:
+
+  - CKA > 0.95 → layers compute nearly identical functions.
+  - Provable output-change bound: ||f_with - f_without|| ≤ (1 - CKA) × ||f_with||. For CKA = 0.98 → removing the layer changes output by at most 2%.
+  - Recommendation: "Layers 5-6 have CKA=0.97. Removing layer 6 saves 3.1% compute with ≤3% output change. Layers 11-12: CKA=0.96, removing layer 12 saves 3.1% with ≤4% change. Combined: 6.2% faster, <5% quality impact."
+
+  Convergence prediction. Fit loss curve L(t) = L* + (L₀ - L*) × exp(-t/τ) + noise:
+
+  - L* = asymptotic loss (where training plateaus).
+  - τ = convergence timescale (steps to 1/e of initial gap).
+  - Calibrated from actual loss values at steps 0, 100, 200, ..., N.
+  - Predict loss at any future step, with confidence interval.
+  - "Loss will plateau at 2.67. To go below 2.0: need 2× more data (reduces L* by ~0.15) or 1.5× wider model (reduces L* by ~0.2) or both (reaches ~1.7)."
+
+  Scaling law analysis. Chinchilla fit: L(N, D) = E + A/N^α + B/D^β.
+
+  - E = irreducible loss (entropy of the data distribution). A, α, B, β = scaling coefficients.
+  - Fit from calibration: loss at a few (N, D) points (could be from prior runs or early in current run).
+  - Given compute budget C (FLOPS), Z3 optimizes: min L(N, D) subject to 6ND = C. Finds optimal model size N* and data size D*.
+  - "For $100K of H100 time (1e22 FLOPS): optimal is 13B params on 260B tokens → predicted loss 2.1. Your plan (70B on 50B tokens) → predicted loss 2.4. Your model is 2.3× over-parameterized for your data budget. Recommendation: train 13B on 260B
+  tokens, or commit to 70B and train for 4× longer."
+  - Cross-architecture: given measured FLOPS per dollar from Meridian, compute the cost-optimal allocation per hardware type. "On H100 at $3.50/hr: $34,400. On MI300X at $2.50/hr: $22,100. On B200 at $5.00/hr: $28,000. MI300X is cheapest for this
+  workload."
+
+  Training efficiency diagnosis. Combines all model intelligence into a single report:
+
+  - MFU explanation: "52% MFU = 412 TFLOPS out of 989 peak. Breakdown: 78% of peak tensor core util × 92% occupancy × 73% communication overlap = 52%. The bottleneck is HBM bandwidth in attention layers."
+  - What's leaving performance on the table: "18% lost to memory bandwidth, 15% lost to communication, 8% lost to pipeline bubble, 7% lost to wave quantization."
+  - What's leaving quality on the table: "23% of neurons are dead. Layers 0-3 have vanishing gradients. Two adjacent layer pairs are redundant."
+  - What to do about it: recommendations ranked by impact, with predicted speedup and quality impact.
+
+  The Complete Augur Report
+
+  Augur Report — Iteration 500 (calibration complete)
+  ══════════════════════════════════════════════════════════════
+
+  PERFORMANCE
+    Iteration time:       47.3 ms  (predicted 46.8 ms, error 1.1%)
+    MFU:                  52.1%    (412 / 989 TFLOPS)
+    Throughput:           676 samples/sec, 1.38M tokens/sec
+    Bottleneck:           MEMORY_BW (attention QKV, 89% HBM peak)
+
+    Breakdown:
+      Forward:            18.2 ms  (38.5%)
+      Backward:           22.1 ms  (46.7%)
+      Optimizer:           3.8 ms  (8.0%)
+      Communication:       3.2 ms  (6.8%) [overlapped 73% with backward]
+
+  MEMORY (EXACT — Axiom-proved)
+    Peak:                 71.2 GB
+    Activations:          42.8 GB
+    Parameters:           14.0 GB (7B × 2 bytes)
+    Optimizer state:      14.0 GB (Adam momentum + variance)
+    Fragmentation:        0 bytes (Axiom-optimal plan)
+
+  LOSS LANDSCAPE
+    Smoothness (L):       4,217    (Hessian top eigenvalue)
+    Strong convexity (μ): 0.003
+    Condition number (κ): 1,405,667
+    Convergence rate:     0.99993/step → 9,900 steps to halve loss
+    Current lr:           3e-4   Optimal lr: 4.7e-4 (+57% faster convergence)
+
+  GRADIENT HEALTH
+    Layer 0:  grad_norm = 0.0003  ⚠ VANISHING
+    Layer 15: grad_norm = 0.42    ✓ healthy
+    Layer 31: grad_norm = 1.87    ✓ mild amplification
+    Dead neurons: 14% total (23% in layer 4, 18% in layer 9)
+
+  CAPACITY
+    Effective rank: 412/4096 (layer 3) → 3901/4096 (layer 28)
+    Minimum sufficient width: 1024 (layers 0-8), 4096 (layers 15+)
+    Redundant pairs: layers 5-6 (CKA=0.97), layers 11-12 (CKA=0.96)
+
+  CONVERGENCE
+    Current loss:         3.12
+    Predicted @10K:       2.84 ± 0.05
+    Predicted @50K:       2.71 ± 0.08
+    Asymptotic loss:      2.67
+
+  SCALING
+    Optimal for budget:   13B params, 260B tokens → loss 2.1
+    Your plan:            7B params, 50B tokens  → loss 2.71
+    Verdict:              undertrained. 4× more data → loss 2.35
+
+  RECOMMENDATIONS (ranked by impact)
+    1. Increase lr to 4.7e-4                    → +57% convergence  [auto, hot]
+    2. Switch attention to FP8                   → +12% throughput   [auto, hot]
+    3. Increase TP 2→4                           → +18% throughput   [auto, cold]
+    4. Fuse QKV projections                      → +8% throughput    [auto, hot]
+    5. Add skip connections layers 0-3           → fixes vanishing   [manual]
+    6. Prune layers 6, 12                        → +6.2% throughput  [manual]
+    7. Train 4× longer (200B tokens)             → loss 2.35 vs 2.71 [manual]
+
+    Applying 1+2+3+4: predicted 31.2 ms/iter, MFU 74.3%
+    Cost savings: $11,200 for same quality
+
+  ---
+  Updated Layer Summary
+
+  L17  Augur            prediction, monitoring, model intelligence, recommendations
+  L16  Meridian         calibration, topology optimization, configuration
+  L15  Axiom            Z3 proofs, consteval, reflection, effects, proof certificates
+  ────────────────────────────────────────────────────────────────────────────────
+  L14  Ecosystem        computation genome, federated learning, hardware co-design
+  L13  Lifecycle        Cipher persistence, reincarnation, deterministic replay
+  L12  Distribution     Canopy, Relays, no master, RAID, DiLoCo, 5D parallelism
+  L11  Data             pipeline absorption, curriculum, latent augmentation
+  L10  Training         meta-gradients, Hessian, K-FAC, curriculum, optimizer evolution
+  L9   Models           growing, pruning, width mutation, composition, live surgery
+  L8   Layers           attention replacement, local losses, per-layer gradient strategy
+  L7   Tokens           merging, early exit, adaptive patching, per-token precision
+  L6   Merkle DAG       specification, branches, guards, LoopNodes, atomic swaps
+  L5   Graphs           CSR property graph, DFG/alias edges, LoopNodes, deterministic order
+  L4   Tensors          shadow handles, TensorMeta, latent space observation, provenance
+  L3   Operations       Vessel dispatch interception, recording, event sourcing, divergence
+  L2   Memory           static plans, OOM impossible, arena allocation, per-Relay budgets
+  L1   Kernels          template codegen, CUPTI autotuning, KernelCache, Philox, streams
+  L0   Hardware         Relays, CUPTI profiling, multi-vendor, health → Keeper
+
+  ---
+  Development Plan
+
+  Phase 1: Foundation (DONE — 9.5K lines, 24 tests, Clang 22 + GCC 15)
+
+  L3 Operations: TraceRing SPSC, MetaLog, recording pipeline. L5 Graphs: TraceGraph CSR. L6 Merkle DAG: RegionNode, BranchNode, content/merkle hashing. L2 Memory: MemoryPlan sweep-line, PoolAllocator. L3/L6 Compiled Tier 1: ReplayEngine,
+  CrucibleContext, dispatch_op, divergence recovery. L1 Kernels: CKernel 146-op taxonomy. L13: Serialize/Deserialize, Cipher. L5 Graph IR: Graph.h, ExprPool, SymbolTable. L15 partial: Effects.h (fx::Alloc/IO/Block), Reflect.h (reflect_hash,
+  reflect_print). Vessel: PyTorch adapter.
+
+  Phase 2: Axiom Core (NEXT)
+
+  Goal: The four-layer proof architecture, fully operational.
+
+  Layer 4 (Z3):
+  - verify/ directory with crucible_verify.cpp linking libz3.
+  - Proof suites: prove_arena.cpp (alignment, bump allocator), prove_hash.cpp (fmix64 no fixed points, avalanche ≥20 bits, determinism), prove_ring.cpp (SPSC bitmask==modulo, invariant preservation, no index collision, linearizability),
+  prove_arithmetic.cpp (mul_sat, add_sat correctness), prove_memory_plan.cpp (sweep-line non-overlap for N=2..16, optimality comparison).
+  - Z3 optimization: memory plan (Z3-optimal vs heuristic, build fails if gap >15%), kernel configs (GEMM, attention, elementwise — Z3-optimal tile/stages/warps for representative shapes).
+  - Z3 protocol: mode transition guards correct for all hash values.
+  - Z3 communication: ring all-reduce correctness, FSDP shard coverage.
+  - CMake integration: add_custom_target(verify), all targets depend on proofs passing.
+
+  Layer 3 (consteval):
+  - constexpr Arena via if consteval (compiler-tracked allocation).
+  - consteval algorithm verification: memory plan (500 random), toposort (500 random), serialization roundtrip, hash determinism, CSR consistency.
+  - consteval model checking: SPSC deadlock freedom (exhaustive BFS over 81 states), mode transition completeness.
+  - constexpr Philox4x32 for deterministic random generation at compile time.
+
+  Layer 2 (reflection):
+  - Expand Reflect.h: verify_init_safe<T>(), verify_type_safe<T>(), verify_layout<T>(expected_sizeof), verify_hash_completeness<T>() (reflect_hash vs hand-written).
+  - Auto-serde: reflect_serialize<T>(), reflect_deserialize<T>().
+  - define_class() for auto-SoA generation and optimal physical layouts.
+  - Registration: static_assert(verify_struct<RegionNode>({.expected_size = 184})) for every layout-critical struct.
+
+  Layer 1 (types):
+  - Complete fx::IO and fx::Block wiring through all effectful functions.
+  - Thread-affinity phantom types: FgTag, BgTag, TraceRingHandle<Tag>.
+  - State-machine typestate: Inactive, Recording, Compiled, Diverged types for mode transitions.
+  - Refinement types: NonZero, InRange, Positive for critical parameters.
+  - Algebraic concepts: Lattice, Monoid, Semiring, Functor — constrained templates + consteval law proofs + Z3 universal proofs where encodable.
+
+  Proof certificates: build manifest with cryptographic hash of all proved theorems.
+
+  Phase 3: Meridian
+
+  Goal: Hardware calibration + Z3-optimal topology.
+
+  - GPU profiling protocol: GEMM/copy benchmarks, NVML queries, sustained clock measurement. 2s parallel.
+  - Network probing: N×N latency/bandwidth matrix, topology detection. 3s parallel.
+  - Kernel calibration: top-20 kernels × 5 shapes → correction factors. 5s.
+  - Z3 topology solver: optimal TP×DP×PP factorization, GPU placement, communication algorithms, gradient bucketing, activation checkpointing, mixed precision, batch size — all jointly.
+  - Keeper integration: Meridian produces config, Keeper applies it.
+  - Re-probe on topology change: Relay death, new Relay, Augur drift detection.
+  - Calibration data → Augur: measured profiles feed the digital twin.
+
+  Phase 4: Augur
+
+  Goal: Digital twin + continuous monitoring + model intelligence.
+
+  - Digital twin: DAG + Axiom kernel predictions + Meridian corrections → complete iteration prediction.
+  - Per-kernel, per-iteration, per-run metrics. What-if engine. Hardware comparison.
+  - Continuous monitoring: predicted vs actual, drift detection, diagnosis, recalibration trigger.
+  - Bottleneck identification: COMPUTE/MEMORY_BW/COMMUNICATION/BUBBLE/IMBALANCE.
+  - Recommendations engine: ranked by impact, auto-applicable flag, side-effect analysis.
+  - Model intelligence: Hessian spectrum (Lanczos), gradient health (Jacobian SVs), effective rank (randomized SVD), layer redundancy (CKA), dead neurons, convergence prediction (exponential fit), scaling law analysis (Chinchilla fit + Z3
+  optimization).
+  - Integration: Augur advises → Keeper acts → Meridian re-solves if needed → Axiom re-proves if needed.
+
+  Phase 5: Compiled Tier 2-3
+
+  Goal: Shadow handles (~2ns/op) and CUDA Graph replay (~50ns/iteration).
+
+  - Shadow handles: ConductorTensorImpl with metadata pointing into PoolAllocator.
+  - Batched kernel launch: accumulate compiled kernels, one stream submission.
+  - CUDA Graph capture: record compiled kernels, replay at ~50ns/iteration.
+  - Integration: Z3-proved kernel configs compiled into the graph. Meridian's stream assignment from topology-aware scheduling.
+
+  Phase 6: Keeper + Canopy + Cipher
+
+  Goal: Distributed, self-healing, persistent, proof-carrying.
+
+  - Keeper daemon: systemd service, health monitoring, self-updating. Executes Augur's recommendations.
+  - Canopy mesh: gossip protocol, Raft consensus, peer discovery. No master.
+  - Cipher: hot tier (other Relays' RAM from RAID redundancy), warm tier (NVMe per Relay), cold tier (S3/GCS). Event-sourced: DAG chain + periodic snapshots → deterministic recovery.
+  - Proof certificates in Cipher: universal proofs (hash, protocol, arithmetic) survive reincarnation. Hardware-specific proofs (kernel configs, topology) re-proved by Meridian on new hardware.
+  - Compositional proofs: DAG splicing inherits sub-DAG proof certificates.
+
+  Phase 7: L7-L11 Intelligence
+
+  Goal: Model-aware optimizations, guided by Augur, verified by Axiom.
+
+  - L7: Token merging (adaptive per-input per-layer from Augur's representation analysis), early exit (per-token convergence from measured layer-to-layer difference), adaptive patching (quadtree by information content).
+  - L8: Attention head classification (from Augur's measured attention patterns), local losses (per-layer learning signal), per-layer gradient strategy (from Augur's gradient health + Hessian spectrum).
+  - L9: Layer growing/pruning (from Augur's capacity analysis + CKA), width mutation (from Augur's effective rank), architecture evolution.
+  - L10: Meta-gradients (∂val_loss/∂lr), per-layer LR from curvature (Augur's Hessian), optimizer evolution.
+  - L11: Curriculum learning (from per-sample loss), manifold mixup (at Augur-selected optimal layer).
+  - All optimizations are DAG branches (L6). Axiom Z3-verifies new branches before activation. Augur predicts expected improvement before activation. The Keeper activates via atomic swap only if both Axiom approves (proved safe) and Augur approves
+  (predicted improvement > threshold).
+
+  ---
+  The Axiom speaks the law — proved, optimal, certified. The Meridian maps the territory — measured, calibrated, solved. The Augur sees everything — predicted, monitored, understood. The Keeper acts on mathematical truth. The Vigil thinks within
+  proved-safe infrastructure. The Cipher remembers everything, including the proofs. And when the last Relay dies, the Cipher carries not just the model, but the certificates — ready to prove itself correct on whatever hardware comes next
