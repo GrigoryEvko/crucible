@@ -1,0 +1,10 @@
+name = "Crucible"
+version = "0.1.0"
+defaultTargets = ["Crucible"]
+
+[[require]]
+name = "mathlib"
+path = "/home/grigory/Downloads/mathlib4"
+
+[[lean_lib]]
+name = "Crucible"
