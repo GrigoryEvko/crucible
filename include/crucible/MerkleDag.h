@@ -296,7 +296,8 @@ struct RegionNode : TraceNode {
 // ═══════════════════════════════════════════════════════════════════
 // BranchNode: A guard point where execution can diverge
 //
-// Arms are value -> target pairs. The next field (from TraceNode)
+// Arms are value -> target pairs, SORTED by value for O(log n)
+// binary search in replay(). The next field (from TraceNode)
 // points to the merge point where all arms reconverge.
 // ═══════════════════════════════════════════════════════════════════
 
@@ -808,8 +809,14 @@ inline void recompute_merkle(TraceNode* node) {
   branch->guard = guard;
   branch->num_arms = 2;
   branch->arms = arena.alloc_array<BranchNode::Arm>(a, 2);
-  branch->arms[0] = {.value = old_guard_value, .target = divergence_point};
-  branch->arms[1] = {.value = new_guard_value, .target = new_region};
+  // Keep arms sorted by value for O(log n) binary search in replay().
+  if (old_guard_value <= new_guard_value) {
+    branch->arms[0] = {.value = old_guard_value, .target = divergence_point};
+    branch->arms[1] = {.value = new_guard_value, .target = new_region};
+  } else {
+    branch->arms[0] = {.value = new_guard_value, .target = new_region};
+    branch->arms[1] = {.value = old_guard_value, .target = divergence_point};
+  }
   branch->next = merge; // Shared continuation after merge
 
   // 6. Recompute Merkle hashes bottom-up
@@ -848,12 +855,18 @@ template <typename GuardEval, typename RegionExec>
       auto* branch = static_cast<BranchNode*>(node);
       int64_t val = eval_guard(branch->guard);
 
-      // Find the matching arm
+      // Binary search on sorted arms. Arms are kept sorted by value
+      // at creation time (add_branch). O(log n) for large arm counts,
+      // degenerates to 1-2 comparisons for the common 2-3 arm case.
       TraceNode* arm = nullptr;
-      for (uint32_t i = 0; i < branch->num_arms; i++) {
-        if (branch->arms[i].value == val) {
-          arm = branch->arms[i].target;
-          break;
+      {
+        uint32_t lo = 0, hi = branch->num_arms;
+        while (lo < hi) {
+          uint32_t mid = lo + (hi - lo) / 2;
+          int64_t mid_val = branch->arms[mid].value;
+          if (mid_val < val) lo = mid + 1;
+          else if (mid_val > val) hi = mid;
+          else { arm = branch->arms[mid].target; break; }
         }
       }
 
