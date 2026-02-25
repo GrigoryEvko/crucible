@@ -42,4 +42,5 @@ Modules matching the C++ headers:
 - **Expr**: Interned symbolic expressions (Expr.h + ExprPool.h) -- interning correctness, canonicalization
 - **Pool**: PoolAllocator (PoolAllocator.h) -- 256B alignment, bounds, init from MemoryPlan
 - **SwissTable**: SIMD hash table (SwissTable.h + ExprPool.h) -- control bytes, probing, insert/find correctness
+- **Graph**: Computation graph IR (Graph.h) -- acyclicity, topological ordering, DCE semantics, SSA well-formedness
 -/
