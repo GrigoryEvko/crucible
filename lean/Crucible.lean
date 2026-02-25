@@ -34,6 +34,8 @@ import Crucible.Quantize
 import Crucible.Canopy
 import Crucible.LoopNode
 import Crucible.Keeper
+import Crucible.Sparsity
+import Crucible.Hessian
 
 /-!
 # Crucible -- Formal Specification
@@ -75,4 +77,6 @@ Modules matching the C++ headers:
 - **Canopy**: L12 distributed mesh -- gossip protocol, Raft consensus, peer discovery, partition healing, health propagation, no-master architecture
 - **LoopNode**: L5/L6 cyclic computation -- LoopNode structure, Repeat/Until semantics, unrolling, feedback edges, pipelining, nested loops, contraction mapping
 - **Keeper**: L12 Keeper daemon -- state machine, health monitoring, recommendation pipeline, self-updating, atomic config, pre-emptive replication, load shedding
+- **Sparsity**: L9 structured sparsity -- N:M patterns, pruning masks, block sparsity, cost model, error bounds, layer sensitivity, matrix structure discovery, gradual pruning
+- **Hessian**: L10 second-order optimization -- HVP cost, K-FAC approximation, natural gradient, condition number, optimal LR, Lanczos iteration, saddle detection, sharpness/generalization
 -/
