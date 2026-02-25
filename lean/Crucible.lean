@@ -31,6 +31,7 @@ import Crucible.Fusion
 import Crucible.Migration
 import Crucible.TokenMerge
 import Crucible.Quantize
+import Crucible.Canopy
 
 /-!
 # Crucible -- Formal Specification
@@ -69,4 +70,5 @@ Modules matching the C++ headers:
 - **Migration**: L13 lifecycle -- three-tier recovery, event-sourced replay, snapshot recovery, DAG chain integrity, reincarnation, deterministic replay, time travel, proof persistence
 - **TokenMerge**: L7 token optimization -- adaptive merging, O(n^2) attention savings, early exit, adaptive patching, mixed precision, variable-length batching, combined savings
 - **Quantize**: L10 mixed precision -- per-op precision selection, error/cost model, error propagation, gradient precision, sensitivity classification
+- **Canopy**: L12 distributed mesh -- gossip protocol, Raft consensus, peer discovery, partition healing, health propagation, no-master architecture
 -/
