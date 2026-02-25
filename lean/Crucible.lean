@@ -32,6 +32,8 @@ import Crucible.Migration
 import Crucible.TokenMerge
 import Crucible.Quantize
 import Crucible.Canopy
+import Crucible.LoopNode
+import Crucible.Keeper
 
 /-!
 # Crucible -- Formal Specification
@@ -71,4 +73,6 @@ Modules matching the C++ headers:
 - **TokenMerge**: L7 token optimization -- adaptive merging, O(n^2) attention savings, early exit, adaptive patching, mixed precision, variable-length batching, combined savings
 - **Quantize**: L10 mixed precision -- per-op precision selection, error/cost model, error propagation, gradient precision, sensitivity classification
 - **Canopy**: L12 distributed mesh -- gossip protocol, Raft consensus, peer discovery, partition healing, health propagation, no-master architecture
+- **LoopNode**: L5/L6 cyclic computation -- LoopNode structure, Repeat/Until semantics, unrolling, feedback edges, pipelining, nested loops, contraction mapping
+- **Keeper**: L12 Keeper daemon -- state machine, health monitoring, recommendation pipeline, self-updating, atomic config, pre-emptive replication, load shedding
 -/
