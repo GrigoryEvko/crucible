@@ -30,6 +30,7 @@ import Crucible.Scheduler
 import Crucible.Fusion
 import Crucible.Migration
 import Crucible.TokenMerge
+import Crucible.Quantize
 
 /-!
 # Crucible -- Formal Specification
@@ -67,4 +68,5 @@ Modules matching the C++ headers:
 - **Fusion**: L1/L6 kernel fusion -- legality, cost model, chain savings, register pressure, elementwise, shared memory tiers
 - **Migration**: L13 lifecycle -- three-tier recovery, event-sourced replay, snapshot recovery, DAG chain integrity, reincarnation, deterministic replay, time travel, proof persistence
 - **TokenMerge**: L7 token optimization -- adaptive merging, O(n^2) attention savings, early exit, adaptive patching, mixed precision, variable-length batching, combined savings
+- **Quantize**: L10 mixed precision -- per-op precision selection, error/cost model, error propagation, gradient precision, sensitivity classification
 -/
