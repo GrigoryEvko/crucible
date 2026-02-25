@@ -21,6 +21,8 @@ import Crucible.Philox
 import Crucible.BitVec
 import Crucible.Algebra
 import Crucible.Protocol
+import Crucible.Redundancy
+import Crucible.Topology
 
 /-!
 # Crucible -- Formal Specification
@@ -49,4 +51,6 @@ Modules matching the C++ headers:
 - **BitVec**: Bitvector proofs via `bv_decide` -- arena alignment, bitmask indexing, saturation arithmetic
 - **Algebra**: Algebraic structures -- ScalarType lattice, hash XOR monoid, Galois connection, DAG transforms
 - **Protocol**: Protocol verification -- SPSC deadlock freedom, mode transition completeness, protocol liveness
+- **Redundancy**: L12 RAID shard redundancy -- fault tolerance, ring replication, DiLoCo sync
+- **Topology**: L16 Meridian parallelism -- 3D/5D factorization, comm cost, placement, load balance, bucketing
 -/
