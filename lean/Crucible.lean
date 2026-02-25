@@ -28,6 +28,8 @@ import Crucible.Scaling
 import Crucible.Attention
 import Crucible.Scheduler
 import Crucible.Fusion
+import Crucible.Migration
+import Crucible.TokenMerge
 
 /-!
 # Crucible -- Formal Specification
@@ -63,4 +65,6 @@ Modules matching the C++ headers:
 - **Attention**: L8 attention head classification -- cost model, replacement bounds, gradient strategy, bottleneck, NaN detection
 - **Scheduler**: L5 multi-stream scheduling -- task graphs, EST, critical path, compute-comm overlap, pipeline bubbles
 - **Fusion**: L1/L6 kernel fusion -- legality, cost model, chain savings, register pressure, elementwise, shared memory tiers
+- **Migration**: L13 lifecycle -- three-tier recovery, event-sourced replay, snapshot recovery, DAG chain integrity, reincarnation, deterministic replay, time travel, proof persistence
+- **TokenMerge**: L7 token optimization -- adaptive merging, O(n^2) attention savings, early exit, adaptive patching, mixed precision, variable-length batching, combined savings
 -/
