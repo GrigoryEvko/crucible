@@ -548,6 +548,86 @@ class CRUCIBLE_OWNER Graph {
     }
   }
 
+  // Common Subexpression Elimination. Finds structurally identical
+  // nodes (same kind, dtype, sizes, inputs, body) and replaces
+  // duplicates with the first occurrence. Processes in topological
+  // order so all inputs are canonicalized before dependents.
+  // Returns the number of eliminated nodes.
+  //
+  // Complexity: O(V + E) — single topo sort, single hash pass,
+  // single rewrite pass. No per-elimination RAUW scan.
+  //
+  // Uses a canonical[] map: during the hash pass, inputs are looked
+  // up through the map (not physically rewritten). After the pass,
+  // one rewrite sweeps all live nodes to patch input pointers.
+  uint32_t eliminate_common_subexpressions(fx::Alloc a) {
+    topological_sort(a);
+
+    // Canonical map: node_id → canonical representative.
+    // Initially identity. Updated when a duplicate is found.
+    auto* canonical = arena_.alloc_array<GraphNode*>(a, num_nodes_);
+    for (uint32_t i = 0; i < num_nodes_; ++i)
+      canonical[i] = nodes_[i];
+
+    // Build processing order: O(n) scatter via schedule_order
+    // (schedule_order is 0..n_live-1 from topological_sort)
+    uint32_t n_live = 0;
+    for (uint32_t i = 0; i < num_nodes_; ++i)
+      if (!(nodes_[i]->flags & NodeFlags::DEAD)) ++n_live;
+    auto* ordered = arena_.alloc_array<GraphNode*>(a, n_live > 0 ? n_live : 1);
+    for (uint32_t i = 0; i < num_nodes_; ++i) {
+      if (!(nodes_[i]->flags & NodeFlags::DEAD))
+        ordered[nodes_[i]->schedule_order] = nodes_[i];
+    }
+
+    // Open-addressing hash table: ~50% load factor
+    uint32_t ht_cap = std::bit_ceil(n_live * 2 + 1);
+    auto* ht_hashes = arena_.alloc_array<uint64_t>(a, ht_cap);
+    auto* ht_nodes = arena_.alloc_array<GraphNode*>(a, ht_cap);
+    std::memset(ht_nodes, 0, ht_cap * sizeof(GraphNode*));
+
+    uint32_t eliminated = 0;
+    uint32_t mask = ht_cap - 1;
+    for (uint32_t i = 0; i < n_live; ++i) {
+      GraphNode* n = ordered[i];
+      if (n->kind == NodeKind::INPUT || n->kind == NodeKind::MUTATION)
+        continue;
+
+      uint64_t h = cse_hash_(n, canonical);
+
+      for (uint32_t probe = 0; probe < ht_cap; ++probe) {
+        uint32_t slot = (static_cast<uint32_t>(h) + probe) & mask;
+        if (!ht_nodes[slot]) {
+          ht_hashes[slot] = h;
+          ht_nodes[slot] = n;
+          break;
+        }
+        if (ht_hashes[slot] == h && cse_equal_(n, ht_nodes[slot], canonical)) {
+          canonical[n->id.raw()] = ht_nodes[slot];
+          n->flags |= NodeFlags::DEAD;
+          ++eliminated;
+          break;
+        }
+      }
+    }
+
+    if (eliminated > 0) {
+      // Single O(V × avg_inputs) rewrite pass
+      for (uint32_t i = 0; i < num_nodes_; ++i) {
+        GraphNode* n = nodes_[i];
+        if (n->flags & NodeFlags::DEAD) continue;
+        for (uint16_t j = 0; j < n->num_inputs; ++j)
+          n->inputs[j] = canonical[n->inputs[j]->id.raw()];
+      }
+      // Patch graph outputs
+      for (uint32_t i = 0; i < num_outputs_; ++i)
+        output_ids_[i] = canonical[output_ids_[i].raw()]->id;
+      // Recompute use counts after bulk rewrite
+      recompute_uses_();
+    }
+    return eliminated;
+  }
+
   // Clear VISITED flag on all nodes
   void clear_visited() {
     for (uint32_t i = 0; i < num_nodes_; ++i)
@@ -642,6 +722,116 @@ class CRUCIBLE_OWNER Graph {
     auto* dst = static_cast<char*>(arena_.alloc(a, len, 1));
     std::memcpy(dst, src, len);
     return dst;
+  }
+
+  // ── CSE helpers ──────────────────────────────────────────────────
+
+  // Structural hash for CSE. Uses canonical[] to resolve inputs
+  // without physically rewriting pointers during the pass.
+  [[nodiscard]] static uint64_t cse_hash_(
+      const GraphNode* n, const GraphNode* const* canonical) {
+    uint64_t h = detail::fmix64(
+        static_cast<uint64_t>(std::to_underlying(n->kind)) |
+        (static_cast<uint64_t>(std::to_underlying(n->dtype)) << 8) |
+        (static_cast<uint64_t>(static_cast<uint8_t>(n->device_idx)) << 16) |
+        (static_cast<uint64_t>(n->ndim) << 24) |
+        (static_cast<uint64_t>(n->nred) << 32));
+
+    // Size expressions (interned → pointer identity)
+    uint8_t total_dims = n->ndim + n->nred;
+    for (uint8_t d = 0; d < total_dims; ++d)
+      h = detail::wymix(h, reinterpret_cast<uint64_t>(n->size[d]));
+
+    // Inputs via canonical map (not raw pointers)
+    for (uint16_t j = 0; j < n->num_inputs; ++j)
+      h = detail::wymix(h, reinterpret_cast<uint64_t>(canonical[n->inputs[j]->id.raw()]));
+
+    // Body ops (POINTWISE/REDUCTION): pack each Inst into 8 bytes
+    if ((n->kind == NodeKind::POINTWISE || n->kind == NodeKind::REDUCTION) && n->body) {
+      auto* body = n->compute_body();
+      // Inst is 8 bytes, trivially copyable → hash as uint64_t
+      static_assert(sizeof(Inst) == 8);
+      for (uint16_t k = 0; k < body->num_ops; ++k) {
+        uint64_t iw;
+        std::memcpy(&iw, &body->ops[k], 8);
+        h = detail::wymix(h, iw);
+      }
+    }
+
+    // Extern kernel name
+    if (n->kind == NodeKind::EXTERN && n->body) {
+      auto* info = n->extern_info();
+      if (info->python_kernel_name)
+        for (const char* s = info->python_kernel_name; *s; ++s)
+          h = detail::wymix(h, static_cast<uint64_t>(*s));
+    }
+
+    // Reduce op for reductions
+    if (n->kind == NodeKind::REDUCTION)
+      h ^= detail::fmix64(static_cast<uint64_t>(std::to_underlying(n->reduce_op)));
+
+    return h;
+  }
+
+  // Structural equality for CSE. Looks through canonical[] for inputs.
+  [[nodiscard]] static bool cse_equal_(
+      const GraphNode* a, const GraphNode* b,
+      const GraphNode* const* canonical) {
+    if (a->kind != b->kind || a->dtype != b->dtype ||
+        a->device_idx != b->device_idx || a->ndim != b->ndim ||
+        a->nred != b->nred || a->num_inputs != b->num_inputs)
+      return false;
+
+    // Sizes (interned → pointer equality)
+    uint8_t total = a->ndim + a->nred;
+    for (uint8_t d = 0; d < total; ++d)
+      if (a->size[d] != b->size[d]) return false;
+
+    // Inputs via canonical map
+    for (uint16_t j = 0; j < a->num_inputs; ++j)
+      if (canonical[a->inputs[j]->id.raw()] != canonical[b->inputs[j]->id.raw()])
+        return false;
+
+    // Body equality (POINTWISE/REDUCTION)
+    if (a->kind == NodeKind::POINTWISE || a->kind == NodeKind::REDUCTION) {
+      auto* ba = a->compute_body();
+      auto* bb = b->compute_body();
+      if (ba != bb) {
+        if (!ba || !bb || ba->num_ops != bb->num_ops) return false;
+        if (std::memcmp(ba->ops, bb->ops, ba->num_ops * sizeof(Inst)) != 0) return false;
+        if (ba->aux != bb->aux) {
+          if (!ba->aux || !bb->aux) return false;
+          if (std::memcmp(ba->aux, bb->aux, ba->num_ops * sizeof(int64_t)) != 0) return false;
+        }
+      }
+    }
+
+    // Reduction-specific fields
+    if (a->kind == NodeKind::REDUCTION) {
+      if (a->reduce_op != b->reduce_op || a->reduce_hint != b->reduce_hint ||
+          a->src_dtype != b->src_dtype)
+        return false;
+    }
+
+    // Extern-specific fields
+    if (a->kind == NodeKind::EXTERN) {
+      auto* ia = a->extern_info();
+      auto* ib = b->extern_info();
+      if (ia != ib) {
+        if (!ia || !ib) return false;
+        if (ia->python_kernel_name != ib->python_kernel_name) {
+          if (!ia->python_kernel_name || !ib->python_kernel_name) return false;
+          if (std::strcmp(ia->python_kernel_name, ib->python_kernel_name) != 0) return false;
+        }
+        if (ia->num_constant_args != ib->num_constant_args) return false;
+        if (ia->num_constant_args > 0 &&
+            std::memcmp(ia->constant_args, ib->constant_args,
+                        ia->num_constant_args * sizeof(int64_t)) != 0)
+          return false;
+      }
+    }
+
+    return true;
   }
 
   // Recompute all use counts from scratch (handles stale counts)
