@@ -36,6 +36,7 @@ import Crucible.LoopNode
 import Crucible.Keeper
 import Crucible.Sparsity
 import Crucible.Hessian
+import Crucible.Curriculum
 
 /-!
 # Crucible -- Formal Specification
@@ -79,4 +80,5 @@ Modules matching the C++ headers:
 - **Keeper**: L12 Keeper daemon -- state machine, health monitoring, recommendation pipeline, self-updating, atomic config, pre-emptive replication, load shedding
 - **Sparsity**: L9 structured sparsity -- N:M patterns, pruning masks, block sparsity, cost model, error bounds, layer sensitivity, matrix structure discovery, gradual pruning
 - **Hessian**: L10 second-order optimization -- HVP cost, K-FAC approximation, natural gradient, condition number, optimal LR, Lanczos iteration, saddle detection, sharpness/generalization
+- **Curriculum**: L11 data pipeline -- curriculum learning, difficulty sorting, sample weighting, backpressure, GPU augmentation, distribution shift, manifold mixup, pipeline throughput
 -/
