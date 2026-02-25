@@ -25,6 +25,7 @@ import Crucible.Redundancy
 import Crucible.Topology
 import Crucible.Roofline
 import Crucible.Scaling
+import Crucible.Attention
 
 /-!
 # Crucible -- Formal Specification
@@ -57,4 +58,5 @@ Modules matching the C++ headers:
 - **Topology**: L16 Meridian parallelism -- 3D/5D factorization, comm cost, placement, load balance, bucketing
 - **Roofline**: L17 Augur digital twin -- roofline model, bottleneck classification, Amdahl's law, iteration time
 - **Scaling**: L17 Augur convergence -- loss models, LR schedules, SNR, effective rank, CKA, Chinchilla, batch scaling
+- **Attention**: L8 attention head classification -- cost model, replacement bounds, gradient strategy, bottleneck, NaN detection
 -/
