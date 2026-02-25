@@ -18,6 +18,9 @@ import Crucible.Detector
 import Crucible.Dag
 import Crucible.Effects
 import Crucible.Philox
+import Crucible.BitVec
+import Crucible.Algebra
+import Crucible.Protocol
 
 /-!
 # Crucible -- Formal Specification
@@ -43,4 +46,7 @@ Modules matching the C++ headers:
 - **Pool**: PoolAllocator (PoolAllocator.h) -- 256B alignment, bounds, init from MemoryPlan
 - **SwissTable**: SIMD hash table (SwissTable.h + ExprPool.h) -- control bytes, probing, insert/find correctness
 - **Graph**: Computation graph IR (Graph.h) -- acyclicity, topological ordering, DCE semantics, SSA well-formedness
+- **BitVec**: Bitvector proofs via `bv_decide` -- arena alignment, bitmask indexing, saturation arithmetic
+- **Algebra**: Algebraic structures -- ScalarType lattice, hash XOR monoid, Galois connection, DAG transforms
+- **Protocol**: Protocol verification -- SPSC deadlock freedom, mode transition completeness, protocol liveness
 -/
