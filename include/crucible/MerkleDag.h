@@ -254,6 +254,7 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Guard);
 enum class TraceNodeKind : uint8_t {
   REGION,    // A sequence of fusible ops -> compiled kernel
   BRANCH,    // A guard check -> routes to different arms
+  LOOP,      // Cyclic computation: body × N or until convergence
   TERMINAL,  // End of trace
 };
 
@@ -311,6 +312,108 @@ struct BranchNode : TraceNode {
   uint32_t num_arms = 0;    // 4B
   uint32_t pad1 = 0;        // 4B — alignment
 };
+
+// ═══════════════════════════════════════════════════════════════════
+// FeedbackEdge: Body output → body input across loop iterations
+//
+// In a LoopNode, feedback edges carry data from the body's outputs
+// back to its inputs for the next iteration. E.g., residual
+// connections in transformer layers, hidden state in RNNs.
+// ═══════════════════════════════════════════════════════════════════
+
+struct FeedbackEdge {
+  uint16_t output_idx = 0;  // 2B — which body output
+  uint16_t input_idx = 0;   // 2B — which body input for next iteration
+};
+
+static_assert(sizeof(FeedbackEdge) == 4, "FeedbackEdge must be 4 bytes");
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(FeedbackEdge);
+
+// ═══════════════════════════════════════════════════════════════════
+// LoopNode: Cyclic computation within the acyclic Merkle DAG
+//
+// Wraps an acyclic body sub-DAG with feedback edges and termination.
+// The body is a self-contained linked list of TraceNodes ending in
+// TERMINAL. Feedback edges connect body outputs to body inputs for
+// the next iteration. The LoopNode's `next` continues execution
+// after all iterations complete.
+//
+// From the manifesto (L5/L6):
+//   merkle_hash = hash(body.content_hash ⊕ "loop" ⊕ feedback_sig ⊕ termination)
+//   Transforms DAG from computation snapshot to computation PROGRAM.
+//
+// 64 bytes = one cache line (matches GraphNode).
+// ═══════════════════════════════════════════════════════════════════
+
+enum class LoopTermKind : uint8_t {
+  REPEAT,  // Fixed N iterations (RNN, fixed unrolling)
+  UNTIL,   // Converge within epsilon (DEQ, diffusion denoising)
+};
+
+struct LoopNode : TraceNode {
+  ContentHash body_content_hash;          // 8B — body sub-DAG content identity
+  TraceNode* body = nullptr;              // 8B — body sub-DAG (ends with TERMINAL)
+  FeedbackEdge* feedback_edges = nullptr; // 8B — arena-allocated
+  uint16_t num_feedback = 0;             // 2B — feedback edge count
+  LoopTermKind term_kind = LoopTermKind::REPEAT; // 1B
+  uint8_t pad_l0 = 0;                    // 1B — InitSafe
+  uint32_t repeat_count = 0;             // 4B — REPEAT: fixed N. UNTIL: observed iters.
+  float epsilon = 0.0f;                  // 4B — convergence threshold (UNTIL only)
+  float measured_body_ms = 0.0f;         // 4B — last measured body execution time
+
+  [[nodiscard]] std::span<const FeedbackEdge> feedback_span() const CRUCIBLE_LIFETIMEBOUND {
+    return feedback_edges ? std::span{feedback_edges, num_feedback}
+                          : std::span<const FeedbackEdge>{};
+  }
+};
+
+static_assert(sizeof(LoopNode) == 64, "LoopNode must be 64 bytes (one cache line)");
+
+// ═══════════════════════════════════════════════════════════════════
+// LoopNode hash helpers
+// ═══════════════════════════════════════════════════════════════════
+
+// Fold feedback edges into a single signature via fmix64.
+// Different feedback wiring → different signature.
+// Uses fmix64 with nonzero seed (not wymix) because wymix(0, 0) = 0
+// which collapses the chain when the first edge is {0,0}.
+// Edge count is folded in so {A} ≠ {A, A}.
+[[nodiscard]] inline uint64_t feedback_signature(std::span<const FeedbackEdge> edges) {
+  if (edges.empty()) return 0;
+  constexpr uint64_t kSeed = 0x6665656462616B73ULL; // "feedbaks"
+  uint64_t h = kSeed;
+  for (const auto& e : edges) {
+    uint64_t packed = (static_cast<uint64_t>(e.output_idx) << 16) | e.input_idx;
+    h = detail::fmix64(h ^ packed);
+  }
+  h = detail::fmix64(h ^ edges.size());
+  return h;
+}
+
+// Hash termination condition. Captures kind + repeat_count + epsilon bits.
+// Uses fmix64 with salts (not wymix) to avoid the zero-input degenerate
+// case: wymix(x, 0) = 0 for all x, which would collapse the hash chain.
+[[nodiscard]] inline uint64_t loopterm_hash(const LoopNode& ln) {
+  constexpr uint64_t kTermSalt = 0x7465726D696E6174ULL; // "terminat"
+  constexpr uint64_t kEpsSalt  = 0x65707369006C6F6EULL; // "epsi\0lon"
+  uint64_t packed = static_cast<uint64_t>(std::to_underlying(ln.term_kind)) |
+                    (static_cast<uint64_t>(ln.repeat_count) << 8);
+  uint64_t h = detail::fmix64(packed ^ kTermSalt);
+  h ^= detail::fmix64(static_cast<uint64_t>(std::bit_cast<uint32_t>(ln.epsilon)) ^ kEpsSalt);
+  return h;
+}
+
+// Content hash of a body sub-DAG: wymix-fold content hashes of all body regions.
+[[nodiscard]] inline ContentHash compute_body_content_hash(TraceNode* body) {
+  uint64_t h = 0x9E3779B97F4A7C15ULL;
+  TraceNode* walk = body;
+  while (walk) {
+    if (walk->kind == TraceNodeKind::REGION)
+      h = detail::wymix(h, static_cast<RegionNode*>(walk)->content_hash.raw());
+    walk = walk->next;
+  }
+  return ContentHash{detail::fmix64(h)};
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // Content and Merkle hash functions
@@ -372,6 +475,18 @@ struct BranchNode : TraceNode {
       h ^= detail::fmix64(b->arms[i].target->merkle_hash.raw());
       h *= 0x9E3779B97F4A7C15ULL;
     }
+  } else if (node->kind == TraceNodeKind::LOOP) {
+    auto* loop = static_cast<LoopNode*>(node);
+    // Salt distinguishes LoopNode hashes from RegionNode hashes with
+    // the same content. "LOOPNODE" in ASCII = 0x4C4F4F504E4F4445.
+    // Use fmix64 + XOR (not wymix) to avoid zero-input degenerate case.
+    // wymix(x, 0) = 0, which would collapse the entire hash chain when
+    // feedback or termination components happen to be zero.
+    constexpr uint64_t kLoopSalt = 0x4C4F4F504E4F4445ULL; // "LOOPNODE"
+    constexpr uint64_t kFbSalt   = 0x6665656462616B00ULL;  // "feedbak\0"
+    h = detail::fmix64(loop->body_content_hash.raw() ^ kLoopSalt);
+    h ^= detail::fmix64(feedback_signature(loop->feedback_span()) ^ kFbSalt);
+    h ^= loopterm_hash(*loop);
   } else {
     // TERMINAL
     return MerkleHash{};
@@ -540,6 +655,32 @@ class CRUCIBLE_OWNER KernelCache {
   return node;
 }
 
+// Create a LoopNode. Body must be a complete sub-DAG (ending in TERMINAL).
+// The body_content_hash is precomputed from the body's region chain.
+[[nodiscard]] inline LoopNode* make_loop(
+    fx::Alloc a,
+    Arena& arena CRUCIBLE_LIFETIMEBOUND,
+    TraceNode* body,
+    ContentHash body_content_hash,
+    FeedbackEdge* feedback,
+    uint16_t num_feedback,
+    LoopTermKind term_kind,
+    uint32_t repeat_count,
+    float epsilon = 0.0f) {
+  assert(body && "LoopNode body must be non-null");
+  auto* node = new (arena.alloc(a, sizeof(LoopNode), alignof(LoopNode)))
+      LoopNode{};
+  node->kind = TraceNodeKind::LOOP;
+  node->body = body;
+  node->body_content_hash = body_content_hash;
+  node->feedback_edges = feedback;
+  node->num_feedback = num_feedback;
+  node->term_kind = term_kind;
+  node->repeat_count = repeat_count;
+  node->epsilon = epsilon;
+  return node;
+}
+
 // Recompute Merkle hashes bottom-up from a node.
 // Assumes all descendants already have correct merkle_hash values.
 inline void recompute_merkle(TraceNode* node) {
@@ -550,6 +691,8 @@ inline void recompute_merkle(TraceNode* node) {
     auto* b = static_cast<BranchNode*>(node);
     for (uint32_t i = 0; i < b->num_arms; i++)
       recompute_merkle(b->arms[i].target);
+  } else if (node->kind == TraceNodeKind::LOOP) {
+    recompute_merkle(static_cast<LoopNode*>(node)->body);
   }
   if (node->next)
     recompute_merkle(node->next);
@@ -570,6 +713,8 @@ inline void recompute_merkle(TraceNode* node) {
       auto* b = static_cast<BranchNode*>(node);
       for (uint32_t i = 0; i < b->num_arms; i++)
         count = collect_regions(b->arms[i].target, out, count);
+    } else if (node->kind == TraceNodeKind::LOOP) {
+      count = collect_regions(static_cast<LoopNode*>(node)->body, out, count);
     }
     node = node->next;
   }
@@ -721,6 +866,17 @@ template <typename GuardEval, typename RegionExec>
 
       // Continue from the merge point (shared suffix)
       node = branch->next;
+      break;
+    }
+
+    case TraceNodeKind::LOOP: {
+      auto* loop = static_cast<LoopNode*>(node);
+      assert(loop->body && "LoopNode body must be non-null");
+      for (uint32_t i = 0; i < loop->repeat_count; i++) {
+        if (!replay(loop->body, eval_guard, exec_region))
+          return false;
+      }
+      node = node->next;
       break;
     }
 
