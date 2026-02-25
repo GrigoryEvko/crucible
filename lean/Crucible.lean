@@ -23,6 +23,8 @@ import Crucible.Algebra
 import Crucible.Protocol
 import Crucible.Redundancy
 import Crucible.Topology
+import Crucible.Roofline
+import Crucible.Scaling
 
 /-!
 # Crucible -- Formal Specification
@@ -53,4 +55,6 @@ Modules matching the C++ headers:
 - **Protocol**: Protocol verification -- SPSC deadlock freedom, mode transition completeness, protocol liveness
 - **Redundancy**: L12 RAID shard redundancy -- fault tolerance, ring replication, DiLoCo sync
 - **Topology**: L16 Meridian parallelism -- 3D/5D factorization, comm cost, placement, load balance, bucketing
+- **Roofline**: L17 Augur digital twin -- roofline model, bottleneck classification, Amdahl's law, iteration time
+- **Scaling**: L17 Augur convergence -- loss models, LR schedules, SNR, effective rank, CKA, Chinchilla, batch scaling
 -/
