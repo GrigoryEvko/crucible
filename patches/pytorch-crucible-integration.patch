@@ -171,3 +171,22 @@ index d0445f009af..100b7ced41d 100644
  
    // Used by Python key logic to know the set of tls on entry to the dispatcher
    // This kernel assumes it is the top-most non-functorch-related DispatchKey.
+diff --git a/torch/csrc/utils/tensor_new.cpp b/torch/csrc/utils/tensor_new.cpp
+index 8b758df7224..f5306f3fb8b 100644
+--- a/torch/csrc/utils/tensor_new.cpp
++++ b/torch/csrc/utils/tensor_new.cpp
+@@ -389,11 +389,10 @@ Tensor internal_new_from_data(
+         c10::DispatchKey::FuncTorchDynamicLayerFrontMode);
+     c10::impl::ExcludeDispatchKeyGuard functorch_back_guard(
+         c10::DispatchKey::FuncTorchDynamicLayerBackMode);
+-    // We disable Fake and DeferredInit handlers for similar reasons as
+-    // functorch.
+-    c10::impl::ExcludeDispatchKeyGuard fake_and_deferred_init_guard(
++    // We disable Fake and Crucible handlers for similar reasons as functorch.
++    c10::impl::ExcludeDispatchKeyGuard fake_and_crucible_guard(
+         c10::DispatchKeySet{
+-            c10::DispatchKey::Fake, c10::DispatchKey::DeferredInit});
++            c10::DispatchKey::Fake, c10::DispatchKey::Crucible});
+     // Note [Functionalization <> torch.Tensor constructor]
+     // Functionalization "lifts" the newly constructed tensor into a wrapper
+     // using aten::lift().
