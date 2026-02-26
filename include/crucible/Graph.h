@@ -628,6 +628,92 @@ class CRUCIBLE_OWNER Graph {
     return eliminated;
   }
 
+  // ── Fusion Group Computation ──────────────────────────────────────
+  //
+  // Assigns fused_group_id to nodes that can execute in one kernel.
+  // Fusion eliminates intermediate HBM traffic: producer's output
+  // stays in registers/shared memory instead of round-tripping to DRAM.
+  //
+  // Fusible pairs:
+  //   POINTWISE → POINTWISE  (same ranges → one kernel loop)
+  //   POINTWISE → REDUCTION  (produce + reduce in one launch)
+  //
+  // Not fusible: EXTERN (opaque), INPUT, CONSTANT, NOP, MUTATION,
+  //              SCAN, SORT, TEMPLATE (own launch logic)
+  //
+  // Algorithm: greedy propagation in topological order.
+  // For each fusible node, join the group of its first compatible
+  // input. If no compatible input exists, create a new group.
+  // Compatible = same device + same output ranges (Expr* equality).
+  //
+  // Also computes group_hash on each node for quick compatibility
+  // checking by downstream passes.
+  //
+  // Returns the number of fusion groups created.
+  uint32_t compute_fusion_groups(fx::Alloc a) {
+    topological_sort(a);
+
+    // Build ordered list via O(n) scatter
+    uint32_t n_live = 0;
+    for (uint32_t i = 0; i < num_nodes_; ++i)
+      if (!(nodes_[i]->flags & NodeFlags::DEAD)) ++n_live;
+    auto* ordered = arena_.alloc_array<GraphNode*>(a, n_live > 0 ? n_live : 1);
+    for (uint32_t i = 0; i < num_nodes_; ++i) {
+      if (!(nodes_[i]->flags & NodeFlags::DEAD))
+        ordered[nodes_[i]->schedule_order] = nodes_[i];
+    }
+
+    // Reset all group IDs
+    for (uint32_t i = 0; i < num_nodes_; ++i) {
+      nodes_[i]->fused_group_id = 0;
+      nodes_[i]->group_hash = 0;
+    }
+
+    // Compute group_hash for each live node: hash of (device, ranges).
+    // Nodes with different group_hash can never fuse.
+    for (uint32_t i = 0; i < n_live; ++i) {
+      GraphNode* n = ordered[i];
+      uint64_t h = detail::fmix64(
+          static_cast<uint64_t>(static_cast<uint8_t>(n->device_idx)) |
+          (static_cast<uint64_t>(n->ndim) << 8));
+      for (uint8_t d = 0; d < n->ndim; ++d)
+        h = detail::wymix(h, reinterpret_cast<uint64_t>(n->size[d]));
+      n->group_hash = static_cast<uint32_t>(h);
+    }
+
+    uint32_t next_group = 1;
+    for (uint32_t i = 0; i < n_live; ++i) {
+      GraphNode* n = ordered[i];
+      if (!is_fusible_(n->kind))
+        continue;
+
+      // Try to join an input's group
+      for (uint16_t j = 0; j < n->num_inputs; ++j) {
+        GraphNode* inp = n->inputs[j];
+        if (inp->fused_group_id == 0) continue;
+        if (!is_fusible_(inp->kind)) continue;
+        if (inp->group_hash != n->group_hash) continue;
+        // Full ranges check (group_hash collision possible)
+        if (ranges_compatible_(n, inp)) {
+          n->fused_group_id = inp->fused_group_id;
+          n->flags |= NodeFlags::FUSED;
+          break;
+        }
+      }
+      if (n->fused_group_id == 0)
+        n->fused_group_id = next_group++;
+    }
+    return next_group - 1;
+  }
+
+  // Count nodes in a specific fusion group
+  [[nodiscard]] uint32_t group_size(uint32_t group_id) const {
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < num_nodes_; ++i)
+      if (nodes_[i]->fused_group_id == group_id) ++count;
+    return count;
+  }
+
   // Clear VISITED flag on all nodes
   void clear_visited() {
     for (uint32_t i = 0; i < num_nodes_; ++i)
@@ -722,6 +808,22 @@ class CRUCIBLE_OWNER Graph {
     auto* dst = static_cast<char*>(arena_.alloc(a, len, 1));
     std::memcpy(dst, src, len);
     return dst;
+  }
+
+  // ── Fusion helpers ──────────────────────────────────────────────
+
+  [[nodiscard]] static bool is_fusible_(NodeKind k) {
+    return k == NodeKind::POINTWISE || k == NodeKind::REDUCTION;
+  }
+
+  // Two nodes have compatible ranges if same device + same output
+  // dimensions. Expr* is interned → pointer equality per dimension.
+  [[nodiscard]] static bool ranges_compatible_(const GraphNode* a, const GraphNode* b) {
+    if (a->device_idx != b->device_idx) return false;
+    if (a->ndim != b->ndim) return false;
+    for (uint8_t d = 0; d < a->ndim; ++d)
+      if (a->size[d] != b->size[d]) return false;
+    return true;
   }
 
   // ── CSE helpers ──────────────────────────────────────────────────

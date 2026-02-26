@@ -903,4 +903,133 @@ template <typename GuardEval, typename RegionExec>
   return true;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// DAG Diff: O(log N) structural comparison via Merkle hashes
+//
+// Compares two Merkle DAGs and finds the first divergent node.
+// Merkle hashes enable massive pruning: identical subtrees (same
+// merkle_hash) are skipped in O(1). Only divergent paths are
+// explored, giving O(log N) for typical "one region changed"
+// scenarios. Worst case O(N) when everything differs.
+//
+// This is the "git diff" for computation graphs. Used for:
+//   - Version comparison (which regions changed between iterations?)
+//   - Regression bisection (binary search through DAG versions)
+//   - Deployment validation (new model == old model where expected?)
+// ═══════════════════════════════════════════════════════════════════
+
+struct DagDiff {
+  TraceNode* node_a = nullptr;
+  TraceNode* node_b = nullptr;
+  uint32_t depth = 0;
+
+  enum class Kind : uint8_t {
+    IDENTICAL,         // Merkle hashes match — subtrees are equal
+    KIND_MISMATCH,     // Different node kinds at this position
+    CONTENT_MISMATCH,  // Same kind but different content (different ops)
+    BRANCH_MISMATCH,   // Different guard or arm structure
+    LOOP_MISMATCH,     // Different body, feedback, or termination
+    STRUCTURE_MISMATCH,// One terminates, other continues (length differs)
+  } kind = Kind::IDENTICAL;
+};
+
+// Walk two DAGs in lockstep, pruning identical subtrees via Merkle hash.
+// Iterative on the next-chain (no stack overflow for long traces),
+// recursive only into branch arms and loop bodies (bounded depth).
+[[nodiscard]] inline DagDiff dag_diff(TraceNode* a, TraceNode* b, uint32_t depth = 0) {
+  while (a && b) {
+    // Merkle match → entire subtree from here is identical → skip
+    if (a->merkle_hash == b->merkle_hash)
+      return {nullptr, nullptr, depth, DagDiff::Kind::IDENTICAL};
+
+    // Kind mismatch is a hard divergence
+    if (a->kind != b->kind)
+      return {a, b, depth, DagDiff::Kind::KIND_MISMATCH};
+
+    if (a->kind == TraceNodeKind::TERMINAL)
+      return {nullptr, nullptr, depth, DagDiff::Kind::IDENTICAL};
+
+    if (a->kind == TraceNodeKind::REGION) {
+      auto* ra = static_cast<RegionNode*>(a);
+      auto* rb = static_cast<RegionNode*>(b);
+      if (ra->content_hash != rb->content_hash)
+        return {a, b, depth, DagDiff::Kind::CONTENT_MISMATCH};
+      // Content matches — divergence is in the tail
+      a = a->next;
+      b = b->next;
+      ++depth;
+      continue;
+    }
+
+    if (a->kind == TraceNodeKind::BRANCH) {
+      auto* ba = static_cast<BranchNode*>(a);
+      auto* bb = static_cast<BranchNode*>(b);
+      if (ba->guard.hash() != bb->guard.hash() || ba->num_arms != bb->num_arms)
+        return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
+      // Check arms recursively (bounded by branch fan-out)
+      for (uint32_t i = 0; i < ba->num_arms; i++) {
+        if (ba->arms[i].value != bb->arms[i].value)
+          return {a, b, depth, DagDiff::Kind::BRANCH_MISMATCH};
+        DagDiff arm_diff = dag_diff(ba->arms[i].target, bb->arms[i].target, depth + 1);
+        if (arm_diff.kind != DagDiff::Kind::IDENTICAL)
+          return arm_diff;
+      }
+      a = a->next;
+      b = b->next;
+      ++depth;
+      continue;
+    }
+
+    if (a->kind == TraceNodeKind::LOOP) {
+      auto* la = static_cast<LoopNode*>(a);
+      auto* lb = static_cast<LoopNode*>(b);
+      if (la->body_content_hash != lb->body_content_hash ||
+          la->num_feedback != lb->num_feedback ||
+          la->term_kind != lb->term_kind ||
+          la->repeat_count != lb->repeat_count ||
+          la->epsilon != lb->epsilon)
+        return {a, b, depth, DagDiff::Kind::LOOP_MISMATCH};
+      // Feedback edges differ?
+      if (la->num_feedback > 0 &&
+          std::memcmp(la->feedback_edges, lb->feedback_edges,
+                      la->num_feedback * sizeof(FeedbackEdge)) != 0)
+        return {a, b, depth, DagDiff::Kind::LOOP_MISMATCH};
+      // Body identical at content level; check sub-structure
+      DagDiff body_diff = dag_diff(la->body, lb->body, depth + 1);
+      if (body_diff.kind != DagDiff::Kind::IDENTICAL)
+        return body_diff;
+      a = a->next;
+      b = b->next;
+      ++depth;
+      continue;
+    }
+
+    // Unknown kind — should not happen
+    return {a, b, depth, DagDiff::Kind::KIND_MISMATCH};
+  }
+
+  // One or both ended
+  if (a == b) // both null
+    return {nullptr, nullptr, depth, DagDiff::Kind::IDENTICAL};
+  return {a, b, depth, DagDiff::Kind::STRUCTURE_MISMATCH};
+}
+
+// Count nodes in a DAG (follows next chain + recurse into branches/loops).
+// Useful for determining N for complexity analysis of dag_diff.
+[[nodiscard]] inline uint32_t dag_node_count(TraceNode* node) {
+  uint32_t count = 0;
+  while (node) {
+    ++count;
+    if (node->kind == TraceNodeKind::BRANCH) {
+      auto* b = static_cast<BranchNode*>(node);
+      for (uint32_t i = 0; i < b->num_arms; i++)
+        count += dag_node_count(b->arms[i].target);
+    } else if (node->kind == TraceNodeKind::LOOP) {
+      count += dag_node_count(static_cast<LoopNode*>(node)->body);
+    }
+    node = node->next;
+  }
+  return count;
+}
+
 } // namespace crucible
