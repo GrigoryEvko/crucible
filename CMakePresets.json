@@ -68,6 +68,26 @@
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_FLAGS": "-freflection"
       }
+    },
+    {
+      "name": "verify",
+      "inherits": "default",
+      "displayName": "Clang 22 + Z3 formal verification (Axiom)",
+      "binaryDir": "${sourceDir}/build-verify",
+      "cacheVariables": {
+        "CRUCIBLE_VERIFY": "ON",
+        "CRUCIBLE_SANITIZE": "OFF"
+      }
+    },
+    {
+      "name": "verify-gcc",
+      "inherits": "gcc",
+      "displayName": "GCC 15 + Z3 formal verification (Axiom)",
+      "binaryDir": "${sourceDir}/build-verify-gcc",
+      "cacheVariables": {
+        "CRUCIBLE_VERIFY": "ON",
+        "CRUCIBLE_SANITIZE": "OFF"
+      }
     }
   ],
   "buildPresets": [
@@ -77,7 +97,9 @@
     { "name": "tidy",    "configurePreset": "tidy" },
     { "name": "tsan",    "configurePreset": "tsan" },
     { "name": "gcc",     "configurePreset": "gcc" },
-    { "name": "gcc16",   "configurePreset": "gcc16" }
+    { "name": "gcc16",   "configurePreset": "gcc16" },
+    { "name": "verify",     "configurePreset": "verify" },
+    { "name": "verify-gcc", "configurePreset": "verify-gcc" }
   ],
   "testPresets": [
     { "name": "default", "configurePreset": "default", "output": { "outputOnFailure": true } },
@@ -86,6 +108,8 @@
     { "name": "tsan",    "configurePreset": "tsan",    "output": { "outputOnFailure": true } },
     { "name": "gcc",     "configurePreset": "gcc",     "output": { "outputOnFailure": true } },
     { "name": "gcc16",   "configurePreset": "gcc16",   "output": { "outputOnFailure": true } },
+    { "name": "verify",     "configurePreset": "verify",     "output": { "outputOnFailure": true } },
+    { "name": "verify-gcc", "configurePreset": "verify-gcc", "output": { "outputOnFailure": true } },
     {
       "name": "stress",
       "configurePreset": "default",
