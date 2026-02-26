@@ -9,49 +9,58 @@ Python describes. Crucible executes. The 492,000 lines of framework overhead bet
 
 | Name | Role | Description |
 |------|------|-------------|
-| **Relay** | Node | Compute node running a Crucible daemon. Replaceable. |
-| **Keeper** | Daemon | Per-Relay daemon — self-healing, self-updating, autonomous. `crucible-keeper.service` starts at boot, discovers peers, joins mesh. |
-| **Vigil** | Model | The model: DAG, weights, learned knowledge. Named for the Prothean AI. Always-on. |
-| **Cipher** | State | Persistent state — DAG chain, weight snapshots, KernelCache, RNG state — survives node failure, restores on new hardware. One `uint64` master counter for deterministic Philox RNG. Event-sourced: mostly replay instructions, not raw state. |
-| **Canopy** | Mesh | Mesh of Keepers — distributed awareness, gossip, consensus, self-healing. No master node. |
-| **Vessel** | Interface | PyTorch — the 2,000+ ATen operators Crucible intercepts via the Dispatcher. Researchers write PyTorch; Crucible handles the rest transparently. |
-| **Crucible** | System | The complete runtime system. |
+| **F\*X** | Foundation | Fork of F\* — 10× more powerful. Proved allocators, SMT-optimal kernel synthesis, fusion engine. Extracts to hardware-optimized C++/CUDA. Every kernel proved optimal. Every allocator proved correct. The runtime is a theorem. |
+| **Relay** | Body | Compute node inhabited by a Crucible daemon. Mortal. Replaceable. |
+| **Keeper** | Spirit | Per-Relay daemon — self-healing, self-updating, autonomous. `crucible-keeper.service` starts at boot, discovers peers, joins mesh. Executes Augur's advice. |
+| **Vigil** | Intellect | The model: DAG, weights, learned knowledge. Named for the Prothean AI. Never sleeps. |
+| **Cipher** | Soul | Persistent state — DAG chain, weight snapshots, KernelCache, RNG state, proof certificates. Event-sourced. Survives death, reincarnates on new hardware. |
+| **Canopy** | Collective | Mesh of Keepers — distributed awareness, gossip, consensus, self-healing. No master node. |
+| **Vessel** | Interface | PyTorch — the 2,000+ ATen operators Crucible intercepts via the Dispatcher. |
+| **Meridian** | Map | Startup calibration. Measured hardware truth. SMT-optimal topology, parallelism, communication, placement. Re-solves on topology change. |
+| **Augur** | Sight | Continuous prediction, monitoring, model intelligence. Digital twin. Loss landscape analysis. Convergence bounds. Scaling laws. Bottleneck diagnosis. Recommendations engine. |
+| **Crucible** | Whole | The organism. Everything together. |
 
 ---
 
-## L0 — Hardware
+## L0 — F\*X
+
+**The proved foundation. Every claim carries a certificate.**
+
+Fork of F\* proof assistant — 10× more powerful. F\*X is the source of truth: write, prove, extract to hardware-optimized C++/CUDA. The runtime is a theorem. No autotuning — SMT-optimal kernel synthesis for every (op, shape, device). Proved allocators. Proved fusion. Proof certificates persist in the Cipher and survive reincarnation.
+
+**SMT kernel engine:** hardware spec = axioms, kernel config = variables, cost function = objective. For any shape on any device, F\*X finds THE optimal kernel configuration. One SMT query. Global optimum. Proved safe: no OOB, no bank conflicts, coalesced access, no register spill. CUTLASS tries 500 configs via benchmarking. Triton tries 50. F\*X solves the exact constraint system.
+
+**Proved allocators:** jemalloc-like CPU allocator with size classes and thread-local caches — proved disjointness, bounded fragmentation. CUDA pool allocator with static plans — proved non-overlap, proved OOM-impossible. Arena bump-pointer — proved alignment and no UAF.
+
+**Proved fusion engine:** fusion legality + fused kernel config as joint SMT problem. Intermediates proved to stay in registers/smem. The fused kernel is proved optimal for the composite computation.
+
+**Extraction pipeline:** F\*X → C++26 (hot paths), F\*X → CUDA/HIP (kernel bodies). Every extraction preserves proved properties. Compile with Clang 22 / NVCC / hipcc.
+
+---
+
+## L1 — Hardware
 
 **Compute hardware. Heterogeneous, replaceable.**
 
-GPUs are ecosystems: tensor cores (1000 TFLOPS FP16 on H100), scalar ALUs (60 TFLOPS), four-level memory hierarchy (registers → shared memory → L2 → HBM), power envelopes. Gap between theoretical peak and achieved: 40-70%. A kernel in shared memory runs 10× faster than one spilling to HBM; tensor cores are 16× faster than scalar ALUs.
+GPUs are ecosystems: tensor cores (1000 TFLOPS FP16 on H100), scalar ALUs (60 TFLOPS), four-level memory hierarchy (registers → shared memory → L2 → HBM), power envelopes. Gap between theoretical peak and achieved: 40-70%.
 
-**Nobody observes this at runtime.** CUPTI exposes per-kernel counters: SM utilization, bandwidth saturation, occupancy, tensor core use, register spills, cache hits, warp stalls. These tell you EXACTLY why a kernel is slow. No ML framework reads them.
+**Multi-vendor:** NVIDIA (sm_86/89/90/100), AMD (gfx1100/942), Intel XMX, Apple AMX, Google TPU MXU. Same computation described once in the Merkle DAG; different F\*X-compiled kernels per (content_hash, device_capability).
 
-**Crucible reads CUPTI after every compiled kernel.** Mechanical diagnosis:
-- Memory bandwidth >80% AND SM <60% → memory-bound → increase tile size
-- Register spill >0 AND occupancy <50% → register pressure → use shared memory staging
-- Tensor core utilization =0% on matmul → alignment issue → pad to multiples of 16
-- Warp stalls on memory dependency → software-pipeline prefetch
+**Power management:** NVML exposes clocks, power, temperature, ECC errors. Memory-bound phases don't need full core clock — drop 30% for zero perf loss, significant savings.
 
-Each diagnosis maps to a targeted fix, benchmarked and kept or discarded. CUPTI counters guide kernel optimization like a gradient. AMD equivalent: rocprofiler (CU utilization, VRAM bandwidth, LDS conflicts, wavefront occupancy) — abstracted so diagnosis logic is vendor-agnostic.
-
-**Multi-vendor:** NVIDIA (sm_86/89/90/100), AMD (gfx1100/942), Intel XMX, Apple AMX, Google TPU MXU. Same computation described once in the Merkle DAG; different compiled kernels per (content_hash, device_capability).
-
-**Power management:** NVML exposes clocks, power, temperature, ECC errors. Memory-bound phases don't need full core clock — drop 30% for zero perf loss, significant savings. Compute-bound: boost max. Over 1000 GPUs × 2 weeks: hundreds of thousands in electricity savings.
-
-**Health monitoring → Keeper:** ECC error trends, thermal throttling, clock degradation feed into the Keeper. A failing GPU gets load-reduced, data pre-replicated to healthy Relays (L12 RAID). State is already replicated before failure completes. New hardware → fresh Keeper discovers mesh and Cipher → recompiles for new device → reshards for new topology → resumes exactly.
+**Health monitoring → Keeper:** ECC error trends, thermal throttling, clock degradation feed into the Keeper. A failing GPU gets load-reduced, data pre-replicated to healthy Relays (L13 Distribution, RAID). State is already replicated before failure completes. New hardware → fresh Keeper discovers mesh and Cipher → F\*X computes optimal kernels for new device → reshards for new topology → resumes exactly.
 
 ---
 
-## L1 — Kernels
+## L2 — Kernels
 
-**Compiled computation. Templates instantiated per shape, per hardware.**
+**SMT-optimal computation. Proved for every shape, every device.**
 
 Current frameworks: static lookup (op + dtype → library kernel). Same kernel for 64×64 and 8192×8192, A100 and 3090, contiguous and transposed. No adaptation.
 
 **Crucible generates kernels from C++ CUDA templates** parameterized by: tile size M/N/K, vectorization width, shared memory allocation, unrolling factor, precision (fp32/fp16/bf16/tf32/int8), access pattern. NVRTC compiles at runtime for exact shapes and hardware. For AMD: hipRTC with wavefront-adapted templates (64-wide vs 32-wide warps).
 
-**CUPTI-informed autotuning** replaces random search. Each CUPTI diagnosis → one targeted variant → one benchmark → converge in 3-5 iterations vs 1000 random trials. The counters ARE the gradient of performance w.r.t. configuration.
+**F\*X SMT kernel engine** replaces autotuning entirely. Hardware spec = SMT axioms, kernel config = SMT variables, cost function = SMT objective. For any (op, shape, device): one query, global optimum. Proved safe: no OOB, no bank conflicts, coalesced access, no register spill. CUPTI validates predictions post-hoc; corrections feed back into Meridian calibration.
 
 **KernelCache:** maps (content_hash, device_capability) → CompiledKernel. Content-addressing: identical ops on identical shapes produce identical hashes. Reuse across iterations, runs, models sharing sub-computations, even organizations. Multiple variants coexist per hash; best selected per device, alternatives benchmarked during dead time. Cache grows monotonically across restarts. Lock-free open-addressing hash table — zero overhead on hot path.
 
@@ -65,7 +74,7 @@ KernelCache is part of the **Cipher** — write-once, persists across reincarnat
 
 ---
 
-## L2 — Memory
+## L3 — Memory
 
 **Where tensors live. 2ns allocation vs 2000ns.**
 
@@ -94,7 +103,7 @@ Per-tensor, optimal, no manual `torch.utils.checkpoint()`. Threshold adapts to m
 
 ---
 
-## L3 — Operations
+## L4 — Operations
 
 **The atomic unit. What happens when Python says `x + y`.**
 
@@ -135,11 +144,11 @@ Replacements are DAG branches with quality verification.
 
 **Communication ops** (all_reduce, all_gather, etc.) intercepted identically — same recording, timing, optimization pipeline. The recording pipeline is **event sourcing**: the Cipher persists the event log for deterministic replay and reincarnation.
 
-No training/inference distinction at L3 — same fallback, same recording, same compiled execution.
+No training/inference distinction at L4 — same fallback, same recording, same compiled execution.
 
 ---
 
-## L4 — Tensors
+## L5 — Tensors
 
 **Metadata, shadow handles, and the latent space.**
 
@@ -161,7 +170,7 @@ Shadow handles are mode-agnostic: training and inference produce identical objec
 
 ---
 
-## L5 — Graphs
+## L6 — Graphs
 
 **The skeleton. Dataflow, aliases, edges, and cycles.**
 
@@ -184,17 +193,17 @@ Graph's fixed execution order is a pillar of deterministic replay.
 
 ---
 
-## L6 — The Merkle DAG
+## L7 — The Merkle DAG
 
 **Content-addressable, versioned computation graph.**
 
-Central data structure. L0-L5 feed in, L7-L14 read/modify. Simultaneously: computation specification, compilation cache key, guard system, versioning mechanism, and deployment artifact.
+Central data structure. L1-L6 feed in, L8-L16 read/modify. L0 proves correctness. Simultaneously: computation specification, compilation cache key, guard system, versioning mechanism, and deployment artifact.
 
 **RegionNodes:** compilable op sequences. **content_hash** = hash(schema_hashes, input shapes/strides/dtypes/devices, scalar values). Identical computation → identical hash, even across models. **merkle_hash** = content_hash + child hashes → O(1) equality for entire subtrees (like git commits).
 
 **BranchNodes:** dynamic behavior. Guard = the op sequence itself. Mismatch at op N → branch arms for different paths. Both arms independently compilable. Shared suffixes share content_hashes and kernels.
 
-BranchNodes are THE mechanism for everything that changes: architecture mutation (L9), attention replacement (L8), hyperparameter changes (L10), continuous learning (L13). Every adaptation is a branch. Every branch is versioned and rollbackable.
+BranchNodes are THE mechanism for everything that changes: architecture mutation (L10), attention replacement (L9), hyperparameter changes (L11), continuous learning (L14). Every adaptation is a branch. Every branch is versioned and rollbackable.
 
 **KernelCache:** (content_hash, device_capability) → CompiledKernel. Lock-free reads. Persists across runs, models, organizations. The **computation genome** — every run enriches it.
 
@@ -210,7 +219,7 @@ BranchNodes are THE mechanism for everything that changes: architecture mutation
 
 ---
 
-## L7 — Tokens
+## L8 — Tokens
 
 **Input granularity. Matching compute to information density.**
 
@@ -230,7 +239,7 @@ Fixed tokenization violates information theory. A blank wall gets same compute a
 
 ---
 
-## L8 — Layers
+## L9 — Layers
 
 **Attention replacement, local learning, per-layer gradient strategy.**
 
@@ -265,7 +274,7 @@ Strategy evolves: early training → mostly local losses/synthetic; late → mos
 
 ---
 
-## L9 — Models
+## L10 — Models
 
 **Growing, pruning, evolving, composing the architecture itself.**
 
@@ -289,7 +298,7 @@ The DAG IS the architecture. Modifying the DAG IS architecture search. Every mod
 
 ---
 
-## L10 — Training
+## L11 — Training
 
 **Hessian, meta-gradients, curriculum, and self-tuning.**
 
@@ -309,23 +318,23 @@ The entire training loop (forward + backward + optimizer) is in the DAG → obse
 
 ---
 
-## L11 — Data
+## L12 — Data
 
 **Pipeline absorption, augmentation, and steering.**
 
 Crucible dissolves the boundary between data loading and training.
 
-**Backpressure:** measure GPU idle between iterations → signal DataLoader to prefetch more/less. **GPU-side augmentation:** tensor ops (crop, flip, jitter, blur) moved to GPU as compiled DAG ops. ~500μs CPU → ~5μs GPU. **Curriculum integration:** L10 measures difficulty → L11 reorders data stream.
+**Backpressure:** measure GPU idle between iterations → signal DataLoader to prefetch more/less. **GPU-side augmentation:** tensor ops (crop, flip, jitter, blur) moved to GPU as compiled DAG ops. ~500μs CPU → ~5μs GPU. **Curriculum integration:** L11 measures difficulty → L12 reorders data stream.
 
-**Manifold Mixup:** interpolate hidden states at layer K: h_mix = α·h_A + (1-α)·h_B → forward remainder → loss against interpolated label. Layer K chosen by linear probe accuracy. DAG modification at L6.
+**Manifold Mixup:** interpolate hidden states at layer K: h_mix = α·h_A + (1-α)·h_B → forward remainder → loss against interpolated label. Layer K chosen by linear probe accuracy. DAG modification at L7.
 
 **Representation steering at inference:** add α × direction_vector to hidden state at optimal layer. No weight changes. Direction discovery automated: difference of means between desired/undesired behavior activations.
 
-**Distribution shift monitoring:** KL divergence between current activations and training reference → trigger continuous learning (L13) or alert.
+**Distribution shift monitoring:** KL divergence between current activations and training reference → trigger continuous learning (L14) or alert.
 
 ---
 
-## L12 — Distribution
+## L13 — Distribution
 
 **Distributed mesh. Multiple nodes, shared state, no master.**
 
@@ -333,7 +342,7 @@ Crucible dissolves the boundary between data loading and training.
 
 **Spot-aware:** 30-second eviction → Keeper signals Canopy → mesh reshards to N-1 (redundant copies already exist) → Vigil continues from same step. New instance → Keeper discovers Canopy → loads Cipher → joins.
 
-**Heterogeneous compute:** same Vigil, per-Relay compiled kernels (H100/3090/MI300X/A100 each optimized via L0+L1). Content-addressing handles naturally.
+**Heterogeneous compute:** same Vigil, per-Relay compiled kernels (H100/3090/MI300X/A100 each optimized via L0+L2). Content-addressing handles naturally.
 
 **LOR batch distribution:** micro-batches proportional to measured throughput. H100 gets 3× more than 3090. Both fully utilized. Gradients weighted by actual batch size.
 
@@ -355,7 +364,7 @@ Crucible dissolves the boundary between data loading and training.
 
 ---
 
-## L13 — Lifecycle
+## L14 — Lifecycle
 
 **Continuous operation with persistent state.**
 
@@ -380,7 +389,29 @@ Event-sourced: DAG chain (few KB/step) persisted every step, weight snapshots pe
 
 ---
 
-## L14 — Ecosystem
+## L15 — Meridian+Augur
+
+**Operational intelligence. Two time scales in one layer.**
+
+Meridian = startup calibration (5-15s). Augur = continuous per-iteration monitoring.
+
+**Meridian (startup):**
+- GPU profiling: GEMM→actual TFLOPS, streaming copy→HBM/PCIe BW, NVML→power/temp/ECC/memory
+- Network probing: N×N latency/bandwidth matrix, topology detection
+- F\*X computes optimal kernel configs for measured hardware (SMT, not benchmarking)
+- F\*X solves topology: TP×DP×PP factorization, placement, communication algorithms — all jointly
+- Output: complete device-specific kernel set + MeridianConfig. Re-probes on topology change.
+
+**Augur (continuous):**
+- Digital twin: DAG + F\*X kernel predictions + Meridian corrections → iteration prediction (±5-10%)
+- Per-kernel bottleneck classification: COMPUTE/MEMORY_BW/COMMUNICATION/BUBBLE/IMBALANCE
+- Predicted vs actual monitoring. >10% drift → diagnose → trigger Meridian recalibration
+- Recommendations ranked by expected_speedup × confidence, tagged auto-hot/auto-cold/manual
+- Model intelligence (periodic): Hessian spectrum (Lanczos), gradient health, effective rank (randomized SVD), CKA layer redundancy, convergence prediction, Chinchilla scaling laws
+
+---
+
+## L16 — Ecosystem
 
 **Cross-run learning, computation genome, federated intelligence.**
 
@@ -392,282 +423,95 @@ Event-sourced: DAG chain (few KB/step) persisted every step, weight snapshots pe
 
 **Model marketplace:** content-addressed DAG fragments + KernelCache + verified quality metrics. Download, splice, verify, commit. Architectures from best-in-class components discovered ecosystem-wide.
 
-**Hardware co-design:** aggregated KernelCache reveals real workload patterns (shape distributions, sparsity patterns, bottleneck frequencies). Feed to hardware designers → next-gen silicon optimized for actual workloads → Crucible autotuned for → new data → co-evolution.
+**Hardware co-design:** aggregated KernelCache reveals real workload patterns (shape distributions, sparsity patterns, bottleneck frequencies). Feed to hardware designers → next-gen silicon optimized for actual workloads → F\*X re-solves optimal kernels for new silicon → new data → co-evolution.
 
 **What Crucible is not:** not intelligent, not AGI. A matmul is a matmul. It observes, compiles, adapts, distributes, heals, persists, evolves — mechanically, from measurements. The model determines the quality ceiling. Crucible removes infrastructure overhead so the model can reach its potential.
 
+---
 
-  Updated Ontology
+## Development Plan
 
-  Name: Relay
-  Role: Node
-  Description: Compute node running a Crucible daemon. Replaceable.
-  ────────────────────────────────────────
-  Name: Keeper
-  Role: Daemon
-  Description: Per-Relay daemon — self-healing, self-updating, autonomous. Executes Augur's recommendations.
-  ────────────────────────────────────────
-  Name: Vigil
-  Role: Model
-  Description: The model: DAG, weights, learned knowledge. Named for the Prothean AI. Always-on.
-  ────────────────────────────────────────
-  Name: Cipher
-  Role: State
-  Description: Persistent state — DAG chain, weight snapshots, KernelCache, RNG state, proof certificates. Event-sourced. Survives node failure, restores on new hardware.
-  ────────────────────────────────────────
-  Name: Canopy
-  Role: Mesh
-  Description: Mesh of Keepers — distributed awareness, gossip, consensus, self-healing. No master.
-  ────────────────────────────────────────
-  Name: Vessel
-  Role: Interface
-  Description: PyTorch — the 2,000+ ATen operators Crucible intercepts via the Dispatcher.
-  ────────────────────────────────────────
-  Name: Axiom
-  Role: Verification
-  Description: Build-time formal verification. Z3 universal proofs. consteval bounded proofs. Reflection structural proofs. Type-system boundary proofs. Proof-guided optimization. Every claim carries a certificate.
-  ────────────────────────────────────────
-  Name: Meridian
-  Role: Calibration
-  Description: Startup calibration. Measured hardware characteristics. Z3-optimal topology, parallelism, communication, placement. Re-solves on topology change. Inherits Axiom's universal proofs as axioms.
-  ────────────────────────────────────────
-  Name: Augur
-  Role: Monitoring
-  Description: Continuous prediction, monitoring, model analysis. Digital twin. Loss landscape analysis. Convergence bounds. Scaling laws. Bottleneck diagnosis. Recommendations engine. Proved bounds where possible, calibrated models elsewhere.
-  ────────────────────────────────────────
-  Name: Crucible
-  Role: System
-  Description: The complete runtime system.
+**Phase 1: Foundation (DONE — 9.5K lines, 24 tests, Clang 22 + GCC 15)**
 
-  ---
-  L15 — Axiom (Build-time Formal Verification)
+L4 Operations: TraceRing SPSC, MetaLog, recording pipeline. L6 Graphs: TraceGraph CSR. L7 Merkle DAG: RegionNode, BranchNode, content/merkle hashing. L3 Memory: MemoryPlan sweep-line, PoolAllocator. L4/L7 Compiled Tier 1: ReplayEngine, CrucibleContext, dispatch_op, divergence recovery. L2 Kernels: CKernel 146-op taxonomy. L14: Serialize/Deserialize, Cipher. L6 Graph IR: Graph.h, ExprPool, SymbolTable. L0 partial: Effects.h (fx::Alloc/IO/Block), Reflect.h (reflect_hash, reflect_print). Vessel: PyTorch adapter.
 
-  Four-layer proof architecture. Each layer proves what the layers below cannot:
+**Phase 2: F\*X Core (NEXT)**
 
-  Layer 4 — Z3 SMT: universal proofs (∀x. P(x)) via custom Z3 fork (+CaDiCaL, 85 commits, +13.7K lines)
-  Layer 3 — consteval: bounded verification, UB detection, model checking (compiler as verifier)
-  Layer 2 — reflection: structural completeness (GCC 16 -freflection, P2996/P1306)
-  Layer 1 — type system: fx::Alloc/IO/Block effect tokens, FgTag/BgTag phantom types, typestate mode transitions, refinement types (NonZero, InRange), strong ID wrappers
+Goal: F\*X foundation — proved allocators, SMT kernel engine, extraction pipeline.
 
-  Z3 proof targets (CMake custom_target crucible_verify, build fails if any theorem fails):
-  - Arena alignment: ∀ base,offset,align ∈ [0,2^64). UNSAT in 0.03s
-  - fmix64 no fixed points: ∀ x ∈ [0,2^64). UNSAT in 0.8s
-  - fmix64 avalanche ≥20 bits: 64× UNSAT in 12s
-  - SPSC bitmask==modulo, invariant preservation, no index collision: ∀ head,tail. UNSAT in ms
-  - mul_sat/add_sat correctness: ∀ a,b ∈ [0,2^64). UNSAT in 0.1s
-  - Sweep-line non-overlap N=2..16: ∀ lifetime configs. 15× UNSAT in 4s
-  - Kernel configs: no bank conflicts, coalesced access, no OOB for ∀ (blockIdx,threadIdx)
-  - Algebraic laws: hash monoid, ScalarType lattice, gradient commutative monoid
+- **SMT kernel engine:** Hardware spec → SMT axioms. Kernel config → SMT variables. Cost function → SMT objective. For any (op, shape, device): F\*X finds THE optimal kernel config. Proved optimal. Proved safe (no OOB, no bank conflicts, coalesced access). Fusion as joint SMT: producer+consumer configs solved simultaneously, intermediates proved to stay in registers/smem. Per-device kernel compilation: Meridian measures hardware, F\*X computes optimal kernels, compiles them.
+- **Proved allocators:** CPU: jemalloc-like with size classes, thread-local caches, proved disjointness and bounded fragmentation. CUDA: pool allocator with static plans, proved non-overlap, proved OOM-impossible. Arena: bump-pointer for DAG metadata, proved alignment and no UAF via lifetime tracking.
+- **Extraction:** F\*X → C++26 (hot paths, zero-overhead). F\*X → CUDA/HIP (kernel bodies, proved properties). Proof certificates: build manifest with cryptographic hash of all proved theorems.
 
-  Z3 as optimizer (not just verifier):
-  - Memory plan: Z3 optimize minimizes total footprint; heuristic must be ≤1.15× optimal
-  - Kernel configs: Z3 finds optimal (tile_M/N/K, pipeline_stages, warps) per shape in 2-5s
-  - Topology: optimal TP×DP×PP×EP×CP factorization as joint constraint problem
-  - Instruction scheduling: LLVM MC disassembly → Z3 finds minimum makespan per hot function
+**Phase 3: Meridian+Augur**
 
-  consteval verification:
-  - Arena dual-mode via `if consteval` — compiler tracks every allocation at compile time
-  - Philox-driven fuzzing: 500 random memory plans, 500 toposorts, 100 serde roundtrips
-  - SPSC model checking: exhaustive BFS over 81 states (3×3×9), proves deadlock-free
-  - Mode transition completeness: 4 states × 3 events = 12 transitions, no livelock
+Goal: Hardware calibration + continuous monitoring as one operational intelligence layer.
 
-  Reflection (GCC 16): per-struct static_assert checks NSDMI, padding, type safety, sizeof.
-  Auto-generates: reflect_hash, reflect_serialize, reflect_compare, reflect_print.
-  Cross-checks hand-written vs reflected for 100 random instances; divergence = build failure.
+- GPU profiling + network probing at startup. F\*X computes optimal topology + kernel set.
+- Digital twin: DAG + F\*X kernel predictions + calibration corrections → iteration prediction.
+- Continuous monitoring, bottleneck diagnosis, recommendations engine.
+- Model intelligence: Hessian spectrum, gradient health, effective rank, CKA, scaling laws.
 
-  Proof certificates: build manifest with cryptographic hash of all theorems. Stored in Cipher.
-  Compositional: DAG fragment proofs compose when spliced. Content-addressing enables reuse.
-  Gap: memory ordering (acquire/release) requires TSan at runtime — no compile-time proof possible.
+**Phase 4: Compiled Tier 2-3**
 
-  ---
-  L16 — Meridian (Hardware Calibration + Topology Optimization)
+Goal: Shadow handles (~2ns/op) and CUDA Graph replay (~50ns/iteration).
 
-  Runs at startup (5-15s) and on topology changes. Inherits Axiom's universal proofs as axioms.
+- Shadow handles: ConductorTensorImpl with metadata pointing into PoolAllocator.
+- Batched kernel launch: accumulate F\*X-proved-optimal kernels, one stream submission.
+- CUDA Graph capture: record compiled kernels, replay at ~50ns/iteration.
 
-  Calibration protocol (4 phases, ~10s total):
-  1. GPU profiling (2s): GEMM→actual TFLOPS, streaming copy→HBM/PCIe BW, NVML→power/temp/ECC/memory
-     → GPUProfile { actual_tflops, actual_hbm_bw, sustained_clock, power_watts, usable_memory }
-  2. Network probing (3s): N×N ping-pong→latency, flood→bandwidth, topology detection (NVSwitch/NVLink/PCIe/IB/RoCE)
-     → LinkProfile links[N][N]
-  3. Kernel calibration (5s): top-20 kernels × 5 shapes → correction factors vs roofline prediction (±3-5% after)
-  4. Z3 topology optimization: single joint query over ALL feasible configurations
+**Phase 5: Keeper + Canopy + Cipher**
 
-  Z3 solves jointly: TP×DP×PP factorization, GPU-to-group placement (max intra-group BW), per-collective communication algorithm (ring/tree/halving per message size), gradient bucket sizes, per-tensor activation checkpointing, per-op mixed precision (FP32/TF32/BF16/FP16/FP8), batch size.
+Goal: Distributed, self-healing, persistent, proof-carrying.
 
-  Output: MeridianConfig — all decisions proven optimal for measured hardware. Re-probes on Relay failure/addition.
+- Keeper daemon: systemd service, health monitoring, self-updating. Executes Augur's advice.
+- Canopy mesh: gossip protocol, Raft consensus, peer discovery. No master.
+- Cipher: hot tier (RAID redundancy), warm tier (NVMe), cold tier (S3/GCS). Event-sourced.
+- Proof certificates in Cipher survive reincarnation. Hardware-specific proofs re-computed by F\*X on new hardware.
 
-  ---
-  L17 — Augur (Continuous Monitoring + Model Analysis)
+**Phase 6: L8-L12 Intelligence**
 
-  Runs every iteration. Three time scales: Axiom=build-time, Meridian=startup, Augur=per-iteration.
+Goal: Model-aware optimizations, guided by Augur, verified by F\*X.
 
-  Digital twin: DAG + Axiom kernel predictions + Meridian corrections → complete iteration prediction (±5-10%).
-  - Per-kernel: roofline × correction × wave quantization. Bottleneck classification: COMPUTE/MEMORY/LAUNCH.
-  - Per-iteration: critical-path compute + exposed communication + pipeline bubble.
-  - Memory timeline: EXACT from Axiom's plan (zero fragmentation).
-  - What-if engine: change batch/TP/hardware/model-size → instant re-prediction, no GPU needed.
-
-  Continuous monitoring: predicted vs actual per iteration. >10% drift → diagnose (thermal throttle, ECC errors, network, contention) → trigger Meridian recalibration.
-
-  Bottleneck identification: COMPUTE / MEMORY_BW / COMMUNICATION / BUBBLE / IMBALANCE.
-  Recommendations ranked by expected_speedup × confidence, tagged auto-hot/auto-cold/manual.
-
-  Model analysis (periodic, from recorded tensor data):
-  - Hessian spectrum: Lanczos iteration (10 Hv products), condition number κ=L/μ, optimal lr=2/(L+μ)
-  - Gradient health: per-layer SNR, Jacobian σ_max, vanishing/exploding detection
-  - Representation capacity: effective rank via randomized SVD, dead neuron detection
-  - Layer redundancy: CKA between adjacent layers, provable output-change bound
-  - Convergence prediction: exponential fit L(t) = L* + (L₀-L*)·exp(-t/τ)
-  - Scaling laws: Chinchilla fit L(N,D) = E + A/N^α + B/D^β, Z3 optimizes N*,D* for budget C
-
-  ---
-  Updated Layer Summary
-
-  L17  Augur            prediction, monitoring, model intelligence, recommendations
-  L16  Meridian         calibration, topology optimization, configuration
-  L15  Axiom            Z3 proofs, consteval, reflection, effects, proof certificates
-  ────────────────────────────────────────────────────────────────────────────────
-  L14  Ecosystem        computation genome, federated learning, hardware co-design
-  L13  Lifecycle        Cipher persistence, reincarnation, deterministic replay
-  L12  Distribution     Canopy, Relays, no master, RAID, DiLoCo, 5D parallelism
-  L11  Data             pipeline absorption, curriculum, latent augmentation
-  L10  Training         meta-gradients, Hessian, K-FAC, curriculum, optimizer evolution
-  L9   Models           growing, pruning, width mutation, composition, live surgery
-  L8   Layers           attention replacement, local losses, per-layer gradient strategy
-  L7   Tokens           merging, early exit, adaptive patching, per-token precision
-  L6   Merkle DAG       specification, branches, guards, LoopNodes, atomic swaps
-  L5   Graphs           CSR property graph, DFG/alias edges, LoopNodes, deterministic order
-  L4   Tensors          shadow handles, TensorMeta, latent space observation, provenance
-  L3   Operations       Vessel dispatch interception, recording, event sourcing, divergence
-  L2   Memory           static plans, OOM impossible, arena allocation, per-Relay budgets
-  L1   Kernels          template codegen, CUPTI autotuning, KernelCache, Philox, streams
-  L0   Hardware         Relays, CUPTI profiling, multi-vendor, health → Keeper
-
-  ---
-  Development Plan
-
-  Phase 1: Foundation (DONE — 9.5K lines, 24 tests, Clang 22 + GCC 15)
-
-  L3 Operations: TraceRing SPSC, MetaLog, recording pipeline. L5 Graphs: TraceGraph CSR. L6 Merkle DAG: RegionNode, BranchNode, content/merkle hashing. L2 Memory: MemoryPlan sweep-line, PoolAllocator. L3/L6 Compiled Tier 1: ReplayEngine,
-  CrucibleContext, dispatch_op, divergence recovery. L1 Kernels: CKernel 146-op taxonomy. L13: Serialize/Deserialize, Cipher. L5 Graph IR: Graph.h, ExprPool, SymbolTable. L15 partial: Effects.h (fx::Alloc/IO/Block), Reflect.h (reflect_hash,
-  reflect_print). Vessel: PyTorch adapter.
-
-  Phase 2: Axiom Core (NEXT)
-
-  Goal: The four-layer proof architecture, fully operational.
-
-  Layer 4 (Z3):
-  - verify/ directory with crucible_verify.cpp linking libz3.
-  - Proof suites: prove_arena.cpp (alignment, bump allocator), prove_hash.cpp (fmix64 no fixed points, avalanche ≥20 bits, determinism), prove_ring.cpp (SPSC bitmask==modulo, invariant preservation, no index collision, linearizability),
-  prove_arithmetic.cpp (mul_sat, add_sat correctness), prove_memory_plan.cpp (sweep-line non-overlap for N=2..16, optimality comparison).
-  - Z3 optimization: memory plan (Z3-optimal vs heuristic, build fails if gap >15%), kernel configs (GEMM, attention, elementwise — Z3-optimal tile/stages/warps for representative shapes).
-  - Z3 protocol: mode transition guards correct for all hash values.
-  - Z3 communication: ring all-reduce correctness, FSDP shard coverage.
-  - CMake integration: add_custom_target(verify), all targets depend on proofs passing.
-
-  Layer 3 (consteval):
-  - constexpr Arena via if consteval (compiler-tracked allocation).
-  - consteval algorithm verification: memory plan (500 random), toposort (500 random), serialization roundtrip, hash determinism, CSR consistency.
-  - consteval model checking: SPSC deadlock freedom (exhaustive BFS over 81 states), mode transition completeness.
-  - constexpr Philox4x32 for deterministic random generation at compile time.
-
-  Layer 2 (reflection):
-  - Expand Reflect.h: verify_init_safe<T>(), verify_type_safe<T>(), verify_layout<T>(expected_sizeof), verify_hash_completeness<T>() (reflect_hash vs hand-written).
-  - Auto-serde: reflect_serialize<T>(), reflect_deserialize<T>().
-  - define_class() for auto-SoA generation and optimal physical layouts.
-  - Registration: static_assert(verify_struct<RegionNode>({.expected_size = 184})) for every layout-critical struct.
-
-  Layer 1 (types):
-  - Complete fx::IO and fx::Block wiring through all effectful functions.
-  - Thread-affinity phantom types: FgTag, BgTag, TraceRingHandle<Tag>.
-  - State-machine typestate: Inactive, Recording, Compiled, Diverged types for mode transitions.
-  - Refinement types: NonZero, InRange, Positive for critical parameters.
-  - Algebraic concepts: Lattice, Monoid, Semiring, Functor — constrained templates + consteval law proofs + Z3 universal proofs where encodable.
-
-  Proof certificates: build manifest with cryptographic hash of all proved theorems.
-
-  Phase 3: Meridian
-
-  Goal: Hardware calibration + Z3-optimal topology.
-
-  - GPU profiling protocol: GEMM/copy benchmarks, NVML queries, sustained clock measurement. 2s parallel.
-  - Network probing: N×N latency/bandwidth matrix, topology detection. 3s parallel.
-  - Kernel calibration: top-20 kernels × 5 shapes → correction factors. 5s.
-  - Z3 topology solver: optimal TP×DP×PP factorization, GPU placement, communication algorithms, gradient bucketing, activation checkpointing, mixed precision, batch size — all jointly.
-  - Keeper integration: Meridian produces config, Keeper applies it.
-  - Re-probe on topology change: Relay failure, new Relay, Augur drift detection.
-  - Calibration data → Augur: measured profiles feed the digital twin.
-
-  Phase 4: Augur
-
-  Goal: Digital twin + continuous monitoring + model intelligence.
-
-  - Digital twin: DAG + Axiom kernel predictions + Meridian corrections → complete iteration prediction.
-  - Per-kernel, per-iteration, per-run metrics. What-if engine. Hardware comparison.
-  - Continuous monitoring: predicted vs actual, drift detection, diagnosis, recalibration trigger.
-  - Bottleneck identification: COMPUTE/MEMORY_BW/COMMUNICATION/BUBBLE/IMBALANCE.
-  - Recommendations engine: ranked by impact, auto-applicable flag, side-effect analysis.
-  - Model intelligence: Hessian spectrum (Lanczos), gradient health (Jacobian SVs), effective rank (randomized SVD), layer redundancy (CKA), dead neurons, convergence prediction (exponential fit), scaling law analysis (Chinchilla fit + Z3
-  optimization).
-  - Integration: Augur advises → Keeper acts → Meridian re-solves if needed → Axiom re-proves if needed.
-
-  Phase 5: Compiled Tier 2-3
-
-  Goal: Shadow handles (~2ns/op) and CUDA Graph replay (~50ns/iteration).
-
-  - Shadow handles: ConductorTensorImpl with metadata pointing into PoolAllocator.
-  - Batched kernel launch: accumulate compiled kernels, one stream submission.
-  - CUDA Graph capture: record compiled kernels, replay at ~50ns/iteration.
-  - Integration: Z3-proved kernel configs compiled into the graph. Meridian's stream assignment from topology-aware scheduling.
-
-  Phase 6: Keeper + Canopy + Cipher
-
-  Goal: Distributed, self-healing, persistent, proof-carrying.
-
-  - Keeper daemon: systemd service, health monitoring, self-updating. Executes Augur's recommendations.
-  - Canopy mesh: gossip protocol, Raft consensus, peer discovery. No master.
-  - Cipher: hot tier (other Relays' RAM from RAID redundancy), warm tier (NVMe per Relay), cold tier (S3/GCS). Event-sourced: DAG chain + periodic snapshots → deterministic recovery.
-  - Proof certificates in Cipher: universal proofs (hash, protocol, arithmetic) survive reincarnation. Hardware-specific proofs (kernel configs, topology) re-proved by Meridian on new hardware.
-  - Compositional proofs: DAG splicing inherits sub-DAG proof certificates.
-
-  Phase 7: L7-L11 Intelligence
-
-  Goal: Model-aware optimizations, guided by Augur, verified by Axiom.
-
-  - L7: Token merging (adaptive per-input per-layer from Augur's representation analysis), early exit (per-token convergence from measured layer-to-layer difference), adaptive patching (quadtree by information content).
-  - L8: Attention head classification (from Augur's measured attention patterns), local losses (per-layer learning signal), per-layer gradient strategy (from Augur's gradient health + Hessian spectrum).
-  - L9: Layer growing/pruning (from Augur's capacity analysis + CKA), width mutation (from Augur's effective rank), architecture evolution.
-  - L10: Meta-gradients (∂val_loss/∂lr), per-layer LR from curvature (Augur's Hessian), optimizer evolution.
-  - L11: Curriculum learning (from per-sample loss), manifold mixup (at Augur-selected optimal layer).
-  - All optimizations are DAG branches (L6). Axiom Z3-verifies new branches before activation. Augur predicts expected improvement before activation. The Keeper activates via atomic swap only if both Axiom approves (proved safe) and Augur approves
-  (predicted improvement > threshold).
-
-  ---
-  Axiom verifies correctness at build time. Meridian calibrates hardware at startup. Augur monitors continuously at runtime. The Keeper executes based on proved-optimal decisions. The Vigil runs within verified infrastructure. The Cipher persists everything, including proof certificates — ready to restore and re-verify on any new hardware.
+- L8: Token merging, early exit, adaptive patching.
+- L9: Attention head classification, local losses, per-layer gradient strategy.
+- L10: Layer growing/pruning, width mutation, architecture evolution.
+- L11: Meta-gradients, per-layer LR from curvature, optimizer evolution.
+- L12: Curriculum learning, manifold mixup, pipeline absorption.
+- All optimizations are DAG branches (L7). F\*X proves new branches safe. Augur predicts improvement. The Keeper activates via atomic swap only if both F\*X approves (proved safe) and Augur approves (predicted improvement > threshold).
 
 ---
 
-## The Layers
+F\*X proves everything. Meridian measures truth. Augur monitors reality. The Keeper acts on proved-optimal decisions. The Vigil thinks within proved-safe infrastructure. The Cipher remembers everything, including the proofs. When the last Relay dies, the Cipher carries not just the model, but the certificates — ready to prove itself correct on whatever hardware comes next.
+
+---
+
+## The Layers (17 layers, L0–L16)
 
 ```
-L14  Ecosystem       computation genome, federated learning, hardware co-design
-L13  Lifecycle        Cipher persistence, reincarnation, deterministic replay, self-updating
-L12  Distribution     Canopy, Relays, no master, RAID, DiLoCo, 5D parallelism
-L11  Data             pipeline absorption, curriculum, latent augmentation, steering
-L10  Training         meta-gradients, Hessian, K-FAC, curriculum, optimizer evolution
-L9   Models           growing, pruning, width mutation, composition, live surgery
-L8   Layers           attention replacement, local losses, per-layer gradient strategy
-L7   Tokens           merging, early exit, adaptive patching, per-token precision
-L6   Merkle DAG       specification, branches, guards, LoopNodes, atomic swaps
-L5   Graphs           CSR property graph, DFG/alias edges, LoopNodes, deterministic order
-L4   Tensors          shadow handles, TensorMeta, latent space observation, provenance
-L3   Operations       Vessel dispatch interception, recording, event sourcing, divergence
-L2   Memory           static plans, OOM impossible, arena allocation, per-Relay budgets
-L1   Kernels          template codegen, CUPTI autotuning, KernelCache, Philox, streams
-L0   Hardware         Relays, CUPTI profiling, multi-vendor, health → Keeper
+L16  Ecosystem        computation genome, federated learning, hardware co-design
+L15  Meridian+Augur   calibration, digital twin, monitoring, recommendations
+─────────────────────────────────────────────────────────────────────────────
+L14  Lifecycle        Cipher persistence, reincarnation, deterministic replay
+L13  Distribution     Canopy, Relays, no master, RAID, DiLoCo, 5D parallelism
+L12  Data             pipeline absorption, curriculum, latent augmentation
+L11  Training         meta-gradients, Hessian, K-FAC, curriculum, optimizer evolution
+L10  Models           growing, pruning, width mutation, composition, live surgery
+L9   Layers           attention replacement, local losses, per-layer gradient strategy
+L8   Tokens           merging, early exit, adaptive patching, per-token precision
+─────────────────────────────────────────────────────────────────────────────
+L7   Merkle DAG       specification, branches, guards, LoopNodes, atomic swaps
+L6   Graphs           CSR property graph, DFG/alias edges, deterministic order
+L5   Tensors          shadow handles, TensorMeta, latent space observation, provenance
+L4   Operations       Vessel dispatch interception, recording, event sourcing, divergence
+L3   Memory           proved allocators (jemalloc CPU, CUDA pool), static plans, OOM impossible
+L2   Kernels          SMT-optimal kernel composition, proved fusion, KernelCache, Philox, streams
+L1   Hardware         Relays, hardware profiling, multi-vendor, health → Keeper
+─────────────────────────────────────────────────────────────────────────────
+L0   F*X              proved foundation: SMT kernel synthesis, extraction to C++/CUDA
 ```
 
-Vessel intercepts PyTorch ops. Keeper manages each node. Vigil holds the model. Cipher persists state. Canopy coordinates the mesh. Relay provides compute.
+F\*X proves. Meridian maps. Augur sees. Vessel intercepts. Keeper serves. Vigil thinks. Cipher remembers. Canopy protects. Relay executes.
 # Crucible C++26 Code Rules
 
 *Dual-threaded: foreground records ~5ns/op, background builds/compiles/replays. Foreground never stalls.*
