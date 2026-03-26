@@ -1,21 +1,19 @@
 # 5. Formal Verification (FX)
 
-This section describes Crucible's approach to proving runtime invariants at build time. The type-system layer and effects system are implemented. The Z3 integration has scaffolding and an enhanced solver fork. The Lean 4 formalization accompanies the implementation as an independent proof artifact. Reflection-based verification requires GCC 16 with `-freflection` and is partially implemented.
+The type-system layer and effects system are implemented. Z3 integration has scaffolding and an enhanced solver fork. Reflection-based verification requires GCC 16 with `-freflection` and is partially implemented. The Lean 4 formalization accompanies the implementation as an independent proof artifact.
 
-## 5.1 Verification Philosophy
-
-Crucible pursues a layered verification strategy organized by the strength of guarantee each layer provides:
+## 5.1 Verification Layers
 
 | Layer | Mechanism | Guarantee | Scope |
 |-------|-----------|-----------|-------|
-| 4 | Z3 SMT solver | Universal (∀x. P(x)) | Mathematical properties over all inputs |
-| 3 | `consteval` | Bounded (N test inputs, UB-free) | Implementation correctness for exercised paths |
+| 4 | Z3 SMT solver | Universal (forall x. P(x)) | Mathematical properties over all inputs |
+| 3 | `consteval` | Bounded (N inputs, UB-free) | Implementation correctness for exercised paths |
 | 2 | Static reflection | Structural (every field, every struct) | Completeness and consistency of data layout |
 | 1 | Type system | API boundaries (zero-cost) | Compile error on misuse |
 
-Each layer proves what the layers below cannot. Layer 1 prevents calling the wrong function. Layer 2 verifies that every struct is complete and consistent. Layer 3 proves the implementation is free of undefined behavior for exercised inputs. Layer 4 proves mathematical properties hold for every possible input.
+Each layer proves what the layers below cannot. Layer 1 prevents calling the wrong function. Layer 2 verifies struct completeness. Layer 3 proves UB-freedom for exercised inputs. Layer 4 proves mathematical properties for all inputs.
 
-The boundary between formal verification and empirical validation is explicit. Crucible proves: memory plan non-overlap, hash function quality, protocol deadlock freedom, kernel access safety, algebraic laws of combining operations. Crucible does NOT prove: memory ordering on real hardware (requires runtime sanitizers), numerical stability of floating-point computation (requires empirical bounds), global optimality of kernel configurations (requires hardware fidelity beyond the analytical model).
+Crucible proves: memory plan non-overlap, hash function quality, protocol deadlock freedom, kernel access safety, algebraic combining laws. Crucible does NOT prove: memory ordering on real hardware (ThreadSanitizer), floating-point stability (empirical bounds), global kernel optimality (model fidelity limitation).
 
 ## 5.2 Z3 Integration
 
@@ -45,37 +43,33 @@ A `consteval` function executes inside the C++ compiler's abstract machine, whic
 
 ## 5.4 Reflection-Based Structural Verification
 
-Using C++26 static reflection (P2996, available in GCC 16 with `-freflection`), Crucible performs compile-time structural checks on every layout-critical struct.
+Using C++26 static reflection (P2996, GCC 16 with `-freflection`), Crucible performs compile-time structural checks. Reflect.h (guarded by `CRUCIBLE_HAS_REFLECTION`) implements:
 
-Four checks per field via `nonstatic_data_members_of(^^T)` and expansion statements:
+`reflect_hash<T>()` iterates all non-static data members via `nonstatic_data_members_of(^^T, access_context::unchecked())` and hashes each field with `fmix64`: integral types via cast, floats via `bit_cast`, pointers via `reinterpret_cast<uintptr_t>`, C arrays element-by-element, nested structs recursively. Adding a field automatically includes it in the hash; forgetting is structurally impossible.
 
-1. `has_default_member_initializer(member)` --- InitSafe: every field has a default value. No uninitialized reads.
-2. Offset sequence --- no unintended padding holes. For cache-critical structs, proves the layout matches design.
-3. `type_of(member)` --- TypeSafe: raw `uint32_t` or `uint64_t` with ID-like names trigger a compile error demanding a strong type wrapper.
-4. `sizeof(T)` --- MemSafe: matches expected value, catches silent layout changes.
+`reflect_print<T>()` generates debug output for every field, dispatching on type category via the same reflection machinery.
 
-**Auto-generation.** Reflection generates `reflect_hash<T>()`, `reflect_serialize<T>()`, `reflect_compare<T>()`, and `reflect_print<T>()` that operate on ALL fields. Adding a field automatically includes it; forgetting is impossible. Cross-checks verify hand-written versions agree with reflected versions for random test instances.
+Four structural checks per field: (1) `has_default_member_initializer` (InitSafe: every field has NSDMI), (2) offset sequence (no unintended padding holes), (3) `type_of` (TypeSafe: raw uint32_t/uint64_t with ID-like names triggers compile error), (4) `sizeof(T)` (MemSafe: catches silent layout changes). Cross-checks verify hand-written hash functions agree with reflected versions.
 
 ## 5.5 Type System Enforcement
 
-The lowest verification layer uses the C++ type system for zero-cost, always-on enforcement.
+**Capability tokens** (Effects.h). Three effect types with private constructors: `fx::Alloc` (heap allocation), `fx::IO` (file/network I/O), `fx::Block` (blocking operations). Three authorized contexts: `fx::Bg` (background thread: all three), `fx::Init` (initialization: Alloc + IO, no Block), `fx::Test` (unrestricted). Each context is a 1-byte struct with `[[no_unique_address]]` members --- `static_assert(sizeof(fx::Bg) == 1)`. C++20 concepts enforce requirements: `fx::CanAlloc<Ctx>` checks for an `alloc` member; `fx::Pure<Ctx>` checks for absence of all effects. Foreground hot-path code holds no tokens; the compiler rejects effectful calls. Example: `Arena::alloc(fx::Alloc, size_t, size_t)` --- the first parameter is a compile-time proof of authorization.
 
-**Capability tokens.** Functions requiring side effects take empty-struct parameters: `fx::Alloc` for arena allocation, `fx::IO` for I/O, `fx::Block` for potentially-blocking operations. Only authorized contexts construct tokens (`fx::Bg` for background thread, `fx::Init` for startup, `fx::Test` for testing). Foreground hot-path code holds no tokens; the compiler rejects effectful calls. Tokens are `[[no_unique_address]]` empty structs --- zero runtime cost.
+**Strong types** (Types.h). `CRUCIBLE_STRONG_ID(Name)` generates a uint32_t wrapper with explicit constructor, `.raw()` unwrap, `.none()` sentinel (UINT32_MAX), `.is_valid()` check, `operator<=>`, and no arithmetic. Five ID types: OpIndex, SlotId, NodeId, SymbolId, MetaIndex. `CRUCIBLE_STRONG_HASH(Name)` generates a uint64_t wrapper with explicit constructor, `.raw()`, `.sentinel()` (UINT64_MAX), `operator<=>`, and no arithmetic. Six hash types: SchemaHash, ShapeHash, ScopeHash, CallsiteHash, ContentHash, MerkleHash. All are `static_assert`-verified to have the same size as the underlying integer and are trivially relocatable.
 
-**Thread-affinity phantom types.** `FgTag` and `BgTag` tag data structure handles with their owning thread. `TraceRingHandle<FgTag>` exposes `try_append()`; `TraceRingHandle<BgTag>` exposes `drain()`. Cross-thread access requires explicit `unsafe_borrow<OtherTag>()`. The compiler prevents cross-thread misuse; phantom types vanish in codegen.
-
-**Strong types.** Every semantic value is a distinct type: `OpIndex`, `SlotId`, `NodeId`, `SymbolId`, `MetaIndex` (uint32_t wrappers), `SchemaHash`, `ShapeHash`, `ScopeHash`, `CallsiteHash`, `ContentHash`, `MerkleHash` (uint64_t wrappers). Explicit construction, no implicit conversion, no arithmetic. The compiler rejects argument-order swaps that would silently corrupt data with raw integers.
-
-**Typestate.** Mode transitions (INACTIVE → RECORD → COMPILED → DIVERGED) are encoded as types. `start_recording(Inactive)` compiles; `start_recording(Compiled)` has no overload and fails at compile time.
+**Typestate.** Mode transitions (INACTIVE -> RECORD -> COMPILED -> DIVERGED) are encoded as types. `start_recording(Inactive)` compiles; `start_recording(Compiled)` has no overload.
 
 ## 5.6 Lean 4 Formalization
 
 Independent of the C++ implementation, Crucible maintains a Lean 4 formalization that proves properties of every core data structure and algorithm. The formalization covers:
 
 - **Arena:** pairwise disjointness of allocations, alignment correctness, bounded fragmentation.
-- **Memory plan:** sweep-line non-overlap, offset + size ≤ pool size, alignment waste bounds.
+- **PoolAllocator:** slot disjointness for overlapping lifetimes, offset + size <= pool_bytes.
+- **Memory plan:** sweep-line non-overlap, offset + size <= pool size, alignment waste bounds.
 - **SPSC ring:** FIFO ordering for N push/pop sequences, batch drain correctness, capacity invariant preservation.
-- **Iteration detector:** detection latency bounds, false positive probability bounds under hash independence assumptions.
+- **MetaLog:** bulk read-after-write correctness for all indices.
+- **Iteration detector:** detection latency bounds (exactly K ops), false positive probability bounds under hash independence assumptions.
+- **TraceGraph:** CSR construction correctness, bidirectional consistency.
 - **Graph IR:** DCE fixpoint convergence, topological sort validity.
 - **Merkle DAG:** collision probability bounds, structural diff correctness, replay completeness.
 - **Scheduling:** Graham's list scheduling bound, Brent's theorem, critical path optimality.
