@@ -1,22 +1,28 @@
 # 7. Distribution and Persistence
 
-This section describes how Crucible scales across multiple Relays and how the Vigil's state persists across hardware failures. These components are described as designs.
+These components are designs.
 
 ## 7.1 The Canopy: Masterless Mesh
 
-The Canopy is a mesh of Keepers --- one per Relay --- that provides distributed coordination without a master node. Keepers discover each other via gossip protocol, form consensus on critical state via Raft, and share eventually-consistent metrics via CRDTs.
+One Keeper per Relay. Gossip for discovery, Raft for critical state consensus, CRDTs for eventually-consistent metrics. No master node.
 
-Any Keeper can propose configuration changes (topology updates, optimization activations, Relay eviction). The Canopy coordinates changes to take effect at the same iteration boundary across all participating Relays, using the same atomic swap mechanism that activates local DAG updates (Section 3.4).
+Any Keeper can propose changes (topology updates, optimization activations, Relay eviction). Changes take effect at the same iteration boundary across all participating Relays, using the same atomic swap mechanism as local DAG updates (Section 3.4).
 
-**Spot-aware operation.** Cloud spot instances may be evicted with as little as 30 seconds warning. On eviction signal, the Keeper notifies the Canopy, which reshards to N-1 Relays. Because redundant copies of the Vigil's state already exist on other Relays (Section 7.3), no data migration is needed. When a new instance appears, its Keeper discovers the Canopy, loads the Cipher, compiles device-specific kernels, and joins.
+**Spot-aware.** On 30-second eviction signal, the Keeper notifies the Canopy. Reshard to N-1 Relays --- redundant copies already exist on other Relays (Section 7.3), so no data migration is needed. New instance: Keeper discovers Canopy, loads Cipher, compiles device-specific kernels, joins.
 
 ## 7.2 Heterogeneous Compute
 
-The Merkle DAG is hardware-agnostic; the KernelCache provides hardware-specific compilation. A single Vigil can execute across Relays with different GPUs (e.g., NVIDIA H100, AMD MI300X, older NVIDIA A100). Each Relay compiles kernels for its local device via the (content_hash, device_capability) cache key. The DAG, memory plan structure, and communication pattern are shared; only the compiled kernels differ.
+A single Vigil executes across Relays with different GPUs. The MemoryPlan carries device context (`DeviceType`, `device_idx`, `device_capability`) so each plan is self-describing. Each Relay compiles kernels for its local device via `(ContentHash, device_capability)`. The DAG is shared; only compiled kernels and memory plans differ.
 
-**Load balancing.** Different devices have different throughput. Crucible distributes micro-batches proportionally to measured throughput (Least Outstanding Requests). An H100 receives more micro-batches than a 3090; both stay fully utilized. Gradients are weighted by actual batch size processed.
+**Load balancing.** Micro-batches distributed proportionally to measured throughput (LOR). An H100 receives more micro-batches than a 3090; both fully utilized. Gradients weighted by actual batch size.
 
-**Multi-backend transport.** Communication uses UCX for multi-backend support: GPUDirect RDMA (NVIDIA), ROCm-aware RDMA (AMD), or host-staged transfer. The transport layer is selected per link based on Longitude's measured capabilities.
+**Multi-backend transport.** UCX: GPUDirect RDMA (NVIDIA), ROCm-aware RDMA (AMD), host-staged (TPU). Transport selected per link from Longitude measurements. Not NCCL-locked: cross-vendor GPU-to-GPU transfers (AMD to NVIDIA) route through the InfiniBand fabric with zero CPU staging.
+
+**Adaptive topology.** The Canopy probes the actual network state continuously (N*N latency and bandwidth matrices). Per-collective, per-message-size algorithm selection: ring for bandwidth-bound (gradient all-reduce, 128MB), tree for latency-bound (parameter broadcast, 2MB), recursive halving-doubling for balanced (activation all-gather, 32MB), direct for sparse (expert routing all-to-all). Topology swaps at iteration boundaries via the same atomic mechanism as DAG branches. The Canopy routes around degraded links.
+
+**DiLoCo enhancement.** DiLoCo (Distributed Local Optimization) runs DDP within each island, with periodic outer sync across islands. Crucible enhances every axis: (1) adaptive H --- measure parameter drift between islands, sync sooner on high drift, less on low drift. (2) Heterogeneous islands --- each island runs at full speed with different inner step counts, pseudo-gradients weighted by actual work. (3) Selective sync --- skip parameters with small deltas across H steps, saving 60%+ WAN bandwidth. (4) Compressed pseudo-gradients --- top-K sparsification with error feedback plus int8 quantization yields 50--100x bandwidth reduction. (5) Async outer sync --- no barriers, staleness-aware weighting: `weight = 1/(1 + staleness/H)`. (6) Hierarchical --- NVLink every step, InfiniBand every 5, WAN every 50, H auto-tuned per level from measured latencies, expressed as nested LoopNodes.
+
+**5D parallelism auto-tuning.** Crucible measures actual per-dimension costs at runtime: TP all-gather latency, PP pipeline bubble, DP reduce-scatter time, EP all-to-all time, CP chunk transfer time. Given measurements, simulate alternative configurations; if predicted improvement exceeds a threshold, try for a few iterations, commit or rollback. The parallelism configuration evolves during training.
 
 ## 7.3 Redundancy
 
@@ -32,22 +38,20 @@ Dynamic α: the Keeper on each Relay monitors hardware health (ECC errors, therm
 
 ## 7.4 The Cipher: Event-Sourced Persistence
 
-The Cipher is the Vigil's persistent state. It enables the Vigil to survive the failure of any Relay, any Canopy, any hardware.
-
-The Cipher is event-sourced, not snapshot-based. Each iteration, the DAG chain (which operations executed, in what order, with what parameters) is persisted --- typically a few kilobytes per step. Weight snapshots are periodic (every N steps). To recover to step T+500 from a snapshot at step T: load the snapshot, replay 500 steps deterministically. Deterministic replay is possible because the DAG fixes execution order, the memory plan fixes addresses, and the Philox RNG fixes random state.
+Event-sourced, not snapshot-based. Each iteration: the DAG chain is persisted (a few KB per step). Weight snapshots are periodic. Recovery to step T+500 from snapshot at T: load snapshot, replay 500 steps deterministically (DAG fixes execution order, memory plan fixes addresses, Philox4x32 fixes RNG state --- counter-based, platform-independent).
 
 **Three tiers:**
 
-- **Hot:** other Relays' RAM, from the redundancy mechanism (Section 7.3). Recovery from single Relay failure: immediate, zero cost. This is the common case.
-- **Warm:** local NVMe on each Relay. Each Relay persists its own FSDP shard. Recovery from Relay reboot: seconds.
-- **Cold:** durable object storage (S3, GCS). Full Vigil state, infrequently replicated from warm tier. Recovery from total Canopy failure: minutes.
+- **Hot:** other Relays' RAM from redundancy (Section 7.3). Single Relay failure: immediate recovery, zero cost.
+- **Warm:** local NVMe per Relay. Relay reboot recovery: seconds.
+- **Cold:** durable object storage (S3, GCS). Total Canopy failure recovery: minutes.
 
-The Cipher also stores the KernelCache, proof certificates from FX, Longitude calibration data, and Augur's model intelligence history. When the Vigil migrates to new hardware, universal proofs (hash properties, protocol safety) are inherited from the Cipher. Hardware-specific state (kernel compilations, topology configuration) is regenerated by Longitude and FX for the new devices.
+The Cipher also stores the KernelCache, FX proof certificates, Longitude calibration data, and Augur's history. On migration: universal proofs (hash, protocol) are inherited. Hardware-specific state (kernels, topology) is regenerated.
 
 ## 7.5 Deterministic Replay
 
-The Merkle DAG fixes execution order. The memory plan fixes tensor addresses. The KernelCache (keyed by content hash) fixes kernel selection. The Philox4x32 RNG (counter-based, platform-independent, seeded from a master counter in the Cipher) fixes random state. Together, these produce bit-identical execution across replays on the same hardware.
+Four invariants produce bit-identical execution on the same hardware: the Merkle DAG fixes execution order, the MemoryPlan fixes tensor addresses, the KernelCache fixes kernel selection, and Philox4x32 (counter-based, platform-independent, seeded from a master counter in the Cipher) fixes random state. Each op derives its key from `hash(master_counter, op_index, content_hash)`; each thread generates `philox(thread_idx, op_key)` --- ~10 integer instructions in registers.
 
-On different hardware, kernels differ (different device capability → different compiled code). Floating-point non-associativity in different kernel implementations may produce different results. Crucible documents this: same-hardware replay is bit-identical; cross-hardware replay preserves semantics but not bits.
+Cross-hardware replay preserves semantics but not bits (floating-point non-associativity in different kernel implementations).
 
-Deterministic replay enables: exact reproducibility for research, regression testing between DAG versions, time-travel debugging (replay to any step, extract any activation, trace any anomaly backward through the dataflow graph).
+Applications: exact reproducibility for research, regression testing between DAG versions, time-travel debugging (replay to any step, extract any activation, trace anomalies backward through the dataflow graph to root cause).
