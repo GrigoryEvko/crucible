@@ -17,7 +17,7 @@
 // If any of these fire, the C API is passing garbage to the C++ code.
 static_assert(sizeof(CrucibleMeta) == sizeof(crucible::TensorMeta),
               "CrucibleMeta size must match TensorMeta");
-static_assert(sizeof(CrucibleMeta) == 160);
+static_assert(sizeof(CrucibleMeta) == 168);
 static_assert(offsetof(CrucibleMeta, sizes) == 0);
 static_assert(offsetof(CrucibleMeta, strides) == 64);
 static_assert(offsetof(CrucibleMeta, data_ptr) == 128);
@@ -32,6 +32,7 @@ static_assert(offsetof(CrucibleMeta, output_nr) == 143);
 static_assert(offsetof(CrucibleMeta, storage_offset) == 144);
 static_assert(offsetof(CrucibleMeta, version) == 152);
 static_assert(offsetof(CrucibleMeta, storage_nbytes) == 156);
+static_assert(offsetof(CrucibleMeta, grad_fn_hash) == 160);
 
 static_assert(sizeof(CrucibleDispatchResult) == 8);
 

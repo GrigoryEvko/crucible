@@ -68,13 +68,15 @@ struct TensorMeta {
 
   uint8_t output_nr = 0;     // 1B — autograd output number (multi-output ops)
 
-  // ── Extended fields (16B) ─────────────────────────────────────────
+  // ── Extended fields (24B) ─────────────────────────────────────────
   int64_t storage_offset = 0; // 8B — offset into underlying storage (view chains)
   uint32_t version = 0;      // 4B — tensor data version counter (in-place mutation detection)
   uint32_t storage_nbytes = 0; // 4B — actual storage size in bytes (may differ from view)
+  uint64_t grad_fn_hash = 0;  // 8B — FNV-1a hash of grad_fn class name (e.g. "AddmmBackward0")
+                               //      0 = no grad_fn (leaf tensor or no autograd)
 };
 
-static_assert(sizeof(TensorMeta) == 160, "TensorMeta layout check");
+static_assert(sizeof(TensorMeta) == 168, "TensorMeta layout check");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TensorMeta);
 
 // TensorMeta::flags bit constants.

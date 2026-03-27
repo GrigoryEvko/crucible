@@ -43,6 +43,7 @@ typedef struct {
     int64_t storage_offset; // offset into underlying storage
     uint32_t version;    // tensor data version counter
     uint32_t storage_nbytes; // actual storage size
+    uint64_t grad_fn_hash; // FNV-1a hash of grad_fn class name
 } CrucibleMeta;
 
 // Result from crucible_dispatch_op (8 bytes).

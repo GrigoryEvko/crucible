@@ -128,27 +128,34 @@ struct LoadedTrace {
   std::fseek(f, meta_start_pos, SEEK_SET);
 
   const long remaining = file_size - meta_start_pos;
-  const bool legacy_144 = (num_metas > 0) &&
-      (remaining >= static_cast<long>(num_metas) * 144) &&
-      (remaining < static_cast<long>(num_metas) * 160);
+  // Detect meta record size: 144B (legacy v1), 160B (v2), 168B (current).
+  const long meta_bytes_144 = static_cast<long>(num_metas) * 144;
+  const long meta_bytes_160 = static_cast<long>(num_metas) * 160;
+  const long meta_bytes_168 = static_cast<long>(num_metas) * 168;
+
+  uint32_t meta_record_size = 168;  // default: current
+  if (num_metas > 0) {
+    if (remaining >= meta_bytes_168)      meta_record_size = 168;
+    else if (remaining >= meta_bytes_160) meta_record_size = 160;
+    else if (remaining >= meta_bytes_144) meta_record_size = 144;
+  }
+  const bool legacy_144 = (meta_record_size == 144);
+  const bool legacy_160 = (meta_record_size == 160);
 
   std::vector<TensorMeta> metas(num_metas);
   if (num_metas > 0) {
-    if (legacy_144) {
-      // Legacy 144B format: read each meta as 144B, zero-init extended fields.
-      struct LegacyMeta { uint8_t data[144]; };
+    if (legacy_144 || legacy_160) {
+      // Legacy format: read each meta at its original size, zero-init rest.
       for (uint32_t i = 0; i < num_metas; i++) {
-        LegacyMeta lm{};
-        if (std::fread(&lm, 144, 1, f) != 1) {
+        if (std::fread(&metas[i], meta_record_size, 1, f) != 1) {
           std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
           std::fclose(f);
           return nullptr;
         }
-        // Copy the first 144 bytes into TensorMeta (extended fields stay zero).
-        std::memcpy(&metas[i], &lm, 144);
+        // Extended fields beyond meta_record_size stay zero from TensorMeta{}.
       }
     } else {
-      // Current 160B format: direct read.
+      // Current 168B format: direct bulk read.
       if (std::fread(metas.data(), sizeof(TensorMeta), num_metas, f) != num_metas) {
         std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
         std::fclose(f);
