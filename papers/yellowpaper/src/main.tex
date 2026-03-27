@@ -4,17 +4,16 @@
 \usepackage{fontspec}
 \setmainfont[
   Ligatures=TeX,
-]{Libertinus Serif}
+]{STIX Two Text}
 \setsansfont[
   Scale=MatchLowercase,
-]{Open Sans}
+]{NewComputerModernSans10}
 \setmonofont[
   Scale=0.82,
   Ligatures=,
-  WordSpace=0.9,
-]{Source Code Pro}
+]{NewComputerModernMono10}
 \usepackage{unicode-math}
-\setmathfont{Libertinus Math}
+\setmathfont{STIX Two Math}
 
 % ── Page ───────────────────────────────────────────────────────────────
 \usepackage[
@@ -112,6 +111,15 @@
 \usepackage{amsmath}
 \usepackage{mathtools}
 \usepackage{stmaryrd}
+\usepackage{mathpartir}         % inference rules
+
+% Tighter display math spacing
+\AtBeginDocument{%
+  \setlength{\abovedisplayskip}{6pt plus 2pt minus 2pt}%
+  \setlength{\belowdisplayskip}{6pt plus 2pt minus 2pt}%
+  \setlength{\abovedisplayshortskip}{3pt plus 1pt minus 1pt}%
+  \setlength{\belowdisplayshortskip}{3pt plus 1pt minus 1pt}%
+}
 
 % ── Theorem environments (amsthm) ─────────────────────────────────────
 \usepackage{amsthm}
@@ -168,6 +176,7 @@
   urlcolor=blue!35!black,
   citecolor=black!55,
 ]{hyperref}
+\usepackage{cleveref}           % \cref, \Cref — smart cross-references
 
 % ── Shortcuts ──────────────────────────────────────────────────────────
 \newcommand{\code}[1]{\texorpdfstring{\texttt{\small #1}}{#1}}
