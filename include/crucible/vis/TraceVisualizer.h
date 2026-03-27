@@ -383,12 +383,17 @@ struct UShapeSplit {
       .w = lw, .h = ROW_H, .col = 0, .row = r,
     };
   }
+  // Backward column: REVERSED order. Autograd generates backward ops
+  // in reverse order of forward. backward[0] = Loss BWD (mirrors
+  // forward[-1] = Loss). Reversing puts Loss BWD at the bottom,
+  // matching Loss on the left. Skip connections become horizontal.
   for (uint32_t r = 0; r < n_bwd; r++) {
+    uint32_t rev_r = n_bwd - 1 - r;  // reverse: last bwd block at row 0
     float lw = label_width(bwd_idx[r]);
     pos[bwd_idx[r]] = {
       .x = PAD + COL_WIDTH + COL_GAP + (COL_WIDTH - lw) / 2,
-      .y = HEADER + r * (ROW_H + ROW_GAP),
-      .w = lw, .h = ROW_H, .col = 1, .row = r,
+      .y = HEADER + rev_r * (ROW_H + ROW_GAP),
+      .w = lw, .h = ROW_H, .col = 1, .row = rev_r,
     };
   }
 
