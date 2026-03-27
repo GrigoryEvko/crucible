@@ -17,9 +17,14 @@
 \setmathfont{Libertinus Math}
 
 % ── Page ───────────────────────────────────────────────────────────────
-\usepackage[a4paper, margin=1in, top=1.1in, bottom=1.2in]{geometry}
-\linespread{1.08}
-\setlength{\parskip}{0.3em plus 0.1em minus 0.05em}
+\usepackage[
+  a4paper,
+  margin=0.9in,
+  top=1in,
+  bottom=1in,
+]{geometry}
+\linespread{1.06}
+\setlength{\parskip}{0.25em plus 0.08em minus 0.04em}
 \setlength{\parindent}{0em}
 
 % ── Typography ─────────────────────────────────────────────────────────
@@ -30,46 +35,66 @@
 \widowpenalty=10000
 \clubpenalty=10000
 
+% ── Colors ─────────────────────────────────────────────────────────────
+\usepackage{xcolor}
+\definecolor{defbg}{HTML}{F5F7FA}
+\definecolor{defborder}{HTML}{C5CAD0}
+\definecolor{thmbg}{HTML}{FFFCF0}
+\definecolor{thmborder}{HTML}{D4A017}
+\definecolor{invbg}{HTML}{FFF5F5}
+\definecolor{invborder}{HTML}{C0392B}
+\definecolor{probg}{HTML}{F0FFF0}
+\definecolor{proborder}{HTML}{27AE60}
+\definecolor{algbg}{HTML}{F5F0FF}
+\definecolor{algborder}{HTML}{7D3C98}
+\definecolor{rulegray}{HTML}{333333}
+\definecolor{codebg}{HTML}{F5F5F5}
+\definecolor{codefr}{HTML}{DDDDDD}
+\definecolor{kw}{HTML}{1a5276}
+\definecolor{cm}{HTML}{7f8c8d}
+\definecolor{st}{HTML}{196f3d}
+
 % ── Sections ───────────────────────────────────────────────────────────
 \usepackage{titlesec}
 \titleformat{\section}
   {\Large\bfseries\sffamily}
   {\thesection}{0.6em}{}
-  [\vspace{-0.15em}{\color{black!20}\hrule height 0.4pt}]
+  [\vspace{-0.1em}{\color{rulegray}\hrule height 0.6pt}]
 \titleformat{\subsection}{\large\bfseries\sffamily}{\thesubsection}{0.5em}{}
 \titleformat{\subsubsection}{\normalsize\bfseries\sffamily}{\thesubsubsection}{0.5em}{}
-\titlespacing*{\section}{0pt}{2.2em}{0.8em}
-\titlespacing*{\subsection}{0pt}{1.5em}{0.5em}
-\titlespacing*{\subsubsection}{0pt}{1em}{0.3em}
+\titlespacing*{\section}{0pt}{2em}{0.7em}
+\titlespacing*{\subsection}{0pt}{1.4em}{0.4em}
+\titlespacing*{\subsubsection}{0pt}{0.9em}{0.25em}
 
 % ── Header / Footer ───────────────────────────────────────────────────
 \usepackage{fancyhdr}
 \pagestyle{fancy}
 \fancyhf{}
-\fancyfoot[C]{\footnotesize\thepage}
-\renewcommand{\headrulewidth}{0pt}
-\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\footnotesize\thepage}\renewcommand{\headrulewidth}{0pt}}
+\fancyhead[L]{\footnotesize\textsf{\textcolor{black!40}{\nouppercase{\leftmark}}}}
+\fancyhead[R]{\footnotesize\textsf{\textcolor{black!40}{\thepage}}}
+\fancyfoot[C]{\footnotesize\textcolor{black!25}{\rule{0.3\textwidth}{0.3pt}}}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\headrule}{\color{black!15}\hrule height 0.3pt}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyfoot[C]{\footnotesize\thepage}%
+  \renewcommand{\headrulewidth}{0pt}%
+}
 
 % ── Lists ──────────────────────────────────────────────────────────────
 \usepackage{enumitem}
-\setlist{nosep, leftmargin=1.5em, topsep=0.2em}
-\setlist[itemize]{label=\textcolor{black!35}{\textbullet}}
+\setlist{nosep, leftmargin=1.5em, topsep=0.15em}
+\setlist[itemize]{label=\textcolor{black!40}{\textbullet}}
 
 % ── Tables ─────────────────────────────────────────────────────────────
 \usepackage{booktabs}
 \usepackage{array}
 \usepackage{tabularx}
 \usepackage{multirow}
-\renewcommand{\arraystretch}{1.15}
+\renewcommand{\arraystretch}{1.12}
 
 % ── Code ───────────────────────────────────────────────────────────────
-\usepackage{xcolor}
 \usepackage{listings}
-\definecolor{codebg}{HTML}{F8F8F8}
-\definecolor{codefr}{HTML}{E8E8E8}
-\definecolor{kw}{HTML}{1a5276}
-\definecolor{cm}{HTML}{7f8c8d}
-\definecolor{st}{HTML}{196f3d}
 \lstset{
   basicstyle=\ttfamily\footnotesize,
   backgroundcolor=\color{codebg},
@@ -80,15 +105,15 @@
   keywordstyle=\color{kw}\bfseries,
   commentstyle=\color{cm}\itshape,
   stringstyle=\color{st},
-  aboveskip=0.6em, belowskip=0.4em,
+  aboveskip=0.5em, belowskip=0.3em,
 }
 
 % ── Math ───────────────────────────────────────────────────────────────
 \usepackage{amsmath}
 \usepackage{mathtools}
-\usepackage{stmaryrd}       % semantic brackets
+\usepackage{stmaryrd}
 
-% ── Theorem environments ──────────────────────────────────────────────
+% ── Theorem environments (amsthm) ─────────────────────────────────────
 \usepackage{amsthm}
 \theoremstyle{definition}
 \newtheorem{definition}{Definition}[section]
@@ -103,15 +128,45 @@
 \newtheorem{remark}[definition]{Remark}
 \newtheorem{proofobligation}[definition]{Proof Obligation}
 
+% ── Framed theorem styling (tcolorbox wrapping amsthm) ────────────────
+\usepackage{tcolorbox}
+\tcbuselibrary{breakable}
+
+\tcolorboxenvironment{definition}{
+  colback=defbg, colframe=defborder,
+  boxrule=0.4pt, arc=1pt, left=5pt, right=5pt, top=3pt, bottom=3pt,
+  breakable, before skip=0.5em, after skip=0.4em,
+}
+\tcolorboxenvironment{theorem}{
+  colback=thmbg, colframe=thmborder,
+  boxrule=0.4pt, arc=1pt, left=5pt, right=5pt, top=3pt, bottom=3pt,
+  breakable, before skip=0.5em, after skip=0.4em,
+}
+\tcolorboxenvironment{invariant}{
+  colback=invbg, colframe=invborder,
+  boxrule=0.4pt, arc=1pt, left=5pt, right=5pt, top=3pt, bottom=3pt,
+  breakable, before skip=0.5em, after skip=0.4em,
+}
+\tcolorboxenvironment{proofobligation}{
+  colback=probg, colframe=proborder,
+  boxrule=0.4pt, arc=1pt, left=5pt, right=5pt, top=3pt, bottom=3pt,
+  breakable, before skip=0.5em, after skip=0.4em,
+}
+\tcolorboxenvironment{algorithm_spec}{
+  colback=algbg, colframe=algborder,
+  boxrule=0.4pt, arc=1pt, left=5pt, right=5pt, top=3pt, bottom=3pt,
+  breakable, before skip=0.5em, after skip=0.4em,
+}
+
 % ── Struct layout diagrams ────────────────────────────────────────────
 \usepackage{bytefield}
 
 % ── Links ──────────────────────────────────────────────────────────────
 \usepackage[
   colorlinks=true,
-  linkcolor=black!60,
-  urlcolor=blue!40!black,
-  citecolor=black!60,
+  linkcolor=black!55,
+  urlcolor=blue!35!black,
+  citecolor=black!55,
 ]{hyperref}
 
 % ── Shortcuts ──────────────────────────────────────────────────────────
@@ -123,30 +178,39 @@
 \newcommand{\unsat}{\textsc{unsat}}
 \newcommand{\sat}{\textsc{sat}}
 \newcommand{\bytes}[1]{#1\,\text{B}}
+\newcommand{\layer}[1]{\textsc{#1}}  % verification layer tag
 
 % ══════════════════════════════════════════════════════════════════════
 \begin{document}
 
 % ── Title ──────────────────────────────────────────────────────────────
 \begin{center}
-  \vspace*{1.2em}
-  {\fontsize{22}{26}\selectfont\sffamily\bfseries The Crucible Yellowpaper}\\[0.6em]
-  {\large\sffamily Formal Specification of the Crucible Runtime}\\[2em]
-  {\normalsize Grigory Evko}\\[0.4em]
-  {\small\textcolor{black!45}{March 2026 --- Draft}}\\[2em]
-  {\color{black!20}\rule{0.35\textwidth}{0.4pt}}
+  \vspace*{0.8em}
+  {\color{rulegray}\rule{\textwidth}{1.2pt}}\\[1.5em]
+  {\fontsize{24}{28}\selectfont\sffamily\bfseries The Crucible Yellowpaper}\\[0.5em]
+  {\large\sffamily Formal Specification of the Crucible Runtime}\\[1.8em]
+  {\normalsize Grigory Evko}\\[0.3em]
+  {\small\textcolor{black!45}{Version 0.1 \quad---\quad March 2026}}\\[1.5em]
+  {\color{rulegray}\rule{\textwidth}{1.2pt}}
 \end{center}
 \thispagestyle{empty}
-\vspace{1em}
+\vspace{1.2em}
 
 \noindent
-This document is the formal specification of Crucible, an adaptive machine learning runtime.
+\textit{This document is the formal specification of Crucible, an adaptive machine learning runtime.
 Every data structure layout, algorithm, protocol state machine, hash function, and proof obligation
 is specified with sufficient precision for independent reimplementation or formal audit.
 The whitepaper~\cite{crucible-whitepaper} provides motivation and architecture;
-this document provides the exact specification.
+this document provides the exact specification.}
+
+\vspace{0.8em}
+{\color{black!15}\hrule height 0.3pt}
+\vspace{0.4em}
 
 \tableofcontents
+
+\vspace{0.4em}
+{\color{black!15}\hrule height 0.3pt}
 \newpage
 
 % ── Chapters ───────────────────────────────────────────────────────────

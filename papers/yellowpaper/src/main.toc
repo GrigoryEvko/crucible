@@ -11,12 +11,12 @@
 \contentsline {subsection}{\numberline {2.1}ScalarType Enumeration}{5}{subsection.2.1}%
 \contentsline {subsection}{\numberline {2.2}DeviceType Enumeration}{5}{subsection.2.2}%
 \contentsline {subsection}{\numberline {2.3}Layout Enumeration}{5}{subsection.2.3}%
-\contentsline {subsection}{\numberline {2.4}Strong ID Types}{5}{subsection.2.4}%
-\contentsline {subsection}{\numberline {2.5}Strong Hash Types}{6}{subsection.2.5}%
-\contentsline {subsection}{\numberline {2.6}Type Algebra: ScalarType Promotion}{7}{subsection.2.6}%
+\contentsline {subsection}{\numberline {2.4}Strong ID Types}{6}{subsection.2.4}%
+\contentsline {subsection}{\numberline {2.5}Strong Hash Types}{7}{subsection.2.5}%
+\contentsline {subsection}{\numberline {2.6}Type Algebra: ScalarType Promotion}{8}{subsection.2.6}%
 \contentsline {section}{\numberline {3}Arena Allocator}{8}{section.3}%
 \contentsline {subsection}{\numberline {3.1}Block Structure}{8}{subsection.3.1}%
-\contentsline {subsection}{\numberline {3.2}Layout}{9}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.2}Layout}{8}{subsection.3.2}%
 \contentsline {subsection}{\numberline {3.3}Alignment Formula}{9}{subsection.3.3}%
 \contentsline {subsection}{\numberline {3.4}Allocation Algorithm}{9}{subsection.3.4}%
 \contentsline {subsection}{\numberline {3.5}Formal Properties}{10}{subsection.3.5}%
@@ -33,7 +33,7 @@
 \contentsline {subsection}{\numberline {4.9}SPSC State Machine}{14}{subsection.4.9}%
 \contentsline {section}{\numberline {5}Tensor Metadata}{14}{section.5}%
 \contentsline {subsection}{\numberline {5.1}TensorMeta Structure}{14}{subsection.5.1}%
-\contentsline {subsection}{\numberline {5.2}Storage Size Computation}{15}{subsection.5.2}%
-\contentsline {subsection}{\numberline {5.3}View and Alias Semantics}{16}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.2}Storage Size Computation}{14}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}View and Alias Semantics}{15}{subsection.5.3}%
 \contentsline {subsection}{\numberline {5.4}External Tensor Classification}{16}{subsection.5.4}%
 \contentsline {subsection}{\numberline {5.5}TensorSlot Structure}{16}{subsection.5.5}%
