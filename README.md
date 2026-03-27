@@ -64,7 +64,7 @@ cmake --preset verify           # Z3 proof suite
 ## Project Structure
 
 ```
-include/crucible/     31 C++26 headers (10.7K lines)
+include/crucible/     31 C++26 headers
   Platform.h          Macros, branch hints, CRUCIBLE_INLINE
   Types.h             ScalarType, DeviceType, Layout, strong ID/hash types
   Effects.h           Capability tokens (fx::Alloc, fx::IO, fx::Block)
@@ -86,7 +86,7 @@ include/crucible/     31 C++26 headers (10.7K lines)
   ...
 
 test/                 24 C++ tests
-lean/Crucible/        39 Lean 4 modules (20.4K lines, 1331 theorems)
+lean/Crucible/        39 Lean 4 modules, 1331 theorems
 papers/
   whitepaper/         13 LaTeX chapters (25 pages)
   yellowpaper/        20 LaTeX chapters (formal specification, in progress)
@@ -96,7 +96,7 @@ verify/               Z3 proof suite scaffolding
 
 ## Lean 4 Formalization
 
-39 modules, 20,442 lines, 1,331 theorems. Covers Arena, MemoryPlan, PoolAllocator, SPSC ring, MetaLog, IterationDetector, TraceGraph, Merkle DAG, Graph IR, scheduling, roofline model, and fusion. 11 `sorry` remain in intelligence-layer modules (attention, curriculum, fusion, Hessian, quantization, scaling, sparsity, token merging).
+39 modules, 1,331 theorems. Covers Arena, MemoryPlan, PoolAllocator, SPSC ring, MetaLog, IterationDetector, TraceGraph, Merkle DAG, Graph IR, scheduling, roofline model, and fusion. 11 `sorry` remain in intelligence-layer modules (attention, curriculum, fusion, Hessian, quantization, scaling, sparsity, token merging).
 
 ```bash
 cd lean && lake build    # Lean 4.28.0 + Mathlib
