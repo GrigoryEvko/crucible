@@ -23,3 +23,10 @@ crucible_bench(bench_iteration_detector)
 crucible_bench(bench_replay_engine)
 crucible_bench(bench_merkle_dag)
 crucible_bench(bench_phases)
+
+# ── Visualization tool ────────────────────────────────────────────────
+# Not a benchmark — a utility for rendering .crtrace traces as SVG.
+# Usage: ./render_trace <trace.crtrace> [-o output.svg] [--blocks-only]
+add_executable(render_trace render_trace.cpp)
+target_link_libraries(render_trace PRIVATE crucible)
+target_compile_options(render_trace PRIVATE -O2)
