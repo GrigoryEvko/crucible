@@ -1,0 +1,285 @@
+% ═══════════════════════════════════════════════════════════════════
+% §4  SPSC Ring Protocol
+% ═══════════════════════════════════════════════════════════════════
+
+\section{SPSC Ring Protocol}
+\label{sec:spsc}
+
+The \struct{TraceRing} and \struct{MetaLog} form a two-buffer SPSC
+(single-producer, single-consumer) recording system.  The foreground thread
+writes one entry per ATen op; the background thread drains in batches.
+
+\subsection{TraceRing Entry Layout}
+
+\begin{definition}[TraceRing Entry]
+\label{def:ringentry}
+Each entry is exactly $\bytes{64}$ (one cache line), with \code{alignas(64)}.
+\end{definition}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{r r l l}
+\toprule
+\textbf{Offset} & \textbf{Size} & \textbf{Field} & \textbf{Type} \\
+\midrule
+ 0 & 8B & \field{schema\_hash}    & \struct{SchemaHash} \\
+ 8 & 8B & \field{shape\_hash}     & \struct{ShapeHash} \\
+16 & 2B & \field{num\_inputs}     & \code{uint16\_t} \\
+18 & 2B & \field{num\_outputs}    & \code{uint16\_t} \\
+20 & 2B & \field{num\_scalar\_args} & \code{uint16\_t} \\
+22 & 1B & \field{grad\_enabled}   & \code{bool} \\
+23 & 1B & \field{inference\_mode}  & \code{bool} \\
+24 & 40B & \field{scalar\_values[5]} & \code{int64\_t[5]} \\
+\midrule
+   & 64B & \multicolumn{2}{l}{\textit{Total (verified by \code{static\_assert})}} \\
+\bottomrule
+\end{tabular}
+\caption{TraceRing entry layout.  Scalar values are \code{int64\_t} bitcast
+(doubles, bools, enums all fit).  Five slots cover 99.9\% of ops.}
+\end{table}
+
+\subsection{Parallel Arrays}
+
+Alongside the $\code{entries[]}$ array, the ring maintains three parallel
+arrays at the same capacity, indexed by the same slot:
+
+\begin{table}[h]
+\centering
+\begin{tabular}{l l r l}
+\toprule
+\textbf{Array} & \textbf{Element Type} & \textbf{Element Size} & \textbf{Total} \\
+\midrule
+\code{meta\_starts[]}    & \struct{MetaIndex}    & 4B  & 256\,KB \\
+\code{scope\_hashes[]}   & \struct{ScopeHash}    & 8B  & 512\,KB \\
+\code{callsite\_hashes[]} & \struct{CallsiteHash} & 8B & 512\,KB \\
+\bottomrule
+\end{tabular}
+\caption{Parallel arrays.  \code{meta\_starts} stores the MetaLog
+index for each entry's tensor metadata.  \struct{MetaIndex}::\code{none()}
+indicates zero-tensor ops or MetaLog overflow.}
+\end{table}
+
+\subsection{Capacity and Indexing}
+
+\begin{definition}[Ring parameters]
+\[
+  C = 2^{16} = 65536, \qquad M = C - 1 = \texttt{0xFFFF}
+\]
+$C$ is the ring capacity (entries).  $M$ is the bitmask.
+Total memory: $C \times 64 + C \times 4 + C \times 8 + C \times 8
+= C \times 84 \approx 5.25\;\text{MB}$.
+\end{definition}
+
+\begin{lemma}[Bitmask indexing]
+\label{lem:bitmask}
+For any $h \in \bv{64}$ and $C = 2^k$:
+\[
+  h \;\mathbin{\&}\; (C - 1) = h \bmod C
+\]
+\end{lemma}
+\begin{proof}
+$C - 1 = 2^k - 1$ has exactly its low $k$ bits set.
+$h \;\mathbin{\&}\; (2^k - 1)$ retains only bits $0$ through $k-1$,
+which is the remainder of $h / 2^k$.
+$[\textit{Z3}: \text{QF\_BV}]$
+\end{proof}
+
+\subsection{Atomic State}
+
+\begin{definition}[Head and tail]
+\label{def:headtail}
+$h \in \bv{64}$ (head): total entries ever produced (monotonically increasing).
+$t \in \bv{64}$ (tail): total entries ever consumed.
+Both are \code{std::atomic<uint64\_t>} with \code{alignas(64)} on separate cache lines.
+The ring occupancy is $h - t$ (modular subtraction on $\bv{64}$).
+\end{definition}
+
+\begin{invariant}[Ring occupancy bound]
+\label{inv:ring-bound}
+At all times: $0 \le h - t \le C$.
+\end{invariant}
+
+\begin{definition}[\code{cached\_tail\_}]
+\label{def:cachedtail}
+A producer-local copy of the tail on its own cache line
+(\code{alignas(64)}).  Never written by the consumer.
+Stale values are conservative: if $\field{cached\_tail\_} \le t$,
+then $h - \field{cached\_tail\_} \ge h - t$, so a ``full'' check
+against the cache may report full when space exists, but never reports
+space when the ring is actually full.
+\end{definition}
+
+\subsection{Memory Ordering}
+
+All atomic operations use \code{acquire}/\code{release} semantics, never \code{relaxed}:
+
+\begin{itemize}
+  \item \code{head.store(h+1, release)}: publishes the entry data written before it.
+  \item \code{head.load(acquire)}: consumer sees all data written before the producer's release.
+  \item \code{tail.store(t+n, release)}: publishes that the consumer finished reading entries.
+  \item \code{tail.load(acquire)}: producer sees this before overwriting slots.
+\end{itemize}
+
+On x86-64, \code{acquire}/\code{release} compile to plain \code{MOV}
+instructions (x86 TSO provides acquire/release natively).
+Using \code{relaxed} would be unsound on ARM due to the weaker memory model.
+
+\subsection{Producer: \code{try\_append}}
+
+\begin{algorithm_spec}[\code{try\_append(e, meta\_start, scope\_hash, callsite\_hash)}]
+\label{alg:try-append}
+Foreground thread only (SPSC producer).  Returns \code{bool}.
+
+\begin{enumerate}
+  \item $h \leftarrow \field{head}.\text{load(acquire)}$.
+  \item If $h - \field{cached\_tail\_} \ge C$: \\
+    \quad $\field{cached\_tail\_} \leftarrow \field{tail}.\text{load(acquire)}$. \\
+    \quad If still $h - \field{cached\_tail\_} \ge C$: return \code{false} (ring full).
+  \item $\text{slot} \leftarrow \text{uint32}(h) \;\mathbin{\&}\; M$.
+  \item $\field{entries}[\text{slot}] \leftarrow e$; copy parallel arrays.
+  \item Prefetch next slot: $\code{\_\_builtin\_prefetch}(\&\field{entries}[(\text{slot}+1) \;\mathbin{\&}\; M], 1, 3)$.
+    Also prefetch all three parallel arrays for the next slot.
+  \item $\field{head}.\text{store}(h+1, \text{release})$.
+  \item Return \code{true}.
+\end{enumerate}
+\end{algorithm_spec}
+
+\begin{property}[Amortized tail cost]
+\label{prop:amortized-tail}
+The \field{cached\_tail\_} optimization avoids the cross-core atomic
+load of \field{tail} on the common path.  With a drain interval of
+${\sim}100\;\mu\text{s}$ and ${\sim}5\;\text{ns/op}$, approximately
+$20{,}000$ appends execute between drains.  The slow path (re-reading
+\field{tail}) occurs at most once per drain cycle.  Amortized cost
+of the fullness check: $\frac{1}{20{,}000}$ of a cross-core cache line transfer
+$\approx 0.002\;\text{ns/op}$.
+\end{property}
+
+\subsection{Consumer: \code{drain}}
+
+\begin{algorithm_spec}[\code{drain(out, max\_count, ...)}]
+\label{alg:drain}
+Background thread only (SPSC consumer).  Returns entries drained.
+
+\begin{enumerate}
+  \item $h \leftarrow \field{head}.\text{load(acquire)}$,
+        $t \leftarrow \field{tail}.\text{load(acquire)}$.
+  \item $\text{avail} \leftarrow \text{uint32}(h - t)$,
+        $\text{count} \leftarrow \min(\text{avail}, \text{max\_count})$.
+  \item If $\text{count} = 0$: return $0$.
+  \item $\text{start} \leftarrow \text{uint32}(t) \;\mathbin{\&}\; M$.
+  \item $\text{first} \leftarrow \min(\text{count},\; C - \text{start})$;
+        $\text{second} \leftarrow \text{count} - \text{first}$.
+  \item \code{memcpy} $\text{first}$ entries from $\field{entries}[\text{start}]$
+        (and parallel arrays if output buffers non-null).
+  \item If $\text{second} > 0$: \code{memcpy} the wrap-around portion from $\field{entries}[0]$.
+  \item $\field{tail}.\text{store}(t + \text{count}, \text{release})$.
+  \item Return $\text{count}$.
+\end{enumerate}
+\end{algorithm_spec}
+
+\subsection{MetaLog}
+\label{sec:metalog}
+
+The \struct{MetaLog} is a parallel SPSC buffer for \struct{TensorMeta}
+entries ($\bytes{144}$ each).
+
+\begin{definition}[MetaLog parameters]
+\[
+  C_m = 2^{20} = 1{,}048{,}576, \qquad M_m = C_m - 1
+\]
+Total allocation: $C_m \times 144 \approx 144\;\text{MB}$,
+\code{std::aligned\_alloc(64, ...)}.
+\end{definition}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{l l r l}
+\toprule
+\textbf{Cache line} & \textbf{Field} & \textbf{Size} & \textbf{Description} \\
+\midrule
+Producer & \field{head}          & 4B & \code{atomic<uint32\_t>} \\
+         & \field{cached\_tail\_} & 4B & producer-local tail cache \\
+         & \field{entries}       & 8B & pointer to buffer \\
+\midrule
+Consumer & \field{tail}          & 4B & \code{atomic<uint32\_t>} (own cache line) \\
+\bottomrule
+\end{tabular}
+\caption{MetaLog cache-line layout.  Producer fields share one line; \field{tail}
+is on a separate line to prevent false sharing.}
+\end{table}
+
+\begin{algorithm_spec}[\code{try\_append(metas, n)}]
+\label{alg:meta-append}
+Appends $n$ consecutive \struct{TensorMeta} entries.
+Returns the start index as \struct{MetaIndex}, or \code{MetaIndex::none()} if full.
+
+\begin{enumerate}
+  \item If $n = 0$: return \code{MetaIndex::none()}.
+  \item $h \leftarrow \field{head}.\text{load(acquire)}$.
+  \item Cached-tail fullness check (same protocol as TraceRing).
+  \item $\text{start} \leftarrow h \;\mathbin{\&}\; M_m$,
+        $\text{end} \leftarrow \text{start} + n$.
+  \item If $\text{end} \le C_m$: single \code{memcpy}
+        of $n \times 144$ bytes (contiguous, 99.99\% of calls).
+  \item Else: two \code{memcpy}s (wrap-around, extremely rare).
+  \item Prefetch 3 cache lines for next write position
+        ($\bytes{144} = 3 \times \bytes{64}$).
+  \item $\field{head}.\text{store}(h + n, \text{release})$.
+  \item Return $\text{MetaIndex}\{h\}$.
+\end{enumerate}
+\end{algorithm_spec}
+
+\begin{algorithm_spec}[\code{try\_contiguous(start, count)}]
+Zero-copy optimization: returns a direct pointer into the buffer
+if the range $[\text{start}, \text{start}+\text{count})$ does not
+wrap around.  Returns \code{nullptr} on wrap (caller falls back to
+per-element \code{at()} copies).  Succeeds 99.99\% of calls.
+\end{algorithm_spec}
+
+\subsection{SPSC State Machine}
+
+The combined state of the producer and consumer is:
+\[
+  S = (\text{fg\_phase}, \text{bg\_phase}, h - t)
+\]
+where $\text{fg\_phase} \in \{\text{IDLE}, \text{WRITING}\}$ and
+$\text{bg\_phase} \in \{\text{IDLE}, \text{DRAINING}\}$.
+
+\begin{invariant}[No index collision]
+\label{inv:no-collision}
+When $0 < h - t < C$, the producer writes to slot $h \;\mathbin{\&}\; M$
+and the consumer reads from slot $t \;\mathbin{\&}\; M$.
+Since $h \neq t$ and both are reduced modulo $C$:
+\[
+  h \;\mathbin{\&}\; M \neq t \;\mathbin{\&}\; M
+  \quad \text{when } 0 < h - t < C.
+\]
+$[\textit{Lean}]$
+\end{invariant}
+
+\begin{theorem}[Deadlock freedom]
+\label{thm:deadlock-free}
+The SPSC protocol is deadlock-free.
+The producer never blocks (returns \code{false} on full ring).
+The consumer never blocks (returns 0 on empty ring).
+Neither thread waits for the other via any blocking primitive.
+\quad$[\textit{Lean}: \text{finite-state BFS}]$
+\end{theorem}
+
+\begin{theorem}[FIFO ordering]
+\label{thm:fifo}
+Entries are consumed in the same order they were produced:
+\[
+  \forall\, i < j.\; \text{produce}(e_i) \prec \text{produce}(e_j)
+  \implies \text{consume}(e_i) \prec \text{consume}(e_j)
+\]
+where $\prec$ denotes happens-before.
+\end{theorem}
+\begin{proof}
+The producer increments $h$ after writing (release).
+The consumer reads entries in $[t, h)$ order, advancing $t$ monotonically.
+The total order on $\bv{64}$ indices and the single-producer/single-consumer
+invariant guarantee FIFO.
+$[\textit{Lean}]$
+\end{proof}

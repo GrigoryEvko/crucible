@@ -1,0 +1,39 @@
+\contentsline {section}{\numberline {1}Notation and Conventions}{3}{section.1}%
+\contentsline {subsection}{\numberline {1.1}Byte Ordering and Alignment}{3}{subsection.1.1}%
+\contentsline {subsection}{\numberline {1.2}Bitvectors}{3}{subsection.1.2}%
+\contentsline {subsection}{\numberline {1.3}Semantic Interpretation}{3}{subsection.1.3}%
+\contentsline {subsection}{\numberline {1.4}Proof Obligations}{3}{subsection.1.4}%
+\contentsline {subsection}{\numberline {1.5}Complexity Notation}{4}{subsection.1.5}%
+\contentsline {subsection}{\numberline {1.6}The Eight Safety Axioms}{4}{subsection.1.6}%
+\contentsline {subsubsection}{\numberline {1.6.1}Compile-Enforced Axioms}{4}{subsubsection.1.6.1}%
+\contentsline {subsubsection}{\numberline {1.6.2}Discipline-Enforced Axioms}{5}{subsubsection.1.6.2}%
+\contentsline {section}{\numberline {2}Scalar Types and Type Algebra}{5}{section.2}%
+\contentsline {subsection}{\numberline {2.1}ScalarType Enumeration}{5}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}DeviceType Enumeration}{5}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Layout Enumeration}{5}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}Strong ID Types}{5}{subsection.2.4}%
+\contentsline {subsection}{\numberline {2.5}Strong Hash Types}{6}{subsection.2.5}%
+\contentsline {subsection}{\numberline {2.6}Type Algebra: ScalarType Promotion}{7}{subsection.2.6}%
+\contentsline {section}{\numberline {3}Arena Allocator}{8}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Block Structure}{8}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Layout}{9}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Alignment Formula}{9}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}Allocation Algorithm}{9}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}Formal Properties}{10}{subsection.3.5}%
+\contentsline {subsection}{\numberline {3.6}Z3 Encoding Sketch}{10}{subsection.3.6}%
+\contentsline {section}{\numberline {4}SPSC Ring Protocol}{11}{section.4}%
+\contentsline {subsection}{\numberline {4.1}TraceRing Entry Layout}{11}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Parallel Arrays}{11}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Capacity and Indexing}{11}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Atomic State}{12}{subsection.4.4}%
+\contentsline {subsection}{\numberline {4.5}Memory Ordering}{12}{subsection.4.5}%
+\contentsline {subsection}{\numberline {4.6}Producer: \texttt {\small try\_append}}{12}{subsection.4.6}%
+\contentsline {subsection}{\numberline {4.7}Consumer: \texttt {\small drain}}{13}{subsection.4.7}%
+\contentsline {subsection}{\numberline {4.8}MetaLog}{13}{subsection.4.8}%
+\contentsline {subsection}{\numberline {4.9}SPSC State Machine}{14}{subsection.4.9}%
+\contentsline {section}{\numberline {5}Tensor Metadata}{14}{section.5}%
+\contentsline {subsection}{\numberline {5.1}TensorMeta Structure}{14}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Storage Size Computation}{15}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}View and Alias Semantics}{16}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}External Tensor Classification}{16}{subsection.5.4}%
+\contentsline {subsection}{\numberline {5.5}TensorSlot Structure}{16}{subsection.5.5}%

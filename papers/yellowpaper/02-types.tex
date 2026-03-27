@@ -1,0 +1,235 @@
+% ═══════════════════════════════════════════════════════════════════
+% §2  Scalar Types and Type Algebra
+% ═══════════════════════════════════════════════════════════════════
+
+\section{Scalar Types and Type Algebra}
+
+\subsection{ScalarType Enumeration}
+
+\begin{definition}[ScalarType]
+\label{def:scalartype}
+\struct{ScalarType} is an \code{enum class} with underlying type \code{int8\_t}.
+Ordinals mirror \code{c10::ScalarType} exactly so that
+$\operatorname{static\_cast}\langle\text{int8\_t}\rangle$ is identity between
+the standalone library and the PyTorch Vessel adapter.
+\end{definition}
+
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{l r r X}
+\toprule
+\textbf{Name} & \textbf{Ordinal} & \textbf{Bytes} & \textbf{Description} \\
+\midrule
+\code{Byte}             &  0 & 1  & Unsigned 8-bit integer \\
+\code{Char}             &  1 & 1  & Signed 8-bit integer \\
+\code{Short}            &  2 & 2  & Signed 16-bit integer \\
+\code{Int}              &  3 & 4  & Signed 32-bit integer \\
+\code{Long}             &  4 & 8  & Signed 64-bit integer \\
+\code{Half}             &  5 & 2  & IEEE 754 half-precision \\
+\code{Float}            &  6 & 4  & IEEE 754 single-precision \\
+\code{Double}           &  7 & 8  & IEEE 754 double-precision \\
+\code{ComplexHalf}      &  8 & 4  & Complex half (re + im) \\
+\code{ComplexFloat}     &  9 & 8  & Complex float (re + im) \\
+\code{ComplexDouble}    & 10 & 16 & Complex double (re + im) \\
+\code{Bool}             & 11 & 1  & Boolean (1 byte storage) \\
+\code{BFloat16}         & 15 & 2  & Brain floating-point \\
+\code{Float8\_e5m2}     & 23 & 1  & FP8 (5-bit exponent, 2-bit mantissa) \\
+\code{Float8\_e4m3fn}   & 24 & 1  & FP8 (4-bit exponent, 3-bit mantissa, no inf/NaN) \\
+\code{Float8\_e5m2fnuz} & 25 & 1  & FP8 E5M2 with negative zero as NaN \\
+\code{Float8\_e4m3fnuz} & 26 & 1  & FP8 E4M3 with negative zero as NaN \\
+\code{Undefined}        & $-1$ & 0 & Sentinel (no type) \\
+\bottomrule
+\end{tabularx}
+\caption{ScalarType enumeration. Ordinals 12--14 and 16--22 are reserved
+for future c10 types and must not be used.}
+\label{tab:scalartype}
+\end{table}
+
+\begin{definition}[\code{element\_size}]
+\label{def:element-size}
+The function $\operatorname{element\_size} : \text{ScalarType} \to \bv{8}$
+is a \code{constexpr} map returning the byte size of each dtype as shown
+in the Bytes column of Table~\ref{tab:scalartype}.
+For \code{Undefined}, it returns~$0$.
+The \code{default} case invokes \code{std::unreachable()}.
+\end{definition}
+
+\begin{property}[element\_size totality]
+\label{prop:elemsize-total}
+$\forall t \in \text{ScalarType} \setminus \{\text{Undefined}\}.\;
+\operatorname{element\_size}(t) > 0$. \quad$[\textit{consteval}]$
+\end{property}
+
+\subsection{DeviceType Enumeration}
+
+\begin{definition}[DeviceType]
+\struct{DeviceType} is an \code{enum class : int8\_t} mirroring \code{c10::DeviceType}.
+\end{definition}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{l r l}
+\toprule
+\textbf{Name} & \textbf{Ordinal} & \textbf{Description} \\
+\midrule
+\code{CPU}  &  0 & Host memory \\
+\code{CUDA} &  1 & NVIDIA GPU \\
+\code{XLA}  &  9 & Google TPU / XLA devices \\
+\code{HIP}  & 20 & AMD GPU (ROCm) \\
+\bottomrule
+\end{tabular}
+\caption{DeviceType enumeration (subset relevant to Crucible).}
+\end{table}
+
+\subsection{Layout Enumeration}
+
+\begin{definition}[Layout]
+\struct{Layout} is an \code{enum class : int8\_t} mirroring \code{c10::Layout}.
+\end{definition}
+
+\begin{table}[h]
+\centering
+\begin{tabular}{l r l}
+\toprule
+\textbf{Name} & \textbf{Ordinal} & \textbf{Description} \\
+\midrule
+\code{Strided}   & 0 & Dense strided (default) \\
+\code{Sparse}    & 1 & COO sparse \\
+\code{SparseCsr} & 2 & CSR format \\
+\code{SparseCsc} & 3 & CSC format \\
+\code{SparseBsr} & 4 & Block-sparse row \\
+\code{SparseBsc} & 5 & Block-sparse column \\
+\bottomrule
+\end{tabular}
+\caption{Layout enumeration.}
+\end{table}
+
+\subsection{Strong ID Types}
+\label{sec:strongid}
+
+\begin{definition}[\code{CRUCIBLE\_STRONG\_ID}]
+\label{def:strongid}
+The macro \code{CRUCIBLE\_STRONG\_ID(Name)} generates a struct with the
+following exact semantics:
+
+\begin{enumerate}
+  \item Storage: a single field \code{uint32\_t v}.
+  \item \code{explicit} constructor from \code{uint32\_t} --- no implicit conversion.
+  \item Default constructor sets $v = 2^{32}-1$ (\code{UINT32\_MAX}).
+  \item \code{static constexpr Name none()} returns the sentinel $2^{32}-1$.
+  \item \code{bool is\_valid() const} returns $v \neq 2^{32}-1$.
+  \item \code{explicit operator bool() const} delegates to \code{is\_valid()}.
+  \item \code{uint32\_t raw() const} returns $v$ (explicit unwrap).
+  \item \code{operator<=>} is defaulted (lexicographic on $v$).
+  \item No arithmetic operators --- the caller must unwrap, compute, and rewrap.
+  \item $\code{sizeof(Name)} = 4$ (verified by \code{static\_assert}).
+\end{enumerate}
+\end{definition}
+
+Five strong ID types are defined:
+
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Type} & \textbf{Domain} & \textbf{Semantics} \\
+\midrule
+\struct{OpIndex}   & $\bv{32}$ & Index into \code{TraceEntry[]} \\
+\struct{SlotId}    & $\bv{32}$ & Index into \code{TensorSlot[]} \\
+\struct{NodeId}    & $\bv{32}$ & Index into Graph node array \\
+\struct{SymbolId}  & $\bv{32}$ & Index into \code{SymbolTable} \\
+\struct{MetaIndex} & $\bv{32}$ & Index into \code{MetaLog} buffer \\
+\bottomrule
+\end{tabularx}
+\caption{Strong ID types. All share the same layout and interface
+generated by \code{CRUCIBLE\_STRONG\_ID}.}
+\end{table}
+
+\begin{invariant}[Sentinel uniqueness]
+\label{inv:sentinel}
+The sentinel value $2^{32} - 1$ is never a valid index in any array
+accessed by these types.  In particular, all Crucible arrays have
+fewer than $2^{32} - 1$ elements.
+\end{invariant}
+
+\subsection{Strong Hash Types}
+\label{sec:stronghash}
+
+\begin{definition}[\code{CRUCIBLE\_STRONG\_HASH}]
+\label{def:stronghash}
+The macro \code{CRUCIBLE\_STRONG\_HASH(Name)} generates a struct with:
+
+\begin{enumerate}
+  \item Storage: a single field \code{uint64\_t v}.
+  \item \code{explicit} constructor from \code{uint64\_t}.
+  \item Default constructor sets $v = 0$ (``no hash / unset'').
+  \item \code{uint64\_t raw() const} returns $v$.
+  \item \code{explicit operator bool() const} returns $v \neq 0$.
+  \item \code{static constexpr Name sentinel()} returns $2^{64} - 1$ (\code{UINT64\_MAX}).
+  \item \code{bool is\_sentinel() const} returns $v = 2^{64}-1$.
+  \item \code{operator<=>} is defaulted.
+  \item No arithmetic operators.
+  \item $\code{sizeof(Name)} = 8$ (verified by \code{static\_assert}).
+\end{enumerate}
+\end{definition}
+
+Six strong hash types are defined:
+
+\begin{table}[h]
+\centering
+\begin{tabularx}{\textwidth}{l l X}
+\toprule
+\textbf{Type} & \textbf{Domain} & \textbf{Semantics} \\
+\midrule
+\struct{SchemaHash}   & $\bv{64}$ & Op identity (ATen schema) \\
+\struct{ShapeHash}    & $\bv{64}$ & Quick hash of input tensor shapes \\
+\struct{ScopeHash}    & $\bv{64}$ & Module hierarchy path \\
+\struct{CallsiteHash} & $\bv{64}$ & Python source location identity \\
+\struct{ContentHash}  & $\bv{64}$ & Region content identity (kernel cache key) \\
+\struct{MerkleHash}   & $\bv{64}$ & Subtree identity (includes all descendants) \\
+\bottomrule
+\end{tabularx}
+\caption{Strong hash types.  Default $= 0$ means ``unset''.
+Sentinel $= 2^{64}-1$ marks end-of-region boundaries.}
+\end{table}
+
+\begin{invariant}[Hash zero and sentinel]
+\label{inv:hashzero}
+A value of $0$ indicates the hash has not been computed.
+A value of $2^{64}-1$ is reserved as a sentinel for boundary marking
+and must never be produced by any hash function.
+The probability that a uniformly random 64-bit hash equals either
+value is $2^{-63}$, which is negligible.
+\end{invariant}
+
+All eleven strong types (\struct{OpIndex} through \struct{MerkleHash})
+are verified as trivially relocatable on Clang~22 via
+\code{CRUCIBLE\_ASSERT\_TRIVIALLY\_RELOCATABLE}, ensuring Arena
+\code{memcpy} soundness.
+
+\subsection{Type Algebra: ScalarType Promotion}
+\label{sec:type-promotion}
+
+\begin{definition}[Promotion lattice]
+\label{def:promotion}
+The promotion order $\preceq$ on \struct{ScalarType} is a join-semilattice:
+for any two types $a, b$, the \emph{promoted type} is $a \sqcup b = \min\{c : a \preceq c \land b \preceq c\}$.
+The lattice satisfies:
+\end{definition}
+
+\begin{property}[Promotion properties]
+\label{prop:promotion}
+For all $a, b, c \in \text{ScalarType}$:
+\begin{enumerate}
+  \item \textbf{Commutativity:} $a \sqcup b = b \sqcup a$
+  \item \textbf{Associativity:} $(a \sqcup b) \sqcup c = a \sqcup (b \sqcup c)$
+  \item \textbf{Idempotence:} $a \sqcup a = a$
+  \item \textbf{Absorption:} $a \sqcup (a \sqcap b) = a$ where $\sqcap$ is the meet
+\end{enumerate}
+These properties hold by construction: the promotion function is the
+maximum under the partial order induced by the ordinal widening chain
+\code{Bool} $\preceq$ \code{Byte} $\preceq$ \code{Short} $\preceq$ \code{Int}
+$\preceq$ \code{Long} $\preceq$ \code{Half} $\preceq$ \code{Float}
+$\preceq$ \code{Double}, with complex types forming a parallel chain.
+$[\textit{consteval}]$
+\end{property}
