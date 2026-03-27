@@ -255,10 +255,11 @@ struct UShapeSplit {
   constexpr float SUB_COL_W = 220;   // sub-column width (encoder/decoder)
   constexpr float SUB_GAP = 10;      // gap between encoder and decoder sub-columns
   constexpr float PHASE_GAP = 50;    // gap between forward U and backward U
-  constexpr float ROW_H = 26;
   constexpr float ROW_GAP = 3;
   constexpr float PAD = 25;
   constexpr float HEADER = 50;
+
+  constexpr float ROW_H = 26;
 
   std::vector<GridPos> pos(blocks.size());
 
@@ -510,9 +511,8 @@ struct UShapeSplit {
       float y1 = pos[e.src_block].y + pos[e.src_block].h / 2;
       float x2 = pos[e.dst_block].x - 2;
       float y2 = pos[e.dst_block].y + pos[e.dst_block].h / 2;
-      float mid_x = (x1 + x2) / 2;
-      svg.bezier_arrow(x1, y1, mid_x, y1, mid_x, y2, x2, y2,
-                        Color::hex(0xA78BFA), 0.4f, true);
+      svg.orthogonal_edge(x1, y1, x2, y2,
+                           Color::hex(0xA78BFA), 0.4f, true);
       cross_count++;
     }
   } else {
@@ -530,9 +530,8 @@ struct UShapeSplit {
       float y1 = pos[e.src_block].y + pos[e.src_block].h / 2;
       float x2 = pos[e.dst_block].x - 2;
       float y2 = pos[e.dst_block].y + pos[e.dst_block].h / 2;
-      float mid_x = (x1 + x2) / 2;
-      svg.bezier_arrow(x1, y1, mid_x, y1, mid_x, y2, x2, y2,
-                        palette::EDGE_SKIP, 0.5f, true);
+      svg.orthogonal_edge(x1, y1, x2, y2,
+                           palette::EDGE_SKIP, 0.5f, true);
     }
   }
   svg.end_group();
