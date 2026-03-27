@@ -61,6 +61,7 @@ class _VesselLib:
             ("storage_offset", ctypes.c_int64),
             ("version", ctypes.c_uint32),
             ("storage_nbytes", ctypes.c_uint32),
+            ("grad_fn_hash", ctypes.c_uint64),
         ]
 
     class DispatchResult(ctypes.Structure):
@@ -187,6 +188,15 @@ for _name, _ord in [("sparse_csr", 2), ("sparse_csc", 3),
 
 
 # ─── Scalar encoding ───────────────────────────────────────────────
+
+def _fnv1a(s: bytes) -> int:
+    """FNV-1a 64-bit hash, matching vessel_api.cpp crucible_hash_string."""
+    h = 0xCBF29CE484222325
+    for b in s:
+        h ^= b
+        h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return h
+
 
 def _scalar_to_int64(val):
     """Bitcast a Python scalar to int64 for TraceRing::Entry::scalar_values."""
@@ -502,6 +512,13 @@ class CrucibleMode(TorchDispatchMode):
             meta.storage_nbytes = tensor.untyped_storage().nbytes() & 0xFFFFFFFF
         except Exception:
             meta.storage_nbytes = 0
+
+        # grad_fn class name hash (forward↔backward pairing)
+        gfn = tensor.grad_fn
+        if gfn is not None:
+            meta.grad_fn_hash = _fnv1a(type(gfn).__name__.encode("ascii"))
+        else:
+            meta.grad_fn_hash = 0
 
     @staticmethod
     def _extract_tensors(args, kwargs):

@@ -84,6 +84,7 @@ inline void write_meta(Writer& w, const TensorMeta& m) {
     w.w(m.storage_offset);
     w.w(m.version);
     w.w(m.storage_nbytes);
+    w.w(m.grad_fn_hash);
 }
 
 // Read TensorMeta: data_ptr is always null after deserialization.
@@ -104,6 +105,7 @@ inline TensorMeta read_meta(Reader& r) {
     m.storage_offset  = r.r<int64_t>();
     m.version         = r.r<uint32_t>();
     m.storage_nbytes  = r.r<uint32_t>();
+    m.grad_fn_hash    = r.r<uint64_t>();
     return m;
 }
 
