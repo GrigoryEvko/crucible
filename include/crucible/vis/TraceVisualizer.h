@@ -594,12 +594,17 @@ struct UShapeSplit {
     svg.end_group();
   }
 
-  // Draw blocks
+  // Draw blocks (with interactive class + data attributes for JS)
   svg.begin_group("blocks");
   for (uint32_t i = 0; i < blocks.size(); i++) {
     const auto& b = blocks[i];
     const auto& p = pos[i];
     auto [fill, border] = colors_for_block(b.kind);
+
+    // Wrap in a group with class="block" for interactivity
+    std::string info = b.label + " | " + std::to_string(b.num_ops) + " ops";
+    if (!b.out_shape.empty()) info += " | " + b.out_shape;
+    svg.begin_block_group(info);
 
     svg.rect(p.x, p.y, p.w, p.h, fill, border, 4, 0.7f, true);
     // Block label (bold, centered)
@@ -609,6 +614,8 @@ struct UShapeSplit {
     std::string ops_str = std::to_string(b.num_ops);
     svg.text(p.x + p.w - 3, p.y + p.h - 3,
              ops_str, 5.0f, Color::hex(0xA0A0A0), "end");
+
+    svg.end_group();
   }
   svg.end_group();
 
@@ -668,6 +675,9 @@ struct UShapeSplit {
     svg.text(lx + 16, ly, "Sequential flow", 7, Color::hex(0x6B7280));
   }
   svg.end_group();
+
+  // ── Interactive JavaScript ──────────────────────────────────────────
+  svg.embed_interactivity();
 
   svg.end();
   return svg.take();
