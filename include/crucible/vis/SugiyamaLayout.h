@@ -62,6 +62,7 @@ struct LayoutParams {
   float node_h_gap = 16;    // horizontal gap between nodes in same layer
   float layer_v_gap = 36;   // vertical gap between layers
   float padding = 20;       // padding around the entire layout
+  bool use_network_simplex = true; // use NS for X positioning (false = naive placement)
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -263,6 +264,9 @@ struct LayoutParams {
     });
   }
 
+  float total_width = 0;
+
+  if (params.use_network_simplex) {
   std::vector<NSEdge> aux_edges;
   aux_edges.reserve(total_n + edges.size());
 
@@ -294,21 +298,22 @@ struct LayoutParams {
 
   // Solve X positions via network simplex
   auto ns_result = network_simplex(total_n, aux_edges, 200);
-
-  float total_width = 0;
   if (ns_result.converged) {
-    // Use network simplex result as X positions (scaled to float)
     for (uint32_t i = 0; i < total_n; i++) {
       nodes[i].x = params.padding +
           static_cast<float>(ns_result.rank[i]) + nodes[i].min_width / 2;
     }
-    // Compute total width
     float max_x = 0;
     for (uint32_t i = 0; i < total_n; i++)
       max_x = std::max(max_x, nodes[i].x + nodes[i].min_width / 2);
     total_width = max_x + params.padding;
   } else {
-    // Fallback: naive left-to-right placement
+    // NS didn't converge — fall through to naive placement
+  }
+  } // end if (params.use_network_simplex)
+
+  // Naive left-to-right placement (used when NS disabled or didn't converge)
+  if (total_width == 0) {
     std::vector<float> layer_widths(num_layers, 0);
     for (uint32_t l = 0; l < num_layers; l++) {
       float w = 0;

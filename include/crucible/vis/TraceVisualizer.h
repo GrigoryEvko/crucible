@@ -716,6 +716,7 @@ struct UShapeSplit {
         .node_h_gap = 10,
         .layer_v_gap = 8,
         .padding = 8,
+        .use_network_simplex = false,  // NS overkill for small intra-block DAGs
     };
     intra[bi].layout = sugiyama_layout(
         std::move(op_nodes), op_edges, op_params);
@@ -744,6 +745,7 @@ struct UShapeSplit {
       .node_h_gap = 28,
       .layer_v_gap = 16,
       .padding = 50,
+      .use_network_simplex = false,  // block graph may have cycles
   };
   auto block_layout = sugiyama_layout(
       std::move(block_nodes), block_layout_edges, block_params);
