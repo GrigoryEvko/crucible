@@ -169,9 +169,78 @@ struct GridPos {
   uint32_t row = 0;
 };
 
+// Detect encoder/mid/decoder within a phase's blocks using spatial resolution.
+// Returns (encoder_end, decoder_start) indices into the phase_idx array.
+// encoder = [0..encoder_end], mid = [encoder_end+1..decoder_start-1],
+// decoder = [decoder_start..end]
+struct UShapeSplit {
+  uint32_t enc_end = 0;      // last encoder index
+  uint32_t dec_start = 0;    // first decoder index
+  bool is_unet = false;
+};
+
+[[nodiscard]] inline UShapeSplit detect_u_shape(
+    const std::vector<Block>& blocks,
+    const std::vector<uint32_t>& phase_idx) {
+
+  if (phase_idx.size() < 6) return {0, 0, false};
+
+  // Get spatial resolution per block (0 if not 4D)
+  std::vector<int32_t> res(phase_idx.size(), 0);
+  for (uint32_t i = 0; i < phase_idx.size(); i++)
+    res[i] = blocks[phase_idx[i]].spatial_h;
+
+  // Find blocks with valid resolution
+  std::vector<std::pair<uint32_t, int32_t>> valid_res;
+  for (uint32_t i = 0; i < res.size(); i++)
+    if (res[i] > 0) valid_res.push_back({i, res[i]});
+
+  if (valid_res.size() < 4) return {0, 0, false};
+
+  // Find minimum resolution (bottleneck)
+  int32_t min_res = valid_res[0].second;
+  uint32_t min_idx = valid_res[0].first;
+  for (const auto& [idx, r] : valid_res) {
+    if (r < min_res) { min_res = r; min_idx = idx; }
+  }
+
+  // Check if there's a U-shape: resolution decreases then increases
+  int32_t max_res = valid_res[0].second;
+  if (max_res < 2 * min_res) return {0, 0, false};
+
+  // Find last block before bottleneck with max resolution (encoder end region)
+  // and first block after bottleneck with increasing resolution (decoder start)
+  uint32_t enc_end = 0;
+  uint32_t dec_start = static_cast<uint32_t>(phase_idx.size()) - 1;
+
+  // Encoder: find where resolution first reaches minimum
+  for (uint32_t i = 0; i < phase_idx.size(); i++) {
+    if (res[i] == min_res || (res[i] > 0 && res[i] <= min_res)) {
+      enc_end = (i > 0) ? i - 1 : 0;
+      break;
+    }
+  }
+
+  // Decoder: find where resolution starts increasing after bottleneck
+  bool past_mid = false;
+  for (uint32_t i = enc_end + 1; i < phase_idx.size(); i++) {
+    if (res[i] == min_res) {
+      past_mid = true;
+      continue;
+    }
+    if (past_mid && res[i] > min_res) {
+      dec_start = i;
+      break;
+    }
+  }
+
+  return {enc_end, dec_start, true};
+}
+
 [[nodiscard]] inline std::vector<GridPos> grid_layout(
     const std::vector<Block>& blocks,
-    const std::vector<BlockEdge>& edges) {
+    const std::vector<BlockEdge>& /*edges*/,
+    Architecture arch) {
 
   // Separate by phase
   std::vector<uint32_t> fwd_idx, bwd_idx, opt_idx;
@@ -183,73 +252,155 @@ struct GridPos {
     }
   }
 
-  // Geometry constants
-  constexpr float COL_WIDTH = 260;
-  constexpr float COL_GAP = 80;     // gap between forward and backward columns
-  constexpr float ROW_HEIGHT = 32;
-  constexpr float ROW_GAP = 4;
-  constexpr float PAD = 40;
-  constexpr float HEADER = 50;      // space for title
-
-  uint32_t max_rows = std::max(
-      static_cast<uint32_t>(fwd_idx.size()),
-      static_cast<uint32_t>(bwd_idx.size()));
+  // Geometry
+  constexpr float SUB_COL_W = 220;   // sub-column width (encoder/decoder)
+  constexpr float SUB_GAP = 10;      // gap between encoder and decoder sub-columns
+  constexpr float PHASE_GAP = 50;    // gap between forward U and backward U
+  constexpr float ROW_H = 26;
+  constexpr float ROW_GAP = 3;
+  constexpr float PAD = 25;
+  constexpr float HEADER = 50;
 
   std::vector<GridPos> pos(blocks.size());
 
-  // Forward: column 0, sequential rows
-  for (uint32_t r = 0; r < fwd_idx.size(); r++) {
-    uint32_t bi = fwd_idx[r];
-    float lw = std::min(COL_WIDTH,
-        std::max(120.0f, static_cast<float>(blocks[bi].label.size()) * 8.0f + 16));
-    pos[bi] = {
-        .x = PAD + (COL_WIDTH - lw) / 2,
-        .y = HEADER + r * (ROW_HEIGHT + ROW_GAP),
-        .w = lw,
-        .h = ROW_HEIGHT,
-        .col = 0,
-        .row = r,
+  auto label_width = [&](uint32_t bi) -> float {
+    return std::min(SUB_COL_W,
+        std::max(90.0f, static_cast<float>(blocks[bi].label.size()) * 7.0f + 12));
+  };
+
+  // ── UNet layout: two U-shapes side by side ──────────────────────────
+  if (arch == Architecture::UNET) {
+    auto fwd_u = detect_u_shape(blocks, fwd_idx);
+
+    // Layout one U-shape phase into sub-columns.
+    // Encoder: left sub-column, going DOWN (highest res at top).
+    // Decoder: right sub-column, going DOWN in REVERSED order
+    //          (highest res at top, matching encoder rows).
+    // Mid: centered below both, at the bottom.
+    // The U-shape is visual: skip connections between matching
+    // resolution rows create horizontal lines.
+    auto layout_u = [&](const std::vector<uint32_t>& idx,
+                        const UShapeSplit& u, float base_x) -> uint32_t {
+      if (!u.is_unet || idx.empty()) {
+        // Fallback: single column
+        for (uint32_t r = 0; r < idx.size(); r++) {
+          float lw = label_width(idx[r]);
+          pos[idx[r]] = {
+            .x = base_x + (SUB_COL_W - lw) / 2,
+            .y = HEADER + r * (ROW_H + ROW_GAP),
+            .w = lw, .h = ROW_H, .col = 0, .row = r,
+          };
+        }
+        return static_cast<uint32_t>(idx.size());
+      }
+
+      uint32_t enc_count = u.enc_end + 1;
+      uint32_t mid_count = u.dec_start - u.enc_end - 1;
+      uint32_t dec_count = static_cast<uint32_t>(idx.size()) - u.dec_start;
+
+      // Encoder and decoder go DOWN in parallel columns.
+      // Use max(enc, dec) rows for the paired section, then mid below.
+      uint32_t paired_rows = std::max(enc_count, dec_count);
+
+      // Encoder: left sub-column, rows 0..enc_count-1 (top to bottom)
+      for (uint32_t i = 0; i < enc_count && i < idx.size(); i++) {
+        float lw = label_width(idx[i]);
+        pos[idx[i]] = {
+          .x = base_x + (SUB_COL_W - lw) / 2,
+          .y = HEADER + i * (ROW_H + ROW_GAP),
+          .w = lw, .h = ROW_H, .col = 0, .row = i,
+        };
+      }
+
+      // Decoder: right sub-column, REVERSED order so highest resolution
+      // is at top (row 0) matching encoder's first blocks.
+      // decoder_blocks = [dec_start..end], reversed = [end..dec_start]
+      for (uint32_t i = 0; i < dec_count; i++) {
+        uint32_t block_i = u.dec_start + dec_count - 1 - i;  // reverse
+        float lw = label_width(idx[block_i]);
+        pos[idx[block_i]] = {
+          .x = base_x + SUB_COL_W + SUB_GAP + (SUB_COL_W - lw) / 2,
+          .y = HEADER + i * (ROW_H + ROW_GAP),
+          .w = lw, .h = ROW_H, .col = 1, .row = i,
+        };
+      }
+
+      // Mid: centered below both columns
+      uint32_t mid_row = paired_rows;
+      float mid_center = base_x + SUB_COL_W + SUB_GAP / 2;
+      for (uint32_t i = u.enc_end + 1; i < u.dec_start && i < idx.size(); i++) {
+        float lw = label_width(idx[i]);
+        pos[idx[i]] = {
+          .x = mid_center - lw / 2,
+          .y = HEADER + mid_row * (ROW_H + ROW_GAP),
+          .w = lw, .h = ROW_H, .col = 0, .row = mid_row,
+        };
+        mid_row++;
+      }
+
+      return mid_row;  // total rows used by this U
+    };
+
+    // Forward U: left side
+    float fwd_base = PAD;
+    uint32_t fwd_rows = layout_u(fwd_idx, fwd_u, fwd_base);
+
+    // Backward U: right side
+    float bwd_base = PAD + 2 * SUB_COL_W + SUB_GAP + PHASE_GAP;
+    auto bwd_u = detect_u_shape(blocks, bwd_idx);
+    uint32_t bwd_rows = layout_u(bwd_idx, bwd_u, bwd_base);
+
+    // Optimizer: centered below everything
+    uint32_t max_used_rows = std::max(fwd_rows, bwd_rows);
+    float opt_y = HEADER + max_used_rows * (ROW_H + ROW_GAP) + 20;
+    float total_w = 2 * (2 * SUB_COL_W + SUB_GAP) + PHASE_GAP;
+    float center_x = PAD + total_w / 2;
+    for (uint32_t r = 0; r < opt_idx.size(); r++) {
+      uint32_t bi = opt_idx[r];
+      float lw = std::min(total_w, std::max(180.0f, label_width(bi)));
+      pos[bi] = {
+        .x = center_x - lw / 2,
+        .y = opt_y + r * (ROW_H + ROW_GAP),
+        .w = lw, .h = ROW_H, .col = 2, .row = 0,
+      };
+    }
+
+    return pos;
+  }
+
+  // ── Default layout: two columns (forward + backward) ────────────────
+  uint32_t n_fwd = static_cast<uint32_t>(fwd_idx.size());
+  uint32_t n_bwd = static_cast<uint32_t>(bwd_idx.size());
+  uint32_t max_rows = std::max(n_fwd, n_bwd);
+  constexpr float COL_WIDTH = 240;
+  constexpr float COL_GAP = 60;
+
+  for (uint32_t r = 0; r < n_fwd; r++) {
+    float lw = label_width(fwd_idx[r]);
+    pos[fwd_idx[r]] = {
+      .x = PAD + (COL_WIDTH - lw) / 2,
+      .y = HEADER + r * (ROW_H + ROW_GAP),
+      .w = lw, .h = ROW_H, .col = 0, .row = r,
+    };
+  }
+  for (uint32_t r = 0; r < n_bwd; r++) {
+    float lw = label_width(bwd_idx[r]);
+    pos[bwd_idx[r]] = {
+      .x = PAD + COL_WIDTH + COL_GAP + (COL_WIDTH - lw) / 2,
+      .y = HEADER + r * (ROW_H + ROW_GAP),
+      .w = lw, .h = ROW_H, .col = 1, .row = r,
     };
   }
 
-  // Backward: column 1, REVERSED rows to mirror forward.
-  // Backward block 0 (Loss BWD) pairs with last forward block.
-  // Backward block N pairs with forward block (n_fwd - 1 - N).
-  for (uint32_t r = 0; r < bwd_idx.size(); r++) {
-    uint32_t bi = bwd_idx[r];
-    // Reverse: first backward block gets row = n_fwd-1, last gets row 0
-    uint32_t mirror_row = (bwd_idx.size() > fwd_idx.size())
-        ? r   // more backward blocks than forward — just stack sequentially
-        : static_cast<uint32_t>(fwd_idx.size()) - 1 - r;
-    // Clamp to valid range
-    if (mirror_row >= max_rows) mirror_row = max_rows - 1;
-
-    float lw = std::min(COL_WIDTH,
-        std::max(120.0f, static_cast<float>(blocks[bi].label.size()) * 8.0f + 16));
-    pos[bi] = {
-        .x = PAD + COL_WIDTH + COL_GAP + (COL_WIDTH - lw) / 2,
-        .y = HEADER + mirror_row * (ROW_HEIGHT + ROW_GAP),
-        .w = lw,
-        .h = ROW_HEIGHT,
-        .col = 1,
-        .row = mirror_row,
-    };
-  }
-
-  // Optimizer: centered below both columns
-  float opt_y = HEADER + max_rows * (ROW_HEIGHT + ROW_GAP) + 20;
+  float opt_y = HEADER + max_rows * (ROW_H + ROW_GAP) + 16;
   float center_x = PAD + COL_WIDTH + COL_GAP / 2;
   for (uint32_t r = 0; r < opt_idx.size(); r++) {
     uint32_t bi = opt_idx[r];
-    float lw = std::min(COL_WIDTH * 2 + COL_GAP,
-        std::max(200.0f, static_cast<float>(blocks[bi].label.size()) * 8.0f + 16));
+    float lw = std::min(COL_WIDTH * 2 + COL_GAP, std::max(180.0f, label_width(bi)));
     pos[bi] = {
-        .x = center_x - lw / 2,
-        .y = opt_y + r * (ROW_HEIGHT + ROW_GAP),
-        .w = lw,
-        .h = ROW_HEIGHT,
-        .col = 2,
-        .row = max_rows + r,
+      .x = center_x - lw / 2,
+      .y = opt_y + r * (ROW_H + ROW_GAP),
+      .w = lw, .h = ROW_H, .col = 2, .row = max_rows + r,
     };
   }
 
@@ -269,7 +420,7 @@ struct GridPos {
   if (blocks.empty()) return {};
 
   auto block_edges = build_block_edges(blocks, ops);
-  auto pos = grid_layout(blocks, block_edges);
+  auto pos = grid_layout(blocks, block_edges, detection.architecture);
 
   // Compute total size
   float max_x = 0, max_y = 0;
@@ -277,51 +428,73 @@ struct GridPos {
     max_x = std::max(max_x, pos[i].x + pos[i].w);
     max_y = std::max(max_y, pos[i].y + pos[i].h);
   }
-  float svg_w = max_x + 40;
-  float svg_h = max_y + 40;
+  float svg_w = max_x + 30;
+  float svg_h = max_y + 30;
 
   SvgRenderer svg;
   svg.begin(svg_w, svg_h, std::string{title});
 
   // Column headers
-  float col0_center = 40 + 130;
-  float col1_center = 40 + 260 + 80 + 130;
+  constexpr float COL_WIDTH = 260;
+  constexpr float COL_GAP = 60;
+  constexpr float PAD = 30;
+  float col0_center = PAD + COL_WIDTH / 2;
+  float col1_center = PAD + COL_WIDTH + COL_GAP + COL_WIDTH / 2;
   svg.text(col0_center, 42, "FORWARD", 12, Color::hex(0x1E40AF), "middle", true);
   svg.text(col1_center, 42, "BACKWARD", 12, Color::hex(0x9A3412), "middle", true);
 
-  // Draw skip edges first (behind blocks)
+  // Filter cross-column edges: only draw meaningful saved-activation edges.
+  // Skip edges from data-movement-only blocks (views, transposes) and
+  // limit to one edge per forward compute block to avoid spaghetti.
   svg.begin_group("skip-edges");
-  for (const auto& e : block_edges) {
-    if (!e.is_skip) continue;
-    // Only draw cross-column skip edges (forward→backward)
-    if (pos[e.src_block].col == 0 && pos[e.dst_block].col == 1) {
-      float x1 = pos[e.src_block].x + pos[e.src_block].w;
+  {
+    std::unordered_set<uint32_t> drawn_src;
+    for (const auto& e : block_edges) {
+      if (pos[e.src_block].col != 0 || pos[e.dst_block].col != 1) continue;
+
+      // Only draw from compute blocks (attention, MLP, conv, resblock, loss)
+      BlockKind sk = blocks[e.src_block].kind;
+      if (sk != BlockKind::SELF_ATTN && sk != BlockKind::CROSS_ATTN &&
+          sk != BlockKind::MLP && sk != BlockKind::RESBLOCK &&
+          sk != BlockKind::CONV_BLOCK && sk != BlockKind::LOSS &&
+          sk != BlockKind::TRANSFORMER)
+        continue;
+
+      // One edge per source block max
+      if (!drawn_src.insert(e.src_block).second) continue;
+
+      float x1 = pos[e.src_block].x + pos[e.src_block].w + 2;
       float y1 = pos[e.src_block].y + pos[e.src_block].h / 2;
-      float x2 = pos[e.dst_block].x;
+      float x2 = pos[e.dst_block].x - 2;
       float y2 = pos[e.dst_block].y + pos[e.dst_block].h / 2;
-      float dx = x2 - x1;
-      float dy = y2 - y1;
-      float cx1 = x1 + dx * 0.3f;
-      float cy1 = y1;
-      float cx2 = x2 - dx * 0.3f;
-      float cy2 = y2;
-      svg.bezier_arrow(x1, y1, cx1, cy1, cx2, cy2, x2, y2,
-                        palette::EDGE_SKIP, 0.6f, true);
+
+      // Slight S-curve for cleaner routing
+      float mid_x = (x1 + x2) / 2;
+      svg.bezier_arrow(x1, y1, mid_x, y1, mid_x, y2, x2, y2,
+                        palette::EDGE_SKIP, 0.5f, true);
     }
   }
   svg.end_group();
 
-  // Draw sequential edges within columns
+  // Thin vertical connector lines within each column
   svg.begin_group("seq-edges");
-  for (const auto& e : block_edges) {
-    if (e.is_skip) continue;
-    if (pos[e.src_block].col == pos[e.dst_block].col) {
-      float x1 = pos[e.src_block].x + pos[e.src_block].w / 2;
-      float y1 = pos[e.src_block].y + pos[e.src_block].h;
-      float x2 = pos[e.dst_block].x + pos[e.dst_block].w / 2;
-      float y2 = pos[e.dst_block].y;
-      if (y2 > y1) // only draw downward
-        svg.arrow(x1, y1, x2, y2, palette::EDGE_DATA_FLOW, 0.35f);
+  {
+    // Collect blocks per column in row order
+    for (uint32_t col = 0; col < 2; col++) {
+      std::vector<uint32_t> col_blocks;
+      for (uint32_t i = 0; i < blocks.size(); i++)
+        if (pos[i].col == col) col_blocks.push_back(i);
+      std::ranges::sort(col_blocks, [&](uint32_t a, uint32_t b) {
+        return pos[a].row < pos[b].row;
+      });
+      for (uint32_t j = 0; j + 1 < col_blocks.size(); j++) {
+        uint32_t a = col_blocks[j], b = col_blocks[j + 1];
+        float x = pos[a].x + pos[a].w / 2;
+        float y1 = pos[a].y + pos[a].h;
+        float y2 = pos[b].y;
+        if (y2 > y1)
+          svg.line(x, y1, x, y2, Color::hex(0xD1D5DB), 0.4f);
+      }
     }
   }
   svg.end_group();
@@ -333,9 +506,9 @@ struct GridPos {
     const auto& p = pos[i];
     auto [fill, border] = colors_for_block(b.kind);
 
-    svg.rect(p.x, p.y, p.w, p.h, fill, border, 5, 0.8f, true);
-    svg.text(p.x + p.w / 2, p.y + p.h / 2 + 4,
-             b.label, 8, Color::hex(0x1F2937), "middle", true);
+    svg.rect(p.x, p.y, p.w, p.h, fill, border, 4, 0.7f, true);
+    svg.text(p.x + p.w / 2, p.y + p.h / 2 + 3,
+             b.label, 7.5f, Color::hex(0x1F2937), "middle", true);
   }
   svg.end_group();
 
