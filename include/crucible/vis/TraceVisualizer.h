@@ -443,32 +443,90 @@ struct UShapeSplit {
   svg.text(col0_center, 42, "FORWARD", 12, Color::hex(0x1E40AF), "middle", true);
   svg.text(col1_center, 42, "BACKWARD", 12, Color::hex(0x9A3412), "middle", true);
 
-  // Filter cross-column edges: only draw meaningful saved-activation edges.
-  // Skip edges from data-movement-only blocks (views, transposes) and
-  // limit to one edge per forward compute block to avoid spaghetti.
+  // For UNet: draw resolution-paired skip connections between
+  // encoder and decoder at matching resolution levels.
+  // For non-UNet: draw filtered data-flow skip edges.
   svg.begin_group("skip-edges");
-  {
+  if (detection.architecture == Architecture::UNET) {
+    // Pair encoder↔decoder blocks by spatial resolution within each U.
+    // Forward U: left two sub-columns. Backward U: right two sub-columns.
+    // Within each U, encoder blocks (col 0) match decoder blocks (col 1)
+    // at the same spatial_h.
+
+    // Collect encoder and decoder blocks per U-shape
+    auto draw_u_skips = [&](const std::vector<uint32_t>& phase_idx) {
+      // Separate encoder (col 0) and decoder (col 1) within this phase
+      std::unordered_map<int32_t, std::vector<uint32_t>> enc_by_res;
+      std::unordered_map<int32_t, std::vector<uint32_t>> dec_by_res;
+      for (uint32_t bi : phase_idx) {
+        if (blocks[bi].spatial_h <= 0) continue;
+        if (pos[bi].col == 0)
+          enc_by_res[blocks[bi].spatial_h].push_back(bi);
+        else if (pos[bi].col == 1)
+          dec_by_res[blocks[bi].spatial_h].push_back(bi);
+      }
+      // Draw horizontal arrows between matching resolutions
+      for (auto& [res, enc_blocks] : enc_by_res) {
+        auto dit = dec_by_res.find(res);
+        if (dit == dec_by_res.end()) continue;
+        // Connect last encoder block at this res to first decoder block
+        uint32_t enc_bi = enc_blocks.back();
+        uint32_t dec_bi = dit->second.front();
+        float x1 = pos[enc_bi].x + pos[enc_bi].w + 3;
+        float y1 = pos[enc_bi].y + pos[enc_bi].h / 2;
+        float x2 = pos[dec_bi].x - 3;
+        float y2 = pos[dec_bi].y + pos[dec_bi].h / 2;
+        float mid_x = (x1 + x2) / 2;
+        svg.bezier_arrow(x1, y1, mid_x, y1, mid_x, y2, x2, y2,
+                          palette::EDGE_SKIP, 0.6f, true);
+      }
+    };
+
+    // Forward phase blocks
+    std::vector<uint32_t> fwd_phase, bwd_phase;
+    for (uint32_t i = 0; i < blocks.size(); i++) {
+      if (blocks[i].phase == Phase::FORWARD) fwd_phase.push_back(i);
+      else if (blocks[i].phase == Phase::BACKWARD) bwd_phase.push_back(i);
+    }
+    draw_u_skips(fwd_phase);
+    draw_u_skips(bwd_phase);
+
+    // Also draw a few forward→backward saved-activation edges (limited)
     std::unordered_set<uint32_t> drawn_src;
+    uint32_t cross_count = 0;
     for (const auto& e : block_edges) {
-      if (pos[e.src_block].col != 0 || pos[e.dst_block].col != 1) continue;
-
-      // Only draw from compute blocks (attention, MLP, conv, resblock, loss)
+      if (cross_count >= 8) break;  // limit cross-phase edges
+      if (blocks[e.src_block].phase != Phase::FORWARD) continue;
+      if (blocks[e.dst_block].phase != Phase::BACKWARD) continue;
       BlockKind sk = blocks[e.src_block].kind;
-      if (sk != BlockKind::SELF_ATTN && sk != BlockKind::CROSS_ATTN &&
-          sk != BlockKind::MLP && sk != BlockKind::RESBLOCK &&
-          sk != BlockKind::CONV_BLOCK && sk != BlockKind::LOSS &&
-          sk != BlockKind::TRANSFORMER)
-        continue;
-
-      // One edge per source block max
+      if (sk != BlockKind::SELF_ATTN && sk != BlockKind::RESBLOCK &&
+          sk != BlockKind::LOSS) continue;
       if (!drawn_src.insert(e.src_block).second) continue;
 
       float x1 = pos[e.src_block].x + pos[e.src_block].w + 2;
       float y1 = pos[e.src_block].y + pos[e.src_block].h / 2;
       float x2 = pos[e.dst_block].x - 2;
       float y2 = pos[e.dst_block].y + pos[e.dst_block].h / 2;
-
-      // Slight S-curve for cleaner routing
+      float mid_x = (x1 + x2) / 2;
+      svg.bezier_arrow(x1, y1, mid_x, y1, mid_x, y2, x2, y2,
+                        Color::hex(0xA78BFA), 0.4f, true);
+      cross_count++;
+    }
+  } else {
+    // Non-UNet: filtered data-flow edges
+    std::unordered_set<uint32_t> drawn_src;
+    for (const auto& e : block_edges) {
+      if (pos[e.src_block].col != 0 || pos[e.dst_block].col != 1) continue;
+      BlockKind sk = blocks[e.src_block].kind;
+      if (sk != BlockKind::SELF_ATTN && sk != BlockKind::CROSS_ATTN &&
+          sk != BlockKind::MLP && sk != BlockKind::RESBLOCK &&
+          sk != BlockKind::CONV_BLOCK && sk != BlockKind::LOSS &&
+          sk != BlockKind::TRANSFORMER) continue;
+      if (!drawn_src.insert(e.src_block).second) continue;
+      float x1 = pos[e.src_block].x + pos[e.src_block].w + 2;
+      float y1 = pos[e.src_block].y + pos[e.src_block].h / 2;
+      float x2 = pos[e.dst_block].x - 2;
+      float y2 = pos[e.dst_block].y + pos[e.dst_block].h / 2;
       float mid_x = (x1 + x2) / 2;
       svg.bezier_arrow(x1, y1, mid_x, y1, mid_x, y2, x2, y2,
                         palette::EDGE_SKIP, 0.5f, true);
