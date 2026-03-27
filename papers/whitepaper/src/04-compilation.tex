@@ -28,6 +28,75 @@ No mutex, no freelist, no fragmentation.
 
 \textbf{Correctness.}
 Non-overlap is proved in Lean~4 for the general case and verified by Z3 for configurations up to 64 tensors with arbitrary lifetimes.
+Figure~\ref{fig:memplan} illustrates the sweep-line assignment.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[xscale=0.72, yscale=0.85]
+  %% Grid
+  \fill[black!2] (0,0) rectangle (12,4.2);
+  \draw[black!10, very thin] foreach \x in {1,...,11} {(\x,0) -- (\x,4.2)};
+  \draw[black!10, very thin] foreach \y in {1,...,4}  {(0,\y) -- (12,\y)};
+
+  %% Axes
+  \draw[black!40, -{Stealth[length=4pt]}] (0,0) -- (12.5,0)
+    node[right, font=\sffamily\scriptsize] {op index};
+  \draw[black!40, -{Stealth[length=4pt]}] (0,0) -- (0,4.6)
+    node[above, font=\sffamily\scriptsize] {pool offset (KB)};
+
+  %% Op ticks
+  \foreach \x in {0,...,11} {
+    \node[font=\tiny, text=black!40, below=1pt] at (\x+0.5, 0) {\x};
+  }
+  %% Offset ticks
+  \foreach \y/\lab in {0/0, 1/1, 2/2, 3/3, 4/4} {
+    \node[font=\tiny, text=black!40, left=2pt] at (0, \y) {\lab};
+  }
+
+  %% Tensor bars
+  %% T0: ops 0-5, offset 0, size 2KB
+  \fill[blue!18] (0.1, 0.05) rectangle (5.9, 1.95);
+  \draw[blue!50, thick] (0.1, 0.05) rectangle (5.9, 1.95);
+  \node[font=\sffamily\tiny\bfseries, blue!70] at (3, 1.0) {$T_0$: 2\,KB};
+
+  %% T1: ops 1-7, offset 2KB, size 1.5KB
+  \fill[green!15] (1.1, 2.05) rectangle (7.9, 3.55);
+  \draw[green!50!black, thick] (1.1, 2.05) rectangle (7.9, 3.55);
+  \node[font=\sffamily\tiny\bfseries, green!55!black] at (4.5, 2.8) {$T_1$: 1.5\,KB};
+
+  %% T2: ops 6-9, offset 0 (reuses T0), size 1KB
+  \fill[orange!18] (6.1, 0.05) rectangle (9.9, 0.95);
+  \draw[orange!60, thick] (6.1, 0.05) rectangle (9.9, 0.95);
+  \node[font=\sffamily\tiny\bfseries, orange!70!black] at (8, 0.5) {$T_2$: 1\,KB};
+
+  %% T3: ops 3-10, offset 3.5KB, size 0.5KB
+  \fill[red!12] (3.1, 3.6) rectangle (10.9, 4.1);
+  \draw[red!45, thick] (3.1, 3.6) rectangle (10.9, 4.1);
+  \node[font=\sffamily\tiny\bfseries, red!60!black] at (7, 3.85) {$T_3$: 0.5\,KB};
+
+  %% Reuse arrow
+  \draw[-{Stealth[length=3.5pt]}, dashed, black!40, thick]
+    (5.95, 0.5) -- node[above, font=\tiny\itshape, text=black!40] {reuse} (6.05, 0.5);
+
+  %% Pool brace
+  \draw[decorate, decoration={brace, amplitude=5pt}, ultra thick, black!25]
+    (12.4, 0) -- (12.4, 4.1)
+    node[midway, right=7pt, font=\sffamily\scriptsize, text=black!50,
+         align=center] {pool\\4.1\,KB};
+
+  %% Birth/death labels
+  \draw[blue!50, thick, -{Stealth[length=3pt]}] (0.1, -0.4)
+    -- node[below, font=\tiny, text=blue!50] {birth} (0.5, -0.4);
+  \draw[blue!50, thick, {Stealth[length=3pt]}-] (5.5, -0.4)
+    -- node[below, font=\tiny, text=blue!50] {death} (5.9, -0.4);
+\end{tikzpicture}
+\caption{Sweep-line memory planning.
+  Each tensor is assigned a non-overlapping offset within a single contiguous pool
+  based on its dataflow lifetime $[\mathit{birth}, \mathit{death}]$.
+  After $T_0$ dies at op~5, $T_2$ reuses the same offset.
+  One \texttt{cudaMalloc(pool\_bytes)} replaces all per-operation allocations.}
+\label{fig:memplan}
+\end{figure}
 
 \textbf{Dynamic shapes.}
 New \code{MemoryPlan} computed by the background thread and activated via atomic swap at the iteration boundary.
@@ -69,7 +138,74 @@ For a given operation, shape, and target device, \code{CostModel.h} defines the 
 \end{itemize}
 
 A Z3 \code{optimize} query finds the configuration minimizing the objective subject to all constraints.
-The solution is optimal within the analytical model.
+The solution is optimal within the analytical model (Figure~\ref{fig:roofline}).
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[xscale=1.1, yscale=0.9]
+  %% Axes
+  \draw[black!40, -{Stealth[length=4pt]}] (0,0) -- (7.5,0)
+    node[right, font=\sffamily\scriptsize]
+    {operational intensity (FLOP/byte)};
+  \draw[black!40, -{Stealth[length=4pt]}] (0,0) -- (0,5)
+    node[above, font=\sffamily\scriptsize, align=center]
+    {throughput\\(TFLOPS)};
+
+  %% Ridge point
+  \pgfmathsetmacro{\ridge}{3.5}
+  \pgfmathsetmacro{\peak}{4.0}
+
+  %% Memory-bound slope
+  \draw[blue!50, ultra thick] (0,0) -- (\ridge, \peak);
+  %% Compute-bound ceiling
+  \draw[red!50, ultra thick] (\ridge, \peak) -- (7.2, \peak);
+
+  %% Ridge point marker
+  \fill[black!60] (\ridge, \peak) circle (2.5pt);
+  \node[font=\sffamily\tiny, text=black!50, above right=2pt]
+    at (\ridge, \peak) {ridge point};
+
+  %% Region labels
+  \node[font=\sffamily\scriptsize, text=blue!55, rotate=38] at (1.3, 1.5)
+    {memory-bound};
+  \node[font=\sffamily\scriptsize, text=red!50] at (5.5, 4.3)
+    {compute-bound};
+
+  %% Example kernels
+  \fill[orange!70] (1.2, 1.35) circle (3pt)
+    node[right=4pt, font=\sffamily\tiny, text=black!55] {LayerNorm};
+  \fill[orange!70] (2.0, 2.25) circle (3pt)
+    node[right=4pt, font=\sffamily\tiny, text=black!55] {Softmax};
+  \fill[green!60!black] (4.5, \peak) circle (3pt)
+    node[below right=1pt, font=\sffamily\tiny, text=black!55] {GEMM 4096};
+  \fill[green!60!black] (5.8, \peak) circle (3pt)
+    node[below right=1pt, font=\sffamily\tiny, text=black!55] {Conv2D};
+  \fill[purple!60] (3.2, 3.4) circle (3pt)
+    node[left=4pt, font=\sffamily\tiny, text=black!55] {SDPA};
+
+  %% Z3 annotation
+  \draw[decorate, decoration={brace, amplitude=4pt}, thick, black!25]
+    (7.4, 0) -- (7.4, \peak)
+    node[midway, right=7pt, font=\sffamily\tiny, text=black!45,
+         align=left, text width=5.5em]
+    {Z3 optimizes\\tile, pipeline,\\warps to reach\\roofline ceiling};
+
+  %% HBM BW label
+  \node[font=\sffamily\tiny, text=blue!40, rotate=90] at (-0.5, 2)
+    {HBM bandwidth};
+  %% Peak label
+  \node[font=\sffamily\tiny, text=red!40] at (0.8, 4.3)
+    {peak TFLOPS};
+\end{tikzpicture}
+\caption{Roofline model for SMT kernel synthesis.
+  Hardware parameters (peak TFLOPS, HBM bandwidth) define the roofline.
+  Each kernel's operational intensity determines whether it is
+  memory-bound or compute-bound.
+  Z3 finds the tile/pipeline/warp configuration that reaches the
+  roofline ceiling, subject to hardware constraints C1--C8.
+  Longitude calibration adjusts the roofline to measured reality.}
+\label{fig:roofline}
+\end{figure}
 
 \textbf{Qualification.}
 The roofline model does not capture L1/L2 cache behavior, instruction scheduling, warp divergence, or TLB pressure.
@@ -89,6 +225,61 @@ Four severity levels based on which hash component diverges:
   \item \textbf{ScopeHash mismatch}---same operation, same shapes, different module context (code refactoring). Soft warning: compiled plan remains valid.
   \item \textbf{CallsiteHash mismatch}---same shapes, same module, different source location. Softest warning: logged only.
 \end{enumerate}
+
+Figure~\ref{fig:divergence} illustrates the graduated detection hierarchy.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  level/.style={draw=black!30, rounded corners=2pt,
+    minimum width=17em, minimum height=2em,
+    font=\sffamily\small, align=center,
+    blur shadow={shadow blur steps=3, shadow xshift=0.3pt,
+                 shadow yshift=-0.3pt, shadow blur radius=1pt}},
+  arr/.style={-{Stealth[length=4pt]}, thick, black!30},
+  chk/.style={font=\sffamily\scriptsize, text=black!50},
+]
+  \node[level, fill=red!8] (s1)
+    {\textbf{Level 1:} SchemaHash $\neq$ \quad {\scriptsize different op}};
+  \node[level, fill=orange!8, below=0.6em of s1] (s2)
+    {\textbf{Level 2:} ShapeHash $\neq$ \quad {\scriptsize different shapes}};
+  \node[level, fill=yellow!10, below=0.6em of s2] (s3)
+    {\textbf{Level 3:} ScopeHash $\neq$ \quad {\scriptsize different module}};
+  \node[level, fill=green!6, below=0.6em of s3] (s4)
+    {\textbf{Level 4:} CallsiteHash $\neq$ \quad {\scriptsize different source loc}};
+
+  %% Severity labels
+  \node[chk, left=1em of s1] {\textcolor{red!60}{\textbf{hard}}};
+  \node[chk, left=1em of s2] {\textcolor{orange!70}{\textbf{hard}}};
+  \node[chk, left=1em of s3] {\textcolor{yellow!70!black}{\textbf{soft}}};
+  \node[chk, left=1em of s4] {\textcolor{green!55!black}{\textbf{log}}};
+
+  %% Action labels
+  \node[chk, right=0.8em of s1, text width=8em, align=left]
+    {fallback to eager\\re-record, recompile};
+  \node[chk, right=0.8em of s2, text width=8em, align=left]
+    {fallback to eager\\kernels + plan invalid};
+  \node[chk, right=0.8em of s3, text width=8em, align=left]
+    {warning only\\plan remains valid};
+  \node[chk, right=0.8em of s4, text width=8em, align=left]
+    {logged only\\no action};
+
+  %% Check flow
+  \draw[arr] ([yshift=1.2em]s1.north) -- (s1.north)
+    node[above right=-0.1em and 0.2em, chk] {compiled op $i$};
+  \draw[arr] (s1.south) -- (s2.north)
+    node[midway, right=0.3em, chk] {match $\checkmark$};
+  \draw[arr] (s2.south) -- (s3.north)
+    node[midway, right=0.3em, chk] {match $\checkmark$};
+  \draw[arr] (s3.south) -- (s4.north)
+    node[midway, right=0.3em, chk] {match $\checkmark$};
+\end{tikzpicture}
+\caption{Graduated divergence detection.
+  Four hash levels are checked in order of decreasing severity.
+  A SchemaHash mismatch (different operation) triggers immediate eager fallback.
+  A CallsiteHash mismatch (refactored code, same semantics) is logged without action.}
+\label{fig:divergence}
+\end{figure}
 
 \textbf{Recovery protocol.}
 After divergence, the foreground thread sets \code{BackgroundThread::reset\_requested} (atomic bool).

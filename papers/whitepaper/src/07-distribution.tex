@@ -84,13 +84,58 @@ Each iteration: the DAG chain is persisted (a few KB per step).
 Weight snapshots are periodic.
 Recovery to step $T{+}500$ from snapshot at~$T$: load snapshot, replay 500 steps deterministically (DAG fixes execution order, memory plan fixes addresses, Philox4x32 fixes RNG state---counter-based, platform-independent).
 
-\textbf{Three tiers:}
+\textbf{Three tiers} (Figure~\ref{fig:cipher}):
 
-\begin{itemize}
-  \item \textbf{Hot:} other Relays' RAM from redundancy (Section~7.3). Single Relay failure: immediate recovery, zero cost.
-  \item \textbf{Warm:} local NVMe per Relay. Relay reboot recovery: seconds.
-  \item \textbf{Cold:} durable object storage (S3, GCS). Total Canopy failure recovery: minutes.
-\end{itemize}
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  tier/.style={draw=black!30, rounded corners=2pt,
+    minimum width=20em, minimum height=2.4em,
+    font=\sffamily\small, align=center,
+    blur shadow={shadow blur steps=3, shadow xshift=0.3pt,
+                 shadow yshift=-0.3pt, shadow blur radius=1pt}},
+  lbl/.style={font=\sffamily\scriptsize, text=black!45},
+  timing/.style={font=\sffamily\scriptsize\bfseries},
+]
+  \node[tier, fill=red!6] (hot)
+    {\textbf{Hot} --- peer Relay RAM (RAID redundancy)};
+  \node[tier, fill=orange!6, below=0.7em of hot] (warm)
+    {\textbf{Warm} --- local NVMe per Relay};
+  \node[tier, fill=blue!5, below=0.7em of warm] (cold)
+    {\textbf{Cold} --- durable object store (S3/GCS)};
+
+  %% Recovery times
+  \node[timing, text=red!55, right=1em of hot] {0\,ms};
+  \node[timing, text=orange!65, right=1em of warm] {seconds};
+  \node[timing, text=blue!50, right=1em of cold] {minutes};
+
+  %% Left labels
+  \node[lbl, left=1em of hot] {1 Relay fails};
+  \node[lbl, left=1em of warm] {Relay reboots};
+  \node[lbl, left=1em of cold] {Canopy lost};
+
+  %% Cipher contents
+  \node[lbl, below=1em of cold, text width=22em, align=center]
+    {Cipher contents: DAG chain $\cdot$ weight snapshots $\cdot$
+     KernelCache $\cdot$ Philox RNG state $\cdot$ proof certificates $\cdot$
+     Longitude calibration};
+
+  %% Cascade arrows
+  \draw[-{Stealth[length=4pt]}, thick, black!25]
+    ([xshift=-10em]hot.south) -- ([xshift=-10em]warm.north);
+  \draw[-{Stealth[length=4pt]}, thick, black!25]
+    ([xshift=-10em]warm.south) -- ([xshift=-10em]cold.north);
+  \node[font=\tiny\itshape, text=black!30, left=0.5em of warm,
+        xshift=-2em] {fallback};
+\end{tikzpicture}
+\caption{Three-tier Cipher persistence.
+  The hot tier provides zero-cost recovery from single Relay failure
+  (data already replicated to peers).
+  Each tier subsumes the one above as a fallback.
+  Event-sourced: DAG chain (KB/step) persisted every step,
+  weight snapshots periodic.}
+\label{fig:cipher}
+\end{figure}
 
 The Cipher also stores the KernelCache, F$\star$X proof certificates, Longitude calibration data, and Augur's history.
 On migration: universal proofs (hash, protocol) are inherited.
