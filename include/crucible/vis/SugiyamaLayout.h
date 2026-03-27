@@ -13,10 +13,11 @@
 //
 // Not hot path — std::vector is appropriate.
 
+#include <crucible/vis/NetworkSimplex.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <limits>
-#include <numeric>
 #include <vector>
 
 namespace crucible::vis {
@@ -167,39 +168,85 @@ struct LayoutParams {
     }
   }
 
-  // ── Phase 4: X-coordinate assignment ─────────────────────────────
+  // ── Phase 4: X-coordinate assignment via network simplex ──────────
+  //
+  // Build auxiliary constraint graph:
+  //   - Adjacent pairs in each rank: minlen = half-widths + gap (hard sep)
+  //   - Original edges: weight = edge weight (spring pulling together)
+  // Solve with network simplex for optimal X that minimizes weighted
+  // edge bending subject to non-overlap constraints.
 
-  // Compute x positions: place nodes left-to-right within each layer
-  // with gaps, then center each layer.
-
-  // Compute per-layer width
-  std::vector<float> layer_widths(num_layers, 0);
+  // Sort layers by order before building constraints
   for (uint32_t l = 0; l < num_layers; l++) {
-    float w = 0;
-    for (uint32_t idx : layers[l]) {
-      w += nodes[idx].min_width;
-    }
-    // Add gaps
-    if (!layers[l].empty())
-      w += params.node_h_gap * static_cast<float>(layers[l].size() - 1);
-    layer_widths[l] = w;
-  }
-
-  float max_layer_width = *std::ranges::max_element(layer_widths);
-  float total_width = max_layer_width + 2 * params.padding;
-
-  // Assign x: center each layer within total_width
-  for (uint32_t l = 0; l < num_layers; l++) {
-    float offset = params.padding + (max_layer_width - layer_widths[l]) / 2;
-    // Sort by order
-    auto& layer = layers[l];
-    std::ranges::sort(layer, [&](uint32_t a, uint32_t b) {
+    std::ranges::sort(layers[l], [&](uint32_t a, uint32_t b) {
       return nodes[a].order < nodes[b].order;
     });
-    float x = offset;
-    for (uint32_t idx : layer) {
-      nodes[idx].x = x + nodes[idx].min_width / 2;  // center
-      x += nodes[idx].min_width + params.node_h_gap;
+  }
+
+  std::vector<NSEdge> aux_edges;
+  aux_edges.reserve(n + edges.size());
+
+  // Left-right separation constraints within each rank.
+  // x(right) - x(left) >= rw(left) + lw(right) + gap
+  // Using half-widths (min_width/2) as lw and rw.
+  for (uint32_t l = 0; l < num_layers; l++) {
+    const auto& layer = layers[l];
+    for (uint32_t j = 1; j < layer.size(); j++) {
+      uint32_t left = layer[j - 1];
+      uint32_t right = layer[j];
+      int32_t sep = static_cast<int32_t>(
+          nodes[left].min_width / 2 + nodes[right].min_width / 2
+          + params.node_h_gap);
+      aux_edges.push_back({left, right, sep, 0});  // hard constraint, no spring
+    }
+  }
+
+  // Spring edges for original DAG edges (pull connected nodes together)
+  for (const auto& e : edges) {
+    if (e.src < n && e.dst < n && e.src != e.dst) {
+      // Bidirectional spring: if src is left of dst, pull right;
+      // if src is right of dst, pull left. Network simplex handles
+      // this by allowing negative rank differences.
+      // We model as: both directions with minlen=0, weight=1
+      aux_edges.push_back({e.src, e.dst, 0, 1});
+    }
+  }
+
+  // Solve X positions via network simplex
+  auto ns_result = network_simplex(n, aux_edges, 200);
+
+  float total_width = 0;
+  if (ns_result.converged) {
+    // Use network simplex result as X positions (scaled to float)
+    for (uint32_t i = 0; i < n; i++) {
+      nodes[i].x = params.padding +
+          static_cast<float>(ns_result.rank[i]) + nodes[i].min_width / 2;
+    }
+    // Compute total width
+    float max_x = 0;
+    for (uint32_t i = 0; i < n; i++)
+      max_x = std::max(max_x, nodes[i].x + nodes[i].min_width / 2);
+    total_width = max_x + params.padding;
+  } else {
+    // Fallback: naive left-to-right placement
+    std::vector<float> layer_widths(num_layers, 0);
+    for (uint32_t l = 0; l < num_layers; l++) {
+      float w = 0;
+      for (uint32_t idx : layers[l])
+        w += nodes[idx].min_width;
+      if (!layers[l].empty())
+        w += params.node_h_gap * static_cast<float>(layers[l].size() - 1);
+      layer_widths[l] = w;
+    }
+    float max_layer_width = *std::ranges::max_element(layer_widths);
+    total_width = max_layer_width + 2 * params.padding;
+    for (uint32_t l = 0; l < num_layers; l++) {
+      float offset = params.padding + (max_layer_width - layer_widths[l]) / 2;
+      float x = offset;
+      for (uint32_t idx : layers[l]) {
+        nodes[idx].x = x + nodes[idx].min_width / 2;
+        x += nodes[idx].min_width + params.node_h_gap;
+      }
     }
   }
 
