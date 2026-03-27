@@ -222,10 +222,13 @@ struct LayoutParams {
 
   float total_height = y - params.layer_v_gap + params.padding;
 
-  // ── Phase 6: Median improvement (optional, 4 sweeps) ─────────────
+  // ── Phase 6: Median improvement (4 sweeps) ─────────────────────────
+  //
+  // Nudge nodes toward the median of their connected nodes' x positions.
+  // After each sweep, enforce minimum separation to prevent overlap.
 
-  // Nudge nodes toward the median of their connected nodes' x positions
   for (uint32_t sweep = 0; sweep < 4; sweep++) {
+    // Down sweep: nudge toward predecessor median
     for (uint32_t l = 1; l < num_layers; l++) {
       for (uint32_t idx : layers[l]) {
         if (rev[idx].empty()) continue;
@@ -235,11 +238,55 @@ struct LayoutParams {
           pred_x.push_back(nodes[p].x);
         std::ranges::sort(pred_x);
         float median = pred_x[pred_x.size() / 2];
-        // Nudge toward median (don't overlap neighbors)
         nodes[idx].x = 0.7f * nodes[idx].x + 0.3f * median;
       }
     }
+
+    // Up sweep: nudge toward successor median
+    for (uint32_t l = num_layers - 1; l > 0; l--) {
+      for (uint32_t idx : layers[l - 1]) {
+        if (fwd[idx].empty()) continue;
+        std::vector<float> succ_x;
+        succ_x.reserve(fwd[idx].size());
+        for (uint32_t s : fwd[idx])
+          succ_x.push_back(nodes[s].x);
+        std::ranges::sort(succ_x);
+        float median = succ_x[succ_x.size() / 2];
+        nodes[idx].x = 0.7f * nodes[idx].x + 0.3f * median;
+      }
+    }
+
+    // ── Overlap enforcement: sweep left→right within each layer ────
+    // Guarantees: edge-to-edge distance >= node_h_gap.
+    // This is a hard constraint — no node can violate it after this pass.
+    for (uint32_t l = 0; l < num_layers; l++) {
+      auto& layer = layers[l];
+      // Sort by current x position
+      std::ranges::sort(layer, [&](uint32_t a, uint32_t b) {
+        return nodes[a].x < nodes[b].x;
+      });
+      // Push right if overlapping
+      for (uint32_t j = 1; j < layer.size(); j++) {
+        uint32_t prev = layer[j - 1];
+        uint32_t curr = layer[j];
+        float min_x = nodes[prev].x + nodes[prev].min_width / 2
+                     + params.node_h_gap
+                     + nodes[curr].min_width / 2;
+        if (nodes[curr].x < min_x)
+          nodes[curr].x = min_x;
+      }
+      // Update order to match new x positions
+      for (uint32_t pos = 0; pos < layer.size(); pos++)
+        nodes[layer[pos]].order = pos;
+    }
   }
+
+  // Recompute total width after nudging may have expanded the layout
+  float actual_max_x = 0;
+  for (uint32_t i = 0; i < n; i++)
+    actual_max_x = std::max(actual_max_x,
+        nodes[i].x + nodes[i].min_width / 2);
+  total_width = actual_max_x + params.padding;
 
   return LayoutResult{
       .nodes = std::move(nodes),
