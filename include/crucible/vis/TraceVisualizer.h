@@ -559,6 +559,41 @@ struct UShapeSplit {
   }
   svg.end_group();
 
+  // ── Resolution bands for UNet ─────────────────────────────────────
+  if (detection.architecture == Architecture::UNET) {
+    svg.begin_group("res-bands");
+    // Group forward blocks by spatial_h, draw subtle background bands
+    struct ResBand { int32_t res; float y_min; float y_max; };
+    std::vector<ResBand> bands;
+    int32_t prev_res = 0;
+    for (uint32_t i = 0; i < blocks.size(); i++) {
+      if (blocks[i].phase != Phase::FORWARD) continue;
+      int32_t r = blocks[i].spatial_h;
+      if (r <= 0) continue;
+      if (r != prev_res) {
+        bands.push_back({r, pos[i].y - 2, pos[i].y + pos[i].h + 2});
+        prev_res = r;
+      } else if (!bands.empty()) {
+        bands.back().y_max = pos[i].y + pos[i].h + 2;
+      }
+    }
+    // Draw alternating very subtle background bands
+    constexpr Color band_colors[] = {
+      Color::hex(0xFEFCE8), // warm yellow tint
+      Color::hex(0xEFF6FF), // cool blue tint
+    };
+    for (uint32_t i = 0; i < bands.size(); i++) {
+      const auto& band = bands[i];
+      svg.rect(2, band.y_min, svg_w - 4, band.y_max - band.y_min,
+               band_colors[i % 2], Color::hex(0xE5E7EB), 0, 0, false);
+      // Resolution label on the left margin
+      std::string res_label = std::to_string(band.res) + "x" + std::to_string(band.res);
+      svg.text(4, (band.y_min + band.y_max) / 2 + 3,
+               res_label, 6.0f, Color::hex(0xC0C0C0), "start");
+    }
+    svg.end_group();
+  }
+
   // Draw blocks
   svg.begin_group("blocks");
   for (uint32_t i = 0; i < blocks.size(); i++) {
