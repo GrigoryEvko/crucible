@@ -1,0 +1,203 @@
+% ═══════════════════════════════════════════════════════════════════
+% §3  Arena Allocator
+% ═══════════════════════════════════════════════════════════════════
+
+\section{Arena Allocator}
+\label{sec:arena}
+
+The \struct{Arena} is a bump-pointer allocator that provides all memory
+for DAG structures, \struct{Expr} nodes, \struct{TraceEntry} arrays,
+and their sub-allocations.  Allocation is a pointer bump
+(${\approx}\,2\;\text{ns}$); there is no individual deallocation.
+All memory is freed when the \struct{Arena} is destroyed.
+
+\subsection{Block Structure}
+
+\begin{definition}[Arena block]
+An arena block is a contiguous region of $B$ bytes obtained from
+\code{std::malloc}.  The default block size is $B = 2^{20} = \bytes{1M}$.
+Requests larger than $B - a_{\max}$ (where $a_{\max}$ is the alignment)
+receive a dedicated oversized block of size $\max(B, s + a)$.
+\end{definition}
+
+\subsection{Layout}
+
+The \struct{Arena} struct fits in a single 64-byte cache line.
+Hot fields (touched on every allocation) are at the top; cold fields
+(touched only on the slow path) follow.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{l l r l}
+\toprule
+\textbf{Category} & \textbf{Field} & \textbf{Size} & \textbf{Description} \\
+\midrule
+\multirow{4}{*}{Hot}
+& \field{cur\_block\_}  & 8B & Pointer to current block \\
+& \field{cur\_base\_}   & 8B & \code{reinterpret\_cast<uintptr\_t>(cur\_block\_)} \\
+& \field{offset\_}      & 8B & Current byte offset within block \\
+& \field{end\_offset\_} & 8B & Usable size of current block \\
+\midrule
+\multirow{2}{*}{Cold}
+& \field{block\_size\_} & 8B & Default block size for new allocations \\
+& \field{blocks\_}      & 24B & \code{std::vector<char*>} (all blocks for cleanup) \\
+\bottomrule
+\end{tabular}
+\caption{Arena struct layout ($\leq 64$ bytes, verified by \code{static\_assert}).}
+\end{table}
+
+\begin{invariant}[Arena size]
+$\code{sizeof(Arena)} \leq 64$. \quad$[\textit{consteval}]$
+\end{invariant}
+
+\subsection{Alignment Formula}
+
+\begin{definition}[Arena alignment]
+\label{def:arena-align}
+Given absolute base address $b = \field{cur\_base\_}$, current offset $o = \field{offset\_}$,
+and requested alignment $a$ (a power of two), the aligned offset is:
+\[
+  o' = \bigl((b + o + a - 1) \;\mathbin{\&}\; {\sim}(a-1)\bigr) - b
+\]
+Equivalently, the aligned address is:
+\[
+  \operatorname{addr} = (b + o + a - 1) \;\mathbin{\&}\; {\sim}(a-1)
+\]
+and $o' = \operatorname{addr} - b$.
+Alignment is computed against the \emph{absolute address}, not the
+block-relative offset, because \code{std::malloc} only guarantees
+$\operatorname{alignof}(\text{std::max\_align\_t}) = 16$ bytes.
+\end{definition}
+
+\begin{theorem}[Alignment correctness]
+\label{thm:arena-align}
+For any $b \in \bv{64}$, $o \in \bv{64}$, and $a = 2^m$ with $0 \le m \le 63$:
+\[
+  \bigl((b + o + a - 1) \;\mathbin{\&}\; {\sim}(a-1)\bigr) \bmod a = 0
+\]
+\end{theorem}
+\begin{proof}
+Let $x = b + o$.  Then $(x + a - 1) \;\mathbin{\&}\; {\sim}(a-1)$
+clears the low $m$ bits, producing a multiple of $a$.
+Formally: ${\sim}(a-1)$ is a mask with the top $64-m$ bits set, so
+the AND zeroes bits $0$ through $m-1$.
+$[\textit{Z3}: \text{QF\_BV}]$
+\end{proof}
+
+\subsection{Allocation Algorithm}
+
+\begin{algorithm_spec}[\code{alloc(fx::Alloc, size, align)}]
+\label{alg:arena-alloc}
+Requires capability token \code{fx::Alloc} (cannot be called from hot path).
+
+\textbf{Fast path} (fits in current block):
+\begin{enumerate}
+  \item Compute $\operatorname{addr} = (b + o + a - 1) \;\mathbin{\&}\; {\sim}(a-1)$,
+        $o' = \operatorname{addr} - b$.
+  \item If $o' + s \le \field{end\_offset\_}$: set
+        $\field{offset\_} \leftarrow o' + s$, return $\field{cur\_block\_} + o'$.
+\end{enumerate}
+
+\textbf{Slow path} (block exhausted):
+\begin{enumerate}
+  \item Compute $B' = \max(B, s + a)$.
+  \item Allocate new block: $p \leftarrow \code{std::malloc}(B')$.
+        If $p = \text{null}$, call \code{std::abort()}.
+  \item Push $p$ into \field{blocks\_} vector.
+  \item Update hot fields: $\field{cur\_block\_} \leftarrow p$,
+        $\field{cur\_base\_} \leftarrow \operatorname{uintptr}(p)$,
+        $\field{end\_offset\_} \leftarrow B'$.
+  \item Recompute alignment for the fresh block and return.
+\end{enumerate}
+\end{algorithm_spec}
+
+\begin{algorithm_spec}[\code{alloc\_obj<T>(fx::Alloc)}]
+Typed wrapper: $\code{static\_cast<T*>(alloc(a, sizeof(T), alignof(T)))}$.
+\end{algorithm_spec}
+
+\begin{algorithm_spec}[\code{alloc\_array<T>(fx::Alloc, n)}]
+Array allocation with overflow protection.
+If $n = 0$, returns \code{nullptr} (NullSafe: caller must check).
+Otherwise computes $\code{std::mul\_sat}(n, \code{sizeof}(T))$ to prevent
+$n \times \code{sizeof}(T)$ from wrapping, then delegates to \code{alloc}.
+\end{algorithm_spec}
+
+\begin{algorithm_spec}[\code{copy\_string(fx::Alloc, src)}]
+Copies a null-terminated string into the arena with alignment~$1$.
+Returns \code{nullptr} for null input.
+The returned pointer is valid for the lifetime of the \struct{Arena}.
+\end{algorithm_spec}
+
+\subsection{Formal Properties}
+
+\begin{theorem}[Allocation alignment]
+\label{thm:alloc-align}
+$\forall\; b \in \bv{64},\; o \in \bv{64},\; a = 2^m.\;$
+$\operatorname{alloc}(s, a)$ returns a pointer $p$ satisfying
+$p \bmod a = 0$.
+\quad$[\textit{Z3}]$
+\end{theorem}
+
+\begin{theorem}[Pairwise disjointness]
+\label{thm:alloc-disjoint}
+Let $p_1, s_1$ and $p_2, s_2$ be the pointer and size of any two
+distinct allocations from the same \struct{Arena}.  Then:
+\[
+  [p_1,\; p_1 + s_1) \;\cap\; [p_2,\; p_2 + s_2) = \emptyset
+\]
+\end{theorem}
+\begin{proof}
+Within a single block, allocations advance $\field{offset\_}$
+monotonically: $o'_2 \ge o'_1 + s_1$.  Across blocks, disjointness
+follows from \code{malloc} returning non-overlapping regions.
+$[\textit{Lean}]$
+\end{proof}
+
+\begin{theorem}[Alignment waste bound]
+\label{thm:alloc-waste}
+For $n$ allocations each requesting alignment $a$, the total wasted
+bytes due to alignment padding is at most $n \cdot (a - 1)$:
+\[
+  \sum_{i=1}^{n} (\text{aligned}_{i} - \text{unaligned}_{i}) \le n \cdot (a - 1)
+\]
+where $\text{unaligned}_i = b + o_i$ and $\text{aligned}_i = \operatorname{align}(\text{unaligned}_i, a)$.
+\quad$[\textit{Lean}]$
+\end{theorem}
+
+\begin{theorem}[Zero external fragmentation]
+\label{thm:arena-nofrag}
+The arena never frees individual objects, so freed memory is never
+interspersed with live memory.  External fragmentation is
+structurally zero.
+\quad$[\textit{Lean}]$
+\end{theorem}
+
+\begin{property}[Non-copyable, non-movable]
+\label{prop:arena-noncopy}
+\struct{Arena} deletes copy and move constructors/assignment with
+reasons: ``interior pointers would dangle.''
+This prevents invalidation of pointers returned by \code{alloc}.
+\end{property}
+
+\subsection{Z3 Encoding Sketch}
+\label{sec:arena-z3}
+
+The alignment correctness theorem (Theorem~\ref{thm:arena-align}) is
+encoded in Z3 as:
+
+\begin{lstlisting}[language={},morekeywords={declare-const,assert,check-sat,forall,bvand,bvnot,bvsub,bvadd,bvurem}]
+(declare-const b (_ BitVec 64))
+(declare-const o (_ BitVec 64))
+(declare-const m (_ BitVec 64))
+; a = 2^m, require m < 64
+(assert (bvult m #x0000000000000040))
+(define-fun a () (_ BitVec 64) (bvshl #x0000000000000001 m))
+(define-fun mask () (_ BitVec 64) (bvnot (bvsub a #x0000000000000001)))
+(define-fun aligned () (_ BitVec 64) (bvand (bvadd b o (bvsub a #x0000000000000001)) mask))
+; Prove: aligned % a == 0
+(assert (not (= (bvurem aligned a) #x0000000000000000)))
+(check-sat)  ; Expected: unsat
+\end{lstlisting}
+
+A result of \unsat{} confirms the property for all 64-bit values
+of $b$, $o$, and valid $m$.

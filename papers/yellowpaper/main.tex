@@ -1,15 +1,84 @@
-\documentclass[11pt]{article}
-\usepackage{../crucible-preamble}
+\documentclass[11pt, a4paper]{article}
 
-\fancyhead[L]{\small\textsf{Crucible Yellowpaper}}
+% ── Fonts ──────────────────────────────────────────────────────────────
+\usepackage{fontspec}
+\setmainfont[Ligatures=TeX]{Libertinus Serif}
+\setsansfont[Scale=MatchLowercase]{Open Sans}
+\setmonofont[Scale=0.82, Ligatures=]{Source Code Pro}
+\usepackage{unicode-math}
+\setmathfont{Libertinus Math}
 
-% ── Line spacing (tighter for spec) ───────────────────────────────────
+% ── Page ───────────────────────────────────────────────────────────────
+\usepackage[a4paper, margin=1in, top=1.1in, bottom=1.2in]{geometry}
 \linespread{1.08}
+\setlength{\parskip}{0.3em plus 0.1em minus 0.05em}
+\setlength{\parindent}{0em}
 
-% ── Extra packages for formal spec ────────────────────────────────────
-\usepackage{stmaryrd}      % ⟦ ⟧ semantic brackets
-\usepackage{mathpartir}     % inference rules
-\usepackage{bytefield}      % struct layout diagrams
+% ── Typography ─────────────────────────────────────────────────────────
+\usepackage{microtype}
+\frenchspacing
+\emergencystretch=1.5em
+\tolerance=1500
+\widowpenalty=10000
+\clubpenalty=10000
+
+% ── Sections ───────────────────────────────────────────────────────────
+\usepackage{titlesec}
+\titleformat{\section}
+  {\Large\bfseries\sffamily}
+  {\thesection}{0.6em}{}
+  [\vspace{-0.15em}{\color{black!20}\hrule height 0.4pt}]
+\titleformat{\subsection}{\large\bfseries\sffamily}{\thesubsection}{0.5em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\sffamily}{\thesubsubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{2.2em}{0.8em}
+\titlespacing*{\subsection}{0pt}{1.5em}{0.5em}
+\titlespacing*{\subsubsection}{0pt}{1em}{0.3em}
+
+% ── Header / Footer ───────────────────────────────────────────────────
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot[C]{\footnotesize\thepage}
+\renewcommand{\headrulewidth}{0pt}
+\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\footnotesize\thepage}\renewcommand{\headrulewidth}{0pt}}
+
+% ── Lists ──────────────────────────────────────────────────────────────
+\usepackage{enumitem}
+\setlist{nosep, leftmargin=1.5em, topsep=0.2em}
+\setlist[itemize]{label=\textcolor{black!35}{\textbullet}}
+
+% ── Tables ─────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{multirow}
+\renewcommand{\arraystretch}{1.15}
+
+% ── Code ───────────────────────────────────────────────────────────────
+\usepackage{xcolor}
+\usepackage{listings}
+\definecolor{codebg}{HTML}{F8F8F8}
+\definecolor{codefr}{HTML}{E8E8E8}
+\definecolor{kw}{HTML}{1a5276}
+\definecolor{cm}{HTML}{7f8c8d}
+\definecolor{st}{HTML}{196f3d}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  frame=single, rulecolor=\color{codefr},
+  framesep=2.5pt, xleftmargin=4pt, xrightmargin=4pt,
+  breaklines=true, breakatwhitespace=true,
+  tabsize=4, showstringspaces=false,
+  keywordstyle=\color{kw}\bfseries,
+  commentstyle=\color{cm}\itshape,
+  stringstyle=\color{st},
+  aboveskip=0.6em, belowskip=0.4em,
+}
+
+% ── Math ───────────────────────────────────────────────────────────────
+\usepackage{amsmath}
+\usepackage{mathtools}
+\usepackage{stmaryrd}       % semantic brackets
 
 % ── Theorem environments ──────────────────────────────────────────────
 \usepackage{amsthm}
@@ -17,6 +86,7 @@
 \newtheorem{definition}{Definition}[section]
 \newtheorem{invariant}[definition]{Invariant}
 \newtheorem{property}[definition]{Property}
+\newtheorem{algorithm_spec}[definition]{Algorithm}
 \theoremstyle{plain}
 \newtheorem{theorem}[definition]{Theorem}
 \newtheorem{lemma}[definition]{Lemma}
@@ -25,101 +95,78 @@
 \newtheorem{remark}[definition]{Remark}
 \newtheorem{proofobligation}[definition]{Proof Obligation}
 
-% ── Notation commands ─────────────────────────────────────────────────
-\newcommand{\sem}[1]{\llbracket #1 \rrbracket}   % semantic brackets
-\newcommand{\bytes}[1]{\texttt{#1}\,\text{B}}     % byte sizes
-\newcommand{\bv}[1]{\text{BV}_{#1}}               % bitvector sort
-\newcommand{\proves}{\vdash}
+% ── Struct layout diagrams ────────────────────────────────────────────
+\usepackage{bytefield}
+
+% ── Links ──────────────────────────────────────────────────────────────
+\usepackage[
+  colorlinks=true,
+  linkcolor=black!60,
+  urlcolor=blue!40!black,
+  citecolor=black!60,
+]{hyperref}
+
+% ── Shortcuts ──────────────────────────────────────────────────────────
+\newcommand{\code}[1]{\texorpdfstring{\texttt{\small #1}}{#1}}
+\newcommand{\struct}[1]{\texttt{#1}}
+\newcommand{\field}[1]{\texttt{#1}}
+\newcommand{\sem}[1]{\llbracket #1 \rrbracket}
+\newcommand{\bv}[1]{\mathrm{BV}_{#1}}
 \newcommand{\unsat}{\textsc{unsat}}
 \newcommand{\sat}{\textsc{sat}}
+\newcommand{\bytes}[1]{#1\,\text{B}}
+
+% ══════════════════════════════════════════════════════════════════════
+\begin{document}
 
 % ── Title ──────────────────────────────────────────────────────────────
-\title{\vspace{-1.5em}\textsf{\textbf{The Crucible Yellowpaper}}\\[0.3em]
-       \large\textsf{Formal Specification of the Crucible Runtime}}
-\author{Grigory Evko}
-\date{March 2026 — Draft}
+\begin{center}
+  \vspace*{1.2em}
+  {\fontsize{22}{26}\selectfont\sffamily\bfseries The Crucible Yellowpaper}\\[0.6em]
+  {\large\sffamily Formal Specification of the Crucible Runtime}\\[2em]
+  {\normalsize Grigory Evko}\\[0.4em]
+  {\small\textcolor{black!45}{March 2026 --- Draft}}\\[2em]
+  {\color{black!20}\rule{0.35\textwidth}{0.4pt}}
+\end{center}
+\thispagestyle{empty}
+\vspace{1em}
 
-\begin{document}
-\maketitle
-\thispagestyle{fancy}
-
-\begin{abstract}
+\noindent
 This document is the formal specification of Crucible, an adaptive machine learning runtime.
 Every data structure layout, algorithm, protocol state machine, hash function, and proof obligation
 is specified with sufficient precision for independent reimplementation or formal audit.
-The whitepaper~\cite{crucible-whitepaper} provides motivation and high-level architecture;
+The whitepaper~\cite{crucible-whitepaper} provides motivation and architecture;
 this document provides the exact specification.
-\end{abstract}
 
 \tableofcontents
 \newpage
 
-% ── Chapters (to be written) ──────────────────────────────────────────
-
-\section{Notation and Conventions}
-\textit{To be written.}
-
-\section{Scalar Types and Type Algebra}
-\textit{To be written.}
-
-\section{Arena Allocator}
-\textit{To be written.}
-
-\section{SPSC Ring Protocol}
-\textit{To be written.}
-
-\section{Tensor Metadata}
-\textit{To be written.}
-
-\section{Graph Construction}
-\textit{To be written.}
-
-\section{Iteration Detection}
-\textit{To be written.}
-
-\section{Content Hashing}
-\textit{To be written.}
-
-\section{The Merkle DAG}
-\textit{To be written.}
-
-\section{Memory Planning}
-\textit{To be written.}
-
-\section{Compiled Execution and Divergence}
-\textit{To be written.}
-
-\section{Kernel Taxonomy}
-\textit{To be written.}
-
-\section{Cost Model}
-\textit{To be written.}
-
-\section{Graph IR}
-\textit{To be written.}
-
-\section{Effects System and Capability Tokens}
-\textit{To be written.}
-
-\section{Reflection and Structural Verification}
-\textit{To be written.}
-
-\section{Deterministic Execution Model}
-\textit{To be written.}
-
-\section{Cipher Serialization}
-\textit{To be written.}
-
-\section{Distributed Protocols}
-\textit{To be written.}
-
-\section{Lean 4 Formalization Index}
-\textit{To be written.}
+% ── Chapters ───────────────────────────────────────────────────────────
+\input{01-notation}
+\input{02-types}
+\input{03-arena}
+\input{04-spsc}
+\input{05-tensormeta}
+\input{06-graph}
+\input{07-iteration}
+\input{08-hashing}
+\input{09-merkledag}
+\input{10-memplan}
+\input{11-compiled}
+\input{12-kernels}
+\input{13-costmodel}
+\input{14-graphir}
+\input{15-effects}
+\input{16-reflection}
+\input{17-determinism}
+\input{18-cipher}
+\input{19-distributed}
+\input{20-lean}
 
 % ── References ────────────────────────────────────────────────────────
 \begin{thebibliography}{9}
 \bibitem{crucible-whitepaper}
-G.~Chirkov, ``The Crucible Whitepaper: A Content-Addressed Adaptive Runtime for Machine Learning,'' 2026.
+G.~Evko, ``The Crucible Whitepaper: A Content-Addressed Adaptive Runtime for Machine Learning,'' 2026.
 \end{thebibliography}
 
 \end{document}
