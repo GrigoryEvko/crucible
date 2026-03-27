@@ -110,17 +110,11 @@ misc/                      Manifesto, notes, design documents
 
 ## Papers
 
-[**Whitepaper**](papers/whitepaper/) — *A Content-Addressed Adaptive Runtime for Machine Learning.* System architecture, design principles, recording pipeline, compilation model, formal verification (FX), hardware adaptation (Longitude + Augur), distribution (Canopy + Cipher), model-aware optimization, implementation status, related work (XLA, TVM, Triton, TorchInductor, FlexFlow, Alpa, Megatron, DeepSpeed, seL4, CompCert), research roadmap.
+[**Whitepaper**](papers/whitepaper/crucible-whitepaper.pdf) ([source](papers/whitepaper/)) — *A Content-Addressed Adaptive Runtime for Machine Learning.* System architecture, design principles, recording pipeline, compilation model, formal verification (FX), hardware adaptation (Longitude + Augur), distribution (Canopy + Cipher), model-aware optimization, implementation status, related work (XLA, TVM, Triton, TorchInductor, FlexFlow, Alpa, Megatron, DeepSpeed, seL4, CompCert), research roadmap.
 
-```bash
-cd papers && make whitepaper    # produces whitepaper/crucible-whitepaper.pdf
-```
+[**Yellowpaper**](papers/yellowpaper/crucible-yellowpaper.pdf) ([source](papers/yellowpaper/)) — *Formal Specification of the Crucible Runtime.* Every data structure layout (byte-level), algorithm (step-by-step), protocol state machine, hash function (exact constants), and proof obligation (with Z3 encoding sketches). Chapters 1–5 complete (notation, types, arena, SPSC ring, tensor metadata). Chapters 6–20 in progress.
 
-[**Yellowpaper**](papers/yellowpaper/) — *Formal Specification of the Crucible Runtime.* Every data structure layout (byte-level), algorithm (step-by-step), protocol state machine, hash function (exact constants), and proof obligation (with Z3 encoding sketches). Chapters 1–5 complete (notation, types, arena, SPSC ring, tensor metadata). Chapters 6–20 in progress.
-
-```bash
-cd papers && make yellowpaper   # produces yellowpaper/crucible-yellowpaper.pdf
-```
+Rebuild from source: `cd papers && make whitepaper yellowpaper`
 
 ## Lean 4 Formalization
 

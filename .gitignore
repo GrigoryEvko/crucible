@@ -18,3 +18,4 @@ __pycache__/
 
 # Binary artifacts
 *.pdf
+!papers/**/*.pdf
