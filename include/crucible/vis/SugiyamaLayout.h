@@ -120,11 +120,91 @@ struct LayoutParams {
   for (const auto& nd : nodes)
     num_layers = std::max(num_layers, nd.layer + 1);
 
+  // ── Phase 1.5: Virtual nodes for multi-rank edges ────────────────
+  //
+  // When an edge spans >1 layer, insert thin dummy nodes at each
+  // intermediate layer. Replace the long edge with a chain of
+  // single-layer edges. Virtual nodes participate in crossing
+  // minimization and coordinate assignment, guiding long edges
+  // through intermediate ranks cleanly.
+
+  const uint32_t original_n = static_cast<uint32_t>(nodes.size());
+  // Count virtual nodes needed
+  uint32_t num_virtual = 0;
+  for (const auto& e : edges) {
+    if (e.src >= original_n || e.dst >= original_n) continue;
+    int32_t span = static_cast<int32_t>(nodes[e.dst].layer) -
+                   static_cast<int32_t>(nodes[e.src].layer);
+    if (span > 1) num_virtual += static_cast<uint32_t>(span - 1);
+  }
+
+  // Reserve space for virtual nodes
+  nodes.reserve(original_n + num_virtual);
+
+  // Rebuild adjacency with virtual node chains
+  std::vector<std::vector<uint32_t>> fwd2, rev2;
+  fwd2.resize(original_n + num_virtual);
+  rev2.resize(original_n + num_virtual);
+
+  uint32_t vnode_id = original_n;
+  for (const auto& e : edges) {
+    if (e.src >= original_n || e.dst >= original_n) continue;
+    if (e.src == e.dst) continue;
+
+    uint32_t src_layer = nodes[e.src].layer;
+    uint32_t dst_layer = nodes[e.dst].layer;
+    if (dst_layer <= src_layer) continue;  // skip backward edges
+
+    int32_t span = static_cast<int32_t>(dst_layer - src_layer);
+    if (span <= 1) {
+      // Single-layer edge: keep as-is
+      fwd2[e.src].push_back(e.dst);
+      rev2[e.dst].push_back(e.src);
+    } else {
+      // Multi-layer: insert virtual nodes
+      uint32_t prev = e.src;
+      for (int32_t k = 1; k < span; k++) {
+        LayoutNode vn{};
+        vn.min_width = 4;     // thin virtual node
+        vn.min_height = 4;
+        vn.layer = src_layer + static_cast<uint32_t>(k);
+        nodes.push_back(vn);
+        uint32_t vid = vnode_id++;
+        fwd2[prev].push_back(vid);
+        rev2[vid].push_back(prev);
+        prev = vid;
+      }
+      fwd2[prev].push_back(e.dst);
+      rev2[e.dst].push_back(prev);
+    }
+  }
+
+  // Also keep single-span edges that weren't multi-rank
+  // (already added above, but edges with dst_layer == src_layer+1
+  //  that we skipped in the span>1 path)
+  for (const auto& e : edges) {
+    if (e.src >= original_n || e.dst >= original_n) continue;
+    if (e.src == e.dst) continue;
+    uint32_t src_layer = nodes[e.src].layer;
+    uint32_t dst_layer = nodes[e.dst].layer;
+    if (dst_layer == src_layer + 1) {
+      fwd2[e.src].push_back(e.dst);
+      rev2[e.dst].push_back(e.src);
+    }
+  }
+
+  // Replace adjacency lists
+  fwd = std::move(fwd2);
+  rev = std::move(rev2);
+
+  // Update n to include virtual nodes
+  const uint32_t total_n = static_cast<uint32_t>(nodes.size());
+
   // ── Phase 2: Build layers ────────────────────────────────────────
 
-  // Group nodes by layer
+  // Group nodes by layer (including virtual nodes)
   std::vector<std::vector<uint32_t>> layers(num_layers);
-  for (uint32_t i = 0; i < n; i++)
+  for (uint32_t i = 0; i < total_n; i++)
     layers[nodes[i].layer].push_back(i);
 
   // Initial order: preserve input order within each layer
@@ -184,7 +264,7 @@ struct LayoutParams {
   }
 
   std::vector<NSEdge> aux_edges;
-  aux_edges.reserve(n + edges.size());
+  aux_edges.reserve(total_n + edges.size());
 
   // Left-right separation constraints within each rank.
   // x(right) - x(left) >= rw(left) + lw(right) + gap
@@ -203,7 +283,7 @@ struct LayoutParams {
 
   // Spring edges for original DAG edges (pull connected nodes together)
   for (const auto& e : edges) {
-    if (e.src < n && e.dst < n && e.src != e.dst) {
+    if (e.src < total_n && e.dst < total_n && e.src != e.dst) {
       // Bidirectional spring: if src is left of dst, pull right;
       // if src is right of dst, pull left. Network simplex handles
       // this by allowing negative rank differences.
@@ -213,18 +293,18 @@ struct LayoutParams {
   }
 
   // Solve X positions via network simplex
-  auto ns_result = network_simplex(n, aux_edges, 200);
+  auto ns_result = network_simplex(total_n, aux_edges, 200);
 
   float total_width = 0;
   if (ns_result.converged) {
     // Use network simplex result as X positions (scaled to float)
-    for (uint32_t i = 0; i < n; i++) {
+    for (uint32_t i = 0; i < total_n; i++) {
       nodes[i].x = params.padding +
           static_cast<float>(ns_result.rank[i]) + nodes[i].min_width / 2;
     }
     // Compute total width
     float max_x = 0;
-    for (uint32_t i = 0; i < n; i++)
+    for (uint32_t i = 0; i < total_n; i++)
       max_x = std::max(max_x, nodes[i].x + nodes[i].min_width / 2);
     total_width = max_x + params.padding;
   } else {
@@ -254,7 +334,7 @@ struct LayoutParams {
 
   // Compute per-layer max height
   std::vector<float> layer_heights(num_layers, 0);
-  for (uint32_t i = 0; i < n; i++)
+  for (uint32_t i = 0; i < total_n; i++)
     layer_heights[nodes[i].layer] = std::max(
         layer_heights[nodes[i].layer], nodes[i].min_height);
 
@@ -330,10 +410,13 @@ struct LayoutParams {
 
   // Recompute total width after nudging may have expanded the layout
   float actual_max_x = 0;
-  for (uint32_t i = 0; i < n; i++)
+  for (uint32_t i = 0; i < total_n; i++)
     actual_max_x = std::max(actual_max_x,
         nodes[i].x + nodes[i].min_width / 2);
   total_width = actual_max_x + params.padding;
+
+  // Strip virtual nodes from output (caller only needs original nodes)
+  nodes.resize(original_n);
 
   return LayoutResult{
       .nodes = std::move(nodes),
