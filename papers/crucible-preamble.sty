@@ -1,0 +1,91 @@
+% crucible-preamble.sty — shared LaTeX configuration for Crucible papers
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{crucible-preamble}[2026/02/27 Crucible paper style]
+
+% ── Fonts ──────────────────────────────────────────────────────────────
+\RequirePackage{fontspec}
+\setmainfont{Libertinus Serif}
+\setsansfont{Open Sans}
+\setmonofont[Scale=0.85]{Source Code Pro}
+\RequirePackage{unicode-math}
+\setmathfont{Latin Modern Math}
+
+% ── Page geometry ──────────────────────────────────────────────────────
+\RequirePackage[a4paper, margin=1in, top=1.1in, bottom=1.1in]{geometry}
+
+% ── Typography ─────────────────────────────────────────────────────────
+\RequirePackage{microtype}
+\frenchspacing
+\setlength{\parskip}{0.35em}
+\setlength{\parindent}{0em}
+
+% ── Section formatting ─────────────────────────────────────────────────
+\RequirePackage{titlesec}
+\titleformat{\section}{\Large\bfseries\sffamily}{§\thesection}{0.6em}{}
+\titleformat{\subsection}{\large\bfseries\sffamily}{\thesubsection}{0.5em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\sffamily}{\thesubsubsection}{0.5em}{}
+\titlespacing*{\section}{0pt}{1.8em}{0.6em}
+\titlespacing*{\subsection}{0pt}{1.2em}{0.4em}
+\titlespacing*{\subsubsection}{0pt}{0.8em}{0.3em}
+
+% ── Headers/footers ───────────────────────────────────────────────────
+\RequirePackage{fancyhdr}
+\pagestyle{fancy}
+\fancyfoot{}
+\fancyhead[R]{\small\thepage}
+\renewcommand{\headrulewidth}{0.3pt}
+
+% ── Lists ──────────────────────────────────────────────────────────────
+\RequirePackage{enumitem}
+\setlist{nosep, leftmargin=1.5em}
+
+% ── Tables ─────────────────────────────────────────────────────────────
+\RequirePackage{booktabs}
+\RequirePackage{longtable}
+
+% ── Code listings ──────────────────────────────────────────────────────
+\RequirePackage{listings}
+\RequirePackage{xcolor}
+\definecolor{codebg}{HTML}{F7F7F7}
+\definecolor{codeframe}{HTML}{DDDDDD}
+\definecolor{keyword}{HTML}{1a5276}
+\definecolor{comment}{HTML}{7f8c8d}
+\definecolor{string}{HTML}{196f3d}
+\lstset{
+  basicstyle=\ttfamily\small,
+  backgroundcolor=\color{codebg},
+  frame=single,
+  rulecolor=\color{codeframe},
+  framesep=3pt,
+  xleftmargin=4pt,
+  xrightmargin=4pt,
+  breaklines=true,
+  breakatwhitespace=true,
+  tabsize=4,
+  showstringspaces=false,
+  keywordstyle=\color{keyword}\bfseries,
+  commentstyle=\color{comment}\itshape,
+  stringstyle=\color{string},
+}
+
+% ── Links ──────────────────────────────────────────────────────────────
+\RequirePackage[colorlinks=true, linkcolor=black!70, urlcolor=blue!50!black, citecolor=black!70]{hyperref}
+
+% ── Math ───────────────────────────────────────────────────────────────
+\RequirePackage{amsmath}
+% amssymb omitted — unicode-math provides all symbols
+
+% ── Custom commands ────────────────────────────────────────────────────
+\newcommand{\crucible}{\textsc{Crucible}}
+\newcommand{\vessel}{\textit{Vessel}}
+\newcommand{\vigil}{\textit{Vigil}}
+\newcommand{\cipher}{\textit{Cipher}}
+\newcommand{\canopy}{\textit{Canopy}}
+\newcommand{\keeper}{\textit{Keeper}}
+\newcommand{\relay}{\textit{Relay}}
+\newcommand{\longitude}{\textit{Longitude}}
+\newcommand{\augur}{\textit{Augur}}
+\newcommand{\fx}{\textit{FX}}
+\newcommand{\code}[1]{\texttt{#1}}
+\newcommand{\struct}[1]{\texttt{#1}}
+\newcommand{\field}[1]{\texttt{#1}}

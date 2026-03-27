@@ -1,0 +1,104 @@
+% 09-implementation.tex
+
+\section{Implementation Status}\label{sec:implementation}
+
+\subsection{What Is Built}
+
+${\sim}9{,}500$ lines of C++26 across 17 headers in \code{include/crucible/}, 24 tests.
+
+\textbf{Recording pipeline.}
+TraceRing: 65,536 entries $\times$ 64B $=$ 4\,MB ring + 3 parallel arrays (\code{MetaIndex}, \code{ScopeHash}, \code{CallsiteHash}) totaling ${\sim}5.25$\,MB.
+\code{alignas(64)} head/tail on separate cache lines, \code{cached\_tail\_} optimization, next-slot prefetch.
+MetaLog: 1M entries $\times$ 144B $= {\sim}144$\,MB, \code{aligned\_alloc(64, ...)}, same SPSC protocol with cached tail and bulk memcpy.
+Vessel adapter for PyTorch ATen dispatch.
+
+\textbf{Graph construction.}
+TraceGraph: bidirectional CSR with four edge kinds (\code{DATA\_FLOW}, \code{ALIAS}, \code{CONTROL\_FLOW}, \code{SCALAR\_FLOW}), 12-byte Edge structs, $O(V{+}E)$ counting-sort construction.
+IterationDetector: $K{=}5$, 128 bytes (2 cache lines), ${\sim}1$\,ns steady-state hot path, two-match confirmation.
+PtrMap: open-addressing with generation counter (no memset between iterations).
+Scratch buffers allocated once and reused.
+
+\textbf{Merkle DAG.}
+TraceNode (24B base), RegionNode (content hash, atomic \code{CompiledKernel*}, TraceEntry array, \code{MemoryPlan*}, \code{first\_op\_schema}, \code{measured\_ms}), BranchNode (12B Guard with 5 kinds, sorted arms for $O(\log n)$ binary search), LoopNode (64B $=$ 1 cache line, FeedbackEdge array, REPEAT/UNTIL termination, \code{body\_content\_hash}).
+Content hashing via wymix-fold.
+Merkle hashing with salts to distinguish node kinds.
+KernelCache: lock-free open-addressing, default capacity 4096, CAS insert.
+Serialization and deserialization for Cipher.
+
+\textbf{Memory planning.}
+TensorSlot (40B): \code{offset\_bytes}, \code{nbytes}, \code{birth\_op}, \code{death\_op}, dtype, device, \code{is\_external}, \code{slot\_id}.
+MemoryPlan: \code{pool\_bytes}, \code{num\_slots}, \code{num\_external}, device context, distributed topology.
+\code{compute\_storage\_nbytes()} handles negative strides.
+Counting sort $O(n{+}k)$ sweep-line.
+
+\textbf{Compiled Tier~1.}
+ReplayEngine, CrucibleContext, \code{dispatch\_op} with four-level divergence detection (schema, shape, scope, callsite hash), divergence recovery via \code{reset\_requested} atomic flag.
+
+\textbf{Kernel taxonomy} (\code{CKernel.h}).
+146 ops in two sections:
+Section~1 (1--99, frozen since \code{CDAG\_VERSION=3}): linear algebra~(8), convolution~(6), attention~(4), normalization~(6), activations~(13), elementwise binary~(9), unary~(10), reductions~(8), pooling~(8), data movement~(16), embedding~(2), copy~(2), vision~(3), fused~(4).
+Section~2 (100--146): linalg decompositions~(9), SSM/recurrence~(6), production inference~(6), 3D rendering~(4), structured matrix/graph~(5), collective comms~(10), I/O~(4), RNG~(2), sync~(1).
+Two-phase registration: Vessel registers \code{schema\_hash} $\to$ \code{CKernelId} at startup; \code{classify\_kernel()} called during \code{build\_trace()}.
+
+\textbf{Graph IR} (\code{Graph.h}).
+\code{GraphNode}: 64\,B (one cache line).
+Fields: \code{NodeId}, \code{NodeKind} (10 kinds: \textsc{input, constant, pointwise, reduction, scan, sort, extern, template, mutation, nop}), \code{ndim}, \code{nred}, dtype, \code{ReduceOp}, \code{num\_inputs}, symbolic size/stride via \code{Expr**}, body (\code{ComputeBody*} or \code{ExternInfo*}), inputs array, \code{num\_uses}, \code{schedule\_order}, \code{group\_hash}, \code{fused\_group\_id}.
+\code{Inst}: 8\,B SSA micro-op (${\sim}50$ opcodes, dtype, 3 \code{uint16} operands).
+\code{ComputeBody}: flat instruction array emittable to CUDA~C++.
+\code{FuseKind}: 6 classifications (\textsc{none, register, smem, epilogue, prologue, broadcast}).
+\code{ExprPool}: Swiss table interned expressions (32\,B nodes, wyhash, pointer equality).
+\code{SymbolTable}: per-symbol metadata.
+Transforms: DCE (fixpoint), CSE, topological sort (Kahn's $O(V{+}E)$), RAUW.
+
+\textbf{Effects system} (\code{Effects.h}).
+\code{fx::Alloc}, \code{fx::IO}, \code{fx::Block} with private constructors, friend access for \code{fx::Bg}/\code{fx::Init}/\code{fx::Test}.
+C++20 concepts: \code{CanAlloc}, \code{CanIO}, \code{CanBlock}, \code{Pure}.
+All contexts verified at 1 byte via \code{static\_assert}.
+
+\textbf{Reflection} (\code{Reflect.h}, GCC~16 only).
+\code{reflect\_hash<T>()} and \code{reflect\_print<T>()} via P2996 \code{nonstatic\_data\_members\_of} + expansion statements.
+
+\textbf{Cost model} (\code{CostModel.h}).
+\code{HardwareProfile} struct (compute fabric, register file, 4-level memory hierarchy, bandwidth/latency, peak throughput per dtype).
+Presets: B200 (sm\_100), H100 (sm\_90), MI300X (gfx942), A100 (sm\_80).
+\code{KernelConfig} (\code{tile\_m}/\code{n}/\code{k}, \code{pipeline\_stages}, \code{warps\_per\_block}, \code{smem\_bytes}, \code{regs\_per\_thread}, \code{vec\_width}).
+\code{validate\_config()} with C1--C8 constraints.
+\code{evaluate\_cost()} roofline model.
+
+\textbf{Toolchain.}
+C++26 (\code{-std=c++26}).
+Primary: Clang~22.1.0 + libc++~22.
+Fallback: GCC~15.2.1 + libstdc++~15.
+Bleeding-edge: GCC~16.0.1 for reflection.
+All headers compile clean on both primary toolchains with zero warnings.
+
+\subsection{Lean 4 Formalization}
+
+36 modules, 18,231 lines, 1,312 theorems, zero \code{sorry}.
+Covers Arena (pairwise disjointness, alignment), MemoryPlan (sweep-line non-overlap), PoolAllocator, SPSC ring (FIFO ordering, batch drain), MetaLog, IterationDetector (detection latency bounds), TraceGraph (CSR consistency), Merkle DAG (collision probability, structural diff), Graph IR (DCE fixpoint, topological sort validity), scheduling (Graham's bound, Brent's theorem), roofline model (multi-level cache, wave quantization, correction factors), and fusion (chain optimality, occupancy).
+Built with Lean~4.28.0 + local Mathlib.
+
+Correspondence between Lean specification and C++ implementation is maintained by design discipline and cross-referenced invariant names.
+
+\subsection{What Is Designed but Not Built}
+
+\begin{itemize}
+  \item \textbf{F$\star$X Z3 integration:} Enhanced Z3 fork exists. Build scaffolding (\code{verify/}) exists. Proof suites partially encoded.
+  \item \textbf{SMT kernel synthesis:} \code{CostModel.h} complete (\code{HardwareProfile}, \code{KernelConfig}, \code{validate\_config}, \code{evaluate\_cost}). Z3 encoding in progress.
+  \item \textbf{Shadow handles (Tier~2):} \code{ConductorTensorImpl} design complete. Not integrated with Vessel.
+  \item \textbf{CUDA Graph replay (Tier~3):} Depends on Tier~2.
+  \item \textbf{Longitude:} Calibration protocol designed. Depends on CUPTI/NVML integration.
+  \item \textbf{Augur:} Digital twin designed. Depends on Longitude.
+  \item \textbf{Canopy:} Mesh protocol designed. Not implemented.
+  \item \textbf{Cipher (full):} Serialization exists. Three-tier persistence and distributed replication not implemented.
+  \item \textbf{Model-aware optimizations:} Depend on Augur diagnostics.
+\end{itemize}
+
+\subsection{What Is Next}
+
+Phase~2: F$\star$X core (Z3 proof suites, consteval infrastructure, reflection checks).
+Phase~3: Longitude (calibration, topology optimization).
+Phase~4: Augur (digital twin, monitoring).
+Phase~5: Tiers~2--3 (shadow handles, CUDA Graph).
+Phase~6: Canopy, Keepers, full Cipher.
+Phase~7: model-aware optimizations.

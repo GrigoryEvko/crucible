@@ -1,0 +1,125 @@
+\documentclass[11pt]{article}
+\usepackage{../crucible-preamble}
+
+\fancyhead[L]{\small\textsf{Crucible Yellowpaper}}
+
+% ── Line spacing (tighter for spec) ───────────────────────────────────
+\linespread{1.08}
+
+% ── Extra packages for formal spec ────────────────────────────────────
+\usepackage{stmaryrd}      % ⟦ ⟧ semantic brackets
+\usepackage{mathpartir}     % inference rules
+\usepackage{bytefield}      % struct layout diagrams
+
+% ── Theorem environments ──────────────────────────────────────────────
+\usepackage{amsthm}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{invariant}[definition]{Invariant}
+\newtheorem{property}[definition]{Property}
+\theoremstyle{plain}
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{lemma}[definition]{Lemma}
+\newtheorem{corollary}[definition]{Corollary}
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+\newtheorem{proofobligation}[definition]{Proof Obligation}
+
+% ── Notation commands ─────────────────────────────────────────────────
+\newcommand{\sem}[1]{\llbracket #1 \rrbracket}   % semantic brackets
+\newcommand{\bytes}[1]{\texttt{#1}\,\text{B}}     % byte sizes
+\newcommand{\bv}[1]{\text{BV}_{#1}}               % bitvector sort
+\newcommand{\proves}{\vdash}
+\newcommand{\unsat}{\textsc{unsat}}
+\newcommand{\sat}{\textsc{sat}}
+
+% ── Title ──────────────────────────────────────────────────────────────
+\title{\vspace{-1.5em}\textsf{\textbf{The Crucible Yellowpaper}}\\[0.3em]
+       \large\textsf{Formal Specification of the Crucible Runtime}}
+\author{Grigory Evko}
+\date{March 2026 — Draft}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+\begin{abstract}
+This document is the formal specification of Crucible, an adaptive machine learning runtime.
+Every data structure layout, algorithm, protocol state machine, hash function, and proof obligation
+is specified with sufficient precision for independent reimplementation or formal audit.
+The whitepaper~\cite{crucible-whitepaper} provides motivation and high-level architecture;
+this document provides the exact specification.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ── Chapters (to be written) ──────────────────────────────────────────
+
+\section{Notation and Conventions}
+\textit{To be written.}
+
+\section{Scalar Types and Type Algebra}
+\textit{To be written.}
+
+\section{Arena Allocator}
+\textit{To be written.}
+
+\section{SPSC Ring Protocol}
+\textit{To be written.}
+
+\section{Tensor Metadata}
+\textit{To be written.}
+
+\section{Graph Construction}
+\textit{To be written.}
+
+\section{Iteration Detection}
+\textit{To be written.}
+
+\section{Content Hashing}
+\textit{To be written.}
+
+\section{The Merkle DAG}
+\textit{To be written.}
+
+\section{Memory Planning}
+\textit{To be written.}
+
+\section{Compiled Execution and Divergence}
+\textit{To be written.}
+
+\section{Kernel Taxonomy}
+\textit{To be written.}
+
+\section{Cost Model}
+\textit{To be written.}
+
+\section{Graph IR}
+\textit{To be written.}
+
+\section{Effects System and Capability Tokens}
+\textit{To be written.}
+
+\section{Reflection and Structural Verification}
+\textit{To be written.}
+
+\section{Deterministic Execution Model}
+\textit{To be written.}
+
+\section{Cipher Serialization}
+\textit{To be written.}
+
+\section{Distributed Protocols}
+\textit{To be written.}
+
+\section{Lean 4 Formalization Index}
+\textit{To be written.}
+
+% ── References ────────────────────────────────────────────────────────
+\begin{thebibliography}{9}
+\bibitem{crucible-whitepaper}
+G.~Chirkov, ``The Crucible Whitepaper: A Content-Addressed Adaptive Runtime for Machine Learning,'' 2026.
+\end{thebibliography}
+
+\end{document}

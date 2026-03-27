@@ -1,0 +1,146 @@
+% 05-verification.tex
+
+\section{Formal Verification (\texorpdfstring{F$\star$X}{F*X})}\label{sec:verification}
+
+The type-system layer and effects system are implemented.
+Z3 integration has scaffolding and an enhanced solver fork.
+Reflection-based verification requires GCC~16 with \code{-freflection} and is partially implemented.
+The Lean~4 formalization accompanies the implementation as an independent proof artifact.
+
+\subsection{Verification Layers}
+
+\smallskip
+\begin{tabularx}{\textwidth}{@{}clll>{\raggedright\arraybackslash}X@{}}
+\toprule
+\textbf{Layer} & \textbf{Mechanism} & \textbf{Guarantee} & \textbf{Scope} \\
+\midrule
+4 & Z3 SMT solver & Universal ($\forall x.\; P(x)$) & All inputs \\
+3 & \code{consteval} & Bounded ($N$ inputs, UB-free) & Exercised implementation paths \\
+2 & Static reflection & Structural (every field) & Data layout completeness \\
+1 & Type system & Zero-cost API boundaries & Compile error on misuse \\
+\bottomrule
+\end{tabularx}
+\smallskip
+
+\medskip
+
+Each layer proves what the layers below cannot.
+Layer~1 prevents calling the wrong function.
+Layer~2 verifies struct completeness.
+Layer~3 proves UB-freedom for exercised inputs.
+Layer~4 proves mathematical properties for all inputs.
+
+Crucible proves: memory plan non-overlap, hash function quality, protocol deadlock freedom, kernel access safety, algebraic combining laws.
+Crucible does \emph{not} prove: memory ordering on real hardware (ThreadSanitizer), floating-point stability (empirical bounds), global kernel optimality (model fidelity limitation).
+
+\subsection{Z3 Integration}
+
+Crucible integrates a Z3 fork enhanced with CaDiCaL dual-mode search (VSIDS + VMTF switching), ProbSAT local-search walker, on-the-fly self-subsumption, arena-based clause allocation, and several additional optimizations.
+The enhanced SAT solver provides speedups on bitvector problems that dominate Crucible's proof obligations.
+
+\textbf{Build integration.}
+A CMake custom target (\code{crucible\_verify}) compiles an executable that links \code{libz3} and Crucible headers, encodes properties as SMT formulas, and runs proofs.
+If any theorem fails, the build fails.
+All targets depend on verification passing.
+
+\textbf{What Z3 proves---memory.}
+Arena alignment: the expression \code{(base + offset + align - 1) \& \textasciitilde{}(align - 1)} produces a correctly aligned result for all $2^{192}$ (base, offset, align) combinations where align is a power of two.
+Memory plan non-overlap: for $N$ tensors (parameterized, up to a bound) with arbitrary lifetimes, sizes, and alignments, the sweep-line allocator produces non-overlapping assignments for all simultaneously live tensors.
+Saturation arithmetic: \code{mul\_sat(a, b)} equals $\min(a \times b, \texttt{UINT64\_MAX})$ for all $2^{128}$ input pairs.
+
+\textbf{What Z3 proves---hashing.}
+$\code{fmix64}(x) \neq x$ for all $x \in [0, 2^{64})$.
+Each of 64 input bit flips changes at least 20 output bits, for all inputs.
+Content hash determinism: same field values produce same hash output.
+
+\textbf{What Z3 proves---protocol.}
+SPSC ring: bitmask indexing \code{h \& MASK} equals \code{h \% CAPACITY} for all power-of-two capacities and all head values.
+Enqueue preserves the invariant $\code{head} - \code{tail} \leq \code{CAPACITY}$ for all (head, tail) pairs.
+No index collision when $0 < \code{used} < \code{CAPACITY}$.
+
+\textbf{What Z3 proves---kernels.}
+Each compiled kernel configuration is verified for: no shared-memory bank conflicts (32 threads access different banks or broadcast), coalesced global memory access (minimum 128B transactions), no out-of-bounds access (thread address $<$ buffer size for all valid block/thread indices), register count within limits.
+
+\textbf{Z3 as optimizer.}
+Beyond verification, Z3's \code{optimize} module solves for optimal configurations: minimum-footprint memory plans, roofline-optimal kernel parameters, and topology-optimal parallelism factorizations.
+When used as an optimizer, the result is optimal within the encoded model; correctness constraints (no OOB, no bank conflicts) are simultaneously enforced.
+
+\subsection{Consteval Verification}
+
+A \code{consteval} function executes inside the C++ compiler's abstract machine, which is a sound interpreter: null dereference, out-of-bounds access, signed integer overflow, use-after-free, double-free, memory leak, and uninitialized read are all compile errors.
+If a \code{consteval} function completes, every execution path was free of undefined behavior for the supplied inputs.
+
+\textbf{Dual-mode Arena.}
+The Arena allocator uses \code{if consteval} to select between compile-time tracking (compiler verifies alignment, bounds, no overlap, no leak) and runtime execution (zero-overhead bump pointer).
+Same algorithm, two execution modes.
+
+\textbf{Consteval fuzzing.}
+Philox4x32 is pure integer arithmetic and trivially \code{constexpr}.
+Crucible generates deterministic random inputs at compile time: random memory plans (verify non-overlap), random topological sorts (verify edge ordering), random struct instances (verify serialization roundtrip and hash determinism).
+The compiler proves all trials are UB-free.
+
+\textbf{Finite-state model checking.}
+The SPSC ring protocol has finite state: ($\text{fg\_phase} \times \text{bg\_phase} \times \text{ring\_count}$).
+For small capacity, exhaustive BFS at compile time verifies deadlock freedom and liveness.
+The mode transition state machine (\code{INACTIVE}/\code{RECORD}/\code{COMPILED}/\code{DIVERGED}) is similarly exhausted.
+
+\subsection{Reflection-Based Structural Verification}
+
+Using C++26 static reflection (P2996, GCC~16 with \code{-freflection}), Crucible performs compile-time structural checks.
+\code{Reflect.h} (guarded by \code{CRUCIBLE\_HAS\_REFLECTION}) implements:
+
+\code{reflect\_hash<T>()} iterates all non-static data members via \code{nonstatic\_data\_members\_of(\^{}\^{}T, access\_context::unchecked())} and hashes each field with \code{fmix64}: integral types via cast, floats via \code{bit\_cast}, pointers via \code{reinterpret\_cast<uintptr\_t>}, C arrays element-by-element, nested structs recursively.
+Adding a field automatically includes it in the hash; forgetting is structurally impossible.
+
+\code{reflect\_print<T>()} generates debug output for every field, dispatching on type category via the same reflection machinery.
+
+Four structural checks per field:
+(1)~\code{has\_default\_member\_initializer} (InitSafe: every field has NSDMI),
+(2)~offset sequence (no unintended padding holes),
+(3)~\code{type\_of} (TypeSafe: raw \code{uint32\_t}/\code{uint64\_t} with ID-like names triggers compile error),
+(4)~\code{sizeof(T)} (MemSafe: catches silent layout changes).
+Cross-checks verify hand-written hash functions agree with reflected versions.
+
+\subsection{Type System Enforcement}
+
+\textbf{Capability tokens} (\code{Effects.h}).
+Three effect types with private constructors: \code{fx::Alloc} (heap allocation), \code{fx::IO} (file/network I/O), \code{fx::Block} (blocking operations).
+Three authorized contexts: \code{fx::Bg} (background thread: all three), \code{fx::Init} (initialization: Alloc + IO, no Block), \code{fx::Test} (unrestricted).
+Each context is a 1-byte struct with \code{[[no\_unique\_address]]} members---\code{static\_assert(sizeof(fx::Bg) == 1)}.
+C++20 concepts enforce requirements: \code{fx::CanAlloc<Ctx>} checks for an \code{alloc} member; \code{fx::Pure<Ctx>} checks for absence of all effects.
+Foreground hot-path code holds no tokens; the compiler rejects effectful calls.
+Example: \code{Arena::alloc(fx::Alloc, size\_t, size\_t)}---the first parameter is a compile-time proof of authorization.
+
+\textbf{Strong types} (\code{Types.h}).
+\code{CRUCIBLE\_STRONG\_ID(Name)} generates a \code{uint32\_t} wrapper with explicit constructor, \code{.raw()} unwrap, \code{.none()} sentinel (\code{UINT32\_MAX}), \code{.is\_valid()} check, \code{operator<=>}, and no arithmetic.
+Five ID types: \code{OpIndex}, \code{SlotId}, \code{NodeId}, \code{SymbolId}, \code{MetaIndex}.
+\code{CRUCIBLE\_STRONG\_HASH(Name)} generates a \code{uint64\_t} wrapper with explicit constructor, \code{.raw()}, \code{.sentinel()} (\code{UINT64\_MAX}), \code{operator<=>}, and no arithmetic.
+Six hash types: \code{SchemaHash}, \code{ShapeHash}, \code{ScopeHash}, \code{CallsiteHash}, \code{ContentHash}, \code{MerkleHash}.
+All are \code{static\_assert}-verified to have the same size as the underlying integer and are trivially relocatable.
+
+\textbf{Typestate.}
+Mode transitions (\code{INACTIVE} $\to$ \code{RECORD} $\to$ \code{COMPILED} $\to$ \code{DIVERGED}) are encoded as types.
+\code{start\_recording(Inactive)} compiles; \code{start\_recording(Compiled)} has no overload.
+
+\subsection{Lean 4 Formalization}
+
+Independent of the C++ implementation, Crucible maintains a Lean~4 formalization that proves properties of every core data structure and algorithm.
+The formalization covers:
+
+\begin{itemize}
+  \item \textbf{Arena:} pairwise disjointness of allocations, alignment correctness, bounded fragmentation.
+  \item \textbf{PoolAllocator:} slot disjointness for overlapping lifetimes, offset + size $\leq$ \code{pool\_bytes}.
+  \item \textbf{Memory plan:} sweep-line non-overlap, offset + size $\leq$ pool size, alignment waste bounds.
+  \item \textbf{SPSC ring:} FIFO ordering for $N$ push/pop sequences, batch drain correctness, capacity invariant preservation.
+  \item \textbf{MetaLog:} bulk read-after-write correctness for all indices.
+  \item \textbf{Iteration detector:} detection latency bounds (exactly $K$ ops), false positive probability bounds under hash independence assumptions.
+  \item \textbf{TraceGraph:} CSR construction correctness, bidirectional consistency.
+  \item \textbf{Graph IR:} DCE fixpoint convergence, topological sort validity.
+  \item \textbf{Merkle DAG:} collision probability bounds, structural diff correctness, replay completeness.
+  \item \textbf{Scheduling:} Graham's list scheduling bound, Brent's theorem, critical path optimality.
+  \item \textbf{Roofline:} multi-level cache model, wave quantization, correction factor model.
+  \item \textbf{Fusion:} chain selection optimality, occupancy constraints.
+\end{itemize}
+
+All theorems are proved with no \code{sorry} (unresolved proof obligations).
+The formalization serves as a specification that the C++ implementation targets and as an independent check on algorithm correctness.
