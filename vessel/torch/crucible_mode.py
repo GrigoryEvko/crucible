@@ -230,8 +230,11 @@ class CrucibleMode(TorchDispatchMode):
         self._prev_compiled = False
         # Trace recording: capture per-op data for binary export.
         self._record_trace = record_trace
-        self._trace_ops = []   # list of (schema_hash, shape_hash, scalars, n_in, n_out, n_scalars, grad, infer)
-        self._trace_metas = bytearray()  # concatenated 144B TensorMeta records
+        self._trace_ops = []
+        self._trace_metas = bytearray()
+        # Module scope tracking: current module path (set by forward pre-hooks).
+        self._current_scope = ""
+        self._scope_cache = {}  # scope_string → scope_hash
 
     def __del__(self):
         if hasattr(self, "_handle") and self._handle:
@@ -251,6 +254,25 @@ class CrucibleMode(TorchDispatchMode):
 
     def flush(self):
         self._vessel.crucible_flush(self._handle)
+
+    def track_modules(self, model):
+        """Install forward pre-hooks on all submodules for scope tracking.
+        Call before entering CrucibleMode context or before training loop.
+        Each op will carry the scope_hash of the innermost active module."""
+        self._scope_hooks = []
+        for name, module in model.named_modules():
+            if not name:
+                continue  # skip root
+            h = self._scope_hooks  # prevent closure over self
+            scope = name
+
+            def _make_pre(s):
+                def _pre(mod, args):
+                    self._current_scope = s
+                return _pre
+
+            handle = module.register_forward_pre_hook(_make_pre(scope))
+            self._scope_hooks.append(handle)
 
     # ── Trace export ─────────────────────────────────────────────────
 
@@ -295,9 +317,11 @@ class CrucibleMode(TorchDispatchMode):
             f.write(struct.pack("<III", 1, num_ops, num_metas))
 
             # Op records (80B each)
-            for (sh, hsh, sv, n_in, n_out, n_sc, grad, infer, mutable) in self._trace_ops:
+            for entry in self._trace_ops:
+                (sh, hsh, sv, n_in, n_out, n_sc, grad, infer,
+                 mutable, scope_h, tags) = entry
                 f.write(struct.pack("<QQ", sh, hsh))
-                f.write(struct.pack("<QQ", 0, 0))  # scope_hash, callsite_hash
+                f.write(struct.pack("<QQ", scope_h, tags))  # scope_hash, op_tags (in callsite slot)
                 f.write(struct.pack("<5q", *sv))
                 f.write(struct.pack("<HHH", n_in, n_out, n_sc))
                 # Pack is_mutable into bit 1 of inference_mode byte
@@ -308,7 +332,12 @@ class CrucibleMode(TorchDispatchMode):
             f.write(self._trace_metas)
 
             # Schema name table: (hash, name) pairs for visualization.
-            names = [(h, name) for name, h in self._schema_cache.items()]
+            all_names = list(self._schema_cache.items())
+            # Also include scope names
+            for scope_str, scope_h in self._scope_cache.items():
+                if scope_str and scope_h:
+                    all_names.append((scope_str, scope_h))
+            names = [(h, name) for name, h in all_names]
             f.write(struct.pack("<I", len(names)))
             for h, name in names:
                 name_bytes = name.encode("ascii")
@@ -368,6 +397,28 @@ class CrucibleMode(TorchDispatchMode):
         # Per-op metadata from schema
         is_mutable = 1 if func._schema.is_mutable else 0
 
+        # Scope hash from module tracking hooks
+        scope = self._current_scope
+        scope_hash = self._scope_cache.get(scope)
+        if scope_hash is None:
+            scope_hash = _fnv1a(scope.encode("ascii")) if scope else 0
+            self._scope_cache[scope] = scope_hash
+
+        # Op tags from PyTorch dispatch
+        op_tags = 0
+        try:
+            for tag in func.tags:
+                name = tag.name
+                if name == "core":       op_tags |= 0x01
+                elif name == "pointwise":  op_tags |= 0x02
+                elif name == "reduction":  op_tags |= 0x04
+                elif name == "view_copy":  op_tags |= 0x08
+                elif name == "dynamic_output_shape": op_tags |= 0x10
+                elif name == "data_dependent_output": op_tags |= 0x20
+                elif name == "nondeterministic_seeded": op_tags |= 0x40
+        except Exception:
+            pass
+
         # Record trace data before dispatch (captures real data_ptrs).
         if self._record_trace:
             sv = [scalar_buf[i] for i in range(5)]
@@ -375,6 +426,7 @@ class CrucibleMode(TorchDispatchMode):
                 schema_hash, shape_hash, sv,
                 num_inputs, num_outputs, num_scalars,
                 grad_on, infer_on, is_mutable,
+                scope_hash, op_tags,
             ))
             if n_metas > 0:
                 self._trace_metas.extend(bytes(metas))

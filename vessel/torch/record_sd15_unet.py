@@ -75,6 +75,7 @@ def main():
     target_noise = torch.randn_like(latents)
 
     with CrucibleMode(record_trace=True) as mode:
+        mode.track_modules(model)
         # Iter 0: warmup (optimizer state init)
         print("\n  iter 0: warmup...")
         t0 = time.perf_counter()

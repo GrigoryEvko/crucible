@@ -50,6 +50,7 @@ def main():
     labels = torch.randint(0, 1000, (2,))
 
     with CrucibleMode(record_trace=True) as mode:
+        mode.track_modules(model)
         # Iter 1: warmup (optimizer state init, different op count)
         print("\n  iter 0: warmup...")
         t0 = time.perf_counter()
