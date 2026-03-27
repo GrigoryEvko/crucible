@@ -247,6 +247,22 @@ class SvgRenderer {
     buf_ += "/>\n";
   }
 
+  // Dashed rectangle (for cluster borders)
+  void rect_dashed(float x, float y, float w, float h,
+                   Color stroke, float rx = 6,
+                   float stroke_width = 0.8f,
+                   std::string_view dash = "6,3") {
+    buf_ += "<rect x=\"" + ftoa(x) + "\" y=\"" + ftoa(y) + "\" ";
+    buf_ += "width=\"" + ftoa(w) + "\" height=\"" + ftoa(h) + "\" ";
+    buf_ += "rx=\"" + ftoa(rx) + "\" ";
+    buf_ += "fill=\"none\" ";
+    buf_ += "stroke=\"" + stroke.to_svg() + "\" ";
+    buf_ += "stroke-width=\"" + ftoa(stroke_width) + "\" ";
+    buf_ += "stroke-dasharray=\"";
+    buf_ += dash;
+    buf_ += "\"/>\n";
+  }
+
   // ── Op node (small rectangle inside a block) ─────────────────────
 
   void op_node(float x, float y, float w, float h,
