@@ -247,6 +247,40 @@ class SvgRenderer {
     buf_ += "/>\n";
   }
 
+  // Orthogonal edge: down from src, horizontal, down into dst.
+  // Routes through inter-row gaps, never through blocks.
+  // Uses a smooth cubic bezier with orthogonal control points.
+  void orthogonal_edge(float x1, float y1, float x2, float y2,
+                       Color stroke = palette::EDGE_DATA_FLOW,
+                       float width = 0.5f, bool skip = false) {
+    float dy = y2 - y1;
+    float dx = x2 - x1;
+
+    if (std::abs(dx) < 2.0f) {
+      // Nearly vertical: straight line with arrowhead
+      arrow(x1, y1, x2, y2, stroke, width, skip);
+      return;
+    }
+
+    // Route: down from src → horizontal at midpoint → down into dst
+    // Using smooth bezier that approximates orthogonal corners
+    float mid_y = y1 + dy * 0.5f;
+
+    // SVG path: move to start, curve to mid-horizontal, curve to end
+    buf_ += "<path d=\"M" + ftoa(x1) + "," + ftoa(y1);
+    // First segment: vertical down to mid_y, curving toward x2
+    buf_ += " C" + ftoa(x1) + "," + ftoa(mid_y);
+    buf_ += " " + ftoa(x2) + "," + ftoa(mid_y);
+    buf_ += " " + ftoa(x2) + "," + ftoa(y2);
+    buf_ += "\" fill=\"none\" stroke=\"" + stroke.to_svg() + "\" ";
+    buf_ += "stroke-width=\"" + ftoa(width) + "\" ";
+    buf_ += "marker-end=\"url(#";
+    buf_ += skip ? "skip-arrow" : "arrow";
+    buf_ += ")\"";
+    if (skip) buf_ += " stroke-dasharray=\"6,3\"";
+    buf_ += "/>\n";
+  }
+
   // Dashed rectangle (for cluster borders)
   void rect_dashed(float x, float y, float w, float h,
                    Color stroke, float rx = 6,
