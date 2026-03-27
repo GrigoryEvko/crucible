@@ -4,6 +4,59 @@
 
 The recording pipeline, graph construction, and Merkle DAG are implemented and tested.
 Formal properties of the DAG are proved in Lean~4.
+Figure~\ref{fig:pipeline} shows the end-to-end data flow.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  node distance=1.4em,
+  box/.style={draw=black!40, fill=black!3, rounded corners=1.5pt,
+    minimum height=2.2em, font=\sffamily\scriptsize, align=center},
+  buf/.style={box, fill=blue!5},
+  obox/.style={box, fill=orange!5},
+  arr/.style={-{Stealth[length=4pt]}, thick, black!40},
+  thr/.style={font=\sffamily\tiny, text=black!40},
+]
+  %% Foreground
+  \node[box, fill=blue!6] (vessel) {Vessel\\(ATen dispatch)};
+  \node[buf, right=1.8em of vessel] (ring) {TraceRing\\64\,B $\times$ $2^{16}$};
+  \node[buf, below=0.7em of ring]   (meta) {MetaLog\\144\,B $\times$ $2^{20}$};
+
+  %% Background
+  \node[box, fill=green!5, right=2.8em of ring] (bg) {Background\\Thread};
+  \node[box, right=1.6em of bg]   (graph) {TraceGraph\\(bidir.\ CSR)};
+  \node[box, right=1.6em of graph] (dag) {Merkle\\DAG};
+
+  %% Outputs
+  \node[obox, below=0.8em of dag]   (cache) {KernelCache};
+  \node[obox, below=0.8em of graph] (plan)  {MemoryPlan};
+
+  %% Arrows
+  \draw[arr] (vessel) -- (ring);
+  \draw[arr] (vessel) |- (meta);
+  \draw[arr] (ring)   -- (bg);
+  \draw[arr] (meta)   -| (bg);
+  \draw[arr] (bg)     -- (graph);
+  \draw[arr] (graph)  -- (dag);
+  \draw[arr] (dag)    -- (cache);
+  \draw[arr] (graph)  -- (plan);
+
+  %% Thread boundary
+  \draw[dashed, black!15, thick]
+    ($(ring.north east)!0.5!(bg.north west)+(0,1.2)$) --
+    ($(meta.south east)!0.5!(bg.south west)+(0,-0.7)$);
+  \node[thr] at ($(vessel.north)+(0,0.9)$) {foreground};
+  \node[thr] at ($(bg.north)+(0,0.9)$) {background};
+
+  %% Timing
+  \node[font=\tiny, text=black!40, below=0.2em of vessel] {${\sim}5$\,ns/op};
+\end{tikzpicture}
+\caption{Recording pipeline.
+  The foreground thread writes to two lock-free SPSC buffers.
+  The background thread drains, builds a bidirectional CSR graph,
+  constructs the Merkle DAG, and computes a static memory plan.}
+\label{fig:pipeline}
+\end{figure}
 
 \subsection{Vessel Interception}
 
@@ -107,6 +160,52 @@ The background thread prepares new DAG structures and publishes them via \code{a
 The foreground thread loads with acquire.
 All zero-downtime updates---compilation activation, branch swaps, memory plan updates, topology changes, rollbacks---use this single mechanism.
 
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  node distance=1.6em,
+  R/.style={draw=blue!40, fill=blue!5, rounded corners=1pt,
+    minimum width=5.5em, minimum height=1.8em, font=\sffamily\scriptsize},
+  B/.style={draw=orange!50, fill=orange!6, rounded corners=1pt,
+    minimum width=5.5em, minimum height=1.8em, font=\sffamily\scriptsize},
+  L/.style={draw=green!50!black, fill=green!6, rounded corners=1pt,
+    minimum width=5.5em, minimum height=1.8em, font=\sffamily\scriptsize},
+  arr/.style={-{Stealth[length=3.5pt]}, black!35},
+]
+  \node[R] (r1) {RegionNode};
+  \node[B, below=1.6em of r1] (b1) {BranchNode};
+  \node[R, below left=1.4em and 2.5em of b1]  (a1) {Arm\,1};
+  \node[R, below=1.4em of b1]                 (a2) {Arm\,2};
+  \node[R, below right=1.4em and 2.5em of b1] (a3) {Arm\,3};
+  \node[R, below=2.2em of a2] (merge) {RegionNode};
+  \node[L, below=1.6em of merge] (loop) {LoopNode};
+
+  \draw[arr] (r1) -- (b1);
+  \draw[arr] (b1) -- (a1);
+  \draw[arr] (b1) -- (a2);
+  \draw[arr] (b1) -- (a3);
+  \draw[arr] (a1) |- (merge);
+  \draw[arr] (a2) -- (merge);
+  \draw[arr] (a3) |- (merge);
+  \draw[arr] (merge) -- (loop);
+  \draw[arr, dashed, bend right=55] (loop.west)
+    to node[left, font=\scriptsize\itshape, text=black!40] {feedback} (loop.north west);
+
+  %% Annotations
+  \node[font=\scriptsize, text=black!40, right=0.4em of b1]
+    {guard: \texttt{SHAPE\_DIM}};
+  \node[font=\scriptsize, text=black!40, right=0.4em of loop]
+    {\texttt{REPEAT}($N$) $|$ \texttt{UNTIL}($\varepsilon$)};
+\end{tikzpicture}
+\caption{Merkle DAG node types.
+  \textsf{RegionNode}: compilable op sequence.
+  \textsf{BranchNode}: guard dispatch with sorted arms.
+  \textsf{LoopNode}: cyclic computation with feedback edges.
+  All modifications---architecture mutation, precision changes,
+  continuous learning---are BranchNode arms.}
+\label{fig:dagstructure}
+\end{figure}
+
 \subsection{Content Addressing and the Kernel Cache}
 
 The \code{KernelCache} is a lock-free open-addressing hash table (default capacity 4,096, power-of-two, calloc-initialized).
@@ -124,3 +223,66 @@ Content addressing yields four reuse levels:
 \end{itemize}
 
 The cache grows monotonically and persists across Relay migrations.
+Figure~\ref{fig:content-addressing} illustrates the full content-addressing flow.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  node distance=1em,
+  box/.style={draw=black!35, fill=white, rounded corners=2pt,
+    minimum height=2.4em, font=\sffamily\scriptsize, align=center,
+    blur shadow={shadow blur steps=4, shadow xshift=0.4pt,
+                 shadow yshift=-0.4pt, shadow blur radius=1.2pt}},
+  hash/.style={box, fill=blue!6, minimum width=6.5em},
+  cache/.style={box, fill=orange!6, minimum width=9em, minimum height=3.5em},
+  inp/.style={box, fill=black!4, minimum width=7em, text width=6em},
+  arr/.style={-{Stealth[length=5pt]}, thick, black!35},
+  lbl/.style={font=\sffamily\tiny, text=black!45},
+]
+  %% Inputs
+  \node[inp] (ops) {schema hashes\\shapes, strides\\dtypes, devices\\scalar args};
+
+  %% Hashing
+  \node[hash, right=2.5em of ops] (ch) {\textbf{ContentHash}\\$\in\mathcal{B}_{64}$};
+  \node[hash, below=1.2em of ch]  (mh) {\textbf{MerkleHash}\\$\in\mathcal{B}_{64}$};
+
+  %% KernelCache
+  \node[cache, right=3em of ch] (kc) {\textbf{KernelCache}\\[1pt]
+    {\tiny\texttt{(ContentHash, device\_cap)}}\\[-1pt]
+    {\tiny$\longrightarrow$ \texttt{CompiledKernel*}}};
+
+  %% Arrows
+  \draw[arr] (ops) -- node[above, lbl] {wymix fold} (ch);
+  \draw[arr] (ch)  -- node[above, lbl] {lock-free lookup} (kc);
+  \draw[arr] (ch)  -- node[right, lbl, xshift=2pt]
+    {$\oplus$ child hashes} (mh);
+
+  %% Reuse levels (right of cache)
+  \node[right=1.5em of kc, font=\sffamily\scriptsize, text=black!55,
+        align=left, text width=8em] (reuse) {%
+    \raisebox{0pt}{\tikz\fill[blue!40] (0,0) circle (2pt);}\;
+      cross-iteration\\
+    \raisebox{0pt}{\tikz\fill[green!50!black] (0,0) circle (2pt);}\;
+      cross-run\\
+    \raisebox{0pt}{\tikz\fill[orange!60] (0,0) circle (2pt);}\;
+      cross-model\\
+    \raisebox{0pt}{\tikz\fill[red!40] (0,0) circle (2pt);}\;
+      cross-device};
+
+  %% Structural diff annotation
+  \node[lbl, below=0.3em of mh, text width=9em, align=center]
+    {structural diff in $O(\log N)$\\--- shared subtrees identical};
+
+  %% Brace for inputs
+  \draw[decorate, decoration={brace, mirror, amplitude=4pt},
+        thick, black!25]
+    ([yshift=-2pt]ops.south west) -- ([yshift=-2pt]ops.south east)
+    node[midway, below=5pt, lbl] {per-RegionNode};
+\end{tikzpicture}
+\caption{Content addressing.
+  A RegionNode's semantics are folded into a 64-bit ContentHash via wymix.
+  The KernelCache maps \texttt{(ContentHash, device\_capability)} to compiled
+  artifacts, enabling four levels of reuse.
+  The MerkleHash extends to the full subtree for $O(\log N)$ structural diff.}
+\label{fig:content-addressing}
+\end{figure}

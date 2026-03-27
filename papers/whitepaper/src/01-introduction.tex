@@ -51,13 +51,43 @@ The \textbf{Canopy} is the masterless Keeper mesh.
 \textbf{Augur} is continuous monitoring (performance prediction, drift detection, bottleneck diagnosis).
 \textbf{F$\star$X} is the formal verification layer proving runtime invariants at build time.
 
-\textbf{Three execution phases.}
+\textbf{Three execution phases} (Figure~\ref{fig:phases}).
 In \textbf{recording}, Crucible intercepts Vessel dispatch and records each operation's identity, input/output tensor metadata, and scalar arguments into a lock-free SPSC ring buffer (65,536 entries of 64 bytes each, with parallel arrays for scope and callsite hashes).
 The Vessel executes normally; recording adds 3--5\,ns per operation on the hot path (one cache-line write plus a release store on the head pointer).
 A separate MetaLog (1M entries, 144 bytes each) stores full tensor metadata.
 In \textbf{analysis}, a background thread drains the ring buffer in batches via memcpy, constructs a bidirectional CSR dataflow graph, detects iteration boundaries via $K{=}5$ schema hash signature matching, and builds a content-addressed Merkle DAG.
 From the DAG, it computes a static memory plan and prepares a compiled execution plan.
 In \textbf{compiled} mode, the Vessel interceptor advances an operation index, checks a guard hash, and returns a pre-allocated shadow handle---no execution, no allocation, no redispatch.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  phase/.style={draw=black!40, rounded corners=2pt,
+    minimum width=9em, minimum height=4.5em, align=center,
+    font=\sffamily\small},
+  arr/.style={-{Stealth[length=5pt]}, thick, black!40},
+  lbl/.style={font=\sffamily\scriptsize, text=black!50},
+]
+  \node[phase, fill=blue!5]   (rec) {\textbf{Recording}\\[2pt]
+    {\scriptsize Vessel intercept}\\[-1pt]{\scriptsize 3--5\,ns/op}};
+  \node[phase, fill=green!4, right=2.5em of rec]  (ana) {\textbf{Analysis}\\[2pt]
+    {\scriptsize Background thread}\\[-1pt]{\scriptsize $O(V{+}E)$ CSR}};
+  \node[phase, fill=orange!5, right=2.5em of ana] (com) {\textbf{Compiled}\\[2pt]
+    {\scriptsize Shadow handles}\\[-1pt]{\scriptsize ${\sim}2$\,ns/op}};
+
+  \draw[arr] (rec) -- node[above, lbl] {SPSC drain} (ana);
+  \draw[arr] (ana) -- node[above, lbl] {atomic swap} (com);
+
+  \node[lbl, below=0.4em of rec] {TraceRing + MetaLog};
+  \node[lbl, below=0.4em of ana] {TraceGraph $\to$ Merkle DAG};
+  \node[lbl, below=0.4em of com] {KernelCache + MemoryPlan};
+\end{tikzpicture}
+\caption{Three execution phases.
+  Recording adds 3--5\,ns overhead per operation.
+  Analysis runs on a dedicated background thread.
+  Compiled mode returns pre-allocated shadow handles.}
+\label{fig:phases}
+\end{figure}
 
 \textbf{The Merkle DAG} is the central abstraction.
 Each node's content hash is computed from computation semantics: operation identities, shapes, data types, scalar arguments.

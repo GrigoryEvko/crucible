@@ -24,11 +24,68 @@ The Lean~4 formalization accompanies the implementation as an independent proof 
 
 \medskip
 
-Each layer proves what the layers below cannot.
-Layer~1 prevents calling the wrong function.
-Layer~2 verifies struct completeness.
-Layer~3 proves UB-freedom for exercised inputs.
-Layer~4 proves mathematical properties for all inputs.
+Each layer proves what the layers below cannot (Figure~\ref{fig:fxlayers}).
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  layer/.style={draw=black!25, rounded corners=2pt,
+    minimum width=24em, minimum height=2.6em,
+    font=\sffamily\small, align=center,
+    blur shadow={shadow blur steps=3, shadow xshift=0.3pt,
+                 shadow yshift=-0.3pt, shadow blur radius=1pt}},
+  ex/.style={font=\ttfamily\tiny, text=black!45, align=left, text width=14em},
+]
+  \node[layer, fill=red!6] (l4)
+    {\textbf{Layer 4: Z3 SMT} --- universal proofs
+     ($\forall x \in \mathcal{B}_{64}.\; P(x)$)};
+  \node[layer, fill=orange!6, below=0.5em of l4] (l3)
+    {\textbf{Layer 3: consteval} --- bounded model checking ($N$ inputs, UB-free)};
+  \node[layer, fill=yellow!8, below=0.5em of l3] (l2)
+    {\textbf{Layer 2: Reflection} --- structural completeness ($\forall$ fields)};
+  \node[layer, fill=green!5, below=0.5em of l2] (l1)
+    {\textbf{Layer 1: Type system} --- zero-cost API enforcement};
+
+  %% Left layer numbers
+  \foreach \n/\nd in {4/l4, 3/l3, 2/l2, 1/l1} {
+    \node[font=\sffamily\scriptsize\bfseries, text=black!35, left=0.6em of \nd] {L\n};
+  }
+
+  %% Right: example proofs
+  \node[ex, right=0.7em of l4]
+    {alignment $\forall b,o,a$\\hash no-fixed-point\\SPSC non-overlap};
+  \node[ex, right=0.7em of l3]
+    {Arena UB-freedom\\Philox roundtrip\\FSM deadlock-free};
+  \node[ex, right=0.7em of l2]
+    {\code{reflect\_hash<T>}\\every field has NSDMI\\sizeof cross-check};
+  \node[ex, right=0.7em of l1]
+    {\code{fx::Alloc} tokens\\\code{CRUCIBLE\_STRONG\_ID}\\typestate transitions};
+
+  %% Brace
+  \draw[decorate, decoration={brace, mirror, amplitude=6pt},
+        ultra thick, black!20]
+    ([xshift=-2.4em]l4.north west) -- ([xshift=-2.4em]l1.south west)
+    node[midway, left=10pt, font=\sffamily\bfseries, text=black!45,
+         align=center, rotate=90] {F$\star$X};
+
+  %% Scope annotations
+  \node[font=\sffamily\tiny, text=red!50, above right=-0.1em and -3em of l4]
+    {all inputs};
+  \node[font=\sffamily\tiny, text=orange!60, above right=-0.1em and -3em of l3]
+    {exercised paths};
+  \node[font=\sffamily\tiny, text=yellow!60!black, above right=-0.1em and -3em of l2]
+    {data layout};
+  \node[font=\sffamily\tiny, text=green!50!black, above right=-0.1em and -3em of l1]
+    {compile error};
+\end{tikzpicture}
+\caption{Four-layer F$\star$X verification architecture.
+  Each layer proves properties that the layers below cannot express.
+  Crucible proves: memory plan non-overlap, hash quality, protocol safety,
+  kernel access bounds.
+  Crucible does \emph{not} prove: memory ordering on real hardware,
+  floating-point stability, global kernel optimality.}
+\label{fig:fxlayers}
+\end{figure}
 
 Crucible proves: memory plan non-overlap, hash function quality, protocol deadlock freedom, kernel access safety, algebraic combining laws.
 Crucible does \emph{not} prove: memory ordering on real hardware (ThreadSanitizer), floating-point stability (empirical bounds), global kernel optimality (model fidelity limitation).

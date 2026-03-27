@@ -129,6 +129,53 @@ The optimizer itself becomes a tunable component.
 
 \subsection{Verification and Activation}
 
+Figure~\ref{fig:optloop} illustrates the uniform protocol.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+  stp/.style={draw=black!30, fill=white, rounded corners=2pt,
+    minimum width=9em, minimum height=2.2em,
+    font=\sffamily\scriptsize, align=center,
+    blur shadow={shadow blur steps=3, shadow xshift=0.3pt,
+                 shadow yshift=-0.3pt, shadow blur radius=1pt}},
+  arr/.style={-{Stealth[length=4.5pt]}, thick, black!35},
+  lbl/.style={font=\sffamily\tiny, text=black!40},
+]
+  %% Steps
+  \node[stp, fill=blue!5] (diag) {\textbf{Augur}\\diagnose + predict};
+  \node[stp, fill=green!5, right=2em of diag] (branch)
+    {\textbf{DAG}\\create BranchNode};
+  \node[stp, fill=orange!5, right=2em of branch] (verify)
+    {\textbf{F$\star$X}\\verify safety};
+  \node[stp, fill=purple!5, below=2em of branch] (eval)
+    {\textbf{Evaluate}\\A/B on validation};
+  \node[stp, fill=red!5, left=2em of eval] (discard)
+    {\textbf{Discard}\\branch removed};
+  \node[stp, fill=green!8, right=2em of eval] (activate)
+    {\textbf{Keeper}\\atomic swap};
+
+  %% Arrows
+  \draw[arr] (diag) -- (branch);
+  \draw[arr] (branch) -- (verify);
+  \draw[arr] (verify) -- (eval);
+  \draw[arr] (eval) -- node[below, lbl] {quality $\uparrow$} (activate);
+  \draw[arr] (eval) -- node[below, lbl] {quality $\downarrow$} (discard);
+
+  %% Feedback
+  \draw[arr, dashed, black!20] (activate.south)
+    .. controls +(0,-1.2) and +(0,-1.2) .. (diag.south)
+    node[midway, below=2pt, lbl] {next iteration};
+\end{tikzpicture}
+\caption{Optimization activation protocol.
+  Every optimization follows the same path:
+  Augur diagnoses, a BranchNode encodes the change,
+  F$\star$X verifies safety, evaluation compares arms on validation data,
+  and the Keeper activates or discards via atomic swap.
+  No optimization is irreversible.}
+\label{fig:optloop}
+\end{figure}
+
 Uniform protocol for all optimizations:
 
 \begin{enumerate}
