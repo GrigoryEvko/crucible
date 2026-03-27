@@ -622,7 +622,7 @@ struct BackgroundThread {
       te.grad_enabled = re.grad_enabled;
       te.inference_mode = re.inference_mode;
       te.kernel_id = classify_kernel(re.schema_hash);
-      te.pad_te = 0;
+      te.is_mutable = false;
       assert(re.num_scalar_args <= 5 &&
              "op has >5 scalar args — truncated in TraceRing (see Task #18)");
       uint16_t n_scalars = std::min(re.num_scalar_args, uint16_t(5));

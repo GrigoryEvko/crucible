@@ -54,11 +54,38 @@ struct TensorMeta {
   DeviceType device_type = DeviceType::CPU; // 1B
   int8_t device_idx = -1;   // 1B — -1 = CPU, 0+ = device index
   Layout layout = Layout::Strided; // 1B
-  uint8_t pad[3]{};          // 3B — padding to 8-byte alignment
+  bool requires_grad = false; // 1B — tensor.requires_grad (forward/backward discriminator)
+
+  // Packed tensor flags (1B). Bit layout:
+  //   bit 0: is_leaf       — parameter or user-created tensor (no grad_fn)
+  //   bit 1: is_contiguous — contiguous memory layout
+  //   bit 2: has_grad_fn   — has autograd history (not a leaf)
+  //   bit 3: is_view       — shares storage with another tensor
+  //   bit 4: is_neg        — negation bit-view (torch._neg_view)
+  //   bit 5: is_conj       — conjugate bit-view
+  //   bit 6-7: reserved
+  uint8_t flags = 0;          // 1B — packed tensor flags (see meta_flags)
+
+  uint8_t output_nr = 0;     // 1B — autograd output number (multi-output ops)
+
+  // ── Extended fields (16B) ─────────────────────────────────────────
+  int64_t storage_offset = 0; // 8B — offset into underlying storage (view chains)
+  uint32_t version = 0;      // 4B — tensor data version counter (in-place mutation detection)
+  uint32_t storage_nbytes = 0; // 4B — actual storage size in bytes (may differ from view)
 };
 
-static_assert(sizeof(TensorMeta) == 144, "TensorMeta layout check");
+static_assert(sizeof(TensorMeta) == 160, "TensorMeta layout check");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TensorMeta);
+
+// TensorMeta::flags bit constants.
+namespace meta_flags {
+  inline constexpr uint8_t IS_LEAF       = 1 << 0;
+  inline constexpr uint8_t IS_CONTIGUOUS = 1 << 1;
+  inline constexpr uint8_t HAS_GRAD_FN  = 1 << 2;
+  inline constexpr uint8_t IS_VIEW       = 1 << 3;
+  inline constexpr uint8_t IS_NEG        = 1 << 4;
+  inline constexpr uint8_t IS_CONJ       = 1 << 5;
+} // namespace meta_flags
 
 // ═══════════════════════════════════════════════════════════════════
 // TensorSlot: One unique storage in a recorded iteration
@@ -171,7 +198,7 @@ struct TraceEntry {
   // registered schema_hash → CKernelId mappings. Used by Tier 2+ replay
   // to dispatch directly without going through the Vessel dispatcher.
   CKernelId kernel_id = CKernelId::OPAQUE; // 1B
-  uint8_t   pad_te = 0;        // 1B — alignment
+  bool is_mutable = false;    // 1B — schema.is_mutable (in-place op)
 
   // Tensor identity tracking (for dataflow edges between ops)
   OpIndex* input_trace_indices = nullptr; // 8B — which previous op produced each input

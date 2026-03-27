@@ -45,7 +45,7 @@ namespace crucible {
 //      64-byte cache line (producer-only). tail on a separate line (consumer).
 //      Zero false sharing between threads.
 struct CRUCIBLE_OWNER MetaLog {
-  static constexpr uint32_t CAPACITY = 1 << 20; // 1M entries (~144MB)
+  static constexpr uint32_t CAPACITY = 1 << 20; // 1M entries (~160MB)
   static constexpr uint32_t MASK = CAPACITY - 1;
 
   // ── Producer cache line ──
@@ -73,12 +73,12 @@ struct CRUCIBLE_OWNER MetaLog {
   MetaLog() {
     // 64-byte aligned allocation for cache-line-friendly access.
     // std::aligned_alloc requires size to be a multiple of alignment — it is:
-    // CAPACITY * 144 is divisible by 64 (144 = 2*64 + 16, but CAPACITY * 144
-    // = 1M * 144 = 144MB, trivially a multiple of 64).
+    // CAPACITY * 160 is divisible by 64 (160 = 2*64 + 32, CAPACITY * 160
+    // = 1M * 160 = 160MB, trivially a multiple of 64).
     static constexpr size_t ALLOC_BYTES = CAPACITY * sizeof(TensorMeta);
     static_assert(ALLOC_BYTES % 64 == 0, "allocation size must be multiple of alignment");
     entries = static_cast<TensorMeta*>(std::aligned_alloc(64, ALLOC_BYTES));
-    if (!entries) [[unlikely]] std::abort(); // 144MB alloc failed — unrecoverable
+    if (!entries) [[unlikely]] std::abort(); // 160MB alloc failed — unrecoverable
   }
 
   ~MetaLog() { std::free(entries); }
