@@ -206,7 +206,6 @@ struct LoadedTrace {
     e.num_scalar_args = r.num_scalars;
     e.grad_enabled = r.grad_enabled != 0;
     e.inference_mode = (r.inference_mode & 1) != 0;
-    e.is_mutable = (r.inference_mode & 2) != 0;
     uint16_t n = r.num_scalars < 5 ? r.num_scalars : 5;
     for (uint16_t s = 0; s < n; s++)
       e.scalar_values[s] = r.scalar_values[s];
