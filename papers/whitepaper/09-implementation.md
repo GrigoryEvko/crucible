@@ -2,7 +2,7 @@
 
 ## 9.1 What Is Built
 
-~9,500 lines of C++26 across 17 headers in `include/crucible/`, 24 tests.
+31 C++26 headers in `include/crucible/`, 24 tests.
 
 **Recording pipeline.** TraceRing: 65,536 entries x 64B = 4MB ring + 3 parallel arrays (MetaIndex, ScopeHash, CallsiteHash) totaling ~5.25MB. `alignas(64)` head/tail on separate cache lines, `cached_tail_` optimization, next-slot prefetch. MetaLog: 1M entries x 144B = ~144MB, `aligned_alloc(64, ...)`, same SPSC protocol with cached tail and bulk memcpy. Vessel adapter for PyTorch ATen dispatch.
 
@@ -28,7 +28,7 @@
 
 ## 9.2 Lean 4 Formalization
 
-36 modules, 18,231 lines, 1,312 theorems, zero `sorry`. Covers Arena (pairwise disjointness, alignment), MemoryPlan (sweep-line non-overlap), PoolAllocator, SPSC ring (FIFO ordering, batch drain), MetaLog, IterationDetector (detection latency bounds), TraceGraph (CSR consistency), Merkle DAG (collision probability, structural diff), Graph IR (DCE fixpoint, topological sort validity), scheduling (Graham's bound, Brent's theorem), roofline model (multi-level cache, wave quantization, correction factors), and fusion (chain optimality, occupancy). Built with Lean 4.28.0 + local Mathlib.
+39 modules, 1,331 theorems, zero `sorry` in core infrastructure. Covers Arena (pairwise disjointness, alignment), MemoryPlan (sweep-line non-overlap), PoolAllocator, SPSC ring (FIFO ordering, batch drain), MetaLog, IterationDetector (detection latency bounds), TraceGraph (CSR consistency), Merkle DAG (collision probability, structural diff), Graph IR (DCE fixpoint, topological sort validity), scheduling (Graham's bound, Brent's theorem), roofline model (multi-level cache, wave quantization, correction factors), and fusion (chain optimality, occupancy). Built with Lean 4.28.0 + local Mathlib.
 
 Correspondence between Lean specification and C++ implementation is maintained by design discipline and cross-referenced invariant names.
 

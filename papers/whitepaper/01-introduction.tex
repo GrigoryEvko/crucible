@@ -76,7 +76,7 @@ The DAG simultaneously serves as versioning mechanism (Merkle hashes enable $O(\
   \item Graduated divergence detection with four severity levels (schema, shape, scope, callsite hash mismatches), enabling seamless compiled-to-eager fallback.
   \item A four-layer formal verification architecture (F$\star$X) proving runtime invariants at build time: Z3 universal proofs, \code{consteval} bounded model checking, reflection-based structural checks, and type-system enforcement via capability tokens and strong types.
   \item An event-sourced persistence model (the Cipher) enabling deterministic replay, hardware migration, and recovery from any training step.
-  \item A prototype implementation (${\sim}9{,}500$ lines of C++26, 24 tests, compiling clean on Clang~22 and GCC~15), accompanied by a Lean~4 formalization (36 modules, 1,312 theorems, zero \code{sorry}).
+  \item A prototype implementation in C++26 (31 headers, 24 tests, compiling clean on Clang~22 and GCC~15), accompanied by a Lean~4 formalization (39 modules, 1,331 theorems, zero \code{sorry} in core infrastructure).
 \end{enumerate}
 
 \subsection{Paper Organization}

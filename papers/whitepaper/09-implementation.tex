@@ -4,7 +4,7 @@
 
 \subsection{What Is Built}
 
-${\sim}9{,}500$ lines of C++26 across 17 headers in \code{include/crucible/}, 24 tests.
+31 C++26 headers in \code{include/crucible/}, 24 tests.
 
 \textbf{Recording pipeline.}
 TraceRing: 65,536 entries $\times$ 64B $=$ 4\,MB ring + 3 parallel arrays (\code{MetaIndex}, \code{ScopeHash}, \code{CallsiteHash}) totaling ${\sim}5.25$\,MB.
@@ -74,7 +74,7 @@ All headers compile clean on both primary toolchains with zero warnings.
 
 \subsection{Lean 4 Formalization}
 
-36 modules, 18,231 lines, 1,312 theorems, zero \code{sorry}.
+39 modules, 1,331 theorems, zero \code{sorry} in core infrastructure.
 Covers Arena (pairwise disjointness, alignment), MemoryPlan (sweep-line non-overlap), PoolAllocator, SPSC ring (FIFO ordering, batch drain), MetaLog, IterationDetector (detection latency bounds), TraceGraph (CSR consistency), Merkle DAG (collision probability, structural diff), Graph IR (DCE fixpoint, topological sort validity), scheduling (Graham's bound, Brent's theorem), roofline model (multi-level cache, wave quantization, correction factors), and fusion (chain optimality, occupancy).
 Built with Lean~4.28.0 + local Mathlib.
 

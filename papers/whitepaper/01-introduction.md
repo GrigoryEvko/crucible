@@ -36,7 +36,7 @@ Crucible records what the framework does, then executes it better next time.
 4. Graduated divergence detection with four severity levels (schema, shape, scope, callsite hash mismatches), enabling seamless compiled-to-eager fallback.
 5. A four-layer formal verification architecture (FX) proving runtime invariants at build time: Z3 universal proofs, `consteval` bounded model checking, reflection-based structural checks, and type-system enforcement via capability tokens and strong types.
 6. An event-sourced persistence model (the Cipher) enabling deterministic replay, hardware migration, and recovery from any training step.
-7. A prototype implementation (~9,500 lines of C++26, 24 tests, compiling clean on Clang 22 and GCC 15), accompanied by a Lean 4 formalization (36 modules, 1,312 theorems, zero `sorry`).
+7. A prototype implementation in C++26 (31 headers, 24 tests, compiling clean on Clang 22 and GCC 15), accompanied by a Lean 4 formalization (39 modules, 1,331 theorems, zero `sorry` in core infrastructure).
 
 ## 1.4 Paper Organization
 
