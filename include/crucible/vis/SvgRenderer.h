@@ -134,7 +134,100 @@ class SvgRenderer {
     }
   }
 
-  void end() { buf_ += "</svg>\n"; }
+  void end() {
+    buf_ += "</svg>\n";
+  }
+
+  // Embed interactive JavaScript for hover highlights and zoom/pan.
+  // Call before end(). Requires blocks to have class="block" and
+  // data-id attributes matching edge data-src/data-dst.
+  void embed_interactivity() {
+    buf_ += R"(<script type="text/ecmascript"><![CDATA[
+(function() {
+  var svg = document.querySelector('svg');
+  if (!svg) return;
+
+  // ── Zoom / Pan ─────────────────────────────────────────────
+  var viewBox = svg.viewBox.baseVal;
+  var isPanning = false, startX, startY;
+
+  svg.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    var scale = e.deltaY > 0 ? 1.1 : 0.9;
+    var pt = svg.createSVGPoint();
+    pt.x = e.clientX; pt.y = e.clientY;
+    pt = pt.matrixTransform(svg.getScreenCTM().inverse());
+    viewBox.x = pt.x - (pt.x - viewBox.x) * scale;
+    viewBox.y = pt.y - (pt.y - viewBox.y) * scale;
+    viewBox.width *= scale;
+    viewBox.height *= scale;
+  });
+
+  svg.addEventListener('mousedown', function(e) {
+    if (e.button !== 0) return;
+    isPanning = true;
+    startX = e.clientX; startY = e.clientY;
+    svg.style.cursor = 'grabbing';
+  });
+  svg.addEventListener('mousemove', function(e) {
+    if (!isPanning) return;
+    var dx = (e.clientX - startX) * viewBox.width / svg.clientWidth;
+    var dy = (e.clientY - startY) * viewBox.height / svg.clientHeight;
+    viewBox.x -= dx; viewBox.y -= dy;
+    startX = e.clientX; startY = e.clientY;
+  });
+  svg.addEventListener('mouseup', function() {
+    isPanning = false; svg.style.cursor = 'default';
+  });
+  svg.addEventListener('mouseleave', function() {
+    isPanning = false; svg.style.cursor = 'default';
+  });
+
+  // ── Hover highlight ────────────────────────────────────────
+  var blocks = svg.querySelectorAll('.block');
+  var tooltip = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  tooltip.setAttribute('id', 'tooltip');
+  tooltip.style.display = 'none';
+  svg.appendChild(tooltip);
+
+  var tipBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+  tipBg.setAttribute('rx', '4');
+  tipBg.setAttribute('fill', '#1F2937');
+  tipBg.setAttribute('opacity', '0.9');
+  tooltip.appendChild(tipBg);
+
+  var tipText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  tipText.setAttribute('fill', 'white');
+  tipText.setAttribute('font-size', '10');
+  tipText.setAttribute('font-family', 'Menlo,Consolas,monospace');
+  tooltip.appendChild(tipText);
+
+  blocks.forEach(function(block) {
+    block.addEventListener('mouseenter', function() {
+      block.style.filter = 'brightness(0.92)';
+      var info = block.getAttribute('data-info') || '';
+      if (info) {
+        tipText.textContent = info;
+        var bbox = tipText.getBBox();
+        tipBg.setAttribute('x', bbox.x - 6);
+        tipBg.setAttribute('y', bbox.y - 3);
+        tipBg.setAttribute('width', bbox.width + 12);
+        tipBg.setAttribute('height', bbox.height + 6);
+        var bboxB = block.getBBox();
+        tooltip.setAttribute('transform',
+          'translate(' + (bboxB.x + bboxB.width + 8) + ',' + (bboxB.y + bboxB.height/2) + ')');
+        tooltip.style.display = '';
+      }
+    });
+    block.addEventListener('mouseleave', function() {
+      block.style.filter = '';
+      tooltip.style.display = 'none';
+    });
+  });
+})();
+]]></script>
+)";
+  }
 
   // ── Groups ───────────────────────────────────────────────────────
 
@@ -153,6 +246,17 @@ class SvgRenderer {
   }
 
   void end_group() { buf_ += "</g>\n"; }
+
+  // Interactive block group with class="block" and data-info tooltip.
+  void begin_block_group(std::string_view info = {}) {
+    buf_ += "<g class=\"block\"";
+    if (!info.empty()) {
+      buf_ += " data-info=\"";
+      xml_escape(info);
+      buf_ += "\"";
+    }
+    buf_ += " style=\"cursor:pointer\">\n";
+  }
 
   // ── Rectangles ───────────────────────────────────────────────────
 
