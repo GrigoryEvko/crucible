@@ -101,8 +101,8 @@ include/crucible/          C++26 headers
 test/                      C++ tests
 lean/Crucible/             Lean 4 formalization (39 modules, 1,331 theorems)
 papers/
-  whitepaper/              LaTeX source — system architecture, design, related work
-  yellowpaper/             LaTeX source — formal specification (struct layouts, algorithms, proofs)
+  whitepaper/              PDF + src/ LaTeX — system architecture, design, related work
+  yellowpaper/             PDF + src/ LaTeX — formal specification (struct layouts, algorithms, proofs)
 vessel/                    PyTorch Vessel adapter
 verify/                    Z3 proof suite scaffolding (enhanced Z3 fork with CaDiCaL)
 misc/                      Manifesto, notes, design documents
@@ -110,9 +110,9 @@ misc/                      Manifesto, notes, design documents
 
 ## Papers
 
-[**Whitepaper**](papers/whitepaper/crucible-whitepaper.pdf) ([source](papers/whitepaper/)) — *A Content-Addressed Adaptive Runtime for Machine Learning.* System architecture, design principles, recording pipeline, compilation model, formal verification (FX), hardware adaptation (Longitude + Augur), distribution (Canopy + Cipher), model-aware optimization, implementation status, related work (XLA, TVM, Triton, TorchInductor, FlexFlow, Alpa, Megatron, DeepSpeed, seL4, CompCert), research roadmap.
+[**Whitepaper**](papers/whitepaper/crucible-whitepaper.pdf) ([source](papers/whitepaper/src/)) — *A Content-Addressed Adaptive Runtime for Machine Learning.* System architecture, design principles, recording pipeline, compilation model, formal verification (FX), hardware adaptation (Longitude + Augur), distribution (Canopy + Cipher), model-aware optimization, implementation status, related work (XLA, TVM, Triton, TorchInductor, FlexFlow, Alpa, Megatron, DeepSpeed, seL4, CompCert), research roadmap.
 
-[**Yellowpaper**](papers/yellowpaper/crucible-yellowpaper.pdf) ([source](papers/yellowpaper/)) — *Formal Specification of the Crucible Runtime.* Every data structure layout (byte-level), algorithm (step-by-step), protocol state machine, hash function (exact constants), and proof obligation (with Z3 encoding sketches). Chapters 1–5 complete (notation, types, arena, SPSC ring, tensor metadata). Chapters 6–20 in progress.
+[**Yellowpaper**](papers/yellowpaper/crucible-yellowpaper.pdf) ([source](papers/yellowpaper/src/)) — *Formal Specification of the Crucible Runtime.* Every data structure layout (byte-level), algorithm (step-by-step), protocol state machine, hash function (exact constants), and proof obligation (with Z3 encoding sketches). Chapters 1–5 complete (notation, types, arena, SPSC ring, tensor metadata). Chapters 6–20 in progress.
 
 Rebuild from source: `cd papers && make whitepaper yellowpaper`
 
