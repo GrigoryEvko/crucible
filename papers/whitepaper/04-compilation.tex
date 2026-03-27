@@ -1,0 +1,132 @@
+% 04-compilation.tex
+
+\section{Compilation and Execution}\label{sec:compilation}
+
+Memory planning and Tier~1 replay are implemented.
+SMT kernel synthesis and shadow handle execution are designs.
+
+\subsection{Static Memory Planning}
+
+Crucible replaces per-operation dynamic allocation with a static plan computed from the dataflow graph.
+During \code{build\_trace()}, the background thread identifies unique tensor storages as \code{TensorSlot} structs (40 bytes each: \code{offset\_bytes}, \code{nbytes}, \code{birth\_op}, \code{death\_op}, dtype, device, \code{is\_external} flag, \code{slot\_id}).
+Storage size is computed via \code{compute\_storage\_nbytes()}, which handles negative strides (e.g., \code{torch.flip}, \code{as\_strided}) by tracking both max and min offset contributions.
+External tensors (parameters, data loader outputs) are excluded from the pool.
+
+A sweep-line algorithm assigns offsets within a single contiguous pool using counting sort $O(n{+}k)$ rather than insertion sort:
+
+\begin{enumerate}
+  \item Sort tensors by birth index.
+  \item Maintain free intervals within the pool.
+  \item For each tensor in birth order: find the first fitting interval, assign offset, mark occupied until death.
+  \item At death points, return intervals to the free list.
+\end{enumerate}
+
+The output is a \code{MemoryPlan}: \code{pool\_bytes} (total), \code{num\_slots}, \code{num\_external}, device context (\code{DeviceType}, \code{device\_idx}, \code{device\_capability}), and distributed topology (rank, world\_size).
+At runtime, one allocation obtains the pool.
+Every subsequent ``allocation'' is \code{base\_ptr + offset}.
+No mutex, no freelist, no fragmentation.
+
+\textbf{Correctness.}
+Non-overlap is proved in Lean~4 for the general case and verified by Z3 for configurations up to 64 tensors with arbitrary lifetimes.
+
+\textbf{Dynamic shapes.}
+New \code{MemoryPlan} computed by the background thread and activated via atomic swap at the iteration boundary.
+Foreground never blocked.
+
+\textbf{Activation checkpointing.}
+The memory plan provides exact per-tensor cost.
+For each forward activation needed in backward: if \code{store\_cost / recompute\_cost > threshold}, recompute.
+Per-tensor, adapts to available memory.
+
+\subsection{SMT-Based Kernel Synthesis}
+
+\emph{Design.}
+Autotuning (Triton, AutoTVM/Ansor) searches configuration space by benchmarking candidates---hundreds to thousands of trials, finding local optima.
+Crucible formulates kernel configuration as a constraint optimization problem.
+
+For a given operation, shape, and target device, \code{CostModel.h} defines the complete problem:
+
+\begin{itemize}
+  \item \textbf{Axioms} (\code{HardwareProfile}).
+    Measured hardware parameters: \code{num\_sms}, \code{warp\_size}, \code{max\_warps\_per\_sm}, \code{regs\_per\_sm}, \code{max\_regs\_per\_thread} (255), \code{smem\_per\_sm}, \code{tmem\_per\_sm}, four-level bandwidth hierarchy (\code{smem\_bw\_per\_sm}, \code{l2\_bw}, \code{hbm\_bw}), corresponding latencies, peak throughput per dtype (fp64 through fp4), and \code{launch\_ns} (${\sim}3$\,\textmu{}s).
+    Presets exist for B200 (sm\_100), H100 (sm\_90), MI300X (gfx942), and A100 (sm\_80).
+    Longitude replaces presets with calibrated measurements.
+  \item \textbf{Variables} (\code{KernelConfig}).
+    \code{tile\_m}, \code{tile\_n}, \code{tile\_k} (\code{uint16}), \code{pipeline\_stages} (1--7), \code{warps\_per\_block} (1--32), \code{smem\_bytes}, \code{regs\_per\_thread}, \code{vec\_width}.
+  \item \textbf{Constraints} (C1--C8).
+    \code{smem\_bytes} $\leq$ \code{smem\_per\_sm}.
+    \code{regs\_per\_thread} $\leq$ \code{max\_regs\_per\_thread}.
+    \code{warps\_per\_block} $\geq$ 1.
+    \code{warps\_per\_block} $\times$ \code{warp\_size} $\leq$ 1024.
+    Positive tile dimensions.
+    \code{pipeline\_stages} $\in [1,7]$.
+    Each maps mechanically to a Z3 \code{(assert ...)}.
+  \item \textbf{Objective.}
+    Minimize roofline execution time: $\max(\text{compute\_ns}, \text{memory\_ns}) + \text{launch\_ns}$.
+    Compute: $\text{FLOPs} / (\text{peak\_tflops} \times 10^3)$.
+    Memory: $\text{bytes} / \text{hbm\_bw}$.
+    The ridge point ($\text{peak\_tflops} \times 10^3 / \text{hbm\_bw}$) determines whether a kernel is compute-bound or memory-bound.
+\end{itemize}
+
+A Z3 \code{optimize} query finds the configuration minimizing the objective subject to all constraints.
+The solution is optimal within the analytical model.
+
+\textbf{Qualification.}
+The roofline model does not capture L1/L2 cache behavior, instruction scheduling, warp divergence, or TLB pressure.
+Longitude calibration (Section~6) computes per-kernel-class correction factors.
+Formal safety guarantees---no out-of-bounds access, no bank conflicts, coalesced access---are model-independent and hold on actual hardware.
+
+\textbf{Scope.}
+Applies to any kernel with bounded discrete configuration: GEMM (tile/pipeline/warp), convolution (tile/implicit\_gemm), attention (tile/pipeline/TMA), normalization (vector\_width/rows\_per\_block), reduction (block\_dim/strategy), collective communication (algorithm/channels/chunk\_size).
+
+\subsection{Graduated Divergence Detection}
+
+Four severity levels based on which hash component diverges:
+
+\begin{enumerate}
+  \item \textbf{SchemaHash mismatch}---different operation. Hard diverge: immediate eager fallback, re-record.
+  \item \textbf{ShapeHash mismatch}---same operation, different shapes. Hard diverge: kernels and memory plan invalid. Fallback, re-record, recompile.
+  \item \textbf{ScopeHash mismatch}---same operation, same shapes, different module context (code refactoring). Soft warning: compiled plan remains valid.
+  \item \textbf{CallsiteHash mismatch}---same shapes, same module, different source location. Softest warning: logged only.
+\end{enumerate}
+
+\textbf{Recovery protocol.}
+After divergence, the foreground thread sets \code{BackgroundThread::reset\_requested} (atomic bool).
+The background thread detects this at the start of each drain cycle, discards accumulated trace and resets the \code{IterationDetector}---preventing leftover signature ops from producing false iteration boundaries and garbage regions.
+Recording skips during alignment; the divergent op itself is not recorded.
+If the divergence was temporary, the system may re-encounter the original behavior and switch back via BranchNode arm selection.
+
+\subsection{Shadow Handle Execution Model}
+
+\emph{Design.}
+In Tier~2, the Vessel interceptor returns \emph{shadow handles}: full tensor objects (\code{ConductorTensorImpl}) with correct metadata (shape, strides, dtype, device) whose storage points into the pre-planned memory pool.
+The GPU executes compiled kernels asynchronously on CUDA streams; Python holds shadows and inspects only metadata.
+
+Synchronization points (the only moments Python blocks): \code{.item()}, \code{.cpu()}, \code{.numpy()}, \code{print()}, data-dependent control flow, unrecognized operations.
+Everything else returns immediately.
+For 1,000 operations with one \code{loss.item()}: 999 shadow returns (${\sim}2$\,\textmu{}s total) + 1 sync (${\sim}10$\,\textmu{}s).
+
+\subsection{Execution Tiers}
+
+Three tiers of increasing optimization:
+
+\textbf{Tier~1 (implemented).}
+Eager replay with divergence detection.
+Operations replay in recorded order using Vessel dispatch for execution but the static memory plan for allocation.
+Guards check hash consistency at each operation.
+Validates the recording and divergence infrastructure without custom kernel compilation.
+
+\textbf{Tier~2 (designed).}
+Shadow handle execution.
+Foreground returns pre-allocated handles; background pre-schedules kernel launches on CUDA streams.
+Python and GPU fully decoupled.
+Target: ${\sim}2$\,ns per Vessel dispatch (one pointer advance + one hash guard check).
+
+\textbf{Tier~3 (designed).}
+CUDA Graph capture and replay.
+Entire compiled iteration captured as a CUDA Graph, replayed in one API call.
+Target: ${\sim}50$\,ns per iteration, independent of operation count.
+Requires static shapes across iterations.
+
+Each tier is a strict superset of the previous tier's correctness infrastructure.
+Divergence detection and fallback are identical across tiers.

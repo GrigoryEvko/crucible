@@ -1,0 +1,126 @@
+% 03-recording.tex
+
+\section{Recording and Representation}\label{sec:recording}
+
+The recording pipeline, graph construction, and Merkle DAG are implemented and tested.
+Formal properties of the DAG are proved in Lean~4.
+
+\subsection{Vessel Interception}
+
+The Vessel adapts Crucible to the host framework.
+The current Vessel targets PyTorch's ATen dispatch mechanism---a priority-ordered function pointer table indexed by dispatch keys.
+Crucible registers \code{DispatchKey::Conductor} above backend keys, observing every operation before it reaches the compute backend.
+
+\textbf{Recording mode} (six steps per operation):
+(1)~snapshot input \code{TensorMeta} (\code{sizes[8]}, \code{strides[8]}, \code{data\_ptr}, \code{ndim}, \code{dtype}, \code{device\_type}, \code{device\_idx}, \code{layout}---144 bytes per tensor);
+(2)~compute \code{SchemaHash} (from registered operator name) and \code{ShapeHash} (from input dimensions);
+(3)~execute the operation via redispatch;
+(4)~snapshot output \code{TensorMeta};
+(5)~append metadata to the MetaLog;
+(6)~record a 64-byte entry in the TraceRing.
+\textbf{Compiled mode}: advance operation index, check guard hash, return pre-allocated shadow handle.
+No execution, no allocation, no redispatch.
+
+The Vessel handles operations with zero tensor arguments (profiler hooks like \code{profiler::\_record\_\allowbreak{}function\_enter\_new}, scope markers) by recording them with \code{MetaIndex::none()}.
+TensorList inputs (concatenation, stacking) are unpacked into individual \code{TensorMeta} entries.
+Scalar arguments are encoded inline (up to five \code{int64} values per TraceRing entry, covering 99.9\% of operations).
+Communication operations (all-reduce, all-gather) use the identical recording pipeline.
+
+\subsection{Trace Recording}
+
+Two parallel SPSC (single-producer, single-consumer) structures communicate between the foreground thread (Python + Vessel recording) and the background thread (graph construction + compilation).
+
+\textbf{TraceRing.}
+65,536 entries (\code{CAPACITY = 1 << 16}), each exactly 64 bytes (one cache line): \code{SchemaHash} (8B), \code{ShapeHash} (8B), \code{num\_inputs} (2B), \code{num\_outputs} (2B), \code{num\_scalar\_args} (2B), \code{grad\_enabled} (1B), \code{inference\_mode} (1B), and \code{scalar\_values[5]} (40B).
+Three parallel arrays alongside entries---\code{meta\_starts[]} (\code{MetaIndex}), \code{scope\_hashes[]} (\code{ScopeHash}), \code{callsite\_hashes[]} (\code{CallsiteHash})---are indexed by the same slot, providing the background thread with module context and source location.
+Total pre-allocated: ${\sim}5.25$\,MB.
+
+Bitmask indexing (\code{index \& MASK}) replaces modulo.
+Head and tail are \code{alignas(64)} atomics on separate cache lines to prevent false sharing.
+The producer caches the last-read tail locally (\code{cached\_tail\_}); since drain only advances the tail forward, a stale cache is conservative.
+This avoids cross-core cache-line traffic on the common path---approximately 20,000 appends between drains at 5\,ns/op and 100\,\textmu{}s drain intervals.
+The next write slot is prefetched via \code{\_\_builtin\_prefetch} (write hint, L1 locality) before publishing the head, hiding DRAM latency for the 4\,MB ring.
+
+\textbf{MetaLog.}
+1,048,576 entries (\code{CAPACITY = 1 << 20}) of 144-byte \code{TensorMeta} records, 64-byte aligned allocation (${\sim}144$\,MB).
+Same SPSC protocol with cached tail.
+Producer hot path: ${\sim}12$\,ns for 1 tensor, ${\sim}33$\,ns for 3 tensors (measured).
+Bulk memcpy for contiguous regions compiles to AVX-512 stores.
+The background thread accesses entries zero-copy via \code{try\_contiguous()} when the range does not wrap around the circular boundary (99.99\% of calls with 1M capacity and ${\sim}1{,}500$ metas per iteration).
+
+Both structures are pre-allocated at initialization and never resized.
+The foreground recording path involves no dynamic allocation, no system calls, and no contention.
+All graph and DAG memory is allocated from a bump-pointer Arena on the background thread (${\sim}2$\,ns per allocation, 1\,MB blocks, zero fragmentation).
+
+\subsection{Graph Construction}
+
+The background thread drains the TraceRing in batches of up to 4,096 entries (\code{BATCH\_SIZE}) and constructs a \code{TraceGraph}: a bidirectional CSR property graph where nodes represent operations and edges represent relationships.
+Four edge kinds are defined: \code{DATA\_FLOW} (producer-consumer), \code{ALIAS} (shared storage), \code{CONTROL\_FLOW} (explicit ordering), and \code{SCALAR\_FLOW} (scalar dependencies).
+Each Edge is 12 bytes: \code{OpIndex src}, \code{OpIndex dst}, \code{src\_port} (\code{uint8}), \code{dst\_port} (\code{uint8}), \code{EdgeKind}, padding.
+
+\textbf{Data flow edges} are constructed by pointer tracking.
+A PtrMap (open-addressing, generation-counter-based to avoid memset between iterations) maps tensor \code{data\_ptr} to the \code{OpIndex} that produced it.
+Input pointer matching a recorded output pointer creates a \code{DATA\_FLOW} edge.
+\textbf{Alias edges} arise when multiple operations reference the same underlying storage (views, in-place ops, transposes).
+
+Each graph node is a \code{TraceEntry}: \code{SchemaHash}, \code{ShapeHash}, \code{ScopeHash}, \code{CallsiteHash} (all strong \code{uint64} types), arena-allocated \code{TensorMeta} arrays for inputs and outputs, arena-allocated scalar args, grad/inference flags, \code{CKernelId} classification, and \code{SlotId} arrays for memory planning.
+The graph is built in a single pass with $O(V{+}E)$ CSR construction via counting sort (prefix sum + scatter).
+Both forward (src-sorted) and reverse (dst-sorted) CSR adjacency structures are constructed simultaneously.
+
+Scratch buffers (PtrMap, SlotInfo, Edge arrays) are allocated once and reused across iterations---zero per-call allocation.
+Content hash is fused into the main loop as a streaming accumulator, eliminating a redundant second pass.
+
+\textbf{Iteration detection.}
+The \code{IterationDetector} uses a $K{=}5$ schema hash signature occupying exactly two cache lines (128 bytes).
+Steady-state hot path: one increment + one comparison + one well-predicted branch (${\sim}1$\,ns).
+The expected next hash value is cached directly---no rolling fingerprint, no ring buffer, no multiply.
+Two-match confirmation handles warmup: the first match locks the signature as a candidate; the second confirms a boundary.
+The last completed iteration length is computed via \code{std::sub\_sat(ops\_since\_boundary, K)}.
+False positives require 5 consecutive hash collisions; with 64-bit hashes, probability is ${\sim}5 \times 2^{-320}$.
+
+\subsection{The Merkle DAG}
+
+From the \code{TraceGraph}, the background thread constructs the Merkle DAG.
+All nodes inherit from \code{TraceNode} (24 bytes: \code{TraceNodeKind kind}, padding, \code{MerkleHash merkle\_hash}, \code{TraceNode* next}).
+Four kinds: \code{REGION}, \code{BRANCH}, \code{LOOP}, \code{TERMINAL}.
+
+\textbf{RegionNode.}
+A compilable operation sequence.
+Contains an arena-allocated array of \code{TraceEntry} structs, a \code{ContentHash} computed via \code{compute\_content\_hash()} (wymix-fold over schema hashes, per-tensor dimension products, packed dtype/device metadata, and scalar arguments), an atomic \code{CompiledKernel*} pointer (background writes with release, foreground reads with acquire), a \code{MemoryPlan*} for liveness analysis, \code{first\_op\_schema} for quick mismatch detection, and \code{measured\_ms}/\code{variant\_id} for runtime profiling.
+The Merkle hash extends the content hash with the continuation's Merkle hash via \code{fmix64(content\_hash \^{} next->merkle\_hash)}.
+
+\textbf{BranchNode.}
+A guard point with sorted arms for $O(\log n)$ binary search during replay.
+The \code{Guard} struct (12 bytes) supports five kinds: \code{SHAPE\_DIM}, \code{SCALAR\_VALUE}, \code{DTYPE}, \code{DEVICE}, \code{OP\_SEQUENCE}.
+Each arm is a \code{(int64\_t value, TraceNode* target)} pair.
+The \code{next} pointer points to the merge point where all arms reconverge.
+BranchNodes are the mechanism for all runtime adaptation: architecture mutation, attention head replacement, hyperparameter changes, continuous learning with A/B verification.
+
+\textbf{LoopNode.}
+Cyclic computation within the acyclic DAG framework (64 bytes = one cache line).
+Contains a body sub-DAG (linked list ending in \code{TERMINAL}), an array of \code{FeedbackEdge} structs (4 bytes each: \code{output\_idx}, \code{input\_idx}), and termination: \code{LoopTermKind::REPEAT} (fixed $N$ iterations) or \code{LoopTermKind::UNTIL} (converge within epsilon).
+The Merkle hash uses a ``LOOPNODE'' salt (\code{0x4C4F4F504E4F4445}) to distinguish from RegionNodes, incorporating \code{body\_content\_hash}, \code{feedback\_signature()} (\code{fmix64} fold over all feedback edges with edge count), and \code{loopterm\_hash()} (termination kind + repeat count + epsilon bits).
+LoopNodes enable compiled recurrence (RNNs without Python per timestep), convergence-based execution (fixed-point iterations), and cross-iteration pipelining.
+
+\textbf{Atomic activation.}
+The background thread prepares new DAG structures and publishes them via \code{active\_region.store(ptr, release)}.
+The foreground thread loads with acquire.
+All zero-downtime updates---compilation activation, branch swaps, memory plan updates, topology changes, rollbacks---use this single mechanism.
+
+\subsection{Content Addressing and the Kernel Cache}
+
+The \code{KernelCache} is a lock-free open-addressing hash table (default capacity 4,096, power-of-two, calloc-initialized).
+Lookup: linear probing with bitmask indexing; \code{content\_hash} slots are \code{atomic<uint64\_t>} loaded with acquire; zero signals empty (miss).
+Insert: CAS on the \code{content\_hash} slot with acq\_rel ordering; if the key already exists, the kernel pointer is updated (newer variant wins).
+The size counter uses relaxed ordering (informational only).
+
+Content addressing yields four reuse levels:
+
+\begin{itemize}
+  \item \textbf{Cross-iteration.} Iteration $N{+}1$ typically has identical content hashes. All compiled kernels are cache hits.
+  \item \textbf{Cross-run.} The KernelCache persists in the Cipher. Restarting training incurs zero compilation.
+  \item \textbf{Cross-Vigil.} Different Vigils sharing sub-computations (e.g., same attention mechanism, same head dimension) produce identical content hashes. Compiled kernels transfer automatically.
+  \item \textbf{Cross-device.} The same content hash maps to different compiled kernels on different hardware. Multiple device-specific variants coexist.
+\end{itemize}
+
+The cache grows monotonically and persists across Relay migrations.
