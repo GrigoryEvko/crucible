@@ -64,7 +64,7 @@ int main() {
     {
         TraceEntry te{};
         assert(te.kernel_id == CKernelId::OPAQUE);
-        assert(te.pad_te == 0);
+        assert(te.is_mutable == false);
         te.kernel_id = CKernelId::GEMM_ADDMM;
         assert(te.kernel_id == CKernelId::GEMM_ADDMM);
     }

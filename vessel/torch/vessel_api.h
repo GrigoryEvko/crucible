@@ -37,7 +37,12 @@ typedef struct {
     int8_t device_type;  // crucible::DeviceType ordinal
     int8_t device_idx;
     int8_t layout;       // crucible::Layout ordinal
-    uint8_t pad[3];
+    uint8_t requires_grad; // tensor.requires_grad
+    uint8_t flags;       // packed: is_leaf|is_contiguous|has_grad_fn|is_view|is_neg|is_conj
+    uint8_t output_nr;   // autograd output number (which output of multi-output op)
+    int64_t storage_offset; // offset into underlying storage
+    uint32_t version;    // tensor data version counter
+    uint32_t storage_nbytes; // actual storage size
 } CrucibleMeta;
 
 // Result from crucible_dispatch_op (8 bytes).
@@ -106,6 +111,16 @@ CRUCIBLE_VESSEL_API uint32_t crucible_compiled_iterations(CrucibleHandle h);
 
 // Number of divergences detected.
 CRUCIBLE_VESSEL_API uint32_t crucible_diverged_count(CrucibleHandle h);
+
+// ── Schema name registration ─────────────────────────────────────────
+
+// Register an op name for a schema hash. Call once per op at startup.
+// Enables human-readable labels in trace visualization and diagnostics.
+CRUCIBLE_VESSEL_API void crucible_register_schema_name(uint64_t schema_hash,
+                                                        const char* name);
+
+// Lookup the registered name for a schema hash. Returns NULL if unknown.
+CRUCIBLE_VESSEL_API const char* crucible_schema_name(uint64_t schema_hash);
 
 // ── Diagnostics ──────────────────────────────────────────────────────
 

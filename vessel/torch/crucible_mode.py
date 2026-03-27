@@ -55,7 +55,12 @@ class _VesselLib:
             ("device_type", ctypes.c_int8),
             ("device_idx", ctypes.c_int8),
             ("layout", ctypes.c_int8),
-            ("pad", ctypes.c_uint8 * 3),
+            ("requires_grad", ctypes.c_uint8),
+            ("flags", ctypes.c_uint8),
+            ("output_nr", ctypes.c_uint8),
+            ("storage_offset", ctypes.c_int64),
+            ("version", ctypes.c_uint32),
+            ("storage_nbytes", ctypes.c_uint32),
         ]
 
     class DispatchResult(ctypes.Structure):
@@ -82,6 +87,14 @@ class _VesselLib:
 
         lib.crucible_hash_string.restype = ctypes.c_uint64
         lib.crucible_hash_string.argtypes = [ctypes.c_char_p]
+
+        lib.crucible_register_schema_name.restype = None
+        lib.crucible_register_schema_name.argtypes = [
+            ctypes.c_uint64, ctypes.c_char_p,
+        ]
+
+        lib.crucible_schema_name.restype = ctypes.c_char_p
+        lib.crucible_schema_name.argtypes = [ctypes.c_uint64]
 
         lib.crucible_hash_shapes.restype = ctypes.c_uint64
         lib.crucible_hash_shapes.argtypes = [
@@ -272,18 +285,29 @@ class CrucibleMode(TorchDispatchMode):
             f.write(struct.pack("<III", 1, num_ops, num_metas))
 
             # Op records (80B each)
-            for (sh, hsh, sv, n_in, n_out, n_sc, grad, infer) in self._trace_ops:
+            for (sh, hsh, sv, n_in, n_out, n_sc, grad, infer, mutable) in self._trace_ops:
                 f.write(struct.pack("<QQ", sh, hsh))
                 f.write(struct.pack("<QQ", 0, 0))  # scope_hash, callsite_hash
                 f.write(struct.pack("<5q", *sv))
                 f.write(struct.pack("<HHH", n_in, n_out, n_sc))
-                f.write(struct.pack("<BB", grad, infer))
+                # Pack is_mutable into bit 1 of inference_mode byte
+                infer_packed = (infer & 1) | ((mutable & 1) << 1)
+                f.write(struct.pack("<BB", grad, infer_packed))
 
             # Meta records (raw bytes, already in CrucibleMeta layout)
             f.write(self._trace_metas)
 
-        print(f"  [crucible] Exported {num_ops} ops, {num_metas} metas "
-              f"({16 + num_ops * 80 + num_metas * 144} bytes) → {path}")
+            # Schema name table: (hash, name) pairs for visualization.
+            names = [(h, name) for name, h in self._schema_cache.items()]
+            f.write(struct.pack("<I", len(names)))
+            for h, name in names:
+                name_bytes = name.encode("ascii")
+                f.write(struct.pack("<QH", h, len(name_bytes)))
+                f.write(name_bytes)
+
+        total = 16 + num_ops * 80 + num_metas * 144
+        print(f"  [crucible] Exported {num_ops} ops, {num_metas} metas, "
+              f"{len(names)} schema names ({total}+ bytes) → {path}")
 
     # ── Dispatch interception ───────────────────────────────────────
 
@@ -331,13 +355,16 @@ class CrucibleMode(TorchDispatchMode):
         grad_on = 1 if torch.is_grad_enabled() else 0
         infer_on = 1 if torch.is_inference_mode_enabled() else 0
 
+        # Per-op metadata from schema
+        is_mutable = 1 if func._schema.is_mutable else 0
+
         # Record trace data before dispatch (captures real data_ptrs).
         if self._record_trace:
             sv = [scalar_buf[i] for i in range(5)]
             self._trace_ops.append((
                 schema_hash, shape_hash, sv,
                 num_inputs, num_outputs, num_scalars,
-                grad_on, infer_on,
+                grad_on, infer_on, is_mutable,
             ))
             if n_metas > 0:
                 self._trace_metas.extend(bytes(metas))
@@ -378,6 +405,9 @@ class CrucibleMode(TorchDispatchMode):
         if h is None:
             h = self._vessel.crucible_hash_string(op_name.encode("ascii"))
             self._schema_cache[op_name] = h
+            # Register name in the global SchemaTable for visualization/diagnostics.
+            self._vessel.crucible_register_schema_name(
+                h, op_name.encode("ascii"))
         return h
 
     def _compute_shape_hash(self, tensors):
@@ -429,6 +459,49 @@ class CrucibleMode(TorchDispatchMode):
         meta.device_type = _DEVICE_MAP.get(dev.type, 0)
         meta.device_idx = dev.index if dev.index is not None else -1
         meta.layout = _LAYOUT_MAP.get(tensor.layout, 0)
+        meta.requires_grad = 1 if tensor.requires_grad else 0
+
+        # Packed flags: is_leaf|is_contiguous|has_grad_fn|is_view|is_neg|is_conj
+        flags = 0
+        if tensor.is_leaf:
+            flags |= 0x01
+        if tensor.is_contiguous():
+            flags |= 0x02
+        if tensor.grad_fn is not None:
+            flags |= 0x04
+        if tensor.storage_offset() != 0 or (
+                tensor.data_ptr() != 0 and hasattr(tensor, '_base')
+                and tensor._base is not None):
+            flags |= 0x08  # is_view
+        if tensor.is_neg():
+            flags |= 0x10
+        if tensor.is_conj():
+            flags |= 0x20
+        meta.flags = flags
+
+        # Autograd output number
+        try:
+            meta.output_nr = getattr(tensor, 'output_nr', 0) & 0xFF
+        except Exception:
+            meta.output_nr = 0
+
+        # Storage offset (view chain tracking)
+        try:
+            meta.storage_offset = tensor.storage_offset() if tensor.layout == torch.strided else 0
+        except Exception:
+            meta.storage_offset = 0
+
+        # Data version counter (in-place mutation detection)
+        try:
+            meta.version = tensor._version & 0xFFFFFFFF
+        except Exception:
+            meta.version = 0
+
+        # Actual storage size in bytes (may differ from view size)
+        try:
+            meta.storage_nbytes = tensor.untyped_storage().nbytes() & 0xFFFFFFFF
+        except Exception:
+            meta.storage_nbytes = 0
 
     @staticmethod
     def _extract_tensors(args, kwargs):

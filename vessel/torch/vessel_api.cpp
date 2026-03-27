@@ -6,6 +6,7 @@
 
 #include "vessel_api.h"
 
+#include <crucible/SchemaTable.h>
 #include <crucible/Vigil.h>
 
 #include <cstddef>
@@ -16,7 +17,7 @@
 // If any of these fire, the C API is passing garbage to the C++ code.
 static_assert(sizeof(CrucibleMeta) == sizeof(crucible::TensorMeta),
               "CrucibleMeta size must match TensorMeta");
-static_assert(sizeof(CrucibleMeta) == 144);
+static_assert(sizeof(CrucibleMeta) == 160);
 static_assert(offsetof(CrucibleMeta, sizes) == 0);
 static_assert(offsetof(CrucibleMeta, strides) == 64);
 static_assert(offsetof(CrucibleMeta, data_ptr) == 128);
@@ -25,6 +26,12 @@ static_assert(offsetof(CrucibleMeta, dtype) == 137);
 static_assert(offsetof(CrucibleMeta, device_type) == 138);
 static_assert(offsetof(CrucibleMeta, device_idx) == 139);
 static_assert(offsetof(CrucibleMeta, layout) == 140);
+static_assert(offsetof(CrucibleMeta, requires_grad) == 141);
+static_assert(offsetof(CrucibleMeta, flags) == 142);
+static_assert(offsetof(CrucibleMeta, output_nr) == 143);
+static_assert(offsetof(CrucibleMeta, storage_offset) == 144);
+static_assert(offsetof(CrucibleMeta, version) == 152);
+static_assert(offsetof(CrucibleMeta, storage_nbytes) == 156);
 
 static_assert(sizeof(CrucibleDispatchResult) == 8);
 
@@ -183,6 +190,14 @@ void* crucible_output_ptr(CrucibleHandle h, uint16_t j) {
 
 void* crucible_input_ptr(CrucibleHandle h, uint16_t j) {
     return as_vigil(h)->input_ptr(j);
+}
+
+void crucible_register_schema_name(uint64_t schema_hash, const char* name) {
+    crucible::register_schema_name(crucible::SchemaHash{schema_hash}, name);
+}
+
+const char* crucible_schema_name(uint64_t schema_hash) {
+    return crucible::schema_name(crucible::SchemaHash{schema_hash});
 }
 
 } // extern "C"

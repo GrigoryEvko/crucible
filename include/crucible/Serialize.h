@@ -78,9 +78,12 @@ inline void write_meta(Writer& w, const TensorMeta& m) {
     w.w(m.device_type);
     w.w(m.device_idx);
     w.w(m.layout);
-    // Pad bytes: write zero (deterministic round-trip)
-    const uint8_t zero_pad[3] = {0, 0, 0};
-    w.write_bytes(zero_pad, 3);
+    w.w(m.requires_grad);
+    w.w(m.flags);
+    w.w(m.output_nr);
+    w.w(m.storage_offset);
+    w.w(m.version);
+    w.w(m.storage_nbytes);
 }
 
 // Read TensorMeta: data_ptr is always null after deserialization.
@@ -94,9 +97,13 @@ inline TensorMeta read_meta(Reader& r) {
     m.dtype      = r.r<ScalarType>();
     m.device_type = r.r<DeviceType>();
     m.device_idx  = r.r<int8_t>();
-    m.layout      = r.r<Layout>();
-    uint8_t ignored_pad[3];
-    r.read_bytes(ignored_pad, 3);
+    m.layout          = r.r<Layout>();
+    m.requires_grad   = r.r<bool>();
+    m.flags           = r.r<uint8_t>();
+    m.output_nr       = r.r<uint8_t>();
+    m.storage_offset  = r.r<int64_t>();
+    m.version         = r.r<uint32_t>();
+    m.storage_nbytes  = r.r<uint32_t>();
     return m;
 }
 
@@ -191,7 +198,7 @@ inline Header read_header(Reader& r) {
         w.w(te.grad_enabled);
         w.w(te.inference_mode);
         w.w(std::to_underlying(te.kernel_id));
-        w.w(te.pad_te);
+        w.w(static_cast<uint8_t>(te.is_mutable ? 1 : 0));
 
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             write_meta(w, te.input_metas ? te.input_metas[j] : TensorMeta{});
@@ -290,7 +297,7 @@ inline Header read_header(Reader& r) {
         te.grad_enabled     = r.r<bool>();
         te.inference_mode   = r.r<bool>();
         te.kernel_id        = static_cast<CKernelId>(r.r<uint8_t>());
-        te.pad_te           = r.r<uint8_t>();
+        te.is_mutable       = r.r<uint8_t>() != 0;
 
         te.input_metas = (te.num_inputs > 0)
             ? arena.alloc_array<TensorMeta>(a, te.num_inputs) : nullptr;

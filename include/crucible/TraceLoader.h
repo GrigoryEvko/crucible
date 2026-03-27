@@ -20,10 +20,18 @@
 //   Meta records (num_metas × 144B):
 //     Raw TensorMeta structs (sizes, strides, data_ptr, ndim, dtype, etc.)
 //
+//   Schema name table (optional, present if file has trailing data):
+//     uint32   num_names
+//     For each name:
+//       uint64   schema_hash
+//       uint16   name_len (excluding null terminator)
+//       char[name_len]  name (NOT null-terminated in file)
+//
 // Usage:
 //   auto trace = crucible::load_trace("vit_b.crtrace");
 //   if (!trace) { /* error */ }
 //   // Feed to BackgroundThread::build_trace() via its public vectors.
+//   // Schema names are auto-registered in the global SchemaTable.
 
 #include <cstdint>
 #include <cstdio>
@@ -32,6 +40,7 @@
 #include <vector>
 
 #include <crucible/MerkleDag.h>
+#include <crucible/SchemaTable.h>
 #include <crucible/TraceRing.h>
 
 namespace crucible {
@@ -48,7 +57,7 @@ struct TraceOpRecord {
   uint16_t num_outputs = 0;       // 2B
   uint16_t num_scalars = 0;       // 2B
   uint8_t grad_enabled = 0;       // 1B
-  uint8_t inference_mode = 0;     // 1B
+  uint8_t inference_mode = 0;     // 1B — bit 0: inference_mode, bit 1: is_mutable
 };
 
 static_assert(sizeof(TraceOpRecord) == 80, "TraceOpRecord must be 80 bytes");
@@ -111,13 +120,58 @@ struct LoadedTrace {
     return nullptr;
   }
 
-  // Read meta records.
+  // Read meta records. Auto-detect 144B (legacy) vs 160B (current) format
+  // by checking remaining file size after op records.
+  const long meta_start_pos = std::ftell(f);
+  std::fseek(f, 0, SEEK_END);
+  const long file_size = std::ftell(f);
+  std::fseek(f, meta_start_pos, SEEK_SET);
+
+  const long remaining = file_size - meta_start_pos;
+  const bool legacy_144 = (num_metas > 0) &&
+      (remaining >= static_cast<long>(num_metas) * 144) &&
+      (remaining < static_cast<long>(num_metas) * 160);
+
   std::vector<TensorMeta> metas(num_metas);
-  if (num_metas > 0 &&
-      std::fread(metas.data(), sizeof(TensorMeta), num_metas, f) != num_metas) {
-    std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
-    std::fclose(f);
-    return nullptr;
+  if (num_metas > 0) {
+    if (legacy_144) {
+      // Legacy 144B format: read each meta as 144B, zero-init extended fields.
+      struct LegacyMeta { uint8_t data[144]; };
+      for (uint32_t i = 0; i < num_metas; i++) {
+        LegacyMeta lm{};
+        if (std::fread(&lm, 144, 1, f) != 1) {
+          std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
+          std::fclose(f);
+          return nullptr;
+        }
+        // Copy the first 144 bytes into TensorMeta (extended fields stay zero).
+        std::memcpy(&metas[i], &lm, 144);
+      }
+    } else {
+      // Current 160B format: direct read.
+      if (std::fread(metas.data(), sizeof(TensorMeta), num_metas, f) != num_metas) {
+        std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
+        std::fclose(f);
+        return nullptr;
+      }
+    }
+  }
+
+  // Read optional schema name table (trailing data after metas).
+  uint32_t num_names = 0;
+  if (std::fread(&num_names, 4, 1, f) == 1 && num_names > 0 &&
+      num_names <= SCHEMA_TABLE_CAP) {
+    for (uint32_t i = 0; i < num_names; i++) {
+      uint64_t sh = 0;
+      uint16_t name_len = 0;
+      if (std::fread(&sh, 8, 1, f) != 1) break;
+      if (std::fread(&name_len, 2, 1, f) != 1) break;
+      if (name_len == 0 || name_len > 256) break;
+      char buf[257]{};
+      if (std::fread(buf, 1, name_len, f) != name_len) break;
+      buf[name_len] = '\0';
+      register_schema_name(SchemaHash{sh}, buf);
+    }
   }
 
   std::fclose(f);
@@ -144,7 +198,8 @@ struct LoadedTrace {
     e.num_outputs = r.num_outputs;
     e.num_scalar_args = r.num_scalars;
     e.grad_enabled = r.grad_enabled != 0;
-    e.inference_mode = r.inference_mode != 0;
+    e.inference_mode = (r.inference_mode & 1) != 0;
+    e.is_mutable = (r.inference_mode & 2) != 0;
     uint16_t n = r.num_scalars < 5 ? r.num_scalars : 5;
     for (uint16_t s = 0; s < n; s++)
       e.scalar_values[s] = r.scalar_values[s];
