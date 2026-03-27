@@ -286,7 +286,6 @@ struct DetectionResult {
 
 [[nodiscard]] inline std::vector<Op> build_ops(const LoadedTrace& trace) {
   std::vector<Op> ops(trace.num_ops);
-  uint32_t meta_cursor = 0;
 
   for (uint32_t i = 0; i < trace.num_ops; i++) {
     const auto& e = trace.entries[i];
@@ -355,7 +354,6 @@ struct DetectionResult {
         }
       }
     }
-    meta_cursor += e.num_inputs + e.num_outputs;
   }
   return ops;
 }
@@ -899,7 +897,7 @@ struct PhaseBoundaries {
 [[nodiscard]] inline std::vector<Block> detect_backward_blocks(
     std::span<const Op> all_ops,
     uint32_t fwd_end, uint32_t bwd_end,
-    std::span<const Block> fwd_blocks) {
+    [[maybe_unused]] std::span<const Block> fwd_blocks) {
 
   if (bwd_end <= fwd_end) return {};
   const uint32_t bwd_start = fwd_end + 1;
@@ -980,7 +978,6 @@ struct PhaseBoundaries {
     auto min_it = std::ranges::min_element(resolutions);
     int32_t min_res = *min_it;
     auto min_idx = std::distance(resolutions.begin(), min_it);
-    auto max_res = *std::ranges::max_element(resolutions);
 
     if (min_idx > 0 && min_idx < static_cast<ptrdiff_t>(resolutions.size()) - 1) {
       // Python: check that both before_min and after_min have max >= 2 * min_res

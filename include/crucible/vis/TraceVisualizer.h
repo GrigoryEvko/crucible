@@ -199,9 +199,8 @@ struct UShapeSplit {
 
   // Find minimum resolution (bottleneck)
   int32_t min_res = valid_res[0].second;
-  uint32_t min_idx = valid_res[0].first;
   for (const auto& [idx, r] : valid_res) {
-    if (r < min_res) { min_res = r; min_idx = idx; }
+    if (r < min_res) min_res = r;
   }
 
   // Check if there's a U-shape: resolution decreases then increases
@@ -295,7 +294,6 @@ struct UShapeSplit {
       }
 
       uint32_t enc_count = u.enc_end + 1;
-      uint32_t mid_count = u.dec_start - u.enc_end - 1;
       uint32_t dec_count = static_cast<uint32_t>(idx.size()) - u.dec_start;
 
       // Encoder and decoder go DOWN in parallel columns.
@@ -583,7 +581,7 @@ struct UShapeSplit {
   // ── Phase cluster borders (dashed rectangles) ──────────────────────
   svg.begin_group("clusters");
   {
-    auto draw_cluster = [&](Phase phase, std::string_view label,
+    auto draw_cluster = [&](Phase phase, [[maybe_unused]] std::string_view label,
                             Color border_color) {
       float cx_min = 1e9f, cy_min = 1e9f, cx_max = 0, cy_max = 0;
       uint32_t count = 0;
