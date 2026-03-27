@@ -19,62 +19,72 @@
 % ── Page ───────────────────────────────────────────────────────────────
 \usepackage[
   a4paper,
-  margin=1in,
-  top=1.1in,
-  bottom=1.2in,
+  margin=0.9in,
+  top=1in,
+  bottom=1in,
 ]{geometry}
-\linespread{1.14}
-\setlength{\parskip}{0.4em plus 0.1em minus 0.05em}
+\linespread{1.12}
+\setlength{\parskip}{0.3em plus 0.08em minus 0.04em}
 \setlength{\parindent}{0em}
 
 % ── Typography ─────────────────────────────────────────────────────────
 \usepackage{microtype}
 \frenchspacing
-\emergencystretch=1.5em        % prevent overfull hboxes in narrow measure
+\emergencystretch=1.5em
 \tolerance=1500
 \widowpenalty=10000
 \clubpenalty=10000
+
+% ── Colors ─────────────────────────────────────────────────────────────
+\usepackage{xcolor}
+\definecolor{rulegray}{HTML}{333333}
+\definecolor{codebg}{HTML}{F5F5F5}
+\definecolor{codefr}{HTML}{DDDDDD}
+\definecolor{kw}{HTML}{1a5276}
+\definecolor{cm}{HTML}{7f8c8d}
+\definecolor{st}{HTML}{196f3d}
 
 % ── Sections ───────────────────────────────────────────────────────────
 \usepackage{titlesec}
 \titleformat{\section}
   {\Large\bfseries\sffamily}
   {\thesection}{0.6em}{}
-  [\vspace{-0.15em}{\color{black!20}\hrule height 0.4pt}]
+  [\vspace{-0.1em}{\color{rulegray}\hrule height 0.6pt}]
 \titleformat{\subsection}{\large\bfseries\sffamily}{\thesubsection}{0.5em}{}
 \titleformat{\subsubsection}{\normalsize\bfseries\sffamily}{\thesubsubsection}{0.5em}{}
-\titlespacing*{\section}{0pt}{2.2em}{0.8em}
-\titlespacing*{\subsection}{0pt}{1.5em}{0.5em}
-\titlespacing*{\subsubsection}{0pt}{1em}{0.3em}
+\titlespacing*{\section}{0pt}{2em}{0.7em}
+\titlespacing*{\subsection}{0pt}{1.4em}{0.4em}
+\titlespacing*{\subsubsection}{0pt}{0.9em}{0.25em}
 
 % ── Header / Footer ───────────────────────────────────────────────────
 \usepackage{fancyhdr}
 \pagestyle{fancy}
 \fancyhf{}
-\fancyfoot[C]{\footnotesize\thepage}
-\renewcommand{\headrulewidth}{0pt}
-\fancypagestyle{plain}{\fancyhf{}\fancyfoot[C]{\footnotesize\thepage}\renewcommand{\headrulewidth}{0pt}}
+\fancyhead[L]{\footnotesize\textsf{\textcolor{black!40}{\nouppercase{\leftmark}}}}
+\fancyhead[R]{\footnotesize\textsf{\textcolor{black!40}{\thepage}}}
+\fancyfoot[C]{\footnotesize\textcolor{black!25}{\rule{0.3\textwidth}{0.3pt}}}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\headrule}{\color{black!15}\hrule height 0.3pt}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyfoot[C]{\footnotesize\thepage}%
+  \renewcommand{\headrulewidth}{0pt}%
+}
 
 % ── Lists ──────────────────────────────────────────────────────────────
 \usepackage{enumitem}
-\setlist{nosep, leftmargin=1.5em, topsep=0.2em}
-\setlist[itemize]{label=\textcolor{black!35}{\textbullet}}
+\setlist{nosep, leftmargin=1.5em, topsep=0.15em}
+\setlist[itemize]{label=\textcolor{black!40}{\textbullet}}
 \setlist[enumerate]{label=\textcolor{black!60}{\arabic*.}}
 
 % ── Tables ─────────────────────────────────────────────────────────────
 \usepackage{booktabs}
 \usepackage{array}
 \usepackage{tabularx}
-\renewcommand{\arraystretch}{1.15}
+\renewcommand{\arraystretch}{1.12}
 
 % ── Code ───────────────────────────────────────────────────────────────
-\usepackage{xcolor}
 \usepackage{listings}
-\definecolor{codebg}{HTML}{F8F8F8}
-\definecolor{codefr}{HTML}{E8E8E8}
-\definecolor{kw}{HTML}{1a5276}
-\definecolor{cm}{HTML}{7f8c8d}
-\definecolor{st}{HTML}{196f3d}
 \lstset{
   basicstyle=\ttfamily\footnotesize,
   backgroundcolor=\color{codebg},
@@ -85,7 +95,7 @@
   keywordstyle=\color{kw}\bfseries,
   commentstyle=\color{cm}\itshape,
   stringstyle=\color{st},
-  aboveskip=0.6em, belowskip=0.4em,
+  aboveskip=0.5em, belowskip=0.3em,
 }
 
 % ── Math ───────────────────────────────────────────────────────────────
@@ -95,22 +105,15 @@
 % ── Links ──────────────────────────────────────────────────────────────
 \usepackage[
   colorlinks=true,
-  linkcolor=black!60,
-  urlcolor=blue!40!black,
-  citecolor=black!60,
+  linkcolor=black!55,
+  urlcolor=blue!35!black,
+  citecolor=black!55,
 ]{hyperref}
 
 % ── Shortcuts ──────────────────────────────────────────────────────────
-% \code — monospace, allows manual breaks via \allowbreak
 \newcommand{\code}[1]{\texorpdfstring{\texttt{\small #1}}{#1}}
-
-% Named entities (italic in text, upright in headings)
 \newcommand{\ent}[1]{\emph{#1}}
-
-% Struct/type names (monospace but breakable)
 \newcommand{\struct}[1]{{\ttfamily\small #1}}
-
-% Byte sizes
 \newcommand{\bytes}[1]{#1\,B}
 
 % ══════════════════════════════════════════════════════════════════════
@@ -118,15 +121,16 @@
 
 % ── Title ──────────────────────────────────────────────────────────────
 \begin{center}
-  \vspace*{1.2em}
-  {\fontsize{22}{26}\selectfont\sffamily\bfseries The Crucible Whitepaper}\\[0.6em]
-  {\large\sffamily A Content-Addressed Adaptive Runtime\\[0.15em]for Machine Learning}\\[2em]
-  {\normalsize Grigory Evko}\\[0.4em]
-  {\small\textcolor{black!45}{March 2026}}\\[2em]
-  {\color{black!20}\rule{0.35\textwidth}{0.4pt}}
+  \vspace*{0.8em}
+  {\color{rulegray}\rule{\textwidth}{1.2pt}}\\[1.5em]
+  {\fontsize{24}{28}\selectfont\sffamily\bfseries The Crucible Whitepaper}\\[0.5em]
+  {\large\sffamily A Content-Addressed Adaptive Runtime\\[0.15em]for Machine Learning}\\[1.8em]
+  {\normalsize Grigory Evko}\\[0.3em]
+  {\small\textcolor{black!45}{Version 1.0 \quad---\quad March 2026}}\\[1.5em]
+  {\color{rulegray}\rule{\textwidth}{1.2pt}}
 \end{center}
 \thispagestyle{empty}
-\vspace{1.5em}
+\vspace{1.2em}
 
 % ── Chapters ───────────────────────────────────────────────────────────
 \input{00-abstract}

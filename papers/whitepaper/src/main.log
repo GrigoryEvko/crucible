@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999995 (TeX Live 2023) (preloaded format=xelatex 2026.3.13)  27 MAR 2026 17:52
+This is XeTeX, Version 3.141592653-2.6-0.999995 (TeX Live 2023) (preloaded format=xelatex 2026.3.13)  27 MAR 2026 18:00
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -499,6 +499,27 @@ Package microtype Info: Loading configuration file microtype.cfg.
 (/usr/share/texlive/texmf-dist/tex/latex/microtype/microtype.cfg
 File: microtype.cfg 2023/03/13 v3.1a microtype main configuration file (RS)
 ))
+(/usr/share/texlive/texmf-dist/tex/latex/xcolor/xcolor.sty
+Package: xcolor 2022/06/12 v2.14 LaTeX color extensions (UK)
+
+(/usr/share/texlive/texmf-dist/tex/latex/graphics-cfg/color.cfg
+File: color.cfg 2016/01/02 v1.6 sample color configuration
+)
+Package xcolor Info: Driver file: xetex.def on input line 227.
+
+(/usr/share/texlive/texmf-dist/tex/latex/graphics-def/xetex.def
+File: xetex.def 2022/09/22 v5.0n Graphics/color driver for xetex
+)
+(/usr/share/texlive/texmf-dist/tex/latex/graphics/mathcolor.ltx)
+Package xcolor Info: Model `cmy' substituted by `cmy0' on input line 1353.
+Package xcolor Info: Model `RGB' extended on input line 1369.
+Package xcolor Info: Model `HTML' substituted by `rgb' on input line 1371.
+Package xcolor Info: Model `Hsb' substituted by `hsb' on input line 1372.
+Package xcolor Info: Model `tHsb' substituted by `hsb' on input line 1373.
+Package xcolor Info: Model `HSB' substituted by `hsb' on input line 1374.
+Package xcolor Info: Model `Gray' substituted by `gray' on input line 1375.
+Package xcolor Info: Model `wave' substituted by `hsb' on input line 1376.
+)
 (/usr/share/texlive/texmf-dist/tex/latex/titlesec/titlesec.sty
 Package: titlesec 2021/07/05 v2.14 Sectioning titles
 \ttl@box=\box55
@@ -572,27 +593,6 @@ Package: tabularx 2020/01/15 v2.11c `tabularx' package (DPC)
 \TX@delta=\dimen187
 \TX@cols=\count297
 \TX@ftn=\toks28
-)
-(/usr/share/texlive/texmf-dist/tex/latex/xcolor/xcolor.sty
-Package: xcolor 2022/06/12 v2.14 LaTeX color extensions (UK)
-
-(/usr/share/texlive/texmf-dist/tex/latex/graphics-cfg/color.cfg
-File: color.cfg 2016/01/02 v1.6 sample color configuration
-)
-Package xcolor Info: Driver file: xetex.def on input line 227.
-
-(/usr/share/texlive/texmf-dist/tex/latex/graphics-def/xetex.def
-File: xetex.def 2022/09/22 v5.0n Graphics/color driver for xetex
-)
-(/usr/share/texlive/texmf-dist/tex/latex/graphics/mathcolor.ltx)
-Package xcolor Info: Model `cmy' substituted by `cmy0' on input line 1353.
-Package xcolor Info: Model `RGB' extended on input line 1369.
-Package xcolor Info: Model `HTML' substituted by `rgb' on input line 1371.
-Package xcolor Info: Model `Hsb' substituted by `hsb' on input line 1372.
-Package xcolor Info: Model `tHsb' substituted by `hsb' on input line 1373.
-Package xcolor Info: Model `HSB' substituted by `hsb' on input line 1374.
-Package xcolor Info: Model `Gray' substituted by `gray' on input line 1375.
-Package xcolor Info: Model `wave' substituted by `hsb' on input line 1376.
 )
 (/usr/share/texlive/texmf-dist/tex/latex/listings/listings.sty
 \lst@mode=\count298
@@ -797,46 +797,46 @@ Package uniquecounter Info: New unique counter `rerunfilecheck' on input line 2
 (./main.aux)
 \openout1 = `main.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 117.
-LaTeX Font Info:    ... okay on input line 117.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 117.
-LaTeX Font Info:    ... okay on input line 117.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 117.
-LaTeX Font Info:    ... okay on input line 117.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 117.
-LaTeX Font Info:    ... okay on input line 117.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 117.
-LaTeX Font Info:    ... okay on input line 117.
-LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 117.
-LaTeX Font Info:    ... okay on input line 117.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 117.
-LaTeX Font Info:    ... okay on input line 117.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 117.
-LaTeX Font Info:    ... okay on input line 117.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 117.
-LaTeX Font Info:    ... okay on input line 117.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 117.
-LaTeX Font Info:    ... okay on input line 117.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 120.
+LaTeX Font Info:    ... okay on input line 120.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 120.
+LaTeX Font Info:    ... okay on input line 120.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 120.
+LaTeX Font Info:    ... okay on input line 120.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 120.
+LaTeX Font Info:    ... okay on input line 120.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 120.
+LaTeX Font Info:    ... okay on input line 120.
+LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 120.
+LaTeX Font Info:    ... okay on input line 120.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 120.
+LaTeX Font Info:    ... okay on input line 120.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 120.
+LaTeX Font Info:    ... okay on input line 120.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 120.
+LaTeX Font Info:    ... okay on input line 120.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 120.
+LaTeX Font Info:    ... okay on input line 120.
 LaTeX Font Info:    Overwriting math alphabet `\mathrm' in version `normal'
 (Font)                  TU/LibertinusMath(1)/m/n --> TU/LibertinusSerif(0)/m/n 
-on input line 117.
+on input line 120.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `normal'
 (Font)                  OT1/cmr/m/it --> TU/LibertinusSerif(0)/m/it on input li
-ne 117.
+ne 120.
 LaTeX Font Info:    Overwriting math alphabet `\mathbf' in version `normal'
 (Font)                  OT1/cmr/bx/n --> TU/LibertinusSerif(0)/b/n on input lin
-e 117.
+e 120.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `normal'
-(Font)                  OT1/cmss/m/n --> TU/OpenSans(0)/m/n on input line 117.
+(Font)                  OT1/cmss/m/n --> TU/OpenSans(0)/m/n on input line 120.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `bold'
-(Font)                  OT1/cmss/bx/n --> TU/OpenSans(0)/b/n on input line 117.
+(Font)                  OT1/cmss/bx/n --> TU/OpenSans(0)/b/n on input line 120.
 
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `normal'
 (Font)                  OT1/cmtt/m/n --> TU/SourceCodePro(0)/m/n on input line 
-117.
+120.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `bold'
 (Font)                  OT1/cmtt/m/n --> TU/SourceCodePro(0)/b/n on input line 
-117.
+120.
 
 
 Package unicode-math Warning: Using \overbracket and \underbracket from
@@ -864,15 +864,15 @@ Package unicode-math Warning: I'm going to overwrite the following commands
 * layout: <same size as paper>
 * layoutoffset:(h,v)=(0.0pt,0.0pt)
 * modes: 
-* h-part:(L,W,R)=(72.26999pt, 452.9679pt, 72.26999pt)
-* v-part:(T,H,B)=(79.49744pt, 678.82564pt, 86.72377pt)
+* h-part:(L,W,R)=(65.04256pt, 467.42276pt, 65.04256pt)
+* v-part:(T,H,B)=(72.26999pt, 700.50687pt, 72.26999pt)
 * \paperwidth=597.50787pt
 * \paperheight=845.04684pt
-* \textwidth=452.9679pt
-* \textheight=678.82564pt
-* \oddsidemargin=0.0pt
-* \evensidemargin=0.0pt
-* \topmargin=-29.77255pt
+* \textwidth=467.42276pt
+* \textheight=700.50687pt
+* \oddsidemargin=-7.22743pt
+* \evensidemargin=-7.22743pt
+* \topmargin=-37.0pt
 * \headheight=12.0pt
 * \headsep=25.0pt
 * \topskip=11.0pt
@@ -890,12 +890,12 @@ Package unicode-math Warning: I'm going to overwrite the following commands
 * \@reversemarginfalse
 * (1in=72.27pt=25.4mm, 1cm=28.453pt)
 
-LaTeX Info: Redefining \microtypecontext on input line 117.
-Package microtype Info: Applying patch `item' on input line 117.
-Package microtype Info: Applying patch `toc' on input line 117.
-Package microtype Info: Applying patch `eqnum' on input line 117.
-Package microtype Info: Applying patch `footnote' on input line 117.
-Package microtype Info: Applying patch `verbatim' on input line 117.
+LaTeX Info: Redefining \microtypecontext on input line 120.
+Package microtype Info: Applying patch `item' on input line 120.
+Package microtype Info: Applying patch `toc' on input line 120.
+Package microtype Info: Applying patch `eqnum' on input line 120.
+Package microtype Info: Applying patch `footnote' on input line 120.
+Package microtype Info: Applying patch `verbatim' on input line 120.
 Package microtype Info: Character protrusion enabled (level 2).
 Package microtype Info: Using default protrusion set `alltext'.
 Package microtype Info: No adjustment of tracking.
@@ -923,22 +923,22 @@ Package graphics Info: Driver file: xetex.def on input line 107.
 \Gin@req@height=\dimen262
 \Gin@req@width=\dimen263
 )
-Package hyperref Info: Link coloring ON on input line 117.
+Package hyperref Info: Link coloring ON on input line 120.
 
 (./main.out) (./main.out)
 \@outlinefile=\write3
 \openout3 = `main.out'.
 
 LaTeX Font Info:    Font shape `TU/OpenSans(0)/m/n' will be
-(Font)              scaled to size 17.63599pt on input line 122.
+(Font)              scaled to size 19.23926pt on input line 126.
 Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `OpenSans' (encoding: TU).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
 LaTeX Font Info:    Font shape `TU/OpenSans(0)/b/n' will be
-(Font)              scaled to size 17.28888pt on input line 122.
+(Font)              scaled to size 18.8606pt on input line 126.
 LaTeX Font Info:    Font shape `TU/OpenSans(0)/m/n' will be
-(Font)              scaled to size 9.61963pt on input line 123.
+(Font)              scaled to size 9.61963pt on input line 127.
  (./00-abstract.tex
 Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `LibertinusMath' (encoding: TU).
@@ -961,9 +961,6 @@ LaTeX Font Info:    Font shape `TU/OpenSans(0)/b/n' will be
 (Font)              scaled to size 11.31635pt on input line 3.
 LaTeX Font Info:    Font shape `TU/OpenSans(0)/b/n' will be
 (Font)              scaled to size 9.4303pt on input line 5.
- [1
-
-]
 LaTeX Font Info:    Font shape `TU/SourceCodePro(0)/m/n' will be
 (Font)              scaled to size 8.97906pt on input line 12.
 Package microtype Info: Loading generic protrusion settings for font family
@@ -972,112 +969,31 @@ Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             See the microtype manual for details.
 LaTeX Font Info:    Font shape `TU/SourceCodePro(0)/m/n' will be
 (Font)              scaled to size 8.20007pt on input line 12.
+ [1
 
-[2]) (./02-design-principles.tex [3] [4]) (./03-recording.tex [5]
-Underfull \hbox (badness 5161) in paragraph at lines 33--37
+]
+LaTeX Font Info:    Font shape `TU/OpenSans(0)/m/n' will be
+(Font)              scaled to size 7.21472pt on input line 67.
+
+[2]) (./02-design-principles.tex [3] [4]) (./03-recording.tex
+Underfull \hbox (badness 2197) in paragraph at lines 33--37
 \TU/LibertinusSerif(0)/m/n/10.95 (8B), \TU/SourceCodePro(0)/m/n/10 ShapeHash \T
 U/LibertinusSerif(0)/m/n/10.95 (8B), \TU/SourceCodePro(0)/m/n/10 num_inputs \TU
 /LibertinusSerif(0)/m/n/10.95 (2B), \TU/SourceCodePro(0)/m/n/10 num_outputs \TU
 /LibertinusSerif(0)/m/n/10.95 (2B), \TU/SourceCodePro(0)/m/n/10 num_scalar_args
  \TU/LibertinusSerif(0)/m/n/10.95 (2B), \TU/SourceCodePro(0)/m/n/10 grad_enable
-d
+d \TU/LibertinusSerif(0)/m/n/10.95 (1B),
  []
 
-[6]
-Underfull \hbox (badness 1603) in paragraph at lines 87--91
-\TU/LibertinusSerif(0)/m/n/10.95 structs, a \TU/SourceCodePro(0)/m/n/10 Content
-Hash \TU/LibertinusSerif(0)/m/n/10.95 computed via \TU/SourceCodePro(0)/m/n/10 
-compute_content_hash() \TU/LibertinusSerif(0)/m/n/10.95 (wymix-fold over schema
- hashes,
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 87--91
-\TU/LibertinusSerif(0)/m/n/10.95 per-tensor dimension products, packed dtype/de
-vice metadata, and scalar arguments), an
- []
-
-
-Underfull \hbox (badness 3601) in paragraph at lines 87--91
-\TU/LibertinusSerif(0)/m/n/10.95 atomic \TU/SourceCodePro(0)/m/n/10 CompiledKer
-nel* \TU/LibertinusSerif(0)/m/n/10.95 pointer (background writes with release, 
-foreground reads with ac-
- []
-
-
-Underfull \hbox (badness 1028) in paragraph at lines 87--91
-\TU/LibertinusSerif(0)/m/n/10.95 quire), a \TU/SourceCodePro(0)/m/n/10 MemoryPl
-an* \TU/LibertinusSerif(0)/m/n/10.95 for liveness analysis, \TU/SourceCodePro(0
-)/m/n/10 first_op_schema \TU/LibertinusSerif(0)/m/n/10.95 for quick mismatch de
-tection, and
- []
-
-
-Underfull \hbox (badness 1661) in paragraph at lines 99--104
-\TU/LibertinusSerif(0)/m/n/10.95 Contains a body sub-DAG (linked list ending in
- \TU/SourceCodePro(0)/m/n/10 TERMINAL\TU/LibertinusSerif(0)/m/n/10.95 ), an arr
-ay of \TU/SourceCodePro(0)/m/n/10 FeedbackEdge \TU/LibertinusSerif(0)/m/n/10.95
- structs
- []
-
-
-Underfull \hbox (badness 2980) in paragraph at lines 99--104
-\TU/LibertinusSerif(0)/m/n/10.95 (4 bytes each: \TU/SourceCodePro(0)/m/n/10 out
-put_idx\TU/LibertinusSerif(0)/m/n/10.95 , \TU/SourceCodePro(0)/m/n/10 input_idx
-\TU/LibertinusSerif(0)/m/n/10.95 ), and termination: \TU/SourceCodePro(0)/m/n/1
-0 LoopTermKind::REPEAT \TU/LibertinusSerif(0)/m/n/10.95 (fixed $[]$ itera-
- []
-
-
-Underfull \hbox (badness 4954) in paragraph at lines 99--104
-\TU/LibertinusSerif(0)/m/n/10.95 salt (\TU/SourceCodePro(0)/m/n/10 0x4C4F4F504E
-4F4445\TU/LibertinusSerif(0)/m/n/10.95 ) to distinguish from RegionNodes, incor
-porating \TU/SourceCodePro(0)/m/n/10 body_content_hash\TU/LibertinusSerif(0)/m/
-n/10.95 ,
- []
-
-[7]) (./04-compilation.tex [8]
-Underfull \hbox (badness 3646) in paragraph at lines 43--46
-\TU/LibertinusSerif(0)/m/it/10.95 Design. \TU/LibertinusSerif(0)/m/n/10.95 Auto
-tuning (Triton, AutoTVM/Ansor) searches configuration space by benchmarking
- []
-
-
-Underfull \hbox (badness 5374) in paragraph at lines 56--64
+[5] [6]) (./04-compilation.tex [7] [8]
+Underfull \hbox (badness 10000) in paragraph at lines 56--64
 []\TU/LibertinusSerif(0)/b/n/10.95 Constraints \TU/LibertinusSerif(0)/m/n/10.95
  (C1–C8). \TU/SourceCodePro(0)/m/n/10 smem_bytes $[]$ smem_per_sm\TU/Libertinus
 Serif(0)/m/n/10.95 . \TU/SourceCodePro(0)/m/n/10 regs_per_thread $[]$ max_regs_
 per_thread\TU/LibertinusSerif(0)/m/n/10.95 .
  []
 
-
-Underfull \hbox (badness 10000) in paragraph at lines 56--64
-\TU/SourceCodePro(0)/m/n/10 warps_per_block $[]$ \TU/LibertinusSerif(0)/m/n/10.
-95 1. \TU/SourceCodePro(0)/m/n/10 warps_per_block $[]$ warp_size $[]$ \TU/Liber
-tinusSerif(0)/m/n/10.95 1024. Positive tile dimensions.
- []
-
-
-Underfull \hbox (badness 1895) in paragraph at lines 64--69
-\TU/LibertinusSerif(0)/m/n/10.95 pute: $[][][][] [] [][][][]$. Memory: $[][][]$
-. The ridge point ($[] []
- []
-
-[9]
-Overfull \hbox (2.54567pt too wide) in paragraph at lines 79--81
-\TU/LibertinusSerif(0)/m/n/10.95 tion (tile/implicit_gemm), attention (tile/pip
-eline/TMA), normalization (vector_width/rows_per_block),
- []
-
-
-Overfull \hbox (3.92705pt too wide) in paragraph at lines 101--104
-\TU/LibertinusSerif(0)/m/it/10.95 Design. \TU/LibertinusSerif(0)/m/n/10.95 In T
-ier 2, the Vessel interceptor returns \TU/LibertinusSerif(0)/m/it/10.95 shadow 
-handles\TU/LibertinusSerif(0)/m/n/10.95 : full tensor objects (\TU/SourceCodePr
-o(0)/m/n/10 ConductorTensorImpl\TU/LibertinusSerif(0)/m/n/10.95 )
- []
-
-[10]) (./05-verification.tex
+[9]) (./05-verification.tex
 LaTeX Font Info:    Font shape `TU/LibertinusMath(2)/m/n' will be
 (Font)              scaled to size 14.40152pt on input line 3.
 LaTeX Font Info:    Font shape `TU/LibertinusMath(2)/m/n' will be
@@ -1095,70 +1011,44 @@ Underfull \hbox (badness 10000) in alignment at lines 22--22
 [][][][][]
  []
 
-[11]
-Underfull \hbox (badness 1281) in paragraph at lines 64--67
-[]\TU/LibertinusSerif(0)/b/n/10.95 Z3 as optimizer. \TU/LibertinusSerif(0)/m/n/
-10.95 Beyond verification, Z3’s \TU/SourceCodePro(0)/m/n/10 optimize \TU/Libert
-inusSerif(0)/m/n/10.95 module solves for optimal configurations:
- []
-
-[12]
+LaTeX Font Info:    Font shape `TU/LibertinusMath(2)/m/n' will be
+(Font)              scaled to size 9.00096pt on input line 46.
+LaTeX Font Info:    Font shape `TU/LibertinusMath(2)/m/n' will be
+(Font)              scaled to size 6.00064pt on input line 46.
+LaTeX Font Info:    Font shape `TU/LibertinusMath(2)/m/n' will be
+(Font)              scaled to size 5.00053pt on input line 46.
+LaTeX Font Info:    Font shape `TU/LibertinusMath(3)/m/n' will be
+(Font)              scaled to size 8.99904pt on input line 46.
+LaTeX Font Info:    Font shape `TU/LibertinusMath(3)/m/n' will be
+(Font)              scaled to size 5.99936pt on input line 46.
+LaTeX Font Info:    Font shape `TU/LibertinusMath(3)/m/n' will be
+(Font)              scaled to size 4.99947pt on input line 46.
+[10]
 Underfull \hbox (badness 10000) in paragraph at lines 92--94
 []\TU/SourceCodePro(0)/m/n/10 reflect_hash<T>() \TU/LibertinusSerif(0)/m/n/10.9
 5 iterates all non-static data members via \TU/SourceCodePro(0)/m/n/10 nonstati
 c_data_members_of(^^T,
  []
 
-
-Underfull \hbox (badness 1028) in paragraph at lines 106--113
-\TU/SourceCodePro(0)/m/n/10 == 1)\TU/LibertinusSerif(0)/m/n/10.95 . C++20 conce
-pts enforce requirements: \TU/SourceCodePro(0)/m/n/10 fx::CanAlloc<Ctx> \TU/Lib
-ertinusSerif(0)/m/n/10.95 checks for an \TU/SourceCodePro(0)/m/n/10 alloc \TU/L
-ibertinusSerif(0)/m/n/10.95 member;
+[11]
+Underfull \hbox (badness 1365) in paragraph at lines 121--124
+[]\TU/LibertinusSerif(0)/b/n/10.95 Typestate. \TU/LibertinusSerif(0)/m/n/10.95 
+Mode transitions (\TU/SourceCodePro(0)/m/n/10 INACTIVE $[]$ RECORD $[]$ COMPILE
+D $[]$ DIVERGED\TU/LibertinusSerif(0)/m/n/10.95 ) are encoded as types.
  []
 
-[13]) (./06-hardware.tex [14]) (./07-distribution.tex [15] [16] [17])
-(./08-optimization.tex [18]
-Underfull \hbox (badness 2027) in paragraph at lines 96--99
-[]\TU/LibertinusSerif(0)/b/n/10.95 Per-layer LR from curvature. \TU/LibertinusS
-erif(0)/m/n/10.95 Hessian diagonal (periodic Hessian-vector products) gives per
--
- []
-
-[19]) (./09-implementation.tex
-Underfull \hbox (badness 6927) in paragraph at lines 9--14
-\TU/SourceCodePro(0)/m/n/10 ScopeHash\TU/LibertinusSerif(0)/m/n/10.95 , \TU/Sou
-rceCodePro(0)/m/n/10 CallsiteHash\TU/LibertinusSerif(0)/m/n/10.95 ) totaling $[
-][][][][]$MB. \TU/SourceCodePro(0)/m/n/10 alignas(64) \TU/LibertinusSerif(0)/m/
-n/10.95 head/tail on separate cache lines,
+[12]) (./06-hardware.tex [13]) (./07-distribution.tex [14] [15])
+(./08-optimization.tex [16] [17]) (./09-implementation.tex [18]
+Underfull \hbox (badness 3525) in paragraph at lines 28--33
+\TU/SourceCodePro(0)/m/n/10 slot_id\TU/LibertinusSerif(0)/m/n/10.95 . MemoryPla
+n: \TU/SourceCodePro(0)/m/n/10 pool_bytes\TU/LibertinusSerif(0)/m/n/10.95 , \TU
+/SourceCodePro(0)/m/n/10 num_slots\TU/LibertinusSerif(0)/m/n/10.95 , \TU/Source
+CodePro(0)/m/n/10 num_external\TU/LibertinusSerif(0)/m/n/10.95 , device context
+, distributed topology.
  []
 
 
-Underfull \hbox (badness 7981) in paragraph at lines 9--14
-\TU/SourceCodePro(0)/m/n/10 cached_tail_ \TU/LibertinusSerif(0)/m/n/10.95 optim
-ization, next-slot prefetch. MetaLog: 1M entries $[]$ 144B $[] [][][][]$MB,
- []
-
-
-Underfull \hbox (badness 3333) in paragraph at lines 15--20
-[]\TU/LibertinusSerif(0)/b/n/10.95 Graph construction. \TU/LibertinusSerif(0)/m
-/n/10.95 TraceGraph: bidirectional CSR with four edge kinds (\TU/SourceCodePro(
-0)/m/n/10 DATA_FLOW\TU/LibertinusSerif(0)/m/n/10.95 , \TU/SourceCodePro(0)/m/n/
-10 ALIAS\TU/LibertinusSerif(0)/m/n/10.95 ,
- []
-
-[20]
-Underfull \hbox (badness 2865) in paragraph at lines 28--33
-[]\TU/LibertinusSerif(0)/b/n/10.95 Memory planning. \TU/LibertinusSerif(0)/m/n/
-10.95 TensorSlot (40B): \TU/SourceCodePro(0)/m/n/10 offset_bytes\TU/LibertinusS
-erif(0)/m/n/10.95 , \TU/SourceCodePro(0)/m/n/10 nbytes\TU/LibertinusSerif(0)/m/
-n/10.95 , \TU/SourceCodePro(0)/m/n/10 birth_op\TU/LibertinusSerif(0)/m/n/10.95 
-, \TU/SourceCodePro(0)/m/n/10 death_op\TU/LibertinusSerif(0)/m/n/10.95 , dtype,
- device,
- []
-
-
-Underfull \hbox (badness 5203) in paragraph at lines 58--60
+Underfull \hbox (badness 10000) in paragraph at lines 58--60
 []\TU/LibertinusSerif(0)/b/n/10.95 Reflection \TU/LibertinusSerif(0)/m/n/10.95 
 (\TU/SourceCodePro(0)/m/n/10 Reflect.h\TU/LibertinusSerif(0)/m/n/10.95 , GCC 16
  only). \TU/SourceCodePro(0)/m/n/10 reflect_hash<T>() \TU/LibertinusSerif(0)/m/
@@ -1166,30 +1056,27 @@ n/10.95 and \TU/SourceCodePro(0)/m/n/10 reflect_print<T>() \TU/LibertinusSerif(
 0)/m/n/10.95 via P2996
  []
 
-
-Underfull \hbox (badness 1158) in paragraph at lines 61--67
-\TU/LibertinusSerif(0)/m/n/10.95 (gfx942), A100 (sm_80). \TU/SourceCodePro(0)/m
-/n/10 KernelConfig \TU/LibertinusSerif(0)/m/n/10.95 (\TU/SourceCodePro(0)/m/n/1
-0 tile_m\TU/LibertinusSerif(0)/m/n/10.95 /\TU/SourceCodePro(0)/m/n/10 n\TU/Libe
-rtinusSerif(0)/m/n/10.95 /\TU/SourceCodePro(0)/m/n/10 k\TU/LibertinusSerif(0)/m
-/n/10.95 , \TU/SourceCodePro(0)/m/n/10 pipeline_stages\TU/LibertinusSerif(0)/m/
-n/10.95 , \TU/SourceCodePro(0)/m/n/10 warps_per_block\TU/LibertinusSerif(0)/m/n
-/10.95 , \TU/SourceCodePro(0)/m/n/10 smem_bytes\TU/LibertinusSerif(0)/m/n/10.95
- ,
+[19]
+Underfull \hbox (badness 1796) in paragraph at lines 87--88
+[]\TU/LibertinusSerif(0)/b/n/10.95 SMT kernel synthesis: \TU/SourceCodePro(0)/m
+/n/10 CostModel.h \TU/LibertinusSerif(0)/m/n/10.95 complete (\TU/SourceCodePro(
+0)/m/n/10 HardwareProfile\TU/LibertinusSerif(0)/m/n/10.95 , \TU/SourceCodePro(0
+)/m/n/10 KernelConfig\TU/LibertinusSerif(0)/m/n/10.95 , \TU/SourceCodePro(0)/m/
+n/10 validate_config\TU/LibertinusSerif(0)/m/n/10.95 ,
  []
 
-[21]) (./10-related.tex [22] [23]) (./11-roadmap.tex) (./12-conclusion.tex
-[24]) [25] (./main.aux)
+) (./10-related.tex [20]) (./11-roadmap.tex [21]) (./12-conclusion.tex)
+[22] [23] (./main.aux)
 Package rerunfilecheck Info: File `main.out' has not changed.
 (rerunfilecheck)             Checksum: 7B859CBE4565A8F8F44FE98BE63059F2;10461.
  ) 
 Here is how much of TeX's memory you used:
- 20874 strings out of 476689
- 381166 string characters out of 5806613
- 1860018 words of memory out of 6000000
- 40798 multiletter control sequences out of 15000+600000
- 515946 words of font info for 114 fonts, out of 8000000 for 9000
+ 20920 strings out of 476689
+ 382789 string characters out of 5806613
+ 1862018 words of memory out of 6000000
+ 40830 multiletter control sequences out of 15000+600000
+ 517268 words of font info for 128 fonts, out of 8000000 for 9000
  1348 hyphenation exceptions out of 8191
- 84i,12n,119p,1001b,481s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 84i,15n,119p,1001b,524s stack positions out of 10000i,1000n,20000p,200000b,200000s
 
-Output written on main.pdf (25 pages).
+Output written on main.pdf (23 pages).
