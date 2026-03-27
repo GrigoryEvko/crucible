@@ -306,10 +306,11 @@ class CrucibleMode(TorchDispatchMode):
           Meta records (num_metas × 144B each):
             Raw TensorMeta structs, same layout as CrucibleMeta.
         """
+        meta_size = ctypes.sizeof(_VesselLib.Meta)
         num_ops = len(self._trace_ops)
-        num_metas = len(self._trace_metas) // 144
-        assert len(self._trace_metas) % 144 == 0, \
-            f"meta buffer size {len(self._trace_metas)} not multiple of 144"
+        num_metas = len(self._trace_metas) // meta_size
+        assert len(self._trace_metas) % meta_size == 0, \
+            f"meta buffer size {len(self._trace_metas)} not multiple of {meta_size}"
 
         with open(path, "wb") as f:
             # Header
@@ -344,9 +345,10 @@ class CrucibleMode(TorchDispatchMode):
                 f.write(struct.pack("<QH", h, len(name_bytes)))
                 f.write(name_bytes)
 
-        total = 16 + num_ops * 80 + num_metas * 144
-        print(f"  [crucible] Exported {num_ops} ops, {num_metas} metas, "
-              f"{len(names)} schema names ({total}+ bytes) → {path}")
+        total = 16 + num_ops * 80 + num_metas * meta_size
+        print(f"  [crucible] Exported {num_ops} ops, {num_metas} metas "
+              f"({meta_size}B each), {len(names)} names "
+              f"({total // 1024}KB) → {path}")
 
     # ── Dispatch interception ───────────────────────────────────────
 
