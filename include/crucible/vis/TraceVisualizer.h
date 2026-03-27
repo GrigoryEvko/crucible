@@ -570,6 +570,63 @@ struct UShapeSplit {
   }
   svg.end_group();
 
+  // ── Phase cluster borders (dashed rectangles) ──────────────────────
+  svg.begin_group("clusters");
+  {
+    auto draw_cluster = [&](Phase phase, std::string_view label,
+                            Color border_color) {
+      float cx_min = 1e9f, cy_min = 1e9f, cx_max = 0, cy_max = 0;
+      uint32_t count = 0;
+      for (uint32_t i = 0; i < blocks.size(); i++) {
+        if (blocks[i].phase != phase) continue;
+        cx_min = std::min(cx_min, pos[i].x - 6);
+        cy_min = std::min(cy_min, pos[i].y - 6);
+        cx_max = std::max(cx_max, pos[i].x + pos[i].w + 6);
+        cy_max = std::max(cy_max, pos[i].y + pos[i].h + 6);
+        count++;
+      }
+      if (count == 0) return;
+      svg.rect_dashed(cx_min, cy_min, cx_max - cx_min, cy_max - cy_min,
+                       border_color, 8, 0.6f);
+    };
+    draw_cluster(Phase::FORWARD, "Forward", Color::hex(0x93C5FD));
+    draw_cluster(Phase::BACKWARD, "Backward", Color::hex(0xFCA5A5));
+    draw_cluster(Phase::OPTIMIZER, "Optimizer", Color::hex(0xF9A8D4));
+  }
+  svg.end_group();
+
+  // ── Legend ─────────────────────────────────────────────────────────
+  svg.begin_group("legend");
+  {
+    float lx = max_x - 180;
+    float ly = max_y + 12;
+    svg.text(lx, ly, "Legend", 9, Color::hex(0x6B7280), "start", true);
+    ly += 14;
+
+    struct LegendEntry { const char* label; Color fill; Color border; };
+    LegendEntry entries[] = {
+      {"ResBlock",   palette::BLOCK_RESBLOCK, Color::hex(0x065F46)},
+      {"Attention",  palette::BLOCK_ATTN,     Color::hex(0x92400E)},
+      {"MLP",        palette::BLOCK_MLP,      Color::hex(0x1E40AF)},
+      {"Conv",       palette::BLOCK_CONV,     Color::hex(0x0C4A6E)},
+      {"Loss",       palette::BLOCK_LOSS,     Color::hex(0xBE123C)},
+      {"Optimizer",  palette::BLOCK_OPTIM,    Color::hex(0x9D174D)},
+    };
+    for (const auto& e : entries) {
+      svg.rect(lx, ly - 7, 12, 10, e.fill, e.border, 2, 0.5f);
+      svg.text(lx + 16, ly + 1, e.label, 7, Color::hex(0x6B7280));
+      ly += 13;
+    }
+    // Edge types
+    ly += 4;
+    svg.line(lx, ly - 3, lx + 12, ly - 3, palette::EDGE_SKIP, 0.6f, true);
+    svg.text(lx + 16, ly, "Skip connection", 7, Color::hex(0x6B7280));
+    ly += 13;
+    svg.line(lx, ly - 3, lx + 12, ly - 3, Color::hex(0xD1D5DB), 0.5f);
+    svg.text(lx + 16, ly, "Sequential flow", 7, Color::hex(0x6B7280));
+  }
+  svg.end_group();
+
   svg.end();
   return svg.take();
 }
