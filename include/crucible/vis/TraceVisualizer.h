@@ -415,6 +415,228 @@ struct UShapeSplit {
 // Block-level rendering with phase-aware grid layout
 // ═══════════════════════════════════════════════════════════════════
 
+// ── Rendering sub-steps ─────────────────────────────────────────────
+// Each function handles one visual layer, keeping render_block_svg clean.
+
+inline void render_skip_edges(
+    SvgRenderer& svg, const DetectionResult& detection,
+    const std::vector<Block>& blocks,
+    const std::vector<GridPos>& pos,
+    const std::vector<BlockEdge>& block_edges) {
+
+  svg.begin_group("skip-edges");
+  if (detection.architecture == Architecture::UNET) {
+    // Resolution-paired skip connections within each U
+    auto draw_u_skips = [&](const std::vector<uint32_t>& phase_idx) {
+      std::unordered_map<int32_t, std::vector<uint32_t>> enc_by_res, dec_by_res;
+      for (uint32_t bi : phase_idx) {
+        if (blocks[bi].spatial_h <= 0) continue;
+        (pos[bi].col == 0 ? enc_by_res : dec_by_res)
+            [blocks[bi].spatial_h].push_back(bi);
+      }
+      for (auto& [res, enc] : enc_by_res) {
+        auto dit = dec_by_res.find(res);
+        if (dit == dec_by_res.end()) continue;
+        uint32_t a = enc.back(), b = dit->second.front();
+        float x1 = pos[a].x + pos[a].w + 3, y1 = pos[a].y + pos[a].h / 2;
+        float x2 = pos[b].x - 3,             y2 = pos[b].y + pos[b].h / 2;
+        float mx = (x1 + x2) / 2;
+        svg.bezier_arrow(x1, y1, mx, y1, mx, y2, x2, y2,
+                          palette::EDGE_SKIP, 0.6f, true);
+      }
+    };
+    std::vector<uint32_t> fwd_phase, bwd_phase;
+    for (uint32_t i = 0; i < blocks.size(); i++) {
+      if (blocks[i].phase == Phase::FORWARD)  fwd_phase.push_back(i);
+      if (blocks[i].phase == Phase::BACKWARD) bwd_phase.push_back(i);
+    }
+    draw_u_skips(fwd_phase);
+    draw_u_skips(bwd_phase);
+
+    // Cross-phase saved-activation edges (limited)
+    std::unordered_set<uint32_t> drawn;
+    uint32_t count = 0;
+    for (const auto& e : block_edges) {
+      if (count >= 8) break;
+      if (blocks[e.src_block].phase != Phase::FORWARD) continue;
+      if (blocks[e.dst_block].phase != Phase::BACKWARD) continue;
+      auto sk = blocks[e.src_block].kind;
+      if (sk != BlockKind::SELF_ATTN && sk != BlockKind::RESBLOCK &&
+          sk != BlockKind::LOSS) continue;
+      if (!drawn.insert(e.src_block).second) continue;
+      svg.orthogonal_edge(
+          pos[e.src_block].x + pos[e.src_block].w + 2,
+          pos[e.src_block].y + pos[e.src_block].h / 2,
+          pos[e.dst_block].x - 2,
+          pos[e.dst_block].y + pos[e.dst_block].h / 2,
+          Color::hex(0xA78BFA), 0.4f, true);
+      count++;
+    }
+  } else {
+    // Non-UNet: filtered data-flow edges
+    std::unordered_set<uint32_t> drawn;
+    for (const auto& e : block_edges) {
+      if (pos[e.src_block].col != 0 || pos[e.dst_block].col != 1) continue;
+      auto sk = blocks[e.src_block].kind;
+      if (sk != BlockKind::SELF_ATTN && sk != BlockKind::CROSS_ATTN &&
+          sk != BlockKind::MLP && sk != BlockKind::RESBLOCK &&
+          sk != BlockKind::CONV_BLOCK && sk != BlockKind::LOSS &&
+          sk != BlockKind::TRANSFORMER) continue;
+      if (!drawn.insert(e.src_block).second) continue;
+      svg.orthogonal_edge(
+          pos[e.src_block].x + pos[e.src_block].w + 2,
+          pos[e.src_block].y + pos[e.src_block].h / 2,
+          pos[e.dst_block].x - 2,
+          pos[e.dst_block].y + pos[e.dst_block].h / 2,
+          palette::EDGE_SKIP, 0.5f, true);
+    }
+  }
+  svg.end_group();
+}
+
+inline void render_seq_connectors(
+    SvgRenderer& svg,
+    const std::vector<Block>& blocks,
+    const std::vector<GridPos>& pos) {
+
+  svg.begin_group("seq-edges");
+  for (uint32_t col = 0; col < 2; col++) {
+    std::vector<uint32_t> col_blocks;
+    for (uint32_t i = 0; i < blocks.size(); i++)
+      if (pos[i].col == col) col_blocks.push_back(i);
+    std::ranges::sort(col_blocks, [&](uint32_t a, uint32_t b) {
+      return pos[a].row < pos[b].row;
+    });
+    for (uint32_t j = 0; j + 1 < col_blocks.size(); j++) {
+      uint32_t a = col_blocks[j], b = col_blocks[j + 1];
+      float x = pos[a].x + pos[a].w / 2;
+      if (pos[b].y > pos[a].y + pos[a].h)
+        svg.line(x, pos[a].y + pos[a].h, x, pos[b].y,
+                 Color::hex(0xD1D5DB), 0.4f);
+    }
+  }
+  svg.end_group();
+}
+
+inline void render_resolution_bands(
+    SvgRenderer& svg, float svg_w,
+    const std::vector<Block>& blocks,
+    const std::vector<GridPos>& pos) {
+
+  svg.begin_group("res-bands");
+  struct ResBand { int32_t res; float y_min; float y_max; };
+  std::vector<ResBand> bands;
+  int32_t prev_res = 0;
+  for (uint32_t i = 0; i < blocks.size(); i++) {
+    if (blocks[i].phase != Phase::FORWARD) continue;
+    int32_t r = blocks[i].spatial_h;
+    if (r <= 0) continue;
+    if (r != prev_res) {
+      bands.push_back({r, pos[i].y - 2, pos[i].y + pos[i].h + 2});
+      prev_res = r;
+    } else if (!bands.empty()) {
+      bands.back().y_max = pos[i].y + pos[i].h + 2;
+    }
+  }
+  constexpr Color band_colors[] = {
+    Color::hex(0xFEFCE8), Color::hex(0xEFF6FF),
+  };
+  for (uint32_t i = 0; i < bands.size(); i++) {
+    const auto& band = bands[i];
+    svg.rect(2, band.y_min, svg_w - 4, band.y_max - band.y_min,
+             band_colors[i % 2], Color::hex(0xE5E7EB), 0, 0, false);
+    std::string label = std::to_string(band.res) + "x" + std::to_string(band.res);
+    svg.text(4, (band.y_min + band.y_max) / 2 + 3,
+             label, 6.0f, Color::hex(0xC0C0C0), "start");
+  }
+  svg.end_group();
+}
+
+inline void render_block_nodes(
+    SvgRenderer& svg,
+    const std::vector<Block>& blocks,
+    const std::vector<GridPos>& pos) {
+
+  svg.begin_group("blocks");
+  for (uint32_t i = 0; i < blocks.size(); i++) {
+    const auto& b = blocks[i];
+    const auto& p = pos[i];
+    auto [fill, border] = colors_for_block(b.kind);
+
+    std::string info = b.label + " | " + std::to_string(b.num_ops) + " ops";
+    if (!b.out_shape.empty()) info += " | " + b.out_shape;
+    svg.begin_block_group(info);
+
+    svg.rect(p.x, p.y, p.w, p.h, fill, border, 4, 0.7f, true);
+    svg.text(p.x + p.w / 2, p.y + p.h / 2 + 1,
+             b.label, 7.0f, Color::hex(0x1F2937), "middle", true);
+    std::string ops_str = std::to_string(b.num_ops);
+    svg.text(p.x + p.w - 3, p.y + p.h - 3,
+             ops_str, 5.0f, Color::hex(0xA0A0A0), "end");
+    svg.end_group();
+  }
+  svg.end_group();
+}
+
+inline void render_phase_borders(
+    SvgRenderer& svg,
+    const std::vector<Block>& blocks,
+    const std::vector<GridPos>& pos) {
+
+  svg.begin_group("clusters");
+  auto draw_cluster = [&](Phase phase, Color border_color) {
+    float cx_min = 1e9f, cy_min = 1e9f, cx_max = 0, cy_max = 0;
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < blocks.size(); i++) {
+      if (blocks[i].phase != phase) continue;
+      cx_min = std::min(cx_min, pos[i].x - 6);
+      cy_min = std::min(cy_min, pos[i].y - 6);
+      cx_max = std::max(cx_max, pos[i].x + pos[i].w + 6);
+      cy_max = std::max(cy_max, pos[i].y + pos[i].h + 6);
+      count++;
+    }
+    if (count == 0) return;
+    svg.rect_dashed(cx_min, cy_min, cx_max - cx_min, cy_max - cy_min,
+                     border_color, 8, 0.6f);
+  };
+  draw_cluster(Phase::FORWARD,  Color::hex(0x93C5FD));
+  draw_cluster(Phase::BACKWARD, Color::hex(0xFCA5A5));
+  draw_cluster(Phase::OPTIMIZER,Color::hex(0xF9A8D4));
+  svg.end_group();
+}
+
+inline void render_legend(SvgRenderer& svg, float lx, float ly) {
+  svg.begin_group("legend");
+  svg.text(lx, ly, "Legend", 9, Color::hex(0x6B7280), "start", true);
+  ly += 14;
+
+  struct Entry { const char* label; Color fill; Color border; };
+  Entry entries[] = {
+    {"ResBlock",  palette::BLOCK_RESBLOCK, Color::hex(0x065F46)},
+    {"Attention", palette::BLOCK_ATTN,     Color::hex(0x92400E)},
+    {"MLP",       palette::BLOCK_MLP,      Color::hex(0x1E40AF)},
+    {"Conv",      palette::BLOCK_CONV,     Color::hex(0x0C4A6E)},
+    {"Loss",      palette::BLOCK_LOSS,     Color::hex(0xBE123C)},
+    {"Optimizer", palette::BLOCK_OPTIM,    Color::hex(0x9D174D)},
+  };
+  for (const auto& e : entries) {
+    svg.rect(lx, ly - 7, 12, 10, e.fill, e.border, 2, 0.5f);
+    svg.text(lx + 16, ly + 1, e.label, 7, Color::hex(0x6B7280));
+    ly += 13;
+  }
+  ly += 4;
+  svg.line(lx, ly - 3, lx + 12, ly - 3, palette::EDGE_SKIP, 0.6f, true);
+  svg.text(lx + 16, ly, "Skip connection", 7, Color::hex(0x6B7280));
+  ly += 13;
+  svg.line(lx, ly - 3, lx + 12, ly - 3, Color::hex(0xD1D5DB), 0.5f);
+  svg.text(lx + 16, ly, "Sequential flow", 7, Color::hex(0x6B7280));
+  svg.end_group();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Block-level rendering — orchestrator
+// ═══════════════════════════════════════════════════════════════════
+
 [[nodiscard]] inline std::string render_block_svg(
     const DetectionResult& detection,
     const std::vector<Op>& ops,
@@ -438,245 +660,31 @@ struct UShapeSplit {
   SvgRenderer svg;
   svg.begin(svg_w, svg_h, std::string{title});
 
-  // Column headers
-  constexpr float COL_WIDTH = 260;
-  constexpr float COL_GAP = 60;
-  constexpr float PAD = 30;
-  float col0_center = PAD + COL_WIDTH / 2;
-  float col1_center = PAD + COL_WIDTH + COL_GAP + COL_WIDTH / 2;
-  svg.text(col0_center, 42, "FORWARD", 12, Color::hex(0x1E40AF), "middle", true);
-  svg.text(col1_center, 42, "BACKWARD", 12, Color::hex(0x9A3412), "middle", true);
-
-  // For UNet: draw resolution-paired skip connections between
-  // encoder and decoder at matching resolution levels.
-  // For non-UNet: draw filtered data-flow skip edges.
-  svg.begin_group("skip-edges");
-  if (detection.architecture == Architecture::UNET) {
-    // Pair encoder↔decoder blocks by spatial resolution within each U.
-    // Forward U: left two sub-columns. Backward U: right two sub-columns.
-    // Within each U, encoder blocks (col 0) match decoder blocks (col 1)
-    // at the same spatial_h.
-
-    // Collect encoder and decoder blocks per U-shape
-    auto draw_u_skips = [&](const std::vector<uint32_t>& phase_idx) {
-      // Separate encoder (col 0) and decoder (col 1) within this phase
-      std::unordered_map<int32_t, std::vector<uint32_t>> enc_by_res;
-      std::unordered_map<int32_t, std::vector<uint32_t>> dec_by_res;
-      for (uint32_t bi : phase_idx) {
-        if (blocks[bi].spatial_h <= 0) continue;
-        if (pos[bi].col == 0)
-          enc_by_res[blocks[bi].spatial_h].push_back(bi);
-        else if (pos[bi].col == 1)
-          dec_by_res[blocks[bi].spatial_h].push_back(bi);
-      }
-      // Draw horizontal arrows between matching resolutions
-      for (auto& [res, enc_blocks] : enc_by_res) {
-        auto dit = dec_by_res.find(res);
-        if (dit == dec_by_res.end()) continue;
-        // Connect last encoder block at this res to first decoder block
-        uint32_t enc_bi = enc_blocks.back();
-        uint32_t dec_bi = dit->second.front();
-        float x1 = pos[enc_bi].x + pos[enc_bi].w + 3;
-        float y1 = pos[enc_bi].y + pos[enc_bi].h / 2;
-        float x2 = pos[dec_bi].x - 3;
-        float y2 = pos[dec_bi].y + pos[dec_bi].h / 2;
-        float mid_x = (x1 + x2) / 2;
-        svg.bezier_arrow(x1, y1, mid_x, y1, mid_x, y2, x2, y2,
-                          palette::EDGE_SKIP, 0.6f, true);
-      }
-    };
-
-    // Forward phase blocks
-    std::vector<uint32_t> fwd_phase, bwd_phase;
+  // Column headers — computed from actual block positions per phase
+  auto phase_center_x = [&](Phase phase) -> float {
+    float xmin = 1e9f, xmax = 0;
     for (uint32_t i = 0; i < blocks.size(); i++) {
-      if (blocks[i].phase == Phase::FORWARD) fwd_phase.push_back(i);
-      else if (blocks[i].phase == Phase::BACKWARD) bwd_phase.push_back(i);
+      if (blocks[i].phase != phase) continue;
+      xmin = std::min(xmin, pos[i].x);
+      xmax = std::max(xmax, pos[i].x + pos[i].w);
     }
-    draw_u_skips(fwd_phase);
-    draw_u_skips(bwd_phase);
+    return (xmin + xmax) / 2;
+  };
+  float fwd_cx = phase_center_x(Phase::FORWARD);
+  float bwd_cx = phase_center_x(Phase::BACKWARD);
+  if (fwd_cx < 1e8f)
+    svg.text(fwd_cx, 42, "FORWARD", 12, Color::hex(0x1E40AF), "middle", true);
+  if (bwd_cx < 1e8f)
+    svg.text(bwd_cx, 42, "BACKWARD", 12, Color::hex(0x9A3412), "middle", true);
 
-    // Also draw a few forward→backward saved-activation edges (limited)
-    std::unordered_set<uint32_t> drawn_src;
-    uint32_t cross_count = 0;
-    for (const auto& e : block_edges) {
-      if (cross_count >= 8) break;  // limit cross-phase edges
-      if (blocks[e.src_block].phase != Phase::FORWARD) continue;
-      if (blocks[e.dst_block].phase != Phase::BACKWARD) continue;
-      BlockKind sk = blocks[e.src_block].kind;
-      if (sk != BlockKind::SELF_ATTN && sk != BlockKind::RESBLOCK &&
-          sk != BlockKind::LOSS) continue;
-      if (!drawn_src.insert(e.src_block).second) continue;
-
-      float x1 = pos[e.src_block].x + pos[e.src_block].w + 2;
-      float y1 = pos[e.src_block].y + pos[e.src_block].h / 2;
-      float x2 = pos[e.dst_block].x - 2;
-      float y2 = pos[e.dst_block].y + pos[e.dst_block].h / 2;
-      svg.orthogonal_edge(x1, y1, x2, y2,
-                           Color::hex(0xA78BFA), 0.4f, true);
-      cross_count++;
-    }
-  } else {
-    // Non-UNet: filtered data-flow edges
-    std::unordered_set<uint32_t> drawn_src;
-    for (const auto& e : block_edges) {
-      if (pos[e.src_block].col != 0 || pos[e.dst_block].col != 1) continue;
-      BlockKind sk = blocks[e.src_block].kind;
-      if (sk != BlockKind::SELF_ATTN && sk != BlockKind::CROSS_ATTN &&
-          sk != BlockKind::MLP && sk != BlockKind::RESBLOCK &&
-          sk != BlockKind::CONV_BLOCK && sk != BlockKind::LOSS &&
-          sk != BlockKind::TRANSFORMER) continue;
-      if (!drawn_src.insert(e.src_block).second) continue;
-      float x1 = pos[e.src_block].x + pos[e.src_block].w + 2;
-      float y1 = pos[e.src_block].y + pos[e.src_block].h / 2;
-      float x2 = pos[e.dst_block].x - 2;
-      float y2 = pos[e.dst_block].y + pos[e.dst_block].h / 2;
-      svg.orthogonal_edge(x1, y1, x2, y2,
-                           palette::EDGE_SKIP, 0.5f, true);
-    }
-  }
-  svg.end_group();
-
-  // Thin vertical connector lines within each column
-  svg.begin_group("seq-edges");
-  {
-    // Collect blocks per column in row order
-    for (uint32_t col = 0; col < 2; col++) {
-      std::vector<uint32_t> col_blocks;
-      for (uint32_t i = 0; i < blocks.size(); i++)
-        if (pos[i].col == col) col_blocks.push_back(i);
-      std::ranges::sort(col_blocks, [&](uint32_t a, uint32_t b) {
-        return pos[a].row < pos[b].row;
-      });
-      for (uint32_t j = 0; j + 1 < col_blocks.size(); j++) {
-        uint32_t a = col_blocks[j], b = col_blocks[j + 1];
-        float x = pos[a].x + pos[a].w / 2;
-        float y1 = pos[a].y + pos[a].h;
-        float y2 = pos[b].y;
-        if (y2 > y1)
-          svg.line(x, y1, x, y2, Color::hex(0xD1D5DB), 0.4f);
-      }
-    }
-  }
-  svg.end_group();
-
-  // ── Resolution bands for UNet ─────────────────────────────────────
-  if (detection.architecture == Architecture::UNET) {
-    svg.begin_group("res-bands");
-    // Group forward blocks by spatial_h, draw subtle background bands
-    struct ResBand { int32_t res; float y_min; float y_max; };
-    std::vector<ResBand> bands;
-    int32_t prev_res = 0;
-    for (uint32_t i = 0; i < blocks.size(); i++) {
-      if (blocks[i].phase != Phase::FORWARD) continue;
-      int32_t r = blocks[i].spatial_h;
-      if (r <= 0) continue;
-      if (r != prev_res) {
-        bands.push_back({r, pos[i].y - 2, pos[i].y + pos[i].h + 2});
-        prev_res = r;
-      } else if (!bands.empty()) {
-        bands.back().y_max = pos[i].y + pos[i].h + 2;
-      }
-    }
-    // Draw alternating very subtle background bands
-    constexpr Color band_colors[] = {
-      Color::hex(0xFEFCE8), // warm yellow tint
-      Color::hex(0xEFF6FF), // cool blue tint
-    };
-    for (uint32_t i = 0; i < bands.size(); i++) {
-      const auto& band = bands[i];
-      svg.rect(2, band.y_min, svg_w - 4, band.y_max - band.y_min,
-               band_colors[i % 2], Color::hex(0xE5E7EB), 0, 0, false);
-      // Resolution label on the left margin
-      std::string res_label = std::to_string(band.res) + "x" + std::to_string(band.res);
-      svg.text(4, (band.y_min + band.y_max) / 2 + 3,
-               res_label, 6.0f, Color::hex(0xC0C0C0), "start");
-    }
-    svg.end_group();
-  }
-
-  // Draw blocks (with interactive class + data attributes for JS)
-  svg.begin_group("blocks");
-  for (uint32_t i = 0; i < blocks.size(); i++) {
-    const auto& b = blocks[i];
-    const auto& p = pos[i];
-    auto [fill, border] = colors_for_block(b.kind);
-
-    // Wrap in a group with class="block" for interactivity
-    std::string info = b.label + " | " + std::to_string(b.num_ops) + " ops";
-    if (!b.out_shape.empty()) info += " | " + b.out_shape;
-    svg.begin_block_group(info);
-
-    svg.rect(p.x, p.y, p.w, p.h, fill, border, 4, 0.7f, true);
-    // Block label (bold, centered)
-    svg.text(p.x + p.w / 2, p.y + p.h / 2 + 1,
-             b.label, 7.0f, Color::hex(0x1F2937), "middle", true);
-    // Op count (small, right-aligned, gray)
-    std::string ops_str = std::to_string(b.num_ops);
-    svg.text(p.x + p.w - 3, p.y + p.h - 3,
-             ops_str, 5.0f, Color::hex(0xA0A0A0), "end");
-
-    svg.end_group();
-  }
-  svg.end_group();
-
-  // ── Phase cluster borders (dashed rectangles) ──────────────────────
-  svg.begin_group("clusters");
-  {
-    auto draw_cluster = [&](Phase phase, [[maybe_unused]] std::string_view label,
-                            Color border_color) {
-      float cx_min = 1e9f, cy_min = 1e9f, cx_max = 0, cy_max = 0;
-      uint32_t count = 0;
-      for (uint32_t i = 0; i < blocks.size(); i++) {
-        if (blocks[i].phase != phase) continue;
-        cx_min = std::min(cx_min, pos[i].x - 6);
-        cy_min = std::min(cy_min, pos[i].y - 6);
-        cx_max = std::max(cx_max, pos[i].x + pos[i].w + 6);
-        cy_max = std::max(cy_max, pos[i].y + pos[i].h + 6);
-        count++;
-      }
-      if (count == 0) return;
-      svg.rect_dashed(cx_min, cy_min, cx_max - cx_min, cy_max - cy_min,
-                       border_color, 8, 0.6f);
-    };
-    draw_cluster(Phase::FORWARD, "Forward", Color::hex(0x93C5FD));
-    draw_cluster(Phase::BACKWARD, "Backward", Color::hex(0xFCA5A5));
-    draw_cluster(Phase::OPTIMIZER, "Optimizer", Color::hex(0xF9A8D4));
-  }
-  svg.end_group();
-
-  // ── Legend ─────────────────────────────────────────────────────────
-  svg.begin_group("legend");
-  {
-    float lx = max_x - 180;
-    float ly = max_y + 12;
-    svg.text(lx, ly, "Legend", 9, Color::hex(0x6B7280), "start", true);
-    ly += 14;
-
-    struct LegendEntry { const char* label; Color fill; Color border; };
-    LegendEntry entries[] = {
-      {"ResBlock",   palette::BLOCK_RESBLOCK, Color::hex(0x065F46)},
-      {"Attention",  palette::BLOCK_ATTN,     Color::hex(0x92400E)},
-      {"MLP",        palette::BLOCK_MLP,      Color::hex(0x1E40AF)},
-      {"Conv",       palette::BLOCK_CONV,     Color::hex(0x0C4A6E)},
-      {"Loss",       palette::BLOCK_LOSS,     Color::hex(0xBE123C)},
-      {"Optimizer",  palette::BLOCK_OPTIM,    Color::hex(0x9D174D)},
-    };
-    for (const auto& e : entries) {
-      svg.rect(lx, ly - 7, 12, 10, e.fill, e.border, 2, 0.5f);
-      svg.text(lx + 16, ly + 1, e.label, 7, Color::hex(0x6B7280));
-      ly += 13;
-    }
-    // Edge types
-    ly += 4;
-    svg.line(lx, ly - 3, lx + 12, ly - 3, palette::EDGE_SKIP, 0.6f, true);
-    svg.text(lx + 16, ly, "Skip connection", 7, Color::hex(0x6B7280));
-    ly += 13;
-    svg.line(lx, ly - 3, lx + 12, ly - 3, Color::hex(0xD1D5DB), 0.5f);
-    svg.text(lx + 16, ly, "Sequential flow", 7, Color::hex(0x6B7280));
-  }
-  svg.end_group();
-
-  // ── Interactive JavaScript ──────────────────────────────────────────
+  // Render layers (back to front)
+  if (detection.architecture == Architecture::UNET)
+    render_resolution_bands(svg, svg_w, blocks, pos);
+  render_skip_edges(svg, detection, blocks, pos, block_edges);
+  render_seq_connectors(svg, blocks, pos);
+  render_block_nodes(svg, blocks, pos);
+  render_phase_borders(svg, blocks, pos);
+  render_legend(svg, max_x - 180, max_y + 12);
   svg.embed_interactivity();
 
   svg.end();
