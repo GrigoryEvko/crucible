@@ -565,8 +565,13 @@ struct UShapeSplit {
     auto [fill, border] = colors_for_block(b.kind);
 
     svg.rect(p.x, p.y, p.w, p.h, fill, border, 4, 0.7f, true);
-    svg.text(p.x + p.w / 2, p.y + p.h / 2 + 3,
-             b.label, 7.5f, Color::hex(0x1F2937), "middle", true);
+    // Block label (bold, centered)
+    svg.text(p.x + p.w / 2, p.y + p.h / 2 + 1,
+             b.label, 7.0f, Color::hex(0x1F2937), "middle", true);
+    // Op count (small, right-aligned, gray)
+    std::string ops_str = std::to_string(b.num_ops);
+    svg.text(p.x + p.w - 3, p.y + p.h - 3,
+             ops_str, 5.0f, Color::hex(0xA0A0A0), "end");
   }
   svg.end_group();
 
