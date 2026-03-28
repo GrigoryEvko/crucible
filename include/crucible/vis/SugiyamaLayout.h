@@ -300,6 +300,18 @@ struct LayoutParams {
     }
   }
 
+  // Compaction: for each layer, add a weak edge from rightmost to
+  // leftmost node pulling the layout inward. Weight=1 (same as springs).
+  for (uint32_t l = 0; l < num_layers; l++) {
+    if (layers[l].size() >= 2) {
+      uint32_t first = layers[l].front();
+      uint32_t last = layers[l].back();
+      // Edge from last → first with minlen=0: NS will try to minimize
+      // the distance between them (compressing the layer).
+      aux_edges.push_back({last, first, 0, 1});
+    }
+  }
+
   // Solve X positions via network simplex
   auto ns_result = network_simplex(total_n, aux_edges, 200);
   if (ns_result.converged) {
