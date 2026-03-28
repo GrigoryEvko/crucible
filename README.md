@@ -75,7 +75,7 @@ include/crucible/          C++26 headers
   Effects.h                Capability tokens: fx::Alloc, fx::IO, fx::Block (zero-cost authorization)
   Arena.h                  Bump-pointer allocator (~2ns/alloc, 1MB blocks, zero fragmentation)
   TraceRing.h              SPSC ring buffer (64B entries, 2^16 capacity, alignas(64) atomics)
-  MetaLog.h                Parallel SPSC for TensorMeta (144B entries, 2^20 capacity, zero-copy drain)
+  MetaLog.h                Parallel SPSC for TensorMeta (168B entries, 2^20 capacity, zero-copy drain)
   IterationDetector.h      K=5 schema hash signature, two-match confirmation, ~1ns steady state
   BackgroundThread.h       Drains ring, builds TraceGraph, constructs Merkle DAG, computes MemoryPlan
   TraceGraph.h             Bidirectional CSR property graph (DATA_FLOW, ALIAS, CONTROL_FLOW, SCALAR_FLOW)
@@ -97,13 +97,23 @@ include/crucible/          C++26 headers
   ReplayEngine.h           Compiled Tier 1 replay with graduated divergence detection
   CrucibleContext.h        Top-level context: mode transitions, recording/compiled dispatch
   PoolAllocator.h          Single-allocation memory pool (base_ptr + offset, ~2ns/alloc)
+  SchemaTable.h            SchemaHash → op name lookup (sorted array, binary search, 512 cap)
+  TraceLoader.h            Load .crtrace binary traces (auto-detects 144/160/168B TensorMeta)
+
+include/crucible/vis/     Trace visualization (2,428 lines)
+  BlockDetector.h          Scope-based block grouping from Vessel scope_hash recordings
+  NetworkSimplex.h         Minimum-cost rank assignment for DAG layout
+  SugiyamaLayout.h         Layered graph drawing (Kahn's toposort, barycenter, virtual nodes)
+  SvgRenderer.h            Direct SVG emission (rect, text, bezier, interactive JS zoom/pan)
+  TraceVisualizer.h        Grid layout + rendering orchestrator (phase columns, skip edges, legend)
 
 test/                      C++ tests
 lean/Crucible/             Lean 4 formalization (39 modules, 1,331 theorems)
 papers/
   whitepaper/              PDF + src/ LaTeX — system architecture, design, related work
   yellowpaper/             PDF + src/ LaTeX — formal specification (struct layouts, algorithms, proofs)
-vessel/                    PyTorch Vessel adapter
+vessel/                    PyTorch Vessel adapter (TorchDispatchMode + C API)
+bench/                     Benchmarks + render_trace SVG visualization tool
 verify/                    Z3 proof suite scaffolding (enhanced Z3 fork with CaDiCaL)
 misc/                      Manifesto, notes, design documents
 ```
