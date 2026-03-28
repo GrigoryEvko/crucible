@@ -33,8 +33,12 @@ struct LayoutEdge {
 
 struct LayoutNode {
   // Input (caller fills these):
-  float min_width = 60;     // minimum node width (from label length)
-  float min_height = 28;    // minimum node height
+  float lw = 30;             // left half-width (center to left edge)
+  float rw = 30;             // right half-width (center to right edge)
+  float min_height = 28;     // minimum node height
+
+  // Convenience: total width
+  [[nodiscard]] float width() const { return lw + rw; }
 
   // Output (layout fills these):
   float x = 0;              // center x
@@ -166,7 +170,8 @@ struct LayoutParams {
       uint32_t prev = e.src;
       for (int32_t k = 1; k < span; k++) {
         LayoutNode vn{};
-        vn.min_width = 4;     // thin virtual node
+        vn.lw = 2;            // thin virtual node
+        vn.rw = 2;
         vn.min_height = 4;
         vn.layer = src_layer + static_cast<uint32_t>(k);
         nodes.push_back(vn);
@@ -272,15 +277,14 @@ struct LayoutParams {
 
   // Left-right separation constraints within each rank.
   // x(right) - x(left) >= rw(left) + lw(right) + gap
-  // Using half-widths (min_width/2) as lw and rw.
+  // Separation: rw(left) + lw(right) + gap
   for (uint32_t l = 0; l < num_layers; l++) {
     const auto& layer = layers[l];
     for (uint32_t j = 1; j < layer.size(); j++) {
       uint32_t left = layer[j - 1];
       uint32_t right = layer[j];
       int32_t sep = static_cast<int32_t>(
-          nodes[left].min_width / 2 + nodes[right].min_width / 2
-          + params.node_h_gap);
+          nodes[left].rw + nodes[right].lw + params.node_h_gap);
       aux_edges.push_back({left, right, sep, 0});  // hard constraint, no spring
     }
   }
@@ -301,11 +305,11 @@ struct LayoutParams {
   if (ns_result.converged) {
     for (uint32_t i = 0; i < total_n; i++) {
       nodes[i].x = params.padding +
-          static_cast<float>(ns_result.rank[i]) + nodes[i].min_width / 2;
+          static_cast<float>(ns_result.rank[i]) + nodes[i].lw;
     }
     float max_x = 0;
     for (uint32_t i = 0; i < total_n; i++)
-      max_x = std::max(max_x, nodes[i].x + nodes[i].min_width / 2);
+      max_x = std::max(max_x, nodes[i].x + nodes[i].rw);
     total_width = max_x + params.padding;
   } else {
     // NS didn't converge — fall through to naive placement
@@ -318,7 +322,7 @@ struct LayoutParams {
     for (uint32_t l = 0; l < num_layers; l++) {
       float w = 0;
       for (uint32_t idx : layers[l])
-        w += nodes[idx].min_width;
+        w += nodes[idx].width();
       if (!layers[l].empty())
         w += params.node_h_gap * static_cast<float>(layers[l].size() - 1);
       layer_widths[l] = w;
@@ -329,8 +333,8 @@ struct LayoutParams {
       float offset = params.padding + (max_layer_width - layer_widths[l]) / 2;
       float x = offset;
       for (uint32_t idx : layers[l]) {
-        nodes[idx].x = x + nodes[idx].min_width / 2;
-        x += nodes[idx].min_width + params.node_h_gap;
+        nodes[idx].x = x + nodes[idx].lw;
+        x += nodes[idx].width() + params.node_h_gap;
       }
     }
   }
@@ -401,9 +405,9 @@ struct LayoutParams {
       for (uint32_t j = 1; j < layer.size(); j++) {
         uint32_t prev = layer[j - 1];
         uint32_t curr = layer[j];
-        float min_x = nodes[prev].x + nodes[prev].min_width / 2
+        float min_x = nodes[prev].x + nodes[prev].rw
                      + params.node_h_gap
-                     + nodes[curr].min_width / 2;
+                     + nodes[curr].lw;
         if (nodes[curr].x < min_x)
           nodes[curr].x = min_x;
       }
@@ -417,7 +421,7 @@ struct LayoutParams {
   float actual_max_x = 0;
   for (uint32_t i = 0; i < total_n; i++)
     actual_max_x = std::max(actual_max_x,
-        nodes[i].x + nodes[i].min_width / 2);
+        nodes[i].x + nodes[i].rw);
   total_width = actual_max_x + params.padding;
 
   // Strip virtual nodes from output (caller only needs original nodes)
