@@ -221,14 +221,25 @@ struct LayoutParams {
 
   // ── Phase 3: Crossing minimization (barycenter, 8 sweeps) ───────
 
-  auto barycenter = [&](uint32_t node_id, bool use_pred) -> float {
+  // Weighted median: more robust than barycenter (mean) for crossing
+  // minimization. Returns median of adjacent nodes' positions.
+  auto weighted_median = [&](uint32_t node_id, bool use_pred) -> float {
     const auto& adj = use_pred ? rev[node_id] : fwd[node_id];
     if (adj.empty())
       return static_cast<float>(nodes[node_id].order);
-    float sum = 0;
+    if (adj.size() == 1)
+      return static_cast<float>(nodes[adj[0]].order);
+    // Collect positions and sort
+    std::vector<float> positions;
+    positions.reserve(adj.size());
     for (uint32_t a : adj)
-      sum += static_cast<float>(nodes[a].order);
-    return sum / static_cast<float>(adj.size());
+      positions.push_back(static_cast<float>(nodes[a].order));
+    std::ranges::sort(positions);
+    // Return median
+    size_t mid = positions.size() / 2;
+    if (positions.size() % 2 == 0)
+      return (positions[mid - 1] + positions[mid]) / 2;
+    return positions[mid];
   };
 
   constexpr uint32_t MAX_SWEEPS = 8;
@@ -237,7 +248,7 @@ struct LayoutParams {
     for (uint32_t l = 1; l < num_layers; l++) {
       auto& layer = layers[l];
       std::ranges::sort(layer, [&](uint32_t a, uint32_t b) {
-        return barycenter(a, true) < barycenter(b, true);
+        return weighted_median(a, true) < weighted_median(b, true);
       });
       for (uint32_t pos = 0; pos < layer.size(); pos++)
         nodes[layer[pos]].order = pos;
@@ -247,7 +258,7 @@ struct LayoutParams {
     for (uint32_t l = num_layers - 1; l > 0; l--) {
       auto& layer = layers[l - 1];
       std::ranges::sort(layer, [&](uint32_t a, uint32_t b) {
-        return barycenter(a, false) < barycenter(b, false);
+        return weighted_median(a, false) < weighted_median(b, false);
       });
       for (uint32_t pos = 0; pos < layer.size(); pos++)
         nodes[layer[pos]].order = pos;
