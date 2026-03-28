@@ -53,29 +53,16 @@ struct NodeColors {
 
 [[nodiscard]] inline NodeColors colors_for_block(BlockKind k) {
   switch (k) {
-    case BlockKind::RESBLOCK: case BlockKind::RESBLOCK_BWD:
-      return {palette::BLOCK_RESBLOCK, Color::hex(0x065F46)};
-    case BlockKind::SELF_ATTN: case BlockKind::SELF_ATTN_BWD:
-    case BlockKind::CROSS_ATTN: case BlockKind::CROSS_ATTN_BWD:
-    case BlockKind::TRANSFORMER: case BlockKind::TRANSFORMER_BWD:
-    case BlockKind::ATTN_BWD:
-      return {palette::BLOCK_ATTN, Color::hex(0x92400E)};
-    case BlockKind::MLP: case BlockKind::MLP_BWD:
+    case BlockKind::MODULE:
       return {palette::BLOCK_MLP, Color::hex(0x1E40AF)};
-    case BlockKind::CONV: case BlockKind::CONV_BWD:
-    case BlockKind::CONV_BLOCK: case BlockKind::CONV_BLOCK_BWD:
-    case BlockKind::DOWNSAMPLE: case BlockKind::DOWNSAMPLE_BWD:
-    case BlockKind::UPSAMPLE: case BlockKind::UPSAMPLE_BWD:
-      return {palette::BLOCK_CONV, Color::hex(0x0C4A6E)};
-    case BlockKind::LOSS: case BlockKind::LOSS_BWD:
-      return {palette::BLOCK_LOSS, Color::hex(0xBE123C)};
+    case BlockKind::MODULE_BWD:
+      return {palette::BLOCK_BWD_MLP, Color::hex(0x1E40AF)};
     case BlockKind::OPTIMIZER: case BlockKind::EPILOGUE:
       return {palette::BLOCK_OPTIM, Color::hex(0x9D174D)};
-    case BlockKind::TIME_EMBED: case BlockKind::TIME_EMBED_BWD:
-      return {palette::BLOCK_GENERIC, Color::hex(0x374151)};
-    default:
+    case BlockKind::ROOT:
       return {palette::BLOCK_GENERIC, Color::hex(0x6B7280)};
   }
+  return {palette::BLOCK_GENERIC, Color::hex(0x6B7280)};
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -460,9 +447,8 @@ inline void render_skip_edges(
       if (count >= 8) break;
       if (blocks[e.src_block].phase != Phase::FORWARD) continue;
       if (blocks[e.dst_block].phase != Phase::BACKWARD) continue;
-      auto sk = blocks[e.src_block].kind;
-      if (sk != BlockKind::SELF_ATTN && sk != BlockKind::RESBLOCK &&
-          sk != BlockKind::LOSS) continue;
+      // Only draw from forward MODULE blocks (not ROOT/EPILOGUE)
+      if (blocks[e.src_block].kind != BlockKind::MODULE) continue;
       if (!drawn.insert(e.src_block).second) continue;
       svg.orthogonal_edge(
           pos[e.src_block].x + pos[e.src_block].w + 2,
@@ -477,11 +463,7 @@ inline void render_skip_edges(
     std::unordered_set<uint32_t> drawn;
     for (const auto& e : block_edges) {
       if (pos[e.src_block].col != 0 || pos[e.dst_block].col != 1) continue;
-      auto sk = blocks[e.src_block].kind;
-      if (sk != BlockKind::SELF_ATTN && sk != BlockKind::CROSS_ATTN &&
-          sk != BlockKind::MLP && sk != BlockKind::RESBLOCK &&
-          sk != BlockKind::CONV_BLOCK && sk != BlockKind::LOSS &&
-          sk != BlockKind::TRANSFORMER) continue;
+      if (blocks[e.src_block].kind != BlockKind::MODULE) continue;
       if (!drawn.insert(e.src_block).second) continue;
       svg.orthogonal_edge(
           pos[e.src_block].x + pos[e.src_block].w + 2,
@@ -612,12 +594,9 @@ inline void render_legend(SvgRenderer& svg, float lx, float ly) {
 
   struct Entry { const char* label; Color fill; Color border; };
   Entry entries[] = {
-    {"ResBlock",  palette::BLOCK_RESBLOCK, Color::hex(0x065F46)},
-    {"Attention", palette::BLOCK_ATTN,     Color::hex(0x92400E)},
-    {"MLP",       palette::BLOCK_MLP,      Color::hex(0x1E40AF)},
-    {"Conv",      palette::BLOCK_CONV,     Color::hex(0x0C4A6E)},
-    {"Loss",      palette::BLOCK_LOSS,     Color::hex(0xBE123C)},
-    {"Optimizer", palette::BLOCK_OPTIM,    Color::hex(0x9D174D)},
+    {"Module (fwd)", palette::BLOCK_MLP,      Color::hex(0x1E40AF)},
+    {"Module (bwd)", palette::BLOCK_BWD_MLP,  Color::hex(0x1E40AF)},
+    {"Optimizer",    palette::BLOCK_OPTIM,    Color::hex(0x9D174D)},
   };
   for (const auto& e : entries) {
     svg.rect(lx, ly - 7, 12, 10, e.fill, e.border, 2, 0.5f);
