@@ -1,16 +1,19 @@
 // render_trace: visualize .crtrace files as SVG.
 //
 // Usage:
-//   render_trace <trace.crtrace> [-o output.svg] [--blocks-only]
+//   render_trace <trace.crtrace> [-o output.svg] [--depth N]
 //
-// Modes:
-//   --blocks-only  Block-level view (default): colored rectangles with labels,
-//                  phase columns, skip connections, cluster borders, legend.
-//   (default)      Full view: ops inside blocks + inter-block edges.
+// Options:
+//   -o FILE      Output SVG file (default: <trace>.svg)
+//   --depth N    Scope grouping depth (default: 4).
+//                  3 = one block per transformer layer
+//                  4 = attention/mlp/norm separated
+//                  5 = individual submodules (query/key/value)
 //
-// Output: SVG file (default: <trace_name>.svg in current directory).
+// Open the .svg in a browser for zoom/pan and hover tooltips.
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <fstream>
 
@@ -19,20 +22,27 @@
 int main(int argc, char** argv) {
   if (argc < 2) {
     std::fprintf(stderr,
-        "Usage: %s <trace.crtrace> [-o output.svg] [--blocks-only]\n",
+        "Usage: %s <trace.crtrace> [-o output.svg] [--depth N]\n"
+        "\n"
+        "Options:\n"
+        "  -o FILE      Output SVG file (default: <trace>.svg)\n"
+        "  --depth N    Scope grouping depth (default: 4)\n"
+        "                 3 = one block per transformer layer\n"
+        "                 4 = attention/mlp/norm separated\n"
+        "                 5 = individual submodules\n",
         argv[0]);
     return 1;
   }
 
   const char* trace_path = argv[1];
   const char* output_path = nullptr;
-  bool blocks_only = false;
+  uint32_t scope_depth = 4;
 
   for (int i = 2; i < argc; i++) {
     if (std::strcmp(argv[i], "-o") == 0 && i + 1 < argc)
       output_path = argv[++i];
-    else if (std::strcmp(argv[i], "--blocks-only") == 0)
-      blocks_only = true;
+    else if (std::strcmp(argv[i], "--depth") == 0 && i + 1 < argc)
+      scope_depth = static_cast<uint32_t>(std::atoi(argv[++i]));
   }
 
   // Default output: same stem with .svg extension
@@ -53,10 +63,10 @@ int main(int argc, char** argv) {
   std::fprintf(stderr, "  %u ops, %u metas\n",
                trace->num_ops, trace->num_metas);
 
-  // Build ops and detect blocks
-  std::fprintf(stderr, "Detecting blocks...\n");
+  // Detect blocks at configured scope depth
+  std::fprintf(stderr, "Detecting blocks (depth=%u)...\n", scope_depth);
   auto ops = crucible::vis::build_ops(*trace);
-  auto detection = crucible::vis::detect_blocks(*trace);
+  auto detection = crucible::vis::detect_blocks(*trace, scope_depth);
   std::fprintf(stderr, "  %zu blocks (%s)\n",
                detection.blocks.size(),
                detection.architecture == crucible::vis::Architecture::UNET
@@ -70,11 +80,7 @@ int main(int argc, char** argv) {
   auto slash = title.rfind('/');
   if (slash != std::string::npos) title = title.substr(slash + 1);
 
-  std::string svg;
-  if (blocks_only)
-    svg = crucible::vis::render_block_svg(detection, ops, title);
-  else
-    svg = crucible::vis::render_full_svg(detection, ops, title);
+  auto svg = crucible::vis::render_block_svg(detection, ops, title);
 
   // Write output
   std::ofstream out(output_path);
