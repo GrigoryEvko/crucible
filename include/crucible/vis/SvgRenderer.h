@@ -118,9 +118,9 @@ class SvgRenderer {
             "markerWidth=\"8\" markerHeight=\"6\" orient=\"auto-start-reverse\">\n";
     buf_ += "    <path d=\"M0,0 L10,3 L0,6 z\" fill=\"#F97316\"/>\n";
     buf_ += "  </marker>\n";
-    buf_ += "  <filter id=\"shadow\" x=\"-2%\" y=\"-2%\" width=\"104%\" height=\"104%\">\n";
-    buf_ += "    <feDropShadow dx=\"0.5\" dy=\"0.5\" stdDeviation=\"1\" "
-            "flood-opacity=\"0.1\"/>\n";
+    buf_ += "  <filter id=\"shadow\" x=\"-4%\" y=\"-4%\" width=\"108%\" height=\"112%\">\n";
+    buf_ += "    <feDropShadow dx=\"0.8\" dy=\"1.2\" stdDeviation=\"1.5\" "
+            "flood-opacity=\"0.12\"/>\n";
     buf_ += "  </filter>\n";
     buf_ += "</defs>\n";
 
