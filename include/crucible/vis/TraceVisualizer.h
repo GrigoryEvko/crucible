@@ -430,6 +430,12 @@ inline void render_skip_edges(
         float mx = (x1 + x2) / 2;
         svg.bezier_arrow(x1, y1, mx, y1, mx, y2, x2, y2,
                           palette::EDGE_SKIP, 0.6f, true);
+        // Shape label at midpoint
+        if (!blocks[a].out_shape.empty()) {
+          float label_y = (y1 + y2) / 2 - 2;
+          svg.text_mono(mx, label_y, blocks[a].out_shape, 5.0f,
+                        Color::hex(0xB0B0B0));
+        }
       }
     };
     std::vector<uint32_t> fwd_phase, bwd_phase;
