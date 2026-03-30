@@ -64,11 +64,12 @@ def main():
                   f"bg_iters={ctx.bg_iterations()} compiled={ctx.is_compiled()}")
 
         ok = ctx.export_trace(out_path)
+        num_ops = ctx.active_num_ops()
 
     if ok:
         import os
         sz = os.path.getsize(out_path)
-        print(f"\n  {out_path}: {sz:,} bytes, {ctx.active_num_ops()} ops")
+        print(f"\n  {out_path}: {sz:,} bytes, {num_ops} ops")
     print("=" * 60)
 
 
