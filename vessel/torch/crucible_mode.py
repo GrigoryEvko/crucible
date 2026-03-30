@@ -1,20 +1,29 @@
-"""Crucible TorchDispatchMode — intercepts ATen ops and feeds them to Vigil.
+"""Crucible TorchDispatchMode — MVP PROOF-OF-CONCEPT. COMPLETE BULLSHIT.
+
+WARNING: This is a throwaway prototype. It uses TorchDispatchMode (Python-level
+dispatch) instead of the real C++ DispatchKey::Crucible. Known problems:
+
+  - TorchDispatchMode sees backward ATen ops BUT the scope_hash is stale
+    (forward pre-hooks don't fire during autograd). Backward ops inherit
+    whatever scope was active when the last forward pre-hook fired.
+  - No autograd hooks at all — we don't track which backward op corresponds
+    to which forward op. The grad_fn_hash field exists but is never correlated.
+  - In-place ops and views share data_ptr, producing wrong edges downstream.
+  - Python dispatch overhead is ~10μs/op. Real Crucible is ~5ns/op via C++.
+  - No compiled mode, no shadow handles, no replay — just recording.
+  - Scalar extraction is best-effort and misses many kwargs.
+  - The .crtrace export format has the scope_hash in the callsite slot (hack).
+
+The REAL implementation uses DispatchKey::Crucible in c10 (see patches/).
+This file exists ONLY for recording traces to feed the visualization pipeline.
 
 Usage:
     from crucible_mode import CrucibleMode
 
-    model = torch.nn.Linear(4, 8)
-    x = torch.randn(2, 4)
-
-    with CrucibleMode() as mode:
-        for i in range(10):
-            y = model(x)
-            print(f"iter {i}: compiled={mode.is_compiled()}")
-
-    # Export one iteration's trace for C++ benchmarking:
     with CrucibleMode(record_trace=True) as mode:
-        train_step(model, x)       # iteration 1 — recorded
-        mode.export_trace("vit_b.crtrace")
+        mode.track_modules(model)
+        train_step(model, x)
+        mode.export_trace("trace.crtrace")
 """
 
 import ctypes

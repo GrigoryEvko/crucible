@@ -1,41 +1,9 @@
-diff --git a/c10/core/CrucibleState.cpp b/c10/core/CrucibleState.cpp
-new file mode 100644
-index 00000000000..98b176681ac
---- /dev/null
-+++ b/c10/core/CrucibleState.cpp
-@@ -0,0 +1,26 @@
-+#include <c10/core/CrucibleState.h>
-+
-+namespace c10 {
-+
-+namespace {
-+thread_local CrucibleState crucible_state_tls;
-+} // namespace
-+
-+CrucibleState& CrucibleState::get_tls_state() {
-+  return crucible_state_tls;
-+}
-+
-+void CrucibleState::set_tls_state(CrucibleState state) {
-+  crucible_state_tls = state;
-+}
-+
-+CrucibleModeGuard::CrucibleModeGuard(CrucibleMode mode)
-+    : prev_(CrucibleState::get_tls_state()) {
-+  CrucibleState::get_tls_state().set_mode(mode);
-+}
-+
-+CrucibleModeGuard::~CrucibleModeGuard() {
-+  CrucibleState::set_tls_state(prev_);
-+}
-+
-+} // namespace c10
 diff --git a/c10/core/CrucibleState.h b/c10/core/CrucibleState.h
 new file mode 100644
-index 00000000000..5678a404e60
+index 00000000000..23d27c1939a
 --- /dev/null
 +++ b/c10/core/CrucibleState.h
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,104 @@
 +#pragma once
 +
 +#include <c10/macros/Export.h>
@@ -105,10 +73,21 @@ index 00000000000..5678a404e60
 +    return op_index_++;
 +  }
 +
++  // Scope hash: FNV-1a of the current nn.Module path (e.g. "layer1.conv1").
++  // Set by Python forward_pre_hooks via crucible_dispatch_set_tls_scope(),
++  // read by the C++ fallback kernel per-op. Zero when no module scope active.
++  [[nodiscard]] uint64_t scope_hash() const {
++    return scope_hash_;
++  }
++  void set_scope_hash(uint64_t h) {
++    scope_hash_ = h;
++  }
++
 + private:
 +  CrucibleMode mode_ = CrucibleMode::INACTIVE;
 +  void* context_ = nullptr;
 +  uint32_t op_index_ = 0;
++  uint64_t scope_hash_ = 0;
 +};
 +
 +// RAII guard that saves/restores the full CrucibleState on the
@@ -127,6 +106,38 @@ index 00000000000..5678a404e60
 + private:
 +  CrucibleState prev_;
 +};
++
++} // namespace c10
+diff --git a/c10/core/CrucibleState.cpp b/c10/core/CrucibleState.cpp
+new file mode 100644
+index 00000000000..98b176681ac
+--- /dev/null
++++ b/c10/core/CrucibleState.cpp
+@@ -0,0 +1,26 @@
++#include <c10/core/CrucibleState.h>
++
++namespace c10 {
++
++namespace {
++thread_local CrucibleState crucible_state_tls;
++} // namespace
++
++CrucibleState& CrucibleState::get_tls_state() {
++  return crucible_state_tls;
++}
++
++void CrucibleState::set_tls_state(CrucibleState state) {
++  crucible_state_tls = state;
++}
++
++CrucibleModeGuard::CrucibleModeGuard(CrucibleMode mode)
++    : prev_(CrucibleState::get_tls_state()) {
++  CrucibleState::get_tls_state().set_mode(mode);
++}
++
++CrucibleModeGuard::~CrucibleModeGuard() {
++  CrucibleState::set_tls_state(prev_);
++}
 +
 +} // namespace c10
 diff --git a/c10/core/DispatchKey.cpp b/c10/core/DispatchKey.cpp

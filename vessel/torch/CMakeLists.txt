@@ -1,18 +1,31 @@
 add_library(crucible_vessel SHARED vessel_api.cpp)
 target_link_libraries(crucible_vessel PRIVATE crucible)
 
-# For Clang + libc++: embed rpath so Python/ctypes finds libc++.so.1.
-# Derive the lib directory from the compiler location.
-if(CMAKE_CXX_COMPILER MATCHES "llvm")
-    get_filename_component(_COMPILER_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
-    get_filename_component(_LLVM_ROOT "${_COMPILER_DIR}" DIRECTORY)
-    set(_LLVM_LIB "${_LLVM_ROOT}/lib/x86_64-unknown-linux-gnu")
-    if(EXISTS "${_LLVM_LIB}/libc++.so")
-        target_link_directories(crucible_vessel PRIVATE "${_LLVM_LIB}")
-        target_link_libraries(crucible_vessel PRIVATE c++abi)
-        set_target_properties(crucible_vessel PROPERTIES
-            BUILD_RPATH "${_LLVM_LIB}"
-        )
+# ── ABI compatibility with crucible_dispatch ─────────────────────────
+#
+# When TORCH_DIR is set, both libraries must use the same stdlib ABI.
+# crucible_dispatch uses libstdc++ (for PyTorch ABI compat).  If vessel
+# uses libc++ (from the Clang preset), the Vigil object layout would
+# differ — Vigil is header-only and compiled into BOTH .so files.
+# Accessing a libc++ Vigil through libstdc++ headers = instant segfault.
+#
+# When TORCH_DIR is NOT set, vessel can use whatever the preset says.
+if(TORCH_DIR AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(crucible_vessel PRIVATE -stdlib=libstdc++)
+    target_link_options(crucible_vessel PRIVATE -stdlib=libstdc++)
+else()
+    # Original libc++ rpath for standalone usage.
+    if(CMAKE_CXX_COMPILER MATCHES "llvm")
+        get_filename_component(_COMPILER_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        get_filename_component(_LLVM_ROOT "${_COMPILER_DIR}" DIRECTORY)
+        set(_LLVM_LIB "${_LLVM_ROOT}/lib/x86_64-unknown-linux-gnu")
+        if(EXISTS "${_LLVM_LIB}/libc++.so")
+            target_link_directories(crucible_vessel PRIVATE "${_LLVM_LIB}")
+            target_link_libraries(crucible_vessel PRIVATE c++abi)
+            set_target_properties(crucible_vessel PROPERTIES
+                BUILD_RPATH "${_LLVM_LIB}"
+            )
+        endif()
     endif()
 endif()
 
