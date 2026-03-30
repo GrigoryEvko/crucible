@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Record SD 1.5 UNet training trace → .crtrace binary for C++ benchmarking.
+"""Record SD 1.5 UNet training trace via native C++ dispatch.
 
-Runs 2 training iterations through Crucible, exports the second iteration
-(steady-state, no warmup artifacts) as a binary trace file.
+Uses DispatchKey::Crucible to intercept ALL ATen ops (forward, backward,
+optimizer) at ~100ns/op.  SD 1.5 UNet: ~860M params, cross-attention,
+U-shaped encoder/decoder with skip connections.
 
-SD 1.5 UNet: ~860M params, takes (latent, timestep, text_embed) inputs.
+Output: traces/sd15_unet.crtrace
 
 Usage:
-    python record_sd15_unet.py [output_path]
+    PYTHONPATH=~/Downloads/pytorch python record_sd15_unet.py
 """
 
 import sys
@@ -15,20 +16,18 @@ import time
 
 import torch
 
-from crucible_mode import CrucibleMode
+from crucible_native import CrucibleNative
 
 
 def main():
-    out_path = sys.argv[1] if len(sys.argv) > 1 else "sd15_unet.crtrace"
+    out_path = sys.argv[1] if len(sys.argv) > 1 else "../../traces/sd15_unet.crtrace"
 
     print("=" * 60)
-    print("Crucible Vessel — SD 1.5 UNet Trace Export")
+    print("Crucible Vessel — SD 1.5 UNet (native C++ dispatch)")
     print("=" * 60)
-    print(f"PyTorch: {torch.__version__}")
 
     from diffusers import UNet2DConditionModel
 
-    # SD 1.5 UNet config (exact match to runwayml/stable-diffusion-v1-5)
     model = UNet2DConditionModel(
         sample_size=64,
         in_channels=4,
@@ -66,47 +65,32 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
     torch.manual_seed(42)
 
-    # Synthetic inputs matching SD 1.5 latent space
     batch = 2
     latents = torch.randn(batch, 4, 64, 64)
     timesteps = torch.randint(0, 1000, (batch,))
-    encoder_hidden_states = torch.randn(batch, 77, 768)  # CLIP text embeddings
-    # Target: predict noise (same shape as latents)
+    encoder_hidden_states = torch.randn(batch, 77, 768)
     target_noise = torch.randn_like(latents)
 
-    with CrucibleMode(record_trace=True) as mode:
-        mode.track_modules(model)
-        # Iter 0: warmup (optimizer state init)
-        print("\n  iter 0: warmup...")
-        t0 = time.perf_counter()
-        optimizer.zero_grad()
-        pred = model(latents, timesteps, encoder_hidden_states).sample
-        loss = torch.nn.functional.mse_loss(pred, target_noise)
-        loss.backward()
-        optimizer.step()
-        print(f"    {mode._op_count} ops, loss={loss.item():.4f}, "
-              f"{1000*(time.perf_counter()-t0):.0f}ms")
+    with CrucibleNative(verbose=True) as ctx:
+        ctx.track_modules(model)
 
-        # Clear warmup trace, record only iter 1 (steady-state)
-        mode.clear_trace()
+        for i in range(4):
+            t0 = time.perf_counter()
+            optimizer.zero_grad()
+            pred = model(latents, timesteps, encoder_hidden_states).sample
+            loss = torch.nn.functional.mse_loss(pred, target_noise)
+            loss.backward()
+            optimizer.step()
+            dt = (time.perf_counter() - t0) * 1000
+            print(f"  iter {i}: loss={loss.item():.4f} ({dt:.1f}ms) "
+                  f"bg_iters={ctx.bg_iterations()} compiled={ctx.is_compiled()}")
 
-        print("  iter 1: recording...")
-        t0 = time.perf_counter()
-        optimizer.zero_grad()
-        pred = model(latents, timesteps, encoder_hidden_states).sample
-        loss = torch.nn.functional.mse_loss(pred, target_noise)
-        loss.backward()
-        optimizer.step()
-        print(f"    loss={loss.item():.4f}, "
-              f"{1000*(time.perf_counter()-t0):.0f}ms")
+        ok = ctx.export_trace(out_path)
 
-        mode.export_trace(out_path)
-
-    print(f"\n  Recorded ops:  {len(mode._trace_ops)}")
-    print(f"  Recorded metas: {len(mode._trace_metas) // 144}")
-    print()
-    print("=" * 60)
-    print("Done.")
+    if ok:
+        import os
+        sz = os.path.getsize(out_path)
+        print(f"\n  {out_path}: {sz:,} bytes, {ctx.active_num_ops()} ops")
     print("=" * 60)
 
 

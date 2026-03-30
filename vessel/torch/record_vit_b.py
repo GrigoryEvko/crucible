@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Record ViT-B/16 training trace → .crtrace binary for C++ benchmarking.
+"""Record ViT-B/16 training trace via native C++ dispatch.
 
-Runs 2 training iterations through Crucible, exports the second iteration
-(steady-state, no warmup artifacts) as a binary trace file.
+Uses DispatchKey::Crucible to intercept ALL ATen ops (forward, backward,
+optimizer) at ~100ns/op.  ViT-B/16: 12 layers, d=768, 12 heads, ~86M params.
+
+Output: traces/vit_b.crtrace
 
 Usage:
-    python record_vit_b.py [output_path]
+    PYTHONPATH=~/Downloads/pytorch python record_vit_b.py
 """
 
 import sys
@@ -13,16 +15,15 @@ import time
 
 import torch
 
-from crucible_mode import CrucibleMode
+from crucible_native import CrucibleNative
 
 
 def main():
-    out_path = sys.argv[1] if len(sys.argv) > 1 else "vit_b.crtrace"
+    out_path = sys.argv[1] if len(sys.argv) > 1 else "../../traces/vit_b.crtrace"
 
     print("=" * 60)
-    print("Crucible Vessel — ViT-B/16 Trace Export")
+    print("Crucible Vessel — ViT-B/16 (native C++ dispatch)")
     print("=" * 60)
-    print(f"PyTorch: {torch.__version__}")
 
     from transformers import ViTForImageClassification, ViTConfig
 
@@ -49,38 +50,25 @@ def main():
     images = torch.randn(2, 3, 224, 224)
     labels = torch.randint(0, 1000, (2,))
 
-    with CrucibleMode(record_trace=True) as mode:
-        mode.track_modules(model)
-        # Iter 1: warmup (optimizer state init, different op count)
-        print("\n  iter 0: warmup...")
-        t0 = time.perf_counter()
-        optimizer.zero_grad()
-        out = model(images, labels=labels)
-        out.loss.backward()
-        optimizer.step()
-        print(f"    {mode._op_count} ops, loss={out.loss.item():.4f}, "
-              f"{1000*(time.perf_counter()-t0):.0f}ms")
+    with CrucibleNative(verbose=True) as ctx:
+        ctx.track_modules(model)
 
-        # Clear warmup trace, record only iter 2 (steady-state)
-        mode.clear_trace()
+        for i in range(4):
+            t0 = time.perf_counter()
+            optimizer.zero_grad()
+            out = model(images, labels=labels)
+            out.loss.backward()
+            optimizer.step()
+            dt = (time.perf_counter() - t0) * 1000
+            print(f"  iter {i}: loss={out.loss.item():.4f} ({dt:.1f}ms) "
+                  f"bg_iters={ctx.bg_iterations()} compiled={ctx.is_compiled()}")
 
-        print("  iter 1: recording...")
-        t0 = time.perf_counter()
-        optimizer.zero_grad()
-        out = model(images, labels=labels)
-        out.loss.backward()
-        optimizer.step()
-        ops_iter2 = mode._op_count  # total across both iters
-        print(f"    loss={out.loss.item():.4f}, "
-              f"{1000*(time.perf_counter()-t0):.0f}ms")
+        ok = ctx.export_trace(out_path)
 
-        mode.export_trace(out_path)
-
-    print(f"\n  Recorded ops:  {len(mode._trace_ops)}")
-    print(f"  Recorded metas: {len(mode._trace_metas) // 144}")
-    print()
-    print("=" * 60)
-    print("Done.")
+    if ok:
+        import os
+        sz = os.path.getsize(out_path)
+        print(f"\n  {out_path}: {sz:,} bytes, {ctx.active_num_ops()} ops")
     print("=" * 60)
 
 

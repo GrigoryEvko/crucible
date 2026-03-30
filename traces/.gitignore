@@ -1,0 +1,5 @@
+# Trace artifacts — recorded by vessel/torch/record_*.py
+# Binary traces and JSON exports are large and machine-specific.
+# Re-record with: cd vessel/torch && PYTHONPATH=~/Downloads/pytorch python record_*.py
+*.crtrace
+*.json

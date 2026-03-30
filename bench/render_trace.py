@@ -2,9 +2,9 @@
 """Render a .crtrace binary as a dataflow graph via Graphviz.
 
 Usage:
-    python3 render_trace.py vit_b.crtrace -o vit_b.pdf
-    python3 render_trace.py sd15_unet.crtrace -o sd15_unet.svg --max-ops 300
-    python3 render_trace.py vit_b.crtrace --dot  # print DOT to stdout
+    python3 render_trace.py ../traces/resnet18.crtrace -o resnet18.pdf
+    python3 render_trace.py ../traces/sd15_unet.crtrace -o sd15.svg --max-ops 300
+    python3 render_trace.py ../traces/vit_b.crtrace --dot  # print DOT to stdout
 """
 
 import argparse
@@ -80,7 +80,6 @@ FAMILY_COLORS = {
 # ── .crtrace parser ────────────────────────────────────────────────────
 
 OP_SIZE = 80
-META_SIZE = 144
 
 def load_trace(path):
     with open(path, "rb") as f:
@@ -103,7 +102,23 @@ def load_trace(path):
         })
         off += OP_SIZE
 
-    # Parse metas
+    # Auto-detect meta record size: 144B (legacy), 160B (v2), 168B (current).
+    # Same logic as C++ TraceLoader.h.
+    meta_start = off
+    remaining = len(data) - meta_start
+    if num_metas > 0:
+        for candidate in (168, 160, 144):
+            if remaining >= num_metas * candidate:
+                meta_size = candidate
+                break
+        else:
+            meta_size = 144
+    else:
+        meta_size = 168
+    print(f"  meta record size: {meta_size}B", file=sys.stderr)
+
+    # Parse metas — field offsets are the same across all sizes,
+    # the difference is trailing fields added in v2/v3.
     metas = []
     for i in range(num_metas):
         sizes = struct.unpack_from("<8q", data, off)
@@ -114,7 +129,7 @@ def load_trace(path):
             "sizes": sizes[:min(ndim, 8)], "data_ptr": ptr,
             "ndim": ndim, "dtype": dtype,
         })
-        off += META_SIZE
+        off += meta_size
 
     # Parse optional schema name table
     names = dict(BUILTIN_HASH_TABLE)  # start with builtins
@@ -244,15 +259,323 @@ def render_dot(ops, metas, edges, names, max_ops=None, title="Trace"):
     return "\n".join(lines)
 
 
+def enrich_ops(ops, metas, edges, names, max_ops=None):
+    """Build enriched node list with resolved scope paths."""
+    if max_ops and len(ops) > max_ops:
+        ops = ops[:max_ops]
+        op_set = {o["idx"] for o in ops}
+        edges = [(s, d) for s, d in edges if s in op_set and d in op_set]
+
+    meta_cursor = 0
+    nodes = []
+    for op in ops:
+        idx = op["idx"]
+        n_in, n_out = op["n_in"], op["n_out"]
+        full = names.get(op["schema"])
+        sn = short_name(full)
+        family = classify_op(full) if full else "unknown"
+        fill, border = FAMILY_COLORS.get(family, FAMILY_COLORS["unknown"])
+
+        # Resolve scope path from names table (scope hashes stored there too)
+        scope_path = names.get(op.get("scope", 0), "")
+        # Filter out non-module-path names (ATen op names contain ::)
+        if "::" in scope_path:
+            scope_path = ""
+
+        # Output shape
+        out_start = meta_cursor + n_in
+        shp = ""
+        if n_out > 0 and out_start < len(metas):
+            shp = shape_str(metas[out_start]["sizes"])
+
+        nodes.append({
+            "id": idx,
+            "name": sn or f"0x{op['schema']:04x}",
+            "family": family,
+            "fill": fill,
+            "border": border,
+            "shape": shp,
+            "scope": scope_path,
+            "n_in": n_in,
+            "n_out": n_out,
+            "grad": op.get("grad", 0),
+        })
+        meta_cursor += n_in + n_out
+
+    return nodes, edges
+
+
+def export_json(ops, metas, edges, names, max_ops=None):
+    """Export raw JSON (no layout)."""
+    import json
+    nodes, edges = enrich_ops(ops, metas, edges, names, max_ops)
+    return json.dumps({
+        "nodes": nodes,
+        "edges": [{"src": s, "dst": d} for s, d in edges],
+    }, separators=(",", ":"))
+
+
+def export_viewer_json(ops, metas, edges, names, max_ops=None, title="Trace"):
+    """Generate clustered DOT, run dot -Tjson0, emit positioned JSON."""
+    import json
+    import subprocess
+
+    nodes, edges = enrich_ops(ops, metas, edges, names, max_ops)
+
+    # Build scope tree: scope_path → [node indices]
+    scope_children = defaultdict(list)
+    for i, nd in enumerate(nodes):
+        scope_children[nd["scope"]].append(i)
+
+    # Collect all unique scope prefixes for nested clusters
+    all_scopes = set()
+    for nd in nodes:
+        if not nd["scope"]:
+            continue
+        parts = nd["scope"].split(".")
+        for depth in range(1, len(parts) + 1):
+            all_scopes.add(".".join(parts[:depth]))
+
+    # Sort scopes by depth (deepest first for DOT nesting)
+    sorted_scopes = sorted(all_scopes, key=lambda s: s.count("."), reverse=True)
+
+    # Map scope → parent scope
+    scope_parent = {}
+    for s in sorted_scopes:
+        if "." in s:
+            scope_parent[s] = s.rsplit(".", 1)[0]
+        else:
+            scope_parent[s] = ""
+
+    # Build DOT with nested subgraph clusters
+    # DOT cluster names: sanitize dots to underscores
+    def cluster_id(scope):
+        return "cluster_" + scope.replace(".", "__")
+
+    def scope_label(scope):
+        return scope.rsplit(".", 1)[-1] if "." in scope else scope
+
+    # Recursive DOT emission
+    def emit_cluster(scope, indent=2):
+        lines = []
+        prefix = " " * indent
+        cid = cluster_id(scope)
+        lab = scope_label(scope)
+
+        # Soft cluster colors by depth
+        depth = scope.count(".") + 1
+        bg_colors = ["#1a1a24", "#1c1c28", "#1e1e2c", "#202030", "#222234", "#242438"]
+        border_colors = ["#2a2a3a", "#303045", "#363650", "#3c3c5a", "#424264", "#48486e"]
+        bg = bg_colors[min(depth, len(bg_colors) - 1)]
+        bc = border_colors[min(depth, len(border_colors) - 1)]
+
+        lines.append(f'{prefix}subgraph {cid} {{')
+        lines.append(f'{prefix}  label="{lab}";')
+        lines.append(f'{prefix}  style=filled;')
+        lines.append(f'{prefix}  color="{bc}";')
+        lines.append(f'{prefix}  fillcolor="{bg}";')
+        lines.append(f'{prefix}  fontcolor="#808090";')
+        lines.append(f'{prefix}  fontsize=9;')
+        lines.append(f'{prefix}  fontname="Inter,-apple-system,sans-serif";')
+        lines.append(f'{prefix}  penwidth=0.8;')
+
+        # Emit child clusters
+        for child_scope in sorted_scopes:
+            if scope_parent.get(child_scope) == scope:
+                lines.extend(emit_cluster(child_scope, indent + 2))
+
+        # Emit nodes that belong directly to this scope
+        for i, nd in enumerate(nodes):
+            if nd["scope"] == scope:
+                lines.append(f'{prefix}  op{nd["id"]};')
+
+        lines.append(f'{prefix}}}')
+        return lines
+
+    # DOT header
+    dot_lines = [
+        "digraph CrucibleTrace {",
+        f'  graph [rankdir=TB, fontname="Inter,-apple-system,sans-serif",',
+        f'         fontsize=11, bgcolor="#0f0f13", pad=0.5,',
+        f'         nodesep=0.10, ranksep=0.22, margin=0.3,',
+        f'         label=<{title}>, labelloc=t, fontcolor="#808090"];',
+        f'  node [shape=box, style="filled,rounded",',
+        f'         fontname="Inter,-apple-system,sans-serif",',
+        f'         fontsize=7, height=0.20, penwidth=0.6,',
+        f'         margin="0.06,0.02"];',
+        f'  edge [color="#303040", arrowsize=0.3, penwidth=0.3];',
+        "",
+    ]
+
+    # Emit top-level clusters (scope with no parent or parent="")
+    top_scopes = [s for s in sorted_scopes if scope_parent.get(s, "") == ""]
+    for s in sorted(top_scopes):
+        dot_lines.extend(emit_cluster(s))
+
+    # Emit unclustered nodes (no scope)
+    for nd in nodes:
+        if not nd["scope"]:
+            dot_lines.append(f'  op{nd["id"]};')
+
+    # Node attributes
+    dot_lines.append("")
+    in_deg = defaultdict(int)
+    out_deg = defaultdict(int)
+    for s, d in edges:
+        in_deg[d] += 1
+        out_deg[s] += 1
+
+    for nd in nodes:
+        idx = nd["id"]
+        label = f'<b>{nd["name"]}</b>'
+        if nd["shape"]:
+            label += f'<br/><font point-size="5" color="#7a7a9a">{nd["shape"]}</font>'
+        pw = "0.8" if (out_deg[idx] > 3 or in_deg[idx] > 3) else "0.5"
+        dot_lines.append(
+            f'  op{idx} [label=<{label}>, fillcolor="{nd["fill"]}", '
+            f'color="{nd["border"]}", penwidth={pw}];'
+        )
+
+    # Edges
+    dot_lines.append("")
+    for src, dst in edges:
+        dot_lines.append(f"  op{src} -> op{dst};")
+
+    dot_lines.append("}")
+    dot_src = "\n".join(dot_lines)
+
+    # Run dot -Tjson0
+    print(f"  Running dot -Tjson0 ({len(nodes)} nodes, {len(edges)} edges)...",
+          file=sys.stderr)
+    result = subprocess.run(
+        ["dot", "-Tjson0"],
+        input=dot_src, capture_output=True, text=True, timeout=120,
+    )
+    if result.returncode != 0:
+        print(f"  Graphviz error: {result.stderr[:200]}", file=sys.stderr)
+        # Fallback: return raw JSON
+        return export_json(ops, metas, edges, names, max_ops)
+
+    gv = json.loads(result.stdout)
+
+    # Parse Graphviz output: extract positioned nodes, clusters, edges
+    # Graphviz Y is bottom-up; we flip to top-down.
+    bb = gv.get("bb", "0,0,100,100").split(",")
+    graph_h = float(bb[3])
+
+    def flip_y(y):
+        return graph_h - y
+
+    # Build gvid → node map
+    gv_objects = gv.get("objects", [])
+    positioned_nodes = []
+    clusters = []
+
+    for obj in gv_objects:
+        name = obj.get("name", "")
+        if name.startswith("cluster_"):
+            # Cluster bounding box
+            cbb = obj.get("bb", "0,0,0,0").split(",")
+            x1, y1, x2, y2 = float(cbb[0]), float(cbb[1]), float(cbb[2]), float(cbb[3])
+            # Flip Y
+            fy1, fy2 = flip_y(y2), flip_y(y1)
+            scope_path = name[8:].replace("__", ".")
+            clusters.append({
+                "scope": scope_path,
+                "x": x1, "y": fy1,
+                "w": x2 - x1, "h": fy2 - fy1,
+                "label": obj.get("label", ""),
+            })
+        elif name.startswith("op"):
+            # Node position
+            op_id = int(name[2:])
+            pos = obj.get("pos", "0,0").split(",")
+            cx, cy = float(pos[0]), flip_y(float(pos[1]))
+            w = float(obj.get("width", "1")) * 72  # inches→points
+            h = float(obj.get("height", "0.5")) * 72
+
+            # Find matching enriched node
+            nd_data = None
+            for nd in nodes:
+                if nd["id"] == op_id:
+                    nd_data = nd
+                    break
+
+            positioned_nodes.append({
+                "id": op_id,
+                "x": cx - w / 2, "y": cy - h / 2,
+                "w": w, "h": h,
+                "name": nd_data["name"] if nd_data else name,
+                "family": nd_data["family"] if nd_data else "unknown",
+                "fill": nd_data["fill"] if nd_data else "#F9FAFB",
+                "border": nd_data["border"] if nd_data else "#9CA3AF",
+                "shape": nd_data["shape"] if nd_data else "",
+                "scope": nd_data["scope"] if nd_data else "",
+                "grad": nd_data["grad"] if nd_data else 0,
+            })
+
+    # Parse edges with spline control points
+    positioned_edges = []
+    for edge in gv.get("edges", []):
+        pos_str = edge.get("pos", "")
+        if not pos_str:
+            continue
+        # Parse Graphviz edge pos: "e,ex,ey sx,sy cx1,cy1 cx2,cy2 ex,ey ..."
+        # or "s,sx,sy ... e,ex,ey"
+        points = []
+        for token in pos_str.split():
+            if token.startswith("e,") or token.startswith("s,"):
+                xy = token[2:].split(",")
+            else:
+                xy = token.split(",")
+            if len(xy) == 2:
+                try:
+                    points.append((float(xy[0]), flip_y(float(xy[1]))))
+                except ValueError:
+                    pass
+
+        # Get source/dest from gvid
+        tail_gvid = edge.get("tail")
+        head_gvid = edge.get("head")
+        tail_name = ""
+        head_name = ""
+        for obj in gv_objects:
+            if obj.get("_gvid") == tail_gvid:
+                tail_name = obj.get("name", "")
+            if obj.get("_gvid") == head_gvid:
+                head_name = obj.get("name", "")
+
+        src_id = int(tail_name[2:]) if tail_name.startswith("op") else -1
+        dst_id = int(head_name[2:]) if head_name.startswith("op") else -1
+
+        positioned_edges.append({
+            "src": src_id, "dst": dst_id,
+            "points": points,
+        })
+
+    return json.dumps({
+        "title": title,
+        "graph_w": float(bb[2]),
+        "graph_h": graph_h,
+        "nodes": positioned_nodes,
+        "edges": positioned_edges,
+        "clusters": clusters,
+    }, separators=(",", ":"))
+
+
 def main():
     parser = argparse.ArgumentParser(description="Render .crtrace as graph")
     parser.add_argument("trace", help="Path to .crtrace file")
     parser.add_argument("-o", "--output", default=None,
-                       help="Output file (pdf/svg/png)")
+                       help="Output file (pdf/svg/png/json/html)")
     parser.add_argument("--max-ops", type=int, default=None,
                        help="Limit to first N ops")
     parser.add_argument("--dot", action="store_true",
                        help="Output DOT source to stdout")
+    parser.add_argument("--json", action="store_true",
+                       help="Export raw JSON graph data")
+    parser.add_argument("--viewer", action="store_true",
+                       help="Export positioned JSON via Graphviz for viewer")
     parser.add_argument("--engine", default="dot",
                        help="Graphviz engine (dot/neato/fdp/sfdp)")
     args = parser.parse_args()
@@ -274,6 +597,21 @@ def main():
     title = trace_path.stem.replace("_", " ").upper()
     dot_src = render_dot(ops, metas, edges, names,
                          max_ops=args.max_ops, title=title)
+
+    if args.viewer:
+        json_data = export_viewer_json(ops, metas, edges, names,
+                                        max_ops=args.max_ops, title=title)
+        output = args.output or str(trace_path.with_suffix(".json"))
+        Path(output).write_text(json_data)
+        print(f"  {output} ({len(json_data)//1024} KB)", file=sys.stderr)
+        return
+
+    if args.json:
+        json_data = export_json(ops, metas, edges, names, max_ops=args.max_ops)
+        output = args.output or str(trace_path.with_suffix(".json"))
+        Path(output).write_text(json_data)
+        print(f"  {output} ({len(json_data)//1024} KB)", file=sys.stderr)
+        return
 
     if args.dot:
         print(dot_src)

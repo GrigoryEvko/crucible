@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Record Llama 3.1 8B training trace → .crtrace binary for C++ benchmarking.
+"""Record Llama 3.1 8B training trace via native C++ dispatch.
 
-Runs 2 training iterations through Crucible, exports the second iteration
-(steady-state, no warmup artifacts) as a binary trace file.
+Uses DispatchKey::Crucible to intercept ALL ATen ops (forward, backward,
+optimizer) at ~100ns/op.  Llama 3.1 8B: 32 layers, GQA (32Q/8KV), RoPE,
+SwiGLU, ~8.03B params.  Uses batch=1, seq=128 to fit in CPU RAM.
 
-Llama 3.1 8B: 32 layers, GQA (32 Q heads / 8 KV heads), RoPE, SwiGLU.
-~8.03B params. Uses batch=1, seq=128 to fit in RAM.
+Output: traces/llama8b.crtrace
 
 Usage:
-    python record_llama8b.py [output_path]
+    PYTHONPATH=~/Downloads/pytorch python record_llama8b.py
 """
 
 import sys
@@ -16,16 +16,15 @@ import time
 
 import torch
 
-from crucible_mode import CrucibleMode
+from crucible_native import CrucibleNative
 
 
 def main():
-    out_path = sys.argv[1] if len(sys.argv) > 1 else "llama8b.crtrace"
+    out_path = sys.argv[1] if len(sys.argv) > 1 else "../../traces/llama8b.crtrace"
 
     print("=" * 60)
-    print("Crucible Vessel — Llama 3.1 8B Trace Export")
+    print("Crucible Vessel — Llama 3.1 8B (native C++ dispatch)")
     print("=" * 60)
-    print(f"PyTorch: {torch.__version__}")
 
     from transformers import LlamaForCausalLM, LlamaConfig
 
@@ -56,34 +55,25 @@ def main():
     input_ids = torch.randint(0, config.vocab_size, (1, seq_len))
     labels = input_ids.clone()
 
-    with CrucibleMode(record_trace=True) as mode:
-        print("\n  iter 0: warmup...")
-        t0 = time.perf_counter()
-        optimizer.zero_grad()
-        out = model(input_ids, labels=labels)
-        out.loss.backward()
-        optimizer.step()
-        print(f"    {mode._op_count} ops, loss={out.loss.item():.4f}, "
-              f"{1000*(time.perf_counter()-t0):.0f}ms")
+    with CrucibleNative(verbose=True) as ctx:
+        ctx.track_modules(model)
 
-        mode.clear_trace()
+        for i in range(4):
+            t0 = time.perf_counter()
+            optimizer.zero_grad()
+            out = model(input_ids, labels=labels)
+            out.loss.backward()
+            optimizer.step()
+            dt = (time.perf_counter() - t0) * 1000
+            print(f"  iter {i}: loss={out.loss.item():.4f} ({dt:.1f}ms) "
+                  f"bg_iters={ctx.bg_iterations()} compiled={ctx.is_compiled()}")
 
-        print("  iter 1: recording...")
-        t0 = time.perf_counter()
-        optimizer.zero_grad()
-        out = model(input_ids, labels=labels)
-        out.loss.backward()
-        optimizer.step()
-        print(f"    loss={out.loss.item():.4f}, "
-              f"{1000*(time.perf_counter()-t0):.0f}ms")
+        ok = ctx.export_trace(out_path)
 
-        mode.export_trace(out_path)
-
-    print(f"\n  Recorded ops:  {len(mode._trace_ops)}")
-    print(f"  Recorded metas: {len(mode._trace_metas) // 144}")
-    print()
-    print("=" * 60)
-    print("Done.")
+    if ok:
+        import os
+        sz = os.path.getsize(out_path)
+        print(f"\n  {out_path}: {sz:,} bytes, {ctx.active_num_ops()} ops")
     print("=" * 60)
 
 
