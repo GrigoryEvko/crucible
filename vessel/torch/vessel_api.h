@@ -143,6 +143,17 @@ CRUCIBLE_VESSEL_API void* crucible_output_ptr(CrucibleHandle h, uint16_t j);
 // Pre-allocated input pointer for input j of the current op.
 CRUCIBLE_VESSEL_API void* crucible_input_ptr(CrucibleHandle h, uint16_t j);
 
+// ── Trace export ────────────────────────────────────────────────────
+
+// Export the active compiled region as .crtrace binary.
+// Flushes the ring first, then serializes the RegionNode's TraceEntry
+// data to disk.  Format: 16B header + 80B/op + 168B/meta + schema table.
+// Returns 1 on success, 0 on failure (no active region, file I/O error).
+CRUCIBLE_VESSEL_API int crucible_export_crtrace(CrucibleHandle h, const char* path);
+
+// Number of ops in the active compiled region.  0 if no region.
+CRUCIBLE_VESSEL_API uint32_t crucible_active_num_ops(CrucibleHandle h);
+
 #ifdef __cplusplus
 }
 #endif

@@ -1,63 +1,101 @@
-"""Crucible native dispatch mode — C++ fallback via DispatchKey::Crucible.
+"""Crucible native vessel controller — C++ dispatch via DispatchKey::Crucible.
 
-Activates the C++ boxed fallback (crucible_fallback.cpp) instead of the
-Python TorchDispatchMode.  Requires the PyTorch fork with DispatchKey::Crucible
-and libcrucible_dispatch.so built with TORCH_DIR.
+Activates the C++ boxed fallback (crucible_fallback.cpp) so that EVERY ATen
+op — forward, backward, optimizer — is intercepted at ~100ns/op and fed to
+the Vigil runtime (TraceRing -> BackgroundThread -> MerkleDag).
+
+Requires:
+  - PyTorch fork with DispatchKey::Crucible + CrucibleState TLS
+    (built from patches/pytorch-crucible-integration.patch)
+  - libcrucible_vessel.so  (C API to Vigil lifecycle)
+  - libcrucible_dispatch.so (C++ fallback + TLS accessors)
 
 Usage:
     from crucible_native import CrucibleNative
 
-    model = torch.nn.Linear(4, 8)
-    x = torch.randn(2, 4)
+    model = torchvision.models.resnet18()
+    x = torch.randn(4, 3, 224, 224)
 
-    with CrucibleNative() as ctx:
-        for i in range(10):
-            y = model(x)
-        ctx.flush()
-        print(f"compiled={ctx.is_compiled()}, iters={ctx.compiled_iterations()}")
-
-Falls back to CrucibleMode (Python TorchDispatchMode) if the native dispatch
-library is not available.
+    with CrucibleNative(verbose=True) as ctx:
+        ctx.track_modules(model)
+        for i in range(3):  # 1 warmup + 2 for iteration detection
+            optimizer.zero_grad()
+            out = model(x)
+            loss = criterion(out, labels)
+            loss.backward()
+            optimizer.step()
+        ctx.export_trace("resnet18.crtrace")
 """
 
 import ctypes
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import torch
 
-# ─── Locate libraries ──────────────────────────────────────────────────
+if TYPE_CHECKING:
+    import torch.nn as nn
+
+
+# =====================================================================
+# FNV-1a 64-bit — must match C++ fnv1a_bytes() in crucible_fallback.cpp
+# =====================================================================
+
+_FNV_OFFSET = 0xCBF29CE484222325
+_FNV_PRIME  = 0x100000001B3
+_MASK64     = (1 << 64) - 1
+
+
+def _fnv1a(data: bytes) -> int:
+    """FNV-1a 64-bit hash, identical to C++ fnv1a_bytes()."""
+    h = _FNV_OFFSET
+    for b in data:
+        h = ((h ^ b) * _FNV_PRIME) & _MASK64
+    return h
+
+
+# =====================================================================
+# Library locator
+# =====================================================================
 
 def _find_lib(name: str) -> str | None:
     """Search for a Crucible .so in common build directories."""
     base = Path(__file__).resolve().parent.parent.parent
-    for d in ("build", "build-gcc"):
+    for d in ("build", "build-default", "build-gcc", "build-release"):
         p = base / d / "lib" / name
         if p.exists():
             return str(p)
     return None
 
 
-# ─── Vessel C API (reuse from crucible_mode.py) ────────────────────────
+# =====================================================================
+# Vessel C API wrapper (Vigil lifecycle + trace export)
+# =====================================================================
 
 class _VesselLib:
-    """Minimal ctypes wrapper — just lifecycle + query functions."""
+    """Ctypes wrapper for libcrucible_vessel.so — Vigil lifecycle + queries."""
 
     def __init__(self, lib_path: str | None = None):
         path = lib_path or _find_lib("libcrucible_vessel.so")
         if path is None:
             raise RuntimeError(
-                "Cannot find libcrucible_vessel.so — build Crucible first")
+                "Cannot find libcrucible_vessel.so — build Crucible first:\n"
+                "  cmake --preset default && cmake --build --preset default")
         self._lib = ctypes.CDLL(path)
-        self._setup_signatures()
+        self._setup()
 
-    def _setup_signatures(self):
+    def _setup(self):
         L = self._lib
+
+        # Lifecycle
         L.crucible_create.restype = ctypes.c_void_p
         L.crucible_create.argtypes = []
         L.crucible_destroy.restype = None
         L.crucible_destroy.argtypes = [ctypes.c_void_p]
         L.crucible_flush.restype = None
         L.crucible_flush.argtypes = [ctypes.c_void_p]
+
+        # Queries
         L.crucible_is_compiled.restype = ctypes.c_int
         L.crucible_is_compiled.argtypes = [ctypes.c_void_p]
         L.crucible_compiled_iterations.restype = ctypes.c_uint32
@@ -70,6 +108,12 @@ class _VesselLib:
         L.crucible_ring_size.argtypes = [ctypes.c_void_p]
         L.crucible_metalog_size.restype = ctypes.c_uint32
         L.crucible_metalog_size.argtypes = [ctypes.c_void_p]
+
+        # Trace export
+        L.crucible_export_crtrace.restype = ctypes.c_int
+        L.crucible_export_crtrace.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        L.crucible_active_num_ops.restype = ctypes.c_uint32
+        L.crucible_active_num_ops.argtypes = [ctypes.c_void_p]
 
     def create(self) -> int:
         return self._lib.crucible_create()
@@ -98,53 +142,117 @@ class _VesselLib:
     def metalog_size(self, h: int) -> int:
         return self._lib.crucible_metalog_size(h)
 
+    def export_crtrace(self, h: int, path: str) -> bool:
+        return bool(self._lib.crucible_export_crtrace(h, path.encode()))
 
-# ─── CrucibleState TLS access via torch._C ─────────────────────────────
-#
-# The PyTorch fork exposes CrucibleState through the dispatcher's TLS.
-# DispatchKey::Crucible is enabled/disabled via _set_dispatch_key_included.
-# The CrucibleState (mode + context pointer) is set via c10 TLS accessors
-# exposed through pybind11.
-#
-# For the initial version, we use a simpler approach: a tiny C extension
-# that sets the TLS state directly.  This is built into libcrucible_dispatch.so.
+    def active_num_ops(self, h: int) -> int:
+        return self._lib.crucible_active_num_ops(h)
+
+
+# =====================================================================
+# Dispatch library wrapper (TLS accessors from crucible_fallback.cpp)
+# =====================================================================
+
+class _DispatchLib:
+    """Ctypes wrapper for libcrucible_dispatch.so — TLS state + scope."""
+
+    def __init__(self, lib_path: str | None = None):
+        path = lib_path or _find_lib("libcrucible_dispatch.so")
+        if path is None:
+            raise RuntimeError(
+                "Cannot find libcrucible_dispatch.so — build with:\n"
+                "  cmake -DTORCH_DIR=~/Downloads/pytorch --preset default\n"
+                "  cmake --build --preset default")
+        # Ensure torch._C is loaded first (provides libc10 symbols).
+        import torch._C  # noqa: F401
+        # CDLL triggers the .so's global constructors, which include
+        # TORCH_LIBRARY_IMPL registration — the C++ fallback is active
+        # as soon as the library is loaded.
+        self._lib = ctypes.CDLL(path)
+        self._setup()
+
+    def _setup(self):
+        L = self._lib
+
+        # TLS mode/context
+        L.crucible_dispatch_set_tls_mode.restype = None
+        L.crucible_dispatch_set_tls_mode.argtypes = [ctypes.c_uint8]
+        L.crucible_dispatch_get_tls_mode.restype = ctypes.c_uint8
+        L.crucible_dispatch_get_tls_mode.argtypes = []
+        L.crucible_dispatch_set_tls_context.restype = None
+        L.crucible_dispatch_set_tls_context.argtypes = [ctypes.c_void_p]
+        L.crucible_dispatch_get_tls_context.restype = ctypes.c_void_p
+        L.crucible_dispatch_get_tls_context.argtypes = []
+
+        # TLS scope hash
+        L.crucible_dispatch_set_tls_scope.restype = None
+        L.crucible_dispatch_set_tls_scope.argtypes = [ctypes.c_uint64]
+        L.crucible_dispatch_get_tls_scope.restype = ctypes.c_uint64
+        L.crucible_dispatch_get_tls_scope.argtypes = []
+
+    def set_mode(self, mode: int):
+        self._lib.crucible_dispatch_set_tls_mode(ctypes.c_uint8(mode))
+
+    def set_context(self, ctx: int):
+        self._lib.crucible_dispatch_set_tls_context(ctypes.c_void_p(ctx))
+
+    def set_scope(self, scope_hash: int):
+        self._lib.crucible_dispatch_set_tls_scope(ctypes.c_uint64(scope_hash))
+
+    def get_mode(self) -> int:
+        return self._lib.crucible_dispatch_get_tls_mode()
+
+    def get_scope(self) -> int:
+        return self._lib.crucible_dispatch_get_tls_scope()
+
+
+# =====================================================================
+# DispatchKey::Crucible accessor
+# =====================================================================
 
 def _get_crucible_dispatch_key():
-    """Get DispatchKey::Crucible from the PyTorch fork, or None.
-
-    The key exists in the C++ enum but may not be registered as a named
-    Python attribute (shows as DispatchKey.???).  We try the attribute first,
-    then fall back to string-based parsing.
-    """
+    """Get DispatchKey::Crucible from the PyTorch fork, or None."""
+    import torch._C as _C
     try:
-        return torch._C.DispatchKey.Crucible
+        return _C.DispatchKey.Crucible
     except AttributeError:
         pass
-    try:
-        key = torch._C._parse_dispatch_key("Crucible")
-        if key is not None:
-            return key
-    except Exception:
-        pass
+    # String-based lookup (key exists in C++ but Python enum not updated)
+    for fn_name in ("_parse_dispatch_key", "_dispatch_key_parse"):
+        fn = getattr(_C, fn_name, None)
+        if fn is not None:
+            try:
+                key = fn("Crucible")
+                if key is not None:
+                    return key
+            except Exception:
+                pass
     return None
 
+
+# =====================================================================
+# CrucibleNative — the vessel controller
+# =====================================================================
 
 class CrucibleNative:
     """Context manager for native C++ Crucible dispatch.
 
-    Activates DispatchKey::Crucible + sets CrucibleState TLS, so the C++
-    boxed fallback intercepts every ATen op and feeds it to Vigil.
-
     On __enter__:
-      1. Load libcrucible_dispatch.so (registers TORCH_LIBRARY_IMPL)
+      1. Load libcrucible_dispatch.so (registers TORCH_LIBRARY_IMPL fallback)
       2. Create Vigil via vessel C API
-      3. Set CrucibleState TLS: mode=RECORD, context=vigil
-      4. Enable DispatchKey::Crucible in TLS
+      3. Set CrucibleState TLS: mode=RECORD, context=vigil*
+      4. Enable DispatchKey::Crucible in this thread's TLS
+
+    While active:
+      - Every ATen op goes through crucibleFallback() in C++
+      - track_modules() installs scope hooks for module hierarchy
+      - Vigil records to TraceRing, bg thread builds DAG
 
     On __exit__:
       5. Disable DispatchKey::Crucible
-      6. Set CrucibleState mode=INACTIVE, context=nullptr
-      7. Destroy Vigil
+      6. Clear TLS state
+      7. Remove scope hooks
+      8. Destroy Vigil
     """
 
     # CrucibleMode ordinals (must match c10::CrucibleMode enum)
@@ -153,96 +261,172 @@ class CrucibleNative:
     COMPILED = 2
     DIVERGED = 3
 
-    def __init__(self, vessel_lib_path: str | None = None,
+    def __init__(self, *, vessel_lib_path: str | None = None,
                  dispatch_lib_path: str | None = None,
                  verbose: bool = False):
         self._vessel_lib_path = vessel_lib_path
         self._dispatch_lib_path = dispatch_lib_path
         self._verbose = verbose
+
         self._vessel: _VesselLib | None = None
+        self._dispatch: _DispatchLib | None = None
         self._handle: int = 0
-        self._dispatch_lib: ctypes.CDLL | None = None
-        self._dispatch_key = None  # cached DispatchKey::Crucible
+        self._dispatch_key = None
+
+        # Scope tracking state
+        self._hook_handles: list = []
+        self._scope_names: dict[int, str] = {}  # hash -> module path
 
     def __enter__(self):
         self._dispatch_key = _get_crucible_dispatch_key()
         if self._dispatch_key is None:
             raise RuntimeError(
-                "PyTorch fork with DispatchKey::Crucible required. "
-                "Use CrucibleMode (Python TorchDispatchMode) for stock PyTorch.")
+                "PyTorch fork with DispatchKey::Crucible required.\n"
+                "Build from ~/Downloads/pytorch with the crucible patch applied.")
 
-        # Load vessel lib (C API to Vigil)
+        # Load vessel lib (Vigil lifecycle)
         self._vessel = _VesselLib(self._vessel_lib_path)
         self._handle = self._vessel.create()
 
-        # Load dispatch lib (registers C++ fallback via TORCH_LIBRARY_IMPL).
-        # Also exports crucible_dispatch_set_tls_{mode,context} for TLS access.
-        dispatch_path = self._dispatch_lib_path or _find_lib(
-            "libcrucible_dispatch.so")
-        if not dispatch_path:
-            raise RuntimeError(
-                "Cannot find libcrucible_dispatch.so — "
-                "build with -DTORCH_DIR=~/Downloads/pytorch")
+        # Load dispatch lib (C++ fallback + TLS accessors)
+        self._dispatch = _DispatchLib(self._dispatch_lib_path)
 
-        # Load via torch to register TORCH_LIBRARY_IMPL, then via ctypes
-        # for the exported TLS accessors.
-        torch.ops.load_library(dispatch_path)
-        self._dispatch_lib = ctypes.CDLL(dispatch_path)
-        self._dispatch_lib.crucible_dispatch_set_tls_mode.restype = None
-        self._dispatch_lib.crucible_dispatch_set_tls_mode.argtypes = [
-            ctypes.c_uint8]
-        self._dispatch_lib.crucible_dispatch_set_tls_context.restype = None
-        self._dispatch_lib.crucible_dispatch_set_tls_context.argtypes = [
-            ctypes.c_void_p]
+        # Set CrucibleState TLS: mode=RECORD, context=vigil handle
+        self._dispatch.set_mode(self.RECORD)
+        self._dispatch.set_context(self._handle)
 
-        # Set CrucibleState TLS: mode=RECORD, context=vigil handle.
-        # The C++ fallback reads these from TLS on every op.
-        self._set_tls_state(self.RECORD, self._handle)
-
-        # Enable DispatchKey::Crucible in this thread's TLS.
-        torch._C._dispatch_tls_set_dispatch_key_included(
+        # Enable DispatchKey::Crucible in this thread
+        import torch._C as _C
+        _C._dispatch_tls_set_dispatch_key_included(
             self._dispatch_key, True)
 
         if self._verbose:
-            print(f"[crucible] native dispatch active, handle={self._handle:#x}")
+            print(f"[crucible] native dispatch active, vigil={self._handle:#x}")
 
         return self
 
     def __exit__(self, *exc):
-        # Disable dispatch key first (stops fallback from firing)
+        # Disable dispatch key (stops fallback from firing)
         if self._dispatch_key is not None:
             try:
-                torch._C._dispatch_tls_set_dispatch_key_included(
+                import torch._C as _C
+                _C._dispatch_tls_set_dispatch_key_included(
                     self._dispatch_key, False)
             except Exception:
                 pass
 
         # Clear TLS state
-        self._set_tls_state(self.INACTIVE, 0)
+        if self._dispatch is not None:
+            self._dispatch.set_mode(self.INACTIVE)
+            self._dispatch.set_context(0)
+            self._dispatch.set_scope(0)
+
+        # Remove scope hooks
+        self._remove_hooks()
 
         # Destroy Vigil
         if self._vessel and self._handle:
             self._vessel.destroy(self._handle)
             self._handle = 0
 
-    # ── TLS state management ──────────────────────────────────────
+        if self._verbose:
+            print("[crucible] native dispatch deactivated")
 
-    def _set_tls_state(self, mode: int, context: int):
-        """Set CrucibleState TLS via exported C functions in libcrucible_dispatch.so.
+    # ── Module scope tracking ────────────────────────────────────────
 
-        These are thin wrappers around CrucibleState::get_tls_state().set_mode()
-        and CrucibleState::get_tls_state().set_context().  No pybind11 needed.
+    def track_modules(self, model: "nn.Module", backward_hooks: bool = False):
+        """Install scope hooks on all modules for hierarchy tracking.
+
+        Each hook sets the CrucibleState TLS scope_hash to the FNV-1a hash
+        of the module's path (e.g. "layer1.0.conv1").  The C++ fallback
+        reads this per-op and records it in the TraceRing.
+
+        Forward hooks: always installed. Fire when model(x) enters each module.
+        Backward hooks: opt-in (backward_hooks=True). Fire during loss.backward().
+            WARNING: backward hooks conflict with PyTorch's inplace ops (relu_).
+            When disabled, backward ops inherit the last forward module's scope.
         """
-        if not self._dispatch_lib:
-            return
-        self._dispatch_lib.crucible_dispatch_set_tls_mode(
-            ctypes.c_uint8(mode))
-        self._dispatch_lib.crucible_dispatch_set_tls_context(
-            ctypes.c_void_p(context))
+        if not self._dispatch:
+            raise RuntimeError("track_modules() requires active CrucibleNative context")
 
-    # ── Query methods (mirror CrucibleMode API) ──────────────────
+        self._remove_hooks()  # clean any previous hooks
+
+        for name, module in model.named_modules():
+            if not name:
+                name = "<root>"
+            scope_hash = _fnv1a(name.encode("utf-8"))
+            self._scope_names[scope_hash] = name
+
+            # Forward pre-hook: sets scope for ops during forward pass
+            handle = module.register_forward_pre_hook(
+                self._make_forward_hook(scope_hash))
+            self._hook_handles.append(handle)
+
+            # Backward pre-hook: optional (conflicts with inplace ops)
+            if backward_hooks:
+                handle = module.register_full_backward_pre_hook(
+                    self._make_backward_hook(scope_hash))
+                self._hook_handles.append(handle)
+
+        if self._verbose:
+            n_modules = len(self._scope_names)
+            kind = "fwd+bwd" if backward_hooks else "fwd-only"
+            print(f"[crucible] tracking {n_modules} modules "
+                  f"({len(self._hook_handles)} hooks, {kind})")
+
+    def _make_forward_hook(self, scope_hash: int):
+        dispatch = self._dispatch
+        def hook(module, input):
+            dispatch.set_scope(scope_hash)
+        return hook
+
+    def _make_backward_hook(self, scope_hash: int):
+        dispatch = self._dispatch
+        def hook(module, grad_output):
+            dispatch.set_scope(scope_hash)
+        return hook
+
+    def _remove_hooks(self):
+        for h in self._hook_handles:
+            h.remove()
+        self._hook_handles.clear()
+
+    # ── Trace export ─────────────────────────────────────────────────
+
+    def export_trace(self, path: str) -> bool:
+        """Export the active compiled region as .crtrace binary.
+
+        Flushes the ring buffer first, waits for the bg thread to process
+        all pending entries, then serializes the RegionNode to disk.
+
+        Requires at least 2 complete iterations for the IterationDetector
+        to have built a region.  Returns True on success.
+        """
+        if not self._vessel or not self._handle:
+            raise RuntimeError("export_trace() requires active CrucibleNative context")
+
+        self._vessel.flush(self._handle)
+
+        num_ops = self._vessel.active_num_ops(self._handle)
+        if num_ops == 0:
+            if self._verbose:
+                bg_iters = self._vessel.bg_iterations(self._handle)
+                print(f"[crucible] no active region (bg_iterations={bg_iters})")
+                print("[crucible] need 2+ complete iterations for detection")
+            return False
+
+        ok = self._vessel.export_crtrace(self._handle, path)
+        if self._verbose:
+            if ok:
+                print(f"[crucible] exported {num_ops} ops to {path}")
+            else:
+                print(f"[crucible] export failed: {path}")
+        return ok
+
+    # ── Queries ──────────────────────────────────────────────────────
 
     def flush(self):
+        """Wait until bg thread has fully processed all recorded ops."""
         if self._vessel and self._handle:
             self._vessel.flush(self._handle)
 
@@ -250,26 +434,24 @@ class CrucibleNative:
         return bool(self._vessel and self._vessel.is_compiled(self._handle))
 
     def compiled_iterations(self) -> int:
-        if not self._vessel:
-            return 0
-        return self._vessel.compiled_iterations(self._handle)
+        return self._vessel.compiled_iterations(self._handle) if self._vessel else 0
 
     def diverged_count(self) -> int:
-        if not self._vessel:
-            return 0
-        return self._vessel.diverged_count(self._handle)
+        return self._vessel.diverged_count(self._handle) if self._vessel else 0
 
     def bg_iterations(self) -> int:
-        if not self._vessel:
-            return 0
-        return self._vessel.bg_iterations(self._handle)
+        return self._vessel.bg_iterations(self._handle) if self._vessel else 0
 
     def ring_size(self) -> int:
-        if not self._vessel:
-            return 0
-        return self._vessel.ring_size(self._handle)
+        return self._vessel.ring_size(self._handle) if self._vessel else 0
 
     def metalog_size(self) -> int:
-        if not self._vessel:
-            return 0
-        return self._vessel.metalog_size(self._handle)
+        return self._vessel.metalog_size(self._handle) if self._vessel else 0
+
+    def active_num_ops(self) -> int:
+        return self._vessel.active_num_ops(self._handle) if self._vessel else 0
+
+    @property
+    def scope_names(self) -> dict[int, str]:
+        """Map of scope_hash -> module path for all tracked modules."""
+        return self._scope_names
