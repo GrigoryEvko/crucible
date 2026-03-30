@@ -62,12 +62,16 @@ enum class ScalarType : int8_t {
   }
 }
 
-// Mirror c10::DeviceType ordinals.
+// Mirror c10::DeviceType ordinals exactly (c10/core/DeviceType.h).
 enum class DeviceType : int8_t {
   CPU = 0,
   CUDA = 1,
+  MKLDNN = 2,
+  HIP = 6,      // AMD HIP — was incorrectly 20 (PrivateUse1's ordinal)
   XLA = 9,
-  HIP = 20,
+  MPS = 13,
+  Meta = 14,
+  PrivateUse1 = 20,
 };
 
 // Mirror c10::Layout ordinals.

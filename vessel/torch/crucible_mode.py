@@ -180,7 +180,8 @@ _DEVICE_MAP = {
     "hip": 6,
     "xla": 9,
     "mps": 13,
-    "privateuseone": 18,
+    "meta": 14,
+    "privateuseone": 20,
 }
 
 # c10::Layout ordinals.
@@ -312,7 +313,7 @@ class CrucibleMode(TorchDispatchMode):
             uint8    grad_enabled
             uint8    inference_mode
 
-          Meta records (num_metas × 144B each):
+          Meta records (num_metas × 168B each):
             Raw TensorMeta structs, same layout as CrucibleMeta.
         """
         meta_size = ctypes.sizeof(_VesselLib.Meta)

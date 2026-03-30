@@ -145,8 +145,10 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
     entry.inference_mode = inference_mode != 0;
 
     uint16_t n = num_scalars < 5 ? num_scalars : 5;
-    for (uint16_t i = 0; i < n; i++)
-        entry.scalar_values[i] = scalar_values[i];
+    if (scalar_values) {
+        for (uint16_t i = 0; i < n; i++)
+            entry.scalar_values[i] = scalar_values[i];
+    }
 
     auto result = vigil->dispatch_op(
         entry,
@@ -214,6 +216,14 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) {
     std::FILE* f = std::fopen(path, "wb");
     if (!f) return 0;
 
+    // Track write errors: if any fwrite fails (disk full, I/O error),
+    // we still close the file but report failure.
+    bool ok = true;
+    auto w = [&](const void* ptr, size_t size, size_t count) {
+        if (ok && std::fwrite(ptr, size, count, f) != count)
+            ok = false;
+    };
+
     // Count total tensor metas across all ops.
     uint32_t total_metas = 0;
     for (uint32_t i = 0; i < region->num_ops; i++) {
@@ -221,11 +231,11 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) {
     }
 
     // Header: "CRTR" + version(1) + num_ops + num_metas = 16B.
-    std::fwrite("CRTR", 1, 4, f);
+    w("CRTR", 1, 4);
     uint32_t version = 1;
-    std::fwrite(&version, 4, 1, f);
-    std::fwrite(&region->num_ops, 4, 1, f);
-    std::fwrite(&total_metas, 4, 1, f);
+    w(&version, 4, 1);
+    w(&region->num_ops, 4, 1);
+    w(&total_metas, 4, 1);
 
     // Op records: 80B each (TraceOpRecord layout).
     for (uint32_t i = 0; i < region->num_ops; i++) {
@@ -244,33 +254,33 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) {
         const uint16_t ns = te.num_scalar_args < 5 ? te.num_scalar_args : 5;
         for (uint16_t s = 0; s < ns; s++)
             rec.scalar_values[s] = te.scalar_args ? te.scalar_args[s] : 0;
-        std::fwrite(&rec, sizeof(rec), 1, f);
+        w(&rec, sizeof(rec), 1);
     }
 
     // Meta records: 168B each (TensorMeta layout).
     for (uint32_t i = 0; i < region->num_ops; i++) {
         const auto& te = region->ops[i];
         for (const auto& m : te.input_span())
-            std::fwrite(&m, sizeof(crucible::TensorMeta), 1, f);
+            w(&m, sizeof(crucible::TensorMeta), 1);
         for (const auto& m : te.output_span())
-            std::fwrite(&m, sizeof(crucible::TensorMeta), 1, f);
+            w(&m, sizeof(crucible::TensorMeta), 1);
     }
 
     // Schema name table.
     const auto& table = crucible::global_schema_table();
     uint32_t num_names = table.count();
-    std::fwrite(&num_names, 4, 1, f);
+    w(&num_names, 4, 1);
     for (uint32_t i = 0; i < num_names; i++) {
         uint64_t sh = table.entries[i].hash.raw();
         const char* name = table.entries[i].name;
         auto name_len = static_cast<uint16_t>(std::strlen(name));
-        std::fwrite(&sh, 8, 1, f);
-        std::fwrite(&name_len, 2, 1, f);
-        std::fwrite(name, 1, name_len, f);
+        w(&sh, 8, 1);
+        w(&name_len, 2, 1);
+        w(name, 1, name_len);
     }
 
     std::fclose(f);
-    return 1;
+    return ok ? 1 : 0;
 }
 
 uint32_t crucible_active_num_ops(CrucibleHandle h) {
