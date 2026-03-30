@@ -1,0 +1,4 @@
+# Trace artifacts — recorded by ../record_*.py
+# Binary traces are large and machine-specific.
+*.crtrace
+*.json
