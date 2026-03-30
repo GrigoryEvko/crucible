@@ -111,6 +111,11 @@ struct SchemaTable {
 };
 
 // Global singleton — same pattern as global_ckernel_table().
+//
+// TODO(thread-safety): register_name() is NOT thread-safe. Current usage is
+// safe because only one foreground thread records ops (SPSC model), and the
+// background thread only calls lookup(). If multi-threaded recording is ever
+// needed, add a spinlock or use a concurrent hash map.
 [[nodiscard]] inline SchemaTable& global_schema_table() {
   static SchemaTable table;
   return table;

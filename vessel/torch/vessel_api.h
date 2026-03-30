@@ -4,7 +4,7 @@
 // TorchDispatchMode (Python) calls these functions to feed real ATen ops
 // into Crucible's recording and dispatch pipeline.
 //
-// CrucibleMeta is binary-compatible with crucible::TensorMeta (144 bytes).
+// CrucibleMeta is binary-compatible with crucible::TensorMeta (168 bytes).
 // All enum types use the same int8_t ordinals as c10::ScalarType etc.
 
 #pragma once
@@ -25,7 +25,7 @@ extern "C" {
 // Opaque handle to a crucible::Vigil instance.
 typedef void* CrucibleHandle;
 
-// Binary-compatible with crucible::TensorMeta (144 bytes).
+// Binary-compatible with crucible::TensorMeta (168 bytes).
 // Field order and types must match exactly — verified via static_assert
 // in the implementation.
 typedef struct {

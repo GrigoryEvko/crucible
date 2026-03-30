@@ -115,6 +115,10 @@ class _VesselLib:
         L.crucible_active_num_ops.restype = ctypes.c_uint32
         L.crucible_active_num_ops.argtypes = [ctypes.c_void_p]
 
+        # Schema name registration (bridge from dispatch lib)
+        L.crucible_register_schema_name.restype = None
+        L.crucible_register_schema_name.argtypes = [ctypes.c_uint64, ctypes.c_char_p]
+
     def create(self) -> int:
         return self._lib.crucible_create()
 
@@ -147,6 +151,10 @@ class _VesselLib:
 
     def active_num_ops(self, h: int) -> int:
         return self._lib.crucible_active_num_ops(h)
+
+    def register_schema_name(self, schema_hash: int, name: str):
+        self._lib.crucible_register_schema_name(
+            ctypes.c_uint64(schema_hash), name.encode("utf-8"))
 
 
 # =====================================================================
@@ -190,6 +198,16 @@ class _DispatchLib:
         L.crucible_dispatch_get_tls_scope.restype = ctypes.c_uint64
         L.crucible_dispatch_get_tls_scope.argtypes = []
 
+        # Schema table accessors (for bridging to vessel lib before export)
+        L.crucible_dispatch_schema_count.restype = ctypes.c_uint32
+        L.crucible_dispatch_schema_count.argtypes = []
+        L.crucible_dispatch_schema_entry.restype = ctypes.c_int
+        L.crucible_dispatch_schema_entry.argtypes = [
+            ctypes.c_uint32,
+            ctypes.POINTER(ctypes.c_uint64),
+            ctypes.POINTER(ctypes.c_char_p),
+        ]
+
     def set_mode(self, mode: int):
         self._lib.crucible_dispatch_set_tls_mode(ctypes.c_uint8(mode))
 
@@ -204,6 +222,25 @@ class _DispatchLib:
 
     def get_scope(self) -> int:
         return self._lib.crucible_dispatch_get_tls_scope()
+
+    def schema_count(self) -> int:
+        return self._lib.crucible_dispatch_schema_count()
+
+    def schema_entries(self) -> list[tuple[int, str]]:
+        """Return all (schema_hash, name) pairs from dispatch lib's table."""
+        n = self.schema_count()
+        result = []
+        for i in range(n):
+            h = ctypes.c_uint64(0)
+            name = ctypes.c_char_p(None)
+            ok = self._lib.crucible_dispatch_schema_entry(
+                ctypes.c_uint32(i),
+                ctypes.byref(h),
+                ctypes.byref(name),
+            )
+            if ok and name.value is not None:
+                result.append((h.value, name.value.decode("utf-8")))
+        return result
 
 
 # =====================================================================
@@ -415,6 +452,13 @@ class CrucibleNative:
                 print("[crucible] need 2+ complete iterations for detection")
             return False
 
+        # Bridge schema names from dispatch lib to vessel lib.
+        # Each .so has its own copy of global_schema_table() (inline static
+        # local).  crucible_fallback.cpp registers names into the dispatch
+        # lib's copy, but crucible_export_crtrace reads from the vessel
+        # lib's copy.  Copy all entries before export.
+        self._bridge_schema_names()
+
         ok = self._vessel.export_crtrace(self._handle, path)
         if self._verbose:
             if ok:
@@ -422,6 +466,23 @@ class CrucibleNative:
             else:
                 print(f"[crucible] export failed: {path}")
         return ok
+
+    def _bridge_schema_names(self):
+        """Copy schema names from dispatch lib's table to vessel lib's table.
+
+        Both libraries have independent copies of global_schema_table()
+        because it uses an inline function with a static local variable.
+        The dispatch lib populates its copy during op recording; the vessel
+        lib reads its copy during .crtrace export.  This method bridges them.
+        """
+        if not self._dispatch or not self._vessel:
+            return
+        entries = self._dispatch.schema_entries()
+        for schema_hash, name in entries:
+            self._vessel.register_schema_name(schema_hash, name)
+        if self._verbose and entries:
+            print(f"[crucible] bridged {len(entries)} schema names "
+                  f"from dispatch lib to vessel lib")
 
     # ── Queries ──────────────────────────────────────────────────────
 

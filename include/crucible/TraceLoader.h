@@ -17,8 +17,9 @@
 //     uint16 num_inputs, uint16 num_outputs, uint16 num_scalars,
 //     uint8  grad_enabled, uint8 inference_mode
 //
-//   Meta records (num_metas × 144B):
+//   Meta records (num_metas × 168B):
 //     Raw TensorMeta structs (sizes, strides, data_ptr, ndim, dtype, etc.)
+//     Auto-detects legacy 144B and 160B formats for backward compat.
 //
 //   Schema name table (optional, present if file has trailing data):
 //     uint32   num_names
@@ -79,6 +80,11 @@ struct LoadedTrace {
 };
 
 // ── Loader ───────────────────────────────────────────────────────────
+
+// .crtrace is written and read as raw struct bytes — only correct on
+// little-endian hosts. x86_64 and aarch64 (in LE mode) are fine.
+static_assert(std::endian::native == std::endian::little,
+              ".crtrace format requires little-endian host");
 
 [[nodiscard]] inline std::unique_ptr<LoadedTrace> load_trace(const char* path) {
   std::FILE* f = std::fopen(path, "rb");

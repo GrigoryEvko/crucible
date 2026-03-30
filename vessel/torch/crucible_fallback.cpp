@@ -47,8 +47,8 @@ namespace {
 static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
 static constexpr uint64_t FNV_PRIME  = 0x100000001b3ULL;
 
-[[nodiscard]] static uint64_t fnv1a_bytes(const void* data, size_t len) {
-    uint64_t h = FNV_OFFSET;
+[[nodiscard]] static uint64_t fnv1a_bytes(const void* data, size_t len,
+                                           uint64_t h = FNV_OFFSET) {
     const auto* p = static_cast<const uint8_t*>(data);
     for (size_t i = 0; i < len; i++) {
         h ^= p[i];
@@ -157,15 +157,19 @@ static thread_local SchemaHashSlot schema_cache[SCHEMA_CACHE_CAP]{};
 // Identical to vessel_api.cpp crucible_hash_shapes().
 // =====================================================================
 
+// Must produce identical hashes to vessel_api.cpp::crucible_hash_shapes().
+// Chain: for each tensor, fold ndim (1 byte) then sizes (ndim * 8 bytes)
+// into a single continuous FNV-1a accumulator.
 [[nodiscard]] static crucible::ShapeHash compute_shape_hash(
     const crucible::TensorMeta* metas, uint16_t n_inputs)
 {
     uint64_t h = FNV_OFFSET;
     for (uint16_t i = 0; i < n_inputs; i++) {
-        h ^= metas[i].ndim;
-        h *= FNV_PRIME;
+        // Hash ndim as separator (1 byte), continuing the chain.
+        h = fnv1a_bytes(&metas[i].ndim, 1, h);
+        // Hash sizes[0..ndim-1], continuing the chain.
         const uint32_t nbytes = metas[i].ndim * sizeof(int64_t);
-        h = fnv1a_bytes(metas[i].sizes, nbytes) ^ h;
+        h = fnv1a_bytes(metas[i].sizes, nbytes, h);
     }
     return crucible::ShapeHash{h};
 }
@@ -177,9 +181,10 @@ static thread_local SchemaHashSlot schema_cache[SCHEMA_CACHE_CAP]{};
 // Handles strided and non-strided layouts.
 //
 // Fields filled:
-//   Core (141B): sizes, strides, data_ptr, ndim, dtype, device, layout
-//   Extended (27B): requires_grad, flags, output_nr, storage_offset,
-//                   version, storage_nbytes, grad_fn_hash
+//   Core (144B): sizes[8], strides[8], data_ptr, ndim, dtype,
+//                device_type, device_idx, layout, requires_grad,
+//                flags, output_nr
+//   Extended (24B): storage_offset, version, storage_nbytes, grad_fn_hash
 // =====================================================================
 
 static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
@@ -236,7 +241,13 @@ static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
             torch::autograd::impl::get_autograd_meta(t)->output_nr_ & 0xFF);
     }
 
-    // View detection: data_ptr differs from storage base
+    // View detection: check autograd is_view_ flag first (catches expand,
+    // as_strided, narrow etc. that share storage base and zero offset).
+    // Fall back to data_ptr != storage_base and storage_offset != 0 checks
+    // for non-autograd views.
+    if (am && static_cast<torch::autograd::AutogradMeta*>(am)->is_view_)
+        flags |= crucible::meta_flags::IS_VIEW;
+
     if (strided && impl->has_storage()) {
         auto* storage_base = impl->storage().data_ptr().get();
         if (storage_base != nullptr &&
@@ -309,7 +320,10 @@ struct ExtractionResult {
                 }
             }
         } else if (iv.isOptionalTensorList()) {
-            for (const auto& ref : iv.toOptionalTensorList()) {
+            // c10::List iterator dereferences to a proxy object (like
+            // vector<bool>). Binding `const auto&` to it triggers
+            // -Wrange-loop-bind-reference. Use value to avoid the warning.
+            for (const auto ref : iv.toOptionalTensorList()) {
                 const auto opt = static_cast<std::optional<at::Tensor>>(ref);
                 if (opt.has_value() && opt->defined()
                     && r.counts.inputs < MAX_INLINE_METAS) {
@@ -319,6 +333,16 @@ struct ExtractionResult {
             }
         } else if (iv.isInt() || iv.isDouble() || iv.isBool()) {
             r.scalars.push(scalar_to_int64(iv));
+        } else if (iv.isIntList()) {
+            // IntList args (e.g., size=[3,4] in reshape, padding=[1,2] in conv).
+            // Pack first elements into scalar slots (up to 5 total).
+            for (int64_t elem : iv.toIntList()) {
+                r.scalars.push(elem);
+            }
+        } else if (iv.isDoubleList()) {
+            for (double elem : iv.toDoubleList()) {
+                r.scalars.push(std::bit_cast<int64_t>(elem));
+            }
         }
     }
 
@@ -385,6 +409,12 @@ void crucibleFallback(
 
     // -- Extract input tensor metadata + scalars ----------------------
     const auto num_args   = schema.arguments().size();
+    // Guard: schema.arguments().size() > stack->size() should never happen
+    // with a well-formed dispatcher, but protect against underflow (UB).
+    if (num_args > stack->size()) [[unlikely]] {
+        op.redispatchBoxed(dispatch_keys & AFTER_CRUCIBLE_KEYSET, stack);
+        return;
+    }
     const auto args_begin = stack->size() - num_args;
 
     crucible::TensorMeta inline_metas[MAX_INLINE_METAS]{};
@@ -445,6 +475,60 @@ TORCH_LIBRARY_IMPL(profiler, Crucible, m) {
            torch::CppFunction::makeFallthrough());
 }
 
+// =====================================================================
+// Tracing completeness notes
+//
+// What IS captured by DispatchKey::Crucible fallback:
+//   [x] Forward pass ATen ops (mm, conv2d, relu, etc.)
+//   [x] Backward/autograd decomposed ops (mm, addmm, threshold_backward, etc.)
+//       The autograd engine decomposes backward into native ATen ops that
+//       all go through the dispatcher. DispatchKey::Crucible is above
+//       AutogradCPU/AutogradCUDA in the priority table, so we see them.
+//   [x] Optimizer ops (SGD: add_, mul_, addcdiv_; Adam: mul_, add_, etc.)
+//       optimizer.step() wraps ops in torch.no_grad(), but ops still dispatch
+//       through Crucible. no_grad() only affects autograd key, not Crucible.
+//   [x] Loss function ops (nll_loss, cross_entropy decomposed, mse_loss, etc.)
+//   [x] In-place ops (add_, relu_, copy_, etc.) — same dispatch path
+//   [x] View ops (reshape, transpose, expand, slice, etc.) — same dispatch
+//   [x] Gradient accumulation ops (add_ on .grad tensors)
+//
+// What IS filtered (passthrough, not recorded):
+//   [x] profiler::_record_function_enter_new/exit — bookkeeping noise
+//
+// Also captured (no special handling required):
+//   [x] aten::_foreach_* ops (fused optimizer ops like _foreach_add_,
+//       _foreach_mul_) — go through the ATen dispatcher. TensorList args
+//       are unpacked by extract_inputs() isTensorList() handler.
+//   [x] aten::empty, aten::zeros, aten::ones — allocation ops that produce
+//       fresh tensors. Recorded for correct DFG birth tracking.
+//   [x] aten::t, aten::reshape, aten::view — view/alias ops. Recorded for
+//       ALIAS edge construction and stride change tracking.
+//   [x] aten::lift_fresh — compiler-inserted materialization op. Mostly a
+//       no-op in eager mode. Recorded (harmless in iteration signature).
+//   [x] AccumulateGrad — NOT an ATen op (autograd Node), but the resulting
+//       add_/copy_ on .grad tensors IS dispatched and recorded.
+//
+// What requires attention for future phases:
+//   [ ] aten::detach, aten::alias — metadata-only ops that create no
+//       computation. Currently recorded (contributes to op count accuracy)
+//       but could be filtered for cleaner traces. Keep for now: they carry
+//       data_ptr for correct dataflow edge construction.
+//   [ ] Communication ops (all_reduce, broadcast, etc.) — ProcessGroup ops
+//       do NOT go through the ATen dispatcher. They use a separate C++
+//       class hierarchy (ProcessGroupNCCL, etc.). To capture them, we need
+//       either: (a) custom hooks in ProcessGroup, or (b) intercept the
+//       collective ops that ARE dispatched (c10d::allreduce_, etc.).
+//       See CLAUDE.md L13 Distribution for the planned approach.
+//   [ ] Custom autograd Functions (torch.autograd.Function) — the forward()
+//       contains ATen ops that ARE dispatched. The backward() also contains
+//       ATen ops that ARE dispatched. But the Function call itself is not
+//       an ATen op. The ops inside both forward/backward are fully captured.
+//   [ ] torch.compile / Inductor — if the model is compiled with
+//       torch.compile, Inductor fuses ops into triton kernels. These fused
+//       ops bypass the ATen dispatcher entirely. Crucible and torch.compile
+//       are mutually exclusive execution strategies.
+// =====================================================================
+
 } // anonymous namespace
 
 // =====================================================================
@@ -481,6 +565,32 @@ CRUCIBLE_API void crucible_dispatch_set_tls_scope(uint64_t scope_hash) {
 
 CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope() {
     return c10::CrucibleState::get_tls_state().scope_hash();
+}
+
+// ── Schema table accessors ──────────────────────────────────────────
+//
+// libcrucible_dispatch.so has its own copy of global_schema_table()
+// (inline static local, one per .so).  The vessel lib (vessel_api.cpp)
+// has a DIFFERENT copy.  To export correct .crtrace files, Python must
+// copy schema names from this table to the vessel lib's table before
+// calling crucible_export_crtrace().
+//
+// These accessors expose the dispatch lib's schema table for that copy.
+
+CRUCIBLE_API uint32_t crucible_dispatch_schema_count() {
+    return crucible::global_schema_table().count();
+}
+
+// Get the schema hash and name for the i-th entry.
+// Returns 0 if i >= count.  Writes hash and name pointer.
+CRUCIBLE_API int crucible_dispatch_schema_entry(
+    uint32_t i, uint64_t* out_hash, const char** out_name)
+{
+    const auto& table = crucible::global_schema_table();
+    if (i >= table.count()) return 0;
+    if (out_hash) *out_hash = table.entries[i].hash.raw();
+    if (out_name) *out_name = table.entries[i].name;
+    return 1;
 }
 
 } // extern "C"
