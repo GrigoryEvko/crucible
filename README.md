@@ -1,162 +1,125 @@
 # Crucible
 
-Adaptive ML runtime. Records framework dispatch, builds content-addressed computation graphs, compiles execution plans with formal safety guarantees.
+Adaptive ML runtime. Intercepts framework dispatch, builds content-addressed computation graphs, compiles execution plans with formal safety guarantees.
 
-**Status:** Research prototype. Recording pipeline, graph construction, Merkle DAG, memory planning, compiled replay with divergence recovery, and a 146-op kernel taxonomy are implemented. Shadow handles, CUDA graph replay, distributed execution, and model-aware optimization are designed but not built.
+[Whitepaper](papers/whitepaper/crucible-whitepaper.pdf) — *A Content-Addressed Adaptive Runtime for Machine Learning.* Architecture, recording pipeline, compilation model, formal verification, hardware adaptation, distribution, model-aware optimization, related work.
+
+[Yellowpaper](papers/yellowpaper/crucible-yellowpaper.pdf) — *Formal Specification of the Crucible Runtime.* Byte-level struct layouts, step-by-step algorithms, protocol state machines, hash constants, proof obligations with Z3 encodings.
 
 ---
 
-## Architecture
+## How it works
 
-Crucible interposes on PyTorch's ATen dispatch layer (the *Vessel*) to record execution traces into a lock-free SPSC ring buffer. A background thread constructs a bidirectional dataflow graph, builds a content-addressed Merkle DAG, and compiles execution plans. Identical sub-computations produce identical content hashes — enabling kernel reuse across models, runs, and organizations.
+Crucible interposes on PyTorch's ATen dispatcher via `DispatchKey::Crucible` — a C++ boxed fallback that fires on every op (forward, backward, optimizer) at ~100ns overhead. The fallback extracts tensor metadata (168B/tensor), scalar arguments, schema identity, and 5 bits of dispatch context (mutability, training phase, inference mode) into a lock-free SPSC ring buffer at one 64-byte cache-line write per op.
 
-The runtime operates in three phases: **recording** (intercept Vessel dispatch, write 64B entries to SPSC ring at 3–5ns/op), **analysis** (background thread drains ring, builds CSR graph, constructs Merkle DAG, computes static memory plan, prepares compiled execution), and **compiled** (Vessel interceptor returns pre-allocated shadow handles — no execution, no allocation, no redispatch).
+A background thread drains the ring, detects iteration boundaries from schema-hash signatures, constructs a bidirectional CSR dataflow graph, and builds a content-addressed Merkle DAG. Identical sub-computations produce identical hashes — enabling kernel reuse across models, runs, and organizations. A sweep-line allocator computes a static memory plan from dataflow lifetimes, making OOM structurally impossible.
+
+Three execution tiers: **recording** (intercept + eager redispatch, ~100ns/op), **compiled Tier 1** (guard check + pre-allocated shadow handles, ~2ns/op), **compiled Tier 2** (CUDA graph replay, ~50ns/iteration).
 
 ```
-L16  Ecosystem        kernel genome, federated learning, hardware co-design
-L15  Longitude+Augur  calibration, digital twin, monitoring, recommendations
-────────────────────────────────────────────────────────────────────────────
-L14  Lifecycle        Cipher persistence, reincarnation, deterministic replay
-L13  Distribution     Canopy mesh, no master, RAID redundancy, DiLoCo, 5D parallelism
-L12  Data             pipeline absorption, curriculum, latent augmentation
-L11  Training         meta-gradients, Hessian, K-FAC, optimizer evolution
-L10  Models           growing, pruning, width mutation, composition, live surgery
-L9   Layers           attention replacement, local losses, per-layer gradient strategy
-L8   Tokens           merging, early exit, adaptive patching, per-token precision
-────────────────────────────────────────────────────────────────────────────
-L7   Merkle DAG       content/merkle hashing, branches, guards, LoopNodes, atomic swaps
+L7   Merkle DAG       content/merkle hashing, branches, guards, LoopNodes
 L6   Graphs           bidirectional CSR, DFG/alias edges, iteration detection
-L5   Tensors          shadow handles, TensorMeta, latent space observation
-L4   Operations       Vessel dispatch interception, recording, divergence detection
+L5   Tensors          shadow handles, 168B TensorMeta, latent observation
+L4   Operations       DispatchKey::Crucible interception, op_flags, recording
 L3   Memory           static plans from dataflow lifetimes, sweep-line allocation
-L2   Kernels          SMT-optimal configuration, proved fusion, KernelCache, Philox RNG
-L1   Hardware         Relays, hardware profiling, multi-vendor, health monitoring
-────────────────────────────────────────────────────────────────────────────
-L0   FX               formal verification: Z3, consteval, reflection, type system
+L2   Kernels          SMT-optimal configuration, proved fusion, KernelCache
+L1   Hardware         Relays, profiling, multi-vendor, health monitoring
+L0   FX               Z3, consteval, reflection, type system
 ```
 
-## Terminology
+## Vessel: PyTorch integration
 
-| Name | Role |
-|------|------|
-| **Vessel** | Framework adapter (PyTorch ATen dispatch). Filled with user code, emptied by Crucible. |
-| **Vigil** | The model as persistent entity: computation DAG, weights, accumulated knowledge. Outlives any hardware. |
-| **Cipher** | Event-sourced persistent state (DAG chain, weight snapshots, KernelCache, RNG state, proof certificates). Survives hardware failure, enables deterministic replay and migration. |
-| **Relay** | Compute node running a Crucible daemon. Mortal, replaceable. |
-| **Keeper** | Per-Relay daemon: health monitoring, mesh participation, executes Augur's optimization recommendations. |
-| **Canopy** | Masterless Keeper mesh. Gossip for discovery, Raft for consensus, CRDTs for metrics. No single point of failure. |
-| **Longitude** | Startup calibration: GPU profiling, network probing, kernel calibration, Z3-optimal topology/parallelism/communication. Re-solves on topology change. |
-| **Augur** | Continuous monitoring: digital twin (per-iteration prediction), drift detection, bottleneck diagnosis (compute/memory/communication/bubble/imbalance), model intelligence (Hessian, gradient health, effective rank, CKA, scaling laws). |
-| **FX** | Formal verification: four layers — Z3 SMT (universal proofs), consteval (bounded model checking), P2996 reflection (structural completeness), type system (capability tokens, strong types, phantom tags). |
+The Vessel is a two-library design that bridges PyTorch's dispatcher with Crucible's standalone runtime:
+
+**libcrucible_dispatch.so** — C++ boxed fallback registered via `TORCH_LIBRARY_IMPL(_, Crucible, m)`. Links against the PyTorch fork (with `DispatchKey::Crucible` + `CrucibleState` TLS). Extracts `TensorMeta`, computes `SchemaHash`/`ShapeHash` via FNV-1a, caches `schema.is_mutable()` per-op in a thread-local parallel array, packs 5 `op_flags` bits, and feeds everything to Vigil's `dispatch_op()`.
+
+**libcrucible_vessel.so** — C API to Vigil lifecycle (`create`/`destroy`/`flush`/`export`). Compiled against standalone Crucible headers only. Both libraries share Vigil through headers but get independent copies of `global_schema_table()` (inline static local per `.so`), bridged by Python before export.
+
+**crucible_native.py** — Python controller. `CrucibleNative` context manager handles: library loading, `CrucibleState` TLS setup, `DispatchKey::Crucible` enable/disable, module scope tracking via forward hooks, training phase TLS, schema name bridging, `.crtrace` export.
+
+The PyTorch fork patch is minimal (~200 lines across 5 files): one dispatch key, one TLS struct with mode/context/scope fields.
 
 ## Build
 
-Requires C++26. Primary: Clang 22 + libc++ 22. Fallback: GCC 15 + libstdc++ 15. Bleeding-edge: GCC 16 for P2996 reflection.
+C++26. Primary: Clang 22 + libc++ 22. Fallback: GCC 15 + libstdc++ 15.
 
 ```bash
-cmake --preset default          # Clang 22 + libc++ (debug)
-cmake --build --preset default -j$(nproc)
-ctest --preset default
+cmake --preset default && cmake --build --preset default -j$(nproc)
+ctest --preset default          # 24 tests
 
-cmake --preset gcc              # GCC 15 fallback
-cmake --preset gcc16            # GCC 16 (reflection, inplace_vector)
+cmake --preset gcc              # GCC 15
 cmake --preset release          # -O3 -march=native -DNDEBUG
-cmake --preset verify           # Z3 proof suite
-cmake --preset tsan             # ThreadSanitizer
-cmake --preset tidy             # clang-tidy
 ```
 
-## Project Structure
-
-```
-include/crucible/          C++26 headers
-  Platform.h               Macros, branch hints ([[likely]]/[[unlikely]]), CRUCIBLE_INLINE
-  Types.h                  ScalarType (24 dtypes), DeviceType, Layout, 5 strong ID types, 6 strong hash types
-  Effects.h                Capability tokens: fx::Alloc, fx::IO, fx::Block (zero-cost authorization)
-  Arena.h                  Bump-pointer allocator (~2ns/alloc, 1MB blocks, zero fragmentation)
-  TraceRing.h              SPSC ring buffer (64B entries, 2^16 capacity, alignas(64) atomics)
-  MetaLog.h                Parallel SPSC for TensorMeta (168B entries, 2^20 capacity, zero-copy drain)
-  IterationDetector.h      K=5 schema hash signature, two-match confirmation, ~1ns steady state
-  BackgroundThread.h       Drains ring, builds TraceGraph, constructs Merkle DAG, computes MemoryPlan
-  TraceGraph.h             Bidirectional CSR property graph (DATA_FLOW, ALIAS, CONTROL_FLOW, SCALAR_FLOW)
-  MerkleDag.h              RegionNode, BranchNode (sorted arms, 5 guard kinds), LoopNode (64B),
-                           KernelCache (lock-free open-addressing, CAS insert), content/merkle hashing
-  Graph.h                  Mutable graph IR: 64B GraphNode (10 NodeKinds), 8B Inst (~50 micro-ops),
-                           ComputeBody, FuseKind (6 classifications), DCE, CSE, toposort (Kahn's O(V+E))
-  ExprPool.h               Swiss table interned symbolic expressions (32B Expr, wyhash, pointer equality)
-  SymbolTable.h            Per-symbol metadata (kind, hint, range, flags)
-  Ops.h                    55 symbolic ops for shape/dimension algebra
-  CKernel.h                146 device-agnostic compute ops (Section 1: 1–99 frozen, Section 2: 100–146)
-  CostModel.h              HardwareProfile (4-level memory hierarchy, per-dtype throughput),
-                           KernelConfig (tile/pipeline/warp params), C1–C8 constraints, roofline model.
-                           Presets: B200 (sm_100), H100 (sm_90), MI300X (gfx942), A100 (sm_80)
-  Reflect.h                GCC 16 P2996 reflection: reflect_hash<T>, reflect_print<T>
-  Philox.h                 Deterministic counter-based RNG (platform-independent, ~10 int ops)
-  SwissTable.h             SIMD control bytes (AVX-512/AVX2/SSE2/NEON/portable)
-  Cipher.h                 Serialization/deserialization for persistent state
-  ReplayEngine.h           Compiled Tier 1 replay with graduated divergence detection
-  CrucibleContext.h        Top-level context: mode transitions, recording/compiled dispatch
-  PoolAllocator.h          Single-allocation memory pool (base_ptr + offset, ~2ns/alloc)
-  SchemaTable.h            SchemaHash → op name lookup (sorted array, binary search, 512 cap)
-  TraceLoader.h            Load .crtrace binary traces (auto-detects 144/160/168B TensorMeta)
-
-include/crucible/vis/     Trace visualization (2,428 lines)
-  BlockDetector.h          Scope-based block grouping from Vessel scope_hash recordings
-  NetworkSimplex.h         Minimum-cost rank assignment for DAG layout
-  SugiyamaLayout.h         Layered graph drawing (Kahn's toposort, barycenter, virtual nodes)
-  SvgRenderer.h            Direct SVG emission (rect, text, bezier, interactive JS zoom/pan)
-  TraceVisualizer.h        Grid layout + rendering orchestrator (phase columns, skip edges, legend)
-
-test/                      C++ tests
-lean/Crucible/             Lean 4 formalization (39 modules, 1,331 theorems)
-papers/
-  whitepaper/              PDF + src/ LaTeX — system architecture, design, related work
-  yellowpaper/             PDF + src/ LaTeX — formal specification (struct layouts, algorithms, proofs)
-vessel/                    PyTorch Vessel adapter (TorchDispatchMode + C API)
-bench/                     Benchmarks + render_trace SVG visualization tool
-verify/                    Z3 proof suite scaffolding (enhanced Z3 fork with CaDiCaL)
-misc/                      Manifesto, notes, design documents
-```
-
-## Papers
-
-[**Whitepaper**](papers/whitepaper/crucible-whitepaper.pdf) ([source](papers/whitepaper/src/)) — *A Content-Addressed Adaptive Runtime for Machine Learning.* System architecture, design principles, recording pipeline, compilation model, formal verification (FX), hardware adaptation (Longitude + Augur), distribution (Canopy + Cipher), model-aware optimization, implementation status, related work (XLA, TVM, Triton, TorchInductor, FlexFlow, Alpa, Megatron, DeepSpeed, seL4, CompCert), research roadmap.
-
-[**Yellowpaper**](papers/yellowpaper/crucible-yellowpaper.pdf) ([source](papers/yellowpaper/src/)) — *Formal Specification of the Crucible Runtime.* Every data structure layout (byte-level), algorithm (step-by-step), protocol state machine, hash function (exact constants), and proof obligation (with Z3 encoding sketches). Chapters 1–5 complete (notation, types, arena, SPSC ring, tensor metadata). Chapters 6–20 in progress.
-
-Rebuild from source: `cd papers && make whitepaper yellowpaper`
-
-## Lean 4 Formalization
-
-39 modules, 1,331 theorems. Core infrastructure has zero `sorry`; 11 remain in intelligence-layer modules.
-
-Coverage: Arena (pairwise disjointness, alignment, waste bound, zero external fragmentation), MemoryPlan (sweep-line non-overlap, offset bounds), PoolAllocator (slot disjointness), SPSC ring (FIFO ordering, batch drain, capacity invariant), MetaLog (bulk read-after-write), IterationDetector (detection latency, false positive bound), TraceGraph (CSR consistency), Merkle DAG (collision probability, structural diff, replay completeness), Graph IR (DCE fixpoint convergence, topological sort validity), scheduling (Graham's bound, Brent's theorem, critical path optimality), roofline model (multi-level cache, wave quantization, correction factors), fusion (chain optimality, occupancy).
+## Recording traces
 
 ```bash
-cd lean && lake build           # Lean 4.28.0 + Mathlib
+cd vessel/torch/examples
+PYTHONPATH=~/Downloads/pytorch:.. python3 record_resnet18.py
 ```
 
-## Roadmap
+Each script sets `set_training_phase()` around forward/backward/optimizer to annotate ops with phase context. Traces land in `vessel/torch/examples/traces/`.
 
-| Phase | Target | Status |
-|-------|--------|--------|
-| **1. Foundation** | TraceRing, MetaLog, TraceGraph, Merkle DAG (Region/Branch/LoopNode), MemoryPlan, PoolAllocator, compiled Tier 1 replay, divergence recovery, CKernel 146-op taxonomy, Graph IR (DCE, CSE, toposort), effects system, Lean 4 formalization | **Done** |
-| **2. FX Core** | Z3 proof suites (arena, hashing, SPSC, memory plan, kernel access), consteval infrastructure (dual-mode Arena, Philox fuzzing, finite-state model checking), reflection structural checks (InitSafe, TypeSafe per struct), proof-carrying build | **Next** |
-| **3. Longitude** | GPU profiling (GEMM/copy benchmarks, NVML), network probing (N*N latency/bandwidth), kernel calibration (correction factors), Z3 topology solver (TP*DP*PP*EP*CP, placement, communication algorithms, checkpointing, precision — all jointly) | Planned |
-| **4. Augur** | Digital twin (DAG + cost model + corrections), per-iteration prediction, drift detection, bottleneck diagnosis, model intelligence (Hessian spectrum, gradient health, effective rank, CKA, convergence prediction, Chinchilla scaling) | Planned |
-| **5. Compiled Tier 2–3** | Shadow handles (ConductorTensorImpl, ~2ns/op), batched kernel launch, CUDA Graph capture and replay (~50ns/iter) | Planned |
-| **6. Distribution** | Canopy (gossip, Raft, CRDTs), Keepers (health, self-update), full Cipher (hot/warm/cold tiers, configurable alpha redundancy), heterogeneous compute (UCX multi-backend), DiLoCo enhancement (adaptive H, selective sync, compressed pseudo-gradients), 5D parallelism auto-tuning | Planned |
-| **7. Intelligence** | Token merging/early exit/adaptive patching, attention head classification and replacement, architecture mutation (grow/prune/width), meta-gradients, per-layer LR from curvature, curriculum learning, automatic mixed precision, optimizer evolution. All as DAG branches: Augur diagnoses, FX verifies, Keeper activates. | Planned |
+## Project layout
 
-## Key Design Decisions
+```
+include/crucible/
+  Platform.h             Macros, branch hints, CRUCIBLE_INLINE
+  Types.h                ScalarType, DeviceType, Layout, strong ID/hash types
+  Arena.h                Bump-pointer allocator (~2ns, 1MB blocks)
+  TraceRing.h            SPSC ring (64B entries, op_flags 5-bit packed context)
+  MetaLog.h              Parallel SPSC for TensorMeta (168B, zero-copy drain)
+  IterationDetector.h    K=5 schema hash signature, two-match confirmation
+  BackgroundThread.h     Ring drain → TraceGraph → Merkle DAG → MemoryPlan
+  TraceGraph.h           Bidirectional CSR (DATA_FLOW, ALIAS edges)
+  MerkleDag.h            RegionNode, BranchNode, LoopNode, KernelCache
+  Graph.h                Mutable IR: 64B GraphNode, 8B Inst, DCE, CSE, toposort
+  ExprPool.h             Swiss table interned expressions (wyhash, pointer equality)
+  Ops.h                  55 symbolic ops for shape/dimension algebra
+  CKernel.h              146 device-agnostic compute ops
+  CostModel.h            Hardware profiles, roofline model, kernel constraints
+  SchemaTable.h          SchemaHash → op name (sorted, binary search)
+  TraceLoader.h          .crtrace binary loader (auto-detects meta format)
+  Philox.h               Deterministic counter-based RNG
+  Serialize.h            CDAG v7 serialization
+  ReplayEngine.h         Compiled Tier 1 with graduated divergence detection
+  PoolAllocator.h        base_ptr + offset allocation (~2ns)
 
-- **Content-addressed computation.** Same ops + same shapes + same dtypes = same ContentHash. KernelCache keys: `(ContentHash, device_capability)`. Cross-model, cross-run, cross-organization reuse is automatic.
-- **Observe before optimizing.** Record one iteration eagerly, then compile from observations. No shape inference, no symbolic tracing, no Python AST analysis. Concrete execution only.
-- **Formal verification where tractable.** Z3 for universal bitvector properties (alignment, hashing, protocol safety, kernel access bounds). consteval for bounded model checking (compiler catches UB). Reflection for structural completeness (every field initialized, no raw integers for IDs). Type system for zero-cost enforcement (capability tokens, strong types, phantom thread tags). Explicit boundary between proved, tested, and mitigated.
-- **Two threads, spin only.** Foreground records at 3–5ns/op (one cache-line write + release store). Background drains, builds, compiles. SPSC rings with acquire/release atomics. No mutexes, no condition variables, no OS waits, no timeouts on the hot path.
-- **No training/inference distinction.** The compiled Merkle DAG is both artifacts. Deploy = copy the Cipher to a Relay. Same kernels, same memory plans, same dispatch.
-- **Eight safety axioms on every change.** InitSafe (NSDMI), TypeSafe (strong types), NullSafe ([[nodiscard]], span accessors), MemSafe (arena, = delete("reason")), BorrowSafe (SPSC ownership), ThreadSafe (acquire/release only), LeakSafe (arena bulk-free, unique_ptr), DetSafe (DAG + plan + Philox = bit-identical).
+include/crucible/vis/   Trace visualization
+  BlockDetector.h        Scope-based block grouping
+  NetworkSimplex.h       Minimum-cost rank assignment
+  SugiyamaLayout.h       Layered graph drawing
+  SvgRenderer.h          Direct SVG emission with interactive JS
+
+vessel/torch/
+  crucible_fallback.cpp  C++ boxed fallback (DispatchKey::Crucible)
+  vessel_api.cpp         C API to Vigil lifecycle
+  crucible_native.py     Python controller (CrucibleNative context manager)
+  crucible_mode.py       Legacy Python-only TorchDispatchMode path
+  examples/              Recording scripts (ResNet-18, ViT-B, SD 1.5, Llama 8B)
+    traces/              .crtrace output (gitignored)
+
+patches/                 PyTorch fork patch (~200 lines)
+test/                    C++ tests (24)
+bench/                   Micro-benchmarks
+lean/Crucible/           Lean 4 formalization (39 modules, 1,331 theorems)
+papers/
+  whitepaper/            System architecture paper
+  yellowpaper/           Formal specification
+```
+
+## Design principles
+
+**Content-addressed computation.** Same ops + same shapes + same dtypes = same `ContentHash`. `KernelCache` keys on `(ContentHash, device_capability)`. Reuse is automatic across models, runs, organizations.
+
+**Observe before optimizing.** Record one iteration eagerly, compile from observations. No symbolic tracing, no shape inference, no Python AST analysis.
+
+**Two threads, spin only.** Foreground records at 3-5ns/op (one cache-line write + release store). Background drains, builds, compiles. SPSC rings with acquire/release atomics. No mutexes, no condition variables, no OS waits on the hot path.
+
+**Eight safety axioms.** InitSafe (NSDMI on every field), TypeSafe (strong types for all semantic values), NullSafe (`[[nodiscard]]`, span accessors), MemSafe (arena allocation, `= delete("reason")`), BorrowSafe (SPSC ownership protocol), ThreadSafe (acquire/release only), LeakSafe (arena bulk-free), DetSafe (DAG + plan + Philox = bit-identical replay).
+
+**No training/inference distinction.** The compiled DAG is both. Deploy = copy the Cipher.
 
 ## License
 
-Proprietary. All rights reserved.
+MIT
