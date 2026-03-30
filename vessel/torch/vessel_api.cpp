@@ -142,7 +142,9 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
     entry.num_outputs = num_outputs;
     entry.num_scalar_args = num_scalars;
     entry.grad_enabled = grad_enabled != 0;
-    entry.inference_mode = inference_mode != 0;
+    // C API doesn't set op_flags bits beyond inference_mode.
+    // Native C++ fallback (crucible_fallback.cpp) sets all 5 bits directly.
+    entry.op_flags = inference_mode != 0 ? crucible::op_flag::INFERENCE_MODE : 0;
 
     uint16_t n = num_scalars < 5 ? num_scalars : 5;
     if (scalar_values) {
@@ -249,8 +251,14 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) {
         rec.num_outputs = te.num_outputs;
         rec.num_scalars = te.num_scalar_args;
         rec.grad_enabled = te.grad_enabled ? 1 : 0;
-        rec.inference_mode = static_cast<uint8_t>(
-            (te.inference_mode ? 1 : 0) | (te.is_mutable ? 2 : 0));
+        // Pack all op_flags back into one byte for on-disk format.
+        uint8_t flags = 0;
+        if (te.inference_mode) flags |= crucible::op_flag::INFERENCE_MODE;
+        if (te.is_mutable)     flags |= crucible::op_flag::IS_MUTABLE;
+        flags |= (static_cast<uint8_t>(te.training_phase) & 0x3)
+                 << crucible::op_flag::PHASE_SHIFT;
+        if (te.torch_function) flags |= crucible::op_flag::TORCH_FUNCTION;
+        rec.inference_mode = flags;
         const uint16_t ns = te.num_scalar_args < 5 ? te.num_scalar_args : 5;
         for (uint16_t s = 0; s < ns; s++)
             rec.scalar_values[s] = te.scalar_args ? te.scalar_args[s] : 0;

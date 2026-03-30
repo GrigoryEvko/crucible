@@ -200,7 +200,13 @@ struct TraceEntry {
   // registered schema_hash → CKernelId mappings. Used by Tier 2+ replay
   // to dispatch directly without going through the Vessel dispatcher.
   CKernelId kernel_id = CKernelId::OPAQUE; // 1B
-  bool is_mutable = false;    // 1B — schema.is_mutable (in-place op)
+  bool is_mutable = false;    // 1B — schema.is_mutable (in-place or out= op)
+
+  // Training phase: set by Python via TLS, unpacked from op_flags bits 2-3.
+  // Distinguishes forward/backward/optimizer/other for L9-L11 intelligence.
+  TrainingPhase training_phase = TrainingPhase::FORWARD; // 1B
+  // __torch_function__ was active for this op (tensor subclass, dispatch mode).
+  bool torch_function = false;  // 1B
 
   // Tensor identity tracking (for dataflow edges between ops)
   OpIndex* input_trace_indices = nullptr; // 8B — which previous op produced each input

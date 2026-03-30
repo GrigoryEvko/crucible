@@ -51,6 +51,8 @@ int main() {
         ops[i].num_scalar_args  = 1;
         ops[i].grad_enabled     = (i % 2 == 0);
         ops[i].inference_mode   = false;
+        ops[i].training_phase   = crucible::TrainingPhase::FORWARD;
+        ops[i].torch_function   = false;
 
         ops[i].input_metas      = arena.alloc_array<crucible::TensorMeta>(test.alloc, 2);
         ops[i].input_metas[0]   = make_meta(4, 8);

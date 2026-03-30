@@ -100,6 +100,10 @@ struct ScalarArgs {
 // typical models (<500 unique ops).
 // =====================================================================
 
+// Per-op cached info: schema hash + is_mutable flag.
+// SchemaHash (16B slot) + is_mutable parallel array (1B) = 34KB total.
+// Fits comfortably in L1d (48KB Zen 4). The parallel array avoids
+// bloating slots to 24B which would spill L1d.
 struct SchemaHashSlot {
     const void*          key  = nullptr;
     crucible::SchemaHash hash;
@@ -108,15 +112,22 @@ struct SchemaHashSlot {
 static constexpr uint32_t SCHEMA_CACHE_CAP  = 2048;
 static constexpr uint32_t SCHEMA_CACHE_MASK = SCHEMA_CACHE_CAP - 1;
 static thread_local SchemaHashSlot schema_cache[SCHEMA_CACHE_CAP]{};
+static thread_local bool schema_is_mutable[SCHEMA_CACHE_CAP]{};
 
-[[nodiscard]] static crucible::SchemaHash get_schema_hash(
-    const c10::OperatorHandle& op)
+struct SchemaInfo {
+    crucible::SchemaHash hash;
+    bool is_mutable = false;
+};
+
+[[nodiscard]] static SchemaInfo get_schema_info(
+    const c10::OperatorHandle& op,
+    const c10::FunctionSchema& schema)
 {
     const auto idx = (reinterpret_cast<uintptr_t>(&op) >> 4)
                      & SCHEMA_CACHE_MASK;
     auto& slot = schema_cache[idx];
     if (slot.key == &op) [[likely]]
-        return slot.hash;
+        return {slot.hash, schema_is_mutable[idx]};
 
     // Cache miss: compute FNV-1a over "namespace::name.overload".
     const auto& name = op.operator_name();
@@ -145,10 +156,27 @@ static thread_local SchemaHashSlot schema_cache[SCHEMA_CACHE_CAP]{};
     }
     crucible::register_schema_name(schema_hash, full_name.c_str());
 
+    // Authoritative mutability from schema alias annotations.
+    // Catches both in-place ops (add_.Tensor: self(a!)) and out= variants
+    // (add.out: out(a!)). FunctionSchema::is_mutable() checks if any
+    // argument has AliasInfo with isWrite() == true.
+    const bool mutable_op = schema.is_mutable();
+
     slot.key  = &op;
     slot.hash = schema_hash;
-    return schema_hash;
+    schema_is_mutable[idx] = mutable_op;
+    return {schema_hash, mutable_op};
 }
+
+// =====================================================================
+// Training phase TLS
+//
+// Set by Python controller to distinguish forward/backward/optimizer.
+// Lives in the dispatch lib (no PyTorch patch needed). The fallback
+// reads this and packs it into op_flags bits 2-3.
+// =====================================================================
+
+static thread_local uint8_t s_training_phase = 0;
 
 // =====================================================================
 // Shape hash
@@ -421,9 +449,9 @@ void crucibleFallback(
     auto [counts, scalars] = extract_inputs(
         *stack, args_begin, num_args, inline_metas);
 
-    // -- Compute hashes -----------------------------------------------
-    const auto schema_hash = get_schema_hash(op);
-    const auto shape_hash  = compute_shape_hash(inline_metas, counts.inputs);
+    // -- Compute hashes + mutability -----------------------------------
+    const auto [schema_hash, is_mutable] = get_schema_info(op, schema);
+    const auto shape_hash = compute_shape_hash(inline_metas, counts.inputs);
 
     // -- Execute eagerly (Tier 1: always redispatch) ------------------
     op.redispatchBoxed(dispatch_keys & AFTER_CRUCIBLE_KEYSET, stack);
@@ -439,7 +467,17 @@ void crucibleFallback(
     entry.num_outputs     = counts.outputs;
     entry.num_scalar_args = scalars.count;
     entry.grad_enabled    = c10::GradMode::is_enabled();
-    entry.inference_mode  = c10::InferenceMode::is_enabled();
+
+    // Pack op_flags: 5 bits of per-op context.
+    uint8_t flags = 0;
+    if (c10::InferenceMode::is_enabled())
+        flags |= crucible::op_flag::INFERENCE_MODE;
+    if (is_mutable)
+        flags |= crucible::op_flag::IS_MUTABLE;
+    flags |= (s_training_phase & 0x3) << crucible::op_flag::PHASE_SHIFT;
+    if (dispatch_keys.has(c10::DispatchKey::Python))
+        flags |= crucible::op_flag::TORCH_FUNCTION;
+    entry.op_flags = flags;
 
     for (uint16_t s = 0; s < scalars.count; s++)
         entry.scalar_values[s] = scalars.values[s];
@@ -565,6 +603,20 @@ CRUCIBLE_API void crucible_dispatch_set_tls_scope(uint64_t scope_hash) {
 
 CRUCIBLE_API uint64_t crucible_dispatch_get_tls_scope() {
     return c10::CrucibleState::get_tls_state().scope_hash();
+}
+
+// ── Training phase TLS ─────────────────────────────────────────────
+//
+// Thread-local training phase, set by Python controller to distinguish
+// forward/backward/optimizer passes. Packed into op_flags bits 2-3.
+// Lives in the dispatch lib — no PyTorch patch needed.
+
+CRUCIBLE_API void crucible_dispatch_set_training_phase(uint8_t phase) {
+    s_training_phase = phase & 0x3;
+}
+
+CRUCIBLE_API uint8_t crucible_dispatch_get_training_phase() {
+    return s_training_phase;
 }
 
 // ── Schema table accessors ──────────────────────────────────────────

@@ -621,26 +621,17 @@ struct BackgroundThread {
       te.num_inputs = re.num_inputs;
       te.num_outputs = re.num_outputs;
       te.grad_enabled = re.grad_enabled;
-      te.inference_mode = re.inference_mode;
       te.kernel_id = classify_kernel(re.schema_hash);
-      // Detect in-place ops from schema name convention: ATen in-place ops
-      // end with '_' before the overload dot (e.g., "aten::add_.Tensor").
-      // SchemaTable lookup is O(log n) and only runs once per region build.
-      {
-        const char* sname = schema_name(re.schema_hash);
-        te.is_mutable = false;
-        if (sname) {
-          // Find the last ':' (end of namespace) and scan forward to '.' or '\0'.
-          const char* p = std::strrchr(sname, ':');
-          if (p) p++; else p = sname;
-          // Walk to end of base name (before '.' overload or '\0').
-          const char* end = p;
-          while (*end && *end != '.') end++;
-          // In-place if base name ends with '_' and is longer than 1 char.
-          if (end > p && *(end - 1) == '_')
-            te.is_mutable = true;
-        }
-      }
+
+      // Unpack op_flags: 5 bits set by the Vessel fallback at dispatch time.
+      // Ground truth from the dispatch site (schema, TLS, dispatch keys),
+      // not heuristics. See TraceRing.h op_flag:: constants.
+      const uint8_t flags = re.op_flags;
+      te.inference_mode  = (flags & op_flag::INFERENCE_MODE) != 0;
+      te.is_mutable      = (flags & op_flag::IS_MUTABLE) != 0;
+      te.training_phase  = static_cast<TrainingPhase>(
+          (flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
+      te.torch_function  = (flags & op_flag::TORCH_FUNCTION) != 0;
       assert(re.num_scalar_args <= 5 &&
              "op has >5 scalar args — truncated in TraceRing (see Task #18)");
       uint16_t n_scalars = std::min(re.num_scalar_args, uint16_t(5));
