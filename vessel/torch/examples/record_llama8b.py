@@ -20,7 +20,7 @@ from crucible_native import CrucibleNative
 
 
 def main():
-    out_path = sys.argv[1] if len(sys.argv) > 1 else "../../traces/llama8b.crtrace"
+    out_path = sys.argv[1] if len(sys.argv) > 1 else "traces/llama8b.crtrace"
 
     print("=" * 60)
     print("Crucible Vessel — Llama 3.1 8B (native C++ dispatch)")
@@ -60,9 +60,13 @@ def main():
 
         for i in range(4):
             t0 = time.perf_counter()
+            ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
             optimizer.zero_grad()
+            ctx.set_training_phase(ctx.PHASE_FORWARD)
             out = model(input_ids, labels=labels)
+            ctx.set_training_phase(ctx.PHASE_BACKWARD)
             out.loss.backward()
+            ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
             optimizer.step()
             dt = (time.perf_counter() - t0) * 1000
             print(f"  iter {i}: loss={out.loss.item():.4f} ({dt:.1f}ms) "

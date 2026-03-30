@@ -22,7 +22,7 @@ from crucible_native import CrucibleNative
 
 
 def main():
-    out_path = sys.argv[1] if len(sys.argv) > 1 else "../../traces/resnet18.crtrace"
+    out_path = sys.argv[1] if len(sys.argv) > 1 else "traces/resnet18.crtrace"
 
     print("=" * 60)
     print("Crucible Vessel — ResNet-18 (native C++ dispatch)")
@@ -44,10 +44,14 @@ def main():
 
         for i in range(4):
             t0 = time.perf_counter()
+            ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
             optimizer.zero_grad()
+            ctx.set_training_phase(ctx.PHASE_FORWARD)
             out = model(images)
             loss = criterion(out, labels)
+            ctx.set_training_phase(ctx.PHASE_BACKWARD)
             loss.backward()
+            ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
             optimizer.step()
             dt = (time.perf_counter() - t0) * 1000
             print(f"  iter {i}: loss={loss.item():.4f} ({dt:.1f}ms) "
