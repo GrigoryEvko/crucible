@@ -15,7 +15,7 @@ C++ implementation:
 
 Key C++ constants:
   CDAG_MAGIC   = 0x43444147  ('GDAG' little-endian)
-  CDAG_VERSION = 6           (v6: +input_slot_ids on TraceEntry)
+  CDAG_VERSION = 7           (v7: op_flags byte replaces inference_mode+is_mutable)
 
 Position-independence:
   TensorMeta.data_ptr is always written as 0 (runtime address, meaningless persisted).
@@ -39,9 +39,9 @@ namespace Crucible
     Used as the first 4 bytes of every serialized node for format identification. -/
 def cdagMagic : Nat := 0x43444147
 
-/-- CDAG wire format version. C++: `CDAG_VERSION = 6`.
+/-- CDAG wire format version. C++: `CDAG_VERSION = 7`.
     Incremented on breaking format changes. Deserialization rejects mismatches. -/
-def cdagVersion : Nat := 6
+def cdagVersion : Nat := 7
 
 /-- Header size in bytes. C++: magic(4) + version(4) + kind(1) + pad(7) + merkle(8) + content(8). -/
 def headerSize : Nat := 32

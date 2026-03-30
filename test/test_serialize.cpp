@@ -50,9 +50,11 @@ int main() {
         ops[i].num_outputs      = 1;
         ops[i].num_scalar_args  = 1;
         ops[i].grad_enabled     = (i % 2 == 0);
-        ops[i].inference_mode   = false;
-        ops[i].training_phase   = crucible::TrainingPhase::FORWARD;
-        ops[i].torch_function   = false;
+        // Vary op_flags across ops to exercise bit-packing round-trip.
+        ops[i].inference_mode   = (i == 0);  // op 0: inference mode
+        ops[i].is_mutable       = (i == 1);  // op 1: mutable (in-place)
+        ops[i].training_phase   = static_cast<crucible::TrainingPhase>(i % 4);
+        ops[i].torch_function   = (i == 2);  // op 2: torch_function active
 
         ops[i].input_metas      = arena.alloc_array<crucible::TensorMeta>(test.alloc, 2);
         ops[i].input_metas[0]   = make_meta(4, 8);
@@ -109,6 +111,13 @@ int main() {
         assert(loaded->ops[i].num_inputs   == ops[i].num_inputs);
         assert(loaded->ops[i].num_outputs  == ops[i].num_outputs);
         assert(loaded->ops[i].num_scalar_args == ops[i].num_scalar_args);
+
+        // op_flags fields must round-trip through bit-packed serialization.
+        assert(loaded->ops[i].grad_enabled    == ops[i].grad_enabled);
+        assert(loaded->ops[i].inference_mode  == ops[i].inference_mode);
+        assert(loaded->ops[i].is_mutable      == ops[i].is_mutable);
+        assert(loaded->ops[i].training_phase  == ops[i].training_phase);
+        assert(loaded->ops[i].torch_function  == ops[i].torch_function);
 
         // data_ptr MUST be null after deserialization (not a meaningful address).
         for (uint16_t j = 0; j < ops[i].num_inputs; j++) {

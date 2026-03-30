@@ -25,7 +25,7 @@
 namespace crucible {
 
 static constexpr uint32_t CDAG_MAGIC   = 0x43444147u; // 'GDAG' LE
-static constexpr uint32_t CDAG_VERSION = 6u;           // v6: +input_slot_ids on TraceEntry
+static constexpr uint32_t CDAG_VERSION = 7u;           // v7: op_flags byte replaces inference_mode+is_mutable (3B vs 4B per op)
 
 // ═══════════════════════════════════════════════════════════════════
 // Internal Writer/Reader — linear cursor with overflow detection.

@@ -15,7 +15,7 @@
 //     uint64 scope_hash, uint64 callsite_hash,
 //     int64  scalar_values[5],
 //     uint16 num_inputs, uint16 num_outputs, uint16 num_scalars,
-//     uint8  grad_enabled, uint8 inference_mode
+//     uint8  grad_enabled, uint8 op_flags (bit-packed, see op_flag:: in TraceRing.h)
 //
 //   Meta records (num_metas × 168B):
 //     Raw TensorMeta structs (sizes, strides, data_ptr, ndim, dtype, etc.)
@@ -58,7 +58,8 @@ struct TraceOpRecord {
   uint16_t num_outputs = 0;       // 2B
   uint16_t num_scalars = 0;       // 2B
   uint8_t grad_enabled = 0;       // 1B
-  uint8_t inference_mode = 0;     // 1B — op_flags: see op_flag:: constants in TraceRing.h
+  uint8_t inference_mode = 0;     // 1B — misleading name (kept for struct layout); carries
+                                  //       all op_flag bits, see op_flag:: in TraceRing.h
 };
 
 static_assert(sizeof(TraceOpRecord) == 80, "TraceOpRecord must be 80 bytes");
