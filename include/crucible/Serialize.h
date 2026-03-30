@@ -198,9 +198,17 @@ inline Header read_header(Reader& r) {
         w.w(te.num_outputs);
         w.w(te.num_scalar_args);
         w.w(te.grad_enabled);
-        w.w(te.inference_mode);
+        // Pack all op_flags into one byte (same layout as TraceRing::Entry::op_flags).
+        {
+            uint8_t flags = 0;
+            if (te.inference_mode) flags |= op_flag::INFERENCE_MODE;
+            if (te.is_mutable)     flags |= op_flag::IS_MUTABLE;
+            flags |= (static_cast<uint8_t>(te.training_phase) & 0x3)
+                     << op_flag::PHASE_SHIFT;
+            if (te.torch_function) flags |= op_flag::TORCH_FUNCTION;
+            w.w(flags);
+        }
         w.w(std::to_underlying(te.kernel_id));
-        w.w(static_cast<uint8_t>(te.is_mutable ? 1 : 0));
 
         for (uint16_t j = 0; j < te.num_inputs; j++) {
             write_meta(w, te.input_metas ? te.input_metas[j] : TensorMeta{});
@@ -297,9 +305,16 @@ inline Header read_header(Reader& r) {
         te.num_outputs      = r.r<uint16_t>();
         te.num_scalar_args  = r.r<uint16_t>();
         te.grad_enabled     = r.r<bool>();
-        te.inference_mode   = r.r<bool>();
+        // Unpack op_flags byte (same layout as TraceRing::Entry::op_flags).
+        {
+            const uint8_t flags = r.r<uint8_t>();
+            te.inference_mode  = (flags & op_flag::INFERENCE_MODE) != 0;
+            te.is_mutable      = (flags & op_flag::IS_MUTABLE) != 0;
+            te.training_phase  = static_cast<TrainingPhase>(
+                (flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
+            te.torch_function  = (flags & op_flag::TORCH_FUNCTION) != 0;
+        }
         te.kernel_id        = static_cast<CKernelId>(r.r<uint8_t>());
-        te.is_mutable       = r.r<uint8_t>() != 0;
 
         te.input_metas = (te.num_inputs > 0)
             ? arena.alloc_array<TensorMeta>(a, te.num_inputs) : nullptr;

@@ -436,9 +436,14 @@ static void bench_phase2_subparts(
       te.num_inputs = re.num_inputs;
       te.num_outputs = re.num_outputs;
       te.grad_enabled = re.grad_enabled;
-      te.inference_mode = re.inference_mode;
+      // Unpack op_flags (same logic as BackgroundThread::build_trace).
+      const uint8_t flags = re.op_flags;
+      te.inference_mode  = (flags & op_flag::INFERENCE_MODE) != 0;
+      te.is_mutable      = (flags & op_flag::IS_MUTABLE) != 0;
+      te.training_phase  = static_cast<TrainingPhase>(
+          (flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
+      te.torch_function  = (flags & op_flag::TORCH_FUNCTION) != 0;
       te.kernel_id = CKernelId::OPAQUE;
-      te.pad_te = 0;
       uint16_t n_scalars = std::min(re.num_scalar_args, uint16_t(5));
       te.num_scalar_args = n_scalars;
 

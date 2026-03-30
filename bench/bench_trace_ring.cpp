@@ -33,7 +33,7 @@ static TraceRing::Entry make_entry(uint64_t schema, uint64_t shape) {
     e.num_outputs = 1;
     e.num_scalar_args = 1;
     e.grad_enabled = true;
-    e.inference_mode = false;
+    e.op_flags = 0;
     e.scalar_values[0] = 42;
     return e;
 }

@@ -198,6 +198,12 @@ class _DispatchLib:
         L.crucible_dispatch_get_tls_scope.restype = ctypes.c_uint64
         L.crucible_dispatch_get_tls_scope.argtypes = []
 
+        # TLS training phase (op_flags bits 2-3)
+        L.crucible_dispatch_set_training_phase.restype = None
+        L.crucible_dispatch_set_training_phase.argtypes = [ctypes.c_uint8]
+        L.crucible_dispatch_get_training_phase.restype = ctypes.c_uint8
+        L.crucible_dispatch_get_training_phase.argtypes = []
+
         # Schema table accessors (for bridging to vessel lib before export)
         L.crucible_dispatch_schema_count.restype = ctypes.c_uint32
         L.crucible_dispatch_schema_count.argtypes = []
@@ -207,6 +213,9 @@ class _DispatchLib:
             ctypes.POINTER(ctypes.c_uint64),
             ctypes.POINTER(ctypes.c_char_p),
         ]
+
+    def set_training_phase(self, phase: int):
+        self._lib.crucible_dispatch_set_training_phase(ctypes.c_uint8(phase))
 
     def set_mode(self, mode: int):
         self._lib.crucible_dispatch_set_tls_mode(ctypes.c_uint8(mode))
@@ -297,6 +306,12 @@ class CrucibleNative:
     RECORD   = 1
     COMPILED = 2
     DIVERGED = 3
+
+    # TrainingPhase ordinals (packed into op_flags bits 2-3)
+    PHASE_FORWARD   = 0
+    PHASE_BACKWARD  = 1
+    PHASE_OPTIMIZER = 2
+    PHASE_OTHER     = 3
 
     def __init__(self, *, vessel_lib_path: str | None = None,
                  dispatch_lib_path: str | None = None,
@@ -511,6 +526,22 @@ class CrucibleNative:
 
     def active_num_ops(self) -> int:
         return self._vessel.active_num_ops(self._handle) if self._vessel else 0
+
+    def set_training_phase(self, phase: int):
+        """Set the training phase for subsequent ops (op_flags bits 2-3).
+
+        Call this between training phases so the trace records which ops
+        belong to forward, backward, or optimizer passes:
+
+            ctx.set_training_phase(ctx.PHASE_FORWARD)
+            out = model(x)
+            ctx.set_training_phase(ctx.PHASE_BACKWARD)
+            loss.backward()
+            ctx.set_training_phase(ctx.PHASE_OPTIMIZER)
+            optimizer.step()
+        """
+        if self._dispatch:
+            self._dispatch.set_training_phase(phase)
 
     @property
     def scope_names(self) -> dict[int, str]:

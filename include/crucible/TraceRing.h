@@ -17,7 +17,7 @@ namespace crucible {
 //
 // Entry is exactly 64 bytes (one cache line). Layout:
 //   schema_hash(8) + shape_hash(8) + num_inputs(2) + num_outputs(2)
-//   + num_scalar_args(2) + grad_enabled(1) + inference_mode(1)
+//   + num_scalar_args(2) + grad_enabled(1) + op_flags(1)
 //   + scalar_values[5](40) = 64 bytes
 //
 // Parallel arrays alongside entries[]:
@@ -36,6 +36,34 @@ namespace crucible {
 // (shows less space than actually available). This eliminates cross-core
 // cache-line traffic on the common path: ~20,000 appends between drains
 // at 5ns/op and 100us drain interval.
+// Op recording flags packed into Entry::op_flags.
+// Bit-packed into one byte to preserve the 64B cache-line entry.
+//
+//   7     6     5     4     3     2     1     0
+// ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
+// │     reserved    │ TFN │   phase   │ MUT │ INF │
+// └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
+//
+// bit 0:   INFERENCE_MODE — c10::InferenceMode active
+// bit 1:   IS_MUTABLE     — schema.is_mutable() (in-place or out= op)
+// bit 2-3: TRAINING_PHASE — 0=forward, 1=backward, 2=optimizer, 3=other
+// bit 4:   TORCH_FUNCTION — DispatchKey::Python active (__torch_function__)
+namespace op_flag {
+inline constexpr uint8_t INFERENCE_MODE = 1 << 0;
+inline constexpr uint8_t IS_MUTABLE     = 1 << 1;
+inline constexpr uint8_t PHASE_MASK     = 0x3 << 2;  // bits 2-3
+inline constexpr uint8_t PHASE_SHIFT    = 2;
+inline constexpr uint8_t TORCH_FUNCTION = 1 << 4;
+} // namespace op_flag
+
+// Training phase encoded in op_flags bits 2-3.
+enum class TrainingPhase : uint8_t {
+  FORWARD   = 0,
+  BACKWARD  = 1,
+  OPTIMIZER = 2,
+  OTHER     = 3,
+};
+
 struct CRUCIBLE_OWNER TraceRing {
   struct alignas(64) Entry {
     SchemaHash schema_hash;              // 8B — op identity
@@ -44,7 +72,7 @@ struct CRUCIBLE_OWNER TraceRing {
     uint16_t num_outputs = 0;            // 2B
     uint16_t num_scalar_args = 0;        // 2B
     bool grad_enabled = false;           // 1B
-    bool inference_mode = false;         // 1B
+    uint8_t op_flags = 0;               // 1B — bit-packed, see op_flag::*
     // Scalar argument values (int64_t bitcast for doubles/bools/enums).
     // 5 slots cover 99.9% of ops. Overflow counted in num_scalar_args.
     int64_t scalar_values[5]{};          // 40B — zero-init prevents hash instability

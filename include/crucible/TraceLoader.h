@@ -58,7 +58,7 @@ struct TraceOpRecord {
   uint16_t num_outputs = 0;       // 2B
   uint16_t num_scalars = 0;       // 2B
   uint8_t grad_enabled = 0;       // 1B
-  uint8_t inference_mode = 0;     // 1B — bit 0: inference_mode, bit 1: is_mutable
+  uint8_t inference_mode = 0;     // 1B — op_flags: see op_flag:: constants in TraceRing.h
 };
 
 static_assert(sizeof(TraceOpRecord) == 80, "TraceOpRecord must be 80 bytes");
@@ -211,7 +211,7 @@ static_assert(std::endian::native == std::endian::little,
     e.num_outputs = r.num_outputs;
     e.num_scalar_args = r.num_scalars;
     e.grad_enabled = r.grad_enabled != 0;
-    e.inference_mode = (r.inference_mode & 1) != 0;
+    e.op_flags = r.inference_mode;  // on-disk byte carries all op_flag bits
     uint16_t n = r.num_scalars < 5 ? r.num_scalars : 5;
     for (uint16_t s = 0; s < n; s++)
       e.scalar_values[s] = r.scalar_values[s];
