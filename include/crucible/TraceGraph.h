@@ -119,6 +119,10 @@ inline void build_csr(
     uint32_t num_ops) {
   graph->num_edges = num_edges;
 
+  // Degenerate case: empty trace.  alloc_array(0) returns nullptr, and
+  // memcpy/memset on nullptr is UB even with n=0.  Bail early.
+  if (num_ops == 0) return;
+
   // Allocate CSR arrays.
   graph->fwd_edges = arena.alloc_array<Edge>(a, num_edges);
   graph->fwd_offsets = arena.alloc_array<uint32_t>(a, num_ops + 1);
