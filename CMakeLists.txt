@@ -137,8 +137,13 @@ if(CRUCIBLE_WERROR)
   # Gated on target property so bench/ can opt out cleanly (benches
   # legitimately ignore some [[nodiscard]] returns — they're measuring,
   # not enforcing).  Library + tests keep full -Werror.
+  # -Wno-error=tsan: GCC rejects std::atomic_thread_fence under
+  # -fsanitize=thread (TSan can't model fences).  Our SPSC rings use
+  # a relaxed-load + acquire-fence fast path; pattern is sound per the
+  # C++ model.  Warning remains visible; just not an error.
   target_compile_options(crucible INTERFACE
-    $<$<NOT:$<BOOL:$<TARGET_PROPERTY:CRUCIBLE_NO_WERROR>>>:-Werror>)
+    $<$<NOT:$<BOOL:$<TARGET_PROPERTY:CRUCIBLE_NO_WERROR>>>:-Werror
+      -Wno-error=tsan>)
 endif()
 
 # ═══════════════════════════════════════════════════════════════
