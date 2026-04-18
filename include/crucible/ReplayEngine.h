@@ -94,8 +94,11 @@ struct ReplayEngine {
   //
   // Caller must reset() after COMPLETE before calling advance() again.
   [[nodiscard]] CRUCIBLE_INLINE ReplayStatus
-  advance(SchemaHash schema_hash, ShapeHash shape_hash) {
-    assert(cursor_ < end_ && "advance() past end without reset");
+  advance(SchemaHash schema_hash, ShapeHash shape_hash)
+#if CRUCIBLE_HAS_CONTRACTS
+      pre (cursor_ < end_)
+#endif
+  {
 
     // Guard 1: op identity. L1d load at offset 0.
     if (schema_hash != expected_schema_) [[unlikely]]

@@ -313,11 +313,15 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 # ═══════════════════════════════════════════════════════════════
-# SECTION 6: Release-only — cheaper auto-init
+# SECTION 6: Release-only — cheaper auto-init + contracts to [[assume]]
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_BUILD_TYPE MATCHES "Release")
   target_compile_options(crucible PUBLIC
     -ftrivial-auto-var-init=zero        # 212  zero-fill (cheaper)
+    # Hot paths use contracts purely as invariant hints; release compiles
+    # them to [[assume]] so the optimizer can exploit them without a
+    # runtime check.  Boundary TUs that want enforcement flip this.
+    -fcontract-evaluation-semantic=ignore
   )
 endif()
 
