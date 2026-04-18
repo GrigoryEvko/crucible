@@ -134,7 +134,11 @@ target_compile_options(crucible INTERFACE
 )
 
 if(CRUCIBLE_WERROR)
-  target_compile_options(crucible INTERFACE -Werror)
+  # Gated on target property so bench/ can opt out cleanly (benches
+  # legitimately ignore some [[nodiscard]] returns — they're measuring,
+  # not enforcing).  Library + tests keep full -Werror.
+  target_compile_options(crucible INTERFACE
+    $<$<NOT:$<BOOL:$<TARGET_PROPERTY:CRUCIBLE_NO_WERROR>>>:-Werror>)
 endif()
 
 # ═══════════════════════════════════════════════════════════════
@@ -332,9 +336,12 @@ target_link_options(crucible INTERFACE
 # Vessel adapter (shared library for Python/ctypes)
 add_subdirectory(vessel/torch)
 
-# Tests
+# Tests — assert-heavy, only built in Debug.  Release/bench builds
+# strip assert(), which would leave "set but not used" variables.
 enable_testing()
-add_subdirectory(test)
+if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "")
+  add_subdirectory(test)
+endif()
 
 # Benchmarks (opt-in: only built if -DCRUCIBLE_BENCH=ON)
 option(CRUCIBLE_BENCH "Build benchmark executables" OFF)
