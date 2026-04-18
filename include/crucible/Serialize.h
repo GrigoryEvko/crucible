@@ -27,6 +27,16 @@ namespace crucible {
 static constexpr uint32_t CDAG_MAGIC   = 0x43444147u; // 'GDAG' LE
 static constexpr uint32_t CDAG_VERSION = 7u;           // v7: op_flags byte replaces inference_mode+is_mutable (3B vs 4B per op)
 
+// Hard caps on header-declared counts.  Real traces top out around
+// 10^5 ops / 10 inputs per op; the extra order of magnitude is slack.
+// Reject adversarial headers up front so we don't attempt TB-scale
+// allocations before discovering the body is truncated.
+static constexpr uint32_t CDAG_MAX_OPS          = 1u << 22;   // 4 M ops
+static constexpr uint32_t CDAG_MAX_SLOTS        = 1u << 22;
+static constexpr uint16_t CDAG_MAX_INPUTS       = 1024;
+static constexpr uint16_t CDAG_MAX_OUTPUTS      = 1024;
+static constexpr uint16_t CDAG_MAX_SCALAR_ARGS  = 256;
+
 // ═══════════════════════════════════════════════════════════════════
 // Internal Writer/Reader — linear cursor with overflow detection.
 // ═══════════════════════════════════════════════════════════════════
@@ -263,6 +273,7 @@ inline Header read_header(Reader& r) {
     }
 
     const uint32_t   num_ops         = r.r<uint32_t>();
+    if (num_ops > CDAG_MAX_OPS) return nullptr;
     const SchemaHash first_op_schema = SchemaHash{r.r<uint64_t>()};
     const float      measured_ms     = r.r<float>();
     const uint32_t   variant_id      = r.r<uint32_t>();
@@ -274,6 +285,7 @@ inline Header read_header(Reader& r) {
         plan                   = arena.alloc_obj<MemoryPlan>(a);
         plan->pool_bytes        = r.r<uint64_t>();
         plan->num_slots         = r.r<uint32_t>();
+        if (plan->num_slots > CDAG_MAX_SLOTS) return nullptr;
         plan->num_external      = r.r<uint32_t>();
         plan->device_type       = r.r<DeviceType>();
         plan->device_idx        = r.r<int8_t>();
@@ -304,6 +316,9 @@ inline Header read_header(Reader& r) {
         te.num_inputs       = r.r<uint16_t>();
         te.num_outputs      = r.r<uint16_t>();
         te.num_scalar_args  = r.r<uint16_t>();
+        if (te.num_inputs       > CDAG_MAX_INPUTS)      return nullptr;
+        if (te.num_outputs      > CDAG_MAX_OUTPUTS)     return nullptr;
+        if (te.num_scalar_args  > CDAG_MAX_SCALAR_ARGS) return nullptr;
         te.grad_enabled     = r.r<bool>();
         // Unpack op_flags byte (same layout as TraceRing::Entry::op_flags).
         {
