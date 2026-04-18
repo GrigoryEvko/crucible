@@ -26,6 +26,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/BackgroundThread.h>
+#include <crucible/Effects.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/TraceLoader.h>
@@ -37,6 +38,12 @@
 #include <vector>
 
 using namespace crucible;
+
+// Benches run outside the normal bg thread so we spin a standalone
+// fx::Bg context once and thread its .alloc token through every
+// capability-tagged call.
+static const fx::Bg BG_CTX;
+static constexpr auto A = BG_CTX.alloc;
 
 // ── Timing infrastructure ────────────────────────────────────────────
 
@@ -116,7 +123,7 @@ static void bench_phases_toplevel(
     bg.arena.~Arena();
     new (&bg.arena) Arena{arena_bytes};
     repopulate();
-    auto* g = bg.build_trace(trace.num_ops);
+    auto* g = bg.build_trace(A, trace.num_ops);
     bench::DoNotOptimize(g);
   }
 
@@ -137,7 +144,7 @@ static void bench_phases_toplevel(
     bench::ClobberMemory();
     uint64_t t0 = bench::rdtsc();
 
-    auto* graph = bg.build_trace(trace.num_ops);
+    auto* graph = bg.build_trace(A, trace.num_ops);
 
     bench::ClobberMemory();
     uint64_t t1 = bench::rdtsc();
@@ -170,7 +177,7 @@ static void bench_phases_toplevel(
     bg.arena.~Arena();
     new (&bg.arena) Arena{arena_bytes};
     repopulate();
-    auto* ref = bg.build_trace(trace.num_ops);
+    auto* ref = bg.build_trace(A, trace.num_ops);
 
     // Extract edge and slot data from scratch buffers for isolated benchmarks.
     // We can approximate by benchmarking build_csr and compute_memory_plan
@@ -193,13 +200,13 @@ static void bench_phases_toplevel(
     // Benchmark build_csr
     for (uint32_t iter = 0; iter < iters; iter++) {
       Arena csr_arena{1 << 18};
-      auto* graph2 = csr_arena.alloc_obj<TraceGraph>();
+      auto* graph2 = csr_arena.alloc_obj<TraceGraph>(A);
       graph2->ops = nullptr;
       graph2->num_ops = num_ops;
 
       bench::ClobberMemory();
       uint64_t t0 = bench::rdtsc();
-      build_csr(csr_arena, graph2, saved_edges.data(),
+      build_csr(A, csr_arena, graph2, saved_edges.data(),
                 static_cast<uint32_t>(saved_edges.size()), num_ops);
       bench::ClobberMemory();
       uint64_t t1 = bench::rdtsc();
@@ -212,12 +219,12 @@ static void bench_phases_toplevel(
     for (uint32_t iter = 0; iter < iters; iter++) {
       bg.arena.~Arena();
       new (&bg.arena) Arena{arena_bytes};
-      auto* s = bg.arena.alloc_array<TensorSlot>(num_slots);
+      auto* s = bg.arena.alloc_array<TensorSlot>(A, num_slots);
       std::memcpy(s, saved_slots.data(), num_slots * sizeof(TensorSlot));
 
       bench::ClobberMemory();
       uint64_t t0 = bench::rdtsc();
-      auto* plan = bg.compute_memory_plan(s, num_slots);
+      auto* plan = bg.compute_memory_plan(A, s, num_slots);
       bench::ClobberMemory();
       uint64_t t1 = bench::rdtsc();
 
@@ -285,7 +292,7 @@ static void bench_phase2_subparts(
   bg.arena.~Arena();
   new (&bg.arena) Arena{arena_bytes};
   repopulate();
-  auto* ref = bg.build_trace(count);
+  auto* ref = bg.build_trace(A, count);
   (void)ref;
 
   // ── P0: Pre-scan ──────────────────────────────────────────────────
@@ -344,14 +351,14 @@ static void bench_phase2_subparts(
     bench::ClobberMemory();
     uint64_t t0 = bench::rdtsc();
 
-    auto* ops = bg.arena.alloc_array<TraceEntry>(count);
+    auto* ops = bg.arena.alloc_array<TraceEntry>(A, count);
     size_t aux_bytes =
         static_cast<size_t>(total_scalars) * sizeof(int64_t) +
         static_cast<size_t>(total_inputs) * sizeof(OpIndex) +
         static_cast<size_t>(total_inputs) * sizeof(SlotId) +
         static_cast<size_t>(total_outputs) * sizeof(SlotId);
     char* aux = (aux_bytes > 0) ?
-        static_cast<char*>(bg.arena.alloc(aux_bytes, alignof(int64_t))) :
+        static_cast<char*>(bg.arena.alloc(A, aux_bytes, alignof(int64_t))) :
         nullptr;
     bg.ensure_scratch_buffers(total_inputs, total_outputs);
     uint32_t slot_cap = std::min(bg.slot_cap_max_,
@@ -401,13 +408,13 @@ static void bench_phase2_subparts(
       total_scalars += std::min(re.num_scalar_args, uint16_t(5));
     }
 
-    auto* ops = bg.arena.alloc_array<TraceEntry>(count);
+    auto* ops = bg.arena.alloc_array<TraceEntry>(A, count);
     uint32_t total_metas = (first_meta != UINT32_MAX) ?
         max_meta_end - first_meta : 0;
     TensorMeta* meta_base = (total_metas > 0) ?
         meta_log.try_contiguous(first_meta, total_metas) : nullptr;
     if (!meta_base && total_metas > 0) {
-      meta_base = bg.arena.alloc_array<TensorMeta>(total_metas);
+      meta_base = bg.arena.alloc_array<TensorMeta>(A, total_metas);
       for (uint32_t m = 0; m < total_metas; m++)
         meta_base[m] = meta_log.at(first_meta + m);
     }
@@ -417,7 +424,7 @@ static void bench_phase2_subparts(
         static_cast<size_t>(total_inputs) * sizeof(SlotId) +
         static_cast<size_t>(total_outputs) * sizeof(SlotId);
     char* aux_cursor = (aux_bytes > 0) ?
-        static_cast<char*>(bg.arena.alloc(aux_bytes, alignof(int64_t))) :
+        static_cast<char*>(bg.arena.alloc(A, aux_bytes, alignof(int64_t))) :
         nullptr;
 
     bench::ClobberMemory();
@@ -489,7 +496,7 @@ static void bench_phase2_subparts(
     bg.arena.~Arena();
     new (&bg.arena) Arena{arena_bytes};
     repopulate();
-    auto* ref_graph = bg.build_trace(count);
+    auto* ref_graph = bg.build_trace(A, count);
     TraceEntry* ref_ops = ref_graph->ops;
 
     for (uint32_t iter = 0; iter < iters; iter++) {
@@ -540,7 +547,7 @@ static void bench_phase2_subparts(
     bg.arena.~Arena();
     new (&bg.arena) Arena{arena_bytes};
     repopulate();
-    auto* ref_graph = bg.build_trace(count);
+    auto* ref_graph = bg.build_trace(A, count);
     TraceEntry* ref_ops = ref_graph->ops;
 
     // build_trace above already sized scratch buffers.
@@ -603,7 +610,7 @@ static void bench_phase2_subparts(
     bg.arena.~Arena();
     new (&bg.arena) Arena{arena_bytes};
     repopulate();
-    auto* ref_graph = bg.build_trace(count);
+    auto* ref_graph = bg.build_trace(A, count);
     TraceEntry* ref_ops = ref_graph->ops;
 
     // build_trace above already sized scratch buffers.
@@ -657,7 +664,7 @@ static void bench_phase2_subparts(
     bg.arena.~Arena();
     new (&bg.arena) Arena{arena_bytes};
     repopulate();
-    auto* ref_graph = bg.build_trace(count);
+    auto* ref_graph = bg.build_trace(A, count);
     uint32_t num_slots = ref_graph->num_slots;
 
     // Save the scratch_slots_ state
@@ -674,7 +681,7 @@ static void bench_phase2_subparts(
       bench::ClobberMemory();
       uint64_t t0 = bench::rdtsc();
 
-      auto* slots = bg.arena.alloc_array<TensorSlot>(num_slots);
+      auto* slots = bg.arena.alloc_array<TensorSlot>(A, num_slots);
       for (uint32_t s = 0; s < num_slots; s++) {
         slots[s].offset_bytes = 0;
         std::memcpy(&slots[s].nbytes, &bg.scratch_slots_[s],
