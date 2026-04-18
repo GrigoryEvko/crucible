@@ -6,13 +6,17 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Header-only library
-add_library(crucible INTERFACE)
-target_include_directories(crucible INTERFACE include/)
+# Header-only library plus one TU for the weak contract-violation handler.
+# Downstream tests/benches need `handle_contract_violation` defined at link
+# time (GCC 16 libstdc++ does not provide a default); the weak symbol lets
+# production binaries override with a stronger one that calls crucible_abort.
+add_library(crucible STATIC src/ContractHandler.cpp)
+target_include_directories(crucible PUBLIC include/)
+set_target_properties(crucible PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # C++26-only flags — applied at target level where -std=c++26 is active
 # (applying them in CMAKE_CXX_FLAGS would poison CMake's compiler-probe).
-target_compile_options(crucible INTERFACE
+target_compile_options(crucible PUBLIC
   -freflection
   -fcontracts
 )
@@ -44,7 +48,7 @@ endif()
 # SECTION 1: Common flags — GCC 16
 #            52 warning flags + 13 hardening flags = 65
 # ═══════════════════════════════════════════════════════════════
-target_compile_options(crucible INTERFACE
+target_compile_options(crucible PUBLIC
   # ── 1.1  Baseline (3) ──────────────────────────────────────
   -Wall                                #   1
   -Wextra                              #   2
@@ -141,7 +145,7 @@ if(CRUCIBLE_WERROR)
   # -fsanitize=thread (TSan can't model fences).  Our SPSC rings use
   # a relaxed-load + acquire-fence fast path; pattern is sound per the
   # C++ model.  Warning remains visible; just not an error.
-  target_compile_options(crucible INTERFACE
+  target_compile_options(crucible PUBLIC
     $<$<NOT:$<BOOL:$<TARGET_PROPERTY:CRUCIBLE_NO_WERROR>>>:-Werror
       -Wno-error=tsan>)
 endif()
@@ -151,7 +155,7 @@ endif()
 #            200+ individual warning flags
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  target_compile_options(crucible INTERFACE
+  target_compile_options(crucible PUBLIC
     # ── 3.1  Type conversion (7) ─────────────────────────────
     # -Wconversion-extra (Fortran-only), -Wenum-int-mismatch (C-only),
     # -Wabsolute-value (C-only), -Woverride-init (C-only),
@@ -283,7 +287,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   )
 
   # ── 3.14  Library hardening — libstdc++ ────────────────────
-  target_compile_definitions(crucible INTERFACE
+  target_compile_definitions(crucible PUBLIC
     $<$<CONFIG:Debug>:
       _GLIBCXX_ASSERTIONS=1             # 206  vector[]/string[] bounds
       _GLIBCXX_SANITIZE_VECTOR=1        # 207  vector realloc poison
@@ -294,7 +298,7 @@ endif()
 # ═══════════════════════════════════════════════════════════════
 # SECTION 4: FORTIFY_SOURCE + defines — both compilers
 # ═══════════════════════════════════════════════════════════════
-target_compile_definitions(crucible INTERFACE
+target_compile_definitions(crucible PUBLIC
   _FORTIFY_SOURCE=3                     # 208  max glibc buffer checks
 )
 
@@ -302,7 +306,7 @@ target_compile_definitions(crucible INTERFACE
 # SECTION 5: Debug-only — auto-init
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  target_compile_options(crucible INTERFACE
+  target_compile_options(crucible PUBLIC
     -ftrivial-auto-var-init=zero        # 210  zero-fill uninit stack (P2795R5)
     -fharden-control-flow-redundancy    # 211  redundant CFG checks
   )
@@ -312,7 +316,7 @@ endif()
 # SECTION 6: Release-only — cheaper auto-init
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_BUILD_TYPE MATCHES "Release")
-  target_compile_options(crucible INTERFACE
+  target_compile_options(crucible PUBLIC
     -ftrivial-auto-var-init=zero        # 212  zero-fill (cheaper)
   )
 endif()
@@ -323,7 +327,7 @@ endif()
 # Full RELRO, immediate binding, no-exec stack, separate code,
 # build-id for debuginfo, and more.
 # ═══════════════════════════════════════════════════════════════
-target_link_options(crucible INTERFACE
+target_link_options(crucible PUBLIC
   "LINKER:-z,relro"                     # 213  read-only relocations
   "LINKER:-z,now"                       # 214  immediate symbol binding
   "LINKER:-z,noexecstack"              # 215  non-executable stack
