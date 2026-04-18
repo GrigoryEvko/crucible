@@ -36,6 +36,7 @@ static constexpr uint32_t CDAG_MAX_SLOTS        = 1u << 22;
 static constexpr uint16_t CDAG_MAX_INPUTS       = 1024;
 static constexpr uint16_t CDAG_MAX_OUTPUTS      = 1024;
 static constexpr uint16_t CDAG_MAX_SCALAR_ARGS  = 256;
+static constexpr uint32_t CDAG_MAX_BRANCH_ARMS  = 1u << 16;   // 64 K arms
 
 // ═══════════════════════════════════════════════════════════════════
 // Internal Writer/Reader — linear cursor with overflow detection.
@@ -450,6 +451,7 @@ inline Header read_header(Reader& r) {
     r.read_bytes(&guard, sizeof(Guard));
 
     const uint32_t num_arms = r.r<uint32_t>();
+    if (num_arms > CDAG_MAX_BRANCH_ARMS) return nullptr;
 
     auto* node = arena.alloc_obj<BranchNode>(a);
     ::new (node) BranchNode{};
