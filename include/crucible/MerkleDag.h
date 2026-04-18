@@ -832,7 +832,12 @@ inline void recompute_merkle(TraceNode* node) {
     int64_t old_guard_value,
     int64_t new_guard_value,
     Guard guard,
-    TraceNode* existing_suffix) {
+    TraceNode* existing_suffix)
+#if CRUCIBLE_HAS_CONTRACTS
+    pre (divergence_point != nullptr)
+    pre (old_guard_value != new_guard_value)
+#endif
+{
   auto* new_region = make_region(a, arena, new_ops, new_n);
 
   TraceNode* merge = find_merge_point(std::span{new_ops, new_n}, existing_suffix);
