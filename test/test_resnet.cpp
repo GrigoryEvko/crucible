@@ -70,7 +70,7 @@ struct ResNet50 {
               TRef t0 = {}, TRef t1 = {}, TRef t2 = {}, TRef t3 = {}) {
         OpDef op{};
         op.schema = sch;
-        op.shape = ShapeHash{static_cast<uint64_t>(0xC000 + ops.size())};
+        op.shape = ShapeHash{0xC000ULL + ops.size()};
         op.n_in = static_cast<uint8_t>(ni);
         op.n_out = static_cast<uint8_t>(no);
         op.t[0] = t0; op.t[1] = t1; op.t[2] = t2; op.t[3] = t3;
@@ -186,7 +186,7 @@ struct ResNet50 {
 // ═══════════════════════════════════════════════════════════════════
 
 static void* param_ptr(uint16_t idx) {
-    return reinterpret_cast<void*>(uintptr_t(uint64_t(idx + 1) * 0x10000));
+    return reinterpret_cast<void*>(uint64_t(idx + 1) * 0x10000);
 }
 
 static void* act_ptr(uint32_t iter, uint16_t idx) {

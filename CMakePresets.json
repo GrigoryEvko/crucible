@@ -4,46 +4,39 @@
   "configurePresets": [
     {
       "name": "default",
-      "displayName": "Clang 22 + libc++ (C++26)",
+      "displayName": "GCC 16 + libstdc++ 16 (C++26)",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
-        "CMAKE_CXX_COMPILER": "/home/grigory/.local/llvm/bin/clang++",
+        "CMAKE_CXX_COMPILER": "/home/grigory/.local/gcc16/usr/bin/g++",
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_FLAGS": "-stdlib=libc++",
-        "CMAKE_EXE_LINKER_FLAGS": "-L/home/grigory/.local/llvm/lib/x86_64-unknown-linux-gnu -lc++abi -Wl,-rpath,/home/grigory/.local/llvm/lib/x86_64-unknown-linux-gnu"
+        "CMAKE_EXE_LINKER_FLAGS": "-Wl,-rpath,/home/grigory/.local/gcc16/usr/lib64",
+        "CMAKE_SHARED_LINKER_FLAGS": "-Wl,-rpath,/home/grigory/.local/gcc16/usr/lib64",
+        "CMAKE_MODULE_LINKER_FLAGS": "-Wl,-rpath,/home/grigory/.local/gcc16/usr/lib64",
+        "CRUCIBLE_WERROR": "ON"
       }
     },
     {
       "name": "release",
       "inherits": "default",
-      "displayName": "Clang 22 + libc++ (C++26, Release)",
+      "displayName": "GCC 16 + libstdc++ 16 (C++26, Release)",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_FLAGS": "-stdlib=libc++ -O3 -march=native -DNDEBUG -g"
+        "CMAKE_CXX_FLAGS": "-O3 -march=native -DNDEBUG -g"
       }
     },
     {
       "name": "bench",
       "inherits": "release",
-      "displayName": "Clang 22 + libc++ (C++26, Bench)",
+      "displayName": "GCC 16 + libstdc++ 16 (C++26, Bench)",
       "binaryDir": "${sourceDir}/build-bench",
       "cacheVariables": {
         "CRUCIBLE_BENCH": "ON"
       }
     },
     {
-      "name": "tidy",
-      "inherits": "default",
-      "displayName": "Clang 22 + clang-tidy (C++26)",
-      "binaryDir": "${sourceDir}/build-tidy",
-      "cacheVariables": {
-        "CRUCIBLE_TIDY": "ON"
-      }
-    },
-    {
       "name": "tsan",
       "inherits": "default",
-      "displayName": "Clang 22 + ThreadSanitizer (AxRaceFree)",
+      "displayName": "GCC 16 + ThreadSanitizer (AxRaceFree)",
       "binaryDir": "${sourceDir}/build-tsan",
       "cacheVariables": {
         "CRUCIBLE_SANITIZE": "OFF",
@@ -51,39 +44,10 @@
       }
     },
     {
-      "name": "gcc",
-      "displayName": "GCC 15 + libstdc++ (C++26)",
-      "binaryDir": "${sourceDir}/build-gcc",
-      "cacheVariables": {
-        "CMAKE_CXX_COMPILER": "g++",
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-    {
-      "name": "gcc16",
-      "displayName": "GCC 16 + libstdc++ 16 (C++26, bleeding-edge)",
-      "binaryDir": "${sourceDir}/build-gcc16",
-      "cacheVariables": {
-        "CMAKE_CXX_COMPILER": "/home/grigory/.local/gcc16/usr/bin/g++",
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_CXX_FLAGS": "-freflection"
-      }
-    },
-    {
       "name": "verify",
       "inherits": "default",
-      "displayName": "Clang 22 + Z3 formal verification (Axiom)",
+      "displayName": "GCC 16 + Z3 formal verification (Axiom)",
       "binaryDir": "${sourceDir}/build-verify",
-      "cacheVariables": {
-        "CRUCIBLE_VERIFY": "ON",
-        "CRUCIBLE_SANITIZE": "OFF"
-      }
-    },
-    {
-      "name": "verify-gcc",
-      "inherits": "gcc",
-      "displayName": "GCC 15 + Z3 formal verification (Axiom)",
-      "binaryDir": "${sourceDir}/build-verify-gcc",
       "cacheVariables": {
         "CRUCIBLE_VERIFY": "ON",
         "CRUCIBLE_SANITIZE": "OFF"
@@ -94,22 +58,14 @@
     { "name": "default", "configurePreset": "default" },
     { "name": "release", "configurePreset": "release" },
     { "name": "bench",   "configurePreset": "bench" },
-    { "name": "tidy",    "configurePreset": "tidy" },
     { "name": "tsan",    "configurePreset": "tsan" },
-    { "name": "gcc",     "configurePreset": "gcc" },
-    { "name": "gcc16",   "configurePreset": "gcc16" },
-    { "name": "verify",     "configurePreset": "verify" },
-    { "name": "verify-gcc", "configurePreset": "verify-gcc" }
+    { "name": "verify",  "configurePreset": "verify" }
   ],
   "testPresets": [
     { "name": "default", "configurePreset": "default", "output": { "outputOnFailure": true } },
     { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
-    { "name": "tidy",    "configurePreset": "tidy",    "output": { "outputOnFailure": true } },
     { "name": "tsan",    "configurePreset": "tsan",    "output": { "outputOnFailure": true } },
-    { "name": "gcc",     "configurePreset": "gcc",     "output": { "outputOnFailure": true } },
-    { "name": "gcc16",   "configurePreset": "gcc16",   "output": { "outputOnFailure": true } },
-    { "name": "verify",     "configurePreset": "verify",     "output": { "outputOnFailure": true } },
-    { "name": "verify-gcc", "configurePreset": "verify-gcc", "output": { "outputOnFailure": true } },
+    { "name": "verify",  "configurePreset": "verify",  "output": { "outputOnFailure": true } },
     {
       "name": "stress",
       "configurePreset": "default",

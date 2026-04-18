@@ -35,8 +35,7 @@ static void test_basic_init() {
   //   Slot 0: internal, offset=0, 1024 bytes
   //   Slot 1: internal, offset=1024 (256-aligned), 2048 bytes
   //   Slot 2: external
-  TensorSlot slots[3];
-  std::memset(slots, 0, sizeof(slots));
+  TensorSlot slots[3]{};
   slots[0] = {.offset_bytes = 0, .nbytes = 1024,
               .birth_op = OpIndex{0}, .death_op = OpIndex{5},
               .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
@@ -84,8 +83,7 @@ static void test_basic_init() {
 
 // ── Test 2: External slot registration ──
 static void test_external_registration() {
-  TensorSlot slots[2];
-  std::memset(slots, 0, sizeof(slots));
+  TensorSlot slots[2]{};
   slots[0] = {.offset_bytes = 0, .nbytes = 1024,
               .birth_op = OpIndex{0}, .death_op = OpIndex{3},
               .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
@@ -121,8 +119,7 @@ static void test_write_read_isolation() {
   //   Slot 0: offset=0, 256 bytes
   //   Slot 1: offset=256, 512 bytes
   //   Slot 2: offset=768, 256 bytes
-  TensorSlot slots[3];
-  std::memset(slots, 0, sizeof(slots));
+  TensorSlot slots[3]{};
   slots[0] = {.offset_bytes = 0, .nbytes = 256,
               .birth_op = OpIndex{0}, .death_op = OpIndex{3},
               .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
@@ -163,8 +160,7 @@ static void test_write_read_isolation() {
 
 // ── Test 4: All-external plan (zero pool bytes) ──
 static void test_all_external() {
-  TensorSlot slots[2];
-  std::memset(slots, 0, sizeof(slots));
+  TensorSlot slots[2]{};
   slots[0] = {.offset_bytes = 0, .nbytes = 1024,
               .birth_op = OpIndex{0}, .death_op = OpIndex{3},
               .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
@@ -203,8 +199,7 @@ static void test_all_external() {
 
 // ── Test 5: Destroy and re-init with a different plan ──
 static void test_reinit() {
-  TensorSlot slots_a[1];
-  std::memset(slots_a, 0, sizeof(slots_a));
+  TensorSlot slots_a[1]{};
   slots_a[0] = {.offset_bytes = 0, .nbytes = 512,
                 .birth_op = OpIndex{0}, .death_op = OpIndex{3},
                 .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
@@ -222,8 +217,7 @@ static void test_reinit() {
   pool.destroy();
   assert(!pool.is_initialized());
 
-  TensorSlot slots_b[2];
-  std::memset(slots_b, 0, sizeof(slots_b));
+  TensorSlot slots_b[2]{};
   slots_b[0] = {.offset_bytes = 0, .nbytes = 1024,
                 .birth_op = OpIndex{0}, .death_op = OpIndex{5},
                 .dtype = ScalarType::Float, .device_type = DeviceType::CPU,
@@ -266,8 +260,7 @@ static void test_integration_with_sweep_line() {
   // Slot 2: birth=4, death=7, 1024B (internal, should reuse slot 1's space)
   // Slot 3: birth=0, death=7, 512B  (external)
   constexpr uint32_t N = 4;
-  TensorSlot slots[N];
-  std::memset(slots, 0, sizeof(slots));
+  TensorSlot slots[N]{};
   slots[0] = {.offset_bytes = 0, .nbytes = 1024,
               .birth_op = OpIndex{0}, .death_op = OpIndex{5},
               .dtype = ScalarType::Float, .device_type = DeviceType::CPU,

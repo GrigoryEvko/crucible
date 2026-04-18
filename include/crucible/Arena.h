@@ -2,12 +2,12 @@
 
 #include "Effects.h"
 #include "Platform.h"
+#include "Saturate.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <numeric>
 #include <vector>
 
 namespace crucible {
@@ -67,7 +67,7 @@ class CRUCIBLE_OWNER Arena {
     // Compute aligned offset within the current block.
     // Uses absolute address for correctness with malloc's arbitrary base.
     uintptr_t aligned_addr = (cur_base_ + offset_ + align - 1) & ~(align - 1);
-    size_t aligned = static_cast<size_t>(aligned_addr - cur_base_);
+    size_t aligned = aligned_addr - cur_base_;
 
     if (aligned + size <= end_offset_) [[likely]] {
       // Fast path: fits in current block.
@@ -92,7 +92,7 @@ class CRUCIBLE_OWNER Arena {
   template <typename T>
   [[nodiscard]] CRUCIBLE_INLINE T* alloc_array(fx::Alloc a, size_t n) CRUCIBLE_LIFETIMEBOUND {
     if (n == 0) [[unlikely]] return nullptr;
-    size_t nbytes = std::mul_sat(n, sizeof(T));
+    size_t nbytes = crucible::sat::mul_sat(n, sizeof(T));
     return static_cast<T*>(alloc(a, nbytes, alignof(T)));
   }
 
@@ -131,9 +131,8 @@ class CRUCIBLE_OWNER Arena {
     cur_base_ = reinterpret_cast<uintptr_t>(p);
     end_offset_ = new_size;
 
-    // Re-compute alignment for the fresh block.
     uintptr_t aligned_addr = (cur_base_ + align - 1) & ~(align - 1);
-    size_t aligned = static_cast<size_t>(aligned_addr - cur_base_);
+    size_t aligned = aligned_addr - cur_base_;
 
     void* ptr = cur_block_ + aligned;
     offset_ = aligned + size;

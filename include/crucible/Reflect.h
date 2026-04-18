@@ -3,9 +3,10 @@
 // Reflect.h: Auto-generated struct hashing and debug printing via
 // P2996 static reflection (GCC 16 with -freflection).
 //
-// On Clang 22 / GCC 15, these utilities are simply not available —
-// callers must #if CRUCIBLE_HAS_REFLECTION before use. The header
-// itself always compiles cleanly on all three compilers.
+// GCC 16 is the only supported compiler and always provides reflection
+// when built via the project presets. CRUCIBLE_HAS_REFLECTION is kept
+// as a feature guard so the header compiles clean if someone bootstraps
+// with a compiler that lacks P2996 — reflect_hash just won't be defined.
 
 #include <crucible/Platform.h>
 
@@ -71,7 +72,7 @@ template <typename T>
     else
       return detail::fmix64(std::bit_cast<uint64_t>(val));
   } else if constexpr (std::is_pointer_v<T>) {
-    return detail::fmix64(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(val)));
+    return detail::fmix64(reinterpret_cast<uintptr_t>(val));
   } else if constexpr (std::is_array_v<T>) {
     uint64_t h = 0;
     for (size_t i = 0; i < std::extent_v<T>; i++)

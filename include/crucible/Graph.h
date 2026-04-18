@@ -48,6 +48,34 @@ enum class ReduceOp : uint8_t {
   SUM, PROD, MAX, MIN, ARGMAX, ARGMIN, ANY, XOR_SUM, WELFORD, DOT,
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// Fusion classification: how two adjacent ops share intermediate data
+//
+// Modern GPUs (B200: 128 SMs, 256KB regs, 228KB smem, 64KB tmem)
+// are "fat": massively parallel but bandwidth-starved. Small ops
+// waste >99% of silicon on launch overhead. Fusion fixes this by
+// keeping intermediates in faster storage:
+//
+//   REGISTER:  same thread processes both ops, ~0ns latency
+//   SMEM:      same threadblock, shared memory (~20ns latency)
+//   EPILOGUE:  GEMM/Conv accumulator → activation without writeback
+//   PROLOGUE:  input scaling → GEMM in registers before matmul
+//   BROADCAST: reduction output → pointwise via smem broadcast
+//
+// Each FuseKind implies a storage level for the intermediate.
+// The cost model (CostModel.h) uses this to determine effective
+// bandwidth: REGISTER = free, SMEM = smem_bw, EPILOGUE = tmem/reg.
+// ═══════════════════════════════════════════════════════════════════
+
+enum class FuseKind : uint8_t {
+  NONE,        // Cannot fuse — intermediate goes through HBM
+  REGISTER,    // Same iteration space: intermediate in registers
+  SMEM,        // Same block, different iteration: intermediate via smem
+  EPILOGUE,    // EXTERN output stays in accumulator, epilogue applied
+  PROLOGUE,    // Input transformed in registers before EXTERN kernel
+  BROADCAST,   // Reduction output broadcast to consumers via smem
+};
+
 enum class ReduceHint : uint8_t { DEFAULT, INNER, OUTER };
 
 struct NodeFlags {
@@ -325,7 +353,7 @@ class CRUCIBLE_OWNER Graph {
     n->nred = static_cast<uint8_t>(red_ranges.size());
     n->reduce_op = reduce_op;
     n->reduce_hint = hint;
-    const uint8_t total = n->ndim + n->nred;
+    const auto total = static_cast<uint8_t>(n->ndim + n->nred);
     n->size = arena_.alloc_array<const Expr*>(a, total);
     std::memcpy(
         const_cast<const Expr**>(n->size), ranges.data(),
@@ -716,8 +744,10 @@ class CRUCIBLE_OWNER Graph {
 
   // Clear VISITED flag on all nodes
   void clear_visited() {
+    constexpr auto CLEAR_VISITED =
+        static_cast<uint8_t>(~NodeFlags::VISITED);
     for (uint32_t i = 0; i < num_nodes_; ++i)
-      nodes_[i]->flags &= ~NodeFlags::VISITED;
+      nodes_[i]->flags &= CLEAR_VISITED;
   }
 
   [[nodiscard]] uint32_t count_live() const {
@@ -756,11 +786,9 @@ class CRUCIBLE_OWNER Graph {
   GraphNode* alloc_node_(fx::Alloc a) {
     if (num_nodes_ >= capacity_)
       grow_(a, capacity_ * 2);
-    auto* n = static_cast<GraphNode*>(arena_.alloc(a, 64, 64));
-    std::memset(n, 0, 64);
+    auto* raw = arena_.alloc(a, sizeof(GraphNode), alignof(GraphNode));
+    auto* n = ::new (raw) GraphNode{};
     n->id = NodeId{num_nodes_};
-    n->device_idx = -1;
-    n->num_outputs = 1;
     nodes_[num_nodes_++] = n;
     return n;
   }
@@ -840,7 +868,7 @@ class CRUCIBLE_OWNER Graph {
         (static_cast<uint64_t>(n->nred) << 32));
 
     // Size expressions (interned → pointer identity)
-    uint8_t total_dims = n->ndim + n->nred;
+    const auto total_dims = static_cast<uint8_t>(n->ndim + n->nred);
     for (uint8_t d = 0; d < total_dims; ++d)
       h = detail::wymix(h, reinterpret_cast<uint64_t>(n->size[d]));
 
@@ -885,7 +913,7 @@ class CRUCIBLE_OWNER Graph {
       return false;
 
     // Sizes (interned → pointer equality)
-    uint8_t total = a->ndim + a->nred;
+    const auto total = static_cast<uint8_t>(a->ndim + a->nred);
     for (uint8_t d = 0; d < total; ++d)
       if (a->size[d] != b->size[d]) return false;
 

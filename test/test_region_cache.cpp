@@ -94,7 +94,7 @@ static OpData make_op(const ShapeHash* shapes, uint32_t variant,
     }
     int64_t out_sz = tensor_size(variant, op_idx);
     d.metas[idx++] = make_meta(fake_ptr(variant, iter, op_idx), out_sz);
-    d.n_metas = d.entry.num_inputs + d.entry.num_outputs;
+    d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }
 

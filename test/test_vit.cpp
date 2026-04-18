@@ -164,7 +164,8 @@ static void* param_ptr(uint8_t idx) {
 
 static void* act_ptr(uint32_t iter, uint8_t idx) {
     return reinterpret_cast<void*>(
-        uintptr_t((iter + 1) * 0x1000000ULL + (idx + 1) * 0x10000));
+        (static_cast<uint64_t>(iter) + 1) * 0x1000000ULL
+        + (static_cast<uint64_t>(idx) + 1) * 0x10000);
 }
 
 static TensorMeta make_meta(const TSpec& s, uint32_t iter) {
@@ -195,7 +196,7 @@ static OpPacket build_op(uint32_t op_idx, uint32_t iter) {
     pkt.entry.shape_hash = op.shape;
     pkt.entry.num_inputs = op.n_in;
     pkt.entry.num_outputs = op.n_out;
-    pkt.n_metas = op.n_in + op.n_out;
+    pkt.n_metas = static_cast<uint16_t>(op.n_in + op.n_out);
     for (uint8_t i = 0; i < pkt.n_metas; i++)
         pkt.metas[i] = make_meta(op.t[i], iter);
     return pkt;

@@ -10,12 +10,19 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_library(crucible INTERFACE)
 target_include_directories(crucible INTERFACE include/)
 
+# C++26-only flags — applied at target level where -std=c++26 is active
+# (applying them in CMAKE_CXX_FLAGS would poison CMake's compiler-probe).
+target_compile_options(crucible INTERFACE
+  -freflection
+  -fcontracts
+)
+
 # ╔═══════════════════════════════════════════════════════════════════╗
-# ║  CRUCIBLE HARDENING — 400+ compiler/linker/sanitizer flags       ║
+# ║  CRUCIBLE HARDENING — 300+ compiler/linker/sanitizer flags       ║
 # ║                                                                   ║
-# ║  Clang 22: -Weverything (1002 warnings) minus ~30 useless ones   ║
-# ║  GCC 16:   200+ individual warnings                              ║
-# ║  Both:     sanitizers, linker hardening, FORTIFY, library checks ║
+# ║  GCC 16:   200+ individual warnings + contracts + reflection     ║
+# ║            (only supported compiler — see code_guide.md §I)       ║
+# ║  +         sanitizers, linker hardening, FORTIFY, library checks ║
 # ║                                                                   ║
 # ║  "Every nanosecond matters. Every byte is accounted for.         ║
 # ║   Every type is strong. Every pointer is checked."               ║
@@ -34,7 +41,7 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug")
 endif()
 
 # ═══════════════════════════════════════════════════════════════
-# SECTION 1: Common flags — both Clang 22 and GCC 15/16
+# SECTION 1: Common flags — GCC 16
 #            52 warning flags + 13 hardening flags = 65
 # ═══════════════════════════════════════════════════════════════
 target_compile_options(crucible INTERFACE
@@ -56,7 +63,11 @@ target_compile_options(crucible INTERFACE
   -Wcast-qual                          #  13  cast discards const
 
   # ── 1.3  Enum safety (5) ───────────────────────────────────
-  -Wswitch-enum                        #  14  missing enum case
+  # Note: -Wswitch-enum (warn on missing case even with default:) is
+  # intentionally omitted.  Our Op/CKernelId enums have 60+/140+ values;
+  # most dispatchers handle a strict subset and fall through on default.
+  # -Werror=switch + -Wswitch-default catch the real bugs (uncovered value
+  # with no default, missing default) without drowning in 60-way noise.
   -Wswitch-default                     #  15  no default in switch
   -Wimplicit-fallthrough               #  16  missing [[fallthrough]]
   -Wenum-conversion                    #  17  enum type conversion
@@ -127,125 +138,17 @@ if(CRUCIBLE_WERROR)
 endif()
 
 # ═══════════════════════════════════════════════════════════════
-# SECTION 2: Clang 22 — THE NUCLEAR OPTION
-#
-# -Weverything enables ALL 1002 Clang warning groups.
-# We suppress ~30 that are useless for C++26 or pathologically noisy.
-# Net: ~970 active warning checks.
-# ═══════════════════════════════════════════════════════════════
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  target_compile_options(crucible INTERFACE
-    # ── 2.1  Enable every Clang warning ever created ─────────
-    -Weverything                        #  66  ALL 1002 warning groups
-
-    # ── 2.2  Suppress useless / counterproductive ones ───────
-    #         (30 suppressions → net ~970 active warnings)
-
-    # C++98/11/14/17/20 backward compat — we're C++26, don't care
-    -Wno-c++98-compat                   #  67
-    -Wno-c++98-compat-pedantic          #  68
-    -Wno-c++98-compat-bind-to-temporary-copy #  69
-    -Wno-c++98-compat-extra-semi        #  70
-    -Wno-c++98-compat-local-type-template-args #  71
-    -Wno-pre-c++14-compat              #  72
-    -Wno-pre-c++17-compat              #  73
-    -Wno-pre-c++20-compat              #  74
-    -Wno-pre-c++20-compat-pedantic     #  75
-    -Wno-pre-c++26-compat             #  76
-    -Wno-c++11-compat                  #  77
-    -Wno-c++14-compat                  #  78
-    -Wno-c++17-compat                  #  79
-    -Wno-c++20-compat                  #  80
-
-    # Padding — every struct with padding would warn. Not actionable.
-    -Wno-padded                         #  81
-
-    # We don't use Doxygen documentation comments
-    -Wno-documentation                  #  82
-    -Wno-documentation-unknown-command  #  83
-
-    # System headers — not our code
-    -Wno-system-headers                 #  84
-
-    # Variadic macros are standard C++11+
-    -Wno-variadic-macros                #  85
-
-    # Nested anon types are fine in C++
-    -Wno-nested-anon-types              #  86
-
-    # Language extensions we use deliberately
-    -Wno-language-extension-token       #  87
-
-    # gnu-statement-expression used in assert macros
-    -Wno-gnu-statement-expression-from-macro-expansion #  88
-
-    # covered-switch-default conflicts with switch-default
-    # (we WANT default in switch, even if enum is covered)
-    -Wno-covered-switch-default         #  89
-
-    # Disabled warnings that conflict with our patterns
-    -Wno-missing-field-initializers     #  90  we use {} init, not all fields
-    # -Wno-unsafe-buffer-usage removed: D3390 unsafe context enabled.
-    # Functions doing intentional ptr[i]/ptr+n are marked CRUCIBLE_UNSAFE_BUFFER_USAGE.
-
-    # libc++ marks printf as __attribute__((unused)), then we use it
-    -Wno-used-but-marked-unused         #  92  false positive on std::printf
-
-    # We use default: in switches on Op enum (55 values) intentionally
-    -Wno-switch-enum                    #  93  covered by -Wswitch-default
-
-    # Header-only lib: static locals in inline functions are OK (ODR)
-    -Wno-unique-object-duplication      #  94  CKernelTable singleton
-
-    # Trivial copy when NRVO can't elide — not a real issue
-    -Wno-nrvo                           #  95  Cipher early-return copy
-
-    # ── 2.3  Extra Clang hardening flags ─────────────────────
-    -fsafe-buffer-usage-suggestions     #  96a suggest span/at() for unsafe bufs
-    -fstrict-enums                      #  96  assume valid enum values
-    -fstrict-return                     #  97  UB on missing return
-    -fstrict-vtable-pointers            #  98  devirt optimization
-    -fcolor-diagnostics                 #  99  colored output
-    -ftemplate-backtrace-limit=0        # 100  full template errors
-    -fmacro-backtrace-limit=0           # 101  full macro errors
-    -fconstexpr-backtrace-limit=0       # 102  full constexpr errors
-    -fconstexpr-steps=10000000          # 103  generous constexpr budget
-    -fbracket-depth=1024                # 104  deep template nesting
-
-    # ── 2.4  Lifetime safety — intra-procedural borrow check ──
-    #
-    # CFG-based analysis: catches use-after-free, dangling
-    # references, returning pointers to locals. Tested on our
-    # codebase — zero warnings (Arena ownership model is clean).
-    # In Clang trunk (post-22): promoted to -flifetime-safety.
-    "SHELL:-Xclang -fexperimental-lifetime-safety"            # 105
-    "SHELL:-Xclang -fexperimental-lifetime-safety-inference"  # 105a auto-infer lifetimebound
-    -Wexperimental-lifetime-safety                            # 106  lifetime violation warnings
-    -Wexperimental-lifetime-safety-intra-tu-suggestions       # 106a suggest [[clang::lifetimebound]]
-
-    # ── 2.5  Clang-only linker hardening ─────────────────────
-    -fcf-protection=full                # 107  control-flow integrity
-  )
-
-  # ── 2.6  Library hardening — libc++ ────────────────────────
-  target_compile_definitions(crucible INTERFACE
-    # 102: libc++ bounds checks, null checks, type checks
-    $<$<CONFIG:Debug>:_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_EXTENSIVE>
-    # 103: release: fast checks only (no perf impact)
-    $<$<CONFIG:Release,RelWithDebInfo>:_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_FAST>
-  )
-endif()
-
-# ═══════════════════════════════════════════════════════════════
-# SECTION 3: GCC 15/16 — MAXIMUM PARANOIA
+# SECTION 2: GCC 16 — MAXIMUM PARANOIA
 #            200+ individual warning flags
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(crucible INTERFACE
-    # ── 3.1  Type conversion (9) ─────────────────────────────
+    # ── 3.1  Type conversion (7) ─────────────────────────────
+    # -Wconversion-extra (Fortran-only), -Wenum-int-mismatch (C-only),
+    # -Wabsolute-value (C-only), -Woverride-init (C-only),
+    # -Wunterminated-string-initialization (C-only) dropped — GCC emits
+    # "valid for C/ObjC but not for C++" for each on every TU.
     -Warith-conversion                  # 104  arith conversion lossy
-    -Wconversion-extra                  # 105  extra conversions
-    -Wenum-int-mismatch                 # 106  enum/int mismatch
     -Wlogical-op                        # 107  suspicious logical ops
     -Wduplicated-cond                   # 108  duplicate if/else cond
     -Wduplicated-branches               # 109  identical branches
@@ -334,8 +237,6 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -Wshift-count-negative              # 173  negative shift count
     -Wshift-count-overflow              # 174  shift count ≥ width
     -Wshift-negative-value              # 175  shift of negative val
-    -Wabsolute-value                    # 176  wrong abs() func
-    -Woverride-init                     # 177  override initializer
     -Wsequence-point                    # 178  undefined eval order
     -Wvarargs                           # 179  va_arg problems
     -Wattributes                        # 180  attribute warnings
@@ -347,12 +248,14 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -Wunused-but-set-variable           # 186  var set but unused
     -Wunused-const-variable=2           # 187  unused static const
 
-    # ── 3.12  Overflow / safety (6) ──────────────────────────
+    # ── 3.12  Overflow / safety (5) ──────────────────────────
     -Walloc-size-larger-than=1073741824 # 188  alloc > 1GB
     -Wstrict-flex-arrays                # 189  flex array discipline
-    -Wunterminated-string-initialization # 190  string init truncated
     -Wpacked-not-aligned                # 191  packed+aligned conflict
-    -Wabi-tag                           # 192  missing ABI tag
+    # -Wabi-tag dropped: Cipher owns std::string which carries the cxx11
+    # ABI tag transitively; the warning appears on every accessor that
+    # returns string&, adding no signal.  Real ABI breaks show up as link
+    # errors anyway.  -Wabi=0 is retained for all compat warnings.
     -Wabi=0                             # 193  all ABI compat warnings
 
     # ── 3.13  GCC hardening flags (10) ───────────────────────
@@ -390,16 +293,10 @@ target_compile_definitions(crucible INTERFACE
 # SECTION 5: Debug-only — auto-init
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(crucible INTERFACE
-      -ftrivial-auto-var-init=pattern   # 209  0xAA fill uninit stack
-    )
-  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_compile_options(crucible INTERFACE
-      -ftrivial-auto-var-init=zero      # 210  zero-fill uninit stack
-      -fharden-control-flow-redundancy  # 211  redundant CFG checks
-    )
-  endif()
+  target_compile_options(crucible INTERFACE
+    -ftrivial-auto-var-init=zero        # 210  zero-fill uninit stack (P2795R5)
+    -fharden-control-flow-redundancy    # 211  redundant CFG checks
+  )
 endif()
 
 # ═══════════════════════════════════════════════════════════════
@@ -431,31 +328,6 @@ target_link_options(crucible INTERFACE
   "LINKER:--gc-sections"               # 223  garbage-collect sections
   "LINKER:-z,defs"                     # 224  no undefined symbols
 )
-
-# ═══════════════════════════════════════════════════════════════
-# SECTION 8: clang-tidy integration (opt-in)
-#
-# Runs clang-tidy on every translation unit during compilation.
-# Finds clang-tidy next to the active compiler (Clang 22 → v22).
-# Uses .clang-tidy config at project root for check selection.
-#
-#   cmake --preset tidy && cmake --build --preset tidy
-# ═══════════════════════════════════════════════════════════════
-option(CRUCIBLE_TIDY "Run clang-tidy during compilation (slow)" OFF)
-if(CRUCIBLE_TIDY)
-  if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    message(WARNING "CRUCIBLE_TIDY only supported with Clang builds")
-  else()
-    get_filename_component(_compiler_dir "${CMAKE_CXX_COMPILER}" DIRECTORY)
-    find_program(CLANG_TIDY_EXE NAMES clang-tidy HINTS "${_compiler_dir}")
-    if(CLANG_TIDY_EXE)
-      set(CMAKE_CXX_CLANG_TIDY "${CLANG_TIDY_EXE}")
-      message(STATUS "clang-tidy enabled: ${CLANG_TIDY_EXE}")
-    else()
-      message(WARNING "CRUCIBLE_TIDY=ON but clang-tidy not found")
-    endif()
-  endif()
-endif()
 
 # Vessel adapter (shared library for Python/ctypes)
 add_subdirectory(vessel/torch)

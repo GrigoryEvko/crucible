@@ -15,8 +15,7 @@ int main() {
   // Slot 2: birth=4, death=7, 1024 bytes (should reuse slot 1's space)
   // Slot 3: birth=0, death=7, 512 bytes, external (not planned)
   constexpr uint32_t N = 4;
-  crucible::TensorSlot slots[N];
-  std::memset(slots, 0, sizeof(slots));
+  crucible::TensorSlot slots[N]{};
 
   using crucible::SlotId; using crucible::OpIndex;
   using crucible::ScalarType; using crucible::DeviceType; using crucible::Layout;

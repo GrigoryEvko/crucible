@@ -1,4 +1,6 @@
 #include <crucible/Cipher.h>
+
+#include <memory>
 #include <crucible/Effects.h>
 #include <cassert>
 #include <cinttypes>
@@ -12,7 +14,7 @@ static crucible::fx::Test g_test;
 static crucible::RegionNode* make_test_region(crucible::Arena& arena) {
     constexpr uint32_t NUM_OPS = 2;
     auto* ops = arena.alloc_array<crucible::TraceEntry>(g_test.alloc, NUM_OPS);
-    std::memset(ops, 0, NUM_OPS * sizeof(crucible::TraceEntry));
+    std::uninitialized_value_construct_n(ops, NUM_OPS);
 
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         ops[i].schema_hash  = crucible::SchemaHash{0xCAFE0000 + i};

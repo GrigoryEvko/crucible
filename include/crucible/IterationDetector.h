@@ -2,9 +2,9 @@
 
 #include <cstdint>
 #include <cstring>
-#include <numeric>
 
 #include <crucible/Platform.h>
+#include <crucible/Saturate.h>
 #include <crucible/Types.h>
 
 namespace crucible {
@@ -112,7 +112,7 @@ struct IterationDetector {
     }
 
     // Match — advance to next position in signature.
-    uint8_t next = match_pos_ + 1;
+    const auto next = static_cast<uint8_t>(match_pos_ + 1);
     if (next >= K) [[unlikely]] {
       return on_match_();
     }
@@ -123,7 +123,7 @@ struct IterationDetector {
 
   void reset() {
     expected_hash_ = SchemaHash{};
-    std::memset(signature, 0, sizeof(signature));
+    for (auto& h : signature) h = SchemaHash{};
     match_pos_ = 0;
     confirmed = false;
     ops_since_boundary = 0;
@@ -161,7 +161,7 @@ struct IterationDetector {
     }
 
     // Second+ match — confirmed iteration boundary.
-    last_completed_len = std::sub_sat(ops_since_boundary, K);
+    last_completed_len = crucible::sat::sub_sat(ops_since_boundary, K);
     ops_since_boundary = K;
     boundaries_detected++;
     return true;

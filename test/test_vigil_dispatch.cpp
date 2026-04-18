@@ -68,7 +68,7 @@ static OpData make_op(uint32_t iter, uint32_t op_idx) {
     if (op_idx > 0)
         d.metas[idx++] = make_meta(fake_ptr(iter, op_idx - 1));
     d.metas[idx++] = make_meta(fake_ptr(iter, op_idx));
-    d.n_metas = d.entry.num_inputs + d.entry.num_outputs;
+    d.n_metas = static_cast<uint16_t>(d.entry.num_inputs + d.entry.num_outputs);
     return d;
 }
 

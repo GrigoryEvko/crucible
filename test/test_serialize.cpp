@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <span>
 
 // Helper: build a minimal TensorMeta for testing.
@@ -38,7 +39,7 @@ int main() {
 
     constexpr uint32_t NUM_OPS = 3;
     auto* ops = arena.alloc_array<crucible::TraceEntry>(test.alloc, NUM_OPS);
-    std::memset(ops, 0, NUM_OPS * sizeof(crucible::TraceEntry));
+    std::uninitialized_value_construct_n(ops, NUM_OPS);
 
     // Set up metas: 2 inputs + 1 output per op.
     for (uint32_t i = 0; i < NUM_OPS; i++) {

@@ -839,7 +839,7 @@ inline void recompute_merkle(TraceNode* node) {
 
   // 5. Create BranchNode
   auto* branch = arena.alloc_obj<BranchNode>(a);
-  std::memset(branch, 0, sizeof(BranchNode));
+  ::new (branch) BranchNode{};
   branch->kind = TraceNodeKind::BRANCH;
   branch->guard = guard;
   branch->num_arms = 2;
@@ -1022,7 +1022,8 @@ struct DagDiff {
           la->num_feedback != lb->num_feedback ||
           la->term_kind != lb->term_kind ||
           la->repeat_count != lb->repeat_count ||
-          la->epsilon != lb->epsilon)
+          std::bit_cast<uint32_t>(la->epsilon)
+              != std::bit_cast<uint32_t>(lb->epsilon))
         return {a, b, depth, DagDiff::Kind::LOOP_MISMATCH};
       // Feedback edges differ?
       if (la->num_feedback > 0 &&

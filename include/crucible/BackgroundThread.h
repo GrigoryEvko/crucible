@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <bit>
 #include <chrono>
@@ -7,13 +8,13 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
-#include <numeric>
 #include <thread>
 #include <vector>
 
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
+#include <crucible/Saturate.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/TraceGraph.h>
 
@@ -227,17 +228,17 @@ struct BackgroundThread {
     // PtrMap: power-of-two, load factor < 50%.
     // Unique ptrs ≈ total_outputs + external_inputs (small fraction).
     uint32_t raw_map = std::max(MIN_PTR_MAP_CAP,
-        std::mul_sat(std::add_sat(total_outputs, uint32_t{256}), uint32_t{2}));
+        crucible::sat::mul_sat(crucible::sat::add_sat(total_outputs, uint32_t{256}), uint32_t{2}));
     uint32_t needed_map = (raw_map >= MAX_PTR_MAP_CAP) ?
         MAX_PTR_MAP_CAP : std::bit_ceil(raw_map);
 
     // Slots: unique storages bounded by outputs + external headroom.
     uint32_t needed_slots = std::max(MIN_SCRATCH_SLOT_CAP,
-        std::add_sat(total_outputs, uint32_t{1024}));
+        crucible::sat::add_sat(total_outputs, uint32_t{1024}));
 
     // Edges: DATA_FLOW (≤ total_inputs) + ALIAS (≤ total_outputs).
     uint32_t needed_edges = std::max(MIN_SCRATCH_EDGE_CAP,
-        std::add_sat(total_inputs, total_outputs));
+        crucible::sat::add_sat(total_inputs, total_outputs));
 
     if (needed_map > map_cap_) {
       std::free(scratch_map_);
@@ -408,8 +409,8 @@ struct BackgroundThread {
     uint32_t total = static_cast<uint32_t>(current_trace.size());
     uint32_t iter_len = detector.last_completed_len;
 
-    uint32_t warmup = std::sub_sat(
-        std::sub_sat(total, IterationDetector::K),
+    uint32_t warmup = crucible::sat::sub_sat(
+        crucible::sat::sub_sat(total, IterationDetector::K),
         iter_len);
     if (warmup > 0) [[unlikely]] {
       // Shift data: memmove remaining to front (no alloc).
@@ -427,10 +428,10 @@ struct BackgroundThread {
       shift(current_meta_starts);
       shift(current_scope_hashes);
       shift(current_callsite_hashes);
-      total = std::sub_sat(total, warmup);
+      total = crucible::sat::sub_sat(total, warmup);
     }
 
-    uint32_t completed_len = std::sub_sat(total, IterationDetector::K);
+    uint32_t completed_len = crucible::sat::sub_sat(total, IterationDetector::K);
     last_iteration_length = completed_len;
     iterations_completed++;
 
@@ -576,15 +577,15 @@ struct BackgroundThread {
     map_gen_++;
     if (map_gen_ == 0) [[unlikely]] {
       // Wrap-around every 255 calls: full reset.
-      std::memset(scratch_map_, 0, map_cap_ * sizeof(PtrSlot));
+      std::fill_n(scratch_map_, map_cap_, PtrSlot{});
       map_gen_ = 1;
     }
 
-    // ── SlotInfo: memset only the portion we'll use ──
+    // ── SlotInfo: value-init the portion we'll use ──
 
     uint32_t slot_cap = std::min(slot_cap_max_,
         std::max(uint32_t{256}, total_inputs + total_outputs));
-    std::memset(scratch_slots_, 0, slot_cap * sizeof(SlotInfo));
+    std::fill_n(scratch_slots_, slot_cap, SlotInfo{});
     uint32_t next_slot_raw = 0;
 
     // ── Edge buffer: scratch, no init needed ──

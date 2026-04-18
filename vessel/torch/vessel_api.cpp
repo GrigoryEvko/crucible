@@ -229,7 +229,8 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) {
     // Count total tensor metas across all ops.
     uint32_t total_metas = 0;
     for (uint32_t i = 0; i < region->num_ops; i++) {
-        total_metas += region->ops[i].num_inputs + region->ops[i].num_outputs;
+        total_metas += static_cast<uint32_t>(
+            region->ops[i].num_inputs + region->ops[i].num_outputs);
     }
 
     // Header: "CRTR" + version(1) + num_ops + num_metas = 16B.
