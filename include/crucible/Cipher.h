@@ -97,6 +97,12 @@ class CRUCIBLE_OWNER Cipher {
 
     // Deserialize a RegionNode from objects/<content_hash>.
     // All structures are arena-allocated. Returns nullptr if not found.
+    // Hard cap on a single object-file's on-disk size.  Real regions
+    // sit at ≤ 1 MB; the 256 MB ceiling covers MoE and long-horizon
+    // traces while rejecting corrupt or adversarial entries that would
+    // OOM the loader with a SIZE_MAX allocation.
+    static constexpr size_t MAX_OBJECT_BYTES = size_t{256} << 20;
+
     [[nodiscard]] RegionNode* load(fx::Alloc a, ContentHash content_hash, Arena& arena) const {
         if (!content_hash) return nullptr;
         const std::string path = obj_path(content_hash.raw());
@@ -106,7 +112,10 @@ class CRUCIBLE_OWNER Cipher {
         if (!f) return nullptr;
 
         f.seekg(0, std::ios::end);
-        const size_t len = static_cast<size_t>(f.tellg());
+        const auto raw = f.tellg();
+        if (raw < 0) return nullptr;  // tellg() failure
+        const auto len = static_cast<size_t>(raw);
+        if (len > MAX_OBJECT_BYTES) return nullptr;
         f.seekg(0, std::ios::beg);
 
         std::vector<uint8_t> buf(len);
