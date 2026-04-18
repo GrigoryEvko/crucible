@@ -118,6 +118,19 @@ static_assert(std::endian::native == std::endian::little,
     return nullptr;
   }
 
+  // Hard caps: real traces top out at 10^5 ops; reject adversarial
+  // headers that would allocate >8 GB of records before discovering
+  // truncation.
+  static constexpr uint32_t MAX_OPS   = 1u << 22;   // 4 M ops
+  static constexpr uint32_t MAX_METAS = 1u << 24;   // 16 M metas
+  if (num_ops > MAX_OPS || num_metas > MAX_METAS) {
+    std::fprintf(stderr, "load_trace: header counts exceed cap in %s "
+                         "(num_ops=%u num_metas=%u)\n",
+                 path, num_ops, num_metas);
+    std::fclose(f);
+    return nullptr;
+  }
+
   // Read op records.
   std::vector<TraceOpRecord> records(num_ops);
   if (num_ops > 0 &&

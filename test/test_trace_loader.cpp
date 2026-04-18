@@ -104,6 +104,19 @@ static void test_happy_path_zero_ops() {
     std::printf("  test_happy_path_empty:          PASSED\n");
 }
 
+static void test_adversarial_num_ops_rejected() {
+    // Header claiming 4 G + 1 ops must be rejected before allocating
+    // a 320 GB std::vector<TraceOpRecord>.
+    struct { char magic[4]; uint32_t version; uint32_t n_ops; uint32_t n_metas; }
+    hdr{.magic = {'C','R','T','R'}, .version = 1,
+        .n_ops = 0xFFFF'FFFFu, .n_metas = 0};
+    std::string path = write_tmp(&hdr, sizeof(hdr));
+    auto t = load_trace(path.c_str());
+    assert(!t);
+    std::remove(path.c_str());
+    std::printf("  test_adversarial_counts:        PASSED\n");
+}
+
 static void test_round_trip_single_op() {
     // Build a minimal valid file: header + 1 op record (80B) + 0 metas.
     char buf[16 + 80] = {};
@@ -145,6 +158,7 @@ int main() {
     test_truncated_header();
     test_truncated_op_records();
     test_happy_path_zero_ops();
+    test_adversarial_num_ops_rejected();
     test_round_trip_single_op();
     std::printf("test_trace_loader: 8 groups, all passed\n");
     return 0;
