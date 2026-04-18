@@ -155,37 +155,18 @@ endif()
 # ═══════════════════════════════════════════════════════════════
 
 if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND CRUCIBLE_SANITIZE)
-  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(CRUCIBLE_SAN_COMPILE_FLAGS
-      # AxMemSafe: ASan — buffer overflow, use-after-free, double-free, stack-use-after-return
-      # AxLeakFree: LeakSan — integrated into ASan on Linux (default on)
-      # AxInitSafe: use-after-scope detection
-      -fsanitize=address
-      -fsanitize-address-use-after-scope     # detect use-after-scope
-      # UBSan + integer + nullability — existing checks
-      -fsanitize=undefined,integer,nullability,float-divide-by-zero,implicit-conversion,local-bounds
-      -fno-sanitize=unsigned-integer-overflow  # hash functions + Philox use intentional wrap
-      -fno-sanitize-recover=all         # abort on first violation
-      -fno-omit-frame-pointer           # readable stack traces
-    )
-    set(CRUCIBLE_SAN_LINK_FLAGS
-      -fsanitize=address,undefined,integer,nullability,float-divide-by-zero,implicit-conversion,local-bounds
-      -fno-sanitize=unsigned-integer-overflow
-    )
-  elseif(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    set(CRUCIBLE_SAN_COMPILE_FLAGS
-      # AxMemSafe: ASan — buffer overflow, use-after-free, double-free
-      # AxLeakFree: LeakSan — integrated into ASan on Linux
-      -fsanitize=address
-      # UBSan — existing checks
-      -fsanitize=undefined,bounds-strict
-      -fno-sanitize-recover=all         # abort on first violation
-      -fno-omit-frame-pointer           # readable stack traces
-    )
-    set(CRUCIBLE_SAN_LINK_FLAGS
-      -fsanitize=address,undefined,bounds-strict
-    )
-  endif()
+  set(CRUCIBLE_SAN_COMPILE_FLAGS
+    # AxMemSafe: ASan — buffer overflow, use-after-free, double-free
+    # AxLeakFree: LeakSan — integrated into ASan on Linux
+    -fsanitize=address
+    # UBSan — existing checks
+    -fsanitize=undefined,bounds-strict
+    -fno-sanitize-recover=all         # abort on first violation
+    -fno-omit-frame-pointer           # readable stack traces
+  )
+  set(CRUCIBLE_SAN_LINK_FLAGS
+    -fsanitize=address,undefined,bounds-strict
+  )
 endif()
 
 # ═══════════════════════════════════════════════════════════════
@@ -280,6 +261,8 @@ function(crucible_test name)
   add_test(NAME ${name} COMMAND ${name})
 endfunction()
 
+crucible_test(test_safety)
+crucible_test(test_saturate)
 crucible_test(test_arena)
 crucible_test(test_trace_ring)
 crucible_test(test_merkle_dag)
