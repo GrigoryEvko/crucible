@@ -36,6 +36,10 @@ struct CallSiteTable {
   CallsiteHash seen[SET_CAP]{};
 
   [[nodiscard]] bool has(CallsiteHash hash) const {
+    // Sentinel (raw == 0) reserved for empty slots; real callsites hash
+    // to non-zero.  Reject the sentinel up front so has(sentinel) can't
+    // alias the first empty bucket encountered.
+    if (!hash) return false;
     uint32_t idx = static_cast<uint32_t>(hash.raw()) & SET_MASK;
     for (uint32_t p = 0; p < SET_CAP; p++) {
       const auto& h = seen[(idx + p) & SET_MASK];
@@ -50,6 +54,7 @@ struct CallSiteTable {
       std::string filename,
       std::string funcname,
       int32_t lineno) {
+    if (!hash) return;  // sentinel is reserved; reject at the door
     if (has(hash)) return;
     uint32_t idx = static_cast<uint32_t>(hash.raw()) & SET_MASK;
     for (uint32_t p = 0; p < SET_CAP; p++) {
