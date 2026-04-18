@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstring>
+#include <vector>
 #include <memory>
 #include <span>
 
@@ -161,6 +162,32 @@ int main() {
     crucible::Arena arena3(1 << 16);
     crucible::RegionNode* bad = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{buf, 10}, arena3);
     assert(bad == nullptr && "deserialize_region must return nullptr on truncated input");
+
+    // ── Adversarial-header caps: reject before any giant allocation ──
+    // Build a minimal header, then overwrite num_ops with 0xFFFFFFFF.
+    // Pre-cap deserializer would allocate 4 G × sizeof(TraceEntry)
+    // before failing; now rejects up front.
+    {
+        // Offset 0..3 = magic; 4..7 = version; 8 = kind byte; 9..15 pad;
+        // 16..23 merkle; 24..31 content; 32..35 num_ops.  See Serialize.h.
+        std::vector<uint8_t> adv(128, 0);
+        const uint32_t magic = crucible::CDAG_MAGIC;
+        const uint32_t version = crucible::CDAG_VERSION;
+        const uint8_t  kind = static_cast<uint8_t>(crucible::TraceNodeKind::REGION);
+        std::memcpy(adv.data() +  0, &magic,   4);
+        std::memcpy(adv.data() +  4, &version, 4);
+        adv[8] = kind;
+        // merkle_hash + content_hash stay zero.
+        const uint32_t bogus_num_ops = 0xFFFF'FFFFu;
+        std::memcpy(adv.data() + 32, &bogus_num_ops, 4);
+
+        crucible::Arena arena4(1 << 16);
+        crucible::RegionNode* r = crucible::deserialize_region(
+            test.alloc, std::span<const uint8_t>{adv.data(), adv.size()},
+            arena4);
+        assert(r == nullptr
+               && "deserialize_region must reject num_ops > CDAG_MAX_OPS");
+    }
 
     std::printf("test_serialize: all tests passed\n");
     return 0;
