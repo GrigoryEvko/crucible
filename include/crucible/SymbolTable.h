@@ -89,6 +89,8 @@ class CRUCIBLE_OWNER SymbolTable {
         e.range_upper = bitcast_double(
             std::numeric_limits<double>::infinity());
         break;
+      default:
+        std::unreachable();
     }
 
     entries_.push_back(e);
