@@ -21,9 +21,7 @@ crucible_bench(bench_trace_ring)
 crucible_bench(bench_region_cache)
 crucible_bench(bench_dispatch)
 crucible_bench(bench_swiss_table)
-# bench_expr_pool: 49 call sites stale against fx::Alloc API.  Re-enable
-# once the bench file is rewritten to thread the capability token.
-# crucible_bench(bench_expr_pool)
+crucible_bench(bench_expr_pool)
 crucible_bench(bench_iteration_detector)
 crucible_bench(bench_replay_engine)
 crucible_bench(bench_merkle_dag)
