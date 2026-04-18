@@ -14,6 +14,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <vector>
 
@@ -149,20 +150,31 @@ inline void check_variance(const Result& r, double max_ratio = 4.0) {
     }
 }
 
-// Check if median exceeds regression threshold. Also checks variance
-// to reject results from noisy systems. Aborts with a clear message —
-// assert is disabled in release builds, so we use fprintf+abort.
-//
-// max_var_ratio: override variance threshold for benchmarks with
-// known structural variance (burst fills, pipeline warmup). Default
-// is 4.0× from check_variance().
+// Read CRUCIBLE_BENCH_MULT once (default 1.0).  Host-specific calibration
+// lives in the env, not in per-bench source — a slower box can set 2.0
+// without any source change.  Negative / non-numeric values fall back.
+inline double bench_mult() {
+    static const double mult = [] {
+        const char* s = std::getenv("CRUCIBLE_BENCH_MULT");
+        if (!s) return 1.0;
+        char* end = nullptr;
+        double v = std::strtod(s, &end);
+        return (end != s && v > 0) ? v : 1.0;
+    }();
+    return mult;
+}
+
+// Check if median exceeds regression threshold × CRUCIBLE_BENCH_MULT.
+// Aborts with a clear message — assert is disabled in release builds.
 inline void check_regression(const Result& r, double max_ns,
                              double max_var_ratio = 4.0) {
     check_variance(r, max_var_ratio);
-    if (r.median_ns > max_ns) {
+    const double eff = max_ns * bench_mult();
+    if (r.median_ns > eff) {
         std::fprintf(stderr,
-            "REGRESSION: %-40s  median=%.1f ns  threshold=%.1f ns\n",
-            r.name, r.median_ns, max_ns);
+            "REGRESSION: %-40s  median=%.1f ns  threshold=%.1f ns"
+            " (base=%.1f × CRUCIBLE_BENCH_MULT=%.2f)\n",
+            r.name, r.median_ns, eff, max_ns, bench_mult());
         std::abort();
     }
 }
