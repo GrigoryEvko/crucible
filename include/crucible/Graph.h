@@ -355,12 +355,16 @@ class CRUCIBLE_OWNER Graph {
     n->reduce_hint = hint;
     const auto total = static_cast<uint8_t>(n->ndim + n->nred);
     n->size = arena_.alloc_array<const Expr*>(a, total);
-    std::memcpy(
-        const_cast<const Expr**>(n->size), ranges.data(),
-        ranges.size_bytes());
-    std::memcpy(
-        const_cast<const Expr**>(n->size) + n->ndim, red_ranges.data(),
-        red_ranges.size_bytes());
+    // memcpy(nullptr, ..., 0) is UB; guard by size.  alloc_array(0)
+    // yields nullptr and ranges.data() is nullptr for an empty span.
+    if (!ranges.empty()) {
+      std::memcpy(const_cast<const Expr**>(n->size), ranges.data(),
+                  ranges.size_bytes());
+    }
+    if (!red_ranges.empty()) {
+      std::memcpy(const_cast<const Expr**>(n->size) + n->ndim,
+                  red_ranges.data(), red_ranges.size_bytes());
+    }
     n->body = body;
     set_inputs_(a, n, inputs);
     return n;
@@ -420,15 +424,17 @@ class CRUCIBLE_OWNER Graph {
   // ── Graph I/O ──────────────────────────────────────────────────
 
   void set_graph_inputs(fx::Alloc a, std::span<const NodeId> ids) {
+    num_inputs_ = static_cast<uint32_t>(ids.size());
+    if (ids.empty()) { input_ids_ = nullptr; return; }
     input_ids_ = arena_.alloc_array<NodeId>(a, ids.size());
     std::memcpy(input_ids_, ids.data(), ids.size_bytes());
-    num_inputs_ = static_cast<uint32_t>(ids.size());
   }
 
   void set_graph_outputs(fx::Alloc a, std::span<const NodeId> ids) {
+    num_outputs_ = static_cast<uint32_t>(ids.size());
+    if (ids.empty()) { output_ids_ = nullptr; return; }
     output_ids_ = arena_.alloc_array<NodeId>(a, ids.size());
     std::memcpy(output_ids_, ids.data(), ids.size_bytes());
-    num_outputs_ = static_cast<uint32_t>(ids.size());
   }
 
   // ── Slot ID side-tables ────────────────────────────────────────
