@@ -39,9 +39,12 @@ struct CRUCIBLE_OWNER PoolAllocator {
   //
   // Aborts on OOM — a Crucible runtime that can't allocate the pool
   // is unrecoverable (the whole point is pre-allocation).
-  void init(const MemoryPlan* plan) CRUCIBLE_NO_THREAD_SAFETY {
-    assert(plan && "null MemoryPlan");
-    assert(!ptr_table_ && "already initialized — call destroy() first");
+  void init(const MemoryPlan* plan) CRUCIBLE_NO_THREAD_SAFETY
+#if CRUCIBLE_HAS_CONTRACTS
+      pre (plan != nullptr)
+      pre (ptr_table_ == nullptr)
+#endif
+  {
 
     num_slots_ = plan->num_slots;
     num_external_ = plan->num_external;
@@ -175,8 +178,11 @@ struct CRUCIBLE_OWNER PoolAllocator {
   //
   // Used by CrucibleContext::switch_region() to keep old pool data
   // alive while initializing a new pool for the alternate region.
-  [[nodiscard]] DetachedPool detach() {
-    assert(pool_ && "detaching an uninitialized pool");
+  [[nodiscard]] DetachedPool detach()
+#if CRUCIBLE_HAS_CONTRACTS
+      pre (pool_ != nullptr)
+#endif
+  {
     void* p = pool_;
     uint64_t n = pool_bytes_;
     pool_ = nullptr;   // prevent destroy() from freeing the buffer
