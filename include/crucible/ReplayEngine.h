@@ -134,19 +134,25 @@ struct ReplayEngine {
   // current_ points to the matched entry (set during advance, survives
   // reset). The prefetch during advance() brought the second cache line
   // (containing output_slot_ids) into L1d.
-  [[nodiscard]] CRUCIBLE_INLINE void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
-    assert(current_ && "no matched entry — call advance() first");
-    assert(j < current_->num_outputs && "output index out of bounds");
-    assert(current_->output_slot_ids && "null output_slot_ids");
+  [[nodiscard]] CRUCIBLE_INLINE void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
+#if CRUCIBLE_HAS_CONTRACTS
+      pre (current_ != nullptr)
+      pre (j < current_->num_outputs)
+      pre (current_->output_slot_ids != nullptr)
+#endif
+  {
     SlotId sid = current_->output_slot_ids[j];
     return sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
   }
 
   // ── Input pointer for input j of the last matched op ──
-  [[nodiscard]] CRUCIBLE_INLINE void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
-    assert(current_ && "no matched entry — call advance() first");
-    assert(j < current_->num_inputs && "input index out of bounds");
-    assert(current_->input_slot_ids && "null input_slot_ids");
+  [[nodiscard]] CRUCIBLE_INLINE void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
+#if CRUCIBLE_HAS_CONTRACTS
+      pre (current_ != nullptr)
+      pre (j < current_->num_inputs)
+      pre (current_->input_slot_ids != nullptr)
+#endif
+  {
     SlotId sid = current_->input_slot_ids[j];
     return sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
   }
