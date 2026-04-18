@@ -4,6 +4,7 @@
 #include "Platform.h"
 #include "Saturate.h"
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -63,7 +64,11 @@ class CRUCIBLE_OWNER Arena {
   // Slow path: malloc + vector push (amortized across block_size_ bytes).
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] CRUCIBLE_INLINE
-  void* alloc(fx::Alloc, size_t size, size_t align = alignof(std::max_align_t)) CRUCIBLE_LIFETIMEBOUND {
+  void* alloc(fx::Alloc, size_t size, size_t align = alignof(std::max_align_t)) CRUCIBLE_LIFETIMEBOUND
+#if CRUCIBLE_HAS_CONTRACTS
+      pre (std::has_single_bit(align))
+#endif
+  {
     // Compute aligned offset within the current block.
     // Uses absolute address for correctness with malloc's arbitrary base.
     uintptr_t aligned_addr = (cur_base_ + offset_ + align - 1) & ~(align - 1);

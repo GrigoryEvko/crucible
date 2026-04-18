@@ -1,8 +1,18 @@
 #include <crucible/Arena.h>
 #include <crucible/Effects.h>
 #include <cassert>
+#include <contracts>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+
+[[noreturn]] void handle_contract_violation(
+    const std::contracts::contract_violation&);
+
+[[noreturn]] void handle_contract_violation(
+    const std::contracts::contract_violation&) {
+    std::abort();
+}
 
 int main() {
   crucible::fx::Test test;
