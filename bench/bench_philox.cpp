@@ -67,6 +67,22 @@ int main() {
         bench::DoNotOptimize(k);
     });
 
+    // ── Streaming throughput: fill a buffer of random u32 values ──
+    // Mirrors a dropout/RNG kernel generating N outputs from one key.
+    constexpr size_t BUF_WORDS = 4096;
+    alignas(64) static uint32_t scratch[BUF_WORDS];
+
+    BENCH("  fill 4096 u32 (16 KB / batch)", 10'000, {
+        for (size_t i = 0; i < BUF_WORDS; i += 4) {
+            auto c = Philox::generate(static_cast<uint64_t>(i), key);
+            scratch[i + 0] = c[0];
+            scratch[i + 1] = c[1];
+            scratch[i + 2] = c[2];
+            scratch[i + 3] = c[3];
+        }
+        bench::DoNotOptimize(scratch[0]);
+    });
+
     // Determinism sanity check — same inputs, same bits.
     auto r1 = Philox::generate(uint64_t{1}, uint64_t{2});
     auto r2 = Philox::generate(uint64_t{1}, uint64_t{2});
