@@ -126,7 +126,11 @@ class CRUCIBLE_OWNER Arena {
   [[gnu::noinline]]
   void* alloc_slow_(size_t size, size_t align) {
     // Oversized requests get their own block with room for alignment.
-    size_t new_size = (size + align > block_size_) ? size + align : block_size_;
+    // Saturating add avoids silent overflow if size ≈ SIZE_MAX — the
+    // follow-on malloc(SIZE_MAX) will then fail and abort cleanly
+    // instead of allocating a small block and writing out of bounds.
+    const size_t needed = crucible::sat::add_sat(size, align);
+    size_t new_size = (needed > block_size_) ? needed : block_size_;
     auto* p = static_cast<char*>(std::malloc(new_size));
     if (!p) [[unlikely]] std::abort();
     blocks_.push_back(p);
