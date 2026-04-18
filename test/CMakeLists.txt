@@ -263,6 +263,7 @@ endfunction()
 
 crucible_test(test_safety)
 crucible_test(test_saturate)
+crucible_test(test_iteration_detector)
 crucible_test(test_arena)
 crucible_test(test_trace_ring)
 crucible_test(test_merkle_dag)
