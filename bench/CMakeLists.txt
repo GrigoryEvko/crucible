@@ -31,6 +31,7 @@ crucible_bench(bench_merkle_dag)
 # crucible_bench(bench_phases)
 crucible_bench(bench_saturate)
 crucible_bench(bench_safety)
+crucible_bench(bench_philox)
 
 # ── Visualization tool ────────────────────────────────────────────────
 # Not a benchmark — a utility for rendering .crtrace traces as SVG.
