@@ -29,7 +29,7 @@ using crucible::ShapeHash;
 // Only schema_hash, shape_hash, num_outputs, output_slot_ids,
 // num_inputs, input_slot_ids are meaningful for ReplayEngine.
 static void init_region(RegionNode* r, TraceEntry* ops, uint32_t n) {
-  std::memset(r, 0, sizeof(*r));
+  ::new (r) RegionNode{};
   r->kind = TraceNodeKind::REGION;
   r->ops = ops;
   r->num_ops = n;
@@ -356,8 +356,7 @@ static void test_integration_with_pool() {
   //   Slot 1: birth=1, death=2, 256B
   //   Slot 2: birth=0, death=2, 128B (external — param)
   constexpr uint32_t NSLOTS = 3;
-  TensorSlot slots[NSLOTS];
-  std::memset(slots, 0, sizeof(slots));
+  TensorSlot slots[NSLOTS]{};
   slots[0] = {.offset_bytes=0, .nbytes=512,
                .birth_op=OpIndex{0}, .death_op=OpIndex{2},
                .dtype=ScalarType::Float, .device_type=DeviceType::CPU,

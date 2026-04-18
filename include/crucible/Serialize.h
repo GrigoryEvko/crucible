@@ -437,7 +437,7 @@ inline Header read_header(Reader& r) {
     const uint32_t num_arms = r.r<uint32_t>();
 
     auto* node = arena.alloc_obj<BranchNode>(a);
-    std::memset(node, 0, sizeof(BranchNode));
+    ::new (node) BranchNode{};
     node->kind        = TraceNodeKind::BRANCH;
     node->merkle_hash = hdr.merkle_hash;
     node->next        = nullptr; // caller resolves continuation separately

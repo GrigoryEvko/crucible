@@ -143,7 +143,7 @@ struct Philox {
     // FNV-1a mix of a 64-bit value into hash state.
     [[nodiscard]] static constexpr uint64_t fnv_mix_(uint64_t h, uint64_t v) {
         for (int i = 0; i < 8; i++) {
-            h ^= static_cast<uint64_t>((v >> (i * 8)) & 0xFF);
+            h ^= (v >> (i * 8)) & 0xFFULL;
             h *= 0x100000001b3ULL;
         }
         return h;

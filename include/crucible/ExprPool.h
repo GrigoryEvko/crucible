@@ -251,9 +251,11 @@ class CRUCIBLE_OWNER ExprPool {
       f |= ExprFlags::IS_POSITIVE | ExprFlags::IS_NONNEGATIVE;
     else if (val < 0)
       f |= ExprFlags::IS_NEGATIVE | ExprFlags::IS_NONPOSITIVE;
-    else if (val == 0.0)
+    else if ((static_cast<uint64_t>(payload) << 1) == 0) {
+      // ±0 but not NaN — shift-out-sign catches both signed zeros.
       f |= ExprFlags::IS_ZERO | ExprFlags::IS_NONNEGATIVE |
            ExprFlags::IS_NONPOSITIVE;
+    }
     return intern_node(a, Op::FLOAT, nullptr, 0, f, SymbolId{}, payload);
   }
 
@@ -938,7 +940,7 @@ class CRUCIBLE_OWNER ExprPool {
     while (i < nt) {
       int64_t total_coeff = terms[i].coeff;
       const Expr* base = terms[i].base;
-      uint8_t j = i + 1;
+      auto j = static_cast<uint8_t>(i + 1);
       while (j < nt && terms[j].base == base) {
         total_coeff += terms[j].coeff;
         ++j;

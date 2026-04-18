@@ -213,12 +213,15 @@ class CRUCIBLE_OWNER Cipher {
         }
         for (uint32_t i = 0; i < region->num_ops; i++) {
             const TraceEntry& te = region->ops[i];
+            const size_t n_in  = te.num_inputs;
+            const size_t n_out = te.num_outputs;
+            const size_t n_sca = te.num_scalar_args;
             sz += 40; // fixed per-op header
-            sz += (te.num_inputs + te.num_outputs) * sizeof(TensorMeta);
-            sz += te.num_scalar_args * sizeof(int64_t);
-            sz += te.num_inputs  * sizeof(uint32_t); // input_trace_indices
-            sz += te.num_inputs  * sizeof(uint32_t); // input_slot_ids
-            sz += te.num_outputs * sizeof(uint32_t); // output_slot_ids
+            sz += (n_in + n_out) * sizeof(TensorMeta);
+            sz += n_sca          * sizeof(int64_t);
+            sz += n_in           * sizeof(uint32_t); // input_trace_indices
+            sz += n_in           * sizeof(uint32_t); // input_slot_ids
+            sz += n_out          * sizeof(uint32_t); // output_slot_ids
         }
         return sz + 256; // headroom
     }

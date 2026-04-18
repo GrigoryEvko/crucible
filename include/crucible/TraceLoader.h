@@ -217,7 +217,8 @@ static_assert(std::endian::native == std::endian::little,
     for (uint16_t s = 0; s < n; s++)
       e.scalar_values[s] = r.scalar_values[s];
 
-    uint16_t total_tensors = r.num_inputs + r.num_outputs;
+    const auto total_tensors =
+        static_cast<uint16_t>(r.num_inputs + r.num_outputs);
     if (total_tensors > 0) {
       trace->meta_starts[i] = MetaIndex{meta_cursor};
       meta_cursor += total_tensors;

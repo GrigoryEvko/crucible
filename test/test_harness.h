@@ -22,7 +22,7 @@ inline void elevate_priority() {
     setpriority(PRIO_PROCESS, 0, -10);
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    CPU_SET(sched_getcpu(), &cpuset);
+    CPU_SET(static_cast<size_t>(sched_getcpu()), &cpuset);
     sched_setaffinity(0, sizeof(cpuset), &cpuset);
 #endif
 }

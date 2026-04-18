@@ -69,7 +69,7 @@ static void feed_iteration(TraceRing* ring, MetaLog* meta_log, uint32_t iter) {
     e.num_inputs = (i == 0) ? 0 : 1;
     e.num_outputs = 1;
 
-    uint16_t n_metas = e.num_inputs + e.num_outputs;
+    const auto n_metas = static_cast<uint16_t>(e.num_inputs + e.num_outputs);
     TensorMeta metas[2]{};
     uint16_t idx = 0;
     if (i > 0)
@@ -91,7 +91,7 @@ static void feed_trigger(TraceRing* ring, MetaLog* meta_log, uint32_t iter) {
     e.num_inputs = (i == 0) ? 0 : 1;
     e.num_outputs = 1;
 
-    uint16_t n_metas = e.num_inputs + e.num_outputs;
+    const auto n_metas = static_cast<uint16_t>(e.num_inputs + e.num_outputs);
     TensorMeta metas[2]{};
     uint16_t idx = 0;
     if (i > 0)

@@ -26,7 +26,7 @@ using crucible::ShapeHash;
 
 static void init_region(RegionNode* r, TraceEntry* ops, uint32_t n,
                         MemoryPlan* plan) {
-  std::memset(r, 0, sizeof(*r));
+  ::new (r) RegionNode{};
   r->kind = TraceNodeKind::REGION;
   r->ops = ops;
   r->num_ops = n;
@@ -265,8 +265,7 @@ static void test_external_slots() {
   ops[0].input_slot_ids = in;
 
   // Slot 0: internal, slot 1: external.
-  TensorSlot slots[2];
-  std::memset(slots, 0, sizeof(slots));
+  TensorSlot slots[2]{};
   slots[0] = {.offset_bytes=0, .nbytes=256,
                .birth_op=OpIndex{0}, .death_op=OpIndex{1},
                .dtype=ScalarType::Float, .device_type=DeviceType::CPU,
@@ -312,8 +311,7 @@ static void test_integration_sweep_line() {
 
   // 2 internal slots, 1 external.
   constexpr uint32_t NSLOTS = 3;
-  TensorSlot slots[NSLOTS];
-  std::memset(slots, 0, sizeof(slots));
+  TensorSlot slots[NSLOTS]{};
   slots[0] = {.offset_bytes=0, .nbytes=512,
                .birth_op=OpIndex{0}, .death_op=OpIndex{2},
                .dtype=ScalarType::Float, .device_type=DeviceType::CPU,

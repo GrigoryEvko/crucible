@@ -25,8 +25,7 @@ int main() {
   assert(nbytes == 8192);
 
   // Test make_region
-  crucible::TraceEntry ops[3];
-  std::memset(ops, 0, sizeof(ops));
+  crucible::TraceEntry ops[3]{};
   ops[0].schema_hash = SchemaHash{0xAABB};
   ops[1].schema_hash = SchemaHash{0xCCDD};
   ops[2].schema_hash = SchemaHash{0xEEFF};
@@ -113,7 +112,7 @@ int main() {
   assert(loop->feedback_edges[0].output_idx == 0);
   assert(loop->term_kind == crucible::LoopTermKind::REPEAT);
   assert(loop->repeat_count == 4);
-  assert(loop->epsilon == 0.0f);
+  assert(std::bit_cast<uint32_t>(loop->epsilon) == 0);
   static_assert(sizeof(crucible::LoopNode) == 64);
   static_assert(sizeof(crucible::FeedbackEdge) == 4);
 

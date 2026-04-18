@@ -2,7 +2,7 @@
 #include <crucible/Effects.h>
 #include <cassert>
 #include <cstdio>
-#include <cstring>
+#include <memory>
 
 // Helper: build a TensorMeta for a 2D float tensor.
 static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
@@ -43,7 +43,7 @@ int main() {
     constexpr uint32_t NUM_SLOTS = 6;
 
     auto* ops = arena.alloc_array<crucible::TraceEntry>(test.alloc, NUM_OPS);
-    std::memset(ops, 0, NUM_OPS * sizeof(crucible::TraceEntry));
+    std::uninitialized_value_construct_n(ops, NUM_OPS);
 
     // ── Op 0: EWISE_ADD(ext_slot0, ext_slot1) → slot 2 ─────────
     {
@@ -132,7 +132,7 @@ int main() {
 
     // ── Build TensorSlots ───────────────────────────────────────
     auto* slots = arena.alloc_array<crucible::TensorSlot>(test.alloc, NUM_SLOTS);
-    std::memset(slots, 0, NUM_SLOTS * sizeof(crucible::TensorSlot));
+    std::uninitialized_value_construct_n(slots, NUM_SLOTS);
     using crucible::SlotId; using crucible::OpIndex;
     using crucible::ScalarType; using crucible::DeviceType; using crucible::Layout;
     // External slots
@@ -282,7 +282,7 @@ int main() {
     // Create a single op with 3 inputs, one of which is null (bias=None).
     crucible::Arena arena2(1 << 16);
     auto* ops2 = arena2.alloc_array<crucible::TraceEntry>(test.alloc, 1);
-    std::memset(ops2, 0, sizeof(crucible::TraceEntry));
+    std::uninitialized_value_construct_n(ops2, 1);
 
     ops2[0].schema_hash = crucible::SchemaHash{0xDD};
     ops2[0].kernel_id = crucible::CKernelId::GEMM_ADDMM;
@@ -311,7 +311,7 @@ int main() {
     ops2[0].output_slot_ids[0] = crucible::SlotId{2};
 
     auto* slots2 = arena2.alloc_array<crucible::TensorSlot>(test.alloc, 3);
-    std::memset(slots2, 0, 3 * sizeof(crucible::TensorSlot));
+    std::uninitialized_value_construct_n(slots2, 3);
     slots2[0] = {.offset_bytes = 0, .nbytes = 128,
                  .birth_op = OpIndex{0}, .death_op = OpIndex{0},
                  .dtype = ScalarType::Float, .device_type = DeviceType::CPU,

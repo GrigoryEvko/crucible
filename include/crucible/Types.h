@@ -102,17 +102,19 @@ enum class Layout : int8_t {
 #define CRUCIBLE_STRONG_ID(Name)                                           \
   struct Name {                                                            \
     uint32_t v;                                                            \
-    constexpr explicit Name(uint32_t val) : v(val) {}                      \
-    constexpr Name() : v(UINT32_MAX) {}                                    \
-    [[nodiscard]] static constexpr Name none() { return Name{UINT32_MAX}; }\
-    [[nodiscard]] constexpr bool is_valid() const {                        \
+    constexpr explicit Name(uint32_t val) noexcept : v(val) {}             \
+    constexpr Name() noexcept : v(UINT32_MAX) {}                           \
+    [[nodiscard]] static constexpr Name none() noexcept {                  \
+      return Name{UINT32_MAX};                                             \
+    }                                                                      \
+    [[nodiscard]] constexpr bool is_valid() const noexcept {               \
       return v != UINT32_MAX;                                              \
     }                                                                      \
-    [[nodiscard]] constexpr explicit operator bool() const {               \
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {      \
       return is_valid();                                                   \
     }                                                                      \
-    [[nodiscard]] constexpr uint32_t raw() const { return v; }             \
-    constexpr auto operator<=>(const Name&) const = default;               \
+    [[nodiscard]] constexpr uint32_t raw() const noexcept { return v; }    \
+    constexpr auto operator<=>(const Name&) const noexcept = default;      \
   };                                                                       \
   static_assert(sizeof(Name) == sizeof(uint32_t))
 
@@ -142,22 +144,22 @@ CRUCIBLE_STRONG_ID(MetaIndex);  // index into MetaLog buffer
 #define CRUCIBLE_STRONG_HASH(Name)                                         \
   struct Name {                                                            \
     uint64_t v;                                                            \
-    constexpr explicit Name(uint64_t val) : v(val) {}                      \
-    constexpr Name() : v(0) {}                                             \
-    [[nodiscard]] constexpr uint64_t raw() const { return v; }             \
-    [[nodiscard]] constexpr explicit operator bool() const {               \
+    constexpr explicit Name(uint64_t val) noexcept : v(val) {}             \
+    constexpr Name() noexcept : v(0) {}                                    \
+    [[nodiscard]] constexpr uint64_t raw() const noexcept { return v; }    \
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {      \
       return v != 0;                                                       \
     }                                                                      \
     /* Sentinel: impossible value used as end-of-region marker.            \
      * No real hash can be UINT64_MAX — hash functions produce             \
      * uniformly distributed values, and we reserve this one. */           \
-    [[nodiscard]] static constexpr Name sentinel() {                       \
+    [[nodiscard]] static constexpr Name sentinel() noexcept {              \
       return Name{UINT64_MAX};                                             \
     }                                                                      \
-    [[nodiscard]] constexpr bool is_sentinel() const {                     \
+    [[nodiscard]] constexpr bool is_sentinel() const noexcept {            \
       return v == UINT64_MAX;                                              \
     }                                                                      \
-    constexpr auto operator<=>(const Name&) const = default;               \
+    constexpr auto operator<=>(const Name&) const noexcept = default;      \
   };                                                                       \
   static_assert(sizeof(Name) == sizeof(uint64_t))
 
