@@ -30,6 +30,7 @@ crucible_bench(bench_merkle_dag)
 # bench_phases: build_trace/alloc_obj stale against fx::Alloc API.
 # crucible_bench(bench_phases)
 crucible_bench(bench_saturate)
+crucible_bench(bench_safety)
 
 # ── Visualization tool ────────────────────────────────────────────────
 # Not a benchmark — a utility for rendering .crtrace traces as SVG.
