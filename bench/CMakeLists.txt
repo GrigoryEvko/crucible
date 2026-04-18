@@ -32,6 +32,7 @@ crucible_bench(bench_philox)
 crucible_bench(bench_ckernel)
 crucible_bench(bench_schema_table)
 crucible_bench(bench_serialize)
+crucible_bench(bench_graph)
 
 # ── Visualization tool ────────────────────────────────────────────────
 # Not a benchmark — a utility for rendering .crtrace traces as SVG.
