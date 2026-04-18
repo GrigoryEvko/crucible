@@ -34,6 +34,7 @@ crucible_bench(bench_schema_table)
 crucible_bench(bench_serialize)
 crucible_bench(bench_graph)
 crucible_bench(bench_reflect)
+crucible_bench(bench_cipher)
 
 # ── Visualization tool ────────────────────────────────────────────────
 # Not a benchmark — a utility for rendering .crtrace traces as SVG.
