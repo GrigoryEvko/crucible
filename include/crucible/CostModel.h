@@ -469,15 +469,17 @@ struct CostBreakdown {
   float peak = hw.peak_tflops(dtype);
   if (peak > 0 && cb.wave_efficiency > 0 && cb.occupancy > 0) {
     double effective = static_cast<double>(peak) * 1e3
-                     * cb.wave_efficiency * cb.occupancy;
+                     * static_cast<double>(cb.wave_efficiency)
+                     * static_cast<double>(cb.occupancy);
     cb.compute_ns = static_cast<double>(flops) / effective;
   }
 
   // Memory time: latency + transfer
   // hbm_bw is in GB/s = bytes/ns (unit identity)
   if (hw.hbm_bw > 0) {
-    cb.memory_ns = hw.hbm_latency
-                 + static_cast<double>(bytes) / hw.hbm_bw;
+    cb.memory_ns = static_cast<double>(hw.hbm_latency)
+                 + static_cast<double>(bytes)
+                 / static_cast<double>(hw.hbm_bw);
   }
 
   // Total = max(compute, memory) + launch
