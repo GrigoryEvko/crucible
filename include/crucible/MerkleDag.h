@@ -654,7 +654,11 @@ class CRUCIBLE_OWNER KernelCache {
     fx::Alloc a,
     Arena& arena CRUCIBLE_LIFETIMEBOUND,
     TraceEntry* ops,
-    uint32_t num_ops) {
+    uint32_t num_ops)
+#if CRUCIBLE_HAS_CONTRACTS
+    pre (num_ops == 0 || ops != nullptr)
+#endif
+{
   auto* node = new (arena.alloc(a, sizeof(RegionNode), alignof(RegionNode)))
       RegionNode{};
   node->kind = TraceNodeKind::REGION;
@@ -672,7 +676,11 @@ class CRUCIBLE_OWNER KernelCache {
     Arena& arena CRUCIBLE_LIFETIMEBOUND,
     TraceEntry* ops,
     uint32_t num_ops,
-    ContentHash precomputed_hash) {
+    ContentHash precomputed_hash)
+#if CRUCIBLE_HAS_CONTRACTS
+    pre (num_ops == 0 || ops != nullptr)
+#endif
+{
   auto* node = new (arena.alloc(a, sizeof(RegionNode), alignof(RegionNode)))
       RegionNode{};
   node->kind = TraceNodeKind::REGION;
