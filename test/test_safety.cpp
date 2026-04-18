@@ -13,16 +13,8 @@
 #include <string>
 #include <utility>
 
-// Default contract-violation handler.  GCC 16's libstdc++ requires the
-// program to supply this.  Production Crucible wires it to crucible_abort().
-[[noreturn]] void handle_contract_violation(
-    const std::contracts::contract_violation& v);
-
-[[noreturn]] void handle_contract_violation(
-    const std::contracts::contract_violation& v) {
-    std::fprintf(stderr, "contract violation: %s\n", v.comment());
-    std::abort();
-}
+// Weak default handle_contract_violation comes from libcrucible.a
+// (src/ContractHandler.cpp).  Nothing to do here.
 
 using namespace crucible::safety;
 

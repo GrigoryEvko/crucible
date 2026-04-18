@@ -7,17 +7,11 @@
 
 #include <crucible/safety/Safety.h>
 
-#include <contracts>
 #include <cstdint>
 #include <cstdio>
 #include <utility>
 
 #include "bench_harness.h"
-
-[[noreturn]] void handle_contract_violation(
-    const std::contracts::contract_violation&) {
-    std::abort();
-}
 
 using namespace crucible::safety;
 

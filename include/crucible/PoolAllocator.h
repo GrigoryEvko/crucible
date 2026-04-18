@@ -101,8 +101,11 @@ struct CRUCIBLE_OWNER PoolAllocator {
   // this returns whatever was registered via register_external().
   //
   // Single 8-byte load — the entire point of pre-building the table.
-  [[nodiscard]] CRUCIBLE_INLINE void* slot_ptr(SlotId sid) const CRUCIBLE_LIFETIMEBOUND {
-    assert(sid.raw() < num_slots_ && "SlotId out of bounds");
+  [[nodiscard]] CRUCIBLE_INLINE void* slot_ptr(SlotId sid) const CRUCIBLE_LIFETIMEBOUND
+#if CRUCIBLE_HAS_CONTRACTS
+      pre (sid.raw() < num_slots_)
+#endif
+  {
     return ptr_table_[sid.raw()];
   }
 
@@ -111,9 +114,12 @@ struct CRUCIBLE_OWNER PoolAllocator {
   // External slots (params, data loader outputs, optimizer states)
   // keep their existing allocations. The Vessel adapter calls this
   // before replay begins for each external slot.
-  void register_external(SlotId sid, void* ptr) {
-    assert(sid.raw() < num_slots_ && "SlotId out of bounds");
-    assert(ptr && "registering null external pointer");
+  void register_external(SlotId sid, void* ptr)
+#if CRUCIBLE_HAS_CONTRACTS
+      pre (sid.raw() < num_slots_)
+      pre (ptr != nullptr)
+#endif
+  {
     ptr_table_[sid.raw()] = ptr;
   }
 
