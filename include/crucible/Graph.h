@@ -439,27 +439,39 @@ class CRUCIBLE_OWNER Graph {
   // only accessed during buffer allocation and code emission, not
   // during hot graph traversals like DCE or topological sort).
 
-  void set_input_slots(fx::Alloc a, NodeId node_id, std::span<const SlotId> slots) {
-    assert(node_id.raw() < num_nodes_);
+  void set_input_slots(fx::Alloc a, NodeId node_id, std::span<const SlotId> slots)
+#if CRUCIBLE_HAS_CONTRACTS
+      pre (node_id.raw() < num_nodes_)
+#endif
+  {
     if (slots.empty()) { input_slots_[node_id.raw()] = nullptr; return; }
     input_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(a, slots.size());
     std::memcpy(input_slots_[node_id.raw()], slots.data(), slots.size_bytes());
   }
 
-  void set_output_slots(fx::Alloc a, NodeId node_id, std::span<const SlotId> slots) {
-    assert(node_id.raw() < num_nodes_);
+  void set_output_slots(fx::Alloc a, NodeId node_id, std::span<const SlotId> slots)
+#if CRUCIBLE_HAS_CONTRACTS
+      pre (node_id.raw() < num_nodes_)
+#endif
+  {
     if (slots.empty()) { output_slots_[node_id.raw()] = nullptr; return; }
     output_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(a, slots.size());
     std::memcpy(output_slots_[node_id.raw()], slots.data(), slots.size_bytes());
   }
 
-  [[nodiscard]] const SlotId* input_slots(NodeId node_id) const CRUCIBLE_LIFETIMEBOUND {
-    assert(node_id.raw() < num_nodes_);
+  [[nodiscard]] const SlotId* input_slots(NodeId node_id) const CRUCIBLE_LIFETIMEBOUND
+#if CRUCIBLE_HAS_CONTRACTS
+      pre (node_id.raw() < num_nodes_)
+#endif
+  {
     return input_slots_[node_id.raw()];
   }
 
-  [[nodiscard]] const SlotId* output_slots(NodeId node_id) const CRUCIBLE_LIFETIMEBOUND {
-    assert(node_id.raw() < num_nodes_);
+  [[nodiscard]] const SlotId* output_slots(NodeId node_id) const CRUCIBLE_LIFETIMEBOUND
+#if CRUCIBLE_HAS_CONTRACTS
+      pre (node_id.raw() < num_nodes_)
+#endif
+  {
     return output_slots_[node_id.raw()];
   }
 
