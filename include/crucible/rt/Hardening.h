@@ -40,17 +40,21 @@
 #  include <sys/syscall.h>
 #  include <sys/types.h>
 #  include <unistd.h>
+// Kernel-ABI constants. Defined here when toolchain headers lag behind the
+// running kernel (common in glibc packaging). Values come from the upstream
+// Linux UAPI headers and are stable. Comments cite the kernel version that
+// introduced each constant so it's clear what we're feature-gating against.
 #  ifndef MADV_COLLAPSE
-#    define MADV_COLLAPSE 25
+#    define MADV_COLLAPSE 25          // Linux 6.1 (2022-12). include/uapi/asm-generic/mman-common.h
 #  endif
 #  ifndef MLOCK_ONFAULT
-#    define MLOCK_ONFAULT 0x01
+#    define MLOCK_ONFAULT 0x01        // Linux 4.4 (2016-01). include/uapi/asm-generic/mman.h
 #  endif
 #  ifndef SCHED_DEADLINE
-#    define SCHED_DEADLINE 6
+#    define SCHED_DEADLINE 6          // Linux 3.14 (2014-03). include/uapi/linux/sched.h
 #  endif
 #  ifndef PR_SET_THP_DISABLE
-#    define PR_SET_THP_DISABLE 41
+#    define PR_SET_THP_DISABLE 41     // Linux 3.15 (2014-06). include/uapi/linux/prctl.h
 #  endif
 #endif
 
@@ -61,24 +65,27 @@ namespace crucible::rt {
 #ifdef __linux__
 
 struct sched_attr_t {
-    uint32_t size;
-    uint32_t sched_policy;
-    uint64_t sched_flags;
-    int32_t  sched_nice;
-    uint32_t sched_priority;
-    uint64_t sched_runtime;
-    uint64_t sched_deadline;
-    uint64_t sched_period;
+    uint32_t size            = 0;
+    uint32_t sched_policy    = 0;
+    uint64_t sched_flags     = 0;
+    int32_t  sched_nice      = 0;
+    uint32_t sched_priority  = 0;
+    uint64_t sched_runtime   = 0;
+    uint64_t sched_deadline  = 0;
+    uint64_t sched_period    = 0;
 };
 
-[[nodiscard]] inline int sched_setattr_sys(pid_t pid, const sched_attr_t* attr, unsigned flags) noexcept {
+[[nodiscard, gnu::always_inline]] inline int
+sched_setattr_sys(pid_t pid, const sched_attr_t* attr, unsigned flags) noexcept {
     return static_cast<int>(::syscall(SYS_sched_setattr, pid, attr, flags));
 }
-[[nodiscard]] inline int sched_getattr_sys(pid_t pid, sched_attr_t* attr, unsigned size, unsigned flags) noexcept {
+[[nodiscard, gnu::always_inline]] inline int
+sched_getattr_sys(pid_t pid, sched_attr_t* attr, unsigned size, unsigned flags) noexcept {
     return static_cast<int>(::syscall(SYS_sched_getattr, pid, attr, size, flags));
 }
 
-[[nodiscard]] inline int mlock2_sys(const void* addr, size_t len, unsigned flags) noexcept {
+[[nodiscard, gnu::always_inline]] inline int
+mlock2_sys(const void* addr, size_t len, unsigned flags) noexcept {
     return static_cast<int>(::syscall(SYS_mlock2, addr, len, flags));
 }
 
@@ -93,7 +100,11 @@ namespace detail {
     return v != nullptr && v[0] == '1';
 }
 
-inline void warn(const char* mechanism, int err) noexcept {
+// Cold-path diagnostic. Only fires when a capability is missing. The
+// "[rt] " prefix plus "unavailable:" infix is the stable grep anchor for
+// automated log scanners (bench harness, Keeper health monitors, CI).
+// Format: "[rt] <mechanism> unavailable[: <errno-string>]\n"
+[[gnu::cold]] inline void warn(const char* mechanism, int err) noexcept {
     if (rt_quiet()) return;
     if (err != 0) {
         std::fprintf(stderr, "[rt] %s unavailable: %s\n", mechanism, std::strerror(err));
@@ -283,7 +294,7 @@ class Hardening {
     //
     // Returns true on success. Stores the (addr, len) in the provided
     // guard so it gets unlocked on revert.
-    static bool lock_region(AppliedPolicy& g, void* addr, size_t len) noexcept {
+    [[nodiscard]] static bool lock_region(AppliedPolicy& g, void* addr, size_t len) noexcept {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
         // MLOCK_ONFAULT → lock pages as they fault in, not eagerly.
@@ -305,7 +316,7 @@ class Hardening {
     }
 
     // madvise(MADV_HUGEPAGE) — idempotent, no revert needed.
-    static bool hint_hugepage(void* addr, size_t len) noexcept {
+    [[nodiscard]] static bool hint_hugepage(void* addr, size_t len) noexcept {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
         if (::madvise(addr, len, MADV_HUGEPAGE) == 0) return true;
@@ -319,7 +330,7 @@ class Hardening {
 
     // madvise(MADV_COLLAPSE) — kernel ≥ 6.1. Synchronously builds
     // hugepages. No revert.
-    static bool collapse_hugepage(void* addr, size_t len) noexcept {
+    [[nodiscard]] static bool collapse_hugepage(void* addr, size_t len) noexcept {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
         if (::madvise(addr, len, MADV_COLLAPSE) == 0) return true;
@@ -335,8 +346,10 @@ class Hardening {
     }
 
     // Prefault: touch one byte per page so page tables are populated.
-    // Called from Meridian's calibration stage. No revert.
-    static void prefault(void* addr, size_t len) noexcept {
+    // Called from Meridian's calibration stage. No revert. Cold-marked
+    // because each region is prefaulted exactly once at init time; the
+    // hot path never visits this function.
+    [[gnu::cold]] static void prefault(void* addr, size_t len) noexcept {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return;
         const size_t page = static_cast<size_t>(::sysconf(_SC_PAGESIZE));
