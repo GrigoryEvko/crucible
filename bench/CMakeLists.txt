@@ -185,17 +185,30 @@ set_target_properties(render_trace PROPERTIES CRUCIBLE_NO_WERROR TRUE)
 
 # ── bench-caps target ────────────────────────────────────────────────
 #
-# The kernel requires CAP_BPF + CAP_PERFMON for tracepoint-type BPF
-# programs (Linux ≥ 5.8, hardcoded in bpf_prog_load — not gated by
-# kernel.unprivileged_bpf_disabled). This target batches `sudo setcap`
-# over every bench binary in a single command so you enter the
-# password exactly once per rebuild:
+# The bench binary needs three capabilities to load + attach the BPF
+# sense hub as an unprivileged user:
+#
+#   CAP_BPF             — bpf_prog_load (tracepoint type, since 5.8)
+#   CAP_PERFMON         — perf_event_open on tracepoint IDs
+#   CAP_DAC_READ_SEARCH — read /sys/kernel/tracing/events/*/id (640 root:root).
+#                         libbpf reads the tracepoint id file on every
+#                         bpf_program__attach() and silently fails to
+#                         attach without it; CAP_PERFMON alone does
+#                         not override DAC on tracefs.
+#
+# This target batches `sudo setcap` over every bench binary in one
+# command so you enter the password exactly once per rebuild:
 #
 #   cmake --build --preset bench --target bench-caps
 #
-# Caveat: the ELF xattr is destroyed on every re-link, so this target
-# must be re-run after any rebuild of the benches. It's intentionally
-# NOT a POST_BUILD step because that would demand sudo on every build.
+# Caveat: the ELF xattr is destroyed on every re-link, so re-run this
+# target after any rebuild. It's intentionally NOT a POST_BUILD step
+# because that would demand sudo on every build.
+#
+# Security note: CAP_DAC_READ_SEARCH lets the binary read any file on
+# the system, including otherwise-protected ones like /etc/shadow.
+# Acceptable for dev binaries running your own bench code; don't
+# setcap binaries you don't trust to the same extent.
 get_property(_crucible_bench_cap_targets GLOBAL PROPERTY CRUCIBLE_BENCH_CAP_TARGETS)
 if (CRUCIBLE_BENCH_BPF_AVAILABLE AND SETCAP_EXECUTABLE AND _crucible_bench_cap_targets)
   set(_crucible_bench_caps_commands
@@ -203,7 +216,7 @@ if (CRUCIBLE_BENCH_BPF_AVAILABLE AND SETCAP_EXECUTABLE AND _crucible_bench_cap_t
       "Applying CAP_BPF+CAP_PERFMON to ${_crucible_bench_cap_targets}")
   foreach (_t IN LISTS _crucible_bench_cap_targets)
     list(APPEND _crucible_bench_caps_commands
-      COMMAND sudo ${SETCAP_EXECUTABLE} cap_bpf,cap_perfmon=eip $<TARGET_FILE:${_t}>)
+      COMMAND sudo ${SETCAP_EXECUTABLE} cap_bpf,cap_perfmon,cap_dac_read_search=eip $<TARGET_FILE:${_t}>)
   endforeach()
   add_custom_target(bench-caps
     ${_crucible_bench_caps_commands}
