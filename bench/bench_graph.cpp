@@ -1,14 +1,20 @@
 // Graph IR transform benchmarks.
 //
-// Measures topological_sort, eliminate_common_subexpressions, and
-// compute_fusion_groups on a realistic pointwise-chain graph. Drives
-// decisions about how often the scheduler pipeline can afford to run
-// these passes per bg drain cycle.
+// Every Run builds a fresh ExprPool + Graph + pointwise chain inside
+// the body, then runs one transform pass. Rebuild-per-body is load-
+// bearing: the transforms (topological_sort, compute_fusion_groups,
+// eliminate_common_subexpressions) each allocate scratch arrays into
+// Graph::arena_, which is a bump allocator with no per-call free.
+// Running them N times on the SAME graph would accumulate N copies of
+// that scratch in the arena — unbounded RSS under the default 100k
+// samples × 10k warmup. Rebuild-per-body keeps memory bounded to one
+// chain + one transform's scratch at any moment.
 //
-// Scales the chain at 3 sizes (64 / 512 / 4096 nodes) so the reader
-// sees how each pass scales with graph depth. Same pool/graph reused
-// across the non-mutating passes (topo, fusion); CSE rebuilds per
-// sample because it mutates (marks dupes DEAD).
+// Side effect: the numbers below are "build_chain + transform", not
+// pure transform cost. Subtract the build_chain baseline at the same
+// N to isolate the transform. For scheduler budgeting, the combined
+// number is what matters — transforms always run against a freshly-
+// recorded graph.
 
 #include <cstdint>
 #include <cstdio>
@@ -49,49 +55,66 @@ int main() {
 
     const bool json = bench::env_json();
 
-    std::printf("=== graph ===\n");
+    std::printf("=== graph ===\n\n");
 
-    // Three chain sizes, three Runs each = 9 Reports. Collected into one
-    // array so emit_reports can walk everything at once and the JSON tail
-    // is a single valid document.
+    // 4 Reports per size × 3 sizes = 12. First Report per size is the
+    // build_chain baseline; subtract from the others to isolate the
+    // transform cost. The bench harness caps each Run's wall time
+    // (default 10s) so heavy bodies don't accumulate RSS via glibc's
+    // heap-pool growth under 100k-sample iteration.
     std::vector<bench::Report> reports;
-    reports.reserve(9);
+    reports.reserve(12);
 
     for (uint32_t n : {64u, 512u, 4096u}) {
-        // One long-lived pool + graph drives the non-mutating topo/fusion
-        // passes. It outlives all three Runs for this N. The IIFE-lambda
-        // pattern from bench_arena captures by reference, so the pool must
-        // live in this outer scope.
-        ExprPool pool{A};
-        Graph    graph{A, &pool};
-        build_chain(pool, graph, n);
-
         char label[64];
 
-        std::snprintf(label, sizeof(label), "topological_sort  (%u nodes)", n);
-        reports.push_back(bench::run(label, [&]{
-            graph.topological_sort(A);
+        std::snprintf(label, sizeof(label), "build_chain                (%u nodes)", n);
+        reports.push_back(bench::run(label, [n]{
+            ExprPool pool(A);
+            Graph    graph(A, &pool);
+            build_chain(pool, graph, n);
+            bench::do_not_optimize(graph);
         }));
 
-        std::snprintf(label, sizeof(label), "compute_fusion    (%u nodes)", n);
-        reports.push_back(bench::run(label, [&]{
+        std::snprintf(label, sizeof(label), "build + topological_sort   (%u nodes)", n);
+        reports.push_back(bench::run(label, [n]{
+            ExprPool pool(A);
+            Graph    graph(A, &pool);
+            build_chain(pool, graph, n);
+            graph.topological_sort(A);
+            bench::do_not_optimize(graph);
+        }));
+
+        std::snprintf(label, sizeof(label), "build + compute_fusion     (%u nodes)", n);
+        reports.push_back(bench::run(label, [n]{
+            ExprPool pool(A);
+            Graph    graph(A, &pool);
+            build_chain(pool, graph, n);
             uint32_t g = graph.compute_fusion_groups(A);
             bench::do_not_optimize(g);
         }));
 
-        // CSE mutates — rebuild a fresh graph per body call. Auto-batch
-        // will replay this N times per timed region; still meaningful
-        // because each body is a self-contained build + mutate pair.
-        std::snprintf(label, sizeof(label), "cse_build+run     (%u nodes)", n);
-        reports.push_back(bench::run(label, [&]{
-            ExprPool p2(A);
-            Graph    g2(A, &p2);
-            build_chain(p2, g2, n);
-            uint32_t e = g2.eliminate_common_subexpressions(A);
+        std::snprintf(label, sizeof(label), "build + cse                (%u nodes)", n);
+        reports.push_back(bench::run(label, [n]{
+            ExprPool pool(A);
+            Graph    graph(A, &pool);
+            build_chain(pool, graph, n);
+            uint32_t e = graph.eliminate_common_subexpressions(A);
             bench::do_not_optimize(e);
         }));
     }
 
-    bench::emit_reports(reports, json);
+    bench::emit_reports_text(reports);
+
+    // Transform deltas at N=4096 (indices 8/9/10/11 = build/topo/fusion/cse).
+    std::printf("\n=== compare — pure transform vs build baseline (N=4096) ===\n");
+    std::printf("  topo   = Δ over build_chain:\n  ");
+    bench::compare(reports[8], reports[9]).print_text(stdout);
+    std::printf("  fusion = Δ over build_chain:\n  ");
+    bench::compare(reports[8], reports[10]).print_text(stdout);
+    std::printf("  cse    = Δ over build_chain:\n  ");
+    bench::compare(reports[8], reports[11]).print_text(stdout);
+
+    bench::emit_reports_json(reports, json);
     return 0;
 }

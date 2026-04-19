@@ -846,6 +846,30 @@ class Run {
         return *this;
     }
 
+    // Cap the Run's total wall time. `ms=0` disables the cap (fall
+    // back to the raw samples_ × batch iteration count). Default
+    // budget is 10 seconds per Run — enough for stable p99.9 on any
+    // sensible body, short enough that heavy bodies (~1 ms) don't
+    // iterate so many times that glibc's heap pool stops returning
+    // pages to the OS (observed: bench_graph at N=4096 built 1 MB
+    // per body, 100k samples → 20 GB RSS before the cap).
+    //
+    // Behavior when the cap hits:
+    //   - Warmup stops as soon as wall exceeds max_wall_ms_/4.
+    //   - The sample loop stops at the first sample boundary past
+    //     max_wall_ms_. Collected samples are kept (ns_samples.size()
+    //     < samples_), drift calculation and Percentiles::compute
+    //     work on whatever landed.
+    //
+    // Override with env CRUCIBLE_BENCH_WALL_MS=<ms>. Explicit
+    // `.max_wall_ms(0)` disables capping even with env set.
+    [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
+    Run& max_wall_ms(size_t ms) noexcept {
+        max_wall_ms_ = ms;
+        have_max_wall_ = true;
+        return *this;
+    }
+
     template <typename Body>
     [[nodiscard]] Report measure(Body&& body) const {
         // Resolve the policy: explicit .hardening() wins, else env var
@@ -869,7 +893,26 @@ class Run {
 
         const size_t batch = (batch_ == 0) ? auto_batch_(body) : batch_;
 
-        for (size_t i = 0; i < warmup_; ++i) body();
+        // Wall-time cap: explicit `.max_wall_ms()` wins; else env var
+        // CRUCIBLE_BENCH_WALL_MS; else default `kDefaultMaxWallMs`.
+        // Zero disables capping entirely.
+        const size_t wall_cap_ms = have_max_wall_
+            ? max_wall_ms_
+            : env_wall_ms_().value_or(kDefaultMaxWallMs);
+        const auto start_all = std::chrono::steady_clock::now();
+        const auto wall_budget = std::chrono::milliseconds(wall_cap_ms);
+        const auto warmup_budget = wall_budget / 4;
+
+        for (size_t i = 0; i < warmup_; ++i) {
+            body();
+            // Budget check every 64 iterations — steady_clock::now() is
+            // ~20 ns, amortizing it keeps overhead under 1% for ≥2 µs
+            // bodies and invisible for anything heavier.
+            if (wall_cap_ms > 0 && (i & 63) == 63 &&
+                std::chrono::steady_clock::now() - start_all > warmup_budget) {
+                break;
+            }
+        }
 
         const uint64_t freq_start = detail::read_cpu_freq_hz(pinned_cpu.raw());
 
@@ -900,6 +943,14 @@ class Run {
             const uint64_t d   = (raw > ovh) ? (raw - ovh) : 0;
             ns_samples.push_back(
                 (static_cast<double>(d) * nspc) / static_cast<double>(batch));
+            // Wall-budget cut-off. Checked every 64 samples to keep
+            // clock overhead negligible on fast bodies; heavy bodies
+            // hit the check often enough because each iteration is
+            // already long relative to steady_clock::now() (~20 ns).
+            if (wall_cap_ms > 0 && (i & 63) == 63 &&
+                std::chrono::steady_clock::now() - start_all > wall_budget) {
+                break;
+            }
         }
 
         const auto wall1 = std::chrono::steady_clock::now();
@@ -910,14 +961,19 @@ class Run {
 
         // Drift: compare first-half vs second-half p50 as a proxy for
         // frequency or cache-state transitions during the run. Use
-        // (S+1)/2 so that on odd S, h1 contains the median element and
+        // (N+1)/2 so that on odd N, h1 contains the median element and
         // is never shorter than h2 — makes the comparison symmetric in
         // "which half includes the middle sample?" rather than biased
-        // toward the lower half (which S/2 would do).
+        // toward the lower half (which N/2 would do).
+        //
+        // N is ns_samples.size(), not the requested S — when the
+        // wall-time cap breaks the sample loop early, ns_samples is
+        // shorter than S and using S here would read past the end.
         double drift = 0;
         bool drift_flag = false;
-        if (S >= 200) {
-            const auto half = static_cast<std::ptrdiff_t>((S + 1) / 2);
+        const size_t N = ns_samples.size();
+        if (N >= 200) {
+            const auto half = static_cast<std::ptrdiff_t>((N + 1) / 2);
             std::vector<double> h1(ns_samples.begin(), ns_samples.begin() + half);
             std::vector<double> h2(ns_samples.begin() + half, ns_samples.end());
             std::sort(h1.begin(), h1.end());
@@ -976,6 +1032,26 @@ class Run {
     size_t      batch_    = 0;          // TODO: strong type
     CpuId       core_{};                // CpuId::none() → falls through to Auto
     Pin         pin_mode_ = Pin::Auto;
+
+    // Default wall-time budget per Run. Caps any bench where the body
+    // × 100'000 samples × 10'000 warmup would run for hours or hold
+    // gigabytes of short-lived allocations that glibc's heap pool
+    // can't promptly return to the OS. Override globally via
+    // CRUCIBLE_BENCH_WALL_MS; per-Run via .max_wall_ms(ms); disable
+    // entirely via .max_wall_ms(0) or CRUCIBLE_BENCH_WALL_MS=0.
+    static constexpr size_t kDefaultMaxWallMs = 10'000;
+    size_t      max_wall_ms_   = kDefaultMaxWallMs;
+    bool        have_max_wall_ = false;   // true iff .max_wall_ms() was called
+
+    // CRUCIBLE_BENCH_WALL_MS=<n>. Empty/unset → default applies.
+    [[nodiscard]] static std::optional<size_t> env_wall_ms_() noexcept {
+        const char* s = std::getenv("CRUCIBLE_BENCH_WALL_MS");
+        if (s == nullptr || s[0] == '\0') return std::nullopt;
+        char* end = nullptr;
+        const long v = std::strtol(s, &end, 10);
+        if (end == s || v < 0) return std::nullopt;
+        return static_cast<size_t>(v);
+    }
 
     // Optional realtime policy applied for the duration of measure().
     // When set, crucible::rt::apply() is invoked at the top of measure()
