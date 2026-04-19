@@ -145,14 +145,44 @@ struct Snapshot {
         return counters[static_cast<uint32_t>(i)];
     }
 
-    // Monotonic-delta semantics. Gauge fields are meaningless after
-    // this subtraction; the caller should pull them from the post
-    // snapshot directly.
+    // Delta semantics with saturation-on-underflow.
+    //
+    // Most counters are monotonic (SCHED_CTX_*, NET_TX_BYTES, MEM_PAGE_
+    // FAULTS_*, …) and b - a reads meaningfully as the run's delta.
+    //
+    // A handful of slots are instantaneous gauges rather than running
+    // totals — the BPF program sets them via counter_set / counter_max
+    // on each event rather than fetch-and-add:
+    //
+    //   FD_CURRENT, TCP_{MIN,MAX}_SRTT_US, TCP_LAST_CWND,
+    //   THERMAL_MAX_TRIP, SIGNAL_LAST_SIGNO, OOM_KILL_US,
+    //   RECLAIM_STALL_LOOPS, NET_TCP_*, NET_UDP_ACTIVE, NET_UNIX_ACTIVE,
+    //   RSS_{ANON,FILE,SHMEM}_BYTES, RSS_SWAP_ENTRIES
+    //
+    // For these, post < pre is physically possible (a TCP connection
+    // closed, RSS shrank). A raw u64 subtraction wraps to ~2^64 and the
+    // pretty-printer would render "18.4E" garbage. Saturate the
+    // subtraction to 0 so gauges that decreased simply read as "no
+    // delta" in diffs — accurate enough for the bench harness without
+    // poisoning the table.
+    //
+    // Callers that need the true gauge value should pull it from the
+    // post snapshot directly.
+    //
+    // std::sub_sat (P0543, C++26) would fit perfectly here, but
+    // libstdc++ 16.0.1 hasn't wired __glibcxx_saturation_arithmetic
+    // through yet. Using __builtin_sub_overflow directly lowers to a
+    // single SUB + CMOV on x86-64, identical to what std::sub_sat would
+    // emit once available.
     [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
         Snapshot r;
         for (size_t i = 0; i < NUM_COUNTERS; ++i) {
-            // Wrap-safe (all counters are u64 and monotonic within a run).
-            r.counters[i] = counters[i] - older.counters[i];
+            uint64_t diff = 0;
+            if (__builtin_sub_overflow(counters[i], older.counters[i], &diff))
+                [[unlikely]] {
+                diff = 0;  // gauge decreased; saturate to zero
+            }
+            r.counters[i] = diff;
         }
         return r;
     }
@@ -182,8 +212,15 @@ class SenseHub {
     // coverage we have.
     [[nodiscard]] size_t attached_programs() const noexcept;
 
-    SenseHub(const SenseHub&)            = delete;
-    SenseHub& operator=(const SenseHub&) = delete;
+    // Number of bpf_program__attach calls that failed (returned NULL
+    // or an ERR_PTR). Non-zero means some subsystems are dark; set
+    // CRUCIBLE_BENCH_BPF_VERBOSE=1 to see which ones.
+    [[nodiscard]] size_t attach_failures()   const noexcept;
+
+    SenseHub(const SenseHub&) =
+        delete("SenseHub owns unique BPF object + mmap — copying would double-close");
+    SenseHub& operator=(const SenseHub&) =
+        delete("SenseHub owns unique BPF object + mmap — copying would double-close");
     SenseHub(SenseHub&&) noexcept;
     SenseHub& operator=(SenseHub&&) noexcept;
     ~SenseHub();

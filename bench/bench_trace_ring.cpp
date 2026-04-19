@@ -1,30 +1,35 @@
 // TraceRing SPSC hot path — per-sample tail-latency benchmark.
 
-#include <crucible/TraceRing.h>
-
-#include "bench_harness.h"
-
 #include <cstdio>
 #include <cstdlib>
 #include <string>
 
-static int env_core() {
-    if (const char* s = std::getenv("CRUCIBLE_BENCH_CORE"))
-        return static_cast<int>(std::strtol(s, nullptr, 10));
-    return -1;
-}
+#include <crucible/TraceRing.h>
 
-static bool env_json() {
-    const char* s = std::getenv("CRUCIBLE_BENCH_JSON");
-    return s && s[0] && std::string(s) != "0";
+#include "bench_harness.h"
+
+// TODO: move to bench_harness.h::env
+static const char* env(const char* name) noexcept {
+    const char* s = std::getenv(name);
+    return (s && s[0]) ? s : nullptr;
 }
 
 int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const int  core = env_core();
-    const bool json = env_json();
+    const char* core_s = env("CRUCIBLE_BENCH_CORE");
+    const int   core   = core_s ? static_cast<int>(std::strtol(core_s, nullptr, 10)) : -1;
+    const char* json_s = env("CRUCIBLE_BENCH_JSON");
+    const bool  json   = json_s && std::string(json_s) != "0";
+
+    // Pin only if explicitly requested via env; else let harness auto-pick
+    // (isolcpu if available, sched_getcpu() otherwise).
+    auto run = [&](std::string name, auto&& body) {
+        auto r = bench::Run(std::move(name));
+        if (core >= 0) r.core(core);   // else Pin::Auto default
+        return r.measure(body);
+    };
 
     std::printf("=== trace_ring ===\n");
     std::printf("  Entry size: %zu bytes (expect 64)\n",
@@ -38,50 +43,44 @@ int main() {
             crucible::TraceRing ring;
             crucible::TraceRing::Entry e{};
             uint64_t h = 0;
-            return bench::Run("ring.try_append (drain-amortized)")
-                     .core(core)
-                     .measure([&]{
-                         e.schema_hash = crucible::SchemaHash{++h};
-                         const bool ok = ring.try_append(e);
-                         bench::do_not_optimize(ok);
-                         if (!ok) ring.reset();  // prevent full-ring saturation
-                     });
+            // Label notes the in-body reset: on ring-full we call
+            // ring.reset() inside the timed region to prevent saturation.
+            // Consequence: tail samples (p99.9, max) include occasional
+            // reset costs, not pure try_append cost.
+            return run("ring.try_append+reset-on-full", [&]{
+                e.schema_hash = crucible::SchemaHash{++h};
+                const bool ok = ring.try_append(e);
+                bench::do_not_optimize(ok);
+                if (!ok) ring.reset();  // prevent full-ring saturation
+            });
         }(),
         [&]{
             crucible::TraceRing ring;
             crucible::TraceRing::Entry e{};
             e.schema_hash = crucible::SchemaHash{0xABCDEF};
-            return bench::Run("ring.try_append (defaults)")
-                     .core(core)
-                     .measure([&]{
-                         const bool ok = ring.try_append(e);
-                         bench::do_not_optimize(ok);
-                         if (!ok) ring.reset();
-                     });
+            return run("ring.try_append+reset-on-full (defaults)", [&]{
+                const bool ok = ring.try_append(e);
+                bench::do_not_optimize(ok);
+                if (!ok) ring.reset();
+            });
         }(),
         [&]{
             crucible::TraceRing ring;
-            return bench::Run("ring.size()")
-                     .core(core)
-                     .measure([&]{
-                         const auto s = ring.size();
-                         bench::do_not_optimize(s);
-                     });
+            return run("ring.size()", [&]{
+                const auto s = ring.size();
+                bench::do_not_optimize(s);
+            });
         }(),
         [&]{
             crucible::TraceRing ring;
-            return bench::Run("ring.total_produced()")
-                     .core(core)
-                     .measure([&]{
-                         const auto s = ring.total_produced();
-                         bench::do_not_optimize(s);
-                     });
+            return run("ring.total_produced()", [&]{
+                const auto s = ring.total_produced();
+                bench::do_not_optimize(s);
+            });
         }(),
         [&]{
             crucible::TraceRing ring;
-            return bench::Run("ring.reset()")
-                     .core(core)
-                     .measure([&]{ ring.reset(); });
+            return run("ring.reset()", [&]{ ring.reset(); });
         }(),
     };
 

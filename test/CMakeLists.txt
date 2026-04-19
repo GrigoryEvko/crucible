@@ -299,3 +299,13 @@ crucible_test(test_compute_vit)
 crucible_test(test_end_to_end)
 crucible_test(test_philox)
 crucible_test(test_region_cache)
+
+# bench harness unit tests — include bench/ for bench_harness.h + bpf_senses.h.
+# CRUCIBLE_BENCH_HAVE_BPF is intentionally unset: the test exercises only
+# the non-BPF statistical primitives plus Snapshot::operator- (which is
+# a header-only inline using crucible::sat::sub_sat from Saturate.h).
+# Use SYSTEM include to silence -Werror diagnostics from the headers we
+# don't own (other agents' territory); our .cpp still honours -Werror.
+crucible_test(test_bench_harness)
+target_include_directories(test_bench_harness SYSTEM PRIVATE
+  ${CMAKE_SOURCE_DIR}/bench)
