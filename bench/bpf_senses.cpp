@@ -102,8 +102,10 @@ static_assert(sizeof(Fd)   == sizeof(int));
 
 // Silence libbpf's INFO/WARN spew by default — we emit a single clean
 // diagnostic from load() on failure. Forward everything when the user
-// explicitly asks for verbose output.
-int libbpf_log_cb(enum libbpf_print_level, const char* fmt, va_list args) {
+// explicitly asks for verbose output. noexcept because libbpf stores
+// and invokes this as a C function pointer; throwing across a C
+// callback frame is undefined behavior.
+int libbpf_log_cb(enum libbpf_print_level, const char* fmt, va_list args) noexcept {
     if (!verbose()) return 0;
     return std::vfprintf(stderr, fmt, args);
 }
@@ -239,7 +241,7 @@ std::optional<SenseHub> SenseHub::load() noexcept {
         const int e = libbpf_errno(obj, errno);
         // Don't let state->~State() call bpf_object__close(IS_ERR_PTR).
         state->obj = nullptr;
-        report("bpf_object__open_mem failed", e);
+        report("bpf_object__open_mem failed (corrupt embedded bytecode — rebuild bench)", e);
         return std::nullopt;
     }
     state->obj = obj;
@@ -266,7 +268,8 @@ std::optional<SenseHub> SenseHub::load() noexcept {
 
     // ── 4. Verify, JIT, allocate maps ──────────────────────────────
     if (const int err = bpf_object__load(state->obj); err != 0) {
-        report("bpf_object__load failed", -err);
+        report("bpf_object__load failed (try `cmake --build --preset bench --target bench-caps`; "
+               "verifier rejected, missing CAP_BPF, or kernel too old)", -err);
         return std::nullopt;
     }
 
@@ -320,14 +323,15 @@ std::optional<SenseHub> SenseHub::load() noexcept {
         state->links.push_back(link);
     }
     if (state->links.empty()) {
-        report("no programs attached (kernel missing every tracepoint?)");
+        report("no programs attached (try `cmake --build --preset bench --target bench-caps`; "
+               "kernel missing every tracepoint, or lacking CAP_PERFMON/CAP_DAC_READ_SEARCH)");
         return std::nullopt;
     }
 
     // ── 7. mmap the counters array ─────────────────────────────────
     struct bpf_map* counters_map = bpf_object__find_map_by_name(state->obj, "counters");
     if (counters_map == nullptr) {
-        report("counters map not found in object");
+        report("counters map not found in object (bytecode/header out of sync — rebuild bench)");
         return std::nullopt;
     }
     const Fd counters_fd = map_fd(counters_map);
@@ -337,7 +341,7 @@ std::optional<SenseHub> SenseHub::load() noexcept {
     // produce a garbage mmap length.
     const long page_l = ::sysconf(_SC_PAGESIZE);
     if (page_l <= 0) {
-        report("sysconf(_SC_PAGESIZE) failed", errno);
+        report("sysconf(_SC_PAGESIZE) failed (hardened sandbox blocking syscalls?)", errno);
         return std::nullopt;
     }
     const size_t page  = static_cast<size_t>(page_l);
@@ -345,10 +349,23 @@ std::optional<SenseHub> SenseHub::load() noexcept {
     state->mmap_len    = (bytes + page - 1) & ~(page - 1);
     void* p = ::mmap(nullptr, state->mmap_len, PROT_READ, MAP_SHARED, counters_fd.raw, 0);
     if (p == MAP_FAILED) {
-        report("mmap of counters map failed", errno);
+        report("mmap of counters map failed (try `cmake --build --preset bench --target bench-caps`; "
+               "BPF_F_MMAPABLE requires CAP_BPF or kernel ≥ 5.5)", errno);
         return std::nullopt;
     }
     state->counters = static_cast<volatile uint64_t*>(p);
+
+    // Surface partial-coverage warnings once per successful load. Most
+    // runs attach every program; when the kernel is missing a tracepoint
+    // or lacks a capability, the corresponding subsystem reads zero and
+    // the user deserves to know which counters are dark without having
+    // to diff an expected baseline.
+    if (!quiet() && state->attach_fail_cnt != 0) {
+        std::fprintf(stderr,
+            "[bench] BPF sense hub partial: %zu program(s) failed to attach "
+            "(set CRUCIBLE_BENCH_BPF_VERBOSE=1 to see which)\n",
+            state->attach_fail_cnt);
+    }
 
     SenseHub h;
     h.state_ = std::move(state);
