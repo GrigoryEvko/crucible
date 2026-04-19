@@ -9,15 +9,37 @@
 #include <version>
 #include <type_traits>
 
-#if defined(_MSC_VER)
-  #define CRUCIBLE_INLINE __forceinline
-  #define CRUCIBLE_NOINLINE __declspec(noinline)
-  #define CRUCIBLE_API __declspec(dllexport)
-#else
-  #define CRUCIBLE_INLINE __attribute__((always_inline)) inline
-  #define CRUCIBLE_NOINLINE __attribute__((noinline))
-  #define CRUCIBLE_API __attribute__((visibility("default")))
+// ═══════════════════════════════════════════════════════════════════
+// Toolchain floor — hard-require C++26 and GCC 16 (or Clang 22 for
+// editor-only parsing). This is not a recommendation; the codebase
+// unconditionally uses contracts (pre/post), static reflection (^^T),
+// expansion statements (template for), std::inplace_vector, and other
+// C++26 features with no fallback. Any lower toolchain silently
+// miscompiles the moment one of those hits, so the guard fires at the
+// top of Platform.h — every TU sees it before anything else is parsed.
+//
+// Memo: feature guards (`#if CRUCIBLE_HAS_*`, `#if __cpp_*`) are
+// BANNED everywhere in this codebase per
+//     .claude/.../memory/feedback_no_feature_guards.md
+// Write the feature directly; trust the toolchain.
+// ═══════════════════════════════════════════════════════════════════
+
+// GCC 16 with `-std=c++26` reports `__cplusplus = 202400L` (C++26 draft
+// value). The ISO-final C++26 publication will bump this to 202600L;
+// bump the floor then. Until then, 202400L is the right floor — C++23
+// is 202302L, C++20 is 202002L.
+static_assert(__cplusplus >= 202400L,
+              "Crucible requires C++26 (-std=c++26). See CMakePresets.json.");
+
+#if !defined(__clang__)
+static_assert(__GNUC__ >= 16,
+              "Crucible requires GCC 16 for -fcontracts / -freflection. "
+              "See CLAUDE.md toolchain section.");
 #endif
+
+#define CRUCIBLE_INLINE    __attribute__((always_inline)) inline
+#define CRUCIBLE_NOINLINE  __attribute__((noinline))
+#define CRUCIBLE_API       __attribute__((visibility("default")))
 
 // ═══════════════════════════════════════════════════════════════════
 // Spin-pause hint — the ONLY cross-thread synchronization primitive.
@@ -141,73 +163,14 @@
 #endif
 
 // ═══════════════════════════════════════════════════════════════════
-// C++26 feature detection
+// Arena memcpy-safety assertion
 //
-// Three-compiler strategy: Clang 22 (primary), GCC 15 (fallback),
-// GCC 16 (bleeding-edge safety). Each has exclusive features.
-// Guard conditional code with these macros so the same codebase
-// compiles on all three with maximum safety on each.
-//
-// Language features: defined by the compiler frontend, no include needed.
-// Library features: defined by <version>, included above.
+// Crucible's Arena moves objects by bulk memcpy during block growth,
+// which is sound for trivially-copyable types. We use std::is_trivially
+// _copyable_v unconditionally — trivial-relocatability (P2786) is still
+// a Clang-only extension in 2026 and a superset we don't need.
 // ═══════════════════════════════════════════════════════════════════
 
-// ── GCC 16 exclusive: P1306 expansion statements ──
-// `template for (auto m : ...) { }` — iterate over packs/reflections.
-#if defined(__cpp_expansion_statements) && __cpp_expansion_statements >= 202506L
-  #define CRUCIBLE_HAS_EXPANSION_STMT 1
-#else
-  #define CRUCIBLE_HAS_EXPANSION_STMT 0
-#endif
-
-// ── GCC 16 exclusive: std::inplace_vector<T, N> ──
-// Fixed-capacity, bounds-checked replacement for T[N] arrays.
-#if defined(__cpp_lib_inplace_vector) && __cpp_lib_inplace_vector >= 202406L
-  #define CRUCIBLE_HAS_INPLACE_VECTOR 1
-#else
-  #define CRUCIBLE_HAS_INPLACE_VECTOR 0
-#endif
-
-// ── GCC 16 exclusive: std::function_ref ──
-// Non-owning type-erased callable (cheaper than std::function).
-#if defined(__cpp_lib_function_ref) && __cpp_lib_function_ref >= 202306L
-  #define CRUCIBLE_HAS_FUNCTION_REF 1
-#else
-  #define CRUCIBLE_HAS_FUNCTION_REF 0
-#endif
-
-// ── GCC 16 exclusive: std::indirect / std::polymorphic ──
-// Value-semantic heap indirection (SOO) and polymorphic containers.
-#if defined(__cpp_lib_indirect) && __cpp_lib_indirect >= 202502L
-  #define CRUCIBLE_HAS_INDIRECT 1
-#else
-  #define CRUCIBLE_HAS_INDIRECT 0
-#endif
-
-// ── Clang 22 exclusive: trivial relocatability ──
-// [[clang::trivially_relocatable]] + std::is_trivially_relocatable_v.
-#if defined(__cpp_trivial_relocatability)
-  #define CRUCIBLE_HAS_TRIVIAL_RELOC 1
-#else
-  #define CRUCIBLE_HAS_TRIVIAL_RELOC 0
-#endif
-
-// ── GCC 16 exclusive: std::breakpoint / std::is_debugger_present ──
-#if defined(__cpp_lib_debugging) && __cpp_lib_debugging >= 202403L
-  #define CRUCIBLE_HAS_DEBUGGING 1
-#else
-  #define CRUCIBLE_HAS_DEBUGGING 0
-#endif
-
-// ── Trivial relocatability assert (Clang 22) ──
-// Verifies that a type can be safely memcpy'd (critical for Arena).
-// No-op on compilers without the builtin.
-#if CRUCIBLE_HAS_TRIVIAL_RELOC
-  #define CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(T) \
-    static_assert(__builtin_is_cpp_trivially_relocatable(T), \
-                  #T " must be trivially relocatable for Arena memcpy safety")
-#else
-  #define CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(T) \
-      static_assert(std::is_trivially_copyable_v<T>, \
-                    #T " must be trivially copyable for Arena memcpy safety")
-#endif
+#define CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(T)                       \
+    static_assert(std::is_trivially_copyable_v<T>,                     \
+                  #T " must be trivially copyable for Arena memcpy safety")
