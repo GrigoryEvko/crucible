@@ -211,6 +211,13 @@ crucible_bench(bench_iteration_detector)
 crucible_bench(bench_merkle_dag)
 crucible_bench(bench_meta_log)
 crucible_bench(bench_phases)
+# Default trace for bench_phases: SD1.5 U-Net (36499 ops) — real-world
+# production-scale baseline. 10k+ DAG ops is the minimum meaningful
+# signal for the build_trace pipeline; resnet18 (1386) shows <100 µs
+# noise, vit_b (~15k) is borderline. SD1.5's 3 ms full pipeline gives
+# the phase breakdown clean percentages without sub-phase quantization.
+target_compile_definitions(bench_phases PRIVATE
+  CRUCIBLE_BENCH_DEFAULT_TRACE="${CMAKE_SOURCE_DIR}/vessel/torch/examples/traces/sd15_unet.crtrace")
 crucible_bench(bench_philox)
 crucible_bench(bench_pool_allocator)
 crucible_bench(bench_reflect)
