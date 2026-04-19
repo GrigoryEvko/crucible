@@ -26,6 +26,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -233,6 +234,19 @@ struct CoreSelector {
     bool avoid_smt_sibling = true;   // skip siblings of already-pinned cores
     int  explicit_cpu      = -1;     // if >=0, short-circuit to this CPU iff allowed
 
+    // Penalize cpu0 (and its SMT sibling) during scoring. Rationale: on
+    // Linux, cpu0 is the default landing pad for the timer-tick IRQ, the
+    // initial SMP-affinity of newly-registered IRQs, and RCU callbacks
+    // when `rcu_nocbs` isn't set on the kernel cmdline. Its SMT sibling
+    // shares the L1/L2 cache with that kernel work. Both absorb more
+    // cache-coherence noise than the rest of the system, so we steer the
+    // HOT thread away from them unless nothing else is available.
+    //
+    // The final allowed-fallback at the end of select_hot_cpu still
+    // returns cpu0 when it's the only choice, so this is strictly a
+    // preference, not a hard exclusion.
+    bool avoid_cpu0        = true;
+
     // NUMA hint: if >=0, prefer cores on this node. -1 = no preference.
     // Typical source: numa_node_of_device("/sys/class/drm/card0/device/numa_node").
     int  numa_hint         = -1;
@@ -279,9 +293,12 @@ struct CoreSelector {
     pools.push_back(allowed);
 
     auto try_pool = [&](const std::vector<int>& pool) noexcept -> int {
-        // Rank by (p_core, numa_match, not_smt_sibling) with reasonable weights.
+        // Rank by (p_core, numa_match, avoid_cpu0_proximity) with integer
+        // weights. Initial best_score is INT_MIN so negative-scored
+        // candidates (cpu0 with the avoid_cpu0 penalty) still update
+        // `best` when they're the only option in the pool.
         int best = -1;
-        int best_score = -1;
+        int best_score = std::numeric_limits<int>::min();
         for (const int c : pool) {
             if (is_excluded(c)) continue;
             // Avoid SMT siblings of already-selected cores.
@@ -296,6 +313,21 @@ struct CoreSelector {
             if (sel.prefer_p_core && is_p_core(c))          score += 4;
             if (sel.numa_hint >= 0 &&
                 numa_node_of(c) == sel.numa_hint)           score += 2;
+            // Steer away from cpu0 and its SMT sibling (see CoreSelector
+            // doc). -8 on cpu0 itself dominates the P-core bonus (+4) so
+            // a non-cpu0 E-core beats a cpu0 P-core. -4 on cpu0's sibling
+            // zeros out the P-core bonus but still loses to any unrelated
+            // P-core. The allowed-fallback at the bottom of
+            // select_hot_cpu still returns cpu0 when it's the only choice.
+            if (sel.avoid_cpu0) {
+                if (c == 0) {
+                    score -= 8;
+                } else {
+                    const auto sibs = smt_siblings(c);
+                    if (std::find(sibs.begin(), sibs.end(), 0) != sibs.end())
+                        score -= 4;
+                }
+            }
             // Lower CPU index = tie-break (stable, predictable).
             score = score * kScoreScale - c;
             if (score > best_score) { best_score = score; best = c; }

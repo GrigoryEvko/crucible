@@ -118,6 +118,36 @@ void test_core_selector() {
     }
 }
 
+// `avoid_cpu0` steers the default selector away from cpu 0 when the
+// allowed set has another candidate.  cpu 0 absorbs timer IRQs / RCU
+// callbacks on most Linux configs, so its cache state is the least
+// predictable member of the allowed set.
+void test_core_selector_avoids_cpu0() {
+    using namespace crucible::rt;
+
+    const auto allowed = allowed_cpus();
+    // Can only exercise the heuristic if (a) cpu 0 is in our cpuset
+    // (normal case) and (b) we have at least one other CPU to steer
+    // towards.  Skip silently otherwise — CI runners in cpu-constrained
+    // cgroups legitimately hit the skip.
+    const bool have0  = std::find(allowed.begin(), allowed.end(), 0) != allowed.end();
+    if (!have0 || allowed.size() < 2) return;
+
+    CoreSelector sel;  // default: avoid_cpu0 = true
+    const int pick = select_hot_cpu(sel);
+    CHECK(pick >= 0, "select_hot_cpu returns something");
+    CHECK(pick != 0, "default selector avoids cpu0 when another CPU is available");
+
+    // Opting out puts cpu0 back on the table. The lowest-index tie-break
+    // wins in absence of any scoring signal, so cpu0 should win.
+    CoreSelector sel_legacy;
+    sel_legacy.avoid_cpu0     = false;
+    sel_legacy.prefer_p_core  = false;   // flatten any P/E signal
+    sel_legacy.prefer_isolcpu = false;   // ignore isolcpus
+    const int pick_legacy = select_hot_cpu(sel_legacy);
+    CHECK(pick_legacy == 0, "avoid_cpu0=false with flat scoring returns cpu0");
+}
+
 // Passing `exclude` to `select_hot_cpu` actually skips those CPUs.
 void test_core_selector_avoids_exclude() {
     using namespace crucible::rt;
@@ -301,6 +331,7 @@ int main() {
     test_topology_basic();
     test_cpulist_parser();
     test_core_selector();
+    test_core_selector_avoids_cpu0();
     test_core_selector_avoids_exclude();
     test_policy_none_is_noop();
     test_policy_dev_quiet_pins_and_reverts();
