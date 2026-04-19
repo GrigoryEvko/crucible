@@ -204,11 +204,14 @@ crucible_bench(bench_arena)
 crucible_bench(bench_cipher)
 crucible_bench(bench_ckernel)
 crucible_bench(bench_content_hash)
+crucible_bench(bench_expr_pool)
 crucible_bench(bench_graph)
 crucible_bench(bench_iteration_detector)
 crucible_bench(bench_meta_log)
 crucible_bench(bench_philox)
 crucible_bench(bench_reflect)
+crucible_bench(bench_region_cache)
+crucible_bench(bench_replay_engine)
 crucible_bench(bench_safety)
 crucible_bench(bench_saturate)
 crucible_bench(bench_schema_table)
@@ -216,9 +219,9 @@ crucible_bench(bench_serialize)
 crucible_bench(bench_smoke)
 crucible_bench(bench_trace_ring)
 
-# TODO: 8 more benches (pool_allocator, region_cache,
-# dispatch, swiss_table, expr_pool, replay_engine,
-# merkle_dag, phases) need migration to
+# TODO: 5 more benches (pool_allocator,
+# dispatch, swiss_table, merkle_dag, phases)
+# need migration to
 # the new bench::Run/Report/Compare harness. Each one is independent;
 # add a crucible_bench(bench_<name>) line as each lands.
 

@@ -1,29 +1,38 @@
-// ExprPool interning benchmark — measures intern() hot path latency.
+// ExprPool interning microbench — every intern path individually.
 //
-// Target: intern() cache hit ≤ 10 ns (median).  Benches:
-//   atom hit/miss, binary/ternary hit, pointer compare, integer cache,
-//   scaling 100/1000/10000, deep trees, mixed 90/10 hit/miss, constant
-//   folding, identity elimination, generic make().
+// Target: intern() cache hit ≤ 10 ns median. The bench covers atoms
+// (integer / symbol), binary ops (add, mul), ternary (where), pointer-
+// equality post-interning, the [-128, 127] integer fast cache, scaling
+// at 100/1000/10k pool entries, deep-tree interning, novel-expression
+// miss path, 90/10 mixed workload, generic make(), constant folding,
+// and identity elimination.
+//
+// Hash-quality is a separate non-timed diagnostic printed once before
+// the timing block.
 
-#include "bench_harness.h"
+#include <cstdint>
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+#include <vector>
 
 #include <crucible/Effects.h>
 #include <crucible/ExprPool.h>
 
-#include <cstdio>
-#include <cstdlib>
-#include <vector>
+#include "bench_harness.h"
 
 using namespace crucible;
 
-static constexpr uint16_t NUM_FLAGS =
+namespace {
+
+constexpr uint16_t NUM_FLAGS =
     ExprFlags::IS_INTEGER | ExprFlags::IS_REAL |
     ExprFlags::IS_FINITE  | ExprFlags::IS_NUMBER;
 
-// Build ADD(ADD(... ADD(x, y) ..., z_i) ..., z_j) to a given depth.
-static const Expr* build_deep_tree(fx::Alloc a, ExprPool& pool, int depth) {
-    const Expr* x = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
-    const Expr* y = pool.symbol(a, "y", SymbolId{1}, NUM_FLAGS);
+// ADD(ADD(... ADD(x, y) ..., z_i) ..., z_j) to a given depth.
+const Expr* build_deep_tree(fx::Alloc a, ExprPool& pool, int depth) {
+    const Expr* x    = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
+    const Expr* y    = pool.symbol(a, "y", SymbolId{1}, NUM_FLAGS);
     const Expr* node = pool.add(a, x, y);
     for (int i = 2; i < depth; ++i) {
         const Expr* z = pool.symbol(
@@ -34,171 +43,192 @@ static const Expr* build_deep_tree(fx::Alloc a, ExprPool& pool, int depth) {
     return node;
 }
 
-static void populate_pool(fx::Alloc a, ExprPool& pool,
-                          int n, std::vector<const Expr*>& out) {
+void populate_pool(fx::Alloc a, ExprPool& pool, int n,
+                   std::vector<const Expr*>& out) {
     out.reserve(static_cast<size_t>(n));
     for (int i = 0; i < n; ++i) {
         out.push_back(pool.integer(a, static_cast<int64_t>(i) + 1000));
     }
 }
 
-int main() {
-    std::printf("=== ExprPool Interning Benchmark ===\n");
-    std::printf("    Target: intern() cache hit <= 10ns\n\n");
+} // namespace
 
-    fx::Test t;
+int main() {
+    bench::print_system_info();
+    bench::elevate_priority();
+
+    const bool json = bench::env_json();
+
+    std::printf("=== expr_pool ===\n  target: intern() cache hit ≤ 10 ns median\n\n");
+
+    fx::Test   t{};
     const auto a = t.alloc;
 
-    // ── 1. Atom cache hit (integer) ──
-    std::printf("── Atom (integer) cache hit ──\n");
+    // ── Pre-bench diagnostic: hash-table load factor after 10 k entries.
     {
+        ExprPool pool{a};
+        for (int i = 0; i < 10000; ++i) {
+            pool.integer(a, static_cast<int64_t>(i) + 5000);
+        }
+        const double load = static_cast<double>(pool.intern_size())
+                          / static_cast<double>(pool.intern_capacity());
+        std::printf("  hash-table load factor: %.1f%% (%zu / %zu entries, arena %zu B)\n\n",
+                    load * 100.0,
+                    pool.intern_size(), pool.intern_capacity(),
+                    pool.arena_bytes());
+    }
+
+    std::vector<bench::Report> reports;
+    reports.reserve(22);
+
+    // ── Atom cache hits ───────────────────────────────────────────────
+    reports.push_back([&]{
         ExprPool pool{a};
         const Expr* e42 = pool.integer(a, 42);
-        bench::DoNotOptimize(e42);
-        BENCH("  integer(42) [cached, hit]", 10'000'000, {
+        bench::do_not_optimize(e42);
+        auto r = bench::run("integer(42)  [cached, hit]", [&]{
             const Expr* r = pool.integer(a, 42);
-            bench::DoNotOptimize(r);
+            bench::do_not_optimize(r);
         });
-        const Expr* e42b = pool.integer(a, 42);
-        if (e42 != e42b) {
-            std::fprintf(stderr, "  ERROR: interning broken!\n");
-            return 1;
+        // Sanity check — both pointers must match post-intern.
+        if (pool.integer(a, 42) != e42) {
+            std::fprintf(stderr, "[FATAL] interning broken!\n");
+            std::exit(1);
         }
-    }
+        return r;
+    }());
 
-    // ── 2. Atom cache hit (symbol) ──
-    {
+    reports.push_back([&]{
         ExprPool pool{a};
         const Expr* sx = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
-        bench::DoNotOptimize(sx);
-        BENCH("  symbol('x') [hit]", 10'000'000, {
+        bench::do_not_optimize(sx);
+        return bench::run("symbol('x') [hit]", [&]{
             const Expr* r = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
-            bench::DoNotOptimize(r);
+            bench::do_not_optimize(r);
         });
-    }
+    }());
 
-    // ── 3. Binary cache hit (add) ──
-    std::printf("\n── Binary expression cache hit ──\n");
-    {
+    // ── Binary / ternary cache hits ───────────────────────────────────
+    reports.push_back([&]{
         ExprPool pool{a};
-        const Expr* x = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
-        const Expr* y = pool.symbol(a, "y", SymbolId{1}, NUM_FLAGS);
+        const Expr* x   = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
+        const Expr* y   = pool.symbol(a, "y", SymbolId{1}, NUM_FLAGS);
         const Expr* sum = pool.add(a, x, y);
-        bench::DoNotOptimize(sum);
-        BENCH("  add(x, y) [hit]", 10'000'000, {
+        bench::do_not_optimize(sum);
+        return bench::run("add(x, y) [hit]", [&]{
             const Expr* r = pool.add(a, x, y);
-            bench::DoNotOptimize(r);
+            bench::do_not_optimize(r);
         });
-    }
+    }());
 
-    // ── 4. Binary cache hit (mul) ──
-    {
+    reports.push_back([&]{
         ExprPool pool{a};
-        const Expr* x = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
-        const Expr* y = pool.symbol(a, "y", SymbolId{1}, NUM_FLAGS);
+        const Expr* x    = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
+        const Expr* y    = pool.symbol(a, "y", SymbolId{1}, NUM_FLAGS);
         const Expr* prod = pool.mul(a, x, y);
-        bench::DoNotOptimize(prod);
-        BENCH("  mul(x, y) [hit]", 10'000'000, {
+        bench::do_not_optimize(prod);
+        return bench::run("mul(x, y) [hit]", [&]{
             const Expr* r = pool.mul(a, x, y);
-            bench::DoNotOptimize(r);
+            bench::do_not_optimize(r);
         });
-    }
+    }());
 
-    // ── 5. Ternary cache hit (where) ──
-    {
+    reports.push_back([&]{
         ExprPool pool{a};
-        const Expr* c = pool.symbol(a, "cond", SymbolId{0},
-                                    ExprFlags::IS_BOOLEAN);
-        const Expr* x = pool.symbol(a, "x", SymbolId{1}, NUM_FLAGS);
-        const Expr* y = pool.symbol(a, "y", SymbolId{2}, NUM_FLAGS);
+        const Expr* c = pool.symbol(a, "cond", SymbolId{0}, ExprFlags::IS_BOOLEAN);
+        const Expr* x = pool.symbol(a, "x",    SymbolId{1}, NUM_FLAGS);
+        const Expr* y = pool.symbol(a, "y",    SymbolId{2}, NUM_FLAGS);
         const Expr* w = pool.where(a, c, x, y);
-        bench::DoNotOptimize(w);
-        BENCH("  where(c, x, y) [hit]", 10'000'000, {
+        bench::do_not_optimize(w);
+        return bench::run("where(c, x, y) [hit]", [&]{
             const Expr* r = pool.where(a, c, x, y);
-            bench::DoNotOptimize(r);
+            bench::do_not_optimize(r);
         });
-    }
+    }());
 
-    // ── 6. Pointer comparison ──
-    std::printf("\n── Pointer comparison (post-interning) ──\n");
-    {
+    // ── Pointer equality post-intern (should compile to single cmp) ──
+    reports.push_back([&]{
         ExprPool pool{a};
         const Expr* ea = pool.add(a, pool.integer(a, 1), pool.integer(a, 2));
         const Expr* eb = pool.add(a, pool.integer(a, 1), pool.integer(a, 2));
-        BENCH("  ptr compare (a == b)", 100'000'000, {
+        return bench::run("ptr compare (ea == eb)", [&]{
             bool same = (ea == eb);
-            bench::DoNotOptimize(same);
+            bench::do_not_optimize(same);
         });
-    }
+    }());
 
-    // ── 7. Integer cache: fast path ──
-    std::printf("\n── Integer cache ([-128, 127] fast path) ──\n");
+    // ── Integer [-128, 127] fast-cache path ───────────────────────────
+    // Three Runs share a pre-populated pool fixture.
     {
         ExprPool pool{a};
-        for (int64_t i = -128; i <= 127; ++i)
-            bench::DoNotOptimize(pool.integer(a, i));
-        BENCH("  integer(0) [int_cache hit]", 100'000'000, {
+        for (int64_t i = -128; i <= 127; ++i) {
+            bench::do_not_optimize(pool.integer(a, i));
+        }
+        reports.push_back(bench::run("integer(0)    [int_cache hit]", [&]{
             const Expr* r = pool.integer(a, 0);
-            bench::DoNotOptimize(r);
-        });
-        BENCH("  integer(42) [int_cache hit]", 100'000'000, {
+            bench::do_not_optimize(r);
+        }));
+        reports.push_back(bench::run("integer(42)   [int_cache hit]", [&]{
             const Expr* r = pool.integer(a, 42);
-            bench::DoNotOptimize(r);
-        });
-        BENCH("  integer(999) [uncached, intern]", 10'000'000, {
+            bench::do_not_optimize(r);
+        }));
+        reports.push_back(bench::run("integer(999)  [intern]", [&]{
             const Expr* r = pool.integer(a, 999);
-            bench::DoNotOptimize(r);
-        });
+            bench::do_not_optimize(r);
+        }));
     }
 
-    // ── 8. Scaling: pool with 100/1000/10000 entries ──
-    std::printf("\n── Scaling: cache hit with N entries in pool ──\n");
+    // ── Scaling: cache hit with N entries in pool ─────────────────────
     for (int n : {100, 1000, 10000}) {
-        ExprPool pool{a};
-        std::vector<const Expr*> entries;
-        populate_pool(a, pool, n, entries);
-        const Expr* target = entries[static_cast<size_t>(n / 2)];
-        int64_t target_val = target->as_int();
+        reports.push_back([&, n]{
+            ExprPool pool{a};
+            std::vector<const Expr*> entries;
+            populate_pool(a, pool, n, entries);
+            const Expr* target     = entries[static_cast<size_t>(n / 2)];
+            const int64_t target_v = target->as_int();
 
-        char label[80];
-        std::snprintf(label, sizeof(label),
-                      "  integer(%ld) [hit, pool=%d]", target_val, n);
-        BENCH(label, 5'000'000, {
-            const Expr* r = pool.integer(a, target_val);
-            bench::DoNotOptimize(r);
-        });
+            char label[80];
+            std::snprintf(label, sizeof(label),
+                          "integer(%ld)  [hit, pool=%d]", target_v, n);
+            return bench::run(label, [&]{
+                const Expr* r = pool.integer(a, target_v);
+                bench::do_not_optimize(r);
+            });
+        }());
     }
 
-    // ── 9. Tree depth: cache hit for deep trees ──
-    std::printf("\n── Tree depth: cache hit for deep expressions ──\n");
+    // ── Tree depth: cache hit for deep expressions ────────────────────
     for (int depth : {2, 4, 8}) {
-        ExprPool pool{a};
-        const Expr* tree = build_deep_tree(a, pool, depth);
-        bench::DoNotOptimize(tree);
+        reports.push_back([&, depth]{
+            ExprPool pool{a};
+            const Expr* tree = build_deep_tree(a, pool, depth);
+            bench::do_not_optimize(tree);
 
-        char label[80];
-        std::snprintf(label, sizeof(label),
-                      "  build_deep_tree(depth=%d) [all hits]", depth);
-        BENCH(label, 1'000'000, {
-            const Expr* r = build_deep_tree(a, pool, depth);
-            bench::DoNotOptimize(r);
-        });
+            char label[80];
+            std::snprintf(label, sizeof(label),
+                          "build_deep_tree(depth=%d) [all hits]", depth);
+            return bench::run(label, [&, depth]{
+                const Expr* r = build_deep_tree(a, pool, depth);
+                bench::do_not_optimize(r);
+            });
+        }());
     }
 
-    // ── 10. Cache miss: create novel expressions ──
-    std::printf("\n── Cache miss: intern novel expressions ──\n");
-    {
-        BENCH("  integer(novel) [miss]", 1'000'000, {
-            static int64_t counter = 100000;
+    // ── Cache miss — novel integer each call ─────────────────────────
+    // ExprPool is re-created inside the body (auto-batch safe) because
+    // the novel-integer growth would otherwise blow the pool across
+    // samples. Fresh pool per body, matching the old bench's intent.
+    reports.push_back([&]{
+        int64_t counter = 100000;
+        return bench::run("integer(novel) [miss]", [&]{
             ExprPool pool(a, 1 << 10);
             const Expr* r = pool.integer(a, counter++);
-            bench::DoNotOptimize(r);
+            bench::do_not_optimize(r);
         });
-    }
+    }());
 
-    // ── 11. Mixed hit/miss workload ──
-    std::printf("\n── Mixed workload: 90%% hit, 10%% miss ──\n");
-    {
+    // ── Mixed 90% hit / 10% miss ──────────────────────────────────────
+    reports.push_back([&]{
         ExprPool pool{a};
         std::vector<const Expr*> symbols;
         for (uint32_t i = 0; i < 100; ++i) {
@@ -211,84 +241,66 @@ int main() {
             adds.push_back(pool.add(a, symbols[i], symbols[(i + 1) % 100]));
         }
         uint32_t idx = 0;
-        BENCH("  mixed 90/10 hit/miss", 5'000'000, {
+        return bench::run("mixed 90/10 hit/miss", [&]{
             if (idx % 10 == 0) {
-                const Expr* r = pool.mul(a,
-                    adds[idx % 100],
+                const Expr* r = pool.mul(
+                    a, adds[idx % 100],
                     pool.integer(a, static_cast<int64_t>(idx) + 10000));
-                bench::DoNotOptimize(r);
+                bench::do_not_optimize(r);
             } else {
-                uint32_t j = idx % 100;
+                const uint32_t j = idx % 100;
                 const Expr* r = pool.add(a, symbols[j], symbols[(j + 1) % 100]);
-                bench::DoNotOptimize(r);
+                bench::do_not_optimize(r);
             }
             ++idx;
         });
-    }
+    }());
 
-    // ── 12. Hash quality diagnostic ──
-    std::printf("\n── Hash quality (probe depth) ──\n");
-    {
-        ExprPool pool{a};
-        for (int i = 0; i < 10000; ++i) {
-            pool.integer(a, static_cast<int64_t>(i) + 5000);
-        }
-        std::printf("  pool size:     %zu\n", pool.intern_size());
-        std::printf("  pool capacity: %zu\n", pool.intern_capacity());
-        double load = static_cast<double>(pool.intern_size())
-                    / static_cast<double>(pool.intern_capacity());
-        std::printf("  load factor:   %.1f%%\n", load * 100.0);
-        std::printf("  arena bytes:   %zu\n", pool.arena_bytes());
-    }
-
-    // ── 13. Raw intern_node via make() for generic ops ──
-    std::printf("\n── Generic make() cache hit ──\n");
-    {
+    // ── Generic make() for arbitrary Op kind ──────────────────────────
+    reports.push_back([&]{
         ExprPool pool{a};
         const Expr* x = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
         const Expr* y = pool.symbol(a, "y", SymbolId{1}, NUM_FLAGS);
         const Expr* args[] = {x, y};
         const Expr* e = pool.make(a, Op::ADD, args);
-        bench::DoNotOptimize(e);
-        BENCH("  make(ADD, {x, y}) [hit]", 10'000'000, {
+        bench::do_not_optimize(e);
+        return bench::run("make(ADD, {x, y}) [hit]", [&]{
             const Expr* r = pool.make(a, Op::ADD, args);
-            bench::DoNotOptimize(r);
+            bench::do_not_optimize(r);
         });
-    }
+    }());
 
-    // ── 14. Constant folding (does not hit intern) ──
-    std::printf("\n── Constant folding (no intern) ──\n");
+    // ── Constant folding (doesn't touch intern) ──────────────────────
     {
         ExprPool pool{a};
         const Expr* three = pool.integer(a, 3);
-        const Expr* five = pool.integer(a, 5);
-        BENCH("  add(3, 5) [fold → 8]", 10'000'000, {
+        const Expr* five  = pool.integer(a, 5);
+        reports.push_back(bench::run("add(3, 5) [fold → 8]", [&]{
             const Expr* r = pool.add(a, three, five);
-            bench::DoNotOptimize(r);
-        });
-        BENCH("  mul(3, 5) [fold → 15]", 10'000'000, {
+            bench::do_not_optimize(r);
+        }));
+        reports.push_back(bench::run("mul(3, 5) [fold → 15]", [&]{
             const Expr* r = pool.mul(a, three, five);
-            bench::DoNotOptimize(r);
-        });
+            bench::do_not_optimize(r);
+        }));
     }
 
-    // ── 15. Identity elimination (no intern) ──
-    std::printf("\n── Identity elimination (no intern) ──\n");
+    // ── Identity elimination (doesn't touch intern) ──────────────────
     {
         ExprPool pool{a};
-        const Expr* x = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
+        const Expr* x    = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
         const Expr* zero = pool.integer(a, 0);
-        const Expr* one = pool.integer(a, 1);
-        BENCH("  add(x, 0) [identity → x]", 100'000'000, {
+        const Expr* one  = pool.integer(a, 1);
+        reports.push_back(bench::run("add(x, 0) [identity → x]", [&]{
             const Expr* r = pool.add(a, x, zero);
-            bench::DoNotOptimize(r);
-        });
-        BENCH("  mul(x, 1) [identity → x]", 100'000'000, {
+            bench::do_not_optimize(r);
+        }));
+        reports.push_back(bench::run("mul(x, 1) [identity → x]", [&]{
             const Expr* r = pool.mul(a, x, one);
-            bench::DoNotOptimize(r);
-        });
+            bench::do_not_optimize(r);
+        }));
     }
 
-    std::printf("\n=== Done ===\n");
+    bench::emit_reports(reports, json);
     return 0;
 }
