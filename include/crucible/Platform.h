@@ -7,6 +7,7 @@
 // at usage sites instead of macros wrapping __builtin_expect.
 
 #include <version>
+#include <type_traits>
 
 #if defined(_MSC_VER)
   #define CRUCIBLE_INLINE __forceinline
@@ -159,6 +160,13 @@
   #define CRUCIBLE_HAS_REFLECTION 0
 #endif
 
+// ── GCC 16 / P2900 contracts (-fcontracts) ──
+#if defined(__cpp_contracts) && __cpp_contracts >= 202502L
+  #define CRUCIBLE_HAS_CONTRACTS 1
+#else
+  #define CRUCIBLE_HAS_CONTRACTS 0
+#endif
+
 // ── GCC 16 exclusive: P1306 expansion statements ──
 // `template for (auto m : ...) { }` — iterate over packs/reflections.
 #if defined(__cpp_expansion_statements) && __cpp_expansion_statements >= 202506L
@@ -214,5 +222,7 @@
     static_assert(__builtin_is_cpp_trivially_relocatable(T), \
                   #T " must be trivially relocatable for Arena memcpy safety")
 #else
-  #define CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(T) /* no-op */
+  #define CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(T) \
+      static_assert(std::is_trivially_copyable_v<T>, \
+                    #T " must be trivially copyable for Arena memcpy safety")
 #endif
