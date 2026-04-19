@@ -95,9 +95,7 @@ struct ReplayEngine {
   // Caller must reset() after COMPLETE before calling advance() again.
   [[nodiscard]] CRUCIBLE_INLINE ReplayStatus
   advance(SchemaHash schema_hash, ShapeHash shape_hash)
-#if CRUCIBLE_HAS_CONTRACTS
       pre (cursor_ < end_)
-#endif
   {
 
     // Guard 1: op identity. L1d load at offset 0.
@@ -135,11 +133,9 @@ struct ReplayEngine {
   // reset). The prefetch during advance() brought the second cache line
   // (containing output_slot_ids) into L1d.
   [[nodiscard]] CRUCIBLE_INLINE void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
-#if CRUCIBLE_HAS_CONTRACTS
       pre (current_ != nullptr)
       pre (j < current_->num_outputs)
       pre (current_->output_slot_ids != nullptr)
-#endif
   {
     SlotId sid = current_->output_slot_ids[j];
     return sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
@@ -147,11 +143,9 @@ struct ReplayEngine {
 
   // ── Input pointer for input j of the last matched op ──
   [[nodiscard]] CRUCIBLE_INLINE void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
-#if CRUCIBLE_HAS_CONTRACTS
       pre (current_ != nullptr)
       pre (j < current_->num_inputs)
       pre (current_->input_slot_ids != nullptr)
-#endif
   {
     SlotId sid = current_->input_slot_ids[j];
     return sid.is_valid() ? slot_table_[sid.raw()] : nullptr;

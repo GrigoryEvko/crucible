@@ -548,9 +548,7 @@ class Vigil {
     //
     // Returns true if switch succeeded and engine is at position div_pos.
     [[nodiscard]] bool try_switch_region_(const RegionNode* alt, uint32_t div_pos)
-#if CRUCIBLE_HAS_CONTRACTS
         pre (alt != nullptr)
-#endif
     {
         if (!alt->plan) return false;
 

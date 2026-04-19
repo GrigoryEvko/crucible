@@ -112,9 +112,7 @@ struct CRUCIBLE_OWNER MetaLog {
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append(const TensorMeta* metas, uint32_t n)
       CRUCIBLE_NO_THREAD_SAFETY
-#if CRUCIBLE_HAS_CONTRACTS
       pre (n == 0 || metas != nullptr)
-#endif
   {
     if (n == 0) [[unlikely]] return MetaIndex::none();
 
