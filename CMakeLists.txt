@@ -21,6 +21,17 @@ target_compile_options(crucible PUBLIC
   -fcontracts
 )
 
+# Re `-fno-ipa-modref`: we considered it as a workaround for a GCC 16
+# miscompile where `asm volatile("" : "+m,r"(ptr) : : "memory")` applied
+# to a non-const pointer-to-class-with-pre()-contract-method, captured
+# by reference in a lambda, generates wrong code. Our release build
+# uses `-fcontract-evaluation-semantic=ignore` which happens to avoid
+# the minimal-repro crash path, but the real bench still triggers a
+# DIFFERENT miscompile along the same family. Safer fix is at the
+# source level: don't use `do_not_optimize(raw_typed_ptr)` — pass the
+# result of a method call instead. See bugs/gcc-modref-miscompile/
+# for the full GCC bug writeup.
+
 # ╔═══════════════════════════════════════════════════════════════════╗
 # ║  CRUCIBLE HARDENING — 300+ compiler/linker/sanitizer flags       ║
 # ║                                                                   ║
