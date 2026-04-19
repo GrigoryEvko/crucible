@@ -202,9 +202,10 @@ endfunction()
 # ── Migrated to the new bench::Run / Report / Compare API ─────────────
 crucible_bench(bench_arena)
 crucible_bench(bench_trace_ring)
+crucible_bench(bench_meta_log)
 crucible_bench(bench_smoke)
 
-# TODO: 20 more benches (meta_log, pool_allocator, region_cache,
+# TODO: 19 more benches (pool_allocator, region_cache,
 # dispatch, swiss_table, expr_pool, iteration_detector, replay_engine,
 # merkle_dag, phases, saturate, safety, philox, ckernel, schema_table,
 # serialize, graph, reflect, cipher, content_hash) need migration to
