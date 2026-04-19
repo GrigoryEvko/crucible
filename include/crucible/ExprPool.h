@@ -202,21 +202,28 @@ constexpr uint16_t composite_flags(
 //   - Term combining: add(a, 2a) → 3a (via coefficient decomposition)
 class CRUCIBLE_OWNER ExprPool {
  public:
-  // Default `initial_capacity` chosen to fit the 256-entry int cache + 2
-  // boolean singletons at ≤60% load, zero rehashes during ctor:
+  // Default `initial_capacity` is the smallest power of 2 that holds the
+  // ctor's 258 initial entries (256-integer cache + BOOL_TRUE/FALSE
+  // singletons) at ≤87.5% load factor without triggering a rehash:
   //
-  //   AVX-512BW:  kGroupWidth(64) * 16 = 1024 slots →  9 KB ctrl+slots
-  //   AVX2:       kGroupWidth(32) * 16 =  512 slots → ~5 KB ctrl+slots
-  //   SSE2/NEON:  kGroupWidth(16) * 16 =  256 slots → ~2.5 KB ctrl+slots
+  //   258 items × 8 / 7 ≈ 295 slots needed  →  round up → 512
   //
-  // Callers expecting to intern many more exprs should call reserve(n)
-  // after construction to skip the early grow sequence. Previous default
-  // (1 << 16 = 65536) allocated ~590 KB up front on every construct —
-  // in bench harnesses and short-lived test scopes that cost ~25 cold-
-  // page faults per instance (observed >7M faults in bench_graph's 65k-
-  // iteration loop), dominating measured runtime.
+  // 512 is the right number on every SIMD backend (AVX-512BW, AVX2,
+  // SSE2, NEON) — the constant is determined by the ctor payload, not
+  // the SIMD group width. Memory cost: ~5 KB (512 ctrl + 512*8 slots).
+  //
+  // Production callers that will intern many more exprs should call
+  // `reserve(n)` right after construction to skip the early grow
+  // sequence (e.g. KernelCache expecting 10k sub-computations).
+  //
+  // Previous default (1 << 16 = 65536) allocated ~590 KB up front on
+  // every construct — in bench harnesses and short-lived test scopes
+  // that cost ~25 cold-page faults per instance (observed >7M faults in
+  // bench_graph's 65k-iteration loop), dominating measured runtime.
+  static constexpr size_t kDefaultInitialCapacity = 512;
+
   explicit ExprPool(fx::Alloc a,
-                    size_t initial_capacity = detail::kGroupWidth * 16) : arena_() {
+                    size_t initial_capacity = kDefaultInitialCapacity) : arena_() {
     // Round up to power of 2, minimum one full SIMD group
     capacity_ = detail::kGroupWidth;
     while (capacity_ < initial_capacity)
