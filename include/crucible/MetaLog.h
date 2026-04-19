@@ -72,16 +72,9 @@ struct CRUCIBLE_OWNER MetaLog {
   alignas(64) std::atomic<uint32_t> tail{0};   // 4B — consumer writes, producer reads (rare)
 
   MetaLog() {
-    // 2 MB huge-page-aligned allocation. Kernel 5.8+ rejects
-    // madvise(MADV_HUGEPAGE) on a non-PMD-aligned address with EINVAL
-    // (older kernels silently rounded). Aligning the base + rounding
-    // the length up to a 2 MB multiple makes the whole region
-    // THP-eligible, so rt::apply() lands MADV_HUGEPAGE cleanly and the
-    // kernel backs it with 2 MB pages. Impact on a hot trace: ~80× TLB
-    // reach on this 168 MB buffer (42k entries → 84 huge pages).
+    // PMD alignment: kernel 5.8+ EINVALs MADV_HUGEPAGE on non-2-MB addrs.
     static constexpr size_t RAW_BYTES   = CAPACITY * sizeof(TensorMeta);
     static constexpr size_t ALLOC_BYTES = crucible::rt::round_up_huge(RAW_BYTES);
-    static_assert(ALLOC_BYTES % crucible::rt::kHugePageBytes == 0);
     entries = static_cast<TensorMeta*>(
         std::aligned_alloc(crucible::rt::kHugePageBytes, ALLOC_BYTES));
     if (!entries) [[unlikely]] std::abort();

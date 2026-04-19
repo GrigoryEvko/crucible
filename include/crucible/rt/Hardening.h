@@ -233,8 +233,27 @@ class Hardening {
             }
         }
 
-        // 2. Scheduler policy for the HOT thread.
-        if (p.hot_sched != SchedClass::Other) {
+        // 2. Scheduler policy. Skip RT on a non-isolated CPU — FIFO/RR
+        // on a shared core starves whatever else lives there (Wayland
+        // compositor → frozen cursor). Override with CRUCIBLE_RT_FORCE=1.
+        bool rt_allowed = true;
+        if (p.hot_sched != SchedClass::Other && g.pinned_cpu_ >= 0) {
+            const auto iso = isolated_cpus();
+            const bool on_isolcpu = std::find(iso.begin(), iso.end(),
+                                              g.pinned_cpu_) != iso.end();
+            if (!on_isolcpu) {
+                const char* force = std::getenv("CRUCIBLE_RT_FORCE");
+                if (!force || std::strcmp(force, "1") != 0) {
+                    std::fprintf(stderr,
+                        "[rt] CPU %d not isolated — skipping RT class "
+                        "(set CRUCIBLE_RT_FORCE=1 or boot isolcpus=%d).\n",
+                        g.pinned_cpu_, g.pinned_cpu_);
+                    rt_allowed = false;
+                }
+            }
+        }
+
+        if (p.hot_sched != SchedClass::Other && rt_allowed) {
             sched_attr_t prior{};
             if (sched_getattr_sys(0, &prior, sizeof(prior), 0) == 0) {
                 g.prior_sched_     = prior;
@@ -270,16 +289,8 @@ class Hardening {
             }
             if (sched_setattr_sys(0, &attr, 0) != 0) {
                 const int err = errno;
-                // SCHED_DEADLINE admission control refuses any task whose
-                // CPU affinity mask is a strict subset of the scheduler's
-                // DL root domain (kernel 5.8+). Step 1 above pinned us to
-                // one CPU, so on a multi-CPU system DEADLINE always EPERMs
-                // even as root. This is the overwhelmingly common failure
-                // mode on dev laptops and systemd user sessions.
-                //
-                // Gracefully fall back to SCHED_FIFO at hot_rt_priority:
-                // same preemption semantics (preempts SCHED_OTHER), same
-                // typical prio=50, but no root-domain check.
+                // DEADLINE EPERMs when affinity is a strict subset of the
+                // DL root domain (kernel 5.8+); fall back to FIFO.
                 if (p.hot_sched == SchedClass::Deadline && err == EPERM) {
                     sched_attr_t fifo{};
                     fifo.size           = sizeof(fifo);
@@ -287,21 +298,16 @@ class Hardening {
                     fifo.sched_priority =
                         static_cast<uint32_t>(p.hot_rt_priority);
                     if (sched_setattr_sys(0, &fifo, 0) == 0) {
-                        // Successful fallback — one info line, not an
-                        // error. Preserve prior_sched_set_ so revert
-                        // restores the original SCHED_OTHER.
                         std::fprintf(stderr,
-                            "[rt] SCHED_DEADLINE unavailable (EPERM; "
-                            "likely cgroup/affinity constraint) — "
-                            "falling back to SCHED_FIFO prio=%d\n",
-                            p.hot_rt_priority);
+                            "[rt] SCHED_DEADLINE EPERM — fell back to "
+                            "SCHED_FIFO prio=%d\n", p.hot_rt_priority);
                     } else {
                         g.prior_sched_set_ = false;
                         detail::warn("sched_setattr (FIFO fallback)",
                                      errno);
                     }
                 } else {
-                    g.prior_sched_set_ = false;  // nothing to revert
+                    g.prior_sched_set_ = false;
                     detail::warn("sched_setattr (real-time class)", err);
                 }
             }
@@ -316,25 +322,9 @@ class Hardening {
             }
         }
 
-        // 4. Walk the HotRegionRegistry: mlock every registered region,
-        //    and MADV_HUGEPAGE + optionally MADV_COLLAPSE the ones flagged
-        //    huge_hint. The registry is populated by component
-        //    constructors (TraceRing, MetaLog, PoolAllocator, …) that
-        //    ran before apply() was called. Components registered AFTER
-        //    apply() won't be covered by this guard — they'd need a
-        //    subsequent apply() call.
-        //
-        //   Order inside the loop matters for first-fault semantics:
-        //     a. MADV_HUGEPAGE first — sets the vma flag, so any page
-        //        faulted in AFTER this call can land as a 2 MB page.
-        //     b. mlock2(MLOCK_ONFAULT) second — marks for lock-on-fault
-        //        without pre-faulting. Faults that do occur hit the THP
-        //        allocator and either get 2 MB pages or fall back to 4K.
-        //     c. MADV_COLLAPSE third — synchronously collapses any pages
-        //        already faulted with 4K into 2 MB (kernel ≥ 6.1). This
-        //        is what makes `thp_ok` tick in the BPF sense hub; without
-        //        it, khugepaged collapses in its own time (minutes) and
-        //        a short bench never observes the transition.
+        // 4. Per registered region: HUGEPAGE hint, mlock, then COLLAPSE.
+        // Order matters: the hint must be set before any fault, and
+        // COLLAPSE only makes `thp_ok` tick after pages are present.
         if (p.mlock_hot_regions || p.thp_hint_pools || p.thp_collapse_now) {
             const auto regions = HotRegionRegistry::instance().snapshot();
             for (const auto& r : regions) {
@@ -383,14 +373,8 @@ class Hardening {
 #endif
     }
 
-    // madvise(MADV_HUGEPAGE) — idempotent, no revert needed.
-    //
-    // Kernel 5.8+ rejects non-PMD-aligned addresses with EINVAL. Every
-    // hot region with huge_hint=true SHOULD be allocated 2 MB-aligned
-    // at the source (TraceRing alignas, MetaLog/PoolAllocator
-    // aligned_alloc) — but as defense in depth, round the range to
-    // huge-page boundaries here so a mis-allocated caller still gets
-    // the aligned interior portion advised instead of blanket EINVAL.
+    // MADV_HUGEPAGE with defense-in-depth PMD rounding (kernel 5.8+
+    // EINVALs non-aligned addresses).
     [[nodiscard]] static bool hint_hugepage(void* addr, size_t len) noexcept {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
@@ -399,11 +383,10 @@ class Hardening {
         const uintptr_t aligned   = (raw + kHugePageBytes - 1)
                                   & ~(kHugePageBytes - 1);
         const size_t    lost_head = aligned - raw;
-        if (lost_head >= len) return false;  // region smaller than one PMD
-
-        const size_t usable   = len - lost_head;
+        if (lost_head >= len) return false;
+        const size_t usable      = len - lost_head;
         const size_t aligned_len = usable & ~(kHugePageBytes - 1);
-        if (aligned_len == 0) return false;  // no full huge page fits
+        if (aligned_len == 0) return false;
 
         void* const target = reinterpret_cast<void*>(aligned);
         if (::madvise(target, aligned_len, MADV_HUGEPAGE) == 0) return true;
@@ -415,13 +398,8 @@ class Hardening {
 #endif
     }
 
-    // madvise(MADV_COLLAPSE) — kernel ≥ 6.1. Synchronously builds
-    // hugepages (triggers the `mm_collapse_huge_page` tracepoint, so
-    // the BPF sense hub's thp_ok counter ticks). No revert.
-    //
-    // Same PMD alignment rounding as hint_hugepage — the interior
-    // PMD-aligned range is what MADV_COLLAPSE wants. EINVAL on older
-    // kernels is expected (feature gate), not a real error.
+    // MADV_COLLAPSE (kernel ≥ 6.1) — synchronous; ticks the BPF thp_ok
+    // counter via the mm_collapse_huge_page tracepoint.
     [[nodiscard]] static bool collapse_hugepage(void* addr, size_t len) noexcept {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
