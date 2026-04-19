@@ -307,5 +307,6 @@ crucible_test(test_region_cache)
 # Use SYSTEM include to silence -Werror diagnostics from the headers we
 # don't own (other agents' territory); our .cpp still honours -Werror.
 crucible_test(test_bench_harness)
+crucible_test(test_rt_policy)
 target_include_directories(test_bench_harness SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
