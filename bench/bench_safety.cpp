@@ -1,15 +1,17 @@
 // Zero-cost proof for the crucible::safety wrappers (§XVI).
 //
-// Each wrapper is benched side-by-side with the bare primitive.
-// Median times should be statistically indistinguishable — if a
-// wrapper adds any cycles, it invalidates the load-bearing claim
-// that the safety layer is zero-cost after -O3.
-
-#include <crucible/safety/Safety.h>
+// Each wrapper benched side-by-side with the bare primitive. Medians
+// should be statistically indistinguishable — if a wrapper costs any
+// measurable cycles, it invalidates the load-bearing claim that the
+// safety layer is zero-cost after -O3. bench::compare() between every
+// adjacent bare/wrapped pair makes this a one-line pass/fail per
+// wrapper (look for [indistinguishable]; anything else is a regression).
 
 #include <cstdint>
 #include <cstdio>
 #include <utility>
+
+#include <crucible/safety/Safety.h>
 
 #include "bench_harness.h"
 
@@ -17,17 +19,19 @@ using namespace crucible::safety;
 
 // ── Linear<T> ─────────────────────────────────────────────────────
 
+namespace {
+
 struct Resource {
     int fd{0};
     int payload{0};
 };
 
-static Resource consume_bare(Resource r) {
+Resource consume_bare(Resource r) {
     r.payload = r.fd * 7 + 1;
     return r;
 }
 
-static Linear<Resource> consume_linear(Linear<Resource>&& x) {
+Linear<Resource> consume_linear(Linear<Resource>&& x) {
     Resource r = std::move(x).consume();
     r.payload = r.fd * 7 + 1;
     return Linear<Resource>{std::move(r)};
@@ -37,13 +41,13 @@ static Linear<Resource> consume_linear(Linear<Resource>&& x) {
 
 using PosInt = Refined<positive, int>;
 
-static int square_bare(int n) { return n * n; }
-static int square_refined(PosInt n) { return n.value() * n.value(); }
+int square_bare(int n) { return n * n; }
+int square_refined(PosInt n) { return n.value() * n.value(); }
 
 // ── Secret<T> ─────────────────────────────────────────────────────
 
-static uint64_t leak_bare(uint64_t x) { return x ^ 0xDEADBEEFULL; }
-static uint64_t leak_secret(Secret<uint64_t> s) {
+uint64_t leak_bare(uint64_t x) { return x ^ 0xDEADBEEFULL; }
+uint64_t leak_secret(Secret<uint64_t> s) {
     uint64_t x = std::move(s).declassify<secret_policy::AuditedLogging>();
     return x ^ 0xDEADBEEFULL;
 }
@@ -51,113 +55,144 @@ static uint64_t leak_secret(Secret<uint64_t> s) {
 // ── Tagged<T, Tag> ────────────────────────────────────────────────
 
 using UserInt = Tagged<int, source::FromUser>;
-static int id_bare(int x) { return x + 1; }
-static int id_tagged(UserInt x) { return x.value() + 1; }
+int id_bare(int x) { return x + 1; }
+int id_tagged(UserInt x) { return x.value() + 1; }
 
 // ── Machine<State> ────────────────────────────────────────────────
 
 struct ConnState {
-    int sock_fd{-1};
+    int      sock_fd{-1};
     uint32_t attempts{0};
 };
 
-static ConnState transition_bare(ConnState s) {
+ConnState transition_bare(ConnState s) {
     ++s.attempts;
     return s;
 }
 
-static Machine<ConnState> transition_machine(Machine<ConnState>&& m) {
+Machine<ConnState> transition_machine(Machine<ConnState>&& m) {
     ConnState s = std::move(m).extract();
     ++s.attempts;
     return Machine<ConnState>{std::move(s)};
 }
 
+} // namespace
+
 int main() {
-    std::printf("bench_safety: zero-cost proof\n\n");
+    bench::print_system_info();
+    bench::elevate_priority();
 
-    // ── Linear<T> vs raw T ────────────────────────────────────────
-    Resource r0{.fd = 3, .payload = 0};
-    BENCH("  raw Resource round-trip", 10'000'000, {
-        Resource r = consume_bare(r0);
-        bench::DoNotOptimize(r);
-    });
-    BENCH("  Linear<Resource> round-trip", 10'000'000, {
-        Linear<Resource> l = consume_linear(Linear<Resource>{r0});
-        Resource r = std::move(l).consume();
-        bench::DoNotOptimize(r);
-    });
+    const bool json = bench::env_json();
 
-    // ── Refined<positive, int> vs raw int ─────────────────────────
-    volatile int n0 = 7;
-    BENCH("  raw int square", 10'000'000, {
-        int r = square_bare(n0);
-        bench::DoNotOptimize(r);
-    });
-    BENCH("  Refined<positive, int> square", 10'000'000, {
-        int r = square_refined(PosInt{n0});
-        bench::DoNotOptimize(r);
-    });
-
-    // ── Secret<uint64_t> vs raw uint64_t ──────────────────────────
+    // All volatile seeds live in outer scope so lambdas capture the same
+    // memory locations the compiler can't constant-fold through.
+    const Resource  r0{.fd = 3, .payload = 0};
+    volatile int    n0 = 7;
     volatile uint64_t v0 = 0xCAFEBABEULL;
-    BENCH("  raw uint64 xor", 10'000'000, {
-        uint64_t r = leak_bare(v0);
-        bench::DoNotOptimize(r);
-    });
-    BENCH("  Secret<uint64> declassify+xor", 10'000'000, {
-        uint64_t r = leak_secret(Secret<uint64_t>{v0});
-        bench::DoNotOptimize(r);
-    });
+    volatile int    t0 = 41;
+    const ConnState c0{.sock_fd = 5, .attempts = 0};
+    volatile uint32_t bit_ = 1;
+    volatile uint32_t a    = 0xFFFFFFFFu;
+    volatile uint32_t b    = 0x00000000u;
 
-    // ── Tagged<int, source::FromUser> vs raw int ──────────────────
-    volatile int t0 = 41;
-    BENCH("  raw int +1", 10'000'000, {
-        int r = id_bare(t0);
-        bench::DoNotOptimize(r);
-    });
-    BENCH("  Tagged<int, source> +1", 10'000'000, {
-        int r = id_tagged(UserInt{t0});
-        bench::DoNotOptimize(r);
-    });
+    std::printf("=== safety ===\n\n");
 
-    // ── Machine<ConnState> vs raw ConnState ───────────────────────
-    ConnState c0{.sock_fd = 5, .attempts = 0};
-    BENCH("  raw ConnState transition", 10'000'000, {
-        ConnState s = transition_bare(c0);
-        bench::DoNotOptimize(s);
-    });
-    BENCH("  Machine<ConnState> transition", 10'000'000, {
-        Machine<ConnState> m = transition_machine(Machine<ConnState>{c0});
-        ConnState s = std::move(m).extract();
-        bench::DoNotOptimize(s);
-    });
+    // Layout: pairs of (bare, wrapped) at indices (0,1), (2,3), … for
+    // trivial compare() at the end.
+    bench::Report reports[] = {
+        // Pair 0: Linear<Resource>
+        bench::run("raw Resource round-trip", [&]{
+            Resource r = consume_bare(r0);
+            bench::do_not_optimize(r);
+        }),
+        bench::run("Linear<Resource> round-trip", [&]{
+            Linear<Resource> l = consume_linear(Linear<Resource>{r0});
+            Resource r = std::move(l).consume();
+            bench::do_not_optimize(r);
+        }),
+        // Pair 1: Refined<positive, int>
+        bench::run("raw int square", [&]{
+            int r = square_bare(n0);
+            bench::do_not_optimize(r);
+        }),
+        bench::run("Refined<positive,int> square", [&]{
+            int r = square_refined(PosInt{n0});
+            bench::do_not_optimize(r);
+        }),
+        // Pair 2: Secret<uint64_t>
+        bench::run("raw uint64 xor", [&]{
+            uint64_t r = leak_bare(v0);
+            bench::do_not_optimize(r);
+        }),
+        bench::run("Secret<uint64> declassify+xor", [&]{
+            uint64_t r = leak_secret(Secret<uint64_t>{v0});
+            bench::do_not_optimize(r);
+        }),
+        // Pair 3: Tagged<int, source::FromUser>
+        bench::run("raw int +1", [&]{
+            int r = id_bare(t0);
+            bench::do_not_optimize(r);
+        }),
+        bench::run("Tagged<int,source> +1", [&]{
+            int r = id_tagged(UserInt{t0});
+            bench::do_not_optimize(r);
+        }),
+        // Pair 4: Machine<ConnState>
+        bench::run("raw ConnState transition", [&]{
+            ConnState s = transition_bare(c0);
+            bench::do_not_optimize(s);
+        }),
+        bench::run("Machine<ConnState> transition", [&]{
+            Machine<ConnState> m = transition_machine(Machine<ConnState>{c0});
+            ConnState s = std::move(m).extract();
+            bench::do_not_optimize(s);
+        }),
 
-    // ── ct::select / eq / less branch-free ops ────────────────────
-    volatile uint32_t bit = 1;
-    volatile uint32_t a = 0xFFFFFFFFu;
-    volatile uint32_t b = 0x00000000u;
-    BENCH("  ct::select<u32>", 10'000'000, {
-        auto r = ct::select<uint32_t>(bit, a, b);
-        bench::DoNotOptimize(r);
-    });
-    BENCH("  ct::less<u32>", 10'000'000, {
-        auto r = ct::less<uint32_t>(a, b);
-        bench::DoNotOptimize(r);
-    });
-    BENCH("  ct::is_zero<u64>", 10'000'000, {
-        auto r = ct::is_zero<uint64_t>(a);
-        bench::DoNotOptimize(r);
-    });
+        // Standalone ct::* primitives — no bare comparator, they ARE
+        // the primitive. Just confirm they stay ~1-2 ns.
+        bench::run("ct::select<u32>", [&]{
+            auto r = ct::select<uint32_t>(bit_, a, b);
+            bench::do_not_optimize(r);
+        }),
+        bench::run("ct::less<u32>", [&]{
+            auto r = ct::less<uint32_t>(a, b);
+            bench::do_not_optimize(r);
+        }),
+        bench::run("ct::is_zero<u64>", [&]{
+            auto r = ct::is_zero<uint64_t>(a);
+            bench::do_not_optimize(r);
+        }),
 
-    // ── Monotonic / WriteOnce fast path ───────────────────────────
-    Monotonic<uint32_t> mon{0};
-    uint32_t step = 1;
-    BENCH("  Monotonic::try_advance", 10'000'000, {
-        bool ok = mon.try_advance(step++);
-        bench::DoNotOptimize(ok);
-    });
+        // Monotonic fast path — try_advance with a strictly increasing
+        // step counter. The state is inside the lambda so each auto-batch
+        // invocation works from a fresh high-water mark (modular advance).
+        [&]{
+            Monotonic<uint32_t> mon{0};
+            uint32_t step = 1;
+            return bench::run("Monotonic::try_advance", [&]{
+                bool ok = mon.try_advance(step++);
+                bench::do_not_optimize(ok);
+            });
+        }(),
+    };
 
-    std::printf("\nbench_safety: every wrapper within measurement noise\n");
-    std::printf("              of the bare primitive (zero-cost proved).\n");
+    bench::emit_reports_text(reports);
+
+    // One compare() per (bare, wrapped) pair. Zero-cost wrappers show
+    // [indistinguishable]; any [REGRESS] flag is a real finding.
+    std::printf("\n=== compare — zero-cost proof ===\n");
+    const char* pair_labels[] = {
+        "Linear<Resource>",
+        "Refined<positive,int>",
+        "Secret<uint64>",
+        "Tagged<int,source>",
+        "Machine<ConnState>",
+    };
+    for (size_t p = 0; p < std::size(pair_labels); ++p) {
+        std::printf("  [%s]\n  ", pair_labels[p]);
+        bench::compare(reports[2 * p], reports[2 * p + 1]).print_text(stdout);
+    }
+
+    bench::emit_reports_json(reports, json);
     return 0;
 }
