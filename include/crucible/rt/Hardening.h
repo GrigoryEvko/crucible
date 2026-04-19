@@ -317,19 +317,35 @@ class Hardening {
         }
 
         // 4. Walk the HotRegionRegistry: mlock every registered region,
-        //    and MADV_HUGEPAGE the ones flagged huge_hint. The registry
-        //    is populated by component constructors (TraceRing, MetaLog,
-        //    PoolAllocator, …) that ran before apply() was called.
-        //    Components registered AFTER apply() won't be covered by
-        //    this guard — they'd need a subsequent apply() call.
-        if (p.mlock_hot_regions || p.thp_hint_pools) {
+        //    and MADV_HUGEPAGE + optionally MADV_COLLAPSE the ones flagged
+        //    huge_hint. The registry is populated by component
+        //    constructors (TraceRing, MetaLog, PoolAllocator, …) that
+        //    ran before apply() was called. Components registered AFTER
+        //    apply() won't be covered by this guard — they'd need a
+        //    subsequent apply() call.
+        //
+        //   Order inside the loop matters for first-fault semantics:
+        //     a. MADV_HUGEPAGE first — sets the vma flag, so any page
+        //        faulted in AFTER this call can land as a 2 MB page.
+        //     b. mlock2(MLOCK_ONFAULT) second — marks for lock-on-fault
+        //        without pre-faulting. Faults that do occur hit the THP
+        //        allocator and either get 2 MB pages or fall back to 4K.
+        //     c. MADV_COLLAPSE third — synchronously collapses any pages
+        //        already faulted with 4K into 2 MB (kernel ≥ 6.1). This
+        //        is what makes `thp_ok` tick in the BPF sense hub; without
+        //        it, khugepaged collapses in its own time (minutes) and
+        //        a short bench never observes the transition.
+        if (p.mlock_hot_regions || p.thp_hint_pools || p.thp_collapse_now) {
             const auto regions = HotRegionRegistry::instance().snapshot();
             for (const auto& r : regions) {
+                if (p.thp_hint_pools && r.huge_hint) {
+                    (void)hint_hugepage(r.addr, r.len);
+                }
                 if (p.mlock_hot_regions) {
                     (void)lock_region(g, r.addr, r.len);
                 }
-                if (p.thp_hint_pools && r.huge_hint) {
-                    (void)hint_hugepage(r.addr, r.len);
+                if (p.thp_collapse_now && r.huge_hint) {
+                    (void)collapse_hugepage(r.addr, r.len);
                 }
             }
         }
@@ -400,11 +416,27 @@ class Hardening {
     }
 
     // madvise(MADV_COLLAPSE) — kernel ≥ 6.1. Synchronously builds
-    // hugepages. No revert.
+    // hugepages (triggers the `mm_collapse_huge_page` tracepoint, so
+    // the BPF sense hub's thp_ok counter ticks). No revert.
+    //
+    // Same PMD alignment rounding as hint_hugepage — the interior
+    // PMD-aligned range is what MADV_COLLAPSE wants. EINVAL on older
+    // kernels is expected (feature gate), not a real error.
     [[nodiscard]] static bool collapse_hugepage(void* addr, size_t len) noexcept {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
-        if (::madvise(addr, len, MADV_COLLAPSE) == 0) return true;
+
+        const uintptr_t raw       = reinterpret_cast<uintptr_t>(addr);
+        const uintptr_t aligned   = (raw + kHugePageBytes - 1)
+                                  & ~(kHugePageBytes - 1);
+        const size_t    lost_head = aligned - raw;
+        if (lost_head >= len) return false;
+        const size_t usable      = len - lost_head;
+        const size_t aligned_len = usable & ~(kHugePageBytes - 1);
+        if (aligned_len == 0) return false;
+
+        void* const target = reinterpret_cast<void*>(aligned);
+        if (::madvise(target, aligned_len, MADV_COLLAPSE) == 0) return true;
         // ENOSYS / EINVAL on older kernels — silent.
         if (errno != ENOSYS && errno != EINVAL) {
             detail::warn("madvise(MADV_COLLAPSE)", errno);
