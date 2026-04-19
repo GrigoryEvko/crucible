@@ -40,6 +40,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -47,6 +48,7 @@
 #include <cstring>
 #include <optional>
 #include <random>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1177,6 +1179,88 @@ inline void elevate_priority() noexcept {
 #ifdef __linux__
     (void)setpriority(PRIO_PROCESS, 0, -10);
 #endif
+}
+
+// ── Per-bench boilerplate helpers ──────────────────────────────────
+//
+// Every bench executable ends up duplicating:
+//   - getenv-with-empty-check
+//   - CRUCIBLE_BENCH_CORE → int parse (-1 if unset/invalid)
+//   - CRUCIBLE_BENCH_JSON → bool
+//   - a local `run = [&](...)` lambda that applies env-core to a new Run
+//   - a JSON emission block after the reports array
+//
+// Pull those into the harness so every migration is the minimum needed.
+// CRUCIBLE_BENCH_HARDENING is NOT parsed here — it's consumed by
+// Run::measure() directly, so no bench-side work is required.
+
+// Read an env var; return nullptr if unset OR empty (matches the convention
+// of existing benches where an empty value is "unset").
+[[nodiscard]] inline const char* env(const char* name) noexcept {
+    const char* s = std::getenv(name);
+    return (s != nullptr && s[0] != '\0') ? s : nullptr;
+}
+
+// Parse CRUCIBLE_BENCH_CORE. Returns -1 when unset, invalid, or outside
+// the int range (the -1 sentinel is the "no explicit pin" signal that
+// Run::pin_() falls back to Auto on).
+[[nodiscard]] inline int env_core() noexcept {
+    if (const char* s = env("CRUCIBLE_BENCH_CORE")) {
+        char*      endp = nullptr;
+        const long v    = std::strtol(s, &endp, 10);
+        if (endp != s && v >= static_cast<long>(INT_MIN)
+                      && v <= static_cast<long>(INT_MAX)) {
+            return static_cast<int>(v);
+        }
+    }
+    return -1;
+}
+
+// CRUCIBLE_BENCH_JSON=1 (or anything not "0") → emit JSON tail.
+[[nodiscard]] inline bool env_json() noexcept {
+    const char* s = env("CRUCIBLE_BENCH_JSON");
+    return s != nullptr && std::strcmp(s, "0") != 0;
+}
+
+// One-shot: build a Run with env-driven core pinning and measure body.
+// For benches that need .samples()/.warmup() overrides, construct Run
+// directly and apply env_core() manually — see bench_arena.cpp slow-path
+// case for the fluent-builder form.
+template <typename Body>
+[[nodiscard]] inline Report run(std::string name, Body&& body) {
+    Run r{std::move(name)};
+    if (const int c = env_core(); c >= 0) (void)r.core(c);
+    return r.measure(std::forward<Body>(body));
+}
+
+// Emit the text block for every Report. Always done — the JSON path is
+// additive. Taken as std::span so aggregate-init C arrays pass directly.
+inline void emit_reports_text(std::span<const Report> reports, FILE* out = stdout) noexcept {
+    for (const auto& r : reports) r.print_text(out);
+}
+
+// Emit the JSON array tail for every Report, iff `json`. No-op otherwise.
+// Benches that want extra output between text and JSON (e.g., a bench::compare
+// block) call emit_reports_text → extra prints → emit_reports_json.
+inline void emit_reports_json(std::span<const Report> reports, bool json,
+                              FILE* out = stdout) noexcept {
+    if (!json) return;
+    std::fputs("\n=== json ===\n[\n", out);
+    for (size_t i = 0; i < reports.size(); ++i) {
+        std::fputs("  ", out);
+        reports[i].print_json(out);
+        std::fputs((i + 1 < reports.size()) ? ",\n" : "\n", out);
+    }
+    std::fputs("]\n", out);
+}
+
+// Standard main() epilogue: text block + JSON tail, in that order. For
+// benches that need anything between the two (compare/CI prints), call
+// emit_reports_text + emit_reports_json directly.
+inline void emit_reports(std::span<const Report> reports, bool json,
+                         FILE* out = stdout) noexcept {
+    emit_reports_text(reports, out);
+    emit_reports_json(reports, json, out);
 }
 
 } // namespace bench
