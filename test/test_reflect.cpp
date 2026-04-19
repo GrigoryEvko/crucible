@@ -4,8 +4,6 @@
 #include <cassert>
 #include <cstdio>
 
-#if CRUCIBLE_HAS_REFLECTION
-
 // Simple test struct with diverse field types.
 struct Point {
   int32_t x;
@@ -88,12 +86,3 @@ int main() {
     std::printf("test_reflect: all tests passed\n");
     return 0;
 }
-
-#else // !CRUCIBLE_HAS_REFLECTION
-
-int main() {
-    std::printf("test_reflect: skipped (reflection not available)\n");
-    return 0;
-}
-
-#endif
