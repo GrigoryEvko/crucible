@@ -72,17 +72,21 @@ struct CRUCIBLE_OWNER MetaLog {
   alignas(64) std::atomic<uint32_t> tail{0};   // 4B — consumer writes, producer reads (rare)
 
   MetaLog() {
-    // 64-byte aligned allocation for cache-line-friendly access.
-    // std::aligned_alloc requires size to be a multiple of alignment — it is:
-    // CAPACITY * 168 is divisible by 8 (168 = 8*21). For aligned_alloc(64,...),
-    // ALLOC_BYTES must be a multiple of 64: 1M * 168 = 168MB, check via static_assert.
-    static constexpr size_t ALLOC_BYTES = CAPACITY * sizeof(TensorMeta);
-    static_assert(ALLOC_BYTES % 64 == 0, "allocation size must be multiple of alignment");
-    entries = static_cast<TensorMeta*>(std::aligned_alloc(64, ALLOC_BYTES));
-    if (!entries) [[unlikely]] std::abort(); // 168MB alloc failed — unrecoverable
-    // Register as hot so rt::apply(production|cloud_vm) locks + THP-hints
-    // this 168 MB buffer. huge_hint=true: static + multi-page, THP wins.
-    crucible::rt::register_hot_region(entries, ALLOC_BYTES, /*huge=*/true, "MetaLog.entries");
+    // 2 MB huge-page-aligned allocation. Kernel 5.8+ rejects
+    // madvise(MADV_HUGEPAGE) on a non-PMD-aligned address with EINVAL
+    // (older kernels silently rounded). Aligning the base + rounding
+    // the length up to a 2 MB multiple makes the whole region
+    // THP-eligible, so rt::apply() lands MADV_HUGEPAGE cleanly and the
+    // kernel backs it with 2 MB pages. Impact on a hot trace: ~80× TLB
+    // reach on this 168 MB buffer (42k entries → 84 huge pages).
+    static constexpr size_t RAW_BYTES   = CAPACITY * sizeof(TensorMeta);
+    static constexpr size_t ALLOC_BYTES = crucible::rt::round_up_huge(RAW_BYTES);
+    static_assert(ALLOC_BYTES % crucible::rt::kHugePageBytes == 0);
+    entries = static_cast<TensorMeta*>(
+        std::aligned_alloc(crucible::rt::kHugePageBytes, ALLOC_BYTES));
+    if (!entries) [[unlikely]] std::abort();
+    crucible::rt::register_hot_region(entries, ALLOC_BYTES,
+        /*huge=*/true, "MetaLog.entries");
   }
 
   ~MetaLog() {

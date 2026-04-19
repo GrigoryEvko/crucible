@@ -52,7 +52,15 @@ enum class TrainingPhase : uint8_t {
   OTHER     = 3,
 };
 
-struct CRUCIBLE_OWNER TraceRing {
+// alignas(2 MB): the four parallel arrays together span ~5.25 MB. When
+// allocated via std::make_unique<TraceRing>() the compiler routes through
+// the aligned operator new (C++17 §6.7.6), so the whole struct lives in
+// a PMD-aligned region. Kernel 5.8+ rejects madvise(MADV_HUGEPAGE) on
+// non-2 MB-aligned addresses with EINVAL — aligning at allocation time
+// is the only reliable fix. Cost: ~750 KB of end-of-struct padding
+// rounded up to the next 2 MB multiple; it's mlocked-but-untouched so
+// the pager never backs it with physical pages (no RSS hit).
+struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   // One cache line per op. Layout is load-bearing: bit-reinterpreted by
   // Serialize.h and assumed stable by Vigil / BackgroundThread / TraceLoader.
   //   schema(8) + shape(8) + num_inputs(2) + num_outputs(2)
@@ -105,20 +113,17 @@ struct CRUCIBLE_OWNER TraceRing {
   CallsiteHash              callsite_hashes[CAPACITY]{};  // 0 = no callsite
 
   TraceRing() noexcept {
-    // Register the four parallel arrays as "hot" so that a subsequent
-    // crucible::rt::apply(production_or_vm_policy) locks them resident.
-    // No-op when the runtime hasn't asked for mlock; costs one mutex
-    // acquisition per TraceRing construction.
-    crucible::rt::register_hot_region(entries,          sizeof(entries),         false, "TraceRing.entries");
-    crucible::rt::register_hot_region(meta_starts,      sizeof(meta_starts),     false, "TraceRing.meta_starts");
-    crucible::rt::register_hot_region(scope_hashes,     sizeof(scope_hashes),    false, "TraceRing.scope_hashes");
-    crucible::rt::register_hot_region(callsite_hashes,  sizeof(callsite_hashes), false, "TraceRing.callsite_hashes");
+    // One registration covers the entire struct — alignas(2 MB) on the
+    // class puts head/tail/cached/entries/meta_starts/scope/callsite
+    // all inside a single PMD-aligned region. A subsequent
+    // crucible::rt::apply(production|cloud_vm) locks the range with
+    // mlock2(MLOCK_ONFAULT) and madvises it MADV_HUGEPAGE so the
+    // kernel backs it with 2 MB pages. ~3 huge pages per TraceRing.
+    crucible::rt::register_hot_region(this, sizeof(*this),
+        /*huge=*/true, "TraceRing");
   }
   ~TraceRing() {
-    crucible::rt::unregister_hot_region(callsite_hashes);
-    crucible::rt::unregister_hot_region(scope_hashes);
-    crucible::rt::unregister_hot_region(meta_starts);
-    crucible::rt::unregister_hot_region(entries);
+    crucible::rt::unregister_hot_region(this);
   }
   TraceRing(const TraceRing&)            = delete("SPSC ring is pinned to a producer/consumer thread pair");
   TraceRing& operator=(const TraceRing&) = delete("SPSC ring is pinned to a producer/consumer thread pair");
