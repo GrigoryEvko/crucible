@@ -91,10 +91,8 @@ class TransactionLog {
     // Returns false if tx is not in a committable state (logic error).
     bool commit(Transaction* tx, RegionNode* region,
                 ContentHash content_hash, MerkleHash merkle_root)
-#if CRUCIBLE_HAS_CONTRACTS
         pre (tx != nullptr)
         pre (region != nullptr)
-#endif
     {
         if (tx->status != TxStatus::RECORDING
             && tx->status != TxStatus::CLOSED) {
@@ -112,9 +110,7 @@ class TransactionLog {
     // Returns the previously ACTIVE transaction (the rollback target), or nullptr
     // if no previous ACTIVE existed.
     [[nodiscard]] Transaction* activate(Transaction* tx)
-#if CRUCIBLE_HAS_CONTRACTS
         pre (tx != nullptr)
-#endif
     {
         if (tx->status != TxStatus::COMMITTED) return nullptr;
 
