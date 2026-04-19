@@ -1,18 +1,18 @@
 // Unit tests for bench/bench_harness.h statistical primitives and for
 // bench/bpf_senses.h Snapshot delta.
 //
-// Coverage:
+// Coverage (one invariant per test function):
 //   1. bench::percentile_interp        — R type 7 (Hyndman & Fan 1996)
 //   2. bench::Percentiles::compute     — sort + per-percentile + moments
-//   3. bench::bootstrap_ci             — Efron (1979) bootstrap CI
+//   3. bench::bootstrap_ci             — Efron (1979) bootstrap CI, seed-deterministic
 //   4. bench::compare                  — Mann-Whitney U (Mann & Whitney 1947)
-//   5. bench::bpf::Snapshot::operator- — saturating per-counter delta
+//   5. bench::bpf::Snapshot::operator- — saturating per-counter delta (gauge-safe)
 //
 // Methodology:
 //   Raw main() + CHECK macro. No gtest, no catch2. Every failure prints
 //   file:line to stderr but the test continues so we see all failures
-//   per run. main() returns the total failure count (nonzero → CTest
-//   marks FAILED).
+//   per run. main() returns nonzero iff any CHECK failed and prints a
+//   final PASS/FAIL summary.
 //
 // Build context:
 //   Default preset (GCC 16, -std=c++26 -Werror). CRUCIBLE_BENCH_HAVE_BPF
@@ -21,9 +21,7 @@
 //   (we never instantiate SenseHub, which lives in bpf_senses.cpp and
 //   is not linked).
 
-#include "bench_harness.h"
-#include "bpf_senses.h"
-
+// stdlib
 #include <algorithm>
 #include <bit>
 #include <cassert>
@@ -33,7 +31,32 @@
 #include <cstdlib>
 #include <vector>
 
+// crucible / bench
+#include "bench_harness.h"
+#include "bpf_senses.h"
+
 namespace {
+
+// ── Named constants — no magic numbers in the test body ─────────────
+//
+// kSampleN       sample count used by bootstrap_ci / compare tests.
+//                Must be ≥ 30 to clear bench_harness's "too few samples"
+//                gate (both bootstrap_ci and compare bail early below
+//                that threshold), and large enough that the CI is
+//                representative of the resampling distribution.
+// kSmallN        sample count below the 30-threshold; exercises the
+//                "insufficient data" branch in bootstrap_ci and compare.
+// kBootstrapB    number of bootstrap resamples. Matches the default
+//                used throughout the bench harness.
+// kAlpha         two-sided alpha for CI; α/2 and 1-α/2 quantiles.
+// kDefaultSeed   fixed RNG seed for determinism checks; matches the
+//                bench_harness default so the test exercises the exact
+//                code path benches use.
+constexpr std::size_t kSampleN     = 100;
+constexpr std::size_t kSmallN      = 10;
+constexpr std::size_t kBootstrapB  = 1000;
+constexpr double      kAlpha       = 0.05;
+constexpr std::uint64_t kDefaultSeed = 0xBEEFCAFEDEADF00Dull;
 
 int g_failures = 0;
 
@@ -53,16 +76,82 @@ int g_failures = 0;
     return std::abs(a - b) <= eps;
 }
 
-// ────────────────────────────────────────────────────────────────────
-// 1. percentile_interp — R type 7 linear interpolation
-// ────────────────────────────────────────────────────────────────────
+// Bit-exact double equality. Used where a deterministic RNG is expected
+// to emit the exact same IEEE-754 bit pattern across runs. Dodges
+// -Wfloat-equal (which rightly warns on direct `==` for doubles).
+[[nodiscard]] bool bit_same(double a, double b) noexcept {
+    return std::bit_cast<std::uint64_t>(a) == std::bit_cast<std::uint64_t>(b);
+}
+
+// Cached {1, 2, …, kSampleN} — shared between bootstrap_ci and compare
+// tests. Cheap to build, but computing it in one place avoids the
+// temptation to drift values apart. Function-local static → built on
+// first call, reused process-wide.
+[[nodiscard]] const std::vector<double>& ramp_1_to_N() {
+    static const std::vector<double> v = [] {
+        std::vector<double> out;
+        out.reserve(kSampleN);
+        for (std::size_t i = 1; i <= kSampleN; ++i) {
+            out.push_back(static_cast<double>(i));
+        }
+        return out;
+    }();
+    return v;
+}
+
+// Dispatch the optional<CI> vs bare-CI API shape via a generic lambda.
+// A generic lambda's body is a template; only the branch that matches
+// the deduced parameter type is instantiated, so the discarded branch
+// never needs to compile against the wrong shape.
 //
-// Type 7 (Hyndman & Fan 1996, R default) straddles two samples at
-// frac * (n - 1). Defined tests:
-//   • empty → 0 (graceful NDEBUG fallback)
-//   • single element → that element at any frac
-//   • odd-length symmetric set → exact sample values at quartiles
-//   • even-length → midpoint interpolation between adjacent samples
+// small-sample form: n < 30 → must be "empty" under either shape.
+template <typename CI_t>
+void check_ci_is_empty(const CI_t& ci) {
+    if constexpr (requires { ci.value(); }) {
+        // std::optional<CI>
+        CHECK(!ci.has_value());
+    } else {
+        // bare CI — zero-initialised members signal "no CI".
+        CHECK(bit_same(ci.lo, 0.0));
+        CHECK(bit_same(ci.hi, 0.0));
+    }
+}
+
+// determinism form: two runs with same seed → bit-identical bounds.
+template <typename CI_t>
+void check_ci_stable(const CI_t& a, const CI_t& b) {
+    if constexpr (requires { a.value(); }) {
+        CHECK(a.has_value());
+        CHECK(b.has_value());
+        if (a.has_value() && b.has_value()) {
+            CHECK(bit_same(a->lo, b->lo));
+            CHECK(bit_same(a->hi, b->hi));
+            CHECK(a->lo > 0.0);
+            CHECK(a->hi >= a->lo);
+        }
+    } else {
+        CHECK(bit_same(a.lo, b.lo));
+        CHECK(bit_same(a.hi, b.hi));
+        CHECK(a.lo > 0.0);     // median of {1..kSampleN} is (kSampleN+1)/2; CI brackets it
+        CHECK(a.hi >= a.lo);
+    }
+}
+
+// Build a Report with pre-populated .samples / .pct fields. No need to
+// run the full Run::measure pipeline — compare reads only those.
+[[nodiscard]] bench::Report make_report_from(
+    const char* name,
+    std::vector<double> samples) {
+    bench::Report r;
+    r.name    = name;
+    r.samples = samples;                       // keep for compare
+    r.pct     = bench::Percentiles::compute(samples);
+    return r;
+}
+
+// Invariant 1: percentile_interp respects R type 7 linear interpolation
+// at boundary positions (empty, single-element, odd-n quartiles, even-n
+// midpoint).
 void test_percentile_interp() {
     // ── empty → 0 ──
     // Note: in Debug builds the internal assert fires before the 0
@@ -99,9 +188,9 @@ void test_percentile_interp() {
     }
 }
 
-// ────────────────────────────────────────────────────────────────────
-// 2. Percentiles::compute — aggregate statistics over sorted samples
-// ────────────────────────────────────────────────────────────────────
+// Invariant 2: Percentiles::compute produces correct aggregate statistics
+// (min, max, mean, stddev, cv, percentiles) over empty / uniform /
+// symmetric samples, and sorts internally so input order is irrelevant.
 void test_percentiles_compute() {
     // ── empty input → all zero, n = 0 ──
     {
@@ -152,105 +241,41 @@ void test_percentiles_compute() {
     }
 }
 
-// ────────────────────────────────────────────────────────────────────
-// 3. bootstrap_ci — Efron (1979) with fixed seed for determinism
-// ────────────────────────────────────────────────────────────────────
-// Bit-exact double equality. We use this where deterministic RNG output
-// is expected: two identical runs MUST produce the same bit pattern.
-// Dodges -Wfloat-equal (which warns on direct `==` on doubles).
-[[nodiscard]] bool bit_same(double a, double b) noexcept {
-    return std::bit_cast<uint64_t>(a) == std::bit_cast<uint64_t>(b);
-}
-
-// Dispatch the optional<CI> vs bare-CI API shape via a generic lambda.
-// A generic lambda's body is a template; only the branch that matches
-// the deduced parameter type is instantiated, so the discarded branch
-// never needs to compile against the wrong shape.
-//
-// small-sample form: n < 30 → must be "empty" under either shape.
-template <typename CI_t>
-void check_ci_is_empty(const CI_t& ci) {
-    if constexpr (requires { ci.value(); }) {
-        // std::optional<CI>
-        CHECK(!ci.has_value());
-    } else {
-        // bare CI — zero-initialised members signal "no CI".
-        CHECK(bit_same(ci.lo, 0.0));
-        CHECK(bit_same(ci.hi, 0.0));
-    }
-}
-
-// determinism form: two runs with same seed → bit-identical bounds.
-template <typename CI_t>
-void check_ci_stable(const CI_t& a, const CI_t& b) {
-    if constexpr (requires { a.value(); }) {
-        CHECK(a.has_value());
-        CHECK(b.has_value());
-        if (a.has_value() && b.has_value()) {
-            CHECK(bit_same(a->lo, b->lo));
-            CHECK(bit_same(a->hi, b->hi));
-            CHECK(a->lo > 0.0);
-            CHECK(a->hi >= a->lo);
-        }
-    } else {
-        CHECK(bit_same(a.lo, b.lo));
-        CHECK(bit_same(a.hi, b.hi));
-        CHECK(a.lo > 0.0);     // median of {1..100} is 50.5; CI brackets it
-        CHECK(a.hi >= a.lo);
-    }
-}
-
+// Invariant 3: bootstrap_ci is deterministic for a fixed seed (two runs
+// with identical inputs produce bit-identical bounds), and gracefully
+// degrades for n < 30 (Efron's bootstrap needs enough data to resample).
+// We don't assert numeric bounds — the resampling distribution is
+// RNG-implementation-dependent; we only assert *stability*.
 void test_bootstrap_ci() {
     // ── n < 30 → Agent 1 may have promoted the return to optional<CI>.
     //    The helpers above cover both shapes via a templated probe.
     {
         std::vector<double> small;
-        for (int i = 1; i <= 10; ++i) small.push_back(static_cast<double>(i));
+        small.reserve(kSmallN);
+        for (std::size_t i = 1; i <= kSmallN; ++i) {
+            small.push_back(static_cast<double>(i));
+        }
         auto result = bench::bootstrap_ci(small, 0.5, /*B=*/100);
         check_ci_is_empty(result);
     }
 
     // ── determinism: same input + same seed → bit-identical output ──
-    // Picks B=1000, seed = 0xBEEFCAFEDEADF00D (the bench_harness default).
-    // We don't hard-code numeric bounds — the resampling distribution is
-    // RNG-implementation-dependent. We only assert *stability* between
-    // two independent runs on the same input.
     {
-        std::vector<double> big;
-        big.reserve(100);
-        for (int i = 1; i <= 100; ++i) big.push_back(static_cast<double>(i));
-
-        auto a = bench::bootstrap_ci(big, 0.5, /*B=*/1000, /*alpha=*/0.05,
-                                     /*seed=*/0xBEEFCAFEDEADF00Dull);
-        auto b = bench::bootstrap_ci(big, 0.5, /*B=*/1000, /*alpha=*/0.05,
-                                     /*seed=*/0xBEEFCAFEDEADF00Dull);
+        const auto& big = ramp_1_to_N();
+        auto a = bench::bootstrap_ci(big, 0.5, kBootstrapB, kAlpha, kDefaultSeed);
+        auto b = bench::bootstrap_ci(big, 0.5, kBootstrapB, kAlpha, kDefaultSeed);
         check_ci_stable(a, b);
     }
 }
 
-// ────────────────────────────────────────────────────────────────────
-// 4. compare — Mann-Whitney U (Mann & Whitney 1947)
-// ────────────────────────────────────────────────────────────────────
-//
-// Build two Reports with pre-populated .samples / .pct fields. No need
-// to run the full Run::measure pipeline — compare reads only those.
-[[nodiscard]] bench::Report make_report_from(
-    const char* name,
-    std::vector<double> samples) {
-    bench::Report r;
-    r.name    = name;
-    r.samples = samples;                       // keep for compare
-    r.pct     = bench::Percentiles::compute(samples);
-    return r;
-}
-
+// Invariant 4: Mann-Whitney compare. Identical samples → Δ=0 and
+// distinguishable=false; tiny shift → Δp50 > 0 with finite z; heavy
+// ties on both sides → z ≈ 0 (rank-sum symmetry); insufficient samples
+// → distinguishable=false regardless of effect size.
 void test_compare() {
-    // ── identical distributions {1..100} → indistinguishable, Δp50 = 0 ──
+    // ── identical distributions {1..kSampleN} → indistinguishable, Δp50 = 0 ──
     {
-        std::vector<double> v;
-        v.reserve(100);
-        for (int i = 1; i <= 100; ++i) v.push_back(static_cast<double>(i));
-
+        const auto& v = ramp_1_to_N();
         const bench::Report a = make_report_from("a", v);
         const bench::Report b = make_report_from("b", v);
         const bench::Compare c = bench::compare(a, b);
@@ -269,9 +294,9 @@ void test_compare() {
     // and z is a finite number.
     {
         std::vector<double> va, vb;
-        va.reserve(100);
-        vb.reserve(100);
-        for (int i = 1; i <= 100; ++i) {
+        va.reserve(kSampleN);
+        vb.reserve(kSampleN);
+        for (std::size_t i = 1; i <= kSampleN; ++i) {
             va.push_back(static_cast<double>(i));
             vb.push_back(static_cast<double>(i) + 0.01);
         }
@@ -287,7 +312,9 @@ void test_compare() {
     // ── insufficient samples (< 30) → not distinguishable ──
     {
         std::vector<double> small_a, small_b;
-        for (int i = 0; i < 20; ++i) {
+        small_a.reserve(20);
+        small_b.reserve(20);
+        for (std::size_t i = 0; i < 20; ++i) {
             small_a.push_back(static_cast<double>(i));
             small_b.push_back(static_cast<double>(i) + 100.0);  // massive shift
         }
@@ -305,9 +332,9 @@ void test_compare() {
     // (u_min − μ) is zero regardless of σ.
     {
         std::vector<double> tie_a, tie_b;
-        tie_a.reserve(100);
-        tie_b.reserve(100);
-        for (int i = 0; i < 50; ++i) {
+        tie_a.reserve(kSampleN);
+        tie_b.reserve(kSampleN);
+        for (std::size_t i = 0; i < kSampleN / 2; ++i) {
             tie_a.push_back(1.0); tie_a.push_back(2.0);
             tie_b.push_back(1.0); tie_b.push_back(2.0);
         }
@@ -321,14 +348,10 @@ void test_compare() {
     }
 }
 
-// ────────────────────────────────────────────────────────────────────
-// 5. Snapshot::operator- — saturating per-counter subtraction
-// ────────────────────────────────────────────────────────────────────
-//
-// Monotonic counters (SCHED_CTX_*, NET_TX_BYTES, …) produce meaningful
-// post − pre. Gauges (FD_CURRENT, TCP_*, THERMAL_MAX_TRIP) can have
-// post < pre; a raw u64 subtract would wrap to ~2^64. Snapshot uses
-// crucible::sat::sub_sat and so MUST clamp to 0 on underflow.
+// Invariant 5: Snapshot::operator- is saturating on underflow. Gauges
+// that decreased (post < pre) must clamp to 0 in a single slot without
+// wrapping to ~2^64 and without zeroing the whole vector. Monotonic
+// counters (post ≥ pre) must still read exact element-wise deltas.
 void test_snapshot_subtract() {
     using bench::bpf::Snapshot;
     using bench::bpf::NUM_COUNTERS;
@@ -337,13 +360,13 @@ void test_snapshot_subtract() {
     {
         Snapshot pre{};
         Snapshot post{};
-        for (size_t i = 0; i < NUM_COUNTERS; ++i) {
-            pre.counters[i]  = static_cast<uint64_t>(i) * 10u;
-            post.counters[i] = pre.counters[i] + static_cast<uint64_t>(i) + 1u;
+        for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
+            pre.counters[i]  = static_cast<std::uint64_t>(i) * 10u;
+            post.counters[i] = pre.counters[i] + static_cast<std::uint64_t>(i) + 1u;
         }
         const Snapshot d = post - pre;
-        for (size_t i = 0; i < NUM_COUNTERS; ++i) {
-            CHECK(d.counters[i] == static_cast<uint64_t>(i) + 1u);
+        for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
+            CHECK(d.counters[i] == static_cast<std::uint64_t>(i) + 1u);
         }
     }
 
@@ -353,16 +376,16 @@ void test_snapshot_subtract() {
     {
         Snapshot pre{};
         Snapshot post{};
-        for (size_t i = 0; i < NUM_COUNTERS; ++i) {
+        for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
             pre.counters[i]  = 100u;
             post.counters[i] = 150u;
         }
-        constexpr size_t k = 17;                // arbitrary mid-range slot
+        constexpr std::size_t k = 17;           // arbitrary mid-range slot
         pre.counters[k]  = 200u;                // gauge that decreased
         post.counters[k] = 50u;                 // post < pre by 150
 
         const Snapshot d = post - pre;
-        for (size_t i = 0; i < NUM_COUNTERS; ++i) {
+        for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
             if (i == k) {
                 // Must clamp to 0 — NOT wrap to UINT64_MAX - 149.
                 CHECK(d.counters[i] == 0u);
@@ -376,12 +399,12 @@ void test_snapshot_subtract() {
     {
         Snapshot pre{};
         Snapshot post{};
-        for (size_t i = 0; i < NUM_COUNTERS; ++i) {
+        for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
             pre.counters[i]  = UINT64_MAX;       // max possible decrease
             post.counters[i] = 0u;
         }
         const Snapshot d = post - pre;
-        for (size_t i = 0; i < NUM_COUNTERS; ++i) {
+        for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
             CHECK(d.counters[i] == 0u);
         }
     }
@@ -391,7 +414,7 @@ void test_snapshot_subtract() {
         const Snapshot empty_a{};
         const Snapshot empty_b{};
         const Snapshot d = empty_a - empty_b;
-        for (size_t i = 0; i < NUM_COUNTERS; ++i) {
+        for (std::size_t i = 0; i < NUM_COUNTERS; ++i) {
             CHECK(d.counters[i] == 0u);
         }
     }
@@ -399,7 +422,7 @@ void test_snapshot_subtract() {
     // ── operator[] returns the counters[] entry ──
     {
         Snapshot s{};
-        s.counters[bench::bpf::SCHED_CTX_VOL]        = 12345u;
+        s.counters[bench::bpf::SCHED_CTX_VOL]       = 12345u;
         s.counters[bench::bpf::MEM_PAGE_FAULTS_MIN] = 67u;
         CHECK(s[bench::bpf::SCHED_CTX_VOL] == 12345u);
         CHECK(s[bench::bpf::MEM_PAGE_FAULTS_MIN] == 67u);
@@ -417,11 +440,14 @@ int main() {
     test_compare();
     test_snapshot_subtract();
 
+    constexpr int kNumGroups = 5;
     if (g_failures == 0) {
-        std::fprintf(stderr, "test_bench_harness: 5 groups PASSED\n");
+        std::fprintf(stderr,
+            "test_bench_harness: PASS (%d groups, 0 failures)\n", kNumGroups);
         return 0;
     }
     std::fprintf(stderr,
-        "test_bench_harness: %d CHECK failure(s)\n", g_failures);
+        "test_bench_harness: FAIL (%d groups, %d CHECK failure(s))\n",
+        kNumGroups, g_failures);
     return 1;
 }

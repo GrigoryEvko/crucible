@@ -20,12 +20,14 @@
 //   Report → text + JSON; bootstrap CI on any percentile on demand.
 //   bench::compare(a, b) → Mann-Whitney U; distinguishable at p<0.01 or not.
 //
-// By default each Run pins to the current core (or to an isolcpu CPU if
-// one exists), reads cpufreq at the start and end of the run, and — when
-// BPF is available — reads the 96-counter sense hub on both sides of the
-// measurement. The reported deltas cover context switches, page faults,
-// migrations, futex contention, I/O bytes, and the rest of the kernel
-// surface the bench inadvertently touches.
+// Pin-by-default: uses /sys/devices/system/cpu/isolated first (so an
+// isolcpu reserved via the kernel cmdline wins), falling back to
+// sched_getcpu() only if no CPU is isolated. Each Run also reads
+// cpufreq at the start and end of the run, and — when BPF is available
+// — reads the 96-counter sense hub on both sides of the measurement.
+// The reported deltas cover context switches, page faults, migrations,
+// futex contention, I/O bytes, and the rest of the kernel surface the
+// bench inadvertently touches.
 //
 // If BPF fails to load (missing CAP_BPF, kernel.unprivileged_bpf_disabled,
 // kernel too old), the harness degrades gracefully: ns/cycle numbers are
@@ -383,9 +385,15 @@ struct Report {
     double              cycles_per_op        = 0;
 
     // Kernel-side context via eBPF sense hub. All zero when BPF is
-    // unavailable. Deltas over the measured run (monotonic counters);
-    // for gauge fields (FD_CURRENT, TCP_*, THERMAL_MAX_TRIP) the caller
-    // should read the post snapshot directly from bpf_post.
+    // unavailable. Deltas over the measured run (monotonic counters).
+    //
+    // For the gauge-valued Idx slots listed in bpf_senses.h's
+    // Snapshot::operator- comment (FD_CURRENT, TCP_{MIN,MAX}_SRTT_US,
+    // TCP_LAST_CWND, THERMAL_MAX_TRIP, SIGNAL_LAST_SIGNO, OOM_KILL_US,
+    // RECLAIM_STALL_LOOPS, NET_TCP_*, NET_UDP_ACTIVE, NET_UNIX_ACTIVE,
+    // RSS_{ANON,FILE,SHMEM}_BYTES, RSS_SWAP_ENTRIES) the post - pre
+    // difference is meaningless; callers wanting those instantaneous
+    // values should pull them from the post snapshot directly.
 #if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
     bench::bpf::Snapshot bpf_delta{};
     size_t               bpf_attached = 0;  // # programs the kernel accepted
@@ -408,7 +416,12 @@ struct Report {
     // samples (n < 30) — callers that need to distinguish "no data" from
     // a genuine interval centred at zero should use `ci_opt()`, which
     // surfaces the "not enough samples" case as std::nullopt.
-    [[nodiscard]] CI ci(double frac, size_t B = 1000) const {
+    //
+    // Marked noexcept: bootstrap_ci allocates std::vectors, but OOM in
+    // this project aborts() per the MemSafe axiom, so throwing here is
+    // structurally impossible and std::terminate via the noexcept barrier
+    // is the desired outcome if an allocator ever did throw.
+    [[nodiscard]] CI ci(double frac, size_t B = 1000) const noexcept {
         return bootstrap_ci(samples, frac, B);
     }
 
@@ -426,7 +439,10 @@ struct Report {
         return pct.cv > cv_threshold;
     }
 
-    void print_text(FILE* out = stdout) const {
+    // Writes a single summary line (optionally followed by the BPF
+    // sensory line) to `out`. Every underlying call is C stdio and
+    // std::string::c_str() — no throwing paths, so noexcept.
+    void print_text(FILE* out = stdout) const noexcept {
         std::fprintf(out,
             "  %-38s  p50=%7.2f  p90=%7.2f  p99=%7.2f  p99.9=%7.2f  "
             "max=%9.2f  μ=%7.2f  σ=%6.2f  cv=%4.1f%%",
@@ -485,7 +501,9 @@ struct Report {
         std::fputc('"', out);
     }
 
-    void print_json(FILE* out) const {
+    // JSON emitter — same argument as print_text(): C stdio + noexcept
+    // accessors only, no throwing paths.
+    void print_json(FILE* out) const noexcept {
         std::fputc('{', out);
         std::fputs("\"name\":", out);
         fprint_json_string(out, name);
@@ -514,11 +532,14 @@ struct Report {
  private:
 #if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
     // Print every monotonic counter that actually incremented during the
-    // run, in unit-scaled form. Gauges (TCP states, SRTT min/max, RSS
-    // bytes, signal-last, thermal, OOM-kill-us, reclaim stalls, FD
-    // current, TCP last cwnd) are deliberately excluded — their (post -
-    // pre) delta is meaningless. Callers that want raw gauge values
-    // should pull them from the post snapshot directly.
+    // run, in unit-scaled form. The gauge-valued Idx slots listed in
+    // bpf_senses.h's Snapshot::operator- comment (FD_CURRENT, TCP_
+    // {MIN,MAX}_SRTT_US, TCP_LAST_CWND, THERMAL_MAX_TRIP, SIGNAL_LAST_
+    // SIGNO, OOM_KILL_US, RECLAIM_STALL_LOOPS, NET_TCP_*, NET_UDP_ACTIVE,
+    // NET_UNIX_ACTIVE, RSS_{ANON,FILE,SHMEM}_BYTES, RSS_SWAP_ENTRIES)
+    // are deliberately excluded from kAll — their (post - pre) delta
+    // saturates to zero in Snapshot::operator-. Callers wanting raw
+    // gauge values should pull them from the post snapshot directly.
     //
     // Output:
     //   └─ clean                                   (no monotonic counter moved)
@@ -675,7 +696,9 @@ struct Compare {
     double       z               = 0;
     bool         distinguishable = false;    // |z| > 2.576 → p < 0.01
 
-    void print_text(FILE* out = stdout) const {
+    // One-line summary — C stdio + std::string::c_str() only, noexcept
+    // for the same reasons as Report::print_text.
+    void print_text(FILE* out = stdout) const noexcept {
         const char* flag = "  [indistinguishable]";
         if (distinguishable && delta_p99_pct >  5.0) flag = "  [REGRESS]";
         if (distinguishable && delta_p99_pct < -5.0) flag = "  [IMPROVE]";
@@ -785,13 +808,15 @@ class Run {
     Run& no_pin()          noexcept { pin_mode_ = Pin::None; return *this; }
 
     // Apply a `crucible::rt::Policy` to the measuring thread for the
-    // duration of the Run. The policy's `hot_core` selector overrides
-    // our own pinning logic (so `.hardening(p)` and `.core(N)` conflict
-    // — last setter wins by design). The returned RAII guard reverts
-    // sched class, affinity, mlock'd regions, and THP flag when
-    // measure() returns.
+    // duration of the Run. When set, the policy's `hot_core` selector
+    // drives pinning and our legacy pin_() path is skipped entirely —
+    // so `.hardening(p)` unconditionally wins over any prior or
+    // subsequent `.core(N)` / `.no_pin()` in the same builder chain.
+    // The RAII guard returned by crucible::rt::apply() reverts sched
+    // class, affinity, mlock'd regions, and THP flag when measure()
+    // returns.
     //
-    // Default: crucible::rt::Policy::none() (no hardening).
+    // Default: no hardening (have_hardening_ == false → legacy pin_()).
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
     Run& hardening(const crucible::rt::Policy& p) noexcept {
         hardening_ = p;
