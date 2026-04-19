@@ -12,14 +12,22 @@
 // throwing. The Keeper / bench consumer degrades gracefully if the
 // kernel doesn't expose a particular file (older kernels, chroots,
 // non-standard filesystems).
+//
+// Attribute conventions:
+//   • [[gnu::pure]] on read-only queries. sysfs/procfs reads are
+//     treated as "no C++-observable side effects" — the compiler is
+//     free to coalesce redundant calls (callers that care about freshness
+//     must space calls with non-pure work in between).
+//   • [[gnu::cold]] on rare error-recovery paths (e.g. sched_getaffinity
+//     fallback when /proc/self/status is unreadable — chroots, exotic
+//     filesystems). Moves the body out of the hot icache.
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <cstring>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #ifdef __linux__
@@ -30,10 +38,14 @@
 namespace crucible::rt {
 
 // ── Internal sysfs helpers ─────────────────────────────────────────
+//
+// Note: `detail::` is deliberately reachable by tests (test_rt_policy.cpp
+// reaches in to verify `parse_cpulist` invariants directly). Keep the
+// names stable; changes break the test.
 
 namespace detail {
 
-[[nodiscard]] inline std::string read_small_file(const char* path) noexcept {
+[[nodiscard, gnu::pure]] inline std::string read_small_file(const char* path) noexcept {
     std::string out;
     std::FILE* f = std::fopen(path, "r");
     if (f == nullptr) return out;
@@ -46,7 +58,7 @@ namespace detail {
 }
 
 // Parse a Linux "cpulist" string — e.g. "0-3,5,7-9,15" — into ints.
-[[nodiscard]] inline std::vector<int> parse_cpulist(std::string_view s) noexcept {
+[[nodiscard, gnu::pure]] inline std::vector<int> parse_cpulist(std::string_view s) noexcept {
     std::vector<int> out;
     size_t i = 0;
     while (i < s.size()) {
@@ -73,7 +85,7 @@ namespace detail {
 }
 
 // Parse the "Cpus_allowed_list:\t0-27" line out of /proc/self/status.
-[[nodiscard]] inline std::vector<int> parse_cpus_allowed_list(std::string_view status) noexcept {
+[[nodiscard, gnu::pure]] inline std::vector<int> parse_cpus_allowed_list(std::string_view status) noexcept {
     constexpr std::string_view key = "Cpus_allowed_list:";
     const auto pos = status.find(key);
     if (pos == std::string_view::npos) return {};
@@ -85,10 +97,22 @@ namespace detail {
 
 } // namespace detail
 
+// ── Platform invariants ────────────────────────────────────────────
+//
+// CPU_SETSIZE is the upper bound we iterate over in the fallback. glibc
+// has defined this as 1024 since the cpu_set_t macro API shipped; modern
+// servers with >1024 CPUs must use CPU_*_S variants on dynamic sets,
+// which we don't attempt here. If some libc ships with a smaller value,
+// the fallback silently truncates — assert hard so we catch at build time.
+#ifdef __linux__
+static_assert(CPU_SETSIZE >= 1024,
+              "crucible::rt::allowed_cpus fallback assumes CPU_SETSIZE >= 1024");
+#endif
+
 // ── Public API ─────────────────────────────────────────────────────
 
 // Total number of online CPUs. Returns 1 on failure (conservative).
-[[nodiscard]] inline int num_online_cpus() noexcept {
+[[nodiscard, gnu::pure]] inline int num_online_cpus() noexcept {
 #ifdef __linux__
     const long n = sysconf(_SC_NPROCESSORS_ONLN);
     return (n > 0) ? static_cast<int>(n) : 1;
@@ -97,13 +121,12 @@ namespace detail {
 #endif
 }
 
-// CPUs granted to this task by the orchestrator / cpuset cgroup.
-// Sourced from /proc/self/status:Cpus_allowed_list (authoritative).
-// Falls back to the kernel mask via sched_getaffinity if procfs fails.
-[[nodiscard]] inline std::vector<int> allowed_cpus() noexcept {
-    const auto status = detail::read_small_file("/proc/self/status");
-    if (auto v = detail::parse_cpus_allowed_list(status); !v.empty()) return v;
+namespace detail {
 
+// Last-resort path for allowed_cpus(): /proc/self/status was unreadable
+// or malformed. Ask the kernel directly via sched_getaffinity, and if
+// that also fails, assume every online CPU is ours.
+[[nodiscard, gnu::cold]] inline std::vector<int> allowed_cpus_fallback() noexcept {
 #ifdef __linux__
     cpu_set_t set;
     CPU_ZERO(&set);
@@ -115,7 +138,6 @@ namespace detail {
         return out;
     }
 #endif
-    // Last-resort: assume all online are allowed.
     std::vector<int> out;
     const int n = num_online_cpus();
     out.reserve(static_cast<size_t>(n));
@@ -123,13 +145,24 @@ namespace detail {
     return out;
 }
 
+} // namespace detail
+
+// CPUs granted to this task by the orchestrator / cpuset cgroup.
+// Sourced from /proc/self/status:Cpus_allowed_list (authoritative).
+// Falls back to the kernel mask via sched_getaffinity if procfs fails.
+[[nodiscard, gnu::pure]] inline std::vector<int> allowed_cpus() noexcept {
+    const auto status = detail::read_small_file("/proc/self/status");
+    if (auto v = detail::parse_cpus_allowed_list(status); !v.empty()) return v;
+    return detail::allowed_cpus_fallback();
+}
+
 // CPUs quarantined by the kernel cmdline `isolcpus=…`. Empty if unset.
-[[nodiscard]] inline std::vector<int> isolated_cpus() noexcept {
+[[nodiscard, gnu::pure]] inline std::vector<int> isolated_cpus() noexcept {
     return detail::parse_cpulist(detail::read_small_file("/sys/devices/system/cpu/isolated"));
 }
 
 // /sys/devices/system/cpu/cpuN/topology/thread_siblings_list
-[[nodiscard]] inline std::vector<int> smt_siblings(int cpu) noexcept {
+[[nodiscard, gnu::pure]] inline std::vector<int> smt_siblings(int cpu) noexcept {
     char path[128];
     std::snprintf(path, sizeof(path),
         "/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", cpu);
@@ -139,7 +172,7 @@ namespace detail {
 // Intel hybrid: the topology/core_type file reports "Core" (P-core) or
 // "Atom" (E-core). Non-hybrid CPUs don't expose the file; we treat the
 // absence as "Core" so homogeneous hosts default to true.
-[[nodiscard]] inline bool is_p_core(int cpu) noexcept {
+[[nodiscard, gnu::pure]] inline bool is_p_core(int cpu) noexcept {
     char path[128];
     std::snprintf(path, sizeof(path),
         "/sys/devices/system/cpu/cpu%d/topology/core_type", cpu);
@@ -150,7 +183,7 @@ namespace detail {
 
 // NUMA node of a CPU. -1 on failure. /sys/devices/system/cpu/cpuN/node<M>
 // is a symlink; simpler to scan /sys/devices/system/node/*/cpulist.
-[[nodiscard]] inline int numa_node_of(int cpu) noexcept {
+[[nodiscard, gnu::pure]] inline int numa_node_of(int cpu) noexcept {
     // Try /sys/devices/system/cpu/cpuN/node<M> symlink first (cheaper).
     for (int n = 0; n < 64; ++n) {
         char path[128];
@@ -163,7 +196,7 @@ namespace detail {
 
 // NUMA node closest to a given PCI device (GPU, NIC). Pass a sysfs
 // path ending in .../numa_node. -1 on failure.
-[[nodiscard]] inline int numa_node_of_device(const char* sysfs_numa_node_path) noexcept {
+[[nodiscard, gnu::pure]] inline int numa_node_of_device(const char* sysfs_numa_node_path) noexcept {
     const auto s = detail::read_small_file(sysfs_numa_node_path);
     if (s.empty()) return -1;
     const int n = std::atoi(s.c_str());
@@ -171,7 +204,7 @@ namespace detail {
 }
 
 // Current CPU frequency (kHz) from cpufreq sysfs. 0 on failure.
-[[nodiscard]] inline uint64_t cpu_cur_freq_khz(int cpu) noexcept {
+[[nodiscard, gnu::pure]] inline uint64_t cpu_cur_freq_khz(int cpu) noexcept {
     char path[128];
     std::snprintf(path, sizeof(path),
         "/sys/devices/system/cpu/cpu%d/cpufreq/scaling_cur_freq", cpu);
@@ -182,7 +215,7 @@ namespace detail {
 }
 
 // Max achievable frequency (kHz). 0 on failure.
-[[nodiscard]] inline uint64_t cpu_max_freq_khz(int cpu) noexcept {
+[[nodiscard, gnu::pure]] inline uint64_t cpu_max_freq_khz(int cpu) noexcept {
     char path[128];
     std::snprintf(path, sizeof(path),
         "/sys/devices/system/cpu/cpu%d/cpufreq/cpuinfo_max_freq", cpu);
@@ -210,6 +243,13 @@ struct CoreSelector {
 // start the Keeper).
 [[nodiscard]] inline int select_hot_cpu(const CoreSelector& sel,
                                         const std::vector<int>& exclude = {}) noexcept {
+    // Scoring weight: the P-core/NUMA bonuses are scaled by this factor
+    // so the tie-break subtraction of the CPU index (lowest wins) stays
+    // strictly below one bonus unit. 1024 comfortably bounds any plausible
+    // CPU count (> CPU_SETSIZE today = 1024; servers with more use _S APIs
+    // that this selector doesn't touch).
+    constexpr int kScoreScale = 1024;
+
     const auto allowed = allowed_cpus();
     if (allowed.empty()) return -1;
 
@@ -219,7 +259,7 @@ struct CoreSelector {
         return sel.explicit_cpu;
     }
 
-    const auto is_excluded = [&](int c) {
+    const auto is_excluded = [&](int c) noexcept {
         return std::find(exclude.begin(), exclude.end(), c) != exclude.end();
     };
 
@@ -238,7 +278,7 @@ struct CoreSelector {
     // Pool 2: all allowed (fallback).
     pools.push_back(allowed);
 
-    auto try_pool = [&](const std::vector<int>& pool) -> int {
+    auto try_pool = [&](const std::vector<int>& pool) noexcept -> int {
         // Rank by (p_core, numa_match, not_smt_sibling) with reasonable weights.
         int best = -1;
         int best_score = -1;
@@ -257,7 +297,7 @@ struct CoreSelector {
             if (sel.numa_hint >= 0 &&
                 numa_node_of(c) == sel.numa_hint)           score += 2;
             // Lower CPU index = tie-break (stable, predictable).
-            score = score * 1024 - c;
+            score = score * kScoreScale - c;
             if (score > best_score) { best_score = score; best = c; }
         }
         return best;
@@ -276,7 +316,9 @@ struct CoreSelector {
 // Pick a set of CPUs for WARM threads (same NUMA node as hot, NOT
 // including the hot CPU itself). Empty on failure.
 [[nodiscard]] inline std::vector<int> select_warm_cpus(int hot_cpu,
-                                                       int count) noexcept {
+                                                       int count) noexcept
+    pre (count >= 0)
+{
     const auto allowed = allowed_cpus();
     const int hot_numa = (hot_cpu >= 0) ? numa_node_of(hot_cpu) : -1;
 
