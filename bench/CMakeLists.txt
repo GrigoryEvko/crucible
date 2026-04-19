@@ -2,6 +2,17 @@
 # Built separately from tests:
 #   cmake --preset bench && cmake --build --preset bench
 #   ./build-bench/bench/bench_arena
+#
+# The `bench-caps` target (declared below) applies three Linux
+# capabilities to every bench binary so they can load the eBPF sense
+# hub as an unprivileged user:
+#
+#   cap_bpf               — bpf_prog_load (tracepoint)
+#   cap_perfmon           — perf_event_open on tracepoint IDs
+#   cap_dac_read_search   — read /sys/kernel/tracing/events/*/id
+#
+# Usage: `cmake --build --preset bench --target bench-caps`
+# See the target's own comment block for rationale + caveats.
 
 # ── eBPF sense hub ──────────────────────────────────────────────────
 #
@@ -150,8 +161,7 @@ if (CRUCIBLE_BENCH_BPF_AVAILABLE)
   # the file through the C++ compiler.
   set_source_files_properties(${BPF_EMBED_C} PROPERTIES
     GENERATED TRUE
-    LANGUAGE CXX)
-  set_source_files_properties(${BPF_EMBED_C} PROPERTIES
+    LANGUAGE CXX
     COMPILE_OPTIONS "-w")
 
   add_library(crucible_bench_bpf STATIC
@@ -235,6 +245,11 @@ set_target_properties(render_trace PROPERTIES CRUCIBLE_NO_WERROR TRUE)
 # the system, including otherwise-protected ones like /etc/shadow.
 # Acceptable for dev binaries running your own bench code; don't
 # setcap binaries you don't trust to the same extent.
+# Fallback when setcap is absent (hardened containers, some CI images,
+# cross-distro build hosts): invoke benches under `sudo ./bench_foo` so
+# the eBPF loader runs as root and bypasses the capability check
+# entirely. The SenseHub setup path accepts either route — runtime
+# behaviour is identical either way.
 get_property(_crucible_bench_cap_targets GLOBAL PROPERTY CRUCIBLE_BENCH_CAP_TARGETS)
 if (CRUCIBLE_BENCH_BPF_AVAILABLE AND SETCAP_EXECUTABLE AND _crucible_bench_cap_targets)
   set(_crucible_bench_caps_commands
