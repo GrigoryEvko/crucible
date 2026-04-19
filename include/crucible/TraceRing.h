@@ -27,6 +27,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
+#include <crucible/rt/Registry.h>
 
 namespace crucible {
 
@@ -103,7 +104,22 @@ struct CRUCIBLE_OWNER TraceRing {
   ScopeHash                 scope_hashes[CAPACITY]{};     // 0 = no scope
   CallsiteHash              callsite_hashes[CAPACITY]{};  // 0 = no callsite
 
-  TraceRing() = default;
+  TraceRing() noexcept {
+    // Register the four parallel arrays as "hot" so that a subsequent
+    // crucible::rt::apply(production_or_vm_policy) locks them resident.
+    // No-op when the runtime hasn't asked for mlock; costs one mutex
+    // acquisition per TraceRing construction.
+    crucible::rt::register_hot_region(entries,          sizeof(entries),         false, "TraceRing.entries");
+    crucible::rt::register_hot_region(meta_starts,      sizeof(meta_starts),     false, "TraceRing.meta_starts");
+    crucible::rt::register_hot_region(scope_hashes,     sizeof(scope_hashes),    false, "TraceRing.scope_hashes");
+    crucible::rt::register_hot_region(callsite_hashes,  sizeof(callsite_hashes), false, "TraceRing.callsite_hashes");
+  }
+  ~TraceRing() {
+    crucible::rt::unregister_hot_region(callsite_hashes);
+    crucible::rt::unregister_hot_region(scope_hashes);
+    crucible::rt::unregister_hot_region(meta_starts);
+    crucible::rt::unregister_hot_region(entries);
+  }
   TraceRing(const TraceRing&)            = delete("SPSC ring is pinned to a producer/consumer thread pair");
   TraceRing& operator=(const TraceRing&) = delete("SPSC ring is pinned to a producer/consumer thread pair");
   TraceRing(TraceRing&&)                 = delete("SPSC ring is pinned to a producer/consumer thread pair");

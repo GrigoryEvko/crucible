@@ -22,6 +22,7 @@
 // platforms to an empty AppliedPolicy (policy has no effect).
 
 #include "Policy.h"
+#include "Registry.h"
 #include "Topology.h"
 
 #include <cerrno>
@@ -279,6 +280,24 @@ class Hardening {
                 g.thp_globally_disabled_ = true;
             } else {
                 detail::warn("prctl(PR_SET_THP_DISABLE)", errno);
+            }
+        }
+
+        // 4. Walk the HotRegionRegistry: mlock every registered region,
+        //    and MADV_HUGEPAGE the ones flagged huge_hint. The registry
+        //    is populated by component constructors (TraceRing, MetaLog,
+        //    PoolAllocator, …) that ran before apply() was called.
+        //    Components registered AFTER apply() won't be covered by
+        //    this guard — they'd need a subsequent apply() call.
+        if (p.mlock_hot_regions || p.thp_hint_pools) {
+            const auto regions = HotRegionRegistry::instance().snapshot();
+            for (const auto& r : regions) {
+                if (p.mlock_hot_regions) {
+                    (void)lock_region(g, r.addr, r.len);
+                }
+                if (p.thp_hint_pools && r.huge_hint) {
+                    (void)hint_hugepage(r.addr, r.len);
+                }
             }
         }
 #else

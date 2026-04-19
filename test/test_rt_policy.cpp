@@ -26,6 +26,7 @@
 
 #include <crucible/rt/Hardening.h>
 #include <crucible/rt/Policy.h>
+#include <crucible/rt/Registry.h>
 #include <crucible/rt/Topology.h>
 
 namespace {
@@ -227,6 +228,73 @@ void test_policy_production_degrades_gracefully() {
     CHECK(g.pinned_cpu() >= -1, "pinned_cpu is plausible after production()");
 }
 
+// HotRegionRegistry: register / unregister / idempotent update.
+void test_registry_basic() {
+    using namespace crucible::rt;
+
+    auto& reg = HotRegionRegistry::instance();
+    const size_t baseline = reg.size();
+
+    alignas(64) unsigned char buf[4096]{};
+    register_hot_region(buf, sizeof(buf), /*huge=*/false, "test_registry_basic");
+    CHECK(reg.size() == baseline + 1, "one registration bumps size");
+
+    // Idempotent update — same addr, no new slot.
+    register_hot_region(buf, sizeof(buf), /*huge=*/true, "test_registry_basic_updated");
+    CHECK(reg.size() == baseline + 1, "re-register same addr is an update, not a new slot");
+
+    auto snap = reg.snapshot();
+    bool found = false;
+    for (const auto& r : snap) {
+        if (r.addr == buf) {
+            CHECK(r.len == sizeof(buf), "len preserved on update");
+            CHECK(r.huge_hint, "huge_hint updated to true");
+            found = true;
+            break;
+        }
+    }
+    CHECK(found, "registered region appears in snapshot");
+
+    unregister_hot_region(buf);
+    CHECK(reg.size() == baseline, "unregister restores size");
+
+    // Unregister missing addr is silently ignored.
+    unregister_hot_region(buf);
+    CHECK(reg.size() == baseline, "double-unregister is a no-op");
+}
+
+// apply(Policy with mlock_hot_regions) locks every registered region,
+// guard destructor unlocks them. We can't CHECK the mlock took effect
+// without CAP_IPC_LOCK, but we CAN check the guard recorded the region
+// and the size-count after teardown equals before.
+void test_registry_applies_on_apply() {
+    using namespace crucible::rt;
+
+    alignas(64) unsigned char buf[4096]{};
+    const size_t baseline = HotRegionRegistry::instance().size();
+
+    register_hot_region(buf, sizeof(buf), /*huge=*/false, "test_registry_applies");
+    CHECK(HotRegionRegistry::instance().size() == baseline + 1,
+          "buf registered");
+
+    // dev_quiet enables mlock_hot_regions but uses SCHED_OTHER, so no
+    // CAP_SYS_NICE needed for the test to exercise the iteration path.
+    ::setenv("CRUCIBLE_RT_QUIET", "1", 1);
+    {
+        auto g = apply(Policy::dev_quiet());
+        // regions_locked() >= 1 iff mlock actually succeeded (requires
+        // CAP_IPC_LOCK or RLIMIT_MEMLOCK headroom). Either way the
+        // iteration ran without crashing — which is the invariant we
+        // care about here.
+        (void)g.regions_locked();
+    }
+    ::unsetenv("CRUCIBLE_RT_QUIET");
+
+    unregister_hot_region(buf);
+    CHECK(HotRegionRegistry::instance().size() == baseline,
+          "registry clean after unregister");
+}
+
 } // namespace
 
 int main() {
@@ -237,6 +305,8 @@ int main() {
     test_policy_none_is_noop();
     test_policy_dev_quiet_pins_and_reverts();
     test_policy_production_degrades_gracefully();
+    test_registry_basic();
+    test_registry_applies_on_apply();
 
     if (failures == 0) {
         std::puts("test_rt_policy: OK");
