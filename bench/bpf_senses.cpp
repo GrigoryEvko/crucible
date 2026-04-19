@@ -39,16 +39,9 @@
 #include <string>
 #include <string_view>
 
-// GCC 16 ships <inplace_vector> behind the C++26 feature-test macro
-// __cpp_lib_inplace_vector. Fall back to std::vector on stdlibs that
-// don't have it. 64 slots comfortably covers the 58 tracepoints shipped
-// today with headroom for additions.
-#if __has_include(<inplace_vector>)
-#  include <inplace_vector>
-#endif
-#ifndef __cpp_lib_inplace_vector
-#  include <vector>
-#endif
+// 64 slots comfortably covers the 58 tracepoints shipped today with
+// headroom. GCC 16 ships std::inplace_vector unconditionally.
+#include <inplace_vector>
 
 extern "C" {
 extern const unsigned char sense_hub_bpf_bytecode[];
@@ -174,12 +167,8 @@ void disable_unavailable_programs(struct bpf_object* obj) noexcept {
 } // namespace
 
 struct SenseHub::State {
-    struct bpf_object*               obj      = nullptr;
-#ifdef __cpp_lib_inplace_vector
+    struct bpf_object*                        obj   = nullptr;
     std::inplace_vector<struct bpf_link*, 64> links{};
-#else
-    std::vector<struct bpf_link*>    links{};
-#endif
     volatile uint64_t*               counters         = nullptr;
     size_t                           mmap_len         = 0;
     size_t                           attach_fail_cnt  = 0;
@@ -305,7 +294,6 @@ std::optional<SenseHub> SenseHub::load() noexcept {
             }
             continue;
         }
-#ifdef __cpp_lib_inplace_vector
         // inplace_vector has a fixed capacity; the limit is chosen
         // with headroom (64 for 58 tracepoints) but enforce the
         // invariant so a future expansion that goes overboard fails
@@ -319,7 +307,6 @@ std::optional<SenseHub> SenseHub::load() noexcept {
             }
             continue;
         }
-#endif
         state->links.push_back(link);
     }
     if (state->links.empty()) {
