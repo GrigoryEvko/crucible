@@ -57,9 +57,9 @@ struct CRUCIBLE_OWNER PoolAllocator {
 
   // Materialize a plan. Aborts on OOM — a pre-allocated runtime that can't
   // allocate the plan has no recovery path. External slots start null and
-  // must be registered before replay.
+  // must be registered before replay. noexcept: failure mode is abort, not throw.
   [[gnu::cold, gnu::noinline]]
-  void init(const MemoryPlan* plan) CRUCIBLE_NO_THREAD_SAFETY
+  void init(const MemoryPlan* plan) noexcept CRUCIBLE_NO_THREAD_SAFETY
       pre (plan        != nullptr)
       pre (ptr_table_  == nullptr)   // double-init forbidden
       pre (pool_       == nullptr)

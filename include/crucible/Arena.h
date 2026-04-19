@@ -107,6 +107,10 @@ class CRUCIBLE_OWNER Arena {
   // size of oversized blocks (>block_size_) and excluding only the unused
   // tail of the current block. A single 1MB request in a 32B arena reports
   // ~1MB, not 32B. Used by ExprPool::bytes_used() and test assertions.
+  //
+  // Invariant: total_block_bytes_ >= end_offset_ >= offset_ (each new block
+  // adds its exact size to the total; offset_ never exceeds end_offset_),
+  // so the subtraction below cannot underflow.
   [[nodiscard, gnu::pure]] size_t total_allocated() const noexcept {
     return total_block_bytes_ - (end_offset_ - offset_);
   }
