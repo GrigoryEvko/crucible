@@ -827,7 +827,7 @@ class Run {
     template <typename Body>
     [[nodiscard]] Report measure(Body&& body) const {
         // Resolve the policy: explicit .hardening() wins, else env var
-        // CRUCIBLE_BENCH_HARDENING=production|dev_quiet|none, else the
+        // CRUCIBLE_BENCH_HARDENING=production|cloud_vm|dev_quiet|none, else the
         // legacy pin_() path.
         crucible::rt::AppliedPolicy hardening_guard;
         CpuId pinned_cpu;
@@ -964,13 +964,17 @@ class Run {
     crucible::rt::Policy hardening_{crucible::rt::Policy::none()};
     bool                 have_hardening_ = false;
 
-    // CRUCIBLE_BENCH_HARDENING=production|dev_quiet|none — applies the
-    // named profile to every Run that doesn't call .hardening() itself.
-    // Unset → fall through to legacy pin_() (no hardening).
+    // CRUCIBLE_BENCH_HARDENING=production|cloud_vm|dev_quiet|none —
+    // applies the named profile to every Run that doesn't call
+    // .hardening() itself. Unset → fall through to legacy pin_() (no
+    // hardening).
     [[nodiscard]] static std::optional<crucible::rt::Policy> env_hardening_() noexcept {
         const char* s = std::getenv("CRUCIBLE_BENCH_HARDENING");
         if (s == nullptr || s[0] == '\0') return std::nullopt;
         if (std::strcmp(s, "production") == 0) return crucible::rt::Policy::production();
+        if (std::strcmp(s, "cloud_vm") == 0 ||
+            std::strcmp(s, "vm")       == 0 ||
+            std::strcmp(s, "cloud")    == 0) return crucible::rt::Policy::cloud_vm();
         if (std::strcmp(s, "dev_quiet") == 0 ||
             std::strcmp(s, "dev")       == 0) return crucible::rt::Policy::dev_quiet();
         if (std::strcmp(s, "none") == 0)      return crucible::rt::Policy::none();
