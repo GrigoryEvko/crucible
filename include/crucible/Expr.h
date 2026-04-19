@@ -79,10 +79,8 @@ struct Expr {
   // ---- Child access ----
 
   [[nodiscard]] const Expr* arg(uint8_t i) const CRUCIBLE_LIFETIMEBOUND
-#if CRUCIBLE_HAS_CONTRACTS
       pre (i < nargs)
       pre (args != nullptr)
-#endif
   {
     return args[i];
   }

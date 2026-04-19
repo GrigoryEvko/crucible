@@ -655,9 +655,7 @@ class CRUCIBLE_OWNER KernelCache {
     Arena& arena CRUCIBLE_LIFETIMEBOUND,
     TraceEntry* ops,
     uint32_t num_ops)
-#if CRUCIBLE_HAS_CONTRACTS
     pre (num_ops == 0 || ops != nullptr)
-#endif
 {
   auto* node = new (arena.alloc(a, sizeof(RegionNode), alignof(RegionNode)))
       RegionNode{};
@@ -677,9 +675,7 @@ class CRUCIBLE_OWNER KernelCache {
     TraceEntry* ops,
     uint32_t num_ops,
     ContentHash precomputed_hash)
-#if CRUCIBLE_HAS_CONTRACTS
     pre (num_ops == 0 || ops != nullptr)
-#endif
 {
   auto* node = new (arena.alloc(a, sizeof(RegionNode), alignof(RegionNode)))
       RegionNode{};
@@ -833,10 +829,8 @@ inline void recompute_merkle(TraceNode* node) {
     int64_t new_guard_value,
     Guard guard,
     TraceNode* existing_suffix)
-#if CRUCIBLE_HAS_CONTRACTS
     pre (divergence_point != nullptr)
     pre (old_guard_value != new_guard_value)
-#endif
 {
   auto* new_region = make_region(a, arena, new_ops, new_n);
 
