@@ -207,6 +207,7 @@ crucible_bench(bench_content_hash)
 crucible_bench(bench_expr_pool)
 crucible_bench(bench_graph)
 crucible_bench(bench_iteration_detector)
+crucible_bench(bench_merkle_dag)
 crucible_bench(bench_meta_log)
 crucible_bench(bench_philox)
 crucible_bench(bench_pool_allocator)
@@ -218,10 +219,11 @@ crucible_bench(bench_saturate)
 crucible_bench(bench_schema_table)
 crucible_bench(bench_serialize)
 crucible_bench(bench_smoke)
+crucible_bench(bench_swiss_table)
 crucible_bench(bench_trace_ring)
 
-# TODO: 4 more benches (dispatch, swiss_table,
-# merkle_dag, phases) need migration to
+# TODO: 2 more benches (dispatch, phases)
+# need migration to
 # the new bench::Run/Report/Compare harness. Each one is independent;
 # add a crucible_bench(bench_<name>) line as each lands.
 
