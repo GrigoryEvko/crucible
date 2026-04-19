@@ -35,6 +35,11 @@ namespace bench::bpf {
 // Counter indices — must match enum sense_idx in bench/bpf/sense_hub.bpf.c.
 // Gaps in the numbering (e.g. 38–39, 75–95) are reserved slots mapped
 // to zero; they exist so each subsystem lives on its own cache line.
+//
+// TODO: enum class upgrade requires updating all 62 call sites in
+// bench_harness.h — unscoped enum is kept intentionally for now so the
+// TypeSafe axiom trade-off (implicit Idx→uint32_t conversions inside
+// counter_set/get helpers) stays local to this header.
 enum Idx : uint32_t {
     // ── Cache line 0: Network State ──────────────────────────────
     NET_TCP_ESTABLISHED     = 0,
@@ -178,6 +183,8 @@ struct Snapshot {
         Snapshot r;
         for (size_t i = 0; i < NUM_COUNTERS; ++i) {
             uint64_t diff = 0;
+            // Equivalent to std::sub_sat(counters[i], older.counters[i]) —
+            // migrate once libstdc++ exposes __cpp_lib_saturation_arithmetic.
             if (__builtin_sub_overflow(counters[i], older.counters[i], &diff))
                 [[unlikely]] {
                 diff = 0;  // gauge decreased; saturate to zero
@@ -187,6 +194,14 @@ struct Snapshot {
         return r;
     }
 };
+
+// Snapshot is a thin wrapper over std::array<uint64_t, NUM_COUNTERS>.
+// 768 bytes = 12 cache lines — load-bearing for the mmap contract:
+// userspace reads/copies the array in one shot, any padding or extra
+// members would break the wire-compatible layout with the BPF map.
+static_assert(sizeof(Snapshot) == NUM_COUNTERS * sizeof(uint64_t),
+              "Snapshot must be a tight 96*u64 = 768B = 12 cache lines; "
+              "mmap contract with BPF_F_MMAPABLE array map depends on it");
 
 class SenseHub {
  public:
