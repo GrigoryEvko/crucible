@@ -4,14 +4,9 @@
 // P2996 static reflection (GCC 16 with -freflection).
 //
 // GCC 16 is the only supported compiler and always provides reflection
-// when built via the project presets. CRUCIBLE_HAS_REFLECTION is kept
-// as a feature guard so the header compiles clean if someone bootstraps
-// with a compiler that lacks P2996 — reflect_hash just won't be defined.
+// when built via the project presets.
 
 #include <crucible/Platform.h>
-
-#if CRUCIBLE_HAS_REFLECTION
-
 #include <crucible/Expr.h> // detail::fmix64
 
 #include <bit>
@@ -180,5 +175,3 @@ void reflect_print(const T& obj, FILE* out) {
 }
 
 } // namespace crucible
-
-#endif // CRUCIBLE_HAS_REFLECTION

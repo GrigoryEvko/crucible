@@ -12,13 +12,6 @@
 
 #include "bench_harness.h"
 
-#if !CRUCIBLE_HAS_REFLECTION
-int main() {
-    std::printf("bench_reflect: reflection not available, skipped\n");
-    return 0;
-}
-#else
-
 struct Small {
     uint32_t id;
     uint16_t kind;
@@ -95,4 +88,3 @@ int main() {
     std::printf("\nbench_reflect: reflect path matches hand-rolled fmix64\n");
     return 0;
 }
-#endif

@@ -152,21 +152,6 @@
 // Library features: defined by <version>, included above.
 // ═══════════════════════════════════════════════════════════════════
 
-// ── GCC 16 exclusive: P2996 static reflection ──
-// Requires -freflection flag. Enables reflect_hash<T>, reflect_print<T>.
-#if defined(__cpp_impl_reflection) && __cpp_impl_reflection >= 202506L
-  #define CRUCIBLE_HAS_REFLECTION 1
-#else
-  #define CRUCIBLE_HAS_REFLECTION 0
-#endif
-
-// ── GCC 16 / P2900 contracts (-fcontracts) ──
-#if defined(__cpp_contracts) && __cpp_contracts >= 202502L
-  #define CRUCIBLE_HAS_CONTRACTS 1
-#else
-  #define CRUCIBLE_HAS_CONTRACTS 0
-#endif
-
 // ── GCC 16 exclusive: P1306 expansion statements ──
 // `template for (auto m : ...) { }` — iterate over packs/reflections.
 #if defined(__cpp_expansion_statements) && __cpp_expansion_statements >= 202506L
