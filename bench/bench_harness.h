@@ -1093,11 +1093,13 @@ class Run {
     //  • Pin::Explicit with core_ >= 0 → target = core_.
     //  • Pin::Explicit with core_ < 0 (e.g. `.core(-1)` because the
     //    caller's env var defaulted to -1) → fall through to the Auto
-    //    discovery path instead of silently skipping pinning. Previously
-    //    this early-returned -1 and BOTH shipped benches (which use
-    //    `.core(env_core())` with env_core()=-1 default) never applied
-    //    any affinity at all.
-    //  • Pin::Auto → first isolcpu, else sched_getcpu().
+    //    discovery path instead of silently skipping pinning.
+    //  • Pin::Auto → hand off to `rt::select_hot_cpu`, which honors
+    //    isolcpus, prefers P-cores, and (crucially) steers away from
+    //    cpu0 and its SMT sibling because cpu0 absorbs timer IRQs /
+    //    RCU callbacks on most Linux configs. Falls back to
+    //    sched_getcpu() only if the selector returns -1 (empty
+    //    allowed set).
     //
     // After a successful sched_setaffinity, re-read sched_getcpu() — the
     // scheduler is not obliged to migrate us synchronously, so the
@@ -1115,8 +1117,13 @@ class Run {
         if (explicit_valid) {
             target = core_.raw();
         } else {
-            // Auto path, OR Explicit-but-negative (task-1 fix).
-            target = detail::first_isolated_cpu();
+            // Auto path, OR Explicit-but-negative.
+            //
+            // Use the rt topology-aware selector. Same heuristic the
+            // Keeper's Policy::apply() uses: isolcpu first, P-core
+            // preference, avoid cpu0 and its SMT sibling (timer-tick
+            // IRQ landing pad).
+            target = crucible::rt::select_hot_cpu(crucible::rt::CoreSelector{});
             if (target < 0) target = sched_getcpu();
         }
         if (target < 0) return CpuId::none();
