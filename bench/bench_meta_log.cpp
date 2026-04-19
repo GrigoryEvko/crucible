@@ -19,7 +19,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <string>
 
 #include <crucible/MetaLog.h>
 
@@ -29,12 +28,6 @@ using crucible::DeviceType;
 using crucible::MetaLog;
 using crucible::ScalarType;
 using crucible::TensorMeta;
-
-// TODO: move to bench_harness.h::env (same TODO as bench_arena, bench_trace_ring).
-[[nodiscard]] static const char* env(const char* name) noexcept {
-    const char* s = std::getenv(name);
-    return (s && s[0]) ? s : nullptr;
-}
 
 // Realistic 2D float tensor (linear / matmul input).
 [[nodiscard]] static TensorMeta make_meta_2d(int64_t dim0, int64_t dim1) noexcept {
@@ -71,16 +64,7 @@ int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const char* core_s = env("CRUCIBLE_BENCH_CORE");
-    const int   core   = core_s ? static_cast<int>(std::strtol(core_s, nullptr, 10)) : -1;
-    const char* json_s = env("CRUCIBLE_BENCH_JSON");
-    const bool  json   = json_s && std::string(json_s) != "0";
-
-    auto run = [&](std::string name, auto&& body) {
-        auto r = bench::Run(std::move(name));
-        if (core >= 0) (void)r.core(core);
-        return r.measure(body);
-    };
+    const bool json = bench::env_json();
 
     std::printf("=== meta_log ===\n");
     std::printf("  TensorMeta size: %zu bytes (expect 168)\n", sizeof(TensorMeta));
@@ -118,7 +102,7 @@ int main() {
     bench::Report reports[] = {
         [&]{
             auto log = std::make_unique<MetaLog>();
-            return run("try_append(1 meta  = 168B)", [&]{
+            return bench::run("try_append(1 meta  = 168B)", [&]{
                 auto idx = log->try_append(meta1, 1);
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
@@ -126,7 +110,7 @@ int main() {
         }(),
         [&]{
             auto log = std::make_unique<MetaLog>();
-            return run("try_append(2 metas = 336B)", [&]{
+            return bench::run("try_append(2 metas = 336B)", [&]{
                 auto idx = log->try_append(meta2, 2);
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
@@ -134,7 +118,7 @@ int main() {
         }(),
         [&]{
             auto log = std::make_unique<MetaLog>();
-            return run("try_append(3 metas = 504B)", [&]{
+            return bench::run("try_append(3 metas = 504B)", [&]{
                 auto idx = log->try_append(meta3, 3);
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
@@ -142,7 +126,7 @@ int main() {
         }(),
         [&]{
             auto log = std::make_unique<MetaLog>();
-            return run("try_append(8 metas = 1344B)", [&]{
+            return bench::run("try_append(8 metas = 1344B)", [&]{
                 auto idx = log->try_append(meta8, 8);
                 bench::do_not_optimize(idx);
                 if (!idx.is_valid()) log->reset();
@@ -159,7 +143,7 @@ int main() {
             auto log              = std::make_unique<MetaLog>();
             uint32_t since_drain  = 0;
             constexpr uint32_t kD = 50'000;
-            return run("throughput (3 metas/call, drain/50k)", [&]{
+            return bench::run("throughput (3 metas/call, drain/50k)", [&]{
                 auto idx = log->try_append(meta3, 3);
                 bench::do_not_optimize(idx);
                 if (++since_drain >= kD) [[unlikely]] {
@@ -172,7 +156,7 @@ int main() {
         // ── Raw atomics (floor for ordering cost) ─────────────────────
         [&]{
             auto log = std::make_unique<MetaLog>();
-            return run("head.load (relaxed)", [&]{
+            return bench::run("head.load (relaxed)", [&]{
                 auto h = log->head.load(std::memory_order_relaxed);
                 bench::do_not_optimize(h);
             });
@@ -180,7 +164,7 @@ int main() {
         [&]{
             auto log    = std::make_unique<MetaLog>();
             uint32_t v  = 0;
-            return run("head.store (release)", [&]{
+            return bench::run("head.store (release)", [&]{
                 log->head.store(++v, std::memory_order_release);
                 bench::do_not_optimize(v);
             });
@@ -201,7 +185,7 @@ int main() {
             for (uint32_t i = 0; i < kBuf; ++i) ::new (&buf[i]) TensorMeta{};
             const TensorMeta src = make_meta_2d(64, 768);
             uint32_t pos = 0;
-            auto r = run("memcpy(168B)  to advancing dst", [&]{
+            auto r = bench::run("memcpy(168B)  to advancing dst", [&]{
                 std::memcpy(&buf[pos & (kBuf - 1)], &src, sizeof(TensorMeta));
                 bench::do_not_optimize(buf[pos & (kBuf - 1)]);
                 ++pos;
@@ -218,7 +202,7 @@ int main() {
                                          make_meta_2d(768, 768),
                                          make_meta_2d(64, 768) };
             uint32_t pos = 0;
-            auto r = run("memcpy(504B)  to advancing dst", [&]{
+            auto r = bench::run("memcpy(504B)  to advancing dst", [&]{
                 const uint32_t p = pos & (kBuf - 4);  // leave room for 3 entries
                 std::memcpy(&buf[p], src, 3 * sizeof(TensorMeta));
                 bench::do_not_optimize(buf[p]);
@@ -232,14 +216,14 @@ int main() {
             // Gives the compiler's best case for 168 B store.
             const TensorMeta src = make_meta_2d(64, 768);
             TensorMeta dst{};
-            return run("memcpy(168B)  same dst (L1)", [&]{
+            return bench::run("memcpy(168B)  same dst (L1)", [&]{
                 std::memcpy(&dst, &src, sizeof(TensorMeta));
                 bench::do_not_optimize(dst);
             });
         }(),
     };
 
-    for (const auto& r : reports) r.print_text(stdout);
+    bench::emit_reports_text(reports);
 
     // A/B compare — head.load vs head.store: one relaxed load vs one
     // release store. On x86 both compile to a single MOV after CPU
@@ -247,27 +231,15 @@ int main() {
     // instruction but may exhibit cache-line contention differences
     // when the consumer is reading. Statistically indistinguishable
     // on a single-threaded bench.
-    const auto& r_load   = reports[5];
-    const auto& r_store  = reports[6];
     std::printf("\n=== compare ===\n");
-    bench::compare(r_load, r_store).print_text(stdout);
+    bench::compare(reports[5], reports[6]).print_text(stdout);
 
     // 95% bootstrap CI on the n=3 producer-side p99 — the most common
     // workload shape (2 inputs + 1 output → 3 meta slots per op).
-    const auto& r_n3     = reports[2];
-    const auto ci99      = r_n3.ci(0.99);
+    const auto ci99 = reports[2].ci(0.99);
     std::printf("  %s  p99 95%% CI: [%.2f, %.2f] ns\n",
-                r_n3.name.c_str(), ci99.lo, ci99.hi);
+                reports[2].name.c_str(), ci99.lo, ci99.hi);
 
-    if (json) {
-        std::printf("\n=== json ===\n[\n");
-        const size_t n = sizeof(reports) / sizeof(reports[0]);
-        for (size_t i = 0; i < n; ++i) {
-            std::printf("  ");
-            reports[i].print_json(stdout);
-            std::printf("%s\n", (i + 1 < n) ? "," : "");
-        }
-        std::printf("]\n");
-    }
+    bench::emit_reports_json(reports, json);
     return 0;
 }

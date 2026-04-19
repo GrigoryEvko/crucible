@@ -6,35 +6,19 @@
 
 #include <cstdio>
 #include <cstdlib>
-#include <string>
 
 #include <crucible/Arena.h>
 #include <crucible/Effects.h>
 
 #include "bench_harness.h"
 
-// TODO: move to bench_harness.h::env
-static const char* env(const char* name) noexcept {
-    const char* s = std::getenv(name);
-    return (s && s[0]) ? s : nullptr;
-}
-
 int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const char* core_s = env("CRUCIBLE_BENCH_CORE");
-    const int   core   = core_s ? static_cast<int>(std::strtol(core_s, nullptr, 10)) : -1;
-    const char* json_s = env("CRUCIBLE_BENCH_JSON");
-    const bool  json   = json_s && std::string(json_s) != "0";
+    const bool json = bench::env_json();
 
-    // Pin only if explicitly requested via env; else let harness auto-pick
-    // (isolcpu if available, sched_getcpu() otherwise).
-    auto run = [&](std::string name, auto&& body) {
-        auto r = bench::Run(std::move(name));
-        if (core >= 0) r.core(core);   // else Pin::Auto default
-        return r.measure(body);
-    };
+    // bench::run() pins from CRUCIBLE_BENCH_CORE (else Pin::Auto default).
 
     // Oversized-request slow path: each alloc triggers a new block. Auto-
     // batching would hide the per-call block allocation cost (one block =
@@ -53,7 +37,7 @@ int main() {
         [&]{
             crucible::Arena arena(1u << 24);
             crucible::fx::Test test;
-            return run("arena.alloc(8)", [&]{
+            return bench::run("arena.alloc(8)", [&]{
                 auto* p = arena.alloc(test.alloc, 8);
                 bench::do_not_optimize(p);
             });
@@ -61,7 +45,7 @@ int main() {
         [&]{
             crucible::Arena arena(1u << 24);
             crucible::fx::Test test;
-            return run("arena.alloc(64)", [&]{
+            return bench::run("arena.alloc(64)", [&]{
                 auto* p = arena.alloc(test.alloc, 64);
                 bench::do_not_optimize(p);
             });
@@ -69,7 +53,7 @@ int main() {
         [&]{
             crucible::Arena arena(1u << 24);
             crucible::fx::Test test;
-            return run("arena.alloc(64, align=64)", [&]{
+            return bench::run("arena.alloc(64, align=64)", [&]{
                 auto* p = arena.alloc(test.alloc, 64, 64);
                 bench::do_not_optimize(p);
             });
@@ -77,7 +61,7 @@ int main() {
         [&]{
             crucible::Arena arena(1u << 24);
             crucible::fx::Test test;
-            return run("arena.alloc_obj<uint64_t>", [&]{
+            return bench::run("arena.alloc_obj<uint64_t>", [&]{
                 auto* p = arena.alloc_obj<uint64_t>(test.alloc);
                 bench::do_not_optimize(p);
             });
@@ -85,7 +69,7 @@ int main() {
         [&]{
             crucible::Arena arena(1u << 24);
             crucible::fx::Test test;
-            return run("arena.alloc_array<uint64_t>(100)", [&]{
+            return bench::run("arena.alloc_array<uint64_t>(100)", [&]{
                 auto* p = arena.alloc_array<uint64_t>(test.alloc, 100);
                 bench::do_not_optimize(p);
             });
@@ -93,7 +77,7 @@ int main() {
         [&]{
             crucible::Arena arena(1u << 24);
             crucible::fx::Test test;
-            return run("arena.alloc_array<uint64_t>(0) nullptr", [&]{
+            return bench::run("arena.alloc_array<uint64_t>(0) nullptr", [&]{
                 auto* p = arena.alloc_array<uint64_t>(test.alloc, 0);
                 bench::do_not_optimize(p);
             });
@@ -101,11 +85,13 @@ int main() {
         [&]{
             // Oversized-request slow path: each alloc triggers a new block.
             // Explicit sample/warmup counts — see kSlowPathSamples above.
+            // Fluent-builder form because we override samples/warmup; the
+            // one-shot bench::run(name, body) helper has no override hook.
             crucible::Arena arena(4096);
             crucible::fx::Test test;
             auto r = bench::Run("arena.alloc(8192) slow-path")
                          .samples(kSlowPathSamples).warmup(kSlowPathWarmup);
-            if (core >= 0) r.core(core);   // else Pin::Auto default
+            if (const int c = bench::env_core(); c >= 0) (void)r.core(c);
             return r.measure([&]{
                 auto* p = arena.alloc(test.alloc, 8192);
                 bench::do_not_optimize(p);
@@ -114,23 +100,13 @@ int main() {
         [&]{
             crucible::Arena arena(1u << 24);
             crucible::fx::Test test;
-            return run("arena.copy_string(\"relu\")", [&]{
+            return bench::run("arena.copy_string(\"relu\")", [&]{
                 auto* p = arena.copy_string(test.alloc, "relu");
                 bench::do_not_optimize(p);
             });
         }(),
     };
 
-    for (const auto& r : reports) r.print_text(stdout);
-
-    if (json) {
-        std::printf("\n=== json ===\n[\n");
-        for (size_t i = 0; i < sizeof(reports)/sizeof(reports[0]); ++i) {
-            std::printf("  ");
-            reports[i].print_json(stdout);
-            std::printf("%s\n", (i + 1 < sizeof(reports)/sizeof(reports[0])) ? "," : "");
-        }
-        std::printf("]\n");
-    }
+    bench::emit_reports(reports, json);
     return 0;
 }
