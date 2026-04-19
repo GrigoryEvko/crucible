@@ -33,20 +33,10 @@
 
 namespace crucible::rt {
 
-// ── Huge page size ─────────────────────────────────────────────────
-//
-// 2 MB on x86-64 and aarch64 alike (the two platforms Crucible
-// targets, §XIV of the code guide). Used by:
-//   • Callers of register_hot_region(huge_hint=true) to align their
-//     backing buffer at allocation time. Required since kernel 5.8+,
-//     where madvise(MADV_HUGEPAGE) returns EINVAL on a non-PMD-aligned
-//     address rather than silently rounding.
-//   • Hardening.h::hint_hugepage() as the rounding granularity for
-//     defense-in-depth: even mis-aligned regions get a useful subrange
-//     madvised rather than a blanket EINVAL.
+// 2 MB huge page on x86-64 + aarch64. Required alignment for
+// MADV_HUGEPAGE since kernel 5.8 (earlier kernels rounded silently).
 inline constexpr size_t kHugePageBytes = 2 * 1024 * 1024;
 
-// Round `n` up to a multiple of kHugePageBytes.
 [[nodiscard]] constexpr size_t round_up_huge(size_t n) noexcept {
     return (n + kHugePageBytes - 1) & ~(kHugePageBytes - 1);
 }
