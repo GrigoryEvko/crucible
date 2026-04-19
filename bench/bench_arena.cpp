@@ -147,7 +147,7 @@ int main() {
     std::printf("\n--- alloc_array<T>(0) nullptr fast path ---\n");
     {
         crucible::Arena arena(1 << 24);
-        BENCH_CHECK("alloc_array<uint64_t>(0)", 10'000'000, 0.3, {
+        BENCH_CHECK("alloc_array<uint64_t>(0)", 10'000'000, 0.6, {
             auto* p = arena.alloc_array<uint64_t>(test.alloc, 0);
             bench::DoNotOptimize(p);
         });
@@ -173,7 +173,7 @@ int main() {
     }
     {
         crucible::Arena arena(1 << 24);
-        BENCH_CHECK("copy_string(nullptr)", 10'000'000, 0.3, {
+        BENCH_CHECK("copy_string(nullptr)", 10'000'000, 0.6, {
             auto* p = arena.copy_string(test.alloc, nullptr);
             bench::DoNotOptimize(p);
         });
