@@ -219,6 +219,21 @@ int main() {
         });
     }
 
+    // ── total_allocated / block_count query latency (pure getters) ──
+    std::printf("\n--- total_allocated() / block_count() accessors ---\n");
+    {
+        crucible::Arena arena(1 << 16);
+        for (int i = 0; i < 100; ++i) (void)arena.alloc(test.alloc, 128, 8);
+        BENCH_CHECK("total_allocated()", 20'000'000, 0.5, {
+            auto n = arena.total_allocated();
+            bench::DoNotOptimize(n);
+        });
+        BENCH_CHECK("block_count()", 20'000'000, 0.5, {
+            auto n = arena.block_count();
+            bench::DoNotOptimize(n);
+        });
+    }
+
     // ── Baseline: malloc/free for comparison ──
     std::printf("\n--- Baseline: malloc/free comparison ---\n");
     {

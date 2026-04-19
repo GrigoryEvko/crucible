@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 
 int main() {
   crucible::fx::Test test;
@@ -44,6 +45,70 @@ int main() {
   size_t before = tracker.total_allocated();
   (void)tracker.alloc(test.alloc, 256, 1);
   assert(tracker.total_allocated() > before);
+
+  // Oversized allocation is fully accounted by total_allocated().
+  // The old implementation used (blocks-1)*block_size + offset which
+  // undercounts dedicated blocks sized above block_size_.
+  {
+    crucible::Arena oversized(64);
+    (void)oversized.alloc(test.alloc, 1 << 20, 1);  // 1MB in a 64B arena
+    assert(oversized.total_allocated() >= (1 << 20));
+    assert(oversized.block_count() == 2);  // initial 64B + one 1MB
+  }
+
+  // Second oversized block in a row still increments correctly.
+  {
+    crucible::Arena multi(32);
+    (void)multi.alloc(test.alloc, 4096, 1);
+    (void)multi.alloc(test.alloc, 8192, 1);
+    assert(multi.total_allocated() >= 4096 + 8192);
+    assert(multi.block_count() == 3);
+  }
+
+  // Fast-path byte-accounting: total_allocated equals the sum of bump
+  // offsets when no slow path fires.
+  {
+    crucible::Arena steady(1 << 16);
+    (void)steady.alloc(test.alloc, 100, 1);
+    (void)steady.alloc(test.alloc, 200, 1);
+    (void)steady.alloc(test.alloc, 300, 1);
+    assert(steady.total_allocated() == 600);
+    assert(steady.block_count() == 1);
+  }
+
+  // alloc_array<T>(0) returns nullptr AND doesn't consume any bytes.
+  {
+    crucible::Arena pristine(1024);
+    size_t bytes_before = pristine.total_allocated();
+    int* zero = pristine.alloc_array<int>(test.alloc, 0);
+    assert(zero == nullptr);
+    assert(pristine.total_allocated() == bytes_before);
+  }
+
+  // copy_string(nullptr) returns nullptr without allocating.
+  {
+    crucible::Arena s(1024);
+    size_t bytes_before = s.total_allocated();
+    const char* none = s.copy_string(test.alloc, nullptr);
+    assert(none == nullptr);
+    assert(s.total_allocated() == bytes_before);
+
+    // Non-null source round-trips byte-identically.
+    const char* src = "crucible";
+    const char* dst = s.copy_string(test.alloc, src);
+    assert(dst != nullptr);
+    assert(std::strcmp(dst, src) == 0);
+    assert(dst != src);  // distinct storage
+  }
+
+  // Alignment honored for all power-of-two requests up to 256.
+  {
+    crucible::Arena align_arena(1 << 16);
+    for (size_t align : {1u, 2u, 4u, 8u, 16u, 32u, 64u, 128u, 256u}) {
+      void* p = align_arena.alloc(test.alloc, 8, align);
+      assert(reinterpret_cast<uintptr_t>(p) % align == 0);
+    }
+  }
 
   std::printf("test_arena: all tests passed\n");
   return 0;
