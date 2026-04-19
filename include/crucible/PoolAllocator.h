@@ -16,6 +16,7 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
+#include <crucible/rt/Registry.h>
 #include <crucible/safety/Checked.h>
 
 #include <cassert>
@@ -69,16 +70,29 @@ struct CRUCIBLE_OWNER PoolAllocator {
     pool_bytes_   = plan->pool_bytes;
 
     if (pool_bytes_ > 0) {
-      // aligned_alloc requires size to be a multiple of alignment.
-      // Saturating add guards against (near-UINT64_MAX + ALIGNMENT) wrap.
-      const uint64_t padded    = safety::saturating_add<uint64_t>(pool_bytes_, ALIGNMENT - 1);
-      const uint64_t alloc_size = padded & ~uint64_t(ALIGNMENT - 1);
-      pool_ = std::aligned_alloc(ALIGNMENT, alloc_size);
+      // Pick page granularity:
+      //   • ≥ 2 MB pool → 2 MB alignment so rt::apply() can MADV_HUGEPAGE
+      //     the whole region cleanly (kernel 5.8+ requires PMD alignment).
+      //     A typical memory plan for a real model is tens of MB to many
+      //     GB, so this path is the common one.
+      //   • <  2 MB pool → fall back to the 256 B CUDA-coalescing floor.
+      //     MADV_HUGEPAGE would be a no-op anyway; don't waste padding.
+      const size_t page_align =
+          (pool_bytes_ >= crucible::rt::kHugePageBytes)
+              ? crucible::rt::kHugePageBytes
+              : ALIGNMENT;
+      const uint64_t padded     = safety::saturating_add<uint64_t>(
+          pool_bytes_, page_align - 1);
+      const uint64_t alloc_size = padded & ~(page_align - 1);
+      pool_ = std::aligned_alloc(page_align, alloc_size);
       if (!pool_) [[unlikely]] std::abort();
 #ifndef NDEBUG
       // 0xCD poison: reads of uninit pool memory show up in debuggers/ASan.
       std::memset(pool_, 0xCD, alloc_size);
 #endif
+      const bool huge = (page_align == crucible::rt::kHugePageBytes);
+      crucible::rt::register_hot_region(pool_, alloc_size,
+          /*huge=*/huge, "PoolAllocator.pool");
     }
 
     if (num_slots_ > 0) {
@@ -102,6 +116,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
 
   [[gnu::cold]]
   void destroy() noexcept {
+    if (pool_) crucible::rt::unregister_hot_region(pool_);
     std::free(pool_);
     std::free(ptr_table_);
     pool_         = nullptr;
@@ -152,6 +167,10 @@ struct CRUCIBLE_OWNER PoolAllocator {
   {
     void* p          = pool_;
     uint64_t n       = pool_bytes_;
+    // Unregister before nulling: destroy() uses pool_ != nullptr as its
+    // guard for the unregister call, so we must hit the registry here
+    // or the entry leaks (points to memory the DetachedPool now owns).
+    crucible::rt::unregister_hot_region(p);
     pool_            = nullptr;   // prevent destroy() from freeing p
     destroy();                    // frees ptr_table_, zeros counters
     return DetachedPool{p, n};    // prvalue: guaranteed copy elision

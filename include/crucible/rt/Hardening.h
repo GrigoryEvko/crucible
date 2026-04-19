@@ -269,8 +269,41 @@ class Hardening {
                 break;
             }
             if (sched_setattr_sys(0, &attr, 0) != 0) {
-                g.prior_sched_set_ = false;  // nothing to revert
-                detail::warn("sched_setattr (real-time class)", errno);
+                const int err = errno;
+                // SCHED_DEADLINE admission control refuses any task whose
+                // CPU affinity mask is a strict subset of the scheduler's
+                // DL root domain (kernel 5.8+). Step 1 above pinned us to
+                // one CPU, so on a multi-CPU system DEADLINE always EPERMs
+                // even as root. This is the overwhelmingly common failure
+                // mode on dev laptops and systemd user sessions.
+                //
+                // Gracefully fall back to SCHED_FIFO at hot_rt_priority:
+                // same preemption semantics (preempts SCHED_OTHER), same
+                // typical prio=50, but no root-domain check.
+                if (p.hot_sched == SchedClass::Deadline && err == EPERM) {
+                    sched_attr_t fifo{};
+                    fifo.size           = sizeof(fifo);
+                    fifo.sched_policy   = SCHED_FIFO;
+                    fifo.sched_priority =
+                        static_cast<uint32_t>(p.hot_rt_priority);
+                    if (sched_setattr_sys(0, &fifo, 0) == 0) {
+                        // Successful fallback — one info line, not an
+                        // error. Preserve prior_sched_set_ so revert
+                        // restores the original SCHED_OTHER.
+                        std::fprintf(stderr,
+                            "[rt] SCHED_DEADLINE unavailable (EPERM; "
+                            "likely cgroup/affinity constraint) — "
+                            "falling back to SCHED_FIFO prio=%d\n",
+                            p.hot_rt_priority);
+                    } else {
+                        g.prior_sched_set_ = false;
+                        detail::warn("sched_setattr (FIFO fallback)",
+                                     errno);
+                    }
+                } else {
+                    g.prior_sched_set_ = false;  // nothing to revert
+                    detail::warn("sched_setattr (real-time class)", err);
+                }
             }
         }
 
@@ -335,10 +368,29 @@ class Hardening {
     }
 
     // madvise(MADV_HUGEPAGE) — idempotent, no revert needed.
+    //
+    // Kernel 5.8+ rejects non-PMD-aligned addresses with EINVAL. Every
+    // hot region with huge_hint=true SHOULD be allocated 2 MB-aligned
+    // at the source (TraceRing alignas, MetaLog/PoolAllocator
+    // aligned_alloc) — but as defense in depth, round the range to
+    // huge-page boundaries here so a mis-allocated caller still gets
+    // the aligned interior portion advised instead of blanket EINVAL.
     [[nodiscard]] static bool hint_hugepage(void* addr, size_t len) noexcept {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
-        if (::madvise(addr, len, MADV_HUGEPAGE) == 0) return true;
+
+        const uintptr_t raw       = reinterpret_cast<uintptr_t>(addr);
+        const uintptr_t aligned   = (raw + kHugePageBytes - 1)
+                                  & ~(kHugePageBytes - 1);
+        const size_t    lost_head = aligned - raw;
+        if (lost_head >= len) return false;  // region smaller than one PMD
+
+        const size_t usable   = len - lost_head;
+        const size_t aligned_len = usable & ~(kHugePageBytes - 1);
+        if (aligned_len == 0) return false;  // no full huge page fits
+
+        void* const target = reinterpret_cast<void*>(aligned);
+        if (::madvise(target, aligned_len, MADV_HUGEPAGE) == 0) return true;
         detail::warn("madvise(MADV_HUGEPAGE)", errno);
         return false;
 #else
