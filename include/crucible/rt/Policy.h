@@ -172,6 +172,44 @@ struct Policy {
         return p;
     }
 
+    // Hyperscaler VM guest (AWS EC2, GCP Compute, Azure VM). We don't
+    // own the host, so anything that would need root-on-bare-metal —
+    // frequency lock, C-state disable, IRQ steering, isolcpus — is
+    // skipped. What DOES work inside a guest:
+    //
+    //   • Per-vCPU pinning (keeps us on one vCPU within the guest;
+    //     the host can still migrate us, but intra-guest stays stable)
+    //   • mlock2(MLOCK_ONFAULT) to defeat the guest pager; balloon
+    //     driver + KSM on the host remain the only residual threat
+    //   • SCHED_FIFO, not SCHED_DEADLINE — the kernel admits a deadline
+    //     but the host can preempt the whole vCPU regardless, making
+    //     the admission a lie. FIFO preempts in-guest work without
+    //     promising what we can't guarantee.
+    //   • MADV_HUGEPAGE on big pools (host usually honors 2 MB)
+    //   • io_uring with SQPOLL — guest syscall elision is real savings
+    //
+    // Use this on managed K8s, ECS, GKE Standard, AKS, self-managed
+    // EC2, etc. Expect p99.9 tails 2-10× worse than bare-metal due to
+    // vCPU steal; absolute timings are noisy, but relative comparisons
+    // via Mann-Whitney U still hold. For actual realtime ML, request
+    // a bare-metal instance type and use Policy::production() instead.
+    [[nodiscard]] static constexpr Policy cloud_vm() noexcept {
+        Policy p;
+        p.hot_enabled           = true;
+        p.hot_sched             = SchedClass::Fifo;   // not Deadline — host can still preempt
+        p.hot_rt_priority       = 50;
+        p.mlock_hot_regions     = true;
+        p.thp_hint_pools        = true;                // MADV_HUGEPAGE — guest-local, works
+        p.disable_thp_global    = false;               // don't fight the VM's THP policy
+        p.thp_collapse_now      = false;               // MADV_COLLAPSE unreliable in guests
+        p.lock_frequency        = false;               // no permission
+        p.disable_c_states      = false;               // no permission
+        p.io_uring_sqpoll       = true;                // syscall elision still wins
+        p.rdma_for_comm         = true;                // EFA / IB on HPC instance types
+        p.on_missing_capability = OnMissingCap::DegradeAndWarn;
+        return p;
+    }
+
     // Opt out entirely. For debugging ("does my bug reproduce without
     // any hardening?") or for shells where realtime isn't wanted.
     [[nodiscard]] static constexpr Policy none() noexcept {
