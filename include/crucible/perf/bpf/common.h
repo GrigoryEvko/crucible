@@ -1,17 +1,19 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/* Common definitions shared across all Crucible bench BPF programs. */
+/* Shared definitions for the Crucible perf BPF programs (sched_switch,
+ * syscall_latency, lock_contention, pmu_sample). Ported 1:1 from
+ * symbiotic's bpf/common.h. */
 
-#ifndef __CRUCIBLE_BENCH_COMMON_H
-#define __CRUCIBLE_BENCH_COMMON_H
+#ifndef __CRUCIBLE_PERF_BPF_COMMON_H
+#define __CRUCIBLE_PERF_BPF_COMMON_H
 
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 
-/* target_tgid / is_target / get_tid live in the individual BPF programs
-   that use them (e.g. sense_hub.bpf.c) — including them here would ODR-
-   conflict the moment a program #includes common.h. */
+/* ─── Target PID filter (set from userspace via .rodata rewrite) ──────── */
+
+const volatile __u32 target_tgid = 0;
 
 /* ─── Shared constants ────────────────────────────────────────────────── */
 
@@ -19,7 +21,7 @@
 #define MAX_ENTRIES      65536
 #define MAX_STACKS       16384
 
-/* ─── Off-CPU types (shared between BPF and userspace via aya maps) ──── */
+/* ─── Off-CPU types (shared between BPF and userspace) ───────────────── */
 
 struct offcpu_key {
     __s32 stack_id;
@@ -117,19 +119,16 @@ struct timeline_header {
     __u64 _pad[7];     /* pad to 64 bytes */
 };
 
-/* Full timeline buffer for sched events (header + ring) */
 struct sched_timeline {
     struct timeline_header hdr;
     struct timeline_sched_event events[TIMELINE_CAPACITY];
 };
 
-/* Full timeline buffer for syscall events */
 struct syscall_timeline {
     struct timeline_header hdr;
     struct timeline_syscall_event events[TIMELINE_CAPACITY];
 };
 
-/* Full timeline buffer for lock events */
 struct lock_timeline {
     struct timeline_header hdr;
     struct timeline_lock_event events[TIMELINE_CAPACITY];
@@ -145,7 +144,7 @@ struct lock_timeline {
  * event_type: 0=cycles, 1=L1D-miss, 2=LLC-miss, 3=branch-miss, 4=DTLB-miss,
  *             5=IBS-Op (AMD precise micro-op), 6=IBS-Fetch (AMD instruction fetch),
  *             7=major-pagefault, 8=cpu-migration, 9=alignment-fault
- * Write ts_ns LAST as completion marker (same protocol as timeline events).
+ * Write ts_ns LAST as completion marker.
  */
 struct pmu_sample_event {
     __u64 ip;           /* instruction pointer (userspace virtual addr) */
@@ -155,10 +154,22 @@ struct pmu_sample_event {
     __u64 ts_ns;        /* bpf_ktime_get_ns() — WRITTEN LAST */
 };
 
-/* Full PMU sample buffer (header + ring) */
 struct pmu_sample_timeline {
     struct timeline_header hdr;
     struct pmu_sample_event events[PMU_SAMPLE_CAPACITY];
 };
 
-#endif /* __CRUCIBLE_BENCH_COMMON_H */
+/* ─── Helpers: target filter + tid extraction ────────────────────────── */
+
+static __always_inline bool is_target(void)
+{
+    __u32 tgid = bpf_get_current_pid_tgid() >> 32;
+    return tgid == target_tgid;
+}
+
+static __always_inline __u32 get_tid(void)
+{
+    return (__u32)bpf_get_current_pid_tgid();
+}
+
+#endif /* __CRUCIBLE_PERF_BPF_COMMON_H */

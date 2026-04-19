@@ -96,7 +96,8 @@ if (CRUCIBLE_BENCH_BPF_AVAILABLE)
 endif()
 
 if (CRUCIBLE_BENCH_BPF_AVAILABLE)
-  set(BPF_SRC "${CMAKE_CURRENT_SOURCE_DIR}/bpf/sense_hub.bpf.c")
+  set(BPF_DIR "${CMAKE_SOURCE_DIR}/include/crucible/perf/bpf")
+  set(BPF_SRC "${BPF_DIR}/sense_hub.bpf.c")
   set(BPF_OBJ "${CMAKE_CURRENT_BINARY_DIR}/sense_hub.bpf.o")
   set(BPF_EMBED_DIR "${CMAKE_CURRENT_BINARY_DIR}/bpf_embed")
   set(BPF_EMBED_STAGED "${BPF_EMBED_DIR}/sense_hub_bpf_bytecode")
@@ -115,7 +116,7 @@ if (CRUCIBLE_BENCH_BPF_AVAILABLE)
     COMMAND ${CLANG_BPF_COMPILER}
             -target bpf
             ${_crucible_bpf_arch_define}
-            -I${CMAKE_CURRENT_SOURCE_DIR}/bpf
+            -I${BPF_DIR}
             -O2 -g
             -fdebug-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=.
             -Wall -Wno-unused-function -Wno-address-of-packed-member
