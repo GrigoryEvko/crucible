@@ -301,6 +301,102 @@ int main() {
         }));
     }
 
-    bench::emit_reports(reports, json);
+    // ── Scaling: construction cost vs initial_capacity ───────────────
+    //
+    // The default initial_capacity was lowered from 1<<16 (65536) to
+    // kGroupWidth*16 (512 on AVX2). These Reports show the construction-
+    // cost curve and let you verify that smaller starts are cheap.
+    //
+    // On AVX2, kGroupWidth=32. The relevant caps:
+    //   kGroupWidth*4  = 128  — smallest sensible
+    //   kGroupWidth*16 = 512  — current default (fits 256-entry int cache)
+    //   65536                 — legacy default (pre-allocated 590 KB)
+    //   1 << 20 = 1M          — what a warmed-up production KernelCache holds
+    for (size_t cap : {detail::kGroupWidth * 4,
+                       detail::kGroupWidth * 16,
+                       size_t{1u} << 16,
+                       size_t{1u} << 20}) {
+        char label[64];
+        std::snprintf(label, sizeof(label),
+                      "ExprPool ctor + dtor [init_cap=%zu]", cap);
+        reports.push_back([&, cap]{
+            return bench::run(label, [&, cap]{
+                ExprPool pool(a, cap);
+                bench::do_not_optimize(pool);
+            });
+        }());
+    }
+
+    // ── Scaling: N inserts into empty pool (grow-sequence cost) ──────
+    //
+    // Starts from the default capacity and inserts N unique integers,
+    // going through the auto-rehash chain. The body constructs a fresh
+    // pool each call so the grow sequence is measured from scratch.
+    // Expected shape: super-linear per-insert cost at small N (rehashes
+    // dominate), amortized to ~10 ns per insert at large N.
+    for (size_t n_inserts : {size_t{100}, size_t{1'000}, size_t{10'000}}) {
+        char label[64];
+        std::snprintf(label, sizeof(label),
+                      "grow sequence: %zu inserts from default", n_inserts);
+        reports.push_back([&, n_inserts]{
+            return bench::run(label, [&, n_inserts]{
+                ExprPool pool(a);                      // default init cap
+                for (size_t i = 0; i < n_inserts; ++i)
+                    bench::do_not_optimize(pool.integer(a, 10'000 + static_cast<int64_t>(i)));
+            });
+        }());
+    }
+
+    // ── Scaling: reserve(N) + N inserts (zero-grow cost) ─────────────
+    //
+    // Compared against the previous trio: the delta is the cost of the
+    // grow sequence. A caller that knows its final size ahead of time
+    // pays the reserve() once and skips every rehash. Under the Swiss-
+    // table's 87.5% load factor, reserve(N) allocates ceil(N*8/7)
+    // rounded to the next power of 2 — for N=10000 that's 16384 slots.
+    for (size_t n_inserts : {size_t{100}, size_t{1'000}, size_t{10'000}}) {
+        char label[64];
+        std::snprintf(label, sizeof(label),
+                      "reserve(%zu) + %zu inserts", n_inserts, n_inserts);
+        reports.push_back([&, n_inserts]{
+            return bench::run(label, [&, n_inserts]{
+                ExprPool pool(a);
+                pool.reserve(n_inserts);
+                for (size_t i = 0; i < n_inserts; ++i)
+                    bench::do_not_optimize(pool.integer(a, 10'000 + static_cast<int64_t>(i)));
+            });
+        }());
+    }
+
+    bench::emit_reports_text(reports);
+
+    // ── Compare: does reserve() actually pay off? ───────────────────
+    //
+    // Last 10 Reports are the scaling scenarios:
+    //   [L-10 .. L-7]  ctor+dtor @ init_cap = 128/512/64k/1M
+    //   [L-6  .. L-4]  grow-sequence: N inserts, N = 100/1000/10000
+    //   [L-3  .. L-1]  reserve(N) + N inserts, same Ns
+    //
+    // Pair each grow-sequence scenario with its reserve counterpart —
+    // the Δ is pure rehash cost that reserve() avoids. At N=10000 the
+    // grow sequence triggers ~6 rehashes (512 → 16384 by doubling);
+    // reserve() goes straight to 16384.
+    const size_t L = reports.size();
+
+    std::printf("\n=== compare — ctor cost vs initial_capacity ===\n");
+    std::printf("  default (kGroupWidth*16) vs legacy 1<<16:\n  ");
+    bench::compare(reports[L - 9], reports[L - 8]).print_text(stdout);
+    std::printf("  default vs max (1<<20):\n  ");
+    bench::compare(reports[L - 9], reports[L - 7]).print_text(stdout);
+
+    std::printf("\n=== compare — reserve() vs grow-sequence ===\n");
+    for (size_t k = 0; k < 3; ++k) {
+        std::printf("  %s  →  %s:\n  ",
+                    reports[L - 6 + k].name.c_str(),
+                    reports[L - 3 + k].name.c_str());
+        bench::compare(reports[L - 6 + k], reports[L - 3 + k]).print_text(stdout);
+    }
+
+    bench::emit_reports_json(reports, json);
     return 0;
 }
