@@ -1,22 +1,25 @@
 #pragma once
 
-// PoolAllocator: Pre-allocated memory pool for Tier 1 replay.
+// PoolAllocator: materialize a MemoryPlan into one aligned heap allocation
+// plus a SlotId→void* table. Hot path (slot_ptr) is a single load; init /
+// destroy / detach are cold.
 //
-// Takes a completed MemoryPlan (from sweep-line offset assignment)
-// and materializes it: one contiguous aligned allocation for the
-// entire pool, plus a pre-built pointer table for O(1) slot lookup.
+// External slots (params, loader outputs, optimizer state) are owned by the
+// Vessel and registered via register_external(); internal slots point into
+// the pool. The pool and table are raw heap (not Linear<T>) because detach()
+// transfers ownership of the pool buffer out — Linear<T>'s move-consume
+// would couple buffer lifetime to this struct, defeating that use case.
 //
-// Hot path: slot_ptr(SlotId) → single 8-byte load from ptr_table_.
-// Cold path: init() builds the table once per plan.
-//
-// External slots (params, data loader outputs) are registered
-// separately via register_external() — their memory is owned
-// elsewhere. Internal slots point into the pool.
+// Ownership: constructed and written by the background thread; read-only
+// from the foreground replay after init returns. Not movable — ptr_table_
+// entries are interior pointers into pool_.
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
+#include <crucible/safety/Checked.h>
 
 #include <cassert>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 
@@ -26,142 +29,24 @@ struct CRUCIBLE_OWNER PoolAllocator {
   PoolAllocator() = default;
   ~PoolAllocator() { destroy(); }
 
-  PoolAllocator(const PoolAllocator&) = delete("pool base address would alias");
-  PoolAllocator& operator=(const PoolAllocator&) = delete("pool base address would alias");
-  PoolAllocator(PoolAllocator&&) = delete("ptr_table entries point into pool");
-  PoolAllocator& operator=(PoolAllocator&&) = delete("ptr_table entries point into pool");
+  PoolAllocator(const PoolAllocator&)            = delete("interior pointers into pool_ would alias");
+  PoolAllocator& operator=(const PoolAllocator&) = delete("interior pointers into pool_ would alias");
+  PoolAllocator(PoolAllocator&&)                 = delete("ptr_table_ entries are interior pointers into pool_");
+  PoolAllocator& operator=(PoolAllocator&&)      = delete("ptr_table_ entries are interior pointers into pool_");
 
-  // ── Init: materialize a MemoryPlan into a live memory pool ──
-  //
-  // Allocates pool_bytes of 256-byte-aligned memory, builds the
-  // pointer table from slot offsets. External slots start as nullptr
-  // and must be registered before replay.
-  //
-  // Aborts on OOM — a Crucible runtime that can't allocate the pool
-  // is unrecoverable (the whole point is pre-allocation).
-  void init(const MemoryPlan* plan) CRUCIBLE_NO_THREAD_SAFETY
-#if CRUCIBLE_HAS_CONTRACTS
-      pre (plan != nullptr)
-      pre (ptr_table_ == nullptr)
-#endif
-  {
-
-    num_slots_ = plan->num_slots;
-    num_external_ = plan->num_external;
-    pool_bytes_ = plan->pool_bytes;
-
-    // Allocate the pool (one contiguous block).
-    // aligned_alloc requires size to be a multiple of alignment.
-    if (pool_bytes_ > 0) {
-      uint64_t alloc_size = (pool_bytes_ + ALIGNMENT - 1) & ~uint64_t(ALIGNMENT - 1);
-      pool_ = std::aligned_alloc(ALIGNMENT, alloc_size);
-      if (!pool_) [[unlikely]]
-        std::abort();
-#ifndef NDEBUG
-      // Poison with 0xCD — reads of uninitialized pool memory are
-      // immediately visible in debuggers and ASan.
-      std::memset(pool_, 0xCD, alloc_size);
-#endif
-    }
-
-    // Allocate the pointer table.
-    if (num_slots_ > 0) {
-      ptr_table_ = static_cast<void**>(
-          std::calloc(num_slots_, sizeof(void*)));
-      if (!ptr_table_) [[unlikely]]
-        std::abort();
-
-      // Fill internal slots: base + offset.
-      // External slots stay nullptr (calloc zeroed them).
-      auto* base = static_cast<char*>(pool_);
-      for (uint32_t s = 0; s < num_slots_; s++) {
-        if (!plan->slots[s].is_external) {
-          assert(plan->slots[s].offset_bytes + plan->slots[s].nbytes <= pool_bytes_
-                 && "slot exceeds pool bounds");
-          assert(plan->slots[s].offset_bytes % ALIGNMENT == 0
-                 && "slot offset not aligned — sweep-line bug");
-          ptr_table_[s] = base + plan->slots[s].offset_bytes;
-        }
-      }
-    }
-  }
-
-  // ── Destroy: free pool and pointer table ──
-  void destroy() {
-    std::free(pool_);
-    std::free(ptr_table_);
-    pool_ = nullptr;
-    ptr_table_ = nullptr;
-    pool_bytes_ = 0;
-    num_slots_ = 0;
-    num_external_ = 0;
-  }
-
-  // ── Hot path: get pointer for a tensor slot ──
-  //
-  // Returns the data pointer for the given slot. For internal slots,
-  // this points into the pre-allocated pool. For external slots,
-  // this returns whatever was registered via register_external().
-  //
-  // Single 8-byte load — the entire point of pre-building the table.
-  [[nodiscard]] CRUCIBLE_INLINE void* slot_ptr(SlotId sid) const CRUCIBLE_LIFETIMEBOUND
-#if CRUCIBLE_HAS_CONTRACTS
-      pre (sid.raw() < num_slots_)
-#endif
-  {
-    return ptr_table_[sid.raw()];
-  }
-
-  // ── Register an external tensor's pointer ──
-  //
-  // External slots (params, data loader outputs, optimizer states)
-  // keep their existing allocations. The Vessel adapter calls this
-  // before replay begins for each external slot.
-  void register_external(SlotId sid, void* ptr)
-#if CRUCIBLE_HAS_CONTRACTS
-      pre (sid.raw() < num_slots_)
-      pre (ptr != nullptr)
-#endif
-  {
-    ptr_table_[sid.raw()] = ptr;
-  }
-
-  // ── Raw table access for hot inner loops ──
-  //
-  // Returns the raw pointer table so callers (ReplayEngine) can
-  // capture it into a local, eliminating a level of indirection:
-  //
-  //   void* const* tbl = pool.table();
-  //   for (...) { void* p = tbl[sid.raw()]; }  // one load per call
-  //
-  // vs the two-load path through slot_ptr() when the compiler cannot
-  // prove that ptr_table_ doesn't change across loop iterations.
-  [[nodiscard]] CRUCIBLE_INLINE void* const* table() const CRUCIBLE_LIFETIMEBOUND {
-    return ptr_table_;
-  }
-
-  // ── Queries ──
-  [[nodiscard]] void* pool_base() const CRUCIBLE_LIFETIMEBOUND { return pool_; }
-  [[nodiscard]] uint64_t pool_bytes() const { return pool_bytes_; }
-  [[nodiscard]] uint32_t num_slots() const { return num_slots_; }
-  [[nodiscard]] uint32_t num_external() const { return num_external_; }
-  [[nodiscard]] bool is_initialized() const { return ptr_table_ != nullptr; }
-
-  // 256-byte alignment: matches compute_memory_plan() in BackgroundThread.h.
-  // Critical for CUDA coalescing and AVX-512 vector loads.
+  // 256B: matches compute_memory_plan() offsets; required for CUDA
+  // coalescing and AVX-512 vector loads.
   static constexpr uint32_t ALIGNMENT = 256;
 
-  // ── DetachedPool: RAII handle for a pool buffer detached from this allocator ──
-  //
-  // Returned by detach().  Owns the raw aligned allocation and frees it
-  // on destruction.  Non-copyable, non-movable — consumed at the detach
-  // site via guaranteed copy elision (C++17 P0135).
-  struct DetachedPool {
-    void* base = nullptr;
+  // DetachedPool — raw aligned buffer owned by the detach site; frees on
+  // destruction. Non-copyable, non-movable: consumed via guaranteed copy
+  // elision (C++17 P0135).
+  struct CRUCIBLE_OWNER DetachedPool {
+    void*    base  = nullptr;
     uint64_t bytes = 0;
 
     DetachedPool() = default;
-    DetachedPool(void* b, uint64_t n) : base(b), bytes(n) {}
+    DetachedPool(void* b, uint64_t n) noexcept : base{b}, bytes{n} {}
     ~DetachedPool() { std::free(base); }
 
     DetachedPool(const DetachedPool&)            = delete("would double-free the pool buffer");
@@ -170,34 +55,120 @@ struct CRUCIBLE_OWNER PoolAllocator {
     DetachedPool& operator=(DetachedPool&&)      = delete("consumed at detach site via guaranteed elision");
   };
 
-  // ── Detach: release ownership of the pool buffer ──
-  //
-  // Returns a DetachedPool holding the raw allocation.  The allocator
-  // is reset to empty (ptr_table freed, counters zeroed).  The caller
-  // can read from the detached buffer, then let it destruct to free.
-  //
-  // Used by CrucibleContext::switch_region() to keep old pool data
-  // alive while initializing a new pool for the alternate region.
-  [[nodiscard]] DetachedPool detach()
-#if CRUCIBLE_HAS_CONTRACTS
-      pre (pool_ != nullptr)
-#endif
+  // Materialize a plan. Aborts on OOM — a pre-allocated runtime that can't
+  // allocate the plan has no recovery path. External slots start null and
+  // must be registered before replay.
+  [[gnu::cold, gnu::noinline]]
+  void init(const MemoryPlan* plan) CRUCIBLE_NO_THREAD_SAFETY
+      pre (plan        != nullptr)
+      pre (ptr_table_  == nullptr)   // double-init forbidden
+      pre (pool_       == nullptr)
   {
-    void* p = pool_;
-    uint64_t n = pool_bytes_;
-    pool_ = nullptr;   // prevent destroy() from freeing the buffer
-    destroy();          // frees ptr_table_, zeros counters
-    return DetachedPool{p, n};  // prvalue: guaranteed copy elision (P0135)
+    num_slots_    = plan->num_slots;
+    num_external_ = plan->num_external;
+    pool_bytes_   = plan->pool_bytes;
+
+    if (pool_bytes_ > 0) {
+      // aligned_alloc requires size to be a multiple of alignment.
+      // Saturating add guards against (near-UINT64_MAX + ALIGNMENT) wrap.
+      const uint64_t padded    = safety::saturating_add<uint64_t>(pool_bytes_, ALIGNMENT - 1);
+      const uint64_t alloc_size = padded & ~uint64_t(ALIGNMENT - 1);
+      pool_ = std::aligned_alloc(ALIGNMENT, alloc_size);
+      if (!pool_) [[unlikely]] std::abort();
+#ifndef NDEBUG
+      // 0xCD poison: reads of uninit pool memory show up in debuggers/ASan.
+      std::memset(pool_, 0xCD, alloc_size);
+#endif
+    }
+
+    if (num_slots_ > 0) {
+      ptr_table_ = static_cast<void**>(std::calloc(num_slots_, sizeof(void*)));
+      if (!ptr_table_) [[unlikely]] std::abort();
+
+      // Internal slots: base + offset. External slots stay null (calloc'd).
+      auto* base = static_cast<char*>(pool_);
+      for (uint32_t s = 0; s < num_slots_; ++s) {
+        const auto& slot = plan->slots[s];
+        if (!slot.is_external) {
+          assert(slot.offset_bytes + slot.nbytes <= pool_bytes_ &&
+                 "slot exceeds pool bounds");
+          assert(slot.offset_bytes % ALIGNMENT == 0 &&
+                 "slot offset not ALIGNMENT-aligned — sweep-line bug");
+          ptr_table_[s] = base + slot.offset_bytes;
+        }
+      }
+    }
+  }
+
+  [[gnu::cold]]
+  void destroy() noexcept {
+    std::free(pool_);
+    std::free(ptr_table_);
+    pool_         = nullptr;
+    ptr_table_    = nullptr;
+    pool_bytes_   = 0;
+    num_slots_    = 0;
+    num_external_ = 0;
+  }
+
+  // Hot path: single 8-byte load. Returns null for unregistered externals.
+  [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
+  inline void* slot_ptr(SlotId sid) const noexcept CRUCIBLE_LIFETIMEBOUND
+      pre (sid.raw() < num_slots_)
+  {
+    return ptr_table_[sid.raw()];
+  }
+
+  // Wire an external tensor into its slot. Called by the Vessel once per
+  // external slot before replay begins.
+  void register_external(SlotId sid, void* ptr) noexcept
+      pre (sid.raw() < num_slots_)
+      pre (ptr       != nullptr)
+      pre (ptr_table_ != nullptr)
+  {
+    ptr_table_[sid.raw()] = ptr;
+  }
+
+  // Raw table for inner loops that want to hoist the indirection:
+  //   void* const* tbl = pool.table();
+  //   for (...) p = tbl[sid.raw()];   // one load per access
+  [[nodiscard, gnu::pure]] CRUCIBLE_INLINE
+  void* const* table() const noexcept CRUCIBLE_LIFETIMEBOUND {
+    return ptr_table_;
+  }
+
+  [[nodiscard, gnu::pure]] void*    pool_base()      const noexcept CRUCIBLE_LIFETIMEBOUND { return pool_; }
+  [[nodiscard, gnu::pure]] uint64_t pool_bytes()     const noexcept { return pool_bytes_; }
+  [[nodiscard, gnu::pure]] uint32_t num_slots()      const noexcept { return num_slots_; }
+  [[nodiscard, gnu::pure]] uint32_t num_external()   const noexcept { return num_external_; }
+  [[nodiscard, gnu::pure]] bool     is_initialized() const noexcept { return ptr_table_ != nullptr; }
+
+  // Release pool_ to a DetachedPool, then reset this allocator to empty.
+  // Used by CrucibleContext::switch_region() to keep old pool data alive
+  // while initializing the alternate region.
+  [[nodiscard, gnu::cold]]
+  DetachedPool detach() noexcept
+      pre (pool_ != nullptr)
+  {
+    void* p          = pool_;
+    uint64_t n       = pool_bytes_;
+    pool_            = nullptr;   // prevent destroy() from freeing p
+    destroy();                    // frees ptr_table_, zeros counters
+    return DetachedPool{p, n};    // prvalue: guaranteed copy elision
   }
 
  private:
-  void* pool_ = nullptr;           // one big aligned allocation
-  void** ptr_table_ = nullptr;     // SlotId → data pointer (pre-built)
-  uint64_t pool_bytes_ = 0;        // pool size
-  uint32_t num_slots_ = 0;         // table size
-  uint32_t num_external_ = 0;      // external slot count (for diagnostics)
+  // Raw pointers (not Linear<T>) because detach() moves pool_ out to a
+  // separate RAII sink; Linear<T>'s consume-on-move would couple the
+  // buffer's lifetime to the allocator instance.
+  void*    pool_         = nullptr;   // one aligned allocation, pool_bytes_ long
+  void**   ptr_table_    = nullptr;   // SlotId.raw() → data pointer
+  uint64_t pool_bytes_   = 0;
+  uint32_t num_slots_    = 0;
+  uint32_t num_external_ = 0;
 };
 
-static_assert(sizeof(PoolAllocator) == 32, "PoolAllocator layout: 2 ptrs + u64 + 2×u32");
+static_assert(sizeof(PoolAllocator) == 32, "PoolAllocator layout: 2 ptrs + u64 + 2*u32");
+static_assert(alignof(PoolAllocator) == 8);
 
 } // namespace crucible
