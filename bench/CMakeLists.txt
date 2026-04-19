@@ -30,9 +30,19 @@ if (CRUCIBLE_BENCH_BPF)
 
   find_program(XXD_EXECUTABLE NAMES xxd)
 
+  # setcap for the bench-caps convenience target (kernel ≥ 5.8 requires
+  # CAP_BPF + CAP_PERFMON for tracepoint programs; setcap bakes these
+  # into the ELF file's security.capability xattr).
+  find_program(SETCAP_EXECUTABLE NAMES setcap PATHS /usr/sbin /sbin)
+
   if (LIBBPF_FOUND AND CLANG_BPF_COMPILER AND XXD_EXECUTABLE)
     set(CRUCIBLE_BENCH_BPF_AVAILABLE TRUE)
     message(STATUS "bench: eBPF sense hub ENABLED (libbpf ${LIBBPF_VERSION}, ${CLANG_BPF_COMPILER})")
+    if (SETCAP_EXECUTABLE)
+      message(STATUS "bench: `cmake --build --preset bench --target bench-caps` to apply BPF caps (sudo)")
+    else()
+      message(STATUS "bench: setcap not found — benches will need sudo/run-as-root at invocation")
+    endif()
   else()
     message(STATUS "bench: eBPF sense hub DISABLED — missing:"
       "$<$<NOT:$<BOOL:${LIBBPF_FOUND}>>: libbpf>"
@@ -125,6 +135,9 @@ function(crucible_bench name)
   if (CRUCIBLE_BENCH_BPF_AVAILABLE)
     target_link_libraries(${name} PRIVATE crucible_bench_bpf)
     target_compile_definitions(${name} PRIVATE CRUCIBLE_BENCH_HAVE_BPF=1)
+    # Register for the bench-caps target — applied after all benches
+    # are declared so we can batch them into one sudo invocation.
+    set_property(GLOBAL APPEND PROPERTY CRUCIBLE_BENCH_CAP_TARGETS ${name})
   else()
     target_compile_definitions(${name} PRIVATE CRUCIBLE_BENCH_HAVE_BPF=0)
   endif()
@@ -169,3 +182,32 @@ add_executable(render_trace render_trace.cpp)
 target_link_libraries(render_trace PRIVATE crucible)
 target_compile_options(render_trace PRIVATE -O2)
 set_target_properties(render_trace PROPERTIES CRUCIBLE_NO_WERROR TRUE)
+
+# ── bench-caps target ────────────────────────────────────────────────
+#
+# The kernel requires CAP_BPF + CAP_PERFMON for tracepoint-type BPF
+# programs (Linux ≥ 5.8, hardcoded in bpf_prog_load — not gated by
+# kernel.unprivileged_bpf_disabled). This target batches `sudo setcap`
+# over every bench binary in a single command so you enter the
+# password exactly once per rebuild:
+#
+#   cmake --build --preset bench --target bench-caps
+#
+# Caveat: the ELF xattr is destroyed on every re-link, so this target
+# must be re-run after any rebuild of the benches. It's intentionally
+# NOT a POST_BUILD step because that would demand sudo on every build.
+get_property(_crucible_bench_cap_targets GLOBAL PROPERTY CRUCIBLE_BENCH_CAP_TARGETS)
+if (CRUCIBLE_BENCH_BPF_AVAILABLE AND SETCAP_EXECUTABLE AND _crucible_bench_cap_targets)
+  set(_crucible_bench_caps_commands
+    COMMAND ${CMAKE_COMMAND} -E echo
+      "Applying CAP_BPF+CAP_PERFMON to ${_crucible_bench_cap_targets}")
+  foreach (_t IN LISTS _crucible_bench_cap_targets)
+    list(APPEND _crucible_bench_caps_commands
+      COMMAND sudo ${SETCAP_EXECUTABLE} cap_bpf,cap_perfmon=eip $<TARGET_FILE:${_t}>)
+  endforeach()
+  add_custom_target(bench-caps
+    ${_crucible_bench_caps_commands}
+    DEPENDS ${_crucible_bench_cap_targets}
+    COMMENT "Applying BPF caps (sudo password required once, re-run after any rebuild)"
+    VERBATIM)
+endif()
