@@ -439,19 +439,39 @@ struct Report {
         return pct.cv > cv_threshold;
     }
 
+    // Auto-scaled ns formatter for the main summary columns: renders a
+    // fractional-ns double as "NN.NNns" / "NN.NNµs" / "NN.NNms" /
+    // "NN.NNs" with 2 decimals, right-padded to 9 bytes for column
+    // alignment. µs is 2-byte UTF-8 so alignment is slightly off on
+    // µs/ms/s columns — 9 bytes fits up to "9999.99ns" and "999.99µs".
+    static void fmt_ns_(char* buf, size_t len, double ns) noexcept {
+        if      (ns >= 1e9) std::snprintf(buf, len, "%.2fs",  ns / 1e9);
+        else if (ns >= 1e6) std::snprintf(buf, len, "%.2fms", ns / 1e6);
+        else if (ns >= 1e3) std::snprintf(buf, len, "%.2fµs", ns / 1e3);
+        else                std::snprintf(buf, len, "%.2fns", ns);
+    }
+
     // Writes a single summary line (optionally followed by the BPF
     // sensory line) to `out`. Every underlying call is C stdio and
     // std::string::c_str() — no throwing paths, so noexcept.
     void print_text(FILE* out = stdout) const noexcept {
+        char p50_b[32], p90_b[32], p99_b[32], p999_b[32], max_b[32], mean_b[32], sigma_b[32];
+        fmt_ns_(p50_b,  sizeof(p50_b),  pct.p50);
+        fmt_ns_(p90_b,  sizeof(p90_b),  pct.p90);
+        fmt_ns_(p99_b,  sizeof(p99_b),  pct.p99);
+        fmt_ns_(p999_b, sizeof(p999_b), pct.p99_9);
+        fmt_ns_(max_b,  sizeof(max_b),  pct.max);
+        fmt_ns_(mean_b, sizeof(mean_b), pct.mean);
+        fmt_ns_(sigma_b, sizeof(sigma_b), pct.stddev);
         std::fprintf(out,
-            "  %-38s  p50=%7.2f  p90=%7.2f  p99=%7.2f  p99.9=%7.2f  "
-            "max=%9.2f  μ=%7.2f  σ=%6.2f  cv=%4.1f%%",
+            "  %-38s  p50=%9s  p90=%9s  p99=%9s  p99.9=%9s  "
+            "max=%10s  μ=%9s  σ=%9s  cv=%4.1f%%",
             name.c_str(),
-            pct.p50, pct.p90, pct.p99, pct.p99_9, pct.max,
-            pct.mean, pct.stddev, pct.cv * 100.0);
+            p50_b, p90_b, p99_b, p999_b, max_b, mean_b, sigma_b,
+            pct.cv * 100.0);
 
         if (cycles_per_op > 0.0) {
-            std::fprintf(out, "  cyc=%6.1f", cycles_per_op);
+            std::fprintf(out, "  cyc=%7.1f", cycles_per_op);
         }
         if (freq_start_hz > 0) {
             std::fprintf(out, "  @%.2fGHz", static_cast<double>(freq_start_hz) / 1e9);
