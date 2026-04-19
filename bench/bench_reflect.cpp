@@ -2,15 +2,19 @@
 //
 // P2996 reflection emits a per-field hash chain at compile time; the
 // runtime code is identical in principle to a hand-written fmix64 loop.
-// Bench confirms the abstraction has zero steady-state cost.
-
-#include <crucible/Expr.h>   // detail::fmix64
-#include <crucible/Reflect.h>
+// The bench confirms the abstraction has zero steady-state cost — the
+// Mann-Whitney A/B at the end should come out "indistinguishable" on a
+// clean machine.
 
 #include <cstdint>
 #include <cstdio>
 
+#include <crucible/Expr.h>       // detail::fmix64
+#include <crucible/Reflect.h>
+
 #include "bench_harness.h"
+
+namespace {
 
 struct Small {
     uint32_t id;
@@ -31,60 +35,80 @@ struct Wide {
     int64_t  scalars[5];
 };
 
-static uint64_t manual_hash_small(const Small& s) {
+uint64_t manual_hash_small(const Small& s) noexcept {
     uint64_t h = 0x9E3779B97F4A7C15ULL;
-    h = h * 0x9E3779B97F4A7C15ULL
-        ^ crucible::detail::fmix64(s.id);
-    h = h * 0x9E3779B97F4A7C15ULL
-        ^ crucible::detail::fmix64(s.kind);
-    h = h * 0x9E3779B97F4A7C15ULL
-        ^ crucible::detail::fmix64(s.flags);
-    h = h * 0x9E3779B97F4A7C15ULL
-        ^ crucible::detail::fmix64(static_cast<uint64_t>(s.payload));
+    h = h * 0x9E3779B97F4A7C15ULL ^ crucible::detail::fmix64(s.id);
+    h = h * 0x9E3779B97F4A7C15ULL ^ crucible::detail::fmix64(s.kind);
+    h = h * 0x9E3779B97F4A7C15ULL ^ crucible::detail::fmix64(s.flags);
+    h = h * 0x9E3779B97F4A7C15ULL ^ crucible::detail::fmix64(
+        static_cast<uint64_t>(s.payload));
     return crucible::detail::fmix64(h);
 }
 
+} // namespace
+
 int main() {
-    std::printf("bench_reflect:\n");
+    bench::print_system_info();
+    bench::elevate_priority();
 
-    volatile uint32_t vid = 42;
-    volatile uint16_t vkind = 7;
-    volatile uint16_t vflags = 0x3F;
-    volatile int64_t  vpayload = 0x1234'5678'9ABC'DEF0LL;
+    const bool json = bench::env_json();
 
-    auto make_small = [&] {
-        Small s;
-        s.id = vid; s.kind = vkind; s.flags = vflags; s.payload = vpayload;
+    std::printf("=== reflect ===\n\n");
+
+    // All three Runs use volatile-seeded inputs so the compiler can't
+    // hoist the hash computation out of the body. The seeds live in the
+    // outer scope so the IIFE-lambdas can capture by reference.
+    volatile uint32_t vid       = 42;
+    volatile uint16_t vkind     = 7;
+    volatile uint16_t vflags    = 0x3F;
+    volatile int64_t  vpayload  = 0x1234'5678'9ABC'DEF0LL;
+    volatile uint64_t vschema   = 0xAABB'CCDD'0000'0000ULL;
+
+    auto make_small = [&]() noexcept {
+        Small s{};
+        s.id      = vid;
+        s.kind    = vkind;
+        s.flags   = vflags;
+        s.payload = vpayload;
         return s;
     };
 
-    BENCH("  reflect_hash<Small>  (4 fields)", 10'000'000, {
-        Small s = make_small();
-        auto h = crucible::reflect_hash(s);
-        bench::DoNotOptimize(h);
-    });
+    bench::Report reports[] = {
+        bench::run("reflect_hash<Small>  (4 fields)", [&]{
+            Small s = make_small();
+            auto h = crucible::reflect_hash(s);
+            bench::do_not_optimize(h);
+        }),
+        bench::run("manual fmix64 chain  (same 4)", [&]{
+            Small s = make_small();
+            auto h = manual_hash_small(s);
+            bench::do_not_optimize(h);
+        }),
+        bench::run("reflect_hash<Wide>  (19 fields)", [&]{
+            Wide w{};
+            w.schema      = vschema;
+            w.shape       = vschema ^ 1;
+            w.scope       = vschema ^ 2;
+            w.callsite    = vschema ^ 3;
+            w.num_inputs  = 2;
+            w.num_outputs = 1;
+            w.op_flags    = 0x1;
+            w.scalars[0]  = 1;
+            w.scalars[1]  = 2;
+            auto h = crucible::reflect_hash(w);
+            bench::do_not_optimize(h);
+        }),
+    };
 
-    BENCH("  manual fmix64 chain  (same 4)", 10'000'000, {
-        Small s = make_small();
-        auto h = manual_hash_small(s);
-        bench::DoNotOptimize(h);
-    });
+    bench::emit_reports_text(reports);
 
-    // Larger struct with 11 scalar + 7-byte pad + 5-element array = 19 items.
-    volatile uint64_t vschema = 0xAABB'CCDD'0000'0000ULL;
-    BENCH("  reflect_hash<Wide>  (19 fields)", 10'000'000, {
-        Wide w{};
-        w.schema = vschema;
-        w.shape  = vschema ^ 1;
-        w.scope  = vschema ^ 2;
-        w.callsite = vschema ^ 3;
-        w.num_inputs = 2; w.num_outputs = 1;
-        w.op_flags = 0x1;
-        w.scalars[0] = 1; w.scalars[1] = 2;
-        auto h = crucible::reflect_hash(w);
-        bench::DoNotOptimize(h);
-    });
+    // The core claim: reflect_hash<Small> and manual_hash_small produce
+    // statistically indistinguishable timings on a clean machine. If
+    // this goes [REGRESS], reflection's emitted code has drifted from
+    // the hand-rolled form.
+    std::printf("\n=== compare ===\n");
+    bench::compare(reports[0], reports[1]).print_text(stdout);
 
-    std::printf("\nbench_reflect: reflect path matches hand-rolled fmix64\n");
+    bench::emit_reports_json(reports, json);
     return 0;
 }
