@@ -7,6 +7,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/MerkleDag.h>
+#include <crucible/rt/Registry.h>
 
 namespace crucible {
 
@@ -79,9 +80,15 @@ struct CRUCIBLE_OWNER MetaLog {
     static_assert(ALLOC_BYTES % 64 == 0, "allocation size must be multiple of alignment");
     entries = static_cast<TensorMeta*>(std::aligned_alloc(64, ALLOC_BYTES));
     if (!entries) [[unlikely]] std::abort(); // 168MB alloc failed — unrecoverable
+    // Register as hot so rt::apply(production|cloud_vm) locks + THP-hints
+    // this 168 MB buffer. huge_hint=true: static + multi-page, THP wins.
+    crucible::rt::register_hot_region(entries, ALLOC_BYTES, /*huge=*/true, "MetaLog.entries");
   }
 
-  ~MetaLog() { std::free(entries); }
+  ~MetaLog() {
+    crucible::rt::unregister_hot_region(entries);
+    std::free(entries);
+  }
 
   MetaLog(const MetaLog&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
   MetaLog& operator=(const MetaLog&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
