@@ -19,7 +19,7 @@
  *   Net Health — TCP retransmits, resets, errors, packet drops, RTT, congestion
  *   Reliability— signals, OOM, thermal, MCE
  *
- * 58 tracepoint programs attached.
+ * 59 tracepoint programs attached.
  *
  * TODO(perf): sense_sched_switch runs system-wide (no early tgid gate).
  * On a busy box ~200K ctx switches/sec × 2 map lookups adds ~6 ms/s of
