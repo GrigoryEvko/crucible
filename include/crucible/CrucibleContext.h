@@ -52,9 +52,7 @@ struct CrucibleContext {
   // ── Activate compiled mode ──
   [[nodiscard]] bool activate(const RegionNode* region)
       CRUCIBLE_NO_THREAD_SAFETY
-#if CRUCIBLE_HAS_CONTRACTS
       pre (region != nullptr)
-#endif
   {
     if (!region->plan) [[unlikely]]
       return false;
@@ -85,9 +83,7 @@ struct CrucibleContext {
   // Cold path (COMPLETE): engine auto-resets for the next iteration.
   [[nodiscard]] CRUCIBLE_INLINE ReplayStatus
   advance(SchemaHash schema_hash, ShapeHash shape_hash)
-#if CRUCIBLE_HAS_CONTRACTS
       pre (mode_ == ContextMode::COMPILED)
-#endif
   {
     auto status = engine_.advance(schema_hash, shape_hash);
 
@@ -109,26 +105,20 @@ struct CrucibleContext {
 
   // ── Output/input pointer forwarding ──
   [[nodiscard]] CRUCIBLE_INLINE void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
-#if CRUCIBLE_HAS_CONTRACTS
       pre (mode_ == ContextMode::COMPILED)
-#endif
   {
     return engine_.output_ptr(j);
   }
 
   [[nodiscard]] CRUCIBLE_INLINE void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
-#if CRUCIBLE_HAS_CONTRACTS
       pre (mode_ == ContextMode::COMPILED)
-#endif
   {
     return engine_.input_ptr(j);
   }
 
   // ── Register external slot pointer ──
   void register_external(SlotId sid, void* ptr)
-#if CRUCIBLE_HAS_CONTRACTS
       pre (mode_ == ContextMode::COMPILED)
-#endif
   {
     pool_.register_external(sid, ptr);
   }
@@ -136,10 +126,8 @@ struct CrucibleContext {
   // ── Switch to a different compiled region (mid-iteration safe) ──
   [[nodiscard]] bool switch_region(const RegionNode* alt, uint32_t div_pos)
       CRUCIBLE_NO_THREAD_SAFETY
-#if CRUCIBLE_HAS_CONTRACTS
       pre (mode_ == ContextMode::COMPILED)
       pre (alt != nullptr)
-#endif
   {
     if (!alt->plan) [[unlikely]]
       return false;
