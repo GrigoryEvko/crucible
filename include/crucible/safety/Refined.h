@@ -93,9 +93,7 @@ public:
 
     // Checked construction — contract fires if the predicate fails.
     constexpr explicit Refined(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
-#if CRUCIBLE_HAS_CONTRACTS
         pre(Pred(v))
-#endif
         : value_{std::move(v)} {}
 
     // Trusted construction — no check, caller-asserted invariant.

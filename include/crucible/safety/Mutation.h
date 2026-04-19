@@ -97,9 +97,7 @@ public:
 
     // Advance.  Contract-checks that the new value does not go backward.
     constexpr void advance(T new_value) noexcept(std::is_nothrow_move_assignable_v<T>)
-#if CRUCIBLE_HAS_CONTRACTS
         pre(!Cmp{}(new_value, value_))
-#endif
     {
         value_ = std::move(new_value);
     }
@@ -140,9 +138,7 @@ public:
 
     // Set exactly once.  Contract-checks that value has not been set.
     constexpr void set(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
-#if CRUCIBLE_HAS_CONTRACTS
         pre(!value_.has_value())
-#endif
     {
         value_.emplace(std::move(v));
     }
@@ -156,9 +152,7 @@ public:
 
     // Read the set value.  Contract-fails if not yet set.
     [[nodiscard]] constexpr const T& get() const noexcept
-#if CRUCIBLE_HAS_CONTRACTS
         pre(value_.has_value())
-#endif
     {
         return *value_;
     }
