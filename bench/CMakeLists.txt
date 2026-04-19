@@ -201,13 +201,15 @@ endfunction()
 
 # ── Migrated to the new bench::Run / Report / Compare API ─────────────
 crucible_bench(bench_arena)
-crucible_bench(bench_trace_ring)
+crucible_bench(bench_ckernel)
 crucible_bench(bench_meta_log)
+crucible_bench(bench_schema_table)
 crucible_bench(bench_smoke)
+crucible_bench(bench_trace_ring)
 
-# TODO: 19 more benches (pool_allocator, region_cache,
+# TODO: 17 more benches (pool_allocator, region_cache,
 # dispatch, swiss_table, expr_pool, iteration_detector, replay_engine,
-# merkle_dag, phases, saturate, safety, philox, ckernel, schema_table,
+# merkle_dag, phases, saturate, safety, philox,
 # serialize, graph, reflect, cipher, content_hash) need migration to
 # the new bench::Run/Report/Compare harness. Each one is independent;
 # add a crucible_bench(bench_<name>) line as each lands.
