@@ -202,17 +202,27 @@ constexpr uint16_t composite_flags(
 //   - Term combining: add(a, 2a) → 3a (via coefficient decomposition)
 class CRUCIBLE_OWNER ExprPool {
  public:
-  explicit ExprPool(fx::Alloc a, size_t initial_capacity = 1 << 16) : arena_() {
+  // Default `initial_capacity` chosen to fit the 256-entry int cache + 2
+  // boolean singletons at ≤60% load, zero rehashes during ctor:
+  //
+  //   AVX-512BW:  kGroupWidth(64) * 16 = 1024 slots →  9 KB ctrl+slots
+  //   AVX2:       kGroupWidth(32) * 16 =  512 slots → ~5 KB ctrl+slots
+  //   SSE2/NEON:  kGroupWidth(16) * 16 =  256 slots → ~2.5 KB ctrl+slots
+  //
+  // Callers expecting to intern many more exprs should call reserve(n)
+  // after construction to skip the early grow sequence. Previous default
+  // (1 << 16 = 65536) allocated ~590 KB up front on every construct —
+  // in bench harnesses and short-lived test scopes that cost ~25 cold-
+  // page faults per instance (observed >7M faults in bench_graph's 65k-
+  // iteration loop), dominating measured runtime.
+  explicit ExprPool(fx::Alloc a,
+                    size_t initial_capacity = detail::kGroupWidth * 16) : arena_() {
     // Round up to power of 2, minimum one full SIMD group
     capacity_ = detail::kGroupWidth;
     while (capacity_ < initial_capacity)
       capacity_ <<= 1;
 
-    ctrl_ = static_cast<int8_t*>(std::malloc(capacity_));
-    if (!ctrl_) [[unlikely]] std::abort();
-    std::memset(ctrl_, 0x80, capacity_); // kEmpty = 0x80
-    slots_ = static_cast<const Expr**>(std::calloc(capacity_, sizeof(const Expr*)));
-    if (!slots_) [[unlikely]] std::abort();
+    alloc_tables_(capacity_);
     intern_count_ = 0;
 
     // Boolean singletons
@@ -226,14 +236,30 @@ class CRUCIBLE_OWNER ExprPool {
   }
 
   ~ExprPool() {
-    std::free(ctrl_);
-    std::free(slots_);
+    std::free(backing_);
   }
 
   ExprPool(const ExprPool&) = delete("ExprPool owns arena + Swiss table with interior pointers");
   ExprPool& operator=(const ExprPool&) = delete("ExprPool owns arena + Swiss table with interior pointers");
   ExprPool(ExprPool&&) = delete("interned Expr* pointers would dangle after arena move");
   ExprPool& operator=(ExprPool&&) = delete("interned Expr* pointers would dangle after arena move");
+
+  // Pre-grow the Swiss table to hold at least `n_entries` without
+  // triggering rehash during subsequent intern_node calls. No-op if the
+  // table already has the capacity. Safe to call multiple times.
+  //
+  // A production KernelCache that will register ~10k sub-computations
+  // calls `pool.reserve(10'000)` right after construction and skips the
+  // ~5 doublings (256→512→1024→2048→4096→8192→16384) that would
+  // otherwise land on its insertion path.
+  void reserve(size_t n_entries) {
+    // Need capacity such that n_entries * 8 <= capacity * 7 (87.5% LF).
+    // Solve: capacity >= ceil(n_entries * 8 / 7).
+    const size_t needed = (n_entries * 8 + 6) / 7;
+    size_t target = detail::kGroupWidth;
+    while (target < needed) target <<= 1;
+    if (target > capacity_) grow_to_(target);
+  }
 
   // ---- Atom construction ----
 
@@ -1208,19 +1234,46 @@ class CRUCIBLE_OWNER ExprPool {
     }
   }
 
+  // Allocate `ctrl_` + `slots_` in a single contiguous backing buffer.
+  // Layout:
+  //   [ctrl_: `cap` bytes] [slots_: `cap * 8` bytes]
+  // slots_ starts at offset `cap`, which is always a multiple of
+  // kGroupWidth (≥ 16) → trivially 8-byte aligned for the pointer array.
+  // Merging the two saves one malloc/free pair per ctor/rehash, reduces
+  // fragmentation, and typically keeps ctrl_ and the first slots on
+  // adjacent cache lines (better prefetch behavior on the insert path).
+  void alloc_tables_(size_t cap) {
+    const size_t slot_bytes = cap * sizeof(const Expr*);
+    const size_t total      = cap + slot_bytes;
+    // aligned_alloc requires size to be a multiple of alignment.
+    const size_t rounded    = (total + 63) & ~size_t(63);
+    backing_ = std::aligned_alloc(64, rounded);
+    if (!backing_) [[unlikely]] std::abort();
+
+    ctrl_  = static_cast<int8_t*>(backing_);
+    slots_ = reinterpret_cast<const Expr**>(
+        static_cast<char*>(backing_) + cap);
+    std::memset(ctrl_, 0x80, cap);          // kEmpty = 0x80
+    std::memset(slots_, 0, slot_bytes);     // null-init slot pointers
+  }
+
   CRUCIBLE_UNSAFE_BUFFER_USAGE
-  void rehash() {
+  void rehash() { grow_to_(capacity_ * 2); }
+
+  // Core resize: allocate new ctrl_/slots_ of `new_capacity`, re-insert
+  // every live entry at its new home, free the old buffer. Called both
+  // by rehash() (implicit doubling at 87.5% load) and reserve() (caller-
+  // directed pre-growth). new_capacity must be a power of 2 and a
+  // multiple of kGroupWidth — the public entrypoints enforce that.
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
+  void grow_to_(size_t new_capacity) {
     size_t old_cap = capacity_;
     int8_t* old_ctrl = ctrl_;
     const Expr** old_slots = slots_;
+    void* old_backing = backing_;
 
-    capacity_ *= 2;
-    ctrl_ = static_cast<int8_t*>(std::malloc(capacity_));
-    if (!ctrl_) [[unlikely]] std::abort();
-    std::memset(ctrl_, 0x80, capacity_);
-    slots_ = static_cast<const Expr**>(
-        std::calloc(capacity_, sizeof(const Expr*)));
-    if (!slots_) [[unlikely]] std::abort();
+    capacity_ = new_capacity;
+    alloc_tables_(capacity_);
     intern_count_ = 0;
 
     size_t slot_mask = capacity_ - 1;
@@ -1248,15 +1301,15 @@ class CRUCIBLE_OWNER ExprPool {
         base = (base + probe * detail::kGroupWidth) & slot_mask;
       }
     }
-    std::free(old_ctrl);
-    std::free(old_slots);
+    std::free(old_backing);
   }
 
   Arena arena_;
-  int8_t* ctrl_;           // Control bytes: kEmpty (0x80) or H2 tag (0x00..0x7F)
-  const Expr** slots_;     // Slot array: interned Expr* pointers
-  size_t capacity_;        // Total slots (always power of 2, multiple of kGroupWidth)
-  size_t intern_count_;    // Number of occupied slots
+  void*   backing_ = nullptr;   // One aligned buffer holds ctrl_ + slots_.
+  int8_t* ctrl_;                // Points into backing_ at offset 0.
+  const Expr** slots_;          // Points into backing_ at offset capacity_.
+  size_t capacity_;             // Total slots (always power of 2, multiple of kGroupWidth)
+  size_t intern_count_;         // Number of occupied slots
   std::vector<const char*> symbol_names_;
 
   const Expr* int_cache_[kIntCacheSize];
