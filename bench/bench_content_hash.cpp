@@ -1,17 +1,17 @@
 // Isolate compute_content_hash to inform wymix / fmix64 alternatives.
 //
-// vit_b.crtrace phase breakdown shows P2b (content hash) at 30 % of
-// phase-2 cost.  Bench varies tensor rank (4 vs 8 dims) and input
-// count (1 vs 3 vs 8) to tell where cost concentrates.
-
-#include <crucible/Arena.h>
-#include <crucible/Effects.h>
-#include <crucible/MerkleDag.h>
+// vit_b.crtrace phase breakdown shows P2b (content hash) at ~30% of
+// phase-2 cost.  Bench varies tensor rank (4D vs 8D) and input count
+// (1 vs 3) to tell where the cost concentrates.
 
 #include <cstdint>
 #include <cstdio>
 #include <span>
 #include <vector>
+
+#include <crucible/Arena.h>
+#include <crucible/Effects.h>
+#include <crucible/MerkleDag.h>
 
 #include "bench_harness.h"
 
@@ -27,15 +27,15 @@ static std::vector<TraceEntry> make_ops(Arena& arena,
     std::vector<TraceEntry> ops(count);
     for (uint32_t i = 0; i < count; i++) {
         auto& te = ops[i];
-        te.schema_hash = SchemaHash{0xAAAA'0000'0000'0000ULL ^ i};
-        te.num_inputs = num_inputs;
-        te.num_outputs = 1;
-        te.input_metas = arena.alloc_array<TensorMeta>(A, num_inputs);
+        te.schema_hash  = SchemaHash{0xAAAA'0000'0000'0000ULL ^ i};
+        te.num_inputs   = num_inputs;
+        te.num_outputs  = 1;
+        te.input_metas  = arena.alloc_array<TensorMeta>(A, num_inputs);
         std::uninitialized_value_construct_n(te.input_metas, num_inputs);
         for (uint16_t j = 0; j < num_inputs; j++) {
             auto& m = te.input_metas[j];
-            m.ndim = ndim;
-            m.dtype = ScalarType::Float;
+            m.ndim        = ndim;
+            m.dtype       = ScalarType::Float;
             m.device_type = DeviceType::CUDA;
             for (uint8_t d = 0; d < ndim; d++) {
                 m.sizes[d]   = (d == ndim - 1) ? 128 : 32;
@@ -50,37 +50,43 @@ static std::vector<TraceEntry> make_ops(Arena& arena,
 }
 
 int main() {
-    std::printf("bench_content_hash:\n");
+    bench::print_system_info();
+    bench::elevate_priority();
 
-    // (num_ops, ndim, inputs_per_op)
-    struct Config { uint32_t n; uint8_t ndim; uint16_t ins; const char* label; };
+    const bool json = bench::env_json();
+
+    struct Config {
+        uint32_t  n;
+        uint8_t   ndim;
+        uint16_t  ins;
+        const char* label;
+    };
     const Config cfgs[] = {
-        {  128, 4, 1, "128 ops × 1×4D"},
-        {  128, 4, 3, "128 ops × 3×4D"},
-        {  128, 8, 3, "128 ops × 3×8D"},
+        {  128, 4, 1, "128 ops ×  1×4D"},
+        {  128, 4, 3, "128 ops ×  3×4D"},
+        {  128, 8, 3, "128 ops ×  3×8D"},
         { 1024, 4, 3, "1024 ops × 3×4D"},
         { 1024, 8, 3, "1024 ops × 3×8D"},
     };
 
+    std::printf("=== content_hash ===\n\n");
+
+    // One arena + ops vector per config; kept alive in outer scope so
+    // the body can reference the span by value-into-reference.
+    std::vector<bench::Report> reports;
+    reports.reserve(std::size(cfgs));
+
     for (const auto& c : cfgs) {
         Arena arena{1 << 20};
-        auto ops = make_ops(arena, c.n, c.ndim, c.ins);
-        std::span<const TraceEntry> span{ops.data(), ops.size()};
+        auto  ops  = make_ops(arena, c.n, c.ndim, c.ins);
+        const std::span<const TraceEntry> span{ops.data(), ops.size()};
 
-        const uint64_t iters = 2'000'000 / c.n;
-
-        char label[64];
-        std::snprintf(label, sizeof(label), "  %s", c.label);
-        BENCH(label, iters, {
+        reports.push_back(bench::run(c.label, [&]{
             auto h = compute_content_hash(span);
-            bench::DoNotOptimize(h);
-        });
-
-        // Per-op / per-tensor-fold breakdown (rough).
-        const double per_op = static_cast<double>(iters) /*1*/;
-        (void)per_op;
+            bench::do_not_optimize(h);
+        }));
     }
 
-    std::printf("\nbench_content_hash: complete\n");
+    bench::emit_reports(reports, json);
     return 0;
 }
