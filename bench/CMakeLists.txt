@@ -1,7 +1,7 @@
 # Benchmark targets — O3 + native, no sanitizers.
 # Built separately from tests:
 #   cmake --preset bench && cmake --build --preset bench
-#   ./build-bench/bench/bench_smoke
+#   ./build-bench/bench/bench_arena
 
 function(crucible_bench name)
   add_executable(${name} ${name}.cpp)
@@ -13,29 +13,35 @@ function(crucible_bench name)
   set_target_properties(${name} PROPERTIES CRUCIBLE_NO_WERROR TRUE)
 endfunction()
 
-crucible_bench(bench_smoke)
+# ── Migrated to the new bench::Run / Report / Compare API ─────────────
 crucible_bench(bench_arena)
-crucible_bench(bench_meta_log)
-crucible_bench(bench_pool_allocator)
 crucible_bench(bench_trace_ring)
-crucible_bench(bench_region_cache)
-crucible_bench(bench_dispatch)
-crucible_bench(bench_swiss_table)
-crucible_bench(bench_expr_pool)
-crucible_bench(bench_iteration_detector)
-crucible_bench(bench_replay_engine)
-crucible_bench(bench_merkle_dag)
-crucible_bench(bench_phases)
-crucible_bench(bench_saturate)
-crucible_bench(bench_safety)
-crucible_bench(bench_philox)
-crucible_bench(bench_ckernel)
-crucible_bench(bench_schema_table)
-crucible_bench(bench_serialize)
-crucible_bench(bench_graph)
-crucible_bench(bench_reflect)
-crucible_bench(bench_cipher)
-crucible_bench(bench_content_hash)
+
+# ── TODO: migrate to the new API in subsequent commits. Each one is
+#        independent. Until migrated they remain off so the bench preset
+#        builds clean against the new harness. ────────────────────────
+#
+# crucible_bench(bench_smoke)
+# crucible_bench(bench_meta_log)
+# crucible_bench(bench_pool_allocator)
+# crucible_bench(bench_region_cache)
+# crucible_bench(bench_dispatch)
+# crucible_bench(bench_swiss_table)
+# crucible_bench(bench_expr_pool)
+# crucible_bench(bench_iteration_detector)
+# crucible_bench(bench_replay_engine)
+# crucible_bench(bench_merkle_dag)
+# crucible_bench(bench_phases)
+# crucible_bench(bench_saturate)
+# crucible_bench(bench_safety)
+# crucible_bench(bench_philox)
+# crucible_bench(bench_ckernel)
+# crucible_bench(bench_schema_table)
+# crucible_bench(bench_serialize)
+# crucible_bench(bench_graph)
+# crucible_bench(bench_reflect)
+# crucible_bench(bench_cipher)
+# crucible_bench(bench_content_hash)
 
 # ── Visualization tool ────────────────────────────────────────────────
 # Not a benchmark — a utility for rendering .crtrace traces as SVG.
