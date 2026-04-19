@@ -65,6 +65,37 @@
 
 namespace bench {
 
+// ── CpuId strong type (TypeSafe axiom) ─────────────────────────────
+//
+// Wraps a signed CPU index so that sched_getcpu()/sched_setaffinity
+// arguments aren't interchangeable with raw `int`s flowing through the
+// builder API. Mirrors CRUCIBLE_STRONG_ID in include/crucible/Types.h
+// but uses a signed underlying type because POSIX CPU indices can be
+// -1 ("unknown / no pin"). No arithmetic operators — callers must
+// .raw() to compute, then rewrap.
+//
+//   • Default construct → CpuId::none() (raw() == -1, is_valid() == false)
+//   • CpuId{sched_getcpu()} — explicit ctor, no implicit conversions
+//   • is_valid() — true iff raw() >= 0 (a real CPU index)
+//   • printed with %d after .raw() — matches existing format strings
+struct CpuId {
+    int raw_ = -1;
+
+    constexpr CpuId() noexcept = default;
+    constexpr explicit CpuId(int v) noexcept : raw_{v} {}
+
+    [[nodiscard]] static constexpr CpuId none() noexcept { return CpuId{-1}; }
+
+    [[nodiscard]] constexpr int  raw()      const noexcept { return raw_; }
+    [[nodiscard]] constexpr bool is_valid() const noexcept { return raw_ >= 0; }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {
+        return is_valid();
+    }
+
+    constexpr auto operator<=>(const CpuId&) const noexcept = default;
+};
+static_assert(sizeof(CpuId) == sizeof(int));
+
 // ── Fenced RDTSC primitives ────────────────────────────────────────
 //
 // Intel's "How to Benchmark..." (2010) §3.2.1: LFENCE before RDTSC to
@@ -330,8 +361,8 @@ struct CI {
 
 struct Report {
     std::string         name;
-    size_t              batch       = 1;     // > 1 → pct over batch means
-    int                 pinned_cpu  = -1;
+    size_t              batch       = 1;     // > 1 → pct over batch means  // TODO: strong type
+    CpuId               pinned_cpu{};        // CpuId::none() = -1 / no pin
     double              wall_ns     = 0;     // total measurement wall time
     double              drift_pct   = 0;     // |first-half - second-half p50| / p50
     bool                drift_flag  = false; // drift_pct > 10 %
@@ -359,7 +390,32 @@ struct Report {
 
     std::vector<double> samples;  // kept for bootstrap_ci, compare
 
+    // Report owns a potentially-large sample vector (~100k doubles by
+    // default = 800 KB). Copying is almost always an accidental pessim-
+    // ization — accepted callers either take `const Report&` (compare,
+    // print_*) or move from a return value. Delete copy, keep move.
+    Report() = default;
+    ~Report() = default;
+    Report(const Report&) = delete("copy of Report is almost always unintentional; use move semantics or pass by const&");
+    Report& operator=(const Report&) = delete("copy-assignment of Report is almost always unintentional; use move or const&");
+    Report(Report&&) noexcept = default;
+    Report& operator=(Report&&) noexcept = default;
+
+    // Bootstrap CI on a sample percentile. Returns CI{0,0} on insufficient
+    // samples (n < 30) — callers that need to distinguish "no data" from
+    // a genuine interval centred at zero should use `ci_opt()`, which
+    // surfaces the "not enough samples" case as std::nullopt.
     [[nodiscard]] CI ci(double frac, size_t B = 1000) const {
+        return bootstrap_ci(samples, frac, B);
+    }
+
+    // Same as ci() but distinguishes "insufficient samples" (nullopt)
+    // from a computed interval. Implicitly wraps the CI-returning
+    // bootstrap_ci — a CI with lo == hi == 0 still reports has_value()
+    // == true; callers that need the n < 30 signal should gate on
+    // samples.size() >= 30 before consulting the return.
+    [[nodiscard]] std::optional<CI> ci_opt(double frac, size_t B = 1000) const {
+        if (samples.size() < 30) return std::nullopt;
         return bootstrap_ci(samples, frac, B);
     }
 
@@ -382,7 +438,7 @@ struct Report {
             std::fprintf(out, "  @%.2fGHz", static_cast<double>(freq_start_hz) / 1e9);
         }
         std::fprintf(out, "  n=%zu", pct.n);
-        if (pinned_cpu >= 0)   std::fprintf(out, "  cpu%d",   pinned_cpu);
+        if (pinned_cpu.is_valid()) std::fprintf(out, "  cpu%d", pinned_cpu.raw());
         if (batch > 1)         std::fprintf(out, "  [batch-avg]");
         if (noisy())           std::fprintf(out, "  [noisy]");
         if (drift_flag)        std::fprintf(out, "  [drift]");
@@ -390,23 +446,55 @@ struct Report {
         std::fprintf(out, "\n");
 
 #if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
-        // One-line sensory summary — emitted only when at least one
-        // "interesting" counter fired during the run. For most pure-
-        // CPU benches the line is absent, so no noise.
+        // One-line sensory summary. When BPF is attached and every
+        // interesting counter is zero we still emit "└─ sched clean"
+        // as confirmation that senses ARE attached (so the reader can
+        // trust the silence). When any counter fires, only the fields
+        // that actually have a delta are printed.
         print_bpf_summary_(out);
 #endif
     }
 
+    // Minimal RFC-8259 string escape — covers every char that would
+    // make a JSON parser unhappy inside a "..."-quoted value. Names in
+    // benches can contain `"` (e.g. arena.copy_string(\"relu\")), and
+    // are user-controlled by the Run constructor. Escape these before
+    // emission to produce valid JSON unconditionally.
+    static void fprint_json_string(FILE* out, std::string_view s) noexcept {
+        std::fputc('"', out);
+        for (unsigned char c : s) {
+            switch (c) {
+                case '"':  std::fputs("\\\"", out); break;
+                case '\\': std::fputs("\\\\", out); break;
+                case '\b': std::fputs("\\b",  out); break;
+                case '\f': std::fputs("\\f",  out); break;
+                case '\n': std::fputs("\\n",  out); break;
+                case '\r': std::fputs("\\r",  out); break;
+                case '\t': std::fputs("\\t",  out); break;
+                default:
+                    if (c < 0x20) {
+                        std::fprintf(out, "\\u%04x", static_cast<unsigned>(c));
+                    } else {
+                        std::fputc(static_cast<char>(c), out);
+                    }
+            }
+        }
+        std::fputc('"', out);
+    }
+
     void print_json(FILE* out) const {
+        std::fputc('{', out);
+        std::fputs("\"name\":", out);
+        fprint_json_string(out, name);
         std::fprintf(out,
-            "{\"name\":\"%s\",\"batch\":%zu,\"n\":%zu,\"cpu\":%d,"
+            ",\"batch\":%zu,\"n\":%zu,\"cpu\":%d,"
             "\"p50\":%.3f,\"p75\":%.3f,\"p90\":%.3f,\"p95\":%.3f,"
             "\"p99\":%.3f,\"p99_9\":%.3f,\"p99_99\":%.3f,"
             "\"min\":%.3f,\"max\":%.3f,\"mean\":%.3f,\"stddev\":%.3f,"
             "\"cv\":%.5f,\"wall_ns\":%.0f,\"drift_pct\":%.3f,"
             "\"cycles_per_op\":%.3f,"
             "\"freq_start_hz\":%lu,\"freq_end_hz\":%lu",
-            name.c_str(), batch, pct.n, pinned_cpu,
+            batch, pct.n, pinned_cpu.raw(),
             pct.p50, pct.p75, pct.p90, pct.p95,
             pct.p99, pct.p99_9, pct.p99_99,
             pct.min, pct.max, pct.mean, pct.stddev, pct.cv,
@@ -417,7 +505,7 @@ struct Report {
 #if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
         print_bpf_json_(out);
 #endif
-        std::fprintf(out, "}");
+        std::fputc('}', out);
     }
 
  private:
@@ -428,6 +516,10 @@ struct Report {
     void print_bpf_summary_(FILE* out) const noexcept {
         if (bpf_attached == 0) return;
         const auto& d = bpf_delta;
+        // Gate each sense on non-zero; but always emit one confirmation
+        // line so the reader knows senses ARE attached (rather than
+        // wondering "are they missing, or just quiet?"). For fully
+        // clean runs this collapses to a single "└─ sched clean" line.
         const bool interesting =
             d[bench::bpf::SCHED_CTX_VOL]       ||
             d[bench::bpf::SCHED_CTX_INVOL]     ||
@@ -439,9 +531,13 @@ struct Report {
             d[bench::bpf::SOFTIRQ_STOLEN_NS]   ||
             d[bench::bpf::MEM_MMAP_COUNT]      ||
             d[bench::bpf::MEM_MUNMAP_COUNT];
-        if (!interesting) return;
 
-        std::fprintf(out, "     senses:");
+        if (!interesting) {
+            std::fprintf(out, "     └─ sched  clean\n");
+            return;
+        }
+
+        std::fprintf(out, "     └─ senses:");
         if (uint64_t v = d[bench::bpf::SCHED_CTX_VOL])       std::fprintf(out, " vol=%lu",  v);
         if (uint64_t v = d[bench::bpf::SCHED_CTX_INVOL])     std::fprintf(out, " invol=%lu", v);
         if (uint64_t v = d[bench::bpf::SCHED_MIGRATIONS])    std::fprintf(out, " mig=%lu",  v);
@@ -525,25 +621,50 @@ struct Compare {
     std::sort(all.begin(), all.end(),
               [](Tagged const& x, Tagged const& y) { return x.v < y.v; });
 
+    // Rank the union of A and B. In a tie group spanning positions
+    // [i..j] (inclusive), every element gets the average of the ranks
+    // i+1 through j+1. Simultaneously accumulate the tie-correction
+    // sum T = Σ(tᵢ³ − tᵢ), where tᵢ is each tie-group's size; used
+    // below to adjust sigma for ties.
     long double r1 = 0;
+    long double tie_sum = 0;
     size_t i = 0;
     while (i < all.size()) {
         size_t j = i;
         while (j + 1 < all.size() && all[j + 1].v == all[i].v) ++j;
         const double avg_rank = (static_cast<double>(i + j) + 2.0) / 2.0;
+        const long double t = static_cast<long double>(j - i + 1);
+        tie_sum += t * t * t - t;  // 0 for tie groups of size 1
         for (size_t k = i; k <= j; ++k) {
             if (all[k].src == 0) r1 += avg_rank;
         }
         i = j + 1;
     }
 
-    const double u1    = static_cast<double>(r1) - static_cast<double>(n1) * (n1 + 1) / 2.0;
-    const double u2    = static_cast<double>(n1) * n2 - u1;
-    const double u_min = std::min(u1, u2);
-    const double mu    = static_cast<double>(n1) * n2 / 2.0;
-    const double sigma = std::sqrt(static_cast<double>(n1) * n2 * (n1 + n2 + 1) / 12.0);
+    const double    u1    = static_cast<double>(r1) - static_cast<double>(n1) * (n1 + 1) / 2.0;
+    const double    u2    = static_cast<double>(n1) * n2 - u1;
+    const double    u_min = std::min(u1, u2);
+    const double    mu    = static_cast<double>(n1) * n2 / 2.0;
+
+    // Tie-corrected variance (Mann & Whitney 1947 §5; Siegel 1956):
+    //   sigma² = (n1·n2 / 12) · (N + 1 − T / (N·(N − 1)))
+    // For T = 0 (no ties) this reduces to the classical form.
+    const long double N       = static_cast<long double>(n1) + static_cast<long double>(n2);
+    const long double n1n2_12 = (static_cast<long double>(n1) * n2) / 12.0L;
+    const long double Ncorr   = (N > 1.0L)
+        ? (N + 1.0L - tie_sum / (N * (N - 1.0L)))
+        : (N + 1.0L);
+    const double sigma = static_cast<double>(std::sqrt(std::max<long double>(0, n1n2_12 * Ncorr)));
+
+    // Continuity correction: subtract 0.5 from |u_min − mu| before
+    // dividing by sigma (normal approximation of a discrete statistic).
+    // Sign of z preserves direction (is A tending below or above B?).
+    const double diff  = u_min - mu;
+    const double adj   = (diff >= 0.0 ? +1.0 : -1.0)
+                       * std::max(0.0, std::abs(diff) - 0.5);
+
     c.u = u_min;
-    c.z = (sigma > 0) ? ((u_min - mu) / sigma) : 0.0;
+    c.z = (sigma > 0) ? (adj / sigma) : 0.0;
     c.distinguishable = std::abs(c.z) > 2.576;
     return c;
 }
@@ -555,18 +676,30 @@ class Run {
     explicit Run(std::string name) : name_{std::move(name)} {}
 
     // Pinning policy:
-    //   default:    pin to isolcpu if available, else sched_getcpu()
-    //   .core(N):   pin to CPU N
-    //   .no_pin():  do not touch affinity
-    Run& samples(size_t n) { samples_   = n; return *this; }
-    Run& warmup(size_t n)  { warmup_    = n; return *this; }
-    Run& batch(size_t n)   { batch_     = n; return *this; }
-    Run& core(int c)       { core_      = c; pin_mode_ = Pin::Explicit; return *this; }
-    Run& no_pin()          { pin_mode_  = Pin::None;   return *this; }
+    //   default:       pin to first isolcpu (else sched_getcpu())
+    //   .core(N) N≥0:  pin to CPU N
+    //   .core(-1):     treat as .default; still applies affinity to
+    //                  isolcpu/sched_getcpu() (previously silently
+    //                  returned without pinning, so env CRUCIBLE_BENCH_CORE
+    //                  unset → no affinity ever applied)
+    //   .no_pin():     do not touch affinity
+    //
+    // [[nodiscard]] on every setter — the fluent builder is worthless if
+    // the returned Run& is thrown away before .measure().
+    [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
+    Run& samples(size_t n) noexcept { samples_ = n; return *this; }
+    [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
+    Run& warmup(size_t n)  noexcept { warmup_  = n; return *this; }
+    [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
+    Run& batch(size_t n)   noexcept { batch_   = n; return *this; }
+    [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
+    Run& core(int c)       noexcept { core_    = CpuId{c}; pin_mode_ = Pin::Explicit; return *this; }
+    [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
+    Run& no_pin()          noexcept { pin_mode_ = Pin::None; return *this; }
 
     template <typename Body>
     [[nodiscard]] Report measure(Body&& body) const {
-        const int pinned_cpu = pin_();
+        const CpuId pinned_cpu = pin_();
 
         const double   nspc = Timer::ns_per_cycle();
         const uint64_t ovh  = Timer::overhead_cycles();
@@ -576,7 +709,7 @@ class Run {
 
         for (size_t i = 0; i < warmup_; ++i) body();
 
-        const uint64_t freq_start = detail::read_cpu_freq_hz(pinned_cpu);
+        const uint64_t freq_start = detail::read_cpu_freq_hz(pinned_cpu.raw());
 
 #if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
         const bench::bpf::SenseHub* hub = detail::bpf_instance();
@@ -596,7 +729,13 @@ class Run {
             const uint64_t t0 = rdtsc_start();
             for (size_t j = 0; j < batch; ++j) body();
             const uint64_t t1 = rdtsc_end();
-            const uint64_t d  = (t1 > t0 + ovh) ? (t1 - t0 - ovh) : 0;
+            // RDTSCP+LFENCE guarantees t1 >= t0 (each RDTSC pair is
+            // monotone on a single core); modular unsigned subtraction
+            // is therefore safe. The older form `(t1 > t0 + ovh)`
+            // wraps to false when t0 + ovh overflows UINT64_MAX, which
+            // can happen after a long runtime on a 4+ GHz core.
+            const uint64_t raw = t1 - t0;
+            const uint64_t d   = (raw > ovh) ? (raw - ovh) : 0;
             ns_samples.push_back(
                 (static_cast<double>(d) * nspc) / static_cast<double>(batch));
         }
@@ -605,14 +744,18 @@ class Run {
 #if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
         if (hub != nullptr) bpf_post = hub->read();
 #endif
-        const uint64_t freq_end = detail::read_cpu_freq_hz(pinned_cpu);
+        const uint64_t freq_end = detail::read_cpu_freq_hz(pinned_cpu.raw());
 
         // Drift: compare first-half vs second-half p50 as a proxy for
-        // frequency or cache-state transitions during the run.
+        // frequency or cache-state transitions during the run. Use
+        // (S+1)/2 so that on odd S, h1 contains the median element and
+        // is never shorter than h2 — makes the comparison symmetric in
+        // "which half includes the middle sample?" rather than biased
+        // toward the lower half (which S/2 would do).
         double drift = 0;
         bool drift_flag = false;
         if (S >= 200) {
-            const auto half = static_cast<std::ptrdiff_t>(S / 2);
+            const auto half = static_cast<std::ptrdiff_t>((S + 1) / 2);
             std::vector<double> h1(ns_samples.begin(), ns_samples.begin() + half);
             std::vector<double> h2(ns_samples.begin() + half, ns_samples.end());
             std::sort(h1.begin(), h1.end());
@@ -666,10 +809,10 @@ class Run {
     enum class Pin : uint8_t { Auto, Explicit, None };
 
     std::string name_;
-    size_t      samples_  = 0;
-    size_t      warmup_   = 10'000;
-    size_t      batch_    = 0;
-    int         core_     = -1;
+    size_t      samples_  = 0;          // TODO: strong type (count, not an id)
+    size_t      warmup_   = 10'000;     // TODO: strong type
+    size_t      batch_    = 0;          // TODO: strong type
+    CpuId       core_{};                // CpuId::none() → falls through to Auto
     Pin         pin_mode_ = Pin::Auto;
 
     [[nodiscard]] static size_t env_samples_() noexcept {
@@ -680,37 +823,75 @@ class Run {
         return 100'000;
     }
 
-    // Returns the CPU actually pinned to, or -1 on None / failure.
-    [[nodiscard]] int pin_() const noexcept {
+    // Apply affinity and return the CPU we actually ended up on.
+    //
+    //  • Pin::None → no affinity change, just report sched_getcpu().
+    //  • Pin::Explicit with core_ >= 0 → target = core_.
+    //  • Pin::Explicit with core_ < 0 (e.g. `.core(-1)` because the
+    //    caller's env var defaulted to -1) → fall through to the Auto
+    //    discovery path instead of silently skipping pinning. Previously
+    //    this early-returned -1 and BOTH shipped benches (which use
+    //    `.core(env_core())` with env_core()=-1 default) never applied
+    //    any affinity at all.
+    //  • Pin::Auto → first isolcpu, else sched_getcpu().
+    //
+    // After a successful sched_setaffinity, re-read sched_getcpu() — the
+    // scheduler is not obliged to migrate us synchronously, so the
+    // value we return is the one actually executing user code. On
+    // sched_setaffinity failure we return CpuId::none() rather than
+    // the pre-call sched_getcpu(), to avoid silently pretending we
+    // successfully pinned.
+    [[nodiscard]] CpuId pin_() const noexcept {
 #ifdef __linux__
-        if (pin_mode_ == Pin::None) return sched_getcpu();
+        if (pin_mode_ == Pin::None) return CpuId{sched_getcpu()};
 
         int target = -1;
-        if (pin_mode_ == Pin::Explicit) {
-            target = core_;
+        const bool explicit_valid =
+            (pin_mode_ == Pin::Explicit) && core_.is_valid();
+        if (explicit_valid) {
+            target = core_.raw();
         } else {
+            // Auto path, OR Explicit-but-negative (task-1 fix).
             target = detail::first_isolated_cpu();
             if (target < 0) target = sched_getcpu();
         }
-        if (target < 0) return -1;
+        if (target < 0) return CpuId::none();
 
         cpu_set_t set;
         CPU_ZERO(&set);
         CPU_SET(target, &set);
-        if (sched_setaffinity(0, sizeof(set), &set) != 0) return sched_getcpu();
-        return target;
+        if (sched_setaffinity(0, sizeof(set), &set) != 0) {
+            return CpuId::none();  // fail loudly, not silently
+        }
+        // Re-read — scheduler may not have migrated us yet. This is a
+        // benign race: `sched_getcpu()` reads the currently-executing
+        // CPU, which, having just been restricted to {target} by
+        // sched_setaffinity, must be `target` on the next schedule
+        // boundary. On short paths (no preemption between setaffinity
+        // and getcpu) we might still report the previous CPU — accept
+        // that inaccuracy rather than calling sched_yield() and
+        // burning a context switch inside every .measure().
+        const int actual = sched_getcpu();
+        return (actual >= 0) ? CpuId{actual} : CpuId{target};
 #else
-        return -1;
+        return CpuId::none();
 #endif
     }
 
-    // Ramp batch size by 2× until one batch exceeds 1000 cycles — keeps
-    // rdtsc overhead below ~3 % of the measured region. Cap at 2^18.
+    // Ramp batch size by 2× until the **body itself** (raw region minus
+    // rdtsc overhead) exceeds 1000 cycles — keeps rdtsc overhead below
+    // ~3 % of the measured region. Cap at 2^18.
+    //
+    // Older form compared `best` (includes overhead) to MIN_CYCLES, so
+    // the terminator fired ~30 cycles early. Add `ovh` to the threshold
+    // so the real body cost crosses 1000, not body+overhead.
     template <typename Body>
     [[nodiscard]] size_t auto_batch_(Body&& body) const {
         constexpr uint64_t MIN_CYCLES     = 1000;
         constexpr size_t   MAX_BATCH      = 1u << 18;
         constexpr size_t   PILOT_SAMPLES  = 100;
+
+        const uint64_t ovh = Timer::overhead_cycles();
 
         size_t batch = 1;
         while (batch <= MAX_BATCH) {
@@ -719,10 +900,11 @@ class Run {
                 const uint64_t t0 = rdtsc_start();
                 for (size_t j = 0; j < batch; ++j) body();
                 const uint64_t t1 = rdtsc_end();
+                // Same wrap-safety argument as in the main loop.
                 const uint64_t d  = t1 - t0;
                 if (d < best) best = d;
             }
-            if (best >= MIN_CYCLES) return batch;
+            if (best >= MIN_CYCLES + ovh) return batch;
             batch *= 2;
         }
         return MAX_BATCH;
@@ -778,6 +960,11 @@ inline void print_system_info(FILE* out = stdout) {
     std::fprintf(out, "  RDTSC oh:  %lu cycles (≈ %.2f ns)\n",
                  static_cast<unsigned long>(Timer::overhead_cycles()),
                  Timer::overhead_ns());
+    if (nspc == 0.0) {
+        std::fprintf(stderr,
+            "WARN bench: TSC calibration failed (ns_per_cycle == 0); "
+            "cycles/op will read 0.\n");
+    }
 
 #if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
     const bench::bpf::SenseHub* hub = detail::bpf_instance();

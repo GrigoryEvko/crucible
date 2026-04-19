@@ -4,36 +4,42 @@
 // op is sub-5 ns on modern x86; rdtsc would dominate per-op timing.
 // Percentiles are over batch means, flagged as "[batch-avg]" in output.
 
+#include <cstdio>
+#include <cstdlib>
+#include <string>
+
 #include <crucible/Arena.h>
 #include <crucible/Effects.h>
 
 #include "bench_harness.h"
 
-#include <cstdio>
-#include <cstdlib>
-#include <string>
-
-static int env_core() {
-    if (const char* s = std::getenv("CRUCIBLE_BENCH_CORE"))
-        return static_cast<int>(std::strtol(s, nullptr, 10));
-    return -1;
-}
-
-static bool env_json() {
-    const char* s = std::getenv("CRUCIBLE_BENCH_JSON");
-    return s && s[0] && std::string(s) != "0";
+// TODO: move to bench_harness.h::env
+static const char* env(const char* name) noexcept {
+    const char* s = std::getenv(name);
+    return (s && s[0]) ? s : nullptr;
 }
 
 int main() {
     bench::print_system_info();
     bench::elevate_priority();
 
-    const int  core = env_core();
-    const bool json = env_json();
+    const char* core_s = env("CRUCIBLE_BENCH_CORE");
+    const int   core   = core_s ? static_cast<int>(std::strtol(core_s, nullptr, 10)) : -1;
+    const char* json_s = env("CRUCIBLE_BENCH_JSON");
+    const bool  json   = json_s && std::string(json_s) != "0";
 
+    // Pin only if explicitly requested via env; else let harness auto-pick
+    // (isolcpu if available, sched_getcpu() otherwise).
     auto run = [&](std::string name, auto&& body) {
-        return bench::Run(std::move(name)).core(core).measure(body);
+        auto r = bench::Run(std::move(name));
+        if (core >= 0) r.core(core);   // else Pin::Auto default
+        return r.measure(body);
     };
+
+    // Oversized-request slow path: each alloc triggers a new block. Auto-
+    // batching would hide the per-call block allocation cost (one block =
+    // one call), so sample explicitly. ~1 µs/op × 20k = ~20 ms wall time.
+    constexpr size_t kSlowPathSamples = 20'000;
 
     std::printf("=== arena ===\n");
 
@@ -88,14 +94,16 @@ int main() {
         }(),
         [&]{
             // Oversized-request slow path: each alloc triggers a new block.
+            // Explicit sample count — see kSlowPathSamples above.
             crucible::Arena arena(4096);
             crucible::fx::Test test;
-            return bench::Run("arena.alloc(8192) slow-path")
-                     .core(core).samples(20'000).warmup(100)
-                     .measure([&]{
-                         auto* p = arena.alloc(test.alloc, 8192);
-                         bench::do_not_optimize(p);
-                     });
+            auto r = bench::Run("arena.alloc(8192) slow-path")
+                         .samples(kSlowPathSamples).warmup(100);
+            if (core >= 0) r.core(core);   // else Pin::Auto default
+            return r.measure([&]{
+                auto* p = arena.alloc(test.alloc, 8192);
+                bench::do_not_optimize(p);
+            });
         }(),
         [&]{
             crucible::Arena arena(1u << 24);
