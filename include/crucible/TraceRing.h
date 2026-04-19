@@ -93,6 +93,8 @@ struct CRUCIBLE_OWNER TraceRing {
 
   // Producer-local shadow of tail. Never read by the consumer. Own cache
   // line to avoid sharing with head (each line owned by exactly one thread).
+  // Invariant: cached_tail_ <= tail.load(). Stale is conservative — it under-
+  // reports free space, forcing a real tail reload; never over-reports.
   alignas(64) uint64_t cached_tail_ = 0;
 
   // 4 MB contiguous ring plus the three parallel arrays.
@@ -116,7 +118,7 @@ struct CRUCIBLE_OWNER TraceRing {
       const Entry& e,
       MetaIndex    meta_start    = MetaIndex::none(),
       ScopeHash    scope_hash    = {},
-      CallsiteHash callsite_hash = {}) CRUCIBLE_NO_THREAD_SAFETY {
+      CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
     // relaxed: producer reads its own head — no cross-thread sync needed.
     const uint64_t h = head.load(std::memory_order_relaxed);
 
@@ -164,7 +166,7 @@ struct CRUCIBLE_OWNER TraceRing {
       uint32_t      max_count,
       MetaIndex*    out_meta_starts     = nullptr,
       ScopeHash*    out_scope_hashes    = nullptr,
-      CallsiteHash* out_callsite_hashes = nullptr) CRUCIBLE_NO_THREAD_SAFETY
+      CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY
       pre (max_count == 0 || out != nullptr)
   {
     // acquire: pair with producer's release store — observe entry writes.
@@ -207,8 +209,8 @@ struct CRUCIBLE_OWNER TraceRing {
 
   // Approximate count — racy by design (diagnostic only). pure: depends on
   // memory (atomics) but has no side effects — optimizer may CSE adjacent
-  // calls, which is fine for a diagnostic.
-  [[nodiscard, gnu::pure]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY {
+  // calls, which is fine for a diagnostic. Invariant: head >= tail always.
+  [[nodiscard, gnu::pure]] uint32_t size() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
     return static_cast<uint32_t>(
         head.load(std::memory_order_acquire) -
         tail.load(std::memory_order_acquire));
@@ -218,16 +220,21 @@ struct CRUCIBLE_OWNER TraceRing {
   // this before waiting for the background thread to catch up.
   // acquire: synchronizes with producer's release in try_append so the
   // returned bound implies visibility of all prior entries.
-  [[nodiscard, gnu::pure]] uint64_t total_produced() const CRUCIBLE_NO_THREAD_SAFETY {
+  [[nodiscard, gnu::pure]] uint64_t total_produced() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
     return head.load(std::memory_order_acquire);
   }
 
   // Only valid when both threads are quiescent (join/stop).
-  void reset() CRUCIBLE_NO_THREAD_SAFETY {
+  void reset() noexcept CRUCIBLE_NO_THREAD_SAFETY {
     head.store(0, std::memory_order_release);
     tail.store(0, std::memory_order_release);
     cached_tail_ = 0;
   }
 };
+
+// Expected footprint ~5.25 MB. Bounds catch accidental layout bloat.
+static_assert(sizeof(TraceRing) >= (5u * 1024u * 1024u) &&
+              sizeof(TraceRing) <= (6u * 1024u * 1024u),
+              "TraceRing footprint outside 5-6 MB envelope — layout changed");
 
 } // namespace crucible
