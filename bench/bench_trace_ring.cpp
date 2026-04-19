@@ -9,7 +9,7 @@
 #include "bench_harness.h"
 
 // TODO: move to bench_harness.h::env
-static const char* env(const char* name) noexcept {
+[[nodiscard]] static const char* env(const char* name) noexcept {
     const char* s = std::getenv(name);
     return (s && s[0]) ? s : nullptr;
 }
@@ -27,7 +27,9 @@ int main() {
     // (isolcpu if available, sched_getcpu() otherwise).
     auto run = [&](std::string name, auto&& body) {
         auto r = bench::Run(std::move(name));
-        if (core >= 0) r.core(core);   // else Pin::Auto default
+        // r.core() is [[nodiscard]] for the fluent builder idiom; here we
+        // mutate r in place and ignore the returned self-reference.
+        if (core >= 0) (void)r.core(core);   // else Pin::Auto default
         return r.measure(body);
     };
 
@@ -43,11 +45,11 @@ int main() {
             crucible::TraceRing ring;
             crucible::TraceRing::Entry e{};
             uint64_t h = 0;
-            // Label notes the in-body reset: on ring-full we call
-            // ring.reset() inside the timed region to prevent saturation.
-            // Consequence: tail samples (p99.9, max) include occasional
-            // reset costs, not pure try_append cost.
-            return run("ring.try_append+reset-on-full", [&]{
+            // NOTE: body performs ring.reset() inside the timed region when
+            // the ring saturates; tail samples (p99.9, max) therefore include
+            // occasional reset costs, not pure try_append cost. Label mirrors
+            // this trade-off.
+            return run("ring.try_append (+reset-on-full)", [&]{
                 e.schema_hash = crucible::SchemaHash{++h};
                 const bool ok = ring.try_append(e);
                 bench::do_not_optimize(ok);
@@ -58,7 +60,9 @@ int main() {
             crucible::TraceRing ring;
             crucible::TraceRing::Entry e{};
             e.schema_hash = crucible::SchemaHash{0xABCDEF};
-            return run("ring.try_append+reset-on-full (defaults)", [&]{
+            // Same (+reset-on-full) trade-off as above; entry stays constant
+            // so we measure the pure hot-path cost without ++h.
+            return run("ring.try_append (+reset-on-full, const entry)", [&]{
                 const bool ok = ring.try_append(e);
                 bench::do_not_optimize(ok);
                 if (!ok) ring.reset();
