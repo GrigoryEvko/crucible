@@ -53,7 +53,11 @@ enum class OnMissingCap : uint8_t {
 
 struct Policy {
     // ── HOT dispatcher thread ──────────────────────────────────────
+    // Master switch: if false, apply() is a no-op for the HOT thread
+    // (no pinning, no scheduler change, no mlock on hot regions).
     bool          hot_enabled          = true;
+    // Which kernel scheduling class to request via sched_setattr for
+    // the HOT thread. See the SchedClass enum for per-value semantics.
     SchedClass    hot_sched            = SchedClass::Other;
     // SCHED_DEADLINE parameters (ns). Kernel CBS admits if (runtime /
     // period) across all deadline threads ≤ 1.
@@ -66,7 +70,11 @@ struct Policy {
     CoreSelector  hot_core             = {};
 
     // ── WARM / COLD threads ────────────────────────────────────────
+    // setpriority() nice value for WARM threads (background compile,
+    // graph build, memory planner, trace drain). 0 = default.
     int           warm_nice            = 0;
+    // setpriority() nice value for COLD threads (gossip, Cipher
+    // writer, Augur, health, self-update). Higher = less CPU share.
     int           cold_nice            = 10;
 
     // ── Memory ─────────────────────────────────────────────────────
@@ -118,6 +126,8 @@ struct Policy {
     uint32_t      watchdog_window_sec  = 60;
 
     // ── Fallback semantics ─────────────────────────────────────────
+    // How apply() behaves when a privileged knob fails (missing
+    // capability, sysfs read-only, unsupported kernel). See enum doc.
     OnMissingCap  on_missing_capability = OnMissingCap::DegradeAndWarn;
 
     // ── Profiles ───────────────────────────────────────────────────
@@ -126,7 +136,7 @@ struct Policy {
     // on; SCHED_DEADLINE for the dispatch thread. Degrade-and-warn if
     // a capability is missing (so the Keeper still boots on a fallback
     // node and reports DEGRADED upstream).
-    [[nodiscard]] static Policy production() noexcept {
+    [[nodiscard]] static constexpr Policy production() noexcept {
         Policy p;
         p.hot_enabled           = true;
         p.hot_sched             = SchedClass::Deadline;
@@ -146,7 +156,7 @@ struct Policy {
     // no SCHED_DEADLINE (would wedge the laptop if the bench spins).
     // Used by the bench harness on dev machines; also the default if
     // an operator passes no profile name.
-    [[nodiscard]] static Policy dev_quiet() noexcept {
+    [[nodiscard]] static constexpr Policy dev_quiet() noexcept {
         Policy p;
         p.hot_enabled           = true;
         p.hot_sched             = SchedClass::Other;  // safe on laptops
@@ -164,7 +174,7 @@ struct Policy {
 
     // Opt out entirely. For debugging ("does my bug reproduce without
     // any hardening?") or for shells where realtime isn't wanted.
-    [[nodiscard]] static Policy none() noexcept {
+    [[nodiscard]] static constexpr Policy none() noexcept {
         Policy p;
         p.hot_enabled           = false;
         p.mlock_hot_regions     = false;
@@ -179,5 +189,12 @@ struct Policy {
         return p;
     }
 };
+
+// One cache line of hot fields (scheduler / pinning) + cold tail
+// (mlock, THP hints, watchdog). The whole struct is passed by value
+// to apply() once per component init, so keep it small and trivially
+// copyable. If this fires, something was added that probably doesn't
+// belong in Policy — consider a separate config struct.
+static_assert(sizeof(Policy) < 256);
 
 } // namespace crucible::rt
