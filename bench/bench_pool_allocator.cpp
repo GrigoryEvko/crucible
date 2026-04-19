@@ -207,6 +207,11 @@ int main() {
         PoolAllocator pool;
         pool.init(&plan);
         const PoolAllocator* pool_ptr = &pool;
+        // No bench::do_not_optimize(pool_ptr) — triggers a GCC 16
+        // miscompile (bugs/gcc-modref-miscompile/). The
+        // do_not_optimize inside the lambda body on the slot_ptr
+        // return value is still safe, because it clobbers a prvalue
+        // (void*), not the pointer-to-class lvalue.
         auto r = bench::run("slot_ptr(100, via pointer)", [&]{
             for (uint32_t i = 0; i < N; i++)
                 bench::do_not_optimize(pool_ptr->slot_ptr(SlotId{i}));
