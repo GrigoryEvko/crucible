@@ -510,69 +510,153 @@ struct Report {
 
  private:
 #if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
-    // Emit a "  senses:" line iff any tracked delta is non-zero. The
-    // fields printed are the ones that actually tell a bench author
-    // something — scheduling interference, page faults, syscalls.
+    // Print every monotonic counter that actually incremented during the
+    // run, in unit-scaled form. Gauges (TCP states, SRTT min/max, RSS
+    // bytes, signal-last, thermal, OOM-kill-us, reclaim stalls, FD
+    // current, TCP last cwnd) are deliberately excluded — their (post -
+    // pre) delta is meaningless. Callers that want raw gauge values
+    // should pull them from the post snapshot directly.
+    //
+    // Output:
+    //   └─ clean                                   (no monotonic counter moved)
+    //   └─ 6 preempt · 243 pgfault · 4.3ms softirq · 48 mmap
+    //
+    // "N label" reads as English. Times auto-scale ns → µs → ms → s,
+    // bytes auto-scale to KB/MB/GB, counts to k/M/G above 10k.
+
+    enum class Unit : uint8_t { Count, Ns, Bytes };
+
+    struct Field {
+        const char*       label;
+        bench::bpf::Idx   idx;
+        Unit              unit;
+    };
+
+    // Every counter whose (post - pre) is meaningful. Order = the story
+    // the reader walks: first what interrupted us, then what the bench
+    // touched (memory → sync → I/O → thread mgmt), finally reliability.
+    static constexpr Field kAll[] = {
+        // Scheduling interference.
+        {"preempt",   bench::bpf::SCHED_CTX_INVOL,        Unit::Count},
+        {"yield",     bench::bpf::SCHED_CTX_VOL,          Unit::Count},
+        {"migrate",   bench::bpf::SCHED_MIGRATIONS,       Unit::Count},
+        {"runtime",   bench::bpf::SCHED_RUNTIME_NS,       Unit::Ns},
+        {"wait",      bench::bpf::SCHED_WAIT_NS,          Unit::Ns},
+        {"sleep",     bench::bpf::SCHED_SLEEP_NS,         Unit::Ns},
+        {"iowait",    bench::bpf::SCHED_IOWAIT_NS,        Unit::Ns},
+        {"blocked",   bench::bpf::SCHED_BLOCKED_NS,       Unit::Ns},
+        {"softirq",   bench::bpf::SOFTIRQ_STOLEN_NS,      Unit::Ns},
+        {"wake_rx",   bench::bpf::WAKEUPS_RECEIVED,       Unit::Count},
+        {"wake_tx",   bench::bpf::WAKEUPS_SENT,           Unit::Count},
+        {"freq_chg",  bench::bpf::CPU_FREQ_CHANGES,       Unit::Count},
+        {"tid_new",   bench::bpf::THREADS_CREATED,        Unit::Count},
+        {"tid_end",   bench::bpf::THREADS_EXITED,         Unit::Count},
+
+        // Memory.
+        {"pgfault",   bench::bpf::MEM_PAGE_FAULTS_MIN,    Unit::Count},
+        {"majfault",  bench::bpf::MEM_PAGE_FAULTS_MAJ,    Unit::Count},
+        {"mmap",      bench::bpf::MEM_MMAP_COUNT,         Unit::Count},
+        {"munmap",    bench::bpf::MEM_MUNMAP_COUNT,       Unit::Count},
+        {"brk",       bench::bpf::MEM_BRK_CALLS,          Unit::Count},
+        {"reclaim_n", bench::bpf::DIRECT_RECLAIM_COUNT,   Unit::Count},
+        {"reclaim_t", bench::bpf::DIRECT_RECLAIM_NS,      Unit::Ns},
+        {"swap_out",  bench::bpf::SWAP_OUT_PAGES,         Unit::Count},
+        {"thp_ok",    bench::bpf::THP_COLLAPSE_OK,        Unit::Count},
+        {"thp_fail",  bench::bpf::THP_COLLAPSE_FAIL,      Unit::Count},
+        {"numa",      bench::bpf::NUMA_MIGRATE_PAGES,     Unit::Count},
+        {"compact",   bench::bpf::COMPACTION_STALLS,      Unit::Count},
+        {"extfrag",   bench::bpf::EXTFRAG_EVENTS,         Unit::Count},
+
+        // Sync contention.
+        {"futex",     bench::bpf::FUTEX_WAIT_COUNT,       Unit::Count},
+        {"futex_t",   bench::bpf::FUTEX_WAIT_NS,          Unit::Ns},
+        {"klock",     bench::bpf::KERNEL_LOCK_COUNT,      Unit::Count},
+        {"klock_t",   bench::bpf::KERNEL_LOCK_NS,         Unit::Ns},
+
+        // I/O (syscall-level).
+        {"read",      bench::bpf::IO_READ_BYTES,          Unit::Bytes},
+        {"write",     bench::bpf::IO_WRITE_BYTES,         Unit::Bytes},
+        {"r_ops",     bench::bpf::IO_READ_OPS,            Unit::Count},
+        {"w_ops",     bench::bpf::IO_WRITE_OPS,           Unit::Count},
+        {"fd_open",   bench::bpf::FD_OPEN_OPS,            Unit::Count},
+
+        // Block I/O (device-level).
+        {"disk_r",    bench::bpf::DISK_READ_BYTES,        Unit::Bytes},
+        {"disk_w",    bench::bpf::DISK_WRITE_BYTES,       Unit::Bytes},
+        {"disk_t",    bench::bpf::DISK_IO_LATENCY_NS,     Unit::Ns},
+        {"disk_n",    bench::bpf::DISK_IO_COUNT,          Unit::Count},
+        {"pg_miss",   bench::bpf::PAGE_CACHE_MISSES,      Unit::Count},
+        {"readahead", bench::bpf::READAHEAD_PAGES,        Unit::Count},
+        {"unplug",    bench::bpf::IO_UNPLUG_COUNT,        Unit::Count},
+        {"throttle",  bench::bpf::WRITE_THROTTLE_JIFFIES, Unit::Count},
+
+        // Network.
+        {"tx",        bench::bpf::NET_TX_BYTES,           Unit::Bytes},
+        {"rx",        bench::bpf::NET_RX_BYTES,           Unit::Bytes},
+        {"retrans",   bench::bpf::TCP_RETRANSMIT_COUNT,   Unit::Count},
+        {"rst",       bench::bpf::TCP_RST_SENT,           Unit::Count},
+        {"sk_err",    bench::bpf::TCP_ERROR_COUNT,        Unit::Count},
+        {"skb_drop",  bench::bpf::SKB_DROP_COUNT,         Unit::Count},
+        {"cng_loss",  bench::bpf::TCP_CONG_LOSS,          Unit::Count},
+
+        // Reliability (delta-meaningful signals only).
+        {"sig_fatal", bench::bpf::SIGNAL_FATAL_COUNT,     Unit::Count},
+        {"oom_kills", bench::bpf::OOM_KILLS_SYSTEM,       Unit::Count},
+        {"mce",       bench::bpf::MCE_COUNT,              Unit::Count},
+    };
+
+    static void print_scaled_(FILE* out, uint64_t v, Unit u) noexcept {
+        switch (u) {
+        case Unit::Count:
+            if      (v >= 1'000'000'000) std::fprintf(out, "%.1fG", static_cast<double>(v) / 1e9);
+            else if (v >= 1'000'000)     std::fprintf(out, "%.1fM", static_cast<double>(v) / 1e6);
+            else if (v >= 10'000)        std::fprintf(out, "%.1fk", static_cast<double>(v) / 1e3);
+            else                         std::fprintf(out, "%lu",   v);
+            break;
+        case Unit::Ns:
+            if      (v >= 1'000'000'000) std::fprintf(out, "%.1fs",  static_cast<double>(v) / 1e9);
+            else if (v >= 1'000'000)     std::fprintf(out, "%.1fms", static_cast<double>(v) / 1e6);
+            else if (v >= 1'000)         std::fprintf(out, "%.1fµs", static_cast<double>(v) / 1e3);
+            else                         std::fprintf(out, "%luns",  v);
+            break;
+        case Unit::Bytes:
+            if      (v >= (1ULL << 30)) std::fprintf(out, "%.1fGB", static_cast<double>(v) / static_cast<double>(1ULL << 30));
+            else if (v >= (1ULL << 20)) std::fprintf(out, "%.1fMB", static_cast<double>(v) / static_cast<double>(1ULL << 20));
+            else if (v >= (1ULL << 10)) std::fprintf(out, "%.1fKB", static_cast<double>(v) / 1024.0);
+            else                        std::fprintf(out, "%luB",   v);
+            break;
+        }
+    }
+
     void print_bpf_summary_(FILE* out) const noexcept {
         if (bpf_attached == 0) return;
         const auto& d = bpf_delta;
-        // Gate each sense on non-zero; but always emit one confirmation
-        // line so the reader knows senses ARE attached (rather than
-        // wondering "are they missing, or just quiet?"). For fully
-        // clean runs this collapses to a single "└─ sched clean" line.
-        const bool interesting =
-            d[bench::bpf::SCHED_CTX_VOL]       ||
-            d[bench::bpf::SCHED_CTX_INVOL]     ||
-            d[bench::bpf::SCHED_MIGRATIONS]    ||
-            d[bench::bpf::MEM_PAGE_FAULTS_MIN] ||
-            d[bench::bpf::MEM_PAGE_FAULTS_MAJ] ||
-            d[bench::bpf::FUTEX_WAIT_COUNT]    ||
-            d[bench::bpf::SCHED_IOWAIT_NS]     ||
-            d[bench::bpf::SOFTIRQ_STOLEN_NS]   ||
-            d[bench::bpf::MEM_MMAP_COUNT]      ||
-            d[bench::bpf::MEM_MUNMAP_COUNT];
 
-        if (!interesting) {
-            std::fprintf(out, "     └─ sched  clean\n");
-            return;
+        std::fprintf(out, "     └─ ");
+        bool first = true;
+        for (const Field& f : kAll) {
+            const uint64_t v = d[f.idx];
+            if (v == 0) continue;
+            if (!first) std::fprintf(out, " · ");
+            first = false;
+            std::fprintf(out, "%s=", f.label);
+            print_scaled_(out, v, f.unit);
         }
-
-        std::fprintf(out, "     └─ senses:");
-        if (uint64_t v = d[bench::bpf::SCHED_CTX_VOL])       std::fprintf(out, " vol=%lu",  v);
-        if (uint64_t v = d[bench::bpf::SCHED_CTX_INVOL])     std::fprintf(out, " invol=%lu", v);
-        if (uint64_t v = d[bench::bpf::SCHED_MIGRATIONS])    std::fprintf(out, " mig=%lu",  v);
-        if (uint64_t v = d[bench::bpf::MEM_PAGE_FAULTS_MIN]) std::fprintf(out, " pf_min=%lu", v);
-        if (uint64_t v = d[bench::bpf::MEM_PAGE_FAULTS_MAJ]) std::fprintf(out, " pf_maj=%lu", v);
-        if (uint64_t v = d[bench::bpf::FUTEX_WAIT_COUNT])    std::fprintf(out, " futex=%lu", v);
-        if (uint64_t v = d[bench::bpf::FUTEX_WAIT_NS])       std::fprintf(out, "/%luns", v);
-        if (uint64_t v = d[bench::bpf::SCHED_IOWAIT_NS])     std::fprintf(out, " iowait=%luns", v);
-        if (uint64_t v = d[bench::bpf::SOFTIRQ_STOLEN_NS])   std::fprintf(out, " softirq=%luns", v);
-        if (uint64_t v = d[bench::bpf::MEM_MMAP_COUNT])      std::fprintf(out, " mmap=%lu", v);
-        if (uint64_t v = d[bench::bpf::MEM_MUNMAP_COUNT])    std::fprintf(out, " munmap=%lu", v);
-        std::fprintf(out, "\n");
+        if (first) std::fprintf(out, "clean");
+        std::fputc('\n', out);
     }
 
+    // JSON: emit every counter in the kAll table as a stable schema
+    // (all present whether zero or not) so downstream consumers can
+    // rely on field presence.
     void print_bpf_json_(FILE* out) const noexcept {
         if (bpf_attached == 0) return;
         const auto& d = bpf_delta;
-        std::fprintf(out,
-            ",\"bpf\":{\"attached\":%zu,"
-            "\"ctx_vol\":%lu,\"ctx_invol\":%lu,\"migrations\":%lu,"
-            "\"page_fault_min\":%lu,\"page_fault_maj\":%lu,"
-            "\"futex_wait_count\":%lu,\"futex_wait_ns\":%lu,"
-            "\"sched_runtime_ns\":%lu,\"sched_wait_ns\":%lu,"
-            "\"sched_iowait_ns\":%lu,\"softirq_stolen_ns\":%lu,"
-            "\"mmap_count\":%lu,\"munmap_count\":%lu,"
-            "\"io_read_bytes\":%lu,\"io_write_bytes\":%lu}",
-            bpf_attached,
-            d[bench::bpf::SCHED_CTX_VOL],       d[bench::bpf::SCHED_CTX_INVOL],
-            d[bench::bpf::SCHED_MIGRATIONS],
-            d[bench::bpf::MEM_PAGE_FAULTS_MIN], d[bench::bpf::MEM_PAGE_FAULTS_MAJ],
-            d[bench::bpf::FUTEX_WAIT_COUNT],    d[bench::bpf::FUTEX_WAIT_NS],
-            d[bench::bpf::SCHED_RUNTIME_NS],    d[bench::bpf::SCHED_WAIT_NS],
-            d[bench::bpf::SCHED_IOWAIT_NS],     d[bench::bpf::SOFTIRQ_STOLEN_NS],
-            d[bench::bpf::MEM_MMAP_COUNT],      d[bench::bpf::MEM_MUNMAP_COUNT],
-            d[bench::bpf::IO_READ_BYTES],       d[bench::bpf::IO_WRITE_BYTES]);
+        std::fprintf(out, ",\"bpf\":{\"attached\":%zu", bpf_attached);
+        for (const Field& f : kAll) {
+            std::fprintf(out, ",\"%s\":%lu", f.label, d[f.idx]);
+        }
+        std::fputc('}', out);
     }
 #endif
 };
