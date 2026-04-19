@@ -1,32 +1,17 @@
 /* SPDX-License-Identifier: GPL-2.0 OR BSD-3-Clause */
-/* Common definitions shared across all symbiotic BPF programs. */
+/* Common definitions shared across all Crucible bench BPF programs. */
 
-#ifndef __SYMBIOTIC_COMMON_H
-#define __SYMBIOTIC_COMMON_H
+#ifndef __CRUCIBLE_BENCH_COMMON_H
+#define __CRUCIBLE_BENCH_COMMON_H
 
 #include "vmlinux.h"
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_tracing.h>
 #include <bpf/bpf_core_read.h>
 
-/*
- * ─── Target PID filter ────────────────────────────────────────────────
- *
- * Each BPF program file owns its own copy of:
- *     const volatile __u32 target_tgid = 0;
- *     static __always_inline bool is_target(void);
- *     static __always_inline __u32 get_tid(void);
- *
- * Defining them here would create duplicate .rodata symbols across every
- * compilation unit that includes this header, and libbpf's rodata rewrite
- * would silently target only one copy. Keep the definitions in the .bpf.c
- * files; this header is for shared TYPES only, never globals.
- *
- * Also: program files MUST use the inverted default
- *     return target_tgid != 0 && tgid == target_tgid;
- * so that a failed .rodata rewrite produces empty output (loud) rather
- * than system-wide recording (quiet firehose).
- */
+/* target_tgid / is_target / get_tid live in the individual BPF programs
+   that use them (e.g. sense_hub.bpf.c) — including them here would ODR-
+   conflict the moment a program #includes common.h. */
 
 /* ─── Shared constants ────────────────────────────────────────────────── */
 
@@ -176,7 +161,4 @@ struct pmu_sample_timeline {
     struct pmu_sample_event events[PMU_SAMPLE_CAPACITY];
 };
 
-/* is_target() and get_tid() live in each .bpf.c file — see the comment at
- * the top of this header. */
-
-#endif /* __SYMBIOTIC_COMMON_H */
+#endif /* __CRUCIBLE_BENCH_COMMON_H */
