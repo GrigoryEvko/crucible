@@ -118,7 +118,7 @@ bench::Report run_fullpipeline(BackgroundThread& bg, MetaLog& meta_log,
 
     bench::Run r{label};
     if (const int c = bench::env_core(); c >= 0) (void)r.core(c);
-    return r.samples(200).warmup(5).batch(1).measure([&]{
+    return r.samples(500).warmup(10).batch(1).measure([&]{
         bg.current_trace.assign(trace.entries.begin(),
                                 trace.entries.end());
         bg.current_meta_starts.assign(trace.meta_starts.begin(),
@@ -758,11 +758,35 @@ void bench_phase2_subparts(
     print_phase_table(phases, 7, sum, iters);
 }
 
+// Default trace baked at configure time — see bench/CMakeLists.txt.
+// SD1.5 U-Net (36499 ops) is the minimum meaningful production-scale
+// signal for the build_trace pipeline. resnet18 (1386 ops) under-samples
+// every per-op phase; vit_b (~15k) is borderline.
+#ifdef CRUCIBLE_BENCH_DEFAULT_TRACE
+constexpr const char* kDefaultTrace = CRUCIBLE_BENCH_DEFAULT_TRACE;
+#else
+constexpr const char* kDefaultTrace = nullptr;
+#endif
+
+// Default iteration count per phase. Tuned against SD1.5 on i7-14700HX
+// to land inside a ~10 s total wall budget:
+//   bench::run Report  (500 samples × 3.3 ms)                 ≈ 1.7 s
+//   Top-level measure  (1200 iters × 2.0 ms)                  ≈ 2.4 s
+//   build_csr + plan   (1200 × 460 µs)                        ≈ 0.5 s
+//   Phase 2 sub-parts  (7 × 1200 × [measured + ~1.5 ms setup]) ≈ 4.5 s
+// Total ≈ 9 s. Smaller traces (resnet18, vit_b) finish in a fraction.
+// Override explicitly: `./bench_phases <trace> <iters>`.
+constexpr uint32_t kDefaultIters = 1200;
+
 } // namespace
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        std::fprintf(stderr, "usage: %s <file.crtrace> [iters]\n", argv[0]);
+    const char* trace_path = (argc >= 2) ? argv[1] : kDefaultTrace;
+    if (!trace_path) {
+        std::fprintf(stderr,
+            "usage: %s <file.crtrace> [iters]\n"
+            "error: no default trace baked in at configure time\n",
+            argv[0]);
         return 1;
     }
 
@@ -772,16 +796,18 @@ int main(int argc, char* argv[]) {
 
     std::printf("TSC ratio: %.4f ns/cycle\n", bench::Timer::ns_per_cycle());
 
-    auto trace = load_trace(argv[1]);
+    auto trace = load_trace(trace_path);
     if (!trace) {
-        std::fprintf(stderr, "error: could not load %s\n", argv[1]);
+        std::fprintf(stderr, "error: could not load %s\n", trace_path);
+        std::fprintf(stderr,
+            "usage: %s [file.crtrace] [iters]\n", argv[0]);
         return 1;
     }
     std::printf("Loaded %s: %u ops, %u metas\n",
-                argv[1], trace->num_ops, trace->num_metas);
+                trace_path, trace->num_ops, trace->num_metas);
 
     const uint32_t iters = (argc >= 3)
-        ? static_cast<uint32_t>(std::atoi(argv[2])) : 1000;
+        ? static_cast<uint32_t>(std::atoi(argv[2])) : kDefaultIters;
 
     MetaLog meta_log;
     meta_log.reset();
