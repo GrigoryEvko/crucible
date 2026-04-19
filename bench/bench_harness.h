@@ -63,6 +63,9 @@
   #include "bpf_senses.h"
 #endif
 
+#include <crucible/rt/Hardening.h>
+#include <crucible/rt/Policy.h>
+
 namespace bench {
 
 // ── CpuId strong type (TypeSafe axiom) ─────────────────────────────
@@ -781,9 +784,37 @@ class Run {
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
     Run& no_pin()          noexcept { pin_mode_ = Pin::None; return *this; }
 
+    // Apply a `crucible::rt::Policy` to the measuring thread for the
+    // duration of the Run. The policy's `hot_core` selector overrides
+    // our own pinning logic (so `.hardening(p)` and `.core(N)` conflict
+    // — last setter wins by design). The returned RAII guard reverts
+    // sched class, affinity, mlock'd regions, and THP flag when
+    // measure() returns.
+    //
+    // Default: crucible::rt::Policy::none() (no hardening).
+    [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
+    Run& hardening(const crucible::rt::Policy& p) noexcept {
+        hardening_ = p;
+        have_hardening_ = true;
+        return *this;
+    }
+
     template <typename Body>
     [[nodiscard]] Report measure(Body&& body) const {
-        const CpuId pinned_cpu = pin_();
+        // Resolve the policy: explicit .hardening() wins, else env var
+        // CRUCIBLE_BENCH_HARDENING=production|dev_quiet|none, else the
+        // legacy pin_() path.
+        crucible::rt::AppliedPolicy hardening_guard;
+        CpuId pinned_cpu;
+        if (have_hardening_) {
+            hardening_guard = crucible::rt::apply(hardening_);
+            pinned_cpu      = CpuId{hardening_guard.pinned_cpu()};
+        } else if (auto env = env_hardening_(); env.has_value()) {
+            hardening_guard = crucible::rt::apply(*env);
+            pinned_cpu      = CpuId{hardening_guard.pinned_cpu()};
+        } else {
+            pinned_cpu = pin_();
+        }
 
         const double   nspc = Timer::ns_per_cycle();
         const uint64_t ovh  = Timer::overhead_cycles();
@@ -898,6 +929,28 @@ class Run {
     size_t      batch_    = 0;          // TODO: strong type
     CpuId       core_{};                // CpuId::none() → falls through to Auto
     Pin         pin_mode_ = Pin::Auto;
+
+    // Optional realtime policy applied for the duration of measure().
+    // When set, crucible::rt::apply() is invoked at the top of measure()
+    // and the returned AppliedPolicy is held until measure() returns —
+    // scheduler / affinity / mlocks revert automatically. `.core()` and
+    // `.no_pin()` are overridden by the policy's own CoreSelector when
+    // hardening is set (the policy's Topology-based pick wins).
+    crucible::rt::Policy hardening_{crucible::rt::Policy::none()};
+    bool                 have_hardening_ = false;
+
+    // CRUCIBLE_BENCH_HARDENING=production|dev_quiet|none — applies the
+    // named profile to every Run that doesn't call .hardening() itself.
+    // Unset → fall through to legacy pin_() (no hardening).
+    [[nodiscard]] static std::optional<crucible::rt::Policy> env_hardening_() noexcept {
+        const char* s = std::getenv("CRUCIBLE_BENCH_HARDENING");
+        if (s == nullptr || s[0] == '\0') return std::nullopt;
+        if (std::strcmp(s, "production") == 0) return crucible::rt::Policy::production();
+        if (std::strcmp(s, "dev_quiet") == 0 ||
+            std::strcmp(s, "dev")       == 0) return crucible::rt::Policy::dev_quiet();
+        if (std::strcmp(s, "none") == 0)      return crucible::rt::Policy::none();
+        return std::nullopt;
+    }
 
     [[nodiscard]] static size_t env_samples_() noexcept {
         if (const char* s = std::getenv("CRUCIBLE_BENCH_SAMPLES")) {
