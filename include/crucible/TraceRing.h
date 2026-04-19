@@ -1,5 +1,25 @@
 #pragma once
 
+// Lock-free SPSC ring buffer for op recording.
+//
+// Foreground writes one Entry per ATen op (~5 ns target). Background drains
+// in batches and builds the trace. The ring is pre-allocated (~5.25 MB) and
+// never resized; a full ring silently drops the entry (the next iteration
+// re-records).
+//
+// Entry is exactly one 64 B cache line. See Entry below for field layout.
+//
+// Parallel arrays (indexed by the same ring slot):
+//   meta_starts[]     — MetaLog index for tensor metadata (MetaIndex, 256 KB)
+//   scope_hashes[]    — module-hierarchy hash from CrucibleContext (512 KB)
+//   callsite_hashes[] — Python source-location identity           (512 KB)
+//
+// cached_tail_ lives on the producer's cache line and holds the last-read
+// tail. Stale cache is conservative (reports less free space than reality),
+// so the producer only touches the consumer's atomic when the cache shows
+// the ring full — roughly once per ~20 k appends at 5 ns/op and a 100 µs
+// drain interval.
+
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
@@ -10,53 +30,20 @@
 
 namespace crucible {
 
-// Lock-free SPSC ring buffer for op recording.
-//
-// Foreground thread writes one entry per ATen op (~5ns target).
-// Background thread drains in batches and builds the trace.
-//
-// Entry is exactly 64 bytes (one cache line). Layout:
-//   schema_hash(8) + shape_hash(8) + num_inputs(2) + num_outputs(2)
-//   + num_scalar_args(2) + grad_enabled(1) + op_flags(1)
-//   + scalar_values[5](40) = 64 bytes
-//
-// Parallel arrays alongside entries[]:
-//   meta_starts[] — MetaLog index for tensor metadata (MetaIndex, 256KB)
-//   scope_hashes[] — module hierarchy hash from CrucibleContext (uint64_t, 512KB)
-//   callsite_hashes[] — Python callsite identity (uint64_t, 512KB)
-//
-// The ring is pre-allocated (~5.25MB total) and never resized.
-// If the background thread falls behind, entries are silently
-// dropped — the next iteration will re-record everything.
-//
-// Performance optimization: cached_tail_ avoids reading the consumer's
-// atomic tail on every try_append(). The producer caches the last-read
-// tail and only re-reads the atomic when the cache shows the ring full.
-// Since drain() only advances tail forward, a stale cache is conservative
-// (shows less space than actually available). This eliminates cross-core
-// cache-line traffic on the common path: ~20,000 appends between drains
-// at 5ns/op and 100us drain interval.
-// Op recording flags packed into Entry::op_flags.
-// Bit-packed into one byte to preserve the 64B cache-line entry.
-//
-//   7     6     5     4     3     2     1     0
-// ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
-// │     reserved    │ TFN │   phase   │ MUT │ INF │
-// └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
-//
-// bit 0:   INFERENCE_MODE — c10::InferenceMode active
-// bit 1:   IS_MUTABLE     — schema.is_mutable() (in-place or out= op)
-// bit 2-3: TRAINING_PHASE — 0=forward, 1=backward, 2=optimizer, 3=other
-// bit 4:   TORCH_FUNCTION — DispatchKey::Python active (__torch_function__)
+// Packed flags in Entry::op_flags — preserves the 64 B cache-line Entry.
+//   bit 0   : INFERENCE_MODE — c10::InferenceMode active
+//   bit 1   : IS_MUTABLE     — schema.is_mutable() (in-place / out= op)
+//   bit 2-3 : TRAINING_PHASE — 0 forward, 1 backward, 2 optimizer, 3 other
+//   bit 4   : TORCH_FUNCTION — DispatchKey::Python active
+//   bit 5-7 : reserved
 namespace op_flag {
 inline constexpr uint8_t INFERENCE_MODE = 1 << 0;
 inline constexpr uint8_t IS_MUTABLE     = 1 << 1;
-inline constexpr uint8_t PHASE_MASK     = 0x3 << 2;  // bits 2-3
+inline constexpr uint8_t PHASE_MASK     = 0x3 << 2;
 inline constexpr uint8_t PHASE_SHIFT    = 2;
 inline constexpr uint8_t TORCH_FUNCTION = 1 << 4;
 } // namespace op_flag
 
-// Training phase encoded in op_flags bits 2-3.
 enum class TrainingPhase : uint8_t {
   FORWARD   = 0,
   BACKWARD  = 1,
@@ -65,190 +52,177 @@ enum class TrainingPhase : uint8_t {
 };
 
 struct CRUCIBLE_OWNER TraceRing {
+  // One cache line per op. Layout is load-bearing: bit-reinterpreted by
+  // Serialize.h and assumed stable by Vigil / BackgroundThread / TraceLoader.
+  //   schema(8) + shape(8) + num_inputs(2) + num_outputs(2)
+  //   + num_scalar_args(2) + grad_enabled(1) + op_flags(1)
+  //   + scalar_values[5](40) = 64 B
   struct alignas(64) Entry {
-    SchemaHash schema_hash;              // 8B — op identity
-    ShapeHash shape_hash;                // 8B — quick hash of input shapes
-    uint16_t num_inputs = 0;             // 2B
-    uint16_t num_outputs = 0;            // 2B
-    uint16_t num_scalar_args = 0;        // 2B
-    bool grad_enabled = false;           // 1B
-    uint8_t op_flags = 0;               // 1B — bit-packed, see op_flag::*
-    // Scalar argument values (int64_t bitcast for doubles/bools/enums).
-    // 5 slots cover 99.9% of ops. Overflow counted in num_scalar_args.
-    int64_t scalar_values[5]{};          // 40B — zero-init prevents hash instability
+    SchemaHash schema_hash;               // op identity
+    ShapeHash  shape_hash;                // quick hash of input shapes
+    uint16_t   num_inputs       = 0;
+    uint16_t   num_outputs      = 0;
+    uint16_t   num_scalar_args  = 0;      // count; first 5 stored inline
+    bool       grad_enabled     = false;
+    uint8_t    op_flags         = 0;      // see op_flag::*
+    // Inline scalar args (int64 bit-cast for doubles/bools/enums). 5 slots
+    // cover 99.9 % of ops; overflow is counted in num_scalar_args. Zero-init
+    // prevents hash instability on padding bytes.
+    int64_t    scalar_values[5]{};
   };
 
   static_assert(sizeof(Entry) == 64, "Entry must be exactly one cache line");
+  static_assert(alignof(Entry) == 64);
   CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Entry);
 
-  static constexpr uint32_t CAPACITY = 1 << 16; // 65536 entries = 4MB
-  static constexpr uint32_t MASK = CAPACITY - 1;
+  static constexpr uint32_t CAPACITY = 1u << 16; // 65 536 entries = 4 MB
+  static constexpr uint32_t MASK     = CAPACITY - 1;
+  static_assert((CAPACITY & MASK) == 0, "CAPACITY must be a power of two");
 
-  // ── Cache-line-isolated atomics ──
-  // head and tail MUST be on separate cache lines to prevent false sharing.
-  // Producer writes head, consumer writes tail — if they shared a cache
-  // line, every write would bounce the line between cores (~40ns penalty).
+  // ── Cross-thread atomics on isolated cache lines ────────────────────
+  // head and tail on one shared line would ping-pong MESI on every
+  // producer/consumer write (~40 ns each). alignas(64) separates them.
 
-  // Producer state (foreground thread writes, consumer reads).
-  // NOT relaxed: head.store(release) publishes entry data written before it.
-  // Consumer's head.load(acquire) must see that data. Relaxed = torn reads.
+  // Producer-owned. release on store publishes the entry data written before
+  // it; consumer pairs with acquire to observe that data before reading.
   alignas(64) std::atomic<uint64_t> head{0};
 
-  // Consumer state (consumer reads/writes, producer reads for fullness).
-  // NOT relaxed: tail.store(release) publishes that the consumer is done
-  // reading entries. Producer's tail.load(acquire) must see this before
-  // overwriting those slots. Relaxed = producer overwrites live data.
+  // Consumer-owned. release on store publishes "reader finished with these
+  // slots"; producer pairs with acquire to avoid overwriting live data.
   alignas(64) std::atomic<uint64_t> tail{0};
 
-  // Producer-local cache of tail. Lives on the producer's cache line,
-  // never written by the consumer. Avoids atomic load of tail on the
-  // fast path (~20,000 appends avoid cross-core read per drain cycle).
-  // Same cache line as head would cause false sharing, so we give it
-  // its own line. Pad to 64B to prevent sharing with entries[].
+  // Producer-local shadow of tail. Never read by the consumer. Own cache
+  // line to avoid sharing with head (each line owned by exactly one thread).
   alignas(64) uint64_t cached_tail_ = 0;
 
-  // The ring buffer itself (4MB contiguous, cache-line aligned).
-  alignas(64) Entry entries[CAPACITY];
+  // 4 MB contiguous ring plus the three parallel arrays.
+  alignas(64) Entry         entries[CAPACITY]{};
+  MetaIndex                 meta_starts[CAPACITY]{};      // MetaIndex::none() default
+  ScopeHash                 scope_hashes[CAPACITY]{};     // 0 = no scope
+  CallsiteHash              callsite_hashes[CAPACITY]{};  // 0 = no callsite
 
-  // Parallel array: MetaLog start index for each ring entry.
-  // Written by foreground alongside entries[], read by background.
-  // MetaIndex::none() means no metadata (zero-tensor op or MetaLog overflow).
-  MetaIndex meta_starts[CAPACITY];
-
-  // Parallel array: module scope hash for each ring entry.
-  // Default (0) means no scope (op at top level, outside any nn.Module).
-  ScopeHash scope_hashes[CAPACITY];
-
-  // Parallel array: Python callsite hash for each ring entry.
-  // Identifies the Python source location (file:func:line) that triggered
-  // this op. Default (0) means no callsite captured (e.g., pure C++).
-  CallsiteHash callsite_hashes[CAPACITY];
-
-  // ── Producer (foreground): ~3-5 ns, never blocks ──
-  //
-  // Returns true if the entry was written, false if the ring is full.
-  // A full ring means the background thread is behind — we silently
-  // drop the entry. The next iteration will re-record everything.
-  // meta_start: MetaLog index for this entry's tensor metadata.
-  //   MetaIndex::none() if op has no tensors or MetaLog is full.
-  // scope_hash: current module hierarchy hash from CrucibleContext.
-  // callsite_hash: Python source location identity.
   TraceRing() = default;
-  TraceRing(const TraceRing&) = delete("SPSC ring is pinned to producer/consumer thread pair");
-  TraceRing& operator=(const TraceRing&) = delete("SPSC ring is pinned to producer/consumer thread pair");
-  TraceRing(TraceRing&&) = delete("SPSC ring is pinned to producer/consumer thread pair");
-  TraceRing& operator=(TraceRing&&) = delete("SPSC ring is pinned to producer/consumer thread pair");
+  TraceRing(const TraceRing&)            = delete("SPSC ring is pinned to a producer/consumer thread pair");
+  TraceRing& operator=(const TraceRing&) = delete("SPSC ring is pinned to a producer/consumer thread pair");
+  TraceRing(TraceRing&&)                 = delete("SPSC ring is pinned to a producer/consumer thread pair");
+  TraceRing& operator=(TraceRing&&)      = delete("SPSC ring is pinned to a producer/consumer thread pair");
 
-  // Foreground thread only (SPSC producer).
-  // Safe by protocol: only one thread writes head + entries[head].
+  // ── Producer (foreground): ~3-5 ns, never blocks ────────────────────
+  // Returns true on append, false if the ring is full (entry is dropped;
+  // next iteration re-records). SPSC-safe: the producer is the sole writer
+  // of head and entries[head]; we suppress Clang's thread-safety analysis.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
-  [[nodiscard]] CRUCIBLE_INLINE bool try_append(
+  [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool try_append(
       const Entry& e,
-      MetaIndex meta_start = MetaIndex::none(),
-      ScopeHash scope_hash = {},
+      MetaIndex    meta_start    = MetaIndex::none(),
+      ScopeHash    scope_hash    = {},
       CallsiteHash callsite_hash = {}) CRUCIBLE_NO_THREAD_SAFETY {
-    uint64_t h = head.load(std::memory_order_acquire);
-    // Fast path: check against cached tail (producer-local, no atomic load).
-    // Stale cached tail is conservative — shows less space than reality.
+    // relaxed: producer reads its own head — no cross-thread sync needed.
+    const uint64_t h = head.load(std::memory_order_relaxed);
+
+    // Fast path uses the producer-local cached_tail_ copy — no atomic load.
+    // Stale cache is conservative (under-reports free space).
     if (h - cached_tail_ >= CAPACITY) [[unlikely]] {
-      // Slow path: re-read the real tail from the consumer's atomic.
-      // This crosses cache lines but happens at most once per drain cycle
-      // (every ~20,000 appends at 5ns/op with 100us drain interval).
+      // acquire: pair with consumer's release store to observe that the
+      // slots we're about to overwrite have been fully read.
       cached_tail_ = tail.load(std::memory_order_acquire);
-      if (h - cached_tail_ >= CAPACITY) [[unlikely]] {
-        return false;
-      }
+      if (h - cached_tail_ >= CAPACITY) [[unlikely]] return false;
     }
-    uint32_t slot = static_cast<uint32_t>(h) & MASK;
-    entries[slot] = e;
-    meta_starts[slot] = meta_start;
-    scope_hashes[slot] = scope_hash;
+
+    const uint32_t slot = static_cast<uint32_t>(h) & MASK;
+    entries[slot]         = e;
+    meta_starts[slot]     = meta_start;
+    scope_hashes[slot]    = scope_hash;
     callsite_hashes[slot] = callsite_hash;
 
-    // Prefetch the NEXT write slot into L1d before publishing head.
-    // The next try_append() will find its destination cache-hot.
-    // Without this, each write hits cold cache lines in the 4MB ring,
-    // costing ~100+ cycles for DRAM→L1d. The prefetch fires now and
-    // completes during the caller's other work (Python dispatch, etc).
+    // Prefetch the NEXT slot into L1d (write intent, T0 locality) so the
+    // following try_append finds its destination cache-hot. Fires now,
+    // completes during the caller's post-append work (Python dispatch, etc.).
     {
-      uint32_t next_slot = (slot + 1) & MASK;
-      __builtin_prefetch(&entries[next_slot], 1 /*write*/, 3 /*L1*/);
-      // Parallel arrays: each in a separate memory region, prefetch all.
-      __builtin_prefetch(&meta_starts[next_slot], 1, 3);
-      __builtin_prefetch(&scope_hashes[next_slot], 1, 3);
+      const uint32_t next_slot = (slot + 1u) & MASK;
+      __builtin_prefetch(&entries[next_slot],         1, 3);
+      __builtin_prefetch(&meta_starts[next_slot],     1, 3);
+      __builtin_prefetch(&scope_hashes[next_slot],    1, 3);
       __builtin_prefetch(&callsite_hashes[next_slot], 1, 3);
     }
 
+    // release: publish the entry data (stored above) to the consumer; the
+    // consumer's acquire load of head will observe all four writes.
     head.store(h + 1, std::memory_order_release);
     return true;
   }
 
-  // ── Consumer (background): drain all available entries ──
-  //
-  // Copies up to max_count entries into `out` and their corresponding
-  // parallel arrays into output buffers (any may be null).
-  // Returns the number of entries actually drained.
-  // Uses memcpy for contiguous runs to exploit hardware prefetch and
-  // SIMD store forwarding.
-  // Background thread only (SPSC consumer).
-  // Safe by protocol: only one thread writes tail + reads entries[tail..head].
+  // ── Consumer (background): drain up to max_count entries ────────────
+  // Copies into `out` and the three optional parallel-array buffers (any
+  // may be null). Returns the number of entries drained. Uses memcpy for
+  // contiguous runs to exploit SIMD store forwarding.
+  // SPSC-safe: consumer is the sole writer of tail and sole reader of
+  // entries[tail..head]. Clang thread-safety suppressed.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
-  [[nodiscard]] uint32_t drain(Entry* out, uint32_t max_count,
-                 MetaIndex* out_meta_starts = nullptr,
-                 ScopeHash* out_scope_hashes = nullptr,
-                 CallsiteHash* out_callsite_hashes = nullptr) CRUCIBLE_NO_THREAD_SAFETY {
-    uint64_t h = head.load(std::memory_order_acquire);
-    uint64_t t = tail.load(std::memory_order_acquire);
-    uint32_t available = static_cast<uint32_t>(h - t);
-    uint32_t count = std::min(available, max_count);
-    if (count == 0) [[unlikely]] {
-      return 0;
-    }
+  [[nodiscard, gnu::hot]] uint32_t drain(
+      Entry*        out,
+      uint32_t      max_count,
+      MetaIndex*    out_meta_starts     = nullptr,
+      ScopeHash*    out_scope_hashes    = nullptr,
+      CallsiteHash* out_callsite_hashes = nullptr) CRUCIBLE_NO_THREAD_SAFETY
+      pre (max_count == 0 || out != nullptr)
+  {
+    // acquire: pair with producer's release store — observe entry writes.
+    const uint64_t h = head.load(std::memory_order_acquire);
+    // relaxed: consumer reads its own tail — no cross-thread sync needed.
+    const uint64_t t = tail.load(std::memory_order_relaxed);
 
-    // Split into at most two contiguous runs (wrap-around at CAPACITY).
-    uint32_t start = static_cast<uint32_t>(t) & MASK;
-    uint32_t first = std::min(count, CAPACITY - start);
-    uint32_t second = count - first;
+    const uint32_t available = static_cast<uint32_t>(h - t);
+    const uint32_t count     = std::min(available, max_count);
+    if (count == 0) [[unlikely]] return 0;
 
-    // First contiguous run: [start, start + first).
+    // Wrap split: at most two contiguous runs inside entries[].
+    const uint32_t start  = static_cast<uint32_t>(t) & MASK;
+    const uint32_t first  = std::min(count, CAPACITY - start);
+    const uint32_t second = count - first;
+
     std::memcpy(out, &entries[start], first * sizeof(Entry));
     if (out_meta_starts)
-      std::memcpy(out_meta_starts, &meta_starts[start], first * sizeof(MetaIndex));
+      std::memcpy(out_meta_starts,     &meta_starts[start],     first * sizeof(MetaIndex));
     if (out_scope_hashes)
-      std::memcpy(out_scope_hashes, &scope_hashes[start], first * sizeof(ScopeHash));
+      std::memcpy(out_scope_hashes,    &scope_hashes[start],    first * sizeof(ScopeHash));
     if (out_callsite_hashes)
       std::memcpy(out_callsite_hashes, &callsite_hashes[start], first * sizeof(CallsiteHash));
 
-    // Second contiguous run (wrap-around): [0, second).
     if (second > 0) [[unlikely]] {
       std::memcpy(out + first, &entries[0], second * sizeof(Entry));
       if (out_meta_starts)
-        std::memcpy(out_meta_starts + first, &meta_starts[0], second * sizeof(MetaIndex));
+        std::memcpy(out_meta_starts     + first, &meta_starts[0],     second * sizeof(MetaIndex));
       if (out_scope_hashes)
-        std::memcpy(out_scope_hashes + first, &scope_hashes[0], second * sizeof(ScopeHash));
+        std::memcpy(out_scope_hashes    + first, &scope_hashes[0],    second * sizeof(ScopeHash));
       if (out_callsite_hashes)
         std::memcpy(out_callsite_hashes + first, &callsite_hashes[0], second * sizeof(CallsiteHash));
     }
 
+    // release: publish "slots [t, t+count) are free"; producer's acquire
+    // load of tail on the full-ring path observes this before overwriting.
     tail.store(t + count, std::memory_order_release);
     return count;
   }
 
-  // Approximate count — deliberately racy (diagnostic only).
-  [[nodiscard]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY {
+  // Approximate count — racy by design (diagnostic only). pure: depends on
+  // memory (atomics) but has no side effects — optimizer may CSE adjacent
+  // calls, which is fine for a diagnostic.
+  [[nodiscard, gnu::pure]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY {
     return static_cast<uint32_t>(
         head.load(std::memory_order_acquire) -
         tail.load(std::memory_order_acquire));
   }
 
-  // Total entries ever produced (monotonic).  Acquire: synchronizes with
-  // producer's release store in try_append().  Used by Vigil::flush() to
-  // snapshot the high-water mark before waiting for full processing.
-  [[nodiscard]] uint64_t total_produced() const CRUCIBLE_NO_THREAD_SAFETY {
+  // Monotonic high-water mark of producer commits. Vigil::flush snapshots
+  // this before waiting for the background thread to catch up.
+  // acquire: synchronizes with producer's release in try_append so the
+  // returned bound implies visibility of all prior entries.
+  [[nodiscard, gnu::pure]] uint64_t total_produced() const CRUCIBLE_NO_THREAD_SAFETY {
     return head.load(std::memory_order_acquire);
   }
 
-  // Only when both threads are quiescent (join/stop).
+  // Only valid when both threads are quiescent (join/stop).
   void reset() CRUCIBLE_NO_THREAD_SAFETY {
     head.store(0, std::memory_order_release);
     tail.store(0, std::memory_order_release);

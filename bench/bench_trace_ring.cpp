@@ -372,6 +372,35 @@ int main() {
         delete ring;
     }
 
+    // ── 11. drain() across the wrap-around boundary ──
+    // Drives head/tail past CAPACITY so drain() executes the two-segment
+    // memcpy path (the common-case "first-run only" is measured in #6).
+    {
+        std::printf("\n-- drain() across wrap-around --\n");
+        auto* ring = new TraceRing();
+        TraceRing::Entry e = make_entry(0xF00DF00D, 0xBABABABA);
+        TraceRing::Entry drain_buf[4096];
+
+        // Align head and tail near CAPACITY - 64 so a 128-entry append wraps.
+        for (uint32_t i = 0; i < TraceRing::CAPACITY - 64; i++)
+            static_cast<void>(ring->try_append(e));
+        static_cast<void>(ring->drain(drain_buf, 4096));   // advance tail
+        for (uint32_t i = 0; i < TraceRing::CAPACITY - 128; i++)
+            static_cast<void>(ring->try_append(e));
+        static_cast<void>(ring->drain(drain_buf, 4096));
+        // Now head ≈ 2*CAPACITY - 192, tail matches; slot indices wrap.
+
+        constexpr uint64_t ITERS = 500'000;
+        BENCH_CHECK("append+drain (wrap 128)", ITERS, 700.0, {
+            for (uint32_t i = 0; i < 128; i++)
+                static_cast<void>(ring->try_append(e));
+            uint32_t n = ring->drain(drain_buf, 128);
+            bench::DoNotOptimize(n);
+        });
+
+        delete ring;
+    }
+
     std::printf("\nDone.\n");
     return 0;
 }
