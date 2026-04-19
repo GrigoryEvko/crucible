@@ -202,25 +202,37 @@ constexpr uint16_t composite_flags(
 //   - Term combining: add(a, 2a) → 3a (via coefficient decomposition)
 class CRUCIBLE_OWNER ExprPool {
  public:
-  // Default `initial_capacity` is the smallest power of 2 that holds the
-  // ctor's 258 initial entries (256-integer cache + BOOL_TRUE/FALSE
-  // singletons) at ≤87.5% load factor without triggering a rehash:
+  // Default `initial_capacity` sized for real production graphs — ViT
+  // forward+backward+optimizer is ~15k DAG ops, SD1.5 is ~30k. Each op
+  // contributes 1-3 non-cached Exprs (shape polynomials, symbolic dims,
+  // composites; concrete ints are served by the separate 256-entry
+  // integer cache). 16384 slots holds 14k user entries at 87.5% load
+  // → covers ViT-scale graphs with zero rehashes.
   //
-  //   258 items × 8 / 7 ≈ 295 slots needed  →  round up → 512
+  // Capacity math:
+  //   16384 slots × 7/8 threshold  = 14336 entries max
+  //   258 seeded by ctor           = 14078 user Exprs budget
   //
-  // 512 is the right number on every SIMD backend (AVX-512BW, AVX2,
-  // SSE2, NEON) — the constant is determined by the ctor payload, not
-  // the SIMD group width. Memory cost: ~5 KB (512 ctrl + 512*8 slots).
+  // Memory cost: 144 KB (16384 ctrl + 16384*8 slots). This is the
+  // first capacity above glibc's default 128 KB mmap threshold, so the
+  // single backing_ allocation goes through mmap/munmap directly —
+  // clean return to the OS on dtor (no heap-pool growth).
   //
-  // Production callers that will intern many more exprs should call
-  // `reserve(n)` right after construction to skip the early grow
-  // sequence (e.g. KernelCache expecting 10k sub-computations).
+  // Ctor cost (measured AVX2): ~30 µs for the two memsets + mmap + the
+  // 258 initial inserts. Negligible for long-lived pools; bench harness
+  // wall-cap keeps short-lived test scopes bounded.
   //
-  // Previous default (1 << 16 = 65536) allocated ~590 KB up front on
-  // every construct — in bench harnesses and short-lived test scopes
-  // that cost ~25 cold-page faults per instance (observed >7M faults in
-  // bench_graph's 65k-iteration loop), dominating measured runtime.
-  static constexpr size_t kDefaultInitialCapacity = 512;
+  // Callers with known bounded size call `reserve(n)` explicitly:
+  //   - Production KernelCache: reserve(expected_kernel_count)
+  //   - Large graphs (>14k exprs): reserve(approximate_final_size)
+  //
+  // History: original default was 1<<16 = 65536 (576 KB up-front, ~25
+  // cold-page faults per ctor, 7M faults across bench_graph's 65k-iter
+  // loop). First reduction went to 512 (optimal for tiny benches but
+  // forced 5+ rehashes on real graphs). 16384 is the measured sweet
+  // spot — covers the user-declared minimum baseline (10k+ node real
+  // networks) while staying at a clean mmap-backed allocation size.
+  static constexpr size_t kDefaultInitialCapacity = 16384;
 
   explicit ExprPool(fx::Alloc a,
                     size_t initial_capacity = kDefaultInitialCapacity) : arena_() {

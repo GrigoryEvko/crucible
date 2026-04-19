@@ -303,17 +303,17 @@ int main() {
 
     // ── Scaling: construction cost vs initial_capacity ───────────────
     //
-    // The default initial_capacity was lowered from 1<<16 (65536) to
-    // kGroupWidth*16 (512 on AVX2). These Reports show the construction-
-    // cost curve and let you verify that smaller starts are cheap.
+    // Default is 16384 slots (ExprPool::kDefaultInitialCapacity) — fits
+    // 14078 user exprs at 87.5% load → covers ViT-scale real networks
+    // (~15k DAG ops) with zero rehashes.
     //
-    // On AVX2, kGroupWidth=32. The relevant caps:
-    //   kGroupWidth*4  = 128  — smallest sensible
-    //   kGroupWidth*16 = 512  — current default (fits 256-entry int cache)
-    //   65536                 — legacy default (pre-allocated 590 KB)
-    //   1 << 20 = 1M          — what a warmed-up production KernelCache holds
-    for (size_t cap : {detail::kGroupWidth * 4,
-                       detail::kGroupWidth * 16,
+    // Capacity choices:
+    //   512      — legacy "tiny" (forces rehash chain on real graphs)
+    //   16384    — current default (fits 10k+ op networks, mmap-backed)
+    //   65536    — historical default (576 KB up front, more headroom)
+    //   1 << 20  — warmed-up production KernelCache scale
+    for (size_t cap : {size_t{512},
+                       ExprPool::kDefaultInitialCapacity,
                        size_t{1u} << 16,
                        size_t{1u} << 20}) {
         char label[64];
@@ -373,7 +373,7 @@ int main() {
     // ── Compare: does reserve() actually pay off? ───────────────────
     //
     // Last 10 Reports are the scaling scenarios:
-    //   [L-10 .. L-7]  ctor+dtor @ init_cap = 128/512/64k/1M
+    //   [L-10 .. L-7]  ctor+dtor @ init_cap = 512/16384(default)/64k/1M
     //   [L-6  .. L-4]  grow-sequence: N inserts, N = 100/1000/10000
     //   [L-3  .. L-1]  reserve(N) + N inserts, same Ns
     //
@@ -384,7 +384,7 @@ int main() {
     const size_t L = reports.size();
 
     std::printf("\n=== compare — ctor cost vs initial_capacity ===\n");
-    std::printf("  default (kGroupWidth*16) vs legacy 1<<16:\n  ");
+    std::printf("  tiny 512 vs default 16384:\n  ");
     bench::compare(reports[L - 9], reports[L - 8]).print_text(stdout);
     std::printf("  default vs max (1<<20):\n  ");
     bench::compare(reports[L - 9], reports[L - 7]).print_text(stdout);
