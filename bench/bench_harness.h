@@ -9,8 +9,11 @@
 //     interpolation — Hyndman & Fan (1996) type 7, the R default.
 //   • Bootstrap confidence intervals — Efron (1979).
 //   • Mann-Whitney U rank-sum for A/B comparison — Mann & Whitney (1947).
-//   • HW cycle counters via perf_event_open + PERF_COUNT_HW_CPU_CYCLES /
-//     PERF_COUNT_HW_REF_CPU_CYCLES — Linux perf subsystem.
+//   • Kernel-side context via eBPF — 96 counters in a BPF_F_MMAPABLE
+//     array map (bench/bpf/sense_hub.bpf.c, ported from symbiotic).
+//     Tracepoint handlers run in kernel context on the event; the bench
+//     side just does volatile mmap loads on entry and exit of the run,
+//     so zero overhead lands inside the timed region.
 //
 // What the harness gives you:
 //   bench::Run("name").samples(N).warmup(W).core(C).measure(body) → Report
@@ -18,16 +21,16 @@
 //   bench::compare(a, b) → Mann-Whitney U; distinguishable at p<0.01 or not.
 //
 // By default each Run pins to the current core (or to an isolcpu CPU if
-// one exists), reads cpufreq at the start and end of the run, and opens
-// perf_event_open hardware counters for CPU cycles + reference cycles.
-// Result: frequency-invariant cycles/op alongside wall-time ns/op, so a
-// run captured on a turbo CPU and a run on a throttled CPU are directly
-// comparable in cycles terms.
+// one exists), reads cpufreq at the start and end of the run, and — when
+// BPF is available — reads the 96-counter sense hub on both sides of the
+// measurement. The reported deltas cover context switches, page faults,
+// migrations, futex contention, I/O bytes, and the rest of the kernel
+// surface the bench inadvertently touches.
 //
-// If perf_event_open fails (paranoid level >2, missing /proc/sys support,
-// containers without CAP_PERFMON), the harness degrades gracefully: ns
-// numbers are unchanged, cycle fields read 0, and the text output omits
-// the cycles column.
+// If BPF fails to load (missing CAP_BPF, kernel.unprivileged_bpf_disabled,
+// kernel too old), the harness degrades gracefully: ns/cycle numbers are
+// unchanged, sensory fields read zero, and the text output omits the
+// sensory line.
 //
 // Auto-batching averages over 2^k calls until the timed region exceeds
 // 1000 cycles — batched percentiles are over batch means, labeled
@@ -54,15 +57,10 @@
   #include <sched.h>
   #include <unistd.h>
   #include <sys/resource.h>
-  #if __has_include(<linux/perf_event.h>)
-    #include <linux/perf_event.h>
-    #include <sys/syscall.h>
-    #define BENCH_HAVE_PERF 1
-  #else
-    #define BENCH_HAVE_PERF 0
-  #endif
-#else
-  #define BENCH_HAVE_PERF 0
+#endif
+
+#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+  #include "bpf_senses.h"
 #endif
 
 namespace bench {
@@ -222,107 +220,24 @@ namespace detail {
 
 } // namespace detail
 
-// ── Perf counter pair: actual cycles + reference cycles ────────────
+// ── BPF sense hub accessor (shared singleton) ──────────────────────
 //
-// PERF_COUNT_HW_CPU_CYCLES tracks unhalted core cycles — real work the
-// core did, scales with turbo and down-clocking. PERF_COUNT_HW_REF_CPU_
-// CYCLES ticks at the invariant reference rate — same as TSC on modern
-// Intel/AMD. Their ratio is the instantaneous frequency multiplier.
-//
-// Opens with pid=0, cpu=-1 (this thread, any core) so pinning is
-// respected. Unprivileged on /proc/sys/kernel/perf_event_paranoid ≤ 2;
-// gracefully unavailable otherwise.
-//
-// Reads via ::read() — one syscall per counter, ~300 ns each. Called
-// twice per run (start + end), so overhead is ~1.2 µs amortized over
-// 100 k samples — negligible. For per-sample reads, rdpmc via mmap'd
-// perf_event_mmap_page would be required; out of scope here.
+// All Runs in the same process share one loaded BPF program — the
+// kernel tracepoints stay attached for the lifetime of the bench
+// binary. First call loads + attaches; subsequent calls are a simple
+// pointer return. Returns nullptr if BPF is unavailable (missing
+// CAP_BPF, kernel.unprivileged_bpf_disabled=2, kernel too old).
 
-class PerfCounters {
- public:
-    struct Snapshot {
-        uint64_t actual_cycles = 0;
-        uint64_t ref_cycles    = 0;
-    };
-
-    [[nodiscard]] static std::optional<PerfCounters> open() noexcept {
-#if BENCH_HAVE_PERF
-        const int a = open_(PERF_COUNT_HW_CPU_CYCLES);
-        const int r = open_(PERF_COUNT_HW_REF_CPU_CYCLES);
-        if (a < 0 || r < 0) {
-            if (a >= 0) ::close(a);
-            if (r >= 0) ::close(r);
-            return std::nullopt;
-        }
-        PerfCounters pc;
-        pc.actual_fd_ = a;
-        pc.ref_fd_    = r;
-        return pc;
+namespace detail {
+#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+[[nodiscard]] inline const bench::bpf::SenseHub* bpf_instance() noexcept {
+    static std::optional<bench::bpf::SenseHub> slot = bench::bpf::SenseHub::load();
+    return slot.has_value() ? &*slot : nullptr;
+}
 #else
-        return std::nullopt;
+[[nodiscard]] inline const void* bpf_instance() noexcept { return nullptr; }
 #endif
-    }
-
-    [[nodiscard]] Snapshot read() const noexcept {
-        Snapshot s{};
-#if BENCH_HAVE_PERF
-        if (actual_fd_ >= 0)
-            (void)!::read(actual_fd_, &s.actual_cycles, sizeof(s.actual_cycles));
-        if (ref_fd_ >= 0)
-            (void)!::read(ref_fd_, &s.ref_cycles, sizeof(s.ref_cycles));
-#endif
-        return s;
-    }
-
-    PerfCounters() = default;
-    PerfCounters(const PerfCounters&)            = delete;
-    PerfCounters& operator=(const PerfCounters&) = delete;
-
-    PerfCounters(PerfCounters&& o) noexcept
-        : actual_fd_{o.actual_fd_}, ref_fd_{o.ref_fd_} {
-        o.actual_fd_ = -1;
-        o.ref_fd_    = -1;
-    }
-    PerfCounters& operator=(PerfCounters&& o) noexcept {
-        if (this != &o) {
-            close_();
-            actual_fd_ = o.actual_fd_;
-            ref_fd_    = o.ref_fd_;
-            o.actual_fd_ = -1;
-            o.ref_fd_    = -1;
-        }
-        return *this;
-    }
-
-    ~PerfCounters() { close_(); }
-
- private:
-    void close_() noexcept {
-#if BENCH_HAVE_PERF
-        if (actual_fd_ >= 0) ::close(actual_fd_);
-        if (ref_fd_    >= 0) ::close(ref_fd_);
-#endif
-        actual_fd_ = -1;
-        ref_fd_    = -1;
-    }
-
-#if BENCH_HAVE_PERF
-    [[nodiscard]] static int open_(uint64_t config) noexcept {
-        struct perf_event_attr pe{};
-        pe.type           = PERF_TYPE_HARDWARE;
-        pe.size           = sizeof(pe);
-        pe.config         = config;
-        pe.disabled       = 0;
-        pe.exclude_kernel = 1;   // user-space only
-        pe.exclude_hv     = 1;
-        return static_cast<int>(::syscall(SYS_perf_event_open,
-            &pe, /*pid=*/0, /*cpu=*/-1, /*group_fd=*/-1, /*flags=*/0ul));
-    }
-#endif
-
-    int actual_fd_ = -1;
-    int ref_fd_    = -1;
-};
+} // namespace detail
 
 // ── Percentile with linear interpolation (R type 7) ───────────────
 //
@@ -422,13 +337,25 @@ struct Report {
     bool                drift_flag  = false; // drift_pct > 10 %
     Percentiles         pct{};
 
-    // Frequency / cycle metadata — zero if unavailable.
-    uint64_t            freq_start_hz       = 0;   // sysfs scaling_cur_freq at run start
-    uint64_t            freq_end_hz         = 0;   // sysfs scaling_cur_freq at run end
+    // sysfs-derived frequency bracketing (not PMU).
+    uint64_t            freq_start_hz       = 0;   // scaling_cur_freq at run start
+    uint64_t            freq_end_hz         = 0;   // scaling_cur_freq at run end
     bool                freq_drift_flag     = false;
-    double              measured_freq_hz    = 0;   // APERF/MPERF-style avg (perf counters)
-    double              actual_cycles_per_op = 0;  // unhalted cycles / (samples × batch)
-    double              ref_cycles_per_op    = 0;  // reference cycles / (samples × batch)
+
+    // Cycles/op computed from rdtsc-derived ns and the TSC frequency
+    // (Timer::tsc_freq_hz). This is wall-time cycles, not PMU retired
+    // cycles — but on a pinned, non-throttled core the two are equal
+    // to within a few percent and suffice for cross-commit comparison.
+    double              cycles_per_op        = 0;
+
+    // Kernel-side context via eBPF sense hub. All zero when BPF is
+    // unavailable. Deltas over the measured run (monotonic counters);
+    // for gauge fields (FD_CURRENT, TCP_*, THERMAL_MAX_TRIP) the caller
+    // should read the post snapshot directly from bpf_post.
+#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+    bench::bpf::Snapshot bpf_delta{};
+    size_t               bpf_attached = 0;  // # programs the kernel accepted
+#endif
 
     std::vector<double> samples;  // kept for bootstrap_ci, compare
 
@@ -448,11 +375,11 @@ struct Report {
             pct.p50, pct.p90, pct.p99, pct.p99_9, pct.max,
             pct.mean, pct.stddev, pct.cv * 100.0);
 
-        if (actual_cycles_per_op > 0) {
-            std::fprintf(out, "  cyc=%6.1f", actual_cycles_per_op);
+        if (cycles_per_op > 0.0) {
+            std::fprintf(out, "  cyc=%6.1f", cycles_per_op);
         }
-        if (measured_freq_hz > 0) {
-            std::fprintf(out, "  @%.2fGHz", measured_freq_hz / 1e9);
+        if (freq_start_hz > 0) {
+            std::fprintf(out, "  @%.2fGHz", static_cast<double>(freq_start_hz) / 1e9);
         }
         std::fprintf(out, "  n=%zu", pct.n);
         if (pinned_cpu >= 0)   std::fprintf(out, "  cpu%d",   pinned_cpu);
@@ -461,6 +388,13 @@ struct Report {
         if (drift_flag)        std::fprintf(out, "  [drift]");
         if (freq_drift_flag)   std::fprintf(out, "  [freq-drift]");
         std::fprintf(out, "\n");
+
+#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+        // One-line sensory summary — emitted only when at least one
+        // "interesting" counter fired during the run. For most pure-
+        // CPU benches the line is absent, so no noise.
+        print_bpf_summary_(out);
+#endif
     }
 
     void print_json(FILE* out) const {
@@ -470,18 +404,81 @@ struct Report {
             "\"p99\":%.3f,\"p99_9\":%.3f,\"p99_99\":%.3f,"
             "\"min\":%.3f,\"max\":%.3f,\"mean\":%.3f,\"stddev\":%.3f,"
             "\"cv\":%.5f,\"wall_ns\":%.0f,\"drift_pct\":%.3f,"
-            "\"cycles_per_op\":%.3f,\"ref_cycles_per_op\":%.3f,"
-            "\"freq_hz\":%.0f,\"freq_start_hz\":%lu,\"freq_end_hz\":%lu}",
+            "\"cycles_per_op\":%.3f,"
+            "\"freq_start_hz\":%lu,\"freq_end_hz\":%lu",
             name.c_str(), batch, pct.n, pinned_cpu,
             pct.p50, pct.p75, pct.p90, pct.p95,
             pct.p99, pct.p99_9, pct.p99_99,
             pct.min, pct.max, pct.mean, pct.stddev, pct.cv,
             wall_ns, drift_pct,
-            actual_cycles_per_op, ref_cycles_per_op,
-            measured_freq_hz,
+            cycles_per_op,
             static_cast<unsigned long>(freq_start_hz),
             static_cast<unsigned long>(freq_end_hz));
+#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+        print_bpf_json_(out);
+#endif
+        std::fprintf(out, "}");
     }
+
+ private:
+#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+    // Emit a "  senses:" line iff any tracked delta is non-zero. The
+    // fields printed are the ones that actually tell a bench author
+    // something — scheduling interference, page faults, syscalls.
+    void print_bpf_summary_(FILE* out) const noexcept {
+        if (bpf_attached == 0) return;
+        const auto& d = bpf_delta;
+        const bool interesting =
+            d[bench::bpf::SCHED_CTX_VOL]       ||
+            d[bench::bpf::SCHED_CTX_INVOL]     ||
+            d[bench::bpf::SCHED_MIGRATIONS]    ||
+            d[bench::bpf::MEM_PAGE_FAULTS_MIN] ||
+            d[bench::bpf::MEM_PAGE_FAULTS_MAJ] ||
+            d[bench::bpf::FUTEX_WAIT_COUNT]    ||
+            d[bench::bpf::SCHED_IOWAIT_NS]     ||
+            d[bench::bpf::SOFTIRQ_STOLEN_NS]   ||
+            d[bench::bpf::MEM_MMAP_COUNT]      ||
+            d[bench::bpf::MEM_MUNMAP_COUNT];
+        if (!interesting) return;
+
+        std::fprintf(out, "     senses:");
+        if (uint64_t v = d[bench::bpf::SCHED_CTX_VOL])       std::fprintf(out, " vol=%lu",  v);
+        if (uint64_t v = d[bench::bpf::SCHED_CTX_INVOL])     std::fprintf(out, " invol=%lu", v);
+        if (uint64_t v = d[bench::bpf::SCHED_MIGRATIONS])    std::fprintf(out, " mig=%lu",  v);
+        if (uint64_t v = d[bench::bpf::MEM_PAGE_FAULTS_MIN]) std::fprintf(out, " pf_min=%lu", v);
+        if (uint64_t v = d[bench::bpf::MEM_PAGE_FAULTS_MAJ]) std::fprintf(out, " pf_maj=%lu", v);
+        if (uint64_t v = d[bench::bpf::FUTEX_WAIT_COUNT])    std::fprintf(out, " futex=%lu", v);
+        if (uint64_t v = d[bench::bpf::FUTEX_WAIT_NS])       std::fprintf(out, "/%luns", v);
+        if (uint64_t v = d[bench::bpf::SCHED_IOWAIT_NS])     std::fprintf(out, " iowait=%luns", v);
+        if (uint64_t v = d[bench::bpf::SOFTIRQ_STOLEN_NS])   std::fprintf(out, " softirq=%luns", v);
+        if (uint64_t v = d[bench::bpf::MEM_MMAP_COUNT])      std::fprintf(out, " mmap=%lu", v);
+        if (uint64_t v = d[bench::bpf::MEM_MUNMAP_COUNT])    std::fprintf(out, " munmap=%lu", v);
+        std::fprintf(out, "\n");
+    }
+
+    void print_bpf_json_(FILE* out) const noexcept {
+        if (bpf_attached == 0) return;
+        const auto& d = bpf_delta;
+        std::fprintf(out,
+            ",\"bpf\":{\"attached\":%zu,"
+            "\"ctx_vol\":%lu,\"ctx_invol\":%lu,\"migrations\":%lu,"
+            "\"page_fault_min\":%lu,\"page_fault_maj\":%lu,"
+            "\"futex_wait_count\":%lu,\"futex_wait_ns\":%lu,"
+            "\"sched_runtime_ns\":%lu,\"sched_wait_ns\":%lu,"
+            "\"sched_iowait_ns\":%lu,\"softirq_stolen_ns\":%lu,"
+            "\"mmap_count\":%lu,\"munmap_count\":%lu,"
+            "\"io_read_bytes\":%lu,\"io_write_bytes\":%lu}",
+            bpf_attached,
+            d[bench::bpf::SCHED_CTX_VOL],       d[bench::bpf::SCHED_CTX_INVOL],
+            d[bench::bpf::SCHED_MIGRATIONS],
+            d[bench::bpf::MEM_PAGE_FAULTS_MIN], d[bench::bpf::MEM_PAGE_FAULTS_MAJ],
+            d[bench::bpf::FUTEX_WAIT_COUNT],    d[bench::bpf::FUTEX_WAIT_NS],
+            d[bench::bpf::SCHED_RUNTIME_NS],    d[bench::bpf::SCHED_WAIT_NS],
+            d[bench::bpf::SCHED_IOWAIT_NS],     d[bench::bpf::SOFTIRQ_STOLEN_NS],
+            d[bench::bpf::MEM_MMAP_COUNT],      d[bench::bpf::MEM_MUNMAP_COUNT],
+            d[bench::bpf::IO_READ_BYTES],       d[bench::bpf::IO_WRITE_BYTES]);
+    }
+#endif
 };
 
 // ── Mann-Whitney U (Mann & Whitney 1947) for A/B ──────────────────
@@ -579,14 +576,20 @@ class Run {
 
         for (size_t i = 0; i < warmup_; ++i) body();
 
-        auto perf = PerfCounters::open();
-        PerfCounters::Snapshot perf_start{}, perf_end{};
         const uint64_t freq_start = detail::read_cpu_freq_hz(pinned_cpu);
+
+#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+        const bench::bpf::SenseHub* hub = detail::bpf_instance();
+        bench::bpf::Snapshot        bpf_pre{};
+        bench::bpf::Snapshot        bpf_post{};
+#endif
 
         std::vector<double> ns_samples;
         ns_samples.reserve(S);
 
-        if (perf) perf_start = perf->read();
+#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+        if (hub != nullptr) bpf_pre = hub->read();
+#endif
         const auto wall0 = std::chrono::steady_clock::now();
 
         for (size_t i = 0; i < S; ++i) {
@@ -599,7 +602,9 @@ class Run {
         }
 
         const auto wall1 = std::chrono::steady_clock::now();
-        if (perf) perf_end = perf->read();
+#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+        if (hub != nullptr) bpf_post = hub->read();
+#endif
         const uint64_t freq_end = detail::read_cpu_freq_hz(pinned_cpu);
 
         // Drift: compare first-half vs second-half p50 as a proxy for
@@ -640,22 +645,19 @@ class Run {
             r.freq_drift_flag = ratio > 0.05;
         }
 
-        // Perf counter-derived cycles/op and measured frequency.
-        if (perf) {
-            const uint64_t total_actual = perf_end.actual_cycles - perf_start.actual_cycles;
-            const uint64_t total_ref    = perf_end.ref_cycles    - perf_start.ref_cycles;
-            const uint64_t total_ops    = static_cast<uint64_t>(S) * batch;
-            if (total_ops > 0) {
-                r.actual_cycles_per_op = static_cast<double>(total_actual) / static_cast<double>(total_ops);
-                r.ref_cycles_per_op    = static_cast<double>(total_ref)    / static_cast<double>(total_ops);
-            }
-            // ref_cycles tick at the TSC invariant rate; actual/ref gives
-            // the frequency multiplier relative to TSC.
-            if (total_ref > 0 && Timer::tsc_freq_hz() > 0) {
-                const double mult = static_cast<double>(total_actual) / static_cast<double>(total_ref);
-                r.measured_freq_hz = mult * Timer::tsc_freq_hz();
-            }
+        // Cycles/op derived from rdtsc mean ns and TSC frequency.
+        // Consistent with how "cyc" was reported before, independent of
+        // PMU availability.
+        if (const double tsc_hz = Timer::tsc_freq_hz(); tsc_hz > 0.0) {
+            r.cycles_per_op = r.pct.mean * tsc_hz / 1e9;
         }
+
+#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+        if (hub != nullptr) {
+            r.bpf_delta    = bpf_post - bpf_pre;
+            r.bpf_attached = hub->attached_programs();
+        }
+#endif
 
         return r;
     }
@@ -777,9 +779,20 @@ inline void print_system_info(FILE* out = stdout) {
                  static_cast<unsigned long>(Timer::overhead_cycles()),
                  Timer::overhead_ns());
 
-    auto perf_probe = PerfCounters::open();
-    std::fprintf(out, "  perf HW:   %s\n",
-                 perf_probe ? "available (actual + ref cycles)" : "UNAVAILABLE (cycles/op = 0)");
+#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+    const bench::bpf::SenseHub* hub = detail::bpf_instance();
+    if (hub != nullptr) {
+        std::fprintf(out, "  BPF senses: loaded (%zu tracepoints attached)\n",
+                     hub->attached_programs());
+    } else {
+        std::fprintf(out,
+            "  BPF senses: UNAVAILABLE — set CRUCIBLE_BENCH_BPF_VERBOSE=1 for libbpf logs;\n"
+            "              typical fix: sudo sysctl kernel.unprivileged_bpf_disabled=0\n"
+            "              or sudo setcap cap_bpf,cap_perfmon=eip <binary>\n");
+    }
+#else
+    std::fprintf(out, "  BPF senses: disabled at build time\n");
+#endif
 
     if (const char* s = std::getenv("CRUCIBLE_BENCH_SAMPLES")) {
         std::fprintf(out, "  samples:   %s (CRUCIBLE_BENCH_SAMPLES)\n", s);
