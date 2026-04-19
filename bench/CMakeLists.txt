@@ -22,6 +22,12 @@ if (CRUCIBLE_BENCH_BPF)
     pkg_check_modules(LIBBPF QUIET IMPORTED_TARGET libbpf)
   endif()
 
+  # Prefer the system clang (/usr/bin, /usr/local/bin) for BPF because
+  # the user's personal toolchain under ~/.local/llvm/bin is a newer
+  # clang (22.x) that may reject the installed kernel's BTF or emit
+  # relocations libbpf doesn't yet understand. The system clang is the
+  # version matched against the running kernel's BPF ABI. Fall back to
+  # whatever's on PATH if no system clang is installed.
   find_program(CLANG_BPF_COMPILER NAMES clang
     PATHS /usr/bin /usr/local/bin NO_DEFAULT_PATH)
   if (NOT CLANG_BPF_COMPILER)
@@ -32,12 +38,22 @@ if (CRUCIBLE_BENCH_BPF)
 
   # setcap for the bench-caps convenience target (kernel ≥ 5.8 requires
   # CAP_BPF + CAP_PERFMON for tracepoint programs; setcap bakes these
-  # into the ELF file's security.capability xattr).
-  find_program(SETCAP_EXECUTABLE NAMES setcap PATHS /usr/sbin /sbin)
+  # into the ELF file's security.capability xattr). Mirror the clang
+  # lookup: prefer /usr/sbin /sbin (the canonical location on most
+  # distros), fall back to default PATH in case it's packaged under
+  # /usr/bin somewhere unusual.
+  find_program(SETCAP_EXECUTABLE NAMES setcap PATHS /usr/sbin /sbin NO_DEFAULT_PATH)
+  if (NOT SETCAP_EXECUTABLE)
+    find_program(SETCAP_EXECUTABLE NAMES setcap)
+  endif()
 
   if (LIBBPF_FOUND AND CLANG_BPF_COMPILER AND XXD_EXECUTABLE)
     set(CRUCIBLE_BENCH_BPF_AVAILABLE TRUE)
-    message(STATUS "bench: eBPF sense hub ENABLED (libbpf ${LIBBPF_VERSION}, ${CLANG_BPF_COMPILER})")
+    if (LIBBPF_VERSION)
+      message(STATUS "bench: eBPF sense hub ENABLED (libbpf ${LIBBPF_VERSION}, ${CLANG_BPF_COMPILER})")
+    else()
+      message(STATUS "bench: eBPF sense hub ENABLED (libbpf, ${CLANG_BPF_COMPILER})")
+    endif()
     if (SETCAP_EXECUTABLE)
       message(STATUS "bench: `cmake --build --preset bench --target bench-caps` to apply BPF caps (sudo)")
     else()
@@ -51,66 +67,92 @@ if (CRUCIBLE_BENCH_BPF)
   endif()
 endif()
 
+# Gate the BPF __TARGET_ARCH_* define on the build host. BPF CO-RE
+# headers (libbpf's bpf_helpers.h, vmlinux.h) use this to select the
+# per-arch pt_regs layout and syscall conventions. Hardcoding x86
+# silently miscompiles on aarch64 (register layout differs; argument
+# extraction from pt_regs reads the wrong fields). Disable BPF on
+# architectures we haven't vetted rather than generate broken bytecode.
+if (CRUCIBLE_BENCH_BPF_AVAILABLE)
+  if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    set(_crucible_bpf_arch_define "-D__TARGET_ARCH_x86")
+  elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+    set(_crucible_bpf_arch_define "-D__TARGET_ARCH_arm64")
+  else()
+    message(WARNING "bench: unsupported BPF arch ${CMAKE_SYSTEM_PROCESSOR}, disabling BPF")
+    set(CRUCIBLE_BENCH_BPF_AVAILABLE FALSE)
+  endif()
+endif()
+
 if (CRUCIBLE_BENCH_BPF_AVAILABLE)
   set(BPF_SRC "${CMAKE_CURRENT_SOURCE_DIR}/bpf/sense_hub.bpf.c")
   set(BPF_OBJ "${CMAKE_CURRENT_BINARY_DIR}/sense_hub.bpf.o")
+  set(BPF_EMBED_DIR "${CMAKE_CURRENT_BINARY_DIR}/bpf_embed")
+  set(BPF_EMBED_STAGED "${BPF_EMBED_DIR}/sense_hub_bpf_bytecode")
   set(BPF_EMBED_C "${CMAKE_CURRENT_BINARY_DIR}/sense_hub_bpf_bytecode.c")
 
   # Compile BPF program: clang -target bpf, with -O2 (verifier
   # requires optimized code for larger programs) and BTF debug info
-  # (-g) for CO-RE field relocations.
+  # (-g) for CO-RE field relocations. -fdebug-prefix-map scrubs the
+  # absolute build path from .debug_str so the generated .o (and the
+  # embedded byte array) are reproducible across checkouts.
+  # IMPLICIT_DEPENDS CXX walks #includes in sense_hub.bpf.c to track
+  # every header (common.h, vmlinux.h, plus any new file added under
+  # bench/bpf/) automatically, instead of a brittle manual list.
   add_custom_command(
     OUTPUT  ${BPF_OBJ}
     COMMAND ${CLANG_BPF_COMPILER}
             -target bpf
-            -D__TARGET_ARCH_x86
+            ${_crucible_bpf_arch_define}
             -I${CMAKE_CURRENT_SOURCE_DIR}/bpf
             -O2 -g
+            -fdebug-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=.
             -Wall -Wno-unused-function -Wno-address-of-packed-member
             -c ${BPF_SRC}
             -o ${BPF_OBJ}
     DEPENDS ${BPF_SRC}
-            ${CMAKE_CURRENT_SOURCE_DIR}/bpf/common.h
-            ${CMAKE_CURRENT_SOURCE_DIR}/bpf/vmlinux.h
+    IMPLICIT_DEPENDS CXX ${BPF_SRC}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     VERBATIM
     COMMENT "Compiling BPF sense_hub.bpf.c → sense_hub.bpf.o")
 
-  # Convert .bpf.o → C array via xxd -i. The generated file declares
-  # `sense_hub_bpf_o[]` + `sense_hub_bpf_o_len`; we rename them to
-  # the canonical bench API names with sed-free in-place edits by
-  # copying the input file into binary dir with the desired basename
-  # first (xxd uses the input file name to derive the C identifier).
-  # xxd derives the C identifier from the input *path as given*. We
-  # stage the .o to a file named exactly `sense_hub_bpf_bytecode` in
-  # the build dir, then run xxd with that bare basename from the same
-  # directory — the generated array is `sense_hub_bpf_bytecode[]`,
-  # matching the extern decls in bpf_senses.cpp.
+  # Convert .bpf.o → C array via xxd -i. xxd derives the C identifier
+  # from the input *path as given*, so we stage the .o into a file
+  # named exactly `sense_hub_bpf_bytecode` (no extension) and run xxd
+  # from that directory with the bare basename. The generated array is
+  # `unsigned char sense_hub_bpf_bytecode[]`, matching the extern
+  # declarations in bpf_senses.cpp.
+  #
+  # The staging file lives in a dedicated bpf_embed/ subdirectory so
+  # it can't collide with any other build artifact in the bench
+  # binary dir that happens to pick the same extensionless name
+  # (e.g. a parallel jobs race if a future target stages something
+  # similar). Removing the staged file at the end keeps the tree clean.
   add_custom_command(
     OUTPUT  ${BPF_EMBED_C}
-    COMMAND ${CMAKE_COMMAND} -E copy ${BPF_OBJ} sense_hub_bpf_bytecode
-    COMMAND sh -c "${XXD_EXECUTABLE} -i sense_hub_bpf_bytecode > sense_hub_bpf_bytecode.c.tmp"
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${BPF_EMBED_DIR}
+    COMMAND ${CMAKE_COMMAND} -E copy ${BPF_OBJ} ${BPF_EMBED_STAGED}
+    COMMAND sh -c "cd ${BPF_EMBED_DIR} && ${XXD_EXECUTABLE} -i sense_hub_bpf_bytecode > ${CMAKE_CURRENT_BINARY_DIR}/sense_hub_bpf_bytecode.c.tmp"
     COMMAND ${CMAKE_COMMAND} -E rename sense_hub_bpf_bytecode.c.tmp ${BPF_EMBED_C}
-    COMMAND ${CMAKE_COMMAND} -E remove -f sense_hub_bpf_bytecode
+    COMMAND ${CMAKE_COMMAND} -E remove -f ${BPF_EMBED_STAGED}
     DEPENDS ${BPF_OBJ}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
     VERBATIM
     COMMENT "Embedding BPF bytecode into C array")
 
-  # The generated array is at sense_hub_bpf_bytecode[] (xxd derives
-  # the identifier from the input file basename, and we copied the
-  # .o into a file named sense_hub_bpf_bytecode with no extension).
-  # That lines up exactly with the extern declarations in bpf_senses.cpp.
-
   # The embed file is xxd-generated (not present at configure time).
   # We compile it as C++ rather than enabling C project-wide — the
   # file is pure data (`unsigned char ...[] = { ... };`) and parses
   # identically in both languages. -w silences any warnings that
-  # would otherwise trip our project-wide -Werror.
+  # would otherwise trip -Werror. COMPILE_OPTIONS is the list-based
+  # modern API; COMPILE_FLAGS is the deprecated string form. The
+  # redundant -x c++ override is gone — LANGUAGE CXX already routes
+  # the file through the C++ compiler.
   set_source_files_properties(${BPF_EMBED_C} PROPERTIES
     GENERATED TRUE
-    LANGUAGE CXX
-    COMPILE_FLAGS "-w -x c++")
+    LANGUAGE CXX)
+  set_source_files_properties(${BPF_EMBED_C} PROPERTIES
+    COMPILE_OPTIONS "-w")
 
   add_library(crucible_bench_bpf STATIC
     bpf_senses.cpp
@@ -123,7 +165,9 @@ if (CRUCIBLE_BENCH_BPF_AVAILABLE)
   # loader so runtime overhead of SenseHub::read() is minimal.
   target_compile_options(crucible_bench_bpf PRIVATE
     -O3 -march=native -mtune=native -fno-omit-frame-pointer)
-  set_target_properties(crucible_bench_bpf PROPERTIES CRUCIBLE_NO_WERROR TRUE)
+  # No CRUCIBLE_NO_WERROR needed here: this target doesn't link
+  # crucible, so it inherits none of crucible's PUBLIC options (where
+  # -Werror lives). The property would be a no-op.
 endif()
 
 function(crucible_bench name)
@@ -148,32 +192,14 @@ endfunction()
 # ── Migrated to the new bench::Run / Report / Compare API ─────────────
 crucible_bench(bench_arena)
 crucible_bench(bench_trace_ring)
+crucible_bench(bench_smoke)
 
-# ── TODO: migrate to the new API in subsequent commits. Each one is
-#        independent. Until migrated they remain off so the bench preset
-#        builds clean against the new harness. ────────────────────────
-#
-# crucible_bench(bench_smoke)
-# crucible_bench(bench_meta_log)
-# crucible_bench(bench_pool_allocator)
-# crucible_bench(bench_region_cache)
-# crucible_bench(bench_dispatch)
-# crucible_bench(bench_swiss_table)
-# crucible_bench(bench_expr_pool)
-# crucible_bench(bench_iteration_detector)
-# crucible_bench(bench_replay_engine)
-# crucible_bench(bench_merkle_dag)
-# crucible_bench(bench_phases)
-# crucible_bench(bench_saturate)
-# crucible_bench(bench_safety)
-# crucible_bench(bench_philox)
-# crucible_bench(bench_ckernel)
-# crucible_bench(bench_schema_table)
-# crucible_bench(bench_serialize)
-# crucible_bench(bench_graph)
-# crucible_bench(bench_reflect)
-# crucible_bench(bench_cipher)
-# crucible_bench(bench_content_hash)
+# TODO: 20 more benches (meta_log, pool_allocator, region_cache,
+# dispatch, swiss_table, expr_pool, iteration_detector, replay_engine,
+# merkle_dag, phases, saturate, safety, philox, ckernel, schema_table,
+# serialize, graph, reflect, cipher, content_hash) need migration to
+# the new bench::Run/Report/Compare harness. Each one is independent;
+# add a crucible_bench(bench_<name>) line as each lands.
 
 # ── Visualization tool ────────────────────────────────────────────────
 # Not a benchmark — a utility for rendering .crtrace traces as SVG.
