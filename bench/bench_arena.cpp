@@ -38,11 +38,17 @@ int main() {
 
     // Oversized-request slow path: each alloc triggers a new block. Auto-
     // batching would hide the per-call block allocation cost (one block =
-    // one call), so sample explicitly. ~1 µs/op × 20k = ~20 ms wall time.
+    // one call), so sample explicitly. Each 8KB alloc triggers brk/mmap;
+    // 20k samples × ~1µs ≈ 20ms wall time.
     constexpr size_t kSlowPathSamples = 20'000;
+    constexpr size_t kSlowPathWarmup  = 100;
 
     std::printf("=== arena ===\n");
 
+    // Each entry below builds a fresh Arena + fx::Test, measures one op,
+    // and moves the Report into the array (Report's copy ctor is deleted,
+    // move ctor is `= default` — the IIFE-lambda pattern works via NRVO +
+    // move-construction into the aggregate-init slot).
     bench::Report reports[] = {
         [&]{
             crucible::Arena arena(1u << 24);
@@ -94,11 +100,11 @@ int main() {
         }(),
         [&]{
             // Oversized-request slow path: each alloc triggers a new block.
-            // Explicit sample count — see kSlowPathSamples above.
+            // Explicit sample/warmup counts — see kSlowPathSamples above.
             crucible::Arena arena(4096);
             crucible::fx::Test test;
             auto r = bench::Run("arena.alloc(8192) slow-path")
-                         .samples(kSlowPathSamples).warmup(100);
+                         .samples(kSlowPathSamples).warmup(kSlowPathWarmup);
             if (core >= 0) r.core(core);   // else Pin::Auto default
             return r.measure([&]{
                 auto* p = arena.alloc(test.alloc, 8192);
