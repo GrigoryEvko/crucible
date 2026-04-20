@@ -7,10 +7,13 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
+#include <crucible/Platform.h>
 
+#include <atomic>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include <thread>
 #include <vector>
 
 using namespace crucible;
@@ -129,6 +132,85 @@ static void test_try_contiguous_wrap_returns_null() {
     std::printf("  test_wrap:                      PASSED\n");
 }
 
+// Concurrent SPSC integrity: a live producer and consumer exchange N
+// distinct TensorMeta records across threads. Verifies ThreadSafe:
+//
+//   - Every meta the producer appended is eventually observed by the
+//     consumer (no lost events — cached_tail_ fallback path works).
+//   - Observed metas are bit-identical to what was written (no torn
+//     read — release/acquire publishes entries[] before head advances).
+//   - Strict producer-order preservation (data_ptr encodes sequence).
+//
+// Rationale: the hot path uses memory_order_relaxed for the producer's
+// own-head load and memory_order_release for the publish store. On x86
+// (TSO) a buggy relaxed store would still work by accident; this test
+// crystallises the behaviour so a regression on any weakly-ordered
+// platform (ARM, RISC-V) turns red here instead of in production.
+static void test_spsc_concurrent_integrity() {
+    constexpr uint32_t N = 100'000;
+    MetaLog log;
+
+    // Producer and consumer run on distinct OS threads. The producer
+    // encodes the sequence number into data_ptr (i + 1, shifted to
+    // avoid colliding with low-magic values) so the consumer can
+    // verify strict ordering on each slot.
+    std::atomic<bool>     producer_done{false};
+    std::atomic<uint32_t> lost_spin{0};        // diagnostic only
+
+    std::thread producer{[&]{
+        for (uint32_t i = 0; i < N; /* advance only on success */) {
+            TensorMeta m = make_meta(
+                reinterpret_cast<void*>(static_cast<uintptr_t>(i + 1) << 16));
+            auto idx = log.try_append(&m, 1);
+            if (idx.is_valid()) [[likely]] {
+                ++i;
+            } else {
+                // Buffer full — yield so the consumer catches up.
+                // 1 M capacity + aggressive drain makes this rare.
+                CRUCIBLE_SPIN_PAUSE;
+                lost_spin.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+        producer_done.store(true, std::memory_order_release);
+    }};
+
+    std::thread consumer{[&]{
+        uint32_t next = 0;  // next expected sequence number (0-based)
+        while (next < N) {
+            const uint32_t avail = log.size();
+            if (avail == 0) {
+                if (producer_done.load(std::memory_order_acquire) &&
+                    log.size() == 0) {
+                    break;  // producer finished and we drained everything
+                }
+                CRUCIBLE_SPIN_PAUSE;
+                continue;
+            }
+            // Verify each meta in the batch: data_ptr encodes position.
+            for (uint32_t k = 0; k < avail; ++k) {
+                const TensorMeta& m = log.at(next + k);
+                const uintptr_t expected =
+                    static_cast<uintptr_t>(next + k + 1) << 16;
+                assert(reinterpret_cast<uintptr_t>(m.data_ptr) == expected);
+                // Spot-check non-pointer fields to catch torn reads.
+                assert(m.sizes[0]    == 128);
+                assert(m.sizes[1]    == 256);
+                assert(m.dtype       == ScalarType::Float);
+                assert(m.device_type == DeviceType::CUDA);
+            }
+            log.advance_tail(next + avail);
+            next += avail;
+        }
+        assert(next == N);  // consumer saw every producer append
+    }};
+
+    producer.join();
+    consumer.join();
+    std::printf("  test_spsc_integrity:            PASSED "
+                "(N=%u, producer_spins=%u)\n",
+                N, lost_spin.load());
+}
+
 int main() {
     test_empty_state();
     test_single_append_returns_index_zero();
@@ -136,6 +218,7 @@ int main() {
     test_tail_advance_frees_capacity();
     test_reset_zeroes_both_pointers();
     test_try_contiguous_wrap_returns_null();
-    std::printf("test_meta_log: 6 groups, all passed\n");
+    test_spsc_concurrent_integrity();
+    std::printf("test_meta_log: 7 groups, all passed\n");
     return 0;
 }
