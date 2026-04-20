@@ -1,6 +1,10 @@
+#include <crucible/Platform.h>
 #include <crucible/TraceRing.h>
+
+#include <atomic>
 #include <cassert>
 #include <cstdio>
+#include <thread>
 #include <vector>
 
 using crucible::SchemaHash;
@@ -95,6 +99,90 @@ int main() {
   assert(ring->total_produced() == hi0 + 1);
 
   delete ring;
+
+  // ── Concurrent SPSC integrity ─────────────────────────────────────
+  //
+  // Live producer+consumer exchange N distinct entries. Verifies:
+  //   - Every append the producer emits is eventually drained exactly
+  //     once (no lost/duplicate — cached_tail_ fallback works).
+  //   - Schema hashes arrive in strict producer order (release/acquire
+  //     publishes entry writes before head advances).
+  //   - Parallel arrays (meta_starts, scope_hashes, callsite_hashes)
+  //     stay in lockstep with Entry writes under concurrent drain.
+  //
+  // The hot path uses memory_order_relaxed on the producer's own-head
+  // load and memory_order_release on publish. On x86 (TSO) a buggy
+  // relaxed store would work by accident; this test crystallises the
+  // behaviour so weak-order regressions (ARM, RISC-V) fail here.
+  {
+    constexpr uint32_t N = 200'000;
+    auto* r = new crucible::TraceRing();
+
+    std::atomic<bool>     producer_done{false};
+    std::atomic<uint32_t> producer_spins{0};
+
+    std::thread producer{[&]{
+      for (uint32_t i = 0; i < N; /* advance only on success */) {
+        crucible::TraceRing::Entry entry{};
+        entry.schema_hash = SchemaHash{i + 1};     // non-zero, unique
+        entry.shape_hash  = ShapeHash{~uint64_t{i} + 1};
+        if (r->try_append(entry,
+                          MetaIndex{i},
+                          ScopeHash{0xA000'0000ull | i},
+                          CallsiteHash{0xB000'0000ull | i})) [[likely]] {
+          ++i;
+        } else {
+          CRUCIBLE_SPIN_PAUSE;
+          producer_spins.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
+      producer_done.store(true, std::memory_order_release);
+    }};
+
+    std::thread consumer{[&]{
+      // Bounded drain buffer — smaller than CAPACITY so we exercise the
+      // multi-drain path. 4096 is enough to keep up with a reasonable
+      // producer but small enough to see real pipelining.
+      constexpr uint32_t DRAIN_CAP = 4096;
+      crucible::TraceRing::Entry batch_out[DRAIN_CAP];
+      MetaIndex    batch_meta [DRAIN_CAP];
+      ScopeHash    batch_scope[DRAIN_CAP];
+      CallsiteHash batch_csite[DRAIN_CAP];
+
+      uint32_t next = 0;  // next expected schema_hash base (0 → seq+1)
+      while (next < N) {
+        uint32_t got = r->drain(batch_out, DRAIN_CAP,
+                                batch_meta, batch_scope, batch_csite);
+        if (got == 0) {
+          if (producer_done.load(std::memory_order_acquire) &&
+              r->size() == 0) {
+            break;
+          }
+          CRUCIBLE_SPIN_PAUSE;
+          continue;
+        }
+        for (uint32_t k = 0; k < got; ++k) {
+          const uint32_t seq = next + k;
+          assert(batch_out[k].schema_hash == SchemaHash{seq + 1});
+          assert(batch_out[k].shape_hash  == ShapeHash{~uint64_t{seq} + 1});
+          assert(batch_meta[k]            == MetaIndex{seq});
+          assert(batch_scope[k]           == ScopeHash{0xA000'0000ull | seq});
+          assert(batch_csite[k]           == CallsiteHash{0xB000'0000ull | seq});
+        }
+        next += got;
+      }
+      assert(next == N);
+    }};
+
+    producer.join();
+    consumer.join();
+    delete r;
+
+    std::printf("test_trace_ring: concurrent SPSC integrity "
+                "(N=%u, producer_spins=%u) OK\n",
+                N, producer_spins.load());
+  }
+
   std::printf("test_trace_ring: all tests passed\n");
   return 0;
 }
