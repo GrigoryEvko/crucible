@@ -57,8 +57,17 @@ struct CRUCIBLE_OWNER MetaLog {
   // cached_tail_: producer-local copy of tail. Avoids cross-core atomic load
   // on every call. Stale value is conservative — if it says "full" we reload
   // the real tail (slow path), which may have advanced.
-  // NOT relaxed: same SPSC publish pattern as TraceRing.
-  // head.store(release) publishes TensorMeta entries to consumer.
+  //
+  // Memory ordering (same SPSC pattern as TraceRing):
+  //   - Producer reads its OWN head with memory_order_relaxed. Single-thread
+  //     coherence orders a thread's loads of its own atomic; no cross-thread
+  //     sync is needed. On ARM this saves LDAR (one cycle) vs LDR; on x86 TSO
+  //     it's identical codegen.
+  //   - Producer stores head with memory_order_release. This publishes the
+  //     preceding entries[] memcpy to any consumer that acquires head — either
+  //     directly via size() or transitively via TraceRing.head (which is
+  //     released AFTER MetaLog.head in program order, so its acquire observes
+  //     MetaLog.entries).
   alignas(64) std::atomic<uint32_t> head{0};   // 4B — producer writes, consumer reads
   uint32_t cached_tail_ = 0;                    // 4B — producer-only (never touched by consumer)
   TensorMeta* entries = nullptr;                // 8B — producer-only read
@@ -113,7 +122,9 @@ struct CRUCIBLE_OWNER MetaLog {
   {
     if (n == 0) [[unlikely]] return MetaIndex::none();
 
-    uint32_t h = head.load(std::memory_order_acquire);
+    // relaxed: producer reads its own head — no cross-thread sync needed.
+    // Same pattern as TraceRing::try_append.
+    const uint32_t h = head.load(std::memory_order_relaxed);
 
     // Fast path: check against cached (possibly stale) tail.
     // Stale tail is conservative — if it says "not full", it's guaranteed
