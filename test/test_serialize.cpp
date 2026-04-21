@@ -1,11 +1,25 @@
 #include <crucible/Serialize.h>
 #include <crucible/Effects.h>
 #include <cassert>
+#include <cinttypes>
 #include <cstdio>
 #include <cstring>
 #include <vector>
 #include <memory>
 #include <span>
+
+// Family-A (persistent, cross-process stable) FNV-1a byte hash.
+// Used below for wire-byte stability goldens — the bytes are the
+// ground truth per the Types.h taxonomy, and any drift in this hash
+// indicates a wire-format change (→ CDAG_VERSION bump required).
+static uint64_t fnv1a_bytes(std::span<const uint8_t> bytes) {
+    uint64_t h = 0xcbf29ce484222325ULL;  // FNV offset basis
+    for (uint8_t b : bytes) {
+        h ^= b;
+        h *= 0x100000001b3ULL;            // FNV prime
+    }
+    return h;
+}
 
 // Helper: build a minimal TensorMeta for testing.
 static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
@@ -152,6 +166,72 @@ int main() {
     const crucible::ContentHash recomputed = crucible::compute_content_hash(
         std::span{loaded->ops, loaded->num_ops});
     assert(recomputed == original_content_hash);
+
+    // ── §10.8 wire-stability: serialize twice, bytes identical ──────
+    //
+    // Catches uninit-memory-to-wire leaks that pass the structural
+    // round-trip above but would corrupt Cipher under concurrent use
+    // or across repeated snapshots of the same region.  Both calls
+    // target fresh buffers so no prior-call state can bias the second.
+    {
+        uint8_t buf_a[65536];
+        uint8_t buf_b[65536];
+        std::memset(buf_a, 0xAA, sizeof(buf_a));  // poison pattern
+        std::memset(buf_b, 0xBB, sizeof(buf_b));  // different poison
+
+        const size_t na = crucible::serialize_region(region, nullptr,
+            std::span<uint8_t>{buf_a, sizeof(buf_a)});
+        const size_t nb = crucible::serialize_region(region, nullptr,
+            std::span<uint8_t>{buf_b, sizeof(buf_b)});
+        assert(na == nb && "serialize_region byte count must be deterministic");
+        assert(na > 0);
+        assert(std::memcmp(buf_a, buf_b, na) == 0
+               && "serialize_region bytes must be deterministic — uninit-memory leak?");
+    }
+
+    // ── §10.8 wire-byte golden: Family-A cross-process stable hash ──
+    //
+    // Pins the canonical fixture's wire-byte hash.  Unlike the earlier
+    // expr/cse-hash experiments (Family-B, ASLR-dependent), wire bytes
+    // are cross-process stable BY CONSTRUCTION — data_ptr is zeroed
+    // on write (see Serialize.h write_meta), padding is explicit,
+    // strong-typed fields serialize as raw bytes.  Any drift here is
+    // a wire-format change and requires a CDAG_VERSION bump in the
+    // same commit that updates this golden.
+    //
+    // Two goldens are pinned: the byte length (catches size drift)
+    // and the FNV-1a hash of all bytes (catches content drift within
+    // a byte-stable size).  Both are anchored to CDAG_VERSION=8.
+    {
+        static constexpr uint32_t EXPECTED_CDAG_VERSION = 8;
+        static_assert(crucible::CDAG_VERSION == EXPECTED_CDAG_VERSION,
+            "CDAG_VERSION bump detected — update wire-byte golden below "
+            "after confirming the new bytes hash to the expected value.");
+
+        const uint64_t wire_hash = fnv1a_bytes(std::span<const uint8_t>{buf, n});
+
+        // ── GOLDEN VALUES (update atomically with CDAG_VERSION bump) ──
+        //
+        //   To refresh after an intentional wire-format change:
+        //     1. bump CDAG_VERSION in Serialize.h
+        //     2. run this test once, capture the printed values
+        //     3. update the two constants below
+        //     4. commit all three in the same change
+        constexpr size_t   EXPECTED_WIRE_BYTES = 1772;
+        constexpr uint64_t EXPECTED_WIRE_HASH  = 0x88c4973fb04b16c5ULL;
+
+        if (n != EXPECTED_WIRE_BYTES || wire_hash != EXPECTED_WIRE_HASH) {
+            std::fprintf(stderr,
+                "WIRE-FORMAT DRIFT DETECTED\n"
+                "  got    n=%zu  hash=0x%016" PRIx64 "\n"
+                "  expect n=%zu  hash=0x%016" PRIx64 "\n"
+                "  if intentional: update EXPECTED_WIRE_BYTES and\n"
+                "  EXPECTED_WIRE_HASH in test_serialize.cpp, and\n"
+                "  verify CDAG_VERSION was bumped in Serialize.h.\n",
+                n, wire_hash, EXPECTED_WIRE_BYTES, EXPECTED_WIRE_HASH);
+            assert(false && "wire-byte golden mismatch");
+        }
+    }
 
     // ── Buffer-overflow safety: serializing into too-small a buffer ─
     uint8_t tiny_buf[4];
