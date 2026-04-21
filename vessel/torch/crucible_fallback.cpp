@@ -154,7 +154,10 @@ struct SchemaInfo {
         full_name += '.';
         full_name += name.overload_name;
     }
-    crucible::register_schema_name(schema_hash, full_name.c_str());
+    // PyTorch's Operator schema is trusted by source — compiled into
+    // the libtorch binary.  Construct Sanitized directly.
+    crucible::register_schema_name(schema_hash,
+        crucible::SchemaTable::SanitizedName{full_name.c_str()});
 
     // Authoritative mutability from schema alias annotations.
     // Catches both in-place ops (add_.Tensor: self(a!)) and out= variants

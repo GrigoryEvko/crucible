@@ -16,6 +16,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
+#include <crucible/safety/Tagged.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -48,9 +49,19 @@ struct SchemaTable {
 
   ~SchemaTable() { clear(); }
 
-  // Register a schema_hash → name mapping. Idempotent: re-registering
-  // the same hash updates the name. Silently no-ops beyond cap.
-  void register_name(SchemaHash hash, const char* name) {
+  // Register a schema_hash → name mapping.  Idempotent: re-registering
+  // the same hash updates the name.  Silently no-ops beyond cap.
+  //
+  // The name parameter is Tagged<source::Sanitized> so that bytes from
+  // disk / network / FFI cannot reach this entry without going through
+  // an explicit retag<source::Sanitized>() — i.e., the caller has to
+  // certify they validated the input.  Trusted sources (PyTorch's
+  // Operator schema, in-source string literals) construct Sanitized
+  // directly; the TraceLoader retags after its length-bounded validation.
+  using SanitizedName = crucible::safety::Tagged<const char*,
+                                                 crucible::safety::source::Sanitized>;
+  void register_name(SchemaHash hash, SanitizedName name_tag) {
+    const char* name = name_tag.value();
     if (!name) return;
 
     // Check for existing entry (idempotent update).
@@ -121,8 +132,11 @@ struct SchemaTable {
   return table;
 }
 
-// Convenience: register hash → name in the global table.
-inline void register_schema_name(SchemaHash hash, const char* name) {
+// Convenience: register hash → name in the global table.  The free
+// function takes Tagged<Sanitized> so the trust boundary is uniform
+// with SchemaTable::register_name above.
+inline void register_schema_name(SchemaHash hash,
+                                 SchemaTable::SanitizedName name) {
   global_schema_table().register_name(hash, name);
 }
 

@@ -28,7 +28,8 @@ int main() {
         const uint64_t h = 0x9E3779B97F4A7C15ULL * (i + 1);
         hashes[i] = SchemaHash{h};
         std::snprintf(names[i], sizeof(names[i]), "aten::op%u", i);
-        table.register_name(hashes[i], names[i]);
+        table.register_name(hashes[i],
+            crucible::SchemaTable::SanitizedName{names[i]});
     }
 
     std::printf("=== schema_table ===\n");
