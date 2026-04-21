@@ -59,6 +59,34 @@ static crucible::Vigil* as_vigil(CrucibleHandle h) {
     return static_cast<crucible::Vigil*>(h);
 }
 
+// ── FFI entry validation ─────────────────────────────────────────────
+//
+// The Vessel-boundary compose-3 pattern: raw uint64_t/uint16_t args
+// from Python/PyTorch cross untrusted.  validate_ffi_entry checks the
+// fields for structural soundness BEFORE any in-memory Entry is built
+// or routed to Vigil.  On success it returns the Entry; the caller
+// then vouches for it at the typed dispatch boundary.
+//
+// Rules, conservative by design — the FFI is the attack surface:
+//   - schema_hash != 0 (0 is the invalid sentinel)
+//   - num_inputs  ≤ 64  (TensorMeta array cap)
+//   - num_outputs ≤ 64
+//   - num_scalars ≤ 4096 (the 5-inline cap is separate)
+//
+// A real fleet of PyTorch ops never violates these.  The validator
+// exists to reject corrupt FFI state before it reaches the hot path.
+static bool validate_ffi_entry(uint64_t schema_hash,
+                               uint16_t num_inputs,
+                               uint16_t num_outputs,
+                               uint16_t num_scalars) noexcept
+{
+    if (schema_hash == 0) return false;
+    if (num_inputs  > 64) return false;
+    if (num_outputs > 64) return false;
+    if (num_scalars > 4096) return false;
+    return true;
+}
+
 // ── C API implementation ─────────────────────────────────────────────
 
 extern "C" {
@@ -105,6 +133,14 @@ CrucibleDispatchResult crucible_dispatch_op(
 {
     auto* vigil = as_vigil(handle);
 
+    // Validate FFI inputs before constructing an Entry — see
+    // validate_ffi_entry for rules.  Failure returns an empty result
+    // (action=RECORD, status=DIVERGED by default-init of uint8_t) so
+    // the Python side can see it didn't take effect.
+    if (!validate_ffi_entry(schema_hash, num_inputs, num_outputs, 0)) {
+        return CrucibleDispatchResult{};
+    }
+
     // C→C++ boundary: wrap raw uint64_t into strong hash types.
     crucible::TraceRing::Entry entry{};
     entry.schema_hash = crucible::SchemaHash{schema_hash};
@@ -112,8 +148,9 @@ CrucibleDispatchResult crucible_dispatch_op(
     entry.num_inputs = num_inputs;
     entry.num_outputs = num_outputs;
 
+    // Entry fields are now validated; vouch at the typed dispatch boundary.
     auto result = vigil->dispatch_op(
-        entry,
+        crucible::vouch(entry),
         reinterpret_cast<const crucible::TensorMeta*>(metas),
         n_metas);
 
@@ -134,6 +171,11 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
 {
     auto* vigil = as_vigil(handle);
 
+    // Validate FFI inputs before constructing an Entry.
+    if (!validate_ffi_entry(schema_hash, num_inputs, num_outputs, num_scalars)) {
+        return CrucibleDispatchResult{};
+    }
+
     // C→C++ boundary: wrap raw uint64_t into strong hash types.
     crucible::TraceRing::Entry entry{};
     entry.schema_hash = crucible::SchemaHash{schema_hash};
@@ -152,8 +194,9 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
             entry.scalar_values[i] = scalar_values[i];
     }
 
+    // Entry fields validated above; vouch at the typed dispatch boundary.
     auto result = vigil->dispatch_op(
-        entry,
+        crucible::vouch(entry),
         reinterpret_cast<const crucible::TensorMeta*>(metas),
         n_metas);
 

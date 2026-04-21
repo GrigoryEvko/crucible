@@ -100,17 +100,18 @@ class Vigil {
     //
     // Hot path: ~5ns + MetaLog write (~10ns for metas) = ~15ns total.
     [[nodiscard]] CRUCIBLE_INLINE bool record_op(
-        const TraceRing::Entry& e,
-        const TensorMeta*       metas,
-        uint32_t                n_metas,
-        ScopeHash               scope_hash    = {},
-        CallsiteHash            callsite_hash = {})
+        TraceRing::ValidatedEntryPtr ve,
+        const TensorMeta*            metas,
+        uint32_t                     n_metas,
+        ScopeHash                    scope_hash    = {},
+        CallsiteHash                 callsite_hash = {})
+        pre(ve.value() != nullptr)
     {
         MetaIndex meta_start;  // default = none()
         if (metas && n_metas > 0) {
             meta_start = meta_log_->try_append(metas, n_metas);
         }
-        return ring_->try_append(e, meta_start, scope_hash, callsite_hash);
+        return ring_->try_append(*ve.value(), meta_start, scope_hash, callsite_hash);
     }
 
     // ─── Per-op dispatch (Tier 1 entry point) ─────────────────────
@@ -134,12 +135,15 @@ class Vigil {
     //   provides acquire semantics anyway; acquire fence deferred to
     //   the cold transition path.
     [[nodiscard]] CRUCIBLE_INLINE DispatchResult dispatch_op(
-        const TraceRing::Entry& entry,
-        const TensorMeta*       metas,
-        uint32_t                n_metas,
-        ScopeHash               scope_hash    = {},
-        CallsiteHash            callsite_hash = {})
+        TraceRing::ValidatedEntryPtr ve,
+        const TensorMeta*            metas,
+        uint32_t                     n_metas,
+        ScopeHash                    scope_hash    = {},
+        CallsiteHash                 callsite_hash = {})
+        pre(ve.value() != nullptr)
     {
+        const TraceRing::Entry& entry = *ve.value();
+
         // ── COMPILED path (hot) ──
         //
         // The is_compiled() branch proves the context is in COMPILED mode.
@@ -169,7 +173,7 @@ class Vigil {
             return dispatch_transition_(entry, metas, n_metas,
                                         scope_hash, callsite_hash);
 
-        (void)record_op(entry, metas, n_metas, scope_hash, callsite_hash);
+        (void)record_op(ve, metas, n_metas, scope_hash, callsite_hash);
         return {.action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {},
                 .op_index = OpIndex{}};
     }
@@ -457,7 +461,9 @@ class Vigil {
             // boundaries in the bg thread's detector).
             try_align_(entry.schema_hash, entry.shape_hash);
         } else {
-            (void)record_op(entry, metas, n_metas, scope_hash, callsite_hash);
+            // entry is a live reference to a ValidatedEntryPtr's target
+            // in dispatch_op's caller frame; re-vouch at the typed API.
+            (void)record_op(vouch(entry), metas, n_metas, scope_hash, callsite_hash);
         }
 
         return {.action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {},

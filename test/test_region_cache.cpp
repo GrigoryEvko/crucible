@@ -102,7 +102,7 @@ static void feed_record(Vigil& vigil, const ShapeHash* shapes,
                         uint32_t variant, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(shapes, variant, iter, i);
-        (void)vigil.record_op(d.entry, d.metas, d.n_metas);
+        (void)vigil.record_op(crucible::vouch(d.entry), d.metas, d.n_metas);
     }
 }
 
@@ -110,7 +110,7 @@ static void feed_trigger(Vigil& vigil, const ShapeHash* shapes,
                          uint32_t variant, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto d = make_op(shapes, variant, iter, i);
-        (void)vigil.record_op(d.entry, d.metas, d.n_metas);
+        (void)vigil.record_op(crucible::vouch(d.entry), d.metas, d.n_metas);
     }
 }
 
@@ -120,7 +120,7 @@ static void align_and_activate(Vigil& vigil, const ShapeHash* shapes,
                                 uint32_t variant, uint32_t iter) {
     for (uint32_t i = 0; i < K; i++) {
         auto d = make_op(shapes, variant, iter, i);
-        auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::RECORD
                && "alignment ops should return RECORD");
     }
@@ -129,7 +129,7 @@ static void align_and_activate(Vigil& vigil, const ShapeHash* shapes,
 
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto d = make_op(shapes, variant, iter, i);
-        auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 }
@@ -154,18 +154,18 @@ static void test_cache_switch_mid_iter() {
     // Complete one full A iteration to confirm it works.
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_A, 0, 4, i);
-        auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
     // Diverge at op 3 with B shapes.
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(SHAPE_A, 0, 5, i);
-        auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
     auto dB3 = make_op(SHAPE_B, 1, 5, 3);
-    auto r_div = vigil.dispatch_op(dB3.entry, dB3.metas, dB3.n_metas);
+    auto r_div = vigil.dispatch_op(crucible::vouch(dB3.entry), dB3.metas, dB3.n_metas);
     assert(r_div.action == DispatchResult::Action::RECORD);
     assert(r_div.status == ReplayStatus::DIVERGED);
 
@@ -185,7 +185,7 @@ static void test_cache_switch_mid_iter() {
     // Full compiled iteration with B.
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_B, 1, 18, i);
-        auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
@@ -193,12 +193,12 @@ static void test_cache_switch_mid_iter() {
     // Shared prefix (ops 0-2) matches B, op 3 diverges → find A in cache.
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(SHAPE_A, 0, 19, i);
-        auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
     auto dA3 = make_op(SHAPE_A, 0, 19, 3);
-    auto r_switch = vigil.dispatch_op(dA3.entry, dA3.metas, dA3.n_metas);
+    auto r_switch = vigil.dispatch_op(crucible::vouch(dA3.entry), dA3.metas, dA3.n_metas);
 
     assert(r_switch.action == DispatchResult::Action::COMPILED
            && "Expected instant cache switch to variant A");
@@ -206,7 +206,7 @@ static void test_cache_switch_mid_iter() {
     // Complete the iteration with A shapes.
     for (uint32_t i = 4; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_A, 0, 19, i);
-        auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
@@ -232,10 +232,10 @@ static void test_cache_data_migration() {
     // Diverge from A to trigger fallback.
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(SHAPE_A, 0, 4, i);
-        (void)vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        (void)vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
     }
     auto dB3 = make_op(SHAPE_B, 1, 4, 3);
-    auto r_div = vigil.dispatch_op(dB3.entry, dB3.metas, dB3.n_metas);
+    auto r_div = vigil.dispatch_op(crucible::vouch(dB3.entry), dB3.metas, dB3.n_metas);
     assert(r_div.action == DispatchResult::Action::RECORD);
 
     // Build B via bg thread.
@@ -251,7 +251,7 @@ static void test_cache_data_migration() {
     // Start a B iteration and write byte patterns to ops 0-2 outputs.
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(SHAPE_B, 1, 18, i);
-        auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
         // Op 0-2 output is 1024 * 4 = 4096 bytes (shared prefix shape).
         std::memset(vigil.output_ptr(0), static_cast<int>(0xA0 + i), 4096);
@@ -259,7 +259,7 @@ static void test_cache_data_migration() {
 
     // Op 3: send A's shape → diverges from B.  Cache should find A.
     auto dA3 = make_op(SHAPE_A, 0, 18, 3);
-    auto r_switch = vigil.dispatch_op(dA3.entry, dA3.metas, dA3.n_metas);
+    auto r_switch = vigil.dispatch_op(crucible::vouch(dA3.entry), dA3.metas, dA3.n_metas);
     assert(r_switch.action == DispatchResult::Action::COMPILED
            && "Expected cache switch from B to A at pos 3");
 
@@ -274,7 +274,7 @@ static void test_cache_data_migration() {
     // Complete the iteration with A shapes.
     for (uint32_t i = 4; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_A, 0, 18, i);
-        auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
@@ -300,7 +300,7 @@ static void test_cache_miss_fallback() {
     bad.num_outputs = 1;
     TensorMeta bad_meta = make_meta(fake_ptr(99, 99, 0), 512);
 
-    auto r = vigil.dispatch_op(bad, &bad_meta, 1);
+    auto r = vigil.dispatch_op(crucible::vouch(bad), &bad_meta, 1);
     assert(r.action == DispatchResult::Action::RECORD);
     assert(r.status == ReplayStatus::DIVERGED);
     assert(!vigil.context().is_compiled());
@@ -372,16 +372,16 @@ static void test_cache_repeated_switching() {
     // Full A iteration.
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_A, 0, 4, i);
-        (void)vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        (void)vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
     }
 
     // Diverge → build variant B.
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(SHAPE_A, 0, 5, i);
-        (void)vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        (void)vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
     }
     auto dB3 = make_op(SHAPE_B, 1, 5, 3);
-    (void)vigil.dispatch_op(dB3.entry, dB3.metas, dB3.n_metas);
+    (void)vigil.dispatch_op(crucible::vouch(dB3.entry), dB3.metas, dB3.n_metas);
 
     for (uint32_t iter = 10; iter < 16; iter++)
         feed_record(vigil, SHAPE_B, 1, iter);
@@ -395,7 +395,7 @@ static void test_cache_repeated_switching() {
     // Full B iteration.
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(SHAPE_B, 1, 18, i);
-        (void)vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        (void)vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
     }
 
     // Now alternate A ↔ B repeatedly.  Each switch should be via cache.
@@ -407,20 +407,20 @@ static void test_cache_repeated_switching() {
         // Shared prefix (ops 0-2) — always COMPILED.
         for (uint32_t i = 0; i < 3; i++) {
             auto d = make_op(active_shapes, variant, iter, i);
-            auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+            auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
 
         // Op 3: divergence point → cache switch.
         auto d3 = make_op(active_shapes, variant, iter, 3);
-        auto r3 = vigil.dispatch_op(d3.entry, d3.metas, d3.n_metas);
+        auto r3 = vigil.dispatch_op(crucible::vouch(d3.entry), d3.metas, d3.n_metas);
         assert(r3.action == DispatchResult::Action::COMPILED
                && "Cache switch failed during repeated alternation");
 
         // Complete iteration.
         for (uint32_t i = 4; i < NUM_OPS; i++) {
             auto d = make_op(active_shapes, variant, iter, i);
-            auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+            auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
             assert(r.action == DispatchResult::Action::COMPILED);
         }
     }

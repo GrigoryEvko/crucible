@@ -75,14 +75,14 @@ static OpData make_op(uint32_t iter, uint32_t op_idx) {
 static void feed_record(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
-        (void)vigil.record_op(d.entry, d.metas, d.n_metas);
+        (void)vigil.record_op(crucible::vouch(d.entry), d.metas, d.n_metas);
     }
 }
 
 static void feed_trigger(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto d = make_op(iter, i);
-        (void)vigil.record_op(d.entry, d.metas, d.n_metas);
+        (void)vigil.record_op(crucible::vouch(d.entry), d.metas, d.n_metas);
     }
 }
 
@@ -100,7 +100,7 @@ using test::flush_and_wait_compiled;
 static void align_and_activate(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < K; i++) {
         auto d = make_op(iter, i);
-        auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::RECORD
                && "alignment ops should return RECORD");
     }
@@ -110,7 +110,7 @@ static void align_and_activate(Vigil& vigil, uint32_t iter) {
     // Complete partial iteration: ops K..NUM_OPS-1 in COMPILED mode.
     for (uint32_t i = K; i < NUM_OPS; i++) {
         auto d = make_op(iter, i);
-        auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 }
@@ -137,7 +137,7 @@ static void test_dispatch_basic() {
     uint32_t complete_count = 0;
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(4, i);
-        auto result = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto result = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(result.action == DispatchResult::Action::COMPILED);
 
         if (result.status == ReplayStatus::MATCH)
@@ -172,7 +172,7 @@ static void test_dispatch_divergence() {
     // First few ops of new iteration match.
     for (uint32_t i = 0; i < 3; i++) {
         auto d = make_op(4, i);
-        auto result = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto result = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(result.action == DispatchResult::Action::COMPILED);
         assert(result.status == ReplayStatus::MATCH);
     }
@@ -187,14 +187,14 @@ static void test_dispatch_divergence() {
     bad_metas[0] = make_meta(fake_ptr(4, 2));
     bad_metas[1] = make_meta(fake_ptr(4, 3));
 
-    auto result = vigil.dispatch_op(bad_entry, bad_metas, 2);
+    auto result = vigil.dispatch_op(crucible::vouch(bad_entry), bad_metas, 2);
     assert(result.action == DispatchResult::Action::RECORD);
     assert(result.status == ReplayStatus::DIVERGED);
     assert(vigil.diverged_count() == 1);
 
     // Subsequent calls should be RECORD (ctx deactivated).
     auto d = make_op(4, 4);
-    auto result2 = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+    auto result2 = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
     assert(result2.action == DispatchResult::Action::RECORD);
     assert(!vigil.context().is_compiled());
 
@@ -224,7 +224,7 @@ static void test_dispatch_recovery() {
     bad.num_outputs = 1;
     TensorMeta bad_meta = make_meta(fake_ptr(99, 0));
 
-    auto r_div = vigil.dispatch_op(bad, &bad_meta, 1);
+    auto r_div = vigil.dispatch_op(crucible::vouch(bad), &bad_meta, 1);
     assert(r_div.action == DispatchResult::Action::RECORD);
     assert(r_div.status == ReplayStatus::DIVERGED);
     assert(!vigil.context().is_compiled());
@@ -247,7 +247,7 @@ static void test_dispatch_recovery() {
     // Full compiled iteration to prove recovery works.
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(18, i);
-        auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
 
@@ -271,7 +271,7 @@ static void test_dispatch_data_flow() {
 
     // Op 0: write pattern to output.
     auto d0 = make_op(4, 0);
-    auto r0 = vigil.dispatch_op(d0.entry, d0.metas, d0.n_metas);
+    auto r0 = vigil.dispatch_op(crucible::vouch(d0.entry), d0.metas, d0.n_metas);
     assert(r0.action == DispatchResult::Action::COMPILED);
     assert(r0.status == ReplayStatus::MATCH);
     std::memset(vigil.output_ptr(0), 0x42, 4096);
@@ -279,7 +279,7 @@ static void test_dispatch_data_flow() {
     // Ops 1-6: verify input carries previous output's data, write new.
     for (uint32_t i = 1; i < NUM_OPS - 1; i++) {
         auto d = make_op(4, i);
-        auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
         assert(r.status == ReplayStatus::MATCH);
 
@@ -293,7 +293,7 @@ static void test_dispatch_data_flow() {
 
     // Op 7 (final): verify input, advance to COMPLETE.
     auto d7 = make_op(4, NUM_OPS - 1);
-    auto r7 = vigil.dispatch_op(d7.entry, d7.metas, d7.n_metas);
+    auto r7 = vigil.dispatch_op(crucible::vouch(d7.entry), d7.metas, d7.n_metas);
     assert(r7.action == DispatchResult::Action::COMPILED);
     assert(r7.status == ReplayStatus::COMPLETE);
 
@@ -333,7 +333,7 @@ static void test_dispatch_pool_bounds() {
     // Full iteration — verify every output pointer is within pool.
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto d = make_op(4, i);
-        auto r = vigil.dispatch_op(d.entry, d.metas, d.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(d.entry), d.metas, d.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
 
         auto* p = static_cast<uint8_t*>(vigil.output_ptr(0));

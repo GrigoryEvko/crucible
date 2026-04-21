@@ -228,7 +228,7 @@ static OpPacket build_op(uint32_t iter, uint32_t op_idx) {
 static void feed_iteration(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < NUM_OPS; i++) {
         auto pkt = build_op(iter, i);
-        bool ok = vigil.record_op(pkt.entry, pkt.metas, pkt.n_metas);
+        bool ok = vigil.record_op(crucible::vouch(pkt.entry), pkt.metas, pkt.n_metas);
         assert(ok && "record_op failed");
     }
 }
@@ -237,7 +237,7 @@ static void feed_iteration(Vigil& vigil, uint32_t iter) {
 static void feed_trigger(Vigil& vigil, uint32_t iter) {
     for (uint32_t i = 0; i < IterationDetector::K; i++) {
         auto pkt = build_op(iter, i);
-        bool ok = vigil.record_op(pkt.entry, pkt.metas, pkt.n_metas);
+        bool ok = vigil.record_op(crucible::vouch(pkt.entry), pkt.metas, pkt.n_metas);
         assert(ok);
     }
 }
@@ -325,7 +325,7 @@ int main() {
     // Alignment phase: K ops return RECORD.
     for (uint32_t i = 0; i < AK; i++) {
         auto pkt = build_op(3, i);
-        auto r = vigil.dispatch_op(pkt.entry, pkt.metas, pkt.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(pkt.entry), pkt.metas, pkt.n_metas);
         assert(r.action == DispatchResult::Action::RECORD);
     }
     assert(vigil.context().is_compiled());
@@ -336,7 +336,7 @@ int main() {
     // Complete the partial iteration: ops AK..NUM_OPS-1 in COMPILED.
     for (uint32_t i = AK; i < NUM_OPS; i++) {
         auto pkt = build_op(3, i);
-        auto r = vigil.dispatch_op(pkt.entry, pkt.metas, pkt.n_metas);
+        auto r = vigil.dispatch_op(crucible::vouch(pkt.entry), pkt.metas, pkt.n_metas);
         assert(r.action == DispatchResult::Action::COMPILED);
     }
     std::printf("   Partial iteration completed (ops %u-%u COMPILED)\n",
@@ -353,7 +353,7 @@ int main() {
 
         for (uint32_t i = 0; i < NUM_OPS; i++) {
             auto pkt = build_op(iter, i);
-            auto result = vigil.dispatch_op(pkt.entry, pkt.metas, pkt.n_metas);
+            auto result = vigil.dispatch_op(crucible::vouch(pkt.entry), pkt.metas, pkt.n_metas);
 
             assert(result.action == DispatchResult::Action::COMPILED);
 
@@ -406,13 +406,13 @@ int main() {
 
     // Op 0: write known pattern to output
     auto p0 = build_op(7, 0);
-    auto r0 = vigil.dispatch_op(p0.entry, p0.metas, p0.n_metas);
+    auto r0 = vigil.dispatch_op(crucible::vouch(p0.entry), p0.metas, p0.n_metas);
     assert(r0.action == DispatchResult::Action::COMPILED);
     std::memset(vigil.output_ptr(0), 0xAB, BATCH * HIDDEN * 4);
 
     // Op 1: verify input carries op 0's output
     auto p1 = build_op(7, 1);
-    auto r1 = vigil.dispatch_op(p1.entry, p1.metas, p1.n_metas);
+    auto r1 = vigil.dispatch_op(crucible::vouch(p1.entry), p1.metas, p1.n_metas);
     assert(r1.action == DispatchResult::Action::COMPILED);
     auto* in_data = static_cast<uint8_t*>(vigil.input_ptr(0));
     bool flow_ok = true;
@@ -423,7 +423,7 @@ int main() {
     // Complete the iteration for clean state.
     for (uint32_t i = 2; i < NUM_OPS; i++) {
         auto pkt = build_op(7, i);
-        (void)vigil.dispatch_op(pkt.entry, pkt.metas, pkt.n_metas);
+        (void)vigil.dispatch_op(crucible::vouch(pkt.entry), pkt.metas, pkt.n_metas);
     }
 
     std::printf("   op0 output → op1 input data flow: %s\n",

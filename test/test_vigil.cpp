@@ -70,7 +70,7 @@ int main() {
     for (int iter = 0; iter < 3; iter++) {
         for (int j = 0; j < 5; j++) {
             auto e = make_entry(schemas[j]);
-            const bool ok = vigil.record_op(e, io_metas, 2);
+            const bool ok = vigil.record_op(crucible::vouch(e), io_metas, 2);
             assert(ok && "record_op must succeed (ring not full)");
         }
     }
