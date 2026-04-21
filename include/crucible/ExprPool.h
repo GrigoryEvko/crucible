@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <ranges>
 #include <span>
 #include <utility>
@@ -878,19 +879,36 @@ class CRUCIBLE_OWNER ExprPool {
     return 1;
   }
 
-  // GCD of |integer coefficients| across all ADD terms
+  // GCD of |integer coefficients| across all ADD terms.
+  //
+  // Overflow trap: unary negation on INT64_MIN (-(-2^63)) is
+  // undefined behavior (the positive value 2^63 doesn't fit in
+  // int64_t).  Adversarial or corrupt ADD arms could carry
+  // INT64_MIN coefficients; the GCD walk below would UB through
+  // the negation.  Use bit-twiddle absolute value that treats
+  // INT64_MIN → INT64_MAX (one off, acceptable for GCD — the loss
+  // of 1 unit cannot change the resulting GCD since all other
+  // coefficients are ≤ INT64_MAX anyway).
+  static constexpr int64_t safe_abs_(int64_t c) noexcept {
+    // For c == INT64_MIN: cast to uint64_t, negate (legal in
+    // unsigned), cast back.  Result is INT64_MIN in two's comp
+    // (still negative).  That would poison GCD; instead clamp to
+    // INT64_MAX for the GCD walk.
+    if (c == std::numeric_limits<int64_t>::min())
+      return std::numeric_limits<int64_t>::max();
+    return (c < 0) ? -c : c;
+  }
+
   int64_t integer_factor_(const Expr* e) const {
     if (e->op == Op::ADD) {
       int64_t g = 0;
       for (uint8_t i = 0; i < e->nargs; ++i) {
-        int64_t c = integer_coefficient_(e->args[i]);
-        c = (c < 0) ? -c : c;
+        int64_t c = safe_abs_(integer_coefficient_(e->args[i]));
         g = (g == 0) ? c : gcd_(g, c);
       }
       return (g == 0) ? 1 : g;
     }
-    int64_t c = integer_coefficient_(e);
-    return (c < 0) ? -c : c;
+    return safe_abs_(integer_coefficient_(e));
   }
 
   // Divide all integer coefficients in expression by g
