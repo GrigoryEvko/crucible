@@ -41,6 +41,17 @@ namespace ctx_mode {
 }
 
 // DispatchResult: Return value from Vigil::dispatch_op()
+//
+// Discriminated variant: the two Actions carry fundamentally different
+// follow-on state, and the existing "one big struct with union-shaped
+// fields" encoded the discrimination via convention (Action::RECORD
+// means op_index is meaningless / none()).  Helper accessors now make
+// the access-with-wrong-action case a contract fire.
+//
+// Layout preserved (sizeof == 8) — the helpers don't add storage,
+// they gate access through pre() contracts.  The `action` field IS
+// the discriminant; `status` and `op_index` are the COMPILED-arm
+// payload (RECORD has no meaningful payload).
 struct DispatchResult {
   enum class Action : uint8_t {
     RECORD,    // Execute eagerly (normal allocation)
@@ -51,6 +62,38 @@ struct DispatchResult {
   ReplayStatus status = ReplayStatus::MATCH;
   uint8_t pad[2]{};
   OpIndex op_index;  // position in region (diagnostics); none() for RECORD
+
+  // Discriminated accessors.  Accessing the COMPILED payload when
+  // action == RECORD is a bug: status and op_index carry no meaning.
+  // Routing through these accessors makes the caller prove they
+  // checked the action first.
+  [[nodiscard, gnu::pure]] bool is_record()   const noexcept { return action == Action::RECORD; }
+  [[nodiscard, gnu::pure]] bool is_compiled() const noexcept { return action == Action::COMPILED; }
+
+  // COMPILED-only payload accessors.  pre() fires if the caller
+  // reaches for status/op_index without first confirming COMPILED.
+  [[nodiscard, gnu::pure]] ReplayStatus compiled_status() const noexcept
+      pre (action == Action::COMPILED)
+  {
+    return status;
+  }
+  [[nodiscard, gnu::pure]] OpIndex compiled_op_index() const noexcept
+      pre (action == Action::COMPILED)
+  {
+    return op_index;
+  }
+
+  // Factories make the legitimate constructions explicit.
+  [[nodiscard]] static DispatchResult record() noexcept {
+    return DispatchResult{};  // defaults are RECORD / MATCH / none()
+  }
+  [[nodiscard]] static DispatchResult compiled(
+      ReplayStatus s, OpIndex idx) noexcept {
+    return DispatchResult{.action = Action::COMPILED,
+                          .status = s,
+                          .pad    = {},
+                          .op_index = idx};
+  }
 };
 
 static_assert(sizeof(DispatchResult) == 8, "DispatchResult: 1+1+2+4 = 8 bytes");
