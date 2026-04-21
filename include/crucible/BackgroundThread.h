@@ -218,11 +218,15 @@ struct BackgroundThread {
   Edge* scratch_edges_ = nullptr;
   uint8_t map_gen_ = 0;
 
-  // Current capacities (0 = not yet allocated).
-  uint32_t map_cap_ = 0;        // PtrMap capacity (always power of 2)
-  uint32_t ptr_mask_ = 0;       // map_cap_ - 1
-  uint32_t slot_cap_max_ = 0;   // SlotInfo buffer capacity
-  uint32_t edge_cap_max_ = 0;   // Edge buffer capacity
+  // Current capacities (0 = not yet allocated).  The three *_cap_max_
+  // fields grow monotonically — comment in ensure_scratch_buffers says
+  // "never shrinks".  Wrapped so that promise is type-enforced.
+  // ptr_mask_ is a derived view of map_cap_ kept raw for the inner-loop
+  // load on line 608.
+  crucible::safety::Monotonic<uint32_t> map_cap_      {0};  // PtrMap capacity (power of 2)
+  uint32_t                              ptr_mask_     = 0;  // map_cap_ - 1
+  crucible::safety::Monotonic<uint32_t> slot_cap_max_ {0};  // SlotInfo buffer capacity
+  crucible::safety::Monotonic<uint32_t> edge_cap_max_ {0};  // Edge buffer capacity
 
   // Ensure scratch buffers are large enough for the given workload.
   // Called after Phase 0 scan, which provides exact counts.
@@ -243,29 +247,29 @@ struct BackgroundThread {
     uint32_t needed_edges = std::max(MIN_SCRATCH_EDGE_CAP,
         crucible::sat::add_sat(total_inputs, total_outputs));
 
-    if (needed_map > map_cap_) {
+    if (needed_map > map_cap_.get()) {
       std::free(scratch_map_);
-      map_cap_ = needed_map;
-      ptr_mask_ = map_cap_ - 1;
+      map_cap_.advance(needed_map);
+      ptr_mask_ = map_cap_.get() - 1;
       scratch_map_ = static_cast<PtrSlot*>(
-          std::calloc(map_cap_, sizeof(PtrSlot)));
+          std::calloc(map_cap_.get(), sizeof(PtrSlot)));
       if (!scratch_map_) [[unlikely]] std::abort();
       map_gen_ = 0; // fresh buffer, reset gen
     }
 
-    if (needed_slots > slot_cap_max_) {
+    if (needed_slots > slot_cap_max_.get()) {
       std::free(scratch_slots_);
-      slot_cap_max_ = needed_slots;
+      slot_cap_max_.advance(needed_slots);
       scratch_slots_ = static_cast<SlotInfo*>(
-          std::calloc(slot_cap_max_, sizeof(SlotInfo)));
+          std::calloc(slot_cap_max_.get(), sizeof(SlotInfo)));
       if (!scratch_slots_) [[unlikely]] std::abort();
     }
 
-    if (needed_edges > edge_cap_max_) {
+    if (needed_edges > edge_cap_max_.get()) {
       std::free(scratch_edges_);
-      edge_cap_max_ = needed_edges;
+      edge_cap_max_.advance(needed_edges);
       scratch_edges_ = static_cast<Edge*>(
-          std::calloc(edge_cap_max_, sizeof(Edge)));
+          std::calloc(edge_cap_max_.get(), sizeof(Edge)));
       if (!scratch_edges_) [[unlikely]] std::abort();
     }
   }
@@ -580,13 +584,13 @@ struct BackgroundThread {
     map_gen_++;
     if (map_gen_ == 0) [[unlikely]] {
       // Wrap-around every 255 calls: full reset.
-      std::fill_n(scratch_map_, map_cap_, PtrSlot{});
+      std::fill_n(scratch_map_, map_cap_.get(), PtrSlot{});
       map_gen_ = 1;
     }
 
     // ── SlotInfo: value-init the portion we'll use ──
 
-    uint32_t slot_cap = std::min(slot_cap_max_,
+    uint32_t slot_cap = std::min(slot_cap_max_.get(),
         std::max(uint32_t{256}, total_inputs + total_outputs));
     std::fill_n(scratch_slots_, slot_cap, SlotInfo{});
     uint32_t next_slot_raw = 0;
@@ -736,7 +740,7 @@ struct BackgroundThread {
         te.input_trace_indices[j] = lookup.op_index;
         if (lookup.op_index.is_valid()) {
           te.input_slot_ids[j] = lookup.slot_id;
-          assert(num_edges < edge_cap_max_);
+          assert(num_edges < edge_cap_max_.get());
           local_edges[num_edges++] = {
               .src = OpIndex{lookup.op_index.raw()}, .dst = OpIndex{i},
               .src_port = lookup.port, .dst_port = static_cast<uint8_t>(j),
@@ -786,7 +790,7 @@ struct BackgroundThread {
             si.nbytes = std::max(si.nbytes, nb);
           }
           if (result.old_op.is_valid()) {
-            assert(num_edges < edge_cap_max_);
+            assert(num_edges < edge_cap_max_.get());
             local_edges[num_edges++] = {
                 .src = OpIndex{result.old_op.raw()}, .dst = OpIndex{i},
                 .src_port = result.old_port, .dst_port = static_cast<uint8_t>(j),

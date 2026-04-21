@@ -1,6 +1,7 @@
 #pragma once
 
 #include <crucible/Types.h>
+#include <crucible/safety/Mutation.h>
 
 #include <cstdint>
 #include <string>
@@ -27,7 +28,11 @@ struct CallSiteTable {
     int32_t lineno = 0;
   };
 
-  std::vector<Entry> entries;
+  // entries is structurally append-only: insert() pushes new callsite
+  // records, nothing ever erases or reorders.  AppendOnly<> turns the
+  // convention into a type-system guarantee — code that tries to .erase()
+  // or .clear() this won't compile.
+  crucible::safety::AppendOnly<Entry> entries;
 
   // Open-addressing hash set for fast "already seen" check.
   // Sentinel: CallsiteHash{} (raw 0) means empty slot.
@@ -61,8 +66,7 @@ struct CallSiteTable {
       auto& h = seen[(idx + p) & SET_MASK];
       if (h == CallsiteHash{}) {
         h = hash;
-        entries.push_back(
-            {hash, std::move(filename), std::move(funcname), lineno});
+        entries.emplace(hash, std::move(filename), std::move(funcname), lineno);
         return;
       }
     }
