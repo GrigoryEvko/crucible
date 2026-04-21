@@ -85,7 +85,7 @@ struct IterationDetector {
   //   - 1 comparison (match) + 1 write (match_pos_, expected_hash_)
   //
   // Boundary path (match_pos_ reaches K): ~50ns (memcpy + reset, rare).
-  [[nodiscard]] CRUCIBLE_INLINE bool check(SchemaHash schema_hash) {
+  [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool check(SchemaHash schema_hash) noexcept {
     ops_since_boundary++;
 
     // Phase 1: building signature from first K ops.

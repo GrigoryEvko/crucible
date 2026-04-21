@@ -152,7 +152,7 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   // next iteration re-records). SPSC-safe: the producer is the sole writer
   // of head and entries[head]; we suppress Clang's thread-safety analysis.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
-  [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool try_append(
+  [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool try_append(
       const Entry& e,
       MetaIndex    meta_start    = MetaIndex::none(),
       ScopeHash    scope_hash    = {},

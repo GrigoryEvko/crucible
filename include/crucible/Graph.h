@@ -289,7 +289,7 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(GraphNode);
 
 class CRUCIBLE_OWNER Graph {
  public:
-  explicit Graph(fx::Alloc a, ExprPool* pool, SymbolTable* tab = nullptr)
+  [[gnu::cold]] explicit Graph(fx::Alloc a, ExprPool* pool, SymbolTable* tab = nullptr)
       : pool_(pool), tab_(tab),
         nodes_(nullptr), input_slots_(nullptr), output_slots_(nullptr),
         num_nodes_(0), capacity_(0),
