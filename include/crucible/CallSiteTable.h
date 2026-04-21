@@ -2,6 +2,7 @@
 
 #include <crucible/Types.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/Refined.h>
 
 #include <cstdint>
 #include <string>
@@ -59,12 +60,20 @@ struct CallSiteTable {
     return false;
   }
 
+  // Typed insert: Refined<non_zero, CallsiteHash> makes the
+  // "not the sentinel" invariant a type-system property.  Construction
+  // of the Refined at the call site fires a contract if the caller
+  // passes the zero sentinel, AND the body here treats the invariant
+  // as established: no internal null-check, no early return on zero.
+  using NonZeroHash = crucible::safety::Refined<
+      crucible::safety::non_zero, CallsiteHash>;
+
   void insert(
-      CallsiteHash hash,
+      NonZeroHash hash_nz,
       std::string filename,
       std::string funcname,
       int32_t lineno) {
-    if (!hash) return;  // sentinel is reserved; reject at the door
+    const CallsiteHash hash = hash_nz.value();
     if (has(hash)) return;
     uint32_t idx = static_cast<uint32_t>(hash.raw()) & SET_MASK;
     for (uint32_t p = 0; p < SET_CAP; p++) {
@@ -75,6 +84,23 @@ struct CallSiteTable {
         return;
       }
     }
+  }
+
+  // Backward-compat overload: constructs the NonZeroHash at the boundary
+  // and forwards.  Callers that already filter the sentinel outside can
+  // use this without wrapping; the Refined ctor fires a contract on zero
+  // so the behavior is "crash the caller" rather than silent drop.
+  void insert(
+      CallsiteHash hash,
+      std::string filename,
+      std::string funcname,
+      int32_t lineno) {
+    if (!hash) return;  // tolerate sentinel for callers that haven't
+                        // migrated — do NOT construct NonZeroHash, which
+                        // would fire a contract.  Once all call sites
+                        // pass NonZeroHash explicitly, this overload
+                        // can be removed.
+    insert(NonZeroHash{hash}, std::move(filename), std::move(funcname), lineno);
   }
 
   [[nodiscard]] uint32_t size() const { return static_cast<uint32_t>(entries.size()); }

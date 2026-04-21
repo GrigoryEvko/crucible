@@ -42,6 +42,17 @@ inline constexpr auto non_negative = [](auto x) constexpr noexcept {
     return x >= decltype(x){0};
 };
 
+// non_zero differs from positive for unsigned types (positive is "> 0",
+// which for unsigned is also "!= 0", but explicit non_zero documents
+// "sentinel reservation" rather than "signed sign class").
+// Works on wrapped strong hash types via `.raw() != 0`, or scalars.
+inline constexpr auto non_zero = [](const auto& x) constexpr noexcept {
+    if constexpr (requires { x.raw(); })
+        return x.raw() != 0;
+    else
+        return x != decltype(x){0};
+};
+
 inline constexpr auto non_null = [](auto* p) constexpr noexcept {
     return p != nullptr;
 };
