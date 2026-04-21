@@ -22,13 +22,31 @@ enum class EdgeKind : uint8_t {
 
 // One edge in the property graph. Port-level granularity:
 // src_port = which output of src, dst_port = which input of dst.
+//
+// Port bounds: CDAG_MAX_INPUTS = CDAG_MAX_OUTPUTS = 64 (validated at
+// the Vessel FFI boundary).  A port index ≥ 64 is categorically a
+// bug.  The fields stay uint8_t (uint8_t max == 255, headroom vs
+// the real 64-cap); a set_port() helper with pre() makes the
+// invariant load-bearing at mutation sites without wrapping the
+// field type (Edge is trivially-copyable POD by layout lock).
 struct Edge {
+  // Ports are bounded above by CDAG_MAX_INPUTS / CDAG_MAX_OUTPUTS
+  // (both 64); 63 is the inclusive upper endpoint.  Use the strong
+  // typedef at call sites that MUST prove bounds.
+  static constexpr uint8_t kMaxPort = 63;
+
   OpIndex src;            // 4B — source op index (default = none)
   OpIndex dst;            // 4B — destination op index (default = none)
-  uint8_t src_port = 0;  // 1B — output index of src
-  uint8_t dst_port = 0;  // 1B — input index of dst
+  uint8_t src_port = 0;  // 1B — output index of src, ≤ kMaxPort
+  uint8_t dst_port = 0;  // 1B — input index of dst,  ≤ kMaxPort
   EdgeKind kind = EdgeKind::DATA_FLOW; // 1B
   uint8_t pad = 0;       // 1B
+
+  // Validating setters: fire on port ≥ 64.  The binary-search
+  // edge assembly paths that populate Edge pairs should route
+  // through these rather than writing the fields directly.
+  void set_src_port(uint8_t p) noexcept pre (p <= kMaxPort) { src_port = p; }
+  void set_dst_port(uint8_t p) noexcept pre (p <= kMaxPort) { dst_port = p; }
 };
 
 static_assert(sizeof(Edge) == 12, "Edge must be 12 bytes");
