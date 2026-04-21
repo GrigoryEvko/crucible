@@ -197,7 +197,12 @@ static_assert(std::endian::native == std::endian::little,
       char buf[257]{};
       if (std::fread(buf, 1, name_len, f) != name_len) break;
       buf[name_len] = '\0';
-      register_schema_name(SchemaHash{sh}, buf);
+      // Bytes from disk, but length-validated above (1..256) and explicitly
+      // null-terminated.  Retag from External (file source) → Sanitized so
+      // the schema table can accept them.
+      register_schema_name(
+          SchemaHash{sh},
+          SchemaTable::SanitizedName{static_cast<const char*>(buf)});
     }
   }
 

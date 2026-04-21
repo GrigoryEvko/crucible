@@ -201,7 +201,11 @@ void* crucible_input_ptr(CrucibleHandle h, uint16_t j) {
 }
 
 void crucible_register_schema_name(uint64_t schema_hash, const char* name) {
-    crucible::register_schema_name(crucible::SchemaHash{schema_hash}, name);
+    // C ABI boundary: caller is the Python wrapper which receives names
+    // from Vessel-side code (already validated when going through the
+    // PyTorch dispatcher).  Construct Sanitized at the boundary.
+    crucible::register_schema_name(crucible::SchemaHash{schema_hash},
+        crucible::SchemaTable::SanitizedName{name});
 }
 
 const char* crucible_schema_name(uint64_t schema_hash) {

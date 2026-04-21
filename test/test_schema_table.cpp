@@ -13,6 +13,12 @@ using namespace crucible;
 
 static SchemaHash H(uint64_t v) { return SchemaHash{v}; }
 
+// Test inputs are string literals — trusted by source.  Wrap in
+// Sanitized at the call site; the explicit retag is the audit trail.
+static SchemaTable::SanitizedName S(const char* s) {
+    return SchemaTable::SanitizedName{s};
+}
+
 static void test_empty_lookup_returns_nullptr() {
     SchemaTable t;
     assert(t.lookup(H(0xDEAD)) == nullptr);
@@ -23,9 +29,9 @@ static void test_empty_lookup_returns_nullptr() {
 
 static void test_register_and_lookup() {
     SchemaTable t;
-    t.register_name(H(0x100), "aten::mm");
-    t.register_name(H(0x200), "aten::add.Tensor");
-    t.register_name(H(0x300), "aten::linear");
+    t.register_name(H(0x100), S("aten::mm"));
+    t.register_name(H(0x200), S("aten::add.Tensor"));
+    t.register_name(H(0x300), S("aten::linear"));
 
     assert(std::strcmp(t.lookup(H(0x100)), "aten::mm") == 0);
     assert(std::strcmp(t.lookup(H(0x200)), "aten::add.Tensor") == 0);
@@ -36,9 +42,9 @@ static void test_register_and_lookup() {
 
 static void test_short_name_strips_aten_prefix() {
     SchemaTable t;
-    t.register_name(H(0x100), "aten::mm");
-    t.register_name(H(0x200), "aten::scaled_dot_product_attention");
-    t.register_name(H(0x300), "prim::TupleConstruct");   // non-aten
+    t.register_name(H(0x100), S("aten::mm"));
+    t.register_name(H(0x200), S("aten::scaled_dot_product_attention"));
+    t.register_name(H(0x300), S("prim::TupleConstruct"));   // non-aten
 
     assert(std::strcmp(t.short_name(H(0x100)), "mm") == 0);
     assert(std::strcmp(t.short_name(H(0x200)),
@@ -50,9 +56,9 @@ static void test_short_name_strips_aten_prefix() {
 
 static void test_idempotent_re_register() {
     SchemaTable t;
-    t.register_name(H(0x42), "first");
+    t.register_name(H(0x42), S("first"));
     assert(t.count() == 1);
-    t.register_name(H(0x42), "updated");  // same hash, new name
+    t.register_name(H(0x42), S("updated"));  // same hash, new name
     assert(t.count() == 1);  // no duplicate
     assert(std::strcmp(t.lookup(H(0x42)), "updated") == 0);
     std::printf("  test_re_register:               PASSED\n");
@@ -66,7 +72,7 @@ static void test_binary_search_across_many() {
         std::snprintf(names[i], sizeof(names[i]), "op_%u", i);
         // Deterministic but shuffled — test sort-on-insert.
         const uint64_t key = 0x9E3779B97F4A7C15ULL * (i + 1);
-        t.register_name(SchemaHash{key}, names[i]);
+        t.register_name(SchemaHash{key}, S(names[i]));
     }
     assert(t.count() == N);
     // Every registered hash resolves.
@@ -83,7 +89,7 @@ static void test_binary_search_across_many() {
 
 static void test_global_table_convenience() {
     global_schema_table().clear();  // isolation
-    register_schema_name(H(0xAA), "aten::relu");
+    register_schema_name(H(0xAA), S("aten::relu"));
     assert(std::strcmp(schema_name(H(0xAA)), "aten::relu") == 0);
     assert(std::strcmp(schema_short_name(H(0xAA)), "relu") == 0);
     assert(schema_name(H(0xBB)) == nullptr);
@@ -93,7 +99,7 @@ static void test_global_table_convenience() {
 
 static void test_null_name_is_noop() {
     SchemaTable t;
-    t.register_name(H(0x77), nullptr);  // must not crash or corrupt
+    t.register_name(H(0x77), S(nullptr));  // must not crash or corrupt
     assert(t.count() == 0);
     assert(t.lookup(H(0x77)) == nullptr);
     std::printf("  test_null_name:                 PASSED\n");
