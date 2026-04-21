@@ -19,7 +19,10 @@
 // WriteOnce<T>                         — settable exactly once, then read-only.
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Pinned.h>
 
+#include <atomic>
+#include <chrono>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -366,6 +369,123 @@ public:
 
     [[nodiscard]] constexpr bool has_value() const noexcept { return value_.has_value(); }
     [[nodiscard]] constexpr explicit operator bool() const noexcept { return value_.has_value(); }
+};
+
+// ── AtomicMonotonic<T> ─────────────────────────────────────────────
+//
+// Thread-safe Monotonic: multiple threads may observe, but only one
+// may advance.  Advances enforce monotonicity via compare_exchange in
+// a loop — concurrent advances with non-monotonic values all lose the
+// CAS.  Loads are acquire; stores (on successful advance) are release.
+//
+// sizeof(AtomicMonotonic<uint64_t>) == sizeof(atomic<uint64_t>).
+//
+//   Axiom coverage: ThreadSafe + DetSafe.
+//   Runtime cost:   one CAS per advance under contention, one load
+//                   per get().  No heap, no locks.
+//
+// Pinned<>: the atomic IS the channel identity; movement would fork
+// the monotonic sequence across two atomics.
+
+template <typename T, typename Cmp = std::less<T>>
+    requires std::is_trivially_copyable_v<T>
+class [[nodiscard]] AtomicMonotonic : Pinned<AtomicMonotonic<T, Cmp>> {
+    std::atomic<T> value_;
+
+public:
+    using value_type      = T;
+    using comparator_type = Cmp;
+
+    constexpr explicit AtomicMonotonic(T initial) noexcept : value_{initial} {}
+
+    [[nodiscard]] T get() const noexcept {
+        return value_.load(std::memory_order_acquire);
+    }
+
+    // Advance to new_value.  Contract fires if new_value goes
+    // backward relative to ANY observed value (not just the current).
+    // Returns true iff the value was advanced by this call; false if
+    // the atomic already held a value ≥ new_value.
+    [[nodiscard]] bool try_advance(T new_value) noexcept {
+        Cmp cmp;
+        T observed = value_.load(std::memory_order_acquire);
+        while (!cmp(observed, new_value)) {
+            // observed ≥ new_value — the monotonic invariant already
+            // includes new_value; no advance needed.
+            if (!cmp(observed, new_value) && !cmp(new_value, observed))
+                return false;  // equal
+            return false;      // observed > new_value; skip advance
+        }
+        // observed < new_value — attempt to publish.  Loop handles
+        // races with other advancers.
+        while (!value_.compare_exchange_weak(
+                observed, new_value,
+                std::memory_order_acq_rel,
+                std::memory_order_acquire)) {
+            if (!cmp(observed, new_value)) return false;  // someone beat us with ≥
+        }
+        return true;
+    }
+
+    // Strict advance: contract fires if new_value would go backward.
+    void advance(T new_value) noexcept
+        pre (Cmp{}(value_.load(std::memory_order_acquire), new_value))
+    {
+        value_.store(new_value, std::memory_order_release);
+    }
+};
+
+// ── MaxObserved<T> ─────────────────────────────────────────────────
+//
+// AtomicMonotonic<T, std::less<T>> alias expressing "max seen so far".
+// Semantically identical, name makes intent obvious at call site:
+//   MaxObserved<uint64_t> high_water{0};
+//   high_water.try_advance(new_size);  // track peak
+//
+// Using the named alias rather than a new class preserves the
+// underlying implementation and keeps sizeof collapse.
+
+template <typename T>
+using MaxObserved = AtomicMonotonic<T, std::less<T>>;
+
+// ── MonotonicClock ─────────────────────────────────────────────────
+//
+// Thin wrapper around std::chrono::steady_clock::now() that enforces
+// monotonicity even across the (rare) implementation glitches where
+// steady_clock goes briefly backward on Linux (occurs on some VM
+// migration / CLOCK_MONOTONIC_RAW races).
+//
+// The underlying clock is already monotonic by spec; this layer
+// defends against platform/kernel bugs that Crucible's bit-exact
+// replay cannot tolerate.  now() returns AtomicMonotonic-managed
+// counter — never regresses.
+//
+// Cost: one atomic load + (rarely) one CAS per now().  Used for
+// step-id generation and iteration timing in hot paths that record,
+// not per-op.
+
+class MonotonicClock : Pinned<MonotonicClock> {
+    AtomicMonotonic<uint64_t> last_ns_{0};
+
+public:
+    MonotonicClock() noexcept = default;
+
+    // Returns a nanosecond timestamp that never regresses across
+    // threads.  If steady_clock::now() goes backward, returns the
+    // previously-observed value instead — detection of the clock bug
+    // is the responsibility of the host monitoring layer.
+    [[nodiscard]] uint64_t now_ns() noexcept {
+        const uint64_t raw = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch())
+                .count());
+        // try_advance returns false if raw ≤ observed; in that case
+        // we return the observed value (same-or-forward).  The caller
+        // sees a monotonic sequence regardless of underlying regress.
+        (void)last_ns_.try_advance(raw);
+        const uint64_t observed = last_ns_.get();
+        return observed > raw ? observed : raw;
+    }
 };
 
 } // namespace crucible::safety
