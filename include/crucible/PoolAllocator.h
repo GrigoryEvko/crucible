@@ -78,11 +78,27 @@ struct CRUCIBLE_OWNER PoolAllocator {
   // Materialize a plan. Aborts on OOM — a pre-allocated runtime that can't
   // allocate the plan has no recovery path. External slots start null and
   // must be registered before replay. noexcept: failure mode is abort, not throw.
+  // Upper bounds on plan dimensions.  num_slots fits in a uint32_t
+  // by field type, but a 4 G × 8 B pointer table (32 GB) is absurd;
+  // cap at 1 M slots which covers real models with room.  pool_bytes
+  // caps at 256 GB (matches the Cipher load ceiling × 1024).
+  // Adversarial or corrupt MemoryPlan beyond these is rejected at the
+  // init boundary rather than allocating obscene amounts and failing
+  // the post-alloc checks.
+  static constexpr uint32_t kMaxNumSlots = 1u << 20;          // 1 M
+  static constexpr uint64_t kMaxPoolBytes = uint64_t{256} << 30;  // 256 GB
+
   [[gnu::cold, gnu::noinline]]
   void init(const MemoryPlan* plan) noexcept CRUCIBLE_NO_THREAD_SAFETY
       pre (plan        != nullptr)
       pre (ptr_table_  == nullptr)   // double-init forbidden
       pre (pool_       == nullptr)
+      // Refined bounds on plan dimensions — propagates as [[assume]]
+      // under release semantic=ignore so downstream uses of num_slots_
+      // and pool_bytes_ reason about bounded values.
+      pre (plan->num_slots  <= kMaxNumSlots)
+      pre (plan->pool_bytes <= kMaxPoolBytes)
+      pre (plan->num_external <= plan->num_slots)
   {
     num_slots_    = plan->num_slots;
     num_external_ = plan->num_external;
