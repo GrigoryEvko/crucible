@@ -314,3 +314,49 @@ crucible_test(test_bench_harness)
 crucible_test(test_rt_policy)
 target_include_directories(test_bench_harness SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
+
+# ── safety::ScopedView positive + negative tests ─────────────────────
+#
+# Positive: test_safety_view links normally, must compile + pass.
+# Negative: each safety_neg/neg_*.cpp MUST FAIL TO COMPILE; the Tier 1
+# (private ctor / deleted assign) or Tier 2 (reflection audit) mechanism
+# fires a diagnostic.  CMake builds each via EXCLUDE_FROM_ALL, then
+# wraps each in a ctest with WILL_FAIL=TRUE so that a successful build
+# is reported as a test failure.
+crucible_test(test_safety_view)
+
+function(crucible_neg_compile_test name expected_diag)
+  # Build target that is NOT part of default build — only reachable
+  # via the ctest harness below.
+  add_executable(${name} EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/safety_neg/${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  # PASS_REGULAR_EXPRESSION passes the test iff the build output
+  # contains the expected-diagnostic substring.  A "clean" build
+  # (i.e., the discipline slipped and the .cpp compiled) produces no
+  # such text → test fails.  An unrelated compile error (typo in
+  # the .cpp) also produces different text → test fails, surfacing
+  # the drift.  This is strictly stronger than WILL_FAIL.
+  add_test(NAME ${name}
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+            --target ${name} --config $<CONFIG>)
+  set_tests_properties(${name} PROPERTIES
+    LABELS "safety_neg"
+    PASS_REGULAR_EXPRESSION "${expected_diag}")
+endfunction()
+
+# Tier 2 reflection audit — all three fire the same static_assert message.
+crucible_neg_compile_test(neg_field_storage
+  "Type contains a safety::ScopedView<> in some field")
+crucible_neg_compile_test(neg_vector_storage
+  "Type contains a safety::ScopedView<> in some field")
+crucible_neg_compile_test(neg_optional_nested
+  "Type contains a safety::ScopedView<> in some field")
+
+# Tier 1 compiler firings — each has a distinct diagnostic.
+crucible_neg_compile_test(neg_assignment
+  "ScopedView is single-binding; assignment hides state transitions")
+crucible_neg_compile_test(neg_direct_construct
+  "is private within this context")
+crucible_neg_compile_test(neg_default_construct
+  "no matching function for call to.*ScopedView.*::ScopedView")
