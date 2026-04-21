@@ -122,7 +122,14 @@ struct ReplayEngine {
   // Returns COMPLETE for the last matched op directly.
   //
   // Caller must reset() after COMPLETE before calling advance() again.
-  [[nodiscard]] CRUCIBLE_INLINE ReplayStatus
+  //
+  // Attributes: CRUCIBLE_HOT = [[gnu::hot, gnu::always_inline]] inline.
+  // gnu::hot promotes to the .text.hot section (better i-cache packing
+  // with other hot-path code) and biases the inliner's heuristic
+  // toward always-inline even across TU boundaries.  This is the
+  // single most-called function in COMPILED mode — every ATen op
+  // dispatched goes through it exactly once.
+  [[nodiscard]] CRUCIBLE_HOT ReplayStatus
   advance(SchemaHash schema_hash, ShapeHash shape_hash)
       pre (cursor_ < end_)
   {
@@ -161,7 +168,11 @@ struct ReplayEngine {
   // current_ points to the matched entry (set during advance, survives
   // reset). The prefetch during advance() brought the second cache line
   // (containing output_slot_ids) into L1d.
-  [[nodiscard]] CRUCIBLE_INLINE void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
+  //
+  // CRUCIBLE_HOT: called by the Vessel adapter after every successful
+  // advance() to bind op outputs to their pool slots.  Same frequency
+  // as advance(); keep in .text.hot alongside it.
+  [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
       pre (current_ != nullptr)
       pre (j < current_->num_outputs)
       pre (current_->output_slot_ids != nullptr)
@@ -171,7 +182,7 @@ struct ReplayEngine {
   }
 
   // ── Input pointer for input j of the last matched op ──
-  [[nodiscard]] CRUCIBLE_INLINE void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
+  [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
       pre (current_ != nullptr)
       pre (j < current_->num_inputs)
       pre (current_->input_slot_ids != nullptr)
@@ -261,7 +272,7 @@ struct ReplayEngine {
   // in the other was real (happened once during the view migration —
   // an unlikely branch hint was added to one but not the other).
   // Single source of truth removes that risk.
-  [[nodiscard]] CRUCIBLE_INLINE ReplayStatus
+  [[nodiscard]] CRUCIBLE_HOT ReplayStatus
   advance(SchemaHash schema_hash, ShapeHash shape_hash,
           ActiveView const&)
       pre (cursor_ < end_)
@@ -269,7 +280,7 @@ struct ReplayEngine {
     return advance(schema_hash, shape_hash);
   }
 
-  [[nodiscard]] CRUCIBLE_INLINE void* output_ptr(uint16_t j, ActiveView const&) const
+  [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, ActiveView const&) const
       CRUCIBLE_LIFETIMEBOUND
       pre (current_ != nullptr)
       pre (j < current_->num_outputs)
@@ -278,7 +289,7 @@ struct ReplayEngine {
     return output_ptr(j);
   }
 
-  [[nodiscard]] CRUCIBLE_INLINE void* input_ptr(uint16_t j, ActiveView const&) const
+  [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j, ActiveView const&) const
       CRUCIBLE_LIFETIMEBOUND
       pre (current_ != nullptr)
       pre (j < current_->num_inputs)
