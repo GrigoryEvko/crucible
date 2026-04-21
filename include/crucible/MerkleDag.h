@@ -21,6 +21,7 @@
 #include <crucible/CKernel.h>
 #include <crucible/Expr.h>
 #include <crucible/IterationDetector.h>
+#include <crucible/Reflect.h>
 #include <crucible/TraceRing.h>
 
 #include <crucible/Types.h>
@@ -308,18 +309,17 @@ struct Guard {
   uint16_t arg_index = 0; // 2B — which argument (for SHAPE_DIM, DTYPE, DEVICE)
   uint16_t dim_index = 0; // 2B — which dimension (for SHAPE_DIM)
 
-  // Note: arg_index and dim_index are included in the hash for ALL guard
-  // kinds, so they MUST be initialized even when semantically unused.
-  // gnu::pure: reads *this fields (memory access through the implicit
-  // `this` arg) — pure, not const.  No side effects, no global memory
-  // access; optimizer may CSE within a basic block.  Bundles
-  // [[nodiscard]] so a discarded hash is a build error.
+  // Reflection-driven: folds every non-static data member (kind, pad[3],
+  // op_index.v, arg_index, dim_index) via fmix64.  Replaces the prior
+  // manual bit-shift packing which dropped fields silently if Guard grew
+  // a new field — a new discriminant on SHAPE_DIM / SCALAR_VALUE would
+  // hash to the same value as the old one, making guards collide.
+  // reflect_hash walks the struct at compile time: adding a field is a
+  // hash-format break caught by CDAG_VERSION.
+  //
+  // gnu::pure: depends on *this fields only (memory through `this`).
   CRUCIBLE_PURE uint64_t hash() const noexcept {
-    return detail::fmix64(
-        std::to_underlying(kind) |
-        (static_cast<uint64_t>(op_index.raw()) << 8) |
-        (static_cast<uint64_t>(arg_index) << 40) |
-        (static_cast<uint64_t>(dim_index) << 56));
+    return crucible::reflect_hash(*this);
   }
 };
 
