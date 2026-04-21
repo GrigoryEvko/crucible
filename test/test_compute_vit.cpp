@@ -334,18 +334,19 @@ int main() {
     assert(ctx.is_compiled());
 
     // Register all 12 external parameter pointers
-    ctx.register_external(SlotId{SL_X},     X);
-    ctx.register_external(SlotId{SL_G1},    gamma1);
-    ctx.register_external(SlotId{SL_B1},    beta1);
-    ctx.register_external(SlotId{SL_WQ},    W_q);
-    ctx.register_external(SlotId{SL_WK},    W_k);
-    ctx.register_external(SlotId{SL_WV},    W_v);
-    ctx.register_external(SlotId{SL_WOUT},  W_out);
-    ctx.register_external(SlotId{SL_G2},    gamma2);
-    ctx.register_external(SlotId{SL_B2},    beta2);
-    ctx.register_external(SlotId{SL_WFF1},  W_ff1);
-    ctx.register_external(SlotId{SL_WFF2},  W_ff2);
-    ctx.register_external(SlotId{SL_WHEAD}, W_head);
+    using crucible::safety::NonNull;
+    ctx.register_external(SlotId{SL_X},     NonNull<void*>{X});
+    ctx.register_external(SlotId{SL_G1},    NonNull<void*>{gamma1});
+    ctx.register_external(SlotId{SL_B1},    NonNull<void*>{beta1});
+    ctx.register_external(SlotId{SL_WQ},    NonNull<void*>{W_q});
+    ctx.register_external(SlotId{SL_WK},    NonNull<void*>{W_k});
+    ctx.register_external(SlotId{SL_WV},    NonNull<void*>{W_v});
+    ctx.register_external(SlotId{SL_WOUT},  NonNull<void*>{W_out});
+    ctx.register_external(SlotId{SL_G2},    NonNull<void*>{gamma2});
+    ctx.register_external(SlotId{SL_B2},    NonNull<void*>{beta2});
+    ctx.register_external(SlotId{SL_WFF1},  NonNull<void*>{W_ff1});
+    ctx.register_external(SlotId{SL_WFF2},  NonNull<void*>{W_ff2});
+    ctx.register_external(SlotId{SL_WHEAD}, NonNull<void*>{W_head});
 
     // ── Run 50 compiled iterations ──────────────────────────────────
     for (int iter = 0; iter < 50; iter++) {

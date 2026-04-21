@@ -301,7 +301,9 @@ class Vigil {
     [[nodiscard]] void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND { return ctx_.input_ptr(j); }
 
     // Register an external tensor's data pointer with the pool.
-    void register_external(SlotId sid, void* ptr) { ctx_.register_external(sid, ptr); }
+    void register_external(SlotId sid, crucible::safety::NonNull<void*> ptr) {
+        ctx_.register_external(sid, ptr);
+    }
 
     // Number of complete iterations replayed in COMPILED mode.
     [[nodiscard]] uint32_t compiled_iterations() const { return ctx_.compiled_iterations(); }
@@ -536,7 +538,8 @@ class Vigil {
                 }
             }
 
-            if (ptr) ctx_.register_external(target, ptr);
+            if (ptr != nullptr)
+                ctx_.register_external(target, crucible::safety::NonNull<void*>{ptr});
         }
     }
 

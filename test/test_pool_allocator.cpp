@@ -105,7 +105,7 @@ static void test_external_registration() {
 
   // Register an external pointer (simulates param tensor).
   alignas(256) char fake_param[512];
-  pool.register_external(SlotId{1}, fake_param);
+  pool.register_external(SlotId{1}, crucible::safety::NonNull<void*>{fake_param});
 
   // After registration: returns the registered pointer.
   assert(pool.slot_ptr(SlotId{1}) == fake_param);
@@ -189,8 +189,8 @@ static void test_all_external() {
   // Register externals.
   alignas(256) char buf_a[1024];
   alignas(256) char buf_b[2048];
-  pool.register_external(SlotId{0}, buf_a);
-  pool.register_external(SlotId{1}, buf_b);
+  pool.register_external(SlotId{0}, crucible::safety::NonNull<void*>{buf_a});
+  pool.register_external(SlotId{1}, crucible::safety::NonNull<void*>{buf_b});
   assert(pool.slot_ptr(SlotId{0}) == buf_a);
   assert(pool.slot_ptr(SlotId{1}) == buf_b);
 
@@ -298,7 +298,7 @@ static void test_integration_with_sweep_line() {
 
   // Register external.
   alignas(256) char fake_param[512];
-  pool.register_external(SlotId{3}, fake_param);
+  pool.register_external(SlotId{3}, crucible::safety::NonNull<void*>{fake_param});
   assert(pool.slot_ptr(SlotId{3}) == fake_param);
 
   // Verify simultaneously-alive slots don't corrupt each other.

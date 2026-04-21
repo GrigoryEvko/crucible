@@ -118,7 +118,7 @@ struct CrucibleContext {
   }
 
   // ── Register external slot pointer ──
-  void register_external(SlotId sid, void* ptr)
+  void register_external(SlotId sid, crucible::safety::NonNull<void*> ptr)
       pre (mode_ == ContextMode::COMPILED)
   {
     pool_.register_external(sid, ptr);

@@ -183,9 +183,9 @@ int main() {
     assert(ctx.activate(&region));
     assert(ctx.is_compiled());
 
-    ctx.register_external(SlotId{SL_X},  X);
-    ctx.register_external(SlotId{SL_W1}, W1);
-    ctx.register_external(SlotId{SL_W2}, W2);
+    ctx.register_external(SlotId{SL_X},  crucible::safety::NonNull<void*>{X});
+    ctx.register_external(SlotId{SL_W1}, crucible::safety::NonNull<void*>{W1});
+    ctx.register_external(SlotId{SL_W2}, crucible::safety::NonNull<void*>{W2});
 
     // Verify externals are registered correctly
     assert(ctx.pool().slot_ptr(SlotId{SL_X})  == X);
