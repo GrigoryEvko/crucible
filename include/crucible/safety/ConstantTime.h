@@ -25,6 +25,42 @@
 // Reference: the constant-time coding handbook.  All operations use
 // bitwise ops + integer arithmetic, no branches, no lookups indexed
 // by secret data.
+//
+// ── Scope: what ct::* IS and IS NOT for ─────────────────────────────
+//
+// IS for (when those subsystems land):
+//   - Canopy peer authentication:  HMAC tag comparison (ct::eq),
+//     session-token equality, challenge-response verification.
+//   - Cipher cold-tier encryption:  MAC verification on serialized
+//     DAG/object bytes retrieved from S3/GCS.
+//   - TLS/mTLS certificate pinning inside the Canopy mesh.
+//   - Any future code path handling credentials, keys, or auth tags
+//     where the execution trace must not leak secret content.
+//
+// IS NOT for:
+//   - **Philox4x32 RNG** (crucible::Philox).  Philox is counter-based,
+//     deterministic, and its reproducibility is the DetSafe contract —
+//     the key + counter stream IS the replay proof.  Classifying key
+//     material would fight DetSafe: the whole point of Philox is that
+//     the same (counter, key) produces the same bits on any hardware,
+//     and downstream code MUST be able to compare / log / serialize /
+//     hash those bits.  Timing side-channel is not a threat; the PRNG
+//     state is part of the public replay contract.
+//   - Model weights, activations, gradients.  These are the artifact
+//     being trained/served; reproducibility across restarts and mesh
+//     reshards is the whole Cipher/Canopy promise.  Constant-time
+//     access would break determinism and add no security value.
+//   - Content hashes, schema hashes, merkle roots.  Public by design
+//     (Merkle DAG audit trail, KernelCache key).  No secret content.
+//   - Any comparison of SchemaHash / ContentHash / CallsiteHash /
+//     OpIndex etc.  These are identity, not credentials.
+//
+// If a new caller wants ct::* on one of the "IS NOT" list values,
+// rethink — they are public inputs, not secrets, and adding ct::*
+// there introduces gratuitous runtime cost for zero security gain.
+// If in doubt, grep for `Secret<` — only values wrapped in Secret<T>
+// should flow through ct::*.  A call site without a Secret<T> in its
+// backing data is almost certainly wrong-scoped.
 
 #include <crucible/Platform.h>
 
