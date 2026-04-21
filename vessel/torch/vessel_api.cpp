@@ -87,6 +87,26 @@ static bool validate_ffi_entry(uint64_t schema_hash,
     return true;
 }
 
+// Per-meta FFI validation.  The structural invariant of TensorMeta is
+// that sizes[] and strides[] are length-8 fixed arrays; any ndim > 8
+// from a corrupt FFI caller would cause out-of-bounds reads when the
+// recording pipeline iterates per-dim.
+//
+// Cost: one uint8_t compare per meta on the dispatch path.  Typical
+// op has 2-8 metas → <10 ns overhead; PyTorch dispatch itself is
+// orders of magnitude larger, so the validation is free in the
+// regime the FFI is actually used.
+static bool validate_ffi_metas(const CrucibleMeta* metas, uint32_t n_metas) noexcept
+{
+    // n_metas == 0 requires metas == nullptr is OK (trivial op).
+    if (n_metas == 0) return true;
+    if (metas == nullptr) return false;
+    for (uint32_t i = 0; i < n_metas; ++i) {
+        if (metas[i].ndim > 8) return false;
+    }
+    return true;
+}
+
 // ── C API implementation ─────────────────────────────────────────────
 
 extern "C" {
@@ -134,10 +154,14 @@ CrucibleDispatchResult crucible_dispatch_op(
     auto* vigil = as_vigil(handle);
 
     // Validate FFI inputs before constructing an Entry — see
-    // validate_ffi_entry for rules.  Failure returns an empty result
-    // (action=RECORD, status=DIVERGED by default-init of uint8_t) so
-    // the Python side can see it didn't take effect.
+    // validate_ffi_entry / validate_ffi_metas for rules.  Failure
+    // returns an empty result (action=RECORD, status=DIVERGED by
+    // default-init of uint8_t) so the Python side can see it didn't
+    // take effect.
     if (!validate_ffi_entry(schema_hash, num_inputs, num_outputs, 0)) {
+        return CrucibleDispatchResult{};
+    }
+    if (!validate_ffi_metas(metas, n_metas)) {
         return CrucibleDispatchResult{};
     }
 
@@ -173,6 +197,9 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
 
     // Validate FFI inputs before constructing an Entry.
     if (!validate_ffi_entry(schema_hash, num_inputs, num_outputs, num_scalars)) {
+        return CrucibleDispatchResult{};
+    }
+    if (!validate_ffi_metas(metas, n_metas)) {
         return CrucibleDispatchResult{};
     }
 
@@ -244,9 +271,20 @@ void* crucible_input_ptr(CrucibleHandle h, uint16_t j) noexcept {
 }
 
 void crucible_register_schema_name(uint64_t schema_hash, const char* name) noexcept {
-    // C ABI boundary: caller is the Python wrapper which receives names
-    // from Vessel-side code (already validated when going through the
-    // PyTorch dispatcher).  Construct Sanitized at the boundary.
+    // C ABI boundary: validate before routing to SanitizedName.
+    // Rules:
+    //   - schema_hash != 0 (0 is the invalid sentinel)
+    //   - name != null
+    //   - strnlen(name, MAX_NAME+1) ≤ MAX_NAME
+    //     (strnlen caps the walk so a missing NUL-terminator from a
+    //     malformed FFI caller can't walk off into foreign memory)
+    // ATen op names in PyTorch all fit in <= 128 bytes; the 256 cap
+    // leaves headroom while still bounding the worst-case walk.
+    constexpr size_t MAX_NAME = 256;
+    if (schema_hash == 0) return;
+    if (name == nullptr) return;
+    const size_t len = ::strnlen(name, MAX_NAME + 1);
+    if (len == 0 || len > MAX_NAME) return;
     crucible::register_schema_name(crucible::SchemaHash{schema_hash},
         crucible::SchemaTable::SanitizedName{name});
 }
@@ -256,6 +294,17 @@ const char* crucible_schema_name(uint64_t schema_hash) noexcept {
 }
 
 int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
+    // FFI boundary: path validation before any fs::* / fopen call.
+    //   - path != null
+    //   - strnlen(path, PATH_MAX+1) ≤ PATH_MAX
+    // A missing NUL-terminator from a malformed caller could otherwise
+    // walk into foreign memory; PATH_MAX=4096 is Linux's filesystem
+    // component-path ceiling.  Cap the walk to bound the failure mode.
+    constexpr size_t MAX_PATH_LEN = 4096;
+    if (path == nullptr) return 0;
+    const size_t path_len = ::strnlen(path, MAX_PATH_LEN + 1);
+    if (path_len == 0 || path_len > MAX_PATH_LEN) return 0;
+
     auto* vigil = as_vigil(h);
     vigil->flush();
 
