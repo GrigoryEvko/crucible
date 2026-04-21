@@ -38,11 +38,17 @@ namespace crucible {
 //     eliminating the redundant second pass in make_region.
 //   - Memory plan uses counting sort O(n+k) instead of insertion sort O(n²).
 struct BackgroundThread {
-  // The ring buffer to drain from. Not owned.
-  TraceRing* ring = nullptr;
+  // The ring buffer to drain from. Not owned.  WriteOnce<>: must be
+  // installed exactly once per BackgroundThread (via start() or
+  // explicit set() in test/bench harnesses), then read for the
+  // process lifetime.  has_value() / operator bool exposes the
+  // "set" state for defensive code paths.
+  crucible::safety::WriteOnce<TraceRing*> ring;
 
-  // The MetaLog to read tensor metadata from. Not owned.
-  MetaLog* meta_log = nullptr;
+  // The MetaLog to read tensor metadata from.  Not owned.  Same
+  // installed-once discipline as ring.  Defensive `if (meta_log)`
+  // checks compile against the WriteOnce::operator bool.
+  crucible::safety::WriteOnce<MetaLog*>   meta_log;
 
   // Distributed context (set by Vessel adapter at start).
   int32_t rank = -1;
@@ -118,8 +124,8 @@ struct BackgroundThread {
   void start(TraceRing* r, MetaLog* ml,
              int32_t rank_ = -1, int32_t world_size_ = 0,
              uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY {
-    ring = r;
-    meta_log = ml;
+    ring.set(r);
+    meta_log.set(ml);
     rank = rank_;
     world_size = world_size_;
     device_capability = device_cap;
@@ -356,7 +362,7 @@ struct BackgroundThread {
         reset_requested.store(false, std::memory_order_release);
       }
 
-      uint32_t n = ring->drain(
+      uint32_t n = ring.get()->drain(
           batch, BATCH_SIZE, meta_batch, scope_batch, callsite_batch);
       if (n == 0) {
         CRUCIBLE_SPIN_PAUSE;
@@ -406,7 +412,7 @@ struct BackgroundThread {
     }
 
     // Drain remaining on shutdown.
-    uint32_t n = ring->drain(
+    uint32_t n = ring.get()->drain(
         batch, BATCH_SIZE, meta_batch, scope_batch, callsite_batch);
     for (uint32_t i = 0; i < n; i++) {
       current_trace.push_back(batch[i]);
@@ -462,7 +468,7 @@ struct BackgroundThread {
 
         // Advance MetaLog tail AFTER all reads are done (zero-copy safety).
         if (graph->max_meta_end > 0)
-          meta_log->advance_tail(graph->max_meta_end);
+          meta_log.get()->advance_tail(graph->max_meta_end);
 
         recompute_merkle(region);
         uncompiled_regions.append(region);
@@ -529,7 +535,7 @@ struct BackgroundThread {
       if (!ms.is_valid() && (re.num_inputs + re.num_outputs) > 0) {
         // Genuine MetaLog overflow on an op that had tensors.
         if (max_meta_end > 0)
-          meta_log->advance_tail(max_meta_end);
+          meta_log.get()->advance_tail(max_meta_end);
         return nullptr;
       }
       if (ms.is_valid()) {
@@ -553,18 +559,18 @@ struct BackgroundThread {
 
     // 2. Zero-copy MetaLog: point directly into the circular buffer.
     //    No arena alloc, no memcpy — just pointer arithmetic per op.
-    //    Pointers valid until meta_log->advance_tail() is called
+    //    Pointers valid until meta_log.get()->advance_tail() is called
     //    (deferred to on_iteration_boundary after all processing).
     //    For the rare wrap case (< 0.01%), fall back to arena copy.
     TensorMeta* meta_base = nullptr;
     if (first_meta != UINT32_MAX) {
       uint32_t total_metas = max_meta_end - first_meta;
-      meta_base = meta_log->try_contiguous(first_meta, total_metas);
+      meta_base = meta_log.get()->try_contiguous(first_meta, total_metas);
       if (!meta_base) [[unlikely]] {
         // Wrap case: copy to arena (extremely rare with 1M capacity).
         meta_base = arena.alloc_array<TensorMeta>(a, total_metas);
         for (uint32_t m = 0; m < total_metas; m++)
-          meta_base[m] = meta_log->at(first_meta + m);
+          meta_base[m] = meta_log.get()->at(first_meta + m);
       }
     }
 

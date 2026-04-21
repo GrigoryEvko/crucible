@@ -813,7 +813,7 @@ int main(int argc, char* argv[]) {
     meta_log.reset();
 
     BackgroundThread bg;
-    bg.meta_log = &meta_log;
+    bg.meta_log.set(&meta_log);
 
     std::printf("\n=== full pipeline (bench::run with BPF sensing) ===\n");
     std::vector<bench::Report> reports;

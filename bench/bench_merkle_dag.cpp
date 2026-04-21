@@ -289,8 +289,8 @@ int main(int argc, char* argv[]) {
         }
 
         BackgroundThread bg;
-        bg.ring     = &ring;
-        bg.meta_log = &meta_log;
+        bg.ring.set(&ring);
+        bg.meta_log.set(&meta_log);
 
         // Drain buffers heap-allocated; 4× 4096-element arrays on the
         // stack blow past our 512 kB stack-usage budget.
@@ -371,7 +371,7 @@ int main(int argc, char* argv[]) {
             };
 
             BackgroundThread bg;
-            bg.meta_log = &meta_log;
+            bg.meta_log.set(&meta_log);
             const size_t arena_bytes = std::max(
                 size_t{1} << 20,
                 static_cast<size_t>(trace->num_ops) * 256);
