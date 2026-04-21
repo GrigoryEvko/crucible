@@ -34,9 +34,12 @@ namespace crucible {
 // ═══════════════════════════════════════════════════════════════════
 
 // Forward declaration for recursive nested struct hashing.
+// gnu::pure: no side effects, reads only the argument (and nested
+// sub-objects via member access).  noexcept: every hash_field branch is
+// integer math, bit_cast, or pointer-to-integer — none can throw.
 template <typename T>
   requires std::is_class_v<T>
-[[nodiscard]] uint64_t reflect_hash(const T& obj);
+[[nodiscard, gnu::pure]] uint64_t reflect_hash(const T& obj) noexcept;
 
 namespace detail_reflect {
 
@@ -56,7 +59,7 @@ consteval auto member_info() {
 
 // Hash a single field value. Dispatches on type.
 template <typename T>
-[[nodiscard]] constexpr uint64_t hash_field(const T& val) {
+[[nodiscard, gnu::pure]] constexpr uint64_t hash_field(const T& val) noexcept {
   if constexpr (std::is_enum_v<T>) {
     return detail::fmix64(static_cast<uint64_t>(std::to_underlying(val)));
   } else if constexpr (std::is_integral_v<T>) {
@@ -82,7 +85,7 @@ template <typename T>
 
 // Fold over all members via index_sequence.
 template <typename T, size_t... Is>
-[[nodiscard]] uint64_t hash_impl(const T& obj, std::index_sequence<Is...>) {
+[[nodiscard, gnu::pure]] uint64_t hash_impl(const T& obj, std::index_sequence<Is...>) noexcept {
   uint64_t h = 0x9E3779B97F4A7C15ULL;
   ((h = h * 0x9E3779B97F4A7C15ULL ^ hash_field(obj.[:member_info<T, Is>():])), ...);
   return detail::fmix64(h);
@@ -92,7 +95,7 @@ template <typename T, size_t... Is>
 
 template <typename T>
   requires std::is_class_v<T>
-[[nodiscard]] uint64_t reflect_hash(const T& obj) {
+[[nodiscard, gnu::pure]] uint64_t reflect_hash(const T& obj) noexcept {
   constexpr size_t N = detail_reflect::member_count<T>();
   return detail_reflect::hash_impl(obj, std::make_index_sequence<N>{});
 }
@@ -108,15 +111,22 @@ template <typename T>
 // ═══════════════════════════════════════════════════════════════════
 
 // Forward declaration for recursive nested struct printing.
+//
+// Not gnu::pure: fprintf mutates the FILE* stream.  noexcept: Crucible
+// compiles with -fno-exceptions, and fprintf is C-linkage so its error
+// path is an errno set rather than an exception.  The FILE* argument
+// itself is the side-effect channel — callers that pass a valid stream
+// get output; a null FILE* is undefined behavior at the libc level and
+// outside Reflect's contract.
 template <typename T>
   requires std::is_class_v<T>
-void reflect_print(const T& obj, FILE* out = stderr);
+void reflect_print(const T& obj, FILE* out = stderr) noexcept;
 
 namespace detail_reflect {
 
 // Print a single field value.
 template <typename T>
-void print_field(const T& val, FILE* out) {
+void print_field(const T& val, FILE* out) noexcept {
   if constexpr (std::is_enum_v<T>) {
     std::fprintf(out, "%llu", static_cast<unsigned long long>(std::to_underlying(val)));
   } else if constexpr (std::is_same_v<T, bool>) {
@@ -151,7 +161,7 @@ consteval auto member_name() {
 
 // Print one "name = value" pair.
 template <typename T, size_t I>
-void print_member(const T& obj, FILE* out, bool first) {
+void print_member(const T& obj, FILE* out, bool first) noexcept {
   if (!first) std::fprintf(out, ", ");
   // identifier_of returns a string_view usable at runtime via expansion
   constexpr auto name = member_name<T, I>();
@@ -160,7 +170,7 @@ void print_member(const T& obj, FILE* out, bool first) {
 }
 
 template <typename T, size_t... Is>
-void print_impl(const T& obj, FILE* out, std::index_sequence<Is...>) {
+void print_impl(const T& obj, FILE* out, std::index_sequence<Is...>) noexcept {
   constexpr auto type_name = std::meta::identifier_of(^^T);
   std::fprintf(out, "%.*s { ", static_cast<int>(type_name.size()), type_name.data());
   (print_member<T, Is>(obj, out, Is == 0), ...);
@@ -171,7 +181,7 @@ void print_impl(const T& obj, FILE* out, std::index_sequence<Is...>) {
 
 template <typename T>
   requires std::is_class_v<T>
-void reflect_print(const T& obj, FILE* out) {
+void reflect_print(const T& obj, FILE* out) noexcept {
   constexpr size_t N = detail_reflect::member_count<T>();
   detail_reflect::print_impl(obj, out, std::make_index_sequence<N>{});
 }
