@@ -175,6 +175,15 @@ class CRUCIBLE_OWNER Cipher {
 
     // Typed: caller has proved Open.  const because deserialize does
     // not mutate the Cipher (it only reads paths under root_).
+    //
+    // Source tag boundary: buf holds source::External bytes (disk, not
+    // yet validated).  deserialize_region IS the External→Sanitized
+    // transition — its bounds-checked Reader rejects truncated input,
+    // and Serialize's pre-flight size checks reject adversarial num_slots
+    // claims.  On success, the returned RegionNode* carries Sanitized
+    // contents (ndim ≤ 8 per-meta, num_ops ≤ CDAG_MAX_OPS, etc.).  On
+    // any failure along the way: nullptr, no state change, no partial
+    // arena growth (see Serialize.h pre-flight).
     [[nodiscard]] RegionNode* load(OpenView const&, fx::Alloc a,
                                    ContentHash content_hash, Arena& arena) const {
         if (!content_hash) return nullptr;
@@ -191,6 +200,12 @@ class CRUCIBLE_OWNER Cipher {
         if (len > MAX_OBJECT_BYTES) return nullptr;
         f.seekg(0, std::ios::beg);
 
+        // Buffer holds untrusted disk bytes until deserialize_region
+        // validates them.  Empty-buffer branch avoids a zero-length
+        // vector on a zero-byte file (which would be corrupt anyway,
+        // but we get a deterministic nullptr rather than reliance on
+        // the reader's bounds check).
+        if (len == 0) return nullptr;
         std::vector<uint8_t> buf(len);
         f.read(reinterpret_cast<char*>(buf.data()),
                static_cast<std::streamsize>(len));
