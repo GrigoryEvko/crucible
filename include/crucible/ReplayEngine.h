@@ -63,10 +63,28 @@ struct ReplayEngine {
   ReplayEngine& operator=(ReplayEngine&&) = delete("non-owning pointers would alias with moved-from cursor");
 
   // ── Init: bind to a compiled region + pool ──
+  //
+  // Preconditions lift the legacy asserts into contracts.  Under
+  // semantic=enforce (debug, CI) each fires at the entry; under
+  // semantic=ignore (release hot TUs) they propagate as [[assume]]
+  // facts to the optimizer, removing the runtime asserts entirely
+  // without losing their safety value.
+  //
+  // Postconditions document the invariants callers of advance() then
+  // depend on — in particular, that cursor_ starts at ops_ and that
+  // slot_table_ is non-null (derived from pool->table() which is
+  // non-null when pool is Initialized).
   void init(const RegionNode* region, const PoolAllocator* pool)
-      CRUCIBLE_NO_THREAD_SAFETY {
-    assert(region && "null RegionNode");
-    assert(pool && pool->is_initialized() && "pool not initialized");
+      CRUCIBLE_NO_THREAD_SAFETY
+      pre (region != nullptr)
+      pre (pool   != nullptr)
+      pre (pool->is_initialized())
+      // Region bounds: num_ops==0 is legitimate (empty region), but if
+      // num_ops>0 then ops must be non-null.
+      pre (region->num_ops == 0 || region->ops != nullptr)
+      post (cursor_ == ops_)
+      post (slot_table_ != nullptr)
+  {
     ops_ = region->ops;
     end_ = region->ops + region->num_ops;
     cursor_ = ops_;
