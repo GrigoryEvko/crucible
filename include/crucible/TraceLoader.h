@@ -182,6 +182,26 @@ static_assert(std::endian::native == std::endian::little,
         return nullptr;
       }
     }
+
+    // Sanitize: validate each meta's untrusted fields AT the read boundary.
+    // Source is disk bytes (source::External); downstream code assumes
+    // ndim ≤ 8 (TensorMeta::sizes/strides capacity).  Without this check,
+    // an adversarial trace with ndim=255 would drive compute_storage_nbytes
+    // to read past the end of the sizes[] array.
+    //
+    // data_ptr is zeroed at write time (see Serialize.h:81 "data_ptr → always
+    // 0 on disk") but we re-zero here so any downstream address-use path
+    // fails loudly rather than treating a disk byte pattern as a pointer.
+    for (uint32_t i = 0; i < num_metas; i++) {
+      if (metas[i].ndim > 8) [[unlikely]] {
+        std::fprintf(stderr,
+            "load_trace: meta[%u].ndim=%u exceeds max 8 in %s — corrupt trace\n",
+            i, metas[i].ndim, path);
+        std::fclose(f);
+        return nullptr;
+      }
+      metas[i].data_ptr = nullptr;
+    }
   }
 
   // Read optional schema name table (trailing data after metas).
