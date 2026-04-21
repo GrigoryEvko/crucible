@@ -169,6 +169,7 @@ CRUCIBLE_STRONG_HASH(ScopeHash);     // module hierarchy path hash
 CRUCIBLE_STRONG_HASH(CallsiteHash);  // Python source location identity
 CRUCIBLE_STRONG_HASH(ContentHash);   // region content identity (kernel cache key)
 CRUCIBLE_STRONG_HASH(MerkleHash);    // subtree identity (includes all descendants)
+CRUCIBLE_STRONG_HASH(RecipeHash);    // NumericalRecipe identity (FORGE.md §19, §20)
 
 #undef CRUCIBLE_STRONG_HASH
 
@@ -267,5 +268,6 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(ScopeHash);
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(CallsiteHash);
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(ContentHash);
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(MerkleHash);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(RecipeHash);
 
 } // namespace crucible
