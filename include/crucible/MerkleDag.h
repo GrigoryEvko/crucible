@@ -813,8 +813,21 @@ class CRUCIBLE_OWNER KernelCache {
     LoopTermKind term_kind,
     uint32_t repeat_count,
     float epsilon = 0.0f) noexcept
+    // Pointer / pair validity.
     pre (body != nullptr)
     pre (num_feedback == 0 || feedback != nullptr)
+    // Semantic validity on the numeric parameters:
+    //   epsilon must be non-negative.  Negative thresholds are
+    //     meaningless (a convergence distance can't be negative), and
+    //     the sign bit of epsilon flowing into loopterm_hash would
+    //     produce two Merkle hashes for operationally-identical loops.
+    //   REPEAT with repeat_count=0 is a legitimate degenerate case —
+    //     used by replay() to test the "skip body entirely, run
+    //     continuation" path.  Not enforced.
+    //   UNTIL with epsilon=0 is permitted at construction (the caller
+    //     may set it lazily).  Callers that actually run the loop are
+    //     responsible for epsilon > 0 by the time the scheduler sees it.
+    pre (!(epsilon < 0.0f))
 {
   // pre() above replaces the runtime assert; kept as [[assume]] so the
   // optimizer can drop redundant null checks in the body.
