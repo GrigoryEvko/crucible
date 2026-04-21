@@ -69,12 +69,20 @@ struct BackgroundThread {
   // NOT relaxed: store(release) publishes region data (ops, plan, merkle
   // hash) written before it. Fg's load(acquire) must see that data.
   // Relaxed = fg dereferences pointer to region with stale/garbage fields.
-  std::atomic<RegionNode*> active_region{nullptr};
+  //
+  // Own cache line: fg reads, bg writes.  Co-locating with adjacent
+  // bg-only fields below would have every bg write to those fields
+  // invalidate the fg's cached copy of active_region.
+  alignas(64) std::atomic<RegionNode*> active_region{nullptr};
 
   // Optional callback invoked on the background thread whenever a new
   // RegionNode becomes available. Used by Vigil to update transactions
   // and trigger persistence without polling.
-  std::function<void(RegionNode*)> region_ready_cb;
+  //
+  // Own cache line: bg-only state.  Separating it from active_region
+  // (fg-touched) prevents fg's acquire load from dragging the callback
+  // object into fg's L1 every iteration.
+  alignas(64) std::function<void(RegionNode*)> region_ready_cb;
 
   // Iteration detection.
   IterationDetector detector;
@@ -92,7 +100,12 @@ struct BackgroundThread {
   // Completed iteration stats.  iterations_completed is structurally
   // monotonic (only increments at iteration boundary); wrap so the
   // invariant is enforced by the type rather than by convention.
-  crucible::safety::Monotonic<uint32_t> iterations_completed {0};
+  //
+  // Own cache line: bg writes, fg reads for diagnostics (via size() /
+  // iteration count queries).  Co-locating with the preceding per-
+  // iteration vectors would have every push_back invalidate fg's copy
+  // of iterations_completed.
+  alignas(64) crucible::safety::Monotonic<uint32_t> iterations_completed {0};
   uint32_t last_iteration_length = 0;
 
   // Arena for DAG allocations (TraceEntry, TensorMeta arrays,
@@ -133,7 +146,13 @@ struct BackgroundThread {
   // OneShotFlag fuses the (relaxed load → acquire fence → body →
   // release clear) dance into a single check_and_run call so the
   // memory-ordering discipline is structural, not per-site convention.
-  crucible::safety::OneShotFlag reset_requested;
+  //
+  // Own cache line: fg writes (request side), bg reads (at each drain
+  // cycle).  Without alignas, a line containing reset_requested + the
+  // adjacent bg-private fields (arena, uncompiled_regions, thread)
+  // would ping-pong every time fg signals — bg would lose its cached
+  // copies of the bg-only fields on the same line.
+  alignas(64) crucible::safety::OneShotFlag reset_requested;
 
   // Start the background thread. ring/meta_log must be set first.
   //
