@@ -37,9 +37,65 @@ static_assert(__GNUC__ >= 16,
               "See CLAUDE.md toolchain section.");
 #endif
 
-#define CRUCIBLE_INLINE    __attribute__((always_inline)) inline
-#define CRUCIBLE_NOINLINE  __attribute__((noinline))
-#define CRUCIBLE_API       __attribute__((visibility("default")))
+// ═══════════════════════════════════════════════════════════════════
+// Attribute macros — code_guide §VII
+//
+// Inlining control, purity, pointer contracts, and tail-call intent.
+// Macros (not direct [[gnu::...]]) so call sites grep cleanly and so
+// the project can adjust the underlying attribute form per-toolchain
+// in one place later.
+//
+// Style:
+//   [[gnu::X]] is the standard-attribute form GCC honors since ~5.x.
+//   Preferred over __attribute__((X)) because it composes cleanly
+//   with C++26 [[assume]], [[nodiscard]], [[likely]], etc.
+//
+// Usage (from §VII):
+//   CRUCIBLE_HOT    on per-op dispatch, SPSC push, MetaLog append
+//   CRUCIBLE_COLD   on init / factory / divergence-recovery helpers
+//   CRUCIBLE_FLATTEN on hot wrappers that should inline their callees
+//   CRUCIBLE_PURE   on [nodiscard + depends on args+memory] query fns
+//   CRUCIBLE_CONST  on [nodiscard + depends only on args] math helpers
+//   CRUCIBLE_NONNULL          when every pointer param is required
+//   CRUCIBLE_RETURNS_NONNULL  when the return is guaranteed non-null
+//   CRUCIBLE_MALLOC           allocator returns non-aliasing ptr
+//   CRUCIBLE_ALLOC_SIZE(n)    argument-indexed size in bytes
+//   CRUCIBLE_ASSUME_ALIGNED(n) return alignment for optimizer
+//   CRUCIBLE_MUSTTAIL         GCC 16 tail-call guarantee
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Inlining control ───────────────────────────────────────────────
+#define CRUCIBLE_INLINE       [[gnu::always_inline]] inline
+#define CRUCIBLE_HOT          [[gnu::hot, gnu::always_inline]] inline
+#define CRUCIBLE_COLD         [[gnu::cold, gnu::noinline]]
+#define CRUCIBLE_FLATTEN      [[gnu::flatten]]
+#define CRUCIBLE_NOINLINE     [[gnu::noinline]]
+
+// ── Purity (optimizer can CSE / move across side-effect points) ────
+// PURE:  depends on args + observable memory (no side effects,
+//        but may dereference pointers).  Pair with [[nodiscard]] —
+//        a PURE call that discards its result is a bug.
+// CONST: depends on args only; does not read memory.  Strictly
+//        stronger than PURE.  Use on sat-math, bit helpers, simple
+//        arithmetic where the args alone determine the result.
+#define CRUCIBLE_PURE         [[gnu::pure, nodiscard]]
+#define CRUCIBLE_CONST        [[gnu::const, nodiscard]]
+
+// ── Pointer contracts ──────────────────────────────────────────────
+#define CRUCIBLE_NONNULL              [[gnu::nonnull]]
+#define CRUCIBLE_RETURNS_NONNULL      [[gnu::returns_nonnull]]
+#define CRUCIBLE_MALLOC               [[gnu::malloc]]
+#define CRUCIBLE_ALLOC_SIZE(n)        [[gnu::alloc_size(n)]]
+#define CRUCIBLE_ASSUME_ALIGNED(n)    [[gnu::assume_aligned(n)]]
+
+// ── Tail call ──────────────────────────────────────────────────────
+// Used in state-machine-style dispatch where the called function's
+// return is the enclosing function's return — GCC 16 treats it as a
+// hard requirement (compile error if the call can't be tail-optimized).
+#define CRUCIBLE_MUSTTAIL     [[gnu::musttail]]
+
+// ── Symbol visibility ─────────────────────────────────────────────
+#define CRUCIBLE_API          __attribute__((visibility("default")))
 
 // ═══════════════════════════════════════════════════════════════════
 // Spin-pause hint — the ONLY cross-thread synchronization primitive.
