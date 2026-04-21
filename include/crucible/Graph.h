@@ -289,14 +289,51 @@ struct GraphNode {
     return static_cast<uint8_t>(device_idx);
   }
 
-  // Reduction range expressions (valid only for REDUCTION kind)
-  [[nodiscard]] const Expr** reduction_ranges() const CRUCIBLE_LIFETIMEBOUND { return size + ndim; }
+  // Reduction range expressions (valid only for REDUCTION kind).
+  // pre(nred > 0) ensures the size + ndim offset points into the
+  // reduction-range tail rather than past the array end for a
+  // non-reducing node.
+  [[nodiscard]] const Expr** reduction_ranges() const CRUCIBLE_LIFETIMEBOUND
+      pre (kind == NodeKind::REDUCTION)
+      pre (nred > 0)
+  {
+    return size + ndim;
+  }
 
-  [[nodiscard]] ComputeBody* compute_body() const CRUCIBLE_LIFETIMEBOUND {
+  // body is void* — interpretation depends on `kind`:
+  //   POINTWISE / REDUCTION / SCAN → ComputeBody*
+  //   EXTERN / TEMPLATE            → ExternInfo*
+  //   INPUT / CONSTANT / MUTATION / NOP / SORT → body is null/unused
+  //
+  // The old accessors compute_body() / extern_info() blindly
+  // static_cast<> regardless of kind — a caller with a kind mismatch
+  // silently interprets random arena memory as a ComputeBody or
+  // ExternInfo struct.  Downstream field reads return garbage.
+  //
+  // New pre() contracts reject the mismatch: compute_body() fires if
+  // kind is not in the ComputeBody set; extern_info() fires if kind
+  // is not in the ExternInfo set.  Plus is_* predicates let callers
+  // branch before accessing.
+  [[nodiscard, gnu::pure]] bool has_compute_body() const noexcept {
+    return kind == NodeKind::POINTWISE
+        || kind == NodeKind::REDUCTION
+        || kind == NodeKind::SCAN;
+  }
+  [[nodiscard, gnu::pure]] bool has_extern_info() const noexcept {
+    return kind == NodeKind::EXTERN || kind == NodeKind::TEMPLATE;
+  }
+
+  [[nodiscard]] ComputeBody* compute_body() const CRUCIBLE_LIFETIMEBOUND
+      pre (has_compute_body())
+      pre (body != nullptr)
+  {
     return static_cast<ComputeBody*>(body);
   }
 
-  [[nodiscard]] ExternInfo* extern_info() const CRUCIBLE_LIFETIMEBOUND {
+  [[nodiscard]] ExternInfo* extern_info() const CRUCIBLE_LIFETIMEBOUND
+      pre (has_extern_info())
+      pre (body != nullptr)
+  {
     return static_cast<ExternInfo*>(body);
   }
 };
