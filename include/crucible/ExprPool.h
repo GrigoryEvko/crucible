@@ -175,8 +175,50 @@ constexpr uint16_t composite_flags(
              ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER);
       return 0;
 
-    default:
+    // ABS: propagates input's numeric kind AND guarantees non-negative.
+    // Before this case existed, ABS hit default:return 0 and silently
+    // lost its integer/real classification, breaking downstream
+    // simplifiers that branch on is_integer/is_real.
+    case Op::ABS:
+      if (nargs >= 1)
+        return (args[0]->flags &
+                (ExprFlags::IS_INTEGER | ExprFlags::IS_REAL |
+                 ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER))
+             | ExprFlags::IS_NONNEGATIVE;
       return 0;
+
+    // BITWISE_XOR: integer like AND/OR.  Its absence from the old
+    // switch meant BITWISE_XOR expressions lost IS_INTEGER / IS_REAL /
+    // IS_FINITE / IS_NUMBER — a correctness hole in every simplifier
+    // that consulted the flags.
+    case Op::BITWISE_XOR:
+      return ExprFlags::IS_INTEGER | ExprFlags::IS_REAL |
+             ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
+
+    // ── Atoms reach composite_flags only under caller bug ──
+    //
+    // integer(), float_(), symbol(), bool_true(), bool_false() populate
+    // flags directly via intern_node; composite_flags is invoked only
+    // on composite (nargs>0) construction paths.  Receiving an atom op
+    // here means a caller bypassed the dedicated constructor and fed
+    // raw args through make()/intern_node with atom-kind — a bug.
+    case Op::INTEGER:
+    case Op::FLOAT:
+    case Op::SYMBOL:
+    case Op::BOOL_TRUE:
+    case Op::BOOL_FALSE:
+      std::unreachable();
+
+    // ── NUM_OPS is the enum sentinel ──
+    case Op::NUM_OPS:
+      std::unreachable();
+
+    // Required by -Werror=switch-default.  Every enumerator is handled
+    // above.  Reaching this arm implies the op value was read from
+    // out-of-range memory (cast from a corrupted uint8_t).  A new Op
+    // added without a case here still fires -Werror=switch first.
+    default:
+      std::unreachable();
   }
 }
 
