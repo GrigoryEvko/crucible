@@ -819,6 +819,11 @@ class CRUCIBLE_OWNER KernelCache {
   node->kind = TraceNodeKind::REGION;
   node->ops = ops;
   node->num_ops = num_ops;
+  // Sentinel-based WriteOnce: node was just default-constructed so
+  // content_hash is zero.  A second make_region call on the same
+  // pointer (or any write between here and destruction) violates the
+  // "computed exactly once at construction" invariant.
+  contract_assert(node->content_hash.raw() == 0);
   node->content_hash = compute_content_hash(std::span{ops, num_ops});
   node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
   return node;
@@ -833,12 +838,18 @@ class CRUCIBLE_OWNER KernelCache {
     uint32_t num_ops,
     ContentHash precomputed_hash) noexcept
     pre (num_ops == 0 || ops != nullptr)
+    // Precomputed hash must be the actual hash, not the zero sentinel.
+    // compute_content_hash may legitimately return 0 for a degenerate
+    // input, but the precomputed-hash path is for callers that already
+    // ran the hash computation; supplying 0 is a caller bug.
+    pre (precomputed_hash.raw() != 0 || num_ops == 0)
 {
   auto* node = new (arena.alloc_obj<RegionNode>(a))
       RegionNode{};
   node->kind = TraceNodeKind::REGION;
   node->ops = ops;
   node->num_ops = num_ops;
+  contract_assert(node->content_hash.raw() == 0);
   node->content_hash = precomputed_hash;
   node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
   return node;
