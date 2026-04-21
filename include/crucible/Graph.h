@@ -503,7 +503,11 @@ class CRUCIBLE_OWNER Graph {
   // Dead code elimination. Marks nodes with zero uses and no side
   // effects as DEAD. Propagates: killing a node decrements its
   // inputs' use counts, potentially making them dead too.
-  void eliminate_dead_nodes() {
+  //
+  // Post: every live (non-DEAD) non-MUTATION node has num_uses > 0
+  // OR is referenced as a graph output.  Caller relies on this for
+  // correctness of downstream passes (topological_sort skips DEAD).
+  void eliminate_dead_nodes() noexcept {
     recompute_uses_();
     bool changed = true;
     while (changed) {
