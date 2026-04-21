@@ -73,6 +73,11 @@ class CRUCIBLE_OWNER Arena {
   {
     const size_t s = size.value();
     const size_t a = align.value();
+    // Refined guarantees these at ctor time; [[assume]] propagates the
+    // fact to the optimizer so the alignment arithmetic below compiles
+    // to a single AND instead of a branch on `(a & (a-1)) == 0`.
+    [[assume(s > 0)]];
+    [[assume(a != 0 && (a & (a - 1)) == 0)]];
     const uintptr_t base = std::bit_cast<uintptr_t>(cur_block_);
     const uintptr_t aligned_addr = (base + offset_ + a - 1) & ~(a - 1);
     const size_t aligned = aligned_addr - base;
