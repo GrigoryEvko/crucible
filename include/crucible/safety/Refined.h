@@ -20,6 +20,7 @@
 // at call sites — aliases are what participate in grep and review.
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Linear.h>
 
 #include <compare>
 #include <cstdint>
@@ -148,5 +149,41 @@ template <typename T> using NonNull       = Refined<non_null, T>;
 template <typename T> using Positive      = Refined<positive, T>;
 template <typename T> using NonNegative   = Refined<non_negative, T>;
 template <typename T> using PowerOfTwo    = Refined<power_of_two, T>;
+
+// ── Composition with Linear ─────────────────────────────────────────
+//
+// Two orthogonal orderings compose Linear and Refined, and they mean
+// different things:
+//
+//   LinearRefined<Pred, T> = Linear<Refined<Pred, T>>
+//     The VALUE is refined; the WRAPPER is linear.  Use when the
+//     predicate is about the underlying T (e.g. fd >= 0, ptr != null,
+//     tag < MAX) and ownership must be single-consumer.  This is the
+//     common case — most resources are "handle to a value that
+//     satisfies an invariant".
+//     Construction checks Pred on T at build time; thereafter the
+//     invariant is frozen by the type.  .consume() && yields the
+//     Refined<Pred, T>; caller may then .value() or .into().
+//
+//   RefinedLinear<Pred, T> = Refined<Pred, Linear<T>>
+//     The WRAPPER is refined; the inner VALUE is linear.  Use when
+//     the predicate is about the Linear<> state itself (e.g. "not
+//     moved-from", "holding the exclusive lock") rather than the
+//     underlying T.  Rare in practice; most predicates care about
+//     the value, not the wrapper.
+//
+// Named aliases keep the ordering intentional.  Pick the one whose
+// predicate-target matches your invariant; don't freely reorder.
+
+template <auto Pred, typename T>
+using LinearRefined = Linear<Refined<Pred, T>>;
+
+template <auto Pred, typename T>
+using RefinedLinear = Refined<Pred, Linear<T>>;
+
+// Zero-cost: Linear<Refined<P, T>> is exactly sizeof(T) — Linear is
+// zero-overhead, Refined is zero-overhead, both storage-transparent.
+static_assert(sizeof(LinearRefined<non_null, void*>) == sizeof(void*),
+              "LinearRefined must collapse to sizeof(T)");
 
 } // namespace crucible::safety

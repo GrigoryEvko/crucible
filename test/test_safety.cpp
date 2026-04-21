@@ -62,6 +62,43 @@ static void test_refined() {
     assert(*q.value() == 7);
     int extracted = std::move(p).into();
     assert(extracted == 5);
+
+    // Composition: Linear<Refined<Pred, T>> — owned move-only handle
+    // to a value that satisfies a compile-time invariant.  The common
+    // ordering for resource handles.
+    {
+        // Predicate: fd >= 0.  This is a "load-bearing" invariant — the
+        // rule says name it (code_guide §XVI).  We inline here because
+        // the demo is self-contained; real call sites would use a named
+        // alias near the resource type.
+        constexpr auto is_open_fd = [](int fd) constexpr noexcept {
+            return fd >= 0;
+        };
+
+        static_assert(sizeof(LinearRefined<is_open_fd, int>) == sizeof(int),
+                      "LinearRefined<P, T> must collapse to sizeof(T)");
+
+        // Move-only by Linear's rule; construction proves the invariant.
+        LinearRefined<is_open_fd, int> handle{Refined<is_open_fd, int>{42}};
+        assert(handle.peek().value() == 42);
+
+        // Consume yields the Refined; extract the raw int via into().
+        int raw_fd = std::move(handle).consume().into();
+        assert(raw_fd == 42);
+    }
+
+    // Composition: Refined<Pred, Linear<T>> — predicate about the
+    // Linear wrapper state (rare case).  The predicate runs at
+    // construction and gets a const Linear<T>& via peek().
+    {
+        struct Sentinel { int token{0}; };
+        constexpr auto token_is_valid = [](const Linear<Sentinel>& l) constexpr noexcept {
+            return l.peek().token > 0;
+        };
+        RefinedLinear<token_is_valid, Sentinel> rl{Linear<Sentinel>{Sentinel{7}}};
+        assert(rl.value().peek().token == 7);
+    }
+
     std::printf("  Refined:        ok\n");
 }
 
