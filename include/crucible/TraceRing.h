@@ -266,7 +266,11 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   }
 
   // Only valid when both threads are quiescent (join/stop).
-  void reset() noexcept CRUCIBLE_NO_THREAD_SAFETY {
+  void reset() noexcept CRUCIBLE_NO_THREAD_SAFETY
+      post (head.load(std::memory_order_relaxed) == 0)
+      post (tail.load(std::memory_order_relaxed) == 0)
+      post (cached_tail_.get() == 0)
+  {
     head.store(0, std::memory_order_release);
     tail.store(0, std::memory_order_release);
     // cached_tail_ goes "backward" to 0, which would fire Monotonic's

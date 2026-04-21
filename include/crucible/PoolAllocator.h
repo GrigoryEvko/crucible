@@ -125,7 +125,13 @@ struct CRUCIBLE_OWNER PoolAllocator {
   }
 
   [[gnu::cold]]
-  void destroy() noexcept {
+  void destroy() noexcept
+      post (pool_       == nullptr)
+      post (ptr_table_  == nullptr)
+      post (pool_bytes_ == 0)
+      post (num_slots_  == 0)
+      post (num_external_ == 0)
+  {
     if (pool_) crucible::rt::unregister_hot_region(pool_);
     std::free(pool_);
     std::free(ptr_table_);
