@@ -235,6 +235,145 @@ int main() {
   ContentHash alt_ch = crucible::compute_body_content_hash(alt_body);
   assert(alt_ch != body_ch);
 
+  // ═══════════════════════════════════════════════════════════════════
+  // Recipe-aware content hashing (FORGE.md §18.6)
+  //
+  // Two regions with byte-identical ops but different NumericalRecipes
+  // must produce distinct content_hash values.  Without this, a cached
+  // kernel compiled under one recipe would silently serve lookups
+  // under another recipe — the replay-determinism invariant break
+  // documented in CRUCIBLE.md §10.
+  //
+  // The FORGE.md §18.6 composition rule: content_hash folds
+  // recipe->hash into the accumulator BEFORE the ops stream so that
+  // the recipe contribution propagates through every downstream
+  // wymix for maximum avalanche.  We verify that property here.
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    // Build two NumericalRecipes with distinct semantic fields.
+    // Using crucible::hashed() ensures the `hash` field is populated
+    // to the compute_recipe_hash value — compute_content_hash's
+    // pre(recipe->hash.raw() != 0) would otherwise fire.
+    constexpr crucible::NumericalRecipe recipe_tc = crucible::hashed(
+        crucible::NumericalRecipe{
+            .accum_dtype    = crucible::ScalarType::Float,
+            .out_dtype      = crucible::ScalarType::Half,
+            .reduction_algo = crucible::ReductionAlgo::PAIRWISE,
+            .rounding       = crucible::RoundingMode::RN,
+            .scale_policy   = crucible::ScalePolicy::NONE,
+            .softmax        = crucible::SoftmaxRecurrence::ONLINE_LSE,
+            .determinism    = crucible::ReductionDeterminism::BITEXACT_TC,
+            .flags          = 0,
+            .hash           = {},
+        });
+    constexpr crucible::NumericalRecipe recipe_strict = crucible::hashed(
+        crucible::NumericalRecipe{
+            .accum_dtype    = crucible::ScalarType::Float,
+            .out_dtype      = crucible::ScalarType::Float,
+            .reduction_algo = crucible::ReductionAlgo::PAIRWISE,
+            .rounding       = crucible::RoundingMode::RN,
+            .scale_policy   = crucible::ScalePolicy::NONE,
+            .softmax        = crucible::SoftmaxRecurrence::ONLINE_LSE,
+            .determinism    = crucible::ReductionDeterminism::BITEXACT_STRICT,
+            .flags          = 0,
+            .hash           = {},
+        });
+    assert(recipe_tc.hash != recipe_strict.hash);
+    assert(recipe_tc.hash.raw() != 0);
+    assert(!recipe_tc.hash.is_sentinel());
+    assert(recipe_strict.hash.raw() != 0);
+    assert(!recipe_strict.hash.is_sentinel());
+
+    crucible::TraceEntry recipe_ops[2]{};
+    recipe_ops[0].schema_hash = SchemaHash{0xDEAD};
+    recipe_ops[1].schema_hash = SchemaHash{0xBEEF};
+    const std::span<const crucible::TraceEntry> ops_span{recipe_ops, 2};
+
+    // ─── 1. Backward compat: nullptr == default argument ──────────
+    //
+    // Existing callers that do not pass a recipe must produce the
+    // same hash as explicitly passing nullptr.  Any drift here
+    // would silently break every existing content-hash golden.
+    const ContentHash h_default = crucible::compute_content_hash(ops_span);
+    const ContentHash h_null    = crucible::compute_content_hash(ops_span, nullptr);
+    assert(h_default == h_null);
+
+    // ─── 2. Recipe disambiguation ────────────────────────────────
+    //
+    // Same ops + two distinct recipes → two distinct hashes.  This
+    // is the primary safety property the integration provides.
+    const ContentHash h_tc     = crucible::compute_content_hash(ops_span, &recipe_tc);
+    const ContentHash h_strict = crucible::compute_content_hash(ops_span, &recipe_strict);
+    assert(h_tc != h_strict);
+    assert(h_tc != h_null);
+    assert(h_strict != h_null);
+
+    // ─── 3. Recipe-aware determinism ─────────────────────────────
+    //
+    // Multiple calls with (same ops, same recipe) produce the same
+    // hash — pure function, no hidden state.
+    const ContentHash h_tc_again = crucible::compute_content_hash(ops_span, &recipe_tc);
+    assert(h_tc == h_tc_again);
+
+    // ─── 4. Ops disambiguation preserved under recipe ────────────
+    //
+    // Same recipe + different ops still produces different hashes.
+    // The recipe participation is additive, not overriding.
+    crucible::TraceEntry alt_recipe_ops[2]{};
+    alt_recipe_ops[0].schema_hash = SchemaHash{0xFACE};
+    alt_recipe_ops[1].schema_hash = SchemaHash{0xBEEF};
+    const std::span<const crucible::TraceEntry> alt_ops_span{alt_recipe_ops, 2};
+    const ContentHash h_alt_tc = crucible::compute_content_hash(alt_ops_span, &recipe_tc);
+    assert(h_alt_tc != h_tc);
+
+    // ─── 5. make_region recipe overload ──────────────────────────
+    //
+    // The recipe-aware make_region stores the recipe-disambiguated
+    // hash in the RegionNode's content_hash field, so downstream
+    // KernelCache lookups are naturally partitioned by recipe.
+    crucible::TraceEntry rops_a[2]{};
+    rops_a[0].schema_hash = SchemaHash{0x0A0A};
+    rops_a[1].schema_hash = SchemaHash{0x0B0B};
+    crucible::TraceEntry rops_b[2]{};
+    rops_b[0].schema_hash = SchemaHash{0x0A0A};
+    rops_b[1].schema_hash = SchemaHash{0x0B0B};
+
+    auto* r_tc     = crucible::make_region(test.alloc, arena, rops_a, 2, &recipe_tc);
+    auto* r_strict = crucible::make_region(test.alloc, arena, rops_b, 2, &recipe_strict);
+    auto* r_none   = crucible::make_region(test.alloc, arena, rops_a, 2);
+
+    assert(r_tc != nullptr && r_strict != nullptr && r_none != nullptr);
+    assert(r_tc->content_hash != r_strict->content_hash);
+    assert(r_tc->content_hash != r_none->content_hash);
+    assert(r_strict->content_hash != r_none->content_hash);
+
+    // Recipe-aware hash matches the direct compute_content_hash
+    // path (equivalent computation by construction).
+    const ContentHash direct_tc =
+        crucible::compute_content_hash(std::span<const crucible::TraceEntry>{rops_a, 2},
+                                       &recipe_tc);
+    assert(r_tc->content_hash == direct_tc);
+
+    // ─── 6. KernelCache disambiguation (end-to-end) ──────────────
+    //
+    // Register a fake compiled kernel under r_tc's content_hash; a
+    // lookup under r_strict's (same ops, different recipe) content
+    // hash must miss.  This is the core safety property: recipe
+    // divergence at the hash level → no cache collision.
+    crucible::KernelCache rcache;
+    struct FakeRecipeKernel { int tag; };
+    FakeRecipeKernel tc_kernel{1};
+    assert(rcache.insert(r_tc->content_hash,
+                         reinterpret_cast<crucible::CompiledKernel*>(&tc_kernel))
+               .has_value());
+    assert(rcache.lookup(r_tc->content_hash) ==
+           reinterpret_cast<crucible::CompiledKernel*>(&tc_kernel));
+    // Critical: lookup under the different-recipe content_hash MUST miss.
+    assert(rcache.lookup(r_strict->content_hash) == nullptr);
+    // Lookup under the no-recipe content_hash ALSO misses.
+    assert(rcache.lookup(r_none->content_hash) == nullptr);
+  }
+
   std::printf("test_merkle_dag: all tests passed\n");
   return 0;
 }

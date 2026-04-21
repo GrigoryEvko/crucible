@@ -21,6 +21,7 @@
 #include <crucible/CKernel.h>
 #include <crucible/Expr.h>
 #include <crucible/IterationDetector.h>
+#include <crucible/NumericalRecipe.h>
 #include <crucible/Reflect.h>
 #include <crucible/TraceRing.h>
 #include <crucible/safety/PublishOnce.h>
@@ -612,7 +613,54 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 // Both use detail::fmix64 from Expr.h.
 // ═══════════════════════════════════════════════════════════════════
 
-[[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(std::span<const TraceEntry> ops) noexcept {
+// compute_content_hash — IR001 RegionNode content identity.
+//
+// Folds schema + input-tensor metadata + scalar args into a 64-bit hash
+// used as a KernelCache key and as a component of the containing
+// BranchNode / LoopNode Merkle hash.
+//
+// ── Recipe participation (FORGE.md §18.6) ──────────────────────────
+//
+// When `recipe` is non-null, the recipe's Family-A hash is mixed into
+// the accumulator BEFORE the ops loop.  This disambiguates two regions
+// with byte-identical ops but different numerical recipes — a user who
+// switches from f16_f32accum_tc to f32_strict gets a distinct
+// content_hash and therefore a distinct KernelCache slot.  Without
+// this participation, a cached kernel compiled under one recipe would
+// silently serve lookups under a different recipe, breaking the
+// replay-determinism invariant of CRUCIBLE.md §10.
+//
+// Backward compatibility: the default argument is nullptr, which fully
+// preserves the previous hash stream.  Every existing caller that does
+// not explicitly pin a recipe produces exactly the same ContentHash
+// values as before — all content-hash goldens in test_merkle_dag,
+// test_serialize, and the bench harness remain stable.
+//
+// Safety guards:
+//   pre(recipe == nullptr || recipe->hash.raw() != 0)
+//     Default-constructed RecipeHash has raw() == 0.  A caller passing
+//     a recipe with hash==0 indicates the recipe was not interned via
+//     RecipePool (which is the only path that populates the hash).
+//     Accepting it would fold zero into the accumulator and the
+//     resulting ContentHash would collide with the nullptr path —
+//     silently defeating the safety the recipe parameter is supposed
+//     to provide.
+//   pre(recipe == nullptr || !recipe->hash.is_sentinel())
+//     UINT64_MAX is reserved as an end-of-region marker in RegionNode
+//     traversal (see Types.h RecipeHash::sentinel()).  A real recipe
+//     must never produce it; rejecting it here is belt-and-suspenders.
+//
+// Future: Phase E (FORGE.md §10) lowers IR001 regions into IR002
+// KernelNodes where the recipe is a proper stored field and
+// KernelContentHash includes recipe->hash as a first-class
+// composition.  This IR001-level integration is the bridge until
+// KernelNode exists.
+[[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(
+    std::span<const TraceEntry> ops,
+    const NumericalRecipe* recipe = nullptr) noexcept
+    pre (recipe == nullptr || recipe->hash.raw() != 0)
+    pre (recipe == nullptr || !recipe->hash.is_sentinel())
+{
   // XOR-fold content hash: for each tensor, fold all dimensions into a
   // single accumulator via independent multiplies (sizes[d] * kDimMix[d]),
   // then one wymix per tensor. Breaks the serial wymix-per-dimension
@@ -620,6 +668,23 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
   // + 1 wymix (~5 cy) instead of ndim × wymix (~5 cy each, serial).
   // For ndim=4: ~13 cy vs ~22 cy per tensor (~40% faster).
   uint64_t h = 0x9E3779B97F4A7C15ULL;
+
+  // Fold the recipe's Family-A hash into the accumulator BEFORE the
+  // ops loop.  Placement matters: folding before the ops iteration
+  // means the recipe contribution propagates through every subsequent
+  // wymix, maximizing avalanche — two recipes differing in a single
+  // bit produce hashes differing in ~32 bits across all subsequent
+  // fields.  A post-hoc fold (after the loop) would give less
+  // avalanche on short op sequences.
+  if (recipe != nullptr) {
+    // [[assume]] lets the optimizer treat recipe->hash.raw() as a
+    // non-zero, non-sentinel uint64_t inside the branch — the pre
+    // clauses above have already rejected the bad values, so the
+    // downstream wymix can skip any redundant tests.
+    [[assume(recipe->hash.raw() != 0)]];
+    [[assume(recipe->hash.raw() != UINT64_MAX)]];
+    h = detail::wymix(h, recipe->hash.raw());
+  }
 
   for (const auto& op : ops) {
     h = detail::wymix(h, op.schema_hash.raw());
@@ -1001,6 +1066,55 @@ class CRUCIBLE_OWNER KernelCache {
   node->num_ops = num_ops;
   contract_assert(node->content_hash.raw() == 0);
   node->content_hash = precomputed_hash;
+  node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
+  return node;
+}
+
+// Recipe-aware overload.  Computes a recipe-disambiguated content_hash
+// by passing `recipe` through to compute_content_hash.  Two regions
+// with identical ops but different recipes receive distinct
+// content_hashes and therefore distinct KernelCache slots — the
+// mechanism that prevents silent cross-recipe pollution of a cached
+// compile.
+//
+// The recipe parameter is a non-owning const pointer; callers retain
+// ownership (typically in a RecipePool).  null_recipe is equivalent
+// to the no-recipe overload above (included for call-site symmetry;
+// the pre() below rejects an explicitly-passed null).
+//
+// Safety guards:
+//   pre(recipe != nullptr)          — use the no-recipe overload
+//                                      when no recipe applies; this
+//                                      overload exists specifically to
+//                                      carry a recipe commitment.
+//   pre(recipe->hash.raw() != 0)    — default-constructed RecipeHash
+//                                      indicates the recipe was never
+//                                      interned through RecipePool.
+//   pre(!recipe->hash.is_sentinel())— UINT64_MAX reserved per Types.h.
+//
+// Note: RegionNode does NOT currently store the recipe pointer — the
+// layout lock at 80B predates Phase E KernelNode (§18.2).  The recipe
+// participates in the computed content_hash and is then released;
+// callers who need to recover the recipe later must track it out-of-
+// band (or upgrade to IR002 KernelNode when Phase E lands).
+[[nodiscard]] inline RegionNode* make_region(
+    fx::Alloc a,
+    Arena& arena CRUCIBLE_LIFETIMEBOUND,
+    TraceEntry* ops,
+    uint32_t num_ops,
+    const NumericalRecipe* recipe) noexcept
+    pre (num_ops == 0 || ops != nullptr)
+    pre (recipe != nullptr)
+    pre (recipe->hash.raw() != 0)
+    pre (!recipe->hash.is_sentinel())
+{
+  auto* node = new (arena.alloc_obj<RegionNode>(a))
+      RegionNode{};
+  node->kind = TraceNodeKind::REGION;
+  node->ops = ops;
+  node->num_ops = num_ops;
+  contract_assert(node->content_hash.raw() == 0);
+  node->content_hash = compute_content_hash(std::span{ops, num_ops}, recipe);
   node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
   return node;
 }
