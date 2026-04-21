@@ -64,9 +64,9 @@ class Vigil {
     // ─── Construction / Destruction ────────────────────────────────
 
     // Default constructor: no persistence, no distributed context.
-    Vigil() : Vigil(Config{}) {}
+    [[gnu::cold]] Vigil() : Vigil(Config{}) {}
 
-    explicit Vigil(Config cfg) : cfg_(std::move(cfg)) {
+    [[gnu::cold]] explicit Vigil(Config cfg) : cfg_(std::move(cfg)) {
         ring_ = std::make_unique<TraceRing>();
         ring_->reset();
 
@@ -183,22 +183,26 @@ class Vigil {
     // Relaxed: mode_ is set and read primarily by fg thread. Tests spin
     // on it cross-thread but only need eventual visibility (relaxed
     // guarantees this). The real synchronization is pending_region_ acquire.
-    [[nodiscard]] Mode mode() const {
+    // Note: these cross-thread queries load atomics — not gnu::pure
+    // (the atomic load is not side-effect-free from the optimizer's
+    // POV; another thread may change the value between loads, so CSE
+    // would be incorrect).  noexcept only.
+    [[nodiscard]] Mode mode() const noexcept {
         return mode_.load(std::memory_order_relaxed);
     }
-    [[nodiscard]] bool is_compiled() const { return mode() == Mode::COMPILED; }
+    [[nodiscard]] bool is_compiled() const noexcept { return mode() == Mode::COMPILED; }
 
-    [[nodiscard]] const RegionNode* active_region() const {
+    [[nodiscard]] const RegionNode* active_region() const noexcept {
         return bg_.active_region.load(std::memory_order_acquire);
     }
 
     // Relaxed: monotonic fg-thread counter. bg thread never reads it.
     // Cross-thread readers (tests, persist) only need an approximate value.
-    [[nodiscard]] uint64_t current_step() const {
+    [[nodiscard]] uint64_t current_step() const noexcept {
         return step_.load(std::memory_order_relaxed);
     }
 
-    [[nodiscard]] ContentHash head_hash() const {
+    [[nodiscard]] ContentHash head_hash() const noexcept {
         return cipher_.has_value() ? cipher_->head() : ContentHash{};
     }
 

@@ -40,7 +40,7 @@ struct Expr {
     return std::bit_cast<double>(payload);
   }
 
-  [[nodiscard]] const char* as_symbol_name() const {
+  [[nodiscard]] const char* as_symbol_name() const noexcept CRUCIBLE_LIFETIMEBOUND {
     return std::bit_cast<const char*>(payload);
   }
 

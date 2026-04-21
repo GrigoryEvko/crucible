@@ -313,7 +313,8 @@ struct BackgroundThread {
 
   // ── PtrMap operations ─────────────────────────────────────────────
 
-  [[nodiscard]] static uint32_t hash_ptr(void* p) {
+  // gnu::const: depends only on the pointer value, no memory access.
+  [[nodiscard, gnu::const]] static uint32_t hash_ptr(void* p) noexcept {
     return static_cast<uint32_t>(
         reinterpret_cast<uintptr_t>(p) * 0x9E3779B97F4A7C15ULL >> 32);
   }
