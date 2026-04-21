@@ -138,7 +138,14 @@ struct CrucibleContext {
   //
   // Hot path (MATCH, non-last): two L1d comparisons + increment + pre-cache.
   // Cold path (COMPLETE): engine auto-resets for the next iteration.
-  [[nodiscard]] CRUCIBLE_INLINE ReplayStatus
+  //
+  // CRUCIBLE_HOT + gnu::flatten: this function is called per-op in
+  // COMPILED mode — same cadence as Vigil::dispatch_op.  gnu::hot
+  // promotes it to .text.hot; gnu::flatten tells the compiler to
+  // inline every call inside the function body (the engine_.advance
+  // call and the counter .bump() calls), eliminating the frame on
+  // the hot path.
+  [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus
   advance(SchemaHash schema_hash, ShapeHash shape_hash)
       pre (mode_ == ContextMode::COMPILED)
   {
@@ -167,13 +174,18 @@ struct CrucibleContext {
   }
 
   // ── Output/input pointer forwarding ──
-  [[nodiscard]] CRUCIBLE_INLINE void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
+  //
+  // CRUCIBLE_HOT: called once per op-output/op-input after every
+  // successful advance().  Binds ATen output tensors to their
+  // memory-plan slots.  Not gnu::flatten — the delegate already
+  // always_inlines the engine call.
+  [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
       pre (mode_ == ContextMode::COMPILED)
   {
     return engine_.output_ptr(j);
   }
 
-  [[nodiscard]] CRUCIBLE_INLINE void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
+  [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
       pre (mode_ == ContextMode::COMPILED)
   {
     return engine_.input_ptr(j);
@@ -268,7 +280,7 @@ struct CrucibleContext {
   // them to the engine + pool typed methods, so the entire dispatch
   // chain is type-state-checked end-to-end.
 
-  [[nodiscard]] CRUCIBLE_INLINE ReplayStatus
+  [[nodiscard, gnu::flatten]] CRUCIBLE_HOT ReplayStatus
   advance(SchemaHash schema_hash, ShapeHash shape_hash,
           CompiledView const&)
   {
@@ -288,14 +300,14 @@ struct CrucibleContext {
     }
   }
 
-  [[nodiscard]] CRUCIBLE_INLINE void* output_ptr(uint16_t j, CompiledView const&) const
+  [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, CompiledView const&) const
       CRUCIBLE_LIFETIMEBOUND
   {
     auto av = const_cast<ReplayEngine&>(engine_).mint_active_view();
     return engine_.output_ptr(j, av);
   }
 
-  [[nodiscard]] CRUCIBLE_INLINE void* input_ptr(uint16_t j, CompiledView const&) const
+  [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j, CompiledView const&) const
       CRUCIBLE_LIFETIMEBOUND
   {
     auto av = const_cast<ReplayEngine&>(engine_).mint_active_view();
