@@ -34,6 +34,7 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
+#include <crucible/safety/Tagged.h>
 
 #include <cassert>
 #include <cstdint>
@@ -53,6 +54,24 @@ enum class ReplayStatus : uint8_t {
 // since "matched" is a transient per-op state, not a stable scope.
 namespace engine_state {
     struct Active {};
+}
+
+// Role tags for OpIndex values returned by ReplayEngine.
+//   Matched  — the index of the last op that passed the guard check.
+//              Points at a live entry in ops_[]; safe to dereference
+//              for current_entry() lookup.
+//   Diverged — the index where the guard check failed.  May equal
+//              num_ops (inclusive upper bound) if divergence happened
+//              on the LAST op of the region.  Callers that index
+//              ops_[diverged] must first check diverged < num_ops.
+//
+// The tags distinguish two OpIndex values with identical underlying
+// type but distinct meanings.  A caller that swaps them silently
+// reports divergence at the previous op, or re-submits a matched op
+// for error recovery.
+namespace op_role {
+    struct Matched {};
+    struct Diverged {};
 }
 
 struct ReplayEngine {
@@ -198,9 +217,21 @@ struct ReplayEngine {
     return *current_;
   }
 
-  [[nodiscard]] OpIndex matched_op_index() const {
+  // matched_op_index() returns the index of the op the engine MATCHED
+  // last (the one now pointed at by current_).  diverged_op_index()
+  // returns the index where the engine FAILED to match — where
+  // divergence was detected.  These are semantically distinct values
+  // that happen to share the same underlying type (OpIndex); a caller
+  // mixing them up would, e.g., report divergence at the *previous*
+  // op or re-submit the matched op as divergent.  The op_role tags
+  // discriminate the two at the type level — an unwrapped OpIndex
+  // cannot substitute for either and a Diverged-tagged value cannot
+  // substitute for Matched.
+  [[nodiscard]] crucible::safety::Tagged<OpIndex, op_role::Matched>
+  matched_op_index() const {
     assert(current_ && "no matched entry");
-    return OpIndex{static_cast<uint32_t>(current_ - ops_)};
+    return crucible::safety::Tagged<OpIndex, op_role::Matched>{
+        OpIndex{static_cast<uint32_t>(current_ - ops_)}};
   }
 
   // Diverged op index — strictly in [0, num_ops()] after advance()
@@ -221,6 +252,15 @@ struct ReplayEngine {
     return crucible::safety::Refined<
         crucible::safety::bounded_above<uint32_t{1u << 22}>,
         uint32_t>{static_cast<uint32_t>(cursor_ - ops_)};
+  }
+
+  // Tagged diverged accessor.  Use in preference to the untyped one
+  // where the value flows into structures/parameters that could
+  // legitimately also receive matched_op_index().
+  [[nodiscard]] crucible::safety::Tagged<OpIndex, op_role::Diverged>
+  diverged_op_index_tagged() const {
+    return crucible::safety::Tagged<OpIndex, op_role::Diverged>{
+        OpIndex{static_cast<uint32_t>(cursor_ - ops_)}};
   }
 
   // Untyped legacy accessor — kept for error-message producers that
