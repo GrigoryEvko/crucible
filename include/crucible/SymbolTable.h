@@ -62,7 +62,8 @@ class CRUCIBLE_OWNER SymbolTable {
 
   // Register a new symbol. Returns the assigned ID.
   // Caller provides assumptions as ExprFlags bits (IS_INTEGER, IS_POSITIVE, etc).
-  [[nodiscard]] SymbolId add(SymKind kind, uint16_t expr_flags, bool is_backed = true) {
+  // gnu::cold: startup-only, invoked once per symbol at DAG build time.
+  [[nodiscard, gnu::cold]] SymbolId add(SymKind kind, uint16_t expr_flags, bool is_backed = true) {
     auto id = SymbolId{static_cast<uint32_t>(entries_.size())};
     SymbolEntry e{};
     e.hint = kNoHint;
@@ -128,59 +129,59 @@ class CRUCIBLE_OWNER SymbolTable {
     return entries_[id.raw()];
   }
 
-  [[nodiscard]] bool has_hint(SymbolId id) const {
+  [[nodiscard, gnu::pure]] bool has_hint(SymbolId id) const noexcept {
     return entries_[id.raw()].sym_flags & SymFlags::HAS_HINT;
   }
 
-  [[nodiscard]] int64_t hint(SymbolId id) const {
+  [[nodiscard, gnu::pure]] int64_t hint(SymbolId id) const noexcept {
     return entries_[id.raw()].hint;
   }
 
-  [[nodiscard]] double hint_float(SymbolId id) const {
+  [[nodiscard, gnu::pure]] double hint_float(SymbolId id) const noexcept {
     return bitcast_to_double(entries_[id.raw()].hint);
   }
 
-  [[nodiscard]] int64_t lower(SymbolId id) const {
+  [[nodiscard, gnu::pure]] int64_t lower(SymbolId id) const noexcept {
     return entries_[id.raw()].range_lower;
   }
 
-  [[nodiscard]] int64_t upper(SymbolId id) const {
+  [[nodiscard, gnu::pure]] int64_t upper(SymbolId id) const noexcept {
     return entries_[id.raw()].range_upper;
   }
 
-  [[nodiscard]] bool is_size_like(SymbolId id) const {
+  [[nodiscard, gnu::pure]] bool is_size_like(SymbolId id) const noexcept {
     return entries_[id.raw()].sym_flags & SymFlags::IS_SIZE_LIKE;
   }
 
-  [[nodiscard]] bool is_backed(SymbolId id) const {
+  [[nodiscard, gnu::pure]] bool is_backed(SymbolId id) const noexcept {
     return entries_[id.raw()].sym_flags & SymFlags::IS_BACKED;
   }
 
-  [[nodiscard]] SymKind kind(SymbolId id) const {
+  [[nodiscard, gnu::pure]] SymKind kind(SymbolId id) const noexcept {
     return entries_[id.raw()].kind;
   }
 
-  [[nodiscard]] uint16_t expr_flags(SymbolId id) const {
+  [[nodiscard, gnu::pure]] uint16_t expr_flags(SymbolId id) const noexcept {
     return entries_[id.raw()].expr_flags;
   }
 
   // Range check: is value guaranteed to be in [lo, hi]?
-  [[nodiscard]] bool range_contains(SymbolId id, int64_t lo, int64_t hi) const {
+  [[nodiscard, gnu::pure]] bool range_contains(SymbolId id, int64_t lo, int64_t hi) const noexcept {
     const auto& e = entries_[id.raw()];
     return e.range_lower >= lo && e.range_upper <= hi;
   }
 
   // Is the symbol guaranteed positive (lower bound > 0)?
-  [[nodiscard]] bool is_positive(SymbolId id) const {
+  [[nodiscard, gnu::pure]] bool is_positive(SymbolId id) const noexcept {
     return entries_[id.raw()].range_lower > 0;
   }
 
   // Is the symbol guaranteed nonnegative (lower bound >= 0)?
-  [[nodiscard]] bool is_nonnegative(SymbolId id) const {
+  [[nodiscard, gnu::pure]] bool is_nonnegative(SymbolId id) const noexcept {
     return entries_[id.raw()].range_lower >= 0;
   }
 
-  [[nodiscard]] size_t size() const {
+  [[nodiscard, gnu::pure]] size_t size() const noexcept {
     return entries_.size();
   }
 
