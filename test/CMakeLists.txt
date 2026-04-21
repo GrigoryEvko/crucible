@@ -299,6 +299,7 @@ crucible_test(test_compute_vit)
 crucible_test(test_end_to_end)
 crucible_test(test_philox)
 crucible_test(test_region_cache)
+crucible_test(test_numerical_recipe)
 
 # bench harness unit tests — include bench/ for bench_harness.h + bpf_senses.h.
 # CRUCIBLE_BENCH_HAVE_BPF is intentionally unset: the test exercises only
