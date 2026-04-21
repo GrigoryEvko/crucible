@@ -513,7 +513,7 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 // Both use detail::fmix64 from Expr.h.
 // ═══════════════════════════════════════════════════════════════════
 
-[[nodiscard]] inline ContentHash compute_content_hash(std::span<const TraceEntry> ops) {
+[[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(std::span<const TraceEntry> ops) noexcept {
   // XOR-fold content hash: for each tensor, fold all dimensions into a
   // single accumulator via independent multiplies (sizes[d] * kDimMix[d]),
   // then one wymix per tensor. Breaks the serial wymix-per-dimension
@@ -551,7 +551,7 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
   return ContentHash{detail::fmix64(h)};
 }
 
-[[nodiscard]] inline MerkleHash compute_merkle_hash(TraceNode* node) {
+[[nodiscard, gnu::pure]] inline MerkleHash compute_merkle_hash(TraceNode* node) noexcept {
   if (!node)
     return MerkleHash{};
 
