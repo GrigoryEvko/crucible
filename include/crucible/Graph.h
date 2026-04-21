@@ -266,6 +266,29 @@ struct GraphNode {
 
   [[nodiscard]] bool is_dead() const { return flags & NodeFlags::DEAD; }
 
+  // ── Device placement queries ──
+  //
+  // device_idx uses a sentinel-based encoding: -1 = CPU, 0+ = CUDA device.
+  // Raw int8_t access is error-prone (every caller must remember the
+  // sentinel, and comparing device_idx < 0 as "CPU" reads like a bug).
+  // These accessors make the intent explicit.
+  static constexpr int8_t kCpuDeviceIdx = -1;
+
+  [[nodiscard, gnu::pure]] bool is_cpu() const noexcept {
+    return device_idx == kCpuDeviceIdx;
+  }
+  [[nodiscard, gnu::pure]] bool is_gpu() const noexcept {
+    return device_idx >= 0;
+  }
+  // Returns the CUDA device index (0+).  pre-condition enforces the
+  // "is_gpu" invariant, so calling on a CPU node fires the contract
+  // rather than returning the -1 sentinel as a uint8_t.
+  [[nodiscard, gnu::pure]] uint8_t gpu_idx() const noexcept
+      pre (is_gpu())
+  {
+    return static_cast<uint8_t>(device_idx);
+  }
+
   // Reduction range expressions (valid only for REDUCTION kind)
   [[nodiscard]] const Expr** reduction_ranges() const CRUCIBLE_LIFETIMEBOUND { return size + ndim; }
 
