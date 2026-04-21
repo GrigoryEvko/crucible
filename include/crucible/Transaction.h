@@ -134,7 +134,7 @@ class TransactionLog {
     // Roll back: restore the most recent SUPERSEDED transaction to ACTIVE.
     // Marks the current ACTIVE as ROLLED_BACK.
     // Returns true if a rollback was possible.
-    bool rollback() {
+    [[nodiscard]] bool rollback() noexcept {
         Transaction* prev = previous();
         if (!prev) return false;
 
