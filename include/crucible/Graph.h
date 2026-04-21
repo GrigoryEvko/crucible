@@ -745,7 +745,7 @@ class CRUCIBLE_OWNER Graph {
   }
 
   // Count nodes in a specific fusion group
-  [[nodiscard]] uint32_t group_size(uint32_t group_id) const {
+  [[nodiscard, gnu::pure]] uint32_t group_size(uint32_t group_id) const noexcept {
     uint32_t count = 0;
     for (uint32_t i = 0; i < num_nodes_; ++i)
       if (nodes_[i]->fused_group_id == group_id) ++count;
@@ -760,7 +760,7 @@ class CRUCIBLE_OWNER Graph {
       nodes_[i]->flags &= CLEAR_VISITED;
   }
 
-  [[nodiscard]] uint32_t count_live() const {
+  [[nodiscard, gnu::pure]] uint32_t count_live() const noexcept {
     uint32_t count = 0;
     for (uint32_t i = 0; i < num_nodes_; ++i) {
       if (!(nodes_[i]->flags & NodeFlags::DEAD))
@@ -771,25 +771,29 @@ class CRUCIBLE_OWNER Graph {
 
   // ── Accessors ──────────────────────────────────────────────────
 
-  [[nodiscard]] GraphNode* node(NodeId id) const CRUCIBLE_LIFETIMEBOUND {
-    assert(id.raw() < num_nodes_);
+  [[nodiscard, gnu::pure]] GraphNode* node(NodeId id) const noexcept CRUCIBLE_LIFETIMEBOUND
+      pre (id.raw() < num_nodes_)
+  {
+    [[assume(id.raw() < num_nodes_)]];
     return nodes_[id.raw()];
   }
 
-  [[nodiscard]] GraphNode* node(uint32_t id) const CRUCIBLE_LIFETIMEBOUND {
-    assert(id < num_nodes_);
+  [[nodiscard, gnu::pure]] GraphNode* node(uint32_t id) const noexcept CRUCIBLE_LIFETIMEBOUND
+      pre (id < num_nodes_)
+  {
+    [[assume(id < num_nodes_)]];
     return nodes_[id];
   }
 
-  [[nodiscard]] uint32_t num_nodes() const { return num_nodes_; }
-  [[nodiscard]] uint32_t num_graph_inputs() const { return num_inputs_; }
-  [[nodiscard]] uint32_t num_graph_outputs() const { return num_outputs_; }
-  [[nodiscard]] const NodeId* graph_input_ids() const CRUCIBLE_LIFETIMEBOUND { return input_ids_; }
-  [[nodiscard]] const NodeId* graph_output_ids() const CRUCIBLE_LIFETIMEBOUND { return output_ids_; }
+  [[nodiscard, gnu::pure]] uint32_t num_nodes() const noexcept { return num_nodes_; }
+  [[nodiscard, gnu::pure]] uint32_t num_graph_inputs() const noexcept { return num_inputs_; }
+  [[nodiscard, gnu::pure]] uint32_t num_graph_outputs() const noexcept { return num_outputs_; }
+  [[nodiscard, gnu::pure]] const NodeId* graph_input_ids() const noexcept CRUCIBLE_LIFETIMEBOUND { return input_ids_; }
+  [[nodiscard, gnu::pure]] const NodeId* graph_output_ids() const noexcept CRUCIBLE_LIFETIMEBOUND { return output_ids_; }
 
-  [[nodiscard]] ExprPool* pool() const CRUCIBLE_LIFETIMEBOUND { return pool_; }
-  [[nodiscard]] SymbolTable* tab() const CRUCIBLE_LIFETIMEBOUND { return tab_; }
-  [[nodiscard]] Arena& arena() CRUCIBLE_LIFETIMEBOUND { return arena_; }
+  [[nodiscard, gnu::pure]] ExprPool* pool() const noexcept CRUCIBLE_LIFETIMEBOUND { return pool_; }
+  [[nodiscard, gnu::pure]] SymbolTable* tab() const noexcept CRUCIBLE_LIFETIMEBOUND { return tab_; }
+  [[nodiscard]] Arena& arena() noexcept CRUCIBLE_LIFETIMEBOUND { return arena_; }
 
  private:
   // Allocate a zeroed, 64-byte-aligned GraphNode
