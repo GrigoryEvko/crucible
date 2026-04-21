@@ -99,22 +99,28 @@ struct CrucibleContext {
   advance(SchemaHash schema_hash, ShapeHash shape_hash)
       pre (mode_ == ContextMode::COMPILED)
   {
-    auto status = engine_.advance(schema_hash, shape_hash);
-
-    if (status == ReplayStatus::MATCH) [[likely]]
-      return ReplayStatus::MATCH;
-
-    if (status == ReplayStatus::COMPLETE) [[unlikely]] {
-      compiled_iterations_.bump();
-      // Auto-reset for next iteration. current_ survives reset
-      // so output_ptr/input_ptr remain valid until next advance().
-      engine_.reset();
-      return ReplayStatus::COMPLETE;
+    // Exhaustive switch: a new ReplayStatus variant added to the enum
+    // would previously have silently been routed to the DIVERGED branch
+    // (the old if/else-if fell through anything that wasn't MATCH or
+    // COMPLETE).  Now -Werror=switch fires, forcing an explicit
+    // decision on what the new status means for compiled_iterations_ /
+    // diverged_count_ bookkeeping.
+    switch (engine_.advance(schema_hash, shape_hash)) {
+      case ReplayStatus::MATCH:
+        return ReplayStatus::MATCH;
+      case ReplayStatus::COMPLETE: {
+        compiled_iterations_.bump();
+        // Auto-reset for next iteration. current_ survives reset
+        // so output_ptr/input_ptr remain valid until next advance().
+        engine_.reset();
+        return ReplayStatus::COMPLETE;
+      }
+      case ReplayStatus::DIVERGED:
+        diverged_count_.bump();
+        return ReplayStatus::DIVERGED;
+      default:
+        std::unreachable();
     }
-
-    // DIVERGED
-    diverged_count_.bump();
-    return ReplayStatus::DIVERGED;
   }
 
   // ── Output/input pointer forwarding ──
@@ -224,16 +230,19 @@ struct CrucibleContext {
           CompiledView const&)
   {
     auto av = engine_.mint_active_view();
-    auto status = engine_.advance(schema_hash, shape_hash, av);
-    if (status == ReplayStatus::MATCH) [[likely]]
-      return ReplayStatus::MATCH;
-    if (status == ReplayStatus::COMPLETE) [[unlikely]] {
-      compiled_iterations_.bump();
-      engine_.reset(av);
-      return ReplayStatus::COMPLETE;
+    switch (engine_.advance(schema_hash, shape_hash, av)) {
+      case ReplayStatus::MATCH:
+        return ReplayStatus::MATCH;
+      case ReplayStatus::COMPLETE:
+        compiled_iterations_.bump();
+        engine_.reset(av);
+        return ReplayStatus::COMPLETE;
+      case ReplayStatus::DIVERGED:
+        diverged_count_.bump();
+        return ReplayStatus::DIVERGED;
+      default:
+        std::unreachable();
     }
-    diverged_count_.bump();
-    return ReplayStatus::DIVERGED;
   }
 
   [[nodiscard]] CRUCIBLE_INLINE void* output_ptr(uint16_t j, CompiledView const&) const
