@@ -469,7 +469,7 @@ void crucibleFallback(
     entry.num_inputs      = counts.inputs;
     entry.num_outputs     = counts.outputs;
     entry.num_scalar_args = scalars.count;
-    entry.grad_enabled    = c10::GradMode::is_enabled();
+    entry.set_grad_enabled(c10::GradMode::is_enabled());
 
     // Pack op_flags: 5 bits of per-op context.
     uint8_t flags = 0;

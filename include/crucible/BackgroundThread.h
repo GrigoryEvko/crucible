@@ -680,7 +680,7 @@ struct BackgroundThread {
       te.callsite_hash = callsite_data[i];
       te.num_inputs = re.num_inputs;
       te.num_outputs = re.num_outputs;
-      te.grad_enabled = re.grad_enabled;
+      te.grad_enabled = re.grad_enabled();
       te.kernel_id = classify_kernel(re.schema_hash);
 
       // Unpack op_flags: 5 bits set by the Vessel fallback at dispatch time.

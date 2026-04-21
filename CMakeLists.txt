@@ -156,9 +156,14 @@ if(CRUCIBLE_WERROR)
   # -fsanitize=thread (TSan can't model fences).  Our SPSC rings use
   # a relaxed-load + acquire-fence fast path; pattern is sound per the
   # C++ model.  Warning remains visible; just not an error.
+  #
+  # -Wno-error=suggest-attribute=cold: GCC 16's heuristic flags test
+  # main() functions as cold under TSan instrumentation.  The code
+  # guide lists -Wsuggest-* as suggestions, not errors.
   target_compile_options(crucible PUBLIC
     $<$<NOT:$<BOOL:$<TARGET_PROPERTY:CRUCIBLE_NO_WERROR>>>:-Werror
-      -Wno-error=tsan>)
+      -Wno-error=tsan
+      -Wno-error=suggest-attribute=cold>)
 endif()
 
 # ═══════════════════════════════════════════════════════════════

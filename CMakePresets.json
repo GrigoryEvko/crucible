@@ -7,11 +7,11 @@
       "displayName": "GCC 16 + libstdc++ 16 (C++26)",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
-        "CMAKE_CXX_COMPILER": "/home/grigory/.local/gcc16/usr/bin/g++",
+        "CMAKE_CXX_COMPILER": "$env{HOME}/.local/gcc16/usr/bin/g++",
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXE_LINKER_FLAGS": "-Wl,-rpath,/home/grigory/.local/gcc16/usr/lib64",
-        "CMAKE_SHARED_LINKER_FLAGS": "-Wl,-rpath,/home/grigory/.local/gcc16/usr/lib64",
-        "CMAKE_MODULE_LINKER_FLAGS": "-Wl,-rpath,/home/grigory/.local/gcc16/usr/lib64",
+        "CMAKE_EXE_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16/usr/lib64:$env{HOME}/.local/gcc16/lib64",
+        "CMAKE_SHARED_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16/usr/lib64:$env{HOME}/.local/gcc16/lib64",
+        "CMAKE_MODULE_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16/usr/lib64:$env{HOME}/.local/gcc16/lib64",
         "CRUCIBLE_WERROR": "ON"
       }
     },

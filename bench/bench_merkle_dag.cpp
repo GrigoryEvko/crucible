@@ -266,7 +266,7 @@ int main(int argc, char* argv[]) {
             e.num_inputs      = static_cast<uint16_t>(1 + (bench_rand() % 3));
             e.num_outputs     = static_cast<uint16_t>(1 + (bench_rand() % 2));
             e.num_scalar_args = static_cast<uint16_t>(bench_rand() % 3);
-            e.grad_enabled    = true;
+            e.set_grad_enabled(true);
 
             const uint16_t total_metas = e.num_inputs + e.num_outputs;
             TensorMeta metas[8]{};

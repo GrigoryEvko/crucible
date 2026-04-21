@@ -38,13 +38,21 @@ namespace crucible {
 //   bit 1   : IS_MUTABLE     — schema.is_mutable() (in-place / out= op)
 //   bit 2-3 : TRAINING_PHASE — 0 forward, 1 backward, 2 optimizer, 3 other
 //   bit 4   : TORCH_FUNCTION — DispatchKey::Python active
-//   bit 5-7 : reserved
+//   bit 5   : GRAD_ENABLED   — GradMode::is_enabled() (folded from its
+//                              own byte to free a slot for scalar types)
+//   bit 6-7 : SCALAR4_TYPE   — 2 bits encoding the type of the 5th
+//                              inline scalar (slot index 4).  Paired
+//                              with Entry::scalar_types byte which
+//                              holds types for slots 0..3.
 namespace op_flag {
 inline constexpr uint8_t INFERENCE_MODE = 1 << 0;
 inline constexpr uint8_t IS_MUTABLE     = 1 << 1;
 inline constexpr uint8_t PHASE_MASK     = 0x3 << 2;
 inline constexpr uint8_t PHASE_SHIFT    = 2;
 inline constexpr uint8_t TORCH_FUNCTION = 1 << 4;
+inline constexpr uint8_t GRAD_ENABLED   = 1 << 5;
+inline constexpr uint8_t SCALAR4_TYPE_MASK  = 0x3 << 6;
+inline constexpr uint8_t SCALAR4_TYPE_SHIFT = 6;
 } // namespace op_flag
 
 enum class TrainingPhase : uint8_t {
@@ -54,26 +62,97 @@ enum class TrainingPhase : uint8_t {
   OTHER     = 3,
 };
 
+// Type tag for an inline scalar_values[i] slot.  Two bits per slot,
+// packed into Entry::scalar_types (for slots 0..3) and op_flag bits
+// 6-7 (for slot 4).  The type is stored so that scalar_values can
+// be interpreted back to its original type — without this tag, a
+// float 1.5 bit-cast to int64 (0x3FF8000000000000) is identical to
+// the integer 0x3FF8000000000000, and callers that read the scalar
+// cannot distinguish them.
+//
+// Content-hashing ignores the type tag (hashes raw bit pattern), so
+// this is purely for semantic readback at Python-callsite rewriting
+// and debugging paths.
+enum class ScalarType2 : uint8_t {
+  INT   = 0,   // int64_t — default, covers all integer types via sign-ext
+  FLOAT = 1,   // double  — bit_cast via std::bit_cast<double>(v)
+  BOOL  = 2,   // 0 or 1 — canonicalized at record time
+  ENUM  = 3,   // underlying integer of an enum class (e.g. ScalarType, Layout)
+};
+
 // 2 MB alignment so make_unique lands on a PMD-aligned region and
 // MADV_HUGEPAGE doesn't EINVAL (kernel 5.8+).
 struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   // One cache line per op. Layout is load-bearing: bit-reinterpreted by
   // Serialize.h and assumed stable by Vigil / BackgroundThread / TraceLoader.
   //   schema(8) + shape(8) + num_inputs(2) + num_outputs(2)
-  //   + num_scalar_args(2) + grad_enabled(1) + op_flags(1)
+  //   + num_scalar_args(2) + scalar_types(1) + op_flags(1)
   //   + scalar_values[5](40) = 64 B
+  //
+  // Layout change (v7→v8): grad_enabled's dedicated byte is folded
+  // into op_flags bit 5.  The freed byte becomes `scalar_types`:
+  // two-bit type tag for each of the first 4 inline slots.  The 5th
+  // slot's type tag lives in op_flags bits 6-7.  Net: same 64B, new
+  // capability to distinguish int / float / bool / enum scalars
+  // without ambiguity from bit-cast aliasing.
   struct alignas(64) Entry {
     SchemaHash schema_hash;               // op identity
     ShapeHash  shape_hash;                // quick hash of input shapes
     uint16_t   num_inputs       = 0;
     uint16_t   num_outputs      = 0;
     uint16_t   num_scalar_args  = 0;      // count; first 5 stored inline
-    bool       grad_enabled     = false;
+    uint8_t    scalar_types     = 0;      // 2 bits × 4 slots: types for slots 0..3
+                                          // slot 4's type lives in op_flags[6-7]
     uint8_t    op_flags         = 0;      // see op_flag::*
-    // Inline scalar args (int64 bit-cast for doubles/bools/enums). 5 slots
-    // cover 99.9 % of ops; overflow is counted in num_scalar_args. Zero-init
-    // prevents hash instability on padding bytes.
+    // Inline scalar args (int64 bit-cast for doubles/bools/enums).
+    // 5 slots cover 99.9 % of ops; overflow is counted in num_scalar_args.
+    // Zero-init prevents hash instability on padding bytes.
+    // Use the get_scalar_type(i) / set_scalar_type(i, t) helpers rather
+    // than reading scalar_values[i] blind — the type tag disambiguates
+    // float 1.5 (bit_cast(0x3FF8000000000000)) from int 0x3FF8000000000000.
     int64_t    scalar_values[5]{};
+
+    // ── Scalar type accessors ──────────────────────────────────────
+    //
+    // Extract/install the 2-bit type tag for slot `i` (0..4).
+    // Packed across scalar_types byte (slots 0..3) and op_flags bits
+    // 6-7 (slot 4).  Hot path: both reads compile to a shift+mask.
+    [[nodiscard, gnu::pure]] ScalarType2 get_scalar_type(uint32_t i) const noexcept
+        pre (i < 5)
+    {
+      if (i < 4) {
+        return static_cast<ScalarType2>((scalar_types >> (i * 2)) & 0x3);
+      }
+      return static_cast<ScalarType2>(
+          (op_flags & op_flag::SCALAR4_TYPE_MASK) >> op_flag::SCALAR4_TYPE_SHIFT);
+    }
+
+    void set_scalar_type(uint32_t i, ScalarType2 t) noexcept
+        pre (i < 5)
+    {
+      const uint8_t bits = static_cast<uint8_t>(t) & 0x3;
+      if (i < 4) {
+        const uint8_t shift = static_cast<uint8_t>(i * 2);
+        scalar_types = static_cast<uint8_t>(
+            (scalar_types & ~(uint8_t{0x3} << shift)) | (bits << shift));
+      } else {
+        op_flags = static_cast<uint8_t>(
+            (op_flags & ~op_flag::SCALAR4_TYPE_MASK)
+            | (bits << op_flag::SCALAR4_TYPE_SHIFT));
+      }
+    }
+
+    // Convenience: grad_enabled now lives as op_flags bit 5 rather
+    // than its own byte.  Keep the legacy setter/getter so existing
+    // call sites compile unchanged.  Once callers migrate to op_flag
+    // bit access directly, these can be deprecated.
+    [[nodiscard, gnu::pure]] bool grad_enabled() const noexcept {
+      return (op_flags & op_flag::GRAD_ENABLED) != 0;
+    }
+    void set_grad_enabled(bool v) noexcept {
+      if (v) op_flags = static_cast<uint8_t>(op_flags |  op_flag::GRAD_ENABLED);
+      else   op_flags = static_cast<uint8_t>(op_flags & static_cast<uint8_t>(~op_flag::GRAD_ENABLED));
+    }
   };
 
   static_assert(sizeof(Entry) == 64, "Entry must be exactly one cache line");
