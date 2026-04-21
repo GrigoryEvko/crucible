@@ -119,9 +119,10 @@ int main() {
         MemoryPlan plan = make_uniform_plan(slots, 1, 256);
         PoolAllocator pool;
         pool.init(&plan);
+        auto pv = pool.mint_initialized_view();
         const SlotId s0{0};
         auto r = bench::run("slot_ptr(1 slot, same)", [&]{
-            bench::do_not_optimize(pool.slot_ptr(s0));
+            bench::do_not_optimize(pool.slot_ptr(s0, pv));
         });
         pool.destroy();
         return r;
@@ -133,11 +134,12 @@ int main() {
             MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
             PoolAllocator pool;
             pool.init(&plan);
+            auto pv = pool.mint_initialized_view();
             char label[64];
             std::snprintf(label, sizeof(label), "slot_ptr(%u slots, sweep)", N);
             auto r = bench::run(label, [&, N]{
                 for (uint32_t i = 0; i < N; i++) {
-                    bench::do_not_optimize(pool.slot_ptr(SlotId{i}));
+                    bench::do_not_optimize(pool.slot_ptr(SlotId{i}, pv));
                 }
             });
             pool.destroy();
@@ -154,6 +156,7 @@ int main() {
             MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
             PoolAllocator pool;
             pool.init(&plan);
+            auto pv = pool.mint_initialized_view();
 
             std::vector<uint32_t> indices(ACCESS_COUNT);
             fill_random_indices(indices.data(), ACCESS_COUNT, N);
@@ -163,7 +166,7 @@ int main() {
             std::snprintf(label, sizeof(label), "slot_ptr(%u slots, random)", N);
             auto r = bench::run(label, [&]{
                 bench::do_not_optimize(
-                    pool.slot_ptr(SlotId{indices[idx % ACCESS_COUNT]}));
+                    pool.slot_ptr(SlotId{indices[idx % ACCESS_COUNT]}, pv));
                 idx++;
             });
             pool.destroy();
@@ -182,9 +185,10 @@ int main() {
         MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
         PoolAllocator pool;
         pool.init(&plan);
+        auto pv = pool.mint_initialized_view();
         auto r = bench::run("slot_ptr(100, direct ref)", [&]{
             for (uint32_t i = 0; i < N; i++)
-                bench::do_not_optimize(pool.slot_ptr(SlotId{i}));
+                bench::do_not_optimize(pool.slot_ptr(SlotId{i}, pv));
         });
         pool.destroy();
         return r;
@@ -196,11 +200,12 @@ int main() {
         MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
         PoolAllocator pool;
         pool.init(&plan);
+        auto pv = pool.mint_initialized_view();
         const PoolAllocator* pool_ptr = &pool;
         bench::do_not_optimize(pool_ptr);
         auto r = bench::run("slot_ptr(100, via pointer)", [&]{
             for (uint32_t i = 0; i < N; i++)
-                bench::do_not_optimize(pool_ptr->slot_ptr(SlotId{i}));
+                bench::do_not_optimize(pool_ptr->slot_ptr(SlotId{i}, pv));
         });
         pool.destroy();
         return r;
@@ -288,13 +293,14 @@ int main() {
 
         PoolAllocator pool;
         pool.init(&plan);
+        auto pv = pool.mint_initialized_view();
 
         alignas(256) static char ext_bufs[N_EXT][256];
 
         auto r = bench::run("register_external(20 slots)", [&]{
             for (uint32_t i = 0; i < N_EXT; i++) {
                 pool.register_external(SlotId{N_INT + i},
-                    crucible::safety::NonNull<void*>{ext_bufs[i]});
+                    crucible::safety::NonNull<void*>{ext_bufs[i]}, pv);
             }
         });
         pool.destroy();
@@ -310,6 +316,7 @@ int main() {
 
         PoolAllocator pool;
         pool.init(&plan);
+        auto pv = pool.mint_initialized_view();
 
         struct OpSlots { SlotId in0, in1, out; };
         std::vector<OpSlots> op_slots(NUM_OPS);
@@ -322,9 +329,9 @@ int main() {
 
         auto r = bench::run("replay(200 ops, 3 slots each)", [&]{
             for (uint32_t i = 0; i < NUM_OPS; i++) {
-                bench::do_not_optimize(pool.slot_ptr(op_slots[i].in0));
-                bench::do_not_optimize(pool.slot_ptr(op_slots[i].in1));
-                bench::do_not_optimize(pool.slot_ptr(op_slots[i].out));
+                bench::do_not_optimize(pool.slot_ptr(op_slots[i].in0, pv));
+                bench::do_not_optimize(pool.slot_ptr(op_slots[i].in1, pv));
+                bench::do_not_optimize(pool.slot_ptr(op_slots[i].out, pv));
             }
         });
         pool.destroy();
