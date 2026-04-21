@@ -359,13 +359,13 @@ struct CKernelTable {
     using MutableView = crucible::safety::ScopedView<CKernelTable, ckernel_state::Mutable>;
     using SealedView  = crucible::safety::ScopedView<CKernelTable, ckernel_state::Sealed>;
 
-    [[nodiscard]] MutableView mint_mutable_view() noexcept
+    [[nodiscard]] MutableView mint_mutable_view() const noexcept
         pre (!is_sealed())
     {
         return crucible::safety::mint_view<ckernel_state::Mutable>(*this);
     }
 
-    [[nodiscard]] SealedView mint_sealed_view() noexcept
+    [[nodiscard]] SealedView mint_sealed_view() const noexcept
         pre (is_sealed())
     {
         return crucible::safety::mint_view<ckernel_state::Sealed>(*this);

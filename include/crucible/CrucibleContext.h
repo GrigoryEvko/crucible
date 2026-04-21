@@ -131,10 +131,15 @@ struct CrucibleContext {
   }
 
   // ── Register external slot pointer ──
+  //
+  // Untyped legacy entry point — routes through the typed overload
+  // below by minting the CompiledView locally.  pool_'s register_external
+  // has no legacy untyped overload any more, so this one-liner is the
+  // bridge for callers that haven't been migrated to pass a view.
   void register_external(SlotId sid, crucible::safety::NonNull<void*> ptr)
       pre (mode_ == ContextMode::COMPILED)
   {
-    pool_.register_external(sid, ptr);
+    register_external(sid, ptr, mint_compiled_view());
   }
 
   // ── Switch to a different compiled region (mid-iteration safe) ──
@@ -199,7 +204,7 @@ struct CrucibleContext {
     return c.mode_ == ContextMode::COMPILED;
   }
 
-  [[nodiscard]] CRUCIBLE_INLINE CompiledView mint_compiled_view() noexcept
+  [[nodiscard]] CRUCIBLE_INLINE CompiledView mint_compiled_view() const noexcept
       pre (mode_ == ContextMode::COMPILED)
   {
     return crucible::safety::mint_view<ctx_mode::Compiled>(*this);

@@ -96,13 +96,13 @@ struct SchemaTable {
   using MutableView = crucible::safety::ScopedView<SchemaTable, schema_state::Mutable>;
   using SealedView  = crucible::safety::ScopedView<SchemaTable, schema_state::Sealed>;
 
-  [[nodiscard]] MutableView mint_mutable_view() noexcept
+  [[nodiscard]] MutableView mint_mutable_view() const noexcept
       pre (!is_sealed())
   {
     return crucible::safety::mint_view<schema_state::Mutable>(*this);
   }
 
-  [[nodiscard]] SealedView mint_sealed_view() noexcept
+  [[nodiscard]] SealedView mint_sealed_view() const noexcept
       pre (is_sealed())
   {
     return crucible::safety::mint_view<schema_state::Sealed>(*this);

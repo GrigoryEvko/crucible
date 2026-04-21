@@ -82,15 +82,21 @@ inline constexpr bool is_scoped_view_v =
 
 template <typename Carrier, typename Tag>
 class [[nodiscard]] ScopedView {
-    Carrier* ptr_;
+    // Const pointer — the view is proof-only, never a mutable handle.
+    // Methods that mutate the carrier already hold their own `this`
+    // reference; they don't need write access through the view.
+    // Storing const* lets mint_view accept `Carrier const&` and keeps
+    // const member functions minting-capable (e.g. diagnostic reads
+    // on a `Carrier const&` accessor).
+    Carrier const* ptr_;
 
     // Private constructor.  Only mint_view (friended below) may call.
-    constexpr explicit ScopedView(Carrier& c CRUCIBLE_LIFETIMEBOUND) noexcept
+    constexpr explicit ScopedView(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept
         : ptr_{&c} {}
 
     template <typename Tag_, typename Carrier_>
     friend constexpr ScopedView<Carrier_, Tag_>
-    mint_view(Carrier_& c CRUCIBLE_LIFETIMEBOUND) noexcept;
+    mint_view(Carrier_ const& c CRUCIBLE_LIFETIMEBOUND) noexcept;
 
 public:
     using carrier_type = Carrier;
@@ -105,8 +111,11 @@ public:
         = delete("ScopedView is single-binding; assignment hides state transitions");
     constexpr ~ScopedView() = default;
 
-    [[nodiscard]] constexpr Carrier* operator->() const noexcept { return ptr_; }
-    [[nodiscard]] constexpr Carrier& carrier()    const noexcept { return *ptr_; }
+    // Access is always const.  A caller that needs to mutate the
+    // carrier does so via a direct reference (typically `this` in a
+    // non-const member that accepts a view as proof of state).
+    [[nodiscard]] constexpr Carrier const* operator->() const noexcept { return ptr_; }
+    [[nodiscard]] constexpr Carrier const& carrier()    const noexcept { return *ptr_; }
 
     // Tier 1: forbid heap allocation.  Without these deletes, a caller
     // could do `new ScopedView<...>(existing)` via the public copy
@@ -138,7 +147,7 @@ public:
 // state check.
 template <typename Tag, typename Carrier>
 [[nodiscard]] constexpr ScopedView<Carrier, Tag>
-mint_view(Carrier& c CRUCIBLE_LIFETIMEBOUND) noexcept
+mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept
     pre(view_ok(c, std::type_identity<Tag>{}))
 {
     return ScopedView<Carrier, Tag>{c};

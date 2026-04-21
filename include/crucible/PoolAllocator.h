@@ -131,25 +131,6 @@ struct CRUCIBLE_OWNER PoolAllocator {
     num_external_ = 0;
   }
 
-  // ── Untyped hot path (legacy; prefer ScopedView overloads below) ──
-  //
-  // The original API that uses a runtime pre() check for the "pool is
-  // initialized" invariant.  Still supported for callers that haven't
-  // migrated — the typed overloads below are the new canonical API.
-  [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
-  inline void* slot_ptr(SlotId sid) const noexcept CRUCIBLE_LIFETIMEBOUND
-      pre (sid.raw() < num_slots_)
-  {
-    return ptr_table_[sid.raw()];
-  }
-
-  void register_external(SlotId sid, crucible::safety::NonNull<void*> ptr) noexcept
-      pre (sid.raw() < num_slots_)
-      pre (ptr_table_ != nullptr)
-  {
-    ptr_table_[sid.raw()] = ptr.value();
-  }
-
   // ── ScopedView-typed overloads ──────────────────────────────────────
   //
   // The supported API.  Callers obtain an InitializedView once per
@@ -163,7 +144,7 @@ struct CRUCIBLE_OWNER PoolAllocator {
 
   // Factory: mints an InitializedView for `*this`.  Contract fires if
   // the pool is not actually initialized, matching the runtime guard.
-  [[nodiscard]] CRUCIBLE_INLINE InitializedView mint_initialized_view() noexcept
+  [[nodiscard]] CRUCIBLE_INLINE InitializedView mint_initialized_view() const noexcept
       pre (is_initialized())
   {
     return crucible::safety::mint_view<pool_state::Initialized>(*this);
