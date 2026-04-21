@@ -513,9 +513,12 @@ int main() {
     cpu::mm(ref_cls, W_head, ref_logits, B, N_CLS, D);
     cpu::softmax(ref_logits, ref_probs, B, N_CLS);
 
-    // Compare final softmax output from pool vs reference
+    // Compare final softmax output from pool vs reference.
+    // mint_initialized_view() is const-callable, so diagnostic reads
+    // through `ctx.pool()` go through the typed API.
+    auto pv = ctx.pool().mint_initialized_view();
     auto* pool_probs = static_cast<const float*>(
-        ctx.pool().slot_ptr(SlotId{SL_PROBS}));
+        ctx.pool().slot_ptr(SlotId{SL_PROBS}, pv));
 
     float max_err = 0.0f;
     for (int i = 0; i < B * N_CLS; i++) {
@@ -539,7 +542,7 @@ int main() {
 
     // Also verify intermediate: resid2 (residual 2, the transformer block output)
     auto* pool_res2 = static_cast<const float*>(
-        ctx.pool().slot_ptr(SlotId{SL_RES2}));
+        ctx.pool().slot_ptr(SlotId{SL_RES2}, pv));
     float max_res2_err = 0.0f;
     for (int i = 0; i < B * S * D; i++) {
         float err = std::abs(pool_res2[i] - ref_res2[i]);

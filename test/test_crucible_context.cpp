@@ -138,11 +138,12 @@ static void test_full_replay() {
   CrucibleContext ctx;
   assert(ctx.activate(&region));
   auto cv = ctx.mint_compiled_view();
+  auto pv = ctx.pool().mint_initialized_view();
 
   // First iteration.
   assert(ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
   void* p0 = ctx.output_ptr(0, cv);
-  assert(p0 == ctx.pool().slot_ptr(SlotId{0}));
+  assert(p0 == ctx.pool().slot_ptr(SlotId{0}, pv));
 
   assert(ctx.advance(SchemaHash{101}, ShapeHash{201}, cv) == ReplayStatus::COMPLETE);
   assert(ctx.compiled_iterations() == 1);
@@ -150,7 +151,7 @@ static void test_full_replay() {
   // output_ptr() is valid after COMPLETE (lazy reset — engine not
   // yet reset, so the final op's pointer is still accessible).
   void* p1 = ctx.output_ptr(0, cv);
-  assert(p1 == ctx.pool().slot_ptr(SlotId{1}));
+  assert(p1 == ctx.pool().slot_ptr(SlotId{1}, pv));
 
   // COMPLETE — next advance() auto-resets for second iteration.
   assert(ctx.is_compiled());  // still compiled
@@ -309,7 +310,8 @@ static void test_external_slots() {
   assert(ctx.advance(SchemaHash{50}, ShapeHash{60}, cv) == ReplayStatus::COMPLETE);
   // Can't call input_ptr after COMPLETE (engine auto-reset), so test
   // via pool directly.
-  assert(ctx.pool().slot_ptr(SlotId{1}) == fake_param);
+  auto pv = ctx.pool().mint_initialized_view();
+  assert(ctx.pool().slot_ptr(SlotId{1}, pv) == fake_param);
 
   std::printf("  test_external_slots: PASSED\n");
 }
@@ -373,11 +375,12 @@ static void test_integration_sweep_line() {
   alignas(256) char fake_param[128];
   std::memset(fake_param, 0xEE, 128);
   ctx.register_external(SlotId{2}, crucible::safety::NonNull<void*>{fake_param}, cv);
+  auto pv = ctx.pool().mint_initialized_view();
 
   // Replay iteration 1.
   assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
   // Op 0: output → slot 0, input → slot 2 (external).
-  assert(ctx.output_ptr(0, cv) == ctx.pool().slot_ptr(SlotId{0}));
+  assert(ctx.output_ptr(0, cv) == ctx.pool().slot_ptr(SlotId{0}, pv));
   assert(ctx.input_ptr(0, cv) == fake_param);
 
   // Write to output.
@@ -392,7 +395,7 @@ static void test_integration_sweep_line() {
   // (In Tier 1, the op executes eagerly and overwrites, but the
   // pointer is still valid from the previous write.)
   auto* p = static_cast<uint8_t*>(ctx.output_ptr(0, cv));
-  assert(p == ctx.pool().slot_ptr(SlotId{0}));
+  assert(p == ctx.pool().slot_ptr(SlotId{0}, pv));
 
   assert(ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}, cv) == ReplayStatus::COMPLETE);
   assert(ctx.compiled_iterations() == 2);

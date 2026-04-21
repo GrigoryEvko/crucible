@@ -203,7 +203,7 @@ struct ReplayEngine {
     return e.is_initialized();
   }
 
-  [[nodiscard]] CRUCIBLE_INLINE ActiveView mint_active_view() noexcept
+  [[nodiscard]] CRUCIBLE_INLINE ActiveView mint_active_view() const noexcept
       pre (is_initialized())
   {
     return crucible::safety::mint_view<engine_state::Active>(*this);

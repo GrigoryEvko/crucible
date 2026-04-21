@@ -89,7 +89,7 @@ class CRUCIBLE_OWNER Cipher {
 
     using OpenView = crucible::safety::ScopedView<Cipher, cipher_state::Open>;
 
-    [[nodiscard]] OpenView mint_open_view() noexcept
+    [[nodiscard]] OpenView mint_open_view() const noexcept
         pre (is_open())
     {
         return crucible::safety::mint_view<cipher_state::Open>(*this);
@@ -174,13 +174,10 @@ class CRUCIBLE_OWNER Cipher {
         return deserialize_region(a, std::span<const uint8_t>{buf}, arena);
     }
 
-    // Legacy: mints OpenView locally.  Non-const overload because
-    // mint_open_view() needs a mutable *this (ScopedView carriers are
-    // non-const by design); this is the only reason this overload is
-    // not const.  Callers holding `const Cipher&` cannot use the legacy
-    // path — they must obtain a view externally and use the typed
-    // overload, which IS const.
-    [[nodiscard]] RegionNode* load(fx::Alloc a, ContentHash content_hash, Arena& arena) {
+    // Legacy: mints OpenView locally.  const because mint_open_view()
+    // is now const-callable (ScopedView stores Carrier const*, so
+    // view minting works through a const reference).
+    [[nodiscard]] RegionNode* load(fx::Alloc a, ContentHash content_hash, Arena& arena) const {
         return load(mint_open_view(), a, content_hash, arena);
     }
 
@@ -237,9 +234,9 @@ class CRUCIBLE_OWNER Cipher {
         return result;
     }
 
-    // Legacy: mints OpenView locally (non-const for the mint path;
-    // see the rationale on load() above).
-    [[nodiscard]] ContentHash hash_at_step(uint64_t step_id) {
+    // Legacy: mints OpenView locally.  const because mint_open_view()
+    // is const-callable — same rationale as load() above.
+    [[nodiscard]] ContentHash hash_at_step(uint64_t step_id) const {
         return hash_at_step(mint_open_view(), step_id);
     }
 

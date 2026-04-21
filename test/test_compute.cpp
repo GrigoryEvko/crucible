@@ -194,11 +194,13 @@ int main() {
     ctx.register_external(SlotId{SL_W1}, crucible::safety::NonNull<void*>{W1}, cv);
     ctx.register_external(SlotId{SL_W2}, crucible::safety::NonNull<void*>{W2}, cv);
 
-    // Verify externals are registered correctly (diagnostic — read-only
-    // const access via ctx.pool() stays on the untyped overload).
-    assert(ctx.pool().slot_ptr(SlotId{SL_X})  == X);
-    assert(ctx.pool().slot_ptr(SlotId{SL_W1}) == W1);
-    assert(ctx.pool().slot_ptr(SlotId{SL_W2}) == W2);
+    // Verify externals are registered correctly.  mint_initialized_view()
+    // is const-callable; read-only diagnostic assertions go through the
+    // typed API like the hot path does.
+    auto pv = ctx.pool().mint_initialized_view();
+    assert(ctx.pool().slot_ptr(SlotId{SL_X},  pv) == X);
+    assert(ctx.pool().slot_ptr(SlotId{SL_W1}, pv) == W1);
+    assert(ctx.pool().slot_ptr(SlotId{SL_W2}, pv) == W2);
 
     // ── Run 100 compiled iterations ──────────────────────────────────
     for (int iter = 0; iter < 100; iter++) {
@@ -249,7 +251,7 @@ int main() {
 
     // Read final softmax from the pool
     auto* pool_sm = static_cast<const float*>(
-        ctx.pool().slot_ptr(SlotId{SL_SM}));
+        ctx.pool().slot_ptr(SlotId{SL_SM}, pv));
 
     float max_err = 0.0f;
     for (int i = 0; i < BATCH * OUT_DIM; i++) {
