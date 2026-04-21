@@ -19,16 +19,66 @@ namespace crucible {
 //   - Lifetime: arena-managed, freed when ExprPool is destroyed
 //
 // 32 bytes on 64-bit systems. Fits in half a cache line.
+//
+// ── Immutability ──
+// All member fields are `const`.  Once an Expr is constructed via the
+// full-argument constructor below, no code path can mutate its
+// structure — the TypeSafe axiom from CLAUDE.md extends from "silent
+// parameter swap" to "silent node rewrite".  The intern-table protocol
+// depends on Expr instances never changing after publication: a hash
+// mutation would orphan the slot in the Swiss table, a payload
+// mutation would corrupt structural equality in CSE.
+//
+// Arena storage: ExprPool allocates raw bytes from the Arena and
+// placement-news an Expr into them using the full-args constructor.
+// Arena never calls destructors; Expr is trivially destructible.
 struct Expr {
-  Op op = Op::INTEGER;         // 1 byte  — node type
-  uint8_t nargs = 0;           // 1 byte  — number of children (0-255)
-  uint16_t flags = 0;          // 2 bytes — ExprFlags bitfield
-  SymbolId symbol_id;          // 4 bytes — unique id for symbols (SymbolId{} for non-symbols)
-  uint64_t hash = 0;           // 8 bytes — precomputed hash for intern table
-  int64_t payload = 0;         // 8 bytes — integer value, or bitcast double, or symbol name ptr
-  const Expr** args = nullptr; // 8 bytes — pointer to arena-allocated array of children
-                               // ──────────
-                               // 32 bytes total
+  const Op op = Op::INTEGER;          // 1 byte  — node type
+  const uint8_t nargs = 0;            // 1 byte  — number of children (0-255)
+  const uint16_t flags = 0;           // 2 bytes — ExprFlags bitfield
+  const SymbolId symbol_id;           // 4 bytes — unique id for symbols (SymbolId{} for non-symbols)
+  const uint64_t hash = 0;            // 8 bytes — precomputed hash for intern table
+  const int64_t payload = 0;          // 8 bytes — integer value, or bitcast double, or symbol name ptr
+  const Expr* const* const args = nullptr;  // 8 bytes — pointer to arena-allocated array of children
+                                            // ──────────
+                                            // 32 bytes total
+
+  // Default constructor: yields a valid "integer 0" atom.  Value-init
+  // via NSDMI keeps default-constructed instances well-defined per the
+  // InitSafe axiom.  Primarily used by Arena zero-fill paths and by
+  // tests that build placeholder Exprs.
+  constexpr Expr() noexcept = default;
+
+  // Full-args constructor: the only way to create a non-default Expr.
+  // ExprPool::make_ uses this via placement-new into arena storage.
+  // hash_ and payload_ may legitimately be 0 (zero integer, zero-valued
+  // flag set).  args_ may be null iff nargs_ == 0.
+  constexpr Expr(
+      Op           op_,
+      uint8_t      nargs_,
+      uint16_t     flags_,
+      SymbolId     symbol_id_,
+      uint64_t     hash_,
+      int64_t      payload_,
+      const Expr* const* args_) noexcept
+      : op(op_)
+      , nargs(nargs_)
+      , flags(flags_)
+      , symbol_id(symbol_id_)
+      , hash(hash_)
+      , payload(payload_)
+      , args(args_)
+  {}
+
+  // Copy/move: deleted because const fields make assignment impossible
+  // and copying an interned Expr would break intern-table identity
+  // (two pointers referencing equivalent structures must be THE SAME
+  // pointer, not distinct copies).  Move is likewise nonsensical since
+  // the target is an identity-interned pointer.
+  Expr(const Expr&)            = delete("interned Exprs have identity equality; copying would break intern");
+  Expr& operator=(const Expr&) = delete("fields are const");
+  Expr(Expr&&)                 = delete("interned Exprs are arena-pinned");
+  Expr& operator=(Expr&&)      = delete("fields are const");
 
   // ---- Payload accessors ----
 

@@ -1308,19 +1308,24 @@ class CRUCIBLE_OWNER ExprPool {
       if (empties) [[likely]] {
         size_t idx = base + empties.lowest();
 
-        Expr* e = arena_.alloc_obj<Expr>(a);
-        e->op = op;
-        e->nargs = nargs;
-        e->flags = flags;
-        e->symbol_id = symbol_id;
-        e->hash = h;
-        e->payload = payload;
+        // Copy args into the arena BEFORE constructing the Expr — the
+        // Expr's args pointer is const, so it can only be set via the
+        // constructor (not assigned later).  For nargs == 0 we pass
+        // nullptr, matching the legacy null-args contract.
+        const Expr** owned_args = nullptr;
         if (nargs > 0) {
-          e->args = arena_.alloc_array<const Expr*>(a, nargs);
-          std::memcpy(e->args, args, nargs * sizeof(const Expr*));
-        } else {
-          e->args = nullptr;
+          owned_args = arena_.alloc_array<const Expr*>(a, nargs);
+          std::memcpy(owned_args, args, nargs * sizeof(const Expr*));
         }
+
+        // Placement-new into arena storage via the full-args
+        // constructor.  The const fields of Expr are initialized
+        // in-place; no post-construction mutation is possible
+        // (or desired — Expr is immutable by contract).
+        void* storage = arena_.alloc_obj<Expr>(a);
+        Expr* e = ::new (storage) Expr(op, nargs, flags, symbol_id,
+                                       h, payload, owned_args);
+
         ctrl_[idx] = tag;
         slots_[idx] = e;
         ++intern_count_;
