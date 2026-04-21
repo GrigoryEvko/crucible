@@ -227,23 +227,23 @@ struct ReplayEngine {
     return crucible::safety::mint_view<engine_state::Active>(*this);
   }
 
+  // Typed overloads delegate to the untyped bodies.  The ActiveView
+  // parameter is pure type-state proof (engine is initialized); it
+  // carries no runtime state, so under CRUCIBLE_INLINE the delegation
+  // collapses to the same machine code as the untyped call.
+  //
+  // Deduplication rationale: the pre-view code duplicated every line
+  // of advance / output_ptr / input_ptr for "also accepts an
+  // ActiveView".  Parallel-body drift risk: a fix to one body missed
+  // in the other was real (happened once during the view migration —
+  // an unlikely branch hint was added to one but not the other).
+  // Single source of truth removes that risk.
   [[nodiscard]] CRUCIBLE_INLINE ReplayStatus
   advance(SchemaHash schema_hash, ShapeHash shape_hash,
           ActiveView const&)
       pre (cursor_ < end_)
   {
-    if (schema_hash != expected_schema_) [[unlikely]]
-      return ReplayStatus::DIVERGED;
-    if (shape_hash != expected_shape_) [[unlikely]]
-      return ReplayStatus::DIVERGED;
-    current_ = cursor_;
-    __builtin_prefetch(reinterpret_cast<const char*>(cursor_) + 64, 0, 3);
-    ++cursor_;
-    if (cursor_ == end_) [[unlikely]]
-      return ReplayStatus::COMPLETE;
-    expected_schema_ = cursor_->schema_hash;
-    expected_shape_ = cursor_->shape_hash;
-    return ReplayStatus::MATCH;
+    return advance(schema_hash, shape_hash);
   }
 
   [[nodiscard]] CRUCIBLE_INLINE void* output_ptr(uint16_t j, ActiveView const&) const
@@ -252,8 +252,7 @@ struct ReplayEngine {
       pre (j < current_->num_outputs)
       pre (current_->output_slot_ids != nullptr)
   {
-    SlotId sid = current_->output_slot_ids[j];
-    return sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
+    return output_ptr(j);
   }
 
   [[nodiscard]] CRUCIBLE_INLINE void* input_ptr(uint16_t j, ActiveView const&) const
@@ -262,8 +261,7 @@ struct ReplayEngine {
       pre (j < current_->num_inputs)
       pre (current_->input_slot_ids != nullptr)
   {
-    SlotId sid = current_->input_slot_ids[j];
-    return sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
+    return input_ptr(j);
   }
 
   CRUCIBLE_INLINE void reset(ActiveView const&) {
