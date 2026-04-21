@@ -42,10 +42,14 @@ enum class NodeKind : uint8_t {
   TEMPLATE,   // Template-based kernel (CUTLASS, Triton)
   MUTATION,   // In-place mutation of existing buffer
   NOP,        // No computation (concat, view, etc.)
+  NUM_KINDS,  // Sentinel: count of valid kinds. Not a valid NodeKind value.
+              // Exhaustive switch asserts against this; also used to size
+              // per-kind lookup tables without a magic number.
 };
 
 enum class ReduceOp : uint8_t {
   SUM, PROD, MAX, MIN, ARGMAX, ARGMIN, ANY, XOR_SUM, WELFORD, DOT,
+  NUM_OPS,    // Sentinel — see NodeKind::NUM_KINDS.
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -74,6 +78,7 @@ enum class FuseKind : uint8_t {
   EPILOGUE,    // EXTERN output stays in accumulator, epilogue applied
   PROLOGUE,    // Input transformed in registers before EXTERN kernel
   BROADCAST,   // Reduction output broadcast to consumers via smem
+  NUM_KINDS,   // Sentinel — see NodeKind::NUM_KINDS.
 };
 
 enum class ReduceHint : uint8_t { DEFAULT, INNER, OUTER };
@@ -153,6 +158,7 @@ enum class MicroOp : uint8_t {
   WHERE,        // operands = {cond, true_val, false_val}
   REDUCE,       // operands[0]=value, accumulated by owning node's reduce_op
   INDEX_EXPR,   // Symbolic index (Expr* stored via reinterpret in aux)
+  NUM_OPS,      // Sentinel — see NodeKind::NUM_KINDS.
 };
 
 // ═══════════════════════════════════════════════════════════════════
