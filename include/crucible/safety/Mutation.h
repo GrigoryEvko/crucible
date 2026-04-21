@@ -13,6 +13,9 @@
 // OrderedAppendOnly<T, KeyFn, Cmp, St> — AppendOnly + per-emplace key
 //                                        monotonicity (nested composition).
 // Monotonic<T, Cmp>                    — single value that only advances per Cmp.
+// BoundedMonotonic<T, Max, Cmp>        — Monotonic + per-advance bound check
+//                                        (nested composition, not a Refined
+//                                        alias — see body comment).
 // WriteOnce<T>                         — settable exactly once, then read-only.
 
 #include <crucible/Platform.h>
@@ -218,6 +221,82 @@ static_assert(sizeof(Monotonic<uint32_t, std::less<uint32_t>>) == sizeof(uint32_
               "Monotonic<T, EmptyCmp> must be zero-cost: same size as T");
 static_assert(sizeof(Monotonic<uint64_t, std::less<uint64_t>>) == sizeof(uint64_t),
               "Monotonic<T, EmptyCmp> must be zero-cost: same size as T");
+
+// ── BoundedMonotonic ────────────────────────────────────────────────
+//
+// Monotonic + compile-time upper bound enforced at every mutation.
+// Intended for counters that advance and must not wrap (OpIndex, step_id,
+// iteration counters, op_index during replay).
+//
+// Why this isn't `Refined<bounded_above<Max>, Monotonic<T>>`:
+//   Refined checks its predicate ONCE at construction; subsequent
+//   advances on the inner Monotonic bypass the check.  Combining the
+//   two as a type alias fails silently.  Instead BoundedMonotonic
+//   nests a Monotonic and re-applies the predicate at each
+//   advance / bump call site, matching Refined's discipline in
+//   spirit.  The bound becomes part of the type (compile-time Max),
+//   so downstream code can `[[assume]]` the invariant on reads.
+//
+//   Axiom coverage: DetSafe + TypeSafe (the bound is a type parameter).
+//   Runtime cost:   same as Monotonic plus one extra comparison per
+//                   mutation (contract-elided under semantic=ignore).
+
+template <typename T, auto Max, typename Cmp = std::less<T>>
+class [[nodiscard]] BoundedMonotonic {
+    Monotonic<T, Cmp> inner_;
+
+    static constexpr T kMax = T(Max);
+
+public:
+    using value_type      = T;
+    using comparator_type = Cmp;
+    static constexpr T    max() noexcept { return kMax; }
+
+    constexpr explicit BoundedMonotonic(T initial)
+        noexcept(std::is_nothrow_move_constructible_v<T>)
+        pre(!(T(Max) < initial))        // initial <= Max
+        : inner_{std::move(initial)} {}
+
+    BoundedMonotonic(const BoundedMonotonic&)            = default;
+    BoundedMonotonic(BoundedMonotonic&&)                 = default;
+    BoundedMonotonic& operator=(const BoundedMonotonic&) = default;
+    BoundedMonotonic& operator=(BoundedMonotonic&&)      = default;
+
+    [[nodiscard]] constexpr const T& get()     const noexcept { return inner_.get(); }
+    [[nodiscard]] constexpr const T& current() const noexcept { return inner_.current(); }
+
+    // Advance — must be both non-decreasing (Monotonic's rule) AND
+    // within the bound.  The inner Monotonic's pre() covers the first;
+    // this pre() adds the bound.
+    constexpr void advance(T new_value) noexcept(std::is_nothrow_move_assignable_v<T>)
+        pre(!(T(Max) < new_value))      // new_value <= Max
+    {
+        inner_.advance(std::move(new_value));
+    }
+
+    // try_advance returns false if either the monotonicity OR the bound
+    // would be violated; the Monotonic still succeeds on equal values.
+    constexpr bool try_advance(T new_value)
+        noexcept(std::is_nothrow_move_assignable_v<T>)
+    {
+        if (T(Max) < new_value) return false;  // bound violation
+        return inner_.try_advance(std::move(new_value));
+    }
+
+    // Integral bump — advance by one, guarded by the bound.  Mirrors
+    // Monotonic::bump but uses the type's Max rather than the domain
+    // type's numeric_limits::max.
+    constexpr void bump() noexcept
+        requires std::integral<T>
+        pre(inner_.get() < T(Max))
+    {
+        inner_.advance(static_cast<T>(inner_.get() + T{1}));
+    }
+};
+
+// Zero-cost: stateless Cmp collapses, inner Monotonic is same size as T.
+static_assert(sizeof(BoundedMonotonic<std::uint32_t, 1024U>) == sizeof(std::uint32_t),
+              "BoundedMonotonic must collapse to underlying T");
 
 // ── WriteOnce ───────────────────────────────────────────────────────
 //

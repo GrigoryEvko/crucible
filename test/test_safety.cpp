@@ -270,6 +270,36 @@ static void test_mutation() {
         assert(log_by_step.size() == 3);
         assert(log_by_step.back().step == 20);
     }
+
+    // BoundedMonotonic — Monotonic + compile-time upper bound.
+    static_assert(sizeof(BoundedMonotonic<std::uint32_t, 1024U>) == sizeof(std::uint32_t),
+                  "BoundedMonotonic must collapse to underlying T");
+    {
+        BoundedMonotonic<std::uint32_t, 10U> counter{0U};
+        assert(counter.get() == 0);
+        counter.advance(1U);
+        counter.advance(5U);
+        counter.advance(10U);                 // at bound — still OK (<=)
+        // counter.advance(11U);              // would fire pre (> Max)
+        // counter.advance(5U);               // would fire Monotonic's pre
+        assert(counter.get() == 10);
+        assert((BoundedMonotonic<std::uint32_t, 10U>::max() == 10U));
+
+        BoundedMonotonic<std::uint32_t, 3U> bumper{0U};
+        bumper.bump();
+        bumper.bump();
+        bumper.bump();                         // now at bound
+        // bumper.bump();                      // would fire pre (get() == Max)
+        assert(bumper.get() == 3U);
+
+        // try_advance rejects out-of-bound silently, as documented.
+        BoundedMonotonic<std::uint32_t, 5U> cnt{2U};
+        assert(!cnt.try_advance(6U));          // over bound — rejected
+        assert(cnt.get() == 2U);
+        assert(!cnt.try_advance(1U));          // goes backward — rejected
+        assert(cnt.try_advance(4U));           // fine
+        assert(cnt.get() == 4U);
+    }
     std::printf("  Mutation:       ok\n");
 }
 
