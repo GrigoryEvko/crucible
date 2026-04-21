@@ -721,10 +721,54 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 // Open-addressing hash map. Lock-free reads via atomic pointers.
 // Thread-safe inserts via CAS on the content_hash slot. Capacity
 // must be a power of two.
+//
+// ── Per-slot state machine ─────────────────────────────────────────
+//
+// The slot is the pair (content_hash: atomic<u64>, kernel: atomic<CompiledKernel*>).
+// Only the transitions below are legal; the protocol guarantees that
+// no other (hash, kernel) combination is reachable from a legal start:
+//
+//     ┌────────────┐   hash CAS(0 → H) acq_rel   ┌────────────┐
+//     │   EMPTY    │────────────────────────────▶│  CLAIMED   │
+//     │ h=0 k=null │                             │ h=H k=null │
+//     └────────────┘                             └─────┬──────┘
+//           ▲                                          │
+//           │                                          │ kernel.store(K) release
+//           │                                          ▼
+//           │                                    ┌────────────┐
+//           │                                    │ PUBLISHED  │◀───┐
+//           │                                    │ h=H k=K    │    │ kernel.store(K') release
+//           │                                    └─────┬──────┘────┘ (variant update)
+//           │                                          │
+//           └──── (never) ─── slots are insert-only ───┘
+//
+// EMPTY     — probing terminates here: "definitely not in the cache"
+// CLAIMED   — transient; an inserter has reserved the slot but has not yet
+//             published the kernel. The window is ~1 instruction wide. A
+//             concurrent reader that sees CLAIMED must wait or miss; it
+//             CANNOT conclude "not in the cache" because the inserter
+//             will publish imminently.
+// PUBLISHED — stable; variant updates (kernel re-store under the same
+//             hash) stay in PUBLISHED.
+//
+// Before this refactor, the reader treated CLAIMED as a miss and
+// returned nullptr, even though the insert was already mid-flight —
+// causing spurious misses under concurrent insert+lookup (which leak
+// into re-compilation storms in the Keeper). Now lookup() spins a
+// bounded number of PAUSE-cycles on CLAIMED before giving up, turning
+// the race window into a deterministic micro-wait.
 // ═══════════════════════════════════════════════════════════════════
 
 class CRUCIBLE_OWNER KernelCache {
  public:
+  // Slot's observable state (computed from the atomic pair). Private
+  // to the class; exposed publicly only as a diagnostic type.
+  enum class SlotState : uint8_t {
+    Empty     = 0,  // h == 0, k == nullptr
+    Claimed   = 1,  // h != 0, k == nullptr  (insert in flight)
+    Published = 2,  // h != 0, k != nullptr
+  };
+
   explicit KernelCache(uint32_t capacity = 4096) : capacity_(capacity) {
     assert((capacity & (capacity - 1)) == 0 && "capacity must be power of 2");
     table_ = static_cast<Entry*>(std::calloc(capacity_, sizeof(Entry)));
@@ -738,6 +782,14 @@ class CRUCIBLE_OWNER KernelCache {
   KernelCache& operator=(const KernelCache&) = delete("lock-free hash map with atomic state cannot be copied");
   KernelCache(KernelCache&&) = delete("lock-free hash map with atomic state cannot be moved");
   KernelCache& operator=(KernelCache&&) = delete("lock-free hash map with atomic state cannot be moved");
+
+  // Maximum PAUSE-spin iterations a reader will tolerate on a CLAIMED
+  // slot before giving up and returning nullptr. Value chosen so the
+  // total wait is ~1-4 µs on x86-64 (well below a compile-fallback),
+  // yet covers the ~tens-of-ns CAS→store window by several orders of
+  // magnitude. If the inserter is slower than this bound (e.g. due to
+  // preemption), the reader misses and the caller re-dispatches.
+  static constexpr uint32_t kClaimedSpinBudget = 64;
 
   // Lock-free lookup via atomic load. Any thread, safe by CAS protocol.
   // gnu::hot: called per dispatch_op in COMPILED mode (millions/sec).
@@ -762,10 +814,17 @@ class CRUCIBLE_OWNER KernelCache {
     for (uint32_t probe = 0; probe < capacity_; probe++) {
       auto& entry = table_[(idx + probe) & mask];
       uint64_t key = entry.content_hash.load(std::memory_order_acquire);
-      if (key == content_hash.raw())
-        return entry.kernel.load(std::memory_order_acquire);
+      if (key == content_hash.raw()) {
+        CompiledKernel* k = entry.kernel.load(std::memory_order_acquire);
+        if (k != nullptr) [[likely]]
+          return k;                 // PUBLISHED
+        // CLAIMED: an inserter is mid-flight (between content_hash
+        // CAS and kernel.store). The window is a few nanoseconds on
+        // x86 (acq_rel CAS + release store), so spin briefly.
+        return await_claimed_(entry);
+      }
       if (key == 0)
-        return nullptr; // empty slot -> miss
+        return nullptr; // EMPTY slot -> miss
     }
     return nullptr;
   }
@@ -783,6 +842,10 @@ class CRUCIBLE_OWNER KernelCache {
   // Thread-safe insert via CAS. Overwrites if key already exists.
   // Background thread primary writer, safe by atomic CAS protocol.
   //
+  // Transition contract (enforced by memory ordering, not contract_assert):
+  //   EMPTY ──CAS(acq_rel)──▶ CLAIMED ──store(release)──▶ PUBLISHED
+  //   PUBLISHED(old) ──store(release)──▶ PUBLISHED(new)    [variant update]
+  //
   // Returns {} on success (including the update-existing-slot path).
   // Returns std::unexpected(TableFull) iff the entire probe chain was
   // full of foreign keys — no slot was free AND no match for this hash.
@@ -799,8 +862,11 @@ class CRUCIBLE_OWNER KernelCache {
     for (uint32_t probe = 0; probe < capacity_; probe++) {
       auto& entry = table_[(idx + probe) & mask];
       uint64_t expected = 0;
+      // EMPTY → CLAIMED transition.
       if (entry.content_hash.compare_exchange_strong(
               expected, content_hash.raw(), std::memory_order_acq_rel)) {
+        // CLAIMED → PUBLISHED transition. Any reader that sees the
+        // hash (acquire) after this store will also see the kernel.
         entry.kernel.store(kernel, std::memory_order_release);
         // Relaxed: size_ is informational only (no control flow depends
         // on its exact value). The real synchronization is content_hash CAS.
@@ -808,7 +874,10 @@ class CRUCIBLE_OWNER KernelCache {
         return {};
       }
       if (expected == content_hash.raw()) {
-        // Already exists -- update to newer variant
+        // PUBLISHED(old) → PUBLISHED(new): variant update.
+        // A concurrent reader may briefly observe either kernel value
+        // — both are valid by the insert contract (insert() only runs
+        // with kernel != nullptr; kernel is never demoted to nullptr).
         entry.kernel.store(kernel, std::memory_order_release);
         return {};
       }
@@ -822,6 +891,19 @@ class CRUCIBLE_OWNER KernelCache {
   }
   [[nodiscard]] uint32_t capacity() const { return capacity_; }
 
+  // Diagnostic: classify a slot at index `i` (probing order). Returns
+  // `Empty` for an unused slot, `Claimed` for a transient (hash set but
+  // kernel null) slot, `Published` for a fully-committed entry. Not a
+  // hot-path primitive — tests and perf counters only.
+  [[nodiscard]] SlotState diag_slot_state(uint32_t i) const noexcept
+      CRUCIBLE_NO_THREAD_SAFETY
+      pre (i < capacity_)
+  {
+    const Entry& e = table_[i];
+    return classify_(e.content_hash.load(std::memory_order_acquire),
+                     e.kernel.load(std::memory_order_acquire));
+  }
+
  private:
   struct Entry {
     // NOT relaxed: lock-free hash table protocol.
@@ -832,6 +914,32 @@ class CRUCIBLE_OWNER KernelCache {
     std::atomic<uint64_t> content_hash{0};
     std::atomic<CompiledKernel*> kernel{nullptr};
   };
+
+  // Static classifier — evaluates the state machine from the observed
+  // (hash, kernel) pair. No atomic reads; caller provides the snapshot.
+  [[nodiscard, gnu::const]] static constexpr SlotState classify_(
+      uint64_t hash_bits, const CompiledKernel* k) noexcept
+  {
+    if (hash_bits == 0) return SlotState::Empty;
+    if (k == nullptr)   return SlotState::Claimed;
+    return SlotState::Published;
+  }
+
+  // Cold path: reader saw CLAIMED and waits for PUBLISHED.  Outlined
+  // so the hot lookup stays compact (one cache line).
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
+  [[gnu::cold, gnu::noinline]]
+  static CompiledKernel* await_claimed_(const Entry& entry) noexcept {
+    for (uint32_t spin = 0; spin < kClaimedSpinBudget; ++spin) {
+      CRUCIBLE_SPIN_PAUSE;
+      CompiledKernel* k = entry.kernel.load(std::memory_order_acquire);
+      if (k != nullptr) return k;
+    }
+    // Inserter exceeded the spin budget (preempted?). Treat as miss.
+    // Caller will re-dispatch; next lookup almost certainly finds
+    // PUBLISHED since the insert completes in microseconds at worst.
+    return nullptr;
+  }
 
   Entry* table_;
   uint32_t capacity_;
