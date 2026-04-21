@@ -162,12 +162,39 @@ enum class MicroOp : uint8_t {
 };
 
 // ═══════════════════════════════════════════════════════════════════
+// InstIndex: SSA operand reference inside a ComputeBody
+//
+// A strong 16-bit newtype over the operand index used by Inst.  Its
+// job is to prevent silent confusion with the ComputeBody's fellow
+// uint16_t scalars (num_ops, num_loads, store_op) — all of which live
+// in the same struct and could trivially be swapped into an operand
+// slot during a refactor.
+//
+// InstIndex stays 2 bytes so sizeof(Inst) remains 8.  Aggregate-init
+// via `{0, 1, 0}` on an Inst's operands[] continues to work because
+// InstIndex is an aggregate with a single uint16_t member.
+// ═══════════════════════════════════════════════════════════════════
+
+struct InstIndex {
+  uint16_t v = 0;
+
+  constexpr bool operator==(const InstIndex&) const noexcept = default;
+  constexpr auto operator<=>(const InstIndex&) const noexcept = default;
+
+  [[nodiscard, gnu::const]] constexpr uint16_t raw() const noexcept { return v; }
+};
+
+static_assert(sizeof(InstIndex) == sizeof(uint16_t),
+              "InstIndex must stay 2 bytes to preserve sizeof(Inst) == 8");
+static_assert(std::is_standard_layout_v<InstIndex>);
+
+// ═══════════════════════════════════════════════════════════════════
 // Inst: One micro-op instruction (8 bytes, SSA form)
 //
-// Operands are 0-based indices into the ComputeBody ops array.
-// Max 65535 instructions per body (typical kernels: 5-50 ops).
+// Operands are 0-based InstIndex references into the ComputeBody ops
+// array.  Max 65535 instructions per body (typical kernels: 5-50).
 //
-//   LOAD:   operands[0] = input buffer index
+//   LOAD:   operands[0] = input buffer index (by SSA convention)
 //   Unary:  operands[0] = source
 //   Binary: operands[0] = LHS, [1] = RHS
 //   WHERE:  operands[0] = cond, [1] = true, [2] = false
@@ -176,7 +203,7 @@ enum class MicroOp : uint8_t {
 struct Inst {
   MicroOp op{};                    // 1B — zero = LOAD (overwritten before use)
   ScalarType dtype = ScalarType::Undefined; // 1B — result dtype
-  uint16_t operands[3]{};          // 6B — SSA references
+  InstIndex operands[3]{};          // 6B — SSA references (strong-typed)
 };
 
 static_assert(sizeof(Inst) == 8, "Inst must be 8 bytes");
