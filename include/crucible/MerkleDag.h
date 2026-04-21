@@ -23,6 +23,7 @@
 #include <crucible/IterationDetector.h>
 #include <crucible/Reflect.h>
 #include <crucible/TraceRing.h>
+#include <crucible/safety/Refined.h>
 
 #include <crucible/Types.h>
 
@@ -343,7 +344,31 @@ struct TraceNode {
   TraceNodeKind kind{};     // 1B
   uint8_t pad[7]{};         // 7B — alignment for merkle_hash
   MerkleHash merkle_hash;   // 8B — subtree identity (includes all descendants)
+                             // Field stays as MerkleHash (default-zero
+                             // at construction, populated by
+                             // recompute_merkle).  Type wrapping the
+                             // field would break layout; consumers use
+                             // the computed_merkle_hash() accessor
+                             // below to get a non-zero-refined view.
   TraceNode* next = nullptr; // 8B — continuation (null for TERMINAL)
+
+  // Accessor for callers that require merkle_hash to be populated.
+  // Returns Refined<non_zero, MerkleHash> — caller must have called
+  // recompute_merkle on this node (or its ancestor) before invoking,
+  // or the Refined ctor's contract fires.
+  //
+  // Rationale: freshly-constructed nodes have merkle_hash == 0.
+  // Comparing a fresh node's hash to a stored one gives a spurious
+  // mismatch.  Routing through this accessor makes "the hash has been
+  // computed" a load-bearing precondition at the type level.
+  [[nodiscard]] crucible::safety::Refined<
+      crucible::safety::non_zero, MerkleHash>
+  computed_merkle_hash() const noexcept
+      pre (merkle_hash.raw() != 0)
+  {
+    return crucible::safety::Refined<
+        crucible::safety::non_zero, MerkleHash>{merkle_hash};
+  }
 };
 
 static_assert(sizeof(TraceNode) == 24, "TraceNode must be 24 bytes");
