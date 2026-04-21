@@ -142,6 +142,12 @@ class Vigil {
         CallsiteHash                 callsite_hash = {})
         pre(ve.value() != nullptr)
     {
+#ifndef NDEBUG
+        // Debug-only SPSC producer-thread check — first dispatch claims
+        // the thread, subsequent dispatches must come from the same one.
+        // Release builds skip this entirely (zero hot-path cost).
+        assert_producer_thread_();
+#endif
         const TraceRing::Entry& entry = *ve.value();
 
         // ── COMPILED path (hot) ──
@@ -177,6 +183,27 @@ class Vigil {
         return {.action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {},
                 .op_index = OpIndex{}};
     }
+
+#ifndef NDEBUG
+    // First call claims; subsequent calls verify match.  Debug-only.
+    CRUCIBLE_INLINE void assert_producer_thread_() noexcept {
+        const auto cur = std::this_thread::get_id();
+        auto claimed = producer_tid_.load(std::memory_order_relaxed);
+        if (claimed == cur) return;
+        if (claimed == std::thread::id{}) {
+            // First dispatch — try to claim.  Relaxed: this is a
+            // debug-only lifecycle gate, no cross-thread sync needed.
+            if (producer_tid_.compare_exchange_strong(
+                    claimed, cur, std::memory_order_relaxed)) {
+                return;
+            }
+            // Lost the race — another thread claimed first; fall through.
+        }
+        contract_assert(claimed == cur &&
+                        "Vigil::dispatch_op called from a thread other than the "
+                        "foreground producer — SPSC invariant violated");
+    }
+#endif
 
     // ─── Queries (lock-free reads) ─────────────────────────────────
 
@@ -629,6 +656,14 @@ class Vigil {
     std::unique_ptr<MetaLog>        meta_log_;
     TransactionLog<16>              tx_log_;
     std::optional<Cipher>           cipher_;
+    // SPSC invariant: every dispatch_op / record_op must come from the
+    // SAME thread (the foreground producer).  A different thread entering
+    // violates the ring's single-producer protocol and can corrupt the
+    // head-tail relationship.  producer_tid_ captures the first
+    // dispatching thread's id and debug-asserts match on every subsequent
+    // dispatch.  In release builds the contract collapses under
+    // semantic=ignore.
+    std::atomic<std::thread::id>    producer_tid_{};
     // Relaxed ordering on both: fg-thread-primary, no data dependencies.
     // mode_ is a status flag — real sync is pending_region_ acquire.
     // step_ is a monotonic counter — bg never reads, tests need only approx.
