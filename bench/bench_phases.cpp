@@ -405,10 +405,12 @@ void bench_phase2_subparts(
             + static_cast<size_t>(total_outputs) * sizeof(SlotId);
         char* aux = (aux_bytes > 0)
             ? static_cast<char*>(
-                  bg.arena.alloc(A, aux_bytes, alignof(int64_t)))
+                  bg.arena.alloc(A,
+                      crucible::safety::Positive<size_t>{aux_bytes},
+                      crucible::safety::PowerOfTwo<size_t>{alignof(int64_t)}))
             : nullptr;
         bg.ensure_scratch_buffers(total_inputs, total_outputs);
-        const uint32_t slot_cap = std::min(bg.slot_cap_max_,
+        const uint32_t slot_cap = std::min(bg.slot_cap_max_.get(),
             std::max(uint32_t{256}, total_inputs + total_outputs));
         std::memset(bg.scratch_slots_, 0,
                     slot_cap * sizeof(BackgroundThread::SlotInfo));
@@ -472,7 +474,9 @@ void bench_phase2_subparts(
             + static_cast<size_t>(total_outputs) * sizeof(SlotId);
         char* aux_cursor = (aux_bytes > 0)
             ? static_cast<char*>(
-                  bg.arena.alloc(A, aux_bytes, alignof(int64_t)))
+                  bg.arena.alloc(A,
+                      crucible::safety::Positive<size_t>{aux_bytes},
+                      crucible::safety::PowerOfTwo<size_t>{alignof(int64_t)}))
             : nullptr;
 
         const uint64_t t0 = bench::rdtsc_start();
@@ -611,7 +615,7 @@ void bench_phase2_subparts(
             bg.map_gen_++;
             if (bg.map_gen_ == 0) {
                 std::memset(bg.scratch_map_, 0,
-                            bg.map_cap_
+                            bg.map_cap_.get()
                                 * sizeof(BackgroundThread::PtrSlot));
                 bg.map_gen_ = 1;
             }
@@ -671,7 +675,7 @@ void bench_phase2_subparts(
             bg.map_gen_++;
             if (bg.map_gen_ == 0) {
                 std::memset(bg.scratch_map_, 0,
-                            bg.map_cap_
+                            bg.map_cap_.get()
                                 * sizeof(BackgroundThread::PtrSlot));
                 bg.map_gen_ = 1;
             }
