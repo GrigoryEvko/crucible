@@ -70,11 +70,19 @@ namespace crucible {
 
 // ─── Error taxonomy ─────────────────────────────────────────────────
 //
-// by_name is the only path that can fail against user input; a bad
-// recipe name is the sole error class.  The enum is stable across
-// versions — new recipes are added by appending, not renumbering.
+// Two distinct miss conditions:
+//   - NameNotFound — user or pin referenced an unknown recipe name.
+//     Recoverable: fall back to a default; log; etc.
+//   - HashNotFound — Cipher loaded a persisted RecipeHash that the
+//     current-process registry cannot resolve.  Indicates either a
+//     registry downgrade (the hash was persisted by a newer build
+//     that knew a recipe this build doesn't) or file corruption.
+//
+// Enum ordinals are stable across versions — new recipes are added by
+// appending entries to the registry, not by renumbering the errors.
 enum class RecipeError : uint8_t {
   NameNotFound = 1,
+  HashNotFound = 2,
 };
 
 class CRUCIBLE_OWNER RecipeRegistry {
@@ -123,6 +131,33 @@ class CRUCIBLE_OWNER RecipeRegistry {
   // Cost: ~15 ns for a miss, ~5-10 ns for a hit.
   [[nodiscard, gnu::pure]] std::expected<const NumericalRecipe*, RecipeError>
       by_name(std::string_view name) const noexcept;
+
+  // Look up a starter recipe by Family-A hash.
+  //
+  // This is the Cipher load path: a persisted KernelContentHash
+  // (FORGE.md §18.6) composes a RecipeHash; on recovery the Cipher
+  // hands the hash to the registry to resolve back to the canonical
+  // const NumericalRecipe* pointer in the current process.
+  //
+  // Hash mismatch modes:
+  //   - The persisted registry had a recipe this process's registry
+  //     doesn't (registry downgrade): returns HashNotFound.
+  //   - The persistence blob was corrupted: same, returns HashNotFound.
+  //   - The Family-A hash fold changed since persist (CDAG_VERSION
+  //     break): same, returns HashNotFound.
+  //
+  // Callers MUST handle the miss — falling back to a default recipe
+  // is usually wrong (it breaks the load-bearing replay-determinism
+  // invariant from CRUCIBLE.md §10).  The right escalation is: abort
+  // the load, surface a "recipe downgrade" diagnostic, require the
+  // operator to either re-run with the newer build or accept the
+  // non-replayable loss.
+  //
+  // Cost: ~8 ns miss, ~5 ns hit — one predicated branch per entry,
+  // no string compare overhead.  Compared to by_name this is tighter
+  // because 8-byte hash compare is a single integer test.
+  [[nodiscard, gnu::pure]] std::expected<const NumericalRecipe*, RecipeError>
+      by_hash(RecipeHash hash) const noexcept;
 
   // Enumerate every (name, recipe*) binding.  Order matches the
   // starter table declaration order in the .cpp; stable across the
@@ -349,6 +384,22 @@ RecipeRegistry::by_name(std::string_view name) const noexcept
     }
   }
   return std::unexpected(RecipeError::NameNotFound);
+}
+
+inline std::expected<const NumericalRecipe*, RecipeError>
+RecipeRegistry::by_hash(RecipeHash hash) const noexcept
+{
+  // Linear scan — 8 × 8-byte compare = one cache line's worth of
+  // work, faster than a hash-map probe would be.  The hash stored
+  // on each interned recipe is authoritative (RecipePool guarantees
+  // it via compute_recipe_hash) so comparing against recipe->hash
+  // is the identity the caller expects.
+  for (const auto& e : entries_) {
+    if (e.recipe->hash == hash) {
+      return e.recipe;
+    }
+  }
+  return std::unexpected(RecipeError::HashNotFound);
 }
 
 }  // namespace crucible

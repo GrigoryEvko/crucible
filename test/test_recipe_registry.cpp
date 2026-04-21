@@ -373,8 +373,62 @@ int main() {
   }
 
   // ═══════════════════════════════════════════════════════════════════
-  // 9. Independence across registries — two registries, two pools,
-  //    same names, different pointers; same Family-A hashes.
+  // 9. by_hash — the Cipher load-path counterpart to by_name
+  //
+  //    Persisted RecipeHash values must resolve back to the canonical
+  //    const NumericalRecipe* pointer.  Three cases:
+  //      (a) hit — every starter's stored hash resolves to the same
+  //          pointer as by_name
+  //      (b) miss — bogus hash returns HashNotFound (NOT
+  //          NameNotFound; the two error classes are distinct)
+  //      (c) sentinel miss — RecipeHash::sentinel() (UINT64_MAX)
+  //          is reserved as an end-of-region marker and must never
+  //          appear as a valid recipe hash
+  // ═══════════════════════════════════════════════════════════════════
+  {
+    Arena arena{};
+    RecipePool pool{arena, alloc_cap()};
+    RecipeRegistry reg{pool, alloc_cap()};
+
+    // (a) Every starter's hash resolves via by_hash to the same
+    //     canonical pointer as by_name.
+    for (const auto& entry : reg.entries()) {
+      auto via_hash = reg.by_hash(entry.recipe->hash);
+      assert(via_hash.has_value());
+      assert(*via_hash == entry.recipe);
+
+      auto via_name = reg.by_name(entry.name);
+      assert(via_name.has_value());
+      assert(*via_hash == *via_name);
+    }
+
+    // (b) Bogus hashes miss with HashNotFound — NOT NameNotFound.
+    //     The two error classes are distinct so callers can
+    //     distinguish "user typo" (by_name miss) from "Cipher
+    //     downgrade" (by_hash miss).
+    const crucible::RecipeHash bogus_hashes[] = {
+        crucible::RecipeHash{0xDEADBEEFCAFEBABEULL},
+        crucible::RecipeHash{0x0000000000000000ULL},  // all-zero
+        crucible::RecipeHash{0x0000000000000001ULL},  // near-zero
+        crucible::RecipeHash{0xFFFFFFFFFFFFFFFEULL},  // near-max
+    };
+    for (auto h : bogus_hashes) {
+      auto r = reg.by_hash(h);
+      assert(!r.has_value());
+      assert(r.error() == RecipeError::HashNotFound);
+    }
+
+    // (c) Sentinel hash (UINT64_MAX) is reserved as end-of-region
+    //     marker in RegionNode (see Types.h RecipeHash::sentinel).
+    //     A real recipe must never produce it.
+    auto sentinel_miss = reg.by_hash(crucible::RecipeHash::sentinel());
+    assert(!sentinel_miss.has_value());
+    assert(sentinel_miss.error() == RecipeError::HashNotFound);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // 10. Independence across registries — two registries, two pools,
+  //     same names, different pointers; same Family-A hashes.
   // ═══════════════════════════════════════════════════════════════════
   {
     Arena arena_a{};
