@@ -402,7 +402,13 @@ struct CKernelTable {
         register_op(mint_mutable_view(), schema_hash, id);
     }
 
-    [[nodiscard]] CKernelId classify(SchemaHash schema_hash) const {
+    // Binary search over the sorted entries[] array.  gnu::pure: depends
+    // only on the argument + the table contents (read via implicit this).
+    // Called on the hot path by Vigil::record_op for every op — the
+    // optimizer can CSE classify(h) across multiple calls within a basic
+    // block as long as no register_op() intervenes.  The table is sealed
+    // before bg start(), so hot-path calls can assume stable contents.
+    [[nodiscard, gnu::pure]] CKernelId classify(SchemaHash schema_hash) const noexcept {
         uint32_t lo = 0, hi = size;
         while (lo < hi) {
             const uint32_t mid = lo + (hi - lo) / 2;
@@ -437,7 +443,7 @@ inline void register_schema_hash(SchemaHash schema_hash, CKernelId id) {
     global_ckernel_table().register_op(schema_hash, id);
 }
 
-[[nodiscard]] inline CKernelId classify_kernel(SchemaHash schema_hash) {
+[[nodiscard, gnu::pure]] inline CKernelId classify_kernel(SchemaHash schema_hash) noexcept {
     return global_ckernel_table().classify(schema_hash);
 }
 
