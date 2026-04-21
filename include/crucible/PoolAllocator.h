@@ -55,11 +55,16 @@ struct CRUCIBLE_OWNER PoolAllocator {
   // DetachedPool — raw aligned buffer owned by the detach site; frees on
   // destruction. Non-copyable, non-movable: consumed via guaranteed copy
   // elision (C++17 P0135).
-  struct CRUCIBLE_OWNER DetachedPool {
+  struct [[nodiscard]] CRUCIBLE_OWNER DetachedPool {
     void*    base  = nullptr;
     uint64_t bytes = 0;
 
     DetachedPool() = default;
+    // Owner ctor — carries a freshly-allocated buffer.  [[nodiscard]] at
+    // class level already prevents discarding the whole DetachedPool;
+    // the ctor doesn't need its own attribute but the class-level
+    // nodiscard makes accidental temporaries at the detach site a
+    // compile error — the caller must bind to a named local.
     DetachedPool(void* b, uint64_t n) noexcept : base{b}, bytes{n} {}
     ~DetachedPool() { std::free(base); }
 
