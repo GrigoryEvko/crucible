@@ -1,5 +1,6 @@
 #include <crucible/CKernel.h>
 #include <crucible/MerkleDag.h>
+#include <crucible/safety/Tagged.h>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -13,6 +14,12 @@ static const crucible::SchemaHash HASH_RELU     {0xDDDD000000000004ULL};
 static const crucible::SchemaHash HASH_EWISE_ADD{0xEEEE000000000005ULL};
 static const crucible::SchemaHash HASH_UNKNOWN  {0xDEAD000000000000ULL};
 
+// Simulated-Vessel tag wrapper.  register_schema_hash() requires the
+// hash to carry source::External provenance — tests explicitly retag
+// their fixtures to document "this path pretends to be Vessel".
+using ExtHash = crucible::safety::Tagged<crucible::SchemaHash,
+                                          crucible::safety::source::External>;
+
 int main() {
     using namespace crucible;
 
@@ -22,11 +29,11 @@ int main() {
     assert(classify_kernel(HASH_UNKNOWN)   == CKernelId::OPAQUE);
 
     // ── Register known ops (simulating Vessel startup registration) ──────
-    register_schema_hash(HASH_LINEAR,    CKernelId::GEMM_LINEAR);
-    register_schema_hash(HASH_CONV2D,    CKernelId::CONV2D);
-    register_schema_hash(HASH_SDPA,      CKernelId::SDPA);
-    register_schema_hash(HASH_RELU,      CKernelId::ACT_RELU);
-    register_schema_hash(HASH_EWISE_ADD, CKernelId::EWISE_ADD);
+    register_schema_hash(ExtHash{HASH_LINEAR},    CKernelId::GEMM_LINEAR);
+    register_schema_hash(ExtHash{HASH_CONV2D},    CKernelId::CONV2D);
+    register_schema_hash(ExtHash{HASH_SDPA},      CKernelId::SDPA);
+    register_schema_hash(ExtHash{HASH_RELU},      CKernelId::ACT_RELU);
+    register_schema_hash(ExtHash{HASH_EWISE_ADD}, CKernelId::EWISE_ADD);
 
     // ── Registered ops resolve correctly ────────────────────────────────
     assert(classify_kernel(HASH_LINEAR)    == CKernelId::GEMM_LINEAR);
@@ -48,7 +55,7 @@ int main() {
 
     // ── Idempotent re-registration (same hash, same id) ─────────────────
     // Second registration of same hash: table should still return correct id.
-    register_schema_hash(HASH_LINEAR, CKernelId::GEMM_LINEAR);
+    register_schema_hash(ExtHash{HASH_LINEAR}, CKernelId::GEMM_LINEAR);
     assert(classify_kernel(HASH_LINEAR) == CKernelId::GEMM_LINEAR);
 
     // ── ckernel_name() sanity ────────────────────────────────────────────

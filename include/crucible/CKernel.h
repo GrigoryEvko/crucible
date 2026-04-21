@@ -32,6 +32,7 @@
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <crucible/safety/ScopedView.h>
+#include <crucible/safety/Tagged.h>
 
 #include <algorithm>
 #include <atomic>
@@ -455,8 +456,25 @@ static_assert(crucible::safety::no_scoped_view_field_check<CKernelTable>());
 }
 
 // Called by Vessel at startup, before BackgroundThread::start().
-inline void register_schema_hash(SchemaHash schema_hash, CKernelId id) {
-    global_ckernel_table().register_op(schema_hash, id);
+//
+// Provenance: the SchemaHash parameter is Tagged<source::External>
+// because every real caller is the Vessel adapter translating an
+// ATen OperatorHandle schema from PyTorch — a foreign runtime.  The
+// type discipline documents the trust boundary: internal code (bg
+// thread, replay engine) never synthesizes schema hashes for
+// registration; tests that pre-populate the table must construct a
+// Tagged<..., source::External> explicitly, making "this test is
+// simulating what Vessel would pass" visible at the call site.
+//
+// Overload resolution: an untyped `register_schema_hash(hash, id)`
+// call now fails to compile; callers must wrap with
+// `Tagged<SchemaHash, source::External>{hash}`.
+inline void register_schema_hash(
+    crucible::safety::Tagged<SchemaHash,
+                             crucible::safety::source::External> schema_hash,
+    CKernelId id)
+{
+    global_ckernel_table().register_op(schema_hash.value(), id);
 }
 
 [[nodiscard, gnu::pure]] inline CKernelId classify_kernel(SchemaHash schema_hash) noexcept {
