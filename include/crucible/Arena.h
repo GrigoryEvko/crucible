@@ -126,6 +126,35 @@ class CRUCIBLE_OWNER Arena {
         crucible::safety::PowerOfTwo<size_t>{alignof(T)}));
   }
 
+  // Allocate N elements of T where N > 0 is guaranteed by the caller.
+  //
+  // Unlike alloc_array(), this variant never returns nullptr — the
+  // pre() contract rejects n == 0 at the call site.  Use when the
+  // count is structurally non-zero (e.g., bracketed by `if (count > 0)`
+  // at the caller) to eliminate redundant null checks downstream.
+  //
+  // Rationale: NullSafe demands (pointer, count) agreement.  Mixing
+  // alloc_array with if-count-nonzero guards creates two places where
+  // the "non-zero → non-null" invariant must be maintained; a refactor
+  // dropping either guard silently yields (null, N > 0) — every
+  // subsequent read dereferences null.  alloc_array_nonzero collapses
+  // the invariant into the callee: the contract fires if count is
+  // ever 0, [[assume]] propagates n > 0 into the downstream mul_sat
+  // so the optimizer can prove the result non-zero, and
+  // gnu::returns_nonnull exposes the proof to callers' null-check
+  // elimination.
+  template <typename T>
+  [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE
+  T* alloc_array_nonzero(fx::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND
+      pre (n > 0)
+  {
+    [[assume(n > 0)]];
+    const size_t nbytes = crucible::sat::mul_sat(n, sizeof(T));
+    return static_cast<T*>(alloc(a,
+        crucible::safety::Positive<size_t>{nbytes},
+        crucible::safety::PowerOfTwo<size_t>{alignof(T)}));
+  }
+
   // Copy a null-terminated string into the arena. Returns nullptr iff src is
   // null, non-null otherwise (NullSafe: both pointer and length agree).
   [[nodiscard]] const char* copy_string(fx::Alloc a, const char* src) CRUCIBLE_LIFETIMEBOUND {
