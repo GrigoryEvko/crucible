@@ -374,3 +374,9 @@ crucible_neg_compile_test(neg_schema_register_with_sealed_view
   "no matching function for call to.*register_name")
 crucible_neg_compile_test(neg_ckernel_register_with_sealed_view
   "no matching function for call to.*register_op")
+
+# Cross-carrier discipline: Cipher::store(OpenView, ...) must reject a
+# ScopedView parametrized on a different Carrier+Tag (SchemaTable's
+# SealedView).  Proves the type-state lock is per-carrier.
+crucible_neg_compile_test(neg_cipher_wrong_tag
+  "no matching function for call to.*store")

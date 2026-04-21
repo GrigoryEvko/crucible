@@ -276,9 +276,13 @@ class Vigil {
         if (!cipher_.has_value()) return false;
         const RegionNode* r = active_region();
         if (!r) return false;
-        const ContentHash hash = cipher_->store(r, meta_log_.get());
+        // cipher_.has_value() guarantees Open (we only emplace via open()).
+        // Mint the view once and thread it through both typed calls —
+        // one acquire load instead of two redundant mints.
+        auto ov = cipher_->mint_open_view();
+        const ContentHash hash = cipher_->store(ov, r, meta_log_.get());
         if (!hash) return false;
-        cipher_->advance_head(hash,
+        cipher_->advance_head(ov, hash,
                               step_.load(std::memory_order_relaxed));
         return true;
     }
@@ -288,7 +292,8 @@ class Vigil {
     // Also activates CrucibleContext if the region has a MemoryPlan.
     [[nodiscard]] bool load(fx::Alloc a) {
         if (!cipher_.has_value() || cipher_->empty()) return false;
-        RegionNode* r = cipher_->load(a, cipher_->head(), load_arena_);
+        auto ov = cipher_->mint_open_view();
+        RegionNode* r = cipher_->load(ov, a, cipher_->head(), load_arena_);
         if (!r) return false;
         bg_.active_region.store(r, std::memory_order_release);
         mode_.store(Mode::COMPILED, std::memory_order_relaxed);
@@ -376,7 +381,8 @@ class Vigil {
 
         // Pre-store the object (idempotent) so persist() is instant later.
         if (cipher_.has_value()) {
-            (void)cipher_->store(region, meta_log_.get());
+            auto ov = cipher_->mint_open_view();
+            (void)cipher_->store(ov, region, meta_log_.get());
         }
     }
 
