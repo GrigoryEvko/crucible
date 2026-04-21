@@ -147,6 +147,12 @@ struct MemoryPlan {
   int32_t world_size = 0;     // 4B — total processes (0 = not distributed)
 };
 
+// MemoryPlan layout: slots(8) + pool_bytes(8) + num_slots(4) + num_external(4) +
+// device_type(1) + device_idx(1) + pad(2) + device_capability(8) + rank(4) +
+// world_size(4) = 44B → aligned to 48 via trailing pad the compiler inserts.
+static_assert(sizeof(MemoryPlan) == 48,
+              "MemoryPlan size changed — update serializer and on-disk format");
+
 // Compute storage size in bytes from TensorMeta.
 //
 // The total storage span is the sum of per-dimension extents (not the
@@ -162,7 +168,9 @@ struct MemoryPlan {
 // arithmetic step is now overflow-checked via __builtin_*_overflow;
 // any overflow returns UINT64_MAX so allocators downstream fail clean
 // on "tensor too large" rather than silently wrap.
-[[nodiscard]] constexpr uint64_t compute_storage_nbytes(const TensorMeta& m) {
+[[nodiscard]] constexpr uint64_t compute_storage_nbytes(const TensorMeta& m)
+    pre (m.ndim <= 8)
+{
   if (m.ndim == 0)
     return element_size(m.dtype);
   int64_t max_offset = 0;
@@ -361,6 +369,12 @@ struct RegionNode : TraceNode {
   MemoryPlan* plan = nullptr; // 8B — liveness analysis result (null until computed)
 };
 
+// RegionNode layout: TraceNode(24) + content_hash(8) + compiled(8) + ops(8)
+// + num_ops(4) + pad(4) + first_op_schema(8) + measured_ms(4) + variant_id(4)
+// + plan(8) = 80B.
+static_assert(sizeof(RegionNode) == 80,
+              "RegionNode size changed — update serializer, replay, content hash");
+
 // ═══════════════════════════════════════════════════════════════════
 // BranchNode: A guard point where execution can diverge
 //
@@ -381,6 +395,13 @@ struct BranchNode : TraceNode {
   uint32_t num_arms = 0;    // 4B
   uint32_t pad1 = 0;        // 4B — alignment
 };
+
+// BranchNode layout locked: TraceNode(24) + Guard(~12B) padded + arms(8)
+// + num_arms(4) + pad1(4).  Any layout change invalidates on-disk
+// region hashes — the serializer reads this struct's bytes, so a size
+// drift is a silent content-hash drift across Cipher round-trips.
+static_assert(sizeof(BranchNode) == 56,
+              "BranchNode size changed — update serializer + content hash");
 
 // ═══════════════════════════════════════════════════════════════════
 // FeedbackEdge: Body output → body input across loop iterations
@@ -626,8 +647,10 @@ class CRUCIBLE_OWNER KernelCache {
   // Thread-safe insert via CAS. Overwrites if key already exists.
   // Background thread primary writer, safe by atomic CAS protocol.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
-  void insert(ContentHash content_hash, CompiledKernel* kernel) CRUCIBLE_NO_THREAD_SAFETY {
-    assert(content_hash.raw() != 0 && "zero is the sentinel for empty slots");
+  void insert(ContentHash content_hash, CompiledKernel* kernel) CRUCIBLE_NO_THREAD_SAFETY
+      pre (content_hash.raw() != 0)  // zero is the sentinel for empty slots
+      pre (kernel != nullptr)
+  {
     uint32_t mask = capacity_ - 1;
     uint32_t idx = static_cast<uint32_t>(content_hash.raw()) & mask;
     for (uint32_t probe = 0; probe < capacity_; probe++) {
@@ -740,8 +763,13 @@ class CRUCIBLE_OWNER KernelCache {
     uint16_t num_feedback,
     LoopTermKind term_kind,
     uint32_t repeat_count,
-    float epsilon = 0.0f) {
-  assert(body && "LoopNode body must be non-null");
+    float epsilon = 0.0f)
+    pre (body != nullptr)
+    pre (num_feedback == 0 || feedback != nullptr)
+{
+  // pre() above replaces the runtime assert; kept as [[assume]] so the
+  // optimizer can drop redundant null checks in the body.
+  [[assume(body != nullptr)]];
   auto* node = new (arena.alloc_obj<LoopNode>(a))
       LoopNode{};
   node->kind = TraceNodeKind::LOOP;
