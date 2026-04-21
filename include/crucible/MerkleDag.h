@@ -30,6 +30,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <expected>
@@ -400,10 +401,51 @@ struct RegionNode : TraceNode {
 
   SchemaHash first_op_schema;   // 8B — quick mismatch detection
 
-  float measured_ms = 0.0f;  // 4B — last measured execution time
+  // measured_ms is a wall-clock duration (kernel execution time from
+  // the profiler).  Semantic invariant: non-negative and finite.
+  // NaN / Inf / negative values would flow into Augur's convergence
+  // prediction / scheduler cost model, producing wild extrapolations
+  // or infinite loops.  The field type stays float (layout: RegionNode
+  // == 80B locked; Serialize reads/writes raw float bits), but
+  // mutating accessors validate.
+  float measured_ms = 0.0f;  // 4B — last measured execution time (ms)
+
+  // variant_id selects which CompiledKernel variant was observed at
+  // this region's content_hash.  Zero is the sentinel meaning "no
+  // variant selected yet" (fresh region, never executed).
   uint32_t variant_id = 0;   // 4B — which compiled variant is active
 
   MemoryPlan* plan = nullptr; // 8B — liveness analysis result (null until computed)
+
+  // ── Validating accessors ──
+  //
+  // Prefer these over direct field writes at mutation sites: contract
+  // contracts catch NaN/Inf/negative propagation and zero-variant
+  // overwrite-after-selection bugs.
+  void set_measured_ms(float ms) noexcept
+      pre (ms >= 0.0f)                 // rejects negative (and NaN via !>=)
+      pre (!std::isinf(ms))            // rejects ±Inf
+  {
+    measured_ms = ms;
+  }
+
+  [[nodiscard, gnu::pure]] bool has_measurement() const noexcept {
+    return measured_ms > 0.0f;
+  }
+
+  [[nodiscard, gnu::pure]] bool has_variant() const noexcept {
+    return variant_id != 0;
+  }
+
+  // Set the active variant.  pre(new_id != 0) rejects the zero
+  // sentinel (which means "no variant" — overwriting a real variant
+  // with the sentinel is a bug).  If a future policy allows reverting
+  // to "no variant", add an explicit clear_variant() method.
+  void set_variant(uint32_t new_id) noexcept
+      pre (new_id != 0)
+  {
+    variant_id = new_id;
+  }
 };
 
 // RegionNode layout: TraceNode(24) + content_hash(8) + compiled(8) + ops(8)
