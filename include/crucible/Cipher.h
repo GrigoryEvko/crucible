@@ -15,12 +15,23 @@
 //
 // The Cipher is not thread-safe. It should be owned and accessed from
 // a single thread (typically foreground, during persist() / load() calls).
+//
+// Lifecycle (compile-time via ScopedView, runtime via contract):
+//
+//   Closed (default-constructed or moved-from) → Open (returned by open())
+//
+// Open means `root_` is non-empty and the objects/ directory exists; all
+// disk-touching methods (store, load, advance_head, hash_at_step) require
+// an OpenView to prove the state.  head() and empty() work in either
+// state because they read only in-memory fields that are well-defined
+// for a Closed Cipher too (empty root, null head).
 
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/Serialize.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/ScopedView.h>
 
 #include <chrono>
 #include <cstdint>
@@ -28,9 +39,17 @@
 #include <format>
 #include <fstream>
 #include <string>
+#include <type_traits>
 #include <vector>
 
 namespace crucible {
+
+// ── Cipher state tag ────────────────────────────────────────────────
+// Open denotes: open() has run, objects/ exists, root_ is non-empty.
+// Closed is implicit (no tag) — the negation of is_open().
+namespace cipher_state {
+    struct Open {};
+}
 
 class CRUCIBLE_OWNER Cipher {
  public:
@@ -65,9 +84,28 @@ class CRUCIBLE_OWNER Cipher {
     Cipher(Cipher&&)                 = default;
     Cipher& operator=(Cipher&&)      = default;
 
+    // ── Open-state query + view minting ─────────────────────────────
+    [[nodiscard]] bool is_open() const noexcept { return !root_.empty(); }
+
+    using OpenView = crucible::safety::ScopedView<Cipher, cipher_state::Open>;
+
+    [[nodiscard]] OpenView mint_open_view() noexcept
+        pre (is_open())
+    {
+        return crucible::safety::mint_view<cipher_state::Open>(*this);
+    }
+
+    [[nodiscard]] friend constexpr bool view_ok(
+        Cipher const& c, std::type_identity<cipher_state::Open>) noexcept {
+        return c.is_open();
+    }
+
     // ─── Store ──────────────────────────────────────────────────────
 
-    [[nodiscard]] ContentHash store(const RegionNode* region, const MetaLog* meta_log) {
+    // Typed: caller has proved Open.  Zero runtime state check.
+    [[nodiscard]] ContentHash store(OpenView const&,
+                                    const RegionNode* region,
+                                    const MetaLog* meta_log) {
         if (!region) return ContentHash{};
         const ContentHash hash = region->content_hash;
         if (!hash) return ContentHash{};
@@ -94,6 +132,12 @@ class CRUCIBLE_OWNER Cipher {
         return f ? hash : ContentHash{};
     }
 
+    // Legacy: mints OpenView locally; fires mint_open_view()'s pre()
+    // contract if the Cipher is Closed.
+    [[nodiscard]] ContentHash store(const RegionNode* region, const MetaLog* meta_log) {
+        return store(mint_open_view(), region, meta_log);
+    }
+
     // ─── Load ───────────────────────────────────────────────────────
 
     // Deserialize a RegionNode from objects/<content_hash>.
@@ -104,7 +148,10 @@ class CRUCIBLE_OWNER Cipher {
     // OOM the loader with a SIZE_MAX allocation.
     static constexpr size_t MAX_OBJECT_BYTES = size_t{256} << 20;
 
-    [[nodiscard]] RegionNode* load(fx::Alloc a, ContentHash content_hash, Arena& arena) const {
+    // Typed: caller has proved Open.  const because deserialize does
+    // not mutate the Cipher (it only reads paths under root_).
+    [[nodiscard]] RegionNode* load(OpenView const&, fx::Alloc a,
+                                   ContentHash content_hash, Arena& arena) const {
         if (!content_hash) return nullptr;
         const std::string path = obj_path(content_hash.raw());
         if (!std::filesystem::exists(path)) return nullptr;
@@ -127,12 +174,22 @@ class CRUCIBLE_OWNER Cipher {
         return deserialize_region(a, std::span<const uint8_t>{buf}, arena);
     }
 
+    // Legacy: mints OpenView locally.  Non-const overload because
+    // mint_open_view() needs a mutable *this (ScopedView carriers are
+    // non-const by design); this is the only reason this overload is
+    // not const.  Callers holding `const Cipher&` cannot use the legacy
+    // path — they must obtain a view externally and use the typed
+    // overload, which IS const.
+    [[nodiscard]] RegionNode* load(fx::Alloc a, ContentHash content_hash, Arena& arena) {
+        return load(mint_open_view(), a, content_hash, arena);
+    }
+
     // ─── HEAD management ────────────────────────────────────────────
 
-    // Advance HEAD to `content_hash` and append a log entry for `step_id`.
+    // Typed: caller has proved Open.
     // Contract: step_id must not go backward — steps are documented as
     // monotonic for binary search in hash_at_step() to be correct.
-    void advance_head(ContentHash content_hash, uint64_t step_id)
+    void advance_head(OpenView const&, ContentHash content_hash, uint64_t step_id)
         pre (log_.empty() || step_id >= log_.back().step_id)
     {
         head_ = content_hash;
@@ -152,12 +209,15 @@ class CRUCIBLE_OWNER Cipher {
         }
     }
 
+    // Legacy: mints OpenView locally.
+    void advance_head(ContentHash content_hash, uint64_t step_id) {
+        advance_head(mint_open_view(), content_hash, step_id);
+    }
+
     // ─── Time travel ────────────────────────────────────────────────
 
-    // Returns the content_hash committed at or before `step_id`.
-    // Binary-searches the in-memory log (steps are monotonically increasing).
-    // Returns ContentHash{} if no commit at or before that step exists.
-    [[nodiscard]] ContentHash hash_at_step(uint64_t step_id) const {
+    // Typed: caller has proved Open.  const — reads only log_.
+    [[nodiscard]] ContentHash hash_at_step(OpenView const&, uint64_t step_id) const {
         if (log_.empty()) return ContentHash{};
 
         // Find last entry with log_[mid].step_id <= step_id.
@@ -175,6 +235,12 @@ class CRUCIBLE_OWNER Cipher {
             }
         }
         return result;
+    }
+
+    // Legacy: mints OpenView locally (non-const for the mint path;
+    // see the rationale on load() above).
+    [[nodiscard]] ContentHash hash_at_step(uint64_t step_id) {
+        return hash_at_step(mint_open_view(), step_id);
     }
 
     // ─── Queries ────────────────────────────────────────────────────
@@ -251,5 +317,8 @@ class CRUCIBLE_OWNER Cipher {
                 tp.time_since_epoch()).count());
     }
 };
+
+// Tier 2 opt-in: nothing inside Cipher may be a ScopedView.
+static_assert(crucible::safety::no_scoped_view_field_check<Cipher>());
 
 } // namespace crucible

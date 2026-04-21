@@ -150,6 +150,43 @@ int main() {
         assert(cipher.load(g_test.alloc, crucible::ContentHash{0xBADBADBADBADBAD0ULL}, arena3) == nullptr);
     }
 
+    // ── Closed→Open state machine ────────────────────────────────────
+    {
+        // Default-constructed Cipher is Closed.
+        crucible::Cipher closed;
+        assert(!closed.is_open() && "default Cipher must be Closed");
+        // head() and empty() are safe in Closed state.
+        assert(closed.empty());
+        assert(!closed.head());
+    }
+
+    // ── open() transitions to Open, mint_open_view succeeds ──────────
+    {
+        auto cipher = crucible::Cipher::open(dir);
+        assert(cipher.is_open());
+        auto ov = cipher.mint_open_view();    // no contract violation
+        // Typed overloads compile and work via the minted view.
+        auto* region2 = make_test_region(arena);
+        const auto hash = cipher.store(ov, region2, nullptr);
+        assert(static_cast<bool>(hash));
+        cipher.advance_head(ov, hash, 100);
+        assert(cipher.head() == hash);
+        // Typed hash_at_step via the same view.
+        assert(cipher.hash_at_step(ov, 100) == hash);
+    }
+
+    // ── Moved-from Cipher is Closed (root_ moves out) ────────────────
+    {
+        auto cipher = crucible::Cipher::open(dir);
+        assert(cipher.is_open());
+        auto moved = std::move(cipher);
+        assert(moved.is_open() && "moved-to must be Open");
+        // NB: a moved-from std::string is "valid but unspecified";
+        // libstdc++ leaves it empty, which makes the source Closed.
+        // Don't assert on the source (implementation-defined) — just
+        // verify the invariant on the destination.
+    }
+
     // Cleanup temp dir.
     std::filesystem::remove_all(dir);
 
