@@ -25,7 +25,7 @@
 namespace crucible {
 
 static constexpr uint32_t CDAG_MAGIC   = 0x43444147u; // 'GDAG' LE
-static constexpr uint32_t CDAG_VERSION = 7u;           // v7: op_flags byte replaces inference_mode+is_mutable (3B vs 4B per op)
+static constexpr uint32_t CDAG_VERSION = 8u;           // v8: Guard::hash reflection-based (full-field fold incl. pad); v7 hashes invalid
 
 // Hard caps on header-declared counts.  Real traces top out around
 // 10^5 ops / 10 inputs per op; the extra order of magnitude is slack.
