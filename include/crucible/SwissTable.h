@@ -283,5 +283,13 @@ struct CtrlGroup {
 #endif
 };
 
+// Layout lock: CtrlGroup is a single SIMD register's worth of control
+// bytes.  Vector-width mismatch between sizeof(CtrlGroup) and kGroupWidth
+// would break the load/match bitmask width accounting — catch here.
+// NEON aarch64 keeps kGroupWidth = 16 (SSE2 fallthrough in the kGroupWidth
+// chain), matching int8x16_t's size.
+static_assert(sizeof(CtrlGroup) == kGroupWidth,
+              "CtrlGroup size must match SIMD group width");
+
 } // namespace detail
 } // namespace crucible
