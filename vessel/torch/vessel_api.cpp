@@ -91,15 +91,15 @@ static bool validate_ffi_entry(uint64_t schema_hash,
 
 extern "C" {
 
-CrucibleHandle crucible_create(void) {
+CrucibleHandle crucible_create(void) noexcept {
     return new crucible::Vigil();
 }
 
-void crucible_destroy(CrucibleHandle h) {
+void crucible_destroy(CrucibleHandle h) noexcept {
     delete static_cast<crucible::Vigil*>(h);
 }
 
-uint64_t crucible_hash_string(const char* s) {
+uint64_t crucible_hash_string(const char* s) noexcept {
     if (!s) return 0;
     uint64_t h = FNV_OFFSET;
     while (*s) {
@@ -111,7 +111,7 @@ uint64_t crucible_hash_string(const char* s) {
 
 uint64_t crucible_hash_shapes(const int64_t* all_sizes,
                               const uint8_t* ndims,
-                              uint32_t n_tensors) {
+                              uint32_t n_tensors) noexcept {
     if (n_tensors == 0 || !all_sizes || !ndims) return FNV_OFFSET;
     uint64_t h = FNV_OFFSET;
     uint32_t offset = 0;
@@ -129,7 +129,7 @@ CrucibleDispatchResult crucible_dispatch_op(
     CrucibleHandle handle,
     uint64_t schema_hash, uint64_t shape_hash,
     uint16_t num_inputs, uint16_t num_outputs,
-    const CrucibleMeta* metas, uint32_t n_metas)
+    const CrucibleMeta* metas, uint32_t n_metas) noexcept
 {
     auto* vigil = as_vigil(handle);
 
@@ -167,7 +167,7 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
     uint16_t num_inputs, uint16_t num_outputs,
     const CrucibleMeta* metas, uint32_t n_metas,
     const int64_t* scalar_values, uint16_t num_scalars,
-    uint8_t grad_enabled, uint8_t inference_mode)
+    uint8_t grad_enabled, uint8_t inference_mode) noexcept
 {
     auto* vigil = as_vigil(handle);
 
@@ -207,43 +207,43 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
     return cr;
 }
 
-void crucible_flush(CrucibleHandle h) {
+void crucible_flush(CrucibleHandle h) noexcept {
     as_vigil(h)->flush();
 }
 
-int crucible_is_compiled(CrucibleHandle h) {
+int crucible_is_compiled(CrucibleHandle h) noexcept {
     return as_vigil(h)->is_compiled() ? 1 : 0;
 }
 
-uint32_t crucible_compiled_iterations(CrucibleHandle h) {
+uint32_t crucible_compiled_iterations(CrucibleHandle h) noexcept {
     return as_vigil(h)->compiled_iterations();
 }
 
-uint32_t crucible_diverged_count(CrucibleHandle h) {
+uint32_t crucible_diverged_count(CrucibleHandle h) noexcept {
     return as_vigil(h)->diverged_count();
 }
 
-uint32_t crucible_bg_iterations(CrucibleHandle h) {
+uint32_t crucible_bg_iterations(CrucibleHandle h) noexcept {
     return as_vigil(h)->bg_iterations_completed();
 }
 
-uint32_t crucible_ring_size(CrucibleHandle h) {
+uint32_t crucible_ring_size(CrucibleHandle h) noexcept {
     return as_vigil(h)->ring().size();
 }
 
-uint32_t crucible_metalog_size(CrucibleHandle h) {
+uint32_t crucible_metalog_size(CrucibleHandle h) noexcept {
     return as_vigil(h)->meta_log().size();
 }
 
-void* crucible_output_ptr(CrucibleHandle h, uint16_t j) {
+void* crucible_output_ptr(CrucibleHandle h, uint16_t j) noexcept {
     return as_vigil(h)->output_ptr(j);
 }
 
-void* crucible_input_ptr(CrucibleHandle h, uint16_t j) {
+void* crucible_input_ptr(CrucibleHandle h, uint16_t j) noexcept {
     return as_vigil(h)->input_ptr(j);
 }
 
-void crucible_register_schema_name(uint64_t schema_hash, const char* name) {
+void crucible_register_schema_name(uint64_t schema_hash, const char* name) noexcept {
     // C ABI boundary: caller is the Python wrapper which receives names
     // from Vessel-side code (already validated when going through the
     // PyTorch dispatcher).  Construct Sanitized at the boundary.
@@ -251,11 +251,11 @@ void crucible_register_schema_name(uint64_t schema_hash, const char* name) {
         crucible::SchemaTable::SanitizedName{name});
 }
 
-const char* crucible_schema_name(uint64_t schema_hash) {
+const char* crucible_schema_name(uint64_t schema_hash) noexcept {
     return crucible::schema_name(crucible::SchemaHash{schema_hash});
 }
 
-int crucible_export_crtrace(CrucibleHandle h, const char* path) {
+int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     auto* vigil = as_vigil(h);
     vigil->flush();
 
@@ -339,7 +339,7 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) {
     return ok ? 1 : 0;
 }
 
-uint32_t crucible_active_num_ops(CrucibleHandle h) {
+uint32_t crucible_active_num_ops(CrucibleHandle h) noexcept {
     auto* vigil = as_vigil(h);
     const auto* region = vigil->active_region();
     return region ? region->num_ops : 0;
