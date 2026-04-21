@@ -859,8 +859,26 @@ class CRUCIBLE_OWNER Graph {
 
   // ── Fusion helpers ──────────────────────────────────────────────
 
-  [[nodiscard]] static bool is_fusible_(NodeKind k) {
-    return k == NodeKind::POINTWISE || k == NodeKind::REDUCTION;
+  // Exhaustive classification.  A new NodeKind added without updating
+  // this switch fires -Werror=switch; the default: arm would silently
+  // return false under the old if-chain, hiding the bug.
+  [[nodiscard, gnu::const]] static bool is_fusible_(NodeKind k) noexcept {
+    switch (k) {
+      case NodeKind::POINTWISE:
+      case NodeKind::REDUCTION:
+        return true;
+      case NodeKind::INPUT:
+      case NodeKind::CONSTANT:
+      case NodeKind::SCAN:
+      case NodeKind::SORT:
+      case NodeKind::EXTERN:
+      case NodeKind::TEMPLATE:
+      case NodeKind::MUTATION:
+      case NodeKind::NOP:
+        return false;
+      default:
+        std::unreachable();
+    }
   }
 
   // Two nodes have compatible ranges if same device + same output
