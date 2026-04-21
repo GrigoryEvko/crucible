@@ -649,4 +649,10 @@ class Vigil {
     BackgroundThread                bg_;  // MUST be declared last
 };
 
+// Tier 2 opt-in: nothing inside Vigil may be a ScopedView.  The
+// reflection walk proves that neither Vigil nor any of its fields
+// (transitively, through known wrappers) stores a safety::ScopedView —
+// views must not escape their construction scope.
+static_assert(crucible::safety::no_scoped_view_field_check<Vigil>());
+
 } // namespace crucible
