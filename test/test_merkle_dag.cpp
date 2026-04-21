@@ -24,6 +24,21 @@ int main() {
   // (31*64 + 63*1 + 1) * 4 = 2048 * 4 = 8192 (= 32 * 64 * sizeof(float))
   assert(nbytes == 8192);
 
+  // Overflow path: sizes × strides that wrap int64_t.  The pre-fix
+  // implementation silently wrapped to a tiny value; the new code
+  // returns UINT64_MAX so downstream alloc/recording rejects cleanly.
+  {
+    crucible::TensorMeta huge{};
+    huge.ndim = 2;
+    huge.sizes[0]   = 1LL << 32;   // 4G elements
+    huge.strides[0] = 1LL << 32;   // × 4G stride → 2^64, overflows i64
+    huge.sizes[1]   = 1;
+    huge.strides[1] = 1;
+    huge.dtype = crucible::ScalarType::Float;
+    uint64_t nb = crucible::compute_storage_nbytes(huge);
+    assert(nb == UINT64_MAX && "huge tensor must saturate to UINT64_MAX");
+  }
+
   // Test make_region
   crucible::TraceEntry ops[3]{};
   ops[0].schema_hash = SchemaHash{0xAABB};

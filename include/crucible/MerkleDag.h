@@ -153,6 +153,15 @@ struct MemoryPlan {
 // max). For contiguous [3,4] strides [4,1]: (2*4)+(3*1)+1 = 12 elements.
 // Handles negative strides (e.g. torch.flip, as_strided) by tracking
 // both max and min offset contributions separately.
+//
+// Overflow handling: a corrupt or adversarial TensorMeta could carry
+// huge sizes/strides whose product overflows int64_t silently — the
+// pre-fix code computed (sizes-1)*strides without checking, leaving a
+// path for downstream code to consume a wrapped-around byte count and
+// either underallocate (use-after-free) or trip a contract.  Each
+// arithmetic step is now overflow-checked via __builtin_*_overflow;
+// any overflow returns UINT64_MAX so allocators downstream fail clean
+// on "tensor too large" rather than silently wrap.
 [[nodiscard]] constexpr uint64_t compute_storage_nbytes(const TensorMeta& m) {
   if (m.ndim == 0)
     return element_size(m.dtype);
@@ -160,13 +169,33 @@ struct MemoryPlan {
   int64_t min_offset = 0;
   for (uint8_t d = 0; d < m.ndim; d++) {
     if (m.sizes[d] == 0) return 0; // zero-size tensor
-    int64_t extent = (m.sizes[d] - 1) * m.strides[d];
-    if (extent > 0)
-      max_offset += extent;
-    else
-      min_offset += extent;
+    int64_t extent;
+    // (sizes[d] - 1) * strides[d] can overflow for huge dims.
+    // sizes[d] is positive, so the subtraction never overflows.
+    if (__builtin_mul_overflow(m.sizes[d] - 1, m.strides[d], &extent)) [[unlikely]]
+      return UINT64_MAX;
+    if (extent > 0) {
+      if (__builtin_add_overflow(max_offset, extent, &max_offset)) [[unlikely]]
+        return UINT64_MAX;
+    } else {
+      if (__builtin_add_overflow(min_offset, extent, &min_offset)) [[unlikely]]
+        return UINT64_MAX;
+    }
   }
-  return static_cast<uint64_t>(max_offset - min_offset + 1) * element_size(m.dtype);
+  // span = max_offset - min_offset + 1; both subtractions can overflow
+  // when max and min straddle int64 limits.
+  int64_t span_signed;
+  if (__builtin_sub_overflow(max_offset, min_offset, &span_signed)) [[unlikely]]
+    return UINT64_MAX;
+  if (__builtin_add_overflow(span_signed, int64_t{1}, &span_signed)) [[unlikely]]
+    return UINT64_MAX;
+  // span is non-negative here (max >= 0 >= min, so max - min >= 0).
+  uint64_t bytes;
+  if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed),
+                             static_cast<uint64_t>(element_size(m.dtype)),
+                             &bytes)) [[unlikely]]
+    return UINT64_MAX;
+  return bytes;
 }
 
 // ═══════════════════════════════════════════════════════════════════
