@@ -24,6 +24,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <vector>
 
 using namespace crucible;
@@ -230,7 +231,15 @@ int main() {
     std::printf("--- sub-component baselines ---\n");
 
     reports.push_back([&]{
-        TraceRing ring;
+        // Heap-allocate: sizeof(TraceRing) ≈ 5.3 MB (inline Entry[65536] +
+        // three parallel arrays). On an 8 MB default stack, a second large
+        // local in a sibling IIFE — or GCC's worst-case frame-sum at -O3
+        // inlining all the IIFEs into main() — blows the stack guard page
+        // before main() executes a single instruction. Vigil avoids this
+        // via std::make_unique<TraceRing>(); raw TraceRing on the stack
+        // must follow the same rule.
+        auto ring_up = std::make_unique<TraceRing>();
+        auto& ring = *ring_up;
         ring.reset();
         TraceRing::Entry entry{};
         entry.schema_hash = SchemaHash{0x100};
