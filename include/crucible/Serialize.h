@@ -372,8 +372,7 @@ inline Header read_header(Reader& r) {
     if (!r.ok) return nullptr;
 
     // Construct RegionNode in arena (atomic field requires placement new).
-    auto* node = new (arena.alloc(a, sizeof(RegionNode), alignof(RegionNode)))
-        RegionNode{};
+    auto* node = new (arena.alloc_obj<RegionNode>(a)) RegionNode{};
     node->kind            = TraceNodeKind::REGION;
     node->merkle_hash     = hdr.merkle_hash;
     node->content_hash    = hdr.content_hash;

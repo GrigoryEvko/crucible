@@ -796,8 +796,7 @@ class CRUCIBLE_OWNER Graph {
   GraphNode* alloc_node_(fx::Alloc a) {
     if (num_nodes_ >= capacity_)
       grow_(a, capacity_ * 2);
-    auto* raw = arena_.alloc(a, sizeof(GraphNode), alignof(GraphNode));
-    auto* n = ::new (raw) GraphNode{};
+    auto* n = ::new (arena_.alloc_obj<GraphNode>(a)) GraphNode{};
     n->id = NodeId{num_nodes_};
     nodes_[num_nodes_++] = n;
     return n;
@@ -843,7 +842,9 @@ class CRUCIBLE_OWNER Graph {
     if (!src)
       return nullptr;
     size_t len = std::strlen(src) + 1;
-    auto* dst = static_cast<char*>(arena_.alloc(a, len, 1));
+    auto* dst = static_cast<char*>(arena_.alloc(a,
+        crucible::safety::Positive<size_t>{len},
+        crucible::safety::PowerOfTwo<size_t>{1}));
     std::memcpy(dst, src, len);
     return dst;
   }

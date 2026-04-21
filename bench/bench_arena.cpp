@@ -38,7 +38,8 @@ int main() {
             crucible::Arena arena(1u << 24);
             crucible::fx::Test test;
             return bench::run("arena.alloc(8)", [&]{
-                auto* p = arena.alloc(test.alloc, 8);
+                auto* p = arena.alloc(test.alloc,
+                    crucible::safety::Positive<size_t>{8});
                 bench::do_not_optimize(p);
             });
         }(),
@@ -46,7 +47,8 @@ int main() {
             crucible::Arena arena(1u << 24);
             crucible::fx::Test test;
             return bench::run("arena.alloc(64)", [&]{
-                auto* p = arena.alloc(test.alloc, 64);
+                auto* p = arena.alloc(test.alloc,
+                    crucible::safety::Positive<size_t>{64});
                 bench::do_not_optimize(p);
             });
         }(),
@@ -54,7 +56,9 @@ int main() {
             crucible::Arena arena(1u << 24);
             crucible::fx::Test test;
             return bench::run("arena.alloc(64, align=64)", [&]{
-                auto* p = arena.alloc(test.alloc, 64, 64);
+                auto* p = arena.alloc(test.alloc,
+                    crucible::safety::Positive<size_t>{64},
+                    crucible::safety::PowerOfTwo<size_t>{64});
                 bench::do_not_optimize(p);
             });
         }(),
@@ -93,7 +97,8 @@ int main() {
                          .samples(kSlowPathSamples).warmup(kSlowPathWarmup);
             if (const int c = bench::env_core(); c >= 0) (void)r.core(c);
             return r.measure([&]{
-                auto* p = arena.alloc(test.alloc, 8192);
+                auto* p = arena.alloc(test.alloc,
+                    crucible::safety::Positive<size_t>{8192});
                 bench::do_not_optimize(p);
             });
         }(),

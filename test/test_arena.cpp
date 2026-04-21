@@ -5,6 +5,9 @@
 #include <cstdio>
 #include <cstring>
 
+using crucible::safety::Positive;
+using crucible::safety::PowerOfTwo;
+
 int main() {
   crucible::fx::Test test;
 
@@ -20,20 +23,20 @@ int main() {
   assert(arr[99] >= 148.4 && arr[99] <= 148.6);  // 99 * 1.5 = 148.5
 
   // Alignment: 16-byte aligned allocation (max_align_t guarantee)
-  void* aligned = arena.alloc(test.alloc, 128, 16);
+  void* aligned = arena.alloc(test.alloc, Positive<size_t>{128}, PowerOfTwo<size_t>{16});
   assert(reinterpret_cast<uintptr_t>(aligned) % 16 == 0);
 
   // Cross-block allocation (force new block)
   crucible::Arena small_arena(64);
-  char* p1 = static_cast<char*>(small_arena.alloc(test.alloc, 32, 1));
-  char* p2 = static_cast<char*>(small_arena.alloc(test.alloc, 64, 1));
+  char* p1 = static_cast<char*>(small_arena.alloc(test.alloc, Positive<size_t>{32}, PowerOfTwo<size_t>{1}));
+  char* p2 = static_cast<char*>(small_arena.alloc(test.alloc, Positive<size_t>{64}, PowerOfTwo<size_t>{1}));
   // p2 must be in a new block (32 + 64 > 64)
   assert(p1 != nullptr);
   assert(p2 != nullptr);
 
   // Oversized allocation (larger than block size)
   crucible::Arena tiny_arena(32);
-  void* big = tiny_arena.alloc(test.alloc, 1024, 1);
+  void* big = tiny_arena.alloc(test.alloc, Positive<size_t>{1024}, PowerOfTwo<size_t>{1});
   assert(big != nullptr);
 
   // Zero-length array returns nullptr
@@ -43,7 +46,7 @@ int main() {
   // total_allocated grows
   crucible::Arena tracker(1024);
   size_t before = tracker.total_allocated();
-  (void)tracker.alloc(test.alloc, 256, 1);
+  (void)tracker.alloc(test.alloc, Positive<size_t>{256}, PowerOfTwo<size_t>{1});
   assert(tracker.total_allocated() > before);
 
   // Oversized allocation is fully accounted by total_allocated().
@@ -51,7 +54,7 @@ int main() {
   // undercounts dedicated blocks sized above block_size_.
   {
     crucible::Arena oversized(64);
-    (void)oversized.alloc(test.alloc, 1 << 20, 1);  // 1MB in a 64B arena
+    (void)oversized.alloc(test.alloc, Positive<size_t>{1 << 20}, PowerOfTwo<size_t>{1});  // 1MB in a 64B arena
     assert(oversized.total_allocated() >= (1 << 20));
     assert(oversized.block_count() == 2);  // initial 64B + one 1MB
   }
@@ -59,8 +62,8 @@ int main() {
   // Second oversized block in a row still increments correctly.
   {
     crucible::Arena multi(32);
-    (void)multi.alloc(test.alloc, 4096, 1);
-    (void)multi.alloc(test.alloc, 8192, 1);
+    (void)multi.alloc(test.alloc, Positive<size_t>{4096}, PowerOfTwo<size_t>{1});
+    (void)multi.alloc(test.alloc, Positive<size_t>{8192}, PowerOfTwo<size_t>{1});
     assert(multi.total_allocated() >= 4096 + 8192);
     assert(multi.block_count() == 3);
   }
@@ -69,9 +72,9 @@ int main() {
   // offsets when no slow path fires.
   {
     crucible::Arena steady(1 << 16);
-    (void)steady.alloc(test.alloc, 100, 1);
-    (void)steady.alloc(test.alloc, 200, 1);
-    (void)steady.alloc(test.alloc, 300, 1);
+    (void)steady.alloc(test.alloc, Positive<size_t>{100}, PowerOfTwo<size_t>{1});
+    (void)steady.alloc(test.alloc, Positive<size_t>{200}, PowerOfTwo<size_t>{1});
+    (void)steady.alloc(test.alloc, Positive<size_t>{300}, PowerOfTwo<size_t>{1});
     assert(steady.total_allocated() == 600);
     assert(steady.block_count() == 1);
   }
@@ -105,7 +108,7 @@ int main() {
   {
     crucible::Arena align_arena(1 << 16);
     for (size_t align : {1u, 2u, 4u, 8u, 16u, 32u, 64u, 128u, 256u}) {
-      void* p = align_arena.alloc(test.alloc, 8, align);
+      void* p = align_arena.alloc(test.alloc, Positive<size_t>{8}, PowerOfTwo<size_t>{align});
       assert(reinterpret_cast<uintptr_t>(p) % align == 0);
     }
   }
