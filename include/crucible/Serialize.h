@@ -395,7 +395,9 @@ inline Header read_header(Reader& r) {
     node->measured_ms     = measured_ms;
     node->variant_id      = variant_id;
     node->plan            = plan;
-    node->compiled.store(nullptr, std::memory_order_release);
+    // node->compiled is a PublishOnce<CompiledKernel> — default-
+    // constructed nullptr is the correct "not yet published" state.
+    // No explicit store needed.
     return node;
 }
 

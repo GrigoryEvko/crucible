@@ -23,6 +23,7 @@
 #include <crucible/IterationDetector.h>
 #include <crucible/Reflect.h>
 #include <crucible/TraceRing.h>
+#include <crucible/safety/PublishOnce.h>
 #include <crucible/safety/Refined.h>
 
 #include <crucible/Types.h>
@@ -384,9 +385,15 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TraceNode);
 
 struct RegionNode : TraceNode {
   ContentHash content_hash;                       // 8B — kernel identity (this region)
-  // NOT relaxed: publish pattern — bg writes compiled kernel data, then
-  // stores pointer with release. Fg loads with acquire to see the data.
-  std::atomic<CompiledKernel*> compiled{nullptr}; // 8B — from global cache, null until ready
+  // Publish-once channel: bg thread writes the compiled kernel once,
+  // fg thread observes via acquire load.  Wrapping in PublishOnce
+  // encodes the "exactly one publisher, at most one non-null transition"
+  // discipline in the type — a second publish fires a contract rather
+  // than silently racing the first.
+  //
+  // sizeof(PublishOnce<T*>) == sizeof(std::atomic<T*>) so the layout
+  // lock (RegionNode == 80 bytes) holds.
+  crucible::safety::PublishOnce<CompiledKernel> compiled; // 8B
 
   TraceEntry* ops = nullptr;  // 8B — arena-allocated array
   uint32_t num_ops = 0;      // 4B
@@ -1016,10 +1023,13 @@ inline void recompute_merkle(TraceNode* node) {
   // 3. Wire new arm's tail to the merge point
   new_region->next = merge;
 
-  // 4. Look up compiled kernel from global cache (may already exist)
-  new_region->compiled.store(
-      kernel_cache.lookup(new_region->content_hash),
-      std::memory_order_release);
+  // 4. Look up compiled kernel from global cache (may already exist).
+  // publish() requires non-null; skip when the lookup missed — the
+  // field's default-constructed null is preserved, which is correct
+  // for "no compiled kernel yet".
+  if (auto* k = kernel_cache.lookup(new_region->content_hash)) {
+    new_region->compiled.publish(k);
+  }
 
   // 5. Create BranchNode
   auto* branch = arena.alloc_obj<BranchNode>(a);
