@@ -78,7 +78,7 @@ struct TensorMeta {
 };
 
 static_assert(sizeof(TensorMeta) == 168, "TensorMeta layout check");
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TensorMeta);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorMeta);
 
 // TensorMeta::flags bit constants.
 namespace meta_flags {
@@ -116,7 +116,7 @@ struct TensorSlot {
 };
 
 static_assert(sizeof(TensorSlot) == 40, "TensorSlot must be 40 bytes");
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TensorSlot);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorSlot);
 
 // ═══════════════════════════════════════════════════════════════════
 // MemoryPlan: Result of liveness analysis + offset assignment
@@ -153,7 +153,7 @@ struct MemoryPlan {
 // world_size(4) = 44B → aligned to 48 via trailing pad the compiler inserts.
 static_assert(sizeof(MemoryPlan) == 48,
               "MemoryPlan size changed — update serializer and on-disk format");
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(MemoryPlan);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(MemoryPlan);
 
 // Compute storage size in bytes from TensorMeta.
 //
@@ -324,7 +324,7 @@ struct Guard {
 };
 
 static_assert(sizeof(Guard) == 12, "Guard must be 12 bytes");
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Guard);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(Guard);
 
 // ═══════════════════════════════════════════════════════════════════
 // DAG Node Types

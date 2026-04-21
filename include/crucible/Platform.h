@@ -230,3 +230,20 @@ static_assert(__GNUC__ >= 16,
 #define CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(T)                       \
     static_assert(std::is_trivially_copyable_v<T>,                     \
                   #T " must be trivially copyable for Arena memcpy safety")
+
+// Strong variant: BOTH trivially-copyable (for memcpy) AND standard-layout
+// (for offsetof / per-field serialization).  Use on types that are written
+// to disk via explicit offset math; the plain macro is enough for Arena
+// memcpy where absolute field offsets are never computed.
+//
+// Note: inheritance with data members in BOTH base and derived breaks
+// standard-layout.  TraceNode + RegionNode/BranchNode/LoopNode hierarchy
+// uses the plain variant; leaf struct types (MemoryPlan, TensorMeta,
+// TensorSlot, CallSiteTable entries, serialized records) get this one.
+#define CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(T)                \
+    static_assert(std::is_trivially_copyable_v<T>,                     \
+                  #T " must be trivially copyable for Arena memcpy safety"); \
+    static_assert(std::is_standard_layout_v<T>,                        \
+                  #T " must be standard-layout so offsetof() and "     \
+                  "serialize/deserialize via per-field offsets is "    \
+                  "well-defined")
