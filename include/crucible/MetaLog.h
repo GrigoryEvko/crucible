@@ -182,6 +182,21 @@ struct CRUCIBLE_OWNER MetaLog {
   }
 
   // Background thread only (SPSC consumer): read meta at absolute index.
+  //
+  // TypeSafe: the primary overload takes a MetaIndex strong ID.  The
+  // uint32_t overload exists ONLY for the single bench site that needs
+  // raw arithmetic over absolute positions (first_meta + offset), where
+  // wrapping each sum in MetaIndex would obscure the intent without
+  // adding safety — the sum isn't any stronger a MetaIndex than a
+  // uint32_t is.  Everywhere else: pass MetaIndex.
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
+  [[nodiscard]] const TensorMeta& at(MetaIndex idx) const CRUCIBLE_LIFETIMEBOUND
+      CRUCIBLE_NO_THREAD_SAFETY
+      pre (idx.is_valid())
+  {
+    return entries[idx.raw() & MASK];
+  }
+
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] const TensorMeta& at(uint32_t idx) const CRUCIBLE_LIFETIMEBOUND
       CRUCIBLE_NO_THREAD_SAFETY {
