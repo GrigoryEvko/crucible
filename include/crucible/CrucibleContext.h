@@ -15,10 +15,13 @@
 #include <crucible/ReplayEngine.h>
 #include <crucible/Types.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/ScopedView.h>
 
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <optional>
+#include <type_traits>
 
 namespace crucible {
 
@@ -26,6 +29,16 @@ enum class ContextMode : uint8_t {
   RECORD,    // Foreground records + executes eagerly
   COMPILED,  // Foreground replays with pre-allocated outputs
 };
+
+// State tag for ScopedView.  COMPILED is the only mode that gates
+// methods (advance / output_ptr / input_ptr / register_external all
+// pre(mode_ == COMPILED)).  RECORD has no mode-specific methods —
+// dispatch_op records via Vigil's own ring, no ctx_ method is RECORD-
+// only.  DIVERGED is a transient status returned by advance(), not a
+// stable state you hold a view against.
+namespace ctx_mode {
+    struct Compiled  {};
+}
 
 // DispatchResult: Return value from Vigil::dispatch_op()
 struct DispatchResult {
@@ -139,16 +152,26 @@ struct CrucibleContext {
     const auto* old_region = active_region_;
     assert(old_region && old_region->plan && "no active region to switch from");
 
-    auto old_pool = pool_.detach();
+    // Pool is currently initialized (we're in COMPILED mode and the
+    // active_region_ != nullptr check above confirmed it).  Mint the
+    // InitializedView, use the typed detach overload.  After detach
+    // the pool is empty; pv is now semantically stale, but its
+    // destructor fires at scope exit before any further pool use.
+    auto pv = pool_.mint_initialized_view();
+    auto old_pool = pool_.detach(pv);
     pool_.init(alt->plan);
     migrate_prefix_slots_(old_region, alt, old_pool.base, div_pos);
 
     engine_.init(alt, &pool_);
     active_region_ = alt;
 
+    // Engine just init'd → mint an ActiveView and use the typed advance
+    // overload so the prefix-replay matches the rest of the codebase
+    // (Vigil dispatch_op and our own typed advance).
+    auto av = engine_.mint_active_view();
     for (uint32_t i = 0; i < div_pos; i++) {
       auto s = engine_.advance(alt->ops[i].schema_hash,
-                               alt->ops[i].shape_hash);
+                               alt->ops[i].shape_hash, av);
       assert(s == ReplayStatus::MATCH || s == ReplayStatus::COMPLETE);
       (void)s;
     }
@@ -161,6 +184,74 @@ struct CrucibleContext {
   [[nodiscard]] ContextMode mode() const { return mode_; }
   [[nodiscard]] bool is_compiled() const { return mode_ == ContextMode::COMPILED; }
   [[nodiscard]] bool is_recording() const { return mode_ == ContextMode::RECORD; }
+
+  // ── ScopedView predicates + factories ────────────────────────────
+  //
+  // Mode-specific methods accept a CompiledView proof that the ctx is
+  // in COMPILED; the existing pre()-checked overloads are retained for
+  // gradual migration.
+
+  using CompiledView  = crucible::safety::ScopedView<CrucibleContext,
+                                                      ctx_mode::Compiled>;
+
+  [[nodiscard]] friend constexpr bool view_ok(
+      CrucibleContext const& c, std::type_identity<ctx_mode::Compiled>) noexcept {
+    return c.mode_ == ContextMode::COMPILED;
+  }
+
+  [[nodiscard]] CRUCIBLE_INLINE CompiledView mint_compiled_view() noexcept
+      pre (mode_ == ContextMode::COMPILED)
+  {
+    return crucible::safety::mint_view<ctx_mode::Compiled>(*this);
+  }
+
+  // ── Typed mode-specific overloads ────────────────────────────────
+
+  // The typed overloads thread proofs all the way down: a CompiledView
+  // on the context implies the engine is initialized AND the pool is
+  // initialized (activate() inits both synchronously).  Mint the inner
+  // ActiveView / InitializedView from the outer CompiledView and pass
+  // them to the engine + pool typed methods, so the entire dispatch
+  // chain is type-state-checked end-to-end.
+
+  [[nodiscard]] CRUCIBLE_INLINE ReplayStatus
+  advance(SchemaHash schema_hash, ShapeHash shape_hash,
+          CompiledView const&)
+  {
+    auto av = engine_.mint_active_view();
+    auto status = engine_.advance(schema_hash, shape_hash, av);
+    if (status == ReplayStatus::MATCH) [[likely]]
+      return ReplayStatus::MATCH;
+    if (status == ReplayStatus::COMPLETE) [[unlikely]] {
+      compiled_iterations_.bump();
+      engine_.reset(av);
+      return ReplayStatus::COMPLETE;
+    }
+    diverged_count_.bump();
+    return ReplayStatus::DIVERGED;
+  }
+
+  [[nodiscard]] CRUCIBLE_INLINE void* output_ptr(uint16_t j, CompiledView const&) const
+      CRUCIBLE_LIFETIMEBOUND
+  {
+    auto av = const_cast<ReplayEngine&>(engine_).mint_active_view();
+    return engine_.output_ptr(j, av);
+  }
+
+  [[nodiscard]] CRUCIBLE_INLINE void* input_ptr(uint16_t j, CompiledView const&) const
+      CRUCIBLE_LIFETIMEBOUND
+  {
+    auto av = const_cast<ReplayEngine&>(engine_).mint_active_view();
+    return engine_.input_ptr(j, av);
+  }
+
+  CRUCIBLE_INLINE void register_external(SlotId sid,
+                                          crucible::safety::NonNull<void*> ptr,
+                                          CompiledView const&)
+  {
+    auto pv = pool_.mint_initialized_view();
+    pool_.register_external(sid, ptr, pv);
+  }
 
   [[nodiscard]] uint32_t compiled_iterations() const { return compiled_iterations_.get(); }
   [[nodiscard]] uint32_t diverged_count() const { return diverged_count_.get(); }
@@ -254,5 +345,9 @@ struct CrucibleContext {
 
 static_assert(sizeof(CrucibleContext) == 120,
               "CrucibleContext: 64 engine + 24 cold + 32 pool = 120");
+
+// Tier 2 opt-in: CrucibleContext must not hold a ScopedView field —
+// views mustn't outlive the stack frame that minted them.
+static_assert(crucible::safety::no_scoped_view_field_check<CrucibleContext>());
 
 } // namespace crucible

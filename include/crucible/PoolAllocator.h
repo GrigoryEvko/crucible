@@ -29,12 +29,13 @@
 
 namespace crucible {
 
-// ── PoolAllocator state tags ────────────────────────────────────────
+// ── PoolAllocator state tag ─────────────────────────────────────────
 // Used with safety::ScopedView to prove at compile time that the
 // allocator is in the Initialized state before slot_ptr / register_
-// external / detach are called.
+// external / detach are called.  Empty is implicitly the negation —
+// the only Empty-only public method is init(), which is a member
+// function and doesn't need an external view.
 namespace pool_state {
-    struct Empty       {};   // pool_ == nullptr && ptr_table_ == nullptr
     struct Initialized {};   // init() succeeded, destroy() not yet called
 }
 
@@ -159,8 +160,6 @@ struct CRUCIBLE_OWNER PoolAllocator {
   // only when the pool is initialized.
   using InitializedView =
       crucible::safety::ScopedView<PoolAllocator, pool_state::Initialized>;
-  using EmptyView =
-      crucible::safety::ScopedView<PoolAllocator, pool_state::Empty>;
 
   // Factory: mints an InitializedView for `*this`.  Contract fires if
   // the pool is not actually initialized, matching the runtime guard.
@@ -168,12 +167,6 @@ struct CRUCIBLE_OWNER PoolAllocator {
       pre (is_initialized())
   {
     return crucible::safety::mint_view<pool_state::Initialized>(*this);
-  }
-
-  [[nodiscard]] CRUCIBLE_INLINE EmptyView mint_empty_view() noexcept
-      pre (!is_initialized())
-  {
-    return crucible::safety::mint_view<pool_state::Empty>(*this);
   }
 
   // Hot path — requires InitializedView proof.
@@ -210,10 +203,6 @@ struct CRUCIBLE_OWNER PoolAllocator {
   [[nodiscard, gnu::pure]] bool     is_initialized() const noexcept { return ptr_table_ != nullptr; }
 
   // ── ScopedView predicates (ADL-discovered by safety::mint_view) ──
-  [[nodiscard]] friend constexpr bool view_ok(
-      PoolAllocator const& p, std::type_identity<pool_state::Empty>) noexcept {
-    return !p.is_initialized();
-  }
   [[nodiscard]] friend constexpr bool view_ok(
       PoolAllocator const& p, std::type_identity<pool_state::Initialized>) noexcept {
     return p.is_initialized();

@@ -141,8 +141,17 @@ class Vigil {
         CallsiteHash            callsite_hash = {})
     {
         // ── COMPILED path (hot) ──
+        //
+        // The is_compiled() branch proves the context is in COMPILED mode.
+        // Mint a ScopedView once per dispatch so the advance() call
+        // below uses the typed overload — type-system guarantee that
+        // the engine transition is only reachable from this branch.
+        // View construction is a single pointer-copy in release (contract
+        // check in debug builds); the typed advance() overload is
+        // otherwise identical to the legacy one.
         if (ctx_.is_compiled()) [[likely]] {
-            auto status = ctx_.advance(entry.schema_hash, entry.shape_hash);
+            auto cv = ctx_.mint_compiled_view();
+            auto status = ctx_.advance(entry.schema_hash, entry.shape_hash, cv);
             if (status == ReplayStatus::DIVERGED) [[unlikely]]
                 return handle_divergence_(entry, metas, n_metas,
                                           scope_hash, callsite_hash);
@@ -295,14 +304,24 @@ class Vigil {
 
     // Pre-allocated output pointer for output j of the current op.
     // Valid only after dispatch_op() returned COMPILED with MATCH/COMPLETE.
-    [[nodiscard]] void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND { return ctx_.output_ptr(j); }
+    // Mints a CompiledView locally so the typed ctx overload is taken;
+    // the view's pre() check confirms the precondition the public API
+    // documents.  Compiles to the same machine code as the untyped path.
+    [[nodiscard]] void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
+        auto cv = const_cast<CrucibleContext&>(ctx_).mint_compiled_view();
+        return ctx_.output_ptr(j, cv);
+    }
 
     // Pre-allocated input pointer for input j of the current op.
-    [[nodiscard]] void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND { return ctx_.input_ptr(j); }
+    [[nodiscard]] void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
+        auto cv = const_cast<CrucibleContext&>(ctx_).mint_compiled_view();
+        return ctx_.input_ptr(j, cv);
+    }
 
     // Register an external tensor's data pointer with the pool.
     void register_external(SlotId sid, crucible::safety::NonNull<void*> ptr) {
-        ctx_.register_external(sid, ptr);
+        auto cv = ctx_.mint_compiled_view();
+        ctx_.register_external(sid, ptr, cv);
     }
 
     // Number of complete iterations replayed in COMPILED mode.
@@ -385,7 +404,9 @@ class Vigil {
 
         if (alt && try_switch_region_(alt, div_pos)) {
             // Switched successfully.  Advance past the divergent op.
-            auto s = ctx_.advance(entry.schema_hash, entry.shape_hash);
+            // try_switch_region_ leaves ctx_ in COMPILED mode.
+            auto cv = ctx_.mint_compiled_view();
+            auto s = ctx_.advance(entry.schema_hash, entry.shape_hash, cv);
             if (s != ReplayStatus::DIVERGED) {
                 return {.action = DispatchResult::Action::COMPILED, .status = s, .pad = {},
                         .op_index = OpIndex{ctx_.engine().ops_matched()}};
@@ -538,8 +559,13 @@ class Vigil {
                 }
             }
 
-            if (ptr != nullptr)
-                ctx_.register_external(target, crucible::safety::NonNull<void*>{ptr});
+            if (ptr != nullptr) {
+                // ctx_ has just been activated by activate(region) at the
+                // call sites of register_externals_from_region_, so we
+                // know it's in COMPILED mode.  Mint the view inline.
+                auto cv = ctx_.mint_compiled_view();
+                ctx_.register_external(target, crucible::safety::NonNull<void*>{ptr}, cv);
+            }
         }
     }
 
