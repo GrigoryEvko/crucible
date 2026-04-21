@@ -210,7 +210,7 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
     entry.num_inputs = num_inputs;
     entry.num_outputs = num_outputs;
     entry.num_scalar_args = num_scalars;
-    entry.grad_enabled = grad_enabled != 0;
+    entry.set_grad_enabled(grad_enabled != 0);
     // C API doesn't set op_flags bits beyond inference_mode.
     // Native C++ fallback (crucible_fallback.cpp) sets all 5 bits directly.
     entry.op_flags = inference_mode != 0 ? crucible::op_flag::INFERENCE_MODE : 0;

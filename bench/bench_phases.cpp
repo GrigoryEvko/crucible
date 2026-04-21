@@ -492,7 +492,7 @@ void bench_phase2_subparts(
             te.callsite_hash = callsite_data[i];
             te.num_inputs    = re.num_inputs;
             te.num_outputs   = re.num_outputs;
-            te.grad_enabled  = re.grad_enabled;
+            te.grad_enabled  = re.grad_enabled();
 
             const uint8_t flags = re.op_flags;
             te.inference_mode = (flags & op_flag::INFERENCE_MODE) != 0;

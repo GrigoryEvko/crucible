@@ -263,7 +263,7 @@ static_assert(std::endian::native == std::endian::little,
     e.num_inputs = r.num_inputs;
     e.num_outputs = r.num_outputs;
     e.num_scalar_args = r.num_scalars;
-    e.grad_enabled = r.grad_enabled != 0;
+    e.set_grad_enabled(r.grad_enabled != 0);
     e.op_flags = r.inference_mode;  // on-disk byte carries all op_flag bits
     uint16_t n = r.num_scalars < 5 ? r.num_scalars : 5;
     for (uint16_t s = 0; s < n; s++)

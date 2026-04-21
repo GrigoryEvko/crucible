@@ -40,7 +40,7 @@
 #     clang-analyzer-cplusplus.Move
 #
 # Run:  cmake --preset tidy && cmake --build --preset tidy
-# Or:   /home/grigory/.local/llvm/bin/clang-tidy -p build <file>
+# Or:   $HOME/.local/llvm/bin/clang-tidy -p build <file>
 # ═══════════════════════════════════════════════════════════════
 
 # Only analyze our headers, not system/third-party.

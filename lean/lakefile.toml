@@ -4,7 +4,7 @@ defaultTargets = ["Crucible"]
 
 [[require]]
 name = "mathlib"
-path = "/home/grigory/Downloads/mathlib4"
+path = "../../mathlib4"
 
 [[lean_lib]]
 name = "Crucible"
