@@ -14,6 +14,7 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/ReplayEngine.h>
 #include <crucible/Types.h>
+#include <crucible/safety/Mutation.h>
 
 #include <cassert>
 #include <cstdint>
@@ -91,7 +92,7 @@ struct CrucibleContext {
       return ReplayStatus::MATCH;
 
     if (status == ReplayStatus::COMPLETE) [[unlikely]] {
-      compiled_iterations_++;
+      compiled_iterations_.bump();
       // Auto-reset for next iteration. current_ survives reset
       // so output_ptr/input_ptr remain valid until next advance().
       engine_.reset();
@@ -99,7 +100,7 @@ struct CrucibleContext {
     }
 
     // DIVERGED
-    diverged_count_++;
+    diverged_count_.bump();
     return ReplayStatus::DIVERGED;
   }
 
@@ -161,8 +162,8 @@ struct CrucibleContext {
   [[nodiscard]] bool is_compiled() const { return mode_ == ContextMode::COMPILED; }
   [[nodiscard]] bool is_recording() const { return mode_ == ContextMode::RECORD; }
 
-  [[nodiscard]] uint32_t compiled_iterations() const { return compiled_iterations_; }
-  [[nodiscard]] uint32_t diverged_count() const { return diverged_count_; }
+  [[nodiscard]] uint32_t compiled_iterations() const { return compiled_iterations_.get(); }
+  [[nodiscard]] uint32_t diverged_count() const { return diverged_count_.get(); }
   [[nodiscard]] const RegionNode* active_region() const CRUCIBLE_LIFETIMEBOUND { return active_region_; }
 
   [[nodiscard]] const ReplayEngine& engine() const CRUCIBLE_LIFETIMEBOUND { return engine_; }
@@ -240,8 +241,12 @@ struct CrucibleContext {
   ReplayEngine engine_;                       // 64B — at offset 0 (one cache line)
   ContextMode mode_ = ContextMode::RECORD;    // 1B  — offset 64
   [[maybe_unused]] uint8_t pad_[3]{};         // 3B  — offset 65
-  uint32_t compiled_iterations_ = 0;          // 4B  — offset 68
-  uint32_t diverged_count_ = 0;               // 4B  — offset 72
+  // Both counters are structurally monotonic: incremented on iteration
+  // boundaries / divergence events, never reset.  Wrapped so the
+  // invariant is type-enforced (overflow is the only way to violate it
+  // and bump() catches that via contract).
+  crucible::safety::Monotonic<uint32_t> compiled_iterations_ {0}; // 4B  — offset 68
+  crucible::safety::Monotonic<uint32_t> diverged_count_      {0}; // 4B  — offset 72
   [[maybe_unused]] uint8_t pad2_[4]{};        // 4B  — offset 76
   const RegionNode* active_region_ = nullptr; // 8B  — offset 80
   PoolAllocator pool_;                        // 32B — offset 88

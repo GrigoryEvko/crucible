@@ -150,7 +150,7 @@ class CRUCIBLE_OWNER Arena {
   {
     auto* p = static_cast<char*>(std::malloc(nbytes));
     if (p == nullptr) [[unlikely]] std::abort();
-    blocks_.push_back(p);
+    blocks_.append(p);
 
     cur_block_  = p;
     offset_     = 0;
@@ -169,10 +169,13 @@ class CRUCIBLE_OWNER Arena {
   size_t offset_     = 0;
   size_t end_offset_ = 0;
 
-  // Cold fields (slow path / diagnostic only).
-  size_t                              block_size_        = 0;
-  crucible::safety::Monotonic<size_t> total_block_bytes_ {0};
-  std::vector<char*>                  blocks_            {};
+  // Cold fields (slow path / diagnostic only).  blocks_ grows append-only:
+  // alloc_new_block_ push_backs each fresh block; the dtor frees every
+  // entry; nothing ever erases in between.  AppendOnly<> makes that a
+  // type-level guarantee — a future .erase() would be a build error.
+  size_t                                block_size_        = 0;
+  crucible::safety::Monotonic<size_t>   total_block_bytes_ {0};
+  crucible::safety::AppendOnly<char*>   blocks_            {};
 };
 
 static_assert(sizeof(Arena) == 64, "Arena must fit within one cache line");

@@ -20,6 +20,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/Serialize.h>
+#include <crucible/safety/Mutation.h>
 
 #include <chrono>
 #include <cstdint>
@@ -129,7 +130,11 @@ class CRUCIBLE_OWNER Cipher {
     // ─── HEAD management ────────────────────────────────────────────
 
     // Advance HEAD to `content_hash` and append a log entry for `step_id`.
-    void advance_head(ContentHash content_hash, uint64_t step_id) {
+    // Contract: step_id must not go backward — steps are documented as
+    // monotonic for binary search in hash_at_step() to be correct.
+    void advance_head(ContentHash content_hash, uint64_t step_id)
+        pre (log_.empty() || step_id >= log_.back().step_id)
+    {
         head_ = content_hash;
 
         // Overwrite HEAD file (truncate to hex + newline).
@@ -140,7 +145,7 @@ class CRUCIBLE_OWNER Cipher {
 
         // Append log entry.
         const uint64_t ts = now_ns();
-        log_.push_back({.step_id = step_id, .hash = content_hash, .ts_ns = ts});
+        log_.emplace(LogEntry{.step_id = step_id, .hash = content_hash, .ts_ns = ts});
         {
             std::ofstream lf(root_ + "/log", std::ios::app);
             lf << std::format("{},{:016x},{}", step_id, content_hash.raw(), ts) << "\n";
@@ -185,9 +190,13 @@ class CRUCIBLE_OWNER Cipher {
         uint64_t    ts_ns;
     };
 
-    std::string            root_;
-    ContentHash            head_{};
-    std::vector<LogEntry>  log_;
+    std::string                              root_;
+    ContentHash                              head_{};
+    // log_ grows append-only — Cipher's whole point is "no overwrites,
+    // no deletes" (header comment).  AppendOnly<> turns that doc-only
+    // promise into a compile-time guarantee; .erase() / .clear() on
+    // log_ becomes a build error.
+    crucible::safety::AppendOnly<LogEntry>   log_;
 
     // Path: root_/objects/<first2hex>/<remaining14hex>
     std::string obj_path(uint64_t hash) const {
@@ -209,7 +218,7 @@ class CRUCIBLE_OWNER Cipher {
             const ContentHash hash{std::stoull(line.substr(p1 + 1, p2 - p1 - 1),
                                                   nullptr, 16)};
             const uint64_t    ts_ns   = std::stoull(line.substr(p2 + 1));
-            log_.push_back({.step_id = step_id, .hash = hash, .ts_ns = ts_ns});
+            log_.emplace(LogEntry{.step_id = step_id, .hash = hash, .ts_ns = ts_ns});
         }
     }
 
