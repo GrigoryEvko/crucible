@@ -580,7 +580,9 @@ struct BackgroundThread {
         static_cast<size_t>(total_inputs) * sizeof(SlotId) +
         static_cast<size_t>(total_outputs) * sizeof(SlotId);
     char* aux_cursor = (aux_bytes > 0) ?
-        static_cast<char*>(arena.alloc(a, aux_bytes, alignof(int64_t))) :
+        static_cast<char*>(arena.alloc(a,
+            crucible::safety::Positive<size_t>{aux_bytes},
+            crucible::safety::PowerOfTwo<size_t>{alignof(int64_t)})) :
         nullptr;
 
     // ── PtrMap: bump generation (zero memset) ──

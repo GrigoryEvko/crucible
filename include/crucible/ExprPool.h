@@ -309,7 +309,9 @@ class CRUCIBLE_OWNER ExprPool {
       symbol_names_.resize(id.raw() + 1, nullptr);
     if (symbol_names_[id.raw()] == nullptr) {
       size_t len = std::strlen(name) + 1;
-      char* buf = static_cast<char*>(arena_.alloc(a, len, 1));
+      char* buf = static_cast<char*>(arena_.alloc(a,
+          crucible::safety::Positive<size_t>{len},
+          crucible::safety::PowerOfTwo<size_t>{1}));
       std::memcpy(buf, name, len);
       symbol_names_[id.raw()] = buf;
     }

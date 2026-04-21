@@ -657,7 +657,7 @@ class CRUCIBLE_OWNER KernelCache {
     uint32_t num_ops)
     pre (num_ops == 0 || ops != nullptr)
 {
-  auto* node = new (arena.alloc(a, sizeof(RegionNode), alignof(RegionNode)))
+  auto* node = new (arena.alloc_obj<RegionNode>(a))
       RegionNode{};
   node->kind = TraceNodeKind::REGION;
   node->ops = ops;
@@ -677,7 +677,7 @@ class CRUCIBLE_OWNER KernelCache {
     ContentHash precomputed_hash)
     pre (num_ops == 0 || ops != nullptr)
 {
-  auto* node = new (arena.alloc(a, sizeof(RegionNode), alignof(RegionNode)))
+  auto* node = new (arena.alloc_obj<RegionNode>(a))
       RegionNode{};
   node->kind = TraceNodeKind::REGION;
   node->ops = ops;
@@ -689,7 +689,7 @@ class CRUCIBLE_OWNER KernelCache {
 
 // Create a terminal node. NSDMI handles zero-init; just set kind.
 [[nodiscard]] inline TraceNode* make_terminal(fx::Alloc a, Arena& arena) {
-  auto* node = new (arena.alloc(a, sizeof(TraceNode), alignof(TraceNode)))
+  auto* node = new (arena.alloc_obj<TraceNode>(a))
       TraceNode{};
   node->kind = TraceNodeKind::TERMINAL;
   return node;
@@ -708,7 +708,7 @@ class CRUCIBLE_OWNER KernelCache {
     uint32_t repeat_count,
     float epsilon = 0.0f) {
   assert(body && "LoopNode body must be non-null");
-  auto* node = new (arena.alloc(a, sizeof(LoopNode), alignof(LoopNode)))
+  auto* node = new (arena.alloc_obj<LoopNode>(a))
       LoopNode{};
   node->kind = TraceNodeKind::LOOP;
   node->body = body;

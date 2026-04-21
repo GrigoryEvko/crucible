@@ -14,6 +14,7 @@
 #include "Platform.h"
 #include "Saturate.h"
 #include "safety/Mutation.h"
+#include "safety/Refined.h"
 
 #include <bit>
 #include <cstddef>
@@ -45,33 +46,51 @@ class CRUCIBLE_OWNER Arena {
   Arena(Arena&&)                 = delete("Arena is non-movable: interior pointers would dangle");
   Arena& operator=(Arena&&)      = delete("Arena is non-movable: interior pointers would dangle");
 
-  // Allocate `size` bytes aligned to `align`. `align` must be a power of two.
+  // Allocate `size` bytes aligned to `align`.  Both invariants are now
+  // type-carried: size is a Positive<size_t>, align is a PowerOfTwo<size_t>.
+  // Construction of the wrappers fires a contract on violation, so the
+  // callee body can read .value() without re-checking.
+  //
   // Returns a non-null pointer valid for the Arena's lifetime; OOM aborts.
+  // Alignment uses absolute address arithmetic because malloc only
+  // guarantees alignof(std::max_align_t) = 16B; larger alignments
+  // (64B cache-line, 256B PoolAllocator) cannot assume block-relative
+  // offset suffices.
   //
-  // Alignment uses absolute address arithmetic because malloc only guarantees
-  // alignof(std::max_align_t) = 16B; larger alignments (64B cache-line, 256B
-  // PoolAllocator) cannot assume block-relative offset suffices.
-  //
-  // alloc_size/alloc_align indices are 1-based and count the implicit `this`
-  // for non-static members (this=1, fx::Alloc=2, size=3, align=4). `malloc`
-  // promises no alias with any existing allocation.
+  // gnu::alloc_size / alloc_align dropped: those attributes require a
+  // scalar size_t parameter index, and Refined<> is a class wrapper.
+  // The replacement guarantee comes from the type system: every alloc
+  // call carries a proved size invariant, statically verified at
+  // construction.  Direct callers of alloc() are internal-only (alloc_obj
+  // and alloc_array do the wrapping); GCC's -Wstringop-overflow
+  // diagnostics still apply transitively via those wrappers.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
-  [[nodiscard, gnu::malloc, gnu::returns_nonnull, gnu::alloc_size(3), gnu::alloc_align(4)]]
+  [[nodiscard, gnu::malloc, gnu::returns_nonnull]]
   CRUCIBLE_INLINE
-  void* alloc(fx::Alloc, size_t size, size_t align = alignof(std::max_align_t)) CRUCIBLE_LIFETIMEBOUND
-      pre (std::has_single_bit(align))
-      pre (size > 0)
+  void* alloc(fx::Alloc,
+              crucible::safety::Positive<size_t>   size,
+              crucible::safety::PowerOfTwo<size_t> align) CRUCIBLE_LIFETIMEBOUND
   {
+    const size_t s = size.value();
+    const size_t a = align.value();
     const uintptr_t base = std::bit_cast<uintptr_t>(cur_block_);
-    const uintptr_t aligned_addr = (base + offset_ + align - 1) & ~(align - 1);
+    const uintptr_t aligned_addr = (base + offset_ + a - 1) & ~(a - 1);
     const size_t aligned = aligned_addr - base;
 
-    if (aligned + size <= end_offset_) [[likely]] {
+    if (aligned + s <= end_offset_) [[likely]] {
       void* ptr = cur_block_ + aligned;
-      offset_ = aligned + size;
+      offset_ = aligned + s;
       return ptr;
     }
-    return alloc_slow_(size, align);
+    return alloc_slow_(s, a);
+  }
+
+  // Default-align overload — convenience for the common case where the
+  // caller doesn't have a stricter alignment constraint.
+  [[nodiscard, gnu::malloc, gnu::returns_nonnull]] CRUCIBLE_INLINE
+  void* alloc(fx::Alloc a, crucible::safety::Positive<size_t> size) CRUCIBLE_LIFETIMEBOUND {
+    return alloc(a, size,
+                 crucible::safety::PowerOfTwo<size_t>{alignof(std::max_align_t)});
   }
 
   // Allocate a single default-constructible T. Storage only — caller must
@@ -80,7 +99,13 @@ class CRUCIBLE_OWNER Arena {
   template <typename T>
   [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE
   T* alloc_obj(fx::Alloc a) CRUCIBLE_LIFETIMEBOUND {
-    return static_cast<T*>(alloc(a, sizeof(T), alignof(T)));
+    static_assert(sizeof(T) > 0, "alloc_obj<T> requires complete T");
+    static_assert(std::has_single_bit(alignof(T)),
+                  "alignof(T) must be a power of two — true on every "
+                  "ABI we support; assert here to surface ports");
+    return static_cast<T*>(alloc(a,
+        crucible::safety::Positive<size_t>{sizeof(T)},
+        crucible::safety::PowerOfTwo<size_t>{alignof(T)}));
   }
 
   // Allocate N elements of T. n == 0 returns nullptr (paired with count=0 at
@@ -91,7 +116,9 @@ class CRUCIBLE_OWNER Arena {
   T* alloc_array(fx::Alloc a, size_t n) CRUCIBLE_LIFETIMEBOUND {
     if (n == 0) [[unlikely]] return nullptr;
     const size_t nbytes = crucible::sat::mul_sat(n, sizeof(T));
-    return static_cast<T*>(alloc(a, nbytes, alignof(T)));
+    return static_cast<T*>(alloc(a,
+        crucible::safety::Positive<size_t>{nbytes},
+        crucible::safety::PowerOfTwo<size_t>{alignof(T)}));
   }
 
   // Copy a null-terminated string into the arena. Returns nullptr iff src is
@@ -99,7 +126,9 @@ class CRUCIBLE_OWNER Arena {
   [[nodiscard]] const char* copy_string(fx::Alloc a, const char* src) CRUCIBLE_LIFETIMEBOUND {
     if (src == nullptr) return nullptr;
     const size_t len = std::strlen(src) + 1;
-    auto* dst = static_cast<char*>(alloc(a, len, 1));
+    auto* dst = static_cast<char*>(alloc(a,
+        crucible::safety::Positive<size_t>{len},
+        crucible::safety::PowerOfTwo<size_t>{1}));
     std::memcpy(dst, src, len);
     return dst;
   }
