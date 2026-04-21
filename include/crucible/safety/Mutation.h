@@ -9,9 +9,11 @@
 //                   one contract check per advance (Monotonic),
 //                   one bool per instance (WriteOnce).
 //
-// AppendOnly<T, Storage>  — Storage<T> restricted to grow-only.
-// Monotonic<T, Cmp>       — single value that only advances per Cmp.
-// WriteOnce<T>            — settable exactly once, then read-only.
+// AppendOnly<T, Storage>               — Storage<T> restricted to grow-only.
+// OrderedAppendOnly<T, KeyFn, Cmp, St> — AppendOnly + per-emplace key
+//                                        monotonicity (nested composition).
+// Monotonic<T, Cmp>                    — single value that only advances per Cmp.
+// WriteOnce<T>                         — settable exactly once, then read-only.
 
 #include <crucible/Platform.h>
 
@@ -71,6 +73,90 @@ public:
         return std::move(data_);
     }
 };
+
+// ── OrderedAppendOnly ───────────────────────────────────────────────
+//
+// AppendOnly + per-emplace monotonicity check on a key projection.
+// Nested composition of AppendOnly (grow-only) and Monotonic's ordering
+// invariant: each appended element's projected key must not go backward
+// per Cmp relative to the last appended element's key.
+//
+// Typical use: an append-only log whose entries carry a monotonically
+// non-decreasing step_id / epoch / timestamp whose ordering is relied
+// upon by downstream code (e.g. binary search).  Without this wrapper
+// the ordering lives as a runtime pre() on the writer plus a doc
+// comment on the reader; here it is the log's type.
+//
+// KeyFn and Cmp must be stateless (matches Monotonic's idiom) so the
+// pre-condition can construct them fresh per-call; [[no_unique_address]]
+// collapses empty functors to zero layout cost.
+//
+//   Axiom coverage: MemSafe (inherits AppendOnly) + DetSafe.
+//   Runtime cost:   storage of the wrapped Storage<T>, plus one KeyFn
+//                   invocation + one Cmp invocation per append under
+//                   contract semantic=enforce/observe; zero under
+//                   semantic=ignore (hot-path TUs).
+
+template <typename T,
+          typename KeyFn = std::identity,
+          typename Cmp   = std::less<>,
+          template <typename...> class Storage = std::vector>
+class [[nodiscard]] OrderedAppendOnly {
+    AppendOnly<T, Storage>     inner_;
+    [[no_unique_address]] KeyFn key_{};
+    [[no_unique_address]] Cmp   cmp_{};
+
+public:
+    using value_type     = T;
+    using key_type       = std::invoke_result_t<KeyFn, const T&>;
+    using key_fn_type    = KeyFn;
+    using comparator     = Cmp;
+    using storage_type   = Storage<T>;
+    using const_iterator = typename AppendOnly<T, Storage>::const_iterator;
+
+    OrderedAppendOnly() = default;
+    explicit OrderedAppendOnly(std::size_t reserve_hint) : inner_{reserve_hint} {}
+
+    // The only mutation permitted: grow the tail, and only with a key
+    // that does not go backward relative to the last entry.  Contract
+    // fires via std::terminate under enforce; collapses to [[assume]]
+    // under ignore.  KeyFn/Cmp are stateless — this idiom matches
+    // Monotonic::advance's `pre(!Cmp{}(new, old))`.
+    void append(T item)
+        pre(inner_.empty() || !Cmp{}(KeyFn{}(item), KeyFn{}(inner_.back())))
+    {
+        inner_.append(std::move(item));
+    }
+
+    // Forwarding emplace: constructs the element, then contract-checks
+    // via append().  The temp construction is unavoidable — we can't
+    // evaluate the key of a not-yet-constructed element.
+    template <typename... Args>
+    void emplace(Args&&... args) {
+        append(T{std::forward<Args>(args)...});
+    }
+
+    // Read-only access — delegates to the wrapped AppendOnly.
+    [[nodiscard]] const T& operator[](std::size_t i) const noexcept { return inner_[i]; }
+    [[nodiscard]] const T& front() const noexcept { return inner_.front(); }
+    [[nodiscard]] const T& back()  const noexcept { return inner_.back(); }
+    [[nodiscard]] std::size_t size()  const noexcept { return inner_.size(); }
+    [[nodiscard]] bool        empty() const noexcept { return inner_.empty(); }
+
+    [[nodiscard]] const_iterator begin() const noexcept { return inner_.begin(); }
+    [[nodiscard]] const_iterator end()   const noexcept { return inner_.end(); }
+
+    // Consuming drain — yield the collected storage and leave *this empty.
+    [[nodiscard]] Storage<T> drain() && noexcept(std::is_nothrow_move_constructible_v<Storage<T>>) {
+        return std::move(inner_).drain();
+    }
+};
+
+// Zero-cost guarantee: stateless KeyFn + Cmp collapse via [[no_unique_address]],
+// so OrderedAppendOnly<T> with default projections has the same layout as
+// the wrapped AppendOnly<T>.
+static_assert(sizeof(OrderedAppendOnly<std::uint64_t>) == sizeof(AppendOnly<std::uint64_t>),
+              "OrderedAppendOnly must collapse empty KeyFn/Cmp to zero layout cost");
 
 // ── Monotonic ───────────────────────────────────────────────────────
 //

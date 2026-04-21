@@ -253,13 +253,24 @@ class CRUCIBLE_OWNER Cipher {
         uint64_t    ts_ns;
     };
 
+    // Stateless projection used by OrderedAppendOnly below.  hash_at_step()
+    // binary-searches the log on step_id; that search requires monotonic
+    // non-decreasing step_id across the entire log.  Projecting step_id
+    // through OrderedAppendOnly makes the ordering invariant structural
+    // (contract-fires at append time) rather than a doc comment.
+    struct LogEntryByStepId {
+        [[nodiscard]] constexpr uint64_t operator()(const LogEntry& e) const noexcept {
+            return e.step_id;
+        }
+    };
+
     std::string                              root_;
     ContentHash                              head_{};
-    // log_ grows append-only — Cipher's whole point is "no overwrites,
-    // no deletes" (header comment).  AppendOnly<> turns that doc-only
-    // promise into a compile-time guarantee; .erase() / .clear() on
-    // log_ becomes a build error.
-    crucible::safety::AppendOnly<LogEntry>   log_;
+    // log_ grows append-only AND each entry's step_id must not go
+    // backward.  OrderedAppendOnly<> fuses both invariants into one
+    // type; .erase() / .clear() / out-of-order .append() all fail at
+    // compile time (the first two) or contract-terminate (the third).
+    crucible::safety::OrderedAppendOnly<LogEntry, LogEntryByStepId> log_;
 
     // Path: root_/objects/<first2hex>/<remaining14hex>
     std::string obj_path(uint64_t hash) const {

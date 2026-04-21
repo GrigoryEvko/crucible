@@ -236,6 +236,40 @@ static void test_mutation() {
     assert(!epoch.try_advance(2));
     assert(epoch.try_advance(10));
     assert(epoch.get() == 10);
+
+    // OrderedAppendOnly — nested composition of AppendOnly + per-emplace
+    // key monotonicity.  Default KeyFn = std::identity, Cmp = std::less<>.
+    static_assert(sizeof(OrderedAppendOnly<std::uint64_t>)
+                  == sizeof(AppendOnly<std::uint64_t>),
+                  "stateless KeyFn/Cmp must collapse to zero layout cost");
+    {
+        OrderedAppendOnly<std::uint64_t> timeline;
+        timeline.append(0ULL);
+        timeline.append(1ULL);
+        timeline.append(1ULL); // equal — non-decreasing, OK.
+        timeline.append(2ULL);
+        timeline.emplace(5ULL); // forwarding — must take the same path.
+        // timeline.append(3);  // WOULD contract-violate (3 < 5).
+        assert(timeline.size() == 5);
+        assert(timeline.back() == 5);
+        assert(timeline[0] == 0);
+    }
+    // Projected key: struct-with-step_id log, ordered by step_id.
+    {
+        struct Entry { std::uint64_t step; int payload; };
+        struct ByStep {
+            constexpr std::uint64_t operator()(const Entry& e) const noexcept {
+                return e.step;
+            }
+        };
+        OrderedAppendOnly<Entry, ByStep> log_by_step;
+        log_by_step.append({.step = 10, .payload = 100});
+        log_by_step.append({.step = 10, .payload = 101});  // duplicate step OK
+        log_by_step.append({.step = 20, .payload = 200});
+        // log_by_step.append({.step = 15, .payload = 150}); // would fail pre
+        assert(log_by_step.size() == 3);
+        assert(log_by_step.back().step == 20);
+    }
     std::printf("  Mutation:       ok\n");
 }
 
