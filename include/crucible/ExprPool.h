@@ -24,6 +24,21 @@ namespace detail {
 // Hash all structural fields of an expression. Args are compared by pointer
 // (since children are themselves interned), so we hash their addresses.
 //
+// ─── Family-B (process-local) per Types.h taxonomy ─────────────────
+// The returned value embeds `reinterpret_cast<uintptr_t>(args[i])` for
+// compound nodes — arena pointers are ASLR-randomized per process, so
+// the SAME structural input produces DIFFERENT bits in different
+// processes.  This is INTENTIONAL: the Swiss-table intern path only
+// needs process-local uniqueness at zero-cost probing, and within a
+// single process, interning guarantees structural equality → pointer
+// equality on children.
+//
+// MUST NOT be persisted, fed into any Cipher key, or mixed into any
+// Family-A hash (content_hash / merkle_hash / Guard::hash / etc).
+// If FORGE ever needs a cross-process stable Expr identity for L1
+// federation (FORGE.md §18.6), add a separate `structural_content_hash`
+// that walks children via their own structural hashes, not pointers.
+//
 // Uses wyhash-style 128-bit multiply mixing: each wymix() is a single
 // mulq + xor on x86-64 (~3 cycles). Total cost for a binary node:
 // 2 wymix calls = ~6 cycles ≈ 2ns. Previous fmix64 chain was ~15ns.

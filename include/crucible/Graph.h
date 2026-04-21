@@ -988,6 +988,14 @@ class CRUCIBLE_OWNER Graph {
 
   // Structural hash for CSE. Uses canonical[] to resolve inputs
   // without physically rewriting pointers during the pass.
+  //
+  // ─── Family-B (process-local) per Types.h taxonomy ─────────────
+  // Mixes `reinterpret_cast<uintptr_t>(canonical[...])` and
+  // `reinterpret_cast<uintptr_t>(n->size[d])` (interned Expr*) as
+  // entropy sources — arena pointers are ASLR-randomized per process,
+  // so the output is NOT cross-process stable.  This is fine for its
+  // single purpose: CSE probing within one compile pass on the bg
+  // thread.  MUST NOT be persisted or fed into any Cipher key.
   [[nodiscard]] static uint64_t cse_hash_(
       const GraphNode* n, const GraphNode* const* canonical) {
     uint64_t h = detail::fmix64(

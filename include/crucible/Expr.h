@@ -37,7 +37,14 @@ struct Expr {
   const uint8_t nargs = 0;            // 1 byte  — number of children (0-255)
   const uint16_t flags = 0;           // 2 bytes — ExprFlags bitfield
   const SymbolId symbol_id;           // 4 bytes — unique id for symbols (SymbolId{} for non-symbols)
-  const uint64_t hash = 0;            // 8 bytes — precomputed hash for intern table
+  // `hash` is Family-B (process-local intern key) per Types.h taxonomy.
+  // MUST NOT be persisted, federated, or fed into any Cipher key /
+  // merkle_hash / content_hash computation.  ExprPool uses it as the
+  // Swiss-table probing key and mixes arg-pointer bits (ASLR) for
+  // speed — the same structural input hashes differently per process.
+  // If FORGE federation ever needs Expr identity, compute a separate
+  // structural `content_hash()` that ignores `args` pointer values.
+  const uint64_t hash = 0;            // 8 bytes — Family-B intern key (see Types.h)
   const int64_t payload = 0;          // 8 bytes — integer value, or bitcast double, or symbol name ptr
   const Expr* const* const args = nullptr;  // 8 bytes — pointer to arena-allocated array of children
                                             // ──────────

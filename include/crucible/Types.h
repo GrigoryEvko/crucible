@@ -172,6 +172,88 @@ CRUCIBLE_STRONG_HASH(MerkleHash);    // subtree identity (includes all descendan
 
 #undef CRUCIBLE_STRONG_HASH
 
+// ═══════════════════════════════════════════════════════════════════
+// Hash taxonomy — TWO DISJOINT FAMILIES with different persistence
+// semantics.  The type system does not yet enforce the split (future
+// work — see the `InternHash` note below); until it does, this
+// comment block is the contract every new hash site must honor.
+//
+// ── Family A: PERSISTENT hashes ────────────────────────────────────
+//
+// Must be byte-stable across processes, platforms, and Crucible
+// versions within a compile_version window.  Family A values:
+//   - flow into Cipher entry keys (L1/L2/L3 KernelCache, RegionNode
+//     object store, BranchNode arm targets, TrainingCheckpoint
+//     manifest; CRUCIBLE.md §9)
+//   - identify federation-shareable artifacts (IR002 snapshots,
+//     FORGE.md §23.2)
+//   - drive cross-vendor replay determinism (CRUCIBLE.md §10)
+//
+// A drift in any Family-A hash — even one bit — is a wire-format
+// break and requires a CDAG_VERSION bump.  Goldens for Family A are
+// correct AS LONG AS they are computed via serialize→hash-bytes
+// (the bytes are the ground truth; hashing in-memory structs is
+// fragile).
+//
+// Members (by type):
+//   ContentHash      — RegionNode structural identity
+//   MerkleHash       — subtree identity incl. descendants
+//   SchemaHash       — ATen op identity
+//   ShapeHash        — tensor geometry
+//   ScopeHash        — module hierarchy path
+//   CallsiteHash     — Python source-location identity
+//   (future) RecipeHash / KernelContentHash / PlanHash — FORGE.md §19, §23
+//
+// Members (by function):
+//   compute_content_hash(TensorMeta...)      MerkleDag.h
+//   compute_merkle_hash(node)                MerkleDag.h
+//   Guard::hash()                             MerkleDag.h  (reflect_hash)
+//   feedback_signature(edges)                 MerkleDag.h
+//   loopterm_hash(LoopNode)                   MerkleDag.h
+//   branched_content_hash(BranchNode)         MerkleDag.h
+//
+// ── Family B: PROCESS-LOCAL hashes ─────────────────────────────────
+//
+// Intentionally NOT byte-stable across processes.  Family B values
+// embed arena pointer entropy (ASLR-randomized per process) to get
+// O(1) intern-table probing at zero-cost-beyond-pointer-compare.
+// The SAME structural input produces DIFFERENT bits in different
+// processes.
+//
+// Family B values MUST NOT:
+//   - be written to Cipher under any circumstance
+//   - flow into any Family-A hash computation
+//   - be pinned in a golden test file
+//   - be assumed stable across program restarts
+//
+// Members:
+//   Expr::hash                   — ExprPool Swiss-table intern key.
+//                                  Computed by detail::expr_hash
+//                                  mixing arg-pointer bits (Expr.h,
+//                                  ExprPool.h lines ~28-67).
+//   Graph::cse_hash_()           — GraphNode CSE probe hash; mixes
+//                                  canonical[] pointer entropy
+//                                  (Graph.h ~line 964).
+//   KernelCache slot probe       — the open-addressing probe order
+//                                  is process-local; the stored
+//                                  content_hash key IS Family A.
+//
+// If you ever need a cross-process stable identity for an Expr
+// (e.g., ComputeBody fragment hashing for FORGE federation per
+// FORGE.md §18.6), compute a new `Expr::content_hash()` that walks
+// the tree structurally without consulting `args[i]` pointers — do
+// NOT reuse `Expr::hash`.  Cache the structural hash on the Expr at
+// construction time (Exprs are const post-#113).
+//
+// ── Future: type-level distinction ─────────────────────────────────
+//
+// The clean fix is to replace `uint64_t Expr::hash` with a strong
+// type `InternHash` distinct from `ContentHash` / `MerkleHash`, so
+// that mixing them is a compile error.  Deferred — requires an
+// audit of ExprPool, Graph, KernelCache, and tests.  Document first,
+// enforce later.
+// ═══════════════════════════════════════════════════════════════════
+
 // Trivial relocatability: all strong ID/hash types are trivially copyable
 // PODs — safe for Arena memcpy, vector reallocation, flat array storage.
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(OpIndex);
