@@ -345,12 +345,16 @@ function(crucible_neg_compile_test name expected_diag)
     PASS_REGULAR_EXPRESSION "${expected_diag}")
 endfunction()
 
-# Tier 2 reflection audit — all three fire the same static_assert message.
+# Tier 2 reflection audit — all four fire the same static_assert message.
 crucible_neg_compile_test(neg_field_storage
   "Type contains a safety::ScopedView<> in some field")
 crucible_neg_compile_test(neg_vector_storage
   "Type contains a safety::ScopedView<> in some field")
 crucible_neg_compile_test(neg_optional_nested
+  "Type contains a safety::ScopedView<> in some field")
+crucible_neg_compile_test(neg_unique_ptr_field
+  "Type contains a safety::ScopedView<> in some field")
+crucible_neg_compile_test(neg_c_array_field
   "Type contains a safety::ScopedView<> in some field")
 
 # Tier 1 compiler firings — each has a distinct diagnostic.
@@ -360,3 +364,5 @@ crucible_neg_compile_test(neg_direct_construct
   "is private within this context")
 crucible_neg_compile_test(neg_default_construct
   "no matching function for call to.*ScopedView.*::ScopedView")
+crucible_neg_compile_test(neg_heap_allocate
+  "ScopedView must live on the stack; heap allocation defeats")
