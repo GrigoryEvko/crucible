@@ -15,8 +15,11 @@
 
 #include <crucible/Platform.h>
 
+#include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -76,8 +79,8 @@ public:
 
 template <typename T, typename Cmp = std::less<T>>
 class [[nodiscard]] Monotonic {
-    T   value_;
-    Cmp cmp_{};
+    T                          value_;
+    [[no_unique_address]] Cmp  cmp_{};   // zero-cost when Cmp is empty
 
 public:
     using value_type      = T;
@@ -112,7 +115,23 @@ public:
         value_ = std::move(new_value);
         return true;
     }
+
+    // Convenience for integral counters: increment by one.  Contract
+    // catches wraparound (the only way an integral counter can violate
+    // monotonicity is overflow).  Equivalent to advance(get() + 1).
+    constexpr void bump() noexcept
+        requires std::integral<T>
+        pre(value_ != std::numeric_limits<T>::max())
+    {
+        ++value_;
+    }
 };
+
+// Zero-cost guarantee: empty Cmp must collapse via [[no_unique_address]].
+static_assert(sizeof(Monotonic<uint32_t, std::less<uint32_t>>) == sizeof(uint32_t),
+              "Monotonic<T, EmptyCmp> must be zero-cost: same size as T");
+static_assert(sizeof(Monotonic<uint64_t, std::less<uint64_t>>) == sizeof(uint64_t),
+              "Monotonic<T, EmptyCmp> must be zero-cost: same size as T");
 
 // ── WriteOnce ───────────────────────────────────────────────────────
 //

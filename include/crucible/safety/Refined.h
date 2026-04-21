@@ -133,4 +133,9 @@ public:
     }
 };
 
+// Zero-cost guarantee: a Refined is exactly its underlying T.
+static_assert(sizeof(Refined<positive,    int>)    == sizeof(int));
+static_assert(sizeof(Refined<non_null,    void*>)  == sizeof(void*));
+static_assert(sizeof(Refined<power_of_two,std::size_t>) == sizeof(std::size_t));
+
 } // namespace crucible::safety

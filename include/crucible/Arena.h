@@ -13,6 +13,7 @@
 #include "Effects.h"
 #include "Platform.h"
 #include "Saturate.h"
+#include "safety/Mutation.h"
 
 #include <bit>
 #include <cstddef>
@@ -112,7 +113,7 @@ class CRUCIBLE_OWNER Arena {
   // adds its exact size to the total; offset_ never exceeds end_offset_),
   // so the subtraction below cannot underflow.
   [[nodiscard, gnu::pure]] size_t total_allocated() const noexcept {
-    return total_block_bytes_ - (end_offset_ - offset_);
+    return total_block_bytes_.get() - (end_offset_ - offset_);
   }
 
   // Number of blocks currently held. Diagnostic only.
@@ -156,8 +157,11 @@ class CRUCIBLE_OWNER Arena {
     end_offset_ = nbytes;
 
     // Saturating add against pathological totals; clamping here keeps
-    // total_allocated() sane even under adversarial tests.
-    total_block_bytes_ = crucible::sat::add_sat(total_block_bytes_, nbytes);
+    // total_allocated() sane even under adversarial tests.  advance() is
+    // monotonicity-checked: saturating_add never decreases, so the contract
+    // holds by construction.
+    total_block_bytes_.advance(
+        crucible::sat::add_sat(total_block_bytes_.get(), nbytes));
   }
 
   // Hot fields (one cache line, touched on every alloc).
@@ -166,9 +170,9 @@ class CRUCIBLE_OWNER Arena {
   size_t end_offset_ = 0;
 
   // Cold fields (slow path / diagnostic only).
-  size_t              block_size_        = 0;
-  size_t              total_block_bytes_ = 0;
-  std::vector<char*>  blocks_{};
+  size_t                              block_size_        = 0;
+  crucible::safety::Monotonic<size_t> total_block_bytes_ {0};
+  std::vector<char*>                  blocks_            {};
 };
 
 static_assert(sizeof(Arena) == 64, "Arena must fit within one cache line");

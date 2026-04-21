@@ -99,4 +99,9 @@ constexpr void drop(Linear<T>&& x)
     (void)std::move(x).consume();
 }
 
+// Zero-cost guarantee.
+static_assert(sizeof(Linear<int>)        == sizeof(int));
+static_assert(sizeof(Linear<void*>)      == sizeof(void*));
+static_assert(sizeof(Linear<long long>)  == sizeof(long long));
+
 } // namespace crucible::safety

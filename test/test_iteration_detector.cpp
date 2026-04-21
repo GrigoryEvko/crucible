@@ -59,14 +59,14 @@ static void test_second_match_is_boundary() {
     // First repeat → candidate.
     for (auto h : sig) assert(!d.check(h));
     assert(d.confirmed);
-    assert(d.boundaries_detected == 0);
+    assert(d.boundaries_detected.get() == 0);
     // Second repeat → BOUNDARY (return true on K-th op).
     assert(!d.check(sig[0]));
     assert(!d.check(sig[1]));
     assert(!d.check(sig[2]));
     assert(!d.check(sig[3]));
     assert(d.check(sig[4]));   // ← true
-    assert(d.boundaries_detected == 1);
+    assert(d.boundaries_detected.get() == 1);
     std::printf("  test_second_match_boundary:   PASSED\n");
 }
 
@@ -125,7 +125,7 @@ static void test_reset_clears_everything() {
     d.reset();
     assert(!d.confirmed);
     assert(d.signature_len == 0);
-    assert(d.boundaries_detected == 0);
+    assert(d.boundaries_detected.get() == 0);
     assert(d.ops_since_boundary == 0);
     assert(d.last_completed_len == 0);
     // Detector is fresh: must rebuild signature.
