@@ -602,7 +602,7 @@ class CRUCIBLE_OWNER Graph {
   // Uses a canonical[] map: during the hash pass, inputs are looked
   // up through the map (not physically rewritten). After the pass,
   // one rewrite sweeps all live nodes to patch input pointers.
-  uint32_t eliminate_common_subexpressions(fx::Alloc a) {
+  [[nodiscard]] uint32_t eliminate_common_subexpressions(fx::Alloc a) {
     topological_sort(a);
 
     // Canonical map: node_id → canonical representative.
@@ -692,7 +692,7 @@ class CRUCIBLE_OWNER Graph {
   // checking by downstream passes.
   //
   // Returns the number of fusion groups created.
-  uint32_t compute_fusion_groups(fx::Alloc a) {
+  [[nodiscard]] uint32_t compute_fusion_groups(fx::Alloc a) {
     topological_sort(a);
 
     // Build ordered list via O(n) scatter
