@@ -32,6 +32,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/PoolAllocator.h>
+#include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
 
 #include <cassert>
@@ -191,6 +192,28 @@ struct ReplayEngine {
     return OpIndex{static_cast<uint32_t>(current_ - ops_)};
   }
 
+  // Diverged op index — strictly in [0, num_ops()] after advance()
+  // returned DIVERGED.  The upper endpoint num_ops() is inclusive
+  // because the cursor can land exactly at end_ if the LAST op's
+  // guard failed (the increment happened just before the guard
+  // check in the prior match-then-fail cycle).
+  //
+  // Returns Refined<in_range<0, CDAG_MAX_OPS>, OpIndex> — the Refined
+  // ctor's contract enforces the upper ceiling matches the region's
+  // capacity.  Callers that interpret the result for error reporting
+  // pass through .value() once; callers that index ops[diverged] can
+  // use the bound as an [[assume]] hint.
+  [[nodiscard]] crucible::safety::Refined<
+      crucible::safety::bounded_above<uint32_t{1u << 22}>,  // CDAG_MAX_OPS
+      uint32_t>
+  diverged_op_index_refined() const {
+    return crucible::safety::Refined<
+        crucible::safety::bounded_above<uint32_t{1u << 22}>,
+        uint32_t>{static_cast<uint32_t>(cursor_ - ops_)};
+  }
+
+  // Untyped legacy accessor — kept for error-message producers that
+  // format the index into a string and don't need the bound.
   [[nodiscard]] OpIndex diverged_op_index() const {
     return OpIndex{static_cast<uint32_t>(cursor_ - ops_)};
   }
