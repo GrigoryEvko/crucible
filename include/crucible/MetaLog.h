@@ -8,6 +8,7 @@
 #include <crucible/Platform.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/rt/Registry.h>
+#include <crucible/safety/Mutation.h>
 
 namespace crucible {
 
@@ -69,7 +70,11 @@ struct CRUCIBLE_OWNER MetaLog {
   //     released AFTER MetaLog.head in program order, so its acquire observes
   //     MetaLog.entries).
   alignas(64) std::atomic<uint32_t> head{0};   // 4B — producer writes, consumer reads
-  uint32_t cached_tail_ = 0;                    // 4B — producer-only (never touched by consumer)
+  // Producer-only shadow of the consumer's tail.  Monotonic enforces
+  // "only advances" at the type level — the consumer only releases tail
+  // forward, so each acquire-load observes ≥ the prior observation; any
+  // reverse motion would be an acquire-semantics bug worth catching.
+  crucible::safety::Monotonic<uint32_t> cached_tail_{0};  // 4B
   TensorMeta* entries = nullptr;                // 8B — producer-only read
   // 48B padding to fill cache line (implicitly provided by alignas on tail)
 
@@ -129,10 +134,10 @@ struct CRUCIBLE_OWNER MetaLog {
     // Fast path: check against cached (possibly stale) tail.
     // Stale tail is conservative — if it says "not full", it's guaranteed
     // correct because the real tail only advances (consumer frees space).
-    if (h - cached_tail_ + n > CAPACITY) [[unlikely]] {
+    if (h - cached_tail_.get() + n > CAPACITY) [[unlikely]] {
       // Slow path: reload actual tail from consumer's cache line.
-      cached_tail_ = tail.load(std::memory_order_acquire);
-      if (h - cached_tail_ + n > CAPACITY) [[unlikely]] {
+      cached_tail_.advance(tail.load(std::memory_order_acquire));
+      if (h - cached_tail_.get() + n > CAPACITY) [[unlikely]] {
         return MetaIndex::none();
       }
     }
@@ -214,7 +219,9 @@ struct CRUCIBLE_OWNER MetaLog {
   void reset() CRUCIBLE_NO_THREAD_SAFETY {
     head.store(0, std::memory_order_release);
     tail.store(0, std::memory_order_release);
-    cached_tail_ = 0;
+    // Rewind to 0 would violate Monotonic's pre() if done via advance().
+    // Safe here because both threads are quiescent; reconstruct in place.
+    cached_tail_ = crucible::safety::Monotonic<uint32_t>{0};
   }
 };
 

@@ -28,6 +28,7 @@
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <crucible/rt/Registry.h>
+#include <crucible/safety/Mutation.h>
 #include <crucible/safety/Tagged.h>
 
 namespace crucible {
@@ -122,9 +123,13 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
 
   // Producer-local shadow of tail. Never read by the consumer. Own cache
   // line to avoid sharing with head (each line owned by exactly one thread).
-  // Invariant: cached_tail_ <= tail.load(). Stale is conservative — it under-
-  // reports free space, forcing a real tail reload; never over-reports.
-  alignas(64) uint64_t cached_tail_ = 0;
+  // Invariant: cached_tail_ <= tail.load(). Stale is conservative — it
+  // under-reports free space, forcing a real tail reload; never
+  // over-reports.  Wrapped in Monotonic to enforce "only advances"
+  // structurally — the consumer only increments tail, so each
+  // tail.load(acquire) observes a value ≥ the previous observation;
+  // any reverse move would be an acquire-semantics bug worth catching.
+  alignas(64) crucible::safety::Monotonic<uint64_t> cached_tail_{0};
 
   // 4 MB contiguous ring plus the three parallel arrays.
   alignas(64) Entry         entries[CAPACITY]{};
@@ -157,11 +162,11 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
 
     // Fast path uses the producer-local cached_tail_ copy — no atomic load.
     // Stale cache is conservative (under-reports free space).
-    if (h - cached_tail_ >= CAPACITY) [[unlikely]] {
+    if (h - cached_tail_.get() >= CAPACITY) [[unlikely]] {
       // acquire: pair with consumer's release store to observe that the
       // slots we're about to overwrite have been fully read.
-      cached_tail_ = tail.load(std::memory_order_acquire);
-      if (h - cached_tail_ >= CAPACITY) [[unlikely]] return false;
+      cached_tail_.advance(tail.load(std::memory_order_acquire));
+      if (h - cached_tail_.get() >= CAPACITY) [[unlikely]] return false;
     }
 
     const uint32_t slot = static_cast<uint32_t>(h) & MASK;
@@ -261,7 +266,10 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   void reset() noexcept CRUCIBLE_NO_THREAD_SAFETY {
     head.store(0, std::memory_order_release);
     tail.store(0, std::memory_order_release);
-    cached_tail_ = 0;
+    // cached_tail_ goes "backward" to 0, which would fire Monotonic's
+    // pre() if we advanced.  Valid here because both threads are
+    // quiescent — reconstruct the Monotonic in place to reset cleanly.
+    cached_tail_ = crucible::safety::Monotonic<uint64_t>{0};
   }
 };
 
