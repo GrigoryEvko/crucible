@@ -78,7 +78,7 @@ class TransactionLog {
     TransactionLog& operator=(TransactionLog&&)      = delete("interior pointers into entries_ would dangle");
 
     // gnu::cold: step-boundary transition, amortized once per iteration.
-    [[gnu::cold]] Transaction* begin_tx(uint64_t step_id) {
+    [[nodiscard, gnu::cold]] Transaction* begin_tx(uint64_t step_id) noexcept {
         auto* tx   = &entries_[head_ & MASK];
         *tx = Transaction{};   // value-init via NSDMI defaults (no memset on non-trivial type)
         tx->step_id = step_id;
@@ -90,8 +90,8 @@ class TransactionLog {
 
     // Transition RECORDING (or CLOSED) → COMMITTED, attach region.
     // Returns false if tx is not in a committable state (logic error).
-    bool commit(Transaction* tx, RegionNode* region,
-                ContentHash content_hash, MerkleHash merkle_root)
+    [[nodiscard]] bool commit(Transaction* tx, RegionNode* region,
+                ContentHash content_hash, MerkleHash merkle_root) noexcept
         pre (tx != nullptr)
         pre (region != nullptr)
     {
@@ -110,7 +110,7 @@ class TransactionLog {
     // Transition COMMITTED → ACTIVE. Marks the previous ACTIVE as SUPERSEDED.
     // Returns the previously ACTIVE transaction (the rollback target), or nullptr
     // if no previous ACTIVE existed.
-    [[nodiscard]] Transaction* activate(Transaction* tx)
+    [[nodiscard]] Transaction* activate(Transaction* tx) noexcept
         pre (tx != nullptr)
     {
         if (tx->status != TxStatus::COMMITTED) return nullptr;

@@ -61,7 +61,7 @@ int main() {
 
     const crucible::ContentHash hash2   = region2->content_hash;
     const crucible::MerkleHash  merkle2 = region2->merkle_hash;
-    log.commit(tx2, region2, hash2, merkle2);
+    assert(log.commit(tx2, region2, hash2, merkle2));
     assert(tx2->status == crucible::TxStatus::COMMITTED);
 
     auto* superseded = log.activate(tx2);
@@ -90,7 +90,7 @@ int main() {
         crucible::TraceEntry e{};
         e.schema_hash = crucible::SchemaHash{static_cast<uint64_t>(i)};
         auto* r = crucible::make_region(test.alloc, arena, &e, 1);
-        log.commit(tx, r, r->content_hash, r->merkle_hash);
+        assert(log.commit(tx, r, r->content_hash, r->merkle_hash));
         (void)log.activate(tx);
     }
     // The active tx must be the last one (step_id == 32).

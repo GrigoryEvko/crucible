@@ -375,9 +375,11 @@ class Vigil {
         const uint64_t step = step_.fetch_add(1, std::memory_order_relaxed);
 
         auto* tx = tx_log_.begin_tx(step);
-        tx_log_.commit(tx, region,
-                       region->content_hash,
-                       region->merkle_hash);
+        // commit is nodiscard — bg-thread fast path cannot recover
+        // from a state-machine logic error here.  Cast away.
+        (void)tx_log_.commit(tx, region,
+                             region->content_hash,
+                             region->merkle_hash);
         (void)tx_log_.activate(tx);
 
         // Signal fg thread: a region with a MemoryPlan is available.
