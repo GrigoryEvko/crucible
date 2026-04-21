@@ -823,14 +823,23 @@ inline void recompute_merkle(TraceNode* node) {
     std::span<RegionNode*> out,
     uint32_t count = 0) {
   while (node && count < out.size()) {
-    if (node->kind == TraceNodeKind::REGION) {
-      out[count++] = static_cast<RegionNode*>(node);
-    } else if (node->kind == TraceNodeKind::BRANCH) {
-      auto* b = static_cast<BranchNode*>(node);
-      for (uint32_t i = 0; i < b->num_arms; i++)
-        count = collect_regions(b->arms[i].target, out, count);
-    } else if (node->kind == TraceNodeKind::LOOP) {
-      count = collect_regions(static_cast<LoopNode*>(node)->body, out, count);
+    switch (node->kind) {
+      case TraceNodeKind::REGION:
+        out[count++] = static_cast<RegionNode*>(node);
+        break;
+      case TraceNodeKind::BRANCH: {
+        auto* b = static_cast<BranchNode*>(node);
+        for (uint32_t i = 0; i < b->num_arms; i++)
+          count = collect_regions(b->arms[i].target, out, count);
+        break;
+      }
+      case TraceNodeKind::LOOP:
+        count = collect_regions(static_cast<LoopNode*>(node)->body, out, count);
+        break;
+      case TraceNodeKind::TERMINAL:
+        break;  // walk past; the next-pointer handles continuation
+      default:
+        std::unreachable();
     }
     node = node->next;
   }
@@ -1143,12 +1152,21 @@ struct DagDiff {
   uint32_t count = 0;
   while (node) {
     ++count;
-    if (node->kind == TraceNodeKind::BRANCH) {
-      auto* b = static_cast<BranchNode*>(node);
-      for (uint32_t i = 0; i < b->num_arms; i++)
-        count += dag_node_count(b->arms[i].target);
-    } else if (node->kind == TraceNodeKind::LOOP) {
-      count += dag_node_count(static_cast<LoopNode*>(node)->body);
+    switch (node->kind) {
+      case TraceNodeKind::BRANCH: {
+        auto* b = static_cast<BranchNode*>(node);
+        for (uint32_t i = 0; i < b->num_arms; i++)
+          count += dag_node_count(b->arms[i].target);
+        break;
+      }
+      case TraceNodeKind::LOOP:
+        count += dag_node_count(static_cast<LoopNode*>(node)->body);
+        break;
+      case TraceNodeKind::REGION:
+      case TraceNodeKind::TERMINAL:
+        break;  // leaf-like: already counted via ++count
+      default:
+        std::unreachable();
     }
     node = node->next;
   }
