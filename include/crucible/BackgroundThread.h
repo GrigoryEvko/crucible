@@ -692,8 +692,14 @@ struct BackgroundThread {
       te.training_phase  = static_cast<TrainingPhase>(
           (flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
       te.torch_function  = (flags & op_flag::TORCH_FUNCTION) != 0;
-      assert(re.num_scalar_args <= 5 &&
-             "op has >5 scalar args — truncated in TraceRing (see Task #18)");
+      // Structural invariant: TraceRing::Entry::scalar_values is a
+      // fixed-5 array; num_scalar_args > 5 implies the foreground
+      // recorder wrote past the array (UB) or the on-disk format
+      // stored a corrupt count.  contract_assert fires at the bg
+      // boundary so the first downstream memcpy doesn't inherit
+      // garbage.  The std::min on the next line retains the defensive
+      // clamp for release builds where contracts compile out.
+      contract_assert(re.num_scalar_args <= 5);
       uint16_t n_scalars = std::min(re.num_scalar_args, uint16_t(5));
       te.num_scalar_args = n_scalars;
 
