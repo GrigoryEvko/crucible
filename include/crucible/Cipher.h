@@ -318,7 +318,22 @@ class CRUCIBLE_OWNER Cipher {
         return root_str() + "/objects/" + hex.substr(0, 2) + "/" + hex.substr(2);
     }
 
-    // Load the log file into memory.
+    // Parse a single uint64_t field via std::from_chars — exception-free
+    // (std::stoull throws on malformed input, which is UB under
+    // -fno-exceptions).  Returns true iff the full [begin, end) range
+    // parsed cleanly as a number in the given base.
+    [[nodiscard]] static bool parse_u64(
+        const char* begin, const char* end, int base, uint64_t& out) noexcept
+    {
+        if (begin >= end) return false;
+        auto [p, ec] = std::from_chars(begin, end, out, base);
+        return ec == std::errc{} && p == end;
+    }
+
+    // Load the log file into memory.  Malformed lines (missing commas,
+    // non-numeric fields, out-of-range values) are SKIPPED — a corrupt
+    // or adversarially-truncated log doesn't abort the process, it just
+    // means the log's state may be a proper prefix of what was on disk.
     void load_log() {
         std::ifstream f(root_str() + "/log");
         if (!f) return;
@@ -326,13 +341,21 @@ class CRUCIBLE_OWNER Cipher {
         while (std::getline(f, line)) {
             if (line.empty()) continue;
             const size_t p1 = line.find(',');
+            if (p1 == std::string::npos) continue;
             const size_t p2 = line.find(',', p1 + 1);
-            if (p1 == std::string::npos || p2 == std::string::npos) continue;
-            const uint64_t    step_id = std::stoull(line.substr(0, p1));
-            const ContentHash hash{std::stoull(line.substr(p1 + 1, p2 - p1 - 1),
-                                                  nullptr, 16)};
-            const uint64_t    ts_ns   = std::stoull(line.substr(p2 + 1));
-            log_.emplace(LogEntry{.step_id = step_id, .hash = hash, .ts_ns = ts_ns});
+            if (p2 == std::string::npos) continue;
+
+            const char* begin = line.data();
+            uint64_t step_id = 0;
+            uint64_t raw_hash = 0;
+            uint64_t ts_ns = 0;
+            if (!parse_u64(begin, begin + p1, 10, step_id))        continue;
+            if (!parse_u64(begin + p1 + 1, begin + p2, 16, raw_hash)) continue;
+            if (!parse_u64(begin + p2 + 1, begin + line.size(), 10, ts_ns)) continue;
+
+            log_.emplace(LogEntry{.step_id = step_id,
+                                   .hash    = ContentHash{raw_hash},
+                                   .ts_ns   = ts_ns});
         }
     }
 

@@ -187,6 +187,38 @@ int main() {
         // verify the invariant on the destination.
     }
 
+    // ── load_log skips malformed lines (no exception, no abort) ─────
+    // Pre-COMPOSE-3: std::stoull threw on malformed input, which is UB
+    // under -fno-exceptions.  Now from_chars-based; bad lines are
+    // skipped and the parse continues at the next newline.
+    {
+        // Build a corrupt log file in a fresh temp dir.
+        char tmpl2[] = "/tmp/crucible_corrupt_XXXXXX";
+        char* dir2 = mkdtemp(tmpl2);
+        assert(dir2 != nullptr);
+        std::filesystem::create_directories(std::string(dir2) + "/objects");
+
+        // Write a log with mixed valid/garbage content.
+        {
+            std::ofstream lf(std::string(dir2) + "/log");
+            lf << "10,deadbeef00000001,1000\n";   // valid
+            lf << "garbage,not,numbers\n";        // bad: non-numeric step_id
+            lf << "20,GHI,2000\n";                // bad: invalid hex
+            lf << "30,deadbeef00000003\n";        // bad: missing field
+            lf << "40,deadbeef00000004,4000\n";   // valid
+        }
+
+        auto cipher = crucible::Cipher::open(dir2);
+        // Two valid entries should have parsed; corrupt lines skipped.
+        assert(cipher.hash_at_step(10) == crucible::ContentHash{0xdeadbeef00000001ULL});
+        assert(cipher.hash_at_step(40) == crucible::ContentHash{0xdeadbeef00000004ULL});
+        // Step 30 is between the two valid entries — should resolve to step 10
+        // (last entry with step_id <= 30).
+        assert(cipher.hash_at_step(30) == crucible::ContentHash{0xdeadbeef00000001ULL});
+
+        std::filesystem::remove_all(dir2);
+    }
+
     // Cleanup temp dir.
     std::filesystem::remove_all(dir);
 
