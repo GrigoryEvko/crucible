@@ -358,6 +358,8 @@ crucible_neg_compile_test(neg_c_array_field
   "Type contains a safety::ScopedView<> in some field")
 crucible_neg_compile_test(neg_linear_view_field
   "Type contains a safety::ScopedView<> in some field")
+crucible_neg_compile_test(neg_appendonly_over_writeonce
+  "AppendOnly<WriteOnce<T>> is redundant")
 
 # Tier 1 compiler firings — each has a distinct diagnostic.
 crucible_neg_compile_test(neg_assignment
