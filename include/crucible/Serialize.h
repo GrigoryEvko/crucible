@@ -74,6 +74,34 @@ struct Reader {
 
     template <typename T>
     [[nodiscard]] T r() { T v{}; read_bytes(&v, sizeof(T)); return v; }
+
+    // Bytes remaining from the cursor.
+    [[nodiscard]] size_t remaining() const noexcept {
+        return (pos <= len) ? (len - pos) : 0;
+    }
+
+    // Pre-flight check for array-of-T deserialization: returns true iff
+    // the reader has at least n * sizeof(T) bytes remaining AND the
+    // product is computable without overflow.
+    //
+    // Use before allocating an arena buffer sized for `n` elements of
+    // type T: adversarial headers claiming counts near CDAG_MAX_* with
+    // a truncated body would otherwise grow the arena by
+    // n * sizeof(T) bytes before the per-element read discovers EOF —
+    // up to ~2 GB on num_ops=4M TraceEntry arrays.  With this check
+    // the arena is left untouched; the caller can bail cleanly.
+    template <typename T>
+    [[nodiscard]] bool has_remaining(size_t n) const noexcept {
+        if (n == 0) return true;
+        // Guard the multiply.  SIZE_MAX / sizeof(T) is the largest n
+        // for which n * sizeof(T) doesn't wrap on size_t.  Any header-
+        // declared count exceeding CDAG_MAX_* is already rejected, but
+        // the multiply check is a belt-and-braces defence for types T
+        // whose sizeof may grow (e.g. TraceEntry extensions).
+        if (n > SIZE_MAX / sizeof(T)) return false;
+        const size_t need = n * sizeof(T);
+        return pos <= len && (len - pos) >= need;
+    }
 };
 
 // Write TensorMeta with data_ptr zeroed (runtime address is not meaningful).
@@ -316,7 +344,18 @@ inline Header read_header(Reader& r) {
         }
     }
 
-    // TraceEntries
+    // TraceEntries.  Each entry is a variable-size record (input/output
+    // metas + scalar args), but the minimum per-entry wire cost is the
+    // fixed header (hashes + counts + flags ≈ 40 bytes), which we can
+    // pre-flight cheaply.  Adversarial num_ops=CDAG_MAX_OPS (4M) with a
+    // truncated body would otherwise grow the arena by 4M *
+    // sizeof(TraceEntry) (~2 GB) before the first read_meta failure.
+    constexpr size_t kTraceEntryMinWireBytes = 40;
+    if (num_ops > 0 &&
+        r.remaining() < static_cast<size_t>(num_ops) * kTraceEntryMinWireBytes)
+    {
+        return nullptr;
+    }
     TraceEntry* ops = (num_ops > 0)
         ? arena.alloc_array<TraceEntry>(a, num_ops) : nullptr;
 
@@ -465,6 +504,22 @@ inline Header read_header(Reader& r) {
 
     const uint32_t num_arms = r.r<uint32_t>();
     if (num_arms > CDAG_MAX_BRANCH_ARMS) return nullptr;
+
+    // Pre-flight: each arm is 16 bytes on the wire (int64 value +
+    // MerkleHash).  Reject truncated bodies before allocating the arms
+    // array — an adversarial num_arms near CDAG_MAX_BRANCH_ARMS (64 K)
+    // with a short body would otherwise grow the arena by 64 K * 16 B
+    // (1 MB) uselessly.  The check runs once, O(1).  Use explicit wire
+    // byte count instead of sizeof(Arm) — wire and in-memory layouts
+    // happen to coincide at 16 bytes today, but in-memory Arm ends up
+    // storing a TraceNode* (not a MerkleHash) post-resolve, so tying
+    // the check to the wire cost decouples from struct changes.
+    constexpr size_t kArmWireBytes = sizeof(int64_t) + sizeof(uint64_t);
+    if (num_arms > 0 &&
+        r.remaining() < static_cast<size_t>(num_arms) * kArmWireBytes)
+    {
+        return nullptr;
+    }
 
     auto* node = arena.alloc_obj<BranchNode>(a);
     ::new (node) BranchNode{};
