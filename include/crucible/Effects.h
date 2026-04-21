@@ -81,31 +81,35 @@ struct Test;
 // authorized contexts can create them. Passed by value (not reference)
 // so the compiler can elide them entirely in inlined code.
 
+// noexcept on every ctor/assign: capability tokens are empty structs and
+// must never throw.  Explicit noexcept documents intent AND guards
+// against a future body being added that calls a throwing expression
+// (the compiler catches the contradiction).
 struct Alloc {
-  Alloc(const Alloc&) = default;
-  Alloc& operator=(const Alloc&) = default;
+  Alloc(const Alloc&) noexcept = default;
+  Alloc& operator=(const Alloc&) noexcept = default;
  private:
-  constexpr Alloc() = default;
+  constexpr Alloc() noexcept = default;
   friend struct Bg;
   friend struct Init;
   friend struct Test;
 };
 
 struct IO {
-  IO(const IO&) = default;
-  IO& operator=(const IO&) = default;
+  IO(const IO&) noexcept = default;
+  IO& operator=(const IO&) noexcept = default;
  private:
-  constexpr IO() = default;
+  constexpr IO() noexcept = default;
   friend struct Bg;
   friend struct Init;
   friend struct Test;
 };
 
 struct Block {
-  Block(const Block&) = default;
-  Block& operator=(const Block&) = default;
+  Block(const Block&) noexcept = default;
+  Block& operator=(const Block&) noexcept = default;
  private:
-  constexpr Block() = default;
+  constexpr Block() noexcept = default;
   friend struct Bg;
   friend struct Test;
   // Note: Init does NOT get Block — initialization should not block.
