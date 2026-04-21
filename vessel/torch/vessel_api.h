@@ -22,6 +22,18 @@ extern "C" {
   #define CRUCIBLE_VESSEL_API __attribute__((visibility("default")))
 #endif
 
+// Exception transparency for the C ABI boundary.  Every extern "C"
+// function is noexcept: throwing across a C ABI is UB, and the project
+// builds with -fno-exceptions anyway, so the annotation is both
+// documentation and a guarantee that GCC elides any unwind machinery
+// for these thunks.  The macro collapses to empty under a C compiler
+// because `noexcept` is C++-only syntax.
+#ifdef __cplusplus
+  #define CRUCIBLE_VESSEL_NOEXCEPT noexcept
+#else
+  #define CRUCIBLE_VESSEL_NOEXCEPT
+#endif
+
 // Opaque handle to a crucible::Vigil instance.
 typedef void* CrucibleHandle;
 
@@ -57,16 +69,16 @@ typedef struct {
 // ── Lifecycle ────────────────────────────────────────────────────────
 
 // Create a Vigil instance. Starts the background thread.
-CRUCIBLE_VESSEL_API CrucibleHandle crucible_create(void);
+CRUCIBLE_VESSEL_API CrucibleHandle crucible_create(void) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Destroy a Vigil instance. Joins the background thread.
-CRUCIBLE_VESSEL_API void crucible_destroy(CrucibleHandle h);
+CRUCIBLE_VESSEL_API void crucible_destroy(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Hashing ──────────────────────────────────────────────────────────
 
 // FNV-1a 64-bit hash of a null-terminated string.
 // Use for: op name → schema_hash.
-CRUCIBLE_VESSEL_API uint64_t crucible_hash_string(const char* s);
+CRUCIBLE_VESSEL_API uint64_t crucible_hash_string(const char* s) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // FNV-1a hash of tensor shapes. Concatenates (ndim, sizes[0..ndim-1])
 // for each tensor. Use for: input shapes → shape_hash.
@@ -75,7 +87,7 @@ CRUCIBLE_VESSEL_API uint64_t crucible_hash_string(const char* s);
 // n_tensors: number of tensors.
 CRUCIBLE_VESSEL_API uint64_t crucible_hash_shapes(const int64_t* all_sizes,
                                                    const uint8_t* ndims,
-                                                   uint32_t n_tensors);
+                                                   uint32_t n_tensors) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Dispatch ─────────────────────────────────────────────────────────
 
@@ -86,7 +98,7 @@ CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op(
     CrucibleHandle h,
     uint64_t schema_hash, uint64_t shape_hash,
     uint16_t num_inputs, uint16_t num_outputs,
-    const CrucibleMeta* metas, uint32_t n_metas);
+    const CrucibleMeta* metas, uint32_t n_metas) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Extended dispatch with scalar arguments and grad/inference flags.
 // scalar_values: up to 5 int64_t values (floats bitcast via memcpy).
@@ -97,51 +109,51 @@ CRUCIBLE_VESSEL_API CrucibleDispatchResult crucible_dispatch_op_ex(
     uint16_t num_inputs, uint16_t num_outputs,
     const CrucibleMeta* metas, uint32_t n_metas,
     const int64_t* scalar_values, uint16_t num_scalars,
-    uint8_t grad_enabled, uint8_t inference_mode);
+    uint8_t grad_enabled, uint8_t inference_mode) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Control ──────────────────────────────────────────────────────────
 
 // Spin-wait until TraceRing is drained (1s timeout).
-CRUCIBLE_VESSEL_API void crucible_flush(CrucibleHandle h);
+CRUCIBLE_VESSEL_API void crucible_flush(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Query mode: 1 if COMPILED, 0 if RECORDING/DIVERGED.
-CRUCIBLE_VESSEL_API int crucible_is_compiled(CrucibleHandle h);
+CRUCIBLE_VESSEL_API int crucible_is_compiled(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Number of complete iterations in COMPILED mode.
-CRUCIBLE_VESSEL_API uint32_t crucible_compiled_iterations(CrucibleHandle h);
+CRUCIBLE_VESSEL_API uint32_t crucible_compiled_iterations(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Number of divergences detected.
-CRUCIBLE_VESSEL_API uint32_t crucible_diverged_count(CrucibleHandle h);
+CRUCIBLE_VESSEL_API uint32_t crucible_diverged_count(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Schema name registration ─────────────────────────────────────────
 
 // Register an op name for a schema hash. Call once per op at startup.
 // Enables human-readable labels in trace visualization and diagnostics.
 CRUCIBLE_VESSEL_API void crucible_register_schema_name(uint64_t schema_hash,
-                                                        const char* name);
+                                                        const char* name) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Lookup the registered name for a schema hash. Returns NULL if unknown.
-CRUCIBLE_VESSEL_API const char* crucible_schema_name(uint64_t schema_hash);
+CRUCIBLE_VESSEL_API const char* crucible_schema_name(uint64_t schema_hash) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Diagnostics ──────────────────────────────────────────────────────
 
 // Number of iteration boundaries detected by the background thread.
-CRUCIBLE_VESSEL_API uint32_t crucible_bg_iterations(CrucibleHandle h);
+CRUCIBLE_VESSEL_API uint32_t crucible_bg_iterations(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Number of entries currently in the ring buffer (approximate).
-CRUCIBLE_VESSEL_API uint32_t crucible_ring_size(CrucibleHandle h);
+CRUCIBLE_VESSEL_API uint32_t crucible_ring_size(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Number of entries in the MetaLog (approximate).
-CRUCIBLE_VESSEL_API uint32_t crucible_metalog_size(CrucibleHandle h);
+CRUCIBLE_VESSEL_API uint32_t crucible_metalog_size(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Compiled mode accessors ──────────────────────────────────────────
 
 // Pre-allocated output pointer for output j of the current op.
 // Valid only after dispatch returned COMPILED with MATCH/COMPLETE.
-CRUCIBLE_VESSEL_API void* crucible_output_ptr(CrucibleHandle h, uint16_t j);
+CRUCIBLE_VESSEL_API void* crucible_output_ptr(CrucibleHandle h, uint16_t j) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Pre-allocated input pointer for input j of the current op.
-CRUCIBLE_VESSEL_API void* crucible_input_ptr(CrucibleHandle h, uint16_t j);
+CRUCIBLE_VESSEL_API void* crucible_input_ptr(CrucibleHandle h, uint16_t j) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Trace export ────────────────────────────────────────────────────
 
@@ -149,10 +161,10 @@ CRUCIBLE_VESSEL_API void* crucible_input_ptr(CrucibleHandle h, uint16_t j);
 // Flushes the ring first, then serializes the RegionNode's TraceEntry
 // data to disk.  Format: 16B header + 80B/op + 168B/meta + schema table.
 // Returns 1 on success, 0 on failure (no active region, file I/O error).
-CRUCIBLE_VESSEL_API int crucible_export_crtrace(CrucibleHandle h, const char* path);
+CRUCIBLE_VESSEL_API int crucible_export_crtrace(CrucibleHandle h, const char* path) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // Number of ops in the active compiled region.  0 if no region.
-CRUCIBLE_VESSEL_API uint32_t crucible_active_num_ops(CrucibleHandle h);
+CRUCIBLE_VESSEL_API uint32_t crucible_active_num_ops(CrucibleHandle h) CRUCIBLE_VESSEL_NOEXCEPT;
 
 #ifdef __cplusplus
 }
