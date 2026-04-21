@@ -32,9 +32,11 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/PoolAllocator.h>
+#include <crucible/safety/ScopedView.h>
 
 #include <cassert>
 #include <cstdint>
+#include <type_traits>
 
 namespace crucible {
 
@@ -43,6 +45,14 @@ enum class ReplayStatus : uint8_t {
   DIVERGED,  // Guard failed -- schema or shape mismatch
   COMPLETE,  // All ops in region consumed (iteration done)
 };
+
+// State tags for ScopedView.  Active = init() has been called; the
+// engine has a region and pool bound.  Methods that require a matched
+// entry (output_ptr/input_ptr) still use their existing pre() checks
+// since "matched" is a transient per-op state, not a stable scope.
+namespace engine_state {
+    struct Active {};
+}
 
 struct ReplayEngine {
   ReplayEngine() = default;
@@ -178,6 +188,74 @@ struct ReplayEngine {
   [[nodiscard]] bool is_complete() const { return cursor_ == end_; }
   [[nodiscard]] bool is_initialized() const { return ops_ != nullptr; }
 
+  // ── ScopedView integration ────────────────────────────────────────
+  //
+  // ActiveView proves the engine has been init()'d.  advance() and the
+  // other methods still use their existing pre() contracts for cursor
+  // and match state — those are op-scale transient invariants, not
+  // block-scoped state the view would cover.
+
+  using ActiveView = crucible::safety::ScopedView<ReplayEngine,
+                                                   engine_state::Active>;
+
+  [[nodiscard]] friend constexpr bool view_ok(
+      ReplayEngine const& e, std::type_identity<engine_state::Active>) noexcept {
+    return e.is_initialized();
+  }
+
+  [[nodiscard]] CRUCIBLE_INLINE ActiveView mint_active_view() noexcept
+      pre (is_initialized())
+  {
+    return crucible::safety::mint_view<engine_state::Active>(*this);
+  }
+
+  [[nodiscard]] CRUCIBLE_INLINE ReplayStatus
+  advance(SchemaHash schema_hash, ShapeHash shape_hash,
+          ActiveView const&)
+      pre (cursor_ < end_)
+  {
+    if (schema_hash != expected_schema_) [[unlikely]]
+      return ReplayStatus::DIVERGED;
+    if (shape_hash != expected_shape_) [[unlikely]]
+      return ReplayStatus::DIVERGED;
+    current_ = cursor_;
+    __builtin_prefetch(reinterpret_cast<const char*>(cursor_) + 64, 0, 3);
+    ++cursor_;
+    if (cursor_ == end_) [[unlikely]]
+      return ReplayStatus::COMPLETE;
+    expected_schema_ = cursor_->schema_hash;
+    expected_shape_ = cursor_->shape_hash;
+    return ReplayStatus::MATCH;
+  }
+
+  [[nodiscard]] CRUCIBLE_INLINE void* output_ptr(uint16_t j, ActiveView const&) const
+      CRUCIBLE_LIFETIMEBOUND
+      pre (current_ != nullptr)
+      pre (j < current_->num_outputs)
+      pre (current_->output_slot_ids != nullptr)
+  {
+    SlotId sid = current_->output_slot_ids[j];
+    return sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
+  }
+
+  [[nodiscard]] CRUCIBLE_INLINE void* input_ptr(uint16_t j, ActiveView const&) const
+      CRUCIBLE_LIFETIMEBOUND
+      pre (current_ != nullptr)
+      pre (j < current_->num_inputs)
+      pre (current_->input_slot_ids != nullptr)
+  {
+    SlotId sid = current_->input_slot_ids[j];
+    return sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
+  }
+
+  CRUCIBLE_INLINE void reset(ActiveView const&) {
+    cursor_ = ops_;
+    if (ops_ != end_) [[likely]] {
+      expected_schema_ = ops_[0].schema_hash;
+      expected_shape_ = ops_[0].shape_hash;
+    }
+  }
+
  private:
   // ── Layout: all fields in ONE 64-byte cache line ──
   //
@@ -206,5 +284,8 @@ struct ReplayEngine {
 };
 
 static_assert(sizeof(ReplayEngine) == 64, "ReplayEngine: 8 × 8B = 64 bytes (one cache line)");
+
+// Tier 2 opt-in.
+static_assert(crucible::safety::no_scoped_view_field_check<ReplayEngine>());
 
 } // namespace crucible

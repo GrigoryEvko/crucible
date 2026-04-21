@@ -273,7 +273,8 @@ int main() {
             PoolAllocator pool;
             pool.init(&plan_a);
             {
-                auto old = pool.detach();
+                auto pv = pool.mint_initialized_view();
+                auto old = pool.detach(pv);
                 bench::do_not_optimize(old.base);
                 pool.init(&plan_b);
             }
