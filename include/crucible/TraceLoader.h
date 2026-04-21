@@ -49,20 +49,24 @@ namespace crucible {
 // ── On-disk record layout (80 bytes) ─────────────────────────────────
 
 struct TraceOpRecord {
-  uint64_t schema_hash = 0;       // 8B
-  uint64_t shape_hash = 0;        // 8B
-  uint64_t scope_hash = 0;        // 8B
-  uint64_t callsite_hash = 0;     // 8B
-  int64_t scalar_values[5]{};     // 40B
-  uint16_t num_inputs = 0;        // 2B
-  uint16_t num_outputs = 0;       // 2B
-  uint16_t num_scalars = 0;       // 2B
-  uint8_t grad_enabled = 0;       // 1B
-  uint8_t inference_mode = 0;     // 1B — misleading name (kept for struct layout); carries
-                                  //       all op_flag bits, see op_flag:: in TraceRing.h
+  SchemaHash   schema_hash;         // 8B — default-ctor 0; same layout as uint64_t
+  ShapeHash    shape_hash;          // 8B
+  ScopeHash    scope_hash;          // 8B
+  CallsiteHash callsite_hash;       // 8B
+  int64_t  scalar_values[5]{};     // 40B
+  uint16_t num_inputs     = 0;     // 2B
+  uint16_t num_outputs    = 0;     // 2B
+  uint16_t num_scalars    = 0;     // 2B
+  uint8_t  grad_enabled   = 0;     // 1B
+  uint8_t  inference_mode = 0;     // 1B — misleading name (kept for struct layout);
+                                    //      carries all op_flag bits, see op_flag:: in TraceRing.h
 };
 
+// Strong-hash newtypes are sizeof()-identical to their raw uint64_t;
+// the on-disk record remains bit-compatible with pre-typed writers.
 static_assert(sizeof(TraceOpRecord) == 80, "TraceOpRecord must be 80 bytes");
+static_assert(std::is_trivially_copyable_v<TraceOpRecord>);
+static_assert(std::is_standard_layout_v<TraceOpRecord>);
 
 // ── Loaded trace data ────────────────────────────────────────────────
 
@@ -254,8 +258,8 @@ static_assert(std::endian::native == std::endian::little,
     const auto& r = records[i];
     auto& e = trace->entries[i];
 
-    e.schema_hash = SchemaHash{r.schema_hash};
-    e.shape_hash = ShapeHash{r.shape_hash};
+    e.schema_hash = r.schema_hash;
+    e.shape_hash  = r.shape_hash;
     e.num_inputs = r.num_inputs;
     e.num_outputs = r.num_outputs;
     e.num_scalar_args = r.num_scalars;
@@ -274,8 +278,8 @@ static_assert(std::endian::native == std::endian::little,
       trace->meta_starts[i] = MetaIndex::none();
     }
 
-    trace->scope_hashes[i] = ScopeHash{r.scope_hash};
-    trace->callsite_hashes[i] = CallsiteHash{r.callsite_hash};
+    trace->scope_hashes[i]    = r.scope_hash;
+    trace->callsite_hashes[i] = r.callsite_hash;
   }
 
   return trace;
