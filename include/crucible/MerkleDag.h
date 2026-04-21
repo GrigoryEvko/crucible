@@ -30,6 +30,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cstring>
+#include <expected>
 #include <span>
 #include <utility>
 
@@ -663,10 +664,27 @@ class CRUCIBLE_OWNER KernelCache {
     return nullptr;
   }
 
+  // Error channel for insert: callers that can tolerate a full table
+  // can branch on it; callers that cannot must map it to crucible_abort.
+  enum class InsertError : uint8_t {
+    TableFull,  // Every slot probed was occupied by a different hash.
+                // At load factor > 0.9 this is plausible on power-of-two
+                // capacities; caller either (a) grows the cache offline
+                // or (b) aborts.  Silent-discard was the pre-expected
+                // behavior and hid capacity pressure.
+  };
+
   // Thread-safe insert via CAS. Overwrites if key already exists.
   // Background thread primary writer, safe by atomic CAS protocol.
+  //
+  // Returns {} on success (including the update-existing-slot path).
+  // Returns std::unexpected(TableFull) iff the entire probe chain was
+  // full of foreign keys — no slot was free AND no match for this hash.
+  // [[nodiscard]] forces callers to handle the error explicitly: the
+  // previous silent-fail behavior made cache pressure invisible.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
-  void insert(ContentHash content_hash, CompiledKernel* kernel) CRUCIBLE_NO_THREAD_SAFETY
+  [[nodiscard]] std::expected<void, InsertError>
+  insert(ContentHash content_hash, CompiledKernel* kernel) CRUCIBLE_NO_THREAD_SAFETY
       pre (content_hash.raw() != 0)  // zero is the sentinel for empty slots
       pre (kernel != nullptr)
   {
@@ -681,16 +699,15 @@ class CRUCIBLE_OWNER KernelCache {
         // Relaxed: size_ is informational only (no control flow depends
         // on its exact value). The real synchronization is content_hash CAS.
         size_.fetch_add(1, std::memory_order_relaxed);
-        return;
+        return {};
       }
       if (expected == content_hash.raw()) {
         // Already exists -- update to newer variant
         entry.kernel.store(kernel, std::memory_order_release);
-        return;
+        return {};
       }
     }
-    // Table full -- should not happen with proper sizing
-    assert(false && "KernelCache table full");
+    return std::unexpected(InsertError::TableFull);
   }
 
   // Relaxed: informational counter, no ordering dependency.

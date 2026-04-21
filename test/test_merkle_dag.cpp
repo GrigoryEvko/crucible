@@ -73,11 +73,11 @@ int main() {
   assert(cache.lookup(ContentHash{0x1234}) == nullptr);
   struct FakeKernel { int x; };
   FakeKernel fk{42};
-  cache.insert(ContentHash{0x1234}, reinterpret_cast<crucible::CompiledKernel*>(&fk));
+  assert(cache.insert(ContentHash{0x1234}, reinterpret_cast<crucible::CompiledKernel*>(&fk)).has_value());
   assert(cache.lookup(ContentHash{0x1234}) == reinterpret_cast<crucible::CompiledKernel*>(&fk));
   // Duplicate insert: overwrites to newer variant
   FakeKernel fk2{99};
-  cache.insert(ContentHash{0x1234}, reinterpret_cast<crucible::CompiledKernel*>(&fk2));
+  assert(cache.insert(ContentHash{0x1234}, reinterpret_cast<crucible::CompiledKernel*>(&fk2)).has_value());
   assert(cache.lookup(ContentHash{0x1234}) == reinterpret_cast<crucible::CompiledKernel*>(&fk2));
 
   // Test element_size
