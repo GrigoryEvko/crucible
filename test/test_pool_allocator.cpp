@@ -56,6 +56,9 @@ static void test_basic_init() {
 
   PoolAllocator pool;
   pool.init(&plan);
+  // ScopedView: one runtime check at construction, zero on every
+  // slot_ptr / register_external call that takes `pv` as proof.
+  auto pv = pool.mint_initialized_view();
 
   // Pool is allocated and 256-byte aligned.
   assert(pool.is_initialized());
@@ -67,16 +70,16 @@ static void test_basic_init() {
 
   // Internal slot pointers are within pool bounds.
   auto* base = static_cast<char*>(pool.pool_base());
-  assert(pool.slot_ptr(SlotId{0}) == base + 0);
-  assert(pool.slot_ptr(SlotId{1}) == base + 1024);
+  assert(pool.slot_ptr(SlotId{0}, pv) == base + 0);
+  assert(pool.slot_ptr(SlotId{1}, pv) == base + 1024);
 
   // Internal slot pointers are 256-aligned (offsets are 256-aligned multiples
   // or 0, and base is 256-aligned, so base+0 and base+1024 are both aligned).
-  assert(reinterpret_cast<uintptr_t>(pool.slot_ptr(SlotId{0})) % 256 == 0);
-  assert(reinterpret_cast<uintptr_t>(pool.slot_ptr(SlotId{1})) % 256 == 0);
+  assert(reinterpret_cast<uintptr_t>(pool.slot_ptr(SlotId{0}, pv)) % 256 == 0);
+  assert(reinterpret_cast<uintptr_t>(pool.slot_ptr(SlotId{1}, pv)) % 256 == 0);
 
   // External slot is nullptr before registration.
-  assert(pool.slot_ptr(SlotId{2}) == nullptr);
+  assert(pool.slot_ptr(SlotId{2}, pv) == nullptr);
 
   std::printf("  test_basic_init: PASSED\n");
 }
@@ -99,16 +102,17 @@ static void test_external_registration() {
 
   PoolAllocator pool;
   pool.init(&plan);
+  auto pv = pool.mint_initialized_view();
 
   // Before registration: external is null.
-  assert(pool.slot_ptr(SlotId{1}) == nullptr);
+  assert(pool.slot_ptr(SlotId{1}, pv) == nullptr);
 
   // Register an external pointer (simulates param tensor).
   alignas(256) char fake_param[512];
-  pool.register_external(SlotId{1}, crucible::safety::NonNull<void*>{fake_param});
+  pool.register_external(SlotId{1}, crucible::safety::NonNull<void*>{fake_param}, pv);
 
   // After registration: returns the registered pointer.
-  assert(pool.slot_ptr(SlotId{1}) == fake_param);
+  assert(pool.slot_ptr(SlotId{1}, pv) == fake_param);
 
   std::printf("  test_external_registration: PASSED\n");
 }
@@ -140,16 +144,17 @@ static void test_write_read_isolation() {
 
   PoolAllocator pool;
   pool.init(&plan);
+  auto pv = pool.mint_initialized_view();
 
   // Write distinct byte patterns to each slot.
-  std::memset(pool.slot_ptr(SlotId{0}), 0xAA, 256);
-  std::memset(pool.slot_ptr(SlotId{1}), 0xBB, 512);
-  std::memset(pool.slot_ptr(SlotId{2}), 0xCC, 256);
+  std::memset(pool.slot_ptr(SlotId{0}, pv), 0xAA, 256);
+  std::memset(pool.slot_ptr(SlotId{1}, pv), 0xBB, 512);
+  std::memset(pool.slot_ptr(SlotId{2}, pv), 0xCC, 256);
 
   // Read back and verify — no cross-contamination.
-  auto* p0 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{0}));
-  auto* p1 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{1}));
-  auto* p2 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{2}));
+  auto* p0 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{0}, pv));
+  auto* p1 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{1}, pv));
+  auto* p2 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{2}, pv));
 
   for (uint32_t i = 0; i < 256; i++) assert(p0[i] == 0xAA);
   for (uint32_t i = 0; i < 512; i++) assert(p1[i] == 0xBB);
@@ -176,6 +181,7 @@ static void test_all_external() {
 
   PoolAllocator pool;
   pool.init(&plan);
+  auto pv = pool.mint_initialized_view();
 
   assert(pool.is_initialized());
   assert(pool.pool_base() == nullptr);
@@ -183,16 +189,16 @@ static void test_all_external() {
   assert(pool.num_slots() == 2);
 
   // Both slots are null before registration.
-  assert(pool.slot_ptr(SlotId{0}) == nullptr);
-  assert(pool.slot_ptr(SlotId{1}) == nullptr);
+  assert(pool.slot_ptr(SlotId{0}, pv) == nullptr);
+  assert(pool.slot_ptr(SlotId{1}, pv) == nullptr);
 
   // Register externals.
   alignas(256) char buf_a[1024];
   alignas(256) char buf_b[2048];
-  pool.register_external(SlotId{0}, crucible::safety::NonNull<void*>{buf_a});
-  pool.register_external(SlotId{1}, crucible::safety::NonNull<void*>{buf_b});
-  assert(pool.slot_ptr(SlotId{0}) == buf_a);
-  assert(pool.slot_ptr(SlotId{1}) == buf_b);
+  pool.register_external(SlotId{0}, crucible::safety::NonNull<void*>{buf_a}, pv);
+  pool.register_external(SlotId{1}, crucible::safety::NonNull<void*>{buf_b}, pv);
+  assert(pool.slot_ptr(SlotId{0}, pv) == buf_a);
+  assert(pool.slot_ptr(SlotId{1}, pv) == buf_b);
 
   std::printf("  test_all_external: PASSED\n");
 }
@@ -231,6 +237,7 @@ static void test_reinit() {
 
   MemoryPlan plan_b = make_manual_plan(slots_b, 2, 3072, 0);
   pool.init(&plan_b);
+  auto pv_b = pool.mint_initialized_view();
 
   assert(pool.is_initialized());
   assert(pool.pool_bytes() == 3072);
@@ -241,8 +248,8 @@ static void test_reinit() {
 
   // Verify slots work.
   auto* base = static_cast<char*>(pool.pool_base());
-  assert(pool.slot_ptr(SlotId{0}) == base);
-  assert(pool.slot_ptr(SlotId{1}) == base + 1024);
+  assert(pool.slot_ptr(SlotId{0}, pv_b) == base);
+  assert(pool.slot_ptr(SlotId{1}, pv_b) == base + 1024);
 
   std::printf("  test_reinit: PASSED\n");
 }
@@ -289,17 +296,18 @@ static void test_integration_with_sweep_line() {
   // Materialize the plan.
   PoolAllocator pool;
   pool.init(plan);
+  auto pv = pool.mint_initialized_view();
 
   assert(pool.is_initialized());
   assert(pool.pool_bytes() == plan->pool_bytes);
 
   // External slot starts null.
-  assert(pool.slot_ptr(SlotId{3}) == nullptr);
+  assert(pool.slot_ptr(SlotId{3}, pv) == nullptr);
 
   // Register external.
   alignas(256) char fake_param[512];
-  pool.register_external(SlotId{3}, crucible::safety::NonNull<void*>{fake_param});
-  assert(pool.slot_ptr(SlotId{3}) == fake_param);
+  pool.register_external(SlotId{3}, crucible::safety::NonNull<void*>{fake_param}, pv);
+  assert(pool.slot_ptr(SlotId{3}, pv) == fake_param);
 
   // Verify simultaneously-alive slots don't corrupt each other.
   //
@@ -311,8 +319,8 @@ static void test_integration_with_sweep_line() {
   // Test: write to co-alive slots, verify no cross-contamination.
 
   // Phase 1: ops 1-3 — Slot 0 and Slot 1 both alive.
-  auto* p0 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{0}));
-  auto* p1 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{1}));
+  auto* p0 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{0}, pv));
+  auto* p1 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{1}, pv));
   std::memset(p0, 0x11, 1024);
   std::memset(p1, 0x22, 2048);
   for (uint32_t i = 0; i < 1024; i++) assert(p0[i] == 0x11);
@@ -320,7 +328,7 @@ static void test_integration_with_sweep_line() {
 
   // Phase 2: ops 4-5 — Slot 0 and Slot 2 both alive.
   // Slot 1 is dead — writing to Slot 2 may overwrite it (reuse).
-  auto* p2 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{2}));
+  auto* p2 = static_cast<uint8_t*>(pool.slot_ptr(SlotId{2}, pv));
   std::memset(p2, 0x33, 1024);
   // Slot 0 must survive — it's alive alongside Slot 2.
   for (uint32_t i = 0; i < 1024; i++) assert(p0[i] == 0x11);

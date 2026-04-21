@@ -19,13 +19,24 @@
 #include <crucible/rt/Registry.h>
 #include <crucible/safety/Checked.h>
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/ScopedView.h>
 
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <type_traits>
 
 namespace crucible {
+
+// ── PoolAllocator state tags ────────────────────────────────────────
+// Used with safety::ScopedView to prove at compile time that the
+// allocator is in the Initialized state before slot_ptr / register_
+// external / detach are called.
+namespace pool_state {
+    struct Empty       {};   // pool_ == nullptr && ptr_table_ == nullptr
+    struct Initialized {};   // init() succeeded, destroy() not yet called
+}
 
 struct CRUCIBLE_OWNER PoolAllocator {
   PoolAllocator() = default;
@@ -119,7 +130,11 @@ struct CRUCIBLE_OWNER PoolAllocator {
     num_external_ = 0;
   }
 
-  // Hot path: single 8-byte load. Returns null for unregistered externals.
+  // ── Untyped hot path (legacy; prefer ScopedView overloads below) ──
+  //
+  // The original API that uses a runtime pre() check for the "pool is
+  // initialized" invariant.  Still supported for callers that haven't
+  // migrated — the typed overloads below are the new canonical API.
   [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
   inline void* slot_ptr(SlotId sid) const noexcept CRUCIBLE_LIFETIMEBOUND
       pre (sid.raw() < num_slots_)
@@ -127,14 +142,55 @@ struct CRUCIBLE_OWNER PoolAllocator {
     return ptr_table_[sid.raw()];
   }
 
-  // Wire an external tensor into its slot. Called by the Vessel once per
-  // external slot before replay begins.  ptr is type-checked non-null
-  // via NonNull<>, so the runtime nullptr contract collapses to a
-  // single check at the wrapper construction site (often statically
-  // elided when the caller has already proved non-null).
   void register_external(SlotId sid, crucible::safety::NonNull<void*> ptr) noexcept
       pre (sid.raw() < num_slots_)
       pre (ptr_table_ != nullptr)
+  {
+    ptr_table_[sid.raw()] = ptr.value();
+  }
+
+  // ── ScopedView-typed overloads ──────────────────────────────────────
+  //
+  // The supported API.  Callers obtain an InitializedView once per
+  // init/destroy cycle via `mint_initialized_view()` — the view
+  // construction fires the contract pre() that the pool is live.
+  // Downstream calls thread the view through; the type system
+  // guarantees slot_ptr / register_external / detach are reachable
+  // only when the pool is initialized.
+  using InitializedView =
+      crucible::safety::ScopedView<PoolAllocator, pool_state::Initialized>;
+  using EmptyView =
+      crucible::safety::ScopedView<PoolAllocator, pool_state::Empty>;
+
+  // Factory: mints an InitializedView for `*this`.  Contract fires if
+  // the pool is not actually initialized, matching the runtime guard.
+  [[nodiscard]] CRUCIBLE_INLINE InitializedView mint_initialized_view() noexcept
+      pre (is_initialized())
+  {
+    return crucible::safety::mint_view<pool_state::Initialized>(*this);
+  }
+
+  [[nodiscard]] CRUCIBLE_INLINE EmptyView mint_empty_view() noexcept
+      pre (!is_initialized())
+  {
+    return crucible::safety::mint_view<pool_state::Empty>(*this);
+  }
+
+  // Hot path — requires InitializedView proof.
+  [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
+  inline void* slot_ptr(SlotId sid, InitializedView const&) const noexcept
+      CRUCIBLE_LIFETIMEBOUND
+      pre (sid.raw() < num_slots_)
+  {
+    return ptr_table_[sid.raw()];
+  }
+
+  // External registration — requires InitializedView proof.
+  CRUCIBLE_INLINE void register_external(
+      SlotId sid,
+      crucible::safety::NonNull<void*> ptr,
+      InitializedView const&) noexcept
+      pre (sid.raw() < num_slots_)
   {
     ptr_table_[sid.raw()] = ptr.value();
   }
@@ -153,6 +209,16 @@ struct CRUCIBLE_OWNER PoolAllocator {
   [[nodiscard, gnu::pure]] uint32_t num_external()   const noexcept { return num_external_; }
   [[nodiscard, gnu::pure]] bool     is_initialized() const noexcept { return ptr_table_ != nullptr; }
 
+  // ── ScopedView predicates (ADL-discovered by safety::mint_view) ──
+  [[nodiscard]] friend constexpr bool view_ok(
+      PoolAllocator const& p, std::type_identity<pool_state::Empty>) noexcept {
+    return !p.is_initialized();
+  }
+  [[nodiscard]] friend constexpr bool view_ok(
+      PoolAllocator const& p, std::type_identity<pool_state::Initialized>) noexcept {
+    return p.is_initialized();
+  }
+
   // Release pool_ to a DetachedPool, then reset this allocator to empty.
   // Used by CrucibleContext::switch_region() to keep old pool data alive
   // while initializing the alternate region.
@@ -164,6 +230,20 @@ struct CRUCIBLE_OWNER PoolAllocator {
     uint64_t n       = pool_bytes_;
     crucible::rt::unregister_hot_region(p);
     pool_            = nullptr;   // destroy() skips free since pool_==nullptr
+    destroy();
+    return DetachedPool{p, n};
+  }
+
+  // Typed detach — requires an InitializedView to prove the pool is live.
+  // After the call the view is semantically stale (the underlying pool is
+  // empty); callers should not use it further.  The view's deleted op=
+  // already prevents them from refreshing it by assignment.
+  [[nodiscard, gnu::cold]]
+  DetachedPool detach(InitializedView const&) noexcept {
+    void* p          = pool_;
+    uint64_t n       = pool_bytes_;
+    crucible::rt::unregister_hot_region(p);
+    pool_            = nullptr;
     destroy();
     return DetachedPool{p, n};
   }
@@ -181,5 +261,12 @@ struct CRUCIBLE_OWNER PoolAllocator {
 
 static_assert(sizeof(PoolAllocator) == 32, "PoolAllocator layout: 2 ptrs + u64 + 2*u32");
 static_assert(alignof(PoolAllocator) == 8);
+
+// Tier 2 opt-in: nothing inside PoolAllocator may be a ScopedView.
+// ScopedViews must not outlive their construction scope, so storing
+// one in a field would be an escape.  GCC 16 reflection walks the
+// struct at compile time and fails this if any member (even nested
+// through optional / vector / variant / etc.) is a ScopedView.
+static_assert(crucible::safety::no_scoped_view_field_check<PoolAllocator>());
 
 } // namespace crucible
