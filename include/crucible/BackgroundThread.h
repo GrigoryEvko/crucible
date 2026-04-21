@@ -18,6 +18,7 @@
 #include <crucible/SchemaTable.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/OneShotFlag.h>
+#include <crucible/safety/Refined.h>
 #include <crucible/TraceGraph.h>
 
 namespace crucible {
@@ -39,17 +40,25 @@ namespace crucible {
 //     eliminating the redundant second pass in make_region.
 //   - Memory plan uses counting sort O(n+k) instead of insertion sort O(n²).
 struct BackgroundThread {
-  // The ring buffer to drain from. Not owned.  WriteOnce<>: must be
-  // installed exactly once per BackgroundThread (via start() or
-  // explicit set() in test/bench harnesses), then read for the
-  // process lifetime.  has_value() / operator bool exposes the
-  // "set" state for defensive code paths.
-  crucible::safety::WriteOnce<TraceRing*> ring;
+  // The ring buffer to drain from. Not owned.  The composition is:
+  //   WriteOnce<NonNull<T*>>
+  //     — WriteOnce: installed exactly once per BackgroundThread; a
+  //       second set() is a contract fire.  has_value() / operator bool
+  //       exposes the "set" state for defensive code paths.
+  //     — NonNull (= Refined<non_null, T*>): the installed pointer is
+  //       proven non-null at construction, so downstream bg-worker
+  //       code dereferences without guards and the optimizer can
+  //       [[assume]] it.  `set(nullptr)` is a contract fire.
+  using RingPtr    = crucible::safety::NonNull<TraceRing*>;
+  using MetaLogPtr = crucible::safety::NonNull<MetaLog*>;
+  crucible::safety::WriteOnce<RingPtr>    ring;
 
   // The MetaLog to read tensor metadata from.  Not owned.  Same
-  // installed-once discipline as ring.  Defensive `if (meta_log)`
-  // checks compile against the WriteOnce::operator bool.
-  crucible::safety::WriteOnce<MetaLog*>   meta_log;
+  // installed-once + non-null discipline as ring.  `if (meta_log)`
+  // continues to work via WriteOnce::operator bool (checks the
+  // has-been-set state, not the pointer itself — the pointer is
+  // non-null once set, by construction).
+  crucible::safety::WriteOnce<MetaLogPtr> meta_log;
 
   // Distributed context (set by Vessel adapter at start).
   int32_t rank = -1;
@@ -139,8 +148,11 @@ struct BackgroundThread {
              uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY {
     global_schema_table().seal();
     global_ckernel_table().seal();
-    ring.set(r);
-    meta_log.set(ml);
+    // Wrap raw pointers in NonNull at the set-once boundary.  Refined's
+    // ctor contract fires if either is null — the only way into the
+    // bg worker's ring.get().value() / meta_log.get().value() reads.
+    ring.set(RingPtr{r});
+    meta_log.set(MetaLogPtr{ml});
     rank = rank_;
     world_size = world_size_;
     device_capability = device_cap;
@@ -378,7 +390,7 @@ struct BackgroundThread {
       // Check for divergence reset signal from fg thread.
       (void)reset_requested.check_and_run(do_reset);
 
-      uint32_t n = ring.get()->drain(
+      uint32_t n = ring.get().value()->drain(
           batch, BATCH_SIZE, meta_batch, scope_batch, callsite_batch);
       if (n == 0) {
         CRUCIBLE_SPIN_PAUSE;
@@ -420,7 +432,7 @@ struct BackgroundThread {
     }
 
     // Drain remaining on shutdown.
-    uint32_t n = ring.get()->drain(
+    uint32_t n = ring.get().value()->drain(
         batch, BATCH_SIZE, meta_batch, scope_batch, callsite_batch);
     for (uint32_t i = 0; i < n; i++) {
       current_trace.push_back(batch[i]);
@@ -476,7 +488,7 @@ struct BackgroundThread {
 
         // Advance MetaLog tail AFTER all reads are done (zero-copy safety).
         if (graph->max_meta_end > 0)
-          meta_log.get()->advance_tail(graph->max_meta_end);
+          meta_log.get().value()->advance_tail(graph->max_meta_end);
 
         recompute_merkle(region);
         uncompiled_regions.append(region);
@@ -543,7 +555,7 @@ struct BackgroundThread {
       if (!ms.is_valid() && (re.num_inputs + re.num_outputs) > 0) {
         // Genuine MetaLog overflow on an op that had tensors.
         if (max_meta_end > 0)
-          meta_log.get()->advance_tail(max_meta_end);
+          meta_log.get().value()->advance_tail(max_meta_end);
         return nullptr;
       }
       if (ms.is_valid()) {
@@ -567,18 +579,18 @@ struct BackgroundThread {
 
     // 2. Zero-copy MetaLog: point directly into the circular buffer.
     //    No arena alloc, no memcpy — just pointer arithmetic per op.
-    //    Pointers valid until meta_log.get()->advance_tail() is called
+    //    Pointers valid until meta_log.get().value()->advance_tail() is called
     //    (deferred to on_iteration_boundary after all processing).
     //    For the rare wrap case (< 0.01%), fall back to arena copy.
     TensorMeta* meta_base = nullptr;
     if (first_meta != UINT32_MAX) {
       uint32_t total_metas = max_meta_end - first_meta;
-      meta_base = meta_log.get()->try_contiguous(first_meta, total_metas);
+      meta_base = meta_log.get().value()->try_contiguous(first_meta, total_metas);
       if (!meta_base) [[unlikely]] {
         // Wrap case: copy to arena (extremely rare with 1M capacity).
         meta_base = arena.alloc_array<TensorMeta>(a, total_metas);
         for (uint32_t m = 0; m < total_metas; m++)
-          meta_base[m] = meta_log.get()->at(first_meta + m);
+          meta_base[m] = meta_log.get().value()->at(first_meta + m);
       }
     }
 
