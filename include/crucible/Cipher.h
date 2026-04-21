@@ -32,6 +32,7 @@
 #include <crucible/Serialize.h>
 #include <crucible/safety/FileHandle.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Tagged.h>
 
@@ -173,6 +174,14 @@ class CRUCIBLE_OWNER Cipher {
     // OOM the loader with a SIZE_MAX allocation.
     static constexpr size_t MAX_OBJECT_BYTES = size_t{256} << 20;
 
+    // Refined alias for byte-size inputs validated against the cap.
+    // Internal helper; the `load` boundary constructs this when it
+    // has proven the disk file size is within the ceiling, then
+    // feeds the Refined value into the allocation path.  Downstream
+    // code can treat the size as [[assume]]-bounded.
+    using ValidatedObjectSize = crucible::safety::Refined<
+        crucible::safety::bounded_above<MAX_OBJECT_BYTES>, size_t>;
+
     // Typed: caller has proved Open.  const because deserialize does
     // not mutate the Cipher (it only reads paths under root_).
     //
@@ -197,18 +206,21 @@ class CRUCIBLE_OWNER Cipher {
         const auto raw = f.tellg();
         if (raw < 0) return nullptr;  // tellg() failure
         const auto len = static_cast<size_t>(raw);
-        if (len > MAX_OBJECT_BYTES) return nullptr;
+        // Guard the size against the ceiling AT the disk boundary.
+        // Once validated, wrap in ValidatedObjectSize — the Refined
+        // ctor's contract fires on len > MAX_OBJECT_BYTES, catching
+        // a caller who skipped the if-return above (e.g. a future
+        // refactor that splits this function and forgets the check).
+        if (len == 0 || len > MAX_OBJECT_BYTES) return nullptr;
+        const ValidatedObjectSize validated_len{len};
         f.seekg(0, std::ios::beg);
 
         // Buffer holds untrusted disk bytes until deserialize_region
-        // validates them.  Empty-buffer branch avoids a zero-length
-        // vector on a zero-byte file (which would be corrupt anyway,
-        // but we get a deterministic nullptr rather than reliance on
-        // the reader's bounds check).
-        if (len == 0) return nullptr;
-        std::vector<uint8_t> buf(len);
+        // validates their semantic structure.  The BYTE-COUNT is
+        // already validated by construction of validated_len above.
+        std::vector<uint8_t> buf(validated_len.value());
         f.read(reinterpret_cast<char*>(buf.data()),
-               static_cast<std::streamsize>(len));
+               static_cast<std::streamsize>(validated_len.value()));
         if (!f) return nullptr;
 
         return deserialize_region(a, std::span<const uint8_t>{buf}, arena);
