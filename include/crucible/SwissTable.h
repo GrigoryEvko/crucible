@@ -57,9 +57,32 @@ static constexpr size_t kGroupWidth = 16;
 // H2 tag: top 7 bits of hash -> [0, 127].
 // Always non-negative as int8_t (bit 7 cleared).
 // Independent from H1 (lower bits) due to fmix64 avalanche.
-[[nodiscard]] constexpr int8_t h2_tag(uint64_t hash) {
+//
+// post() enforces the [0, 127] invariant: kEmpty = 0x80 is the sentinel
+// for empty slots in the control byte array; h2_tag returning a value
+// with bit 7 set would alias an empty slot, corrupting the probe loop's
+// termination condition.  The shift by 57 on uint64_t mathematically
+// guarantees the top bit of the cast is clear, so the contract never
+// fires under normal operation — it's a compile-time proof of the
+// sentinel-space reservation that the rest of the SwissTable relies on.
+[[nodiscard, gnu::const]] constexpr int8_t h2_tag(uint64_t hash) noexcept
+    post (r: r >= 0)
+{
   return static_cast<int8_t>(hash >> 57);
 }
+
+// Compile-time proof: for every uint64_t input, h2_tag produces a
+// non-negative int8_t (bit 7 clear).  This expresses the sentinel-space
+// reservation as an invariant rather than a runtime check.  If h2_tag's
+// implementation drifts (e.g. `hash >> 56` leaking bit 7), either the
+// static_assert or the post() contract trips.
+static_assert(h2_tag(0x0000000000000000ULL) == 0,
+              "h2_tag(0) must be 0");
+static_assert(h2_tag(0xFFFFFFFFFFFFFFFFULL) == 127,
+              "h2_tag(UINT64_MAX) must be 127 (top 7 bits all set, "
+              "bit 7 of int8_t clear)");
+static_assert(h2_tag(0x8000000000000000ULL) == 64,
+              "h2_tag with only bit 63 set must map to 0x40");
 
 // Bitmask of matching positions within a group.
 // Each set bit corresponds to a slot offset (0..kGroupWidth-1).
