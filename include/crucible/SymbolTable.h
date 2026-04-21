@@ -115,8 +115,18 @@ class CRUCIBLE_OWNER SymbolTable {
   }
 
   // Tighten the integer range. Only narrows, never widens.
-  void tighten_range(SymbolId id, int64_t lower, int64_t upper)
+  //
+  // Narrowing invariant: after the call, the stored range is a subset of
+  // [lower, upper] — specifically, range_lower ≥ lower and
+  // range_upper ≤ upper.  Neither bound ever relaxes outward, so a caller
+  // that wants to observe "the symbol is in [a, b]" only needs to call
+  // this once with [a, b]; subsequent calls can only further constrain.
+  //
+  // const on value params is required by P2900R14 to use them in post().
+  void tighten_range(const SymbolId id, const int64_t lower, const int64_t upper)
       pre (id.raw() < entries_.size())
+      post (entries_[id.raw()].range_lower >= lower)
+      post (entries_[id.raw()].range_upper <= upper)
   {
     auto& e = entries_[id.raw()];
     if (lower > e.range_lower)
