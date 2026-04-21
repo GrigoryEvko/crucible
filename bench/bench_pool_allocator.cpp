@@ -176,16 +176,6 @@ int main() {
     // Three siblings that look alike on paper but exercise different
     // indirection forms. Each gets its own fresh PoolAllocator in its
     // own IIFE scope so the measurements don't interact.
-    //
-    // IMPORTANT: do NOT wrap the `const PoolAllocator*` local in a
-    // bench::do_not_optimize(pool_ptr) barrier before passing it into
-    // the body lambda. Applying the "r,m" / "memory" clobber to a
-    // typed pointer-to-class-with-inlineable-methods confuses GCC 16's
-    // alias analysis inside the captured closure: it generates a load
-    // that reads from a wrong register for `this`, and slot_ptr()
-    // segfaults on the first access. The `void* const* tbl` variant is
-    // safe to clobber — raw `void**` has no inlinable methods for the
-    // optimizer to reason about.
     reports.push_back([&]{
         constexpr uint32_t N = 100;
         std::vector<TensorSlot> slots(N);
@@ -207,11 +197,7 @@ int main() {
         PoolAllocator pool;
         pool.init(&plan);
         const PoolAllocator* pool_ptr = &pool;
-        // No bench::do_not_optimize(pool_ptr) — triggers a GCC 16
-        // miscompile (bugs/gcc-modref-miscompile/). The
-        // do_not_optimize inside the lambda body on the slot_ptr
-        // return value is still safe, because it clobbers a prvalue
-        // (void*), not the pointer-to-class lvalue.
+        bench::do_not_optimize(pool_ptr);
         auto r = bench::run("slot_ptr(100, via pointer)", [&]{
             for (uint32_t i = 0; i < N; i++)
                 bench::do_not_optimize(pool_ptr->slot_ptr(SlotId{i}));
