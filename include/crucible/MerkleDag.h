@@ -648,9 +648,22 @@ class CRUCIBLE_OWNER KernelCache {
 
   // Lock-free lookup via atomic load. Any thread, safe by CAS protocol.
   // gnu::hot: called per dispatch_op in COMPILED mode (millions/sec).
+  //
+  // pre(content_hash.raw() != 0): the zero hash is the slot-empty
+  // sentinel.  A lookup of the zero hash would linearly probe the
+  // entire table (never match, never hit an empty slot) — an O(n)
+  // path on the hot lookup function, which sees millions of calls
+  // per second.  Legitimate callers never synthesize the zero hash;
+  // a caller that did is always a bug.
+  // [[assume]] propagates the fact to the optimizer: the probe's
+  // `key == 0 -> miss` branch remains honest, but the input is
+  // known-non-zero so downstream reasoning holds.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard, gnu::hot]] CompiledKernel* lookup(ContentHash content_hash) const noexcept
-      CRUCIBLE_NO_THREAD_SAFETY {
+      CRUCIBLE_NO_THREAD_SAFETY
+      pre (content_hash.raw() != 0)
+  {
+    [[assume(content_hash.raw() != 0)]];
     uint32_t mask = capacity_ - 1;
     uint32_t idx = static_cast<uint32_t>(content_hash.raw()) & mask;
     for (uint32_t probe = 0; probe < capacity_; probe++) {
