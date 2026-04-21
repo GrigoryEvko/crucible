@@ -30,8 +30,8 @@ enum class ScalarType : int8_t {
   Undefined = -1,
 };
 
-// Byte size per dtype.
-[[nodiscard]] constexpr uint8_t element_size(ScalarType t) {
+// Byte size per dtype.  gnu::const: takes one value, no memory access.
+CRUCIBLE_CONST constexpr uint8_t element_size(ScalarType t) noexcept {
   switch (t) {
     case ScalarType::Bool:
     case ScalarType::Byte:

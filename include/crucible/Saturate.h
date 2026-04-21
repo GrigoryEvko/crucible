@@ -18,6 +18,7 @@
 // Runtime cost: one __builtin_*_overflow (single CMP + CMOV on x86-64,
 // ~1 cycle) plus a branchless clamp.  Constexpr-capable.
 
+#include <crucible/Platform.h>
 #include <version>
 
 #include <concepts>
@@ -26,8 +27,13 @@
 
 namespace crucible::sat {
 
+// gnu::const: takes two values, no memory access, no side effects.
+// Optimizer may CSE freely across statements (no aliasing concerns).
+// CRUCIBLE_CONST bundles [[nodiscard]] — a saturated arith result that
+// is thrown away is almost certainly a bug.
+
 template <std::integral T>
-[[nodiscard]] constexpr T add_sat(T a, T b) noexcept {
+CRUCIBLE_CONST constexpr T add_sat(T a, T b) noexcept {
     T r{};
     if (__builtin_add_overflow(a, b, &r)) [[unlikely]] {
         if constexpr (std::is_signed_v<T>) {
@@ -43,7 +49,7 @@ template <std::integral T>
 }
 
 template <std::integral T>
-[[nodiscard]] constexpr T sub_sat(T a, T b) noexcept {
+CRUCIBLE_CONST constexpr T sub_sat(T a, T b) noexcept {
     T r{};
     if (__builtin_sub_overflow(a, b, &r)) [[unlikely]] {
         if constexpr (std::is_signed_v<T>) {
@@ -60,7 +66,7 @@ template <std::integral T>
 }
 
 template <std::integral T>
-[[nodiscard]] constexpr T mul_sat(T a, T b) noexcept {
+CRUCIBLE_CONST constexpr T mul_sat(T a, T b) noexcept {
     T r{};
     if (__builtin_mul_overflow(a, b, &r)) [[unlikely]] {
         if constexpr (std::is_signed_v<T>) {

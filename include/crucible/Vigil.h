@@ -99,7 +99,7 @@ class Vigil {
     // next iteration re-records everything).
     //
     // Hot path: ~5ns + MetaLog write (~10ns for metas) = ~15ns total.
-    [[nodiscard]] CRUCIBLE_INLINE bool record_op(
+    [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool record_op(
         TraceRing::ValidatedEntryPtr ve,
         const TensorMeta*            metas,
         uint32_t                     n_metas,
@@ -134,7 +134,7 @@ class Vigil {
     //   Relaxed atomic load on pending_region_: on x86 the hardware
     //   provides acquire semantics anyway; acquire fence deferred to
     //   the cold transition path.
-    [[nodiscard]] CRUCIBLE_INLINE DispatchResult dispatch_op(
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult dispatch_op(
         TraceRing::ValidatedEntryPtr ve,
         const TensorMeta*            metas,
         uint32_t                     n_metas,
@@ -394,7 +394,7 @@ class Vigil {
 
     // Divergence handler: region cache lookup, switch attempt, fallback.
     // Called when ctx_.advance() returns DIVERGED.  ~50-400ns cold path.
-    CRUCIBLE_NOINLINE DispatchResult handle_divergence_(
+    [[gnu::cold]] CRUCIBLE_NOINLINE DispatchResult handle_divergence_(
         const TraceRing::Entry& entry,
         [[maybe_unused]] const TensorMeta* metas,
         [[maybe_unused]] uint32_t          n_metas,

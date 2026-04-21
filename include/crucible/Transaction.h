@@ -77,7 +77,8 @@ class TransactionLog {
     TransactionLog(TransactionLog&&)                 = delete("interior pointers into entries_ would dangle");
     TransactionLog& operator=(TransactionLog&&)      = delete("interior pointers into entries_ would dangle");
 
-    Transaction* begin_tx(uint64_t step_id) {
+    // gnu::cold: step-boundary transition, amortized once per iteration.
+    [[gnu::cold]] Transaction* begin_tx(uint64_t step_id) {
         auto* tx   = &entries_[head_ & MASK];
         *tx = Transaction{};   // value-init via NSDMI defaults (no memset on non-trivial type)
         tx->step_id = step_id;
