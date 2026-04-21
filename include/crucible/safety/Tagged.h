@@ -103,4 +103,9 @@ public:
     }
 };
 
+// Zero-cost guarantee: phantom Tag is template parameter, not a member.
+static_assert(sizeof(Tagged<int,   source::FromUser>)  == sizeof(int));
+static_assert(sizeof(Tagged<void*, trust::Verified>)   == sizeof(void*));
+static_assert(sizeof(Tagged<long,  access::AppendOnly>) == sizeof(long));
+
 } // namespace crucible::safety

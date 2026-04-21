@@ -322,9 +322,9 @@ class Vigil {
     [[nodiscard]] MetaLog&                 meta_log()   CRUCIBLE_LIFETIMEBOUND { return *meta_log_; }
 
     // Background thread diagnostics.
-    [[nodiscard]] uint32_t bg_iterations_completed() const { return bg_.iterations_completed; }
+    [[nodiscard]] uint32_t bg_iterations_completed() const { return bg_.iterations_completed.get(); }
     [[nodiscard]] uint32_t bg_last_iteration_length() const { return bg_.last_iteration_length; }
-    [[nodiscard]] uint32_t bg_detector_boundaries() const { return bg_.detector.boundaries_detected; }
+    [[nodiscard]] uint32_t bg_detector_boundaries() const { return bg_.detector.boundaries_detected.get(); }
     [[nodiscard]] bool     bg_detector_confirmed() const { return bg_.detector.confirmed; }
 
  private:

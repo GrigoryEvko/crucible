@@ -16,6 +16,7 @@
 #include <crucible/Platform.h>
 #include <crucible/Saturate.h>
 #include <crucible/SchemaTable.h>
+#include <crucible/safety/Mutation.h>
 #include <crucible/TraceGraph.h>
 
 namespace crucible {
@@ -72,8 +73,10 @@ struct BackgroundThread {
   // Parallel: Python callsite hash for each entry in current_trace.
   std::vector<CallsiteHash> current_callsite_hashes;
 
-  // Completed iteration stats.
-  uint32_t iterations_completed = 0;
+  // Completed iteration stats.  iterations_completed is structurally
+  // monotonic (only increments at iteration boundary); wrap so the
+  // invariant is enforced by the type rather than by convention.
+  crucible::safety::Monotonic<uint32_t> iterations_completed {0};
   uint32_t last_iteration_length = 0;
 
   // Arena for DAG allocations (TraceEntry, TensorMeta arrays,
@@ -433,7 +436,7 @@ struct BackgroundThread {
 
     uint32_t completed_len = crucible::sat::sub_sat(total, IterationDetector::K);
     last_iteration_length = completed_len;
-    iterations_completed++;
+    iterations_completed.bump();
 
     if (meta_log && completed_len > 0) {
       TraceGraph* graph = build_trace(a, completed_len);

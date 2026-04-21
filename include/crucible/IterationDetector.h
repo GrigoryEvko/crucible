@@ -6,6 +6,7 @@
 #include <crucible/Platform.h>
 #include <crucible/Saturate.h>
 #include <crucible/Types.h>
+#include <crucible/safety/Mutation.h>
 
 namespace crucible {
 
@@ -64,7 +65,10 @@ struct IterationDetector {
   // ── End cache line 0 (64 bytes) ──────────────────────────────
 
   // ── Cache line 1: cold data (touched only at boundaries) ─────
-  uint32_t boundaries_detected = 0;                   // offset 64, 4B
+  // boundaries_detected is structurally monotonic: it only increments
+  // on a confirmed iteration boundary.  Wrapped in Monotonic<> so the
+  // invariant is enforced by the type, not by convention.
+  crucible::safety::Monotonic<uint32_t> boundaries_detected {0};  // offset 64, 4B
   uint32_t last_completed_len = 0;                    // offset 68, 4B
   uint8_t pad2_[56]{};                                // offset 72, pad to 128B
   // ── End cache line 1 (64 bytes) ──────────────────────────────
@@ -128,7 +132,11 @@ struct IterationDetector {
     confirmed = false;
     ops_since_boundary = 0;
     signature_len = 0;
-    boundaries_detected = 0;
+    // reset() is not a monotonic operation — it deliberately rewinds
+    // the counter on test/teardown.  Re-construct the Monotonic so the
+    // invariant is established afresh from value 0.
+    std::construct_at(&boundaries_detected,
+                      crucible::safety::Monotonic<uint32_t>{0});
     last_completed_len = 0;
   }
 
@@ -163,7 +171,7 @@ struct IterationDetector {
     // Second+ match — confirmed iteration boundary.
     last_completed_len = crucible::sat::sub_sat(ops_since_boundary, K);
     ops_since_boundary = K;
-    boundaries_detected++;
+    boundaries_detected.bump();   // monotonicity-checked +1
     return true;
   }
 };

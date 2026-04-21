@@ -106,4 +106,8 @@ template <typename NewState, typename OldState>
     return Machine<NewState>{std::move(s)};
 }
 
+// Zero-cost guarantee.
+static_assert(sizeof(Machine<int>)   == sizeof(int));
+static_assert(sizeof(Machine<void*>) == sizeof(void*));
+
 } // namespace crucible::safety

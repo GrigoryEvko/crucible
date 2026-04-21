@@ -120,4 +120,8 @@ template <typename T, typename... Args>
     return Secret<T>{std::in_place, std::forward<Args>(args)...};
 }
 
+// Zero-cost guarantee.
+static_assert(sizeof(Secret<int>)               == sizeof(int));
+static_assert(sizeof(Secret<unsigned long long>) == sizeof(unsigned long long));
+
 } // namespace crucible::safety
