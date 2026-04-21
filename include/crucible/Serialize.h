@@ -295,6 +295,18 @@ inline Header read_header(Reader& r) {
         plan->rank              = r.r<int32_t>();
         plan->world_size        = r.r<int32_t>();
         if (plan->num_slots > 0) {
+            // Pre-flight size check: before allocating num_slots * sizeof
+            // TensorSlot bytes in the arena, verify the reader has that
+            // many bytes remaining.  Adversarial input claiming
+            // num_slots = CDAG_MAX_SLOTS with a short buffer would otherwise
+            // succeed at alloc_array (grows the arena) then fail read-by-
+            // read — wasting arena space that only detach() can reclaim.
+            // Multiplication bound: num_slots ≤ CDAG_MAX_SLOTS; sizeof
+            // TensorSlot is a small compile-time constant; product fits
+            // uint64_t.
+            const uint64_t slot_bytes =
+                static_cast<uint64_t>(plan->num_slots) * sizeof(TensorSlot);
+            if (r.pos + slot_bytes > r.len) return nullptr;
             plan->slots = arena.alloc_array<TensorSlot>(a, plan->num_slots);
             for (uint32_t s = 0; s < plan->num_slots; s++) {
                 r.read_bytes(&plan->slots[s], sizeof(TensorSlot));
