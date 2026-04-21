@@ -121,9 +121,16 @@ struct BackgroundThread {
   std::atomic<bool> reset_requested{false};
 
   // Start the background thread. ring/meta_log must be set first.
+  //
+  // Seals the global SchemaTable as part of start(): after this point,
+  // register_schema_name() aborts via the mint_mutable_view() contract
+  // rather than racing with the lookups the bg worker performs on this
+  // thread.  This matches the documented lifecycle — all registrations
+  // complete before bg starts — and turns it into a load-bearing rule.
   void start(TraceRing* r, MetaLog* ml,
              int32_t rank_ = -1, int32_t world_size_ = 0,
              uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY {
+    global_schema_table().seal();
     ring.set(r);
     meta_log.set(ml);
     rank = rank_;
