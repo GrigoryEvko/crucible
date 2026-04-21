@@ -25,7 +25,9 @@
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
 
+#include <bit>
 #include <cstdint>
+#include <utility>
 
 namespace crucible {
 
@@ -152,6 +154,93 @@ static_assert(sizeof(NumericalRecipe) == 16,
               "for the RecipePool Swiss table and KernelNode::recipe "
               "cache-line packing (see FORGE.md §19.1).");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(NumericalRecipe);
+
+// ─── Hash computation (Family-A per Types.h taxonomy) ──────────────
+//
+// compute_recipe_hash folds the 8 semantic bytes of a recipe (seven
+// 1-byte enum fields + the flags byte) through a MurmurHash3 finalizer.
+// Deliberately EXCLUDES the `hash` field itself so that:
+//
+//   1. Re-hashing an already-populated recipe produces the same value
+//      as hashing a fresh-constructed one with the same semantic
+//      fields (idempotence).  Without this, deserializing a recipe
+//      from disk and re-hashing it would drift.
+//
+//   2. Two recipes differ in their `hash` field values only when they
+//      differ in semantic fields — never in the other direction.
+//      Hash equality ⟺ semantic equality, modulo fmix64 collisions
+//      (≈ 2^-64 per pair).
+//
+// Family-A properties honored:
+//   - Cross-process stable: no pointer entropy, no ASLR dependence,
+//     no endian-dependent bit reinterpretation.
+//   - Wire-safe: hash composes into KernelContentHash (FORGE.md §18.6)
+//     and L1 federation cache keys (§23.2); byte-stable for the
+//     lifetime of the NumericalRecipe layout.
+//   - Platform-independent: std::bit_cast on 1-byte trivially-copyable
+//     enums is well-defined on every supported ABI; shifts and XORs
+//     are integer ops with defined semantics.
+//
+// Cost: ~5 integer ops + one 64-bit multiply chain.  constexpr — can
+// be computed at compile time for static starter recipes.
+
+namespace detail_recipe {
+    // MurmurHash3 64-bit finalizer.  Same constants as detail::fmix64
+    // in Expr.h; duplicated here so NumericalRecipe.h stays free of
+    // Expr.h's transitive include cost (Ops.h, Types.h was already
+    // pulled).  Both finalizers produce identical bits given identical
+    // inputs — verified by a cross-check test.
+    [[nodiscard, gnu::const]] constexpr uint64_t fmix64(uint64_t k) noexcept {
+        k ^= k >> 33;
+        k *= 0xff51afd7ed558ccdULL;
+        k ^= k >> 33;
+        k *= 0xc4ceb9fe1a85ec53ULL;
+        k ^= k >> 33;
+        return k;
+    }
+
+    // Extract the raw byte of a 1-byte scoped enum without sign
+    // extension.  ScalarType has Undefined = -1 (int8_t); casting
+    // directly to uint64_t would sign-extend to 0xFF...FF and clobber
+    // neighboring fields in the packed hash.  bit_cast to uint8_t
+    // first preserves the bit pattern (Undefined → 0xFF in one byte).
+    template <typename E>
+    [[nodiscard, gnu::const]] constexpr uint8_t enum_byte(E e) noexcept {
+        static_assert(sizeof(E) == 1,
+                      "enum_byte expects a 1-byte scoped enum; widen the "
+                      "hash fold if NumericalRecipe gains a multi-byte "
+                      "enum field");
+        return std::bit_cast<uint8_t>(e);
+    }
+}  // namespace detail_recipe
+
+[[nodiscard, gnu::pure]] constexpr RecipeHash compute_recipe_hash(
+    const NumericalRecipe& r) noexcept
+{
+    using detail_recipe::enum_byte;
+    const uint64_t packed =
+          (uint64_t(enum_byte(r.accum_dtype))    <<  0)
+        | (uint64_t(enum_byte(r.out_dtype))      <<  8)
+        | (uint64_t(enum_byte(r.reduction_algo)) << 16)
+        | (uint64_t(enum_byte(r.rounding))       << 24)
+        | (uint64_t(enum_byte(r.scale_policy))   << 32)
+        | (uint64_t(enum_byte(r.softmax))        << 40)
+        | (uint64_t(enum_byte(r.determinism))    << 48)
+        | (uint64_t(r.flags)                     << 56);
+    return RecipeHash{detail_recipe::fmix64(packed)};
+}
+
+// Return a copy of the recipe with its `hash` field populated from
+// compute_recipe_hash.  Idempotent: hashing an already-hashed recipe
+// produces the same value.  Useful at construction sites that want
+// a fully-populated recipe without threading the hash computation
+// through the caller.
+[[nodiscard, gnu::pure]] constexpr NumericalRecipe hashed(
+    NumericalRecipe r) noexcept
+{
+    r.hash = compute_recipe_hash(r);
+    return r;
+}
 
 // ─── Utility predicates (gnu::const — pure function of one arg) ────
 
