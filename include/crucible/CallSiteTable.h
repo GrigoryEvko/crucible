@@ -40,7 +40,7 @@ struct CallSiteTable {
   static constexpr uint32_t SET_MASK = SET_CAP - 1;
   CallsiteHash seen[SET_CAP]{};
 
-  [[nodiscard]] bool has(CallsiteHash hash) const {
+  [[nodiscard, gnu::hot]] bool has(CallsiteHash hash) const noexcept {
     // Sentinel (raw == 0) reserved for empty slots; real callsites hash
     // to non-zero.  Reject the sentinel up front so has(sentinel) can't
     // alias the first empty bucket encountered.

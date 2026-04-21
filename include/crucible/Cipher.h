@@ -59,7 +59,8 @@ class CRUCIBLE_OWNER Cipher {
  public:
     // Factory: open (or create) a Cipher rooted at `root`.
     // Creates the objects/ subdirectory if absent, loads HEAD + log from disk.
-    static Cipher open(const std::string& root) {
+    // gnu::cold: startup-only path, never on the op-dispatch hot path.
+    [[gnu::cold]] static Cipher open(const std::string& root) {
         Cipher c;
         // root_ is WriteOnce<Tagged<std::string, source::Durable>>:
         // set exactly once here (WriteOnce), tagged at the type level as

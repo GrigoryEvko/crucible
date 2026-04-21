@@ -299,7 +299,11 @@ struct Guard {
 
   // Note: arg_index and dim_index are included in the hash for ALL guard
   // kinds, so they MUST be initialized even when semantically unused.
-  uint64_t hash() const {
+  // gnu::pure: reads *this fields (memory access through the implicit
+  // `this` arg) — pure, not const.  No side effects, no global memory
+  // access; optimizer may CSE within a basic block.  Bundles
+  // [[nodiscard]] so a discarded hash is a build error.
+  CRUCIBLE_PURE uint64_t hash() const noexcept {
     return detail::fmix64(
         std::to_underlying(kind) |
         (static_cast<uint64_t>(op_index.raw()) << 8) |
@@ -443,7 +447,7 @@ static_assert(sizeof(LoopNode) == 64, "LoopNode must be 64 bytes (one cache line
 // Uses fmix64 with nonzero seed (not wymix) because wymix(0, 0) = 0
 // which collapses the chain when the first edge is {0,0}.
 // Edge count is folded in so {A} ≠ {A, A}.
-[[nodiscard]] inline uint64_t feedback_signature(std::span<const FeedbackEdge> edges) {
+CRUCIBLE_PURE inline uint64_t feedback_signature(std::span<const FeedbackEdge> edges) noexcept {
   if (edges.empty()) return 0;
   constexpr uint64_t kSeed = 0x6665656462616B73ULL; // "feedbaks"
   uint64_t h = kSeed;
@@ -458,7 +462,7 @@ static_assert(sizeof(LoopNode) == 64, "LoopNode must be 64 bytes (one cache line
 // Hash termination condition. Captures kind + repeat_count + epsilon bits.
 // Uses fmix64 with salts (not wymix) to avoid the zero-input degenerate
 // case: wymix(x, 0) = 0 for all x, which would collapse the hash chain.
-[[nodiscard]] inline uint64_t loopterm_hash(const LoopNode& ln) {
+CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
   constexpr uint64_t kTermSalt = 0x7465726D696E6174ULL; // "terminat"
   constexpr uint64_t kEpsSalt  = 0x65707369006C6F6EULL; // "epsi\0lon"
   uint64_t packed = static_cast<uint64_t>(std::to_underlying(ln.term_kind)) |
@@ -602,8 +606,9 @@ class CRUCIBLE_OWNER KernelCache {
   KernelCache& operator=(KernelCache&&) = delete("lock-free hash map with atomic state cannot be moved");
 
   // Lock-free lookup via atomic load. Any thread, safe by CAS protocol.
+  // gnu::hot: called per dispatch_op in COMPILED mode (millions/sec).
   CRUCIBLE_UNSAFE_BUFFER_USAGE
-  [[nodiscard]] CompiledKernel* lookup(ContentHash content_hash) const
+  [[nodiscard, gnu::hot]] CompiledKernel* lookup(ContentHash content_hash) const noexcept
       CRUCIBLE_NO_THREAD_SAFETY {
     uint32_t mask = capacity_ - 1;
     uint32_t idx = static_cast<uint32_t>(content_hash.raw()) & mask;
@@ -908,7 +913,7 @@ inline void recompute_merkle(TraceNode* node) {
 // ═══════════════════════════════════════════════════════════════════
 
 template <typename GuardEval, typename RegionExec>
-[[nodiscard]] inline bool replay(
+[[nodiscard, gnu::flatten]] inline bool replay(
     TraceNode* node,
     GuardEval&& eval_guard,
     RegionExec&& exec_region) {
