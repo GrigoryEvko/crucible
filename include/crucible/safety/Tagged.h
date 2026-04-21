@@ -41,6 +41,13 @@ namespace source {
     struct FromInternal {};
     struct External     {};  // raw untrusted input (network, FFI)
     struct Sanitized    {};  // validated, safe to pass to sanitized-only APIs
+    // Durable: loaded from on-disk state (Cipher, config, snapshots).
+    // Computed: derived at startup / runtime from Durable + inputs.
+    // The pair lets a reader distinguish "this came from disk" from "this
+    // is a computation result" at the type level — useful when init code
+    // mixes both and a reviewer needs to see which is load-bearing.
+    struct Durable      {};
+    struct Computed     {};
 }
 
 namespace trust {

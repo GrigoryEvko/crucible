@@ -32,6 +32,7 @@
 #include <crucible/Serialize.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/ScopedView.h>
+#include <crucible/safety/Tagged.h>
 
 #include <chrono>
 #include <cstdint>
@@ -57,7 +58,13 @@ class CRUCIBLE_OWNER Cipher {
     // Creates the objects/ subdirectory if absent, loads HEAD + log from disk.
     static Cipher open(const std::string& root) {
         Cipher c;
-        c.root_ = root;
+        // root_ is WriteOnce<Tagged<std::string, source::Durable>>:
+        // set exactly once here (WriteOnce), tagged at the type level as
+        // loaded from on-disk state (Tagged).  A second attempt to set
+        // (e.g. calling open on a Cipher that already has a root) would
+        // contract-fire; reassignment via `=` is a compile error.
+        c.root_.set(crucible::safety::Tagged<std::string,
+                                             crucible::safety::source::Durable>{root});
         std::filesystem::create_directories(root + "/objects");
 
         // Load the log first to populate in-memory state.
@@ -85,7 +92,7 @@ class CRUCIBLE_OWNER Cipher {
     Cipher& operator=(Cipher&&)      = default;
 
     // ── Open-state query + view minting ─────────────────────────────
-    [[nodiscard]] bool is_open() const noexcept { return !root_.empty(); }
+    [[nodiscard]] bool is_open() const noexcept { return root_.has_value(); }
 
     using OpenView = crucible::safety::ScopedView<Cipher, cipher_state::Open>;
 
@@ -193,7 +200,7 @@ class CRUCIBLE_OWNER Cipher {
 
         // Overwrite HEAD file (truncate to hex + newline).
         {
-            std::ofstream hf(root_ + "/HEAD");
+            std::ofstream hf(root_str() + "/HEAD");
             hf << std::format("{:016x}", content_hash.raw()) << "\n";
         }
 
@@ -201,7 +208,7 @@ class CRUCIBLE_OWNER Cipher {
         const uint64_t ts = now_ns();
         log_.emplace(LogEntry{.step_id = step_id, .hash = content_hash, .ts_ns = ts});
         {
-            std::ofstream lf(root_ + "/log", std::ios::app);
+            std::ofstream lf(root_str() + "/log", std::ios::app);
             lf << std::format("{},{:016x},{}", step_id, content_hash.raw(), ts) << "\n";
         }
     }
@@ -244,7 +251,10 @@ class CRUCIBLE_OWNER Cipher {
 
     [[nodiscard]] ContentHash        head()  const { return head_; }
     [[nodiscard]] bool               empty() const { return !head_; }
-    [[nodiscard]] const std::string& root()  const CRUCIBLE_LIFETIMEBOUND { return root_; }
+    // root() unwraps WriteOnce + Tagged for callers that just want the
+    // path string.  Internal code uses root_str() below; external callers
+    // preserve the old signature.
+    [[nodiscard]] const std::string& root()  const CRUCIBLE_LIFETIMEBOUND { return root_str(); }
 
  private:
     struct LogEntry {
@@ -264,8 +274,21 @@ class CRUCIBLE_OWNER Cipher {
         }
     };
 
-    std::string                              root_;
+    // root_ is write-once (set by open, never reassigned) and carries
+    // the provenance tag source::Durable at the type level.  Reassigning
+    // via `=` is a compile error (WriteOnce); a second set() would
+    // contract-fire.  Internal code unwraps via root_str().
+    crucible::safety::WriteOnce<
+        crucible::safety::Tagged<std::string, crucible::safety::source::Durable>>
+                                             root_;
     ContentHash                              head_{};
+
+    // Internal unwrap — single point that peels both layers.
+    [[nodiscard]] const std::string& root_str() const noexcept
+        pre (root_.has_value())
+    {
+        return root_.get().value();
+    }
     // log_ grows append-only AND each entry's step_id must not go
     // backward.  OrderedAppendOnly<> fuses both invariants into one
     // type; .erase() / .clear() / out-of-order .append() all fail at
@@ -275,12 +298,12 @@ class CRUCIBLE_OWNER Cipher {
     // Path: root_/objects/<first2hex>/<remaining14hex>
     std::string obj_path(uint64_t hash) const {
         auto hex = std::format("{:016x}", hash);
-        return root_ + "/objects/" + hex.substr(0, 2) + "/" + hex.substr(2);
+        return root_str() + "/objects/" + hex.substr(0, 2) + "/" + hex.substr(2);
     }
 
     // Load the log file into memory.
     void load_log() {
-        std::ifstream f(root_ + "/log");
+        std::ifstream f(root_str() + "/log");
         if (!f) return;
         std::string line;
         while (std::getline(f, line)) {
