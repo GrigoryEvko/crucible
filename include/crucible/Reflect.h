@@ -138,6 +138,8 @@ void print_field(const T& val, FILE* out) {
     std::fprintf(out, "]");
   } else if constexpr (std::is_class_v<T>) {
     reflect_print(val, out); // recursive
+  } else {
+    static_assert(false, "Unsupported type for reflect_print");
   }
 }
 
