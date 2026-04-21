@@ -32,6 +32,23 @@
 
 namespace crucible::safety {
 
+// ── Forward declarations + wrapper-stacking traits ──────────────────
+//
+// These let downstream wrappers reject redundant stacks at instantiation
+// time.  The canonical case is AppendOnly<WriteOnce<T>>: AppendOnly
+// already guarantees that once an element is emplaced it is never
+// mutated, reassigned, or removed — layering WriteOnce inside adds no
+// invariant and doubles the per-element storage by one tag byte.
+// Catching the pattern structurally keeps the backlog clear of
+// "should we also wrap the value?" design questions.
+
+template <typename T> class WriteOnce;  // forward decl for the trait
+
+template <typename T> struct is_writeonce            : std::false_type {};
+template <typename U> struct is_writeonce<WriteOnce<U>> : std::true_type {};
+template <typename T>
+inline constexpr bool is_writeonce_v = is_writeonce<std::remove_cvref_t<T>>::value;
+
 // ── AppendOnly ──────────────────────────────────────────────────────
 //
 // Default storage is std::vector; users may substitute arena-backed
@@ -39,6 +56,12 @@ namespace crucible::safety {
 
 template <typename T, template <typename...> class Storage = std::vector>
 class [[nodiscard]] AppendOnly {
+    static_assert(!is_writeonce_v<T>,
+        "AppendOnly<WriteOnce<T>> is redundant: AppendOnly already guarantees "
+        "that emplaced elements are never mutated, reassigned, or removed. "
+        "Use AppendOnly<T> directly — the WriteOnce layer adds no invariant "
+        "and doubles per-element storage by one std::optional tag byte.");
+
     Storage<T> data_;
 
 public:
