@@ -3,6 +3,7 @@
 #include <crucible/Types.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/Tagged.h>
 
 #include <cstdint>
 #include <string>
@@ -101,6 +102,44 @@ struct CallSiteTable {
                         // pass NonZeroHash explicitly, this overload
                         // can be removed.
     insert(NonZeroHash{hash}, std::move(filename), std::move(funcname), lineno);
+  }
+
+  // ── Source-tagged variants ─────────────────────────────────────────
+  //
+  // Python frame metadata arriving via Vessel FFI is source::External
+  // (not validated as a valid UTF-8 path, not sanitized for embedded
+  // shell metacharacters, etc.).  Synthetic test drivers tag as
+  // source::FromInternal so review greps distinguish the origins.
+  //
+  // These overloads unwrap the tag and forward to the untagged body —
+  // the CallSiteTable stores the strings for diagnostic output only and
+  // never consumes them as paths, shell arguments, or HTML, so the tag
+  // acts as provenance documentation rather than a sanitization gate.
+  using ExternalName = crucible::safety::Tagged<
+      std::string, crucible::safety::source::External>;
+  using InternalName = crucible::safety::Tagged<
+      std::string, crucible::safety::source::FromInternal>;
+
+  void insert(
+      NonZeroHash hash_nz,
+      ExternalName filename,
+      ExternalName funcname,
+      int32_t lineno) {
+    insert(hash_nz,
+           std::move(filename).into(),
+           std::move(funcname).into(),
+           lineno);
+  }
+
+  void insert(
+      NonZeroHash hash_nz,
+      InternalName filename,
+      InternalName funcname,
+      int32_t lineno) {
+    insert(hash_nz,
+           std::move(filename).into(),
+           std::move(funcname).into(),
+           lineno);
   }
 
   [[nodiscard]] uint32_t size() const { return static_cast<uint32_t>(entries.size()); }
