@@ -23,6 +23,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <type_traits>
@@ -110,11 +111,31 @@ struct CRUCIBLE_OWNER PoolAllocator {
       if (!ptr_table_) [[unlikely]] std::abort();
 
       // Internal slots: base + offset. External slots stay null (calloc'd).
+      //
+      // Overflow-checked bounds verification: an adversarial MemoryPlan
+      // with offset_bytes = UINT64_MAX - 100 and nbytes = 200 would
+      // produce offset+nbytes ≈ 100 — smaller than pool_bytes_, so the
+      // old `offset + nbytes <= pool_bytes` assertion passed while the
+      // slot actually wrapped past the end of the pool and into the
+      // allocator's metadata.  __builtin_add_overflow catches the wrap
+      // deterministically; the subsequent <= check then compares a real
+      // end offset.
       auto* base = static_cast<char*>(pool_);
       for (uint32_t s = 0; s < num_slots_; ++s) {
         const auto& slot = plan->slots[s];
         if (!slot.is_external) {
-          assert(slot.offset_bytes + slot.nbytes <= pool_bytes_ &&
+          uint64_t end_offset;
+          if (__builtin_add_overflow(slot.offset_bytes, slot.nbytes,
+                                     &end_offset)) [[unlikely]] {
+            std::fprintf(stderr,
+                "PoolAllocator: slot %u offset_bytes+nbytes overflow "
+                "(offset=%llu nbytes=%llu)\n",
+                s,
+                static_cast<unsigned long long>(slot.offset_bytes),
+                static_cast<unsigned long long>(slot.nbytes));
+            std::abort();
+          }
+          assert(end_offset <= pool_bytes_ &&
                  "slot exceeds pool bounds");
           assert(slot.offset_bytes % ALIGNMENT == 0 &&
                  "slot offset not ALIGNMENT-aligned — sweep-line bug");
