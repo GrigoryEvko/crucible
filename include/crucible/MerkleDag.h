@@ -711,7 +711,7 @@ class CRUCIBLE_OWNER KernelCache {
     fx::Alloc a,
     Arena& arena CRUCIBLE_LIFETIMEBOUND,
     TraceEntry* ops,
-    uint32_t num_ops)
+    uint32_t num_ops) noexcept
     pre (num_ops == 0 || ops != nullptr)
 {
   auto* node = new (arena.alloc_obj<RegionNode>(a))
@@ -731,7 +731,7 @@ class CRUCIBLE_OWNER KernelCache {
     Arena& arena CRUCIBLE_LIFETIMEBOUND,
     TraceEntry* ops,
     uint32_t num_ops,
-    ContentHash precomputed_hash)
+    ContentHash precomputed_hash) noexcept
     pre (num_ops == 0 || ops != nullptr)
 {
   auto* node = new (arena.alloc_obj<RegionNode>(a))
@@ -745,7 +745,7 @@ class CRUCIBLE_OWNER KernelCache {
 }
 
 // Create a terminal node. NSDMI handles zero-init; just set kind.
-[[nodiscard]] inline TraceNode* make_terminal(fx::Alloc a, Arena& arena) {
+[[nodiscard]] inline TraceNode* make_terminal(fx::Alloc a, Arena& arena) noexcept {
   auto* node = new (arena.alloc_obj<TraceNode>(a))
       TraceNode{};
   node->kind = TraceNodeKind::TERMINAL;
@@ -763,7 +763,7 @@ class CRUCIBLE_OWNER KernelCache {
     uint16_t num_feedback,
     LoopTermKind term_kind,
     uint32_t repeat_count,
-    float epsilon = 0.0f)
+    float epsilon = 0.0f) noexcept
     pre (body != nullptr)
     pre (num_feedback == 0 || feedback != nullptr)
 {
