@@ -90,10 +90,11 @@ class TransactionLog {
 
     // Transition RECORDING (or CLOSED) → COMMITTED, attach region.
     // Returns false if tx is not in a committable state (logic error).
-    [[nodiscard]] bool commit(Transaction* tx, RegionNode* region,
+    [[nodiscard]] bool commit(Transaction* const tx, RegionNode* const region,
                 ContentHash content_hash, MerkleHash merkle_root) noexcept
         pre (tx != nullptr)
         pre (region != nullptr)
+        post (r: !r || tx->status == TxStatus::COMMITTED)
     {
         if (tx->status != TxStatus::RECORDING
             && tx->status != TxStatus::CLOSED) {
@@ -110,8 +111,9 @@ class TransactionLog {
     // Transition COMMITTED → ACTIVE. Marks the previous ACTIVE as SUPERSEDED.
     // Returns the previously ACTIVE transaction (the rollback target), or nullptr
     // if no previous ACTIVE existed.
-    [[nodiscard]] Transaction* activate(Transaction* tx) noexcept
+    [[nodiscard]] Transaction* activate(Transaction* const tx) noexcept
         pre (tx != nullptr)
+        post (r: r == nullptr || tx->status == TxStatus::ACTIVE)
     {
         if (tx->status != TxStatus::COMMITTED) return nullptr;
 
