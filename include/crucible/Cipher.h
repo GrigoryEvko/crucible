@@ -30,16 +30,19 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/Serialize.h>
+#include <crucible/safety/FileHandle.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Tagged.h>
 
+#include <charconv>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <format>
 #include <fstream>
 #include <string>
+#include <system_error>
 #include <type_traits>
 #include <vector>
 
@@ -71,14 +74,28 @@ class CRUCIBLE_OWNER Cipher {
         c.load_log();
 
         // HEAD file overrides the log's last hash (HEAD is the authoritative pointer).
-        std::ifstream hf(root + "/HEAD");
-        if (hf) {
-            std::string hex;
-            std::getline(hf, hex);
-            if (!hex.empty()) {
-                c.head_ = ContentHash{std::stoull(hex, nullptr, 16)};
+        // FileHandle's RAII closes the fd at scope exit; no iostream needed.
+        // std::from_chars is exception-free (unlike std::stoull which throws
+        // on malformed input — incompatible with -fno-exceptions), so a
+        // corrupt HEAD file cleanly falls through to the log fallback.
+        const std::string head_path = root + "/HEAD";
+        auto hf = crucible::safety::open_read(head_path.c_str());
+        bool head_from_file = false;
+        if (hf.is_open()) {
+            char buf[32];
+            const ssize_t n = ::read(hf.get(), buf, sizeof(buf));
+            if (n > 0) {
+                uint64_t raw = 0;
+                const auto* begin = buf;
+                const auto* end   = buf + n;
+                auto [p, ec] = std::from_chars(begin, end, raw, /*base=*/16);
+                if (ec == std::errc{} && p != begin) {
+                    c.head_ = ContentHash{raw};
+                    head_from_file = true;
+                }
             }
-        } else if (!c.log_.empty()) {
+        }
+        if (!head_from_file && !c.log_.empty()) {
             c.head_ = c.log_.back().hash;
         }
 

@@ -341,6 +341,79 @@ static void test_mutation() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// FileHandle — RAII posix fd wrapper
+// ═══════════════════════════════════════════════════════════════════
+
+static void test_file_handle() {
+    static_assert(sizeof(FileHandle) == sizeof(int),
+                  "FileHandle must be a zero-cost int wrapper");
+    static_assert(!std::is_copy_constructible_v<FileHandle>);
+    static_assert(!std::is_copy_assignable_v<FileHandle>);
+    static_assert(std::is_move_constructible_v<FileHandle>);
+    static_assert(std::is_move_assignable_v<FileHandle>);
+
+    char tmpl[] = "/tmp/crucible_fh_XXXXXX";
+    int raw_fd = ::mkstemp(tmpl);
+    assert(raw_fd >= 0);
+
+    // Wrap: FileHandle now owns raw_fd.  Scope-exit closes it.
+    const std::string path = tmpl;
+    {
+        FileHandle h{raw_fd};
+        assert(h.is_open());
+        assert(h.get() == raw_fd);
+
+        // write_full with all-or-nothing semantics.
+        const std::byte buf[] = {
+            std::byte{'A'}, std::byte{'B'}, std::byte{'C'}, std::byte{'\n'}
+        };
+        const int wrc = write_full(h, std::span<const std::byte>{buf, 4});
+        assert(wrc == 0);
+
+        // fstat via file_size — we wrote 4 bytes.
+        const auto sz = file_size(h);
+        assert(sz == 4);
+    }  // dtor closes raw_fd here
+
+    // Read back via open_read + read_full.  Factory returns a FileHandle
+    // whose fd is a brand-new one (different from raw_fd above).
+    {
+        FileHandle r = open_read(path.c_str());
+        assert(r.is_open());
+        std::byte rbuf[16]{};
+        const ssize_t n = read_full(r, std::span<std::byte>{rbuf, 16});
+        assert(n == 4);
+        assert(rbuf[0] == std::byte{'A'});
+        assert(rbuf[3] == std::byte{'\n'});
+    }
+
+    // Move semantics: moved-from is closed-state.
+    {
+        FileHandle a = open_read(path.c_str());
+        assert(a.is_open());
+        const int a_fd = a.get();
+        FileHandle b = std::move(a);
+        assert(!a.is_open());      // source is reset
+        assert(b.is_open());
+        assert(b.get() == a_fd);
+    }
+
+    // Explicit close: lets caller observe the close() return code.
+    {
+        FileHandle c = open_read(path.c_str());
+        assert(c.is_open());
+        const int rc = c.close_explicit();
+        assert(rc == 0);
+        assert(!c.is_open());
+        // Second explicit close is a no-op (already closed).
+        assert(c.close_explicit() == 0);
+    }
+
+    ::unlink(path.c_str());
+    std::printf("  FileHandle:     ok\n");
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // ConstantTime primitives
 // ═══════════════════════════════════════════════════════════════════
 
@@ -383,6 +456,7 @@ int main() {
     test_machine();
     test_checked();
     test_mutation();
+    test_file_handle();
     test_constant_time();
     std::printf("All safety wrappers compile and pass smoke test.\n");
     return 0;
