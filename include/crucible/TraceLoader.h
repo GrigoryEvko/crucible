@@ -185,6 +185,11 @@ static_assert(std::endian::native == std::endian::little,
   }
 
   // Read optional schema name table (trailing data after metas).
+  // Name length bound: matches register_schema_name's FFI contract
+  // (schema_name length ≤ 256).  Any wire value outside [1, 256] breaks
+  // the loop — detection at the parse boundary, never downstream.
+  static constexpr uint16_t kMinSchemaNameLen = 1;
+  static constexpr uint16_t kMaxSchemaNameLen = 256;
   uint32_t num_names = 0;
   if (std::fread(&num_names, 4, 1, f) == 1 && num_names > 0 &&
       num_names <= SCHEMA_TABLE_CAP) {
@@ -193,7 +198,12 @@ static_assert(std::endian::native == std::endian::little,
       uint16_t name_len = 0;
       if (std::fread(&sh, 8, 1, f) != 1) break;
       if (std::fread(&name_len, 2, 1, f) != 1) break;
-      if (name_len == 0 || name_len > 256) break;
+      if (name_len < kMinSchemaNameLen || name_len > kMaxSchemaNameLen) break;
+      // Propagate the validated bound to the optimizer so the fread
+      // and the terminating null write both compile without bounds
+      // repredicating (buf has fixed 257-byte storage; name_len's
+      // range is fully resolved by the guard above).
+      [[assume(name_len >= kMinSchemaNameLen && name_len <= kMaxSchemaNameLen)]];
       char buf[257]{};
       if (std::fread(buf, 1, name_len, f) != name_len) break;
       buf[name_len] = '\0';
