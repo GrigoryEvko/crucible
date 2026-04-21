@@ -555,31 +555,45 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
   if (!node)
     return MerkleHash{};
 
+  // Exhaustive switch: every TraceNodeKind arm must return (or fall
+  // through to the tail).  A new kind added without an arm trips
+  // std::unreachable rather than silently falling off the end with
+  // uninitialized `h`.  Switches compile to jump tables; if/else-if
+  // chains are opaque to that pattern.
   uint64_t h;
-  if (node->kind == TraceNodeKind::REGION) {
-    h = static_cast<RegionNode*>(node)->content_hash.raw();
-  } else if (node->kind == TraceNodeKind::BRANCH) {
-    auto* b = static_cast<BranchNode*>(node);
-    h = detail::fmix64(b->guard.hash());
-    for (uint32_t i = 0; i < b->num_arms; i++) {
-      h ^= detail::fmix64(b->arms[i].target->merkle_hash.raw());
-      h *= 0x9E3779B97F4A7C15ULL;
+  switch (node->kind) {
+    case TraceNodeKind::REGION:
+      h = static_cast<RegionNode*>(node)->content_hash.raw();
+      break;
+    case TraceNodeKind::BRANCH: {
+      auto* b = static_cast<BranchNode*>(node);
+      h = detail::fmix64(b->guard.hash());
+      for (uint32_t i = 0; i < b->num_arms; i++) {
+        h ^= detail::fmix64(b->arms[i].target->merkle_hash.raw());
+        h *= 0x9E3779B97F4A7C15ULL;
+      }
+      break;
     }
-  } else if (node->kind == TraceNodeKind::LOOP) {
-    auto* loop = static_cast<LoopNode*>(node);
-    // Salt distinguishes LoopNode hashes from RegionNode hashes with
-    // the same content. "LOOPNODE" in ASCII = 0x4C4F4F504E4F4445.
-    // Use fmix64 + XOR (not wymix) to avoid zero-input degenerate case.
-    // wymix(x, 0) = 0, which would collapse the entire hash chain when
-    // feedback or termination components happen to be zero.
-    constexpr uint64_t kLoopSalt = 0x4C4F4F504E4F4445ULL; // "LOOPNODE"
-    constexpr uint64_t kFbSalt   = 0x6665656462616B00ULL;  // "feedbak\0"
-    h = detail::fmix64(loop->body_content_hash.raw() ^ kLoopSalt);
-    h ^= detail::fmix64(feedback_signature(loop->feedback_span()) ^ kFbSalt);
-    h ^= loopterm_hash(*loop);
-  } else {
-    // TERMINAL
-    return MerkleHash{};
+    case TraceNodeKind::LOOP: {
+      auto* loop = static_cast<LoopNode*>(node);
+      // Salt distinguishes LoopNode hashes from RegionNode hashes with
+      // the same content. "LOOPNODE" in ASCII = 0x4C4F4F504E4F4445.
+      // Use fmix64 + XOR (not wymix) to avoid zero-input degenerate case.
+      // wymix(x, 0) = 0, which would collapse the entire hash chain when
+      // feedback or termination components happen to be zero.
+      constexpr uint64_t kLoopSalt = 0x4C4F4F504E4F4445ULL; // "LOOPNODE"
+      constexpr uint64_t kFbSalt   = 0x6665656462616B00ULL;  // "feedbak\0"
+      h = detail::fmix64(loop->body_content_hash.raw() ^ kLoopSalt);
+      h ^= detail::fmix64(feedback_signature(loop->feedback_span()) ^ kFbSalt);
+      h ^= loopterm_hash(*loop);
+      break;
+    }
+    case TraceNodeKind::TERMINAL:
+      return MerkleHash{};
+    default:
+      // All valid TraceNodeKind values handled above.  Any other value
+      // is corrupt node memory and indicates a serious bug upstream.
+      std::unreachable();
   }
 
   // Include continuation's merkle hash (this is what makes it Merkle)
@@ -967,6 +981,10 @@ template <typename GuardEval, typename RegionExec>
         uint32_t lo = 0, hi = branch->num_arms;
         while (lo < hi) {
           uint32_t mid = lo + (hi - lo) / 2;
+          // Binary-search invariant: mid ∈ [lo, hi) and hi ≤ num_arms.
+          // Propagate to the optimizer so arms[mid] drops the bounds
+          // check GCC would emit under -D_GLIBCXX_ASSERTIONS.
+          [[assume(mid < branch->num_arms)]];
           int64_t mid_val = branch->arms[mid].value;
           if (mid_val < val) lo = mid + 1;
           else if (mid_val > val) hi = mid;
