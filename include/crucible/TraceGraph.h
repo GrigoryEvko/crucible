@@ -80,29 +80,49 @@ struct TraceGraph {
   // gnu::pure: accessors read *this fields + the CSR arrays; no side
   // effects, no memory writes.  Optimizer may CSE across successive
   // calls with the same argument within a basic block.
-  [[nodiscard, gnu::pure]] const Edge* fwd_begin(uint32_t i) const noexcept CRUCIBLE_LIFETIMEBOUND {
-    return fwd_edges + fwd_offsets[i];
+  //
+  // TypeSafe: OpIndex parameter rejects accidental SlotId / NodeId /
+  // raw uint32_t mixing.  pre() guards the bounds so the indexed load
+  // compiles without a runtime check under release semantic=ignore.
+  [[nodiscard, gnu::pure]] const Edge* fwd_begin(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
+      pre (i.raw() < num_ops)
+  {
+    return fwd_edges + fwd_offsets[i.raw()];
   }
-  [[nodiscard, gnu::pure]] const Edge* fwd_end(uint32_t i) const noexcept CRUCIBLE_LIFETIMEBOUND {
-    return fwd_edges + fwd_offsets[i + 1];
+  [[nodiscard, gnu::pure]] const Edge* fwd_end(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
+      pre (i.raw() < num_ops)
+  {
+    return fwd_edges + fwd_offsets[i.raw() + 1];
   }
-  [[nodiscard, gnu::pure]] uint32_t out_degree(uint32_t i) const noexcept {
-    return fwd_offsets[i + 1] - fwd_offsets[i];
+  [[nodiscard, gnu::pure]] uint32_t out_degree(OpIndex i) const noexcept
+      pre (i.raw() < num_ops)
+  {
+    return fwd_offsets[i.raw() + 1] - fwd_offsets[i.raw()];
   }
 
   // ── Reverse queries (dst → src): "who produces op i's inputs?" ──
-  [[nodiscard, gnu::pure]] const Edge* rev_begin(uint32_t i) const noexcept CRUCIBLE_LIFETIMEBOUND {
-    return rev_edges + rev_offsets[i];
+  [[nodiscard, gnu::pure]] const Edge* rev_begin(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
+      pre (i.raw() < num_ops)
+  {
+    return rev_edges + rev_offsets[i.raw()];
   }
-  [[nodiscard, gnu::pure]] const Edge* rev_end(uint32_t i) const noexcept CRUCIBLE_LIFETIMEBOUND {
-    return rev_edges + rev_offsets[i + 1];
+  [[nodiscard, gnu::pure]] const Edge* rev_end(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
+      pre (i.raw() < num_ops)
+  {
+    return rev_edges + rev_offsets[i.raw() + 1];
   }
-  [[nodiscard, gnu::pure]] uint32_t in_degree(uint32_t i) const noexcept {
-    return rev_offsets[i + 1] - rev_offsets[i];
+  [[nodiscard, gnu::pure]] uint32_t in_degree(OpIndex i) const noexcept
+      pre (i.raw() < num_ops)
+  {
+    return rev_offsets[i.raw() + 1] - rev_offsets[i.raw()];
   }
 
   // ── Node access ──
-  [[nodiscard, gnu::pure]] const TraceEntry& op(uint32_t i) const noexcept CRUCIBLE_LIFETIMEBOUND { return ops[i]; }
+  [[nodiscard, gnu::pure]] const TraceEntry& op(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
+      pre (i.raw() < num_ops)
+  {
+    return ops[i.raw()];
+  }
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -121,6 +141,7 @@ inline void build_csr(
     uint32_t num_edges,
     uint32_t num_ops) {
   graph->num_edges = num_edges;
+  graph->num_ops   = num_ops;
 
   // Degenerate case: empty trace.  alloc_array(0) returns nullptr, and
   // memcpy/memset on nullptr is UB even with n=0.  Bail early.

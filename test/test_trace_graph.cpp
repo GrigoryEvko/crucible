@@ -34,13 +34,13 @@ static void test_single_edge_fwd_rev() {
     build_csr(t.alloc, arena, &g, edges, 1, /*num_ops=*/2);
     assert(g.num_edges == 1);
     // fwd: op 0 has 1 out-edge.
-    assert(g.out_degree(0) == 1);
-    assert(g.out_degree(1) == 0);
-    assert(g.fwd_begin(0)->dst == OpIndex{1});
+    assert(g.out_degree(OpIndex{0}) == 1);
+    assert(g.out_degree(OpIndex{1}) == 0);
+    assert(g.fwd_begin(OpIndex{0})->dst == OpIndex{1});
     // rev: op 1 has 1 in-edge.
-    assert(g.in_degree(0) == 0);
-    assert(g.in_degree(1) == 1);
-    assert(g.rev_begin(1)->src == OpIndex{0});
+    assert(g.in_degree(OpIndex{0}) == 0);
+    assert(g.in_degree(OpIndex{1}) == 1);
+    assert(g.rev_begin(OpIndex{1})->src == OpIndex{0});
     std::printf("  test_single_edge:               PASSED\n");
 }
 
@@ -56,22 +56,24 @@ static void test_counting_sort_groups_by_src() {
               static_cast<uint32_t>(edges.size()), /*num_ops=*/6);
 
     // Degrees.
-    assert(g.out_degree(0) == 2);
-    assert(g.out_degree(1) == 1);
-    assert(g.out_degree(2) == 3);
-    assert(g.out_degree(3) == 0);
+    assert(g.out_degree(OpIndex{0}) == 2);
+    assert(g.out_degree(OpIndex{1}) == 1);
+    assert(g.out_degree(OpIndex{2}) == 3);
+    assert(g.out_degree(OpIndex{3}) == 0);
 
     // All fwd edges with src=0 must come before any with src=1, etc.
     for (uint32_t op = 0; op < 6; ++op) {
-        for (const Edge* e = g.fwd_begin(op); e != g.fwd_end(op); ++e) {
-            assert(e->src == OpIndex{op});
+        const OpIndex oi{op};
+        for (const Edge* e = g.fwd_begin(oi); e != g.fwd_end(oi); ++e) {
+            assert(e->src == oi);
         }
     }
 
     // Reverse edges also grouped — every in-edge of op N has dst=N.
     for (uint32_t op = 0; op < 6; ++op) {
-        for (const Edge* e = g.rev_begin(op); e != g.rev_end(op); ++e) {
-            assert(e->dst == OpIndex{op});
+        const OpIndex oi{op};
+        for (const Edge* e = g.rev_begin(oi); e != g.rev_end(oi); ++e) {
+            assert(e->dst == oi);
         }
     }
     std::printf("  test_counting_sort:             PASSED\n");
@@ -87,10 +89,11 @@ static void test_edge_kind_preserved() {
         E(0, 2, EdgeKind::CONTROL_FLOW),
     };
     build_csr(t.alloc, arena, &g, edges, 3, /*num_ops=*/3);
-    assert(g.out_degree(0) == 3);
+    assert(g.out_degree(OpIndex{0}) == 3);
 
     bool saw_df = false, saw_alias = false, saw_cf = false;
-    for (const Edge* e = g.fwd_begin(0); e != g.fwd_end(0); ++e) {
+    const OpIndex oi0{0};
+    for (const Edge* e = g.fwd_begin(oi0); e != g.fwd_end(oi0); ++e) {
         if (e->kind == EdgeKind::DATA_FLOW)     saw_df = true;
         if (e->kind == EdgeKind::ALIAS)         saw_alias = true;
         if (e->kind == EdgeKind::CONTROL_FLOW)  saw_cf = true;
@@ -131,10 +134,11 @@ static void test_fanout_node_has_multiple_edges() {
     for (uint32_t i = 1; i < 10; ++i) edges.push_back(E(0, i));
     build_csr(t.alloc, arena, &g, edges.data(), 9, /*num_ops=*/10);
 
-    assert(g.out_degree(0) == 9);
+    assert(g.out_degree(OpIndex{0}) == 9);
     for (uint32_t i = 1; i < 10; ++i) {
-        assert(g.in_degree(i) == 1);
-        assert(g.rev_begin(i)->src == OpIndex{0});
+        const OpIndex oi{i};
+        assert(g.in_degree(oi) == 1);
+        assert(g.rev_begin(oi)->src == OpIndex{0});
     }
     std::printf("  test_fanout:                    PASSED\n");
 }
