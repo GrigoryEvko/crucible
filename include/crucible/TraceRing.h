@@ -170,6 +170,9 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     }
 
     const uint32_t slot = static_cast<uint32_t>(h) & MASK;
+    // MASK = CAPACITY - 1 and CAPACITY is a power of two, so slot ∈ [0, CAPACITY).
+    // Tell the optimizer so the indexed stores below drop bounds-style checks.
+    [[assume(slot < CAPACITY)]];
     entries[slot]         = e;
     meta_starts[slot]     = meta_start;
     scope_hashes[slot]    = scope_hash;

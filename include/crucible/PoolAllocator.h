@@ -156,6 +156,9 @@ struct CRUCIBLE_OWNER PoolAllocator {
       CRUCIBLE_LIFETIMEBOUND
       pre (sid.raw() < num_slots_)
   {
+    // Contract guarantees the bound; propagate to the optimizer so the
+    // indexed load below compiles to a single MOV with no runtime check.
+    [[assume(sid.raw() < num_slots_)]];
     return ptr_table_[sid.raw()];
   }
 

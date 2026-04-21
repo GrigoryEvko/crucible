@@ -144,6 +144,9 @@ struct CRUCIBLE_OWNER MetaLog {
 
     // Compute masked start position in the circular buffer.
     uint32_t start_pos = h & MASK;
+    // MASK = CAPACITY - 1 (power-of-two CAPACITY).  Tell the optimizer
+    // so the memcpy destinations drop redundant bound checks.
+    [[assume(start_pos < CAPACITY)]];
     uint32_t end_pos = start_pos + n;
 
     if (end_pos <= CAPACITY) [[likely]] {
