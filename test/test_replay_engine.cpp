@@ -94,7 +94,7 @@ static void test_linear_match() {
     auto status = engine.advance(SchemaHash{100 + i}, ShapeHash{200 + i}, av);
     assert(status == ReplayStatus::MATCH);
     assert(engine.ops_matched() == i + 1);
-    assert(engine.matched_op_index() == OpIndex{i});
+    assert(engine.matched_op_index().value() == OpIndex{i});
 
     void* ptr = engine.output_ptr(0, av);
     assert(ptr == pool.slot_ptr(SlotId{i}, pv));
@@ -105,7 +105,7 @@ static void test_linear_match() {
     auto status = engine.advance(SchemaHash{102}, ShapeHash{202}, av);
     assert(status == ReplayStatus::COMPLETE);
     assert(engine.ops_matched() == 3);
-    assert(engine.matched_op_index() == OpIndex{2});
+    assert(engine.matched_op_index().value() == OpIndex{2});
     void* ptr = engine.output_ptr(0, av);
     assert(ptr == pool.slot_ptr(SlotId{2}, pv));
   }
