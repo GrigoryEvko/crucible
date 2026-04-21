@@ -105,6 +105,61 @@ static void test_null_name_is_noop() {
     std::printf("  test_null_name:                 PASSED\n");
 }
 
+static void test_default_is_mutable_and_seal_flips() {
+    SchemaTable t;
+    assert(!t.is_sealed());
+    t.seal();
+    assert(t.is_sealed());
+    // Idempotent: re-seal keeps the state sealed.
+    t.seal();
+    assert(t.is_sealed());
+    std::printf("  test_seal_flips:                PASSED\n");
+}
+
+static void test_clear_resets_seal() {
+    SchemaTable t;
+    t.register_name(H(0xAB), S("aten::matmul"));
+    t.seal();
+    assert(t.is_sealed());
+    assert(t.count() == 1);
+
+    t.clear();
+    assert(!t.is_sealed());
+    assert(t.count() == 0);
+    // After clear, the table is Mutable again — register works.
+    t.register_name(H(0xCD), S("aten::add"));
+    assert(t.count() == 1);
+    assert(std::strcmp(t.lookup(H(0xCD)), "aten::add") == 0);
+    std::printf("  test_clear_resets_seal:         PASSED\n");
+}
+
+static void test_typed_register_with_mutable_view() {
+    // The MutableView overload proves Mutable at compile time; the
+    // runtime path (register_name(hash, name)) mints the same view
+    // internally, so both reach identical behavior.
+    SchemaTable t;
+    auto mv = t.mint_mutable_view();
+    t.register_name(mv, H(0xBEEF), S("aten::conv2d"));
+    assert(std::strcmp(t.lookup(H(0xBEEF)), "aten::conv2d") == 0);
+    std::printf("  test_typed_register:            PASSED\n");
+}
+
+static void test_lookup_works_post_seal() {
+    // Readers are unaffected by the phase — lookup is the bg-thread path
+    // that MUST keep working after seal().
+    SchemaTable t;
+    t.register_name(H(0x111), S("aten::sum"));
+    t.register_name(H(0x222), S("aten::mean"));
+    t.seal();
+
+    assert(std::strcmp(t.lookup(H(0x111)), "aten::sum") == 0);
+    assert(std::strcmp(t.short_name(H(0x222)), "mean") == 0);
+    assert(t.count() == 2);
+    // mint_sealed_view succeeds post-seal.
+    (void)t.mint_sealed_view();
+    std::printf("  test_lookup_post_seal:          PASSED\n");
+}
+
 int main() {
     test_empty_lookup_returns_nullptr();
     test_register_and_lookup();
@@ -113,6 +168,10 @@ int main() {
     test_binary_search_across_many();
     test_global_table_convenience();
     test_null_name_is_noop();
-    std::printf("test_schema_table: 7 groups, all passed\n");
+    test_default_is_mutable_and_seal_flips();
+    test_clear_resets_seal();
+    test_typed_register_with_mutable_view();
+    test_lookup_works_post_seal();
+    std::printf("test_schema_table: 11 groups, all passed\n");
     return 0;
 }
