@@ -11,6 +11,7 @@
 
 #include <crucible/safety/Checked.h>
 #include <crucible/safety/ConstantTime.h>
+#include <crucible/safety/FileHandle.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Machine.h>
 #include <crucible/safety/Mutation.h>
