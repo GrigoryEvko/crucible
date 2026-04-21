@@ -134,17 +134,52 @@ static_assert(sizeof(CpuId) == sizeof(int));
 #endif
 }
 
-template <typename T>
-[[gnu::always_inline]] inline void do_not_optimize(T const& v) noexcept {
-    asm volatile("" : : "r,m"(v) : "memory");
-}
+// Defeat dead-code elimination of values we want the optimizer to treat
+// as consumed.
+//
+// We do NOT use the canonical Google-Benchmark / folly / nanobench form
+//     asm volatile("" : "+m,r"(v) : : "memory")
+//     asm volatile("" : :  "r,m"(v) : "memory")
+// because both are subtly broken under modern GCC inlining + IPA:
+//
+//   * "+m,r"(v) is shorthand for "=m,r" output paired with "m,0" matching
+//     input. When GCC selects the `r` alternative the matching `0` input
+//     ties the input register to the output register (a temp); the asm
+//     operates on the temp; nothing writes the temp back to v's storage.
+//     Under inlining this leaves v's slot whatever it was at function
+//     entry (uninitialized stack), and downstream lambda value-expr
+//     substitutions that look up v by stack offset read the wrong bytes.
+//     We hit this as a hard SIGSEGV in bench_pool_allocator's via-pointer
+//     workload and minimized it to bugs/gcc-modref-miscompile/. Filed as
+//     PR124958, closed INVALID by Andrew Pinski 2026-04-21: the asm is
+//     wrong, not GCC.
+//
+//   * "r,m"(v) on a value: when GCC picks `r`, the asm sees a register
+//     copy and the original storage is invisible. Earlier writes to v's
+//     storage become DSE-eligible (PR109057, Jakub Jelinek).
+//
+//   * "+m,r" on objects > ~8 KB additionally forces a memcpy into a
+//     temporary that is then never read back (PR105519).
+//
+// Pinski's recommended replacement, PR105519 c#3:
+//     [[gnu::noipa]] void DoNotOptimize(T&) {}
+// Empty function, no inline asm. `noipa` blocks inter-procedural
+// analysis so the call cannot be deleted as dead, the argument is
+// passed through real ABI registers / stack, and from the optimizer's
+// point of view anything could happen inside. Cost is one real call
+// instruction per use. Acceptable for benchmark scaffolding — the
+// alternative is wrong-code at -O3.
+//
+// References:
+//   https://gcc.gnu.org/bugzilla/show_bug.cgi?id=124958  (our filing)
+//   https://gcc.gnu.org/bugzilla/show_bug.cgi?id=109057  (r,m DSE)
+//   https://gcc.gnu.org/bugzilla/show_bug.cgi?id=105519  (+m,r temp)
 
 template <typename T>
-[[gnu::always_inline]] inline void do_not_optimize(T& v) noexcept {
-    // "+m,r" prefers memory over register — avoids "impossible constraint"
-    // for types GCC can't place in a register with -O3 inlining.
-    asm volatile("" : "+m,r"(v) : : "memory");
-}
+[[gnu::noipa]] void do_not_optimize(T const& v) noexcept { (void)v; }
+
+template <typename T>
+[[gnu::noipa]] void do_not_optimize(T& v) noexcept { (void)v; }
 
 [[gnu::always_inline]] inline void clobber() noexcept {
     asm volatile("" : : : "memory");
