@@ -52,7 +52,10 @@
 #include <crucible/Platform.h>
 
 #include <array>
+#include <cstddef>
+#include <memory>
 #include <meta>
+#include <new>
 #include <optional>
 #include <tuple>
 #include <type_traits>
@@ -104,6 +107,26 @@ public:
 
     [[nodiscard]] constexpr Carrier* operator->() const noexcept { return ptr_; }
     [[nodiscard]] constexpr Carrier& carrier()    const noexcept { return *ptr_; }
+
+    // Tier 1: forbid heap allocation.  Without these deletes, a caller
+    // could do `new ScopedView<...>(existing)` via the public copy
+    // ctor and escape the stack frame.  The placement-new overload
+    // (void* operator new(size_t, void*)) is NOT deleted — it's used
+    // by std::optional, std::variant, and any arena or bump-pointer
+    // allocator that stores Views inline.  Those in-place storage
+    // sites still have to pass the Tier 2 field audit.
+    static void* operator new(std::size_t)
+        = delete("ScopedView must live on the stack; heap allocation defeats the lifetime contract");
+    static void* operator new[](std::size_t)
+        = delete("ScopedView arrays on the heap defeat the lifetime contract");
+    static void* operator new(std::size_t, std::align_val_t)
+        = delete("ScopedView must live on the stack");
+    static void* operator new[](std::size_t, std::align_val_t)
+        = delete("ScopedView arrays on the heap defeat the lifetime contract");
+    static void operator delete(void*)                     = delete;
+    static void operator delete[](void*)                   = delete;
+    static void operator delete(void*, std::align_val_t)   = delete;
+    static void operator delete[](void*, std::align_val_t) = delete;
 };
 
 // ── mint_view: the single chokepoint for state assertion ───────────
@@ -137,11 +160,16 @@ consteval bool contains_scoped_view();   // forward decl for recursion
 
 namespace detail {
 
-// Single-element wrappers (optional, vector, array, unique_ptr, etc.).
+// Single-element wrappers (optional, vector, array, smart pointers, etc.).
 template <typename T> struct sv_unwrap_single { using type = void; };
 template <typename X>                 struct sv_unwrap_single<std::optional<X>>     { using type = X; };
 template <typename X, typename A>     struct sv_unwrap_single<std::vector<X, A>>    { using type = X; };
 template <typename X, std::size_t N>  struct sv_unwrap_single<std::array<X, N>>     { using type = X; };
+template <typename X, typename D>     struct sv_unwrap_single<std::unique_ptr<X, D>>{ using type = X; };
+template <typename X>                 struct sv_unwrap_single<std::shared_ptr<X>>   { using type = X; };
+template <typename X>                 struct sv_unwrap_single<std::weak_ptr<X>>     { using type = X; };
+// C arrays in struct fields — `ScopedView<...> views[N];` escape vector.
+template <typename X, std::size_t N>  struct sv_unwrap_single<X[N]>                 { using type = X; };
 
 template <typename T>
 using sv_unwrap_single_t = typename sv_unwrap_single<T>::type;
