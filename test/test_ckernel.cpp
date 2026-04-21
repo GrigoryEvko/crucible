@@ -75,6 +75,56 @@ int main() {
         assert(name != nullptr && name[0] != '<' && "all known ids must have proper names");
     }
 
+    // ── Seal lifecycle: default Mutable, seal() flips, clear() resets ────
+    {
+        CKernelTable t;
+        assert(!t.is_sealed());
+
+        // Populate before seal().
+        t.register_op(SchemaHash{0x1}, CKernelId::GEMM_MM);
+        assert(t.count() == 1);
+
+        t.seal();
+        assert(t.is_sealed());
+        // Idempotent: re-seal keeps state sealed.
+        t.seal();
+        assert(t.is_sealed());
+
+        // clear() resets the seal alongside the entries.
+        t.clear();
+        assert(!t.is_sealed());
+        assert(t.count() == 0);
+
+        // Post-clear: register works again.
+        t.register_op(SchemaHash{0x2}, CKernelId::SDPA);
+        assert(t.classify(SchemaHash{0x2}) == CKernelId::SDPA);
+    }
+
+    // ── Typed register_op(MutableView, ...) compiles and works ──────────
+    {
+        CKernelTable t;
+        auto mv = t.mint_mutable_view();
+        t.register_op(mv, SchemaHash{0x42}, CKernelId::CONV2D);
+        assert(t.classify(SchemaHash{0x42}) == CKernelId::CONV2D);
+    }
+
+    // ── Classify works post-seal (bg-thread read path) ──────────────────
+    {
+        CKernelTable t;
+        t.register_op(SchemaHash{0x111}, CKernelId::GEMM_MM);
+        t.register_op(SchemaHash{0x222}, CKernelId::LAYER_NORM);
+        t.seal();
+        assert(t.classify(SchemaHash{0x111}) == CKernelId::GEMM_MM);
+        assert(t.classify(SchemaHash{0x222}) == CKernelId::LAYER_NORM);
+        assert(t.classify(SchemaHash{0xBAD})  == CKernelId::OPAQUE);
+        // mint_sealed_view is allowed post-seal.
+        (void)t.mint_sealed_view();
+    }
+
+    // Restore global table to a clean Mutable state so downstream tests
+    // running in the same process start from a known baseline.
+    global_ckernel_table().clear();
+
     std::printf("test_ckernel: all tests passed\n");
     return 0;
 }

@@ -368,7 +368,9 @@ crucible_neg_compile_test(neg_heap_allocate
   "ScopedView must live on the stack; heap allocation defeats")
 
 # State-discipline: SealedView cannot satisfy the MutableView parameter
-# of register_name — the only typed registration path requires proof
-# that the table is in the Mutable phase.
+# of register_name / register_op — the only typed registration path
+# requires proof that the table is in the Mutable phase.
 crucible_neg_compile_test(neg_schema_register_with_sealed_view
   "no matching function for call to.*register_name")
+crucible_neg_compile_test(neg_ckernel_register_with_sealed_view
+  "no matching function for call to.*register_op")

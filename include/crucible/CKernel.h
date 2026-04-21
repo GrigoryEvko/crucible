@@ -19,15 +19,25 @@
 //   2. BackgroundThread calls classify_kernel() during build_trace().
 //      Returns OPAQUE until the Vessel has registered ops.
 //
-// Thread safety: all registrations MUST complete before BackgroundThread::start()
-// is called. After that the table is read-only (no locking needed).
+// Lifecycle (compile-time + runtime enforced — same discipline as SchemaTable):
+//
+//   Mutable (fresh/after clear) → Sealed (one-way, set by seal())
+//
+// BackgroundThread::start() seals the global CKernelTable automatically so
+// the documented invariant — "all registrations complete before bg starts"
+// — is now a load-bearing rule.  The runtime guard catches FFI callers; the
+// typed register_op(MutableView, ...) overload is available for code that
+// wants to prove the Mutable state at compile time.
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
+#include <crucible/safety/ScopedView.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <span>
+#include <type_traits>
 
 namespace crucible {
 
@@ -311,14 +321,68 @@ struct CKernelEntry {
 
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(CKernelEntry);
 
+// ── CKernelTable state tags ─────────────────────────────────────────
+// Same shape as SchemaTable's schema_state tags — register_op lives in
+// Mutable, classify() works in any phase, seal() is the one-way
+// transition driven by BackgroundThread::start().
+namespace ckernel_state {
+    struct Mutable {};
+    struct Sealed  {};
+}
+
 struct CKernelTable {
     CKernelEntry entries[CKERNEL_TABLE_CAP]{};
     uint32_t     size{0};
 
-    // Register a schema_hash → CKernelId mapping. Idempotent: re-registering
-    // the same hash updates the entry in-place (later registration wins).
-    // Silently no-ops beyond CKERNEL_TABLE_CAP (never happens in practice).
-    void register_op(SchemaHash schema_hash, CKernelId id) {
+    // Seal gate. Release-store in seal() pairs with acquire-load in
+    // is_sealed() so any bg-thread classify() reader observing Sealed
+    // also observes every entry registered before seal().
+    std::atomic<bool> sealed_{false};
+
+    CKernelTable() = default;
+
+    // atomic<bool> member deletes copy/move for us, but spell it out
+    // with a reason so the rule survives a future member refactor.
+    CKernelTable(const CKernelTable&)            = delete("table is a global registration singleton; no copies");
+    CKernelTable& operator=(const CKernelTable&) = delete("table is a global registration singleton; no copies");
+    CKernelTable(CKernelTable&&)                 = delete("table is a global registration singleton; no moves");
+    CKernelTable& operator=(CKernelTable&&)      = delete("table is a global registration singleton; no moves");
+
+    // ── Seal transition ────────────────────────────────────────────
+    void seal() noexcept { sealed_.store(true, std::memory_order_release); }
+
+    [[nodiscard]] bool is_sealed() const noexcept {
+        return sealed_.load(std::memory_order_acquire);
+    }
+
+    // ── Typed views (ScopedView discipline) ────────────────────────
+    using MutableView = crucible::safety::ScopedView<CKernelTable, ckernel_state::Mutable>;
+    using SealedView  = crucible::safety::ScopedView<CKernelTable, ckernel_state::Sealed>;
+
+    [[nodiscard]] MutableView mint_mutable_view() noexcept
+        pre (!is_sealed())
+    {
+        return crucible::safety::mint_view<ckernel_state::Mutable>(*this);
+    }
+
+    [[nodiscard]] SealedView mint_sealed_view() noexcept
+        pre (is_sealed())
+    {
+        return crucible::safety::mint_view<ckernel_state::Sealed>(*this);
+    }
+
+    // ADL-discovered predicates for mint_view<>.
+    [[nodiscard]] friend constexpr bool view_ok(
+        CKernelTable const& t, std::type_identity<ckernel_state::Mutable>) noexcept {
+        return !t.is_sealed();
+    }
+    [[nodiscard]] friend constexpr bool view_ok(
+        CKernelTable const& t, std::type_identity<ckernel_state::Sealed>) noexcept {
+        return t.is_sealed();
+    }
+
+    // Typed overload — requires MutableView proof. Zero runtime phase check.
+    void register_op(MutableView const&, SchemaHash schema_hash, CKernelId id) {
         // Check for existing entry first (idempotent / alias update).
         for (uint32_t i = 0; i < size; i++) {
             if (entries[i].schema_hash == schema_hash) {
@@ -332,6 +396,12 @@ struct CKernelTable {
                           {}, &CKernelEntry::schema_hash);
     }
 
+    // Legacy overload — mints MutableView locally; runtime-guarded via
+    // mint_mutable_view()'s pre() contract. Matches SchemaTable.
+    void register_op(SchemaHash schema_hash, CKernelId id) {
+        register_op(mint_mutable_view(), schema_hash, id);
+    }
+
     [[nodiscard]] CKernelId classify(SchemaHash schema_hash) const {
         uint32_t lo = 0, hi = size;
         while (lo < hi) {
@@ -342,8 +412,21 @@ struct CKernelTable {
         }
         return CKernelId::OPAQUE;
     }
+
+    [[nodiscard]] uint32_t count() const noexcept { return size; }
+
+    // Reset to empty Mutable state.  Unseals so tests can reuse the
+    // table across cases.
+    void clear() noexcept {
+        size = 0;
+        sealed_.store(false, std::memory_order_release);
+    }
 };
 
+// Tier 2 opt-in: nothing inside CKernelTable may be a ScopedView.
+static_assert(crucible::safety::no_scoped_view_field_check<CKernelTable>());
+
+// Global singleton — sealed automatically by BackgroundThread::start().
 [[nodiscard]] inline CKernelTable& global_ckernel_table() {
     static CKernelTable table;
     return table;
