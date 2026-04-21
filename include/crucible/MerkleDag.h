@@ -152,6 +152,7 @@ struct MemoryPlan {
 // world_size(4) = 44B → aligned to 48 via trailing pad the compiler inserts.
 static_assert(sizeof(MemoryPlan) == 48,
               "MemoryPlan size changed — update serializer and on-disk format");
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(MemoryPlan);
 
 // Compute storage size in bytes from TensorMeta.
 //
@@ -286,6 +287,8 @@ struct TraceEntry {
   }
 };
 
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TraceEntry);
+
 // ═══════════════════════════════════════════════════════════════════
 // Guard: Condition that determines branch selection at a BranchNode
 // ═══════════════════════════════════════════════════════════════════
@@ -343,6 +346,7 @@ struct TraceNode {
 };
 
 static_assert(sizeof(TraceNode) == 24, "TraceNode must be 24 bytes");
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TraceNode);
 
 // ═══════════════════════════════════════════════════════════════════
 // RegionNode: A compilable sequence of ops
@@ -458,6 +462,7 @@ struct LoopNode : TraceNode {
 };
 
 static_assert(sizeof(LoopNode) == 64, "LoopNode must be 64 bytes (one cache line)");
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(LoopNode);
 
 // ═══════════════════════════════════════════════════════════════════
 // LoopNode hash helpers
