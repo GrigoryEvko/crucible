@@ -492,7 +492,11 @@ void crucibleFallback(
     //
     // COMPILED path: checks guards (~2ns), ignores metas.
     // RECORDING path: appends to ring + MetaLog (~15ns), uses metas.
-    (void)vigil->dispatch_op(entry, inline_metas, counts.total(),
+    // Entry was built by this function from the ATen Stack + schema:
+    // every field (schema_hash, shape_hash, counts, scalar_values,
+    // op_flags, grad_enabled) comes from either the dispatcher-trusted
+    // schema or the live c10 query surface.  Vouch at the typed boundary.
+    (void)vigil->dispatch_op(crucible::vouch(entry), inline_metas, counts.total(),
                              scope_hash);
 }
 

@@ -75,6 +75,22 @@ namespace version {
     template <unsigned N> struct V { static constexpr unsigned number = N; };
 }
 
+// Vessel-boundary provenance: values crossing from Python / PyTorch /
+// any foreign runtime carry FromPytorch until validated by Vessel-side
+// code, at which point they are retagged to Validated.  Internal paths
+// that record / compile / replay require Validated at their entry
+// points; FromPytorch cannot substitute for Validated — the type system
+// rejects the call.
+//
+// Internal code (tests, synthetic drivers, replay engines that fabricate
+// Entry values) may construct Tagged<T, Validated> directly.  Audit by
+// grep for `vessel_trust::Validated` — anything outside of validator
+// functions or known-trusted internal constructors is a review concern.
+namespace vessel_trust {
+    struct FromPytorch {};  // raw uint64_t / pointer / scalar from the FFI
+    struct Validated   {};  // Vessel-side validation produced a well-formed value
+}
+
 template <typename T, typename Tag>
 class [[nodiscard]] Tagged {
     T value_;

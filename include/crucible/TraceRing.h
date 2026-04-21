@@ -28,6 +28,7 @@
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <crucible/rt/Registry.h>
+#include <crucible/safety/Tagged.h>
 
 namespace crucible {
 
@@ -77,6 +78,31 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   static_assert(sizeof(Entry) == 64, "Entry must be exactly one cache line");
   static_assert(alignof(Entry) == 64);
   CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(Entry);
+
+  // ── Vessel-boundary provenance ────────────────────────────────────
+  //
+  // Every Entry that reaches record_op / dispatch_op / TraceRing::
+  // try_append must first be vouched for.  The vouching happens by
+  // constructing one of these Tagged-pointer types:
+  //
+  //   FromPytorchEntryPtr  — raw Entry values built directly from FFI
+  //                          input.  Must be validated (Vessel-side)
+  //                          before recording.  No dispatch / record
+  //                          overload accepts this type.
+  //   ValidatedEntryPtr    — either the result of Vessel validation, or
+  //                          constructed by internal code that certifies
+  //                          the Entry by construction (tests, synthetic
+  //                          drivers, replay engines).  Accepted by
+  //                          dispatch_op and record_op.
+  //
+  // Pointer-based Tagged keeps the call site zero-copy: the underlying
+  // 64-B Entry stays in the caller's stack/ring, and only an 8-B const*
+  // is tagged and passed.  `vouch(e)` is the idiomatic internal wrap.
+  using FromPytorchEntryPtr = crucible::safety::Tagged<
+      const Entry*, crucible::safety::vessel_trust::FromPytorch>;
+  using ValidatedEntryPtr   = crucible::safety::Tagged<
+      const Entry*, crucible::safety::vessel_trust::Validated>;
+
 
   static constexpr uint32_t CAPACITY = 1u << 16; // 65 536 entries = 4 MB
   static constexpr uint32_t MASK     = CAPACITY - 1;
@@ -243,5 +269,23 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
 static_assert(sizeof(TraceRing) >= (5u * 1024u * 1024u) &&
               sizeof(TraceRing) <= (6u * 1024u * 1024u),
               "TraceRing footprint outside 5-6 MB envelope — layout changed");
+
+// ── vouch(): internal-certification factory for ValidatedEntryPtr ──
+//
+// Construct a ValidatedEntryPtr from a known-good Entry.  Intended for
+// tests, synthetic drivers, and internal recording paths that build
+// their Entry by hand and certify it by construction (the op-flags
+// come from c10::InferenceMode / TrainingPhase querying, inputs/outputs
+// come from the op schema, scalars are packed from the ATen stack).
+//
+// FFI callers MUST NOT use vouch() to escape validation — FFI goes
+// through validate_entry() (Vessel-side) which returns the same
+// ValidatedEntryPtr after running the actual checks.  Audit for
+// `vouch(` outside of test/ or src/: any such occurrence is a review
+// concern.
+[[nodiscard]] CRUCIBLE_INLINE
+TraceRing::ValidatedEntryPtr vouch(const TraceRing::Entry& e CRUCIBLE_LIFETIMEBOUND) noexcept {
+    return TraceRing::ValidatedEntryPtr{&e};
+}
 
 } // namespace crucible
