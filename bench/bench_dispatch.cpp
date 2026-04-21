@@ -309,16 +309,17 @@ int main() {
         pool.init(br.plan);
         ReplayEngine engine;
         engine.init(br.region, &pool);
+        auto av = engine.mint_active_view();
 
         uint32_t op_idx = 0;
         auto r = bench::run("ReplayEngine::advance (cyclic, 8 ops)", [&]{
             bench::do_not_optimize(&engine);
-            auto s = engine.advance(SCHEMA[op_idx], SHAPE[op_idx]);
+            auto s = engine.advance(SCHEMA[op_idx], SHAPE[op_idx], av);
             bench::do_not_optimize(s);
             op_idx++;
             if (op_idx >= NUM_OPS) {
                 op_idx = 0;
-                engine.reset();
+                engine.reset(av);
             }
         });
         pool.destroy();

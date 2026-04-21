@@ -92,36 +92,40 @@ struct BenchRegion {
 };
 
 // Walks — each calls engine.reset() at top so repeated invocation
-// through auto-batch is stateless.
+// through auto-batch is stateless.  Each helper mints its own
+// ActiveView; engine is already initialized before being passed in.
 ReplayStatus walk_advance_only(ReplayEngine& engine,
                                const TraceEntry* ops, uint32_t n) {
-    engine.reset();
+    auto av = engine.mint_active_view();
+    engine.reset(av);
     ReplayStatus last = ReplayStatus::MATCH;
     for (uint32_t i = 0; i < n; i++) {
-        last = engine.advance(ops[i].schema_hash, ops[i].shape_hash);
+        last = engine.advance(ops[i].schema_hash, ops[i].shape_hash, av);
     }
     return last;
 }
 
 void* walk_advance_output(ReplayEngine& engine,
                           const TraceEntry* ops, uint32_t n) {
-    engine.reset();
+    auto av = engine.mint_active_view();
+    engine.reset(av);
     void* last_ptr = nullptr;
     for (uint32_t i = 0; i < n; i++) {
-        (void)engine.advance(ops[i].schema_hash, ops[i].shape_hash);
-        last_ptr = engine.output_ptr(0);
+        (void)engine.advance(ops[i].schema_hash, ops[i].shape_hash, av);
+        last_ptr = engine.output_ptr(0, av);
     }
     return last_ptr;
 }
 
 void* walk_advance_both(ReplayEngine& engine,
                         const TraceEntry* ops, uint32_t n) {
-    engine.reset();
+    auto av = engine.mint_active_view();
+    engine.reset(av);
     void* last_ptr = nullptr;
     for (uint32_t i = 0; i < n; i++) {
-        (void)engine.advance(ops[i].schema_hash, ops[i].shape_hash);
-        last_ptr = engine.output_ptr(0);
-        bench::do_not_optimize(engine.input_ptr(0));
+        (void)engine.advance(ops[i].schema_hash, ops[i].shape_hash, av);
+        last_ptr = engine.output_ptr(0, av);
+        bench::do_not_optimize(engine.input_ptr(0, av));
     }
     return last_ptr;
 }
