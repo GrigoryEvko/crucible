@@ -77,29 +77,32 @@ struct TraceGraph {
   uint32_t pad_tg = 0;            // 4B — alignment
 
   // ── Forward queries (src → dst): "who consumes op i's outputs?" ──
-  [[nodiscard]] const Edge* fwd_begin(uint32_t i) const CRUCIBLE_LIFETIMEBOUND {
+  // gnu::pure: accessors read *this fields + the CSR arrays; no side
+  // effects, no memory writes.  Optimizer may CSE across successive
+  // calls with the same argument within a basic block.
+  [[nodiscard, gnu::pure]] const Edge* fwd_begin(uint32_t i) const noexcept CRUCIBLE_LIFETIMEBOUND {
     return fwd_edges + fwd_offsets[i];
   }
-  [[nodiscard]] const Edge* fwd_end(uint32_t i) const CRUCIBLE_LIFETIMEBOUND {
+  [[nodiscard, gnu::pure]] const Edge* fwd_end(uint32_t i) const noexcept CRUCIBLE_LIFETIMEBOUND {
     return fwd_edges + fwd_offsets[i + 1];
   }
-  [[nodiscard]] uint32_t out_degree(uint32_t i) const {
+  [[nodiscard, gnu::pure]] uint32_t out_degree(uint32_t i) const noexcept {
     return fwd_offsets[i + 1] - fwd_offsets[i];
   }
 
   // ── Reverse queries (dst → src): "who produces op i's inputs?" ──
-  [[nodiscard]] const Edge* rev_begin(uint32_t i) const CRUCIBLE_LIFETIMEBOUND {
+  [[nodiscard, gnu::pure]] const Edge* rev_begin(uint32_t i) const noexcept CRUCIBLE_LIFETIMEBOUND {
     return rev_edges + rev_offsets[i];
   }
-  [[nodiscard]] const Edge* rev_end(uint32_t i) const CRUCIBLE_LIFETIMEBOUND {
+  [[nodiscard, gnu::pure]] const Edge* rev_end(uint32_t i) const noexcept CRUCIBLE_LIFETIMEBOUND {
     return rev_edges + rev_offsets[i + 1];
   }
-  [[nodiscard]] uint32_t in_degree(uint32_t i) const {
+  [[nodiscard, gnu::pure]] uint32_t in_degree(uint32_t i) const noexcept {
     return rev_offsets[i + 1] - rev_offsets[i];
   }
 
   // ── Node access ──
-  [[nodiscard]] const TraceEntry& op(uint32_t i) const CRUCIBLE_LIFETIMEBOUND { return ops[i]; }
+  [[nodiscard, gnu::pure]] const TraceEntry& op(uint32_t i) const noexcept CRUCIBLE_LIFETIMEBOUND { return ops[i]; }
 };
 
 // ═══════════════════════════════════════════════════════════════════
