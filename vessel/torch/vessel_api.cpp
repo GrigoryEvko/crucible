@@ -340,10 +340,10 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     for (uint32_t i = 0; i < region->num_ops; i++) {
         const auto& te = region->ops[i];
         crucible::TraceOpRecord rec{};
-        rec.schema_hash = te.schema_hash.raw();
-        rec.shape_hash = te.shape_hash.raw();
-        rec.scope_hash = te.scope_hash.raw();
-        rec.callsite_hash = te.callsite_hash.raw();
+        rec.schema_hash   = te.schema_hash;
+        rec.shape_hash    = te.shape_hash;
+        rec.scope_hash    = te.scope_hash;
+        rec.callsite_hash = te.callsite_hash;
         rec.num_inputs = te.num_inputs;
         rec.num_outputs = te.num_outputs;
         rec.num_scalars = te.num_scalar_args;
