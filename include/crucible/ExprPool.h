@@ -759,8 +759,69 @@ class CRUCIBLE_OWNER ExprPool {
         return min_n(a, args);
       case Op::MAX:
         return max_n(a, args);
+
+      // Atoms must be built via the dedicated constructors
+      // (integer()/float()/symbol()/bool_true()/bool_false()); they
+      // carry a payload, not child args, and the args.data() vector
+      // would be silently ignored by intern_node.  make(atom, ...) is
+      // a caller bug, not a runtime-dispatchable condition.
+      case Op::INTEGER:
+      case Op::FLOAT:
+      case Op::SYMBOL:
+      case Op::BOOL_TRUE:
+      case Op::BOOL_FALSE:
+        std::unreachable();
+
+      // Sentinel: not a valid op value.  Reached only via corrupted
+      // input or a caller passing a cast-from-int out-of-range value.
+      case Op::NUM_OPS:
+        std::unreachable();
+
+      // Opaque math (SIN, COS, LOG, …), type conversions, bitwise,
+      // shift, identity, and IS_NON_OVERLAPPING_AND_DENSE all share
+      // the generic interning path — no canonical simplifier required.
+      // Listed explicitly-as-fallthrough so adding a new op surfaces
+      // here (via -Wswitch) rather than disappearing into a catch-all.
+      case Op::INT_TRUE_DIV:
+      case Op::FLOAT_TRUE_DIV:
+      case Op::CEIL_TO_INT:
+      case Op::FLOOR_TO_INT:
+      case Op::TRUNC_TO_FLOAT:
+      case Op::TRUNC_TO_INT:
+      case Op::ROUND_TO_INT:
+      case Op::ROUND_DECIMAL:
+      case Op::TO_FLOAT:
+      case Op::LSHIFT:
+      case Op::RSHIFT:
+      case Op::POW_BY_NATURAL:
+      case Op::FLOAT_POW:
+      case Op::IDENTITY:
+      case Op::IS_NON_OVERLAPPING_AND_DENSE:
+      case Op::SQRT:
+      case Op::COS:
+      case Op::COSH:
+      case Op::SIN:
+      case Op::SINH:
+      case Op::TAN:
+      case Op::TANH:
+      case Op::ASIN:
+      case Op::ACOS:
+      case Op::ATAN:
+      case Op::EXP:
+      case Op::LOG:
+      case Op::ASINH:
+      case Op::LOG2:
+      case Op::ABS:
+      case Op::BITWISE_AND:
+      case Op::BITWISE_OR:
+      case Op::BITWISE_XOR:
+        break;  // fall through to intern_node below
+
+      // Required by -Wswitch-default even though every enumerator is
+      // handled above.  Reaching this arm implies Op was read from
+      // out-of-range memory (e.g. casting a corrupted uint8_t to Op).
       default:
-        break;
+        std::unreachable();
     }
     uint16_t f = detail::composite_flags(op, args.data(),
                                          static_cast<uint8_t>(args.size()));
