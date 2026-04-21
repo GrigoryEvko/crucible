@@ -129,10 +129,11 @@ void* walk_advance_both(ReplayEngine& engine,
 // CrucibleContext drives its internal ReplayEngine; no external reset.
 void* walk_context(CrucibleContext& ctx,
                    const TraceEntry* ops, uint32_t n) {
+    auto cv = ctx.mint_compiled_view();
     void* last_ptr = nullptr;
     for (uint32_t i = 0; i < n; i++) {
-        auto s = ctx.advance(ops[i].schema_hash, ops[i].shape_hash);
-        last_ptr = ctx.output_ptr(0);
+        auto s = ctx.advance(ops[i].schema_hash, ops[i].shape_hash, cv);
+        last_ptr = ctx.output_ptr(0, cv);
         bench::do_not_optimize(s);
     }
     return last_ptr;

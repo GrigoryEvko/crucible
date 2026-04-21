@@ -281,8 +281,9 @@ int main() {
         pool.init(plan);
 
         uint32_t slot_idx = 0;
+        auto pv = pool.mint_initialized_view();
         auto r = bench::run("PoolAllocator::slot_ptr (cyclic, N=16)", [&]{
-            bench::do_not_optimize(pool.slot_ptr(SlotId{slot_idx}));
+            bench::do_not_optimize(pool.slot_ptr(SlotId{slot_idx}, pv));
             slot_idx = (slot_idx + 1) & (NSLOTS - 1);
         });
         pool.destroy();
@@ -331,9 +332,10 @@ int main() {
         (void)ctx.activate(br.region);
 
         uint32_t op_idx = 0;
+        auto cv = ctx.mint_compiled_view();
         auto r = bench::run("CrucibleContext::advance (cyclic, 8 ops)", [&]{
             bench::do_not_optimize(&ctx);
-            auto s = ctx.advance(SCHEMA[op_idx], SHAPE[op_idx]);
+            auto s = ctx.advance(SCHEMA[op_idx], SHAPE[op_idx], cv);
             bench::do_not_optimize(s);
             op_idx = (op_idx + 1) % NUM_OPS;
         });
@@ -355,9 +357,10 @@ int main() {
         (void)ctx.activate(br.region);
 
         uint32_t op_idx = 0;
+        auto cv = ctx.mint_compiled_view();
         auto r = bench::run("CrucibleContext::advance (cyclic, 32 ops)", [&]{
             bench::do_not_optimize(&ctx);
-            auto s = ctx.advance(big_sch[op_idx], big_shp[op_idx]);
+            auto s = ctx.advance(big_sch[op_idx], big_shp[op_idx], cv);
             bench::do_not_optimize(s);
             op_idx = (op_idx + 1) % BIG;
         });

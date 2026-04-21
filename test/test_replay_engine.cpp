@@ -378,10 +378,11 @@ static void test_integration_with_pool() {
 
   PoolAllocator pool;
   pool.init(plan);
+  auto pv = pool.mint_initialized_view();
 
   // Register external.
   alignas(256) char fake_param[128];
-  pool.register_external(SlotId{2}, crucible::safety::NonNull<void*>{fake_param});
+  pool.register_external(SlotId{2}, crucible::safety::NonNull<void*>{fake_param}, pv);
 
   // Build 2 ops:
   //   Op 0: produces slot 0, reads external slot 2

@@ -173,21 +173,23 @@ static void test_pipeline_basic() {
   assert(ctx.active_region() == region);
   assert(ctx.pool().is_initialized());
 
+  auto cv = ctx.mint_compiled_view();
+
   // Iteration 1.
   for (uint32_t i = 0; i < NUM_OPS; i++) {
-    auto s = ctx.advance(SCHEMA[i], SHAPE[i]);
+    auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv);
     if (i < NUM_OPS - 1) {
       assert(s == ReplayStatus::MATCH);
     } else {
       assert(s == ReplayStatus::COMPLETE);
     }
-    assert(ctx.output_ptr(0) != nullptr);
+    assert(ctx.output_ptr(0, cv) != nullptr);
   }
   assert(ctx.compiled_iterations() == 1);
 
   // Iteration 2 (lazy reset).
   for (uint32_t i = 0; i < NUM_OPS; i++) {
-    auto s = ctx.advance(SCHEMA[i], SHAPE[i]);
+    auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv);
     if (i < NUM_OPS - 1) {
       assert(s == ReplayStatus::MATCH);
     } else {
@@ -226,19 +228,20 @@ static void test_pipeline_divergence() {
 
   CrucibleContext ctx;
   assert(ctx.activate(region));
+  auto cv = ctx.mint_compiled_view();
 
   // First 3 ops match.
   for (uint32_t i = 0; i < 3; i++) {
-    assert(ctx.advance(SCHEMA[i], SHAPE[i]) == ReplayStatus::MATCH);
+    assert(ctx.advance(SCHEMA[i], SHAPE[i], cv) == ReplayStatus::MATCH);
   }
 
   // Op 3: wrong schema → DIVERGED.
-  assert(ctx.advance(SchemaHash{0xBAD}, SHAPE[3]) == ReplayStatus::DIVERGED);
+  assert(ctx.advance(SchemaHash{0xBAD}, SHAPE[3], cv) == ReplayStatus::DIVERGED);
   assert(ctx.diverged_count() == 1);
   assert(ctx.is_compiled()); // mode unchanged — caller decides
 
   // Op 3 again: wrong shape → still DIVERGED (position unchanged).
-  assert(ctx.advance(SCHEMA[3], ShapeHash{0xBAD}) == ReplayStatus::DIVERGED);
+  assert(ctx.advance(SCHEMA[3], ShapeHash{0xBAD}, cv) == ReplayStatus::DIVERGED);
   assert(ctx.diverged_count() == 2);
 
   ctx.deactivate();
@@ -275,29 +278,30 @@ static void test_pipeline_data_flow() {
 
   CrucibleContext ctx;
   assert(ctx.activate(region));
+  auto cv = ctx.mint_compiled_view();
 
   // Advance op 0: write pattern to output.
-  assert(ctx.advance(SCHEMA[0], SHAPE[0]) == ReplayStatus::MATCH);
-  std::memset(ctx.output_ptr(0), 0x11, 4096);
+  assert(ctx.advance(SCHEMA[0], SHAPE[0], cv) == ReplayStatus::MATCH);
+  std::memset(ctx.output_ptr(0, cv), 0x11, 4096);
 
   // Ops 1-6: verify input carries previous output's data, write new pattern.
   for (uint32_t i = 1; i < NUM_OPS - 1; i++) {
-    assert(ctx.advance(SCHEMA[i], SHAPE[i]) == ReplayStatus::MATCH);
+    assert(ctx.advance(SCHEMA[i], SHAPE[i], cv) == ReplayStatus::MATCH);
 
     // Input should carry previous op's output pattern.
-    auto* in_data = static_cast<uint8_t*>(ctx.input_ptr(0));
+    auto* in_data = static_cast<uint8_t*>(ctx.input_ptr(0, cv));
     uint8_t expected = static_cast<uint8_t>(0x11 + i - 1);
     for (uint32_t b = 0; b < 4096; b++) {
       assert(in_data[b] == expected);
     }
 
     // Write this op's output with a new pattern.
-    std::memset(ctx.output_ptr(0), static_cast<int>(0x11 + i), 4096);
+    std::memset(ctx.output_ptr(0, cv), static_cast<int>(0x11 + i), 4096);
   }
 
   // Op 7 (final): verify input, advance to COMPLETE.
-  assert(ctx.advance(SCHEMA[7], SHAPE[7]) == ReplayStatus::COMPLETE);
-  auto* in_last = static_cast<uint8_t*>(ctx.input_ptr(0));
+  assert(ctx.advance(SCHEMA[7], SHAPE[7], cv) == ReplayStatus::COMPLETE);
+  auto* in_last = static_cast<uint8_t*>(ctx.input_ptr(0, cv));
   uint8_t expected_last = static_cast<uint8_t>(0x11 + NUM_OPS - 2);
   for (uint32_t b = 0; b < 4096; b++) {
     assert(in_last[b] == expected_last);
@@ -338,11 +342,13 @@ static void test_pipeline_pool_bounds() {
   assert(pool_base != nullptr);
   assert(pool_bytes > 0);
 
+  auto cv2 = ctx.mint_compiled_view();
+
   // Replay and verify every output pointer is within [pool_base, pool_base + pool_bytes).
   for (uint32_t i = 0; i < NUM_OPS; i++) {
-    auto s = ctx.advance(SCHEMA[i], SHAPE[i]);
+    auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv2);
     (void)s;
-    auto* p = static_cast<uint8_t*>(ctx.output_ptr(0));
+    auto* p = static_cast<uint8_t*>(ctx.output_ptr(0, cv2));
     assert(p >= pool_base);
     assert(p + 4096 <= pool_base + pool_bytes);
   }
@@ -351,10 +357,10 @@ static void test_pipeline_pool_bounds() {
   // Need to re-replay since we consumed the iteration.
   // After COMPLETE, lazy reset kicks in on next advance.
   for (uint32_t i = 0; i < NUM_OPS; i++) {
-    auto s = ctx.advance(SCHEMA[i], SHAPE[i]);
+    auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv2);
     (void)s;
     if (i > 0) {
-      auto* p = static_cast<uint8_t*>(ctx.input_ptr(0));
+      auto* p = static_cast<uint8_t*>(ctx.input_ptr(0, cv2));
       assert(p >= pool_base);
       assert(p + 4096 <= pool_base + pool_bytes);
     }
@@ -433,8 +439,9 @@ static void test_pipeline_multi_iteration() {
   // Replay with the second region.
   CrucibleContext ctx;
   assert(ctx.activate(region2));
+  auto cv = ctx.mint_compiled_view();
   for (uint32_t i = 0; i < NUM_OPS; i++) {
-    auto s = ctx.advance(SCHEMA[i], SHAPE[i]);
+    auto s = ctx.advance(SCHEMA[i], SHAPE[i], cv);
     if (i < NUM_OPS - 1) {
       assert(s == ReplayStatus::MATCH);
     } else {
