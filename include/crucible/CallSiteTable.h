@@ -28,6 +28,11 @@ struct CallSiteTable {
     int32_t lineno = 0;
   };
 
+  // The seen[] array is 32 KiB (4096 × 8 B CallsiteHash); the entries
+  // AppendOnly adds ~24 B (std::vector inline state).  Lock the layout
+  // so SET_CAP changes are surfaced rather than silently bloating the
+  // cache-line footprint.
+
   // entries is structurally append-only: insert() pushes new callsite
   // records, nothing ever erases or reorders.  AppendOnly<> turns the
   // convention into a type-system guarantee — code that tries to .erase()
@@ -74,5 +79,13 @@ struct CallSiteTable {
 
   [[nodiscard]] uint32_t size() const { return static_cast<uint32_t>(entries.size()); }
 };
+
+// Layout lock: seen[] dominates the footprint.  Test: sizeof is at
+// least SET_CAP * sizeof(CallsiteHash), bounded above by a generous
+// ceiling that still surfaces SET_CAP doublings.
+static_assert(sizeof(CallSiteTable) >= CallSiteTable::SET_CAP * sizeof(CallsiteHash),
+              "CallSiteTable footprint should be dominated by seen[]");
+static_assert(sizeof(CallSiteTable) <= CallSiteTable::SET_CAP * sizeof(CallsiteHash) + 128,
+              "CallSiteTable grew unexpectedly — check for accidental field additions");
 
 } // namespace crucible
