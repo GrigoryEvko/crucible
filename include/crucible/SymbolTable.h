@@ -99,19 +99,25 @@ class CRUCIBLE_OWNER SymbolTable {
   }
 
   // Set the concrete hint for a backed symbol.
-  void set_hint(SymbolId id, int64_t hint) {
+  void set_hint(SymbolId id, int64_t hint)
+      pre (id.raw() < entries_.size())
+  {
     entries_[id.raw()].hint = hint;
     entries_[id.raw()].sym_flags |= SymFlags::HAS_HINT;
   }
 
   // Set float hint (bitcast to int64_t).
-  void set_hint_float(SymbolId id, double hint) {
+  void set_hint_float(SymbolId id, double hint)
+      pre (id.raw() < entries_.size())
+  {
     entries_[id.raw()].hint = bitcast_double(hint);
     entries_[id.raw()].sym_flags |= SymFlags::HAS_HINT;
   }
 
   // Tighten the integer range. Only narrows, never widens.
-  void tighten_range(SymbolId id, int64_t lower, int64_t upper) {
+  void tighten_range(SymbolId id, int64_t lower, int64_t upper)
+      pre (id.raw() < entries_.size())
+  {
     auto& e = entries_[id.raw()];
     if (lower > e.range_lower)
       e.range_lower = lower;
@@ -119,7 +125,9 @@ class CRUCIBLE_OWNER SymbolTable {
       e.range_upper = upper;
   }
 
-  void set_size_like(SymbolId id) {
+  void set_size_like(SymbolId id)
+      pre (id.raw() < entries_.size())
+  {
     entries_[id.raw()].sym_flags |= SymFlags::IS_SIZE_LIKE;
   }
 
