@@ -17,6 +17,7 @@
 #include <crucible/Saturate.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/OneShotFlag.h>
 #include <crucible/TraceGraph.h>
 
 namespace crucible {
@@ -114,11 +115,16 @@ struct BackgroundThread {
   // Own cache line: fg reads, bg writes — false sharing otherwise.
   alignas(64) std::atomic<uint64_t> total_processed{0};
 
-  // Divergence signal: fg thread sets this when compiled replay diverges.
-  // bg thread checks at the start of each drain cycle and resets its
-  // accumulated trace + detector, discarding stale data that would
-  // produce garbage regions from leftover signature ops + divergent ops.
-  std::atomic<bool> reset_requested{false};
+  // Divergence signal: fg thread signals this when compiled replay
+  // diverges.  bg thread checks at the start of each drain cycle and
+  // on every op inside the drain loop; on observed signal, resets its
+  // accumulated trace + detector so leftover signature ops from the
+  // pre-divergence iteration don't poison the next region.
+  //
+  // OneShotFlag fuses the (relaxed load → acquire fence → body →
+  // release clear) dance into a single check_and_run call so the
+  // memory-ordering discipline is structural, not per-site convention.
+  crucible::safety::OneShotFlag reset_requested;
 
   // Start the background thread. ring/meta_log must be set first.
   //
@@ -357,19 +363,20 @@ struct BackgroundThread {
     ScopeHash scope_batch[BATCH_SIZE];
     CallsiteHash callsite_batch[BATCH_SIZE];
 
-    while (running.load(std::memory_order_relaxed)) {
-      // Check for divergence reset signal from fg thread.
-      // Relaxed: just testing a flag. Acquire fence deferred to the rare
-      // true path (same pattern as the inner-loop check below).
-      if (reset_requested.load(std::memory_order_relaxed)) [[unlikely]] {
-        std::atomic_thread_fence(std::memory_order_acquire);
+    // Reset-on-divergence body — same code for the top-of-loop check
+    // and the inner-loop check.  OneShotFlag::check_and_run fuses the
+    // (relaxed test → acquire fence → body → release clear) dance.
+    auto do_reset = [&]() noexcept {
         detector.reset();
         current_trace.clear();
         current_meta_starts.clear();
         current_scope_hashes.clear();
         current_callsite_hashes.clear();
-        reset_requested.store(false, std::memory_order_release);
-      }
+    };
+
+    while (running.load(std::memory_order_relaxed)) {
+      // Check for divergence reset signal from fg thread.
+      (void)reset_requested.check_and_run(do_reset);
 
       uint32_t n = ring.get()->drain(
           batch, BATCH_SIZE, meta_batch, scope_batch, callsite_batch);
@@ -390,16 +397,8 @@ struct BackgroundThread {
         //
         // Cost: one relaxed atomic load per entry (~1ns). Acceptable on
         // the bg thread (~50-100ns/entry). Acquire fence deferred to the
-        // rare case where the flag is true.
-        if (reset_requested.load(std::memory_order_relaxed)) [[unlikely]] {
-          std::atomic_thread_fence(std::memory_order_acquire);
-          detector.reset();
-          current_trace.clear();
-          current_meta_starts.clear();
-          current_scope_hashes.clear();
-          current_callsite_hashes.clear();
-          reset_requested.store(false, std::memory_order_release);
-        }
+        // rare case where the flag is true — OneShotFlag handles that.
+        (void)reset_requested.check_and_run(do_reset);
 
         current_trace.push_back(batch[i]);
         current_meta_starts.push_back(meta_batch[i]);

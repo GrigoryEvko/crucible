@@ -430,7 +430,7 @@ class Vigil {
 
         mode_.store(Mode::RECORDING, std::memory_order_relaxed);
         // Signal bg thread to reset its detector and accumulated trace.
-        bg_.reset_requested.store(true, std::memory_order_release);
+        bg_.reset_requested.signal();
         // Don't record the divergent op — it poisons the bg thread's
         // iteration detector.
         return {.action = DispatchResult::Action::RECORD,
