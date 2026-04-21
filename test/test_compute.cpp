@@ -183,11 +183,19 @@ int main() {
     assert(ctx.activate(&region));
     assert(ctx.is_compiled());
 
-    ctx.register_external(SlotId{SL_X},  crucible::safety::NonNull<void*>{X});
-    ctx.register_external(SlotId{SL_W1}, crucible::safety::NonNull<void*>{W1});
-    ctx.register_external(SlotId{SL_W2}, crucible::safety::NonNull<void*>{W2});
+    // Mint a CompiledView once; the ctx stays in COMPILED for the whole
+    // 100-iteration loop.  Every advance/output_ptr/input_ptr/
+    // register_external below uses the typed overload — same machine
+    // code at -O3, but the type system enforces "compiled mode" reach-
+    // ability at every call.
+    auto cv = ctx.mint_compiled_view();
 
-    // Verify externals are registered correctly
+    ctx.register_external(SlotId{SL_X},  crucible::safety::NonNull<void*>{X},  cv);
+    ctx.register_external(SlotId{SL_W1}, crucible::safety::NonNull<void*>{W1}, cv);
+    ctx.register_external(SlotId{SL_W2}, crucible::safety::NonNull<void*>{W2}, cv);
+
+    // Verify externals are registered correctly (diagnostic — read-only
+    // const access via ctx.pool() stays on the untyped overload).
     assert(ctx.pool().slot_ptr(SlotId{SL_X})  == X);
     assert(ctx.pool().slot_ptr(SlotId{SL_W1}) == W1);
     assert(ctx.pool().slot_ptr(SlotId{SL_W2}) == W2);
@@ -195,33 +203,33 @@ int main() {
     // ── Run 100 compiled iterations ──────────────────────────────────
     for (int iter = 0; iter < 100; iter++) {
         // Op 0: mm(X, W1) → mm1_out [BATCH, HIDDEN]
-        auto s = ctx.advance(H_MM1, S_MM1);
+        auto s = ctx.advance(H_MM1, S_MM1, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0)),  // X
-                static_cast<const float*>(ctx.input_ptr(1)),  // W1
-                static_cast<float*>(ctx.output_ptr(0)),       // mm1_out
+        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)),  // X
+                static_cast<const float*>(ctx.input_ptr(1, cv)),  // W1
+                static_cast<float*>(ctx.output_ptr(0, cv)),       // mm1_out
                 BATCH, HIDDEN, IN_DIM);
 
         // Op 1: relu(mm1_out) → relu_out [BATCH, HIDDEN]
-        s = ctx.advance(H_RELU, S_RELU);
+        s = ctx.advance(H_RELU, S_RELU, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::relu(static_cast<const float*>(ctx.input_ptr(0)),  // mm1_out
-                  static_cast<float*>(ctx.output_ptr(0)),       // relu_out
+        cpu::relu(static_cast<const float*>(ctx.input_ptr(0, cv)),  // mm1_out
+                  static_cast<float*>(ctx.output_ptr(0, cv)),       // relu_out
                   BATCH * HIDDEN);
 
         // Op 2: mm(relu_out, W2) → mm2_out [BATCH, OUT_DIM]
-        s = ctx.advance(H_MM2, S_MM2);
+        s = ctx.advance(H_MM2, S_MM2, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0)),  // relu_out
-                static_cast<const float*>(ctx.input_ptr(1)),  // W2
-                static_cast<float*>(ctx.output_ptr(0)),       // mm2_out
+        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)),  // relu_out
+                static_cast<const float*>(ctx.input_ptr(1, cv)),  // W2
+                static_cast<float*>(ctx.output_ptr(0, cv)),       // mm2_out
                 BATCH, OUT_DIM, HIDDEN);
 
         // Op 3: softmax(mm2_out) → softmax_out [BATCH, OUT_DIM]
-        s = ctx.advance(H_SOFTMAX, S_SOFTMAX);
+        s = ctx.advance(H_SOFTMAX, S_SOFTMAX, cv);
         assert(s == ReplayStatus::COMPLETE);
-        cpu::softmax(static_cast<const float*>(ctx.input_ptr(0)),  // mm2_out
-                     static_cast<float*>(ctx.output_ptr(0)),       // softmax_out
+        cpu::softmax(static_cast<const float*>(ctx.input_ptr(0, cv)),  // mm2_out
+                     static_cast<float*>(ctx.output_ptr(0, cv)),       // softmax_out
                      BATCH, OUT_DIM);
     }
 

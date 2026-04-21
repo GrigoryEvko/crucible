@@ -137,25 +137,26 @@ static void test_full_replay() {
 
   CrucibleContext ctx;
   assert(ctx.activate(&region));
+  auto cv = ctx.mint_compiled_view();
 
   // First iteration.
-  assert(ctx.advance(SchemaHash{100}, ShapeHash{200}) == ReplayStatus::MATCH);
-  void* p0 = ctx.output_ptr(0);
+  assert(ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
+  void* p0 = ctx.output_ptr(0, cv);
   assert(p0 == ctx.pool().slot_ptr(SlotId{0}));
 
-  assert(ctx.advance(SchemaHash{101}, ShapeHash{201}) == ReplayStatus::COMPLETE);
+  assert(ctx.advance(SchemaHash{101}, ShapeHash{201}, cv) == ReplayStatus::COMPLETE);
   assert(ctx.compiled_iterations() == 1);
 
   // output_ptr() is valid after COMPLETE (lazy reset — engine not
   // yet reset, so the final op's pointer is still accessible).
-  void* p1 = ctx.output_ptr(0);
+  void* p1 = ctx.output_ptr(0, cv);
   assert(p1 == ctx.pool().slot_ptr(SlotId{1}));
 
   // COMPLETE — next advance() auto-resets for second iteration.
   assert(ctx.is_compiled());  // still compiled
 
-  assert(ctx.advance(SchemaHash{100}, ShapeHash{200}) == ReplayStatus::MATCH);
-  assert(ctx.advance(SchemaHash{101}, ShapeHash{201}) == ReplayStatus::COMPLETE);
+  assert(ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
+  assert(ctx.advance(SchemaHash{101}, ShapeHash{201}, cv) == ReplayStatus::COMPLETE);
   assert(ctx.compiled_iterations() == 2);
 
   std::printf("  test_full_replay: PASSED\n");
@@ -181,12 +182,13 @@ static void test_divergence() {
 
   CrucibleContext ctx;
   assert(ctx.activate(&region));
+  auto cv = ctx.mint_compiled_view();
 
   // Op 0: matches.
-  assert(ctx.advance(SchemaHash{100}, ShapeHash{200}) == ReplayStatus::MATCH);
+  assert(ctx.advance(SchemaHash{100}, ShapeHash{200}, cv) == ReplayStatus::MATCH);
 
   // Op 1: wrong schema.
-  assert(ctx.advance(SchemaHash{999}, ShapeHash{201}) == ReplayStatus::DIVERGED);
+  assert(ctx.advance(SchemaHash{999}, ShapeHash{201}, cv) == ReplayStatus::DIVERGED);
   assert(ctx.diverged_count() == 1);
   assert(ctx.is_compiled());  // mode unchanged — caller decides
 
@@ -238,14 +240,21 @@ static void test_reactivate() {
 
   // Activate region A, run one iteration.
   assert(ctx.activate(&region_a));
-  assert(ctx.advance(SchemaHash{10}, ShapeHash{20}) == ReplayStatus::COMPLETE);
+  {
+    auto cv = ctx.mint_compiled_view();
+    assert(ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::COMPLETE);
+  }
   assert(ctx.compiled_iterations() == 1);
 
-  // Re-activate with region B (implicitly deactivates A).
+  // Re-activate with region B (implicitly deactivates A).  The previous
+  // CompiledView went out of scope; mint a fresh one for the new region.
   assert(ctx.activate(&region_b));
   assert(ctx.active_region() == &region_b);
-  assert(ctx.advance(SchemaHash{30}, ShapeHash{40}) == ReplayStatus::MATCH);
-  assert(ctx.advance(SchemaHash{31}, ShapeHash{41}) == ReplayStatus::COMPLETE);
+  {
+    auto cv = ctx.mint_compiled_view();
+    assert(ctx.advance(SchemaHash{30}, ShapeHash{40}, cv) == ReplayStatus::MATCH);
+    assert(ctx.advance(SchemaHash{31}, ShapeHash{41}, cv) == ReplayStatus::COMPLETE);
+  }
   assert(ctx.compiled_iterations() == 2);
 
   std::printf("  test_reactivate: PASSED\n");
@@ -290,13 +299,14 @@ static void test_external_slots() {
 
   CrucibleContext ctx;
   assert(ctx.activate(&region));
+  auto cv = ctx.mint_compiled_view();
 
   // Register external param.
   alignas(256) char fake_param[128];
-  ctx.register_external(SlotId{1}, crucible::safety::NonNull<void*>{fake_param});
+  ctx.register_external(SlotId{1}, crucible::safety::NonNull<void*>{fake_param}, cv);
 
   // Advance — input points to registered external.
-  assert(ctx.advance(SchemaHash{50}, ShapeHash{60}) == ReplayStatus::COMPLETE);
+  assert(ctx.advance(SchemaHash{50}, ShapeHash{60}, cv) == ReplayStatus::COMPLETE);
   // Can't call input_ptr after COMPLETE (engine auto-reset), so test
   // via pool directly.
   assert(ctx.pool().slot_ptr(SlotId{1}) == fake_param);
@@ -357,38 +367,39 @@ static void test_integration_sweep_line() {
 
   CrucibleContext ctx;
   assert(ctx.activate(&region));
+  auto cv = ctx.mint_compiled_view();
 
   // Register external.
   alignas(256) char fake_param[128];
   std::memset(fake_param, 0xEE, 128);
-  ctx.register_external(SlotId{2}, crucible::safety::NonNull<void*>{fake_param});
+  ctx.register_external(SlotId{2}, crucible::safety::NonNull<void*>{fake_param}, cv);
 
   // Replay iteration 1.
-  assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}) == ReplayStatus::MATCH);
+  assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
   // Op 0: output → slot 0, input → slot 2 (external).
-  assert(ctx.output_ptr(0) == ctx.pool().slot_ptr(SlotId{0}));
-  assert(ctx.input_ptr(0) == fake_param);
+  assert(ctx.output_ptr(0, cv) == ctx.pool().slot_ptr(SlotId{0}));
+  assert(ctx.input_ptr(0, cv) == fake_param);
 
   // Write to output.
-  std::memset(ctx.output_ptr(0), 0x11, 512);
+  std::memset(ctx.output_ptr(0, cv), 0x11, 512);
 
-  assert(ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}) == ReplayStatus::COMPLETE);
+  assert(ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}, cv) == ReplayStatus::COMPLETE);
   assert(ctx.compiled_iterations() == 1);
 
   // Replay iteration 2 (auto-reset happened).
-  assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}) == ReplayStatus::MATCH);
+  assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
   // Op 1's input (slot 0) still has data from iteration 1.
   // (In Tier 1, the op executes eagerly and overwrites, but the
   // pointer is still valid from the previous write.)
-  auto* p = static_cast<uint8_t*>(ctx.output_ptr(0));
+  auto* p = static_cast<uint8_t*>(ctx.output_ptr(0, cv));
   assert(p == ctx.pool().slot_ptr(SlotId{0}));
 
-  assert(ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}) == ReplayStatus::COMPLETE);
+  assert(ctx.advance(SchemaHash{0xCC}, ShapeHash{0xDD}, cv) == ReplayStatus::COMPLETE);
   assert(ctx.compiled_iterations() == 2);
 
   // Diverge on iteration 3.
-  assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}) == ReplayStatus::MATCH);
-  assert(ctx.advance(SchemaHash{0xFF}, ShapeHash{0xFF}) == ReplayStatus::DIVERGED);
+  assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}, cv) == ReplayStatus::MATCH);
+  assert(ctx.advance(SchemaHash{0xFF}, ShapeHash{0xFF}, cv) == ReplayStatus::DIVERGED);
   assert(ctx.diverged_count() == 1);
 
   // Deactivate.
@@ -422,21 +433,31 @@ static void test_divergence_counter() {
 
   // Cycle 1: activate → diverge → deactivate.
   assert(ctx.activate(&region));
-  assert(ctx.advance(SchemaHash{10}, ShapeHash{20}) == ReplayStatus::MATCH);
-  assert(ctx.advance(SchemaHash{99}, ShapeHash{99}) == ReplayStatus::DIVERGED);
+  {
+    auto cv = ctx.mint_compiled_view();
+    assert(ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::MATCH);
+    assert(ctx.advance(SchemaHash{99}, ShapeHash{99}, cv) == ReplayStatus::DIVERGED);
+  }
   assert(ctx.diverged_count() == 1);
   ctx.deactivate();
 
-  // Cycle 2: activate → diverge → deactivate.
+  // Cycle 2: activate → diverge → deactivate.  Each activate cycle
+  // mints its own view; the previous one is out of scope.
   assert(ctx.activate(&region));
-  assert(ctx.advance(SchemaHash{99}, ShapeHash{20}) == ReplayStatus::DIVERGED);
+  {
+    auto cv = ctx.mint_compiled_view();
+    assert(ctx.advance(SchemaHash{99}, ShapeHash{20}, cv) == ReplayStatus::DIVERGED);
+  }
   assert(ctx.diverged_count() == 2);
   ctx.deactivate();
 
   // Cycle 3: activate → full iteration → no diverge.
   assert(ctx.activate(&region));
-  assert(ctx.advance(SchemaHash{10}, ShapeHash{20}) == ReplayStatus::MATCH);
-  assert(ctx.advance(SchemaHash{11}, ShapeHash{21}) == ReplayStatus::COMPLETE);
+  {
+    auto cv = ctx.mint_compiled_view();
+    assert(ctx.advance(SchemaHash{10}, ShapeHash{20}, cv) == ReplayStatus::MATCH);
+    assert(ctx.advance(SchemaHash{11}, ShapeHash{21}, cv) == ReplayStatus::COMPLETE);
+  }
   assert(ctx.diverged_count() == 2);  // unchanged
   assert(ctx.compiled_iterations() == 1);
 

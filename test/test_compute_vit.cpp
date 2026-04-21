@@ -333,143 +333,147 @@ int main() {
     assert(ctx.activate(&region));
     assert(ctx.is_compiled());
 
-    // Register all 12 external parameter pointers
+    // Mint a CompiledView once for the whole iteration loop.  Every
+    // ctx_ method below threads the proof through the typed overload.
     using crucible::safety::NonNull;
-    ctx.register_external(SlotId{SL_X},     NonNull<void*>{X});
-    ctx.register_external(SlotId{SL_G1},    NonNull<void*>{gamma1});
-    ctx.register_external(SlotId{SL_B1},    NonNull<void*>{beta1});
-    ctx.register_external(SlotId{SL_WQ},    NonNull<void*>{W_q});
-    ctx.register_external(SlotId{SL_WK},    NonNull<void*>{W_k});
-    ctx.register_external(SlotId{SL_WV},    NonNull<void*>{W_v});
-    ctx.register_external(SlotId{SL_WOUT},  NonNull<void*>{W_out});
-    ctx.register_external(SlotId{SL_G2},    NonNull<void*>{gamma2});
-    ctx.register_external(SlotId{SL_B2},    NonNull<void*>{beta2});
-    ctx.register_external(SlotId{SL_WFF1},  NonNull<void*>{W_ff1});
-    ctx.register_external(SlotId{SL_WFF2},  NonNull<void*>{W_ff2});
-    ctx.register_external(SlotId{SL_WHEAD}, NonNull<void*>{W_head});
+    auto cv = ctx.mint_compiled_view();
+
+    // Register all 12 external parameter pointers
+    ctx.register_external(SlotId{SL_X},     NonNull<void*>{X},     cv);
+    ctx.register_external(SlotId{SL_G1},    NonNull<void*>{gamma1}, cv);
+    ctx.register_external(SlotId{SL_B1},    NonNull<void*>{beta1},  cv);
+    ctx.register_external(SlotId{SL_WQ},    NonNull<void*>{W_q},    cv);
+    ctx.register_external(SlotId{SL_WK},    NonNull<void*>{W_k},    cv);
+    ctx.register_external(SlotId{SL_WV},    NonNull<void*>{W_v},    cv);
+    ctx.register_external(SlotId{SL_WOUT},  NonNull<void*>{W_out},  cv);
+    ctx.register_external(SlotId{SL_G2},    NonNull<void*>{gamma2}, cv);
+    ctx.register_external(SlotId{SL_B2},    NonNull<void*>{beta2},  cv);
+    ctx.register_external(SlotId{SL_WFF1},  NonNull<void*>{W_ff1},  cv);
+    ctx.register_external(SlotId{SL_WFF2},  NonNull<void*>{W_ff2},  cv);
+    ctx.register_external(SlotId{SL_WHEAD}, NonNull<void*>{W_head}, cv);
 
     // ── Run 50 compiled iterations ──────────────────────────────────
     for (int iter = 0; iter < 50; iter++) {
         ReplayStatus s;
 
         // Op 0: layer_norm(X, gamma1, beta1) → norm1_out
-        s = ctx.advance(H_LN1, S_LN1);
+        s = ctx.advance(H_LN1, S_LN1, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::layer_norm(static_cast<const float*>(ctx.input_ptr(0)),
-                        static_cast<const float*>(ctx.input_ptr(1)),
-                        static_cast<const float*>(ctx.input_ptr(2)),
-                        static_cast<float*>(ctx.output_ptr(0)),
+        cpu::layer_norm(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                        static_cast<const float*>(ctx.input_ptr(1, cv)),
+                        static_cast<const float*>(ctx.input_ptr(2, cv)),
+                        static_cast<float*>(ctx.output_ptr(0, cv)),
                         B * S, D);
 
         // Op 1: mm(norm1_out, W_q) → Q
-        s = ctx.advance(H_MMQ, S_MMQ);
+        s = ctx.advance(H_MMQ, S_MMQ, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0)),
-                static_cast<const float*>(ctx.input_ptr(1)),
-                static_cast<float*>(ctx.output_ptr(0)),
+        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                static_cast<const float*>(ctx.input_ptr(1, cv)),
+                static_cast<float*>(ctx.output_ptr(0, cv)),
                 B * S, D, D);
 
         // Op 2: mm(norm1_out, W_k) → K
-        s = ctx.advance(H_MMK, S_MMK);
+        s = ctx.advance(H_MMK, S_MMK, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0)),
-                static_cast<const float*>(ctx.input_ptr(1)),
-                static_cast<float*>(ctx.output_ptr(0)),
+        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                static_cast<const float*>(ctx.input_ptr(1, cv)),
+                static_cast<float*>(ctx.output_ptr(0, cv)),
                 B * S, D, D);
 
         // Op 3: mm(norm1_out, W_v) → V
-        s = ctx.advance(H_MMV, S_MMV);
+        s = ctx.advance(H_MMV, S_MMV, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0)),
-                static_cast<const float*>(ctx.input_ptr(1)),
-                static_cast<float*>(ctx.output_ptr(0)),
+        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                static_cast<const float*>(ctx.input_ptr(1, cv)),
+                static_cast<float*>(ctx.output_ptr(0, cv)),
                 B * S, D, D);
 
         // Op 4: sdpa(Q, K, V) → attn_out
-        s = ctx.advance(H_SDPA, S_SDPA);
+        s = ctx.advance(H_SDPA, S_SDPA, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::sdpa(static_cast<const float*>(ctx.input_ptr(0)),
-                  static_cast<const float*>(ctx.input_ptr(1)),
-                  static_cast<const float*>(ctx.input_ptr(2)),
-                  static_cast<float*>(ctx.output_ptr(0)),
+        cpu::sdpa(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                  static_cast<const float*>(ctx.input_ptr(1, cv)),
+                  static_cast<const float*>(ctx.input_ptr(2, cv)),
+                  static_cast<float*>(ctx.output_ptr(0, cv)),
                   B, S, D);
 
         // Op 5: mm(attn_out, W_out) → proj_out
-        s = ctx.advance(H_MMOUT, S_MMOUT);
+        s = ctx.advance(H_MMOUT, S_MMOUT, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0)),
-                static_cast<const float*>(ctx.input_ptr(1)),
-                static_cast<float*>(ctx.output_ptr(0)),
+        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                static_cast<const float*>(ctx.input_ptr(1, cv)),
+                static_cast<float*>(ctx.output_ptr(0, cv)),
                 B * S, D, D);
 
         // Op 6: add(proj_out, X) → resid1
-        s = ctx.advance(H_ADD1, S_ADD1);
+        s = ctx.advance(H_ADD1, S_ADD1, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::add(static_cast<const float*>(ctx.input_ptr(0)),
-                 static_cast<const float*>(ctx.input_ptr(1)),
-                 static_cast<float*>(ctx.output_ptr(0)),
+        cpu::add(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                 static_cast<const float*>(ctx.input_ptr(1, cv)),
+                 static_cast<float*>(ctx.output_ptr(0, cv)),
                  B * S * D);
 
         // Op 7: layer_norm(resid1, gamma2, beta2) → norm2_out
-        s = ctx.advance(H_LN2, S_LN2);
+        s = ctx.advance(H_LN2, S_LN2, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::layer_norm(static_cast<const float*>(ctx.input_ptr(0)),
-                        static_cast<const float*>(ctx.input_ptr(1)),
-                        static_cast<const float*>(ctx.input_ptr(2)),
-                        static_cast<float*>(ctx.output_ptr(0)),
+        cpu::layer_norm(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                        static_cast<const float*>(ctx.input_ptr(1, cv)),
+                        static_cast<const float*>(ctx.input_ptr(2, cv)),
+                        static_cast<float*>(ctx.output_ptr(0, cv)),
                         B * S, D);
 
         // Op 8: mm(norm2_out, W_ff1) → ff1_out
-        s = ctx.advance(H_MMFF1, S_MMFF1);
+        s = ctx.advance(H_MMFF1, S_MMFF1, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0)),
-                static_cast<const float*>(ctx.input_ptr(1)),
-                static_cast<float*>(ctx.output_ptr(0)),
+        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                static_cast<const float*>(ctx.input_ptr(1, cv)),
+                static_cast<float*>(ctx.output_ptr(0, cv)),
                 B * S, D_FF, D);
 
         // Op 9: relu(ff1_out) → relu_out
-        s = ctx.advance(H_RELU, S_RELU);
+        s = ctx.advance(H_RELU, S_RELU, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::relu(static_cast<const float*>(ctx.input_ptr(0)),
-                  static_cast<float*>(ctx.output_ptr(0)),
+        cpu::relu(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                  static_cast<float*>(ctx.output_ptr(0, cv)),
                   B * S * D_FF);
 
         // Op 10: mm(relu_out, W_ff2) → ff2_out
-        s = ctx.advance(H_MMFF2, S_MMFF2);
+        s = ctx.advance(H_MMFF2, S_MMFF2, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0)),
-                static_cast<const float*>(ctx.input_ptr(1)),
-                static_cast<float*>(ctx.output_ptr(0)),
+        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                static_cast<const float*>(ctx.input_ptr(1, cv)),
+                static_cast<float*>(ctx.output_ptr(0, cv)),
                 B * S, D, D_FF);
 
         // Op 11: add(ff2_out, resid1) → resid2
-        s = ctx.advance(H_ADD2, S_ADD2);
+        s = ctx.advance(H_ADD2, S_ADD2, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::add(static_cast<const float*>(ctx.input_ptr(0)),
-                 static_cast<const float*>(ctx.input_ptr(1)),
-                 static_cast<float*>(ctx.output_ptr(0)),
+        cpu::add(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                 static_cast<const float*>(ctx.input_ptr(1, cv)),
+                 static_cast<float*>(ctx.output_ptr(0, cv)),
                  B * S * D);
 
         // Op 12: index_select(resid2, idx=0) → cls [B,D]
-        s = ctx.advance(H_IDXSEL, S_IDXSEL);
+        s = ctx.advance(H_IDXSEL, S_IDXSEL, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::index_select(static_cast<const float*>(ctx.input_ptr(0)),
-                          static_cast<float*>(ctx.output_ptr(0)),
+        cpu::index_select(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                          static_cast<float*>(ctx.output_ptr(0, cv)),
                           B, S, D, 0);
 
         // Op 13: mm(cls, W_head) → logits
-        s = ctx.advance(H_MMHEAD, S_MMHEAD);
+        s = ctx.advance(H_MMHEAD, S_MMHEAD, cv);
         assert(s == ReplayStatus::MATCH);
-        cpu::mm(static_cast<const float*>(ctx.input_ptr(0)),
-                static_cast<const float*>(ctx.input_ptr(1)),
-                static_cast<float*>(ctx.output_ptr(0)),
+        cpu::mm(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                static_cast<const float*>(ctx.input_ptr(1, cv)),
+                static_cast<float*>(ctx.output_ptr(0, cv)),
                 B, N_CLS, D);
 
         // Op 14: softmax(logits) → probs (LAST OP → COMPLETE)
-        s = ctx.advance(H_SOFTMAX, S_SOFTMAX);
+        s = ctx.advance(H_SOFTMAX, S_SOFTMAX, cv);
         assert(s == ReplayStatus::COMPLETE);
-        cpu::softmax(static_cast<const float*>(ctx.input_ptr(0)),
-                     static_cast<float*>(ctx.output_ptr(0)),
+        cpu::softmax(static_cast<const float*>(ctx.input_ptr(0, cv)),
+                     static_cast<float*>(ctx.output_ptr(0, cv)),
                      B, N_CLS);
     }
 
