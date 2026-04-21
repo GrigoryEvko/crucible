@@ -138,4 +138,15 @@ static_assert(sizeof(Refined<positive,    int>)    == sizeof(int));
 static_assert(sizeof(Refined<non_null,    void*>)  == sizeof(void*));
 static_assert(sizeof(Refined<power_of_two,std::size_t>) == sizeof(std::size_t));
 
+// ── Common refinement aliases ──────────────────────────────────────
+//
+// Named so they participate in grep/review and don't drift to
+// anonymous Refined<positive, T> at every call site (per code_guide
+// §XVI: "Every load-bearing predicate gets a named alias").
+
+template <typename T> using NonNull       = Refined<non_null, T>;
+template <typename T> using Positive      = Refined<positive, T>;
+template <typename T> using NonNegative   = Refined<non_negative, T>;
+template <typename T> using PowerOfTwo    = Refined<power_of_two, T>;
+
 } // namespace crucible::safety

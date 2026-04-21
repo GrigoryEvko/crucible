@@ -18,6 +18,7 @@
 #include <crucible/Platform.h>
 #include <crucible/rt/Registry.h>
 #include <crucible/safety/Checked.h>
+#include <crucible/safety/Refined.h>
 
 #include <cassert>
 #include <cstdint>
@@ -127,13 +128,15 @@ struct CRUCIBLE_OWNER PoolAllocator {
   }
 
   // Wire an external tensor into its slot. Called by the Vessel once per
-  // external slot before replay begins.
-  void register_external(SlotId sid, void* ptr) noexcept
+  // external slot before replay begins.  ptr is type-checked non-null
+  // via NonNull<>, so the runtime nullptr contract collapses to a
+  // single check at the wrapper construction site (often statically
+  // elided when the caller has already proved non-null).
+  void register_external(SlotId sid, crucible::safety::NonNull<void*> ptr) noexcept
       pre (sid.raw() < num_slots_)
-      pre (ptr       != nullptr)
       pre (ptr_table_ != nullptr)
   {
-    ptr_table_[sid.raw()] = ptr;
+    ptr_table_[sid.raw()] = ptr.value();
   }
 
   // Raw table for inner loops that want to hoist the indirection:

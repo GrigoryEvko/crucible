@@ -381,7 +381,7 @@ static void test_integration_with_pool() {
 
   // Register external.
   alignas(256) char fake_param[128];
-  pool.register_external(SlotId{2}, fake_param);
+  pool.register_external(SlotId{2}, crucible::safety::NonNull<void*>{fake_param});
 
   // Build 2 ops:
   //   Op 0: produces slot 0, reads external slot 2

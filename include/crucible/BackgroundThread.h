@@ -83,11 +83,15 @@ struct BackgroundThread {
   // edges, CSR structures, RegionNodes).
   Arena arena{1 << 20}; // 1MB blocks
 
-  // Regions created but not yet compiled.
-  std::vector<RegionNode*> uncompiled_regions;
+  // Regions created but not yet compiled.  Pure push-only — drained
+  // by the foreground thread once a region is associated with a
+  // compiled plan.  AppendOnly enforces the "no in-place removal"
+  // invariant in the type.
+  crucible::safety::AppendOnly<RegionNode*> uncompiled_regions;
 
   // Per-iteration property graphs (for future fusion/scheduling).
-  std::vector<TraceGraph*> iteration_graphs;
+  // Same append-only lifecycle.
+  crucible::safety::AppendOnly<TraceGraph*> iteration_graphs;
 
   // Thread control — relaxed ordering.
   // std::thread ctor (in start()) provides happens-before for init data.
@@ -445,7 +449,7 @@ struct BackgroundThread {
     if (meta_log && completed_len > 0) {
       TraceGraph* graph = build_trace(a, completed_len);
       if (graph) {
-        iteration_graphs.push_back(graph);
+        iteration_graphs.append(graph);
 
         // Use pre-computed content hash — no redundant second pass.
         auto* region = make_region(
@@ -461,7 +465,7 @@ struct BackgroundThread {
           meta_log->advance_tail(graph->max_meta_end);
 
         recompute_merkle(region);
-        uncompiled_regions.push_back(region);
+        uncompiled_regions.append(region);
 
         active_region.store(region, std::memory_order_release);
         if (region_ready_cb) region_ready_cb(region);

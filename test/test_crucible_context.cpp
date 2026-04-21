@@ -293,7 +293,7 @@ static void test_external_slots() {
 
   // Register external param.
   alignas(256) char fake_param[128];
-  ctx.register_external(SlotId{1}, fake_param);
+  ctx.register_external(SlotId{1}, crucible::safety::NonNull<void*>{fake_param});
 
   // Advance — input points to registered external.
   assert(ctx.advance(SchemaHash{50}, ShapeHash{60}) == ReplayStatus::COMPLETE);
@@ -361,7 +361,7 @@ static void test_integration_sweep_line() {
   // Register external.
   alignas(256) char fake_param[128];
   std::memset(fake_param, 0xEE, 128);
-  ctx.register_external(SlotId{2}, fake_param);
+  ctx.register_external(SlotId{2}, crucible::safety::NonNull<void*>{fake_param});
 
   // Replay iteration 1.
   assert(ctx.advance(SchemaHash{0xAA}, ShapeHash{0xBB}) == ReplayStatus::MATCH);
