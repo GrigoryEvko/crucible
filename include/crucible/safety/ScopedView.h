@@ -50,6 +50,7 @@
 // in practice; see the design discussion in misc/.
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Linear.h>
 
 #include <array>
 #include <cstddef>
@@ -153,6 +154,45 @@ mint_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept
     return ScopedView<Carrier, Tag>{c};
 }
 
+// ── LinearScopedView: Linear<ScopedView<...>> ───────────────────────
+//
+// Nested composition of two primitives: Linear<T>'s move-only "consumed
+// exactly once" semantics wrapping ScopedView<Carrier, Tag>'s typed
+// state proof.  The resulting view is:
+//
+//   - move-only (Linear deletes copy),
+//   - move-only for ASSIGNMENT too (ScopedView's move-assignment is
+//     deleted, which structurally deletes Linear's move-assignment as
+//     well — no reassignment to a fresh state),
+//   - consumable once via .consume() &&.
+//
+// Use when a method represents a one-shot transition that the caller
+// must prove they have the right to make — and whose right is handed
+// over (not shared).  The type-system guarantee is "at most one call"
+// per minted token: the token is gone after consume().
+//
+// NB: this does NOT prevent the carrier from being observed by separate
+// copyable ScopedViews minted in parallel; it only enforces linearity
+// on the lifecycle token itself.  Pair with state-check preconditions
+// on the transition method for stale-view-after-transition coverage.
+//
+//   Axiom coverage: composes ScopedView's TypeSafe + Linear's BorrowSafe.
+//   Runtime cost:   sizeof == sizeof(void*); same as ScopedView.
+
+template <typename Carrier, typename Tag>
+using LinearScopedView = Linear<ScopedView<Carrier, Tag>>;
+
+// Factory: mint a LinearScopedView.  Fires the same view_ok precondition
+// as mint_view but wraps the result in Linear<> so the caller has a
+// move-only lifecycle token.
+template <typename Tag, typename Carrier>
+[[nodiscard]] constexpr LinearScopedView<Carrier, Tag>
+mint_linear_view(Carrier const& c CRUCIBLE_LIFETIMEBOUND) noexcept
+    pre(view_ok(c, std::type_identity<Tag>{}))
+{
+    return LinearScopedView<Carrier, Tag>{mint_view<Tag>(c)};
+}
+
 // ── Tier 2: reflection-driven storage audit ─────────────────────────
 //
 // contains_scoped_view<T>() returns true iff T is a ScopedView, OR T
@@ -179,6 +219,12 @@ template <typename X>                 struct sv_unwrap_single<std::shared_ptr<X>
 template <typename X>                 struct sv_unwrap_single<std::weak_ptr<X>>     { using type = X; };
 // C arrays in struct fields — `ScopedView<...> views[N];` escape vector.
 template <typename X, std::size_t N>  struct sv_unwrap_single<X[N]>                 { using type = X; };
+// Linear<T> is a single-element wrapper (private `value_`).  Without
+// this specialization the access-controlled reflection walk would miss
+// Linear<ScopedView<...>>, defeating the audit on composed tokens
+// (LinearScopedView).  The recursion proceeds through X identically to
+// the optional/vector path.
+template <typename X>                 struct sv_unwrap_single<crucible::safety::Linear<X>> { using type = X; };
 
 template <typename T>
 using sv_unwrap_single_t = typename sv_unwrap_single<T>::type;
