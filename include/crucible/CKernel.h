@@ -36,6 +36,8 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <span>
 #include <type_traits>
 
@@ -382,6 +384,14 @@ struct CKernelTable {
     }
 
     // Typed overload — requires MutableView proof. Zero runtime phase check.
+    //
+    // Overflow policy: hard abort.  CKERNEL_TABLE_CAP=256 is sized for
+    // the 146-op CKernel taxonomy with headroom for aliases; hitting the
+    // cap means a Vessel adapter is registering schemas it shouldn't or
+    // the taxonomy has drifted past the cap.  Silent truncation would
+    // leave classify() returning OPAQUE for the dropped entries — a
+    // correctness bug that only manifests at replay time on a specific
+    // schema hash.  Abort at registration is the early, loud failure.
     void register_op(MutableView const&, SchemaHash schema_hash, CKernelId id) {
         // Check for existing entry first (idempotent / alias update).
         for (uint32_t i = 0; i < size; i++) {
@@ -390,7 +400,13 @@ struct CKernelTable {
                 return;
             }
         }
-        if (size >= CKERNEL_TABLE_CAP) return;
+        if (size >= CKERNEL_TABLE_CAP) [[unlikely]] {
+            std::fprintf(stderr,
+                "crucible: CKernelTable full (%u/%u entries); bump "
+                "CKERNEL_TABLE_CAP or audit Vessel schema registrations\n",
+                size, CKERNEL_TABLE_CAP);
+            std::abort();
+        }
         entries[size++] = {.schema_hash = schema_hash, .id = id};
         std::ranges::sort(std::span{entries, size},
                           {}, &CKernelEntry::schema_hash);
