@@ -424,6 +424,25 @@ struct BranchNode : TraceNode {
   Arm* arms = nullptr;      // 8B — arena-allocated array
   uint32_t num_arms = 0;    // 4B
   uint32_t pad1 = 0;        // 4B — alignment
+
+  // Sortedness is a load-bearing invariant: the binary search in
+  // replay() uses `arms[mid].value < val` to narrow to one arm.  If
+  // arms are NOT sorted by value, the search returns wrong arms →
+  // wrong routing → replay divergence against a region that otherwise
+  // hashes identically.  The invariant is silent-failure until
+  // divergence surfaces, often in production.
+  //
+  // This predicate confirms sortedness in O(num_arms) and is designed
+  // for debug-only verification (gnu::cold): used by post-conditions
+  // on arm-installation paths and by test assertions.  Adjacent-pair
+  // comparison tolerates duplicate values (strict < would reject a
+  // legitimate "two guards hash equal" case, which doesn't happen in
+  // current code but isn't structurally forbidden).
+  [[nodiscard, gnu::cold]] bool arms_sorted() const noexcept {
+    for (uint32_t i = 1; i < num_arms; ++i)
+      if (arms[i].value < arms[i - 1].value) return false;
+    return true;
+  }
 };
 
 // BranchNode layout locked: TraceNode(24) + Guard(~12B) padded + arms(8)
@@ -1054,6 +1073,15 @@ template <typename GuardEval, typename RegionExec>
     case TraceNodeKind::BRANCH: {
       auto* branch = static_cast<BranchNode*>(node);
       int64_t val = eval_guard(branch->guard);
+
+      // Binary search depends on arms[i].value being ascending.  In
+      // debug, assert the invariant on first entry to catch builders
+      // that populated arms in wrong order — silent failure otherwise
+      // (wrong arm selected, replay diverges against a region that
+      // hashes identical to the correct one).  Zero-cost under NDEBUG
+      // since arms_sorted is gnu::cold and contract_assert compiles
+      // out.
+      contract_assert(branch->arms_sorted());
 
       // Binary search on sorted arms. Arms are kept sorted by value
       // at creation time (add_branch). O(log n) for large arm counts,
