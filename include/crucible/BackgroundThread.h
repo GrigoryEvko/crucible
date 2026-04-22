@@ -732,6 +732,16 @@ struct BackgroundThread {
         // Independent multiplies (sizes[d] * kDimMix[d]) break the serial
         // wymix chain. CPU pipelines all multiplies in parallel; XOR chain
         // at 1 cy/op is the critical path. One wymix per tensor merges.
+        //
+        // REFL-4: this is an inlined-fused copy of compute_content_hash
+        // running directly on the build_trace path (avoiding a redundant
+        // second pass over the ops).  Same intentional-manual rationale
+        // as compute_content_hash itself: heavily perf-tuned XOR-fold
+        // (40% faster than per-dim wymix), Family-A bit-stable, must
+        // produce IDENTICAL bits to compute_content_hash so cache lookups
+        // composed via either path agree.  reflect_hash on TraceEntry
+        // would (a) break that bit identity and (b) lose the optimized
+        // XOR-fold pattern.
 
         content_h = detail::wymix(content_h, te.schema_hash.raw());
         for (uint16_t j = 0; j < n_in; j++) {

@@ -806,6 +806,13 @@ class CRUCIBLE_OWNER Graph {
 
     // Compute group_hash for each live node: hash of (device, ranges).
     // Nodes with different group_hash can never fuse.
+    //
+    // Same REFL-4 rationale as cse_hash_ above: this is SELECTIVE on
+    // GraphNode fields (only device_idx + ndim + size, which determine
+    // fusion-group eligibility — kind/dtype/etc. are intentionally
+    // excluded so different-kind nodes can still group).  Pure
+    // reflect_hash<GraphNode> would over-fold and break grouping.
+    // Manual selection is load-bearing.
     for (uint32_t i = 0; i < n_live; ++i) {
       GraphNode* n = ordered[i];
       uint64_t h = detail::fmix64(
