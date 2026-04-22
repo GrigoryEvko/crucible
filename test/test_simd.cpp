@@ -8,6 +8,10 @@
 // primitives, not facade primitives.  Heavier algorithmic SIMD tests
 // (Philox batch equivalence) live in dedicated fuzzers under
 // fuzz/property/.
+//
+// Single-target build per -march=; no multi-target dispatch.  Hand-
+// rolled intrinsics live only in SwissTable.h where std::simd has no
+// movemask analog.
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/safety/Simd.h>
@@ -32,16 +36,6 @@ static void test_type_aliases() {
     static_assert(simd::i32x16::size() == 16);
     static_assert(simd::u8x32::size() == 32);
     std::printf("  test_type_aliases: PASSED\n");
-}
-
-static void test_width_by_bits() {
-    static_assert(simd::simd_128<int64_t>::size() == 2);
-    static_assert(simd::simd_256<int64_t>::size() == 4);
-    static_assert(simd::simd_512<int64_t>::size() == 8);
-    static_assert(simd::simd_128<uint32_t>::size() == 4);
-    static_assert(simd::simd_256<uint32_t>::size() == 8);
-    static_assert(simd::simd_512<uint32_t>::size() == 16);
-    std::printf("  test_width_by_bits: PASSED\n");
 }
 
 static void test_iota() {
@@ -307,7 +301,6 @@ static void test_dim_hash_equivalence_handcoded() {
 
 int main() {
     test_type_aliases();
-    test_width_by_bits();
     test_iota();
     test_prefix_mask();
     test_det_safe_simd_concept();

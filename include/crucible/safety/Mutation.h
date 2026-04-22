@@ -74,11 +74,6 @@ public:
 
     AppendOnly() = default;
 
-    explicit AppendOnly(std::size_t reserve_hint) {
-        if constexpr (requires { data_.reserve(reserve_hint); })
-            data_.reserve(reserve_hint);
-    }
-
     // The only mutation permitted: grow the tail.
     template <typename... Args>
     void emplace(Args&&... args) {
@@ -144,7 +139,6 @@ public:
     using const_iterator = typename AppendOnly<T, Storage>::const_iterator;
 
     OrderedAppendOnly() = default;
-    explicit OrderedAppendOnly(std::size_t reserve_hint) : inner_{reserve_hint} {}
 
     // The only mutation permitted: grow the tail, and only with a key
     // that does not go backward relative to the last entry.  Contract
