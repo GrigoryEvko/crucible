@@ -63,7 +63,6 @@ int main() {
     // (default 10s) so heavy bodies don't accumulate RSS via glibc's
     // heap-pool growth under 100k-sample iteration.
     std::vector<bench::Report> reports;
-    reports.reserve(12);
 
     for (uint32_t n : {64u, 512u, 4096u}) {
         char label[64];

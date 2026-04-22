@@ -73,7 +73,6 @@ int main() {
     // 3 Runs × 2 region sizes = 6 Reports. Each (num_ops) scope holds
     // its Cipher + warm-region fixture across three IIFE-lambdas.
     std::vector<bench::Report> reports;
-    reports.reserve(6);
 
     for (uint32_t num_ops : {16u, 256u}) {
         // Cipher + warm_region live in THIS scope, shared across the

@@ -126,7 +126,6 @@ int main() {
     std::printf("  kGroupWidth: %zu\n\n", kGroupWidth);
 
     std::vector<bench::Report> reports;
-    reports.reserve(32);
 
     // ── h2_tag ───────────────────────────────────────────────────────
     {
@@ -289,7 +288,6 @@ int main() {
         auto table = std::make_unique<MiniSwissTable>(TABLE_CAP);
 
         std::vector<uint64_t> inserted_hashes;
-        inserted_hashes.reserve(1024);
         uint64_t seed = 0xDEADBEEF;
         for (size_t i = 0; i < target_count; ++i) {
             seed = fmix64(seed + i);
@@ -298,7 +296,6 @@ int main() {
         }
 
         std::vector<uint64_t> absent_hashes;
-        absent_hashes.reserve(1024);
         seed = 0xCAFEBABE;
         while (absent_hashes.size() < 1024) {
             seed = fmix64(seed + absent_hashes.size() + 1);

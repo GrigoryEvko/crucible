@@ -111,7 +111,6 @@ int main() {
     std::printf("  sizeof(SlotId)                      = %zu\n\n", sizeof(SlotId));
 
     std::vector<bench::Report> reports;
-    reports.reserve(30);
 
     // ── slot_ptr sequential access ────────────────────────────────────
     reports.push_back([&]{

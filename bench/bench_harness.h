@@ -385,12 +385,11 @@ struct CI {
     std::uniform_int_distribution<size_t> pick(0, n - 1);
 
     std::vector<double> buf(n);
-    std::vector<double> estimates;
-    estimates.reserve(B);
+    std::vector<double> estimates(B);
     for (size_t b = 0; b < B; ++b) {
         for (size_t i = 0; i < n; ++i) buf[i] = ns_samples[pick(rng)];
         std::sort(buf.begin(), buf.end());
-        estimates.push_back(percentile_interp(buf, frac));
+        estimates[b] = percentile_interp(buf, frac);
     }
     std::sort(estimates.begin(), estimates.end());
     return {
@@ -781,10 +780,9 @@ struct Compare {
     if (n1 < 30 || n2 < 30) { c.distinguishable = false; return c; }
 
     struct Tagged { double v; uint8_t src; };
-    std::vector<Tagged> all;
-    all.reserve(n1 + n2);
-    for (double v : a.samples) all.push_back({v, 0});
-    for (double v : b.samples) all.push_back({v, 1});
+    std::vector<Tagged> all(n1 + n2);
+    for (size_t i = 0; i < n1; ++i) all[i]      = {a.samples[i], 0};
+    for (size_t i = 0; i < n2; ++i) all[n1 + i] = {b.samples[i], 1};
     std::sort(all.begin(), all.end(),
               [](Tagged const& x, Tagged const& y) { return x.v < y.v; });
 
@@ -957,8 +955,11 @@ class Run {
         bench::bpf::Snapshot        bpf_post{};
 #endif
 
-        std::vector<double> ns_samples;
-        ns_samples.reserve(S);
+        // Pre-sized to S; if the wall-cap cutoff fires early, we trim to
+        // `filled` below so downstream stats (sort, percentile) only see
+        // real samples — never default-zero trailing slots.
+        std::vector<double> ns_samples(S);
+        size_t              filled = 0;
 
 #if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
         if (hub != nullptr) bpf_pre = hub->read();
@@ -976,8 +977,9 @@ class Run {
             // can happen after a long runtime on a 4+ GHz core.
             const uint64_t raw = t1 - t0;
             const uint64_t d   = (raw > ovh) ? (raw - ovh) : 0;
-            ns_samples.push_back(
-                (static_cast<double>(d) * nspc) / static_cast<double>(batch));
+            ns_samples[i] =
+                (static_cast<double>(d) * nspc) / static_cast<double>(batch);
+            ++filled;
             // Wall-budget cut-off. Checked every 64 samples to keep
             // clock overhead negligible on fast bodies; heavy bodies
             // hit the check often enough because each iteration is
@@ -987,6 +989,7 @@ class Run {
                 break;
             }
         }
+        ns_samples.resize(filled);
 
         const auto wall1 = std::chrono::steady_clock::now();
 #if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF

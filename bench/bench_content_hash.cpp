@@ -74,7 +74,6 @@ int main() {
     // One arena + ops vector per config; kept alive in outer scope so
     // the body can reference the span by value-into-reference.
     std::vector<bench::Report> reports;
-    reports.reserve(std::size(cfgs));
 
     for (const auto& c : cfgs) {
         Arena arena{1 << 20};
