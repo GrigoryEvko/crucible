@@ -563,34 +563,55 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(LoopNode);
 // LoopNode hash helpers
 // ═══════════════════════════════════════════════════════════════════
 
-// Fold feedback edges into a single signature via fmix64.
-// Different feedback wiring → different signature.
-// Uses fmix64 with nonzero seed (not wymix) because wymix(0, 0) = 0
-// which collapses the chain when the first edge is {0,0}.
-// Edge count is folded in so {A} ≠ {A, A}.
+// Fold feedback edges into a single signature via reflection +
+// fmix64.  Different feedback wiring → different signature.  Uses
+// fmix64 with nonzero seed (not wymix) because wymix(0, 0) = 0 which
+// collapses the chain when the first edge is {0,0}.  Edge count is
+// folded in so {A} ≠ {A, A}.
+//
+// Reflection refactor (REFL-2): each FeedbackEdge is hashed via
+// crucible::reflect_hash, which iterates the struct's non-static
+// data members at compile time.  If FeedbackEdge gains a new field
+// (e.g., a "weight" or "delay" attribute), reflect_hash picks it up
+// automatically — no manual fold-loop edit required.  Bit pattern
+// differs from the prior manual `(output_idx << 16) | input_idx`
+// packing; tests assert the documented contracts (empty → 0,
+// non-empty → nonzero) which both implementations preserve.
 CRUCIBLE_PURE inline uint64_t feedback_signature(std::span<const FeedbackEdge> edges) noexcept {
   if (edges.empty()) return 0;
   constexpr uint64_t kSeed = 0x6665656462616B73ULL; // "feedbaks"
   uint64_t h = kSeed;
   for (const auto& e : edges) {
-    uint64_t packed = (static_cast<uint64_t>(e.output_idx) << 16) | e.input_idx;
-    h = detail::fmix64(h ^ packed);
+    h = detail::fmix64(h ^ reflect_hash(e));
   }
   h = detail::fmix64(h ^ edges.size());
   return h;
 }
 
-// Hash termination condition. Captures kind + repeat_count + epsilon bits.
-// Uses fmix64 with salts (not wymix) to avoid the zero-input degenerate
-// case: wymix(x, 0) = 0 for all x, which would collapse the hash chain.
+// Hash termination condition.  Captures kind + repeat_count + epsilon
+// bits via reflection over a local Spec struct that names exactly the
+// LoopNode fields contributing to termination identity.
+//
+// Why a local Spec rather than reflect_hash on the whole LoopNode?
+// LoopNode contains body, feedback_edges, num_feedback, and other
+// fields that are hashed elsewhere (compute_body_content_hash,
+// feedback_signature) — including them here would double-count and
+// muddy the termination semantics.  The Spec is the explicit
+// projection.
+//
+// Reflection refactor (REFL-3): reflect_fmix_fold applies fmix64
+// per field with the seed acting as a domain separator.  Bit pattern
+// differs from the manual packed form (which combined term_kind +
+// repeat_count into a single u64 word); contract is unchanged.
 CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
-  constexpr uint64_t kTermSalt = 0x7465726D696E6174ULL; // "terminat"
-  constexpr uint64_t kEpsSalt  = 0x65707369006C6F6EULL; // "epsi\0lon"
-  uint64_t packed = static_cast<uint64_t>(std::to_underlying(ln.term_kind)) |
-                    (static_cast<uint64_t>(ln.repeat_count) << 8);
-  uint64_t h = detail::fmix64(packed ^ kTermSalt);
-  h ^= detail::fmix64(static_cast<uint64_t>(std::bit_cast<uint32_t>(ln.epsilon)) ^ kEpsSalt);
-  return h;
+  struct Spec {
+    LoopTermKind term_kind;
+    uint32_t     repeat_count;
+    float        epsilon;
+  };
+  constexpr uint64_t kSeed = 0x7465726D696E6174ULL; // "terminat"
+  return reflect_fmix_fold<kSeed>(
+      Spec{ln.term_kind, ln.repeat_count, ln.epsilon});
 }
 
 // Content hash of a body sub-DAG: wymix-fold content hashes of all body regions.
