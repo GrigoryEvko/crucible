@@ -65,7 +65,7 @@ namespace detail {
 // §18.6 federation), it would be a SECOND function operating on an
 // already-interned `const Expr&` and could cleanly use reflect_hash
 // without the API or perf constraints listed above.
-inline uint64_t expr_hash(
+[[nodiscard, gnu::pure]] inline uint64_t expr_hash(
     Op op,
     int64_t payload,
     SymbolId symbol_id,
@@ -74,14 +74,15 @@ inline uint64_t expr_hash(
     uint8_t nargs) {
   // Pack small fields (op, nargs, flags, symbol_id) into one 64-bit word.
   // This avoids separate mix operations for each tiny field.
-  uint64_t packed = static_cast<uint64_t>(std::to_underlying(op))
-                  | (static_cast<uint64_t>(nargs) << 8)
-                  | (static_cast<uint64_t>(flags) << 16)
-                  | (static_cast<uint64_t>(symbol_id.raw()) << 32);
+  uint64_t packed_metadata = static_cast<uint64_t>(std::to_underlying(op))
+                           | (static_cast<uint64_t>(nargs) << 8)
+                           | (static_cast<uint64_t>(flags) << 16)
+                           | (static_cast<uint64_t>(symbol_id.raw()) << 32);
 
   // Mix packed metadata with payload — one 128-bit multiply
-  uint64_t h = wymix(packed ^ 0x9E3779B97F4A7C15ULL,
-                      static_cast<uint64_t>(payload) ^ 0x517CC1B727220A95ULL);
+  uint64_t mixed_hash = wymix(
+      packed_metadata ^ 0x9E3779B97F4A7C15ULL,
+      static_cast<uint64_t>(payload) ^ 0x517CC1B727220A95ULL);
 
   // Mix in child pointers. Common cases (0, 1, 2 args) are unrolled
   // to avoid loop overhead. Each child is already interned → unique
@@ -90,36 +91,36 @@ inline uint64_t expr_hash(
     case 0:
       break;
     case 1:
-      h = wymix(h, reinterpret_cast<uintptr_t>(args[0]));
+      mixed_hash = wymix(mixed_hash, reinterpret_cast<uintptr_t>(args[0]));
       break;
     case 2:
-      h = wymix(h ^ reinterpret_cast<uintptr_t>(args[0]),
-                reinterpret_cast<uintptr_t>(args[1]));
+      mixed_hash = wymix(mixed_hash ^ reinterpret_cast<uintptr_t>(args[0]),
+                         reinterpret_cast<uintptr_t>(args[1]));
       break;
     default:
       for (uint8_t i = 0; i < nargs; ++i)
-        h = wymix(h, reinterpret_cast<uintptr_t>(args[i]));
+        mixed_hash = wymix(mixed_hash, reinterpret_cast<uintptr_t>(args[i]));
       break;
   }
-  return h;
+  return mixed_hash;
 }
 
-constexpr uint16_t integer_flags(int64_t val) {
-  uint16_t f = ExprFlags::IS_INTEGER | ExprFlags::IS_REAL |
-               ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
+[[nodiscard]] constexpr uint16_t integer_flags(int64_t val) {
+  uint16_t flag_bits = ExprFlags::IS_INTEGER | ExprFlags::IS_REAL |
+                       ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
   if (val > 0)
-    f |= ExprFlags::IS_POSITIVE | ExprFlags::IS_NONNEGATIVE;
+    flag_bits |= ExprFlags::IS_POSITIVE | ExprFlags::IS_NONNEGATIVE;
   else if (val < 0)
-    f |= ExprFlags::IS_NEGATIVE | ExprFlags::IS_NONPOSITIVE;
+    flag_bits |= ExprFlags::IS_NEGATIVE | ExprFlags::IS_NONPOSITIVE;
   else
-    f |= ExprFlags::IS_ZERO | ExprFlags::IS_NONNEGATIVE |
-         ExprFlags::IS_NONPOSITIVE;
-  f |= (val % 2 == 0) ? ExprFlags::IS_EVEN : ExprFlags::IS_ODD;
-  return f;
+    flag_bits |= ExprFlags::IS_ZERO | ExprFlags::IS_NONNEGATIVE |
+                 ExprFlags::IS_NONPOSITIVE;
+  flag_bits |= (val % 2 == 0) ? ExprFlags::IS_EVEN : ExprFlags::IS_ODD;
+  return flag_bits;
 }
 
 // Derive flags for a composite node from its op and children.
-constexpr uint16_t composite_flags(
+[[nodiscard]] constexpr uint16_t composite_flags(
     Op op,
     const Expr* const* args,
     uint8_t nargs) {
@@ -129,10 +130,10 @@ constexpr uint16_t composite_flags(
     case Op::MUL:
     case Op::MIN:
     case Op::MAX: {
-      uint16_t f = 0xFFFF;
+      uint16_t intersected_flags = 0xFFFF;
       for (uint8_t i = 0; i < nargs; ++i)
-        f &= args[i]->flags;
-      return f &
+        intersected_flags &= args[i]->flags;
+      return intersected_flags &
           (ExprFlags::IS_INTEGER | ExprFlags::IS_REAL | ExprFlags::IS_FINITE |
            ExprFlags::IS_NUMBER);
     }
@@ -370,7 +371,7 @@ class CRUCIBLE_OWNER ExprPool {
   }
 
   [[nodiscard]] const Expr* float_(fx::Alloc a, double val) {
-    int64_t payload = std::bit_cast<int64_t>(val);
+    int64_t bit_payload = std::bit_cast<int64_t>(val);
     uint16_t assumption_flags_combined =
         ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
     if (val > 0)
@@ -379,14 +380,14 @@ class CRUCIBLE_OWNER ExprPool {
     else if (val < 0)
       assumption_flags_combined |=
           ExprFlags::IS_NEGATIVE | ExprFlags::IS_NONPOSITIVE;
-    else if ((static_cast<uint64_t>(payload) << 1) == 0) {
+    else if ((static_cast<uint64_t>(bit_payload) << 1) == 0) {
       // ±0 but not NaN — shift-out-sign catches both signed zeros.
       assumption_flags_combined |= ExprFlags::IS_ZERO |
           ExprFlags::IS_NONNEGATIVE | ExprFlags::IS_NONPOSITIVE;
     }
     return intern_node(
         a, Op::FLOAT, nullptr, 0, assumption_flags_combined,
-        SymbolId{}, payload);
+        SymbolId{}, bit_payload);
   }
 
   [[nodiscard]] const Expr* symbol(fx::Alloc a, const char* name, SymbolId id, uint16_t assumption_flags) {
@@ -400,10 +401,10 @@ class CRUCIBLE_OWNER ExprPool {
       std::memcpy(name_buf, name, name_len_with_null);
       symbol_names_[id.raw()] = name_buf;
     }
-    int64_t payload = std::bit_cast<int64_t>(symbol_names_[id.raw()]);
+    int64_t name_ptr_payload = std::bit_cast<int64_t>(symbol_names_[id.raw()]);
     return intern_node(
         a, Op::SYMBOL, nullptr, 0,
-        assumption_flags | ExprFlags::IS_SYMBOL, id, payload);
+        assumption_flags | ExprFlags::IS_SYMBOL, id, name_ptr_payload);
   }
 
   [[nodiscard]] const Expr* bool_true() const {
@@ -431,8 +432,8 @@ class CRUCIBLE_OWNER ExprPool {
       if (lhs > rhs)
         std::swap(lhs, rhs);
       const Expr* args[] = {lhs, rhs};
-      uint16_t f = detail::composite_flags(Op::ADD, args, 2);
-      return intern_node(a, Op::ADD, args, 2, f, SymbolId{}, 0);
+      uint16_t composite_flag_bits = detail::composite_flags(Op::ADD, args, 2);
+      return intern_node(a, Op::ADD, args, 2, composite_flag_bits, SymbolId{}, 0);
     }
     // Constant folding
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
@@ -460,8 +461,8 @@ class CRUCIBLE_OWNER ExprPool {
       if (lhs > rhs)
         std::swap(lhs, rhs);
       const Expr* args[] = {lhs, rhs};
-      uint16_t f = detail::composite_flags(Op::MUL, args, 2);
-      return intern_node(a, Op::MUL, args, 2, f, SymbolId{}, 0);
+      uint16_t composite_flag_bits = detail::composite_flags(Op::MUL, args, 2);
+      return intern_node(a, Op::MUL, args, 2, composite_flag_bits, SymbolId{}, 0);
     }
     // Constant folding
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
@@ -491,23 +492,25 @@ class CRUCIBLE_OWNER ExprPool {
     // Concrete integer power (small exponents only to avoid overflow)
     if (base->op == Op::INTEGER && exp->op == Op::INTEGER &&
         exp->payload >= 0 && exp->payload <= 62) {
-      int64_t result = 1, b = base->payload, e = exp->payload;
-      for (int64_t i = 0; i < e; ++i)
-        result *= b;
-      return integer(a, result);
+      int64_t accumulated_product = 1;
+      int64_t base_value = base->payload;
+      int64_t exponent_value = exp->payload;
+      for (int64_t i = 0; i < exponent_value; ++i)
+        accumulated_product *= base_value;
+      return integer(a, accumulated_product);
     }
     const Expr* args[] = {base, exp};
-    uint16_t f = detail::composite_flags(Op::POW, args, 2);
-    return intern_node(a, Op::POW, args, 2, f, SymbolId{}, 0);
+    uint16_t composite_flag_bits = detail::composite_flags(Op::POW, args, 2);
+    return intern_node(a, Op::POW, args, 2, composite_flag_bits, SymbolId{}, 0);
   }
 
   // Canonical form: MUL(-1, x). No NEG nodes in output.
-  [[nodiscard]] const Expr* neg(fx::Alloc a, const Expr* e) {
-    if (e->op == Op::INTEGER)
-      return integer(a, -e->payload);
-    if (e->op == Op::FLOAT)
-      return float_(a, -e->as_float());
-    return mul(a, integer(a, -1), e);
+  [[nodiscard]] const Expr* neg(fx::Alloc a, const Expr* expr) {
+    if (expr->op == Op::INTEGER)
+      return integer(a, -expr->payload);
+    if (expr->op == Op::FLOAT)
+      return float_(a, -expr->as_float());
+    return mul(a, integer(a, -1), expr);
   }
 
   // ---- Relational ----
@@ -599,15 +602,15 @@ class CRUCIBLE_OWNER ExprPool {
     return or_n(a, binary_args);
   }
 
-  [[nodiscard]] const Expr* not_(fx::Alloc a, const Expr* e) {
-    if (e == true_)
+  [[nodiscard]] const Expr* not_(fx::Alloc a, const Expr* expr) {
+    if (expr == true_)
       return false_;
-    if (e == false_)
+    if (expr == false_)
       return true_;
     // Double negation elimination
-    if (e->op == Op::NOT)
-      return e->args[0];
-    const Expr* args[] = {e};
+    if (expr->op == Op::NOT)
+      return expr->args[0];
+    const Expr* args[] = {expr};
     return intern_node(a, Op::NOT, args, 1, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
@@ -615,10 +618,14 @@ class CRUCIBLE_OWNER ExprPool {
 
   [[nodiscard]] const Expr* floor_div(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
-      int64_t av = lhs->as_int(), bv = rhs->as_int();
-      int64_t q = av / bv, r = av % bv;
-      if (r != 0 && ((r ^ bv) < 0)) --q;
-      return integer(a, q);
+      int64_t dividend = lhs->as_int();
+      int64_t divisor = rhs->as_int();
+      int64_t quotient = dividend / divisor;
+      int64_t remainder = dividend % divisor;
+      // Floor adjustment: C truncates toward zero; floor() rounds toward
+      // -inf when the remainder has the opposite sign of the divisor.
+      if (remainder != 0 && ((remainder ^ divisor) < 0)) --quotient;
+      return integer(a, quotient);
     }
     if (lhs->is_zero_int()) return integer(a, 0);
     if (rhs->is_one()) return lhs;
@@ -629,38 +636,40 @@ class CRUCIBLE_OWNER ExprPool {
       return floor_div(a, lhs->arg(0), mul(a, lhs->arg(1), rhs));
     // Extract divisible terms from ADD when divisor is constant
     if (lhs->op == Op::ADD && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
-      int64_t d = rhs->as_int();
+      int64_t divisor = rhs->as_int();
       const Expr* quotients[256];
       const Expr* remainders[256];
-      uint8_t nq = 0, nr = 0;
+      uint8_t num_quotients = 0;
+      uint8_t num_remainders = 0;
       for (uint8_t i = 0; i < lhs->nargs; ++i) {
-        int64_t c = integer_coefficient_(lhs->arg(i));
-        if (c != 0 && c % d == 0)
-          quotients[nq++] = divide_coefficients_(a, lhs->arg(i), d);
+        int64_t coeff = integer_coefficient_(lhs->arg(i));
+        if (coeff != 0 && coeff % divisor == 0)
+          quotients[num_quotients++] = divide_coefficients_(a, lhs->arg(i), divisor);
         else
-          remainders[nr++] = lhs->arg(i);
+          remainders[num_remainders++] = lhs->arg(i);
       }
-      if (nq > 0) {
-        const Expr* qsum = (nq == 1) ? quotients[0]
-            : add_n(a, std::span{quotients, nq});
-        if (nr == 0) return qsum;
-        const Expr* rsum = (nr == 1) ? remainders[0]
-            : add_n(a, std::span{remainders, nr});
-        return add(a, qsum, floor_div(a, rsum, rhs));
+      if (num_quotients > 0) {
+        const Expr* quotient_sum = (num_quotients == 1) ? quotients[0]
+            : add_n(a, std::span{quotients, num_quotients});
+        if (num_remainders == 0) return quotient_sum;
+        const Expr* remainder_sum = (num_remainders == 1) ? remainders[0]
+            : add_n(a, std::span{remainders, num_remainders});
+        return add(a, quotient_sum, floor_div(a, remainder_sum, rhs));
       }
     }
     // Integer GCD cancellation
     {
-      int64_t g = gcd_(integer_factor_(lhs), integer_factor_(rhs));
-      if (g > 1)
+      int64_t common_divisor = gcd_(integer_factor_(lhs), integer_factor_(rhs));
+      if (common_divisor > 1)
         return floor_div(a,
-            divide_coefficients_(a, lhs, g), divide_coefficients_(a, rhs, g));
+            divide_coefficients_(a, lhs, common_divisor),
+            divide_coefficients_(a, rhs, common_divisor));
     }
     const Expr* args[] = {lhs, rhs};
-    uint16_t f = ExprFlags::IS_INTEGER;
+    uint16_t composite_flag_bits = ExprFlags::IS_INTEGER;
     if (lhs->is_nonnegative() && rhs->is_positive())
-      f |= ExprFlags::IS_NONNEGATIVE;
-    return intern_node(a, Op::FLOOR_DIV, args, 2, f, SymbolId{}, 0);
+      composite_flag_bits |= ExprFlags::IS_NONNEGATIVE;
+    return intern_node(a, Op::FLOOR_DIV, args, 2, composite_flag_bits, SymbolId{}, 0);
   }
 
   [[nodiscard]] const Expr* clean_div(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
@@ -669,10 +678,14 @@ class CRUCIBLE_OWNER ExprPool {
 
   [[nodiscard]] const Expr* ceil_div(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
-      int64_t av = lhs->as_int(), bv = rhs->as_int();
-      int64_t q = av / bv, r = av % bv;
-      if (r != 0 && ((r ^ bv) > 0)) ++q;
-      return integer(a, q);
+      int64_t dividend = lhs->as_int();
+      int64_t divisor = rhs->as_int();
+      int64_t quotient = dividend / divisor;
+      int64_t remainder = dividend % divisor;
+      // Ceil adjustment: when the remainder shares the divisor's sign,
+      // C truncation already rounded down; bump up to round toward +inf.
+      if (remainder != 0 && ((remainder ^ divisor) > 0)) ++quotient;
+      return integer(a, quotient);
     }
     // ceil(a/b) = floor((a + b - 1) / b) for positive b
     return floor_div(a, add(a, lhs, add(a, rhs, integer(a, -1))), rhs);
@@ -687,16 +700,19 @@ class CRUCIBLE_OWNER ExprPool {
       if (lhs->is_odd()) return integer(a, 1);
     }
     const Expr* args[] = {lhs, rhs};
-    uint16_t f = ExprFlags::IS_INTEGER | ExprFlags::IS_NONNEGATIVE;
-    return intern_node(a, Op::MOD, args, 2, f, SymbolId{}, 0);
+    uint16_t composite_flag_bits = ExprFlags::IS_INTEGER | ExprFlags::IS_NONNEGATIVE;
+    return intern_node(a, Op::MOD, args, 2, composite_flag_bits, SymbolId{}, 0);
   }
 
   [[nodiscard]] const Expr* python_mod(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
-      int64_t av = lhs->as_int(), bv = rhs->as_int();
-      int64_t r = av % bv;
-      if (r != 0 && ((r ^ bv) < 0)) r += bv;
-      return integer(a, r);
+      int64_t dividend = lhs->as_int();
+      int64_t divisor = rhs->as_int();
+      int64_t remainder = dividend % divisor;
+      // Python modulo: result has the same sign as the divisor; C truncation
+      // gives the wrong sign when remainder and divisor disagree.
+      if (remainder != 0 && ((remainder ^ divisor) < 0)) remainder += divisor;
+      return integer(a, remainder);
     }
     if (lhs->is_zero_int() || lhs == rhs || rhs->is_one()) return integer(a, 0);
     if (rhs->op == Op::INTEGER && rhs->as_int() == 2) {
@@ -704,8 +720,8 @@ class CRUCIBLE_OWNER ExprPool {
       if (lhs->is_odd()) return integer(a, 1);
     }
     const Expr* args[] = {lhs, rhs};
-    uint16_t f = ExprFlags::IS_INTEGER;
-    return intern_node(a, Op::PYTHON_MOD, args, 2, f, SymbolId{}, 0);
+    uint16_t composite_flag_bits = ExprFlags::IS_INTEGER;
+    return intern_node(a, Op::PYTHON_MOD, args, 2, composite_flag_bits, SymbolId{}, 0);
   }
 
   [[nodiscard]] const Expr* modular_indexing(
@@ -718,41 +734,46 @@ class CRUCIBLE_OWNER ExprPool {
     if (base->op == Op::INTEGER && div->op == Op::INTEGER &&
         modulus->op == Op::INTEGER && div->as_int() != 0 &&
         modulus->as_int() != 0) {
-      int64_t bv = base->as_int(), dv = div->as_int(), mv = modulus->as_int();
-      int64_t q = bv / dv, r = bv % dv;
-      if (r != 0 && ((r ^ dv) < 0)) --q;
-      int64_t m = q % mv;
-      if (m < 0) m += mv;
-      return integer(a, m);
+      int64_t base_value = base->as_int();
+      int64_t divisor_value = div->as_int();
+      int64_t modulus_value = modulus->as_int();
+      int64_t quotient = base_value / divisor_value;
+      int64_t remainder = base_value % divisor_value;
+      // Floor adjustment for negative dividend (matches Python //).
+      if (remainder != 0 && ((remainder ^ divisor_value) < 0)) --quotient;
+      int64_t mod_result = quotient % modulus_value;
+      if (mod_result < 0) mod_result += modulus_value;
+      return integer(a, mod_result);
     }
     // GCD on (base, divisor)
     if (!(div->op == Op::INTEGER && div->as_int() == 1)) {
-      int64_t g = gcd_(integer_factor_(base), integer_factor_(div));
-      if (g > 1)
+      int64_t common_divisor = gcd_(integer_factor_(base), integer_factor_(div));
+      if (common_divisor > 1)
         return modular_indexing(a,
-            divide_coefficients_(a, base, g),
-            divide_coefficients_(a, div, g), modulus);
+            divide_coefficients_(a, base, common_divisor),
+            divide_coefficients_(a, div, common_divisor), modulus);
     }
     // Drop ADD terms divisible by modulus*divisor
     if (base->op == Op::ADD && modulus->op == Op::INTEGER &&
         div->op == Op::INTEGER) {
-      int64_t md = modulus->as_int() * div->as_int();
-      if (md > 0) {
-        const Expr* kept[256];
-        uint8_t nk = 0;
-        bool dropped = false;
+      int64_t mod_div_product = modulus->as_int() * div->as_int();
+      if (mod_div_product > 0) {
+        const Expr* kept_terms[256];
+        uint8_t num_kept = 0;
+        bool any_dropped = false;
         for (uint8_t i = 0; i < base->nargs; ++i) {
-          int64_t c = integer_coefficient_(base->arg(i));
-          if (c != 0 && c % md == 0)
-            dropped = true;
+          int64_t coeff = integer_coefficient_(base->arg(i));
+          if (coeff != 0 && coeff % mod_div_product == 0)
+            any_dropped = true;
           else
-            kept[nk++] = base->arg(i);
+            kept_terms[num_kept++] = base->arg(i);
         }
-        if (dropped) {
-          if (nk == 0) return integer(a, 0);
-          const Expr* nb =
-              (nk == 1) ? kept[0] : add_n(a, std::span{kept, nk});
-          return modular_indexing(a, nb, div, modulus);
+        if (any_dropped) {
+          if (num_kept == 0) return integer(a, 0);
+          const Expr* reduced_base =
+              (num_kept == 1) ? kept_terms[0]
+                              : add_n(a, std::span{kept_terms, num_kept});
+          return modular_indexing(a, reduced_base, div, modulus);
         }
       }
     }
@@ -761,19 +782,23 @@ class CRUCIBLE_OWNER ExprPool {
       return modular_indexing(a, base->arg(0), mul(a, base->arg(1), div), modulus);
 
     const Expr* args[] = {base, div, modulus};
-    uint16_t f = ExprFlags::IS_INTEGER | ExprFlags::IS_NONNEGATIVE;
-    return intern_node(a, Op::MODULAR_INDEXING, args, 3, f, SymbolId{}, 0);
+    uint16_t composite_flag_bits = ExprFlags::IS_INTEGER | ExprFlags::IS_NONNEGATIVE;
+    return intern_node(a, Op::MODULAR_INDEXING, args, 3, composite_flag_bits, SymbolId{}, 0);
   }
 
   // ---- Conditional ----
 
-  [[nodiscard]] const Expr* where(fx::Alloc a, const Expr* cond, const Expr* t, const Expr* f) {
-    if (cond == true_) return t;
-    if (cond == false_) return f;
-    if (t == f) return t;
-    const Expr* args[] = {cond, t, f};
-    uint16_t fl = t->flags & f->flags;
-    return intern_node(a, Op::WHERE, args, 3, fl, SymbolId{}, 0);
+  [[nodiscard]] const Expr* where(
+      fx::Alloc a,
+      const Expr* cond,
+      const Expr* then_branch,
+      const Expr* else_branch) {
+    if (cond == true_) return then_branch;
+    if (cond == false_) return else_branch;
+    if (then_branch == else_branch) return then_branch;
+    const Expr* args[] = {cond, then_branch, else_branch};
+    uint16_t intersected_flags = then_branch->flags & else_branch->flags;
+    return intern_node(a, Op::WHERE, args, 3, intersected_flags, SymbolId{}, 0);
   }
 
   // ---- Min / Max ----
@@ -961,7 +986,10 @@ class CRUCIBLE_OWNER ExprPool {
 
   // ---- GCD / coefficient helpers for division rules ----
 
-  static int64_t gcd_(int64_t a, int64_t b) {
+  [[nodiscard]] static int64_t gcd_(int64_t a, int64_t b) {
+    // Note: -INT64_MIN is UB; callers route absolute-value inputs through
+    // safe_abs_() which clamps INT64_MIN → INT64_MAX, so the unary
+    // negations below never observe INT64_MIN.
     a = (a < 0) ? -a : a;
     b = (b < 0) ? -b : b;
     while (b) {
@@ -973,11 +1001,11 @@ class CRUCIBLE_OWNER ExprPool {
   }
 
   // Integer coefficient of a term: MUL(3,x,y) → 3, INTEGER(5) → 5, x → 1
-  static int64_t integer_coefficient_(const Expr* e) {
-    if (e->op == Op::INTEGER) return e->as_int();
-    if (e->op == Op::MUL) {
-      for (uint8_t i = 0; i < e->nargs; ++i)
-        if (e->args[i]->op == Op::INTEGER) return e->args[i]->as_int();
+  [[nodiscard, gnu::pure]] static int64_t integer_coefficient_(const Expr* expr) {
+    if (expr->op == Op::INTEGER) return expr->as_int();
+    if (expr->op == Op::MUL) {
+      for (uint8_t i = 0; i < expr->nargs; ++i)
+        if (expr->args[i]->op == Op::INTEGER) return expr->args[i]->as_int();
     }
     return 1;
   }
@@ -992,95 +1020,105 @@ class CRUCIBLE_OWNER ExprPool {
   // INT64_MIN → INT64_MAX (one off, acceptable for GCD — the loss
   // of 1 unit cannot change the resulting GCD since all other
   // coefficients are ≤ INT64_MAX anyway).
-  static constexpr int64_t safe_abs_(int64_t c) noexcept {
-    // For c == INT64_MIN: cast to uint64_t, negate (legal in
+  [[nodiscard]] static constexpr int64_t safe_abs_(int64_t value) noexcept {
+    // For value == INT64_MIN: cast to uint64_t, negate (legal in
     // unsigned), cast back.  Result is INT64_MIN in two's comp
     // (still negative).  That would poison GCD; instead clamp to
     // INT64_MAX for the GCD walk.
-    if (c == std::numeric_limits<int64_t>::min())
+    if (value == std::numeric_limits<int64_t>::min())
       return std::numeric_limits<int64_t>::max();
-    return (c < 0) ? -c : c;
+    return (value < 0) ? -value : value;
   }
 
-  int64_t integer_factor_(const Expr* e) const {
-    if (e->op == Op::ADD) {
-      int64_t g = 0;
-      for (uint8_t i = 0; i < e->nargs; ++i) {
-        int64_t c = safe_abs_(integer_coefficient_(e->args[i]));
-        g = (g == 0) ? c : gcd_(g, c);
+  [[nodiscard, gnu::pure]] int64_t integer_factor_(const Expr* expr) const {
+    if (expr->op == Op::ADD) {
+      int64_t accumulated_gcd = 0;
+      for (uint8_t i = 0; i < expr->nargs; ++i) {
+        int64_t abs_coeff = safe_abs_(integer_coefficient_(expr->args[i]));
+        accumulated_gcd =
+            (accumulated_gcd == 0) ? abs_coeff : gcd_(accumulated_gcd, abs_coeff);
       }
-      return (g == 0) ? 1 : g;
+      return (accumulated_gcd == 0) ? 1 : accumulated_gcd;
     }
-    return safe_abs_(integer_coefficient_(e));
+    return safe_abs_(integer_coefficient_(expr));
   }
 
-  // Divide all integer coefficients in expression by g
-  const Expr* divide_coefficients_(fx::Alloc a, const Expr* e, int64_t g) {
-    if (g <= 1) return e;
-    if (e->op == Op::INTEGER) return integer(a, e->as_int() / g);
-    if (e->op == Op::MUL) {
-      for (uint8_t i = 0; i < e->nargs; ++i) {
-        if (e->args[i]->op == Op::INTEGER) {
-          int64_t new_coeff = e->args[i]->as_int() / g;
-          if (new_coeff == 1 && e->nargs == 2)
-            return e->args[1 - i];
-          const Expr* buf[255];
-          uint8_t n = 0;
-          for (uint8_t j = 0; j < e->nargs; ++j)
-            buf[n++] = (j == i) ? integer(a, new_coeff) : e->args[j];
-          return mul_n(a, std::span{buf, n});
+  // Divide all integer coefficients in expression by `divisor`.
+  const Expr* divide_coefficients_(fx::Alloc a, const Expr* expr, int64_t divisor) {
+    if (divisor <= 1) return expr;
+    if (expr->op == Op::INTEGER) return integer(a, expr->as_int() / divisor);
+    if (expr->op == Op::MUL) {
+      for (uint8_t i = 0; i < expr->nargs; ++i) {
+        if (expr->args[i]->op == Op::INTEGER) {
+          int64_t new_coeff = expr->args[i]->as_int() / divisor;
+          // Coefficient collapsed to 1 in a binary MUL: drop the integer,
+          // return the only remaining factor directly.
+          if (new_coeff == 1 && expr->nargs == 2)
+            return expr->args[1 - i];
+          const Expr* rebuilt_factors[255];
+          uint8_t num_rebuilt = 0;
+          for (uint8_t j = 0; j < expr->nargs; ++j)
+            rebuilt_factors[num_rebuilt++] =
+                (j == i) ? integer(a, new_coeff) : expr->args[j];
+          return mul_n(a, std::span{rebuilt_factors, num_rebuilt});
         }
       }
-      return e; // no integer factor
+      return expr; // no integer factor
     }
-    if (e->op == Op::ADD) {
-      const Expr* buf[255];
-      for (uint8_t i = 0; i < e->nargs; ++i)
-        buf[i] = divide_coefficients_(a, e->args[i], g);
-      return add_n(a, std::span{buf, e->nargs});
+    if (expr->op == Op::ADD) {
+      const Expr* divided_terms[255];
+      for (uint8_t i = 0; i < expr->nargs; ++i)
+        divided_terms[i] = divide_coefficients_(a, expr->args[i], divisor);
+      return add_n(a, std::span{divided_terms, expr->nargs});
     }
-    return e;
+    return expr;
   }
 
   // Flatten MIN/MAX + dedup + sort
   const Expr* min_n(fx::Alloc a, std::span<const Expr* const> inputs) {
-    const Expr* buf[64];
-    uint8_t n = 0;
-    for (auto* e : inputs) {
-      if (e->op == Op::MIN) {
-        for (uint8_t i = 0; i < e->nargs; ++i)
-          buf[n++] = e->arg(i);
+    const Expr* scratch_buf[64];
+    uint8_t num_args = 0;
+    for (auto* input_expr : inputs) {
+      if (input_expr->op == Op::MIN) {
+        for (uint8_t i = 0; i < input_expr->nargs; ++i)
+          scratch_buf[num_args++] = input_expr->arg(i);
       } else {
-        buf[n++] = e;
+        scratch_buf[num_args++] = input_expr;
       }
     }
-    std::ranges::sort(std::span{buf, n});
-    uint8_t m = 1;
-    for (uint8_t i = 1; i < n; ++i)
-      if (buf[i] != buf[m - 1]) buf[m++] = buf[i];
-    if (m == 1) return buf[0];
-    uint16_t f = detail::composite_flags(Op::MIN, buf, m);
-    return intern_node(a, Op::MIN, buf, m, f, SymbolId{}, 0);
+    std::ranges::sort(std::span{scratch_buf, num_args});
+    uint8_t num_unique = 1;
+    for (uint8_t i = 1; i < num_args; ++i)
+      if (scratch_buf[i] != scratch_buf[num_unique - 1])
+        scratch_buf[num_unique++] = scratch_buf[i];
+    if (num_unique == 1) return scratch_buf[0];
+    uint16_t composite_flag_bits =
+        detail::composite_flags(Op::MIN, scratch_buf, num_unique);
+    return intern_node(
+        a, Op::MIN, scratch_buf, num_unique, composite_flag_bits, SymbolId{}, 0);
   }
 
   const Expr* max_n(fx::Alloc a, std::span<const Expr* const> inputs) {
-    const Expr* buf[64];
-    uint8_t n = 0;
-    for (auto* e : inputs) {
-      if (e->op == Op::MAX) {
-        for (uint8_t i = 0; i < e->nargs; ++i)
-          buf[n++] = e->arg(i);
+    const Expr* scratch_buf[64];
+    uint8_t num_args = 0;
+    for (auto* input_expr : inputs) {
+      if (input_expr->op == Op::MAX) {
+        for (uint8_t i = 0; i < input_expr->nargs; ++i)
+          scratch_buf[num_args++] = input_expr->arg(i);
       } else {
-        buf[n++] = e;
+        scratch_buf[num_args++] = input_expr;
       }
     }
-    std::ranges::sort(std::span{buf, n});
-    uint8_t m = 1;
-    for (uint8_t i = 1; i < n; ++i)
-      if (buf[i] != buf[m - 1]) buf[m++] = buf[i];
-    if (m == 1) return buf[0];
-    uint16_t f = detail::composite_flags(Op::MAX, buf, m);
-    return intern_node(a, Op::MAX, buf, m, f, SymbolId{}, 0);
+    std::ranges::sort(std::span{scratch_buf, num_args});
+    uint8_t num_unique = 1;
+    for (uint8_t i = 1; i < num_args; ++i)
+      if (scratch_buf[i] != scratch_buf[num_unique - 1])
+        scratch_buf[num_unique++] = scratch_buf[i];
+    if (num_unique == 1) return scratch_buf[0];
+    uint16_t composite_flag_bits =
+        detail::composite_flags(Op::MAX, scratch_buf, num_unique);
+    return intern_node(
+        a, Op::MAX, scratch_buf, num_unique, composite_flag_bits, SymbolId{}, 0);
   }
 
   // Flatten ADD children, fold integer constants, combine like terms,
@@ -1123,8 +1161,8 @@ class CRUCIBLE_OWNER ExprPool {
       int64_t coeff;
       const Expr* base;
     };
-    CoeffTerm terms[256];
-    uint8_t nt = 0;
+    CoeffTerm decomposed_terms[256];
+    uint8_t num_decomposed = 0;
 
     for (uint8_t j = 0; j < num_args; ++j) {
       int64_t combined_coefficient = 1;
@@ -1132,81 +1170,84 @@ class CRUCIBLE_OWNER ExprPool {
 
       if (term_scratch_buf[j]->op == Op::MUL) {
         // Strip integer coefficient from MUL
-        const Expr* factors[256];
-        uint8_t nf = 0;
+        const Expr* mul_factors[256];
+        uint8_t num_factors = 0;
         for (uint8_t k = 0; k < term_scratch_buf[j]->nargs; ++k) {
           if (term_scratch_buf[j]->args[k]->op == Op::INTEGER)
             combined_coefficient = term_scratch_buf[j]->args[k]->payload;
           else
-            factors[nf++] = term_scratch_buf[j]->args[k];
+            mul_factors[num_factors++] = term_scratch_buf[j]->args[k];
         }
-        if (nf == 0) {
+        if (num_factors == 0) {
           // Pure integer MUL (shouldn't happen after phase 1, but be safe)
           int_sum += combined_coefficient;
           continue;
-        } else if (nf == 1) {
-          base = factors[0];
+        } else if (num_factors == 1) {
+          base = mul_factors[0];
         } else {
           // Re-intern coefficient-free MUL as the grouping key.
-          // factors[] are already sorted (came from a canonical MUL).
+          // mul_factors[] are already sorted (came from a canonical MUL).
           uint16_t composite_flag_bits =
-              detail::composite_flags(Op::MUL, factors, nf);
+              detail::composite_flags(Op::MUL, mul_factors, num_factors);
           base = intern_node(
-              a, Op::MUL, factors, nf, composite_flag_bits, SymbolId{}, 0);
+              a, Op::MUL, mul_factors, num_factors,
+              composite_flag_bits, SymbolId{}, 0);
         }
       }
-      terms[nt++] = {.coeff = combined_coefficient, .base = base};
+      decomposed_terms[num_decomposed++] =
+          {.coeff = combined_coefficient, .base = base};
     }
 
     // Phase 3: Sort by base pointer, merge adjacent same-base entries
     std::ranges::sort(
-        std::span{terms, nt},
+        std::span{decomposed_terms, num_decomposed},
         [](const CoeffTerm& lhs, const CoeffTerm& rhs) {
           return lhs.base < rhs.base;
         });
 
-    const Expr* collected[256];
-    uint8_t cn = 0;
+    const Expr* collected_terms[256];
+    uint8_t num_collected = 0;
     uint8_t i = 0;
-    while (i < nt) {
-      int64_t total_coeff = terms[i].coeff;
-      const Expr* base = terms[i].base;
+    while (i < num_decomposed) {
+      int64_t total_coeff = decomposed_terms[i].coeff;
+      const Expr* base = decomposed_terms[i].base;
       auto j = static_cast<uint8_t>(i + 1);
-      while (j < nt && terms[j].base == base) {
-        total_coeff += terms[j].coeff;
+      while (j < num_decomposed && decomposed_terms[j].base == base) {
+        total_coeff += decomposed_terms[j].coeff;
         ++j;
       }
 
       if (total_coeff == 0) {
         // Terms cancelled out (e.g., a + (-a))
       } else if (total_coeff == 1) {
-        collected[cn++] = base;
+        collected_terms[num_collected++] = base;
       } else {
         const Expr* mul_args[] = {integer(a, total_coeff), base};
-        collected[cn++] = mul_n(a, mul_args);
+        collected_terms[num_collected++] = mul_n(a, mul_args);
       }
       i = j;
     }
 
     // Reattach integer sum (omit zero unless it's the only term)
-    if (int_sum != 0 || cn == 0) {
-      assert(cn < 255);
-      collected[cn++] = integer(a, int_sum);
+    if (int_sum != 0 || num_collected == 0) {
+      assert(num_collected < 255);
+      collected_terms[num_collected++] = integer(a, int_sum);
     }
-    if (cn == 1)
-      return collected[0];
+    if (num_collected == 1)
+      return collected_terms[0];
 
     // Final sort for canonical ordering
-    std::ranges::sort(std::span{collected, cn});
+    std::ranges::sort(std::span{collected_terms, num_collected});
     uint16_t composite_flag_bits =
-        detail::composite_flags(Op::ADD, collected, cn);
+        detail::composite_flags(Op::ADD, collected_terms, num_collected);
     return intern_node(
-        a, Op::ADD, collected, cn, composite_flag_bits, SymbolId{}, 0);
+        a, Op::ADD, collected_terms, num_collected,
+        composite_flag_bits, SymbolId{}, 0);
   }
 
   // Flatten MUL children, fold integer constants, sort, intern.
   const Expr* mul_n(fx::Alloc a, std::span<const Expr* const> inputs) {
-    const Expr* term_scratch_buf[256];
+    const Expr* factor_scratch_buf[256];
     uint8_t num_args = 0;
     int64_t int_prod = 1;
 
@@ -1217,14 +1258,14 @@ class CRUCIBLE_OWNER ExprPool {
             int_prod *= arg_expr->args[i]->payload;
           else {
             assert(num_args < 255 && "too many MUL terms");
-            term_scratch_buf[num_args++] = arg_expr->args[i];
+            factor_scratch_buf[num_args++] = arg_expr->args[i];
           }
         }
       } else if (arg_expr->op == Op::INTEGER) {
         int_prod *= arg_expr->payload;
       } else {
         assert(num_args < 255 && "too many MUL terms");
-        term_scratch_buf[num_args++] = arg_expr;
+        factor_scratch_buf[num_args++] = arg_expr;
       }
     }
 
@@ -1233,83 +1274,85 @@ class CRUCIBLE_OWNER ExprPool {
     // Reattach integer product (omit 1 unless it's the only term)
     if (int_prod != 1 || num_args == 0) {
       assert(num_args < 255);
-      term_scratch_buf[num_args++] = integer(a, int_prod);
+      factor_scratch_buf[num_args++] = integer(a, int_prod);
     }
     if (num_args == 1)
-      return term_scratch_buf[0];
+      return factor_scratch_buf[0];
 
-    std::ranges::sort(std::span{term_scratch_buf, num_args});
+    std::ranges::sort(std::span{factor_scratch_buf, num_args});
     uint16_t composite_flag_bits =
-        detail::composite_flags(Op::MUL, term_scratch_buf, num_args);
+        detail::composite_flags(Op::MUL, factor_scratch_buf, num_args);
     return intern_node(
-        a, Op::MUL, term_scratch_buf, num_args,
+        a, Op::MUL, factor_scratch_buf, num_args,
         composite_flag_bits, SymbolId{}, 0);
   }
 
   // Flatten AND children, short-circuit on FALSE, filter TRUE, sort, intern.
   const Expr* and_n(fx::Alloc a, std::span<const Expr* const> inputs) {
-    const Expr* buf[64];
-    uint8_t n = 0;
+    const Expr* operand_scratch_buf[64];
+    uint8_t num_operands = 0;
 
-    for (auto* e : inputs) {
-      if (e == false_)
+    for (auto* input_expr : inputs) {
+      if (input_expr == false_)
         return false_;
-      if (e == true_)
+      if (input_expr == true_)
         continue;
-      if (e->op == Op::AND) {
-        for (uint8_t i = 0; i < e->nargs; ++i) {
-          if (e->args[i] == false_)
+      if (input_expr->op == Op::AND) {
+        for (uint8_t i = 0; i < input_expr->nargs; ++i) {
+          if (input_expr->args[i] == false_)
             return false_;
-          if (e->args[i] == true_)
+          if (input_expr->args[i] == true_)
             continue;
-          assert(n < 64);
-          buf[n++] = e->args[i];
+          assert(num_operands < 64);
+          operand_scratch_buf[num_operands++] = input_expr->args[i];
         }
       } else {
-        assert(n < 64);
-        buf[n++] = e;
+        assert(num_operands < 64);
+        operand_scratch_buf[num_operands++] = input_expr;
       }
     }
 
-    if (n == 0)
+    if (num_operands == 0)
       return true_;
-    if (n == 1)
-      return buf[0];
-    std::ranges::sort(std::span{buf, n});
-    return intern_node(a, Op::AND, buf, n, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    if (num_operands == 1)
+      return operand_scratch_buf[0];
+    std::ranges::sort(std::span{operand_scratch_buf, num_operands});
+    return intern_node(a, Op::AND, operand_scratch_buf, num_operands,
+                       ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   // Flatten OR children, short-circuit on TRUE, filter FALSE, sort, intern.
   const Expr* or_n(fx::Alloc a, std::span<const Expr* const> inputs) {
-    const Expr* buf[64];
-    uint8_t n = 0;
+    const Expr* operand_scratch_buf[64];
+    uint8_t num_operands = 0;
 
-    for (auto* e : inputs) {
-      if (e == true_)
+    for (auto* input_expr : inputs) {
+      if (input_expr == true_)
         return true_;
-      if (e == false_)
+      if (input_expr == false_)
         continue;
-      if (e->op == Op::OR) {
-        for (uint8_t i = 0; i < e->nargs; ++i) {
-          if (e->args[i] == true_)
+      if (input_expr->op == Op::OR) {
+        for (uint8_t i = 0; i < input_expr->nargs; ++i) {
+          if (input_expr->args[i] == true_)
             return true_;
-          if (e->args[i] == false_)
+          if (input_expr->args[i] == false_)
             continue;
-          assert(n < 64);
-          buf[n++] = e->args[i];
+          assert(num_operands < 64);
+          operand_scratch_buf[num_operands++] = input_expr->args[i];
         }
       } else {
-        assert(n < 64);
-        buf[n++] = e;
+        assert(num_operands < 64);
+        operand_scratch_buf[num_operands++] = input_expr;
       }
     }
 
-    if (n == 0)
+    if (num_operands == 0)
       return false_;
-    if (n == 1)
-      return buf[0];
-    std::ranges::sort(std::span{buf, n});
-    return intern_node(a, Op::OR, buf, n, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
+    if (num_operands == 1)
+      return operand_scratch_buf[0];
+    std::ranges::sort(std::span{operand_scratch_buf, num_operands});
+    return intern_node(a, Op::OR, operand_scratch_buf, num_operands,
+                       ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
   // Swiss table probe + insert. Returns existing interned node or creates new.
@@ -1400,14 +1443,14 @@ class CRUCIBLE_OWNER ExprPool {
                   return existing_expr;
                 break;
               default: {
-                bool is_args_match = true;
+                bool all_args_match = true;
                 for (uint8_t i = 0; i < nargs; ++i) {
                   if (existing_expr->args[i] != args[i]) {
-                    is_args_match = false;
+                    all_args_match = false;
                     break;
                   }
                 }
-                if (is_args_match)
+                if (all_args_match)
                   return existing_expr;
                 break;
               }
@@ -1489,7 +1532,7 @@ class CRUCIBLE_OWNER ExprPool {
   // multiple of kGroupWidth — the public entrypoints enforce that.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   void grow_to_(size_t new_capacity) {
-    size_t old_cap = capacity_;
+    size_t old_capacity = capacity_;
     int8_t* old_ctrl = ctrl_;
     const Expr** old_slots = slots_;
     void* old_backing = backing_;
@@ -1500,27 +1543,29 @@ class CRUCIBLE_OWNER ExprPool {
 
     size_t slot_mask = capacity_ - 1;
 
-    for (size_t i = 0; i < old_cap; ++i) {
+    for (size_t i = 0; i < old_capacity; ++i) {
       if (old_ctrl[i] == detail::kEmpty)
         continue;
 
-      const Expr* e = old_slots[i];
-      int8_t tag = detail::h2_tag(e->hash);
-      size_t base = (e->hash * detail::kGroupWidth) & slot_mask;
-      size_t probe = 0;
+      const Expr* existing_expr = old_slots[i];
+      int8_t slot_match_tag = detail::h2_tag(existing_expr->hash);
+      size_t probe_base_slot =
+          (existing_expr->hash * detail::kGroupWidth) & slot_mask;
+      size_t probe_iteration = 0;
 
       while (true) {
-        auto group = detail::CtrlGroup::load(&ctrl_[base]);
+        auto group = detail::CtrlGroup::load(&ctrl_[probe_base_slot]);
         auto empties = group.match_empty();
         if (empties) {
-          size_t idx = base + empties.lowest();
-          ctrl_[idx] = tag;
-          slots_[idx] = e;
+          size_t insert_slot_index = probe_base_slot + empties.lowest();
+          ctrl_[insert_slot_index] = slot_match_tag;
+          slots_[insert_slot_index] = existing_expr;
           ++intern_count_;
           break;
         }
-        ++probe;
-        base = (base + probe * detail::kGroupWidth) & slot_mask;
+        ++probe_iteration;
+        probe_base_slot =
+            (probe_base_slot + probe_iteration * detail::kGroupWidth) & slot_mask;
       }
     }
     std::free(old_backing);
