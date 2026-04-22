@@ -12,6 +12,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <latch>
 #include <string>
 #include <thread>
 #include <utility>
@@ -386,6 +387,12 @@ static void test_mutation() {
     // Final state must be the global max.  Total successful try_advance
     // returns must equal the number of strict-improvement events
     // (every thread always sees a higher max from someone else partway).
+    //
+    // Uses std::latch as a starting-line gate so every worker hits
+    // try_advance simultaneously — without this, threads constructed
+    // earlier in the loop finish thousands of calls before later
+    // threads even start, and the CAS contention the test is meant
+    // to exercise never materializes.
     {
         constexpr int kThreads = 4;
         constexpr std::uint64_t kPerThread = 4096;
@@ -393,11 +400,15 @@ static void test_mutation() {
         AtomicMonotonic<std::uint64_t> shared_high{0};
         std::atomic<std::uint64_t> total_advances{0};
 
+        std::latch start_gate{kThreads + 1};
+
         {
             std::vector<std::jthread> workers;
             workers.reserve(kThreads);
             for (int tid = 0; tid < kThreads; ++tid) {
-                workers.emplace_back([tid, &shared_high, &total_advances]{
+                workers.emplace_back([tid, &shared_high,
+                                      &total_advances, &start_gate]{
+                    start_gate.arrive_and_wait();       // synchronize all workers
                     std::uint64_t local_advances = 0;
                     const std::uint64_t base =
                         static_cast<std::uint64_t>(tid) * kPerThread;
@@ -409,6 +420,8 @@ static void test_mutation() {
                                              std::memory_order_relaxed);
                 });
             }
+            // Main thread arrives last, releasing all workers at once.
+            start_gate.arrive_and_wait();
         }  // jthreads join
 
         // Final value must be the highest base+v any thread tried.
