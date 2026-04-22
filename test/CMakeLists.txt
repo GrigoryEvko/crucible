@@ -303,6 +303,7 @@ crucible_test(test_numerical_recipe)
 crucible_test(test_recipe_pool)
 crucible_test(test_recipe_registry)
 crucible_test(test_recipe_integration)
+crucible_test(test_recipe_coverage)
 
 # bench harness unit tests — include bench/ for bench_harness.h + bpf_senses.h.
 # CRUCIBLE_BENCH_HAVE_BPF is intentionally unset: the test exercises only
