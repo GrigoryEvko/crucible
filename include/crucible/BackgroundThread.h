@@ -162,7 +162,7 @@ struct BackgroundThread {
   // bg worker performs on this thread.  This matches the documented
   // lifecycle — all registrations complete before bg starts — and turns
   // it into a load-bearing rule.
-  void start(TraceRing* r, MetaLog* ml,
+  void start(TraceRing* ring_ptr, MetaLog* meta_log_ptr,
              int32_t rank_ = -1, int32_t world_size_ = 0,
              uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY {
     global_schema_table().seal();
@@ -170,8 +170,8 @@ struct BackgroundThread {
     // Wrap raw pointers in NonNull at the set-once boundary.  Refined's
     // ctor contract fires if either is null — the only way into the
     // bg worker's ring.get().value() / meta_log.get().value() reads.
-    ring.set(RingPtr{r});
-    meta_log.set(MetaLogPtr{ml});
+    ring.set(RingPtr{ring_ptr});
+    meta_log.set(MetaLogPtr{meta_log_ptr});
     rank = rank_;
     world_size = world_size_;
     device_capability = device_cap;
@@ -290,10 +290,10 @@ struct BackgroundThread {
   void ensure_scratch_buffers(uint32_t total_inputs, uint32_t total_outputs) {
     // PtrMap: power-of-two, load factor < 50%.
     // Unique ptrs ≈ total_outputs + external_inputs (small fraction).
-    uint32_t raw_map = std::max(MIN_PTR_MAP_CAP,
+    uint32_t raw_map_size = std::max(MIN_PTR_MAP_CAP,
         crucible::sat::mul_sat(crucible::sat::add_sat(total_outputs, uint32_t{256}), uint32_t{2}));
-    uint32_t needed_map = (raw_map >= MAX_PTR_MAP_CAP) ?
-        MAX_PTR_MAP_CAP : std::bit_ceil(raw_map);
+    uint32_t needed_map = (raw_map_size >= MAX_PTR_MAP_CAP) ?
+        MAX_PTR_MAP_CAP : std::bit_ceil(raw_map_size);
 
     // Slots: unique storages bounded by outputs + external headroom.
     uint32_t needed_slots = std::max(MIN_SCRATCH_SLOT_CAP,
@@ -333,34 +333,34 @@ struct BackgroundThread {
   // ── PtrMap operations ─────────────────────────────────────────────
 
   // gnu::const: depends only on the pointer value, no memory access.
-  [[nodiscard, gnu::const]] static uint32_t hash_ptr(void* p) noexcept {
+  [[nodiscard, gnu::const]] static uint32_t hash_ptr(void* ptr) noexcept {
     return static_cast<uint32_t>(
-        reinterpret_cast<uintptr_t>(p) * 0x9E3779B97F4A7C15ULL >> 32);
+        reinterpret_cast<uintptr_t>(ptr) * 0x9E3779B97F4A7C15ULL >> 32);
   }
 
   [[nodiscard]] static InsertResult ptr_map_insert(
       PtrSlot* map, uint8_t gen, uint32_t mask,
       void* key, OpIndex op_index, uint8_t port, SlotId slot_id) {
-    uint32_t idx = hash_ptr(key) & mask;
+    uint32_t bucket_idx = hash_ptr(key) & mask;
     for (uint32_t probe = 0; probe <= mask; probe++) {
-      auto& s = map[(idx + probe) & mask];
-      if (s.gen != gen) {
+      auto& slot = map[(bucket_idx + probe) & mask];
+      if (slot.gen != gen) {
         // Stale generation → empty slot. Claim it.
-        s.key = key;
-        s.op_index = op_index;
-        s.port = port;
-        s.slot_id = slot_id;
-        s.gen = gen;
-        return {.slot = &s, .was_alias = false, .old_op = {}, .old_port = 0, .old_slot = {}};
+        slot.key = key;
+        slot.op_index = op_index;
+        slot.port = port;
+        slot.slot_id = slot_id;
+        slot.gen = gen;
+        return {.slot = &slot, .was_alias = false, .old_op = {}, .old_port = 0, .old_slot = {}};
       }
-      if (s.key == key) {
+      if (slot.key == key) {
         // Existing entry. Alias if op differs.
-        InsertResult r{.slot = &s, .was_alias = (s.op_index != op_index),
-                       .old_op = s.op_index, .old_port = s.port, .old_slot = s.slot_id};
-        s.op_index = op_index;
-        s.port = port;
+        InsertResult result{.slot = &slot, .was_alias = (slot.op_index != op_index),
+                            .old_op = slot.op_index, .old_port = slot.port, .old_slot = slot.slot_id};
+        slot.op_index = op_index;
+        slot.port = port;
         // Keep the same slot_id for aliases (shared storage)
-        return r;
+        return result;
       }
     }
     return {.slot = nullptr, .was_alias = false, .old_op = {}, .old_port = 0, .old_slot = {}}; // table full
@@ -375,12 +375,12 @@ struct BackgroundThread {
   [[nodiscard]] static PtrLookup ptr_map_lookup(
       const PtrSlot* map, uint8_t gen, uint32_t mask, void* key) {
     if (!key) return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};
-    uint32_t idx = hash_ptr(key) & mask;
+    uint32_t bucket_idx = hash_ptr(key) & mask;
     for (uint32_t probe = 0; probe <= mask; probe++) {
-      auto& s = map[(idx + probe) & mask];
-      if (s.gen == gen && s.key == key)
-        return {.op_index = s.op_index, .slot_id = s.slot_id, .port = s.port};
-      if (s.gen != gen)
+      auto& slot = map[(bucket_idx + probe) & mask];
+      if (slot.gen == gen && slot.key == key)
+        return {.op_index = slot.op_index, .slot_id = slot.slot_id, .port = slot.port};
+      if (slot.gen != gen)
         return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0}; // empty → miss
     }
     return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0};
@@ -410,14 +410,14 @@ struct BackgroundThread {
       // Check for divergence reset signal from fg thread.
       (void)reset_requested.check_and_run(do_reset);
 
-      uint32_t n = ring.get().value()->drain(
+      uint32_t drained_count = ring.get().value()->drain(
           batch, BATCH_SIZE, meta_batch, scope_batch, callsite_batch);
-      if (n == 0) {
+      if (drained_count == 0) {
         CRUCIBLE_SPIN_PAUSE;
         continue;
       }
 
-      for (uint32_t i = 0; i < n; i++) {
+      for (uint32_t i = 0; i < drained_count; i++) {
         // Check for divergence reset INSIDE the drain loop.
         //
         // Race without this: fg sets reset_requested AFTER the top-of-loop
@@ -448,13 +448,13 @@ struct BackgroundThread {
       // Release: publishes all bg side effects (pending_region_,
       // active_region, region data) to fg thread's acquire in flush().
       // Not acq_rel: bg has no reads that depend on fg writes here.
-      total_processed.fetch_add(n, std::memory_order_release);
+      total_processed.fetch_add(drained_count, std::memory_order_release);
     }
 
     // Drain remaining on shutdown.
-    uint32_t n = ring.get().value()->drain(
+    uint32_t drained_count = ring.get().value()->drain(
         batch, BATCH_SIZE, meta_batch, scope_batch, callsite_batch);
-    for (uint32_t i = 0; i < n; i++) {
+    for (uint32_t i = 0; i < drained_count; i++) {
       current_trace.push_back(batch[i]);
       current_meta_starts.push_back(meta_batch[i]);
       current_scope_hashes.push_back(scope_batch[i]);
@@ -580,8 +580,8 @@ struct BackgroundThread {
       }
       if (ms.is_valid()) {
         if (first_meta == UINT32_MAX) first_meta = ms.raw();
-        uint32_t end = ms.raw() + re.num_inputs + re.num_outputs;
-        if (end > max_meta_end) max_meta_end = end;
+        uint32_t meta_end = ms.raw() + re.num_inputs + re.num_outputs;
+        if (meta_end > max_meta_end) max_meta_end = meta_end;
       }
       total_inputs += re.num_inputs;
       total_outputs += re.num_outputs;
@@ -789,13 +789,13 @@ struct BackgroundThread {
           uint32_t next_off = next_ms.raw() - first_meta;
           const auto& next_re = trace_data[i + 1];
           if (next_re.num_inputs > 0) {
-            uint32_t idx = hash_ptr(meta_base[next_off].data_ptr) & local_mask;
-            __builtin_prefetch(&local_map[idx], 0, 1);
+            uint32_t bucket_idx = hash_ptr(meta_base[next_off].data_ptr) & local_mask;
+            __builtin_prefetch(&local_map[bucket_idx], 0, 1);
           }
           if (next_re.num_outputs > 0) {
             uint32_t out_off = next_off + next_re.num_inputs;
-            uint32_t idx = hash_ptr(meta_base[out_off].data_ptr) & local_mask;
-            __builtin_prefetch(&local_map[idx], 1, 1);
+            uint32_t bucket_idx = hash_ptr(meta_base[out_off].data_ptr) & local_mask;
+            __builtin_prefetch(&local_map[bucket_idx], 1, 1);
           }
         }
       }
