@@ -175,7 +175,24 @@ class CRUCIBLE_OWNER Arena {
   // Invariant: total_block_bytes_ >= end_offset_ >= offset_ (each new block
   // adds its exact size to the total; offset_ never exceeds end_offset_),
   // so the subtraction below cannot underflow.
-  [[nodiscard, gnu::pure]] size_t total_allocated() const noexcept {
+  //
+  // Pre-condition: lifts the load-bearing class invariants offset_ <=
+  // end_offset_ <= total_block_bytes_.get() to function-level
+  // contracts.  These hold by construction across the alloc paths
+  // (alloc_new_block_ resets offset_=0, advances offset_ <=
+  // end_offset_, monotonically grows total_block_bytes_); the pre()s
+  // make the optimizer's job explicit and surface any future refactor
+  // that would inadvertently violate them.
+  //
+  // Post-condition: result <= total_block_bytes_.get() — total
+  // allocated never exceeds the running byte total.  The optimizer
+  // can drop redundant capacity guards in callers that compare
+  // total_allocated() against a known upper bound.
+  [[nodiscard, gnu::pure]] size_t total_allocated() const noexcept
+      pre  (offset_ <= end_offset_)
+      pre  (end_offset_ <= total_block_bytes_.get())
+      post (r: r <= total_block_bytes_.get())
+  {
     return total_block_bytes_.get() - (end_offset_ - offset_);
   }
 
