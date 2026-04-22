@@ -868,6 +868,8 @@ These C++26 library features are spec'd and the project will adopt them, but lib
 | `std::thread` raw | Use `std::jthread` (C++20) |
 | `std::endl` | Flushes; use `'\n'` |
 | `std::vector<bool>` | Proxy iterators, not really a container; use `std::bitset<N>` |
+| `std::vector::reserve` (anywhere) | **Banned** — signals wrong container choice. `vector::push_back` past capacity is **O(n)** (copies every existing element to the new buffer); reserve only delays the first O(n) spike, doesn't eliminate it. The "amortized O(1)" story hides three real costs: (1) **tail-latency**: each individual growth event is O(n), fatal for p99 budgets; (2) **silent perf cliff**: move-during-growth requires `noexcept` move ctors or falls back to **copy** without warning; (3) **heap churn**: every growth allocates new + frees old, fragments the allocator. Replacements: known max → `std::inplace_vector<T, N>` (compile-time bound, zero heap, true O(1) push_back, contract-checked overflow); known exact size at construction → `vector<T> v(N)` and fill by index (one allocation, no growth); truly unbounded → plain `vector<T>` and accept amortization (rare in practice; usually means you should have used arena-backed storage). Hot path: arena, never vector at all (per §X.10) |
+| `std::vector::push_back` on growth-uncertain hot paths | Same root cause as the reserve ban — growth event is O(n) with hidden allocator interaction. Use `std::inplace_vector<T, N>` for type-encoded bounds or arena allocation for unbounded cold growth |
 | `std::cout` / `std::cerr` on hot path | Synced with stdio; use `fprintf(stderr, ...)` for debug |
 | `std::printf` / `std::format` on hot path | Formatting cost; reserve for debug paths |
 | `std::rand()` / `std::srand()` | Global state, poor quality; Philox only |
@@ -1155,8 +1157,8 @@ Rule: prefetch 8-16 iterations ahead; `locality = 0` for streaming reads (don't 
 Three tiers:
 
 1. **Auto-vectorization** — clean loops + `__restrict__` + `[[assume]]`. Audit with `-fopt-info-vec -fopt-info-vec-missed`.
-2. **`std::simd` (C++26 `<simd>`)** — namespace `std::simd::*`, vec spelling `std::simd::vec<T,N>`. See §IV opt-in for the full surface (`unchecked_load`/`partial_load`, `reduce` with masked overload, `select`, `min/max/clamp`, `chunk`/`cat`). Default for new portable SIMD; the `crucible::simd::*` facade adds only what std lacks (width-pinned aliases, `iota_v`, `prefix_mask`, `DetSafeSimd` concept, microarch detection, `CRUCIBLE_TARGET_CLONES` macro).
-3. **Intrinsics** (`<immintrin.h>`) — for AVX-512 / AVX2 when std::simd doesn't expose the operation (`vpshufb`, `vpternlog`, `vpcompressd`, `vpgatherdd`, `vpopcntq`) or when math/bit-manip on vec is needed (those C++26 sections aren't shipped in libstdc++ 16). Wrap in named helpers behind `CRUCIBLE_TARGET_CLONES`.
+2. **`std::simd` (C++26 `<simd>`)** — namespace `std::simd::*`, vec spelling `std::simd::vec<T,N>`. See §IV opt-in for the full surface (`unchecked_load`/`partial_load`, `reduce` with masked overload, `select`, `min/max/clamp`, `chunk`/`cat`). Default for new portable SIMD; the `crucible::simd::*` facade adds only what std lacks (`iota_v`, `prefix_mask`, `DetSafeSimd` concept, microarch detection).
+3. **Intrinsics** (`<immintrin.h>`) — only when `std::simd` cannot express the operation (`vpshufb`, `vpternlog`, `vpcompressd`, `vpgatherdd`, `vpopcntq`) or when math/bit-manip on vec is needed (those C++26 sections aren't shipped in libstdc++ 16). The canonical example is `SwissTable.h`'s `vpcmpeqb + vpmovmskb` probe. Compile-time `#ifdef __AVX2__ / __SSE2__` selection — single ISA per build, matches the deployment microarch chosen at `-march=` time.
 
 Crucible's vectorizable hot paths: Philox RNG, hash mixing, TensorMeta extraction, reduction kernels.
 
@@ -1314,7 +1316,7 @@ Alternative (continuous profiling from production runs): **AutoFDO** via `-fauto
 
 - **Local development**: `-march=native -mtune=native`. Exact features of the build machine.
 - **Distribution / production**: the specific minimum microarch of the deployment fleet, declared in the build manifest. No project-wide default — the choice is deployment-local and documented alongside the fleet's hardware spec.
-- **Multi-versioned dispatch**: use `[[gnu::target_clones(...)]]` for routines that have microarchitecture-specific fast paths (e.g., AVX2 vs AVX-512 vs NEON). First call pays one indirect jump; subsequent calls are direct.
+- **Single-target binaries only.** Crucible does not use `[[gnu::target_clones]]` or any other multi-target / function-multiversioning mechanism. Each binary is compiled for one ISA tier; fleets that span multiple microarchs ship multiple binaries (one per tier), not a single fat binary with runtime dispatch. This keeps icache pressure predictable, eliminates the indirect-jump-on-first-call cost, and means every hot function compiles to a single straight-line code path the optimizer fully sees through.
 
 No single `-march=` default ships with Crucible. The build owner picks it for their fleet.
 
@@ -1948,7 +1950,7 @@ Hardcoded values. Changing any requires an audit sweep of the affected macros an
 | Endianness | **Little-endian** | x86 + ARM in practice; hashing assumes this |
 | Word size | **64-bit** | No 32-bit support |
 | Min x86 baseline | **AVX2 + FMA + BMI2** | Haswell-and-later |
-| Optional x86 uplift | AVX-512, AMX | Opt-in per target via `target_clones`; never assumed |
+| Optional x86 uplift | AVX-512, AMX | Opt-in per build via `-march=`; never assumed at the source level |
 | Min ARM baseline | **ARMv8.2-A + NEON** | Graviton 2+, Apple M1+ |
 | Float representation | **IEEE 754** | `-fno-fast-math` enforces |
 | Stack size | **8 MB** (Linux default) | Large arrays → arena, not stack |
