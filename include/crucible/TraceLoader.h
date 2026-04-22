@@ -92,8 +92,8 @@ static_assert(std::endian::native == std::endian::little,
               ".crtrace format requires little-endian host");
 
 [[nodiscard]] inline std::unique_ptr<LoadedTrace> load_trace(const char* path) {
-  std::FILE* f = std::fopen(path, "rb");
-  if (!f) {
+  std::FILE* trace_file = std::fopen(path, "rb");
+  if (!trace_file) {
     std::fprintf(stderr, "load_trace: cannot open %s\n", path);
     return nullptr;
   }
@@ -101,24 +101,24 @@ static_assert(std::endian::native == std::endian::little,
   // Read header (16 bytes).
   char magic[4]{};
   uint32_t version = 0, num_ops = 0, num_metas = 0;
-  if (std::fread(magic, 1, 4, f) != 4 ||
-      std::fread(&version, 4, 1, f) != 1 ||
-      std::fread(&num_ops, 4, 1, f) != 1 ||
-      std::fread(&num_metas, 4, 1, f) != 1) {
+  if (std::fread(magic, 1, 4, trace_file) != 4 ||
+      std::fread(&version, 4, 1, trace_file) != 1 ||
+      std::fread(&num_ops, 4, 1, trace_file) != 1 ||
+      std::fread(&num_metas, 4, 1, trace_file) != 1) {
     std::fprintf(stderr, "load_trace: truncated header in %s\n", path);
-    std::fclose(f);
+    std::fclose(trace_file);
     return nullptr;
   }
 
   if (std::memcmp(magic, "CRTR", 4) != 0) {
     std::fprintf(stderr, "load_trace: bad magic in %s\n", path);
-    std::fclose(f);
+    std::fclose(trace_file);
     return nullptr;
   }
   if (version != 1) {
     std::fprintf(stderr, "load_trace: unsupported version %u in %s\n",
                  version, path);
-    std::fclose(f);
+    std::fclose(trace_file);
     return nullptr;
   }
 
@@ -131,28 +131,28 @@ static_assert(std::endian::native == std::endian::little,
     std::fprintf(stderr, "load_trace: header counts exceed cap in %s "
                          "(num_ops=%u num_metas=%u)\n",
                  path, num_ops, num_metas);
-    std::fclose(f);
+    std::fclose(trace_file);
     return nullptr;
   }
 
   // Read op records.
   std::vector<TraceOpRecord> records(num_ops);
   if (num_ops > 0 &&
-      std::fread(records.data(), sizeof(TraceOpRecord), num_ops, f) != num_ops) {
+      std::fread(records.data(), sizeof(TraceOpRecord), num_ops, trace_file) != num_ops) {
     std::fprintf(stderr, "load_trace: truncated op records in %s\n", path);
-    std::fclose(f);
+    std::fclose(trace_file);
     return nullptr;
   }
 
-  // Read meta records. Auto-detect 144B (legacy) vs 160B (current) format
-  // by checking remaining file size after op records.
-  const long meta_start_pos = std::ftell(f);
-  std::fseek(f, 0, SEEK_END);
-  const long file_size = std::ftell(f);
-  std::fseek(f, meta_start_pos, SEEK_SET);
+  // Read meta records.  Auto-detect 144B (legacy v1), 160B (v2), and
+  // 168B (current) formats by checking remaining file size after op
+  // records.
+  const long meta_start_pos = std::ftell(trace_file);
+  std::fseek(trace_file, 0, SEEK_END);
+  const long file_size = std::ftell(trace_file);
+  std::fseek(trace_file, meta_start_pos, SEEK_SET);
 
   const long remaining = file_size - meta_start_pos;
-  // Detect meta record size: 144B (legacy v1), 160B (v2), 168B (current).
   const long meta_bytes_144 = static_cast<long>(num_metas) * 144;
   const long meta_bytes_160 = static_cast<long>(num_metas) * 160;
   const long meta_bytes_168 = static_cast<long>(num_metas) * 168;
@@ -171,18 +171,18 @@ static_assert(std::endian::native == std::endian::little,
     if (legacy_144 || legacy_160) {
       // Legacy format: read each meta at its original size, zero-init rest.
       for (uint32_t i = 0; i < num_metas; i++) {
-        if (std::fread(&metas[i], meta_record_size, 1, f) != 1) {
+        if (std::fread(&metas[i], meta_record_size, 1, trace_file) != 1) {
           std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
-          std::fclose(f);
+          std::fclose(trace_file);
           return nullptr;
         }
         // Extended fields beyond meta_record_size stay zero from TensorMeta{}.
       }
     } else {
       // Current 168B format: direct bulk read.
-      if (std::fread(metas.data(), sizeof(TensorMeta), num_metas, f) != num_metas) {
+      if (std::fread(metas.data(), sizeof(TensorMeta), num_metas, trace_file) != num_metas) {
         std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
-        std::fclose(f);
+        std::fclose(trace_file);
         return nullptr;
       }
     }
@@ -193,15 +193,16 @@ static_assert(std::endian::native == std::endian::little,
     // an adversarial trace with ndim=255 would drive compute_storage_nbytes
     // to read past the end of the sizes[] array.
     //
-    // data_ptr is zeroed at write time (see Serialize.h:81 "data_ptr → always
-    // 0 on disk") but we re-zero here so any downstream address-use path
-    // fails loudly rather than treating a disk byte pattern as a pointer.
+    // data_ptr is zeroed at write time (Serialize.h: WriteOps writes
+    // TensorMeta with data_ptr=0; ReadOps treats it as discarded).  We
+    // re-zero here so any downstream address-use path fails loudly rather
+    // than treating a disk byte pattern as a pointer.
     for (uint32_t i = 0; i < num_metas; i++) {
       if (metas[i].ndim > 8) [[unlikely]] {
         std::fprintf(stderr,
             "load_trace: meta[%u].ndim=%u exceeds max 8 in %s — corrupt trace\n",
             i, metas[i].ndim, path);
-        std::fclose(f);
+        std::fclose(trace_file);
         return nullptr;
       }
       metas[i].data_ptr = nullptr;
@@ -212,35 +213,35 @@ static_assert(std::endian::native == std::endian::little,
   // Name length bound: matches register_schema_name's FFI contract
   // (schema_name length ≤ 256).  Any wire value outside [1, 256] breaks
   // the loop — detection at the parse boundary, never downstream.
-  static constexpr uint16_t kMinSchemaNameLen = 1;
-  static constexpr uint16_t kMaxSchemaNameLen = 256;
+  static constexpr uint16_t MIN_SCHEMA_NAME_LEN = 1;
+  static constexpr uint16_t MAX_SCHEMA_NAME_LEN = 256;
   uint32_t num_names = 0;
-  if (std::fread(&num_names, 4, 1, f) == 1 && num_names > 0 &&
+  if (std::fread(&num_names, 4, 1, trace_file) == 1 && num_names > 0 &&
       num_names <= SCHEMA_TABLE_CAP) {
     for (uint32_t i = 0; i < num_names; i++) {
-      uint64_t sh = 0;
+      uint64_t schema_hash_raw = 0;
       uint16_t name_len = 0;
-      if (std::fread(&sh, 8, 1, f) != 1) break;
-      if (std::fread(&name_len, 2, 1, f) != 1) break;
-      if (name_len < kMinSchemaNameLen || name_len > kMaxSchemaNameLen) break;
+      if (std::fread(&schema_hash_raw, 8, 1, trace_file) != 1) break;
+      if (std::fread(&name_len, 2, 1, trace_file) != 1) break;
+      if (name_len < MIN_SCHEMA_NAME_LEN || name_len > MAX_SCHEMA_NAME_LEN) break;
       // Propagate the validated bound to the optimizer so the fread
       // and the terminating null write both compile without bounds
-      // repredicating (buf has fixed 257-byte storage; name_len's
+      // repredicating (name_buf has fixed 257-byte storage; name_len's
       // range is fully resolved by the guard above).
-      [[assume(name_len >= kMinSchemaNameLen && name_len <= kMaxSchemaNameLen)]];
-      char buf[257]{};
-      if (std::fread(buf, 1, name_len, f) != name_len) break;
-      buf[name_len] = '\0';
+      [[assume(name_len >= MIN_SCHEMA_NAME_LEN && name_len <= MAX_SCHEMA_NAME_LEN)]];
+      char name_buf[257]{};
+      if (std::fread(name_buf, 1, name_len, trace_file) != name_len) break;
+      name_buf[name_len] = '\0';
       // Bytes from disk, but length-validated above (1..256) and explicitly
       // null-terminated.  Retag from External (file source) → Sanitized so
       // the schema table can accept them.
       register_schema_name(
-          SchemaHash{sh},
-          SchemaTable::SanitizedName{static_cast<const char*>(buf)});
+          SchemaHash{schema_hash_raw},
+          SchemaTable::SanitizedName{static_cast<const char*>(name_buf)});
     }
   }
 
-  std::fclose(f);
+  std::fclose(trace_file);
 
   // Convert to BackgroundThread-compatible vectors.
   auto trace = std::make_unique<LoadedTrace>();
@@ -255,22 +256,22 @@ static_assert(std::endian::native == std::endian::little,
 
   uint32_t meta_cursor = 0;
   for (uint32_t i = 0; i < num_ops; i++) {
-    const auto& r = records[i];
-    auto& e = trace->entries[i];
+    const auto& op_record = records[i];
+    auto& entry = trace->entries[i];
 
-    e.schema_hash = r.schema_hash;
-    e.shape_hash  = r.shape_hash;
-    e.num_inputs = r.num_inputs;
-    e.num_outputs = r.num_outputs;
-    e.num_scalar_args = r.num_scalars;
-    e.set_grad_enabled(r.grad_enabled != 0);
-    e.op_flags = r.inference_mode;  // on-disk byte carries all op_flag bits
-    uint16_t n = r.num_scalars < 5 ? r.num_scalars : 5;
-    for (uint16_t s = 0; s < n; s++)
-      e.scalar_values[s] = r.scalar_values[s];
+    entry.schema_hash     = op_record.schema_hash;
+    entry.shape_hash      = op_record.shape_hash;
+    entry.num_inputs      = op_record.num_inputs;
+    entry.num_outputs     = op_record.num_outputs;
+    entry.num_scalar_args = op_record.num_scalars;
+    entry.set_grad_enabled(op_record.grad_enabled != 0);
+    entry.op_flags        = op_record.inference_mode;  // on-disk byte carries all op_flag bits
+    const uint16_t num_inline_scalars = op_record.num_scalars < 5 ? op_record.num_scalars : 5;
+    for (uint16_t j = 0; j < num_inline_scalars; j++)
+      entry.scalar_values[j] = op_record.scalar_values[j];
 
     const auto total_tensors =
-        static_cast<uint16_t>(r.num_inputs + r.num_outputs);
+        static_cast<uint16_t>(op_record.num_inputs + op_record.num_outputs);
     if (total_tensors > 0) {
       trace->meta_starts[i] = MetaIndex{meta_cursor};
       meta_cursor += total_tensors;
@@ -278,8 +279,8 @@ static_assert(std::endian::native == std::endian::little,
       trace->meta_starts[i] = MetaIndex::none();
     }
 
-    trace->scope_hashes[i]    = r.scope_hash;
-    trace->callsite_hashes[i] = r.callsite_hash;
+    trace->scope_hashes[i]    = op_record.scope_hash;
+    trace->callsite_hashes[i] = op_record.callsite_hash;
   }
 
   return trace;
