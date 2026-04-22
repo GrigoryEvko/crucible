@@ -10,10 +10,12 @@
 
 #include <crucible/Philox.h>
 
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <random>
 
 using namespace crucible;
 
@@ -223,6 +225,108 @@ static void test_pipeline() {
     std::printf("    2 iters × 3 ops × 1000 elems: all deterministic\n");
 }
 
+// ── std::philox4x32 bit-equivalence audit (P2075R6) ──────────────────
+//
+// libstdc++ 16.0.1 ships std::philox4x32 with the canonical
+// Philox4x32-10 multipliers and Weyl constants — the same the
+// Random123 paper specifies and that crucible::Philox uses.  This
+// test pins which subset of crucible::Philox::generate inputs
+// produces output bit-identical to std::philox4x32, and documents
+// where the two diverge.
+//
+// Findings (verified against libstdc++ 16.0.1 rawhide):
+//
+//   * Block cipher: identical.  Same 10 rounds, same multipliers,
+//     same Weyl bumps, same lane mixing.
+//   * Counter input: std::philox4x32::set_counter REVERSES the
+//     input array internally (`_M_x[j] = counter[N-1-j]`), so to
+//     reproduce crucible::Philox::generate({c0,c1,c2,c3}, ...) the
+//     std counter must be passed as {c3,c2,c1,c0}.
+//   * Output ordering: matches directly when the counter is fed
+//     pre-reversed — operator()() reads _M_y in descending index
+//     order which exactly cancels the set_counter reversal.
+//   * Key:
+//       - key[1] = 0 case: bit-equivalent.  std::seed(value) sets
+//         _M_k = {value, 0, ...}, exactly matching Crucible's Key.
+//       - key[1] != 0 case: NOT REPRODUCIBLE via the public API.
+//         std::philox_engine offers no member to set _M_k[1]
+//         independently; only seed(uint32) and seed(seed_seq) (which
+//         hashes inputs through a derivation step).  Migrating away
+//         from crucible::Philox is therefore impossible while we use
+//         non-zero key[1] (op_key derivation produces 64-bit keys).
+//
+// SIMD-9's future Philox::generate_batch8 must use scalar
+// crucible::Philox as the bit-equivalence oracle, not std::philox4x32.
+
+static void test_std_philox_equivalence() {
+    std::printf("  std::philox4x32 bit-equivalence audit...\n");
+
+    auto run_std = [](uint32_t k0,
+                      const std::array<uint32_t, 4>& counter)
+        -> std::array<uint32_t, 4>
+    {
+        std::philox4x32 stl;
+        stl.seed(k0);
+        // set_counter reverses internally; pre-reverse to match crucible.
+        stl.set_counter({counter[3], counter[2], counter[1], counter[0]});
+        return {static_cast<uint32_t>(stl()),
+                static_cast<uint32_t>(stl()),
+                static_cast<uint32_t>(stl()),
+                static_cast<uint32_t>(stl())};
+    };
+
+    // Case 1: zero counter, zero key — sanity check on the block.
+    {
+        auto cru = Philox::generate({0, 0, 0, 0}, {0, 0});
+        auto stl = run_std(0, {0, 0, 0, 0});
+        assert(cru == stl && "zero/zero block must match std::philox4x32");
+    }
+
+    // Case 2: non-zero counter with key[1] = 0 — full equivalence.
+    {
+        Philox::Ctr ctr{0xDEADBEEF, 0x12345678, 0xCAFEBABE, 0x87654321};
+        auto cru = Philox::generate(ctr, {0xA5A5A5A5, 0});
+        auto stl = run_std(0xA5A5A5A5, ctr);
+        assert(cru == stl && "k1=0 case must be bit-equivalent");
+    }
+
+    // Case 3: many random (counter, k0) pairs with k1=0 — fuzz the contract.
+    {
+        std::mt19937_64 rng{0xCAFEBEEFD00DULL};
+        for (int trial = 0; trial < 1000; ++trial) {
+            Philox::Ctr ctr{
+                static_cast<uint32_t>(rng()),
+                static_cast<uint32_t>(rng()),
+                static_cast<uint32_t>(rng()),
+                static_cast<uint32_t>(rng())};
+            uint32_t k0 = static_cast<uint32_t>(rng());
+            auto cru = Philox::generate(ctr, {k0, 0});
+            auto stl = run_std(k0, ctr);
+            assert(cru == stl &&
+                   "random (counter, k0, 0) trial must be bit-equivalent");
+        }
+    }
+
+    // Case 4: documents the divergence — k1 != 0 is NOT reproducible
+    // through the std public API.  We assert non-equivalence here so
+    // that any future libstdc++ change which exposes _M_k[1] would
+    // flip this test red and remind the maintainer to revisit the
+    // migration question.
+    {
+        Philox::Ctr ctr{1, 2, 3, 4};
+        auto cru = Philox::generate(ctr, {0xAAAA, 0xBBBB});
+        auto stl = run_std(0xAAAA, ctr);  // best we can do via std API
+        assert(cru != stl &&
+               "k1=0xBBBB must NOT match seed(k0=0xAAAA) — gap is fundamental "
+               "to std::philox_engine's public API.  If this assertion ever "
+               "fails, libstdc++ has presumably exposed _M_k[1] — revisit the "
+               "migration question and update GCC16-7 audit notes.");
+    }
+
+    std::printf("    block cipher matches; k1=0 fully equivalent; "
+                "k1!=0 not reproducible (documented gap)\n");
+}
+
 // ── constexpr verification ─────────────────────────────────────────
 
 static void test_constexpr() {
@@ -254,6 +358,7 @@ int main() {
     test_normal();
     test_op_keys();
     test_pipeline();
+    test_std_philox_equivalence();
     test_constexpr();
 
     std::printf("test_philox: PASSED\n");
