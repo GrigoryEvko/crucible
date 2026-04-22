@@ -383,3 +383,15 @@ option(CRUCIBLE_VERIFY "Build Z3 formal verification suite (Axiom)" OFF)
 if(CRUCIBLE_VERIFY)
   add_subdirectory(verify)
 endif()
+
+# Fuzz infrastructure (opt-in: property-based stress + adversarial
+# boundary harnesses).  Builds small executables that exercise the
+# library's invariants at scale:
+#   ctest -L fuzz_property  — deterministic property tests
+#   ctest -L fuzz_boundary  — adversarial corpus replay
+# Coverage-guided fuzzing via AFL++ QEMU-mode or libFuzzer drives the
+# same boundary harnesses (see fuzz/README.md).
+option(CRUCIBLE_FUZZ "Build property + boundary fuzz harnesses" OFF)
+if(CRUCIBLE_FUZZ)
+  add_subdirectory(fuzz)
+endif()
