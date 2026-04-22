@@ -9,6 +9,13 @@
 #include <version>
 #include <type_traits>
 
+#include <contracts>   // CRUCIBLE_ASSERT / CRUCIBLE_DEBUG_ASSERT
+#include <cstdio>      // CRUCIBLE_INVARIANT diagnostic path
+#include <cstdlib>     // CRUCIBLE_INVARIANT abort path
+#include <cstring>     // is_debugger_present: strstr parse of /proc status
+#include <fcntl.h>     // is_debugger_present: open(/proc/self/status)
+#include <unistd.h>    // is_debugger_present: read/close
+
 // ═══════════════════════════════════════════════════════════════════
 // Toolchain floor — hard-require C++26 and GCC 16 (or Clang 22 for
 // editor-only parsing). This is not a recommendation; the codebase
@@ -247,3 +254,112 @@ static_assert(__GNUC__ >= 16,
                   #T " must be standard-layout so offsetof() and "     \
                   "serialize/deserialize via per-field offsets is "    \
                   "well-defined")
+
+// ═══════════════════════════════════════════════════════════════════
+// Debugging primitives — shim for C++26 <debugging> (P2546R5).
+//
+// GCC 16.0.1 rawhide declares std::breakpoint / breakpoint_if_debugging
+// / is_debugger_present in <debugging> but libstdc++ 16.0.1 does not
+// yet ship the definitions (symbols absent from libstdc++.so.6.0.35).
+// We provide spec-equivalent implementations in crucible::detail so
+// the assertion triad below links today; once libstdc++ ships the
+// definitions, call sites can be migrated to std::* mechanically.
+// ═══════════════════════════════════════════════════════════════════
+
+namespace crucible::detail {
+
+// True iff this process is being traced by a debugger.  Linux impl
+// parses /proc/self/status for a non-zero TracerPid.  Cost is a few
+// syscalls — acceptable on the failure path (we're about to abort).
+// Returns false conservatively on any read/parse failure.
+[[nodiscard]] inline bool is_debugger_present() noexcept {
+    int fd = ::open("/proc/self/status", O_RDONLY | O_CLOEXEC);
+    if (fd < 0) return false;
+    char buf[4096];
+    ssize_t n = ::read(fd, buf, sizeof(buf) - 1);
+    ::close(fd);
+    if (n <= 0) return false;
+    buf[n] = '\0';
+    const char* p = buf;
+    while ((p = std::strstr(p, "TracerPid:")) != nullptr) {
+        p += sizeof("TracerPid:") - 1;
+        while (*p == ' ' || *p == '\t') ++p;
+        if (*p != '0' && *p >= '0' && *p <= '9') return true;
+        break;
+    }
+    return false;
+}
+
+// Unconditional programmatic breakpoint.  Platform-specific trap:
+// int3 on x86, brk #0 on aarch64.  __builtin_trap is portable and
+// emits the same opcode GCC uses for std::unreachable on UB.
+[[gnu::always_inline]] inline void breakpoint() noexcept {
+    __builtin_trap();
+}
+
+// Breakpoint only when a debugger is attached.  Under unattended CI
+// the call no-ops; under gdb/lldb it drops the operator at the
+// failure site so the stack frame can be inspected before abort.
+[[gnu::always_inline]] inline void breakpoint_if_debugging() noexcept {
+    if (is_debugger_present()) [[unlikely]] __builtin_trap();
+}
+
+} // namespace crucible::detail
+
+// ═══════════════════════════════════════════════════════════════════
+// Assertion triad — code_guide §XII
+//
+// Strictly-ordered by when they fire and what they cost:
+//
+//   CRUCIBLE_ASSERT(cond)        Always-on boundary precondition.
+//                                Contract-backed; respects
+//                                contract-evaluation-semantic.  Runs in
+//                                release under the default "observe"
+//                                semantic (logs + continues); hot TUs
+//                                opt to "ignore" for zero cost.
+//
+//   CRUCIBLE_DEBUG_ASSERT(cond)  Hot-path invariant.  Checked in debug
+//                                builds (contract_assert), compiled
+//                                out entirely in release via NDEBUG.
+//
+//   CRUCIBLE_INVARIANT(cond)     Fact the optimizer can exploit.
+//                                Release: lowers to [[assume(cond)]]
+//                                — zero runtime code, steers codegen
+//                                (range analysis, loop vectorization,
+//                                switch densification).
+//                                Debug: prints diagnostic, pauses the
+//                                attached debugger (P2546R5 via the
+//                                detail:: shim above), then aborts.
+//
+// The INVARIANT debug path uses breakpoint_if_debugging() rather than
+// unconditional breakpoint(): on unattended CI the traphint no-ops and
+// execution falls through to abort; under an attached debugger it
+// drops the operator at the failure site for inspection.  Without
+// this distinction, CI runs would core-dump with SIGTRAP and hide the
+// diagnostic message we just printed.
+// ═══════════════════════════════════════════════════════════════════
+
+#define CRUCIBLE_ASSERT(cond) contract_assert(cond)
+
+#ifdef NDEBUG
+  #define CRUCIBLE_DEBUG_ASSERT(cond) ((void)0)
+#else
+  #define CRUCIBLE_DEBUG_ASSERT(cond) contract_assert(cond)
+#endif
+
+#ifdef NDEBUG
+  #define CRUCIBLE_INVARIANT(cond) [[assume(cond)]]
+#else
+  #define CRUCIBLE_INVARIANT(cond)                                            \
+      do {                                                                    \
+          if (!(cond)) [[unlikely]] {                                         \
+              if (!::crucible::detail::is_debugger_present()) {               \
+                  std::fprintf(stderr,                                        \
+                               "crucible: invariant failed: %s (%s:%d)\n",   \
+                               #cond, __FILE__, __LINE__);                    \
+              }                                                               \
+              ::crucible::detail::breakpoint_if_debugging();                  \
+              std::abort();                                                   \
+          }                                                                   \
+      } while (0)
+#endif

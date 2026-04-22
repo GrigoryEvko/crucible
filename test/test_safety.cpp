@@ -426,6 +426,38 @@ static void test_mutation() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Assertion triad — Platform.h CRUCIBLE_ASSERT/DEBUG_ASSERT/INVARIANT
+//
+// Smoke test: each macro accepts a true expression without firing,
+// verifies the <debugging> shim links, and confirms the
+// is_debugger_present() probe returns a defined bool.  We don't try
+// to trigger contract violations here — those go through abort and
+// would terminate the test binary.
+// ═══════════════════════════════════════════════════════════════════
+
+static void test_assertion_triad() {
+    // CRUCIBLE_ASSERT: contract-backed boundary precondition.
+    int x = 42;
+    CRUCIBLE_ASSERT(x == 42);
+    CRUCIBLE_DEBUG_ASSERT(x > 0);
+    CRUCIBLE_INVARIANT(x > 0);
+
+    // The <debugging> shim must link.  is_debugger_present() returns
+    // false on unattended CI; under gdb/lldb returns true.  Either way
+    // it's a defined bool, not a link error.
+    bool dbg = ::crucible::detail::is_debugger_present();
+    (void)dbg;
+
+    // breakpoint_if_debugging() must link too.  On unattended CI it
+    // no-ops; under a debugger it would trap, but the test runner
+    // would not be running under a debugger so the call is safe.
+    ::crucible::detail::breakpoint_if_debugging();
+
+    std::printf("  AssertionTriad: ok (debugger_present=%s)\n",
+                dbg ? "true" : "false");
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // FileHandle — RAII posix fd wrapper
 // ═══════════════════════════════════════════════════════════════════
 
@@ -543,6 +575,7 @@ int main() {
     test_mutation();
     test_file_handle();
     test_constant_time();
+    test_assertion_triad();
     std::printf("All safety wrappers compile and pass smoke test.\n");
     return 0;
 }
