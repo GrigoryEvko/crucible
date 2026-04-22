@@ -82,7 +82,6 @@ int main() {
     std::printf("=== serialize ===\n\n");
 
     std::vector<bench::Report> reports;
-    reports.reserve(6);   // 3 sizes × 2 ops (ser + deser)
 
     for (uint32_t num_ops : {16u, 128u, 1024u}) {
         // Per-size fixture: one arena, one region, one wire buffer sized

@@ -106,7 +106,6 @@ int main(int argc, char* argv[]) {
     std::printf("=== merkle_dag ===\n\n");
 
     std::vector<bench::Report> reports;
-    reports.reserve(16);
 
     // ── compute_content_hash at three region sizes ───────────────────
     reports.push_back([]{

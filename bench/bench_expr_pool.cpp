@@ -45,9 +45,10 @@ const Expr* build_deep_tree(fx::Alloc a, ExprPool& pool, int depth) {
 
 void populate_pool(fx::Alloc a, ExprPool& pool, int n,
                    std::vector<const Expr*>& out) {
-    out.reserve(static_cast<size_t>(n));
+    out.assign(static_cast<size_t>(n), nullptr);
     for (int i = 0; i < n; ++i) {
-        out.push_back(pool.integer(a, static_cast<int64_t>(i) + 1000));
+        out[static_cast<size_t>(i)] =
+            pool.integer(a, static_cast<int64_t>(i) + 1000);
     }
 }
 
@@ -79,7 +80,6 @@ int main() {
     }
 
     std::vector<bench::Report> reports;
-    reports.reserve(22);
 
     // ── Atom cache hits ───────────────────────────────────────────────
     reports.push_back([&]{

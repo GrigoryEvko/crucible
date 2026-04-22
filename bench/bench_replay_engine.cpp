@@ -157,7 +157,6 @@ int main() {
     std::printf("  sizeof(TraceEntry)      : %zu B\n\n", sizeof(TraceEntry));
 
     std::vector<bench::Report> reports;
-    reports.reserve(12);  // 3 sizes × 4 scenarios
 
     for (uint32_t n : {8u, 100u, 1000u}) {
         // Each size scope owns a BenchRegion, a PoolAllocator, the

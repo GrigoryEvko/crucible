@@ -187,8 +187,7 @@ void bench_phases_toplevel(
 
     // Measurement: run build_trace N times, accumulate.
     double              total_ns = 0;
-    std::vector<double> samples;
-    samples.reserve(iters);
+    std::vector<double> samples(iters);
 
     for (uint32_t iter = 0; iter < iters; iter++) {
         bg.current_trace.assign(trace.entries.begin(),
@@ -210,7 +209,7 @@ void bench_phases_toplevel(
         bench::do_not_optimize(graph);
         const double ns = static_cast<double>(t1 - t0) * nspc;
         total_ns += ns;
-        samples.push_back(ns);
+        samples[iter] = ns;
     }
 
     std::sort(samples.begin(), samples.end());
@@ -821,7 +820,6 @@ int main(int argc, char* argv[]) {
 
     std::printf("\n=== full pipeline (bench::run with BPF sensing) ===\n");
     std::vector<bench::Report> reports;
-    reports.reserve(1);
     reports.push_back(run_fullpipeline(bg, meta_log, *trace));
     bench::emit_reports_text(reports);
 

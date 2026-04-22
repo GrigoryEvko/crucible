@@ -225,7 +225,6 @@ int main() {
     std::printf("  sizeof(TensorMeta)       : %zu B\n\n",sizeof(TensorMeta));
 
     std::vector<bench::Report> reports;
-    reports.reserve(20);
 
     // ── Sub-component baselines ────────────────────────────────────
     std::printf("--- sub-component baselines ---\n");
