@@ -771,6 +771,8 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 | Placeholder variable `_` | P2169R4 | Explicit discard |
 | User-generated static_assert messages | P2741R3 | Better compile errors |
 | `= delete("reason")` | P2573R2 | Every banned copy/move |
+| Structured binding decl as condition | P0963R3 | `if (auto [iter, ok] = map.insert(x))` — skip trailing `;ok` |
+| Variadic friends | P2893R3 | Tagged-newtype friend families across template packs |
 
 ### Opt IN — from C++23
 
@@ -828,6 +830,16 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 | `std::countr_zero` / `popcount` (C++20) | Bit manipulation primitives |
 | `std::span` (C++20) | Pointer+count replacement |
 | `std::jthread` (C++20) | Auto-joining thread, no destructor-terminate |
+| `<simd>`: `std::simd::vec`, `partial_load`, `reduce_min/max`, `simd::chunk` (C++26) | Default for new SIMD; library does per-ISA dispatch internally. DetSafe: integer reductions only — FP reductions forbidden (ISA-dependent rounding) |
+| `std::atomic<T>::fetch_max` / `fetch_min` (C++26) | Monotonic update without CAS retry loop; replaces the `Monotonic<T>::bump` CAS pattern |
+| `<debugging>` — `breakpoint_if_debugging`, `is_debugger_present` (C++26) | Pause when debugger attached, continue otherwise; tighten `CRUCIBLE_INVARIANT` |
+| `std::latch` / `std::barrier` / `std::counting_semaphore` (C++20) | Pool throttling, one-shot init, fan-in waits — replace bespoke atomic+spin where ≥100 ns latency is acceptable |
+| `std::is_within_lifetime` (C++26) | Debug-time UAF detection in `Linear<T>` / `ScopedView<>` |
+| `std::source_location` (C++20) | Replace `__FILE__`/`__LINE__` in trace/assert/contract-violation paths |
+| `std::is_sufficiently_aligned`, `std::aligned_accessor` (C++26) | Typed alternatives to `__builtin_assume_aligned` |
+| `std::atomic_ref::address()` (C++26) | Bench/diagnostic — verify the atomic points where the planner said it does |
+| `std::philox_engine` (C++26) | Standard counter-based RNG; cross-reference Crucible's `Philox.h` for bit-equivalence |
+| `std::is_layout_compatible_with`, `std::is_pointer_interconvertible_with_class` (C++20) | Semantic companion to `static_assert(sizeof(T) == N)` for layout-strict structs |
 
 ### Opt OUT
 
@@ -855,6 +867,10 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 | `std::variant` on hot path | Visitor dispatch; `kind` enum + `static_cast` |
 | Bitfields | Often slower than manual shift+mask; manual bits |
 | `std::codecvt` | Deprecated, broken API |
+| `std::rcu` / `<hazard_pointer>` (C++26) | We publish via `AtomicSnapshot<T>` + `atomic_ref` — finer control, DetSafe-documented; stdlib variants add overhead we don't need |
+| `std::simd` FP reductions (`reduce_*` on float/double) | ISA-dependent rounding; breaks DetSafe bit-equality across platforms. Integer reductions are safe |
+| `std::linalg` (C++26) | HS9 bans vendor BLAS; `<linalg>` dispatches through one anyway |
+| `std::copyable_function` (C++26) | Heap allocation risk on capture-heavy lambdas; prefer `function_ref` (borrow) + explicit owned-pointer when ownership is needed |
 
 ---
 
