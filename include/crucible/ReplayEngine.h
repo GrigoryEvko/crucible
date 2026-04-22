@@ -109,7 +109,13 @@ struct ReplayEngine {
     end_ = region->ops + region->num_ops;
     cursor_ = ops_;
     current_ = nullptr;
-    slot_table_ = pool->table();
+    // Mint the InitializedView and consume it via the typed table()
+    // overload.  The view's pre() is is_initialized() — already
+    // proved by the function's pre() above — so minting is a no-op
+    // assert.  The typed call returns a gnu::returns_nonnull pointer,
+    // matching ReplayEngine's slot_table_ != nullptr post-condition.
+    const auto pool_view = pool->mint_initialized_view();
+    slot_table_ = pool->table(pool_view);
     pool_ = pool;
     // Prime the cache: load first entry's guard values.
     if (ops_ != end_) [[likely]] {

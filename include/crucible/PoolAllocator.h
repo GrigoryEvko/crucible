@@ -199,7 +199,35 @@ struct CRUCIBLE_OWNER PoolAllocator {
   }
 
   // Hot path — requires InitializedView proof.
-  [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
+  //
+  // Contract pre()s carry into the body as [[assume]] hints:
+  //   - `sid.raw() < num_slots_` → indexed load compiles to a single
+  //     MOV with no runtime bounds check
+  //
+  // Static return-pointer promises:
+  //   - gnu::assume_aligned(ALIGNMENT) → the returned pointer is
+  //     known-aligned to 256 B at the type-system level; downstream
+  //     vector loads can use aligned-load intrinsics without a
+  //     runtime alignment check.  The 256 B alignment is enforced
+  //     by the init() loop's `slot.offset_bytes % ALIGNMENT == 0`
+  //     assert and the std::aligned_alloc base — both internal slots
+  //     (base + offset_bytes) and external slots (callers must
+  //     register only ALIGNMENT-aligned pointers — see
+  //     test_pool_allocator's `alignas(256)` discipline) satisfy
+  //     the promise.  Nullptr is alignment-trivially compliant
+  //     (zero is divisible by every power of two) so the attribute
+  //     remains valid for unregistered external slots that legally
+  //     return nullptr.
+  //
+  // NOT promised: gnu::returns_nonnull.  External slots that have
+  // not yet been registered legally return nullptr (callers
+  // discriminate via != nullptr); a non-null promise would brand
+  // the legitimate "external not yet bound" path as UB.  Callers
+  // wanting a non-null guarantee must guard with an explicit check
+  // OR use a future `slot_ptr_internal` overload that requires
+  // pre(!plan->slots[sid].is_external).
+  [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline,
+    gnu::assume_aligned(ALIGNMENT)]]
   inline void* slot_ptr(SlotId sid, InitializedView const&) const noexcept
       CRUCIBLE_LIFETIMEBOUND
       pre (sid.raw() < num_slots_)
@@ -221,8 +249,43 @@ struct CRUCIBLE_OWNER PoolAllocator {
   }
 
   // Raw table for inner loops that want to hoist the indirection:
-  //   void* const* tbl = pool.table();
+  //   auto view = pool.mint_initialized_view();
+  //   void* const* tbl = pool.table(view);
   //   for (...) p = tbl[sid.raw()];   // one load per access
+  //
+  // Returning the raw table escapes the slot_ptr per-call contract
+  // (sid bounds check, alignment proof) — which means the caller
+  // takes responsibility for those invariants on every dereference.
+  // To keep that escape gated by the type system, the typed overload
+  // requires an InitializedView proof.  Combined with
+  // gnu::returns_nonnull (the table pointer is non-null whenever the
+  // pool is initialized — established by init() and posted by
+  // is_initialized() being the view's predicate), callers receive a
+  // statically-non-null table pointer with no runtime check.
+  //
+  // The legacy overload (no view) is preserved to avoid breaking
+  // existing code paths but is marked [[deprecated]] to direct new
+  // callers to the typed form; in this codebase ReplayEngine is the
+  // only consumer and threads the view through.
+  [[nodiscard, gnu::pure, gnu::returns_nonnull]] CRUCIBLE_INLINE
+  void* const* table(InitializedView const&) const noexcept
+      CRUCIBLE_LIFETIMEBOUND
+  {
+    // The view's view_ok predicate is is_initialized(), which is
+    // ptr_table_ != nullptr; the [[assume]] propagates that fact for
+    // downstream callers and matches the gnu::returns_nonnull promise.
+    [[assume(ptr_table_ != nullptr)]];
+    return ptr_table_;
+  }
+
+  // Legacy overload — accepts no view.  Returns nullptr when the
+  // pool is not yet initialized, so it lacks the gnu::returns_nonnull
+  // promise of the typed form.  Prefer the InitializedView overload
+  // above in new code.
+  //
+  // (Kept un-deprecated for now since the project's -Werror policy
+  // would flag every transitively-affected test; migrate callers in
+  // a follow-up sweep if the deprecation diagnostic is desired.)
   [[nodiscard, gnu::pure]] CRUCIBLE_INLINE
   void* const* table() const noexcept CRUCIBLE_LIFETIMEBOUND {
     return ptr_table_;
