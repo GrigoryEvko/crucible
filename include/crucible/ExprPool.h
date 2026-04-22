@@ -42,6 +42,29 @@ namespace detail {
 // Uses wyhash-style 128-bit multiply mixing: each wymix() is a single
 // mulq + xor on x86-64 (~3 cycles). Total cost for a binary node:
 // 2 wymix calls = ~6 cycles ≈ 2ns. Previous fmix64 chain was ~15ns.
+//
+// ─── Why NOT reflect_hash on Expr? (REFL-4) ────────────────────────
+//
+// Two reasons this stays manual:
+//
+// (1) API shape: this hash is computed on the intern hot path BEFORE
+//     an Expr exists.  Inputs are loose parameters (op, payload,
+//     symbol_id, flags, args, nargs) — there's no Expr struct yet
+//     to reflect on.  Building one to reflect would require an arena
+//     allocation per probe attempt; the whole point of the intern
+//     path is to avoid that allocation when the lookup hits.
+//
+// (2) Performance: the manual path is ~6 cycles for the common
+//     binary-arg case (one wymix per arg).  reflect_hash builds a
+//     multiplicative wymix-like chain over members + a final fmix64
+//     — even on a synthesized struct that would be ~3-4× slower.
+//     ExprPool::intern is the single hottest function in the bg
+//     trace path; the perf budget here is unforgiving.
+//
+// If a separate cross-process structural hash is ever needed (FORGE.md
+// §18.6 federation), it would be a SECOND function operating on an
+// already-interned `const Expr&` and could cleanly use reflect_hash
+// without the API or perf constraints listed above.
 inline uint64_t expr_hash(
     Op op,
     int64_t payload,

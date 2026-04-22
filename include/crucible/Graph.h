@@ -996,6 +996,26 @@ class CRUCIBLE_OWNER Graph {
   // so the output is NOT cross-process stable.  This is fine for its
   // single purpose: CSE probing within one compile pass on the bg
   // thread.  MUST NOT be persisted or fed into any Cipher key.
+  //
+  // ─── Why NOT reflect_hash<GraphNode>? (REFL-4) ─────────────────────
+  //
+  // Pure reflect_hash<GraphNode> would iterate ALL non-static data
+  // members — including fields that are NOT part of CSE identity:
+  //   - `id` — unique per node, defeats the entire point of CSE
+  //   - output edges, parent links — derivative of structural shape
+  //   - scratch fields written by later passes
+  //
+  // Including those would change CSE semantics, not just bit pattern:
+  // two structurally-equivalent nodes would receive different hashes
+  // and miss collapse, producing incorrect (but valid-looking)
+  // graphs.  The manual hash here projects exactly the structural
+  // fields and uses kind-conditional logic for the body / extern /
+  // reduce-op portions.
+  //
+  // When C++26 annotations (P3394R4) land in the ecosystem, this
+  // becomes a candidate for `[[crucible::cse_hash::include]]`-style
+  // field tagging + annotation-aware reflection.  Until then, the
+  // explicit selection here is load-bearing and must stay manual.
   [[nodiscard]] static uint64_t cse_hash_(
       const GraphNode* n, const GraphNode* const* canonical) {
     uint64_t h = detail::fmix64(
