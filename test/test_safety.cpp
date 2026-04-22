@@ -4,14 +4,18 @@
 
 #include <crucible/safety/Safety.h>
 
+#include <atomic>
 #include <cassert>
 #include <contracts>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <functional>
 #include <string>
+#include <thread>
 #include <utility>
+#include <vector>
 
 // Weak default handle_contract_violation comes from libcrucible.a
 // (src/ContractHandler.cpp).  Nothing to do here.
@@ -336,6 +340,87 @@ static void test_mutation() {
         assert(!cnt.try_advance(1U));          // goes backward — rejected
         assert(cnt.try_advance(4U));           // fine
         assert(cnt.get() == 4U);
+    }
+
+    // AtomicMonotonic — fetch_max fast path on canonical std::less<T>.
+    // Single-threaded behavior must match the non-atomic Monotonic.
+    {
+        AtomicMonotonic<std::uint64_t> step{0};
+        assert(step.get() == 0ULL);
+        assert(step.try_advance(1ULL));        // 0 → 1: advanced
+        assert(step.get() == 1ULL);
+        assert(!step.try_advance(1ULL));       // equal: no-op, returns false
+        assert(!step.try_advance(0ULL));       // backward: no-op, returns false
+        assert(step.try_advance(7ULL));        // jump forward
+        assert(step.get() == 7ULL);
+        assert(!step.try_advance(5ULL));       // backward again
+        assert(step.get() == 7ULL);
+
+        // Strict advance: contract checks for non-monotonic input.
+        step.advance(8ULL);
+        assert(step.get() == 8ULL);
+    }
+
+    // AtomicMonotonic with std::greater — fetch_min fast path.
+    {
+        AtomicMonotonic<std::uint64_t, std::greater<std::uint64_t>> floor{100ULL};
+        assert(floor.get() == 100ULL);
+        assert(floor.try_advance(50ULL));      // 100 → 50: advanced
+        assert(floor.get() == 50ULL);
+        assert(!floor.try_advance(50ULL));     // equal
+        assert(!floor.try_advance(60ULL));     // backward (greater than current)
+        assert(floor.try_advance(0ULL));       // jump down
+        assert(floor.get() == 0ULL);
+    }
+
+    // MaxObserved alias — same underlying impl, intent-revealing name.
+    {
+        MaxObserved<std::uint32_t> high_water{0U};
+        assert(high_water.try_advance(50U));
+        assert(high_water.try_advance(100U));
+        assert(!high_water.try_advance(75U));   // not a new high
+        assert(high_water.get() == 100U);
+    }
+
+    // Concurrent stress: N threads each push an exclusive range of values.
+    // Final state must be the global max.  Total successful try_advance
+    // returns must equal the number of strict-improvement events
+    // (every thread always sees a higher max from someone else partway).
+    {
+        constexpr int kThreads = 4;
+        constexpr std::uint64_t kPerThread = 4096;
+
+        AtomicMonotonic<std::uint64_t> shared_high{0};
+        std::atomic<std::uint64_t> total_advances{0};
+
+        {
+            std::vector<std::jthread> workers;
+            workers.reserve(kThreads);
+            for (int tid = 0; tid < kThreads; ++tid) {
+                workers.emplace_back([tid, &shared_high, &total_advances]{
+                    std::uint64_t local_advances = 0;
+                    const std::uint64_t base =
+                        static_cast<std::uint64_t>(tid) * kPerThread;
+                    for (std::uint64_t v = 1; v <= kPerThread; ++v) {
+                        if (shared_high.try_advance(base + v))
+                            ++local_advances;
+                    }
+                    total_advances.fetch_add(local_advances,
+                                             std::memory_order_relaxed);
+                });
+            }
+        }  // jthreads join
+
+        // Final value must be the highest base+v any thread tried.
+        const std::uint64_t expected_max =
+            static_cast<std::uint64_t>(kThreads - 1) * kPerThread + kPerThread;
+        assert(shared_high.get() == expected_max);
+        // At least kPerThread advances must have stuck (the winning thread's
+        // monotonic stride alone), and no more than kThreads*kPerThread.
+        const std::uint64_t advances =
+            total_advances.load(std::memory_order_relaxed);
+        assert(advances >= kPerThread);
+        assert(advances <= kThreads * kPerThread);
     }
     std::printf("  Mutation:       ok\n");
 }

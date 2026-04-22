@@ -373,16 +373,19 @@ public:
 
 // ── AtomicMonotonic<T> ─────────────────────────────────────────────
 //
-// Thread-safe Monotonic: multiple threads may observe, but only one
-// may advance.  Advances enforce monotonicity via compare_exchange in
-// a loop — concurrent advances with non-monotonic values all lose the
-// CAS.  Loads are acquire; stores (on successful advance) are release.
+// Thread-safe Monotonic: multiple threads may observe and advance.
+// Loads are acquire; advances are acq_rel.
 //
 // sizeof(AtomicMonotonic<uint64_t>) == sizeof(atomic<uint64_t>).
 //
 //   Axiom coverage: ThreadSafe + DetSafe.
-//   Runtime cost:   one CAS per advance under contention, one load
-//                   per get().  No heap, no locks.
+//   Runtime cost:   one fetch_max / fetch_min per advance for the
+//                   canonical std::less / std::greater comparators on
+//                   integral T (P0493R5, GCC 16).  ARMv8.1+ LSE emits
+//                   one-cycle LDUMAX / LDUMIN; x86-64 emits an
+//                   equivalent CAS loop in libstdc++.  Falls back to a
+//                   hand-rolled CAS loop for arbitrary Cmp or
+//                   non-integral T.
 //
 // Pinned<>: the atomic IS the channel identity; movement would fork
 // the monotonic sequence across two atomics.
@@ -391,6 +394,19 @@ template <typename T, typename Cmp = std::less<T>>
     requires std::is_trivially_copyable_v<T>
 class [[nodiscard]] AtomicMonotonic : Pinned<AtomicMonotonic<T, Cmp>> {
     std::atomic<T> value_;
+
+    // Canonical comparator detection: handle both the explicitly-typed
+    // (std::less<T>) and the transparent (std::less<>) forms.  The
+    // transparent form lets future call sites use heterogeneous compares
+    // without giving up the fetch_max fast path.
+    static constexpr bool kIsLess =
+        std::is_same_v<Cmp, std::less<T>> ||
+        std::is_same_v<Cmp, std::less<>>;
+    static constexpr bool kIsGreater =
+        std::is_same_v<Cmp, std::greater<T>> ||
+        std::is_same_v<Cmp, std::greater<>>;
+    static constexpr bool kFastPathEligible =
+        std::integral<T> && (kIsLess || kIsGreater);
 
 public:
     using value_type      = T;
@@ -402,29 +418,31 @@ public:
         return value_.load(std::memory_order_acquire);
     }
 
-    // Advance to new_value.  Contract fires if new_value goes
-    // backward relative to ANY observed value (not just the current).
-    // Returns true iff the value was advanced by this call; false if
-    // the atomic already held a value ≥ new_value.
+    // Try to advance to new_value.  Returns true iff this call moved the
+    // value forward (per Cmp); false if the atomic already held a value
+    // that is at-or-past new_value.
+    //
+    // Fast path (canonical Cmp + integral T): one fetch_max / fetch_min.
+    // Slow path: CAS loop preserving the original semantics.
     [[nodiscard]] bool try_advance(T new_value) noexcept {
-        Cmp cmp;
-        T observed = value_.load(std::memory_order_acquire);
-        while (!cmp(observed, new_value)) {
-            // observed ≥ new_value — the monotonic invariant already
-            // includes new_value; no advance needed.
-            if (!cmp(observed, new_value) && !cmp(new_value, observed))
-                return false;  // equal
-            return false;      // observed > new_value; skip advance
+        if constexpr (kFastPathEligible && kIsLess) {
+            const T prev = value_.fetch_max(new_value, std::memory_order_acq_rel);
+            return prev < new_value;
+        } else if constexpr (kFastPathEligible && kIsGreater) {
+            const T prev = value_.fetch_min(new_value, std::memory_order_acq_rel);
+            return prev > new_value;
+        } else {
+            Cmp cmp;
+            T observed = value_.load(std::memory_order_acquire);
+            while (cmp(observed, new_value)) {
+                if (value_.compare_exchange_weak(
+                        observed, new_value,
+                        std::memory_order_acq_rel,
+                        std::memory_order_acquire))
+                    return true;
+            }
+            return false;
         }
-        // observed < new_value — attempt to publish.  Loop handles
-        // races with other advancers.
-        while (!value_.compare_exchange_weak(
-                observed, new_value,
-                std::memory_order_acq_rel,
-                std::memory_order_acquire)) {
-            if (!cmp(observed, new_value)) return false;  // someone beat us with ≥
-        }
-        return true;
     }
 
     // Strict advance: contract fires if new_value would go backward.
