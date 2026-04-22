@@ -20,10 +20,21 @@ void handle_contract_violation(
 // On unattended CI the pause no-ops and execution falls straight
 // through to abort, which produces the core dump CI post-mortem
 // tooling expects.
+//
+// The violation object carries a std::source_location (P1208R6) via
+// .location() — surface file/line/function on the diagnostic so
+// post-mortem doesn't require opening a debugger to find the site.
 [[gnu::weak, noreturn]]
 void handle_contract_violation(
     const std::contracts::contract_violation& v) noexcept {
-    std::fprintf(stderr, "crucible: contract violation: %s\n", v.comment());
+    const std::source_location loc = v.location();
+    std::fprintf(stderr,
+                 "crucible: contract violation: %s\n"
+                 "  at %s:%u in %s\n",
+                 v.comment(),
+                 loc.file_name(),
+                 loc.line(),
+                 loc.function_name());
     ::crucible::detail::breakpoint_if_debugging();
     std::abort();
 }
