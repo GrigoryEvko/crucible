@@ -183,6 +183,27 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(NumericalRecipe);
 //
 // Cost: ~5 integer ops + one 64-bit multiply chain.  constexpr — can
 // be computed at compile time for static starter recipes.
+//
+// ─── Why NOT reflect_fmix_fold (REFL-4 style)? ────────────────────
+//
+// Same family as ExprPool::expr_hash — INTENTIONAL manual packing.
+// The 8 semantic bytes of NumericalRecipe pack EXACTLY into one
+// uint64_t (7 enums @ 1B + flags @ 1B = 8 bytes), so a single fmix64
+// covers the entire recipe identity.  reflect_fmix_fold would do
+// 8 fmix64 calls (one per reflected member) — ~6× slower per recipe
+// hash, with no avalanche benefit at this scale (the single fmix64's
+// internal multiply chain already provides full avalanche over the
+// 64-bit packed input).
+//
+// Additional constraint: the `hash` field on NumericalRecipe must be
+// EXCLUDED from the fold (idempotence: hashed(hashed(x)) == hashed(x)).
+// Pure reflect_hash<NumericalRecipe> would include it.  A local Spec
+// struct (loopterm_hash pattern) would work but adds boilerplate
+// without buying anything since the manual packing is already
+// minimal and clearly correct.
+//
+// If NumericalRecipe ever grows beyond the 8-byte semantic budget,
+// switch to a Spec + reflect_fmix_fold pattern at that point.
 
 namespace detail_recipe {
     // MurmurHash3 64-bit finalizer.  Same constants as detail::fmix64
