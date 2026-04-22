@@ -60,6 +60,11 @@ crucible_property_fuzzer(prop_recipe_pool_intern)
 crucible_property_fuzzer(prop_reflect_avalanche)
 crucible_property_fuzzer(prop_diff_reflect_vs_packed)
 crucible_property_fuzzer(prop_recipe_hashed_idempotent)
+crucible_property_fuzzer(prop_content_hash_determinism)
+crucible_property_fuzzer(prop_content_hash_recipe_disambiguates)
+crucible_property_fuzzer(prop_recipe_registry_roundtrip)
+crucible_property_fuzzer(prop_arena_alloc_invariants)
+crucible_property_fuzzer(prop_header_roundtrip)
 
 # ── Boundary fuzzers (adversarial input) ───────────────────────
 
@@ -80,3 +85,4 @@ function(crucible_boundary_fuzzer name)
 endfunction()
 
 crucible_boundary_fuzzer(fuzz_serialize)
+crucible_boundary_fuzzer(fuzz_recipe_bytes)
