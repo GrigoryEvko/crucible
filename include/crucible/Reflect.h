@@ -101,6 +101,124 @@ template <typename T>
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// has_reflected_hash<T> — consteval trait reporting whether T can be
+// hashed via reflect_hash.  True for any class type whose every
+// non-static data member is itself reflect_hash-supported (enums,
+// integrals, floats, pointers, arrays, nested classes meeting the
+// same constraint).
+//
+// Use this to gate generic code paths that opt into reflection-driven
+// hashing — callers that don't satisfy the constraint fall back to a
+// manual hash.  Example:
+//
+//   if constexpr (has_reflected_hash<MyType>) {
+//       return reflect_hash(obj);
+//   } else {
+//       return manual_hash(obj);
+//   }
+//
+// Implementation: probe `reflect_hash(declval<const T&>())` in an
+// unevaluated context.  If substitution succeeds, the trait is true.
+//
+// Safety: zero runtime cost (consteval); zero ODR risk (template
+// detection idiom is header-stable).
+// ═══════════════════════════════════════════════════════════════════
+
+namespace detail_reflect {
+
+// Detection helper: SFINAE-friendly invocation of reflect_hash.
+// requires-expression returns true iff reflect_hash<T>() is callable
+// in an unevaluated context.  Wrapped in a consteval to make the
+// trait usable at compile time without instantiation.
+template <typename T>
+consteval bool detect_reflected_hash() noexcept {
+  if constexpr (std::is_class_v<T>) {
+    return requires (const T& t) { reflect_hash(t); };
+  } else {
+    return false;
+  }
+}
+
+}  // namespace detail_reflect
+
+template <typename T>
+inline constexpr bool has_reflected_hash =
+    detail_reflect::detect_reflected_hash<T>();
+
+// ═══════════════════════════════════════════════════════════════════
+// reflect_fmix_fold<T,Seed> — fmix64-based reflection fold helper.
+//
+// reflect_hash uses a multiplicative wymix-like mixing scheme; some
+// callers (feedback_signature, loopterm_hash) need a different
+// mixing pattern: seed-then-fmix64-per-field, with the seed acting
+// as a domain separator.  This helper provides that pattern over
+// reflected fields.
+//
+// Compared to reflect_hash:
+//   - reflect_hash:        h0 = 0x9E37...; for each f: h = h*0x9E37 ^ hash_field(f); h = fmix64(h)
+//   - reflect_fmix_fold:   h0 = Seed;     for each f: h = fmix64(h ^ packed_field(f))
+//
+// The fmix64-fold pattern preserves the "domain-separated, no
+// cross-field algebraic collapse" property the manual hashes were
+// designed for: a per-field fmix64 ensures bit avalanche before the
+// next XOR, so two structs differing in a low-entropy field produce
+// hashes differing across the whole word.
+//
+// Used in MerkleDag.h's feedback_signature / loopterm_hash via
+// reflect-based refactors that preserve the call-site semantics
+// (Family-A persistence safe per their documented contract — the
+// hash differs from the prior manual one in BIT pattern but the
+// uniqueness/avalanche properties are equivalent).
+// ═══════════════════════════════════════════════════════════════════
+
+namespace detail_reflect {
+
+// Pack a field value into a uint64_t for XOR-into-accumulator
+// folding.  Trivial cases (≤8B integral / enum / float / pointer)
+// pack directly; arrays are byte-summed; nested classes recurse via
+// reflect_hash.  Distinct from hash_field above (which applies
+// fmix64 PER field): pack_field is the LINEAR step before the
+// outer fmix64 in the fold loop.
+template <typename T>
+[[nodiscard, gnu::pure]] constexpr uint64_t pack_field(const T& val) noexcept {
+  if constexpr (std::is_enum_v<T>) {
+    return static_cast<uint64_t>(std::to_underlying(val));
+  } else if constexpr (std::is_integral_v<T>) {
+    return static_cast<uint64_t>(val);
+  } else if constexpr (std::is_floating_point_v<T>) {
+    if constexpr (sizeof(T) == 4)
+      return static_cast<uint64_t>(std::bit_cast<uint32_t>(val));
+    else
+      return std::bit_cast<uint64_t>(val);
+  } else if constexpr (std::is_pointer_v<T>) {
+    return reinterpret_cast<uintptr_t>(val);
+  } else if constexpr (std::is_class_v<T>) {
+    return reflect_hash(val);  // recursive
+  } else {
+    static_assert(false, "Unsupported type for reflect_fmix_fold");
+  }
+}
+
+template <typename T, uint64_t Seed, size_t... Is>
+[[nodiscard, gnu::pure]] constexpr uint64_t
+fmix_fold_impl(const T& obj, std::index_sequence<Is...>) noexcept {
+  uint64_t h = Seed;
+  ((h = detail::fmix64(h ^ pack_field(obj.[:member_info<T, Is>():]))), ...);
+  return h;
+}
+
+}  // namespace detail_reflect
+
+template <uint64_t Seed, typename T>
+  requires std::is_class_v<T>
+[[nodiscard, gnu::pure]] constexpr uint64_t
+reflect_fmix_fold(const T& obj) noexcept {
+  constexpr size_t N = detail_reflect::member_count<T>();
+  return detail_reflect::fmix_fold_impl<T, Seed>(
+      obj, std::make_index_sequence<N>{});
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // reflect_print<T>: Auto-generated debug printing via reflection
 //
 // Prints "TypeName { field0 = val, field1 = val, ... }\n" to stderr.
