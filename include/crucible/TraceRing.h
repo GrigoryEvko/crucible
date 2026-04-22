@@ -327,6 +327,72 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     return count;
   }
 
+  // ── Consumer (background): bulk SPSC drain with REQUIRED outputs ────
+  //
+  // Like drain() but ALL 4 output buffers are mandatory (contract-
+  // checked).  Trade-off: caller commits to receiving all four
+  // parallel arrays — the implementation loses the per-array null
+  // branches that drain() carries (3 fewer conditional jumps per
+  // call), and downstream SIMD batch processors (SIMD-12) get a
+  // tight contract that every pop populates every array.
+  //
+  // Determinism: produces ENTRIES in identical FIFO order to N
+  // successive single-pop drain(out, 1, ..., ..., ...) calls.  The
+  // SPSC head/tail mechanism is the same; this method just amortizes
+  // the head acquire-load and the tail release-store across max_count
+  // entries.
+  //
+  // SPSC-safe: consumer is the sole writer of tail and sole reader
+  // of entries[tail..head].  Clang thread-safety suppressed.
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
+  [[nodiscard, gnu::hot]] uint32_t try_pop_batch(
+      Entry*        out_entries,
+      MetaIndex*    out_meta_starts,
+      ScopeHash*    out_scope_hashes,
+      CallsiteHash* out_callsite_hashes,
+      uint32_t      max_count) noexcept CRUCIBLE_NO_THREAD_SAFETY
+      pre (max_count == 0 ||
+           (out_entries != nullptr &&
+            out_meta_starts != nullptr &&
+            out_scope_hashes != nullptr &&
+            out_callsite_hashes != nullptr))
+  {
+    // acquire: pair with producer's release store — observe entry writes.
+    const uint64_t h = head.load(std::memory_order_acquire);
+    // relaxed: consumer reads its own tail — no cross-thread sync needed.
+    const uint64_t t = tail.load(std::memory_order_relaxed);
+
+    const uint32_t available = static_cast<uint32_t>(h - t);
+    const uint32_t count     = std::min(available, max_count);
+    if (count == 0) [[unlikely]] return 0;
+
+    // Wrap split: at most two contiguous runs inside entries[].
+    const uint32_t start  = static_cast<uint32_t>(t) & MASK;
+    const uint32_t first  = std::min(count, CAPACITY - start);
+    const uint32_t second = count - first;
+
+    // Unconditional memcpys — the all-required precondition lets us
+    // skip per-array null checks (vs drain()'s 3 branches per array
+    // per segment = up to 6 branches per call).  Cleaner SIMD store-
+    // forwarding pattern.
+    std::memcpy(out_entries,         &entries[start],         first * sizeof(Entry));
+    std::memcpy(out_meta_starts,     &meta_starts[start],     first * sizeof(MetaIndex));
+    std::memcpy(out_scope_hashes,    &scope_hashes[start],    first * sizeof(ScopeHash));
+    std::memcpy(out_callsite_hashes, &callsite_hashes[start], first * sizeof(CallsiteHash));
+
+    if (second > 0) [[unlikely]] {
+      std::memcpy(out_entries         + first, &entries[0],         second * sizeof(Entry));
+      std::memcpy(out_meta_starts     + first, &meta_starts[0],     second * sizeof(MetaIndex));
+      std::memcpy(out_scope_hashes    + first, &scope_hashes[0],    second * sizeof(ScopeHash));
+      std::memcpy(out_callsite_hashes + first, &callsite_hashes[0], second * sizeof(CallsiteHash));
+    }
+
+    // release: publish "slots [t, t+count) are free"; producer's acquire
+    // load of tail on the full-ring path observes this before overwriting.
+    tail.store(t + count, std::memory_order_release);
+    return count;
+  }
+
   // Approximate count — racy by design (diagnostic only). pure: depends on
   // memory (atomics) but has no side effects — optimizer may CSE adjacent
   // calls, which is fine for a diagnostic. Invariant: head >= tail always.
