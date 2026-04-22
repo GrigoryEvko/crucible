@@ -606,13 +606,13 @@ class CRUCIBLE_OWNER Graph {
     while (changed) {
       changed = false;
       for (uint32_t i = num_nodes_; i-- > 0;) {
-        GraphNode* n = nodes_[i];
-        if (n->flags & NodeFlags::DEAD)
+        GraphNode* current_node = nodes_[i];
+        if (current_node->flags & NodeFlags::DEAD)
           continue;
-        if (n->num_uses == 0 && n->kind != NodeKind::MUTATION) {
-          n->flags |= NodeFlags::DEAD;
-          for (uint16_t j = 0; j < n->num_inputs; ++j)
-            --n->inputs[j]->num_uses;
+        if (current_node->num_uses == 0 && current_node->kind != NodeKind::MUTATION) {
+          current_node->flags |= NodeFlags::DEAD;
+          for (uint16_t j = 0; j < current_node->num_inputs; ++j)
+            --current_node->inputs[j]->num_uses;
           changed = true;
         }
       }
@@ -631,14 +631,14 @@ class CRUCIBLE_OWNER Graph {
     // Count edges and compute in-degree
     uint32_t total_edges = 0;
     for (uint32_t i = 0; i < num_nodes_; ++i) {
-      GraphNode* n = nodes_[i];
-      if (n->flags & NodeFlags::DEAD)
+      GraphNode* current_node = nodes_[i];
+      if (current_node->flags & NodeFlags::DEAD)
         continue;
-      for (uint16_t j = 0; j < n->num_inputs; ++j) {
-        GraphNode* dep = n->inputs[j];
-        if (!(dep->flags & NodeFlags::DEAD)) {
+      for (uint16_t j = 0; j < current_node->num_inputs; ++j) {
+        GraphNode* dep_node = current_node->inputs[j];
+        if (!(dep_node->flags & NodeFlags::DEAD)) {
           ++in_deg[i];
-          ++succ_cnt[dep->id.raw()];
+          ++succ_cnt[dep_node->id.raw()];
           ++total_edges;
         }
       }
@@ -654,11 +654,11 @@ class CRUCIBLE_OWNER Graph {
         arena_.alloc_array<uint32_t>(a, total_edges > 0 ? total_edges : 1);
     std::memset(succ_cnt, 0, num_nodes_ * sizeof(uint32_t));
     for (uint32_t i = 0; i < num_nodes_; ++i) {
-      GraphNode* n = nodes_[i];
-      if (n->flags & NodeFlags::DEAD)
+      GraphNode* current_node = nodes_[i];
+      if (current_node->flags & NodeFlags::DEAD)
         continue;
-      for (uint16_t j = 0; j < n->num_inputs; ++j) {
-        uint32_t dep_id = n->inputs[j]->id.raw();
+      for (uint16_t j = 0; j < current_node->num_inputs; ++j) {
+        uint32_t dep_id = current_node->inputs[j]->id.raw();
         if (!(nodes_[dep_id]->flags & NodeFlags::DEAD))
           succs[offset[dep_id] + succ_cnt[dep_id]++] = i;
       }
@@ -672,11 +672,11 @@ class CRUCIBLE_OWNER Graph {
         queue[tail++] = i;
     }
 
-    uint32_t order = 0;
+    uint32_t next_schedule_order = 0;
     while (head < tail) {
-      uint32_t id = queue[head++];
-      nodes_[id]->schedule_order = order++;
-      for (uint32_t k = offset[id]; k < offset[id + 1]; ++k) {
+      uint32_t dequeued_node_id = queue[head++];
+      nodes_[dequeued_node_id]->schedule_order = next_schedule_order++;
+      for (uint32_t k = offset[dequeued_node_id]; k < offset[dequeued_node_id + 1]; ++k) {
         if (--in_deg[succs[k]] == 0)
           queue[tail++] = succs[k];
       }
@@ -692,75 +692,76 @@ class CRUCIBLE_OWNER Graph {
   // Complexity: O(V + E) — single topo sort, single hash pass,
   // single rewrite pass. No per-elimination RAUW scan.
   //
-  // Uses a canonical[] map: during the hash pass, inputs are looked
-  // up through the map (not physically rewritten). After the pass,
-  // one rewrite sweeps all live nodes to patch input pointers.
+  // Uses a canonical_representative[] map: during the hash pass, inputs
+  // are looked up through the map (not physically rewritten). After the
+  // pass, one rewrite sweeps all live nodes to patch input pointers.
   [[nodiscard]] uint32_t eliminate_common_subexpressions(fx::Alloc a) {
     topological_sort(a);
 
     // Canonical map: node_id → canonical representative.
     // Initially identity. Updated when a duplicate is found.
-    auto* canonical = arena_.alloc_array<GraphNode*>(a, num_nodes_);
+    auto* canonical_representative = arena_.alloc_array<GraphNode*>(a, num_nodes_);
     for (uint32_t i = 0; i < num_nodes_; ++i)
-      canonical[i] = nodes_[i];
+      canonical_representative[i] = nodes_[i];
 
     // Build processing order: O(n) scatter via schedule_order
-    // (schedule_order is 0..n_live-1 from topological_sort)
-    uint32_t n_live = 0;
+    // (schedule_order is 0..num_live_nodes-1 from topological_sort)
+    uint32_t num_live_nodes = 0;
     for (uint32_t i = 0; i < num_nodes_; ++i)
-      if (!(nodes_[i]->flags & NodeFlags::DEAD)) ++n_live;
-    auto* ordered = arena_.alloc_array<GraphNode*>(a, n_live > 0 ? n_live : 1);
+      if (!(nodes_[i]->flags & NodeFlags::DEAD)) ++num_live_nodes;
+    auto* topological_order = arena_.alloc_array<GraphNode*>(a, num_live_nodes > 0 ? num_live_nodes : 1);
     for (uint32_t i = 0; i < num_nodes_; ++i) {
       if (!(nodes_[i]->flags & NodeFlags::DEAD))
-        ordered[nodes_[i]->schedule_order] = nodes_[i];
+        topological_order[nodes_[i]->schedule_order] = nodes_[i];
     }
 
     // Open-addressing hash table: ~50% load factor
-    uint32_t ht_cap = std::bit_ceil(n_live * 2 + 1);
-    auto* ht_hashes = arena_.alloc_array<uint64_t>(a, ht_cap);
-    auto* ht_nodes = arena_.alloc_array<GraphNode*>(a, ht_cap);
-    std::memset(ht_nodes, 0, ht_cap * sizeof(GraphNode*));
+    uint32_t cse_table_capacity = std::bit_ceil(num_live_nodes * 2 + 1);
+    auto* cse_table_hashes = arena_.alloc_array<uint64_t>(a, cse_table_capacity);
+    auto* cse_table_nodes = arena_.alloc_array<GraphNode*>(a, cse_table_capacity);
+    std::memset(cse_table_nodes, 0, cse_table_capacity * sizeof(GraphNode*));
 
-    uint32_t eliminated = 0;
-    uint32_t mask = ht_cap - 1;
-    for (uint32_t i = 0; i < n_live; ++i) {
-      GraphNode* n = ordered[i];
-      if (n->kind == NodeKind::INPUT || n->kind == NodeKind::MUTATION)
+    uint32_t eliminated_count = 0;
+    uint32_t cse_table_index_mask = cse_table_capacity - 1;
+    for (uint32_t i = 0; i < num_live_nodes; ++i) {
+      GraphNode* current_node = topological_order[i];
+      if (current_node->kind == NodeKind::INPUT || current_node->kind == NodeKind::MUTATION)
         continue;
 
-      uint64_t h = cse_hash_(n, canonical);
+      uint64_t node_cse_hash = cse_hash_(current_node, canonical_representative);
 
-      for (uint32_t probe = 0; probe < ht_cap; ++probe) {
-        uint32_t slot = (static_cast<uint32_t>(h) + probe) & mask;
-        if (!ht_nodes[slot]) {
-          ht_hashes[slot] = h;
-          ht_nodes[slot] = n;
+      for (uint32_t probe_iteration = 0; probe_iteration < cse_table_capacity; ++probe_iteration) {
+        uint32_t probe_slot_index = (static_cast<uint32_t>(node_cse_hash) + probe_iteration) & cse_table_index_mask;
+        if (!cse_table_nodes[probe_slot_index]) {
+          cse_table_hashes[probe_slot_index] = node_cse_hash;
+          cse_table_nodes[probe_slot_index] = current_node;
           break;
         }
-        if (ht_hashes[slot] == h && cse_equal_(n, ht_nodes[slot], canonical)) {
-          canonical[n->id.raw()] = ht_nodes[slot];
-          n->flags |= NodeFlags::DEAD;
-          ++eliminated;
+        if (cse_table_hashes[probe_slot_index] == node_cse_hash &&
+            cse_equal_(current_node, cse_table_nodes[probe_slot_index], canonical_representative)) {
+          canonical_representative[current_node->id.raw()] = cse_table_nodes[probe_slot_index];
+          current_node->flags |= NodeFlags::DEAD;
+          ++eliminated_count;
           break;
         }
       }
     }
 
-    if (eliminated > 0) {
+    if (eliminated_count > 0) {
       // Single O(V × avg_inputs) rewrite pass
       for (uint32_t i = 0; i < num_nodes_; ++i) {
-        GraphNode* n = nodes_[i];
-        if (n->flags & NodeFlags::DEAD) continue;
-        for (uint16_t j = 0; j < n->num_inputs; ++j)
-          n->inputs[j] = canonical[n->inputs[j]->id.raw()];
+        GraphNode* current_node = nodes_[i];
+        if (current_node->flags & NodeFlags::DEAD) continue;
+        for (uint16_t j = 0; j < current_node->num_inputs; ++j)
+          current_node->inputs[j] = canonical_representative[current_node->inputs[j]->id.raw()];
       }
       // Patch graph outputs
       for (uint32_t i = 0; i < num_outputs_; ++i)
-        output_ids_[i] = canonical[output_ids_[i].raw()]->id;
+        output_ids_[i] = canonical_representative[output_ids_[i].raw()]->id;
       // Recompute use counts after bulk rewrite
       recompute_uses_();
     }
-    return eliminated;
+    return eliminated_count;
   }
 
   // ── Fusion Group Computation ──────────────────────────────────────
@@ -789,13 +790,13 @@ class CRUCIBLE_OWNER Graph {
     topological_sort(a);
 
     // Build ordered list via O(n) scatter
-    uint32_t n_live = 0;
+    uint32_t num_live_nodes = 0;
     for (uint32_t i = 0; i < num_nodes_; ++i)
-      if (!(nodes_[i]->flags & NodeFlags::DEAD)) ++n_live;
-    auto* ordered = arena_.alloc_array<GraphNode*>(a, n_live > 0 ? n_live : 1);
+      if (!(nodes_[i]->flags & NodeFlags::DEAD)) ++num_live_nodes;
+    auto* topological_order = arena_.alloc_array<GraphNode*>(a, num_live_nodes > 0 ? num_live_nodes : 1);
     for (uint32_t i = 0; i < num_nodes_; ++i) {
       if (!(nodes_[i]->flags & NodeFlags::DEAD))
-        ordered[nodes_[i]->schedule_order] = nodes_[i];
+        topological_order[nodes_[i]->schedule_order] = nodes_[i];
     }
 
     // Reset all group IDs
@@ -813,47 +814,47 @@ class CRUCIBLE_OWNER Graph {
     // excluded so different-kind nodes can still group).  Pure
     // reflect_hash<GraphNode> would over-fold and break grouping.
     // Manual selection is load-bearing.
-    for (uint32_t i = 0; i < n_live; ++i) {
-      GraphNode* n = ordered[i];
-      uint64_t h = detail::fmix64(
-          static_cast<uint64_t>(static_cast<uint8_t>(n->device_idx)) |
-          (static_cast<uint64_t>(n->ndim) << 8));
-      for (uint8_t d = 0; d < n->ndim; ++d)
-        h = detail::wymix(h, reinterpret_cast<uint64_t>(n->size[d]));
-      n->group_hash = static_cast<uint32_t>(h);
+    for (uint32_t i = 0; i < num_live_nodes; ++i) {
+      GraphNode* current_node = topological_order[i];
+      uint64_t node_group_hash = detail::fmix64(
+          static_cast<uint64_t>(static_cast<uint8_t>(current_node->device_idx)) |
+          (static_cast<uint64_t>(current_node->ndim) << 8));
+      for (uint8_t d = 0; d < current_node->ndim; ++d)
+        node_group_hash = detail::wymix(node_group_hash, reinterpret_cast<uint64_t>(current_node->size[d]));
+      current_node->group_hash = static_cast<uint32_t>(node_group_hash);
     }
 
-    uint32_t next_group = 1;
-    for (uint32_t i = 0; i < n_live; ++i) {
-      GraphNode* n = ordered[i];
-      if (!is_fusible_(n->kind))
+    uint32_t next_fusion_group_id = 1;
+    for (uint32_t i = 0; i < num_live_nodes; ++i) {
+      GraphNode* current_node = topological_order[i];
+      if (!is_fusible_(current_node->kind))
         continue;
 
       // Try to join an input's group
-      for (uint16_t j = 0; j < n->num_inputs; ++j) {
-        GraphNode* inp = n->inputs[j];
-        if (inp->fused_group_id == 0) continue;
-        if (!is_fusible_(inp->kind)) continue;
-        if (inp->group_hash != n->group_hash) continue;
+      for (uint16_t j = 0; j < current_node->num_inputs; ++j) {
+        GraphNode* input_node = current_node->inputs[j];
+        if (input_node->fused_group_id == 0) continue;
+        if (!is_fusible_(input_node->kind)) continue;
+        if (input_node->group_hash != current_node->group_hash) continue;
         // Full ranges check (group_hash collision possible)
-        if (ranges_compatible_(n, inp)) {
-          n->fused_group_id = inp->fused_group_id;
-          n->flags |= NodeFlags::FUSED;
+        if (ranges_compatible_(current_node, input_node)) {
+          current_node->fused_group_id = input_node->fused_group_id;
+          current_node->flags |= NodeFlags::FUSED;
           break;
         }
       }
-      if (n->fused_group_id == 0)
-        n->fused_group_id = next_group++;
+      if (current_node->fused_group_id == 0)
+        current_node->fused_group_id = next_fusion_group_id++;
     }
-    return next_group - 1;
+    return next_fusion_group_id - 1;
   }
 
   // Count nodes in a specific fusion group
   [[nodiscard, gnu::pure]] uint32_t group_size(uint32_t group_id) const noexcept {
-    uint32_t count = 0;
+    uint32_t match_count = 0;
     for (uint32_t i = 0; i < num_nodes_; ++i)
-      if (nodes_[i]->fused_group_id == group_id) ++count;
-    return count;
+      if (nodes_[i]->fused_group_id == group_id) ++match_count;
+    return match_count;
   }
 
   // Clear VISITED flag on all nodes
@@ -865,12 +866,12 @@ class CRUCIBLE_OWNER Graph {
   }
 
   [[nodiscard, gnu::pure]] uint32_t count_live() const noexcept {
-    uint32_t count = 0;
+    uint32_t live_count = 0;
     for (uint32_t i = 0; i < num_nodes_; ++i) {
       if (!(nodes_[i]->flags & NodeFlags::DEAD))
-        ++count;
+        ++live_count;
     }
-    return count;
+    return live_count;
   }
 
   // ── Accessors ──────────────────────────────────────────────────
@@ -962,8 +963,8 @@ class CRUCIBLE_OWNER Graph {
   // Exhaustive classification.  A new NodeKind added without updating
   // this switch fires -Werror=switch; the default: arm would silently
   // return false under the old if-chain, hiding the bug.
-  [[nodiscard, gnu::const]] static bool is_fusible_(NodeKind k) noexcept {
-    switch (k) {
+  [[nodiscard, gnu::const]] static bool is_fusible_(NodeKind kind) noexcept {
+    switch (kind) {
       case NodeKind::POINTWISE:
       case NodeKind::REDUCTION:
         return true;
@@ -983,11 +984,11 @@ class CRUCIBLE_OWNER Graph {
 
   // Two nodes have compatible ranges if same device + same output
   // dimensions. Expr* is interned → pointer equality per dimension.
-  [[nodiscard]] static bool ranges_compatible_(const GraphNode* a, const GraphNode* b) {
-    if (a->device_idx != b->device_idx) return false;
-    if (a->ndim != b->ndim) return false;
-    for (uint8_t d = 0; d < a->ndim; ++d)
-      if (a->size[d] != b->size[d]) return false;
+  [[nodiscard]] static bool ranges_compatible_(const GraphNode* lhs_node, const GraphNode* rhs_node) {
+    if (lhs_node->device_idx != rhs_node->device_idx) return false;
+    if (lhs_node->ndim != rhs_node->ndim) return false;
+    for (uint8_t d = 0; d < lhs_node->ndim; ++d)
+      if (lhs_node->size[d] != rhs_node->size[d]) return false;
     return true;
   }
 
@@ -1024,104 +1025,106 @@ class CRUCIBLE_OWNER Graph {
   // field tagging + annotation-aware reflection.  Until then, the
   // explicit selection here is load-bearing and must stay manual.
   [[nodiscard]] static uint64_t cse_hash_(
-      const GraphNode* n, const GraphNode* const* canonical) {
-    uint64_t h = detail::fmix64(
-        static_cast<uint64_t>(std::to_underlying(n->kind)) |
-        (static_cast<uint64_t>(std::to_underlying(n->dtype)) << 8) |
-        (static_cast<uint64_t>(static_cast<uint8_t>(n->device_idx)) << 16) |
-        (static_cast<uint64_t>(n->ndim) << 24) |
-        (static_cast<uint64_t>(n->nred) << 32));
+      const GraphNode* node, const GraphNode* const* canonical) {
+    uint64_t structural_hash = detail::fmix64(
+        static_cast<uint64_t>(std::to_underlying(node->kind)) |
+        (static_cast<uint64_t>(std::to_underlying(node->dtype)) << 8) |
+        (static_cast<uint64_t>(static_cast<uint8_t>(node->device_idx)) << 16) |
+        (static_cast<uint64_t>(node->ndim) << 24) |
+        (static_cast<uint64_t>(node->nred) << 32));
 
     // Size expressions (interned → pointer identity)
-    const auto total_dims = static_cast<uint8_t>(n->ndim + n->nred);
+    const auto total_dims = static_cast<uint8_t>(node->ndim + node->nred);
     for (uint8_t d = 0; d < total_dims; ++d)
-      h = detail::wymix(h, reinterpret_cast<uint64_t>(n->size[d]));
+      structural_hash = detail::wymix(structural_hash, reinterpret_cast<uint64_t>(node->size[d]));
 
     // Inputs via canonical map (not raw pointers)
-    for (uint16_t j = 0; j < n->num_inputs; ++j)
-      h = detail::wymix(h, reinterpret_cast<uint64_t>(canonical[n->inputs[j]->id.raw()]));
+    for (uint16_t j = 0; j < node->num_inputs; ++j)
+      structural_hash = detail::wymix(structural_hash,
+          reinterpret_cast<uint64_t>(canonical[node->inputs[j]->id.raw()]));
 
     // Body ops (POINTWISE/REDUCTION): pack each Inst into 8 bytes
-    if ((n->kind == NodeKind::POINTWISE || n->kind == NodeKind::REDUCTION) && n->body) {
-      auto* body = n->compute_body();
+    if ((node->kind == NodeKind::POINTWISE || node->kind == NodeKind::REDUCTION) && node->body) {
+      auto* body = node->compute_body();
       // Inst is 8 bytes, trivially copyable → hash as uint64_t
       static_assert(sizeof(Inst) == 8);
       for (uint16_t k = 0; k < body->num_ops; ++k) {
-        uint64_t iw;
-        std::memcpy(&iw, &body->ops[k], 8);
-        h = detail::wymix(h, iw);
+        uint64_t packed_inst;
+        std::memcpy(&packed_inst, &body->ops[k], 8);
+        structural_hash = detail::wymix(structural_hash, packed_inst);
       }
     }
 
     // Extern kernel name
-    if (n->kind == NodeKind::EXTERN && n->body) {
-      auto* info = n->extern_info();
+    if (node->kind == NodeKind::EXTERN && node->body) {
+      auto* info = node->extern_info();
       if (info->python_kernel_name)
-        for (const char* s = info->python_kernel_name; *s; ++s)
-          h = detail::wymix(h, static_cast<uint64_t>(*s));
+        for (const char* char_cursor = info->python_kernel_name; *char_cursor; ++char_cursor)
+          structural_hash = detail::wymix(structural_hash, static_cast<uint64_t>(*char_cursor));
     }
 
     // Reduce op for reductions
-    if (n->kind == NodeKind::REDUCTION)
-      h ^= detail::fmix64(static_cast<uint64_t>(std::to_underlying(n->reduce_op)));
+    if (node->kind == NodeKind::REDUCTION)
+      structural_hash ^= detail::fmix64(static_cast<uint64_t>(std::to_underlying(node->reduce_op)));
 
-    return h;
+    return structural_hash;
   }
 
   // Structural equality for CSE. Looks through canonical[] for inputs.
   [[nodiscard]] static bool cse_equal_(
-      const GraphNode* a, const GraphNode* b,
+      const GraphNode* lhs_node, const GraphNode* rhs_node,
       const GraphNode* const* canonical) {
-    if (a->kind != b->kind || a->dtype != b->dtype ||
-        a->device_idx != b->device_idx || a->ndim != b->ndim ||
-        a->nred != b->nred || a->num_inputs != b->num_inputs)
+    if (lhs_node->kind != rhs_node->kind || lhs_node->dtype != rhs_node->dtype ||
+        lhs_node->device_idx != rhs_node->device_idx || lhs_node->ndim != rhs_node->ndim ||
+        lhs_node->nred != rhs_node->nred || lhs_node->num_inputs != rhs_node->num_inputs)
       return false;
 
     // Sizes (interned → pointer equality)
-    const auto total = static_cast<uint8_t>(a->ndim + a->nred);
-    for (uint8_t d = 0; d < total; ++d)
-      if (a->size[d] != b->size[d]) return false;
+    const auto total_dims = static_cast<uint8_t>(lhs_node->ndim + lhs_node->nred);
+    for (uint8_t d = 0; d < total_dims; ++d)
+      if (lhs_node->size[d] != rhs_node->size[d]) return false;
 
     // Inputs via canonical map
-    for (uint16_t j = 0; j < a->num_inputs; ++j)
-      if (canonical[a->inputs[j]->id.raw()] != canonical[b->inputs[j]->id.raw()])
+    for (uint16_t j = 0; j < lhs_node->num_inputs; ++j)
+      if (canonical[lhs_node->inputs[j]->id.raw()] != canonical[rhs_node->inputs[j]->id.raw()])
         return false;
 
     // Body equality (POINTWISE/REDUCTION)
-    if (a->kind == NodeKind::POINTWISE || a->kind == NodeKind::REDUCTION) {
-      auto* ba = a->compute_body();
-      auto* bb = b->compute_body();
-      if (ba != bb) {
-        if (!ba || !bb || ba->num_ops != bb->num_ops) return false;
-        if (std::memcmp(ba->ops, bb->ops, ba->num_ops * sizeof(Inst)) != 0) return false;
-        if (ba->aux != bb->aux) {
-          if (!ba->aux || !bb->aux) return false;
-          if (std::memcmp(ba->aux, bb->aux, ba->num_ops * sizeof(int64_t)) != 0) return false;
+    if (lhs_node->kind == NodeKind::POINTWISE || lhs_node->kind == NodeKind::REDUCTION) {
+      auto* lhs_body = lhs_node->compute_body();
+      auto* rhs_body = rhs_node->compute_body();
+      if (lhs_body != rhs_body) {
+        if (!lhs_body || !rhs_body || lhs_body->num_ops != rhs_body->num_ops) return false;
+        if (std::memcmp(lhs_body->ops, rhs_body->ops, lhs_body->num_ops * sizeof(Inst)) != 0) return false;
+        if (lhs_body->aux != rhs_body->aux) {
+          if (!lhs_body->aux || !rhs_body->aux) return false;
+          if (std::memcmp(lhs_body->aux, rhs_body->aux, lhs_body->num_ops * sizeof(int64_t)) != 0) return false;
         }
       }
     }
 
     // Reduction-specific fields
-    if (a->kind == NodeKind::REDUCTION) {
-      if (a->reduce_op != b->reduce_op || a->reduce_hint != b->reduce_hint ||
-          a->src_dtype != b->src_dtype)
+    if (lhs_node->kind == NodeKind::REDUCTION) {
+      if (lhs_node->reduce_op != rhs_node->reduce_op ||
+          lhs_node->reduce_hint != rhs_node->reduce_hint ||
+          lhs_node->src_dtype != rhs_node->src_dtype)
         return false;
     }
 
     // Extern-specific fields
-    if (a->kind == NodeKind::EXTERN) {
-      auto* ia = a->extern_info();
-      auto* ib = b->extern_info();
-      if (ia != ib) {
-        if (!ia || !ib) return false;
-        if (ia->python_kernel_name != ib->python_kernel_name) {
-          if (!ia->python_kernel_name || !ib->python_kernel_name) return false;
-          if (std::strcmp(ia->python_kernel_name, ib->python_kernel_name) != 0) return false;
+    if (lhs_node->kind == NodeKind::EXTERN) {
+      auto* lhs_info = lhs_node->extern_info();
+      auto* rhs_info = rhs_node->extern_info();
+      if (lhs_info != rhs_info) {
+        if (!lhs_info || !rhs_info) return false;
+        if (lhs_info->python_kernel_name != rhs_info->python_kernel_name) {
+          if (!lhs_info->python_kernel_name || !rhs_info->python_kernel_name) return false;
+          if (std::strcmp(lhs_info->python_kernel_name, rhs_info->python_kernel_name) != 0) return false;
         }
-        if (ia->num_constant_args != ib->num_constant_args) return false;
-        if (ia->num_constant_args > 0 &&
-            std::memcmp(ia->constant_args, ib->constant_args,
-                        ia->num_constant_args * sizeof(int64_t)) != 0)
+        if (lhs_info->num_constant_args != rhs_info->num_constant_args) return false;
+        if (lhs_info->num_constant_args > 0 &&
+            std::memcmp(lhs_info->constant_args, rhs_info->constant_args,
+                        lhs_info->num_constant_args * sizeof(int64_t)) != 0)
           return false;
       }
     }
@@ -1135,11 +1138,11 @@ class CRUCIBLE_OWNER Graph {
       nodes_[i]->num_uses = 0;
 
     for (uint32_t i = 0; i < num_nodes_; ++i) {
-      GraphNode* n = nodes_[i];
-      if (n->flags & NodeFlags::DEAD)
+      GraphNode* current_node = nodes_[i];
+      if (current_node->flags & NodeFlags::DEAD)
         continue;
-      for (uint16_t j = 0; j < n->num_inputs; ++j)
-        ++n->inputs[j]->num_uses;
+      for (uint16_t j = 0; j < current_node->num_inputs; ++j)
+        ++current_node->inputs[j]->num_uses;
     }
     // Graph outputs are roots: keep them alive
     for (uint32_t i = 0; i < num_outputs_; ++i) {
