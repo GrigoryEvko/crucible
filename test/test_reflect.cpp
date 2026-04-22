@@ -83,6 +83,49 @@ int main() {
     crucible::reflect_print(g1, stderr);
     std::fprintf(stderr, "\n");
 
+    // ── has_reflected_hash<T> trait ─────────────────────────────────
+    //
+    // Class types whose every member is reflect_hash-supported should
+    // satisfy the trait; non-class types should not.
+    static_assert(crucible::has_reflected_hash<Point>);
+    static_assert(crucible::has_reflected_hash<Dims>);
+    static_assert(crucible::has_reflected_hash<crucible::TensorMeta>);
+    static_assert(crucible::has_reflected_hash<crucible::Guard>);
+
+    // Non-class types: trait is false (reflect_hash requires
+    // is_class_v<T> per the requires-clause).
+    static_assert(!crucible::has_reflected_hash<int>);
+    static_assert(!crucible::has_reflected_hash<float>);
+    static_assert(!crucible::has_reflected_hash<int*>);
+
+    // ── reflect_fmix_fold<Seed, T> ──────────────────────────────────
+    //
+    // Same input → same hash (determinism).  Different input → high
+    // probability of different hash (avalanche from per-field fmix64).
+    // Different seed → different hash (domain separation).
+    {
+        constexpr uint64_t kSeedA = 0xDEADBEEFCAFEBABEULL;
+        constexpr uint64_t kSeedB = 0x0123456789ABCDEFULL;
+
+        const Point p_a{1, 2, 3.0f};
+        const Point p_b{1, 2, 3.0f};
+        const Point p_c{1, 3, 3.0f};
+
+        const auto h_a = crucible::reflect_fmix_fold<kSeedA>(p_a);
+        const auto h_b = crucible::reflect_fmix_fold<kSeedA>(p_b);
+        const auto h_c = crucible::reflect_fmix_fold<kSeedA>(p_c);
+
+        assert(h_a == h_b);  // same input → same hash
+        assert(h_a != h_c);  // different input → different hash
+
+        // Same input, different seed → different hash.
+        const auto h_a2 = crucible::reflect_fmix_fold<kSeedB>(p_a);
+        assert(h_a != h_a2);
+
+        // Hash is non-zero with overwhelming probability.
+        assert(h_a != 0);
+    }
+
     std::printf("test_reflect: all tests passed\n");
     return 0;
 }
