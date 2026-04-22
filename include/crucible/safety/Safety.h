@@ -19,4 +19,5 @@
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Session.h>
+#include <crucible/safety/Simd.h>
 #include <crucible/safety/Tagged.h>
