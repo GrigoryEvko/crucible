@@ -51,8 +51,8 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Expr.h>            // detail::kDimMix
-#include <crucible/MerkleDag.h>       // TensorMeta
 #include <crucible/Platform.h>
+#include <crucible/TensorMeta.h>      // TensorMeta (extracted from MerkleDag.h)
 #include <crucible/safety/Simd.h>
 
 #include <cstdint>

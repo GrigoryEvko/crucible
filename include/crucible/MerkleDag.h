@@ -19,10 +19,12 @@
 
 #include <crucible/Arena.h>
 #include <crucible/CKernel.h>
+#include <crucible/DimHash.h>
 #include <crucible/Expr.h>
 #include <crucible/IterationDetector.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Reflect.h>
+#include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
 #include <crucible/safety/PublishOnce.h>
 #include <crucible/safety/Refined.h>
@@ -43,47 +45,10 @@ namespace crucible {
 // Opaque compiled kernel handle (implemented by codegen backend)
 struct CompiledKernel;
 
-// ═══════════════════════════════════════════════════════════════════
-// TensorMeta: Compact metadata for one tensor (no actual data)
-//
-// Sizes and strides inlined for up to 8 dimensions, covering 99.9%
-// of real tensors. Arena-allocated when > 8 dims needed (via indirection
-// at a higher level, not inside this struct).
-// ═══════════════════════════════════════════════════════════════════
-
-struct TensorMeta {
-  int64_t sizes[8]{};        // 64B — zero-init prevents hash instability
-  int64_t strides[8]{};      // 64B
-  void* data_ptr = nullptr;  // 8B — tensor data pointer (for dataflow tracking)
-  uint8_t ndim = 0;          // 1B — dimensions used (0-8)
-  ScalarType dtype = ScalarType::Undefined; // 1B
-  DeviceType device_type = DeviceType::CPU; // 1B
-  int8_t device_idx = -1;   // 1B — -1 = CPU, 0+ = device index
-  Layout layout = Layout::Strided; // 1B
-  bool requires_grad = false; // 1B — tensor.requires_grad (forward/backward discriminator)
-
-  // Packed tensor flags (1B). Bit layout:
-  //   bit 0: is_leaf       — parameter or user-created tensor (no grad_fn)
-  //   bit 1: is_contiguous — contiguous memory layout
-  //   bit 2: has_grad_fn   — has autograd history (not a leaf)
-  //   bit 3: is_view       — shares storage with another tensor
-  //   bit 4: is_neg        — negation bit-view (torch._neg_view)
-  //   bit 5: is_conj       — conjugate bit-view
-  //   bit 6-7: reserved
-  uint8_t flags = 0;          // 1B — packed tensor flags (see meta_flags)
-
-  uint8_t output_nr = 0;     // 1B — autograd output number (multi-output ops)
-
-  // ── Extended fields (24B) ─────────────────────────────────────────
-  int64_t storage_offset = 0; // 8B — offset into underlying storage (view chains)
-  uint32_t version = 0;      // 4B — tensor data version counter (in-place mutation detection)
-  uint32_t storage_nbytes = 0; // 4B — actual storage size in bytes (may differ from view)
-  uint64_t grad_fn_hash = 0;  // 8B — FNV-1a hash of grad_fn class name (e.g. "AddmmBackward0")
-                               //      0 = no grad_fn (leaf tensor or no autograd)
-};
-
-static_assert(sizeof(TensorMeta) == 168, "TensorMeta layout check");
-CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorMeta);
+// TensorMeta lives in its own header so DimHash.h (which we use for
+// the SIMD dim-hash inside compute_content_hash) can depend on it
+// without creating a circular include with MerkleDag.h.
+// (Definition + sizeof/relocatability asserts are in TensorMeta.h.)
 
 // TensorMeta::flags bit constants.
 namespace meta_flags {
@@ -722,11 +687,9 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 
     for (uint16_t j = 0; j < op_record.num_inputs; j++) {
       const TensorMeta& input_meta = op_record.input_metas[j];
-      uint64_t per_dim_hash_xor = 0;
-      for (uint8_t d = 0; d < input_meta.ndim; d++) {
-        per_dim_hash_xor ^= static_cast<uint64_t>(input_meta.sizes[d]) * detail::kDimMix[d];
-        per_dim_hash_xor ^= static_cast<uint64_t>(input_meta.strides[d]) * detail::kDimMix[d + 8];
-      }
+      // SIMD dim-hash: bit-identical to the prior inline XOR-fold.
+      // Locked by test_dim_hash_equivalence_handcoded in test_simd.cpp.
+      const uint64_t per_dim_hash_xor = detail::dim_hash_simd(input_meta);
       uint64_t meta_packed =
           static_cast<uint64_t>(std::to_underlying(input_meta.dtype)) |
           (static_cast<uint64_t>(std::to_underlying(input_meta.device_type)) << 8) |
