@@ -411,8 +411,14 @@ struct BackgroundThread {
       // Check for divergence reset signal from fg thread.
       (void)reset_requested.check_and_run(do_reset);
 
-      uint32_t drained_count = ring.get().value()->drain(
-          batch, BATCH_SIZE, meta_batch, scope_batch, callsite_batch);
+      // SIMD-12: try_pop_batch instead of drain — same SPSC mechanism,
+      // same FIFO order (proven by test_trace_ring_pop_batch's
+      // equivalence test), but the all-required-outputs contract
+      // eliminates drain()'s 6-12 conditional null branches per call.
+      // Hot bg drain runs at ~10M ops/sec; per-call branch saving
+      // amortizes meaningfully across BATCH_SIZE entries.
+      uint32_t drained_count = ring.get().value()->try_pop_batch(
+          batch, meta_batch, scope_batch, callsite_batch, BATCH_SIZE);
       if (drained_count == 0) {
         CRUCIBLE_SPIN_PAUSE;
         continue;
@@ -452,9 +458,10 @@ struct BackgroundThread {
       total_processed.fetch_add(drained_count, std::memory_order_release);
     }
 
-    // Drain remaining on shutdown.
-    uint32_t drained_count = ring.get().value()->drain(
-        batch, BATCH_SIZE, meta_batch, scope_batch, callsite_batch);
+    // Drain remaining on shutdown.  Same try_pop_batch path as the
+    // hot loop above — see SIMD-12 comment there for rationale.
+    uint32_t drained_count = ring.get().value()->try_pop_batch(
+        batch, meta_batch, scope_batch, callsite_batch, BATCH_SIZE);
     for (uint32_t i = 0; i < drained_count; i++) {
       current_trace.push_back(batch[i]);
       current_meta_starts.push_back(meta_batch[i]);
