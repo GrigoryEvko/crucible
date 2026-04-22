@@ -303,14 +303,16 @@ struct CrucibleContext {
   [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, CompiledView const&) const
       CRUCIBLE_LIFETIMEBOUND
   {
-    auto av = const_cast<ReplayEngine&>(engine_).mint_active_view();
+    // mint_active_view is const; previous const_cast removal was a
+    // legacy artefact from a pre-const factory.
+    auto av = engine_.mint_active_view();
     return engine_.output_ptr(j, av);
   }
 
   [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j, CompiledView const&) const
       CRUCIBLE_LIFETIMEBOUND
   {
-    auto av = const_cast<ReplayEngine&>(engine_).mint_active_view();
+    auto av = engine_.mint_active_view();
     return engine_.input_ptr(j, av);
   }
 
@@ -330,19 +332,37 @@ struct CrucibleContext {
   [[nodiscard]] const PoolAllocator& pool() const CRUCIBLE_LIFETIMEBOUND { return pool_; }
 
  private:
+  // Migration bitset capacity.  Public constant because it is a real
+  // structural limit of the migrate_prefix_slots_ algorithm: the
+  // visited[] bitset is sized at this bound, and a num_slots > this
+  // would silently miss tracking visits and re-copy slots.  The
+  // MemoryPlan creation path enforces num_slots <= PoolAllocator's
+  // own kMaxNumSlots (1 M) which is much larger; this 1 K migration
+  // bound is the tighter local constraint and lifted to a contract
+  // pre() on this function.
+  static constexpr uint32_t MIGRATION_MAX_SLOTS = 1024;
+
   void migrate_prefix_slots_(
       const RegionNode* old_region,
       const RegionNode* alt,
       const void* old_pool_base,
       uint32_t div_pos)
-      CRUCIBLE_NO_THREAD_SAFETY {
+      CRUCIBLE_NO_THREAD_SAFETY
+      pre (old_region != nullptr)
+      pre (alt        != nullptr)
+      pre (old_region->plan != nullptr)
+      pre (alt->plan        != nullptr)
+      // The migration bitset is fixed-size; reject plans the bitset
+      // can't track.  Lifted from the legacy runtime assert.
+      pre (alt->plan->num_slots <= MIGRATION_MAX_SLOTS)
+  {
     const auto* old_plan = old_region->plan;
     const auto* new_plan = alt->plan;
-
-    static constexpr uint32_t MAX_SLOTS = 1024;
-    assert(new_plan->num_slots <= MAX_SLOTS
-           && "slot count exceeds migration bitset capacity");
-    uint64_t visited[(MAX_SLOTS + 63) / 64]{};
+    // Propagate the contract bound to the optimizer so the
+    // visited[] indexing math below uses the tight upper bound
+    // rather than the field's full uint32_t range.
+    [[assume(new_plan->num_slots <= MIGRATION_MAX_SLOTS)]];
+    uint64_t visited[(MIGRATION_MAX_SLOTS + 63) / 64]{};
 
     for (uint32_t i = 0; i < div_pos; i++) {
       const auto& old_te = old_region->ops[i];
