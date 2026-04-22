@@ -12,11 +12,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <inplace_vector>
 #include <latch>
 #include <string>
 #include <thread>
 #include <utility>
-#include <vector>
 
 // Weak default handle_contract_violation comes from libcrucible.a
 // (src/ContractHandler.cpp).  Nothing to do here.
@@ -403,8 +403,7 @@ static void test_mutation() {
         std::latch start_gate{kThreads + 1};
 
         {
-            std::vector<std::jthread> workers;
-            workers.reserve(kThreads);
+            std::inplace_vector<std::jthread, kThreads> workers;
             for (int tid = 0; tid < kThreads; ++tid) {
                 workers.emplace_back([tid, &shared_high,
                                       &total_advances, &start_gate]{

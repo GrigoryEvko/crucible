@@ -103,10 +103,9 @@ constexpr uint32_t kAlphabetLen = sizeof(kAlphabet) - 1;  // exclude NUL
     uint32_t max_len) noexcept
 {
     const uint32_t len = min_len + rng.next_below(max_len - min_len + 1);
-    std::string s;
-    s.reserve(len);
+    std::string s(len, '\0');
     for (uint32_t i = 0; i < len; ++i) {
-        s.push_back(kAlphabet[rng.next_below(kAlphabetLen)]);
+        s[i] = kAlphabet[rng.next_below(kAlphabetLen)];
     }
     return s;
 }
