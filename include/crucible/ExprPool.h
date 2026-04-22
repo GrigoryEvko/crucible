@@ -793,16 +793,33 @@ class CRUCIBLE_OWNER ExprPool {
   // ---- Generic construction ----
   // Dispatches to canonical constructors for ops that have them,
   // generic interning for everything else.
+  //
+  // Variadic ops (ADD/MUL/AND/OR/MIN/MAX) take an n-ary args span.  When
+  // size() == 2, dispatching to the binary helper (add/mul/and_/or_/
+  // min_expr/max_expr) bypasses the *_n slow path's flatten + sort +
+  // coefficient-combining work that the binary fast paths skip via
+  // their early-return identity checks (e.g. add(x,0) -> x without
+  // touching the intern table).  The binary helpers are inline and
+  // hot — the compiler inlines them into make() naturally without
+  // gnu::flatten (attempted initially, reverted: flatten also inlined
+  // the bulky add_n/mul_n/and_n/... slow-path bodies into make(),
+  // bloating the function to ~900 B of stack frame + icache pressure
+  // and REGRESSING the hit-path benchmark from 138 ns to 690 ns).
+  // Relying on default inlining keeps make() lean.
   [[nodiscard]] const Expr* make(
       fx::Alloc a, Op op, std::span<const Expr* const> args) {
     switch (op) {
       case Op::ADD:
+        if (args.size() == 2) [[likely]] return add(a, args[0], args[1]);
         return add_n(a, args);
       case Op::MUL:
+        if (args.size() == 2) [[likely]] return mul(a, args[0], args[1]);
         return mul_n(a, args);
       case Op::AND:
+        if (args.size() == 2) [[likely]] return and_(a, args[0], args[1]);
         return and_n(a, args);
       case Op::OR:
+        if (args.size() == 2) [[likely]] return or_(a, args[0], args[1]);
         return or_n(a, args);
       case Op::POW:
         return pow(a, args[0], args[1]);
@@ -837,8 +854,10 @@ class CRUCIBLE_OWNER ExprPool {
       case Op::WHERE:
         return where(a, args[0], args[1], args[2]);
       case Op::MIN:
+        if (args.size() == 2) [[likely]] return min_expr(a, args[0], args[1]);
         return min_n(a, args);
       case Op::MAX:
+        if (args.size() == 2) [[likely]] return max_expr(a, args[0], args[1]);
         return max_n(a, args);
 
       // Atoms must be built via the dedicated constructors
