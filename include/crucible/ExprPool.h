@@ -371,30 +371,34 @@ class CRUCIBLE_OWNER ExprPool {
 
   [[nodiscard]] const Expr* float_(fx::Alloc a, double val) {
     int64_t payload = std::bit_cast<int64_t>(val);
-    uint16_t f =
+    uint16_t assumption_flags_combined =
         ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
     if (val > 0)
-      f |= ExprFlags::IS_POSITIVE | ExprFlags::IS_NONNEGATIVE;
+      assumption_flags_combined |=
+          ExprFlags::IS_POSITIVE | ExprFlags::IS_NONNEGATIVE;
     else if (val < 0)
-      f |= ExprFlags::IS_NEGATIVE | ExprFlags::IS_NONPOSITIVE;
+      assumption_flags_combined |=
+          ExprFlags::IS_NEGATIVE | ExprFlags::IS_NONPOSITIVE;
     else if ((static_cast<uint64_t>(payload) << 1) == 0) {
       // ±0 but not NaN — shift-out-sign catches both signed zeros.
-      f |= ExprFlags::IS_ZERO | ExprFlags::IS_NONNEGATIVE |
-           ExprFlags::IS_NONPOSITIVE;
+      assumption_flags_combined |= ExprFlags::IS_ZERO |
+          ExprFlags::IS_NONNEGATIVE | ExprFlags::IS_NONPOSITIVE;
     }
-    return intern_node(a, Op::FLOAT, nullptr, 0, f, SymbolId{}, payload);
+    return intern_node(
+        a, Op::FLOAT, nullptr, 0, assumption_flags_combined,
+        SymbolId{}, payload);
   }
 
   [[nodiscard]] const Expr* symbol(fx::Alloc a, const char* name, SymbolId id, uint16_t assumption_flags) {
     if (id.raw() >= symbol_names_.size())
       symbol_names_.resize(id.raw() + 1, nullptr);
     if (symbol_names_[id.raw()] == nullptr) {
-      size_t len = std::strlen(name) + 1;
-      char* buf = static_cast<char*>(arena_.alloc(a,
-          crucible::safety::Positive<size_t>{len},
+      size_t name_len_with_null = std::strlen(name) + 1;
+      char* name_buf = static_cast<char*>(arena_.alloc(a,
+          crucible::safety::Positive<size_t>{name_len_with_null},
           crucible::safety::PowerOfTwo<size_t>{1}));
-      std::memcpy(buf, name, len);
-      symbol_names_[id.raw()] = buf;
+      std::memcpy(name_buf, name, name_len_with_null);
+      symbol_names_[id.raw()] = name_buf;
     }
     int64_t payload = std::bit_cast<int64_t>(symbol_names_[id.raw()]);
     return intern_node(
@@ -441,8 +445,8 @@ class CRUCIBLE_OWNER ExprPool {
     if (rhs->is_zero_int())
       return lhs;
     // Slow path: flatten + fold + sort + coefficient combining
-    const Expr* inputs[] = {lhs, rhs};
-    return add_n(a, inputs);
+    const Expr* binary_args[] = {lhs, rhs};
+    return add_n(a, binary_args);
   }
 
   [[nodiscard]] const Expr* mul(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
@@ -473,8 +477,8 @@ class CRUCIBLE_OWNER ExprPool {
     if (rhs->is_one())
       return lhs;
     // Slow path: flatten + fold + sort
-    const Expr* inputs[] = {lhs, rhs};
-    return mul_n(a, inputs);
+    const Expr* binary_args[] = {lhs, rhs};
+    return mul_n(a, binary_args);
   }
 
   [[nodiscard]] const Expr* pow(fx::Alloc a, const Expr* base, const Expr* exp) {
@@ -578,8 +582,8 @@ class CRUCIBLE_OWNER ExprPool {
       return lhs;
     if (lhs == rhs)
       return lhs;
-    const Expr* inputs[] = {lhs, rhs};
-    return and_n(a, inputs);
+    const Expr* binary_args[] = {lhs, rhs};
+    return and_n(a, binary_args);
   }
 
   [[nodiscard]] const Expr* or_(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
@@ -591,8 +595,8 @@ class CRUCIBLE_OWNER ExprPool {
       return lhs;
     if (lhs == rhs)
       return lhs;
-    const Expr* inputs[] = {lhs, rhs};
-    return or_n(a, inputs);
+    const Expr* binary_args[] = {lhs, rhs};
+    return or_n(a, binary_args);
   }
 
   [[nodiscard]] const Expr* not_(fx::Alloc a, const Expr* e) {
@@ -778,16 +782,16 @@ class CRUCIBLE_OWNER ExprPool {
     if (lhs == rhs) return lhs;
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
       return integer(a, std::min(lhs->as_int(), rhs->as_int()));
-    const Expr* inputs[] = {lhs, rhs};
-    return min_n(a, inputs);
+    const Expr* binary_args[] = {lhs, rhs};
+    return min_n(a, binary_args);
   }
 
   [[nodiscard]] const Expr* max_expr(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs == rhs) return lhs;
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
       return integer(a, std::max(lhs->as_int(), rhs->as_int()));
-    const Expr* inputs[] = {lhs, rhs};
-    return max_n(a, inputs);
+    const Expr* binary_args[] = {lhs, rhs};
+    return max_n(a, binary_args);
   }
 
   // ---- Generic construction ----
@@ -1083,30 +1087,30 @@ class CRUCIBLE_OWNER ExprPool {
   // sort, intern. Term combining: ADD(MUL(a,b), MUL(3,a,b)) → ADD(MUL(4,a,b)).
   // Critical for expand(): (a+b)^n produces n+1 binomial terms, not 2^n.
   const Expr* add_n(fx::Alloc a, std::span<const Expr* const> inputs) {
-    const Expr* buf[256];
-    uint8_t n = 0;
+    const Expr* term_scratch_buf[256];
+    uint8_t num_args = 0;
     int64_t int_sum = 0;
 
     // Phase 1: Flatten nested ADD, separate integer constants
-    for (auto* e : inputs) {
-      if (e->op == Op::ADD) {
-        for (uint8_t i = 0; i < e->nargs; ++i) {
-          if (e->args[i]->op == Op::INTEGER)
-            int_sum += e->args[i]->payload;
+    for (auto* arg_expr : inputs) {
+      if (arg_expr->op == Op::ADD) {
+        for (uint8_t i = 0; i < arg_expr->nargs; ++i) {
+          if (arg_expr->args[i]->op == Op::INTEGER)
+            int_sum += arg_expr->args[i]->payload;
           else {
-            assert(n < 255 && "too many ADD terms");
-            buf[n++] = e->args[i];
+            assert(num_args < 255 && "too many ADD terms");
+            term_scratch_buf[num_args++] = arg_expr->args[i];
           }
         }
-      } else if (e->op == Op::INTEGER) {
-        int_sum += e->payload;
+      } else if (arg_expr->op == Op::INTEGER) {
+        int_sum += arg_expr->payload;
       } else {
-        assert(n < 255 && "too many ADD terms");
-        buf[n++] = e;
+        assert(num_args < 255 && "too many ADD terms");
+        term_scratch_buf[num_args++] = arg_expr;
       }
     }
 
-    if (n == 0)
+    if (num_args == 0)
       return integer(a, int_sum);
 
     // Phase 2: Decompose each term into (coefficient, base).
@@ -1122,34 +1126,36 @@ class CRUCIBLE_OWNER ExprPool {
     CoeffTerm terms[256];
     uint8_t nt = 0;
 
-    for (uint8_t j = 0; j < n; ++j) {
-      int64_t coeff = 1;
-      const Expr* base = buf[j];
+    for (uint8_t j = 0; j < num_args; ++j) {
+      int64_t combined_coefficient = 1;
+      const Expr* base = term_scratch_buf[j];
 
-      if (buf[j]->op == Op::MUL) {
+      if (term_scratch_buf[j]->op == Op::MUL) {
         // Strip integer coefficient from MUL
         const Expr* factors[256];
         uint8_t nf = 0;
-        for (uint8_t k = 0; k < buf[j]->nargs; ++k) {
-          if (buf[j]->args[k]->op == Op::INTEGER)
-            coeff = buf[j]->args[k]->payload;
+        for (uint8_t k = 0; k < term_scratch_buf[j]->nargs; ++k) {
+          if (term_scratch_buf[j]->args[k]->op == Op::INTEGER)
+            combined_coefficient = term_scratch_buf[j]->args[k]->payload;
           else
-            factors[nf++] = buf[j]->args[k];
+            factors[nf++] = term_scratch_buf[j]->args[k];
         }
         if (nf == 0) {
           // Pure integer MUL (shouldn't happen after phase 1, but be safe)
-          int_sum += coeff;
+          int_sum += combined_coefficient;
           continue;
         } else if (nf == 1) {
           base = factors[0];
         } else {
           // Re-intern coefficient-free MUL as the grouping key.
           // factors[] are already sorted (came from a canonical MUL).
-          uint16_t f = detail::composite_flags(Op::MUL, factors, nf);
-          base = intern_node(a, Op::MUL, factors, nf, f, SymbolId{}, 0);
+          uint16_t composite_flag_bits =
+              detail::composite_flags(Op::MUL, factors, nf);
+          base = intern_node(
+              a, Op::MUL, factors, nf, composite_flag_bits, SymbolId{}, 0);
         }
       }
-      terms[nt++] = {.coeff = coeff, .base = base};
+      terms[nt++] = {.coeff = combined_coefficient, .base = base};
     }
 
     // Phase 3: Sort by base pointer, merge adjacent same-base entries
@@ -1192,47 +1198,52 @@ class CRUCIBLE_OWNER ExprPool {
 
     // Final sort for canonical ordering
     std::ranges::sort(std::span{collected, cn});
-    uint16_t f = detail::composite_flags(Op::ADD, collected, cn);
-    return intern_node(a, Op::ADD, collected, cn, f, SymbolId{}, 0);
+    uint16_t composite_flag_bits =
+        detail::composite_flags(Op::ADD, collected, cn);
+    return intern_node(
+        a, Op::ADD, collected, cn, composite_flag_bits, SymbolId{}, 0);
   }
 
   // Flatten MUL children, fold integer constants, sort, intern.
   const Expr* mul_n(fx::Alloc a, std::span<const Expr* const> inputs) {
-    const Expr* buf[256];
-    uint8_t n = 0;
+    const Expr* term_scratch_buf[256];
+    uint8_t num_args = 0;
     int64_t int_prod = 1;
 
-    for (auto* e : inputs) {
-      if (e->op == Op::MUL) {
-        for (uint8_t i = 0; i < e->nargs; ++i) {
-          if (e->args[i]->op == Op::INTEGER)
-            int_prod *= e->args[i]->payload;
+    for (auto* arg_expr : inputs) {
+      if (arg_expr->op == Op::MUL) {
+        for (uint8_t i = 0; i < arg_expr->nargs; ++i) {
+          if (arg_expr->args[i]->op == Op::INTEGER)
+            int_prod *= arg_expr->args[i]->payload;
           else {
-            assert(n < 255 && "too many MUL terms");
-            buf[n++] = e->args[i];
+            assert(num_args < 255 && "too many MUL terms");
+            term_scratch_buf[num_args++] = arg_expr->args[i];
           }
         }
-      } else if (e->op == Op::INTEGER) {
-        int_prod *= e->payload;
+      } else if (arg_expr->op == Op::INTEGER) {
+        int_prod *= arg_expr->payload;
       } else {
-        assert(n < 255 && "too many MUL terms");
-        buf[n++] = e;
+        assert(num_args < 255 && "too many MUL terms");
+        term_scratch_buf[num_args++] = arg_expr;
       }
     }
 
     if (int_prod == 0)
       return integer(a, 0);
     // Reattach integer product (omit 1 unless it's the only term)
-    if (int_prod != 1 || n == 0) {
-      assert(n < 255);
-      buf[n++] = integer(a, int_prod);
+    if (int_prod != 1 || num_args == 0) {
+      assert(num_args < 255);
+      term_scratch_buf[num_args++] = integer(a, int_prod);
     }
-    if (n == 1)
-      return buf[0];
+    if (num_args == 1)
+      return term_scratch_buf[0];
 
-    std::ranges::sort(std::span{buf, n});
-    uint16_t f = detail::composite_flags(Op::MUL, buf, n);
-    return intern_node(a, Op::MUL, buf, n, f, SymbolId{}, 0);
+    std::ranges::sort(std::span{term_scratch_buf, num_args});
+    uint16_t composite_flag_bits =
+        detail::composite_flags(Op::MUL, term_scratch_buf, num_args);
+    return intern_node(
+        a, Op::MUL, term_scratch_buf, num_args,
+        composite_flag_bits, SymbolId{}, 0);
   }
 
   // Flatten AND children, short-circuit on FALSE, filter TRUE, sort, intern.
@@ -1328,71 +1339,76 @@ class CRUCIBLE_OWNER ExprPool {
     if (intern_count_ * 8 >= capacity_ * 7) [[unlikely]]
       rehash();
 
-    uint64_t h =
+    uint64_t expr_full_hash =
         detail::expr_hash(op, payload, symbol_id, flags, args, nargs);
-    int8_t tag = detail::h2_tag(h);
+    int8_t slot_match_tag = detail::h2_tag(expr_full_hash);
 
     // Pack small fields for a single 64-bit comparison instead of
     // 4 separate branches. Same packing as expr_hash uses.
-    uint64_t packed = static_cast<uint64_t>(std::to_underlying(op))
-                    | (static_cast<uint64_t>(nargs) << 8)
-                    | (static_cast<uint64_t>(flags) << 16)
-                    | (static_cast<uint64_t>(symbol_id.raw()) << 32);
+    uint64_t query_packed_metadata =
+        static_cast<uint64_t>(std::to_underlying(op))
+      | (static_cast<uint64_t>(nargs) << 8)
+      | (static_cast<uint64_t>(flags) << 16)
+      | (static_cast<uint64_t>(symbol_id.raw()) << 32);
 
-    // Operate directly on slot indices (base) instead of group indices.
-    // Eliminates the g*kGroupWidth multiply on every probe iteration.
+    // Operate directly on slot indices (probe_base_slot) instead of
+    // group indices.  Eliminates the g*kGroupWidth multiply on every
+    // probe iteration.
     size_t slot_mask = capacity_ - 1;
-    size_t base = (h * detail::kGroupWidth) & slot_mask;
-    size_t probe = 0;
+    size_t probe_base_slot = (expr_full_hash * detail::kGroupWidth) & slot_mask;
+    size_t probe_iteration = 0;
 
     while (true) {
-      auto group = detail::CtrlGroup::load(&ctrl_[base]);
+      auto group = detail::CtrlGroup::load(&ctrl_[probe_base_slot]);
 
       // Phase 1: Check H2 tag matches within the group.
       // SIMD produces a bitmask; iterate only the ~0.11 expected matches.
-      auto matches = group.match(tag);
+      auto matches = group.match(slot_match_tag);
       while (matches) {
-        size_t idx = base + matches.lowest();
-        const Expr* slot = slots_[idx];
+        size_t match_slot_index = probe_base_slot + matches.lowest();
+        const Expr* existing_expr = slots_[match_slot_index];
         // Full hash compare: rejects with P(false positive) ≈ 2^-57.
         // Packed metadata compare: catches the astronomically rare hash
         // collision where different (op,nargs,flags,symbol_id) produce
         // the same 64-bit hash.
-        if (slot->hash == h && slot->payload == payload) [[likely]] {
-          // Pack the slot's metadata the same way for single compare
-          uint64_t slot_packed =
-              static_cast<uint64_t>(std::to_underlying(slot->op))
-              | (static_cast<uint64_t>(slot->nargs) << 8)
-              | (static_cast<uint64_t>(slot->flags) << 16)
-              | (static_cast<uint64_t>(slot->symbol_id.raw()) << 32);
-          if (slot_packed == packed) [[likely]] {
+        if (existing_expr->hash == expr_full_hash &&
+            existing_expr->payload == payload) [[likely]] {
+          // Pack the existing expr's metadata the same way for single compare
+          uint64_t existing_packed_metadata =
+              static_cast<uint64_t>(std::to_underlying(existing_expr->op))
+              | (static_cast<uint64_t>(existing_expr->nargs) << 8)
+              | (static_cast<uint64_t>(existing_expr->flags) << 16)
+              | (static_cast<uint64_t>(existing_expr->symbol_id.raw()) << 32);
+          if (existing_packed_metadata == query_packed_metadata) [[likely]] {
             // Args comparison — specialized for common arities
             switch (nargs) {
               case 0:
-                return slot;
+                return existing_expr;
               case 1:
-                if (slot->args[0] == args[0])
-                  return slot;
+                if (existing_expr->args[0] == args[0])
+                  return existing_expr;
                 break;
               case 2:
-                if (slot->args[0] == args[0] && slot->args[1] == args[1])
-                  return slot;
+                if (existing_expr->args[0] == args[0] &&
+                    existing_expr->args[1] == args[1])
+                  return existing_expr;
                 break;
               case 3:
-                if (slot->args[0] == args[0] && slot->args[1] == args[1] &&
-                    slot->args[2] == args[2])
-                  return slot;
+                if (existing_expr->args[0] == args[0] &&
+                    existing_expr->args[1] == args[1] &&
+                    existing_expr->args[2] == args[2])
+                  return existing_expr;
                 break;
               default: {
-                bool eq = true;
+                bool is_args_match = true;
                 for (uint8_t i = 0; i < nargs; ++i) {
-                  if (slot->args[i] != args[i]) {
-                    eq = false;
+                  if (existing_expr->args[i] != args[i]) {
+                    is_args_match = false;
                     break;
                   }
                 }
-                if (eq)
-                  return slot;
+                if (is_args_match)
+                  return existing_expr;
                 break;
               }
             }
@@ -1405,36 +1421,38 @@ class CRUCIBLE_OWNER ExprPool {
       // is definitively not in the table (insert-only, no tombstones).
       auto empties = group.match_empty();
       if (empties) [[likely]] {
-        size_t idx = base + empties.lowest();
+        size_t match_slot_index = probe_base_slot + empties.lowest();
 
         // Copy args into the arena BEFORE constructing the Expr — the
         // Expr's args pointer is const, so it can only be set via the
         // constructor (not assigned later).  For nargs == 0 we pass
         // nullptr, matching the legacy null-args contract.
-        const Expr** owned_args = nullptr;
+        const Expr** arena_owned_args = nullptr;
         if (nargs > 0) {
-          owned_args = arena_.alloc_array<const Expr*>(a, nargs);
-          std::memcpy(owned_args, args, nargs * sizeof(const Expr*));
+          arena_owned_args = arena_.alloc_array<const Expr*>(a, nargs);
+          std::memcpy(arena_owned_args, args, nargs * sizeof(const Expr*));
         }
 
         // Placement-new into arena storage via the full-args
         // constructor.  The const fields of Expr are initialized
         // in-place; no post-construction mutation is possible
         // (or desired — Expr is immutable by contract).
-        void* storage = arena_.alloc_obj<Expr>(a);
-        Expr* e = ::new (storage) Expr(op, nargs, flags, symbol_id,
-                                       h, payload, owned_args);
+        void* arena_expr_storage = arena_.alloc_obj<Expr>(a);
+        Expr* interned_expr = ::new (arena_expr_storage)
+            Expr(op, nargs, flags, symbol_id,
+                 expr_full_hash, payload, arena_owned_args);
 
-        ctrl_[idx] = tag;
-        slots_[idx] = e;
+        ctrl_[match_slot_index] = slot_match_tag;
+        slots_[match_slot_index] = interned_expr;
         ++intern_count_;
-        return e;
+        return interned_expr;
       }
 
       // Triangular probing: visits all groups before repeating.
-      // Sequence: base, base+G, base+3G, base+6G, ...
-      ++probe;
-      base = (base + probe * detail::kGroupWidth) & slot_mask;
+      // Sequence: probe_base_slot, +G, +3G, +6G, ...
+      ++probe_iteration;
+      probe_base_slot =
+          (probe_base_slot + probe_iteration * detail::kGroupWidth) & slot_mask;
     }
   }
 

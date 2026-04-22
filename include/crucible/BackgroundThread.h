@@ -609,8 +609,8 @@ struct BackgroundThread {
       if (!meta_base) [[unlikely]] {
         // Wrap case: copy to arena (extremely rare with 1M capacity).
         meta_base = arena.alloc_array<TensorMeta>(a, total_metas);
-        for (uint32_t m = 0; m < total_metas; m++)
-          meta_base[m] = meta_log.get().value()->at(first_meta + m);
+        for (uint32_t meta_idx = 0; meta_idx < total_metas; meta_idx++)
+          meta_base[meta_idx] = meta_log.get().value()->at(first_meta + meta_idx);
       }
     }
 
@@ -665,7 +665,7 @@ struct BackgroundThread {
 
     // ── Streaming content hash ──
 
-    uint64_t content_h = 0x9E3779B97F4A7C15ULL;
+    uint64_t content_h_local = 0x9E3779B97F4A7C15ULL;
 
     // ── Phase 2: Main loop — zero arena allocs, zero MetaLog copies ──
 
@@ -743,24 +743,24 @@ struct BackgroundThread {
         // would (a) break that bit identity and (b) lose the optimized
         // XOR-fold pattern.
 
-        content_h = detail::wymix(content_h, te.schema_hash.raw());
+        content_h_local = detail::wymix(content_h_local, te.schema_hash.raw());
         for (uint16_t j = 0; j < n_in; j++) {
-          const TensorMeta& m = te.input_metas[j];
-          uint64_t dim_h = 0;
-          for (uint8_t d = 0; d < m.ndim; d++) {
-            dim_h ^= static_cast<uint64_t>(m.sizes[d]) * detail::kDimMix[d];
-            dim_h ^= static_cast<uint64_t>(m.strides[d]) * detail::kDimMix[d + 8];
+          const TensorMeta& meta = te.input_metas[j];
+          uint64_t dim_h_local = 0;
+          for (uint8_t d = 0; d < meta.ndim; d++) {
+            dim_h_local ^= static_cast<uint64_t>(meta.sizes[d]) * detail::kDimMix[d];
+            dim_h_local ^= static_cast<uint64_t>(meta.strides[d]) * detail::kDimMix[d + 8];
           }
           uint64_t meta_packed =
-              static_cast<uint64_t>(std::to_underlying(m.dtype)) |
-              (static_cast<uint64_t>(std::to_underlying(m.device_type)) << 8) |
-              (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16);
-          content_h = detail::wymix(content_h ^ dim_h, meta_packed);
+              static_cast<uint64_t>(std::to_underlying(meta.dtype)) |
+              (static_cast<uint64_t>(std::to_underlying(meta.device_type)) << 8) |
+              (static_cast<uint64_t>(static_cast<uint8_t>(meta.device_idx)) << 16);
+          content_h_local = detail::wymix(content_h_local ^ dim_h_local, meta_packed);
         }
         if (n_scalars > 0) {
-          for (uint16_t s = 0; s < n_scalars; s++) {
-            content_h ^= static_cast<uint64_t>(te.scalar_args[s]);
-            content_h *= 0x100000001b3ULL;
+          for (uint16_t scalar_idx = 0; scalar_idx < n_scalars; scalar_idx++) {
+            content_h_local ^= static_cast<uint64_t>(te.scalar_args[scalar_idx]);
+            content_h_local *= 0x100000001b3ULL;
           }
         }
       } else {
@@ -774,7 +774,7 @@ struct BackgroundThread {
         te.num_outputs = 0;
 
         // Still hash schema for no-tensor ops (profiler hooks).
-        content_h = detail::wymix(content_h, te.schema_hash.raw());
+        content_h_local = detail::wymix(content_h_local, te.schema_hash.raw());
       }
 
       // ── PtrMap prefetch: hide L3 latency for next op's probes ──
@@ -803,8 +803,8 @@ struct BackgroundThread {
       // ── DFG edges + input slot tracking ──
 
       for (uint16_t j = 0; j < te.num_inputs; j++) {
-        void* ptr = te.input_metas[j].data_ptr;
-        auto lookup = ptr_map_lookup(local_map, local_gen, local_mask, ptr);
+        void* input_ptr = te.input_metas[j].data_ptr;
+        auto lookup = ptr_map_lookup(local_map, local_gen, local_mask, input_ptr);
         te.input_trace_indices[j] = lookup.op_index;
         if (lookup.op_index.is_valid()) {
           te.input_slot_ids[j] = lookup.slot_id;
@@ -814,24 +814,24 @@ struct BackgroundThread {
               .src_port = lookup.port, .dst_port = static_cast<uint8_t>(j),
               .kind = EdgeKind::DATA_FLOW, .pad = 0};
           if (lookup.slot_id.raw() < slot_cap) {
-            auto& si = local_slots[lookup.slot_id.raw()];
-            si.death_op = std::max(si.death_op, OpIndex{i});
+            auto& slot_info = local_slots[lookup.slot_id.raw()];
+            slot_info.death_op = std::max(slot_info.death_op, OpIndex{i});
           }
-        } else if (ptr != nullptr && next_slot_raw < slot_cap) {
+        } else if (input_ptr != nullptr && next_slot_raw < slot_cap) {
           // External tensor (param, data loader output): first encounter.
-          SlotId sid{next_slot_raw++};
-          te.input_slot_ids[j] = sid;
-          auto& si = local_slots[sid.raw()];
-          si.birth_op = OpIndex{0};
-          si.death_op = OpIndex{i};
-          si.is_external = true;
-          si.nbytes = compute_storage_nbytes(te.input_metas[j]);
-          si.dtype = te.input_metas[j].dtype;
-          si.device_type = te.input_metas[j].device_type;
-          si.device_idx = te.input_metas[j].device_idx;
-          si.layout = te.input_metas[j].layout;
+          SlotId new_slot{next_slot_raw++};
+          te.input_slot_ids[j] = new_slot;
+          auto& slot_info = local_slots[new_slot.raw()];
+          slot_info.birth_op = OpIndex{0};
+          slot_info.death_op = OpIndex{i};
+          slot_info.is_external = true;
+          slot_info.nbytes = compute_storage_nbytes(te.input_metas[j]);
+          slot_info.dtype = te.input_metas[j].dtype;
+          slot_info.device_type = te.input_metas[j].device_type;
+          slot_info.device_idx = te.input_metas[j].device_idx;
+          slot_info.layout = te.input_metas[j].layout;
           (void)ptr_map_insert(local_map, local_gen, local_mask,
-              ptr, OpIndex{}, 0, sid);
+              input_ptr, OpIndex{}, 0, new_slot);
         } else {
           te.input_slot_ids[j] = SlotId{};
         }
@@ -840,22 +840,22 @@ struct BackgroundThread {
       // ── Output slot tracking + alias detection ──
 
       for (uint16_t j = 0; j < te.num_outputs; j++) {
-        void* ptr = te.output_metas[j].data_ptr;
-        if (!ptr) {
+        void* output_ptr = te.output_metas[j].data_ptr;
+        if (!output_ptr) {
           te.output_slot_ids[j] = SlotId{};
           continue;
         }
 
         auto result = ptr_map_insert(local_map, local_gen, local_mask,
-            ptr, OpIndex{i}, static_cast<uint8_t>(j), SlotId{0});
+            output_ptr, OpIndex{i}, static_cast<uint8_t>(j), SlotId{0});
 
         if (result.was_alias) {
           te.output_slot_ids[j] = result.old_slot;
           if (result.old_slot.raw() < slot_cap) {
-            auto& si = local_slots[result.old_slot.raw()];
-            si.death_op = std::max(si.death_op, OpIndex{i});
-            uint64_t nb = compute_storage_nbytes(te.output_metas[j]);
-            si.nbytes = std::max(si.nbytes, nb);
+            auto& slot_info = local_slots[result.old_slot.raw()];
+            slot_info.death_op = std::max(slot_info.death_op, OpIndex{i});
+            uint64_t output_nbytes = compute_storage_nbytes(te.output_metas[j]);
+            slot_info.nbytes = std::max(slot_info.nbytes, output_nbytes);
           }
           if (result.old_op.is_valid()) {
             assert(num_edges < edge_cap_max_.get());
@@ -865,19 +865,19 @@ struct BackgroundThread {
                 .kind = EdgeKind::ALIAS, .pad = 0};
           }
         } else if (next_slot_raw < slot_cap) {
-          SlotId sid{next_slot_raw++};
-          auto& si = local_slots[sid.raw()];
-          si.birth_op = OpIndex{i};
-          si.death_op = OpIndex{i};
-          si.is_external = false;
-          si.nbytes = compute_storage_nbytes(te.output_metas[j]);
-          si.dtype = te.output_metas[j].dtype;
-          si.device_type = te.output_metas[j].device_type;
-          si.device_idx = te.output_metas[j].device_idx;
-          si.layout = te.output_metas[j].layout;
-          te.output_slot_ids[j] = sid;
+          SlotId new_slot{next_slot_raw++};
+          auto& slot_info = local_slots[new_slot.raw()];
+          slot_info.birth_op = OpIndex{i};
+          slot_info.death_op = OpIndex{i};
+          slot_info.is_external = false;
+          slot_info.nbytes = compute_storage_nbytes(te.output_metas[j]);
+          slot_info.dtype = te.output_metas[j].dtype;
+          slot_info.device_type = te.output_metas[j].device_type;
+          slot_info.device_idx = te.output_metas[j].device_idx;
+          slot_info.layout = te.output_metas[j].layout;
+          te.output_slot_ids[j] = new_slot;
           // Patch the PtrMap slot's slot_id via returned pointer.
-          if (result.slot) result.slot->slot_id = sid;
+          if (result.slot) result.slot->slot_id = new_slot;
         } else {
           te.output_slot_ids[j] = SlotId{};
         }
@@ -894,14 +894,14 @@ struct BackgroundThread {
       static_assert(sizeof(SlotInfo) == 24);
       static_assert(offsetof(TensorSlot, nbytes) == 8);
       static_assert(offsetof(SlotInfo, nbytes) == 0);
-      for (uint32_t s = 0; s < num_slots; s++) {
-        slots[s].offset_bytes = 0;  // assigned by compute_memory_plan()
+      for (uint32_t slot_idx = 0; slot_idx < num_slots; slot_idx++) {
+        slots[slot_idx].offset_bytes = 0;  // assigned by compute_memory_plan()
         // Bulk-copy 24B: nbytes|birth|death|dtype|dev|idx|layout|ext|pad
-        std::memcpy(&slots[s].nbytes, &local_slots[s], sizeof(SlotInfo));
-        slots[s].slot_id = SlotId{s};
+        std::memcpy(&slots[slot_idx].nbytes, &local_slots[slot_idx], sizeof(SlotInfo));
+        slots[slot_idx].slot_id = SlotId{slot_idx};
         // pad2 is zero from NSDMI + arena alloc_array returns unzeroed,
         // but TensorSlot has NSDMI pad2[4]{} so placement-new is fine.
-        std::memset(slots[s].pad2, 0, sizeof(slots[s].pad2));
+        std::memset(slots[slot_idx].pad2, 0, sizeof(slots[slot_idx].pad2));
       }
     }
 
@@ -911,7 +911,7 @@ struct BackgroundThread {
     graph->num_ops = count;
     graph->slots = slots;
     graph->num_slots = num_slots;
-    graph->content_hash = ContentHash{detail::fmix64(content_h)};
+    graph->content_hash = ContentHash{detail::fmix64(content_h_local)};
     graph->max_meta_end = max_meta_end;
     build_csr(a, arena, graph, local_edges, num_edges, count);
 
@@ -1020,33 +1020,33 @@ struct BackgroundThread {
 
     constexpr uint32_t MAX_FREE = 4096;
     // SoA layout: sizes[] contiguous for fast scanning, offsets[]
-    // only touched on hit. NOT zero-init: num_free bounds all access.
-    uint64_t fl_sizes[MAX_FREE];
-    uint64_t fl_offsets[MAX_FREE];
-    uint32_t num_free = 0;
+    // only touched on hit. NOT zero-init: free_list_count bounds all access.
+    uint64_t free_list_sizes[MAX_FREE];
+    uint64_t free_list_offsets[MAX_FREE];
+    uint32_t free_list_count = 0;
     uint64_t pool_end = 0;
 
     // Free: O(1) append.
     auto free_block = [&](uint64_t offset, uint64_t size) {
-      if (num_free < MAX_FREE) [[likely]] {
-        fl_offsets[num_free] = offset;
-        fl_sizes[num_free] = size;
-        ++num_free;
+      if (free_list_count < MAX_FREE) [[likely]] {
+        free_list_offsets[free_list_count] = offset;
+        free_list_sizes[free_list_count] = size;
+        ++free_list_count;
       }
     };
 
     // Alloc: first-fit scan over sizes[] + O(1) swap-remove.
     auto alloc_slot = [&](uint32_t s, uint64_t aligned_size) {
-      for (uint32_t f = 0; f < num_free; f++) {
-        if (fl_sizes[f] >= aligned_size) {
-          slots[s].offset_bytes = fl_offsets[f];
-          if (fl_sizes[f] == aligned_size) {
+      for (uint32_t f = 0; f < free_list_count; f++) {
+        if (free_list_sizes[f] >= aligned_size) {
+          slots[s].offset_bytes = free_list_offsets[f];
+          if (free_list_sizes[f] == aligned_size) {
             // Swap-remove: move last entry into this slot.
-            fl_sizes[f] = fl_sizes[--num_free];
-            fl_offsets[f] = fl_offsets[num_free];
+            free_list_sizes[f] = free_list_sizes[--free_list_count];
+            free_list_offsets[f] = free_list_offsets[free_list_count];
           } else {
-            fl_offsets[f] += aligned_size;
-            fl_sizes[f] -= aligned_size;
+            free_list_offsets[f] += aligned_size;
+            free_list_sizes[f] -= aligned_size;
           }
           return;
         }
@@ -1064,65 +1064,65 @@ struct BackgroundThread {
     constexpr uint32_t MAX_PER_OP = 64;
 
     for (uint32_t op = 0; op < num_ops; op++) {
-      uint32_t d_beg = death_off[op], d_end = death_off[op + 1];
-      uint32_t b_beg = birth_off[op], b_end = birth_off[op + 1];
-      uint32_t nd = d_end - d_beg;
-      uint32_t nb = b_end - b_beg;
+      uint32_t dying_begin = death_off[op], dying_end = death_off[op + 1];
+      uint32_t born_begin = birth_off[op], born_end = birth_off[op + 1];
+      uint32_t num_dying = dying_end - dying_begin;
+      uint32_t num_born = born_end - born_begin;
 
       // ── Direct reuse: match dying→born to skip free list ──
-      uint32_t nd_cap = nd < MAX_PER_OP ? nd : MAX_PER_OP;
-      uint32_t nb_cap = nb < MAX_PER_OP ? nb : MAX_PER_OP;
-      bool d_used[MAX_PER_OP]{};
-      bool b_used[MAX_PER_OP]{};
+      uint32_t dying_count_capped = num_dying < MAX_PER_OP ? num_dying : MAX_PER_OP;
+      uint32_t born_count_capped = num_born < MAX_PER_OP ? num_born : MAX_PER_OP;
+      bool dying_consumed[MAX_PER_OP]{};
+      bool born_assigned[MAX_PER_OP]{};
 
-      if (nd_cap > 0 && nb_cap > 0) {
-        DyingInfo d_info[MAX_PER_OP];
-        for (uint32_t i = 0; i < nd_cap; i++) {
-          uint32_t ds = dead_slots[d_beg + i];
-          d_info[i] = {
-            .aligned_size = (slots[ds].nbytes + ALIGNMENT - 1) &
+      if (dying_count_capped > 0 && born_count_capped > 0) {
+        DyingInfo dying_slot_info[MAX_PER_OP];
+        for (uint32_t i = 0; i < dying_count_capped; i++) {
+          uint32_t dying_slot_id = dead_slots[dying_begin + i];
+          dying_slot_info[i] = {
+            .aligned_size = (slots[dying_slot_id].nbytes + ALIGNMENT - 1) &
                             ~uint64_t(ALIGNMENT - 1),
-            .offset = slots[ds].offset_bytes
+            .offset = slots[dying_slot_id].offset_bytes
           };
         }
 
-        for (uint32_t bi = 0; bi < nb_cap; bi++) {
-          uint32_t bs = born_slots[b_beg + bi];
-          uint64_t b_sz = (slots[bs].nbytes + ALIGNMENT - 1) &
+        for (uint32_t born_idx = 0; born_idx < born_count_capped; born_idx++) {
+          uint32_t born_slot_id = born_slots[born_begin + born_idx];
+          uint64_t born_aligned_size = (slots[born_slot_id].nbytes + ALIGNMENT - 1) &
                           ~uint64_t(ALIGNMENT - 1);
 
-          uint32_t best_d = UINT32_MAX;
-          uint64_t best_waste = UINT64_MAX;
-          for (uint32_t di = 0; di < nd_cap; di++) {
-            if (!d_used[di] && d_info[di].aligned_size >= b_sz) {
-              uint64_t w = d_info[di].aligned_size - b_sz;
-              if (w < best_waste) { best_d = di; best_waste = w; }
+          uint32_t best_dying_match_idx = UINT32_MAX;
+          uint64_t best_waste_bytes = UINT64_MAX;
+          for (uint32_t dying_idx = 0; dying_idx < dying_count_capped; dying_idx++) {
+            if (!dying_consumed[dying_idx] && dying_slot_info[dying_idx].aligned_size >= born_aligned_size) {
+              uint64_t waste_bytes = dying_slot_info[dying_idx].aligned_size - born_aligned_size;
+              if (waste_bytes < best_waste_bytes) { best_dying_match_idx = dying_idx; best_waste_bytes = waste_bytes; }
             }
           }
-          if (best_d != UINT32_MAX) {
-            slots[bs].offset_bytes = d_info[best_d].offset;
-            d_used[best_d] = true;
-            b_used[bi] = true;
-            if (best_waste > 0)
-              free_block(d_info[best_d].offset + b_sz, best_waste);
+          if (best_dying_match_idx != UINT32_MAX) {
+            slots[born_slot_id].offset_bytes = dying_slot_info[best_dying_match_idx].offset;
+            dying_consumed[best_dying_match_idx] = true;
+            born_assigned[born_idx] = true;
+            if (best_waste_bytes > 0)
+              free_block(dying_slot_info[best_dying_match_idx].offset + born_aligned_size, best_waste_bytes);
           }
         }
       }
 
       // ── Free unmatched dying slots ──
-      for (uint32_t i = 0; i < nd; i++) {
-        if (i < nd_cap && d_used[i]) continue;
-        uint32_t ds = dead_slots[d_beg + i];
-        free_block(slots[ds].offset_bytes,
-                   (slots[ds].nbytes + ALIGNMENT - 1) &
+      for (uint32_t i = 0; i < num_dying; i++) {
+        if (i < dying_count_capped && dying_consumed[i]) continue;
+        uint32_t dying_slot_id = dead_slots[dying_begin + i];
+        free_block(slots[dying_slot_id].offset_bytes,
+                   (slots[dying_slot_id].nbytes + ALIGNMENT - 1) &
                        ~uint64_t(ALIGNMENT - 1));
       }
 
       // ── Alloc unmatched born slots ──
-      for (uint32_t i = 0; i < nb; i++) {
-        if (i < nb_cap && b_used[i]) continue;
-        uint32_t bs = born_slots[b_beg + i];
-        alloc_slot(bs, (slots[bs].nbytes + ALIGNMENT - 1) &
+      for (uint32_t i = 0; i < num_born; i++) {
+        if (i < born_count_capped && born_assigned[i]) continue;
+        uint32_t born_slot_id = born_slots[born_begin + i];
+        alloc_slot(born_slot_id, (slots[born_slot_id].nbytes + ALIGNMENT - 1) &
                            ~uint64_t(ALIGNMENT - 1));
       }
     }
