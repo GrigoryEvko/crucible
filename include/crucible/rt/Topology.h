@@ -133,7 +133,6 @@ namespace detail {
     CPU_ZERO(&set);
     if (sched_getaffinity(0, sizeof(set), &set) == 0) {
         std::vector<int> out;
-        out.reserve(static_cast<size_t>(CPU_COUNT(&set)));
         for (int c = 0; c < CPU_SETSIZE; ++c)
             if (CPU_ISSET(static_cast<size_t>(c), &set)) out.push_back(c);
         return out;
@@ -141,7 +140,6 @@ namespace detail {
 #endif
     std::vector<int> out;
     const int n = num_online_cpus();
-    out.reserve(static_cast<size_t>(n));
     for (int c = 0; c < n; ++c) out.push_back(c);
     return out;
 }
@@ -363,7 +361,6 @@ struct CoreSelector {
         else other.push_back(c);
     }
     std::vector<int> out;
-    out.reserve(static_cast<size_t>(count));
     for (const int c : same_numa) { if (static_cast<int>(out.size()) >= count) break; out.push_back(c); }
     for (const int c : other)     { if (static_cast<int>(out.size()) >= count) break; out.push_back(c); }
     return out;

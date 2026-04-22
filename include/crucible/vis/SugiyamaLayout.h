@@ -96,7 +96,6 @@ struct LayoutParams {
 
   // Topological order via Kahn's algorithm
   std::vector<uint32_t> topo;
-  topo.reserve(n);
   {
     std::vector<uint32_t> queue;
     for (uint32_t i = 0; i < n; i++)
@@ -142,9 +141,6 @@ struct LayoutParams {
                    static_cast<int32_t>(nodes[e.src].layer);
     if (span > 1) num_virtual += static_cast<uint32_t>(span - 1);
   }
-
-  // Reserve space for virtual nodes
-  nodes.reserve(original_n + num_virtual);
 
   // Rebuild adjacency with virtual node chains
   std::vector<std::vector<uint32_t>> fwd2, rev2;
@@ -231,7 +227,6 @@ struct LayoutParams {
       return static_cast<float>(nodes[adj[0]].order);
     // Collect positions and sort
     std::vector<float> positions;
-    positions.reserve(adj.size());
     for (uint32_t a : adj)
       positions.push_back(static_cast<float>(nodes[a].order));
     std::ranges::sort(positions);
@@ -284,7 +279,6 @@ struct LayoutParams {
 
   if (params.use_network_simplex) {
   std::vector<NSEdge> aux_edges;
-  aux_edges.reserve(total_n + edges.size());
 
   // Left-right separation constraints within each rank.
   // x(right) - x(left) >= rw(left) + lw(right) + gap
@@ -392,7 +386,6 @@ struct LayoutParams {
       for (uint32_t idx : layers[l]) {
         if (rev[idx].empty()) continue;
         std::vector<float> pred_x;
-        pred_x.reserve(rev[idx].size());
         for (uint32_t p : rev[idx])
           pred_x.push_back(nodes[p].x);
         std::ranges::sort(pred_x);
@@ -406,7 +399,6 @@ struct LayoutParams {
       for (uint32_t idx : layers[l - 1]) {
         if (fwd[idx].empty()) continue;
         std::vector<float> succ_x;
-        succ_x.reserve(fwd[idx].size());
         for (uint32_t s : fwd[idx])
           succ_x.push_back(nodes[s].x);
         std::ranges::sort(succ_x);
