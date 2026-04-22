@@ -825,21 +825,28 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 | `std::start_lifetime_as` (C++23) | Arena type punning correctness |
 | `std::bit_cast` (C++20) | The ONLY type-pun primitive allowed |
 | `std::add_sat` / `mul_sat` / `sub_sat` (C++26) | Saturation arithmetic at size-math sites |
-| `std::breakpoint()` (C++26) | Hardware breakpoint for debug asserts |
+| `std::breakpoint()` (C++26) | Hardware breakpoint for debug asserts. **libstdc++ 16.0.1 status:** `<debugging>` header declares but does not yet ship symbol definitions — use the `crucible::detail::breakpoint*` shim in Platform.h until libstdc++ ships |
 | `std::unreachable()` (C++23) | After exhaustive switch to eliminate default branch |
 | `std::countr_zero` / `popcount` (C++20) | Bit manipulation primitives |
 | `std::span` (C++20) | Pointer+count replacement |
 | `std::jthread` (C++20) | Auto-joining thread, no destructor-terminate |
-| `<simd>`: `std::simd::vec`, `partial_load`, `reduce_min/max`, `simd::chunk` (C++26) | Default for new SIMD; library does per-ISA dispatch internally. DetSafe: integer reductions only — FP reductions forbidden (ISA-dependent rounding) |
-| `std::atomic<T>::fetch_max` / `fetch_min` (C++26) | Monotonic update without CAS retry loop; replaces the `Monotonic<T>::bump` CAS pattern |
-| `<debugging>` — `breakpoint_if_debugging`, `is_debugger_present` (C++26) | Pause when debugger attached, continue otherwise; tighten `CRUCIBLE_INVARIANT` |
+| `<simd>`: `std::simd::vec`, `partial_load`, `reduce_min/max`, `simd::chunk` (C++26) | Default for new SIMD; library does per-ISA dispatch internally. DetSafe: integer reductions only — FP reductions forbidden (ISA-dependent rounding). **libstdc++ 16.0.1 status:** symbols work (verified `simd::vec`/`reduce`/`partial_load`/`chunk`) but `__cpp_lib_simd` FTM not yet bumped — usable, don't gate on FTM |
+| `std::atomic<T>::fetch_max` / `fetch_min` (C++26) | Monotonic update without CAS retry loop; replaces the `Monotonic<T>::bump` CAS pattern. **libstdc++ 16.0.1 status:** shipped (`__cpp_lib_atomic_min_max = 202403`) |
+| `<debugging>` — `breakpoint_if_debugging`, `is_debugger_present` (C++26) | Pause when debugger attached, continue otherwise; tighten `CRUCIBLE_INVARIANT`. **libstdc++ 16.0.1 status:** header declares but symbols absent from libstdc++.so — use `crucible::detail::*` shim in Platform.h |
 | `std::latch` / `std::barrier` / `std::counting_semaphore` (C++20) | Pool throttling, one-shot init, fan-in waits — replace bespoke atomic+spin where ≥100 ns latency is acceptable |
-| `std::is_within_lifetime` (C++26) | Debug-time UAF detection in `Linear<T>` / `ScopedView<>` |
 | `std::source_location` (C++20) | Replace `__FILE__`/`__LINE__` in trace/assert/contract-violation paths |
-| `std::is_sufficiently_aligned`, `std::aligned_accessor` (C++26) | Typed alternatives to `__builtin_assume_aligned` |
-| `std::atomic_ref::address()` (C++26) | Bench/diagnostic — verify the atomic points where the planner said it does |
-| `std::philox_engine` (C++26) | Standard counter-based RNG; cross-reference Crucible's `Philox.h` for bit-equivalence |
+| `std::is_sufficiently_aligned`, `std::aligned_accessor` (C++26) | Typed alternatives to `__builtin_assume_aligned`. **libstdc++ 16.0.1 status:** shipped (`__cpp_lib_is_sufficiently_aligned`/`aligned_accessor = 202411`) |
+| `std::philox_engine` (C++26) | Standard counter-based RNG; cross-reference Crucible's `Philox.h` for bit-equivalence. **libstdc++ 16.0.1 status:** shipped (`__cpp_lib_philox_engine = 202406`) |
 | `std::is_layout_compatible_with`, `std::is_pointer_interconvertible_with_class` (C++20) | Semantic companion to `static_assert(sizeof(T) == N)` for layout-strict structs |
+
+#### Blocked on libstdc++ 16.0.1 (revisit when shipped)
+
+These C++26 library features are spec'd and the project will adopt them, but libstdc++ 16.0.1 rawhide does not ship the implementation yet. Do not write code that depends on them today.
+
+| Type | Intended use | Blocking FTM |
+|---|---|---|
+| `std::is_within_lifetime` (P2641R4, C++26) | Debug-time UAF detection in `Linear<T>` / `ScopedView<>` (consteval-only — needs compiler lifetime tracking, not shimmable) | `__cpp_lib_is_within_lifetime` undefined |
+| `std::atomic_ref::address()` (P2929R1, C++26) | Bench/diagnostic — verify the atomic points where the planner said it does | `__cpp_lib_atomic_ref_padding_bits` undefined |
 
 ### Opt OUT
 
@@ -867,9 +874,9 @@ Relaxed = ARM reordering = race. On x86 it's the same MOV as acquire/release —
 | `std::variant` on hot path | Visitor dispatch; `kind` enum + `static_cast` |
 | Bitfields | Often slower than manual shift+mask; manual bits |
 | `std::codecvt` | Deprecated, broken API |
-| `std::rcu` / `<hazard_pointer>` (C++26) | We publish via `AtomicSnapshot<T>` + `atomic_ref` — finer control, DetSafe-documented; stdlib variants add overhead we don't need |
+| `std::rcu` / `<hazard_pointer>` (C++26) | We publish via `AtomicSnapshot<T>` + `atomic_ref` — finer control, DetSafe-documented; stdlib variants add overhead we don't need. **libstdc++ 16.0.1 status:** not shipped (`__cpp_lib_rcu` / `__cpp_lib_hazard_pointer` undefined) — banning the policy now ensures no one reaches for them later when they do land |
 | `std::simd` FP reductions (`reduce_*` on float/double) | ISA-dependent rounding; breaks DetSafe bit-equality across platforms. Integer reductions are safe |
-| `std::linalg` (C++26) | HS9 bans vendor BLAS; `<linalg>` dispatches through one anyway |
+| `std::linalg` (C++26) | HS9 bans vendor BLAS; `<linalg>` dispatches through one anyway. **libstdc++ 16.0.1 status:** not shipped (`__cpp_lib_linalg` undefined) — policy ban applies once it lands |
 | `std::copyable_function` (C++26) | Heap allocation risk on capture-heavy lambdas; prefer `function_ref` (borrow) + explicit owned-pointer when ownership is needed |
 
 ---
@@ -1755,16 +1762,22 @@ const auto& ck = *r;  // happy path
 
 // ── CRUCIBLE_INVARIANT ─────────────────────────────────────────
 // Fact the optimizer can exploit. `[[assume]]` in release (free).
+// Debug branch uses crucible::detail::breakpoint_if_debugging — a
+// libstdc++-16-shim for std::breakpoint_if_debugging (<debugging>
+// header declares the symbol but libstdc++ 16.0.1 ships no
+// definition; see Platform.h).
 #ifdef NDEBUG
   #define CRUCIBLE_INVARIANT(cond) [[assume(cond)]]
 #else
-  #define CRUCIBLE_INVARIANT(cond) do {                           \
-      if (!(cond)) [[unlikely]] {                                  \
-          fprintf(stderr, "invariant failed: %s (%s:%d)\n",        \
-                  #cond, __FILE__, __LINE__);                      \
-          std::breakpoint();                                       \
-          std::abort();                                            \
-      }                                                            \
+  #define CRUCIBLE_INVARIANT(cond) do {                                \
+      if (!(cond)) [[unlikely]] {                                       \
+          if (!::crucible::detail::is_debugger_present()) {             \
+              fprintf(stderr, "invariant failed: %s (%s:%d)\n",         \
+                      #cond, __FILE__, __LINE__);                       \
+          }                                                             \
+          ::crucible::detail::breakpoint_if_debugging();                \
+          std::abort();                                                 \
+      }                                                                 \
   } while (0)
 #endif
 ```
