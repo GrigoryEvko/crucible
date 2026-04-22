@@ -262,6 +262,7 @@ function(crucible_test name)
 endfunction()
 
 crucible_test(test_safety)
+crucible_test(test_simd)
 crucible_test(test_types)
 crucible_test(test_cost_model)
 crucible_test(test_saturate)
