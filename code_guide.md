@@ -1,5 +1,4 @@
 # Crucible Code Guide
-
 *The canonical reference for writing Crucible code. Every rule has a cost-of-violation, a compiler-enforcement mechanism, and a discipline fallback. Nothing is style; everything is measured.*
 
 Design target: **~5 ns/op foreground recording, ~2 ns shadow-handle dispatch, zero UB, bit-identical across hardware under BITEXACT recipes**. Every rule below serves one or more of those targets.
@@ -1614,7 +1613,79 @@ For those properties, the `verify` preset runs SMT (Z3) over the annotated code;
 
 ---
 
-## XVII. Hard Stops (Review Checklist)
+## XVII. Identifier and Readability Discipline
+
+Code tells a story. Reading a function should read like prose — a noun subject, a verb action, an adjective condition. Every identifier reads as a sentence fragment that narrates what the thing IS or DOES. The primary reader of this codebase is an agentic LLM — so names carry semantic weight equal to types. Under `-fno-rtti` + `-fno-exceptions` an identifier's spelling is often the only remaining signal an automated tool has about semantics; ambiguous names degrade grep, code review, and future refactoring equally.
+
+### Names by part-of-speech
+
+Pick the word class intentionally:
+
+- **Nouns** for data, state, fields, values: `arena`, `pool`, `recipe`, `resolvedBackend`, `pendingRegion`, `completedLength`. Plural for collections: `slots`, `edges`, `operands`, `pendingObligations`.
+- **Verbs** for actions — functions, methods, effectful steps: `buildTrace`, `interpretRegion`, `classifyKernel`, `publishKernel`, `emitDiagnostic`. Lead with a verb. Factory helpers: `makeRegion`, `makeLoop`, not `regionFromSpec`.
+- **Adjectives / past participles** for transformed values: `alignedSize`, `sortedArgs`, `pinnedSlots`, `deadNodes`, `canonicalHash`, `validatedEntry`. Describes what happened.
+- **Question verbs** (`is`, `has`, `should`, `must`, `can`, `will`, `was`, `needs`) for booleans and predicates — see telling-word rule below.
+
+### Telling-word rule for predicates and booleans
+
+Every `bool`, every `[[nodiscard]] bool` query, every `*_flag` name, every `is_*`/`has_*` axiom discipline MUST start with or contain a question verb so a reader can mentally complete the sentence:
+
+- `is_compiled`, `is_recording`, `is_flushing`, `is_valid`, `is_initialized`, `is_mutable` — "Is this <X>?"
+- `has_scalar_args`, `has_pending_region`, `has_reflected_hash`, `has_tensors` — "Does this have <X>?"
+- `should_retain_mode_on_divergence`, `should_suppress_recording` — "Should we <X>?"
+- `must_terminate`, `must_be_contiguous`, `must_be_pinned` — "Must this <X>?"
+- `can_fuse`, `can_coerce`, `can_elide_guard` — "Can we <X>?"
+- `will_publish`, `will_block_on_wait` — "Will this <X>?"
+- `was_consumed`, `was_declassified`, `was_validated` — "Was this <X>?"
+- `needs_rehash`, `needs_reclassify`, `needs_flush` — "Does this need <X>?"
+
+**Forbidden predicate shapes** (reject on review):
+
+- `ok`, `valid` (standalone, without `is_`), `good`, `done`, `flag`, `check`, `b`, `p`, `pred`, `set` — these do not form a sentence; the reader cannot tell what is being asked. Rename: `ok → was_dispatched_without_divergence`; `valid → is_well_formed`; `done → has_reached_terminal_state`; `flag → a named is_*`.
+- Negation via prefix `not_`: prefer the positively-named inverse (`is_consumed` over `is_not_consumed`; write `!is_consumed` at the call site). Double negatives (`not_unused`) are banned.
+
+Test names (fuzzer property checks, gtest-style names) obey the same rule: `prop_hash_determinism` (property under test), `invariant_bit_exact_replay` (invariant being checked), `prop_kernel_cache_roundtrip` (behavior exercised). Never `test1`, `test_bug`, `my_test`.
+
+### Hard rules
+
+- **Banned**: any non-ASCII character in a C++ identifier (variable, parameter, function, template parameter, member, namespace). No Γ, no α, no ω, no μ, no ≤. Doc-comments MAY cite papers or specs with Unicode (`fmix64` from xxHash, the `Θ(log n)` complexity of Chase-Lev). Code MAY NOT.
+- **Banned**: single-character identifiers (`g`, `t`, `e`, `s`, `x`, `a`, `b`, `n`, `r`) in any scope except numeric `for` loop induction over a range.
+- **Banned**: two-character identifiers (`ty`, `ex`, `fn`, `st`, `pt`, `tc`, `ok`, `nf`). Abbreviations are not names.
+- **Discouraged**: identifiers ≤ 3 characters. Prefer `scope` over `sc`, `param` over `p`, `binder` over `b`, `result` over `r`, `grade` over `g`, `index` over `i`.
+
+### Allowed exceptions (canonical technical terminology)
+
+Five categories of short names are exempt because they ARE the standard vocabulary in their domain — renaming them would make the code less recognizable, not more:
+
+- **Crucible ontology primitives**: `Vigil`, `Keeper`, `Relay`, `Cipher`, `Canopy`, `Meridian`, `Augur`, `Vessel` are full words and fine at any length. Their short aliases in hot paths are not — use the full name.
+- **Hot-path idiomatic short names** canonical in Crucible: `op` (Op), `args` (const Expr* const*), `nargs` (uint8_t), `ndim` (uint8_t), `dtype` (ScalarType), `arena` (fx::Alloc), `ctx` (CrucibleContext), `bg` (fx::Bg token), `fg` (fx::Fg token), `ms` (MetaIndex strong ID), `ring` (TraceRing&). Established in TraceRing.h / ExprPool.h / MerkleDag.h; rename would be churn.
+- **Binary-operation sides** (the FX/parser convention, preserved): `lhs` / `rhs` inside `add(lhs, rhs)`, `mul(lhs, rhs)`, `compare(lhs, rhs)`. Fine in accessors (`binop_lhs()`, `binop_rhs()`) because they project fields whose semantics are exactly "left side" / "right side".
+- **Loop induction variables** over a compile-time small range: `i`, `j`, `d` (dimension), `k` inside `for (uint8_t d = 0; d < ndim; ++d)`. `d` for dimension is idiomatic because `ndim` is the canonical spelling of the upper bound.
+- **Template type parameters** in generic code: `T`, `U`, `V`, `T1`, `T2` are canonical STL-style naming. A template parameter named `Predicate` is fine; one named `Fn` or `F` depends on role — a type-erased callable is `Callable` or `Predicate`, not `F`. Single-letter OK only for type-level `T`-style.
+
+### Required patterns
+
+- Every helper function name states what it does (`build_trace`, not `trace`; `classify_kernel`, not `classify`; `compute_storage_nbytes`, not `nbytes`). Exception: the hot-path idiomatic short names above.
+- Pattern variables / structured bindings name their role: `auto [birth_op, death_op] = slot_lifetime(s)` — not `auto [b, d]`. Match arms / switch on `kind`: the bound variable names its semantic role (`matched_op` / `diverged_op`, not `mi` / `di`).
+- Every intermediate `let`-binding (const local) is named after its role: `const uint32_t aligned_size = (n + ALIGNMENT - 1) & mask;` — not `const uint32_t n2`, not `tmp`. Crucible's `auto te = ops[i];` is fine because `te` in that file is consistently "TraceEntry reference" — established canonical.
+- Fold / loop accumulators name the element type in plural or the semantic role: `uint64_t content_hash`, `uint32_t total_inputs`, `size_t num_edges` — not `acc`, `r`, `sum`.
+- Boolean helpers follow the telling-word rule: `is_linear_grade`, not `linear_check`; `has_refinement_clause`, not `refinement?` (we're C++, no trailing `?`); `should_reject`, not `reject`.
+
+### Lemma / theorem / invariant names
+
+Lean code in `lean/Crucible/` and C++ test names obey the same rule: compose a question: `isConsumed_impliesGradeZero`, `bitExact_ofReplay`, `wellFormed_ofChecked`. Never `lemma1`, `wf_thm`, `tc_test`. Test-suite names that describe the invariant should lead with the invariant name, not the test index.
+
+### Apply unconditionally to new code. Apply opportunistically to existing code when refactoring — don't open rename-only PRs.
+
+If an edit touches a function body, its local names become your problem; rename while you are there. Do not expand scope to other functions just to rename them. The delta between "good naming" and "perfect naming" is never worth a dedicated PR.
+
+### Review checklist entry
+
+Before committing, grep the diff for: single-letter identifiers outside loop ranges, two-letter abbreviations, `tmp`/`res`/`ret`/`buf`/`ptr` (unqualified), `ok`/`valid`/`done`/`flag`, `!not_*` double-negations, non-ASCII in identifiers. Every match is either a canonical exception (loop `d`, hot-path `op`/`args`/`nargs`) or a rename target.
+
+---
+
+## XVIII. Hard Stops (Review Checklist)
 
 Every PR passes all hard stops or is rejected.
 
@@ -1642,7 +1713,7 @@ Every PR passes all hard stops or is rejected.
 
 ---
 
-## XVIII. When to Update This Guide
+## XIX. When to Update This Guide
 
 Update rules here when:
 
@@ -1655,7 +1726,7 @@ Every change to this guide is a semi-major commit with rationale. This guide is 
 
 ---
 
-## XIX. The Cost Hierarchy
+## XX. The Cost Hierarchy
 
 When in doubt, the cost of failure ordering is:
 
