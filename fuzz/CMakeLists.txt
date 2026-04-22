@@ -65,6 +65,9 @@ crucible_property_fuzzer(prop_content_hash_recipe_disambiguates)
 crucible_property_fuzzer(prop_recipe_registry_roundtrip)
 crucible_property_fuzzer(prop_arena_alloc_invariants)
 crucible_property_fuzzer(prop_header_roundtrip)
+crucible_property_fuzzer(prop_philox_determinism)
+crucible_property_fuzzer(prop_compute_storage_nbytes_saturation)
+crucible_property_fuzzer(prop_kernel_cache_roundtrip)
 
 # ── Boundary fuzzers (adversarial input) ───────────────────────
 
