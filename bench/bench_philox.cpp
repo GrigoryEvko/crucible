@@ -1,14 +1,20 @@
 // Philox4x32-10 throughput bench.
 //
-// One generate() call produces 4 × uint32 = 16 bytes of random data.
-// Target: ≤20 ns / call → ≥800 MB/s on a single thread. Scales
-// linearly across element indices (counter-based, no sequential state),
-// so the streaming buffer-fill number is the throughput that matters.
+// One scalar generate() call produces 4 × uint32 = 16 bytes of random
+// data.  Target: ≤20 ns / call → ≥800 MB/s on a single thread.
+//
+// SIMD-9 batched generate produces 8 × (4 × uint32) = 128 bytes per
+// call.  Target: ≤25 ns / call → ≥5 GB/s = ~6× scalar throughput.
+// Both scale linearly across element indices (counter-based, no
+// sequential state), so the streaming buffer-fill number is the
+// throughput that matters.
 
 #include <cstdint>
 #include <cstdio>
 
 #include <crucible/Philox.h>
+#include <crucible/PhiloxSimd.h>
+#include <crucible/safety/Simd.h>
 
 #include "bench_harness.h"
 
@@ -89,6 +95,82 @@ int main() {
             }
             bench::do_not_optimize(scratch[0]);
         }),
+
+        // ── SIMD-9: batched generator ─────────────────────────────
+        //
+        // One philox_batch8 call = 8 scalar generate() calls' worth
+        // of work (32 × uint32 = 128 bytes).  The straight-line
+        // version measures pure per-batch latency.
+        [&]{
+            using crucible::simd::u32x8;
+            const u32x8 ctr0(static_cast<uint32_t>(seed));
+            const u32x8 ctr1(static_cast<uint32_t>(seed + 1));
+            const u32x8 ctr2(0u);
+            const u32x8 ctr3(0u);
+            const u32x8 key0(static_cast<uint32_t>(key));
+            const u32x8 key1(static_cast<uint32_t>(key >> 32));
+            return bench::run("philox_batch8 (8×4×u32 = 128B)", [&]{
+                auto out = crucible::detail::philox_batch8(
+                    ctr0, ctr1, ctr2, ctr3, key0, key1);
+                bench::do_not_optimize(out.r0);
+                bench::do_not_optimize(out.r1);
+                bench::do_not_optimize(out.r2);
+                bench::do_not_optimize(out.r3);
+            });
+        }(),
+
+        // SIMD streaming fill: 4096 u32 = 128 batch8 calls.  Same
+        // 16 KB target as the scalar streaming fill — head-to-head
+        // throughput comparison.
+        //
+        // Layout note: stores 4 contiguous u32x8 vectors per call
+        // (r0[8], r1[8], r2[8], r3[8]) — NOT interleaved per-lane.
+        // This makes each call write 4 vector stores instead of 32
+        // scalar stores; the streaming bench is then dominated by
+        // generate cost, not store cost.  Callers that need
+        // per-stream output simply read 4 stride-8 streams out of
+        // the same buffer.
+        [&]{
+            using crucible::simd::u32x8;
+            return bench::run("philox_batch8 fill 4096 u32 (16 KB batch)", [&]{
+                const u32x8 key0(static_cast<uint32_t>(key));
+                const u32x8 key1(static_cast<uint32_t>(key >> 32));
+                // 32 u32 per batch8 call → 4096/32 = 128 calls.
+                // Lane i of the i-th call sees counter
+                // base = (call_idx * 8 + i) on ctr0; ctr1..3 stay 0.
+                const u32x8 lane_offsets =
+                    crucible::simd::iota_v<u32x8>();
+                for (uint32_t call_idx = 0;
+                     call_idx < BUF_WORDS / 32; ++call_idx)
+                {
+                    const u32x8 base(call_idx * 8u);
+                    const u32x8 ctr0 = base + lane_offsets;
+                    const u32x8 ctr1(0u);
+                    const u32x8 ctr2(0u);
+                    const u32x8 ctr3(0u);
+                    auto out = crucible::detail::philox_batch8(
+                        ctr0, ctr1, ctr2, ctr3, key0, key1);
+                    // Four aligned vector stores — 32 u32 per call
+                    // in 4 instructions instead of 32.  Iterator +
+                    // count form: unchecked_store(v, first, n, flag).
+                    const std::size_t base_idx = call_idx * 32u;
+                    constexpr std::ptrdiff_t LANES = u32x8::size();
+                    std::simd::unchecked_store(
+                        out.r0, scratch + base_idx +  0, LANES,
+                        std::simd::flag_aligned);
+                    std::simd::unchecked_store(
+                        out.r1, scratch + base_idx +  8, LANES,
+                        std::simd::flag_aligned);
+                    std::simd::unchecked_store(
+                        out.r2, scratch + base_idx + 16, LANES,
+                        std::simd::flag_aligned);
+                    std::simd::unchecked_store(
+                        out.r3, scratch + base_idx + 24, LANES,
+                        std::simd::flag_aligned);
+                }
+                bench::do_not_optimize(scratch[0]);
+            });
+        }(),
     };
 
     bench::emit_reports_text(reports);
