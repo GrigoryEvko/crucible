@@ -68,6 +68,11 @@ crucible_property_fuzzer(prop_header_roundtrip)
 crucible_property_fuzzer(prop_philox_determinism)
 crucible_property_fuzzer(prop_compute_storage_nbytes_saturation)
 crucible_property_fuzzer(prop_kernel_cache_roundtrip)
+crucible_property_fuzzer(prop_callsite_table_dedup)
+crucible_property_fuzzer(prop_expr_pool_intern)
+crucible_property_fuzzer(prop_trace_ring_spsc)
+crucible_property_fuzzer(prop_saturate_math_invariants)
+crucible_property_fuzzer(prop_guard_hash_invariants)
 
 # ── Boundary fuzzers (adversarial input) ───────────────────────
 
