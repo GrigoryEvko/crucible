@@ -175,25 +175,26 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(MemoryPlan);
 // arithmetic step is now overflow-checked via __builtin_*_overflow;
 // any overflow returns UINT64_MAX so allocators downstream fail clean
 // on "tensor too large" rather than silently wrap.
-[[nodiscard]] constexpr uint64_t compute_storage_nbytes(const TensorMeta& m)
-    pre (m.ndim <= 8)
+[[nodiscard]] constexpr uint64_t compute_storage_nbytes(const TensorMeta& meta)
+    pre (meta.ndim <= 8)
 {
-  if (m.ndim == 0)
-    return element_size(m.dtype);
+  if (meta.ndim == 0)
+    return element_size(meta.dtype);
   int64_t max_offset = 0;
   int64_t min_offset = 0;
-  for (uint8_t d = 0; d < m.ndim; d++) {
-    if (m.sizes[d] == 0) return 0; // zero-size tensor
-    int64_t extent;
+  for (uint8_t d = 0; d < meta.ndim; d++) {
+    if (meta.sizes[d] == 0) return 0; // zero-size tensor
+    int64_t dim_extent_bytes;
     // (sizes[d] - 1) * strides[d] can overflow for huge dims.
     // sizes[d] is positive, so the subtraction never overflows.
-    if (__builtin_mul_overflow(m.sizes[d] - 1, m.strides[d], &extent)) [[unlikely]]
+    if (__builtin_mul_overflow(meta.sizes[d] - 1, meta.strides[d],
+                               &dim_extent_bytes)) [[unlikely]]
       return UINT64_MAX;
-    if (extent > 0) {
-      if (__builtin_add_overflow(max_offset, extent, &max_offset)) [[unlikely]]
+    if (dim_extent_bytes > 0) {
+      if (__builtin_add_overflow(max_offset, dim_extent_bytes, &max_offset)) [[unlikely]]
         return UINT64_MAX;
     } else {
-      if (__builtin_add_overflow(min_offset, extent, &min_offset)) [[unlikely]]
+      if (__builtin_add_overflow(min_offset, dim_extent_bytes, &min_offset)) [[unlikely]]
         return UINT64_MAX;
     }
   }
@@ -205,12 +206,12 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(MemoryPlan);
   if (__builtin_add_overflow(span_signed, int64_t{1}, &span_signed)) [[unlikely]]
     return UINT64_MAX;
   // span is non-negative here (max >= 0 >= min, so max - min >= 0).
-  uint64_t bytes;
+  uint64_t total_bytes;
   if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed),
-                             static_cast<uint64_t>(element_size(m.dtype)),
-                             &bytes)) [[unlikely]]
+                             static_cast<uint64_t>(element_size(meta.dtype)),
+                             &total_bytes)) [[unlikely]]
     return UINT64_MAX;
-  return bytes;
+  return total_bytes;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -488,7 +489,11 @@ struct BranchNode : TraceNode {
   // comparison tolerates duplicate values (strict < would reject a
   // legitimate "two guards hash equal" case, which doesn't happen in
   // current code but isn't structurally forbidden).
-  [[nodiscard, gnu::cold]] bool arms_sorted() const noexcept {
+  //
+  // Telling-word predicate: reads as "are arms sorted by value?" — the
+  // assertion site `contract_assert(branch->are_arms_sorted_by_value())`
+  // forms a complete English sentence per code_guide §XVII.
+  [[nodiscard, gnu::cold]] bool are_arms_sorted_by_value() const noexcept {
     for (uint32_t i = 1; i < num_arms; ++i)
       if (arms[i].value < arms[i - 1].value) return false;
     return true;
@@ -580,12 +585,12 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(LoopNode);
 CRUCIBLE_PURE inline uint64_t feedback_signature(std::span<const FeedbackEdge> edges) noexcept {
   if (edges.empty()) return 0;
   constexpr uint64_t kSeed = 0x6665656462616B73ULL; // "feedbaks"
-  uint64_t h = kSeed;
-  for (const auto& e : edges) {
-    h = detail::fmix64(h ^ reflect_hash(e));
+  uint64_t signature_state = kSeed;
+  for (const auto& edge : edges) {
+    signature_state = detail::fmix64(signature_state ^ reflect_hash(edge));
   }
-  h = detail::fmix64(h ^ edges.size());
-  return h;
+  signature_state = detail::fmix64(signature_state ^ edges.size());
+  return signature_state;
 }
 
 // Hash termination condition.  Captures kind + repeat_count + epsilon
@@ -615,15 +620,20 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 }
 
 // Content hash of a body sub-DAG: wymix-fold content hashes of all body regions.
-[[nodiscard]] inline ContentHash compute_body_content_hash(TraceNode* body) {
-  uint64_t h = 0x9E3779B97F4A7C15ULL;
+//
+// gnu::pure: result depends on the body chain reachable through `body`
+// and the immutable content_hash field of each REGION node (set once
+// at make_region time).  No side effects, no atomic loads.
+[[nodiscard, gnu::pure]] inline ContentHash compute_body_content_hash(TraceNode* body) noexcept {
+  uint64_t body_hash_state = 0x9E3779B97F4A7C15ULL;
   TraceNode* walk = body;
   while (walk) {
     if (walk->kind == TraceNodeKind::REGION)
-      h = detail::wymix(h, static_cast<RegionNode*>(walk)->content_hash.raw());
+      body_hash_state = detail::wymix(
+          body_hash_state, static_cast<RegionNode*>(walk)->content_hash.raw());
     walk = walk->next;
   }
-  return ContentHash{detail::fmix64(h)};
+  return ContentHash{detail::fmix64(body_hash_state)};
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -688,7 +698,7 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
   // dependency chain: ndim XOR-folds (1 cy each, multiplies pipelined)
   // + 1 wymix (~5 cy) instead of ndim × wymix (~5 cy each, serial).
   // For ndim=4: ~13 cy vs ~22 cy per tensor (~40% faster).
-  uint64_t h = 0x9E3779B97F4A7C15ULL;
+  uint64_t content_hash_state = 0x9E3779B97F4A7C15ULL;
 
   // Fold the recipe's Family-A hash into the accumulator BEFORE the
   // ops loop.  Placement matters: folding before the ops iteration
@@ -704,36 +714,36 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
     // downstream wymix can skip any redundant tests.
     [[assume(recipe->hash.raw() != 0)]];
     [[assume(recipe->hash.raw() != UINT64_MAX)]];
-    h = detail::wymix(h, recipe->hash.raw());
+    content_hash_state = detail::wymix(content_hash_state, recipe->hash.raw());
   }
 
-  for (const auto& op : ops) {
-    h = detail::wymix(h, op.schema_hash.raw());
+  for (const auto& op_record : ops) {
+    content_hash_state = detail::wymix(content_hash_state, op_record.schema_hash.raw());
 
-    for (uint16_t j = 0; j < op.num_inputs; j++) {
-      const TensorMeta& m = op.input_metas[j];
-      uint64_t dim_h = 0;
-      for (uint8_t d = 0; d < m.ndim; d++) {
-        dim_h ^= static_cast<uint64_t>(m.sizes[d]) * detail::kDimMix[d];
-        dim_h ^= static_cast<uint64_t>(m.strides[d]) * detail::kDimMix[d + 8];
+    for (uint16_t j = 0; j < op_record.num_inputs; j++) {
+      const TensorMeta& input_meta = op_record.input_metas[j];
+      uint64_t per_dim_hash_xor = 0;
+      for (uint8_t d = 0; d < input_meta.ndim; d++) {
+        per_dim_hash_xor ^= static_cast<uint64_t>(input_meta.sizes[d]) * detail::kDimMix[d];
+        per_dim_hash_xor ^= static_cast<uint64_t>(input_meta.strides[d]) * detail::kDimMix[d + 8];
       }
       uint64_t meta_packed =
-          static_cast<uint64_t>(std::to_underlying(m.dtype)) |
-          (static_cast<uint64_t>(std::to_underlying(m.device_type)) << 8) |
-          (static_cast<uint64_t>(static_cast<uint8_t>(m.device_idx)) << 16);
-      h = detail::wymix(h ^ dim_h, meta_packed);
+          static_cast<uint64_t>(std::to_underlying(input_meta.dtype)) |
+          (static_cast<uint64_t>(std::to_underlying(input_meta.device_type)) << 8) |
+          (static_cast<uint64_t>(static_cast<uint8_t>(input_meta.device_idx)) << 16);
+      content_hash_state = detail::wymix(content_hash_state ^ per_dim_hash_xor, meta_packed);
     }
 
-    if (op.scalar_args) {
-      uint16_t n = std::min(op.num_scalar_args, uint16_t{5});
-      for (uint16_t s = 0; s < n; s++) {
-        h ^= static_cast<uint64_t>(op.scalar_args[s]);
-        h *= 0x100000001b3ULL;
+    if (op_record.scalar_args) {
+      uint16_t num_scalars_clamped = std::min(op_record.num_scalar_args, uint16_t{5});
+      for (uint16_t s = 0; s < num_scalars_clamped; s++) {
+        content_hash_state ^= static_cast<uint64_t>(op_record.scalar_args[s]);
+        content_hash_state *= 0x100000001b3ULL;
       }
     }
   }
 
-  return ContentHash{detail::fmix64(h)};
+  return ContentHash{detail::fmix64(content_hash_state)};
 }
 
 [[nodiscard, gnu::pure]] inline MerkleHash compute_merkle_hash(TraceNode* node) noexcept {
@@ -743,19 +753,19 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
   // Exhaustive switch: every TraceNodeKind arm must return (or fall
   // through to the tail).  A new kind added without an arm trips
   // std::unreachable rather than silently falling off the end with
-  // uninitialized `h`.  Switches compile to jump tables; if/else-if
-  // chains are opaque to that pattern.
-  uint64_t h;
+  // uninitialized accumulator.  Switches compile to jump tables;
+  // if/else-if chains are opaque to that pattern.
+  uint64_t merkle_hash_state;
   switch (node->kind) {
     case TraceNodeKind::REGION:
-      h = static_cast<RegionNode*>(node)->content_hash.raw();
+      merkle_hash_state = static_cast<RegionNode*>(node)->content_hash.raw();
       break;
     case TraceNodeKind::BRANCH: {
-      auto* b = static_cast<BranchNode*>(node);
-      h = detail::fmix64(b->guard.hash());
-      for (uint32_t i = 0; i < b->num_arms; i++) {
-        h ^= detail::fmix64(b->arms[i].target->merkle_hash.raw());
-        h *= 0x9E3779B97F4A7C15ULL;
+      auto* branch = static_cast<BranchNode*>(node);
+      merkle_hash_state = detail::fmix64(branch->guard.hash());
+      for (uint32_t i = 0; i < branch->num_arms; i++) {
+        merkle_hash_state ^= detail::fmix64(branch->arms[i].target->merkle_hash.raw());
+        merkle_hash_state *= 0x9E3779B97F4A7C15ULL;
       }
       break;
     }
@@ -768,9 +778,9 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
       // feedback or termination components happen to be zero.
       constexpr uint64_t kLoopSalt = 0x4C4F4F504E4F4445ULL; // "LOOPNODE"
       constexpr uint64_t kFbSalt   = 0x6665656462616B00ULL;  // "feedbak\0"
-      h = detail::fmix64(loop->body_content_hash.raw() ^ kLoopSalt);
-      h ^= detail::fmix64(feedback_signature(loop->feedback_span()) ^ kFbSalt);
-      h ^= loopterm_hash(*loop);
+      merkle_hash_state = detail::fmix64(loop->body_content_hash.raw() ^ kLoopSalt);
+      merkle_hash_state ^= detail::fmix64(feedback_signature(loop->feedback_span()) ^ kFbSalt);
+      merkle_hash_state ^= loopterm_hash(*loop);
       break;
     }
     case TraceNodeKind::TERMINAL:
@@ -783,22 +793,25 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 
   // Include continuation's merkle hash (this is what makes it Merkle)
   if (node->next)
-    h = detail::fmix64(h ^ node->next->merkle_hash.raw());
+    merkle_hash_state = detail::fmix64(merkle_hash_state ^ node->next->merkle_hash.raw());
 
-  return MerkleHash{h};
+  return MerkleHash{merkle_hash_state};
 }
 
-// Content hash for a branched kernel (all arms fused into one kernel)
-[[nodiscard]] inline ContentHash branched_content_hash(BranchNode* branch) {
-  uint64_t h = detail::fmix64(branch->guard.hash());
+// Content hash for a branched kernel (all arms fused into one kernel).
+//
+// gnu::pure: depends only on the BranchNode subtree's immutable fields
+// (guard + arm content hashes).  No side effects.
+[[nodiscard, gnu::pure]] inline ContentHash branched_content_hash(BranchNode* branch) noexcept {
+  uint64_t branched_hash_state = detail::fmix64(branch->guard.hash());
   for (uint32_t i = 0; i < branch->num_arms; i++) {
     if (branch->arms[i].target->kind == TraceNodeKind::REGION) {
-      h ^= detail::fmix64(
+      branched_hash_state ^= detail::fmix64(
           static_cast<RegionNode*>(branch->arms[i].target)->content_hash.raw());
-      h *= 0x9E3779B97F4A7C15ULL;
+      branched_hash_state *= 0x9E3779B97F4A7C15ULL;
     }
   }
-  return ContentHash{detail::fmix64(h)};
+  return ContentHash{detail::fmix64(branched_hash_state)};
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -895,15 +908,19 @@ class CRUCIBLE_OWNER KernelCache {
       pre (content_hash.raw() != 0)
   {
     [[assume(content_hash.raw() != 0)]];
-    uint32_t mask = capacity_ - 1;
-    uint32_t idx = static_cast<uint32_t>(content_hash.raw()) & mask;
+    // Hoist .raw() once: the optimizer would CSE under -O3 anyway, but
+    // having the same name at both the probe seed and the slot-key
+    // comparison makes the dataflow obvious to a reader.
+    const uint64_t lookup_hash = content_hash.raw();
+    const uint32_t mask = capacity_ - 1;
+    const uint32_t slot_index = static_cast<uint32_t>(lookup_hash) & mask;
     for (uint32_t probe = 0; probe < capacity_; probe++) {
-      auto& entry = table_[(idx + probe) & mask];
+      auto& entry = table_[(slot_index + probe) & mask];
       uint64_t key = entry.content_hash.load(std::memory_order_acquire);
-      if (key == content_hash.raw()) {
-        CompiledKernel* k = entry.kernel.load(std::memory_order_acquire);
-        if (k != nullptr) [[likely]]
-          return k;                 // PUBLISHED
+      if (key == lookup_hash) {
+        CompiledKernel* kernel_ptr = entry.kernel.load(std::memory_order_acquire);
+        if (kernel_ptr != nullptr) [[likely]]
+          return kernel_ptr;        // PUBLISHED
         // CLAIMED: an inserter is mid-flight (between content_hash
         // CAS and kernel.store). The window is a few nanoseconds on
         // x86 (acq_rel CAS + release store), so spin briefly.
@@ -943,14 +960,19 @@ class CRUCIBLE_OWNER KernelCache {
       pre (content_hash.raw() != 0)  // zero is the sentinel for empty slots
       pre (kernel != nullptr)
   {
-    uint32_t mask = capacity_ - 1;
-    uint32_t idx = static_cast<uint32_t>(content_hash.raw()) & mask;
+    // Hoist .raw() once for both the probe seed and the CAS
+    // desired-value — the optimizer CSEs under -O3 but the explicit
+    // local makes the "this exact 64-bit value is what we publish"
+    // invariant readable.
+    const uint64_t lookup_hash = content_hash.raw();
+    const uint32_t mask = capacity_ - 1;
+    const uint32_t slot_index = static_cast<uint32_t>(lookup_hash) & mask;
     for (uint32_t probe = 0; probe < capacity_; probe++) {
-      auto& entry = table_[(idx + probe) & mask];
+      auto& entry = table_[(slot_index + probe) & mask];
       uint64_t expected = 0;
       // EMPTY → CLAIMED transition.
       if (entry.content_hash.compare_exchange_strong(
-              expected, content_hash.raw(), std::memory_order_acq_rel)) {
+              expected, lookup_hash, std::memory_order_acq_rel)) {
         // CLAIMED → PUBLISHED transition. Any reader that sees the
         // hash (acquire) after this store will also see the kernel.
         entry.kernel.store(kernel, std::memory_order_release);
@@ -959,7 +981,7 @@ class CRUCIBLE_OWNER KernelCache {
         size_.fetch_add(1, std::memory_order_relaxed);
         return {};
       }
-      if (expected == content_hash.raw()) {
+      if (expected == lookup_hash) {
         // PUBLISHED(old) → PUBLISHED(new): variant update.
         // A concurrent reader may briefly observe either kernel value
         // — both are valid by the insert contract (insert() only runs
@@ -977,17 +999,17 @@ class CRUCIBLE_OWNER KernelCache {
   }
   [[nodiscard]] uint32_t capacity() const { return capacity_; }
 
-  // Diagnostic: classify a slot at index `i` (probing order). Returns
-  // `Empty` for an unused slot, `Claimed` for a transient (hash set but
-  // kernel null) slot, `Published` for a fully-committed entry. Not a
-  // hot-path primitive — tests and perf counters only.
-  [[nodiscard]] SlotState diag_slot_state(uint32_t i) const noexcept
+  // Diagnostic: classify a slot at the given probing-order index.
+  // Returns `Empty` for an unused slot, `Claimed` for a transient
+  // (hash set but kernel null) slot, `Published` for a fully-committed
+  // entry. Not a hot-path primitive — tests and perf counters only.
+  [[nodiscard]] SlotState diag_slot_state(uint32_t slot_index) const noexcept
       CRUCIBLE_NO_THREAD_SAFETY
-      pre (i < capacity_)
+      pre (slot_index < capacity_)
   {
-    const Entry& e = table_[i];
-    return classify_(e.content_hash.load(std::memory_order_acquire),
-                     e.kernel.load(std::memory_order_acquire));
+    const Entry& entry = table_[slot_index];
+    return classify_(entry.content_hash.load(std::memory_order_acquire),
+                     entry.kernel.load(std::memory_order_acquire));
   }
 
  private:
@@ -1018,8 +1040,8 @@ class CRUCIBLE_OWNER KernelCache {
   static CompiledKernel* await_claimed_(const Entry& entry) noexcept {
     for (uint32_t spin = 0; spin < kClaimedSpinBudget; ++spin) {
       CRUCIBLE_SPIN_PAUSE;
-      CompiledKernel* k = entry.kernel.load(std::memory_order_acquire);
-      if (k != nullptr) return k;
+      CompiledKernel* kernel_ptr = entry.kernel.load(std::memory_order_acquire);
+      if (kernel_ptr != nullptr) return kernel_ptr;
     }
     // Inserter exceeded the spin budget (preempted?). Treat as miss.
     // Caller will re-dispatch; next lookup almost certainly finds
@@ -1199,9 +1221,9 @@ inline void recompute_merkle(TraceNode* node) {
     return;
   // Must recompute children first (bottom-up)
   if (node->kind == TraceNodeKind::BRANCH) {
-    auto* b = static_cast<BranchNode*>(node);
-    for (uint32_t i = 0; i < b->num_arms; i++)
-      recompute_merkle(b->arms[i].target);
+    auto* branch = static_cast<BranchNode*>(node);
+    for (uint32_t i = 0; i < branch->num_arms; i++)
+      recompute_merkle(branch->arms[i].target);
   } else if (node->kind == TraceNodeKind::LOOP) {
     recompute_merkle(static_cast<LoopNode*>(node)->body);
   }
@@ -1223,9 +1245,9 @@ inline void recompute_merkle(TraceNode* node) {
         out[count++] = static_cast<RegionNode*>(node);
         break;
       case TraceNodeKind::BRANCH: {
-        auto* b = static_cast<BranchNode*>(node);
-        for (uint32_t i = 0; i < b->num_arms; i++)
-          count = collect_regions(b->arms[i].target, out, count);
+        auto* branch = static_cast<BranchNode*>(node);
+        for (uint32_t i = 0; i < branch->num_arms; i++)
+          count = collect_regions(branch->arms[i].target, out, count);
         break;
       }
       case TraceNodeKind::LOOP:
@@ -1323,8 +1345,8 @@ inline void recompute_merkle(TraceNode* node) {
   // publish() requires non-null; skip when the lookup missed — the
   // field's default-constructed null is preserved, which is correct
   // for "no compiled kernel yet".
-  if (auto* k = kernel_cache.lookup(new_region->content_hash)) {
-    new_region->compiled.publish(k);
+  if (auto* cached_kernel = kernel_cache.lookup(new_region->content_hash)) {
+    new_region->compiled.publish(cached_kernel);
   }
 
   // 5. Create BranchNode
@@ -1385,9 +1407,9 @@ template <typename GuardEval, typename RegionExec>
       // that populated arms in wrong order — silent failure otherwise
       // (wrong arm selected, replay diverges against a region that
       // hashes identical to the correct one).  Zero-cost under NDEBUG
-      // since arms_sorted is gnu::cold and contract_assert compiles
-      // out.
-      contract_assert(branch->arms_sorted());
+      // since are_arms_sorted_by_value is gnu::cold and contract_assert
+      // compiles out.
+      contract_assert(branch->are_arms_sorted_by_value());
 
       // Binary search on sorted arms. Arms are kept sorted by value
       // at creation time (add_branch). O(log n) for large arm counts,
