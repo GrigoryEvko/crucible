@@ -93,7 +93,7 @@ namespace palette {
 
 class SvgRenderer {
  public:
-  SvgRenderer() { buf_.reserve(64 * 1024); }
+  SvgRenderer() = default;
 
   // ── Document ─────────────────────────────────────────────────────
 

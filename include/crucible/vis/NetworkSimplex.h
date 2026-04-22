@@ -87,7 +87,6 @@ struct NSResult {
 
   // Topological order (Kahn's)
   std::vector<uint32_t> topo;
-  topo.reserve(n);
   {
     std::vector<uint32_t> queue;
     for (uint32_t i = 0; i < n; i++)
@@ -133,7 +132,6 @@ struct NSResult {
   std::vector<bool> in_tree(m, false);     // edge in spanning tree?
   std::vector<bool> node_in_tree(n, false);
   std::vector<uint32_t> tree_edges;
-  tree_edges.reserve(n - 1);
 
   // Parent in tree (for DFS traversal)
   std::vector<int32_t> parent_edge(n, -1); // edge index connecting to parent
