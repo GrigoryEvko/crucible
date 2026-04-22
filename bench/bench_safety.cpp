@@ -174,6 +174,32 @@ int main() {
                 bench::do_not_optimize(ok);
             });
         }(),
+
+        // AtomicMonotonic fast path — single-threaded, but exercises the
+        // fetch_max codegen (P0493R5).  On x86-64 libstdc++ emits a
+        // lock cmpxchg retry; on ARMv8.1+ LSE this is a one-cycle LDUMAX.
+        // Compares against scalar Monotonic above so the lock-prefix tax
+        // is visible in the diff.
+        [&]{
+            AtomicMonotonic<uint64_t> amon{0};
+            uint64_t step = 1;
+            return bench::run("AtomicMonotonic::try_advance (fetch_max)", [&]{
+                bool ok = amon.try_advance(step++);
+                bench::do_not_optimize(ok);
+            });
+        }(),
+
+        // MaxObserved — alias of AtomicMonotonic<T, std::less<T>>.  Same
+        // implementation, but bench separately to confirm the alias does
+        // not regress and to make any future divergence visible.
+        [&]{
+            MaxObserved<uint32_t> high_water{0};
+            uint32_t v = 1;
+            return bench::run("MaxObserved::try_advance", [&]{
+                bool ok = high_water.try_advance(v++);
+                bench::do_not_optimize(ok);
+            });
+        }(),
     };
 
     bench::emit_reports_text(reports);
