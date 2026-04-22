@@ -11,6 +11,7 @@
 #include <thread>
 #include <vector>
 
+#include <crucible/DimHash.h>
 #include <crucible/MetaLog.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
@@ -746,11 +747,10 @@ struct BackgroundThread {
         content_h_local = detail::wymix(content_h_local, te.schema_hash.raw());
         for (uint16_t j = 0; j < n_in; j++) {
           const TensorMeta& meta = te.input_metas[j];
-          uint64_t dim_h_local = 0;
-          for (uint8_t d = 0; d < meta.ndim; d++) {
-            dim_h_local ^= static_cast<uint64_t>(meta.sizes[d]) * detail::kDimMix[d];
-            dim_h_local ^= static_cast<uint64_t>(meta.strides[d]) * detail::kDimMix[d + 8];
-          }
+          // SIMD dim-hash: bit-identical to the prior inline XOR-fold over
+          // sizes[d]*kDimMix[d] + strides[d]*kDimMix[d+8].  Locked by
+          // test_dim_hash_equivalence_handcoded in test_simd.cpp.
+          const uint64_t dim_h_local = detail::dim_hash_simd(meta);
           uint64_t meta_packed =
               static_cast<uint64_t>(std::to_underlying(meta.dtype)) |
               (static_cast<uint64_t>(std::to_underlying(meta.device_type)) << 8) |
