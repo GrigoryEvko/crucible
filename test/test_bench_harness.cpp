@@ -89,10 +89,9 @@ int g_failures = 0;
 // first call, reused process-wide.
 [[nodiscard]] const std::vector<double>& ramp_1_to_N() {
     static const std::vector<double> v = [] {
-        std::vector<double> out;
-        out.reserve(kSampleN);
-        for (std::size_t i = 1; i <= kSampleN; ++i) {
-            out.push_back(static_cast<double>(i));
+        std::vector<double> out(kSampleN);
+        for (std::size_t i = 0; i < kSampleN; ++i) {
+            out[i] = static_cast<double>(i + 1);
         }
         return out;
     }();
@@ -250,10 +249,9 @@ void test_bootstrap_ci() {
     // ── n < 30 → Agent 1 may have promoted the return to optional<CI>.
     //    The helpers above cover both shapes via a templated probe.
     {
-        std::vector<double> small;
-        small.reserve(kSmallN);
-        for (std::size_t i = 1; i <= kSmallN; ++i) {
-            small.push_back(static_cast<double>(i));
+        std::vector<double> small(kSmallN);
+        for (std::size_t i = 0; i < kSmallN; ++i) {
+            small[i] = static_cast<double>(i + 1);
         }
         auto result = bench::bootstrap_ci(small, 0.5, /*B=*/100);
         check_ci_is_empty(result);
@@ -293,12 +291,12 @@ void test_compare() {
     // continuity correction). Either way Δp50 is strictly positive
     // and z is a finite number.
     {
-        std::vector<double> va, vb;
-        va.reserve(kSampleN);
-        vb.reserve(kSampleN);
-        for (std::size_t i = 1; i <= kSampleN; ++i) {
-            va.push_back(static_cast<double>(i));
-            vb.push_back(static_cast<double>(i) + 0.01);
+        std::vector<double> va(kSampleN);
+        std::vector<double> vb(kSampleN);
+        for (std::size_t i = 0; i < kSampleN; ++i) {
+            const double base = static_cast<double>(i + 1);
+            va[i] = base;
+            vb[i] = base + 0.01;
         }
         const bench::Report a = make_report_from("a", va);
         const bench::Report b = make_report_from("b+shift", vb);
@@ -311,12 +309,13 @@ void test_compare() {
 
     // ── insufficient samples (< 30) → not distinguishable ──
     {
-        std::vector<double> small_a, small_b;
-        small_a.reserve(20);
-        small_b.reserve(20);
-        for (std::size_t i = 0; i < 20; ++i) {
-            small_a.push_back(static_cast<double>(i));
-            small_b.push_back(static_cast<double>(i) + 100.0);  // massive shift
+        constexpr std::size_t kSmallCmpN = 20;
+        std::vector<double> small_a(kSmallCmpN);
+        std::vector<double> small_b(kSmallCmpN);
+        for (std::size_t i = 0; i < kSmallCmpN; ++i) {
+            const double base = static_cast<double>(i);
+            small_a[i] = base;
+            small_b[i] = base + 100.0;  // massive shift
         }
         const bench::Report a = make_report_from("small_a", small_a);
         const bench::Report b = make_report_from("small_b", small_b);
@@ -331,12 +330,13 @@ void test_compare() {
     // Rank-sum symmetry ⇒ u1 = u2 = n1·n2/2 = μ, so the numerator
     // (u_min − μ) is zero regardless of σ.
     {
-        std::vector<double> tie_a, tie_b;
-        tie_a.reserve(kSampleN);
-        tie_b.reserve(kSampleN);
+        std::vector<double> tie_a(kSampleN);
+        std::vector<double> tie_b(kSampleN);
         for (std::size_t i = 0; i < kSampleN / 2; ++i) {
-            tie_a.push_back(1.0); tie_a.push_back(2.0);
-            tie_b.push_back(1.0); tie_b.push_back(2.0);
+            tie_a[2 * i]     = 1.0;
+            tie_a[2 * i + 1] = 2.0;
+            tie_b[2 * i]     = 1.0;
+            tie_b[2 * i + 1] = 2.0;
         }
         const bench::Report a = make_report_from("tie_a", tie_a);
         const bench::Report b = make_report_from("tie_b", tie_b);
