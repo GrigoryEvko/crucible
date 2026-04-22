@@ -78,7 +78,7 @@ class Vigil {
         }
 
         // Wire the background thread callback to our on_region_ready.
-        bg_.region_ready_cb = [this](RegionNode* r) { on_region_ready(r); };
+        bg_.region_ready_cb = [this](RegionNode* region) { on_region_ready(region); };
 
         bg_.start(ring_.get(), meta_log_.get(),
                   cfg_.rank, cfg_.world_size, cfg_.device_capability);
@@ -131,9 +131,12 @@ class Vigil {
     //
     // RECORDING hot path:
     //   is_compiled() → pending check → record_op() → return result
-    //   Relaxed atomic load on pending_region_: on x86 the hardware
-    //   provides acquire semantics anyway; acquire fence deferred to
-    //   the cold transition path.
+    //   Acquire load on pending_region_: must see the region data
+    //   stored by the bg thread (release pairing).  Free on x86 (same
+    //   as relaxed for an aligned load); emits DMB ISH on ARM only
+    //   when needed.  A relaxed load could miss the bg's store for
+    //   one op, recording it instead of aligning — alignment then
+    //   needs an extra op to reach K, delaying ctx_ activation.
     [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult dispatch_op(
         TraceRing::ValidatedEntryPtr ve,
         const TensorMeta*            metas,
@@ -160,8 +163,8 @@ class Vigil {
         // check in debug builds); the typed advance() overload is
         // otherwise identical to the legacy one.
         if (ctx_.is_compiled()) [[likely]] {
-            auto cv = ctx_.mint_compiled_view();
-            auto status = ctx_.advance(entry.schema_hash, entry.shape_hash, cv);
+            auto compiled_view = ctx_.mint_compiled_view();
+            auto status = ctx_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
             if (status == ReplayStatus::DIVERGED) [[unlikely]]
                 return handle_divergence_(entry, metas, n_metas,
                                           scope_hash, callsite_hash);
@@ -170,12 +173,11 @@ class Vigil {
 
         // ── RECORDING fast path (hot) ──
         //
-        // Acquire load: must see the region stored by the bg thread.
-        // A relaxed load could miss it for one op, causing that op to
-        // be recorded instead of aligned — which breaks alignment (one
-        // fewer op matched → threshold not reached → ctx_ never activates).
-        auto* pr = pending_region_.load(std::memory_order_acquire);
-        if (pr || pending_activation_) [[unlikely]]
+        // Acquire load matches the release store in on_region_ready
+        // (bg thread).  We must see every byte of the region (ops,
+        // plan, hashes) the bg thread published before its store.
+        auto* pending = pending_region_.load(std::memory_order_acquire);
+        if (pending || pending_activation_) [[unlikely]]
             return dispatch_transition_(entry, metas, n_metas,
                                         scope_hash, callsite_hash);
 
@@ -187,19 +189,19 @@ class Vigil {
 #ifndef NDEBUG
     // First call claims; subsequent calls verify match.  Debug-only.
     CRUCIBLE_INLINE void assert_producer_thread_() noexcept {
-        const auto cur = std::this_thread::get_id();
+        const auto current_tid = std::this_thread::get_id();
         auto claimed = producer_tid_.load(std::memory_order_relaxed);
-        if (claimed == cur) return;
+        if (claimed == current_tid) return;
         if (claimed == std::thread::id{}) {
             // First dispatch — try to claim.  Relaxed: this is a
             // debug-only lifecycle gate, no cross-thread sync needed.
             if (producer_tid_.compare_exchange_strong(
-                    claimed, cur, std::memory_order_relaxed)) {
+                    claimed, current_tid, std::memory_order_relaxed)) {
                 return;
             }
             // Lost the race — another thread claimed first; fall through.
         }
-        contract_assert(claimed == cur &&
+        contract_assert(claimed == current_tid &&
                         "Vigil::dispatch_op called from a thread other than the "
                         "foreground producer — SPSC invariant violated");
     }
@@ -251,9 +253,9 @@ class Vigil {
     // New: snapshot total_produced, wait until total_processed catches up.
     // Release/acquire on total_processed ensures all bg side effects
     // (pending_region_, mode_) are visible to fg after flush returns.
-    void flush() {
-        const uint64_t target = ring_->total_produced();
-        while (bg_.total_processed.load(std::memory_order_acquire) < target) {
+    [[gnu::cold]] void flush() {
+        const uint64_t target_produced = ring_->total_produced();
+        while (bg_.total_processed.load(std::memory_order_acquire) < target_produced) {
             CRUCIBLE_SPIN_PAUSE;
         }
     }
@@ -268,7 +270,7 @@ class Vigil {
     // Restore the previous SUPERSEDED transaction as the active one.
     // Also deactivates/re-activates CrucibleContext as needed.
     // Returns true if rollback succeeded.
-    [[nodiscard]] bool rollback() {
+    [[nodiscard, gnu::cold]] bool rollback() {
         if (!tx_log_.rollback()) return false;
         // Deactivate current per-op replay state.
         if (ctx_.is_compiled())
@@ -292,12 +294,12 @@ class Vigil {
     // Returns true if replay completed without guard mismatches.
     template <typename GuardEval, typename RegionExec>
     [[nodiscard]] bool replay(GuardEval&& eval_guard, RegionExec&& exec_region) {
-        const RegionNode* r = active_region();
-        if (!r) return false;
+        const RegionNode* region = active_region();
+        if (!region) return false;
         // crucible::replay() is defined in MerkleDag.h.
         // RegionNode : TraceNode, so the pointer upcast is implicit.
         return crucible::replay(
-            const_cast<RegionNode*>(r),
+            const_cast<RegionNode*>(region),
             std::forward<GuardEval>(eval_guard),
             std::forward<RegionExec>(exec_region));
     }
@@ -307,17 +309,17 @@ class Vigil {
     // Serialize the active region to Cipher and advance HEAD.
     // No-op if cipher_path was not set in Config.
     // Returns true if the region was successfully stored.
-    [[nodiscard]] bool persist() {
+    [[nodiscard, gnu::cold]] bool persist() {
         if (!cipher_.has_value()) return false;
-        const RegionNode* r = active_region();
-        if (!r) return false;
+        const RegionNode* region = active_region();
+        if (!region) return false;
         // cipher_.has_value() guarantees Open (we only emplace via open()).
         // Mint the view once and thread it through both typed calls —
         // one acquire load instead of two redundant mints.
-        auto ov = cipher_->mint_open_view();
-        const ContentHash hash = cipher_->store(ov, r, meta_log_.get());
+        auto open_view = cipher_->mint_open_view();
+        const ContentHash hash = cipher_->store(open_view, region, meta_log_.get());
         if (!hash) return false;
-        cipher_->advance_head(ov, hash,
+        cipher_->advance_head(open_view, hash,
                               step_.load(std::memory_order_relaxed));
         return true;
     }
@@ -325,17 +327,17 @@ class Vigil {
     // Load the most recent region from Cipher and activate it.
     // No-op if no Cipher or the Cipher is empty.
     // Also activates CrucibleContext if the region has a MemoryPlan.
-    [[nodiscard]] bool load(fx::Alloc a) {
+    [[nodiscard, gnu::cold]] bool load(fx::Alloc a) {
         if (!cipher_.has_value() || cipher_->empty()) return false;
-        auto ov = cipher_->mint_open_view();
-        RegionNode* r = cipher_->load(ov, a, cipher_->head(), load_arena_);
-        if (!r) return false;
-        bg_.active_region.store(r, std::memory_order_release);
+        auto open_view = cipher_->mint_open_view();
+        RegionNode* region = cipher_->load(open_view, a, cipher_->head(), load_arena_);
+        if (!region) return false;
+        bg_.active_region.store(region, std::memory_order_release);
         mode_.store(Mode::COMPILED, std::memory_order_relaxed);
         // Activate per-op replay if the loaded region has a plan.
-        if (ctx_.activate(r)) {
-            register_externals_from_region_(r);
-            region_cache_.insert(r);
+        if (ctx_.activate(region)) {
+            register_externals_from_region_(region);
+            region_cache_.insert(region);
         }
         return true;
     }
@@ -348,20 +350,20 @@ class Vigil {
     // the view's pre() check confirms the precondition the public API
     // documents.  Compiles to the same machine code as the untyped path.
     [[nodiscard]] void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
-        auto cv = const_cast<CrucibleContext&>(ctx_).mint_compiled_view();
-        return ctx_.output_ptr(j, cv);
+        auto compiled_view = const_cast<CrucibleContext&>(ctx_).mint_compiled_view();
+        return ctx_.output_ptr(j, compiled_view);
     }
 
     // Pre-allocated input pointer for input j of the current op.
     [[nodiscard]] void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
-        auto cv = const_cast<CrucibleContext&>(ctx_).mint_compiled_view();
-        return ctx_.input_ptr(j, cv);
+        auto compiled_view = const_cast<CrucibleContext&>(ctx_).mint_compiled_view();
+        return ctx_.input_ptr(j, compiled_view);
     }
 
     // Register an external tensor's data pointer with the pool.
     void register_external(SlotId sid, crucible::safety::NonNull<void*> ptr) {
-        auto cv = ctx_.mint_compiled_view();
-        ctx_.register_external(sid, ptr, cv);
+        auto compiled_view = ctx_.mint_compiled_view();
+        ctx_.register_external(sid, ptr, compiled_view);
     }
 
     // Number of complete iterations replayed in COMPILED mode.
@@ -394,7 +396,7 @@ class Vigil {
     // Called on the background thread when a new RegionNode is ready.
     // Transitions the transaction to ACTIVE, updates the execution mode,
     // and optionally pre-stores the object in the Cipher.
-    void on_region_ready(RegionNode* region) {
+    [[gnu::cold]] void on_region_ready(RegionNode* region) {
         // Relaxed: step_ is a monotonic counter for tx_log sequencing.
         // bg thread never reads data ordered by this; fg thread is the
         // only writer. On x86 lock-xadd is full fence regardless, but
@@ -410,7 +412,7 @@ class Vigil {
         (void)tx_log_.activate(tx);
 
         // Signal fg thread: a region with a MemoryPlan is available.
-        // fg thread picks it up in dispatch_op() via try_activate_().
+        // fg thread picks it up in dispatch_op() via dispatch_transition_().
         // Also set mode_=COMPILED for backward compat — existing code/tests
         // poll is_compiled() without calling dispatch_op().
         pending_region_.store(region, std::memory_order_release);
@@ -418,8 +420,8 @@ class Vigil {
 
         // Pre-store the object (idempotent) so persist() is instant later.
         if (cipher_.has_value()) {
-            auto ov = cipher_->mint_open_view();
-            (void)cipher_->store(ov, region, meta_log_.get());
+            auto open_view = cipher_->mint_open_view();
+            (void)cipher_->store(open_view, region, meta_log_.get());
         }
     }
 
@@ -427,7 +429,7 @@ class Vigil {
 
     // Divergence handler: region cache lookup, switch attempt, fallback.
     // Called when ctx_.advance() returns DIVERGED.  ~50-400ns cold path.
-    [[gnu::cold]] CRUCIBLE_NOINLINE DispatchResult handle_divergence_(
+    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult handle_divergence_(
         const TraceRing::Entry& entry,
         [[maybe_unused]] const TensorMeta* metas,
         [[maybe_unused]] uint32_t          n_metas,
@@ -448,10 +450,10 @@ class Vigil {
         if (alt && try_switch_region_(alt, div_pos)) {
             // Switched successfully.  Advance past the divergent op.
             // try_switch_region_ leaves ctx_ in COMPILED mode.
-            auto cv = ctx_.mint_compiled_view();
-            auto s = ctx_.advance(entry.schema_hash, entry.shape_hash, cv);
-            if (s != ReplayStatus::DIVERGED) {
-                return {.action = DispatchResult::Action::COMPILED, .status = s, .pad = {},
+            auto compiled_view = ctx_.mint_compiled_view();
+            auto status = ctx_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
+            if (status != ReplayStatus::DIVERGED) {
+                return {.action = DispatchResult::Action::COMPILED, .status = status, .pad = {},
                         .op_index = OpIndex{ctx_.engine().ops_matched()}};
             }
             // Double divergence — shouldn't happen.  Fall through.
@@ -473,7 +475,7 @@ class Vigil {
     // Transition handler: consume pending region, run alignment, or
     // record while a transition is in progress.  Called when
     // pending_region_ or pending_activation_ is non-null.
-    CRUCIBLE_NOINLINE DispatchResult dispatch_transition_(
+    [[nodiscard, gnu::cold]] CRUCIBLE_NOINLINE DispatchResult dispatch_transition_(
         const TraceRing::Entry& entry,
         const TensorMeta*       metas,
         uint32_t                n_metas,
@@ -507,7 +509,7 @@ class Vigil {
 
     // Consume the bg→fg pending region into fg-only alignment state.
     // Does NOT activate CrucibleContext — alignment phase handles that.
-    void consume_pending_region_() {
+    [[gnu::cold]] void consume_pending_region_() {
         auto* region = pending_region_.exchange(nullptr,
                                                 std::memory_order_acq_rel);
         if (!region) return;
@@ -528,7 +530,7 @@ class Vigil {
     //
     // K=5 matches the IterationDetector's signature length — sufficient
     // to avoid false positives from a single op coincidence.
-    void try_align_(SchemaHash schema, ShapeHash shape) {
+    [[gnu::cold]] void try_align_(SchemaHash schema, ShapeHash shape) {
         assert(pending_activation_ && "try_align_ called without pending region");
         const auto* region = pending_activation_;
 
@@ -568,11 +570,11 @@ class Vigil {
             // be at position alignment_pos_ so the NEXT op checks against
             // the correct region op.
             for (uint32_t i = 0; i < alignment_pos_; i++) {
-                auto s = ctx_.advance(region->ops[i].schema_hash,
-                                      region->ops[i].shape_hash);
+                auto status = ctx_.advance(region->ops[i].schema_hash,
+                                           region->ops[i].shape_hash);
                 // Must match — we verified these during alignment.
-                assert(s == ReplayStatus::MATCH || s == ReplayStatus::COMPLETE);
-                (void)s;
+                assert(status == ReplayStatus::MATCH || status == ReplayStatus::COMPLETE);
+                (void)status;
             }
 
             mode_.store(Mode::COMPILED, std::memory_order_relaxed);
@@ -583,13 +585,13 @@ class Vigil {
     // Walk region ops to find external slot data_ptrs from recorded
     // TensorMeta. O(num_ext × num_ops × max_inputs) — cold path,
     // runs once per activation.
-    void register_externals_from_region_(const RegionNode* region) {
+    [[gnu::cold]] void register_externals_from_region_(const RegionNode* region) {
         if (!region->plan) return;
 
-        for (uint32_t s = 0; s < region->plan->num_slots; s++) {
-            if (!region->plan->slots[s].is_external) continue;
+        for (uint32_t slot_idx = 0; slot_idx < region->plan->num_slots; slot_idx++) {
+            if (!region->plan->slots[slot_idx].is_external) continue;
 
-            SlotId target = region->plan->slots[s].slot_id;
+            SlotId target = region->plan->slots[slot_idx].slot_id;
             void* ptr = nullptr;
 
             // Search region ops for the first input that reads from this slot.
@@ -608,8 +610,8 @@ class Vigil {
                 // ctx_ has just been activated by activate(region) at the
                 // call sites of register_externals_from_region_, so we
                 // know it's in COMPILED mode.  Mint the view inline.
-                auto cv = ctx_.mint_compiled_view();
-                ctx_.register_external(target, crucible::safety::NonNull<void*>{ptr}, cv);
+                auto compiled_view = ctx_.mint_compiled_view();
+                ctx_.register_external(target, crucible::safety::NonNull<void*>{ptr}, compiled_view);
             }
         }
     }
@@ -621,7 +623,7 @@ class Vigil {
     // selective slot migration, and engine advancement.
     //
     // Returns true if switch succeeded and engine is at position div_pos.
-    [[nodiscard]] bool try_switch_region_(const RegionNode* alt, uint32_t div_pos)
+    [[nodiscard, gnu::cold]] bool try_switch_region_(const RegionNode* alt, uint32_t div_pos)
         pre (alt != nullptr)
     {
         if (!alt->plan) return false;
