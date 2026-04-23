@@ -432,6 +432,15 @@ crucible_test(test_session_diagnostic)
 # extensions plug in with zero boilerplate.
 crucible_test(test_scheduler_policy)
 
+# ContentAddressed<T> quotient combinator (SEPLOG-L1, task #361,
+# session_types.md Appendix D.5) — payload wrapper marking a value
+# type as eligible for wire-level dedup at the transport layer.
+# Mutual is_subsort integration makes Send<ContentAddressed<T>, K>
+# and Send<T, K> interchangeable at the session-type level.
+# Supports Cipher publication, KernelCache broadcast, PagedKVCache
+# prefix sharing, replay trace dedup.
+crucible_test(test_session_content_addressed)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
