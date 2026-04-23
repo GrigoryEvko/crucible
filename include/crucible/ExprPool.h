@@ -1528,6 +1528,21 @@ class CRUCIBLE_OWNER ExprPool {
       ++probe_iteration;
       probe_base_slot =
           (probe_base_slot + probe_iteration * detail::kGroupWidth) & slot_mask;
+
+      // PERF-3: prefetch the NEXT probe's control group.  Issued
+      // ONLY here — after we've decided to iterate (current group
+      // had no empty slots, current matches all rejected) — so the
+      // dominant first-probe-hit case never pays the prefetch tax.
+      //
+      // Cost: ~1 cycle on the iterate path, where it's amortized
+      // against a ~50-cycle memory fetch on the next CtrlGroup::load.
+      // The prefetch is in flight while the loop branch back to top
+      // executes and the optimizer may interleave the load.
+      //
+      // Locality hint = 0 (streaming, no L1 retention).  Probe
+      // tables are large (~64-512 KB); evicting useful data with
+      // speculative prefetches would cost more than it saves.
+      __builtin_prefetch(&ctrl_[probe_base_slot], 0, 0);
     }
   }
 
