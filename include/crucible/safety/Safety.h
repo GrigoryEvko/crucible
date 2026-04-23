@@ -19,6 +19,7 @@
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Permission.h>
 #include <crucible/safety/PermissionFork.h>
+#include <crucible/safety/ReadView.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Session.h>
