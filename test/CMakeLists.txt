@@ -366,6 +366,13 @@ crucible_test(test_session_subtype)
 # Accept<T, K> runtime via an in-memory mock transport.
 crucible_test(test_session_delegate)
 
+# Session-type pattern library (SEPLOG-H2p, task #341) — RequestResponse,
+# FanOut / FanIn / Broadcast / ScatterGather, PipelineSource / Stage /
+# Sink, Transaction, TwoPhaseCommit, MpmcProducer / Consumer, SwimProbe,
+# Handshake.  Most coverage is in-header static_asserts; this harness
+# exercises four patterns end-to-end through an in-memory wire.
+crucible_test(test_session_patterns)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
