@@ -60,6 +60,7 @@
 // All bodies must be noexcept (Crucible's -fno-exceptions rule).
 
 #include <crucible/Platform.h>
+#include <crucible/concurrent/CostModel.h>
 #include <crucible/concurrent/Topology.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Permission.h>
@@ -118,35 +119,23 @@ struct WorkBudget {
     }
 };
 
-// Cost-model heuristic — picks parallelism when working set exceeds
-// the per-core L2 budget AND total compute amortises pthread spawn.
+// Cost-model heuristic — picks parallelism per the multi-tier
+// decision table in concurrent/CostModel.h (SEPLOG-C2).  Considers
+// cache hierarchy (L1d / L2 / L3 / DRAM), compute-bound override,
+// container CPU caps, and spawn-amortization threshold.
 //
-// Reads its cache-tier threshold from concurrent::Topology, which
-// probes Linux sysfs at first call (or falls back to compile-time
-// defaults on non-Linux / containers without /sys).  No hardcoded
-// constants — the heuristic adapts to the host machine.
-//
-// SEPLOG-C2 will extend with NUMA-aware decisions and per-call-site
-// adaptive tuning; this function is the foundation.
+// Returns true iff the recommendation is Parallel.  For finer-
+// grained decisions (factor + NUMA policy), call
+// concurrent::recommend_parallelism(budget) directly.
 [[nodiscard]] inline bool
 should_parallelize(WorkBudget budget) noexcept {
-    const auto& topo = crucible::concurrent::Topology::instance();
-    const std::size_t L2_per_core_bytes = topo.l2_per_core_bytes();
-    // Spawn-overhead threshold — 8 cores × 25 µs amortised.  Per
-    // SEPLOG-C2 this could become Topology-derived (cores_per_socket
-    // × per-core-spawn-ns), but a fixed bound is fine for the v1
-    // heuristic.
-    constexpr std::size_t spawn_overhead_ns = 200'000;
-
-    const std::size_t ws = budget.read_bytes + budget.write_bytes;
-    const std::size_t total_compute_ns =
-        budget.item_count * budget.per_item_compute_ns;
-
-    // Cache-tier rule: sequential when L2-resident.
-    if (ws < L2_per_core_bytes) return false;
-    // Compute-bound rule: parallel only when total work amortises spawn.
-    if (total_compute_ns < spawn_overhead_ns) return false;
-    return true;
+    const crucible::concurrent::WorkBudget cost_budget{
+        .read_bytes          = budget.read_bytes,
+        .write_bytes         = budget.write_bytes,
+        .item_count          = budget.item_count,
+        .per_item_compute_ns = budget.per_item_compute_ns,
+    };
+    return crucible::concurrent::recommend_parallelism(cost_budget).is_parallel();
 }
 
 namespace detail {
@@ -313,17 +302,19 @@ parallel_for_views_adaptive(OwnedRegion<T, Whole>&& region,
 // ── parallel_for_smart — the one-call dispatch ──────────────────────
 //
 // THE 95%-case API.  Auto-derives WorkBudget from the region's span,
-// auto-picks N from Topology::process_cpu_count() (capped at 16 for
-// pthread spawn cost / typical L3-group bound).  Caller passes only:
+// consults concurrent::recommend_parallelism for tier-aware decision
+// (L1/L2 → sequential, L3 → ≤4 NUMA-local, DRAM → up to 16
+// NUMA-spread), then dispatches to the matching parallel_for_views<N>.
+// Caller passes only:
 //
 //   * the OwnedRegion to mutate
 //   * the noexcept body lambda
 //   * an optional ns/item compute estimate (default 0 = memory-bound)
 //
-// Behavior:
-//   * Tiny workloads (< L2_per_core) → sequential inline call
-//   * Larger workloads → parallel_for_views<auto_N> with NUMA-local
-//     dispatch (when SEPLOG-C3 lands; for now, plain pthread_create)
+// The factor ladder snap (1, 2, 4, 8, 16) lives in the cost model;
+// this function dispatches via switch.  AdaptiveScheduler (SEPLOG-C3)
+// will replace the switch with NUMA-local thread-pool dispatch using
+// the same decision struct.
 //
 // Always returns the recombined OwnedRegion; never throws; preserves
 // the no-regression guarantee.
@@ -334,29 +325,26 @@ parallel_for_smart(OwnedRegion<T, Whole>&& region,
                    Body body,
                    std::size_t ns_per_item = 0) noexcept
 {
-    auto const& topo  = crucible::concurrent::Topology::instance();
-    auto const data   = region.cspan();
-    auto const budget = WorkBudget::for_span<T>(data, ns_per_item);
+    const auto data = region.cspan();
+    const crucible::concurrent::WorkBudget cost_budget{
+        .read_bytes          = data.size() * sizeof(T),
+        .write_bytes         = data.size() * sizeof(T),
+        .item_count          = data.size(),
+        .per_item_compute_ns = ns_per_item,
+    };
 
-    if (!should_parallelize(budget)) {
-        return parallel_for_views<1>(std::move(region), std::move(body));
-    }
+    const auto decision =
+        crucible::concurrent::recommend_parallelism(cost_budget);
 
-    // Pick N from process_cpu_count, but cap at compile-time-bounded
-    // factors (the Workload primitives are templated on N, so we pick
-    // the closest fixed factor from a small ladder).  Future SEPLOG-C3
-    // AdaptiveScheduler can replace this with dynamic dispatch.
-    const std::size_t allowed = topo.process_cpu_count();
-    if (allowed >= 16) {
-        return parallel_for_views<16>(std::move(region), std::move(body));
-    } else if (allowed >= 8) {
-        return parallel_for_views<8>(std::move(region), std::move(body));
-    } else if (allowed >= 4) {
-        return parallel_for_views<4>(std::move(region), std::move(body));
-    } else if (allowed >= 2) {
-        return parallel_for_views<2>(std::move(region), std::move(body));
+    // Dispatch on the snapped factor.  decision.kind == Sequential
+    // iff factor == 1 (per CostModel rounding rule).
+    switch (decision.factor) {
+        case 16: return parallel_for_views<16>(std::move(region), std::move(body));
+        case 8:  return parallel_for_views<8>(std::move(region), std::move(body));
+        case 4:  return parallel_for_views<4>(std::move(region), std::move(body));
+        case 2:  return parallel_for_views<2>(std::move(region), std::move(body));
+        default: return parallel_for_views<1>(std::move(region), std::move(body));
     }
-    return parallel_for_views<1>(std::move(region), std::move(body));
 }
 
 // ── Startup logging hook ────────────────────────────────────────────
