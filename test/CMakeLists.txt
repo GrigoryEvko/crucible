@@ -423,6 +423,15 @@ crucible_test(test_session_checkpoint)
 # classified build-log diagnostics.
 crucible_test(test_session_diagnostic)
 
+# Scheduler policy tags (SEPLOG-H3, task #329) — 7 compile-time
+# policy tags (Fifo, Lifo, RoundRobin, LocalityAware★, Deadline,
+# Cfs, Eevdf) parameterising the future NumaMpmcThreadPool.  Each
+# tag carries constexpr metadata (name, description, use_case,
+# typical_submit_ns, algorithmic properties).  LocalityAware is the
+# default per THREADING.md §5.5.2.  Inheritance-based detection; user
+# extensions plug in with zero boilerplate.
+crucible_test(test_scheduler_policy)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
