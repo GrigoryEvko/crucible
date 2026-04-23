@@ -16,6 +16,8 @@
 #include <crucible/safety/Machine.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/OneShotFlag.h>
+#include <crucible/safety/Permission.h>
+#include <crucible/safety/PermissionFork.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Session.h>
