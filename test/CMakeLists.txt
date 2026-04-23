@@ -379,6 +379,13 @@ crucible_test(test_session_patterns)
 # L7 (φ safety), L8 (crash-stop) and L9 (CSL × session).
 crucible_test(test_session_context)
 
+# L8 crash-stop extensions (SEPLOG-I5, task #347) — Stop combinator,
+# Crash<PeerTag> payload marker, UnavailableQueue, ReliableSet,
+# has_crash_branch_for_peer_v.  Stop as the bottom of the subtype
+# order (BSYZ22); crash-branch dispatch via Offer<>; ReliableSet
+# membership; Crash<Server> round-trip through an in-memory wire.
+crucible_test(test_session_crash)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
