@@ -500,3 +500,67 @@ crucible_neg_compile_test(neg_ckernel_register_with_sealed_view
 # SealedView).  Proves the type-state lock is per-carrier.
 crucible_neg_compile_test(neg_cipher_wrong_tag
   "no matching function for call to.*store")
+
+# ─── Session-type negative-compile tests (SEPLOG-J4, task #354) ───
+#
+# Each test is a .cpp file under test/safety_neg/ that deliberately
+# triggers a session-type invariant violation.  The ctest passes IFF
+# the build fails with the expected-diagnostic substring — strictly
+# stronger than WILL_FAIL (which would accept any failure; here we
+# require the PRECISE classified error).
+#
+# Coverage: one neg-compile per major layer's assertion contract.
+# Adding a new session-type invariant should come with a new
+# neg-compile test alongside it.
+
+# L1 Session.h — well-formedness: Continue outside Loop.
+crucible_neg_compile_test(neg_session_wellformed_free_continue
+    "proto: protocol is ill-formed")
+
+# L6 SessionSubtype.h — assert_subtype_sync on non-subtype pair.
+crucible_neg_compile_test(neg_session_subtype_mismatch
+    "T is not a synchronous subtype of U")
+
+# L2 SessionContext.h — Context with duplicate (session, role) keys.
+crucible_neg_compile_test(neg_session_context_duplicate_keys
+    "entries must have pairwise-distinct")
+
+# L2 SessionContext.h — compose_context_t with overlapping domains.
+crucible_neg_compile_test(neg_session_context_compose_overlap
+    "share one or more")
+
+# L2 SessionContext.h — lookup_context_t on missing (session, role).
+crucible_neg_compile_test(neg_session_lookup_missing_entry
+    "has no entry for")
+
+# L4 SessionGlobal.h — global type with Var_G outside Rec_G.
+# is_global_well_formed_v returns false; the static_assert in this
+# test expects it to be true, so the assert fails.
+crucible_neg_compile_test(neg_session_global_free_var
+    "should be ill-formed")
+
+# L3 SessionQueue.h — head_queue_t on an empty queue.
+crucible_neg_compile_test(neg_session_queue_head_empty
+    "Q is empty or is not a Queue")
+
+# L5 SessionAssoc.h — assert_associated on Γ missing a role.
+crucible_neg_compile_test(neg_session_assoc_missing_role
+    "condition .1. fails")
+
+# L8 SessionCrash.h — assert_has_crash_branch_for on missing branch.
+crucible_neg_compile_test(neg_session_crash_branch_missing
+    "lacks a Recv<Crash<PeerTag>, _> branch")
+
+# CheckpointedSession combinator — mismatched base-branch assertion.
+crucible_neg_compile_test(neg_session_checkpoint_wrong_base
+    "base branch does not match")
+
+# L11 SessionDiagnostic.h — diagnostic_name_v on non-tag type.
+# Fails the variable template's requires-clause ⇒ "invalid variable
+# template" in GCC 16's diagnostic.
+crucible_neg_compile_test(neg_session_diagnostic_non_tag
+    "invalid variable template")
+
+# Concurrent — SchedulerPolicy accessor on non-policy type.
+crucible_neg_compile_test(neg_scheduler_policy_non_inheritance
+    "invalid variable template")
