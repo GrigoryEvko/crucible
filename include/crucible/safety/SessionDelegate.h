@@ -271,6 +271,28 @@ public:
         return detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
     }
 
+    // Transport-less variant: consumes the delegated handle but does
+    // NOT physically transfer anything.  Useful for in-memory / test /
+    // stub settings where the carrier and the delegated handle live
+    // in the same process and the "transfer" is merely a type-state
+    // advance.  Mirrors the existing Offer::pick<I>() convenience.
+    //
+    // The delegated handle's resource is discarded via scope exit
+    // (standard RAII).  If the Resource owns a live wire, its own
+    // destructor closes it; if the user needs to extract the wire,
+    // they should use the transport-taking variant instead.
+    template <typename DelegatedResource, typename DelegatedLoopCtx>
+    [[nodiscard]] constexpr auto delegate(
+        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated) &&
+        noexcept(std::is_nothrow_move_constructible_v<Resource>
+                 && std::is_nothrow_destructible_v<DelegatedResource>)
+    {
+        // Consume the delegated handle (its resource's dtor fires
+        // when this lambda scope ends).
+        (void)std::move(delegated);
+        return detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
+    }
+
     [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
     [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
 };
@@ -336,9 +358,65 @@ public:
                          std::move(continuation_handle)};
     }
 
+    // Transport-less variant: caller provides the DelegatedResource
+    // directly (either because it was handed to them via an out-of-
+    // band channel, or because they're running an in-memory / test
+    // transport where the "receive" is really just a type-state
+    // advance).  Mirrors delegate()'s transport-less form.
+    template <typename DelegatedResource>
+    [[nodiscard]] constexpr auto accept_with(DelegatedResource delegated_res) &&
+        noexcept(std::is_nothrow_move_constructible_v<Resource>
+                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
+    {
+        auto delegated_handle = make_session_handle<T>(std::move(delegated_res));
+        auto continuation_handle =
+            detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
+        return std::pair{std::move(delegated_handle),
+                         std::move(continuation_handle)};
+    }
+
     [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
     [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
 };
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Ergonomic surface ──────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+
+// Concept: is CarrierProto's head a Delegate/Accept of a T-typed
+// session?  Use at boundary functions that demand a specific
+// delegation contract.
+template <typename CarrierProto, typename DelegatedProto>
+concept DelegatesTo =
+    is_delegate_v<CarrierProto>
+    && std::is_same_v<typename CarrierProto::delegated_proto, DelegatedProto>;
+
+template <typename CarrierProto, typename DelegatedProto>
+concept AcceptsFrom =
+    is_accept_v<CarrierProto>
+    && std::is_same_v<typename CarrierProto::delegated_proto, DelegatedProto>;
+
+// Assertion helpers — one-liner at call sites that demand a specific
+// delegation contract.  Emits the diagnostic right at the assert site
+// instead of deep in a template instantiation.
+template <typename CarrierProto, typename DelegatedProto>
+consteval void assert_delegates_to() noexcept {
+    static_assert(DelegatesTo<CarrierProto, DelegatedProto>,
+        "crucible::safety::proto::assert_delegates_to: "
+        "CarrierProto must be Delegate<DelegatedProto, K> for some K.  "
+        "Check the template-instantiation context for the actual "
+        "CarrierProto and DelegatedProto types; common mismatches are "
+        "(a) CarrierProto starts with Send/Recv/Select/Offer instead "
+        "of Delegate, or (b) the delegated_proto nested alias does "
+        "not equal the requested DelegatedProto.");
+}
+
+template <typename CarrierProto, typename DelegatedProto>
+consteval void assert_accepts_from() noexcept {
+    static_assert(AcceptsFrom<CarrierProto, DelegatedProto>,
+        "crucible::safety::proto::assert_accepts_from: "
+        "CarrierProto must be Accept<DelegatedProto, K> for some K.");
+}
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Framework self-test static_asserts ─────────────────────────────
@@ -478,6 +556,37 @@ namespace cntp_cross_layer_example {
     // Involution holds through the nested delegation structure.
     static_assert(std::is_same_v<dual_of_t<CntpLayer1Peer>, CntpLayer1>);
 }
+
+// ── Loop<Delegate<…>> duality ──────────────────────────────────────
+//
+// Dualisation must commute with Loop:
+//     dual(Loop<Delegate<T, Continue>>) = Loop<dual(Delegate<T, Continue>)>
+//                                        = Loop<Accept<T, Continue>>
+//
+// The T stays un-dualised even under Loop; regression test.
+
+using LoopedDelegator = Loop<Delegate<DelegatedProto, Continue>>;
+using LoopedAcceptor  = Loop<Accept<DelegatedProto,  Continue>>;
+
+static_assert(std::is_same_v<dual_of_t<LoopedDelegator>, LoopedAcceptor>);
+static_assert(std::is_same_v<dual_of_t<LoopedAcceptor>,  LoopedDelegator>);
+static_assert(std::is_same_v<dual_of_t<dual_of_t<LoopedDelegator>>,
+                              LoopedDelegator>);  // involution under Loop
+static_assert(is_well_formed_v<LoopedDelegator>);
+static_assert(is_well_formed_v<LoopedAcceptor>);
+
+// ── Concept / assert-helper compile test ───────────────────────────
+static_assert(DelegatesTo<Delegate<DelegatedProto, End>, DelegatedProto>);
+static_assert(!DelegatesTo<Delegate<DelegatedProto, End>, Send<int, End>>);  // wrong T
+static_assert(!DelegatesTo<Accept<DelegatedProto, End>, DelegatedProto>);    // wrong head
+static_assert(AcceptsFrom<Accept<DelegatedProto, End>, DelegatedProto>);
+
+consteval bool check_assert_delegates() {
+    assert_delegates_to<Delegate<DelegatedProto, End>, DelegatedProto>();
+    assert_accepts_from<Accept<DelegatedProto, End>,   DelegatedProto>();
+    return true;
+}
+static_assert(check_assert_delegates());
 
 }  // namespace detail::delegate_self_test
 
