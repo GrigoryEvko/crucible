@@ -31,7 +31,15 @@ enum class ScalarType : int8_t {
 };
 
 // Byte size per dtype.  gnu::const: takes one value, no memory access.
-CRUCIBLE_CONST constexpr uint8_t element_size(ScalarType t) noexcept {
+//
+// Postcondition: result > 0 for every ScalarType EXCEPT Undefined (which
+// returns 0).  The post() contract propagates as [[assume]] at call sites
+// where t is known non-Undefined, eliminating divide-by-zero branches in
+// size-math chains.  Callers that intend to accept Undefined must handle
+// the result==0 case explicitly.
+CRUCIBLE_CONST constexpr uint8_t element_size(ScalarType const t) noexcept
+    post (r: t == ScalarType::Undefined || r > 0)
+{
   switch (t) {
     case ScalarType::Bool:
     case ScalarType::Byte:
