@@ -16,6 +16,7 @@
 #include <crucible/safety/Machine.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/OneShotFlag.h>
+#include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Permission.h>
 #include <crucible/safety/PermissionFork.h>
 #include <crucible/safety/Refined.h>
@@ -23,3 +24,4 @@
 #include <crucible/safety/Session.h>
 #include <crucible/safety/Simd.h>
 #include <crucible/safety/Tagged.h>
+#include <crucible/safety/Workload.h>
