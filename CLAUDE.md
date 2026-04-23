@@ -1494,6 +1494,85 @@ Zero machine cost. Just blocks the optimizer.
 
 30 ns is the physical floor for cross-core wait; the SPSC ring hits it. "Lower" claims are single-threaded, same-thread store-buffer read-after-write (~1 ns, not cross-thread), or cooked warm-L1 benchmarks. >50 ns per signal on hot path = something wrong: false sharing, a LOCK-prefixed fence, NUMA-remote memory, or a disguised kernel call. Diagnose with `perf stat` on cache events + `perf c2c`.
 
+### Permission discipline — CSL-typed concurrency
+
+The "two threads" rule above is the *floor* of concurrency in Crucible. It's also the easy case: one fg producer, one bg consumer, hand-coded SPSC ring. Beyond that — kernel compile pools, sharded dispatch, multi-reader snapshots, BG pipelines — the discipline must scale, and "scale" means the type system has to do the bookkeeping the human stops doing.
+
+Crucible encodes **Concurrent Separation Logic** (O'Hearn 2007) as a family of zero-cost C++ types. The discipline is mechanical: tokens prove ownership at the type level; the compiler enforces who can call what. The runtime cost is exactly the underlying primitive's cost (SpscRing acquire/release, AtomicSnapshot seqlock, etc.) — no extra mutex, no extra CAS, because the type system already proved the access pattern is sound.
+
+#### The CSL → C++ mapping
+
+| CSL concept | C++ encoding | File | When to use |
+|---|---|---|---|
+| Separating conjunction `*` | `permission_split<L,R>(Permission<In>&&)` | `safety/Permission.h` | Splitting a region into disjoint subregions |
+| Frame rule | Linearity (move-only `Permission<Tag>`) | `safety/Permission.h` | Every exclusive ownership claim |
+| Parallel composition rule | `permission_fork<Children...>(parent, callables...)` | `safety/PermissionFork.h` | Spawning N threads with disjoint sub-permissions |
+| Fractional permissions `e ↦_p v` | `SharedPermission<Tag>` + `SharedPermissionPool` (atomic refcount) | `safety/Permission.h` | Multi-reader / single-writer with mode upgrade |
+| Lifetime-bound borrow | `ReadView<Tag>` (CRUCIBLE_LIFETIMEBOUND) | `safety/Permission.h` | Scoped read borrow (function-call lifetime) |
+| Resource invariants (Brookes) | DEFERRED — needs `LockedResource<T, Inv>` | (future) | Mutex-protected shared state |
+| Logical atomicity (TaDA) | Implicit — every consume-and-return cycle | (free) | All Permission-typed operations |
+
+Backlog: SEPLOG-A1..E3 (#300–#319). Phase A primitives → Phase B worked examples → Phase C scheduler → Phase D Crucible integration → Phase E validation.
+
+#### "Just right amount of concurrency" — the cache-tier rule
+
+Parallelism only wins when memory bandwidth is the bottleneck. When the working set is L1/L2-resident, adding cores adds nothing but cache-line ping-pong, instruction-cache cold misses, and TLB shootdowns — strictly worse than a single core that already has the data hot. When the working set lives in L3 or DRAM, memory latency is the bottleneck and adding cores adds independent cache hierarchies (each thread's L1/L2 preloads its share) plus parallel memory-controller channels.
+
+The decision rule (encoded in `concurrent/CostModel.h`, SEPLOG-C2):
+
+| Working set | Decision | Reason |
+|---|---|---|
+| `< L1d_per_core` (~32 KB) | **SEQUENTIAL** | Already hot in one core's L1; threading thrashes |
+| `< L2_per_core` (~1 MB) | **SEQUENTIAL** | L2 is private; thread #2 cold-misses everything |
+| `< L3_per_socket` (~32 MB) | **PARALLEL ≤ 4** | Within socket, cores share L3 bandwidth |
+| `≥ L3` (DRAM-bound) | **PARALLEL = min(cores, ws / L2_per_core)** with NUMA-local affinity | Memory-channel-bound; scale until channels saturate |
+| Compute-bound override | Raise floor regardless of footprint | If per-item compute > 100 ns, parallelism wins independent of memory |
+
+The promise: **never regresses**. If the cost model says sequential, parallel must not be measurably faster (within 5%, validated by SEPLOG-E1 bench harness). If it says parallel, the speedup must justify the sync cost.
+
+`AdaptiveScheduler` (SEPLOG-C3) reads `Topology` (SEPLOG-C1, sysfs probe of cache sizes, core counts, NUMA distances), evaluates the rule against a `WorkingSet` declared by the task, and dispatches via `NumaThreadPool` (SEPLOG-C4, per-core jthreads + ChaseLevDeque + `sched_setaffinity`). Sequential decisions invoke the body inline; parallel decisions perform `permission_fork` with NUMA-local placement.
+
+#### Decision matrix — which Permission primitive
+
+```
+Need exclusive single-thread ownership?
+    → Permission<Tag>                       (linear, move-only, sizeof = 1)
+
+Need shared-read scoped to a function call (lifetime fits inside the caller's stack)?
+    → ReadView<Tag>                         (lifetime-bound, copyable, sizeof = sizeof(void*))
+
+Need shared-read across threads (lifetime escapes)?
+    → SharedPermission<Tag> via SharedPermissionPool::lend()
+                                            (RAII guard, atomic refcount, mode upgrade via try_upgrade)
+
+Need structured fork-join (split parent → N children → rejoin)?
+    → permission_fork<Children...>(parent, callables...)
+                                            (CSL parallel rule, jthread-based, RAII join)
+
+Need a queue with mode-typed access (read mode vs write mode)?
+    → PermissionedRwQueue<T, N, Tag>        (synthesis primitive, SEPLOG-B4)
+
+Need a sharded dispatch grid (M producers × N consumers)?
+    → PermissionedShardedGrid<T, M, N, Cap, Tag>  (SEPLOG-B3)
+```
+
+#### Anti-patterns (review-rejected)
+
+- **Storing `Permission<Tag>` in a long-lived struct field** that is shared between threads. Defeats linearity — the struct may be aliased and the type system can't see it. Permissions belong in handles (Pinned), thread-local stacks, or function parameters.
+- **Passing `SharedPermission` by value across functions** without lifetime context. Lifetime gets confusing fast. Prefer `ReadView<Tag>` for scoped borrows; use `SharedPermissionGuard` (RAII) when crossing thread boundaries.
+- **Manually spawning `std::jthread` with a Permission inside** instead of using `permission_fork`. Bypasses the CSL parallel-rule encoding and skips static verification of `splits_into_pack`. Use `permission_fork` and let the type system check.
+- **Parallelizing a workload smaller than L2** without explicit override. `CostModel` will refuse; bypassing it almost always regresses (icache cold, MESI ping-pong, TLB shootdowns).
+- **`new`-allocating a Permission or ReadView**. Both have deleted `operator new` precisely because heap-allocating them defeats the lifetime contract. Stack only.
+
+#### Composition rules
+
+- `Permission<Tag>` IS already linear → wrapping in `Linear<Permission>` is redundant (and will fail the `is_writeonce_v` check pattern).
+- Handles holding a `Permission` should be `Pinned` — the handle's existence is the proof of permission; moving the handle would break the proof.
+- Use `[[no_unique_address]] Permission<Tag>` on handle members — collapses to 0 bytes via EBO.
+- `SharedPermissionGuard` is move-only RAII → do NOT also wrap in `Linear<>`.
+- `SharedPermissionPool` is `Pinned` — the atomic refcount IS the channel identity.
+- `PermissionedSpscChannel` / `PermissionedSnapshot` / `PermissionedShardedGrid` / `PermissionedRwQueue` are all `Pinned` for the same reason — the underlying primitive's atomics ARE the channel.
+
 ---
 
 ## X. Footgun Catalog
@@ -2063,8 +2142,10 @@ Library types in `include/crucible/safety/` that mechanize the axioms from §II 
 | `Checked.h` | TypeSafe, DetSafe | `checked_add` / `wrapping_add` / `trapping_add` over `__builtin_*_overflow`. `std::add_sat` / `std::mul_sat` / `std::sub_sat` pass-through for saturation. |
 | `Mutation.h` | MemSafe, DetSafe | `AppendOnly<T>` — no erase/resize. `Monotonic<T, Cmp>` — advance-only with contract guard on the step. |
 | `ConstantTime.h` | DetSafe (side-channel resistance) | `ct::select`, `ct::eq`, branch-free primitives for crypto paths and Cipher key handling. |
+| `Permission.h` | BorrowSafe, ThreadSafe, MemSafe | `Permission<Tag>` — phantom-typed move-only token (sizeof = 1, EBO-collapsible) encoding CSL frame rule. `SharedPermission<Tag>` + `SharedPermissionPool` for fractional read sharing (atomic refcount + mode upgrade). `ReadView<Tag>` for lifetime-bound borrows. Factories: `permission_root_mint` / `permission_split` / `permission_combine` / `permission_split_n`. |
+| `PermissionFork.h` | ThreadSafe, BorrowSafe | `permission_fork<Children...>(parent, callables...)` — encodes CSL parallel composition rule as RAII fork-join over `std::jthread`. Constraint: `splits_into_pack_v<Parent, Children...>`. Returns parent permission after all children join. |
 
-Each header is ≤150 lines, header-only, depending only on `<type_traits>` and `Platform.h`.
+Each header is ≤150 lines except `Permission.h` (≤500 — substantial doc + the fractional-permission machinery), header-only, depending only on `<type_traits>`, `<atomic>`, and `Platform.h`.
 
 ### Usage rules
 
@@ -2076,14 +2157,16 @@ Each header is ≤150 lines, header-only, depending only on `<type_traits>` and 
 6. **Every fixed-order protocol uses `Session<...>`** — handshakes, init sequences, channel lifecycles, plan-chain acquisition.
 7. **Every append-only or monotonic structure wraps** in `AppendOnly<>` / `Monotonic<T, Cmp>` — event logs, generation counters, version numbers, Cipher warm writes.
 8. **Every crypto path uses `ct::*` primitives** for comparisons and selections. Non-CT code in a `with Crypto` context is a review reject.
+9. **Every concurrent producer/consumer endpoint wraps in `Permission<Tag>`** — handles holding a Permission are `Pinned`; cross-thread handoff goes through `permission_fork` (structured concurrency), `SharedPermissionPool::lend()` (refcounted shared read), or move-into-`std::jthread`-lambda (single owner). Never a raw `std::thread` without a Permission token; never two threads simultaneously calling the same `try_push` on a shared queue without a Permission split. The cache-tier rule (§IX) decides whether to actually parallelize — Permissions just prove the access pattern is sound.
 
 ### Compiler enforcement
 
 - `-Werror=conversion` + the wrapper types together prevent accidental unwrapping across boundaries.
-- `-Werror=use-after-move` + `Linear<>`'s deleted copy constructor catches double-consume at compile time.
+- `-Werror=use-after-move` + `Linear<>`'s deleted copy constructor catches double-consume at compile time. Same mechanism catches `Permission<Tag>` double-use after split/fork.
 - `[[nodiscard]]` on every wrapper type's constructor forces the caller to capture the return value.
 - Contracts on `Refined<>` and `Monotonic<>` constructors fire at construction sites under `semantic=enforce` (debug, CI, boundary TUs) and under `semantic=ignore` on hot-path TUs they compile to `[[assume]]` hints, optimizing downstream code as if the invariant always holds.
-- Deleted copy + defaulted move on `Linear<>` / `Secret<>` / `Session<>` means the compiler rejects accidental duplication.
+- Deleted copy + defaulted move on `Linear<>` / `Secret<>` / `Session<>` / `Permission<Tag>` means the compiler rejects accidental duplication.
+- `permission_split`, `permission_combine`, `permission_split_n`, `permission_fork` all `static_assert` on `splits_into_v` / `splits_into_pack_v` — splitting into undeclared subregions is a compile error, naming the missing trait specialization in the diagnostic.
 - Contract violations abort via `std::terminate` (P1494R5), never invoke undefined behavior.
 
 ### Review enforcement
@@ -2097,6 +2180,11 @@ Rules for code review and grep-guards:
 - A new public API taking raw `int`, `size_t`, `void*`, or `T*` without a wrapper → questioned on review; almost always rewritten.
 - A new resource-carrying type without `Linear<>` → questioned; must have justification.
 - Any `[[unlikely]]` body of more than 8 non-trivial lines without being outlined into a `CRUCIBLE_COLD` helper → reject.
+- A new concurrent producer/consumer pair without a `Permission<Tag>` discipline → questioned; bare `std::thread` + raw atomic SPSC is an old-style pattern; new code uses `Permission<Tag>` for the static safety + `permission_fork` for handoff.
+- A `permission_root_mint<X>()` call site outside `main()` / a Vessel/Keeper init function → reject; root-mint is once-per-program-per-tag and review-discoverable via `grep permission_root_mint<` exactly because of this rule.
+- A new `splits_into<...>` or `splits_into_pack<...>` specialization in a header far from its tag tree's declaration → questioned; the manifest belongs in the same TU as the tags so reviewers see the whole region tree at one glance.
+- A `Permission<Tag>` stored in a struct field of a type that is itself shared between threads (i.e., not Pinned + not handle-pattern) → reject; defeats linearity.
+- Bypassing `AdaptiveScheduler` to spawn N raw threads when working set is L2-resident → questioned; cache-tier rule (§IX) says sequential wins. Override requires bench evidence and a justification comment.
 
 ### GCC 16 contracts — implementation gotchas
 
@@ -2267,6 +2355,10 @@ Every PR passes all hard stops or is rejected.
 
 **HS11.** Determinism preserved. Same inputs → same outputs, bit-identical under BITEXACT recipe. CI test `bit_exact_replay_invariant` must pass.
 
+**HS12.** Permission discipline on every new concurrent endpoint. New producer-consumer pairs use `Permission<Tag>` (or `SharedPermission` + Pool for SWMR). New thread-spawn sites either use `permission_fork` (structured) or document why a raw `std::jthread` move is appropriate. Bypassing the discipline is questioned on review.
+
+**HS13.** No regression at the chosen parallelism factor. If `AdaptiveScheduler` or any new threading code chooses parallel(N), the SEPLOG-E1 bench harness must show ≤5% regression vs sequential at that workload's footprint tier. Cache-resident workloads stay sequential by default; DRAM-bound workloads parallelize.
+
 ---
 
 ## XIX. When to Update This Guide
@@ -2277,6 +2369,8 @@ Update rules here when:
 2. A new GCC/libstdc++ feature lands that measurably helps an axiom → add to opt-in.
 3. A measurement invalidates a "perf wisdom" here → replace with the measured version.
 4. A rule is consistently violated without consequence → investigate whether the rule is still necessary.
+5. A new Permission tag tree, splits_into specialization, or PermissionedFoo primitive lands → add a row to §IX or §XVI cataloging it.
+6. The cache-tier rule (§IX) is invalidated by a new microarchitecture → re-measure with SEPLOG-E1 bench harness, update the table.
 
 Every change to this guide is a semi-major commit with rationale. This guide is the contract between engineer and codebase.
 
@@ -2292,6 +2386,17 @@ Correctness  >  Determinism  >  Security  >  Latency  >  Throughput  >  Code siz
 
 Never trade correctness for latency. Never trade determinism for throughput. Security is non-negotiable (replay determinism IS a security property). Latency matters because of the ~5 ns/op budget — but only after the first three.
 
+### Concurrency cost ordering
+
+A separate ordering applies inside the concurrency layer (§IX). When deciding "should this be parallel?":
+
+```
+Sequential-correctness  >  No-regression-vs-sequential  >  Type-system safety (Permission)  >
+    Cache-tier appropriateness (CostModel)  >  NUMA locality  >  Maximum throughput
+```
+
+A parallel design that regresses small workloads is worse than no parallelism at all. A parallel design that races (no Permission discipline, raw threads, shared mutables) is worse than a sequential design that's slow. The cost-model heuristic is in service of the no-regression rule, not the maximum-throughput rule. **"Just right" beats "as much as possible"** — measured every time.
+
 ---
 
 ZERO COPY. ZERO ALLOC ON HOT PATH. EVERY INSTRUCTION JUSTIFIED.
@@ -2301,3 +2406,6 @@ IF VARIANCE > 5% IN BENCHES — IGNORE RESULTS, THE LAPTOP IS THROTTLING.
 
 IF A RULE HERE CONFLICTS WITH REALITY — MEASURE, FIX REALITY, OR FIX THE RULE.
 NEVER WRITE CODE THAT CONTRADICTS BOTH.
+
+PERMISSIONS PROVE WHAT'S SAFE. THE COST MODEL DECIDES WHAT'S PROFITABLE.
+NEITHER ALONE IS ENOUGH. BOTH TOGETHER IS THE WHOLE GAME.
