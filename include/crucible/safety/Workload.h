@@ -60,6 +60,7 @@
 // All bodies must be noexcept (Crucible's -fno-exceptions rule).
 
 #include <crucible/Platform.h>
+#include <crucible/concurrent/Topology.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Permission.h>
 
@@ -85,18 +86,25 @@ struct WorkBudget {
     std::size_t per_item_compute_ns  = 0;
 };
 
-// Placeholder cost-model heuristic — picks parallelism when working
-// set exceeds a per-core L2 budget OR when total compute exceeds the
-// pthread spawn-amortisation threshold.
+// Cost-model heuristic — picks parallelism when working set exceeds
+// the per-core L2 budget AND total compute amortises pthread spawn.
 //
-// Returns true iff parallelism is recommended.  SEPLOG-C2 will
-// extend with Topology probe + NUMA-aware decisions.
-[[nodiscard, gnu::const]] inline bool
+// Reads its cache-tier threshold from concurrent::Topology, which
+// probes Linux sysfs at first call (or falls back to compile-time
+// defaults on non-Linux / containers without /sys).  No hardcoded
+// constants — the heuristic adapts to the host machine.
+//
+// SEPLOG-C2 will extend with NUMA-aware decisions and per-call-site
+// adaptive tuning; this function is the foundation.
+[[nodiscard]] inline bool
 should_parallelize(WorkBudget budget) noexcept {
-    // Default tier thresholds (Tiger Lake / typical desktop).
-    // These will be replaced by Topology::instance() values in C2.
-    constexpr std::size_t L2_per_core_bytes = 1 << 20;   // 1 MB
-    constexpr std::size_t spawn_overhead_ns = 200'000;   // ~8 × 25 µs
+    const auto& topo = crucible::concurrent::Topology::instance();
+    const std::size_t L2_per_core_bytes = topo.l2_per_core_bytes();
+    // Spawn-overhead threshold — 8 cores × 25 µs amortised.  Per
+    // SEPLOG-C2 this could become Topology-derived (cores_per_socket
+    // × per-core-spawn-ns), but a fixed bound is fine for the v1
+    // heuristic.
+    constexpr std::size_t spawn_overhead_ns = 200'000;
 
     const std::size_t ws = budget.read_bytes + budget.write_bytes;
     const std::size_t total_compute_ns =
