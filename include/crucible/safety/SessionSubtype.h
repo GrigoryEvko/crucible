@@ -130,6 +130,27 @@ struct is_subsort : std::is_same<T, U> {};
 template <typename T, typename U>
 inline constexpr bool is_subsort_v = is_subsort<T, U>::value;
 
+// ─── Subsort transitivity is the USER'S responsibility ─────────────
+//
+// The framework propagates is_subsort through Send/Recv's payload
+// position but does NOT close it transitively.  If a user declares
+// is_subsort<A, B> and is_subsort<B, C> but NOT is_subsort<A, C>,
+// then:
+//
+//     is_subtype_sync_v<Send<A, End>, Send<B, End>> = true
+//     is_subtype_sync_v<Send<B, End>, Send<C, End>> = true
+//     is_subtype_sync_v<Send<A, End>, Send<C, End>> = false  (*)
+//
+// This is a HOLE in the derived relation, but closing it automatically
+// would require transitive-closure machinery whose compile-time cost
+// is proportional to the square of the user's subsort specialisations.
+// We push the responsibility to the user: declare every direct subsort
+// edge the user wants; transitivity is the user's contract.
+//
+// If your use case demands transitive closure, prefer a SINGLE CANONICAL
+// subsort per payload class (e.g., every integer subtype specialises to
+// the canonical `IntegerBase`) rather than a chain of incremental edges.
+
 // ═════════════════════════════════════════════════════════════════════
 // ── is_subtype_sync<T, U> — Gay-Hole subtype relation ─────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -259,6 +280,44 @@ struct is_subtype_sync<Offer<B1s...>, Offer<B2s...>>
 // Public alias
 template <typename T, typename U>
 inline constexpr bool is_subtype_sync_v = is_subtype_sync<T, U>::value;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Ergonomic surface ──────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+
+// Concept form — use in function templates to require a subtype
+// relation at the call site:
+//
+//   template <typename ProtoV2>
+//       requires SubtypeSync<ProtoV2, CanonicalProto>
+//   auto accept(SessionHandle<ProtoV2, Resource>);
+template <typename T, typename U>
+concept SubtypeSync = is_subtype_sync_v<T, U>;
+
+// Assertion helper — one-liner at every place a subtype relation must
+// hold.  Named with the explicit "sync" suffix so when async subtyping
+// (SEPLOG-I6) ships, `assert_subtype_async` lives alongside it.
+//
+// Use at integration boundaries — e.g., per-Vessel adapter declaration:
+//
+//   assert_subtype_sync<PyTorchVesselProto, FrontendCanon>();
+//
+// Fires a compile error pointing AT THE CALL SITE (not deep inside a
+// template instantiation) when the relation does not hold.  The
+// diagnostic names T and U via the template-instantiation context.
+template <typename T, typename U>
+consteval void assert_subtype_sync() noexcept {
+    static_assert(is_subtype_sync_v<T, U>,
+        "crucible::safety::proto::assert_subtype_sync: "
+        "T is not a synchronous subtype of U.  "
+        "The six Gay-Hole rules are documented at the top of "
+        "SessionSubtype.h.  Common causes: shape mismatch "
+        "(Send vs Recv, Select vs Offer); too many/too few branches "
+        "(subtype has more Select branches than supertype, or fewer "
+        "Offer branches); payload types not related via is_subsort "
+        "specialisation.  Check the template-instantiation context "
+        "for the failing T and U.");
+}
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Framework self-test static_asserts ────────────────────────────
@@ -463,5 +522,95 @@ static_assert(!is_subtype_sync_v<Send<BaseInt, End>, Send<DerivedInt, End>>);
 // Recv is contravariant in payload — Recv<Base, _> ⩽ Recv<Derived, _>.
 static_assert(is_subtype_sync_v<Recv<BaseInt, End>, Recv<DerivedInt, End>>);
 static_assert(!is_subtype_sync_v<Recv<DerivedInt, End>, Recv<BaseInt, End>>);
+
+// ─── Dualization contravariance ────────────────────────────────────
+//
+// Load-bearing theorem (Gay-Hole 2005 Prop 3.4):
+//
+//     T ⩽ U    ⟹    dual(U) ⩽ dual(T)
+//
+// Subtyping is CONTRAVARIANT under dualization.  Intuition: if T is
+// a safe substitute for U, then the peer's view of T is a safe
+// substitute for the peer's view of U — and the peer's view IS the dual.
+
+// Select narrowing: dual flips to Offer narrowing (note flipped direction).
+using DS1 = Select<Send<PingReq, End>>;
+using DS2 = Select<Send<PingReq, End>, Send<StopReq, End>>;
+static_assert(is_subtype_sync_v<DS1, DS2>);
+static_assert(is_subtype_sync_v<dual_of_t<DS2>, dual_of_t<DS1>>);
+static_assert(!is_subtype_sync_v<DS2, DS1>);
+static_assert(!is_subtype_sync_v<dual_of_t<DS1>, dual_of_t<DS2>>);
+
+// Offer widening: dual flips to Select widening.
+using DO1 = Offer<Recv<PingReq, End>, Recv<StopReq, End>>;
+using DO2 = Offer<Recv<PingReq, End>>;
+static_assert(is_subtype_sync_v<DO1, DO2>);
+static_assert(is_subtype_sync_v<dual_of_t<DO2>, dual_of_t<DO1>>);
+
+// Send-payload covariance dualizes to Recv-payload contravariance.
+static_assert(is_subtype_sync_v<Send<DerivedInt, End>, Send<BaseInt, End>>);
+static_assert(is_subtype_sync_v<dual_of_t<Send<BaseInt, End>>,
+                                 dual_of_t<Send<DerivedInt, End>>>);
+
+// Loop preserves dualization contravariance (recursive witness).
+using DLoopS1 = Loop<Send<int, Select<Send<PingReq, Continue>>>>;
+using DLoopS2 = Loop<Send<int, Select<Send<PingReq, Continue>,
+                                       Send<StopReq, End>>>>;
+static_assert(is_subtype_sync_v<DLoopS1, DLoopS2>);
+static_assert(is_subtype_sync_v<dual_of_t<DLoopS2>, dual_of_t<DLoopS1>>);
+
+// ─── Transitivity (structural) ─────────────────────────────────────
+//
+// T ⩽ U  ∧  U ⩽ V  ⟹  T ⩽ V  (for structural subtyping across
+// combinators; subsort-transitivity is user's contract per above).
+
+// Three-level Select narrowing chain
+using TSelectT = Select<Send<PingReq, End>>;
+using TSelectU = Select<Send<PingReq, End>, Send<StopReq, End>>;
+using TSelectV = Select<Send<PingReq, End>, Send<StopReq, End>,
+                         Recv<PingReq, End>>;
+static_assert(is_subtype_sync_v<TSelectT, TSelectU>);
+static_assert(is_subtype_sync_v<TSelectU, TSelectV>);
+static_assert(is_subtype_sync_v<TSelectT, TSelectV>);  // transitivity
+
+// Three-level Offer widening chain (reverse direction, more branches wins)
+using TOfferW = Offer<Recv<PingReq, End>, Recv<StopReq, End>,
+                       Send<PingReq, End>>;
+using TOfferX = Offer<Recv<PingReq, End>, Recv<StopReq, End>>;
+using TOfferY = Offer<Recv<PingReq, End>>;
+static_assert(is_subtype_sync_v<TOfferW, TOfferX>);
+static_assert(is_subtype_sync_v<TOfferX, TOfferY>);
+static_assert(is_subtype_sync_v<TOfferW, TOfferY>);  // transitivity
+
+// ─── Loop vs non-Loop edge cases ───────────────────────────────────
+//
+// Loop<X> and X are DIFFERENT protocols at the combinator level — no
+// subtype relation in either direction.  Philosophically Loop<End> is
+// a degenerate infinite-iterations-that-exits-immediately — distinct
+// from End structurally.  Keep them unrelated; any blurring would
+// require coercive rules we've chosen not to ship.
+static_assert(!is_subtype_sync_v<Loop<End>, End>);
+static_assert(!is_subtype_sync_v<End, Loop<End>>);
+static_assert(!is_subtype_sync_v<Loop<Send<int, Continue>>, Send<int, End>>);
+static_assert(!is_subtype_sync_v<Send<int, End>, Loop<Send<int, Continue>>>);
+
+// ─── assert_subtype_sync helper compile-test ───────────────────────
+//
+// Exercise the helper in a consteval context so it actually forces
+// the static_assert path at compile time.  Calling it with a valid
+// relation should evaluate cleanly.
+consteval bool check_assert_subtype_sync() {
+    assert_subtype_sync<DS1, DS2>();  // valid; compiles
+    return true;
+}
+static_assert(check_assert_subtype_sync());
+
+// ─── Concept smoke test ────────────────────────────────────────────
+
+template <typename T, typename U>
+    requires SubtypeSync<T, U>
+consteval bool requires_subtype() { return true; }
+
+static_assert(requires_subtype<DS1, DS2>());
 
 }  // namespace crucible::safety::proto::detail::subtype_self_test
