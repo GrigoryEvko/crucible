@@ -149,13 +149,90 @@ int run_carrier() {
         return 1;
     }
 
+    // PROOF OF FIRST-CLASS-NESS: Bob actually USES the delegated
+    // handle — it's a real SessionHandle<DelegatedProto, MockChannel>
+    // that he can step through.  DelegatedProto is
+    // Send<PingReq, Recv<PingAck, End>>, so Bob's handle is at Send.
+    //
+    // To actually drive send + recv through the delegated channel we
+    // need a matching peer for the delegated endpoint.  Construct one
+    // on the fly (in production, the peer lives somewhere else — the
+    // whole point of delegation is handoff to a pre-existing peer).
+    std::deque<std::string> delegated_wire;
+    MockChannel delegated_peer_res{.name = "delegated-peer",
+                                    .wire_bytes = &delegated_wire};
+    // Rebind bob_delegated's wire to match — simulating that the peer
+    // at the other end of the delegated channel is connected.
+    bob_delegated.resource().wire_bytes = &delegated_wire;
+    auto delegated_peer_h =
+        make_session_handle<dual_of_t<DelegatedProto>>(
+            std::move(delegated_peer_res));
+
+    // Bob sends a PingReq through his delegated handle.  (Transport
+    // lambdas marked noexcept: test harness accepts std::terminate
+    // on OOM / alloc failure — not a real failure mode for this
+    // bounded in-memory test.)
+    auto send_req = [](MockChannel& res, PingReq&& req) noexcept {
+        res.wire_bytes->push_back("REQ:" + std::to_string(req.payload));
+    };
+    auto recv_req = [](MockChannel& res) noexcept -> PingReq {
+        std::string s = std::move(res.wire_bytes->front());
+        res.wire_bytes->pop_front();
+        return PingReq{.payload = std::atoi(s.data() + std::strlen("REQ:"))};
+    };
+    auto send_ack = [](MockChannel& res, PingAck&& ack) noexcept {
+        res.wire_bytes->push_back("ACK:" + std::to_string(ack.echoed));
+    };
+    auto recv_ack = [](MockChannel& res) noexcept -> PingAck {
+        std::string s = std::move(res.wire_bytes->front());
+        res.wire_bytes->pop_front();
+        return PingAck{.echoed = std::atoi(s.data() + std::strlen("ACK:"))};
+    };
+
+    auto bob_delegated_2 = std::move(bob_delegated).send(
+        PingReq{.payload = 42}, send_req);
+    auto [req, delegated_peer_h2] = std::move(delegated_peer_h).recv(recv_req);
+    if (req.payload != 42) {
+        std::fprintf(stderr, "delegated req payload mismatch: got %d\n",
+                     req.payload);
+        return 1;
+    }
+    auto delegated_peer_h3 = std::move(delegated_peer_h2).send(
+        PingAck{.echoed = req.payload}, send_ack);
+    auto [ack, bob_delegated_3] = std::move(bob_delegated_2).recv(recv_ack);
+    if (ack.echoed != 42) {
+        std::fprintf(stderr, "delegated ack echo mismatch: got %d\n",
+                     ack.echoed);
+        return 1;
+    }
+
+    // Clean close on both delegated ends.
+    (void)std::move(bob_delegated_3).close();
+    (void)std::move(delegated_peer_h3).close();
+
     return 0;
 }
+
+// ── Compile-time: DelegatesTo concept + assert_delegates_to helper ─
+static_assert(DelegatesTo<Delegate<DelegatedProto, End>, DelegatedProto>);
+static_assert(AcceptsFrom<Accept<DelegatedProto, End>,   DelegatedProto>);
+
+// Invoking the assert helpers at namespace scope would trigger their
+// consteval path even if we don't have a top-level consteval context;
+// wrap in a constexpr fn for the static_assert.
+consteval bool exercise_assert_helpers() {
+    assert_delegates_to<Delegate<DelegatedProto, Send<int, End>>,
+                         DelegatedProto>();
+    assert_accepts_from<Accept<DelegatedProto, Recv<int, End>>,
+                         DelegatedProto>();
+    return true;
+}
+static_assert(exercise_assert_helpers());
 
 }  // anonymous namespace
 
 int main() {
     if (int rc = run_carrier(); rc != 0) return rc;
-    std::puts("session_delegate: runtime delegate/accept round-trip OK");
+    std::puts("session_delegate: delegation + delegated-endpoint-usage OK");
     return 0;
 }
