@@ -361,6 +361,11 @@ crucible_test(test_safety_view)
 # this test adds a small runtime harness for ctest integration.
 crucible_test(test_session_subtype)
 
+# Session delegation — Honda 1998 throw/catch higher-order sessions
+# (SEPLOG-H2a+delegate, task #337).  Exercises Delegate<T, K> /
+# Accept<T, K> runtime via an in-memory mock transport.
+crucible_test(test_session_delegate)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
