@@ -386,6 +386,13 @@ crucible_test(test_session_context)
 # membership; Crash<Server> round-trip through an in-memory wire.
 crucible_test(test_session_crash)
 
+# L3 queue types σ (SEPLOG-I2, task #344) — QueuedMsg, Queue,
+# enqueue_queue_t, head_queue_t, tail_queue_t, queue_contains_v,
+# count_matching_v, is_bounded_queue_v, is_unavailable_queue_v.
+# Foundation for L7 async reasoning (φ_precise_async_safe) and
+# L6.5 SISO async subtyping.
+crucible_test(test_session_queue)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
