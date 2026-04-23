@@ -373,6 +373,12 @@ crucible_test(test_session_delegate)
 # exercises four patterns end-to-end through an in-memory wire.
 crucible_test(test_session_patterns)
 
+# L2 typing context Γ (SEPLOG-I1, task #343) — Entry, Context,
+# compose_context_t, lookup_context_t, contains_key_v, domain_of_t,
+# update_entry_t, remove_entry_t.  Gateway to L5 (association),
+# L7 (φ safety), L8 (crash-stop) and L9 (CSL × session).
+crucible_test(test_session_context)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
