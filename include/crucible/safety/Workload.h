@@ -84,6 +84,38 @@ struct WorkBudget {
     std::size_t write_bytes          = 0;
     std::size_t item_count           = 0;
     std::size_t per_item_compute_ns  = 0;
+
+    // ── Convenience constructors for the 95% case ──────────────────
+    //
+    // for_span(span, ns_per_item) — auto-derive byte counts from a
+    // typed span.  Assumes read+write (in-place mutation) by default;
+    // override read_bytes / write_bytes after if access is read-only
+    // or write-only.
+    template <typename T>
+    [[nodiscard]] static constexpr WorkBudget
+    for_span(std::span<T const> data, std::size_t ns_per_item = 0) noexcept {
+        const std::size_t n = data.size();
+        const std::size_t bytes = n * sizeof(T);
+        return WorkBudget{
+            .read_bytes = bytes,
+            .write_bytes = bytes,
+            .item_count = n,
+            .per_item_compute_ns = ns_per_item,
+        };
+    }
+
+    // Read-only variant — for when the body only reads (parallel_reduce).
+    template <typename T>
+    [[nodiscard]] static constexpr WorkBudget
+    for_span_read_only(std::span<T const> data, std::size_t ns_per_item = 0) noexcept {
+        const std::size_t n = data.size();
+        return WorkBudget{
+            .read_bytes = n * sizeof(T),
+            .write_bytes = 0,
+            .item_count = n,
+            .per_item_compute_ns = ns_per_item,
+        };
+    }
 };
 
 // Cost-model heuristic — picks parallelism when working set exceeds
@@ -276,6 +308,69 @@ parallel_for_views_adaptive(OwnedRegion<T, Whole>&& region,
     }
     // Sequential — split into 1 shard and invoke inline.
     return parallel_for_views<1>(std::move(region), std::move(body));
+}
+
+// ── parallel_for_smart — the one-call dispatch ──────────────────────
+//
+// THE 95%-case API.  Auto-derives WorkBudget from the region's span,
+// auto-picks N from Topology::process_cpu_count() (capped at 16 for
+// pthread spawn cost / typical L3-group bound).  Caller passes only:
+//
+//   * the OwnedRegion to mutate
+//   * the noexcept body lambda
+//   * an optional ns/item compute estimate (default 0 = memory-bound)
+//
+// Behavior:
+//   * Tiny workloads (< L2_per_core) → sequential inline call
+//   * Larger workloads → parallel_for_views<auto_N> with NUMA-local
+//     dispatch (when SEPLOG-C3 lands; for now, plain pthread_create)
+//
+// Always returns the recombined OwnedRegion; never throws; preserves
+// the no-regression guarantee.
+
+template <typename T, typename Whole, typename Body>
+[[nodiscard]] OwnedRegion<T, Whole>
+parallel_for_smart(OwnedRegion<T, Whole>&& region,
+                   Body body,
+                   std::size_t ns_per_item = 0) noexcept
+{
+    auto const& topo  = crucible::concurrent::Topology::instance();
+    auto const data   = region.cspan();
+    auto const budget = WorkBudget::for_span<T>(data, ns_per_item);
+
+    if (!should_parallelize(budget)) {
+        return parallel_for_views<1>(std::move(region), std::move(body));
+    }
+
+    // Pick N from process_cpu_count, but cap at compile-time-bounded
+    // factors (the Workload primitives are templated on N, so we pick
+    // the closest fixed factor from a small ladder).  Future SEPLOG-C3
+    // AdaptiveScheduler can replace this with dynamic dispatch.
+    const std::size_t allowed = topo.process_cpu_count();
+    if (allowed >= 16) {
+        return parallel_for_views<16>(std::move(region), std::move(body));
+    } else if (allowed >= 8) {
+        return parallel_for_views<8>(std::move(region), std::move(body));
+    } else if (allowed >= 4) {
+        return parallel_for_views<4>(std::move(region), std::move(body));
+    } else if (allowed >= 2) {
+        return parallel_for_views<2>(std::move(region), std::move(body));
+    }
+    return parallel_for_views<1>(std::move(region), std::move(body));
+}
+
+// ── Startup logging hook ────────────────────────────────────────────
+//
+// Forces the Topology::instance() probe AND emits a one-screen
+// human-readable summary to stderr (or supplied FILE*).  Intended
+// for Keeper / Vessel / test startup paths; the Topology probe is
+// otherwise lazy (deferred to first should_parallelize call).
+//
+// Use:  crucible::safety::log_topology_at_startup();
+//   or:  crucible::safety::log_topology_at_startup(my_log_fp);
+
+inline void log_topology_at_startup(FILE* out = stderr) noexcept {
+    crucible::concurrent::Topology::instance().log_summary(out);
 }
 
 }  // namespace crucible::safety

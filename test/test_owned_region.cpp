@@ -412,6 +412,78 @@ void test_adaptive_picks_parallel_for_large_workload() {
 
 // ── Tier 7: stress (relies on TSan for race detection) ──────────
 
+// ── Tier 8: integration ergonomics (SEPLOG-C1b) ──────────────────
+
+void test_workbudget_for_span() {
+    Arena arena;
+    auto perm = permission_root_mint<DataA>();
+    auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
+        test_alloc_token(), arena, 1024, std::move(perm));
+
+    // for_span auto-derives byte counts from the typed span.
+    const auto budget = WorkBudget::for_span<std::uint64_t>(
+        region.cspan(), /*ns_per_item=*/50);
+
+    CRUCIBLE_TEST_REQUIRE(budget.item_count == 1024);
+    CRUCIBLE_TEST_REQUIRE(budget.read_bytes == 1024 * sizeof(std::uint64_t));
+    CRUCIBLE_TEST_REQUIRE(budget.write_bytes == 1024 * sizeof(std::uint64_t));
+    CRUCIBLE_TEST_REQUIRE(budget.per_item_compute_ns == 50);
+
+    // Read-only variant zeroes write_bytes.
+    const auto ro_budget = WorkBudget::for_span_read_only<std::uint64_t>(
+        region.cspan(), 50);
+    CRUCIBLE_TEST_REQUIRE(ro_budget.read_bytes == 1024 * sizeof(std::uint64_t));
+    CRUCIBLE_TEST_REQUIRE(ro_budget.write_bytes == 0);
+}
+
+void test_parallel_for_smart_small_workload() {
+    Arena arena;
+    auto perm = permission_root_mint<DataA>();
+    constexpr std::size_t N = 100;  // tiny — should run sequentially
+    auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
+        test_alloc_token(), arena, N, std::move(perm));
+
+    for (std::size_t i = 0; i < N; ++i) region.span()[i] = i + 1;
+
+    // parallel_for_smart auto-derives WorkBudget from the region size
+    // and picks sequential vs parallel from Topology.
+    auto recombined = parallel_for_smart(
+        std::move(region),
+        [](auto sub) noexcept { for (auto& x : sub.span()) x *= 3; }
+    );
+
+    for (std::size_t i = 0; i < N; ++i) {
+        CRUCIBLE_TEST_REQUIRE(recombined.cspan()[i] == (i + 1) * 3);
+    }
+}
+
+void test_parallel_for_smart_large_workload() {
+    Arena arena{1ULL << 24};  // 16 MB block
+    auto perm = permission_root_mint<DataB>();
+    constexpr std::size_t N = 200'000;  // ~1.6 MB > L2_per_core typically
+    auto region = OwnedRegion<std::uint64_t, DataB>::adopt(
+        test_alloc_token(), arena, N, std::move(perm));
+
+    for (std::size_t i = 0; i < N; ++i) region.span()[i] = 0;
+
+    auto recombined = parallel_for_smart(
+        std::move(region),
+        [](auto sub) noexcept { for (auto& x : sub.span()) x = 42; },
+        /*ns_per_item=*/100  // bias toward parallelism
+    );
+
+    for (std::size_t i = 0; i < N; ++i) {
+        CRUCIBLE_TEST_REQUIRE(recombined.cspan()[i] == 42);
+    }
+}
+
+void test_log_topology_at_startup() {
+    // Just verify it's callable and doesn't crash.
+    std::fprintf(stderr, "\n      log_topology_at_startup() output ↓\n");
+    log_topology_at_startup();
+    std::fprintf(stderr, "      ↑\n      ");
+}
+
 void test_stress_parallel_for_repeated() {
     Arena arena;
     auto perm = permission_root_mint<DataA>();
@@ -458,6 +530,10 @@ int main() {
              test_adaptive_picks_sequential_for_small_workload);
     run_test("test_adaptive_picks_parallel_for_large_workload",
              test_adaptive_picks_parallel_for_large_workload);
+    run_test("test_workbudget_for_span",                     test_workbudget_for_span);
+    run_test("test_parallel_for_smart_small_workload",       test_parallel_for_smart_small_workload);
+    run_test("test_parallel_for_smart_large_workload",       test_parallel_for_smart_large_workload);
+    run_test("test_log_topology_at_startup",                 test_log_topology_at_startup);
     run_test("test_stress_parallel_for_repeated",            test_stress_parallel_for_repeated);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
