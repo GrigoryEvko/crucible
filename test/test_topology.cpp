@@ -138,12 +138,51 @@ void test_singleton_identity() {
 void test_basic_positive_values() {
     auto& t = Topology::instance();
     CRUCIBLE_TEST_REQUIRE(t.l1d_per_core_bytes() > 0);
+    CRUCIBLE_TEST_REQUIRE(t.l1i_per_core_bytes() > 0);
     CRUCIBLE_TEST_REQUIRE(t.l2_per_core_bytes() > 0);
     CRUCIBLE_TEST_REQUIRE(t.l3_total_bytes() > 0);
     CRUCIBLE_TEST_REQUIRE(t.cache_line_bytes() > 0);
     CRUCIBLE_TEST_REQUIRE(t.num_cores() > 0);
     CRUCIBLE_TEST_REQUIRE(t.num_smt_threads() > 0);
     CRUCIBLE_TEST_REQUIRE(t.numa_nodes() > 0);
+    CRUCIBLE_TEST_REQUIRE(t.process_cpu_count() > 0);
+    CRUCIBLE_TEST_REQUIRE(t.page_size_bytes() > 0);
+}
+
+// ── New container/cgroup awareness tests ───────────────────────
+
+void test_process_cpu_count_sane() {
+    auto& t = Topology::instance();
+    // process_cpu_count must be ≤ num_smt_threads (cgroup can only
+    // restrict, never expand).
+    CRUCIBLE_TEST_REQUIRE(t.process_cpu_count() <= t.num_smt_threads());
+    // Without container restriction, process_cpu_count typically
+    // equals num_smt_threads.  We don't strictly assert equality
+    // because CI may run inside a cgroup, but we DO assert positive.
+    CRUCIBLE_TEST_REQUIRE(t.process_cpu_count() >= 1);
+}
+
+void test_page_size_typical() {
+    auto& t = Topology::instance();
+    const auto ps = t.page_size_bytes();
+    // 4 KB on x86-64 / aarch64 with default kernel; 16 KB on Apple
+    // Silicon and some ARM Linux configurations.  Anything else is
+    // unusual but theoretically valid.
+    CRUCIBLE_TEST_REQUIRE(ps == 4096 || ps == 16384 || ps == 65536);
+}
+
+void test_cache_clusters_alias() {
+    auto& t = Topology::instance();
+    // cache_clusters() is the AMD-CCD-vocabulary alias of l3_groups().
+    // Identical content; verify by sizes.
+    CRUCIBLE_TEST_REQUIRE(t.cache_clusters().size() == t.l3_groups().size());
+}
+
+void test_log_summary_emits() {
+    auto& t = Topology::instance();
+    std::fprintf(stderr, "\n      log_summary() output ↓\n");
+    t.log_summary(stderr);
+    std::fprintf(stderr, "      log_summary() output ↑\n      ");
 }
 
 void test_cache_hierarchy_monotonic() {
@@ -281,6 +320,10 @@ int main() {
     run_test("test_parse_int_list",               test_parse_int_list);
     run_test("test_singleton_identity",           test_singleton_identity);
     run_test("test_basic_positive_values",        test_basic_positive_values);
+    run_test("test_process_cpu_count_sane",       test_process_cpu_count_sane);
+    run_test("test_page_size_typical",            test_page_size_typical);
+    run_test("test_cache_clusters_alias",         test_cache_clusters_alias);
+    run_test("test_log_summary_emits",            test_log_summary_emits);
     run_test("test_cache_hierarchy_monotonic",    test_cache_hierarchy_monotonic);
     run_test("test_smt_factor_sane",              test_smt_factor_sane);
     run_test("test_l3_groups_cover_threads",      test_l3_groups_cover_threads);

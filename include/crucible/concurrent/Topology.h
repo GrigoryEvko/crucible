@@ -95,6 +95,20 @@
   #include <filesystem>
 #endif
 
+#if __has_include(<sched.h>)
+  #include <sched.h>
+  #define CRUCIBLE_HAS_SCHED_AFFINITY 1
+#else
+  #define CRUCIBLE_HAS_SCHED_AFFINITY 0
+#endif
+
+#if __has_include(<unistd.h>)
+  #include <unistd.h>
+  #define CRUCIBLE_HAS_UNISTD 1
+#else
+  #define CRUCIBLE_HAS_UNISTD 0
+#endif
+
 namespace crucible::concurrent {
 
 namespace topology_detail {
@@ -235,6 +249,79 @@ parse_int_list_(std::string_view s) noexcept {
     return cpus;
 }
 
+// Probe sched_getaffinity for the count of CPUs THIS process is
+// allowed to run on.  Inside a Docker/Kubernetes/cgroup container,
+// this is typically smaller than the host's physical CPU count —
+// using `num_cores()` for parallelism would over-spawn threads.
+//
+// Returns 0 on platforms without sched_getaffinity (Mac, Windows);
+// callers fall back to hardware_concurrency.
+[[nodiscard]] inline std::size_t probe_process_cpu_count_() noexcept {
+#if CRUCIBLE_HAS_SCHED_AFFINITY
+    cpu_set_t mask;
+    CPU_ZERO(&mask);
+    if (sched_getaffinity(0, sizeof(mask), &mask) == 0) {
+        return static_cast<std::size_t>(CPU_COUNT(&mask));
+    }
+#endif
+    return 0;
+}
+
+// Probe page size via sysconf.  Always available on POSIX.  Standard
+// 4 KB on x86-64 / aarch64 with default kernel config; 16 KB on Apple
+// Silicon (macOS) and some ARM Linux distros.
+[[nodiscard]] inline std::size_t probe_page_size_() noexcept {
+#if CRUCIBLE_HAS_UNISTD
+    const long s = sysconf(_SC_PAGESIZE);
+    return (s > 0) ? static_cast<std::size_t>(s) : 4096;
+#else
+    return 4096;
+#endif
+}
+
+// Probe whether 2MB hugepages are usable by reading
+// /sys/kernel/mm/transparent_hugepage/enabled — typical contents
+// "always [madvise] never" or "[always] madvise never".  We accept
+// "always" or "madvise" as available (the latter requires explicit
+// MADV_HUGEPAGE per allocation, which Crucible's Arena could opt
+// into in future).
+[[nodiscard]] inline bool probe_hugepage_2mb_available_() noexcept {
+    const auto contents = read_trimmed_(
+        "/sys/kernel/mm/transparent_hugepage/enabled");
+    if (contents.empty()) return false;
+    // Look for [always] or [madvise] (selected option in brackets).
+    return contents.find("[always]") != std::string::npos ||
+           contents.find("[madvise]") != std::string::npos;
+}
+
+// Probe CPU vendor + model from /proc/cpuinfo.  Reads first
+// matching field; assumes homogeneous CPUs (true for every
+// platform we ship to).
+[[nodiscard]] inline std::pair<std::string, std::string>
+probe_cpu_vendor_and_model_() noexcept {
+    std::string vendor, model;
+    try {
+        std::ifstream f{"/proc/cpuinfo"};
+        if (!f.is_open()) return {vendor, model};
+        std::string line;
+        while (std::getline(f, line)) {
+            if (vendor.empty() && line.starts_with("vendor_id")) {
+                const auto pos = line.find(':');
+                if (pos != std::string::npos && pos + 2 < line.size()) {
+                    vendor = line.substr(pos + 2);
+                }
+            } else if (model.empty() && line.starts_with("model name")) {
+                const auto pos = line.find(':');
+                if (pos != std::string::npos && pos + 2 < line.size()) {
+                    model = line.substr(pos + 2);
+                }
+            }
+            if (!vendor.empty() && !model.empty()) break;
+        }
+    } catch (...) {}
+    return {vendor, model};
+}
+
 // Enumerate /sys/devices/system/node/node* directories.
 [[nodiscard]] inline std::vector<int> enumerate_numa_nodes_() noexcept {
     std::vector<int> nodes;
@@ -281,6 +368,7 @@ public:
     // ── Cache hierarchy ─────────────────────────────────────────────
 
     [[nodiscard]] std::size_t l1d_per_core_bytes() const noexcept { return l1d_; }
+    [[nodiscard]] std::size_t l1i_per_core_bytes() const noexcept { return l1i_; }
     [[nodiscard]] std::size_t l2_per_core_bytes()  const noexcept { return l2_; }
     [[nodiscard]] std::size_t l3_total_bytes()     const noexcept { return l3_; }
     [[nodiscard]] std::size_t cache_line_bytes()   const noexcept { return line_; }
@@ -291,6 +379,45 @@ public:
     [[nodiscard]] std::size_t num_smt_threads() const noexcept { return threads_; }
     [[nodiscard]] std::size_t smt_factor()      const noexcept {
         return cores_ == 0 ? 1 : threads_ / cores_;
+    }
+
+    // process_cpu_count — THE container/cgroup-respecting count.
+    // Returns the number of CPUs THIS process is allowed to run on
+    // per sched_getaffinity.  Inside Docker / Kubernetes / cgroup
+    // restrictions, this is typically smaller than num_cores().
+    //
+    // Cost-model decisions, thread pool sizing, and parallel_for
+    // factor selection MUST use this — not num_cores() — to avoid
+    // over-spawning threads inside containers.
+    //
+    // Falls back to num_smt_threads() when sched_getaffinity isn't
+    // available (Mac, Windows, /proc/self locked down).
+    [[nodiscard]] std::size_t process_cpu_count() const noexcept {
+        return process_cpus_;
+    }
+
+    // ── Memory characteristics ──────────────────────────────────────
+
+    // Base page size (4096 on x86-64/aarch64; 16384 on Apple Silicon
+    // and some Pi 4 / Graviton ARM Linux distros).
+    [[nodiscard]] std::size_t page_size_bytes() const noexcept {
+        return page_size_;
+    }
+
+    // Whether 2MB transparent hugepages are kernel-enabled (either
+    // "always" or "madvise" mode — the Arena could opt-in via
+    // madvise(MADV_HUGEPAGE) for large bump-pointer blocks).
+    [[nodiscard]] bool hugepage_2mb_available() const noexcept {
+        return hugepage_2mb_;
+    }
+
+    // ── CPU identity (diagnostic) ───────────────────────────────────
+
+    [[nodiscard]] std::string_view cpu_vendor() const noexcept {
+        return cpu_vendor_;
+    }
+    [[nodiscard]] std::string_view cpu_model_name() const noexcept {
+        return cpu_model_;
     }
 
     // ── L3 grouping ─────────────────────────────────────────────────
@@ -308,6 +435,14 @@ public:
         std::size_t m = 0;
         for (auto const& g : l3_groups_) m = std::max(m, g.size());
         return m == 0 ? cores_ : m;
+    }
+
+    // Alias of l3_groups() — the AMD-vocabulary name.  On AMD Zen 4/5
+    // each L3 instance corresponds to one CCD (Chiplet Complex Die);
+    // on Intel each L3 corresponds to one socket.  Same data either
+    // way; the alias documents intent at the call site.
+    [[nodiscard]] std::span<const std::vector<int>> cache_clusters() const noexcept {
+        return l3_groups();
     }
 
     // ── NUMA topology ───────────────────────────────────────────────
@@ -336,6 +471,35 @@ public:
 
     [[nodiscard]] Source source() const noexcept { return source_; }
 
+    // ── Startup logging ─────────────────────────────────────────────
+    //
+    // Print a one-screen human-readable summary of the probed
+    // topology to `out`.  Intended for ops visibility at Keeper /
+    // Vessel / test startup; call once after first instance().
+    //
+    // Thread-safe (writes via a single fprintf burst per line; if
+    // multiple threads call concurrently the output may interleave
+    // but each line is intact).
+    void log_summary(FILE* out = stderr) const noexcept {
+        std::fprintf(out,
+            "crucible::Topology(source=%s):\n"
+            "  CPU:    vendor=\"%s\" model=\"%s\"\n"
+            "  Cores:  physical=%zu smt_threads=%zu smt_factor=%zu process_allowed=%zu\n"
+            "  Caches: l1d=%zu KB l1i=%zu KB l2=%zu KB l3=%zu MB line=%zu\n"
+            "  Groups: l3_clusters=%zu cores_per_socket=%zu\n"
+            "  NUMA:   nodes=%zu\n"
+            "  Memory: page_size=%zu B hugepage_2mb=%s\n",
+            (source_ == Source::Sysfs ? "Sysfs" : "Fallback"),
+            cpu_vendor_.empty() ? "?" : cpu_vendor_.c_str(),
+            cpu_model_.empty() ? "?" : cpu_model_.c_str(),
+            cores_, threads_, smt_factor(), process_cpus_,
+            l1d_ / 1024, l1i_ / 1024, l2_ / 1024,
+            l3_ / (1024 * 1024), line_,
+            l3_groups_.size(), cores_per_socket(),
+            numa_nodes(),
+            page_size_, (hugepage_2mb_ ? "yes" : "no"));
+    }
+
 private:
     // Fallback defaults — chosen conservatively.  Underestimating
     // cache sizes biases the cost model toward parallelism, which is
@@ -347,11 +511,17 @@ private:
     static constexpr std::size_t kFallbackLine = 64;
 
     std::size_t                   l1d_     = kFallbackL1d;
+    std::size_t                   l1i_     = kFallbackL1d;     // L1i typically same as L1d
     std::size_t                   l2_      = kFallbackL2;
     std::size_t                   l3_      = kFallbackL3;
     std::size_t                   line_    = kFallbackLine;
     std::size_t                   cores_   = 1;
     std::size_t                   threads_ = 1;
+    std::size_t                   process_cpus_ = 1;
+    std::size_t                   page_size_ = 4096;
+    bool                          hugepage_2mb_ = false;
+    std::string                   cpu_vendor_;
+    std::string                   cpu_model_;
     std::vector<std::vector<int>> l3_groups_;
     std::vector<std::vector<int>> cores_on_node_;
     std::vector<std::vector<int>> numa_distance_;
@@ -365,6 +535,25 @@ private:
         const unsigned hw = std::thread::hardware_concurrency();
         cores_   = (hw == 0) ? 1 : hw;
         threads_ = cores_;
+
+        // Container/cgroup probe: sched_getaffinity tells us which
+        // CPUs THIS process is allowed on.  Critical for thread-pool
+        // sizing in Docker/Kubernetes — without it, num_cores()
+        // returns the host's CPU count and we over-spawn.
+        const std::size_t allowed = topology_detail::probe_process_cpu_count_();
+        process_cpus_ = (allowed > 0) ? allowed : threads_;
+
+        // Page size: sysconf(_SC_PAGESIZE).  Always available on POSIX.
+        page_size_ = topology_detail::probe_page_size_();
+
+        // Hugepage availability: read /sys.  False on non-Linux or
+        // when transparent hugepage is disabled at the kernel level.
+        hugepage_2mb_ = topology_detail::probe_hugepage_2mb_available_();
+
+        // CPU vendor + model from /proc/cpuinfo.  Empty on non-Linux.
+        auto [vendor, model] = topology_detail::probe_cpu_vendor_and_model_();
+        cpu_vendor_ = std::move(vendor);
+        cpu_model_  = std::move(model);
 
         // Fallback NUMA: single node, self-distance 10.
         cores_on_node_.push_back({});
@@ -435,11 +624,18 @@ inline void Topology::probe_linux_() noexcept {
                 if (size == 0) continue;
 
                 if (level == 1) {
-                    // L1 has separate Data and Instruction; only
-                    // record Data.  Type is "Data" or "Instruction"
-                    // (or rarely "Unified" on some uarchs — accept).
-                    if (type_str == "Data" || type_str == "Unified") {
+                    // L1 has separate Data and Instruction caches.
+                    // Record both (l1d_ for cost model; l1i_ for
+                    // hot-function-fits-icache discipline per
+                    // CLAUDE.md §VIII).  Unified L1 (rare; some
+                    // ARM uarchs) sets both to the same value.
+                    if (type_str == "Data") {
                         l1d_ = size;
+                    } else if (type_str == "Instruction") {
+                        l1i_ = size;
+                    } else if (type_str == "Unified") {
+                        l1d_ = size;
+                        l1i_ = size;
                     }
                 } else if (level == 2) {
                     l2_ = size;
