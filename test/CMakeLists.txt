@@ -356,6 +356,11 @@ target_include_directories(test_bench_harness SYSTEM PRIVATE
 # is reported as a test failure.
 crucible_test(test_safety_view)
 
+# Gay-Hole synchronous session subtyping (SEPLOG-H2a+subtype, task #338).
+# Header-only L6 layer; the bulk of coverage is in-header static_asserts,
+# this test adds a small runtime harness for ctest integration.
+crucible_test(test_session_subtype)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
