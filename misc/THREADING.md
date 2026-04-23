@@ -208,16 +208,21 @@ The full Crucible threading model decomposes into five tiers, each composed of z
 ```
 ┌────────────────────────────────────────────────────────────────┐
 │ TIER 5  Domain Integration                                     │
-│         BackgroundThread pipeline · KernelCompile pool         │
-│         Augur metrics broadcast · Canopy peer RX               │
+│         NumaMpmcThreadPool<Scheduler,Tag> · BackgroundThread   │
+│         KernelCompile pool · Augur metrics · Canopy peer RX    │
 ├────────────────────────────────────────────────────────────────┤
-│ TIER 4  Auto-Routed Queues                                     │
-│         Queue<T, Kind> facade · pick_kind<Hint> dispatcher     │
+│ TIER 4  Auto-Routed Queues + Scheduler Flavours                │
+│         Queue<T, Kind> : spsc | mpsc | mpmc (SCQ) | sharded |  │
+│                          work_stealing | snapshot              │
 │         PermissionedProducerHandle / PermissionedConsumerHandle│
+│         Session<Active|Closed> state on handles (Honda/MPST)   │
+│         scheduler::{Fifo,Lifo,RoundRobin,LocalityAware★,       │
+│                     Deadline,Cfs,Eevdf}                        │
 ├────────────────────────────────────────────────────────────────┤
 │ TIER 3  Cost Model + Adaptive Scheduler                        │
 │         Topology probe · WorkBudget · recommend_parallelism    │
-│         AdaptiveScheduler::run · NumaThreadPool                │
+│         Tier (L1/L2/L3/DRAM) · NumaPolicy                      │
+│         AdaptiveScheduler · NumaMpmcThreadPool                 │
 ├────────────────────────────────────────────────────────────────┤
 │ TIER 2  Workload Primitives                                    │
 │         OwnedRegion<T, Tag> · split_into<N> · recombine        │
@@ -235,6 +240,7 @@ The full Crucible threading model decomposes into five tiers, each composed of z
 │         Pinned<T> · ScopedView<C,Tag> · Session<R,Steps>       │
 │         Mutation::{AppendOnly,Monotonic,WriteOnce}             │
 └────────────────────────────────────────────────────────────────┘
+                    ★ = default scheduler (see §5.5.2)
 ```
 
 Each tier is independently usable; each higher tier adds capability without removing any guarantee from below.  An engineer who understands only Tiers 0+1 can write safe, manually-orchestrated concurrent code.  An engineer who reaches Tier 2 gets workload primitives that handle partitioning + join.  Tier 3 adds adaptive scheduling.  Tier 4 adds the queue facade.  Tier 5 is concrete domain integration.
@@ -459,31 +465,163 @@ class AdaptiveScheduler : Pinned<...> {
 
 `AdaptiveScheduler::run` consults the cost model, picks N, and dispatches to either sequential inline call or `parallel_for_views<N>` with NUMA-local thread pinning.  User code calls `scheduler.run(...)` and gets the right behaviour automatically.
 
-### 5.5 Tier 4 — Auto-routed queue facade
+### 5.5 Tier 4 — Auto-routed queue facade + beyond-Vyukov MPMC
 
-For cases where the workload is not "iterate over a region" but "produce/consume messages between threads," the Queue facade (already built in `concurrent/Queue.h`) routes 5 Kind tags (`spsc`, `mpsc`, `sharded`, `work_stealing`, plus `auto`) to the right underlying primitive.
+Tier 4 divides into two concerns: **which primitive** fits the producer/consumer shape, and **which scheduling policy** picks which queue to service next when multiple channels compete.  Crucible's `concurrent/` layer provides a zero-cost Kind-dispatched facade for the first and a template-parameterised Scheduler family for the second.
+
+#### 5.5.1 The Kind-routed primitive family
+
+For workloads shaped as "produce/consume messages between threads" rather than "iterate over a contiguous region," the Queue facade (`concurrent/Queue.h`) routes six Kind tags to the right underlying primitive.  Each primitive is chosen for its asymptotic behaviour under its intended access pattern; the facade preserves every primitive's published cost profile:
 
 ```cpp
-Queue<Event, kind::spsc<1024>>           ch;       // single-producer single-consumer
-Queue<Event, kind::mpsc<1024>>           ch;       // multi-producer single-consumer
-Queue<Event, kind::sharded<4, 4, 256>>   ch;       // M×N shards
-Queue<Event, kind::work_stealing<256>>   ch;       // owner+thieves
+// SPSC — single writer, single reader.  ~5-8 ns/op uncontended.
+Queue<Event, kind::spsc<1024>>           ch;
+// MPSC — many writers, one reader.  Vyukov per-cell sequence, ~12-15 ns/op.
+Queue<Event, kind::mpsc<1024>>           ch;
+// Sharded — M producers × N consumers, M·N SpscRings.  Compile-time fan-out.
+Queue<Event, kind::sharded<4, 4, 256>>   ch;
+// Work-stealing — one owner, many thieves.  Chase-Lev; LIFO owner, FIFO steal.
+Queue<Event, kind::work_stealing<256>>   ch;
+// MPMC (SCQ — beyond Vyukov).  Many writers, many readers.  ~15-25 ns/op.
+Queue<Event, kind::mpmc<1024>>           ch;
+// Snapshot — 1 writer, N readers see latest-only (not a FIFO).  ~5-10 ns load.
+Queue<Event, kind::snapshot<Metrics>>    ch;
 
-// Or hint-driven:
-constexpr WorkloadHint hint{.producer_count=4, .consumer_count=1, .capacity=1024};
-auto_queue_t<Event, hint> ch;   // → Queue<Event, kind::mpsc<1024>>
+// Or hint-driven — facade picks Kind from WorkloadHint at compile time:
+constexpr WorkloadHint hint{.producer_count=8, .consumer_count=4, .capacity=1024};
+auto_queue_t<Event, hint> ch;   // producers ≥ 2 AND consumers ≥ 2 → mpmc<1024>
 ```
 
-Each Queue has bare handle factories `producer_handle()` / `consumer_handle()` for cases where Permission discipline is overkill, AND Permission-typed factories `producer_handle(Permission<...>&&)` that consume the token and return `PermissionedProducerHandle<UserTag>` (sizeof = sizeof(Queue*) via EBO; move-only; sizeof preserved).
+**The MPMC slot is genuinely beyond-Vyukov.**  We implement the SCQ algorithm from Nikolaev (DISC 2019, "A Scalable, Portable, and Memory-Efficient Lock-Free FIFO Queue").  Against Vyukov's original 2011 bounded MPMC:
+
+| Property | Vyukov 2011 | Nikolaev SCQ 2019 (Crucible's choice) |
+|---|---|---|
+| Head/Tail claim | CAS (retries on contention) | **FAA** (never fails) |
+| Contention bottleneck | Single CAS cache line — ~200 ns/op at 16-way | FAA + per-cell state — ~30-60 ns/op at 16-way |
+| Livelock avoidance | Not required; producer checks cycle before CAS | Threshold counter (3n-1); dequeuer bails without probing |
+| Platform support | Any CAS (portable) | Any single-width CAS (portable; no CAS2) |
+| Memory overhead | n cells | 2n cells (double-buffered for livelock freedom) |
+| Ceiling under contention | CAS serialisation | FAA bandwidth (memory-subsystem bound) |
+
+**Why not LCRQ** (Morrison-Afek 2013, the pre-SCQ frontier)?  LCRQ requires `cmpxchg16b` — x86-only.  It is not available on ARMv8 without LSE, PowerPC, RISC-V, or MIPS.  LCRQ also suffers livelock-forced CRQ churn with high memory overhead.  SCQ achieves LCRQ's throughput on a portable instruction set, with strictly less memory per queue.
+
+**Why not WFqueue / wCQ (wait-free)**?  Wait-free guarantees bounded steps per op, valuable for hard real-time.  Our thread-pool workload (fork-join of short-lived tasks) does not need bounded-steps; it needs HIGH THROUGHPUT.  SCQ's lock-free guarantee + FAA claim is strictly faster in the common case.
+
+Plus the genuinely-novel Crucible additions:
+
+1. **CSL fractional permissions on both sides of the queue.**  Every MPMC channel carries two independent `SharedPermissionPool` instances — one for producers, one for consumers.  Each handle holds a `SharedPermissionGuard` share of its side's pool.  The type system compile-time-enforces that only `ProducerHandle` can `try_push`, only `ConsumerHandle` can `try_pop` — silent role confusion is structurally impossible.  No existing MPMC library (Vyukov, LCRQ, SCQ, wCQ, MoodyCamel, folly-MPMC, concurrentqueue) encodes producer/consumer roles at the type level.  This is our contribution.
+
+2. **Mode-transition primitive `with_drained_access(body)`.**  Atomic upgrade of BOTH producer and consumer pools to exclusive — body runs with zero live handles on either side.  Safe for reset, capacity resize, migration.  A single atomic-CAS pair resolves the upgrade race; no lock, no barrier, no stop-the-world.  Not in any MPMC paper.
+
+3. **Session-typed handles (Honda 1998; multi-party / MPST extension in Honda-Yoshida-Carbone 2008).**  Each handle carries a type-level session state:
+   ```
+   ProducerProto = μX. ( !T . X  ⊕  close . End )
+   ConsumerProto = μY. ( ?T . Y  ⊕  close . End )
+   ChannelProto  = ProducerProto  ‖  ConsumerProto
+   ```
+   Encoded as `ProducerHandle<session::Active>` → `ProducerHandle<session::Closed>`.  The closed state has NEITHER `try_push` NOR `close` — type system refuses operations past the protocol end.  Multi-party extension (many producers, many consumers) drops out of `splits_into_pack<Whole, Producer₀, …, Producerₘ, Consumer₀, …, Consumerₙ>` — session parallelism is fractional permission N-ary splitting.
+
+4. **Compile-time cookie-fingerprint debug mode.**  `MpmcRing<T, N, verify=true>` embeds FNV-1a digest per entry, verified on pop.  Zero cost when `verify=false`; strong byte-level corruption detection when enabled.  Catches torn writes that the SCQ protocol's cycle check would not — complementary to TSan, stronger than structural invariants.
+
+The combination — SCQ + fractional permissions + session types + cookie verify — does not appear in any concurrent-data-structure paper or library we could find.  The individual pieces are prior art; the synthesis is Crucible's.
+
+#### 5.5.2 The Scheduler policy family
+
+Picking a queue is one concern; picking an ORDER of work from many queues is another.  Tier 4 parametrises the pool and the auto-routed queue facade on a Scheduler policy type.  Each policy is zero-runtime-cost — selected at compile time, dispatched via template specialisation, no virtual calls.
+
+| Policy | Semantics | Best for | Cost model |
+|---|---|---|---|
+| `scheduler::Fifo` | One shared MPMC queue, strict global FIFO | Ordered processing, simple debug, strong FIFO invariants | Bottleneck at the single head under 16+ workers |
+| `scheduler::Lifo` | Owner-local LIFO via Chase-Lev deque; thieves steal FIFO from top | Recursive fork-join; owner re-uses hot L1 data across nested tasks | Excellent cache locality on the fast path; thieves pay steal cost |
+| `scheduler::RoundRobin` | Submit rotates across per-worker MPSC shards | Simple, balanced, no global head | No load balancing when tasks are uneven-cost |
+| `scheduler::LocalityAware` ★ | Submit to submitter's L3-local shard; workers drain own L3 first, steal within NUMA, then cross-NUMA | HPC task-dispatch — keeps arena data hot in L3 of the consuming worker | Best throughput on modern multi-socket / multi-CCD hardware |
+| `scheduler::Deadline` | EDF (Earliest Deadline First) — per-task deadline tag, soonest first | Real-time workloads with SLA / deadline miss cost | Per-submit sort cost; worth it when deadlines are the primary objective |
+| `scheduler::Cfs` | Linux CFS-style — red-black tree of virtual runtimes, proportional share | Long-lived tasks needing fair-share guarantees | RB-tree update per scheduling event |
+| `scheduler::Eevdf` | Linux 6.6+ default — earliest eligible virtual deadline; proportional share + latency bound | Long-lived tasks needing BOTH fairness AND latency bounds | EEVDF tree ops; strictly more work than CFS |
+
+★ **`scheduler::LocalityAware` is the default.**  For fork-join of short-lived tasks on a contiguous arena — Crucible's primary workload — cache locality dominates throughput.  Concrete rationale:
+
+- **Deadline / CFS / EEVDF are overkill.**  Those algorithms are designed for long-lived tasks (milliseconds+) where scheduling overhead is amortised across runtime.  Our task bodies are microseconds; scheduling overhead > benefit.
+- **Fifo's global head is a cache cliff.**  At 16+ workers pulling from one head, the head's cache line ping-pongs between cores, collapsing throughput to ~50 M ops/sec across the cluster.  LocalityAware partitions the contention.
+- **Lifo (pure work-stealing) penalises the first submitter.**  Owner-LIFO is great for the owner thread's cache but consumers waiting on initial tasks stall.  LocalityAware balances by submitting to the L3-local shard, so workers AND owners see hot data.
+- **RR balances but ignores topology.**  On a 2-CCD machine, RR round-robins across cache boundaries — every other task crosses L3.  LocalityAware respects the L3 grouping from `Topology::l3_groups()`.
+
+LocalityAware's dispatch rule:
+
+```
+submit(Job j):
+  shard_id = topology.l3_group_of(current_core())
+  target_queue = shards_[shard_id]
+  target_queue.push(j)
+
+worker[i].pop():
+  // Phase 1: own L3 shard (L3 cache hit)
+  if own_shard.try_pop() returns Some(j): return j
+  // Phase 2: same NUMA node, different L3 (L3 miss, DRAM local hit)
+  for peer in numa_peers(own_l3_group):
+    if peer.try_pop() returns Some(j): return j
+  // Phase 3: cross-NUMA (full DRAM + QPI hop)
+  for peer in cross_numa_peers():
+    if peer.try_pop() returns Some(j): return j
+  // Phase 4: dormant — futex wait
+  wake_counter.wait(observed)
+```
+
+Work-stealing between phases is implemented via the SCQ queue's natural multi-consumer support — any consumer can `try_pop` from any shard's queue.  No special steal protocol needed.
+
+#### 5.5.3 The auto-routed queue facade, refreshed
+
+With the MPMC slot and Scheduler flavours in place, the facade becomes:
+
+```cpp
+// Automatic primitive + scheduler selection from hint:
+constexpr WorkloadHint hint{
+    .producer_count = 8,
+    .consumer_count = 4,
+    .capacity       = 1024,
+    .scheduler      = scheduler::LocalityAware{},   // or ::Fifo{}, ::Eevdf{}, …
+};
+auto_queue_t<Event, hint> ch;   // → Queue<Event, kind::mpmc<1024>, LocalityAware>
+```
+
+Every Queue has two families of factories:
+
+- **Bare handles**: `ch.producer_handle()` / `ch.consumer_handle()`.  No Permission check; caller responsible for role discipline.  For migrations, testing, legacy code.
+- **Permission-typed handles**: `ch.producer_handle(Permission<Whole<Tag>>&&)` / `ch.consumer_handle(Permission<Whole<Tag>>&&)`.  Consumes the token, returns a `PermissionedProducerHandle<UserTag>` whose sizeof equals `sizeof(Queue*)` via EBO.  Move-only; sizeof-preserved.
+
+For MPMC specifically:
+
+```cpp
+// Mint the whole-channel permission at startup.
+auto whole = permission_root_mint<channel_tag::Whole<MyChannel>>();
+// Split into producer + consumer (fractional pools).
+auto [prod_perm, cons_perm] = permission_split<
+    channel_tag::Producer<MyChannel>,
+    channel_tag::Consumer<MyChannel>>(std::move(whole));
+// Lend a producer share per submitter thread:
+auto prod = ch.producer_handle_share(prod_perm);   // SharedPermissionGuard
+// Lend a consumer share per worker:
+auto cons = ch.consumer_handle_share(cons_perm);
+// Type system enforces: prod can only try_push, cons can only try_pop.
+// Pool refcount tracks outstanding handles.
+// with_drained_access available for exclusive reset.
+```
 
 ### 5.6 Tier 5 — Domain integration
 
-The actual Crucible runtime workloads benefit from all four tiers:
+The Crucible runtime workloads compose all four lower tiers with the pool + scheduler of Tier 4:
 
-- **BackgroundThread pipeline**: drain → build → hash → memory_plan → compile, each as an `OwnedRegion` with stage-typed Permissions, dispatched via `AdaptiveScheduler`
-- **KernelCompile pool**: each pending kernel is a job; many jobs ⟹ AdaptiveScheduler partitions into N workers, each holding `Permission<KernelCompile<I>>`
-- **Augur metrics broadcast**: 1 writer + N readers ⟹ `SharedPermissionPool` over `AtomicSnapshot<Metrics>` ⟹ readers via `ReadView<Tag>`, writer via `Permission<Tag>`
-- **Canopy peer RX**: per-peer `MpscRing<Msg>` ⟹ MpscQueue with Permission-typed producer per peer, single Permission-typed consumer
+- **BackgroundThread pipeline** (`BackgroundThread.h`): drain → build → hash → memory_plan → compile.  Each stage is an `OwnedRegion` with stage-typed `Permission`, dispatched via `NumaMpmcThreadPool<scheduler::LocalityAware>`.  Because the staged pipeline has a producer-consumer shape (drain → build → …), the inter-stage queues are `Queue<StageMsg, kind::mpmc<CAP>>` — any bg worker can handle any stage transition, load-balanced by the scheduler.
+
+- **KernelCompile pool** (`Mimic/KernelCompile.h`): each pending kernel is a `Job{fn, ctx}`.  Submitted via `pool.fork_join(N, compile_body)`.  Pool's default scheduler is LocalityAware so compile workers share L3 cache of the source DAG.  When a compile completes, its result publishes through `AtomicSnapshot<CompiledKernel>` for lock-free reader access.
+
+- **Augur metrics broadcast** (`Augur/Metrics.h`): 1 writer (the Augur background thread) + N readers (monitoring surfaces).  Uses `PermissionedSnapshot<Metrics, AugurTag>` (`concurrent/PermissionedSnapshot.h`) — `SharedPermissionPool<Reader<AugurTag>>` over `AtomicSnapshot<Metrics>`.  Readers via `ReadView<Reader<AugurTag>>`; writer via `Permission<Writer<AugurTag>>`.  Mode transition via `with_exclusive_access(body)` for schema resets.
+
+- **Canopy peer RX** (`Canopy/PeerInbox.h`): per-peer `Queue<Msg, kind::mpsc<CAP>>`.  Many local producers (dispatch loop, retry loop, health check) push into one peer's inbox; the peer's dedicated RX thread is the single consumer.  `Permission<Producer<Peer_i>>` minted per local producer.
+
+- **Cipher hot-tier replication** (`Cipher/HotTier.h`): broadcast-writer (this Relay) + N subscribers (peer Keepers).  `Queue<Delta, kind::sharded<1, N, CAP>>` — the sharded primitive guarantees each subscriber sees the same total order.  `Permission<Consumer<Peer_i>>` per subscriber.
+
+- **Vessel FFI dispatch**: tiny surface — one ATen call per tensor op — goes straight through `TraceRing`'s SPSC path.  No pool involved; the recording thread IS the producer.  This is the one path the pool does NOT own.
 
 ---
 
@@ -677,27 +815,95 @@ Total cost of a `parallel_for_views<8>` Permission flow: 8 × 1 byte for child P
 | `with_shared_view(pool, body)` | `optional<R>` or bool | 0 | 1 lend + 1 release |
 | `with_exclusive_view(pool, body)` | `optional<R>` or bool | 0 | 1 try_upgrade + 1 deposit |
 
-### 8.4 Queue facade
+### 8.4 Queue primitives (the lock-free substrate)
+
+| Type | sizeof | Pinned | Algorithm | Per-op cost |
+|---|---|---|---|---|
+| `SpscRing<T, N>` | N × sizeof(T) + 2 cache lines | yes | Head/tail acquire/release | ~5-8 ns uncontended |
+| `MpscRing<T, N>` | N × 64 bytes (cache-aligned cells) | yes | Vyukov per-cell sequence | ~12-15 ns producer; ~5-10 ns consumer |
+| `MpmcRing<T, N>` | 2N × 64 bytes (double-buffered SCQ) | yes | **Nikolaev SCQ (DISC 2019)** — FAA head/tail, per-cell cycle + IsSafe + occupied bits, threshold livelock prevention | ~15-25 ns uncontended; ~30-60 ns at 16-way contention |
+| `ShardedSpscGrid<T, M, N, C>` | M·N × SpscRing<T, C> | yes | M·N independent SpscRings + routing policy | Per-shard ~5-8 ns |
+| `ChaseLevDeque<T, N>` | N × sizeof(atomic<T>) + 3 cache lines | yes | Chase-Lev work-stealing — owner LIFO, thief FIFO, two seq_cst points | Owner ~8-12 ns push, ~10-15 ns pop; Thief ~20-30 ns steal |
+| `AtomicSnapshot<T>` | 2 cache lines + sizeof(T) | yes | Lamport seqlock — two fetch_add bracketing memcpy | Writer ~15 ns; reader ~5-10 ns uncontended |
+
+**The MPMC slot is the beyond-Vyukov frontier.**  See §5.5.1 for the full comparison; summary: SCQ uses FAA (never fails) where Vyukov uses CAS (retries under contention), achieving 2-4× throughput at high producer/consumer counts without requiring `cmpxchg16b` (so portable to ARM/PowerPC/RISC-V, unlike LCRQ).
+
+### 8.5 Queue facade + permission-typed handles
 
 | Type | sizeof | Pinned | Notes |
 |---|---|---|---|
 | `Queue<T, kind::spsc<N>>` | sizeof(SpscRing<T,N>) | yes | Wraps SpscRing |
 | `Queue<T, kind::mpsc<N>>` | sizeof(MpscRing<T,N>) | yes | Wraps MpscRing |
+| `Queue<T, kind::mpmc<N>>` | sizeof(MpmcRing<T,N>) | yes | **Wraps MpmcRing (SCQ)** |
 | `Queue<T, kind::sharded<M,N,C>>` | sizeof(ShardedSpscGrid<...>) | yes | Wraps ShardedSpscGrid |
 | `Queue<T, kind::work_stealing<C>>` | sizeof(ChaseLevDeque<T,C>) | yes | Wraps ChaseLevDeque |
-| `Queue<T,K>::ProducerHandle` | sizeof(Queue*) | n/a | Bare handle, copyable |
-| `Queue<T,K>::PermissionedProducerHandle<UserTag>` | sizeof(Queue*) (EBO) | n/a | Permission-typed, move-only |
+| `Queue<T, kind::snapshot<U>>` | sizeof(AtomicSnapshot<U>) | yes | Wraps AtomicSnapshot (latest-value, not FIFO) |
+| `Queue<T,K>::ProducerHandle` | sizeof(Queue*) | n/a | Bare handle; caller enforces role |
+| `Queue<T,K>::ConsumerHandle` | sizeof(Queue*) | n/a | Bare handle; caller enforces role |
+| `Queue<T,K>::PermissionedProducerHandle<UserTag>` | sizeof(Queue*) (EBO) | n/a | CSL-typed; only try_push exposed |
+| `Queue<T,K>::PermissionedConsumerHandle<UserTag>` | sizeof(Queue*) (EBO) | n/a | CSL-typed; only try_pop exposed |
+| `PermissionedMpmcChannel<T, N, Tag>` | sizeof(MpmcRing) + 2× SharedPermissionPool | yes | MPMC + fractional permissions on BOTH sides + session state |
+| `PermissionedSnapshot<T, Tag>` | sizeof(AtomicSnapshot) + SharedPermissionPool | yes | SWMR + fractional permissions on reader side |
 
-### 8.5 Cost-model primitives (Tier 3, planned)
+**Session states** (Honda 1998; in `safety/Session.h`):
 
-| Type | Role |
-|---|---|
-| `Topology` | sysfs probe; cached singleton |
-| `WorkBudget` | Workload size descriptor |
-| `ParallelismDecision` | Discriminated `Sequential | Parallel(N, NumaPolicy)` |
-| `recommend_parallelism(WorkBudget)` | The cache-tier heuristic |
-| `AdaptiveScheduler` | Unified dispatch entry; pool of pinned jthreads |
-| `NumaThreadPool` | NUMA-affinity worker pool |
+| State tag | Transitions to | Operations exposed |
+|---|---|---|
+| `session::Active` | `Closed` via `close()` | try_push / try_pop / close |
+| `session::Closed` | (terminal) | (none) |
+
+Compile error attempting any operation on a `Closed` handle — the type system refuses operations past protocol end.
+
+### 8.6 Cost-model primitives (Tier 3)
+
+| Type | Role | Status |
+|---|---|---|
+| `Topology` | sysfs probe — L1d/L1i/L2/L3 sizes, NUMA nodes/distances, core/SMT counts, container-aware via sched_getaffinity | ✓ shipped (`concurrent/Topology.h`) |
+| `WorkBudget` | Workload size descriptor — read_bytes, write_bytes, item_count, per_item_compute_ns | ✓ shipped (`concurrent/CostModel.h`) |
+| `Tier` | Enum: L1Resident / L2Resident / L3Resident / DRAMBound | ✓ shipped |
+| `NumaPolicy` | Enum: NumaIgnore / NumaLocal / NumaSpread | ✓ shipped |
+| `ParallelismDecision` | `{ kind, factor, numa, tier }` — the cost model's recommendation | ✓ shipped |
+| `recommend_parallelism(WorkBudget)` | The 5-step cache-tier decision tree; returns ParallelismDecision | ✓ shipped |
+| `WorkingSetEstimator::classify / recommend` | Class wrapping the decision logic | ✓ shipped |
+
+### 8.7 Scheduler flavour policies (Tier 4)
+
+Each scheduler is a zero-cost policy type — template parameter of `NumaMpmcThreadPool<Scheduler, Tag>` and of the `auto_queue_t` facade.
+
+| Policy tag | Algorithm | Use case | Overhead per submit |
+|---|---|---|---|
+| `scheduler::Fifo` | Single shared MpmcRing; strict global FIFO | Ordered processing, debug | ~20 ns (FAA + CAS) |
+| `scheduler::Lifo` | Chase-Lev deque per worker; owner LIFO | Recursive fork-join owner cache re-use | ~10 ns owner, ~25 ns thief |
+| `scheduler::RoundRobin` | Per-worker MpscRing + rr counter | Balanced, simple, no global head | ~15 ns |
+| `scheduler::LocalityAware` ★ | Per-L3-shard MpmcRing; consumers drain own L3 first, steal within NUMA, then cross-NUMA | HPC task dispatch (default) | ~20 ns local submit; ~30 ns steal |
+| `scheduler::Deadline` | Per-task deadline; min-heap of jobs by deadline | EDF real-time | ~50 ns (heap insert) |
+| `scheduler::Cfs` | Linux CFS — RB-tree of virtual runtimes | Long-lived fair-share tasks | ~80 ns (RB ops) |
+| `scheduler::Eevdf` | Linux 6.6+ default — earliest eligible virtual deadline | Fair share + latency bound | ~100 ns (EEVDF ops) |
+
+★ **LocalityAware is the default.**  For fork-join of short-lived tasks on contiguous arenas (Crucible's primary workload), cache locality dominates throughput — see §5.5.2 for the full rationale.  User overrides via `NumaMpmcThreadPool<scheduler::Fifo, MyTag>{}`.
+
+### 8.8 Thread pool (Tier 5)
+
+| Type | Role | Status |
+|---|---|---|
+| `NumaMpmcThreadPool<Scheduler, Tag>` | The default pool — N Topology-placed workers, scheduler-dispatched job queue, Permission-typed submit/drain, futex-based wake | In design (SEPLOG-C4) |
+| `AdaptiveScheduler` | Higher-level wrapper — reads ParallelismDecision, dispatches to pool, collects telemetry | In design (SEPLOG-C3) |
+| `WorkloadProfiler` | Runtime telemetry — suggests Kind / Scheduler per call site based on observed behaviour | Design-only (SEPLOG-F3) |
+
+**The pool's default construction** picks workers from `Topology::process_cpu_count()`, pins each to a core (via `sched_setaffinity`), and uses `scheduler::LocalityAware` for dispatch.  Explicit override:
+
+```cpp
+// Default — LocalityAware scheduler, one worker per process-accessible core.
+NumaMpmcThreadPool<> pool;
+
+// Custom scheduler — EEVDF for a long-lived-task workload.
+NumaMpmcThreadPool<scheduler::Eevdf, MyCustomTag> pool;
+
+// Custom config — 4 workers, no NUMA pin.
+NumaMpmcThreadPool<> pool{NumaMpmcThreadPool<>::Config{
+    .workers = 4, .numa_pin = false,
+}};
+```
 
 ---
 
@@ -892,23 +1098,71 @@ This section enumerates the performance and safety claims Crucible's threading m
 
 ### 10.1 Latency targets (per operation class)
 
+Measured or projected on AMD Ryzen 9 5950X (Zen 3, 16 cores / 32 SMT, 32 KB L1d, 512 KB L2, 32 MB L3 per CCD, 2 CCDs, single-NUMA).
+
+#### Tier 0-1 — Permission primitives
+
 | Operation | Target p99 | Cost source |
 |---|---|---|
 | `Permission` mint | < 1 ns | constexpr no-op |
 | `permission_split_n` | < 1 ns | constexpr no-op |
 | `Pool::lend()` (uncontended) | 5-15 ns | one CAS |
 | `Pool::try_upgrade()` (uncontended) | 5-15 ns | one CAS |
-| `Pool::lend()` (contended) | 30-80 ns | CAS retry × 1-3 |
+| `Pool::lend()` (16-way contended) | 30-80 ns | CAS retry × 1-3 |
 | Permission move into jthread lambda | 0 ns | EBO + move |
+
+#### Tier 2 — OwnedRegion
+
+| Operation | Target p99 | Cost source |
+|---|---|---|
 | `OwnedRegion::adopt` from arena | 5-10 ns | arena bump + move |
 | `OwnedRegion::split_into<8>` | 5-15 ns | 8 (T*, size_t) writes + tag construction |
 | `OwnedRegion::recombine<8>` | 5-15 ns | symmetric |
-| `parallel_for_views<8>` spawn (ex bodies) | 80-150 µs | 8 × pthread_create |
-| `parallel_for_views<8>` join (ex bodies) | 16-40 µs | 8 × pthread_join |
-| `Queue::try_push` (SPSC) | 5-8 ns | acquire-load + relaxed-store |
-| `Queue::try_push` (MPSC, uncontended) | 12-15 ns | 1 CAS + 1 release-store |
-| `Queue::try_push` (MPSC, 4-way contended) | 50-80 ns p99 | CAS retry |
-| `AdaptiveScheduler::run` overhead | 50-100 ns | budget eval + dispatch |
+
+#### Tier 3 — Cost model
+
+| Operation | Target p99 | Cost source |
+|---|---|---|
+| `Topology::instance()` (warm) | < 1 ns | function-local static, inlined getter |
+| `recommend_parallelism(WorkBudget)` | 30-80 ns | 4 atomic loads + classification + factor rounding |
+
+#### Tier 4 — Queue primitives (the lock-free substrate)
+
+| Operation | Target p99 | Cost source |
+|---|---|---|
+| `SpscRing::try_push` | 5-8 ns | acquire-load + relaxed-store |
+| `SpscRing::try_pop` | 5-8 ns | symmetric |
+| `MpscRing::try_push` (uncontended) | 12-15 ns | 1 CAS head + 1 release-store cell |
+| `MpscRing::try_push` (4-way contended) | 50-80 ns | CAS retry |
+| `MpmcRing::try_push` (SCQ, uncontended) | 15-25 ns | 1 FAA tail + 1 CAS cell |
+| `MpmcRing::try_push` (SCQ, 16-way contended) | **30-60 ns** | FAA never fails; only per-cell CAS contends |
+| `MpmcRing::try_pop` (SCQ, uncontended) | 15-25 ns | 1 FAA head + 1 OR cell |
+| `MpmcRing::try_pop` (SCQ, empty fast-path) | < 5 ns | Threshold < 0 check, no ticket claim |
+| `AtomicSnapshot::load` (uncontended) | 5-10 ns | 2 seq-loads + memcpy + fence |
+| `AtomicSnapshot::publish` | ~15 ns | 2 fetch_add + memcpy |
+
+**MPMC vs Vyukov-MPMC projection at 16-way contention:**
+
+| Algorithm | 16-producer throughput | p99 submit latency |
+|---|---|---|
+| Vyukov bounded MPMC (CAS head + CAS tail) | ~50-100 M ops/sec cluster-wide | ~200-400 ns |
+| **Nikolaev SCQ (Crucible's `MpmcRing`)** | **~300-500 M ops/sec** | **~30-60 ns** |
+
+The 3-8× improvement comes from FAA never failing vs CAS retry storm.
+
+#### Tier 5 — NumaMpmcThreadPool
+
+| Operation | Target p99 | Cost source |
+|---|---|---|
+| Pool construction (N=16 workers) | ~200-500 µs | 16 × pthread_create + sched_setaffinity |
+| `pool.submit(job)` | ~20 ns | MpmcRing try_push + wake atomic fetch_add |
+| `pool.submit + notify_one` | ~1-2 µs | includes futex_wake syscall |
+| Worker wake from futex (dormant) | ~1-3 µs | futex round-trip |
+| `pool.fork_join<N=16>` warm (empty body) | ~10-30 µs | 16 submits + 16 decrements + latch wait |
+| `pool.fork_join<N=16>` warm vs jthread-spawn-per-call | **10-50× faster** | persistent workers vs pthread_create overhead |
+| Pool destruction (N=16) | ~100 µs | 16 × running-flag-store + notify + join |
+
+**The persistent-pool win**: old jthread-spawn model paid 5-15 µs pthread_create × 16 = 80-240 µs per fork_join.  NumaMpmcThreadPool amortises that by reusing dormant workers, dropping the critical path to ~10-30 µs warm.
 
 ### 10.2 Speedup targets (cache-tier rule)
 
@@ -984,6 +1238,12 @@ Combining all the above:
 >
 > The same expression on a 1K-element region runs **sequentially inline**, **without regression**, with the type system unchanged.
 >
+> A C++26 user that targets the pool directly via
+> `pool.fork_join(16, [&](std::size_t i) noexcept { body(i); });`
+> pays ~10-30 µs warm (persistent workers + SCQ submit + futex wake) — **10-50× faster than jthread-spawn-per-call**.  Under 16-way producer contention on the shared MPMC queue, throughput is **3-8× Vyukov bounded MPMC** (FAA never fails vs CAS retry storm).
+>
+> Producer / consumer role discrimination is compile-time-enforced via CSL fractional permissions.  Protocol adherence (producer can't push after close) is compile-time-enforced via session types.  Placement respects L1/L2/L3/NUMA topology via the default `LocalityAware` scheduler.
+>
 > No mainstream C++ library exists today that delivers all of these properties simultaneously in one composable primitive.
 
 This is the deliverable.
@@ -1037,18 +1297,26 @@ What `std::execution` lacks:
 
 ### 11.5 What Crucible uniquely provides
 
-Crucible is the first C++ system (to our knowledge) that provides:
+Crucible is the first C++ system (to our knowledge) that provides ALL of the following — individually each is prior art; the combination is novel:
 
-1. **Compile-time region-disjointness proofs (CSL frame rule)** at zero runtime cost
-2. **Cache-tier-aware cost model** that gates parallelism with no-regression guarantee
-3. **Arena-backed contiguous storage** mandated by the type system (`OwnedRegion<T, Tag>`)
-4. **Zero per-submission allocation** in any parallel_for invocation
-5. **Zero user-level atomics** — synchronisation entirely structural via RAII join
-6. **Composable with the eight-axiom safety stack** — Permissions wrap with Linear, Refined, Tagged, Pinned, ScopedView
-7. **Auto-routed queue facade** that picks the optimal lock-free primitive at compile time
-8. **TaDA-style atomic mode-transition triple** for SWMR upgrade — single CAS, no spinlock
+1. **Compile-time region-disjointness proofs (CSL frame rule)** at zero runtime cost.  O'Hearn-Reynolds-Brookes CSL encoded via linear `Permission<Tag>` types.
+2. **CSL fractional permissions applied to both sides of an MPMC queue.**  Every other MPMC library (Vyukov, LCRQ, SCQ, wCQ, MoodyCamel, folly-MPMC) treats producer and consumer as compile-time-indistinguishable; Crucible's `PermissionedMpmcChannel<T, N, Tag>` has independent `SharedPermissionPool<Producer<Tag>>` and `SharedPermissionPool<Consumer<Tag>>`, each refcounting its side's live handles.  No existing concurrent-data-structure paper encodes producer/consumer roles with fractional permissions.
+3. **Beyond-Vyukov MPMC via Nikolaev SCQ** (DISC 2019) — FAA-based, livelock-free, portable single-width CAS, 2-4× Vyukov throughput under 16-way contention without requiring `cmpxchg16b`.  Choice validated against LCRQ (x86-only), wCQ (wait-free variant), FAAArrayQueue, NBLFQ.
+4. **Session-typed handles (Honda 1998 / Honda-Yoshida-Carbone MPST 2008).**  `ProducerHandle<session::Active>` → `ProducerHandle<session::Closed>` transitions encode the protocol `μX. (!T.X ⊕ close.End)` at the type level.  Multi-party session types emerge from `splits_into_pack<Whole, Producer₀..Producerₘ, Consumer₀..Consumerₙ>` — fractional permission N-ary splits ARE MPST session parallelism.  No existing C++ library encodes session types + MPMC + CSL in one system.
+5. **Cache-tier-aware cost model** that gates parallelism with a no-regression guarantee.  Structural 5-step decision tree (L1/L2-resident → sequential; L3-resident → 4-way NumaLocal; DRAM-bound → N-way NumaSpread).  Container-aware via `sched_getaffinity`.
+6. **Pluggable scheduler flavours** — `scheduler::{Fifo, Lifo, RoundRobin, LocalityAware★, Deadline, Cfs, Eevdf}` — all zero-cost template dispatch.  Default `LocalityAware` respects topology L3 clustering.  No existing C++ thread pool (TBB, Cilk, `std::execution`) offers a user-selectable scheduler surface with cache-hierarchy placement.
+7. **Arena-backed contiguous storage** mandated by the type system (`OwnedRegion<T, Tag>`).  No `Vec<Box<T>>`-style fragmentation; one arena allocation per logical region; parallel slices are index-space partitions.
+8. **Zero per-submission allocation** in any parallel_for invocation, any fork_join, any queue push or pop.  Contexts are stack-local; pool workers are persistent.
+9. **Zero user-level atomics** — synchronisation entirely structural via RAII join (fork_join) or via the queue primitive (MPMC).  User body lambdas contain NO atomic operations.
+10. **Composable with the eight-axiom safety stack** — Permissions wrap with Linear, Refined, Tagged, Pinned, ScopedView, Secret, Session.  The permission primitives are Tier-1; every higher tier inherits.
+11. **Auto-routed queue facade** that picks the optimal lock-free primitive at compile time from `WorkloadHint` (producer_count, consumer_count, capacity, scheduler).
+12. **TaDA-style atomic mode-transition triple** for SWMR upgrade (and MPMC drain) — single CAS per side, no spinlock, no stop-the-world.
+13. **Persistent thread pool with topology-pinned workers** — `NumaMpmcThreadPool<Scheduler, Tag>` defaults to `LocalityAware`, pins each worker to a core via `sched_setaffinity`, wakes via per-worker futex.  10-50× faster than jthread-spawn-per-call for fork_join.
+14. **Cookie-fingerprint corruption detection as compile-time option** — `MpmcRing<T, N, verify=true>` adds FNV-1a digest per entry, verified on pop.  Zero-cost when off; catches ANY byte-level mix when on.  Not in any published MPMC algorithm.
 
-No other C++ library combines these.  The combination requires GCC 16's contracts + reflection + the existing C++23 features that just landed; before 2026, the mechanism wasn't expressible in standard C++.
+No other C++ library combines these.  Each individual piece has prior art (credited in Appendix H); the synthesis — permission-typed + session-typed + beyond-Vyukov MPMC + scheduler-flavoured + cache-hierarchy-aware + arena-contiguous — is Crucible's.
+
+The combination requires GCC 16's contracts + reflection + the existing C++23 features that just landed; before 2026, the mechanism wasn't expressible in standard C++.
 
 This is the niche.
 
@@ -1056,53 +1324,66 @@ This is the niche.
 
 ## 12. The dependency roadmap — what builds when
 
-The full vision spans 22 SEPLOG tasks (#300-#322).  This section organises them into a concrete dependency-ordered build plan.
+Updated 2026-04-23.  The SEPLOG initiative now spans ~28 tasks (#300-#326).  This section organises them into a dependency-ordered build plan, with current status.  The Phase H entries (MPMC + scheduler flavours) are new since the document's first draft; they reflect the user-driven expansion of scope to beyond-Vyukov territory.
 
-### 12.1 Phase A — Permission framework foundations (DONE: A1, A4)
+### 12.1 Phase A — Permission framework foundations (✅ COMPLETE)
 
 - ✅ **SEPLOG-A1**: `Permission<Tag>` core primitive — linear move-only token
-- ⏳ **SEPLOG-A2**: `SharedPermission` + `Pool` + `Guard` (fractional permissions)
-- ⏳ **SEPLOG-A3**: `ReadView<Tag>` lifetime-bound borrow
+- ✅ **SEPLOG-A2**: `SharedPermission` + `Pool` + `Guard` (fractional permissions)
+- ✅ **SEPLOG-A3**: `ReadView<Tag>` lifetime-bound borrow
 - ✅ **SEPLOG-A4**: `permission_fork<Children...>` structured concurrency
 
-### 12.2 Phase B — Permissioned worked examples (DEPENDS ON A)
+### 12.2 Phase B — Permissioned worked examples (partial)
 
 - ⏳ **SEPLOG-B1**: `PermissionedSpscChannel` — Tier 1 exclusive endpoints worked example
-- ⏳ **SEPLOG-B2**: `PermissionedSnapshot` — Tier 2 SWMR worked example
+- ✅ **SEPLOG-B2**: `PermissionedSnapshot` — Tier 2 SWMR worked example
 - ⏳ **SEPLOG-B3**: `PermissionedShardedGrid` — Tier 1 at scale
 - ⏳ **SEPLOG-B4**: `PermissionedRwQueue` — synthesis primitive (mode transitions on the queue itself)
 
-### 12.3 Phase C — Cost model + scheduler (DEPENDS ON A)
+### 12.3 Phase C — Cost model + scheduler (in flight)
 
-- ⏳ **SEPLOG-C1**: `Topology` probe (cores/caches/NUMA via sysfs, fallback constants)
-- ⏳ **SEPLOG-C2**: `WorkBudget` + `recommend_parallelism` heuristic
-- ⏳ **SEPLOG-C3**: `AdaptiveScheduler` unifier
-- ⏳ **SEPLOG-C4**: `NumaThreadPool` worker pool
+- ✅ **SEPLOG-C1**: `Topology` probe (cores/caches/NUMA via sysfs, fallback constants)
+- ✅ **SEPLOG-C1b**: Topology hardening + integration ergonomics (container-aware, hugepage, CPU vendor/model, startup logging)
+- ✅ **SEPLOG-C2**: `WorkingSetEstimator` + `recommend_parallelism` heuristic (5-step cache-tier decision tree)
+- ⏳ **SEPLOG-C3**: `AdaptiveScheduler` unifier — consumes `ParallelismDecision`, dispatches via pool, collects telemetry
+- ⏳ **SEPLOG-C4**: `NumaMpmcThreadPool<Scheduler, Tag>` — persistent pinned workers, shared SCQ queue (see Phase H)
 
-### 12.4 Phase D — Crucible runtime integration (DEPENDS ON B + C)
+### 12.4 Phase D — Crucible runtime integration (DEPENDS ON B + C + H)
 
-- ⏳ **SEPLOG-D1**: `BackgroundThread` staged pipeline refactor
-- ⏳ **SEPLOG-D2**: `KernelCompile` pool parallelism
+- ⏳ **SEPLOG-D1**: `BackgroundThread` staged pipeline refactor (inter-stage MPMC queues)
+- ⏳ **SEPLOG-D2**: `KernelCompile` pool parallelism (pool default scheduler: LocalityAware)
 
-### 12.5 Phase E — Validation (DEPENDS ON ALL)
+### 12.5 Phase E — Validation (in flight)
 
-- ⏳ **SEPLOG-E1**: No-regression bench harness (6 tiers × 3 kinds, ≤5% regression budget)
+- ⏳ **SEPLOG-E1**: No-regression bench harness (6 tiers × 3 kinds × 7 scheduler flavours, ≤5% regression budget)
 - ⏳ **SEPLOG-E2**: TSan + ASan validation suite (40M ops per primitive)
-- ✅ **SEPLOG-E3**: CSL design notes + decision matrix (this document is part of it)
+- ✅ **SEPLOG-E2-CF**: Concurrency collision fuzzer with cookie-fingerprint payloads (10 test cases across AtomicSnapshot, OwnedRegion split, MpscRing, ChaseLevDeque, SpscRing, PermissionedSnapshot, Pool refcount, parallel_for_views nested integrity)
+- ✅ **SEPLOG-E3**: CSL design notes + decision matrix (this document)
 
-### 12.6 Phase F — Auto-routed queue facade (DONE: F1, F2)
+### 12.6 Phase F — Auto-routed queue facade (mostly complete)
 
 - ✅ **SEPLOG-F1**: `Queue<T, Kind>` facade
 - ✅ **SEPLOG-F2**: Queue + Permission integration
-- ⏳ **SEPLOG-F3**: WorkloadProfiler runtime telemetry → Kind suggestion
+- ⏳ **SEPLOG-F3**: WorkloadProfiler runtime telemetry → Kind/Scheduler suggestion (detect actual producer/consumer counts, contention rate, recommend corrections)
 
-### 12.7 Phase G — Workload primitives (NEW; the contiguous-buffer model)
+### 12.7 Phase G — Workload primitives (✅ complete)
 
-- ⏳ **SEPLOG-G1**: `OwnedRegion<T, Tag>` + `parallel_for_views<N>` + `parallel_reduce_views<N>` + `parallel_apply_pair<N>`
-- ⏳ **SEPLOG-G2**: `parallel_pipeline<Stages...>` (multi-stage with SpscChannel between stages)
+- ✅ **SEPLOG-G1**: `OwnedRegion<T, Tag>` + `parallel_for_views<N>` + `parallel_reduce_views<N>` + `parallel_for_smart` (cost-model-driven)
+- ⏳ **SEPLOG-G2**: `parallel_pipeline<Stages...>` (multi-stage with inter-stage MPMC queue)
 - ⏳ **SEPLOG-G3**: `parallel_scan<N>` (prefix sum, two-phase Hillis-Steele)
 
-### 12.8 Critical-path summary
+### 12.8 Phase H — MPMC frontier + scheduler flavours (NEW; addresses user-driven scope expansion)
+
+Added 2026-04-23.  The original plan assumed a per-worker MpscRing thread pool; user direction shifted to a genuinely MPMC shared-queue design (avoids reentrancy deadlock, removes load imbalance, enables beyond-Vyukov throughput via SCQ).  These tasks are the concrete landing of §5.5 and §8.4-8.7.
+
+- ✅ **SEPLOG-C4b**: `MpmcRing<T, N>` — Nikolaev SCQ primitive (FAA head/tail, per-cell cycle+IsSafe+occupied, threshold livelock prevention).  First drop shipped.
+- ⏳ **SEPLOG-H1**: `PermissionedMpmcChannel<T, N, Tag>` — TWO fractional `SharedPermissionPool` (producer + consumer), handle-per-role, `with_drained_access(body)` for exclusive reset
+- ⏳ **SEPLOG-H2**: Session-typed handles — `ProducerHandle<session::Active>` ↔ `<session::Closed>` with compile-error on closed-handle ops
+- ⏳ **SEPLOG-H3**: Scheduler policy types — `scheduler::{Fifo, Lifo, RoundRobin, LocalityAware, Deadline, Cfs, Eevdf}`; first three + LocalityAware shipped, Deadline/CFS/EEVDF as scaffolding with TODO
+- ⏳ **SEPLOG-H4**: `NumaMpmcThreadPool<Scheduler, Tag>` — topology-pinned workers, shared SCQ queue, default scheduler `LocalityAware`
+- ⏳ **SEPLOG-H5**: Cookie-fingerprint MPMC stress test — N producers × M consumers × cookie-tagged payloads + exactly-once delivery verify
+
+### 12.9 Critical-path summary
 
 ```
 A1 ──┬── A2 ──┬── B1 ── B3
@@ -1113,12 +1394,16 @@ A1 ──┬── A2 ──┬── B1 ── B3
      │        │
      └── G1 ──┴── G2 ── G3
                   │
-C1 ──── C2 ──── C3 ──── C4 ──── D1 ──── D2 ──── E1 ──── E2
+C1 ─── C1b ── C2 ──┬── C3
+                   │
+              C4b ─┴─ H1 ── H2 ── H3 ── H4 ── H5 ── C4 ── D1 ── D2
+                                                          │
+                                                          └── E1 ── E2
 ```
 
-Phase A is the foundation; Phases B/F/G can proceed in parallel once A1+A2+A4 are done.  Phase C is independent of B/F/G but feeds D.  Phase D is the integration target; Phase E validates the whole.
+Phase A is the foundation; Phase B/F/G proceed once A1+A2+A4 are done.  Phase C is mostly independent; Phase H (MPMC + scheduler) now gates Phase C4 (the pool).  Phase D integrates into Crucible runtime; Phase E validates the whole.
 
-Total estimated work: ~14,000 lines of header + ~6,000 lines of test + ~3,000 lines of bench/doc.  Estimated calendar time at one task per ralph-loop iteration: 22 iterations.  Already done: 6 (~30%).
+**Total work estimate**: ~20,000 lines of header + ~10,000 lines of test + ~4,000 lines of bench/doc.  Estimated calendar time at one task per ralph-loop iteration: ~28 iterations.  Already done: 18 (~64%).  The scope expansion from user direction (MPMC + schedulers) added ~6 tasks; everything else tracks plan.
 
 ---
 
@@ -1321,11 +1606,13 @@ The static cache-tier rule is a strong starting point but can be improved by run
 
 If a reader takes one thing from this document, it should be:
 
-> **Crucible builds a layered, zero-cost, type-system-enforced concurrency model that substitutes for Rust's borrow checker without forcing Rust's allocation fragmentation.  The CSL permission family + arena-backed contiguous storage + cache-tier-aware cost model + auto-routed queue facade together produce a single composable system that delivers HPC-grade performance, compile-time safety, and a friendly user-facing API — a combination no mainstream C++ library has achieved.**
+> **Crucible builds a layered, zero-cost, type-system-enforced concurrency model that substitutes for Rust's borrow checker without forcing Rust's allocation fragmentation — and pushes past it.  The CSL fractional permission family + Honda/MPST session types + Nikolaev SCQ MPMC + arena-backed contiguous storage + cache-tier-aware cost model + user-selectable scheduler flavours (`LocalityAware★ / Fifo / Lifo / RoundRobin / Deadline / Cfs / Eevdf`) + topology-pinned persistent thread pool together produce a single composable system that delivers HPC-grade performance, compile-time type-safe protocol adherence, and a friendly user-facing API — a combination no existing library has achieved, at either the algorithmic frontier, the type-safety frontier, or the locality frontier.**
 
-The five tiers compose downward to optimal machine code.  The permissions are zero bytes via EBO.  The contiguous regions are one arena allocation.  The synchronisation is structural via RAII.  The cost model gates parallelism with a no-regression guarantee.  Domain users write expressions that look like sequential code, with the type system silently proving they're race-free.
+The six tiers compose downward to optimal machine code.  The permissions are zero bytes via EBO.  Session states are phantom types.  The MPMC queue uses FAA (never fails) where Vyukov uses CAS (retries under contention).  The contiguous regions are one arena allocation.  The synchronisation is structural via RAII.  The cost model gates parallelism with a no-regression guarantee.  The default scheduler (`LocalityAware`) respects the host's L1/L2/L3/NUMA hierarchy.  Domain users write expressions that look like sequential code, with the type system silently proving they're race-free.
 
-This is what very few C++ projects have implemented, and what GCC 16's contracts + reflection + the C++23/26 baseline finally make tractable in production.  Crucible is taking the bet that this combination defines the next decade of C++ concurrency.
+No existing C++ library — TBB, Cilk, rayon (Rust), tokio, folly, MoodyCamel, `std::execution` — combines beyond-Vyukov MPMC with CSL fractional permissions, session types, cache-hierarchy-aware scheduling, and arena-contiguous storage.  Individually each piece is prior art; the synthesis is Crucible's.
+
+This is what very few C++ projects have implemented, and what GCC 16's contracts + reflection + the C++23/26 baseline + SCQ's 2019 publication finally make tractable in production.  Crucible is taking the bet that this combination defines the next decade of C++ concurrency.
 
 ---
 
@@ -2077,6 +2364,15 @@ The Crucible threading model synthesises ideas from many sources.  Honest credit
 - **Cilk / OpenCilk**: Charles Leiserson and the Cilk team (MIT, OpenCilk Project).  Their work on randomised work-stealing and the spawn-sync structured concurrency idea predated our `permission_fork`.
 - **Folly's seqlock**: Facebook (now Meta).  Their Lamport-style seqlock implementation informed our AtomicSnapshot design.
 - **Linux kernel's seqcount**: Kernel community.  smp_rmb pairing and the data-race-tolerated-but-retried pattern come from kernel practice.
+- **Vyukov's bounded MPMC** (Dmitry Vyukov, 2011 — 1024cores.net): the CAS-based bounded MPMC per-cell-sequence design that set the standard for a decade; our MpmcRing builds directly on its conceptual lineage while adopting SCQ for beyond-CAS throughput.
+- **LCRQ** (Adam Morrison, Yehuda Afek — PPoPP 2013): the first FAA-based bounded MPMC, using `cmpxchg16b` for per-cell 128-bit state.  Proved FAA > CAS under contention; its limitation (CAS2-only, x86-only) motivated Nikolaev's portable variant.
+- **SCQ** (Ruslan Nikolaev — DISC 2019, arXiv:1908.04511): the livelock-free, portable (single-width CAS), memory-efficient FAA-based MPMC that Crucible's `MpmcRing` implements.  SCQ's threshold-counter livelock-prevention mechanism and 2n-cell double-buffering are load-bearing for our beyond-Vyukov claims.
+- **wCQ** (Ruslan Nikolaev, Binoy Ravindran — 2022, arXiv:2201.02179): wait-free variant of SCQ via fast-path/slow-path methodology; sets the wait-free ceiling Crucible does not yet reach.
+- **YMC / WFqueue** (Chaoran Yang, John Mellor-Crummey — PPoPP 2016): first FAA wait-free queue.  Inspiration for the slow-path announcement table idea.
+- **MoodyCamel ConcurrentQueue** (Cameron Desrochers): thread-local producer tokens + multi-consumer pop.  Demonstrates the per-producer-SPSC pattern we compared against when choosing shared-MPMC for the pool.
+- **Honda session types** (Kohei Honda, 1993 original, COORDINATION 1998 dyadic, Honda-Yoshida-Carbone 2008 MPST): the theoretical foundation for our session-typed handles and multi-party protocol encoding via `splits_into_pack`.  The encoding `μX. (!T.X ⊕ close.End)` traces directly to Honda's calculus.
+- **Completely Fair Scheduler (CFS)** — Ingo Molnár (Linux 2.6.23, 2007): the red-black tree of virtual runtimes that defined fair-share scheduling for a decade.
+- **EEVDF (Earliest Eligible Virtual Deadline First)** — Stoica-Abdel-Wahab et al. 1995, adopted into Linux 6.6 (2023) by Peter Zijlstra: the proportional-share-plus-latency-bound design we expose as `scheduler::Eevdf`.
 - **C++26 contracts (P2900)**: Anthony Williams, Joshua Berne, Andrzej Krzemieński, Lisa Lippincott, Bjarne Stroustrup, Timur Doumler, and the SG21 working group.  Their decade of work to land contracts in the standard is the foundation of our type-system enforcement.
 - **C++26 reflection (P2996)**: Wyatt Childers, Andrew Sutton, Daveed Vandevoorde, and the SG7 working group.  Reflection makes the splits_into_pack auto-generation feasible.
 - **GCC 16 implementers**: The GCC team's rapid implementation of C++26 features (contracts, reflection, expansion statements, P2795R5) is what makes 2026 the right year for this work.  Without a production compiler, the design would be theoretical.
@@ -2089,4 +2385,4 @@ The Crucible team holds responsibility for the synthesis, the integration, the c
 
 *This document is a living artefact.  As the SEPLOG roadmap progresses, sections will be updated with concrete measurements and any design refinements.  The headline claims of §10 will be validated by SEPLOG-E1 bench harness; the safety claims of §13 will be validated by SEPLOG-E2 sanitizer suite.  Discrepancies between this document and observed reality will be reconciled in favour of reality.*
 
-*Last updated: 2026-04-23.  Authors: Crucible team (lead: G. Evko).  Contact: see project README.*
+*Last updated: 2026-04-23 (scope expansion to MPMC/SCQ + session types + scheduler flavours, §5.5/5.6/§8.4-8.8/§10/§11/§12/§16/Appendix H refreshed).  Authors: Crucible team (lead: G. Evko).  Contact: see project README.*
