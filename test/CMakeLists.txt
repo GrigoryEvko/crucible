@@ -400,6 +400,14 @@ crucible_test(test_session_queue)
 # (Δ ⊑_s G) and L7 multiparty φ-aggregate.
 crucible_test(test_session_global)
 
+# L5 association Δ ⊑_s G (SEPLOG-I3, task #345) — HYK24's corrected
+# invariant connecting L2 Γ to L4 G via L6 subtyping.  Ships
+# is_associated_v<Γ, G, SessionTag>, projected_context_t<G, S>,
+# AssociatedWith concept, assert_associated helper, and the
+# gated per-role refinement check.  Payoff: write G once, prove G's
+# properties once, inherit the proofs for every associated Δ.
+crucible_test(test_session_assoc)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
