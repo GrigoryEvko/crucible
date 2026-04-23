@@ -1,0 +1,33 @@
+# ═══════════════════════════════════════════════════════════════════
+# ThreadSanitizer suppressions for documented UB-adjacency patterns
+#
+# Crucible's lock-free primitives intentionally rely on UB-adjacent
+# patterns that the C++ standard technically forbids but every
+# production seqlock / hazard-pointer implementation accepts.  TSan
+# correctly flags the inner byte-level races; the framework's retry
+# protocols ensure user-observable correctness.
+#
+# Each suppression below has:
+#   * The exact pattern matched (function/file)
+#   * The Crucible primitive that owns the UB-adjacency
+#   * A reference to the documentation that explains why it's sound
+#
+# Adding a new suppression requires reviewer sign-off + a comment
+# block here justifying the scope.  Suppressing actual bugs is a
+# fireable offense.
+# ═══════════════════════════════════════════════════════════════════
+
+# ── AtomicSnapshot<T> seqlock UB-adjacency ─────────────────────────
+#
+# AtomicSnapshot::publish does memcpy between two seq fetch_adds;
+# AtomicSnapshot::load does memcpy between two seq loads.  The seq
+# retry protocol guarantees torn reads are discarded before being
+# returned to the caller (proven by the test_atomic_snapshot stress
+# test's torn-read invariant).  TSan correctly observes the inner
+# memcpy race but cannot model the retry's invalidation.
+#
+# Same trade-off as Linux kernel's seqcount_t and Folly's seqlock.
+# See AtomicSnapshot.h §UB-adjacency (lines 64-91) for the full
+# rationale and mitigation argument.
+race:crucible::concurrent::AtomicSnapshot
+race:AtomicSnapshot.h
