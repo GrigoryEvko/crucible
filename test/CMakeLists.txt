@@ -415,6 +415,14 @@ crucible_test(test_session_assoc)
 # Supports speculative decoding, Transaction (#101), FLR recovery.
 crucible_test(test_session_checkpoint)
 
+# L11 diagnostic vocabulary (SEPLOG-H2d, task #342) — 11 manifest-
+# bug classification tag types (ProtocolViolation_*, Deadlock_Detected,
+# SubtypeMismatch, CrashBranch_Missing, UnboundedQueue, etc.), each
+# with ::name / ::description / ::remediation constexpr strings.
+# Provides CRUCIBLE_SESSION_ASSERT_CLASSIFIED macro for greppable,
+# classified build-log diagnostics.
+crucible_test(test_session_diagnostic)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
