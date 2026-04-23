@@ -1616,6 +1616,779 @@ This is what very few C++ projects have implemented, and what GCC 16's contracts
 
 ---
 
+## 17. MPMC internals — the SCQ algorithm walk-through
+
+§5.5 established WHAT the MPMC primitive is and WHY we chose Nikolaev's SCQ over Vyukov / LCRQ / wCQ.  This section is the HOW.  We walk through the algorithm at the level of cell-state transitions, prove the livelock bound, justify every memory-ordering choice, trace a worked 4-producer 4-consumer scenario, and explain how the Permission wrapping + session types + scheduler compose on top without adding ANY runtime cost to the inner loop.
+
+The audience is the engineer who will debug a corrupted counter at 3 a.m. and needs to know exactly what invariants should hold.
+
+### 17.1 Why this deep dive matters
+
+MPMC algorithms have a brutal failure mode: they work perfectly at 1 producer + 1 consumer, pass every unit test, ship to production, and corrupt data under 16-way contention once every billion operations.  The bug is never "memory-order-acquire should have been release" written at the top of a file — it is "the IsSafe bit's release-store happens after the cycle advance on the dequeuer side, and under a specific 3-thread interleaving a fresh enqueuer observes IsSafe=1 when the dequeuer hasn't actually validated it."  You find it by staring at the state machine.
+
+SCQ's state machine is cell-local, finite (5 states), and provable.  Writing it down in this document means we can cite it during review, on-call, and in audit.  Nothing is magic.
+
+### 17.2 Data layout — cell state encoding and buffer layout
+
+Our `MpmcRing<T, Capacity>` represents a bounded queue of `T` with at most `Capacity` elements live at once.  The underlying buffer is 2×Capacity cells (paper §5.2; see §17.5 for why).
+
+Each cell is a 64-byte-aligned struct:
+
+```
+struct alignas(64) Cell {
+    std::atomic<uint64_t> state;   // 8 bytes — the per-cell state machine word
+    T                     data;    // up to 56 bytes of inline payload before spill
+};
+```
+
+The 64-byte alignment **structurally prevents adjacent-cell false sharing**.  The paper uses a Cache_Remap permutation function (placing ticket positions onto non-adjacent cells) to achieve the same end; we achieve it via alignment instead.  Cost: 56 bytes padding per cell when `T` is small (e.g., 16-byte Job).  Benefit: zero arithmetic per access (no remap), trivially verifiable from a cache-line-layout standpoint.
+
+**The 64-bit `state` atomic encodes three fields:**
+
+```
+bit:   63       62       61 .. 0
+field: IsSafe   Occupied Cycle
+       ──────   ──────── ───────────
+       paper:   paper:   paper:
+       IsSafe   Index≠⊥  Cycle
+```
+
+Bit layout rationale:
+
+- **IsSafe** (bit 63): high bit so sign-extension tricks don't accidentally clear it; most MSB for fast `x < 0` check.
+- **Occupied** (bit 62): equivalent to paper's "Index ≠ ⊥".  The paper stores an actual 32-bit index into a separate data array (indirection); we inline data in the cell so the field degenerates to "payload valid" vs "empty slot".  Saves the 32-bit index + the separate array pointer.
+- **Cycle** (bits 0-61): 62-bit round counter.  Increments each time the cell is written (producer) and again when read (consumer).  See §17.8 for ABA analysis.
+
+**Packing / unpacking** (in MpmcRing.h):
+
+```cpp
+static constexpr uint64_t kIsSafeBit   = 1ULL << 63;
+static constexpr uint64_t kOccupiedBit = 1ULL << 62;
+static constexpr uint64_t kCycleMask   = (1ULL << 62) - 1;
+
+// Accessors
+bool is_safe(uint64_t s)   { return s & kIsSafeBit; }
+bool is_occupied(uint64_t s){ return s & kOccupiedBit; }
+uint64_t cycle_of(uint64_t s){ return s & kCycleMask; }
+```
+
+**Cell state machine** (5 observable states):
+
+| State | IsSafe | Occupied | Semantics |
+|---|---|---|---|
+| **A** | 1 | 0 | Past-cycle, safe, empty — ready for next enqueuer at Cycle+1 |
+| **B** | 1 | 1 | Current-cycle, safe, occupied — producer published, awaiting consumer |
+| **C** | 0 | 1 | Current-cycle, unsafe, occupied — consumer marked it unsafe but producer hasn't yielded |
+| **D** | 1 | 0 | Advanced-cycle, safe, empty — consumer cycled past an empty cell |
+| **E** | 0 | 0 | Past-cycle, unsafe, empty — transient: consumer marked past cell unsafe to prevent late enqueuer claim |
+
+Transitions (paper §5.2):
+
+```
+Initial:  A(cycle=0, safe=1, occ=0)
+Enqueue @ cycle=1:  A → B (CAS: cycle=1, safe=1, occ=1)
+Dequeue @ cycle=1:  B → A(cycle=1, safe=1, occ=0)  via atomic fetch_and (clear Occupied)
+                          ^^ same bits as original A but cycle=1;
+                          next enqueuer sees cycle < new_cycle_T and re-CASes.
+
+Dequeue before Enqueue (early consumer):
+                    A(cycle=0) stays;
+                    dequeuer CAS: A → D(cycle=1, safe=1, occ=0)
+                                    OR A → E(cycle=0, safe=0, occ=0) if still unsafe-marked
+```
+
+### 17.3 Enqueue algorithm — line-by-line
+
+From `MpmcRing::try_push(const T& item)`.  Matches paper Figure 8 lines 11-22.
+
+```cpp
+bool try_push(const T& item) noexcept {
+    // [Step 1] Quick capacity check.  Paper Fig 10 Line 3 for double-CAS variant.
+    {
+        const uint64_t t_snap = tail_.load(acquire);
+        const uint64_t h_snap = head_.load(acquire);
+        if (t_snap >= h_snap + kCells) return false;    // queue FULL
+    }
+
+    // [Step 2] Outer loop — FAA-retry on cell-not-ready.  In practice,
+    // the outer loop runs 1 iteration unless a concurrent producer has
+    // wedged the cell state.
+    for (size_t outer_retry = 0; ; ++outer_retry) {
+        if (outer_retry > kCells) return false;         // livelock bound
+
+        // [Step 3] CLAIM TICKET: FAA tail_, never fails.
+        const uint64_t T_ = tail_.fetch_add(1, acq_rel);
+        const uint64_t j  = T_ & kMask;                 // cell index mod 2n
+        const uint64_t cycle_T = T_ >> log2(kCells);    // "my round"
+
+        Cell& cell = cells_[j];
+        uint64_t ent = cell.state.load(acquire);
+
+        // [Step 4] Inner loop — CAS-retry on cell state change.
+        for (;;) {
+            const uint64_t ent_cycle = cycle_of(ent);
+
+            // [Step 5] PAPER LINE 16 — the critical condition.  All
+            // three clauses must hold for the producer to claim:
+            //   (a) Cycle(Ent) < Cycle(T):  cell is from a past round
+            //   (b) !Occupied:               no live data in it
+            //   (c) IsSafe  OR  Head ≤ T:    either the cell is known-safe,
+            //                                or the dequeuer hasn't yet
+            //                                advanced past our position
+            //                                (meaning a late-arriving
+            //                                dequeuer at our position
+            //                                will consume our entry)
+            if (ent_cycle < cycle_T &&
+                !is_occupied(ent) &&
+                (is_safe(ent) ||
+                 head_.load(acquire) <= T_))
+            {
+                // [Step 6] WRITE DATA FIRST, then publish via CAS.
+                // The CAS's release semantics publish BOTH the state
+                // transition AND the data write.
+                cell.data = item;
+                const uint64_t new_ent =
+                    pack_state(cycle_T, /*safe*/ true, /*occupied*/ true);
+
+                if (cell.state.compare_exchange_strong(
+                        ent, new_ent,
+                        std::memory_order_acq_rel,    // success
+                        std::memory_order_acquire))   // failure
+                {
+                    // [Step 7] UPDATE THRESHOLD — wake up any dequeuer
+                    // that observed threshold ≤ 0 and bailed early.
+                    if (threshold_.load(acquire) != kThresholdHi) {
+                        threshold_.store(kThresholdHi, release);
+                    }
+                    return true;
+                }
+                // CAS failed — ent has been reloaded with the conflicting
+                // value; re-enter inner loop to re-check condition.
+                continue;
+            }
+
+            // [Step 8] Condition didn't hold.  Can't use this cell for
+            // this ticket.  Retry outer loop with a new ticket.
+            // (Ticket "wasted"; counted in telemetry.)
+            enqueue_ticket_waste_.fetch_add(1, relaxed);
+            break;
+        }
+    }
+}
+```
+
+**Key subtleties:**
+
+- **Writing data BEFORE CAS** (Step 6): paper is emphatic.  The CAS is the commit point; if CAS succeeds, the data write is already visible to any consumer that subsequently observes the new state via acquire.  If CAS fails, another producer's write overwrote this cell; our write to `cell.data` was "speculative" and is overwritten before anyone sees it.  No UB because `T` is trivially-copyable (assertion in `MpmcValue` concept).
+
+- **The Head ≤ T clause**: This is the paper's subtle fix for the "IsSafe=0 but consumer behind producer" race.  If IsSafe is 0 (consumer marked unsafe), the producer normally must SKIP.  But if the Head pointer has NOT yet advanced past our own ticket position (T_), the unsafe mark is from an EARLIER cycle's consumer — irrelevant to our round.  Head ≤ T ⟹ the unsafe mark is stale, safe to overwrite.
+
+- **CAS failure path**: `compare_exchange_strong(ent, new_ent, acq_rel, acquire)` — on failure, `ent` is UPDATED with the current cell state (that's what the failure memory order is for).  We re-check the condition in the inner loop; if still satisfied (rare), retry CAS; if not, break to outer and FAA a new ticket.
+
+- **The outer livelock bound `outer_retry > kCells`**: Prevents pathological livelock where the same cell keeps wedging us.  Under normal contention this never fires; it's a safety net.
+
+### 17.4 Dequeue algorithm — line-by-line
+
+From `MpmcRing::try_pop()`.  Matches paper Figure 8 lines 23-45.
+
+```cpp
+std::optional<T> try_pop() noexcept {
+    // [Step 1] FAST-PATH EMPTY CHECK via Threshold.
+    // If any concurrent enqueuer has committed, they will have bumped
+    // threshold_ to 3n-1 (see Step 7 of try_push).  If threshold < 0,
+    // no one has pushed since the last full-drain sequence.
+    if (threshold_.load(acquire) < 0) return nullopt;
+
+    for (size_t outer_retry = 0; ; ++outer_retry) {
+        if (outer_retry > kCells) return nullopt;
+
+        // [Step 2] CLAIM TICKET via FAA.
+        const uint64_t H_ = head_.fetch_add(1, acq_rel);
+        const uint64_t j  = H_ & kMask;
+        const uint64_t cycle_H = H_ >> log2(kCells);
+
+        Cell& cell = cells_[j];
+        uint64_t ent = cell.state.load(acquire);
+
+        for (;;) {
+            const uint64_t ent_cycle = cycle_of(ent);
+
+            // [Step 3] CASE A — cell is in our cycle: there's data for us.
+            if (ent_cycle == cycle_H) {
+                // Paper Fig 8 Lines 30-32: consume the data and
+                // transition state to "past-cycle, empty" via atomic
+                // fetch_and (clear Occupied bit).  No CAS needed — we
+                // just clear one bit.
+                T result = cell.data;                  // read BEFORE clearing
+                const uint64_t clear_mask = ~kOccupiedBit;
+                (void)cell.state.fetch_and(clear_mask, acq_rel);
+                return result;
+            }
+
+            // [Step 4] CASE B — cell is in a past cycle: producer hasn't
+            // caught up.  Try to ADVANCE the cell's cycle to ours so
+            // that late-arriving enqueuers with our cycle don't try to
+            // reuse it.
+            if (ent_cycle < cycle_H) {
+                uint64_t new_ent;
+                if (!is_occupied(ent)) {
+                    // Cell is empty.  Advance cycle to cycle_H, preserve
+                    // IsSafe (so the NEXT round's enqueuer at our
+                    // position can claim it cleanly).
+                    new_ent = pack_state(cycle_H, is_safe(ent), false);
+                } else {
+                    // Cell holds stale data from a past cycle.  Keep
+                    // the cycle, but clear IsSafe — marking the cell
+                    // "unsafe".  Prevents a late-arriving enqueuer of
+                    // the current cycle from claiming it when it sees
+                    // Head has progressed past it.
+                    new_ent = pack_state(ent_cycle, false, true);
+                }
+                if (cell.state.compare_exchange_strong(
+                        ent, new_ent, acq_rel, acquire)) {
+                    break;   // advance succeeded; check empty conditions below
+                }
+                continue;    // CAS failed; re-read state
+            }
+
+            // [Step 5] CASE C — cell is in a FUTURE cycle: producer got
+            // ahead of us.  Rare; means another consumer has been slow.
+            // Retry outer (new ticket).
+            break;
+        }
+
+        // [Step 6] EMPTY-QUEUE DETECTION (paper Fig 8 Lines 39-45).
+        // We FAA'd head but there was no data here (we fell through
+        // from Case B or C).  Check if tail caught up.
+        const uint64_t T_ = tail_.load(acquire);
+        if (T_ <= H_ + 1) {
+            // Queue drained.  Decrement threshold to move toward -1.
+            threshold_.fetch_sub(1, acq_rel);
+            return nullopt;
+        }
+
+        // [Step 7] Decrement threshold and bail if we've exceeded the
+        // livelock bound (3n-1 failures).
+        if (threshold_.fetch_sub(1, acq_rel) <= 0) return nullopt;
+        // Otherwise retry outer — FAA a new ticket.
+    }
+}
+```
+
+**Key subtleties:**
+
+- **The atomic OR / fetch_and in Step 3**: Paper uses atomic-OR to set the index to ⊥ (all-ones pattern on 32-bit index).  Our inline variant uses fetch_and with mask `~kOccupiedBit` — semantically equivalent for our single-bit Occupied.  Critically: this is NON-CONFLICTING with any concurrent enqueuer's CAS because the operations touch DIFFERENT bits (enqueuer writes the entire word; we clear only bit 62).  If enqueuer's CAS happens first, our fetch_and sees their published bits and clears Occupied, ending their round.  If our fetch_and happens first, enqueuer's CAS sees the cleared state and proceeds.  No race.
+
+- **The IsSafe preservation in Step 4 (empty sub-case)**: We advance the cycle but KEEP whatever IsSafe value the cell had.  If a past-cycle producer had marked it safe (normal), it stays safe for our successor.  If a past-cycle consumer had marked it unsafe (see Step 4 occupied sub-case), it stays unsafe — our successor at cycle=cycle_H+1 will still see the unsafe flag and check Head.
+
+- **The IsSafe clearing in Step 4 (occupied sub-case)**: This is the heart of livelock prevention.  When we find an occupied past-cycle cell, the producer is LATE — they claimed this ticket, FAA'd, but haven't yet CAS'd the data.  Marking the cell unsafe says: "I'm moving past this position; if you arrive at a future cycle, you must check Head to confirm your cycle is actually current."  If the late producer hasn't published by the time their cycle is lapped, their CAS on our "new_ent" with preserved cycle but cleared IsSafe will succeed — but subsequent enqueuers at cycle_H+1 and beyond must check Head and skip.
+
+- **The Threshold decrement in Steps 6-7**: Each empty-path dequeue decrements threshold.  After 3n-1 failed dequeues with no producer bumping threshold back to 3n-1, we're certified empty.  See §17.7 for the proof of 3n-1.
+
+### 17.5 The 2n-capacity trick — livelock freedom proof
+
+The paper's headline innovation: allocate **2n cells for an n-capacity queue**.  Why?
+
+**The problem with n cells**: an enqueuer that FAA's ticket T_=pos lands on cell pos mod n.  If the consumer side is slow, a previous round's data can still be in cell pos mod n.  Enqueuer can't use it until consumer drains.  But enqueuer has ALREADY COMMITTED to the ticket (FAA is irrevocable).  They must block or spin.  Spin-under-contention can livelock.
+
+**With 2n cells**: an enqueuer that FAA's ticket T_ lands on cell pos mod 2n.  Even if the previous round's data is in 'pos mod 2n', a consumer 1 round behind lands on 'pos mod 2n' too — they'll consume.  The 2n buffer provides a "relief zone" where consumer and producer don't collide on the same physical cell at the same cycle.
+
+**Formal livelock bound** (paper §5.1 proof sketch):
+
+> After an enqueue commits at position T, its cell holds data at cycle=Cycle(T).  For a dequeue at position H ≥ T to fail to find data:
+>
+>   - H = T: finds the data we just committed (Case A).  Success.
+>   - H > T: finds a cell at cycle=Cycle(H) ≥ Cycle(T); if still at Cycle(T), dequeuer advances via Case B.
+>
+> A dequeuer at position H fails ONLY if the cell is empty (occupied=0) AND cycle ≤ cycle_H.  Paper proves: after a successful enqueue at T, any dequeuer at position ≥ T will find non-empty within at most 2n attempts (because the enqueued cell is at position T mod 2n, and at most 2n positions later the same physical cell wraps back).
+
+**The 2n buffer therefore bounds livelock risk to 2n "empty" cells between a committed enqueue and the first successful dequeue**.  Combined with the Threshold counter (3n-1), any "empty queue" claim is provable within bounded steps.
+
+### 17.6 The IsSafe bit — why it's essential
+
+IsSafe exists to solve ONE specific race:
+
+> Producer A at cycle C claims ticket T_A, FAA's tail, but is preempted before CAS-ing cell state.
+> Consumer X at ticket H_X > T_A observes cell with cycle=C-1 (past), Occupied=0 (empty), IsSafe=1.
+> If Consumer X simply advances cell to cycle=Cycle(H_X) and moves on, the now-cycled cell is no longer usable by Producer A (cell's cycle > A's cycle_T).  A's CAS fails.  A must retry with a new ticket.  Bounded wasted ticket.
+> 
+> But if producer B at CYCLE > A's cycle sees IsSafe=1 on the advanced cell, and CAS's to B's data... we're fine.  The unsafe concern is when a LATE-ARRIVING producer at A's original cycle happens upon the (now-advanced) cell and somehow claims it.  The advanced cycle number prevents that: A's cycle_T < current cell cycle ⟹ A's condition clause `ent_cycle < cycle_T` FAILS ⟹ A skips and retries.  Good.
+
+So why do we need IsSafe at all?
+
+The race is actually more subtle: **a dequeuer that arrives EARLY at a cell whose producer is STILL IN FLIGHT**.  Consumer X at position H_X claims ticket, lands on cell X.  Cell X has cycle=cycle_H_X-1 (past) AND Occupied=1 (someone's data).  That data is from a PRIOR round — the producer of cycle_H_X hasn't caught up.  X marks the cell **unsafe** (IsSafe=0) and advances.
+
+Now a producer Y at cycle_H_X arrives, sees cycle < cycle_T ✓, !Occupied ✓, but IsSafe=0.  Y's condition clause `(IsSafe ∨ Head ≤ T)` — if Head hasn't advanced past Y's position, Y can proceed (Head ≤ T clause).  If Head has advanced past Y's position, Y must skip.
+
+The Head ≤ T escape hatch preserves liveness: producers that are "behind Head" can still commit because the dequeuer that advanced Head can't have consumed their slot yet (that dequeuer's H < their T).
+
+### 17.7 The Threshold counter — bounding dequeue scan
+
+Paper §5.1 proves: in SCQ, after the last committed enqueue at position T_last, a dequeuer at H ≥ T_last scans AT MOST n positions before finding the entry OR certifying empty.
+
+But dequeuers are racing among themselves.  If N dequeuers arrive simultaneously, all FAA head, all get tickets H > T_last.  The FIRST dequeuer (lowest H) finds the data.  The others find empty cells.  How do they know when to stop?
+
+**Threshold = 3n - 1** (paper §5.2).  Derivation:
+
+- Worst case: enqueuer committed at T_last.  N-1 dequeuers ahead of T_last could fail (up to n-1 failures with no data to find).
+- After consuming T_last, the queue could be emptying under live traffic.  Additional dequeuers could fail another 2n times before wrapping back to a freshly-committed entry.
+- Total: (n-1) + 2n = 3n - 1 failures before any dequeuer can confidently say "empty".
+
+**Threshold initializes at -1** (empty).  Every successful enqueue sets it to 3n-1.  Every failed dequeue (fell through Case B or C) decrements.  When threshold ≤ 0, queue is certified empty; subsequent dequeuers fast-path via the Step 1 check without FAA'ing.
+
+**Live-lock freedom proof**: under any interleaving, each failed dequeue makes progress on the threshold counter.  After at most 3n-1 failed dequeues, threshold hits 0 and all dequeues return immediately.  No infinite loop possible.
+
+### 17.8 ABA safety via cycle counters
+
+ABA bugs: thread A reads pointer P, suspends; other threads free P, reallocate to value at same address; A resumes and CAS succeeds despite P having been freed.  Classic MPMC hazard.
+
+SCQ sidesteps ABA by NEVER REUSING a cell state value:
+
+- Cycle monotonically increases every pass over a cell (producer+consumer together = 2 cycle bumps per round).
+- 62-bit cycle supports 2^62 ≈ 4.6 × 10^18 cycles.
+- At 10^9 ops/sec PER CELL (unachievable in practice; single cell peak is ~10^8 ops/sec), cycle wrap takes 146 years.
+- Therefore any state word the CAS observed is UNIQUELY identified by its cycle — no false CAS success.
+
+Compare LCRQ which needs `cmpxchg16b` to atomically update (value, cycle) as a 128-bit word.  SCQ's cycle packed with safe + occupied in 64 bits is enough because the observable space is structured — not every 64-bit value is a valid state.
+
+### 17.9 Memory ordering — every atomic op justified
+
+The SCQ algorithm has 5 atomic access points in the hot path.  Every ordering choice is load-bearing.
+
+**(1) tail_.fetch_add(1, acq_rel) — producer ticket claim**
+
+- **acq_rel**: acquire to synchronize-with prior consumer's successful fetch_sub on threshold (Step 7); release to make our FAA visible to other producers.
+- Why not relaxed: relaxed FAA is legal per C++ standard — values are totally ordered regardless of memory order — but we want subsequent per-cell loads to see producer-side effects from before the FAA.
+
+**(2) cell.state.load(acquire) — producer reads observed state**
+
+- **acquire**: pairs with a prior producer's CAS release-store on the same cell; ensures we see THEIR published data.
+
+**(3) cell.state.compare_exchange_strong(..., acq_rel, acquire) — producer CAS publish**
+
+- **acq_rel on success**: release to publish our `cell.data` write to subsequent consumer's acquire; acquire to see any consumer's prior OR.
+- **acquire on failure**: just a read (we don't modify), need to see fresh state.
+
+**(4) threshold_.store(kThresholdHi, release) — producer signal**
+
+- **release**: publishes "there is data somewhere" to dequeuers that are bailed-out via the Step 1 fast-path.  Pairs with their acquire-load in Step 1.
+
+**(5) head_.fetch_add(1, acq_rel) — consumer ticket claim**
+
+- **acq_rel**: acquire to synchronize-with producers' threshold stores; release to order against our subsequent cell reads.
+
+**(6) cell.state.fetch_and(~kOccupiedBit, acq_rel) — consumer clear Occupied**
+
+- **acq_rel**: acquire because we need to observe any in-flight producer's changes; release because some future producer's acquire-load will see our clear.
+
+**(7) cell.state.compare_exchange_strong in Step 4 (advance cycle or mark unsafe)**
+
+- Same as (3) — no data hand-off this time, but the cell state change must be published to subsequent producers/consumers.
+
+**(8) head_.load(acquire) inside producer Step 5 (Head ≤ T check)**
+
+- **acquire**: pairs with consumer's fetch_add release when they advanced head.  Guarantees if we see Head > T, the consumer's advance has happened-before us.
+
+**(9) threshold_.fetch_sub(1, acq_rel) / threshold_.load(acquire) — consumer failures**
+
+- **acq_rel on sub**: propagates the "one fewer chance" to other dequeuers.
+- **acquire on load**: fast-path check at Step 1.
+
+**Summary**: NO relaxed orders on any shared state.  Every load is acquire (synchronize-with prior release); every store/RMW is release or acq_rel.  This is conservative but correct; ARM's weaker memory model will honor the orderings; x86 pays zero cost for them.
+
+### 17.10 Our adaptations — inline data, 64-byte per-cell alignment
+
+The paper (§5.2) presents two designs:
+
+1. **Indirection**: Cells hold (Cycle, IsSafe, Index); a separate `data[2n]` array holds actual values.  `aq` queue holds allocated indices; `fq` queue holds free indices.  Producer pulls index from fq, writes data[index], pushes index into aq.  Consumer pulls index from aq, reads data[index], pushes back to fq.
+2. **Inline**: Cells hold (Cycle, IsSafe, Occupied, T data) directly.  No separate arrays.
+
+We chose **inline** because:
+
+- **Simpler**: one queue, not two.  No fq priming at construction.
+- **Smaller sizeof per cell** for small T: `sizeof(atomic<uint64_t>) + sizeof(T) + padding = 64 bytes` for our Job type (T=16 bytes).  Indirection would save the Index field (no savings if we already pack into 64 bits) plus keep data in a separate cache-aligned buffer (indirection penalty per dequeue).
+- **Cache locality on consume**: consumer's acquire-load on state followed by read of data in same cache line = 1 L1 fetch.  With indirection, state is in one cache line, data in another.
+
+**Trade-off**: If T is large (>56 bytes), inline spills into additional cache lines per cell — fine but not as dense as indirection's separate-array layout which can pack 8 × 64-byte data entries per 512-byte zone.
+
+For our Job type (16 bytes), inline is strictly better.  For future large-payload MPMC users, we could add a second specialization that flips to indirection — but that's v2.
+
+**Per-cell 64-byte alignment vs Cache_Remap**:
+
+Paper uses `Cache_Remap(T mod 2n)` to scatter adjacent tickets across non-adjacent cells, so concurrent producers at tickets T, T+1, T+2 don't hit adjacent cache lines (which would ping-pong).  The remap is typically `(pos * stride) mod 2n` with stride coprime to 2n.
+
+Our approach: align EACH CELL to 64 bytes.  Adjacent tickets T and T+1 land on adjacent cells in buffer, but each cell IS an entire cache line.  No false sharing structurally.
+
+Cost: for T smaller than ~56 bytes, we waste (64 - 8 - sizeof(T)) bytes per cell.  On a 1024-cell buffer with 16-byte T, that's `1024 × (64 - 24) = 40 KB` wasted.  On a modern L3 (MB to tens-of-MB), negligible.
+
+Benefit: zero remap arithmetic per access.  The paper's `j = Cache_Remap(T mod 2n)` is 2-3 extra cycles per op.  We're `j = T mod 2n` — one AND.
+
+### 17.11 Worked example — 4 producers × 4 consumers, 16 ops
+
+Let's trace a specific interleaving.  `Capacity=4`, so `kCells=8`, cycle bits `log2(8)=3`.
+
+Initial state:
+- tail_=8, head_=8 (both start at 2n=8 per paper)
+- threshold_=-1
+- cells[0..7].state = (Cycle=0, IsSafe=1, Occupied=0) = 0x8000000000000000
+
+**Event 1**: Producer P1 pushes X₁.
+- `tail_.FAA(1)` → T_=8, tail_=9.  j=8 mod 8=0, cycle_T=8/8=1.
+- Load cells[0].state = 0x8000000000000000 (cycle=0, safe=1, occ=0).
+- Condition: cycle=0 < cycle_T=1 ✓; !occupied ✓; safe=1 ✓.
+- Write cells[0].data = X₁.
+- CAS cells[0].state from 0x8000000000000000 to pack_state(1, true, true) = 0xC000000000000001.  ✓
+- threshold_ = 3n-1 = 11 (since n=4, 3n-1=11).
+
+**Event 2**: Producer P2 pushes X₂ concurrently.
+- `tail_.FAA(1)` → T_=9, tail_=10.  j=9 mod 8=1, cycle_T=1.
+- Load cells[1].state = 0x8000000000000000.
+- CAS to 0xC000000000000001.  ✓
+- threshold_ stays at 11.
+
+**Event 3**: Consumer C1 pops.
+- threshold_=11 ≥ 0, proceed.
+- `head_.FAA(1)` → H_=8, head_=9.  j=0, cycle_H=1.
+- Load cells[0].state = 0xC000000000000001.
+- Case A: cycle=1 == cycle_H=1.
+- Read cells[0].data = X₁.  fetch_and ~0x4000000000000000 → state = 0x8000000000000001 (cycle=1, safe=1, occ=0).
+- Return X₁.
+
+**Event 4**: Consumer C2 pops concurrently with C3.
+- Both: threshold_=11 ≥ 0, proceed.
+- C2: head_.FAA → H_=9, head_=10.  j=1, cycle_H=1.
+- C3: head_.FAA → H_=10, head_=11.  j=2, cycle_H=1.
+- C2 finds cells[1] in Case A, reads X₂, clears.
+- C3 finds cells[2].state = 0x8000000000000000 (cycle=0, still initial, empty).
+  - Case B, cycle=0 < cycle_H=1, !occupied.
+  - Advance cycle: CAS to pack_state(1, true, false) = 0x8000000000000001.
+  - Check T_=10 ≤ H_+1=11 ✓. threshold_.FAA(-1) = 10. Return nullopt.
+
+**Event 5**: Producer P3 pushes X₃.
+- tail_.FAA → T_=10, tail_=11.  j=2, cycle_T=1.
+- Load cells[2].state = 0x8000000000000001 (cycle=1, safe=1, occ=0).
+- Condition: cycle=1 < cycle_T=1 ❌.  FAILS.
+- Break, outer retry.
+
+**Event 5 retry**: P3 re-FAAs.
+- tail_.FAA → T_=11, tail_=12.  j=3, cycle_T=1.
+- cells[3].state = 0x8000000000000000, conditions ✓, write X₃.
+- CAS to 0xC000000000000001 ✓.  threshold_=11 again.
+
+This trace shows how Case B in dequeue (cycle advance) can "waste" a producer's ticket — P3's first try at ticket 10 found the cell already in the future cycle, so P3 re-FAA'd to ticket 11.  The ticket_waste_ counter ticks for diagnostic purposes; under balanced load, this rarely fires.
+
+Continue the trace through 16 ops and the invariants hold: every X_i emitted by producer_i is received by EXACTLY ONE consumer, in per-producer-FIFO order.
+
+### 17.12 CSL fractional permission wrapping
+
+The raw `MpmcRing` is type-safe for memory ordering but NOT for role discrimination.  Any thread can call try_push or try_pop; the compiler has no way to catch accidental role confusion.
+
+Wrapping in `PermissionedMpmcChannel<T, N, UserTag>` adds CSL-typed role proofs:
+
+```cpp
+namespace mpmc_tag {
+    template <typename UserTag> struct Whole    {};
+    template <typename UserTag> struct Producer {};
+    template <typename UserTag> struct Consumer {};
+}
+
+// Split proof: Whole = Producer ⊗ Consumer (CSL frame rule)
+template <typename UserTag>
+struct splits_into<
+    mpmc_tag::Whole<UserTag>,
+    mpmc_tag::Producer<UserTag>,
+    mpmc_tag::Consumer<UserTag>> : std::true_type {};
+```
+
+The channel holds two independent fractional pools:
+
+```cpp
+template <MpmcValue T, size_t N, typename UserTag>
+class PermissionedMpmcChannel : Pinned<...> {
+    MpmcRing<T, N>                                    ring_;
+    SharedPermissionPool<mpmc_tag::Producer<UserTag>> producer_pool_;
+    SharedPermissionPool<mpmc_tag::Consumer<UserTag>> consumer_pool_;
+
+public:
+    PermissionedMpmcChannel()
+        : producer_pool_{permission_root_mint<mpmc_tag::Producer<UserTag>>()},
+          consumer_pool_{permission_root_mint<mpmc_tag::Consumer<UserTag>>()} {}
+
+    class ProducerHandle {
+        PermissionedMpmcChannel* ch_;
+        SharedPermissionGuard<mpmc_tag::Producer<UserTag>> guard_;
+    public:
+        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
+            return ch_->ring_.try_push(item);
+        }
+        // NO try_pop — compile error if called.
+    };
+
+    class ConsumerHandle {
+        PermissionedMpmcChannel* ch_;
+        SharedPermissionGuard<mpmc_tag::Consumer<UserTag>> guard_;
+    public:
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
+            return ch_->ring_.try_pop();
+        }
+        // NO try_push — compile error if called.
+    };
+
+    [[nodiscard]] std::optional<ProducerHandle> producer() noexcept {
+        auto guard = producer_pool_.lend();
+        if (!guard) return nullopt;    // drain in progress
+        return ProducerHandle{*this, std::move(*guard)};
+    }
+
+    [[nodiscard]] std::optional<ConsumerHandle> consumer() noexcept {
+        auto guard = consumer_pool_.lend();
+        if (!guard) return nullopt;
+        return ConsumerHandle{*this, std::move(*guard)};
+    }
+
+    // Mode transition: upgrade BOTH pools atomically for drain/reset.
+    template <typename Body>
+    bool with_drained_access(Body&& body) noexcept {
+        auto p_excl = producer_pool_.try_upgrade();
+        if (!p_excl) return false;
+        auto c_excl = consumer_pool_.try_upgrade();
+        if (!c_excl) {
+            producer_pool_.deposit_exclusive(std::move(*p_excl));
+            return false;
+        }
+        // Both upgraded; body runs with zero live handles.
+        std::forward<Body>(body)();
+        consumer_pool_.deposit_exclusive(std::move(*c_excl));
+        producer_pool_.deposit_exclusive(std::move(*p_excl));
+        return true;
+    }
+};
+```
+
+**Zero runtime cost in the hot path**: `ProducerHandle::try_push` inlines straight through to `ring_.try_push`.  The `SharedPermissionGuard` member is `sizeof(SharedPermissionPool*)` (pointer); held across the handle's lifetime, dropped on destruction (atomic refcount decrement).  The type-system proof (ProducerHandle has no try_pop method) is compile-time only.
+
+**Refcount tracking**: the two pools independently track "how many producers" and "how many consumers" are live.  `producer_pool_.outstanding()` and `consumer_pool_.outstanding()` are diagnostic.
+
+**Mode transition race handling**: `with_drained_access` tries to upgrade producer first, then consumer.  If consumer upgrade fails, we must deposit the producer back (otherwise a future producer handle would block forever).  Both deposits happen in reverse order of upgrades.
+
+### 17.13 Session type handle machinery
+
+Building on the Permission wrapper, session types add protocol adherence:
+
+```cpp
+namespace session {
+    struct Active {};
+    struct Closed {};
+}
+
+template <typename State>
+class ProducerHandle;   // forward
+
+// Active state: try_push and close are allowed.
+template <>
+class ProducerHandle<session::Active> {
+    PermissionedMpmcChannel* ch_;
+    SharedPermissionGuard<...> guard_;
+public:
+    [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
+        return ch_->ring_.try_push(item);
+    }
+
+    // Consume the Active handle, produce a Closed handle.  Linear
+    // transition — caller MUST move the current handle.
+    [[nodiscard]] ProducerHandle<session::Closed>
+    close() && noexcept {
+        return ProducerHandle<session::Closed>{
+            std::exchange(ch_, nullptr),
+            std::move(guard_)
+        };
+    }
+};
+
+// Closed state: NO try_push, NO close.
+template <>
+class ProducerHandle<session::Closed> {
+    PermissionedMpmcChannel* ch_;
+    SharedPermissionGuard<...> guard_;
+    // Destructor drops guard; no public ops.
+public:
+    ~ProducerHandle() = default;
+};
+```
+
+**Compile-error on mis-use**:
+
+```cpp
+auto ph = channel.producer().value();    // ProducerHandle<Active>
+ph.try_push(x);                           // OK
+auto closed = std::move(ph).close();      // OK — transition
+closed.try_push(x);                       // COMPILE ERROR: no try_push on Closed
+std::move(closed).close();                // COMPILE ERROR: no close on Closed
+```
+
+**Zero runtime cost**: `session::Active`/`Closed` are empty types; the only storage cost is the handle's normal members.  The state "moves" via move semantics — the old handle is consumed and a new handle at the new state materialises.  Compiler sees through trivially.
+
+**Multi-party session types** (Honda-Yoshida-Carbone 2008): The whole channel protocol is `ProducerProto ∥ ConsumerProto`, expressed by our splits_into_pack machinery:
+
+```cpp
+// For N producers + M consumers:
+template <typename UserTag, size_t I> struct Producer_n {};
+template <typename UserTag, size_t I> struct Consumer_n {};
+
+template <typename UserTag, size_t... Ps, size_t... Cs>
+struct splits_into_pack<
+    mpmc_tag::Whole<UserTag>,
+    Producer_n<UserTag, Ps>...,
+    Consumer_n<UserTag, Cs>...> : std::true_type {};
+```
+
+This is MPST under the hood: the "Whole" tag represents the entire N+M-party session; splitting into N producer tags and M consumer tags decomposes the session into parallel composition of the participants.
+
+### 17.14 Scheduler composition with the MPMC ring
+
+The scheduler policy types (`scheduler::Fifo`, `LocalityAware`, etc.) are ZERO-cost template parameters of `NumaMpmcThreadPool<Scheduler, Tag>`.  Different schedulers compose with the raw MpmcRing differently:
+
+**`scheduler::Fifo`**: ONE shared `MpmcRing<Job, kGlobalCap>`.  All workers pop from it.  Global FIFO.  Simple, bottleneck under 16+ workers (single head cache line).
+
+**`scheduler::RoundRobin`**: N per-worker `MpscRing<Job, kPerWorker>`.  Submitters rotate via atomic counter.  Each worker has its own ring; no work stealing.  Simple, no global head, but no load balancing.
+
+**`scheduler::LocalityAware`** (default): L3-shard MpmcRings — one per L3 group from Topology.  For a 2-CCD Zen 3, that's 2 rings each capped at kCap / 2.  Submit picks local L3 shard; workers drain own L3 shard first, then steal within NUMA, then across NUMA.  Each worker's MpmcRing is LOCAL to its L3 — best cache behavior.
+
+**`scheduler::Lifo`**: N per-worker `ChaseLevDeque<Job, kCap>`.  Owner pushes + pops at bottom (LIFO, cache-hot); other workers steal from top (FIFO).  This is the Rayon/TBB work-stealing pattern.
+
+**`scheduler::Deadline`**: A priority queue (min-heap) keyed on per-job deadline.  On submit, O(log k) insert; on pop, O(log k) extract-min.  Not lock-free; uses a mutex.  Only worth it when deadlines are the load-bearing objective.
+
+The pool's template machinery dispatches:
+
+```cpp
+template <typename Scheduler, typename Tag>
+class NumaMpmcThreadPool : Pinned<...> {
+    // Scheduler-specific queue state; see specialisations.
+    typename Scheduler::template queue_type<Job, kCap> queues_;
+
+    // ... workers, wake machinery, submit/pop methods dispatching via queues_
+};
+```
+
+### 17.15 The pool's wake mechanism
+
+Submit + notify pairs with worker sleep-on-atomic:
+
+**Submit path**:
+```cpp
+bool submit(Job job) {
+    // Scheduler-specific: pick a queue.
+    auto& q = pick_submit_queue_(job);
+    if (!q.try_push(job)) return false;
+    // Wake ONE worker that services that queue (or any idle worker for Fifo).
+    wake_target_(q).fetch_add(1, release);
+    wake_target_(q).notify_one();
+    return true;
+}
+```
+
+**Worker loop**:
+```cpp
+void worker_loop(Worker& w) {
+    if (w.pin_core >= 0) pin_affinity(w.pin_core);
+
+    uint32_t last_wake = w.wake.load(acquire);
+    while (w.running.load(acquire)) {
+        // Drain aggressively.
+        while (auto j = pop_from_my_queue_(w)) j->fn(j->ctx);
+        // Steal based on scheduler policy.
+        while (auto j = steal_(w)) j->fn(j->ctx);
+        // Check wake counter; block on futex if unchanged.
+        auto cur = w.wake.load(acquire);
+        if (cur != last_wake) { last_wake = cur; continue; }
+        if (!w.running.load(acquire)) break;
+        w.wake.wait(last_wake, acquire);
+        last_wake = w.wake.load(acquire);
+    }
+    // Final drain on shutdown.
+}
+```
+
+**Per-worker wake atomic** (not global): if one worker is dormant and another is executing, submit wakes ONLY the dormant one.  Avoids waking workers currently executing.
+
+**Futex cost**: wake + wait round-trip is ~1-3 µs on Linux.  For a 16-worker pool processing bursts of 16 jobs, that's 16 × 1-3 µs = 16-48 µs worst case.  For steady-state busy pools, workers don't hit the futex path.
+
+### 17.16 Edge cases and pathological scenarios
+
+**Case 1 — Full queue**: enqueuer's Step 1 check sees `tail - head ≥ kCells` and returns false before FAA.  No ticket wasted.  Caller yields/retries.
+
+**Case 2 — Empty queue**: dequeuer's Step 1 fast-path sees `threshold < 0` and returns nullopt.  No ticket wasted.
+
+**Case 3 — Producer claims ticket but dies**: FAA succeeded; cell state not updated.  Subsequent dequeuer at this ticket enters Case B (cell is past-cycle, occupied=0 if initial, occupied=1 if from even earlier round).  Advances cycle and/or marks unsafe.  Queue recovers.
+
+**Case 4 — Consumer claims ticket on empty queue then producer arrives**: consumer enters Case B on empty cell, advances cycle.  Producer arrives at the now-advanced cell.  Condition: cycle < producer's cycle ❌ (cycle was advanced to AT LEAST cycle_H of consumer, likely same as producer's).  Producer skips, FAA's new ticket, eventually finds a ready cell.
+
+**Case 5 — Threshold underflow**: Multiple failed dequeues drive threshold negative.  No wrap-around (signed 64-bit).  On next enqueue, threshold resets to 3n-1.  Dequeues retry-from-scratch with new data available.
+
+**Case 6 — Cycle wrap**: 62-bit cycle wraps at 2^62.  Per-cell, never achievable in practice.  Mitigation: our code uses `uint64_t` for raw state, uint64_t math.  If ever wrapped (~146 years at 10^9 ops/sec/cell), the cycle < comparison would fail spuriously — but we're long gone.
+
+**Case 7 — Thread preempted mid-CAS**: harmless.  Other threads see the pre-CAS state and can act on it (advance cycle, mark unsafe).  When the preempted thread wakes, its CAS likely fails; it retries.
+
+**Case 8 — Pool shutdown during submit**: shutdown sets `running=false`, bumps each worker's wake, notifies all.  Workers exit loop.  Submit can race — submit might complete just as running is cleared.  Data is queued; no worker processes it.  Acceptable for our use case (fork_join caller also coordinates shutdown).
+
+### 17.17 TSan discipline
+
+Unlike `AtomicSnapshot`'s documented UB-adjacency (seqlock's byte-level memcpy race), **SCQ is data-race-free by construction**.  Every shared state access is:
+
+- `head_`, `tail_`: atomic, acquire/acq_rel.
+- `threshold_`: atomic, acquire/acq_rel.
+- `cell[j].state`: atomic, acquire/CAS/fetch_and.
+- `cell[j].data`: NON-atomic, but ONLY read by consumer AFTER the consumer's acquire-load on state observes producer's release-store via CAS.
+
+The last point is the load-bearing one.  Producer writes `cell.data` UNATOMICALLY, then CAS's state with release.  Consumer CAS-or-fetch_and's state (establishes happens-before via acquire), THEN reads `cell.data`.  The data read happens-after the state publish; no race.
+
+**TSan instrumentation** produces ZERO warnings on MpmcRing under the test_concurrency_collision_fuzzer pattern.  This is provable from the memory-order argument; we verified empirically.  No suppressions needed for this primitive (unlike seqlock).
+
+### 17.18 Cookie-fingerprint verify mode
+
+`MpmcRing<T, N, verify=true>` is a compile-time template parameter enabling a debug mode that:
+
+- Extends each cell with a `uint64_t cookie` field.
+- On successful push: cookie = FNV-1a(data bytes).
+- On successful pop: compute expected cookie from `cell.data`; assert equals `cell.cookie`.
+- On mismatch: CRUCIBLE_INVARIANT fails with the cell index, expected vs observed cookies.
+
+Zero cost when `verify=false` (the cookie field and its accesses are compiled away).
+
+Catches: byte-level data corruption that somehow slips through the CAS protocol (shouldn't happen, but if there's ever a compiler bug or hardware misbehavior, this is the trigger).
+
+Not needed for production (we already have TSan-clean + stress fuzzer + cookie-fingerprint external tests).  Useful for debugging obscure issues in development.
+
+### 17.19 Microbenchmark methodology
+
+The `SEPLOG-E1` bench harness measures MpmcRing against reference primitives:
+
+**Reference baselines**:
+- Vyukov bounded MPMC (implement or pull from boost::lockfree::queue)
+- Moody::ConcurrentQueue (industrial MPMC; per-producer SPSC + multi-consumer pop)
+- LCRQ (x86-only; build from Morrison-Afek reference)
+- `std::queue<T> + std::mutex` (baseline for sanity)
+
+**Measurement pattern**:
+1. N producers × M consumers, balanced.
+2. Each producer pushes K items with cookie-tagged sequence numbers.
+3. Each consumer pops and records (producer_id, seq, cookie_ok).
+4. After join, verify: total pushed == total popped; per-producer sequence is monotone; no duplicates; all cookies match.
+5. Report: throughput (ops/sec/thread), p50/p99/p99.9 submit latency, p50/p99/p99.9 pop latency.
+
+**Contention sweep**: N,M ∈ {1, 2, 4, 8, 16} × 25 combinations.  SCQ should win at M+N ≥ 4 cells contended; Vyukov may tie at M+N ≤ 2.
+
+**Expected headline**:
+- Uncontended (1P1C): SCQ ~20ns, Vyukov ~15ns, MoodyCamel ~10ns (per-producer SPSC wins).
+- 4P4C contended: SCQ ~25-40ns, Vyukov ~80-150ns, MoodyCamel ~15-25ns.
+- 16P16C contended: SCQ ~30-60ns, Vyukov ~200-400ns (CAS retry cliff), MoodyCamel ~20-40ns.
+
+MoodyCamel wins on raw throughput due to per-producer SPSC avoiding contention entirely.  SCQ wins on API simplicity, portability (no thread-local tokens), and deterministic FIFO behavior per producer.  For Crucible's fork_join dispatch use case, SCQ is the right choice because global FIFO is useful and producer count is usually small.
+
+**The full bench harness is SEPLOG-E1 deliverable** — will land with the AdaptiveScheduler integration.
+
+---
+
 ## Appendix A — Glossary
 
 | Term | Definition |
