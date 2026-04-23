@@ -117,6 +117,87 @@ struct Accept {
     using next            = K;
 };
 
+// ─── Compositional sugar ────────────────────────────────────────────
+//
+// Convenience aliases built on top of Delegate / Accept for common
+// multi-handoff and proxy patterns.  None adds new machinery — each
+// expands to nested Delegate / Accept combinators and therefore
+// inherits dual, compose, well-formedness, and handle dispatch
+// without needing its own specialisations.
+
+namespace detail {
+
+template <typename... Ts> struct delegate_seq_helper;
+
+template <typename K>
+struct delegate_seq_helper<K> { using type = K; };
+
+template <typename Head, typename... Rest>
+struct delegate_seq_helper<Head, Rest...> {
+    using type = Delegate<Head, typename delegate_seq_helper<Rest...>::type>;
+};
+
+template <typename... Ts> struct accept_seq_helper;
+
+template <typename K>
+struct accept_seq_helper<K> { using type = K; };
+
+template <typename Head, typename... Rest>
+struct accept_seq_helper<Head, Rest...> {
+    using type = Accept<Head, typename accept_seq_helper<Rest...>::type>;
+};
+
+}  // namespace detail
+
+// Delegate_seq<T1, T2, ..., Tn, K> — sequential multi-handoff:
+// hand off T1, then T2, ..., then Tn, then continue as K.  The LAST
+// type argument is always the continuation; earlier arguments are the
+// delegated session types in hand-off order.  Requires at least one
+// type argument (the continuation itself; 0-arg form is ill-formed).
+//
+// Expands to Delegate<T1, Delegate<T2, ..., Delegate<Tn, K>>>.
+//
+// Duality:  dual(Delegate_seq<Ts..., K>) = Accept_seq<Ts..., dual(K)>
+//           — Ts (delegated protocols) NOT dualised; K IS.
+template <typename... Ts>
+using Delegate_seq = typename detail::delegate_seq_helper<Ts...>::type;
+
+// Accept_seq — peer-side companion to Delegate_seq.  A peer receiving
+// the stream of delegated sessions produced by Delegate_seq<Ts..., K>
+// speaks Accept_seq<Ts..., dual(K)>.  Same nesting structure, Accept
+// instead of Delegate.
+template <typename... Ts>
+using Accept_seq = typename detail::accept_seq_helper<Ts...>::type;
+
+// Redelegate<T, K> — middlebox / proxy pattern:  accept a T-typed
+// endpoint, immediately delegate it onward on the same carrier, then
+// continue as K.  The carrier briefly owns the T-session then passes
+// it on; the T-session never interacts with this carrier beyond
+// transport.
+//
+// Canonical Crucible uses:  CNTP Layer 1 → Layer 2 hand-off (Layer 1
+// accepts, then delegates to the Layer 2 worker), Cipher hot-tier
+// promotion to warm-tier (hot accepts the Raft-log endpoint, re-
+// delegates to warm), Keeper proxying an inference session from an
+// admitting peer to the serving worker.
+template <typename T, typename K>
+using Redelegate = Accept<T, Delegate<T, K>>;
+
+// DelegateWithAck<T, Ack, K> — delegate T, then WAIT for a peer
+// acknowledgment of type Ack, then continue as K.  Gives synchronous
+// confirmation of a successful handoff: no dropped handoffs, no
+// silent lost sessions, the delegator learns whether to retry.
+// Useful when the handoff is expensive (large state transfer) or
+// when the session protocol is critical path (a lost inference
+// session should page someone, not just miss an SLA).
+template <typename T, typename Ack, typename K>
+using DelegateWithAck = Delegate<T, Recv<Ack, K>>;
+
+// AcceptWithAck<T, Ack, K> — peer form: accept the delegated endpoint,
+// immediately send an Ack back confirming receipt, continue as K.
+template <typename T, typename Ack, typename K>
+using AcceptWithAck = Accept<T, Send<Ack, K>>;
+
 // ─── Shape traits ───────────────────────────────────────────────────
 
 template <typename P> struct is_delegate : std::false_type {};
@@ -396,6 +477,40 @@ concept AcceptsFrom =
     is_accept_v<CarrierProto>
     && std::is_same_v<typename CarrierProto::delegated_proto, DelegatedProto>;
 
+// Concept describing a callable usable as the Transport argument to
+// SessionHandle<Delegate<T, K>, Resource>::delegate(delegated, transport).
+// Required signature:
+//     void transport(CarrierRes&, DelegatedRes&&)
+//
+// Use at boundary APIs that accept a user-supplied transport so the
+// diagnostic fires at the call site naming Transport / CarrierRes /
+// DelegatedRes rather than deep in delegate()'s template instantiation:
+//
+//     template <typename T>
+//     void handoff_via(
+//         SessionHandle<Delegate<T, End>, MyCarrier>&& h,
+//         SessionHandle<T,               MyDelegated>&& d,
+//         TransportForDelegate<MyCarrier, MyDelegated> auto transport);
+//
+// Zero runtime cost; composable with the other session-type concepts.
+template <typename Transport, typename CarrierRes, typename DelegatedRes>
+concept TransportForDelegate =
+    std::is_invocable_v<Transport, CarrierRes&, DelegatedRes&&>;
+
+// Concept describing a callable usable as the Transport argument to
+// SessionHandle<Accept<T, K>, Resource>::accept(transport).  Required:
+//     DelegatedRes transport(CarrierRes&)
+//
+// Checks BOTH invocability AND return-type agreement.  A transport
+// that returns the wrong type is rejected at the call site rather than
+// silently changing the deduced DelegatedResource of accept() through
+// template argument deduction on the default template parameter.
+template <typename Transport, typename CarrierRes, typename DelegatedRes>
+concept TransportForAccept =
+    std::is_invocable_v<Transport, CarrierRes&>
+    && std::is_same_v<std::invoke_result_t<Transport, CarrierRes&>,
+                       DelegatedRes>;
+
 // Assertion helpers — one-liner at call sites that demand a specific
 // delegation contract.  Emits the diagnostic right at the assert site
 // instead of deep in a template instantiation.
@@ -587,6 +702,128 @@ consteval bool check_assert_delegates() {
     return true;
 }
 static_assert(check_assert_delegates());
+
+// ── Delegate_seq / Accept_seq ──────────────────────────────────────
+
+// Single-argument form is the identity — the bare continuation.
+static_assert(std::is_same_v<Delegate_seq<End>, End>);
+static_assert(std::is_same_v<Accept_seq<End>,   End>);
+
+// Two-argument form expands to exactly one Delegate / Accept wrap.
+static_assert(std::is_same_v<
+    Delegate_seq<DelegatedProto, End>,
+    Delegate<DelegatedProto, End>>);
+static_assert(std::is_same_v<
+    Accept_seq<DelegatedProto, End>,
+    Accept<DelegatedProto, End>>);
+
+// Three-argument form — two hand-offs then the continuation.
+static_assert(std::is_same_v<
+    Delegate_seq<Send<Req, End>, Recv<Ack, End>, End>,
+    Delegate<Send<Req, End>, Delegate<Recv<Ack, End>, End>>>);
+
+// Four-argument form — three hand-offs then the continuation.
+static_assert(std::is_same_v<
+    Delegate_seq<DelegatedProto, DelegatedProto, DelegatedProto, End>,
+    Delegate<DelegatedProto,
+        Delegate<DelegatedProto,
+            Delegate<DelegatedProto, End>>>>);
+
+// Duality:  dual(Delegate_seq<Ts..., K>) = Accept_seq<Ts..., dual(K)>.
+// Ts (delegated protocols) NOT dualised; final continuation K IS.
+static_assert(std::is_same_v<
+    dual_of_t<Delegate_seq<DelegatedProto, DelegatedProto, End>>,
+    Accept_seq<DelegatedProto, DelegatedProto, End>>);
+static_assert(std::is_same_v<
+    dual_of_t<Delegate_seq<DelegatedProto, Send<int, End>>>,
+    Accept_seq<DelegatedProto, Recv<int, End>>>);
+
+// Involution under dual:  dual(dual(Delegate_seq<...>)) == original.
+static_assert(std::is_same_v<
+    dual_of_t<dual_of_t<Delegate_seq<DelegatedProto, DelegatedProto, End>>>,
+    Delegate_seq<DelegatedProto, DelegatedProto, End>>);
+
+// Well-formedness propagates from each component.
+static_assert(is_well_formed_v<
+    Delegate_seq<DelegatedProto, DelegatedProto, End>>);
+static_assert(is_well_formed_v<
+    Accept_seq<DelegatedProto, DelegatedProto, End>>);
+
+// ── Redelegate ─────────────────────────────────────────────────────
+
+// Structural expansion:  accept then delegate on the same carrier.
+static_assert(std::is_same_v<
+    Redelegate<DelegatedProto, End>,
+    Accept<DelegatedProto, Delegate<DelegatedProto, End>>>);
+
+// Dual flips each combinator in place; T stays un-dualised.
+static_assert(std::is_same_v<
+    dual_of_t<Redelegate<DelegatedProto, End>>,
+    Delegate<DelegatedProto, Accept<DelegatedProto, End>>>);
+
+// Involution.
+static_assert(std::is_same_v<
+    dual_of_t<dual_of_t<Redelegate<DelegatedProto, Send<int, End>>>>,
+    Redelegate<DelegatedProto, Send<int, End>>>);
+
+// Well-formed when T and K are.
+static_assert(is_well_formed_v<Redelegate<DelegatedProto, End>>);
+
+// ── DelegateWithAck / AcceptWithAck ────────────────────────────────
+
+struct AckFixture {};
+
+// Structural expansion.
+static_assert(std::is_same_v<
+    DelegateWithAck<DelegatedProto, AckFixture, End>,
+    Delegate<DelegatedProto, Recv<AckFixture, End>>>);
+
+static_assert(std::is_same_v<
+    AcceptWithAck<DelegatedProto, AckFixture, End>,
+    Accept<DelegatedProto, Send<AckFixture, End>>>);
+
+// Duality:  DelegateWithAck ↔ AcceptWithAck.  T preserved; Recv/Send
+// flipped; tail End unchanged.
+static_assert(std::is_same_v<
+    dual_of_t<DelegateWithAck<DelegatedProto, AckFixture, End>>,
+    AcceptWithAck<DelegatedProto, AckFixture, End>>);
+
+// Involution.
+static_assert(std::is_same_v<
+    dual_of_t<dual_of_t<DelegateWithAck<DelegatedProto, AckFixture, End>>>,
+    DelegateWithAck<DelegatedProto, AckFixture, End>>);
+
+// Well-formed.
+static_assert(is_well_formed_v<
+    DelegateWithAck<DelegatedProto, AckFixture, End>>);
+static_assert(is_well_formed_v<
+    AcceptWithAck<DelegatedProto, AckFixture, End>>);
+
+// ── TransportForDelegate / TransportForAccept concepts ─────────────
+//
+// Exercise the concepts using function-pointer types (not lambdas) —
+// stable at namespace scope and side-steps the -Werror=noexcept
+// warning that lambdas trigger when their body might throw.
+
+namespace transport_concept_test {
+    struct CarrierRes   {};
+    struct DelegatedRes {};
+
+    using ValidDelegateTransport = void (*)(CarrierRes&, DelegatedRes&&);
+    using ValidAcceptTransport   = DelegatedRes (*)(CarrierRes&);
+    using WrongArityTransport    = void (*)(int, int, int);
+    using WrongReturnTransport   = int  (*)(CarrierRes&);
+
+    // TransportForDelegate: requires 2-arg signature (CarrierRes&, DelegatedRes&&)
+    static_assert( TransportForDelegate<ValidDelegateTransport, CarrierRes, DelegatedRes>);
+    static_assert(!TransportForDelegate<ValidAcceptTransport,   CarrierRes, DelegatedRes>);
+    static_assert(!TransportForDelegate<WrongArityTransport,    CarrierRes, DelegatedRes>);
+
+    // TransportForAccept: requires 1-arg signature + exact return type
+    static_assert( TransportForAccept<ValidAcceptTransport,    CarrierRes, DelegatedRes>);
+    static_assert(!TransportForAccept<ValidDelegateTransport,  CarrierRes, DelegatedRes>);
+    static_assert(!TransportForAccept<WrongReturnTransport,    CarrierRes, DelegatedRes>);
+}
 
 }  // namespace detail::delegate_self_test
 

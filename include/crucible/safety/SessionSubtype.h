@@ -319,6 +319,161 @@ consteval void assert_subtype_sync() noexcept {
         "for the failing T and U.");
 }
 
+// ─── Protocol equivalence ──────────────────────────────────────────
+//
+// Two protocols are EQUIVALENT when each is a subtype of the other —
+// bidirectional subtyping.  Equivalent protocols describe the same
+// set of runtime traces; they're interchangeable in every context.
+// Useful for:
+//
+//   * proving a pattern-library alias expands to a hand-written type
+//     (RequestResponse<Req, Resp> ≡ Loop<Send<Req, Recv<Resp, Continue>>>)
+//   * witnessing protocol refactor preserved meaning
+//   * proving two independently-derived protocol definitions coincide
+
+template <typename T, typename U>
+inline constexpr bool equivalent_sync_v =
+    is_subtype_sync_v<T, U> && is_subtype_sync_v<U, T>;
+
+template <typename T, typename U>
+concept EquivalentSync = equivalent_sync_v<T, U>;
+
+// ─── Strict (proper) subtype relation ──────────────────────────────
+//
+// T is a STRICT subtype of U when T ⩽ U holds but U ⩽ T does not —
+// i.e., T is a GENUINE refinement of U, not merely an equivalent
+// restatement.  Useful for catching non-refinements: a proposed
+// protocol evolution that claimed to narrow a Select (or widen an
+// Offer) but in fact produced an equivalent type will yield
+// is_strict_subtype_sync_v = false, flagging that no actual
+// refinement happened.
+//
+// Strict subtyping is:
+//   * irreflexive     (T </ T, because T ⩽ T is always bidirectional)
+//   * antisymmetric   (T < U and U < T cannot both hold)
+//   * transitive      (T < U and U < V ⇒ T < V)
+//
+// i.e., a strict partial order on session types.  Use when you want to
+// REJECT equivalent protocols; prefer plain is_subtype_sync_v / the
+// EquivalentSync concept when equivalence is an acceptable outcome.
+
+template <typename T, typename U>
+inline constexpr bool is_strict_subtype_sync_v =
+    is_subtype_sync_v<T, U> && !is_subtype_sync_v<U, T>;
+
+template <typename T, typename U>
+concept StrictSubtypeSync = is_strict_subtype_sync_v<T, U>;
+
+// ─── Subtype chain ──────────────────────────────────────────────────
+//
+// Verify a chain of subtyping relations: T_1 ⩽ T_2 ⩽ ... ⩽ T_n.
+// Useful for validating a protocol-evolution ladder (v1 → v2 → v3 → v4
+// is monotone).  By transitivity, T_1 ⩽ T_n follows.
+//
+//   static_assert(subtype_chain_v<ProtoV1, ProtoV2, ProtoV3>);
+
+namespace detail::subtype {
+
+template <typename First, typename... Rest>
+struct subtype_chain_impl : std::true_type {};
+
+template <typename A, typename B, typename... Rest>
+struct subtype_chain_impl<A, B, Rest...>
+    : std::bool_constant<
+          is_subtype_sync_v<A, B> &&
+          subtype_chain_impl<B, Rest...>::value
+      > {};
+
+}  // namespace detail::subtype
+
+template <typename... Ts>
+inline constexpr bool subtype_chain_v =
+    detail::subtype::subtype_chain_impl<Ts...>::value;
+
+// ─── Client / server compatibility ──────────────────────────────────
+//
+// Common FFI / cross-process question: "is this CLIENT's protocol
+// compatible with that SERVER's protocol?"  The answer: the client's
+// protocol must be a subtype of the DUAL of the server's protocol.
+// (Server offers dual(ServerProto); client needs a sub-proto of that
+// to be a safe substitute.)
+
+template <typename ClientProto, typename ServerProto>
+concept CompatibleClient =
+    is_subtype_sync_v<ClientProto, dual_of_t<ServerProto>>;
+
+template <typename ServerProto, typename ClientProto>
+concept CompatibleServer =
+    is_subtype_sync_v<ServerProto, dual_of_t<ClientProto>>;
+
+// ─── Protocol-evolution helper ──────────────────────────────────────
+//
+// Named intent-revealing wrapper around the subtype check: "is
+// NewProto a safe refinement of OldProto?"  Intended for use at
+// protocol-version boundaries:
+//
+//   check_protocol_evolution<CipherProtoV1, CipherProtoV2>();
+//
+// Semantically identical to assert_subtype_sync<NewProto, OldProto>();
+// the name signals intent to readers and reviewers.
+
+template <typename OldProto, typename NewProto>
+consteval void check_protocol_evolution() noexcept {
+    static_assert(is_subtype_sync_v<NewProto, OldProto>,
+        "crucible::safety::proto::check_protocol_evolution: "
+        "NewProto is not a safe refinement of OldProto.  "
+        "A valid refinement may: narrow a Select (pick fewer branches), "
+        "widen an Offer (handle more branches), or restrict a payload "
+        "type via is_subsort specialisation.  It may NOT: add a Select "
+        "branch, remove an Offer branch, change Send<->Recv, or swap "
+        "Select<->Offer.");
+}
+
+// ─── Equivalence + compatibility assertion helpers ────────────────
+//
+// One-line consteval assertions for call-site use.  Each emits its
+// diagnostic at the assertion site, not deep inside a metafunction
+// instantiation — cuts typical failure diagnostic noise from ~2K
+// lines to ~3 lines of actionable message.
+
+template <typename T, typename U>
+consteval void assert_equivalent_sync() noexcept {
+    static_assert(equivalent_sync_v<T, U>,
+        "crucible::safety::proto::assert_equivalent_sync: "
+        "T and U are not synchronously equivalent (not bidirectional "
+        "subtypes).  Both is_subtype_sync_v<T, U> and "
+        "is_subtype_sync_v<U, T> must hold.  Common causes: asymmetric "
+        "Select/Offer branch counts; differing payload types; "
+        "mismatched Loop structure.  See the six Gay-Hole rules at the "
+        "top of SessionSubtype.h for the positive direction of each.");
+}
+
+template <typename ClientProto, typename ServerProto>
+consteval void assert_compatible_client() noexcept {
+    static_assert(CompatibleClient<ClientProto, ServerProto>,
+        "crucible::safety::proto::assert_compatible_client: "
+        "ClientProto is not a synchronous subtype of dual(ServerProto).  "
+        "A client may safely talk to a server only when the client's "
+        "protocol is a subtype of the server's DUAL (the server offers "
+        "dual(ServerProto); the client must be a sub-protocol of that).  "
+        "Common causes: forgot to dualise; both written from the same "
+        "perspective (e.g., both send-first); mismatched payload types; "
+        "client's Select picks branches the server's Offer does not "
+        "provide.");
+}
+
+template <typename ServerProto, typename ClientProto>
+consteval void assert_compatible_server() noexcept {
+    static_assert(CompatibleServer<ServerProto, ClientProto>,
+        "crucible::safety::proto::assert_compatible_server: "
+        "ServerProto is not a synchronous subtype of dual(ClientProto).  "
+        "Symmetric to assert_compatible_client — see its diagnostic "
+        "for the structural rule.  Typically ServerProto = "
+        "dual(ClientProto) holds and this assertion is trivially true; "
+        "when it fails, one side has been refactored in a way that "
+        "breaks the symmetric sub-protocol relation.");
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Framework self-test static_asserts ────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -612,5 +767,86 @@ template <typename T, typename U>
 consteval bool requires_subtype() { return true; }
 
 static_assert(requires_subtype<DS1, DS2>());
+
+// ─── Strict subtype relation ───────────────────────────────────────
+
+// Reflexive pairs are equivalent — never strict subtypes of themselves.
+static_assert(!is_strict_subtype_sync_v<End, End>);
+static_assert(!is_strict_subtype_sync_v<Send<int, End>, Send<int, End>>);
+static_assert(!is_strict_subtype_sync_v<DS1, DS1>);
+
+// Narrower Select is a STRICT subtype of a wider Select.
+static_assert( is_strict_subtype_sync_v<DS1, DS2>);
+static_assert(!is_strict_subtype_sync_v<DS2, DS1>);  // wider is not a subtype
+
+// Wider Offer is a STRICT subtype of a narrower Offer.
+static_assert( is_strict_subtype_sync_v<DO1, DO2>);
+static_assert(!is_strict_subtype_sync_v<DO2, DO1>);
+
+// Shape-mismatched pairs are never subtypes in either direction.
+static_assert(!is_strict_subtype_sync_v<Send<int, End>, Recv<int, End>>);
+static_assert(!is_strict_subtype_sync_v<Recv<int, End>, Send<int, End>>);
+
+// Concept form compiles at namespace scope.
+template <typename T, typename U>
+    requires StrictSubtypeSync<T, U>
+consteval bool requires_strict_subtype() { return true; }
+
+static_assert(requires_strict_subtype<DS1, DS2>());
+
+// ─── Equivalence ──────────────────────────────────────────────────
+
+static_assert(equivalent_sync_v<End, End>);
+static_assert(equivalent_sync_v<Send<int, End>, Send<int, End>>);
+static_assert(equivalent_sync_v<DS1, DS1>);
+
+// Strictly-related pairs are NOT equivalent.
+static_assert(!equivalent_sync_v<DS1, DS2>);
+static_assert(!equivalent_sync_v<DO1, DO2>);
+
+// ─── Subtype chain ────────────────────────────────────────────────
+
+static_assert( subtype_chain_v<TSelectT, TSelectU, TSelectV>);
+static_assert( subtype_chain_v<TOfferW,  TOfferX,  TOfferY>);
+static_assert( subtype_chain_v<End>);        // single element trivially chained
+static_assert( subtype_chain_v<End, End>);   // reflexive 2-chain
+
+// Wrong direction breaks the chain.
+static_assert(!subtype_chain_v<TSelectU, TSelectT, TSelectV>);
+
+// ─── Client / server compatibility ────────────────────────────────
+
+namespace client_server_test {
+    struct Query {};
+    struct Reply {};
+    using ReqRespClient = Loop<Send<Query, Recv<Reply, Continue>>>;
+    using ReqRespServer = Loop<Recv<Query, Send<Reply, Continue>>>;
+
+    // Server's dual is exactly the client's protocol (duality involution).
+    static_assert(std::is_same_v<dual_of_t<ReqRespServer>, ReqRespClient>);
+
+    // Standard compatibility: client is a subtype of server's dual.
+    static_assert( CompatibleClient<ReqRespClient, ReqRespServer>);
+    // And symmetrically for the server side.
+    static_assert( CompatibleServer<ReqRespServer, ReqRespClient>);
+
+    // Using the server's protocol where the client is expected is a
+    // shape mismatch (Recv<Query, ...> at the head instead of
+    // Send<Query, ...>) — rejected at the concept level.
+    static_assert(!CompatibleClient<ReqRespServer, ReqRespServer>);
+    static_assert(!CompatibleServer<ReqRespClient, ReqRespClient>);
+}
+
+// ─── Additional assertion-helper compile-tests ────────────────────
+
+consteval bool check_additional_asserts() {
+    assert_equivalent_sync<DS1, DS1>();
+    assert_compatible_client<client_server_test::ReqRespClient,
+                              client_server_test::ReqRespServer>();
+    assert_compatible_server<client_server_test::ReqRespServer,
+                              client_server_test::ReqRespClient>();
+    return true;
+}
+static_assert(check_additional_asserts());
 
 }  // namespace crucible::safety::proto::detail::subtype_self_test
