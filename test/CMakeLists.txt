@@ -393,6 +393,13 @@ crucible_test(test_session_crash)
 # L6.5 SISO async subtyping.
 crucible_test(test_session_queue)
 
+# L4 global types + projection (SEPLOG-H2g, task #339) — End_G,
+# Transmission, Choice, Rec_G, Var_G, StopG; RoleList + insert_unique
+# + union_roles + RolesOf; is_global_well_formed_v; plain_merge_t;
+# Project<G, Role> / project_t<G, Role>.  Gates L5 association
+# (Δ ⊑_s G) and L7 multiparty φ-aggregate.
+crucible_test(test_session_global)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
