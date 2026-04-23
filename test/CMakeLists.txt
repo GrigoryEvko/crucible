@@ -259,6 +259,15 @@ function(crucible_test name)
   endif()
 
   add_test(NAME ${name} COMMAND ${name})
+
+  # Wire in TSan suppressions for known UB-adjacency patterns
+  # (seqlock byte-race, etc.).  See test/tsan-suppressions.txt for
+  # the curated list and rationale.
+  if(CRUCIBLE_TSAN)
+    set_tests_properties(${name} PROPERTIES
+      ENVIRONMENT
+        "TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tsan-suppressions.txt:halt_on_error=1")
+  endif()
 endfunction()
 
 crucible_test(test_safety)
@@ -312,6 +321,7 @@ crucible_test(test_permission_shared)
 crucible_test(test_owned_region)
 crucible_test(test_read_view)
 crucible_test(test_topology)
+crucible_test(test_permissioned_snapshot)
 crucible_test(test_region_cache)
 crucible_test(test_numerical_recipe)
 crucible_test(test_recipe_pool)
