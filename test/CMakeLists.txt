@@ -408,6 +408,13 @@ crucible_test(test_session_global)
 # properties once, inherit the proofs for every associated Δ.
 crucible_test(test_session_assoc)
 
+# CheckpointedSession combinator (SEPLOG-L2, task #362,
+# session_types.md Appendix D.2) — first-class structural combinator
+# with base/rollback branches; dual/compose/well-formed/subtype
+# specialisations + SessionHandle with .base() / .rollback() methods.
+# Supports speculative decoding, Transaction (#101), FLR recovery.
+crucible_test(test_session_checkpoint)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
