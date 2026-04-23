@@ -108,6 +108,38 @@ int main() {
         });
     }());
 
+    // ── PERF-2: fast_symbol(SymbolId) hit — O(1) parallel-array load
+    //
+    // After registration via symbol(name, sid, flags), subsequent
+    // lookups by SymbolId hit a parallel-array slot — no Swiss-table
+    // probe, no hashing.  Compare against `symbol() [hit]` above:
+    // expected ~1.5 ns vs ~6.7 ns.
+    reports.push_back([&]{
+        ExprPool pool{a};
+        // Register first via the slow path; SymbolId is then cached.
+        const Expr* sx = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
+        bench::do_not_optimize(sx);
+        // volatile sid so the compiler can't constant-fold the lookup.
+        volatile uint32_t v_sid = 0;
+        return bench::run("fast_symbol(sid=0) [hit, PERF-2]", [&]{
+            const Expr* r = pool.fast_symbol(SymbolId{v_sid});
+            bench::do_not_optimize(r);
+        });
+    }());
+
+    // PERF-2: fast_symbol miss path (sid out of registered range).
+    // Hits the bounds check + nullptr return — no array access.
+    reports.push_back([&]{
+        ExprPool pool{a};
+        const Expr* sx = pool.symbol(a, "x", SymbolId{0}, NUM_FLAGS);
+        bench::do_not_optimize(sx);
+        volatile uint32_t v_sid = 999;  // never registered
+        return bench::run("fast_symbol(sid=999) [miss, PERF-2]", [&]{
+            const Expr* r = pool.fast_symbol(SymbolId{v_sid});
+            bench::do_not_optimize(r);
+        });
+    }());
+
     // ── Binary / ternary cache hits ───────────────────────────────────
     reports.push_back([&]{
         ExprPool pool{a};
