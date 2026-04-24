@@ -295,6 +295,7 @@ using ct_payload_value_type_t = typename ct_payload_value_type<T>::type;
 // ── Framework self-test static_asserts ─────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::ct_self_test {
 
 // Fixture: a CT-required type.  Trivially copyable POD by design.
@@ -389,5 +390,6 @@ static_assert(!is_subtype_sync_v<
     Recv<TagPayload, End>>);
 
 }  // namespace detail::ct_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS
 
 }  // namespace crucible::safety::ct

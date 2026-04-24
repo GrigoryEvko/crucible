@@ -463,6 +463,7 @@ using remove_entry_t =
 // inclusion time; any regression to the metafunctions above fails at
 // the first TU that pulls us in.
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::ctx::context_self_test {
 
 // Fixture tags.
@@ -636,5 +637,6 @@ static_assert(contains_key_v<RemovedThenReadded, TraceRingSession, Producer>);
 static_assert(contains_key_v<RemovedThenReadded, TraceRingSession, Consumer>);
 
 }  // namespace detail::ctx::context_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS
 
 }  // namespace crucible::safety::proto

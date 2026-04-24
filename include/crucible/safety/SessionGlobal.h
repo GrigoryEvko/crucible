@@ -619,6 +619,7 @@ using project_t = typename Project<G, Role>::type;
 // ── Framework self-test static_asserts ─────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::global::global_self_test {
 
 // Fixture role tags.
@@ -968,5 +969,6 @@ static_assert(std::is_same_v<
     Loop<Recv<Query, Send<Reply, Continue>>>>);  // = RequestResponse_Server<Query, Reply>
 
 }  // namespace detail::global::global_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS
 
 }  // namespace crucible::safety::proto

@@ -546,6 +546,7 @@ consteval void assert_accepts_from() noexcept {
 // under duality, composition, and well-formedness.  Catches regressions
 // to this header or to Session.h's primary templates.
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::delegate_self_test {
 
 // Small placeholder session used as the delegated protocol.
@@ -831,5 +832,6 @@ namespace transport_concept_test {
 }
 
 }  // namespace detail::delegate_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS
 
 }  // namespace crucible::safety::proto

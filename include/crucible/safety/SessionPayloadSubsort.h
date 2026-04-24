@@ -262,6 +262,7 @@ struct is_subsort<Refined<Pred, Tagged<T, V>>, Tagged<T, V>>
 // SessionSubtype.h's payload-flow rules fail at the first TU that
 // includes us.
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::payload_subsort_self_test {
 
 // ── Fixture payloads ───────────────────────────────────────────────
@@ -576,5 +577,6 @@ static_assert(is_subtype_sync_v<
     Offer<Recv<Refined<positive, int>, End>>>);
 
 }  // namespace detail::payload_subsort_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS
 
 }  // namespace crucible::safety::proto

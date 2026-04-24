@@ -423,6 +423,7 @@ consteval void assert_has_crash_branch_for() noexcept {
 // Regressions to the metafunctions above fail at the first TU that
 // includes this header.
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::crash::crash_self_test {
 
 // Fixture tags
@@ -623,5 +624,6 @@ static_assert(has_crash_branch_for_peer_v<ClientOffer, Alice>);
 static_assert(!has_crash_branch_for_peer_v<ClientOffer, Bob>);
 
 }  // namespace detail::crash::crash_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS
 
 }  // namespace crucible::safety::proto

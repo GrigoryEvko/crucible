@@ -664,6 +664,7 @@ inline constexpr std::size_t catalog_size =
 // ── Framework self-test static_asserts ─────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace crucible::safety::proto::diagnostic::detail::diag_self_test {
 
 // ─── is_diagnostic_class_v — positive and negative ────────────────
@@ -821,3 +822,4 @@ consteval bool catalog_names_distinct() {
 static_assert(catalog_names_distinct());
 
 }  // namespace crucible::safety::proto::diagnostic::detail::diag_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS

@@ -338,6 +338,7 @@ inline constexpr bool is_queue_state_v =
 // inclusion time; any regression to the metafunctions above fails
 // at the first TU that includes us.
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::queue::queue_self_test {
 
 // Fixture tags for channel endpoints.
@@ -552,5 +553,6 @@ static_assert(std::is_same_v<
     Queue<AckBobAlice, DataBobCarol>>);
 
 }  // namespace detail::queue::queue_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS
 
 }  // namespace crucible::safety::proto

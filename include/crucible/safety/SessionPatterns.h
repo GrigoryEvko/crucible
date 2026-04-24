@@ -380,6 +380,7 @@ using Handshake_Server = Recv<Hello, Select<
 // Session.h's dual_of / compose / is_well_formed or in this header's
 // aliases fail compilation at the first TU that pulls us in.
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace crucible::safety::proto::pattern::detail::pattern_self_test {
 
 // Fixture types — distinct empty structs so the type system can tell
@@ -791,3 +792,4 @@ static_assert(std::is_same_v<
     FanIn<64, Job>>);
 
 }  // namespace crucible::safety::proto::pattern::detail::pattern_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS

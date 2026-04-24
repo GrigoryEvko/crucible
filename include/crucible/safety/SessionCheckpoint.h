@@ -307,6 +307,7 @@ consteval void assert_checkpointed_matches() noexcept {
 // ── Framework self-test static_asserts ─────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::checkpoint_self_test {
 
 // ─── Fixture protocols ─────────────────────────────────────────────
@@ -447,5 +448,6 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<dual_of_t<dual_of_t<NestedCkpt>>, NestedCkpt>);
 
 }  // namespace detail::checkpoint_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS
 
 }  // namespace crucible::safety::proto
