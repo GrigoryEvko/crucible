@@ -520,6 +520,16 @@ crucible_test(test_lazy_established_channel)
 # auth-handshake worked example from §13.
 crucible_test(test_session_declassify)
 
+# CTPayload + ct::eq for crypto-payload sessions (#409, SAFEINT-C20).
+# CTPayload<T> raises constant-time-comparison discipline to the API
+# surface: requires_ct<T> trait opt-in, move-only wrapper with
+# explicitly-deleted operator==/!= (forces ct::eq), .bytes() byte-
+# view for CT byte-comparison, .declassify_ct<Policy>() for explicit
+# extraction.  Verifies the API-level rejection of naive comparison,
+# subsort asymmetry, and the HMAC-tag verification worked example
+# from §20.
+crucible_test(test_session_ct)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
