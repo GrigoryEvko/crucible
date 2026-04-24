@@ -442,6 +442,33 @@ struct BranchCount_Mismatch : tag_base {
         "ADD branches.";
 };
 
+// ─── Tag added by the self-transmission rejection (#363) ──────────
+//
+// Cover the SessionGlobal.h is_global_well_formed_v rejection of
+// Transmission<X, X, P, G> and Choice<X, X, ...>: a participant
+// cannot send to itself in MPST — the From and To roles must be
+// distinct.  Without this rejection, nonsensical types pass WF
+// check and project to silently-broken local types.
+
+struct ProtocolViolation_Self_Loop : tag_base {
+    static constexpr std::string_view name = "ProtocolViolation_Self_Loop";
+    static constexpr std::string_view description =
+        "A global type contains a Transmission<X, X, P, G> or "
+        "Choice<X, X, ...> — a self-transmission where the same role "
+        "is both sender and receiver.  In MPST, every communication "
+        "event is between two DISTINCT participants; a role cannot "
+        "send to itself.  Such types project to nonsense local types "
+        "(the same role would be both Send and Recv at the same "
+        "position) and would deadlock at runtime if reachable.";
+    static constexpr std::string_view remediation =
+        "Check that From and To in your Transmission / Choice are "
+        "different role tags.  Common cause: copy-paste error where "
+        "both sides reference the same role tag.  If you genuinely "
+        "want a participant's local-only state transition, model it "
+        "as a Machine<State> transition outside the global protocol "
+        "rather than as a self-Transmission.";
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── is_diagnostic_class_v<T> ───────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -565,7 +592,7 @@ inline constexpr bool is_diagnostic_v = is_diagnostic<T>::value;
 // ── Catalog enumeration ────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Compile-time tuple of all 22 shipped tag types — useful for
+// Compile-time tuple of all 23 shipped tag types — useful for
 // reflection-based tooling, catalog printers, and diagnostic UIs.
 // First 11 entries are the original L11 vocabulary; positions 11-17
 // were added by the L11 retrofit (#388) to cover concrete user-
@@ -574,6 +601,7 @@ inline constexpr bool is_diagnostic_v = is_diagnostic<T>::value;
 // is the SessionResource pin-discipline tag added by integration
 // task #406.  Positions 19-21 are the structural-mismatch refinements
 // added by the subtype_rejection_reason metafunction (#380).
+// Position 22 is the self-transmission tag added by #363.
 
 using Catalog = std::tuple<
     ProtocolViolation_Label,
@@ -597,7 +625,8 @@ using Catalog = std::tuple<
     SessionResource_NotPinned,
     ShapeMismatch_SendVsRecv,
     ShapeMismatch_SelectVsOffer,
-    BranchCount_Mismatch>;
+    BranchCount_Mismatch,
+    ProtocolViolation_Self_Loop>;
 
 inline constexpr std::size_t catalog_size =
     std::tuple_size_v<Catalog>;
@@ -709,8 +738,8 @@ static_assert(D2::name == "CrashBranch_Missing");
 
 // ─── Catalog ──────────────────────────────────────────────────────
 
-static_assert(catalog_size == 22);
-static_assert(std::tuple_size_v<Catalog> == 22);
+static_assert(catalog_size == 23);
+static_assert(std::tuple_size_v<Catalog> == 23);
 
 // Each catalog entry is a valid diagnostic class.
 static_assert(is_diagnostic_class_v<std::tuple_element_t<0,  Catalog>>);
@@ -718,12 +747,14 @@ static_assert(is_diagnostic_class_v<std::tuple_element_t<5,  Catalog>>);
 static_assert(is_diagnostic_class_v<std::tuple_element_t<10, Catalog>>);
 static_assert(is_diagnostic_class_v<std::tuple_element_t<18, Catalog>>);
 static_assert(is_diagnostic_class_v<std::tuple_element_t<21, Catalog>>);
+static_assert(is_diagnostic_class_v<std::tuple_element_t<22, Catalog>>);
 
 // The catalog starts with ProtocolViolation_Label and ends with
-// BranchCount_Mismatch (ordering is deterministic).  The original 11
-// L11 tags fill positions [0, 10]; the 7 retrofit tags (#388) fill
-// [11, 17]; the SessionResource tag (#406) fills 18; the three
-// subtype-rejection-reason refinements (#380) fill 19-21.
+// ProtocolViolation_Self_Loop (ordering is deterministic).  The
+// original 11 L11 tags fill positions [0, 10]; the 7 retrofit tags
+// (#388) fill [11, 17]; the SessionResource tag (#406) fills 18;
+// the three subtype-rejection-reason refinements (#380) fill 19-21;
+// the self-transmission tag (#363) fills 22.
 static_assert(std::is_same_v<
     std::tuple_element_t<0, Catalog>, ProtocolViolation_Label>);
 static_assert(std::is_same_v<
@@ -740,6 +771,8 @@ static_assert(std::is_same_v<
     std::tuple_element_t<20, Catalog>, ShapeMismatch_SelectVsOffer>);
 static_assert(std::is_same_v<
     std::tuple_element_t<21, Catalog>, BranchCount_Mismatch>);
+static_assert(std::is_same_v<
+    std::tuple_element_t<22, Catalog>, ProtocolViolation_Self_Loop>);
 
 // ─── Macro compile-test ───────────────────────────────────────────
 

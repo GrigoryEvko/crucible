@@ -349,6 +349,12 @@ using roles_of_t = typename RolesOf<G>::type;
 //
 // Every Var_G must have an enclosing Rec_G.  Nested Rec_G shadow
 // outer ones — Var_G binds to nearest enclosing.
+//
+// Additional check (#363): every Transmission<From, To, P, G> and
+// Choice<From, To, Bs...> must have From ≠ To — a participant cannot
+// send to itself in MPST.  Self-transmissions project to nonsense
+// local types (the same role would appear at both Send and Recv
+// positions) and would deadlock at runtime if reachable.
 
 template <typename G, typename RecCtx = void>
 struct is_global_well_formed;
@@ -362,12 +368,16 @@ struct is_global_well_formed<Var_G, RecCtx>
 
 template <typename From, typename To, typename P, typename G, typename RecCtx>
 struct is_global_well_formed<Transmission<From, To, P, G>, RecCtx>
-    : is_global_well_formed<G, RecCtx> {};
+    : std::bool_constant<
+          !std::is_same_v<From, To>
+          && is_global_well_formed<G, RecCtx>::value
+      > {};
 
 template <typename From, typename To, typename... Bs, typename RecCtx>
 struct is_global_well_formed<Choice<From, To, Bs...>, RecCtx>
     : std::bool_constant<
-          (is_global_well_formed<typename Bs::next, RecCtx>::value && ...)
+          !std::is_same_v<From, To>
+          && (is_global_well_formed<typename Bs::next, RecCtx>::value && ...)
       > {};
 
 template <typename Body, typename RecCtx>
@@ -381,6 +391,58 @@ struct is_global_well_formed<StopG<Peer>, RecCtx> : std::true_type {};
 template <typename G>
 inline constexpr bool is_global_well_formed_v =
     is_global_well_formed<G>::value;
+
+// ─── Self-loop detection (#363) ────────────────────────────────────
+//
+// has_self_loop_v<G> is true iff G CONTAINS a Transmission<X, X, ...>
+// or Choice<X, X, ...> at any position.  Distinct from
+// is_global_well_formed_v's negation: is_global_well_formed_v can
+// also return false for a free Var_G; this trait pinpoints the
+// self-transmission case specifically, so the diagnostic helper
+// below can give a routed message instead of the generic
+// "ill-formed" failure.
+
+template <typename G>
+struct has_self_loop : std::false_type {};
+
+template <typename From, typename To, typename P, typename G>
+struct has_self_loop<Transmission<From, To, P, G>>
+    : std::bool_constant<
+          std::is_same_v<From, To> || has_self_loop<G>::value
+      > {};
+
+template <typename From, typename To, typename... Bs>
+struct has_self_loop<Choice<From, To, Bs...>>
+    : std::bool_constant<
+          std::is_same_v<From, To>
+          || (has_self_loop<typename Bs::next>::value || ...)
+      > {};
+
+template <typename Body>
+struct has_self_loop<Rec_G<Body>> : has_self_loop<Body> {};
+
+template <typename G>
+inline constexpr bool has_self_loop_v = has_self_loop<G>::value;
+
+// assert_no_self_loop<G>() — consteval helper that fires a routed
+// [ProtocolViolation_Self_Loop] static_assert when G contains a
+// self-transmission anywhere in its tree.  Use at protocol
+// declaration sites for the cleanest diagnostic; the framework-
+// controlled tag prefix is stable across GCC versions (#371).
+
+template <typename G>
+consteval void assert_no_self_loop() noexcept {
+    static_assert(!has_self_loop_v<G>,
+        "crucible::session::diagnostic [ProtocolViolation_Self_Loop]: "
+        "global type contains a Transmission<X, X, ...> or "
+        "Choice<X, X, ...> — a participant cannot send to itself in "
+        "MPST.  Check that From and To in your Transmission / Choice "
+        "are different role tags.  Common cause: copy-paste error "
+        "where both sides reference the same role tag.  If you "
+        "genuinely want a participant's local-only state transition, "
+        "model it as a Machine<State> transition outside the global "
+        "protocol rather than as a self-Transmission.");
+}
 
 // ═════════════════════════════════════════════════════════════════════
 // ── plain_merge_t<Ts...> ───────────────────────────────────────────
@@ -662,6 +724,70 @@ static_assert(is_global_well_formed_v<Rec_G<Rec_G<Transmission<Alice, Bob, Ping,
 // StopG is well-formed in any context.
 static_assert(is_global_well_formed_v<StopG<Alice>>);
 static_assert(is_global_well_formed_v<Transmission<Alice, Bob, Ping, StopG<Alice>>>);
+
+// ─── Self-transmission rejection (#363) ────────────────────────────
+//
+// Transmission<X, X, ...> and Choice<X, X, ...> are nonsensical —
+// a participant cannot send to itself in MPST.  is_global_well_formed_v
+// rejects; has_self_loop_v identifies the case explicitly.
+
+// Self-Transmission rejected.
+static_assert(!is_global_well_formed_v<Transmission<Alice, Alice, Ping, End_G>>);
+static_assert(!is_global_well_formed_v<Transmission<Bob,   Bob,   Ack,  End_G>>);
+
+// Self-Choice rejected.
+static_assert(!is_global_well_formed_v<Choice<Alice, Alice,
+    BranchG<Ping, End_G>>>);
+static_assert(!is_global_well_formed_v<Choice<Bob, Bob,
+    BranchG<Ping, End_G>,
+    BranchG<Ack,  End_G>>>);
+
+// Cross-role transmissions still well-formed (positive control).
+static_assert( is_global_well_formed_v<Transmission<Alice, Bob,   Ping, End_G>>);
+static_assert( is_global_well_formed_v<Transmission<Bob,   Alice, Ack,  End_G>>);
+
+// Self-loop NESTED inside a well-formed prefix is also rejected
+// (the non-self-loop prefix doesn't redeem the inner self-loop).
+static_assert(!is_global_well_formed_v<Transmission<Alice, Bob, Ping,
+    Transmission<Alice, Alice, Ack, End_G>>>);
+
+// Same nested check for Choice.
+static_assert(!is_global_well_formed_v<Choice<Alice, Bob,
+    BranchG<Ping, End_G>,
+    BranchG<Ack,  Transmission<Bob, Bob, Ping, End_G>>>>);
+
+// Inside Rec_G: the recursion variable is fine; the self-loop is
+// what makes it ill-formed.
+static_assert( is_global_well_formed_v<
+    Rec_G<Transmission<Alice, Bob, Ping, Var_G>>>);
+static_assert(!is_global_well_formed_v<
+    Rec_G<Transmission<Alice, Alice, Ping, Var_G>>>);
+
+// has_self_loop_v identifies self-loops independently of WF status.
+static_assert(!has_self_loop_v<Transmission<Alice, Bob, Ping, End_G>>);
+static_assert( has_self_loop_v<Transmission<Alice, Alice, Ping, End_G>>);
+static_assert( has_self_loop_v<Choice<Alice, Alice, BranchG<Ping, End_G>>>);
+
+// Self-loop nested anywhere in the tree.
+static_assert( has_self_loop_v<Transmission<Alice, Bob, Ping,
+    Transmission<Alice, Alice, Ack, End_G>>>);
+static_assert( has_self_loop_v<Choice<Alice, Bob,
+    BranchG<Ping, End_G>,
+    BranchG<Ack,  Transmission<Bob, Bob, Ping, End_G>>>>);
+
+// has_self_loop_v on End_G / Var_G / StopG is false.
+static_assert(!has_self_loop_v<End_G>);
+static_assert(!has_self_loop_v<Var_G>);
+static_assert(!has_self_loop_v<StopG<Alice>>);
+
+// assert_no_self_loop<G>() is consteval and compiles for clean Gs.
+consteval bool check_assert_no_self_loop_compiles() {
+    assert_no_self_loop<End_G>();
+    assert_no_self_loop<Transmission<Alice, Bob, Ping, End_G>>();
+    assert_no_self_loop<Rec_G<Transmission<Alice, Bob, Ping, Var_G>>>();
+    return true;
+}
+static_assert(check_assert_no_self_loop_compiles());
 
 // ─── plain_merge_t ─────────────────────────────────────────────────
 
