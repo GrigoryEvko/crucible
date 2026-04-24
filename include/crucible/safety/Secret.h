@@ -67,12 +67,57 @@ public:
     Secret& operator=(Secret&&)       = default;
     ~Secret()                         = default;
 
-    // Transform — operations on Secret produce Secret.
+    // Transform — operations on Secret produce Secret.  The callable
+    // `f` receives the classified payload as T&& and must return a
+    // VALUE (not a reference, not void).  Two classes of "capture
+    // leak" are closed at compile time (#151):
+    //
+    //   1. Reference-return — `f` returning `T&`, `const T&`, or a
+    //      pointer-to-moved-from-storage would produce `Secret<T&>`
+    //      whose referent is either (a) the moved-from internal
+    //      `value_` (UAF on the next Secret dtor), or (b) a member
+    //      of `f`'s closure that the caller can still mutate.
+    //      Either way classified data escapes via ordinary pointer
+    //      aliasing, bypassing the `declassify<Policy>` audit trail.
+    //
+    //   2. Void-return — `f` returning void produces `Secret<void>`,
+    //      which is meaningless.  The likely intent is a side-
+    //      effecting observation on the classified payload — that
+    //      belongs in `declassify<Policy>()` where the audit trail
+    //      survives review.
+    //
+    // `f` is TRUSTED for the duration of the call; transform does
+    // NOT replace `declassify<Policy>` — it produces a DIFFERENT
+    // classified value from the original.  Stateless transformations
+    // (decode, parse, hash-fold) are the intended use.
+    //
+    // `requires std::invocable<F, T&&>` turns the "f isn't callable"
+    // case into a clean concept-failure at the call site rather than
+    // a deduction-failure inside `invoke_result_t`.
     template <typename F>
+        requires std::invocable<F, T&&>
     [[nodiscard]] constexpr auto transform(F&& f) &&
+        noexcept(std::is_nothrow_invocable_v<F, T&&>)
         -> Secret<std::invoke_result_t<F, T&&>>
     {
-        return Secret<std::invoke_result_t<F, T&&>>{
+        using R = std::invoke_result_t<F, T&&>;
+        static_assert(!std::is_reference_v<R>,
+            "[Capture_Leak_Reference_Return] Secret::transform(f): f"
+            " must return by value.  A reference return aliases either"
+            " the moved-from secret storage (UAF) or a member of f's"
+            " closure (silent declassification bypassing"
+            " declassify<Policy>).  Change f's return type to a value,"
+            " or — if the intent is to observe classified data — call"
+            " declassify<Policy>() first to leave an audit trail."
+            " (#151, Secret.h transform())");
+        static_assert(!std::is_void_v<R>,
+            "[Capture_Leak_Void_Return] Secret::transform(f): f must"
+            " return a value.  void → Secret<void> is meaningless; the"
+            " likely intent is a side-effecting observation on the"
+            " classified payload — that belongs in declassify<Policy>(),"
+            " not transform()."
+            " (#151, Secret.h transform())");
+        return Secret<R>{
             std::forward<F>(f)(std::move(value_))
         };
     }
