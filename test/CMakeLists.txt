@@ -479,6 +479,15 @@ crucible_test(test_session_payload_subsort)
 # protocol handles without firing the abandonment-check.
 crucible_test(test_machine_session_bridge)
 
+# Non-consuming protocol-position views (#405, SAFEINT-B16).
+# Position-tagged ScopedView<SessionHandle, At*> borrows that let
+# external code inspect a handle's protocol position without
+# consuming it.  Verifies handle_is_at_v positives + negatives
+# across all SessionHandle specialisations, view_ok ADL hook,
+# mint_session_view requires-clause rejection, multiple-coexisting-
+# views, and the typed-metrics callback pattern from §16.
+crucible_test(test_session_view)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
