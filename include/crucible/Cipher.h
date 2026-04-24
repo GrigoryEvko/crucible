@@ -141,8 +141,11 @@ class CRUCIBLE_OWNER Cipher {
         // Idempotent: if the file already exists, same bytes → skip write.
         if (std::filesystem::exists(path)) return hash;
 
-        // Estimate serialization size conservatively.
-        const size_t cap = estimate_serial_size(region);
+        // Estimate serialization size conservatively.  #105:
+        // estimate_serial_size returns Positive<std::size_t> — the
+        // `.value()` unwrap is the explicit, grep-discoverable bridge
+        // from the refinement domain back to std::vector's ctor.
+        const size_t cap = estimate_serial_size(region).value();
         std::vector<uint8_t> buf(cap);
         const size_t n = serialize_region(region, meta_log, std::span<uint8_t>{buf});
         if (n == 0) return ContentHash{};
@@ -388,7 +391,22 @@ class CRUCIBLE_OWNER Cipher {
     }
 
     // Conservative upper-bound on serialized size for a RegionNode.
-    static size_t estimate_serial_size(const RegionNode* region) {
+    //
+    // Return type is `Positive<std::size_t>` (#105): the estimate is
+    // always structurally ≥ 352 bytes (64 header + 32 fixed fields +
+    // 256 tail headroom, all unconditional), so the `positive`
+    // predicate is satisfied by construction.  The Refined wrapper
+    // makes that non-zero invariant a TYPE-LEVEL claim — if a future
+    // refactor zeros out the tail addition or conditionalizes the
+    // headers, the Refined ctor's contract fires INSIDE this
+    // function rather than the downstream `vector<uint8_t>(cap)`
+    // silently allocating an empty buffer that `serialize_region`
+    // then writes into as a zero-length span.
+    //
+    // Callers unwrap via `.value()` at the `std::vector<uint8_t>`
+    // construction site — explicit, grep-discoverable, zero cost.
+    static crucible::safety::Positive<std::size_t>
+    estimate_serial_size(const RegionNode* region) {
         size_t sz = 64; // header
         sz += 32;       // region fixed fields
         if (region->plan) {
@@ -406,7 +424,7 @@ class CRUCIBLE_OWNER Cipher {
             sz += n_in           * sizeof(uint32_t); // input_slot_ids
             sz += n_out          * sizeof(uint32_t); // output_slot_ids
         }
-        return sz + 256; // headroom
+        return crucible::safety::Positive<std::size_t>{sz + 256}; // headroom
     }
 
     static uint64_t now_ns() {
