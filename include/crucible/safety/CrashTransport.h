@@ -91,6 +91,15 @@
 
 namespace crucible::safety::proto {
 
+// Forward-declared so the pass-key class can friend it (#430).  Real
+// definition appears below CrashEvent.
+template <typename PeerTag,
+          typename InnerHandle,
+          typename Resource,
+          typename Reason>
+[[nodiscard]] constexpr auto wrap_crash_return(
+    InnerHandle&& inner, Reason reason_tag, Resource recovered) noexcept;
+
 // ═════════════════════════════════════════════════════════════════════
 // ── CrashEvent<PeerTag> — the unexpected payload ───────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -102,13 +111,124 @@ namespace crucible::safety::proto {
 //
 // Resource is captured by-value to give the caller exclusive
 // ownership; the wrapper is destroyed in the act of returning.
+//
+// ─── Construction is RESTRICTED (#430) ──────────────────────────────
+//
+// The constructor is PRIVATE.  The ONLY type permitted to construct a
+// CrashEvent is the friend factory `wrap_crash_return`, which bundles
+// the construction with the mandatory `inner.detach(reason)` step that
+// every wrapper crash-path must perform.  This makes the bug from
+// #400 — wrapper crash-paths that returned `std::unexpected(CrashEvent
+// {...})` WITHOUT first detaching their inner SessionHandle, causing
+// a silent abandonment abort via the inner's destructor — STRUCTURALLY
+// IMPOSSIBLE.
+//
+// Callers READ via the public `resource` field (left public so existing
+// `event.resource.field` access patterns in tests / recovery handlers
+// keep working unchanged).
+//
+// Audit:
+//   grep "wrap_crash_return"   — every detach + unexpected pair
+//   grep "CrashEvent<.*>{"     — should match only wrap_crash_return's
+//                                 body and (legacy) doc-comment text
+
+// ─── Pass-key for CrashEvent's restricted ctor (#430) ──────────────
+//
+// The pass-key idiom: an empty type whose ctor is private, with the
+// only friend being the helper that's authorized to construct CrashEvent.
+// Anyone else attempting to spell `CrashEvent<P, R>{key, r}` cannot
+// produce a `key` of type `WrapCrashReturnKey` to begin with.  This
+// sidesteps the template-friend signature-matching subtleties that
+// arise when friending a function template directly.
+class WrapCrashReturnKey {
+    constexpr WrapCrashReturnKey() noexcept = default;
+
+    // Only the wrap_crash_return helper can mint a key.
+    template <typename PeerTag2, typename InnerHandle2,
+              typename Resource2, typename Reason2>
+    friend constexpr auto wrap_crash_return(InnerHandle2&&, Reason2, Resource2) noexcept;
+};
 
 template <typename PeerTag, typename Resource>
-struct CrashEvent {
+class CrashEvent {
+public:
     using peer          = PeerTag;
     using resource_type = Resource;
+
+    // Public read-access — backward-compatible with handler code that
+    // reads `event.resource.field` directly (#430 keeps this open).
     Resource resource;
+
+    // Pass-key-protected ctor.  Direct user construction
+    // `CrashEvent<P, R>{r}` cannot compile — the user has no way to
+    // mint a `WrapCrashReturnKey`.  The only authorized constructor
+    // is `wrap_crash_return`, which is friended on the key class.
+    constexpr CrashEvent(WrapCrashReturnKey, Resource r) noexcept
+        : resource{std::move(r)} {}
 };
+
+// ═════════════════════════════════════════════════════════════════════
+// ── wrap_crash_return — wrapper-side crash-path bundler (#430) ─────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Every wrapper around SessionHandle that returns
+// `std::expected<NextHandle, CrashEvent<PeerTag, Resource>>` on a
+// crash path MUST perform two operations atomically:
+//
+//   1. Detach the inner SessionHandle (`inner.detach(reason_tag)`) so
+//      its destructor sees the consumed flag and skips the abandonment
+//      abort.  Without this, the inner — at non-terminal protocol state
+//      — fires SessionHandleBase's destructor abort when the wrapper's
+//      crash-path stack frame unwinds.  This is exactly the bug shipped
+//      in #400's first replace_all that caught only Send's path,
+//      leaving recv / select / pick / branch silently aborting via the
+//      inner's destructor; debug-instrumentation localised the hole and
+//      the fix was a second pass that applied detach uniformly.
+//
+//   2. Construct the `CrashEvent<PeerTag, Resource>{recovered}` and
+//      wrap in `std::unexpected{...}` so the caller gets the typed
+//      crash signal back through `std::expected`'s error channel.
+//
+// `wrap_crash_return` BUNDLES the two operations.  It is the ONLY
+// construction site for `CrashEvent` (per the friend declaration above),
+// so wrapper crash-paths that try to spell the unexpected return
+// manually (`return std::unexpected(CrashEvent<P, R>{...})`) get a
+// crisp compile error pointing at the private ctor — the bug from
+// #400 becomes structurally impossible.
+//
+// Audit (review-discoverable, grep-mechanical):
+//
+//   grep "wrap_crash_return"   — every wrapper crash-path site
+//   grep "CrashEvent<.*>{"     — must match ONLY wrap_crash_return's
+//                                 body and doc comments; any other
+//                                 hit is a wrapper trying to bypass
+//                                 the discipline (review-reject)
+
+template <typename PeerTag,
+          typename InnerHandle,
+          typename Resource,
+          typename Reason>
+[[nodiscard]] constexpr auto wrap_crash_return(
+    InnerHandle&& inner,
+    Reason reason_tag,
+    Resource recovered) noexcept
+{
+    // The detach call is what saves the inner from firing its
+    // destructor's abandonment abort.  detach()'s `requires
+    // DetachReason<Reason>` constraint enforces that `reason_tag`
+    // is a tag from `detach_reason::*`; mismatched / missing tags
+    // produce the named diagnostic from #376.
+    std::move(inner).detach(reason_tag);
+    // Mint a WrapCrashReturnKey (only this function can — its private
+    // ctor is friended on this template) and pass it to CrashEvent's
+    // pass-key-protected ctor.  Direct user `CrashEvent<P, R>{r}`
+    // construction outside this body cannot mint a key, so the
+    // unexpected-without-detach pattern from #400 is now a compile
+    // error rather than a runtime abort.
+    return std::unexpected{
+        CrashEvent<PeerTag, Resource>{
+            WrapCrashReturnKey{}, std::move(recovered)}};
+}
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Forward declaration + factory ──────────────────────────────────
@@ -239,10 +359,16 @@ public:
             // TransportClosedOutOfBand exactly names the audit class
             // (peer-crash detected at a lower layer).
             Resource recovered = std::move(inner_.resource());
-            std::move(inner_).detach(detach_reason::TransportClosedOutOfBand{});
             this->mark_consumed_();
-            return std::unexpected(
-                CrashEvent<PeerTag, Resource>{std::move(recovered)});
+            // wrap_crash_return (#430) bundles `inner.detach(reason)` +
+            // `return std::unexpected(CrashEvent{...})`.  CrashEvent's
+            // ctor is private; this helper is its only friend, so a
+            // wrapper that returned unexpected without detaching would
+            // not compile (the bug from #400's first replace_all).
+            return wrap_crash_return<PeerTag>(
+                std::move(inner_),
+                detach_reason::TransportClosedOutOfBand{},
+                std::move(recovered));
         }
         auto next = std::move(inner_).send(std::move(value), std::move(transport));
         this->mark_consumed_();
@@ -305,10 +431,16 @@ public:
             // Recover Resource then explicitly detach the inner
             // handle so its destructor's abandonment-check passes.
             Resource recovered = std::move(inner_.resource());
-            std::move(inner_).detach(detach_reason::TransportClosedOutOfBand{});
             this->mark_consumed_();
-            return std::unexpected(
-                CrashEvent<PeerTag, Resource>{std::move(recovered)});
+            // wrap_crash_return (#430) bundles `inner.detach(reason)` +
+            // `return std::unexpected(CrashEvent{...})`.  CrashEvent's
+            // ctor is private; this helper is its only friend, so a
+            // wrapper that returned unexpected without detaching would
+            // not compile (the bug from #400's first replace_all).
+            return wrap_crash_return<PeerTag>(
+                std::move(inner_),
+                detach_reason::TransportClosedOutOfBand{},
+                std::move(recovered));
         }
         auto [value, next] = std::move(inner_).recv(std::move(transport));
         this->mark_consumed_();
@@ -372,10 +504,16 @@ public:
             // Recover Resource then explicitly detach the inner
             // handle so its destructor's abandonment-check passes.
             Resource recovered = std::move(inner_.resource());
-            std::move(inner_).detach(detach_reason::TransportClosedOutOfBand{});
             this->mark_consumed_();
-            return std::unexpected(
-                CrashEvent<PeerTag, Resource>{std::move(recovered)});
+            // wrap_crash_return (#430) bundles `inner.detach(reason)` +
+            // `return std::unexpected(CrashEvent{...})`.  CrashEvent's
+            // ctor is private; this helper is its only friend, so a
+            // wrapper that returned unexpected without detaching would
+            // not compile (the bug from #400's first replace_all).
+            return wrap_crash_return<PeerTag>(
+                std::move(inner_),
+                detach_reason::TransportClosedOutOfBand{},
+                std::move(recovered));
         }
         auto next = std::move(inner_).template select<I>(std::move(transport));
         this->mark_consumed_();
@@ -397,10 +535,16 @@ public:
             // Recover Resource then explicitly detach the inner
             // handle so its destructor's abandonment-check passes.
             Resource recovered = std::move(inner_.resource());
-            std::move(inner_).detach(detach_reason::TransportClosedOutOfBand{});
             this->mark_consumed_();
-            return std::unexpected(
-                CrashEvent<PeerTag, Resource>{std::move(recovered)});
+            // wrap_crash_return (#430) bundles `inner.detach(reason)` +
+            // `return std::unexpected(CrashEvent{...})`.  CrashEvent's
+            // ctor is private; this helper is its only friend, so a
+            // wrapper that returned unexpected without detaching would
+            // not compile (the bug from #400's first replace_all).
+            return wrap_crash_return<PeerTag>(
+                std::move(inner_),
+                detach_reason::TransportClosedOutOfBand{},
+                std::move(recovered));
         }
         auto next = std::move(inner_).template select<I>();
         this->mark_consumed_();
@@ -467,10 +611,16 @@ public:
             // Recover Resource then explicitly detach the inner
             // handle so its destructor's abandonment-check passes.
             Resource recovered = std::move(inner_.resource());
-            std::move(inner_).detach(detach_reason::TransportClosedOutOfBand{});
             this->mark_consumed_();
-            return std::unexpected(
-                CrashEvent<PeerTag, Resource>{std::move(recovered)});
+            // wrap_crash_return (#430) bundles `inner.detach(reason)` +
+            // `return std::unexpected(CrashEvent{...})`.  CrashEvent's
+            // ctor is private; this helper is its only friend, so a
+            // wrapper that returned unexpected without detaching would
+            // not compile (the bug from #400's first replace_all).
+            return wrap_crash_return<PeerTag>(
+                std::move(inner_),
+                detach_reason::TransportClosedOutOfBand{},
+                std::move(recovered));
         }
         auto next = std::move(inner_).template pick<I>();
         this->mark_consumed_();

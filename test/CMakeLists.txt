@@ -784,6 +784,18 @@ crucible_neg_compile_test(neg_scheduler_policy_non_inheritance
 crucible_neg_compile_test(neg_session_detach_no_reason
     "DetachReason_Required")
 
+# Direct CrashEvent construction is rejected (#430) — the pass-key
+# `WrapCrashReturnKey` has a private default ctor and friends only
+# the `wrap_crash_return` helper, so wrapper code that tries to
+# fabricate a CrashEvent without going through the helper (the bug
+# pattern from #400 — return std::unexpected without first calling
+# inner.detach()) gets a crisp compile error naming the pass-key.
+# This makes the silent-abandonment-via-inner-destructor failure
+# mode structurally impossible at the type level, complementing
+# #429's runtime diagnostic improvements.
+crucible_neg_compile_test(neg_crash_event_direct_construction
+    "WrapCrashReturnKey")
+
 # Crash-walker deep-tree rejection (#368).
 #
 # [FRAMEWORK-CONTROLLED] assert_every_offer_has_crash_branch_for
