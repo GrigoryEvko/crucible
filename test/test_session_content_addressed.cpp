@@ -83,8 +83,8 @@ int run_content_addressed_loop() {
     (void)k1; (void)k2; (void)k3;
 
     // Infinite Loop<Send<...Continue>> — detach intentionally.
-    std::move(p3).detach();
-    std::move(s3).detach();
+    std::move(p3).detach(detach_reason::InfiniteLoopProtocol{});
+    std::move(s3).detach(detach_reason::InfiniteLoopProtocol{});
 
     if (wire.size() != 0) {
         std::fprintf(stderr, "ca loop: wire not drained (size=%zu)\n",
@@ -114,8 +114,8 @@ int run_raw_loop() {
                      k1.content_hash, k2.content_hash);
         return 1;
     }
-    std::move(p2).detach();
-    std::move(s2).detach();
+    std::move(p2).detach(detach_reason::InfiniteLoopProtocol{});
+    std::move(s2).detach(detach_reason::InfiniteLoopProtocol{});
     return 0;
 }
 

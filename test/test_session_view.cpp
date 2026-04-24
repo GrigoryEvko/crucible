@@ -273,7 +273,7 @@ int run_loop_body_position() {
         [](FakeRes&, Msg) noexcept {});
     static_assert(std::is_same_v<decltype(next),
                                   SessionHandle<Body, FakeRes, P>>);
-    std::move(next).detach();
+    std::move(next).detach(detach_reason::TestInstrumentation{});
     return 0;
 }
 

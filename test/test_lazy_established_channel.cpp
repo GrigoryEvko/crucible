@@ -87,7 +87,7 @@ int run_establish_then_observe_yields_handle() {
 
     // Detach to clean up — this is a Loop<Select<...>> protocol; the
     // handle is at the body's head (Select) after Loop unrolls.
-    std::move(*h).detach();
+    std::move(*h).detach(detach_reason::TestInstrumentation{});
     return 0;
 }
 
@@ -118,7 +118,7 @@ int run_drive_protocol_after_observe() {
     if (storage.call_count != 1) return 4;
 
     // `next` is at the loop body's head again (Continue resolved).
-    std::move(next).detach();
+    std::move(next).detach(detach_reason::TestInstrumentation{});
     return 0;
 }
 
@@ -142,9 +142,9 @@ int run_multiple_observers_share_resource() {
 
     // Each handle is independent (move-only); detach them
     // individually.
-    std::move(*h1).detach();
-    std::move(*h2).detach();
-    std::move(*h3).detach();
+    std::move(*h1).detach(detach_reason::TestInstrumentation{});
+    std::move(*h2).detach(detach_reason::TestInstrumentation{});
+    std::move(*h3).detach(detach_reason::TestInstrumentation{});
     return 0;
 }
 
@@ -191,7 +191,7 @@ int run_worked_example_vessel_startup() {
                     c->sentinel = v;
                     c->call_count++;
                 });
-            std::move(next).detach();
+            std::move(next).detach(detach_reason::TestInstrumentation{});
             worker_processed.fetch_add(1, std::memory_order_release);
             return;
         }
@@ -237,7 +237,7 @@ int run_observer_before_establish_falls_back() {
     // Subsequent observe() succeeds.
     auto h = ch.observe();
     if (!h) return 3;
-    std::move(*h).detach();
+    std::move(*h).detach(detach_reason::TestInstrumentation{});
     return 0;
 }
 

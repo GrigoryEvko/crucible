@@ -292,7 +292,7 @@ template <typename Proto, typename State, typename LoopCtx>
     safety::proto::SessionHandle<Proto, Machine<State>*, LoopCtx>&& sh) noexcept
 {
     Machine<State>* p = sh.resource();
-    std::move(sh).detach();
+    std::move(sh).detach(safety::proto::detach_reason::OwnerLifetimeBoundEarlyExit{});
     return p;
 }
 

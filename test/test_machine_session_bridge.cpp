@@ -155,7 +155,7 @@ int run_session_view_mints_handle_pointing_at_bridge() {
     // `next` is the Continue resolution — back at the Loop body's
     // top (Select).  Detach it cleanly to satisfy the abandonment
     // check; the bridge still owns the Machine.
-    std::move(next).detach();
+    std::move(next).detach(proto::detach_reason::TestInstrumentation{});
 
     return 0;
 }
@@ -256,7 +256,7 @@ int run_worked_example_mode_transitions() {
                 m->data_mut().mode  = VigilState::Mode::Recording;
                 m->data_mut().ticks = static_cast<uint32_t>(v);
             });
-        std::move(h2).detach();
+        std::move(h2).detach(proto::detach_reason::TestInstrumentation{});
     }
     if (bridge.state().mode  != VigilState::Mode::Recording) return 1;
     if (bridge.state().ticks != 1)                            return 2;
@@ -271,7 +271,7 @@ int run_worked_example_mode_transitions() {
                 m->data_mut().mode  = VigilState::Mode::Replaying;
                 m->data_mut().ticks = static_cast<uint32_t>(v);
             });
-        std::move(h2).detach();
+        std::move(h2).detach(proto::detach_reason::TestInstrumentation{});
     }
     if (bridge.state().mode  != VigilState::Mode::Replaying) return 3;
     if (bridge.state().ticks != 2)                            return 4;

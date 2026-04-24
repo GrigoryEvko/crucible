@@ -105,8 +105,8 @@ int run_trace_via_context_lookup() {
     // Both handles are in Loop<...Continue> state — inherently
     // infinite, no close branch.  Detach intentionally (SessionHandle
     // abandonment check otherwise fires in debug).
-    std::move(p3).detach();
-    std::move(c3).detach();
+    std::move(p3).detach(detach_reason::InfiniteLoopProtocol{});
+    std::move(c3).detach(detach_reason::InfiniteLoopProtocol{});
     return 0;
 }
 

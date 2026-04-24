@@ -128,7 +128,7 @@ int run_detach_infinite_loop() {
     // Send a single ping then detach — the protocol has no close
     // branch, so close() isn't available.
     auto h2 = std::move(h).send(Ping{99}, send_ping);
-    std::move(h2).detach();
+    std::move(h2).detach(detach_reason::TestInstrumentation{});
     return 0;
 }
 
@@ -312,7 +312,7 @@ int run_self_move_preserves_tracker_state() {
         auto h = make_session_handle<Send<int, End>>(FakeRes{});
         auto& alias = h;
         h = std::move(alias);  // self-move-assign via alias
-        std::move(h).detach();  // consume; no abort in debug
+        std::move(h).detach(detach_reason::TestInstrumentation{});  // consume; no abort in debug
     }
 
     return 0;
