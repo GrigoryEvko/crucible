@@ -151,7 +151,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
+#include <meta>
 #include <optional>
+#include <source_location>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -433,9 +436,20 @@ namespace detail {
 
 class consumed_tracker {
 public:
+    constexpr consumed_tracker() noexcept = default;
+    // Source-location-accepting ctor (#429 improvement C).  In RELEASE
+    // builds we DROP the location on the floor — the destructor check
+    // doesn't fire, so capturing the site is pointless overhead.  The
+    // signature stays for ABI parity with the DEBUG branch so derived-
+    // class ctors can pass a loc argument unconditionally.
+    constexpr explicit consumed_tracker(std::source_location) noexcept {}
     constexpr void mark() noexcept {}
     constexpr bool was_marked() const noexcept { return true; }
     constexpr void move_from(consumed_tracker&) noexcept {}
+    // RELEASE: no construction-site info to expose; render a sentinel.
+    constexpr std::source_location construction_loc() const noexcept {
+        return std::source_location{};
+    }
 };
 static_assert(std::is_empty_v<consumed_tracker>,
     "Release-mode consumed_tracker must be std::is_empty_v for EBO.");
@@ -444,9 +458,22 @@ static_assert(std::is_empty_v<consumed_tracker>,
 
 class consumed_tracker {
     bool flag_ = false;
+    // Source location captured at the handle's CONSTRUCTION SITE
+    // (#429 improvement C).  Default-constructs to "unknown source"
+    // for handles minted without an explicit loc argument (e.g.,
+    // legacy code paths or programmatic construction).  Stored ONLY
+    // in DEBUG builds — the release-mode tracker is empty and EBO-
+    // collapses to zero bytes.
+    std::source_location loc_{};
 public:
+    constexpr consumed_tracker() noexcept = default;
+    constexpr explicit consumed_tracker(std::source_location loc) noexcept
+        : loc_{loc} {}
     constexpr void mark() noexcept { flag_ = true; }
     constexpr bool was_marked() const noexcept { return flag_; }
+    constexpr std::source_location construction_loc() const noexcept {
+        return loc_;
+    }
 
     // Self-safe move.  When &other == *this (reachable via aliasing
     // or chained moves like `h = std::move(h);`), the naive
@@ -458,6 +485,7 @@ public:
     constexpr void move_from(consumed_tracker& other) noexcept {
         if (this == &other) [[unlikely]] return;
         flag_       = other.flag_;
+        loc_        = other.loc_;        // inherit source-location
         other.flag_ = true;
     }
 };
@@ -520,6 +548,107 @@ constexpr std::string_view type_name() noexcept {
 
     if (end == std::string_view::npos) [[unlikely]] return raw.substr(start);
     return raw.substr(start, end - start);
+}
+
+// ─── wrapper_class_name<Derived> — reflection-based wrapper spelling (#429)
+//
+// SessionHandleBase<Proto> is inherited by SEVERAL distinct wrapper
+// classes — SessionHandle (the canonical one), CrashWatchedHandle
+// (#400's crash-aware wrapper), RecordingSessionHandle (#404's event-
+// log wrapper), Delegate/Accept handles (SessionDelegate.h), and any
+// future wrapper layered atop the framework.  All inherit from the
+// SAME base specialisation `SessionHandleBase<Proto>` for a given
+// Proto.  Without per-derived-class identity, the destructor's
+// abandonment diagnostic prints only Proto — leaving the developer
+// unable to tell WHICH wrapper aborted when many coexist (the exact
+// confusion that cost real debugging cycles in #400).
+//
+// This helper uses C++26 P2996 static reflection (GCC 16's
+// `-freflection`, the same surface used by Reflect.h's auto-hashers)
+// to extract the bare TEMPLATE name of `Derived` — "SessionHandle",
+// "CrashWatchedHandle", "RecordingSessionHandle", etc. — without
+// dragging the full template-argument list in front of the reader.
+// The Proto rendering stays via the existing `type_name<Proto>()`
+// helper, so the composed message reads cleanly:
+//
+//   "crucible::safety::proto: CrashWatchedHandle<Recv<int, End>>
+//    abandoned at non-terminal protocol state.  ..."
+//
+// vs the pre-#429 ambiguous form:
+//
+//   "crucible::safety::proto: SessionHandle<Recv<int, End>>
+//    abandoned ..."  (was it the wrapper?  the inner?  who knows)
+//
+// `Derived` may be `void` (the SessionHandleBase default — used when
+// a derived class doesn't pass itself for backward compatibility);
+// callers handle that case with `if constexpr (!std::is_void_v<...>)`.
+//
+// For non-template types (e.g., a hand-rolled wrapper without
+// template parameters), the function returns the unqualified
+// identifier.  For template specialisations, it walks through
+// `template_of` to get the bare template name without the angle
+// brackets and arguments.
+template <typename Derived>
+consteval std::string_view wrapper_class_name() noexcept {
+    constexpr auto info = ^^Derived;
+    if constexpr (std::meta::has_template_arguments(info)) {
+        return std::meta::identifier_of(std::meta::template_of(info));
+    } else {
+        return std::meta::identifier_of(info);
+    }
+}
+
+// ─── next_method_hint<Proto> — protocol-head action suggestion (#429)
+//
+// Maps each non-terminal protocol head shape to the &&-qualified
+// consumer method the developer was supposed to call before letting
+// the handle die.  Used by SessionHandleBase's destructor diagnostic
+// to surface a concrete suggestion alongside the abandonment notice
+// — instead of the developer having to look up "what method advances
+// Recv<T, K>?", the message says "you forgot to call .recv()."
+//
+// The hints are deliberately lower-case verb-phrases so the message
+// reads naturally:
+//
+//   "Expected: call .recv() on the handle (or .detach(detach_reason::*))."
+//
+// The hint surface mirrors the framework's actual method names:
+//   * Send<T, K>            → "send(value)"
+//   * Recv<T, K>            → "recv() / recv(callback)"
+//   * Select<Bs...>         → "pick<branch_index>(transport_callable)"
+//   * Offer<Bs...>          → "branch(visitor) or pick<branch_index>()"
+//   * Loop<B>               → handles never reach Loop directly
+//   * Anything else         → fall-through hint
+//
+// Delegate / Accept / CheckpointedSession / Stop are layered atop
+// Session.h via separate headers; their hints live HERE so the
+// destructor can render them without circular-include grief.  When a
+// user adds a new combinator, they extend this switch rather than
+// chasing the destructor body.
+template <typename Proto>
+consteval std::string_view next_method_hint() noexcept {
+    if constexpr (is_send_v<Proto>) {
+        return "send(value, transport_callable)";
+    } else if constexpr (is_recv_v<Proto>) {
+        return "recv() or recv(callback)";
+    } else if constexpr (is_select_v<Proto>) {
+        return "pick<branch_index>(transport_callable)";
+    } else if constexpr (is_offer_v<Proto>) {
+        return "branch(visitor) or pick<branch_index>(transport_callable)";
+    } else if constexpr (is_loop_v<Proto>) {
+        // Should be unreachable: the framework unrolls Loop before
+        // constructing a SessionHandle.  Render for completeness.
+        return "the loop body's appropriate consumer method "
+               "(framework should have unrolled Loop<...>)";
+    } else {
+        // Delegate / Accept / Stop / CheckpointedSession / future
+        // combinators land here.  The user knows which combinator
+        // they're using; the message names it via Proto's full
+        // type_name rendering above, so a generic hint suffices.
+        return "the protocol head's appropriate consumer method "
+               "(close / send / recv / pick / branch / delegate / accept / "
+               "base / rollback)";
+    }
 }
 
 }  // namespace detail
@@ -637,7 +766,16 @@ concept DetachReason =
 // sibling SessionHandle instantiations access protected members
 // (e.g., Delegate's delegate() marking the delegated handle consumed).
 
-template <typename Proto>
+// `Derived` is an OPTIONAL second template parameter naming the
+// wrapper class that inherits this base (CRTP-style).  When supplied,
+// the abandonment-check diagnostic in ~SessionHandleBase() can name
+// the SPECIFIC wrapper that aborted (#429) — distinguishing
+// SessionHandle's abort from CrashWatchedHandle's abort from
+// RecordingSessionHandle's abort, even when all three share the same
+// Proto template argument.  Defaulting to `void` keeps every existing
+// inheritance site working unchanged; new wrappers SHOULD pass
+// themselves to make the diagnostic precise.
+template <typename Proto, typename Derived = void>
 class SessionHandleBase {
     [[no_unique_address]] detail::consumed_tracker tracker_;
 
@@ -652,13 +790,22 @@ protected:
 
     // Expose to friend SessionHandle instantiations (e.g., Delegate's
     // delegate() method marks the delegated handle consumed).
-    template <typename OtherProto>
+    template <typename OtherProto, typename OtherDerived>
     friend class SessionHandleBase;
     template <typename P, typename R, typename L>
     friend class SessionHandle;
 
 public:
     constexpr SessionHandleBase() noexcept = default;
+
+    // Explicit source-location-capturing ctor (#429 improvement C).
+    // Derived-class ctors propagate `std::source_location::current()`
+    // (defaulted in their own signatures, so the captured site is the
+    // user's call to make_session_handle / .send / .recv / etc.).
+    // RELEASE collapses the loc into a no-op via consumed_tracker's
+    // empty-class branch — zero per-handle overhead.
+    constexpr explicit SessionHandleBase(std::source_location loc) noexcept
+        : tracker_{loc} {}
 
     // Static accessor for the protocol's compile-time-rendered name
     // (#379).  Inherited by every SessionHandle specialisation, so
@@ -678,6 +825,56 @@ public:
     // of the program.  Zero allocation; computed at compile time.
     [[nodiscard]] static constexpr std::string_view protocol_name() noexcept {
         return detail::type_name<Proto>();
+    }
+
+    // Static accessor for the DERIVED wrapper class's bare template
+    // name (#429), via C++26 P2996 reflection — "SessionHandle" /
+    // "CrashWatchedHandle" / "RecordingSessionHandle" / etc.  Useful
+    // for:
+    //
+    //   * Production crash handlers logging which wrapper aborted
+    //   * Test failure messages when many wrapper types coexist
+    //   * Manual inspection: handle.wrapper_name() returns "CrashWatchedHandle"
+    //     even when `decltype(handle)::protocol_name()` returns just the Proto
+    //
+    // When the derived class hasn't passed itself as the Derived
+    // template argument (legacy inheritance sites — kept for
+    // backward compatibility), wrapper_name() returns the literal
+    // string "SessionHandle" — matching the historical fallback in
+    // the destructor diagnostic.
+    [[nodiscard]] static constexpr std::string_view wrapper_name() noexcept {
+        if constexpr (!std::is_void_v<Derived>) {
+            return detail::wrapper_class_name<Derived>();
+        } else {
+            return "SessionHandle";
+        }
+    }
+
+    // Static accessor for the protocol-head-driven next-method hint
+    // (#429 improvement B).  Returns a verb-phrase naming the
+    // &&-qualified consumer method that advances the current
+    // protocol head — "send(value)" / "recv()" / "pick<I>()" /
+    // "branch(visitor)" / etc.  Useful for production crash
+    // handlers that catch an abandonment signal and want to suggest
+    // the missing call to the operator.
+    [[nodiscard]] static constexpr std::string_view next_method_hint() noexcept {
+        return detail::next_method_hint<Proto>();
+    }
+
+    // Static accessor for the FULL handle type spelling (#429
+    // improvement A).  Returns the complete `__PRETTY_FUNCTION__`-
+    // derived type name carrying every template argument
+    // (Resource, PeerTag, LoopCtx, ...).  protocol_name() returns
+    // ONLY Proto; full_handle_type_name() returns the WRAPPER's
+    // full instantiation.  When `Derived` is `void` (legacy site),
+    // returns the empty string; callers fall back to wrapper_name().
+    [[nodiscard]] static constexpr std::string_view
+    full_handle_type_name() noexcept {
+        if constexpr (!std::is_void_v<Derived>) {
+            return detail::type_name<Derived>();
+        } else {
+            return std::string_view{};
+        }
     }
 
     // Public detach: mark the handle consumed WITHOUT advancing the
@@ -771,21 +968,101 @@ public:
     ~SessionHandleBase() {
 #ifndef NDEBUG
         if (!tracker_.was_marked() && !is_terminal_state_v<Proto>) {
-            // Render the abandoned protocol's shape via the compile-
-            // time type_name<Proto>() helper (#379) — without this,
-            // the diagnostic gives no clue WHICH session was leaked
-            // when many SessionHandle specialisations coexist in one
-            // process.
+            // ── Structured ABANDONMENT diagnostic (#429 improvements
+            //    A + B + C + D — render every load-bearing fact about
+            //    the abandoning handle so the developer doesn't have
+            //    to re-derive any of it from a stack trace) ─────────
+            //
+            //   A. Full Derived type spelling (carries Resource,
+            //      PeerTag, LoopCtx — pre-#429 these were absent and
+            //      two CrashWatchedHandles for different PeerTags
+            //      rendered indistinguishable).
+            //   B. Protocol-head-driven next-method hint (suggests
+            //      .send / .recv / .pick / .branch — whatever was
+            //      supposed to advance Proto's head).
+            //   C. Construction site captured at make_session_handle
+            //      / .send / .recv / etc. via std::source_location's
+            //      default-arg call-site capture.  Tells the
+            //      developer where the now-orphaned handle was born,
+            //      so they can grep directly to the line that
+            //      ultimately leaked.
+            //   D. Structured enumeration of detach reasons (with
+            //      one-line per-reason explanation) so the developer
+            //      can pick the right tag without consulting docs.
             constexpr auto pname = detail::type_name<Proto>();
+            constexpr auto hint  = detail::next_method_hint<Proto>();
+            const auto loc = tracker_.construction_loc();
+            const char* loc_file = loc.file_name();
+            const char* loc_func = loc.function_name();
+            const auto loc_line  = loc.line();
+            const auto loc_col   = loc.column();
+            // file_name() returns "" when the location is default-
+            // constructed (handle minted without an explicit loc — a
+            // legacy code path).  Render a sentinel in that case so
+            // the diagnostic stays unambiguous.
+            const bool have_loc = loc_file != nullptr && loc_file[0] != '\0';
+
+            if constexpr (!std::is_void_v<Derived>) {
+                constexpr auto wname = detail::wrapper_class_name<Derived>();
+                constexpr auto fname = detail::type_name<Derived>();
+                std::fprintf(stderr,
+                    "\n"
+                    "═════════════════════════════════════════════════════════════════════\n"
+                    "crucible::safety::proto: ABANDONMENT DETECTED (non-terminal handle)\n"
+                    "═════════════════════════════════════════════════════════════════════\n"
+                    "  Wrapper class:    %.*s\n"
+                    "  Full handle type: %.*s\n"
+                    "  Protocol head:    %.*s\n",
+                    static_cast<int>(wname.size()), wname.data(),
+                    static_cast<int>(fname.size()), fname.data(),
+                    static_cast<int>(pname.size()), pname.data());
+            } else {
+                std::fprintf(stderr,
+                    "\n"
+                    "═════════════════════════════════════════════════════════════════════\n"
+                    "crucible::safety::proto: ABANDONMENT DETECTED (non-terminal handle)\n"
+                    "═════════════════════════════════════════════════════════════════════\n"
+                    "  Wrapper class:    SessionHandle (Derived not provided to base)\n"
+                    "  Protocol head:    %.*s\n",
+                    static_cast<int>(pname.size()), pname.data());
+            }
+            if (have_loc) {
+                std::fprintf(stderr,
+                    "  Construction at:  %s:%u:%u\n"
+                    "  In function:      %s\n",
+                    loc_file, static_cast<unsigned>(loc_line),
+                    static_cast<unsigned>(loc_col), loc_func);
+            } else {
+                std::fprintf(stderr,
+                    "  Construction at:  <unknown — handle minted without "
+                    "source_location capture>\n");
+            }
             std::fprintf(stderr,
-                "crucible::safety::proto: SessionHandle<%.*s> abandoned "
-                "at non-terminal protocol state.  A mid-protocol handle "
-                "was destroyed without being consumed via a &&-qualified "
-                "method (close, send, recv, select, pick, branch, "
-                "delegate, accept, base, rollback).  Either consume the "
-                "handle before its scope exits, or advance the protocol "
-                "to End/Stop.\n",
-                static_cast<int>(pname.size()), pname.data());
+                "  Expected action:  call .%.*s\n"
+                "\n"
+                "The handle was destroyed via its destructor without being\n"
+                "consumed via a &&-qualified consumer method.  Either:\n"
+                "  1. Consume the handle by calling its appropriate consumer\n"
+                "     method (close / send / recv / pick / branch / delegate /\n"
+                "     accept / base / rollback), OR\n"
+                "  2. Advance the protocol to a terminal state (End or Stop), OR\n"
+                "  3. Explicitly abandon via std::move(handle).detach(reason),\n"
+                "     where `reason` is one of:\n"
+                "       * detach_reason::InfiniteLoopProtocol\n"
+                "           — Loop<X> with no close branch; transport-level close.\n"
+                "       * detach_reason::TransportClosedOutOfBand\n"
+                "           — peer crash detected (CNTP RETRY_EXC, SWIM dead, fd close).\n"
+                "       * detach_reason::TestInstrumentation\n"
+                "           — test code intentionally drops at a known-safe point.\n"
+                "       * detach_reason::AsyncCancellation\n"
+                "           — std::jthread stop_token fired mid-protocol.\n"
+                "       * detach_reason::OwnerLifetimeBoundEarlyExit\n"
+                "           — bridge/wrapper destructor; last-resort abandonment.\n"
+                "\n"
+                "See safety/Session.h §SessionHandleBase for the full lifetime\n"
+                "contract.  The framework cannot recover the protocol; aborting.\n"
+                "═════════════════════════════════════════════════════════════════════\n",
+                static_cast<int>(hint.size()), hint.data());
             std::abort();
         }
 #endif
@@ -819,7 +1096,9 @@ class SessionHandle;
 namespace detail {
 
 template <typename R, typename Resource, typename LoopCtx>
-[[nodiscard]] constexpr auto step_to_next(Resource r) noexcept
+[[nodiscard]] constexpr auto step_to_next(
+    Resource r,
+    std::source_location loc = std::source_location::current()) noexcept
 {
     if constexpr (std::is_same_v<R, Continue>) {
         static_assert(!std::is_void_v<LoopCtx>,
@@ -828,20 +1107,21 @@ template <typename R, typename Resource, typename LoopCtx>
             "Every Continue must have an enclosing Loop<Body>.");
         using NextBody = typename LoopCtx::body;
         // NextBody may itself begin with Loop or Continue (unlikely but
-        // syntactically legal) — recurse.
-        return step_to_next<NextBody, Resource, LoopCtx>(std::move(r));
+        // syntactically legal) — recurse.  Forward `loc` so the
+        // outermost producer's call site survives the recursion (#429).
+        return step_to_next<NextBody, Resource, LoopCtx>(std::move(r), loc);
     } else if constexpr (is_loop_v<R>) {
         using InnerBody = typename R::body;
         // Enter inner Loop: shadow LoopCtx with the new Loop.  Recurse
         // to handle the case where InnerBody begins with Continue
         // (which would already be ill-formed — caught by is_well_formed).
-        return step_to_next<InnerBody, Resource, R>(std::move(r));
+        return step_to_next<InnerBody, Resource, R>(std::move(r), loc);
     } else {
         static_assert(is_head_v<R>,
             "crucible::session::diagnostic [Protocol_Ill_Formed]: "
             "proto: unexpected protocol shape after resolution.  "
             "Only Send/Recv/Select/Offer/End/Continue are valid heads.");
-        return SessionHandle<R, Resource, LoopCtx>{std::move(r)};
+        return SessionHandle<R, Resource, LoopCtx>{std::move(r), loc};
     }
 }
 
@@ -853,7 +1133,7 @@ template <typename R, typename Resource, typename LoopCtx>
 
 template <typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<End, Resource, LoopCtx>
-    : public SessionHandleBase<End>
+    : public SessionHandleBase<End, SessionHandle<End, Resource, LoopCtx>>
 {
     Resource resource_;
 
@@ -871,9 +1151,12 @@ public:
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
 
-    constexpr explicit SessionHandle(Resource r)
+    constexpr explicit SessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : resource_{std::move(r)} {}
+        : SessionHandleBase<End, SessionHandle<End, Resource, LoopCtx>>{loc}
+        , resource_{std::move(r)} {}
 
     // Copy-delete with reason inherited from SessionHandleBase<End>.
     // Move-ctor/assign: = default invokes base's custom move (which
@@ -904,7 +1187,8 @@ public:
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Send<T, R>, Resource, LoopCtx>
-    : public SessionHandleBase<Send<T, R>>
+    : public SessionHandleBase<Send<T, R>,
+                               SessionHandle<Send<T, R>, Resource, LoopCtx>>
 {
     Resource resource_;
 
@@ -921,9 +1205,13 @@ public:
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
 
-    constexpr explicit SessionHandle(Resource r)
+    constexpr explicit SessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : resource_{std::move(r)} {}
+        : SessionHandleBase<Send<T, R>,
+                            SessionHandle<Send<T, R>, Resource, LoopCtx>>{loc}
+        , resource_{std::move(r)} {}
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
@@ -955,7 +1243,8 @@ public:
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Recv<T, R>, Resource, LoopCtx>
-    : public SessionHandleBase<Recv<T, R>>
+    : public SessionHandleBase<Recv<T, R>,
+                               SessionHandle<Recv<T, R>, Resource, LoopCtx>>
 {
     Resource resource_;
 
@@ -972,9 +1261,13 @@ public:
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
 
-    constexpr explicit SessionHandle(Resource r)
+    constexpr explicit SessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : resource_{std::move(r)} {}
+        : SessionHandleBase<Recv<T, R>,
+                            SessionHandle<Recv<T, R>, Resource, LoopCtx>>{loc}
+        , resource_{std::move(r)} {}
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
@@ -1006,7 +1299,8 @@ public:
 
 template <typename... Branches, typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Select<Branches...>, Resource, LoopCtx>
-    : public SessionHandleBase<Select<Branches...>>
+    : public SessionHandleBase<Select<Branches...>,
+                               SessionHandle<Select<Branches...>, Resource, LoopCtx>>
 {
     Resource resource_;
 
@@ -1023,9 +1317,13 @@ public:
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
-    constexpr explicit SessionHandle(Resource r)
+    constexpr explicit SessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : resource_{std::move(r)} {}
+        : SessionHandleBase<Select<Branches...>,
+                            SessionHandle<Select<Branches...>, Resource, LoopCtx>>{loc}
+        , resource_{std::move(r)} {}
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
@@ -1068,7 +1366,8 @@ public:
 
 template <typename... Branches, typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Offer<Branches...>, Resource, LoopCtx>
-    : public SessionHandleBase<Offer<Branches...>>
+    : public SessionHandleBase<Offer<Branches...>,
+                               SessionHandle<Offer<Branches...>, Resource, LoopCtx>>
 {
     Resource resource_;
 
@@ -1085,9 +1384,13 @@ public:
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
-    constexpr explicit SessionHandle(Resource r)
+    constexpr explicit SessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : resource_{std::move(r)} {}
+        : SessionHandleBase<Offer<Branches...>,
+                            SessionHandle<Offer<Branches...>, Resource, LoopCtx>>{loc}
+        , resource_{std::move(r)} {}
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
@@ -1269,7 +1572,9 @@ concept SessionResource =
 // or if Resource fails the SessionResource pin-discipline check.
 
 template <typename Proto, typename Resource>
-[[nodiscard]] constexpr auto make_session_handle(Resource r) noexcept
+[[nodiscard]] constexpr auto make_session_handle(
+    Resource r,
+    std::source_location loc = std::source_location::current()) noexcept
 {
     static_assert(is_well_formed_v<Proto>,
         "crucible::session::diagnostic [Protocol_Ill_Formed]: "
@@ -1296,13 +1601,16 @@ template <typename Proto, typename Resource>
         using Body = typename Proto::body;
         // Recursively unroll — Body could itself begin with Loop,
         // though that's unusual.  step_to_next handles the recursion
-        // uniformly.
-        return detail::step_to_next<Body, Resource, Proto>(std::move(r));
+        // uniformly.  Forward `loc` so the user's make_session_handle
+        // call site is what shows up in the abandonment diagnostic
+        // (#429 improvement C), even after a Loop unroll inserted an
+        // intermediate handle.
+        return detail::step_to_next<Body, Resource, Proto>(std::move(r), loc);
     } else {
         static_assert(!std::is_same_v<Proto, Continue>,
             "crucible::session::diagnostic [Continue_Without_Loop]: "
             "proto: Continue cannot be the top-level protocol.");
-        return SessionHandle<Proto, Resource, void>{std::move(r)};
+        return SessionHandle<Proto, Resource, void>{std::move(r), loc};
     }
 }
 

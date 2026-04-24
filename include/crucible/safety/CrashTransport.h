@@ -149,7 +149,8 @@ template <typename PeerTag, typename NextHandle>
 
 template <typename Resource, typename PeerTag, typename LoopCtx>
 class [[nodiscard]] CrashWatchedHandle<End, Resource, PeerTag, LoopCtx>
-    : public SessionHandleBase<End>
+    : public SessionHandleBase<End,
+                               CrashWatchedHandle<End, Resource, PeerTag, LoopCtx>>
 {
     SessionHandle<End, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
@@ -161,8 +162,13 @@ public:
     using peer          = PeerTag;
     using inner_type    = SessionHandle<End, Resource, LoopCtx>;
 
-    constexpr CrashWatchedHandle(inner_type inner, OneShotFlag& flag) noexcept
-        : inner_{std::move(inner)}, flag_{&flag} {}
+    constexpr CrashWatchedHandle(
+        inner_type inner,
+        OneShotFlag& flag,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<End,
+                            CrashWatchedHandle<End, Resource, PeerTag, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, flag_{&flag} {}
 
     constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
@@ -187,7 +193,8 @@ public:
 template <typename T, typename R, typename Resource,
           typename PeerTag, typename LoopCtx>
 class [[nodiscard]] CrashWatchedHandle<Send<T, R>, Resource, PeerTag, LoopCtx>
-    : public SessionHandleBase<Send<T, R>>
+    : public SessionHandleBase<Send<T, R>,
+                               CrashWatchedHandle<Send<T, R>, Resource, PeerTag, LoopCtx>>
 {
     SessionHandle<Send<T, R>, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
@@ -201,8 +208,13 @@ public:
     using peer          = PeerTag;
     using inner_type    = SessionHandle<Send<T, R>, Resource, LoopCtx>;
 
-    constexpr CrashWatchedHandle(inner_type inner, OneShotFlag& flag) noexcept
-        : inner_{std::move(inner)}, flag_{&flag} {}
+    constexpr CrashWatchedHandle(
+        inner_type inner,
+        OneShotFlag& flag,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<Send<T, R>,
+                            CrashWatchedHandle<Send<T, R>, Resource, PeerTag, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, flag_{&flag} {}
 
     constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
@@ -249,7 +261,8 @@ public:
 template <typename T, typename R, typename Resource,
           typename PeerTag, typename LoopCtx>
 class [[nodiscard]] CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, LoopCtx>
-    : public SessionHandleBase<Recv<T, R>>
+    : public SessionHandleBase<Recv<T, R>,
+                               CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, LoopCtx>>
 {
     SessionHandle<Recv<T, R>, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
@@ -263,8 +276,13 @@ public:
     using peer          = PeerTag;
     using inner_type    = SessionHandle<Recv<T, R>, Resource, LoopCtx>;
 
-    constexpr CrashWatchedHandle(inner_type inner, OneShotFlag& flag) noexcept
-        : inner_{std::move(inner)}, flag_{&flag} {}
+    constexpr CrashWatchedHandle(
+        inner_type inner,
+        OneShotFlag& flag,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<Recv<T, R>,
+                            CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, flag_{&flag} {}
 
     constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
@@ -311,7 +329,8 @@ public:
 template <typename... Branches, typename Resource,
           typename PeerTag, typename LoopCtx>
 class [[nodiscard]] CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, LoopCtx>
-    : public SessionHandleBase<Select<Branches...>>
+    : public SessionHandleBase<Select<Branches...>,
+                               CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, LoopCtx>>
 {
     SessionHandle<Select<Branches...>, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
@@ -325,8 +344,13 @@ public:
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
-    constexpr CrashWatchedHandle(inner_type inner, OneShotFlag& flag) noexcept
-        : inner_{std::move(inner)}, flag_{&flag} {}
+    constexpr CrashWatchedHandle(
+        inner_type inner,
+        OneShotFlag& flag,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<Select<Branches...>,
+                            CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, flag_{&flag} {}
 
     constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
@@ -402,7 +426,8 @@ public:
 template <typename... Branches, typename Resource,
           typename PeerTag, typename LoopCtx>
 class [[nodiscard]] CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, LoopCtx>
-    : public SessionHandleBase<Offer<Branches...>>
+    : public SessionHandleBase<Offer<Branches...>,
+                               CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, LoopCtx>>
 {
     SessionHandle<Offer<Branches...>, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
@@ -416,8 +441,13 @@ public:
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
-    constexpr CrashWatchedHandle(inner_type inner, OneShotFlag& flag) noexcept
-        : inner_{std::move(inner)}, flag_{&flag} {}
+    constexpr CrashWatchedHandle(
+        inner_type inner,
+        OneShotFlag& flag,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<Offer<Branches...>,
+                            CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, flag_{&flag} {}
 
     constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;

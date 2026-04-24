@@ -45,20 +45,28 @@ static_assert(!is_terminal_state_v<CheckpointedSession<End, End>>);
 
 struct FakeRes {};
 
+// Per #429, SessionHandleBase carries an OPTIONAL Derived parameter
+// naming the wrapper class — every SessionHandle specialisation passes
+// itself, so the abandonment diagnostic can spell the wrapper class
+// even when many wrappers share the same Proto.  The property tests
+// below witness the inheritance with the now-mandatory Derived.
 static_assert(std::is_base_of_v<
-    SessionHandleBase<End>,
+    SessionHandleBase<End, SessionHandle<End, FakeRes, void>>,
     SessionHandle<End, FakeRes>>);
 static_assert(std::is_base_of_v<
-    SessionHandleBase<Send<int, End>>,
+    SessionHandleBase<Send<int, End>,
+                      SessionHandle<Send<int, End>, FakeRes, void>>,
     SessionHandle<Send<int, End>, FakeRes>>);
 static_assert(std::is_base_of_v<
-    SessionHandleBase<Stop>,
+    SessionHandleBase<Stop, SessionHandle<Stop, FakeRes, void>>,
     SessionHandle<Stop, FakeRes>>);
 static_assert(std::is_base_of_v<
-    SessionHandleBase<Delegate<Send<int, End>, End>>,
+    SessionHandleBase<Delegate<Send<int, End>, End>,
+                      SessionHandle<Delegate<Send<int, End>, End>, FakeRes, void>>,
     SessionHandle<Delegate<Send<int, End>, End>, FakeRes>>);
 static_assert(std::is_base_of_v<
-    SessionHandleBase<CheckpointedSession<End, End>>,
+    SessionHandleBase<CheckpointedSession<End, End>,
+                      SessionHandle<CheckpointedSession<End, End>, FakeRes, void>>,
     SessionHandle<CheckpointedSession<End, End>, FakeRes>>);
 
 // ── Runtime: handle properly consumed via close() ──────────────
