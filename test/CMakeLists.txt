@@ -653,6 +653,22 @@ crucible_neg_compile_test(neg_linear_view_field
 crucible_neg_compile_test(neg_appendonly_over_writeonce
   "AppendOnly<WriteOnce<T>> is redundant")
 
+# WriteOnceNonNull<T*> — pointer-specialized single-set primitive (#77).
+#
+# [FRAMEWORK-CONTROLLED] Two named diagnostics gate the primitive's
+# discipline:
+#   - [WriteOnceNonNull_NonPointer_Type] — instantiating with a non-
+#     pointer T (e.g. WriteOnceNonNull<int>) fires the primary
+#     template's static_assert, redirecting callers to WriteOnce<T>
+#     which handles non-pointer single-set.
+#   - [AppendOnly_Over_WriteOnceNonNull_Redundant] — stacking
+#     AppendOnly<WriteOnceNonNull<T*>> fires the redundancy assert,
+#     symmetric with AppendOnly<WriteOnce<T>>'s rejection above.
+crucible_neg_compile_test(neg_writeoncenonnull_non_pointer
+  "WriteOnceNonNull_NonPointer_Type")
+crucible_neg_compile_test(neg_appendonly_over_writeoncenonnull
+  "AppendOnly_Over_WriteOnceNonNull_Redundant")
+
 # SessionResource pin-discipline rejection (task #406, SAFEINT-B17 from
 # misc/24_04_2026_safety_integration.md §17).  make_session_handle
 # called with Resource = lvalue reference to a NON-Pinned object must

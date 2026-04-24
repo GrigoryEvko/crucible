@@ -45,12 +45,25 @@ namespace crucible::safety {
 // Catching the pattern structurally keeps the backlog clear of
 // "should we also wrap the value?" design questions.
 
-template <typename T> class WriteOnce;  // forward decl for the trait
+template <typename T> class WriteOnce;                // forward decl
+template <typename Ptr> class WriteOnceNonNull;        // forward decl (#77)
 
 template <typename T> struct is_writeonce            : std::false_type {};
 template <typename U> struct is_writeonce<WriteOnce<U>> : std::true_type {};
 template <typename T>
 inline constexpr bool is_writeonce_v = is_writeonce<std::remove_cvref_t<T>>::value;
+
+// WriteOnceNonNull<T*> participates in the same redundancy check
+// (#77): AppendOnly<WriteOnceNonNull<T*>> is equally structurally
+// redundant with AppendOnly's own immutability guarantee.  Kept
+// as a separate trait so AppendOnly can fire a distinct named
+// diagnostic for each form, and the pre-existing neg-compile
+// regex `"AppendOnly<WriteOnce<T>> is redundant"` stays stable.
+template <typename T> struct is_writeoncenonnull                    : std::false_type {};
+template <typename Ptr> struct is_writeoncenonnull<WriteOnceNonNull<Ptr>> : std::true_type {};
+template <typename T>
+inline constexpr bool is_writeoncenonnull_v =
+    is_writeoncenonnull<std::remove_cvref_t<T>>::value;
 
 // ── AppendOnly ──────────────────────────────────────────────────────
 //
@@ -64,6 +77,20 @@ class [[nodiscard]] AppendOnly {
         "that emplaced elements are never mutated, reassigned, or removed. "
         "Use AppendOnly<T> directly — the WriteOnce layer adds no invariant "
         "and doubles per-element storage by one std::optional tag byte.");
+    // Symmetric rejection for the pointer-specialized wrapper (#77).
+    // WriteOnceNonNull<T*> is the pointer-slot form of WriteOnce; it
+    // uses nullptr as the "not yet set" sentinel instead of carrying
+    // a std::optional tag byte.  Stacking inside AppendOnly adds no
+    // invariant for the same reason as WriteOnce<T> — AppendOnly's
+    // own immutability promise subsumes it.
+    static_assert(!is_writeoncenonnull_v<T>,
+        "[AppendOnly_Over_WriteOnceNonNull_Redundant] AppendOnly<WriteOnceNonNull<T*>> "
+        "is redundant: AppendOnly already guarantees that emplaced elements "
+        "are never mutated, reassigned, or removed, which subsumes "
+        "WriteOnceNonNull's single-set guarantee.  Use AppendOnly<T*> directly "
+        "when the elements are pointers, and rely on a per-insertion "
+        "non-null contract at the call site if that's the real invariant. "
+        "(#77, symmetric with the AppendOnly<WriteOnce<T>> rejection above)");
 
     Storage<T> data_;
 
@@ -364,6 +391,129 @@ public:
     [[nodiscard]] constexpr bool has_value() const noexcept { return value_.has_value(); }
     [[nodiscard]] constexpr explicit operator bool() const noexcept { return value_.has_value(); }
 };
+
+// ── WriteOnceNonNull<T*> ───────────────────────────────────────────
+//
+// Pointer-specialized single-set slot — the nullptr sentinel replaces
+// WriteOnce<T>'s std::optional tag byte, collapsing storage to exactly
+// sizeof(T*).  Semantics:
+//
+//   - set(p)    : contract fires on double-set OR on null input.
+//                 null is reserved as the unset sentinel; publishing
+//                 null would be indistinguishable from "never set."
+//   - try_set(p): returns false on double-set or null input; no
+//                 contract fire.  Idempotent.
+//   - get()     : contract fires if not yet set.  Returns T*.
+//   - has_value / operator bool : exposes set-vs-unset for defensive
+//                 code paths.
+//
+// Design choice — NAMED PARTIAL SPECIALIZATION on the pointer type
+// rather than a generic `WriteOnceNonNull<T>` with `T*` implied: the
+// spelling `WriteOnceNonNull<TraceRing*>` matches the type of the
+// stored value and `WriteOnceNonNull<int>` fires a named static_assert
+// at the primary template rather than silently producing a single-set
+// integer slot with surprising null-sentinel semantics.
+//
+// Semantic overlap with Once.h's SetOnce<T>: identical storage
+// strategy.  SetOnce uses `T` (pointee) as the template parameter;
+// WriteOnceNonNull uses `T*` (pointer) as the template parameter for
+// naming symmetry with WriteOnce<T>.  Both ship so callers can pick
+// the spelling that matches their surrounding idiom.
+//
+//   Axiom coverage: InitSafe + NullSafe + MemSafe + DetSafe.
+//   Runtime cost:   zero — sizeof(WriteOnceNonNull<T*>) == sizeof(T*).
+//                   One contract check per set/get under semantic=
+//                   enforce; zero under semantic=ignore.
+
+template <typename Ptr>
+class WriteOnceNonNull {
+    static_assert(std::is_pointer_v<Ptr>,
+        "[WriteOnceNonNull_NonPointer_Type] WriteOnceNonNull requires "
+        "a pointer type argument (e.g. WriteOnceNonNull<MyClass*>). "
+        "The nullptr-sentinel strategy that makes this primitive "
+        "zero-overhead is meaningful only for pointer types; for "
+        "single-set slots over non-pointer values use WriteOnce<T> "
+        "(sizeof(T) + 1 byte std::optional tag).  (#77)");
+};
+
+template <typename T>
+class [[nodiscard]] WriteOnceNonNull<T*> {
+    T* ptr_ = nullptr;
+
+public:
+    using value_type   = T*;
+    using pointee_type = T;
+
+    constexpr WriteOnceNonNull() noexcept = default;
+
+    WriteOnceNonNull(const WriteOnceNonNull&)            = default;
+    WriteOnceNonNull(WriteOnceNonNull&&)                 = default;
+    WriteOnceNonNull& operator=(const WriteOnceNonNull&) = default;
+    WriteOnceNonNull& operator=(WriteOnceNonNull&&)      = default;
+
+    // Set exactly once.  Contract fires on double-set (ptr_ already
+    // non-null) and on null input (publishing null is indistinguishable
+    // from "never set" in the sentinel model — always a caller bug).
+    constexpr void set(T* p) noexcept
+        pre (p != nullptr)
+        pre (ptr_ == nullptr)
+    {
+        ptr_ = p;
+    }
+
+    // Try-set — returns true iff this was the first non-null set.
+    // No contract fire; null input and double-set both become no-ops
+    // returning false.
+    [[nodiscard]] constexpr bool try_set(T* p) noexcept {
+        if (ptr_ != nullptr || p == nullptr) return false;
+        ptr_ = p;
+        return true;
+    }
+
+    // Read the set pointer.  Contract fires if not yet set.
+    [[nodiscard]] constexpr T* get() const noexcept
+        pre (ptr_ != nullptr)
+    {
+        return ptr_;
+    }
+
+    [[nodiscard]] constexpr bool has_value() const noexcept {
+        return ptr_ != nullptr;
+    }
+
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {
+        return ptr_ != nullptr;
+    }
+
+    // Dereference — contract fires if not yet set.  Member function
+    // template with a defaulted U=T parameter so the return type
+    // `U&` is only instantiated when the operator is actually called,
+    // letting `WriteOnceNonNull<void*>` still satisfy other member
+    // uses (get, has_value) without triggering "forming reference to
+    // void" at class-instantiation time.
+    template <typename U = T>
+        requires (!std::is_void_v<U>)
+    [[nodiscard]] constexpr U& operator*() const noexcept
+        pre (ptr_ != nullptr)
+    {
+        return *ptr_;
+    }
+
+    template <typename U = T>
+        requires (!std::is_void_v<U>)
+    [[nodiscard]] constexpr U* operator->() const noexcept
+        pre (ptr_ != nullptr)
+    {
+        return ptr_;
+    }
+};
+
+// Zero-cost guarantee: nullptr-sentinel collapses storage to exactly
+// sizeof(T*), saving the optional tag byte + padding of WriteOnce<T*>.
+// Both typed and void-pointee forms are supported — operator* and
+// operator-> are SFINAE'd away for the void pointee.
+static_assert(sizeof(WriteOnceNonNull<int*>)  == sizeof(int*));
+static_assert(sizeof(WriteOnceNonNull<void*>) == sizeof(void*));
 
 // ── AtomicMonotonic<T> ─────────────────────────────────────────────
 //

@@ -452,6 +452,63 @@ static void test_mutation() {
         assert(advances >= kPerThread);
         assert(advances <= kThreads * kPerThread);
     }
+
+    // ── WriteOnceNonNull<T*> (#77) ─────────────────────────────────
+    //
+    // Pointer-specialized single-set with nullptr as the "unset"
+    // sentinel — zero tag overhead relative to WriteOnce<T*>'s
+    // std::optional<T*>.  Covers: sizeof collapse, unset-state
+    // queries, set() + try_set() idempotence, get() retrieval,
+    // dereference paths on typed pointee.
+    {
+        // Zero-cost: sizeof matches the raw pointer exactly.
+        static_assert(sizeof(WriteOnceNonNull<int*>)    == sizeof(int*));
+        static_assert(sizeof(WriteOnceNonNull<double*>) == sizeof(double*));
+        static_assert(sizeof(WriteOnceNonNull<void*>)   == sizeof(void*));
+
+        // Participates in the is_writeoncenonnull trait used by
+        // AppendOnly's redundancy rejection.
+        static_assert(is_writeoncenonnull_v<WriteOnceNonNull<int*>>);
+        static_assert(!is_writeoncenonnull_v<int*>);
+        static_assert(!is_writeoncenonnull_v<WriteOnce<int*>>);
+
+        int payload = 7;
+
+        WriteOnceNonNull<int*> slot;
+        assert(!slot.has_value());
+        assert(!static_cast<bool>(slot));
+
+        // First try_set on null → no-op, stays unset.
+        assert(!slot.try_set(nullptr));
+        assert(!slot.has_value());
+
+        // First try_set on non-null → accepted.
+        assert(slot.try_set(&payload));
+        assert(slot.has_value());
+        assert(static_cast<bool>(slot));
+        assert(slot.get() == &payload);
+        assert(*slot == 7);
+
+        // Subsequent try_set → refused (idempotent).
+        int other = 13;
+        assert(!slot.try_set(&other));
+        assert(slot.get() == &payload);
+
+        // Operator-> reaches the pointee without extra unwrap.
+        struct Thing { int x; };
+        Thing t{42};
+        WriteOnceNonNull<Thing*> thing_slot;
+        thing_slot.set(&t);
+        assert(thing_slot->x == 42);
+
+        // void-pointee path: must compile without operator* / operator->
+        // (SFINAE'd away for void).
+        int raw = 99;
+        WriteOnceNonNull<void*> vslot;
+        vslot.set(&raw);
+        assert(vslot.has_value());
+        assert(vslot.get() == &raw);
+    }
     std::printf("  Mutation:       ok\n");
 }
 
