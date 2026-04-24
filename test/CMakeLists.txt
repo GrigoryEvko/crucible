@@ -660,6 +660,14 @@ crucible_neg_compile_test(neg_session_lookup_missing_entry
 crucible_neg_compile_test(neg_session_global_free_var
     "should be ill-formed")
 
+# L4 SessionGlobal.h — self-transmission Transmission<X, X, ...>
+# (#363).
+#
+# [FRAMEWORK-CONTROLLED] assert_no_self_loop<G>() emits the routed
+# [ProtocolViolation_Self_Loop] tag — stable across GCC versions.
+crucible_neg_compile_test(neg_session_global_self_transmission
+    "ProtocolViolation_Self_Loop")
+
 # L3 SessionQueue.h — head_queue_t on an empty queue.
 crucible_neg_compile_test(neg_session_queue_head_empty
     "Q is empty or is not a Queue")
