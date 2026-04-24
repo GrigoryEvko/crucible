@@ -447,8 +447,17 @@ class consumed_tracker {
 public:
     constexpr void mark() noexcept { flag_ = true; }
     constexpr bool was_marked() const noexcept { return flag_; }
+
+    // Self-safe move.  When &other == *this (reachable via aliasing
+    // or chained moves like `h = std::move(h);`), the naive
+    // implementation would store flag_ = flag_ then unconditionally
+    // set flag_ = true — silently marking the handle consumed
+    // regardless of its prior state and breaking the destructor's
+    // abandonment-check invariant (#365).  The guard short-circuits
+    // self-aliasing, leaving the tracker exactly as it was.
     constexpr void move_from(consumed_tracker& other) noexcept {
-        flag_ = other.flag_;
+        if (this == &other) [[unlikely]] return;
+        flag_       = other.flag_;
         other.flag_ = true;
     }
 };
@@ -629,6 +638,18 @@ public:
     // source's consumed state (typically false — a newly-moved-into
     // handle is fresh).  In RELEASE, tracker.move_from is a no-op
     // and the entire move sequence trivializes to a default move.
+    //
+    // The move ctor cannot self-construct (the language forbids
+    // `auto h(std::move(h))` from naming `h` in its own initialiser
+    // before construction completes), but the move-assignment CAN
+    // self-assign via aliasing (`h = std::move(h);`).  The C++
+    // standard says self-move leaves the object "valid but
+    // unspecified"; our specific contract is STRONGER — self-move
+    // must leave the consumed-state unchanged so the abandonment
+    // check still fires for genuinely-leaked handles.  Defence is
+    // layered: consumed_tracker::move_from short-circuits the
+    // primitive case (#365), and the explicit early return below
+    // documents the contract at the boundary the user calls.
     constexpr SessionHandleBase(SessionHandleBase&& other) noexcept
     {
         tracker_.move_from(other.tracker_);
@@ -636,6 +657,7 @@ public:
 
     constexpr SessionHandleBase& operator=(SessionHandleBase&& other) noexcept
     {
+        if (this == &other) [[unlikely]] return *this;
         tracker_.move_from(other.tracker_);
         return *this;
     }
