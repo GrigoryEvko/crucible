@@ -525,6 +525,79 @@ constexpr std::string_view type_name() noexcept {
 }  // namespace detail
 
 // ═════════════════════════════════════════════════════════════════
+// ── detach_reason::* — typed reasons for SessionHandle::detach()
+// ═════════════════════════════════════════════════════════════════
+//
+// `.detach(reason)` requires a tag from this namespace identifying
+// the AUDIT CLASS of the abandonment (#376).  Each tag names a
+// distinct sanctioned reason for marking the handle consumed
+// without advancing the protocol; per-class greps localize each
+// pattern's call sites:
+//
+//   grep "detach(detach_reason::TestInstrumentation"
+//     — every test-side intentional drop
+//   grep "detach(detach_reason::TransportClosedOutOfBand"
+//     — every CNTP/peer-crash induced abandonment
+//   grep "detach(detach_reason::InfiniteLoopProtocol"
+//     — every infinite Loop<X> termination point
+//
+// Tags are empty structs inheriting from `detach_reason::tag_base`;
+// the `DetachReason` concept gates `.detach()` to accept only
+// inheritors of the base.  User extensions plug in by inheriting
+// from tag_base; the concept admits them automatically.
+
+namespace detach_reason {
+
+// Marker base for the DetachReason concept.  Inheritance-based
+// detection lets new tags plug in without trait-specialisation
+// boilerplate.
+struct tag_base {};
+
+// Loop<X...Continue> protocols without a close branch — termination
+// is implicit via the transport layer closing the channel below
+// the session-type abstraction (TraceRing flush, MetaLog drain end,
+// Augur metrics broadcast shutdown, SWIM gossip cluster shutdown,
+// infinite serving loops at process exit).
+struct InfiniteLoopProtocol : tag_base {};
+
+// Transport detected the peer's session is gone out-of-band — CNTP
+// completion error fires (IB_WC_RETRY_EXC_ERR), SWIM confirmed-dead
+// signal arrives, kernel socket close on the underlying fd.  The
+// session is unrecoverable; the handle is dropped without protocol
+// advance because no advance can complete.
+struct TransportClosedOutOfBand : tag_base {};
+
+// Test / instrumentation drop — the test exercises a partial
+// protocol path, then intentionally abandons.  Almost always
+// scoped to test code.
+struct TestInstrumentation : tag_base {};
+
+// Async cancellation — std::jthread's stop_token fired mid-protocol,
+// or a higher-level cancellation primitive routed a stop signal to
+// the worker holding this handle.  Different from
+// TransportClosedOutOfBand because the local side initiated the
+// cancellation; the peer may still be alive.
+struct AsyncCancellation : tag_base {};
+
+// The owning object that bounded this handle's lifetime is being
+// destructed; the handle has no choice but to detach.  Last-resort —
+// indicates a design where the handle's lifetime didn't match the
+// protocol's expected termination.  Common in bridge / wrapper
+// types that mint borrowed handles (e.g.,
+// MachineSessionBridge::session_view's mid-protocol consumer).
+struct OwnerLifetimeBoundEarlyExit : tag_base {};
+
+}  // namespace detach_reason
+
+// Concept gate for detach()'s reason parameter.  Inheritance-based
+// — user extensions plug in automatically by inheriting from
+// detach_reason::tag_base.
+template <typename T>
+concept DetachReason =
+    std::is_base_of_v<detach_reason::tag_base, T>
+    && !std::is_same_v<T, detach_reason::tag_base>;
+
+// ═════════════════════════════════════════════════════════════════
 // ── SessionHandleBase<Proto> — lifetime-tracked CRTP base ────────
 // ═════════════════════════════════════════════════════════════════
 //
@@ -608,24 +681,57 @@ public:
     }
 
     // Public detach: mark the handle consumed WITHOUT advancing the
-    // protocol.  Use ONLY when:
+    // protocol.  Requires a typed reason tag from the
+    // `detach_reason::*` namespace — the tag NAMES the audit class
+    // and makes per-class greps mechanical (#376).
+    //
+    // Use ONLY when:
     //
     //   * The protocol is inherently infinite (Loop<X> without a close
     //     branch); the handle's "termination" is implicit via the
     //     transport layer closing the channel below the session-type
-    //     abstraction.
+    //     abstraction.  Tag: `detach_reason::InfiniteLoopProtocol`.
     //   * The transport has closed the session out-of-band (peer
     //     crash detected at a lower layer, channel teardown, kernel-
     //     level socket close).
+    //     Tag: `detach_reason::TransportClosedOutOfBand`.
     //   * Test / instrumentation scenarios that intentionally drop
     //     handles at a known-safe point.
+    //     Tag: `detach_reason::TestInstrumentation`.
+    //   * Runtime cancellation (jthread stop_token fired mid-protocol).
+    //     Tag: `detach_reason::AsyncCancellation`.
+    //   * Owning object destructed while handle still alive (last-resort).
+    //     Tag: `detach_reason::OwnerLifetimeBoundEarlyExit`.
     //
-    // Grep for `.detach()` to audit all intentional-drop sites; this
-    // is the reviewable escape hatch.  The destructor-check still
-    // fires for handles that DON'T explicitly detach, catching
-    // accidental abandonment.  In RELEASE, detach is a no-op (the
-    // destructor check is also no-op'd, so consistency holds).
-    constexpr void detach() && noexcept { tracker_.mark(); }
+    // Audit:
+    //   grep "detach(detach_reason::"                — every detach
+    //   grep "detach(detach_reason::TestInstrumentation"  — only tests
+    //   grep "detach(detach_reason::TransportClosedOutOfBand" — only crashes
+    //
+    // The destructor-check still fires for handles that DON'T
+    // explicitly detach, catching accidental abandonment.  In
+    // RELEASE, detach is a no-op (the destructor check is also
+    // no-op'd, so consistency holds).
+    template <typename Reason>
+        requires DetachReason<Reason>
+    constexpr void detach(Reason /*reason_tag*/) && noexcept {
+        tracker_.mark();
+    }
+
+    // Framework-routed rejection of bare `.detach()` (no reason tag).
+    // The deleted overload outranks the templated one for a zero-arg
+    // call, so the diagnostic comes from this string rather than from
+    // the GCC-version-specific "no matching function" wrapper text.
+    // Audit grep: `[DetachReason_Required]`.
+    void detach() && = delete(
+        "[DetachReason_Required] SessionHandle::detach() requires a typed "
+        "reason tag from detach_reason::*.  Pass one of "
+        "detach_reason::InfiniteLoopProtocol{} (Loop<X> with no close "
+        "branch), TransportClosedOutOfBand{} (peer crash), "
+        "TestInstrumentation{} (test code only), AsyncCancellation{} "
+        "(jthread stop_token), or OwnerLifetimeBoundEarlyExit{} "
+        "(bridge/wrapper destructor).  Per #376, the tag NAMES the audit "
+        "class so per-class greps stay mechanical.");
 
     // Linear — copy-deleted with reason.
     SessionHandleBase(const SessionHandleBase&)

@@ -721,3 +721,13 @@ crucible_neg_compile_test(neg_session_diagnostic_non_tag
 # and emit "[SchedulerAccessor_NonPolicy]" on rejection.
 crucible_neg_compile_test(neg_scheduler_policy_non_inheritance
     "SchedulerAccessor_NonPolicy")
+
+# SessionHandle::detach() called without a typed reason tag (#376).
+#
+# [FRAMEWORK-CONTROLLED] The zero-arg overload is `= delete("...")`
+# with the framework-controlled "[DetachReason_Required]" prefix; the
+# templated detach<Reason>(Reason) requires `DetachReason<Reason>` so
+# the deleted overload outranks it for a zero-arg call.  Stable across
+# GCC versions because the framework owns the deleted-overload string.
+crucible_neg_compile_test(neg_session_detach_no_reason
+    "DetachReason_Required")
