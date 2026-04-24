@@ -162,9 +162,24 @@ enum class Layout : int8_t {
 
 #define CRUCIBLE_STRONG_ID(Name)                                           \
   struct Name {                                                            \
+  private:                                                                 \
+    /* #133: v is private.  External read goes through .raw(); external */\
+    /* construction goes through the explicit ctor OR from_raw().  This */\
+    /* closes the direct-field-access hole where `id.v = 999` could */    \
+    /* bypass the explicit-ctor discipline and mutate a strong-ID in */   \
+    /* place. */                                                           \
     uint32_t v;                                                            \
-    constexpr explicit Name(uint32_t val) noexcept : v(val) {}             \
+  public:                                                                  \
     constexpr Name() noexcept : v(UINT32_MAX) {}                           \
+    constexpr explicit Name(uint32_t val) noexcept : v(val) {}             \
+    /* #133: named factory for cross-kind bridges.  When converting */    \
+    /* from ANOTHER strong-ID's raw (the silent-bug pattern), prefer */   \
+    /* `Name::from_raw(other.raw())` — the explicit factory is */         \
+    /* greppable for code review.  Audit: `grep "::from_raw"` finds */    \
+    /* every bridge site mechanically. */                                 \
+    [[nodiscard]] static constexpr Name from_raw(uint32_t val) noexcept {  \
+      return Name{val};                                                    \
+    }                                                                      \
     [[nodiscard]] static constexpr Name none() noexcept {                  \
       return Name{UINT32_MAX};                                             \
     }                                                                      \
@@ -204,9 +219,17 @@ CRUCIBLE_STRONG_ID(MetaIndex);  // index into MetaLog buffer
 
 #define CRUCIBLE_STRONG_HASH(Name)                                         \
   struct Name {                                                            \
+  private:                                                                 \
+    /* #133: v is private; external access is via .raw() only. */         \
     uint64_t v;                                                            \
-    constexpr explicit Name(uint64_t val) noexcept : v(val) {}             \
+  public:                                                                  \
     constexpr Name() noexcept : v(0) {}                                    \
+    constexpr explicit Name(uint64_t val) noexcept : v(val) {}             \
+    /* #133: named factory for cross-kind bridges — `grep "::from_raw"` */\
+    /* locates every cross-kind-hash conversion site. */                  \
+    [[nodiscard]] static constexpr Name from_raw(uint64_t val) noexcept {  \
+      return Name{val};                                                    \
+    }                                                                      \
     [[nodiscard]] constexpr uint64_t raw() const noexcept { return v; }    \
     [[nodiscard]] constexpr explicit operator bool() const noexcept {      \
       return v != 0;                                                       \
