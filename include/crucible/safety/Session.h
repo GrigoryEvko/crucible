@@ -444,6 +444,145 @@ template <typename P, typename Q>
 using compose_t = typename compose<P, Q>::type;
 
 // ═════════════════════════════════════════════════════════════════
+// ── compose_at_branch<P, I, Q> — branch-asymmetric composition (#378)
+// ═════════════════════════════════════════════════════════════════
+//
+// `compose_t<P, Q>` is UNIFORM — it replaces every End in P with Q
+// across all branches.  But many real protocols are branch-ASYMMETRIC:
+// one branch loops back, another terminates; one branch enters a sub-
+// session, another reports an error and ends.  Hand-writing each
+// branch's continuation defeats the point of composing patterns.
+//
+// `compose_at_branch_t<P, I, Q>` walks P's head until it finds the
+// first Select<Bs...> or Offer<Bs...>, then replaces ONLY branch I's
+// continuation (compose_t-style — every End within branch I becomes
+// Q), leaving the other branches untouched.
+//
+// Pre-head Send<T, _> / Recv<T, _> nodes are passed through (the
+// metafunction recurses into the continuation looking for the choice).
+// Loop<B> is passed through and recursed into B.
+//
+// Errors:
+//   * No reachable Select/Offer in P's spine        → [Branch_Compose_No_Choice]
+//   * I out of range for the reached Select/Offer   → [Branch_Compose_Index_Out_Of_Range]
+//
+// Example:
+//
+//     using ServerOnce = Recv<Request, Select<
+//         Send<Ok,    End>,        // branch 0: success path
+//         Send<Error, End>>>;       // branch 1: error path
+//
+//     // Add a follow-up loop ONLY on the success branch:
+//     using ServerLoop = compose_at_branch_t<
+//         ServerOnce, /*branch=*/0,
+//         Loop<Recv<Request, Continue>>>;
+//
+//     // Equivalent to manually:
+//     //   Recv<Request, Select<Send<Ok, Loop<Recv<Request, Continue>>>,
+//     //                        Send<Error, End>>>
+//
+// Audit:
+//   grep "compose_at_branch_t<"   — every branch-asymmetric site
+
+namespace detail {
+// Replace branch_index in (Bs...) with compose_t<Bs[branch_index], Q>.
+template <std::size_t BranchIndex, typename Q, typename... Bs>
+struct rewrite_branches {
+    template <std::size_t I>
+    using at = std::conditional_t<
+        I == BranchIndex,
+        compose_t<std::tuple_element_t<I, std::tuple<Bs...>>, Q>,
+        std::tuple_element_t<I, std::tuple<Bs...>>>;
+
+    template <typename Idxs>
+    struct unpack;
+
+    template <std::size_t... Is>
+    struct unpack<std::index_sequence<Is...>> {
+        using as_select = Select<at<Is>...>;
+        using as_offer  = Offer<at<Is>...>;
+    };
+};
+}  // namespace detail
+
+template <typename P, std::size_t I, typename Q>
+struct compose_at_branch;
+
+// Reaching the choice: Select<Bs...>.
+template <typename... Bs, std::size_t I, typename Q>
+struct compose_at_branch<Select<Bs...>, I, Q> {
+    static_assert(I < sizeof...(Bs),
+        "crucible::session::diagnostic [Branch_Compose_Index_Out_Of_Range]: "
+        "compose_at_branch_t<Select<Bs...>, I, Q>: branch index I is "
+        "out of range for the reached Select.  The Select has fewer "
+        "branches than the index requested; verify I < sizeof...(Bs) "
+        "at the call site (decltype-expose `branch_count` if needed).");
+    using type = typename detail::rewrite_branches<I, Q, Bs...>::template
+        unpack<std::make_index_sequence<sizeof...(Bs)>>::as_select;
+};
+
+// Reaching the choice: Offer<Bs...>.
+template <typename... Bs, std::size_t I, typename Q>
+struct compose_at_branch<Offer<Bs...>, I, Q> {
+    static_assert(I < sizeof...(Bs),
+        "crucible::session::diagnostic [Branch_Compose_Index_Out_Of_Range]: "
+        "compose_at_branch_t<Offer<Bs...>, I, Q>: branch index I is "
+        "out of range for the reached Offer.  The Offer has fewer "
+        "branches than the index requested.");
+    using type = typename detail::rewrite_branches<I, Q, Bs...>::template
+        unpack<std::make_index_sequence<sizeof...(Bs)>>::as_offer;
+};
+
+// Pass-through pre-head nodes: recurse into Send/Recv's continuation.
+template <typename T, typename R, std::size_t I, typename Q>
+struct compose_at_branch<Send<T, R>, I, Q> {
+    using type = Send<T, typename compose_at_branch<R, I, Q>::type>;
+};
+
+template <typename T, typename R, std::size_t I, typename Q>
+struct compose_at_branch<Recv<T, R>, I, Q> {
+    using type = Recv<T, typename compose_at_branch<R, I, Q>::type>;
+};
+
+// Pass-through Loop<B>: recurse into the body.  Note: the loop body's
+// own End is composed normally if the choice is below the Loop; if
+// the loop body itself ends with End (no choice reachable), the
+// no-choice diagnostic fires below.
+template <typename B, std::size_t I, typename Q>
+struct compose_at_branch<Loop<B>, I, Q> {
+    using type = Loop<typename compose_at_branch<B, I, Q>::type>;
+};
+
+// Reaching End / Continue / Stop / etc. WITHOUT having found a
+// Select or Offer means the spine has no choice to compose at —
+// named diagnostic.
+template <std::size_t I, typename Q>
+struct compose_at_branch<End, I, Q> {
+    static_assert(sizeof(Q) == 0,
+        "crucible::session::diagnostic [Branch_Compose_No_Choice]: "
+        "compose_at_branch_t<P, I, Q>: walked P's spine to End without "
+        "encountering a Select<Bs...> or Offer<Bs...> to compose at.  "
+        "Branch-asymmetric composition requires P to contain a choice "
+        "combinator at some position reachable from the head via "
+        "Send/Recv/Loop pass-through.  If you intended UNIFORM "
+        "composition (every End → Q), use the existing compose_t<P, Q> "
+        "instead.");
+};
+
+template <std::size_t I, typename Q>
+struct compose_at_branch<Continue, I, Q> {
+    static_assert(sizeof(Q) == 0,
+        "crucible::session::diagnostic [Branch_Compose_No_Choice]: "
+        "compose_at_branch_t<P, I, Q>: walked P's spine to Continue "
+        "without encountering a Select or Offer.  Continue is a loop-"
+        "back marker, not a choice point; compose_at_branch is meant "
+        "for choice combinators.");
+};
+
+template <typename P, std::size_t I, typename Q>
+using compose_at_branch_t = typename compose_at_branch<P, I, Q>::type;
+
+// ═════════════════════════════════════════════════════════════════
 // ── is_well_formed<P, LoopCtx> — compile-time soundness check ───
 // ═════════════════════════════════════════════════════════════════
 //
