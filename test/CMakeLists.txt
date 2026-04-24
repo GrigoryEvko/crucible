@@ -509,6 +509,17 @@ crucible_test(test_session_subtype_reason)
 # pattern documented in §14.
 crucible_test(test_lazy_established_channel)
 
+# DeclassifyOnSend payload wrapper (#402, SAFEINT-B13).
+# DeclassifyOnSend<T, Policy> puts the wire-classification policy
+# IN THE PROTOCOL TYPE so audit-grep `DeclassifyOnSend<` finds every
+# wire-classified payload.  Move-only wrapping over Secret<T>; the
+# transport's declassify_for_wire() is the single chokepoint where
+# the Secret bytes escape classification.  Verifies the load-bearing
+# subsort asymmetry (DeclassifyOnSend ⩽ bare T is FALSE — defeating
+# audit-discoverability), the trait extraction path, and the typed
+# auth-handshake worked example from §13.
+crucible_test(test_session_declassify)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
