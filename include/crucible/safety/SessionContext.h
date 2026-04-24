@@ -109,7 +109,12 @@
 
 #include <crucible/Platform.h>
 
+#include <algorithm>
+#include <array>
+#include <compare>
 #include <cstddef>
+#include <cstdint>
+#include <string_view>
 #include <type_traits>
 
 namespace crucible::safety::proto {
@@ -137,42 +142,88 @@ struct Entry {
 // ═════════════════════════════════════════════════════════════════════
 // ── Distinctness check (all_keys_distinct_v) ───────────────────────
 // ═════════════════════════════════════════════════════════════════════
-
-namespace detail::ctx {
-
+//
 // Two entries share a key iff both session and role are identical.
 // (Having the same session tag with different roles is NOT a key
 // collision — that's the canonical multi-role-per-session pattern.)
-template <typename A, typename B>
-inline constexpr bool has_same_key_v =
-    std::is_same_v<typename A::session, typename B::session> &&
-    std::is_same_v<typename A::role,    typename B::role>;
+//
+// Implementation (#373 SEPLOG-PERF-3): O(N log N) consteval sort-and-
+// scan over a hash-projected key array.  Replaces the previous
+// O(N²) recursive `head_key_fresh_v` template-instantiation chain
+// (every prefix's head conjoined against its suffix).  At Γ sizes
+// of tens of entries the new path is one consteval call instead of
+// a quadratic instantiation tree; at ~100 entries the
+// instantiation-count saving is ~10×.
+//
+// Key collision robustness: the composite EntryKey holds two 64-bit
+// hashes (session, role).  Probability of false-positive collision
+// across distinct (session, role) pairs is ~1/2^128 — same risk
+// profile as the framework's other content-hashing paths
+// (default_schema_hash, KernelCache content_hash).  Practical Γ
+// hand-written by users are immune.
 
-// Head entry's key must not match any entry in the tail.  O(|tail|)
-// fold-expression.  Conjunction: "for every tail entry T, !same(head, T)".
-template <typename Head, typename... Tail>
-inline constexpr bool head_key_fresh_v =
-    (!has_same_key_v<Head, Tail> && ...);
+namespace detail::ctx {
 
-// All keys distinct: every prefix's head is fresh against its suffix.
-// Total cost: O(|entries|²) compile-time template instantiations,
-// which is fine for realistic Γ sizes (tens of entries).
+// FNV-1a 64-bit hash of a string view at consteval.
+[[nodiscard]] inline consteval std::uint64_t fnv1a_64(std::string_view s) noexcept {
+    constexpr std::uint64_t kFnvOffsetBasis = 0xcbf29ce484222325ULL;
+    constexpr std::uint64_t kFnvPrime       = 0x100000001b3ULL;
+    std::uint64_t h = kFnvOffsetBasis;
+    for (char c : s) {
+        h ^= static_cast<std::uint64_t>(static_cast<unsigned char>(c));
+        h *= kFnvPrime;
+    }
+    return h;
+}
+
+// Per-type stable 64-bit identifier.  __PRETTY_FUNCTION__ inside the
+// template includes T's mangled spelling — same T → same string →
+// same hash across TUs of the same build.  Cross-build / cross-
+// platform identity is NOT promised (mangling differs); session-
+// distinctness is checked within one TU's compile, so this is
+// sufficient.
+template <typename T>
+[[nodiscard]] inline consteval std::uint64_t type_id_hash_for() noexcept {
+    return fnv1a_64(std::string_view{__PRETTY_FUNCTION__});
+}
+
+template <typename T>
+inline constexpr std::uint64_t type_id_hash_v = type_id_hash_for<T>();
+
+// Composite key for an Entry: (session_hash, role_hash).  Defaulted
+// <=> gives lexicographic ordering for std::sort; defaulted == does
+// component-wise equality for the adjacent-duplicate scan.
+struct EntryKey {
+    std::uint64_t session_hash{};
+    std::uint64_t role_hash{};
+    constexpr auto operator<=>(const EntryKey&) const noexcept = default;
+    constexpr bool operator==(const EntryKey&)  const noexcept = default;
+};
+
+// O(N log N) distinctness: project each entry to its EntryKey,
+// sort, scan adjacent for duplicates.
 template <typename... Entries>
-struct all_keys_distinct;
-
-template <>
-struct all_keys_distinct<> : std::true_type {};
-
-template <typename Head, typename... Tail>
-struct all_keys_distinct<Head, Tail...>
-    : std::bool_constant<
-          head_key_fresh_v<Head, Tail...> &&
-          all_keys_distinct<Tail...>::value
-      > {};
+[[nodiscard]] inline consteval bool all_keys_distinct_impl() noexcept {
+    constexpr std::size_t N = sizeof...(Entries);
+    if constexpr (N <= 1) {
+        return true;
+    } else {
+        std::array<EntryKey, N> keys{
+            EntryKey{
+                type_id_hash_v<typename Entries::session>,
+                type_id_hash_v<typename Entries::role>
+            }...
+        };
+        std::ranges::sort(keys);
+        for (std::size_t i = 1; i < N; ++i) {
+            if (keys[i - 1] == keys[i]) return false;
+        }
+        return true;
+    }
+}
 
 template <typename... Entries>
-inline constexpr bool all_keys_distinct_v =
-    all_keys_distinct<Entries...>::value;
+inline constexpr bool all_keys_distinct_v = all_keys_distinct_impl<Entries...>();
 
 // "dependent_false" — always false, but dependent on the template
 // parameter pack so it only fires on template instantiation (not at
