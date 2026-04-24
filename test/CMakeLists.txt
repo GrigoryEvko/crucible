@@ -449,6 +449,15 @@ crucible_test(test_session_content_addressed)
 # or out-of-band transport close.
 crucible_test(test_session_lifetime)
 
+# PermissionedSpscChannel<T, N, UserTag> — SPSC worked example
+# backing SEPLOG-INT-1 (task #384, TraceRing wiring) and the broader
+# K-series production-integration work.  Validates: role
+# discrimination via concept, move-only handles with reference-bound
+# channel (move-assign deliberately deleted), splits_into auto-
+# specialisation per UserTag, sizeof EBO promise, single-threaded
+# FIFO + capacity bound + cross-thread jthread handoff.
+crucible_test(test_permissioned_spsc_channel)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
