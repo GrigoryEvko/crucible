@@ -260,15 +260,74 @@ static_assert(SessionHandle<Delegate<Send<int, End>, End>, FakeRes>::protocol_na
 static_assert(SessionHandle<Accept<Send<int, End>,   End>, FakeRes>::protocol_name().size() > 0);
 static_assert(SessionHandle<CheckpointedSession<End, End>, FakeRes>::protocol_name().size() > 0);
 
+// ── Runtime: self-move-assignment must preserve consumed state (#365) ─
+//
+// `h = std::move(h);` is reachable via aliasing or chained moves.
+// The C++ standard says self-move leaves the object "valid but
+// unspecified" — but our specific contract is STRONGER: self-move
+// must leave the abandonment-tracker's flag UNCHANGED.  Otherwise a
+// previously-unconsumed handle would be silently marked consumed
+// and the destructor's abandonment check would skip handles that
+// are genuinely leaked.
+//
+// We test the consumed_tracker primitive directly.  In RELEASE,
+// consumed_tracker is empty (mark/move_from are no-ops); the test
+// trivially passes.  In DEBUG, the test exercises the actual
+// flag-preservation invariant.
+
+int run_self_move_preserves_tracker_state() {
+    // Case 1: tracker fresh — was_marked() must remain false after
+    // self-move.  Under the bug, the old impl would set flag_=true
+    // unconditionally and was_marked() would flip to true.
+    detail::consumed_tracker fresh;
+#ifndef NDEBUG
+    if (fresh.was_marked()) return 1;
+#endif
+    fresh.move_from(fresh);
+#ifndef NDEBUG
+    if (fresh.was_marked()) return 2;  // would fire under the bug
+#endif
+
+    // Case 2: tracker already consumed — was_marked() stays true
+    // (consumed → consumed is fine; the check is monotonic).
+    detail::consumed_tracker stale;
+    stale.mark();
+#ifndef NDEBUG
+    if (!stale.was_marked()) return 3;
+#endif
+    stale.move_from(stale);
+#ifndef NDEBUG
+    if (!stale.was_marked()) return 4;
+#endif
+
+    // Case 3: through SessionHandleBase's operator= boundary.  We
+    // can't directly inspect tracker_ from outside (private), but
+    // we can verify the operator= does not crash and the handle
+    // remains usable for one more operation (.detach()).  This
+    // doesn't distinguish bug-from-fix on its own — the load-bearing
+    // check is the primitive case above — but it confirms the
+    // operator= compiles, the [[unlikely]] short-circuit doesn't
+    // crash, and detaching after self-move is well-formed.
+    {
+        auto h = make_session_handle<Send<int, End>>(FakeRes{});
+        auto& alias = h;
+        h = std::move(alias);  // self-move-assign via alias
+        std::move(h).detach();  // consume; no abort in debug
+    }
+
+    return 0;
+}
+
 }  // anonymous namespace
 
 int main() {
-    if (int rc = run_consume_via_close();      rc != 0) return rc;
-    if (int rc = run_consume_via_chain();      rc != 0) return rc;
-    if (int rc = run_detach_infinite_loop();   rc != 0) return rc;
-    if (int rc = run_stop_terminal();          rc != 0) return rc;
-    if (int rc = run_moved_from_safe();        rc != 0) return rc;
-    if (int rc = run_protocol_name_smoke();    rc != 0) return rc;
-    std::puts("session_lifetime: close + chain + detach + Stop + moved-from + protocol_name OK");
+    if (int rc = run_consume_via_close();                  rc != 0) return rc;
+    if (int rc = run_consume_via_chain();                  rc != 0) return rc;
+    if (int rc = run_detach_infinite_loop();               rc != 0) return rc;
+    if (int rc = run_stop_terminal();                      rc != 0) return rc;
+    if (int rc = run_moved_from_safe();                    rc != 0) return rc;
+    if (int rc = run_protocol_name_smoke();                rc != 0) return rc;
+    if (int rc = run_self_move_preserves_tracker_state();  rc != 0) return rc;
+    std::puts("session_lifetime: close + chain + detach + Stop + moved-from + protocol_name + self_move OK");
     return 0;
 }
