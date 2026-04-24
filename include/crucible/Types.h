@@ -2,10 +2,57 @@
 
 #include <crucible/Platform.h>
 
+#include <compare>
+#include <cstddef>
 #include <cstdint>
 #include <utility>
 
 namespace crucible {
+
+// ── ElementBytes — strong type for "bytes per element of a dtype" (#129)
+//
+// Previously `element_size(ScalarType)` returned a raw `uint8_t`,
+// letting callers accidentally use the per-element byte size as a
+// SlotId count, a MetaLog index, or a running byte total — all of
+// which happen to fit in 8 bits but have completely different
+// semantics.  `ElementBytes` is a phantom-typed newtype whose value
+// range is tied to the per-element-size semantic, preventing
+// silent conflation at TypeSafe call sites.
+//
+// Value domain: 0 (ScalarType::Undefined) plus {1, 2, 4, 8, 16}
+// (real dtypes).  Underlying storage is `uint8_t` — 16 is the
+// maximum real element size (ComplexDouble).
+//
+// The type is layout-identical to uint8_t under `[[no_unique_address]]`
+// + the member struct has a single uint8_t field → `sizeof(ElementBytes)
+// == sizeof(uint8_t) == 1`.
+struct ElementBytes {
+    uint8_t value_ = 0;
+
+    constexpr ElementBytes() noexcept = default;
+    explicit constexpr ElementBytes(uint8_t v) noexcept : value_{v} {}
+
+    [[nodiscard]] constexpr uint8_t raw()     const noexcept { return value_; }
+    [[nodiscard]] constexpr bool    is_zero() const noexcept { return value_ == 0; }
+
+    // Comparison is defined between ElementBytes values only — raw
+    // integer literals DON'T implicitly convert (the ctor is
+    // `explicit`).  Tests and call sites write `ElementBytes{4}` when
+    // they want to compare against a literal, surfacing the unit.
+    auto operator<=>(const ElementBytes&) const = default;
+
+    // Common operation: multiply by a count to obtain total bytes.
+    // Returns `std::size_t` so the result is wide enough for arena /
+    // region / memory-plan totals without truncation.  Overflow is
+    // NOT checked here — callers needing safety wrap via Checked.h's
+    // `safe_mul<std::size_t, ...>` or the `safe_array_bytes<T, N>`
+    // helper family (#134).
+    [[nodiscard]] constexpr std::size_t times(std::size_t n) const noexcept {
+        return std::size_t{value_} * n;
+    }
+};
+static_assert(sizeof(ElementBytes) == sizeof(uint8_t),
+    "ElementBytes must be layout-identical to uint8_t (#129).");
 
 // Mirror c10::ScalarType ordinals exactly so int8_t casts are compatible
 // between the standalone library and the PyTorch Vessel adapter.
@@ -32,13 +79,19 @@ enum class ScalarType : int8_t {
 
 // Byte size per dtype.  gnu::const: takes one value, no memory access.
 //
-// Postcondition: result > 0 for every ScalarType EXCEPT Undefined (which
-// returns 0).  The post() contract propagates as [[assume]] at call sites
-// where t is known non-Undefined, eliminating divide-by-zero branches in
-// size-math chains.  Callers that intend to accept Undefined must handle
-// the result==0 case explicitly.
-CRUCIBLE_CONST constexpr uint8_t element_size(ScalarType const t) noexcept
-    post (r: t == ScalarType::Undefined || r > 0)
+// Returns an `ElementBytes` strong type (#129) — prevents conflation
+// of per-element byte sizes with SlotId counts, MetaLog indices, or
+// running byte totals at TypeSafe call sites.  `.raw()` extracts the
+// underlying uint8_t; `.times(n)` produces std::size_t for totals.
+//
+// Postcondition: result is non-zero for every ScalarType EXCEPT
+// Undefined (which returns ElementBytes{0}).  The post() contract
+// propagates as [[assume]] at call sites where t is known
+// non-Undefined, eliminating divide-by-zero branches in size-math
+// chains.  Callers that intend to accept Undefined must handle the
+// `.is_zero()` case explicitly.
+CRUCIBLE_CONST constexpr ElementBytes element_size(ScalarType const t) noexcept
+    post (r: t == ScalarType::Undefined || !r.is_zero())
 {
   switch (t) {
     case ScalarType::Bool:
@@ -48,23 +101,23 @@ CRUCIBLE_CONST constexpr uint8_t element_size(ScalarType const t) noexcept
     case ScalarType::Float8_e4m3fn:
     case ScalarType::Float8_e5m2fnuz:
     case ScalarType::Float8_e4m3fnuz:
-      return 1;
+      return ElementBytes{1};
     case ScalarType::Short:
     case ScalarType::Half:
     case ScalarType::BFloat16:
-      return 2;
+      return ElementBytes{2};
     case ScalarType::Int:
     case ScalarType::Float:
     case ScalarType::ComplexHalf:
-      return 4;
+      return ElementBytes{4};
     case ScalarType::Long:
     case ScalarType::Double:
     case ScalarType::ComplexFloat:
-      return 8;
+      return ElementBytes{8};
     case ScalarType::ComplexDouble:
-      return 16;
+      return ElementBytes{16};
     case ScalarType::Undefined:
-      return 0;
+      return ElementBytes{0};
     default:
       std::unreachable();
   }

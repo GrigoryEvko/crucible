@@ -96,7 +96,7 @@ static void test_scalar_tensor() {
     meta.ndim = 0;
     meta.dtype = ScalarType::Float;
     check_equiv(meta, "scalar-float");
-    assert(compute_storage_nbytes_simd(meta) == element_size(ScalarType::Float));
+    assert(compute_storage_nbytes_simd(meta) == element_size(ScalarType::Float).raw());
 
     meta.dtype = ScalarType::Double;
     check_equiv(meta, "scalar-double");
@@ -206,7 +206,7 @@ static void test_dtype_variations() {
         auto m = sizes_strides();
         m.dtype = dt;
         check_equiv(m, "dtype-variation");
-        const uint64_t expected = uint64_t{12} * element_size(dt);
+        const uint64_t expected = element_size(dt).times(uint64_t{12});
         assert(compute_storage_nbytes_simd(m) == expected);
     }
 

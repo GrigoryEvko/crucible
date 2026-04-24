@@ -80,12 +80,12 @@ int main() {
   assert(cache.insert(ContentHash{0x1234}, reinterpret_cast<crucible::CompiledKernel*>(&fk2)).has_value());
   assert(cache.lookup(ContentHash{0x1234}) == reinterpret_cast<crucible::CompiledKernel*>(&fk2));
 
-  // Test element_size
-  assert(crucible::element_size(crucible::ScalarType::Float) == 4);
-  assert(crucible::element_size(crucible::ScalarType::Double) == 8);
-  assert(crucible::element_size(crucible::ScalarType::Half) == 2);
-  assert(crucible::element_size(crucible::ScalarType::Byte) == 1);
-  assert(crucible::element_size(crucible::ScalarType::ComplexDouble) == 16);
+  // Test element_size — returns ElementBytes strong type (#129).
+  assert(crucible::element_size(crucible::ScalarType::Float)         == crucible::ElementBytes{4});
+  assert(crucible::element_size(crucible::ScalarType::Double)        == crucible::ElementBytes{8});
+  assert(crucible::element_size(crucible::ScalarType::Half)          == crucible::ElementBytes{2});
+  assert(crucible::element_size(crucible::ScalarType::Byte)          == crucible::ElementBytes{1});
+  assert(crucible::element_size(crucible::ScalarType::ComplexDouble) == crucible::ElementBytes{16});
 
   // ═══ LoopNode tests ═════════════════════════════════════════════
 

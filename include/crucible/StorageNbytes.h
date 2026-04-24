@@ -97,7 +97,7 @@ namespace crucible::detail {
 [[nodiscard, gnu::const]] CRUCIBLE_INLINE
 uint64_t compute_storage_nbytes_scalar(const TensorMeta& meta) noexcept {
   if (meta.ndim == 0) {
-    return element_size(meta.dtype);
+    return element_size(meta.dtype).raw();
   }
   int64_t max_offset = 0;
   int64_t min_offset = 0;
@@ -136,7 +136,7 @@ uint64_t compute_storage_nbytes_scalar(const TensorMeta& meta) noexcept {
   // span is non-negative (max >= 0 >= min, so max - min >= 0).
   uint64_t total_bytes;
   if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed),
-                             static_cast<uint64_t>(element_size(meta.dtype)),
+                             static_cast<uint64_t>(element_size(meta.dtype).raw()),
                              &total_bytes)) [[unlikely]] {
     return UINT64_MAX;
   }
@@ -219,7 +219,7 @@ bool storage_nbytes_simd_safe_(const TensorMeta& meta) noexcept {
 uint64_t compute_storage_nbytes_simd(const TensorMeta& meta) noexcept {
   // Edge case: scalar tensor.  Same as scalar path.
   if (meta.ndim == 0) {
-    return element_size(meta.dtype);
+    return element_size(meta.dtype).raw();
   }
 
   using simd::i64x8;
@@ -292,7 +292,7 @@ uint64_t compute_storage_nbytes_simd(const TensorMeta& meta) noexcept {
   }
   uint64_t total_bytes;
   if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed),
-                             static_cast<uint64_t>(element_size(meta.dtype)),
+                             static_cast<uint64_t>(element_size(meta.dtype).raw()),
                              &total_bytes)) [[unlikely]] {
     return UINT64_MAX;
   }
