@@ -243,6 +243,52 @@ struct is_subsort<T, ContentAddressed<T>> : std::true_type {};
 // We don't need an explicit specialisation for this; verify in the
 // self-tests below.
 
+// ─── Depth ≥ 2: nested-wrap transitive interchangeability (#370) ──
+//
+// Subsort is NOT transitive in the framework (documented in
+// SessionSubtype.h:133-153 — the user owns the transitivity rules
+// they declare).  But ContentAddressed's quotient semantics are
+// stronger than ordinary subsort: the type is INVARIANT under
+// content-equality at every wrapping depth.  A doubly-wrapped
+// `ContentAddressed<ContentAddressed<T>>` carries the same
+// content-hash semantics as `T` itself, so the two MUST be mutually
+// substitutable — at depth 2, depth 3, depth N.
+//
+// The depth-1 specs above don't transitively close because subsort
+// composition is the user's responsibility; without an explicit
+// rule the framework reports false at depth ≥ 2.  These two
+// constrained specialisations close the hole using the existing
+// `unwrap_content_addressed_t` trait (recursive depth-stripper),
+// admitting:
+//
+//   ContentAddressed<...<ContentAddressed<U>>...>   ⩽   U
+//   U                ⩽   ContentAddressed<...<ContentAddressed<U>>...>
+//
+// for any wrapping depth ≥ 1.
+//
+// Specialisation ordering: these constrained partial specs are LESS
+// specialised than the literal depth-1 specs above, so the compiler
+// picks the literal depth-1 specs when applicable (no overlap).
+// They're MORE specialised than the primary `is_subsort<T, U>`
+// (which uses `is_same` with no constraints) because they carry a
+// `requires` clause.  The constraint `unwrap_content_addressed_t<X>
+// == Y && X != Y` ensures we only match when (a) one side is
+// content-addressed at depth ≥ 1 and (b) the other side is its
+// recursive unwrap — never the reflexive `is_subsort<X, X>` case
+// which the primary already handles.
+
+template <typename T, typename U>
+    requires (is_content_addressed_v<T>
+              && std::is_same_v<unwrap_content_addressed_t<T>, U>
+              && !std::is_same_v<T, U>)
+struct is_subsort<T, U> : std::true_type {};
+
+template <typename T, typename U>
+    requires (is_content_addressed_v<U>
+              && std::is_same_v<T, unwrap_content_addressed_t<U>>
+              && !std::is_same_v<T, U>)
+struct is_subsort<T, U> : std::true_type {};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Framework self-test static_asserts ─────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -317,6 +363,69 @@ static_assert(!is_subsort_v<ContentAddressed<Msg>, Ack>);
 static_assert(!is_subsort_v<Msg, Ack>);
 static_assert(!is_subsort_v<ContentAddressed<Msg>, ContentAddressed<Ack>>);
 
+// ─── Depth ≥ 2: nested-wrap interchangeability (#370) ─────────────
+//
+// Doubly-wrapped (and arbitrarily-deeply-wrapped) ContentAddressed
+// values are mutually substitutable with the raw payload, in BOTH
+// directions, via the constrained-spec rules above.
+
+using CaCa  = ContentAddressed<ContentAddressed<Msg>>;
+using CaCaCa = ContentAddressed<ContentAddressed<ContentAddressed<Msg>>>;
+
+// Depth 2 ↔ raw.
+static_assert( is_subsort_v<CaCa, Msg>);
+static_assert( is_subsort_v<Msg,  CaCa>);
+
+// Depth 3 ↔ raw.
+static_assert( is_subsort_v<CaCaCa, Msg>);
+static_assert( is_subsort_v<Msg,    CaCaCa>);
+
+// Depth 5 ↔ raw — confirms unbounded depth via the recursive trait.
+using CaDepth5 = ContentAddressed<ContentAddressed<ContentAddressed<
+                  ContentAddressed<ContentAddressed<Msg>>>>>;
+static_assert( is_subsort_v<CaDepth5, Msg>);
+static_assert( is_subsort_v<Msg,      CaDepth5>);
+
+// Reflexivity at every depth (primary is_subsort<T, T>).
+static_assert( is_subsort_v<CaCa,    CaCa>);
+static_assert( is_subsort_v<CaCaCa,  CaCaCa>);
+static_assert( is_subsort_v<CaDepth5, CaDepth5>);
+
+// Cross-depth (depth N ↔ depth N+1) is also true — but via the
+// EXISTING depth-1 specs, not the new depth-N-to-raw specs.  The
+// depth-1 spec `is_subsort<ContentAddressed<X>, X>` matches with
+// X = CaCa for the (CaCaCa, CaCa) pair; the symmetric direction
+// matches via `is_subsort<T, ContentAddressed<T>>` with T = CaCa.
+// So adjacent depths are mutually subsortable already.
+
+static_assert( is_subsort_v<CaCaCa, CaCa>);   // depth-1 spec, X = CaCa
+static_assert( is_subsort_v<CaCa,   CaCaCa>); // depth-1 spec, T = CaCa
+
+// Cross-depth (depth N ↔ depth N+2) WOULD need transitive closure
+// — neither the depth-1 specs nor the new depth-N-to-raw specs
+// cover it directly.  Subsort is not transitive in the framework
+// (per SessionSubtype.h:133-153), so this remains false.  In
+// practice protocols traverse depth changes via Send/Recv payload
+// covariance, which DOES compose through `Send<CaCaCaCa, K> ⩽
+// Send<Msg, K> ⩽ Send<CaCa, K>` by routing through the raw
+// payload — so cross-depth-2 hops at the protocol level work
+// even when the value-level subsort doesn't.
+
+using CaDepth4 = ContentAddressed<ContentAddressed<
+                  ContentAddressed<ContentAddressed<Msg>>>>;
+static_assert(!is_subsort_v<CaDepth4, CaCa>);
+static_assert(!is_subsort_v<CaCa,     CaDepth4>);
+
+// Unrelated pairs at higher depth are still not subsortable.
+static_assert(!is_subsort_v<CaCa,     Ack>);
+static_assert(!is_subsort_v<Ack,      CaCa>);
+static_assert(!is_subsort_v<CaDepth5, Ack>);
+
+// Different inner payloads at any depth are unrelated.
+static_assert(!is_subsort_v<
+    ContentAddressed<ContentAddressed<Msg>>,
+    ContentAddressed<ContentAddressed<Ack>>>);
+
 // ─── Session-type protocol-level integration ─────────────────────
 
 // Send is covariant in payload — so Send<ContentAddressed<Msg>, K>
@@ -345,6 +454,29 @@ static_assert(is_subtype_sync_v<
 static_assert(equivalent_sync_v<
     Recv<ContentAddressed<Msg>, End>,
     Recv<Msg, End>>);
+
+// Depth ≥ 2 also flows through Send / Recv via the constrained spec
+// from #370 — a doubly-wrapped payload is interchangeable with raw
+// at the protocol level.
+
+static_assert(is_subtype_sync_v<
+    Send<ContentAddressed<ContentAddressed<Msg>>, End>,
+    Send<Msg, End>>);
+static_assert(is_subtype_sync_v<
+    Send<Msg, End>,
+    Send<ContentAddressed<ContentAddressed<Msg>>, End>>);
+
+static_assert(equivalent_sync_v<
+    Send<ContentAddressed<ContentAddressed<Msg>>, End>,
+    Send<Msg, End>>);
+
+// Recv contravariance through depth ≥ 2.
+static_assert(is_subtype_sync_v<
+    Recv<ContentAddressed<ContentAddressed<Msg>>, End>,
+    Recv<Msg, End>>);
+static_assert(is_subtype_sync_v<
+    Recv<Msg, End>,
+    Recv<ContentAddressed<ContentAddressed<Msg>>, End>>);
 
 // ─── Composition: wrapping inside Loop/Select/Offer ──────────────
 
