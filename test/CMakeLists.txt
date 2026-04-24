@@ -471,6 +471,14 @@ crucible_test(test_permissioned_spsc_channel)
 # → Validated → internal pipeline accepts via subtype subsumption).
 crucible_test(test_session_payload_subsort)
 
+# Machine ↔ Session bridge — single-party typestate carriers (#399,
+# SAFEINT-A10).  Verifies SessionFromMachine<State, Proto> exposes
+# both Machine and SessionHandle views over the same underlying
+# machine, is Pinned for address stability, and machine_from_session
+# recovers the underlying pointer from both End-state and mid-
+# protocol handles without firing the abandonment-check.
+crucible_test(test_machine_session_bridge)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
