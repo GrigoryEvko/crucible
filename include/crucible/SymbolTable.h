@@ -99,19 +99,20 @@ class CRUCIBLE_OWNER SymbolTable {
   }
 
   // Set the concrete hint for a backed symbol.
-  void set_hint(SymbolId id, int64_t hint)
-      pre (id.raw() < entries_.size())
-  {
-    entries_[id.raw()].hint = hint;
-    entries_[id.raw()].sym_flags |= SymFlags::HAS_HINT;
+  //
+  // Bounds + validity contract is enforced by entry_at_mut (#114);
+  // there is no longer a duplicated `pre` here.
+  void set_hint(SymbolId id, int64_t hint) {
+    auto& e = entry_at_mut(id);
+    e.hint = hint;
+    e.sym_flags |= SymFlags::HAS_HINT;
   }
 
   // Set float hint (bitcast to int64_t).
-  void set_hint_float(SymbolId id, double hint)
-      pre (id.raw() < entries_.size())
-  {
-    entries_[id.raw()].hint = bitcast_double(hint);
-    entries_[id.raw()].sym_flags |= SymFlags::HAS_HINT;
+  void set_hint_float(SymbolId id, double hint) {
+    auto& e = entry_at_mut(id);
+    e.hint = bitcast_double(hint);
+    e.sym_flags |= SymFlags::HAS_HINT;
   }
 
   // Tighten the integer range. Only narrows, never widens.
@@ -123,80 +124,82 @@ class CRUCIBLE_OWNER SymbolTable {
   // this once with [a, b]; subsequent calls can only further constrain.
   //
   // const on value params is required by P2900R14 to use them in post().
+  // The post() clause keeps calling `entries_[id.raw()]` directly
+  // because the contract expression cannot re-invoke entry_at() —
+  // doing so would re-check the bounds contract inside the post eval,
+  // not visible on post-violation reports.  The bounds-guard comes
+  // from the body's entry_at_mut() call.
   void tighten_range(const SymbolId id, const int64_t lower, const int64_t upper)
-      pre (id.raw() < entries_.size())
       post (entries_[id.raw()].range_lower >= lower)
       post (entries_[id.raw()].range_upper <= upper)
   {
-    auto& e = entries_[id.raw()];
+    auto& e = entry_at_mut(id);
     if (lower > e.range_lower)
       e.range_lower = lower;
     if (upper < e.range_upper)
       e.range_upper = upper;
   }
 
-  void set_size_like(SymbolId id)
-      pre (id.raw() < entries_.size())
-  {
-    entries_[id.raw()].sym_flags |= SymFlags::IS_SIZE_LIKE;
+  void set_size_like(SymbolId id) {
+    entry_at_mut(id).sym_flags |= SymFlags::IS_SIZE_LIKE;
   }
 
   // ---- Queries ----
 
   [[nodiscard]] const SymbolEntry& operator[](SymbolId id) const CRUCIBLE_LIFETIMEBOUND {
-    return entries_[id.raw()];
+    return entry_at(id);
   }
 
   [[nodiscard, gnu::pure]] bool has_hint(SymbolId id) const noexcept {
-    return entries_[id.raw()].sym_flags & SymFlags::HAS_HINT;
+    return entry_at(id).sym_flags & SymFlags::HAS_HINT;
   }
 
   [[nodiscard, gnu::pure]] int64_t hint(SymbolId id) const noexcept {
-    return entries_[id.raw()].hint;
+    return entry_at(id).hint;
   }
 
   [[nodiscard, gnu::pure]] double hint_float(SymbolId id) const noexcept {
-    return bitcast_to_double(entries_[id.raw()].hint);
+    return bitcast_to_double(entry_at(id).hint);
   }
 
   [[nodiscard, gnu::pure]] int64_t lower(SymbolId id) const noexcept {
-    return entries_[id.raw()].range_lower;
+    return entry_at(id).range_lower;
   }
 
   [[nodiscard, gnu::pure]] int64_t upper(SymbolId id) const noexcept {
-    return entries_[id.raw()].range_upper;
+    return entry_at(id).range_upper;
   }
 
   [[nodiscard, gnu::pure]] bool is_size_like(SymbolId id) const noexcept {
-    return entries_[id.raw()].sym_flags & SymFlags::IS_SIZE_LIKE;
+    return entry_at(id).sym_flags & SymFlags::IS_SIZE_LIKE;
   }
 
   [[nodiscard, gnu::pure]] bool is_backed(SymbolId id) const noexcept {
-    return entries_[id.raw()].sym_flags & SymFlags::IS_BACKED;
+    return entry_at(id).sym_flags & SymFlags::IS_BACKED;
   }
 
   [[nodiscard, gnu::pure]] SymKind kind(SymbolId id) const noexcept {
-    return entries_[id.raw()].kind;
+    return entry_at(id).kind;
   }
 
   [[nodiscard, gnu::pure]] uint16_t expr_flags(SymbolId id) const noexcept {
-    return entries_[id.raw()].expr_flags;
+    return entry_at(id).expr_flags;
   }
 
   // Range check: is value guaranteed to be in [lo, hi]?
   [[nodiscard, gnu::pure]] bool range_contains(SymbolId id, int64_t lo, int64_t hi) const noexcept {
-    const auto& e = entries_[id.raw()];
+    const auto& e = entry_at(id);
     return e.range_lower >= lo && e.range_upper <= hi;
   }
 
   // Is the symbol guaranteed positive (lower bound > 0)?
   [[nodiscard, gnu::pure]] bool is_positive(SymbolId id) const noexcept {
-    return entries_[id.raw()].range_lower > 0;
+    return entry_at(id).range_lower > 0;
   }
 
   // Is the symbol guaranteed nonnegative (lower bound >= 0)?
   [[nodiscard, gnu::pure]] bool is_nonnegative(SymbolId id) const noexcept {
-    return entries_[id.raw()].range_lower >= 0;
+    return entry_at(id).range_lower >= 0;
   }
 
   [[nodiscard, gnu::pure]] size_t size() const noexcept {
@@ -210,6 +213,42 @@ class CRUCIBLE_OWNER SymbolTable {
 
   [[nodiscard]] static double bitcast_to_double(int64_t v) {
     return std::bit_cast<double>(v);
+  }
+
+  // ── Indexing helpers (#114) ──────────────────────────────────────
+  //
+  // Every read/write of SymbolTable's backing vector goes through
+  // these two helpers.  The contract enforces BOTH:
+  //
+  //   (a) the SymbolId is valid — i.e. NOT the default-constructed
+  //       sentinel UINT32_MAX that Expr nodes carry when they aren't
+  //       symbols.  Without this guard, reading `expr.symbol_id` on
+  //       a non-symbol Expr and feeding it to any query function
+  //       below would dereference `entries_[UINT32_MAX]` — silent
+  //       catastrophic OOB before #114.
+  //
+  //   (b) the raw index is within the current vector size.  The
+  //       three mutators already asserted this; the queries did not,
+  //       leaving a TypeSafe hole where a stale SymbolId from a
+  //       different SymbolTable (or from a serialized snapshot
+  //       loaded at different time) silently OOB-read.
+  //
+  // Consolidating into one pair of helpers means future audits that
+  // want to log / instrument / harden access have exactly two
+  // touchpoints instead of ~15 raw-indexing sites.
+
+  [[nodiscard, gnu::pure]] const SymbolEntry& entry_at(SymbolId id) const noexcept
+      pre (id.is_valid())
+      pre (id.raw() < entries_.size())
+  {
+    return entries_[id.raw()];
+  }
+
+  [[nodiscard]] SymbolEntry& entry_at_mut(SymbolId id) noexcept
+      pre (id.is_valid())
+      pre (id.raw() < entries_.size())
+  {
+    return entries_[id.raw()];
   }
 
   std::vector<SymbolEntry> entries_;
