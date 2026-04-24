@@ -456,18 +456,71 @@ inline constexpr bool is_diagnostic_class_v =
 // ═════════════════════════════════════════════════════════════════════
 // ── Accessors (require T be a diagnostic class) ────────────────────
 // ═════════════════════════════════════════════════════════════════════
+//
+// ─── Framework-controlled rejection diagnostic ────────────────────
+//
+// The natural definition would be:
+//
+//     template <typename T>
+//         requires is_diagnostic_class_v<T>
+//     inline constexpr std::string_view diagnostic_name_v = T::name;
+//
+// but a `requires`-clause failure on a variable template emits
+// compiler-version-specific text (GCC 16 says "invalid variable
+// template"; GCC 17 may rephrase).  Neg-compile tests that match on
+// that text break on toolchain bumps.  Per task #371, we route the
+// rejection through a helper struct that fires a STATIC_ASSERT with
+// a framework-controlled message — stable across GCC versions.
+
+namespace detail::diag {
+
+// Primary template intentionally undefined — only the two boolean-
+// gated specialisations below are valid instantiations.
+template <typename T, bool IsTag>
+struct accessor_check;
+
+// Valid case: T IS a diagnostic class.  Forward the three string
+// fields; nothing to assert.
+template <typename T>
+struct accessor_check<T, true> {
+    static constexpr std::string_view name        = T::name;
+    static constexpr std::string_view description = T::description;
+    static constexpr std::string_view remediation = T::remediation;
+};
+
+// Invalid case: T is NOT a diagnostic class.  Fire a stable framework-
+// controlled static_assert.  The empty defaults exist so that even if
+// the compiler continues past the static_assert (some IDE / sanitizer
+// modes), downstream uses of the accessors get a non-undefined-
+// behaviour empty string rather than a hard error.
+template <typename T>
+struct accessor_check<T, false> {
+    static_assert(is_diagnostic_class_v<T>,
+        "crucible::session::diagnostic [DiagnosticAccessor_NonTag]: "
+        "diagnostic_name_v / diagnostic_description_v / "
+        "diagnostic_remediation_v requires T to be derived from "
+        "diagnostic::tag_base.  See SessionDiagnostic.h's catalog "
+        "for the shipped tag classes; user-extensions inherit from "
+        "tag_base and provide constexpr name/description/remediation.");
+
+    static constexpr std::string_view name        = "";
+    static constexpr std::string_view description = "";
+    static constexpr std::string_view remediation = "";
+};
+
+}  // namespace detail::diag
 
 template <typename T>
-    requires is_diagnostic_class_v<T>
-inline constexpr std::string_view diagnostic_name_v = T::name;
+inline constexpr std::string_view diagnostic_name_v =
+    detail::diag::accessor_check<T, is_diagnostic_class_v<T>>::name;
 
 template <typename T>
-    requires is_diagnostic_class_v<T>
-inline constexpr std::string_view diagnostic_description_v = T::description;
+inline constexpr std::string_view diagnostic_description_v =
+    detail::diag::accessor_check<T, is_diagnostic_class_v<T>>::description;
 
 template <typename T>
-    requires is_diagnostic_class_v<T>
-inline constexpr std::string_view diagnostic_remediation_v = T::remediation;
+inline constexpr std::string_view diagnostic_remediation_v =
+    detail::diag::accessor_check<T, is_diagnostic_class_v<T>>::remediation;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Diagnostic<Tag, Ctx...> wrapper ────────────────────────────────

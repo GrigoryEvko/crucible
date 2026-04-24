@@ -103,6 +103,16 @@ public:
     using carrier_type = Carrier;
     using tag_type     = Tag;
 
+    // Default-construction is meaningless — a view must witness a
+    // specific Carrier instance.  The user-declared private
+    // converting ctor would already implicitly suppress the default
+    // ctor, but an explicit `= delete("reason")` gives the diagnostic
+    // a STABLE framework-controlled string instead of GCC's
+    // version-specific "no matching function for call to" wrapper
+    // text.  Per task #371, this is the pattern Crucible uses to
+    // keep neg-compile tests robust across toolchain bumps.
+    ScopedView() = delete("ScopedView default-construction is meaningless — every view must witness a specific Carrier instance; use mint_view<Tag>(carrier) at the construction site");
+
     // Tier 1: copy-construct allowed, assignment deleted.
     constexpr ScopedView(const ScopedView&) noexcept = default;
     constexpr ScopedView(ScopedView&&)      noexcept = default;
