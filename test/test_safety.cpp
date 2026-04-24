@@ -175,16 +175,34 @@ struct Request  { int id; };
 struct Response { int status; };
 
 static void test_session() {
-    auto s = make_session<Send<Request>, Recv<Response>, End>(FakePipe{});
-    auto s1 = std::move(s).send(Request{7}, [](FakePipe& p, Request&& req) {
-        p.recorded_send = req.id;
-    });
+    // Combinators + factory live in the proto:: sub-namespace; bring
+    // them in here rather than at file scope so the rest of the file
+    // (which only uses the value-level safety wrappers) stays free of
+    // the protocol-DSL names.
+    using namespace crucible::safety::proto;
+
+    // Canonical Honda-style nested combinators: a single Proto template
+    // argument whose continuation chain encodes the protocol's full
+    // sequence.  (The legacy parameter-pack form
+    // `make_session<Send<Request>, Recv<Response>, End>(...)` is no
+    // longer the API — both `Send` and `Recv` are now two-arg
+    // combinators with explicit continuations, and the factory is
+    // `make_session_handle<Proto>`.)
+    auto s = make_session_handle<Send<Request, Recv<Response, End>>>(FakePipe{});
+
+    auto s1 = std::move(s).send(Request{7},
+        [](FakePipe& p, Request&& req) noexcept {
+            p.recorded_send = req.id;
+        });
     // std::move(s1).send(...);  // COMPILE ERROR — no send on Recv head.
-    auto [resp, s2] = std::move(s1).recv([](FakePipe& p) {
-        p.recorded_recv = 1;
-        return Response{200};
-    });
+
+    auto [resp, s2] = std::move(s1).recv(
+        [](FakePipe& p) noexcept -> Response {
+            p.recorded_recv = 1;
+            return Response{200};
+        });
     assert(resp.status == 200);
+
     auto pipe = std::move(s2).close();
     assert(pipe.recorded_recv == 1);
     assert(pipe.recorded_send == 7);
