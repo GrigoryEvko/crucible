@@ -527,6 +527,15 @@ crucible_test(test_session_declassify)
 # cumulative static_asserts in one place rather than per-consumer.
 crucible_test(test_session_self_tests)
 
+# Protocol-tree crash-branch walker (#368, SEPLOG-BUG-4).
+# every_offer_has_crash_branch_for_peer_v<Proto, PeerTag> recurses
+# through End/Stop/Continue/Send/Recv/Select/Offer/Loop/Delegate/
+# Accept; catches the "outer Offer has a crash branch, inner Offer
+# doesn't" pattern that `has_crash_branch_for_peer_v` alone misses.
+# Pure compile-time; main() just confirms the consteval assertion
+# point passed for crash-safe protocols.
+crucible_test(test_session_crash_walker)
+
 # OneShotFlag × runtime crash transport (#400, SAFEINT-A11).
 # Wires the type-level Stop/Crash semantics from SessionCrash.h into
 # a runtime wire: CrashWatchedHandle<Proto, R, PeerTag> wraps a bare
@@ -763,6 +772,15 @@ crucible_neg_compile_test(neg_scheduler_policy_non_inheritance
 # GCC versions because the framework owns the deleted-overload string.
 crucible_neg_compile_test(neg_session_detach_no_reason
     "DetachReason_Required")
+
+# Crash-walker deep-tree rejection (#368).
+#
+# [FRAMEWORK-CONTROLLED] assert_every_offer_has_crash_branch_for
+# fires the "[CrashBranch_Missing_In_Tree]" prefix when a deep Offer
+# hidden inside a continuation lacks the Recv<Crash<Peer>, _> branch.
+# Covers the gap that per-node has_crash_branch_for_peer_v misses.
+crucible_neg_compile_test(neg_session_crash_branch_tree_missing
+    "CrashBranch_Missing_In_Tree")
 
 # Compile-time capacity arithmetic — overflow rejection (#408).
 #
