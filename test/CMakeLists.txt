@@ -520,6 +520,19 @@ crucible_test(test_lazy_established_channel)
 # auth-handshake worked example from §13.
 crucible_test(test_session_declassify)
 
+# AppendOnly session event log + RecordingSessionHandle wrapper
+# (#404, SAFEINT-B15).  Promotes bit-exact-replay discipline from an
+# ad-hoc trace into a typed structure: SessionEventLog (Pinned,
+# OrderedAppendOnly-backed, monotonic step counter) plus
+# RecordingSessionHandle<Proto, R> wrapper that records every
+# Send/Recv/Select/Offer/close into the log.  Validates the log
+# primitive, the per-combinator wrapper specialisations, the
+# bilateral request/reply capture pattern, the replay-determinism
+# property (same protocol → same event sequence modulo step offset),
+# the payload-hash opt-in via default_payload_hash_fn specialisation,
+# and Offer branch dispatch capture.
+crucible_test(test_session_event_log)
+
 # CTPayload + ct::eq for crypto-payload sessions (#409, SAFEINT-C20).
 # CTPayload<T> raises constant-time-comparison discipline to the API
 # surface: requires_ct<T> trait opt-in, move-only wrapper with
