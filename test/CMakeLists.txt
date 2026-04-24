@@ -458,6 +458,19 @@ crucible_test(test_session_lifetime)
 # FIFO + capacity bound + cross-thread jthread handoff.
 crucible_test(test_permissioned_spsc_channel)
 
+# Tagged-provenance + Refined payload subsort axioms (task #395,
+# SAFEINT-S6 from misc/24_04_2026_safety_integration.md §6).  The
+# new safety/SessionPayloadSubsort.h header bridges Tagged + Refined
+# through the session-type subsumption lattice.  Test verifies the
+# positive axioms (Sanitized / Validated / FromInternal / FromConfig
+# / FromDb / Durable / Computed flow to bare T), the negative
+# non-axioms (External / FromUser / FromPytorch / trust::* /
+# access::* / version::* deliberately do NOT flow), Send covariance
+# + Recv contravariance through the wrappers, and a runtime worked
+# scenario for the Vessel-FFI flow (raw FromPytorch input → validate
+# → Validated → internal pipeline accepts via subtype subsumption).
+crucible_test(test_session_payload_subsort)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
