@@ -308,8 +308,8 @@ concept SubtypeSync = is_subtype_sync_v<T, U>;
 template <typename T, typename U>
 consteval void assert_subtype_sync() noexcept {
     static_assert(is_subtype_sync_v<T, U>,
-        "crucible::safety::proto::assert_subtype_sync: "
-        "T is not a synchronous subtype of U.  "
+        "crucible::session::diagnostic [SubtypeMismatch]: "
+        "assert_subtype_sync: T is not a synchronous subtype of U.  "
         "The six Gay-Hole rules are documented at the top of "
         "SessionSubtype.h.  Common causes: shape mismatch "
         "(Send vs Recv, Select vs Offer); too many/too few branches "
@@ -420,13 +420,13 @@ concept CompatibleServer =
 template <typename OldProto, typename NewProto>
 consteval void check_protocol_evolution() noexcept {
     static_assert(is_subtype_sync_v<NewProto, OldProto>,
-        "crucible::safety::proto::check_protocol_evolution: "
-        "NewProto is not a safe refinement of OldProto.  "
-        "A valid refinement may: narrow a Select (pick fewer branches), "
-        "widen an Offer (handle more branches), or restrict a payload "
-        "type via is_subsort specialisation.  It may NOT: add a Select "
-        "branch, remove an Offer branch, change Send<->Recv, or swap "
-        "Select<->Offer.");
+        "crucible::session::diagnostic [SubtypeMismatch]: "
+        "check_protocol_evolution: NewProto is not a safe refinement "
+        "of OldProto.  A valid refinement may: narrow a Select (pick "
+        "fewer branches), widen an Offer (handle more branches), or "
+        "restrict a payload type via is_subsort specialisation.  It "
+        "may NOT: add a Select branch, remove an Offer branch, change "
+        "Send<->Recv, or swap Select<->Offer.");
 }
 
 // ─── Equivalence + compatibility assertion helpers ────────────────
@@ -439,39 +439,41 @@ consteval void check_protocol_evolution() noexcept {
 template <typename T, typename U>
 consteval void assert_equivalent_sync() noexcept {
     static_assert(equivalent_sync_v<T, U>,
-        "crucible::safety::proto::assert_equivalent_sync: "
-        "T and U are not synchronously equivalent (not bidirectional "
-        "subtypes).  Both is_subtype_sync_v<T, U> and "
-        "is_subtype_sync_v<U, T> must hold.  Common causes: asymmetric "
-        "Select/Offer branch counts; differing payload types; "
-        "mismatched Loop structure.  See the six Gay-Hole rules at the "
-        "top of SessionSubtype.h for the positive direction of each.");
+        "crucible::session::diagnostic [SubtypeMismatch]: "
+        "assert_equivalent_sync: T and U are not synchronously "
+        "equivalent (not bidirectional subtypes).  Both "
+        "is_subtype_sync_v<T, U> and is_subtype_sync_v<U, T> must hold. "
+        "Common causes: asymmetric Select/Offer branch counts; "
+        "differing payload types; mismatched Loop structure.  See the "
+        "six Gay-Hole rules at the top of SessionSubtype.h for the "
+        "positive direction of each.");
 }
 
 template <typename ClientProto, typename ServerProto>
 consteval void assert_compatible_client() noexcept {
     static_assert(CompatibleClient<ClientProto, ServerProto>,
-        "crucible::safety::proto::assert_compatible_client: "
-        "ClientProto is not a synchronous subtype of dual(ServerProto).  "
-        "A client may safely talk to a server only when the client's "
-        "protocol is a subtype of the server's DUAL (the server offers "
-        "dual(ServerProto); the client must be a sub-protocol of that).  "
-        "Common causes: forgot to dualise; both written from the same "
-        "perspective (e.g., both send-first); mismatched payload types; "
-        "client's Select picks branches the server's Offer does not "
-        "provide.");
+        "crucible::session::diagnostic [SubtypeMismatch]: "
+        "assert_compatible_client: ClientProto is not a synchronous "
+        "subtype of dual(ServerProto).  A client may safely talk to a "
+        "server only when the client's protocol is a subtype of the "
+        "server's DUAL (the server offers dual(ServerProto); the "
+        "client must be a sub-protocol of that).  Common causes: "
+        "forgot to dualise; both written from the same perspective "
+        "(e.g., both send-first); mismatched payload types; client's "
+        "Select picks branches the server's Offer does not provide.");
 }
 
 template <typename ServerProto, typename ClientProto>
 consteval void assert_compatible_server() noexcept {
     static_assert(CompatibleServer<ServerProto, ClientProto>,
-        "crucible::safety::proto::assert_compatible_server: "
-        "ServerProto is not a synchronous subtype of dual(ClientProto).  "
-        "Symmetric to assert_compatible_client — see its diagnostic "
-        "for the structural rule.  Typically ServerProto = "
-        "dual(ClientProto) holds and this assertion is trivially true; "
-        "when it fails, one side has been refactored in a way that "
-        "breaks the symmetric sub-protocol relation.");
+        "crucible::session::diagnostic [SubtypeMismatch]: "
+        "assert_compatible_server: ServerProto is not a synchronous "
+        "subtype of dual(ClientProto).  Symmetric to "
+        "assert_compatible_client — see its diagnostic for the "
+        "structural rule.  Typically ServerProto = dual(ClientProto) "
+        "holds and this assertion is trivially true; when it fails, "
+        "one side has been refactored in a way that breaks the "
+        "symmetric sub-protocol relation.");
 }
 
 // ═════════════════════════════════════════════════════════════════════

@@ -163,6 +163,6 @@ int main() {
     if (int rc = run_user_extension();    rc != 0) return rc;
     if (int rc = run_diagnostic_wrapper(); rc != 0) return rc;
     print_catalog();
-    std::puts("session_diagnostic: 11 tags + user extension + macro + catalog OK");
+    std::puts("session_diagnostic: 18 tags + user extension + macro + catalog OK");
     return 0;
 }

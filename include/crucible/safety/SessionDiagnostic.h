@@ -106,7 +106,7 @@ namespace crucible::safety::proto::diagnostic {
 struct tag_base {};
 
 // ═════════════════════════════════════════════════════════════════════
-// ── The 11 manifest-bug tags ───────────────────────────────────────
+// ── The 18 manifest-bug tags ───────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
 // Each carries three constexpr string_views:
@@ -249,6 +249,113 @@ struct UnboundedQueue : tag_base {
         "them.";
 };
 
+// ─── Tags added by L11 retrofit (#388) ─────────────────────────────
+//
+// Cover the user-facing assertion paths in the existing session-type
+// headers (Session.h's well-formedness assertion, SessionContext.h's
+// domain-collision and lookup-miss errors, SessionQueue.h's empty-
+// queue dequeue, SessionAssoc.h's domain-mismatch on association,
+// SessionGlobal.h's plain-merge divergence).
+
+struct Continue_Without_Loop : tag_base {
+    static constexpr std::string_view name = "Continue_Without_Loop";
+    static constexpr std::string_view description =
+        "A `Continue` combinator was used at a protocol position with "
+        "no syntactically-enclosing `Loop<Body>` to bind to.  Continue "
+        "is the loop-back marker; without an enclosing Loop, there is "
+        "no protocol state to return to.";
+    static constexpr std::string_view remediation =
+        "Wrap the Continue (or its enclosing prefix) in `Loop<...>`.  "
+        "If the protocol is meant to be one-shot, replace Continue "
+        "with `End`.";
+};
+
+struct Protocol_Ill_Formed : tag_base {
+    static constexpr std::string_view name = "Protocol_Ill_Formed";
+    static constexpr std::string_view description =
+        "A session-type expression failed `is_well_formed_v<P>`.  Most "
+        "common cause: a free `Continue` outside any enclosing `Loop`. "
+        "Other causes: degenerate Select/Offer with zero branches, "
+        "ill-typed Delegate/Accept payload, malformed Choice in L4.";
+    static constexpr std::string_view remediation =
+        "Walk the protocol type tree manually; verify every `Continue` "
+        "has a `Loop` ancestor and every `Select`/`Offer` has at least "
+        "one branch.  See Continue_Without_Loop for the most common "
+        "specific case.";
+};
+
+struct Context_Domain_Collision : tag_base {
+    static constexpr std::string_view name = "Context_Domain_Collision";
+    static constexpr std::string_view description =
+        "A typing context Γ was constructed with two entries sharing "
+        "the same `(session_tag, role_tag)` key, OR `compose_context_t"
+        "<Γ1, Γ2>` was applied to contexts whose domains overlap.  "
+        "CSL's frame rule requires disjoint contexts.";
+    static constexpr std::string_view remediation =
+        "Rename one side's session_tag (most common fix); OR give the "
+        "two entries different roles within a shared session; OR lift "
+        "the shared entry into a common prefix before composition.";
+};
+
+struct Context_Lookup_Miss : tag_base {
+    static constexpr std::string_view name = "Context_Lookup_Miss";
+    static constexpr std::string_view description =
+        "A `lookup_context_t<Γ, S, R>` (or `update_entry_t`, "
+        "`remove_entry_t`) was called for a key (S, R) not present in "
+        "Γ.  Operations that mutate-or-read existing entries treat "
+        "absence as a strict error.";
+    static constexpr std::string_view remediation =
+        "Use `contains_key_v<Γ, S, R>` to test presence before lookup. "
+        "Check the (S, R) you're querying matches the Γ's actual "
+        "entries; common typos: wrong session tag, swapped role, "
+        "querying for a role removed earlier in the protocol.";
+};
+
+struct Queue_Empty_Dequeue : tag_base {
+    static constexpr std::string_view name = "Queue_Empty_Dequeue";
+    static constexpr std::string_view description =
+        "`head_queue_t<Q>` or `tail_queue_t<Q>` was applied to an "
+        "empty `Queue<>`.  At runtime the receiver's typing rules "
+        "should have BLOCKED at this state, not advanced past it; an "
+        "empty-queue dequeue indicates the typing-context reduction "
+        "rules are being applied to a non-reachable runtime state.";
+    static constexpr std::string_view remediation =
+        "Use `is_queue_empty_v<Q>` to gate dequeue.  Check the L7 "
+        "reduction logic that produced this Q — a Recv event must "
+        "have a non-empty matching queue at every reachable state.";
+};
+
+struct Association_Domain_Mismatch : tag_base {
+    static constexpr std::string_view name = "Association_Domain_Mismatch";
+    static constexpr std::string_view description =
+        "Condition (1) of HYK24 association `Δ ⊑_s G` failed: Γ's "
+        "domain (for the given session tag) does not equal "
+        "`roles_of_t<G>`.  Either Γ is missing an entry for a role of "
+        "G, or Γ has an extra entry for a role NOT in G.";
+    static constexpr std::string_view remediation =
+        "Add `Entry<S, role, projected_local>` for every role in G "
+        "that's missing from Γ; remove extra entries for roles G "
+        "doesn't have.  `roles_of_t<G>` enumerates the required roles. "
+        "`projected_context_t<G, S>` produces the canonical Γ.";
+};
+
+struct Merge_Branches_Diverge : tag_base {
+    static constexpr std::string_view name = "Merge_Branches_Diverge";
+    static constexpr std::string_view description =
+        "Plain merging at L4 third-party projection failed: two or "
+        "more `Choice` branches project to STRUCTURALLY DIFFERENT "
+        "local types for a non-sender, non-receiver role.  Plain "
+        "merge requires identical projections; coinductive full "
+        "merging (PMY25 §4.3) would admit some divergence but is not "
+        "yet shipped (task SEPLOG-STRUCT-7).";
+    static constexpr std::string_view remediation =
+        "Workaround until full merging lands: project to a role that "
+        "IS involved in every Choice (sender or receiver); OR "
+        "restructure the global type so third-party projections match "
+        "across all branches.  Long-term fix: implement coinductive "
+        "full merging per task SEPLOG-STRUCT-7.";
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── is_diagnostic_class_v<T> ───────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -319,8 +426,12 @@ inline constexpr bool is_diagnostic_v = is_diagnostic<T>::value;
 // ── Catalog enumeration ────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Compile-time tuple of all 11 shipped tag types — useful for
+// Compile-time tuple of all 18 shipped tag types — useful for
 // reflection-based tooling, catalog printers, and diagnostic UIs.
+// First 11 entries are the original L11 vocabulary; the next 7
+// were added by the L11 retrofit (#388) to cover concrete user-
+// facing assertion paths in Session.h, SessionContext.h,
+// SessionQueue.h, SessionAssoc.h, and SessionGlobal.h.
 
 using Catalog = std::tuple<
     ProtocolViolation_Label,
@@ -333,7 +444,14 @@ using Catalog = std::tuple<
     PermissionImbalance,
     SubtypeMismatch,
     DepthBoundReached,
-    UnboundedQueue>;
+    UnboundedQueue,
+    Continue_Without_Loop,
+    Protocol_Ill_Formed,
+    Context_Domain_Collision,
+    Context_Lookup_Miss,
+    Queue_Empty_Dequeue,
+    Association_Domain_Mismatch,
+    Merge_Branches_Diverge>;
 
 inline constexpr std::size_t catalog_size =
     std::tuple_size_v<Catalog>;
@@ -445,8 +563,8 @@ static_assert(D2::name == "CrashBranch_Missing");
 
 // ─── Catalog ──────────────────────────────────────────────────────
 
-static_assert(catalog_size == 11);
-static_assert(std::tuple_size_v<Catalog> == 11);
+static_assert(catalog_size == 18);
+static_assert(std::tuple_size_v<Catalog> == 18);
 
 // Each catalog entry is a valid diagnostic class.
 static_assert(is_diagnostic_class_v<std::tuple_element_t<0,  Catalog>>);
@@ -454,11 +572,17 @@ static_assert(is_diagnostic_class_v<std::tuple_element_t<5,  Catalog>>);
 static_assert(is_diagnostic_class_v<std::tuple_element_t<10, Catalog>>);
 
 // The catalog starts with ProtocolViolation_Label and ends with
-// UnboundedQueue (ordering is deterministic).
+// Merge_Branches_Diverge (ordering is deterministic).  The original
+// 11 L11 tags fill positions [0, 10]; the 7 retrofit tags (#388)
+// fill [11, 17].
 static_assert(std::is_same_v<
     std::tuple_element_t<0, Catalog>, ProtocolViolation_Label>);
 static_assert(std::is_same_v<
     std::tuple_element_t<10, Catalog>, UnboundedQueue>);
+static_assert(std::is_same_v<
+    std::tuple_element_t<11, Catalog>, Continue_Without_Loop>);
+static_assert(std::is_same_v<
+    std::tuple_element_t<17, Catalog>, Merge_Branches_Diverge>);
 
 // ─── Macro compile-test ───────────────────────────────────────────
 

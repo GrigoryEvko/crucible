@@ -202,6 +202,7 @@ using enqueue_queue_t = typename EnqueueQueue<Q, M>::type;
 template <typename Q>
 struct HeadQueue {
     static_assert(detail::queue::dependent_false_v<Q>,
+        "crucible::session::diagnostic [Queue_Empty_Dequeue]: "
         "head_queue_t<Q>: Q is empty or is not a Queue<>.  Use "
         "is_queue_empty_v<Q> to test before dequeue.  The receiver's "
         "typing rules (L7) should have rejected this path already — "
@@ -228,6 +229,7 @@ using head_queue_t = typename HeadQueue<Q>::type;
 template <typename Q>
 struct TailQueue {
     static_assert(detail::queue::dependent_false_v<Q>,
+        "crucible::session::diagnostic [Queue_Empty_Dequeue]: "
         "tail_queue_t<Q>: Q is empty or is not a Queue<>.  Use "
         "is_queue_empty_v<Q> to test before dequeue.");
 };
