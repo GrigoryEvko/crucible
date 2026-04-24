@@ -92,6 +92,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/safety/Session.h>
+#include <crucible/safety/SessionCrash.h>
 
 #include <concepts>
 #include <type_traits>
@@ -116,6 +117,31 @@ struct Accept {
     using delegated_proto = T;
     using next            = K;
 };
+
+}  // namespace crucible::safety::proto
+
+// ─── #368 crash-walker specialisations for Delegate / Accept ──────
+//
+// Both Delegate and Accept recurse into their continuation K only.
+// The delegated protocol T (the session being handed off) is
+// executed by the RECIPIENT; its crash-safety is a check against
+// the recipient's reliability model, not ours.  The walker for our
+// local protocol bypasses T and only considers K, which is what
+// WE still execute after the handoff.
+
+namespace crucible::safety::proto::detail::crash {
+
+template <typename T, typename K, typename PeerTag>
+struct all_offers_have_crash_branch<Delegate<T, K>, PeerTag>
+    : all_offers_have_crash_branch<K, PeerTag> {};
+
+template <typename T, typename K, typename PeerTag>
+struct all_offers_have_crash_branch<Accept<T, K>, PeerTag>
+    : all_offers_have_crash_branch<K, PeerTag> {};
+
+}  // namespace crucible::safety::proto::detail::crash
+
+namespace crucible::safety::proto {
 
 // ─── Compositional sugar ────────────────────────────────────────────
 //

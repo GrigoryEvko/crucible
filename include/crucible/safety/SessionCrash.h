@@ -416,6 +416,118 @@ consteval void assert_has_crash_branch_for() noexcept {
 }
 
 // ═════════════════════════════════════════════════════════════════════
+// ── every_offer_has_crash_branch_for_peer_v<Proto, Peer>   (#368) ──
+// ═════════════════════════════════════════════════════════════════════
+//
+// `has_crash_branch_for_peer_v<Offer, Peer>` checks ONE Offer node.
+// The aggregate "every Offer reachable in the protocol tree Proto has
+// a Recv<Crash<Peer>, _> branch" is the discipline an unreliable-peer
+// session actually needs — a single-Offer check is a local property
+// that a one-Offer-past-the-first-one violation can hide.
+//
+// This walker recurses through the local-protocol combinator family:
+//
+//   End / Stop / Continue      — no Offer nodes, trivially OK
+//   Send<T, K>                 — recurse into K
+//   Recv<T, K>                 — recurse into K
+//   Select<Bs...>              — recurse into each Bs (our choice;
+//                                each branch is a proto, not an
+//                                immediate-crash-relevant Offer)
+//   Offer<Bs...>               — check THIS Offer has a Crash<Peer>
+//                                branch AND recurse into each Bs'
+//                                continuation (branches are
+//                                Recv<Msg, K>; walk K)
+//   Loop<B>                    — recurse into B
+//   Delegate<T, K>             — recurse into K only (the delegated
+//                                protocol T is executed BY THE
+//                                RECIPIENT; that's a separate check
+//                                against the recipient's reliability
+//                                model, not this walker's job)
+//   Accept<T, K>               — same as Delegate: recurse into K
+//
+// The walker forms the building block for the deferred Γ-level trait
+// (`has_mandatory_crash_branches_v<Γ, R>`) — which aggregates this
+// per-entry check across a typing context.  See SessionCrash.h file
+// header's "Deferred" notes.
+//
+// Paired with `CrashWatchedHandle<Proto, R, PeerTag>` (#400): the
+// handle's runtime peek transitions to CrashEvent on peer-crash, and
+// `every_offer_has_crash_branch_for_peer_v<Proto, PeerTag>` statically
+// proves the protocol has somewhere to DISPATCH that crash.  Phase 2
+// auto-dispatch (noted in CrashTransport.h §"What's deferred")
+// becomes sound once this predicate holds.
+
+namespace detail::crash {
+
+template <typename Proto, typename PeerTag>
+struct all_offers_have_crash_branch;
+
+// Terminals — no Offer nodes downstream.
+template <typename PeerTag>
+struct all_offers_have_crash_branch<End, PeerTag> : std::true_type {};
+
+template <typename PeerTag>
+struct all_offers_have_crash_branch<Stop, PeerTag> : std::true_type {};
+
+template <typename PeerTag>
+struct all_offers_have_crash_branch<Continue, PeerTag> : std::true_type {};
+
+// Send / Recv — recurse into the continuation.
+template <typename T, typename K, typename PeerTag>
+struct all_offers_have_crash_branch<Send<T, K>, PeerTag>
+    : all_offers_have_crash_branch<K, PeerTag> {};
+
+template <typename T, typename K, typename PeerTag>
+struct all_offers_have_crash_branch<Recv<T, K>, PeerTag>
+    : all_offers_have_crash_branch<K, PeerTag> {};
+
+// Select — recurse into every branch.  The branches are OUR choice,
+// no crash-branch obligation on Select itself.
+template <typename... Bs, typename PeerTag>
+struct all_offers_have_crash_branch<Select<Bs...>, PeerTag>
+    : std::bool_constant<
+          (all_offers_have_crash_branch<Bs, PeerTag>::value && ...)
+      > {};
+
+// Offer — THE load-bearing case.  This Offer must itself have a
+// Crash<PeerTag> branch AND every downstream continuation must be
+// crash-safe too.  Each branch is typically Recv<Msg, K>; walking
+// into K checks crash-safety of the continuation.
+template <typename... Bs, typename PeerTag>
+struct all_offers_have_crash_branch<Offer<Bs...>, PeerTag>
+    : std::bool_constant<
+          has_crash_branch_for_peer_v<Offer<Bs...>, PeerTag> &&
+          (all_offers_have_crash_branch<Bs, PeerTag>::value && ...)
+      > {};
+
+// Loop — recurse into body.  The same body runs every iteration; one
+// walk is sufficient (no need to unroll).
+template <typename B, typename PeerTag>
+struct all_offers_have_crash_branch<Loop<B>, PeerTag>
+    : all_offers_have_crash_branch<B, PeerTag> {};
+
+}  // namespace detail::crash
+
+// Public surface: boolean predicate + consteval assertion.
+template <typename Proto, typename PeerTag>
+inline constexpr bool every_offer_has_crash_branch_for_peer_v =
+    detail::crash::all_offers_have_crash_branch<Proto, PeerTag>::value;
+
+template <typename Proto, typename PeerTag>
+consteval void assert_every_offer_has_crash_branch_for() noexcept {
+    static_assert(every_offer_has_crash_branch_for_peer_v<Proto, PeerTag>,
+        "crucible::session::diagnostic [CrashBranch_Missing_In_Tree]: "
+        "assert_every_offer_has_crash_branch_for: at least one Offer<> "
+        "in the protocol tree lacks a Recv<Crash<PeerTag>, _> branch "
+        "for the specified unreliable peer.  Every Offer reachable "
+        "from an unreliable-peer session MUST handle that peer's "
+        "crash — add a Recv<Crash<Peer>, RecoveryBody> branch to the "
+        "offending Offer<>.  If the peer IS reliable along this path, "
+        "add its role to ReliableSet<> so the static check knows to "
+        "skip crash-branch enforcement.");
+}
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Framework self-test static_asserts ─────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
