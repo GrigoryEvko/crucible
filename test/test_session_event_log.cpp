@@ -234,11 +234,11 @@ int run_replay_determinism_property() {
         auto bare = make_session_handle<P>(R{});
         auto rec  = make_recording(std::move(bare), log, kClient, kServer);
         // pick<0> twice (Send branch), then pick<1> (End).
-        auto h1 = std::move(rec).template select<0>();
+        auto h1 = std::move(rec).template select_local<0>();
         auto h2 = std::move(h1).send(11, [](R&, int) noexcept {});
-        auto h3 = std::move(h2).template select<0>();
+        auto h3 = std::move(h2).template select_local<0>();
         auto h4 = std::move(h3).send(22, [](R&, int) noexcept {});
-        auto h5 = std::move(h4).template select<1>();
+        auto h5 = std::move(h4).template select_local<1>();
         (void)std::move(h5).close();
     };
 

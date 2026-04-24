@@ -817,6 +817,13 @@ crucible_neg_compile_test(neg_session_pick_index_out_of_range
 crucible_neg_compile_test(neg_session_dual_mismatch
     "Dual_Mismatch")
 
+# Bare select<I>() / pick<I>() (no transport, no `_local` suffix) are
+# now `= delete`'d (#377) so the wire-vs-in-memory choice is forced
+# to be explicit at every call site.  Pre-#377 the bare form silently
+# selected the in-memory variant — wire-based sessions silently drifted.
+crucible_neg_compile_test(neg_session_select_no_wire
+    "Wire_Variant_Required")
+
 # Crash-walker deep-tree rejection (#368).
 #
 # [FRAMEWORK-CONTROLLED] assert_every_offer_has_crash_branch_for

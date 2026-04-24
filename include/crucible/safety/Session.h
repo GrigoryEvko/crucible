@@ -1474,22 +1474,58 @@ public:
         return detail::step_to_next<Chosen, Resource, LoopCtx>(std::move(resource_));
     }
 
-    // Convenience: select without an explicit transport — for in-memory
-    // channels where the branch choice is implicit in subsequent ops.
+    // Convenience: select WITHOUT signalling the choice over the wire
+    // (#377).  Renamed from the bare `select<I>()` to `select_local
+    // <I>()` so the wire ABSENCE is visible at every call site —
+    // calling this on a wire-based session means the peer NEVER sees
+    // the branch choice and silently drifts off-protocol (the original
+    // footgun this rename surfaces).  Use ONLY for:
+    //   * In-memory channels where both endpoints share state.
+    //   * Unit tests with mocked transport.
+    //   * Static pipelines whose branch is fixed at compile time and
+    //     the peer's protocol is hard-coded to receive the same
+    //     branch's continuation.
+    //
+    // For wire-based sessions, use `select<I>(transport)` instead —
+    // its Transport callable is what physically tells the peer which
+    // branch was picked.
+    //
+    // Audit:
+    //   grep "select_local<"   — every wire-omitting call site
+    //   grep "select<.*>(.*)"  — every wire-based call site
     template <std::size_t I>
-    [[nodiscard]] constexpr auto select() &&
+    [[nodiscard]] constexpr auto select_local() &&
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
     {
         static_assert(I < sizeof...(Branches),
             "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
-            "SessionHandle<Select<...>>::select<I>(): branch index I is "
-            "out of range for this Select position.  The protocol has "
-            "fewer branches than the index requested; verify I < "
+            "SessionHandle<Select<...>>::select_local<I>(): branch index "
+            "I is out of range for this Select position.  The protocol "
+            "has fewer branches than the index requested; verify I < "
             "branch_count at the call site.");
         this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
         return detail::step_to_next<Chosen, Resource, LoopCtx>(std::move(resource_));
     }
+
+    // The bare `select<I>()` overload is now `= delete`'d (#377) so
+    // every existing call site is FORCED to make an explicit choice
+    // between the wire variant (`select<I>(transport)`) and the wire-
+    // omitting variant (`select_local<I>()`).  Pre-#377, the bare
+    // `select<I>()` silently selected the wire-omitting variant —
+    // which on a wire-based session means the peer never receives
+    // the branch choice and silently drifts off-protocol.
+    template <std::size_t I>
+    void select() && = delete(
+        "[Wire_Variant_Required] SessionHandle<Select<...>>::select<I>() "
+        "without arguments is no longer allowed (#377).  Choose one: "
+        "(a) `select<I>(transport)` to signal the branch choice over "
+        "the wire (the peer sees the I-th branch and stays in sync), "
+        "OR (b) `select_local<I>()` to advance the local handle WITHOUT "
+        "signalling the peer (in-memory channels and unit tests only — "
+        "wire-based sessions where the peer doesn't observe the "
+        "choice will silently drift off-protocol).  Per #377, the "
+        "framework refuses to guess which one you meant.");
 
     [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
     [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
@@ -1561,26 +1597,53 @@ public:
                                 std::make_index_sequence<sizeof...(Branches)>{});
     }
 
-    // Convenience: pick branch I without an explicit transport — for
-    // in-memory channels where the choice is fixed or already known.
-    // Useful in unit tests and static pipelines.
+    // Pick branch I WITHOUT receiving a peer-driven label (#377).
+    // Renamed from `pick<I>()` to `pick_local<I>()` so the wire
+    // ABSENCE is visible at every call site — calling this on a
+    // wire-based session means the local handle assumes branch I
+    // without ever receiving the peer's actual choice.  If the peer
+    // signals a different branch, the two endpoints silently diverge
+    // off-protocol.
+    //
+    // Use ONLY for:
+    //   * In-memory channels where both endpoints share state.
+    //   * Unit tests with mocked transport.
+    //   * Static pipelines whose branch is fixed at compile time.
     //
     // Out-of-range I → named [Branch_Index_Out_Of_Range] (#433),
-    // mirror of Select::select<I>'s discipline.
+    // mirror of Select::select_local<I>'s discipline.
     template <std::size_t I>
-    [[nodiscard]] constexpr auto pick() &&
+    [[nodiscard]] constexpr auto pick_local() &&
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
     {
         static_assert(I < sizeof...(Branches),
             "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
-            "SessionHandle<Offer<...>>::pick<I>(): branch index I is "
-            "out of range for this Offer position.  The protocol has "
-            "fewer branches than the index requested; verify I < "
+            "SessionHandle<Offer<...>>::pick_local<I>(): branch index "
+            "I is out of range for this Offer position.  The protocol "
+            "has fewer branches than the index requested; verify I < "
             "branch_count at the call site.");
         this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
         return detail::step_to_next<Chosen, Resource, LoopCtx>(std::move(resource_));
     }
+
+    // The bare `pick<I>()` overload is `= delete`'d (#377) — every
+    // call site must pick (a) a peer-receiving variant (when one is
+    // wired up by the user's transport) or (b) `pick_local<I>()` to
+    // explicitly skip the peer label.  Pre-#377, the bare `pick<I>()`
+    // silently selected the peer-skipping variant — wire-based
+    // sessions where the peer didn't send the matching label silently
+    // diverged off-protocol.
+    template <std::size_t I>
+    void pick() && = delete(
+        "[Wire_Variant_Required] SessionHandle<Offer<...>>::pick<I>() "
+        "without arguments is no longer allowed (#377).  Use "
+        "`pick_local<I>()` to advance the local handle WITHOUT "
+        "receiving a peer label (in-memory channels and unit tests "
+        "only — wire-based sessions where the peer's actual choice "
+        "differs from I will silently drift off-protocol).  Per #377, "
+        "the framework refuses to guess that the peer-skipping "
+        "variant was what you meant.");
 
     [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
     [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }

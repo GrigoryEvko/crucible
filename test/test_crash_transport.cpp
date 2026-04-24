@@ -189,7 +189,7 @@ int run_cross_thread_crash() {
         // Try to pick branch 0 (Send).  If flag is set we get
         // CrashEvent; if flag is still low we get the Send handle,
         // send, and loop back to Select.
-        auto r = std::move(watched).template select<0>();
+        auto r = std::move(watched).template select_local<0>();
         if (!r) {
             if (r.error().resource.session_id != 99) return 1;
             producer.join();

@@ -521,12 +521,17 @@ public:
     }
 
     // No-transport select.
+    // Renamed from `select<I>()` to `select_local<I>()` (#377) so the
+    // wire ABSENCE is visible at the call site.  CrashWatchedHandle's
+    // crash-detection still applies — peer crash before the local
+    // .select_local<I>() call returns crash event; otherwise the
+    // local handle advances to branch I without signalling the peer.
     template <std::size_t I>
         requires (I < sizeof...(Branches))
-    [[nodiscard]] constexpr auto select() &&
+    [[nodiscard]] constexpr auto select_local() &&
         -> std::expected<
             decltype(detail::wrap_crash_next_<PeerTag>(
-                std::declval<inner_type>().template select<I>(),
+                std::declval<inner_type>().template select_local<I>(),
                 std::declval<OneShotFlag&>())),
             CrashEvent<PeerTag, Resource>>
     {
@@ -546,10 +551,21 @@ public:
                 detach_reason::TransportClosedOutOfBand{},
                 std::move(recovered));
         }
-        auto next = std::move(inner_).template select<I>();
+        auto next = std::move(inner_).template select_local<I>();
         this->mark_consumed_();
         return detail::wrap_crash_next_<PeerTag>(std::move(next), *flag_);
     }
+
+    // Deleted `select<I>()` overload (#377) — forces every call site
+    // to choose between the wire variant `.select<I>(transport)` and
+    // the wire-omitting `.select_local<I>()`.
+    template <std::size_t I>
+    void select() && = delete(
+        "[Wire_Variant_Required] CrashWatchedHandle<Select<...>>::"
+        "select<I>() without arguments is no longer allowed (#377).  "
+        "Choose `select<I>(transport)` for the wire path, or "
+        "`select_local<I>()` for the in-memory variant.  See "
+        "SessionHandle<Select<...>>::select for the full discipline.");
 
     [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
@@ -597,12 +613,15 @@ public:
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
     ~CrashWatchedHandle() = default;
 
+    // Renamed to `pick_local<I>()` (#377) — surfaces the wire absence
+    // for the Offer side too.  Same crash-detection semantics; the
+    // local handle assumes branch I without receiving the peer label.
     template <std::size_t I>
         requires (I < sizeof...(Branches))
-    [[nodiscard]] constexpr auto pick() &&
+    [[nodiscard]] constexpr auto pick_local() &&
         -> std::expected<
             decltype(detail::wrap_crash_next_<PeerTag>(
-                std::declval<inner_type>().template pick<I>(),
+                std::declval<inner_type>().template pick_local<I>(),
                 std::declval<OneShotFlag&>())),
             CrashEvent<PeerTag, Resource>>
     {
@@ -622,10 +641,22 @@ public:
                 detach_reason::TransportClosedOutOfBand{},
                 std::move(recovered));
         }
-        auto next = std::move(inner_).template pick<I>();
+        auto next = std::move(inner_).template pick_local<I>();
         this->mark_consumed_();
         return detail::wrap_crash_next_<PeerTag>(std::move(next), *flag_);
     }
+
+    // Deleted `pick<I>()` overload (#377) — same discipline as
+    // CrashWatchedHandle<Select<...>>::select; force every call site
+    // to make the wire choice explicit.
+    template <std::size_t I>
+    void pick() && = delete(
+        "[Wire_Variant_Required] CrashWatchedHandle<Offer<...>>::"
+        "pick<I>() without arguments is no longer allowed (#377).  "
+        "Use `pick_local<I>()` to advance without receiving a peer "
+        "label, or call the peer-receiving variant when one is "
+        "available.  See SessionHandle<Offer<...>>::pick for the "
+        "full discipline.");
 
     [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }

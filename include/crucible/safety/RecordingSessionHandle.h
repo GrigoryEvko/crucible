@@ -346,13 +346,14 @@ public:
         return detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
     }
 
-    // No-transport select (in-memory choice).  Same recording + same
+    // Renamed to `select_local<I>()` (#377).  Same recording + same
     // mark_consumed_ pattern; the wrapper does not distinguish the
     // wire-vs-in-memory variant in the event log because both equally
-    // determine the protocol shape.
+    // determine the protocol shape.  The rename surfaces the wire
+    // ABSENCE — useful for human-auditable event-log inspections.
     template <std::size_t I>
         requires (I < sizeof...(Branches))
-    [[nodiscard]] constexpr auto select() &&
+    [[nodiscard]] constexpr auto select_local() &&
     {
         log_->record_now(SessionEvent{
             .from_role    = self_role_,
@@ -361,9 +362,18 @@ public:
             .branch_index = static_cast<uint8_t>(I),
         });
         this->mark_consumed_();
-        auto next = std::move(inner_).template select<I>();
+        auto next = std::move(inner_).template select_local<I>();
         return detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
     }
+
+    // Deleted `select<I>()` overload (#377) — same discipline as the
+    // bare SessionHandle and CrashWatchedHandle.
+    template <std::size_t I>
+    void select() && = delete(
+        "[Wire_Variant_Required] RecordingSessionHandle<Select<...>>::"
+        "select<I>() without arguments is no longer allowed (#377).  "
+        "Use `select<I>(transport)` for the wire path or "
+        "`select_local<I>()` for the in-memory variant.");
 
     [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
@@ -406,10 +416,13 @@ public:
     constexpr RecordingSessionHandle& operator=(RecordingSessionHandle&&) noexcept = default;
     ~RecordingSessionHandle() = default;
 
-    // No-transport pick (caller already learned the branch out-of-band).
+    // Renamed to `pick_local<I>()` (#377) — caller already learned the
+    // branch out-of-band, no peer label is being received here.  The
+    // event log still records the Offer transition; only the wire
+    // semantic differs.
     template <std::size_t I>
         requires (I < sizeof...(Branches))
-    [[nodiscard]] constexpr auto pick() &&
+    [[nodiscard]] constexpr auto pick_local() &&
     {
         log_->record_now(SessionEvent{
             .from_role    = peer_role_,        // peer made the choice
@@ -418,9 +431,19 @@ public:
             .branch_index = static_cast<uint8_t>(I),
         });
         this->mark_consumed_();
-        auto next = std::move(inner_).template pick<I>();
+        auto next = std::move(inner_).template pick_local<I>();
         return detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
     }
+
+    // Deleted `pick<I>()` overload (#377) — same discipline as bare
+    // SessionHandle and CrashWatchedHandle.
+    template <std::size_t I>
+    void pick() && = delete(
+        "[Wire_Variant_Required] RecordingSessionHandle<Offer<...>>::"
+        "pick<I>() without arguments is no longer allowed (#377).  "
+        "Use `pick_local<I>()` to advance without receiving a peer "
+        "label, or call the peer-receiving variant when one is "
+        "available.");
 
     // Transport-driven branch — receives the index from peer, then
     // dispatches to the user's handler with the branch's RecordingSession-
