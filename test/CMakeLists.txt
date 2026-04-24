@@ -878,3 +878,19 @@ crucible_neg_compile_test(neg_checked_safe_capacity_overflow
     "Checked_Capacity_Overflow")
 crucible_neg_compile_test(neg_checked_safe_size_diff_underflow
     "Checked_Capacity_Overflow")
+
+# Secret<T>::transform(f) capture-leak rejection (#151).
+#
+# [FRAMEWORK-CONTROLLED] Secret.h's transform() fires two named
+# static_asserts when f would leak classified data:
+#   - [Capture_Leak_Reference_Return] — f returns a reference that
+#     aliases the moved-from secret storage OR a member of f's
+#     closure, silently declassifying without the declassify<Policy>
+#     audit trail.
+#   - [Capture_Leak_Void_Return] — f returns void, producing the
+#     meaningless Secret<void>; the likely intent is a side-effecting
+#     observation and belongs in declassify<Policy>() instead.
+crucible_neg_compile_test(neg_secret_transform_reference_return
+    "Capture_Leak_Reference_Return")
+crucible_neg_compile_test(neg_secret_transform_void_return
+    "Capture_Leak_Void_Return")
