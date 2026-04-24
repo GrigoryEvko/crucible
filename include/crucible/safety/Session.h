@@ -402,55 +402,112 @@ template <typename P>
 inline constexpr bool is_terminal_state_v = is_terminal_state<P>::value;
 
 // ═════════════════════════════════════════════════════════════════
+// ── detail::consumed_tracker — conditional flag storage ─────────
+// ═════════════════════════════════════════════════════════════════
+//
+// Stores the SessionHandle abandonment-check flag with TWO different
+// shapes per build mode, controlled by NDEBUG:
+//
+//   * DEBUG:    holds a real `bool` recording whether the handle has
+//               been consumed.  Drives the destructor check.
+//   * RELEASE:  empty class — when combined with SessionHandleBase's
+//               `[[no_unique_address]]` member, the base class becomes
+//               empty, EBO collapses it in derived SessionHandle
+//               classes, and the per-handle overhead drops to ZERO.
+//
+// Net effect:  in release, sizeof(SessionHandle<End, R>) == sizeof(R)
+// — no per-handle overhead beyond the underlying Resource.  The
+// framework's "zero-cost discipline" claim is verified at the type
+// level (release-mode static_asserts at the bottom of this file).
+//
+// ABI note:  this is a deliberate debug/release ABI difference.
+// SessionHandle's sizeof differs between modes.  Crucible's build
+// discipline (single mode per binary; never link debug + release
+// object files together) makes this safe.  Cross-mode linking would
+// produce silent layout mismatches.
+
+namespace detail {
+
+#ifdef NDEBUG
+
+class consumed_tracker {
+public:
+    constexpr void mark() noexcept {}
+    constexpr bool was_marked() const noexcept { return true; }
+    constexpr void move_from(consumed_tracker&) noexcept {}
+};
+static_assert(std::is_empty_v<consumed_tracker>,
+    "Release-mode consumed_tracker must be std::is_empty_v for EBO.");
+
+#else
+
+class consumed_tracker {
+    bool flag_ = false;
+public:
+    constexpr void mark() noexcept { flag_ = true; }
+    constexpr bool was_marked() const noexcept { return flag_; }
+    constexpr void move_from(consumed_tracker& other) noexcept {
+        flag_ = other.flag_;
+        other.flag_ = true;
+    }
+};
+
+#endif
+
+}  // namespace detail
+
+// ═════════════════════════════════════════════════════════════════
 // ── SessionHandleBase<Proto> — lifetime-tracked CRTP base ────────
 // ═════════════════════════════════════════════════════════════════
 //
 // Every SessionHandle specialisation inherits from this.  Provides:
 //
-//   * `consumed_` flag tracking whether the handle has been
-//     advanced past (via a &&-qualified consumer method: close,
+//   * `tracker_` (consumed-flag) recording whether the handle has
+//     been advanced past via a &&-qualified consumer method (close,
 //     send, recv, select, pick, branch, delegate, accept, base,
-//     rollback).  Move ctor/assign set the SOURCE's flag to true
-//     so moved-from handles don't fire the destructor check.
+//     rollback) or via .detach().  Move ctor/assign mark the SOURCE
+//     consumed so moved-from handles don't fire the destructor check.
 //
-//   * Destructor check: in debug builds, if the handle is destroyed
+//   * Destructor check: in DEBUG builds, if the handle is destroyed
 //     at a NON-TERMINAL protocol state AND was NOT consumed, call
 //     std::abort() with a diagnostic.  This catches the class of
 //     bug where code drops a mid-protocol handle on the floor
 //     (e.g., forgot to loop back to Continue, forgot to call
 //     close(), exception escapes a handle's scope).
 //
-//   * In release builds (NDEBUG), the destructor is a no-op.  The
-//     1-byte `consumed_` field is retained so move ctor semantics
-//     work uniformly across build configurations.
+//   * In RELEASE builds (NDEBUG), the destructor is a no-op AND the
+//     `tracker_` field is empty (zero bytes via [[no_unique_address]]
+//     + std::is_empty_v<consumed_tracker>).  EBO collapses the base
+//     class in derived SessionHandle specialisations — sizeof of a
+//     SessionHandle equals sizeof of its underlying Resource.
 //
-// Handle overhead:  1 byte for consumed_, plus alignment padding
-// up to the next field or cache line.  Documented in
-// session_types.md §III.L1.5:
-//   "A SessionHandle's sizeof is sizeof(Resource*) + sizeof(
-//    CrashStatus_flag) — ~9 bytes with alignment."
+// Handle overhead:
+//   * DEBUG:   1 byte for tracker_ + alignment padding (~8 bytes
+//              for SessionHandle<End, int>).
+//   * RELEASE: 0 bytes overhead.  sizeof(SessionHandle<End, int>) == 4.
 //
-// ─── Why CRTP base + private inheritance ─────────────────────────
+// ─── Why CRTP base + public inheritance ──────────────────────────
 //
 // Deriving each SessionHandle<Proto, ...> from SessionHandleBase<
 // Proto> avoids 9 copies of the destructor + move-semantics code,
-// and keeps the lifetime contract in ONE place.  Private inheritance
-// prevents outside code from using the base's interface (it's an
-// implementation detail); friend-of-SessionHandle relationships
-// still let sibling SessionHandle instantiations access base
-// members through the derived's access path.
+// and keeps the lifetime contract in ONE place.  Public inheritance
+// allows .detach() to be called on derived handles without per-class
+// using-declarations; friend-of-SessionHandle relationships let
+// sibling SessionHandle instantiations access protected members
+// (e.g., Delegate's delegate() marking the delegated handle consumed).
 
 template <typename Proto>
 class SessionHandleBase {
-    bool consumed_ = false;
+    [[no_unique_address]] detail::consumed_tracker tracker_;
 
 protected:
     // Call before returning from a &&-qualified consumer method.
     // After this, *this is safe to destruct (the destructor check
-    // sees consumed_ == true and skips the abort).
-    constexpr void mark_consumed_() noexcept { consumed_ = true; }
+    // sees the tracker marked and skips the abort).  In RELEASE, this
+    // is a no-op since the tracker is empty.
+    constexpr void mark_consumed_() noexcept { tracker_.mark(); }
 
-    constexpr bool is_consumed_() const noexcept { return consumed_; }
+    constexpr bool is_consumed_() const noexcept { return tracker_.was_marked(); }
 
     // Expose to friend SessionHandle instantiations (e.g., Delegate's
     // delegate() method marks the delegated handle consumed).
@@ -478,8 +535,9 @@ public:
     // Grep for `.detach()` to audit all intentional-drop sites; this
     // is the reviewable escape hatch.  The destructor-check still
     // fires for handles that DON'T explicitly detach, catching
-    // accidental abandonment.
-    constexpr void detach() && noexcept { consumed_ = true; }
+    // accidental abandonment.  In RELEASE, detach is a no-op (the
+    // destructor check is also no-op'd, so consistency holds).
+    constexpr void detach() && noexcept { tracker_.mark(); }
 
     // Linear — copy-deleted with reason.
     SessionHandleBase(const SessionHandleBase&)
@@ -490,23 +548,22 @@ public:
     // Move semantics mark the source as consumed so its destructor
     // check skips the abort.  The MOVED-INTO handle inherits the
     // source's consumed state (typically false — a newly-moved-into
-    // handle is fresh).
+    // handle is fresh).  In RELEASE, tracker.move_from is a no-op
+    // and the entire move sequence trivializes to a default move.
     constexpr SessionHandleBase(SessionHandleBase&& other) noexcept
-        : consumed_(other.consumed_)
     {
-        other.consumed_ = true;
+        tracker_.move_from(other.tracker_);
     }
 
     constexpr SessionHandleBase& operator=(SessionHandleBase&& other) noexcept
     {
-        consumed_ = other.consumed_;
-        other.consumed_ = true;
+        tracker_.move_from(other.tracker_);
         return *this;
     }
 
     ~SessionHandleBase() {
 #ifndef NDEBUG
-        if (!consumed_ && !is_terminal_state_v<Proto>) {
+        if (!tracker_.was_marked() && !is_terminal_state_v<Proto>) {
             std::fprintf(stderr,
                 "crucible::safety::proto: SessionHandle abandoned at "
                 "non-terminal protocol state.  A mid-protocol handle "
@@ -1074,5 +1131,50 @@ namespace two_pc_test {
 }
 
 }  // namespace detail::self_test
+
+// ═════════════════════════════════════════════════════════════════
+// ── Release-mode size verification ───────────────────────────────
+// ═════════════════════════════════════════════════════════════════
+//
+// In release builds, the framework's "zero-cost discipline" promise
+// requires that SessionHandle adds NO bytes beyond its underlying
+// Resource.  Verified via three sizeof checks: SessionHandle wrapping
+// a 1-byte Resource is 1 byte; a 4-byte Resource is 4 bytes; an
+// 8-byte aligned Resource is 8 bytes.  Each fires only under NDEBUG
+// — debug builds carry the consumed_tracker for abandonment detection
+// and naturally have larger sizeof.
+//
+// If these static_asserts FAIL in release, the EBO has not collapsed
+// SessionHandleBase as expected — likely cause: compiler does not
+// recognise [[no_unique_address]] empty member as a candidate for
+// EBO base-collapse.  The fix in that case is a #ifdef NDEBUG/else
+// dual implementation of SessionHandleBase (one truly empty, one
+// with the bool flag) — kept in reserve as a backup.
+
+#ifdef NDEBUG
+namespace detail::release_size_test {
+    struct OneByteRes  { char x; };
+    struct FourByteRes { int  x; };
+    struct EightByteRes { double x; };
+
+    static_assert(sizeof(SessionHandle<End, OneByteRes>) == sizeof(OneByteRes),
+        "Release-mode SessionHandle<End, OneByteRes> must equal sizeof(OneByteRes) "
+        "— the EBO must collapse SessionHandleBase to zero bytes.  If this fires, "
+        "see the comment block above the assert for remediation.");
+
+    static_assert(sizeof(SessionHandle<End, FourByteRes>) == sizeof(FourByteRes),
+        "Release-mode SessionHandle<End, FourByteRes> must equal sizeof(FourByteRes).");
+
+    static_assert(sizeof(SessionHandle<End, EightByteRes>) == sizeof(EightByteRes),
+        "Release-mode SessionHandle<End, EightByteRes> must equal sizeof(EightByteRes).");
+
+    // Same property holds for non-terminal protocol states — Send, Recv,
+    // Select, Offer all derive from SessionHandleBase<Proto> and inherit
+    // the EBO collapse.
+    static_assert(sizeof(SessionHandle<Send<int, End>, FourByteRes>)
+                  == sizeof(FourByteRes),
+        "Release-mode SessionHandle<Send, FourByteRes> must equal sizeof(FourByteRes).");
+}
+#endif  // NDEBUG
 
 }  // namespace crucible::safety::proto

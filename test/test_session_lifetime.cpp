@@ -169,15 +169,31 @@ int run_moved_from_safe() {
                // a smoke test for lifetime mechanics, not full IO.
 }
 
-// ── Compile-time: sizeof includes the consumed_ flag ───────────
+// ── Compile-time: sizeof depends on build mode (#366) ──────────
 
 struct MinimalRes { int x; };
 
-// SessionHandle has 1 byte for consumed_ + Resource (int=4B) +
-// alignment padding.  Exact sizeof depends on alignment; we just
-// verify it's STRICTLY LARGER than sizeof(Resource) alone.
+// SessionHandle's overhead depends on build mode per task #366:
+//
+//   * DEBUG: the consumed_tracker holds a 1-byte bool to drive the
+//            abandoned-protocol check.  Combined with int's 4-byte
+//            alignment, sizeof(SessionHandle<End, int>) is 8 bytes
+//            (1 flag + 3 padding + 4 int).
+//
+//   * RELEASE (NDEBUG): consumed_tracker is std::is_empty_v, base
+//            class is empty, EBO collapses SessionHandleBase.
+//            sizeof(SessionHandle<End, int>) == sizeof(int) — the
+//            framework's zero-cost discipline holds.
+//
+// This conditional check guards the discipline at the type level in
+// EITHER build mode.
+#ifdef NDEBUG
+static_assert(sizeof(SessionHandle<End, MinimalRes>) == sizeof(MinimalRes),
+    "Release-mode: SessionHandle<End, R> must equal sizeof(R) (zero-cost).");
+#else
 static_assert(sizeof(SessionHandle<End, MinimalRes>) > sizeof(MinimalRes),
-    "SessionHandle should carry an extra consumed_ flag (+ padding)");
+    "Debug-mode: SessionHandle carries the consumed_tracker flag (+ padding).");
+#endif
 
 }  // anonymous namespace
 
