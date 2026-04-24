@@ -195,6 +195,71 @@ static_assert(sizeof(SessionHandle<End, MinimalRes>) > sizeof(MinimalRes),
     "Debug-mode: SessionHandle carries the consumed_tracker flag (+ padding).");
 #endif
 
+// ── Runtime: protocol_name() accessor (#379) ───────────────────
+
+// Each SessionHandle exposes static protocol_name() returning a
+// human-readable rendering of its Proto template parameter.  Used by
+// the abandonment-check destructor message and available to user code
+// for production logging / debug diagnostics.
+//
+// We verify the rendering for a sample of protocol shapes.  The exact
+// format is GCC-controlled (drops out of __PRETTY_FUNCTION__) so we
+// match SUBSTRINGS rather than exact strings — a future GCC may tweak
+// whitespace or add type aliases without breaking our contract.
+
+int run_protocol_name_smoke() {
+    // End: simplest case — just the namespaced name.
+    constexpr auto end_name = SessionHandle<End, FakeRes>::protocol_name();
+    if (end_name.find("End") == std::string_view::npos) return 1;
+
+    // Send<int, End>: should mention Send and End and int.
+    using SI = Send<int, End>;
+    constexpr auto si_name = SessionHandle<SI, FakeRes>::protocol_name();
+    if (si_name.find("Send") == std::string_view::npos) return 10;
+    if (si_name.find("int")  == std::string_view::npos) return 11;
+    if (si_name.find("End")  == std::string_view::npos) return 12;
+
+    // SessionHandle for a looped protocol is positioned at the body
+    // with Loop as LoopCtx (Loop<...> isn't a valid head — it unrolls
+    // at make_session_handle time).  protocol_name() shows the body
+    // shape; the LoopCtx is template state, not part of the handle's
+    // protocol identity for this rendering.
+    using LSP_Body = Send<Ping, Continue>;
+    using LSP_Ctx  = Loop<LSP_Body>;
+    constexpr auto lsp_name = SessionHandle<LSP_Body, FakeRes, LSP_Ctx>::protocol_name();
+    if (lsp_name.find("Send")     == std::string_view::npos) return 21;
+    if (lsp_name.find("Ping")     == std::string_view::npos) return 22;
+    if (lsp_name.find("Continue") == std::string_view::npos) return 23;
+
+    // Stop: terminal crash combinator (from SessionCrash.h).
+    constexpr auto stop_name = SessionHandle<Stop, FakeRes>::protocol_name();
+    if (stop_name.find("Stop") == std::string_view::npos) return 30;
+
+    // protocol_name() returns the SAME string_view across calls
+    // (constexpr; points into program-lifetime data).
+    if (end_name.data() != SessionHandle<End, FakeRes>::protocol_name().data()) return 40;
+    if (lsp_name.data() != SessionHandle<LSP_Body, FakeRes, LSP_Ctx>::protocol_name().data()) return 41;
+
+    // Sanity: distinct Protos render distinctly.
+    if (end_name == si_name)  return 50;
+    if (si_name  == lsp_name) return 51;
+    return 0;
+}
+
+// ── Compile-time: protocol_name() is constexpr / NSDMI-eligible ──
+
+static_assert(SessionHandle<End, FakeRes>::protocol_name().size() > 0,
+    "protocol_name() must yield a non-empty rendering at compile time.");
+
+// The accessor is inherited from SessionHandleBase, so it works on
+// every specialisation uniformly.
+static_assert(SessionHandle<Send<int, End>,  FakeRes>::protocol_name().size() > 0);
+static_assert(SessionHandle<Recv<int, End>,  FakeRes>::protocol_name().size() > 0);
+static_assert(SessionHandle<Stop,            FakeRes>::protocol_name().size() > 0);
+static_assert(SessionHandle<Delegate<Send<int, End>, End>, FakeRes>::protocol_name().size() > 0);
+static_assert(SessionHandle<Accept<Send<int, End>,   End>, FakeRes>::protocol_name().size() > 0);
+static_assert(SessionHandle<CheckpointedSession<End, End>, FakeRes>::protocol_name().size() > 0);
+
 }  // anonymous namespace
 
 int main() {
@@ -203,6 +268,7 @@ int main() {
     if (int rc = run_detach_infinite_loop();   rc != 0) return rc;
     if (int rc = run_stop_terminal();          rc != 0) return rc;
     if (int rc = run_moved_from_safe();        rc != 0) return rc;
-    std::puts("session_lifetime: close + chain + detach + Stop + moved-from OK");
+    if (int rc = run_protocol_name_smoke();    rc != 0) return rc;
+    std::puts("session_lifetime: close + chain + detach + Stop + moved-from + protocol_name OK");
     return 0;
 }

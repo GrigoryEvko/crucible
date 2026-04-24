@@ -356,6 +356,33 @@ struct Merge_Branches_Diverge : tag_base {
         "full merging per task SEPLOG-STRUCT-7.";
 };
 
+// ─── Tag added by the Pinned-constraint integration (#406) ─────────
+//
+// Cover the make_session_handle / establish_channel pin-discipline
+// rejection path: lvalue-reference Resource to a non-Pinned type, or
+// rvalue-reference Resource at all.
+
+struct SessionResource_NotPinned : tag_base {
+    static constexpr std::string_view name = "SessionResource_NotPinned";
+    static constexpr std::string_view description =
+        "make_session_handle / establish_channel was called with a "
+        "Resource that fails the pin-discipline: either an lvalue "
+        "reference to a type not derived from safety::Pinned<T>, or "
+        "an rvalue reference (which would bind the handle to a "
+        "temporary).  The handle could outlive the referenced object, "
+        "or the object could be moved out from under the handle, "
+        "producing a use-after-free at the next Send/Recv.";
+    static constexpr std::string_view remediation =
+        "Three options.  (a) Make the channel Pinned by deriving it "
+        "from safety::Pinned<ChannelType>.  This is the canonical "
+        "fix for any channel intended to back live SessionHandles.  "
+        "(b) Pass the channel by value rather than reference; copies "
+        "are fine for value-like channels.  (c) Wrap the channel in "
+        "std::reference_wrapper (a value type) if the caller's "
+        "lifetime contract is satisfied by other means and you "
+        "deliberately want to opt out of the framework's check.";
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── is_diagnostic_class_v<T> ───────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -426,12 +453,14 @@ inline constexpr bool is_diagnostic_v = is_diagnostic<T>::value;
 // ── Catalog enumeration ────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Compile-time tuple of all 18 shipped tag types — useful for
+// Compile-time tuple of all 19 shipped tag types — useful for
 // reflection-based tooling, catalog printers, and diagnostic UIs.
-// First 11 entries are the original L11 vocabulary; the next 7
+// First 11 entries are the original L11 vocabulary; positions 11-17
 // were added by the L11 retrofit (#388) to cover concrete user-
 // facing assertion paths in Session.h, SessionContext.h,
-// SessionQueue.h, SessionAssoc.h, and SessionGlobal.h.
+// SessionQueue.h, SessionAssoc.h, and SessionGlobal.h.  Position 18
+// is the SessionResource pin-discipline tag added by integration
+// task #406.
 
 using Catalog = std::tuple<
     ProtocolViolation_Label,
@@ -451,7 +480,8 @@ using Catalog = std::tuple<
     Context_Lookup_Miss,
     Queue_Empty_Dequeue,
     Association_Domain_Mismatch,
-    Merge_Branches_Diverge>;
+    Merge_Branches_Diverge,
+    SessionResource_NotPinned>;
 
 inline constexpr std::size_t catalog_size =
     std::tuple_size_v<Catalog>;
@@ -563,18 +593,19 @@ static_assert(D2::name == "CrashBranch_Missing");
 
 // ─── Catalog ──────────────────────────────────────────────────────
 
-static_assert(catalog_size == 18);
-static_assert(std::tuple_size_v<Catalog> == 18);
+static_assert(catalog_size == 19);
+static_assert(std::tuple_size_v<Catalog> == 19);
 
 // Each catalog entry is a valid diagnostic class.
 static_assert(is_diagnostic_class_v<std::tuple_element_t<0,  Catalog>>);
 static_assert(is_diagnostic_class_v<std::tuple_element_t<5,  Catalog>>);
 static_assert(is_diagnostic_class_v<std::tuple_element_t<10, Catalog>>);
+static_assert(is_diagnostic_class_v<std::tuple_element_t<18, Catalog>>);
 
 // The catalog starts with ProtocolViolation_Label and ends with
-// Merge_Branches_Diverge (ordering is deterministic).  The original
-// 11 L11 tags fill positions [0, 10]; the 7 retrofit tags (#388)
-// fill [11, 17].
+// SessionResource_NotPinned (ordering is deterministic).  The
+// original 11 L11 tags fill positions [0, 10]; the 7 retrofit tags
+// (#388) fill [11, 17]; the SessionResource tag (#406) fills 18.
 static_assert(std::is_same_v<
     std::tuple_element_t<0, Catalog>, ProtocolViolation_Label>);
 static_assert(std::is_same_v<
@@ -583,6 +614,8 @@ static_assert(std::is_same_v<
     std::tuple_element_t<11, Catalog>, Continue_Without_Loop>);
 static_assert(std::is_same_v<
     std::tuple_element_t<17, Catalog>, Merge_Branches_Diverge>);
+static_assert(std::is_same_v<
+    std::tuple_element_t<18, Catalog>, SessionResource_NotPinned>);
 
 // ─── Macro compile-test ───────────────────────────────────────────
 

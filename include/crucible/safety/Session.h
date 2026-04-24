@@ -144,6 +144,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Pinned.h>
 
 #include <concepts>
 #include <cstddef>
@@ -454,6 +455,64 @@ public:
 
 #endif
 
+// ─── type_name<T> — compile-time protocol-shape rendering (#379) ──
+//
+// Extracts a human-readable rendering of T from GCC's
+// __PRETTY_FUNCTION__ string.  Used by SessionHandleBase's
+// protocol_name() static accessor and by the abandonment-check
+// destructor message — without this, the destructor's fprintf says
+// only "SessionHandle abandoned" with no clue WHICH protocol leaked.
+//
+// Implementation is GCC-specific (relies on __PRETTY_FUNCTION__'s
+// `[with T = ...; std::string_view = ...]` format documented in
+// GCC's manual).  Crucible is GCC 16-only per code_guide.md §I, so
+// no portability fallback is needed.
+//
+// The returned std::string_view points into the function template's
+// constant data (program-lifetime); copying out is unnecessary.
+//
+// Example output for T = Loop<Send<int, Continue>>:
+//
+//   "crucible::safety::proto::Loop<crucible::safety::proto::Send<
+//    int, crucible::safety::proto::Continue> >"
+//
+// (The verbose namespace prefix is preserved as-is — a future task
+// could strip it for readability without breaking the API.)
+
+template <typename T>
+constexpr std::string_view pretty_function_raw_() noexcept {
+    return std::string_view{__PRETTY_FUNCTION__};
+}
+
+template <typename T>
+constexpr std::string_view type_name() noexcept {
+    constexpr std::string_view raw    = pretty_function_raw_<T>();
+    constexpr std::string_view marker = "T = ";
+
+    constexpr auto pos = raw.find(marker);
+    if (pos == std::string_view::npos) [[unlikely]] {
+        // Should be unreachable on GCC 16; if reached, return the
+        // full pretty-function string so the diagnostic at least
+        // contains SOME information.
+        return raw;
+    }
+    constexpr auto start = pos + marker.size();
+
+    // End at the first ';' (separator between with-clause entries —
+    // appears when the template has multiple parameters with default-
+    // arg metadata, e.g. our `[with T = ...; std::string_view = ...]`)
+    // OR the closing ']' of the with-clause if no ';' is present.
+    constexpr auto semi    = raw.find(';', start);
+    constexpr auto bracket = raw.find(']', start);
+    constexpr auto end     = (semi != std::string_view::npos
+                              && (bracket == std::string_view::npos || semi < bracket))
+                                 ? semi
+                                 : bracket;
+
+    if (end == std::string_view::npos) [[unlikely]] return raw.substr(start);
+    return raw.substr(start, end - start);
+}
+
 }  // namespace detail
 
 // ═════════════════════════════════════════════════════════════════
@@ -519,6 +578,26 @@ protected:
 public:
     constexpr SessionHandleBase() noexcept = default;
 
+    // Static accessor for the protocol's compile-time-rendered name
+    // (#379).  Inherited by every SessionHandle specialisation, so
+    // user code can call `MyHandle::protocol_name()` to get the
+    // human-readable shape (e.g., "crucible::safety::proto::Loop<
+    // crucible::safety::proto::Send<int, crucible::safety::proto::
+    // Continue> >").
+    //
+    // Useful for:
+    //   * Logging the active session in production crash handlers
+    //   * Debug-time diagnostics where you have a handle but no
+    //     visibility into its compile-time Proto template arg
+    //   * Test failure messages
+    //
+    // Returns a std::string_view pointing into the program's
+    // constant data — safe to store and pass around for the lifetime
+    // of the program.  Zero allocation; computed at compile time.
+    [[nodiscard]] static constexpr std::string_view protocol_name() noexcept {
+        return detail::type_name<Proto>();
+    }
+
     // Public detach: mark the handle consumed WITHOUT advancing the
     // protocol.  Use ONLY when:
     //
@@ -564,14 +643,21 @@ public:
     ~SessionHandleBase() {
 #ifndef NDEBUG
         if (!tracker_.was_marked() && !is_terminal_state_v<Proto>) {
+            // Render the abandoned protocol's shape via the compile-
+            // time type_name<Proto>() helper (#379) — without this,
+            // the diagnostic gives no clue WHICH session was leaked
+            // when many SessionHandle specialisations coexist in one
+            // process.
+            constexpr auto pname = detail::type_name<Proto>();
             std::fprintf(stderr,
-                "crucible::safety::proto: SessionHandle abandoned at "
-                "non-terminal protocol state.  A mid-protocol handle "
+                "crucible::safety::proto: SessionHandle<%.*s> abandoned "
+                "at non-terminal protocol state.  A mid-protocol handle "
                 "was destroyed without being consumed via a &&-qualified "
                 "method (close, send, recv, select, pick, branch, "
                 "delegate, accept, base, rollback).  Either consume the "
                 "handle before its scope exits, or advance the protocol "
-                "to End/Stop.\n");
+                "to End/Stop.\n",
+                static_cast<int>(pname.size()), pname.data());
             std::abort();
         }
 #endif
@@ -968,6 +1054,81 @@ private:
 };
 
 // ═════════════════════════════════════════════════════════════════
+// ── SessionResource concept — channel-resource pin discipline ────
+// ═════════════════════════════════════════════════════════════════
+//
+// The Resource template parameter of SessionHandle<Proto, Resource>
+// is what the handle stores at runtime.  In production it is one of
+// three shapes:
+//
+//   1. A VALUE TYPE (FakeRes, Wire, std::reference_wrapper<Channel>,
+//      std::unique_ptr<Channel>, std::span<T>, function pointers,
+//      POD scalars, etc.).  The handle owns it by value; copy/move
+//      of the handle moves the value with it.  Cannot dangle —
+//      lifetime is the handle's.
+//
+//   2. An LVALUE REFERENCE TO A PINNED OBJECT (PermissionedSpscChannel
+//      &, MpmcRing<T,N>&, AtomicSnapshot<T>&).  The handle stores a
+//      pointer; the pointee's address is stable for the pointee's
+//      lifetime (Pinned's deleted move guarantees this).  The
+//      caller's discipline is to outlive every handle they minted
+//      from the channel; the framework enforces the address-stability
+//      half via Pinned.
+//
+//   3. An LVALUE REFERENCE TO A NON-PINNED OBJECT.  HAZARD CLASS.
+//      The pointee's address can change when the pointee is moved or
+//      assigned-to; live handles dangle without diagnostic.  The
+//      SessionResource concept REJECTS this case at compile time.
+//
+// Rvalue references are also rejected — a handle bound to an rvalue
+// reference would point at a temporary that disappears before the
+// handle is used.
+//
+// ─── What this concept ENFORCES ─────────────────────────────────────
+//
+//   Resource = T        (value type)              ALLOWED
+//   Resource = T&       where T derives Pinned    ALLOWED
+//   Resource = T&       where T does NOT          REJECTED at compile time
+//   Resource = T&&                                REJECTED at compile time
+//   Resource = T*       where T is an object      ALLOWED (caller's
+//                                                  manual lifetime
+//                                                  contract; raw ptrs
+//                                                  are rare in this
+//                                                  codebase, and the
+//                                                  pointer being a
+//                                                  value type means
+//                                                  the handle owns
+//                                                  the pointer slot)
+//   Resource = R(*)(...)  function pointer        ALLOWED (functions
+//                                                  have stable
+//                                                  addresses by
+//                                                  language rule)
+//
+// The discipline closes the bug class "I created handles, then moved
+// my channel, and now the handles dangle" — a real production failure
+// mode flagged in misc/24_04_2026_safety_integration.md §17 and the
+// SessionResource Pinned-constraint task #406.
+//
+// ─── Why we don't constrain raw object pointers ─────────────────────
+//
+// Raw object pointers (Resource = SomeObject*) could in principle
+// require the pointee to be Pinned-derived too.  We choose to allow
+// them unconstrained in v1 because (a) raw object pointers are rare
+// in Crucible's code style — references and smart pointers are the
+// idioms — and (b) when raw pointers ARE used, the calling code is
+// already in the manual-lifetime regime where the framework's
+// type-system support is necessarily partial.  Tightening this is a
+// future v2 refinement; the canonical hazard (lvalue reference to a
+// non-Pinned object) is what we close today.
+
+template <typename Resource>
+concept SessionResource =
+    !std::is_reference_v<Resource>
+    || (std::is_lvalue_reference_v<Resource>
+        && std::derived_from<std::remove_reference_t<Resource>,
+                              safety::Pinned<std::remove_reference_t<Resource>>>);
+
+// ═════════════════════════════════════════════════════════════════
 // ── Factory: make_session_handle<Proto>(resource) ───────────────
 // ═════════════════════════════════════════════════════════════════
 //
@@ -976,7 +1137,8 @@ private:
 // at Loop's body with the Loop itself as the LoopCtx.  Protocols
 // starting with any other head go through unchanged.
 //
-// Compile error if Proto is ill-formed (Continue outside Loop, etc.).
+// Compile error if Proto is ill-formed (Continue outside Loop, etc.)
+// or if Resource fails the SessionResource pin-discipline check.
 
 template <typename Proto, typename Resource>
 [[nodiscard]] constexpr auto make_session_handle(Resource r) noexcept
@@ -986,6 +1148,21 @@ template <typename Proto, typename Resource>
         "proto: protocol is ill-formed.  Most likely cause: a Continue "
         "appears outside any enclosing Loop<Body>.  Every Continue must "
         "have a Loop above it in the protocol tree.");
+
+    static_assert(SessionResource<Resource>,
+        "crucible::session::diagnostic [SessionResource_NotPinned]: "
+        "make_session_handle<Proto, Resource>: Resource must be either "
+        "a value type (handle owns it by value) or an lvalue reference "
+        "to a type derived from safety::Pinned<T>.  An lvalue reference "
+        "to a non-Pinned object lets a subsequent move of the channel "
+        "leave live handles dangling (use-after-free).  Either: (a) "
+        "make the channel Pinned by deriving it from "
+        "safety::Pinned<ChannelType>, or (b) pass the channel by "
+        "value (copies are fine for value-like channels), or (c) wrap "
+        "the channel in std::reference_wrapper if the caller's "
+        "lifetime contract is satisfied by other means.  Rvalue-"
+        "reference Resource is also rejected — the handle would bind "
+        "to a temporary and dangle immediately on return.");
 
     if constexpr (is_loop_v<Proto>) {
         using Body = typename Proto::body;
@@ -1022,6 +1199,17 @@ template <typename Proto, typename ResourceA, typename ResourceB>
     static_assert(std::is_same_v<Proto, dual_of_t<dual_of_t<Proto>>>,
         "proto: duality must be involutive (dual(dual(P)) == P).  "
         "If this fires, the framework's dual_of computation is broken.");
+
+    static_assert(SessionResource<ResourceA>,
+        "crucible::session::diagnostic [SessionResource_NotPinned]: "
+        "establish_channel<Proto, ResourceA, ResourceB>: ResourceA "
+        "fails the pin-discipline.  See the SessionResource concept "
+        "documentation in Session.h for the allowed shapes.");
+    static_assert(SessionResource<ResourceB>,
+        "crucible::session::diagnostic [SessionResource_NotPinned]: "
+        "establish_channel<Proto, ResourceA, ResourceB>: ResourceB "
+        "fails the pin-discipline.  See the SessionResource concept "
+        "documentation in Session.h for the allowed shapes.");
 
     return std::pair{
         make_session_handle<Proto>(std::move(ra)),
