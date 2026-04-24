@@ -144,7 +144,7 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(MemoryPlan);
     pre (meta.ndim <= 8)
 {
   if (meta.ndim == 0)
-    return element_size(meta.dtype);
+    return element_size(meta.dtype).raw();
   int64_t max_offset = 0;
   int64_t min_offset = 0;
   for (uint8_t d = 0; d < meta.ndim; d++) {
@@ -173,7 +173,7 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(MemoryPlan);
   // span is non-negative here (max >= 0 >= min, so max - min >= 0).
   uint64_t total_bytes;
   if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed),
-                             static_cast<uint64_t>(element_size(meta.dtype)),
+                             static_cast<uint64_t>(element_size(meta.dtype).raw()),
                              &total_bytes)) [[unlikely]]
     return UINT64_MAX;
   return total_bytes;

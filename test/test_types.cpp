@@ -109,18 +109,21 @@ static void test_noexcept_ctors_propagate() {
 }
 
 static void test_scalar_type_element_sizes() {
-    assert(element_size(ScalarType::Bool)   == 1);
-    assert(element_size(ScalarType::Byte)   == 1);
-    assert(element_size(ScalarType::Half)   == 2);
-    assert(element_size(ScalarType::BFloat16) == 2);
-    assert(element_size(ScalarType::Int)    == 4);
-    assert(element_size(ScalarType::Float)  == 4);
-    assert(element_size(ScalarType::Long)   == 8);
-    assert(element_size(ScalarType::Double) == 8);
-    assert(element_size(ScalarType::ComplexFloat) == 8);
-    assert(element_size(ScalarType::ComplexDouble) == 16);
-    assert(element_size(ScalarType::Float8_e4m3fn) == 1);
-    assert(element_size(ScalarType::Undefined) == 0);
+    // Per #129, element_size returns ElementBytes strong type — raw
+    // integer literals don't implicitly compare; use ElementBytes{N}
+    // or .raw() at the comparison site.
+    assert(element_size(ScalarType::Bool)          == ElementBytes{1});
+    assert(element_size(ScalarType::Byte)          == ElementBytes{1});
+    assert(element_size(ScalarType::Half)          == ElementBytes{2});
+    assert(element_size(ScalarType::BFloat16)      == ElementBytes{2});
+    assert(element_size(ScalarType::Int)           == ElementBytes{4});
+    assert(element_size(ScalarType::Float)         == ElementBytes{4});
+    assert(element_size(ScalarType::Long)          == ElementBytes{8});
+    assert(element_size(ScalarType::Double)        == ElementBytes{8});
+    assert(element_size(ScalarType::ComplexFloat)  == ElementBytes{8});
+    assert(element_size(ScalarType::ComplexDouble) == ElementBytes{16});
+    assert(element_size(ScalarType::Float8_e4m3fn) == ElementBytes{1});
+    assert(element_size(ScalarType::Undefined).is_zero());
     std::printf("  test_element_size:              PASSED\n");
 }
 
