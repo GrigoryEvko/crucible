@@ -507,6 +507,14 @@ crucible_neg_compile_test(neg_linear_view_field
 crucible_neg_compile_test(neg_appendonly_over_writeonce
   "AppendOnly<WriteOnce<T>> is redundant")
 
+# SessionResource pin-discipline rejection (task #406, SAFEINT-B17 from
+# misc/24_04_2026_safety_integration.md §17).  make_session_handle
+# called with Resource = lvalue reference to a NON-Pinned object must
+# fail to compile with the routed diagnostic naming the discipline
+# violation.
+crucible_neg_compile_test(neg_session_resource_not_pinned
+  "SessionResource_NotPinned")
+
 # Tier 1 compiler firings — each has a distinct diagnostic.
 crucible_neg_compile_test(neg_assignment
   "ScopedView is single-binding; assignment hides state transitions")
