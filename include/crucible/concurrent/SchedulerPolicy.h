@@ -248,32 +248,98 @@ inline constexpr bool is_scheduler_policy_v =
 template <typename P>
 concept SchedulerPolicy = is_scheduler_policy_v<P>;
 
-template <SchedulerPolicy P>
-inline constexpr std::string_view scheduler_name_v = P::name;
+// ─── Framework-controlled rejection diagnostic ────────────────────
+//
+// Per task #371, accessor variable templates route their concept
+// rejection through a helper struct that fires a STATIC_ASSERT with
+// a framework-controlled message — stable across GCC versions.  The
+// natural definition (`template <SchedulerPolicy P> inline constexpr
+// X = P::field`) emits compiler-version-specific text on rejection
+// ("invalid variable template" today; subject to change).  Routing
+// through `detail::sched::accessor_check<P, IsPolicy>` gives
+// "[SchedulerAccessor_NonPolicy]" prefix that neg-compile tests
+// can match against without coupling to GCC's diagnostic phrasing.
 
-template <SchedulerPolicy P>
-inline constexpr std::string_view scheduler_description_v = P::description;
+namespace detail::sched {
 
-template <SchedulerPolicy P>
-inline constexpr std::string_view scheduler_use_case_v = P::use_case;
+template <typename P, bool IsPolicy>
+struct accessor_check;
 
-template <SchedulerPolicy P>
-inline constexpr std::size_t scheduler_submit_ns_v = P::typical_submit_ns;
+template <typename P>
+struct accessor_check<P, true> {
+    static constexpr std::string_view name             = P::name;
+    static constexpr std::string_view description      = P::description;
+    static constexpr std::string_view use_case         = P::use_case;
+    static constexpr std::size_t      typical_submit_ns = P::typical_submit_ns;
+    static constexpr bool requires_deadline_tag        = P::requires_deadline_tag;
+    static constexpr bool uses_work_stealing           = P::uses_work_stealing;
+    static constexpr bool is_locality_aware            = P::is_locality_aware;
+    static constexpr bool provides_fairness            = P::provides_fairness;
+    static constexpr bool provides_bounded_latency     = P::provides_bounded_latency;
+};
 
-template <SchedulerPolicy P>
-inline constexpr bool requires_deadline_tag_v = P::requires_deadline_tag;
+template <typename P>
+struct accessor_check<P, false> {
+    static_assert(is_scheduler_policy_v<P>,
+        "crucible::session::diagnostic [SchedulerAccessor_NonPolicy]: "
+        "scheduler_name_v / scheduler_description_v / scheduler_use_case_v "
+        "/ scheduler_submit_ns_v / requires_deadline_tag_v / "
+        "uses_work_stealing_v / is_locality_aware_v / provides_fairness_v "
+        "/ provides_bounded_latency_v all require P to be derived from "
+        "crucible::concurrent::scheduler::policy_base.  See the shipped "
+        "policies in SchedulerPolicy.h's Catalog; user extensions "
+        "inherit from policy_base and provide the metadata fields.");
 
-template <SchedulerPolicy P>
-inline constexpr bool uses_work_stealing_v = P::uses_work_stealing;
+    // Defaults are arbitrary safe values; the static_assert above is
+    // what surfaces the violation to the user.
+    static constexpr std::string_view name              = "";
+    static constexpr std::string_view description       = "";
+    static constexpr std::string_view use_case          = "";
+    static constexpr std::size_t      typical_submit_ns = 0;
+    static constexpr bool requires_deadline_tag         = false;
+    static constexpr bool uses_work_stealing            = false;
+    static constexpr bool is_locality_aware             = false;
+    static constexpr bool provides_fairness             = false;
+    static constexpr bool provides_bounded_latency      = false;
+};
 
-template <SchedulerPolicy P>
-inline constexpr bool is_locality_aware_v = P::is_locality_aware;
+}  // namespace detail::sched
 
-template <SchedulerPolicy P>
-inline constexpr bool provides_fairness_v = P::provides_fairness;
+template <typename P>
+inline constexpr std::string_view scheduler_name_v =
+    detail::sched::accessor_check<P, is_scheduler_policy_v<P>>::name;
 
-template <SchedulerPolicy P>
-inline constexpr bool provides_bounded_latency_v = P::provides_bounded_latency;
+template <typename P>
+inline constexpr std::string_view scheduler_description_v =
+    detail::sched::accessor_check<P, is_scheduler_policy_v<P>>::description;
+
+template <typename P>
+inline constexpr std::string_view scheduler_use_case_v =
+    detail::sched::accessor_check<P, is_scheduler_policy_v<P>>::use_case;
+
+template <typename P>
+inline constexpr std::size_t scheduler_submit_ns_v =
+    detail::sched::accessor_check<P, is_scheduler_policy_v<P>>::typical_submit_ns;
+
+template <typename P>
+inline constexpr bool requires_deadline_tag_v =
+    detail::sched::accessor_check<P, is_scheduler_policy_v<P>>::requires_deadline_tag;
+
+template <typename P>
+inline constexpr bool uses_work_stealing_v =
+    detail::sched::accessor_check<P, is_scheduler_policy_v<P>>::uses_work_stealing;
+
+template <typename P>
+inline constexpr bool is_locality_aware_v =
+    detail::sched::accessor_check<P, is_scheduler_policy_v<P>>::is_locality_aware;
+
+template <typename P>
+inline constexpr bool provides_fairness_v =
+    detail::sched::accessor_check<P, is_scheduler_policy_v<P>>::provides_fairness;
+
+template <typename P>
+inline constexpr bool provides_bounded_latency_v =
+    detail::sched::accessor_check<P, is_scheduler_policy_v<P>>::provides_bounded_latency;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Catalog ────────────────────────────────────────────────────────

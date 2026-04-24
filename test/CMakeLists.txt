@@ -529,6 +529,33 @@ function(crucible_neg_compile_test name expected_diag)
     PASS_REGULAR_EXPRESSION "${expected_diag}")
 endfunction()
 
+# ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
+#
+# Each crucible_neg_compile_test below pairs a deliberately-broken
+# .cpp with a regex matched against the build's diagnostic output.
+# The regex falls into one of two stability classes:
+#
+#   FRAMEWORK-CONTROLLED — the matched text is a literal substring
+#       of a `static_assert(..., "crucible::session::diagnostic [...]
+#       message")` (or a `= delete("reason")`) in the framework's
+#       own source.  Stable across GCC versions because we own the
+#       string.  These tests survive toolchain bumps.
+#
+#   GCC-WRAPPER-TEXT — the matched text comes from the compiler's
+#       own diagnostic phrasing ("is private within this context",
+#       "no matching function for call to ...").  These tests are
+#       at risk of breaking when GCC rephrases the diagnostic.  Each
+#       such test is annotated with [GCC-text] in its comment header
+#       and the rationale for not converting it.
+#
+# Most patterns below are FRAMEWORK-CONTROLLED.  Three remain in
+# GCC-WRAPPER-TEXT class: neg_direct_construct (private-ctor access
+# is intrinsic to the protection), neg_schema_register_with_sealed_view
+# / neg_ckernel_register_with_sealed_view / neg_cipher_wrong_tag
+# (overload-set rejection in production-side code; converting would
+# require invasive refactor of schema/ckernel/cipher overloads).
+# Each has an annotated comment below.
+
 # Tier 2 reflection audit — all four fire the same static_assert message.
 crucible_neg_compile_test(neg_field_storage
   "Type contains a safety::ScopedView<> in some field")
@@ -554,26 +581,44 @@ crucible_neg_compile_test(neg_session_resource_not_pinned
   "SessionResource_NotPinned")
 
 # Tier 1 compiler firings — each has a distinct diagnostic.
+
+# [FRAMEWORK-CONTROLLED] Matches ScopedView's = delete("reason") string.
 crucible_neg_compile_test(neg_assignment
   "ScopedView is single-binding; assignment hides state transitions")
+
+# [GCC-WRAPPER-TEXT] Private-ctor access protection IS the mechanism;
+# converting would require exposing a constraint that defeats the
+# private-ctor pattern's purpose.  Documented; accepted as intrinsic.
 crucible_neg_compile_test(neg_direct_construct
   "is private within this context")
+
+# [FRAMEWORK-CONTROLLED] Matches ScopedView's explicit-deleted default
+# ctor's reason string (added by #371 to replace the prior dependency
+# on GCC's "no matching function for call to" overload-resolution text).
 crucible_neg_compile_test(neg_default_construct
-  "no matching function for call to.*ScopedView.*::ScopedView")
+  "ScopedView default-construction is meaningless")
+
+# [FRAMEWORK-CONTROLLED] Matches another of ScopedView's = delete reasons.
 crucible_neg_compile_test(neg_heap_allocate
   "ScopedView must live on the stack; heap allocation defeats")
 
 # State-discipline: SealedView cannot satisfy the MutableView parameter
 # of register_name / register_op — the only typed registration path
 # requires proof that the table is in the Mutable phase.
+#
+# [GCC-WRAPPER-TEXT] Production-side overload-set rejection.  Converting
+# requires refactoring schema/ckernel registration to use a
+# concept-checked dispatch that emits a framework static_assert; out of
+# scope for #371.  Accept the GCC-text dependency; revisit if the
+# framework gains a routed-error helper for production overload sets.
 crucible_neg_compile_test(neg_schema_register_with_sealed_view
   "no matching function for call to.*register_name")
 crucible_neg_compile_test(neg_ckernel_register_with_sealed_view
   "no matching function for call to.*register_op")
 
-# Cross-carrier discipline: Cipher::store(OpenView, ...) must reject a
-# ScopedView parametrized on a different Carrier+Tag (SchemaTable's
-# SealedView).  Proves the type-state lock is per-carrier.
+# [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
+# side overload-set rejection in Cipher.  Same accepted-intrinsic
+# rationale.
 crucible_neg_compile_test(neg_cipher_wrong_tag
   "no matching function for call to.*store")
 
@@ -632,11 +677,18 @@ crucible_neg_compile_test(neg_session_checkpoint_wrong_base
     "base branch does not match")
 
 # L11 SessionDiagnostic.h — diagnostic_name_v on non-tag type.
-# Fails the variable template's requires-clause ⇒ "invalid variable
-# template" in GCC 16's diagnostic.
+#
+# [FRAMEWORK-CONTROLLED] Per #371, the accessor variable templates
+# now route their concept-rejection through a `detail::diag::accessor_check`
+# helper that fires a static_assert with the framework-controlled
+# "[DiagnosticAccessor_NonTag]" prefix.  Stable across GCC versions.
 crucible_neg_compile_test(neg_session_diagnostic_non_tag
-    "invalid variable template")
+    "DiagnosticAccessor_NonTag")
 
 # Concurrent — SchedulerPolicy accessor on non-policy type.
+#
+# [FRAMEWORK-CONTROLLED] Same #371 pattern: the scheduler accessor
+# variable templates route through `detail::sched::accessor_check`
+# and emit "[SchedulerAccessor_NonPolicy]" on rejection.
 crucible_neg_compile_test(neg_scheduler_policy_non_inheritance
-    "invalid variable template")
+    "SchedulerAccessor_NonPolicy")
