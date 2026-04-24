@@ -102,12 +102,11 @@ int run_trace_via_context_lookup() {
         return 1;
     }
 
-    // Both handles are in Loop<...Continue> state — never-terminal
-    // at the protocol level.  Discard via resource() drain for the
-    // test (in production, a Close branch in the Select would
-    // terminate cleanly; omitted for brevity).
-    (void)p3;
-    (void)c3;
+    // Both handles are in Loop<...Continue> state — inherently
+    // infinite, no close branch.  Detach intentionally (SessionHandle
+    // abandonment check otherwise fires in debug).
+    std::move(p3).detach();
+    std::move(c3).detach();
     return 0;
 }
 

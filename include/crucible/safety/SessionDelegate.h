@@ -298,7 +298,9 @@ struct is_well_formed<Accept<T, K>, LoopCtx>
 // returning callable.
 
 template <typename T, typename K, typename Resource, typename LoopCtx>
-class [[nodiscard]] SessionHandle<Delegate<T, K>, Resource, LoopCtx> {
+class [[nodiscard]] SessionHandle<Delegate<T, K>, Resource, LoopCtx>
+    : public SessionHandleBase<Delegate<T, K>>
+{
     Resource resource_;
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
@@ -318,10 +320,6 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : resource_{std::move(r)} {}
 
-    SessionHandle(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
-    SessionHandle& operator=(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
     ~SessionHandle()                                             = default;
@@ -349,6 +347,8 @@ public:
         // Physically transfer the delegated endpoint.  The peer now
         // owns a SessionHandle<T, DelegatedResource, DelegatedLoopCtx>.
         std::invoke(transport, resource_, std::move(delegated.resource_));
+        delegated.mark_consumed_();   // caller's delegated handle consumed
+        this->mark_consumed_();
         return detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
     }
 
@@ -369,8 +369,11 @@ public:
                  && std::is_nothrow_destructible_v<DelegatedResource>)
     {
         // Consume the delegated handle (its resource's dtor fires
-        // when this lambda scope ends).
+        // when this lambda scope ends; its consumed_ flag is
+        // marked so the base's destructor check skips).
+        delegated.mark_consumed_();
         (void)std::move(delegated);
+        this->mark_consumed_();
         return detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
     }
 
@@ -392,7 +395,9 @@ public:
 // (no LoopCtx — the delegated protocol is self-contained).
 
 template <typename T, typename K, typename Resource, typename LoopCtx>
-class [[nodiscard]] SessionHandle<Accept<T, K>, Resource, LoopCtx> {
+class [[nodiscard]] SessionHandle<Accept<T, K>, Resource, LoopCtx>
+    : public SessionHandleBase<Accept<T, K>>
+{
     Resource resource_;
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
@@ -412,10 +417,6 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : resource_{std::move(r)} {}
 
-    SessionHandle(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
-    SessionHandle& operator=(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
     ~SessionHandle()                                             = default;
@@ -432,6 +433,7 @@ public:
                  && std::is_nothrow_move_constructible_v<DelegatedResource>)
     {
         DelegatedResource delegated_res = std::invoke(transport, resource_);
+        this->mark_consumed_();
         auto delegated_handle = make_session_handle<T>(std::move(delegated_res));
         auto continuation_handle =
             detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
@@ -449,6 +451,7 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>
                  && std::is_nothrow_move_constructible_v<DelegatedResource>)
     {
+        this->mark_consumed_();
         auto delegated_handle = make_session_handle<T>(std::move(delegated_res));
         auto continuation_handle =
             detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));

@@ -141,13 +141,15 @@ inline constexpr bool is_stop_v = is_stop<P>::value;
 // ─── Terminal-state utility ──────────────────────────────────────
 //
 // Two combinators represent the END of a session: End (normal) and
-// Stop (crashed).  is_terminal_state_v classifies both together —
-// useful for handle-lifetime checks (the handle is safe to destroy
-// if-and-only-if its protocol is terminal).
+// Stop (crashed).  Session.h declares is_terminal_state<P> as a
+// trait with the End base case; we specialise it here so Stop is
+// ALSO classified as terminal.  SessionHandleBase<Proto>'s
+// destructor check uses this trait to decide whether a handle
+// destruction at state Proto is safe (no abort) or is abandonment
+// (fire in debug).
 
-template <typename P>
-inline constexpr bool is_terminal_state_v =
-    std::is_same_v<P, End> || is_stop_v<P>;
+template <>
+struct is_terminal_state<Stop> : std::true_type {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── dual_of<Stop> = Stop (self-dual) ───────────────────────────────
@@ -217,7 +219,9 @@ struct is_subtype_sync<Stop, U> : std::true_type {};
 // (establish_channel) rather than advancing this handle.
 
 template <typename Resource, typename LoopCtx>
-class [[nodiscard]] SessionHandle<Stop, Resource, LoopCtx> {
+class [[nodiscard]] SessionHandle<Stop, Resource, LoopCtx>
+    : public SessionHandleBase<Stop>
+{
     Resource resource_;
 
     template <typename P, typename R, typename L>
@@ -238,20 +242,21 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : resource_{std::move(r)} {}
 
-    SessionHandle(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
-    SessionHandle& operator=(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
     ~SessionHandle()                                             = default;
 
     // Consume the handle and yield the Resource.  Same shape as End's
     // close(); the semantic difference (crash vs normal) is carried
-    // by the Stop protocol state, not by the method name.
+    // by the Stop protocol state, not by the method name.  Stop is a
+    // terminal state (is_terminal_state<Stop> == true), so the
+    // inherited destructor skips the abandoned-protocol check even
+    // without a close() call — but close() remains the correct way
+    // to release the Resource in callers that need it back.
     [[nodiscard]] constexpr Resource close() &&
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
     {
+        this->mark_consumed_();
         return std::move(resource_);
     }
 

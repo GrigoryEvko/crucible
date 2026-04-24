@@ -81,7 +81,10 @@ int run_content_addressed_loop() {
     auto [k2, s2] = std::move(s1).recv(recv_ca_entry);
     auto [k3, s3] = std::move(s2).recv(recv_ca_entry);
     (void)k1; (void)k2; (void)k3;
-    (void)p3; (void)s3;
+
+    // Infinite Loop<Send<...Continue>> — detach intentionally.
+    std::move(p3).detach();
+    std::move(s3).detach();
 
     if (wire.size() != 0) {
         std::fprintf(stderr, "ca loop: wire not drained (size=%zu)\n",
@@ -111,7 +114,8 @@ int run_raw_loop() {
                      k1.content_hash, k2.content_hash);
         return 1;
     }
-    (void)p2; (void)s2;
+    std::move(p2).detach();
+    std::move(s2).detach();
     return 0;
 }
 

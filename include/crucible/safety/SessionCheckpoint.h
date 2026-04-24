@@ -220,7 +220,9 @@ struct is_subtype_sync<CheckpointedSession<B1, R1>,
 template <typename ProtoBase, typename ProtoRollback,
           typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>,
-                                   Resource, LoopCtx> {
+                                   Resource, LoopCtx>
+    : public SessionHandleBase<CheckpointedSession<ProtoBase, ProtoRollback>>
+{
     Resource resource_;
 
     template <typename P, typename R, typename L>
@@ -243,10 +245,6 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : resource_{std::move(r)} {}
 
-    SessionHandle(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
-    SessionHandle& operator=(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
     ~SessionHandle()                                             = default;
@@ -257,6 +255,7 @@ public:
     [[nodiscard]] constexpr auto base() &&
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
     {
+        this->mark_consumed_();
         return detail::step_to_next<ProtoBase, Resource, LoopCtx>(
             std::move(resource_));
     }
@@ -269,6 +268,7 @@ public:
     [[nodiscard]] constexpr auto rollback() &&
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
     {
+        this->mark_consumed_();
         return detail::step_to_next<ProtoRollback, Resource, LoopCtx>(
             std::move(resource_));
     }
