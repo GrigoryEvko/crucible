@@ -1,0 +1,349 @@
+#pragma once
+
+// ═══════════════════════════════════════════════════════════════════
+// crucible::safety::proto — typed append-only session event log
+//
+// Task #404 SAFEINT-B15 from misc/24_04_2026_safety_integration.md
+// §15.  Promotes the bit-exact-replay discipline from an ad-hoc
+// trace to a typed structure: every Send / Recv / Select / Offer /
+// close on a session can be recorded into an OrderedAppendOnly log
+// whose monotonic step_id provides total ordering and whose append-
+// only invariant structurally forbids in-place rewrite of past
+// events.
+//
+// Two pieces ship in this header:
+//
+//   * `SessionEvent` — the per-operation record (POD, 56 bytes,
+//     TriviallyCopyable for fast bulk-drain to Cipher).  Carries
+//     step_id, session, from_role, to_role, payload schema, payload
+//     hash, op kind, and (for Select / Offer) the chosen branch
+//     index.
+//
+//   * `SessionEventLog` — the log primitive.  Wraps an
+//     OrderedAppendOnly<SessionEvent, StepIdKeyFn> (step monotonicity
+//     enforced by Mutation.h's contract).  Owns a session identifier
+//     and a step-counter (AtomicMonotonic) so multiple writers can
+//     synthesise step_ids without colliding.  Pinned: the atomic
+//     counter and the log storage IS the log identity; movement
+//     would fork it.
+//
+// The recording-handle wrapper that USES this log lives in a
+// sibling header (safety/RecordingSessionHandle.h, also #404) — the
+// log primitive is reusable independently for any code that wants
+// to record protocol events manually.
+//
+// ─── Strong-ID convention ──────────────────────────────────────────
+//
+// Each ID is a thin TypeSafe wrapper around uint64_t with no
+// implicit conversions and no arithmetic.  `value` is the only
+// observable; comparison + ordering are defaulted via <=>.  Inhabits
+// the same TypeSafe discipline as OpIndex / SchemaHash / etc.
+// Strong typing prevents the canonical "swapped from_role and
+// to_role" bug at the call site.
+//
+// ─── Determinism contract ──────────────────────────────────────────
+//
+// step_id is monotonically non-decreasing within a single
+// SessionEventLog (enforced by OrderedAppendOnly's contract).
+// `record(ev)` does NOT auto-stamp the step_id — the caller computes
+// it via `next_step()`.  This separation lets the recording wrapper
+// stamp the step_id atomically per-op without serialising the log
+// itself behind a lock.  The step counter is AtomicMonotonic so
+// multiple recording threads see strictly-increasing values.
+//
+// ─── References ────────────────────────────────────────────────────
+//
+//   misc/24_04_2026_safety_integration.md §15 — design rationale
+//   safety/Mutation.h — OrderedAppendOnly + AtomicMonotonic
+//   safety/RecordingSessionHandle.h — the wrapper that emits events
+//   safety/Pinned.h — Pinned constraint
+// ═══════════════════════════════════════════════════════════════════
+
+#include <crucible/Platform.h>
+#include <crucible/safety/Mutation.h>
+#include <crucible/safety/Pinned.h>
+
+#include <compare>
+#include <cstddef>
+#include <cstdint>
+#include <span>
+#include <string_view>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
+namespace crucible::safety::proto {
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Strong IDs ───────────────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+
+// Identifier for a logical session — typically derived from the
+// participating roles' tag types or assigned at channel-establishment
+// time.  Distinct sessions logged to the same physical event log
+// remain separable via this field.
+struct SessionTagId {
+    uint64_t value = 0;
+    constexpr auto operator<=>(const SessionTagId&) const noexcept = default;
+    constexpr bool operator==(const SessionTagId&)  const noexcept = default;
+};
+
+// Identifier for a participant role — typically derived from the
+// role tag type (Client / Server / Coord / Follower / etc.) by a
+// role-tag-to-id mapping.  No semantic interpretation at the log
+// level; the consumer interprets.
+struct RoleTagId {
+    uint64_t value = 0;
+    constexpr auto operator<=>(const RoleTagId&) const noexcept = default;
+    constexpr bool operator==(const RoleTagId&)  const noexcept = default;
+};
+
+// Hash of the payload's compile-time type — typically derived from a
+// __PRETTY_FUNCTION__-style identifier, so identical payload types
+// across TUs produce identical SchemaHashes.  `default_schema_hash<T>`
+// below is the canonical computation.
+struct SchemaHash {
+    uint64_t value = 0;
+    constexpr auto operator<=>(const SchemaHash&) const noexcept = default;
+    constexpr bool operator==(const SchemaHash&)  const noexcept = default;
+};
+
+// Hash of the payload value — opt-in.  The recording wrapper defaults
+// to `PayloadHash{0}` for types that don't expose a hashing function;
+// users with strict replay-determinism requirements provide their own
+// hash.  Zero is a sentinel meaning "not hashed".
+struct PayloadHash {
+    uint64_t value = 0;
+    constexpr auto operator<=>(const PayloadHash&) const noexcept = default;
+    constexpr bool operator==(const PayloadHash&)  const noexcept = default;
+};
+
+// Monotonic per-log step counter.  Strictly non-decreasing within a
+// SessionEventLog (enforced by OrderedAppendOnly's contract).  Distinct
+// SessionEventLogs maintain separate StepId sequences.
+struct StepId {
+    uint64_t value = 0;
+    constexpr auto operator<=>(const StepId&) const noexcept = default;
+    constexpr bool operator==(const StepId&)  const noexcept = default;
+};
+
+// ═════════════════════════════════════════════════════════════════════
+// ── SessionOp — what kind of operation produced this event ──────────
+// ═════════════════════════════════════════════════════════════════════
+
+enum class SessionOp : uint8_t {
+    Send   = 1,   // Send<T, K>::send() — payload sent to peer
+    Recv   = 2,   // Recv<T, K>::recv() — payload received from peer
+    Select = 3,   // Select<Bs...>::select<I>() — branch chosen by self
+    Offer  = 4,   // Offer<Bs...>::pick<I>() — branch chosen by peer
+    Close  = 5,   // End::close() — terminal, session completed
+    Detach = 6,   // SessionHandle::detach(reason) — abandoned at non-terminal
+};
+
+[[nodiscard]] constexpr std::string_view session_op_name(SessionOp op) noexcept {
+    switch (op) {
+        case SessionOp::Send:   return "Send";
+        case SessionOp::Recv:   return "Recv";
+        case SessionOp::Select: return "Select";
+        case SessionOp::Offer:  return "Offer";
+        case SessionOp::Close:  return "Close";
+        case SessionOp::Detach: return "Detach";
+        default:                return "?";
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// ── SessionEvent — the per-operation record ─────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Layout: 56 bytes.  TriviallyCopyable for memcpy-bulk-drain into
+// the Cipher's cold tier.  Field ordering minimises padding while
+// keeping the most-queried fields (step_id, session, op) at the head.
+
+struct SessionEvent {
+    StepId       step_id        {};
+    SessionTagId session        {};
+    RoleTagId    from_role      {};
+    RoleTagId    to_role        {};
+    SchemaHash   payload_schema {};
+    PayloadHash  payload_hash   {};
+    SessionOp    op             = SessionOp::Send;
+    uint8_t      branch_index   = 0;   // Select/Offer: chosen index; else 0
+    uint8_t      pad[6]{};              // explicit zero-init padding
+};
+
+static_assert(sizeof(SessionEvent) == 56,
+    "SessionEvent layout must be exactly 56 bytes — Cipher cold-tier "
+    "serialisation depends on the fixed size.  If a field changes, "
+    "bump the layout version and update the deserialiser.");
+static_assert(std::is_trivially_copyable_v<SessionEvent>,
+    "SessionEvent must be TriviallyCopyable for fast bulk drain.");
+
+// ═════════════════════════════════════════════════════════════════════
+// ── KeyFn / Cmp for OrderedAppendOnly<SessionEvent, ...> ────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// OrderedAppendOnly requires stateless KeyFn + Cmp (so the contract
+// can construct them per-call).  Project step_id and compare on its
+// underlying value.
+
+struct StepIdKeyFn {
+    constexpr StepId operator()(const SessionEvent& e) const noexcept {
+        return e.step_id;
+    }
+};
+
+struct StepIdLess {
+    constexpr bool operator()(StepId a, StepId b) const noexcept {
+        return a.value < b.value;
+    }
+};
+
+// ═════════════════════════════════════════════════════════════════════
+// ── default_schema_hash<T> — compile-time type identifier ───────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// FNV-1a over __PRETTY_FUNCTION__ — same type across TUs hashes
+// identically (the function-name stamp is a function of T's spelling
+// in the GCC mangling, which is stable per (T, target-triple)).
+// Cross-target stability is a non-goal here; replay determinism
+// within a fixed build is the contract.
+
+namespace detail {
+
+// FNV-1a over a string view at consteval.
+[[nodiscard]] inline consteval uint64_t fnv1a_64(std::string_view s) noexcept {
+    constexpr uint64_t kFnvOffsetBasis = 0xcbf29ce484222325ULL;
+    constexpr uint64_t kFnvPrime       = 0x100000001b3ULL;
+    uint64_t h = kFnvOffsetBasis;
+    for (char c : s) {
+        h ^= static_cast<uint64_t>(static_cast<unsigned char>(c));
+        h *= kFnvPrime;
+    }
+    return h;
+}
+
+template <typename T>
+[[nodiscard]] inline consteval std::string_view pretty_function_for() noexcept {
+    return std::string_view{__PRETTY_FUNCTION__};
+}
+
+}  // namespace detail
+
+template <typename T>
+inline constexpr SchemaHash default_schema_hash{
+    detail::fnv1a_64(detail::pretty_function_for<T>())
+};
+
+// ═════════════════════════════════════════════════════════════════════
+// ── default_payload_hash<T> — opt-in payload hashing ────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Default is the sentinel PayloadHash{0} ("not hashed").  Users with
+// strict-replay-audit requirements specialise this template for their
+// payload type:
+//
+//   template <>
+//   inline constexpr auto crucible::safety::proto::default_payload_hash_fn<MyPayload> =
+//       [](const MyPayload& p) noexcept -> PayloadHash {
+//           return PayloadHash{my_hasher(p)};
+//       };
+//
+// The recording wrapper consults this function template at compile
+// time; the per-op cost is whatever the user's hasher costs (often
+// zero if defaulted to sentinel).
+
+template <typename T>
+inline constexpr auto default_payload_hash_fn =
+    [](const T& /*v*/) noexcept -> PayloadHash {
+        return PayloadHash{0};
+    };
+
+// ═════════════════════════════════════════════════════════════════════
+// ── SessionEventLog — the append-only log ───────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Pinned: the atomic step counter IS the log's identity for ordering.
+// Movement would fork the counter across two distinct objects,
+// breaking the monotone-step invariant downstream consumers rely on.
+
+class [[nodiscard]] SessionEventLog : Pinned<SessionEventLog> {
+    OrderedAppendOnly<SessionEvent, StepIdKeyFn, StepIdLess> log_{};
+    SessionTagId               session_id_{};
+    AtomicMonotonic<uint64_t>  step_counter_{0};
+
+public:
+    using event_type   = SessionEvent;
+    using storage_type = std::vector<SessionEvent>;
+
+    // Construct with an explicit session identifier — typically derived
+    // by the user from the role-tag types or supplied by the channel-
+    // establishment site.  Default (SessionTagId{0}) is permitted for
+    // single-session test code where the identifier carries no
+    // information.
+    constexpr explicit SessionEventLog(SessionTagId id = {}) noexcept
+        : session_id_{id} {}
+
+    // Mint the next monotonic step_id.  Safe to call concurrently from
+    // multiple recording threads — AtomicMonotonic guarantees strictly-
+    // increasing values across threads via fetch_max on x86-64 / ARM.
+    [[nodiscard]] StepId next_step() noexcept {
+        // AtomicMonotonic doesn't expose a fetch-and-bump primitive
+        // directly (try_advance returns bool); compose from the get +
+        // try_advance pair.  The CAS loop is implicit in try_advance's
+        // fast path on integral T + std::less<T>.
+        for (;;) {
+            const uint64_t prev = step_counter_.get();
+            const uint64_t next = prev + 1;
+            if (step_counter_.try_advance(next)) {
+                return StepId{next};
+            }
+            // Another thread bumped past us; retry from the new value.
+        }
+    }
+
+    // Record an event.  step_id MUST be non-decreasing relative to
+    // the last appended event (OrderedAppendOnly's contract).  Use
+    // next_step() to mint a fresh step_id; manual step_ids are
+    // permitted for replay-from-snapshot scenarios where the caller
+    // controls ordering.
+    void record(SessionEvent ev) {
+        log_.append(std::move(ev));
+    }
+
+    // Convenience: stamp + record in one call.  Most callers want
+    // this; the manual `next_step() + record` split exists for
+    // replay-style use cases.
+    void record_now(SessionEvent ev) {
+        ev.step_id = next_step();
+        ev.session = session_id_;
+        log_.append(std::move(ev));
+    }
+
+    // Read-only accessors.
+    [[nodiscard]] SessionTagId session() const noexcept { return session_id_; }
+    [[nodiscard]] std::size_t  size()    const noexcept { return log_.size(); }
+    [[nodiscard]] bool         empty()   const noexcept { return log_.empty(); }
+
+    [[nodiscard]] const SessionEvent& operator[](std::size_t i) const noexcept {
+        return log_[i];
+    }
+    [[nodiscard]] const SessionEvent& front() const noexcept { return log_.front(); }
+    [[nodiscard]] const SessionEvent& back()  const noexcept { return log_.back();  }
+
+    [[nodiscard]] auto begin() const noexcept { return log_.begin(); }
+    [[nodiscard]] auto end()   const noexcept { return log_.end();   }
+
+    // Consuming drain — yield the underlying storage and leave *this
+    // empty.  Used at end-of-session to ship the log to durable
+    // storage (Cipher cold tier).  The Pinned constraint forbids
+    // moving the log itself, but draining yields the backing vector,
+    // which is freely movable.
+    [[nodiscard]] storage_type drain() && noexcept(
+        std::is_nothrow_move_constructible_v<storage_type>)
+    {
+        return std::move(log_).drain();
+    }
+};
+
+}  // namespace crucible::safety::proto
