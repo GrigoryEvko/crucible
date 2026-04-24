@@ -12,6 +12,11 @@
 // The integration is deliberately one-way and provenance-aware:
 //
 //   *  Refined<P, T>            ⩽  T          ALWAYS
+//   *  Refined<P, T>            ⩽  Refined<Q, T>   when implies_v<P,Q>
+//                                              (#227 strengthening
+//                                              lattice — positive ⇒
+//                                              non_negative, aligned<64>
+//                                              ⇒ aligned<32>, etc.)
 //   *  Tagged<T, Sanitized>     ⩽  T          provenance ERASURE on the
 //   *  Tagged<T, Validated>     ⩽  T          way IN to bare-T positions
 //   *  Tagged<T, FromInternal>  ⩽  T          (information narrowing —
@@ -131,6 +136,33 @@ struct is_subsort<Refined<Pred, T>, T> : std::true_type {};
 // because the Linear consume() must be explicit (see file header).
 //
 // (No specialisation here.)
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Refined<P, T> ⩽ Refined<Q, T> when P ⇒ Q  (#227 + §22 wiring) ──
+// ═════════════════════════════════════════════════════════════════════
+//
+// Strengthening axiom: if predicate P implies predicate Q (P's truth-
+// set ⊆ Q's), then a value carrying the stronger refinement P stands
+// where the weaker refinement Q is expected.  Direction matches §22:
+//
+//   Send<Refined<positive, int>, K>  ⩽  Send<Refined<non_negative, int>, K>
+//     because the producer guarantees more (positive); the recipient
+//     at the position only requires non_negative; the stronger
+//     guarantee subsumes via Send's payload covariance.
+//
+//   Recv<Refined<non_negative, int>, K> ⩽ Recv<Refined<positive, int>, K>
+//     because the recipient is willing to accept any non_negative
+//     value (the looser type); a position expecting a strict-positive
+//     recipient is satisfied since positive ⊂ non_negative.  Recv's
+//     payload contravariance reverses the implication direction.
+//
+// The implies_v trait lives in safety/Refined.h.  Ship implications
+// for canonical predicate pairs there; user code adds more via
+// predicate_implies type-level specialisation.
+
+template <auto P, auto Q, typename T>
+    requires (implies_v<P, Q> && !std::is_same_v<decltype(P), decltype(Q)>)
+struct is_subsort<Refined<P, T>, Refined<Q, T>> : std::true_type {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Tagged<T, V> ⩽ T — provenance erasure for trusted tags ─────────
@@ -334,15 +366,65 @@ static_assert(!is_subsort_v<Tagged<int, source::Sanitized>,
 static_assert(!is_subsort_v<Tagged<int, source::FromConfig>,
                              Tagged<int, source::FromDb>>);
 
-// ── Different refinements on same T are unrelated by default ───────
+// ── Cross-predicate refinement via implies_v (#227 + §22) ──────────
 //
-// (Cross-predicate refinement implication is a separate axiom family
-// gated on the implies_v trait — task #227.  Without implies_v, two
-// distinct refinements over the same T are siblings, not sub/super.)
+// Where the implication lattice in Refined.h ships an axiom, distinct
+// refinements on the same T compose: stronger ⩽ weaker.
+// Where no implication exists, they remain unrelated siblings.
 
-static_assert(!is_subsort_v<Refined<positive, int>,
+// positive ⇒ non_negative  → Refined<positive, T> ⩽ Refined<non_neg, T>
+static_assert( is_subsort_v<Refined<positive, int>,
                              Refined<non_negative, int>>);
+// reverse rejected
 static_assert(!is_subsort_v<Refined<non_negative, int>,
+                             Refined<positive, int>>);
+
+// positive ⇒ non_zero
+static_assert( is_subsort_v<Refined<positive, int>,
+                             Refined<non_zero, int>>);
+
+// power_of_two ⇒ non_zero
+static_assert( is_subsort_v<Refined<power_of_two, std::size_t>,
+                             Refined<non_zero, std::size_t>>);
+
+// non_zero does NOT imply non_negative (non_zero admits negative
+// values like -3; non_negative does not).
+static_assert(!is_subsort_v<Refined<non_zero, int>,
+                             Refined<non_negative, int>>);
+
+// Parameterised: BoundedAbove<8> ⇒ BoundedAbove<16>
+static_assert( is_subsort_v<Refined<bounded_above<8u>, unsigned>,
+                             Refined<bounded_above<16u>, unsigned>>);
+static_assert(!is_subsort_v<Refined<bounded_above<16u>, unsigned>,
+                             Refined<bounded_above<8u>, unsigned>>);
+
+// Parameterised: InRange<10, 20> ⇒ InRange<0, 100>
+static_assert( is_subsort_v<Refined<in_range<10, 20>, int>,
+                             Refined<in_range<0, 100>, int>>);
+// Strictly tighter range strictly inside looser one.
+static_assert(!is_subsort_v<Refined<in_range<0, 100>, int>,
+                             Refined<in_range<10, 20>, int>>);
+// Disjoint ranges: neither subtype.
+static_assert(!is_subsort_v<Refined<in_range<0, 10>, int>,
+                             Refined<in_range<20, 30>, int>>);
+
+// Parameterised: InRange<L, H> ⇒ BoundedAbove<H>
+static_assert( is_subsort_v<Refined<in_range<0, 100>, int>,
+                             Refined<bounded_above<100>, int>>);
+
+// Parameterised: Aligned<64> ⇒ Aligned<32> ⇒ Aligned<8>
+//   (transitivity is the USER's contract per SessionSubtype.h note,
+//    not auto-closed; each direct step is checked here)
+static_assert( is_subsort_v<Refined<aligned<64>, void*>,
+                             Refined<aligned<32>, void*>>);
+static_assert( is_subsort_v<Refined<aligned<32>, void*>,
+                             Refined<aligned<8>, void*>>);
+static_assert(!is_subsort_v<Refined<aligned<8>, void*>,
+                             Refined<aligned<32>, void*>>);
+
+// Reflexivity remains intact via the std::is_same fall-through (the
+// strengthening spec's `!std::is_same_v` guard prevents shadowing).
+static_assert( is_subsort_v<Refined<positive, int>,
                              Refined<positive, int>>);
 
 // ═════════════════════════════════════════════════════════════════════
@@ -430,6 +512,39 @@ static_assert(is_subtype_sync_v<
 static_assert(is_subtype_sync_v<
     Loop<Send<Refined<positive, int>, Continue>>,
     Loop<Send<int, Continue>>>);
+
+// ── Cross-predicate strengthening through Send / Recv (#227 + §22) ─
+
+// Send covariance: stronger refinement subsumes weaker.
+static_assert(is_subtype_sync_v<
+    Send<Refined<positive, int>, End>,
+    Send<Refined<non_negative, int>, End>>);
+
+// Reverse rejected: the recipient at the supertype position is
+// entitled to the stronger predicate; weaker doesn't satisfy.
+static_assert(!is_subtype_sync_v<
+    Send<Refined<non_negative, int>, End>,
+    Send<Refined<positive, int>, End>>);
+
+// Recv contravariance: the looser-payload recipient stands where the
+// stricter-payload position is expected.
+static_assert(is_subtype_sync_v<
+    Recv<Refined<non_negative, int>, End>,
+    Recv<Refined<positive, int>, End>>);
+
+static_assert(!is_subtype_sync_v<
+    Recv<Refined<positive, int>, End>,
+    Recv<Refined<non_negative, int>, End>>);
+
+// Parameterised: tighter BoundedAbove subtypes looser via Send.
+static_assert(is_subtype_sync_v<
+    Send<Refined<bounded_above<1024u>, unsigned>, End>,
+    Send<Refined<bounded_above<4096u>, unsigned>, End>>);
+
+// Loop body strengthening composes through Continue.
+static_assert(is_subtype_sync_v<
+    Loop<Send<Refined<positive, int>, Continue>>,
+    Loop<Send<Refined<non_negative, int>, Continue>>>);
 
 // Select branch covariance: each branch's Send-payload subsumption
 // flows independently.

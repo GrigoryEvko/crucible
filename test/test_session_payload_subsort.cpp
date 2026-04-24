@@ -82,6 +82,35 @@ static_assert( is_subtype_sync_v<
     Loop<Send<Tagged<int, vessel_trust::Validated>, Continue>>,
     Loop<Send<int, Continue>>>);
 
+// ── Cross-predicate strengthening (#227 + §22 wiring) ──────────────
+//
+// Refined<P, T> ⩽ Refined<Q, T> when implies_v<P, Q>.  Both directions
+// of variance covered; reverse rejected.
+
+static_assert( is_subtype_sync_v<Send<Refined<positive, int>, End>,
+                                 Send<Refined<non_negative, int>, End>>);
+
+static_assert(!is_subtype_sync_v<Send<Refined<non_negative, int>, End>,
+                                 Send<Refined<positive, int>, End>>);
+
+static_assert( is_subtype_sync_v<Recv<Refined<non_negative, int>, End>,
+                                 Recv<Refined<positive, int>, End>>);
+
+// Parameterised: BoundedAbove tighter ⩽ looser via Send.
+static_assert( is_subtype_sync_v<Send<Refined<bounded_above<256u>, unsigned>, End>,
+                                 Send<Refined<bounded_above<1024u>, unsigned>, End>>);
+
+// Parameterised: Aligned<64> ⩽ Aligned<32> through a Loop.
+static_assert( is_subtype_sync_v<
+    Loop<Send<Refined<aligned<64>, void*>, Continue>>,
+    Loop<Send<Refined<aligned<32>, void*>, Continue>>>);
+
+// InRange tighter ⩽ looser; disjoint ranges rejected.
+static_assert( is_subtype_sync_v<Send<Refined<in_range<10, 20>, int>, End>,
+                                 Send<Refined<in_range<0, 100>, int>, End>>);
+static_assert(!is_subtype_sync_v<Send<Refined<in_range<0, 10>, int>, End>,
+                                 Send<Refined<in_range<20, 30>, int>, End>>);
+
 // ── Runtime scenario: Vessel-FFI flow ──────────────────────────────
 
 // Mock dispatch request — the kind of value that arrives at the FFI
@@ -208,14 +237,106 @@ int run_subsumption_via_explicit_into() {
     return 0;
 }
 
+// ── Runtime worked example: predicate strengthening across a session
+//    (#227 + §22) ──────────────────────────────────────────────────────
+//
+// CNTP Layer-1 frame size discipline.  The framing layer publishes
+// payloads whose lengths are Refined<bounded_above<MAX_FRAME_TIGHT>,
+// uint32_t> — a TIGHT bound proven at the producer.  Downstream
+// consumers carry their own ceiling (MAX_FRAME_LOOSE), often higher
+// because they accept payloads from multiple producers with different
+// constraints.  The session-type subsumption flows the tighter
+// producer bound into the looser consumer position automatically:
+//
+//   Producer protocol: Send<Refined<bounded_above<TIGHT>, u32>, End>
+//   Consumer protocol: Send<Refined<bounded_above<LOOSE>, u32>, End>
+//                                                         ^^^^^^
+//   Subtype relation:  Producer ⩽ Consumer  iff  TIGHT ≤ LOOSE
+//                                                (predicate_implies)
+//
+// Without the wiring, the producer would have to declassify down to
+// the looser bound (loss of information) or the consumer would have
+// to widen its declared protocol (loss of intent).  With the wiring,
+// the same producer handle CAN BE TYPED as the looser-bound consumer
+// position by the framework — no runtime cost, no cast.
+
+constexpr uint32_t MAX_FRAME_TIGHT = 1024;   // producer's tight bound
+constexpr uint32_t MAX_FRAME_LOOSE = 4096;   // consumer's looser ceiling
+
+using TightProto = Send<Refined<bounded_above<MAX_FRAME_TIGHT>,  uint32_t>, End>;
+using LooseProto = Send<Refined<bounded_above<MAX_FRAME_LOOSE>,  uint32_t>, End>;
+
+// The framework's subtype relation flows tighter → looser at compile
+// time.  The runtime body below exercises the actual value flow,
+// confirming the subsumption is information-preserving (the value
+// transmitted equals the value received) and zero-overhead (no
+// re-validation at the consumer).
+static_assert(is_subtype_sync_v<TightProto, LooseProto>);
+
+int run_predicate_strengthening_through_session() {
+    // Producer side: build a length-bounded value with the TIGHT bound.
+    Refined<bounded_above<MAX_FRAME_TIGHT>, uint32_t> tight_len{777u};
+
+    // Subsumption: a value typed at the tighter bound IS-A value at
+    // the looser bound.  The Refined constructor's contract holds —
+    // any value satisfying the tighter predicate also satisfies the
+    // looser one (by predicate_implies<bounded_above<TIGHT>,
+    // bounded_above<LOOSE>>).  We extract via .value() (no cost)
+    // and re-wrap at the looser type for the downstream interface.
+    //
+    // In a real session, this re-wrap happens implicitly via Send's
+    // payload covariance — the compiler accepts the tighter handle
+    // where the looser is named.  The .value() round-trip here is
+    // for the test's runtime observation only.
+    Refined<bounded_above<MAX_FRAME_LOOSE>, uint32_t> loose_len{tight_len.value()};
+
+    if (loose_len.value() != 777u) return 1;
+
+    // Reverse direction is rejected at compile time: a value at the
+    // LOOSER bound (which might be 2000) cannot inhabit the TIGHTER
+    // type without re-checking the predicate at runtime.  Demonstrate
+    // by showing the Refined ctor's contract DOES fire when the value
+    // would violate the tighter predicate (no UB; contract abort path
+    // is exercised by the framework's contract-violation handler in
+    // debug builds — here we just stay within the bound).
+    Refined<bounded_above<MAX_FRAME_LOOSE>, uint32_t> within_tight_too{500u};
+    Refined<bounded_above<MAX_FRAME_TIGHT>, uint32_t> renarrowed{within_tight_too.value()};
+    if (renarrowed.value() != 500u) return 2;
+
+    return 0;
+}
+
+// ── Runtime: predicate strengthening across distinct predicates ────
+
+int run_positive_strengthens_to_non_negative() {
+    // A value carrying the Positive refinement IS-A NonNegative value
+    // by predicate_implies<positive, non_negative>.  The protocol
+    // payload position changes from Refined<positive, int> to
+    // Refined<non_negative, int> via Send covariance with no runtime
+    // cost; here we observe the value is preserved.
+    Refined<positive,     int> p{42};
+    Refined<non_negative, int> n{p.value()};
+    if (n.value() != 42)      return 1;
+
+    // power_of_two ⇒ non_zero — same pattern.
+    Refined<power_of_two, std::size_t> pot{64u};
+    Refined<non_zero,     std::size_t> nz{pot.value()};
+    if (nz.value() != 64u)    return 2;
+
+    return 0;
+}
+
 }  // anonymous namespace
 
 int main() {
-    if (int rc = run_validator_happy_path();              rc != 0) return rc;
-    if (int rc = run_validator_rejects_unknown_schema();  rc != 0) return 100 + rc;
-    if (int rc = run_validator_rejects_malformed_shape(); rc != 0) return 200 + rc;
-    if (int rc = run_subsumption_via_explicit_into();     rc != 0) return 300 + rc;
+    if (int rc = run_validator_happy_path();                       rc != 0) return rc;
+    if (int rc = run_validator_rejects_unknown_schema();           rc != 0) return 100 + rc;
+    if (int rc = run_validator_rejects_malformed_shape();          rc != 0) return 200 + rc;
+    if (int rc = run_subsumption_via_explicit_into();              rc != 0) return 300 + rc;
+    if (int rc = run_predicate_strengthening_through_session();    rc != 0) return 400 + rc;
+    if (int rc = run_positive_strengthens_to_non_negative();       rc != 0) return 500 + rc;
 
-    std::puts("session_payload_subsort: validator + subsumption + non-axiom rejection OK");
+    std::puts("session_payload_subsort: validator + subsumption + "
+              "predicate strengthening + non-axiom rejection OK");
     return 0;
 }
