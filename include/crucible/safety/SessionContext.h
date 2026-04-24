@@ -194,6 +194,7 @@ inline constexpr bool dependent_false_v = false;
 template <typename... Entries>
 struct Context {
     static_assert(detail::ctx::all_keys_distinct_v<Entries...>,
+        "crucible::session::diagnostic [Context_Domain_Collision]: "
         "Context<Entries...>: entries must have pairwise-distinct "
         "(session, role) keys.  Two entries with the SAME session and "
         "role is a typing-context collision.  (Two entries with the "
@@ -229,6 +230,7 @@ struct ComposeContext;
 template <typename... E1, typename... E2>
 struct ComposeContext<Context<E1...>, Context<E2...>> {
     static_assert(detail::ctx::all_keys_distinct_v<E1..., E2...>,
+        "crucible::session::diagnostic [Context_Domain_Collision]: "
         "compose_context_t<Γ1, Γ2>: Γ1 and Γ2 share one or more "
         "(session, role) keys.  CSL's frame rule requires disjoint "
         "contexts; resolve by renaming one side's session tag, "
@@ -290,6 +292,7 @@ struct LookupContext;
 template <typename S, typename R>
 struct LookupContext<Context<>, S, R> {
     static_assert(detail::ctx::dependent_false_v<S, R>,
+        "crucible::session::diagnostic [Context_Lookup_Miss]: "
         "lookup_context_t<Γ, S, R>: Γ has no entry for (S, R).  "
         "Use contains_key_v<Γ, S, R> to test presence before lookup, "
         "or check the (S, R) you're querying matches the Γ you're "
@@ -380,6 +383,7 @@ struct UpdateEntry;
 template <typename... Es, typename S, typename R, typename NewT>
 struct UpdateEntry<Context<Es...>, S, R, NewT> {
     static_assert(contains_key_v<Context<Es...>, S, R>,
+        "crucible::session::diagnostic [Context_Lookup_Miss]: "
         "update_entry_t<Γ, S, R, NewT>: Γ has no entry for (S, R) to "
         "update.  Use compose_context_t to introduce a new entry, "
         "or query contains_key_v<Γ, S, R> first.");
@@ -438,6 +442,7 @@ struct RemoveEntry;
 template <typename... Es, typename S, typename R>
 struct RemoveEntry<Context<Es...>, S, R> {
     static_assert(contains_key_v<Context<Es...>, S, R>,
+        "crucible::session::diagnostic [Context_Lookup_Miss]: "
         "remove_entry_t<Γ, S, R>: Γ has no entry for (S, R) to remove.  "
         "Check the key you're removing was present in Γ; the error "
         "is a strict precondition to keep the removal idempotent.");

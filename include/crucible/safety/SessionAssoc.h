@@ -310,23 +310,25 @@ concept AssociatedWith = is_associated_v<Γ, G, SessionTag>;
 template <typename Γ, typename G, typename SessionTag>
 consteval void assert_associated() noexcept {
     static_assert(domain_matches_v<Γ, G, SessionTag>,
-        "crucible::safety::proto::assert_associated: "
-        "condition (1) fails — Γ's domain (for the given SessionTag) "
-        "does not match roles_of_t<G>.  Every role of G must have a "
-        "corresponding Entry<SessionTag, role, local_type> in Γ, and "
-        "Γ must not have EXTRA entries for this session beyond G's "
-        "roles.  Common causes: missing an entry for a participating "
-        "role; added an entry for a role not in G; wrong SessionTag.");
+        "crucible::session::diagnostic [Association_Domain_Mismatch]: "
+        "assert_associated: condition (1) fails — Γ's domain (for the "
+        "given SessionTag) does not match roles_of_t<G>.  Every role "
+        "of G must have a corresponding Entry<SessionTag, role, "
+        "local_type> in Γ, and Γ must not have EXTRA entries for this "
+        "session beyond G's roles.  Common causes: missing an entry "
+        "for a participating role; added an entry for a role not in "
+        "G; wrong SessionTag.");
 
     static_assert(all_entries_refine_projection_v<Γ, G, SessionTag>,
-        "crucible::safety::proto::assert_associated: "
-        "condition (2) fails — at least one Γ entry's local_type is "
-        "NOT a synchronous subtype of its projection G ↾ role.  "
-        "Subtype follows Gay-Hole 2005 rules (see SessionSubtype.h): "
-        "Send payload covariant + continuation covariant; Recv payload "
-        "contravariant + continuation covariant; Select narrows (fewer "
-        "branches is a subtype); Offer widens (more branches is a "
-        "subtype); Loop bodies related coinductively; Stop is bottom.");
+        "crucible::session::diagnostic [SubtypeMismatch]: "
+        "assert_associated: condition (2) fails — at least one Γ "
+        "entry's local_type is NOT a synchronous subtype of its "
+        "projection G ↾ role.  Subtype follows Gay-Hole 2005 rules "
+        "(see SessionSubtype.h): Send payload covariant + continuation "
+        "covariant; Recv payload contravariant + continuation "
+        "covariant; Select narrows (fewer branches is a subtype); "
+        "Offer widens (more branches is a subtype); Loop bodies "
+        "related coinductively; Stop is bottom.");
 }
 
 // ═════════════════════════════════════════════════════════════════════

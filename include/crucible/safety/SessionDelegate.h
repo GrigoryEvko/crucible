@@ -520,20 +520,22 @@ concept TransportForAccept =
 template <typename CarrierProto, typename DelegatedProto>
 consteval void assert_delegates_to() noexcept {
     static_assert(DelegatesTo<CarrierProto, DelegatedProto>,
-        "crucible::safety::proto::assert_delegates_to: "
-        "CarrierProto must be Delegate<DelegatedProto, K> for some K.  "
-        "Check the template-instantiation context for the actual "
-        "CarrierProto and DelegatedProto types; common mismatches are "
-        "(a) CarrierProto starts with Send/Recv/Select/Offer instead "
-        "of Delegate, or (b) the delegated_proto nested alias does "
-        "not equal the requested DelegatedProto.");
+        "crucible::session::diagnostic [ProtocolViolation_State]: "
+        "assert_delegates_to: CarrierProto must be "
+        "Delegate<DelegatedProto, K> for some K.  Check the template-"
+        "instantiation context for the actual CarrierProto and "
+        "DelegatedProto types; common mismatches are (a) CarrierProto "
+        "starts with Send/Recv/Select/Offer instead of Delegate, or "
+        "(b) the delegated_proto nested alias does not equal the "
+        "requested DelegatedProto.");
 }
 
 template <typename CarrierProto, typename DelegatedProto>
 consteval void assert_accepts_from() noexcept {
     static_assert(AcceptsFrom<CarrierProto, DelegatedProto>,
-        "crucible::safety::proto::assert_accepts_from: "
-        "CarrierProto must be Accept<DelegatedProto, K> for some K.");
+        "crucible::session::diagnostic [ProtocolViolation_State]: "
+        "assert_accepts_from: CarrierProto must be "
+        "Accept<DelegatedProto, K> for some K.");
 }
 
 // ═════════════════════════════════════════════════════════════════════

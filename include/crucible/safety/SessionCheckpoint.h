@@ -291,14 +291,16 @@ concept Checkpointed = is_checkpointed_session_v<P>;
 template <typename P, typename ExpectedBase, typename ExpectedRollback>
 consteval void assert_checkpointed_matches() noexcept {
     static_assert(is_checkpointed_session_v<P>,
-        "crucible::safety::proto::assert_checkpointed_matches: "
-        "P is not a CheckpointedSession.");
+        "crucible::session::diagnostic [ProtocolViolation_State]: "
+        "assert_checkpointed_matches: P is not a CheckpointedSession.");
     static_assert(std::is_same_v<checkpoint_base_t<P>, ExpectedBase>,
-        "crucible::safety::proto::assert_checkpointed_matches: "
-        "base branch does not match ExpectedBase.");
+        "crucible::session::diagnostic [ProtocolViolation_State]: "
+        "assert_checkpointed_matches: base branch does not match "
+        "ExpectedBase.");
     static_assert(std::is_same_v<checkpoint_rollback_t<P>, ExpectedRollback>,
-        "crucible::safety::proto::assert_checkpointed_matches: "
-        "rollback branch does not match ExpectedRollback.");
+        "crucible::session::diagnostic [ProtocolViolation_State]: "
+        "assert_checkpointed_matches: rollback branch does not match "
+        "ExpectedRollback.");
 }
 
 // ═════════════════════════════════════════════════════════════════════

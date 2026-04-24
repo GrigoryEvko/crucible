@@ -411,6 +411,7 @@ struct plain_merge_impl<T> {
 template <typename T, typename... Rest>
 struct plain_merge_impl<T, Rest...> {
     static_assert((std::is_same_v<T, Rest> && ...),
+        "crucible::session::diagnostic [Merge_Branches_Diverge]: "
         "plain_merge_t: branch projections differ.  The third-party "
         "role sees structurally-different local types across Choice "
         "branches, which plain merging cannot unify.  Full merging "

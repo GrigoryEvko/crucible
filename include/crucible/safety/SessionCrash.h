@@ -405,13 +405,14 @@ inline constexpr bool has_crash_branch_for_peer_v =
 template <typename OfferType, typename PeerTag>
 consteval void assert_has_crash_branch_for() noexcept {
     static_assert(has_crash_branch_for_peer_v<OfferType, PeerTag>,
-        "crucible::safety::proto::assert_has_crash_branch_for: "
-        "OfferType lacks a Recv<Crash<PeerTag>, _> branch for the "
-        "specified unreliable peer.  A session receiving from an "
-        "unreliable peer MUST handle that peer's crash — add a "
-        "Recv<Crash<Peer>, RecoveryBody> branch to the Offer<>.  "
-        "If the peer IS reliable, add its role to ReliableSet<> and "
-        "skip the crash branch.");
+        "crucible::session::diagnostic [CrashBranch_Missing]: "
+        "assert_has_crash_branch_for: OfferType lacks a "
+        "Recv<Crash<PeerTag>, _> branch for the specified unreliable "
+        "peer.  A session receiving from an unreliable peer MUST "
+        "handle that peer's crash — add a Recv<Crash<Peer>, "
+        "RecoveryBody> branch to the Offer<>.  If the peer IS "
+        "reliable, add its role to ReliableSet<> and skip the crash "
+        "branch.");
 }
 
 // ═════════════════════════════════════════════════════════════════════

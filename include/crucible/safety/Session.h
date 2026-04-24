@@ -609,6 +609,7 @@ template <typename R, typename Resource, typename LoopCtx>
 {
     if constexpr (std::is_same_v<R, Continue>) {
         static_assert(!std::is_void_v<LoopCtx>,
+            "crucible::session::diagnostic [Continue_Without_Loop]: "
             "proto: Continue appears outside a Loop context.  "
             "Every Continue must have an enclosing Loop<Body>.");
         using NextBody = typename LoopCtx::body;
@@ -623,6 +624,7 @@ template <typename R, typename Resource, typename LoopCtx>
         return step_to_next<InnerBody, Resource, R>(std::move(r));
     } else {
         static_assert(is_head_v<R>,
+            "crucible::session::diagnostic [Protocol_Ill_Formed]: "
             "proto: unexpected protocol shape after resolution.  "
             "Only Send/Recv/Select/Offer/End/Continue are valid heads.");
         return SessionHandle<R, Resource, LoopCtx>{std::move(r)};
@@ -980,6 +982,7 @@ template <typename Proto, typename Resource>
 [[nodiscard]] constexpr auto make_session_handle(Resource r) noexcept
 {
     static_assert(is_well_formed_v<Proto>,
+        "crucible::session::diagnostic [Protocol_Ill_Formed]: "
         "proto: protocol is ill-formed.  Most likely cause: a Continue "
         "appears outside any enclosing Loop<Body>.  Every Continue must "
         "have a Loop above it in the protocol tree.");
@@ -992,6 +995,7 @@ template <typename Proto, typename Resource>
         return detail::step_to_next<Body, Resource, Proto>(std::move(r));
     } else {
         static_assert(!std::is_same_v<Proto, Continue>,
+            "crucible::session::diagnostic [Continue_Without_Loop]: "
             "proto: Continue cannot be the top-level protocol.");
         return SessionHandle<Proto, Resource, void>{std::move(r)};
     }
@@ -1010,6 +1014,7 @@ template <typename Proto, typename ResourceA, typename ResourceB>
 [[nodiscard]] constexpr auto establish_channel(ResourceA ra, ResourceB rb) noexcept
 {
     static_assert(is_well_formed_v<Proto>,
+        "crucible::session::diagnostic [Protocol_Ill_Formed]: "
         "proto: protocol is ill-formed.");
     static_assert(is_well_formed_v<dual_of_t<Proto>>,
         "proto: dual protocol is ill-formed — this is a framework bug "
