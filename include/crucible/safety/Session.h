@@ -245,6 +245,40 @@ template <typename P> inline constexpr bool is_loop_v     = is_loop<P>::value;
 template <typename P> inline constexpr bool is_end_v      = is_end<P>::value;
 template <typename P> inline constexpr bool is_continue_v = is_continue<P>::value;
 
+// ─── is_empty_choice<P> — detects empty Select<> / Offer<> (#364) ──
+//
+// `Select<>` / `Offer<>` with zero branches are LEGITIMATE as type
+// operands in subtyping theory — Gay-Hole 2005 gives them the minimum
+// subtype role (an empty Select is a subtype of any larger Select;
+// covariance on alternatives).  SessionSubtype.h's
+// `is_subtype_sync_v<Select<>, Select<Send<X, End>>>` tests depend on
+// this.
+//
+// But they are NOT runnable protocols.  `SessionHandle<Select<>>` has
+// no branch to pick; `SessionHandle<Offer<>>` cannot receive a valid
+// label from the peer.  Constructing a runnable handle on one would
+// leave the protocol stuck at a dead-end state.
+//
+// `is_empty_choice_v<P>` detects exactly this shape.  Used by
+// make_session_handle's static_assert to reject handle instantiation
+// at the runnable boundary while leaving the type-level trait
+// machinery in SessionSubtype.h untouched.  Complements
+// is_well_formed_v, which covers structural illegality (free
+// Continue, Stop outside Crash context, etc.); empty choice is
+// orthogonal — structurally valid at the type level, but unrunnable
+// when reified as a handle.
+
+template <typename P> struct is_empty_choice : std::false_type {};
+
+// Specialise only on the two empty variants — Select<>/Offer<> with
+// ANY branches are NOT empty, so the primary template's false base
+// applies.
+template <> struct is_empty_choice<Select<>> : std::true_type {};
+template <> struct is_empty_choice<Offer<>>  : std::true_type {};
+
+template <typename P>
+inline constexpr bool is_empty_choice_v = is_empty_choice<P>::value;
+
 // A "protocol head" is anything other than Loop<_> (which is a
 // pseudo-state that auto-unrolls at handle construction).
 //
@@ -295,6 +329,73 @@ struct dual_of<Loop<B>> {
 
 template <typename P>
 using dual_of_t = typename dual_of<P>::type;
+
+// ═════════════════════════════════════════════════════════════════
+// ── is_dual_v / ensure_dual — endpoint-pair duality check (#431)
+// ═════════════════════════════════════════════════════════════════
+//
+// Pairing two endpoint protocols on opposite ends of a channel must
+// yield duals.  Without that, the framework's MAIN safety promise
+// (dual endpoints can never deadlock) silently fails: the user
+// observes runtime hangs, type confusion in the transport bytes, or
+// segfaults when the channel runs out of message types it knows how
+// to decode.
+//
+// `is_dual_v<P1, P2>` is the trait — `true` iff P1 == dual_of_t<P2>.
+// (Equivalently, since `dual_of_t` is involutive on well-formed
+// protocols, dual_of_t<P1> == P2 holds too.)
+//
+// `ensure_dual<P1, P2>()` is the consteval one-line check that fires
+// the framework-controlled `[Dual_Mismatch]` diagnostic when the pair
+// isn't dual.  The diagnostic carries both protocols' rendered names
+// (via the protocol_name() infrastructure from #379) so the developer
+// sees both "actual" and "expected" forms inline.
+//
+// Use ensure_dual at the establishment site of every channel pair —
+// either client/server REST-style, producer/consumer SPSC, request/
+// reply pipelines, or any two-endpoint composition.  The cost is a
+// single static_assert at the type-pairing point; runtime cost is
+// zero.
+//
+// Example:
+//
+//   using ClientProto = Send<Request, Recv<Response, End>>;
+//   using ServerProto = Recv<Request, Send<Response, End>>;
+//   ensure_dual<ClientProto, ServerProto>();   // OK — duals
+//
+//   using BadServer = Recv<Request, Recv<Response, End>>;  // forgot Send
+//   ensure_dual<ClientProto, BadServer>();     // [Dual_Mismatch] fires
+//
+// Audit: grep "ensure_dual<"  →  every channel-establishment pair.
+
+template <typename P1, typename P2>
+inline constexpr bool is_dual_v = std::is_same_v<dual_of_t<P1>, P2>;
+
+template <typename P1, typename P2>
+consteval void ensure_dual() noexcept {
+    static_assert(is_dual_v<P1, P2>,
+        "crucible::session::diagnostic [Dual_Mismatch]: "
+        "ensure_dual<P1, P2>(): the two endpoint protocols are NOT "
+        "structural duals.  One side's Send must pair with the other "
+        "side's Recv; one side's Select must pair with the other "
+        "side's Offer; Loop pairs with Loop, End with End, Continue "
+        "with Continue.  Inspect dual_of_t<P1> against P2 (they must "
+        "be the same type).  Without this duality the framework's "
+        "deadlock-freedom guarantee does NOT hold — runtime hangs and "
+        "transport-byte misinterpretation become possible.  Common "
+        "causes: (a) one side missing a Send/Recv step the other side "
+        "has, (b) Select/Offer mismatch (one endpoint internal-choice, "
+        "other endpoint should be external-choice), (c) branch types "
+        "of a Select/Offer pair don't dualize element-wise.");
+}
+
+// Convenience inline-callable form for use at namespace scope (e.g.,
+// at module init or within a function body):
+//   inline static constexpr auto _dual_check = (ensure_dual<C, S>(), 0);
+// The cleaner pattern is `static_assert(is_dual_v<C, S>, "...")` at
+// the declaration of one of the two protocols, OR a single
+// `ensure_dual<C, S>();` call in a consteval function near the
+// channel factory.
 
 // ═════════════════════════════════════════════════════════════════
 // ── compose<P, Q> — sequential composition ──────────────────────
@@ -1317,6 +1418,20 @@ public:
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
+    // Belt-and-braces empty-choice rejection (#364).  Direct
+    // construction of `SessionHandle<Select<>, ...>` (bypassing
+    // make_session_handle's own static_assert) lands here and fires
+    // the same named diagnostic, so users can't sneak past the
+    // discipline by going around the factory.  Subtyping-level uses
+    // of `Select<>` (Gay-Hole 2005 minimum subtype) are unaffected
+    // — they don't instantiate this class.
+    static_assert(branch_count > 0,
+        "crucible::session::diagnostic [Empty_Choice_Combinator]: "
+        "SessionHandle<Select<>>: cannot construct a runnable handle "
+        "on Select<> with zero branches — there is no branch for "
+        ".pick<I>() to select.  See make_session_handle for the full "
+        "diagnostic and remediation.");
+
     constexpr explicit SessionHandle(
         Resource r,
         std::source_location loc = std::source_location::current())
@@ -1331,13 +1446,28 @@ public:
 
     // Pick branch I and signal the choice to peer via Transport.
     // Transport signature: void(Resource&, std::size_t).
+    //
+    // Out-of-range I produces a NAMED [Branch_Index_Out_Of_Range]
+    // diagnostic (#432) — pre-#432 the requires-clause-only gate
+    // produced the generic GCC "constraints not satisfied: (I <
+    // sizeof...(Branches))" message which omitted the protocol
+    // context.  The static_assert inside the body fires after the
+    // function is selected (Transport requirement still gates
+    // overload resolution), so the message naming conventions from
+    // the rest of the framework apply here too.
     template <std::size_t I, typename Transport>
-        requires (I < sizeof...(Branches))
-              && std::is_invocable_v<Transport, Resource&, std::size_t>
+        requires std::is_invocable_v<Transport, Resource&, std::size_t>
     [[nodiscard]] constexpr auto select(Transport transport) &&
         noexcept(std::is_nothrow_invocable_v<Transport, Resource&, std::size_t>
                  && std::is_nothrow_move_constructible_v<Resource>)
     {
+        static_assert(I < sizeof...(Branches),
+            "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
+            "SessionHandle<Select<...>>::select<I>(transport): branch "
+            "index I is out of range for this Select position.  The "
+            "protocol has fewer branches than the index requested; "
+            "verify I < branch_count at the call site (decltype("
+            "handle)::branch_count is exposed for compile-time queries).");
         std::invoke(transport, resource_, I);
         this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
@@ -1347,10 +1477,15 @@ public:
     // Convenience: select without an explicit transport — for in-memory
     // channels where the branch choice is implicit in subsequent ops.
     template <std::size_t I>
-        requires (I < sizeof...(Branches))
     [[nodiscard]] constexpr auto select() &&
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
     {
+        static_assert(I < sizeof...(Branches),
+            "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
+            "SessionHandle<Select<...>>::select<I>(): branch index I is "
+            "out of range for this Select position.  The protocol has "
+            "fewer branches than the index requested; verify I < "
+            "branch_count at the call site.");
         this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
         return detail::step_to_next<Chosen, Resource, LoopCtx>(std::move(resource_));
@@ -1383,6 +1518,18 @@ public:
     using loop_ctx      = LoopCtx;
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
+
+    // Belt-and-braces empty-choice rejection (#364).  Mirror of the
+    // Select<> guard above — direct construction of `SessionHandle<
+    // Offer<>, ...>` cannot happen because there is no peer label
+    // that could decode to a valid branch.  Subtyping-level uses
+    // (Gay-Hole 2005) are unaffected.
+    static_assert(branch_count > 0,
+        "crucible::session::diagnostic [Empty_Choice_Combinator]: "
+        "SessionHandle<Offer<>>: cannot construct a runnable handle "
+        "on Offer<> with zero branches — there is no label the peer "
+        "can send.  See make_session_handle for the full diagnostic "
+        "and remediation.");
 
     constexpr explicit SessionHandle(
         Resource r,
@@ -1417,11 +1564,19 @@ public:
     // Convenience: pick branch I without an explicit transport — for
     // in-memory channels where the choice is fixed or already known.
     // Useful in unit tests and static pipelines.
+    //
+    // Out-of-range I → named [Branch_Index_Out_Of_Range] (#433),
+    // mirror of Select::select<I>'s discipline.
     template <std::size_t I>
-        requires (I < sizeof...(Branches))
     [[nodiscard]] constexpr auto pick() &&
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
     {
+        static_assert(I < sizeof...(Branches),
+            "crucible::session::diagnostic [Branch_Index_Out_Of_Range]: "
+            "SessionHandle<Offer<...>>::pick<I>(): branch index I is "
+            "out of range for this Offer position.  The protocol has "
+            "fewer branches than the index requested; verify I < "
+            "branch_count at the call site.");
         this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
         return detail::step_to_next<Chosen, Resource, LoopCtx>(std::move(resource_));
@@ -1581,6 +1736,25 @@ template <typename Proto, typename Resource>
         "proto: protocol is ill-formed.  Most likely cause: a Continue "
         "appears outside any enclosing Loop<Body>.  Every Continue must "
         "have a Loop above it in the protocol tree.");
+
+    // Reject Select<> / Offer<> with zero branches (#364).  These are
+    // valid TYPE operands in subtyping theory (Gay-Hole 2005 rule:
+    // Select<> ⩽ Select<X>, covariance on alternatives), and
+    // SessionSubtype.h's trait-level tests legitimately use them —
+    // but they are NOT runnable: there is no branch to pick and no
+    // label the peer can send.  Reject at the handle boundary so
+    // subtyping-level reasoning stays permissive while handle
+    // construction stays safe.
+    static_assert(!is_empty_choice_v<Proto>,
+        "crucible::session::diagnostic [Empty_Choice_Combinator]: "
+        "proto: make_session_handle<Select<>> or make_session_handle"
+        "<Offer<>> — cannot construct a runnable handle on a choice "
+        "combinator with zero branches.  Select<> has no branch for "
+        ".pick<I>() to select; Offer<> has no label the peer can "
+        "signal.  If you intend a type-level subtyping witness, use "
+        "is_subtype_sync_v<...> directly; if you intend a runnable "
+        "handle, add at least one branch (e.g., Select<Send<Stop, "
+        "End>> for an acknowledgement-only selection).");
 
     static_assert(SessionResource<Resource>,
         "crucible::session::diagnostic [SessionResource_NotPinned]: "

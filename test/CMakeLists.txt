@@ -796,6 +796,27 @@ crucible_neg_compile_test(neg_session_detach_no_reason
 crucible_neg_compile_test(neg_crash_event_direct_construction
     "WrapCrashReturnKey")
 
+# Empty Select<> / Offer<> at the handle boundary (#364) — type-level
+# uses (Gay-Hole 2005 minimum-subtype rule, SessionSubtype.h's tests)
+# stay legitimate, but constructing a runnable handle is rejected.
+crucible_neg_compile_test(neg_session_empty_select
+    "Empty_Choice_Combinator")
+
+# pick<I> / select<I> out-of-range index (#432, #433) — replaces the
+# generic GCC "constraints not satisfied" message with a framework-
+# named [Branch_Index_Out_Of_Range] diagnostic carrying the protocol
+# context.  Covers BOTH Select::select<I> (internal choice) and
+# Offer::pick<I> (peer-driven branch dispatch) in one file.
+crucible_neg_compile_test(neg_session_pick_index_out_of_range
+    "Branch_Index_Out_Of_Range")
+
+# Endpoint-pair duality mismatch (#431) — the framework's main
+# safety promise is that dual endpoints can never deadlock.
+# ensure_dual<P1, P2>() catches any pair-up mistake at the
+# establishment site with [Dual_Mismatch].
+crucible_neg_compile_test(neg_session_dual_mismatch
+    "Dual_Mismatch")
+
 # Crash-walker deep-tree rejection (#368).
 #
 # [FRAMEWORK-CONTROLLED] assert_every_offer_has_crash_branch_for
