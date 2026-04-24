@@ -240,14 +240,40 @@ static void fill_meta(crucible::TensorMeta& meta, const at::Tensor& t) {
         meta.data_ptr = t.data_ptr();
     }
 
-    meta.dtype = static_cast<crucible::ScalarType>(
-        static_cast<int8_t>(t.scalar_type()));
-    meta.device_type = static_cast<crucible::DeviceType>(
-        static_cast<int8_t>(t.device().type()));
-    meta.device_idx = static_cast<int8_t>(
-        t.device().has_index() ? t.device().index() : -1);
-    meta.layout = static_cast<crucible::Layout>(
-        static_cast<int8_t>(t.layout()));
+    // #161: c10 and crucible enums mirror ordinals by design
+    // (Types.h documents the invariant).  `std::bit_cast` makes the
+    // ordinal-reinterpretation explicit — the previous
+    // `static_cast<crucible::X>(static_cast<int8_t>(c10_value))` was
+    // a double narrowing conversion that silently truncated any future
+    // c10 enum value escaping int8_t range and looked like an
+    // ordinary value conversion.  bit_cast is pure bit reinterpretation;
+    // sizeof-mismatch is a compile error, not a runtime surprise.
+    //
+    // Static-assert the size and a sentinel ordinal per enum so a c10
+    // renumber — past int8_t overflow or into a previously-hole ordinal
+    // — fails the build instead of silently corrupting tensor metadata.
+    static_assert(sizeof(c10::ScalarType) == sizeof(crucible::ScalarType));
+    static_assert(sizeof(c10::DeviceType) == sizeof(crucible::DeviceType));
+    static_assert(sizeof(c10::Layout)     == sizeof(crucible::Layout));
+    static_assert(static_cast<int8_t>(c10::ScalarType::Float)
+                      == static_cast<int8_t>(crucible::ScalarType::Float),
+                  "c10::ScalarType::Float ordinal drifted from crucible mirror");
+    static_assert(static_cast<int8_t>(c10::ScalarType::Undefined)
+                      == static_cast<int8_t>(crucible::ScalarType::Undefined),
+                  "c10::ScalarType::Undefined ordinal drifted from crucible mirror");
+    static_assert(static_cast<int8_t>(c10::DeviceType::CUDA)
+                      == static_cast<int8_t>(crucible::DeviceType::CUDA),
+                  "c10::DeviceType::CUDA ordinal drifted from crucible mirror");
+    static_assert(static_cast<int8_t>(c10::Layout::Strided)
+                      == static_cast<int8_t>(crucible::Layout::Strided),
+                  "c10::Layout::Strided ordinal drifted from crucible mirror");
+
+    meta.dtype       = std::bit_cast<crucible::ScalarType>(t.scalar_type());
+    meta.device_type = std::bit_cast<crucible::DeviceType>(t.device().type());
+    // c10::DeviceIndex is already int8_t (c10/core/Device.h).  Direct
+    // copy on the present-branch; literal -1 on the absent-branch.
+    meta.device_idx  = t.device().has_index() ? t.device().index() : int8_t{-1};
+    meta.layout      = std::bit_cast<crucible::Layout>(t.layout());
 
     // -- Extended fields (autograd + storage) --------------------------
 
