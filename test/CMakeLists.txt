@@ -441,6 +441,14 @@ crucible_test(test_scheduler_policy)
 # prefix sharing, replay trace dedup.
 crucible_test(test_session_content_addressed)
 
+# SessionHandle lifetime mechanics (SEPLOG-I7, task #349) — the CRTP
+# SessionHandleBase<Proto> that adds abandoned-protocol detection to
+# every specialisation.  Debug destructor aborts when a non-terminal,
+# non-consumed handle leaves scope; release is a 1-byte-field no-op.
+# .detach() is the explicit escape hatch for infinite-Loop protocols
+# or out-of-band transport close.
+crucible_test(test_session_lifetime)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.

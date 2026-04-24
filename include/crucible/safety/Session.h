@@ -147,6 +147,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
 #include <functional>
 #include <optional>
@@ -381,6 +382,146 @@ template <typename P>
 inline constexpr bool is_well_formed_v = is_well_formed<P>::value;
 
 // ═════════════════════════════════════════════════════════════════
+// ── is_terminal_state<P> — handle-destruction safety trait ──────
+// ═════════════════════════════════════════════════════════════════
+//
+// Classifies protocol positions where a SessionHandle may be safely
+// destroyed without consuming it.  Used by SessionHandleBase's
+// debug-time abandoned-protocol check below.
+//
+// Extensible:  SessionCrash.h specialises for Stop (adds it as a
+// terminal state) by including a `template <> struct
+// is_terminal_state<Stop> : std::true_type {};` below its Stop
+// definition.  Users who ship their own terminal combinators do
+// the same.
+
+template <typename P>
+struct is_terminal_state : std::bool_constant<std::is_same_v<P, End>> {};
+
+template <typename P>
+inline constexpr bool is_terminal_state_v = is_terminal_state<P>::value;
+
+// ═════════════════════════════════════════════════════════════════
+// ── SessionHandleBase<Proto> — lifetime-tracked CRTP base ────────
+// ═════════════════════════════════════════════════════════════════
+//
+// Every SessionHandle specialisation inherits from this.  Provides:
+//
+//   * `consumed_` flag tracking whether the handle has been
+//     advanced past (via a &&-qualified consumer method: close,
+//     send, recv, select, pick, branch, delegate, accept, base,
+//     rollback).  Move ctor/assign set the SOURCE's flag to true
+//     so moved-from handles don't fire the destructor check.
+//
+//   * Destructor check: in debug builds, if the handle is destroyed
+//     at a NON-TERMINAL protocol state AND was NOT consumed, call
+//     std::abort() with a diagnostic.  This catches the class of
+//     bug where code drops a mid-protocol handle on the floor
+//     (e.g., forgot to loop back to Continue, forgot to call
+//     close(), exception escapes a handle's scope).
+//
+//   * In release builds (NDEBUG), the destructor is a no-op.  The
+//     1-byte `consumed_` field is retained so move ctor semantics
+//     work uniformly across build configurations.
+//
+// Handle overhead:  1 byte for consumed_, plus alignment padding
+// up to the next field or cache line.  Documented in
+// session_types.md §III.L1.5:
+//   "A SessionHandle's sizeof is sizeof(Resource*) + sizeof(
+//    CrashStatus_flag) — ~9 bytes with alignment."
+//
+// ─── Why CRTP base + private inheritance ─────────────────────────
+//
+// Deriving each SessionHandle<Proto, ...> from SessionHandleBase<
+// Proto> avoids 9 copies of the destructor + move-semantics code,
+// and keeps the lifetime contract in ONE place.  Private inheritance
+// prevents outside code from using the base's interface (it's an
+// implementation detail); friend-of-SessionHandle relationships
+// still let sibling SessionHandle instantiations access base
+// members through the derived's access path.
+
+template <typename Proto>
+class SessionHandleBase {
+    bool consumed_ = false;
+
+protected:
+    // Call before returning from a &&-qualified consumer method.
+    // After this, *this is safe to destruct (the destructor check
+    // sees consumed_ == true and skips the abort).
+    constexpr void mark_consumed_() noexcept { consumed_ = true; }
+
+    constexpr bool is_consumed_() const noexcept { return consumed_; }
+
+    // Expose to friend SessionHandle instantiations (e.g., Delegate's
+    // delegate() method marks the delegated handle consumed).
+    template <typename OtherProto>
+    friend class SessionHandleBase;
+    template <typename P, typename R, typename L>
+    friend class SessionHandle;
+
+public:
+    constexpr SessionHandleBase() noexcept = default;
+
+    // Public detach: mark the handle consumed WITHOUT advancing the
+    // protocol.  Use ONLY when:
+    //
+    //   * The protocol is inherently infinite (Loop<X> without a close
+    //     branch); the handle's "termination" is implicit via the
+    //     transport layer closing the channel below the session-type
+    //     abstraction.
+    //   * The transport has closed the session out-of-band (peer
+    //     crash detected at a lower layer, channel teardown, kernel-
+    //     level socket close).
+    //   * Test / instrumentation scenarios that intentionally drop
+    //     handles at a known-safe point.
+    //
+    // Grep for `.detach()` to audit all intentional-drop sites; this
+    // is the reviewable escape hatch.  The destructor-check still
+    // fires for handles that DON'T explicitly detach, catching
+    // accidental abandonment.
+    constexpr void detach() && noexcept { consumed_ = true; }
+
+    // Linear — copy-deleted with reason.
+    SessionHandleBase(const SessionHandleBase&)
+        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
+    SessionHandleBase& operator=(const SessionHandleBase&)
+        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
+
+    // Move semantics mark the source as consumed so its destructor
+    // check skips the abort.  The MOVED-INTO handle inherits the
+    // source's consumed state (typically false — a newly-moved-into
+    // handle is fresh).
+    constexpr SessionHandleBase(SessionHandleBase&& other) noexcept
+        : consumed_(other.consumed_)
+    {
+        other.consumed_ = true;
+    }
+
+    constexpr SessionHandleBase& operator=(SessionHandleBase&& other) noexcept
+    {
+        consumed_ = other.consumed_;
+        other.consumed_ = true;
+        return *this;
+    }
+
+    ~SessionHandleBase() {
+#ifndef NDEBUG
+        if (!consumed_ && !is_terminal_state_v<Proto>) {
+            std::fprintf(stderr,
+                "crucible::safety::proto: SessionHandle abandoned at "
+                "non-terminal protocol state.  A mid-protocol handle "
+                "was destroyed without being consumed via a &&-qualified "
+                "method (close, send, recv, select, pick, branch, "
+                "delegate, accept, base, rollback).  Either consume the "
+                "handle before its scope exits, or advance the protocol "
+                "to End/Stop.\n");
+            std::abort();
+        }
+#endif
+    }
+};
+
+// ═════════════════════════════════════════════════════════════════
 // ── SessionHandle — the runtime handle ───────────────────────────
 // ═════════════════════════════════════════════════════════════════
 //
@@ -438,7 +579,9 @@ template <typename R, typename Resource, typename LoopCtx>
 // ═════════════════════════════════════════════════════════════════
 
 template <typename Resource, typename LoopCtx>
-class [[nodiscard]] SessionHandle<End, Resource, LoopCtx> {
+class [[nodiscard]] SessionHandle<End, Resource, LoopCtx>
+    : public SessionHandleBase<End>
+{
     Resource resource_;
 
     template <typename P, typename R, typename L>
@@ -459,11 +602,11 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : resource_{std::move(r)} {}
 
-    // Linear: copy-delete with reason; move defaulted.
-    SessionHandle(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
-    SessionHandle& operator=(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
+    // Copy-delete with reason inherited from SessionHandleBase<End>.
+    // Move-ctor/assign: = default invokes base's custom move (which
+    // sets source.consumed_ = true) + default-moves Resource.
+    // Destructor: = default invokes base's dtor (which skips the check
+    // because is_terminal_state_v<End> is true).
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
     ~SessionHandle()                                             = default;
@@ -472,6 +615,7 @@ public:
     [[nodiscard]] constexpr Resource close() &&
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
     {
+        this->mark_consumed_();
         return std::move(resource_);
     }
 
@@ -486,7 +630,9 @@ public:
 // ═════════════════════════════════════════════════════════════════
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
-class [[nodiscard]] SessionHandle<Send<T, R>, Resource, LoopCtx> {
+class [[nodiscard]] SessionHandle<Send<T, R>, Resource, LoopCtx>
+    : public SessionHandleBase<Send<T, R>>
+{
     Resource resource_;
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
@@ -506,10 +652,6 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : resource_{std::move(r)} {}
 
-    SessionHandle(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
-    SessionHandle& operator=(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
     ~SessionHandle()                                             = default;
@@ -526,6 +668,7 @@ public:
                  && std::is_nothrow_move_constructible_v<T>)
     {
         std::invoke(transport, resource_, std::move(value));
+        this->mark_consumed_();
         return detail::step_to_next<R, Resource, LoopCtx>(std::move(resource_));
     }
 
@@ -538,7 +681,9 @@ public:
 // ═════════════════════════════════════════════════════════════════
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
-class [[nodiscard]] SessionHandle<Recv<T, R>, Resource, LoopCtx> {
+class [[nodiscard]] SessionHandle<Recv<T, R>, Resource, LoopCtx>
+    : public SessionHandleBase<Recv<T, R>>
+{
     Resource resource_;
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
@@ -558,10 +703,6 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : resource_{std::move(r)} {}
 
-    SessionHandle(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
-    SessionHandle& operator=(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
     ~SessionHandle()                                             = default;
@@ -577,6 +718,7 @@ public:
                  && std::is_nothrow_move_constructible_v<T>)
     {
         T value = std::invoke(transport, resource_);
+        this->mark_consumed_();
         auto next = detail::step_to_next<R, Resource, LoopCtx>(std::move(resource_));
         return std::pair{std::move(value), std::move(next)};
     }
@@ -590,7 +732,9 @@ public:
 // ═════════════════════════════════════════════════════════════════
 
 template <typename... Branches, typename Resource, typename LoopCtx>
-class [[nodiscard]] SessionHandle<Select<Branches...>, Resource, LoopCtx> {
+class [[nodiscard]] SessionHandle<Select<Branches...>, Resource, LoopCtx>
+    : public SessionHandleBase<Select<Branches...>>
+{
     Resource resource_;
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
@@ -610,10 +754,6 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : resource_{std::move(r)} {}
 
-    SessionHandle(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
-    SessionHandle& operator=(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
     ~SessionHandle()                                             = default;
@@ -628,6 +768,7 @@ public:
                  && std::is_nothrow_move_constructible_v<Resource>)
     {
         std::invoke(transport, resource_, I);
+        this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
         return detail::step_to_next<Chosen, Resource, LoopCtx>(std::move(resource_));
     }
@@ -639,6 +780,7 @@ public:
     [[nodiscard]] constexpr auto select() &&
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
     {
+        this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
         return detail::step_to_next<Chosen, Resource, LoopCtx>(std::move(resource_));
     }
@@ -652,7 +794,9 @@ public:
 // ═════════════════════════════════════════════════════════════════
 
 template <typename... Branches, typename Resource, typename LoopCtx>
-class [[nodiscard]] SessionHandle<Offer<Branches...>, Resource, LoopCtx> {
+class [[nodiscard]] SessionHandle<Offer<Branches...>, Resource, LoopCtx>
+    : public SessionHandleBase<Offer<Branches...>>
+{
     Resource resource_;
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
@@ -672,10 +816,6 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : resource_{std::move(r)} {}
 
-    SessionHandle(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
-    SessionHandle& operator=(const SessionHandle&)
-        = delete("SessionHandle is linear — protocol progress is consumed, not copied.");
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
     ~SessionHandle()                                             = default;
@@ -693,6 +833,7 @@ public:
     constexpr auto branch(Transport transport, Handler handler) &&
     {
         const std::size_t idx = std::invoke(transport, resource_);
+        this->mark_consumed_();
         return dispatch_branch_(idx, std::move(resource_), std::move(handler),
                                 std::make_index_sequence<sizeof...(Branches)>{});
     }
@@ -705,6 +846,7 @@ public:
     [[nodiscard]] constexpr auto pick() &&
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
     {
+        this->mark_consumed_();
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
         return detail::step_to_next<Chosen, Resource, LoopCtx>(std::move(resource_));
     }
