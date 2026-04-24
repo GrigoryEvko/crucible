@@ -832,6 +832,17 @@ crucible_neg_compile_test(neg_session_select_no_wire
 crucible_neg_compile_test(neg_session_delegate_no_wire
     "Wire_Variant_Required")
 
+# compose_at_branch_t<P, I, Q> — branch-asymmetric composition (#378).
+# Replaces only branch I's continuation in the first reachable
+# Select<Bs...> / Offer<Bs...> in P's spine.  Two named diagnostics
+# fire on misuse: out-of-range I and no-choice-in-spine.
+crucible_test(test_session_compose_at_branch)
+
+crucible_neg_compile_test(neg_session_compose_at_branch_index
+    "Branch_Compose_Index_Out_Of_Range")
+crucible_neg_compile_test(neg_session_compose_at_branch_no_choice
+    "Branch_Compose_No_Choice")
+
 # Crash-walker deep-tree rejection (#368).
 #
 # [FRAMEWORK-CONTROLLED] assert_every_offer_has_crash_branch_for
