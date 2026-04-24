@@ -485,6 +485,7 @@ consteval void assert_compatible_server() noexcept {
 // edit that breaks a subtype relation that SHOULD hold — or admits
 // one that shouldn't — fails compile at the offending change).
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::subtype_self_test {
 
 // ─── Reflexivity: every proto is a subtype of itself ───────────────
@@ -654,9 +655,11 @@ struct BaseInt {};
 struct DerivedInt {};  // hypothetically a subtype of BaseInt
 
 }  // namespace detail::subtype_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS
 
 }  // namespace crucible::safety::proto
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 // Specialisation OUTSIDE the test namespace must be in the primary
 // namespace of the template — we declare the test-local subsort
 // relation here to exercise the propagation rule.  This is a one-off
@@ -852,3 +855,4 @@ consteval bool check_additional_asserts() {
 static_assert(check_additional_asserts());
 
 }  // namespace crucible::safety::proto::detail::subtype_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS

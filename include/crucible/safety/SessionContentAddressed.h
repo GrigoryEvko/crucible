@@ -293,6 +293,7 @@ struct is_subsort<T, U> : std::true_type {};
 // ── Framework self-test static_asserts ─────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::ca::ca_self_test {
 
 // Fixture payload.
@@ -556,5 +557,6 @@ using CipherPublisher_Raw = Loop<Send<CipherSnapshot, Continue>>;
 static_assert(equivalent_sync_v<CipherPublisher_CA, CipherPublisher_Raw>);
 
 }  // namespace detail::ca::ca_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS
 
 }  // namespace crucible::safety::proto

@@ -520,6 +520,13 @@ crucible_test(test_lazy_established_channel)
 # auth-handshake worked example from §13.
 crucible_test(test_session_declassify)
 
+# Dedicated TU re-enabling every session-type self-test namespace
+# (#372 SEPLOG-PERF-2).  Each *_self_test namespace across 17 session
+# headers is gated on `CRUCIBLE_SESSION_SELF_TESTS`; this TU defines
+# the macro before including the headers, instantiating ~1000
+# cumulative static_asserts in one place rather than per-consumer.
+crucible_test(test_session_self_tests)
+
 # AppendOnly session event log + RecordingSessionHandle wrapper
 # (#404, SAFEINT-B15).  Promotes bit-exact-replay discipline from an
 # ad-hoc trace into a typed structure: SessionEventLog (Pinned,

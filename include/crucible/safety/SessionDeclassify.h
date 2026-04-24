@@ -287,6 +287,7 @@ static_assert(sizeof(DeclassifyOnSend<FourByteToken, secret_policy::WireSerializ
 // ── Framework self-test static_asserts ─────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::declassify_self_test {
 
 struct Token { int v = 0; };
@@ -376,5 +377,6 @@ static_assert(!is_subtype_sync_v<
     Recv<TokenWire, End>>);
 
 }  // namespace detail::declassify_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS
 
 }  // namespace crucible::safety

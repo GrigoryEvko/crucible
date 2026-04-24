@@ -1354,7 +1354,16 @@ template <typename Proto, typename ResourceA, typename ResourceB>
 //   2. Catch regressions during development — any edit that breaks
 //      duality / composition / well-formedness rules fails compile
 //      at the offending header's first include.
+//
+// Gated on CRUCIBLE_SESSION_SELF_TESTS (#372 SEPLOG-PERF-2): every
+// TU that includes Session*.h used to pay the compile-time cost of
+// ~1000 cumulative static_asserts across the family, even though
+// the invariants are stable and only need checking in one place.
+// The gate reduces header-include cost by roughly half.  The
+// dedicated test/test_session_self_tests.cpp TU defines the macro
+// to keep CI coverage intact.
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::self_test {
 
 // Duality base cases
@@ -1452,6 +1461,7 @@ namespace two_pc_test {
 }
 
 }  // namespace detail::self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS
 
 // ═════════════════════════════════════════════════════════════════
 // ── Release-mode size verification ───────────────────────────────

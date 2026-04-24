@@ -337,6 +337,7 @@ inline constexpr std::size_t session_view_branch_count_v =
 // shape and reject all wrong-position requests.  Runs at header-
 // inclusion time; regressions fail at the first TU that pulls us in.
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::sv_self_test {
 
 struct FakeRes {};
@@ -405,5 +406,6 @@ static_assert(!can_mint_session_view<SessionHandle<End,            FakeRes>, AtS
 static_assert( can_mint_session_view<SessionHandle<End,            FakeRes>, AtTerminal>);
 
 }  // namespace detail::sv_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS
 
 }  // namespace crucible::safety::proto

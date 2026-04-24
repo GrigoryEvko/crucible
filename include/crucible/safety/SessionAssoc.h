@@ -338,6 +338,7 @@ consteval void assert_associated() noexcept {
 // Verify the association machinery at compile time across a realistic
 // scenario (2PC) plus positive and negative refinement cases.
 
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
 namespace detail::assoc::assoc_self_test {
 
 // ─── Fixture tags ──────────────────────────────────────────────────
@@ -545,5 +546,6 @@ static_assert(is_associated_v<projected_context_t<G_empty, My2PC>, G_empty, My2P
 static_assert(std::is_same_v<projected_context_t<G_empty, My2PC>, EmptyContext>);
 
 }  // namespace detail::assoc::assoc_self_test
+#endif  // CRUCIBLE_SESSION_SELF_TESTS
 
 }  // namespace crucible::safety::proto
