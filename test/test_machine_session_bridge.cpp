@@ -136,7 +136,7 @@ int run_session_view_mints_handle_pointing_at_bridge() {
 
     // Pick branch 0 (the Send<int, Continue> branch) — no transport,
     // in-memory choice — and obtain the Send-state handle.
-    auto send_handle = std::move(handle).select<0>();
+    auto send_handle = std::move(handle).select_local<0>();
 
     // Drive the Send.  The transport mutates the Machine's State as
     // a side effect; this is the canonical pattern for using a
@@ -185,7 +185,7 @@ int run_machine_from_session_end_state() {
     VigilBridge bridge{VigilState{VigilState::Mode::Serving, 5}};
 
     auto handle    = bridge.session_view();    // Select<...>
-    auto end_handle = std::move(handle).select<1>();  // End
+    auto end_handle = std::move(handle).select_local<1>();  // End
 
     static_assert(std::is_same_v<
         decltype(end_handle),
@@ -249,7 +249,7 @@ int run_worked_example_mode_transitions() {
     // Tick #1: Idle → Recording.
     {
         auto h0    = bridge.session_view();
-        auto h1    = std::move(h0).select<0>();
+        auto h1    = std::move(h0).select_local<0>();
         auto h2    = std::move(h1).send(
             1,
             [](Machine<VigilState>*& m, int v) noexcept {
@@ -264,7 +264,7 @@ int run_worked_example_mode_transitions() {
     // Tick #2: Recording → Replaying.
     {
         auto h = bridge.session_view();
-        auto h1 = std::move(h).select<0>();
+        auto h1 = std::move(h).select_local<0>();
         auto h2 = std::move(h1).send(
             2,
             [](Machine<VigilState>*& m, int v) noexcept {

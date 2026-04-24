@@ -102,7 +102,7 @@ int run_drive_protocol_after_observe() {
     if (!h) return 1;
 
     // Pick branch 0 (Send) — handle becomes Send<int, Continue>.
-    auto send_handle = std::move(*h).select<0>();
+    auto send_handle = std::move(*h).select_local<0>();
 
     // Drive the send: the transport mutates the channel's storage.
     int side_effect = 0;
@@ -184,7 +184,7 @@ int run_worked_example_vessel_startup() {
                 continue;
             }
             // Drive one protocol cycle: pick Send, send, detach.
-            auto send_handle = std::move(*h).select<0>();
+            auto send_handle = std::move(*h).select_local<0>();
             auto next = std::move(send_handle).send(
                 worker_processed.load() + 1,
                 [&](VesselChannel*& c, int v) noexcept {

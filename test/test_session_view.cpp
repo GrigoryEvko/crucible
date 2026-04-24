@@ -120,7 +120,7 @@ int run_mint_at_select() {
     if (SessionHandle<Select<Send<Msg, End>, End>, FakeRes>::branch_count != 2) return 2;
 
     // Pick branch 1 (the End branch) and consume.
-    auto end_handle = std::move(h).select<1>();
+    auto end_handle = std::move(h).select_local<1>();
     auto recovered = std::move(end_handle).close();
     if (recovered.sentinel != 55) return 3;
     return 0;
@@ -133,7 +133,7 @@ int run_mint_at_offer() {
     if (view->resource().sentinel != 33) return 1;
     if (SessionHandle<Offer<Recv<Msg, End>, End>, FakeRes>::branch_count != 2) return 2;
 
-    auto end_handle = std::move(h).pick<1>();
+    auto end_handle = std::move(h).pick_local<1>();
     auto recovered  = std::move(end_handle).close();
     if (recovered.sentinel != 33) return 3;
     return 0;
