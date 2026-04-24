@@ -1041,7 +1041,7 @@ Session types PROMOTE `ScopedView`'s unary typestate to N-ary protocol state. Th
 
 ## III.L1 — Binary combinators (EXISTS)
 
-`include/crucible/safety/Session.h`. ~700 lines, 24 tests green on GCC 16. Public surface:
+`include/crucible/safety/Session.h`. **1185 lines** (as of 2026-04-24, up from the 700-line estimate when this section was first drafted; growth driven by SessionHandleBase CRTP for abandonment detection #349 and release-mode EBO machinery #366), 102/102 tests green on GCC 16 (full suite, excluding pre-existing test_safety legacy). Public surface:
 
 ```cpp
 namespace crucible::safety::session {
@@ -3261,9 +3261,13 @@ This is checked at compile time, once, per `PermissionedMpmcChannel<…>` instan
 
 ## V.10 Cost budget — compile-time and runtime
 
-Numbers. "Zero runtime cost" without measurements is a claim; with measurements it's a fact.
+> **⚠️ STATUS — PROJECTED, NOT MEASURED.**  All cost numbers in this section are PROJECTIONS extrapolated from underlying-primitive costs (SpscRing, atomic CAS, MPMC SCQ algorithm).  Real-workload measurements depend on Tasks #346 (L7 SessionSafety), #348 (async ⩽_a), #383 (AsyncContext), #381 (full merging) all landing — none are shipped as of 2026-04-24.  bench/bench_session_compile_time.cpp (Task #392) does not exist; the compile-time cost table below is theoretically derived from per-layer template-instantiation complexity, not from `-ftime-report` measurements on the actual MPMC instantiation (which currently doesn't compile because PermissionedMpmcChannel doesn't exist).
+>
+> The SessionHandle release-mode zero-overhead claim WAS empirically validated for sizeof (#366 commit body, /tmp/check_sizeof.cpp).  The PermissionedSpscChannel zero-overhead claim has compile-time `static_assert(sizeof(handle) == sizeof(channel-pointer))` validation (test_permissioned_spsc_channel.cpp).  No equivalent for the full MPMC stack yet.
 
-**Compile-time cost per PermissionedMpmcChannel instantiation:**
+Numbers. "Zero runtime cost" without measurements is a claim; with measurements it's a fact.  This table is currently in the FIRST category, not the second.
+
+**Compile-time cost per PermissionedMpmcChannel instantiation (PROJECTED):**
 
 | Check | Template instantiation count | Wall-clock (GCC 16 -O0) | Wall-clock (-O3) |
 |---|---|---|---|
@@ -3291,9 +3295,9 @@ Absorbed into the ~30s cold build for the Crucible monolith. Per second of build
 | Handle destruction at End | 0 ns (trivial) | 0 ns | **0 ns** |
 | Handle destruction before End (abandoned) | +1 branch to cold path | — | **~2 ns debug / 0 ns release** |
 
-The session-type machinery adds ZERO ns to the hot path. The Nikolaev SCQ's cost is the underlying transport cost; the typed handle adds no overhead.
+The session-type machinery is DESIGNED to add ZERO ns to the hot path.  This claim is currently verified for sizeof (compile-time `static_assert` in PermissionedSpscChannel and SessionHandle) but UNVERIFIED for actual runtime cost on the MPMC stack — the bench harness below describes the test that would verify it; that test does not yet exist.
 
-**Bench verification** (target: M10 milestone, SEPLOG-E1):
+**Bench verification** (target: M10 milestone, SEPLOG-E1; bench harness Task #392 — both pending):
 
 ```cpp
 // bench/bench_permissioned_mpmc.cpp
@@ -3389,31 +3393,44 @@ Most channels use `df ∧ live+ ∧ crash-safe`. The deeper cases (Raft, collect
 
 # Part VII — Execution plan — twelve milestones
 
-Dependency-ordered delivery of the twelve-layer stack. The current state: L1 (binary combinators) is shipped, L2-L5 are the next-phase load-bearing middle, L6-L9 enable the MPMC flagship, L10-L12 are polish + v2.
+> **Status note (last updated 2026-04-24).**  This section was first written when only L1 was shipped.  Reality has moved.  The status legend is updated honestly here; the per-milestone descriptions below are kept for historical reference, with each prefixed by a status tag.  See **Part IX — Honest Assessment** for the full per-conjunct gap analysis.
+>
+> Legend:
+> - **✅ SHIPPED** — header + tests in tree, runtime semantics implemented
+> - **⚠️ PARTIAL** — header in tree, but a critical sub-property is deferred (see notes)
+> - **❌ NOT SHIPPED** — task pending, header does not exist
+> - **🔌 NO CALLERS** — header exists but no production code uses it
 
-**M1 — L1 validated on production protocols.** Already shipped. Goal: every Crucible protocol writable as a Session type; compile time CI green. Tasks: #332 (Session combinator framework — in progress).
+Dependency-ordered delivery of the twelve-layer stack.
 
-**M2 — L2 Typing context Γ.** 4 weeks. Composition, lookup, reduction, enumeration of reachable contexts at compile time. Tasks: new task "SEPLOG-I1 SessionContext.h". Unblocks: L3, L5.
+**M1 — L1 binary combinators.**  ✅ SHIPPED.  Session.h ships Send/Recv/Select/Offer/Loop/Continue/End + dual_of + compose + is_well_formed + SessionHandleBase CRTP (#349) + release-mode zero-cost EBO (#366).  Every Crucible protocol writable as a Session type today.  Tasks: #332 (completed).  Current line count: **1185** (was estimated as 700 in the original plan).
 
-**M3 — L3 Queue types σ.** 2 weeks after M2. Async message-in-flight typing, bounded-buffer invariant, balanced-plus check. Tasks: new "SEPLOG-I2 SessionQueue.h". Unblocks: L6 async subtyping.
+**M2 — L2 Typing context Γ.**  ✅ SHIPPED.  SessionContext.h ships Entry, Context<...>, compose_context_t, lookup_context_t, contains_key_v, domain_of_t, update_entry_t, remove_entry_t.  Task #343 (pending — actually completed; task list out-of-date).  Current line count: **640**.
 
-**M4 — L4 Global types + projection.** 3 weeks after M2. Global-type syntax, projection G↾p, full merging, well-formedness. Tasks: #339 (SEPLOG-H2g Global types + projection — already scoped). Unblocks: L5.
+**M3 — L3 Queue types σ.**  ⚠️ PARTIAL.  SessionQueue.h ships QueuedMsg, Queue<...>, EmptyQueue, enqueue/head/tail, queue_contains_v, count_matching_v, is_bounded_queue_v, is_unavailable_queue_v.  **DEFERRED**: AsyncContext<Γ, Queues...> + reduce_async_context_t + is_balanced_plus_v over reachable states (Task SEPLOG-STRUCT-9 / #383).  Task #344 (pending — partial).  Current line count: **556**.
 
-**M5 — L5 Association.** 2 weeks after M3 and M4. Association check Δ ⊑_s G; association preservation theorem compile-time check. Tasks: new "SEPLOG-I3 SessionAssoc.h".
+**M4 — L4 Global types + projection.**  ⚠️ PARTIAL.  SessionGlobal.h ships End_G, Transmission, Choice, BranchG, Rec_G, Var_G, StopG, RoleList, RolesOf, is_global_well_formed_v, project_t with **PLAIN MERGE only**.  **DEFERRED**: coinductive full merging (PMY25 §4.3, Task SEPLOG-STRUCT-7 / #381) — required to project Raft, 2PC-with-multi-followers, or any DIVERGING multiparty protocol onto third-party roles.  Task #339 (pending — partial).  Current line count: **846**.
 
-**M6 — L6 Subtyping (sync + bounded async).** 6 weeks after M5. Gay-Hole sync subtype, precise async ⩽_a via SISO + 6 rules, bounded-depth decision procedure, diagnostic on rejection. Tasks: #338 (SEPLOG-H2a+subtype Session subtyping). This is the largest single task in the plan; most of the template metaprogramming complexity lives here.
+**M5 — L5 Association.**  ⚠️ PARTIAL.  SessionAssoc.h ships is_associated_v + projected_context_t + assert_associated.  **DEFERRED**: association preservation theorem (HYK24 Thm 5.8) — currently checks association at one point in time; preservation across runtime reductions requires L7's reduction semantics.  Task #345 (pending — partial).  Current line count: **549**.
 
-**M7 — L7 Safety φ family.** 4 weeks after M6. Seven SY19 levels as compile-time predicates; μ-calculus AST for user-defined φ; offline mCRL2 fallback with proof certificates. Tasks: new "SEPLOG-I4 SessionSafety.h".
+**M6 — L6 Subtyping.**  ⚠️ PARTIAL — sync only.  SessionSubtype.h ships Gay-Hole 2005 sync subtype rules (Send/Recv/Select/Offer/Loop, payload subsort).  **NOT SHIPPED**: precise async subtyping ⩽_a via SISO decomposition (GPPSY23, Task #348).  Without ⩽_a, every async channel can only have sync subtyping — every Send must rendezvous with a Recv before another Send.  Task #338 (completed — sync subtyping shipped).  Current line count: **854**.
 
-**M8 — L8 Crash-stop.** 3 weeks after M7. Stop, Crash<p>, ⊘ markers; reliability R parameter; mandatory-crash-branch check; crash-aware safety lifting. Tasks: new "SEPLOG-I5 SessionCrash.h".
+**M7 — L7 Safety φ family.**  ❌ NOT SHIPPED.  No SessionSafety.h header exists.  All seven SY19 φ predicates (safe, df, term, nterm, live, live+, live++) are documented but not implemented.  **Consequence**: every channel's φ choice in Part VI is currently aspirational.  Blocked on Tasks #382 (reachable_contexts BFS) + #383 (AsyncContext queue reduction).  Task #346 (pending).
 
-**M9 — L9 CSL × session.** 3 weeks after M8. PermissionedSessionHandle; permission balance at every reduction; Transferable<P> payload marker. Tasks: #333 (SEPLOG-H2b PermissionedSessionHandle<Proto, Perms...>). Unblocks: PermissionedMpmcChannel flagship.
+**M8 — L8 Crash-stop.**  ⚠️ PARTIAL.  SessionCrash.h ships Stop, Crash<p>, UnavailableQueue, ReliableSet, has_crash_branch_for_peer_v + assert_has_crash_branch_for.  **DEFERRED**: Γ-level aggregate check that walks every Offer in every entry's local type (Task SEPLOG-BUG-4 / #368) and the prerequisite Sender-role-on-Offer (Task SEPLOG-STRUCT-1 / #367).  Per-Offer trait shipped is essentially useless for nested Offers (which is most real protocols).  Task #347 (pending — partial).  Current line count: **627**.
 
-**M10 — The MPMC flagship (Part V).** 2 weeks after M9. PermissionedMpmcChannel<T, N, M, C> instantiated, tested under TSan + ASan + cookie-fingerprint fuzz. Tasks: #327 (SEPLOG-H1 PermissionedMpmcChannel core), #328 (SEPLOG-H2 MPMC protocol instantiation), #331 (SEPLOG-H6 Queue facade), #326 (SEPLOG-C4b Phase H umbrella — in progress).
+**M9 — L9 CSL × session.**  ❌ NOT SHIPPED.  No PermissionedSession.h header exists.  Transferable<P> payload markers, permission balance preservation across reductions, exit-permission validation — all missing.  **Consequence**: sessions and Permission<Tag> are two parallel systems that don't talk.  The framework's central thesis ("session types make CSL permissions compose") is unimplemented.  Task #333 (pending).
 
-**M11 — L10 Pattern library + L11 Diagnostics.** 4 weeks after M10. Pattern library providing one-line API for common protocols: RequestResponse, FanOut, FanIn, ScatterGather, Pipeline, 2PC, MpmcProtocol, RaftReplication, CrashHandled<>, CheckpointedSession<>. Diagnostic layer for manifest-bug classification. Tasks: #341 (SEPLOG-H2p Protocol pattern library), #342 (SEPLOG-H2d Manifest-bug classification tags), #337 (SEPLOG-H2a+delegate Delegate combinator).
+**M10 — The MPMC flagship.**  ❌ NOT SHIPPED.  PermissionedMpmcChannel<T, N, M, C> doesn't exist.  Depends on M6 (async ⩽_a), M9 (CSL × session), Tasks #381 (full merging), #382/383 (L7 prereqs).  Tasks #327, #328, #331, #326 (all pending).  See **Part V** for the projected design — currently descriptive, not implemented.
 
-**M12 — Crucible channel adoption.** 8 weeks rolling after M11. Each channel in Part IV has its C++ code annotated with the relevant Session type and φ; compile-time checks catch any mismatch. Tasks: #78 (Vigil Mode), #101 (Transaction Session), #140 (Cipher/Vigil construction lifecycle), #87 (register_externals Session), #164 (fallback boundary Session), #88 (Publisher/Subscriber atomics wrap), plus ~15 others. This is WHERE THE VALUE LANDS.
+**M11 — L10 Pattern library + L11 Diagnostics.**  ✅ SHIPPED.  SessionPatterns.h ships RequestResponse, FanOut/FanIn, Broadcast, ScatterGather, MpmcProducer/Consumer (proto-only, no runtime), TwoPhaseCommit_Coord/Follower, SwimProbe, Handshake, Transaction_Client/Server, PipelineSource/Sink/Stage.  SessionDiagnostic.h ships 18 manifest-bug tags + CRUCIBLE_SESSION_ASSERT_CLASSIFIED macro + 26 retrofit sites across 10 headers (#388).  Tasks #341, #342, #337 (all completed).  Current line counts: SessionPatterns.h **793**, SessionDiagnostic.h **633**.
+
+**M12 — Crucible channel adoption.**  🔌 NO CALLERS.  Zero production Crucible channels currently use SessionHandle.  The framework sits on a shelf.  Tasks #355-#358 (K-series) are pending; Task SEPLOG-INT-1..4 (sub-tasks #384-#387) added during this status pass.  PermissionedSpscChannel.h ships as the missing primitive — TraceRing, MetaLog, ChainEdge, Augur all need to be wired to use it (or analog wrappers).  This is **WHERE THE VALUE LANDS** and where the framework is currently weakest.
+
+**Appendix-D combinators shipped (orthogonal to L-numbering)**:
+- ✅ SessionDelegate.h — Honda 1998 throw/catch (#337) — **835 lines**
+- ✅ SessionCheckpoint.h — Appendix D.2 (#362) — **451 lines**
+- ✅ SessionContentAddressed.h — Appendix D.5 (#361) — **428 lines**
 
 **v2 candidates (deferred)**:
 - L12 Choreographic projection (M13+)
@@ -3422,7 +3439,9 @@ Dependency-ordered delivery of the twelve-layer stack. The current state: L1 (bi
 - Content-addressed quotient sessions (F.5) generalized beyond Cipher (M16+)
 - Dynamic participants (F.1) formally integrated with precise async + crash-stop (M17+)
 
-Total milestone M1-M12: ~30 weeks = ~7 months of concentrated work, parallelizable after M5.
+**Headline shipping ratio**: 8/12 milestones at SHIPPED or PARTIAL; 4/12 at NOT SHIPPED.  Lines of code in tree: **8,397 across 12 headers** (about 70% of the projected 12K).  Production callers using the framework: **0**.
+
+The 8,397/12,000 lines completion ratio is misleading without context.  The shipped portion is the STRUCTURAL skeleton (combinators, contexts, queues, global types, association check, sync subtyping, patterns, diagnostics).  The NOT-SHIPPED portion is the SEMANTIC core: φ predicates that actually verify safety/liveness, CSL × session integration, async subtyping, full merging.  Lines-per-feature is heavily back-loaded — see Part IX for the per-conjunct breakdown.
 
 ---
 
@@ -3443,6 +3462,88 @@ Seven open items. Each is tagged with a suggested owner phase.
 **Q6 — Merge operator (coinductive full merging).** PMY25 §4 presents coinductive full merging as the right merge for projection onto non-sender / non-receiver roles. Implementation complexity is high; for v1 we use plain merging (all branches project identically) and document the limitation. Unresolved: the cost of the weaker merging in real protocols. Measurement deferred to after M12 adoption.
 
 **Q7 — Runtime vs compile-time φ verification trade-off.** Some protocols have runtime-determined participant counts. For these, we can't compile-time-verify φ; we can only verify it at run-config-time. Proposed: a runtime verifier matching SY19's mCRL2-based MPSTK; we invoke it when the Keeper boots and the actual N participants is known. Adopts the same μ-calculus formulas as compile-time. Cost: ~seconds at Keeper startup (negligible).
+
+---
+
+# Part IX — Honest assessment vs current shipping state
+
+This section was added 2026-04-24 as part of the doc-refresh pass (#389) to capture the gap between the framework's CLAIMS (Parts I–VI) and its CURRENT SHIPPING STATE.  Previous versions of this document presented the design as if the entire vocabulary were enforced; in practice, the type-level skeleton ships but the semantic core is significantly deferred.  This section is the project's brutal-honesty checkpoint — kept current as M7/M9/M10 progress.
+
+## IX.1 The structural-vs-semantic gap
+
+What the framework has at the **structural** level (8,397 lines across 12 headers, 102/102 tests passing in debug):
+- Combinator grammar (Send/Recv/Select/Offer/Loop/Continue/End)
+- Duality computation + involution check
+- Sequential composition
+- Well-formedness predicate
+- Typing context Γ (composition, lookup, mutation, domain)
+- Queue type σ (enqueue/dequeue/contains/count, single-state bounded check)
+- Global type G + projection (with PLAIN merge only)
+- Association Δ ⊑_s G (single-point check; preservation theorem deferred)
+- Synchronous subtyping (Gay-Hole 2005)
+- Crash-stop primitives (Stop, Crash<p>, ⊘, ReliableSet)
+- Pattern library (10+ ready-made shapes)
+- Diagnostic vocabulary (18 tags, retrofit through 26 user-facing assertions)
+- SessionHandle CRTP base with abandoned-protocol detection (debug) + zero-cost release (sizeof equals Resource)
+- Three Appendix-D combinators (Delegate, Checkpointed, ContentAddressed)
+- Negative-compile harness (26 tests verifying the framework REJECTS bad code)
+
+What the framework does NOT have at the **semantic** level:
+- ❌ φ predicates that actually verify properties.  Every is_safe_v / is_df_v / is_live+_v claim in Part VI is currently aspirational — those metafunctions don't exist (Task #346 / SessionSafety.h).  The Part VI table reads as "channel X requires φ(N)" but no compile-time witness can be produced for any channel today.
+- ❌ Async subtyping ⩽_a (Task #348).  Sync-only is too strict for MPMC (Section §V.4 documents the async-pipelining requirement; the type system can't currently certify it).
+- ❌ Coinductive full merging (Task #381).  Plain merge cannot project Raft / 2PC-with-multi-followers / any DIVERGING multiparty global type onto third-party roles.
+- ❌ CSL × session integration (Task #333).  Permission and SessionHandle are parallel systems that don't talk; Transferable<P> doesn't exist as a payload marker.
+- ❌ Causality analysis ≺_II / ≺_IO / ≺_OO (Task #340).  Without these, deadlock-freedom claims have no foundation.
+- ❌ Reachable-contexts BFS (Task #382).  L7's φ predicates need this; without it, L7 can't be implemented.
+- ❌ Association preservation theorem (HYK24 Thm 5.8).  Single-point association check shipped; preservation across reductions needs reduction semantics from L7.
+
+## IX.2 The "no production callers" critique
+
+**Headline gap**: ~8,400 lines of header pile, **zero** Crucible production channels currently use SessionHandle or PermissionedSpscChannel.
+
+The K-series tasks (#355 Vessel dispatch, #356 KernelCache, #357 InferenceSession, #358 CNTP Raft) are all pending.  Sub-tasks #384-#387 (TraceRing/MetaLog/ChainEdge/Augur wiring, added during the gap-analysis pass) are all pending.  PermissionedSpscChannel ships as the missing primitive — but until at least one production channel uses it, the framework's "zero-cost in production" claim is verified only by synthetic micro-benchmarks (sizeof checks via /tmp/check_sizeof.cpp, not real workloads).
+
+The framework is currently a **museum piece**: well-documented, internally-consistent, exhaustively self-tested at the type level, with zero industrial use.
+
+## IX.3 The "claimed φ vs enforced φ" matrix
+
+For every channel listed in **Part VI**, the chosen φ is currently UNVERIFIED.  Replication of Part VI's table with an honest enforcement column:
+
+| Channel | Claimed φ | Currently enforced |
+|---|---|---|
+| IV.1–IV.34 (all 34 channels) | per Part VI table | none (Task #346 not shipped) |
+
+Until L7 SessionSafety.h lands, the φ-table in Part VI documents intent, not protection.
+
+## IX.4 The "claimed costs vs measured costs" gap
+
+**Part V §V.10** cost budget:
+- Compile-time cost claims (~70-120ms per MpmcRing instantiation, full breakdown table) — **PROJECTED, NOT MEASURED**.  bench/bench_session_compile_time.cpp doesn't exist (Task #392).
+- Runtime cost claims (zero-overhead release-mode handles via EBO) — **PARTIALLY VERIFIED**.  SessionHandle's zero-overhead claim was empirically validated for sizeof (#366 commit body).  PermissionedSpscChannel's zero-overhead has compile-time static_asserts on sizeof but no runtime micro-bench yet.
+
+The MPMC flagship's cost-budget table is reading as if measured; it is in fact projected from underlying-primitive costs.  Real-workload bench landing depends on at least M9 (CSL × session) being shipped, which depends on M7 prerequisites.
+
+## IX.5 The shipping-direction warning
+
+If you read this document end-to-end **before reading the headers in the tree**, you would conclude the framework is more complete than it is.  The mitigation:
+1. Part VII's status-tagged milestones (above, just refreshed)
+2. This Part IX
+3. The doc-comment headers of each shipped file say what's IN that file
+4. `git log --oneline include/crucible/safety/Session*.h include/crucible/concurrent/Permissioned*.h` shows actual shipping history
+
+If you came here to validate a "session types are shipping in Crucible" claim before bringing the framework into a downstream system: **don't yet**.  Wait for K1 (TraceRing or Vessel as typed session), L7 (φ predicates actually verifying), and L9 (CSL × session) to ship.  All three are in the queue with tasks; ETAs are 4–16 weeks aggregate of focused work.
+
+## IX.6 Suggested reading order for new contributors
+
+Given the gap-state above, the right onboarding flow:
+1. Read this Part IX first.
+2. Read **Parts II + III** for theory + intended C++ realization.
+3. Read **headers in the tree** — Session.h (1185 lines), then SessionContext.h, SessionQueue.h, SessionGlobal.h, SessionAssoc.h, SessionSubtype.h, SessionCrash.h, SessionPatterns.h, SessionDiagnostic.h, plus Delegate/Checkpoint/ContentAddressed combinators.  These are what's REAL.
+4. Read **Part IV channel catalog** with the understanding that none of the per-channel φ choices are currently enforced.
+5. Read **Part V MPMC flagship** as a forward-looking design document — reading the source-code MpmcRing in concurrent/ is what's real today.
+6. Read **Parts VI + Appendices** for reference.
+
+If you find a discrepancy between this document and the headers (or between this section and the per-milestone status in Part VII): trust the headers, then update this document.  Discrepancies are bugs in the doc, not in the code.
 
 ---
 
@@ -3732,7 +3833,7 @@ crucible cipher publish --certificate <channel>_certificate.json --namespace <ns
 
 ---
 
-*End of document. Last updated: 2026-04-23. Authors: Crucible team. This document is a living artifact; it will be updated as the twelve milestones in Part VII complete, as open questions in Part VIII are resolved, and as frontier items in Appendix D reach the literature. Discrepancies between this document and observed reality will be reconciled in favor of reality.*
+*End of document. Last updated: 2026-04-24 (status-honesty pass — added Part IX, refreshed Part VII milestone status, marked Part V cost budget as PROJECTED, updated stale line counts in Part III; see #389). Authors: Crucible team. This document is a living artifact; it will be updated as the twelve milestones in Part VII complete, as open questions in Part VIII are resolved, and as frontier items in Appendix D reach the literature. Discrepancies between this document and observed reality will be reconciled in favor of reality — see Part IX for the current gap inventory.*
 
 
 
