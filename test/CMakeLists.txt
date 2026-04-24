@@ -498,6 +498,17 @@ crucible_test(test_session_view)
 # reports from the rejection tag.
 crucible_test(test_session_subtype_reason)
 
+# Lazy-established session channels (#403, SAFEINT-B14).
+# LazyEstablishedChannel<Proto, Resource> wraps PublishOnce so
+# session establishment is asynchronous and structurally correct:
+# the publisher calls establish(Resource*) once, observers call
+# observe() and either get a SessionHandle or std::nullopt before
+# the publication is visible.  Verifies pre/post-establish behaviour,
+# multi-observer fan-out, the Vessel-startup pattern, and worker-
+# before-publisher fallback.  Resolves the init-flag-and-condvar
+# pattern documented in §14.
+crucible_test(test_lazy_established_channel)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.
