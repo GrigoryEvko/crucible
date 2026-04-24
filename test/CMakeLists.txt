@@ -744,3 +744,15 @@ crucible_neg_compile_test(neg_scheduler_policy_non_inheritance
 # GCC versions because the framework owns the deleted-overload string.
 crucible_neg_compile_test(neg_session_detach_no_reason
     "DetachReason_Required")
+
+# Compile-time capacity arithmetic — overflow rejection (#408).
+#
+# [FRAMEWORK-CONTROLLED] safe_mul_impl / safe_sub_impl fire a
+# static_assert with the "[Checked_Capacity_Overflow]" prefix on
+# overflow / underflow.  Two scenarios cover both directions: SIZE_MAX
+# * 2 (multiplication overflow) and 10 - 100 (unsigned subtraction
+# underflow).
+crucible_neg_compile_test(neg_checked_safe_capacity_overflow
+    "Checked_Capacity_Overflow")
+crucible_neg_compile_test(neg_checked_safe_size_diff_underflow
+    "Checked_Capacity_Overflow")
