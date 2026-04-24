@@ -62,10 +62,30 @@
     { "name": "verify",  "configurePreset": "verify" }
   ],
   "testPresets": [
-    { "name": "default", "configurePreset": "default", "output": { "outputOnFailure": true } },
-    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
-    { "name": "tsan",    "configurePreset": "tsan",    "output": { "outputOnFailure": true } },
-    { "name": "verify",  "configurePreset": "verify",  "output": { "outputOnFailure": true } },
+    {
+      "name": "default",
+      "configurePreset": "default",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8 }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8 }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8 }
+    },
+    {
+      "name": "verify",
+      "configurePreset": "verify",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 8 }
+    },
     {
       "name": "stress",
       "configurePreset": "default",
