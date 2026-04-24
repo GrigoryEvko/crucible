@@ -121,10 +121,16 @@
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Session.h>
+#include <crucible/safety/SessionContext.h>   // detail::ctx::type_id_hash_v
 #include <crucible/safety/SessionCrash.h>
 
+#include <algorithm>
+#include <array>
 #include <cstddef>
+#include <cstdint>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::safety::proto {
 
@@ -289,55 +295,187 @@ template <typename RL1, typename RL2>
 using union_roles_t = typename detail::global::union_roles<RL1, RL2>::type;
 
 // ═════════════════════════════════════════════════════════════════════
-// ── RolesOf<G> ─────────────────────────────────────────────────────
+// ── RolesOf<G>  (#374 SEPLOG-PERF-4: sort-based dedup, O(N log N)) ─
 // ═════════════════════════════════════════════════════════════════════
-
-template <typename G>
-struct RolesOf;
-
-template <>
-struct RolesOf<End_G> { using type = EmptyRoleList; };
-
-template <typename From, typename To, typename P, typename G>
-struct RolesOf<Transmission<From, To, P, G>> {
-    using tail = typename RolesOf<G>::type;
-    using type = insert_unique_t<From, insert_unique_t<To, tail>>;
-};
+//
+// Implementation strategy: walk G recursively to COLLECT all role
+// instances into a flat parameter pack (with duplicates).  Then
+// deduplicate via a single consteval sort over hash projections,
+// rebuilding the deduped RoleList via C++26 pack indexing.
+//
+// Total cost: O(N) collection + O(N log N) consteval sort, replacing
+// the previous chain of O(N) `insert_unique` template instantiations
+// each doing an O(d) `contains_role` linear scan for total
+// O(N²) template-instantiation work.  At 100-role globals (rare but
+// possible in MPST-heavy adapter codegen) the saving is ~10×.
+//
+// Output ordering: the deduped RoleList is sorted by first-occurrence
+// index in the input pack — independent of hash-based intermediate
+// sort.  All current consumers (`role_lists_equal_as_sets_v`,
+// `contains_role_v`, `::size`, lookup via per-role iteration) are
+// order-insensitive, so the change is invisible.
 
 namespace detail::global {
 
-template <typename Start, typename... RLs>
-struct fold_union_roles;
+// ── flat_roles_t<G> — collect all role instances with duplicates ──
+//
+// Walks G with the same recursive structure as the old RolesOf,
+// but APPENDS rather than UNIQ-INSERTS.  Output is RoleList<R1, R2,
+// ..., Rn> where Ri can repeat.
 
-template <typename Start>
-struct fold_union_roles<Start> { using type = Start; };
+template <typename G>
+struct flat_roles;
 
-template <typename Start, typename First, typename... Rest>
-struct fold_union_roles<Start, First, Rest...>
-    : fold_union_roles<union_roles_t<Start, First>, Rest...> {};
+template <>
+struct flat_roles<End_G> { using type = RoleList<>; };
+
+template <>
+struct flat_roles<Var_G> { using type = RoleList<>; };
+
+template <typename Peer>
+struct flat_roles<StopG<Peer>> { using type = RoleList<Peer>; };
+
+template <typename Body>
+struct flat_roles<Rec_G<Body>> {
+    using type = typename flat_roles<Body>::type;
+};
+
+// Concatenation of role lists.
+template <typename... RLs>
+struct concat_role_lists;
+
+template <>
+struct concat_role_lists<> { using type = RoleList<>; };
+
+template <typename... Rs>
+struct concat_role_lists<RoleList<Rs...>> { using type = RoleList<Rs...>; };
+
+template <typename... A, typename... B, typename... Rest>
+struct concat_role_lists<RoleList<A...>, RoleList<B...>, Rest...>
+    : concat_role_lists<RoleList<A..., B...>, Rest...> {};
+
+template <typename... RLs>
+using concat_role_lists_t = typename concat_role_lists<RLs...>::type;
+
+template <typename From, typename To, typename P, typename G>
+struct flat_roles<Transmission<From, To, P, G>> {
+    using type = concat_role_lists_t<
+        RoleList<From, To>,
+        typename flat_roles<G>::type>;
+};
+
+template <typename From, typename To, typename... Bs>
+struct flat_roles<Choice<From, To, Bs...>> {
+    using type = concat_role_lists_t<
+        RoleList<From, To>,
+        typename flat_roles<typename Bs::next>::type...>;
+};
+
+template <typename G>
+using flat_roles_t = typename flat_roles<G>::type;
+
+// ── compute_dedup_count<Rs...>() — number of distinct role types ──
+//
+// Hashes each role, sorts hashes, counts unique adjacent.
+
+template <typename... Rs>
+[[nodiscard]] inline consteval std::size_t compute_dedup_count() noexcept {
+    constexpr std::size_t N = sizeof...(Rs);
+    if constexpr (N == 0) return 0;
+    else {
+        std::array<std::uint64_t, N> hashes{
+            detail::ctx::type_id_hash_v<Rs>...
+        };
+        std::ranges::sort(hashes);
+        std::size_t unique = 1;
+        for (std::size_t j = 1; j < N; ++j) {
+            if (hashes[j] != hashes[j - 1]) ++unique;
+        }
+        return unique;
+    }
+}
+
+// ── compute_kept_indices<Rs...>() — first-occurrence indices of each
+//    distinct role, sorted by original-input position ───────────────
+
+template <typename... Rs>
+[[nodiscard]] inline consteval auto compute_kept_indices() noexcept {
+    constexpr std::size_t N = sizeof...(Rs);
+    std::array<std::size_t, N == 0 ? 1 : N> kept{};
+    if constexpr (N == 0) return kept;  // unused
+    else {
+        std::array<std::pair<std::uint64_t, std::size_t>, N> tagged{};
+        for (std::size_t i = 0; i < N; ++i) {
+            tagged[i] = std::pair{std::uint64_t{0}, i};
+        }
+        // Fill hashes via fold-expression.
+        const std::array<std::uint64_t, N> hashes{
+            detail::ctx::type_id_hash_v<Rs>...
+        };
+        for (std::size_t i = 0; i < N; ++i) tagged[i].first = hashes[i];
+
+        // Sort by (hash, original_index) so equal-hash entries land
+        // adjacent with the lowest-index first (gives first-occurrence
+        // semantics on dedup).
+        std::ranges::sort(tagged, [](const auto& a, const auto& b){
+            if (a.first != b.first) return a.first < b.first;
+            return a.second < b.second;
+        });
+
+        // First-occurrence dedup: for each unique hash, keep the
+        // smallest original index.
+        std::size_t k = 0;
+        for (std::size_t j = 0; j < N; ++j) {
+            if (j == 0 || tagged[j].first != tagged[j - 1].first) {
+                kept[k++] = tagged[j].second;
+            }
+        }
+
+        // Re-sort kept indices by their original-input position so the
+        // output preserves first-occurrence ORDER, not hash order.
+        std::sort(kept.begin(), kept.begin() + k);
+        return kept;
+    }
+}
+
+// ── build_dedup_role_list — pack-indexes via the kept array ──────
+//
+// Only invoked for non-empty packs; the empty case is short-circuited
+// at the dedup_role_list trait below.
+
+template <typename First, typename... Rest, std::size_t... Is>
+auto build_dedup_role_list_helper(std::index_sequence<Is...>) {
+    static constexpr auto kept = compute_kept_indices<First, Rest...>();
+    using Combined = std::tuple<First, Rest...>;
+    return RoleList<std::tuple_element_t<kept[Is], Combined>...>{};
+}
+
+template <typename RL>
+struct dedup_role_list;
+
+// Empty-pack short-circuit: avoid pack-indexing on an empty pack.
+template <>
+struct dedup_role_list<RoleList<>> { using type = RoleList<>; };
+
+template <typename First, typename... Rest>
+struct dedup_role_list<RoleList<First, Rest...>> {
+    static constexpr std::size_t kept_n = compute_dedup_count<First, Rest...>();
+    using type = decltype(build_dedup_role_list_helper<First, Rest...>(
+        std::make_index_sequence<kept_n>{}));
+};
+
+template <typename RL>
+using dedup_role_list_t = typename dedup_role_list<RL>::type;
 
 }  // namespace detail::global
 
-template <typename From, typename To, typename... Bs>
-struct RolesOf<Choice<From, To, Bs...>> {
-    using base = insert_unique_t<From, insert_unique_t<To, EmptyRoleList>>;
-    using type = typename detail::global::fold_union_roles<
-        base, typename RolesOf<typename Bs::next>::type...>::type;
-};
+// Public surface unchanged: RolesOf<G> + roles_of_t<G> remain the
+// API, now backed by collect-then-dedup.
 
-template <typename Body>
-struct RolesOf<Rec_G<Body>> {
-    using type = typename RolesOf<Body>::type;
-};
-
-template <>
-struct RolesOf<Var_G> {
-    using type = EmptyRoleList;
-};
-
-template <typename Peer>
-struct RolesOf<StopG<Peer>> {
-    using type = RoleList<Peer>;
+template <typename G>
+struct RolesOf {
+    using type = detail::global::dedup_role_list_t<
+        detail::global::flat_roles_t<G>>;
 };
 
 template <typename G>
