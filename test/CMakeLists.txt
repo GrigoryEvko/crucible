@@ -824,6 +824,14 @@ crucible_neg_compile_test(neg_session_dual_mismatch
 crucible_neg_compile_test(neg_session_select_no_wire
     "Wire_Variant_Required")
 
+# Bare `delegate(handle)` (no transport) on a Delegate state is now
+# `= delete`'d (#369) — same Wire_Variant_Required discipline as
+# select/pick (#377), specialized for Delegate's "ship to peer"
+# semantic.  Without the transport, the peer's Accept hangs forever
+# waiting for an endpoint that was never shipped.
+crucible_neg_compile_test(neg_session_delegate_no_wire
+    "Wire_Variant_Required")
+
 # Crash-walker deep-tree rejection (#368).
 #
 # [FRAMEWORK-CONTROLLED] assert_every_offer_has_crash_branch_for
