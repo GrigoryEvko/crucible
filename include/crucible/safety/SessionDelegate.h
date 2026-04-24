@@ -383,18 +383,32 @@ public:
         return detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
     }
 
-    // Transport-less variant: consumes the delegated handle but does
-    // NOT physically transfer anything.  Useful for in-memory / test /
-    // stub settings where the carrier and the delegated handle live
-    // in the same process and the "transfer" is merely a type-state
-    // advance.  Mirrors the existing Offer::pick<I>() convenience.
+    // Transport-less variant (#369 / #377 parallel): renamed from
+    // bare `delegate(handle)` to `delegate_local(handle)` so the wire
+    // ABSENCE is visible at every call site.  Pre-#369 the bare
+    // `delegate(handle)` overload was a SILENT FOOTGUN specific to
+    // Delegate: the Delegate combinator's SEMANTIC is "ship the
+    // delegated endpoint to the peer", so omitting the transport
+    // means NOTHING is shipped — the peer's corresponding Accept
+    // call hangs forever waiting for an endpoint that will never
+    // arrive.  The rename makes the wire-omission audit-visible.
+    //
+    // Use ONLY for:
+    //   * In-memory channels where the carrier and the delegated
+    //     handle share storage and the peer receives its endpoint
+    //     via a different channel (or not at all — e.g., test stubs).
+    //   * Unit tests where the transport would be a mock no-op.
     //
     // The delegated handle's resource is discarded via scope exit
     // (standard RAII).  If the Resource owns a live wire, its own
     // destructor closes it; if the user needs to extract the wire,
     // they should use the transport-taking variant instead.
+    //
+    // Audit:
+    //   grep "delegate_local("    — every wire-omitting delegation
+    //   grep "\.delegate(.*,.*)"  — every wire-based delegation
     template <typename DelegatedResource, typename DelegatedLoopCtx>
-    [[nodiscard]] constexpr auto delegate(
+    [[nodiscard]] constexpr auto delegate_local(
         SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated) &&
         noexcept(std::is_nothrow_move_constructible_v<Resource>
                  && std::is_nothrow_destructible_v<DelegatedResource>)
@@ -407,6 +421,28 @@ public:
         this->mark_consumed_();
         return detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
     }
+
+    // Deleted bare `delegate(handle)` overload (#369) — forces every
+    // call site to make the wire-vs-in-memory distinction explicit.
+    // The named `[Wire_Variant_Required]` diagnostic names the
+    // delegation-specific footgun (peer stuck waiting for the
+    // endpoint that was never shipped).
+    template <typename DelegatedResource, typename DelegatedLoopCtx>
+    void delegate(
+        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&) && = delete(
+        "[Wire_Variant_Required] SessionHandle<Delegate<T, K>>::"
+        "delegate(handle) without a transport is no longer allowed "
+        "(#369).  The Delegate combinator's semantic is \"ship the "
+        "delegated endpoint to the peer\"; omitting the transport "
+        "means nothing is shipped and the peer's corresponding Accept "
+        "call hangs forever.  Choose one: "
+        "(a) `.delegate(handle, transport)` — the transport callable "
+        "physically ships the endpoint (RDMA put, fd passing, bytes "
+        "over the wire, etc.) and the peer's Accept receives it, OR "
+        "(b) `.delegate_local(handle)` — explicitly no wire transfer, "
+        "for in-memory channels or test stubs where the peer obtains "
+        "the endpoint via a separate path or doesn't need it at all.  "
+        "Per #369, the framework refuses to guess which you meant.");
 
     [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
     [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
