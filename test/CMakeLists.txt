@@ -547,6 +547,14 @@ crucible_test(test_session_self_tests)
 # point passed for crash-safe protocols.
 crucible_test(test_session_crash_walker)
 
+# Sender<Role> role annotation for Offer<> (#367, SEPLOG-STRUCT-1).
+# MPST crash analysis needs to know which role sends each Offer to
+# answer correctly "does this Offer need a Recv<Crash<PeerTag>, _>
+# branch?" — the answer is YES only when PeerTag is the Offer's
+# sender.  Offer<Sender<Role>, Branches...> declares the sender;
+# unannotated Offer<> keeps 2-party semantics via AnonymousPeer.
+crucible_test(test_session_sender_role)
+
 # OneShotFlag × runtime crash transport (#400, SAFEINT-A11).
 # Wires the type-level Stop/Crash semantics from SessionCrash.h into
 # a runtime wire: CrashWatchedHandle<Proto, R, PeerTag> wraps a bare
@@ -894,3 +902,16 @@ crucible_neg_compile_test(neg_secret_transform_reference_return
     "Capture_Leak_Reference_Return")
 crucible_neg_compile_test(neg_secret_transform_void_return
     "Capture_Leak_Void_Return")
+
+# Sender-annotated Offer missing its sender's crash branch (#367).
+#
+# [FRAMEWORK-CONTROLLED] Reuses the existing
+# [CrashBranch_Missing_In_Tree] diagnostic from
+# `assert_every_offer_has_crash_branch_for<Proto, PeerTag>()`: when an
+# Offer<Sender<Role>, Branches...> declares Role AND the queried
+# PeerTag == Role, the crash branch becomes mandatory.  An Offer
+# from OTHER roles is silently accepted — "not your peer, not your
+# problem."  The neg-test triggers the sender-matches branch to
+# prove the walker correctly distinguishes the two paths.
+crucible_neg_compile_test(neg_session_sender_role_missing_crash
+    "CrashBranch_Missing_In_Tree")

@@ -189,12 +189,80 @@ struct Select {
     using branches_tuple = std::tuple<Branches...>;
 };
 
+// ── Sender<Role> — MPST role annotation for Offer<> (#367) ──────
+//
+// In a 2-party session, `Offer<Branches...>` is unambiguous: the
+// choice signal comes from "the peer," singular.  In MPST (Honda-
+// Yoshida-Carbone 2008) the projected local protocol at role `q` can
+// contain multiple Offers whose senders are different roles — `Offer
+// from Alice` and `Offer from Bob` both appear in q's local type.
+//
+// Crash analysis (SessionCrash.h, #368) needs to know WHICH role
+// sends an Offer to correctly answer "does this Offer need a
+// Recv<Crash<PeerTag>, _> branch?"  The answer is YES only when
+// PeerTag is the Offer's sender — an Offer from Bob doesn't need
+// Alice's crash branch.  Without a sender annotation, the walker
+// over-rejects.
+//
+// Sender<Role> is a phantom-type tag placed as the FIRST template
+// argument of Offer<>:
+//
+//   Offer<Sender<Alice>, Recv<Msg, End>, Recv<Crash<Alice>, Recovery>>
+//          ^ annotated: choice signal from Alice
+//
+// Partial specialization of Offer<Sender<R>, Branches...> carries
+// `sender = R` and `branches_tuple = std::tuple<Branches...>` —
+// the sender tag is NOT counted as a branch.  Downstream traits
+// (has_crash_branch_for_peer, all_offers_have_crash_branch,
+// compose, compose_at_branch, is_well_formed, is_empty_choice)
+// specialize symmetrically so the tag is transparent to every
+// operation except crash analysis.
+//
+// `Offer<Branches...>` without the Sender<> tag keeps its 2-party
+// semantics; `sender` resolves to `AnonymousPeer`, a sentinel that
+// matches any PeerTag in crash analysis (preserves existing
+// behavior — no migration required).
+template <typename Role>
+struct Sender {
+    using role_type = Role;
+};
+
+// Sentinel sender returned by `offer_sender_t` when an Offer<> is
+// not annotated.  AnonymousPeer is NOT intended as a user-facing
+// role — it exists so trait specializations can distinguish
+// annotated from unannotated Offers at the type level.
+struct AnonymousPeer {};
+
 // External choice: the PEER picks one of Branches...
 template <typename... Branches>
 struct Offer {
     static constexpr std::size_t branch_count = sizeof...(Branches);
     using branches_tuple = std::tuple<Branches...>;
+    // Unannotated Offer — sender matches any PeerTag in crash
+    // analysis (the 2-party default).
+    using sender = AnonymousPeer;
 };
+
+// External choice with explicit sender role (MPST, #367).  Class-
+// template partial specialization on `Sender<Role>` as the first
+// template argument; `branch_count` and `branches_tuple` reflect
+// the REAL branches only, not the tag.
+template <typename Role, typename... Branches>
+struct Offer<Sender<Role>, Branches...> {
+    static constexpr std::size_t branch_count = sizeof...(Branches);
+    using branches_tuple = std::tuple<Branches...>;
+    using sender = Role;
+};
+
+// Extract the declared sender role from an Offer type, or
+// `AnonymousPeer` when unannotated.
+template <typename OfferType>
+struct offer_sender {
+    using type = typename OfferType::sender;
+};
+
+template <typename OfferType>
+using offer_sender_t = typename offer_sender<OfferType>::type;
 
 // Recursive fixpoint μX.Body.  Continue refers to the nearest
 // enclosing Loop.  Nested Loops shadow outer ones.
@@ -276,6 +344,14 @@ template <typename P> struct is_empty_choice : std::false_type {};
 template <> struct is_empty_choice<Select<>> : std::true_type {};
 template <> struct is_empty_choice<Offer<>>  : std::true_type {};
 
+// Annotated-but-empty Offer (#367): `Offer<Sender<Role>>` declares a
+// sender but no branches — the empty-choice rejection applies equally
+// to the annotated form.  Without this specialization, the primary
+// `is_empty_choice<P>::false_type` would leak through and the
+// empty-choice guard would miss `Offer<Sender<Role>>`.
+template <typename Role>
+struct is_empty_choice<Offer<Sender<Role>>> : std::true_type {};
+
 template <typename P>
 inline constexpr bool is_empty_choice_v = is_empty_choice<P>::value;
 
@@ -319,6 +395,16 @@ struct dual_of<Select<Bs...>> {
 
 template <typename... Bs>
 struct dual_of<Offer<Bs...>> {
+    using type = Select<typename dual_of<Bs>::type...>;
+};
+
+// Sender-annotated Offer (#367): dual drops the sender tag and
+// produces a plain Select.  From the DUAL endpoint's perspective
+// the sender of the original Offer is "us" (local role), so the
+// annotation — useful for the Offer-side crash analysis — carries
+// no meaning on the Select-side internal choice.
+template <typename Role, typename... Bs>
+struct dual_of<Offer<Sender<Role>, Bs...>> {
     using type = Select<typename dual_of<Bs>::type...>;
 };
 
@@ -435,6 +521,15 @@ struct compose<Offer<Bs...>, Q> {
     using type = Offer<typename compose<Bs, Q>::type...>;
 };
 
+// Sender-annotated Offer (#367): compose Q into each REAL branch and
+// preserve the `Sender<Role>` tag at position 0.  Without this
+// specialization the primary `compose<Offer<Bs...>, Q>` would
+// compose Q into the Sender<Role> tag too, producing garbage.
+template <typename Role, typename... Bs, typename Q>
+struct compose<Offer<Sender<Role>, Bs...>, Q> {
+    using type = Offer<Sender<Role>, typename compose<Bs, Q>::type...>;
+};
+
 template <typename B, typename Q>
 struct compose<Loop<B>, Q> {
     using type = Loop<typename compose<B, Q>::type>;
@@ -533,6 +628,33 @@ struct compose_at_branch<Offer<Bs...>, I, Q> {
         unpack<std::make_index_sequence<sizeof...(Bs)>>::as_offer;
 };
 
+// Sender-annotated Offer (#367): index I ranges over REAL branches
+// (Bs...), not including the Sender<Role> tag.  Reuse the rewriter
+// on Bs... alone and rebuild with the sender preserved at position 0.
+template <typename Role, typename... Bs, std::size_t I, typename Q>
+struct compose_at_branch<Offer<Sender<Role>, Bs...>, I, Q> {
+    static_assert(I < sizeof...(Bs),
+        "crucible::session::diagnostic [Branch_Compose_Index_Out_Of_Range]: "
+        "compose_at_branch_t<Offer<Sender<Role>, Bs...>, I, Q>: branch "
+        "index I is out of range for the reached sender-annotated "
+        "Offer.  Branches are counted WITHOUT the Sender<Role> tag — "
+        "an Offer<Sender<R>, B0, B1> has 2 branches, not 3.");
+
+    template <std::size_t J>
+    using at = std::conditional_t<
+        J == I,
+        compose_t<std::tuple_element_t<J, std::tuple<Bs...>>, Q>,
+        std::tuple_element_t<J, std::tuple<Bs...>>>;
+
+    template <typename Idxs> struct build;
+    template <std::size_t... Js>
+    struct build<std::index_sequence<Js...>> {
+        using type = Offer<Sender<Role>, at<Js>...>;
+    };
+
+    using type = typename build<std::make_index_sequence<sizeof...(Bs)>>::type;
+};
+
 // Pass-through pre-head nodes: recurse into Send/Recv's continuation.
 template <typename T, typename R, std::size_t I, typename Q>
 struct compose_at_branch<Send<T, R>, I, Q> {
@@ -615,6 +737,13 @@ struct is_well_formed<Select<Bs...>, LoopCtx>
 
 template <typename... Bs, typename LoopCtx>
 struct is_well_formed<Offer<Bs...>, LoopCtx>
+    : std::bool_constant<(is_well_formed<Bs, LoopCtx>::value && ...)> {};
+
+// Sender-annotated Offer (#367): check only the REAL branches
+// (Bs...); the Sender<Role> tag is a type-level annotation, not a
+// runnable combinator, so it isn't a target for well-formedness.
+template <typename Role, typename... Bs, typename LoopCtx>
+struct is_well_formed<Offer<Sender<Role>, Bs...>, LoopCtx>
     : std::bool_constant<(is_well_formed<Bs, LoopCtx>::value && ...)> {};
 
 template <typename B, typename LoopCtx>

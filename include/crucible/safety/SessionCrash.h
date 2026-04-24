@@ -395,6 +395,22 @@ struct has_crash_branch_for_peer<Offer<Branches...>, PeerTag>
           (detail::crash::is_crash_branch_for<Branches, PeerTag>::value || ...)
       > {};
 
+// Sender-annotated Offer (#367): the Crash<PeerTag> branch is only
+// REQUIRED when the Offer's declared sender equals PeerTag.  An
+// Offer<Sender<Alice>, ...> doesn't need a Crash<Bob> branch — Bob
+// isn't the one sending the choice, so Bob's crash doesn't affect
+// this Offer's reception.  When sender ≠ PeerTag the trait is
+// vacuously true.
+//
+// When sender == PeerTag the trait falls through to the ordinary
+// per-branch fold, excluding the Sender<Role> tag from the search.
+template <typename Role, typename... Branches, typename PeerTag>
+struct has_crash_branch_for_peer<Offer<Sender<Role>, Branches...>, PeerTag>
+    : std::bool_constant<
+          !std::is_same_v<Role, PeerTag> ||
+          (detail::crash::is_crash_branch_for<Branches, PeerTag>::value || ...)
+      > {};
+
 template <typename OfferType, typename PeerTag>
 inline constexpr bool has_crash_branch_for_peer_v =
     has_crash_branch_for_peer<OfferType, PeerTag>::value;
@@ -502,6 +518,20 @@ template <typename... Bs, typename PeerTag>
 struct all_offers_have_crash_branch<Offer<Bs...>, PeerTag>
     : std::bool_constant<
           has_crash_branch_for_peer_v<Offer<Bs...>, PeerTag> &&
+          (all_offers_have_crash_branch<Bs, PeerTag>::value && ...)
+      > {};
+
+// Sender-annotated Offer (#367): the per-Offer crash-branch check
+// is delegated to `has_crash_branch_for_peer_v`, which returns true
+// vacuously when the Offer's sender ≠ PeerTag.  The recursion still
+// walks every downstream continuation — an Offer<Sender<Alice>, ...>
+// might wrap a downstream Offer<Sender<Bob>, ...> that DOES need a
+// Crash<Bob> branch.  The tag itself is not walked (it's type-level
+// metadata, not a combinator).
+template <typename Role, typename... Bs, typename PeerTag>
+struct all_offers_have_crash_branch<Offer<Sender<Role>, Bs...>, PeerTag>
+    : std::bool_constant<
+          has_crash_branch_for_peer_v<Offer<Sender<Role>, Bs...>, PeerTag> &&
           (all_offers_have_crash_branch<Bs, PeerTag>::value && ...)
       > {};
 
