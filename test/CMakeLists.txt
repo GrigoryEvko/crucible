@@ -527,6 +527,18 @@ crucible_test(test_session_declassify)
 # cumulative static_asserts in one place rather than per-consumer.
 crucible_test(test_session_self_tests)
 
+# OneShotFlag × runtime crash transport (#400, SAFEINT-A11).
+# Wires the type-level Stop/Crash semantics from SessionCrash.h into
+# a runtime wire: CrashWatchedHandle<Proto, R, PeerTag> wraps a bare
+# SessionHandle with a OneShotFlag& and returns std::expected<
+# NextHandle, CrashEvent<PeerTag, R>> from every consumer method.
+# On-crash the per-op peek routes into the unexpected branch;
+# happy-path overhead is one relaxed atomic load.  Validates happy
+# path, crash-before-send, crash-mid-protocol, cross-thread crash
+# detection (jthread producer + spinning consumer), multi-peer
+# independent watches, and the CNTP request/reply + retry pattern.
+crucible_test(test_crash_transport)
+
 # AppendOnly session event log + RecordingSessionHandle wrapper
 # (#404, SAFEINT-B15).  Promotes bit-exact-replay discipline from an
 # ad-hoc trace into a typed structure: SessionEventLog (Pinned,
