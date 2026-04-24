@@ -46,8 +46,13 @@ static_assert(!std::is_copy_constructible_v<
                   CrashWatchedHandle<End, Channel, ServerPeer>>);
 static_assert( std::is_move_constructible_v<
                   CrashWatchedHandle<End, Channel, ServerPeer>>);
+// Per #429, CrashWatchedHandle now passes itself as the Derived
+// template argument so the abandonment diagnostic spells
+// "CrashWatchedHandle<...>" instead of being ambiguous with a bare
+// "SessionHandle<...>" inheriting the same Proto.
 static_assert(std::is_base_of_v<
-                  SessionHandleBase<End>,
+                  SessionHandleBase<End,
+                                    CrashWatchedHandle<End, Channel, ServerPeer, void>>,
                   CrashWatchedHandle<End, Channel, ServerPeer>>);
 
 // CrashEvent carries both PeerTag and Resource at compile time.

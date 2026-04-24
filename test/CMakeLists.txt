@@ -449,6 +449,17 @@ crucible_test(test_session_content_addressed)
 # or out-of-band transport close.
 crucible_test(test_session_lifetime)
 
+# Per-derived-class abandonment diagnostic (#429) — SessionHandleBase
+# now takes an OPTIONAL `Derived` template argument naming the wrapper
+# class.  C++26 P2996 reflection (std::meta::identifier_of(template_of(
+# ^^Derived))) extracts the bare wrapper template name ("SessionHandle" /
+# "CrashWatchedHandle" / "RecordingSessionHandle") so the destructor's
+# abandonment diagnostic distinguishes which wrapper aborted, even when
+# many wrappers share the same Proto.  The witness fired by #400's
+# debugging episode.  This test verifies wrapper_name() at compile time
+# for all three production wrapper classes across multiple Proto heads.
+crucible_test(test_session_wrapper_name)
+
 # PermissionedSpscChannel<T, N, UserTag> — SPSC worked example
 # backing SEPLOG-INT-1 (task #384, TraceRing wiring) and the broader
 # K-series production-integration work.  Validates: role

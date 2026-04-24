@@ -220,7 +220,8 @@ struct is_subtype_sync<Stop, U> : std::true_type {};
 
 template <typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Stop, Resource, LoopCtx>
-    : public SessionHandleBase<Stop>
+    : public SessionHandleBase<Stop,
+                               SessionHandle<Stop, Resource, LoopCtx>>
 {
     Resource resource_;
 
@@ -238,9 +239,13 @@ public:
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
 
-    constexpr explicit SessionHandle(Resource r)
+    constexpr explicit SessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : resource_{std::move(r)} {}
+        : SessionHandleBase<Stop,
+                            SessionHandle<Stop, Resource, LoopCtx>>{loc}
+        , resource_{std::move(r)} {}
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
     constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;

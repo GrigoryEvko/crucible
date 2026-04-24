@@ -118,7 +118,8 @@ template <typename NextHandle>
 
 template <typename Resource, typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<End, Resource, LoopCtx>
-    : public SessionHandleBase<End>
+    : public SessionHandleBase<End,
+                               RecordingSessionHandle<End, Resource, LoopCtx>>
 {
     SessionHandle<End, Resource, LoopCtx> inner_;
     SessionEventLog* log_      = nullptr;
@@ -131,11 +132,15 @@ public:
     using loop_ctx      = LoopCtx;
     using inner_type    = SessionHandle<End, Resource, LoopCtx>;
 
-    constexpr RecordingSessionHandle(inner_type inner,
-                                     SessionEventLog& log,
-                                     RoleTagId self,
-                                     RoleTagId peer) noexcept
-        : inner_{std::move(inner)}, log_{&log},
+    constexpr RecordingSessionHandle(
+        inner_type inner,
+        SessionEventLog& log,
+        RoleTagId self,
+        RoleTagId peer,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<End,
+                            RecordingSessionHandle<End, Resource, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, log_{&log},
           self_role_{self}, peer_role_{peer} {}
 
     constexpr RecordingSessionHandle(RecordingSessionHandle&&) noexcept = default;
@@ -172,7 +177,8 @@ public:
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<Send<T, R>, Resource, LoopCtx>
-    : public SessionHandleBase<Send<T, R>>
+    : public SessionHandleBase<Send<T, R>,
+                               RecordingSessionHandle<Send<T, R>, Resource, LoopCtx>>
 {
     SessionHandle<Send<T, R>, Resource, LoopCtx> inner_;
     SessionEventLog* log_      = nullptr;
@@ -187,11 +193,15 @@ public:
     using loop_ctx      = LoopCtx;
     using inner_type    = SessionHandle<Send<T, R>, Resource, LoopCtx>;
 
-    constexpr RecordingSessionHandle(inner_type inner,
-                                     SessionEventLog& log,
-                                     RoleTagId self,
-                                     RoleTagId peer) noexcept
-        : inner_{std::move(inner)}, log_{&log},
+    constexpr RecordingSessionHandle(
+        inner_type inner,
+        SessionEventLog& log,
+        RoleTagId self,
+        RoleTagId peer,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<Send<T, R>,
+                            RecordingSessionHandle<Send<T, R>, Resource, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, log_{&log},
           self_role_{self}, peer_role_{peer} {}
 
     constexpr RecordingSessionHandle(RecordingSessionHandle&&) noexcept = default;
@@ -225,7 +235,8 @@ public:
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<Recv<T, R>, Resource, LoopCtx>
-    : public SessionHandleBase<Recv<T, R>>
+    : public SessionHandleBase<Recv<T, R>,
+                               RecordingSessionHandle<Recv<T, R>, Resource, LoopCtx>>
 {
     SessionHandle<Recv<T, R>, Resource, LoopCtx> inner_;
     SessionEventLog* log_      = nullptr;
@@ -240,11 +251,15 @@ public:
     using loop_ctx      = LoopCtx;
     using inner_type    = SessionHandle<Recv<T, R>, Resource, LoopCtx>;
 
-    constexpr RecordingSessionHandle(inner_type inner,
-                                     SessionEventLog& log,
-                                     RoleTagId self,
-                                     RoleTagId peer) noexcept
-        : inner_{std::move(inner)}, log_{&log},
+    constexpr RecordingSessionHandle(
+        inner_type inner,
+        SessionEventLog& log,
+        RoleTagId self,
+        RoleTagId peer,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<Recv<T, R>,
+                            RecordingSessionHandle<Recv<T, R>, Resource, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, log_{&log},
           self_role_{self}, peer_role_{peer} {}
 
     constexpr RecordingSessionHandle(RecordingSessionHandle&&) noexcept = default;
@@ -284,7 +299,8 @@ public:
 
 template <typename... Branches, typename Resource, typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<Select<Branches...>, Resource, LoopCtx>
-    : public SessionHandleBase<Select<Branches...>>
+    : public SessionHandleBase<Select<Branches...>,
+                               RecordingSessionHandle<Select<Branches...>, Resource, LoopCtx>>
 {
     SessionHandle<Select<Branches...>, Resource, LoopCtx> inner_;
     SessionEventLog* log_      = nullptr;
@@ -298,11 +314,15 @@ public:
     using inner_type    = SessionHandle<Select<Branches...>, Resource, LoopCtx>;
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
-    constexpr RecordingSessionHandle(inner_type inner,
-                                     SessionEventLog& log,
-                                     RoleTagId self,
-                                     RoleTagId peer) noexcept
-        : inner_{std::move(inner)}, log_{&log},
+    constexpr RecordingSessionHandle(
+        inner_type inner,
+        SessionEventLog& log,
+        RoleTagId self,
+        RoleTagId peer,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<Select<Branches...>,
+                            RecordingSessionHandle<Select<Branches...>, Resource, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, log_{&log},
           self_role_{self}, peer_role_{peer} {}
 
     constexpr RecordingSessionHandle(RecordingSessionHandle&&) noexcept = default;
@@ -356,7 +376,8 @@ public:
 
 template <typename... Branches, typename Resource, typename LoopCtx>
 class [[nodiscard]] RecordingSessionHandle<Offer<Branches...>, Resource, LoopCtx>
-    : public SessionHandleBase<Offer<Branches...>>
+    : public SessionHandleBase<Offer<Branches...>,
+                               RecordingSessionHandle<Offer<Branches...>, Resource, LoopCtx>>
 {
     SessionHandle<Offer<Branches...>, Resource, LoopCtx> inner_;
     SessionEventLog* log_      = nullptr;
@@ -370,11 +391,15 @@ public:
     using inner_type    = SessionHandle<Offer<Branches...>, Resource, LoopCtx>;
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
-    constexpr RecordingSessionHandle(inner_type inner,
-                                     SessionEventLog& log,
-                                     RoleTagId self,
-                                     RoleTagId peer) noexcept
-        : inner_{std::move(inner)}, log_{&log},
+    constexpr RecordingSessionHandle(
+        inner_type inner,
+        SessionEventLog& log,
+        RoleTagId self,
+        RoleTagId peer,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<Offer<Branches...>,
+                            RecordingSessionHandle<Offer<Branches...>, Resource, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, log_{&log},
           self_role_{self}, peer_role_{peer} {}
 
     constexpr RecordingSessionHandle(RecordingSessionHandle&&) noexcept = default;
