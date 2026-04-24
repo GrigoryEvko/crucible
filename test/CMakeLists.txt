@@ -488,6 +488,16 @@ crucible_test(test_machine_session_bridge)
 # views, and the typed-metrics callback pattern from §16.
 crucible_test(test_session_view)
 
+# Rich subtype-rejection diagnostics (#380, SEPLOG-STRUCT-6).
+# subtype_rejection_reason_t<T, U> walks the protocol tree in
+# lockstep with is_subtype_sync but returns either SubtypeOk or a
+# tagged RejectionReason naming the FIRST failing inner pair.
+# Verifies per-rule reason tagging, deeply-nested bubble-up,
+# is_subtype_sync_diag_v / is_subtype_sync_v agreement, and the
+# protocol-evolution classify pattern that drives structured error
+# reports from the rejection tag.
+crucible_test(test_session_subtype_reason)
+
 function(crucible_neg_compile_test name expected_diag)
   # Build target that is NOT part of default build — only reachable
   # via the ctest harness below.

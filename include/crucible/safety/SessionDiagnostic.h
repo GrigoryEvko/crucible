@@ -383,6 +383,65 @@ struct SessionResource_NotPinned : tag_base {
         "deliberately want to opt out of the framework's check.";
 };
 
+// ─── Tags added by SessionSubtypeReason (#380) ──────────────────────
+//
+// Refine the catch-all SubtypeMismatch into specific failure classes
+// emitted by the subtype_rejection_reason metafunction.  Each tag
+// names a distinct STRUCTURAL cause for subtype rejection, letting
+// the diagnostic point AT THE FAILING INNER PAIR rather than at the
+// outermost typing context.
+
+struct ShapeMismatch_SendVsRecv : tag_base {
+    static constexpr std::string_view name = "ShapeMismatch_SendVsRecv";
+    static constexpr std::string_view description =
+        "A subtype check failed because the LHS combinator class is "
+        "Send and the RHS is Recv (or vice versa).  Send and Recv "
+        "are duals — neither is a subtype of the other — so any "
+        "rule that pairs them at the same protocol position is a "
+        "structural mismatch, not a refinement.";
+    static constexpr std::string_view remediation =
+        "Check that the two protocols agree on direction at every "
+        "position.  Common cause: one side declared from the "
+        "PRODUCER's perspective and the other from the CONSUMER's; "
+        "use dual_of_t<Proto> to compute the peer-side view.  If a "
+        "subtype refactor accidentally swapped Send for Recv at one "
+        "branch, this tag fires at the offending pair.";
+};
+
+struct ShapeMismatch_SelectVsOffer : tag_base {
+    static constexpr std::string_view name = "ShapeMismatch_SelectVsOffer";
+    static constexpr std::string_view description =
+        "A subtype check failed because the LHS combinator class is "
+        "Select (internal choice — we pick) and the RHS is Offer "
+        "(external choice — peer picks), or vice versa.  Select and "
+        "Offer are duals; pairing them at the same position is a "
+        "structural mismatch.";
+    static constexpr std::string_view remediation =
+        "Verify both protocols agree on whether the choice at this "
+        "position is INTERNAL (subtype's responsibility — Select) or "
+        "EXTERNAL (peer's responsibility — Offer).  Common cause: a "
+        "Refactor flipped the direction of choice without flipping "
+        "the dual side.";
+};
+
+struct BranchCount_Mismatch : tag_base {
+    static constexpr std::string_view name = "BranchCount_Mismatch";
+    static constexpr std::string_view description =
+        "A Select or Offer subtype check failed because the branch "
+        "counts violate Gay-Hole's positional rule.  Select<B1...Bn> "
+        "⩽ Select<C1...Cm> requires n ≤ m (subtype picks FEWER "
+        "options).  Offer<B1...Bn> ⩽ Offer<C1...Cm> requires n ≥ m "
+        "(subtype handles MORE options).";
+    static constexpr std::string_view remediation =
+        "For Select: ensure the subtype has FEWER OR EQUAL branches "
+        "than the supertype.  Adding branches to a Select widens the "
+        "type (the opposite direction of refinement); to refine, "
+        "REMOVE branches.  For Offer: ensure the subtype has MORE "
+        "OR EQUAL branches than the supertype.  Removing branches "
+        "from an Offer narrows the type (wrong direction); to refine, "
+        "ADD branches.";
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── is_diagnostic_class_v<T> ───────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -453,14 +512,15 @@ inline constexpr bool is_diagnostic_v = is_diagnostic<T>::value;
 // ── Catalog enumeration ────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Compile-time tuple of all 19 shipped tag types — useful for
+// Compile-time tuple of all 22 shipped tag types — useful for
 // reflection-based tooling, catalog printers, and diagnostic UIs.
 // First 11 entries are the original L11 vocabulary; positions 11-17
 // were added by the L11 retrofit (#388) to cover concrete user-
 // facing assertion paths in Session.h, SessionContext.h,
 // SessionQueue.h, SessionAssoc.h, and SessionGlobal.h.  Position 18
 // is the SessionResource pin-discipline tag added by integration
-// task #406.
+// task #406.  Positions 19-21 are the structural-mismatch refinements
+// added by the subtype_rejection_reason metafunction (#380).
 
 using Catalog = std::tuple<
     ProtocolViolation_Label,
@@ -481,7 +541,10 @@ using Catalog = std::tuple<
     Queue_Empty_Dequeue,
     Association_Domain_Mismatch,
     Merge_Branches_Diverge,
-    SessionResource_NotPinned>;
+    SessionResource_NotPinned,
+    ShapeMismatch_SendVsRecv,
+    ShapeMismatch_SelectVsOffer,
+    BranchCount_Mismatch>;
 
 inline constexpr std::size_t catalog_size =
     std::tuple_size_v<Catalog>;
@@ -593,19 +656,21 @@ static_assert(D2::name == "CrashBranch_Missing");
 
 // ─── Catalog ──────────────────────────────────────────────────────
 
-static_assert(catalog_size == 19);
-static_assert(std::tuple_size_v<Catalog> == 19);
+static_assert(catalog_size == 22);
+static_assert(std::tuple_size_v<Catalog> == 22);
 
 // Each catalog entry is a valid diagnostic class.
 static_assert(is_diagnostic_class_v<std::tuple_element_t<0,  Catalog>>);
 static_assert(is_diagnostic_class_v<std::tuple_element_t<5,  Catalog>>);
 static_assert(is_diagnostic_class_v<std::tuple_element_t<10, Catalog>>);
 static_assert(is_diagnostic_class_v<std::tuple_element_t<18, Catalog>>);
+static_assert(is_diagnostic_class_v<std::tuple_element_t<21, Catalog>>);
 
 // The catalog starts with ProtocolViolation_Label and ends with
-// SessionResource_NotPinned (ordering is deterministic).  The
-// original 11 L11 tags fill positions [0, 10]; the 7 retrofit tags
-// (#388) fill [11, 17]; the SessionResource tag (#406) fills 18.
+// BranchCount_Mismatch (ordering is deterministic).  The original 11
+// L11 tags fill positions [0, 10]; the 7 retrofit tags (#388) fill
+// [11, 17]; the SessionResource tag (#406) fills 18; the three
+// subtype-rejection-reason refinements (#380) fill 19-21.
 static_assert(std::is_same_v<
     std::tuple_element_t<0, Catalog>, ProtocolViolation_Label>);
 static_assert(std::is_same_v<
@@ -616,6 +681,12 @@ static_assert(std::is_same_v<
     std::tuple_element_t<17, Catalog>, Merge_Branches_Diverge>);
 static_assert(std::is_same_v<
     std::tuple_element_t<18, Catalog>, SessionResource_NotPinned>);
+static_assert(std::is_same_v<
+    std::tuple_element_t<19, Catalog>, ShapeMismatch_SendVsRecv>);
+static_assert(std::is_same_v<
+    std::tuple_element_t<20, Catalog>, ShapeMismatch_SelectVsOffer>);
+static_assert(std::is_same_v<
+    std::tuple_element_t<21, Catalog>, BranchCount_Mismatch>);
 
 // ─── Macro compile-test ───────────────────────────────────────────
 
