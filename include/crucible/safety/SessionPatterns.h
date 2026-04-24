@@ -246,6 +246,63 @@ struct fan_in_helper<0, Msg> {
     using type = End;
 };
 
+// ─── #375 SEPLOG-PERF-5: divide-and-conquer chain builders ────────
+//
+// The recursive `fan_{out,in}_helper` above has instantiation depth
+// proportional to N — each `fan_out_helper<N>` requires
+// `fan_out_helper<N - 1>` to be complete before the `Send<Msg, ...>`
+// wrap can be evaluated.  GCC's default `-ftemplate-depth=900` caps
+// the achievable N at roughly 1100; protocols that genuinely need
+// `FanOut<2000, Msg>` (large scatter-gather, per-shard broadcast,
+// MPST adapter codegen for 1000+ peers) hit a hard compile error.
+//
+// The accumulator-passing helpers below split N into halves at every
+// step.  For `chain_send_with_tail<N, Msg, Tail>`:
+//
+//   chain_send_with_tail<N, Msg, Tail>
+//     = chain_send_with_tail<N/2, Msg,
+//         chain_send_with_tail<N - N/2, Msg, Tail>::type>::type
+//
+// Total work is still O(N) (must produce N nested wrappers), but
+// instantiation DEPTH is O(log N).  At log₂(N) ≤ 900 the limit lifts
+// from N ≈ 1100 to N ≈ 2^900 — effectively unlimited.  Cost on small
+// N is unchanged: the base cases for N ∈ {0, 1} short-circuit
+// immediately, and the divide-and-conquer fan-out at N ≤ 4 is
+// equivalent in instantiation count to the linear form.
+//
+// Public-facing FanOut / FanIn aliases switch to these below.
+
+template <std::size_t N, typename Msg, typename Tail>
+struct chain_send_with_tail {
+    static constexpr std::size_t Half = N / 2;
+    static constexpr std::size_t Rest = N - Half;
+    // Build the right portion (Rest copies of Send wrapped around
+    // Tail), then build the left portion (Half copies) on top of
+    // the right's result.
+    using right = typename chain_send_with_tail<Rest, Msg, Tail>::type;
+    using type  = typename chain_send_with_tail<Half, Msg, right>::type;
+};
+
+template <typename Msg, typename Tail>
+struct chain_send_with_tail<0, Msg, Tail> { using type = Tail; };
+
+template <typename Msg, typename Tail>
+struct chain_send_with_tail<1, Msg, Tail> { using type = Send<Msg, Tail>; };
+
+template <std::size_t N, typename Msg, typename Tail>
+struct chain_recv_with_tail {
+    static constexpr std::size_t Half = N / 2;
+    static constexpr std::size_t Rest = N - Half;
+    using right = typename chain_recv_with_tail<Rest, Msg, Tail>::type;
+    using type  = typename chain_recv_with_tail<Half, Msg, right>::type;
+};
+
+template <typename Msg, typename Tail>
+struct chain_recv_with_tail<0, Msg, Tail> { using type = Tail; };
+
+template <typename Msg, typename Tail>
+struct chain_recv_with_tail<1, Msg, Tail> { using type = Recv<Msg, Tail>; };
+
 }  // namespace detail
 
 // N sequential sends of Msg — coordinator's local view of a 1-to-N
@@ -253,12 +310,17 @@ struct fan_in_helper<0, Msg> {
 // receiving a single Msg; we ship the coordinator's projection here
 // and the worker receives via RequestResponseOnce_Server<Msg, ...> or
 // similar per their own protocol obligation.
+//
+// Backed by the O(log N)-depth `chain_send_with_tail` divide-and-
+// conquer helper (#375 SEPLOG-PERF-5).  Reachable N is bounded by
+// 2^template-depth instead of template-depth, lifting the practical
+// cap from ~1100 to effectively unlimited.
 template <std::size_t N, typename Msg>
-using FanOut = typename detail::fan_out_helper<N, Msg>::type;
+using FanOut = typename detail::chain_send_with_tail<N, Msg, End>::type;
 
 // N sequential receives — collector's local view of an N-to-1 fan-in.
 template <std::size_t N, typename Msg>
-using FanIn = typename detail::fan_in_helper<N, Msg>::type;
+using FanIn = typename detail::chain_recv_with_tail<N, Msg, End>::type;
 
 // Broadcast is syntactically identical to FanOut.  The alias names
 // the intent: "I'm sending the same message to each of N peers" vs
@@ -567,6 +629,59 @@ static_assert(is_well_formed_v<FanOut<0, Job>>);
 static_assert(is_well_formed_v<FanOut<1, Job>>);
 static_assert(is_well_formed_v<FanOut<32, Job>>);
 static_assert(is_well_formed_v<FanIn<32, Job>>);
+
+// #375 SEPLOG-PERF-5: divide-and-conquer chain builders make N values
+// far above the previous ~1100 template-depth cap reachable.  These
+// asserts witness the lifted limit — under the original linear
+// `fan_{out,in}_helper` recursion, each of these would fire
+// "template instantiation depth exceeds maximum of 900" on GCC 16.
+//
+// Two-element-at-a-time expansion checks the recursion's correctness
+// at boundaries where Half == Rest (even N) and Half + 1 == Rest
+// (odd N).
+static_assert(std::is_same_v<
+    FanOut<2, Job>,
+    Send<Job, Send<Job, End>>>);
+static_assert(std::is_same_v<
+    FanOut<4, Job>,
+    Send<Job, Send<Job, Send<Job, Send<Job, End>>>>>);
+static_assert(std::is_same_v<
+    FanOut<5, Job>,
+    Send<Job, Send<Job, Send<Job, Send<Job, Send<Job, End>>>>>>);
+
+// Large-N witnesses: instantiating these forces O(log₂ N) chain-
+// construction depth = 11 (for 2048) ≪ 900-default template-depth
+// limit.  Under the previous linear `fan_{out,in}_helper` recursion
+// the chain construction itself fired "template instantiation depth
+// exceeds maximum of 900" at GCC-default settings around N ≈ 1100;
+// the divide-and-conquer helpers lift that ceiling to N ≈ 2^900.
+//
+// The witness uses a non-recursive HEAD pattern-match (instead of
+// `is_well_formed_v`, which walks the entire chain and would itself
+// hit the depth limit).  The chain's existence + matching head
+// shape proves the construction succeeded; tail correctness is
+// established by the small-N exact-match asserts above.
+namespace large_n_witness {
+template <typename T> struct head_is_send : std::false_type {};
+template <typename M, typename K>
+struct head_is_send<Send<M, K>> : std::true_type {};
+
+template <typename T> struct head_is_recv : std::false_type {};
+template <typename M, typename K>
+struct head_is_recv<Recv<M, K>> : std::true_type {};
+}  // namespace large_n_witness
+
+static_assert( large_n_witness::head_is_send<FanOut<2048, Job>>::value);
+static_assert( large_n_witness::head_is_recv<FanIn <2048, Job>>::value);
+static_assert( large_n_witness::head_is_send<FanOut<8192, Job>>::value);
+static_assert( large_n_witness::head_is_recv<FanIn <8192, Job>>::value);
+
+// Note: a `dual_of_t<FanOut<2048, Job>>` witness would be natural
+// here but would itself hit the template-depth limit — `dual_of` is
+// still linearly recursive (Session.h:268).  The small-N duality
+// asserts above (`dual_of_t<FanOut<3, Job>>` / `<FanOut<7, Job>>`)
+// prove the duality rule; lifting `dual_of` to divide-and-conquer
+// is a separate follow-up if any real use case materialises.
 
 // ─── ScatterGather ─────────────────────────────────────────────────
 
