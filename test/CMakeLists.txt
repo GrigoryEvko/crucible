@@ -843,6 +843,21 @@ crucible_neg_compile_test(neg_session_compose_at_branch_index
 crucible_neg_compile_test(neg_session_compose_at_branch_no_choice
     "Branch_Compose_No_Choice")
 
+# Variadic safe_add_all<T, Xs...> (#134) — partial-sum overflow.
+# Same [Checked_Capacity_Overflow] prefix as safe_add / safe_mul;
+# the helper detects overflow at each fold step, not just the final
+# result.
+crucible_neg_compile_test(neg_checked_add_all_overflow
+    "Checked_Capacity_Overflow")
+
+# ensure_bytes_fit<Budget, Used>() (#134) — budget exceeded.  Used
+# for compile-time verification of struct-of-arrays layouts,
+# cache-line-tight metadata, arena page footprints.  The named
+# [Byte_Budget_Exceeded] diagnostic lists common causes so the
+# developer doesn't have to re-derive them.
+crucible_neg_compile_test(neg_checked_bytes_fit_exceeded
+    "Byte_Budget_Exceeded")
+
 # Crash-walker deep-tree rejection (#368).
 #
 # [FRAMEWORK-CONTROLLED] assert_every_offer_has_crash_branch_for
