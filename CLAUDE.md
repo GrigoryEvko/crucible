@@ -9,32 +9,44 @@ Python describes. Crucible executes. The 492,000 lines of framework overhead bet
 
 | Name | Role | Description |
 |------|------|-------------|
-| **F\*X** | Foundation | Fork of F\* — 10× more powerful. Proved allocators, SMT-optimal kernel synthesis, fusion engine. Extracts to hardware-optimized C++/CUDA. Every kernel proved optimal. Every allocator proved correct. The runtime is a theorem. |
+| **Safety** | Foundation | The structural guarantee layer: 8 axioms (Init/Type/Null/Mem/Borrow/Thread/Leak/DetSafe), contracts (P2900), reflection (P2996), `safety/*.h` wrappers (Linear, Refined, Tagged, Secret, Permission, Session, ScopedView, Machine, Monotonic, AppendOnly, ConstantTime, WriteOnceNonNull, FinalBy/NotInherited), session-type stack, CSL permissions. Every higher layer inherits correctness from these primitives. |
 | **Relay** | Body | Compute node inhabited by a Crucible daemon. Mortal. Replaceable. |
 | **Keeper** | Spirit | Per-Relay daemon — self-healing, self-updating, autonomous. `crucible-keeper.service` starts at boot, discovers peers, joins mesh. Executes Augur's advice. |
 | **Vigil** | Intellect | The model: DAG, weights, learned knowledge. Named for the Prothean AI. Never sleeps. |
-| **Cipher** | Soul | Persistent state — DAG chain, weight snapshots, KernelCache, RNG state, proof certificates. Event-sourced. Survives death, reincarnates on new hardware. |
+| **Cipher** | Soul | Persistent state — DAG chain, weight snapshots, KernelCache (three-level: L1 IR002 vendor-neutral / L2 IR003\* per-vendor-family / L3 compiled bytes per-chip), RNG state, MAP-Elites archives, calibration data, recipe registry snapshots. Event-sourced. Survives death, reincarnates on new hardware. |
 | **Canopy** | Collective | Mesh of Keepers — distributed awareness, gossip, consensus, self-healing. No master node. |
 | **Vessel** | Interface | PyTorch — the 2,000+ ATen operators Crucible intercepts via the Dispatcher. |
-| **Meridian** | Map | Startup calibration. Measured hardware truth. SMT-optimal topology, parallelism, communication, placement. Re-solves on topology change. |
+| **Meridian** | Map | Startup calibration. Measured hardware truth. Z3 joint 5D partition search (topology, parallelism, communication, placement) over calibrated `CollectiveBenchmarks` + `TopologyMatrix`. Re-solves on topology change. |
 | **Augur** | Sight | Continuous prediction, monitoring, model intelligence. Digital twin. Loss landscape analysis. Convergence bounds. Scaling laws. Bottleneck diagnosis. Recommendations engine. |
 | **Crucible** | Whole | The organism. Everything together. |
 
 ---
 
-## L0 — F\*X
+## L0 — Safety Foundation
 
-**The proved foundation. Every claim carries a certificate.**
+**The structural guarantee layer. Every higher layer inherits correctness from these primitives.**
 
-Fork of F\* proof assistant — 10× more powerful. F\*X is the source of truth: write, prove, extract to hardware-optimized C++/CUDA. The runtime is a theorem. No autotuning — SMT-optimal kernel synthesis for every (op, shape, device). Proved allocators. Proved fusion. Proof certificates persist in the Cipher and survive reincarnation.
+Crucible has no proof-assistant source of truth. Correctness is won by three complementary disciplines: **contracts-enforced invariants** (P2900R14), **linear / refined / session-typed wrappers** over every resource, and **measurement** (Mimic MAP-Elites + calibrated simulators + cross-vendor CI — §L2, §L15). No SMT-proven optimal kernels; no proved-allocators-theorem. What we have instead:
 
-**SMT kernel engine:** hardware spec = axioms, kernel config = variables, cost function = objective. For any shape on any device, F\*X finds THE optimal kernel configuration. One SMT query. Global optimum. Proved safe: no OOB, no bank conflicts, coalesced access, no register spill. CUTLASS tries 500 configs via benchmarking. Triton tries 50. F\*X solves the exact constraint system.
+**Eight safety axioms.** InitSafe, TypeSafe, NullSafe, MemSafe, BorrowSafe, ThreadSafe, LeakSafe, DetSafe. Every struct, every function, every edit audits all eight. Contracts (`pre`/`post`/`contract_assert`), erroneous behavior for uninit reads (P2795R5), reflection-driven hashing (P2996), strong IDs, `std::bit_cast`, saturation arithmetic. Detail catalog in §II of the Code Guide below.
 
-**Proved allocators:** jemalloc-like CPU allocator with size classes and thread-local caches — proved disjointness, bounded fragmentation. CUDA pool allocator with static plans — proved non-overlap, proved OOM-impossible. Arena bump-pointer — proved alignment and no UAF.
+**Safety wrappers** in `include/crucible/safety/`:
+- `Linear<T>` — move-only exclusive-ownership; compile-time double-consume detection.
+- `Refined<Pred, T>` — predicate checked at construction, trusted downstream via `[[assume]]`.
+- `Tagged<T, Source>` — phantom tag for provenance / trust boundary; mismatched sources fail to compile.
+- `Secret<T>` — classified-by-default; escapes only through named `secret_policy::*` declassification tags.
+- `Permission<Tag>` + `SharedPermission` + `permission_fork` — CSL permissions encoding Concurrent Separation Logic as zero-cost types (THREADING.md).
+- `Session<Proto>` — type-state binary and MPST session types (Honda 1998 / HYC 2008 / Gay-Hole 2005 / BSYZ22 crash-stop); compile-time protocol safety, deadlock freedom, dual-end duality.
+- `ScopedView<...>` — lifetime-bounded borrow for non-consuming inspection.
+- `Machine<States>` — type-indexed state machines; illegal transitions are compile errors.
+- `Monotonic<T>`, `AppendOnly<T>`, `WriteOnceNonNull<T*>`, `FinalBy<T>/NotInherited<T>` — structural invariants as types.
+- `ConstantTime<T>` — branch-free primitives for crypto paths and Cipher key handling.
 
-**Proved fusion engine:** fusion legality + fused kernel config as joint SMT problem. Intermediates proved to stay in registers/smem. The fused kernel is proved optimal for the composite computation.
+**Soundness via measurement, not proof.** Numerical correctness lives in the cross-vendor CI matrix (MIMIC.md §41): every IR002 kernel × recipe × backend runs on real silicon, outputs are compared pairwise against a CPU scalar-FMA oracle, tolerance enforced per the recipe's declared `ReductionDeterminism` tier (UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT). A backend that violates tolerance fails the build.
 
-**Extraction pipeline:** F\*X → C++26 (hot paths), F\*X → CUDA/HIP (kernel bodies). Every extraction preserves proved properties. Compile with Clang 22 / NVCC / hipcc.
+**Optional SMT tier (Z3, not F\*X).** The `verify` CMake preset runs Z3 over contract-annotated boundary code to discharge residual integer / Presburger obligations — the same scope TVM Analyzer uses (PR #1367): bounds, divisibility, modular arithmetic. Default timeout 5 ms per query; not on the hot path. Out of scope: kernel-optimality proofs, floating-point reasoning, cost-model decidability. Those are measurement problems.
+
+**Effect tokens.** `fx::Alloc / fx::IO / fx::Block / fx::Bg / fx::Init / fx::Test` in `Effects.h` — capability tags on function signatures, zero runtime cost. These are NOT F\*X proof obligations; they are C++-level capabilities enforced at compile time.
 
 ---
 
@@ -44,23 +56,25 @@ Fork of F\* proof assistant — 10× more powerful. F\*X is the source of truth:
 
 GPUs are ecosystems: tensor cores (1000 TFLOPS FP16 on H100), scalar ALUs (60 TFLOPS), four-level memory hierarchy (registers → shared memory → L2 → HBM), power envelopes. Gap between theoretical peak and achieved: 40-70%.
 
-**Multi-vendor:** NVIDIA (sm_86/89/90/100), AMD (gfx1100/942), Intel XMX, Apple AMX, Google TPU MXU. Same computation described once in the Merkle DAG; different F\*X-compiled kernels per (content_hash, device_capability).
+**Multi-vendor:** NVIDIA (sm_86/89/90/100), AMD (gfx1100/942), Intel XMX, Apple AMX, Google TPU MXU. Same computation described once in the Merkle DAG; different Mimic-compiled native-ISA kernels per (content_hash, device_capability). See MIMIC.md for per-vendor backends.
 
 **Power management:** NVML exposes clocks, power, temperature, ECC errors. Memory-bound phases don't need full core clock — drop 30% for zero perf loss, significant savings.
 
-**Health monitoring → Keeper:** ECC error trends, thermal throttling, clock degradation feed into the Keeper. A failing GPU gets load-reduced, data pre-replicated to healthy Relays (L13 Distribution, RAID). State is already replicated before failure completes. New hardware → fresh Keeper discovers mesh and Cipher → F\*X computes optimal kernels for new device → reshards for new topology → resumes exactly.
+**Health monitoring → Keeper:** ECC error trends, thermal throttling, clock degradation feed into the Keeper. A failing GPU gets load-reduced, data pre-replicated to healthy Relays (L13 Distribution, RAID). State is already replicated before failure completes. New hardware → fresh Keeper discovers mesh and Cipher → Mimic re-runs MAP-Elites (warm-started from the nearest-family archive in Cipher) for the new device → reshards for new topology → resumes exactly.
 
 ---
 
 ## L2 — Kernels
 
-**SMT-optimal computation. Proved for every shape, every device.**
+**Calibrated-optimal computation. Measured, not proved.**
 
 Current frameworks: static lookup (op + dtype → library kernel). Same kernel for 64×64 and 8192×8192, A100 and 3090, contiguous and transposed. No adaptation.
 
-**Crucible generates kernels from C++ CUDA templates** parameterized by: tile size M/N/K, vectorization width, shared memory allocation, unrolling factor, precision (fp32/fp16/bf16/tf32/int8), access pattern. NVRTC compiles at runtime for exact shapes and hardware. For AMD: hipRTC with wavefront-adapted templates (64-wide vs 32-wide warps).
+**Forge + Mimic replace the vendor stack.** `Forge` (vendor-agnostic optimizer, FORGE.md) lowers IR001 tensor DAG to IR002 portable kernel DAG with pinned `NumericalRecipe` — same IR002 kernel produces ULP-bounded-equivalent or bit-exact results on every supported chip. `Mimic` (per-vendor backend, MIMIC.md) emits native ISA from IR002: `mimic/nv/` (Hopper/Blackwell SASS), `mimic/am/` (CDNA3+/RDNA3+ AMDGPU), `mimic/tpu/` (TPU executable), `mimic/trn/` (NEFF), `mimic/cpu/` (reference oracle). No vendor libraries: zero cuBLAS, zero cuDNN, zero NCCL, zero libtpu — only kernel-driver ioctls.
 
-**F\*X SMT kernel engine** replaces autotuning entirely. Hardware spec = SMT axioms, kernel config = SMT variables, cost function = SMT objective. For any (op, shape, device): one query, global optimum. Proved safe: no OOB, no bank conflicts, coalesced access, no register spill. CUPTI validates predictions post-hoc; corrections feed back into Meridian calibration.
+**MAP-Elites kernel search** replaces autotuning. Six behavior axes (occupancy, register usage, smem usage, pipeline depth, MMA shape family, warp-group split) × 8 buckets each = ~260K cells, typically 500-5K populated per kernel family. Per-vendor three-tier simulator (fast ~1-5 ms / medium ~10-30 ms / accurate ~100-500 ms) calibrated to 95-98% against real silicon via hardware-counter probes (CUPTI / rocprof / PJRT profiler / neuron-profile). Insight-driven mutations — structured diagnostics (WGMMA_UNDERUTILIZED, REGISTER_PRESSURE_HIGH, L2_QUEUE_SATURATED, ~40 kinds) map to concrete mutation operators. Hybrid mode validates top-K archive cells on real hardware.
+
+**Cross-vendor numerics CI (MIMIC.md §41)** enforces the portability contract. Every (KernelKind × NumericalRecipe × target) triple compiled, executed, output-compared pairwise against CPU scalar-FMA oracle. `BITEXACT_STRICT` → 0 bytes diff; `BITEXACT_TC` → ≤1 ULP; `ORDERED` → per-recipe tolerance. A backend that violates tolerance fails the build.
 
 **KernelCache:** maps (content_hash, device_capability) → CompiledKernel. Content-addressing: identical ops on identical shapes produce identical hashes. Reuse across iterations, runs, models sharing sub-computations, even organizations. Multiple variants coexist per hash; best selected per device, alternatives benchmarked during dead time. Cache grows monotonically across restarts. Lock-free open-addressing hash table — zero overhead on hot path.
 
@@ -398,12 +412,12 @@ Meridian = startup calibration (5-15s). Augur = continuous per-iteration monitor
 **Meridian (startup):**
 - GPU profiling: GEMM→actual TFLOPS, streaming copy→HBM/PCIe BW, NVML→power/temp/ECC/memory
 - Network probing: N×N latency/bandwidth matrix, topology detection
-- F\*X computes optimal kernel configs for measured hardware (SMT, not benchmarking)
-- F\*X solves topology: TP×DP×PP factorization, placement, communication algorithms — all jointly
+- Per-vendor calibration microbenchmarks populate `TargetCaps` + `OpcodeLatencyTable`; Mimic's MAP-Elites search warm-starts from Cipher-persisted archives for the measured hardware
+- Z3 joint 5D partition search (FORGE.md §25.6): TP×DP×PP×EP×CP factorization + schedule + bucket size, minimizing predicted step time from `CollectiveBenchmarks` + `mimic::fast_cost`
 - Output: complete device-specific kernel set + MeridianConfig. Re-probes on topology change.
 
 **Augur (continuous):**
-- Digital twin: DAG + F\*X kernel predictions + Meridian corrections → iteration prediction (±5-10%)
+- Digital twin: DAG + Mimic kernel predictions + Meridian corrections → iteration prediction (±5-10%)
 - Per-kernel bottleneck classification: COMPUTE/MEMORY_BW/COMMUNICATION/BUBBLE/IMBALANCE
 - Predicted vs actual monitoring. >10% drift → diagnose → trigger Meridian recalibration
 - Recommendations ranked by expected_speedup × confidence, tagged auto-hot/auto-cold/manual
@@ -423,7 +437,7 @@ Meridian = startup calibration (5-15s). Augur = continuous per-iteration monitor
 
 **Model marketplace:** content-addressed DAG fragments + KernelCache + verified quality metrics. Download, splice, verify, commit. Architectures from best-in-class components discovered ecosystem-wide.
 
-**Hardware co-design:** aggregated KernelCache reveals real workload patterns (shape distributions, sparsity patterns, bottleneck frequencies). Feed to hardware designers → next-gen silicon optimized for actual workloads → F\*X re-solves optimal kernels for new silicon → new data → co-evolution.
+**Hardware co-design:** aggregated KernelCache reveals real workload patterns (shape distributions, sparsity patterns, bottleneck frequencies). Feed to hardware designers → next-gen silicon optimized for actual workloads → per-vendor Mimic backend recalibrates + re-runs MAP-Elites for the new silicon → new data → co-evolution.
 
 **What Crucible is not:** not intelligent, not AGI. A matmul is a matmul. It observes, compiles, adapts, distributes, heals, persists, evolves — mechanically, from measurements. The model determines the quality ceiling. Crucible removes infrastructure overhead so the model can reach its potential.
 
@@ -435,54 +449,68 @@ Meridian = startup calibration (5-15s). Augur = continuous per-iteration monitor
 
 L4 Operations: TraceRing SPSC, MetaLog, recording pipeline. L6 Graphs: TraceGraph CSR. L7 Merkle DAG: RegionNode, BranchNode, content/merkle hashing. L3 Memory: MemoryPlan sweep-line, PoolAllocator. L4/L7 Compiled Tier 1: ReplayEngine, CrucibleContext, dispatch_op, divergence recovery. L2 Kernels: CKernel 146-op taxonomy. L14: Serialize/Deserialize, Cipher. L6 Graph IR: Graph.h, ExprPool, SymbolTable. L0 partial: Effects.h (fx::Alloc/IO/Block), Reflect.h (reflect_hash, reflect_print). Vessel: PyTorch adapter.
 
-**Phase 2: F\*X Core (NEXT)**
+**Phase 2a: Safety Foundation (IN FLIGHT)**
 
-Goal: F\*X foundation — proved allocators, SMT kernel engine, extraction pipeline.
+Goal: complete the L0 structural-guarantee layer — axioms, safety wrappers, session types, CSL permissions.
 
-- **SMT kernel engine:** Hardware spec → SMT axioms. Kernel config → SMT variables. Cost function → SMT objective. For any (op, shape, device): F\*X finds THE optimal kernel config. Proved optimal. Proved safe (no OOB, no bank conflicts, coalesced access). Fusion as joint SMT: producer+consumer configs solved simultaneously, intermediates proved to stay in registers/smem. Per-device kernel compilation: Meridian measures hardware, F\*X computes optimal kernels, compiles them.
-- **Proved allocators:** CPU: jemalloc-like with size classes, thread-local caches, proved disjointness and bounded fragmentation. CUDA: pool allocator with static plans, proved non-overlap, proved OOM-impossible. Arena: bump-pointer for DAG metadata, proved alignment and no UAF via lifetime tracking.
-- **Extraction:** F\*X → C++26 (hot paths, zero-overhead). F\*X → CUDA/HIP (kernel bodies, proved properties). Proof certificates: build manifest with cryptographic hash of all proved theorems.
+- **Safety wrappers** in `include/crucible/safety/` — Linear, Refined, Tagged, Secret, Permission, Session, ScopedView, Machine, Monotonic, AppendOnly, WriteOnceNonNull, FinalBy/NotInherited, ConstantTime. Zero runtime cost (`sizeof(Wrapper<T>) == sizeof(T)` under `-O3`).
+- **Session-type stack** (12-layer binary + MPST at `safety/Session*.h`): Honda 1998 binary, HYC 2008 MPST, Gay-Hole 2005 subtyping, SY19 parametric φ, GPPSY23 precise async, BSYZ22/BHYZ23 crash-stop, HYK24 association, PMY25 top-down async. ~8/12 milestones shipped (~8,400 lines, 102 tests green); remaining: L7 φ predicates, L9 CSL × session, async ⩽_a, full merging.
+- **CSL permissions** (THREADING.md) — `Permission<Tag>`, `SharedPermission` + pool, `permission_fork` (CSL parallel rule as RAII fork-join), cache-tier cost model (L1/L2 → sequential, L3/DRAM → parallel).
+- **Production refactors**: Vigil → Machine + Session, TraceRing → PermissionedSpscChannel, KernelCache → SwmrSession + ContentAddressed, Cipher tiers → Delegate + Tagged, CNTP layers → Session over Session. ~70 tracked tasks in the backlog.
+- **Lean proofs** (Phase 5 of safety-integration plan): PermissionFlow, AssociationPreservation, StreamSessionLifetime, CrashFlow, SecretFlow. `lean/Crucible/` already has 36 modules / 1,312 theorems / zero sorry covering L0-L17.
+- **`verify` preset (Z3)** for residual integer-arithmetic proof obligations only — scope matches TVM Analyzer PR #1367: bounds, divisibility, modular. Not a kernel-optimality engine.
+
+**Phase 2b: Forge + Mimic Core (IN PARALLEL)**
+
+Goal: vendor-agnostic optimizer + per-vendor backend framework per FORGE.md / MIMIC.md. No dependency on 2a; the two phases proceed in parallel.
+
+- **IR002 scaffolding** (FORGE.md §18): `KernelGraph`, `KernelNode`, `NumericalRecipe` (interned), `TileSpec`, per-kind attrs pools, `ExecutionPlan`, PatchPoint taxonomy (8 kinds), ChainEdge semaphore pool.
+- **Recipe registry** (FORGE.md §20) — `crucible/data/recipes.json` with four-tier determinism per recipe (UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT), `native_on` bitmap per chip, `tc_shape_constraint` for BITEXACT_TC recipes.
+- **Forge 12-phase pipeline** (FORGE.md §5): INGEST → ANALYZE → REWRITE → FUSE → LOWER_TO_KERNELS → TILE → MEMPLAN → COMPILE → SCHEDULE → EMIT → DISTRIBUTE → VALIDATE. Hard wall-clock budgets per phase.
+- **Mimic CPU reference backend first** (correctness oracle): x86_64 AVX512 / aarch64 NEON, scalar-FMA BITEXACT_STRICT always, every higher-tier recipe validated pairwise against CPU output.
+- **Mimic NVIDIA backend** (M2-M9 of MIMIC.md build plan): IR003NV + SASS emitter + three-tier simulator + MAP-Elites + CUPTI calibration harness + runtime library (direct `/dev/nvidia*` ioctls, no libcuda) + collective library (CNTP, no NCCL).
+- **Mimic AMD / TPU / Trainium backends** follow the same template (one self-contained subsystem per vendor).
 
 **Phase 3: Meridian+Augur**
 
-Goal: Hardware calibration + continuous monitoring as one operational intelligence layer.
+Goal: hardware calibration + continuous monitoring as one operational intelligence layer.
 
-- GPU profiling + network probing at startup. F\*X computes optimal topology + kernel set.
-- Digital twin: DAG + F\*X kernel predictions + calibration corrections → iteration prediction.
-- Continuous monitoring, bottleneck diagnosis, recommendations engine.
+- GPU profiling + network probing at startup. Z3 joint 5D partition search (FORGE.md §25.6) picks topology from calibrated `CollectiveBenchmarks` + `mimic::fast_cost`.
+- Digital twin: DAG + Mimic kernel predictions + calibration corrections → iteration prediction (±5-10%).
+- Continuous monitoring, bottleneck diagnosis, recommendations engine. Augur drift detection triggers per-vendor Mimic recalibration when P95 residual > 10% for 100+ samples.
 - Model intelligence: Hessian spectrum, gradient health, effective rank, CKA, scaling laws.
 
 **Phase 4: Compiled Tier 2-3**
 
-Goal: Shadow handles (~2ns/op) and CUDA Graph replay (~50ns/iteration).
+Goal: shadow handles (~2ns/op) and pushbuffer replay (~80-120ns warm submission per CRUCIBLE.md §14.7).
 
 - Shadow handles: ConductorTensorImpl with metadata pointing into PoolAllocator.
-- Batched kernel launch: accumulate F\*X-proved-optimal kernels, one stream submission.
-- CUDA Graph capture: record compiled kernels, replay at ~50ns/iteration.
+- Batched kernel launch: accumulate MAP-Elites-selected kernels, one doorbell write per ExecutionPlan.
+- Pushbuffer + PatchPoint + ChainEdge replay: plan composition per CRUCIBLE.md §11.9 and FORGE.md §J.6.
 
 **Phase 5: Keeper + Canopy + Cipher**
 
-Goal: Distributed, self-healing, persistent, proof-carrying.
+Goal: distributed, self-healing, persistent, cross-run-shareable.
 
 - Keeper daemon: systemd service, health monitoring, self-updating. Executes Augur's advice.
-- Canopy mesh: gossip protocol, Raft consensus, peer discovery. No master.
-- Cipher: hot tier (RAID redundancy), warm tier (NVMe), cold tier (S3/GCS). Event-sourced.
-- Proof certificates in Cipher survive reincarnation. Hardware-specific proofs re-computed by F\*X on new hardware.
+- Canopy mesh: SWIM gossip + Raft-scoped consensus, peer discovery. No master.
+- Cipher: hot tier (RAID redundancy), warm tier (NVMe), cold tier (S3/GCS). Event-sourced. Three-level KernelCache: L1 IR002 snapshot federation-shareable cross-vendor; L2 IR003\* snapshot cross-chip within vendor family; L3 compiled bytes per-chip.
+- TrainingCheckpoints (weights, optimizer, data cursor, seed, step_idx, fleet UUIDs at checkpoint) survive reincarnation. Hardware-specific kernels recompiled by Mimic on new hardware using the warm-started Cipher archive.
 
 **Phase 6: L8-L12 Intelligence**
 
-Goal: Model-aware optimizations, guided by Augur, verified by F\*X.
+Goal: model-aware optimizations, guided by Augur, validated by cross-vendor CI.
 
 - L8: Token merging, early exit, adaptive patching.
 - L9: Attention head classification, local losses, per-layer gradient strategy.
 - L10: Layer growing/pruning, width mutation, architecture evolution.
 - L11: Meta-gradients, per-layer LR from curvature, optimizer evolution.
 - L12: Curriculum learning, manifold mixup, pipeline absorption.
-- All optimizations are DAG branches (L7). F\*X proves new branches safe. Augur predicts improvement. The Keeper activates via atomic swap only if both F\*X approves (proved safe) and Augur approves (predicted improvement > threshold).
+- All optimizations are DAG branches (L7). Forge Phase L + Augur measure improvement; the Keeper activates via atomic swap only if (a) the branch compiles cleanly through Forge + Mimic, (b) cross-vendor CI tolerance holds for the branch's recipe tier, and (c) Augur's predicted improvement > threshold.
 
 ---
 
-F\*X proves everything. Meridian measures truth. Augur monitors reality. The Keeper acts on proved-optimal decisions. The Vigil thinks within proved-safe infrastructure. The Cipher remembers everything, including the proofs. When the last Relay dies, the Cipher carries not just the model, but the certificates — ready to prove itself correct on whatever hardware comes next.
+Contracts discipline the code. Safety wrappers carry invariants in the type system. Measurement — MAP-Elites + calibrated simulators + cross-vendor CI — replaces proof as the correctness-witnessing mechanism. Meridian maps hardware. Augur monitors reality. The Keeper acts on calibrated-optimal decisions. The Vigil thinks within typed-safe infrastructure. The Cipher remembers — the compiled kernels, the MAP-Elites archives, the calibration data, the TrainingCheckpoints. When the last Relay dies, the Cipher carries the model and everything needed to re-materialize it on whatever silicon comes next.
 
 ---
 
@@ -504,14 +532,14 @@ L7   Merkle DAG       specification, branches, guards, LoopNodes, atomic swaps
 L6   Graphs           CSR property graph, DFG/alias edges, deterministic order
 L5   Tensors          shadow handles, TensorMeta, latent space observation, provenance
 L4   Operations       Vessel dispatch interception, recording, event sourcing, divergence
-L3   Memory           proved allocators (jemalloc CPU, CUDA pool), static plans, OOM impossible
-L2   Kernels          SMT-optimal kernel composition, proved fusion, KernelCache, Philox, streams
+L3   Memory           tested allocators (jemalloc CPU, CUDA pool), static plans, OOM structurally impossible
+L2   Kernels          Forge+Mimic MAP-Elites search, calibrated simulators, cross-vendor CI, KernelCache, Philox
 L1   Hardware         Relays, hardware profiling, multi-vendor, health → Keeper
 ─────────────────────────────────────────────────────────────────────────────
-L0   F*X              proved foundation: SMT kernel synthesis, extraction to C++/CUDA
+L0   Safety           8 axioms + contracts + CSL permissions + session types + safety/*.h wrappers
 ```
 
-F\*X proves. Meridian maps. Augur sees. Vessel intercepts. Keeper serves. Vigil thinks. Cipher remembers. Canopy protects. Relay executes.
+Safety disciplines the code. Meridian maps. Augur sees. Vessel intercepts. Keeper serves. Vigil thinks. Cipher remembers. Canopy protects. Relay executes.
 
 
 

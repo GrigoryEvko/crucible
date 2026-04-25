@@ -649,6 +649,67 @@ static void test_constant_time() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// NotInherited / FinalBy  (task #148)
+// ═══════════════════════════════════════════════════════════════════
+
+// Concept-witness tests.  static_asserts are compile-time; the function
+// body exists only to give the runtime loop a spot to sanity-check that
+// the positive cases also instantiate cleanly.
+namespace not_inherited_test {
+struct Plain {};
+struct Sealed final {};
+
+static_assert(!NotInherited<Plain>,
+              "NotInherited<Plain> must be false — Plain is not final");
+static_assert(NotInherited<Sealed>,
+              "NotInherited<Sealed> must be true — Sealed is final");
+
+// assert_not_inherited<T>() must be invocable from a consteval context
+// when T is final; the static_assert inside is the documentation hook.
+consteval bool prove_sealed() {
+    assert_not_inherited<Sealed>();
+    return true;
+}
+static_assert(prove_sealed());
+
+// FinalBy — a type that uses FinalBy is not directly `final` (so the
+// NotInherited concept doesn't automatically hold on it) but IS
+// non-inheritable by the subclass-rejection mechanism.  Both
+// properties are important and tested separately.
+class Shielded : public virtual FinalBy<Shielded> {
+public:
+    Shielded() = default;
+    int value  = 7;
+};
+
+// FinalBy itself is an empty class.  (Virtual inheritance adds a
+// vbase pointer in Derived, but the BASE contributes zero bytes.)
+static_assert(sizeof(FinalBy<Shielded>) == sizeof(char),
+              "FinalBy<T> must be empty so the base contributes zero bytes");
+static_assert(std::is_empty_v<FinalBy<Shielded>>,
+              "FinalBy<T> must be std::is_empty_v");
+
+// Shielded itself instantiates normally.
+static_assert(std::is_default_constructible_v<Shielded>,
+              "Shielded must be default-constructible via its own (friend) ctor");
+}  // namespace not_inherited_test
+
+static void test_not_inherited() {
+    using namespace not_inherited_test;
+    Shielded s;
+    assert(s.value == 7);
+
+    // The concept witnesses fire at compile time; printing them
+    // confirms the function linked and the types instantiated.
+    constexpr bool plain_is_not_final  = !NotInherited<Plain>;
+    constexpr bool sealed_is_final     = NotInherited<Sealed>;
+    (void)plain_is_not_final;
+    (void)sealed_is_final;
+
+    std::printf("  NotInherited:   ok\n");
+}
+
+// ═══════════════════════════════════════════════════════════════════
 
 int main() {
     std::printf("Safety wrappers smoke test:\n");
@@ -663,6 +724,7 @@ int main() {
     test_file_handle();
     test_constant_time();
     test_assertion_triad();
+    test_not_inherited();
     std::printf("All safety wrappers compile and pass smoke test.\n");
     return 0;
 }
