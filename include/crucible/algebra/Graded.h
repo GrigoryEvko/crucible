@@ -8,45 +8,57 @@
 // Stale, Budgeted, TimeOrdered, SealedRefined) folds into a
 // `Graded<M, L, T>` instantiation under this template.
 //
-//   Axiom coverage: every axiom is INHERITED from the wrapped T plus
-//                   the lattice's structural witnesses.  Linearity
-//                   comes from QttSemiring (grade 1); predicate
-//                   refinement from BoolLattice; classification from
-//                   ConfLattice; trust provenance from TrustLattice;
-//                   etc.  The Graded class adds no axiom obligations
-//                   of its own — it composes them.
-//   Runtime cost:   zero.  `[[no_unique_address]]` on inner_ plus
-//                   empty-class optimization on the lattice's element
-//                   type collapses sizeof(Graded<M, L, T>) ==
-//                   sizeof(T) when both T and LatticeElement<L> are
-//                   empty (e.g. Linear<Tag>); equals sizeof(T) for
-//                   non-empty T with empty lattice (Linear<int>);
-//                   equals sizeof(T) + sizeof(LatticeElement<L>) when
-//                   both carry runtime state.  Verified codebase-wide
-//                   by ALGEBRA-15 (#460) under -O3.
+//   Axiom coverage: every axiom inherits from the wrapped T plus the
+//                   lattice's structural witnesses.  Linearity comes
+//                   from QttSemiring (grade 1); predicate refinement
+//                   from BoolLattice; classification from ConfLattice;
+//                   trust provenance from TrustLattice; etc.  The
+//                   Graded class adds no axiom obligations of its own
+//                   — it composes them.
+//   Runtime cost:   zero when both T AND LatticeElement<L> are empty
+//                   types (e.g. Linear<Tag> with QTT::At<1> grade).
+//                   sizeof(T) when T is non-empty and grade is empty
+//                   (e.g. Linear<int>).  sizeof(T) +
+//                   sizeof(LatticeElement<L>) when both carry runtime
+//                   state (e.g. SharedPermission<Tag> with rational
+//                   grade).  Both fields use [[no_unique_address]] so
+//                   the runtime cost matches the underlying primitives
+//                   exactly.  Verified codebase-wide by ALGEBRA-15
+//                   (#460) under -O3.
 //
-// STATUS: stub.  Class type is COMPLETE so that the MIGRATE-1..11
-// alias declarations under safety/ compile NOW.  Operation bodies
-// land in ALGEBRA-3 (#448); the declarations below are
-// `= delete("...")` so any call site fails to compile with the
-// implementation-task pointer.  This shape is deliberate:
+// Design — type-level vs runtime grade:
 //
-//   - alias declarations work today
-//     (`using Linear<T> = Graded<Absolute, QTT::At<1>, T>;`)
-//   - per-axiom static_asserts verify layout NOW
-//     (`static_assert(sizeof(Linear<int>) == sizeof(int))`)
-//   - any user that tries to call an operation gets the precise
-//     pointer to the implementation task in the diagnostic
-//   - migration-verification harness MIGRATE-12 (#472) only needs
-//     to swap deleted bodies for real ones; no API redesign
+//   For STATIC-grade lattices (QttSemiring::At<1>, BoolLattice<Pred>,
+//   ConfLattice's two-point lattice), the LatticeElement is an empty
+//   class (e.g. `std::integral_constant<int, 1>`), grade_ collapses
+//   to zero bytes via EBO, and the grade is encoded entirely at the
+//   type level via the lattice template parameter L itself.
 //
-// Operations to land per ALGEBRA-3 (#448):
-//   mk<r>(T)           — construct at lattice element r
-//   extract()          — counit (Comonad form); returns T
-//   inject(T)          — relative-monad unit (RelativeMonad form)
-//   weaken<s>()        — lattice ⊑-monotone widening
-//   compose<s>(other)  — joins two graded values via L::join
-//   join_R<s>()        — collapses Graded<Graded<…>> to Graded<⊕>
+//   For DYNAMIC-grade lattices (FractionalLattice with rational
+//   shares, StalenessSemiring with ℕ ∪ ∞ values), LatticeElement is
+//   a runtime-sized type, grade_ stores the per-instance grade, and
+//   `weaken` / `compose` operate on it at runtime.
+//
+//   Both shapes share the same source — ALGEBRA-3 ships ONE Graded
+//   that accommodates both via [[no_unique_address]].  No template
+//   specialization, no opt-in trait — the lattice's element type is
+//   the discriminator.
+//
+// Public API:
+//
+//   Construction:
+//     Graded(value, grade)           — explicit grade
+//     Graded::at_bottom(value)       — uses L::bottom() as initial grade
+//                                      (only when BoundedBelowLattice<L>)
+//     inject(value, grade)           — RelativeMonad-form unit
+//   Access:
+//     peek() const&                  — borrow inner value
+//     consume() &&                   — move inner value out (rvalue this)
+//     grade() const                  — current lattice element
+//   Operations:
+//     extract() &&                   — Comonad counit (requires Comonad)
+//     weaken(new_grade)              — contract-checked widening
+//     compose(other)                 — grade ⊕ other.grade, *this's value
 //
 // See ALGEBRA-1 (Modality.h), ALGEBRA-2 (Lattice.h), ALGEBRA-4..15
 // (concrete lattice instantiations under lattices/).  Lean
@@ -56,8 +68,10 @@
 #include <crucible/algebra/Lattice.h>
 #include <crucible/algebra/Modality.h>
 
+#include <contracts>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::algebra {
 
@@ -77,14 +91,13 @@ public:
     using value_type         = T;
     using grade_type         = LatticeElement<L>;
 
-    // ── Layout (NSDMI per InitSafe) ─────────────────────────────────
-    //
-    // The wrapped value lives in `inner_`.  EBO via `[[no_unique_address]]`
-    // collapses sizeof(Graded) when T (or the lattice's element type
-    // when stored separately by ALGEBRA-3) is empty.
-    [[no_unique_address]] T inner_{};
+private:
+    // ── Layout (NSDMI per InitSafe; EBO for empty types) ────────────
+    [[no_unique_address]] T          inner_{};
+    [[no_unique_address]] grade_type grade_{};
 
-    // ── Diagnostic name emitters ────────────────────────────────────
+public:
+    // ── Diagnostic ──────────────────────────────────────────────────
     [[nodiscard]] static consteval std::string_view modality_name() noexcept {
         return ::crucible::algebra::modality_name(M);
     }
@@ -92,17 +105,9 @@ public:
         return ::crucible::algebra::lattice_name<L>();
     }
 
-    // ── Object semantics (defaulted) ────────────────────────────────
-    //
-    // Per-modality copy/move discipline (e.g. Linear deletes copy) is
-    // imposed by the per-lattice wrapper aliases, not by Graded itself.
-    // A bare Graded preserves T's semantics.
-    //
-    // No explicit noexcept on the defaulted special members: per
-    // C++26, an explicit noexcept that disagrees with the implicit
-    // exception-spec of the defaulted function is ill-formed.  The
-    // compiler infers the correct spec from T (`= default` propagates
-    // T's exception guarantees automatically).
+    // ── Object semantics (defaulted; implicit noexcept inferred from T
+    //     and grade_type — explicit noexcept on `= default` would be
+    //     ill-formed if either had a throwing default ctor) ──────────
     constexpr Graded()                         = default;
     constexpr Graded(const Graded&)            = default;
     constexpr Graded(Graded&&)                 = default;
@@ -110,48 +115,98 @@ public:
     constexpr Graded& operator=(Graded&&)      = default;
     ~Graded()                                  = default;
 
-    // ── Public operations (declared; bodies land in ALGEBRA-3 #448) ─
+    // ── Explicit construction with value + grade ────────────────────
+    constexpr Graded(T value, grade_type grade) noexcept(
+        std::is_nothrow_move_constructible_v<T> &&
+        std::is_nothrow_copy_constructible_v<grade_type>)
+        : inner_{std::move(value)}, grade_{grade} {}
+
+    // ── Construction at the lattice's bottom element (when bounded) ─
     //
-    // Calling any of the below before #448 ships fails to compile with
-    // the reason string pointing at the implementation task.  The
-    // declarations are themselves load-bearing: MIGRATE-1..11 alias
-    // headers must reference the Graded API surface for type checks.
+    // Convenience constructor for BoundedBelowLattice<L>: omits the
+    // grade argument and starts at L::bottom().  Used by alias
+    // wrappers whose default position is "no information accumulated"
+    // (e.g. AppendOnly<T> starting at the empty-prefix lattice
+    // bottom; Monotonic<T, std::less<>> starting at MIN).
+    [[nodiscard]] static constexpr Graded at_bottom(T value) noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        requires BoundedBelowLattice<L>
+    {
+        return Graded{std::move(value), L::bottom()};
+    }
 
-    template <grade_type R>
-    [[nodiscard]] static consteval Graded mk(T x) noexcept
-        = delete("Graded::mk: implementation deferred to ALGEBRA-3 (#448)");
+    // ── Access ──────────────────────────────────────────────────────
+    [[nodiscard]] constexpr T const& peek() const& noexcept {
+        return inner_;
+    }
+    [[nodiscard]] constexpr T consume() && noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+    {
+        return std::move(inner_);
+    }
+    [[nodiscard]] constexpr grade_type grade() const noexcept(
+        std::is_nothrow_copy_constructible_v<grade_type>)
+    {
+        return grade_;
+    }
 
-    [[nodiscard]] constexpr T extract() const noexcept
+    // ── Comonad: counit (extract from a Comonad-form value) ─────────
+    //
+    // Aliased wrappers may rename this — Secret<T>::declassify<Policy>()
+    // is the named counit with audit-discoverable policy tag.  The
+    // bare Graded::extract() is the unnamed counit.
+    [[nodiscard]] constexpr T extract() && noexcept(
+        std::is_nothrow_move_constructible_v<T>)
         requires ComonadModality<M>
-        = delete("Graded::extract: implementation deferred to ALGEBRA-3 (#448)");
+    {
+        return std::move(inner_);
+    }
 
-    [[nodiscard]] static constexpr Graded inject(T x) noexcept
+    // ── RelativeMonad: unit (inject into a RelativeMonad-form value) ─
+    [[nodiscard]] static constexpr Graded inject(T value, grade_type grade) noexcept(
+        std::is_nothrow_move_constructible_v<T> &&
+        std::is_nothrow_copy_constructible_v<grade_type>)
         requires RelativeMonadModality<M>
-        = delete("Graded::inject: implementation deferred to ALGEBRA-3 (#448)");
+    {
+        return Graded{std::move(value), grade};
+    }
 
-    template <grade_type S>
-    [[nodiscard]] consteval Graded weaken() const noexcept
-        = delete("Graded::weaken: implementation deferred to ALGEBRA-3 (#448)");
+    // ── Lattice operations ──────────────────────────────────────────
 
-    template <grade_type S>
-    [[nodiscard]] consteval Graded compose(Graded other) const noexcept
-        = delete("Graded::compose: implementation deferred to ALGEBRA-3 (#448)");
+    // weaken: widen the grade.  Contract-checks `L::leq(current, new)`
+    // — weakening only goes UP the lattice, never DOWN.
+    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) const&
+        noexcept(std::is_nothrow_copy_constructible_v<T> &&
+                 std::is_nothrow_copy_constructible_v<grade_type>)
+        pre (L::leq(grade_, new_grade))
+    {
+        return Graded{inner_, new_grade};
+    }
 
-    // ── ALGEBRA-3 design hole: runtime-grade lattices ───────────────
-    //
-    // The current shape encodes the lattice grade purely at the type
-    // level (NTTP on factory, type-encoded by the lattice itself for
-    // QTT-style discrete grades).  Lattices whose grade VARIES AT
-    // RUNTIME (e.g. FractionalLattice for SharedPermission, where
-    // distinct instances hold distinct fractional shares) cannot use
-    // this shape directly.  The 25_04_2026.md §2.3 sketch is silent
-    // on this question.  ALGEBRA-3 (#448) must decide:
-    //   - extend Graded with an optional runtime grade_ field, OR
-    //   - keep Graded as type-level only and let SharedPermission be
-    //     a struct that COMBINES Graded with a runtime share counter,
-    //     not an alias of Graded.
-    // Either choice preserves the public-API of MIGRATE-7 — the
-    // distinction is invisible to callers of SharedPermission.
+    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) &&
+        noexcept(std::is_nothrow_move_constructible_v<T> &&
+                 std::is_nothrow_copy_constructible_v<grade_type>)
+        pre (L::leq(grade_, new_grade))
+    {
+        return Graded{std::move(inner_), new_grade};
+    }
+
+    // compose: join grades via L::join.  Value comes from *this; the
+    // other Graded contributes only its grade.  Right-biased on value
+    // for symmetry with the Reader-monad analogy.
+    [[nodiscard]] constexpr Graded compose(Graded const& other) const&
+        noexcept(std::is_nothrow_copy_constructible_v<T> &&
+                 std::is_nothrow_copy_constructible_v<grade_type>)
+    {
+        return Graded{inner_, L::join(grade_, other.grade_)};
+    }
+
+    [[nodiscard]] constexpr Graded compose(Graded const& other) &&
+        noexcept(std::is_nothrow_move_constructible_v<T> &&
+                 std::is_nothrow_copy_constructible_v<grade_type>)
+    {
+        return Graded{std::move(inner_), L::join(grade_, other.grade_)};
+    }
 };
 
 // ── Layout invariant macro (used by MIGRATE-* alias headers) ───────
@@ -165,31 +220,45 @@ public:
                   " violates the zero-overhead contract; review "           \
                   "[[no_unique_address]] usage and lattice element type")
 
-// ── Self-test: layout invariant on the trivial witness ─────────────
-//
-// Uses the TrivialBoolLattice witness from Lattice.h's self-test
-// namespace.  Proves that a complete Graded<> type instantiates and
-// that EBO collapses both inner_ and the empty layout under -O3.
+// ── Self-test ───────────────────────────────────────────────────────
 namespace detail::graded_self_test {
 
 using ::crucible::algebra::detail::lattice_self_test::TrivialBoolLattice;
 
+// A trivially-empty-grade lattice — used to demonstrate the EBO
+// collapse path (sizeof(Graded<...>) == sizeof(T) when both inner
+// AND grade are empty).  Concrete static-grade lattices like
+// QttSemiring::At<N> ship per ALGEBRA-4..14; this in-house witness
+// proves the layout invariant in the absence of those headers.
+struct TrivialEmptyLattice {
+    using element_type = std::integral_constant<int, 1>;
+    [[nodiscard]] static consteval element_type bottom() noexcept { return {}; }
+    [[nodiscard]] static consteval element_type top()    noexcept { return {}; }
+    [[nodiscard]] static consteval bool leq(element_type, element_type) noexcept { return true; }
+    [[nodiscard]] static consteval element_type join(element_type, element_type) noexcept { return {}; }
+    [[nodiscard]] static consteval element_type meet(element_type, element_type) noexcept { return {}; }
+    [[nodiscard]] static consteval std::string_view name() noexcept { return "TrivialEmpty"; }
+};
+static_assert(Lattice<TrivialEmptyLattice>);
+static_assert(BoundedLattice<TrivialEmptyLattice>);
+static_assert(std::is_empty_v<TrivialEmptyLattice::element_type>);
+
 struct EmptyValue {};
 struct OneByteValue { char c{0}; };
-struct EightByteValue { std::uint64_t v{0}; };
+struct EightByteValue { unsigned long long v{0}; };
 
-// Type instantiates cleanly under each modality.
-using GComonad      = Graded<ModalityKind::Comonad,       TrivialBoolLattice, EmptyValue>;
-using GRelMonad     = Graded<ModalityKind::RelativeMonad, TrivialBoolLattice, EmptyValue>;
-using GAbsolute     = Graded<ModalityKind::Absolute,      TrivialBoolLattice, EmptyValue>;
-using GRelative     = Graded<ModalityKind::Relative,      TrivialBoolLattice, EmptyValue>;
+// Type instantiation under each modality.
+using GComonad   = Graded<ModalityKind::Comonad,       TrivialBoolLattice, EmptyValue>;
+using GRelMonad  = Graded<ModalityKind::RelativeMonad, TrivialBoolLattice, EmptyValue>;
+using GAbsolute  = Graded<ModalityKind::Absolute,      TrivialBoolLattice, EmptyValue>;
+using GRelative  = Graded<ModalityKind::Relative,      TrivialBoolLattice, EmptyValue>;
 
 static_assert(std::is_default_constructible_v<GComonad>);
 static_assert(std::is_default_constructible_v<GRelMonad>);
 static_assert(std::is_default_constructible_v<GAbsolute>);
 static_assert(std::is_default_constructible_v<GRelative>);
 
-// Type aliases are exposed and correct.
+// Type aliases reachable.
 static_assert(std::is_same_v<GAbsolute::value_type,   EmptyValue>);
 static_assert(std::is_same_v<GAbsolute::lattice_type, TrivialBoolLattice>);
 static_assert(std::is_same_v<GAbsolute::grade_type,   bool>);
@@ -200,23 +269,76 @@ static_assert(GAbsolute::modality_name() == "Absolute");
 static_assert(GAbsolute::lattice_name()  == "TrivialBool");
 static_assert(GComonad::modality_name()  == "Comonad");
 
-// Layout invariant: empty T over empty lattice element collapses
-// (Graded itself has at least 1 byte of identity per the C++ object
-// model — that's a property of any non-base class, not a defect).
+// ── Layout: dynamic grade (TrivialBool's bool element) ─────────────
+//
+// EmptyValue + 1B grade collapses inner_ via EBO, so total = 1B grade.
 static_assert(sizeof(GAbsolute) == 1);
 
-// Layout invariant: non-empty T preserves its size exactly.
+// 1B value + 1B grade → adjacent fields, total = 2B (no padding needed).
 using GOneByte = Graded<ModalityKind::Absolute, TrivialBoolLattice, OneByteValue>;
-static_assert(sizeof(GOneByte) == sizeof(OneByteValue));
+static_assert(sizeof(GOneByte) == 2);
 
+// 8B value + 1B grade with 8B alignment → grade after value forces
+// padding to next multiple of alignof(value); sizeof = 16.  This is
+// the worst-case dynamic-grade overhead and demonstrates why static-
+// grade lattices (empty element_type, EBO-collapsed) are preferred
+// for hot-path wrappers.
 using GEightByte = Graded<ModalityKind::Absolute, TrivialBoolLattice, EightByteValue>;
-static_assert(sizeof(GEightByte) == sizeof(EightByteValue));
+static_assert(sizeof(GEightByte) == 16);
 
-// The macro fires correctly (placeholder usage).
-template <typename T> using LinearWitness =
-    Graded<ModalityKind::Absolute, TrivialBoolLattice, T>;
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(LinearWitness, OneByteValue);
-CRUCIBLE_GRADED_LAYOUT_INVARIANT(LinearWitness, EightByteValue);
+// ── Layout: static (empty) grade — the EBO-collapse path ────────────
+//
+// TrivialEmptyLattice's element_type is empty (std::integral_constant
+// is an empty class).  Both inner_ and grade_ EBO-collapse when the
+// value is also empty; non-empty value preserves its size exactly.
+using GEmptyGrade_Empty    = Graded<ModalityKind::Absolute, TrivialEmptyLattice, EmptyValue>;
+using GEmptyGrade_OneByte  = Graded<ModalityKind::Absolute, TrivialEmptyLattice, OneByteValue>;
+using GEmptyGrade_EightB   = Graded<ModalityKind::Absolute, TrivialEmptyLattice, EightByteValue>;
+
+static_assert(sizeof(GEmptyGrade_Empty)    == 1);                          // C++ minimum-object-size
+static_assert(sizeof(GEmptyGrade_OneByte)  == sizeof(OneByteValue));       // EBO grade
+static_assert(sizeof(GEmptyGrade_EightB)   == sizeof(EightByteValue));     // EBO grade
+
+// Construction with value + grade.
+constexpr GOneByte g_at_top{OneByteValue{}, true};
+static_assert(g_at_top.grade() == true);
+static_assert(g_at_top.peek().c == 0);
+
+// at_bottom convenience for bounded lattices.
+constexpr GOneByte g_bot = GOneByte::at_bottom(OneByteValue{});
+static_assert(g_bot.grade() == false);  // TrivialBool::bottom() is false
+
+// weaken: widen grade.  false ⊑ true is legal.
+constexpr GOneByte g_weakened = g_bot.weaken(true);
+static_assert(g_weakened.grade() == true);
+
+// compose: lattice join.  bot ⊕ top = top.
+constexpr GOneByte g_composed = g_bot.compose(g_at_top);
+static_assert(g_composed.grade() == true);
+
+// ── Capability gates via concept (concepts SFINAE cleanly; inline
+//     `requires(...) { ... }` against member-function constraints
+//     emits a hard error in some GCC versions, hence the indirection) ─
+template <typename G> concept CanExtract = requires(G g) { std::move(g).extract(); };
+template <typename G> concept CanInject  = requires { G::inject(typename G::value_type{}, typename G::grade_type{}); };
+
+// Comonad-only: extract counit reachable iff modality == Comonad.
+static_assert( CanExtract<GComonad>);
+static_assert(!CanExtract<GAbsolute>);
+static_assert(!CanExtract<GRelMonad>);
+static_assert(!CanExtract<GRelative>);
+
+// RelativeMonad-only: inject unit reachable iff modality == RelativeMonad.
+static_assert( CanInject<GRelMonad>);
+static_assert(!CanInject<GComonad>);
+static_assert(!CanInject<GAbsolute>);
+static_assert(!CanInject<GRelative>);
+
+// Layout invariant macro fires correctly on the EBO-collapsed path.
+template <typename T> using AbsoluteOverEmpty =
+    Graded<ModalityKind::Absolute, TrivialEmptyLattice, T>;
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbsoluteOverEmpty, OneByteValue);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbsoluteOverEmpty, EightByteValue);
 
 }  // namespace detail::graded_self_test
 
