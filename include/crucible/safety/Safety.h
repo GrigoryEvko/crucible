@@ -15,6 +15,7 @@
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Machine.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/NotInherited.h>
 #include <crucible/safety/OneShotFlag.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Permission.h>
