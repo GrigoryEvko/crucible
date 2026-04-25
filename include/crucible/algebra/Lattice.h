@@ -6,20 +6,33 @@
 // 25_04_2026.md §2.2.  A "lattice" L is a stateless tag class with
 // static members exposing:
 //
-//     using element_type = ...;            // carrier type
-//     static consteval element_type bottom();    [BoundedBelowLattice]
-//     static consteval element_type top();       [BoundedAboveLattice]
-//     static consteval bool         leq(a, b);   // partial order ⊑
-//     static consteval element_type join(a, b);  // ⊕
-//     static consteval element_type meet(a, b);  // ⊗
+//     using element_type = ...;             // carrier type
+//     static constexpr element_type bottom();    [BoundedBelowLattice]
+//     static constexpr element_type top();       [BoundedAboveLattice]
+//     static constexpr bool         leq(a, b);   // partial order ⊑
+//     static constexpr element_type join(a, b);  // ⊕
+//     static constexpr element_type meet(a, b);  // ⊗
 //     static consteval std::string_view name();  [optional]
 //
 // A "semiring" S extends with multiplicative structure:
 //
-//     static consteval element_type zero();      // additive identity
-//     static consteval element_type one();       // multiplicative identity
-//     static consteval element_type add(a, b);   // (commutative monoid)
-//     static consteval element_type mul(a, b);   // (monoid; needn't commute)
+//     static constexpr element_type zero();      // additive identity
+//     static constexpr element_type one();       // multiplicative identity
+//     static constexpr element_type add(a, b);   // (commutative monoid)
+//     static constexpr element_type mul(a, b);   // (monoid; needn't commute)
+//
+// IMPORTANT — `constexpr` vs `consteval`:
+//
+//   The signature MUST be `constexpr` (callable at both compile time
+//   and runtime), NOT `consteval` (compile-time only).  Graded's
+//   precondition `weaken(new_grade) pre (L::leq(grade_, new_grade))`
+//   is evaluated at RUNTIME under the `enforce` contract semantic —
+//   calling a consteval function with the runtime member `grade_` is
+//   a hard compile error.  Static-grade lattices (e.g. QttSemiring::
+//   At<1> with empty element_type) appear consteval-eligible, but
+//   the convention is uniform: every public lattice op is constexpr.
+//   Only `name()` and the verify_* helpers below are consteval —
+//   they are diagnostic / test-only and never called at runtime.
 //
 //   Axiom coverage: TypeSafe — concept gates fire at template-substitution
 //                   time, not at use site (callers see the missing member
@@ -112,20 +125,21 @@ template <typename L>
 // ── Subsumption helpers ─────────────────────────────────────────────
 //
 // Sugar over L::leq.  `equivalent` performs the antisymmetric round-
-// trip; `strictly_less` is the open inequality.  Used by verify_* and
-// by Graded::weaken's requires-clause.
+// trip; `strictly_less` is the open inequality.  All three are
+// `constexpr` (NOT consteval) so they compose into Graded's runtime
+// `pre()` predicates without forcing compile-time evaluation.
 template <Lattice L>
-[[nodiscard]] consteval bool subsumes(LatticeElement<L> a, LatticeElement<L> b) noexcept {
+[[nodiscard]] constexpr bool subsumes(LatticeElement<L> a, LatticeElement<L> b) noexcept {
     return L::leq(a, b);
 }
 
 template <Lattice L>
-[[nodiscard]] consteval bool equivalent(LatticeElement<L> a, LatticeElement<L> b) noexcept {
+[[nodiscard]] constexpr bool equivalent(LatticeElement<L> a, LatticeElement<L> b) noexcept {
     return L::leq(a, b) && L::leq(b, a);
 }
 
 template <Lattice L>
-[[nodiscard]] consteval bool strictly_less(LatticeElement<L> a, LatticeElement<L> b) noexcept {
+[[nodiscard]] constexpr bool strictly_less(LatticeElement<L> a, LatticeElement<L> b) noexcept {
     return L::leq(a, b) && !L::leq(b, a);
 }
 
@@ -300,13 +314,19 @@ template <Semiring S>
 namespace detail::lattice_self_test {
 
 // A two-element Boolean lattice {false ⊑ true}.  Bounded; total order.
+//
+// All operations are `constexpr` (NOT consteval) per the convention
+// at the top of this header — Graded's runtime `pre (L::leq(...))`
+// must be able to call them with non-constant arguments.  Self-tests
+// below exercise both the compile-time path (static_assert with
+// constant args) and the runtime path (via inline_smoke_test()).
 struct TrivialBoolLattice {
     using element_type = bool;
-    [[nodiscard]] static consteval element_type bottom() noexcept { return false; }
-    [[nodiscard]] static consteval element_type top()    noexcept { return true;  }
-    [[nodiscard]] static consteval bool         leq(bool a, bool b) noexcept { return !a || b; }
-    [[nodiscard]] static consteval bool         join(bool a, bool b) noexcept { return a || b; }
-    [[nodiscard]] static consteval bool         meet(bool a, bool b) noexcept { return a && b; }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return false; }
+    [[nodiscard]] static constexpr element_type top()    noexcept { return true;  }
+    [[nodiscard]] static constexpr bool         leq(bool a, bool b) noexcept { return !a || b; }
+    [[nodiscard]] static constexpr bool         join(bool a, bool b) noexcept { return a || b; }
+    [[nodiscard]] static constexpr bool         meet(bool a, bool b) noexcept { return a && b; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "TrivialBool"; }
 };
 
@@ -337,13 +357,14 @@ static_assert(!strictly_less<TrivialBoolLattice>(true,  true));
 static_assert(lattice_name<TrivialBoolLattice>() == "TrivialBool");
 
 // Boolean ring as a trivial Semiring witness — proves the Semiring
-// concept compiles end-to-end and the verifier helpers fire.
+// concept compiles end-to-end and the verifier helpers fire.  Same
+// constexpr convention as TrivialBoolLattice above.
 struct TrivialBoolSemiring {
     using element_type = bool;
-    [[nodiscard]] static consteval element_type zero() noexcept { return false; }
-    [[nodiscard]] static consteval element_type one()  noexcept { return true;  }
-    [[nodiscard]] static consteval element_type add(bool a, bool b) noexcept { return a || b; }
-    [[nodiscard]] static consteval element_type mul(bool a, bool b) noexcept { return a && b; }
+    [[nodiscard]] static constexpr element_type zero() noexcept { return false; }
+    [[nodiscard]] static constexpr element_type one()  noexcept { return true;  }
+    [[nodiscard]] static constexpr element_type add(bool a, bool b) noexcept { return a || b; }
+    [[nodiscard]] static constexpr element_type mul(bool a, bool b) noexcept { return a && b; }
 };
 
 static_assert(Semiring<TrivialBoolSemiring>);
