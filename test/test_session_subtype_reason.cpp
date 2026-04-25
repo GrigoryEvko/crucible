@@ -16,7 +16,7 @@
 //     where the rejection reason's tag drives a structured error
 //     report.
 
-#include <crucible/safety/SessionSubtypeReason.h>
+#include <crucible/sessions/SessionSubtypeReason.h>
 
 #include <cstdio>
 #include <string_view>

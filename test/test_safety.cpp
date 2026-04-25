@@ -3,6 +3,10 @@
 // wrapping at compile time.
 
 #include <crucible/safety/Safety.h>
+#include <crucible/permissions/Permissions.h>
+#include <crucible/handles/Handles.h>
+#include <crucible/sessions/Sessions.h>
+#include <crucible/bridges/Bridges.h>
 
 #include <atomic>
 #include <cassert>

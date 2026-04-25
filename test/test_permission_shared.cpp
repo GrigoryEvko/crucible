@@ -9,7 +9,7 @@
 //   Tier 5: with_shared_read scoped helper
 // ═══════════════════════════════════════════════════════════════════
 
-#include <crucible/safety/Permission.h>
+#include <crucible/permissions/Permission.h>
 
 #include <atomic>
 #include <cstdint>

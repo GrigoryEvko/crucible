@@ -5,9 +5,9 @@
 // BOTH through the same in-memory wire transport and verifying the
 // resulting handles advance identically.
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionContentAddressed.h>
-#include <crucible/safety/SessionSubtype.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionContentAddressed.h>
+#include <crucible/sessions/SessionSubtype.h>
 
 #include <cstdio>
 #include <deque>

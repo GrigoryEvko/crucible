@@ -90,7 +90,7 @@
 //   //    `returned_whole` Permission is again exclusive in this scope.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Permission.h>
+#include <crucible/permissions/Permission.h>
 
 #include <array>
 #include <thread>

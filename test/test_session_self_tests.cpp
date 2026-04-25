@@ -31,22 +31,22 @@
 
 #define CRUCIBLE_SESSION_SELF_TESTS 1
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionAssoc.h>
-#include <crucible/safety/SessionCT.h>
-#include <crucible/safety/SessionCheckpoint.h>
-#include <crucible/safety/SessionContentAddressed.h>
-#include <crucible/safety/SessionContext.h>
-#include <crucible/safety/SessionCrash.h>
-#include <crucible/safety/SessionDeclassify.h>
-#include <crucible/safety/SessionDelegate.h>
-#include <crucible/safety/SessionDiagnostic.h>
-#include <crucible/safety/SessionGlobal.h>
-#include <crucible/safety/SessionPatterns.h>
-#include <crucible/safety/SessionPayloadSubsort.h>
-#include <crucible/safety/SessionQueue.h>
-#include <crucible/safety/SessionSubtype.h>
-#include <crucible/safety/SessionView.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionAssoc.h>
+#include <crucible/sessions/SessionCT.h>
+#include <crucible/sessions/SessionCheckpoint.h>
+#include <crucible/sessions/SessionContentAddressed.h>
+#include <crucible/sessions/SessionContext.h>
+#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/SessionDeclassify.h>
+#include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/SessionDiagnostic.h>
+#include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/SessionPatterns.h>
+#include <crucible/sessions/SessionPayloadSubsort.h>
+#include <crucible/sessions/SessionQueue.h>
+#include <crucible/sessions/SessionSubtype.h>
+#include <crucible/sessions/SessionView.h>
 
 #include <cstdio>
 

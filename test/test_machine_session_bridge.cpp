@@ -22,7 +22,7 @@
 // bridge; this header SHIPS THE INFRASTRUCTURE only — no production
 // code changes here.
 
-#include <crucible/safety/MachineSessionBridge.h>
+#include <crucible/bridges/MachineSessionBridge.h>
 
 #include <cstdint>
 #include <cstdio>

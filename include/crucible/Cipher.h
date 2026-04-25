@@ -30,7 +30,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/Serialize.h>
-#include <crucible/safety/FileHandle.h>
+#include <crucible/handles/FileHandle.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>

@@ -122,8 +122,8 @@
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Pinned.h>
-#include <crucible/safety/PublishOnce.h>
-#include <crucible/safety/Session.h>
+#include <crucible/handles/PublishOnce.h>
+#include <crucible/sessions/Session.h>
 
 #include <optional>
 #include <type_traits>

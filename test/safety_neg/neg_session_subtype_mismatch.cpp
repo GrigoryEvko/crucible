@@ -4,8 +4,8 @@
 // SessionSubtype.h's consteval helper fires its classified
 // static_assert.
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionSubtype.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionSubtype.h>
 
 using namespace crucible::safety::proto;
 

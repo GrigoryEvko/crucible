@@ -18,7 +18,7 @@
 #include <crucible/Saturate.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/safety/Mutation.h>
-#include <crucible/safety/OneShotFlag.h>
+#include <crucible/handles/OneShotFlag.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/TraceGraph.h>
 

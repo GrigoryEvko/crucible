@@ -79,9 +79,9 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
-#include <crucible/safety/OneShotFlag.h>
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionCrash.h>
+#include <crucible/handles/OneShotFlag.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionCrash.h>
 
 #include <atomic>
 #include <cstddef>

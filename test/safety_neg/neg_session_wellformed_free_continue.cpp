@@ -4,7 +4,7 @@
 // a free Continue (outside any enclosing Loop).  L1 Session.h's
 // well-formedness check in make_session_handle rejects this.
 
-#include <crucible/safety/Session.h>
+#include <crucible/sessions/Session.h>
 
 using namespace crucible::safety::proto;
 

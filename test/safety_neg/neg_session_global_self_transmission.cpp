@@ -4,7 +4,7 @@
 // cannot send to itself in MPST (#363).  assert_no_self_loop<G>()
 // emits the routed [ProtocolViolation_Self_Loop] diagnostic.
 
-#include <crucible/safety/SessionGlobal.h>
+#include <crucible/sessions/SessionGlobal.h>
 
 using namespace crucible::safety::proto;
 

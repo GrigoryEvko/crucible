@@ -23,6 +23,20 @@
 // do not implicitly convert, so a function demanding
 // Tagged<T, source::Sanitized> will not accept Tagged<T, source::External>.
 //
+// ── DEPRECATION-ON-MIGRATE (Phase 2a Graded refactor) ──────────────
+// Folds into a Graded<Modality, Lattice, T> alias once safety/Graded.h
+// ships (misc/25_04_2026.md §2.3).  Public API preserved; this
+// standalone implementation is removed at migration.
+//
+//   template <typename T, typename Source>
+//   using Tagged = Graded<RelativeMonad, TrustLattice<Source>, T>;
+//
+// Each tag namespace (source::*, trust::*, access::*, version::*)
+// instantiates a sub-lattice of TrustLattice.  Subsort axioms (#395)
+// translate to lattice ⊑ on the relative monad.
+// Do not extend with new specializations — extend the Graded algebra.
+// ───────────────────────────────────────────────────────────────────
+//
 // Pattern: cross every trust boundary with a source:: tag; every
 // verified fact with trust::Verified; every schema-versioned structure
 // with version::V<N>.

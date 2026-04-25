@@ -28,6 +28,24 @@
 // A thread that wants to mutate region R must hold Permission<R>.  By
 // linearity, no two simultaneously-live Permission<R> values can
 // exist; by transitivity, no two threads can mutate R simultaneously.
+//
+// ── DEPRECATION-ON-MIGRATE (Phase 2a Graded refactor, partial) ─────
+// SharedPermission<Tag> folds into a Graded<Modality, Lattice, T>
+// alias once safety/Graded.h ships (misc/25_04_2026.md §2.3):
+//
+//   template <typename Tag>
+//   using SharedPermission = Graded<Absolute, FractionalLattice, Tag>;
+//
+// FractionalLattice = ℚ[0,1] semiring; the existing fractional-share
+// arithmetic in SharedPermissionPool collapses to lattice ⊕/⊗.
+//
+// Permission<Tag>, SharedPermissionPool, ReadView<Tag>, and the
+// permission_root_mint / permission_split / permission_combine /
+// permission_split_n factories stay structural — they encode the CSL
+// frame rule's discharge mechanics, not a graded value.  Do not
+// extend SharedPermission with new specializations — extend the
+// Graded algebra instead.
+// ───────────────────────────────────────────────────────────────────
 // Compile-time enforcement of separation logic.
 //
 // ─── Discipline (what the framework enforces vs what it doesn't) ───

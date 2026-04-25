@@ -4,7 +4,7 @@
 // to end through an in-memory transport, and integrates the static
 // test into ctest.
 
-#include <crucible/safety/SessionDelegate.h>
+#include <crucible/sessions/SessionDelegate.h>
 
 #include <cstdio>
 #include <cstring>

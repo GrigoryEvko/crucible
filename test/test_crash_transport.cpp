@@ -17,7 +17,7 @@
 //     recovers the Resource via CrashEvent and re-establishes
 //     via a synthesized replacement.
 
-#include <crucible/safety/CrashTransport.h>
+#include <crucible/bridges/CrashTransport.h>
 
 #include <atomic>
 #include <cstdio>

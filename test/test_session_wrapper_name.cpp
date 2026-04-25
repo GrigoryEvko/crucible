@@ -21,9 +21,9 @@
 // print (so the test harness records "PASSED" with visible evidence
 // of the rendered names).
 
-#include <crucible/safety/CrashTransport.h>
-#include <crucible/safety/RecordingSessionHandle.h>
-#include <crucible/safety/Session.h>
+#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/sessions/Session.h>
 
 #include <cstdio>
 #include <string_view>

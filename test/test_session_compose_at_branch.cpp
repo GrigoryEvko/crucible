@@ -12,7 +12,7 @@
 // All checks are static_assert; the runtime main() just prints a
 // confirmation so the test harness records "PASSED".
 
-#include <crucible/safety/Session.h>
+#include <crucible/sessions/Session.h>
 
 #include <cstdio>
 

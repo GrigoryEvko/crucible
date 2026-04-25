@@ -4,8 +4,8 @@
 // main() so ctest has an executable, and exercises queue operations
 // against a realistic two-peer async channel scenario.
 
-#include <crucible/safety/SessionCrash.h>
-#include <crucible/safety/SessionQueue.h>
+#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/SessionQueue.h>
 
 #include <cstdio>
 #include <type_traits>

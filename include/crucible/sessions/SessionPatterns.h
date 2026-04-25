@@ -103,7 +103,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Session.h>
+#include <crucible/sessions/Session.h>
 
 #include <cstddef>
 #include <type_traits>

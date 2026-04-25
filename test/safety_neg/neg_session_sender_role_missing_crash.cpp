@@ -13,7 +13,7 @@
 // crash branch ("not your peer, not your problem").  Here we trigger
 // the sender-matches branch of the check.
 
-#include <crucible/safety/SessionCrash.h>
+#include <crucible/sessions/SessionCrash.h>
 
 using namespace crucible::safety::proto;
 

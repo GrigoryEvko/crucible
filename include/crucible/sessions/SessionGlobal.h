@@ -120,9 +120,9 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionContext.h>   // detail::ctx::type_id_hash_v
-#include <crucible/safety/SessionCrash.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionContext.h>   // detail::ctx::type_id_hash_v
+#include <crucible/sessions/SessionCrash.h>
 
 #include <algorithm>
 #include <array>

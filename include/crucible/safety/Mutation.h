@@ -18,6 +18,25 @@
 //                                        alias — see body comment).
 // WriteOnce<T>                         — settable exactly once, then read-only.
 
+// ── DEPRECATION-ON-MIGRATE (Phase 2a Graded refactor) ──────────────
+// Monotonic and AppendOnly fold into Graded<Modality, Lattice, T>
+// aliases once safety/Graded.h ships (misc/25_04_2026.md §2.3).
+// Public API preserved; the corresponding implementations in this
+// header are removed at migration.
+//
+//   template <typename T, typename Cmp = std::less<T>>
+//   using Monotonic = Graded<Absolute, MonotoneLattice<T, Cmp>, T>;
+//
+//   template <typename T>
+//   using AppendOnly = Graded<Absolute, SeqPrefixLattice, T>;
+//
+// BoundedMonotonic = Monotonic ⊗ Refined<bounded_above>; under Graded
+// it becomes a product-lattice instantiation, no separate template.
+// WriteOnce / WriteOnceNonNull stay structural for now (one-shot
+// publication — distinct from a graded value).  Do not extend the
+// migrating types with new specializations — extend Graded instead.
+// ───────────────────────────────────────────────────────────────────
+
 #include <crucible/Platform.h>
 #include <crucible/safety/Pinned.h>
 

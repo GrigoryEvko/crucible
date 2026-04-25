@@ -20,6 +20,17 @@
 // Pattern: wrap every resource-carrying type (file handle, mmap region,
 // arena-owned object with drop semantics, channel endpoint).
 
+// ── DEPRECATION-ON-MIGRATE (Phase 2a Graded refactor) ──────────────
+// Folds into a Graded<Modality, Lattice, T> alias once safety/Graded.h
+// ships (misc/25_04_2026.md §2.3).  Public API preserved; this
+// standalone implementation is removed at migration.
+//
+//   using Linear<T> = Graded<Absolute, QTT::At<1>, T>;
+//
+// QTT = quantitative-type-theory linearity semiring {0, 1, ω}, +, ·.
+// Do not extend with new specializations — extend the Graded algebra.
+// ───────────────────────────────────────────────────────────────────
+
 #include <crucible/Platform.h>
 
 #include <type_traits>

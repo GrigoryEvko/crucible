@@ -16,8 +16,8 @@
 // The test is pure compile-time; main() just prints a confirmation
 // string so the test harness records "PASSED".
 
-#include <crucible/safety/SessionCrash.h>
-#include <crucible/safety/SessionDelegate.h>
+#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/SessionDelegate.h>
 
 #include <cstdio>
 

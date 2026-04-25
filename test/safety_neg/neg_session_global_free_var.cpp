@@ -4,8 +4,8 @@
 // L4 SessionGlobal.h's is_global_well_formed_v rejects — used via
 // the is_well_formed check baked into projection.
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionGlobal.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionGlobal.h>
 
 using namespace crucible::safety::proto;
 

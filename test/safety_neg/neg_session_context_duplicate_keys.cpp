@@ -4,8 +4,8 @@
 // (session, role) key pair.  L2 SessionContext.h's static_assert
 // on all_keys_distinct_v rejects.
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionContext.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionContext.h>
 
 using namespace crucible::safety::proto;
 

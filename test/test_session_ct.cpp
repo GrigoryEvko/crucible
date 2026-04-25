@@ -14,7 +14,7 @@
 //     compares received tag against expected via ct::eq, sends
 //     bool ack.
 
-#include <crucible/safety/SessionCT.h>
+#include <crucible/sessions/SessionCT.h>
 
 #include <array>
 #include <cstdio>

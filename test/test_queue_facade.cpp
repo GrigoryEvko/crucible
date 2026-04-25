@@ -11,8 +11,8 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/concurrent/Queue.h>
-#include <crucible/safety/Permission.h>
-#include <crucible/safety/PermissionFork.h>
+#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/PermissionFork.h>
 
 #include <array>
 #include <atomic>

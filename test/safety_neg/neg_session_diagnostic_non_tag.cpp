@@ -3,7 +3,7 @@
 // Violation: using diagnostic_name_v<T> where T is not a
 // diagnostic class.  The accessor's requires-clause rejects.
 
-#include <crucible/safety/SessionDiagnostic.h>
+#include <crucible/sessions/SessionDiagnostic.h>
 
 using namespace crucible::safety::proto::diagnostic;
 

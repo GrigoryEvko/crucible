@@ -76,8 +76,8 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionEventLog.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionEventLog.h>
 
 #include <cstddef>
 #include <type_traits>

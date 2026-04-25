@@ -95,7 +95,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/Machine.h>
 #include <crucible/safety/Pinned.h>
-#include <crucible/safety/Session.h>
+#include <crucible/sessions/Session.h>
 
 #include <cstdint>
 #include <string_view>

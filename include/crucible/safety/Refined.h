@@ -19,6 +19,18 @@
 // Name every load-bearing predicate.  Don't define anonymous refinements
 // at call sites — aliases are what participate in grep and review.
 
+// ── DEPRECATION-ON-MIGRATE (Phase 2a Graded refactor) ──────────────
+// Folds into a Graded<Modality, Lattice, T> alias once safety/Graded.h
+// ships (misc/25_04_2026.md §2.3).  Public API preserved; this
+// standalone implementation is removed at migration.
+//
+//   template <typename Pred, typename T>
+//   using Refined = Graded<Absolute, BoolLattice<Pred>, T>;
+//
+// implies_v<P, Q> (#227) lifts to lattice ⊑ on BoolLattice products.
+// Do not extend with new specializations — extend the Graded algebra.
+// ───────────────────────────────────────────────────────────────────
+
 #include <crucible/Platform.h>
 #include <crucible/safety/Linear.h>
 

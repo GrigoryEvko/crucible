@@ -5,10 +5,10 @@
 // the projected 2PC protocol on handles whose types were LOOKED UP
 // FROM THE CONTEXT via lookup_context_t.
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionAssoc.h>
-#include <crucible/safety/SessionContext.h>
-#include <crucible/safety/SessionGlobal.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionAssoc.h>
+#include <crucible/sessions/SessionContext.h>
+#include <crucible/sessions/SessionGlobal.h>
 
 #include <cstdio>
 #include <deque>

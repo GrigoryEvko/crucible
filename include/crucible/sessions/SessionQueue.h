@@ -99,7 +99,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
-#include <crucible/safety/SessionCrash.h>
+#include <crucible/sessions/SessionCrash.h>
 
 #include <cstddef>
 #include <type_traits>

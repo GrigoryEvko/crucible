@@ -107,8 +107,8 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionSubtype.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionSubtype.h>
 
 #include <cstddef>
 #include <type_traits>

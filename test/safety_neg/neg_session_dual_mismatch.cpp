@@ -7,7 +7,7 @@
 // `[Dual_Mismatch]`, naming the framework's deadlock-freedom
 // guarantee that fails when endpoints aren't dual.
 
-#include <crucible/safety/Session.h>
+#include <crucible/sessions/Session.h>
 
 using namespace crucible::safety::proto;
 
