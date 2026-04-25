@@ -4,7 +4,7 @@
 // no Select<Bs...> or Offer<Bs...> reachable from its head spine.
 // Per #378 the static_assert fires `[Branch_Compose_No_Choice]`.
 
-#include <crucible/safety/Session.h>
+#include <crucible/sessions/Session.h>
 
 using namespace crucible::safety::proto;
 

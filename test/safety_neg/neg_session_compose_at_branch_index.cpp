@@ -4,7 +4,7 @@
 // range for the reached Select<Bs...>.  Per #378 the static_assert
 // fires `[Branch_Compose_Index_Out_Of_Range]`.
 
-#include <crucible/safety/Session.h>
+#include <crucible/sessions/Session.h>
 
 using namespace crucible::safety::proto;
 

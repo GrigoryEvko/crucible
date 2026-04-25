@@ -17,7 +17,7 @@
 //     thread polls observe() and processes the protocol once
 //     established.
 
-#include <crucible/safety/LazyEstablishedChannel.h>
+#include <crucible/handles/LazyEstablishedChannel.h>
 
 #include <atomic>
 #include <cstdio>

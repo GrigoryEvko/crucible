@@ -4,8 +4,8 @@
 // and demonstrates wiring Γ against the L1 combinators from Session.h
 // for a realistic two-session scenario.
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionContext.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionContext.h>
 
 #include <cstdio>
 #include <type_traits>

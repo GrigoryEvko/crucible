@@ -106,11 +106,11 @@
 //   safety/SessionDiagnostic.h — the diagnostic-tag vocabulary.
 // ═══════════════════════════════════════════════════════════════════
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionCheckpoint.h>
-#include <crucible/safety/SessionCrash.h>
-#include <crucible/safety/SessionDiagnostic.h>
-#include <crucible/safety/SessionSubtype.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionCheckpoint.h>
+#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/SessionDiagnostic.h>
+#include <crucible/sessions/SessionSubtype.h>
 
 #include <cstddef>
 #include <tuple>

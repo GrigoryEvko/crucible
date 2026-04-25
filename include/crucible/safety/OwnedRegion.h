@@ -72,7 +72,7 @@
 #include <crucible/Arena.h>
 #include <crucible/Effects.h>
 #include <crucible/Platform.h>
-#include <crucible/safety/Permission.h>
+#include <crucible/permissions/Permission.h>
 
 #include <array>
 #include <cstddef>

@@ -3,8 +3,8 @@
 // file drives a checkpointed session end-to-end: a verify/commit/
 // rollback flow on an in-memory wire, covering both paths.
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionCheckpoint.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionCheckpoint.h>
 
 #include <cstdio>
 #include <deque>

@@ -136,7 +136,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/SpscRing.h>
-#include <crucible/safety/Permission.h>
+#include <crucible/permissions/Permission.h>
 #include <crucible/safety/Pinned.h>
 
 #include <cstddef>

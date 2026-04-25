@@ -72,7 +72,7 @@
 // scope's Permission<TuningCfg>.
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Permission.h>
+#include <crucible/permissions/Permission.h>
 
 #include <concepts>
 #include <cstddef>

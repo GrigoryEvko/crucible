@@ -111,7 +111,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/safety/Refined.h>
-#include <crucible/safety/SessionSubtype.h>
+#include <crucible/sessions/SessionSubtype.h>
 #include <crucible/safety/Tagged.h>
 
 #include <type_traits>

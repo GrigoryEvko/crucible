@@ -1030,7 +1030,7 @@ If the decision procedure reaches the declared depth without concluding, the que
 
 ## III.L0 — Linear-π foundation
 
-Pre-session-types. Already exists in `include/crucible/safety/Permission.h`, `Linear.h`, `Pinned.h`, `ScopedView.h`. Summary of what session types assume from below:
+Pre-session-types. Already exists in `include/crucible/permissions/Permission.h`, `Linear.h`, `Pinned.h`, `ScopedView.h`. Summary of what session types assume from below:
 
 - `Permission<Tag>`: unique ownership token; phantom except in the CSL ownership-transfer sense. `split`, `combine`, `fork` operations.
 - `Linear<T>`: move-only wrapper ensuring `T`-typed resources are consumed exactly once.
@@ -1041,7 +1041,7 @@ Session types PROMOTE `ScopedView`'s unary typestate to N-ary protocol state. Th
 
 ## III.L1 — Binary combinators (EXISTS)
 
-`include/crucible/safety/Session.h`. **1185 lines** (as of 2026-04-24, up from the 700-line estimate when this section was first drafted; growth driven by SessionHandleBase CRTP for abandonment detection #349 and release-mode EBO machinery #366), 102/102 tests green on GCC 16 (full suite, excluding pre-existing test_safety legacy). Public surface:
+`include/crucible/sessions/Session.h`. **1185 lines** (as of 2026-04-24, up from the 700-line estimate when this section was first drafted; growth driven by SessionHandleBase CRTP for abandonment detection #349 and release-mode EBO machinery #366), 102/102 tests green on GCC 16 (full suite, excluding pre-existing test_safety legacy). Public surface:
 
 ```cpp
 namespace crucible::safety::session {
@@ -1193,7 +1193,7 @@ void abandoned_protocol() {
 
 ## III.L2 — Typing context Γ (SessionContext.h)
 
-`include/crucible/safety/SessionContext.h`. Core abstraction: a compile-time set of (session_tag, role_tag) → local_type entries.
+`include/crucible/sessions/SessionContext.h`. Core abstraction: a compile-time set of (session_tag, role_tag) → local_type entries.
 
 ```cpp
 namespace crucible::safety::session {
@@ -1269,7 +1269,7 @@ Fuel bound keeps the BFS bounded; for Crucible's Γ's (bounded participants, bou
 
 ## III.L3 — Queue types σ (SessionQueue.h)
 
-`include/crucible/safety/SessionQueue.h`. Queue types model the in-flight messages between two participants on an async channel.
+`include/crucible/sessions/SessionQueue.h`. Queue types model the in-flight messages between two participants on an async channel.
 
 ```cpp
 namespace crucible::safety::session {
@@ -1324,7 +1324,7 @@ inline constexpr bool is_balanced_plus_v = /* bounded queue depth along all LTS 
 
 ## III.L4 — Global types G, projection (SessionGlobal.h)
 
-`include/crucible/safety/SessionGlobal.h`. The bird's-eye protocol syntax.
+`include/crucible/sessions/SessionGlobal.h`. The bird's-eye protocol syntax.
 
 ```cpp
 namespace crucible::safety::session::global {
@@ -1387,7 +1387,7 @@ inline constexpr bool is_global_balanced_plus_v = /* … */;
 
 ## III.L5 — Association Δ ⊑_s G (SessionAssoc.h)
 
-`include/crucible/safety/SessionAssoc.h`. The invariant tying Γ to a global type.
+`include/crucible/sessions/SessionAssoc.h`. The invariant tying Γ to a global type.
 
 ```cpp
 namespace crucible::safety::session {
@@ -1420,7 +1420,7 @@ using associated_preservation_witness = /* … */;
 
 ## III.L6 — Subtyping: sync ⩽ and bounded async ⩽_a (SessionSubtype.h)
 
-`include/crucible/safety/SessionSubtype.h`. Both subtyping relations in one header, with shared infrastructure.
+`include/crucible/sessions/SessionSubtype.h`. Both subtyping relations in one header, with shared infrastructure.
 
 ```cpp
 namespace crucible::safety::session {
@@ -1759,7 +1759,7 @@ User picks the tightest concept that makes sense for their channel.
 
 ## III.L8 — Crash-stop extensions (SessionCrash.h)
 
-`include/crucible/safety/SessionCrash.h`. Stop, crash-branches, reliability sets, unavailable queues.
+`include/crucible/sessions/SessionCrash.h`. Stop, crash-branches, reliability sets, unavailable queues.
 
 ```cpp
 namespace crucible::safety::session {
@@ -1871,7 +1871,7 @@ inline constexpr bool is_csl_safe_v =
 
 ## III.L10 — Pattern library (SessionPatterns.h)
 
-`include/crucible/safety/SessionPatterns.h`. Ready-made one-liners for common communication patterns.
+`include/crucible/sessions/SessionPatterns.h`. Ready-made one-liners for common communication patterns.
 
 ```cpp
 namespace crucible::safety::session::pattern {
@@ -1938,7 +1938,7 @@ Each pattern is a compile-time construction; instantiating `MpmcProtocol<4, 8, J
 
 ## III.L11 — Diagnostic tags (SessionDiagnostic.h)
 
-`include/crucible/safety/SessionDiagnostic.h`. Per task #342. Classification tags attached to compile errors to identify the manifest bug class and suggest remediation.
+`include/crucible/sessions/SessionDiagnostic.h`. Per task #342. Classification tags attached to compile errors to identify the manifest bug class and suggest remediation.
 
 ```cpp
 namespace crucible::safety::session::diagnostic {

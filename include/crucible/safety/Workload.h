@@ -63,7 +63,7 @@
 #include <crucible/concurrent/CostModel.h>
 #include <crucible/concurrent/Topology.h>
 #include <crucible/safety/OwnedRegion.h>
-#include <crucible/safety/Permission.h>
+#include <crucible/permissions/Permission.h>
 
 #include <array>
 #include <cstddef>

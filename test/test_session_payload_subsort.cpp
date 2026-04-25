@@ -23,10 +23,10 @@
 //   * misc/24_04_2026_safety_integration.md §6, §7, §23 (Vessel FFI
 //     boundary discipline), Part VIII §39 (the deliberate
 //     non-axioms — Secret ⩽ T asymmetry, etc.)
-//   * include/crucible/safety/SessionPayloadSubsort.h (the axioms)
-//   * include/crucible/safety/SessionSubtype.h (the relation)
+//   * include/crucible/sessions/SessionPayloadSubsort.h (the axioms)
+//   * include/crucible/sessions/SessionSubtype.h (the relation)
 
-#include <crucible/safety/SessionPayloadSubsort.h>
+#include <crucible/sessions/SessionPayloadSubsort.h>
 
 #include <cstdio>
 #include <expected>

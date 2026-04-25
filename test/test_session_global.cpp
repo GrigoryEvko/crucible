@@ -4,10 +4,10 @@
 // derive every role's local type via project_t, establish channels
 // with those local types, and verify messages flow correctly.
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionCrash.h>
-#include <crucible/safety/SessionGlobal.h>
-#include <crucible/safety/SessionPatterns.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/SessionPatterns.h>
 
 #include <cstdio>
 #include <deque>

@@ -55,7 +55,7 @@
 #include <crucible/Arena.h>
 #include <crucible/Effects.h>
 #include <crucible/safety/OwnedRegion.h>
-#include <crucible/safety/Permission.h>
+#include <crucible/permissions/Permission.h>
 #include <crucible/safety/Workload.h>
 
 #include <atomic>

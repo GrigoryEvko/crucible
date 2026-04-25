@@ -102,7 +102,7 @@
 //     to SEPLOG-I6.
 // ═══════════════════════════════════════════════════════════════════
 
-#include <crucible/safety/Session.h>
+#include <crucible/sessions/Session.h>
 
 #include <cstddef>
 #include <tuple>

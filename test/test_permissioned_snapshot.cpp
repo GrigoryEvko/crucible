@@ -12,8 +12,8 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
-#include <crucible/safety/Permission.h>
-#include <crucible/safety/PermissionFork.h>
+#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/PermissionFork.h>
 
 #include <atomic>
 #include <cstdint>

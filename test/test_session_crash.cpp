@@ -3,8 +3,8 @@
 // as a first-class handle state and demonstrates the crash-branch
 // dispatch pattern via Offer with a Recv<Crash<Peer>, _> branch.
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionCrash.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionCrash.h>
 
 #include <cstdio>
 #include <deque>

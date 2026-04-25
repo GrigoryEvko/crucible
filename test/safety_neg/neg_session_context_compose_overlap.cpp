@@ -5,8 +5,8 @@
 // static_assert (CSL frame rule — disjoint contexts required)
 // rejects.
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionContext.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionContext.h>
 
 using namespace crucible::safety::proto;
 

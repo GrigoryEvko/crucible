@@ -4,10 +4,10 @@
 // a role that G has.  L5 SessionAssoc.h's assertion helper fires
 // its classified static_assert (domain_matches_v fails condition 1).
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionAssoc.h>
-#include <crucible/safety/SessionContext.h>
-#include <crucible/safety/SessionGlobal.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionAssoc.h>
+#include <crucible/sessions/SessionContext.h>
+#include <crucible/sessions/SessionGlobal.h>
 
 using namespace crucible::safety::proto;
 

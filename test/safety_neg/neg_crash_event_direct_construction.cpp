@@ -13,7 +13,7 @@
 // IMPOSSIBLE — the only path to construct a CrashEvent goes through
 // the helper that bundles the detach.
 
-#include <crucible/safety/CrashTransport.h>
+#include <crucible/bridges/CrashTransport.h>
 
 #include <expected>
 #include <utility>

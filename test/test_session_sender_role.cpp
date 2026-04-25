@@ -23,8 +23,8 @@
 //
 // Runtime main() just prints PASSED — all claims are static_asserts.
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionCrash.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionCrash.h>
 
 #include <cstdio>
 #include <tuple>

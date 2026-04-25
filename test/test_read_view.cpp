@@ -9,9 +9,9 @@
 //   Tier 5: composition with permission_fork — read-only side info
 // ═══════════════════════════════════════════════════════════════════
 
-#include <crucible/safety/Permission.h>
-#include <crucible/safety/PermissionFork.h>
-#include <crucible/safety/ReadView.h>
+#include <crucible/permissions/Permission.h>
+#include <crucible/permissions/PermissionFork.h>
+#include <crucible/permissions/ReadView.h>
 
 #include <atomic>
 #include <cstdint>

@@ -20,6 +20,20 @@
 // payload blobs.  Declassification requires a secret_policy::* tag
 // documenting WHY the data escapes classification.
 
+// ── DEPRECATION-ON-MIGRATE (Phase 2a Graded refactor) ──────────────
+// Folds into a Graded<Modality, Lattice, T> alias once safety/Graded.h
+// ships (misc/25_04_2026.md §2.3).  Public API preserved; this
+// standalone implementation is removed at migration.
+//
+//   template <typename T>
+//   using Secret = Graded<Comonad, ConfLattice, T>;
+//
+// Comonad form encodes information-flow direction (Abadi-Plotkin /
+// Orchard-Liepelt-Eades 2023, arXiv:2309.04324).  declassify<Policy>()
+// becomes the named counit out of the Comonad.
+// Do not extend with new specializations — extend the Graded algebra.
+// ───────────────────────────────────────────────────────────────────
+
 #include <crucible/Platform.h>
 
 #include <concepts>

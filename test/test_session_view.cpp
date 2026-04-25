@@ -17,7 +17,7 @@
 //     branch count; only callable when handle is at the matching
 //     position (compile-time enforced).
 
-#include <crucible/safety/SessionView.h>
+#include <crucible/sessions/SessionView.h>
 
 #include <cstdio>
 #include <string_view>

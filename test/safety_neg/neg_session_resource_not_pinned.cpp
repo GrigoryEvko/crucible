@@ -10,7 +10,7 @@
 // Expected diagnostic substring:
 //   crucible::session::diagnostic [SessionResource_NotPinned]
 
-#include <crucible/safety/Session.h>
+#include <crucible/sessions/Session.h>
 
 using namespace crucible::safety::proto;
 

@@ -5,7 +5,7 @@
 // integrates with ctest and produces a green tick on CI.  All heavy
 // lifting is compile-time.
 
-#include <crucible/safety/SessionSubtype.h>
+#include <crucible/sessions/SessionSubtype.h>
 
 #include <cstdio>
 #include <cstdlib>

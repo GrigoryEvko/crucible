@@ -14,10 +14,10 @@
 // and cannot be tested directly without a death-test framework; we
 // document it here and verify the positive paths.
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionCheckpoint.h>
-#include <crucible/safety/SessionCrash.h>
-#include <crucible/safety/SessionDelegate.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionCheckpoint.h>
+#include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/SessionDelegate.h>
 
 #include <cstdio>
 #include <deque>

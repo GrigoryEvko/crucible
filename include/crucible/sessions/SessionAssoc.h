@@ -112,10 +112,10 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionContext.h>
-#include <crucible/safety/SessionGlobal.h>
-#include <crucible/safety/SessionSubtype.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionContext.h>
+#include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/SessionSubtype.h>
 
 #include <cstddef>
 #include <type_traits>

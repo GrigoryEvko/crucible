@@ -91,8 +91,8 @@
 //     via Channel-carrying values.
 // ═══════════════════════════════════════════════════════════════════
 
-#include <crucible/safety/Session.h>
-#include <crucible/safety/SessionCrash.h>
+#include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionCrash.h>
 
 #include <concepts>
 #include <type_traits>

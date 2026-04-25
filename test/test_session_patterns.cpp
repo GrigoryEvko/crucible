@@ -4,7 +4,7 @@
 // transport to prove each alias is a usable SessionHandle position,
 // not just a type alias that type-checks in isolation.
 
-#include <crucible/safety/SessionPatterns.h>
+#include <crucible/sessions/SessionPatterns.h>
 
 #include <cstdio>
 #include <deque>

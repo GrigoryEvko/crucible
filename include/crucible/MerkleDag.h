@@ -26,7 +26,7 @@
 #include <crucible/Reflect.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
-#include <crucible/safety/PublishOnce.h>
+#include <crucible/handles/PublishOnce.h>
 #include <crucible/safety/Refined.h>
 
 #include <crucible/Types.h>

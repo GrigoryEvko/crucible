@@ -12,7 +12,7 @@
 //     enforcement; cross-thread handoff via std::jthread move.
 
 #include <crucible/concurrent/PermissionedSpscChannel.h>
-#include <crucible/safety/Permission.h>
+#include <crucible/permissions/Permission.h>
 
 #include <cstdint>
 #include <cstdio>

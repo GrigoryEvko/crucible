@@ -4,9 +4,9 @@
 // strings and demonstrates the classified-assertion macro in a
 // realistic user scenario.
 
-#include <crucible/safety/SessionDiagnostic.h>
-#include <crucible/safety/SessionSubtype.h>
-#include <crucible/safety/Session.h>
+#include <crucible/sessions/SessionDiagnostic.h>
+#include <crucible/sessions/SessionSubtype.h>
+#include <crucible/sessions/Session.h>
 
 #include <array>
 #include <cstdio>

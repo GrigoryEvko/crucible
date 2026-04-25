@@ -16,8 +16,8 @@
 //     twice produces step_id-shifted but otherwise identical event
 //     sequences.
 
-#include <crucible/safety/RecordingSessionHandle.h>
-#include <crucible/safety/SessionEventLog.h>
+#include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/sessions/SessionEventLog.h>
 
 #include <cstdio>
 #include <deque>

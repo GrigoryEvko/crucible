@@ -17,7 +17,7 @@
 //     transport calls declassify_for_wire() at the SINGLE chokepoint,
 //     receiver gets the bytes.
 
-#include <crucible/safety/SessionDeclassify.h>
+#include <crucible/sessions/SessionDeclassify.h>
 
 #include <cstdio>
 #include <string>
