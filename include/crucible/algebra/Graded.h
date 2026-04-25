@@ -60,6 +60,28 @@
 //     weaken(new_grade)              — contract-checked widening
 //     compose(other)                 — grade ⊕ other.grade, *this's value
 //
+// Note for MIGRATE-* alias implementers:
+//
+//   Graded's copy/move semantics are DEFAULTED — copying preserves
+//   both value and grade.  Aliases that need stricter semantics
+//   (e.g. Linear<T> = Graded<Absolute, QttSemiring::At<1>, T> must
+//   delete copy to enforce linearity) CANNOT be a bare type alias.
+//   They must wrap Graded in a class that re-imposes the discipline:
+//
+//       template <typename T>
+//       class Linear {
+//           Graded<Absolute, QttSemiring::At<1>, T> impl_;
+//       public:
+//           Linear(const Linear&) = delete("Linear<T> is move-only");
+//           // ... selective re-export of impl_'s API
+//       };
+//
+//   The 25_04_2026.md §2.3 "using Linear = Graded<...>" is shorthand
+//   that hides this wrapping; MIGRATE-1 (#461) makes the wrapping
+//   explicit.  Aliases for non-linear shapes (Refined, Tagged,
+//   Secret, ...) CAN be bare aliases — Graded's defaulted semantics
+//   match the existing wrappers' defaulted semantics in safety/.
+//
 // See ALGEBRA-1 (Modality.h), ALGEBRA-2 (Lattice.h), ALGEBRA-4..15
 // (concrete lattice instantiations under lattices/).  Lean
 // formalization in lean/Crucible/Algebra/Graded.lean per LEAN-1
@@ -116,10 +138,16 @@ public:
     ~Graded()                                  = default;
 
     // ── Explicit construction with value + grade ────────────────────
+    //
+    // Both arguments by value; std::move into the members.  For empty
+    // grade types the move is a no-op (EBO-collapsed); for non-empty
+    // grades (FractionalLattice's rational, StalenessSemiring's int)
+    // moving avoids an extra copy when the caller already had an
+    // rvalue.
     constexpr Graded(T value, grade_type grade) noexcept(
         std::is_nothrow_move_constructible_v<T> &&
-        std::is_nothrow_copy_constructible_v<grade_type>)
-        : inner_{std::move(value)}, grade_{grade} {}
+        std::is_nothrow_move_constructible_v<grade_type>)
+        : inner_{std::move(value)}, grade_{std::move(grade)} {}
 
     // ── Construction at the lattice's bottom element (when bounded) ─
     //
@@ -174,10 +202,16 @@ public:
     // ── Lattice operations ──────────────────────────────────────────
 
     // weaken: widen the grade.  Contract-checks `L::leq(current, new)`
-    // — weakening only goes UP the lattice, never DOWN.
+    // — weakening only goes UP the lattice, never DOWN.  The const&
+    // overload is gated on copy_constructible<T> so move-only T types
+    // (the eventual Linear<T>) cleanly fall through to the && overload
+    // instead of producing a noisy copy-deleted error.
+    //
+    // C++26 clause order: noexcept → requires → pre → body.
     [[nodiscard]] constexpr Graded weaken(grade_type new_grade) const&
         noexcept(std::is_nothrow_copy_constructible_v<T> &&
                  std::is_nothrow_copy_constructible_v<grade_type>)
+        requires std::copy_constructible<T>
         pre (L::leq(grade_, new_grade))
     {
         return Graded{inner_, new_grade};
@@ -185,18 +219,21 @@ public:
 
     [[nodiscard]] constexpr Graded weaken(grade_type new_grade) &&
         noexcept(std::is_nothrow_move_constructible_v<T> &&
-                 std::is_nothrow_copy_constructible_v<grade_type>)
+                 std::is_nothrow_move_constructible_v<grade_type>)
         pre (L::leq(grade_, new_grade))
     {
-        return Graded{std::move(inner_), new_grade};
+        return Graded{std::move(inner_), std::move(new_grade)};
     }
 
     // compose: join grades via L::join.  Value comes from *this; the
     // other Graded contributes only its grade.  Right-biased on value
-    // for symmetry with the Reader-monad analogy.
+    // for symmetry with the Reader-monad analogy.  Same const&-vs-&&
+    // ref-qualifier discipline as weaken: const& gated on
+    // copy_constructible<T>; && always available.
     [[nodiscard]] constexpr Graded compose(Graded const& other) const&
         noexcept(std::is_nothrow_copy_constructible_v<T> &&
                  std::is_nothrow_copy_constructible_v<grade_type>)
+        requires std::copy_constructible<T>
     {
         return Graded{inner_, L::join(grade_, other.grade_)};
     }
@@ -230,13 +267,18 @@ using ::crucible::algebra::detail::lattice_self_test::TrivialBoolLattice;
 // AND grade are empty).  Concrete static-grade lattices like
 // QttSemiring::At<N> ship per ALGEBRA-4..14; this in-house witness
 // proves the layout invariant in the absence of those headers.
+//
+// Operations are `constexpr` (NOT consteval) per the convention in
+// algebra/Lattice.h — Graded's `pre (L::leq(...))` is evaluated at
+// runtime under enforce semantic and must be able to call leq with
+// non-constant arguments.
 struct TrivialEmptyLattice {
     using element_type = std::integral_constant<int, 1>;
-    [[nodiscard]] static consteval element_type bottom() noexcept { return {}; }
-    [[nodiscard]] static consteval element_type top()    noexcept { return {}; }
-    [[nodiscard]] static consteval bool leq(element_type, element_type) noexcept { return true; }
-    [[nodiscard]] static consteval element_type join(element_type, element_type) noexcept { return {}; }
-    [[nodiscard]] static consteval element_type meet(element_type, element_type) noexcept { return {}; }
+    [[nodiscard]] static constexpr element_type bottom() noexcept { return {}; }
+    [[nodiscard]] static constexpr element_type top()    noexcept { return {}; }
+    [[nodiscard]] static constexpr bool leq(element_type, element_type) noexcept { return true; }
+    [[nodiscard]] static constexpr element_type join(element_type, element_type) noexcept { return {}; }
+    [[nodiscard]] static constexpr element_type meet(element_type, element_type) noexcept { return {}; }
     [[nodiscard]] static consteval std::string_view name() noexcept { return "TrivialEmpty"; }
 };
 static_assert(Lattice<TrivialEmptyLattice>);
@@ -339,6 +381,61 @@ template <typename T> using AbsoluteOverEmpty =
     Graded<ModalityKind::Absolute, TrivialEmptyLattice, T>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbsoluteOverEmpty, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbsoluteOverEmpty, EightByteValue);
+
+// ── Move-only T compatibility ───────────────────────────────────────
+//
+// For wrappers like the eventual Linear<T> the inner T may itself be
+// move-only.  The const& overloads of weaken/compose are gated on
+// std::copy_constructible<T> so move-only T cleanly forces &&
+// (rvalue this) — no noisy copy-deleted error cascade.
+struct MoveOnlyValue {
+    int v{0};
+    constexpr MoveOnlyValue() = default;
+    constexpr MoveOnlyValue(int x) noexcept : v{x} {}
+    MoveOnlyValue(const MoveOnlyValue&) = delete;
+    MoveOnlyValue(MoveOnlyValue&&) noexcept = default;
+    MoveOnlyValue& operator=(const MoveOnlyValue&) = delete;
+    MoveOnlyValue& operator=(MoveOnlyValue&&) noexcept = default;
+};
+
+using GMoveOnly = Graded<ModalityKind::Absolute, TrivialEmptyLattice, MoveOnlyValue>;
+
+// const& overloads SFINAE away for move-only T; only && remains.
+template <typename G> concept HasConstWeaken =
+    requires(G const& g, typename G::grade_type r) { g.weaken(r); };
+template <typename G> concept HasRvalueWeaken =
+    requires(G g, typename G::grade_type r) { std::move(g).weaken(r); };
+
+static_assert( HasConstWeaken<GOneByte>);    // copyable T → both available
+static_assert( HasRvalueWeaken<GOneByte>);
+static_assert(!HasConstWeaken<GMoveOnly>);   // move-only T → const& gated off
+static_assert( HasRvalueWeaken<GMoveOnly>);  // && always works
+
+// ── Runtime smoke test ──────────────────────────────────────────────
+//
+// Forces evaluation through a non-constexpr function so the lattice
+// operations called from Graded::weaken's `pre()` are exercised at
+// RUNTIME — catches the consteval-vs-constexpr trap that pure
+// static_assert-only tests miss.
+//
+// The function is `inline` (not constexpr) so the body must compile
+// against runtime semantics.  TU optimizer almost certainly elides
+// the call entirely under -O3, but the front-end still type-checks.
+inline void runtime_smoke_test() {
+    OneByteValue value{42};
+    GOneByte initial{value, false};                         // runtime ctor
+    GOneByte widened   = initial.weaken(true);              // runtime weaken (lvalue this)
+    GOneByte composed  = initial.compose(widened);          // runtime compose (lvalue this)
+    GOneByte moved     = std::move(widened).weaken(true);   // runtime weaken (rvalue this)
+    GOneByte mcomposed = std::move(initial).compose(composed);  // runtime compose (rvalue this)
+
+    // Use the results so the optimizer can't elide the calls.
+    [[maybe_unused]] bool g1 = composed.grade();
+    [[maybe_unused]] bool g2 = moved.grade();
+    [[maybe_unused]] bool g3 = mcomposed.grade();
+    [[maybe_unused]] auto v1 = composed.peek().c;
+    [[maybe_unused]] auto v2 = std::move(mcomposed).consume().c;
+}
 
 }  // namespace detail::graded_self_test
 
