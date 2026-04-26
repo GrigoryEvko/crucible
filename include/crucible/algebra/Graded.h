@@ -189,13 +189,15 @@ public:
         std::is_nothrow_move_constructible_v<T>)
         requires BoundedBelowLattice<L>
     {
-        // post (r: equivalent<L>(r.grade(), L::bottom())) — wanted, but
         // GCC 16.0.1 ICEs (cp/pt.cc:17244) on template-dependent
-        // function calls in post predicates.  See feedback memory
-        // gcc16_c26_contract_gotchas for the limitation.  The body is
-        // a direct return Graded{..., L::bottom()} so the post would
-        // be tautologically true anyway.
-        return Graded{std::move(value), L::bottom()};
+        // expressions in `post()` predicates of templated class
+        // members; `contract_assert(...)` in the body works and gives
+        // equivalent runtime checking under enforce semantic.  See
+        // feedback_gcc16_c26_contract_gotchas memory for the rule.
+        Graded result{std::move(value), L::bottom()};
+        contract_assert(L::leq(result.grade(), L::bottom())
+                     && L::leq(L::bottom(), result.grade()));
+        return result;
     }
 
     // ── Access ──────────────────────────────────────────────────────
@@ -233,25 +235,31 @@ public:
     // grade types and one small-struct copy for non-empty.
     [[nodiscard]] static constexpr Graded inject(T value, grade_type grade) noexcept(
         std::is_nothrow_move_constructible_v<T> &&
+        std::is_nothrow_copy_constructible_v<grade_type> &&
         std::is_nothrow_move_constructible_v<grade_type>)
         requires RelativeMonadModality<M>
     {
-        // post (r: equivalent<L>(r.grade(), grade)) — wanted, blocked
-        // by GCC 16 ICE on template-dependent post predicates.
-        return Graded{std::move(value), std::move(grade)};
+        // post-via-contract_assert (GCC 16 ICE on `post()` w/ template
+        // expressions — see feedback_gcc16_c26_contract_gotchas).
+        grade_type expected = grade;  // copy for the assertion
+        Graded result{std::move(value), std::move(grade)};
+        contract_assert(L::leq(result.grade(), expected)
+                     && L::leq(expected, result.grade()));
+        return result;
     }
 
     // ── Lattice operations ──────────────────────────────────────────
 
-    // weaken: widen the grade.  Contract-checks `L::leq(current, new)`
+    // weaken: widen the grade.  pre () enforces `L::leq(current, new)`
     // — weakening only goes UP the lattice, never DOWN.  The const&
     // overload is gated on copy_constructible<T> so move-only T types
     // (the eventual Linear<T>) cleanly fall through to the && overload
     // instead of producing a noisy copy-deleted error.
     //
-    // No `post` — GCC 16.0.1 ICEs (cp/pt.cc:17244) on template-
-    // dependent function calls in post predicates.  When the GCC bug
-    // is fixed, add: post (r: equivalent<L>(r.grade(), new_grade))
+    // Post-condition checking via `contract_assert` in the body
+    // (equivalent to post(), but post() ICEs in GCC 16.0.1 on
+    // template-dependent expressions — see feedback memory
+    // gcc16_c26_contract_gotchas rule #6).
     //
     // C++26 clause order: noexcept → requires → pre → body.
     [[nodiscard]] constexpr Graded weaken(grade_type new_grade) const&
@@ -260,35 +268,51 @@ public:
         requires std::copy_constructible<T>
         pre (L::leq(grade_, new_grade))
     {
-        return Graded{inner_, new_grade};
+        Graded result{inner_, new_grade};
+        contract_assert(L::leq(result.grade(), new_grade)
+                     && L::leq(new_grade, result.grade()));
+        return result;
     }
 
     [[nodiscard]] constexpr Graded weaken(grade_type new_grade) &&
         noexcept(std::is_nothrow_move_constructible_v<T> &&
+                 std::is_nothrow_copy_constructible_v<grade_type> &&
                  std::is_nothrow_move_constructible_v<grade_type>)
         pre (L::leq(grade_, new_grade))
     {
-        return Graded{std::move(inner_), std::move(new_grade)};
+        grade_type expected = new_grade;  // copy for the assertion
+        Graded result{std::move(inner_), std::move(new_grade)};
+        contract_assert(L::leq(result.grade(), expected)
+                     && L::leq(expected, result.grade()));
+        return result;
     }
 
     // compose: join grades via L::join.  Value comes from *this; the
     // other Graded contributes only its grade.  Right-biased on value
     // for symmetry with the Reader-monad analogy.  Same const&-vs-&&
-    // ref-qualifier discipline as weaken.  No `post` for the same
-    // GCC 16 ICE reason as weaken.
+    // ref-qualifier discipline as weaken.  Post-condition via
+    // contract_assert (GCC 16 ICE workaround).
     [[nodiscard]] constexpr Graded compose(Graded const& other) const&
         noexcept(std::is_nothrow_copy_constructible_v<T> &&
                  std::is_nothrow_copy_constructible_v<grade_type>)
         requires std::copy_constructible<T>
     {
-        return Graded{inner_, L::join(grade_, other.grade_)};
+        grade_type expected = L::join(grade_, other.grade_);
+        Graded result{inner_, expected};
+        contract_assert(L::leq(result.grade(), expected)
+                     && L::leq(expected, result.grade()));
+        return result;
     }
 
     [[nodiscard]] constexpr Graded compose(Graded const& other) &&
         noexcept(std::is_nothrow_move_constructible_v<T> &&
                  std::is_nothrow_copy_constructible_v<grade_type>)
     {
-        return Graded{std::move(inner_), L::join(grade_, other.grade_)};
+        grade_type expected = L::join(grade_, other.grade_);
+        Graded result{std::move(inner_), expected};
+        contract_assert(L::leq(result.grade(), expected)
+                     && L::leq(expected, result.grade()));
+        return result;
     }
 };
 
