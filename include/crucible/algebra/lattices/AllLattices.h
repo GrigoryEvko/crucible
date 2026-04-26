@@ -39,15 +39,23 @@
 // MonotoneLattice<T, Cmp>     | #454    | Monotonic<T, Cmp>
 // SeqPrefixLattice            | #455    | AppendOnly<T>
 // StalenessSemiring           | #456    | Stale<T>             (NEW)
-// LatencyBudget /             | #457    | Budgeted<budget, T>  (NEW)
-//   EnergyBudget /            |         |
-//   BitsBudget /              |         |
-//   PeakBytes                 |         |
 // HappensBeforeLattice        | #458    | TimeOrdered<T, Clk>  (NEW)
 // LifetimeLattice /           | #459    | SessionOpaqueState,
 //   ConsistencyLattice /      |         | BatchPolicy axes,
 //   ToleranceLattice          |         | precision-budget calibrator
 // ProductLattice<L₁, L₂, ...> | #460    | every multi-grade composition
+//
+// NOTE: Latency-budget and energy-budget lattices were dropped from
+// the roadmap.  Both quantities are not reliably measurable as
+// type-level dimensions on the deployment surface (system-load-
+// dependent latency, vendor-spotty / noisy RAPL-style energy
+// counters), so committing them as graded-modality grades would push
+// non-actionable contract obligations into the type system.  The
+// related Budgeted<...> alias and its task entries (formerly #457
+// ALGEBRA-12 Budget.h, #469 MIGRATE-9 Budgeted.h) are deleted.
+// Bytes / sequence length / staleness / consistency / tolerance
+// budgets remain — they ARE measurable at the type-level
+// granularity Crucible needs.
 
 // ── Shipped lattices ────────────────────────────────────────────────
 #include <crucible/algebra/lattices/BoolLattice.h>       // ALGEBRA-5 (#450) — shipped
@@ -76,12 +84,6 @@ namespace crucible::algebra::lattices {
 // SeqPrefixLattice<Element> — already included above (ALGEBRA-10 shipped).
 
 // StalenessSemiring — already included above (ALGEBRA-11 shipped).
-
-// Budget lattices — magnitudes with ≤ ordering.
-struct LatencyBudget;
-struct EnergyBudget;
-struct BitsBudget;
-struct PeakBytes;
 
 // Phantom Before/After ordering lattice.
 template <typename Clock> struct HappensBeforeLattice;
