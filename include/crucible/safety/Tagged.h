@@ -124,17 +124,20 @@ namespace vessel_trust {
 
 template <typename T, typename Tag>
 class [[nodiscard]] Tagged {
+public:
+    using value_type = T;
+    using tag_type   = Tag;
     using lattice_type = ::crucible::algebra::lattices::TrustLattice<Tag>;
+    // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
     using graded_type  = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::RelativeMonad, lattice_type, T>;
 
+private:
     // Empty-lattice grade_type collapses via [[no_unique_address]] in
     // Graded; impl_ is sizeof(T).  Wrapper adds no other state.
     graded_type impl_;
 
 public:
-    using value_type = T;
-    using tag_type   = Tag;
 
     constexpr explicit Tagged(T v)
         noexcept(std::is_nothrow_move_constructible_v<T>)

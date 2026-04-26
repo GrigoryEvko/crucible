@@ -119,25 +119,28 @@ class [[nodiscard]] TimeOrdered {
         "clock has no algebraic content.  Use N >= 1; N=1 reduces to "
         "a Lamport scalar clock.");
 
-    // Substrate alias chain.  The HappensBeforeLattice's element_type
-    // is a non-trivial 2-field struct (regime #4) — TimeOrdered is
-    // the first production wrapper to exercise this regime.
-    using lattice_type = ::crucible::algebra::lattices::HappensBeforeLattice<N, Tag>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute,
-        lattice_type,
-        T>;
-
-    graded_type impl_;
-
 public:
     // ── Public type aliases ─────────────────────────────────────────
     using value_type            = T;
+    // Substrate alias chain.  The HappensBeforeLattice's element_type
+    // is a non-trivial 2-field struct (regime #4) — TimeOrdered is
+    // the first production wrapper to exercise this regime.
+    using lattice_type          = ::crucible::algebra::lattices::HappensBeforeLattice<N, Tag>;
     using lattice_t             = lattice_type;
     using vector_clock_t        = typename lattice_type::element_type;
     using process_id_t          = std::size_t;
     using tag_t                 = Tag;
     static constexpr std::size_t process_count = N;
+    // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
+    using graded_type           = ::crucible::algebra::Graded<
+        ::crucible::algebra::ModalityKind::Absolute,
+        lattice_type,
+        T>;
+
+private:
+    graded_type impl_;
+
+public:
 
     // ── Construction ────────────────────────────────────────────────
     //

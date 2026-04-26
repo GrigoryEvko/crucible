@@ -63,13 +63,20 @@ namespace crucible::safety {
 
 template <typename T>
 class [[nodiscard]] Linear {
+public:
+    using value_type = T;
     // The QTT grade-1 lattice (singleton "exactly one ownership").
     using lattice_type = ::crucible::algebra::lattices::QttSemiring::At<
         ::crucible::algebra::lattices::QttGrade::One>;
 
+    // Public per GRADED-TRAIT-1 — external code (GradedWrapper concept,
+    // test_migration_verification, future SealedRefined-of-Linear,
+    // mCRL2 export) needs to introspect the migration mapping.  Zero
+    // behavioral change vs the prior private declaration.
     using graded_type  = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
 
+private:
     // Empty-lattice grade_type collapses via [[no_unique_address]] in
     // Graded; impl_ is sizeof(T).  Wrapper adds no other state.
     graded_type impl_;
@@ -82,7 +89,6 @@ class [[nodiscard]] Linear {
     }
 
 public:
-    using value_type = T;
 
     // Move-from-T construction.  Forwards to Graded(value, grade).
     constexpr explicit Linear(T v)

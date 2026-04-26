@@ -151,16 +151,19 @@ class [[nodiscard]] AppendOnly {
         "non-null contract at the call site if that's the real invariant. "
         "(#77, symmetric with the AppendOnly<WriteOnce<T>> rejection above)");
 
-    using lattice_type = ::crucible::algebra::lattices::SeqPrefixLattice<T>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute, lattice_type, Storage<T>>;
-
-    graded_type impl_;
-
 public:
     using value_type     = T;
     using storage_type   = Storage<T>;
     using const_iterator = typename Storage<T>::const_iterator;
+    using lattice_type = ::crucible::algebra::lattices::SeqPrefixLattice<T>;
+    // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
+    using graded_type  = ::crucible::algebra::Graded<
+        ::crucible::algebra::ModalityKind::Absolute, lattice_type, Storage<T>>;
+
+private:
+    graded_type impl_;
+
+public:
 
     // Default-construct: empty Storage; derived grade automatically
     // resolves to Length{0} == bottom.
@@ -361,15 +364,18 @@ static_assert(sizeof(OrderedAppendOnly<std::uint64_t>) == sizeof(AppendOnly<std:
 
 template <typename T, typename Cmp = std::less<T>>
 class [[nodiscard]] Monotonic {
-    using lattice_type = ::crucible::algebra::lattices::MonotoneLattice<T, Cmp>;
-    using graded_type  = ::crucible::algebra::Graded<
-        ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
-
-    graded_type impl_;
-
 public:
     using value_type      = T;
     using comparator_type = Cmp;
+    using lattice_type = ::crucible::algebra::lattices::MonotoneLattice<T, Cmp>;
+    // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
+    using graded_type  = ::crucible::algebra::Graded<
+        ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+
+private:
+    graded_type impl_;
+
+public:
 
     // Construction: pass `initial` once via the Graded specialization's
     // ergonomic single-arg ctor.  One move into the unified storage
