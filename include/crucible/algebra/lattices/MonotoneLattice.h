@@ -392,11 +392,20 @@ static_assert(std::is_same_v<MonU64Greater::compare_type, std::greater<std::uint
 
 // ── Layout — NOT zero-overhead (dynamic-grade like FractionalLattice) ─
 //
-// element_type IS T; not empty.  Graded<Absolute, MonotoneLattice<T>, T>
-// stores both the inner value and the grade — the grade is structural
-// state, no EBO collapse.  Documenting via assertions that the
-// overhead matches expectation; CRUCIBLE_GRADED_LAYOUT_INVARIANT does
-// NOT apply (sizeof != sizeof(T) for the non-empty grade case).
+// element_type IS T; not empty.  In the GENERAL Graded layout this
+// would imply 2× sizeof(T) storage (one field for inner, one for
+// grade) — but Graded ships a PARTIAL SPECIALIZATION for the case
+// `T == L::element_type` (algebra/Graded.h §"Partial specialization:
+// value type IS the lattice element type") that collapses both
+// views to a single storage cell.
+//
+// Result: sizeof(Graded<Absolute, MonotoneLattice<T>, T>) ==
+// sizeof(T), matching the pre-MIGRATE-5 zero-cost contract Monotonic
+// callers (Arena's offset_, IterationDetector's counters, TraceRing's
+// head/tail) rely on for cache-line layout.
+//
+// CRUCIBLE_GRADED_LAYOUT_INVARIANT applies cleanly under the
+// specialization; the assertions below are the witness.
 static_assert(!std::is_empty_v<MonU64Less::element_type>);
 static_assert(sizeof(MonU64Less::element_type) == 8);
 
@@ -404,13 +413,12 @@ template <typename T>
 using MonotonicGraded =
     Graded<ModalityKind::Absolute, MonotoneLattice<T, std::less<T>>, T>;
 
-// 8B value + 8B grade with 8B alignment → 16 bytes total.
-static_assert(sizeof(MonotonicGraded<std::uint64_t>) ==
-              sizeof(std::uint64_t) + sizeof(std::uint64_t));
-
-// 4B value + 4B grade + 4B padding (alignof int = 4) → 8 bytes total.
-static_assert(sizeof(MonotonicGraded<std::int32_t>) ==
-              sizeof(std::int32_t) + sizeof(std::int32_t));
+// Specialization collapses value+grade to one field — sizeof(T)
+// regardless of T's width.  If these fire, the partial specialization
+// is no longer being selected (likely the requires-clause drifted or
+// MonotoneLattice's element_type alias changed).
+static_assert(sizeof(MonotonicGraded<std::uint64_t>) == sizeof(std::uint64_t));
+static_assert(sizeof(MonotonicGraded<std::int32_t>)  == sizeof(std::int32_t));
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 //
@@ -440,10 +448,22 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] std::uint64_t gj = MonU64Greater::join(a, b);  // = 100 (smaller-val wins under >)
 
     // Graded<Absolute, MonotoneLattice, T> at runtime.
-    MonotonicGraded<std::uint64_t> initial{a, MonU64Less::bottom()};
-    auto widened   = initial.weaken(a);                         // weaken to current value
+    //
+    // The Graded specialization for `T == L::element_type`
+    // (algebra/Graded.h §"Partial specialization: value type IS the
+    // lattice element type") collapses value and grade into a single
+    // storage cell — its two-arg ctor contract-asserts the two
+    // arguments are lattice-equivalent (`L::leq(v, g) && L::leq(g,
+    // v)`).  Use the ergonomic single-arg ctor here since the
+    // specialization is selected for MonotoneLattice<T>; it expresses
+    // "value and grade are both `start`" in one move.
+    //
+    // weaken/compose preserve the value-IS-grade invariant
+    // automatically (they update both views in lockstep).
+    MonotonicGraded<std::uint64_t> initial{a};                  // value=a, grade=a
+    auto widened   = initial.weaken(a);                         // no-op weaken to current
     auto widened2  = widened.weaken(b);                         // advance to b
-    auto composed  = initial.compose(widened2);                 // join with widened2
+    auto composed  = initial.compose(widened2);                 // join → max(a, b) = b
     auto rv_widen  = std::move(widened2).weaken(b);             // rvalue-this weaken
     auto rv_comp   = std::move(initial).compose(composed);      // rvalue-this compose
 

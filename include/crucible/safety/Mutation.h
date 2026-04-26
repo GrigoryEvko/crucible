@@ -38,6 +38,9 @@
 // ───────────────────────────────────────────────────────────────────
 
 #include <crucible/Platform.h>
+#include <crucible/algebra/Graded.h>
+#include <crucible/algebra/lattices/MonotoneLattice.h>
+#include <crucible/algebra/lattices/SeqPrefixLattice.h>
 #include <crucible/safety/Pinned.h>
 
 #include <atomic>
@@ -88,6 +91,34 @@ inline constexpr bool is_writeoncenonnull_v =
 //
 // Default storage is std::vector; users may substitute arena-backed
 // or inplace_vector backing by specifying the second template param.
+//
+// ── MIGRATE-6 #466 NOTE: NOT migrated to Graded ─────────────────────
+//
+// Unlike Linear / Refined / Monotonic, AppendOnly does NOT delegate
+// storage to Graded<Absolute, SeqPrefixLattice<T>, Storage<T>>.
+//
+// The structural mismatch: SeqPrefixLattice<T>::element_type is
+// `Length{size_t}` (8 bytes) — DIFFERENT from the value type
+// `Storage<T>` (typically std::vector, ~24 bytes).  Graded's
+// `T == L::element_type` partial specialization (which collapses
+// value+grade for Monotonic) does not apply here, so the migrated
+// form would carry +8 bytes per AppendOnly instance.  That breaks
+// Arena's `static_assert(sizeof(Arena) == 64)` cache-line invariant
+// — Arena holds an AppendOnly<char*> for its blocks_ field, packed
+// into the 64-byte budget exactly.
+//
+// More fundamentally: AppendOnly's grade would be redundant with the
+// vector's own .size() — every emplace() would have to update both
+// the vector AND a separate grade field, doubling the work for no
+// algebraic benefit (the wrapper never invokes lattice join/meet).
+// The Graded substrate's value here is purely symbolic.
+//
+// Resolution: AppendOnly stays standalone for now.  When SeqPrefix
+// gains a "derived-grade" specialization (where the grade is a
+// computed view over the value rather than a stored field — open
+// design question on the Graded side), AppendOnly can re-migrate
+// without storage cost.  Tracking under SAFEINT-Verify (#428) for
+// the harness expansion that would catch the regression.
 
 template <typename T, template <typename...> class Storage = std::vector>
 class [[nodiscard]] AppendOnly {
@@ -231,62 +262,125 @@ static_assert(sizeof(OrderedAppendOnly<std::uint64_t>) == sizeof(AppendOnly<std:
 //
 // Cmp defaults to std::less<T>; advance(v) requires `!(v < current)`,
 // i.e. `v >= current`.  Use std::greater for decreasing-only semantics.
+//
+// ── MIGRATED to Graded<Absolute, MonotoneLattice<T, Cmp>, T> (#465) ─
+//
+// As of MIGRATE-5 (2026-04-26) Monotonic<T, Cmp> is a thin wrapper
+// around the algebraic primitive
+//
+//   Graded<ModalityKind::Absolute,
+//          MonotoneLattice<T, Cmp>,
+//          T>
+//
+// per misc/25_04_2026.md §2.3.  The wrapper preserves every existing
+// public API (get / current / advance / try_advance / bump), with
+// the precondition rewritten in terms of `lattice_type::leq` for
+// algebraic clarity (semantically identical to the original
+// `!Cmp{}(new_value, value_)`).
+//
+// ZERO STORAGE COST: thanks to the Graded partial specialization for
+// `T == L::element_type` (algebra/Graded.h §"Partial specialization:
+// value type IS the lattice element type"), Graded<Absolute,
+// MonotoneLattice<T, Cmp>, T> stores a single T field — the value
+// AND the grade collapse to one storage cell.  sizeof(Monotonic<T>)
+// == sizeof(T) is preserved, the same zero-overhead contract the
+// pre-migration wrapper offered.  Production callers (TraceRing
+// head/tail, IterationDetector, Arena::offset_) keep their
+// cache-line layout invariants unchanged.
+//
+// MUTATION SEMANTICS: advance() / try_advance() / bump() use the
+// specialization's ergonomic single-arg constructor:
+//     impl_ = graded_type{std::move(new_value)};
+// One move into the unified storage cell.  The old in-place
+// assignment shape (`value_ = std::move(new_value)`) costs the same
+// for trivially-movable T (the typical case).
+//
+// ALGEBRAIC ACCESS: callers can reach the underlying Graded view via
+// the .grade() forwarder if they want to compose Monotonic values
+// via the lattice's join.  The wrapper's own API never exposes the
+// graded_type to keep the discipline consistent with the existing
+// production-caller surface.
 
 template <typename T, typename Cmp = std::less<T>>
 class [[nodiscard]] Monotonic {
-    T                          value_;
-    [[no_unique_address]] Cmp  cmp_{};   // zero-cost when Cmp is empty
+    using lattice_type = ::crucible::algebra::lattices::MonotoneLattice<T, Cmp>;
+    using graded_type  = ::crucible::algebra::Graded<
+        ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+
+    graded_type impl_;
 
 public:
     using value_type      = T;
     using comparator_type = Cmp;
 
+    // Construction: pass `initial` once via the Graded specialization's
+    // ergonomic single-arg ctor.  One move into the unified storage
+    // cell.  No copy, no double-store.
     constexpr explicit Monotonic(T initial)
         noexcept(std::is_nothrow_move_constructible_v<T>)
-        : value_{std::move(initial)} {}
+        : impl_{std::move(initial)} {}
 
     Monotonic(const Monotonic&)            = default;
     Monotonic(Monotonic&&)                 = default;
     Monotonic& operator=(const Monotonic&) = default;
     Monotonic& operator=(Monotonic&&)      = default;
 
-    [[nodiscard]] constexpr const T& get()     const noexcept { return value_; }
-    [[nodiscard]] constexpr const T& current() const noexcept { return value_; }
+    [[nodiscard]] constexpr const T& get()     const noexcept { return impl_.peek(); }
+    [[nodiscard]] constexpr const T& current() const noexcept { return impl_.peek(); }
 
-    // Advance.  Contract-checks that the new value does not go backward.
-    constexpr void advance(T new_value) noexcept(std::is_nothrow_move_assignable_v<T>)
-        pre(!Cmp{}(new_value, value_))
+    // Advance.  Contract-checks that the new value does not go
+    // backward.  The precondition uses lattice_type::leq for
+    // algebraic clarity — `lattice_type::leq(current, new_value)` is
+    // exactly `!Cmp{}(new_value, current)`, the original predicate.
+    constexpr void advance(T new_value)
+        noexcept(std::is_nothrow_move_constructible_v<T>)
+        pre(lattice_type::leq(impl_.peek(), new_value))
     {
-        value_ = std::move(new_value);
+        // Reassign impl_ via the specialization's single-arg ctor.
+        // Storage is one cell; one move suffices to bring both the
+        // value-view (peek) and the grade-view (grade) to new_value.
+        impl_ = graded_type{std::move(new_value)};
     }
 
     // Compare-and-advance.  Returns true iff advanced.  Useful when
-    // multiple threads attempt to advance and only the monotonic-valid
-    // ones should succeed.
+    // multiple threads attempt to advance and only the monotonic-
+    // valid ones should succeed.
     constexpr bool try_advance(T new_value)
-        noexcept(std::is_nothrow_move_assignable_v<T>)
+        noexcept(std::is_nothrow_move_constructible_v<T>)
     {
-        if (cmp_(new_value, value_)) return false;
-        value_ = std::move(new_value);
+        if (!lattice_type::leq(impl_.peek(), new_value)) return false;
+        impl_ = graded_type{std::move(new_value)};
         return true;
     }
 
     // Convenience for integral counters: increment by one.  Contract
-    // catches wraparound (the only way an integral counter can violate
-    // monotonicity is overflow).  Equivalent to advance(get() + 1).
+    // catches wraparound (the only way an integral counter can
+    // violate monotonicity is overflow).  Equivalent to
+    // advance(get() + 1).
     constexpr void bump() noexcept
         requires std::integral<T>
-        pre(value_ != std::numeric_limits<T>::max())
+        pre(impl_.peek() != std::numeric_limits<T>::max())
     {
-        ++value_;
+        impl_ = graded_type{impl_.peek() + T{1}};
     }
 };
 
-// Zero-cost guarantee: empty Cmp must collapse via [[no_unique_address]].
+// Zero-cost guarantee preserved by Graded's partial specialization
+// for `T == L::element_type` (algebra/Graded.h §"Partial
+// specialization: value type IS the lattice element type") — Graded
+// stores a SINGLE T field when value and grade collapse to the same
+// type, exactly the case for Monotonic<T, MonotoneLattice<T, Cmp>>.
+// If this fires, the specialization is no longer being selected
+// (likely a refactor changed the requires-clause or the lattice's
+// element_type drifted).
 static_assert(sizeof(Monotonic<uint32_t, std::less<uint32_t>>) == sizeof(uint32_t),
-              "Monotonic<T, EmptyCmp> must be zero-cost: same size as T");
+              "Monotonic<T, EmptyCmp> must be zero-cost — Graded's "
+              "T==element_type specialization collapses value and grade "
+              "to one storage cell.");
 static_assert(sizeof(Monotonic<uint64_t, std::less<uint64_t>>) == sizeof(uint64_t),
-              "Monotonic<T, EmptyCmp> must be zero-cost: same size as T");
+              "Monotonic<T, EmptyCmp> must be zero-cost — Graded's "
+              "T==element_type specialization collapses value and grade "
+              "to one storage cell.");
 
 // ── BoundedMonotonic ────────────────────────────────────────────────
 //

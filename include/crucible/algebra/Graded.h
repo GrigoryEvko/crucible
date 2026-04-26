@@ -389,6 +389,247 @@ public:
     }
 };
 
+// ════════════════════════════════════════════════════════════════════
+// Partial specialization: value type IS the lattice element type
+// ════════════════════════════════════════════════════════════════════
+//
+// When `L::element_type` is exactly `T`, the value and the grade are
+// conceptually one — for example MonotoneLattice<T, Cmp>::element_type
+// = T (the watermark IS the value).  The primary template stores
+// these as two separate fields, paying 2× sizeof(T) AND introducing a
+// sync hazard (mutating one without the other diverges them).
+//
+// This specialization stores a SINGLE field and forwards both peek()
+// and grade() to it.  The two-arg `Graded(value, grade)` constructor
+// contract-asserts that its two arguments are lattice-equivalent
+// (they MUST be in this specialization — they collapse to one
+// storage cell).  An ergonomic single-T constructor is provided for
+// callers who naturally have only one value to pass.
+//
+// This unblocks MIGRATE-5 (Monotonic<T, Cmp> → Graded<Absolute,
+// MonotoneLattice<T, Cmp>, T>) and any future wrapper whose lattice
+// element type equals the value type, without paying a 2× layout
+// cost OR breaking downstream cache-line invariants (Arena's
+// 64-byte fit, IterationDetector's 128-byte fit).
+//
+// API surface is BIT-EQUAL to the primary template — the same
+// member set, the same modality / lattice / wrapper concepts, the
+// same lvalue/rvalue overload split.  Callers cannot tell which
+// version they got; the choice is purely a storage optimization
+// the compiler picks via the `requires` clause.
+//
+//   Axiom coverage: same as primary — InitSafe (NSDMI), TypeSafe
+//                   (concept gates), MemSafe (no exposed pointers).
+//   Runtime cost:   sizeof(Graded<M, L, T>) == sizeof(T) when this
+//                   specialization is selected.  Half the primary's
+//                   storage cost; the same operation cost (one move
+//                   per mutation, one copy per query).
+
+template <ModalityKind M, Lattice L, typename T>
+    requires std::is_same_v<typename L::element_type, T>
+class [[nodiscard]] Graded<M, L, T> {
+public:
+    // ── Public type aliases (mirror primary) ────────────────────────
+    static constexpr ModalityKind modality = M;
+
+    using modality_kind_type = ModalityKind;
+    using lattice_type       = L;
+    using value_type         = T;
+    using grade_type         = LatticeElement<L>;  // == T by selection
+
+private:
+    // ── Layout (single field — half the primary's cost) ─────────────
+    //
+    // NSDMI per InitSafe.  No grade_ field — peek() and grade() both
+    // forward to value_.  sizeof(Graded<...>) == sizeof(T) for this
+    // specialization, vs 2 * sizeof(T) under the primary.
+    T value_{};
+
+public:
+    // ── Diagnostic (mirror primary) ─────────────────────────────────
+    [[nodiscard]] static consteval std::string_view modality_name() noexcept {
+        return ::crucible::algebra::modality_name(M);
+    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
+        return ::crucible::algebra::lattice_name<L>();
+    }
+    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
+        return std::meta::display_string_of(^^T);
+    }
+
+    // ── Object semantics (defaulted, mirror primary) ────────────────
+    constexpr Graded()                         = default;
+    constexpr Graded(const Graded&)            = default;
+    constexpr Graded(Graded&&)                 = default;
+    constexpr Graded& operator=(const Graded&) = default;
+    constexpr Graded& operator=(Graded&&)      = default;
+    ~Graded()                                  = default;
+
+    // ── Two-arg constructor (API parity with primary) ───────────────
+    //
+    // Pre: value and grade are lattice-equivalent.  In this
+    // specialization they MUST be — they collapse to one storage
+    // cell.  We keep the value (storing it via std::move) and
+    // accept the grade by-value to consume the rvalue cleanly.
+    constexpr Graded(T value, grade_type grade) noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        pre (L::leq(value, grade) && L::leq(grade, value))
+        : value_{std::move(value)}
+    {
+        // grade is consumed by move binding; we don't store it
+        // because value_ already holds the equivalent value.
+        (void)grade;
+    }
+
+    // ── Ergonomic single-arg constructor (specialization-only) ──────
+    //
+    // When the caller knows the value and grade are identical (the
+    // typical case for Monotonic), this is the natural construction
+    // form.  Saves one copy + one move vs the two-arg ctor.
+    constexpr explicit Graded(T value_or_grade) noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        : value_{std::move(value_or_grade)} {}
+
+    // ── Construction at bottom (BoundedBelowLattice only) ───────────
+    //
+    // Two overloads to mirror the primary's at_bottom(T value)
+    // signature plus the natural no-arg form.  Both produce a Graded
+    // at L::bottom().
+    [[nodiscard]] static constexpr Graded at_bottom() noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        requires BoundedBelowLattice<L>
+    {
+        return Graded{L::bottom()};
+    }
+
+    [[nodiscard]] static constexpr Graded at_bottom(T value) noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        requires BoundedBelowLattice<L>
+    {
+        Graded result{std::move(value)};
+        contract_assert(L::leq(result.grade(), L::bottom())
+                     && L::leq(L::bottom(), result.grade()));
+        return result;
+    }
+
+    // ── Access ──────────────────────────────────────────────────────
+    //
+    // peek() and grade() BOTH return value_ — they are the same field
+    // in this specialization.  The duality is by construction.
+    [[nodiscard]] constexpr T const& peek() const& noexcept {
+        return value_;
+    }
+    [[nodiscard]] constexpr T consume() && noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+    {
+        return std::move(value_);
+    }
+    [[nodiscard]] constexpr grade_type grade() const noexcept(
+        std::is_nothrow_copy_constructible_v<T>)
+    {
+        return value_;  // grade_type IS T here, by the specialization's selector
+    }
+
+    // ── Mutable access (Absolute modality only) ─────────────────────
+    [[nodiscard]] constexpr T& peek_mut() & noexcept
+        requires AbsoluteModality<M>
+    {
+        return value_;
+    }
+
+    constexpr void swap(Graded& other)
+        noexcept(std::is_nothrow_swappable_v<T>)
+        requires AbsoluteModality<M>
+    {
+        using std::swap;
+        swap(value_, other.value_);
+    }
+
+    friend constexpr void swap(Graded& a, Graded& b)
+        noexcept(std::is_nothrow_swappable_v<T>)
+        requires AbsoluteModality<M>
+    {
+        a.swap(b);
+    }
+
+    // ── Comonad counit (extract from a Comonad-form value) ──────────
+    [[nodiscard]] constexpr T extract() && noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        requires ComonadModality<M>
+    {
+        return std::move(value_);
+    }
+
+    // ── RelativeMonad unit (inject into a RelativeMonad-form value) ─
+    //
+    // Same equivalence precondition as the two-arg constructor.
+    [[nodiscard]] static constexpr Graded inject(T value, grade_type grade) noexcept(
+        std::is_nothrow_move_constructible_v<T> &&
+        std::is_nothrow_copy_constructible_v<T>)
+        requires RelativeMonadModality<M>
+    {
+        T expected = grade;  // copy for assertion
+        Graded result{std::move(value)};
+        contract_assert(L::leq(result.grade(), expected)
+                     && L::leq(expected, result.grade()));
+        return result;
+    }
+
+    // ── weaken: widen the grade (and thus the value) ────────────────
+    //
+    // Same `pre (L::leq(value_, new_grade))` discipline as the
+    // primary.  The result has BOTH value_ and grade_ at new_grade
+    // because they're the same field — no inner-vs-grade desync
+    // possible.  This is the structural fix that motivates the
+    // entire specialization.
+    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) const&
+        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires std::copy_constructible<T>
+        pre (L::leq(value_, new_grade))
+    {
+        T expected = new_grade;  // copy for the post-assertion
+        Graded result{std::move(new_grade)};
+        contract_assert(L::leq(result.grade(), expected)
+                     && L::leq(expected, result.grade()));
+        return result;
+    }
+
+    [[nodiscard]] constexpr Graded weaken(grade_type new_grade) &&
+        noexcept(std::is_nothrow_move_constructible_v<T> &&
+                 std::is_nothrow_copy_constructible_v<T>)
+        pre (L::leq(value_, new_grade))
+    {
+        T expected = new_grade;  // copy for the post-assertion
+        Graded result{std::move(new_grade)};
+        contract_assert(L::leq(result.grade(), expected)
+                     && L::leq(expected, result.grade()));
+        return result;
+    }
+
+    // ── compose: join two grades (and thus two values) via L::join ──
+    [[nodiscard]] constexpr Graded compose(Graded const& other) const&
+        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires std::copy_constructible<T>
+    {
+        T expected = L::join(value_, other.value_);
+        Graded result{expected};  // explicit-single-arg ctor
+        contract_assert(L::leq(result.grade(), expected)
+                     && L::leq(expected, result.grade()));
+        return result;
+    }
+
+    [[nodiscard]] constexpr Graded compose(Graded const& other) &&
+        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires std::copy_constructible<T>
+    {
+        T expected = L::join(value_, other.value_);
+        Graded result{expected};
+        contract_assert(L::leq(result.grade(), expected)
+                     && L::leq(expected, result.grade()));
+        return result;
+    }
+};
+
 // ── Layout invariant macro (used by MIGRATE-* alias headers) ───────
 //
 // Each MIGRATE-1..11 alias header invokes this macro at instantiation
