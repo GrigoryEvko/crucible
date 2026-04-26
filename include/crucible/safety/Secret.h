@@ -35,9 +35,12 @@
 // ───────────────────────────────────────────────────────────────────
 
 #include <crucible/Platform.h>
+#include <crucible/algebra/Graded.h>
+#include <crucible/algebra/lattices/ConfLattice.h>
 
 #include <concepts>
 #include <cstring>
+#include <memory>      // std::addressof
 #include <type_traits>
 #include <utility>
 
@@ -59,21 +62,35 @@ concept DeclassificationPolicy = std::is_class_v<Policy>;
 
 template <typename T>
 class [[nodiscard]] Secret {
-    T value_;
+    using lattice_type = ::crucible::algebra::lattices::ConfLattice::At<
+        ::crucible::algebra::lattices::Conf::Secret>;
+    using graded_type  = ::crucible::algebra::Graded<
+        ::crucible::algebra::ModalityKind::Comonad, lattice_type, T>;
+
+    // Empty-lattice grade_type collapses via [[no_unique_address]] in
+    // Graded; impl_ is sizeof(T).  Wrapper adds no other state.
+    graded_type impl_;
 
 public:
     using value_type = T;
 
     constexpr explicit Secret(T v)
         noexcept(std::is_nothrow_move_constructible_v<T>)
-        : value_{std::move(v)} {}
+        : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
     // In-place construction — avoids moving the secret through a temporary.
+    // Constructs T directly from args, then moves it into impl_; since
+    // T is now moved exactly once (into impl_'s storage), there is no
+    // intermediate temporary that survives.  For trivially-movable T
+    // the elision is complete; for move-elidable T paths it is a
+    // single move.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
     constexpr explicit Secret(std::in_place_t, Args&&... args)
-        noexcept(std::is_nothrow_constructible_v<T, Args...>)
-        : value_{std::forward<Args>(args)...} {}
+        noexcept(std::is_nothrow_constructible_v<T, Args...>
+                 && std::is_nothrow_move_constructible_v<T>)
+        : impl_{T(std::forward<Args>(args)...),
+                typename lattice_type::element_type{}} {}
 
     Secret(const Secret&)            = delete("Secret<T> cannot be silently duplicated");
     Secret& operator=(const Secret&) = delete("Secret<T> cannot be silently duplicated");
@@ -132,37 +149,45 @@ public:
             " not transform()."
             " (#151, Secret.h transform())");
         return Secret<R>{
-            std::forward<F>(f)(std::move(value_))
+            std::forward<F>(f)(std::move(impl_).consume())
         };
     }
 
     // Length-preserving accessor — compiles only when T has .size().
+    // Forwards through Graded::peek().
     [[nodiscard]] constexpr auto size() const noexcept
         requires requires(const T& t) { t.size(); }
     {
-        return value_.size();
+        return impl_.peek().size();
     }
 
     // Declassify — consumes the Secret and returns T.  Requires a
-    // policy tag; the call site `declassify<SomePolicy>` is the audit trail.
+    // policy tag; the call site `declassify<SomePolicy>` is the audit
+    // trail.  Forwards to Graded::extract() (the Comonad counit).
     template <DeclassificationPolicy Policy>
     [[nodiscard]] constexpr T declassify() &&
         noexcept(std::is_nothrow_move_constructible_v<T>)
     {
-        return std::move(value_);
+        return std::move(impl_).extract();
     }
 
     // Secure zeroization — overwrites the internal storage with zero
     // bytes before destruction.  Opt-in: call explicitly for crypto-key
-    // paths.  Uses memset_explicit (C23) or volatile writes to prevent
-    // the compiler from eliding the clear.
+    // paths.  Uses volatile writes to prevent the compiler from eliding
+    // the clear.
     //
     // Requires T to be trivially copyable (can be safely overwritten).
+    // Accesses impl_'s mutable storage via Graded::peek_mut() — admitted
+    // by the refined gate `(AbsoluteModality || empty grade)` because
+    // ConfLattice::At<Conf::Secret>::element_type is empty even though
+    // Secret is Comonad modality.  Pre-refinement, this would have
+    // required const_cast on impl_.peek() or a Graded friendship hack.
     void zeroize() noexcept
         requires std::is_trivially_copyable_v<T>
     {
         // Prevent compiler from optimizing away the memset before dtor.
-        volatile auto* p = reinterpret_cast<volatile unsigned char*>(&value_);
+        volatile auto* p = reinterpret_cast<volatile unsigned char*>(
+            std::addressof(impl_.peek_mut()));
         for (std::size_t i = 0; i < sizeof(T); ++i) p[i] = 0;
     }
 };
