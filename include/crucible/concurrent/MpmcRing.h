@@ -86,6 +86,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Mutation.h>
 #include <crucible/safety/Pinned.h>
 
 #include <array>
@@ -176,16 +177,32 @@ private:
     // Paper §5.2: Tail and Head both initialized to 2n (so Cycle(T)
     // = 2n / 2n = 1 for the first enqueue; matches initial cell
     // cycle of 0, producer wins the first CAS).
-    alignas(64) std::atomic<std::uint64_t> tail_{kCells};
-    alignas(64) std::atomic<std::uint64_t> head_{kCells};
+    //
+    // AtomicMonotonic surfaces the SCQ ticket-claim discipline at the
+    // type level: bump_by(1) is the canonical fetch_add(acq_rel) ticket
+    // claim; get() is acquire for cross-thread snapshots.  Both Tail
+    // and Head are strictly monotonic by construction — every push
+    // claims a fresh tail ticket, every pop claims a fresh head ticket,
+    // neither ever decrements.
+    alignas(64) safety::AtomicMonotonic<std::uint64_t> tail_{kCells};
+    alignas(64) safety::AtomicMonotonic<std::uint64_t> head_{kCells};
 
     // Paper §5.2: Threshold = -1 (empty).  Set to 3n-1 on successful
     // enqueue.  Decremented by failed dequeue.  When ≤ 0, queue is
     // guaranteed empty (dequeue short-circuits).
+    //
+    // NOT migrated to AtomicMonotonic: the SCQ algorithm requires
+    // BOTH fetch_add (set to kThresholdHi via store) AND fetch_sub
+    // (failed dequeue decrement) on this counter; threshold is
+    // structurally bidirectional by design.  The wrapper's monotonic
+    // contract would forbid the algorithm's correctness-required moves.
     alignas(64) std::atomic<std::int64_t> threshold_{-1};
 
-    // Telemetry (diagnostic; not on hot path).
-    alignas(64) std::atomic<std::uint64_t> enqueue_ticket_waste_{0};
+    // Telemetry counter — pure monotonic.  Migrated.  Diagnostic only;
+    // not on the hot path.  bump_by uses acq_rel; the prior code used
+    // relaxed (cheaper on ARM).  Acceptable: telemetry counters are
+    // updated only on the rare ticket-waste path.
+    alignas(64) safety::AtomicMonotonic<std::uint64_t> enqueue_ticket_waste_{0};
 
 public:
     MpmcRing() noexcept = default;
@@ -209,8 +226,8 @@ public:
         // fully occupied (SCQ §5.4 Figure 10 pattern).  Don't FAA;
         // return false early.
         {
-            const std::uint64_t t_snap = tail_.load(std::memory_order_acquire);
-            const std::uint64_t h_snap = head_.load(std::memory_order_acquire);
+            const std::uint64_t t_snap = tail_.get();
+            const std::uint64_t h_snap = head_.get();
             if (t_snap >= h_snap + kCells) [[unlikely]] {
                 return false;
             }
@@ -223,8 +240,7 @@ public:
             // Bound outer retries — pathological case only.
             if (outer_retry > kCells) [[unlikely]] return false;
 
-            const std::uint64_t T_ = tail_.fetch_add(
-                1, std::memory_order_acq_rel);
+            const std::uint64_t T_ = tail_.bump_by(1);
             const std::uint64_t j = T_ & kMask;
             // Cycle(T) = T / 2n.  For power-of-2 kCells, this is
             // a shift.
@@ -245,8 +261,7 @@ public:
                 //   AND (IsSafe(Ent) OR Head ≤ T)
                 if (ent_cycle < cycle_T &&
                     !is_occupied(ent) &&
-                    (is_safe(ent) ||
-                     head_.load(std::memory_order_acquire) <= T_)) {
+                    (is_safe(ent) || head_.get() <= T_)) {
 
                     // Write data BEFORE publishing cell state.
                     // The successful CAS release-publishes both.
@@ -273,8 +288,7 @@ public:
                     continue;
                 }
                 // Condition failed — need a new ticket.
-                enqueue_ticket_waste_.fetch_add(
-                    1, std::memory_order_relaxed);
+                (void)enqueue_ticket_waste_.bump_by(1);
                 break;
             }
             // Outer retry — re-FAA for a new ticket.
@@ -296,8 +310,7 @@ public:
         for (std::size_t outer_retry = 0; ; ++outer_retry) {
             if (outer_retry > kCells) [[unlikely]] return std::nullopt;
 
-            const std::uint64_t H_ = head_.fetch_add(
-                1, std::memory_order_acq_rel);
+            const std::uint64_t H_ = head_.bump_by(1);
             const std::uint64_t j = H_ & kMask;
             const std::uint64_t cycle_H =
                 H_ >> std::countr_zero(kCells);
@@ -373,7 +386,7 @@ public:
             }
 
             // Paper Fig 8 Lines 39-45: empty-queue detection.
-            const std::uint64_t T_ = tail_.load(std::memory_order_acquire);
+            const std::uint64_t T_ = tail_.get();
             if (T_ <= H_ + 1) {
                 // Queue is effectively empty.  Decrement Threshold
                 // and return nullopt on underflow (Paper Line 42).
@@ -391,8 +404,8 @@ public:
     // ── Diagnostics (approximate; not on hot path) ──────────────────
 
     [[nodiscard]] std::size_t size_approx() const noexcept {
-        const std::uint64_t t = tail_.load(std::memory_order_acquire);
-        const std::uint64_t h = head_.load(std::memory_order_acquire);
+        const std::uint64_t t = tail_.get();
+        const std::uint64_t h = head_.get();
         return t > h ? (t - h) : 0;
     }
 
@@ -405,7 +418,7 @@ public:
     }
 
     [[nodiscard]] std::uint64_t ticket_waste_count() const noexcept {
-        return enqueue_ticket_waste_.load(std::memory_order_acquire);
+        return enqueue_ticket_waste_.get();
     }
 
     [[nodiscard]] static constexpr std::size_t capacity() noexcept {
