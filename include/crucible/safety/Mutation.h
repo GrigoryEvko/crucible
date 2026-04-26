@@ -801,6 +801,44 @@ public:
     {
         value_.store(new_value, std::memory_order_release);
     }
+
+    // Bump by `delta` in the monotonic direction, returning the
+    // previous value.  `delta` is a MAGNITUDE — its direction is
+    // determined by Cmp:
+    //   std::less<T>    → fetch_add (counter increases)
+    //   std::greater<T> → fetch_sub (counter decreases toward 0)
+    //
+    // The caller's mental model: "advance the counter by delta units
+    // in the monotonic direction, give me the index I reserved."
+    //
+    // This is the queue-counter / ticket-issuing idiom: the caller
+    // gets the index they reserved (the previous value) AND the
+    // counter advances atomically.  Equivalent to the
+    // `head.fetch_add(1, acq_rel)` pattern used throughout SPSC /
+    // MPSC ring buffers, with the monotonicity invariant lifted to
+    // the type level.
+    //
+    // Pre: delta ≥ 0.  Tautologically true for unsigned T (no
+    // codegen).  For signed T, catches "I passed a negative delta"
+    // mistakes at debug.  A negative delta would step the counter
+    // backwards (against Cmp) and violate monotonicity.
+    [[nodiscard]] T bump_by(T delta) noexcept
+        requires std::integral<T> && (kIsLess || kIsGreater)
+        pre (!(delta < T{0}))
+    {
+        if constexpr (kIsLess) {
+            return value_.fetch_add(delta, std::memory_order_acq_rel);
+        } else {
+            return value_.fetch_sub(delta, std::memory_order_acq_rel);
+        }
+    }
+
+    // Convenience: bump by 1.  The most common ring-counter case.
+    [[nodiscard]] T bump() noexcept
+        requires std::integral<T> && (kIsLess || kIsGreater)
+    {
+        return bump_by(T{1});
+    }
 };
 
 // ── MaxObserved<T> ─────────────────────────────────────────────────
