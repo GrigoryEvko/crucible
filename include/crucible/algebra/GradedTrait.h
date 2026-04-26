@@ -72,6 +72,33 @@
 
 namespace crucible::algebra {
 
+// ── is_graded_specialization — substrate-validity trait ────────────
+//
+// True iff T is a Graded<M, L, U> specialization for some M, L, U.
+// Used by the strengthened GradedWrapper concept (Round-3 audit, gap
+// C1) to reject wrappers that expose graded_type but point it at a
+// non-Graded type.
+//
+// Without this, the prior concept admitted:
+//
+//   struct Bogus {
+//       using value_type = int;
+//       using graded_type = void;        // <- not actually Graded
+//       static consteval std::string_view value_type_name() { ... }
+//       static consteval std::string_view lattice_name()    { ... }
+//   };
+//   static_assert(GradedWrapper<Bogus>);  // PASSED (bug)
+
+template <typename T>
+struct is_graded_specialization : std::false_type {};
+
+template <ModalityKind M, typename L, typename T>
+struct is_graded_specialization<Graded<M, L, T>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_graded_specialization_v =
+    is_graded_specialization<T>::value;
+
 // ── is_graded_wrapper — boolean trait (variable template form) ─────
 //
 // Defaults to false.  Every conforming wrapper specializes this to
@@ -83,17 +110,38 @@ template <typename W>
 inline constexpr bool is_graded_wrapper_v = false;
 
 // ── GradedWrapper concept ──────────────────────────────────────────
+//
+// Round-3 audit strengthening (gaps C1, C2):
+//   - lattice_type required (C2)
+//   - graded_type must be a Graded<...> specialization (C1)
+//
+// L2 (value_type ↔ graded_type::value_type consistency) was
+// considered and REJECTED: AppendOnly<T, Storage> has
+// `value_type = T` (the element type, user-facing) but its substrate
+// is Graded<Absolute, SeqPrefixLattice<T>, Storage<T>> with
+// `graded_type::value_type = Storage<T>` (the container, substrate-
+// facing).  This is a deliberate semantics-vs-substrate split, not a
+// drift bug.  Wrappers that LAYER user semantics over a different
+// substrate type legitimately decouple value_type from
+// graded_type::value_type; conflating them would over-constrain.
+// Per-wrapper sanity (e.g. AppendOnly's substrate consistency) is
+// the per-wrapper test's responsibility, not the family concept's.
 
 template <typename W>
 concept GradedWrapper = requires {
     // Public typedefs.
     typename W::value_type;
+    typename W::lattice_type;          // C2: family-wide alias
     typename W::graded_type;
 
-    // Diagnostic forwarders — must be consteval, must return
-    // string_view.  The requires-expression instantiates them in
-    // unevaluated context; if the forwarder is missing or wrong
-    // return type, the concept fails cleanly.
+    // C1: graded_type must actually be a Graded<...> specialization,
+    // not an arbitrary type that happens to be named graded_type.
+    requires is_graded_specialization_v<typename W::graded_type>;
+
+    // Diagnostic forwarders — must return string_view.  The
+    // requires-expression instantiates them in unevaluated context;
+    // if the forwarder is missing or wrong return type, the concept
+    // fails cleanly.
     { W::value_type_name() } -> std::same_as<std::string_view>;
     { W::lattice_name()    } -> std::same_as<std::string_view>;
 };

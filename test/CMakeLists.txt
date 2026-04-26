@@ -662,6 +662,10 @@ crucible_neg_compile_test(neg_appendonly_over_writeonce
   "AppendOnly<WriteOnce<T>> is redundant")
 crucible_neg_compile_test(neg_sealed_refined_into_call
   "has no member named")
+crucible_neg_compile_test(neg_graded_concept_void_substrate
+  "constraints not satisfied")
+crucible_neg_compile_test(neg_graded_concept_no_lattice_type
+  "constraints not satisfied")
 
 # ─── Graded modality discipline (Phase 2a foundation) ───────────────
 #

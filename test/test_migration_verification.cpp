@@ -182,6 +182,36 @@ static_assert(!is_graded_wrapper_v<int>);
 static_assert(!is_graded_wrapper_v<void*>);
 static_assert(!is_graded_wrapper_v<std::string_view>);
 
+// ── COVERAGE MATRIX — forwarder fidelity (GRADED-CONCEPT-C5) ───────
+//
+// Concept admits "lattice_name() returns string_view" but doesn't
+// enforce "returns the SAME string as graded_type::lattice_name()".
+// A wrapper with a custom forwarder returning a wrong string passes
+// the concept silently.  This template-folded check closes the hole
+// — if any forwarder ever stops forwarding, the per-wrapper
+// instantiation fires at compile time.
+//
+// Implemented as a consteval bool function rather than a macro
+// because template-arg commas would split macro arguments and
+// `(W)::` parses as old-style cast under -Werror=old-style-cast.
+
+template <typename W>
+[[nodiscard]] consteval bool forwarders_actually_forward() noexcept {
+    return W::value_type_name() == W::graded_type::value_type_name()
+        && W::lattice_name()    == W::graded_type::lattice_name();
+}
+
+static_assert(forwarders_actually_forward<Linear<int>>());
+static_assert(forwarders_actually_forward<Refined<positive_local, int>>());
+static_assert(forwarders_actually_forward<SealedRefined<positive_local, int>>());
+static_assert(forwarders_actually_forward<Tagged<int, VerificationTag>>());
+static_assert(forwarders_actually_forward<Secret<int>>());
+static_assert(forwarders_actually_forward<Monotonic<std::uint64_t>>());
+static_assert(forwarders_actually_forward<AppendOnly<int>>());
+static_assert(forwarders_actually_forward<Stale<int>>());
+static_assert(forwarders_actually_forward<TimeOrdered<int, 4>>());
+static_assert(forwarders_actually_forward<SharedPermission<VerificationTag>>());
+
 // ── COVERAGE MATRIX — lattice_name forwarder uniformity ────────────
 //
 // Hand-written consteval string literals in algebra/lattices/*.h
