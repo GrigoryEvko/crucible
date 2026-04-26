@@ -1,0 +1,126 @@
+// ═══════════════════════════════════════════════════════════════════
+// test_safety_compile — sentinel TU for the safety/* header tree
+//
+// Why this exists:
+//   Per the feedback_header_only_static_assert_blind_spot memory rule:
+//   any foundational header tree shipped with embedded `static_assert`
+//   blocks is verified ONLY in TUs that actually include it.  Direct-
+//   include grep showed 8 of 15 safety/* headers had ZERO direct test
+//   inclusions: ConstantTime, Linear, Machine, Mutation, NotInherited,
+//   Pinned, Refined, Secret.  They were transitively included through
+//   Safety.h / OwnedRegion.h / Workload.h, but per the algebra/* blind-
+//   spot discovery (4 latent bugs surfaced when MIGRATE-2 first dragged
+//   the algebra headers into a safety/ test TU), explicit per-header
+//   TU coverage under the project's full -Werror matrix matters.
+//
+//   This sentinel forces every safety/* header through the test
+//   target's flags.  Any -Werror=shadow / -Werror=switch-default /
+//   display_string_of context-fragility / similar latent issue surfaces
+//   here, where it's cheap to fix, instead of inside a future MIGRATE-*
+//   commit where it's a noisy distraction.
+//
+// Coverage discipline:
+//   When a new safety/* header ships, add its include below.  The
+//   include alone is sufficient — any embedded static_assert blocks
+//   fire at TU-include time under the test target's warning matrix.
+//   If the header ships an inline runtime_smoke_test() or similar,
+//   add a run_test() invocation in main(); for headers that are
+//   pure type-level (Linear, Refined, Tagged, Secret), include-only
+//   is enough.
+//
+// Trust boundary:
+//   Some safety/ headers (OwnedRegion, Workload, Simd) already have
+//   dedicated tests with deeper coverage.  This sentinel does NOT
+//   duplicate those; it only guarantees the EMBEDDED static_assert
+//   blocks in EVERY header fire.  The dedicated tests remain the
+//   authoritative behavioral coverage.
+// ═══════════════════════════════════════════════════════════════════
+
+#include <crucible/safety/Checked.h>
+#include <crucible/safety/ConstantTime.h>
+#include <crucible/safety/Linear.h>
+#include <crucible/safety/Machine.h>
+#include <crucible/safety/Mutation.h>
+#include <crucible/safety/NotInherited.h>
+#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/Pinned.h>
+#include <crucible/safety/Refined.h>
+#include <crucible/safety/Safety.h>
+#include <crucible/safety/ScopedView.h>
+#include <crucible/safety/Secret.h>
+#include <crucible/safety/Simd.h>
+#include <crucible/safety/Tagged.h>
+#include <crucible/safety/Workload.h>
+
+#include <cstdio>
+#include <cstdlib>
+
+namespace {
+
+struct TestFailure {};
+
+int total_passed = 0;
+int total_failed = 0;
+
+template <typename F>
+void run_test(const char* name, F&& body) {
+    std::fprintf(stderr, "  %s: ", name);
+    try {
+        body();
+        ++total_passed;
+        std::fprintf(stderr, "PASSED\n");
+    } catch (TestFailure&) {
+        ++total_failed;
+        std::fprintf(stderr, "FAILED\n");
+    }
+}
+
+// ── Per-header compile probes ───────────────────────────────────────
+//
+// One probe per header that ships with embedded static_asserts.  The
+// probes are body-empty by design: reaching the run_test invocation
+// proves the include was processed under the test target's full
+// warning matrix without the embedded asserts firing.
+
+void test_checked_compile()         {}
+void test_constant_time_compile()   {}
+void test_linear_compile()          {}
+void test_machine_compile()         {}
+void test_mutation_compile()        {}
+void test_not_inherited_compile()   {}
+void test_owned_region_compile()    {}
+void test_pinned_compile()          {}
+void test_refined_compile()         {}
+void test_safety_umbrella_compile() {}
+void test_scoped_view_compile()     {}
+void test_secret_compile()          {}
+void test_simd_compile()            {}
+void test_tagged_compile()          {}
+void test_workload_compile()        {}
+
+}  // namespace
+
+int main() {
+    std::fprintf(stderr, "test_safety_compile:\n");
+
+    run_test("test_checked_compile",         test_checked_compile);
+    run_test("test_constant_time_compile",   test_constant_time_compile);
+    run_test("test_linear_compile",          test_linear_compile);
+    run_test("test_machine_compile",         test_machine_compile);
+    run_test("test_mutation_compile",        test_mutation_compile);
+    run_test("test_not_inherited_compile",   test_not_inherited_compile);
+    run_test("test_owned_region_compile",    test_owned_region_compile);
+    run_test("test_pinned_compile",          test_pinned_compile);
+    run_test("test_refined_compile",         test_refined_compile);
+    run_test("test_safety_umbrella_compile", test_safety_umbrella_compile);
+    run_test("test_scoped_view_compile",     test_scoped_view_compile);
+    run_test("test_secret_compile",          test_secret_compile);
+    run_test("test_simd_compile",            test_simd_compile);
+    run_test("test_tagged_compile",          test_tagged_compile);
+    run_test("test_workload_compile",        test_workload_compile);
+
+    std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
+    if (total_failed > 0) return EXIT_FAILURE;
+    std::fprintf(stderr, "ALL PASSED\n");
+    return EXIT_SUCCESS;
+}

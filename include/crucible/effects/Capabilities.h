@@ -62,8 +62,8 @@ inline constexpr std::size_t effect_count =
         case Effect::Bg:    return "Bg";
         case Effect::Init:  return "Init";
         case Effect::Test:  return "Test";
+        default:            return std::string_view{"<unknown Effect>"};
     }
-    return std::string_view{"<unknown Effect>"};
 }
 
 // ── Concept gate ────────────────────────────────────────────────────
@@ -94,11 +94,17 @@ static_assert(effect_count == 6,
 [[nodiscard]] consteval bool every_effect_has_name() noexcept {
     static constexpr auto enumerators =
         std::define_static_array(std::meta::enumerators_of(^^Effect));
+    // -Wshadow on `template for` body's induction variable is the
+    // canonical false-positive across iterations; suppress locally.
+    // See feedback_gcc16_c26_reflection_gotchas memory rule.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         if (effect_name([:en:]) == std::string_view{"<unknown Effect>"}) {
             return false;
         }
     }
+#pragma GCC diagnostic pop
     return true;
 }
 static_assert(every_effect_has_name(),
