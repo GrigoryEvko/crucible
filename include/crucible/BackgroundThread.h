@@ -131,12 +131,20 @@ struct BackgroundThread {
   std::atomic<bool> running{false};
   std::thread thread;
 
-  // Total entries fully processed by the bg thread (monotonic).
-  // Release on fetch_add: fg must see all prior bg writes (pending_region_,
-  // active_region, region data) when flush()'s acquire load sees the count.
-  // Not acq_rel: bg doesn't need to acquire anything from fg at this point.
-  // Own cache line: fg reads, bg writes — false sharing otherwise.
-  alignas(64) std::atomic<uint64_t> total_processed{0};
+  // Total entries fully processed by the bg thread.  AtomicMonotonic
+  // lifts the counter's monotonicity into the type system: no decrement,
+  // no reset, no stale CAS.  bump_by(drained_count) uses acq_rel — one
+  // extra ARM dmb per drain batch (BATCH_SIZE = 4096) compared to the
+  // pre-migration release-only fetch_add.  Cost amortized across the
+  // batch is far below measurement noise.
+  //
+  // Synchronization: fg must see all prior bg writes (pending_region_,
+  // active_region, region data) when flush()'s acquire load sees the
+  // count — bump_by's acq_rel covers the release half of that pairing.
+  //
+  // Own cache line: fg reads via flush()/flush_complete(), bg writes
+  // here.  Without alignas(64) the line would ping-pong on every drain.
+  alignas(64) safety::AtomicMonotonic<uint64_t> total_processed{0};
 
   // Divergence signal: fg thread signals this when compiled replay
   // diverges.  bg thread checks at the start of each drain cycle and
@@ -451,11 +459,12 @@ struct BackgroundThread {
 
       // Signal: all entries in this batch are fully processed, including
       // any on_iteration_boundary() calls (build_trace, make_region,
-      // region_ready_cb). Release pairs with acquire in Vigil::flush().
-      // Release: publishes all bg side effects (pending_region_,
-      // active_region, region data) to fg thread's acquire in flush().
-      // Not acq_rel: bg has no reads that depend on fg writes here.
-      total_processed.fetch_add(drained_count, std::memory_order_release);
+      // region_ready_cb).  bump_by's acq_rel pairs with acquire in
+      // Vigil::flush() — publishes all bg side effects (pending_region_,
+      // active_region, region data) to fg thread.  Return value
+      // (previous count) discarded; the SPSC publish is the side effect
+      // that matters here, not the slot index.
+      (void)total_processed.bump_by(drained_count);
     }
 
     // Drain remaining on shutdown.  Same try_pop_batch path as the

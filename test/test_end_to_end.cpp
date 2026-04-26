@@ -109,7 +109,7 @@ static void feed_trigger(TraceRing* ring, MetaLog* meta_log, uint32_t iter) {
 static void wait_processed(BackgroundThread& bt, TraceRing& ring) {
   const uint64_t target = ring.total_produced();
   uint64_t spins = 0;
-  while (bt.total_processed.load(std::memory_order_acquire) < target) {
+  while (bt.total_processed.get() < target) {
     assert(++spins < 100'000'000
            && "bg thread did not finish processing");
     CRUCIBLE_SPIN_PAUSE;

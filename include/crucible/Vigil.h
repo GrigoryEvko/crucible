@@ -259,7 +259,7 @@ class Vigil {
     // (pending_region_, mode_) are visible to fg after flush returns.
     [[gnu::cold]] void flush() {
         const uint64_t target_produced = ring_->total_produced();
-        while (bg_.total_processed.load(std::memory_order_acquire) < target_produced) {
+        while (bg_.total_processed.get() < target_produced) {
             CRUCIBLE_SPIN_PAUSE;
         }
     }
@@ -267,8 +267,7 @@ class Vigil {
     // Query: has the bg thread fully processed all entries ever produced?
     // Tests use this to verify flush() semantics explicitly.
     [[nodiscard]] bool flush_complete() const {
-        return bg_.total_processed.load(std::memory_order_acquire)
-            >= ring_->total_produced();
+        return bg_.total_processed.get() >= ring_->total_produced();
     }
 
     // Restore the previous SUPERSEDED transaction as the active one.
