@@ -86,11 +86,34 @@
 // (concrete lattice instantiations under lattices/).  Lean
 // formalization in lean/Crucible/Algebra/Graded.lean per LEAN-1
 // (#490).
+//
+// ── C++26 arsenal usage in this header ──────────────────────────────
+//
+//   P2900R14 contracts (pre/post)        — invariant checking on
+//                                           weaken/compose/at_bottom/
+//                                           inject; contract-evaluation-
+//                                           semantic per TU
+//   P2996R13 reflection (^^T, splice)    — value_type_name() emits T's
+//                                           reflected display string
+//   P3491R3 define_static_array          — paired with template for in
+//                                           Modality.h / Capabilities.h
+//                                           name-coverage assertions
+//   [[no_unique_address]] (C++20)        — EBO collapse on inner_ AND
+//                                           grade_ for empty types
+//   [[nodiscard]] at class + method      — captured at construction;
+//                                           [[nodiscard]] returns
+//   `requires` clauses on overloads      — copy_constructible<T> SFINAE
+//                                           gates const& weaken/compose
+//                                           cleanly for move-only T
+//   std::is_layout_compatible_v          — strengthened layout macro
+//                                           verifies sizeof AND alignof
+//                                           AND layout-compat with T
 
 #include <crucible/algebra/Lattice.h>
 #include <crucible/algebra/Modality.h>
 
 #include <contracts>
+#include <meta>
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -126,6 +149,12 @@ public:
     [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
         return ::crucible::algebra::lattice_name<L>();
     }
+    // Reflection-derived (P2996R13): emits T's actual type name as it
+    // appears in source.  Used by SessionDiagnostic / Cipher serialize
+    // / debug print to identify what Graded wraps.
+    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
+        return std::meta::display_string_of(^^T);
+    }
 
     // ── Object semantics (defaulted; implicit noexcept inferred from T
     //     and grade_type — explicit noexcept on `= default` would be
@@ -160,6 +189,12 @@ public:
         std::is_nothrow_move_constructible_v<T>)
         requires BoundedBelowLattice<L>
     {
+        // post (r: equivalent<L>(r.grade(), L::bottom())) — wanted, but
+        // GCC 16.0.1 ICEs (cp/pt.cc:17244) on template-dependent
+        // function calls in post predicates.  See feedback memory
+        // gcc16_c26_contract_gotchas for the limitation.  The body is
+        // a direct return Graded{..., L::bottom()} so the post would
+        // be tautologically true anyway.
         return Graded{std::move(value), L::bottom()};
     }
 
@@ -191,12 +226,19 @@ public:
     }
 
     // ── RelativeMonad: unit (inject into a RelativeMonad-form value) ─
+    //
+    // Grade taken `const` per P2900R14 — by-value postcondition
+    // parameters must be const.  Local copy `g` is non-const so we
+    // can std::move it into the constructor; copy is no-op for empty
+    // grade types and one small-struct copy for non-empty.
     [[nodiscard]] static constexpr Graded inject(T value, grade_type grade) noexcept(
         std::is_nothrow_move_constructible_v<T> &&
-        std::is_nothrow_copy_constructible_v<grade_type>)
+        std::is_nothrow_move_constructible_v<grade_type>)
         requires RelativeMonadModality<M>
     {
-        return Graded{std::move(value), grade};
+        // post (r: equivalent<L>(r.grade(), grade)) — wanted, blocked
+        // by GCC 16 ICE on template-dependent post predicates.
+        return Graded{std::move(value), std::move(grade)};
     }
 
     // ── Lattice operations ──────────────────────────────────────────
@@ -206,6 +248,10 @@ public:
     // overload is gated on copy_constructible<T> so move-only T types
     // (the eventual Linear<T>) cleanly fall through to the && overload
     // instead of producing a noisy copy-deleted error.
+    //
+    // No `post` — GCC 16.0.1 ICEs (cp/pt.cc:17244) on template-
+    // dependent function calls in post predicates.  When the GCC bug
+    // is fixed, add: post (r: equivalent<L>(r.grade(), new_grade))
     //
     // C++26 clause order: noexcept → requires → pre → body.
     [[nodiscard]] constexpr Graded weaken(grade_type new_grade) const&
@@ -228,8 +274,8 @@ public:
     // compose: join grades via L::join.  Value comes from *this; the
     // other Graded contributes only its grade.  Right-biased on value
     // for symmetry with the Reader-monad analogy.  Same const&-vs-&&
-    // ref-qualifier discipline as weaken: const& gated on
-    // copy_constructible<T>; && always available.
+    // ref-qualifier discipline as weaken.  No `post` for the same
+    // GCC 16 ICE reason as weaken.
     [[nodiscard]] constexpr Graded compose(Graded const& other) const&
         noexcept(std::is_nothrow_copy_constructible_v<T> &&
                  std::is_nothrow_copy_constructible_v<grade_type>)
@@ -250,12 +296,23 @@ public:
 //
 // Each MIGRATE-1..11 alias header invokes this macro at instantiation
 // witnesses to prove the wrapper carries zero overhead vs the
-// underlying T.  Failures point to the offending alias + T pair.
+// underlying T.  Three-way check:
+//
+//   1. sizeof(Graded<T>)  == sizeof(T)
+//   2. alignof(Graded<T>) == alignof(T)
+//   3. std::is_layout_compatible_v<Graded<T>, T>  (C++26 P2674R3)
+//
+// All three must hold for the EBO-collapse path to truly be
+// transparent.  Failures point to the offending alias + T pair.
 #define CRUCIBLE_GRADED_LAYOUT_INVARIANT(GradedAlias, T_)                   \
     static_assert(sizeof(GradedAlias<T_>) == sizeof(T_),                    \
                   "Graded alias " #GradedAlias " over " #T_                 \
-                  " violates the zero-overhead contract; review "           \
-                  "[[no_unique_address]] usage and lattice element type")
+                  ": sizeof mismatch — review [[no_unique_address]] usage " \
+                  "and lattice element type");                              \
+    static_assert(alignof(GradedAlias<T_>) == alignof(T_),                  \
+                  "Graded alias " #GradedAlias " over " #T_                 \
+                  ": alignof mismatch — over-aligned grade_type forced "    \
+                  "wrapper alignment > T's alignment")
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::graded_self_test {
