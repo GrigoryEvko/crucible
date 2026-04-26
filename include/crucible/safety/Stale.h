@@ -95,6 +95,14 @@ public:
     using value_type    = T;
     using semiring_type = ::crucible::algebra::lattices::StalenessSemiring;
     using semiring_t    = semiring_type;
+    // GRADED-CONCEPT-C3: family-uniform alias.  StalenessSemiring is
+    // technically both a semiring AND a lattice (chain order ℕ ∪ ∞
+    // under ≤); semiring_type is semantically accurate but breaks the
+    // family-wide `lattice_type` introspection surface that the
+    // GradedWrapper concept (algebra/GradedTrait.h) requires.  Both
+    // aliases coexist — semiring_type for algebra-clarity, lattice_type
+    // for family uniformity.
+    using lattice_type  = semiring_type;
     using staleness_t   = typename semiring_type::element_type;
     // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
     using graded_type   = ::crucible::algebra::Graded<

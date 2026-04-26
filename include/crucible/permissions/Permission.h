@@ -465,9 +465,14 @@ public:
     // the proof-token's "value" is its identity.  No Rational is
     // stored at the SharedPermission instance level.
     using value_type   = Tag;
+    // GRADED-CONCEPT-C4: family-uniform lattice_type alias.  Every
+    // graded-backed wrapper exposes lattice_type for substrate
+    // introspection; SharedPermission's regime-5 façade joins the
+    // family for GradedWrapper concept satisfaction.
+    using lattice_type = ::crucible::algebra::lattices::FractionalLattice;
     using graded_type  = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::Absolute,
-        ::crucible::algebra::lattices::FractionalLattice,
+        lattice_type,
         Tag>;
 
     // Copyable: the whole point of fractional permissions.
