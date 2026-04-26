@@ -77,8 +77,8 @@ inline constexpr std::size_t conf_count =
     switch (c) {
         case Conf::Public: return "Public";
         case Conf::Secret: return "Secret";
+        default:           return std::string_view{"<unknown Conf>"};
     }
-    return std::string_view{"<unknown Conf>"};
 }
 
 // ── Full ConfLattice (chain order Public ⊑ Secret) ──────────────────
@@ -135,8 +135,8 @@ struct ConfLattice {
             switch (C) {
                 case Conf::Public: return "ConfLattice::At<Public>";
                 case Conf::Secret: return "ConfLattice::At<Secret>";
+                default:           return "ConfLattice::At<?>";
             }
-            return "ConfLattice::At<?>";
         }
     };
 };
@@ -160,11 +160,17 @@ static_assert(conf_count == 2,
 [[nodiscard]] consteval bool every_conf_has_name() noexcept {
     static constexpr auto enumerators =
         std::define_static_array(std::meta::enumerators_of(^^Conf));
+    // -Wshadow fires on `template for` bodies because GCC 16 unrolls
+    // the loop into successive scopes that each declare the same
+    // induction variable; suppress locally for the loop body only.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         if (conf_name([:en:]) == std::string_view{"<unknown Conf>"}) {
             return false;
         }
     }
+#pragma GCC diagnostic pop
     return true;
 }
 static_assert(every_conf_has_name(),
@@ -187,6 +193,8 @@ static_assert(std::is_empty_v<ConfLattice::At<Conf::Secret>::element_type>);
 [[nodiscard]] consteval bool exhaustive_lattice_check() noexcept {
     static constexpr auto enumerators =
         std::define_static_array(std::meta::enumerators_of(^^Conf));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
         template for (constexpr auto eb : enumerators) {
             template for (constexpr auto ec : enumerators) {
@@ -197,6 +205,7 @@ static_assert(std::is_empty_v<ConfLattice::At<Conf::Secret>::element_type>);
             }
         }
     }
+#pragma GCC diagnostic pop
     return true;
 }
 static_assert(exhaustive_lattice_check(),
@@ -226,12 +235,15 @@ static_assert(conf_name(Conf::Secret) == "Secret");
 [[nodiscard]] consteval bool every_at_conf_has_name() noexcept {
     static constexpr auto enumerators =
         std::define_static_array(std::meta::enumerators_of(^^Conf));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         if (ConfLattice::At<([:en:])>::name() ==
             std::string_view{"ConfLattice::At<?>"}) {
             return false;
         }
     }
+#pragma GCC diagnostic pop
     return true;
 }
 static_assert(every_at_conf_has_name(),
