@@ -405,6 +405,30 @@ static void test_mutation() {
         assert(high_water.get() == 100U);
     }
 
+    // bump_by / bump — queue-counter idiom (PROD-WRAP-9).
+    // Returns the PREVIOUS value (the index reserved by this caller),
+    // atomically advancing the counter.  This is the SPSC/MPSC ring-
+    // counter pattern: producer claims a slot index by bumping head.
+    {
+        AtomicMonotonic<std::uint64_t> ring_head{0};
+        assert(ring_head.bump() == 0ULL);          // claimed slot 0
+        assert(ring_head.get() == 1ULL);
+        assert(ring_head.bump() == 1ULL);          // claimed slot 1
+        assert(ring_head.bump_by(5ULL) == 2ULL);   // claimed slots [2..6]
+        assert(ring_head.get() == 7ULL);
+        assert(ring_head.bump_by(0ULL) == 7ULL);   // delta=0 is a no-op read
+        assert(ring_head.get() == 7ULL);
+    }
+
+    // bump_by under std::greater — symmetric (counter decreases).
+    {
+        AtomicMonotonic<std::uint64_t, std::greater<std::uint64_t>> ttl{1000ULL};
+        assert(ttl.bump() == 1000ULL);             // 1000 → 999
+        assert(ttl.get() == 999ULL);
+        assert(ttl.bump_by(99ULL) == 999ULL);      // 999 → 900
+        assert(ttl.get() == 900ULL);
+    }
+
     // Concurrent stress: N threads each push an exclusive range of values.
     // Final state must be the global max.  Total successful try_advance
     // returns must equal the number of strict-improvement events
