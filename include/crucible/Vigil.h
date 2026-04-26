@@ -32,6 +32,7 @@
 #include <crucible/RegionCache.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Transaction.h>
+#include <crucible/safety/Mutation.h>
 
 #include <atomic>
 #include <chrono>
@@ -225,10 +226,13 @@ class Vigil {
         return bg_.active_region.load(std::memory_order_acquire);
     }
 
-    // Relaxed: monotonic fg-thread counter. bg thread never reads it.
-    // Cross-thread readers (tests, persist) only need an approximate value.
+    // Monotonic counter advanced exclusively by the bg thread on each
+    // region transition (see on_region_ready).  AtomicMonotonic's get()
+    // is acquire — strictly stronger than the pre-migration relaxed
+    // load, but step_ is informational only (tests + Cipher persist) so
+    // the extra ARM dmb on a non-hot read is free.
     [[nodiscard]] uint64_t current_step() const noexcept {
-        return step_.load(std::memory_order_relaxed);
+        return step_.get();
     }
 
     [[nodiscard]] ContentHash head_hash() const noexcept {
@@ -319,8 +323,7 @@ class Vigil {
         auto open_view = cipher_->mint_open_view();
         const ContentHash hash = cipher_->store(open_view, region, meta_log_.get());
         if (!hash) return false;
-        cipher_->advance_head(open_view, hash,
-                              step_.load(std::memory_order_relaxed));
+        cipher_->advance_head(open_view, hash, step_.get());
         return true;
     }
 
@@ -397,11 +400,14 @@ class Vigil {
     // Transitions the transaction to ACTIVE, updates the execution mode,
     // and optionally pre-stores the object in the Cipher.
     [[gnu::cold]] void on_region_ready(RegionNode* region) {
-        // Relaxed: step_ is a monotonic counter for tx_log sequencing.
-        // bg thread never reads data ordered by this; fg thread is the
-        // only writer. On x86 lock-xadd is full fence regardless, but
-        // relaxed avoids dmb barriers on ARM.
-        const uint64_t step = step_.fetch_add(1, std::memory_order_relaxed);
+        // step_ is a monotonic counter for tx_log sequencing.  bg thread
+        // is the sole writer; fg/test readers see an approximate value
+        // via current_step().  AtomicMonotonic's bump() returns the
+        // PREVIOUS value (the index this caller reserved) and uses
+        // acq_rel — one extra dmb on ARM per region transition.  Cold
+        // path; cost is negligible amortized over thousands of ops
+        // between region boundaries.
+        const uint64_t step = step_.bump();
 
         auto* tx = tx_log_.begin_tx(step);
         // commit is nodiscard — bg-thread fast path cannot recover
@@ -666,11 +672,13 @@ class Vigil {
     // dispatch.  In release builds the contract collapses under
     // semantic=ignore.
     std::atomic<std::thread::id>    producer_tid_{};
-    // Relaxed ordering on both: fg-thread-primary, no data dependencies.
-    // mode_ is a status flag — real sync is pending_region_ acquire.
-    // step_ is a monotonic counter — bg never reads, tests need only approx.
+    // mode_ is a status flag — real sync is pending_region_ acquire,
+    // relaxed ordering is sufficient here (fg-thread-primary).
+    // step_ is a monotonic counter advanced by bg thread on each region
+    // transition; AtomicMonotonic lifts the monotonicity invariant to
+    // the type level (no decrement, no reset, no stale CAS).
     std::atomic<Mode>               mode_{Mode::RECORDING};
-    std::atomic<uint64_t>           step_{0};
+    safety::AtomicMonotonic<uint64_t> step_{0};
     Arena                           load_arena_{1 << 20}; // for Cipher::load()
 
     // ─── Tier 1 dispatch state (fg thread only, except pending_region_) ─
