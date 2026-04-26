@@ -48,6 +48,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace {
@@ -124,6 +125,26 @@ static_assert(TimeOrdered<int, 4>::value_type_name().ends_with("int"));
 // reflection-derived name ends with the local tag struct's name.
 static_assert(SharedPermission<VerificationTag>::value_type_name()
                                             .ends_with("VerificationTag"));
+
+// ── COVERAGE MATRIX — public graded_type alias (GRADED-TRAIT-1) ────
+//
+// Every migrated wrapper exposes `graded_type` in its public section
+// so external code can introspect the migration mapping.  These
+// static_asserts are unevaluated `using` checks — if the alias were
+// private, accessing it via `Wrapper::graded_type` would be ill-formed
+// and the static_assert would fail to compile.  This catches accidental
+// regressions where a future refactor moves the alias back to private.
+
+static_assert(!std::is_void_v<typename Linear<int>::graded_type>);
+static_assert(!std::is_void_v<typename Refined<positive_local, int>::graded_type>);
+static_assert(!std::is_void_v<typename SealedRefined<positive_local, int>::graded_type>);
+static_assert(!std::is_void_v<typename Tagged<int, VerificationTag>::graded_type>);
+static_assert(!std::is_void_v<typename Secret<int>::graded_type>);
+static_assert(!std::is_void_v<typename Monotonic<std::uint64_t>::graded_type>);
+static_assert(!std::is_void_v<typename AppendOnly<int>::graded_type>);
+static_assert(!std::is_void_v<typename Stale<int>::graded_type>);
+static_assert(!std::is_void_v<typename TimeOrdered<int, 4>::graded_type>);
+static_assert(!std::is_void_v<typename SharedPermission<VerificationTag>::graded_type>);
 
 // ── COVERAGE MATRIX — lattice_name forwarder uniformity ────────────
 //

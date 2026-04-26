@@ -90,19 +90,22 @@ namespace crucible::safety {
 
 template <typename T>
 class [[nodiscard]] Stale {
+public:
+    // ── Public type aliases ─────────────────────────────────────────
+    using value_type    = T;
     using semiring_type = ::crucible::algebra::lattices::StalenessSemiring;
+    using semiring_t    = semiring_type;
+    using staleness_t   = typename semiring_type::element_type;
+    // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
     using graded_type   = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::Absolute,
         semiring_type,
         T>;
 
+private:
     graded_type impl_;
 
 public:
-    // ── Public type aliases ─────────────────────────────────────────
-    using value_type    = T;
-    using semiring_t    = semiring_type;
-    using staleness_t   = typename semiring_type::element_type;
 
     // ── Construction ────────────────────────────────────────────────
     //

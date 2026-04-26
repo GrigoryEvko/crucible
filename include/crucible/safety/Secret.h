@@ -63,17 +63,20 @@ concept DeclassificationPolicy = std::is_class_v<Policy>;
 
 template <typename T>
 class [[nodiscard]] Secret {
+public:
+    using value_type = T;
     using lattice_type = ::crucible::algebra::lattices::ConfLattice::At<
         ::crucible::algebra::lattices::Conf::Secret>;
+    // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
     using graded_type  = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::Comonad, lattice_type, T>;
 
+private:
     // Empty-lattice grade_type collapses via [[no_unique_address]] in
     // Graded; impl_ is sizeof(T).  Wrapper adds no other state.
     graded_type impl_;
 
 public:
-    using value_type = T;
 
     constexpr explicit Secret(T v)
         noexcept(std::is_nothrow_move_constructible_v<T>)

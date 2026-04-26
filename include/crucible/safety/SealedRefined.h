@@ -98,16 +98,16 @@ namespace crucible::safety {
 
 template <auto Pred, typename T>
 class [[nodiscard]] SealedRefined {
+public:
+    using value_type     = T;
+    using predicate_type = decltype(Pred);
     // Same Graded substrate as Refined<Pred, T> — identical lattice,
     // modality, storage layout.  The wrapper adds no state; the
     // "sealed" property is enforced by the absence of a destructive
     // extractor in the public surface.
     using lattice_type = ::crucible::algebra::lattices::BoolLattice<
         std::remove_cv_t<decltype(Pred)>>;
-
-public:
-    using value_type     = T;
-    using predicate_type = decltype(Pred);
+    // Public per GRADED-TRAIT-1 — see safety/Linear.h for the rationale.
     using graded_type    = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
 

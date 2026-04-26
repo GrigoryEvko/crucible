@@ -194,6 +194,9 @@ concept PredicateInvocableOn = requires (T const& v) {
 
 template <auto Pred, typename T>
 class [[nodiscard]] Refined {
+public:
+    using value_type     = T;
+    using predicate_type = decltype(Pred);
     // Lattice carrying the predicate at the type level.  Pred is an
     // auto-NTTP (a value); BoolLattice takes the predicate's TYPE,
     // hence remove_cv_t<decltype(Pred)>.  The remove_cv_t strip
@@ -204,16 +207,16 @@ class [[nodiscard]] Refined {
     using lattice_type = ::crucible::algebra::lattices::BoolLattice<
         std::remove_cv_t<decltype(Pred)>>;
 
+    // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
     using graded_type = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
 
+private:
     // Empty-lattice grade_type collapses via [[no_unique_address]] in
     // Graded; impl_ is sizeof(T).  Wrapper adds no other state.
     graded_type impl_;
 
 public:
-    using value_type     = T;
-    using predicate_type = decltype(Pred);
 
     // Tag for skipping the predicate check.  Use only when the caller
     // has already proven the invariant (internal paths, re-wrapping
