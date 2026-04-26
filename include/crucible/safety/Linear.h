@@ -55,6 +55,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/QttSemiring.h>
 
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -139,6 +140,26 @@ public:
 
     friend constexpr void swap(Linear& a, Linear& b) noexcept(std::is_nothrow_swappable_v<T>) {
         a.swap(b);
+    }
+
+    // ── Diagnostic names (forwarded from Graded substrate) ─────────
+    //
+    // value_type_name(): T's display string via reflection (P2996R13).
+    // Answers "what is this Linear wrapping?" without dereferencing.
+    //
+    // lattice_name(): "QttSemiring::At<One>" (the grade-1 chunk of the
+    // Atkey-Brady QTT semiring).  Disambiguates Linear<T> from sibling
+    // Graded-backed wrappers in shared diagnostic output.
+    //
+    // Audit-Tier-2 cross-wrapper parity sweep — every migrated wrapper
+    // ships the same two forwarders so review-time spot-checks always
+    // find them at the same place.  Uniformity is the property; the
+    // strings themselves are useful but secondary.
+    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
+        return graded_type::value_type_name();
+    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
+        return graded_type::lattice_name();
     }
 };
 

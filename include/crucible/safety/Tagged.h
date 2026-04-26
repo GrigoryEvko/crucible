@@ -59,6 +59,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/TrustLattice.h>
 
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -173,6 +174,22 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<T>)
     {
         return std::move(impl_).consume();
+    }
+
+    // ── Diagnostic names (forwarded from Graded substrate) ─────────
+    //
+    // value_type_name(): T's display string via reflection (P2996R13).
+    // lattice_name(): "TrustLattice<Tag>" — the provenance lattice.
+    //
+    // Audit-Tier-2 cross-wrapper parity — every migrated wrapper
+    // ships these two consteval forwarders so diagnostic emission
+    // can introspect uniformly.  See Linear.h's matching block for
+    // the full rationale.
+    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
+        return graded_type::value_type_name();
+    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
+        return graded_type::lattice_name();
     }
 };
 

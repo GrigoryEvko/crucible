@@ -51,6 +51,7 @@
 #include <functional>
 #include <limits>
 #include <optional>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -194,6 +195,25 @@ public:
     // in a moved-from state.  Forwards through Graded::consume().
     [[nodiscard]] Storage<T> drain() && noexcept(std::is_nothrow_move_constructible_v<Storage<T>>) {
         return std::move(impl_).consume();
+    }
+
+    // ── Diagnostic names (forwarded from Graded substrate) ─────────
+    //
+    // value_type_name(): the Storage<T> display string via reflection
+    // (P2996R13).  Note this is the STORAGE type, not the element T —
+    // AppendOnly's "value" in Graded terms is the underlying container.
+    //
+    // lattice_name(): "SeqPrefixLattice<T>" — the prefix-extension
+    // lattice over T-sequences whose grade is derived from .size().
+    //
+    // Audit-Tier-2 cross-wrapper parity — every migrated wrapper
+    // ships these two consteval forwarders.  See Linear.h for full
+    // rationale.
+    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
+        return graded_type::value_type_name();
+    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
+        return graded_type::lattice_name();
     }
 };
 
@@ -400,6 +420,22 @@ public:
         pre(impl_.peek() != std::numeric_limits<T>::max())
     {
         impl_ = graded_type{impl_.peek() + T{1}};
+    }
+
+    // ── Diagnostic names (forwarded from Graded substrate) ─────────
+    //
+    // value_type_name(): T's display string via reflection (P2996R13).
+    // lattice_name(): "MonotoneLattice<T, Cmp>" — the partial-order
+    // lattice over T under Cmp.
+    //
+    // Audit-Tier-2 cross-wrapper parity — every migrated wrapper
+    // ships these two consteval forwarders.  See Linear.h for full
+    // rationale.
+    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
+        return graded_type::value_type_name();
+    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
+        return graded_type::lattice_name();
     }
 };
 

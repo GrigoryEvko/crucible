@@ -54,6 +54,7 @@
 
 #include <compare>
 #include <cstdint>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -273,6 +274,28 @@ public:
         requires std::three_way_comparable<T>
     {
         return a.impl_.peek() <=> b.impl_.peek();
+    }
+
+    // ── Diagnostic names (forwarded from Graded substrate) ─────────
+    //
+    // value_type_name(): T's display string via reflection (P2996R13)
+    // — answers "what type does this Refined wrap?" without requiring
+    // the caller to inspect the predicate signature.
+    //
+    // lattice_name(): "BoolLattice<Pred>" (the trivial-bool refinement
+    // lattice).  The actual stringification of Pred depends on
+    // BoolLattice's own consteval name() routine.
+    //
+    // Audit-Tier-2 cross-wrapper parity sweep — every migrated wrapper
+    // (Linear, Refined, Tagged, Secret, Monotonic, AppendOnly, Stale,
+    // TimeOrdered) ships these two forwarders at the bottom of its
+    // class body so review-time greps always find them in the same
+    // place.  Symmetry is the property; concrete strings vary.
+    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
+        return graded_type::value_type_name();
+    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
+        return graded_type::lattice_name();
     }
 };
 
