@@ -23,18 +23,32 @@
 // do not implicitly convert, so a function demanding
 // Tagged<T, source::Sanitized> will not accept Tagged<T, source::External>.
 //
-// ── DEPRECATION-ON-MIGRATE (Phase 2a Graded refactor) ──────────────
-// Folds into a Graded<Modality, Lattice, T> alias once safety/Graded.h
-// ships (misc/25_04_2026.md §2.3).  Public API preserved; this
-// standalone implementation is removed at migration.
+// ── MIGRATED to Graded<RelativeMonad, TrustLattice<Tag>, T>  (#464) ─
 //
-//   template <typename T, typename Source>
-//   using Tagged = Graded<RelativeMonad, TrustLattice<Source>, T>;
+// As of MIGRATE-4 (2026-04-26) Tagged<T, Tag> is a thin wrapper
+// around the algebraic primitive
 //
-// Each tag namespace (source::*, trust::*, access::*, version::*)
-// instantiates a sub-lattice of TrustLattice.  Subsort axioms (#395)
-// translate to lattice ⊑ on the relative monad.
-// Do not extend with new specializations — extend the Graded algebra.
+//   Graded<ModalityKind::RelativeMonad,
+//          TrustLattice<Tag>,
+//          T>
+//
+// per misc/25_04_2026.md §2.3.  The wrapper preserves every existing
+// public API surface (value() / value_mut() / retag() / into() /
+// implicit deduction guide).  Storage is delegated to Graded; the
+// lattice element_type is empty (TrustLattice<Tag>'s singleton tag
+// at type level) and EBO collapses both grade_ and the wrapper
+// itself, so sizeof(Tagged<T, Tag>) == sizeof(T) is preserved by
+// structural guarantee — same as pre-migration.
+//
+// Per the Graded storage-regime taxonomy (memory rule
+// feedback_graded_storage_regimes), this is regime #1: empty grade
+// via EBO.  Same shape as Linear and Refined.
+//
+// MUTATION via value_mut() forwards to Graded::peek_mut(), which is
+// gated by `requires (AbsoluteModality<M> || std::is_empty_v<grade
+// _type>)`.  Tagged is RelativeMonad modality, but TrustLattice
+// <Source>::element_type is empty — the second clause of the gate
+// admits the call.  See Graded.h's "REFINED GATE" comment.
 // ───────────────────────────────────────────────────────────────────
 //
 // Pattern: cross every trust boundary with a source:: tag; every
@@ -42,6 +56,8 @@
 // with version::V<N>.
 
 #include <crucible/Platform.h>
+#include <crucible/algebra/Graded.h>
+#include <crucible/algebra/lattices/TrustLattice.h>
 
 #include <type_traits>
 #include <utility>
@@ -107,12 +123,21 @@ namespace vessel_trust {
 
 template <typename T, typename Tag>
 class [[nodiscard]] Tagged {
-    T value_;
+    using lattice_type = ::crucible::algebra::lattices::TrustLattice<Tag>;
+    using graded_type  = ::crucible::algebra::Graded<
+        ::crucible::algebra::ModalityKind::RelativeMonad, lattice_type, T>;
+
+    // Empty-lattice grade_type collapses via [[no_unique_address]] in
+    // Graded; impl_ is sizeof(T).  Wrapper adds no other state.
+    graded_type impl_;
 
 public:
+    using value_type = T;
+    using tag_type   = Tag;
+
     constexpr explicit Tagged(T v)
         noexcept(std::is_nothrow_move_constructible_v<T>)
-        : value_{std::move(v)} {}
+        : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
     Tagged(const Tagged&)            = default;
     Tagged(Tagged&&)                 = default;
@@ -120,23 +145,34 @@ public:
     Tagged& operator=(Tagged&&)      = default;
     ~Tagged()                        = default;
 
-    [[nodiscard]] constexpr const T& value() const noexcept { return value_; }
-    [[nodiscard]] constexpr T& value_mut() noexcept { return value_; }
+    // Read-only access — forwards through Graded::peek().
+    [[nodiscard]] constexpr const T& value() const noexcept { return impl_.peek(); }
+
+    // Mutable access — forwards through Graded::peek_mut(), admitted
+    // by the refined gate `(AbsoluteModality || empty grade)`.
+    // TrustLattice<Tag> has empty element_type, so the second clause
+    // satisfies even though Tagged is RelativeMonad modality.
+    [[nodiscard]] constexpr T& value_mut() noexcept { return impl_.peek_mut(); }
 
     // Retagging is explicit — produces a new Tagged with a new tag.
+    // The phantom Tag template parameter changes; the value moves
+    // through.  Underlying storage / modality / lattice element shape
+    // is identical (different Tag, same TrustLattice<...>::element_type
+    // singleton), so the move is zero-cost.
     template <typename NewTag>
     [[nodiscard]] constexpr Tagged<T, NewTag> retag() &&
         noexcept(std::is_nothrow_move_constructible_v<T>)
     {
-        return Tagged<T, NewTag>{std::move(value_)};
+        return Tagged<T, NewTag>{std::move(impl_).consume()};
     }
 
     // Underlying-value extraction.  Use for re-wrapping or for known
-    // trusted internal paths.
+    // trusted internal paths.  Forwards through Graded::consume() —
+    // rvalue-this consumes the inner value.
     [[nodiscard]] constexpr T into() &&
         noexcept(std::is_nothrow_move_constructible_v<T>)
     {
-        return std::move(value_);
+        return std::move(impl_).consume();
     }
 };
 

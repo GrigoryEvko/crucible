@@ -263,9 +263,29 @@ public:
     // SAFE subset to expose.  Linear<T>'s migration to a Graded-
     // backed implementation depends on these accessors (Linear's
     // peek_mut and swap forward to them).
+    //
+    // ── REFINED GATE: AbsoluteModality OR empty grade ───────────────
+    //
+    // The first-cut gate `requires AbsoluteModality<M>` was conservative
+    // but unnecessarily restrictive.  The PRINCIPLE is "mutation is
+    // allowed when it can't violate the grade."  That principle has
+    // TWO satisfying conditions:
+    //
+    //   1. Absolute modality: grade is orthogonal to value content
+    //      (linearity, watermark, prefix length).
+    //   2. Empty grade: no runtime grade information exists (singleton
+    //      tag at type level — Secret's At<Conf::Secret>, Tagged's
+    //      TrustLattice<Source>).  Mutation has nothing to violate.
+    //
+    // The refined gate admits mutation for all the migration patterns
+    // (Linear, Refined, Monotonic, AppendOnly, Tagged, Secret) and
+    // still forbids it for the dangerous case: Comonad/RelativeMonad
+    // over a non-empty grade where the grade encodes information
+    // about the specific value bytes that mutation would silently
+    // invalidate.
 
     [[nodiscard]] constexpr T& peek_mut() & noexcept
-        requires AbsoluteModality<M>
+        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         return inner_;
     }
@@ -273,7 +293,7 @@ public:
     constexpr void swap(Graded& other)
         noexcept(std::is_nothrow_swappable_v<T>
                  && std::is_nothrow_swappable_v<grade_type>)
-        requires AbsoluteModality<M>
+        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         using std::swap;
         swap(inner_, other.inner_);
@@ -283,7 +303,7 @@ public:
     friend constexpr void swap(Graded& a, Graded& b)
         noexcept(std::is_nothrow_swappable_v<T>
                  && std::is_nothrow_swappable_v<grade_type>)
-        requires AbsoluteModality<M>
+        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         a.swap(b);
     }
@@ -530,16 +550,21 @@ public:
         return value_;  // grade_type IS T here, by the specialization's selector
     }
 
-    // ── Mutable access (Absolute modality only) ─────────────────────
+    // ── Mutable access (refined gate; see primary's discussion) ─────
+    //
+    // For the T==element_type specialization, grade_type IS T, so
+    // `std::is_empty_v<grade_type>` reduces to `std::is_empty_v<T>`
+    // — almost never true for value types but preserved for
+    // consistency with the primary template's gate principle.
     [[nodiscard]] constexpr T& peek_mut() & noexcept
-        requires AbsoluteModality<M>
+        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         return value_;
     }
 
     constexpr void swap(Graded& other)
         noexcept(std::is_nothrow_swappable_v<T>)
-        requires AbsoluteModality<M>
+        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         using std::swap;
         swap(value_, other.value_);
@@ -547,7 +572,7 @@ public:
 
     friend constexpr void swap(Graded& a, Graded& b)
         noexcept(std::is_nothrow_swappable_v<T>)
-        requires AbsoluteModality<M>
+        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         a.swap(b);
     }
@@ -799,15 +824,20 @@ public:
     // the mutation respects whatever lattice discipline applies
     // (e.g., AppendOnly only allows append, so the derived grade
     // monotonically increases).
+    // Refined gate: same principle as primary (mutation allowed when
+    // grade is orthogonal-to-content OR when grade is empty).  For
+    // derived-grade, the grade computes from the value, so mutation
+    // implicitly updates both views — the wrapper above (e.g.
+    // AppendOnly) provides the discipline.
     [[nodiscard]] constexpr T& peek_mut() & noexcept
-        requires AbsoluteModality<M>
+        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         return value_;
     }
 
     constexpr void swap(Graded& other)
         noexcept(std::is_nothrow_swappable_v<T>)
-        requires AbsoluteModality<M>
+        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         using std::swap;
         swap(value_, other.value_);
@@ -815,7 +845,7 @@ public:
 
     friend constexpr void swap(Graded& a, Graded& b)
         noexcept(std::is_nothrow_swappable_v<T>)
-        requires AbsoluteModality<M>
+        requires (AbsoluteModality<M> || std::is_empty_v<grade_type>)
     {
         a.swap(b);
     }
