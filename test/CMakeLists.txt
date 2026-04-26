@@ -740,6 +740,58 @@ crucible_neg_compile_test(neg_tolerance_cross_lattice_mixing
 crucible_neg_compile_test(neg_graded_peek_mut_on_comonad_nonempty_grade
   "constraints not satisfied|AbsoluteModality")
 
+# ─── ALGEBRA-13/14 cross-instantiation neg-compiles (extension) ─────
+#
+# Six additional neg-compiles broadening coverage of the same lattice
+# substrate the prior batch pinned, targeting class-of-bug holes that
+# would slip through the originals:
+#
+#   neg_happens_before_cross_n_mixing
+#       HappensBefore<3>::leq with HB<4>::element_type — pins per-N
+#       type identity at the static-leq surface.  [GCC-WRAPPER-TEXT]
+#
+#   neg_happens_before_cross_tag_mixing
+#       HappensBefore<4, TagA>::leq with HB<4, TagB>::element_type —
+#       pins per-Tag type identity (the WHOLE POINT of the optional
+#       Tag parameter).  Without this, a future refactor that elided
+#       Tag would silently allow ReplayClock to flow into
+#       KernelOrderClock positions.  [GCC-WRAPPER-TEXT]
+#
+#   neg_happens_before_spaceship_cross_n
+#       Cross-N invocation of operator<=> rejected at overload
+#       resolution.  Catches a refactor that left static `leq` strict
+#       but added a templated converting constructor on element_type
+#       that bridged the spaceship across N.  Both surfaces (member
+#       leq AND member <=>) must remain N-strict.  [GCC-WRAPPER-TEXT]
+#
+#   neg_consistency_at_cross_tier_mixing,
+#   neg_tolerance_at_cross_tier_mixing
+#       Mirrors of neg_lifetime_at_cross_tier_mixing for the OTHER two
+#       At<>-based chain lattices.  Together with the original, all
+#       three families are independently pinned — a refactor that
+#       drifted just ONE family's element_type identity would not
+#       slip through.  [GCC-WRAPPER-TEXT]
+#
+#   neg_graded_peek_mut_on_relative_monad_nonempty_grade
+#       Symmetric to the Comonad case: RelativeMonad over non-empty
+#       grade also rejected by the refined gate.  Together with the
+#       Comonad neg, proves the gate UNIFORMLY rejects any non-Absolute
+#       modality over a non-empty grade — the SOUNDNESS of the gate's
+#       principle ("mutation is allowed when it can't violate the
+#       grade").  [GCC-text + framework]
+crucible_neg_compile_test(neg_happens_before_cross_n_mixing
+  "could not convert|no matching function|cannot convert")
+crucible_neg_compile_test(neg_happens_before_cross_tag_mixing
+  "could not convert|no matching function|cannot convert")
+crucible_neg_compile_test(neg_happens_before_spaceship_cross_n
+  "no match for|invalid operands|no matching function")
+crucible_neg_compile_test(neg_consistency_at_cross_tier_mixing
+  "could not convert|no matching function|cannot convert")
+crucible_neg_compile_test(neg_tolerance_at_cross_tier_mixing
+  "could not convert|no matching function|cannot convert")
+crucible_neg_compile_test(neg_graded_peek_mut_on_relative_monad_nonempty_grade
+  "constraints not satisfied|AbsoluteModality")
+
 # WriteOnceNonNull<T*> — pointer-specialized single-set primitive (#77).
 #
 # [FRAMEWORK-CONTROLLED] Two named diagnostics gate the primitive's
