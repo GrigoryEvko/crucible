@@ -41,14 +41,12 @@
 //   ToleranceLattice          |         | precision-budget calibrator
 // ProductLattice<L₁, L₂, ...> | #460    | every multi-grade composition
 
+// ── Shipped lattices ────────────────────────────────────────────────
+#include <crucible/algebra/lattices/QttSemiring.h>  // ALGEBRA-4 (#449) — shipped
+
 namespace crucible::algebra::lattices {
 
-// ── Forward declarations (full definitions land per ALGEBRA-4..15) ──
-
-// QTT — Atkey 2018 quantitative-type-theory semiring {0, 1, ω}.
-// QttSemiring::At<Grade> ships as a member alias of QttSemiring per
-// ALGEBRA-4; not forward-declarable here.
-struct QttSemiring;
+// ── Forward declarations (full definitions land per ALGEBRA-5..15) ──
 
 // Predicate-Boolean lattice; Pred is a stateless predicate-name tag
 // (typically a class with a static consteval bool check(T) member).
