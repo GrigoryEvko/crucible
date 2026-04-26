@@ -187,12 +187,13 @@ concept GradedWrapper = requires {
     // not an arbitrary type that happens to be named graded_type.
     requires is_graded_specialization_v<typename W::graded_type>;
 
-    // Diagnostic forwarders — must return string_view.  The
-    // requires-expression instantiates them in unevaluated context;
-    // if the forwarder is missing or wrong return type, the concept
-    // fails cleanly.
-    { W::value_type_name() } -> std::same_as<std::string_view>;
-    { W::lattice_name()    } -> std::same_as<std::string_view>;
+    // Diagnostic forwarders — must be noexcept, must return
+    // string_view (L3: noexcept enforcement).  Consteval-ness is
+    // not directly expressible in a requires-clause; the harness
+    // catches non-consteval forwarders via static_assert in the
+    // forwarder-fidelity check.
+    { W::value_type_name() } noexcept -> std::same_as<std::string_view>;
+    { W::lattice_name()    } noexcept -> std::same_as<std::string_view>;
 };
 
 // ── Auto-specialize is_graded_wrapper_v from the concept ──────────
