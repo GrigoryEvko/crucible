@@ -320,21 +320,37 @@ public:
 //
 // Each MIGRATE-1..11 alias header invokes this macro at instantiation
 // witnesses to prove the wrapper carries zero overhead vs the
-// underlying T.  Five-way structural check:
+// underlying T.  Four-way structural check:
 //
 //   1. sizeof(Graded<T>)               == sizeof(T)
 //   2. alignof(Graded<T>)              == alignof(T)
 //   3. is_trivially_destructible_v parity  (preserves trivial dtor)
 //   4. is_trivially_copyable_v parity      (preserves memcpy-safety)
-//   5. is_trivially_default_constructible parity (preserves zero-init)
 //
-// (3)(4)(5) are gated on T's own trivial-trait status — for non-
-// trivial T we don't claim Graded<T> is trivial; we just claim that
-// IF T is trivial in some axis, the wrapper preserves that property.
-// A regression that introduced (e.g.) a non-trivial dtor in
-// grade_type would silently break memcpy-based serialization paths
-// through every migrated wrapper; this macro catches it at the
-// instantiation site.
+// (3)(4) are gated on T's own trivial-trait status — for non-trivial T
+// we don't claim Graded<T> is trivial; we just claim that IF T is
+// trivial in some axis, the wrapper preserves that property.  A
+// regression that introduced (e.g.) a non-trivial dtor in grade_type
+// would silently break memcpy-based serialization paths through every
+// migrated wrapper; this macro catches it at the instantiation site.
+//
+// Note: is_trivially_default_constructible_v parity DELIBERATELY NOT
+// asserted (AUDIT-FOUNDATION-2026-04-26 hardening).  Reason: Graded's
+// `inner_{}` and `grade_{}` use NSDMI (non-static data member
+// initializer) value-init per the InitSafe axiom.  An NSDMI on any
+// member makes the implicit default constructor non-trivial, even
+// when both T and grade_type ARE trivially default constructible.
+// So `is_trivially_default_constructible_v<Graded<int>>` is FALSE
+// while `is_trivially_default_constructible_v<int>` is TRUE — the
+// parity check would spuriously fire on any T that's trivially
+// default constructible.  The runtime cost of the NSDMI value-init
+// is provably zero (compiles to a `mov $0, ...` for arithmetic T,
+// elided entirely for empty-grade types via EBO), so triviality of
+// the default ctor is not a load-bearing property here — sizeof and
+// alignof parity together with the trivial-dtor and trivial-copy
+// parity cover the actual byte-level interoperability claim.  See
+// AUDIT-FOUNDATION-2026-04-26 graded_self_test::audit_int_default
+// witness below for the regression probe.
 //
 // Note: std::is_layout_compatible_v<Graded<T>, T> deliberately NOT
 // asserted.  Per [class.mem], two standard-layout class types are
@@ -366,13 +382,7 @@ public:
                   "Graded alias " #GradedAlias " over " #T_                     \
                   ": trivial-copyability parity broken — wrapper is no "        \
                   "longer memcpy-safe (would break Cipher serialize / SPSC "    \
-                  "ring entry copy paths)");                                    \
-    static_assert(std::is_trivially_default_constructible_v<T_> ==              \
-                  std::is_trivially_default_constructible_v<GradedAlias<T_>>,   \
-                  "Graded alias " #GradedAlias " over " #T_                     \
-                  ": trivial-default-construct parity broken — grade_type's "   \
-                  "default ctor leaks a runtime cost into the wrapper's "       \
-                  "default-init path")
+                  "ring entry copy paths)")
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::graded_self_test {
@@ -498,6 +508,32 @@ template <typename T> using AbsoluteOverEmpty =
     Graded<ModalityKind::Absolute, TrivialEmptyLattice, T>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbsoluteOverEmpty, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbsoluteOverEmpty, EightByteValue);
+
+// AUDIT-FOUNDATION-2026-04-26 regression — invoke the macro on a
+// trivially-default-constructible T (int, double).  Pre-audit, the
+// trivial-default-constructible PARITY check spuriously fired here
+// because Graded's NSDMI-initialized members make the wrapper's
+// implicit default ctor non-trivial even when T's IS trivial — but
+// the layout claim (sizeof, alignof, dtor / copy parity) holds.
+// Dropping the tdc parity check from the macro is the fix; this
+// witness pins it.
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbsoluteOverEmpty, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbsoluteOverEmpty, double);
+
+// Document the underlying NSDMI-vs-trivial-ctor interaction directly
+// so future maintainers see the concrete asymmetry.
+static_assert(std::is_trivially_default_constructible_v<int>);
+static_assert(!std::is_trivially_default_constructible_v<AbsoluteOverEmpty<int>>,
+    "Graded's NSDMI-initialized inner_/grade_ members make the implicit "
+    "default ctor non-trivial — the layout-invariant macro must NOT assert "
+    "trivial-default-constructibility parity.  See macro doc-comment for "
+    "rationale.");
+
+// The other parity claims still hold for trivially-X T:
+static_assert(std::is_trivially_destructible_v<int>);
+static_assert(std::is_trivially_destructible_v<AbsoluteOverEmpty<int>>);
+static_assert(std::is_trivially_copyable_v<int>);
+static_assert(std::is_trivially_copyable_v<AbsoluteOverEmpty<int>>);
 
 // ── Move-only T compatibility ───────────────────────────────────────
 //
