@@ -11,8 +11,16 @@
 //   - include <crucible/algebra/Lattice.h>
 //   - publish a `name()` for diagnostic emission
 //   - emit a self-test block invoking the `verify_*` helpers from
-//     Lattice.h at every representative element witness
-//   - be free of allocations and runtime state (consteval-only)
+//     Lattice.h at every representative element witness — exhaustive
+//     when the carrier is finite (e.g. enums); spot-check at a
+//     representative span when the carrier is infinite (e.g. ℕ, ℚ)
+//   - emit a runtime smoke test (`inline void runtime_smoke_test()`)
+//     exercising lattice ops AND Graded<...,L,T>::weaken / compose
+//     with non-constant arguments, to catch the consteval-vs-constexpr
+//     trap that pure static_assert tests miss
+//   - be free of per-instance allocations in lattice operations
+//     themselves (the lattice is stateless; the smoke harness may
+//     use stack values)
 //
 // The forward declarations below let dependent code (MIGRATE-1..11
 // alias headers, future ProductLattice instantiations) name a lattice
@@ -48,6 +56,7 @@
 #include <crucible/algebra/lattices/MonotoneLattice.h>   // ALGEBRA-9 (#454) — shipped
 #include <crucible/algebra/lattices/QttSemiring.h>       // ALGEBRA-4 (#449) — shipped
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>  // ALGEBRA-10 (#455) — shipped
+#include <crucible/algebra/lattices/StalenessSemiring.h> // ALGEBRA-11 (#456) — shipped
 #include <crucible/algebra/lattices/TrustLattice.h>      // ALGEBRA-7 (#452) — shipped
 
 namespace crucible::algebra::lattices {
@@ -66,8 +75,7 @@ namespace crucible::algebra::lattices {
 
 // SeqPrefixLattice<Element> — already included above (ALGEBRA-10 shipped).
 
-// ℕ ∪ ∞ with min-plus algebra (staleness, latency).
-struct StalenessSemiring;
+// StalenessSemiring — already included above (ALGEBRA-11 shipped).
 
 // Budget lattices — magnitudes with ≤ ordering.
 struct LatencyBudget;
