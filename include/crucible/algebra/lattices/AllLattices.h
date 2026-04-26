@@ -45,18 +45,17 @@
 #include <crucible/algebra/lattices/BoolLattice.h>  // ALGEBRA-5 (#450) — shipped
 #include <crucible/algebra/lattices/ConfLattice.h>  // ALGEBRA-6 (#451) — shipped
 #include <crucible/algebra/lattices/QttSemiring.h>  // ALGEBRA-4 (#449) — shipped
+#include <crucible/algebra/lattices/TrustLattice.h> // ALGEBRA-7 (#452) — shipped
 
 namespace crucible::algebra::lattices {
 
-// ── Forward declarations (full definitions land per ALGEBRA-7..15) ──
+// ── Forward declarations (full definitions land per ALGEBRA-8..15) ──
 
 // BoolLattice<Pred> — already included above (ALGEBRA-5 shipped).
 
 // ConfLattice — already included above (ALGEBRA-6 shipped).
 
-// Trust lattice parameterized over a tag-namespace family
-// (source::*, trust::*, access::*, version::*).
-template <typename Source> struct TrustLattice;
+// TrustLattice<Source> — already included above (ALGEBRA-7 shipped).
 
 // ℚ[0,1] semiring for fractional CSL permissions.
 struct FractionalLattice;
