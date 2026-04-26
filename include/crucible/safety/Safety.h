@@ -30,6 +30,7 @@
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Simd.h>
+#include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Workload.h>

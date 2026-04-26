@@ -893,6 +893,15 @@ crucible_neg_compile_test(neg_time_ordered_cross_n_mixing
 crucible_neg_compile_test(neg_time_ordered_cross_tag_mixing
   "could not convert|no matching function|cannot convert")
 
+# ─── MIGRATE-8 Stale<T> wrapper neg-compile ─────────────────────────
+#
+# Stale<T> has only ONE template-parameter axis (T itself; no N or
+# Tag like TimeOrdered), so its wrapper-level neg-compile surface is
+# correspondingly smaller — one cross-T type-identity test pins the
+# per-payload distinction at every method signature.
+crucible_neg_compile_test(neg_stale_cross_t_mixing
+  "could not convert|no matching function|cannot convert")
+
 # WriteOnceNonNull<T*> — pointer-specialized single-set primitive (#77).
 #
 # [FRAMEWORK-CONTROLLED] Two named diagnostics gate the primitive's
