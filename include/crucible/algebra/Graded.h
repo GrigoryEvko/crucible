@@ -244,6 +244,50 @@ public:
         return grade_;
     }
 
+    // ── Mutable access (Absolute modality only) ─────────────────────
+    //
+    // peek_mut and swap are admitted on Absolute-graded values where
+    // the grade is a STATIC property of the value (not derived from
+    // its content) — mutating inner_ cannot violate the lattice
+    // position.  Comonad and RelativeMonad modalities EXCLUDE these
+    // operations: in those forms the grade encodes information that
+    // depends on the value's identity (Secret<T>'s classification of
+    // the specific bytes, Tagged<T, Source>'s provenance of the
+    // specific value), and raw mutation would silently change what
+    // the grade is asserting about.
+    //
+    // Wrappers above Graded that DO want to constrain mutation
+    // further (Monotonic's monotone-only updates, AppendOnly's
+    // append-only updates) hide these operations via encapsulation —
+    // Graded ships the SOUND operations; the wrapper chooses the
+    // SAFE subset to expose.  Linear<T>'s migration to a Graded-
+    // backed implementation depends on these accessors (Linear's
+    // peek_mut and swap forward to them).
+
+    [[nodiscard]] constexpr T& peek_mut() & noexcept
+        requires AbsoluteModality<M>
+    {
+        return inner_;
+    }
+
+    constexpr void swap(Graded& other)
+        noexcept(std::is_nothrow_swappable_v<T>
+                 && std::is_nothrow_swappable_v<grade_type>)
+        requires AbsoluteModality<M>
+    {
+        using std::swap;
+        swap(inner_, other.inner_);
+        swap(grade_, other.grade_);
+    }
+
+    friend constexpr void swap(Graded& a, Graded& b)
+        noexcept(std::is_nothrow_swappable_v<T>
+                 && std::is_nothrow_swappable_v<grade_type>)
+        requires AbsoluteModality<M>
+    {
+        a.swap(b);
+    }
+
     // ── Comonad: counit (extract from a Comonad-form value) ─────────
     //
     // Aliased wrappers may rename this — Secret<T>::declassify<Policy>()
