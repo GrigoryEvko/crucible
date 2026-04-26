@@ -29,15 +29,53 @@
 // linearity, no two simultaneously-live Permission<R> values can
 // exist; by transitivity, no two threads can mutate R simultaneously.
 //
-// ── DEPRECATION-ON-MIGRATE (Phase 2a Graded refactor, partial) ─────
-// SharedPermission<Tag> folds into a Graded<Modality, Lattice, T>
-// alias once safety/Graded.h ships (misc/25_04_2026.md §2.3):
+// ── MIGRATE-7 — façade migration (audit MIGRATE-7a, 2026-04-26) ────
+//
+// 25_04_2026.md §2.3 specifies the mapping:
 //
 //   template <typename Tag>
 //   using SharedPermission = Graded<Absolute, FractionalLattice, Tag>;
 //
-// FractionalLattice = ℚ[0,1] semiring; the existing fractional-share
-// arithmetic in SharedPermissionPool collapses to lattice ⊕/⊗.
+// The audit (MIGRATE-7a) found this mapping STRUCTURALLY INCONSISTENT
+// with the existing implementation, and chose the FAÇADE path over a
+// full restructure.  Rationale:
+//
+// 1. The existing SharedPermission<Tag> is an EMPTY phantom token
+//    (sizeof 1, EBO-collapsible to 0).  It is a PROOF that a non-zero
+//    fractional share exists — not a CARRIER of the rational value.
+//    The actual share count lives in SharedPermissionPool<Tag>'s
+//    atomic state (count + EXCLUSIVE_OUT_BIT).
+//
+// 2. A literal `using SharedPermission = Graded<Absolute,
+//    FractionalLattice, Tag>` would force SharedPermission to STORE a
+//    Rational at every instance — breaking EBO, breaking the proof-
+//    token design, breaking every production caller of Pool::lend()
+//    that relies on the Guard returning a copyable empty token.
+//
+// 3. The 25_04 doc's mapping conflates two roles: SharedPermission
+//    (the proof) and SharedPermissionPool (the carrier).  The carrier
+//    IS structurally a Graded<Absolute, FractionalLattice, Tag> in
+//    spirit — its atomic state encodes the current share grade —
+//    but lifting the runtime atomic state into the Graded substrate
+//    would require a fundamentally different concurrent primitive.
+//
+// FAÇADE MIGRATION (this commit):
+//
+//   - SharedPermission<Tag> stays a phantom proof-token; semantics
+//     unchanged; sizeof unchanged.
+//   - Adds a public `graded_type = Graded<Absolute, FractionalLattice,
+//     Tag>` typedef for diagnostic introspection (test_migration_
+//     verification, future GradedWrapper concept).
+//   - Adds `lattice_name()` + `value_type_name()` consteval forwarders
+//     mirroring the audit-Tier-2 cross-wrapper parity from the eight
+//     migrated wrappers (Linear/Refined/Tagged/Secret/Monotonic/
+//     AppendOnly/Stale/TimeOrdered, commits 0640168 + e21f6ba).
+//   - Documents this as a "regime-5" classification (proof-token,
+//     non-zero-cost, runtime carrier elsewhere) — distinct from
+//     regime-1 (zero-cost EBO collapse: Linear/Refined/Tagged/Secret),
+//     regime-2 (T == element_type collapse: Monotonic),
+//     regime-3 (derived grade from container: AppendOnly),
+//     regime-4 (T + grade carried per instance: Stale/TimeOrdered).
 //
 // Permission<Tag>, SharedPermissionPool, ReadView<Tag>, and the
 // permission_root_mint / permission_split / permission_combine /
@@ -110,12 +148,15 @@
 //    the whole region tree in one place.
 
 #include <crucible/Platform.h>
+#include <crucible/algebra/Graded.h>
+#include <crucible/algebra/lattices/FractionalLattice.h>
 #include <crucible/safety/Pinned.h>
 
 #include <atomic>
 #include <concepts>
 #include <cstdint>
 #include <optional>
+#include <string_view>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -409,12 +450,47 @@ class [[nodiscard]] SharedPermission {
 public:
     using tag_type = Tag;
 
+    // ── Façade-migration alias (MIGRATE-7, regime-5) ───────────────
+    //
+    // The 25_04_2026.md §2.3 mapping points SharedPermission<Tag> at
+    // Graded<Absolute, FractionalLattice, Tag>.  The audit (MIGRATE-
+    // 7a) chose the FAÇADE path: SharedPermission stays a proof-only
+    // empty token, but exposes graded_type for diagnostic
+    // introspection (GradedWrapper concept, test_migration_
+    // verification harness, mCRL2 export).  See the file-header
+    // MIGRATE-7 audit block for the rationale (atomic share lives in
+    // SharedPermissionPool; the token is the proof, not the carrier).
+    //
+    // value_type is Tag itself — the phantom region label — because
+    // the proof-token's "value" is its identity.  No Rational is
+    // stored at the SharedPermission instance level.
+    using value_type   = Tag;
+    using graded_type  = ::crucible::algebra::Graded<
+        ::crucible::algebra::ModalityKind::Absolute,
+        ::crucible::algebra::lattices::FractionalLattice,
+        Tag>;
+
     // Copyable: the whole point of fractional permissions.
     constexpr SharedPermission(const SharedPermission&) noexcept            = default;
     constexpr SharedPermission(SharedPermission&&) noexcept                 = default;
     constexpr SharedPermission& operator=(const SharedPermission&) noexcept = default;
     constexpr SharedPermission& operator=(SharedPermission&&) noexcept      = default;
     ~SharedPermission()                                                     = default;
+
+    // ── Diagnostic names (forwarded from Graded substrate) ─────────
+    //
+    // value_type_name(): Tag's display string via reflection.
+    // lattice_name(): "FractionalLattice" — the ℚ[0,1] semiring.
+    //
+    // Audit-Tier-2 cross-wrapper parity sweep — every migrated
+    // wrapper (eight Graded-backed + this façade) ships these two
+    // forwarders so review-time diagnostics introspect uniformly.
+    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
+        return graded_type::value_type_name();
+    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
+        return graded_type::lattice_name();
+    }
 };
 
 // ── SharedPermissionGuard<Tag> ───────────────────────────────────────
