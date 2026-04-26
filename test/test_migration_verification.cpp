@@ -35,6 +35,7 @@
 //   This harness is strictly cross-cutting.
 // ═══════════════════════════════════════════════════════════════════
 
+#include <crucible/algebra/GradedTrait.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Refined.h>
@@ -145,6 +146,41 @@ static_assert(!std::is_void_v<typename AppendOnly<int>::graded_type>);
 static_assert(!std::is_void_v<typename Stale<int>::graded_type>);
 static_assert(!std::is_void_v<typename TimeOrdered<int, 4>::graded_type>);
 static_assert(!std::is_void_v<typename SharedPermission<VerificationTag>::graded_type>);
+
+// ── COVERAGE MATRIX — GradedWrapper concept (GRADED-TRAIT-2) ───────
+//
+// Single fold-asserts that every migrated wrapper satisfies the
+// uniform GradedWrapper contract.  This is the structural promotion
+// of the per-wrapper checks above into one concept that future
+// MIGRATE-N work cannot bypass.
+//
+// If a future refactor breaks any forwarder (lattice_name/
+// value_type_name returning the wrong type, missing graded_type,
+// etc.), the concept rejects the wrapper and the static_assert
+// names the offending type.
+
+using namespace ::crucible::algebra;
+
+static_assert(GradedWrapper<Linear<int>>);
+static_assert(GradedWrapper<Refined<positive_local, int>>);
+static_assert(GradedWrapper<SealedRefined<positive_local, int>>);
+static_assert(GradedWrapper<Tagged<int, VerificationTag>>);
+static_assert(GradedWrapper<Secret<int>>);
+static_assert(GradedWrapper<Monotonic<std::uint64_t>>);
+static_assert(GradedWrapper<AppendOnly<int>>);
+static_assert(GradedWrapper<Stale<int>>);
+static_assert(GradedWrapper<TimeOrdered<int, 4>>);
+static_assert(GradedWrapper<SharedPermission<VerificationTag>>);
+
+// The is_graded_wrapper_v variable template auto-specializes from
+// the concept — same coverage, value-form for use in metaprograms.
+static_assert(is_graded_wrapper_v<Linear<int>>);
+static_assert(is_graded_wrapper_v<SharedPermission<VerificationTag>>);
+
+// Negative coverage (sanity) — bare types are NOT graded wrappers.
+static_assert(!is_graded_wrapper_v<int>);
+static_assert(!is_graded_wrapper_v<void*>);
+static_assert(!is_graded_wrapper_v<std::string_view>);
 
 // ── COVERAGE MATRIX — lattice_name forwarder uniformity ────────────
 //
