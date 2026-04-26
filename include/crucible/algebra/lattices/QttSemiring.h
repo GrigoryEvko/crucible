@@ -161,10 +161,11 @@ struct QttSemiring {
         // Empty tag carrying Grade at the type level.  Comparison is
         // trivially true (only one value possible).  Conversion to
         // QttGrade lets external code recover the grade for
-        // diagnostics / serialization.
+        // diagnostics / serialization.  No `value` static — use
+        // `At<Grade>::grade` (lattice level) or the conversion
+        // operator (instance level) to recover the grade.
         struct element_type {
             using grade_value_type = QttGrade;
-            static constexpr grade_value_type value = Grade;
             [[nodiscard]] constexpr operator grade_value_type() const noexcept {
                 return Grade;
             }
@@ -240,25 +241,51 @@ static_assert(std::is_empty_v<QttSemiring::At<QttGrade::Zero>::element_type>);
 static_assert(std::is_empty_v<QttSemiring::At<QttGrade::One>::element_type>);
 static_assert(std::is_empty_v<QttSemiring::At<QttGrade::Omega>::element_type>);
 
-// Lattice axioms hold under the chain order.
-static_assert(verify_bounded_lattice_axioms_at<QttSemiring>(
-    QttGrade::Zero, QttGrade::Zero, QttGrade::Zero));
-static_assert(verify_bounded_lattice_axioms_at<QttSemiring>(
-    QttGrade::Zero, QttGrade::One,  QttGrade::Omega));
-static_assert(verify_bounded_lattice_axioms_at<QttSemiring>(
-    QttGrade::One,  QttGrade::Omega, QttGrade::Zero));
-static_assert(verify_bounded_lattice_axioms_at<QttSemiring>(
-    QttGrade::Omega, QttGrade::Omega, QttGrade::Omega));
+// EXHAUSTIVE lattice + semiring axiom coverage over the entire 3³=27
+// triple space {Zero, One, Omega}³.  For finite-enum carriers this is
+// the strongest verification possible at compile time; spot-checking
+// at four triples (the original) leaves 23 untested combinations.
+//
+// 540 sub-checks = 27 triples × ~20 axiom predicates.  Fits well
+// within compile-time budget; no per-TU cost at runtime.
+[[nodiscard]] consteval bool exhaustive_lattice_check() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^QttGrade));
+    template for (constexpr auto ea : enumerators) {
+        template for (constexpr auto eb : enumerators) {
+            template for (constexpr auto ec : enumerators) {
+                if (!verify_bounded_lattice_axioms_at<QttSemiring>(
+                        [:ea:], [:eb:], [:ec:])) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+static_assert(exhaustive_lattice_check(),
+    "QttSemiring's chain-order lattice axioms must hold at EVERY "
+    "(QttGrade)³ triple — failure indicates a defect in leq/join/meet "
+    "or in the underlying enum encoding.");
 
-// Semiring axioms hold for the QTT operations.
-static_assert(verify_semiring_axioms_at<QttSemiring>(
-    QttGrade::Zero, QttGrade::Zero, QttGrade::Zero));
-static_assert(verify_semiring_axioms_at<QttSemiring>(
-    QttGrade::Zero, QttGrade::One, QttGrade::Omega));
-static_assert(verify_semiring_axioms_at<QttSemiring>(
-    QttGrade::One,  QttGrade::One, QttGrade::One));
-static_assert(verify_semiring_axioms_at<QttSemiring>(
-    QttGrade::Omega, QttGrade::Omega, QttGrade::Omega));
+[[nodiscard]] consteval bool exhaustive_semiring_check() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^QttGrade));
+    template for (constexpr auto ea : enumerators) {
+        template for (constexpr auto eb : enumerators) {
+            template for (constexpr auto ec : enumerators) {
+                if (!verify_semiring_axioms_at<QttSemiring>(
+                        [:ea:], [:eb:], [:ec:])) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+static_assert(exhaustive_semiring_check(),
+    "QttSemiring's QTT semiring axioms must hold at EVERY (QttGrade)³ "
+    "triple — covers Atkey 2018's full algebraic structure.");
 
 // Atkey-specific identities.
 static_assert(QttSemiring::add(QttGrade::One, QttGrade::One) == QttGrade::Omega,
@@ -278,6 +305,29 @@ static_assert(QttSemiring::name() == "QttSemiring");
 static_assert(QttSemiring::At<QttGrade::One>::name() == "QttSemiring::At<1>");
 static_assert(qtt_grade_name(QttGrade::Zero)  == "0");
 static_assert(qtt_grade_name(QttGrade::One)   == "1");
+
+// Reflection-driven coverage check on At<Grade>::name() — every
+// QttGrade enumerator must produce a non-sentinel name from the
+// corresponding At<>'s switch.  Mirrors every_qtt_grade_has_name()
+// for the free function; catches missing switch arms on future
+// grade extensions independently.
+[[nodiscard]] consteval bool every_at_grade_has_name() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^QttGrade));
+    template for (constexpr auto en : enumerators) {
+        // Splice in template-argument position needs parens to
+        // disambiguate from the <: digraph; per P2996R13 / C++26.
+        if (QttSemiring::At<([:en:])>::name() ==
+            std::string_view{"QttSemiring::At<?>"}) {
+            return false;
+        }
+    }
+    return true;
+}
+static_assert(every_at_grade_has_name(),
+    "QttSemiring::At<Grade>::name() switch is missing an arm for at "
+    "least one QttGrade enumerator — add the arm or the new grade "
+    "leaks the 'QttSemiring::At<?>' sentinel into diagnostics.");
 
 // Convenience aliases resolve to the right At<> instantiations.
 static_assert(qtt::Erased::grade       == QttGrade::Zero);
