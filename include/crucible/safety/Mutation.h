@@ -92,33 +92,41 @@ inline constexpr bool is_writeoncenonnull_v =
 // Default storage is std::vector; users may substitute arena-backed
 // or inplace_vector backing by specifying the second template param.
 //
-// ── MIGRATE-6 #466 NOTE: NOT migrated to Graded ─────────────────────
+// ── MIGRATED to Graded<Absolute, SeqPrefixLattice<T>, Storage<T>> (#466) ─
 //
-// Unlike Linear / Refined / Monotonic, AppendOnly does NOT delegate
-// storage to Graded<Absolute, SeqPrefixLattice<T>, Storage<T>>.
+// As of MIGRATE-6 (2026-04-26) AppendOnly<T, Storage> delegates
+// storage to the algebraic primitive
 //
-// The structural mismatch: SeqPrefixLattice<T>::element_type is
-// `Length{size_t}` (8 bytes) — DIFFERENT from the value type
-// `Storage<T>` (typically std::vector, ~24 bytes).  Graded's
-// `T == L::element_type` partial specialization (which collapses
-// value+grade for Monotonic) does not apply here, so the migrated
-// form would carry +8 bytes per AppendOnly instance.  That breaks
-// Arena's `static_assert(sizeof(Arena) == 64)` cache-line invariant
-// — Arena holds an AppendOnly<char*> for its blocks_ field, packed
-// into the 64-byte budget exactly.
+//   Graded<ModalityKind::Absolute,
+//          SeqPrefixLattice<T>,
+//          Storage<T>>
 //
-// More fundamentally: AppendOnly's grade would be redundant with the
-// vector's own .size() — every emplace() would have to update both
-// the vector AND a separate grade field, doubling the work for no
-// algebraic benefit (the wrapper never invokes lattice join/meet).
-// The Graded substrate's value here is purely symbolic.
+// per misc/25_04_2026.md §2.3.  The wrapper preserves every existing
+// public API (emplace / append / operator[] / front / back / size /
+// empty / begin / end / drain).
 //
-// Resolution: AppendOnly stays standalone for now.  When SeqPrefix
-// gains a "derived-grade" specialization (where the grade is a
-// computed view over the value rather than a stored field — open
-// design question on the Graded side), AppendOnly can re-migrate
-// without storage cost.  Tracking under SAFEINT-Verify (#428) for
-// the harness expansion that would catch the regression.
+// ZERO STORAGE COST via DERIVED-GRADE specialization
+//   Graded ships a third partial specialization (algebra/Graded.h
+//   §"derived-grade") that activates when the lattice provides a
+//   `static element_type grade_of(T const&)`.  SeqPrefixLattice opts
+//   in: grade_of(c) returns Length{c.size()}.  Result: Graded stores
+//   ONLY the Storage<T> value; the grade is computed on demand from
+//   the vector's own .size().
+//
+//   sizeof(AppendOnly<T, std::vector>) == sizeof(std::vector<T>)
+//   — same as pre-migration.  Arena's `static_assert(sizeof(Arena)
+//   == 64)` cache-line invariant holds; AppendOnly<char*> packs
+//   into the 64-byte budget exactly as before.
+//
+// SUBSTRATE COVERAGE NOTE
+//   AppendOnly is the canonical caller of the derived-grade
+//   specialization.  The substrate now correctly handles all three
+//   regimes:
+//     - Empty grade (Linear, Refined): EBO collapses, sizeof(T).
+//     - Grade == T (Monotonic): single-field collapse, sizeof(T).
+//     - Grade derives from T (AppendOnly): single field, computed
+//       grade, sizeof(T).
+//   No 2× regression in any standard wrapper.
 
 template <typename T, template <typename...> class Storage = std::vector>
 class [[nodiscard]] AppendOnly {
@@ -142,38 +150,68 @@ class [[nodiscard]] AppendOnly {
         "non-null contract at the call site if that's the real invariant. "
         "(#77, symmetric with the AppendOnly<WriteOnce<T>> rejection above)");
 
-    Storage<T> data_;
+    using lattice_type = ::crucible::algebra::lattices::SeqPrefixLattice<T>;
+    using graded_type  = ::crucible::algebra::Graded<
+        ::crucible::algebra::ModalityKind::Absolute, lattice_type, Storage<T>>;
+
+    graded_type impl_;
 
 public:
     using value_type     = T;
     using storage_type   = Storage<T>;
     using const_iterator = typename Storage<T>::const_iterator;
 
-    AppendOnly() = default;
+    // Default-construct: empty Storage; derived grade automatically
+    // resolves to Length{0} == bottom.
+    AppendOnly() : impl_{Storage<T>{}} {}
 
-    // The only mutation permitted: grow the tail.
+    // The only mutation permitted: grow the tail.  Forwards through
+    // Graded::peek_mut() (gated on AbsoluteModality<M> in Graded).
+    // The lattice grade auto-updates because it's derived from
+    // c.size() — no separate field to maintain.
     template <typename... Args>
     void emplace(Args&&... args) {
-        data_.emplace_back(std::forward<Args>(args)...);
+        impl_.peek_mut().emplace_back(std::forward<Args>(args)...);
     }
 
-    void append(T item) { data_.emplace_back(std::move(item)); }
+    void append(T item) {
+        impl_.peek_mut().emplace_back(std::move(item));
+    }
 
-    // Read-only access.
-    [[nodiscard]] const T& operator[](std::size_t i) const noexcept { return data_[i]; }
-    [[nodiscard]] const T& front() const noexcept { return data_.front(); }
-    [[nodiscard]] const T& back()  const noexcept { return data_.back(); }
-    [[nodiscard]] std::size_t size()  const noexcept { return data_.size(); }
-    [[nodiscard]] bool        empty() const noexcept { return data_.empty(); }
+    // Read-only access — forwards through Graded::peek().
+    [[nodiscard]] const T& operator[](std::size_t i) const noexcept {
+        return impl_.peek()[i];
+    }
+    [[nodiscard]] const T& front() const noexcept { return impl_.peek().front(); }
+    [[nodiscard]] const T& back()  const noexcept { return impl_.peek().back(); }
+    [[nodiscard]] std::size_t size()  const noexcept { return impl_.peek().size(); }
+    [[nodiscard]] bool        empty() const noexcept { return impl_.peek().empty(); }
 
-    [[nodiscard]] const_iterator begin() const noexcept { return data_.begin(); }
-    [[nodiscard]] const_iterator end()   const noexcept { return data_.end(); }
+    [[nodiscard]] const_iterator begin() const noexcept { return impl_.peek().begin(); }
+    [[nodiscard]] const_iterator end()   const noexcept { return impl_.peek().end(); }
 
-    // Consuming drain — yield the collected storage and leave *this empty.
+    // Consuming drain — yield the collected storage and leave *this
+    // in a moved-from state.  Forwards through Graded::consume().
     [[nodiscard]] Storage<T> drain() && noexcept(std::is_nothrow_move_constructible_v<Storage<T>>) {
-        return std::move(data_);
+        return std::move(impl_).consume();
     }
 };
+
+// Zero-cost guarantee preserved by Graded's derived-grade
+// specialization (algebra/Graded.h §"derived-grade").  The lattice
+// element (Length<T>, 8 bytes) is computed on demand from the
+// container's .size() rather than stored as a separate field —
+// no +8 byte regression vs pre-migration storage.
+static_assert(sizeof(AppendOnly<char*>)        == sizeof(std::vector<char*>),
+              "AppendOnly<char*> must collapse to sizeof(Storage<char*>) — "
+              "Graded's derived-grade specialization lets the grade "
+              "(Length{size_t}) be computed from c.size() rather than "
+              "stored separately.  If this fires, the specialization is "
+              "no longer being selected (likely SeqPrefixLattice's "
+              "grade_of trait method drifted).");
+static_assert(sizeof(AppendOnly<std::uint64_t>) == sizeof(std::vector<std::uint64_t>),
+              "AppendOnly<uint64_t> must collapse to sizeof(Storage<T>); "
+              "see neighboring assertion for the substrate rationale.");
 
 // ── OrderedAppendOnly ───────────────────────────────────────────────
 //

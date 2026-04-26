@@ -630,6 +630,225 @@ public:
     }
 };
 
+// ════════════════════════════════════════════════════════════════════
+// Concept: lattice opt-in for derived-grade storage
+// ════════════════════════════════════════════════════════════════════
+//
+// A lattice L "derives its grade from the value of type T" when it
+// publishes a static `grade_of(T const&) -> element_type` member.
+// This signals to the Graded substrate that the lattice position can
+// be COMPUTED from the value's bytes on demand, rather than stored as
+// a separate field.
+//
+// Canonical example: SeqPrefixLattice<T>::grade_of(Storage<T> const&
+// s) returns Length{s.size()}.  The vector already stores its own
+// size; mirroring that into a separate Graded grade field would
+// duplicate information.
+//
+// Lattices opt in by adding the static method.  Lattices that don't
+// fall through to the standard 2-field Graded layout.
+template <typename L, typename T>
+concept LatticeDerivesGrade = requires (T const& v) {
+    { L::grade_of(v) } -> std::same_as<typename L::element_type>;
+};
+
+// ════════════════════════════════════════════════════════════════════
+// Partial specialization: derived-grade storage (single field)
+// ════════════════════════════════════════════════════════════════════
+//
+// When `L` provides `grade_of(T const&)` AND the lattice element type
+// differs from T (so the previous `T == element_type` specialization
+// doesn't fire), the substrate stores a SINGLE T field and computes
+// the grade on demand.  No grade duplication.
+//
+// Storage cost: sizeof(Graded<M, L, T>) == sizeof(T) — same as the
+// other zero-cost regimes (empty grade, T == element_type).  The
+// grade is a logical view, not a stored field.
+//
+// LATTICE OPERATIONS RESTRICTION: weaken / compose are NOT provided
+// in this specialization.  Their semantics require constructing a
+// new Graded with a SPECIFIED grade — but the grade here is derived
+// from the value, so to "weaken to grade G" we'd need an inverse
+// (mutate value such that grade_of(value) == G).  That inverse is
+// generally unavailable; even when it exists (e.g., for SeqPrefix
+// "append elements until length == G"), it is the WRAPPER's job to
+// expose, not the substrate's.
+//
+// The wrapper above this specialization (e.g. AppendOnly's append /
+// emplace) provides whatever mutation discipline is appropriate; the
+// derived grade follows automatically because it's a function of the
+// value's current bytes.  Read-side lattice ops (L::leq, L::join on
+// observed grades) remain available via L's static interface — just
+// not as Graded member functions.
+//
+// This is the third storage regime, completing the substrate's
+// coverage of practical lattice / value combinations:
+//   - Empty grade (Linear, Refined): EBO collapses, sizeof(T).
+//   - Grade == T (Monotonic): single-field collapse, sizeof(T).
+//   - Grade derives from T (AppendOnly): single-field with computed
+//     grade, sizeof(T).
+//   - Genuinely separate runtime grade (Stale, future): real 2-field
+//     storage, cost paid per wrapper.
+
+template <ModalityKind M, Lattice L, typename T>
+    requires LatticeDerivesGrade<L, T>
+          && (!std::is_same_v<typename L::element_type, T>)
+class [[nodiscard]] Graded<M, L, T> {
+public:
+    static constexpr ModalityKind modality = M;
+
+    using modality_kind_type = ModalityKind;
+    using lattice_type       = L;
+    using value_type         = T;
+    using grade_type         = LatticeElement<L>;
+
+private:
+    // Single field — grade computed via L::grade_of(value_).
+    T value_{};
+
+public:
+    // ── Diagnostic (mirror primary) ─────────────────────────────────
+    [[nodiscard]] static consteval std::string_view modality_name() noexcept {
+        return ::crucible::algebra::modality_name(M);
+    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
+        return ::crucible::algebra::lattice_name<L>();
+    }
+    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
+        return std::meta::display_string_of(^^T);
+    }
+
+    // ── Object semantics (defaulted; mirror primary) ────────────────
+    constexpr Graded()                         = default;
+    constexpr Graded(const Graded&)            = default;
+    constexpr Graded(Graded&&)                 = default;
+    constexpr Graded& operator=(const Graded&) = default;
+    constexpr Graded& operator=(Graded&&)      = default;
+    ~Graded()                                  = default;
+
+    // ── Two-arg ctor (API parity with primary) ──────────────────────
+    //
+    // Pre: caller's grade matches L::grade_of(value).  In this
+    // specialization the grade is DERIVED from the value, so the
+    // user's argument is a witness — we contract-assert it equals
+    // what L would derive, then store only the value.
+    constexpr Graded(T value, grade_type grade) noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        pre (L::leq(L::grade_of(value), grade)
+             && L::leq(grade, L::grade_of(value)))
+        : value_{std::move(value)}
+    {
+        // grade is consumed; we don't store it.
+        (void)grade;
+    }
+
+    // ── Ergonomic single-arg constructor (specialization-only) ──────
+    //
+    // The natural construction form for this specialization — pass
+    // the value; the grade derives.  No grade-equivalence check
+    // because the user isn't asserting one.
+    constexpr explicit Graded(T value) noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        : value_{std::move(value)} {}
+
+    // ── at_bottom: produce a value whose derived grade IS bottom ────
+    //
+    // Different from the primary's at_bottom(T value) form — we can't
+    // generally arrange for an arbitrary user-supplied value to have
+    // grade == bottom.  The default-constructed T (e.g. empty
+    // Storage<T>) is the natural "bottom-deriving" value: empty
+    // vector → Length{0} → SeqPrefixLattice::bottom().
+    [[nodiscard]] static constexpr Graded at_bottom() noexcept(
+        std::is_nothrow_default_constructible_v<T> &&
+        std::is_nothrow_move_constructible_v<T>)
+        requires BoundedBelowLattice<L>
+              && std::default_initializable<T>
+    {
+        Graded result{T{}};
+        contract_assert(L::leq(result.grade(), L::bottom())
+                     && L::leq(L::bottom(), result.grade()));
+        return result;
+    }
+
+    // ── Access ──────────────────────────────────────────────────────
+    //
+    // peek() returns the value reference; grade() COMPUTES via
+    // L::grade_of(value_) on every call.  For SeqPrefixLattice this
+    // is `vector.size()` — O(1).  For lattices with more expensive
+    // derivations, callers should cache the result if they need it
+    // multiple times.
+    [[nodiscard]] constexpr T const& peek() const& noexcept {
+        return value_;
+    }
+    [[nodiscard]] constexpr T consume() && noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+    {
+        return std::move(value_);
+    }
+    [[nodiscard]] constexpr grade_type grade() const noexcept(
+        noexcept(L::grade_of(std::declval<T const&>())))
+    {
+        return L::grade_of(value_);
+    }
+
+    // ── Mutable access (Absolute modality only) ─────────────────────
+    //
+    // After mutation, grade() will reflect the new value's derived
+    // grade automatically — that's the point of derived-grade.  The
+    // wrapper above this specialization is responsible for ensuring
+    // the mutation respects whatever lattice discipline applies
+    // (e.g., AppendOnly only allows append, so the derived grade
+    // monotonically increases).
+    [[nodiscard]] constexpr T& peek_mut() & noexcept
+        requires AbsoluteModality<M>
+    {
+        return value_;
+    }
+
+    constexpr void swap(Graded& other)
+        noexcept(std::is_nothrow_swappable_v<T>)
+        requires AbsoluteModality<M>
+    {
+        using std::swap;
+        swap(value_, other.value_);
+    }
+
+    friend constexpr void swap(Graded& a, Graded& b)
+        noexcept(std::is_nothrow_swappable_v<T>)
+        requires AbsoluteModality<M>
+    {
+        a.swap(b);
+    }
+
+    // ── Comonad counit ──────────────────────────────────────────────
+    [[nodiscard]] constexpr T extract() && noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        requires ComonadModality<M>
+    {
+        return std::move(value_);
+    }
+
+    // ── RelativeMonad unit ──────────────────────────────────────────
+    [[nodiscard]] static constexpr Graded inject(T value, grade_type grade) noexcept(
+        std::is_nothrow_move_constructible_v<T>)
+        requires RelativeMonadModality<M>
+    {
+        Graded result{std::move(value)};
+        contract_assert(L::leq(result.grade(), grade)
+                     && L::leq(grade, result.grade()));
+        return result;
+    }
+
+    // ── weaken / compose deliberately omitted ───────────────────────
+    //
+    // See the specialization's header doc.  Their semantics demand a
+    // grade-to-value inverse that doesn't exist generally.  Wrappers
+    // provide their own mutation API that updates the value; the
+    // derived grade follows automatically.  Read-side lattice ops
+    // remain available via L::leq / L::join applied to observed
+    // grades.
+};
+
 // ── Layout invariant macro (used by MIGRATE-* alias headers) ───────
 //
 // Each MIGRATE-1..11 alias header invokes this macro at instantiation

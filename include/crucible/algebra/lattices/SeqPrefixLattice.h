@@ -169,6 +169,32 @@ struct SeqPrefixLattice {
     [[nodiscard]] static consteval std::string_view name() noexcept {
         return "SeqPrefixLattice";
     }
+
+    // ── Derived-grade opt-in (algebra/Graded.h §"derived-grade") ────
+    //
+    // The lattice element (a prefix length) is structurally already
+    // present inside any container we wrap — `Container::size()`
+    // returns it in O(1).  Storing it AGAIN as a separate Graded
+    // grade field would duplicate information.
+    //
+    // Opting into LatticeDerivesGrade<L, T> via this static method
+    // tells the Graded substrate to use its derived-grade
+    // specialization: store only the value (the container), compute
+    // the grade on demand from `c.size()`.  Result: AppendOnly<T,
+    // std::vector> retains sizeof(std::vector<T>) — no +8 byte
+    // regression, no Arena cache-line breakage.
+    //
+    // The Container template parameter accepts any type with a
+    // `.size()` member returning size_t-convertible — std::vector,
+    // std::inplace_vector, arena-backed sequences, or any custom
+    // append-only Storage that AppendOnly might be specialized over.
+    template <typename Container>
+        requires requires (Container const& c) {
+            { c.size() } -> std::convertible_to<std::size_t>;
+        }
+    [[nodiscard]] static constexpr element_type grade_of(Container const& c) noexcept {
+        return element_type{c.size()};
+    }
 };
 
 // ── Self-test ───────────────────────────────────────────────────────
