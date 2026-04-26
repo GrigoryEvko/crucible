@@ -203,6 +203,43 @@ public:
         return a.peek() == b.peek() && a.vector_clock() == b.vector_clock();
     }
 
+    // ── Diagnostic name (forwarded from Graded substrate) ──────────
+    //
+    // Returns T's display string via reflection (P2996R13).  Used for
+    // debug printing ("what is this TimeOrdered wrapping?") without
+    // requiring the caller to dereference and introspect.  Pairs with
+    // protocol_name / lattice_name patterns in the broader Graded
+    // substrate's diagnostic surface.
+    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
+        return graded_type::value_type_name();
+    }
+
+    // ── Swap (forwarded from Graded substrate) ─────────────────────
+    //
+    // Standard exchange — swaps both value AND vector_clock between two
+    // TimeOrdered instances.  Forwards to Graded::swap which is gated
+    // on AbsoluteModality — sound here because the vector-clock grade
+    // is orthogonal to T's identity (swapping the values doesn't
+    // violate the per-event causal-position bookkeeping; it just
+    // exchanges which event is at which storage cell).
+    //
+    // The friend overload enables ADL-style `swap(a, b)` calls that
+    // generic algorithms (std::swap_ranges, std::iter_swap, etc.)
+    // route through.
+    constexpr void swap(TimeOrdered& other)
+        noexcept(std::is_nothrow_swappable_v<T>
+                 && std::is_nothrow_swappable_v<vector_clock_t>)
+    {
+        impl_.swap(other.impl_);
+    }
+
+    friend constexpr void swap(TimeOrdered& a, TimeOrdered& b)
+        noexcept(std::is_nothrow_swappable_v<T>
+                 && std::is_nothrow_swappable_v<vector_clock_t>)
+    {
+        a.swap(b);
+    }
+
     // ── Read-only access ────────────────────────────────────────────
     [[nodiscard]] constexpr T const& peek() const& noexcept {
         return impl_.peek();
@@ -516,6 +553,32 @@ static_assert(!std::is_same_v<TO_replay::vector_clock_t, TO_kernel::vector_clock
 // process_count exposed at the type level.
 static_assert(TO4::process_count == 4);
 static_assert(TimeOrdered<int, 8>::process_count == 8);
+
+// value_type_name forwards to Graded's reflection-derived T name.
+// Per the gcc16_c26_reflection_gotchas memory rule: use .ends_with()
+// not == because display_string_of returns a TU-context-fragile name
+// (could be "int" or "::int" depending on the including TU).
+static_assert(TO4::value_type_name().ends_with("int"));
+
+// swap exchanges value AND vector_clock between two TimeOrdered.
+[[nodiscard]] consteval bool swap_exchanges_both_components() noexcept {
+    TO4 a{10, HB4::element_type{{1, 0, 0, 0}}};
+    TO4 b{20, HB4::element_type{{2, 2, 1, 0}}};
+    a.swap(b);
+    return a.peek() == 20 && a.vector_clock() == HB4::element_type{{2, 2, 1, 0}}
+        && b.peek() == 10 && b.vector_clock() == HB4::element_type{{1, 0, 0, 0}};
+}
+static_assert(swap_exchanges_both_components());
+
+// Free-function swap (ADL-friendly) reaches the same exchange.
+[[nodiscard]] consteval bool free_swap_works() noexcept {
+    TO4 a{10, HB4::element_type{{1, 0, 0, 0}}};
+    TO4 b{20, HB4::element_type{{2, 2, 1, 0}}};
+    using std::swap;
+    swap(a, b);
+    return a.peek() == 20 && b.peek() == 10;
+}
+static_assert(free_swap_works());
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 //

@@ -176,6 +176,42 @@ public:
         return a.peek() == b.peek() && a.staleness() == b.staleness();
     }
 
+    // ── Diagnostic name (forwarded from Graded substrate) ──────────
+    //
+    // Returns T's display string via reflection (P2996R13).  Used for
+    // debug printing ("what is this Stale wrapping?") without
+    // requiring the caller to dereference and introspect.  Pairs with
+    // protocol_name / lattice_name patterns in the broader Graded
+    // substrate's diagnostic surface.
+    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
+        return graded_type::value_type_name();
+    }
+
+    // ── Swap (forwarded from Graded substrate) ─────────────────────
+    //
+    // Standard exchange — swaps both value AND staleness grade between
+    // two Stale instances.  Forwards to Graded::swap which is gated on
+    // AbsoluteModality — sound here because the staleness grade is
+    // orthogonal to T's identity (swapping the values doesn't violate
+    // the per-event staleness bookkeeping; it just exchanges which
+    // event is at which storage cell).
+    //
+    // The friend overload enables ADL-style `swap(a, b)` calls that
+    // generic algorithms route through.
+    constexpr void swap(Stale& other)
+        noexcept(std::is_nothrow_swappable_v<T>
+                 && std::is_nothrow_swappable_v<staleness_t>)
+    {
+        impl_.swap(other.impl_);
+    }
+
+    friend constexpr void swap(Stale& a, Stale& b)
+        noexcept(std::is_nothrow_swappable_v<T>
+                 && std::is_nothrow_swappable_v<staleness_t>)
+    {
+        a.swap(b);
+    }
+
     // ── Read-only access ────────────────────────────────────────────
     [[nodiscard]] constexpr T const& peek() const& noexcept {
         return impl_.peek();
@@ -469,6 +505,31 @@ static_assert(s_advanced_zero.staleness().value == 3);
 // Lattice/semiring identities preserved through the wrapper.
 static_assert(SS::bottom() == s_fresh.staleness());
 static_assert(SS::top()    == s_inf.staleness());
+
+// value_type_name forwards to Graded's reflection-derived T name.
+// Per the gcc16_c26_reflection_gotchas memory rule: use .ends_with()
+// not == because display_string_of is TU-context-fragile.
+static_assert(S_i::value_type_name().ends_with("int"));
+
+// swap exchanges value AND staleness grade between two Stale.
+[[nodiscard]] consteval bool swap_exchanges_both_components() noexcept {
+    S_i a = S_i::at(10, 3);
+    S_i b = S_i::at(20, 8);
+    a.swap(b);
+    return a.peek() == 20 && a.staleness().value == 8
+        && b.peek() == 10 && b.staleness().value == 3;
+}
+static_assert(swap_exchanges_both_components());
+
+// Free-function swap (ADL-friendly) reaches the same exchange.
+[[nodiscard]] consteval bool free_swap_works() noexcept {
+    S_i a = S_i::at(10, 3);
+    S_i b = S_i::at(20, 8);
+    using std::swap;
+    swap(a, b);
+    return a.peek() == 20 && b.peek() == 10;
+}
+static_assert(free_swap_works());
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 //
