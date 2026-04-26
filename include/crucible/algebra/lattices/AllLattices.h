@@ -47,6 +47,7 @@
 #include <crucible/algebra/lattices/FractionalLattice.h> // ALGEBRA-8 (#453) — shipped
 #include <crucible/algebra/lattices/MonotoneLattice.h>   // ALGEBRA-9 (#454) — shipped
 #include <crucible/algebra/lattices/QttSemiring.h>       // ALGEBRA-4 (#449) — shipped
+#include <crucible/algebra/lattices/SeqPrefixLattice.h>  // ALGEBRA-10 (#455) — shipped
 #include <crucible/algebra/lattices/TrustLattice.h>      // ALGEBRA-7 (#452) — shipped
 
 namespace crucible::algebra::lattices {
@@ -63,8 +64,7 @@ namespace crucible::algebra::lattices {
 
 // MonotoneLattice<T, Cmp> — already included above (ALGEBRA-9 shipped).
 
-// Sequence prefix lattice for AppendOnly streams.
-template <typename Element> struct SeqPrefixLattice;
+// SeqPrefixLattice<Element> — already included above (ALGEBRA-10 shipped).
 
 // ℕ ∪ ∞ with min-plus algebra (staleness, latency).
 struct StalenessSemiring;
