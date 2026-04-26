@@ -152,6 +152,14 @@ using RefinedPositive = Graded<ModalityKind::Absolute, BoolLattice<positive>, T>
 
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(RefinedPositive, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(RefinedPositive, EightByteValue);
+// Arithmetic T witnesses — pin the macro's correctness across the
+// trivially-default-constructible-T axis that the AUDIT-FOUNDATION
+// pass dropped from the macro's parity checks.  Without these, a
+// future tighter macro that re-introduced tdc parity would silently
+// pass per-lattice headers but break MIGRATE-2's Refined<positive,
+// int> production usage.
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(RefinedPositive, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(RefinedPositive, double);
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 //

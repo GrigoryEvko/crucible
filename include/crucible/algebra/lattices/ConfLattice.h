@@ -264,6 +264,12 @@ using SecretGraded = Graded<ModalityKind::Comonad, conf::SecretTier, T>;
 
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(SecretGraded, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(SecretGraded, EightByteValue);
+// Arithmetic T witnesses — pin macro correctness across the
+// trivially-default-constructible-T axis (AUDIT-FOUNDATION dropped
+// tdc parity).  Critical for MIGRATE-3 (Secret<int> for tagged
+// counters / step ids in the Cipher path).
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(SecretGraded, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(SecretGraded, double);
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 inline void runtime_smoke_test() {

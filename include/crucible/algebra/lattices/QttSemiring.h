@@ -358,6 +358,11 @@ using LinearGraded = Graded<ModalityKind::Absolute, qtt::LinearGrade, T>;
 
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(LinearGraded, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(LinearGraded, EightByteValue);
+// Arithmetic T witnesses — pin macro correctness across the
+// trivially-default-constructible-T axis (AUDIT-FOUNDATION dropped
+// tdc parity from the macro's checks).  See BoolLattice.h analog.
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(LinearGraded, int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(LinearGraded, double);
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 //
