@@ -45,6 +45,7 @@
 #include <crucible/algebra/lattices/BoolLattice.h>       // ALGEBRA-5 (#450) — shipped
 #include <crucible/algebra/lattices/ConfLattice.h>       // ALGEBRA-6 (#451) — shipped
 #include <crucible/algebra/lattices/FractionalLattice.h> // ALGEBRA-8 (#453) — shipped
+#include <crucible/algebra/lattices/MonotoneLattice.h>   // ALGEBRA-9 (#454) — shipped
 #include <crucible/algebra/lattices/QttSemiring.h>       // ALGEBRA-4 (#449) — shipped
 #include <crucible/algebra/lattices/TrustLattice.h>      // ALGEBRA-7 (#452) — shipped
 
@@ -58,11 +59,9 @@ namespace crucible::algebra::lattices {
 
 // TrustLattice<Source> — already included above (ALGEBRA-7 shipped).
 
-// ℚ[0,1] semiring for fractional CSL permissions.
-struct FractionalLattice;
+// FractionalLattice — already included above (ALGEBRA-8 shipped).
 
-// Per-comparison-functor monotone lattice.
-template <typename T, typename Cmp> struct MonotoneLattice;
+// MonotoneLattice<T, Cmp> — already included above (ALGEBRA-9 shipped).
 
 // Sequence prefix lattice for AppendOnly streams.
 template <typename Element> struct SeqPrefixLattice;
