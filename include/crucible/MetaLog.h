@@ -69,7 +69,12 @@ struct CRUCIBLE_OWNER MetaLog {
   //     directly via size() or transitively via TraceRing.head (which is
   //     released AFTER MetaLog.head in program order, so its acquire observes
   //     MetaLog.entries).
-  alignas(64) std::atomic<uint32_t> head{0};   // 4B — producer writes, consumer reads
+  // Producer-owned.  AtomicMonotonic surfaces the SPSC publish
+  // discipline: peek_relaxed for own-side read, advance for release-
+  // store with monotonicity contract, get for cross-thread acquire,
+  // reset_under_quiescence for the rare quiescent reset.  Hot-path
+  // cost identical to the prior raw atomic.
+  alignas(64) crucible::safety::AtomicMonotonic<uint32_t> head{0};   // 4B
   // Producer-only shadow of the consumer's tail.  Monotonic enforces
   // "only advances" at the type level — the consumer only releases tail
   // forward, so each acquire-load observes ≥ the prior observation; any
@@ -80,10 +85,10 @@ struct CRUCIBLE_OWNER MetaLog {
 
   // ── Consumer cache line ──
   // tail lives alone on its own cache line to prevent false sharing with
-  // the producer's head/cached_tail_/entries. The consumer (background thread)
-  // writes tail; the producer only reads it on the rare slow path.
-  // NOT relaxed: tail.store(release) signals that consumer finished reading.
-  alignas(64) std::atomic<uint32_t> tail{0};   // 4B — consumer writes, producer reads (rare)
+  // the producer's head/cached_tail_/entries.  Consumer-owned: bg thread
+  // publishes via advance(release); producer reads via get(acquire) on
+  // the rare full-path.
+  alignas(64) crucible::safety::AtomicMonotonic<uint32_t> tail{0};   // 4B
 
   MetaLog() {
     // PMD alignment: kernel 5.8+ EINVALs MADV_HUGEPAGE on non-2-MB addrs.
@@ -127,16 +132,16 @@ struct CRUCIBLE_OWNER MetaLog {
   {
     if (n == 0) [[unlikely]] return MetaIndex::none();
 
-    // relaxed: producer reads its own head — no cross-thread sync needed.
+    // peek_relaxed: producer reads its own head — no cross-thread sync needed.
     // Same pattern as TraceRing::try_append.
-    const uint32_t h = head.load(std::memory_order_relaxed);
+    const uint32_t h = head.peek_relaxed();
 
     // Fast path: check against cached (possibly stale) tail.
     // Stale tail is conservative — if it says "not full", it's guaranteed
     // correct because the real tail only advances (consumer frees space).
     if (h - cached_tail_.get() + n > CAPACITY) [[unlikely]] {
-      // Slow path: reload actual tail from consumer's cache line.
-      cached_tail_.advance(tail.load(std::memory_order_acquire));
+      // Slow path: get() is acquire — pair with consumer's advance(release).
+      cached_tail_.advance(tail.get());
       if (h - cached_tail_.get() + n > CAPACITY) [[unlikely]] {
         return MetaIndex::none();
       }
@@ -177,7 +182,11 @@ struct CRUCIBLE_OWNER MetaLog {
       __builtin_prefetch(next_ptr + 128, 1 /*write*/, 3 /*high locality*/);
     }
 
-    head.store(h + n, std::memory_order_release);
+    // advance: publish the entries[] memcpy (above) to the consumer.
+    // pre(load(acquire) < h+n) collapses to [[assume]] under hot-TU
+    // contract semantics; body is the same store(release) as before.
+    // n > 0 guaranteed by the early return at the top.
+    head.advance(h + n);
     return MetaIndex{h};
   }
 
@@ -222,25 +231,28 @@ struct CRUCIBLE_OWNER MetaLog {
     return nullptr; // wraps — caller must copy
   }
 
-  // Background thread only (SPSC consumer): advance tail past consumed entries.
+  // Background thread only (SPSC consumer): advance tail past consumed
+  // entries.  AtomicMonotonic::advance enforces monotonicity at the
+  // type level — caller cannot accidentally regress tail.
   void advance_tail(uint32_t new_tail) CRUCIBLE_NO_THREAD_SAFETY {
-    tail.store(new_tail, std::memory_order_release);
+    tail.advance(new_tail);
   }
 
   // Approximate count — deliberately racy (diagnostic only).
   [[nodiscard]] uint32_t size() const CRUCIBLE_NO_THREAD_SAFETY {
-    return head.load(std::memory_order_acquire) -
-           tail.load(std::memory_order_acquire);
+    return head.get() - tail.get();
   }
 
   // Only when both threads are quiescent (join/stop).
+  // reset_under_quiescence bypasses AtomicMonotonic's monotonicity
+  // contract — caller must have already joined producer + consumer.
   void reset() CRUCIBLE_NO_THREAD_SAFETY
-      post (head.load(std::memory_order_relaxed) == 0)
-      post (tail.load(std::memory_order_relaxed) == 0)
+      post (head.get() == 0)
+      post (tail.get() == 0)
       post (cached_tail_.get() == 0)
   {
-    head.store(0, std::memory_order_release);
-    tail.store(0, std::memory_order_release);
+    head.reset_under_quiescence();
+    tail.reset_under_quiescence();
     // Rewind to 0 would violate Monotonic's pre() if done via advance().
     // Safe here because both threads are quiescent; reconstruct in place.
     cached_tail_ = crucible::safety::Monotonic<uint32_t>{0};
