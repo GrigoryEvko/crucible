@@ -89,6 +89,44 @@
 //                                                 invariant; consumed by
 //                                                 AdaptiveScheduler.
 //
+// Five Mutation.h DERIVATIVE wrappers that compose with or layer on
+// the already-migrated Monotonic/AppendOnly are also deliberately
+// NOT standalone-graded:
+//
+//   Wrapper                Why NOT separately migrated
+//   ─────────────────────  ──────────────────────────────────────────────
+//   WriteOnce<T>           State-machine pattern (Unset → Set), not a
+//                          graded value.  The discipline is "transition
+//                          allowed once in one direction"; that's
+//                          Machine<S>'s domain, not Graded&lt;M, L, T&gt;'s.
+//                          Migration would lose the typestate clarity.
+//   WriteOnceNonNull<T*>   Pointer-sentinel specialization of WriteOnce;
+//                          inherits the same state-machine rationale.
+//                          Migrating only this would split the design.
+//   BoundedMonotonic<T,M>  Composes Monotonic ∩ predicate(≤Max).  The
+//                          bound IS a concrete value, not a lattice
+//                          element — adding a fresh graded substrate
+//                          would duplicate Monotonic's storage with
+//                          a redundant grade.  Use the migrated
+//                          Monotonic + a separate Refined&lt;bounded_above&gt;
+//                          if needed.
+//   OrderedAppendOnly<T,K> Composes AppendOnly + per-element key
+//                          ordering.  AppendOnly's substrate (regime-3
+//                          derived grade) already covers "container
+//                          state graded by length"; OrderedAppendOnly
+//                          adds an orthogonal per-key invariant best
+//                          modeled as a per-element predicate, not a
+//                          new lattice.
+//   AtomicMonotonic<T,Cmp> Pinned + atomic state.  Same regime-5
+//                          situation as SharedPermission (proof-of-
+//                          monotonicity / runtime atomic carrier),
+//                          but the "proof" here is implicit in the
+//                          atomic's value rather than in a separate
+//                          phantom token.  Façade migration would add
+//                          the diagnostic surface but no new
+//                          correctness; deferred until a downstream
+//                          consumer needs Graded introspection.
+//
 // If a future use case demands grading one of these (e.g. a Pinned-
 // with-grade), build it as a NEW wrapper layered on top — don't
 // retrofit the existing one.  The non-graded wrappers' callers
