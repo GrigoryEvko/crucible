@@ -238,6 +238,12 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedFromUser,  EightByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedSanitized, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedVerified,  EightByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedV2,        EightByteValue);
+// Arithmetic T witnesses — pin macro correctness across the
+// trivially-default-constructible-T axis (AUDIT-FOUNDATION dropped
+// tdc parity).  Critical for MIGRATE-4 (Tagged<int, source::FromUser>
+// for shape-bound integers from the Vessel boundary).
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedFromUser,  int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(TaggedSanitized, double);
 
 // ── Runtime smoke test ──────────────────────────────────────────────
 //

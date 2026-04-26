@@ -152,6 +152,35 @@ public:
     // Reflection-derived (P2996R13): emits T's actual type name as it
     // appears in source.  Used by SessionDiagnostic / Cipher serialize
     // / debug print to identify what Graded wraps.
+    //
+    // ── TU-CONTEXT FRAGILITY WARNING ────────────────────────────────
+    //
+    // `display_string_of(^^T)` returns a name whose qualification depth
+    // depends on the including TU's scope chain.  In an algebra-only
+    // TU it may return the simple name "MyKey"; from a deep transitive
+    // include path (e.g. through safety/* into Cipher) it may return
+    // the fully-qualified
+    // `crucible::cipher::secret_keys::MyKey`.  Same TU-fragility that
+    // bit BoolLattice<positive>::name() and TrustLattice<source::*>::
+    // name() before this discipline was established (see
+    // gcc16_c26_reflection_gotchas memory rule #5).
+    //
+    // **DISCIPLINE for callers**: NEVER write
+    //   static_assert(Graded<...>::value_type_name() == "ExpectedT")
+    // because the assertion's pass/fail depends on which TU the
+    // assertion sits in.  Instead, ALWAYS use:
+    //   static_assert(Graded<...>::value_type_name().ends_with("ExpectedT"))
+    // The simple name is always a suffix of the qualified form, so
+    // .ends_with() is robust across any TU the static_assert appears
+    // in.  Diagnostic output (Cipher serialize / debug print) is
+    // unaffected — those callers consume the string verbatim and
+    // tolerate either qualification depth.
+    //
+    // Future-proofing: when MIGRATE-3 (Secret<T>) and MIGRATE-4
+    // (Tagged<T, Source>) ship and want type-level diagnostic
+    // assertions on user-supplied T, they MUST follow the
+    // .ends_with() discipline.  No infrastructure here enforces it
+    // at compile time — the contract is at the call site.
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return std::meta::display_string_of(^^T);
     }
