@@ -1023,3 +1023,15 @@ crucible_neg_compile_test(neg_computation_extract_on_nonempty_row
 # row algebra.
 crucible_neg_compile_test(neg_computation_weaken_non_subrow
     "weaken")
+
+# ── METX-1 #473 — Computation::then bind-vs-fmap discrimination ────
+# then(k) requires k's invoke_result to satisfy IsComputation — the
+# trait specialization is true ONLY for Computation<R, T>.  Trying
+# to bind a callback returning a plain T (which would belong in
+# .map(f), not .then(k)) fails the requires-clause cleanly.  Without
+# this gate, the M(X) monadic substrate would silently degenerate
+# into a functor in disguise — bind and fmap would be
+# interchangeable at the call site, but the resulting type's
+# row_union_t<R, ?> would have an undefined row arithmetic.
+crucible_neg_compile_test(neg_computation_then_non_computation_callback
+    "IsComputation")
