@@ -862,6 +862,37 @@ crucible_neg_compile_test(neg_product_lattice_get_out_of_range
 crucible_neg_compile_test(neg_product_lattice_cross_arity_mixing
   "could not convert|no matching function|cannot convert")
 
+# ─── MIGRATE-10 TimeOrdered<T, N, Tag> wrapper neg-compiles ─────────
+#
+# Three wrapper-level neg-compiles pinning the per-(N, Tag) type
+# distinction at the SAFETY surface (vs the underlying lattice-level
+# tests).  TimeOrdered is the FIRST production wrapper to use Graded's
+# regime-#4 storage (genuine 2-field — non-trivial element_type), so
+# it deserves its own per-template-parameter coverage instead of
+# inheriting the lattice's.  A future refactor that added an implicit
+# converting constructor on TimeOrdered (for "interoperability") would
+# defeat the cross-N or cross-Tag discipline at the wrapper while the
+# lattice-level tests continued to pass.
+#
+#   neg_time_ordered_zero_n
+#       TimeOrdered<T, 0> trips the wrapper's static_assert (mirroring
+#       the lattice's N>0 guard).  [FRAMEWORK-CONTROLLED]
+#
+#   neg_time_ordered_cross_n_mixing
+#       TimeOrdered<T, 4>::happens_before(TimeOrdered<T, 3>) rejected
+#       at the wrapper's method signature.  [GCC-WRAPPER-TEXT]
+#
+#   neg_time_ordered_cross_tag_mixing
+#       TimeOrdered<T, 4, TagA>::happens_before(TimeOrdered<T, 4, TagB>)
+#       rejected — pins the Tag's protocol-distinction at the wrapper.
+#       [GCC-WRAPPER-TEXT]
+crucible_neg_compile_test(neg_time_ordered_zero_n
+  "TimeOrdered<T, 0> is forbidden")
+crucible_neg_compile_test(neg_time_ordered_cross_n_mixing
+  "could not convert|no matching function|cannot convert")
+crucible_neg_compile_test(neg_time_ordered_cross_tag_mixing
+  "could not convert|no matching function|cannot convert")
+
 # WriteOnceNonNull<T*> — pointer-specialized single-set primitive (#77).
 #
 # [FRAMEWORK-CONTROLLED] Two named diagnostics gate the primitive's
