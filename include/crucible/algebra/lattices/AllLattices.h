@@ -42,10 +42,11 @@
 // ProductLattice<L₁, L₂, ...> | #460    | every multi-grade composition
 
 // ── Shipped lattices ────────────────────────────────────────────────
-#include <crucible/algebra/lattices/BoolLattice.h>  // ALGEBRA-5 (#450) — shipped
-#include <crucible/algebra/lattices/ConfLattice.h>  // ALGEBRA-6 (#451) — shipped
-#include <crucible/algebra/lattices/QttSemiring.h>  // ALGEBRA-4 (#449) — shipped
-#include <crucible/algebra/lattices/TrustLattice.h> // ALGEBRA-7 (#452) — shipped
+#include <crucible/algebra/lattices/BoolLattice.h>       // ALGEBRA-5 (#450) — shipped
+#include <crucible/algebra/lattices/ConfLattice.h>       // ALGEBRA-6 (#451) — shipped
+#include <crucible/algebra/lattices/FractionalLattice.h> // ALGEBRA-8 (#453) — shipped
+#include <crucible/algebra/lattices/QttSemiring.h>       // ALGEBRA-4 (#449) — shipped
+#include <crucible/algebra/lattices/TrustLattice.h>      // ALGEBRA-7 (#452) — shipped
 
 namespace crucible::algebra::lattices {
 
