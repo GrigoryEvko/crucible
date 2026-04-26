@@ -30,17 +30,41 @@ Crucible has no proof-assistant source of truth. Correctness is won by three com
 
 **Eight safety axioms.** InitSafe, TypeSafe, NullSafe, MemSafe, BorrowSafe, ThreadSafe, LeakSafe, DetSafe. Every struct, every function, every edit audits all eight. Contracts (`pre`/`post`/`contract_assert`), erroneous behavior for uninit reads (P2795R5), reflection-driven hashing (P2996), strong IDs, `std::bit_cast`, saturation arithmetic. Detail catalog in §II of the Code Guide below.
 
-**Safety wrappers** in `include/crucible/safety/`:
-- `Linear<T>` — move-only exclusive-ownership; compile-time double-consume detection.
-- `Refined<Pred, T>` — predicate checked at construction, trusted downstream via `[[assume]]`.
-- `Tagged<T, Source>` — phantom tag for provenance / trust boundary; mismatched sources fail to compile.
-- `Secret<T>` — classified-by-default; escapes only through named `secret_policy::*` declassification tags.
-- `Permission<Tag>` + `SharedPermission` + `permission_fork` — CSL permissions encoding Concurrent Separation Logic as zero-cost types (THREADING.md).
-- `Session<Proto>` — type-state binary and MPST session types (Honda 1998 / HYC 2008 / Gay-Hole 2005 / BSYZ22 crash-stop); compile-time protocol safety, deadlock freedom, dual-end duality.
-- `ScopedView<...>` — lifetime-bounded borrow for non-consuming inspection.
+**Safety wrappers — Graded foundation refactor (25_04_2026.md §2).** Eleven value-level wrappers split across `include/crucible/{safety,permissions,handles,sessions,bridges}/` and unified by a single algebraic substrate `Graded<Modality, Lattice, T>` in `include/crucible/algebra/Graded.h`. Every Graded-backed wrapper exposes a uniform diagnostic surface (`graded_type`, `lattice_type`, `value_type`, `modality`, `value_type_name()`, `lattice_name()`); the `GradedWrapper` concept in `algebra/GradedTrait.h` enforces the contract structurally. Adversarial cheat-detection harness at `test/test_concept_cheat_probe.cpp` (18 cheats, 4 architectural-limit admissions documented).
+
+**Wrapper → substrate map** (canonical reference; full enumeration in `safety/Safety.h` umbrella):
+
+| Wrapper | Substrate | Regime |
+|---|---|---|
+| `Linear<T>` | `Graded<Absolute, QttSemiring::At<One>, T>` | 1 (zero-cost EBO) |
+| `Refined<Pred, T>` | `Graded<Absolute, BoolLattice<Pred>, T>` | 1 |
+| `SealedRefined<Pred, T>` | same as Refined; minus `into()` (forces re-construct on mutate) | 1 |
+| `Tagged<T, Source>` | `Graded<RelativeMonad, TrustLattice<Source>, T>` | 1 |
+| `Secret<T>` | `Graded<Comonad, ConfLattice::At<Secret>, T>` | 1 |
+| `Monotonic<T, Cmp>` | `Graded<Absolute, MonotoneLattice<T, Cmp>, T>` | 2 (T==element_type collapse) |
+| `AppendOnly<T, Storage>` | `Graded<Absolute, SeqPrefixLattice<T>, Storage<T>>` | 3 (derived grade from container) |
+| `Stale<T>` | `Graded<Absolute, StalenessSemiring, T>` | 4 (T + grade per instance) |
+| `TimeOrdered<T, N, Tag>` | `Graded<Absolute, HappensBeforeLattice<N, Tag>, T>` | 4 |
+| `SharedPermission<Tag>` | `Graded<Absolute, FractionalLattice, Tag>` (façade — atomic state in `SharedPermissionPool`) | 5 (proof-token, runtime carrier elsewhere) |
+
+Five regimes (full taxonomy in `algebra/GradedTrait.h` doc-block): **regime-1** zero-cost EBO collapse · **regime-2** value-type-equals-element-type collapse · **regime-3** grade derived from container content · **regime-4** value + grade carried per instance · **regime-5** proof-token with runtime carrier elsewhere.
+
+**Structural wrappers — deliberately not graded.** Nine wrappers follow non-graded disciplines (RAII, typestate, structural constraint) that don't fit the `Graded<M, L, T>` shape:
+- `Permission<Tag>` + `permission_fork` — CSL frame-rule linear tokens (THREADING.md).
+- `Session<Proto>` — type-state binary and MPST session types in `sessions/` (Honda 1998 / HYC 2008 / Gay-Hole 2005 / BSYZ22 crash-stop).
+- `ScopedView<C, Tag>` — lifetime-bounded borrow for non-consuming inspection.
 - `Machine<States>` — type-indexed state machines; illegal transitions are compile errors.
-- `Monotonic<T>`, `AppendOnly<T>`, `WriteOnceNonNull<T*>`, `FinalBy<T>/NotInherited<T>` — structural invariants as types.
+- `OwnedRegion<T, Tag>` — arena-backed exclusive region.
+- `Pinned<T>` — address-stability marker (CRTP base).
+- `Checked.h` — `checked_add`/`mul_sat`/etc. overflow-detecting primitives.
 - `ConstantTime<T>` — branch-free primitives for crypto paths and Cipher key handling.
+- `NotInherited<T>` / `FinalBy<T>` — structural non-extensibility.
+- `Simd.h` — SIMD primitives.
+- `Workload.h` — concurrency policy hint consumed by `AdaptiveScheduler`.
+
+Plus `WriteOnce<T>` / `WriteOnceNonNull<T*>` / `BoundedMonotonic<T, Max>` / `OrderedAppendOnly<T, KeyFn>` / `AtomicMonotonic<T, Cmp>` — Mutation.h derivative wrappers documented as composable from migrated primitives or state-machine-shaped (full per-wrapper rationale in `safety/Safety.h` policy block).
+
+**Verification harness.** `test/test_migration_verification.cpp` is a single TU asserting cross-cutting properties (sizeof preservation, forwarder fidelity, cross-composition, GradedWrapper concept satisfaction) for all 10 migrated wrappers + the SharedPermission façade. `test/test_concept_cheat_probe.cpp` runs 18 adversarial cheats against the concept; build only succeeds when every cheat is correctly rejected (or documented as architectural limit).
 
 **Soundness via measurement, not proof.** Numerical correctness lives in the cross-vendor CI matrix (MIMIC.md §41): every IR002 kernel × recipe × backend runs on real silicon, outputs are compared pairwise against a CPU scalar-FMA oracle, tolerance enforced per the recipe's declared `ReductionDeterminism` tier (UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT). A backend that violates tolerance fails the build.
 
