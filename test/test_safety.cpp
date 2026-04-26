@@ -429,6 +429,46 @@ static void test_mutation() {
         assert(ttl.get() == 900ULL);
     }
 
+    // peek_relaxed + advance — SPSC ring counter idiom (PROD-WRAP-NEW).
+    // Producer thread reads its own head relaxed, computes the slot,
+    // publishes via release-store with monotonicity contract.
+    {
+        AtomicMonotonic<std::uint64_t> spsc_head{0};
+        const std::uint64_t h0 = spsc_head.peek_relaxed();
+        assert(h0 == 0ULL);
+        spsc_head.advance(h0 + 1);                 // SPSC publish: release-store
+        assert(spsc_head.peek_relaxed() == 1ULL);
+        assert(spsc_head.get() == 1ULL);           // cross-thread acquire load
+
+        // Multi-step pattern matches what TraceRing/MetaLog would do.
+        for (std::uint64_t i = 1; i < 16; ++i) {
+            const std::uint64_t h = spsc_head.peek_relaxed();
+            assert(h == i);
+            spsc_head.advance(h + 1);
+        }
+        assert(spsc_head.get() == 16ULL);
+    }
+
+    // reset_under_quiescence — for SPSC reset() entry point.
+    // Counter advances normally, then is reset to 0 (going BACKWARDS,
+    // which advance() forbids).  Caller asserts no concurrent writers.
+    {
+        AtomicMonotonic<std::uint64_t> ring_head{0};
+        ring_head.advance(1);
+        ring_head.advance(2);
+        ring_head.advance(100);
+        assert(ring_head.get() == 100ULL);
+
+        ring_head.reset_under_quiescence();         // back to 0
+        assert(ring_head.get() == 0ULL);
+
+        ring_head.advance(1);                       // monotonicity restored from new baseline
+        assert(ring_head.get() == 1ULL);
+
+        ring_head.reset_under_quiescence(42ULL);    // reset to non-default value
+        assert(ring_head.get() == 42ULL);
+    }
+
     // Concurrent stress: N threads each push an exclusive range of values.
     // Final state must be the global max.  Total successful try_advance
     // returns must equal the number of strict-improvement events
