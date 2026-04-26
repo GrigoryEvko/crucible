@@ -58,14 +58,15 @@
 // granularity Crucible needs.
 
 // ── Shipped lattices ────────────────────────────────────────────────
-#include <crucible/algebra/lattices/BoolLattice.h>       // ALGEBRA-5 (#450) — shipped
-#include <crucible/algebra/lattices/ConfLattice.h>       // ALGEBRA-6 (#451) — shipped
-#include <crucible/algebra/lattices/FractionalLattice.h> // ALGEBRA-8 (#453) — shipped
-#include <crucible/algebra/lattices/MonotoneLattice.h>   // ALGEBRA-9 (#454) — shipped
-#include <crucible/algebra/lattices/QttSemiring.h>       // ALGEBRA-4 (#449) — shipped
+#include <crucible/algebra/lattices/BoolLattice.h>       // ALGEBRA-5  (#450) — shipped
+#include <crucible/algebra/lattices/ConfLattice.h>       // ALGEBRA-6  (#451) — shipped
+#include <crucible/algebra/lattices/FractionalLattice.h> // ALGEBRA-8  (#453) — shipped
+#include <crucible/algebra/lattices/MonotoneLattice.h>   // ALGEBRA-9  (#454) — shipped
+#include <crucible/algebra/lattices/ProductLattice.h>    // ALGEBRA-15 (#460) — shipped
+#include <crucible/algebra/lattices/QttSemiring.h>       // ALGEBRA-4  (#449) — shipped
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>  // ALGEBRA-10 (#455) — shipped
 #include <crucible/algebra/lattices/StalenessSemiring.h> // ALGEBRA-11 (#456) — shipped
-#include <crucible/algebra/lattices/TrustLattice.h>      // ALGEBRA-7 (#452) — shipped
+#include <crucible/algebra/lattices/TrustLattice.h>      // ALGEBRA-7  (#452) — shipped
 
 namespace crucible::algebra::lattices {
 

@@ -43,6 +43,7 @@
 #include <crucible/algebra/lattices/ConfLattice.h>
 #include <crucible/algebra/lattices/FractionalLattice.h>
 #include <crucible/algebra/lattices/MonotoneLattice.h>
+#include <crucible/algebra/lattices/ProductLattice.h>
 #include <crucible/algebra/lattices/QttSemiring.h>
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>
 #include <crucible/algebra/lattices/StalenessSemiring.h>
@@ -129,6 +130,10 @@ void test_staleness_semiring_runtime_smoke() {
     ::crucible::algebra::lattices::detail::staleness_semiring_self_test::runtime_smoke_test();
 }
 
+void test_product_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::product_lattice_self_test::runtime_smoke_test();
+}
+
 }  // namespace
 
 int main() {
@@ -149,6 +154,8 @@ int main() {
              test_seq_prefix_lattice_runtime_smoke);
     run_test("test_staleness_semiring_runtime_smoke",
              test_staleness_semiring_runtime_smoke);
+    run_test("test_product_lattice_runtime_smoke",
+             test_product_lattice_runtime_smoke);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
