@@ -43,16 +43,16 @@
 
 // ── Shipped lattices ────────────────────────────────────────────────
 #include <crucible/algebra/lattices/BoolLattice.h>  // ALGEBRA-5 (#450) — shipped
+#include <crucible/algebra/lattices/ConfLattice.h>  // ALGEBRA-6 (#451) — shipped
 #include <crucible/algebra/lattices/QttSemiring.h>  // ALGEBRA-4 (#449) — shipped
 
 namespace crucible::algebra::lattices {
 
-// ── Forward declarations (full definitions land per ALGEBRA-6..15) ──
+// ── Forward declarations (full definitions land per ALGEBRA-7..15) ──
 
 // BoolLattice<Pred> — already included above (ALGEBRA-5 shipped).
 
-// Confidentiality lattice: Public ⊑ Secret.
-struct ConfLattice;
+// ConfLattice — already included above (ALGEBRA-6 shipped).
 
 // Trust lattice parameterized over a tag-namespace family
 // (source::*, trust::*, access::*, version::*).
