@@ -128,6 +128,11 @@ public:
     using value_type = T;
     using tag_type   = Tag;
     using lattice_type = ::crucible::algebra::lattices::TrustLattice<Tag>;
+    // Modality declaration — Round-4 CHEAT-5; see Linear.h for the
+    // rationale.  Tagged is RelativeMonad — provenance flows
+    // monadically with the inner T (retag is a relative-monad map).
+    static constexpr ::crucible::algebra::ModalityKind modality =
+        ::crucible::algebra::ModalityKind::RelativeMonad;
     // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
     using graded_type  = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::RelativeMonad, lattice_type, T>;

@@ -104,6 +104,9 @@ public:
     // for family uniformity.
     using lattice_type  = semiring_type;
     using staleness_t   = typename semiring_type::element_type;
+    // Modality declaration — Round-4 CHEAT-5; see safety/Linear.h.
+    static constexpr ::crucible::algebra::ModalityKind modality =
+        ::crucible::algebra::ModalityKind::Absolute;
     // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
     using graded_type   = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::Absolute,

@@ -39,6 +39,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/algebra/Graded.h>
+#include <crucible/algebra/GradedTrait.h>
 #include <crucible/algebra/lattices/MonotoneLattice.h>
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>
 #include <crucible/safety/Pinned.h>
@@ -156,6 +157,15 @@ public:
     using storage_type   = Storage<T>;
     using const_iterator = typename Storage<T>::const_iterator;
     using lattice_type = ::crucible::algebra::lattices::SeqPrefixLattice<T>;
+    // Modality declaration — Round-4 CHEAT-5; see safety/Linear.h.
+    // AppendOnly is Absolute (immutability is a static type-level
+    // discipline).  Note: AppendOnly opts OUT of the value_type ↔
+    // graded_type::value_type equality check via the
+    // value_type_decoupled trait specialization at the bottom of
+    // this header — its value_type is T (element) but its substrate
+    // carries Storage<T> (container).  See algebra/GradedTrait.h.
+    static constexpr ::crucible::algebra::ModalityKind modality =
+        ::crucible::algebra::ModalityKind::Absolute;
     // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
     using graded_type  = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::Absolute, lattice_type, Storage<T>>;
@@ -368,6 +378,9 @@ public:
     using value_type      = T;
     using comparator_type = Cmp;
     using lattice_type = ::crucible::algebra::lattices::MonotoneLattice<T, Cmp>;
+    // Modality declaration — Round-4 CHEAT-5; see safety/Linear.h.
+    static constexpr ::crucible::algebra::ModalityKind modality =
+        ::crucible::algebra::ModalityKind::Absolute;
     // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
     using graded_type  = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
@@ -844,3 +857,21 @@ public:
 };
 
 } // namespace crucible::safety
+
+// ── Round-4 CHEAT-1 opt-out for AppendOnly ─────────────────────────
+//
+// AppendOnly<T, Storage> legitimately decouples its user-facing
+// value_type (T, the element) from its substrate's value_type
+// (Storage<T>, the container being graded by length).  This is the
+// canonical regime-3 wrapper.  The opt-out specialization below
+// tells the GradedWrapper concept to skip the value_type ↔
+// graded_type::value_type equality check.
+//
+// New regime-3 wrappers (container-substrate / element-user pattern)
+// add the same specialization at their own header's bottom.
+
+namespace crucible::algebra {
+    template <typename T, template <typename...> class Storage>
+    struct value_type_decoupled<::crucible::safety::AppendOnly<T, Storage>>
+        : std::true_type {};
+}  // namespace crucible::algebra
