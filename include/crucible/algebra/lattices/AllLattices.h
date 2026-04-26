@@ -60,13 +60,16 @@
 // ── Shipped lattices ────────────────────────────────────────────────
 #include <crucible/algebra/lattices/BoolLattice.h>       // ALGEBRA-5  (#450) — shipped
 #include <crucible/algebra/lattices/ConfLattice.h>       // ALGEBRA-6  (#451) — shipped
+#include <crucible/algebra/lattices/ConsistencyLattice.h>// ALGEBRA-14 (#459) — shipped (2/3)
 #include <crucible/algebra/lattices/FractionalLattice.h> // ALGEBRA-8  (#453) — shipped
 #include <crucible/algebra/lattices/HappensBefore.h>     // ALGEBRA-13 (#458) — shipped
+#include <crucible/algebra/lattices/LifetimeLattice.h>   // ALGEBRA-14 (#459) — shipped (1/3)
 #include <crucible/algebra/lattices/MonotoneLattice.h>   // ALGEBRA-9  (#454) — shipped
 #include <crucible/algebra/lattices/ProductLattice.h>    // ALGEBRA-15 (#460) — shipped
 #include <crucible/algebra/lattices/QttSemiring.h>       // ALGEBRA-4  (#449) — shipped
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>  // ALGEBRA-10 (#455) — shipped
 #include <crucible/algebra/lattices/StalenessSemiring.h> // ALGEBRA-11 (#456) — shipped
+#include <crucible/algebra/lattices/ToleranceLattice.h>  // ALGEBRA-14 (#459) — shipped (3/3)
 #include <crucible/algebra/lattices/TrustLattice.h>      // ALGEBRA-7  (#452) — shipped
 
 namespace crucible::algebra::lattices {
@@ -91,15 +94,16 @@ namespace crucible::algebra::lattices {
 // Vector-clock partial order over N participants with optional Tag
 // for cross-protocol distinction.
 
-// Lifetime lattice (PER_REQUEST < PER_PROGRAM < PER_FLEET).
-struct LifetimeLattice;
+// LifetimeLattice — already included above (ALGEBRA-14 part 1/3 shipped).
+// Three-element chain: PER_REQUEST < PER_PROGRAM < PER_FLEET.
 
-// Consistency lattice (Strong < BoundedStaleness < CausalPrefix <
-// ReadYourWrites < Eventual).
-struct ConsistencyLattice;
+// ConsistencyLattice — already included above (ALGEBRA-14 part 2/3 shipped).
+// Five-element chain: EVENTUAL < READ_YOUR_WRITES < CAUSAL_PREFIX <
+// BOUNDED_STALENESS < STRONG.
 
-// Tolerance lattice (relative/absolute error magnitudes).
-struct ToleranceLattice;
+// ToleranceLattice — already included above (ALGEBRA-14 part 3/3 shipped).
+// Seven-tier chain over numeric-tolerance budgets:
+// RELAXED < ULP_INT8 < ULP_FP8 < ULP_FP16 < ULP_FP32 < ULP_FP64 < BITEXACT.
 
 // Componentwise product over N lattices.
 template <typename... Ls> struct ProductLattice;

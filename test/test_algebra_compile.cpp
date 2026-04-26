@@ -41,13 +41,16 @@
 #include <crucible/algebra/lattices/AllLattices.h>
 #include <crucible/algebra/lattices/BoolLattice.h>
 #include <crucible/algebra/lattices/ConfLattice.h>
+#include <crucible/algebra/lattices/ConsistencyLattice.h>
 #include <crucible/algebra/lattices/FractionalLattice.h>
 #include <crucible/algebra/lattices/HappensBefore.h>
+#include <crucible/algebra/lattices/LifetimeLattice.h>
 #include <crucible/algebra/lattices/MonotoneLattice.h>
 #include <crucible/algebra/lattices/ProductLattice.h>
 #include <crucible/algebra/lattices/QttSemiring.h>
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>
 #include <crucible/algebra/lattices/StalenessSemiring.h>
+#include <crucible/algebra/lattices/ToleranceLattice.h>
 #include <crucible/algebra/lattices/TrustLattice.h>
 
 #include <cstdio>
@@ -139,6 +142,18 @@ void test_happens_before_runtime_smoke() {
     ::crucible::algebra::lattices::detail::happens_before_self_test::runtime_smoke_test();
 }
 
+void test_lifetime_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::lifetime_lattice_self_test::runtime_smoke_test();
+}
+
+void test_consistency_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::consistency_lattice_self_test::runtime_smoke_test();
+}
+
+void test_tolerance_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::tolerance_lattice_self_test::runtime_smoke_test();
+}
+
 }  // namespace
 
 int main() {
@@ -163,6 +178,12 @@ int main() {
              test_product_lattice_runtime_smoke);
     run_test("test_happens_before_runtime_smoke",
              test_happens_before_runtime_smoke);
+    run_test("test_lifetime_lattice_runtime_smoke",
+             test_lifetime_lattice_runtime_smoke);
+    run_test("test_consistency_lattice_runtime_smoke",
+             test_consistency_lattice_runtime_smoke);
+    run_test("test_tolerance_lattice_runtime_smoke",
+             test_tolerance_lattice_runtime_smoke);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
