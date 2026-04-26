@@ -35,6 +35,7 @@
 //   This harness is strictly cross-cutting.
 // ═══════════════════════════════════════════════════════════════════
 
+#include <crucible/permissions/Permission.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Tagged.h>
@@ -89,6 +90,13 @@ static_assert(sizeof(Secret<long long>)             == sizeof(long long));
 static_assert(sizeof(Monotonic<std::uint32_t>)      == sizeof(std::uint32_t));
 static_assert(sizeof(Monotonic<std::uint64_t>)      == sizeof(std::uint64_t));
 
+// SharedPermission<Tag> is a façade migration (regime-5, MIGRATE-7):
+// the proof token stays an empty class (sizeof 1, EBO-collapsible to
+// 0).  Runtime fractional-share state lives in SharedPermissionPool,
+// not at the SharedPermission instance.  See Permission.h's MIGRATE-7
+// audit block for the full rationale.
+static_assert(sizeof(SharedPermission<VerificationTag>) == 1);
+
 // ── COVERAGE MATRIX — value_type_name forwarder uniformity ─────────
 //
 // Every migrated wrapper exposes value_type_name() forwarded from
@@ -105,6 +113,10 @@ static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
            || Monotonic<std::uint64_t>::value_type_name().ends_with("long unsigned int"));
 static_assert(Stale<int>::value_type_name().ends_with("int"));
 static_assert(TimeOrdered<int, 4>::value_type_name().ends_with("int"));
+// SharedPermission's value_type IS the Tag (phantom region label); the
+// reflection-derived name ends with the local tag struct's name.
+static_assert(SharedPermission<VerificationTag>::value_type_name()
+                                            .ends_with("VerificationTag"));
 
 // ── COVERAGE MATRIX — lattice_name forwarder uniformity ────────────
 //
@@ -123,6 +135,7 @@ static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");
 static_assert(AppendOnly<int>::lattice_name()   == "SeqPrefixLattice");
 static_assert(Stale<int>::lattice_name()        == "StalenessSemiring");
 static_assert(TimeOrdered<int, 4>::lattice_name() == "HappensBeforeLattice");
+static_assert(SharedPermission<VerificationTag>::lattice_name() == "FractionalLattice");
 
 // ── COVERAGE MATRIX — cross-wrapper composition ────────────────────
 //
@@ -194,6 +207,30 @@ void runtime_smoke_append_only() {
     if (a[0] != 1 || a[1] != 2 || a[2] != 3) std::abort();
 }
 
+// SharedPermission's runtime smoke goes via the Pool (the carrier).
+// Constructs a Pool from a freshly-minted exclusive Permission, lends
+// a Guard, extracts the SharedPermission proof token, lets the Guard
+// drop, then upgrades back to exclusive.  Exercises the full façade
+// migration loop in one self-contained block.
+void runtime_smoke_shared_permission() {
+    auto exclusive = permission_root_mint<VerificationTag>();
+    SharedPermissionPool<VerificationTag> pool{std::move(exclusive)};
+
+    auto guard1 = pool.lend();
+    if (!guard1) std::abort();
+    [[maybe_unused]] SharedPermission<VerificationTag> tok = guard1->token();
+    if (pool.outstanding() != 1) std::abort();
+
+    // Drop the guard — refcount returns to 0.
+    guard1.reset();
+    if (pool.outstanding() != 0) std::abort();
+
+    // Upgrade succeeds because no shares are out.
+    auto upgraded = pool.try_upgrade();
+    if (!upgraded) std::abort();
+    pool.deposit_exclusive(std::move(*upgraded));
+}
+
 }  // namespace
 
 int main() {
@@ -210,8 +247,11 @@ int main() {
     runtime_smoke_monotonic();
     std::fprintf(stderr, "  monotonic:   OK\n");
     runtime_smoke_append_only();
-    std::fprintf(stderr, "  append_only: OK\n");
+    std::fprintf(stderr, "  append_only:       OK\n");
+    runtime_smoke_shared_permission();
+    std::fprintf(stderr, "  shared_permission: OK\n");
 
-    std::fprintf(stderr, "\nALL PASSED — 8 migrated wrappers verified uniformly\n");
+    std::fprintf(stderr, "\nALL PASSED — 9 migrated wrappers verified uniformly "
+                         "(8 Graded-backed + 1 façade)\n");
     return EXIT_SUCCESS;
 }
