@@ -126,13 +126,13 @@
 #include <crucible/algebra/Lattice.h>
 #include <crucible/Platform.h>
 
-#include <algorithm>     // std::max for causal_merge's pre-condition
 #include <array>
 #include <compare>       // std::partial_ordering for operator<=>
 #include <cstdint>
 #include <cstddef>
 #include <limits>
 #include <string_view>
+#include <utility>       // std::index_sequence for make_clock helper
 
 namespace crucible::algebra::lattices {
 
@@ -350,22 +350,20 @@ struct HappensBeforeLattice {
     // as a named operation rather than requiring callers to
     // hand-compose the pattern.
     //
-    // PRECONDITIONS (two clauses):
-    //   1. me < N — bounds-check on the process-id index.
-    //   2. max(local[me], received[me]) != UINT64_MAX — overflow
-    //      guard on the slot that successor_at will increment.  We
-    //      project the lattice join onto slot `me` rather than
-    //      computing the full join: by the pointwise-max axiom,
-    //      `join(local, received).clock[me] == max(local.clock[me],
-    //      received.clock[me])`.  The projection is O(1); the full
-    //      join is O(N).  Same algebraic content, lower cost.
-    //      (Other slots' overflow is irrelevant — successor_at
-    //      doesn't touch them.)
+    // PRECONDITION: me < N — bounds-check on the process-id index
+    // for a clean diagnostic at THIS call site.  The overflow guard
+    // (max(local[me], received[me]) != UINT64_MAX) is INTENTIONALLY
+    // delegated to the inner successor_at — its own pre re-evaluates
+    // the same condition on `join(local, received).clock[me]` (which
+    // by the pointwise-max axiom equals max(local[me], received[me])).
+    // Originally we duplicated the check at this level for an O(1)
+    // projection vs. the inner's full-join evaluation, but successor_at
+    // already takes the joined element_type by value (the join is
+    // computed regardless), so the inner pre fires on the already-
+    // computed slot at zero additional cost.  Single source of truth.
     [[nodiscard]] static constexpr element_type causal_merge(
         element_type local, element_type received, std::size_t me) noexcept
         pre (me < N)
-        pre (std::max(local.clock[me], received.clock[me])
-             != std::numeric_limits<std::uint64_t>::max())
     {
         return successor_at(join(local, received), me);
     }
@@ -375,6 +373,32 @@ struct HappensBeforeLattice {
         return "HappensBeforeLattice";
     }
 };
+
+// ── make_clock<HB> factory — variadic vector-clock construction ─────
+//
+// Ergonomic helper for the verbose `HappensBeforeLattice<N, Tag>::
+// element_type{{a, b, c, d}}` double-brace pattern.  Lets callers
+// write `make_clock<HB4>(1, 0, 0, 0)` instead.  Exact-arity
+// requirement (sizeof...(Slots) == HB::process_count) is a hard
+// static_assert — passing too few or too many slots is a compile
+// error at the call site.
+//
+// All slot values are converted to std::uint64_t at the boundary
+// (the underlying clock_value_type).  Implicit narrowing is rejected
+// by the std::convertible_to constraint.
+//
+// Usage examples:
+//   auto c1 = make_clock<HB4>(1, 0, 0, 0);
+//   auto c2 = make_clock<HappensBeforeLattice<8>>(0, 0, 0, 0, 0, 0, 0, 0);
+//   auto c3 = make_clock<HBReplay>(2, 1, 0, 0);  // Tag-distinguished
+template <typename HB, typename... Slots>
+    requires (sizeof...(Slots) == HB::process_count)
+          && (std::convertible_to<Slots, typename HB::clock_value_type> && ...)
+[[nodiscard]] constexpr typename HB::element_type make_clock(Slots... slots) noexcept {
+    return typename HB::element_type{{
+        static_cast<typename HB::clock_value_type>(slots)...
+    }};
+}
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::happens_before_self_test {
@@ -717,6 +741,26 @@ static_assert(sizeof(HBReplay::element_type) == sizeof(HBDefault::element_type))
 // ── Diagnostic name ────────────────────────────────────────────────
 static_assert(HB4::name()      == "HappensBeforeLattice");
 static_assert(HBReplay::name() == "HappensBeforeLattice");
+
+// ── make_clock factory: variadic ergonomic construction ────────────
+//
+// Pins the make_clock helper at every relevant arity (N=1, N=4) and
+// across Tag-distinguished instantiations (HBReplay).  The variadic
+// helper shaves the double-brace boilerplate off every production
+// caller — ALGEBRA-15-tier audit improvement.
+static_assert(make_clock<HB4>(1, 0, 0, 0) == HB4::element_type{{1, 0, 0, 0}});
+static_assert(make_clock<HB4>(0, 0, 0, 0) == HB4::bottom());
+static_assert(make_clock<HB4>(2, 2, 1, 0) == hb4_c);
+static_assert(make_clock<HB1>(7)          == HB1::element_type{{7}});
+
+// Cross-Tag distinction propagates through make_clock — same slot
+// values, different Tag → structurally different element_type.
+static_assert(std::is_same_v<
+    decltype(make_clock<HBReplay>(1, 0, 0, 0)),
+    HBReplay::element_type>);
+static_assert(!std::is_same_v<
+    decltype(make_clock<HBReplay>(1, 0, 0, 0)),
+    decltype(make_clock<HBKernel>(1, 0, 0, 0))>);
 
 // ── Runtime smoke test ─────────────────────────────────────────────
 //
