@@ -830,6 +830,38 @@ crucible_neg_compile_test(neg_graded_inject_on_absolute
 crucible_neg_compile_test(neg_graded_extract_on_relative_monad
   "constraints not satisfied|ComonadModality")
 
+# ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
+#
+# Three neg-compiles pinning the variadic primary template's
+# structural invariants:
+#
+#   neg_product_lattice_non_lattice_component
+#       Instantiating ProductLattice<L0, NotALattice, L2> — the
+#       primary's `static_assert((Lattice<Ls> && ...))` fires.
+#       Without this neg, a refactor that loosened the concept
+#       conjunction would let non-Lattice types slip through and
+#       produce a confusing fold-expression diagnostic cascade
+#       instead of the named violation.  [FRAMEWORK-CONTROLLED]
+#
+#   neg_product_lattice_get_out_of_range
+#       Calling `get<I>(e)` with I >= sizeof...(Ls) — the requires
+#       clause `requires (I < sizeof...(Ls))` rejects.  Pins the
+#       per-call bounds discipline (symmetric to HappensBefore's
+#       operator[] bounds-check).  [GCC-text + framework]
+#
+#   neg_product_lattice_cross_arity_mixing
+#       Passing ProductLattice<L,L,L>::element_type to
+#       ProductLattice<L,L>::leq — cross-arity element_types are
+#       structurally different (different specializations).  Catches
+#       a refactor that added implicit converting constructors
+#       between ProductElement specializations.  [GCC-WRAPPER-TEXT]
+crucible_neg_compile_test(neg_product_lattice_non_lattice_component
+  "every L_i must satisfy the Lattice concept")
+crucible_neg_compile_test(neg_product_lattice_get_out_of_range
+  "constraints not satisfied|I < sizeof")
+crucible_neg_compile_test(neg_product_lattice_cross_arity_mixing
+  "could not convert|no matching function|cannot convert")
+
 # WriteOnceNonNull<T*> — pointer-specialized single-set primitive (#77).
 #
 # [FRAMEWORK-CONTROLLED] Two named diagnostics gate the primitive's
