@@ -116,6 +116,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Mutation.h>
 #include <crucible/safety/Pinned.h>
 
 #include <atomic>
@@ -157,9 +158,16 @@ public:
 
     // Initial-value ctor: publish `initial` synchronously, no
     // races possible (no other thread has the address yet).
-    explicit AtomicSnapshot(const T& initial) noexcept {
+    explicit AtomicSnapshot(const T& initial) noexcept
+        : seq_{0} {
         std::memcpy(storage_, &initial, sizeof(T));
-        seq_.store(2, std::memory_order_release);
+        // No concurrent readers possible (no other thread has the
+        // address yet) so reset_under_quiescence is the right tool —
+        // bump from 0 → 2 in one move that bypasses monotonicity check
+        // (we go from initial 0 to 2, which advance() would accept,
+        // but reset_under_quiescence makes the "no concurrent access"
+        // precondition explicit at the call site).
+        seq_.reset_under_quiescence(2);
     }
 
     // ── publish (single writer) ───────────────────────────────────
@@ -196,11 +204,12 @@ public:
     // being moved BEFORE this fetch_add.  The memcpy is now
     // bracketed strictly between the two seq increments.
     void publish(const T& value) noexcept {
-        // First fetch_add: even → odd ("writer in progress").
-        // acq_rel prevents the memcpy below from being hoisted
-        // above this increment (acquire semantics).  See the
-        // detailed comment above.
-        const uint64_t old_seq = seq_.fetch_add(1, std::memory_order_acq_rel);
+        // First bump: even → odd ("writer in progress").
+        // bump_by uses acq_rel, which matches the load-bearing
+        // requirement of this side: acquire semantics prevent the
+        // memcpy below from being hoisted ABOVE this increment.  See
+        // the long doc-comment above for why a plain release is wrong.
+        const uint64_t old_seq = seq_.bump_by(1);
         // Single-writer invariant — debug-checked.  If this fires,
         // either (a) two threads called publish() concurrently
         // (the documented contract violation) or (b) seq_ was
@@ -211,12 +220,14 @@ public:
         // T is trivially-copyable so memcpy is the canonical write.
         std::memcpy(storage_, &value, sizeof(T));
 
-        // Second fetch_add: odd → even ("data published").
-        // Release pairs with reader's acquire on seq_pre — readers
-        // that observe the new even seq see all data writes above.
-        // Release on this side is sufficient: prior ops (the
-        // memcpy) cannot be moved after.
-        seq_.fetch_add(1, std::memory_order_release);
+        // Second bump: odd → even ("data published").  Release alone
+        // would be sufficient (prior memcpy cannot move after); bump_by's
+        // acq_rel is stricter.  On x86 LOCK XADD is a full fence either
+        // way → zero regression.  On ARM, one extra dmb (~1-3ns) per
+        // publish is paid for the type-level monotonicity guarantee.
+        // Acceptable trade — publish is the slow path; readers (which
+        // are the hot path for this primitive) are unchanged.
+        (void)seq_.bump_by(1);
     }
 
     // ── load (any reader) ─────────────────────────────────────────
@@ -259,13 +270,13 @@ public:
         alignas(T) std::byte buf[sizeof(T)]{};
 
         for (;;) {
-            uint64_t pre = seq_.load(std::memory_order_acquire);
+            uint64_t pre = seq_.get();
 
             // Wait for any in-progress writer to complete.  Bounded
             // wait: writer's mid-publish window is ~30 ns.
             while ((pre & 1u) != 0u) {
                 CRUCIBLE_SPIN_PAUSE;
-                pre = seq_.load(std::memory_order_acquire);
+                pre = seq_.get();
             }
 
             // Snapshot the bytes.  This is the technically-UB
@@ -283,7 +294,7 @@ public:
             // data reads and the seq retry check.
             std::atomic_thread_fence(std::memory_order_acquire);
 
-            const uint64_t post = seq_.load(std::memory_order_acquire);
+            const uint64_t post = seq_.get();
 
             if (pre == post) {
                 // Coherent: the bytes in `buf` are exactly what the
@@ -305,7 +316,7 @@ public:
     // is observed; returns nullopt otherwise.  Useful for
     // best-effort instrumentation paths that must never block.
     [[nodiscard]] std::optional<T> try_load() const noexcept {
-        const uint64_t pre = seq_.load(std::memory_order_acquire);
+        const uint64_t pre = seq_.get();
         if ((pre & 1u) != 0u) {
             return std::nullopt;  // writer mid-publish
         }
@@ -317,7 +328,7 @@ public:
         // memcpy from being reordered below the seq_post load.
         std::atomic_thread_fence(std::memory_order_acquire);
 
-        const uint64_t post = seq_.load(std::memory_order_acquire);
+        const uint64_t post = seq_.get();
         if (pre != post) {
             return std::nullopt;  // torn — writer started new round
         }
@@ -333,15 +344,19 @@ public:
     // next call.
     [[nodiscard]] uint64_t version() const noexcept {
         // Half the seq counter (we increment twice per publish).
-        // Acquire to synchronize with the latest publication.
-        return seq_.load(std::memory_order_acquire) >> 1;
+        // get() is acquire, syncing with the latest publication.
+        return seq_.get() >> 1;
     }
 
 private:
     // seq_ is read by all threads; isolate on its own cache line
     // so writer's increments don't ping-pong with unrelated
-    // adjacent state.
-    alignas(64) std::atomic<uint64_t> seq_{0};
+    // adjacent state.  AtomicMonotonic surfaces the seqlock's
+    // monotonic-counter discipline at the type level — bump_by
+    // for the writer's two-step bracket, get for reader pre/post
+    // snapshots, reset_under_quiescence for the initial-value ctor
+    // path where no concurrent access is possible.
+    alignas(64) safety::AtomicMonotonic<uint64_t> seq_{0};
 
     // storage_ is also written by writer, read by all readers.
     // Keep it on its own cache line so seq_ updates don't
