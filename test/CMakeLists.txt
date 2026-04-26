@@ -792,6 +792,44 @@ crucible_neg_compile_test(neg_tolerance_at_cross_tier_mixing
 crucible_neg_compile_test(neg_graded_peek_mut_on_relative_monad_nonempty_grade
   "constraints not satisfied|AbsoluteModality")
 
+# ─── Modality × method matrix completion + cross-mixing closure ─────
+#
+# Four neg-compiles closing the remaining coverage holes from the prior
+# two batches.  Each fills a specific cell that, if the discipline
+# slipped, would not be caught by any earlier neg-compile:
+#
+#   neg_happens_before_spaceship_cross_tag
+#       Mirrors neg_happens_before_spaceship_cross_n for the Tag
+#       parameter — pins that the spaceship surface respects per-Tag
+#       distinction (mirrors the static-leq cross-Tag test for the
+#       spaceship surface).  [GCC-WRAPPER-TEXT]
+#
+#   neg_lifetime_tolerance_cross_lattice_mixing
+#       The third (and final) edge of the chain-lattice cross-mixing
+#       triangle {Lifetime, Consistency, Tolerance}.  Together with
+#       the earlier Consistency×Lifetime and Consistency×Tolerance
+#       tests, all three pairs are independently pinned — an enum-
+#       collapse refactor on any pair would now be caught by at
+#       least two neg-compiles.  [GCC-WRAPPER-TEXT]
+#
+#   neg_graded_inject_on_absolute,
+#   neg_graded_extract_on_relative_monad
+#       Complete the modality × method (extract / inject) 2×2
+#       rejection grid.  Together with the prior
+#       neg_graded_extract_on_absolute and
+#       neg_graded_inject_on_comonad, both methods are pinned as
+#       rejecting BOTH non-matching modalities.  Without these, a
+#       partial loosening (e.g. "extract now also works on
+#       RelativeMonad") would slip past the prior neg-compiles.
+crucible_neg_compile_test(neg_happens_before_spaceship_cross_tag
+  "no match for|invalid operands|no matching function")
+crucible_neg_compile_test(neg_lifetime_tolerance_cross_lattice_mixing
+  "could not convert|no matching function|cannot convert")
+crucible_neg_compile_test(neg_graded_inject_on_absolute
+  "constraints not satisfied|RelativeMonadModality")
+crucible_neg_compile_test(neg_graded_extract_on_relative_monad
+  "constraints not satisfied|ComonadModality")
+
 # WriteOnceNonNull<T*> — pointer-specialized single-set primitive (#77).
 #
 # [FRAMEWORK-CONTROLLED] Two named diagnostics gate the primitive's
