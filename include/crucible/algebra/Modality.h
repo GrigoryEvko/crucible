@@ -98,18 +98,19 @@ inline constexpr bool has_grade_only_v =
     (K == ModalityKind::Absolute) || (K == ModalityKind::Relative);
 
 // ── Diagnostic name emitter ─────────────────────────────────────────
+//
+// Explicit `default:` arm satisfies -Werror=switch-default; the
+// sentinel string is what the `every_modality_has_name()` self-test
+// below checks for to catch a future ModalityKind value that forgets
+// to update this switch.
 [[nodiscard]] consteval std::string_view modality_name(ModalityKind K) noexcept {
     switch (K) {
         case ModalityKind::Comonad:       return "Comonad";
         case ModalityKind::RelativeMonad: return "RelativeMonad";
         case ModalityKind::Absolute:      return "Absolute";
         case ModalityKind::Relative:      return "Relative";
+        default:                          return std::string_view{"<unknown ModalityKind>"};
     }
-    // Unreachable for IsModality<K>; keep an explicit sentinel for the
-    // case where a future ModalityKind value forgets to update this
-    // switch — the static_assert in detail::modality_self_test catches
-    // the missing arm at compile time.
-    return std::string_view{"<unknown ModalityKind>"};
 }
 
 // ── Tag types for overload-set dispatch ─────────────────────────────
@@ -149,11 +150,18 @@ static_assert(modality_kind_count == 4,
 [[nodiscard]] consteval bool every_modality_has_name() noexcept {
     static constexpr auto enumerators =
         std::define_static_array(std::meta::enumerators_of(^^ModalityKind));
+    // -Wshadow fires on the `template for` body's induction variable
+    // because GCC 16 expands the loop into successive scopes that
+    // each declare `en`; suppress locally for the loop body only.
+    // See feedback_gcc16_c26_reflection_gotchas memory.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         if (modality_name([:en:]) == std::string_view{"<unknown ModalityKind>"}) {
             return false;
         }
     }
+#pragma GCC diagnostic pop
     return true;
 }
 static_assert(every_modality_has_name(),

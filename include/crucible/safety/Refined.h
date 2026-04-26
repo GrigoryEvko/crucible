@@ -19,19 +19,37 @@
 // Name every load-bearing predicate.  Don't define anonymous refinements
 // at call sites — aliases are what participate in grep and review.
 
-// ── DEPRECATION-ON-MIGRATE (Phase 2a Graded refactor) ──────────────
-// Folds into a Graded<Modality, Lattice, T> alias once safety/Graded.h
-// ships (misc/25_04_2026.md §2.3).  Public API preserved; this
-// standalone implementation is removed at migration.
+// ── MIGRATED to Graded<Absolute, BoolLattice<Pred>, T>  (#462) ─────
 //
-//   template <typename Pred, typename T>
-//   using Refined = Graded<Absolute, BoolLattice<Pred>, T>;
+// As of MIGRATE-2 (2026-04-26) Refined<Pred, T> is a thin wrapper
+// around the algebraic primitive
 //
-// implies_v<P, Q> (#227) lifts to lattice ⊑ on BoolLattice products.
-// Do not extend with new specializations — extend the Graded algebra.
+//   Graded<ModalityKind::Absolute,
+//          BoolLattice<std::remove_cv_t<decltype(Pred)>>,
+//          T>
+//
+// per misc/25_04_2026.md §2.3.  The wrapper preserves every existing
+// public API surface (value() / into() / Trusted{} / comparison
+// operators / predicate_type alias / all named-predicate aliases /
+// implies_v + predicate_implies machinery).  Storage is delegated to
+// Graded; the lattice's element_type is empty (singleton "Pred holds")
+// and EBO collapses both grade_ and the wrapper itself, so
+// sizeof(Refined<P, T>) == sizeof(T) is preserved by structural
+// guarantee, not by hand.
+//
+// Cross-predicate subsumption stays here (predicate_implies family at
+// the bottom of this file) — it is logically an implication-lattice
+// over BoolLattice<P> instances, not internal to BoolLattice<Pred>'s
+// per-instance structure.  SessionPayloadSubsort.h consumes it via
+// the existing is_subsort<Refined<P, T>, Refined<Q, T>> specialization
+// gated by implies_v<P, Q>; that hook compiles unchanged because
+// Refined is still a class template parameterised on the same
+// (auto Pred, typename T).
 // ───────────────────────────────────────────────────────────────────
 
 #include <crucible/Platform.h>
+#include <crucible/algebra/Graded.h>
+#include <crucible/algebra/lattices/BoolLattice.h>
 #include <crucible/safety/Linear.h>
 
 #include <compare>
@@ -142,11 +160,26 @@ struct LengthGe {
 template <std::size_t N>
 inline constexpr LengthGe<N> length_ge{};
 
-// ── The wrapper ────────────────────────────────────────────────────
+// ── The wrapper (Graded-backed per MIGRATE-2 #462) ─────────────────
 
 template <auto Pred, typename T>
 class [[nodiscard]] Refined {
-    T value_;
+    // Lattice carrying the predicate at the type level.  Pred is an
+    // auto-NTTP (a value); BoolLattice takes the predicate's TYPE,
+    // hence remove_cv_t<decltype(Pred)>.  The remove_cv_t strip
+    // matters because inline-constexpr predicate variables are const-
+    // qualified at file scope but auto-NTTPs strip the const — same
+    // discipline as the predicate_implies specialisations below
+    // (probed on GCC 16; see commit log for #227).
+    using lattice_type = ::crucible::algebra::lattices::BoolLattice<
+        std::remove_cv_t<decltype(Pred)>>;
+
+    using graded_type = ::crucible::algebra::Graded<
+        ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;
+
+    // Empty-lattice grade_type collapses via [[no_unique_address]] in
+    // Graded; impl_ is sizeof(T).  Wrapper adds no other state.
+    graded_type impl_;
 
 public:
     using value_type     = T;
@@ -160,42 +193,48 @@ public:
     // Checked construction — contract fires if the predicate fails.
     constexpr explicit Refined(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
         pre(Pred(v))
-        : value_{std::move(v)} {}
+        : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
     // Trusted construction — no check, caller-asserted invariant.
     constexpr Refined(T v, Trusted) noexcept(std::is_nothrow_move_constructible_v<T>)
-        : value_{std::move(v)} {}
+        : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
     // Refinement applies to the value; once constructed the invariant
-    // holds.  Copy/move just preserve the value.
+    // holds.  Copy/move just preserve the value (defaulted from
+    // graded_type, which is itself defaulted).
     Refined(const Refined&)            = default;
     Refined(Refined&&)                 = default;
     Refined& operator=(const Refined&) = default;
     Refined& operator=(Refined&&)      = default;
 
-    // Explicit accessor — no implicit conversion.
-    [[nodiscard]] constexpr const T& value() const noexcept { return value_; }
+    // Explicit accessor — no implicit conversion.  Forwards to
+    // Graded::peek() under the hood.
+    [[nodiscard]] constexpr const T& value() const noexcept {
+        return impl_.peek();
+    }
 
-    // Explicit raw extraction for re-wrapping paths.
+    // Explicit raw extraction for re-wrapping paths.  Forwards to
+    // Graded::consume() — rvalue-this consumes the inner value.
     [[nodiscard]] constexpr T into() &&
         noexcept(std::is_nothrow_move_constructible_v<T>)
     {
-        return std::move(value_);
+        return std::move(impl_).consume();
     }
 
     // Equality / ordering on the underlying value.  Refined values of
-    // the same Pred and T compare by their inner T.
+    // the same Pred and T compare by their inner T (forwarded through
+    // Graded::peek()).
     friend constexpr bool operator==(const Refined& a, const Refined& b)
-        noexcept(noexcept(a.value_ == b.value_))
+        noexcept(noexcept(a.impl_.peek() == b.impl_.peek()))
     {
-        return a.value_ == b.value_;
+        return a.impl_.peek() == b.impl_.peek();
     }
 
     friend constexpr auto operator<=>(const Refined& a, const Refined& b)
-        noexcept(noexcept(a.value_ <=> b.value_))
+        noexcept(noexcept(a.impl_.peek() <=> b.impl_.peek()))
         requires std::three_way_comparable<T>
     {
-        return a.value_ <=> b.value_;
+        return a.impl_.peek() <=> b.impl_.peek();
     }
 };
 

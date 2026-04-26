@@ -88,8 +88,8 @@ inline constexpr std::size_t qtt_grade_count =
         case QttGrade::Zero:  return "0";
         case QttGrade::One:   return "1";
         case QttGrade::Omega: return "\xCF\x89";  // UTF-8 ω
+        default:              return std::string_view{"<unknown QttGrade>"};
     }
-    return std::string_view{"<unknown QttGrade>"};
 }
 
 // ── Full QttSemiring (lattice + semiring) ───────────────────────────
@@ -187,8 +187,8 @@ struct QttSemiring {
                 case QttGrade::Zero:  return "QttSemiring::At<0>";
                 case QttGrade::One:   return "QttSemiring::At<1>";
                 case QttGrade::Omega: return "QttSemiring::At<\xCF\x89>";  // UTF-8 ω
+                default:              return "QttSemiring::At<?>";
             }
-            return "QttSemiring::At<?>";
         }
     };
 };
@@ -214,11 +214,14 @@ static_assert(qtt_grade_count == 3,
 [[nodiscard]] consteval bool every_qtt_grade_has_name() noexcept {
     static constexpr auto enumerators =
         std::define_static_array(std::meta::enumerators_of(^^QttGrade));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         if (qtt_grade_name([:en:]) == std::string_view{"<unknown QttGrade>"}) {
             return false;
         }
     }
+#pragma GCC diagnostic pop
     return true;
 }
 static_assert(every_qtt_grade_has_name(),
@@ -251,6 +254,8 @@ static_assert(std::is_empty_v<QttSemiring::At<QttGrade::Omega>::element_type>);
 [[nodiscard]] consteval bool exhaustive_lattice_check() noexcept {
     static constexpr auto enumerators =
         std::define_static_array(std::meta::enumerators_of(^^QttGrade));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
         template for (constexpr auto eb : enumerators) {
             template for (constexpr auto ec : enumerators) {
@@ -261,6 +266,7 @@ static_assert(std::is_empty_v<QttSemiring::At<QttGrade::Omega>::element_type>);
             }
         }
     }
+#pragma GCC diagnostic pop
     return true;
 }
 static_assert(exhaustive_lattice_check(),
@@ -271,6 +277,8 @@ static_assert(exhaustive_lattice_check(),
 [[nodiscard]] consteval bool exhaustive_semiring_check() noexcept {
     static constexpr auto enumerators =
         std::define_static_array(std::meta::enumerators_of(^^QttGrade));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto ea : enumerators) {
         template for (constexpr auto eb : enumerators) {
             template for (constexpr auto ec : enumerators) {
@@ -281,6 +289,7 @@ static_assert(exhaustive_lattice_check(),
             }
         }
     }
+#pragma GCC diagnostic pop
     return true;
 }
 static_assert(exhaustive_semiring_check(),
@@ -314,6 +323,8 @@ static_assert(qtt_grade_name(QttGrade::One)   == "1");
 [[nodiscard]] consteval bool every_at_grade_has_name() noexcept {
     static constexpr auto enumerators =
         std::define_static_array(std::meta::enumerators_of(^^QttGrade));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
     template for (constexpr auto en : enumerators) {
         // Splice in template-argument position needs parens to
         // disambiguate from the <: digraph; per P2996R13 / C++26.
@@ -322,6 +333,7 @@ static_assert(qtt_grade_name(QttGrade::One)   == "1");
             return false;
         }
     }
+#pragma GCC diagnostic pop
     return true;
 }
 static_assert(every_at_grade_has_name(),

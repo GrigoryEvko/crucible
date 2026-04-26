@@ -126,10 +126,18 @@ static_assert(verify_bounded_lattice_axioms_at<BoolLattice<non_negative>>(
 static_assert(verify_bounded_lattice_axioms_at<BoolLattice<non_zero>>(
     {}, {}, {}));
 
-// Diagnostic name comes from reflection on Pred.
-static_assert(BoolLattice<positive>::name()     == "positive");
-static_assert(BoolLattice<non_negative>::name() == "non_negative");
-static_assert(BoolLattice<non_zero>::name()     == "non_zero");
+// Diagnostic name comes from reflection on Pred.  GCC 16's
+// std::meta::display_string_of returns a name whose qualification
+// depth depends on the including TU's scope context — sometimes the
+// simple name "positive", sometimes the fully-qualified
+// "crucible::algebra::lattices::detail::bool_lattice_self_test::positive"
+// (probed empirically on safety/Refined.h's TU).  Per the
+// gcc16_c26_reflection_gotchas memory rule #5: verify with
+// .ends_with() rather than equality so the assertion is robust
+// across TU contexts.
+static_assert(BoolLattice<positive>::name().ends_with("positive"));
+static_assert(BoolLattice<non_negative>::name().ends_with("non_negative"));
+static_assert(BoolLattice<non_zero>::name().ends_with("non_zero"));
 
 // predicate_type alias is correct.
 static_assert(std::is_same_v<BoolLattice<positive>::predicate_type, positive>);
