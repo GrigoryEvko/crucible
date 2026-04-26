@@ -160,6 +160,35 @@ struct LengthGe {
 template <std::size_t N>
 inline constexpr LengthGe<N> length_ge{};
 
+// ── Concept gate: Pred must be invocable on T ──────────────────────
+//
+// Used on the construction path (NOT on the class template itself).
+// Two reasons for this scoping:
+//
+//   1. The TYPE Refined<positive, Tagged<int, source::Sanitized>>
+//      MUST remain nameable for SessionPayloadSubsort.h's type-level
+//      subsort axioms (`is_subsort_v<Refined<P, Tagged<T,S>>,
+//      Tagged<T,S>>`) — those metafunctions reason over the wrapper's
+//      type without ever constructing an instance.  Putting the
+//      `requires` on the class template would break the entire
+//      subsort discipline.
+//
+//   2. The CONSTRUCTOR is the operation that actually evaluates
+//      Pred(v).  Gating it with `requires` turns the SFINAE-cascade
+//      from inside the `pre(Pred(v))` clause into a clean concept-
+//      violation message at the call site.  Predicate-vs-T mismatch
+//      surfaces as "no matching constructor; Pred not invocable on
+//      T" rather than a wall of errors deep in <contracts>.
+//
+// The concept allows Pred to return either bool directly OR anything
+// convertible to bool (existing predicates use both shapes).  Const-
+// reference parameter matches the contract's view of the constructed
+// value before std::move.
+template <auto Pred, typename T>
+concept PredicateInvocableOn = requires (T const& v) {
+    { Pred(v) } -> std::convertible_to<bool>;
+};
+
 // ── The wrapper (Graded-backed per MIGRATE-2 #462) ─────────────────
 
 template <auto Pred, typename T>
@@ -191,11 +220,20 @@ public:
     struct Trusted {};
 
     // Checked construction — contract fires if the predicate fails.
+    // `requires PredicateInvocableOn<Pred, T>` upgrades a Pred(T)
+    // invocability mismatch from a contract-clause SFINAE wall into
+    // a clean concept-violation diagnostic at the call site.  Type-
+    // level uses (e.g. SessionPayloadSubsort axioms) are unaffected
+    // because they never instantiate the constructor.
     constexpr explicit Refined(T v) noexcept(std::is_nothrow_move_constructible_v<T>)
+        requires PredicateInvocableOn<Pred, T>
         pre(Pred(v))
         : impl_{std::move(v), typename lattice_type::element_type{}} {}
 
     // Trusted construction — no check, caller-asserted invariant.
+    // No PredicateInvocableOn requirement — the Trusted path explicitly
+    // bypasses the predicate, so even non-invocable Pred is admissible
+    // (the caller takes responsibility for the invariant).
     constexpr Refined(T v, Trusted) noexcept(std::is_nothrow_move_constructible_v<T>)
         : impl_{std::move(v), typename lattice_type::element_type{}} {}
 

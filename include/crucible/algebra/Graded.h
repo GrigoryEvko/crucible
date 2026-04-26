@@ -320,23 +320,59 @@ public:
 //
 // Each MIGRATE-1..11 alias header invokes this macro at instantiation
 // witnesses to prove the wrapper carries zero overhead vs the
-// underlying T.  Three-way check:
+// underlying T.  Five-way structural check:
 //
-//   1. sizeof(Graded<T>)  == sizeof(T)
-//   2. alignof(Graded<T>) == alignof(T)
-//   3. std::is_layout_compatible_v<Graded<T>, T>  (C++26 P2674R3)
+//   1. sizeof(Graded<T>)               == sizeof(T)
+//   2. alignof(Graded<T>)              == alignof(T)
+//   3. is_trivially_destructible_v parity  (preserves trivial dtor)
+//   4. is_trivially_copyable_v parity      (preserves memcpy-safety)
+//   5. is_trivially_default_constructible parity (preserves zero-init)
 //
-// All three must hold for the EBO-collapse path to truly be
-// transparent.  Failures point to the offending alias + T pair.
-#define CRUCIBLE_GRADED_LAYOUT_INVARIANT(GradedAlias, T_)                   \
-    static_assert(sizeof(GradedAlias<T_>) == sizeof(T_),                    \
-                  "Graded alias " #GradedAlias " over " #T_                 \
-                  ": sizeof mismatch — review [[no_unique_address]] usage " \
-                  "and lattice element type");                              \
-    static_assert(alignof(GradedAlias<T_>) == alignof(T_),                  \
-                  "Graded alias " #GradedAlias " over " #T_                 \
-                  ": alignof mismatch — over-aligned grade_type forced "    \
-                  "wrapper alignment > T's alignment")
+// (3)(4)(5) are gated on T's own trivial-trait status — for non-
+// trivial T we don't claim Graded<T> is trivial; we just claim that
+// IF T is trivial in some axis, the wrapper preserves that property.
+// A regression that introduced (e.g.) a non-trivial dtor in
+// grade_type would silently break memcpy-based serialization paths
+// through every migrated wrapper; this macro catches it at the
+// instantiation site.
+//
+// Note: std::is_layout_compatible_v<Graded<T>, T> deliberately NOT
+// asserted.  Per [class.mem], two standard-layout class types are
+// layout-compatible only when they have the same number of NSDMI
+// members in the same order.  Graded has TWO members (inner_,
+// grade_) even when grade_ EBO-collapses to zero bytes; T has its
+// own member structure.  is_layout_compatible_v is ALWAYS false for
+// the wrapper-vs-T pair, so asserting it would universally fail.
+// What we DO assert (sizeof + alignof + trivial-trait parity) is the
+// closest tractable approximation to "behaviorally interchangeable
+// at the byte level for memcpy / bit_cast purposes".
+#define CRUCIBLE_GRADED_LAYOUT_INVARIANT(GradedAlias, T_)                       \
+    static_assert(sizeof(GradedAlias<T_>) == sizeof(T_),                        \
+                  "Graded alias " #GradedAlias " over " #T_                     \
+                  ": sizeof mismatch — review [[no_unique_address]] usage "     \
+                  "and lattice element type");                                  \
+    static_assert(alignof(GradedAlias<T_>) == alignof(T_),                      \
+                  "Graded alias " #GradedAlias " over " #T_                     \
+                  ": alignof mismatch — over-aligned grade_type forced "        \
+                  "wrapper alignment > T's alignment");                         \
+    static_assert(std::is_trivially_destructible_v<T_> ==                       \
+                  std::is_trivially_destructible_v<GradedAlias<T_>>,            \
+                  "Graded alias " #GradedAlias " over " #T_                     \
+                  ": trivial-destructibility parity broken — grade_type "       \
+                  "introduced a non-trivial destructor (would force "           \
+                  "non-trivial wrapper dtor and break arena bulk-free paths)"); \
+    static_assert(std::is_trivially_copyable_v<T_> ==                           \
+                  std::is_trivially_copyable_v<GradedAlias<T_>>,                \
+                  "Graded alias " #GradedAlias " over " #T_                     \
+                  ": trivial-copyability parity broken — wrapper is no "        \
+                  "longer memcpy-safe (would break Cipher serialize / SPSC "    \
+                  "ring entry copy paths)");                                    \
+    static_assert(std::is_trivially_default_constructible_v<T_> ==              \
+                  std::is_trivially_default_constructible_v<GradedAlias<T_>>,   \
+                  "Graded alias " #GradedAlias " over " #T_                     \
+                  ": trivial-default-construct parity broken — grade_type's "   \
+                  "default ctor leaks a runtime cost into the wrapper's "       \
+                  "default-init path")
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::graded_self_test {

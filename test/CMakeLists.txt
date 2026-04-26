@@ -654,6 +654,29 @@ crucible_neg_compile_test(neg_linear_view_field
 crucible_neg_compile_test(neg_appendonly_over_writeonce
   "AppendOnly<WriteOnce<T>> is redundant")
 
+# ─── Graded modality discipline (Phase 2a foundation) ───────────────
+#
+# Three neg-compile tests pinning the modality gates on Graded<>:
+#
+#   - neg_graded_extract_on_absolute     extract() requires Comonad
+#   - neg_graded_inject_on_comonad       inject()  requires RelativeMonad
+#   - neg_refined_predicate_not_invocable Refined ctor requires
+#                                         PredicateInvocableOn<Pred, T>
+#
+# Without these tests, a future Graded refactor that loosens the
+# `requires` clauses on extract/inject would silently erase the
+# modality discipline that Secret<T> (Comonad) and Tagged<T, Source>
+# (RelativeMonad) rest on.  The PredicateInvocableOn test pins the
+# MIGRATE-2 #462 invariant: predicate-vs-T mismatch surfaces as a
+# clean concept-violation rather than a SFINAE cascade through the
+# contract pre-clause.
+crucible_neg_compile_test(neg_graded_extract_on_absolute
+  "constraints not satisfied|ComonadModality")
+crucible_neg_compile_test(neg_graded_inject_on_comonad
+  "constraints not satisfied|RelativeMonadModality")
+crucible_neg_compile_test(neg_refined_predicate_not_invocable
+  "constraints not satisfied|PredicateInvocableOn")
+
 # WriteOnceNonNull<T*> — pointer-specialized single-set primitive (#77).
 #
 # [FRAMEWORK-CONTROLLED] Two named diagnostics gate the primitive's
