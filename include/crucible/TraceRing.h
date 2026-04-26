@@ -192,13 +192,19 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   // head and tail on one shared line would ping-pong MESI on every
   // producer/consumer write (~40 ns each). alignas(64) separates them.
 
-  // Producer-owned. release on store publishes the entry data written before
-  // it; consumer pairs with acquire to observe that data before reading.
-  alignas(64) std::atomic<uint64_t> head{0};
+  // Producer-owned.  AtomicMonotonic lifts the SPSC monotonicity
+  // invariant to the type level: producer publishes via advance(release),
+  // consumer reads via get(acquire), reset under quiescence via
+  // reset_under_quiescence.  Hot-path cost is identical to the prior
+  // raw atomic — peek_relaxed compiles to a plain MOV; advance's pre()
+  // collapses to [[assume]] under hot-TU contract semantics, body is
+  // store(release).
+  alignas(64) crucible::safety::AtomicMonotonic<uint64_t> head{0};
 
-  // Consumer-owned. release on store publishes "reader finished with these
-  // slots"; producer pairs with acquire to avoid overwriting live data.
-  alignas(64) std::atomic<uint64_t> tail{0};
+  // Consumer-owned.  Same discipline: consumer publishes via advance,
+  // producer reads via get for cross-thread acquire on the full-ring
+  // path; consumer reads its own tail via peek_relaxed.
+  alignas(64) crucible::safety::AtomicMonotonic<uint64_t> tail{0};
 
   // Producer-local shadow of tail. Never read by the consumer. Own cache
   // line to avoid sharing with head (each line owned by exactly one thread).
@@ -236,15 +242,16 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       MetaIndex    meta_start    = MetaIndex::none(),
       ScopeHash    scope_hash    = {},
       CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
-    // relaxed: producer reads its own head — no cross-thread sync needed.
-    const uint64_t h = head.load(std::memory_order_relaxed);
+    // peek_relaxed: producer reads its own head — no cross-thread sync needed.
+    const uint64_t h = head.peek_relaxed();
 
     // Fast path uses the producer-local cached_tail_ copy — no atomic load.
     // Stale cache is conservative (under-reports free space).
     if (h - cached_tail_.get() >= CAPACITY) [[unlikely]] {
-      // acquire: pair with consumer's release store to observe that the
-      // slots we're about to overwrite have been fully read.
-      cached_tail_.advance(tail.load(std::memory_order_acquire));
+      // get() on tail is acquire — pair with consumer's release in
+      // advance() to observe that the slots we're about to overwrite
+      // have been fully read.
+      cached_tail_.advance(tail.get());
       if (h - cached_tail_.get() >= CAPACITY) [[unlikely]] return false;
     }
 
@@ -268,9 +275,11 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       __builtin_prefetch(&callsite_hashes[next_slot], 1, 3);
     }
 
-    // release: publish the entry data (stored above) to the consumer; the
-    // consumer's acquire load of head will observe all four writes.
-    head.store(h + 1, std::memory_order_release);
+    // advance: publish the entry data (stored above) to the consumer; the
+    // consumer's get() acquire load of head will observe all four writes.
+    // pre(load(acquire) < h+1) collapses to [[assume]] under hot-TU
+    // contract semantics; body is the same store(release) as before.
+    head.advance(h + 1);
     return true;
   }
 
@@ -289,10 +298,11 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY
       pre (max_count == 0 || out != nullptr)
   {
-    // acquire: pair with producer's release store — observe entry writes.
-    const uint64_t h = head.load(std::memory_order_acquire);
-    // relaxed: consumer reads its own tail — no cross-thread sync needed.
-    const uint64_t t = tail.load(std::memory_order_relaxed);
+    // get(): acquire on head — pair with producer's release in advance()
+    // to observe entry writes.
+    const uint64_t h = head.get();
+    // peek_relaxed: consumer reads its own tail — no cross-thread sync needed.
+    const uint64_t t = tail.peek_relaxed();
 
     const uint32_t available = static_cast<uint32_t>(h - t);
     const uint32_t count     = std::min(available, max_count);
@@ -321,9 +331,10 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         std::memcpy(out_callsite_hashes + first, &callsite_hashes[0], second * sizeof(CallsiteHash));
     }
 
-    // release: publish "slots [t, t+count) are free"; producer's acquire
-    // load of tail on the full-ring path observes this before overwriting.
-    tail.store(t + count, std::memory_order_release);
+    // advance: publish "slots [t, t+count) are free"; producer's get()
+    // acquire load of tail on the full-ring path observes this before
+    // overwriting.  count > 0 guaranteed above ⟹ t+count > t ⟹ pre OK.
+    tail.advance(t + count);
     return count;
   }
 
@@ -357,10 +368,10 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
             out_scope_hashes != nullptr &&
             out_callsite_hashes != nullptr))
   {
-    // acquire: pair with producer's release store — observe entry writes.
-    const uint64_t h = head.load(std::memory_order_acquire);
-    // relaxed: consumer reads its own tail — no cross-thread sync needed.
-    const uint64_t t = tail.load(std::memory_order_relaxed);
+    // get(): acquire on head — pair with producer's release in advance().
+    const uint64_t h = head.get();
+    // peek_relaxed: consumer reads its own tail — no cross-thread sync needed.
+    const uint64_t t = tail.peek_relaxed();
 
     const uint32_t available = static_cast<uint32_t>(h - t);
     const uint32_t count     = std::min(available, max_count);
@@ -387,9 +398,9 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       std::memcpy(out_callsite_hashes + first, &callsite_hashes[0], second * sizeof(CallsiteHash));
     }
 
-    // release: publish "slots [t, t+count) are free"; producer's acquire
-    // load of tail on the full-ring path observes this before overwriting.
-    tail.store(t + count, std::memory_order_release);
+    // advance: publish "slots [t, t+count) are free"; count > 0 above
+    // guarantees the monotonicity precondition holds.
+    tail.advance(t + count);
     return count;
   }
 
@@ -397,27 +408,29 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   // memory (atomics) but has no side effects — optimizer may CSE adjacent
   // calls, which is fine for a diagnostic. Invariant: head >= tail always.
   [[nodiscard, gnu::pure]] uint32_t size() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
-    return static_cast<uint32_t>(
-        head.load(std::memory_order_acquire) -
-        tail.load(std::memory_order_acquire));
+    return static_cast<uint32_t>(head.get() - tail.get());
   }
 
   // Monotonic high-water mark of producer commits. Vigil::flush snapshots
   // this before waiting for the background thread to catch up.
-  // acquire: synchronizes with producer's release in try_append so the
-  // returned bound implies visibility of all prior entries.
+  // get(): acquire — synchronizes with producer's release in try_append so
+  // the returned bound implies visibility of all prior entries.
   [[nodiscard, gnu::pure]] uint64_t total_produced() const noexcept CRUCIBLE_NO_THREAD_SAFETY {
-    return head.load(std::memory_order_acquire);
+    return head.get();
   }
 
   // Only valid when both threads are quiescent (join/stop).
+  // reset_under_quiescence bypasses AtomicMonotonic's monotonicity
+  // contract — caller must have already joined producer + consumer
+  // before calling.  Same precondition the prior implementation
+  // documented; now type-system surfaced via the explicit method name.
   void reset() noexcept CRUCIBLE_NO_THREAD_SAFETY
-      post (head.load(std::memory_order_relaxed) == 0)
-      post (tail.load(std::memory_order_relaxed) == 0)
+      post (head.get() == 0)
+      post (tail.get() == 0)
       post (cached_tail_.get() == 0)
   {
-    head.store(0, std::memory_order_release);
-    tail.store(0, std::memory_order_release);
+    head.reset_under_quiescence();
+    tail.reset_under_quiescence();
     // cached_tail_ goes "backward" to 0, which would fire Monotonic's
     // pre() if we advanced.  Valid here because both threads are
     // quiescent — reconstruct the Monotonic in place to reset cleanly.
