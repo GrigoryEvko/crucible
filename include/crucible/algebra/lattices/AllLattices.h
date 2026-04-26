@@ -61,6 +61,7 @@
 #include <crucible/algebra/lattices/BoolLattice.h>       // ALGEBRA-5  (#450) — shipped
 #include <crucible/algebra/lattices/ConfLattice.h>       // ALGEBRA-6  (#451) — shipped
 #include <crucible/algebra/lattices/FractionalLattice.h> // ALGEBRA-8  (#453) — shipped
+#include <crucible/algebra/lattices/HappensBefore.h>     // ALGEBRA-13 (#458) — shipped
 #include <crucible/algebra/lattices/MonotoneLattice.h>   // ALGEBRA-9  (#454) — shipped
 #include <crucible/algebra/lattices/ProductLattice.h>    // ALGEBRA-15 (#460) — shipped
 #include <crucible/algebra/lattices/QttSemiring.h>       // ALGEBRA-4  (#449) — shipped
@@ -86,8 +87,9 @@ namespace crucible::algebra::lattices {
 
 // StalenessSemiring — already included above (ALGEBRA-11 shipped).
 
-// Phantom Before/After ordering lattice.
-template <typename Clock> struct HappensBeforeLattice;
+// HappensBeforeLattice — already included above (ALGEBRA-13 shipped).
+// Vector-clock partial order over N participants with optional Tag
+// for cross-protocol distinction.
 
 // Lifetime lattice (PER_REQUEST < PER_PROGRAM < PER_FLEET).
 struct LifetimeLattice;

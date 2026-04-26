@@ -249,6 +249,43 @@ template <BoundedLattice L>
         && verify_top_identity<L>(c);
 }
 
+// ── Distributive-lattice axiom (Birkhoff) ───────────────────────────
+//
+// A LATTICE L is distributive iff:
+//
+//     a ∧ (b ∨ c) = (a ∧ b) ∨ (a ∧ c)
+//     a ∨ (b ∧ c) = (a ∨ b) ∧ (a ∨ c)
+//
+// (The two laws are equivalent in any lattice — proving one implies
+// the other — but verifying both at three witnesses gives stronger
+// confidence the lattice author didn't accidentally implement a
+// non-distributive variant.)
+//
+// Distinct from `verify_distributivity` (above), which is the
+// multiplicative variant for Semirings: `a · (b + c) = (a·b) + (a·c)`.
+// Lattice distributivity uses ∧/∨ (meet/join); semiring distributivity
+// uses ·/+ (mul/add).  Same algebraic shape, different operations.
+//
+// Birkhoff's representation theorem: a finite lattice is distributive
+// iff it embeds (as a sublattice) into some power set under
+// (∩, ∪, ⊆).  Practical consequence: vector-clock lattices, prefix
+// lattices, total-order lattices, and most "natural" lattices
+// Crucible cares about are distributive.  The non-distributive
+// counter-examples (M_3, N_5 — the "diamond" and "pentagon") arise
+// in modal logic and free lattices but not in our wrappers.
+//
+// Use this verifier in any lattice header whose author CLAIMS the
+// lattice is distributive.  General Lattice / BoundedLattice rollups
+// do NOT include it — non-distributive lattices are valid lattices.
+template <Lattice L>
+[[nodiscard]] consteval bool verify_distributive_lattice(
+    LatticeElement<L> a, LatticeElement<L> b, LatticeElement<L> c) noexcept {
+    return equivalent<L>(L::meet(a, L::join(b, c)),
+                         L::join(L::meet(a, b), L::meet(a, c)))
+        && equivalent<L>(L::join(a, L::meet(b, c)),
+                         L::meet(L::join(a, b), L::join(a, c)));
+}
+
 // ── Semiring-law verifiers ──────────────────────────────────────────
 
 template <Semiring S>
