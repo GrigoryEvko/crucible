@@ -203,15 +203,29 @@ public:
         return a.peek() == b.peek() && a.vector_clock() == b.vector_clock();
     }
 
-    // ── Diagnostic name (forwarded from Graded substrate) ──────────
+    // ── Diagnostic names (forwarded from Graded substrate) ─────────
     //
-    // Returns T's display string via reflection (P2996R13).  Used for
-    // debug printing ("what is this TimeOrdered wrapping?") without
-    // requiring the caller to dereference and introspect.  Pairs with
-    // protocol_name / lattice_name patterns in the broader Graded
-    // substrate's diagnostic surface.
+    // value_type_name(): T's display string via reflection (P2996R13).
+    // Answers "what is this TimeOrdered wrapping?" without
+    // dereferencing.
+    //
+    // lattice_name(): the underlying lattice's display name —
+    // "HappensBeforeLattice<N>" here — used to disambiguate
+    // diagnostics when multiple Graded wrappers are in scope (e.g.,
+    // distinguishing a TimeOrdered<T, 4> grade-failure from a
+    // Stale<T> grade-failure in the same logging output).  Forwards
+    // to Graded::lattice_name which routes through the algebra-level
+    // free function `lattice_name<L>()`.
+    //
+    // Pair these with a future protocol_name forwarder once
+    // TimeOrdered gains a session-typed counterpart.  Audit-Tier-2
+    // cross-wrapper parity sweep — Stale ships the same two
+    // forwarders.
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
+    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
+        return graded_type::lattice_name();
     }
 
     // ── Swap (forwarded from Graded substrate) ─────────────────────
@@ -559,6 +573,13 @@ static_assert(TimeOrdered<int, 8>::process_count == 8);
 // not == because display_string_of returns a TU-context-fragile name
 // (could be "int" or "::int" depending on the including TU).
 static_assert(TO4::value_type_name().ends_with("int"));
+
+// lattice_name forwards to Graded::lattice_name → routes through the
+// algebra-level free function lattice_name<L>().  HappensBeforeLattice
+// returns the bare string "HappensBeforeLattice" (the N parameter is
+// known structurally via process_count, not encoded in the name —
+// matches the style of every other named lattice in the registry).
+static_assert(TO4::lattice_name() == "HappensBeforeLattice");
 
 // swap exchanges value AND vector_clock between two TimeOrdered.
 [[nodiscard]] consteval bool swap_exchanges_both_components() noexcept {

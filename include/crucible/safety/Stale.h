@@ -176,15 +176,26 @@ public:
         return a.peek() == b.peek() && a.staleness() == b.staleness();
     }
 
-    // ── Diagnostic name (forwarded from Graded substrate) ──────────
+    // ── Diagnostic names (forwarded from Graded substrate) ─────────
     //
-    // Returns T's display string via reflection (P2996R13).  Used for
-    // debug printing ("what is this Stale wrapping?") without
-    // requiring the caller to dereference and introspect.  Pairs with
-    // protocol_name / lattice_name patterns in the broader Graded
-    // substrate's diagnostic surface.
+    // value_type_name(): T's display string via reflection (P2996R13).
+    // Answers "what is this Stale wrapping?" without dereferencing.
+    //
+    // lattice_name(): the underlying lattice's display name —
+    // "StalenessSemiring" here — used to disambiguate diagnostics
+    // when multiple Graded wrappers are in scope ("which grade
+    // failed?  oh, the staleness one").  Forwards to
+    // Graded::lattice_name which itself routes through the algebra-
+    // level free function `lattice_name<L>()`.
+    //
+    // Pair these with a future protocol_name forwarder once Stale
+    // gains a session-typed counterpart.  Audit-Tier-2 cross-wrapper
+    // parity sweep — TimeOrdered ships the same two forwarders.
     [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
         return graded_type::value_type_name();
+    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
+        return graded_type::lattice_name();
     }
 
     // ── Swap (forwarded from Graded substrate) ─────────────────────
@@ -510,6 +521,12 @@ static_assert(SS::top()    == s_inf.staleness());
 // Per the gcc16_c26_reflection_gotchas memory rule: use .ends_with()
 // not == because display_string_of is TU-context-fragile.
 static_assert(S_i::value_type_name().ends_with("int"));
+
+// lattice_name forwards to Graded::lattice_name → routes through the
+// algebra-level free function lattice_name<L>().  StalenessSemiring's
+// own name() returns "StalenessSemiring" exactly; the forwarder
+// preserves the string identity end-to-end.
+static_assert(S_i::lattice_name() == "StalenessSemiring");
 
 // swap exchanges value AND staleness grade between two Stale.
 [[nodiscard]] consteval bool swap_exchanges_both_components() noexcept {
