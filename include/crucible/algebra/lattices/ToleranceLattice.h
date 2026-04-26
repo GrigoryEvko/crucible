@@ -102,6 +102,7 @@
 
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/lattices/ChainLattice.h>
 
 #include <cstdint>
 #include <meta>
@@ -140,23 +141,15 @@ inline constexpr std::size_t tolerance_count =
 }
 
 // ── Full ToleranceLattice (chain order) ─────────────────────────────
-struct ToleranceLattice {
-    using element_type = Tolerance;
-
+//
+// Inherits leq/join/meet from ChainLatticeOps<Tolerance> — see
+// ChainLattice.h for the rationale (audit Tier-2 dedup).
+struct ToleranceLattice : ChainLatticeOps<Tolerance> {
     [[nodiscard]] static constexpr element_type bottom() noexcept {
         return Tolerance::RELAXED;
     }
     [[nodiscard]] static constexpr element_type top() noexcept {
         return Tolerance::BITEXACT;
-    }
-    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
-        return std::to_underlying(a) <= std::to_underlying(b);
-    }
-    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
-        return leq(a, b) ? b : a;  // max — tighten budget
-    }
-    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
-        return leq(a, b) ? a : b;  // min — loosen budget
     }
 
     [[nodiscard]] static consteval std::string_view name() noexcept {

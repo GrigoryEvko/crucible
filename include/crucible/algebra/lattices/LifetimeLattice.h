@@ -84,6 +84,7 @@
 
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
+#include <crucible/algebra/lattices/ChainLattice.h>
 
 #include <cstdint>
 #include <meta>
@@ -117,23 +118,16 @@ inline constexpr std::size_t lifetime_count =
 }
 
 // ── Full LifetimeLattice (chain order) ──────────────────────────────
-struct LifetimeLattice {
-    using element_type = Lifetime;
-
+//
+// Inherits leq/join/meet from ChainLatticeOps<Lifetime> — those three
+// methods are byte-identical across every chain-order lattice over an
+// enum class, factored out per the audit Tier-2 dedup.
+struct LifetimeLattice : ChainLatticeOps<Lifetime> {
     [[nodiscard]] static constexpr element_type bottom() noexcept {
         return Lifetime::PER_REQUEST;
     }
     [[nodiscard]] static constexpr element_type top() noexcept {
         return Lifetime::PER_FLEET;
-    }
-    [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
-        return std::to_underlying(a) <= std::to_underlying(b);
-    }
-    [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
-        return leq(a, b) ? b : a;  // max — widen scope
-    }
-    [[nodiscard]] static constexpr element_type meet(element_type a, element_type b) noexcept {
-        return leq(a, b) ? a : b;  // min — narrow scope
     }
 
     [[nodiscard]] static consteval std::string_view name() noexcept {
