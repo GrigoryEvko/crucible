@@ -974,3 +974,52 @@ crucible_neg_compile_test(neg_session_sender_role_missing_crash
 # for that is task #146 (broader neg-compile coverage sweep).
 crucible_neg_compile_test(neg_notinherited_non_final
     "NotInherited_Not_Final")
+
+# ── A8-P3 #148 — FinalBy<Derived> CRTP enforcement half ───────────
+# Companion to neg_notinherited_non_final.cpp.  Where the witness
+# half exercises a concept on the CALLER side, this exercises the
+# CRTP private-ctor + virtual-inheritance discipline on the LIBRARY
+# side: a class declared `final-by-CRTP` (rather than with the
+# `final` keyword) must remain just as inextensible.  Subclass
+# construction fails because virtual inheritance promotes
+# FinalBy<MyType>'s private ctor responsibility to the most-derived
+# class, but the subclass is not a friend.
+crucible_neg_compile_test(neg_finalby_subclass_attempt
+    "FinalBy")
+
+# ── A8-P2 #146 — Linear<T> move-only enforcement ────────────────
+# Foundational L0 ownership wrapper.  Copy-constructing a Linear<T>
+# would create two simultaneous owners and allow double-consume,
+# defeating the very contract the wrapper exists to prove.  The
+# copy ctor is = delete with reason "Linear<T> is move-only".
+crucible_neg_compile_test(neg_linear_copy_attempt
+    "move-only")
+
+# ── A8-P2 #146 — Permission<Tag> linearity enforcement ──────────
+# Foundational CSL frame-rule token (O'Hearn 2007).  Duplicating a
+# Permission<Tag> would create two simultaneous owners of the same
+# named region, breaking CSL's frame rule.  Copy ctor is = delete
+# with reason mentioning "linear — duplicating creates two
+# simultaneous owners".
+crucible_neg_compile_test(neg_permission_copy_attempt
+    "linear")
+
+# ── METX-1 #473 — Computation::extract requires empty row ────────
+# Effect-row substrate (Tang-Lindley POPL 2026, 25_04_2026.md §3).
+# `extract()` on a Computation<R, T> requires `row_size_v<R> == 0` —
+# unwrapping back to a pure value is only sound when no effect
+# remains to discharge.  The neg-test calls extract on a Bg-row
+# Computation and expects "no matching function" with the extract
+# candidate's requires-clause spelled out.
+crucible_neg_compile_test(neg_computation_extract_on_nonempty_row
+    "extract")
+
+# ── METX-1 #473 — Computation::weaken substitution principle ─────
+# weaken<R2>() requires `Subrow<R, R2>` — capability propagation
+# flows from narrower-effect rows to wider-effect rows, NEVER the
+# reverse.  Trying to weaken from {Bg, IO} down to {Bg} would
+# silently DROP the I/O capability obligation.  The constraint
+# correctly rejects.  Substitution-principle test for the Met(X)
+# row algebra.
+crucible_neg_compile_test(neg_computation_weaken_non_subrow
+    "weaken")
