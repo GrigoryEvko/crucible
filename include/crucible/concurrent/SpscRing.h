@@ -61,6 +61,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Mutation.h>
 #include <crucible/safety/Pinned.h>
 
 #include <array>
@@ -117,13 +118,18 @@ public:
     // The slot indexed by (t & MASK) is NEVER the same as (h & MASK)
     // when both are in flight, so no concurrent slot access occurs.
     [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
-        const std::uint64_t h = head_.load(std::memory_order_relaxed);
-        const std::uint64_t t = tail_.load(std::memory_order_acquire);
+        // peek_relaxed: producer reads its own head — no cross-thread sync.
+        const std::uint64_t h = head_.peek_relaxed();
+        // get(): acquire on tail — pair with consumer's release in advance().
+        const std::uint64_t t = tail_.get();
         if (h - t >= Capacity) [[unlikely]] {
             return false;  // full
         }
         buffer_[h & MASK] = item;
-        head_.store(h + 1, std::memory_order_release);
+        // advance: release-store with monotonicity contract; under hot-TU
+        // contract semantics the pre collapses to [[assume]] and emits zero
+        // codegen — same store(release) as the prior bare atomic.
+        head_.advance(h + 1);
         return true;
     }
 
@@ -138,13 +144,16 @@ public:
     //   - store tail_ release (publishes "slot free" to producer's
     //     acquire on tail)
     [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
-        const std::uint64_t t = tail_.load(std::memory_order_relaxed);
-        const std::uint64_t h = head_.load(std::memory_order_acquire);
+        // peek_relaxed: consumer reads its own tail — no cross-thread sync.
+        const std::uint64_t t = tail_.peek_relaxed();
+        // get(): acquire on head — pair with producer's release in advance().
+        const std::uint64_t h = head_.get();
         if (h == t) [[unlikely]] {
             return std::nullopt;  // empty
         }
         const T result = buffer_[t & MASK];
-        tail_.store(t + 1, std::memory_order_release);
+        // advance: release-store with monotonicity contract.
+        tail_.advance(t + 1);
         return result;
     }
 
@@ -155,16 +164,15 @@ public:
     // NEVER for correctness invariants.
 
     [[nodiscard]] bool empty_approx() const noexcept {
-        return head_.load(std::memory_order_acquire) ==
-               tail_.load(std::memory_order_acquire);
+        return head_.get() == tail_.get();
     }
 
     [[nodiscard]] std::size_t size_approx() const noexcept {
         // size_t == uint64_t on our supported platforms (x86-64,
         // aarch64); the implicit conversion is exact.  An explicit
         // cast would trigger -Werror=useless-cast.
-        const std::uint64_t h = head_.load(std::memory_order_acquire);
-        const std::uint64_t t = tail_.load(std::memory_order_acquire);
+        const std::uint64_t h = head_.get();
+        const std::uint64_t t = tail_.get();
         return h - t;
     }
 
@@ -175,9 +183,14 @@ public:
 private:
     // Cross-thread atomics on isolated cache lines — head and tail
     // on one shared line would ping-pong MESI on every push/pop.
+    //
+    // AtomicMonotonic surfaces the SPSC publish discipline at the type
+    // level: peek_relaxed for own-side reads, advance for release-store
+    // with monotonicity contract, get for cross-thread acquire.  Hot-
+    // path codegen identical to the prior raw atomic.
 
-    alignas(64) std::atomic<std::uint64_t> head_{0};
-    alignas(64) std::atomic<std::uint64_t> tail_{0};
+    alignas(64) safety::AtomicMonotonic<std::uint64_t> head_{0};
+    alignas(64) safety::AtomicMonotonic<std::uint64_t> tail_{0};
 
     // Buffer of T values.  Producer writes [tail, head), consumer
     // reads [tail, head); the SPSC contract makes per-slot races
