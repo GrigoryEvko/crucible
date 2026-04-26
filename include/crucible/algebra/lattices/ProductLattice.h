@@ -150,6 +150,39 @@ struct ProductLattice<L1, L2> {
     using first_lattice  = L1;
     using second_lattice = L2;
 
+    // ── Generic-arity API parity with the N-ary primary ─────────────
+    //
+    // The N-ary primary template (sizeof...(Ls) != 2) ships
+    // `arity`, `nth_lattice<I>`, and `get<I>(e)` so generic code
+    // can address any-arity products uniformly.  The binary case
+    // mirrors that surface so callers templated on the lattice
+    // type — `template <typename P> compute(typename P::element_type
+    // e) { auto x = P::template get<0>(e); }` — work for N=2 without
+    // a special-case branch.
+    //
+    // The historical `e.first` / `e.second` member-access path
+    // remains for callers that grew up with the binary-only API.
+
+    static constexpr std::size_t arity = 2;
+
+    template <std::size_t I>
+        requires (I < 2)
+    using nth_lattice = std::conditional_t<I == 0, L1, L2>;
+
+    template <std::size_t I>
+        requires (I < 2)
+    [[nodiscard]] static constexpr auto& get(element_type& e) noexcept {
+        if constexpr (I == 0) return e.first;
+        else                  return e.second;
+    }
+
+    template <std::size_t I>
+        requires (I < 2)
+    [[nodiscard]] static constexpr auto const& get(element_type const& e) noexcept {
+        if constexpr (I == 0) return e.first;
+        else                  return e.second;
+    }
+
     // ── Bounded structure (concept-gated) ───────────────────────────
     //
     // bottom() is only available when BOTH components are
@@ -524,6 +557,32 @@ static_assert(P_u8u8::name() == "Product<L1xL2>");
 // expose the underlying component types for downstream introspection.
 static_assert(std::is_same_v<P_u8u8::first_lattice,  U8MinMax>);
 static_assert(std::is_same_v<P_u8u8::second_lattice, U8MinMax>);
+
+// ── Generic-arity API parity (audit Tier-1 improvement) ────────────
+//
+// Pin that the binary specialization ships the same get<I> /
+// nth_lattice<I> / arity surface as the N-ary primary, so generic
+// templated callers can reach into ANY ProductLattice<...> without
+// arity-specific specialization.
+static_assert(P_u8u8::arity == 2);
+static_assert(std::is_same_v<P_u8u8::nth_lattice<0>, U8MinMax>);
+static_assert(std::is_same_v<P_u8u8::nth_lattice<1>, U8MinMax>);
+
+// get<I> on lvalue + const lvalue, both addressing the same field
+// the binary specialization's first/second members expose.
+static_assert(P_u8u8::get<0>(P_u8u8::bottom()) == 0);
+static_assert(P_u8u8::get<1>(P_u8u8::bottom()) == 0);
+static_assert(P_u8u8::get<0>(P_u8u8::top())    == 255);
+static_assert(P_u8u8::get<1>(P_u8u8::top())    == 255);
+
+// Helper-equivalence: get<0>/get<1> on a constructed element_type
+// agree with direct first/second access.
+[[nodiscard]] consteval bool binary_get_matches_first_second() noexcept {
+    P_u8u8::element_type e{17, 42};
+    return P_u8u8::get<0>(e) == e.first
+        && P_u8u8::get<1>(e) == e.second;
+}
+static_assert(binary_get_matches_first_second());
 
 // ── Empty-pack degenerate ───────────────────────────────────────────
 using P_empty = ProductLattice<>;
