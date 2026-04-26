@@ -20,13 +20,13 @@
 //                   sizeof(T) when the parent uses
 //                   `[[no_unique_address]]` on its Computation member.
 //
-// STATUS: METX-1 (#473) bodies SHIPPED for mk / extract / lift / weaken.
-//   `then` / `map` remain deferred — their signatures depend on
-//   `row_union_t` (now live, METX-2 #474), so they can land in a
-//   follow-up commit once Computation has at least one production
-//   caller.  Shipping `then`/`map` without a caller risks binding the
-//   row-arithmetic policy (left-bias vs. right-bias on duplicate
-//   atoms) to the wrong shape; better to wait for a concrete demand.
+// STATUS: METX-1 (#473) bodies SHIPPED — full Met(X) monadic surface.
+//   The row-arithmetic policy (left-biased: R1 atoms appear before
+//   R2's, with duplicates absorbed at insert time) is fixed by
+//   row_union_t's recursion (METX-2 #474) and consistent across both
+//   `then` overloads.  Production callers wanting a different bias
+//   can post-process via `weaken<canonical_t<R>>()` once a canonical
+//   form lands; until then, semantic Subrow equality is the contract.
 //
 // Operations now live:
 //   mk(T)              — lift a pure T into Computation<EmptyRow, T>
@@ -35,10 +35,11 @@
 //   lift<Cap>(T)       — construct at row {Cap}
 //   weaken<R₂>()       — widen row when Subrow<R, R₂>
 //                         (lvalue → copy; rvalue → move)
-//
-// Operations still deferred:
-//   then(k)            — bind: T -> Computation<R', U> ⊕ R into R'
-//   map(f)             — fmap: T -> U preserving row
+//   map(f)             — fmap: T -> U preserving row R
+//                         (lvalue → invoke on const T&; rvalue → on T)
+//   then(k)            — bind: k : T -> Computation<R₂, U>
+//                         result row = row_union_t<R, R₂>
+//                         (lvalue → invoke on const T&; rvalue → on T)
 //
 // See Capabilities.h (Effect atoms), EffectRow.h (Row + Subrow algebra),
 // compat/Fx.h (backward-compat fx::* aliases).
@@ -48,8 +49,28 @@
 
 #include <string_view>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::effects {
+
+// Forward declare for the IsComputation gate below.
+template <typename R, typename T>
+class Computation;
+
+// ── IsComputation concept ───────────────────────────────────────────
+//
+// Trait + concept gating then()'s callable result type.  Specialization
+// of detail::is_computation lives AFTER the Computation class
+// definition (Computation must be complete before we can specialize
+// over it); the requires-clause inside the class body is checked at
+// then()'s instantiation, by which time the specialization is visible.
+namespace detail {
+template <typename> struct is_computation : std::false_type {};
+}
+
+template <typename T>
+concept IsComputation =
+    detail::is_computation<std::remove_cvref_t<T>>::value;
 
 // ── Computation<R, T> ───────────────────────────────────────────────
 template <typename R, typename T>
@@ -150,13 +171,100 @@ public:
         return Computation<R2, T>{std::move(inner_)};
     }
 
-    // `then` / `map` deferred entirely — their signatures depend on
-    // row_union_t (now live; see EffectRow.h §METX-2).  Bind/fmap
-    // semantics for Met(X) are sensitive to whether the bind operator
-    // is left-biased or right-biased over the row arithmetic; this is
-    // a policy choice that should follow a concrete production caller,
-    // not anticipate one.  See METX backlog for the follow-up.
+    // ── map(f) — functor fmap, preserves row R ──────────────────────
+    //
+    // f : T -> U.  Result row is unchanged because mapping a pure
+    // function over a Computation<R, T>'s value cannot introduce new
+    // effects — the function f itself is a pure-value transformation
+    // (any effect f wants to add must be discharged via then, not map).
+    //
+    // Two overloads to avoid an unnecessary copy on rvalue uses.
+    // U is deduced from std::invoke_result_t<F, ...>.
+
+    template <typename F>
+        requires std::is_invocable_v<F, const T&>
+    [[nodiscard]] constexpr auto map(F&& f) const &
+        noexcept(std::is_nothrow_invocable_v<F, const T&>
+                 && std::is_nothrow_move_constructible_v<
+                        std::invoke_result_t<F, const T&>>)
+        -> Computation<R, std::invoke_result_t<F, const T&>>
+    {
+        using U = std::invoke_result_t<F, const T&>;
+        return Computation<R, U>{std::forward<F>(f)(inner_)};
+    }
+
+    template <typename F>
+        requires std::is_invocable_v<F, T>
+    [[nodiscard]] constexpr auto map(F&& f) &&
+        noexcept(std::is_nothrow_invocable_v<F, T>
+                 && std::is_nothrow_move_constructible_v<
+                        std::invoke_result_t<F, T>>)
+        -> Computation<R, std::invoke_result_t<F, T>>
+    {
+        using U = std::invoke_result_t<F, T>;
+        return Computation<R, U>{std::forward<F>(f)(std::move(inner_))};
+    }
+
+    // ── then(k) — monadic bind, accumulates effect rows ─────────────
+    //
+    // k : T -> Computation<R2, U>.  Result row is row_union_t<R, R2>:
+    // every effect of either side is carried forward, with duplicates
+    // absorbed by the union's set semantics.  This is the substitution
+    // principle in reverse: the result claims every capability that
+    // any step in the chain might exercise.
+    //
+    // `IsComputation<...>` requires-clause rejects callbacks whose
+    // result is not a Computation — distinguishes then (bind) from
+    // map (fmap) at the type level instead of accidentally accepting a
+    // pure-value k as a degenerate bind.  A user wanting fmap behavior
+    // should call .map(f) directly.
+    //
+    // Two overloads for lvalue/rvalue source; both forward the inner
+    // result's value into a fresh Result.
+
+    template <typename F>
+        requires std::is_invocable_v<F, const T&>
+              && IsComputation<std::invoke_result_t<F, const T&>>
+    [[nodiscard]] constexpr auto then(F&& k) const &
+        -> Computation<
+            row_union_t<R, typename std::invoke_result_t<F, const T&>::row_type>,
+            typename std::invoke_result_t<F, const T&>::value_type>
+    {
+        using Inner  = std::invoke_result_t<F, const T&>;
+        using R2     = typename Inner::row_type;
+        using U      = typename Inner::value_type;
+        using Result = Computation<row_union_t<R, R2>, U>;
+        Inner intermediate = std::forward<F>(k)(inner_);
+        return Result{std::move(intermediate.inner_)};
+    }
+
+    template <typename F>
+        requires std::is_invocable_v<F, T>
+              && IsComputation<std::invoke_result_t<F, T>>
+    [[nodiscard]] constexpr auto then(F&& k) &&
+        -> Computation<
+            row_union_t<R, typename std::invoke_result_t<F, T>::row_type>,
+            typename std::invoke_result_t<F, T>::value_type>
+    {
+        using Inner  = std::invoke_result_t<F, T>;
+        using R2     = typename Inner::row_type;
+        using U      = typename Inner::value_type;
+        using Result = Computation<row_union_t<R, R2>, U>;
+        Inner intermediate = std::forward<F>(k)(std::move(inner_));
+        return Result{std::move(intermediate.inner_)};
+    }
 };
+
+// ── is_computation specialization (post-class) ──────────────────────
+//
+// Now that Computation is complete, specialize the trait so the
+// IsComputation concept gates correctly.  Per the rule documented at
+// the trait's primary template above, the requires-clause checks at
+// instantiation time, by which point this specialization IS visible.
+namespace detail {
+template <typename R, typename T>
+struct is_computation<Computation<R, T>> : std::true_type {};
+}  // namespace detail
 
 // ── Layout invariant macro (used by METX-4 compat aliases) ─────────
 #define CRUCIBLE_COMPUTATION_LAYOUT_INVARIANT(ComputationAlias, T_)         \
@@ -243,6 +351,80 @@ static_assert(
     "Computation<EmptyRow, int>::extract() && must be noexcept for trivially-"
     "move-constructible payloads.");
 
+// ── map / then coverage ────────────────────────────────────────────
+//
+// IsComputation discriminator — gates then() at the type level.
+static_assert( IsComputation<Computation<Row<>, int>>);
+static_assert( IsComputation<Computation<Row<Effect::Bg>, double>>);
+static_assert( IsComputation<Computation<Row<>, int>&>);              // cvref-strip
+static_assert( IsComputation<const Computation<Row<>, int>&>);        // cvref-strip
+static_assert(!IsComputation<int>);
+static_assert(!IsComputation<Row<Effect::Bg>>);
+
+// map: row preserved, value type may change.
+static_assert([] consteval {
+    auto pure = Computation<Row<>, int>::mk(7);
+    auto doubled = pure.map([](int x) { return x * 2; });
+    using Doubled = decltype(doubled);
+    return std::is_same_v<Doubled::row_type, Row<>>
+        && std::is_same_v<Doubled::value_type, int>
+        && doubled.extract() == 14;
+}(),
+"map preserves row and applies the function pointwise.");
+
+// map: value type can change shape (int -> double).
+static_assert([] consteval {
+    auto pure = Computation<Row<>, int>::mk(3);
+    auto as_double = pure.map([](int x) -> double { return x + 0.5; });
+    using D = decltype(as_double);
+    return std::is_same_v<D::row_type, Row<>>
+        && std::is_same_v<D::value_type, double>;
+}(),
+"map admits value-type changes (T -> U) while preserving the row.");
+
+// then: row accumulates via row_union; sequencing two effectful steps
+// produces a Computation whose row contains every effect of either
+// step (with set-union semantics — duplicates absorbed).
+static_assert([] consteval {
+    auto bg = Computation<Row<>, int>::lift<Effect::Bg>(10);
+    auto chained = bg.then([](int x) {
+        return Computation<Row<>, int>::lift<Effect::IO>(x + 1);
+    });
+    using Chained = decltype(chained);
+    // Result row should contain BOTH Bg (from outer) and IO (from inner).
+    return is_subrow_v<Row<Effect::Bg>, Chained::row_type>
+        && is_subrow_v<Row<Effect::IO>, Chained::row_type>
+        && std::is_same_v<Chained::value_type, int>;
+}(),
+"then accumulates the inner Computation's row into the outer's via "
+"row_union_t — both sides' effects are preserved in the result.");
+
+// then: rvalue overload moves through the chain.
+static_assert([] consteval {
+    auto bg = Computation<Row<>, int>::lift<Effect::Bg>(100);
+    auto chained = std::move(bg).then([](int x) {
+        return Computation<Row<>, int>::lift<Effect::Bg>(x);
+    });
+    // Both sides have Bg; the union should be just Bg (set semantics).
+    using Chained = decltype(chained);
+    return is_subrow_v<Row<Effect::Bg>, Chained::row_type>
+        && is_subrow_v<Chained::row_type, Row<Effect::Bg>>;  // mutual ⊑ = equal
+}(),
+"then with overlapping rows absorbs duplicates via row_union's set "
+"semantics — Subrow-equality holds in both directions.");
+
+// then: empty-empty case (the special case that monad laws bottom on).
+static_assert([] consteval {
+    auto pure = Computation<Row<>, int>::mk(5);
+    auto chained = pure.then([](int x) {
+        return Computation<Row<>, int>::mk(x * 2);
+    });
+    return chained.extract() == 10
+        && std::is_same_v<decltype(chained)::row_type, Row<>>;
+}(),
+"then on empty rows produces a result also at the empty row (monad "
+"left/right unit law instance).");
+
 }  // namespace detail::computation_self_test
 
 // ── Runtime smoke test ──────────────────────────────────────────────
@@ -276,6 +458,35 @@ inline void runtime_smoke_test_computation() {
         std::move(bg_pure).template weaken<Row<Effect::Bg, Effect::IO>>();
     (void)bg_widened_lvalue;
     (void)bg_widened_rvalue;
+
+    // map: pure-value transformation, row preserved.  Lvalue and
+    // rvalue overloads exercise the const-ref vs T-by-value paths.
+    auto map_pure   = Computation<Row<>, int>::mk(7);
+    auto map_lvalue = map_pure.map([](int x) { return x + 1; });
+    auto map_rvalue = std::move(map_pure).map([](int x) { return x * 2; });
+    (void)map_lvalue;
+    (void)map_rvalue;
+
+    // then: monadic bind across two effect rows.  The chain
+    // accumulates Bg into the result row via row_union.  Both lvalue
+    // and rvalue then() overloads exercised.
+    auto then_pure = Computation<Row<>, int>::mk(11);
+    auto then_lvalue = then_pure.then([](int x) {
+        return Computation<Row<>, int>::lift<Effect::Bg>(x + 100);
+    });
+    auto then_rvalue = std::move(then_pure).then([](int x) {
+        return Computation<Row<>, int>::lift<Effect::IO>(x + 200);
+    });
+    static_assert(std::is_same_v<
+        decltype(then_lvalue)::row_type,
+        Row<Effect::Bg>
+    >);
+    static_assert(std::is_same_v<
+        decltype(then_rvalue)::row_type,
+        Row<Effect::IO>
+    >);
+    (void)then_lvalue;
+    (void)then_rvalue;
 }
 
 }  // namespace crucible::effects
