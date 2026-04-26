@@ -470,6 +470,9 @@ public:
     // introspection; SharedPermission's regime-5 façade joins the
     // family for GradedWrapper concept satisfaction.
     using lattice_type = ::crucible::algebra::lattices::FractionalLattice;
+    // Modality declaration — Round-4 CHEAT-5; see safety/Linear.h.
+    static constexpr ::crucible::algebra::ModalityKind modality =
+        ::crucible::algebra::ModalityKind::Absolute;
     using graded_type  = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::Absolute,
         lattice_type,

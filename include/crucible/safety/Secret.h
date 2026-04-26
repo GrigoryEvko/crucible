@@ -67,6 +67,11 @@ public:
     using value_type = T;
     using lattice_type = ::crucible::algebra::lattices::ConfLattice::At<
         ::crucible::algebra::lattices::Conf::Secret>;
+    // Modality declaration — Round-4 CHEAT-5; see Linear.h for the
+    // rationale.  Secret is Comonad — declassify is the comonadic
+    // counit (extract from the classified context).
+    static constexpr ::crucible::algebra::ModalityKind modality =
+        ::crucible::algebra::ModalityKind::Comonad;
     // Public per GRADED-TRAIT-1 — see Linear.h for the rationale.
     using graded_type  = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::Comonad, lattice_type, T>;

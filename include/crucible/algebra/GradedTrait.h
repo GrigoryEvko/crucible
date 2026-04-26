@@ -148,6 +148,44 @@ template <typename T>
 inline constexpr bool is_graded_specialization_v =
     is_graded_specialization<T>::value;
 
+// ── graded_modality — extract the ModalityKind value from a Graded ──
+//
+// Round-4 audit, gap CHEAT-5: lets the GradedWrapper concept verify
+// that a wrapper's claimed modality matches its substrate's
+// modality.  Catches the wrapper-says-Absolute-but-substrate-is-
+// Comonad case the prior concept admitted.
+
+template <typename T>
+struct graded_modality;
+
+template <ModalityKind M, typename L, typename T>
+struct graded_modality<Graded<M, L, T>>
+    : std::integral_constant<ModalityKind, M> {};
+
+template <typename T>
+inline constexpr ModalityKind graded_modality_v = graded_modality<T>::value;
+
+// ── value_type_decoupled — opt-out for substrate decoupling ────────
+//
+// Round-4 audit, gap CHEAT-1: by default, GradedWrapper enforces
+// `W::value_type == W::graded_type::value_type` (the wrapper's
+// user-facing value type matches the substrate's carried type).
+// AppendOnly is the canonical exception — its value_type is T
+// (the element) while graded_type::value_type is Storage<T>
+// (the container being graded by length).  AppendOnly opts out
+// of the equality check by specializing this trait to true.
+//
+// New wrappers that LAYER user semantics over a different substrate
+// type (regime-3-style: container substrates with element-typed
+// user surface) opt out the same way.  Default false; concept
+// enforces equality unless explicit opt-out.
+
+template <typename W>
+struct value_type_decoupled : std::false_type {};
+
+template <typename W>
+inline constexpr bool value_type_decoupled_v = value_type_decoupled<W>::value;
+
 // ── is_graded_wrapper — boolean trait (variable template form) ─────
 //
 // Defaults to false.  Every conforming wrapper specializes this to
@@ -160,21 +198,25 @@ inline constexpr bool is_graded_wrapper_v = false;
 
 // ── GradedWrapper concept ──────────────────────────────────────────
 //
-// Round-3 audit strengthening (gaps C1, C2):
-//   - lattice_type required (C2)
-//   - graded_type must be a Graded<...> specialization (C1)
+// Round-3 + Round-4 audit strengthening:
+//   - C1: graded_type must be a Graded<...> specialization
+//   - C2: lattice_type required
+//   - L3: forwarders must be noexcept
+//   - CHEAT-1: value_type matches graded_type::value_type unless the
+//              wrapper opts out via value_type_decoupled<W> (regime-3)
+//   - CHEAT-2: lattice_type matches graded_type::lattice_type
+//   - CHEAT-3: forwarder fidelity at concept level — value_type_name()
+//              and lattice_name() must equal graded_type's forwarders
+//   - CHEAT-5: modality match — wrapper's `static constexpr modality`
+//              field matches graded_type's modality template parameter
 //
-// L2 (value_type ↔ graded_type::value_type consistency) was
-// considered and REJECTED: AppendOnly<T, Storage> has
-// `value_type = T` (the element type, user-facing) but its substrate
-// is Graded<Absolute, SeqPrefixLattice<T>, Storage<T>> with
-// `graded_type::value_type = Storage<T>` (the container, substrate-
-// facing).  This is a deliberate semantics-vs-substrate split, not a
-// drift bug.  Wrappers that LAYER user semantics over a different
-// substrate type legitimately decouple value_type from
-// graded_type::value_type; conflating them would over-constrain.
-// Per-wrapper sanity (e.g. AppendOnly's substrate consistency) is
-// the per-wrapper test's responsibility, not the family concept's.
+// Adversarial probe coverage at test/test_concept_cheat_probe.cpp.
+//
+// L2 strict-equality (value_type ↔ graded_type::value_type for ALL
+// wrappers) was rejected because AppendOnly<T, Storage> legitimately
+// has `value_type = T` and `graded_type::value_type = Storage<T>`.
+// Round-4's CHEAT-1 fix is the WEAK form: enforce equality by
+// default, allow opt-out via value_type_decoupled<W> trait.
 
 template <typename W>
 concept GradedWrapper = requires {
@@ -187,13 +229,43 @@ concept GradedWrapper = requires {
     // not an arbitrary type that happens to be named graded_type.
     requires is_graded_specialization_v<typename W::graded_type>;
 
+    // CHEAT-2: substrate lattice consistency.  Wrapper's claimed
+    // lattice_type must match the substrate's lattice template arg.
+    requires std::same_as<typename W::lattice_type,
+                          typename W::graded_type::lattice_type>;
+
+    // CHEAT-1: substrate value_type consistency, with opt-out for
+    // regime-3 wrappers (AppendOnly's Storage<T> case).  Default is
+    // strict equality; wrappers that legitimately decouple
+    // user-facing value_type from substrate value_type specialize
+    // value_type_decoupled<W> to std::true_type.
+    requires (value_type_decoupled_v<W>
+              || std::same_as<typename W::value_type,
+                              typename W::graded_type::value_type>);
+
+    // CHEAT-5: modality consistency.  Wrapper exposes `static
+    // constexpr ModalityKind modality = ...;` declaring its modality;
+    // concept verifies it matches the substrate's modality template
+    // arg.  Catches wrapper-says-Absolute-but-substrate-is-Comonad
+    // bugs that the prior concept admitted.
+    requires (W::modality == graded_modality_v<typename W::graded_type>);
+
     // Diagnostic forwarders — must be noexcept, must return
-    // string_view (L3: noexcept enforcement).  Consteval-ness is
-    // not directly expressible in a requires-clause; the harness
-    // catches non-consteval forwarders via static_assert in the
-    // forwarder-fidelity check.
+    // string_view (L3: noexcept enforcement).
     { W::value_type_name() } noexcept -> std::same_as<std::string_view>;
     { W::lattice_name()    } noexcept -> std::same_as<std::string_view>;
+
+    // CHEAT-3: forwarder fidelity at concept level.  The forwarders
+    // must return the SAME strings as the substrate's forwarders
+    // (otherwise diagnostics emit lying names).  Catches wrappers
+    // that ship custom string-returning bodies that don't actually
+    // forward.  Both expressions are consteval (forwarders are
+    // consteval and substrate's are consteval), so the comparison
+    // is a constant expression.
+    requires (W::value_type_name() ==
+              W::graded_type::value_type_name());
+    requires (W::lattice_name() ==
+              W::graded_type::lattice_name());
 };
 
 // ── Auto-specialize is_graded_wrapper_v from the concept ──────────

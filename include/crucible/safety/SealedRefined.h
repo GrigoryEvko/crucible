@@ -107,6 +107,9 @@ public:
     // extractor in the public surface.
     using lattice_type = ::crucible::algebra::lattices::BoolLattice<
         std::remove_cv_t<decltype(Pred)>>;
+    // Modality declaration — Round-4 CHEAT-5; see safety/Linear.h.
+    static constexpr ::crucible::algebra::ModalityKind modality =
+        ::crucible::algebra::ModalityKind::Absolute;
     // Public per GRADED-TRAIT-1 — see safety/Linear.h for the rationale.
     using graded_type    = ::crucible::algebra::Graded<
         ::crucible::algebra::ModalityKind::Absolute, lattice_type, T>;

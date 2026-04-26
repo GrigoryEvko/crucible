@@ -69,6 +69,13 @@ public:
     using lattice_type = ::crucible::algebra::lattices::QttSemiring::At<
         ::crucible::algebra::lattices::QttGrade::One>;
 
+    // Modality declaration — Round-4 CHEAT-5: the GradedWrapper
+    // concept verifies this matches graded_type's modality template
+    // parameter.  Linear is Absolute (uniform-grade-known-at-type-
+    // level, no extract/inject monadic operations).
+    static constexpr ::crucible::algebra::ModalityKind modality =
+        ::crucible::algebra::ModalityKind::Absolute;
+
     // Public per GRADED-TRAIT-1 — external code (GradedWrapper concept,
     // test_migration_verification, future SealedRefined-of-Linear,
     // mCRL2 export) needs to introspect the migration mapping.  Zero
