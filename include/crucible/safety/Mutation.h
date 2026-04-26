@@ -768,6 +768,24 @@ public:
         return value_.load(std::memory_order_acquire);
     }
 
+    // Own-thread relaxed read.  For the SPSC ring pattern where the
+    // SOLE writer of this counter (producer for head, consumer for
+    // tail) reads its own value — no cross-thread synchronization
+    // needed.  Caller asserts they are the unique writer.
+    //
+    // Cost: ~1 ns (single relaxed load); on x86 a plain MOV.  Use
+    // get() instead when the reader is on a different thread than the
+    // writer — get()'s acquire pairs with advance()/bump()'s release
+    // half to establish happens-before.
+    //
+    // The discipline this surfaces: SPSC's "producer reads its own
+    // head" idiom is structurally different from "consumer reads
+    // producer's head."  Naming makes the choice visible at the call
+    // site; the bare std::atomic API leaves it to convention.
+    [[nodiscard]] T peek_relaxed() const noexcept {
+        return value_.load(std::memory_order_relaxed);
+    }
+
     // Try to advance to new_value.  Returns true iff this call moved the
     // value forward (per Cmp); false if the atomic already held a value
     // that is at-or-past new_value.
@@ -838,6 +856,28 @@ public:
         requires std::integral<T> && (kIsLess || kIsGreater)
     {
         return bump_by(T{1});
+    }
+
+    // Reset the counter to `value` (default T{}), bypassing the
+    // monotonicity contract.  ONLY safe when both threads (any sides
+    // touching this counter) are quiescent — typically called from
+    // SPSC ring's reset() entry point with the precondition "both
+    // producer and consumer are joined / not running."
+    //
+    // This is the type-level surfacing of the existing pattern in
+    // TraceRing::reset(), MetaLog::reset(), SpscRing::reset(): they
+    // explicitly document "Only valid when both threads are quiescent."
+    // Without this method, AtomicMonotonic's monotonicity contract
+    // makes Pinned reset impossible (the bespoke Monotonic in
+    // TraceRing handles it via move-assign of a fresh instance —
+    // closed off here by Pinned<>).
+    //
+    // Memory order is release: any subsequent acquire reader sees the
+    // reset value AND any prior writes the caller flushed.  Caller is
+    // responsible for ensuring no concurrent writers race with this
+    // call; the type system cannot prove quiescence.
+    void reset_under_quiescence(T value = T{}) noexcept {
+        value_.store(value, std::memory_order_release);
     }
 };
 
