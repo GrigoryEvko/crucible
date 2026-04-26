@@ -60,7 +60,7 @@
 // "not equal".
 //
 // Callers that want the partial-order spaceship can extract the
-// clock via .clock() and use the lattice's element_type::operator<=>
+// clock via .vector_clock() and use the lattice's element_type::operator<=>
 // directly — the lifting is one line and explicit.
 //
 // See ALGEBRA-13 (#458, HappensBefore.h) for the underlying lattice;
@@ -78,6 +78,40 @@
 
 namespace crucible::safety {
 
+// ════════════════════════════════════════════════════════════════════
+// TERMINOLOGY BANNER — read before reading any method signature
+// ════════════════════════════════════════════════════════════════════
+//
+// Throughout this file (and on every TimeOrdered<T,N,Tag> instance):
+//
+//   "clock", "vector_clock", "vector_clock_t" ALL refer to a
+//   LOGICAL VECTOR CLOCK (Mattern 1988 / Fidge 1991) — a tuple of
+//   N per-process integer counters tracking partial-order causal
+//   precedence between distributed events.
+//
+//   These names DO NOT refer to:
+//     ✗ std::chrono clocks (system_clock, steady_clock, etc.)
+//     ✗ Wall-clock time / nanoseconds / microseconds
+//     ✗ Monotonic time / CPU cycles / rdtsc counters
+//     ✗ Hardware oscillators or NTP synchronized time
+//
+//   The vector clock IS:
+//     ✓ A `std::array<uint64_t, N>`-wrapping struct (the
+//       HappensBeforeLattice<N, Tag>::element_type).
+//     ✓ Slot p ∈ [0, N) tracks "events from process p observed
+//       so far" — Lamport's logical-time abstraction generalized
+//       to N participants.
+//     ✓ The substrate Cipher::ReplayLog<Ordering> uses to record
+//       async-DiLoCo gradient-arrival ordering for replay-determinism.
+//     ✓ Partially-ordered: comparing two clocks yields one of
+//       {<, ==, >, ∥} where ∥ means "concurrent — could have
+//       happened in either order in real time".
+//
+// All public methods (vector_clock, vector_clock_at, with_vector_clock,
+// merge, advance_at, tick) operate on this LOGICAL clock — never on
+// physical time.  See HappensBefore.h for the underlying lattice.
+//
+// ════════════════════════════════════════════════════════════════════
 template <typename T, std::size_t N, typename Tag = void>
 class [[nodiscard]] TimeOrdered {
     static_assert(N > 0,
@@ -100,7 +134,7 @@ public:
     // ── Public type aliases ─────────────────────────────────────────
     using value_type            = T;
     using lattice_t             = lattice_type;
-    using clock_t               = typename lattice_type::element_type;
+    using vector_clock_t        = typename lattice_type::element_type;
     using process_id_t          = std::size_t;
     using tag_t                 = Tag;
     static constexpr std::size_t process_count = N;
@@ -116,19 +150,19 @@ public:
     // Explicit construction with both value and clock.  The most
     // common production pattern — caller has a value freshly produced
     // at a known causal position and binds them.
-    constexpr TimeOrdered(T value, clock_t clock) noexcept(
+    constexpr TimeOrdered(T value, vector_clock_t vc) noexcept(
         std::is_nothrow_move_constructible_v<T>)
-        : impl_{std::move(value), clock} {}
+        : impl_{std::move(value), vc} {}
 
     // In-place construction of T inside TimeOrdered, paired with a
-    // clock.  Avoids a move when T is expensive or non-movable;
+    // vector clock.  Avoids a move when T is expensive or non-movable;
     // mirrors Linear<T>'s std::in_place_t pattern.
     template <typename... Args>
         requires std::is_constructible_v<T, Args...>
-    constexpr TimeOrdered(std::in_place_t, clock_t clock, Args&&... args)
+    constexpr TimeOrdered(std::in_place_t, vector_clock_t vc, Args&&... args)
         noexcept(std::is_nothrow_constructible_v<T, Args...>
                  && std::is_nothrow_move_constructible_v<T>)
-        : impl_{T(std::forward<Args>(args)...), clock} {}
+        : impl_{T(std::forward<Args>(args)...), vc} {}
 
     // Convenience factory: value at the origin (clock == bottom).
     // Used when an event's first observation is at the start of a
@@ -158,15 +192,15 @@ public:
     // not publish operator== (its grade-comparison semantics are
     // ambiguous — comparing grades alone, values alone, or both
     // depend on the modality).  TimeOrdered explicitly composes
-    // T::operator== with clock_t::operator==, picking the
+    // T::operator== with vector_clock_t::operator==, picking the
     // "both must match" semantic that distributed-systems events
     // follow.
     [[nodiscard]] friend constexpr bool operator==(
         TimeOrdered const& a, TimeOrdered const& b) noexcept(
         noexcept(a.peek() == b.peek())
-        && noexcept(a.clock() == b.clock()))
+        && noexcept(a.vector_clock() == b.vector_clock()))
     {
-        return a.peek() == b.peek() && a.clock() == b.clock();
+        return a.peek() == b.peek() && a.vector_clock() == b.vector_clock();
     }
 
     // ── Read-only access ────────────────────────────────────────────
@@ -180,17 +214,17 @@ public:
         return std::move(impl_).consume();
     }
 
-    [[nodiscard]] constexpr clock_t clock() const
-        noexcept(std::is_nothrow_copy_constructible_v<clock_t>)
+    [[nodiscard]] constexpr vector_clock_t vector_clock() const
+        noexcept(std::is_nothrow_copy_constructible_v<vector_clock_t>)
     {
         return impl_.grade();
     }
 
-    // Slot accessor — read-only.  The clock_t's bounds-checked
+    // Slot accessor — read-only.  The vector_clock_t's bounds-checked
     // operator[] is forwarded.  Used in patterns like
-    // `evt.clock_at(my_process)` to ask "what's my view of the
+    // `evt.vector_clock_at(my_process)` to ask "what's my view of the
     // sender's events at the moment THIS event was produced?".
-    [[nodiscard]] constexpr std::uint64_t clock_at(std::size_t p) const noexcept
+    [[nodiscard]] constexpr std::uint64_t vector_clock_at(std::size_t p) const noexcept
         pre (p < N)
     {
         return impl_.grade()[p];
@@ -217,7 +251,7 @@ public:
     [[nodiscard]] constexpr bool happens_before(
         TimeOrdered const& other) const noexcept
     {
-        return lattice_type::happens_before(this->clock(), other.clock());
+        return lattice_type::happens_before(this->vector_clock(), other.vector_clock());
     }
 
     // a ∥ b: causal independence.  Neither a → b nor b → a.  THE
@@ -227,7 +261,7 @@ public:
     [[nodiscard]] constexpr bool is_concurrent(
         TimeOrdered const& other) const noexcept
     {
-        return lattice_type::is_concurrent(this->clock(), other.clock());
+        return lattice_type::is_concurrent(this->vector_clock(), other.vector_clock());
     }
 
     // Comparable in EITHER direction (complement of is_concurrent
@@ -235,7 +269,7 @@ public:
     [[nodiscard]] constexpr bool comparable(
         TimeOrdered const& other) const noexcept
     {
-        return lattice_type::comparable(this->clock(), other.clock());
+        return lattice_type::comparable(this->vector_clock(), other.vector_clock());
     }
 
     // ── Causal advancement (returns NEW TimeOrdered) ────────────────
@@ -256,14 +290,14 @@ public:
         requires std::copy_constructible<T>
         pre (p < N)
     {
-        return TimeOrdered{this->peek(), lattice_type::successor_at(this->clock(), p)};
+        return TimeOrdered{this->peek(), lattice_type::successor_at(this->vector_clock(), p)};
     }
 
     [[nodiscard]] constexpr TimeOrdered advance_at(std::size_t p) &&
         noexcept(std::is_nothrow_move_constructible_v<T>)
         pre (p < N)
     {
-        clock_t advanced = lattice_type::successor_at(this->clock(), p);
+        vector_clock_t advanced = lattice_type::successor_at(this->vector_clock(), p);
         return TimeOrdered{std::move(impl_).consume(), advanced};
     }
 
@@ -286,7 +320,7 @@ public:
         return std::move(*this).advance_at(p);
     }
 
-    // with_clock(new_clock) — produces a new TimeOrdered with the
+    // with_vector_clock(new_vector_clock) — produces a new TimeOrdered with the
     // SAME payload but a different clock.  Use case (§4 ReplayLog):
     // peer-state notification — "I learned that peer X is now at
     // clock C; update my view of X without changing my payload."
@@ -295,18 +329,18 @@ public:
     // monotonicity relationship between the new clock and *this's
     // clock.  The caller is responsible for whatever protocol-
     // discipline applies (typically: only call this with a clock
-    // that's known to be ≥ this->clock() under the lattice's leq).
-    [[nodiscard]] constexpr TimeOrdered with_clock(clock_t new_clock) const&
+    // that's known to be ≥ this->vector_clock() under the lattice's leq).
+    [[nodiscard]] constexpr TimeOrdered with_vector_clock(vector_clock_t new_vector_clock) const&
         noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
     {
-        return TimeOrdered{this->peek(), new_clock};
+        return TimeOrdered{this->peek(), new_vector_clock};
     }
 
-    [[nodiscard]] constexpr TimeOrdered with_clock(clock_t new_clock) &&
+    [[nodiscard]] constexpr TimeOrdered with_vector_clock(vector_clock_t new_vector_clock) &&
         noexcept(std::is_nothrow_move_constructible_v<T>)
     {
-        return TimeOrdered{std::move(impl_).consume(), new_clock};
+        return TimeOrdered{std::move(impl_).consume(), new_vector_clock};
     }
 
     // Receive-event advancement: process `me` receives an event with
@@ -319,11 +353,11 @@ public:
     // wrapper doesn't dictate the payload-merge policy because that
     // depends on T's domain).
     [[nodiscard]] constexpr TimeOrdered merge(
-        T received_value, clock_t received_clock, std::size_t me) const noexcept(
+        T received_value, vector_clock_t received_vector_clock, std::size_t me) const noexcept(
         std::is_nothrow_move_constructible_v<T>)
         pre (me < N)
     {
-        clock_t merged = lattice_type::causal_merge(this->clock(), received_clock, me);
+        vector_clock_t merged = lattice_type::causal_merge(this->vector_clock(), received_vector_clock, me);
         return TimeOrdered{std::move(received_value), merged};
     }
 };
@@ -394,12 +428,12 @@ inline constexpr TO4 evt_y{50, HB4::element_type{{0, 2, 0, 1}}};
 
 // at_origin factory yields a TimeOrdered at clock = bottom.
 inline constexpr TO4 evt_origin = TO4::at_origin(99);
-static_assert(evt_origin.clock() == HB4::element_type{{0, 0, 0, 0}});
+static_assert(evt_origin.vector_clock() == HB4::element_type{{0, 0, 0, 0}});
 static_assert(evt_origin.peek()  == 99);
 
 // Default ctor: value = T{}, clock = bottom.
 inline constexpr TO4 evt_default{};
-static_assert(evt_default.clock() == HB4::element_type{{0, 0, 0, 0}});
+static_assert(evt_default.vector_clock() == HB4::element_type{{0, 0, 0, 0}});
 static_assert(evt_default.peek()  == 0);
 
 // Strict causal chain: a → b → c.
@@ -432,15 +466,15 @@ static_assert(!(evt_a == TO4{99, HB4::element_type{{1, 0, 0, 0}}}));
 // identical payloads but different causal positions are distinct.
 static_assert(!(evt_a == TO4{10, HB4::element_type{{2, 0, 0, 0}}}));
 
-// clock_at: per-slot accessor.  Slot 0 of evt_a's clock is 1.
-static_assert(evt_a.clock_at(0) == 1);
-static_assert(evt_a.clock_at(1) == 0);
-static_assert(evt_b.clock_at(1) == 1);
-static_assert(evt_c.clock_at(2) == 1);
+// vector_clock_at: per-slot accessor.  Slot 0 of evt_a's vector clock is 1.
+static_assert(evt_a.vector_clock_at(0) == 1);
+static_assert(evt_a.vector_clock_at(1) == 0);
+static_assert(evt_b.vector_clock_at(1) == 1);
+static_assert(evt_c.vector_clock_at(2) == 1);
 
 // advance_at on rvalue: produces a successor event.
 inline constexpr TO4 evt_a_after = TO4{10, HB4::element_type{{1, 0, 0, 0}}}.advance_at(0);
-static_assert(evt_a_after.clock() == HB4::element_type{{2, 0, 0, 0}});
+static_assert(evt_a_after.vector_clock() == HB4::element_type{{2, 0, 0, 0}});
 static_assert(evt_a_after.peek()  == 10);
 
 // Successor strictly happens after predecessor.
@@ -448,22 +482,22 @@ static_assert(evt_a.happens_before(evt_a_after));
 
 // tick(p) — synonym for advance_at(p), confirms semantic identity.
 inline constexpr TO4 evt_a_ticked = evt_a.tick(0);
-static_assert(evt_a_ticked.clock() == evt_a_after.clock());
+static_assert(evt_a_ticked.vector_clock() == evt_a_after.vector_clock());
 static_assert(evt_a_ticked.peek()  == evt_a.peek());
 static_assert(evt_a.happens_before(evt_a_ticked));
 
-// with_clock — same payload, different clock.  No monotonicity
+// with_vector_clock — same payload, different vector clock.  No monotonicity
 // constraint — caller responsibility.  Used for peer-state
 // notifications: "rebind my view of this value to a new clock."
-inline constexpr TO4 evt_a_relocated = evt_a.with_clock(HB4::element_type{{5, 5, 5, 5}});
+inline constexpr TO4 evt_a_relocated = evt_a.with_vector_clock(HB4::element_type{{5, 5, 5, 5}});
 static_assert(evt_a_relocated.peek()  == evt_a.peek());
-static_assert(evt_a_relocated.clock() == HB4::element_type{{5, 5, 5, 5}});
+static_assert(evt_a_relocated.vector_clock() == HB4::element_type{{5, 5, 5, 5}});
 
 // merge: receive evt_y at process 0 — pointwise max of clocks + bump
 // slot 0.  Result: max({1,0,0,0}, {0,2,0,1}) = {1,2,0,1}, then bump 0
 // → {2,2,0,1}.  Payload = received_value (123 in this witness).
-inline constexpr TO4 evt_merged = evt_a.merge(123, evt_y.clock(), 0);
-static_assert(evt_merged.clock() == HB4::element_type{{2, 2, 0, 1}});
+inline constexpr TO4 evt_merged = evt_a.merge(123, evt_y.vector_clock(), 0);
+static_assert(evt_merged.vector_clock() == HB4::element_type{{2, 2, 0, 1}});
 static_assert(evt_merged.peek()  == 123);
 
 // Post-merge event observes BOTH input clocks (causal closure).
@@ -477,7 +511,7 @@ struct KernelOrderTag {};
 using TO_replay = TimeOrdered<int, 4, ReplayTag>;
 using TO_kernel = TimeOrdered<int, 4, KernelOrderTag>;
 static_assert(!std::is_same_v<TO_replay, TO_kernel>);
-static_assert(!std::is_same_v<TO_replay::clock_t, TO_kernel::clock_t>);
+static_assert(!std::is_same_v<TO_replay::vector_clock_t, TO_kernel::vector_clock_t>);
 
 // process_count exposed at the type level.
 static_assert(TO4::process_count == 4);
@@ -515,12 +549,12 @@ inline void runtime_smoke_test() {
     // Default + at_origin paths.
     TO4 d_evt{};
     TO4 o_evt = TO4::at_origin(7);
-    [[maybe_unused]] auto d_clock = d_evt.clock();
-    [[maybe_unused]] auto o_clock = o_evt.clock();
+    [[maybe_unused]] auto d_clock = d_evt.vector_clock();
+    [[maybe_unused]] auto o_clock = o_evt.vector_clock();
 
     // Slot accessor.
-    [[maybe_unused]] auto slot0 = b.clock_at(0);
-    [[maybe_unused]] auto slot3 = b.clock_at(3);
+    [[maybe_unused]] auto slot0 = b.vector_clock_at(0);
+    [[maybe_unused]] auto slot3 = b.vector_clock_at(3);
 
     // peek_mut on lvalue.
     a_recv.peek_mut() = 42;
