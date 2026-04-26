@@ -38,6 +38,7 @@
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Mutation.h>
@@ -79,6 +80,11 @@ static_assert(sizeof(Linear<void*>)                 == sizeof(void*));
 
 static_assert(sizeof(Refined<positive_local, int>)  == sizeof(int));
 
+// SealedRefined shares Refined's substrate (BoolLattice<P>); the
+// "sealed" property is API-surface only (no into() rvalue extractor).
+// Layout is identical to Refined and to bare T.
+static_assert(sizeof(SealedRefined<positive_local, int>) == sizeof(int));
+
 static_assert(sizeof(Tagged<int, VerificationTag>)  == sizeof(int));
 static_assert(sizeof(Tagged<long, VerificationTag>) == sizeof(long));
 
@@ -107,6 +113,7 @@ static_assert(sizeof(SharedPermission<VerificationTag>) == 1);
 
 static_assert(Linear<int>::value_type_name().ends_with("int"));
 static_assert(Refined<positive_local, int>::value_type_name().ends_with("int"));
+static_assert(SealedRefined<positive_local, int>::value_type_name().ends_with("int"));
 static_assert(Tagged<int, VerificationTag>::value_type_name().ends_with("int"));
 static_assert(Secret<int>::value_type_name().ends_with("int"));
 static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
@@ -127,6 +134,11 @@ static_assert(SharedPermission<VerificationTag>::value_type_name()
 
 static_assert(Linear<int>::lattice_name()       == "QttSemiring::At<1>");
 static_assert(Refined<positive_local, int>::lattice_name()
+                                                 .ends_with("PositiveCheck"));
+// SealedRefined shares Refined's BoolLattice<P> substrate exactly;
+// the lattice_name is identical.  External code distinguishes the
+// two wrappers by class identity, not by lattice name.
+static_assert(SealedRefined<positive_local, int>::lattice_name()
                                                  .ends_with("PositiveCheck"));
 static_assert(Tagged<int, VerificationTag>::lattice_name()
                                                  .ends_with("VerificationTag"));
@@ -174,6 +186,17 @@ void runtime_smoke_refined() {
     if (r.value() != 7) std::abort();
     int v = std::move(r).into();
     if (v != 7) std::abort();
+}
+
+void runtime_smoke_sealed_refined() {
+    SealedRefined<positive_local, int> s{42};
+    if (s.value() != 42) std::abort();
+    // No into() — sealed.  The discipline IS the difference.
+
+    // Round-trip: convert from a Refined into a SealedRefined.
+    Refined<positive_local, int> r{7};
+    SealedRefined<positive_local, int> sealed_from_r{std::move(r)};
+    if (sealed_from_r.value() != 7) std::abort();
 }
 
 void runtime_smoke_tagged() {
@@ -239,7 +262,9 @@ int main() {
     runtime_smoke_linear();
     std::fprintf(stderr, "  linear:      OK\n");
     runtime_smoke_refined();
-    std::fprintf(stderr, "  refined:     OK\n");
+    std::fprintf(stderr, "  refined:           OK\n");
+    runtime_smoke_sealed_refined();
+    std::fprintf(stderr, "  sealed_refined:    OK\n");
     runtime_smoke_tagged();
     std::fprintf(stderr, "  tagged:      OK\n");
     runtime_smoke_secret();
@@ -251,7 +276,7 @@ int main() {
     runtime_smoke_shared_permission();
     std::fprintf(stderr, "  shared_permission: OK\n");
 
-    std::fprintf(stderr, "\nALL PASSED — 9 migrated wrappers verified uniformly "
-                         "(8 Graded-backed + 1 façade)\n");
+    std::fprintf(stderr, "\nALL PASSED — 10 migrated wrappers verified uniformly "
+                         "(9 Graded-backed + 1 façade)\n");
     return EXIT_SUCCESS;
 }

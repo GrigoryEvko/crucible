@@ -47,6 +47,7 @@
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Safety.h>
 #include <crucible/safety/ScopedView.h>
+#include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Simd.h>
 #include <crucible/safety/Stale.h>
@@ -95,6 +96,7 @@ void test_pinned_compile()          {}
 void test_refined_compile()         {}
 void test_safety_umbrella_compile() {}
 void test_scoped_view_compile()     {}
+void test_sealed_refined_compile()  {}
 void test_secret_compile()          {}
 void test_simd_compile()            {}
 void test_stale_compile()           {
@@ -122,6 +124,7 @@ int main() {
     run_test("test_refined_compile",         test_refined_compile);
     run_test("test_safety_umbrella_compile", test_safety_umbrella_compile);
     run_test("test_scoped_view_compile",     test_scoped_view_compile);
+    run_test("test_sealed_refined_compile",  test_sealed_refined_compile);
     run_test("test_secret_compile",          test_secret_compile);
     run_test("test_simd_compile",            test_simd_compile);
     run_test("test_stale_compile",           test_stale_compile);

@@ -660,6 +660,8 @@ crucible_neg_compile_test(neg_linear_view_field
   "Type contains a safety::ScopedView<> in some field")
 crucible_neg_compile_test(neg_appendonly_over_writeonce
   "AppendOnly<WriteOnce<T>> is redundant")
+crucible_neg_compile_test(neg_sealed_refined_into_call
+  "has no member named")
 
 # ─── Graded modality discipline (Phase 2a foundation) ───────────────
 #
