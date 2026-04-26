@@ -75,6 +75,37 @@
 // Non-strict comparisons (≤, ≥) break antisymmetry — leq becomes
 // trivially true everywhere.
 //
+// ── CAVEAT: NaN violates the lattice laws for floating-point T ──────
+//
+// IEEE-754 NaN compares unequal to everything (including itself):
+//
+//   std::less<double>{}(NaN, x)  = false   for any x including NaN
+//   std::less<double>{}(x, NaN)  = false   for any x including NaN
+//
+// Under MonotoneLattice<double, std::less<double>>:
+//
+//   leq(NaN, NaN)        = NOT std::less{}(NaN, NaN) = true        ← OK
+//   join(NaN, 1.0)       = std::less{}(NaN, 1.0)? 1.0 : NaN = NaN  ← BUG
+//   join(1.0, NaN)       = std::less{}(1.0, NaN)? NaN : 1.0 = 1.0  ← BUG
+//
+// join is no longer commutative.  Antisymmetry (NaN ⊑ x ∧ x ⊑ NaN
+// ⇒ NaN == x) trivially holds in the wrong direction (NaN ⋢ x AND
+// x ⋢ NaN).  Verify_lattice_axioms_at would FAIL on a triple
+// containing NaN — but the witness sets in this header carefully
+// avoid NaN inputs.
+//
+// **DISCIPLINE**: instantiating MonotoneLattice<double> / <float>
+// is permitted, but the user MUST NOT supply NaN values at runtime.
+// If NaN is possible, either pre-filter at the boundary
+// (Refined<is_finite, double>) or use a custom Cmp that orders NaN
+// in a defined way (e.g. NaN < anything, then strict-less between
+// finites).  No infrastructure here enforces this at compile time;
+// the contract is at the call site.
+//
+// numeric_limits<double>::lowest()/max() return finite values
+// (-DBL_MAX / DBL_MAX), not -inf / +inf, so the bottom/top witnesses
+// are NaN-safe.  But user-supplied values are not.
+//
 //   Axiom coverage: TypeSafe — Cmp is a type parameter; mismatched
 //                   compare_type at composition sites fails to compile.
 //                   DetSafe — every operation is constexpr.

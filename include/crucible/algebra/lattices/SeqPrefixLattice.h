@@ -124,6 +124,17 @@ template <typename Element>
 struct Length {
     std::size_t length{0};
 
+    // Convenience static factory — preferred over brace-init at call
+    // sites for readability ("Length<Event>::at(5)" reads better than
+    // "Length<Event>{5}" especially in template-heavy contexts).  No
+    // contract beyond the natural-number domain of size_t; SIZE_MAX
+    // is the lattice top so it's a valid input here, though most
+    // callers want the named SeqPrefixLattice<Element>::top() form
+    // when expressing the "no-upper-bound" case.
+    [[nodiscard]] static constexpr Length at(std::size_t n) noexcept {
+        return Length{n};
+    }
+
     [[nodiscard]] friend constexpr auto operator<=>(Length, Length) noexcept = default;
     [[nodiscard]] friend constexpr bool operator==(Length, Length) noexcept = default;
 };
@@ -203,6 +214,11 @@ static_assert(LatA::top().length    == std::numeric_limits<std::size_t>::max());
 static_assert(Length<EventA>{0}   <  Length<EventA>{1});
 static_assert(Length<EventA>{100} == Length<EventA>{100});
 static_assert(Length<EventA>{200} >  Length<EventA>{199});
+
+// Convenience static factory.
+static_assert(Length<EventA>::at(0)   == Length<EventA>{0});
+static_assert(Length<EventA>::at(100) == Length<EventA>{100});
+static_assert(Length<EventA>::at(0)   == LatA::bottom());
 
 // ── Lattice ops at representative witnesses ─────────────────────────
 constexpr Length<EventA> ε       = LatA::bottom();

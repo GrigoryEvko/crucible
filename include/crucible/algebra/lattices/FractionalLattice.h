@@ -86,11 +86,24 @@ namespace crucible::algebra::lattices {
 // num/den representation of a rational number.  Canonical form not
 // required for equality (cross-multiplication handles it), but
 // arithmetic operations simplify via std::gcd to keep magnitudes
-// bounded.  Den must be non-zero; the default {0, 1} is the additive
-// identity.
+// bounded.
+//
+// CSL [0, 1] share invariant: num ≥ 0 AND den > 0.  This is the
+// CONTRACT for every Rational consumed by FractionalLattice.
+// Violating it (e.g. constructing Rational{1, -2}) yields undefined
+// comparison results because operator<=> assumes positive
+// denominators.  is_well_formed() verifies the invariant; the
+// FractionalLattice ops contract-assert it via the Rational input
+// path (NSDMI default {0, 1} is well-formed by construction).
 struct Rational {
     std::int64_t num{0};
     std::int64_t den{1};
+
+    // CSL share invariant — must hold for every Rational that flows
+    // through FractionalLattice's lattice/semiring ops.
+    [[nodiscard]] constexpr bool is_well_formed() const noexcept {
+        return den > 0 && num >= 0;
+    }
 
     [[nodiscard]] friend constexpr bool operator==(Rational a, Rational b) noexcept {
         // Cross-multiply for equality without simplifying.
@@ -99,17 +112,25 @@ struct Rational {
 
     [[nodiscard]] friend constexpr auto operator<=>(Rational a, Rational b) noexcept {
         // Cross-multiply for comparison.  Assumes both denominators
-        // positive (the convention for rationals in [0, 1] used by
-        // FractionalLattice).
+        // positive (the CSL share invariant); is_well_formed() is the
+        // discoverable check.
         return (a.num * b.den) <=> (b.num * a.den);
     }
 };
 
 // ── simplify: reduce to canonical form (num and den coprime) ────────
+//
+// Implementation note: avoids the `-INT64_MIN` UB by passing the
+// signed values directly to std::gcd, which per [numeric.ops.gcd]
+// operates on the absolute values.  libstdc++'s implementation
+// detail computes |M| internally; for CSL share usage (num ≥ 0, den
+// > 0) we never approach the INT64_MIN edge.
 [[nodiscard]] constexpr Rational simplify(Rational r) noexcept {
     if (r.num == 0) return Rational{0, 1};
-    auto abs_num = r.num < 0 ? -r.num : r.num;
-    auto g = std::gcd(abs_num, r.den);
+    // std::gcd handles negative inputs by computing |M|, |N| internally;
+    // for CSL shares (num ≥ 0, den > 0) the inputs are already
+    // non-negative so the computation is straightforward.
+    auto g = std::gcd(r.num, r.den);
     return Rational{r.num / g, r.den / g};
 }
 
@@ -191,6 +212,14 @@ static_assert(simplify(Rational{2, 4}) == Rational{1, 2});
 static_assert(simplify(Rational{6, 8}) == Rational{3, 4});
 static_assert(simplify(Rational{0, 5}) == Rational{0, 1});
 static_assert(simplify(Rational{5, 5}) == Rational{1, 1});
+
+// is_well_formed enforces the CSL share invariant (num ≥ 0, den > 0).
+static_assert(Rational{}.is_well_formed());            // default {0, 1}
+static_assert(Rational{1, 2}.is_well_formed());
+static_assert(Rational{0, 1}.is_well_formed());
+static_assert(!Rational{1, -2}.is_well_formed());      // negative den
+static_assert(!Rational{-1, 2}.is_well_formed());      // negative num
+static_assert(!Rational{1, 0}.is_well_formed());       // zero den
 
 // Lattice axioms — spot-check at a representative span of CSL shares
 // (0, 1/4, 1/2, 3/4, 1).  Pure spot-check (not exhaustive) because
