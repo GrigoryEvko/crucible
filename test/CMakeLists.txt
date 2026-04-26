@@ -961,3 +961,16 @@ crucible_neg_compile_test(neg_secret_transform_void_return
 # prove the walker correctly distinguishes the two paths.
 crucible_neg_compile_test(neg_session_sender_role_missing_crash
     "CrashBranch_Missing_In_Tree")
+
+# ── A8-P3 #148 — NotInherited<T>/FinalBy<T> primitive ──────────────
+# Caller-side witness form: assert_not_inherited<T>() rejects a T
+# that is not declared `final` with the named diagnostic
+# `[NotInherited_Not_Final]`.  This neg-test passes a non-final
+# struct to the helper and checks the diagnostic by name — exercising
+# the WITNESS half of the FinalBy/NotInherited pair documented in
+# include/crucible/safety/NotInherited.h.  The ENFORCEMENT half
+# (FinalBy<Derived> CRTP private-ctor) carries `[FinalBy_Subclass_
+# Forbidden]` in every deleted-copy/move reason; a separate neg-test
+# for that is task #146 (broader neg-compile coverage sweep).
+crucible_neg_compile_test(neg_notinherited_non_final
+    "NotInherited_Not_Final")
