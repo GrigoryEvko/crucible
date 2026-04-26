@@ -683,6 +683,63 @@ crucible_neg_compile_test(neg_graded_inject_on_comonad
 crucible_neg_compile_test(neg_refined_predicate_not_invocable
   "constraints not satisfied|PredicateInvocableOn")
 
+# ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
+#
+# Six tests pinning the structural invariants of the four new lattices
+# (HappensBefore + Lifetime + Consistency + Tolerance) and the refined
+# Graded::peek_mut gate from the prior MIGRATE-3/MIGRATE-4 work.
+#
+#   neg_happens_before_zero_n
+#       N=0 must trip the primary template's static_assert.
+#       [FRAMEWORK-CONTROLLED] — matches the static_assert string.
+#
+#   neg_happens_before_strong_ordering
+#       element_type's operator<=> returns std::partial_ordering, NOT
+#       std::strong_ordering — concurrent events MUST be reachable as
+#       `unordered`.  Pins the partial-order semantic against a future
+#       refactor that defaulted operator<=> on the std::array carrier.
+#       [FRAMEWORK-CONTROLLED] — matches the static_assert tag.
+#
+#   neg_lifetime_at_cross_tier_mixing
+#       LifetimeLattice::At<L>::element_type is a NESTED struct whose
+#       identity depends on L; cross-tier mixing must be a type-mismatch
+#       compile error.  Same structural property holds for the At<>
+#       sub-lattices of every chain lattice — pinning one is sufficient.
+#       [GCC-WRAPPER-TEXT] — overload-resolution rejection.
+#
+#   neg_consistency_cross_lattice_mixing,
+#   neg_tolerance_cross_lattice_mixing
+#       The three new chain-lattice enums (Lifetime / Consistency /
+#       Tolerance) MUST remain structurally distinct.  Pinning the
+#       Consistency × Lifetime AND Consistency × Tolerance pairs covers
+#       both adjacent edges of the triangle (the third edge is implied
+#       by enum-class type identity but pinning two pairs catches a
+#       partial-collapse refactor).
+#       [GCC-WRAPPER-TEXT] — strong-enum type-mismatch rejection.
+#
+#   neg_graded_peek_mut_on_comonad_nonempty_grade
+#       Graded::peek_mut's refined gate `(AbsoluteModality<M> ||
+#       std::is_empty_v<grade_type>)` MUST reject the
+#       Comonad-over-non-empty-grade case (the dangerous pattern that
+#       would let Secret<T> with a runtime classification be silently
+#       mutated, defeating the comonad's information-flow contract).
+#       Empty-grade arm validated independently by MIGRATE-3 positive
+#       tests.
+#       [GCC-text + framework] — concept-failure diagnostic + the
+#       requires clause is FRAMEWORK-CONTROLLED.
+crucible_neg_compile_test(neg_happens_before_zero_n
+  "HappensBeforeLattice<0> is forbidden")
+crucible_neg_compile_test(neg_happens_before_strong_ordering
+  "VectorClockMustBePartialOrder|three_way_comparable")
+crucible_neg_compile_test(neg_lifetime_at_cross_tier_mixing
+  "could not convert|no matching function|cannot convert")
+crucible_neg_compile_test(neg_consistency_cross_lattice_mixing
+  "could not convert|no matching function|cannot convert")
+crucible_neg_compile_test(neg_tolerance_cross_lattice_mixing
+  "could not convert|no matching function|cannot convert")
+crucible_neg_compile_test(neg_graded_peek_mut_on_comonad_nonempty_grade
+  "constraints not satisfied|AbsoluteModality")
+
 # WriteOnceNonNull<T*> — pointer-specialized single-set primitive (#77).
 #
 # [FRAMEWORK-CONTROLLED] Two named diagnostics gate the primitive's
