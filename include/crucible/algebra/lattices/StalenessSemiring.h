@@ -97,6 +97,7 @@
 // 25_04_2026.md §8 for the ASGD admission gate that consumes the
 // + composition rule.
 
+#include <crucible/Saturate.h>
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
 
@@ -104,7 +105,6 @@
 #include <compare>
 #include <cstdint>
 #include <limits>
-#include <numeric>
 #include <string_view>
 #include <type_traits>
 
@@ -182,14 +182,16 @@ struct StalenessSemiring {
     }
     [[nodiscard]] static constexpr element_type mul(element_type a, element_type b) noexcept {
         // Tropical multiplication = +.  ∞ absorbs (∞ + x = ∞).
-        // Saturating add via std::add_sat: overflow folds back into
-        // UINT64_MAX = ∞, which is semantically correct (staleness
-        // that exceeds uint64_t range IS unbounded for any practical
-        // purpose).
+        // Saturating add via crucible::sat::add_sat (project polyfill
+        // for std::add_sat — libstdc++ 16.0.1 doesn't ship the C++26
+        // standard version yet, see Saturate.h).  Overflow folds back
+        // into UINT64_MAX = ∞ sentinel, which is semantically correct
+        // (staleness that exceeds uint64_t range IS unbounded for any
+        // practical purpose).
         if (a.is_infinite() || b.is_infinite()) {
             return top();
         }
-        return element_type{std::add_sat(a.value, b.value)};
+        return element_type{::crucible::sat::add_sat(a.value, b.value)};
     }
 
     [[nodiscard]] static consteval std::string_view name() noexcept {

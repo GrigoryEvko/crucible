@@ -201,15 +201,20 @@ static_assert(!std::is_same_v<TrustLattice<version::V<1>>,
 
 // Diagnostic name comes from reflection.  For sources defined at
 // nested-namespace scope inside the self-test, display_string_of
-// returns the SIMPLE name (verified empirically; consistent with
-// BoolLattice<positive>::name() == "positive").
-static_assert(TrustLattice<source::FromUser>::name()  == "FromUser");
-static_assert(TrustLattice<source::Sanitized>::name() == "Sanitized");
-static_assert(TrustLattice<trust::Verified>::name()   == "Verified");
-static_assert(TrustLattice<access::RW>::name()        == "RW");
-static_assert(TrustLattice<version::V1>::name()       == "V1");
+// returns either the SIMPLE name or the fully-qualified form
+// depending on the depth of the including TU's scope chain (the
+// TU-context-fragility documented in
+// gcc16_c26_reflection_gotchas memory rule #5 +
+// header_only_static_assert_blind_spot rule).  Use ends_with()
+// rather than == so the assertions are robust across the
+// algebra-only TU and the safety/* migration TUs.
+static_assert(TrustLattice<source::FromUser>::name() .ends_with("FromUser"));
+static_assert(TrustLattice<source::Sanitized>::name().ends_with("Sanitized"));
+static_assert(TrustLattice<trust::Verified>::name()  .ends_with("Verified"));
+static_assert(TrustLattice<access::RW>::name()       .ends_with("RW"));
+static_assert(TrustLattice<version::V1>::name()      .ends_with("V1"));
 // Templated source — display_string_of includes the template argument.
-static_assert(TrustLattice<version::V<7>>::name()     == "V<7>");
+static_assert(TrustLattice<version::V<7>>::name()    .ends_with("V<7>"));
 
 // ── Layout invariants on Graded<...,TrustLattice<S>,T> ─────────────
 struct OneByteValue { char c{0}; };

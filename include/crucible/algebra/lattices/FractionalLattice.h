@@ -317,11 +317,17 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] Rational ss  = simplify(Rational{numA + numB, denA + denB});
 
     // Graded<Absolute, FractionalLattice, T> at runtime.
+    //
+    // Critical invariant: weaken only goes UP the lattice (`L::leq
+    // (current_grade, new_grade)`).  The contract pre fires under
+    // enforce semantic if you try to weaken to a smaller grade.
+    // Build the chain in ascending order: bottom → 3/4 → top.
     OneByteValue v{42};
     SharedPermissionGraded<OneByteValue> initial{v, FractionalLattice::bottom()};
-    auto widened   = initial.weaken(FractionalLattice::top());
-    auto composed  = initial.compose(widened);
-    auto rv_widen  = std::move(widened).weaken(Rational{3, 4});
+    auto widened    = initial.weaken(Rational{3, 4});                  // 0   → 3/4
+    auto widened_max = widened.weaken(FractionalLattice::top());       // 3/4 → 1
+    auto composed    = initial.compose(widened_max);                   // join with top
+    auto rv_widen    = std::move(widened_max).weaken(FractionalLattice::top());  // 1 → 1 (idempotent reflexive)
 
     // Exercise rvalue-compose on a moved-into helper handle so the
     // returned Graded can be consumed without aliasing `rv_widen` or
