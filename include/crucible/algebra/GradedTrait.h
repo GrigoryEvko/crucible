@@ -8,6 +8,55 @@
 // follows the Graded foundation refactor's calling convention
 // (25_04_2026.md §2).
 //
+// ── Wrapper regime taxonomy (DOC-REGIME-CLASSIFICATION) ────────────
+//
+// Migrated wrappers fall into FIVE regimes, distinguished by how
+// the substrate's grade (the lattice element) relates to runtime
+// storage.  The regime determines what sizeof witnesses are
+// admissible per wrapper; the GradedWrapper concept itself is
+// regime-blind — it asserts the diagnostic surface uniformity that
+// every regime shares.
+//
+// regime-1 — Zero-cost EBO collapse (the canonical case)
+//     The lattice's element_type is empty (singleton grade).
+//     Graded's [[no_unique_address]] grade_ collapses to 0 bytes;
+//     sizeof(W) == sizeof(T).
+//     Members: Linear, Refined, Tagged, Secret, SealedRefined.
+//
+// regime-2 — T == element_type collapse
+//     The lattice's element_type IS the wrapped type T (e.g.
+//     MonotoneLattice<T, Cmp>::element_type == T).  Graded's
+//     specialization for value-type-equals-grade-type collapses
+//     value+grade into one storage cell; sizeof(W) == sizeof(T).
+//     Members: Monotonic.
+//
+// regime-3 — Derived grade from container content
+//     The grade is computed on demand from the wrapped container's
+//     contents (e.g. SeqPrefixLattice grade derived from
+//     container.size()).  Storage is sizeof(container); no separate
+//     grade field.  sizeof(W) == sizeof(Storage<T>).
+//     Members: AppendOnly.
+//
+// regime-4 — T + grade carried per instance
+//     Lattice element is non-trivial (e.g. vector clock with N
+//     entries, or staleness counter).  Wrapper carries both T and
+//     the grade as separate members; sizeof(W) ==
+//     sizeof(T) + sizeof(grade) + alignment.  This is the
+//     "first-class graded value" regime.
+//     Members: Stale, TimeOrdered.
+//
+// regime-5 — Proof-token, runtime carrier elsewhere
+//     The wrapper is a phantom proof token (sizeof 1 / EBO-
+//     collapsible) that asserts a property whose runtime state
+//     lives in a separate carrier (Pool, atomic, etc.).  The
+//     graded_type alias documents the substrate identity for
+//     diagnostic introspection but doesn't carry the grade.
+//     Members: SharedPermission (carrier = SharedPermissionPool).
+//
+// When introducing a new wrapper, identify its regime first; the
+// regime determines the sizeof witness shape AND the cross-
+// composition properties available.
+//
 //   Axiom coverage: TypeSafe — concept rejection is a clean compile-
 //                   time diagnostic at every "wrapper-shaped" use site.
 //   Runtime cost:   zero — purely consteval / decltype.

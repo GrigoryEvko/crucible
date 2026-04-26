@@ -17,6 +17,82 @@
 // See code_guide.md §XVI for axiom mapping, usage rules, compiler
 // enforcement, and review enforcement rules for each wrapper.
 // 25_04_2026.md §2 documents the directory split rationale.
+//
+// ─── Migration map (DOC-3) ──────────────────────────────────────────
+//
+// Every Graded-backed wrapper in this umbrella migrates to a
+// specific Graded<Modality, Lattice, T> specialization per the
+// 25_04_2026.md §2.3 calling convention.  The map below is the
+// canonical reference; individual headers document their own
+// substrate.  The GradedWrapper concept (algebra/GradedTrait.h)
+// asserts uniformity across all entries.
+//
+//   Wrapper                  Substrate                                            Regime
+//   ──────────────────────── ─────────────────────────────────────────────────── ──────
+//   Linear<T>                Graded<Absolute,    QttSemiring::At<One>,  T>          1
+//   Refined<Pred, T>         Graded<Absolute,    BoolLattice<Pred>,     T>          1
+//   SealedRefined<Pred, T>   Graded<Absolute,    BoolLattice<Pred>,     T>          1
+//   Tagged<T, Source>        Graded<RelativeMonad, TrustLattice<Source>, T>          1
+//   Secret<T>                Graded<Comonad,     ConfLattice::At<Secret>, T>        1
+//   Monotonic<T, Cmp>        Graded<Absolute,    MonotoneLattice<T,Cmp>, T>         2
+//   AppendOnly<T, Storage>   Graded<Absolute,    SeqPrefixLattice<T>,   Storage<T>>  3
+//   Stale<T>                 Graded<Absolute,    StalenessSemiring,     T>          4
+//   TimeOrdered<T, N, Tag>   Graded<Absolute,    HappensBeforeLattice<N,Tag>, T>    4
+//
+// (SharedPermission<Tag> is regime-5 and lives in permissions/, not
+//  this umbrella; its substrate is Graded<Absolute, FractionalLattice,
+//  Tag> as a façade pointing at SharedPermissionPool's atomic state.)
+//
+// See algebra/GradedTrait.h for the regime-N taxonomy.
+//
+// ─── Deliberately not graded (DOC-MIGRATE-POLICY) ──────────────────
+//
+// Nine wrappers in this umbrella are intentionally NOT Graded.  They
+// follow non-graded disciplines (RAII, typestate, structural
+// constraint) that don't fit the Graded<M, L, T> shape.  A future
+// MIGRATE attempt should NOT try to convert them; the policy is
+// documented per-wrapper below.
+//
+//   Wrapper             Discipline                Why NOT graded
+//   ─────────────────── ───────────────────────── ──────────────────────────────
+//   Machine<S>          typestate machine         States form a transition
+//                                                 graph, not a lattice; modeling
+//                                                 them as a grade would lose
+//                                                 the per-state typing surface.
+//   ScopedView<C, T>    lifetime-bounded borrow   Lifetime is a phantom epoch
+//                                                 tag, not an ordered grade;
+//                                                 ScopedView's discipline is
+//                                                 "valid within scope", not
+//                                                 "carries a grade value".
+//   OwnedRegion<T, Tag> arena-backed ownership    Ownership is structural
+//                                                 (region identity), not a
+//                                                 grade; combining with Graded
+//                                                 is the bridges/ tier's job.
+//   Pinned<T>           address stability         Boolean property, not
+//                                                 lattice-shaped; cheaper as
+//                                                 a CRTP marker.
+//   Checked.h           overflow-detecting math   Pure functional primitives
+//                                                 (checked_add etc.); no
+//                                                 per-value invariant to grade.
+//   ConstantTime.h      branch-free crypto        Side-channel-resistant
+//                                                 operations; the discipline
+//                                                 is timing-shape, not value-
+//                                                 shape.
+//   NotInherited<T>     structural non-extension  Inheritance constraint, not
+//                                                 value invariant; FinalBy
+//                                                 idiom belongs in the type
+//                                                 system not the algebra.
+//   Simd.h              SIMD primitives           Vector arithmetic; the
+//                                                 "value" is plural by design,
+//                                                 not graded.
+//   Workload.h          concurrency policy hint   Scheduler advice, not value
+//                                                 invariant; consumed by
+//                                                 AdaptiveScheduler.
+//
+// If a future use case demands grading one of these (e.g. a Pinned-
+// with-grade), build it as a NEW wrapper layered on top — don't
+// retrofit the existing one.  The non-graded wrappers' callers
+// depend on the bare shape.
 
 #include <crucible/safety/Checked.h>
 #include <crucible/safety/ConstantTime.h>
@@ -28,6 +104,7 @@
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
+#include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Simd.h>
 #include <crucible/safety/Stale.h>
