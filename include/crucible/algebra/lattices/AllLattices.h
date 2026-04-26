@@ -42,15 +42,14 @@
 // ProductLattice<L₁, L₂, ...> | #460    | every multi-grade composition
 
 // ── Shipped lattices ────────────────────────────────────────────────
+#include <crucible/algebra/lattices/BoolLattice.h>  // ALGEBRA-5 (#450) — shipped
 #include <crucible/algebra/lattices/QttSemiring.h>  // ALGEBRA-4 (#449) — shipped
 
 namespace crucible::algebra::lattices {
 
-// ── Forward declarations (full definitions land per ALGEBRA-5..15) ──
+// ── Forward declarations (full definitions land per ALGEBRA-6..15) ──
 
-// Predicate-Boolean lattice; Pred is a stateless predicate-name tag
-// (typically a class with a static consteval bool check(T) member).
-template <typename Pred> struct BoolLattice;
+// BoolLattice<Pred> — already included above (ALGEBRA-5 shipped).
 
 // Confidentiality lattice: Public ⊑ Secret.
 struct ConfLattice;
