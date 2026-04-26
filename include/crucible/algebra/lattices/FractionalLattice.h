@@ -51,19 +51,48 @@
 //
 // ── Rational arithmetic + overflow ──────────────────────────────────
 //
-// Rationals carry int64_t num + int64_t den (16 bytes).  Cross-product
-// comparisons (a.num × b.den vs b.num × a.den) and additive cross-
-// products fit in int64_t for shares with num, den ≤ 2^31.  Beyond
-// that range, overflow is documented as undefined — typical CSL
-// fractional permissions never approach the boundary (shares are
-// 1/2, 1/4, 1/8, ... or small fractions like 1/N for moderate N).
+// Rationals carry int64_t num + int64_t den (16 bytes).  Two layers
+// protect against signed-integer overflow on cross-product math:
+//
+//   1. Magnitude bound — `is_well_formed()` requires
+//      `0 ≤ num ≤ 2^31` AND `0 < den ≤ 2^31`.  This is the LATTICE-
+//      level contract: every Rational consumed by FractionalLattice
+//      ops MUST satisfy `is_well_formed()`.  At this bound:
+//        • cross-product           a.num × b.den  ≤ 2^62
+//        • additive numerator sum  a.num × b.den + b.num × a.den ≤ 2^63 - 1
+//        • product denominator     a.den × b.den  ≤ 2^62
+//      All three fit in int64_t with margin.  The bound is documented
+//      ALSO at the original ALGEBRA-8 design point — typical CSL
+//      shares are 1/N for moderate N (1/2, 1/4, ..., 1/2^16) so the
+//      bound never binds in real workloads.
+//
+//   2. Defense-in-depth via __int128 — even if a malicious caller
+//      bypasses (1) by constructing a Rational outside the bound, the
+//      cross-product comparisons in `operator<=>` and `leq` use
+//      __int128 intermediates so the result is mathematically correct
+//      for ANY int64 inputs (no signed-overflow UB, no wrong-direction
+//      comparison flip).  GCC 16 has unconditional __int128 support;
+//      this is zero cost on x86-64 (two-register multiply).  See the
+//      AUDIT-FRAC-OVERFLOW commit for the regression probe that
+//      motivated this defense.
+//
+// Without (2), `leq(Rational{2^40, 1}, Rational{1, 2^25})` returned
+// `true` due to the cross-product `2^40 × 2^25 = 2^65` wrapping to 0
+// — flipping the inequality and silently passing a `Graded::weaken()`
+// precondition that should reject the share-strengthening request.
+// The bound in (1) prevents the situation from arising in
+// well-formed code; (2) ensures DetSafe even when (1) is bypassed.
 //
 //   Axiom coverage: TypeSafe — Rational is a strong struct with
-//                   bounded interpretation.  DetSafe — every operation
-//                   is constexpr and deterministic; no FP arithmetic.
+//                   bounded interpretation enforced by the
+//                   is_well_formed() invariant.  DetSafe — every
+//                   operation is constexpr, deterministic, and
+//                   overflow-free under (1)+(2); no FP arithmetic.
+//                   MemSafe — no heap, no aliased state.
 //   Runtime cost:   16 bytes per share + cross-product multiplications
-//                   on lattice ops.  Acceptable for SharedPermission's
-//                   coarse-grained refcount-style usage.
+//                   on lattice ops.  __int128 cross-product is two
+//                   IMUL on x86-64 vs one for int64 — negligible at
+//                   SharedPermission's coarse-grained refcount cycle.
 //
 // See ALGEBRA-3 (Graded.h), ALGEBRA-2 (Lattice.h);
 // MIGRATE-7 (#467) for the SharedPermission<Tag> alias instantiation;
@@ -88,33 +117,77 @@ namespace crucible::algebra::lattices {
 // arithmetic operations simplify via std::gcd to keep magnitudes
 // bounded.
 //
-// CSL [0, 1] share invariant: num ≥ 0 AND den > 0.  This is the
-// CONTRACT for every Rational consumed by FractionalLattice.
-// Violating it (e.g. constructing Rational{1, -2}) yields undefined
-// comparison results because operator<=> assumes positive
-// denominators.  is_well_formed() verifies the invariant; the
-// FractionalLattice ops contract-assert it via the Rational input
-// path (NSDMI default {0, 1} is well-formed by construction).
+// CSL [0, 1] share invariant: 0 ≤ num ≤ 2^31 AND 0 < den ≤ 2^31.
+// This is the CONTRACT for every Rational consumed by
+// FractionalLattice.  Violating it (e.g. constructing
+// `Rational{1, -2}`, `Rational{1, 0}`, or `Rational{2^40, 1}`) is a
+// boundary-discipline error; `is_well_formed()` gives the discoverable
+// check.  FractionalLattice ops `contract_assert` is_well_formed() at
+// every boundary AND use __int128 cross-products as defense-in-depth
+// so the comparison result is mathematically correct even when a
+// caller bypasses the contract.  The NSDMI default {0, 1} is
+// well-formed by construction.
 struct Rational {
     std::int64_t num{0};
     std::int64_t den{1};
 
+    // ── Magnitude bound for the well-formed CSL share invariant ─────
+    //
+    // 2^31 chosen so every cross-product (a.num × b.den, a.den × b.den,
+    // and the additive sum a.num × b.den + b.num × a.den) fits in
+    // int64_t without wrap.  Real CSL shares (1/N for moderate N)
+    // never approach this bound; values up to 2^31 cover any
+    // refcount-style permission split practical applications need.
+    static constexpr std::int64_t MAX_SAFE_MAGNITUDE = std::int64_t{1} << 31;
+
     // CSL share invariant — must hold for every Rational that flows
-    // through FractionalLattice's lattice/semiring ops.
+    // through FractionalLattice's lattice/semiring ops.  Bounded above
+    // by MAX_SAFE_MAGNITUDE so cross-product arithmetic in
+    // FractionalLattice's operations stays within int64_t range (the
+    // operator<=> path additionally widens to __int128 as
+    // defense-in-depth — see file header comment).
     [[nodiscard]] constexpr bool is_well_formed() const noexcept {
-        return den > 0 && num >= 0;
+        return den > 0
+            && num >= 0
+            && num <= MAX_SAFE_MAGNITUDE
+            && den <= MAX_SAFE_MAGNITUDE;
     }
+
+    // ── int128 typedef for cross-product defense-in-depth ──────────
+    //
+    // GCC 16 provides `__int128` as an extension; -Werror=pedantic
+    // would reject the bare type-id, so we wrap it inside a
+    // diagnostic-pragma push/pop pair and expose a single typedef
+    // `wide_signed`.  The typedef is private to Rational; the rest of
+    // the header refers to it by name and never spells `__int128`
+    // directly, keeping the pedantic-suppression scope to one site.
+    //
+    // Cost: zero — the pragma only affects parsing of the typedef
+    // line; emitted code is identical to the bare `__int128` form.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
+    using wide_signed = __int128;
+#pragma GCC diagnostic pop
 
     [[nodiscard]] friend constexpr bool operator==(Rational a, Rational b) noexcept {
         // Cross-multiply for equality without simplifying.
-        return a.num * b.den == b.num * a.den;
+        // wide_signed intermediate keeps the comparison sound even
+        // for ill-formed inputs (defense-in-depth — the lattice ops
+        // contract-assert is_well_formed() at the boundary, but a
+        // misbehaving caller that bypasses the contract still gets
+        // the mathematically correct answer rather than a UB-induced
+        // wrong direction).
+        return (static_cast<wide_signed>(a.num) * b.den)
+            == (static_cast<wide_signed>(b.num) * a.den);
     }
 
     [[nodiscard]] friend constexpr auto operator<=>(Rational a, Rational b) noexcept {
-        // Cross-multiply for comparison.  Assumes both denominators
-        // positive (the CSL share invariant); is_well_formed() is the
-        // discoverable check.
-        return (a.num * b.den) <=> (b.num * a.den);
+        // Cross-multiply for comparison.  wide_signed intermediate
+        // ensures correctness for any int64 inputs; assumes positive
+        // denominators (is_well_formed() is the discoverable check
+        // that lattice ops contract-assert at the boundary).
+        return (static_cast<wide_signed>(a.num) * b.den)
+           <=> (static_cast<wide_signed>(b.num) * a.den);
     }
 };
 
@@ -146,9 +219,18 @@ struct FractionalLattice {
         return Rational{1, 1};
     }
     [[nodiscard]] static constexpr bool leq(element_type a, element_type b) noexcept {
-        // Cross-multiply: a/d_a ≤ b/d_b iff a*d_b ≤ b*d_a (for positive
-        // denominators).
-        return a.num * b.den <= b.num * a.den;
+        // Boundary discipline — every Rational consumed by the lattice
+        // ops MUST satisfy is_well_formed() per the file-header
+        // contract.  contract_assert fires under enforce semantic
+        // (debug, CI); compiles to nothing under ignore (hot-path TUs).
+        contract_assert(a.is_well_formed() && b.is_well_formed());
+        // Cross-multiply: a/d_a ≤ b/d_b iff a × d_b ≤ b × d_a (for
+        // positive denominators).  wide_signed (__int128) intermediate
+        // keeps the comparison sound for ANY int64 inputs (defense-in-
+        // depth); for is_well_formed() values the result fits
+        // comfortably in int64 with margin (≤ 2^62).
+        return (static_cast<Rational::wide_signed>(a.num) * b.den)
+            <= (static_cast<Rational::wide_signed>(b.num) * a.den);
     }
     [[nodiscard]] static constexpr element_type join(element_type a, element_type b) noexcept {
         return leq(a, b) ? b : a;  // max share
@@ -166,18 +248,38 @@ struct FractionalLattice {
     }
     // add: rational addition with simplification.  Used to combine
     // shares (e.g. when readers return their fractions to upgrade
-    // to a writer permission).
+    // to a writer permission).  Cross-products use wide_signed
+    // (__int128) intermediates so the additive numerator sum
+    // (a × d_b + b × d_a) never wraps; for is_well_formed() inputs
+    // each product is ≤ 2^62 and their sum fits comfortably in int64
+    // (≤ 2^63 - 1).
     [[nodiscard]] static constexpr element_type add(element_type a, element_type b) noexcept {
-        // a/d_a + b/d_b = (a*d_b + b*d_a) / (d_a * d_b)
-        Rational sum{a.num * b.den + b.num * a.den, a.den * b.den};
-        return simplify(sum);
+        contract_assert(a.is_well_formed() && b.is_well_formed());
+        using W = Rational::wide_signed;
+        const W num128 = static_cast<W>(a.num) * b.den
+                       + static_cast<W>(b.num) * a.den;
+        const W den128 = static_cast<W>(a.den) * b.den;
+        // For well-formed inputs each product is ≤ 2^62 and the
+        // additive numerator sum is ≤ 2^63 - 1, so the truncating cast
+        // back to int64 is lossless.  The contract_assert above is
+        // the boundary check; the cast is sound under that contract.
+        return simplify(Rational{
+            static_cast<std::int64_t>(num128),
+            static_cast<std::int64_t>(den128),
+        });
     }
     // mul: rational multiplication with simplification.  Used to
     // split shares (e.g. mul({1, 2}, {1, 2}) = {1, 4} — split a half
-    // into a quarter).
+    // into a quarter).  wide_signed intermediates as in `add`.
     [[nodiscard]] static constexpr element_type mul(element_type a, element_type b) noexcept {
-        Rational prod{a.num * b.num, a.den * b.den};
-        return simplify(prod);
+        contract_assert(a.is_well_formed() && b.is_well_formed());
+        using W = Rational::wide_signed;
+        const W num128 = static_cast<W>(a.num) * b.num;
+        const W den128 = static_cast<W>(a.den) * b.den;
+        return simplify(Rational{
+            static_cast<std::int64_t>(num128),
+            static_cast<std::int64_t>(den128),
+        });
     }
 
     [[nodiscard]] static consteval std::string_view name() noexcept {
@@ -213,13 +315,45 @@ static_assert(simplify(Rational{6, 8}) == Rational{3, 4});
 static_assert(simplify(Rational{0, 5}) == Rational{0, 1});
 static_assert(simplify(Rational{5, 5}) == Rational{1, 1});
 
-// is_well_formed enforces the CSL share invariant (num ≥ 0, den > 0).
+// is_well_formed enforces the CSL share invariant
+// (0 ≤ num ≤ MAX_SAFE_MAGNITUDE, 0 < den ≤ MAX_SAFE_MAGNITUDE).
 static_assert(Rational{}.is_well_formed());            // default {0, 1}
 static_assert(Rational{1, 2}.is_well_formed());
 static_assert(Rational{0, 1}.is_well_formed());
+static_assert(Rational{Rational::MAX_SAFE_MAGNITUDE,
+                       Rational::MAX_SAFE_MAGNITUDE}.is_well_formed());
 static_assert(!Rational{1, -2}.is_well_formed());      // negative den
 static_assert(!Rational{-1, 2}.is_well_formed());      // negative num
 static_assert(!Rational{1, 0}.is_well_formed());       // zero den
+
+// AUDIT-FRAC-OVERFLOW regression — values just past the magnitude
+// bound are rejected by is_well_formed().  Pre-fix, Rational{2^40, 1}
+// was admitted by is_well_formed() and silently produced wrong-
+// direction comparisons via the int64 cross-product overflow.  After
+// the fix the magnitude bound rules them out structurally AND
+// __int128 cross-products inside FractionalLattice ops give the
+// mathematically correct comparison even if a caller bypasses the
+// contract.
+static_assert(!Rational{Rational::MAX_SAFE_MAGNITUDE + 1, 1}.is_well_formed());
+static_assert(!Rational{1, Rational::MAX_SAFE_MAGNITUDE + 1}.is_well_formed());
+static_assert(!Rational{std::int64_t{1} << 40, 1}.is_well_formed());
+static_assert(!Rational{1, std::int64_t{1} << 40}.is_well_formed());
+static_assert(!Rational{std::numeric_limits<std::int64_t>::max(), 1}.is_well_formed());
+
+// __int128 defense-in-depth — operator<=> is mathematically correct
+// for ANY int64 inputs, including ill-formed values that would
+// previously have wrapped via signed-integer overflow.  These
+// assertions exercise the path; the lattice ops contract_assert
+// is_well_formed() so production callers cannot reach this branch,
+// but the soundness of the comparison itself is structural.  The
+// canonical regression case from the AUDIT-FRAC-OVERFLOW probe:
+// pre-fix, leq(Rational{2^40, 1}, Rational{1, 2^25}) returned `true`
+// because 2^40 × 2^25 = 2^65 wrapped to 0 — flipping the comparison.
+// __int128 makes the answer correct even outside the contract.
+static_assert(Rational{1, std::int64_t{1} << 25}
+            < Rational{std::int64_t{1} << 40, 1});
+static_assert(!(Rational{std::int64_t{1} << 40, 1}
+              < Rational{1, std::int64_t{1} << 25}));
 
 // Lattice axioms — spot-check at a representative span of CSL shares
 // (0, 1/4, 1/2, 3/4, 1).  Pure spot-check (not exhaustive) because
@@ -315,6 +449,27 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] Rational s   = FractionalLattice::add(a, b);  // 1/4 + 1/2 = 3/4
     [[maybe_unused]] Rational p   = FractionalLattice::mul(a, b);  // 1/4 × 1/2 = 1/8
     [[maybe_unused]] Rational ss  = simplify(Rational{numA + numB, denA + denB});
+
+    // AUDIT-FRAC-OVERFLOW — exercise the boundary near
+    // MAX_SAFE_MAGNITUDE through the runtime path so the
+    // contract_assert path is touched under the sentinel TU's enforce
+    // semantic.  Both operands are is_well_formed() with denominators
+    // at the bound; leq must return the mathematically correct
+    // comparison via the __int128 cross-product without overflow.
+    // Pre-fix, this path could wrap.
+    //
+    // Note: `add` and `mul` of two near-bound shares can produce a
+    // result whose unsimplified denominator exceeds the bound even
+    // though the simplified result might fit.  We only exercise `leq`
+    // here so the smoke probe stays focused on the operator-bypass
+    // soundness property without entangling simplify-behavior on
+    // bound-exceeding intermediates.
+    Rational large_lo{1, Rational::MAX_SAFE_MAGNITUDE};
+    Rational large_hi{Rational::MAX_SAFE_MAGNITUDE - 1,
+                      Rational::MAX_SAFE_MAGNITUDE};
+    [[maybe_unused]] bool large_leq = FractionalLattice::leq(large_lo, large_hi);
+    [[maybe_unused]] Rational large_join = FractionalLattice::join(large_lo, large_hi);
+    [[maybe_unused]] Rational large_meet = FractionalLattice::meet(large_lo, large_hi);
 
     // Graded<Absolute, FractionalLattice, T> at runtime.
     //

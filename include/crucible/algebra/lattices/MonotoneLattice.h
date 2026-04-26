@@ -120,7 +120,9 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
 
+#include <cmath>      // std::isnan (constexpr in C++26 — used by NaN guard)
 #include <concepts>
+#include <contracts>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -180,18 +182,42 @@ struct MonotoneLattice {
     using element_type = T;
     using compare_type = Cmp;
 
+    // ── NaN guard (FP only) ──────────────────────────────────────────
+    //
+    // For floating-point T, NaN inputs violate every lattice law (see
+    // file-header CAVEAT).  The user contract is "do not pass NaN", but
+    // the AUDIT-FOUNDATION-2026-04-26 hardening adds a defensive
+    // contract_assert that fires under enforce semantic if NaN ever
+    // reaches a lattice op — turning a silent law violation into a
+    // loud, greppable failure at the call site.  Compiles to nothing
+    // under ignore semantic, so the hot path pays no cost.
+    //
+    // Gated on `std::is_floating_point_v<T>` so integer / strong-id
+    // instantiations get exactly the original code (no extra branch,
+    // no extra include surface).
+    [[nodiscard]] static constexpr bool is_nan_safe(T const& x) noexcept {
+        if constexpr (std::is_floating_point_v<T>) {
+            return !std::isnan(x);
+        } else {
+            return true;
+        }
+    }
+
     // ── Lattice ops (always available) ──────────────────────────────
     //
     // Cmp{}(a, b) is "a strictly less than b".  leq is the negation
     // of the strict inverse.  join/meet are the standard chain max/min
     // expressed via Cmp.
     [[nodiscard]] static constexpr bool leq(T const& a, T const& b) noexcept {
+        contract_assert(is_nan_safe(a) && is_nan_safe(b));
         return !Cmp{}(b, a);
     }
     [[nodiscard]] static constexpr T join(T const& a, T const& b) noexcept {
+        contract_assert(is_nan_safe(a) && is_nan_safe(b));
         return Cmp{}(a, b) ? b : a;  // max under Cmp
     }
     [[nodiscard]] static constexpr T meet(T const& a, T const& b) noexcept {
+        contract_assert(is_nan_safe(a) && is_nan_safe(b));
         return Cmp{}(a, b) ? a : b;  // min under Cmp
     }
 
@@ -336,6 +362,25 @@ static_assert(MonU64Less::leq(0u, 1000u));   // transitivity
 static_assert(MonU64Less::join(100u, 1000u) == 1000u);
 static_assert(MonU64Less::join(0u, MonU64Less::top()) == MonU64Less::top());
 
+// ── AUDIT-FOUNDATION-2026-04-26: NaN guard structural witnesses ─────
+//
+// `is_nan_safe(x)` returns true for finite values, false for NaN, and
+// vacuously true for non-FP T.  Every lattice op contract-asserts
+// `is_nan_safe(a) && is_nan_safe(b)` so passing NaN to leq/join/meet
+// is a contract violation rather than a silent law-violation.  The
+// runtime smoke test exercises the path with non-NaN FP values.
+static_assert(MonU64Less::is_nan_safe(0u));
+static_assert(MonU64Less::is_nan_safe(std::numeric_limits<std::uint64_t>::max()));
+static_assert(MonF64Less::is_nan_safe(0.0));
+static_assert(MonF64Less::is_nan_safe(1.0));
+static_assert(MonF64Less::is_nan_safe(-1.0));
+static_assert(MonF64Less::is_nan_safe(std::numeric_limits<double>::lowest()));
+static_assert(MonF64Less::is_nan_safe(std::numeric_limits<double>::max()));
+static_assert(MonF64Less::is_nan_safe(std::numeric_limits<double>::infinity()));
+static_assert(MonF64Less::is_nan_safe(-std::numeric_limits<double>::infinity()));
+static_assert(!MonF64Less::is_nan_safe(std::numeric_limits<double>::quiet_NaN()));
+static_assert(!MonF64Less::is_nan_safe(std::numeric_limits<double>::signaling_NaN()));
+
 // Diagnostic name.
 static_assert(MonU64Less::name()    == "MonotoneLattice");
 static_assert(MonI32Custom::name()  == "MonotoneLattice");
@@ -406,6 +451,31 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] auto v1 = composed.peek();
     [[maybe_unused]] auto v2 = std::move(rv_comp).consume();
     [[maybe_unused]] auto g2 = rv_widen.grade();
+
+    // ── AUDIT-FOUNDATION-2026-04-26: FP runtime path (NaN guard) ────
+    //
+    // Exercise leq/join/meet on non-NaN floating-point values so the
+    // contract_assert(is_nan_safe(...)) path is touched at runtime
+    // under the sentinel TU's enforce semantic.  Passing NaN here
+    // would correctly trigger the contract handler and abort the
+    // smoke test — proving the guard fires.  We do NOT pass NaN to
+    // avoid aborting the test; the static_asserts above pin the
+    // structural property that is_nan_safe(NaN) == false.
+    double fa = -1.0;
+    double fb = 0.0;
+    double fc = std::numeric_limits<double>::infinity();
+    [[maybe_unused]] bool   fl1 = MonF64Less::leq(fa, fb);
+    [[maybe_unused]] double fj1 = MonF64Less::join(fa, fc);
+    [[maybe_unused]] double fm1 = MonF64Less::meet(fa, fc);
+    [[maybe_unused]] bool   fnan_a = MonF64Less::is_nan_safe(fa);
+    [[maybe_unused]] bool   fnan_b = MonF64Less::is_nan_safe(fb);
+    [[maybe_unused]] bool   fnan_inf = MonF64Less::is_nan_safe(fc);
+
+    // Confirm the guard correctly identifies a NaN at runtime (the
+    // value is constructed but NEVER passed to leq/join/meet — that
+    // would intentionally trip the contract).
+    double fnan = std::nan("");
+    [[maybe_unused]] bool   fnan_fired = !MonF64Less::is_nan_safe(fnan);
 }
 
 }  // namespace detail::monotone_lattice_self_test

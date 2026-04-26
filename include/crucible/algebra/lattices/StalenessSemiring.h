@@ -326,6 +326,56 @@ static_assert(staleness::fresh    == StalenessSemiring::bottom());
 static_assert(staleness::infinite == StalenessSemiring::top());
 static_assert(staleness::at(42)   == StalenessSemiring::element_type{42});
 
+// ── AUDIT-FOUNDATION-2026-04-26: exhaustive saturation-boundary check ─
+//
+// User-flagged concern: does saturating overflow into the ∞ sentinel
+// preserve the tropical-semiring axioms?  Distributivity in
+// particular is delicate: a·(b+c) == (a·b) + (a·c) under (·=sat_add,
+// +=min) requires that saturation commute with min.  An exhaustive
+// triple search over a curated set of finite values + saturation-
+// boundary values + ∞ confirms ALL three semiring laws hold at every
+// triple.  Below: 11 representative witnesses chosen to exercise the
+// boundary explicitly — fresh (0), small finites (1, 5, 100, 1000),
+// near-saturation (UINT64_MAX - 100, -10, -5, -2, -1), and ∞.  11³ =
+// 1331 triples × ~7 axioms (additive ID, multiplicative ID/zero,
+// commutativity, associativities, distributivity) = ~9,300 sub-checks
+// at compile time.  Runs in milliseconds; no per-TU cost at runtime.
+[[nodiscard]] consteval bool exhaustive_saturation_axioms() noexcept {
+    constexpr StalenessSemiring::element_type witnesses[] = {
+        StalenessSemiring::element_type{0},
+        StalenessSemiring::element_type{1},
+        StalenessSemiring::element_type{5},
+        StalenessSemiring::element_type{100},
+        StalenessSemiring::element_type{1000},
+        StalenessSemiring::element_type{
+            std::numeric_limits<std::uint64_t>::max() - 100},
+        StalenessSemiring::element_type{
+            std::numeric_limits<std::uint64_t>::max() - 10},
+        StalenessSemiring::element_type{
+            std::numeric_limits<std::uint64_t>::max() - 5},
+        StalenessSemiring::element_type{
+            std::numeric_limits<std::uint64_t>::max() - 2},
+        StalenessSemiring::element_type{
+            std::numeric_limits<std::uint64_t>::max() - 1},
+        StalenessSemiring::top(),  // ∞ = UINT64_MAX
+    };
+    for (auto a : witnesses) {
+        for (auto b : witnesses) {
+            for (auto c : witnesses) {
+                if (!verify_semiring_axioms_at<StalenessSemiring>(a, b, c)) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+static_assert(exhaustive_saturation_axioms(),
+    "StalenessSemiring's tropical (min, +) semiring axioms must hold at "
+    "every (witness)³ triple including the UINT64_MAX-region saturation "
+    "boundary — failure indicates the saturating add_sat does not "
+    "commute with min, breaking distributivity at the boundary.");
+
 // ── Layout — NOT zero-overhead (dynamic-grade) ──────────────────────
 struct OneByteValue { char c{0}; };
 struct EightByteValue { unsigned long long v{0}; };
