@@ -254,6 +254,47 @@ static_assert(SharedPermission<VerificationTag>::lattice_name() == "FractionalLa
 using TaggedLinear = Tagged<Linear<int>, VerificationTag>;
 static_assert(sizeof(TaggedLinear) == sizeof(int));
 
+// MIGRATE-12-extend + GRADED-CONCEPT-L1: extended cross-composition.
+// These compositions appear in production-code patterns; the
+// harness asserts they instantiate cleanly + preserve sizeof where
+// the regime promises it.
+
+// Tagged<Linear<T>, Source> — provenance over linear resource.
+// Already exercised above; kept as the canonical example.
+
+// Refined<P, Linear<T>>... wait, Refined needs a predicate over T,
+// and Linear<T> isn't directly comparable.  The predicate works on
+// the WRAPPED value, so this composition would require the predicate
+// be invocable on Linear<T>.  Most natural-language predicates aren't.
+// SKIP this composition — not a meaningful pattern.
+
+// Secret<Refined<P, T>> — classified-then-predicate-checked.
+// Production: Cipher accepts a Secret<Refined<aligned, void*>>
+// from the Vessel boundary; the Tagged-Refined sequencing layers
+// classification over validation.
+using SecretRefined = Secret<Refined<positive_local, int>>;
+static_assert(sizeof(SecretRefined) == sizeof(Refined<positive_local, int>));
+static_assert(sizeof(SecretRefined) == sizeof(int));   // double EBO collapse
+
+// Tagged<Stale<T>, Source> — staleness-with-provenance.  Production:
+// async-DiLoCo gradient events carry both a vector clock (TimeOrdered)
+// AND a source tag (Tagged) AND a staleness counter (Stale).  This
+// composition exercises the regime-1 (Tagged) over regime-4 (Stale)
+// nesting — Tagged's substrate type IS Stale<T>, not int.
+using TaggedStale = Tagged<Stale<int>, VerificationTag>;
+// sizeof grows by Stale's grade carrier (uint64_t staleness counter).
+static_assert(sizeof(TaggedStale) >= sizeof(Stale<int>));
+
+// Linear<SealedRefined<P, T>> — owned proof-token.  Production:
+// session-boundary handles that carry a sealed-refined value with
+// linear ownership semantics.  Both wrappers are regime-1 and
+// EBO-collapse — the composed sizeof is just sizeof(T).
+using LinearSealed = Linear<SealedRefined<positive_local, int>>;
+static_assert(sizeof(LinearSealed) == sizeof(int));
+
+// SealedRefined<P, Linear<T>> would require a predicate invocable
+// on Linear<T> — same SKIP rationale as Refined<P, Linear<T>>.
+
 // ── COVERAGE MATRIX — runtime API parity (smoke checks) ────────────
 //
 // Confirm peek / consume / construction round-trip for the four
