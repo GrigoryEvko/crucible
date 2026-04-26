@@ -267,6 +267,48 @@ public:
         return TimeOrdered{std::move(impl_).consume(), advanced};
     }
 
+    // tick(p) — synonym for advance_at(p) using the
+    // distributed-systems-vocabulary verb.  "I observed a local
+    // event; tick the clock at my slot."  Both names live; choose
+    // by call-site readability.  No semantic difference.
+    [[nodiscard]] constexpr TimeOrdered tick(std::size_t p) const&
+        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires std::copy_constructible<T>
+        pre (p < N)
+    {
+        return advance_at(p);
+    }
+
+    [[nodiscard]] constexpr TimeOrdered tick(std::size_t p) &&
+        noexcept(std::is_nothrow_move_constructible_v<T>)
+        pre (p < N)
+    {
+        return std::move(*this).advance_at(p);
+    }
+
+    // with_clock(new_clock) — produces a new TimeOrdered with the
+    // SAME payload but a different clock.  Use case (§4 ReplayLog):
+    // peer-state notification — "I learned that peer X is now at
+    // clock C; update my view of X without changing my payload."
+    //
+    // Unlike advance_at / tick / merge, this does NOT enforce any
+    // monotonicity relationship between the new clock and *this's
+    // clock.  The caller is responsible for whatever protocol-
+    // discipline applies (typically: only call this with a clock
+    // that's known to be ≥ this->clock() under the lattice's leq).
+    [[nodiscard]] constexpr TimeOrdered with_clock(clock_t new_clock) const&
+        noexcept(std::is_nothrow_copy_constructible_v<T>)
+        requires std::copy_constructible<T>
+    {
+        return TimeOrdered{this->peek(), new_clock};
+    }
+
+    [[nodiscard]] constexpr TimeOrdered with_clock(clock_t new_clock) &&
+        noexcept(std::is_nothrow_move_constructible_v<T>)
+    {
+        return TimeOrdered{std::move(impl_).consume(), new_clock};
+    }
+
     // Receive-event advancement: process `me` receives an event with
     // the given clock; result clock = pointwise-max(this, received) +
     // bump slot me.  Composite of join + successor_at, encapsulated
@@ -403,6 +445,19 @@ static_assert(evt_a_after.peek()  == 10);
 
 // Successor strictly happens after predecessor.
 static_assert(evt_a.happens_before(evt_a_after));
+
+// tick(p) — synonym for advance_at(p), confirms semantic identity.
+inline constexpr TO4 evt_a_ticked = evt_a.tick(0);
+static_assert(evt_a_ticked.clock() == evt_a_after.clock());
+static_assert(evt_a_ticked.peek()  == evt_a.peek());
+static_assert(evt_a.happens_before(evt_a_ticked));
+
+// with_clock — same payload, different clock.  No monotonicity
+// constraint — caller responsibility.  Used for peer-state
+// notifications: "rebind my view of this value to a new clock."
+inline constexpr TO4 evt_a_relocated = evt_a.with_clock(HB4::element_type{{5, 5, 5, 5}});
+static_assert(evt_a_relocated.peek()  == evt_a.peek());
+static_assert(evt_a_relocated.clock() == HB4::element_type{{5, 5, 5, 5}});
 
 // merge: receive evt_y at process 0 — pointwise max of clocks + bump
 // slot 0.  Result: max({1,0,0,0}, {0,2,0,1}) = {1,2,0,1}, then bump 0
