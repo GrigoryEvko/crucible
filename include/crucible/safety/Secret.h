@@ -41,6 +41,7 @@
 #include <concepts>
 #include <cstring>
 #include <memory>      // std::addressof
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -189,6 +190,25 @@ public:
         volatile auto* p = reinterpret_cast<volatile unsigned char*>(
             std::addressof(impl_.peek_mut()));
         for (std::size_t i = 0; i < sizeof(T); ++i) p[i] = 0;
+    }
+
+    // ── Diagnostic names (forwarded from Graded substrate) ─────────
+    //
+    // value_type_name(): T's display string via reflection (P2996R13).
+    //
+    // lattice_name(): "ConfLattice::At<Secret>" — the confidentiality
+    // comonad lattice's secret tier.  Distinct from the runtime
+    // declassify<Policy> audit trail; this is purely for diagnostic
+    // emission ("which lattice is this Secret graded by?").
+    //
+    // Audit-Tier-2 cross-wrapper parity — every migrated wrapper
+    // ships these two consteval forwarders.  See Linear.h for
+    // full rationale.
+    [[nodiscard]] static consteval std::string_view value_type_name() noexcept {
+        return graded_type::value_type_name();
+    }
+    [[nodiscard]] static consteval std::string_view lattice_name() noexcept {
+        return graded_type::lattice_name();
     }
 };
 
