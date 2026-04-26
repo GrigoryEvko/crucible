@@ -261,52 +261,15 @@ static_assert(std::is_empty_v<tolerance::Fp32Tier::element_type>);
 static_assert(std::is_empty_v<tolerance::Fp64Tier::element_type>);
 static_assert(std::is_empty_v<tolerance::BitexactTier::element_type>);
 
-// EXHAUSTIVE lattice-axiom coverage over (Tolerance)³ = 343 triples.
-// Reflection drives the loop so a future tier added to the enum
-// auto-extends the coverage at compile time.
-[[nodiscard]] consteval bool exhaustive_lattice_check() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Tolerance));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto ea : enumerators) {
-        template for (constexpr auto eb : enumerators) {
-            template for (constexpr auto ec : enumerators) {
-                if (!verify_bounded_lattice_axioms_at<ToleranceLattice>(
-                        [:ea:], [:eb:], [:ec:])) {
-                    return false;
-                }
-            }
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(exhaustive_lattice_check(),
+// EXHAUSTIVE lattice-axiom + distributivity coverage over (Tolerance)³
+// = 343 triples each.  Both verifiers extracted into ChainLattice.h
+// (audit Tier-2 dedup) — adding a new Tolerance tier auto-extends
+// coverage with no per-lattice code change.
+static_assert(verify_chain_lattice_exhaustive<ToleranceLattice>(),
     "ToleranceLattice's chain-order lattice axioms must hold at every "
     "(Tolerance)³ triple — failure indicates a defect in leq/join/meet "
     "or in the underlying enum encoding.");
-
-// Distributive — chain orders are trivially distributive.
-[[nodiscard]] consteval bool exhaustive_distributive_check() noexcept {
-    static constexpr auto enumerators =
-        std::define_static_array(std::meta::enumerators_of(^^Tolerance));
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wshadow"
-    template for (constexpr auto ea : enumerators) {
-        template for (constexpr auto eb : enumerators) {
-            template for (constexpr auto ec : enumerators) {
-                if (!verify_distributive_lattice<ToleranceLattice>(
-                        [:ea:], [:eb:], [:ec:])) {
-                    return false;
-                }
-            }
-        }
-    }
-#pragma GCC diagnostic pop
-    return true;
-}
-static_assert(exhaustive_distributive_check(),
+static_assert(verify_chain_lattice_distributive_exhaustive<ToleranceLattice>(),
     "ToleranceLattice's chain order must satisfy distributivity at "
     "every (Tolerance)³ triple — a chain order always does, so failure "
     "would indicate a defect in join or meet.");
