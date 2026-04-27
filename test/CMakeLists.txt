@@ -335,6 +335,7 @@ crucible_test(test_topology)
 crucible_test(test_parallelism_cost_model)
 crucible_test(test_permissioned_snapshot)
 crucible_test(test_permissioned_mpsc_channel)
+crucible_test(test_permissioned_mpmc_channel)
 crucible_test(test_concurrency_collision_fuzzer)
 crucible_test(test_region_cache)
 crucible_test(test_numerical_recipe)
@@ -1320,3 +1321,24 @@ crucible_neg_compile_test(neg_mpsc_producer_try_pop
 #     the = delete reason string.
 crucible_neg_compile_test(neg_mpsc_consumer_copy
     "ConsumerHandle owns the Consumer Permission")
+
+# ── FOUND-A09 — PermissionedMpmcChannel role-discrimination tests ──
+#
+# Mirror of the MPSC neg-compile suite, plus a copy-attempt witness
+# for the consumer side (since MPMC's consumer is fractional via
+# Pool, the copy-rejection is the SharedPermissionGuard's rejection
+# rather than Permission's linear rejection).
+
+# (a) Consumer cannot push.  GCC-WRAPPER-TEXT.
+crucible_neg_compile_test(neg_mpmc_consumer_try_push
+    "has no member named.*try_push")
+
+# (b) Producer cannot pop.  GCC-WRAPPER-TEXT.
+crucible_neg_compile_test(neg_mpmc_producer_try_pop
+    "has no member named.*try_pop")
+
+# (c) ConsumerHandle is non-copyable — copy would duplicate the
+#     pool refcount share, miscounting outstanding consumers.
+#     FRAMEWORK-CONTROLLED via the = delete reason string.
+crucible_neg_compile_test(neg_mpmc_consumer_copy
+    "ConsumerHandle owns a consumer-pool refcount share")
