@@ -93,6 +93,9 @@ concept SpscValue =
 template <SpscValue T, std::size_t Capacity>
 class SpscRing : public safety::Pinned<SpscRing<T, Capacity>> {
 public:
+    using value_type = T;
+    static constexpr std::size_t channel_capacity = Capacity;
+
     static_assert(std::has_single_bit(Capacity),
                   "Capacity must be a power of two");
     static_assert(Capacity > 0,

@@ -113,6 +113,9 @@ concept RingValue =
 template <RingValue T, std::size_t Capacity>
 class MpscRing : public safety::Pinned<MpscRing<T, Capacity>> {
 public:
+    using value_type = T;
+    static constexpr std::size_t channel_capacity = Capacity;
+
     static_assert(std::has_single_bit(Capacity),
                   "Capacity must be a power of two");
     static_assert(Capacity >= 1,
@@ -329,6 +332,19 @@ public:
         const std::size_t bit_idx  = cell_idx & 63;
         const std::uint64_t mask   = std::uint64_t{1} << bit_idx;
         return (ready_[word_idx].load(std::memory_order_acquire) & mask) == 0;
+    }
+
+    // ── size_approx (any thread, NOT exact) ───────────────────────
+    //
+    // head - tail snapshot.  Both atomics are read with acquire to
+    // synchronize-with the producer's release-CAS on head and the
+    // consumer's release-store on tail.  Snapshot may briefly show
+    // a value > capacity if observed mid-CAS-retry; clamp at Capacity.
+    [[nodiscard]] std::size_t size_approx() const noexcept {
+        const std::uint64_t h = head_.get();
+        const std::uint64_t t = tail_.get();
+        const std::uint64_t d = (h > t) ? (h - t) : 0;
+        return d > Capacity ? Capacity : static_cast<std::size_t>(d);
     }
 
     [[nodiscard]] static constexpr std::size_t capacity() noexcept {
