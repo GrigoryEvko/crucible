@@ -53,6 +53,7 @@ Five regimes (full taxonomy in `algebra/GradedTrait.h` doc-block): **regime-1** 
 - `Permission<Tag>` + `permission_fork` — CSL frame-rule linear tokens (THREADING.md).
 - `Session<Proto>` — type-state binary and MPST session types in `sessions/` (Honda 1998 / HYC 2008 / Gay-Hole 2005 / BSYZ22 crash-stop).
 - `PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>` (`sessions/PermissionedSession.h`, FOUND-C v1) — threads a CSL `PermSet<Tags...>` through session-protocol position; `Send<Transferable<T, X>, K>` consumes `Permission<X>` from PS, `Recv<Transferable<T, X>, K>` produces it, `close()` requires `PS == EmptyPermSet`. Loop body PS-balance + branch terminal PS convergence enforced statically.
+- `producer_session<Channel>(handle&)` / `consumer_session<Channel>(handle&)` (`sessions/SpscSession.h`) — typed-session façade over `PermissionedSpscChannel`. First production-shape wiring of FOUND-C v1; covers TraceRing / MetaLog / CNTP-style streaming SPSC. EmptyPermSet by design (plain payloads, no wire-permission transfer); richer wirings use `establish_permissioned` directly with Transferable/Borrowed/Returned payloads.
 - `ScopedView<C, Tag>` — lifetime-bounded borrow for non-consuming inspection.
 - `Machine<States>` — type-indexed state machines; illegal transitions are compile errors.
 - `OwnedRegion<T, Tag>` — arena-backed exclusive region.

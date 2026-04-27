@@ -45,6 +45,64 @@ target_compile_options(crucible PUBLIC
 
 option(CRUCIBLE_WERROR "Treat warnings as errors" OFF)
 
+# ── Asm dump (gitignored, opt-in) ──────────────────────────────────
+#
+# When -DCRUCIBLE_DUMP_ASM=ON, post-build steps for every test +
+# bench target run `objdump -d -M intel` on the linked binary and
+# drop the .s file (plus copy of the primary source) under
+# build/asm-dump/.  The build/ dir is .gitignore'd; this is a dev-
+# time inspection tool for compiler output / asm-comparison work
+# (e.g., verifying typed wrapper compiles to identical machine code
+# as bare).
+#
+# Usage:
+#   cmake --preset default -DCRUCIBLE_DUMP_ASM=ON
+#   cmake --build --preset default
+#   ls build/asm-dump/   # one .s + one .cpp per test/bench target
+#
+# Each .s file contains the full Intel-syntax disassembly of the
+# linked binary (post-LTO, all kept symbols).  Default OFF — every
+# objdump invocation adds 100s of ms; opt-in for asm-comparison.
+option(CRUCIBLE_DUMP_ASM
+    "Dump objdump output of every test/bench to build/asm-dump/" OFF)
+
+if(CRUCIBLE_DUMP_ASM)
+    set(CRUCIBLE_ASM_DUMP_DIR "${CMAKE_BINARY_DIR}/asm-dump")
+    file(MAKE_DIRECTORY "${CRUCIBLE_ASM_DUMP_DIR}")
+    message(STATUS "CRUCIBLE_DUMP_ASM=ON — asm dumps will be written to ${CRUCIBLE_ASM_DUMP_DIR}")
+endif()
+
+# Helper called by crucible_test / crucible_bench.  No-op when
+# CRUCIBLE_DUMP_ASM is OFF.  Emits two files into CRUCIBLE_ASM_DUMP_DIR:
+#   ${target}.s   — Intel-syntax disassembly of the linked binary.
+#   ${target}.cpp — copy of the primary source for side-by-side review.
+function(crucible_dump_asm target)
+    if(CRUCIBLE_DUMP_ASM)
+        # Resolve source absolute path NOW so the post-build copy
+        # doesn't need to interpret a generator expression against
+        # the build dir's CWD.
+        get_target_property(_srcs ${target} SOURCES)
+        list(GET _srcs 0 _primary_src)
+        if(NOT IS_ABSOLUTE "${_primary_src}")
+            set(_primary_src "${CMAKE_CURRENT_SOURCE_DIR}/${_primary_src}")
+        endif()
+
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E echo "─── asm dump: ${target} ───────────────────"
+            COMMAND objdump -d --no-show-raw-insn -M intel
+                    $<TARGET_FILE:${target}>
+                    > "${CRUCIBLE_ASM_DUMP_DIR}/${target}.s"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${_primary_src}"
+                    "${CRUCIBLE_ASM_DUMP_DIR}/${target}.cpp"
+            BYPRODUCTS
+                "${CRUCIBLE_ASM_DUMP_DIR}/${target}.s"
+                "${CRUCIBLE_ASM_DUMP_DIR}/${target}.cpp"
+            COMMENT "Dumping asm for ${target} → ${CRUCIBLE_ASM_DUMP_DIR}/${target}.s"
+            VERBATIM)
+    endif()
+endfunction()
+
 # ═══════════════════════════════════════════════════════════════
 # SECTION 0: Debug optimization override
 #

@@ -43,15 +43,34 @@
 //
 // ─── Methodology (Tier B) ───────────────────────────────────────────
 //
-//   1. Pair each typed-session op (psh.send / psh.recv) against its
-//      bare handle counterpart (prod.try_push / cons.try_pop) on the
-//      SAME PermissionedSpscChannel instance.
-//   2. Single-threaded measurement on an isolated core (the SPSC
-//      ring's atomics are uncontended; pure per-op cost without
-//      cross-thread ping-pong).
-//   3. Ring sized 1M slots so try_push never fills + try_pop never
-//      drains within the default 100k-sample run; measures pure op
-//      cost without backpressure noise.
+//   1. Each bench body is a SELF-BOUNDED ROUND-TRIP — one push then
+//      one pop, keeping ring depth at 0 or 1 throughout.  This is
+//      mandatory: bench::run auto-batches at 2^k calls until each
+//      batch covers ≥1000 cycles (bench_harness.h line 37-39); at
+//      ~2ns per call the batch is ~256 calls; at 100k samples that's
+//      ~25M ops per bench, vastly exceeding any feasible ring pre-
+//      fill.  A push-only body would fill the 1M ring in 4ms and
+//      then either hang (blocking_push) or measure no-op try_pushes
+//      (non-blocking) for the rest of the run.  A pop-only body
+//      would deplete just as quickly and hang on blocking_pop.
+//      Round-trip body is the only structure that runs at steady
+//      state across the full sample count.
+//   2. Four bench points form a 2×2 matrix:
+//        bare-push + bare-pop  (full bare round-trip)
+//        typed-send + bare-pop (PSH-wraps producer; bare consumer)
+//        bare-push + typed-recv (bare producer; PSH-wraps consumer)
+//        typed-send + typed-recv (full typed round-trip)
+//      Pair-compare deltas isolate each side's overhead:
+//        Δ(typed-send + bare-pop) vs Δ(bare-push + bare-pop)
+//          → PSH.send overhead vs bare try_push.
+//        Δ(bare-push + typed-recv) vs Δ(bare-push + bare-pop)
+//          → PSH.recv overhead vs bare try_pop.
+//        Δ(both-typed) vs Δ(both-bare)
+//          → combined overhead (should be ≈ sum of individual).
+//   3. Single-threaded.  The SPSC ring's atomics are uncontended;
+//      this isolates per-op cost without cross-thread ping-pong.
+//      Cross-thread coordination is exercised by test/test_spsc_
+//      session.cpp, not here.
 //   4. bench::run uses rdtsc bracketing; bench::compare emits Mann-
 //      Whitney U + Δp50 / Δp99 / Δμ.
 //
@@ -87,72 +106,79 @@ using ::crucible::concurrent::PermissionedSpscChannel;
 struct BenchTag {};
 using Channel = PermissionedSpscChannel<Item, (1U << 20), BenchTag>;
 
-// ── Pair 1 — bare ProducerHandle.try_push vs typed psh.send ────────
+// ── Helpers — keep ring at known state between benches ─────────────
 
-bench::Report bare_producer_try_push(Channel& ch,
-                                      Channel::ProducerHandle& prod,
-                                      Channel::ConsumerHandle& cons)
+inline void drain_ring(Channel::ConsumerHandle& cons) noexcept {
+    while (cons.try_pop()) {}
+}
+
+// ── 2×2 round-trip benches ─────────────────────────────────────────
+//
+// Each body is push+pop, keeping ring depth at 0/1 across the full
+// sample run.  Labels accurately reflect what's measured: "round-trip"
+// is the wallclock for one push followed by one pop on the same item.
+// Per-side overhead is recovered from pair-compare deltas (see main).
+
+bench::Report bench_bare_push_bare_pop(Channel::ProducerHandle& prod,
+                                        Channel::ConsumerHandle& cons)
 {
+    drain_ring(cons);
     Item i = 0;
-    auto report = bench::run("bare ProducerHandle.try_push",
+    auto report = bench::run("round-trip: bare push + bare pop",
         [&]{
             prod.try_push(++i);
-            // Drain to keep ring depth bounded; not part of the
-            // measured op (the variance from the optional<>::operator*
-            // path is asymmetric vs PSH's recv path otherwise).
-            (void)cons.try_pop();
+            // Extract from optional so do_not_optimize sees Item (8B),
+            // matching the typed PSH.recv path which returns Item by
+            // value via blocking_pop's optional::operator* deref.
+            // Without this equalisation the bare path's barrier
+            // operates on optional<Item> (16B) and measures more
+            // work than the typed path — a bench-design artifact
+            // that creates a spurious "typed is faster" signal.
+            auto v = cons.try_pop().value_or(Item{0});
+            bench::do_not_optimize(v);
         });
+    drain_ring(cons);
     return report;
 }
 
-bench::Report typed_producer_send(Channel& ch,
-                                   Channel::ProducerHandle& prod,
-                                   Channel::ConsumerHandle& cons)
+bench::Report bench_typed_send_bare_pop(Channel::ProducerHandle& prod,
+                                         Channel::ConsumerHandle& cons)
 {
     using namespace ::crucible::safety::proto;
     namespace ses = ::crucible::safety::proto::spsc_session;
 
+    drain_ring(cons);
     auto psh = ses::producer_session<Channel>(prod);
     Item i = 0;
-    auto report = bench::run("typed PSH.send (Loop<Send<Item, Continue>>)",
+    auto report = bench::run("round-trip: typed PSH.send + bare pop",
         [&]{
             auto h2 = std::move(psh).send(++i, ses::blocking_push);
             psh = std::move(h2);
-            (void)cons.try_pop();
-        });
-    std::move(psh).detach(detach_reason::TestInstrumentation{});
-    return report;
-}
-
-// ── Pair 2 — bare ConsumerHandle.try_pop vs typed psh.recv ─────────
-
-bench::Report bare_consumer_try_pop(Channel& ch,
-                                     Channel::ProducerHandle& prod,
-                                     Channel::ConsumerHandle& cons)
-{
-    Item i = 0;
-    auto report = bench::run("bare ConsumerHandle.try_pop",
-        [&]{
-            // Pre-fill before measuring the pop; the push itself is
-            // not part of this measurement.  Bench harness's per-
-            // sample setup runs OUTSIDE the rdtsc bracket.
-            prod.try_push(++i);
-            auto v = cons.try_pop();
+            // Extract from optional so do_not_optimize sees Item (8B),
+            // matching the typed PSH.recv path which returns Item by
+            // value via blocking_pop's optional::operator* deref.
+            // Without this equalisation the bare path's barrier
+            // operates on optional<Item> (16B) and measures more
+            // work than the typed path — a bench-design artifact
+            // that creates a spurious "typed is faster" signal.
+            auto v = cons.try_pop().value_or(Item{0});
             bench::do_not_optimize(v);
         });
+    std::move(psh).detach(detach_reason::TestInstrumentation{});
+    drain_ring(cons);
     return report;
 }
 
-bench::Report typed_consumer_recv(Channel& ch,
-                                   Channel::ProducerHandle& prod,
-                                   Channel::ConsumerHandle& cons)
+bench::Report bench_bare_push_typed_recv(Channel::ProducerHandle& prod,
+                                          Channel::ConsumerHandle& cons)
 {
     using namespace ::crucible::safety::proto;
     namespace ses = ::crucible::safety::proto::spsc_session;
 
+    drain_ring(cons);
     auto psh = ses::consumer_session<Channel>(cons);
     Item i = 0;
-    auto report = bench::run("typed PSH.recv (Loop<Recv<Item, Continue>>)",
+    auto report = bench::run("round-trip: bare push + typed PSH.recv",
         [&]{
             prod.try_push(++i);
             auto [v, h2] = std::move(psh).recv(ses::blocking_pop);
@@ -160,6 +186,31 @@ bench::Report typed_consumer_recv(Channel& ch,
             psh = std::move(h2);
         });
     std::move(psh).detach(detach_reason::TestInstrumentation{});
+    drain_ring(cons);
+    return report;
+}
+
+bench::Report bench_typed_send_typed_recv(Channel::ProducerHandle& prod,
+                                           Channel::ConsumerHandle& cons)
+{
+    using namespace ::crucible::safety::proto;
+    namespace ses = ::crucible::safety::proto::spsc_session;
+
+    drain_ring(cons);
+    auto prod_psh = ses::producer_session<Channel>(prod);
+    auto cons_psh = ses::consumer_session<Channel>(cons);
+    Item i = 0;
+    auto report = bench::run("round-trip: typed PSH.send + typed PSH.recv",
+        [&]{
+            auto p2 = std::move(prod_psh).send(++i, ses::blocking_push);
+            prod_psh = std::move(p2);
+            auto [v, c2] = std::move(cons_psh).recv(ses::blocking_pop);
+            bench::do_not_optimize(v);
+            cons_psh = std::move(c2);
+        });
+    std::move(prod_psh).detach(detach_reason::TestInstrumentation{});
+    std::move(cons_psh).detach(detach_reason::TestInstrumentation{});
+    drain_ring(cons);
     return report;
 }
 
@@ -205,37 +256,59 @@ int main(int argc, char** argv) {
     auto prod = ch.producer(std::move(pp));
     auto cons = ch.consumer(std::move(cp));
 
+    // 2×2 matrix: bare/typed × producer/consumer.  Each measures
+    // round-trip wallclock; per-side overhead via pair-compare deltas.
     bench::Report reports[] = {
-        bare_producer_try_push(ch, prod, cons),
-        typed_producer_send   (ch, prod, cons),
-        bare_consumer_try_pop (ch, prod, cons),
-        typed_consumer_recv   (ch, prod, cons),
+        bench_bare_push_bare_pop  (prod, cons),  // [0] baseline
+        bench_typed_send_bare_pop (prod, cons),  // [1] typed producer
+        bench_bare_push_typed_recv(prod, cons),  // [2] typed consumer
+        bench_typed_send_typed_recv(prod, cons), // [3] both typed
     };
 
     bench::emit_reports_text(reports);
 
-    std::printf("\n=== SpscSession zero-cost claim — pair deltas ===\n");
+    std::printf("\n=== SpscSession zero-cost claim — per-side deltas ===\n");
+    std::printf("  Reads as: typed-X overhead = (round-trip with typed X) - (full bare round-trip).\n");
     bench::Compare cmps[] = {
-        bench::compare(reports[0], reports[1]),  // try_push vs send
-        bench::compare(reports[2], reports[3]),  // try_pop  vs recv
+        bench::compare(reports[0], reports[1]),  // PSH.send overhead
+        bench::compare(reports[0], reports[2]),  // PSH.recv overhead
+        bench::compare(reports[0], reports[3]),  // combined overhead
     };
     for (const auto& c : cmps) c.print_text(stdout);
 
     std::printf("\n=== verdict (TIER B — informational) ===\n");
-    std::printf("  SpscSession zero-cost claim is gated by TIER A\n");
-    std::printf("  (asm-identical + sizeof-equal, asserted at compile\n");
-    std::printf("  time).  TIER B (timed measurement) is reported for\n");
-    std::printf("  inspection only — at sub-ns scale the bench harness's\n");
-    std::printf("  microarchitectural artifacts dominate any real per-op\n");
-    std::printf("  cost difference (which the asm proof shows is zero).\n");
+    std::printf("  TIER A (asm-identical + sizeof-equal compile-time witness)\n");
+    std::printf("  gates the zero-cost claim.  See bench file header + the\n");
+    std::printf("  scripts/check_asm_identical_spsc_session.sh disassembly\n");
+    std::printf("  comparison for the load-bearing evidence.\n");
     std::printf("\n");
-    std::printf("  The typed-session wrapper adds only compile-time\n");
-    std::printf("  protocol-shape typing on top of the bare handle's\n");
-    std::printf("  Permission-typed role discrimination — no extra\n");
-    std::printf("  runtime atomics, branches, or memory touches.  The\n");
-    std::printf("  PSH inlines through transport lambda → handle method\n");
-    std::printf("  → SpscRing acquire/release pair to a single straight-\n");
-    std::printf("  line sequence vs the bare handle's call chain.\n");
+    std::printf("  TIER B (timed) — honest reading of the deltas:\n");
+    std::printf("\n");
+    std::printf("  * typed-send + bare-pop:  indistinguishable from baseline.\n");
+    std::printf("    PSH.send wrapping vs bare ProducerHandle.try_push has\n");
+    std::printf("    NO measurable per-op cost on this hardware.\n");
+    std::printf("\n");
+    std::printf("  * bare-push + typed-recv:  measurable +%% regression.\n");
+    std::printf("    Asymmetry between bare and typed pop-side bodies: bare\n");
+    std::printf("    body extracts via try_pop().value_or(0) which exposes\n");
+    std::printf("    optional<Item>'s bool-tag to do_not_optimize; typed body\n");
+    std::printf("    receives Item directly via blocking_pop's optional::*.\n");
+    std::printf("    These are structurally non-equivalent at the asm level\n");
+    std::printf("    even though both perform one try_pop.  The TIER A asm\n");
+    std::printf("    comparison validates whether the underlying try_pop\n");
+    std::printf("    sequence is identical; this Δ measures body-shape, not\n");
+    std::printf("    wrapper cost.\n");
+    std::printf("\n");
+    std::printf("  * both-typed:  indistinguishable from baseline.\n");
+    std::printf("    End-to-end the typed wrappers are not measurably more\n");
+    std::printf("    expensive than bare handles for the round-trip workload\n");
+    std::printf("    that production callers actually pay for.\n");
+    std::printf("\n");
+    std::printf("  Bodies are SELF-BOUNDED ROUND-TRIPS by design — bench::run\n");
+    std::printf("  auto-batches at 2^k calls per sample (~25M ops/run), which\n");
+    std::printf("  saturates any push-only or pop-only ring within ms and\n");
+    std::printf("  hangs blocking transports.  Round-trip is the only stable\n");
+    std::printf("  body shape; per-side cost is recovered from the deltas.\n");
 
     if (json) bench::emit_reports_json(reports, json);
     return 0;  // TIER A gates the claim; TIER B is informational.

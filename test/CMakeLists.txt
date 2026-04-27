@@ -268,6 +268,9 @@ function(crucible_test name)
       ENVIRONMENT
         "TSAN_OPTIONS=suppressions=${CMAKE_CURRENT_SOURCE_DIR}/tsan-suppressions.txt:halt_on_error=1")
   endif()
+
+  # Asm dump (gitignored, opt-in via -DCRUCIBLE_DUMP_ASM=ON).
+  crucible_dump_asm(${name})
 endfunction()
 
 crucible_test(test_safety)

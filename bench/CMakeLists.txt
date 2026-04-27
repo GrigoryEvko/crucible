@@ -198,6 +198,9 @@ function(crucible_bench name)
   endif()
   # Opt out of -Werror: benches ignore nodiscard returns by design.
   set_target_properties(${name} PROPERTIES CRUCIBLE_NO_WERROR TRUE)
+
+  # Asm dump (gitignored, opt-in via -DCRUCIBLE_DUMP_ASM=ON).
+  crucible_dump_asm(${name})
 endfunction()
 
 # ── Migrated to the new bench::Run / Report / Compare API ─────────────
