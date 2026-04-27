@@ -98,6 +98,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <type_traits>
 
 namespace crucible::concurrent {
@@ -216,6 +217,159 @@ public:
         cell->data = item;
         cell->sequence.store(pos + 1, std::memory_order_release);
         return true;
+    }
+
+    // ── try_push_batch (any producer) ─────────────────────────────
+    //
+    // Claim N consecutive cells in ONE CAS, then publish data + cell
+    // sequences via pure stores.  Per-batch atomic cost: 1 CAS + 1
+    // sequence-load.  Per-item cost amortizes toward the L1d/L2 store-
+    // buffer floor.
+    //
+    // Algorithm:
+    //
+    //   1. Read head_ → pos (relaxed; will validate via CAS).
+    //
+    //   2. Read cell[(pos + N - 1) & MASK].sequence (acquire) — the
+    //      LAST cell in the proposed batch.  Single consumer drains
+    //      cells in monotonic order, so if the LAST cell is ready
+    //      (sequence == pos + N - 1), every earlier cell is also
+    //      ready (consumer reached at least pos + N - capacity).
+    //      One acquire-load suffices to validate the whole batch.
+    //
+    //   3. CAS head_ from pos to pos + N — claims all N cells in one
+    //      atomic.  Any other producer's load of head_ now sees pos+N,
+    //      they cannot claim cells in [pos, pos+N).  The consumer has
+    //      not yet seen any cell.sequence advance; cells remain
+    //      "not yet ready" from consumer's perspective.
+    //
+    //   4. For i in 0..N-1: write cell[(pos + i) & MASK].data = items[i].
+    //      Pure non-atomic stores — this producer exclusively owns these
+    //      cells until step 5 publishes them.  No false sharing with
+    //      other producers (no one else can write to these cells); no
+    //      contention with consumer (consumer can't read until cell.
+    //      sequence advances).  Pure memcpy through L1d store buffer.
+    //
+    //   5. For i in 0..N-1: cell[(pos+i) & MASK].sequence.store(
+    //          pos + i + 1, release) — publishes cell to consumer.
+    //      On x86, release-store is a plain MOV (TSO gives release
+    //      semantics free); on ARM, STLR (single instruction).  No
+    //      atomic-RMW per cell — just N stores.
+    //
+    // Returns the number of items pushed (N on success, 0 on full).
+    // Either ALL items push or NONE — no partial batches.  Caller's
+    // span is unaffected on failure (no partial fill).
+    //
+    // Cost model:
+    //   uncontended:  1 CAS + 1 acq-load + N data stores + N seq
+    //                 release-stores = ~5 cycles + 2N stores
+    //   contended:    CAS retries amortized across N items
+    //
+    // Constraints:
+    //   * N must satisfy N ≤ Capacity (else batch could never fit)
+    //   * items.size() ≤ Capacity is checked at runtime; oversized
+    //     spans return 0 immediately.
+
+    [[nodiscard, gnu::hot]] std::size_t try_push_batch(
+        std::span<const T> items) noexcept {
+        const std::size_t N = items.size();
+        if (N == 0) return 0;
+        if (N > Capacity) [[unlikely]] return 0;
+
+        for (;;) {
+            const std::uint64_t pos = head_.peek_relaxed();
+
+            // Check the LAST cell in the proposed batch — sequential
+            // consumer drain means LAST-ready ⇒ all earlier cells ready.
+            const std::uint64_t last_idx = pos + N - 1;
+            Cell& last_cell = buffer_[last_idx & MASK];
+            const std::uint64_t last_seq = last_cell.sequence.get();  // acquire
+            const std::int64_t diff =
+                static_cast<std::int64_t>(last_seq) -
+                static_cast<std::int64_t>(last_idx);
+
+            if (diff < 0) {
+                // Cell sequence still at older round — consumer hasn't
+                // drained enough.  Queue is "full" relative to N.
+                return 0;
+            }
+            if (diff > 0) {
+                // Another producer has already advanced past our pos.
+                // Reload head and retry.
+                continue;
+            }
+
+            // Atomic claim: advance head by N.  Monotonic CAS: pre
+            // (pos < pos + N) holds since N > 0.  Weak CAS is fine —
+            // spurious failure just retries.
+            std::uint64_t expected = pos;
+            if (!head_.compare_exchange_advance_weak(expected, pos + N,
+                    std::memory_order_relaxed,
+                    std::memory_order_relaxed)) {
+                continue;
+            }
+
+            // We own cells [pos, pos+N).  Publish via pure stores.
+            for (std::size_t i = 0; i < N; ++i) {
+                Cell& c = buffer_[(pos + i) & MASK];
+                c.data = items[i];
+                // Release-store on cell.sequence publishes the data
+                // write above to the consumer's acquire-load in
+                // try_pop / try_pop_batch.  Forward-monotonic
+                // (sequence advances by 1 per round).
+                c.sequence.store(pos + i + 1, std::memory_order_release);
+            }
+            return N;
+        }
+    }
+
+    // ── try_pop_batch (single consumer ONLY) ──────────────────────
+    //
+    // Drain up to N cells in one call.  Single consumer means tail_ is
+    // exclusively owned — no atomic ticket claim needed.  Per-item
+    // cost: 1 acquire-load on cell.sequence + 1 data read + 1 release-
+    // store on cell.sequence.  No CAS, no FAA.
+    //
+    // Returns the number of items popped (≤ items.size(); 0 iff queue
+    // empty at the moment of the first cell check).  Items written into
+    // out[0..return-1] in FIFO order.
+    //
+    // Caller MUST guarantee single-consumer (no concurrent try_pop or
+    // try_pop_batch).
+
+    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(
+        std::span<T> out) noexcept {
+        const std::size_t cap = out.size();
+        if (cap == 0) return 0;
+
+        const std::uint64_t pos0 = tail_.peek_relaxed();
+        std::size_t n = 0;
+
+        for (; n < cap; ++n) {
+            const std::uint64_t pos = pos0 + n;
+            Cell& cell = buffer_[pos & MASK];
+            const std::uint64_t seq = cell.sequence.get();  // acquire
+            const std::int64_t diff =
+                static_cast<std::int64_t>(seq) -
+                static_cast<std::int64_t>(pos + 1);
+
+            if (diff != 0) {
+                // Producer hasn't published cell at pos yet (diff < 0)
+                // or in an inconsistent future state (diff > 0, won't
+                // happen with sequential consumer).  Stop the batch.
+                break;
+            }
+
+            out[n] = cell.data;
+            // Release: publishes "drained" to next-round producer.
+            cell.sequence.store(pos + Capacity, std::memory_order_release);
+        }
+
+        if (n > 0) {
+            // Single tail update covering all drained cells.
+            tail_.store(pos0 + n, std::memory_order_relaxed);
+        }
+        return n;
     }
 
     // ── try_pop (single consumer ONLY) ────────────────────────────

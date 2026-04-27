@@ -50,6 +50,7 @@
 #include <span>
 
 #include <crucible/concurrent/MpmcRing.h>
+#include <crucible/concurrent/MpscRing.h>
 #include <crucible/concurrent/SpscRing.h>
 
 #include "bench_harness.h"
@@ -57,12 +58,14 @@
 namespace {
 
 using crucible::concurrent::MpmcRing;
+using crucible::concurrent::MpscRing;
 using crucible::concurrent::SpscRing;
 
 using Item = std::uint64_t;
 
 // 1M-slot ring — never fills under any single-thread bench.
 using MpmcLarge = MpmcRing<Item, (1U << 20)>;
+using MpscLarge = MpscRing<Item, (1U << 20)>;
 using SpscLarge = SpscRing<Item, (1U << 20)>;
 
 // ── Single-call benches ───────────────────────────────────────────────
@@ -137,6 +140,41 @@ bench::Report mpmc_round_trip_inner_loop() {
             bench::do_not_optimize(ok);
             bench::do_not_optimize(v);
         }
+    });
+}
+
+// ── MPSC batched API ──────────────────────────────────────────────────
+//
+// The new try_push_batch / try_pop_batch primitives.  Single producer
+// claims N tickets in ONE CAS, then publishes via N pure stores
+// (no per-cell atomic).  Per-batch atomic cost amortizes across all
+// items.
+
+template <std::size_t N>
+bench::Report mpsc_batched_push_pop() {
+    auto ring = std::make_unique<MpscLarge>();
+    alignas(64) static std::array<Item, N> tx{};
+    alignas(64) static std::array<Item, N> rx{};
+    for (std::size_t k = 0; k < N; ++k) tx[k] = k;
+    char name[128];
+    std::snprintf(name, sizeof(name),
+                  "mpsc_ring batch<%zu> round-trip (push+pop)", N);
+    return bench::run(name, [&]{
+        const std::size_t np = ring->try_push_batch(std::span<const Item>(tx));
+        const std::size_t nc = ring->try_pop_batch(std::span<Item>(rx));
+        bench::do_not_optimize(np);
+        bench::do_not_optimize(nc);
+        bench::do_not_optimize(rx[0]);
+        bench::do_not_optimize(rx[N - 1]);
+    });
+}
+
+bench::Report mpsc_single_push_ref() {
+    auto ring = std::make_unique<MpscLarge>();
+    Item i = 0;
+    return bench::run("mpsc_ring.try_push (single-call, REFERENCE)", [&]{
+        const bool ok = ring->try_push(++i);
+        bench::do_not_optimize(ok);
     });
 }
 
@@ -225,11 +263,18 @@ int main() {
         mpmc_round_trip_inner_loop<256>(),
         mpmc_round_trip_inner_loop<1024>(),
 
+        // ── MPSC batched API — the load-bearing test of "batched
+        //    MPMC can approach SPSC throughput" ────────────────────────
+        mpsc_single_push_ref(),                  // [15] ← was spsc_single_push
+        mpsc_batched_push_pop<64>(),             // [16]
+        mpsc_batched_push_pop<256>(),            // [17]
+        mpsc_batched_push_pop<1024>(),           // [18]
+
         // ── SPSC reference points ─────────────────────────────────────
-        spsc_single_push(),
-        spsc_batched_push_pop<64>(),
-        spsc_batched_push_pop<256>(),
-        spsc_batched_push_pop<1024>(),
+        spsc_single_push(),                      // [19]
+        spsc_batched_push_pop<64>(),             // [20]
+        spsc_batched_push_pop<256>(),            // [21]
+        spsc_batched_push_pop<1024>(),           // [22]
     };
 
     bench::emit_reports_text(reports);
@@ -260,41 +305,77 @@ int main() {
         print_one(r, per_item_round_trip_ns(r.pct.p50, push_ns[k]));
     }
 
-    std::printf("\n=== SPSC reference (the gap shows MPMC algorithmic cost) ===\n");
+    std::printf("\n=== MPSC batched API — the headline test ===\n");
     std::printf("\n  %-58s  %12s\n", "Bench", "ns/item");
     std::printf("  %-58s  %12s\n",
                 std::string(58, '-').c_str(),
                 std::string(12, '-').c_str());
-    print_one(reports[15], reports[15].pct.p50);
+    print_one(reports[15], reports[15].pct.p50);                    // mpsc single
     print_one(reports[16], per_item_round_trip_ns(reports[16].pct.p50, 64));
     print_one(reports[17], per_item_round_trip_ns(reports[17].pct.p50, 256));
     print_one(reports[18], per_item_round_trip_ns(reports[18].pct.p50, 1024));
 
-    // ── Headline: gap to SPSC + batched-API opportunity ───────────────
-    std::printf("\n=== gap to SPSC reference ===\n");
-    {
-        const double mpmc_push   = reports[0].pct.p50;
-        const double mpmc_inner  = per_item_ns(reports[8].pct.p50, 1024);
-        const double spsc_push   = reports[15].pct.p50;
-        const double spsc_b1024  = per_item_round_trip_ns(reports[18].pct.p50,
-                                                          1024);
+    std::printf("\n=== SPSC reference (the L1d-port floor) ===\n");
+    std::printf("\n  %-58s  %12s\n", "Bench", "ns/item");
+    std::printf("  %-58s  %12s\n",
+                std::string(58, '-').c_str(),
+                std::string(12, '-').c_str());
+    print_one(reports[19], reports[19].pct.p50);
+    print_one(reports[20], per_item_round_trip_ns(reports[20].pct.p50, 64));
+    print_one(reports[21], per_item_round_trip_ns(reports[21].pct.p50, 256));
+    print_one(reports[22], per_item_round_trip_ns(reports[22].pct.p50, 1024));
 
-        std::printf("  Single MpmcRing.try_push:     %.3f ns\n", mpmc_push);
-        std::printf("  Single SpscRing.try_push:     %.3f ns  (gap: %.1f×)\n",
-                    spsc_push, mpmc_push / spsc_push);
-        std::printf("  MpmcRing inner-loop ×1024:    %.3f ns/item\n",
-                    mpmc_inner);
-        std::printf("  SpscRing batched<1024>:       %.3f ns/item  (gap: %.1f×)\n",
-                    spsc_b1024, mpmc_inner / spsc_b1024);
-        std::printf("\n  ── interpretation ──\n");
-        std::printf("  MPMC has NO batched API today.  Inner-loop ×1024 still\n");
-        std::printf("  pays one FAA+CAS per item.  A future try_push_batch<N>\n");
-        std::printf("  primitive could amortize FAA contention to ~1 per batch,\n");
-        std::printf("  bringing per-item cost toward the SPSC batched floor of\n");
-        std::printf("  %.3f ns/item.  Maximum theoretical batched-MPMC payoff:\n",
+    // ── Headline: MPSC single → MPSC batched → SPSC batched ──────────
+    std::printf("\n=== headline: batched MPSC vs single-call MPSC vs SPSC ===\n");
+    {
+        const double mpmc_push       = reports[0].pct.p50;
+        const double mpmc_inner_1024 = per_item_ns(reports[8].pct.p50, 1024);
+        const double mpsc_single     = reports[15].pct.p50;
+        const double mpsc_b64        = per_item_round_trip_ns(reports[16].pct.p50, 64);
+        const double mpsc_b256       = per_item_round_trip_ns(reports[17].pct.p50, 256);
+        const double mpsc_b1024      = per_item_round_trip_ns(reports[18].pct.p50, 1024);
+        const double spsc_single     = reports[19].pct.p50;
+        const double spsc_b1024      = per_item_round_trip_ns(reports[22].pct.p50, 1024);
+
+        std::printf("  Single MpmcRing.try_push:        %.3f ns/op\n", mpmc_push);
+        std::printf("  Single MpscRing.try_push:        %.3f ns/op\n", mpsc_single);
+        std::printf("  Single SpscRing.try_push:        %.3f ns/op\n", spsc_single);
+        std::printf("\n");
+        std::printf("  MpmcRing inner-loop ×1024:       %.3f ns/item (no batched API)\n",
+                    mpmc_inner_1024);
+        std::printf("  MpscRing batched<64>:            %.3f ns/item (speedup vs single: %.1f×)\n",
+                    mpsc_b64, mpsc_single / mpsc_b64);
+        std::printf("  MpscRing batched<256>:           %.3f ns/item (speedup: %.1f×)\n",
+                    mpsc_b256, mpsc_single / mpsc_b256);
+        std::printf("  MpscRing batched<1024>:          %.3f ns/item (speedup: %.1f×)\n",
+                    mpsc_b1024, mpsc_single / mpsc_b1024);
+        std::printf("  SpscRing batched<1024>:          %.3f ns/item (the floor)\n",
                     spsc_b1024);
-        std::printf("  ~%.1f× speedup vs current MPMC inner-loop cost.\n",
-                    mpmc_inner / spsc_b1024);
+        std::printf("\n  ── interpretation (honest after measurement) ──\n");
+        std::printf("  Single-thread MPSC batched<1024> reaches %.3f ns/item.\n",
+                    mpsc_b1024);
+        std::printf("  vs single-call MPSC %.2f ns: %.1f× speedup.\n",
+                    mpsc_single, mpsc_single / mpsc_b1024);
+        std::printf("  vs SPSC batched<1024> %.3f ns: %.1f× SLOWER.\n",
+                    spsc_b1024, mpsc_b1024 / spsc_b1024);
+        std::printf("\n  Why we don't reach SPSC throughput:\n");
+        std::printf("  • Each MpscRing Cell is alignas(64) → 1024 cells touch\n");
+        std::printf("    64 KB of cache lines (vs SPSC's 8 KB) → exceeds L1d\n");
+        std::printf("    (32 KB on Zen 3) → cache-line bandwidth dominates.\n");
+        std::printf("  • Per-cell publish (data + sequence release-store) costs\n");
+        std::printf("    2× the store-buffer pressure of SPSC's single data write.\n");
+        std::printf("\n  The user's challenge — \"can MPMC be a special case of\n");
+        std::printf("  SPSC at full speed\" — is partly true:\n");
+        std::printf("  • The ALGORITHM scales (1 CAS per N items, N pure stores).\n");
+        std::printf("  • The CACHE LAYOUT does not (64-byte cells × N items).\n");
+        std::printf("  Closing the gap requires packed 16-byte cells (loses\n");
+        std::printf("  false-sharing protection across producer batches) OR a\n");
+        std::printf("  different algorithm without per-cell metadata.\n");
+        std::printf("\n  Real win for THIS API: multi-producer contention.\n");
+        std::printf("  Single FAA(tail, N) replaces N × FAA(tail, 1).  Bench\n");
+        std::printf("  this with multi-thread harness (separate task) to see.\n");
+        (void)mpmc_push;
+        (void)mpmc_inner_1024;
     }
 
     bench::emit_reports_json(reports, json);
