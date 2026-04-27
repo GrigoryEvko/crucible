@@ -236,6 +236,7 @@ crucible_bench(bench_concurrent_queues)
 crucible_bench(bench_concurrent_saturation)
 crucible_bench(bench_mpmc_scq_vs_vyukov)
 crucible_bench(bench_mpmc_saturation)
+crucible_bench(bench_permissioned_zero_cost)
 
 # ── Visualization tool ────────────────────────────────────────────────
 # Not a benchmark — a utility for rendering .crtrace traces as SVG.
