@@ -29,6 +29,42 @@
 //     Verifies that producer + consumer can be detached at shutdown
 //     without the abandonment-tracker firing (Loop without exit branch
 //     requires explicit detach; the documented infinite-loop pattern).
+//
+// ─── What this test PROVES vs DOES NOT PROVE ──────────────────────
+//
+// PROVES:
+//   * Round-trip data integrity (in-order, no corruption) under the
+//     typed-session API end-to-end on the real production primitive.
+//   * sizeof equality between PSH<End, EmptyPermSet, Handle*> and
+//     bare SessionHandle<End, Handle*> under the test TU's build
+//     flags (catches ABI drift between header witness and target).
+//   * Cross-thread typed-session usage works (jthread move + PSH
+//     reassignment via Loop pattern).
+//   * Immediate-detach pattern is well-formed.
+//
+// DOES NOT PROVE:
+//   * PermSet evolution.  We use EmptyPermSet throughout — vacuously
+//     stays empty.  Real evolution paths (Send<Transferable<T, Tag>>
+//     consuming the Tag, Recv<Transferable<T, Tag>> producing it,
+//     Loop body PS-balance enforcement) are exercised in
+//     test/test_permissioned_session_handle.cpp.
+//   * Branch convergence.  No Select/Offer in the streaming protocol
+//     — Decision D4's structural convergence enforcement isn't
+//     exercised here.  See test_permissioned_session_handle.cpp's
+//     test_select_local_pick_branch.
+//   * Permission-balance enforcement.  Trivial empty-set case only.
+//     The non-trivial enforcement (Continue with mismatched PS)
+//     fires the [PermissionImbalance] static_assert exercised in
+//     test/sessions_neg/loop_iteration_drains_permission.cpp.
+//   * Crash transport composition.  This wiring uses unconditional
+//     blocking transports; OneShotFlag-driven shutdown is exercised
+//     in test_permissioned_session_handle.cpp's test_crash_transport_*.
+//
+// This test is essentially a regression test for the new wiring —
+// "PSH wrapping a handle pointer doesn't corrupt the data stream
+//  and matches sizeof of bare." Framework capabilities are exercised
+// elsewhere; this test confirms they compose with the production
+// primitive.
 
 #include <atomic>
 #include <cstdio>

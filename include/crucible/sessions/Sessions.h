@@ -26,6 +26,11 @@
 //   SessionPatterns.h       — RequestResponse, Pipeline, FanOut/FanIn, ...
 //   SessionDiagnostic.h     — manifest-bug classification tags
 //   SessionView.h           — non-consuming protocol introspection
+//   SpscSession.h           — typed-session wrapper for
+//                              PermissionedSpscChannel (FOUND-C v1's
+//                              first production-shape wiring; covers
+//                              TraceRing / MetaLog / CNTP-style
+//                              streaming SPSC channels).
 //
 // Hot-path TUs needing a single piece include the targeted header.
 // PermissionedSession.h ships per FOUND-C v1

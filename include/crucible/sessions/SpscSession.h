@@ -108,6 +108,54 @@
 // see also bench_permissioned_session_handle.cpp for the canonical
 // asm-identical witness pattern.
 //
+// To re-verify the asm-identical claim manually:
+//   cmake --preset default -DCRUCIBLE_DUMP_ASM=ON
+//   cmake --build --preset default --target bench_spsc_session
+//   # Inspect build/asm-dump/bench_spsc_session.s — the bare and
+//   # typed bench bodies are inlined into bench::Run::measure
+//   # instantiations; the inner SpscRing acquire-load + release-
+//   # store sequences are identical for both API shapes.
+//
+// ─── What this wiring DOES NOT demonstrate ─────────────────────────
+//
+// EMPTY PERMSET BY DESIGN.  This wiring uses EmptyPermSet throughout
+// and the protocol shape Loop<Send<T, Continue>> carries plain payloads
+// — no Transferable<T, Tag> / Borrowed<T, Tag> / Returned<T, Tag>
+// markers.  TraceRing / MetaLog / CNTP-shape SPSC channels stream
+// values, not permissions; permissions stay with the role-typed
+// handles (one Producer<UserTag>, one Consumer<UserTag>) and never
+// transit the wire.  This is the CORRECT shape for the production
+// callers this wiring targets — but it means the framework's PermSet
+// evolution path is NOT exercised here.
+//
+// The PermSet evolution path is exercised in
+// test/test_permissioned_session_handle.cpp (FOUND-C v1's own
+// integration test) via Transferable<int, WorkPerm> +
+// Returned<int, WorkPerm> payload tests that watch PS shrink + grow
+// at compile time.  This wiring composes orthogonally with that
+// machinery — production callers needing wire-permission transfer
+// can swap their payload type from `T` to `Transferable<T, MyTag>`
+// without changing the rest of the wiring.
+//
+// FIXED PROTOCOL SHAPE.  Loop<Send<T, Continue>> is the simplest
+// protocol the framework supports — no Select, no Offer, no Stop,
+// no payload markers, no branch convergence.  Shutdown is via
+// detach (Loop without exit branch — the documented infinite-loop
+// pattern).  Production callers wanting richer protocols (e.g.
+// Loop<Choice<Send<T, Continue>, Stop>> for graceful shutdown,
+// Loop<Send<Req, Recv<Resp, Continue>>> for request-response over
+// SPSC) define their own ProducerProto / ConsumerProto and use
+// establish_permissioned directly — this header is the canonical
+// streaming-SPSC factory, not an exhaustive protocol library.
+//
+// FIRST PRODUCTION-SHAPED EXERCISE.  This is the framework's first
+// wired-in production-shape exercise (closes Part IX.2 of
+// session_types.md "no production callers" critique) — but it
+// targets the SIMPLEST production shape.  Richer wirings (Cipher
+// hot→warm tier promotion via Returned<DurabilityAck, HotEntry>,
+// CNTP Raft via session_fork) demonstrate broader framework
+// capabilities; track them via the K-series tasks (#355-#358).
+//
 // ─── References ────────────────────────────────────────────────────
 //
 //   misc/27_04_csl_permission_session_wiring.md §17 — closing
