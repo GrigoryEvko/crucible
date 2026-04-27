@@ -3,7 +3,7 @@
 // Vigil: the Crucible organism.
 //
 // Vigil is the single orchestration point that owns every runtime component:
-//   TraceRing     ← SPSC ring (hot path: ~5ns/op recording)
+//   TraceRing     ← SPSC ring (hot-path op recording)
 //   MetaLog       ← parallel tensor metadata buffer
 //   BackgroundThread ← drains ring, builds Merkle DAG, signals on_region_ready
 //   TransactionLog ← lifecycle records per iteration
@@ -11,11 +11,11 @@
 //
 // Vigil exposes three operational modes:
 //   RECORDING  → Vessel dispatches ops normally; every op calls record_op().
-//   COMPILED   → Active region is live; replay() drives execution in ~2ns/iter.
+//   COMPILED   → Active region is live; replay() drives execution.
 //   DIVERGED   → Guard mismatch during replay; fallback to RECORDING.
 //
 // The Vessel adapter (PyTorch CrucibleFallback) becomes ~200 lines:
-//   if (vigil.is_compiled()) { push_shadow_handles(); return; } // ~2ns
+//   if (vigil.is_compiled()) { push_shadow_handles(); return; }
 //   else { vigil.record_op(...); redispatch to eager backend; }
 //
 // Member declaration order is load-bearing for destruction safety:

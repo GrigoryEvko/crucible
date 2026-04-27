@@ -250,8 +250,8 @@ inline constexpr SchemaHash default_schema_hash{
 //       };
 //
 // The recording wrapper consults this function template at compile
-// time; the per-op cost is whatever the user's hasher costs (often
-// zero if defaulted to sentinel).
+// time; the cost per record is whatever the user's hasher costs
+// (defaulted to a sentinel that does no work).
 
 template <typename T>
 inline constexpr auto default_payload_hash_fn =

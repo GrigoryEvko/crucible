@@ -506,7 +506,8 @@ Goal: hardware calibration + continuous monitoring as one operational intelligen
 
 **Phase 4: Compiled Tier 2-3**
 
-Goal: shadow handles (~2ns/op) and pushbuffer replay (~80-120ns warm submission per CRUCIBLE.md §14.7).
+Goal: shadow-handle dispatch and pushbuffer replay — push the foreground past
+recording into a model where the user-visible work per op is just metadata.
 
 - Shadow handles: ConductorTensorImpl with metadata pointing into PoolAllocator.
 - Batched kernel launch: accumulate MAP-Elites-selected kernels, one doorbell write per ExecutionPlan.
@@ -571,7 +572,7 @@ Safety disciplines the code. Meridian maps. Augur sees. Vessel intercepts. Keepe
 
 *The canonical reference for writing Crucible code. Every rule has a cost-of-violation, a compiler-enforcement mechanism, and a discipline fallback. Nothing is style; everything is measured.*
 
-Design target: **~5 ns/op foreground recording, ~2 ns shadow-handle dispatch, zero UB, bit-identical across hardware under BITEXACT recipes**. Every rule below serves one or more of those targets.
+Design intent: **the lowest foreground recording and shadow-dispatch latency the hardware allows, zero UB, bit-identical across hardware under BITEXACT recipes**. We do not promise specific nanosecond numbers — those depend on workload, system load, cache state, NUMA topology, and contention; they are reported by the bench suite, not guaranteed by the docs. Every rule below serves those structural intents.
 
 ---
 
@@ -1315,25 +1316,25 @@ perf script -F insn,ip,pid | awk '/hot_function/'
 
 Full instruction trace at per-cycle resolution. ~10× overhead but gives exact branch-by-branch history. Reach for when diagnosing rare heisenbugs.
 
-### Latency budgets per operation class
+### Operation shape per hot path
 
-Every hot operation has a target p99 latency. Functions that exceed their budget by more than 2× are rewritten, not patched.
+Every hot operation has a structural cost shape — what it must do per call. Crucible does not promise specific nanosecond numbers (those vary by workload, system load, cache state, NUMA topology, and contention); the bench suite reports current measurements on the dev hardware.
 
-| Operation | p99 target | Notes |
+| Operation | Per-call shape | Notes |
 |---|---|---|
-| Shadow handle dispatch | 2-5 ns | `[[gnu::flatten]]`, no function call |
-| TraceRing push | 5-10 ns | SPSC + `_mm_pause` + `alignas(64)` head/tail |
-| Arena bump allocation | ≤2 ns | No branch, no lock |
-| MetaLog append | 5-10 ns | SPSC, write-combined |
-| Cross-core signal wait | 30-40 ns intra-socket | MESI floor; 100 ns cross-socket |
-| Swiss-table lookup (hit) | 15-30 ns | Open addressing + SIMD probe |
-| Contract check at boundary | 1-3 ns | `semantic=observe`; 0 on hot path with `ignore` |
-| ExecutionPlan submit (warm) | 80-120 ns | Cache hit + doorbell |
-| ExecutionPlan submit (cold, ≤5 patches) | 120-200 ns | Plan lookup + patch writes + SFENCE + doorbell |
-| Syscall | 100-500 ns | Banned on hot path |
-| `malloc` | 100-500 ns | Banned on hot path |
+| Shadow handle dispatch | metadata write, no function call | `[[gnu::flatten]]` |
+| TraceRing push | one acquire/release pair on isolated cache lines | SPSC + `_mm_pause` + `alignas(64)` head/tail |
+| Arena bump allocation | bump + mask, no branch, no lock | one cache line touch |
+| MetaLog append | one acquire/release pair on isolated cache lines | SPSC, write-combined |
+| Cross-core signal wait | bounded by MESI cache-line transfer cost | floor is the interconnect; cross-socket worse than intra-socket |
+| Swiss-table lookup (hit) | one open-addressed probe with SIMD compare | Open addressing + SIMD probe |
+| Contract check at boundary | one branch under `semantic=observe`; nothing under `ignore` | hot TUs use `ignore` |
+| ExecutionPlan submit (warm) | cache lookup + doorbell write | Cache hit + doorbell |
+| ExecutionPlan submit (cold, ≤5 patches) | plan lookup + patch writes + SFENCE + doorbell | one plan creation per fresh shape |
+| Syscall | kernel-mediated transition | Banned on hot path |
+| `malloc` | allocator round-trip | Banned on hot path |
 
-The budget table is a hard contract. A PR that regresses any hot-path budget by >10% requires an explicit "performance tradeoff" justification in the commit message, reviewed by at least one other maintainer.
+A regression in measured latency on the bench suite is investigated like any other regression — root-cause first, then fix. There is no fixed "budget number" promised in this guide; the bench-suite outputs are the source of truth for the current state of the world on each hardware target.
 
 ### Hot functions fit in one cache line
 
@@ -2054,7 +2055,7 @@ Fuzzing via AFL++ / libFuzzer targets untrusted-input paths (Cipher deserialize,
 
 ### Benchmarks are not tests
 
-`bench/` and `test/` are separate trees. Bench asserts measure **numerical targets** (≤ 10 ns/op, ≤ 500 KB binary size). A test that accidentally measures latency is bad design — split it. Benchmarks can be noisy; tests cannot.
+`bench/` and `test/` are separate trees. Bench asserts measure **numerical results** on the dev hardware and gate against the previously-recorded baseline; binary-size and other structural-cap asserts (e.g. ≤ 500 KB binary) live in test. A test that accidentally measures latency is bad design — split it. Benchmarks can be noisy; tests cannot.
 
 ### Coverage targets
 
@@ -2436,7 +2437,7 @@ When in doubt, the cost of failure ordering is:
 Correctness  >  Determinism  >  Security  >  Latency  >  Throughput  >  Code size
 ```
 
-Never trade correctness for latency. Never trade determinism for throughput. Security is non-negotiable (replay determinism IS a security property). Latency matters because of the ~5 ns/op budget — but only after the first three.
+Never trade correctness for latency. Never trade determinism for throughput. Security is non-negotiable (replay determinism IS a security property). Latency matters because of the per-op recording cost on the hot path — but only after the first three.
 
 ### Concurrency cost ordering
 

@@ -3,11 +3,11 @@
 *Performance is non-negotiable. Safety is structural, not aspirational.*
 
 Crucible is a symbiotic runtime organism where the foreground hot path
-records at ~5ns/op and the background thread builds, compiles, and
-replays computation graphs. Every design decision serves this dual
-reality: the foreground must never stall, and the background must
-produce correct compiled output. These rules encode how we write C++26
-to achieve both.
+records ops at the lowest cost the hardware allows and the background
+thread builds, compiles, and replays computation graphs. Every design
+decision serves this dual reality: the foreground must never stall,
+and the background must produce correct compiled output. These rules
+encode how we write C++26 to achieve both.
 
 ## Toolchain
 
@@ -317,7 +317,7 @@ entry[head & MASK] = data;
 head.store(h + 1, release);
 ```
 
-~5ns per op. A mutex lock/unlock alone is ~25ns on Linux.
+An SPSC ring touches one cache line per op with no kernel transition; a mutex lock/unlock pair adds at minimum a kernel-mediated futex round-trip. The structural difference is what matters; absolute numbers depend on the platform.
 
 For shared data structures accessed by multiple threads (KernelCache),
 use lock-free CAS on atomic slots:

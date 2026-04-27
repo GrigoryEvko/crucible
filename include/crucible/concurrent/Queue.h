@@ -158,7 +158,8 @@ template <typename UserTag> struct Consumer {};
 namespace kind {
 
 // kind::spsc<Cap> — single-producer, single-consumer FIFO.
-// Maps to SpscRing<T, Cap>.  Cheapest queue available (~5-8 ns/op).
+// Maps to SpscRing<T, Cap>.  Cheapest available — one acquire/release
+// atomic per call on isolated cache lines, no CAS.
 template <std::size_t Capacity>
 struct spsc {
     static constexpr std::size_t capacity = Capacity;

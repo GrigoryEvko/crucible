@@ -678,11 +678,12 @@
 
   Phase 5: Compiled Tier 2-3
 
-  Goal: Shadow handles (~2ns/op) and CUDA Graph replay (~50ns/iteration).
+  Goal: shadow handles and CUDA Graph replay — push the foreground past per-op
+  compute into a model where the user-visible work is just metadata.
 
   - Shadow handles: ConductorTensorImpl with metadata pointing into PoolAllocator.
   - Batched kernel launch: accumulate compiled kernels, one stream submission.
-  - CUDA Graph capture: record compiled kernels, replay at ~50ns/iteration.
+  - CUDA Graph capture: record compiled kernels, replay as a single host-side call.
   - Integration: Z3-proved kernel configs compiled into the graph. Meridian's stream assignment from topology-aware scheduling.
 
   Phase 6: Keeper + Canopy + Cipher

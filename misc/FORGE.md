@@ -105,7 +105,7 @@ Crucible handles everything above the graph (tracing, Vessel dispatch, shadow ha
 ```
 Crucible Vessel (thin frontend adapter, ~2K LoC per framework)
         │
-        ▼  ~5ns/op recording to TraceRing
+        ▼  hot-path op recording to TraceRing
 Crucible TraceGraph (L6, CSR property graph)
         │
         ▼  per-iteration build + Merkle tree
@@ -166,7 +166,7 @@ Crucible MerkleDAG (L7, content-addressed regions)
         ▼
 Crucible L14 KernelCache + Cipher  (three-level content-addressed)
         │
-        ▼  ~2ns/op shadow handle dispatch in COMPILED mode
+        ▼  shadow-handle dispatch in COMPILED mode (metadata only, no per-op compute)
 Crucible L4 ExecutionPlan + per-vendor launch (CUDA graph / HIP graph / TPU plan)
         │
         ▼
@@ -2457,16 +2457,18 @@ There is only one execution mode in Crucible: **mock-tensor capture followed by 
 
 ```
 // Per Vessel op (PyTorch, JAX, or native frontend):
-// 1. advance op_idx                                     (~1ns)
-// 2. build mock tensor:                                  (~2ns)
+// 1. advance op_idx
+// 2. build mock tensor:
 //    CrucibleTensorImpl with metadata only, arena-allocated,
 //    no device storage yet
-// 3. record op in TraceRing                              (~2ns)
+// 3. record op in TraceRing
 // 4. return mock tensor to user code
 //
-// Total per-op cost: ~5-10ns.
 // No vendor library invoked, no device memory allocated,
 // no Python allocated; all op metadata lives in the arena.
+// Per-op cost is bounded by what the underlying hardware
+// allows — see bench_dispatch / bench_trace_ring for the
+// current measurements on the dev hardware.
 ```
 
 The mock tensor is a full `torch.Tensor` / `jax.Array` / `cr.Tensor` from the frontend's perspective. It has shape, dtype, device, strides, requires_grad, and autograd history. It participates in framework control flow (views, reshapes, broadcasts). It has **no real storage** until Crucible compiles and executes.
@@ -2491,7 +2493,7 @@ First-iteration latency: ~10-100ms for a novel transformer forward pass, dominat
 
 ### 24.3 Subsequent iterations
 
-All cached. Guard-check on IR001 region hashes validates shape + schema didn't change. Guard passes → `runtime::launch_plan(cached_handle)` single call replays captured graph. Total foreground cost per iteration: ~5-10ns per op × N ops + ~0.5μs graph launch = microseconds, not milliseconds. No Python GIL contention; the launch is a single C++ call.
+All cached. Guard-check on IR001 region hashes validates shape + schema didn't change. Guard passes → `runtime::launch_plan(cached_handle)` single call replays captured graph. The foreground cost per iteration reduces to per-op shadow-handle dispatch + a single graph-launch C++ call — orders of magnitude below an unoptimised eager path. No Python GIL contention; the launch is a single C++ call. Actual numbers are reported by the bench suite on the dev hardware.
 
 ### 24.4 Guard divergence
 
@@ -2792,15 +2794,15 @@ Cross-geographic fleets have RTT-dominated all-reduce; Z3 factors 100 ms+ round-
 
 Fleet asymmetry is a gap in NCCL's tuning tables (defaults to `minCompCap` uniformly, MIMIC.md §42 reference). Our solver fills that gap as a first-class feature.
 
-### 25.9 Measured performance targets
+### 25.9 Modeled performance baselines
 
-Crucible commits to specific numerical targets across the stack. Each target is:
+The numbers below are **modeled cost decompositions** — what each step should cost given the underlying hardware, kernel-driver, and protocol primitives — not promises Crucible delivers a particular nanosecond figure on your hardware. They serve three roles:
 
-- A design goal (set at architecture time, this document)
-- A CI-validated threshold (enforced per merged PR against Phase L measurements, MIMIC.md §30)
-- A regression guard (Augur flags drift >10%, CRUCIBLE.md §13.3)
+- **Architecture sanity check** — does the cost decomposition close out to a plausible total, given the lower-level costs Crucible sits on top of?
+- **CI baseline** — values marked ✽ have an associated bench in Phase L (MIMIC.md §30). The bench reports the actual measurement; CI fails on regression vs the previously-recorded baseline, not vs the modeled number.
+- **Augur drift signal** — when actual measurements diverge from the modeled baseline by a large margin, that's a signal worth investigating (CRUCIBLE.md §13.3); it's a diagnostic, not a contract.
 
-Numbers marked ✽ require real-silicon CI validation before declaration as achieved.
+Numbers marked ✽ require real-silicon CI validation; treat unmarked numbers as architecture-time estimates.
 
 #### 25.9.1 Per-launch dispatch (NV Hopper+ reference)
 

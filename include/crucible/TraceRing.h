@@ -2,10 +2,9 @@
 
 // Lock-free SPSC ring buffer for op recording.
 //
-// Foreground writes one Entry per ATen op (~5 ns target). Background drains
-// in batches and builds the trace. The ring is pre-allocated (~5.25 MB) and
-// never resized; a full ring silently drops the entry (the next iteration
-// re-records).
+// Foreground writes one Entry per ATen op. Background drains in batches and
+// builds the trace. The ring is pre-allocated (~5.25 MB) and never resized;
+// a full ring silently drops the entry (the next iteration re-records).
 //
 // Entry is exactly one 64 B cache line. See Entry below for field layout.
 //
@@ -16,9 +15,8 @@
 //
 // cached_tail_ lives on the producer's cache line and holds the last-read
 // tail. Stale cache is conservative (reports less free space than reality),
-// so the producer only touches the consumer's atomic when the cache shows
-// the ring full — roughly once per ~20 k appends at 5 ns/op and a 100 µs
-// drain interval.
+// so the producer only touches the consumer's atomic only on the rare path
+// where the cached view shows the ring full.
 
 #include <algorithm>
 #include <atomic>
@@ -190,7 +188,8 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
 
   // ── Cross-thread atomics on isolated cache lines ────────────────────
   // head and tail on one shared line would ping-pong MESI on every
-  // producer/consumer write (~40 ns each). alignas(64) separates them.
+  // producer/consumer write. alignas(64) separates them onto distinct
+  // cache lines, each owned by exactly one thread.
 
   // Producer-owned.  AtomicMonotonic lifts the SPSC monotonicity
   // invariant to the type level: producer publishes via advance(release),
@@ -232,7 +231,7 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   TraceRing(TraceRing&&)                 = delete("SPSC ring is pinned to a producer/consumer thread pair");
   TraceRing& operator=(TraceRing&&)      = delete("SPSC ring is pinned to a producer/consumer thread pair");
 
-  // ── Producer (foreground): ~3-5 ns, never blocks ────────────────────
+  // ── Producer (foreground): never blocks ─────────────────────────────
   // Returns true on append, false if the ring is full (entry is dropped;
   // next iteration re-records). SPSC-safe: the producer is the sole writer
   // of head and entries[head]; we suppress Clang's thread-safety analysis.

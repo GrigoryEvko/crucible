@@ -79,12 +79,17 @@ namespace crucible::safety {
 // Used by the cost-model gate to decide sequential vs parallel.
 // SEPLOG-C2 will replace this placeholder with a Topology-aware
 // decision; for now, a simple cache-tier heuristic.
+//
+// per_item_compute_ns is a CALLER HINT that feeds the cost-model
+// rule; it is not a runtime budget or guarantee.  When omitted (or
+// wrong), the rule errs toward Sequential and the no-regression
+// invariant still holds.
 
 struct WorkBudget {
     std::size_t read_bytes           = 0;
     std::size_t write_bytes          = 0;
     std::size_t item_count           = 0;
-    std::size_t per_item_compute_ns  = 0;
+    std::size_t per_item_compute_ns  = 0;  // caller hint, not a promise
 
     // ── Convenience constructors for the 95% case ──────────────────
     //

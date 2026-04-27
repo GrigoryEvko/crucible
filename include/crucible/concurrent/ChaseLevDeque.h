@@ -63,13 +63,17 @@
 //     allocate the body elsewhere.
 //   * Capacity must be a power of two and > 0.
 //
-// ─── Performance targets ───────────────────────────────────────────
+// ─── Per-call atomic shape ─────────────────────────────────────────
 //
-//   push_bottom (uncontended): ~8-12 ns (load+store on relaxed)
-//   pop_bottom (uncontended):  ~10-15 ns (load+store+fence+load)
-//   steal_top (uncontended):   ~20-30 ns (load+fence+load+CAS)
-//   steal_top contended:       depends on how many thieves are
-//                              competing for the same deque.
+//   push_bottom: 1 relaxed load + 1 relaxed store on bottom_,
+//                1 release store on the cell
+//   pop_bottom:  1 relaxed load + 1 relaxed store on bottom_,
+//                1 seq_cst fence, 1 acquire load on top_
+//                (and a CAS on the last-element race)
+//   steal_top:   1 acquire load on top_, 1 seq_cst fence,
+//                1 acquire load on bottom_, 1 seq_cst CAS on top_
+//   Steal contention scales with the number of thieves racing on
+//   the same deque; the owner's bottom side stays uncontended.
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>

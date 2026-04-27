@@ -76,13 +76,13 @@
 //     density.  For very large payloads, store T* and allocate
 //     bodies elsewhere.
 //
-// ─── Performance targets ────────────────────────────────────────────
+// ─── Per-call atomic shape ──────────────────────────────────────────
 //
-//   try_push (uncontended):       ~12-15 ns (1 CAS + 1 release)
-//   try_push (4-way contention):  ~50-80 ns p99 (CAS retry)
-//   try_pop  (uncontended):       ~5-10 ns (no CAS, single
-//                                            consumer is straight
-//                                            load + release)
+//   try_push (uncontended):       1 CAS + 1 release
+//   try_push (under contention):  CAS may retry until the producer's
+//                                 ticket lands on a free slot
+//   try_pop  (uncontended):       no CAS, single consumer issues
+//                                 a load + release
 //   Capacity = power-of-2; choose to absorb peak burst from all
 //   producers' worst-case backlog.
 // ═══════════════════════════════════════════════════════════════════

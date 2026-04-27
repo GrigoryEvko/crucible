@@ -4,9 +4,9 @@
 // SpscRing<T, Capacity> — single-producer single-consumer bounded ring
 //
 // The simplest concurrent primitive: one producer pushes, one
-// consumer pops, lock-free, bounded.  Per-op cost ~5-8 ns
-// (uncontended) — no CAS, just acquire/release atomic loads on
-// head/tail and one cache-line-aligned cross-thread sync per call.
+// consumer pops, lock-free, bounded.  No CAS — just acquire/release
+// atomic loads on head/tail (each on its own cache line) plus one
+// cell store/load per call.
 //
 // Trades flexibility for speed: no MPMC support, no batched drain
 // (TraceRing has those for its specific Entry layout); just clean
@@ -21,8 +21,8 @@
 //                         possible concurrent queue.
 //
 //   MpscRing<T, N>:       MANY producers, ONE consumer.  Per-cell
-//                         sequence number protocol; ~12-15 ns per
-//                         producer push (CAS on global head).  Use
+//                         sequence number protocol; producer pays
+//                         one CAS on the global head per push.  Use
 //                         when producer count is dynamic.
 //
 //   ShardedSpscGrid:      M producers × N consumers via M×N SpscRings.
@@ -50,14 +50,14 @@
 //     and sole reader of slots in [tail, head).  Caller MUST
 //     guarantee this — there's no runtime check.
 //
-// ─── Performance targets ────────────────────────────────────────────
+// ─── Per-call atomic shape ──────────────────────────────────────────
 //
-//   try_push (uncontended): ~5-8 ns (1 acquire-load on tail,
-//                                    1 cell store, 1 release-store)
-//   try_pop  (uncontended): ~5-8 ns (1 acquire-load on head,
-//                                    1 cell load, 1 release-store)
-//   try_push when full:     ~3 ns (load tail, fail-fast)
-//   try_pop  when empty:    ~3 ns (load head, fail-fast)
+//   try_push: 1 acquire-load on tail, 1 cell store, 1 release-store
+//             on head
+//   try_pop:  1 acquire-load on head, 1 cell load, 1 release-store
+//             on tail
+//   try_push when full:  load tail, fail-fast
+//   try_pop  when empty: load head, fail-fast
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>

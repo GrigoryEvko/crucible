@@ -471,20 +471,20 @@ Tier 4 divides into two concerns: **which primitive** fits the producer/consumer
 
 #### 5.5.1 The Kind-routed primitive family
 
-For workloads shaped as "produce/consume messages between threads" rather than "iterate over a contiguous region," the Queue facade (`concurrent/Queue.h`) routes six Kind tags to the right underlying primitive.  Each primitive is chosen for its asymptotic behaviour under its intended access pattern; the facade preserves every primitive's published cost profile:
+For workloads shaped as "produce/consume messages between threads" rather than "iterate over a contiguous region," the Queue facade (`concurrent/Queue.h`) routes six Kind tags to the right underlying primitive.  Each primitive is chosen for its asymptotic behaviour under its intended access pattern; the facade preserves every primitive's structural per-call shape:
 
 ```cpp
-// SPSC — single writer, single reader.  ~5-8 ns/op uncontended.
+// SPSC — single writer, single reader.  No CAS; one acquire/release pair.
 Queue<Event, kind::spsc<1024>>           ch;
-// MPSC — many writers, one reader.  Vyukov per-cell sequence, ~12-15 ns/op.
+// MPSC — many writers, one reader.  Vyukov per-cell sequence; one CAS per push.
 Queue<Event, kind::mpsc<1024>>           ch;
 // Sharded — M producers × N consumers, M·N SpscRings.  Compile-time fan-out.
 Queue<Event, kind::sharded<4, 4, 256>>   ch;
 // Work-stealing — one owner, many thieves.  Chase-Lev; LIFO owner, FIFO steal.
 Queue<Event, kind::work_stealing<256>>   ch;
-// MPMC (SCQ — beyond Vyukov).  Many writers, many readers.  ~15-25 ns/op.
+// MPMC (SCQ — beyond Vyukov).  Many writers, many readers.  FAA + per-cell CAS.
 Queue<Event, kind::mpmc<1024>>           ch;
-// Snapshot — 1 writer, N readers see latest-only (not a FIFO).  ~5-10 ns load.
+// Snapshot — 1 writer, N readers see latest-only (not a FIFO).  Lamport seqlock.
 Queue<Event, kind::snapshot<Metrics>>    ch;
 
 // Or hint-driven — facade picks Kind from WorkloadHint at compile time:
@@ -497,7 +497,7 @@ auto_queue_t<Event, hint> ch;   // producers ≥ 2 AND consumers ≥ 2 → mpmc<
 | Property | Vyukov 2011 | Nikolaev SCQ 2019 (Crucible's choice) |
 |---|---|---|
 | Head/Tail claim | CAS (retries on contention) | **FAA** (never fails) |
-| Contention bottleneck | Single CAS cache line — ~200 ns/op at 16-way | FAA + per-cell state — ~30-60 ns/op at 16-way |
+| Contention bottleneck | Single CAS cache line — degrades sharply under heavy contention | FAA + per-cell state — bounded by FAA bandwidth |
 | Livelock avoidance | Not required; producer checks cycle before CAS | Threshold counter (3n-1); dequeuer bails without probing |
 | Platform support | Any CAS (portable) | Any single-width CAS (portable; no CAS2) |
 | Memory overhead | n cells | 2n cells (double-buffered for livelock freedom) |
@@ -1092,90 +1092,87 @@ This is the structural model of Crucible's BackgroundThread (Tier 5 integration 
 
 ---
 
-## 10. The expected results — concrete numerical claims
+## 10. The expected results — structural properties
 
-This section enumerates the performance and safety claims Crucible's threading model will deliver, with calibration against the cache-tier rule.
+This section enumerates the structural properties Crucible's threading model delivers. Crucible does not promise specific nanosecond / op-per-second numbers — those depend on workload, system load, cache state, NUMA topology, and contention. The bench suite (`bench/bench_concurrent_queues.cpp`, `bench/bench_concurrent_saturation.cpp`) reports current measurements on the dev hardware; treat any number that appears in this document as the SHAPE of the cost, not a contract on the magnitude.
 
-### 10.1 Latency targets (per operation class)
-
-Measured or projected on AMD Ryzen 9 5950X (Zen 3, 16 cores / 32 SMT, 32 KB L1d, 512 KB L2, 32 MB L3 per CCD, 2 CCDs, single-NUMA).
+### 10.1 Per-call atomic shape (per operation class)
 
 #### Tier 0-1 — Permission primitives
 
-| Operation | Target p99 | Cost source |
-|---|---|---|
-| `Permission` mint | < 1 ns | constexpr no-op |
-| `permission_split_n` | < 1 ns | constexpr no-op |
-| `Pool::lend()` (uncontended) | 5-15 ns | one CAS |
-| `Pool::try_upgrade()` (uncontended) | 5-15 ns | one CAS |
-| `Pool::lend()` (16-way contended) | 30-80 ns | CAS retry × 1-3 |
-| Permission move into jthread lambda | 0 ns | EBO + move |
+| Operation | Per-call shape |
+|---|---|
+| `Permission` mint | constexpr no-op |
+| `permission_split_n` | constexpr no-op |
+| `Pool::lend()` (uncontended) | one CAS on the pool refcount |
+| `Pool::try_upgrade()` (uncontended) | one CAS on the pool refcount |
+| `Pool::lend()` (under contention) | CAS retries until refcount lands on a free state |
+| Permission move into jthread lambda | EBO + move; no runtime atomic |
 
 #### Tier 2 — OwnedRegion
 
-| Operation | Target p99 | Cost source |
-|---|---|---|
-| `OwnedRegion::adopt` from arena | 5-10 ns | arena bump + move |
-| `OwnedRegion::split_into<8>` | 5-15 ns | 8 (T*, size_t) writes + tag construction |
-| `OwnedRegion::recombine<8>` | 5-15 ns | symmetric |
+| Operation | Per-call shape |
+|---|---|
+| `OwnedRegion::adopt` from arena | arena bump + move |
+| `OwnedRegion::split_into<N>` | N (T*, size_t) writes + tag construction |
+| `OwnedRegion::recombine<N>` | symmetric (just rebuilds the parent (T*, size_t)) |
 
 #### Tier 3 — Cost model
 
-| Operation | Target p99 | Cost source |
-|---|---|---|
-| `Topology::instance()` (warm) | < 1 ns | function-local static, inlined getter |
-| `recommend_parallelism(WorkBudget)` | 30-80 ns | 4 atomic loads + classification + factor rounding |
+| Operation | Per-call shape |
+|---|---|
+| `Topology::instance()` (warm) | function-local static, inlined getter |
+| `recommend_parallelism(WorkBudget)` | 4 atomic loads + classification + factor rounding |
 
 #### Tier 4 — Queue primitives (the lock-free substrate)
 
-| Operation | Target p99 | Cost source |
-|---|---|---|
-| `SpscRing::try_push` | 5-8 ns | acquire-load + relaxed-store |
-| `SpscRing::try_pop` | 5-8 ns | symmetric |
-| `MpscRing::try_push` (uncontended) | 12-15 ns | 1 CAS head + 1 release-store cell |
-| `MpscRing::try_push` (4-way contended) | 50-80 ns | CAS retry |
-| `MpmcRing::try_push` (SCQ, uncontended) | 15-25 ns | 1 FAA tail + 1 CAS cell |
-| `MpmcRing::try_push` (SCQ, 16-way contended) | **30-60 ns** | FAA never fails; only per-cell CAS contends |
-| `MpmcRing::try_pop` (SCQ, uncontended) | 15-25 ns | 1 FAA head + 1 OR cell |
-| `MpmcRing::try_pop` (SCQ, empty fast-path) | < 5 ns | Threshold < 0 check, no ticket claim |
-| `AtomicSnapshot::load` (uncontended) | 5-10 ns | 2 seq-loads + memcpy + fence |
-| `AtomicSnapshot::publish` | ~15 ns | 2 fetch_add + memcpy |
+| Operation | Per-call shape |
+|---|---|
+| `SpscRing::try_push` | acquire-load on tail, relaxed-store on cell, release-store on head |
+| `SpscRing::try_pop` | symmetric |
+| `MpscRing::try_push` (uncontended) | 1 CAS on head + 1 release-store on cell |
+| `MpscRing::try_push` (under contention) | CAS retries until the producer's ticket lands |
+| `MpmcRing::try_push` (SCQ, uncontended) | 1 FAA on tail + 1 CAS on cell |
+| `MpmcRing::try_push` (SCQ, under contention) | FAA never fails; only the per-cell CAS may contend |
+| `MpmcRing::try_pop` (SCQ, uncontended) | 1 FAA on head + 1 OR on cell |
+| `MpmcRing::try_pop` (SCQ, empty fast-path) | Threshold < 0 check, no ticket claim |
+| `AtomicSnapshot::load` (uncontended) | 2 seq-loads + memcpy + acquire fence |
+| `AtomicSnapshot::publish` | 2 fetch_add + memcpy |
 
-**MPMC vs Vyukov-MPMC projection at 16-way contention:**
+**MPMC vs Vyukov-MPMC under heavy contention:**
 
-| Algorithm | 16-producer throughput | p99 submit latency |
-|---|---|---|
-| Vyukov bounded MPMC (CAS head + CAS tail) | ~50-100 M ops/sec cluster-wide | ~200-400 ns |
-| **Nikolaev SCQ (Crucible's `MpmcRing`)** | **~300-500 M ops/sec** | **~30-60 ns** |
+| Algorithm | Behaviour under contention |
+|---|---|
+| Vyukov bounded MPMC (CAS head + CAS tail) | CAS retry storm — degrades sharply as producer count rises |
+| **Nikolaev SCQ (Crucible's `MpmcRing`)** | FAA never fails; throughput is bounded by FAA bandwidth, not retry behaviour |
 
-The 3-8× improvement comes from FAA never failing vs CAS retry storm.
+The structural improvement comes from FAA never failing vs CAS retry storm; the magnitude depends on the platform's memory subsystem.
 
 #### Tier 5 — NumaMpmcThreadPool
 
-| Operation | Target p99 | Cost source |
+| Operation | Per-call shape |
+|---|---|
+| Pool construction (N workers) | N × pthread_create + sched_setaffinity (paid once) |
+| `pool.submit(job)` | MpmcRing try_push + wake atomic fetch_add |
+| `pool.submit + notify_one` | submit + futex_wake syscall |
+| Worker wake from futex (dormant) | futex round-trip |
+| `pool.fork_join<N>` warm (empty body) | N submits + N decrements + latch wait |
+| Pool destruction (N) | N × running-flag-store + notify + join |
+
+**The persistent-pool win**: the old jthread-spawn model paid pthread_create per worker per fork_join. NumaMpmcThreadPool amortises that by reusing dormant workers, so the critical path of a warm fork_join contains no pthread_create and no per-call thread setup.
+
+### 10.2 Cache-tier rule decisions
+
+| Working set | Decision | Why |
 |---|---|---|
-| Pool construction (N=16 workers) | ~200-500 µs | 16 × pthread_create + sched_setaffinity |
-| `pool.submit(job)` | ~20 ns | MpmcRing try_push + wake atomic fetch_add |
-| `pool.submit + notify_one` | ~1-2 µs | includes futex_wake syscall |
-| Worker wake from futex (dormant) | ~1-3 µs | futex round-trip |
-| `pool.fork_join<N=16>` warm (empty body) | ~10-30 µs | 16 submits + 16 decrements + latch wait |
-| `pool.fork_join<N=16>` warm vs jthread-spawn-per-call | **10-50× faster** | persistent workers vs pthread_create overhead |
-| Pool destruction (N=16) | ~100 µs | 16 × running-flag-store + notify + join |
+| L1-resident | Sequential | data already hot in one core's L1; parallel adds invalidation traffic |
+| L1-boundary | Sequential | per the no-regression rule |
+| L2-resident | Sequential | L2 is private; thread #2 cold-misses everything |
+| L3-resident | Parallel, capped at cores-per-socket | shared L3 within a socket; cap avoids cross-socket cache traffic |
+| DRAM-resident | Parallel(N) with NUMA-spread | memory-channel-bound; scale until channels saturate |
+| DRAM-saturated | Parallel(N) with NUMA-spread | same bound; absolute speedup depends on the platform's memory subsystem |
 
-**The persistent-pool win**: old jthread-spawn model paid 5-15 µs pthread_create × 16 = 80-240 µs per fork_join.  NumaMpmcThreadPool amortises that by reusing dormant workers, dropping the critical path to ~10-30 µs warm.
-
-### 10.2 Speedup targets (cache-tier rule)
-
-| Working set | Decision | Expected speedup vs sequential |
-|---|---|---|
-| 1 KB (L1-resident) | Sequential | 1.00× (no regression) |
-| 32 KB (L1-boundary) | Sequential | 0.95-1.05× (within noise) |
-| 256 KB (L2-resident) | Sequential | 0.95-1.05× |
-| 4 MB (L3-resident) | Parallel(2-4) | 2.5-4× |
-| 64 MB (DRAM-resident) | Parallel(N=cores) | 0.7N to 0.9N (memory-bandwidth bound) |
-| 1 GB (DRAM-saturated) | Parallel(N=cores) | 0.6N to 0.8N |
-
-The "no regression" guarantee at small workloads is the most important property — it makes "always call parallel_for_views" the correct default.  The cost model declines parallelism when it would lose; users don't have to know.
+The "no regression" guarantee at small workloads is the most important property — it makes "always call parallel_for_views" the correct default. The cost model declines parallelism when it would lose; users don't have to know. Actual speedup numbers depend on the platform and are validated by SEPLOG-E1's bench harness on the dev hardware.
 
 ### 10.3 Allocation count targets
 
@@ -1232,17 +1229,16 @@ Verified via:
 Combining all the above:
 
 > A C++26 user code that calls
-> `auto result = parallel_for_views<8>(std::move(region), [](auto sub) noexcept { ... });`
-> with a 1M-element float region and 100ns/element body achieves
-> **8× speedup over sequential**, with **zero allocations**, **zero user-level atomics**, **zero pointer chasing per element**, **compile-time-proved disjointness**, and **TSan-clean operation**.
+> `auto result = parallel_for_views<N>(std::move(region), [](auto sub) noexcept { ... });`
+> on a DRAM-resident region with a non-trivial body executes with **zero allocations**, **zero user-level atomics**, **zero pointer chasing per element**, **compile-time-proved disjointness**, and **TSan-clean operation**.
 >
-> The same expression on a 1K-element region runs **sequentially inline**, **without regression**, with the type system unchanged.
+> The same expression on a cache-resident region runs **sequentially inline**, **without regression**, with the type system unchanged.
 >
 > A C++26 user that targets the pool directly via
-> `pool.fork_join(16, [&](std::size_t i) noexcept { body(i); });`
-> pays ~10-30 µs warm (persistent workers + SCQ submit + futex wake) — **10-50× faster than jthread-spawn-per-call**.  Under 16-way producer contention on the shared MPMC queue, throughput is **3-8× Vyukov bounded MPMC** (FAA never fails vs CAS retry storm).
+> `pool.fork_join(N, [&](std::size_t i) noexcept { body(i); });`
+> pays per-fork-join cost dominated by submit + futex wake when workers are warm — no pthread_create on the critical path. Under heavy producer contention on the shared MPMC queue, throughput is bounded by FAA bandwidth rather than CAS retry behaviour.
 >
-> Producer / consumer role discrimination is compile-time-enforced via CSL fractional permissions.  Protocol adherence (producer can't push after close) is compile-time-enforced via session types.  Placement respects L1/L2/L3/NUMA topology via the default `LocalityAware` scheduler.
+> Producer / consumer role discrimination is compile-time-enforced via CSL fractional permissions. Protocol adherence (producer can't push after close) is compile-time-enforced via session types. Placement respects L1/L2/L3/NUMA topology via the default `LocalityAware` scheduler.
 >
 > No mainstream C++ library exists today that delivers all of these properties simultaneously in one composable primitive.
 
@@ -2848,113 +2844,81 @@ with_exclusive_view(pool, [&](Permission<MetricsRegion>&) noexcept {
 });
 ```
 
-The Crucible Pool is faster than std::shared_mutex for read-heavy workloads — `lend` / release is a single CAS each (~5-15 ns), while shared_mutex pays mutex overhead per lock (~50-200 ns).  For 1000:1 read:write workloads this is a 10× throughput improvement.
+The Crucible Pool is structurally cheaper than std::shared_mutex for read-heavy workloads — `lend` / release is a single CAS each, while shared_mutex acquires a mutex around its internal counter on every shared-lock. The actual margin depends on the platform.
 
 The Crucible API is also more explicit about the read/write distinction at the type level: a function taking `SharedPermission<MetricsRegion>` cannot escalate to write.
 
 ---
 
-## Appendix E — Performance microbenchmarks (projected)
+## Appendix E — Per-call shape of each primitive
 
-These are projected numbers based on the underlying primitive measurements in Crucible's existing bench suite.  Will be replaced with measured values from SEPLOG-E1 when implemented.
+This appendix enumerates what each primitive DOES per call (atomics, memcpys, syscalls). It does not promise specific nanosecond numbers — those depend on workload, system load, cache state, NUMA topology, and contention. The bench suite (`bench/bench_concurrent_*`) reports current measurements on the dev hardware.
 
-### E.1 Permission framework overhead
+### E.1 Permission framework
 
-| Operation | Cost | Calibration |
-|---|---|---|
-| `permission_root_mint<T>()` | 0 ns | constexpr; compile-time |
-| `permission_split<L,R>(p)` | 0 ns | constexpr |
-| `permission_combine<I>(l, r)` | 0 ns | constexpr |
-| `permission_split_n<C0..C7>(p)` | 0 ns | constexpr |
-| `permission_fork<C...>(parent, ...)` (8 threads, empty body) | ~200 µs | 8× pthread_create + join |
-| Permission move into jthread lambda (capture-by-move) | 0 ns | EBO + move |
-| `OwnedRegion::adopt` (16 KB allocation) | ~5 ns | arena bump + move |
-| `OwnedRegion::split_into<8>` | ~10 ns | 8× (T*, size_t) writes |
-| `OwnedRegion::recombine<8>` | ~10 ns | symmetric |
+| Operation | Per-call shape |
+|---|---|
+| `permission_root_mint<T>()` | constexpr, compile-time |
+| `permission_split<L,R>(p)` | constexpr |
+| `permission_combine<I>(l, r)` | constexpr |
+| `permission_split_n<C0..C7>(p)` | constexpr |
+| `permission_fork<C...>(parent, ...)` | N × pthread_create + RAII join (paid once per fork-join) |
+| Permission move into jthread lambda (capture-by-move) | EBO + move; no runtime atomic |
+| `OwnedRegion::adopt` | arena bump + move |
+| `OwnedRegion::split_into<N>` | N × (T*, size_t) writes |
+| `OwnedRegion::recombine<N>` | symmetric |
 
 ### E.2 Pool atomic operations
 
-| Operation | Uncontended p99 | 8-way contended p99 |
-|---|---|---|
-| `Pool::lend()` (CAS-loop conditional inc) | 5-15 ns | 50-100 ns |
-| `Pool::try_upgrade()` (single CAS expecting 0) | 5-15 ns | 30-50 ns |
-| `Pool::deposit_exclusive(p)` (release store) | 2-5 ns | 2-5 ns |
-| `Guard` destructor (fetch_sub) | 5-10 ns | 30-50 ns |
+| Operation | Per-call shape |
+|---|---|
+| `Pool::lend()` | CAS-loop conditional increment on the pool refcount |
+| `Pool::try_upgrade()` | single CAS expecting refcount = 0 |
+| `Pool::deposit_exclusive(p)` | release store on refcount |
+| `Guard` destructor | fetch_sub on refcount |
 
-For comparison, `std::shared_mutex::lock_shared()` is typically 50-200 ns uncontended, so Crucible's Pool is approximately 5-10× faster for the read path.
+The Pool's read path is structurally cheaper than `std::shared_mutex::lock_shared()` (which acquires a mutex around its internal counter); the absolute speedup depends on the platform.
 
 ### E.3 Queue operations (SpscRing-backed)
 
-| Operation | Cost |
+| Operation | Per-call shape |
 |---|---|
-| `Queue<T, spsc<N>>::ProducerHandle::try_push` | 5-8 ns |
-| `Queue<T, spsc<N>>::ConsumerHandle::try_pop` | 5-8 ns |
-| `Queue<T, spsc<N>>::try_push` when full | 3 ns (fast fail) |
-| `Queue<T, mpsc<N>>::try_push` (1 producer) | 12-15 ns |
-| `Queue<T, mpsc<N>>::try_push` (4 producers) | 50-80 ns p99 |
+| `Queue<T, spsc<N>>::ProducerHandle::try_push` | acquire-load + cell store + release-store |
+| `Queue<T, spsc<N>>::ConsumerHandle::try_pop` | symmetric |
+| `Queue<T, spsc<N>>::try_push` when full | one cached load, fail-fast |
+| `Queue<T, mpsc<N>>::try_push` (1 producer) | 1 CAS + 1 release-store on cell |
+| `Queue<T, mpsc<N>>::try_push` (under contention) | CAS retries until ticket lands |
 
 ### E.4 parallel_for_views<N> end-to-end
 
-Workload: 1M float elements, body `x = std::sqrt(x)` (~5 ns per element on Tiger Lake).
+The cost decomposes structurally as:
 
-| N | Wall-clock | Speedup vs sequential |
-|---|---|---|
-| Sequential | 5.0 ms | 1.00× |
-| `parallel_for_views<2>` | 2.7 ms | 1.85× |
-| `parallel_for_views<4>` | 1.5 ms | 3.33× |
-| `parallel_for_views<8>` | 0.95 ms | 5.26× |
-| `parallel_for_views<16>` | 0.85 ms | 5.88× (memory bandwidth saturating) |
+  cost(parallel_for_views<N>(region, body))
+    = cost(WorkBudget) + cost(cost-model decision) + cost(body × N) /
+      effective_parallelism + sync overhead
 
-Memory bandwidth bound at N=8 on a typical desktop; further parallelism gives diminishing returns.  On a high-bandwidth server (e.g. EPYC with 8 DDR5 channels), N=16 or 32 would scale further.
+For DRAM-resident workloads the body cost is what matters; effective parallelism is bounded by the platform's memory-bandwidth ceiling, not by Crucible. SEPLOG-E1's bench harness reports observed speedup curves on the dev hardware; the no-regression rule (§5.4) is the contract — never lose to sequential when the cost model says sequential.
 
 ### E.5 SWMR throughput (Metrics broadcast pattern)
 
-Workload: 1 writer thread updating Metrics struct every ~10 ms; N reader threads reading every ~100 µs.
+Per-call shape:
 
-| N readers | Reader throughput | Writer latency p99 |
-|---|---|---|
-| 1 | 10M ops/s | 50 ns |
-| 4 | 38M ops/s | 100 ns |
-| 16 | 140M ops/s | 200 ns |
-| 64 | 460M ops/s | 500 ns |
+  reader load: 2 seq-loads + memcpy + acquire fence (retry on torn read)
+  writer publish: 2 fetch_add + memcpy
 
-For comparison, the same workload on std::shared_mutex:
+The Pool's read path is structurally cheaper than `std::shared_mutex::lock_shared()`; absolute throughput on either side depends on platform memory subsystem and reader count.
 
-| N readers | Reader throughput | Writer latency p99 |
-|---|---|---|
-| 1 | 5M ops/s | 200 ns |
-| 4 | 12M ops/s | 1 µs |
-| 16 | 28M ops/s | 5 µs |
-| 64 | 50M ops/s | 50 µs |
+### E.6 Cost-model decision shape
 
-Crucible's Pool is 3-9× faster on read throughput; writer latency advantage grows with reader count.
+`AdaptiveScheduler::run` for a sequential decision performs:
 
-### E.6 Cost-model decision overhead
+  WorkBudget evaluation → cost-model heuristic (table lookup + branch) → inline body call (no thread spawn)
 
-`AdaptiveScheduler::run` overhead for sequential decision:
+For a parallel decision:
 
-| Step | Cost |
-|---|---|
-| `WorkBudget` evaluation | 1 ns |
-| Cost-model heuristic (table lookup + branch) | 5 ns |
-| Inline body call (no jthread spawn) | 0 ns |
-| **Total Sequential overhead** | **~6 ns** |
+  WorkBudget evaluation → cost-model heuristic → permission_split_n → OwnedRegion::split_into<N> → pthread_create × N → body execution → pthread_join × N → OwnedRegion::recombine<N>
 
-For parallel decision:
-
-| Step | Cost |
-|---|---|
-| `WorkBudget` evaluation | 1 ns |
-| Cost-model heuristic | 5 ns |
-| `permission_split_n` | 0 ns |
-| `OwnedRegion::split_into<N>` | 10 ns |
-| `pthread_create` × N | 80-120 µs |
-| Body execution | (workload-dependent) |
-| `pthread_join` × N | 16-40 µs |
-| `OwnedRegion::recombine<N>` | 10 ns |
-| **Total Parallel overhead (excl body)** | **~100-160 µs** |
-
-The "no regression" guarantee follows directly: for any workload where sequential body time < ~150 µs, AdaptiveScheduler picks sequential and overhead is 6 ns.  Above that threshold, parallel speedup justifies the spawn overhead.
+The no-regression rule follows structurally: when the cost model picks Sequential, the parallel-only steps (split / pthread_create / pthread_join / recombine) are skipped entirely, so the call's overhead reduces to one budget evaluation + one decision branch + the inline body.
 
 ### E.7 Allocation profile per workload
 
