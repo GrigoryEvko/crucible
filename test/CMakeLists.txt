@@ -336,6 +336,7 @@ crucible_test(test_parallelism_cost_model)
 crucible_test(test_permissioned_snapshot)
 crucible_test(test_permissioned_mpsc_channel)
 crucible_test(test_permissioned_mpmc_channel)
+crucible_test(test_permissioned_sharded_grid)
 crucible_test(test_concurrency_collision_fuzzer)
 crucible_test(test_region_cache)
 crucible_test(test_numerical_recipe)
@@ -1342,3 +1343,22 @@ crucible_neg_compile_test(neg_mpmc_producer_try_pop
 #     FRAMEWORK-CONTROLLED via the = delete reason string.
 crucible_neg_compile_test(neg_mpmc_consumer_copy
     "ConsumerHandle owns a consumer-pool refcount share")
+
+# ── FOUND-A15 — PermissionedShardedGrid role + slot-index tests ────
+#
+# Three witnesses prove the type system rejects every misuse the
+# static-indexing discipline was designed to catch.
+
+# (a) ConsumerHandle<J> cannot push.  GCC-WRAPPER-TEXT.
+crucible_neg_compile_test(neg_grid_consumer_try_push
+    "has no member named.*try_push")
+
+# (b) ProducerHandle<I> cannot recv.  GCC-WRAPPER-TEXT.
+crucible_neg_compile_test(neg_grid_producer_try_recv
+    "has no member named.*try_recv")
+
+# (c) producer<I>() with I >= M is a hard compile error at the
+#     factory boundary — even if the caller constructs the type,
+#     the static_assert in producer<I>() fires.  FRAMEWORK-CONTROLLED.
+crucible_neg_compile_test(neg_grid_slot_index_out_of_range
+    "I must be less than M")
