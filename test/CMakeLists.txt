@@ -337,6 +337,7 @@ crucible_test(test_permissioned_snapshot)
 crucible_test(test_permissioned_mpsc_channel)
 crucible_test(test_permissioned_mpmc_channel)
 crucible_test(test_permissioned_sharded_grid)
+crucible_test(test_permissioned_chase_lev_deque)
 crucible_test(test_concurrency_collision_fuzzer)
 crucible_test(test_region_cache)
 crucible_test(test_numerical_recipe)
@@ -1362,3 +1363,24 @@ crucible_neg_compile_test(neg_grid_producer_try_recv
 #     the static_assert in producer<I>() fires.  FRAMEWORK-CONTROLLED.
 crucible_neg_compile_test(neg_grid_slot_index_out_of_range
     "I must be less than M")
+
+# ── FOUND-A19 — PermissionedChaseLevDeque role-discrimination tests ──
+#
+# Three witnesses prove the type system rejects every misuse the
+# linear Owner + fractional Thieves discipline was designed to catch.
+
+# (a) Thief cannot push.  Only the Owner pushes to bottom.
+#     GCC-WRAPPER-TEXT.
+crucible_neg_compile_test(neg_deque_thief_try_push
+    "has no member named.*try_push")
+
+# (b) Owner cannot steal.  Owner has the fast pop_bottom path;
+#     try_steal is structurally absent.  GCC-WRAPPER-TEXT.
+crucible_neg_compile_test(neg_deque_owner_try_steal
+    "has no member named.*try_steal")
+
+# (c) OwnerHandle is non-copyable — copy would duplicate the linear
+#     Owner Permission, allowing two threads to race on bottom_.
+#     FRAMEWORK-CONTROLLED via the = delete reason string.
+crucible_neg_compile_test(neg_deque_owner_copy
+    "OwnerHandle owns the linear Owner Permission")
