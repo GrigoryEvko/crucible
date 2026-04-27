@@ -74,6 +74,8 @@ Plus `WriteOnce<T>` / `WriteOnceNonNull<T*>` / `BoundedMonotonic<T, Max>` / `Ord
 
 **Effect tokens.** `fx::Alloc / fx::IO / fx::Block / fx::Bg / fx::Init / fx::Test` in `Effects.h` — capability tags on function signatures, zero runtime cost. These are NOT F\*X proof obligations; they are C++-level capabilities enforced at compile time.
 
+**Met(X) effect rows (FOUND-B v1, shipped).** `effects/EffectRow.h` ships `Row<Es...>`, `Subrow<R1, R2>` concept, `row_union_t / row_difference_t / row_intersection_t`. `effects/Computation.h` ships the `Computation<Row, T>` carrier with `mk / extract / lift / weaken / map / then` per Tang-Lindley POPL 2026 / 25_04_2026.md §3.2. `effects/Capabilities.h` defines the `Effect` enum (Alloc/IO/Block/Bg/Init/Test). `effects/compat/Fx.h` re-exports legacy `fx::*` so the two systems coexist. Production-side migration (replace `fx::Bg` parameter types with `Computation<Row<Effect::Bg>, T>` returns) is the still-pending sweep — coexistence works fine until then. Tests: `test/test_effects.cpp` + `test/test_effects_compile.cpp`, both green.
+
 ---
 
 ## L1 — Hardware

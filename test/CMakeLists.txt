@@ -668,6 +668,33 @@ function(crucible_neg_compile_session_test name expected_diag)
     PASS_REGULAR_EXPRESSION "${expected_diag}")
 endfunction()
 
+# Sister harness for effects_neg/.  Mirrors the safety_neg / sessions_neg
+# pattern — only the source directory and label differ.  Effects-side
+# neg-compile tests (FOUND-B13, task #602) probe the Subrow concept's
+# substitution-principle gates on Computation.h: extract on non-empty
+# row, weaken to disjoint row, lift with non-Effect template arg.
+function(crucible_neg_compile_effects_test name expected_diag)
+  add_executable(${name} EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/effects_neg/${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  add_test(NAME ${name}
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+            --target ${name} --config $<CONFIG>)
+  set_tests_properties(${name} PROPERTIES
+    LABELS "effects_neg"
+    PASS_REGULAR_EXPRESSION "${expected_diag}")
+endfunction()
+
+# FOUND-B13 (#602): Met(X) negative-compile witnesses.  Three
+# fixtures probing the Subrow / IsEffect concept gates that enforce
+# the substitution principle for capability propagation.
+crucible_neg_compile_effects_test(neg_extract_nonempty_row
+    "associated constraints are not satisfied|row_size_v.*== 0")
+crucible_neg_compile_effects_test(neg_weaken_to_disjoint_row
+    "associated constraints are not satisfied|Subrow")
+crucible_neg_compile_effects_test(neg_lift_unknown_capability
+    "associated constraints are not satisfied|IsEffect")
+
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
 # Each crucible_neg_compile_test below pairs a deliberately-broken
