@@ -45,6 +45,7 @@
 //     CrashWatchedHandle as inner Resource).
 // ═══════════════════════════════════════════════════════════════════
 
+#include <crucible/handles/OneShotFlag.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
@@ -401,7 +402,92 @@ void test_select_local_pick_branch() {
 }
 
 // ═════════════════════════════════════════════════════════════════
-// ── Tier 7: Sizeof equality at file scope (compile-time witness)
+// ── Tier 7: Crash transport composition (FOUND-C Phase 5) ────────
+// ═════════════════════════════════════════════════════════════════
+//
+// Worked example of `with_crash_check_or_detach` — the v1 lightweight
+// crash transport composition.  Production loop:
+//
+//   while (more_work) {
+//       auto next = with_crash_check_or_detach(std::move(h), flag,
+//                       [&](auto h_in) { return std::move(h_in).send(...); });
+//       if (!next) break;       // crash detected, h was detached, PS dropped
+//       h = std::move(*next);   // continue with the new handle
+//   }
+//
+// Two scenarios exercised:
+//   (a) Happy path: flag never fires, full N iterations complete;
+//   (b) Crash path: flag fires mid-loop, with_crash_check_or_detach
+//       returns nullopt, the handle was detached cleanly with
+//       TransportClosedOutOfBand reason (no abort, no leak diagnostic).
+
+void test_crash_transport_happy_path() {
+    using BodyProto = Send<int, Continue>;
+    using LoopProto = Loop<BodyProto>;
+
+    FakeChannel ch{};
+    ::crucible::safety::OneShotFlag flag;  // never set
+    auto h = establish_permissioned<LoopProto>(ch);
+
+    int sum = 0;
+    constexpr int kIterations = 5;
+    for (int i = 0; i < kIterations; ++i) {
+        auto next = with_crash_check_or_detach(
+            std::move(h), flag,
+            [v = i + 1](auto h_in) {
+                return std::move(h_in).send(v, send_int);
+            });
+        CRUCIBLE_TEST_REQUIRE(next.has_value());
+        sum += i + 1;
+        h = std::move(*next);
+    }
+    CRUCIBLE_TEST_REQUIRE(sum == 1 + 2 + 3 + 4 + 5);
+
+    // Loop has no exit branch — explicit detach.
+    std::move(h).detach(detach_reason::TestInstrumentation{});
+}
+
+void test_crash_transport_crash_path() {
+    using BodyProto = Send<int, Continue>;
+    using LoopProto = Loop<BodyProto>;
+
+    FakeChannel ch{};
+    ::crucible::safety::OneShotFlag flag;
+    auto h = establish_permissioned<LoopProto>(ch);
+
+    int sum = 0;
+    bool crash_observed = false;
+
+    for (int i = 0; i < 100; ++i) {
+        // Fire the crash flag at iteration 3 (simulates peer crash
+        // detected by SWIM / CNTP / kernel socket close handler).
+        if (i == 3) flag.signal();
+
+        auto next = with_crash_check_or_detach(
+            std::move(h), flag,
+            [v = i + 1](auto h_in) {
+                return std::move(h_in).send(v, send_int);
+            });
+        if (!next) {
+            // with_crash_check_or_detach detached h cleanly with
+            // TransportClosedOutOfBand reason — no abandonment
+            // diagnostic, no abort, type-level PS was dropped.
+            crash_observed = true;
+            break;
+        }
+        sum += i + 1;
+        h = std::move(*next);
+    }
+
+    CRUCIBLE_TEST_REQUIRE(crash_observed);
+    // Three iterations completed (i = 0, 1, 2) before crash at i = 3.
+    CRUCIBLE_TEST_REQUIRE(sum == 1 + 2 + 3);
+    // Note: h is in a moved-from state after with_crash_check_or_detach
+    // detached it.  No further detach call needed.
+}
+
+// ═════════════════════════════════════════════════════════════════
+// ── Tier 8: Sizeof equality at file scope (compile-time witness)
 // ═════════════════════════════════════════════════════════════════
 //
 // PermissionedSessionHandle MUST have the same sizeof as the bare
@@ -444,6 +530,8 @@ int main() {
     run_test("recv_transferable_send_returned", test_recv_transferable_send_returned);
     run_test("loop_balanced_iteration",         test_loop_balanced_iteration);
     run_test("select_local_pick_branch",        test_select_local_pick_branch);
+    run_test("crash_transport_happy_path",      test_crash_transport_happy_path);
+    run_test("crash_transport_crash_path",      test_crash_transport_crash_path);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);
