@@ -329,7 +329,7 @@ class Vigil {
     // Load the most recent region from Cipher and activate it.
     // No-op if no Cipher or the Cipher is empty.
     // Also activates CrucibleContext if the region has a MemoryPlan.
-    [[nodiscard, gnu::cold]] bool load(fx::Alloc a) {
+    [[nodiscard, gnu::cold]] bool load(effects::Alloc a) {
         if (!cipher_.has_value() || cipher_->empty()) return false;
         auto open_view = cipher_->mint_open_view();
         RegionNode* region = cipher_->load(open_view, a, cipher_->head(), load_arena_);

@@ -21,7 +21,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Arena.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Workload.h>
 
@@ -84,9 +84,9 @@ struct DataA {};
 struct DataB {};
 struct DataSeq {};
 
-// fx::Test exposes an Alloc capability member; copy it for use.
-inline fx::Alloc test_alloc_token() noexcept {
-    return fx::Test{}.alloc;
+// effects::Test exposes an Alloc capability member; copy it for use.
+inline effects::Alloc test_alloc_token() noexcept {
+    return effects::Test{}.alloc;
 }
 
 // ── Tier 1: compile-time structural ──────────────────────────────

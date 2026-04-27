@@ -12,7 +12,7 @@
 //      every registered sid
 // ═══════════════════════════════════════════════════════════════════
 
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/Expr.h>
 #include <crucible/ExprPool.h>
 
@@ -26,7 +26,7 @@ constexpr uint16_t NUM_FLAGS = ExprFlags::IS_INTEGER;
 // ── Test: fast_symbol returns nullptr before registration ─────────
 
 static void test_unregistered_returns_nullptr() {
-    fx::Test t{};
+    effects::Test t{};
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -50,7 +50,7 @@ static void test_unregistered_returns_nullptr() {
 // ── Test: fast_symbol matches the symbol() interning result ───────
 
 static void test_matches_slow_path() {
-    fx::Test t{};
+    effects::Test t{};
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -82,7 +82,7 @@ static void test_matches_slow_path() {
 // ── Test: cache grows sparsely — non-contiguous SymbolId ──────────
 
 static void test_sparse_sids() {
-    fx::Test t{};
+    effects::Test t{};
     const auto a = t.alloc;
     ExprPool pool{a};
 
@@ -115,7 +115,7 @@ static void test_sparse_sids() {
 // ── Test: large sid range stress ──────────────────────────────────
 
 static void test_dense_sids_stress() {
-    fx::Test t{};
+    effects::Test t{};
     const auto a = t.alloc;
     ExprPool pool{a};
 

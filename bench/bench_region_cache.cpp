@@ -14,7 +14,7 @@
 #include <cstring>
 
 #include <crucible/Arena.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/RegionCache.h>
 
 #include "bench_harness.h"
@@ -33,7 +33,7 @@ constexpr uint32_t NUM_OPS     = 128;
 constexpr uint32_t NUM_REGIONS = 10;
 
 struct TestFixture {
-    fx::Test    test{};
+    effects::Test    test{};
     Arena       arena{1 << 20};
     RegionNode* regions[NUM_REGIONS]{};
     MemoryPlan* plans[NUM_REGIONS]{};

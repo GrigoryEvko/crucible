@@ -20,7 +20,7 @@
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/CrucibleContext.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 
 #include <cassert>
 #include <cmath>
@@ -119,7 +119,7 @@ static constexpr uint64_t SZ_BD     = B * D * 4;           // 64
 static constexpr uint64_t SZ_BNCLS  = B * N_CLS * 4;       // 24
 
 int main() {
-    fx::Test test;
+    effects::Test test;
     std::printf("test_compute_vit:\n");
 
     // ── Initialize parameters with seeded random values ──────────────

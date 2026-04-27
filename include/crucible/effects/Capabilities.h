@@ -4,28 +4,28 @@
 //
 // Six effect atoms parameterizing the Met(X) row algebra per
 // 25_04_2026.md §3.3 and Tang-Lindley POPL 2026 (arXiv:2507.10301).
-// Each atom replaces one of the existing fx::* capability tokens in
-// crucible/Effects.h.  The new representation is reflection-friendly
-// (`std::meta::info`-addressable) and composes via row union without
-// the per-token boilerplate the existing fx::* tree carries.
+// The legacy crucible/Effects.h fx::* tree was deleted in
+// FOUND-B07 / METX-5 — this header IS the production capability surface.
 //
-//   Effect    | Replaces       | Carried by
-//   ----------+----------------+-------------------------------------
-//   Alloc     | fx::Alloc      | heap allocation, arena alloc, push_back
-//   IO        | fx::IO         | file/network I/O (fprintf, send, recv)
-//   Block     | fx::Block      | mutex, sleep, futex, spin-wait
-//   Bg        | fx::Bg         | background thread context (Alloc+IO+Block)
-//   Init      | fx::Init       | initialization context (Alloc+IO)
-//   Test      | fx::Test       | test context (unrestricted)
+//   Effect    | Carried by
+//   ----------+-----------------------------------------------------
+//   Alloc     | heap allocation, arena alloc, push_back
+//   IO        | file/network I/O (fprintf, send, recv)
+//   Block     | mutex, sleep, futex, spin-wait
+//   Bg        | background thread context (Alloc + IO + Block)
+//   Init      | initialization context (Alloc + IO)
+//   Test      | test context (unrestricted: Alloc + IO + Block)
 //
 //   Axiom coverage: TypeSafe — strong enum with explicit underlying
 //                   type; reflection traversal sees all atoms.
-//   Runtime cost:   zero — atoms are compile-time tags only.
+//   Runtime cost:   zero — atoms are compile-time tags only.  The
+//                   companion cap::* value-level tag types and the
+//                   Bg / Init / Test context structs collapse to one
+//                   byte each via [[no_unique_address]] EBO.
 //
 // Foreground hot-path code holds an empty row; the type system rejects
-// every effectful call.  See Computation.h for the carrier; EffectRow.h
-// for set algebra; compat/Fx.h for backward-compat aliases preserving
-// the existing fx::* spellings during migration.
+// every effectful call.  See Computation.h for the carrier and
+// EffectRow.h for the set algebra (Subrow / row_union_t / etc.).
 //
 // Self-test block at file end proves the atom catalog is exhaustive
 // and that diagnostic-name emission covers every atom.
@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <meta>
 #include <string_view>
+#include <type_traits>
 
 namespace crucible::effects {
 
@@ -74,6 +75,112 @@ template <Effect E>
 concept IsEffect =
     E == Effect::Alloc || E == Effect::IO   || E == Effect::Block ||
     E == Effect::Bg    || E == Effect::Init || E == Effect::Test;
+
+// ── Capability tag types (cap::*) ───────────────────────────────────
+//
+// The Effect enum is the abstract atom catalog used by the Met(X) row
+// algebra; these `cap::*` types are the concrete value-level proof
+// tokens carried at function-parameter sites.  A function declared
+//
+//   void* alloc(cap::Alloc, size_t n);
+//
+// can only be called from a context that synthesises a `cap::Alloc`
+// value — and only the `Bg` / `Init` / `Test` context types below
+// expose them as members.  Foreground hot-path code holds no context
+// and therefore cannot construct any `cap::*` token; the type system
+// rejects any attempt to do so.
+//
+// Layout: every cap::* is one byte (default-constructible, copyable,
+// trivially-destructible empty struct).  Marked `[[no_unique_address]]`
+// in containing contexts collapses them to zero bytes via EBO.
+//
+// noexcept on every special member: capability tokens are empty
+// structs and must never throw — explicit noexcept documents intent
+// AND fires a compile-time contradiction if a future body adds a
+// throwing expression.
+namespace cap {
+
+struct Alloc {
+    constexpr Alloc()                          noexcept = default;
+    constexpr Alloc(const Alloc&)              noexcept = default;
+    constexpr Alloc(Alloc&&)                   noexcept = default;
+    constexpr Alloc& operator=(const Alloc&)   noexcept = default;
+    constexpr Alloc& operator=(Alloc&&)        noexcept = default;
+    ~Alloc()                                            = default;
+};
+
+struct IO {
+    constexpr IO()                             noexcept = default;
+    constexpr IO(const IO&)                    noexcept = default;
+    constexpr IO(IO&&)                         noexcept = default;
+    constexpr IO& operator=(const IO&)         noexcept = default;
+    constexpr IO& operator=(IO&&)              noexcept = default;
+    ~IO()                                               = default;
+};
+
+struct Block {
+    constexpr Block()                          noexcept = default;
+    constexpr Block(const Block&)              noexcept = default;
+    constexpr Block(Block&&)                   noexcept = default;
+    constexpr Block& operator=(const Block&)   noexcept = default;
+    constexpr Block& operator=(Block&&)        noexcept = default;
+    ~Block()                                            = default;
+};
+
+}  // namespace cap
+
+// ── Top-level effects:: aliases for the cap tags ────────────────────
+//
+// Production call sites use the short form (`effects::Alloc`); the
+// `cap::` namespace exists for diagnostic clarity when the surrounding
+// code is doing something unusual with the tags directly.
+using Alloc = cap::Alloc;
+using IO    = cap::IO;
+using Block = cap::Block;
+
+// ── Context types — Bg / Init / Test ────────────────────────────────
+//
+// A context aggregates the cap::* tokens a particular thread or
+// scope is allowed to exercise.  Members are `[[no_unique_address]]`
+// so the whole context collapses to one byte under -O3.
+//
+//   Bg    — background thread: alloc + io + block
+//   Init  — initialization scope: alloc + io (no block — init must
+//           never block on a synchronisation primitive)
+//   Test  — test driver: unrestricted (alloc + io + block)
+//
+// Usage:
+//   void bg_main(Arena& arena) {
+//       effects::Bg bg;
+//       arena.alloc_obj<RegionNode>(bg.alloc);  // OK
+//   }
+//
+// Hot-path code holds NO context, therefore cannot construct any
+// cap::* token, therefore cannot call any cap::*-taking function.
+
+struct Bg {
+    [[no_unique_address]] cap::Alloc alloc{};
+    [[no_unique_address]] cap::IO    io{};
+    [[no_unique_address]] cap::Block block{};
+};
+
+struct Init {
+    [[no_unique_address]] cap::Alloc alloc{};
+    [[no_unique_address]] cap::IO    io{};
+};
+
+struct Test {
+    [[no_unique_address]] cap::Alloc alloc{};
+    [[no_unique_address]] cap::IO    io{};
+    [[no_unique_address]] cap::Block block{};
+};
+
+static_assert(sizeof(Bg)   == 1, "Bg context must be 1 byte (EBO over empty cap::* members)");
+static_assert(sizeof(Init) == 1, "Init context must be 1 byte");
+static_assert(sizeof(Test) == 1, "Test context must be 1 byte");
+static_assert(sizeof(cap::Alloc) == 1);
+static_assert(sizeof(cap::IO)    == 1);
+static_assert(sizeof(cap::Block) == 1);
 
 // ── Self-test block ─────────────────────────────────────────────────
 namespace detail::capabilities_self_test {
@@ -145,6 +252,31 @@ static_assert(effect_name(Effect::Alloc) != effect_name(Effect::Test));
 static_assert(effect_name(Effect::IO)    != effect_name(Effect::Block));
 static_assert(effect_name(Effect::Bg)    != effect_name(Effect::Init));
 static_assert(effect_name(Effect::Init)  != effect_name(Effect::Test));
+
+// ── Cap-tag layout invariants ───────────────────────────────────────
+//
+// Every cap::* token is a default-constructible empty struct.  Bg /
+// Init / Test contexts hold them as [[no_unique_address]] members and
+// collapse to one byte total.
+static_assert(std::is_default_constructible_v<cap::Alloc>);
+static_assert(std::is_default_constructible_v<cap::IO>);
+static_assert(std::is_default_constructible_v<cap::Block>);
+static_assert(std::is_trivially_copyable_v<cap::Alloc>);
+static_assert(std::is_trivially_copyable_v<cap::IO>);
+static_assert(std::is_trivially_copyable_v<cap::Block>);
+static_assert(std::is_trivially_destructible_v<cap::Alloc>);
+static_assert(std::is_trivially_destructible_v<cap::IO>);
+static_assert(std::is_trivially_destructible_v<cap::Block>);
+
+// Top-level aliases really do refer to the cap::* originals.
+static_assert(std::is_same_v<Alloc, cap::Alloc>);
+static_assert(std::is_same_v<IO,    cap::IO>);
+static_assert(std::is_same_v<Block, cap::Block>);
+
+// Bg / Init / Test contexts default-construct without throwing.
+static_assert(std::is_nothrow_default_constructible_v<Bg>);
+static_assert(std::is_nothrow_default_constructible_v<Init>);
+static_assert(std::is_nothrow_default_constructible_v<Test>);
 
 }  // namespace detail::capabilities_self_test
 

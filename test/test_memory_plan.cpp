@@ -1,12 +1,12 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/BackgroundThread.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
 
 int main() {
-  crucible::fx::Test test;
+  crucible::effects::Test test;
   crucible::BackgroundThread bt;
 
   // Create slots with known liveness intervals for memory planning.

@@ -15,7 +15,7 @@
 
 #include <crucible/BackgroundThread.h>
 #include <crucible/CrucibleContext.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 
 #include <cassert>
 #include <cmath>
@@ -55,7 +55,7 @@ static constexpr uint32_t N_SLOTS = 7;
 static constexpr uint32_t N_OPS = 4;
 
 int main() {
-    fx::Test test;
+    effects::Test test;
     std::printf("test_compute:\n");
 
     // ── Initialize parameters with seeded random values ──────────────

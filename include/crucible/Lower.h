@@ -37,7 +37,7 @@ namespace crucible {
 // the Graph node will have fewer inputs than the TraceEntry. Slot
 // IDs are compacted to match the filtered input list.
 inline void lower_trace_to_graph(
-    fx::Alloc a,
+    effects::Alloc a,
     const TraceGraph& tg,
     ExprPool& pool,
     Graph& graph)

@@ -52,7 +52,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/CKernel.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
@@ -76,8 +76,8 @@ using crucible::ReductionDeterminism;
 using crucible::ScalarType;
 namespace names = crucible::recipe_names;
 
-crucible::fx::Test g_test{};
-inline crucible::fx::Alloc alloc_cap() noexcept { return g_test.alloc; }
+crucible::effects::Test g_test{};
+inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
 // ─── Recipe-relevance taxonomy ─────────────────────────────────────
 //

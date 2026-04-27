@@ -12,7 +12,7 @@
 #include <vector>
 
 #include <crucible/Arena.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
 
@@ -20,7 +20,7 @@
 
 using namespace crucible;
 
-static const fx::Bg BG;
+static const effects::Bg BG;
 static constexpr auto A = BG.alloc;
 
 // Avoids collision with crucible::make_region — this one builds a region

@@ -1029,7 +1029,7 @@ class CRUCIBLE_OWNER KernelCache {
 // Placement-new with RegionNode{} zero-initializes via NSDMI.
 // Only set the fields that differ from defaults.
 [[nodiscard]] inline RegionNode* make_region(
-    fx::Alloc a,
+    effects::Alloc a,
     Arena& arena CRUCIBLE_LIFETIMEBOUND,
     TraceEntry* ops,
     uint32_t num_ops) noexcept
@@ -1053,7 +1053,7 @@ class CRUCIBLE_OWNER KernelCache {
 // Overload: accept a pre-computed content hash (from build_trace's fused
 // streaming hash). Eliminates the redundant second pass over all ops.
 [[nodiscard]] inline RegionNode* make_region(
-    fx::Alloc a,
+    effects::Alloc a,
     Arena& arena CRUCIBLE_LIFETIMEBOUND,
     TraceEntry* ops,
     uint32_t num_ops,
@@ -1104,7 +1104,7 @@ class CRUCIBLE_OWNER KernelCache {
 // callers who need to recover the recipe later must track it out-of-
 // band (or upgrade to IR002 KernelNode when Phase E lands).
 [[nodiscard]] inline RegionNode* make_region(
-    fx::Alloc a,
+    effects::Alloc a,
     Arena& arena CRUCIBLE_LIFETIMEBOUND,
     TraceEntry* ops,
     uint32_t num_ops,
@@ -1126,7 +1126,7 @@ class CRUCIBLE_OWNER KernelCache {
 }
 
 // Create a terminal node. NSDMI handles zero-init; just set kind.
-[[nodiscard]] inline TraceNode* make_terminal(fx::Alloc a, Arena& arena) noexcept {
+[[nodiscard]] inline TraceNode* make_terminal(effects::Alloc a, Arena& arena) noexcept {
   auto* node = new (arena.alloc_obj<TraceNode>(a))
       TraceNode{};
   node->kind = TraceNodeKind::TERMINAL;
@@ -1136,7 +1136,7 @@ class CRUCIBLE_OWNER KernelCache {
 // Create a LoopNode. Body must be a complete sub-DAG (ending in TERMINAL).
 // The body_content_hash is precomputed from the body's region chain.
 [[nodiscard]] inline LoopNode* make_loop(
-    fx::Alloc a,
+    effects::Alloc a,
     Arena& arena CRUCIBLE_LIFETIMEBOUND,
     TraceNode* body,
     ContentHash body_content_hash,
@@ -1284,7 +1284,7 @@ inline void recompute_merkle(TraceNode* node) {
 // ═══════════════════════════════════════════════════════════════════
 
 [[nodiscard]] inline BranchNode* add_branch(
-    fx::Alloc a,
+    effects::Alloc a,
     Arena& arena,
     KernelCache& kernel_cache,
     TraceNode* divergence_point,

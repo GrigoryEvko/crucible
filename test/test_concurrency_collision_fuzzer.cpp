@@ -92,7 +92,7 @@
 #include <crucible/concurrent/SpscRing.h>
 #include <crucible/concurrent/scheduler/Policies.h>
 #include <crucible/Arena.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 #include <crucible/permissions/Permission.h>
@@ -133,10 +133,10 @@ struct TestFailure {};
 
 namespace {
 
-// fx::Test exposes an Alloc capability member; copy it for use in
+// effects::Test exposes an Alloc capability member; copy it for use in
 // arena allocations.  Same pattern as test_owned_region.cpp.
-inline fx::Alloc test_alloc_token_() noexcept {
-    return fx::Test{}.alloc;
+inline effects::Alloc test_alloc_token_() noexcept {
+    return effects::Test{}.alloc;
 }
 
 int total_passed = 0;

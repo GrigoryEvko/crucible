@@ -398,7 +398,7 @@ struct BackgroundThread {
   // ── Main loop ──
 
   void run() CRUCIBLE_NO_THREAD_SAFETY {
-    fx::Bg bg;
+    effects::Bg bg;
     TraceRing::Entry batch[BATCH_SIZE];
     MetaIndex meta_batch[BATCH_SIZE];
     ScopeHash scope_batch[BATCH_SIZE];
@@ -479,7 +479,7 @@ struct BackgroundThread {
     }
   }
 
-  void on_iteration_boundary(fx::Alloc a) CRUCIBLE_NO_THREAD_SAFETY {
+  void on_iteration_boundary(effects::Alloc a) CRUCIBLE_NO_THREAD_SAFETY {
     uint32_t total = static_cast<uint32_t>(current_trace.size());
     uint32_t iter_len = detector.last_completed_len;
 
@@ -565,7 +565,7 @@ struct BackgroundThread {
   //
   // Public: called by on_iteration_boundary() and benchmarks.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
-  [[nodiscard]] TraceGraph* build_trace(fx::Alloc a, uint32_t count)
+  [[nodiscard]] TraceGraph* build_trace(effects::Alloc a, uint32_t count)
       CRUCIBLE_NO_THREAD_SAFETY {
     // ── Hoist vector data pointers into locals ─────────────────────
     //
@@ -942,7 +942,7 @@ struct BackgroundThread {
   // Alignment: 256 bytes (CUDA coalescing).
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] MemoryPlan* compute_memory_plan(
-      fx::Alloc a, TensorSlot* slots, uint32_t num_slots)
+      effects::Alloc a, TensorSlot* slots, uint32_t num_slots)
       CRUCIBLE_NO_THREAD_SAFETY {
     static constexpr uint32_t ALIGNMENT = 256;
 

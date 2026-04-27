@@ -1,5 +1,5 @@
 #include <crucible/MerkleDag.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
@@ -9,7 +9,7 @@ using crucible::ContentHash;
 using crucible::MerkleHash;
 
 int main() {
-  crucible::fx::Test test;
+  crucible::effects::Test test;
   crucible::Arena arena(1 << 16);
 
   // Test compute_storage_nbytes

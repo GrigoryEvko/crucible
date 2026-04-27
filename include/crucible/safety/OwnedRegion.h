@@ -70,7 +70,7 @@
 // happens-before).
 
 #include <crucible/Arena.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/Platform.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/PermissionTreeGenerator.h>
@@ -146,7 +146,7 @@ public:
     //
     // count == 0: returns OwnedRegion with base_ == nullptr, count_ == 0.
     [[nodiscard]] static OwnedRegion adopt(
-        fx::Alloc alloc_token,
+        effects::Alloc alloc_token,
         Arena& arena,
         std::size_t count,
         Permission<Tag>&& perm) noexcept

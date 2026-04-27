@@ -196,7 +196,7 @@ class CRUCIBLE_OWNER Cipher {
     // contents (ndim ≤ 8 per-meta, num_ops ≤ CDAG_MAX_OPS, etc.).  On
     // any failure along the way: nullptr, no state change, no partial
     // arena growth (see Serialize.h pre-flight).
-    [[nodiscard]] RegionNode* load(OpenView const&, fx::Alloc a,
+    [[nodiscard]] RegionNode* load(OpenView const&, effects::Alloc a,
                                    ContentHash content_hash, Arena& arena) const {
         if (!content_hash) return nullptr;
         const std::string path = obj_path(content_hash.raw());
@@ -232,7 +232,7 @@ class CRUCIBLE_OWNER Cipher {
     // Legacy: mints OpenView locally.  const because mint_open_view()
     // is now const-callable (ScopedView stores Carrier const*, so
     // view minting works through a const reference).
-    [[nodiscard]] RegionNode* load(fx::Alloc a, ContentHash content_hash, Arena& arena) const {
+    [[nodiscard]] RegionNode* load(effects::Alloc a, ContentHash content_hash, Arena& arena) const {
         return load(mint_open_view(), a, content_hash, arena);
     }
 

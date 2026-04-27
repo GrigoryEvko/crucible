@@ -41,7 +41,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Arena.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
 
@@ -61,7 +61,7 @@ class CRUCIBLE_OWNER RecipePool {
   // pins (FORGE.md §19.2) with no growth.  Registries bootstrapping
   // with ~8 starter recipes fit comfortably.
   [[gnu::cold]] explicit RecipePool(Arena& arena CRUCIBLE_LIFETIMEBOUND,
-                                    fx::Alloc a,
+                                    effects::Alloc a,
                                     uint32_t initial_capacity = 32)
       noexcept
       pre (initial_capacity >= 8)
@@ -101,7 +101,7 @@ class CRUCIBLE_OWNER RecipePool {
   // aborts via std::abort per the Crucible OOM-is-unrecoverable
   // discipline; table-full triggers grow.
   [[nodiscard, gnu::returns_nonnull]] const NumericalRecipe* intern(
-      fx::Alloc a, const NumericalRecipe& fields)
+      effects::Alloc a, const NumericalRecipe& fields)
       CRUCIBLE_LIFETIMEBOUND
       CRUCIBLE_NO_THREAD_SAFETY
   {
@@ -162,7 +162,7 @@ class CRUCIBLE_OWNER RecipePool {
   // Install a fresh recipe at slot index `i`.  Allocates from arena,
   // copies the fields, writes the authoritative hash, registers.
   [[nodiscard, gnu::returns_nonnull]] const NumericalRecipe* install_(
-      fx::Alloc a, uint32_t i,
+      effects::Alloc a, uint32_t i,
       const NumericalRecipe& fields, RecipeHash h)
   {
     // alloc_obj returns uninitialized storage; placement-new with
@@ -181,7 +181,7 @@ class CRUCIBLE_OWNER RecipePool {
   // Double the table capacity, rehash every existing entry.
   // Called when the 50% load threshold would be exceeded.
   [[gnu::cold, gnu::noinline]]
-  void grow_(fx::Alloc a) {
+  void grow_(effects::Alloc a) {
     const uint32_t old_cap = capacity_;
     Slot* old_slots = slots_;
     const uint32_t new_cap = old_cap * 2;

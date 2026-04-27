@@ -53,7 +53,7 @@
 //                 the call sequence (Layer 2).
 // ═══════════════════════════════════════════════════════════════════
 
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
 #include <crucible/RecipePool.h>
@@ -112,7 +112,7 @@ class CRUCIBLE_OWNER RecipeRegistry {
   // mutates or destroys the pool.  Pool outlives the registry — the
   // lifetime contract is implicit in the construction order.
   [[gnu::cold]] explicit RecipeRegistry(RecipePool& pool CRUCIBLE_LIFETIMEBOUND,
-                                        fx::Alloc a) noexcept;
+                                        effects::Alloc a) noexcept;
 
   // Interior pointers into pool_→arena; relocating would dangle.
   RecipeRegistry(const RecipeRegistry&)            = delete("RecipeRegistry holds interior pointers into the caller's pool");
@@ -361,7 +361,7 @@ inline constexpr std::array<StarterSpec, RecipeRegistry::STARTER_COUNT>
 // ─── Inline implementation ──────────────────────────────────────────
 
 inline RecipeRegistry::RecipeRegistry(RecipePool& pool CRUCIBLE_LIFETIMEBOUND,
-                                      fx::Alloc a) noexcept
+                                      effects::Alloc a) noexcept
 {
   // Intern every starter spec into the pool; the pool writes the
   // authoritative hash, we capture the canonical pointer.  Order

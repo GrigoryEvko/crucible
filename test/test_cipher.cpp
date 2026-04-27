@@ -1,14 +1,14 @@
 #include <crucible/Cipher.h>
 
 #include <memory>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <cassert>
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
 
-static crucible::fx::Test g_test;
+static crucible::effects::Test g_test;
 
 // Build a minimal RegionNode suitable for Cipher round-trip tests.
 static crucible::RegionNode* make_test_region(crucible::Arena& arena) {
