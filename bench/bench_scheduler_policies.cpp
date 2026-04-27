@@ -109,12 +109,37 @@ template <typename T>
 // All deliberately sized to fit each policy's queue_template default
 // capacity.
 
-constexpr std::size_t   ITEMS_FIFO_PER_PROD     = 2'000;
-constexpr std::size_t   ITEMS_LIFO              = 2'000;
-constexpr std::size_t   ITEMS_PRIORITY_PER_PROD = 600;
+// Sample sizes are chosen so spawn overhead (~150 µs/jthread × N)
+// drops below 2% of total wall time — at that point, "items / wall"
+// is a true steady-state throughput rate (workers are warm, the
+// ramp-up cost amortizes to zero).  Smaller workloads conflate
+// "queue throughput" with "pthread_create cost".
+//
+// Estimated wall per cycle at expected per-policy steady-state rate:
+//   FIFO/RR/LA at ~15-35 M items/s × 200K items = 6-13 ms
+//   Lifo at ~25 M × 50K = 2 ms
+//   Priority single-grid at ~18 M × 80K = 4 ms
+//   Per-shard at ~25 M × 80K = 3 ms
+// Spawn ~1.2 ms per cycle is now <30% even for the smallest case.
+constexpr std::size_t   ITEMS_FIFO_PER_PROD     = 50'000;
+constexpr std::size_t   ITEMS_LIFO              = 50'000;
+constexpr std::size_t   ITEMS_PRIORITY_PER_PROD = 20'000;
 constexpr std::size_t   NUM_PRODUCERS           = 4;
 constexpr std::size_t   NUM_CONSUMERS           = 4;
 constexpr std::size_t   NUM_THIEVES             = 4;
+
+// One long-lived contended run per policy.  Workers spawn once,
+// drain ~all items, join.  No per-iter pthread_create cost on the
+// measurement.  Tail percentiles get ~6250 samples per producer
+// (200K / 32) which is enough for stable p99.9 — outliers can't
+// dominate.
+constexpr std::size_t   CONTENDED_ITERATIONS    = 1;
+
+// Legacy spawn-bound throughput constants — referenced by the
+// dead bench_throughput_*_ templates left in place for reference.
+// These templates are no longer called from main(); each cycle
+// includes pthread_create/join cost and was misleading.  Steady-
+// state throughput now comes from contended (long-lived workers).
 constexpr std::size_t   THRU_SAMPLES            = 30;
 constexpr std::size_t   THRU_WARMUP             = 2;
 constexpr std::size_t   THRU_MAX_WALL_MS        = 8000;
@@ -305,6 +330,19 @@ struct PinningLayout {
     return ::pthread_setaffinity_np(::pthread_self(), sizeof(set), &set) == 0;
 }
 
+// SCHED_FIFO was tried as a way to remove OS preemption noise.  It
+// works for non-contending workloads (Lifo, per-shard) but DEADLOCKS
+// any policy whose producers contend on a shared head (Fifo's single
+// MPMC ring): 4 producers + 4 consumers all at RT priority 50 spin
+// indefinitely against each other in the SCQ inner-CAS retry loop
+// because std::this_thread::yield() between RT threads of the same
+// priority on different cores is a no-op — observed Fifo p99.9 going
+// 768 ns → 22 ms with RT enabled.  Decision: pinning alone, no RT.
+// The remaining tail outliers (RoundRobin's ~140 µs at p99.9) ARE
+// real OS preemption; production code that needs predictable tail
+// MUST add CPU isolation (isolcpus= boot param) — RT priority is not
+// a substitute for that.
+
 void print_pinning_layout_(const PinningLayout& L) noexcept {
     if (!L.valid) {
         std::printf("  pinning: DISABLED (topology probe found no usable L3 group)\n");
@@ -322,32 +360,29 @@ void print_pinning_layout_(const PinningLayout& L) noexcept {
 
 struct PolicyResults {
     const char*        policy_name;
-    bench::Report      floor;          // single-thread per-op
-    ContendedResult    tail;           // contended per-submit
-    bench::Report      throughput;     // wall-clock per cycle
+    bench::Report      floor;          // single-thread per-op (push+pop)
+    ContendedResult    tail;           // contended per-submit, K iterations
+                                       // (steady-state items_per_sec inside)
 };
 
 void print_policy_table_header_() {
-    std::printf("\n%-14s | %12s %12s %12s | %12s %12s %12s | %12s %12s\n",
+    std::printf("\n%-18s | %10s %10s %10s | %10s %10s %10s | %14s\n",
                 "policy",
                 "floor p50", "floor p99", "floor p99.9",
                 "tail p50",  "tail p99",  "tail p99.9",
-                "thru p50",  "items/sec");
-    std::printf("%-14s | %12s %12s %12s | %12s %12s %12s | %12s %12s\n",
-                "──────────────",
+                "steady-state");
+    std::printf("%-18s | %10s %10s %10s | %10s %10s %10s | %14s\n",
+                "──────────────────",
                 "(ns)", "(ns)", "(ns)",
                 "(ns)", "(ns)", "(ns)",
-                "(ms/cycle)", "(M items/s)");
+                "(M items/s)");
 }
 
 void print_policy_row_(const PolicyResults& r) {
-    const std::size_t items_per_cycle =
-        (r.tail.total_items == 0) ? 1 : r.tail.total_items;
-    const double thru_p50_ms = r.throughput.pct.p50 / 1e6;
-    const double items_per_sec_p50 = (thru_p50_ms > 0)
-        ? static_cast<double>(items_per_cycle) * 1000.0 / thru_p50_ms / 1e6
-        : 0.0;
-    std::printf("%-14s | %12.1f %12.1f %12.1f | %12.1f %12.1f %12.1f | %12.3f %12.2f\n",
+    // Steady-state throughput from contended: total items processed
+    // over the SUM of contended iteration walls (NOT spawn-bound).
+    const double items_per_sec_M = r.tail.items_per_sec / 1e6;
+    std::printf("%-18s | %10.1f %10.1f %10.1f | %10.1f %10.1f %10.1f | %14.2f\n",
                 r.policy_name,
                 r.floor.pct.p50,
                 r.floor.pct.p99,
@@ -355,8 +390,7 @@ void print_policy_row_(const PolicyResults& r) {
                 r.tail.per_op.p50,
                 r.tail.per_op.p99,
                 r.tail.per_op.p99_9,
-                thru_p50_ms,
-                items_per_sec_p50);
+                items_per_sec_M);
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -380,54 +414,79 @@ template <typename Channel>
 }
 
 template <typename Channel>
-[[nodiscard]] ContendedResult bench_contended_pmpmc_(Channel& ch) {
-    constexpr std::size_t TOTAL = NUM_PRODUCERS * ITEMS_FIFO_PER_PROD;
+[[nodiscard]] ContendedResult bench_contended_pmpmc_(
+    Channel& ch, const PinningLayout& layout)
+{
+    constexpr std::size_t TOTAL_PER_ITER = NUM_PRODUCERS * ITEMS_FIFO_PER_PROD;
+    constexpr std::size_t batches_per_prod =
+        (ITEMS_FIFO_PER_PROD + BATCH_PER_PROD - 1) / BATCH_PER_PROD;
 
-    std::atomic<bool>                       start{false};
-    std::atomic<std::size_t>                consumed{0};
-    std::vector<std::vector<std::uint64_t>> per_prod_samples(NUM_PRODUCERS);
-    for (auto& v : per_prod_samples) v.reserve(ITEMS_FIFO_PER_PROD);
+    std::vector<std::vector<double>> per_prod_ns(NUM_PRODUCERS);
+    for (auto& v : per_prod_ns) v.reserve(batches_per_prod * CONTENDED_ITERATIONS);
 
-    std::vector<std::jthread> producers;
-    for (std::size_t pid = 0; pid < NUM_PRODUCERS; ++pid) {
-        producers.emplace_back([&, pid](std::stop_token) noexcept {
-            auto handle = must_lend_(ch.producer(), "fifo producer (contended)");
-            while (!start.load(std::memory_order_acquire))
-                std::this_thread::yield();
-            for (std::size_t s = 0; s < ITEMS_FIFO_PER_PROD; ++s) {
-                SimpleJob j{static_cast<std::uint64_t>(pid << 32 | s)};
-                const auto t0 = bench::rdtsc_start();
-                while (!handle.try_push(j)) std::this_thread::yield();
-                const auto t1 = bench::rdtsc_end();
-                per_prod_samples[pid].push_back(t1 - t0);
-            }
-        });
-    }
+    double      total_wall_ms = 0.0;
+    std::size_t total_items   = 0;
 
-    std::vector<std::jthread> consumers;
-    for (std::size_t cid = 0; cid < NUM_CONSUMERS; ++cid) {
-        consumers.emplace_back([&](std::stop_token) noexcept {
-            auto handle = must_lend_(ch.consumer(), "fifo consumer (contended)");
-            while (consumed.load(std::memory_order_acquire) < TOTAL) {
-                if (auto opt = handle.try_pop()) {
-                    bench::do_not_optimize(opt->v);
-                    consumed.fetch_add(1, std::memory_order_acq_rel);
-                } else {
+    for (std::size_t iter = 0; iter < CONTENDED_ITERATIONS; ++iter) {
+        std::atomic<bool>        start{false};
+        std::atomic<std::size_t> consumed{0};
+
+        std::vector<std::jthread> producers;
+        for (std::size_t pid = 0; pid < NUM_PRODUCERS; ++pid) {
+            const int cpu = layout.producer_cpu[pid];
+            producers.emplace_back([&, pid, cpu](std::stop_token) noexcept {
+                (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
+                auto handle = must_lend_(ch.producer(), "fifo producer (contended)");
+                const double      nspc = bench::Timer::ns_per_cycle();
+                const std::uint64_t ovh = bench::Timer::overhead_cycles();
+                while (!start.load(std::memory_order_acquire))
                     std::this_thread::yield();
+                for (std::size_t s = 0; s < ITEMS_FIFO_PER_PROD; s += BATCH_PER_PROD) {
+                    const std::size_t end = std::min<std::size_t>(
+                        s + BATCH_PER_PROD, ITEMS_FIFO_PER_PROD);
+                    const std::size_t cnt = end - s;
+                    const auto t0 = bench::rdtsc_start();
+                    for (std::size_t k = 0; k < cnt; ++k) {
+                        SimpleJob j{static_cast<std::uint64_t>(pid << 32 | (s + k))};
+                        while (!handle.try_push(j)) std::this_thread::yield();
+                    }
+                    const auto t1 = bench::rdtsc_end();
+                    const std::uint64_t raw = t1 - t0;
+                    const std::uint64_t adj = (raw > ovh) ? (raw - ovh) : 0;
+                    per_prod_ns[pid].push_back(
+                        (static_cast<double>(adj) * nspc) / static_cast<double>(cnt));
                 }
-            }
-        });
+            });
+        }
+
+        std::vector<std::jthread> consumers;
+        for (std::size_t cid = 0; cid < NUM_CONSUMERS; ++cid) {
+            const int cpu = layout.consumer_cpu[cid];
+            consumers.emplace_back([&, cpu](std::stop_token) noexcept {
+                (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
+                auto handle = must_lend_(ch.consumer(), "fifo consumer (contended)");
+                while (consumed.load(std::memory_order_acquire) < TOTAL_PER_ITER) {
+                    if (auto opt = handle.try_pop()) {
+                        bench::do_not_optimize(opt->v);
+                        consumed.fetch_add(1, std::memory_order_acq_rel);
+                    } else {
+                        std::this_thread::yield();
+                    }
+                }
+            });
+        }
+
+        const auto t_start = std::chrono::steady_clock::now();
+        start.store(true, std::memory_order_release);
+        for (auto& p : producers) p.join();
+        for (auto& c : consumers) c.join();
+        const auto t_end = std::chrono::steady_clock::now();
+        total_wall_ms += std::chrono::duration<double, std::milli>(
+            t_end - t_start).count();
+        total_items   += TOTAL_PER_ITER;
     }
 
-    const auto t_start = std::chrono::steady_clock::now();
-    start.store(true, std::memory_order_release);
-    for (auto& p : producers) p.join();
-    for (auto& c : consumers) c.join();
-    const auto t_end = std::chrono::steady_clock::now();
-    const double wall_ms = std::chrono::duration<double, std::milli>(
-        t_end - t_start).count();
-
-    return aggregate_samples_(std::move(per_prod_samples), wall_ms, TOTAL);
+    return aggregate_batched_(std::move(per_prod_ns), total_wall_ms, total_items);
 }
 
 // Channel constructed once by the caller and reused across every
@@ -503,52 +562,76 @@ template <typename Channel>
 }
 
 template <typename Channel>
-[[nodiscard]] ContendedResult bench_contended_pmpsc_(Channel& ch) {
-    constexpr std::size_t TOTAL = NUM_PRODUCERS * ITEMS_FIFO_PER_PROD;
+[[nodiscard]] ContendedResult bench_contended_pmpsc_(
+    Channel& ch, const PinningLayout& layout)
+{
+    constexpr std::size_t TOTAL_PER_ITER = NUM_PRODUCERS * ITEMS_FIFO_PER_PROD;
+    constexpr std::size_t batches_per_prod =
+        (ITEMS_FIFO_PER_PROD + BATCH_PER_PROD - 1) / BATCH_PER_PROD;
 
     auto cons_perm = permission_root_mint<typename Channel::consumer_tag>();
     auto consumer  = ch.consumer(std::move(cons_perm));
 
-    std::atomic<bool>                       start{false};
-    std::atomic<std::size_t>                consumed{0};
-    std::vector<std::vector<std::uint64_t>> per_prod_samples(NUM_PRODUCERS);
-    for (auto& v : per_prod_samples) v.reserve(ITEMS_FIFO_PER_PROD);
+    std::vector<std::vector<double>> per_prod_ns(NUM_PRODUCERS);
+    for (auto& v : per_prod_ns) v.reserve(batches_per_prod * CONTENDED_ITERATIONS);
 
-    std::vector<std::jthread> producers;
-    for (std::size_t pid = 0; pid < NUM_PRODUCERS; ++pid) {
-        producers.emplace_back([&, pid](std::stop_token) noexcept {
-            auto handle = must_lend_(ch.producer(), "rr producer (contended)");
-            while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
-            for (std::size_t s = 0; s < ITEMS_FIFO_PER_PROD; ++s) {
-                SimpleJob j{static_cast<std::uint64_t>(pid << 32 | s)};
-                const auto t0 = bench::rdtsc_start();
-                while (!handle.try_push(j)) std::this_thread::yield();
-                const auto t1 = bench::rdtsc_end();
-                per_prod_samples[pid].push_back(t1 - t0);
+    double      total_wall_ms = 0.0;
+    std::size_t total_items   = 0;
+
+    for (std::size_t iter = 0; iter < CONTENDED_ITERATIONS; ++iter) {
+        std::atomic<bool>        start{false};
+        std::atomic<std::size_t> consumed{0};
+
+        std::vector<std::jthread> producers;
+        for (std::size_t pid = 0; pid < NUM_PRODUCERS; ++pid) {
+            const int cpu = layout.producer_cpu[pid];
+            producers.emplace_back([&, pid, cpu](std::stop_token) noexcept {
+                (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
+                auto handle = must_lend_(ch.producer(), "rr producer (contended)");
+                const double      nspc = bench::Timer::ns_per_cycle();
+                const std::uint64_t ovh = bench::Timer::overhead_cycles();
+                while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+                for (std::size_t s = 0; s < ITEMS_FIFO_PER_PROD; s += BATCH_PER_PROD) {
+                    const std::size_t end = std::min<std::size_t>(
+                        s + BATCH_PER_PROD, ITEMS_FIFO_PER_PROD);
+                    const std::size_t cnt = end - s;
+                    const auto t0 = bench::rdtsc_start();
+                    for (std::size_t k = 0; k < cnt; ++k) {
+                        SimpleJob j{static_cast<std::uint64_t>(pid << 32 | (s + k))};
+                        while (!handle.try_push(j)) std::this_thread::yield();
+                    }
+                    const auto t1 = bench::rdtsc_end();
+                    const std::uint64_t raw = t1 - t0;
+                    const std::uint64_t adj = (raw > ovh) ? (raw - ovh) : 0;
+                    per_prod_ns[pid].push_back(
+                        (static_cast<double>(adj) * nspc) / static_cast<double>(cnt));
+                }
+            });
+        }
+
+        std::jthread cons_t([&, cpu = layout.consumer_cpu[0]](std::stop_token) noexcept {
+            (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
+            while (consumed.load(std::memory_order_acquire) < TOTAL_PER_ITER) {
+                if (auto opt = consumer.try_pop()) {
+                    bench::do_not_optimize(opt->v);
+                    consumed.fetch_add(1, std::memory_order_acq_rel);
+                } else {
+                    std::this_thread::yield();
+                }
             }
         });
+
+        const auto t_start = std::chrono::steady_clock::now();
+        start.store(true, std::memory_order_release);
+        for (auto& p : producers) p.join();
+        cons_t.join();
+        const auto t_end = std::chrono::steady_clock::now();
+        total_wall_ms += std::chrono::duration<double, std::milli>(
+            t_end - t_start).count();
+        total_items   += TOTAL_PER_ITER;
     }
 
-    std::jthread cons_t([&](std::stop_token) noexcept {
-        while (consumed.load(std::memory_order_acquire) < TOTAL) {
-            if (auto opt = consumer.try_pop()) {
-                bench::do_not_optimize(opt->v);
-                consumed.fetch_add(1, std::memory_order_acq_rel);
-            } else {
-                std::this_thread::yield();
-            }
-        }
-    });
-
-    const auto t_start = std::chrono::steady_clock::now();
-    start.store(true, std::memory_order_release);
-    for (auto& p : producers) p.join();
-    cons_t.join();
-    const auto t_end = std::chrono::steady_clock::now();
-    const double wall_ms = std::chrono::duration<double, std::milli>(
-        t_end - t_start).count();
-
-    return aggregate_samples_(std::move(per_prod_samples), wall_ms, TOTAL);
+    return aggregate_batched_(std::move(per_prod_ns), total_wall_ms, total_items);
 }
 
 template <typename Channel>
@@ -622,57 +705,84 @@ template <typename Channel>
 }
 
 template <typename Channel>
-[[nodiscard]] ContendedResult bench_contended_lifo_(Channel& deq) {
+[[nodiscard]] ContendedResult bench_contended_lifo_(
+    Channel& deq, const PinningLayout& layout)
+{
+    constexpr std::size_t batches_per_owner =
+        (ITEMS_LIFO + BATCH_PER_PROD - 1) / BATCH_PER_PROD;
+
     auto owner_perm = permission_root_mint<typename Channel::owner_tag>();
     auto owner = deq.owner(std::move(owner_perm));
 
-    std::atomic<bool>                start_thieves{false};
-    std::atomic<bool>                stop_thieves{false};
-    std::atomic<std::uint64_t>       steal_count{0};
+    // Owner runs in the bench main thread — pin once, lasts across iters.
+    (void)pin_thread_to_cpu_(std::this_thread::get_id(),
+                             layout.producer_cpu[0]);
 
-    std::vector<std::jthread> thieves;
-    for (std::size_t t = 0; t < NUM_THIEVES; ++t) {
-        thieves.emplace_back([&](std::stop_token) noexcept {
-            auto handle = must_lend_(deq.thief(), "lifo thief (contended)");
-            while (!start_thieves.load(std::memory_order_acquire))
-                std::this_thread::yield();
-            while (!stop_thieves.load(std::memory_order_acquire)) {
-                if (auto v = handle.try_steal()) {
-                    bench::do_not_optimize(*v);
-                    steal_count.fetch_add(1, std::memory_order_acq_rel);
-                } else {
+    std::vector<std::vector<double>> per_thread_ns(1);
+    per_thread_ns[0].reserve(batches_per_owner * CONTENDED_ITERATIONS);
+
+    const double      nspc = bench::Timer::ns_per_cycle();
+    const std::uint64_t ovh = bench::Timer::overhead_cycles();
+
+    double      total_wall_ms = 0.0;
+    std::size_t total_items   = 0;
+
+    for (std::size_t iter = 0; iter < CONTENDED_ITERATIONS; ++iter) {
+        std::atomic<bool>          start_thieves{false};
+        std::atomic<bool>          stop_thieves{false};
+        std::atomic<std::uint64_t> steal_count{0};
+
+        std::vector<std::jthread> thieves;
+        for (std::size_t t = 0; t < NUM_THIEVES; ++t) {
+            const int cpu = layout.consumer_cpu[t];
+            thieves.emplace_back([&, cpu](std::stop_token) noexcept {
+                (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
+                auto handle = must_lend_(deq.thief(), "lifo thief (contended)");
+                while (!start_thieves.load(std::memory_order_acquire))
                     std::this_thread::yield();
+                while (!stop_thieves.load(std::memory_order_acquire)) {
+                    if (auto v = handle.try_steal()) {
+                        bench::do_not_optimize(*v);
+                        steal_count.fetch_add(1, std::memory_order_acq_rel);
+                    } else {
+                        std::this_thread::yield();
+                    }
+                }
+            });
+        }
+
+        const auto t_start = std::chrono::steady_clock::now();
+        start_thieves.store(true, std::memory_order_release);
+
+        for (std::size_t s = 0; s < ITEMS_LIFO; s += BATCH_PER_PROD) {
+            const std::size_t end = std::min<std::size_t>(s + BATCH_PER_PROD, ITEMS_LIFO);
+            const std::size_t cnt = end - s;
+            const auto t0 = bench::rdtsc_start();
+            for (std::size_t k = 0; k < cnt; ++k) {
+                while (!owner.try_push(static_cast<std::uint64_t>(s + k))) {
+                    // Owner pops to make room — thieves should drain but
+                    // owner-pop is the cache-hot path.
+                    (void)owner.try_pop();
                 }
             }
-        });
-    }
-
-    std::vector<std::vector<std::uint64_t>> per_thread_samples(1);
-    per_thread_samples[0].reserve(ITEMS_LIFO);
-
-    const auto t_start = std::chrono::steady_clock::now();
-    start_thieves.store(true, std::memory_order_release);
-
-    for (std::size_t s = 0; s < ITEMS_LIFO; ++s) {
-        const auto t0 = bench::rdtsc_start();
-        while (!owner.try_push(static_cast<std::uint64_t>(s))) {
-            // Owner pops to make room — thieves should drain but
-            // owner-pop is the cache-hot path.
-            (void)owner.try_pop();
+            const auto t1 = bench::rdtsc_end();
+            const std::uint64_t raw = t1 - t0;
+            const std::uint64_t adj = (raw > ovh) ? (raw - ovh) : 0;
+            per_thread_ns[0].push_back(
+                (static_cast<double>(adj) * nspc) / static_cast<double>(cnt));
         }
-        const auto t1 = bench::rdtsc_end();
-        per_thread_samples[0].push_back(t1 - t0);
+        // Drain whatever's left on the owner side.
+        while (owner.try_pop()) { /* empty */ }
+
+        stop_thieves.store(true, std::memory_order_release);
+        for (auto& t : thieves) t.join();
+        const auto t_end = std::chrono::steady_clock::now();
+        total_wall_ms += std::chrono::duration<double, std::milli>(
+            t_end - t_start).count();
+        total_items   += ITEMS_LIFO;
     }
-    // Drain whatever's left on the owner side.
-    while (owner.try_pop()) { /* empty */ }
 
-    stop_thieves.store(true, std::memory_order_release);
-    for (auto& t : thieves) t.join();
-    const auto t_end = std::chrono::steady_clock::now();
-    const double wall_ms = std::chrono::duration<double, std::milli>(
-        t_end - t_start).count();
-
-    return aggregate_samples_(std::move(per_thread_samples), wall_ms, ITEMS_LIFO);
+    return aggregate_batched_(std::move(per_thread_ns), total_wall_ms, total_items);
 }
 
 template <typename Channel>
@@ -752,8 +862,12 @@ template <typename Channel>
 }
 
 template <typename Channel>
-[[nodiscard]] ContendedResult bench_contended_sharded_(Channel& grid) {
-    constexpr std::size_t TOTAL = NUM_PRODUCERS * ITEMS_FIFO_PER_PROD;
+[[nodiscard]] ContendedResult bench_contended_sharded_(
+    Channel& grid, const PinningLayout& layout)
+{
+    constexpr std::size_t TOTAL_PER_ITER = NUM_PRODUCERS * ITEMS_FIFO_PER_PROD;
+    constexpr std::size_t batches_per_prod =
+        (ITEMS_FIFO_PER_PROD + BATCH_PER_PROD - 1) / BATCH_PER_PROD;
 
     using WT = typename Channel::whole_tag;
     auto whole = permission_root_mint<WT>();
@@ -767,52 +881,71 @@ template <typename Channel>
     auto c2 = grid.template consumer<2>(std::move(std::get<2>(perms.consumers)));
     auto c3 = grid.template consumer<3>(std::move(std::get<3>(perms.consumers)));
 
-    std::atomic<bool>                       start{false};
-    std::atomic<std::size_t>                consumed{0};
-    std::vector<std::vector<std::uint64_t>> per_prod_samples(NUM_PRODUCERS);
-    for (auto& v : per_prod_samples) v.reserve(ITEMS_FIFO_PER_PROD);
+    std::vector<std::vector<double>> per_prod_ns(NUM_PRODUCERS);
+    for (auto& v : per_prod_ns) v.reserve(batches_per_prod * CONTENDED_ITERATIONS);
 
-    auto run_producer = [&](auto& handle, std::size_t pid) {
-        return [&, pid](std::stop_token) noexcept {
-            while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
-            for (std::size_t s = 0; s < ITEMS_FIFO_PER_PROD; ++s) {
-                SimpleJob j{static_cast<std::uint64_t>(pid << 32 | s)};
-                const auto t0 = bench::rdtsc_start();
-                while (!handle.try_push(j)) std::this_thread::yield();
-                const auto t1 = bench::rdtsc_end();
-                per_prod_samples[pid].push_back(t1 - t0);
-            }
+    double      total_wall_ms = 0.0;
+    std::size_t total_items   = 0;
+
+    for (std::size_t iter = 0; iter < CONTENDED_ITERATIONS; ++iter) {
+        std::atomic<bool>        start{false};
+        std::atomic<std::size_t> consumed{0};
+
+        auto run_producer = [&](auto& handle, std::size_t pid, int cpu) {
+            return [&, pid, cpu](std::stop_token) noexcept {
+                (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
+                const double      nspc = bench::Timer::ns_per_cycle();
+                const std::uint64_t ovh = bench::Timer::overhead_cycles();
+                while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+                for (std::size_t s = 0; s < ITEMS_FIFO_PER_PROD; s += BATCH_PER_PROD) {
+                    const std::size_t end = std::min<std::size_t>(
+                        s + BATCH_PER_PROD, ITEMS_FIFO_PER_PROD);
+                    const std::size_t cnt = end - s;
+                    const auto t0 = bench::rdtsc_start();
+                    for (std::size_t k = 0; k < cnt; ++k) {
+                        SimpleJob j{static_cast<std::uint64_t>(pid << 32 | (s + k))};
+                        while (!handle.try_push(j)) std::this_thread::yield();
+                    }
+                    const auto t1 = bench::rdtsc_end();
+                    const std::uint64_t raw = t1 - t0;
+                    const std::uint64_t adj = (raw > ovh) ? (raw - ovh) : 0;
+                    per_prod_ns[pid].push_back(
+                        (static_cast<double>(adj) * nspc) / static_cast<double>(cnt));
+                }
+            };
         };
-    };
-    auto run_consumer = [&](auto& handle) {
-        return [&](std::stop_token) noexcept {
-            while (consumed.load(std::memory_order_acquire) < TOTAL) {
-                if (auto opt = handle.try_pop()) {
-                    bench::do_not_optimize(opt->v);
-                    consumed.fetch_add(1, std::memory_order_acq_rel);
-                } else { std::this_thread::yield(); }
-            }
+        auto run_consumer = [&](auto& handle, int cpu) {
+            return [&, cpu](std::stop_token) noexcept {
+                (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
+                while (consumed.load(std::memory_order_acquire) < TOTAL_PER_ITER) {
+                    if (auto opt = handle.try_pop()) {
+                        bench::do_not_optimize(opt->v);
+                        consumed.fetch_add(1, std::memory_order_acq_rel);
+                    } else { std::this_thread::yield(); }
+                }
+            };
         };
-    };
 
-    std::jthread t_p0(run_producer(p0, 0));
-    std::jthread t_p1(run_producer(p1, 1));
-    std::jthread t_p2(run_producer(p2, 2));
-    std::jthread t_p3(run_producer(p3, 3));
-    std::jthread t_c0(run_consumer(c0));
-    std::jthread t_c1(run_consumer(c1));
-    std::jthread t_c2(run_consumer(c2));
-    std::jthread t_c3(run_consumer(c3));
+        std::jthread t_p0(run_producer(p0, 0, layout.producer_cpu[0]));
+        std::jthread t_p1(run_producer(p1, 1, layout.producer_cpu[1]));
+        std::jthread t_p2(run_producer(p2, 2, layout.producer_cpu[2]));
+        std::jthread t_p3(run_producer(p3, 3, layout.producer_cpu[3]));
+        std::jthread t_c0(run_consumer(c0, layout.consumer_cpu[0]));
+        std::jthread t_c1(run_consumer(c1, layout.consumer_cpu[1]));
+        std::jthread t_c2(run_consumer(c2, layout.consumer_cpu[2]));
+        std::jthread t_c3(run_consumer(c3, layout.consumer_cpu[3]));
 
-    const auto t_start = std::chrono::steady_clock::now();
-    start.store(true, std::memory_order_release);
-    t_p0.join(); t_p1.join(); t_p2.join(); t_p3.join();
-    t_c0.join(); t_c1.join(); t_c2.join(); t_c3.join();
-    const auto t_end = std::chrono::steady_clock::now();
-    const double wall_ms = std::chrono::duration<double, std::milli>(
-        t_end - t_start).count();
+        const auto t_start = std::chrono::steady_clock::now();
+        start.store(true, std::memory_order_release);
+        t_p0.join(); t_p1.join(); t_p2.join(); t_p3.join();
+        t_c0.join(); t_c1.join(); t_c2.join(); t_c3.join();
+        const auto t_end = std::chrono::steady_clock::now();
+        total_wall_ms += std::chrono::duration<double, std::milli>(
+            t_end - t_start).count();
+        total_items   += TOTAL_PER_ITER;
+    }
 
-    return aggregate_samples_(std::move(per_prod_samples), wall_ms, TOTAL);
+    return aggregate_batched_(std::move(per_prod_ns), total_wall_ms, total_items);
 }
 
 template <typename Channel>
@@ -908,7 +1041,7 @@ template <typename Channel>
 [[nodiscard]] ContendedResult bench_contended_calendar_(
     Channel& grid, const PinningLayout& layout)
 {
-    constexpr std::size_t TOTAL = NUM_PRODUCERS * ITEMS_PRIORITY_PER_PROD;
+    constexpr std::size_t TOTAL_PER_ITER = NUM_PRODUCERS * ITEMS_PRIORITY_PER_PROD;
 
     using WT = typename Channel::whole_tag;
     auto whole = permission_root_mint<WT>();
@@ -919,70 +1052,75 @@ template <typename Channel>
     auto p3 = grid.template producer<3>(std::move(std::get<3>(perms.producers)));
     auto cons = grid.consumer(std::move(std::get<0>(perms.consumers)));
 
-    std::atomic<bool>                       start{false};
-    std::atomic<std::size_t>                consumed{0};
-    // Same batched-rdtsc storage as the per-shard runner — apples-to-
-    // apples per-op cost above the rdtsc resolution floor.
-    std::vector<std::vector<double>>        per_prod_ns(NUM_PRODUCERS);
     constexpr std::size_t batches_per_prod =
         (ITEMS_PRIORITY_PER_PROD + BATCH_PER_PROD - 1) / BATCH_PER_PROD;
-    for (auto& v : per_prod_ns) v.reserve(batches_per_prod);
+    std::vector<std::vector<double>> per_prod_ns(NUM_PRODUCERS);
+    for (auto& v : per_prod_ns) v.reserve(batches_per_prod * CONTENDED_ITERATIONS);
 
-    auto run_producer = [&](auto& handle, std::uint32_t pid, int cpu) {
-        return [&, pid, cpu](std::stop_token) noexcept {
-            (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
-            const double      nspc = bench::Timer::ns_per_cycle();
-            const std::uint64_t ovh = bench::Timer::overhead_cycles();
-            std::uint64_t key = pid * 100ULL;
-            while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
-            for (std::uint32_t s = 1; s <= ITEMS_PRIORITY_PER_PROD;
-                 s += BATCH_PER_PROD)
-            {
-                const std::uint32_t end = std::min<std::uint32_t>(
-                    s + BATCH_PER_PROD, ITEMS_PRIORITY_PER_PROD + 1);
-                const std::uint32_t batch_cnt = end - s;
-                const auto t0 = bench::rdtsc_start();
-                for (std::uint32_t k = 0; k < batch_cnt; ++k) {
-                    key += 1000;
-                    PriorityJob j{pid, s + k, key};
-                    while (!handle.try_push(j)) std::this_thread::yield();
+    double      total_wall_ms = 0.0;
+    std::size_t total_items   = 0;
+
+    for (std::size_t iter = 0; iter < CONTENDED_ITERATIONS; ++iter) {
+        std::atomic<bool>        start{false};
+        std::atomic<std::size_t> consumed{0};
+
+        auto run_producer = [&](auto& handle, std::uint32_t pid, int cpu) {
+            return [&, pid, cpu](std::stop_token) noexcept {
+                (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
+                const double      nspc = bench::Timer::ns_per_cycle();
+                const std::uint64_t ovh = bench::Timer::overhead_cycles();
+                std::uint64_t key = pid * 100ULL;
+                while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+                for (std::uint32_t s = 1; s <= ITEMS_PRIORITY_PER_PROD;
+                     s += BATCH_PER_PROD)
+                {
+                    const std::uint32_t end = std::min<std::uint32_t>(
+                        s + BATCH_PER_PROD, ITEMS_PRIORITY_PER_PROD + 1);
+                    const std::uint32_t batch_cnt = end - s;
+                    const auto t0 = bench::rdtsc_start();
+                    for (std::uint32_t k = 0; k < batch_cnt; ++k) {
+                        key += 1000;
+                        PriorityJob j{pid, s + k, key};
+                        while (!handle.try_push(j)) std::this_thread::yield();
+                    }
+                    const auto t1 = bench::rdtsc_end();
+                    const std::uint64_t raw = t1 - t0;
+                    const std::uint64_t adj = (raw > ovh) ? (raw - ovh) : 0;
+                    const double per_op_ns =
+                        (static_cast<double>(adj) * nspc)
+                        / static_cast<double>(batch_cnt);
+                    per_prod_ns[pid].push_back(per_op_ns);
                 }
-                const auto t1 = bench::rdtsc_end();
-                const std::uint64_t raw = t1 - t0;
-                const std::uint64_t adj = (raw > ovh) ? (raw - ovh) : 0;
-                const double per_op_ns =
-                    (static_cast<double>(adj) * nspc)
-                    / static_cast<double>(batch_cnt);
-                per_prod_ns[pid].push_back(per_op_ns);
-            }
+            };
         };
-    };
 
-    std::jthread t_p0(run_producer(p0, 0, layout.producer_cpu[0]));
-    std::jthread t_p1(run_producer(p1, 1, layout.producer_cpu[1]));
-    std::jthread t_p2(run_producer(p2, 2, layout.producer_cpu[2]));
-    std::jthread t_p3(run_producer(p3, 3, layout.producer_cpu[3]));
+        std::jthread t_p0(run_producer(p0, 0, layout.producer_cpu[0]));
+        std::jthread t_p1(run_producer(p1, 1, layout.producer_cpu[1]));
+        std::jthread t_p2(run_producer(p2, 2, layout.producer_cpu[2]));
+        std::jthread t_p3(run_producer(p3, 3, layout.producer_cpu[3]));
 
-    // Single consumer drains all 4 producers — pin to consumer<0>'s cpu.
-    std::jthread cons_t([&, cpu = layout.consumer_cpu[0]](std::stop_token) noexcept {
-        (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
-        while (consumed.load(std::memory_order_acquire) < TOTAL) {
-            if (auto opt = cons.try_pop()) {
-                bench::do_not_optimize(opt->key);
-                consumed.fetch_add(1, std::memory_order_acq_rel);
-            } else { std::this_thread::yield(); }
-        }
-    });
+        // Single consumer drains all 4 producers — pin to consumer<0>'s cpu.
+        std::jthread cons_t([&, cpu = layout.consumer_cpu[0]](std::stop_token) noexcept {
+            (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
+            while (consumed.load(std::memory_order_acquire) < TOTAL_PER_ITER) {
+                if (auto opt = cons.try_pop()) {
+                    bench::do_not_optimize(opt->key);
+                    consumed.fetch_add(1, std::memory_order_acq_rel);
+                } else { std::this_thread::yield(); }
+            }
+        });
 
-    const auto t_start = std::chrono::steady_clock::now();
-    start.store(true, std::memory_order_release);
-    t_p0.join(); t_p1.join(); t_p2.join(); t_p3.join();
-    cons_t.join();
-    const auto t_end = std::chrono::steady_clock::now();
-    const double wall_ms = std::chrono::duration<double, std::milli>(
-        t_end - t_start).count();
+        const auto t_start = std::chrono::steady_clock::now();
+        start.store(true, std::memory_order_release);
+        t_p0.join(); t_p1.join(); t_p2.join(); t_p3.join();
+        cons_t.join();
+        const auto t_end = std::chrono::steady_clock::now();
+        total_wall_ms += std::chrono::duration<double, std::milli>(
+            t_end - t_start).count();
+        total_items   += TOTAL_PER_ITER;
+    }
 
-    return aggregate_batched_(std::move(per_prod_ns), wall_ms, TOTAL);
+    return aggregate_batched_(std::move(per_prod_ns), total_wall_ms, total_items);
 }
 
 template <typename Channel>
@@ -1074,7 +1212,7 @@ template <typename Channel>
 [[nodiscard]] ContendedResult bench_contended_per_shard_(
     Channel& grid, const PinningLayout& layout)
 {
-    constexpr std::size_t TOTAL = NUM_PRODUCERS * ITEMS_PRIORITY_PER_PROD;
+    constexpr std::size_t TOTAL_PER_ITER = NUM_PRODUCERS * ITEMS_PRIORITY_PER_PROD;
 
     using WT = typename Channel::whole_tag;
     auto whole = permission_root_mint<WT>();
@@ -1088,79 +1226,85 @@ template <typename Channel>
     auto c2 = grid.template consumer<2>(std::move(std::get<2>(perms.consumers)));
     auto c3 = grid.template consumer<3>(std::move(std::get<3>(perms.consumers)));
 
-    std::atomic<bool>                       start{false};
-    std::array<std::atomic<std::size_t>, 4> consumed_per_shard{};
-    // Per-batch per-op ns samples — true cost above rdtsc resolution.
-    std::vector<std::vector<double>>        per_prod_ns(NUM_PRODUCERS);
     constexpr std::size_t batches_per_prod =
         (ITEMS_PRIORITY_PER_PROD + BATCH_PER_PROD - 1) / BATCH_PER_PROD;
-    for (auto& v : per_prod_ns) v.reserve(batches_per_prod);
+    std::vector<std::vector<double>> per_prod_ns(NUM_PRODUCERS);
+    for (auto& v : per_prod_ns) v.reserve(batches_per_prod * CONTENDED_ITERATIONS);
 
-    auto run_producer = [&](auto& handle, std::uint32_t pid, int cpu) {
-        return [&, pid, cpu](std::stop_token) noexcept {
-            (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
-            const double      nspc = bench::Timer::ns_per_cycle();
-            const std::uint64_t ovh = bench::Timer::overhead_cycles();
-            std::uint64_t key = pid * 100ULL;
-            while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
-            for (std::uint32_t s = 1; s <= ITEMS_PRIORITY_PER_PROD;
-                 s += BATCH_PER_PROD)
-            {
-                const std::uint32_t end = std::min<std::uint32_t>(
-                    s + BATCH_PER_PROD, ITEMS_PRIORITY_PER_PROD + 1);
-                const std::uint32_t batch_cnt = end - s;
-                const auto t0 = bench::rdtsc_start();
-                for (std::uint32_t k = 0; k < batch_cnt; ++k) {
-                    key += 1000;
-                    PriorityJob j{pid, s + k, key};
-                    while (!handle.try_push(j)) std::this_thread::yield();
+    double      total_wall_ms = 0.0;
+    std::size_t total_items   = 0;
+
+    for (std::size_t iter = 0; iter < CONTENDED_ITERATIONS; ++iter) {
+        std::atomic<bool>                       start{false};
+        std::array<std::atomic<std::size_t>, 4> consumed_per_shard{};
+
+        auto run_producer = [&](auto& handle, std::uint32_t pid, int cpu) {
+            return [&, pid, cpu](std::stop_token) noexcept {
+                (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
+                const double      nspc = bench::Timer::ns_per_cycle();
+                const std::uint64_t ovh = bench::Timer::overhead_cycles();
+                std::uint64_t key = pid * 100ULL;
+                while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+                for (std::uint32_t s = 1; s <= ITEMS_PRIORITY_PER_PROD;
+                     s += BATCH_PER_PROD)
+                {
+                    const std::uint32_t end = std::min<std::uint32_t>(
+                        s + BATCH_PER_PROD, ITEMS_PRIORITY_PER_PROD + 1);
+                    const std::uint32_t batch_cnt = end - s;
+                    const auto t0 = bench::rdtsc_start();
+                    for (std::uint32_t k = 0; k < batch_cnt; ++k) {
+                        key += 1000;
+                        PriorityJob j{pid, s + k, key};
+                        while (!handle.try_push(j)) std::this_thread::yield();
+                    }
+                    const auto t1 = bench::rdtsc_end();
+                    const std::uint64_t raw = t1 - t0;
+                    const std::uint64_t adj = (raw > ovh) ? (raw - ovh) : 0;
+                    const double per_op_ns =
+                        (static_cast<double>(adj) * nspc)
+                        / static_cast<double>(batch_cnt);
+                    per_prod_ns[pid].push_back(per_op_ns);
                 }
-                const auto t1 = bench::rdtsc_end();
-                const std::uint64_t raw = t1 - t0;
-                const std::uint64_t adj = (raw > ovh) ? (raw - ovh) : 0;
-                const double per_op_ns =
-                    (static_cast<double>(adj) * nspc)
-                    / static_cast<double>(batch_cnt);
-                per_prod_ns[pid].push_back(per_op_ns);
-            }
+            };
         };
-    };
 
-    auto run_consumer = [&](auto& handle, std::size_t shard_idx, int cpu) {
-        return [&, shard_idx, cpu](std::stop_token) noexcept {
-            (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
-            while (consumed_per_shard[shard_idx].load(std::memory_order_acquire)
-                   < ITEMS_PRIORITY_PER_PROD)
-            {
-                if (auto opt = handle.try_pop()) {
-                    bench::do_not_optimize(opt->key);
-                    consumed_per_shard[shard_idx].fetch_add(
-                        1, std::memory_order_acq_rel);
-                } else {
-                    std::this_thread::yield();
+        auto run_consumer = [&](auto& handle, std::size_t shard_idx, int cpu) {
+            return [&, shard_idx, cpu](std::stop_token) noexcept {
+                (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
+                while (consumed_per_shard[shard_idx].load(std::memory_order_acquire)
+                       < ITEMS_PRIORITY_PER_PROD)
+                {
+                    if (auto opt = handle.try_pop()) {
+                        bench::do_not_optimize(opt->key);
+                        consumed_per_shard[shard_idx].fetch_add(
+                            1, std::memory_order_acq_rel);
+                    } else {
+                        std::this_thread::yield();
+                    }
                 }
-            }
+            };
         };
-    };
 
-    std::jthread t_p0(run_producer(p0, 0, layout.producer_cpu[0]));
-    std::jthread t_p1(run_producer(p1, 1, layout.producer_cpu[1]));
-    std::jthread t_p2(run_producer(p2, 2, layout.producer_cpu[2]));
-    std::jthread t_p3(run_producer(p3, 3, layout.producer_cpu[3]));
-    std::jthread t_c0(run_consumer(c0, 0, layout.consumer_cpu[0]));
-    std::jthread t_c1(run_consumer(c1, 1, layout.consumer_cpu[1]));
-    std::jthread t_c2(run_consumer(c2, 2, layout.consumer_cpu[2]));
-    std::jthread t_c3(run_consumer(c3, 3, layout.consumer_cpu[3]));
+        std::jthread t_p0(run_producer(p0, 0, layout.producer_cpu[0]));
+        std::jthread t_p1(run_producer(p1, 1, layout.producer_cpu[1]));
+        std::jthread t_p2(run_producer(p2, 2, layout.producer_cpu[2]));
+        std::jthread t_p3(run_producer(p3, 3, layout.producer_cpu[3]));
+        std::jthread t_c0(run_consumer(c0, 0, layout.consumer_cpu[0]));
+        std::jthread t_c1(run_consumer(c1, 1, layout.consumer_cpu[1]));
+        std::jthread t_c2(run_consumer(c2, 2, layout.consumer_cpu[2]));
+        std::jthread t_c3(run_consumer(c3, 3, layout.consumer_cpu[3]));
 
-    const auto t_start = std::chrono::steady_clock::now();
-    start.store(true, std::memory_order_release);
-    t_p0.join(); t_p1.join(); t_p2.join(); t_p3.join();
-    t_c0.join(); t_c1.join(); t_c2.join(); t_c3.join();
-    const auto t_end = std::chrono::steady_clock::now();
-    const double wall_ms = std::chrono::duration<double, std::milli>(
-        t_end - t_start).count();
+        const auto t_start = std::chrono::steady_clock::now();
+        start.store(true, std::memory_order_release);
+        t_p0.join(); t_p1.join(); t_p2.join(); t_p3.join();
+        t_c0.join(); t_c1.join(); t_c2.join(); t_c3.join();
+        const auto t_end = std::chrono::steady_clock::now();
+        total_wall_ms += std::chrono::duration<double, std::milli>(
+            t_end - t_start).count();
+        total_items   += TOTAL_PER_ITER;
+    }
 
-    return aggregate_batched_(std::move(per_prod_ns), wall_ms, TOTAL);
+    return aggregate_batched_(std::move(per_prod_ns), total_wall_ms, total_items);
 }
 
 template <typename Channel>
@@ -1287,10 +1431,8 @@ int main() {
         auto ch_floor = std::make_unique<QT>();
         auto floor = bench_floor_pmpmc_("Fifo floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
-        auto tail  = bench_contended_pmpmc_(*ch_tail);
-        auto ch_thru = std::make_unique<QT>();
-        auto thru  = bench_throughput_pmpmc_("Fifo throughput", *ch_thru);
-        results.push_back({"Fifo", std::move(floor), std::move(tail), std::move(thru)});
+        auto tail  = bench_contended_pmpmc_(*ch_tail, layout);
+        results.push_back({"Fifo", std::move(floor), std::move(tail)});
     }
 
     // ── RoundRobin ────────────────────────────────────────────────
@@ -1300,10 +1442,8 @@ int main() {
         auto ch_floor = std::make_unique<QT>();
         auto floor = bench_floor_pmpsc_("RoundRobin floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
-        auto tail  = bench_contended_pmpsc_(*ch_tail);
-        auto ch_thru = std::make_unique<QT>();
-        auto thru  = bench_throughput_pmpsc_("RoundRobin throughput", *ch_thru);
-        results.push_back({"RoundRobin", std::move(floor), std::move(tail), std::move(thru)});
+        auto tail  = bench_contended_pmpsc_(*ch_tail, layout);
+        results.push_back({"RoundRobin", std::move(floor), std::move(tail)});
     }
 
     // ── Lifo (ChaseLevDeque) ─────────────────────────────────────
@@ -1313,10 +1453,8 @@ int main() {
         auto ch_floor = std::make_unique<QT>();
         auto floor = bench_floor_lifo_("Lifo floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
-        auto tail  = bench_contended_lifo_(*ch_tail);
-        auto ch_thru = std::make_unique<QT>();
-        auto thru  = bench_throughput_lifo_("Lifo throughput", *ch_thru);
-        results.push_back({"Lifo", std::move(floor), std::move(tail), std::move(thru)});
+        auto tail  = bench_contended_lifo_(*ch_tail, layout);
+        results.push_back({"Lifo", std::move(floor), std::move(tail)});
     }
 
     // ── LocalityAware (4×4 ShardedGrid) ──────────────────────────
@@ -1326,17 +1464,11 @@ int main() {
         auto ch_floor = std::make_unique<QT>();
         auto floor = bench_floor_sharded_("LocalityAware floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
-        auto tail  = bench_contended_sharded_(*ch_tail);
-        auto ch_thru = std::make_unique<QT>();
-        auto thru  = bench_throughput_sharded_("LocalityAware throughput", *ch_thru);
-        results.push_back({"LocalityAware", std::move(floor), std::move(tail), std::move(thru)});
+        auto tail  = bench_contended_sharded_(*ch_tail, layout);
+        results.push_back({"LocalityAware", std::move(floor), std::move(tail)});
     }
 
-    // ── Deadline / Cfs / Eevdf (calendar grid; same topology) ────
-    //
-    // Calendar grids are ~13 MB each; allocating 3 per policy × 3
-    // policies = 9 × 13 MB = 117 MB.  Acceptable for a bench but
-    // worth noting.
+    // ── Deadline / Cfs / Eevdf (single-grid calendar) ────────────
     {
         std::printf("[Deadline] benching ...\n");
         using QT = SchedDeadline::queue_template<PriorityJob>;
@@ -1344,9 +1476,7 @@ int main() {
         auto floor = bench_floor_calendar_("Deadline floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
         auto tail  = bench_contended_calendar_(*ch_tail, layout);
-        auto ch_thru = std::make_unique<QT>();
-        auto thru  = bench_throughput_calendar_("Deadline throughput", *ch_thru);
-        results.push_back({"Deadline", std::move(floor), std::move(tail), std::move(thru)});
+        results.push_back({"Deadline", std::move(floor), std::move(tail)});
     }
     {
         std::printf("[Cfs] benching ...\n");
@@ -1355,9 +1485,7 @@ int main() {
         auto floor = bench_floor_calendar_("Cfs floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
         auto tail  = bench_contended_calendar_(*ch_tail, layout);
-        auto ch_thru = std::make_unique<QT>();
-        auto thru  = bench_throughput_calendar_("Cfs throughput", *ch_thru);
-        results.push_back({"Cfs", std::move(floor), std::move(tail), std::move(thru)});
+        results.push_back({"Cfs", std::move(floor), std::move(tail)});
     }
     {
         std::printf("[Eevdf] benching ...\n");
@@ -1366,9 +1494,7 @@ int main() {
         auto floor = bench_floor_calendar_("Eevdf floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
         auto tail  = bench_contended_calendar_(*ch_tail, layout);
-        auto ch_thru = std::make_unique<QT>();
-        auto thru  = bench_throughput_calendar_("Eevdf throughput", *ch_thru);
-        results.push_back({"Eevdf", std::move(floor), std::move(tail), std::move(thru)});
+        results.push_back({"Eevdf", std::move(floor), std::move(tail)});
     }
 
     // ── DeadlinePerShard / CfsPerShard / EevdfPerShard ───────────
@@ -1376,8 +1502,6 @@ int main() {
     // Per-shard architecture: 4 producer threads each pushing to
     // their own shard, 4 consumer threads each draining their own
     // shard.  No cross-thread atomic on the producer push path.
-    // Expected: tail p99.9 ≈ tail p50 ≈ floor (vs single-grid
-    // priority-keyed which exhibits 100-200μs tail cliff).
     {
         std::printf("[DeadlinePerShard] benching ...\n");
         using QT = SchedDeadlinePerShard::queue_template<PriorityJob>;
@@ -1385,9 +1509,7 @@ int main() {
         auto floor = bench_floor_per_shard_("DeadlinePerShard floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
         auto tail  = bench_contended_per_shard_(*ch_tail, layout);
-        auto ch_thru = std::make_unique<QT>();
-        auto thru  = bench_throughput_per_shard_("DeadlinePerShard throughput", *ch_thru);
-        results.push_back({"DeadlinePerShard", std::move(floor), std::move(tail), std::move(thru)});
+        results.push_back({"DeadlinePerShard", std::move(floor), std::move(tail)});
     }
     {
         std::printf("[CfsPerShard] benching ...\n");
@@ -1396,9 +1518,7 @@ int main() {
         auto floor = bench_floor_per_shard_("CfsPerShard floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
         auto tail  = bench_contended_per_shard_(*ch_tail, layout);
-        auto ch_thru = std::make_unique<QT>();
-        auto thru  = bench_throughput_per_shard_("CfsPerShard throughput", *ch_thru);
-        results.push_back({"CfsPerShard", std::move(floor), std::move(tail), std::move(thru)});
+        results.push_back({"CfsPerShard", std::move(floor), std::move(tail)});
     }
     {
         std::printf("[EevdfPerShard] benching ...\n");
@@ -1407,26 +1527,27 @@ int main() {
         auto floor = bench_floor_per_shard_("EevdfPerShard floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
         auto tail  = bench_contended_per_shard_(*ch_tail, layout);
-        auto ch_thru = std::make_unique<QT>();
-        auto thru  = bench_throughput_per_shard_("EevdfPerShard throughput", *ch_thru);
-        results.push_back({"EevdfPerShard", std::move(floor), std::move(tail), std::move(thru)});
+        results.push_back({"EevdfPerShard", std::move(floor), std::move(tail)});
     }
 
     // ─── Print headline table ────────────────────────────────────
-    std::printf("\n=== HEADLINE: 3-axis comparison ===\n");
-    std::printf("  floor: single-thread per-op (push+pop), ns\n");
-    std::printf("  tail:  per-submit latency under N=%zu producer contention, ns\n",
+    std::printf("\n=== HEADLINE: latency + steady-state throughput ===\n");
+    std::printf("  floor:        single-thread per-op (push+pop), ns\n");
+    std::printf("  tail:         per-submit latency under N=%zu producer contention, ns\n",
                 NUM_PRODUCERS);
-    std::printf("  thru:  wall-clock per spawn-drain-join cycle (ms p50);"
-                " items/sec at p50\n");
+    std::printf("  steady-state: items processed / wall time, aggregated\n");
+    std::printf("                across %zu contended iterations.  This is the\n",
+                CONTENDED_ITERATIONS);
+    std::printf("                production-shape number — long-lived workers,\n");
+    std::printf("                no per-iter pthread_create overhead.\n");
     print_policy_table_header_();
     for (auto const& r : results) print_policy_row_(r);
 
-    std::printf("\n=== Cycle composition ===\n");
-    std::printf("%-14s | %12s %14s %14s\n",
-                "policy", "items/cycle", "tail wall ms", "tail items/sec");
+    std::printf("\n=== Steady-state composition (raw) ===\n");
+    std::printf("%-18s | %12s %14s %14s\n",
+                "policy", "total items", "total wall ms", "items/s (M)");
     for (auto const& r : results) {
-        std::printf("%-14s | %12zu %14.3f %14.2f\n",
+        std::printf("%-18s | %12zu %14.3f %14.2f\n",
                     r.policy_name,
                     r.tail.total_items,
                     r.tail.total_wall_ms,
