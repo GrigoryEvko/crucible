@@ -4,10 +4,132 @@
 // concurrent/scheduler/Policies.h — compile-time scheduler policy
 // types for the future NumaThreadPool / AdaptiveScheduler dispatch.
 //
-// THREADING.md §5.5.2 + §8.7 enumerate seven scheduler flavours;
-// each is a zero-cost tag type that selects which Permissioned*
-// primitive the pool's queue resolves to AT COMPILE TIME.
+// THREADING.md §5.5.2 + §8.7 enumerate the scheduler flavours; each
+// is a zero-cost tag type that selects which Permissioned* primitive
+// the pool's queue resolves to AT COMPILE TIME.
 //
+// ─── How to pick a policy ─────────────────────────────────────────
+//
+// Don't know what to use? → `LocalityAware` (the default).
+// Need priority? → `Eevdf<K>` (single-grid; see picker below for why).
+// Recursive fork-join with hot owner? → `Lifo`.
+// Hard global FIFO required? → `Fifo`.
+//
+// FULL DECISION TABLE — order-only family (no per-job priority):
+//
+//   policy           | shape                    | pick when
+//   ────────────── | ──────────────────────── | ────────────────────
+//   Fifo             | one shared MPMC          | strict global FIFO
+//                    |                          | required; ≤8 producers
+//   Lifo             | per-worker Chase-Lev     | recursive fork-join
+//                    | (LIFO owner, FIFO steal) | (TBB / Rayon style)
+//   RoundRobin       | N per-worker MPSCs       | many producers, one
+//                    |                          | consumer-per-shard,
+//                    |                          | no balancing
+//   LocalityAware ★  | M×N SpscRing grid +      | DEFAULT — HPC fan-out
+//                    | NUMA-aware steal         | with 2+ producers AND
+//                    |                          | 2+ consumers
+//
+// FULL DECISION TABLE — priority-keyed family (Cfs / Eevdf / Deadline):
+//
+//   intent             | default                   | per-shard variant
+//   ─────────────────  | ─────────────────────── | ──────────────────────
+//   hard deadline       | Deadline<K>              | DeadlinePerShard<K>
+//   fair-share          | Cfs<K>                   | CfsPerShard<K>
+//   fair + latency      | Eevdf<K>                 | EevdfPerShard<K>
+//
+// IMPORTANT — bench data contradicts the original "per-shard wins
+// on tail" intuition.  Under SUSTAINED load (steady-state push
+// rate), single-grid beats per-shard on BOTH throughput AND tail
+// p99.9, because single-grid has 64× more bucket capacity per
+// producer (NumBuckets=1024 × BucketCap=64 vs per-shard's 64 × 16).
+//
+// Pick `Cfs<K>` / `Eevdf<K>` / `Deadline<K>` (single-grid) when:
+//   * Sustained push rate matters (steady-state throughput)
+//   * Global priority order matters (earliest deadline GLOBALLY next)
+//   * You don't have a hard partition of producers across shards
+//
+// Pick `*PerShard<K>` (per-shard) ONLY when:
+//   * Producers naturally partition by shard (per-NUMA-node,
+//     per-tenant, per-collective-bucket — and one producer can NOT
+//     spill into another's shard)
+//   * Short bursts dominate (low item count per burst, no sustained
+//     pressure to fill the smaller per-shard buckets)
+//   * Cross-shard priority approximation is acceptable
+//
+// Default for "I just need priority": `Eevdf<K>` (single-grid).
+// Linux 6.6+ uses the same EEVDF math; pairs fairness + latency.
+//
+// ─── Bench numbers (Ryzen 9 5950X, 4 prod + 4 cons, L3-pinned) ───
+//
+// True steady-state measurement: workers spawn ONCE, drain a large
+// workload, join.  Spawn cost <2% of wall.  All tails are batched-
+// rdtsc (BATCH=32 pushes per timer pair) so per-op cost is amortized
+// above the ~10 ns rdtsc resolution floor.  Pinning: shard[s] =
+// (producer cpu s, consumer cpu s+4), all within CCD0.  Median of
+// 3 runs.  See bench/bench_scheduler_policies.cpp.
+//
+//   policy            | floor p50 | tail p99.9 | steady-state
+//   ──────────────── | ───────── | ────────── | ──────────────
+//   Lifo              |   14.4 ns |     2.8 ns | 210 M items/s  *
+//   Cfs<K>            |    5.8 ns |    95.0 ns | 105 M items/s
+//   Deadline<K>       |    5.6 ns |   192.0 ns |  93 M items/s
+//   Eevdf<K>          |    5.8 ns |    81.0 ns |  91 M items/s
+//   EevdfPerShard     |    7.5 ns |  1146.0 ns |  55 M items/s
+//   DeadlinePerShard  |    7.5 ns |  1466.0 ns |  53 M items/s
+//   CfsPerShard       |    7.5 ns |  1600.0 ns |  53 M items/s
+//   LocalityAware ★   |   30.0 ns |   282.0 ns |  44 M items/s
+//   Fifo              |   16.3 ns |   347.0 ns |  22 M items/s
+//   RoundRobin        |   10.3 ns |  1280.0 ns |  10 M items/s
+//
+//   * Lifo's 210 M is owner-only push/pop on a single thread (no
+//     thief contention on the bench's hot path).  Different shape
+//     from the other policies' producer/consumer rate.
+//
+//   floor measures push+pop = 2 ops per iter (single-thread).
+//   tail measures push alone = 1 op (under N=4 producer contention,
+//   batched).  steady-state = items pushed × 1000 / wall_ms,
+//   measured over a single long-lived spawn (~5-10 ms wall).
+//
+// Headline patterns from the data:
+//
+//   * Lifo wins single-threaded throughput (210 M) — Chase-Lev
+//     deque owner-side push/pop is one store + one load; no
+//     contention.  Recursive fork-join with a hot owner is its
+//     intended shape.
+//
+//   * Single-grid priority schedulers (Cfs/Eevdf/Deadline) HIT
+//     91-105 M items/s — calendar grid's per-producer SpscRing
+//     cells run at near-SPSC speed when the bucket window is
+//     wide enough to absorb the workload.  This is ~2× faster
+//     than per-shard at the same workload.
+//
+//   * Per-shard (53-55 M) is SLOWER than single-grid under
+//     sustained load.  Reason: smaller aggregate queue capacity
+//     (NumBuckets=64 × BucketCap=16 = 1024 per shard) vs
+//     single-grid's NumBuckets=1024 × BucketCap=64 = 65536 per
+//     producer.  Producers wait more when buckets fill.
+//     PER-SHARD TRADE-OFF: lower latency at LOW load (no cross-
+//     thread current_bucket read), worse throughput at HIGH load
+//     (smaller queue capacity).  See "When to pick which" above —
+//     "high contention" means high producer count, not necessarily
+//     high item rate.
+//
+//   * LocalityAware (44 M, 282 ns p99.9) — flat-tail order-only,
+//     consistent across loads.  The 4×4 SpscRing grid keeps each
+//     producer-consumer pair on its own cache line.  Default for
+//     fork-join workloads.
+//
+//   * Fifo (22 M, 347 ns p99.9) — single MPMC head's FAA bandwidth
+//     ceiling.  Acceptable for control-plane (≤16 producers, low
+//     msg rate) where strict global FIFO matters more than throughput.
+//
+//   * RoundRobin (10 M) — single consumer drains 4 per-worker
+//     MPSC shards = single-consumer bottleneck.  Use only when
+//     ordering within each shard's producer matters.
+//
+//
+
 // ─── Two layers of "scheduling" ───────────────────────────────────
 //
 //   QUEUE TOPOLOGY (this header)        : how jobs are stored and
