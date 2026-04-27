@@ -88,6 +88,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Mutation.h>
 #include <crucible/safety/Pinned.h>
 
 #include <array>
@@ -127,17 +128,26 @@ private:
     // Each cell on its own cache line — without alignas(64), two
     // producers writing to adjacent cells would false-share the
     // same line, serializing what should be concurrent traffic.
+    //
+    // sequence wrapped as AtomicMonotonic — every round advances the
+    // sequence forward by either +1 (producer claim → publish) or
+    // +Capacity-1 (consumer drain → next-round producer ready).  The
+    // monotonic contract on store catches accidental backward writes
+    // at compile-time; hot-path codegen identical to bare atomic.
     struct alignas(64) Cell {
-        std::atomic<std::uint64_t> sequence{0};
-        T                          data{};
+        safety::AtomicMonotonic<std::uint64_t> sequence{0};
+        T                                      data{};
     };
 
 public:
     MpscRing() noexcept {
         // Per-cell initial sequence = cell index — this seeds
         // each cell as "ready for round-0 producer at pos i".
+        // reset_under_quiescence bypasses the monotonic-store
+        // contract; initial seeding is the canonical use case
+        // for that API (no other thread holds a reference yet).
         for (std::uint64_t i = 0; i < Capacity; ++i) {
-            buffer_[i].sequence.store(i, std::memory_order_relaxed);
+            buffer_[i].sequence.reset_under_quiescence(i);
         }
     }
 
@@ -167,11 +177,10 @@ public:
     //     write to consumer's acquire.
     [[nodiscard]] bool try_push(T item) noexcept {
         Cell* cell = nullptr;
-        std::uint64_t pos = head_.load(std::memory_order_relaxed);
+        std::uint64_t pos = head_.peek_relaxed();
         for (;;) {
             cell = &buffer_[pos & MASK];
-            const std::uint64_t seq =
-                cell->sequence.load(std::memory_order_acquire);
+            const std::uint64_t seq = cell->sequence.get();  // acquire
             const std::int64_t diff =
                 static_cast<std::int64_t>(seq) -
                 static_cast<std::int64_t>(pos);
@@ -179,8 +188,10 @@ public:
             if (diff == 0) {
                 // Cell is ready for THIS producer (pos).  Try to
                 // claim by advancing head.  CAS-weak is fine —
-                // spurious failure just retries.
-                if (head_.compare_exchange_weak(pos, pos + 1,
+                // spurious failure just retries.  Monotonic CAS
+                // carries the (pos < pos+1) pre — backward CAS is
+                // a compile-time impossibility on this surface.
+                if (head_.compare_exchange_advance_weak(pos, pos + 1,
                         std::memory_order_relaxed,
                         std::memory_order_relaxed)) {
                     break;
@@ -195,11 +206,13 @@ public:
             } else {
                 // diff > 0 — another producer raced ahead and
                 // claimed a higher pos; refresh and retry.
-                pos = head_.load(std::memory_order_relaxed);
+                pos = head_.peek_relaxed();
             }
         }
 
         // We own slot at pos.  Write data and release the cell.
+        // Monotonic store: pos+1 > pos == prior cell sequence value
+        // (that's how we won the CAS above), so the contract holds.
         cell->data = item;
         cell->sequence.store(pos + 1, std::memory_order_release);
         return true;
@@ -229,10 +242,9 @@ public:
     //   - tail_.store(pos+1, relaxed): own variable; no cross-
     //     thread sync needed (producers don't read tail).
     [[nodiscard]] std::optional<T> try_pop() noexcept {
-        const std::uint64_t pos = tail_.load(std::memory_order_relaxed);
+        const std::uint64_t pos = tail_.peek_relaxed();
         Cell* cell = &buffer_[pos & MASK];
-        const std::uint64_t seq =
-            cell->sequence.load(std::memory_order_acquire);
+        const std::uint64_t seq = cell->sequence.get();  // acquire
         const std::int64_t diff =
             static_cast<std::int64_t>(seq) -
             static_cast<std::int64_t>(pos + 1);
@@ -247,6 +259,9 @@ public:
         }
 
         const T item = cell->data;
+        // Both stores forward-monotonic:
+        //   cell.sequence: pos+1 → pos+Capacity (increment Capacity-1)
+        //   tail_:         pos   → pos+1
         cell->sequence.store(pos + Capacity, std::memory_order_release);
         tail_.store(pos + 1, std::memory_order_relaxed);
         return item;
@@ -259,10 +274,8 @@ public:
     // correctness invariants.
 
     [[nodiscard]] bool empty_approx() const noexcept {
-        const std::uint64_t pos =
-            tail_.load(std::memory_order_acquire);
-        const std::uint64_t seq =
-            buffer_[pos & MASK].sequence.load(std::memory_order_acquire);
+        const std::uint64_t pos = tail_.get();                     // acquire
+        const std::uint64_t seq = buffer_[pos & MASK].sequence.get(); // acquire
         // If seq < pos + 1 → producer hasn't published at this pos
         // yet → empty (or in flight).
         return static_cast<std::int64_t>(seq) -
@@ -288,8 +301,14 @@ private:
     // buffer_ aligned: each Cell is alignas(64) so cells don't
     // false-share with each other.
 
-    alignas(64) std::atomic<std::uint64_t> head_{0};
-    alignas(64) std::atomic<std::uint64_t> tail_{0};
+    // head_ / tail_ migrated to AtomicMonotonic per CONCURRENT-A4.
+    // Both counters are forward-monotonic by construction: head_ is
+    // claimed via CAS (always pos → pos+1), tail_ is advanced by the
+    // single consumer (always pos → pos+1).  The wrapper carries the
+    // monotonic-direction contract at the type level — backward CAS
+    // or backward store is structurally impossible on this surface.
+    alignas(64) safety::AtomicMonotonic<std::uint64_t> head_{0};
+    alignas(64) safety::AtomicMonotonic<std::uint64_t> tail_{0};
     alignas(64) std::array<Cell, Capacity> buffer_{};
 };
 
