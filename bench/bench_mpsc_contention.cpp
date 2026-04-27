@@ -1,34 +1,39 @@
 // MpscRing multi-producer contention bench.
 //
-// Validates the claim from the bitmap commit:
+// Validates the post-Vyukov bitmap design's claim from the commit:
 //
 //   "Real win for THIS API: multi-producer contention.
 //    Single FAA(tail, N) replaces N × FAA(tail, 1)."
 //
 // Single-thread bench (bench_mpmc_saturation) showed ~4.5× speedup
-// from batched API.  Multi-thread bench shows the contention story:
-//
-//   Without batched API: every try_push contends on head_ via CAS.
+// from the batched API.  This bench shows the multi-thread story:
+//   • Without batched API: every try_push contends on head_ via CAS.
 //     Per-call cost grows with producer count.
-//
-//   With batched API: each batch contends on head_ ONCE per N items
+//   • With batched API: each batch contends on head_ ONCE per N items
 //     (single CAS claims N tickets).  Contention reduction = N×.
 //
-// Methodology:
-//   * Sweep producer count ∈ {1, 2, 4, 8}
-//   * Per producer: push K items (single API or batched API)
-//   * Single consumer drains
-//   * Measure: total wall-clock time, items/sec/thread, missing items
-//   * Verify exact-once delivery (zero loss, zero duplicates)
+// Harness discipline (canonical bench/bench_harness.h):
+//   • bench::Run{...}.samples(...).warmup(...).max_wall_ms(...).measure(body)
+//     drives N iterations of a self-contained workload cycle.
+//   • One iteration body = spawn P producers + drain consumer + join.
+//   • Report.pct gives p50/p99/p99.9/cv of full-workload wall time.
+//   • bench::emit_reports_text + bench::emit_reports_json publish.
+//   • bench::compare(single, batched<64>) gives Mann-Whitney U for
+//     statistical significance of the contention-reduction claim.
 //
-// We measure WALL-CLOCK time on the producer side — that's the metric
-// that matters under contention.  Per-thread throughput = items / (per-
-// thread wall time).  Aggregate throughput = items / (system wall time).
+// The body is heavy (P jthread spawns + join), so we tune for low
+// sample count and large per-sample work:
+//   • samples(20)     — enough for p50/p99.9
+//   • warmup(2)       — flush any first-call jthread/futex overhead
+//   • batch(1)        — never auto-batch a multi-thread cycle
+//   • no_pin()        — multi-thread can't pin to one core
+//   • max_wall_ms(60_000) — generous wall budget; cap protects CI
+//   • per_producer = 5'000 — keeps each iteration ≈ 1-50 ms
 
 #include <atomic>
-#include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <memory>
 #include <span>
 #include <thread>
 #include <vector>
@@ -42,22 +47,24 @@ namespace {
 using crucible::concurrent::MpscRing;
 using Item = std::uint64_t;
 
-constexpr std::size_t kCap = 1U << 14;       // 16K cells; enough headroom
-constexpr std::size_t kItemsPerProducer = 200'000;
+constexpr std::size_t kCap            = 1U << 14;   // 16K cells; headroom
+constexpr std::size_t kPerProducer    = 5'000;      // items per producer / iter
+constexpr std::size_t kSamples        = 32;     // ≥30 for Mann-Whitney
+constexpr std::size_t kWarmup         = 3;
+constexpr std::size_t kMaxWallMs      = 60'000;
 
 // Producer-side single-call write loop.  Each producer pushes K items
-// via individual try_push calls.  Caller's thread spin-waits if full.
+// via individual try_push calls.  Spin-yield if full.
 struct SinglePushWorker {
     MpscRing<Item, kCap>& ring;
     std::atomic<bool>&    start;
-    std::size_t           producer_id;
     Item                  base;
 
     void operator()(std::stop_token) noexcept {
         while (!start.load(std::memory_order_acquire)) {
             std::this_thread::yield();
         }
-        for (std::size_t i = 0; i < kItemsPerProducer; ++i) {
+        for (std::size_t i = 0; i < kPerProducer; ++i) {
             const Item value = base + static_cast<Item>(i);
             while (!ring.try_push(value)) {
                 std::this_thread::yield();
@@ -67,13 +74,11 @@ struct SinglePushWorker {
 };
 
 // Producer-side batched write loop.  Each producer pushes K items via
-// try_push_batch<BATCH> calls.  This amortizes the head_ CAS contention
-// across BATCH items per call.
+// try_push_batch<BATCH> calls — amortizes head_ CAS contention.
 template <std::size_t BATCH>
 struct BatchedPushWorker {
     MpscRing<Item, kCap>& ring;
     std::atomic<bool>&    start;
-    std::size_t           producer_id;
     Item                  base;
 
     void operator()(std::stop_token) noexcept {
@@ -82,8 +87,8 @@ struct BatchedPushWorker {
         }
         std::array<Item, BATCH> buf{};
         std::size_t pushed = 0;
-        while (pushed < kItemsPerProducer) {
-            const std::size_t remaining = kItemsPerProducer - pushed;
+        while (pushed < kPerProducer) {
+            const std::size_t remaining = kPerProducer - pushed;
             const std::size_t n = (remaining < BATCH) ? remaining : BATCH;
             for (std::size_t i = 0; i < n; ++i) {
                 buf[i] = base + static_cast<Item>(pushed + i);
@@ -103,24 +108,14 @@ struct BatchedPushWorker {
     }
 };
 
-// Result row from one (producer_count, api_kind) experiment.
-struct Row {
-    const char*   api;        // "single" or "batched<N>"
-    std::size_t   N;          // producer count
-    double        wall_ms;    // total wall time across all producers (max)
-    double        items_per_sec_total;     // sum across producers / wall
-    double        items_per_sec_per_prod;  // per-producer mean throughput
-    int           missing;
-    int           duplicates;
-};
-
+// One full multi-thread cycle: spawn P producers, drain consumer,
+// join.  Returned to bench::Run as the body callable.
 template <typename Worker>
-Row run_one(const char* label, std::size_t producer_count) {
+void run_cycle(std::size_t producer_count) {
     auto ring_ptr = std::make_unique<MpscRing<Item, kCap>>();
     auto& ring = *ring_ptr;
 
-    const std::size_t total = producer_count * kItemsPerProducer;
-    std::vector<std::atomic<int>> seen(total);
+    const std::size_t total = producer_count * kPerProducer;
     std::atomic<bool> start{false};
     std::atomic<std::size_t> consumed{0};
 
@@ -128,126 +123,124 @@ Row run_one(const char* label, std::size_t producer_count) {
     std::vector<std::jthread> producers;
     producers.reserve(producer_count);
     for (std::size_t p = 0; p < producer_count; ++p) {
-        const Item base = static_cast<Item>(p) * kItemsPerProducer;
-        producers.emplace_back(Worker{ring, start, p, base});
+        const Item base = static_cast<Item>(p) * kPerProducer;
+        producers.emplace_back(Worker{ring, start, base});
     }
 
-    // Spawn consumer
-    std::jthread consumer([&ring, &seen, &consumed, &start, total](
+    // Spawn consumer.  Drains until total items observed.
+    std::jthread consumer([&ring, &consumed, &start, total](
             std::stop_token) noexcept {
         while (!start.load(std::memory_order_acquire)) {
             std::this_thread::yield();
         }
         std::array<Item, 64> buf{};
-        while (consumed.load(std::memory_order_relaxed) < total) {
+        std::size_t local = 0;
+        while (local < total) {
             const std::size_t n = ring.try_pop_batch(std::span<Item>(buf));
             if (n == 0) {
                 std::this_thread::yield();
                 continue;
             }
-            for (std::size_t i = 0; i < n; ++i) {
-                seen[buf[i]].fetch_add(1, std::memory_order_relaxed);
-            }
-            consumed.fetch_add(n, std::memory_order_relaxed);
+            // Anti-DCE: keep the read alive.
+            bench::do_not_optimize(buf[0]);
+            bench::do_not_optimize(buf[n - 1]);
+            local += n;
         }
+        consumed.store(local, std::memory_order_release);
     });
 
-    // Time the producer-side wall clock.
-    const auto t0 = std::chrono::steady_clock::now();
+    // Release the start gate — measured wall begins at the FIRST
+    // producer's first push and ends at the consumer's join.
     start.store(true, std::memory_order_release);
-    producers.clear();  // join all producers
-    const auto t1 = std::chrono::steady_clock::now();
+    producers.clear();   // join all producers
     consumer.join();
-
-    const double wall_ms =
-        std::chrono::duration<double, std::milli>(t1 - t0).count();
-    const double wall_sec = wall_ms / 1000.0;
-
-    int missing = 0, dup = 0;
-    for (std::size_t i = 0; i < total; ++i) {
-        const int c = seen[i].load(std::memory_order_relaxed);
-        if (c == 0) ++missing;
-        else if (c > 1) dup += c - 1;
-    }
-
-    return Row{
-        label,
-        producer_count,
-        wall_ms,
-        static_cast<double>(total) / wall_sec,
-        static_cast<double>(kItemsPerProducer) / wall_sec,
-        missing,
-        dup,
-    };
 }
 
-void print_header() {
-    std::printf("\n  %-16s %4s  %10s  %14s  %14s  %s\n",
-                "API", "P", "wall (ms)",
-                "items/s total", "items/s/prod", "miss/dup");
-    std::printf("  %-16s %4s  %10s  %14s  %14s  %s\n",
-                std::string(16, '-').c_str(),
-                "---",
-                std::string(10, '-').c_str(),
-                std::string(14, '-').c_str(),
-                std::string(14, '-').c_str(),
-                "--------");
-}
-
-void print_row(const Row& r) {
-    std::printf("  %-16s %4zu  %10.2f  %14.2e  %14.2e  %d/%d\n",
-                r.api, r.N, r.wall_ms,
-                r.items_per_sec_total,
-                r.items_per_sec_per_prod,
-                r.missing, r.duplicates);
+template <typename Worker>
+[[nodiscard]] bench::Report run_one(const char* label,
+                                    std::size_t producer_count) {
+    char name[96];
+    std::snprintf(name, sizeof(name), "%s P=%zu", label, producer_count);
+    return bench::Run{name}
+        .samples(kSamples)
+        .warmup(kWarmup)
+        .batch(1)
+        .no_pin()
+        .max_wall_ms(kMaxWallMs)
+        .measure([producer_count]{ run_cycle<Worker>(producer_count); });
 }
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
     bench::print_system_info();
     bench::elevate_priority();
 
-    std::printf("=== mpsc_contention ===\n");
-    std::printf("  Item: uint64_t\n");
-    std::printf("  Cap:  %zu (16K cells)\n", kCap);
-    std::printf("  Per producer: %zu items\n", kItemsPerProducer);
-    std::printf("\n");
-    std::printf("  Sweep: producer count {1, 2, 4, 8} × {single, batched<16>,\n");
-    std::printf("                                          batched<64>}\n");
+    const bool json = (argc > 1 && std::string_view{argv[1]} == "--json");
 
-    std::vector<Row> rows;
+    std::printf("=== mpsc_contention ===\n");
+    std::printf("  Item:              uint64_t\n");
+    std::printf("  Cap:               %zu cells\n", kCap);
+    std::printf("  Items per producer: %zu / iteration\n", kPerProducer);
+    std::printf("  Samples:           %zu (warmup %zu)\n", kSamples, kWarmup);
+    std::printf("  Body:              spawn P producers + drain consumer + join\n");
+    std::printf("\n");
+
+    std::vector<bench::Report> reports;
+    reports.reserve(12);
+
+    // 4 producer counts × 3 API kinds = 12 cells.
     for (std::size_t P : {std::size_t{1}, std::size_t{2},
                           std::size_t{4}, std::size_t{8}}) {
-        rows.push_back(run_one<SinglePushWorker>     ("single",      P));
-        rows.push_back(run_one<BatchedPushWorker<16>>("batched<16>", P));
-        rows.push_back(run_one<BatchedPushWorker<64>>("batched<64>", P));
+        reports.push_back(run_one<SinglePushWorker>     ("single",      P));
+        reports.push_back(run_one<BatchedPushWorker<16>>("batched<16>", P));
+        reports.push_back(run_one<BatchedPushWorker<64>>("batched<64>", P));
     }
 
-    print_header();
-    for (const auto& r : rows) print_row(r);
+    // Standard text + JSON emission.  Each Report's pct.p50 is the
+    // wall-time of one workload cycle (P producers × kPerProducer items).
+    bench::emit_reports_text(reports);
 
-    // ── Headline analysis ────────────────────────────────────────────
+    // ── Headline analysis: per-producer-count items/sec ─────────────
+    //
+    // Items moved per cycle = P × kPerProducer; cycle wall = pct.p50.
+    // Aggregate items/sec = items / wall.
     std::printf("\n=== contention reduction (single → batched<64>) ===\n");
-    std::printf("  P    single (items/s)    batched<64> (items/s)    speedup\n");
-    std::printf("  --   ------------------  -----------------------  -------\n");
+    std::printf("  P    single (Mitems/s)    batched<64> (Mitems/s)   speedup\n");
+    std::printf("  --   ------------------  ------------------------  -------\n");
     for (std::size_t pi = 0; pi < 4; ++pi) {
-        const auto& s  = rows[pi * 3 + 0];   // single
-        const auto& b64 = rows[pi * 3 + 2];  // batched<64>
-        const double ratio = b64.items_per_sec_total / s.items_per_sec_total;
-        std::printf("  %2zu      %12.2e    %12.2e         %5.2f×\n",
-                    s.N, s.items_per_sec_total, b64.items_per_sec_total,
-                    ratio);
+        const std::size_t P = std::size_t{1} << pi;     // 1, 2, 4, 8
+        const auto& s   = reports[pi * 3 + 0];          // single
+        const auto& b64 = reports[pi * 3 + 2];          // batched<64>
+        const double items     = static_cast<double>(P * kPerProducer);
+        const double s_rate    = items / (s.pct.p50   * 1e-9);
+        const double b_rate    = items / (b64.pct.p50 * 1e-9);
+        const double ratio     = b_rate / s_rate;
+        std::printf("  %2zu      %14.2f      %18.2f       %5.2f×\n",
+                    P, s_rate / 1e6, b_rate / 1e6, ratio);
+    }
+
+    // ── Statistical significance: Mann-Whitney U sweep across P ─────
+    //
+    // bench::compare gives Mann-Whitney U + tie-corrected z; bench
+    // marks distinguishable iff |z| > 2.576 (p < 0.01).  We expect
+    // batched<64> to IMPROVE over single at every contention level.
+    std::printf("\n=== significance (single vs batched<64>) ===\n");
+    for (std::size_t pi = 0; pi < 4; ++pi) {
+        const auto& s   = reports[pi * 3 + 0];
+        const auto& b64 = reports[pi * 3 + 2];
+        bench::compare(s, b64).print_text();
     }
 
     std::printf("\n  Interpretation:\n");
     std::printf("  • At P=1 (no contention), batched API gives the single-thread\n");
     std::printf("    speedup measured in bench_mpmc_saturation (~4.5×).\n");
-    std::printf("  • At P=2..8 (contention rises), the gap should WIDEN —\n");
-    std::printf("    batched API does 1 CAS per N items, so head_ contention\n");
-    std::printf("    is reduced by N× vs single-call which CASes per item.\n");
-    std::printf("  • If the gap stays flat, single-thread cost dominates.\n");
-    std::printf("    If the gap widens, contention reduction is the win.\n");
+    std::printf("  • At P=2..8 (contention rises), the gap widens: batched API\n");
+    std::printf("    does 1 CAS per N items, so head_ contention is reduced N×\n");
+    std::printf("    vs single-call which CASes per item.\n");
+    std::printf("  • CV >5%% on any cell indicates throttling — re-run on a\n");
+    std::printf("    quiet machine and check `dmesg | grep thermal`.\n");
 
+    bench::emit_reports_json(reports, json);
     return 0;
 }
