@@ -139,7 +139,7 @@ static void test_grid_round_robin_single_thread() {
     // Single producer sends 8 items; round-robin should distribute
     // 2 items to each of 4 consumers.
     for (uint64_t i = 0; i < 8; ++i) {
-        assert(grid.send(0, i));
+        assert(grid.try_push(0, i));
     }
 
     // Each consumer gets 2 items
@@ -149,17 +149,17 @@ static void test_grid_round_robin_single_thread() {
 
     // Drain and verify FIFO per consumer
     for (std::size_t c = 0; c < 4; ++c) {
-        auto first = grid.try_recv(c);
+        auto first = grid.try_pop(c);
         assert(first.has_value());
         assert(*first == c);  // first round: producer sent to consumer c=seq%4
-        auto second = grid.try_recv(c);
+        auto second = grid.try_pop(c);
         assert(second.has_value());
         assert(*second == c + 4);  // second round: c=(seq+4)%4=c
     }
 
     // All consumers empty now
     for (std::size_t c = 0; c < 4; ++c) {
-        assert(!grid.try_recv(c).has_value());
+        assert(!grid.try_pop(c).has_value());
     }
 
     std::printf("  test_grid_round_robin_single_thread: PASSED\n");
@@ -183,7 +183,7 @@ static void test_grid_hash_key_ordering() {
     for (uint64_t k : KEYS) {
         for (uint64_t s = 0; s < 10; ++s) {
             const uint64_t item = (k << 32) | s;
-            assert(grid.send(0, item));
+            assert(grid.try_push(0, item));
         }
     }
 
@@ -195,14 +195,14 @@ static void test_grid_hash_key_ordering() {
     // ordering invariant we're trying to verify.
     std::array<std::vector<uint64_t>, 4> received;
     for (std::size_t c = 0; c < 4; ++c) {
-        while (auto opt = grid.try_recv(c)) {
+        while (auto opt = grid.try_pop(c)) {
             received[c].push_back(*opt);
         }
     }
 
     // All rings should now be empty.
     for (std::size_t c = 0; c < 4; ++c) {
-        assert(!grid.try_recv(c).has_value());
+        assert(!grid.try_pop(c).has_value());
     }
 
     // Verify total items received = total sent.
@@ -297,7 +297,7 @@ static void test_grid_4x4_stress() {
     for (std::size_t p = 0; p < M; ++p) {
         producers.emplace_back([&, p](std::stop_token /*st*/) {
             for (std::uint64_t s = 0; s < N_PER_PRODUCER; ++s) {
-                while (!grid.send(p, encode(p, s))) {
+                while (!grid.try_push(p, encode(p, s))) {
                     std::this_thread::yield();
                 }
             }
@@ -312,7 +312,7 @@ static void test_grid_4x4_stress() {
         consumers.emplace_back([&, c](std::stop_token /*st*/) {
             while (total_received.load(std::memory_order_relaxed)
                    < total_expected) {
-                if (auto opt = grid.try_recv(c)) {
+                if (auto opt = grid.try_pop(c)) {
                     const std::size_t p = *opt >> 48;
                     const std::uint64_t s = *opt & ((std::uint64_t{1} << 48) - 1);
                     if (p >= M || s >= N_PER_PRODUCER) {

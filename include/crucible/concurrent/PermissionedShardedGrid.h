@@ -30,7 +30,7 @@
 //
 // Per-operation cost (steady state):
 //   try_push(item) : ~5-8 ns  (single SpscRing acq/rel)
-//   try_recv()     : ~5-8 ns × M (round-robin scan across producers
+//   try_pop()     : ~5-8 ns × M (round-robin scan across producers
 //                                  in the consumer's column)
 //   producer<I>() / consumer<J>() : 0 ns (pure move semantics)
 //
@@ -103,9 +103,9 @@
 //   // Producers emit to round-robin-routed consumer.  Consumers
 //   // round-robin across M producers in their column.
 //   p0.try_push(42);              // → routed to consumer 0..2 by Routing
-//   auto v = c0.try_recv();       // ← reads from any p0..p3 in column 0
+//   auto v = c0.try_pop();       // ← reads from any p0..p3 in column 0
 //
-//   // p0.try_recv()  is a COMPILE ERROR — no such method on ProducerHandle
+//   // p0.try_pop()  is a COMPILE ERROR — no such method on ProducerHandle
 //   // c0.try_push() is a COMPILE ERROR — no such method on ConsumerHandle
 //   // grid.producer<0>(...) twice is a COMPILE ERROR — Permission consumed
 //
@@ -213,7 +213,7 @@ public:
         // Push to producer slot I — Routing picks consumer column.
         // Per ShardedSpscGrid::send: ~5-8 ns uncontended.
         [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
-            return grid_.grid_.send(I, item);
+            return grid_.grid_.try_push(I, item);
         }
 
         [[nodiscard]] static constexpr std::size_t capacity() noexcept {
@@ -225,7 +225,7 @@ public:
     //
     // Statically indexed by consumer slot J.  Holds the linear
     // Permission<Consumer<UserTag, J>> token.  Move-only.  EXPOSES
-    // try_recv only; slot index is part of the type, so try_recv
+    // try_pop only; slot index is part of the type, so try_pop
     // takes no parameters.
 
     template <std::size_t J>
@@ -254,9 +254,9 @@ public:
         static constexpr std::size_t shard_index = J;
 
         // Round-robin pop across all M producers in column J.
-        // Per ShardedSpscGrid::try_recv.
-        [[nodiscard, gnu::hot]] std::optional<T> try_recv() noexcept {
-            return grid_.grid_.try_recv(J);
+        // Per ShardedSpscGrid::try_pop.
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
+            return grid_.grid_.try_pop(J);
         }
 
         [[nodiscard]] static constexpr std::size_t capacity() noexcept {
@@ -286,12 +286,49 @@ public:
         return ConsumerHandle<J>{*this, std::move(perm)};
     }
 
+    // ── Mode transition: scoped exclusive access ──────────────────
+    //
+    // ShardedGrid has linear (move-only) Permissions on every
+    // producer slot AND every consumer slot — no atomic refcounted
+    // pool to drain.  Unified mode-transition matches Spsc's
+    // signature: caller surrenders the recombined whole permission
+    // as type-level proof that no handle is alive on any shard.
+    //
+    // Cost: ZERO atomic ops — the Permission move is purely
+    // type-level.  Body runs with exclusive access to the entire
+    // M×N grid; whole permission is returned for re-split.
+    template <typename Body>
+        requires std::is_invocable_v<Body>
+    [[nodiscard]] safety::Permission<whole_tag>
+    with_recombined_access(safety::Permission<whole_tag>&& whole, Body&& body)
+        noexcept(std::is_nothrow_invocable_v<Body>)
+    {
+        std::forward<Body>(body)();
+        return std::move(whole);
+    }
+
     // ── Diagnostics ───────────────────────────────────────────────
 
+    // Per-shard size — the M×N grid has M*N independent SpscRings,
+    // so a global size is meaningless.  Caller passes the (producer,
+    // consumer) cell indices.
     [[nodiscard]] std::size_t size_approx(std::size_t producer_id,
                                           std::size_t consumer_id) const noexcept
     {
         return grid_.size_approx(producer_id, consumer_id);
+    }
+
+    // Channel-level capacity = total cells across M×N shards.
+    [[nodiscard]] static constexpr std::size_t capacity() noexcept {
+        return M * N * Capacity;
+    }
+
+    // ShardedGrid has no atomic exclusivity flag — the linear
+    // Permissions on all M+N endpoints ARE the proof of single-
+    // handle ownership.  Always returns false for API uniformity
+    // with the pool-based wrappers.
+    [[nodiscard]] static constexpr bool is_exclusive_active() noexcept {
+        return false;
     }
 
 private:

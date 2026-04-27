@@ -308,19 +308,12 @@ public:
     [[nodiscard]] std::uint64_t outstanding_consumers() const noexcept {
         return consumer_pool_.outstanding();
     }
-    [[nodiscard]] bool is_producer_exclusive_active() const noexcept {
-        return producer_pool_.is_exclusive_out();
-    }
-    [[nodiscard]] bool is_consumer_exclusive_active() const noexcept {
-        return consumer_pool_.is_exclusive_out();
-    }
-    // Unified API: true iff EITHER side is in exclusive mode.  Matches
-    // the per-side `is_exclusive_active()` exposed by every other
-    // Permissioned* wrapper.  For Mpmc, exclusivity is per-side; the
-    // unified query is the disjunction.
+    // True iff EITHER pool is in exclusive mode.  Mpmc's
+    // with_drained_access drives both pools in lockstep, so this
+    // disjunction matches the wrapper's mode-transition semantics.
     [[nodiscard]] bool is_exclusive_active() const noexcept {
-        return is_producer_exclusive_active()
-            || is_consumer_exclusive_active();
+        return producer_pool_.is_exclusive_out()
+            || consumer_pool_.is_exclusive_out();
     }
     [[nodiscard]] bool empty_approx() const noexcept {
         return ring_.empty_approx();

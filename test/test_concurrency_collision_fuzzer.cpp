@@ -33,7 +33,7 @@
 //      sequence (catches reorder/duplicate bugs in the simplest queue)
 //
 //   6. PermissionedSnapshot mode-transition — interleaved
-//      reader.lend() with with_exclusive_access; verifies invariants:
+//      reader.lend() with with_drained_access; verifies invariants:
 //      exclusive scope sees zero active readers, lend during exclusive
 //      returns nullopt, post-exclusive lend works
 //
@@ -626,7 +626,7 @@ void test_pool_mode_transition_torture() {
     // without serialization — between snap.reader() returning nullopt
     // and reader's is_exclusive_active() check, the exclusive holder
     // could have called deposit_exclusive (clearing the bit).  The
-    // load-bearing checks are inside the with_exclusive_access body
+    // load-bearing checks are inside the with_drained_access body
     // (where the lock is held): outstanding_readers == 0, etc.
     std::vector<std::jthread> readers;
     for (int i = 0; i < NUM_READERS; ++i) {
@@ -669,7 +669,7 @@ void test_pool_mode_transition_torture() {
             //   * outstanding_readers must be 0 inside exclusive
             //   * writer can publish during exclusive with no torn
             //     observable to readers (because lend returns nullopt)
-            const bool ran = snap.with_exclusive_access([&]() noexcept {
+            const bool ran = snap.with_drained_access([&]() noexcept {
                 if (snap.outstanding_readers() != 0) {
                     torn_observed.fetch_add(1,
                         std::memory_order_acq_rel);

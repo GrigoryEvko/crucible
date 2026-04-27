@@ -121,8 +121,8 @@ void test_single_thread_round_trip() {
     int total = 0;
     int sum   = 0;
     for (int i = 0; i < 16 && total < 8; ++i) {
-        if (auto v = c0.try_recv()) { sum += *v; ++total; }
-        if (auto v = c1.try_recv()) { sum += *v; ++total; }
+        if (auto v = c0.try_pop()) { sum += *v; ++total; }
+        if (auto v = c1.try_pop()) { sum += *v; ++total; }
     }
 
     CRUCIBLE_TEST_REQUIRE(total == 8);
@@ -170,7 +170,7 @@ void test_multi_thread_drain() {
 
     auto pop_loop = [&](auto handle) {
         for (;;) {
-            if (auto v = handle.try_recv()) {
+            if (auto v = handle.try_pop()) {
                 (void)v;
                 total_popped.fetch_add(1, std::memory_order_relaxed);
             } else {

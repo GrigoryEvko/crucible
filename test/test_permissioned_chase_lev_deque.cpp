@@ -11,7 +11,7 @@
 //   2. Single-thread owner round-trip (push, pop, LIFO order).
 //   3. Multi-thread owner + thieves drain (1 owner pushes, N thieves
 //      steal concurrently).
-//   4. with_drained_thieves — refuses while shares out, succeeds when
+//   4. with_drained_access — refuses while shares out, succeeds when
 //      none.
 // ═══════════════════════════════════════════════════════════════════
 
@@ -150,7 +150,7 @@ void test_owner_pushes_thieves_steal() {
     CRUCIBLE_TEST_REQUIRE(total_handled.load() == N_PUSHES);
 }
 
-// ── Tier 3: with_drained_thieves transition ───────────────────────
+// ── Tier 3: with_drained_access transition ───────────────────────
 
 void test_drained_thieves_refuses_while_thief_out() {
     PermissionedChaseLevDeque<int, 64, DrainDeque> deque;
@@ -159,13 +159,13 @@ void test_drained_thieves_refuses_while_thief_out() {
     CRUCIBLE_TEST_REQUIRE(t_opt.has_value());
 
     bool ran = false;
-    bool ok = deque.with_drained_thieves([&]() noexcept { ran = true; });
+    bool ok = deque.with_drained_access([&]() noexcept { ran = true; });
     CRUCIBLE_TEST_REQUIRE(!ok);
     CRUCIBLE_TEST_REQUIRE(!ran);
 
     // Drop the thief; transition succeeds.
     t_opt.reset();
-    ok = deque.with_drained_thieves([&]() noexcept { ran = true; });
+    ok = deque.with_drained_access([&]() noexcept { ran = true; });
     CRUCIBLE_TEST_REQUIRE(ok);
     CRUCIBLE_TEST_REQUIRE(ran);
 

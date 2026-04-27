@@ -1,7 +1,7 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
 // FOUND-A15 — PermissionedShardedGrid::ProducerHandle<I> exposes
-// only try_push.  Calling try_recv must be a hard compile error.
+// only try_push.  Calling try_pop must be a hard compile error.
 
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/permissions/Permission.h>
@@ -11,7 +11,7 @@ namespace {
 
 struct BadGrid {};
 
-void exercise_producer_try_recv() {
+void exercise_producer_try_pop_compile_error() {
     crucible::concurrent::PermissionedShardedGrid<int, 2, 2, 32, BadGrid> grid;
     auto whole = crucible::safety::permission_root_mint<
         crucible::concurrent::grid_tag::Whole<BadGrid>>();
@@ -20,11 +20,11 @@ void exercise_producer_try_recv() {
     auto p = grid.template producer<0>(
         std::move(std::get<0>(perms.producers)));
 
-    // PRODUCER attempting RECV — try_recv is structurally absent.
-    auto v = p.try_recv();
+    // PRODUCER attempting RECV — try_pop is structurally absent.
+    auto v = p.try_pop();
     (void)v;
 }
 
 }  // namespace
 
-int main() { exercise_producer_try_recv(); return 0; }
+int main() { exercise_producer_try_pop_compile_error(); return 0; }
