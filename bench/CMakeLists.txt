@@ -234,7 +234,6 @@ crucible_bench(bench_swiss_table)
 crucible_bench(bench_trace_ring)
 crucible_bench(bench_concurrent_queues)
 crucible_bench(bench_concurrent_saturation)
-crucible_bench(bench_mpmc_scq_vs_vyukov)
 crucible_bench(bench_mpmc_saturation)
 crucible_bench(bench_permissioned_zero_cost)
 
