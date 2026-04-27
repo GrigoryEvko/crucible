@@ -452,20 +452,40 @@ public:
     }
 
     // Send via Transport.  Two compile-time gates:
-    //   * SendablePayload<T, PS>: sender holds the permission demanded
-    //     by T's marker (or T is plain / Borrowed).  Decision D6
-    //     foundation — Phase 6 will compose this into the broader
+    //   * SendablePayload<T, PS> (body static_assert): sender holds
+    //     the permission demanded by T's marker (or T is plain /
+    //     Borrowed).  Encoded as a body static_assert with the
+    //     framework-controlled [PermissionImbalance] prefix so the
+    //     neg-compile harness can pattern-match it (a requires-clause
+    //     would emit GCC-text "constraints not satisfied" instead).
+    //     Decision D6 foundation — Phase 6 composes into the broader
     //     is_permission_balanced_v witness.
-    //   * Transport invocability: matches bare SessionHandle's send
-    //     contract.
+    //   * Transport invocability (requires-clause): matches bare
+    //     SessionHandle's send contract.  Stays in the requires
+    //     because Transport-shape mismatch is a structural signature
+    //     mismatch, not a permission-flow issue.
     template <typename Transport>
-        requires SendablePayload<T, PS>
-              && std::is_invocable_v<Transport, Resource&, T&&>
+        requires std::is_invocable_v<Transport, Resource&, T&&>
     [[nodiscard]] constexpr auto send(T value, Transport transport) &&
         noexcept(std::is_nothrow_invocable_v<Transport, Resource&, T&&>
                  && std::is_nothrow_move_constructible_v<Resource>
                  && std::is_nothrow_move_constructible_v<T>)
     {
+        static_assert(SendablePayload<T, PS>,
+            "crucible::session::diagnostic [PermissionImbalance]: "
+            "PermissionedSessionHandle::send: payload type T requires "
+            "a permission tag the handle's PermSet does not contain.  "
+            "Cases:\n"
+            "  * Send<Transferable<T, X>, K>: sender must hold X "
+            "(X must be in PS).\n"
+            "  * Send<Returned<T, X>, K>: sender must hold X "
+            "(X was previously borrowed and is being returned).\n"
+            "  * Send<Borrowed<T, X>, K> and Send<Plain T, K>: "
+            "always sendable (no permission demand).\n"
+            "Verify the handle was minted (or evolved) with the "
+            "permission you're trying to transfer.  If the protocol "
+            "intends to lend (not transfer), wrap the payload in "
+            "Borrowed<T, X> instead of Transferable<T, X>.");
         std::invoke(transport, resource_, std::move(value));
         this->mark_consumed_();
         using NextPS = compute_perm_set_after_send_t<PS, T>;
