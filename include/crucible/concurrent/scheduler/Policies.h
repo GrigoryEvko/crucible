@@ -91,6 +91,7 @@
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
 #include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/concurrent/traits/Concepts.h>
 
@@ -129,6 +130,9 @@ struct LocalityAware {};
 struct Deadline {};
 struct Cfs {};
 struct Eevdf {};
+struct DeadlinePerShard {};
+struct CfsPerShard {};
+struct EevdfPerShard {};
 }  // namespace tag
 
 // ── Policy-tunable defaults ─────────────────────────────────────────
@@ -358,6 +362,114 @@ struct Eevdf {
     static constexpr PriorityKind priority_kind = PriorityKind::VirtualDeadline;
     static constexpr bool needs_topology        = false;
     static constexpr std::string_view name() noexcept { return "Eevdf"; }
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// PerShard priority-keyed family — N independent calendar grids.
+//
+// Topologically a `PermissionedShardedCalendarGrid`: NumShards
+// independent per-shard calendars, each with its OWN current_bucket
+// atomic.  The producer's try_push reads only its shard's
+// current_bucket — same-core in well-pinned production code, no
+// cross-thread atomic on the push path.  Eliminates the 100-200μs
+// p99.9 tail observed on the single-grid Cfs/Eevdf/Deadline at
+// 4-producer contention.
+//
+// Trade-off (matches Linux CFS/EEVDF per-CPU red-black trees):
+//   * Per-shard priority is EXACT.
+//   * Cross-shard priority is APPROXIMATE — shard A may be at
+//     bucket 100 draining while shard B is at bucket 200; they
+//     are NOT globally ordered.
+//
+// Use when: tail latency matters more than global priority
+// correctness AND the workload can be partitioned across shards
+// (e.g., per-NUMA-node, per-coordinator-thread, per-collective-
+// bucket).  Pin producer P → shard S(P) typically S = P %
+// NumShards or NUMA-node-of(P).
+//
+// If your workload requires global priority correctness, use
+// the single-grid Deadline / Cfs / Eevdf above and accept the
+// p99.9 tail under contention.
+// ═══════════════════════════════════════════════════════════════════
+
+template <typename Policy>
+struct per_shard_defaults {
+    static constexpr std::size_t   num_shards   = 4;
+    static constexpr std::size_t   num_buckets  = 64;
+    static constexpr std::size_t   bucket_cap   = 16;
+    static constexpr std::uint64_t quantum      = 100'000;
+};
+
+// ── DeadlinePerShard ──────────────────────────────────────────────
+
+template <typename KeyExtractor,
+          std::size_t   NumShards   = per_shard_defaults<tag::DeadlinePerShard>::num_shards,
+          std::size_t   NumBuckets  = per_shard_defaults<tag::DeadlinePerShard>::num_buckets,
+          std::size_t   BucketCap   = per_shard_defaults<tag::DeadlinePerShard>::bucket_cap,
+          std::uint64_t QuantumNs   = per_shard_defaults<tag::DeadlinePerShard>::quantum>
+struct DeadlinePerShard {
+    template <typename Job>
+    using queue_template =
+        PermissionedShardedCalendarGrid<Job,
+                                        NumShards,
+                                        NumBuckets,
+                                        BucketCap,
+                                        KeyExtractor,
+                                        QuantumNs,
+                                        tag::DeadlinePerShard>;
+
+    using policy_tag = tag::DeadlinePerShard;
+    static constexpr PriorityKind priority_kind = PriorityKind::Deadline;
+    static constexpr bool needs_topology        = true;
+    static constexpr std::string_view name() noexcept { return "DeadlinePerShard"; }
+};
+
+// ── CfsPerShard ──────────────────────────────────────────────────
+
+template <typename KeyExtractor,
+          std::size_t   NumShards   = per_shard_defaults<tag::CfsPerShard>::num_shards,
+          std::size_t   NumBuckets  = per_shard_defaults<tag::CfsPerShard>::num_buckets,
+          std::size_t   BucketCap   = per_shard_defaults<tag::CfsPerShard>::bucket_cap,
+          std::uint64_t Quantum     = per_shard_defaults<tag::CfsPerShard>::quantum>
+struct CfsPerShard {
+    template <typename Job>
+    using queue_template =
+        PermissionedShardedCalendarGrid<Job,
+                                        NumShards,
+                                        NumBuckets,
+                                        BucketCap,
+                                        KeyExtractor,
+                                        Quantum,
+                                        tag::CfsPerShard>;
+
+    using policy_tag = tag::CfsPerShard;
+    static constexpr PriorityKind priority_kind = PriorityKind::VirtualRuntime;
+    static constexpr bool needs_topology        = true;
+    static constexpr std::string_view name() noexcept { return "CfsPerShard"; }
+};
+
+// ── EevdfPerShard ────────────────────────────────────────────────
+
+template <typename KeyExtractor,
+          std::size_t   NumShards   = per_shard_defaults<tag::EevdfPerShard>::num_shards,
+          std::size_t   NumBuckets  = per_shard_defaults<tag::EevdfPerShard>::num_buckets,
+          std::size_t   BucketCap   = per_shard_defaults<tag::EevdfPerShard>::bucket_cap,
+          std::uint64_t Quantum     = per_shard_defaults<tag::EevdfPerShard>::quantum>
+struct EevdfPerShard {
+    template <typename Job>
+    using queue_template =
+        PermissionedShardedCalendarGrid<Job,
+                                        NumShards,
+                                        NumBuckets,
+                                        BucketCap,
+                                        KeyExtractor,
+                                        Quantum,
+                                        tag::EevdfPerShard>;
+
+    using policy_tag = tag::EevdfPerShard;
+    static constexpr PriorityKind priority_kind = PriorityKind::VirtualDeadline;
+    static constexpr bool needs_topology        = true;
+    static constexpr std::string_view name() noexcept { return "EevdfPerShard"; }
 };
 
 // ═══════════════════════════════════════════════════════════════════
