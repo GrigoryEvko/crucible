@@ -8,14 +8,15 @@
 // time, so reaching the run_test invocation proves the include was
 // processed clean.
 //
-// Coverage: 4 headers (Permission, PermissionFork, Permissions,
-// ReadView).  When a new permissions/* header ships, add its include
-// below.
+// Coverage: 5 headers (Permission, PermissionFork, Permissions,
+// PermSet, ReadView).  When a new permissions/* header ships, add its
+// include below.
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/permissions/Permission.h>
 #include <crucible/permissions/PermissionFork.h>
 #include <crucible/permissions/Permissions.h>
+#include <crucible/permissions/PermSet.h>
 #include <crucible/permissions/ReadView.h>
 
 #include <cstdio>
@@ -43,6 +44,9 @@ void run_test(const char* name, F&& body) {
 void test_permission_compile()       {}
 void test_permission_fork_compile()  {}
 void test_permissions_umbrella()     {}
+void test_perm_set_compile() {
+    crucible::safety::proto::detail::permset_smoke::runtime_smoke_test();
+}
 void test_read_view_compile()        {}
 
 }  // namespace
@@ -52,6 +56,7 @@ int main() {
     run_test("test_permission_compile",      test_permission_compile);
     run_test("test_permission_fork_compile", test_permission_fork_compile);
     run_test("test_permissions_umbrella",    test_permissions_umbrella);
+    run_test("test_perm_set_compile",        test_perm_set_compile);
     run_test("test_read_view_compile",       test_read_view_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
