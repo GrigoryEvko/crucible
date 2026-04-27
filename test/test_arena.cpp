@@ -1,5 +1,5 @@
 #include <crucible/Arena.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -9,7 +9,7 @@ using crucible::safety::Positive;
 using crucible::safety::PowerOfTwo;
 
 int main() {
-  crucible::fx::Test test;
+  crucible::effects::Test test;
 
   // Basic allocation
   crucible::Arena arena(4096);

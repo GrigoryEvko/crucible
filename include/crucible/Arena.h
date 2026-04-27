@@ -10,7 +10,7 @@
 // cache line; cold fields (block_size_, total_block_bytes_, blocks_) follow,
 // touched only on slow path or total_allocated() query. sizeof(Arena) == 64.
 
-#include "Effects.h"
+#include "effects/Capabilities.h"
 #include "Platform.h"
 #include "Saturate.h"
 #include "safety/Mutation.h"
@@ -67,7 +67,7 @@ class CRUCIBLE_OWNER Arena {
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard, gnu::malloc, gnu::returns_nonnull]]
   CRUCIBLE_INLINE
-  void* alloc(fx::Alloc,
+  void* alloc(effects::Alloc,
               crucible::safety::Positive<size_t>   size,
               crucible::safety::PowerOfTwo<size_t> align) noexcept CRUCIBLE_LIFETIMEBOUND
   {
@@ -93,7 +93,7 @@ class CRUCIBLE_OWNER Arena {
   // Default-align overload — convenience for the common case where the
   // caller doesn't have a stricter alignment constraint.
   [[nodiscard, gnu::malloc, gnu::returns_nonnull]] CRUCIBLE_INLINE
-  void* alloc(fx::Alloc a, crucible::safety::Positive<size_t> size) noexcept CRUCIBLE_LIFETIMEBOUND {
+  void* alloc(effects::Alloc a, crucible::safety::Positive<size_t> size) noexcept CRUCIBLE_LIFETIMEBOUND {
     return alloc(a, size,
                  crucible::safety::PowerOfTwo<size_t>{alignof(std::max_align_t)});
   }
@@ -103,7 +103,7 @@ class CRUCIBLE_OWNER Arena {
   // the same code as alloc(sizeof(T), alignof(T)).
   template <typename T>
   [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE
-  T* alloc_obj(fx::Alloc a) noexcept CRUCIBLE_LIFETIMEBOUND {
+  T* alloc_obj(effects::Alloc a) noexcept CRUCIBLE_LIFETIMEBOUND {
     static_assert(sizeof(T) > 0, "alloc_obj<T> requires complete T");
     static_assert(std::has_single_bit(alignof(T)),
                   "alignof(T) must be a power of two — true on every "
@@ -118,7 +118,7 @@ class CRUCIBLE_OWNER Arena {
   // SIZE_MAX, forcing the downstream malloc to fail and std::abort cleanly.
   template <typename T>
   [[nodiscard]] CRUCIBLE_INLINE
-  T* alloc_array(fx::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND {
+  T* alloc_array(effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND {
     if (n == 0) [[unlikely]] return nullptr;
     const size_t nbytes = crucible::sat::mul_sat(n, sizeof(T));
     return static_cast<T*>(alloc(a,
@@ -145,7 +145,7 @@ class CRUCIBLE_OWNER Arena {
   // elimination.
   template <typename T>
   [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE
-  T* alloc_array_nonzero(fx::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND
+  T* alloc_array_nonzero(effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND
       pre (n > 0)
   {
     [[assume(n > 0)]];
@@ -157,7 +157,7 @@ class CRUCIBLE_OWNER Arena {
 
   // Copy a null-terminated string into the arena. Returns nullptr iff src is
   // null, non-null otherwise (NullSafe: both pointer and length agree).
-  [[nodiscard]] const char* copy_string(fx::Alloc a, const char* src) CRUCIBLE_LIFETIMEBOUND {
+  [[nodiscard]] const char* copy_string(effects::Alloc a, const char* src) CRUCIBLE_LIFETIMEBOUND {
     if (src == nullptr) return nullptr;
     const size_t len = std::strlen(src) + 1;
     auto* dst = static_cast<char*>(alloc(a,

@@ -1,6 +1,6 @@
 #include <crucible/ReplayEngine.h>
 #include <crucible/BackgroundThread.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -350,7 +350,7 @@ static void test_current_entry() {
 // End-to-end: create realistic slots, run sweep-line, materialize
 // pool, build ops with slot assignments, replay and verify pointers.
 static void test_integration_with_pool() {
-  crucible::fx::Test test;
+  crucible::effects::Test test;
   crucible::BackgroundThread bt;
 
   // 3 internal slots:

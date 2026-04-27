@@ -20,7 +20,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Arena.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
 
@@ -61,10 +61,12 @@ using crucible::SoftmaxRecurrence;
   return r;
 }
 
-// The fx::Alloc capability token has a private default constructor; only
-// fx::{Bg, Init, Test} are friended to mint one.  Tests use fx::Test.
-crucible::fx::Test g_test{};
-inline crucible::fx::Alloc alloc_cap() noexcept { return g_test.alloc; }
+// The effects::Alloc capability is a default-constructible empty struct
+// in the new Met(X) effect-row substrate; the per-context types Bg /
+// Init / Test still aggregate cap members and serve as the canonical
+// way to mint one.  Tests use effects::Test.
+crucible::effects::Test g_test{};
+inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
 } // namespace
 

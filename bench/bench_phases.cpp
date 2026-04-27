@@ -30,7 +30,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/BackgroundThread.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/TraceLoader.h>
@@ -46,9 +46,9 @@ using namespace crucible;
 namespace {
 
 // Benches run outside the normal bg thread so we spin a standalone
-// fx::Bg context once and thread its .alloc token through every
+// effects::Bg context once and thread its .alloc token through every
 // capability-tagged call.
-const fx::Bg BG_CTX;
+const effects::Bg BG_CTX;
 constexpr auto A = BG_CTX.alloc;
 
 struct PhaseTiming {

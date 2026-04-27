@@ -1,11 +1,11 @@
 #include <crucible/Transaction.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <cassert>
 #include <cstdio>
 #include <cstring>
 
 int main() {
-    crucible::fx::Test test;
+    crucible::effects::Test test;
     crucible::TransactionLog<16> log;
     crucible::Arena arena(1 << 12);
 

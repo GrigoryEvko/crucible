@@ -152,7 +152,7 @@ struct TraceGraph {
 // ═══════════════════════════════════════════════════════════════════
 
 inline void build_csr(
-    fx::Alloc a,
+    effects::Alloc a,
     Arena& arena,
     TraceGraph* graph,
     const Edge* edges,

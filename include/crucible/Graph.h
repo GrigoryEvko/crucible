@@ -382,7 +382,7 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(GraphNode);
 
 class CRUCIBLE_OWNER Graph {
  public:
-  [[gnu::cold]] explicit Graph(fx::Alloc a, ExprPool* pool, SymbolTable* tab = nullptr)
+  [[gnu::cold]] explicit Graph(effects::Alloc a, ExprPool* pool, SymbolTable* tab = nullptr)
       : pool_(pool), tab_(tab),
         nodes_(nullptr), input_slots_(nullptr), output_slots_(nullptr),
         num_nodes_(0), capacity_(0),
@@ -399,7 +399,7 @@ class CRUCIBLE_OWNER Graph {
   // ── Node construction ──────────────────────────────────────────
 
   [[nodiscard]] GraphNode* add_input(
-      fx::Alloc a,
+      effects::Alloc a,
       ScalarType dtype, int8_t device_idx,
       std::span<const Expr* const> size) {
     GraphNode* n = alloc_node_(a);
@@ -412,7 +412,7 @@ class CRUCIBLE_OWNER Graph {
   }
 
   [[nodiscard]] GraphNode* add_pointwise(
-      fx::Alloc a,
+      effects::Alloc a,
       std::span<const Expr* const> ranges,
       ScalarType dtype, int8_t device_idx,
       ComputeBody* body,
@@ -429,7 +429,7 @@ class CRUCIBLE_OWNER Graph {
   }
 
   [[nodiscard]] GraphNode* add_reduction(
-      fx::Alloc a,
+      effects::Alloc a,
       std::span<const Expr* const> ranges,
       std::span<const Expr* const> red_ranges,
       ReduceOp reduce_op, ReduceHint hint,
@@ -464,7 +464,7 @@ class CRUCIBLE_OWNER Graph {
   }
 
   [[nodiscard]] GraphNode* add_extern(
-      fx::Alloc a,
+      effects::Alloc a,
       const char* py_name, const char* cpp_name,
       ScalarType dtype, int8_t device_idx,
       std::span<const Expr* const> size,
@@ -495,7 +495,7 @@ class CRUCIBLE_OWNER Graph {
 
   // ── ComputeBody helpers ────────────────────────────────────────
 
-  [[nodiscard]] ComputeBody* alloc_body(fx::Alloc a, uint16_t num_ops) {
+  [[nodiscard]] ComputeBody* alloc_body(effects::Alloc a, uint16_t num_ops) {
     auto* b = arena_.alloc_obj<ComputeBody>(a);
     b->ops = arena_.alloc_array<Inst>(a, num_ops);
     b->num_ops = num_ops;
@@ -507,7 +507,7 @@ class CRUCIBLE_OWNER Graph {
   }
 
   // Lazily allocate aux array (only needed for CONSTANT/TO_DTYPE/INDEX_EXPR)
-  void alloc_body_aux(fx::Alloc a, ComputeBody* body) {
+  void alloc_body_aux(effects::Alloc a, ComputeBody* body) {
     if (!body->aux) {
       body->aux = arena_.alloc_array<int64_t>(a, body->num_ops);
       std::memset(body->aux, 0, body->num_ops * sizeof(int64_t));
@@ -516,14 +516,14 @@ class CRUCIBLE_OWNER Graph {
 
   // ── Graph I/O ──────────────────────────────────────────────────
 
-  void set_graph_inputs(fx::Alloc a, std::span<const NodeId> ids) {
+  void set_graph_inputs(effects::Alloc a, std::span<const NodeId> ids) {
     num_inputs_ = static_cast<uint32_t>(ids.size());
     if (ids.empty()) { input_ids_ = nullptr; return; }
     input_ids_ = arena_.alloc_array<NodeId>(a, ids.size());
     std::memcpy(input_ids_, ids.data(), ids.size_bytes());
   }
 
-  void set_graph_outputs(fx::Alloc a, std::span<const NodeId> ids) {
+  void set_graph_outputs(effects::Alloc a, std::span<const NodeId> ids) {
     num_outputs_ = static_cast<uint32_t>(ids.size());
     if (ids.empty()) { output_ids_ = nullptr; return; }
     output_ids_ = arena_.alloc_array<NodeId>(a, ids.size());
@@ -538,7 +538,7 @@ class CRUCIBLE_OWNER Graph {
   // only accessed during buffer allocation and code emission, not
   // during hot graph traversals like DCE or topological sort).
 
-  void set_input_slots(fx::Alloc a, NodeId node_id, std::span<const SlotId> slots)
+  void set_input_slots(effects::Alloc a, NodeId node_id, std::span<const SlotId> slots)
       pre (node_id.raw() < num_nodes_)
   {
     if (slots.empty()) { input_slots_[node_id.raw()] = nullptr; return; }
@@ -546,7 +546,7 @@ class CRUCIBLE_OWNER Graph {
     std::memcpy(input_slots_[node_id.raw()], slots.data(), slots.size_bytes());
   }
 
-  void set_output_slots(fx::Alloc a, NodeId node_id, std::span<const SlotId> slots)
+  void set_output_slots(effects::Alloc a, NodeId node_id, std::span<const SlotId> slots)
       pre (node_id.raw() < num_nodes_)
   {
     if (slots.empty()) { output_slots_[node_id.raw()] = nullptr; return; }
@@ -622,7 +622,7 @@ class CRUCIBLE_OWNER Graph {
   // Topological sort via Kahn's algorithm. Sets schedule_order on
   // each live node. O(V + E) using a flat successor array built
   // from the nodes' inputs lists.
-  void topological_sort(fx::Alloc a) {
+  void topological_sort(effects::Alloc a) {
     auto* in_deg = arena_.alloc_array<uint32_t>(a, num_nodes_);
     auto* succ_cnt = arena_.alloc_array<uint32_t>(a, num_nodes_);
     std::memset(in_deg, 0, num_nodes_ * sizeof(uint32_t));
@@ -695,7 +695,7 @@ class CRUCIBLE_OWNER Graph {
   // Uses a canonical_representative[] map: during the hash pass, inputs
   // are looked up through the map (not physically rewritten). After the
   // pass, one rewrite sweeps all live nodes to patch input pointers.
-  [[nodiscard]] uint32_t eliminate_common_subexpressions(fx::Alloc a) {
+  [[nodiscard]] uint32_t eliminate_common_subexpressions(effects::Alloc a) {
     topological_sort(a);
 
     // Canonical map: node_id → canonical representative.
@@ -786,7 +786,7 @@ class CRUCIBLE_OWNER Graph {
   // checking by downstream passes.
   //
   // Returns the number of fusion groups created.
-  [[nodiscard]] uint32_t compute_fusion_groups(fx::Alloc a) {
+  [[nodiscard]] uint32_t compute_fusion_groups(effects::Alloc a) {
     topological_sort(a);
 
     // Build ordered list via O(n) scatter
@@ -902,7 +902,7 @@ class CRUCIBLE_OWNER Graph {
 
  private:
   // Allocate a zeroed, 64-byte-aligned GraphNode
-  GraphNode* alloc_node_(fx::Alloc a) {
+  GraphNode* alloc_node_(effects::Alloc a) {
     if (num_nodes_ >= capacity_)
       grow_(a, capacity_ * 2);
     auto* n = ::new (arena_.alloc_obj<GraphNode>(a)) GraphNode{};
@@ -911,7 +911,7 @@ class CRUCIBLE_OWNER Graph {
     return n;
   }
 
-  void grow_(fx::Alloc a, uint32_t new_cap) {
+  void grow_(effects::Alloc a, uint32_t new_cap) {
     auto** buf = arena_.alloc_array<GraphNode*>(a, new_cap);
     auto** is_buf = arena_.alloc_array<SlotId*>(a, new_cap);
     auto** os_buf = arena_.alloc_array<SlotId*>(a, new_cap);
@@ -929,7 +929,7 @@ class CRUCIBLE_OWNER Graph {
     capacity_ = new_cap;
   }
 
-  void set_inputs_(fx::Alloc a, GraphNode* n, std::span<GraphNode* const> inputs) {
+  void set_inputs_(effects::Alloc a, GraphNode* n, std::span<GraphNode* const> inputs) {
     n->num_inputs = static_cast<uint16_t>(inputs.size());
     if (!inputs.empty()) {
       n->inputs = arena_.alloc_array<GraphNode*>(a, inputs.size());
@@ -939,7 +939,7 @@ class CRUCIBLE_OWNER Graph {
     }
   }
 
-  const Expr** copy_exprs_(fx::Alloc a, std::span<const Expr* const> src) {
+  const Expr** copy_exprs_(effects::Alloc a, std::span<const Expr* const> src) {
     if (src.empty())
       return nullptr;
     auto** dst = arena_.alloc_array<const Expr*>(a, src.size());
@@ -947,7 +947,7 @@ class CRUCIBLE_OWNER Graph {
     return dst;
   }
 
-  const char* copy_string_(fx::Alloc a, const char* src) {
+  const char* copy_string_(effects::Alloc a, const char* src) {
     if (!src)
       return nullptr;
     size_t len = std::strlen(src) + 1;

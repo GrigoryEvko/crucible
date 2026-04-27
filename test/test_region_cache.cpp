@@ -9,7 +9,7 @@
 //   5. Repeated alternation (A→B→A→B)
 
 #include <crucible/Vigil.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include "test_harness.h"
 #include <cassert>
 #include <cstdio>
@@ -314,7 +314,7 @@ static void test_cache_miss_fallback() {
 
 // ── Test 4: Cache capacity and FIFO eviction ──────────────────────
 static void test_cache_dedup_and_cap() {
-    fx::Test test;
+    effects::Test test;
     RegionCache cache;
 
     assert(cache.size() == 0);

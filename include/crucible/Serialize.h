@@ -286,7 +286,7 @@ inline Header read_header(Reader& r) {
 // ═══════════════════════════════════════════════════════════════════
 
 [[nodiscard]] inline RegionNode* deserialize_region(
-    fx::Alloc                a,
+    effects::Alloc                a,
     std::span<const uint8_t> buf,
     Arena&                   arena)
 {
@@ -482,7 +482,7 @@ inline Header read_header(Reader& r) {
 // ═══════════════════════════════════════════════════════════════════
 
 [[nodiscard]] inline BranchNode* deserialize_branch(
-    fx::Alloc                                 a,
+    effects::Alloc                                 a,
     std::span<const uint8_t>                  buf,
     Arena&                                    arena CRUCIBLE_LIFETIMEBOUND,
     std::function<TraceNode*(MerkleHash)>     resolve)

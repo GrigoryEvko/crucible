@@ -1,6 +1,6 @@
 #include <crucible/CrucibleContext.h>
 #include <crucible/BackgroundThread.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
@@ -318,7 +318,7 @@ static void test_external_slots() {
 
 // ── Test 8: Integration with sweep-line ──
 static void test_integration_sweep_line() {
-  crucible::fx::Test test;
+  crucible::effects::Test test;
   crucible::BackgroundThread bt;
 
   // 2 internal slots, 1 external.

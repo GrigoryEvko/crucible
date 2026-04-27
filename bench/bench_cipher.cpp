@@ -18,7 +18,7 @@
 
 #include <crucible/Arena.h>
 #include <crucible/Cipher.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/Serialize.h>
 
@@ -26,7 +26,7 @@
 
 using namespace crucible;
 
-static const fx::Bg BG;
+static const effects::Bg BG;
 static constexpr auto A = BG.alloc;
 
 static RegionNode* synth_region(Arena& arena, uint32_t num_ops,

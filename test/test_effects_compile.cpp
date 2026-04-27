@@ -6,19 +6,17 @@
 // Forces every effects/* header through the test target's full
 // -Werror matrix.
 //
-// Coverage: 5 headers (Capabilities, Computation, EffectRow,
-// Effects, compat/Fx).  When a new effects/* header ships, add
-// its include below.  compat/Fx.h is the temporary backward-compat
-// shim that's slated for deletion via METX-8 (#495); include it
-// here so its remaining warnings continue to be exercised under
-// the test matrix until removal lands.
+// Coverage: 4 headers (Capabilities, Computation, EffectRow, Effects
+// umbrella).  When a new effects/* header ships, add its include below.
+// The legacy crucible/Effects.h fx::* tree and the compat/Fx.h shim
+// were both deleted in FOUND-B07 / METX-5; the cap::* / Bg / Init /
+// Test surface lives in Capabilities.h alongside the Effect enum.
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/Computation.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/Effects.h>
-#include <crucible/effects/compat/Fx.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -46,7 +44,6 @@ void test_capabilities_compile()  {}
 void test_computation_compile()   {}
 void test_effect_row_compile()    {}
 void test_effects_umbrella()      {}
-void test_compat_fx_compile()     {}
 
 }  // namespace
 
@@ -56,7 +53,6 @@ int main() {
     run_test("test_computation_compile",   test_computation_compile);
     run_test("test_effect_row_compile",    test_effect_row_compile);
     run_test("test_effects_umbrella",      test_effects_umbrella);
-    run_test("test_compat_fx_compile",     test_compat_fx_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");

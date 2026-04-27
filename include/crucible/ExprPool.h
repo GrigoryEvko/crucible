@@ -316,7 +316,7 @@ class CRUCIBLE_OWNER ExprPool {
   // networks) while staying at a clean mmap-backed allocation size.
   static constexpr size_t kDefaultInitialCapacity = 16384;
 
-  explicit ExprPool(fx::Alloc a,
+  explicit ExprPool(effects::Alloc a,
                     size_t initial_capacity = kDefaultInitialCapacity) : arena_() {
     // Round up to power of 2, minimum one full SIMD group
     capacity_ = detail::kGroupWidth;
@@ -364,13 +364,13 @@ class CRUCIBLE_OWNER ExprPool {
 
   // ---- Atom construction ----
 
-  [[nodiscard]] const Expr* integer(fx::Alloc a, int64_t val) {
+  [[nodiscard]] const Expr* integer(effects::Alloc a, int64_t val) {
     if (val >= kIntCacheLow && val <= kIntCacheHigh)
       return int_cache_[static_cast<size_t>(val - kIntCacheLow)];
     return make_integer(a, val);
   }
 
-  [[nodiscard]] const Expr* float_(fx::Alloc a, double val) {
+  [[nodiscard]] const Expr* float_(effects::Alloc a, double val) {
     int64_t bit_payload = std::bit_cast<int64_t>(val);
     uint16_t assumption_flags_combined =
         ExprFlags::IS_REAL | ExprFlags::IS_FINITE | ExprFlags::IS_NUMBER;
@@ -390,7 +390,7 @@ class CRUCIBLE_OWNER ExprPool {
         SymbolId{}, bit_payload);
   }
 
-  [[nodiscard]] const Expr* symbol(fx::Alloc a, const char* name, SymbolId id, uint16_t assumption_flags) {
+  [[nodiscard]] const Expr* symbol(effects::Alloc a, const char* name, SymbolId id, uint16_t assumption_flags) {
     if (id.raw() >= symbol_names_.size())
       symbol_names_.resize(id.raw() + 1, nullptr);
     if (symbol_names_[id.raw()] == nullptr) {
@@ -448,7 +448,7 @@ class CRUCIBLE_OWNER ExprPool {
 
   // ---- Arithmetic ----
 
-  [[nodiscard]] const Expr* add(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* add(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     // Fast path: two children that don't need canonicalization.
     // Excluded ops: ADD (needs flattening), MUL (needs coefficient
     // extraction for term combining), INTEGER/FLOAT (needs folding).
@@ -482,7 +482,7 @@ class CRUCIBLE_OWNER ExprPool {
     return add_n(a, binary_args);
   }
 
-  [[nodiscard]] const Expr* mul(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* mul(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     // Fast path: two non-constant, non-MUL children.
     // Skip the full mul_n() canonicalization (flatten, fold, sort).
     // Most symbolic expressions (x * y, a * b) hit this directly.
@@ -514,7 +514,7 @@ class CRUCIBLE_OWNER ExprPool {
     return mul_n(a, binary_args);
   }
 
-  [[nodiscard]] const Expr* pow(fx::Alloc a, const Expr* base, const Expr* exp) {
+  [[nodiscard]] const Expr* pow(effects::Alloc a, const Expr* base, const Expr* exp) {
     // x^0 → 1
     if (exp->is_zero_int())
       return integer(a, 1);
@@ -537,7 +537,7 @@ class CRUCIBLE_OWNER ExprPool {
   }
 
   // Canonical form: MUL(-1, x). No NEG nodes in output.
-  [[nodiscard]] const Expr* neg(fx::Alloc a, const Expr* expr) {
+  [[nodiscard]] const Expr* neg(effects::Alloc a, const Expr* expr) {
     if (expr->op == Op::INTEGER)
       return integer(a, -expr->payload);
     if (expr->op == Op::FLOAT)
@@ -547,7 +547,7 @@ class CRUCIBLE_OWNER ExprPool {
 
   // ---- Relational ----
 
-  [[nodiscard]] const Expr* eq(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* eq(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs == rhs)
       return true_;
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
@@ -559,7 +559,7 @@ class CRUCIBLE_OWNER ExprPool {
     return intern_node(a, Op::EQ, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
-  [[nodiscard]] const Expr* ne(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* ne(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs == rhs)
       return false_;
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
@@ -570,7 +570,7 @@ class CRUCIBLE_OWNER ExprPool {
     return intern_node(a, Op::NE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
-  [[nodiscard]] const Expr* lt(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* lt(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs == rhs)
       return false_;
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
@@ -579,7 +579,7 @@ class CRUCIBLE_OWNER ExprPool {
     return intern_node(a, Op::LT, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
-  [[nodiscard]] const Expr* le(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* le(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs == rhs)
       return true_;
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
@@ -588,7 +588,7 @@ class CRUCIBLE_OWNER ExprPool {
     return intern_node(a, Op::LE, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
-  [[nodiscard]] const Expr* gt(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* gt(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs == rhs)
       return false_;
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
@@ -597,7 +597,7 @@ class CRUCIBLE_OWNER ExprPool {
     return intern_node(a, Op::GT, args, 2, ExprFlags::IS_BOOLEAN, SymbolId{}, 0);
   }
 
-  [[nodiscard]] const Expr* ge(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* ge(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs == rhs)
       return true_;
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
@@ -608,7 +608,7 @@ class CRUCIBLE_OWNER ExprPool {
 
   // ---- Logic ----
 
-  [[nodiscard]] const Expr* and_(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* and_(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs == false_ || rhs == false_)
       return false_;
     if (lhs == true_)
@@ -621,7 +621,7 @@ class CRUCIBLE_OWNER ExprPool {
     return and_n(a, binary_args);
   }
 
-  [[nodiscard]] const Expr* or_(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* or_(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs == true_ || rhs == true_)
       return true_;
     if (lhs == false_)
@@ -634,7 +634,7 @@ class CRUCIBLE_OWNER ExprPool {
     return or_n(a, binary_args);
   }
 
-  [[nodiscard]] const Expr* not_(fx::Alloc a, const Expr* expr) {
+  [[nodiscard]] const Expr* not_(effects::Alloc a, const Expr* expr) {
     if (expr == true_)
       return false_;
     if (expr == false_)
@@ -648,7 +648,7 @@ class CRUCIBLE_OWNER ExprPool {
 
   // ---- Division / Modular ----
 
-  [[nodiscard]] const Expr* floor_div(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* floor_div(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
       int64_t dividend = lhs->as_int();
       int64_t divisor = rhs->as_int();
@@ -704,11 +704,11 @@ class CRUCIBLE_OWNER ExprPool {
     return intern_node(a, Op::FLOOR_DIV, args, 2, composite_flag_bits, SymbolId{}, 0);
   }
 
-  [[nodiscard]] const Expr* clean_div(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* clean_div(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     return floor_div(a, lhs, rhs);
   }
 
-  [[nodiscard]] const Expr* ceil_div(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* ceil_div(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
       int64_t dividend = lhs->as_int();
       int64_t divisor = rhs->as_int();
@@ -723,7 +723,7 @@ class CRUCIBLE_OWNER ExprPool {
     return floor_div(a, add(a, lhs, add(a, rhs, integer(a, -1))), rhs);
   }
 
-  [[nodiscard]] const Expr* mod(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* mod(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() > 0)
       return integer(a, lhs->as_int() % rhs->as_int());
     if (lhs->is_zero_int() || lhs == rhs || rhs->is_one()) return integer(a, 0);
@@ -736,7 +736,7 @@ class CRUCIBLE_OWNER ExprPool {
     return intern_node(a, Op::MOD, args, 2, composite_flag_bits, SymbolId{}, 0);
   }
 
-  [[nodiscard]] const Expr* python_mod(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* python_mod(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER && rhs->as_int() != 0) {
       int64_t dividend = lhs->as_int();
       int64_t divisor = rhs->as_int();
@@ -757,7 +757,7 @@ class CRUCIBLE_OWNER ExprPool {
   }
 
   [[nodiscard]] const Expr* modular_indexing(
-      fx::Alloc a,
+      effects::Alloc a,
       const Expr* base,
       const Expr* div,
       const Expr* modulus) {
@@ -821,7 +821,7 @@ class CRUCIBLE_OWNER ExprPool {
   // ---- Conditional ----
 
   [[nodiscard]] const Expr* where(
-      fx::Alloc a,
+      effects::Alloc a,
       const Expr* cond,
       const Expr* then_branch,
       const Expr* else_branch) {
@@ -835,7 +835,7 @@ class CRUCIBLE_OWNER ExprPool {
 
   // ---- Min / Max ----
 
-  [[nodiscard]] const Expr* min_expr(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* min_expr(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs == rhs) return lhs;
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
       return integer(a, std::min(lhs->as_int(), rhs->as_int()));
@@ -843,7 +843,7 @@ class CRUCIBLE_OWNER ExprPool {
     return min_n(a, binary_args);
   }
 
-  [[nodiscard]] const Expr* max_expr(fx::Alloc a, const Expr* lhs, const Expr* rhs) {
+  [[nodiscard]] const Expr* max_expr(effects::Alloc a, const Expr* lhs, const Expr* rhs) {
     if (lhs == rhs) return lhs;
     if (lhs->op == Op::INTEGER && rhs->op == Op::INTEGER)
       return integer(a, std::max(lhs->as_int(), rhs->as_int()));
@@ -868,7 +868,7 @@ class CRUCIBLE_OWNER ExprPool {
   // and REGRESSING the hit-path benchmark from 138 ns to 690 ns).
   // Relying on default inlining keeps make() lean.
   [[nodiscard]] const Expr* make(
-      fx::Alloc a, Op op, std::span<const Expr* const> args) {
+      effects::Alloc a, Op op, std::span<const Expr* const> args) {
     switch (op) {
       case Op::ADD:
         if (args.size() == 2) [[likely]] return add(a, args[0], args[1]);
@@ -1011,7 +1011,7 @@ class CRUCIBLE_OWNER ExprPool {
   static constexpr size_t kIntCacheSize =
       static_cast<size_t>(kIntCacheHigh - kIntCacheLow + 1);
 
-  const Expr* make_integer(fx::Alloc a, int64_t val) {
+  const Expr* make_integer(effects::Alloc a, int64_t val) {
     return intern_node(
         a, Op::INTEGER, nullptr, 0, detail::integer_flags(val), SymbolId{}, val);
   }
@@ -1076,7 +1076,7 @@ class CRUCIBLE_OWNER ExprPool {
   }
 
   // Divide all integer coefficients in expression by `divisor`.
-  const Expr* divide_coefficients_(fx::Alloc a, const Expr* expr, int64_t divisor) {
+  const Expr* divide_coefficients_(effects::Alloc a, const Expr* expr, int64_t divisor) {
     if (divisor <= 1) return expr;
     if (expr->op == Op::INTEGER) return integer(a, expr->as_int() / divisor);
     if (expr->op == Op::MUL) {
@@ -1107,7 +1107,7 @@ class CRUCIBLE_OWNER ExprPool {
   }
 
   // Flatten MIN/MAX + dedup + sort
-  const Expr* min_n(fx::Alloc a, std::span<const Expr* const> inputs) {
+  const Expr* min_n(effects::Alloc a, std::span<const Expr* const> inputs) {
     const Expr* scratch_buf[64];
     uint8_t num_args = 0;
     for (auto* input_expr : inputs) {
@@ -1130,7 +1130,7 @@ class CRUCIBLE_OWNER ExprPool {
         a, Op::MIN, scratch_buf, num_unique, composite_flag_bits, SymbolId{}, 0);
   }
 
-  const Expr* max_n(fx::Alloc a, std::span<const Expr* const> inputs) {
+  const Expr* max_n(effects::Alloc a, std::span<const Expr* const> inputs) {
     const Expr* scratch_buf[64];
     uint8_t num_args = 0;
     for (auto* input_expr : inputs) {
@@ -1156,7 +1156,7 @@ class CRUCIBLE_OWNER ExprPool {
   // Flatten ADD children, fold integer constants, combine like terms,
   // sort, intern. Term combining: ADD(MUL(a,b), MUL(3,a,b)) → ADD(MUL(4,a,b)).
   // Critical for expand(): (a+b)^n produces n+1 binomial terms, not 2^n.
-  const Expr* add_n(fx::Alloc a, std::span<const Expr* const> inputs) {
+  const Expr* add_n(effects::Alloc a, std::span<const Expr* const> inputs) {
     const Expr* term_scratch_buf[256];
     uint8_t num_args = 0;
     int64_t int_sum = 0;
@@ -1278,7 +1278,7 @@ class CRUCIBLE_OWNER ExprPool {
   }
 
   // Flatten MUL children, fold integer constants, sort, intern.
-  const Expr* mul_n(fx::Alloc a, std::span<const Expr* const> inputs) {
+  const Expr* mul_n(effects::Alloc a, std::span<const Expr* const> inputs) {
     const Expr* factor_scratch_buf[256];
     uint8_t num_args = 0;
     int64_t int_prod = 1;
@@ -1320,7 +1320,7 @@ class CRUCIBLE_OWNER ExprPool {
   }
 
   // Flatten AND children, short-circuit on FALSE, filter TRUE, sort, intern.
-  const Expr* and_n(fx::Alloc a, std::span<const Expr* const> inputs) {
+  const Expr* and_n(effects::Alloc a, std::span<const Expr* const> inputs) {
     const Expr* operand_scratch_buf[64];
     uint8_t num_operands = 0;
 
@@ -1354,7 +1354,7 @@ class CRUCIBLE_OWNER ExprPool {
   }
 
   // Flatten OR children, short-circuit on TRUE, filter FALSE, sort, intern.
-  const Expr* or_n(fx::Alloc a, std::span<const Expr* const> inputs) {
+  const Expr* or_n(effects::Alloc a, std::span<const Expr* const> inputs) {
     const Expr* operand_scratch_buf[64];
     uint8_t num_operands = 0;
 
@@ -1402,7 +1402,7 @@ class CRUCIBLE_OWNER ExprPool {
   // the packed comparison into a single 64-bit op.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   CRUCIBLE_INLINE const Expr* intern_node(
-      fx::Alloc a,
+      effects::Alloc a,
       Op op,
       const Expr* const* args,
       uint8_t nargs,

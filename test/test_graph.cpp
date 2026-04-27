@@ -1,5 +1,5 @@
 #include <crucible/Graph.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/ExprPool.h>
 #include <crucible/Types.h>
 #include <cassert>
@@ -7,7 +7,7 @@
 #include <span>
 
 int main() {
-    crucible::fx::Test test;
+    crucible::effects::Test test;
     crucible::ExprPool pool(test.alloc);
     crucible::Graph graph(test.alloc, &pool);
 

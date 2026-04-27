@@ -20,7 +20,7 @@
 #include <cstdio>
 #include <vector>
 
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/ExprPool.h>
 #include <crucible/Graph.h>
 
@@ -28,7 +28,7 @@
 
 using namespace crucible;
 
-static const fx::Bg BG;
+static const effects::Bg BG;
 static constexpr auto A = BG.alloc;
 
 // Build a pointwise chain of length N: x → op0 → op1 → ... → op(N-1).

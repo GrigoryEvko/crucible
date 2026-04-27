@@ -1,5 +1,5 @@
 #include <crucible/Lower.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <cassert>
 #include <cstdio>
 #include <memory>
@@ -23,7 +23,7 @@ static crucible::TensorMeta make_meta(int64_t d0, int64_t d1,
 }
 
 int main() {
-    crucible::fx::Test test;
+    crucible::effects::Test test;
     crucible::Arena arena(1 << 16);
     crucible::ExprPool pool(test.alloc);
 

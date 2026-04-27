@@ -19,7 +19,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Arena.h>
-#include <crucible/Effects.h>
+#include <crucible/effects/Capabilities.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/RecipePool.h>
@@ -43,8 +43,8 @@ using crucible::TraceEntry;
 
 namespace names = crucible::recipe_names;
 
-crucible::fx::Test g_test{};
-inline crucible::fx::Alloc alloc_cap() noexcept { return g_test.alloc; }
+crucible::effects::Test g_test{};
+inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
 // Build a small but distinctive op trace; hash inputs are deterministic
 // so cross-process / cross-pool comparisons remain stable.
