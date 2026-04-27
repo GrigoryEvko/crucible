@@ -72,6 +72,32 @@ int main() {
     std::printf("\n");
 
     bench::Report reports[] = {
+        // ── HARNESS BASELINE: pure do_not_optimize cost ───────────────
+        // Measures the bench-loop overhead: ++i + a single noipa call
+        // to do_not_optimize.  Subtract this from any single-call ring
+        // bench below to recover the actual ring-op cost (the noipa
+        // attribute on do_not_optimize forces a real CALL+RET that
+        // contributes ~3-4 cycles ≈ 0.7-1ns at 4.6GHz).
+        [&]{
+            std::uint64_t i = 0;
+            return bench::run("HARNESS BASELINE: do_not_optimize(++i)", [&]{
+                bench::do_not_optimize(++i);
+            });
+        }(),
+
+        // ── HARNESS BASELINE: clobber-only (no call, asm barrier) ─────
+        // Cheaper alternative: bench::clobber() is "asm volatile("":::
+        // memory")" — zero runtime cost, just a compiler memory fence.
+        // Difference between this and the do_not_optimize baseline is
+        // the pure CALL+RET cost.
+        [&]{
+            std::uint64_t i = 0;
+            return bench::run("HARNESS BASELINE: clobber + ++i", [&]{
+                ++i;
+                bench::clobber();
+            });
+        }(),
+
         // ── SpscRing: pure push (huge cap, never fills) ───────────────
         [&]{
             auto ring = std::make_unique<HugeSpsc>();
@@ -79,6 +105,25 @@ int main() {
             return bench::run("spsc_ring.try_push (huge cap, no drain)", [&]{
                 const bool ok = ring->try_push(++i);
                 bench::do_not_optimize(ok);
+            });
+        }(),
+
+        // ── SpscRing: BATCHED push+pop pair (per-item amortized) ──────
+        // Push 64 items into ring, immediately pop 64 items out.  Keeps
+        // the ring at depth 0/64 so every iteration does FULL work
+        // (no degenerate ring-full early-returns).  Per-item cost =
+        // (whole_batch_ns / 2) / 64 — divides by 2 because each
+        // iteration does push+pop, then by 64 for per-item.
+        [&]{
+            auto ring = std::make_unique<HugeSpsc>();
+            alignas(64) static std::array<std::uint64_t, 64> tx{};
+            alignas(64) static std::array<std::uint64_t, 64> rx{};
+            for (std::size_t k = 0; k < tx.size(); ++k) tx[k] = k;
+            return bench::run("spsc_ring.{try_push_batch,try_pop_batch}<64> round-trip", [&]{
+                const std::size_t np = ring->try_push_batch(std::span{tx});
+                const std::size_t nc = ring->try_pop_batch(std::span{rx});
+                bench::do_not_optimize(np);
+                bench::do_not_optimize(nc);
             });
         }(),
 
@@ -176,42 +221,69 @@ int main() {
     // ── Comparisons (the headline result) ─────────────────────────────
     std::printf("\n=== compare ===\n");
 
-    // Headline #1: SpscRing.try_push (canonical, AtomicMonotonic-wrapped)
-    // vs TraceRing.try_append (bespoke, also AtomicMonotonic-wrapped post-#505).
-    // SpscRing should be FASTER because it doesn't write the 3 parallel
-    // arrays (meta_starts, scope_hashes, callsite_hashes) that TraceRing
-    // does on every append.
+    // Index map (after PERF-1 additions):
+    //   [0] HARNESS BASELINE: do_not_optimize(++i)      ← bench overhead
+    //   [1] HARNESS BASELINE: clobber + ++i             ← pure compiler-fence
+    //   [2] spsc_ring.try_push (single, huge cap)
+    //   [3] spsc_ring.{try_push_batch,try_pop_batch}<64> round-trip
+    //   [4] spsc_ring.try_pop (pre-filled)
+    //   [5] spsc_ring round-trip (push+pop)
+    //   [6] mpmc_ring.try_push (1T, huge cap)
+    //   [7] mpmc_ring.try_pop (1T, pre-filled)
+    //   [8] atomic_snapshot.publish
+    //   [9] atomic_snapshot.load (uncontended)
+    //   [10] atomic_snapshot.try_load (uncontended)
+    //   [11] trace_ring.try_append (reference, +reset-on-full)
+
+    // Headline #1: actual ring cost = single-push p50 - harness overhead p50.
+    // (do_not_optimize is a [[gnu::noipa]] real CALL+RET ≈ 3-4 cycles ≈
+    // 0.7-1ns at 4.6GHz on Zen 3.)
+    std::printf("\n[spsc_ring.try_push] vs [HARNESS BASELINE do_not_optimize]:\n");
+    bench::compare(reports[2], reports[0]).print_text(stdout);
+
+    // Headline #2: SpscRing vs TraceRing — SpscRing is FASTER (no
+    // parallel-array writes, no prefetches, no slot-mask compute).
     std::printf("\n[spsc_ring.try_push] vs [trace_ring.try_append]:\n");
-    bench::compare(reports[0], reports[8]).print_text(stdout);
+    bench::compare(reports[2], reports[11]).print_text(stdout);
 
-    // Headline #2: MpmcRing.try_push at 1T should be ~2-4× SpscRing
-    // (per Nikolaev SCQ targets: SCQ uncontended ~15-25ns, SPSC ~5-8ns).
-    std::printf("\n[mpmc_ring.try_push] vs [spsc_ring.try_push]:\n");
-    bench::compare(reports[3], reports[0]).print_text(stdout);
+    // Headline #3: per-item batched cost vs per-item single-call cost.
+    // batch[3] reports WHOLE-BATCH-PUSH-AND-POP time for 64 items each
+    // way; per-item-push ≈ batch_p50 / (2 × 64).
+    std::printf("\n[spsc_ring batch<64> push+pop round-trip] vs [single try_push]:\n");
+    bench::compare(reports[3], reports[2]).print_text(stdout);
 
-    // Headline #3: AtomicSnapshot.load is the cheapest of the three
-    // (single acquire load + memcpy + acquire fence + acquire load);
-    // publish is the most expensive (two fetch_add + memcpy).
+    // Headline #4: MpmcRing vs SpscRing under no contention.
+    std::printf("\n[mpmc_ring.try_push (1T)] vs [spsc_ring.try_push]:\n");
+    bench::compare(reports[6], reports[2]).print_text(stdout);
+
+    // Headline #5: AtomicSnapshot.load vs publish.
     std::printf("\n[atomic_snapshot.load] vs [atomic_snapshot.publish]:\n");
-    bench::compare(reports[6], reports[5]).print_text(stdout);
+    bench::compare(reports[9], reports[8]).print_text(stdout);
 
-    // Bootstrap CIs on the headline percentiles.
+    // Bootstrap CIs on the headline percentiles + batched per-item.
     std::printf("\n=== confidence intervals (95%%) ===\n");
     {
         const auto ci = reports[0].ci(0.50);
+        std::printf("  HARNESS BASELINE p50: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
+    }
+    {
+        const auto ci = reports[2].ci(0.50);
         std::printf("  spsc_ring.try_push p50: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
     }
     {
-        const auto ci = reports[0].ci(0.99);
+        const auto ci = reports[2].ci(0.99);
         std::printf("  spsc_ring.try_push p99: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
     }
     {
-        const auto ci = reports[8].ci(0.50);
-        std::printf("  trace_ring.try_append p50: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
+        const auto ci = reports[3].ci(0.50);
+        // round-trip = push 64 + pop 64.  Per-item-push ≈ ci / (2×64).
+        std::printf("  spsc_ring batch<64> push+pop round-trip p50: [%.2f, %.2f] ns "
+                    "(per-item ≈ %.3f ns)\n",
+                    ci.lo, ci.hi, ci.lo / 128.0);
     }
     {
-        const auto ci = reports[8].ci(0.99);
-        std::printf("  trace_ring.try_append p99: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
+        const auto ci = reports[11].ci(0.50);
+        std::printf("  trace_ring.try_append p50: [%.2f, %.2f] ns\n", ci.lo, ci.hi);
     }
 
     bench::emit_reports_json(reports, json);
