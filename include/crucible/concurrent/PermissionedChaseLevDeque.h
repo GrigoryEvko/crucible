@@ -286,6 +286,7 @@ public:
 
     // Thief endpoint — lends a thief-pool share.  Returns nullopt
     // iff exclusive mode is active (with_drained_access in flight).
+
     [[nodiscard]] std::optional<ThiefHandle> thief() noexcept {
         auto guard = thief_pool_.lend();
         if (!guard) return std::nullopt;
@@ -300,9 +301,19 @@ public:
     // owner.  Used for thief-side snapshot reset / migration that
     // doesn't involve the owner.
 
+    // Unified mode-transition primitive (pool-based).  Atomic
+    // upgrade of the thief pool — body runs while no thieves are in
+    // flight.  The OWNER Permission is independent (linear, held by
+    // the owner thread); this transition does NOT affect the owner.
+    // Used for thief-side snapshot reset / migration that doesn't
+    // involve the owner.
+    //
+    // Cost: one CAS to acquire (succeeds iff outstanding == 0),
+    // one release-store to deposit back.  Body's runtime is the
+    // rest.  Subsequent thief() calls succeed once body returns.
     template <typename Body>
         requires std::is_invocable_v<Body>
-    bool with_drained_thieves(Body&& body)
+    bool with_drained_access(Body&& body)
         noexcept(std::is_nothrow_invocable_v<Body>)
     {
         auto upgrade = thief_pool_.try_upgrade();
@@ -310,20 +321,6 @@ public:
         std::forward<Body>(body)();
         thief_pool_.deposit_exclusive(std::move(*upgrade));
         return true;
-    }
-
-    // Unified API alias.  Every Permissioned* wrapper exposes
-    // `with_drained_access(Body) -> bool` (pool-based) or
-    // `with_recombined_access(Permission<whole_tag>&&, Body) ->
-    // Permission<whole_tag>` (Spsc, linear).  ChaseLevDeque has a
-    // pooled thief side; the unified form forwards to the pool drain
-    // and leaves the linear Owner permission untouched.
-    template <typename Body>
-        requires std::is_invocable_v<Body>
-    bool with_drained_access(Body&& body)
-        noexcept(std::is_nothrow_invocable_v<Body>)
-    {
-        return with_drained_thieves(std::forward<Body>(body));
     }
 
     // ── Diagnostics ───────────────────────────────────────────────

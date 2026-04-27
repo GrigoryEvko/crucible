@@ -181,8 +181,8 @@ bench::Report bare_grid_push() {
     auto grid = std::make_unique<
         crucible::concurrent::ShardedSpscGrid<Item, 1, 1, kCap>>();
     Item i = 0;
-    return bench::run("bare ShardedSpscGrid.send(0, item)", [&]{
-        const bool ok = grid->send(0, ++i);
+    return bench::run("bare ShardedSpscGrid.try_push(0, item)", [&]{
+        const bool ok = grid->try_push(0, ++i);
         bench::do_not_optimize(ok);
     });
 }
@@ -207,9 +207,9 @@ bench::Report wrapped_grid_push() {
 bench::Report bare_grid_recv() {
     auto grid = std::make_unique<
         crucible::concurrent::ShardedSpscGrid<Item, 1, 1, kCap>>();
-    for (Item i = 0; i < kCap / 2; ++i) (void)grid->send(0, i);
-    return bench::run("bare ShardedSpscGrid.try_recv(0)", [&]{
-        auto v = grid->try_recv(0);
+    for (Item i = 0; i < kCap / 2; ++i) (void)grid->try_push(0, i);
+    return bench::run("bare ShardedSpscGrid.try_pop(0)", [&]{
+        auto v = grid->try_pop(0);
         bench::do_not_optimize(v);
     });
 }
@@ -229,8 +229,8 @@ bench::Report wrapped_grid_recv() {
     }
     auto c0 = grid->template consumer<0>(
         std::move(std::get<0>(perms.consumers)));
-    return bench::run("wrapped Permissioned Grid.ConsumerHandle<0>::try_recv", [&]{
-        auto v = c0.try_recv();
+    return bench::run("wrapped Permissioned Grid.ConsumerHandle<0>::try_pop", [&]{
+        auto v = c0.try_pop();
         bench::do_not_optimize(v);
     });
 }

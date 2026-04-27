@@ -27,7 +27,7 @@
 // Crucible's concurrent primitives have justifiably-different APIs:
 //   - SpscRing:        try_push(item) / try_pop()
 //   - MpscRing:        try_push(item) / try_pop() (single consumer)
-//   - ShardedSpscGrid: send(producer_id, item) / try_recv(consumer_id)
+//   - ShardedSpscGrid: try_push(producer_id, item) / try_pop(consumer_id)
 //   - ChaseLevDeque:   push_bottom / pop_bottom (owner) + steal_top (thieves)
 //
 // Each shape reflects the underlying algorithm — sharded needs an index,
@@ -567,7 +567,7 @@ public:
         [[nodiscard]] std::size_t shard_id() const noexcept { return shard_; }
 
         [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
-            return q_->grid_.send(shard_, item);
+            return q_->grid_.try_push(shard_, item);
         }
     };
 
@@ -585,7 +585,7 @@ public:
         [[nodiscard]] std::size_t shard_id() const noexcept { return shard_; }
 
         [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
-            return q_->grid_.try_recv(shard_);
+            return q_->grid_.try_pop(shard_);
         }
     };
 

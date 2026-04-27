@@ -57,7 +57,7 @@
 //   * M, N, Capacity all compile-time fixed power-of-two etc.
 //   * Producer p MUST be the sole caller of send(p, ...) for the
 //     grid's lifetime.  Consumer c MUST be the sole caller of
-//     try_recv(c).  Caller pins these — no runtime check.
+//     try_pop(c).  Caller pins these — no runtime check.
 //   * Memory cost: M × N × sizeof(SpscRing<T, Capacity>).  For
 //     M=4, N=4, T=ptr (8 B), Cap=1024: 16 rings × ~8.4 KB ≈ 134 KB.
 //     Acceptable at hot paths; prohibitive at N=32+.  Document the
@@ -130,17 +130,17 @@ public:
 
     ShardedSpscGrid() noexcept = default;
 
-    // ── send (sole producer for producer_id) ──────────────────────
+    // ── try_push (sole producer for producer_id) ──────────────────
     //
-    // Producer `producer_id` sends `item` into the grid.  Routing
+    // Producer `producer_id` pushes `item` into the grid.  Routing
     // policy selects which consumer ring receives it.  Returns
     // false if the selected ring is full — caller may retry, route
     // around, or drop.
     //
     // Caller MUST guarantee `producer_id < M` AND that the calling
     // thread is the sole producer for that id.
-    [[nodiscard, gnu::hot]] bool send(std::size_t producer_id,
-                                       const T& item) noexcept
+    [[nodiscard, gnu::hot]] bool try_push(std::size_t producer_id,
+                                          const T& item) noexcept
         pre (producer_id < M)
     {
         // Per-producer sequence counter for routing decisions.
@@ -158,7 +158,7 @@ public:
         return rings_[producer_id][consumer].try_push(item);
     }
 
-    // ── try_recv (sole consumer for consumer_id) ──────────────────
+    // ── try_pop (sole consumer for consumer_id) ───────────────────
     //
     // Consumer `consumer_id` reads from any of the M rings in its
     // column.  Round-robin across producers via a per-consumer hint
@@ -167,7 +167,7 @@ public:
     //
     // Caller MUST guarantee `consumer_id < N` AND that the calling
     // thread is the sole consumer for that id.
-    [[nodiscard, gnu::hot]] std::optional<T> try_recv(
+    [[nodiscard, gnu::hot]] std::optional<T> try_pop(
         std::size_t consumer_id) noexcept
         pre (consumer_id < N)
     {

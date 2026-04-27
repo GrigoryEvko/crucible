@@ -39,7 +39,7 @@
 //
 //   1. Compile-time type discrimination (Writer vs Reader handles)
 //   2. Runtime lifetime tracking (Pool refcount of outstanding readers)
-//   3. Mode-transition mechanism (with_exclusive_access for ops that
+//   3. Mode-transition mechanism (with_drained_access for ops that
 //      need all readers out — schema reset, atomic reinitialization)
 //
 // ─── The Augur metrics use case ─────────────────────────────────────
@@ -205,7 +205,7 @@ public:
     }
 
     // Reader endpoint — lends a Pool share.  Returns nullopt iff
-    // exclusive mode is active (with_exclusive_access in flight).
+    // exclusive mode is active (with_drained_access in flight).
     // Multiple readers may hold ReaderHandles concurrently — that's
     // the entire point of the fractional permission.
     [[nodiscard]] std::optional<ReaderHandle> reader() noexcept {
@@ -226,9 +226,17 @@ public:
     // Cost: one CAS to acquire (succeeds iff outstanding == 0),
     // one release-store to deposit back.  Body's runtime is the
     // rest.  Subsequent reader() calls succeed once body returns.
+    // Unified mode-transition primitive (pool-based).  Snapshot's
+    // pooled side is the reader pool; the Writer permission is linear
+    // and untouched by this call.  Body runs while readers are
+    // blocked from acquiring new shares; subsequent reader() calls
+    // succeed once body returns.
+    //
+    // Cost: one CAS to acquire (succeeds iff outstanding == 0),
+    // one release-store to deposit back.
     template <typename Body>
         requires std::is_invocable_v<Body>
-    bool with_exclusive_access(Body&& body)
+    bool with_drained_access(Body&& body)
         noexcept(std::is_nothrow_invocable_v<Body>)
     {
         auto upgrade = reader_pool_.try_upgrade();
@@ -236,18 +244,6 @@ public:
         std::forward<Body>(body)();
         reader_pool_.deposit_exclusive(std::move(*upgrade));
         return true;
-    }
-
-    // Unified API alias.  Every Permissioned* wrapper exposes
-    // `with_drained_access(Body) -> bool` (pool-based).  Snapshot's
-    // pooled side is the reader pool; the Writer permission is linear
-    // and untouched by this call.
-    template <typename Body>
-        requires std::is_invocable_v<Body>
-    bool with_drained_access(Body&& body)
-        noexcept(std::is_nothrow_invocable_v<Body>)
-    {
-        return with_exclusive_access(std::forward<Body>(body));
     }
 
     // ── Diagnostics ───────────────────────────────────────────────

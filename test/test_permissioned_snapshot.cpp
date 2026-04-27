@@ -7,7 +7,7 @@
 //   * Compile-time type discrimination of writer vs reader
 //   * Pool refcount tracks active readers
 //   * permission_fork integration: 1 writer + N readers, TSan-clean
-//   * Mode transition: with_exclusive_access succeeds iff readers
+//   * Mode transition: with_drained_access succeeds iff readers
 //     are quiesced
 // ═══════════════════════════════════════════════════════════════════
 
@@ -160,15 +160,15 @@ void test_reader_handle_destruction_decrements() {
     CRUCIBLE_TEST_REQUIRE(snap.outstanding_readers() == 0);
 }
 
-// ── Tier 4: mode transition (with_exclusive_access) ─────────────
+// ── Tier 4: mode transition (with_drained_access) ─────────────
 
-void test_with_exclusive_access_succeeds_when_idle() {
+void test_with_drained_access_succeeds_when_idle() {
     PermissionedSnapshot<Metrics, AppMetrics> snap{Metrics{0, 0, 0}};
     auto writer = snap.writer(
         permission_root_mint<snapshot_tag::Writer<AppMetrics>>());
 
     bool body_ran = false;
-    const bool ok = snap.with_exclusive_access([&] {
+    const bool ok = snap.with_drained_access([&] {
         body_ran = true;
         writer.publish(Metrics{99, 99, 99});
     });
@@ -182,14 +182,14 @@ void test_with_exclusive_access_succeeds_when_idle() {
     CRUCIBLE_TEST_REQUIRE(r->load().requests == 99);
 }
 
-void test_with_exclusive_access_fails_when_readers_present() {
+void test_with_drained_access_fails_when_readers_present() {
     PermissionedSnapshot<Metrics, AppMetrics> snap{};
     auto reader = snap.reader();
     CRUCIBLE_TEST_REQUIRE(reader.has_value());
     CRUCIBLE_TEST_REQUIRE(snap.outstanding_readers() == 1);
 
     bool body_ran = false;
-    const bool ok = snap.with_exclusive_access([&] { body_ran = true; });
+    const bool ok = snap.with_drained_access([&] { body_ran = true; });
 
     CRUCIBLE_TEST_REQUIRE(!ok);
     CRUCIBLE_TEST_REQUIRE(!body_ran);
@@ -337,10 +337,10 @@ int main() {
              test_multiple_readers_coexist);
     run_test("test_reader_handle_destruction_decrements",
              test_reader_handle_destruction_decrements);
-    run_test("test_with_exclusive_access_succeeds_when_idle",
-             test_with_exclusive_access_succeeds_when_idle);
-    run_test("test_with_exclusive_access_fails_when_readers_present",
-             test_with_exclusive_access_fails_when_readers_present);
+    run_test("test_with_drained_access_succeeds_when_idle",
+             test_with_drained_access_succeeds_when_idle);
+    run_test("test_with_drained_access_fails_when_readers_present",
+             test_with_drained_access_fails_when_readers_present);
     run_test("test_swmr_under_load",
              test_swmr_under_load);
     run_test("test_permission_fork_integration",
