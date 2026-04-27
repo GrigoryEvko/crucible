@@ -28,7 +28,8 @@
 //   SessionView.h           — non-consuming protocol introspection
 //
 // Hot-path TUs needing a single piece include the targeted header.
-// PermissionedSession.h ships per #333 (SEPLOG-H2b — pending).
+// PermissionedSession.h ships per FOUND-C v1
+// (`misc/27_04_csl_permission_session_wiring.md`).
 
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionAssoc.h>
@@ -42,6 +43,7 @@
 #include <crucible/sessions/SessionDiagnostic.h>
 #include <crucible/sessions/SessionEventLog.h>
 #include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/SessionPatterns.h>
 #include <crucible/sessions/SessionPayloadSubsort.h>
 #include <crucible/sessions/SessionPermPayloads.h>
