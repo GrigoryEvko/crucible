@@ -401,6 +401,16 @@ crucible_test(test_session_patterns)
 # Resource so the runtime path is verified, not just the type level.
 crucible_test(test_permissioned_session_handle)
 
+# SpscSession.h (SEPLOG-INT-1 / SAFEINT-R31, #384/#413) — first
+# production-shaped wiring of FOUND-C v1 atop concurrent/Permissioned-
+# SpscChannel.  Three tiers: (A) file-scope sizeof witness pinned to
+# this TU's build flags (catches ABI drift); (B) two-jthread round-
+# trip exchanging 1024 items via the typed-session API; (C) immediate-
+# detach validation for the canonical shutdown pattern.  Closes the
+# Part IX.2 critique of "no production caller exists" — this test is
+# the framework's first wired-in end-to-end exercise.
+crucible_test(test_spsc_session)
+
 # L2 typing context Γ (SEPLOG-I1, task #343) — Entry, Context,
 # compose_context_t, lookup_context_t, contains_key_v, domain_of_t,
 # update_entry_t, remove_entry_t.  Gateway to L5 (association),
