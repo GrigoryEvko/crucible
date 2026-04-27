@@ -6,7 +6,7 @@
 // Forces every sessions/* header through the test target's full
 // -Werror matrix.
 //
-// Coverage: 19 headers in sessions/.  Note: Many already have deeper
+// Coverage: 20 headers in sessions/.  Note: Many already have deeper
 // dedicated tests (test_session_*); this sentinel does NOT duplicate
 // them.  Its job is to guarantee the EMBEDDED static_assert blocks
 // in EVERY header fire under the test target's flags — catches the
@@ -30,6 +30,7 @@
 #include <crucible/sessions/SessionGlobal.h>
 #include <crucible/sessions/SessionPatterns.h>
 #include <crucible/sessions/SessionPayloadSubsort.h>
+#include <crucible/sessions/SessionPermPayloads.h>
 #include <crucible/sessions/SessionQueue.h>
 #include <crucible/sessions/SessionSubtype.h>
 #include <crucible/sessions/SessionSubtypeReason.h>
@@ -73,6 +74,9 @@ void test_session_event_log_compile()        {}
 void test_session_global_compile()           {}
 void test_session_patterns_compile()         {}
 void test_session_payload_subsort_compile()  {}
+void test_session_perm_payloads_compile() {
+    crucible::safety::proto::detail::session_perm_payloads_smoke::runtime_smoke_test();
+}
 void test_session_queue_compile()            {}
 void test_session_subtype_compile()          {}
 void test_session_subtype_reason_compile()   {}
@@ -97,6 +101,7 @@ int main() {
     run_test("test_session_global_compile",           test_session_global_compile);
     run_test("test_session_patterns_compile",         test_session_patterns_compile);
     run_test("test_session_payload_subsort_compile",  test_session_payload_subsort_compile);
+    run_test("test_session_perm_payloads_compile",    test_session_perm_payloads_compile);
     run_test("test_session_queue_compile",            test_session_queue_compile);
     run_test("test_session_subtype_compile",          test_session_subtype_compile);
     run_test("test_session_subtype_reason_compile",   test_session_subtype_reason_compile);

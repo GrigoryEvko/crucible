@@ -22,6 +22,7 @@
 //   SessionCT.h             — ConstantTime crypto-payload sessions
 //   SessionEventLog.h       — AppendOnly typed event log
 //   SessionPayloadSubsort.h — Tagged/Refined subsort axioms
+//   SessionPermPayloads.h   — Transferable/Borrowed/Returned markers
 //   SessionPatterns.h       — RequestResponse, Pipeline, FanOut/FanIn, ...
 //   SessionDiagnostic.h     — manifest-bug classification tags
 //   SessionView.h           — non-consuming protocol introspection
@@ -43,6 +44,7 @@
 #include <crucible/sessions/SessionGlobal.h>
 #include <crucible/sessions/SessionPatterns.h>
 #include <crucible/sessions/SessionPayloadSubsort.h>
+#include <crucible/sessions/SessionPermPayloads.h>
 #include <crucible/sessions/SessionQueue.h>
 #include <crucible/sessions/SessionSubtype.h>
 #include <crucible/sessions/SessionSubtypeReason.h>
