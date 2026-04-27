@@ -8,6 +8,52 @@
 // each is a zero-cost tag type that selects which Permissioned*
 // primitive the pool's queue resolves to AT COMPILE TIME.
 //
+// ─── Two layers of "scheduling" ───────────────────────────────────
+//
+//   QUEUE TOPOLOGY (this header)        : how jobs are stored and
+//                                          retrieved — FIFO ring, LIFO
+//                                          deque, sharded grid, calendar
+//                                          grid keyed on a priority.
+//
+//   SCHEDULING MATH (above this layer)  : which job is "next" given
+//                                          per-task accumulators —
+//                                          vruntime, eligibility,
+//                                          deadline.  The user's
+//                                          KeyExtractor encodes the
+//                                          meaning of "priority"; the
+//                                          AdaptiveScheduler maintains
+//                                          per-task state above the
+//                                          queue.
+//
+// Deadline / Cfs / Eevdf all share PermissionedCalendarGrid topology
+// (lowest-key-first FIFO with per-priority-bucket sharding).  They are
+// DISTINCT types — distinct UserTag, distinct queue_template<Job>
+// instantiation — so the type system prevents accidentally feeding
+// EDF jobs to a CFS pool or vice versa.  The user's KeyExtractor
+// determines what "priority" means:
+//
+//   Deadline<K>: K::key(job) returns absolute deadline (e.g. ns since
+//                epoch).  Lowest deadline = highest priority.
+//
+//   Cfs<K>:      K::key(job) returns the task's accumulated virtual
+//                runtime (vruntime), monotonically non-decreasing per
+//                task.  Lowest vruntime = task that has run least.
+//                Caller maintains per-task vruntime accumulator
+//                outside the queue and advances it on dequeue+yield.
+//
+//   Eevdf<K>:    K::key(job) returns the earliest eligible virtual
+//                deadline (= vruntime + request / weight).  Lowest
+//                virtual deadline = task most overdue for service.
+//                Caller maintains both vruntime and per-task weight
+//                outside the queue.
+//
+// All three guarantee "smaller key first" via the calendar grid's
+// per-row FIFO + bucket-clamping invariant.  The semantic difference
+// is documented intent — ENFORCED BY TYPE IDENTITY at the policy
+// level so production code that mixes them is a compile error.
+//
+// ─── Policy contract ──────────────────────────────────────────────
+//
 // A SchedulerPolicy P exposes:
 //
 //   * template <typename Job> using queue_template = …
@@ -19,11 +65,10 @@
 //       per policy so user code mixing policies in adjacent containers
 //       cannot cross-contaminate at the type level.
 //
-//   * static constexpr bool needs_priority_key
-//       True for Deadline / Cfs / Eevdf — the dispatcher must extract
-//       a per-job key (deadline-ns, virtual runtime, virtual deadline)
-//       before submission.  Fifo / Lifo / RoundRobin / LocalityAware
-//       are key-free — submission order alone picks the slot.
+//   * static constexpr PriorityKind priority_kind
+//       Discriminator for the scheduling math the dispatcher should
+//       run above the queue.  None / Deadline / VirtualRuntime /
+//       VirtualDeadline.
 //
 //   * static constexpr bool needs_topology
 //       True for LocalityAware — the dispatcher must consult the
@@ -33,13 +78,6 @@
 //   * static constexpr std::string_view name() noexcept
 //       Human-readable for diagnostics.  Reflection-derived later
 //       (FOUND-E02), hand-written for now.
-//
-// Usage (at the call site of the future pool):
-//
-//   using Pool = NumaThreadPool<scheduler::LocalityAware, MyTag>;
-//   //          ^^^^^^^^^^^^^^^^ pool template parameterised on policy
-//   //                            queue type derives from policy::
-//   //                            template queue_template<Job>.
 //
 // References:
 //   THREADING.md §5.5.2 (the seven scheduler flavours)
@@ -63,11 +101,25 @@
 
 namespace crucible::concurrent::scheduler {
 
+// ── PriorityKind discriminator ─────────────────────────────────────
+//
+// Distinguishes Deadline / Cfs / Eevdf at the type level so the
+// AdaptiveScheduler (#313) can route per-policy scheduling math
+// correctly without per-policy specialisations.  None means the queue
+// is order-only (Fifo / Lifo / RoundRobin / LocalityAware).
+
+enum class PriorityKind : std::uint8_t {
+    None,             // queue order alone determines next job
+    Deadline,         // key = absolute deadline; smaller = sooner due
+    VirtualRuntime,   // key = accumulated vruntime; smaller = ran least
+    VirtualDeadline,  // key = vruntime + lag/weight; smaller = overdue
+};
+
 // ── Phantom region tags ─────────────────────────────────────────────
 //
-// One per policy.  The Permissioned wrapper's user_tag is built atop
-// these; mixing tags between policies is a compile error because the
-// underlying Permission tags do not unify.
+// One per policy.  Distinct UserTag values inside the Permissioned
+// wrapper produce distinct queue_template<Job> instantiations even
+// for the same Job, so cross-contamination is a compile error.
 
 namespace tag {
 struct Fifo {};
@@ -87,9 +139,11 @@ struct Eevdf {};
 
 template <typename Policy>
 struct policy_defaults {
-    static constexpr std::size_t capacity      = 1024;
-    static constexpr std::size_t num_shards    = 4;
-    static constexpr std::size_t num_consumers = 4;
+    static constexpr std::size_t   capacity      = 1024;
+    static constexpr std::size_t   num_shards    = 4;
+    static constexpr std::size_t   num_consumers = 4;
+    static constexpr std::size_t   num_buckets   = 1024;
+    static constexpr std::uint64_t quantum       = 100'000;  // 100 µs / 100k vrun-ticks
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -109,8 +163,8 @@ struct Fifo {
                                 tag::Fifo>;
 
     using policy_tag = tag::Fifo;
-    static constexpr bool needs_priority_key = false;
-    static constexpr bool needs_topology     = false;
+    static constexpr PriorityKind priority_kind = PriorityKind::None;
+    static constexpr bool needs_topology        = false;
     static constexpr std::string_view name() noexcept { return "Fifo"; }
 };
 
@@ -131,8 +185,8 @@ struct Lifo {
                                   tag::Lifo>;
 
     using policy_tag = tag::Lifo;
-    static constexpr bool needs_priority_key = false;
-    static constexpr bool needs_topology     = false;
+    static constexpr PriorityKind priority_kind = PriorityKind::None;
+    static constexpr bool needs_topology        = false;
     static constexpr std::string_view name() noexcept { return "Lifo"; }
 };
 
@@ -155,8 +209,8 @@ struct RoundRobin {
                                 tag::RoundRobin>;
 
     using policy_tag = tag::RoundRobin;
-    static constexpr bool needs_priority_key = false;
-    static constexpr bool needs_topology     = false;
+    static constexpr PriorityKind priority_kind = PriorityKind::None;
+    static constexpr bool needs_topology        = false;
     static constexpr std::string_view name() noexcept { return "RoundRobin"; }
 };
 
@@ -182,32 +236,41 @@ struct LocalityAware {
                                 tag::LocalityAware>;
 
     using policy_tag = tag::LocalityAware;
-    static constexpr bool needs_priority_key = false;
-    static constexpr bool needs_topology     = true;
+    static constexpr PriorityKind priority_kind = PriorityKind::None;
+    static constexpr bool needs_topology        = true;
     static constexpr std::string_view name() noexcept { return "LocalityAware"; }
 };
 
 // ═══════════════════════════════════════════════════════════════════
-// Deadline — Earliest-Deadline-First via the calendar queue.  Each
-// job's key is its deadline (any monotonic priority-ns value); the
-// calendar grid's bucket-clamping invariant guarantees per-row FIFO
-// across producers within the same time quantum.
+// Priority-keyed family — shared PermissionedCalendarGrid topology;
+// distinguished by intent (PriorityKind + UserTag).
 //
-// User must supply:
-//   KeyExtractor — type with `static uint64_t key(const Job&) noexcept`
-//                  returning the priority-ns value.
-//   QuantumNs    — bucket width; smaller = finer priority resolution
-//                  but shorter time horizon (NumBuckets * QuantumNs).
+// Calendar-grid invariants (see PermissionedCalendarGrid.h):
+//   * Per-row FIFO: items pushed by the same producer pop in the
+//     order they were pushed.
+//   * Bucket clamp: items with a key in the past land in the current
+//     bucket — the queue never reorders backwards in time.
+//   * Per-bucket SpscRing: O(1) push, O(1) pop within a bucket.
 //
-// This is a class template, not a struct, because the KeyExtractor
-// is per-job.  Template instantiations satisfy SchedulerPolicy.
+// The KeyExtractor type must satisfy:
+//   static std::uint64_t key(const Job&) noexcept;
+// returning the priority value.  Lowest key pops first.
 // ═══════════════════════════════════════════════════════════════════
+
+// ── Deadline (EDF) ────────────────────────────────────────────────
+//
+// Earliest-Deadline-First.  KeyExtractor returns the absolute
+// deadline (caller's choice of unit; QuantumNs is the bucket width
+// in the same unit).
+//
+// Use when: each job has a hard or soft deadline and miss penalty
+// dominates other scheduling concerns.
 
 template <typename KeyExtractor,
           std::size_t   NumProducers = policy_defaults<tag::Deadline>::num_shards,
-          std::size_t   NumBuckets   = 1024,
+          std::size_t   NumBuckets   = policy_defaults<tag::Deadline>::num_buckets,
           std::size_t   BucketCap    = policy_defaults<tag::Deadline>::capacity,
-          std::uint64_t QuantumNs    = 100'000>  // 100 µs default bucket width
+          std::uint64_t QuantumNs    = policy_defaults<tag::Deadline>::quantum>
 struct Deadline {
     template <typename Job>
     using queue_template =
@@ -220,57 +283,80 @@ struct Deadline {
                                  tag::Deadline>;
 
     using policy_tag = tag::Deadline;
-    static constexpr bool needs_priority_key = true;
-    static constexpr bool needs_topology     = false;
+    static constexpr PriorityKind priority_kind = PriorityKind::Deadline;
+    static constexpr bool needs_topology        = false;
     static constexpr std::string_view name() noexcept { return "Deadline"; }
 };
 
-// ═══════════════════════════════════════════════════════════════════
-// Cfs — Linux CFS-style proportional-share scheduling via a sorted
-// red-black tree of virtual runtimes.
+// ── Cfs (Linux Completely Fair Scheduler analogue) ─────────────────
 //
-// SCAFFOLDING ONLY.  A real CFS implementation needs a lock-free
-// sorted tree (no Permissioned wrapper provides this yet).  For now
-// the queue resolves to MPMC + the policy is tagged needs_priority_key
-// so callers can detect that the priority extraction is ignored.
-// SEPLOG-H3 tracks the real implementation.
-// ═══════════════════════════════════════════════════════════════════
+// Proportional-share via virtual runtime.  KeyExtractor returns the
+// task's accumulated vruntime.  Lowest vruntime = task that has run
+// least.  Caller advances each task's vruntime by (real_time / weight)
+// after each dequeue+yield, then re-enqueues with the new key.
+//
+// Bucket width here is in *vruntime units*, not nanoseconds — picked
+// to balance bucket count vs priority resolution.  Default 100k
+// vruntime ticks = roughly one timeslice's worth of accumulation at
+// a typical weight.
+//
+// Use when: long-lived tasks need fair-share guarantees; per-task
+// weight provides priority differentiation.  Pair with the
+// AdaptiveScheduler's per-task vruntime accumulator (#313).
 
+template <typename KeyExtractor,
+          std::size_t   NumProducers = policy_defaults<tag::Cfs>::num_shards,
+          std::size_t   NumBuckets   = policy_defaults<tag::Cfs>::num_buckets,
+          std::size_t   BucketCap    = policy_defaults<tag::Cfs>::capacity,
+          std::uint64_t Quantum      = policy_defaults<tag::Cfs>::quantum>
 struct Cfs {
     template <typename Job>
     using queue_template =
-        PermissionedMpmcChannel<Job,
-                                policy_defaults<Cfs>::capacity,
-                                tag::Cfs>;
+        PermissionedCalendarGrid<Job,
+                                 NumProducers,
+                                 NumBuckets,
+                                 BucketCap,
+                                 KeyExtractor,
+                                 Quantum,
+                                 tag::Cfs>;
 
     using policy_tag = tag::Cfs;
-    static constexpr bool needs_priority_key = true;
-    static constexpr bool needs_topology     = false;
-    static constexpr bool is_scaffolding     = true;
+    static constexpr PriorityKind priority_kind = PriorityKind::VirtualRuntime;
+    static constexpr bool needs_topology        = false;
     static constexpr std::string_view name() noexcept { return "Cfs"; }
 };
 
-// ═══════════════════════════════════════════════════════════════════
-// Eevdf — Linux 6.6+ default — Earliest Eligible Virtual Deadline
-// First.  Proportional share + per-task latency bound.
+// ── Eevdf (Linux 6.6+ default) ────────────────────────────────────
 //
-// SCAFFOLDING ONLY (same caveat as Cfs).  An EEVDF tree is more
-// involved than CFS's RB-tree because it tracks both virtual runtime
-// AND eligibility timestamps.  Resolves to MPMC for now; SEPLOG-H3
-// tracks the real implementation.
-// ═══════════════════════════════════════════════════════════════════
+// Earliest Eligible Virtual Deadline First.  KeyExtractor returns the
+// task's virtual deadline (= vruntime + request_size / weight).
+// Provides EEVDF's latency bound on top of CFS's fair share.  Caller
+// maintains both per-task vruntime AND per-task weight outside the
+// queue and computes the virtual deadline at enqueue time.
+//
+// Same calendar-grid topology as Cfs/Deadline; the EEVDF math lives
+// in the user's KeyExtractor and the AdaptiveScheduler's per-task
+// state.
 
+template <typename KeyExtractor,
+          std::size_t   NumProducers = policy_defaults<tag::Eevdf>::num_shards,
+          std::size_t   NumBuckets   = policy_defaults<tag::Eevdf>::num_buckets,
+          std::size_t   BucketCap    = policy_defaults<tag::Eevdf>::capacity,
+          std::uint64_t Quantum      = policy_defaults<tag::Eevdf>::quantum>
 struct Eevdf {
     template <typename Job>
     using queue_template =
-        PermissionedMpmcChannel<Job,
-                                policy_defaults<Eevdf>::capacity,
-                                tag::Eevdf>;
+        PermissionedCalendarGrid<Job,
+                                 NumProducers,
+                                 NumBuckets,
+                                 BucketCap,
+                                 KeyExtractor,
+                                 Quantum,
+                                 tag::Eevdf>;
 
     using policy_tag = tag::Eevdf;
-    static constexpr bool needs_priority_key = true;
-    static constexpr bool needs_topology     = false;
-    static constexpr bool is_scaffolding     = true;
+    static constexpr PriorityKind priority_kind = PriorityKind::VirtualDeadline;
+    static constexpr bool needs_topology        = false;
     static constexpr std::string_view name() noexcept { return "Eevdf"; }
 };
 
@@ -288,22 +374,17 @@ concept SchedulerPolicy =
     requires {
         typename P::policy_tag;
         typename P::template queue_template<Job>;
-        { P::needs_priority_key } -> std::convertible_to<bool>;
-        { P::needs_topology     } -> std::convertible_to<bool>;
-        { P::name()             } -> std::convertible_to<std::string_view>;
+        { P::priority_kind } -> std::convertible_to<PriorityKind>;
+        { P::needs_topology } -> std::convertible_to<bool>;
+        { P::name()         } -> std::convertible_to<std::string_view>;
     }
     && traits::PermissionedChannel<typename P::template queue_template<Job>>;
 
 // ── Detection traits — convenient for dispatcher concept overloads ──
 
 template <typename P>
-inline constexpr bool is_scaffolding_v = false;
-
-template <>
-inline constexpr bool is_scaffolding_v<Cfs>   = true;
-
-template <>
-inline constexpr bool is_scaffolding_v<Eevdf> = true;
+inline constexpr bool needs_priority_key_v =
+    P::priority_kind != PriorityKind::None;
 
 // ── DefaultPolicy — what the pool selects when the user omits one ──
 

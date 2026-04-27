@@ -9,64 +9,109 @@
 // change).  False positives are statistically impossible; every
 // failure indicates a real bug.
 //
-// The test suite covers six concurrent primitives + the OwnedRegion
-// partitioning machinery, each with a tailored adversarial workload:
+// ─── Coverage map (three sections) ─────────────────────────────────
 //
-//   1. AtomicSnapshot — cookie-payload SWMR fuzzer with seed-derived
-//      payload (every byte must round-trip the FNV-1a digest)
+// SECTION I — Raw concurrent primitives (the lock-free substrate):
 //
-//   2. OwnedRegion split-disjointness — each thread writes its slice
-//      ID throughout its slice; post-join byte-by-byte scan verifies
-//      no slice wrote outside its expected range (catches off-by-one
-//      in chunk_range_, slice index packing bugs)
+//   1. AtomicSnapshot      — cookie-payload SWMR fuzzer with
+//                            seed-derived payload (every byte must
+//                            round-trip the FNV-1a digest)
+//   2. OwnedRegion         — split-disjointness via parallel_for_views
+//                            (N=8 / 16 / 7 uneven; off-by-one,
+//                             slice-index packing bugs)
+//   3. MpscRing            — N producers exactly-once delivery,
+//                            per-producer FIFO preserved
+//   4. ChaseLevDeque       — owner pops + N thieves steal; every
+//                            item appears exactly once
+//   5. SpscRing            — single-producer FIFO + cookie verify
+//   6. MpmcRing (SCQ)      — N producers × M consumers; per-producer
+//                            FIFO + global exactly-once
+//   7. ShardedSpscGrid     — M×N independent SpscRings, all routed
+//                            via cookie-tagged messages
+//   8. CalendarGrid        — priority-keyed M-producer × 1-consumer;
+//                            cookie + bucket-clamp invariant verified
 //
-//   3. MpscRing exactly-once delivery — N producers each emit K
-//      cookie-tagged messages; consumer drains and verifies (a) total
-//      = N*K, (b) per-producer FIFO preserved, (c) no duplicates
+// SECTION II — Permissioned-wrapper handle-boundary stress (CSL):
 //
-//   4. ChaseLevDeque steal correctness — owner pushes K, owner+thieves
-//      compete for items; each item appears exactly once across owner
-//      pops + thief steals (no duplication, no loss)
+//   9. PermissionedSnapshot mode-transition torture (legacy)
+//  10. Pool refcount conservation (legacy)
+//  11. PermissionedSpscChannel  — linear×linear endpoints
+//  12. PermissionedMpscChannel  — N pool producers × 1 linear consumer
+//  13. PermissionedMpmcChannel  — N pool prods × M pool cons (TWO pools)
+//  14. PermissionedShardedGrid  — M×N statically-indexed handles
+//  15. PermissionedChaseLevDeque — 1 linear owner + N pool thieves
+//  16. PermissionedCalendarGrid  — M static prods × 1 lin cons priority
 //
-//   5. SpscRing exactly-once delivery — single producer emits K
-//      cookie-tagged messages; consumer drains and verifies count and
-//      sequence (catches reorder/duplicate bugs in the simplest queue)
+// SECTION III — Scheduler policy queue_template stress (the
+// dispatcher boundary):
 //
-//   6. PermissionedSnapshot mode-transition — interleaved
-//      reader.lend() with with_drained_access; verifies invariants:
-//      exclusive scope sees zero active readers, lend during exclusive
-//      returns nullopt, post-exclusive lend works
+//  17. scheduler::Fifo          → PermissionedMpmcChannel<UserTag=Fifo>
+//  18. scheduler::Lifo          → PermissionedChaseLevDeque
+//  19. scheduler::RoundRobin    → PermissionedMpscChannel
+//  20. scheduler::LocalityAware → PermissionedShardedGrid
+//  21. scheduler::Deadline<K>   → PermissionedCalendarGrid (deadline)
+//  22. scheduler::Cfs<K>        → PermissionedCalendarGrid (vruntime)
+//  23. scheduler::Eevdf<K>      → PermissionedCalendarGrid (vdeadline)
 //
-//   7. Pool refcount conservation — N readers acquire/release
-//      randomly; verify outstanding always returns to 0
+// ─── Section-III rationale ─────────────────────────────────────────
 //
-// Each test prints (loads, contention, p99 latency) so a regression
-// shows both the functional fail AND a plausible perf cliff origin.
+// Each scheduler policy's queue_template<Job> resolves to one of the
+// Section-II Permissioned wrappers — but with a DIFFERENT UserTag.
+// Distinct UserTags ripple down through the wrapper's permission tree
+// and produce DISTINCT TYPES even when the underlying topology is the
+// same.  Section III drives the policy's queue_template at the SAME
+// adversarial workload as Section II, exercising the policy → wrapper
+// boundary end-to-end.  If the policy alias is wrong (e.g. wires Fifo
+// to Lifo by mistake) the test catches it.
 //
-// Runs under both default and tsan presets; the tsan preset uses
-// test/tsan-suppressions.txt to silence documented UB-adjacency.
+// ─── Discipline ────────────────────────────────────────────────────
+//
+// Each test prints PASSED/FAILED.  Runs under both default and tsan
+// presets; the tsan preset uses test/tsan-suppressions.txt to silence
+// documented UB-adjacency in primitives that intentionally read
+// uncommitted bytes (the AtomicSnapshot seqlock retry pattern).
+//
+// References:
+//   THREADING.md §17 (cookie-fingerprint methodology)
+//   misc/27_04_2026.md §1.4 (CSL discipline at every channel boundary)
+//   SEPLOG-H3 (#329) for the scheduler-policy slice
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/concurrent/AtomicSnapshot.h>
 #include <crucible/concurrent/ChaseLevDeque.h>
+#include <crucible/concurrent/MpmcRing.h>
 #include <crucible/concurrent/MpscRing.h>
+#include <crucible/concurrent/PermissionedCalendarGrid.h>
+#include <crucible/concurrent/PermissionedChaseLevDeque.h>
+#include <crucible/concurrent/PermissionedMpmcChannel.h>
+#include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
+#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/ShardedGrid.h>
 #include <crucible/concurrent/SpscRing.h>
+#include <crucible/concurrent/scheduler/Policies.h>
 #include <crucible/Arena.h>
 #include <crucible/Effects.h>
 #include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/PermissionGridGenerator.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Workload.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <memory>
+#include <mutex>
 #include <set>
 #include <thread>
+#include <tuple>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 using namespace crucible;
@@ -784,6 +829,929 @@ void test_parallel_for_nested_integrity() {
     }
 }
 
+// ═════════════════════════════════════════════════════════════════
+// Shared helpers for the new sections (I.MpmcRing/Sharded + II + III)
+// ═════════════════════════════════════════════════════════════════
+
+// PriorityMsg — cookie-tagged payload with a priority key.  Used for
+// CalendarGrid + Deadline/Cfs/Eevdf coverage.  Cookie covers all four
+// non-cookie fields so any byte mix is caught.
+struct PriorityMsg {
+    std::uint32_t producer_id = 0;
+    std::uint32_t seq         = 0;
+    std::uint64_t key         = 0;
+    std::uint64_t cookie      = 0;
+};
+static_assert(std::is_trivially_copyable_v<PriorityMsg>);
+static_assert(std::is_trivially_destructible_v<PriorityMsg>);
+static_assert(sizeof(PriorityMsg) == 24);
+
+[[nodiscard]] PriorityMsg make_priority_msg_(std::uint32_t pid,
+                                              std::uint32_t seq,
+                                              std::uint64_t key) noexcept {
+    PriorityMsg m;
+    m.producer_id = pid;
+    m.seq         = seq;
+    m.key         = key;
+    m.cookie = fnv1a64_(&m.producer_id, sizeof(m.producer_id))
+             ^ fnv1a64_(&m.seq,         sizeof(m.seq))
+             ^ fnv1a64_(&m.key,         sizeof(m.key));
+    return m;
+}
+
+[[nodiscard]] bool verify_priority_msg_(PriorityMsg const& m) noexcept {
+    const std::uint64_t expected =
+        fnv1a64_(&m.producer_id, sizeof(m.producer_id))
+      ^ fnv1a64_(&m.seq,         sizeof(m.seq))
+      ^ fnv1a64_(&m.key,         sizeof(m.key));
+    return m.cookie == expected;
+}
+
+// KeyExtractor for PriorityMsg — used by CalendarGrid and the three
+// priority-keyed scheduler policies (Deadline / Cfs / Eevdf).
+struct PriorityKey {
+    static std::uint64_t key(const PriorityMsg& m) noexcept { return m.key; }
+};
+
+// Lifo cookie helper.  ChaseLevDeque requires lock-free atomic value
+// type → max 8 bytes on x86_64 without -mcx16.  We pack a 32-bit seq
+// into the upper half of a uint64 and put a 32-bit FNV-1a digest in
+// the lower half.  Lifo / scheduler::Lifo coverage uses this.
+[[nodiscard]] std::uint64_t make_lifo_msg_(std::uint32_t seq) noexcept {
+    const std::uint32_t cookie32 =
+        static_cast<std::uint32_t>(fnv1a64_(&seq, sizeof(seq)) & 0xFFFFFFFFULL);
+    return (static_cast<std::uint64_t>(seq) << 32)
+         | static_cast<std::uint64_t>(cookie32);
+}
+
+[[nodiscard]] bool verify_lifo_msg_(std::uint64_t v) noexcept {
+    const std::uint32_t seq = static_cast<std::uint32_t>(v >> 32);
+    const std::uint32_t got = static_cast<std::uint32_t>(v & 0xFFFFFFFFULL);
+    const std::uint32_t expected =
+        static_cast<std::uint32_t>(fnv1a64_(&seq, sizeof(seq)) & 0xFFFFFFFFULL);
+    return got == expected;
+}
+
+[[nodiscard]] std::uint32_t lifo_msg_seq_(std::uint64_t v) noexcept {
+    return static_cast<std::uint32_t>(v >> 32);
+}
+
+// ═════════════════════════════════════════════════════════════════
+// SECTION I — Raw queues missing from the original fuzzer
+// ═════════════════════════════════════════════════════════════════
+
+// 8. Raw MpmcRing (Nikolaev SCQ) cookie-fingerprint stress
+// ─────────────────────────────────────────────────────────
+//
+// N producers × M consumers; per-producer FIFO + global exactly-once.
+// SCQ's threshold-counter livelock-prevention + per-cell cycle bits
+// must not let two producers overwrite the same cell or let a
+// consumer mis-attribute a payload — the cookie verifies neither
+// happens.
+
+void test_raw_mpmc_ring_cookie_fuzzer() {
+    constexpr std::uint32_t NUM_PRODUCERS     = 4;
+    constexpr std::uint32_t NUM_CONSUMERS     = 4;
+    constexpr std::uint32_t MSGS_PER_PRODUCER = 3'000;
+    constexpr std::size_t   QUEUE_CAP         = 256;
+
+    MpmcRing<MpscMsg, QUEUE_CAP> q;
+    std::atomic<bool>            producers_done{false};
+    std::atomic<std::uint32_t>   producers_finished{0};
+    std::atomic<std::uint64_t>   total_received{0};
+    std::atomic<std::uint64_t>   total_torn{0};
+
+    // Each consumer collects per-producer sequence lists — for FIFO check.
+    std::vector<std::vector<std::vector<std::uint32_t>>> per_consumer_seqs(
+        NUM_CONSUMERS,
+        std::vector<std::vector<std::uint32_t>>(NUM_PRODUCERS));
+
+    constexpr std::uint64_t EXPECTED_TOTAL =
+        static_cast<std::uint64_t>(NUM_PRODUCERS) * MSGS_PER_PRODUCER;
+
+    std::vector<std::jthread> consumers;
+    for (std::uint32_t cid = 0; cid < NUM_CONSUMERS; ++cid) {
+        consumers.emplace_back([&, cid](std::stop_token) noexcept {
+            while (total_received.load(std::memory_order_acquire) < EXPECTED_TOTAL) {
+                auto opt = q.try_pop();
+                if (!opt) {
+                    if (producers_done.load(std::memory_order_acquire) &&
+                        total_received.load() >= EXPECTED_TOTAL) break;
+                    std::this_thread::yield();
+                    continue;
+                }
+                const auto& m = *opt;
+                if (!verify_mpsc_msg_(m)) [[unlikely]] {
+                    total_torn.fetch_add(1, std::memory_order_acq_rel);
+                    continue;
+                }
+                if (m.producer_id < NUM_PRODUCERS) {
+                    per_consumer_seqs[cid][m.producer_id].push_back(m.seq);
+                    total_received.fetch_add(1, std::memory_order_acq_rel);
+                }
+            }
+        });
+    }
+
+    std::vector<std::jthread> producers;
+    for (std::uint32_t pid = 0; pid < NUM_PRODUCERS; ++pid) {
+        producers.emplace_back([&, pid](std::stop_token) noexcept {
+            for (std::uint32_t s = 1; s <= MSGS_PER_PRODUCER; ++s) {
+                while (!q.try_push(make_mpsc_msg_(pid, s))) {
+                    std::this_thread::yield();
+                }
+            }
+            if (producers_finished.fetch_add(1, std::memory_order_acq_rel) + 1
+                == NUM_PRODUCERS) {
+                producers_done.store(true, std::memory_order_release);
+            }
+        });
+    }
+
+    for (auto& p : producers) p.join();
+    producers_done.store(true, std::memory_order_release);
+    for (auto& c : consumers) c.join();
+
+    CRUCIBLE_TEST_REQUIRE(total_torn.load() == 0);
+    CRUCIBLE_TEST_REQUIRE(total_received.load() == EXPECTED_TOTAL);
+
+    // Per-producer FIFO check: when we collect each producer's seqs
+    // (across all consumers, in arrival order per consumer), then
+    // sort by consumer-arrival and verify the per-producer subsequence
+    // is monotone.  SCQ guarantees per-producer FIFO (if producer P
+    // pushed seq=N before seq=N+1, then ANY consumer that observes
+    // both sees seq=N before seq=N+1).
+    for (std::uint32_t pid = 0; pid < NUM_PRODUCERS; ++pid) {
+        for (std::uint32_t cid = 0; cid < NUM_CONSUMERS; ++cid) {
+            const auto& seqs = per_consumer_seqs[cid][pid];
+            for (std::size_t i = 1; i < seqs.size(); ++i) {
+                CRUCIBLE_TEST_REQUIRE(seqs[i] > seqs[i - 1]);
+            }
+        }
+    }
+
+    // Exactly-once: union of per-consumer lists across all consumers
+    // for a given producer must be exactly {1..MSGS_PER_PRODUCER}.
+    for (std::uint32_t pid = 0; pid < NUM_PRODUCERS; ++pid) {
+        std::vector<std::uint32_t> all_seqs;
+        for (std::uint32_t cid = 0; cid < NUM_CONSUMERS; ++cid) {
+            for (auto s : per_consumer_seqs[cid][pid]) all_seqs.push_back(s);
+        }
+        CRUCIBLE_TEST_REQUIRE(all_seqs.size() == MSGS_PER_PRODUCER);
+        std::sort(all_seqs.begin(), all_seqs.end());
+        for (std::uint32_t i = 0; i < MSGS_PER_PRODUCER; ++i) {
+            CRUCIBLE_TEST_REQUIRE(all_seqs[i] == i + 1);
+        }
+    }
+}
+
+// 9. Raw ShardedSpscGrid cookie-fingerprint stress
+// ────────────────────────────────────────────────
+//
+// M producers each push to its own (producer_id, consumer_id) cell —
+// each cell is an independent SpscRing.  Test: N consumers drain
+// across all M producers' columns; verify total + cookie + per-cell
+// FIFO.  Catches any cross-cell smuggling in the routing logic.
+
+void test_raw_sharded_grid_cookie_fuzzer() {
+    constexpr std::size_t   M              = 4;  // producers
+    constexpr std::size_t   N              = 4;  // consumers
+    constexpr std::size_t   PER_CELL_CAP   = 128;
+    constexpr std::uint32_t MSGS_PER_PROD  = 2'000;
+
+    ShardedSpscGrid<MpscMsg, M, N, PER_CELL_CAP> grid;
+    std::atomic<bool>          producers_done{false};
+    std::atomic<std::uint32_t> producers_finished{0};
+    std::atomic<std::uint64_t> total_torn{0};
+
+    // Each consumer accumulates per-producer sequences for its column.
+    std::vector<std::vector<std::vector<std::uint32_t>>> per_cons_per_prod(
+        N, std::vector<std::vector<std::uint32_t>>(M));
+
+    constexpr std::uint64_t EXPECTED_TOTAL =
+        static_cast<std::uint64_t>(M) * MSGS_PER_PROD;
+    std::atomic<std::uint64_t> total_received{0};
+
+    std::vector<std::jthread> consumers;
+    for (std::size_t cid = 0; cid < N; ++cid) {
+        consumers.emplace_back([&, cid](std::stop_token) noexcept {
+            while (total_received.load(std::memory_order_acquire) < EXPECTED_TOTAL) {
+                auto opt = grid.try_pop(cid);
+                if (!opt) {
+                    if (producers_done.load(std::memory_order_acquire) &&
+                        total_received.load() >= EXPECTED_TOTAL) break;
+                    std::this_thread::yield();
+                    continue;
+                }
+                if (!verify_mpsc_msg_(*opt)) [[unlikely]] {
+                    total_torn.fetch_add(1, std::memory_order_acq_rel);
+                    continue;
+                }
+                if (opt->producer_id < M) {
+                    per_cons_per_prod[cid][opt->producer_id].push_back(opt->seq);
+                    total_received.fetch_add(1, std::memory_order_acq_rel);
+                }
+            }
+        });
+    }
+
+    // Each producer round-robins its messages across its row of N cells.
+    std::vector<std::jthread> producers;
+    for (std::size_t pid = 0; pid < M; ++pid) {
+        producers.emplace_back([&, pid](std::stop_token) noexcept {
+            for (std::uint32_t s = 1; s <= MSGS_PER_PROD; ++s) {
+                while (!grid.try_push(pid,
+                       make_mpsc_msg_(static_cast<std::uint32_t>(pid), s))) {
+                    std::this_thread::yield();
+                }
+            }
+            if (producers_finished.fetch_add(1, std::memory_order_acq_rel) + 1
+                == M) {
+                producers_done.store(true, std::memory_order_release);
+            }
+        });
+    }
+
+    for (auto& p : producers) p.join();
+    producers_done.store(true, std::memory_order_release);
+    for (auto& c : consumers) c.join();
+
+    CRUCIBLE_TEST_REQUIRE(total_torn.load() == 0);
+    CRUCIBLE_TEST_REQUIRE(total_received.load() == EXPECTED_TOTAL);
+
+    // Per-cell FIFO: within (cid, pid), seqs must be monotone (each
+    // cell is an SpscRing, strict FIFO).
+    for (std::size_t cid = 0; cid < N; ++cid) {
+        for (std::size_t pid = 0; pid < M; ++pid) {
+            const auto& seqs = per_cons_per_prod[cid][pid];
+            for (std::size_t i = 1; i < seqs.size(); ++i) {
+                CRUCIBLE_TEST_REQUIRE(seqs[i] > seqs[i - 1]);
+            }
+        }
+    }
+    // Exactly-once per producer (union across consumers is exactly
+    // {1..MSGS_PER_PROD}).
+    for (std::size_t pid = 0; pid < M; ++pid) {
+        std::vector<std::uint32_t> all_seqs;
+        for (std::size_t cid = 0; cid < N; ++cid)
+            for (auto s : per_cons_per_prod[cid][pid]) all_seqs.push_back(s);
+        CRUCIBLE_TEST_REQUIRE(all_seqs.size() == MSGS_PER_PROD);
+        std::sort(all_seqs.begin(), all_seqs.end());
+        for (std::uint32_t i = 0; i < MSGS_PER_PROD; ++i) {
+            CRUCIBLE_TEST_REQUIRE(all_seqs[i] == i + 1);
+        }
+    }
+}
+
+// ═════════════════════════════════════════════════════════════════
+// SECTION II — Permissioned-wrapper handle-boundary stress
+// ═════════════════════════════════════════════════════════════════
+//
+// These are templated drivers — same body works for the Section II
+// wrapper instantiation AND the Section III scheduler queue_template
+// instantiation, because the policy's queue_template IS one of these
+// wrapper types (with a different UserTag).  Catches policy → wrapper
+// alias bugs end-to-end.
+
+// ── Driver: Permissioned MPMC ─────────────────────────────────────
+//
+// Shape: N pool producers × M pool consumers, both lend handles per
+// stress iteration to exercise the SharedPermissionPool refcount
+// under continuous churn.  Every msg is FNV-1a cookied.
+
+template <typename Channel>
+void drive_pmpmc_cookie_(Channel& ch) {
+    using Msg = typename Channel::value_type;
+    static_assert(std::is_same_v<Msg, MpscMsg>,
+                  "drive_pmpmc_cookie_ expects MpscMsg payload");
+
+    constexpr std::uint32_t NUM_PRODUCERS     = 4;
+    constexpr std::uint32_t NUM_CONSUMERS     = 4;
+    constexpr std::uint32_t MSGS_PER_PRODUCER = 1'500;
+    constexpr std::uint64_t EXPECTED_TOTAL =
+        static_cast<std::uint64_t>(NUM_PRODUCERS) * MSGS_PER_PRODUCER;
+
+    std::atomic<bool>          producers_done{false};
+    std::atomic<std::uint32_t> producers_finished{0};
+    std::atomic<std::uint64_t> total_received{0};
+    std::atomic<std::uint64_t> total_torn{0};
+    std::vector<std::vector<std::vector<std::uint32_t>>> per_cons_per_prod(
+        NUM_CONSUMERS,
+        std::vector<std::vector<std::uint32_t>>(NUM_PRODUCERS));
+
+    std::vector<std::jthread> consumers;
+    for (std::uint32_t cid = 0; cid < NUM_CONSUMERS; ++cid) {
+        consumers.emplace_back([&, cid](std::stop_token) noexcept {
+            while (total_received.load(std::memory_order_acquire) < EXPECTED_TOTAL) {
+                auto h_opt = ch.consumer();   // lend per-iter — pool churn
+                if (!h_opt) {
+                    if (producers_done.load() &&
+                        total_received.load() >= EXPECTED_TOTAL) break;
+                    std::this_thread::yield();
+                    continue;
+                }
+                auto opt = h_opt->try_pop();
+                if (!opt) {
+                    if (producers_done.load() &&
+                        total_received.load() >= EXPECTED_TOTAL) break;
+                    std::this_thread::yield();
+                    continue;
+                }
+                if (!verify_mpsc_msg_(*opt)) [[unlikely]] {
+                    total_torn.fetch_add(1, std::memory_order_acq_rel);
+                    continue;
+                }
+                if (opt->producer_id < NUM_PRODUCERS) {
+                    per_cons_per_prod[cid][opt->producer_id].push_back(opt->seq);
+                    total_received.fetch_add(1, std::memory_order_acq_rel);
+                }
+            }
+        });
+    }
+
+    std::vector<std::jthread> producers;
+    for (std::uint32_t pid = 0; pid < NUM_PRODUCERS; ++pid) {
+        producers.emplace_back([&, pid](std::stop_token) noexcept {
+            for (std::uint32_t s = 1; s <= MSGS_PER_PRODUCER; ++s) {
+                for (;;) {
+                    auto h_opt = ch.producer();   // lend per-iter
+                    if (!h_opt) { std::this_thread::yield(); continue; }
+                    if (h_opt->try_push(make_mpsc_msg_(pid, s))) break;
+                    std::this_thread::yield();
+                }
+            }
+            if (producers_finished.fetch_add(1, std::memory_order_acq_rel) + 1
+                == NUM_PRODUCERS) {
+                producers_done.store(true, std::memory_order_release);
+            }
+        });
+    }
+
+    for (auto& p : producers) p.join();
+    producers_done.store(true, std::memory_order_release);
+    for (auto& c : consumers) c.join();
+
+    CRUCIBLE_TEST_REQUIRE(total_torn.load() == 0);
+    CRUCIBLE_TEST_REQUIRE(total_received.load() == EXPECTED_TOTAL);
+
+    // Per-producer FIFO across consumers (SCQ guarantees per-producer
+    // ordering between any two consumers that both observe the messages).
+    for (std::uint32_t pid = 0; pid < NUM_PRODUCERS; ++pid) {
+        for (std::uint32_t cid = 0; cid < NUM_CONSUMERS; ++cid) {
+            const auto& seqs = per_cons_per_prod[cid][pid];
+            for (std::size_t i = 1; i < seqs.size(); ++i) {
+                CRUCIBLE_TEST_REQUIRE(seqs[i] > seqs[i - 1]);
+            }
+        }
+    }
+    // Exactly-once.
+    for (std::uint32_t pid = 0; pid < NUM_PRODUCERS; ++pid) {
+        std::vector<std::uint32_t> all_seqs;
+        for (std::uint32_t cid = 0; cid < NUM_CONSUMERS; ++cid)
+            for (auto s : per_cons_per_prod[cid][pid]) all_seqs.push_back(s);
+        CRUCIBLE_TEST_REQUIRE(all_seqs.size() == MSGS_PER_PRODUCER);
+        std::sort(all_seqs.begin(), all_seqs.end());
+        for (std::uint32_t i = 0; i < MSGS_PER_PRODUCER; ++i)
+            CRUCIBLE_TEST_REQUIRE(all_seqs[i] == i + 1);
+    }
+}
+
+// ── Driver: Permissioned MPSC ─────────────────────────────────────
+//
+// Shape: N pool producers × 1 linear consumer.  Consumer holds a
+// linear Permission for the lifetime of the test; producers lend per-
+// iter to exercise the producer pool.
+
+template <typename Channel>
+void drive_pmpsc_cookie_(Channel& ch) {
+    using Msg = typename Channel::value_type;
+    static_assert(std::is_same_v<Msg, MpscMsg>);
+
+    constexpr std::uint32_t NUM_PRODUCERS     = 4;
+    constexpr std::uint32_t MSGS_PER_PRODUCER = 1'500;
+    constexpr std::uint64_t EXPECTED_TOTAL =
+        static_cast<std::uint64_t>(NUM_PRODUCERS) * MSGS_PER_PRODUCER;
+
+    auto cons_perm = permission_root_mint<typename Channel::consumer_tag>();
+    auto consumer  = ch.consumer(std::move(cons_perm));
+
+    std::atomic<bool>          producers_done{false};
+    std::atomic<std::uint32_t> producers_finished{0};
+    std::vector<std::vector<std::uint32_t>> per_prod_seqs(NUM_PRODUCERS);
+    std::atomic<std::uint64_t> total_torn{0};
+
+    std::jthread cons_t([&](std::stop_token) noexcept {
+        std::uint64_t received = 0;
+        while (received < EXPECTED_TOTAL) {
+            auto opt = consumer.try_pop();
+            if (!opt) {
+                if (producers_done.load() && received >= EXPECTED_TOTAL) break;
+                std::this_thread::yield();
+                continue;
+            }
+            if (!verify_mpsc_msg_(*opt)) [[unlikely]] {
+                total_torn.fetch_add(1, std::memory_order_acq_rel);
+                continue;
+            }
+            if (opt->producer_id < NUM_PRODUCERS) {
+                per_prod_seqs[opt->producer_id].push_back(opt->seq);
+                ++received;
+            }
+        }
+    });
+
+    std::vector<std::jthread> producers;
+    for (std::uint32_t pid = 0; pid < NUM_PRODUCERS; ++pid) {
+        producers.emplace_back([&, pid](std::stop_token) noexcept {
+            for (std::uint32_t s = 1; s <= MSGS_PER_PRODUCER; ++s) {
+                for (;;) {
+                    auto h_opt = ch.producer();
+                    if (!h_opt) { std::this_thread::yield(); continue; }
+                    if (h_opt->try_push(make_mpsc_msg_(pid, s))) break;
+                    std::this_thread::yield();
+                }
+            }
+            if (producers_finished.fetch_add(1, std::memory_order_acq_rel) + 1
+                == NUM_PRODUCERS) {
+                producers_done.store(true, std::memory_order_release);
+            }
+        });
+    }
+
+    for (auto& p : producers) p.join();
+    producers_done.store(true, std::memory_order_release);
+    cons_t.join();
+
+    CRUCIBLE_TEST_REQUIRE(total_torn.load() == 0);
+    // Per-producer FIFO (single consumer, MPSC strict per-producer ordering).
+    for (std::uint32_t pid = 0; pid < NUM_PRODUCERS; ++pid) {
+        const auto& seqs = per_prod_seqs[pid];
+        CRUCIBLE_TEST_REQUIRE(seqs.size() == MSGS_PER_PRODUCER);
+        for (std::uint32_t i = 0; i < MSGS_PER_PRODUCER; ++i)
+            CRUCIBLE_TEST_REQUIRE(seqs[i] == i + 1);
+    }
+}
+
+// ── Driver: Permissioned ChaseLevDeque (Lifo policy) ──────────────
+//
+// Shape: 1 linear owner pushing K items, then owner pops while N
+// pool thieves steal.  Every value 1..K appears exactly once across
+// owner pops + thief steals.  Cookie packed into the uint64 because
+// ChaseLev requires lock-free atomic value type.
+
+template <typename Channel>
+void drive_pchase_lev_cookie_(Channel& deq) {
+    using Msg = typename Channel::value_type;
+    static_assert(std::is_same_v<Msg, std::uint64_t>);
+
+    // Owner pushes all items first then drains in parallel with thieves;
+    // we must fit the entire batch in the deque's capacity.  Channel::
+    // capacity() varies between Section II (4096) and the scheduler::Lifo
+    // policy default (1024); take a safe headroom of 16.
+    const std::uint32_t NUM_ITEMS =
+        static_cast<std::uint32_t>(Channel::capacity() - 16);
+    constexpr int       NUM_THIEVES = 4;
+
+    auto owner_perm = permission_root_mint<typename Channel::owner_tag>();
+    auto owner = deq.owner(std::move(owner_perm));
+
+    // Owner pushes all items first.
+    for (std::uint32_t i = 1; i <= NUM_ITEMS; ++i) {
+        const bool ok = owner.try_push(make_lifo_msg_(i));
+        CRUCIBLE_TEST_REQUIRE(ok);
+    }
+
+    std::atomic<bool> stop_thieves{false};
+    std::atomic<std::uint64_t> total_torn{0};
+    std::vector<std::vector<std::uint32_t>> stolen(NUM_THIEVES);
+    std::vector<std::uint32_t> owner_popped;
+
+    std::vector<std::jthread> thieves;
+    for (std::size_t t = 0; t < static_cast<std::size_t>(NUM_THIEVES); ++t) {
+        thieves.emplace_back([&, t](std::stop_token) noexcept {
+            while (!stop_thieves.load(std::memory_order_acquire)) {
+                auto h_opt = deq.thief();
+                if (!h_opt) { std::this_thread::yield(); continue; }
+                auto v = h_opt->try_steal();
+                if (v) {
+                    if (!verify_lifo_msg_(*v)) [[unlikely]] {
+                        total_torn.fetch_add(1, std::memory_order_acq_rel);
+                        continue;
+                    }
+                    stolen[t].push_back(lifo_msg_seq_(*v));
+                } else {
+                    std::this_thread::yield();
+                }
+            }
+        });
+    }
+
+    std::jthread owner_t([&](std::stop_token) noexcept {
+        for (;;) {
+            auto v = owner.try_pop();
+            if (!v) break;
+            if (!verify_lifo_msg_(*v)) [[unlikely]] {
+                total_torn.fetch_add(1, std::memory_order_acq_rel);
+                continue;
+            }
+            owner_popped.push_back(lifo_msg_seq_(*v));
+        }
+    });
+    owner_t.join();
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    stop_thieves.store(true, std::memory_order_release);
+    for (auto& t : thieves) t.join();
+
+    CRUCIBLE_TEST_REQUIRE(total_torn.load() == 0);
+    std::set<std::uint32_t> all_items;
+    std::size_t total = owner_popped.size();
+    for (auto v : owner_popped) {
+        CRUCIBLE_TEST_REQUIRE(all_items.insert(v).second);
+    }
+    for (auto const& thief_loot : stolen) {
+        total += thief_loot.size();
+        for (auto v : thief_loot) {
+            CRUCIBLE_TEST_REQUIRE(all_items.insert(v).second);
+        }
+    }
+    CRUCIBLE_TEST_REQUIRE(total == NUM_ITEMS);
+    CRUCIBLE_TEST_REQUIRE(all_items.size() == NUM_ITEMS);
+    for (std::uint32_t i = 1; i <= NUM_ITEMS; ++i) {
+        CRUCIBLE_TEST_REQUIRE(all_items.contains(i));
+    }
+}
+
+// ── Driver: Permissioned ShardedGrid (LocalityAware policy) ───────
+//
+// Shape: M static producers × N static consumers (M=N=4 fixed for
+// this driver — matches scheduler::LocalityAware's default shards).
+// Each producer round-robins its msgs across its row of N cells.
+
+template <typename Channel>
+void drive_psharded_grid_cookie_(Channel& grid) {
+    using Msg = typename Channel::value_type;
+    static_assert(std::is_same_v<Msg, MpscMsg>);
+    constexpr std::size_t M = Channel::num_producers;
+    constexpr std::size_t N = Channel::num_consumers;
+    static_assert(M == 4 && N == 4,
+                  "drive_psharded_grid_cookie_ hardcodes M=N=4");
+
+    constexpr std::uint32_t MSGS_PER_PROD = 1'500;
+    constexpr std::uint64_t EXPECTED_TOTAL =
+        static_cast<std::uint64_t>(M) * MSGS_PER_PROD;
+
+    using WT = typename Channel::whole_tag;
+    auto whole = permission_root_mint<WT>();
+    auto perms = split_grid<WT, M, N>(std::move(whole));
+
+    auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
+    auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));
+    auto p2 = grid.template producer<2>(std::move(std::get<2>(perms.producers)));
+    auto p3 = grid.template producer<3>(std::move(std::get<3>(perms.producers)));
+    auto c0 = grid.template consumer<0>(std::move(std::get<0>(perms.consumers)));
+    auto c1 = grid.template consumer<1>(std::move(std::get<1>(perms.consumers)));
+    auto c2 = grid.template consumer<2>(std::move(std::get<2>(perms.consumers)));
+    auto c3 = grid.template consumer<3>(std::move(std::get<3>(perms.consumers)));
+
+    std::atomic<bool>          producers_done{false};
+    std::atomic<std::uint32_t> producers_finished{0};
+    std::atomic<std::uint64_t> total_received{0};
+    std::atomic<std::uint64_t> total_torn{0};
+    std::vector<std::vector<std::uint32_t>> per_prod_collected(M);
+    std::mutex collected_mu;
+
+    auto run_producer = [&](auto& handle, std::uint32_t pid) {
+        for (std::uint32_t s = 1; s <= MSGS_PER_PROD; ++s) {
+            while (!handle.try_push(make_mpsc_msg_(pid, s))) {
+                std::this_thread::yield();
+            }
+        }
+        if (producers_finished.fetch_add(1, std::memory_order_acq_rel) + 1
+            == M) {
+            producers_done.store(true, std::memory_order_release);
+        }
+    };
+
+    auto run_consumer = [&](auto& handle) {
+        while (total_received.load(std::memory_order_acquire) < EXPECTED_TOTAL) {
+            auto opt = handle.try_pop();
+            if (!opt) {
+                if (producers_done.load() &&
+                    total_received.load() >= EXPECTED_TOTAL) break;
+                std::this_thread::yield();
+                continue;
+            }
+            if (!verify_mpsc_msg_(*opt)) [[unlikely]] {
+                total_torn.fetch_add(1, std::memory_order_acq_rel);
+                continue;
+            }
+            if (opt->producer_id < M) {
+                {
+                    std::scoped_lock lk{collected_mu};
+                    per_prod_collected[opt->producer_id].push_back(opt->seq);
+                }
+                total_received.fetch_add(1, std::memory_order_acq_rel);
+            }
+        }
+    };
+
+    std::jthread t_p0([&](std::stop_token){ run_producer(p0, 0); });
+    std::jthread t_p1([&](std::stop_token){ run_producer(p1, 1); });
+    std::jthread t_p2([&](std::stop_token){ run_producer(p2, 2); });
+    std::jthread t_p3([&](std::stop_token){ run_producer(p3, 3); });
+    std::jthread t_c0([&](std::stop_token){ run_consumer(c0); });
+    std::jthread t_c1([&](std::stop_token){ run_consumer(c1); });
+    std::jthread t_c2([&](std::stop_token){ run_consumer(c2); });
+    std::jthread t_c3([&](std::stop_token){ run_consumer(c3); });
+
+    t_p0.join(); t_p1.join(); t_p2.join(); t_p3.join();
+    producers_done.store(true, std::memory_order_release);
+    t_c0.join(); t_c1.join(); t_c2.join(); t_c3.join();
+
+    CRUCIBLE_TEST_REQUIRE(total_torn.load() == 0);
+    CRUCIBLE_TEST_REQUIRE(total_received.load() == EXPECTED_TOTAL);
+    for (std::uint32_t pid = 0; pid < M; ++pid) {
+        auto& seqs = per_prod_collected[pid];
+        CRUCIBLE_TEST_REQUIRE(seqs.size() == MSGS_PER_PROD);
+        std::sort(seqs.begin(), seqs.end());
+        for (std::uint32_t i = 0; i < MSGS_PER_PROD; ++i)
+            CRUCIBLE_TEST_REQUIRE(seqs[i] == i + 1);
+    }
+}
+
+// ── Driver: Permissioned CalendarGrid (Deadline/Cfs/Eevdf) ────────
+//
+// Shape: M static producers × 1 linear consumer.  Each producer
+// pushes priority-keyed PriorityMsg.
+//
+// What's verified:
+//   * Cookie integrity per message (no torn writes — the load-bearing
+//     CSL property at the handle boundary).
+//   * Exactly-once delivery via a global seen[] vector: each unique
+//     (producer_id, seq) appears exactly once at the consumer.
+//
+// What's NOT verified (by design):
+//   * Per-producer FIFO at the consumer.  Calendar grid's bucket-
+//     clamp invariant trades strict per-producer FIFO for monotone
+//     priority delivery under bucket wraparound.  When a producer
+//     pushes faster than the consumer drains, late messages can be
+//     forced to the current bucket regardless of their notional
+//     priority — bucket order is preserved, not per-producer order.
+//     This matches test_permissioned_calendar_grid.cpp::Tier 6's
+//     verification scope.
+
+template <typename Channel>
+void drive_pcalendar_cookie_(Channel& grid) {
+    using Msg = typename Channel::value_type;
+    static_assert(std::is_same_v<Msg, PriorityMsg>);
+    constexpr std::size_t M = Channel::num_producers;
+    static_assert(M == 4, "drive_pcalendar_cookie_ hardcodes M=4");
+
+    constexpr std::uint32_t MSGS_PER_PROD = 800;
+    constexpr std::uint32_t EXPECTED_TOTAL =
+        static_cast<std::uint32_t>(M) * MSGS_PER_PROD;
+
+    using WT = typename Channel::whole_tag;
+    auto whole = permission_root_mint<WT>();
+    auto perms = split_grid<WT, M, 1>(std::move(whole));
+
+    auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
+    auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));
+    auto p2 = grid.template producer<2>(std::move(std::get<2>(perms.producers)));
+    auto p3 = grid.template producer<3>(std::move(std::get<3>(perms.producers)));
+    auto cons = grid.consumer(std::move(std::get<0>(perms.consumers)));
+
+    std::atomic<bool>          producers_done{false};
+    std::atomic<std::uint32_t> producers_finished{0};
+    std::atomic<std::uint64_t> total_received{0};
+    std::atomic<std::uint64_t> total_torn{0};
+    // Each (producer_id, seq) pair encodes to a unique payload index;
+    // seen[idx] flips at most once (catches duplicates across the
+    // bucket-clamp + scan path).
+    std::vector<bool> seen(EXPECTED_TOTAL, false);
+    std::mutex seen_mu;
+
+    auto run_producer = [&](auto& handle, std::uint32_t pid) {
+        // Spread keys across many buckets but stay well under
+        // NumBuckets to avoid wraparound (which collapses calendar
+        // priority into FIFO behavior).
+        std::uint64_t key = pid * 100ULL;
+        for (std::uint32_t s = 1; s <= MSGS_PER_PROD; ++s) {
+            key += 1000;
+            while (!handle.try_push(make_priority_msg_(pid, s, key))) {
+                std::this_thread::yield();
+            }
+        }
+        if (producers_finished.fetch_add(1, std::memory_order_acq_rel) + 1
+            == M) {
+            producers_done.store(true, std::memory_order_release);
+        }
+    };
+
+    std::jthread t_p0([&](std::stop_token){ run_producer(p0, 0); });
+    std::jthread t_p1([&](std::stop_token){ run_producer(p1, 1); });
+    std::jthread t_p2([&](std::stop_token){ run_producer(p2, 2); });
+    std::jthread t_p3([&](std::stop_token){ run_producer(p3, 3); });
+
+    std::jthread cons_t([&](std::stop_token) noexcept {
+        while (total_received.load(std::memory_order_acquire) < EXPECTED_TOTAL) {
+            auto opt = cons.try_pop();
+            if (!opt) {
+                if (producers_done.load() &&
+                    total_received.load() >= EXPECTED_TOTAL) break;
+                std::this_thread::yield();
+                continue;
+            }
+            if (!verify_priority_msg_(*opt)) [[unlikely]] {
+                total_torn.fetch_add(1, std::memory_order_acq_rel);
+                continue;
+            }
+            if (opt->producer_id < M && opt->seq >= 1 &&
+                opt->seq <= MSGS_PER_PROD) {
+                const std::uint32_t idx =
+                    opt->producer_id * MSGS_PER_PROD + (opt->seq - 1);
+                std::scoped_lock lk{seen_mu};
+                if (seen[idx]) {
+                    // Duplicate delivery — protocol violation.
+                    total_torn.fetch_add(1, std::memory_order_acq_rel);
+                    continue;
+                }
+                seen[idx] = true;
+                total_received.fetch_add(1, std::memory_order_acq_rel);
+            }
+        }
+    });
+
+    t_p0.join(); t_p1.join(); t_p2.join(); t_p3.join();
+    producers_done.store(true, std::memory_order_release);
+    cons_t.join();
+
+    CRUCIBLE_TEST_REQUIRE(total_torn.load() == 0);
+    CRUCIBLE_TEST_REQUIRE(total_received.load() == EXPECTED_TOTAL);
+    // Exactly-once: every (pid, seq) appeared.
+    for (std::uint32_t i = 0; i < EXPECTED_TOTAL; ++i) {
+        CRUCIBLE_TEST_REQUIRE(seen[i]);
+    }
+}
+
+// ── Driver: Permissioned SPSC ─────────────────────────────────────
+
+template <typename Channel>
+void drive_pspsc_cookie_(Channel& ch) {
+    using Msg = typename Channel::value_type;
+    static_assert(std::is_same_v<Msg, MpscMsg>);
+
+    constexpr std::uint32_t NUM_MSGS = 5'000;
+
+    auto whole = permission_root_mint<typename Channel::whole_tag>();
+    auto [pp, cp] = permission_split<typename Channel::producer_tag,
+                                      typename Channel::consumer_tag>(
+        std::move(whole));
+    auto producer = ch.producer(std::move(pp));
+    auto consumer = ch.consumer(std::move(cp));
+
+    std::atomic<std::uint32_t> received{0};
+    std::vector<std::uint32_t> received_seqs;
+    received_seqs.reserve(NUM_MSGS);
+    std::atomic<std::uint64_t> total_torn{0};
+
+    std::jthread cons_t([&](std::stop_token) noexcept {
+        while (received.load(std::memory_order_acquire) < NUM_MSGS) {
+            auto opt = consumer.try_pop();
+            if (!opt) { std::this_thread::yield(); continue; }
+            if (!verify_mpsc_msg_(*opt)) [[unlikely]] {
+                total_torn.fetch_add(1, std::memory_order_acq_rel);
+                continue;
+            }
+            received_seqs.push_back(opt->seq);
+            received.fetch_add(1, std::memory_order_acq_rel);
+        }
+    });
+
+    std::jthread prod_t([&](std::stop_token) noexcept {
+        for (std::uint32_t s = 1; s <= NUM_MSGS; ++s) {
+            while (!producer.try_push(make_mpsc_msg_(/*pid=*/0, s))) {
+                std::this_thread::yield();
+            }
+        }
+    });
+
+    prod_t.join();
+    cons_t.join();
+
+    CRUCIBLE_TEST_REQUIRE(total_torn.load() == 0);
+    CRUCIBLE_TEST_REQUIRE(received_seqs.size() == NUM_MSGS);
+    for (std::uint32_t i = 0; i < NUM_MSGS; ++i)
+        CRUCIBLE_TEST_REQUIRE(received_seqs[i] == i + 1);
+}
+
+// ─── Section II named tests — direct wrapper instantiation ───────
+
+struct PSpscCookieTag      {};
+struct PMpscCookieTag      {};
+struct PMpmcCookieTag      {};
+struct PShardedCookieTag   {};
+struct PChaseLevCookieTag  {};
+struct PCalCookieTag       {};
+
+void test_permissioned_spsc_cookie_fuzzer() {
+    PermissionedSpscChannel<MpscMsg, 256, PSpscCookieTag> ch;
+    drive_pspsc_cookie_(ch);
+}
+
+void test_permissioned_mpsc_cookie_fuzzer() {
+    PermissionedMpscChannel<MpscMsg, 1024, PMpscCookieTag> ch;
+    drive_pmpsc_cookie_(ch);
+}
+
+void test_permissioned_mpmc_cookie_fuzzer() {
+    PermissionedMpmcChannel<MpscMsg, 1024, PMpmcCookieTag> ch;
+    drive_pmpmc_cookie_(ch);
+}
+
+void test_permissioned_chase_lev_cookie_fuzzer() {
+    PermissionedChaseLevDeque<std::uint64_t, 4096, PChaseLevCookieTag> deq;
+    drive_pchase_lev_cookie_(deq);
+}
+
+void test_permissioned_sharded_grid_cookie_fuzzer() {
+    PermissionedShardedGrid<MpscMsg, 4, 4, 256, PShardedCookieTag> grid;
+    drive_psharded_grid_cookie_(grid);
+}
+
+void test_permissioned_calendar_cookie_fuzzer() {
+    // M=4 producers, NumBuckets=1024, BucketCap=128, QuantumNs=1000.
+    // Bucket window = 1024 × 1000 = 1.024M key-units; producers stride
+    // 1000/key so each lands in successive buckets, well within window.
+    // Heap-allocated — the calendar grid is ~13 MB (4 × 1024 × 128 ×
+    // sizeof(SpscRing slot)), too large for the default 8 MB stack.
+    using Grid = PermissionedCalendarGrid<PriorityMsg, 4, 1024, 128,
+                                          PriorityKey, /*QuantumNs=*/1000ULL,
+                                          PCalCookieTag>;
+    auto grid_ptr = std::make_unique<Grid>();
+    drive_pcalendar_cookie_(*grid_ptr);
+}
+
+// ═════════════════════════════════════════════════════════════════
+// SECTION III — Scheduler policy queue_template stress
+// ═════════════════════════════════════════════════════════════════
+//
+// Each scheduler policy's queue_template<Job> resolves to one of the
+// Section-II Permissioned wrappers — but with a DIFFERENT UserTag
+// (scheduler::tag::Fifo vs PMpmcCookieTag, etc.).  Because UserTag
+// participates in the wrapper's Permission tree, the resulting types
+// are genuinely distinct.  Re-running the same adversarial workload
+// through the policy alias verifies the policy → wrapper mapping is
+// end-to-end correct.
+
+namespace cs = crucible::concurrent::scheduler;
+
+// PriorityMsg-flavored Deadline / Cfs / Eevdf policy instantiations
+// matching the Section-II calendar grid configuration (M=4, 1024
+// buckets, BucketCap=128, Quantum=1000).
+using SchedDeadline = cs::Deadline<PriorityKey, 4, 1024, 128, 1000ULL>;
+using SchedCfs      = cs::Cfs<PriorityKey,      4, 1024, 128, 1000ULL>;
+using SchedEevdf    = cs::Eevdf<PriorityKey,    4, 1024, 128, 1000ULL>;
+
+void test_scheduler_fifo_cookie_fuzzer() {
+    typename cs::Fifo::template queue_template<MpscMsg> ch;
+    drive_pmpmc_cookie_(ch);
+}
+
+void test_scheduler_lifo_cookie_fuzzer() {
+    typename cs::Lifo::template queue_template<std::uint64_t> deq;
+    drive_pchase_lev_cookie_(deq);
+}
+
+void test_scheduler_round_robin_cookie_fuzzer() {
+    typename cs::RoundRobin::template queue_template<MpscMsg> ch;
+    drive_pmpsc_cookie_(ch);
+}
+
+void test_scheduler_locality_aware_cookie_fuzzer() {
+    typename cs::LocalityAware::template queue_template<MpscMsg> grid;
+    drive_psharded_grid_cookie_(grid);
+}
+
+void test_scheduler_deadline_cookie_fuzzer() {
+    using QT = typename SchedDeadline::template queue_template<PriorityMsg>;
+    auto grid = std::make_unique<QT>();
+    drive_pcalendar_cookie_(*grid);
+}
+
+void test_scheduler_cfs_cookie_fuzzer() {
+    using QT = typename SchedCfs::template queue_template<PriorityMsg>;
+    auto grid = std::make_unique<QT>();
+    drive_pcalendar_cookie_(*grid);
+}
+
+void test_scheduler_eevdf_cookie_fuzzer() {
+    using QT = typename SchedEevdf::template queue_template<PriorityMsg>;
+    auto grid = std::make_unique<QT>();
+    drive_pcalendar_cookie_(*grid);
+}
+
 }  // namespace
 
 int main() {
@@ -809,6 +1777,42 @@ int main() {
              test_pool_refcount_conservation);
     run_test("parallel_for_views nested integrity (5 rounds)",
              test_parallel_for_nested_integrity);
+
+    // ─── Section I additions ──────────────────────────────────────
+    run_test("Raw MpmcRing (SCQ) cookie fuzzer (4P × 4C)",
+             test_raw_mpmc_ring_cookie_fuzzer);
+    run_test("Raw ShardedSpscGrid cookie fuzzer (4P × 4C)",
+             test_raw_sharded_grid_cookie_fuzzer);
+
+    // ─── Section II — Permissioned wrappers handle-boundary stress ──
+    run_test("PermissionedSpscChannel cookie fuzzer",
+             test_permissioned_spsc_cookie_fuzzer);
+    run_test("PermissionedMpscChannel cookie fuzzer (4P × 1C linear)",
+             test_permissioned_mpsc_cookie_fuzzer);
+    run_test("PermissionedMpmcChannel cookie fuzzer (4P × 4C pool churn)",
+             test_permissioned_mpmc_cookie_fuzzer);
+    run_test("PermissionedChaseLevDeque cookie fuzzer (1 owner + 4 thieves)",
+             test_permissioned_chase_lev_cookie_fuzzer);
+    run_test("PermissionedShardedGrid cookie fuzzer (4×4 grid)",
+             test_permissioned_sharded_grid_cookie_fuzzer);
+    run_test("PermissionedCalendarGrid cookie fuzzer (4P × 1C priority)",
+             test_permissioned_calendar_cookie_fuzzer);
+
+    // ─── Section III — Scheduler policy queue_template stress ────
+    run_test("scheduler::Fifo queue_template cookie fuzzer",
+             test_scheduler_fifo_cookie_fuzzer);
+    run_test("scheduler::Lifo queue_template cookie fuzzer",
+             test_scheduler_lifo_cookie_fuzzer);
+    run_test("scheduler::RoundRobin queue_template cookie fuzzer",
+             test_scheduler_round_robin_cookie_fuzzer);
+    run_test("scheduler::LocalityAware queue_template cookie fuzzer",
+             test_scheduler_locality_aware_cookie_fuzzer);
+    run_test("scheduler::Deadline<K> queue_template cookie fuzzer",
+             test_scheduler_deadline_cookie_fuzzer);
+    run_test("scheduler::Cfs<K> queue_template cookie fuzzer",
+             test_scheduler_cfs_cookie_fuzzer);
+    run_test("scheduler::Eevdf<K> queue_template cookie fuzzer",
+             test_scheduler_eevdf_cookie_fuzzer);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);
