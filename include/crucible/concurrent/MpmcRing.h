@@ -402,6 +402,43 @@ public:
         }
     }
 
+    // ── try_push_batch ──────────────────────────────────────────────
+    //
+    // Batched MPMC push.  Calls try_push per item; returns the number
+    // pushed before the first failure.  Per-item amortized cost is
+    // higher than SPSC's batched API because each item still pays the
+    // SCQ FAA + cell CAS — the batch shape is ergonomic, not a
+    // throughput optimization.  Use bare try_push when caller wants
+    // per-item retry control.
+    //
+    // Per-call shape: N × try_push, short-circuit on first false.
+    [[nodiscard, gnu::hot]] std::size_t try_push_batch(
+        std::span<const T> items) noexcept
+    {
+        std::size_t pushed = 0;
+        for (const T& item : items) {
+            if (!try_push(item)) break;
+            ++pushed;
+        }
+        return pushed;
+    }
+
+    // ── try_pop_batch ───────────────────────────────────────────────
+    //
+    // Batched MPMC pop.  Calls try_pop per slot in `out`; returns the
+    // number filled before the first nullopt.  Same per-item cost
+    // tradeoff as try_push_batch.
+    [[nodiscard, gnu::hot]] std::size_t try_pop_batch(std::span<T> out) noexcept {
+        std::size_t popped = 0;
+        for (T& slot : out) {
+            auto v = try_pop();
+            if (!v) break;
+            slot = std::move(*v);
+            ++popped;
+        }
+        return popped;
+    }
+
     // ── Diagnostics (approximate; not on hot path) ──────────────────
 
     [[nodiscard]] std::size_t size_approx() const noexcept {
