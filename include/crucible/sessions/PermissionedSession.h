@@ -120,10 +120,12 @@
 
 #include <crucible/Platform.h>
 #include <crucible/handles/OneShotFlag.h>
+#include <crucible/permissions/PermissionFork.h>
 #include <crucible/permissions/PermSet.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/SessionGlobal.h>
 #include <crucible/sessions/SessionPermPayloads.h>
 
 #include <cstdio>
@@ -224,7 +226,8 @@ template <typename R,
             "each iteration so the net PS evolution is zero.");
 
         return PermissionedSessionHandle<LoopBody, LoopEntryPS,
-                                         Resource, LoopCtx>{std::move(r), loc};
+                                         Resource, LoopCtx>{
+            std::forward<Resource>(r), loc};
     } else if constexpr (is_loop_v<R>) {
         using InnerBody = typename R::body;
         using InnerCtx  = LoopContext<InnerBody, PS>;
@@ -232,13 +235,14 @@ template <typename R,
         // entry_perm_set captures the PS at Loop entry.  This is what
         // gives nested Loops their own balance check.
         return PermissionedSessionHandle<InnerBody, PS,
-                                         Resource, InnerCtx>{std::move(r), loc};
+                                         Resource, InnerCtx>{
+            std::forward<Resource>(r), loc};
     } else {
         // Plain head (End / Stop / Send / Recv / Select / Offer).  Wrap
         // and continue.  No PS evolution at the wrap step itself —
         // evolution happens on the consumer call (send/recv/etc.).
         return PermissionedSessionHandle<R, PS, Resource, LoopCtx>{
-            std::move(r), loc};
+            std::forward<Resource>(r), loc};
     }
 }
 
@@ -311,7 +315,7 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : SessionHandleBase<End,
                             PermissionedSessionHandle<End, PS, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+        , resource_{std::forward<Resource>(r)} {}
 
     constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
@@ -356,7 +360,7 @@ public:
             "before End.  Reaching End with leftover authority is "
             "structurally a permission leak.");
         this->mark_consumed_();
-        return std::move(resource_);
+        return std::forward<Resource>(resource_);
     }
 
     [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
@@ -398,7 +402,7 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : SessionHandleBase<Stop,
                             PermissionedSessionHandle<Stop, PS, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+        , resource_{std::forward<Resource>(r)} {}
 
     constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
@@ -422,7 +426,7 @@ public:
             "behaviour, surrender the permissions explicitly before "
             "Stop instead of relying on close to do it implicitly.");
         this->mark_consumed_();
-        return std::move(resource_);
+        return std::forward<Resource>(resource_);
     }
 
     [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
@@ -467,7 +471,7 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : SessionHandleBase<Send<T, R>,
                             PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+        , resource_{std::forward<Resource>(r)} {}
 
     constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
@@ -519,7 +523,7 @@ public:
         this->mark_consumed_();
         using NextPS = compute_perm_set_after_send_t<PS, T>;
         return detail::step_to_next_permissioned<R, NextPS, Resource, LoopCtx>(
-            std::move(resource_));
+            std::forward<Resource>(resource_));
     }
 
     [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
@@ -564,7 +568,7 @@ public:
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
         : SessionHandleBase<Recv<T, R>,
                             PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+        , resource_{std::forward<Resource>(r)} {}
 
     constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
@@ -594,7 +598,7 @@ public:
         using NextPS = compute_perm_set_after_recv_t<PS, T>;
         auto next = detail::step_to_next_permissioned<R, NextPS,
                                                       Resource, LoopCtx>(
-            std::move(resource_));
+            std::forward<Resource>(resource_));
         return std::pair{std::move(value), std::move(next)};
     }
 
@@ -660,7 +664,7 @@ public:
         : SessionHandleBase<Select<Branches...>,
                             PermissionedSessionHandle<Select<Branches...>, PS,
                                                       Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+        , resource_{std::forward<Resource>(r)} {}
 
     constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
@@ -693,7 +697,7 @@ public:
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
         return detail::step_to_next_permissioned<Chosen, PS,
                                                  Resource, LoopCtx>(
-            std::move(resource_));
+            std::forward<Resource>(resource_));
     }
 
     // Wire-omitting variant — same naming discipline as the bare
@@ -711,7 +715,7 @@ public:
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
         return detail::step_to_next_permissioned<Chosen, PS,
                                                  Resource, LoopCtx>(
-            std::move(resource_));
+            std::forward<Resource>(resource_));
     }
 
     // Match the bare framework's deletion of bare select<I>() to keep
@@ -776,7 +780,7 @@ public:
         : SessionHandleBase<Offer<Branches...>,
                             PermissionedSessionHandle<Offer<Branches...>, PS,
                                                       Resource, LoopCtx>>{loc}
-        , resource_{std::move(r)} {}
+        , resource_{std::forward<Resource>(r)} {}
 
     constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
     constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
@@ -796,7 +800,7 @@ public:
     {
         const std::size_t idx = std::invoke(transport, resource_);
         this->mark_consumed_();
-        return dispatch_branch_(idx, std::move(resource_), std::move(handler),
+        return dispatch_branch_(idx, std::forward<Resource>(resource_), std::move(handler),
                                 std::make_index_sequence<sizeof...(Branches)>{});
     }
 
@@ -813,7 +817,7 @@ public:
         using Chosen = std::tuple_element_t<I, std::tuple<Branches...>>;
         return detail::step_to_next_permissioned<Chosen, PS,
                                                  Resource, LoopCtx>(
-            std::move(resource_));
+            std::forward<Resource>(resource_));
     }
 
     template <std::size_t I>
@@ -831,7 +835,7 @@ private:
     static constexpr auto make_branch_handle_(Resource r) {
         using B = std::tuple_element_t<I, std::tuple<Branches...>>;
         return detail::step_to_next_permissioned<B, PS, Resource, LoopCtx>(
-            std::move(r));
+            std::forward<Resource>(r));
     }
 
     template <std::size_t... Is, typename Handler>
@@ -853,7 +857,7 @@ private:
             ([&]() {
                 if (!dispatched && idx == Is) {
                     std::invoke(std::move(handler),
-                                make_branch_handle_<Is>(std::move(res)));
+                                make_branch_handle_<Is>(std::forward<Resource>(res)));
                     dispatched = true;
                 }
             }(), ...);
@@ -863,7 +867,7 @@ private:
             ([&]() {
                 if (!dispatched && idx == Is) {
                     result.emplace(std::invoke(std::move(handler),
-                                                make_branch_handle_<Is>(std::move(res))));
+                                                make_branch_handle_<Is>(std::forward<Resource>(res))));
                     dispatched = true;
                 }
             }(), ...);
@@ -920,14 +924,14 @@ template <typename Proto, typename Resource, typename... InitPerms>
         using Ctx  = LoopContext<Body, InitialPS>;
         return detail::step_to_next_permissioned<Body, InitialPS,
                                                  Resource, Ctx>(
-            std::move(r));
+            std::forward<Resource>(r));
     } else {
         static_assert(!std::is_same_v<Proto, Continue>,
             "crucible::session::diagnostic [Continue_Without_Loop]: "
             "establish_permissioned<Continue>: Continue cannot be the "
             "top-level protocol.");
         return PermissionedSessionHandle<Proto, InitialPS, Resource,
-                                          void>{std::move(r)};
+                                          void>{std::forward<Resource>(r)};
     }
 }
 
@@ -1005,48 +1009,139 @@ template <typename PSH, typename Body>
 }
 
 // ═════════════════════════════════════════════════════════════════
-// ── session_fork — STUB pending Phase 4 ──────────────────────────
+// ── session_fork — multi-party session establishment ─────────────
 // ═════════════════════════════════════════════════════════════════
 //
-// Phase 4 of FOUND-C ships the full session_fork<G, Whole,
-// RolePerms…> primitive.  It depends on:
+// Phase 4 of FOUND-C (Task #616).  Establishes a multi-party session
+// from a global type G + per-role permissions, spawning one jthread
+// per role with the role's projected protocol view.  Composes:
 //
-//   * sessions/SessionGlobal.h::project_t<G, Role> for per-role
-//     local-protocol projection.  Plain merging only in v1; diverging-
-//     multiparty protocols (Raft, 2PC-with-multi-followers) wait on
-//     Task #381 (full coinductive merging).
-//   * permissions/Permission.h::permission_combine_n for rebuilding
-//     the parent Permission after all role bodies join (Phase 1.5
-//     shipped this).
+//   * sessions/SessionGlobal.h::Project<G, Role> for per-role local-
+//     protocol projection.  v1 supports protocols that DON'T require
+//     plain-merging at non-sender/non-receiver roles.  Diverging
+//     multiparty (Raft, 2PC-with-multi-followers) requires full
+//     coinductive merging (Task #381) — until that lands, those
+//     globals fail at the Project<...> instantiation site, naming
+//     the divergent branch.
 //   * permissions/PermissionFork.h::permission_fork for the structured
-//     fork-join over std::jthread (already shipped).
+//     fork-join over std::jthread + RAII Whole rebuild on join.
+//   * splits_into_pack<Whole, RolePerms...> manifest must be declared
+//     by the user in the same TU as the role-tag definitions (per
+//     the CSL discipline in permissions/Permission.h).
 //
-// Until Phase 4 lands, calling this stub is a static_assert with the
-// failure-only-on-instantiation idiom (the std::false_type<Whole>
-// dance) so other headers that include this one do not trip the
-// assert at every TU.
+// API:
+//
+//   template <typename G, typename Whole, typename... RolePerms,
+//             typename SharedChannel, typename... Bodies>
+//   [[nodiscard]] Permission<Whole> session_fork(
+//       SharedChannel& ch,
+//       Permission<Whole>&& whole,
+//       Bodies&&... bodies);
+//
+//   * G            — a global protocol type from SessionGlobal.h
+//                    (Transmission / Choice / Rec_G / End_G / StopG)
+//   * Whole        — the parent permission tag the user holds
+//   * RolePerms... — one tag per participating role; order matches Bodies
+//   * SharedChannel — Pinned channel shared by all roles' transports
+//                    (passed by lvalue reference); each role's PSH binds
+//                    its Resource = SharedChannel&
+//   * Bodies       — one callable per role, signature
+//                    `Body_i(PermissionedSessionHandle<project_t<G, Role_i>,
+//                                                       PermSet<Role_i>,
+//                                                       SharedChannel&>&&)
+//                    -> void`
+//                    (must be noexcept, per permission_fork's invariant)
+//
+// Returns: the rebuilt Permission<Whole> after all role threads join.
+//
+// Discipline:
+//
+//   * Each role's body is responsible for advancing its projected
+//     protocol to a terminal state (End / Stop) AND for either
+//     surrendering its role permission via the protocol (Send<Returned
+//     <..., RolePerm>>) before close, OR for calling .detach(reason)
+//     to drop PS without the close-time perm-surrender check.
+//   * For protocols where each role's projected local type doesn't
+//     consume its role permission via the wire, the body uses
+//     detach(detach_reason::TestInstrumentation{} or similar) to
+//     terminate cleanly with non-empty PS.  This is the "role
+//     permission as proof of participation" pattern — the type
+//     system only checks that the role HOLDS the perm during its
+//     session; surrender is at the body author's discretion.
+//
+// What this does NOT support (v1 limitations):
+//
+//   * Diverging multiparty (Raft, MoE all-to-all): blocked on Task
+//     #381 (full coinductive merging in SessionGlobal.h::plain_merge_t).
+//     Project<G, ThirdPartyRole> for diverging G fails with the
+//     framework's existing plain-merge diagnostic.
+//   * Cross-process roles (CNTP): the SharedChannel reference is a
+//     within-process abstraction.  Cross-process forks need cross-
+//     process Permission semantics — open question in 24_04 §C, v2.
 
 namespace detail {
-template <typename> struct always_false : std::false_type {};
+
+// Build the per-role lambda that establish_permissioned + invokes body.
+// Pulled out so the parameter pack expansion at the call site stays
+// readable.
+template <typename G, typename Role, typename SharedChannel, typename Body>
+[[nodiscard]] constexpr auto session_fork_role_lambda(
+    SharedChannel& ch,
+    Body&& body) noexcept
+{
+    return [&ch, body = std::forward<Body>(body)](
+               Permission<Role>&& role_perm) mutable noexcept {
+        using LocalProto = typename Project<G, Role>::type;
+        // establish_permissioned consumes the per-role Permission and
+        // produces the projected PSH whose Resource is the shared
+        // channel by reference.  LocalProto may begin with Loop —
+        // establish unrolls it.
+        auto handle = establish_permissioned<LocalProto, SharedChannel&,
+                                              Role>(ch, std::move(role_perm));
+        std::move(body)(std::move(handle));
+    };
+}
+
 }  // namespace detail
 
 template <typename G, typename Whole, typename... RolePerms,
           typename SharedChannel, typename... Bodies>
-[[nodiscard]] constexpr Permission<Whole>
-session_fork(SharedChannel& /*ch*/,
-             Permission<Whole>&& /*whole_perm*/,
-             Bodies&&... /*bodies*/) noexcept
+[[nodiscard]] Permission<Whole> session_fork(
+    SharedChannel& ch,
+    Permission<Whole>&& whole_perm,
+    Bodies&&... bodies) noexcept
 {
-    static_assert(detail::always_false<Whole>::value,
+    static_assert(is_global_well_formed_v<G>,
+        "crucible::session::diagnostic [Protocol_Ill_Formed]: "
+        "session_fork<G, ...>: global type G is ill-formed.");
+    static_assert(sizeof...(RolePerms) == sizeof...(Bodies),
         "crucible::session::diagnostic [PermissionImbalance]: "
-        "session_fork<G, Whole, RolePerms...>: not yet implemented "
-        "(Phase 4 of FOUND-C, tracked by Task #616).  The stub exists "
-        "so other headers can mention session_fork in doc-comments "
-        "without breaking compile.  Callers needing fork-join "
-        "multiparty session semantics today should compose "
-        "permissions/PermissionFork.h::permission_fork directly with "
-        "per-role establish_permissioned calls until Phase 4 ships.");
-    return Permission<Whole>{};  // unreachable
+        "session_fork: number of RolePerms template arguments must "
+        "match number of body callables.");
+    static_assert(splits_into_pack_v<Whole, RolePerms...>,
+        "crucible::session::diagnostic [PermissionImbalance]: "
+        "session_fork<G, Whole, RolePerms...>: requires "
+        "splits_into_pack<Whole, RolePerms...>::value true.  Declare "
+        "the manifest in the same TU as the Whole and Role tags so "
+        "reviewers see the entire region tree at one glance.");
+    static_assert(SessionResource<SharedChannel&>,
+        "crucible::session::diagnostic [SessionResource_NotPinned]: "
+        "session_fork: the SharedChannel must be Pinned (its address "
+        "must be stable across the spawned threads' lifetimes).  "
+        "Derive your channel from safety::Pinned<ChannelType>.");
+
+    // Compose: each role's lambda calls establish_permissioned with
+    // the role's projected protocol + the role permission token; then
+    // invokes the user's body with the constructed PSH.  permission_fork
+    // does the heavy lifting: split Whole into per-role tokens, spawn
+    // one jthread per role, join via RAII array destructor, rebuild
+    // Whole on return.
+    return permission_fork<RolePerms...>(
+        std::move(whole_perm),
+        detail::session_fork_role_lambda<G, RolePerms, SharedChannel,
+                                          Bodies>(
+            ch, std::forward<Bodies>(bodies))...
+    );
 }
 
 }  // namespace crucible::safety::proto

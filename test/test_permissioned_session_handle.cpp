@@ -47,11 +47,15 @@
 
 #include <crucible/handles/OneShotFlag.h>
 #include <crucible/permissions/Permission.h>
+#include <crucible/safety/Pinned.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionGlobal.h>
 
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -487,7 +491,142 @@ void test_crash_transport_crash_path() {
 }
 
 // ═════════════════════════════════════════════════════════════════
-// ── Tier 8: Sizeof equality at file scope (compile-time witness)
+// ── Tier 8: session_fork two-role request-reply (FOUND-C Phase 4)
+// ═════════════════════════════════════════════════════════════════
+//
+// End-to-end exercise of session_fork.  Global protocol:
+//
+//   G = Transmission<ClientRole, ServerRole, int,
+//         Transmission<ServerRole, ClientRole, bool, End_G>>
+//
+// Project<G, ClientRole>::type = Send<int, Recv<bool, End>>
+// Project<G, ServerRole>::type = Recv<int, Send<bool, End>>
+//
+// session_fork:
+//   * Mints Permission<Whole>; we manifest splits_into_pack<Whole,
+//     ClientPerm, ServerPerm>.
+//   * Spawns one jthread per role; each role's body receives a PSH
+//     parameterised by its projected protocol + PermSet<RolePerm>.
+//   * RAII-joins both threads; rebuilds Whole on return.
+//
+// SharedChannel: Pinned struct with two atomic-flag-gated slots (one
+// per direction).  Each role's transports busy-wait on the
+// counterpart's flag.
+
+namespace fork_test {
+
+// Role tags double as permission tags — session_fork's RolePerms... pack
+// is BOTH the projection role identity in G AND the per-role Permission
+// tag.  Keeping them unified (rather than pairing two parallel packs)
+// keeps the API surface narrow and the splits_into_pack manifest small.
+struct ClientRole {};
+struct ServerRole {};
+
+struct Whole       {};
+
+// In-memory shared channel: client→server (int) + server→client (bool).
+// Pinned because session_fork's SharedChannel binding is
+// SharedChannel& and SessionResource requires Pinned for lvalue refs.
+struct SharedChan : ::crucible::safety::Pinned<SharedChan> {
+    std::atomic<int>  c2s_value{0};
+    std::atomic<bool> c2s_ready{false};
+    std::atomic<bool> s2c_value{false};
+    std::atomic<bool> s2c_ready{false};
+};
+
+// Client transports.
+void client_send(SharedChan& ch, int v) noexcept {
+    ch.c2s_value.store(v, std::memory_order_relaxed);
+    ch.c2s_ready.store(true, std::memory_order_release);
+}
+bool client_recv(SharedChan& ch) noexcept {
+    while (!ch.s2c_ready.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+    }
+    return ch.s2c_value.load(std::memory_order_relaxed);
+}
+
+// Server transports.
+int server_recv(SharedChan& ch) noexcept {
+    while (!ch.c2s_ready.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+    }
+    return ch.c2s_value.load(std::memory_order_relaxed);
+}
+void server_send(SharedChan& ch, bool v) noexcept {
+    ch.s2c_value.store(v, std::memory_order_relaxed);
+    ch.s2c_ready.store(true, std::memory_order_release);
+}
+
+// Side-effect outputs the bodies write so the test can verify both
+// roles ran their full protocols.
+inline std::atomic<int>  g_client_received{-1};
+inline std::atomic<int>  g_server_received{-1};
+
+}  // namespace fork_test
+
+}  // namespace  (close anonymous namespace before splits_into_pack)
+
+// splits_into_pack manifest — must be at namespace scope, declared
+// adjacent to the role tags.  Same TU per CSL discipline rule.
+namespace crucible::safety {
+template <>
+struct splits_into_pack<fork_test::Whole,
+                        fork_test::ClientRole,
+                        fork_test::ServerRole>
+    : std::true_type {};
+}  // namespace crucible::safety
+
+namespace {  // re-open anonymous namespace for tests
+
+void test_session_fork_two_role_request_reply() {
+    using G = Transmission<fork_test::ClientRole, fork_test::ServerRole, int,
+                Transmission<fork_test::ServerRole, fork_test::ClientRole, bool,
+                  End_G>>;
+
+    fork_test::SharedChan ch;
+    fork_test::g_client_received.store(-1, std::memory_order_relaxed);
+    fork_test::g_server_received.store(-1, std::memory_order_relaxed);
+
+    auto whole = ::crucible::safety::permission_root_mint<fork_test::Whole>();
+
+    auto rebuilt = session_fork<G, fork_test::Whole,
+                                 fork_test::ClientRole,
+                                 fork_test::ServerRole>(
+        ch,
+        std::move(whole),
+        // Client body: Send<int, Recv<bool, End>>.
+        [](auto h_client) noexcept {
+            constexpr int kRequest = 7;
+            auto h2 = std::move(h_client).send(kRequest, fork_test::client_send);
+            auto [reply, h3] = std::move(h2).recv(fork_test::client_recv);
+            (void)reply;
+            // h3 is at End with PS = PermSet<ClientPerm>.  close()
+            // requires PermSet == Empty; the role permission stays in
+            // PS as "proof of participation" — surrender via detach
+            // (TestInstrumentation reason for this test fixture).
+            std::move(h3).detach(detach_reason::TestInstrumentation{});
+            fork_test::g_client_received.store(reply ? 1 : 0,
+                                                std::memory_order_release);
+        },
+        // Server body: Recv<int, Send<bool, End>>.
+        [](auto h_server) noexcept {
+            auto [req, h2] = std::move(h_server).recv(fork_test::server_recv);
+            const bool reply = (req == 7);
+            auto h3 = std::move(h2).send(reply, fork_test::server_send);
+            std::move(h3).detach(detach_reason::TestInstrumentation{});
+            fork_test::g_server_received.store(req,
+                                                std::memory_order_release);
+        });
+
+    // session_fork joined both threads; whole permission was rebuilt.
+    (void)rebuilt;
+    CRUCIBLE_TEST_REQUIRE(fork_test::g_server_received.load() == 7);
+    CRUCIBLE_TEST_REQUIRE(fork_test::g_client_received.load() == 1);
+}
+
+// ═════════════════════════════════════════════════════════════════
+// ── Tier 9: Sizeof equality at file scope (compile-time witness)
 // ═════════════════════════════════════════════════════════════════
 //
 // PermissionedSessionHandle MUST have the same sizeof as the bare
@@ -532,6 +671,8 @@ int main() {
     run_test("select_local_pick_branch",        test_select_local_pick_branch);
     run_test("crash_transport_happy_path",      test_crash_transport_happy_path);
     run_test("crash_transport_crash_path",      test_crash_transport_crash_path);
+    run_test("session_fork_two_role_request_reply",
+             test_session_fork_two_role_request_reply);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);
