@@ -197,6 +197,12 @@ public:
             return ch_->ring_.try_push(item);
         }
 
+        [[nodiscard, gnu::hot]] std::size_t try_push_batch(
+            std::span<const T> items) noexcept
+        {
+            return ch_->ring_.try_push_batch(items);
+        }
+
         [[nodiscard]] bool empty_approx() const noexcept {
             return ch_->ring_.empty_approx();
         }
@@ -230,6 +236,12 @@ public:
         // iff the ring is empty or transient SCQ contention condition.
         [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
             return ch_->ring_.try_pop();
+        }
+
+        [[nodiscard, gnu::hot]] std::size_t try_pop_batch(
+            std::span<T> out) noexcept
+        {
+            return ch_->ring_.try_pop_batch(out);
         }
 
         [[nodiscard]] bool empty_approx() const noexcept {
