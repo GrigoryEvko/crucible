@@ -314,6 +314,14 @@ public:
     [[nodiscard]] bool is_consumer_exclusive_active() const noexcept {
         return consumer_pool_.is_exclusive_out();
     }
+    // Unified API: true iff EITHER side is in exclusive mode.  Matches
+    // the per-side `is_exclusive_active()` exposed by every other
+    // Permissioned* wrapper.  For Mpmc, exclusivity is per-side; the
+    // unified query is the disjunction.
+    [[nodiscard]] bool is_exclusive_active() const noexcept {
+        return is_producer_exclusive_active()
+            || is_consumer_exclusive_active();
+    }
     [[nodiscard]] bool empty_approx() const noexcept {
         return ring_.empty_approx();
     }

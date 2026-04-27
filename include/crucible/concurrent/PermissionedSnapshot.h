@@ -238,6 +238,18 @@ public:
         return true;
     }
 
+    // Unified API alias.  Every Permissioned* wrapper exposes
+    // `with_drained_access(Body) -> bool` (pool-based).  Snapshot's
+    // pooled side is the reader pool; the Writer permission is linear
+    // and untouched by this call.
+    template <typename Body>
+        requires std::is_invocable_v<Body>
+    bool with_drained_access(Body&& body)
+        noexcept(std::is_nothrow_invocable_v<Body>)
+    {
+        return with_exclusive_access(std::forward<Body>(body));
+    }
+
     // ── Diagnostics ───────────────────────────────────────────────
 
     [[nodiscard]] std::uint64_t outstanding_readers() const noexcept {

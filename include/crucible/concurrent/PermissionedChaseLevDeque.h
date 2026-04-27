@@ -312,6 +312,20 @@ public:
         return true;
     }
 
+    // Unified API alias.  Every Permissioned* wrapper exposes
+    // `with_drained_access(Body) -> bool` (pool-based) or
+    // `with_recombined_access(Permission<whole_tag>&&, Body) ->
+    // Permission<whole_tag>` (Spsc, linear).  ChaseLevDeque has a
+    // pooled thief side; the unified form forwards to the pool drain
+    // and leaves the linear Owner permission untouched.
+    template <typename Body>
+        requires std::is_invocable_v<Body>
+    bool with_drained_access(Body&& body)
+        noexcept(std::is_nothrow_invocable_v<Body>)
+    {
+        return with_drained_thieves(std::forward<Body>(body));
+    }
+
     // ── Diagnostics ───────────────────────────────────────────────
 
     [[nodiscard]] std::uint64_t outstanding_thieves() const noexcept {
