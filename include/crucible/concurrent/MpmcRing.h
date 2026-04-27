@@ -114,6 +114,9 @@ concept MpmcValue =
 template <MpmcValue T, std::size_t Capacity>
 class MpmcRing : public safety::Pinned<MpmcRing<T, Capacity>> {
 public:
+    using value_type = T;
+    static constexpr std::size_t channel_capacity = Capacity;
+
     static_assert(std::has_single_bit(Capacity),
                   "Capacity must be a power of two");
     static_assert(Capacity >= 2,

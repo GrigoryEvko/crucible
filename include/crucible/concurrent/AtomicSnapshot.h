@@ -149,6 +149,8 @@ concept SnapshotValue =
 template <SnapshotValue T>
 class AtomicSnapshot : public safety::Pinned<AtomicSnapshot<T>> {
 public:
+    using value_type = T;
+
     // Default ctor: snapshot holds T's zero-initialized value.
     // Initial seq_ = 0 is even — readers immediately see the
     // value.  This is consistent: an "empty" snapshot returns

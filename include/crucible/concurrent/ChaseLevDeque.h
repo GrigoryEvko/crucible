@@ -112,6 +112,9 @@ concept DequeValue =
 template <DequeValue T, std::size_t Capacity>
 class ChaseLevDeque : public safety::Pinned<ChaseLevDeque<T, Capacity>> {
 public:
+    using value_type = T;
+    static constexpr std::size_t channel_capacity = Capacity;
+
     static_assert(std::has_single_bit(Capacity),
                   "Capacity must be a power of two");
     static_assert(Capacity > 0,

@@ -310,12 +310,22 @@ public:
     // ── Diagnostics ───────────────────────────────────────────────
 
     // Per-shard size — the M×N grid has M*N independent SpscRings,
-    // so a global size is meaningless.  Caller passes the (producer,
-    // consumer) cell indices.
+    // so a global size is meaningless on the hot path.  Caller passes
+    // the (producer, consumer) cell indices for per-shard inquiry.
     [[nodiscard]] std::size_t size_approx(std::size_t producer_id,
                                           std::size_t consumer_id) const noexcept
     {
         return grid_.size_approx(producer_id, consumer_id);
+    }
+
+    // Channel-level diagnostics — universal Permissioned* surface.
+    // size_approx() walks all M×N cells; for hot-path use prefer the
+    // per-shard variant above.
+    [[nodiscard]] std::size_t size_approx() const noexcept {
+        return grid_.size_approx();
+    }
+    [[nodiscard]] bool empty_approx() const noexcept {
+        return grid_.empty_approx();
     }
 
     // Channel-level capacity = total cells across M×N shards.

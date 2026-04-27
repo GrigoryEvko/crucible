@@ -125,6 +125,10 @@ template <SpscValue T,
 class ShardedSpscGrid : public safety::Pinned<
     ShardedSpscGrid<T, M, N, Capacity, Routing>> {
 public:
+    using value_type = T;
+    static constexpr std::size_t shard_capacity   = Capacity;
+    static constexpr std::size_t channel_capacity = M * N * Capacity;
+
     static_assert(M > 0, "ShardedSpscGrid requires at least one producer");
     static_assert(N > 0, "ShardedSpscGrid requires at least one consumer");
 
@@ -187,6 +191,9 @@ public:
 
     // ── Diagnostics (snapshot, NOT exact) ─────────────────────────
 
+    // Per-shard size — the M×N grid has independent SpscRings, so
+    // there is no single global size; caller passes the (producer,
+    // consumer) pair.
     [[nodiscard]] std::size_t size_approx(std::size_t producer_id,
                                            std::size_t consumer_id) const noexcept
         pre (producer_id < M)
@@ -195,9 +202,32 @@ public:
         return rings_[producer_id][consumer_id].size_approx();
     }
 
+    // Channel-level diagnostics — universal Permissioned* surface.
+    // size_approx() walks all M×N cells; for hot-path use prefer the
+    // per-shard variant above.
+    [[nodiscard]] std::size_t size_approx() const noexcept {
+        std::size_t total = 0;
+        for (std::size_t p = 0; p < M; ++p) {
+            for (std::size_t c = 0; c < N; ++c) {
+                total += rings_[p][c].size_approx();
+            }
+        }
+        return total;
+    }
+
+    [[nodiscard]] bool empty_approx() const noexcept {
+        for (std::size_t p = 0; p < M; ++p) {
+            for (std::size_t c = 0; c < N; ++c) {
+                if (!rings_[p][c].empty_approx()) return false;
+            }
+        }
+        return true;
+    }
+
     [[nodiscard]] static constexpr std::size_t num_producers() noexcept { return M; }
     [[nodiscard]] static constexpr std::size_t num_consumers() noexcept { return N; }
     [[nodiscard]] static constexpr std::size_t ring_capacity() noexcept { return Capacity; }
+    [[nodiscard]] static constexpr std::size_t capacity()      noexcept { return M * N * Capacity; }
 
 private:
     // M×N grid of SPSC rings.  Each ring[p][c] is independently

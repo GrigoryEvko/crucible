@@ -17,13 +17,16 @@
 // and verifies the unified surface compiles uniformly.
 // ═══════════════════════════════════════════════════════════════════
 
+#include <crucible/concurrent/PermissionedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
 #include <crucible/concurrent/PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/traits/Concepts.h>
 #include <crucible/permissions/Permission.h>
+#include <crucible/safety/PermissionGridGenerator.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -68,6 +71,18 @@ struct MpmcUserTag      {};
 struct GridUserTag      {};
 struct DequeUserTag     {};
 struct SnapshotUserTag  {};
+struct CalendarUserTag  {};
+
+// CalendarGrid needs a KeyExtractor.
+struct CrossKeyJob {
+    std::uint64_t deadline_ns = 0;
+    std::uint64_t payload     = 0;
+};
+struct CrossKeyExtract {
+    static std::uint64_t key(const CrossKeyJob& j) noexcept {
+        return j.deadline_ns;
+    }
+};
 
 // ── Concept-style detection of the unified API surface ──────────────
 //
@@ -99,12 +114,16 @@ concept HasLinearRecombinedAccess =
 // ── Tier 1: typedefs uniform across all six wrappers ────────────────
 
 void test_unified_typedefs_present() {
-    using Spsc  = PermissionedSpscChannel<int, 64, SpscUserTag>;
-    using Mpsc  = PermissionedMpscChannel<int, 64, MpscUserTag>;
-    using Mpmc  = PermissionedMpmcChannel<int, 64, MpmcUserTag>;
-    using Grid  = PermissionedShardedGrid<int, 2, 2, 64, GridUserTag>;
-    using Deque = PermissionedChaseLevDeque<int, 64, DequeUserTag>;
-    using Snap  = PermissionedSnapshot<int, SnapshotUserTag>;
+    using Spsc     = PermissionedSpscChannel<int, 64, SpscUserTag>;
+    using Mpsc     = PermissionedMpscChannel<int, 64, MpscUserTag>;
+    using Mpmc     = PermissionedMpmcChannel<int, 64, MpmcUserTag>;
+    using Grid     = PermissionedShardedGrid<int, 2, 2, 64, GridUserTag>;
+    using Deque    = PermissionedChaseLevDeque<int, 64, DequeUserTag>;
+    using Snap     = PermissionedSnapshot<int, SnapshotUserTag>;
+    using Calendar = PermissionedCalendarGrid<CrossKeyJob, /*M*/2, /*Buckets*/8,
+                                              /*Cap*/16, CrossKeyExtract,
+                                              /*QuantumNs*/1'000'000ULL,
+                                              CalendarUserTag>;
 
     static_assert(HasUnifiedTypedefs<Spsc>,
                   "PermissionedSpscChannel: missing unified typedef");
@@ -118,23 +137,30 @@ void test_unified_typedefs_present() {
                   "PermissionedChaseLevDeque: missing unified typedef");
     static_assert(HasUnifiedTypedefs<Snap>,
                   "PermissionedSnapshot: missing unified typedef");
+    static_assert(HasUnifiedTypedefs<Calendar>,
+                  "PermissionedCalendarGrid: missing unified typedef");
 
-    static_assert(std::is_same_v<typename Spsc::value_type,  int>);
-    static_assert(std::is_same_v<typename Mpsc::value_type,  int>);
-    static_assert(std::is_same_v<typename Mpmc::value_type,  int>);
-    static_assert(std::is_same_v<typename Grid::value_type,  int>);
-    static_assert(std::is_same_v<typename Deque::value_type, int>);
-    static_assert(std::is_same_v<typename Snap::value_type,  int>);
+    static_assert(std::is_same_v<typename Spsc::value_type,     int>);
+    static_assert(std::is_same_v<typename Mpsc::value_type,     int>);
+    static_assert(std::is_same_v<typename Mpmc::value_type,     int>);
+    static_assert(std::is_same_v<typename Grid::value_type,     int>);
+    static_assert(std::is_same_v<typename Deque::value_type,    int>);
+    static_assert(std::is_same_v<typename Snap::value_type,     int>);
+    static_assert(std::is_same_v<typename Calendar::value_type, CrossKeyJob>);
 }
 
 // ── Tier 2: is_exclusive_active uniform across all six ──────────────
 
 void test_unified_is_exclusive_active() {
-    using Spsc  = PermissionedSpscChannel<int, 64, SpscUserTag>;
-    using Mpsc  = PermissionedMpscChannel<int, 64, MpscUserTag>;
-    using Mpmc  = PermissionedMpmcChannel<int, 64, MpmcUserTag>;
-    using Deque = PermissionedChaseLevDeque<int, 64, DequeUserTag>;
-    using Snap  = PermissionedSnapshot<int, SnapshotUserTag>;
+    using Spsc     = PermissionedSpscChannel<int, 64, SpscUserTag>;
+    using Mpsc     = PermissionedMpscChannel<int, 64, MpscUserTag>;
+    using Mpmc     = PermissionedMpmcChannel<int, 64, MpmcUserTag>;
+    using Deque    = PermissionedChaseLevDeque<int, 64, DequeUserTag>;
+    using Snap     = PermissionedSnapshot<int, SnapshotUserTag>;
+    using Calendar = PermissionedCalendarGrid<CrossKeyJob, 2, 8, 16,
+                                              CrossKeyExtract,
+                                              1'000'000ULL,
+                                              CalendarUserTag>;
 
     static_assert(HasIsExclusiveActive<Spsc>,
                   "PermissionedSpscChannel: missing is_exclusive_active");
@@ -146,17 +172,21 @@ void test_unified_is_exclusive_active() {
                   "PermissionedChaseLevDeque: missing is_exclusive_active");
     static_assert(HasIsExclusiveActive<Snap>,
                   "PermissionedSnapshot: missing is_exclusive_active");
+    static_assert(HasIsExclusiveActive<Calendar>,
+                  "PermissionedCalendarGrid: missing is_exclusive_active");
 
     Spsc spsc;
     Mpsc mpsc;
     Mpmc mpmc;
     Deque deque;
     Snap snap{0};
+    Calendar cal;
     CRUCIBLE_TEST_REQUIRE(spsc.is_exclusive_active() == false);
     CRUCIBLE_TEST_REQUIRE(mpsc.is_exclusive_active() == false);
     CRUCIBLE_TEST_REQUIRE(mpmc.is_exclusive_active() == false);
     CRUCIBLE_TEST_REQUIRE(deque.is_exclusive_active() == false);
     CRUCIBLE_TEST_REQUIRE(snap.is_exclusive_active() == false);
+    CRUCIBLE_TEST_REQUIRE(cal.is_exclusive_active() == false);
 }
 
 // ── Tier 3: with_drained_access uniform across pool-based ───────────
@@ -231,6 +261,102 @@ void test_spsc_with_recombined_access() {
     auto popped = consumer.try_pop();
     CRUCIBLE_TEST_REQUIRE(popped.has_value());
     CRUCIBLE_TEST_REQUIRE(*popped == 42);
+}
+
+// ── Tier 4b: with_recombined_access for CalendarGrid ──────────────
+//
+// Same linear-token mechanism as Spsc (and ShardedGrid).  The
+// CalendarGrid's M producer slots + 1 consumer slot are all linear,
+// so the unified mode-transition is the recombined-permission shape.
+
+void test_calendar_with_recombined_access() {
+    using Calendar = PermissionedCalendarGrid<CrossKeyJob, 2, 8, 16,
+                                              CrossKeyExtract,
+                                              1'000'000ULL,
+                                              CalendarUserTag>;
+    static_assert(HasLinearRecombinedAccess<Calendar>,
+                  "PermissionedCalendarGrid: missing with_recombined_access");
+
+    Calendar cal;
+
+    auto whole = permission_root_mint<typename Calendar::whole_tag>();
+    bool body_ran = false;
+    auto returned = cal.with_recombined_access(
+        std::move(whole),
+        [&]() noexcept { body_ran = true; });
+    CRUCIBLE_TEST_REQUIRE(body_ran);
+
+    // Returned permission re-splittable via the same split_grid<Whole, M, 1>
+    // factory used by CalendarGrid handles.  Push and pop one item to
+    // confirm the channel is functional after the mode transition.
+    auto perms = split_grid<typename Calendar::whole_tag, 2, 1>(
+        std::move(returned));
+    auto p0 = cal.template producer<0>(
+        std::move(std::get<0>(perms.producers)));
+    auto cons = cal.consumer(std::move(std::get<0>(perms.consumers)));
+    CRUCIBLE_TEST_REQUIRE(p0.try_push(CrossKeyJob{
+        .deadline_ns = 0, .payload = 99}));
+    auto popped = cons.try_pop();
+    CRUCIBLE_TEST_REQUIRE(popped.has_value());
+    CRUCIBLE_TEST_REQUIRE(popped->payload == 99);
+}
+
+// ── Tier 4c: formal concepts in concurrent/traits/Concepts.h ─────
+//
+// All 7 Permissioned* wrappers must satisfy:
+//   * traits::PermissionedChannel — disjunction of PoolBased / LinearOnly
+//   * traits::PoolBasedChannel    XOR  traits::LinearOnlyChannel
+// Every FIFO-shaped wrapper (every one EXCEPT Snapshot) must satisfy:
+//   * traits::FifoChannel — empty/size/capacity diagnostics
+
+void test_formal_concepts_satisfied() {
+    using namespace crucible::concurrent::traits;
+
+    using Spsc     = PermissionedSpscChannel<int, 64, SpscUserTag>;
+    using Mpsc     = PermissionedMpscChannel<int, 64, MpscUserTag>;
+    using Mpmc     = PermissionedMpmcChannel<int, 64, MpmcUserTag>;
+    using Grid     = PermissionedShardedGrid<int, 2, 2, 64, GridUserTag>;
+    using Deque    = PermissionedChaseLevDeque<int, 64, DequeUserTag>;
+    using Snap     = PermissionedSnapshot<int, SnapshotUserTag>;
+    using Calendar = PermissionedCalendarGrid<CrossKeyJob, 2, 8, 16,
+                                              CrossKeyExtract,
+                                              1'000'000ULL,
+                                              CalendarUserTag>;
+
+    // Umbrella: every wrapper IS a PermissionedChannel.
+    static_assert(PermissionedChannel<Spsc>);
+    static_assert(PermissionedChannel<Mpsc>);
+    static_assert(PermissionedChannel<Mpmc>);
+    static_assert(PermissionedChannel<Grid>);
+    static_assert(PermissionedChannel<Deque>);
+    static_assert(PermissionedChannel<Snap>);
+    static_assert(PermissionedChannel<Calendar>);
+
+    // Topology: linear-only ↔ pool-based, mutually exclusive.
+    static_assert( LinearOnlyChannel<Spsc>);
+    static_assert(!PoolBasedChannel<Spsc>);
+    static_assert( PoolBasedChannel<Mpsc>);
+    static_assert(!LinearOnlyChannel<Mpsc>);
+    static_assert( PoolBasedChannel<Mpmc>);
+    static_assert(!LinearOnlyChannel<Mpmc>);
+    static_assert( LinearOnlyChannel<Grid>);
+    static_assert(!PoolBasedChannel<Grid>);
+    static_assert( PoolBasedChannel<Deque>);
+    static_assert(!LinearOnlyChannel<Deque>);
+    static_assert( PoolBasedChannel<Snap>);
+    static_assert(!LinearOnlyChannel<Snap>);
+    static_assert( LinearOnlyChannel<Calendar>);
+    static_assert(!PoolBasedChannel<Calendar>);
+
+    // FIFO-shape: all wrappers EXCEPT Snapshot.  Snapshot is
+    // latest-value (no empty/size/capacity).
+    static_assert(FifoChannel<Spsc>);
+    static_assert(FifoChannel<Mpsc>);
+    static_assert(FifoChannel<Mpmc>);
+    static_assert(FifoChannel<Grid>);
+    static_assert(FifoChannel<Deque>);
+    static_assert(!FifoChannel<Snap>);
+    static_assert(FifoChannel<Calendar>);
 }
 
 // ── Tier 5: cross-primitive composition — three wrappers in series ──
@@ -309,6 +435,10 @@ int main() {
              test_unified_with_drained_access_pool_based);
     run_test("test_spsc_with_recombined_access",
              test_spsc_with_recombined_access);
+    run_test("test_calendar_with_recombined_access",
+             test_calendar_with_recombined_access);
+    run_test("test_formal_concepts_satisfied",
+             test_formal_concepts_satisfied);
     run_test("test_pipeline_three_wrappers",
              test_pipeline_three_wrappers);
 
