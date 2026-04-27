@@ -45,19 +45,26 @@
 #include <crucible/concurrent/PermissionedChaseLevDeque.h>
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
 #include <crucible/concurrent/PermissionedMpscChannel.h>
+#include <crucible/concurrent/PermissionedShardedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedShardedGrid.h>
+#include <crucible/concurrent/Topology.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/PermissionGridGenerator.h>
 
 #include "bench_harness.h"
 
+#include <pthread.h>
+#include <sched.h>
+
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <thread>
 #include <tuple>
 #include <vector>
@@ -111,6 +118,15 @@ constexpr std::size_t   NUM_THIEVES             = 4;
 constexpr std::size_t   THRU_SAMPLES            = 30;
 constexpr std::size_t   THRU_WARMUP             = 2;
 constexpr std::size_t   THRU_MAX_WALL_MS        = 8000;
+
+// rdtsc has ~30-cycle (~10ns) resolution on Zen — bracketing single
+// pushes quantizes per-op cost to multiples of the resolution.
+// Batching K pushes per rdtsc pair amortizes the per-op cost above
+// the noise floor.  K=32 is the sweet spot: large enough that
+// 32 * (5ns push) = 160ns >> 10ns rdtsc floor, small enough that
+// per-batch wall time stays in the L1d-resident regime so cache-state
+// transitions don't widen the variance.
+constexpr std::uint32_t BATCH_PER_PROD          = 32;
 
 // ── Job types ─────────────────────────────────────────────────────
 
@@ -186,6 +202,120 @@ struct ContendedResult {
     }
     r.per_op = bench::Percentiles::compute(ns);
     return r;
+}
+
+// ── Batched aggregator ────────────────────────────────────────────
+//
+// Each per-thread vector contains *batch-amortized* per-op cycles —
+// one sample per BATCH pushes, divided.  Resolves the rdtsc resolution
+// problem: a single rdtsc-bracketed push has ~30-cycle (~10ns)
+// quantization noise; the smallest non-zero observable per-op cost is
+// the rdtsc resolution itself.  Batching K=32 pushes per timer pair
+// gives true per-op cost above the noise floor (K * cycles per batch
+// is ~5-100x the resolution).
+
+[[nodiscard]] ContendedResult aggregate_batched_(
+    std::vector<std::vector<double>>&& per_thread_per_op_ns,
+    double wall_ms,
+    std::size_t total_items)
+{
+    ContendedResult r;
+    r.total_wall_ms = wall_ms;
+    r.total_items   = total_items;
+    r.items_per_sec = (wall_ms > 0)
+        ? static_cast<double>(total_items) * 1000.0 / wall_ms
+        : 0.0;
+
+    std::vector<double> ns;
+    std::size_t total_samples = 0;
+    for (auto const& v : per_thread_per_op_ns) total_samples += v.size();
+    ns.reserve(total_samples);
+    for (auto const& vec : per_thread_per_op_ns) {
+        for (double v : vec) ns.push_back(v);
+    }
+    r.per_op = bench::Percentiles::compute(ns);
+    return r;
+}
+
+// ── Topology pinning ─────────────────────────────────────────────
+//
+// Ryzen 9 5950X = 16 physical cores split into 2 CCDs (L3 groups),
+// each CCD has 8 cores + SMT siblings.  Cross-CCD atomics travel
+// over Infinity Fabric (~80-100ns).  Same-CCD different-core stays
+// in the shared L3 (~10-15ns).  SMT siblings share L1d but contend
+// for LSU/LSD throughput.
+//
+// Layout strategy for 4 producer + 4 consumer pairs:
+//   * Pick the largest L3 group (one CCD) — keeps all 8 threads in
+//     the same L3 cache so cross-thread current_bucket reads are
+//     L3-resident, not cross-CCD DRAM.
+//   * Pair (producer<S>, consumer<S>) onto two physical cores in
+//     that CCD.  NOT SMT siblings (avoids LSU contention).  With 8
+//     physical cores per CCD, producer<S> on cpus[S], consumer<S>
+//     on cpus[S+4] — same CCD, separate L1/L2.
+
+struct PinningLayout {
+    bool                              valid = false;
+    std::size_t                       l3_group_id = 0;
+    std::size_t                       l3_size = 0;
+    std::array<int, NUM_PRODUCERS>    producer_cpu{-1, -1, -1, -1};
+    std::array<int, NUM_PRODUCERS>    consumer_cpu{-1, -1, -1, -1};
+};
+
+[[nodiscard]] PinningLayout choose_layout_() noexcept {
+    PinningLayout layout{};
+    auto const& topo = Topology::instance();
+    auto groups = topo.l3_groups();
+    if (groups.empty()) return layout;
+
+    // Pick the largest L3 group.
+    std::size_t best_idx = 0;
+    std::size_t best_sz  = groups[0].size();
+    for (std::size_t i = 1; i < groups.size(); ++i) {
+        if (groups[i].size() > best_sz) {
+            best_idx = i;
+            best_sz  = groups[i].size();
+        }
+    }
+    auto const& chosen = groups[best_idx];
+    layout.l3_group_id = best_idx;
+    layout.l3_size     = chosen.size();
+
+    // Need 2 * NUM_PRODUCERS distinct cpus.  Strategy: take the
+    // first NUM_PRODUCERS as producers, next NUM_PRODUCERS as
+    // consumers (skip SMT siblings — sysfs lists physical cores
+    // first, then siblings, but l3_groups concatenates both, so
+    // taking cpus[0..7] from a CCD on Zen gives us 8 physical cores
+    // (sibling cpus 16-23 follow); we want non-sibling pairs).
+    constexpr std::size_t needed = 2 * NUM_PRODUCERS;
+    if (chosen.size() < needed) return layout;
+    for (std::size_t s = 0; s < NUM_PRODUCERS; ++s) {
+        layout.producer_cpu[s] = chosen[s];
+        layout.consumer_cpu[s] = chosen[s + NUM_PRODUCERS];
+    }
+    layout.valid = true;
+    return layout;
+}
+
+[[nodiscard]] bool pin_thread_to_cpu_(std::thread::id /*tid_unused*/, int cpu) noexcept {
+    if (cpu < 0) return false;
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(static_cast<std::size_t>(cpu), &set);
+    return ::pthread_setaffinity_np(::pthread_self(), sizeof(set), &set) == 0;
+}
+
+void print_pinning_layout_(const PinningLayout& L) noexcept {
+    if (!L.valid) {
+        std::printf("  pinning: DISABLED (topology probe found no usable L3 group)\n");
+        return;
+    }
+    std::printf("  pinning: L3-group[%zu] (%zu cpus)\n",
+                L.l3_group_id, L.l3_size);
+    for (std::size_t s = 0; s < NUM_PRODUCERS; ++s) {
+        std::printf("    shard[%zu]: producer cpu=%d  consumer cpu=%d\n",
+                    s, L.producer_cpu[s], L.consumer_cpu[s]);
+    }
 }
 
 // ── Result row aggregation per policy ─────────────────────────────
@@ -775,7 +905,9 @@ template <typename Channel>
 }
 
 template <typename Channel>
-[[nodiscard]] ContendedResult bench_contended_calendar_(Channel& grid) {
+[[nodiscard]] ContendedResult bench_contended_calendar_(
+    Channel& grid, const PinningLayout& layout)
+{
     constexpr std::size_t TOTAL = NUM_PRODUCERS * ITEMS_PRIORITY_PER_PROD;
 
     using WT = typename Channel::whole_tag;
@@ -789,30 +921,51 @@ template <typename Channel>
 
     std::atomic<bool>                       start{false};
     std::atomic<std::size_t>                consumed{0};
-    std::vector<std::vector<std::uint64_t>> per_prod_samples(NUM_PRODUCERS);
-    for (auto& v : per_prod_samples) v.reserve(ITEMS_PRIORITY_PER_PROD);
+    // Same batched-rdtsc storage as the per-shard runner — apples-to-
+    // apples per-op cost above the rdtsc resolution floor.
+    std::vector<std::vector<double>>        per_prod_ns(NUM_PRODUCERS);
+    constexpr std::size_t batches_per_prod =
+        (ITEMS_PRIORITY_PER_PROD + BATCH_PER_PROD - 1) / BATCH_PER_PROD;
+    for (auto& v : per_prod_ns) v.reserve(batches_per_prod);
 
-    auto run_producer = [&](auto& handle, std::uint32_t pid) {
-        return [&, pid](std::stop_token) noexcept {
+    auto run_producer = [&](auto& handle, std::uint32_t pid, int cpu) {
+        return [&, pid, cpu](std::stop_token) noexcept {
+            (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
+            const double      nspc = bench::Timer::ns_per_cycle();
+            const std::uint64_t ovh = bench::Timer::overhead_cycles();
             std::uint64_t key = pid * 100ULL;
             while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
-            for (std::uint32_t s = 1; s <= ITEMS_PRIORITY_PER_PROD; ++s) {
-                key += 1000;
-                PriorityJob j{pid, s, key};
+            for (std::uint32_t s = 1; s <= ITEMS_PRIORITY_PER_PROD;
+                 s += BATCH_PER_PROD)
+            {
+                const std::uint32_t end = std::min<std::uint32_t>(
+                    s + BATCH_PER_PROD, ITEMS_PRIORITY_PER_PROD + 1);
+                const std::uint32_t batch_cnt = end - s;
                 const auto t0 = bench::rdtsc_start();
-                while (!handle.try_push(j)) std::this_thread::yield();
+                for (std::uint32_t k = 0; k < batch_cnt; ++k) {
+                    key += 1000;
+                    PriorityJob j{pid, s + k, key};
+                    while (!handle.try_push(j)) std::this_thread::yield();
+                }
                 const auto t1 = bench::rdtsc_end();
-                per_prod_samples[pid].push_back(t1 - t0);
+                const std::uint64_t raw = t1 - t0;
+                const std::uint64_t adj = (raw > ovh) ? (raw - ovh) : 0;
+                const double per_op_ns =
+                    (static_cast<double>(adj) * nspc)
+                    / static_cast<double>(batch_cnt);
+                per_prod_ns[pid].push_back(per_op_ns);
             }
         };
     };
 
-    std::jthread t_p0(run_producer(p0, 0));
-    std::jthread t_p1(run_producer(p1, 1));
-    std::jthread t_p2(run_producer(p2, 2));
-    std::jthread t_p3(run_producer(p3, 3));
+    std::jthread t_p0(run_producer(p0, 0, layout.producer_cpu[0]));
+    std::jthread t_p1(run_producer(p1, 1, layout.producer_cpu[1]));
+    std::jthread t_p2(run_producer(p2, 2, layout.producer_cpu[2]));
+    std::jthread t_p3(run_producer(p3, 3, layout.producer_cpu[3]));
 
-    std::jthread cons_t([&](std::stop_token) noexcept {
+    // Single consumer drains all 4 producers — pin to consumer<0>'s cpu.
+    std::jthread cons_t([&, cpu = layout.consumer_cpu[0]](std::stop_token) noexcept {
+        (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
         while (consumed.load(std::memory_order_acquire) < TOTAL) {
             if (auto opt = cons.try_pop()) {
                 bench::do_not_optimize(opt->key);
@@ -829,7 +982,7 @@ template <typename Channel>
     const double wall_ms = std::chrono::duration<double, std::milli>(
         t_end - t_start).count();
 
-    return aggregate_samples_(std::move(per_prod_samples), wall_ms, TOTAL);
+    return aggregate_batched_(std::move(per_prod_ns), wall_ms, TOTAL);
 }
 
 template <typename Channel>
@@ -918,7 +1071,9 @@ template <typename Channel>
 }
 
 template <typename Channel>
-[[nodiscard]] ContendedResult bench_contended_per_shard_(Channel& grid) {
+[[nodiscard]] ContendedResult bench_contended_per_shard_(
+    Channel& grid, const PinningLayout& layout)
+{
     constexpr std::size_t TOTAL = NUM_PRODUCERS * ITEMS_PRIORITY_PER_PROD;
 
     using WT = typename Channel::whole_tag;
@@ -935,26 +1090,45 @@ template <typename Channel>
 
     std::atomic<bool>                       start{false};
     std::array<std::atomic<std::size_t>, 4> consumed_per_shard{};
-    std::vector<std::vector<std::uint64_t>> per_prod_samples(NUM_PRODUCERS);
-    for (auto& v : per_prod_samples) v.reserve(ITEMS_PRIORITY_PER_PROD);
+    // Per-batch per-op ns samples — true cost above rdtsc resolution.
+    std::vector<std::vector<double>>        per_prod_ns(NUM_PRODUCERS);
+    constexpr std::size_t batches_per_prod =
+        (ITEMS_PRIORITY_PER_PROD + BATCH_PER_PROD - 1) / BATCH_PER_PROD;
+    for (auto& v : per_prod_ns) v.reserve(batches_per_prod);
 
-    auto run_producer = [&](auto& handle, std::uint32_t pid) {
-        return [&, pid](std::stop_token) noexcept {
+    auto run_producer = [&](auto& handle, std::uint32_t pid, int cpu) {
+        return [&, pid, cpu](std::stop_token) noexcept {
+            (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
+            const double      nspc = bench::Timer::ns_per_cycle();
+            const std::uint64_t ovh = bench::Timer::overhead_cycles();
             std::uint64_t key = pid * 100ULL;
             while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
-            for (std::uint32_t s = 1; s <= ITEMS_PRIORITY_PER_PROD; ++s) {
-                key += 1000;
-                PriorityJob j{pid, s, key};
+            for (std::uint32_t s = 1; s <= ITEMS_PRIORITY_PER_PROD;
+                 s += BATCH_PER_PROD)
+            {
+                const std::uint32_t end = std::min<std::uint32_t>(
+                    s + BATCH_PER_PROD, ITEMS_PRIORITY_PER_PROD + 1);
+                const std::uint32_t batch_cnt = end - s;
                 const auto t0 = bench::rdtsc_start();
-                while (!handle.try_push(j)) std::this_thread::yield();
+                for (std::uint32_t k = 0; k < batch_cnt; ++k) {
+                    key += 1000;
+                    PriorityJob j{pid, s + k, key};
+                    while (!handle.try_push(j)) std::this_thread::yield();
+                }
                 const auto t1 = bench::rdtsc_end();
-                per_prod_samples[pid].push_back(t1 - t0);
+                const std::uint64_t raw = t1 - t0;
+                const std::uint64_t adj = (raw > ovh) ? (raw - ovh) : 0;
+                const double per_op_ns =
+                    (static_cast<double>(adj) * nspc)
+                    / static_cast<double>(batch_cnt);
+                per_prod_ns[pid].push_back(per_op_ns);
             }
         };
     };
 
-    auto run_consumer = [&](auto& handle, std::size_t shard_idx) {
-        return [&, shard_idx](std::stop_token) noexcept {
+    auto run_consumer = [&](auto& handle, std::size_t shard_idx, int cpu) {
+        return [&, shard_idx, cpu](std::stop_token) noexcept {
+            (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
             while (consumed_per_shard[shard_idx].load(std::memory_order_acquire)
                    < ITEMS_PRIORITY_PER_PROD)
             {
@@ -969,14 +1143,14 @@ template <typename Channel>
         };
     };
 
-    std::jthread t_p0(run_producer(p0, 0));
-    std::jthread t_p1(run_producer(p1, 1));
-    std::jthread t_p2(run_producer(p2, 2));
-    std::jthread t_p3(run_producer(p3, 3));
-    std::jthread t_c0(run_consumer(c0, 0));
-    std::jthread t_c1(run_consumer(c1, 1));
-    std::jthread t_c2(run_consumer(c2, 2));
-    std::jthread t_c3(run_consumer(c3, 3));
+    std::jthread t_p0(run_producer(p0, 0, layout.producer_cpu[0]));
+    std::jthread t_p1(run_producer(p1, 1, layout.producer_cpu[1]));
+    std::jthread t_p2(run_producer(p2, 2, layout.producer_cpu[2]));
+    std::jthread t_p3(run_producer(p3, 3, layout.producer_cpu[3]));
+    std::jthread t_c0(run_consumer(c0, 0, layout.consumer_cpu[0]));
+    std::jthread t_c1(run_consumer(c1, 1, layout.consumer_cpu[1]));
+    std::jthread t_c2(run_consumer(c2, 2, layout.consumer_cpu[2]));
+    std::jthread t_c3(run_consumer(c3, 3, layout.consumer_cpu[3]));
 
     const auto t_start = std::chrono::steady_clock::now();
     start.store(true, std::memory_order_release);
@@ -986,7 +1160,7 @@ template <typename Channel>
     const double wall_ms = std::chrono::duration<double, std::milli>(
         t_end - t_start).count();
 
-    return aggregate_samples_(std::move(per_prod_samples), wall_ms, TOTAL);
+    return aggregate_batched_(std::move(per_prod_ns), wall_ms, TOTAL);
 }
 
 template <typename Channel>
@@ -1080,8 +1254,21 @@ int main() {
     std::printf("                   Lifo (owner) = %zu\n", ITEMS_LIFO);
     std::printf("                   Priority (Cal grid) = 4×%zu = %zu\n",
                 ITEMS_PRIORITY_PER_PROD, NUM_PRODUCERS * ITEMS_PRIORITY_PER_PROD);
-    std::printf("  THRU_SAMPLES = %zu  warmup = %zu  max_wall = %zu ms\n\n",
+    std::printf("  THRU_SAMPLES = %zu  warmup = %zu  max_wall = %zu ms\n",
                 THRU_SAMPLES, THRU_WARMUP, THRU_MAX_WALL_MS);
+    std::printf("  rdtsc resolution: %.2f ns (overhead = %lu cycles, "
+                "ns/cyc = %.4f)\n",
+                bench::Timer::overhead_ns(),
+                static_cast<unsigned long>(bench::Timer::overhead_cycles()),
+                bench::Timer::ns_per_cycle());
+    std::printf("  contended-tail measurement: BATCH_PER_PROD = %u "
+                "pushes per rdtsc bracket → per-op cost amortized "
+                "above the rdtsc resolution floor\n",
+                BATCH_PER_PROD);
+
+    const PinningLayout layout = choose_layout_();
+    print_pinning_layout_(layout);
+    std::printf("\n");
 
     std::vector<PolicyResults> results;
 
@@ -1156,7 +1343,7 @@ int main() {
         auto ch_floor = std::make_unique<QT>();
         auto floor = bench_floor_calendar_("Deadline floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
-        auto tail  = bench_contended_calendar_(*ch_tail);
+        auto tail  = bench_contended_calendar_(*ch_tail, layout);
         auto ch_thru = std::make_unique<QT>();
         auto thru  = bench_throughput_calendar_("Deadline throughput", *ch_thru);
         results.push_back({"Deadline", std::move(floor), std::move(tail), std::move(thru)});
@@ -1167,7 +1354,7 @@ int main() {
         auto ch_floor = std::make_unique<QT>();
         auto floor = bench_floor_calendar_("Cfs floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
-        auto tail  = bench_contended_calendar_(*ch_tail);
+        auto tail  = bench_contended_calendar_(*ch_tail, layout);
         auto ch_thru = std::make_unique<QT>();
         auto thru  = bench_throughput_calendar_("Cfs throughput", *ch_thru);
         results.push_back({"Cfs", std::move(floor), std::move(tail), std::move(thru)});
@@ -1178,7 +1365,7 @@ int main() {
         auto ch_floor = std::make_unique<QT>();
         auto floor = bench_floor_calendar_("Eevdf floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
-        auto tail  = bench_contended_calendar_(*ch_tail);
+        auto tail  = bench_contended_calendar_(*ch_tail, layout);
         auto ch_thru = std::make_unique<QT>();
         auto thru  = bench_throughput_calendar_("Eevdf throughput", *ch_thru);
         results.push_back({"Eevdf", std::move(floor), std::move(tail), std::move(thru)});
@@ -1197,7 +1384,7 @@ int main() {
         auto ch_floor = std::make_unique<QT>();
         auto floor = bench_floor_per_shard_("DeadlinePerShard floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
-        auto tail  = bench_contended_per_shard_(*ch_tail);
+        auto tail  = bench_contended_per_shard_(*ch_tail, layout);
         auto ch_thru = std::make_unique<QT>();
         auto thru  = bench_throughput_per_shard_("DeadlinePerShard throughput", *ch_thru);
         results.push_back({"DeadlinePerShard", std::move(floor), std::move(tail), std::move(thru)});
@@ -1208,7 +1395,7 @@ int main() {
         auto ch_floor = std::make_unique<QT>();
         auto floor = bench_floor_per_shard_("CfsPerShard floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
-        auto tail  = bench_contended_per_shard_(*ch_tail);
+        auto tail  = bench_contended_per_shard_(*ch_tail, layout);
         auto ch_thru = std::make_unique<QT>();
         auto thru  = bench_throughput_per_shard_("CfsPerShard throughput", *ch_thru);
         results.push_back({"CfsPerShard", std::move(floor), std::move(tail), std::move(thru)});
@@ -1219,7 +1406,7 @@ int main() {
         auto ch_floor = std::make_unique<QT>();
         auto floor = bench_floor_per_shard_("EevdfPerShard floor (push+pop)", *ch_floor);
         auto ch_tail = std::make_unique<QT>();
-        auto tail  = bench_contended_per_shard_(*ch_tail);
+        auto tail  = bench_contended_per_shard_(*ch_tail, layout);
         auto ch_thru = std::make_unique<QT>();
         auto thru  = bench_throughput_per_shard_("EevdfPerShard throughput", *ch_thru);
         results.push_back({"EevdfPerShard", std::move(floor), std::move(tail), std::move(thru)});
