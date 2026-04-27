@@ -118,7 +118,7 @@ The cost is four-fold.
 
 **Structuring code so protocols are visible.** Instead of "send the message and hope" we write `handle = handle.send(msg).await_response()` with per-step return types. This is how Rust's `async/await` already forces us to write code; session types extend the discipline to cross-thread and cross-node communication.
 
-**Template metaprogramming density.** The type-level machinery for projection, subtyping, context reduction, φ-checking is heavy. We isolate it in `include/crucible/safety/Session*.h` and pay the compile-time cost only where a session-typed handle is instantiated. Release builds see zero runtime overhead; debug builds' extra compile-time is absorbed into the same build cycle as contract and reflection checks.
+**Template metaprogramming density.** The type-level machinery for projection, subtyping, context reduction, φ-checking is heavy. We isolate it in `include/crucible/sessions/Session*.h` and pay the compile-time cost only where a session-typed handle is instantiated. Release builds see zero runtime overhead; debug builds' extra compile-time is absorbed into the same build cycle as contract and reflection checks.
 
 **A decidability wall.** Precise async subtyping ⩽_a is undecidable in general (Bravetti-Carbone-Zavattaro 2018; Lange-Yoshida 2017). Crucible uses a decidable approximation: bounded-depth SISO refinement (à la Rumpsteak, Cutner-Yoshida-Vassor 2022). When the approximation cannot prove a subtype relation within the depth bound, we reject conservatively. In exchange: every subtype we accept is genuinely sound. A rejected query can be resolved by the engineer widening the depth bound or restructuring the protocol; we have not observed a real Crucible protocol that needs depth > 32, and the default bound is 64.
 
@@ -894,7 +894,7 @@ L5  SessionAssoc.h                           association Δ ⊑_s G
 L6  SessionSubtype.h                         sync ⩽ and bounded-async ⩽_a
 L7  SessionSafety.h                          the φ family, all seven SY19 levels
 L8  SessionCrash.h                           Stop, Crash<p>, ⊘, reliability R
-L9  PermissionedSession.h                    CSL × session integration
+L9  sessions/PermissionedSession.h           CSL × session integration (FOUND-C v1)
 L10 SessionPatterns.h                        pattern library (RequestResponse, Pipeline, 2PC, …)
 L11 SessionDiagnostic.h                      manifest-bug tags, compiler diagnostic helpers
 L12 SessionChoreography.h                    choreographic projection (v2; sketch in this doc)
@@ -926,7 +926,7 @@ Builds bottom-up: L0–L1 done, L2–L5 are next phase, L6–L9 are the flagship
 
 Each layer is ONE header in `include/crucible/safety/`. Headers are self-contained (every `#include` is explicit). Total target size across all twelve: ~8–10K lines. Comparison: the existing safety infrastructure (Permission.h + PermissionFork.h + Linear.h + Refined.h + Tagged.h + Pinned.h + ScopedView.h + Session.h + Once.h + Mutation.h + Ordered.h + Secret.h + ConstantTime.h) is ~5K lines total, so we are roughly doubling the safety header surface.
 
-**Namespace discipline.** All public session-type API under `crucible::safety::session`. Internal helpers under `crucible::safety::session::detail`. No leakage into `crucible::` top-level.
+**Namespace discipline.** All public session-type API under `crucible::safety::proto`. Internal helpers under `crucible::safety::proto::detail`. No leakage into `crucible::` top-level.
 
 **Include graph constraints.** No cycles. Every layer depends only on strictly-lower layers (and the non-session safety primitives). L12 is the highest; it may include anything. L0 is the lowest; it includes only `<type_traits>`, `<concepts>`, `<utility>`, and `Platform.h`.
 
@@ -1044,7 +1044,7 @@ Session types PROMOTE `ScopedView`'s unary typestate to N-ary protocol state. Th
 `include/crucible/sessions/Session.h`. **1185 lines** (as of 2026-04-24, up from the 700-line estimate when this section was first drafted; growth driven by SessionHandleBase CRTP for abandonment detection #349 and release-mode EBO machinery #366), 102/102 tests green on GCC 16 (full suite, excluding pre-existing test_safety legacy). Public surface:
 
 ```cpp
-namespace crucible::safety::session {
+namespace crucible::safety::proto {
 
 // Combinators (class templates; types are opaque)
 template <typename P, typename K> struct Send;
@@ -1196,7 +1196,7 @@ void abandoned_protocol() {
 `include/crucible/sessions/SessionContext.h`. Core abstraction: a compile-time set of (session_tag, role_tag) → local_type entries.
 
 ```cpp
-namespace crucible::safety::session {
+namespace crucible::safety::proto {
 
 // An entry: (session, role, local_type) tagged triple
 template <typename SessionTag, typename RoleTag, typename T>
@@ -1272,7 +1272,7 @@ Fuel bound keeps the BFS bounded; for Crucible's Γ's (bounded participants, bou
 `include/crucible/sessions/SessionQueue.h`. Queue types model the in-flight messages between two participants on an async channel.
 
 ```cpp
-namespace crucible::safety::session {
+namespace crucible::safety::proto {
 
 // A queued message
 template <typename From, typename To, typename Label, typename Payload>
@@ -1327,7 +1327,7 @@ inline constexpr bool is_balanced_plus_v = /* bounded queue depth along all LTS 
 `include/crucible/sessions/SessionGlobal.h`. The bird's-eye protocol syntax.
 
 ```cpp
-namespace crucible::safety::session::global {
+namespace crucible::safety::proto::global {
 
 // Global types
 struct End_G;
@@ -1390,7 +1390,7 @@ inline constexpr bool is_global_balanced_plus_v = /* … */;
 `include/crucible/sessions/SessionAssoc.h`. The invariant tying Γ to a global type.
 
 ```cpp
-namespace crucible::safety::session {
+namespace crucible::safety::proto {
 
 // Association: Δ ⊑_s G
 template <typename Δ, typename G, typename SessionTag>
@@ -1423,7 +1423,7 @@ using associated_preservation_witness = /* … */;
 `include/crucible/sessions/SessionSubtype.h`. Both subtyping relations in one header, with shared infrastructure.
 
 ```cpp
-namespace crucible::safety::session {
+namespace crucible::safety::proto {
 
 // ── Synchronous Gay-Hole subtyping ─────────────────────────────
 template <typename T, typename U> struct IsSubtypeSync;
@@ -1673,10 +1673,10 @@ struct IsSubtypeAsync {
 
 ## III.L7 — Parametric safety φ (SessionSafety.h)
 
-`include/crucible/safety/SessionSafety.h`. The seven SY19 safety levels as compile-time predicates.
+`include/crucible/sessions/SessionSafety.h`. The seven SY19 safety levels as compile-time predicates.
 
 ```cpp
-namespace crucible::safety::session {
+namespace crucible::safety::proto {
 
 // LTS-level safety predicates on Γ
 template <typename Γ>
@@ -1762,7 +1762,7 @@ User picks the tightest concept that makes sense for their channel.
 `include/crucible/sessions/SessionCrash.h`. Stop, crash-branches, reliability sets, unavailable queues.
 
 ```cpp
-namespace crucible::safety::session {
+namespace crucible::safety::proto {
 
 // Stop type: local view of a crashed endpoint
 struct Stop;
@@ -1821,60 +1821,103 @@ auto set_stop(H&& handle) -> SessionHandle</* Stop ... */>;
 
 ## III.L9 — CSL × session (PermissionedSession.h)
 
-`include/crucible/safety/PermissionedSession.h`. The integration that ties CSL permissions into session-protocol state.
+**Status: ✅ SHIPPED as FOUND-C v1, 2026-04-27.** Implementation plan: `misc/27_04_csl_permission_session_wiring.md`. Three new headers landed: `permissions/PermSet.h`, `sessions/SessionPermPayloads.h`, `sessions/PermissionedSession.h`. 15/15 tracked tasks complete (#605–#619). One integration test (`test/test_permissioned_session_handle.cpp`, 9 tests green), 10 negative-compile fixtures (`test/sessions_neg/`), one zero-cost bench (`bench/bench_permissioned_session_handle.cpp`). 221/221 ctest green at landing.
+
+`include/crucible/sessions/PermissionedSession.h`. The integration that ties CSL permissions into session-protocol state via a CRTP-inheriting wrapper over `SessionHandle`. Namespace: `crucible::safety::proto` (the same as `Session.h`, NOT a separate `session::` namespace).
 
 ```cpp
-namespace crucible::safety::session {
+namespace crucible::safety::proto {
 
-// Permissioned handle: tracks both protocol state AND active permissions
-template <typename Proto, typename Resource, typename Perms,
-          typename LoopCtx = EmptyLoopStack>
-class PermissionedSessionHandle;
+// Type-level list of currently-held permission tags.  Empty class; sizeof = 1.
+template <typename... Tags>
+struct PermSet { static constexpr std::size_t size = sizeof...(Tags); };
 
-// Permissions are a type-level list of Permission tags
-template <typename... PermTags>
-struct PermissionSet;
+using EmptyPermSet = PermSet<>;
 
-// Transfer a Permission through a Send: sender loses it, recipient gains it
-template <typename PermTag>
-struct Transferable { using perm_tag = PermTag; };
+// Set operations (insert, remove, union, difference, equal) — type-level
+// fold expressions; canonical sort via reflect_hash<Tag> for hash equality.
+// See permissions/PermSet.h.
+template <typename PS, typename Tag>
+inline constexpr bool perm_set_contains_v = /* fold */;
+template <typename PS, typename Tag>
+using perm_set_insert_t = /* unique-prepend */;
+// ... perm_set_remove_t, perm_set_union_t, perm_set_difference_t,
+//     perm_set_equal_v, perm_set_canonicalize_t, perm_set_name<PS> ...
 
-// Compile-time check: every communication event balances the permission sets
-template <typename Γ, typename InitialPermissions>
-inline constexpr bool is_permission_balanced_v = /* … */;
+// Three payload markers signaling permission flow at the message level.
+// Sender LOSES the permission; recipient GAINS it (Transferable / Returned).
+// Borrowed lends a ReadView<Tag> scoped to the next protocol step.
+template <typename T, typename Tag> struct Transferable { /* T value, Permission<Tag> perm */ };
+template <typename T, typename Tag> struct Borrowed     { /* T value, ReadView<Tag> view  */ };
+template <typename T, typename Tag> struct Returned     { /* T value, Permission<Tag> ret */ };
 
-// CSL frame rule: parallel composition of two permissioned sessions
-//   If P_1 : T_1 uses perms P1 and P_2 : T_2 uses perms P2, disjoint,
-//   then P_1 | P_2 : T_1 ⊗ T_2 uses P1 ⊎ P2.
-template <typename H1, typename H2>
-auto csl_compose(H1&& h1, H2&& h2) -> PermissionedSessionHandle</* composed */>;
+// The handle — CRTP-inherits SessionHandleBase; carries Proto state AND
+// the type-level PermSet that evolves on every send/recv/pick/branch.
+// PS is the second template parameter (between Proto and Resource).
+template <typename Proto, typename PS, typename Resource, typename LoopCtx = void>
+class [[nodiscard]] PermissionedSessionHandle
+    : public SessionHandleBase<Proto, PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>>
+{
+    // Send<Plain T, K>:                  PS' = PS
+    // Send<Transferable<T, X>, K>:       PS' = perm_set_remove_t<PS, X>
+    // Send<Borrowed<T, X>, K>:           PS' = PS  (borrow is scoped, not transferred)
+    // Send<Returned<T, X>, K>:           PS' = perm_set_remove_t<PS, X>
+    // Recv mirrors with insert in place of remove.
+    // close() requires perm_set_equal_v<PS, EmptyPermSet>; surrender via
+    // Send<Returned<...>> or detach with documented reason.
+};
 
-// At End, active permission set must match declared exit set
-template <typename Proto, typename EntryPerms, typename ExitPerms>
-inline constexpr bool exit_permissions_valid_v = /* … */;
+// Establishment — consumes Permission tokens; their tags become the initial PS.
+template <typename Proto, typename Resource, typename... InitPerms>
+[[nodiscard]] auto establish_permissioned(Resource r, Permission<InitPerms>&&... perms);
 
-// φ_CSL = φ_safe ∧ permission-balanced
-template <typename Γ, typename InitialPerms>
-inline constexpr bool is_csl_safe_v =
-    is_safe_v<Γ> && is_permission_balanced_v<Γ, InitialPerms>;
+// Multi-party fork — splits Whole into RolePerms, projects G per role,
+// spawns one std::jthread per role, RAII rebuilds Whole on join.
+// Works for binary + plain-mergeable multiparty in v1; diverging multiparty
+// (Raft, 2PC-with-multi-followers, MoE all-to-all) is blocked on Task #381
+// (full coinductive merging in plain_merge_t) and produces a clean
+// projection-failure diagnostic until then.
+template <typename G, typename Whole, typename... RolePerms,
+          typename SharedChannel, typename... Bodies>
+[[nodiscard]] Permission<Whole> session_fork(
+    SharedChannel& ch,
+    Permission<Whole>&& whole_perm,
+    Bodies&&... bodies) noexcept;
 
-} // namespace
+// One-shot crash transport composition — peek the flag before the body,
+// detach with TransportClosedOutOfBand if signaled.  Wraps the existing
+// CrashWatchedHandle pattern from bridges/CrashTransport.h.
+template <typename PSH, typename Body>
+[[nodiscard]] auto with_crash_check_or_detach(
+    PSH&& h, ::crucible::safety::OneShotFlag& flag, Body&& body)
+    -> std::optional<std::invoke_result_t<Body, PSH&&>>;
+
+}  // namespace crucible::safety::proto
 ```
 
-**The permission-transfer invariant.** When a handle with active permission set P sends a message of type `Transferable<X>` (carrying a Permission<X>), the handle's active set becomes P \ {X}; the recipient's active set gains X. Protocol-level invariant: the union of active sets across all participants is constant (modulo splits and combines at CSL-split points).
+**Decisions made (per implementation plan §0.4).**
 
-**Safety theorem.** If every participant's local protocol preserves permission balance, and the global initial permission set is the disjoint union of every participant's initial set, then at every reachable protocol state the union of active permissions is well-defined. Proof: by induction on the LTS reduction, using the per-event transfer rule.
+- **D2 — `session_fork` ships in v1** for binary + plain-mergeable multiparty. Diverging multiparty waits on Task #381.
+- **D3 — Loop balance enforcement is mandatory.** Every reachable `Continue` carries `static_assert(perm_set_equal_v<PS, LoopEntryPS>)`; iteration N+1 must start in the same permission state as iteration N.
+- **D4 — Branch convergence is structural.** Each terminal head (End / Stop / Continue) carries its own PS check, so Select/Offer branches converge by construction — no separate `all_branches_converge_v` metafunction needed.
+- **D5 — Debug-mode abandonment tracker enriched** to enumerate leaked permission tags. Zero release-mode cost (the entire enrichment is `#ifndef NDEBUG`).
+- **D6 — `is_permission_balanced_v<Γ, InitialPerms>` ships standalone**, NOT conjuncted with `is_safe_v` (Task #346, unshipped). The earlier doc-claimed conjunction `is_csl_safe_v = is_safe_v ∧ is_permission_balanced_v` is **deferred to v2** — over-claiming would violate Part IX's honest-assessment discipline. Promotion criterion: L7 SessionSafety.h ships.
+- **D7 — Doc-update sweep bundled with implementation PR.** This rewrite is part of that sweep.
 
-**Compile-time enforcement.** Every Send/Recv of a `Transferable<X>` is checked against the permissioned handle's current perm set. Sending without holding the permission is a compile error. Receiving duplicates the permission on the recipient's side (the type system tracks this). At End, the caller must surrender the permission-set to continue.
+**The permission-transfer invariant.** When a handle with active PS sends a `Transferable<T, X>` (or `Returned<T, X>`), PS' = `perm_set_remove_t<PS, X>`; the recipient's PS' = `perm_set_insert_t<PS, X>`. Protocol-level invariant: the union of active PSets across all participants is constant modulo `permission_split` / `permission_combine` at fork points. `Borrowed<T, X>` lends a `ReadView<X>` scoped to the next protocol step — recipient's PS is unchanged.
 
-**Relation to CRUCIBLE.md §5.1.** CNTP's permission-carrying messages (gradient buckets with Permission<Grad<k>>, KernelCache publications with Permission<CompiledKernel<hash>>) use this layer directly.
+**Compile-time enforcement.** Every send dispatches on the payload SHAPE (Transferable / Borrowed / Returned / plain) and statically asserts the sender's PS contains the required tag. Receiving evolves PS automatically per the SessionPayloadSubsort axioms (which compose orthogonally — see `SessionPayloadSubsort.h:90-99`'s integration block). At `close()` PS must equal `EmptyPermSet`; otherwise compile error with `[PermissionImbalance]` diagnostic listing the leaked tags. Loop body PS-balance and branch-terminal PS convergence are both enforced statically.
+
+**`csl_compose` is NOT shipped.** This combinator was invented in an earlier draft of this document; no other doc spec, no FOUND-C task tracks it. Deferred to v2 explicitly. Composition of two PermissionedSessionHandles is currently expressed via `permission_fork` + `establish_permissioned`, which is what `session_fork` does internally.
+
+**Relation to CRUCIBLE.md §5.1.** CNTP's permission-carrying messages (gradient buckets with `Permission<Grad<k>>`, KernelCache publications with `Permission<CompiledKernel<hash>>`) are the next consumers — see K-series tasks #355–#358. v1 ships the framework; production wiring is the next phase.
 
 ## III.L10 — Pattern library (SessionPatterns.h)
 
 `include/crucible/sessions/SessionPatterns.h`. Ready-made one-liners for common communication patterns.
 
 ```cpp
-namespace crucible::safety::session::pattern {
+namespace crucible::safety::proto::pattern {
 
 // Request-response: client sends Req, receives Resp, repeat
 template <typename Req, typename Resp>
@@ -1941,7 +1984,7 @@ Each pattern is a compile-time construction; instantiating `MpmcProtocol<4, 8, J
 `include/crucible/sessions/SessionDiagnostic.h`. Per task #342. Classification tags attached to compile errors to identify the manifest bug class and suggest remediation.
 
 ```cpp
-namespace crucible::safety::session::diagnostic {
+namespace crucible::safety::proto::diagnostic {
 
 // Manifest-bug classes (from session-type literature)
 struct ProtocolViolation_Label;        // sent wrong label in a Select
@@ -1972,10 +2015,10 @@ struct Diagnostic;
 
 ## III.L12 — Choreographic projection (v2 sketch)
 
-`include/crucible/safety/SessionChoreography.h`. Deferred to v2 but architecturally anticipated.
+`include/crucible/sessions/SessionChoreography.h`. Deferred to v2 but architecturally anticipated.
 
 ```cpp
-namespace crucible::safety::session::choreo {
+namespace crucible::safety::proto::choreo {
 
 // A choreographic program: one expression describing all participants' behavior
 template <typename... Steps>
@@ -3419,9 +3462,9 @@ Dependency-ordered delivery of the twelve-layer stack.
 
 **M8 — L8 Crash-stop.**  ⚠️ PARTIAL.  SessionCrash.h ships Stop, Crash<p>, UnavailableQueue, ReliableSet, has_crash_branch_for_peer_v + assert_has_crash_branch_for.  **DEFERRED**: Γ-level aggregate check that walks every Offer in every entry's local type (Task SEPLOG-BUG-4 / #368) and the prerequisite Sender-role-on-Offer (Task SEPLOG-STRUCT-1 / #367).  Per-Offer trait shipped is essentially useless for nested Offers (which is most real protocols).  Task #347 (pending — partial).  Current line count: **627**.
 
-**M9 — L9 CSL × session.**  ❌ NOT SHIPPED.  No PermissionedSession.h header exists.  Transferable<P> payload markers, permission balance preservation across reductions, exit-permission validation — all missing.  **Consequence**: sessions and Permission<Tag> are two parallel systems that don't talk.  The framework's central thesis ("session types make CSL permissions compose") is unimplemented.  Task #333 (pending).
+**M9 — L9 CSL × session.**  ✅ SHIPPED as FOUND-C v1, 2026-04-27.  `sessions/PermissionedSession.h` (~1,300 lines) + `permissions/PermSet.h` (~370) + `sessions/SessionPermPayloads.h` (~410).  Three payload markers (Transferable / Borrowed / Returned), per-protocol-head specialisations (End / Stop / Send / Recv / Select / Offer), Loop body permission-balance enforcement (Decision D3), branch-terminal PS convergence enforced structurally (Decision D4), debug-mode abandonment-tracker enrichment with leaked tags (Decision D5), `establish_permissioned` factory, `session_fork<G, Whole, RolePerms…>` multi-party establishment (Decision D2; works for binary + plain-mergeable multiparty, diverging-multiparty waits on Task #381), `with_crash_check_or_detach` OneShotFlag composition.  9-test integration suite + 10 negative-compile fixtures + zero-cost bench (sizeof-equal + asm-identical, two-tier evidence).  221/221 ctest green at landing.  Tasks #605–#619 (15/15 completed).  See `misc/27_04_csl_permission_session_wiring.md` for the full implementation plan.  **`is_permission_balanced_v` ships standalone**; the conjunction `is_csl_safe_v = is_safe_v ∧ is_permission_balanced_v` is **deferred to v2** (Decision D6) — promotion criterion is L7 SessionSafety.h landing (M7 / Task #346).
 
-**M10 — The MPMC flagship.**  ❌ NOT SHIPPED.  PermissionedMpmcChannel<T, N, M, C> doesn't exist.  Depends on M6 (async ⩽_a), M9 (CSL × session), Tasks #381 (full merging), #382/383 (L7 prereqs).  Tasks #327, #328, #331, #326 (all pending).  See **Part V** for the projected design — currently descriptive, not implemented.
+**M10 — The MPMC flagship.**  ⚠️ PARTIAL.  `PermissionedMpmcChannel<T, N, Cap>` ships (FOUND-A06–A10, completed 2026-04 in concurrent/PermissionedMpmcChannel.h with TWO fractional pools per THREADING.md §5.5.1, cookie-fingerprint debug mode, mode-transition `with_drained_access`, full bench coverage). The TYPE-LEVEL PermSet correctness now composes via the M9 PermissionedSessionHandle; the conjunction with `is_safe_v` still depends on M7. Remaining: Tasks #328 (MPMC protocol instantiation as ProducerProto / ConsumerProto via session framework), #381 (full coinductive merging for diverging projections), #382/383 (L7 prereqs).  See **Part V** for the design.
 
 **M11 — L10 Pattern library + L11 Diagnostics.**  ✅ SHIPPED.  SessionPatterns.h ships RequestResponse, FanOut/FanIn, Broadcast, ScatterGather, MpmcProducer/Consumer (proto-only, no runtime), TwoPhaseCommit_Coord/Follower, SwimProbe, Handshake, Transaction_Client/Server, PipelineSource/Sink/Stage.  SessionDiagnostic.h ships 18 manifest-bug tags + CRUCIBLE_SESSION_ASSERT_CLASSIFIED macro + 26 retrofit sites across 10 headers (#388).  Tasks #341, #342, #337 (all completed).  Current line counts: SessionPatterns.h **793**, SessionDiagnostic.h **633**.
 
@@ -3492,18 +3535,20 @@ What the framework does NOT have at the **semantic** level:
 - ❌ φ predicates that actually verify properties.  Every is_safe_v / is_df_v / is_live+_v claim in Part VI is currently aspirational — those metafunctions don't exist (Task #346 / SessionSafety.h).  The Part VI table reads as "channel X requires φ(N)" but no compile-time witness can be produced for any channel today.
 - ❌ Async subtyping ⩽_a (Task #348).  Sync-only is too strict for MPMC (Section §V.4 documents the async-pipelining requirement; the type system can't currently certify it).
 - ❌ Coinductive full merging (Task #381).  Plain merge cannot project Raft / 2PC-with-multi-followers / any DIVERGING multiparty global type onto third-party roles.
-- ❌ CSL × session integration (Task #333).  Permission and SessionHandle are parallel systems that don't talk; Transferable<P> doesn't exist as a payload marker.
+- ✅ CSL × session integration shipped as `PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>` per FOUND-C v1 (2026-04-27).  Transferable / Borrowed / Returned payload markers (`sessions/SessionPermPayloads.h`); PermSet algebra (`permissions/PermSet.h`); Loop body permission-balance enforcement at every Continue (Decision D3); branch-terminal PS convergence enforced structurally (Decision D4); debug abandonment-tracker enrichment with leaked tags (Decision D5).  `establish_permissioned` + `session_fork` factories.  `is_permission_balanced_v` ships standalone; the conjunction `is_csl_safe_v = is_safe_v ∧ is_permission_balanced_v` deferred to v2 until Task #346 (L7) lands (Decision D6).
 - ❌ Causality analysis ≺_II / ≺_IO / ≺_OO (Task #340).  Without these, deadlock-freedom claims have no foundation.
 - ❌ Reachable-contexts BFS (Task #382).  L7's φ predicates need this; without it, L7 can't be implemented.
 - ❌ Association preservation theorem (HYK24 Thm 5.8).  Single-point association check shipped; preservation across reductions needs reduction semantics from L7.
 
 ## IX.2 The "no production callers" critique
 
-**Headline gap**: ~8,400 lines of header pile, **zero** Crucible production channels currently use SessionHandle or PermissionedSpscChannel.
+**Headline gap**: ~9,700 lines of header pile (8,400 sessions/ + ~1,300 PermissionedSession + ~370 PermSet + ~410 SessionPermPayloads), **zero** Crucible production channels currently use SessionHandle or PermissionedSpscChannel.
 
-The K-series tasks (#355 Vessel dispatch, #356 KernelCache, #357 InferenceSession, #358 CNTP Raft) are all pending.  Sub-tasks #384-#387 (TraceRing/MetaLog/ChainEdge/Augur wiring, added during the gap-analysis pass) are all pending.  PermissionedSpscChannel ships as the missing primitive — but until at least one production channel uses it, the framework's "zero-cost in production" claim is verified only by synthetic micro-benchmarks (sizeof checks via /tmp/check_sizeof.cpp, not real workloads).
+After FOUND-C v1 (2026-04-27): the framework gained its first compile-time integration test exercising the whole stack from `Permission<Tag>` through `PermSet<Tags...>` through `Transferable<T, Tag>` through `PermissionedSessionHandle<Proto, PS, Resource>` (`test/test_permissioned_session_handle.cpp`, 9 tests + 10 negative-compile fixtures + sizeof-equal/asm-identical zero-cost bench).  But no production channel is rewritten to use it yet.
 
-The framework is currently a **museum piece**: well-documented, internally-consistent, exhaustively self-tested at the type level, with zero industrial use.
+The K-series tasks (#355 Vessel dispatch, #356 KernelCache, #357 InferenceSession, #358 CNTP Raft) are all pending.  Sub-tasks #384-#387 (TraceRing/MetaLog/ChainEdge/Augur wiring, added during the gap-analysis pass) are all pending.  Production wiring of the K-series remains pending; `PermissionedSessionHandle` itself is now exercised by test + bench but no production channel uses it yet.
+
+The framework is currently a **museum piece with one wired exhibit**: well-documented, internally-consistent, exhaustively self-tested at the type level, with one end-to-end integration witness (FOUND-C v1) and zero industrial use.  The next PR after FOUND-C is `SAFEINT-R31` / `SEPLOG-INT-1` (#384 / #413): TraceRing as `PermissionedSpscChannel<TraceEntry, N, TraceRingTag>` composed with the new PermissionedSessionHandle.  That is the moment this section finally has a non-zero answer to "production callers using the framework."
 
 ## IX.3 The "claimed φ vs enforced φ" matrix
 
@@ -3512,8 +3557,9 @@ For every channel listed in **Part VI**, the chosen φ is currently UNVERIFIED. 
 | Channel | Claimed φ | Currently enforced |
 |---|---|---|
 | IV.1–IV.34 (all 34 channels) | per Part VI table | none (Task #346 not shipped) |
+| `PermissionedSessionHandle<Γ, …>` (any caller of FOUND-C v1) | csl_balanced (= `is_permission_balanced_v`, structural per-Continue + per-terminal-head) | enforced (compile-time, via FOUND-C v1) |
 
-Until L7 SessionSafety.h lands, the φ-table in Part VI documents intent, not protection.
+Until L7 SessionSafety.h lands, the φ-table in Part VI documents intent, not protection.  The single exception added 2026-04-27: the `csl` conjunct is now enforced for any caller using `PermissionedSessionHandle` — Loop body PS-balance fires `static_assert([PermissionImbalance])` at every `Continue`; close requires `PS == EmptyPermSet`; branch terminals enforce convergence structurally via per-head PS checks at End / Stop / Continue.
 
 ## IX.4 The "claimed costs vs measured costs" gap
 
@@ -3529,7 +3575,7 @@ If you read this document end-to-end **before reading the headers in the tree**,
 1. Part VII's status-tagged milestones (above, just refreshed)
 2. This Part IX
 3. The doc-comment headers of each shipped file say what's IN that file
-4. `git log --oneline include/crucible/safety/Session*.h include/crucible/concurrent/Permissioned*.h` shows actual shipping history
+4. `git log --oneline include/crucible/sessions/Session*.h include/crucible/sessions/PermissionedSession.h include/crucible/concurrent/Permissioned*.h` shows actual shipping history
 
 If you came here to validate a "session types are shipping in Crucible" claim before bringing the framework into a downstream system: **don't yet**.  Wait for K1 (TraceRing or Vessel as typed session), L7 (φ predicates actually verifying), and L9 (CSL × session) to ship.  All three are in the queue with tasks; ETAs are 4–16 weeks aggregate of focused work.
 

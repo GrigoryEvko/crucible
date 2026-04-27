@@ -87,16 +87,18 @@
 // payload-wrapper axioms include this header explicitly; TUs that
 // only need the bare relation include just SessionSubtype.h.
 //
-// ─── Integration with PermissionedSessionHandle (task #333) ───────
+// ─── Integration with PermissionedSessionHandle (FOUND-C v1) ──────
 //
-// The forthcoming PermissionedSessionHandle (misc/24_04_2026_safety_integration.md
-// §5) carries protocol payloads through Send/Recv whose types may
-// include Tagged / Refined / Transferable / Borrowed wrappers.  The
-// permission-flow rules dispatch on payload SHAPE; the subsumption
-// rules in this header determine which payload TYPES are
-// interchangeable through Send's covariance / Recv's contravariance.
-// Both layers compose cleanly because they operate on disjoint
-// information.
+// `sessions/PermissionedSession.h` (shipped FOUND-C v1, see
+// `misc/27_04_csl_permission_session_wiring.md`) carries protocol
+// payloads through Send/Recv whose types may include Tagged /
+// Refined / Transferable / Borrowed / Returned wrappers.  The
+// permission-flow rules dispatch on payload SHAPE (Transferable /
+// Borrowed / Returned / plain) via `sessions/SessionPermPayloads.h`
+// markers; the subsumption rules in this header determine which
+// payload TYPES are interchangeable through Send's covariance /
+// Recv's contravariance.  Both layers compose cleanly because they
+// operate on disjoint information.
 //
 // ─── References ────────────────────────────────────────────────────
 //

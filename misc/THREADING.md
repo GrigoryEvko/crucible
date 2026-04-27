@@ -2169,6 +2169,8 @@ public:
 
 ### 17.13 Session type handle machinery
 
+> **Scope note (added 2026-04-27).** The `session::Active` / `session::Closed` typestate below is a LOCAL per-wrapper mini-typestate — Honda-Vasconcelos-Kubo 1998 binary session at one specific channel — embedded in MpmcChannel for ergonomic close-once semantics. It is NOT the full `Session<Proto, Resource, LoopCtx>` framework from `sessions/Session.h`. Production code wanting full session-type semantics over MPMC channels should compose `PermissionedSessionHandle<MpmcProto, PS, Channel&, void>` per FOUND-C v1 (`sessions/PermissionedSession.h`, see `misc/27_04_csl_permission_session_wiring.md`) — NOT extend `mpmc_session::*`. The local typestate gives you Active/Closed close-discipline; the full framework adds Send/Recv/Select/Offer/Loop/End, duality, projection, branch convergence, Loop balance, payload markers (Transferable / Borrowed / Returned), and PermSet evolution.
+
 Building on the Permission wrapper, session types add protocol adherence:
 
 ```cpp

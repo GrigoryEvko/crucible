@@ -16,8 +16,9 @@
 //   * L8 Crash-stop (SessionCrash.h, task #347) — mandatory-crash-
 //     branch enumeration iterates Γ's entries and checks every Offer
 //     from an unreliable peer has a crash-handling branch.
-//   * L9 CSL × session (PermissionedSession.h, task #333) — permission
-//     balance is an invariant on Γ preserved by reductions.
+//   * L9 CSL × session (`PermissionedSession.h`, FOUND-C v1) —
+//     `is_permission_balanced_v<Γ, InitialPerms>` ships standalone;
+//     conjunction with `is_safe_v` deferred until L7 (Task #346).
 //
 // This layer ships the STRUCTURE only (no reduction, no event-based
 // advance, no reachable-contexts BFS — those arrive with the layers

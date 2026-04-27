@@ -52,6 +52,7 @@ Five regimes (full taxonomy in `algebra/GradedTrait.h` doc-block): **regime-1** 
 **Structural wrappers — deliberately not graded.** Nine wrappers follow non-graded disciplines (RAII, typestate, structural constraint) that don't fit the `Graded<M, L, T>` shape:
 - `Permission<Tag>` + `permission_fork` — CSL frame-rule linear tokens (THREADING.md).
 - `Session<Proto>` — type-state binary and MPST session types in `sessions/` (Honda 1998 / HYC 2008 / Gay-Hole 2005 / BSYZ22 crash-stop).
+- `PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>` (`sessions/PermissionedSession.h`, FOUND-C v1) — threads a CSL `PermSet<Tags...>` through session-protocol position; `Send<Transferable<T, X>, K>` consumes `Permission<X>` from PS, `Recv<Transferable<T, X>, K>` produces it, `close()` requires `PS == EmptyPermSet`. Loop body PS-balance + branch terminal PS convergence enforced statically.
 - `ScopedView<C, Tag>` — lifetime-bounded borrow for non-consuming inspection.
 - `Machine<States>` — type-indexed state machines; illegal transitions are compile errors.
 - `OwnedRegion<T, Tag>` — arena-backed exclusive region.
@@ -478,7 +479,7 @@ L4 Operations: TraceRing SPSC, MetaLog, recording pipeline. L6 Graphs: TraceGrap
 Goal: complete the L0 structural-guarantee layer — axioms, safety wrappers, session types, CSL permissions.
 
 - **Safety wrappers** in `include/crucible/safety/` — Linear, Refined, Tagged, Secret, Permission, Session, ScopedView, Machine, Monotonic, AppendOnly, WriteOnceNonNull, FinalBy/NotInherited, ConstantTime. Zero runtime cost (`sizeof(Wrapper<T>) == sizeof(T)` under `-O3`).
-- **Session-type stack** (12-layer binary + MPST at `safety/Session*.h`): Honda 1998 binary, HYC 2008 MPST, Gay-Hole 2005 subtyping, SY19 parametric φ, GPPSY23 precise async, BSYZ22/BHYZ23 crash-stop, HYK24 association, PMY25 top-down async. ~8/12 milestones shipped (~8,400 lines, 102 tests green); remaining: L7 φ predicates, L9 CSL × session, async ⩽_a, full merging.
+- **Session-type stack** (12-layer binary + MPST at `sessions/Session*.h`): Honda 1998 binary, HYC 2008 MPST, Gay-Hole 2005 subtyping, SY19 parametric φ, GPPSY23 precise async, BSYZ22/BHYZ23 crash-stop, HYK24 association, PMY25 top-down async. ~9/12 milestones shipped (~8,400 lines + ~1,700 FOUND-C, 102 tests + 9 PSH integration tests + 10 negative-compile fixtures green); L9 CSL × session shipped as FOUND-C v1 (`sessions/PermissionedSession.h`). Remaining: L7 φ predicates (Task #346), async ⩽_a (#348), full coinductive merging (#381).
 - **CSL permissions** (THREADING.md) — `Permission<Tag>`, `SharedPermission` + pool, `permission_fork` (CSL parallel rule as RAII fork-join), cache-tier cost model (L1/L2 → sequential, L3/DRAM → parallel).
 - **Production refactors**: Vigil → Machine + Session, TraceRing → PermissionedSpscChannel, KernelCache → SwmrSession + ContentAddressed, Cipher tiers → Delegate + Tagged, CNTP layers → Session over Session. ~70 tracked tasks in the backlog.
 - **Lean proofs** (Phase 5 of safety-integration plan): PermissionFlow, AssociationPreservation, StreamSessionLifetime, CrashFlow, SecretFlow. `lean/Crucible/` already has 36 modules / 1,312 theorems / zero sorry covering L0-L17.
