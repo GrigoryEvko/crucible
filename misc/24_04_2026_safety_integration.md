@@ -81,7 +81,16 @@ The scope is also limited by what GCC 16 can express today. P2900R14 contracts, 
 
 ## 5. PermissionedSessionHandle — the unfinished thesis (task #333)
 
-`session_types.md` Part IX names this as the framework's "central thesis" and flags it as `❌ NOT SHIPPED`. It is the deepest integration in the document and the one that, once landed, makes every subsequent integration trivially expressible.
+> **SHIPPED-AS marker (added 2026-04-27).** Section 5 was the v1 spec; FOUND-C v1 implements it. **Implementation plan: `misc/27_04_csl_permission_session_wiring.md`.** Three new headers in `include/crucible/sessions/PermissionedSession.h` (~1,300 lines), `include/crucible/sessions/SessionPermPayloads.h` (~410 lines), `include/crucible/permissions/PermSet.h` (~370 lines). 15/15 tracked tasks complete (#605–#619). Notable deviations from this section's spec, all bundled in the SHIPPED-AS marker:
+>
+> - **Header location**: `sessions/PermissionedSession.h`, not `safety/PermissionedSession.h` (sessions/ tree moved out of safety/).
+> - **Template parameter order**: `<Proto, PS, Resource, LoopCtx>` (PS second, between Proto and Resource — mirrors CRTP base inheritance) rather than the original L184 ordering.
+> - **§9 multi-party factory renamed**: `establish_n_party_permissioned` → `session_fork` (more idiomatic; matches `permission_fork`).
+> - **Decision D6 — `is_csl_safe_v` deferred**: `is_permission_balanced_v<Γ, InitialPerms>` ships standalone in v1; the conjunction `is_csl_safe_v = is_safe_v ∧ is_permission_balanced_v` is deferred to v2 since `is_safe_v` (Task #346 / L7) is unshipped — over-claiming would violate Part IX's honest-assessment discipline.
+> - **§11 crash-transport partial integration**: `with_crash_check_or_detach(handle, OneShotFlag&, body)` helper shipped (uses the existing `bridges/CrashTransport.h::CrashWatchedHandle` pattern). The proposed `notify_crash(PeerId)` global hook is NOT shipped — callers wire `OneShotFlag::signal()` themselves from their detection layer.
+> - **Resource-as-reference support**: PSH supports both value-type Resource (e.g. `FakeChannel`) AND lvalue-ref Resource (e.g. `SharedChan&`) via `std::forward<Resource>(...)` throughout per-head ctors / step_to_next / branch dispatch / establish. Required for `session_fork`'s SharedChannel pattern; the bare `std::move(...)` form would have hit all K-series production migrations.
+
+`session_types.md` Part IX names this as the framework's "central thesis"; before FOUND-C v1 it was flagged `❌ NOT SHIPPED`. After FOUND-C v1 (2026-04-27): ✅ SHIPPED. Production wiring (K-series tasks #355–#358 / SAFEINT-R31 #413) remains pending and is the next phase.
 
 ### 5.1 The current gap
 
@@ -446,6 +455,8 @@ Around three hundred lines: the StreamSource/Sink type aliases, the establishmen
 
 ## 9. permission_fork × multi-party session establishment
 
+> **SHIPPED-AS marker (added 2026-04-27).** Shipped as `session_fork<G, Whole, RolePerms…, SharedChannel, Bodies…>` (renamed from `establish_n_party_permissioned` for symmetry with `permission_fork`). Works for binary + plain-mergeable multiparty in v1; diverging multiparty (Raft, 2PC-with-multi-followers, MoE all-to-all) is blocked on Task #381 (full coinductive merging in `SessionGlobal.h::plain_merge_t`) and produces a clean projection-failure diagnostic from `Project<G, Role>` until that lands. The role tag and permission tag are unified into a single `RolePerms` template parameter (each tag does double duty: projection role identity in G AND `Permission<RolePerm>` linear token), keeping the API narrow and the `splits_into_pack<Whole, RolePerms…>` manifest small.
+
 Multi-party sessions currently have no first-class establishment factory. The session_types.md §V documentation describes N-party MPMC channels and §IV.18 documents N-party collectives, but neither has a one-call establishment path that ties N participants to N projected local protocols with N permission roots and N worker threads. The integration uses `permission_fork` as the substrate.
 
 ### 9.1 Design
@@ -593,6 +604,8 @@ Several long-pending tasks resolve via this unification:
 - #164 (Fallback boundary Session type-state) and #33 (pending_region/pending_activation ScopedView state machine) compose ScopedView for non-consuming inspection, Machine for the carrier, Session for the bisimulation-against-G view.
 
 ## 11. OneShotFlag × runtime crash transport for sessions
+
+> **SHIPPED-AS marker (added 2026-04-27, partial).** FOUND-C v1 ships the composition primitive `with_crash_check_or_detach(handle, OneShotFlag&, body)` in `sessions/PermissionedSession.h`, which peeks the flag before the body and calls `detach(detach_reason::TransportClosedOutOfBand{})` on the handle if the flag is signaled. This composes cleanly with the existing `bridges/CrashTransport.h::CrashWatchedHandle` pattern. The proposed `notify_crash(PeerId)` global hook is **NOT shipped** — callers wire `OneShotFlag::signal()` themselves from their detection layer (CNTP completion-error handler, SWIM confirmed-dead handler, kernel socket-close handler). PS-drop-on-crash policy is enforced structurally: detach drops PS without firing the close-time perm-surrender check, matching the "permissions are not recovered from a crashed peer" invariant.
 
 Session types model crash-stop at the type level via `Stop`, `Crash<Peer>`, and `UnavailableQueue<Peer>` in `SessionCrash.h`. The runtime mechanism that actually transitions a live `SessionHandle<Proto, R>` to `Stop` when CNTP detects the peer's death does not exist — the file-header note in `SessionCrash.h` flags it as "out of scope for L8." The right primitive to wire it with already exists: `OneShotFlag` from `safety/OneShotFlag.h`.
 
@@ -1197,7 +1210,7 @@ The integrations split naturally into four epochs:
 
 **Epoch I (weeks 1-2): Subsort axioms + concept gates.** Land §6 (Tagged subsorts), §7 (Refined subsorts), §22 (implies_v wiring), §17 (Pinned concept). Total: about two hundred lines of new framework code; roughly one thousand lines of existing call site updates as production code opts in. Low risk; high payoff. Unblocks every subsequent integration.
 
-**Epoch II (weeks 3-5): The PermissionedSessionHandle thesis.** Land §5 (PermissionedSessionHandle), §11 (OneShotFlag crash transport), §9 (session_fork). Total: about a thousand lines of new framework code. Medium-high risk; this is the load-bearing integration. Negative-compile tests for every permission-flow violation; benchmark to verify zero overhead in release.
+**Epoch II (weeks 3-5): The PermissionedSessionHandle thesis.** Land §5 (PermissionedSessionHandle), §11 (OneShotFlag crash transport), §9 (session_fork). **Landed 2026-04-27 as FOUND-C v1** (~2,100 lines of framework code across three new headers, plus ~680 lines of integration test, 50 lines of negative-compile fixtures, and a two-tier zero-cost bench — see `misc/27_04_csl_permission_session_wiring.md`). Medium-high risk converted to LOW — the asm-identical machine-code-parity claim is verified at compile time via `static_assert(sizeof == sizeof)` plus a runtime bench. Negative-compile harness has 10 fixtures with triple-anchor regex matching; bench shows sub-nanosecond per-op for both bare and PSH (delta is bench-harness microarchitectural noise, not framework overhead).
 
 **Epoch III (weeks 6-8): Streaming, swap, and SWMR.** Land §8 (StreamSession over OwnedRegion), §10 (Machine bridge), §18 (SwmrSession). Total: about six hundred lines of new framework code. Medium risk; provides the patterns the production refactors will rely on.
 
@@ -1213,9 +1226,12 @@ The remaining Tier-B/C integrations (§13 Secret payloads, §14 PublishOnce esta
 | §7 Refined subsort | 30 | 100 | Low |
 | §17 Pinned concept | 20 | 50 | Low |
 | §22 implies_v wiring | 50 | 50 | Low |
-| §5 PermissionedSessionHandle | 600 | 0 | Medium-high |
-| §11 OneShotFlag crash | 300 | 200 | Medium |
-| §9 session_fork | 200 | 0 | Medium |
+| §5 PermissionedSessionHandle | 1,300 (shipped 2026-04-27 — full functionality, all 5 protocol-head specialisations, Loop balance + branch convergence enforcement, debug abandonment-tracker enrichment, three payload markers, both establishment factories) | 0 | Low (shipped) |
+| §11 OneShotFlag crash | 50 (shipped — `with_crash_check_or_detach` helper composes with existing `bridges/CrashTransport.h::CrashWatchedHandle`) | 0 | Low (shipped, partial — global `notify_crash` hook explicitly NOT shipped per FOUND-C SHIPPED-AS) |
+| §9 session_fork | 100 (shipped — delegates to `permission_fork`, projects per role via `Project<G, Role>`, RAII rebuild on join) | 0 | Low (shipped) |
+| **PermSet algebra** (new line) | 370 (shipped 2026-04-27 — `permissions/PermSet.h`) | 0 | Low (shipped) |
+| **SessionPermPayloads** (new line) | 410 (shipped 2026-04-27 — `sessions/SessionPermPayloads.h`) | 0 | Low (shipped) |
+| **PSH integration test + bench + neg-compile** (new line) | 730 (shipped 2026-04-27) | 0 | Low (shipped) |
 | §8 StreamSession | 300 | 0 | Medium |
 | §10 Machine bridge | 150 | 0 | Low |
 | §18 SwmrSession | 200 | 0 | Medium |
