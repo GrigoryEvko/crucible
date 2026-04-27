@@ -49,6 +49,7 @@
 #include <cstdint>
 #include <span>
 
+#include <crucible/concurrent/BitmapMpscRing.h>
 #include <crucible/concurrent/MpmcRing.h>
 #include <crucible/concurrent/MpscRing.h>
 #include <crucible/concurrent/SpscRing.h>
@@ -57,6 +58,7 @@
 
 namespace {
 
+using crucible::concurrent::BitmapMpscRing;
 using crucible::concurrent::MpmcRing;
 using crucible::concurrent::MpscRing;
 using crucible::concurrent::SpscRing;
@@ -64,9 +66,10 @@ using crucible::concurrent::SpscRing;
 using Item = std::uint64_t;
 
 // 1M-slot ring — never fills under any single-thread bench.
-using MpmcLarge = MpmcRing<Item, (1U << 20)>;
-using MpscLarge = MpscRing<Item, (1U << 20)>;
-using SpscLarge = SpscRing<Item, (1U << 20)>;
+using MpmcLarge       = MpmcRing<Item, (1U << 20)>;
+using MpscLarge       = MpscRing<Item, (1U << 20)>;
+using BitmapMpscLarge = BitmapMpscRing<Item, (1U << 20)>;
+using SpscLarge       = SpscRing<Item, (1U << 20)>;
 
 // ── Single-call benches ───────────────────────────────────────────────
 
@@ -178,6 +181,39 @@ bench::Report mpsc_single_push_ref() {
     });
 }
 
+// ── Bitmap-backed MPSC (the new design) ───────────────────────────────
+//
+// Pure-data cells + out-of-band bitmap.  No per-cell metadata.  Same
+// 8-byte cell density as SPSC.
+
+bench::Report bitmap_mpsc_single_push() {
+    auto ring = std::make_unique<BitmapMpscLarge>();
+    Item i = 0;
+    return bench::run("bitmap_mpsc.try_push (single-call)", [&]{
+        const bool ok = ring->try_push(++i);
+        bench::do_not_optimize(ok);
+    });
+}
+
+template <std::size_t N>
+bench::Report bitmap_mpsc_batched_push_pop() {
+    auto ring = std::make_unique<BitmapMpscLarge>();
+    alignas(64) static std::array<Item, N> tx{};
+    alignas(64) static std::array<Item, N> rx{};
+    for (std::size_t k = 0; k < N; ++k) tx[k] = k;
+    char name[128];
+    std::snprintf(name, sizeof(name),
+                  "bitmap_mpsc batch<%zu> round-trip (push+pop)", N);
+    return bench::run(name, [&]{
+        const std::size_t np = ring->try_push_batch(std::span<const Item>(tx));
+        const std::size_t nc = ring->try_pop_batch(std::span<Item>(rx));
+        bench::do_not_optimize(np);
+        bench::do_not_optimize(nc);
+        bench::do_not_optimize(rx[0]);
+        bench::do_not_optimize(rx[N - 1]);
+    });
+}
+
 // ── SPSC cross-reference at matched batch sizes ───────────────────────
 //
 // The SpscRing equivalent — both single-call and BATCHED.  Single-
@@ -275,6 +311,12 @@ int main() {
         spsc_batched_push_pop<64>(),             // [20]
         spsc_batched_push_pop<256>(),            // [21]
         spsc_batched_push_pop<1024>(),           // [22]
+
+        // ── BitmapMpscRing — the new design (post-Vyukov) ─────────────
+        bitmap_mpsc_single_push(),               // [23]
+        bitmap_mpsc_batched_push_pop<64>(),      // [24]
+        bitmap_mpsc_batched_push_pop<256>(),     // [25]
+        bitmap_mpsc_batched_push_pop<1024>(),    // [26]
     };
 
     bench::emit_reports_text(reports);
@@ -376,6 +418,39 @@ int main() {
         std::printf("  this with multi-thread harness (separate task) to see.\n");
         (void)mpmc_push;
         (void)mpmc_inner_1024;
+    }
+
+    // ── Bitmap-MPSC headline (the post-Vyukov design) ─────────────────
+    std::printf("\n=== BitmapMpscRing — out-of-band bitmap design ===\n");
+    std::printf("\n  %-58s  %12s\n", "Bench", "ns/item");
+    std::printf("  %-58s  %12s\n",
+                std::string(58, '-').c_str(),
+                std::string(12, '-').c_str());
+    {
+        auto print_one = [](const bench::Report& r, double per_item) {
+            std::printf("  %-58s  %10.3f ns\n", r.name.c_str(), per_item);
+        };
+        print_one(reports[23], reports[23].pct.p50);
+        print_one(reports[24], per_item_round_trip_ns(reports[24].pct.p50, 64));
+        print_one(reports[25], per_item_round_trip_ns(reports[25].pct.p50, 256));
+        print_one(reports[26], per_item_round_trip_ns(reports[26].pct.p50, 1024));
+
+        const double bm_single   = reports[23].pct.p50;
+        const double bm_b1024    = per_item_round_trip_ns(reports[26].pct.p50, 1024);
+        const double mpsc_b1024  = per_item_round_trip_ns(reports[18].pct.p50, 1024);
+        const double spsc_b1024  = per_item_round_trip_ns(reports[22].pct.p50, 1024);
+
+        std::printf("\n  ── BitmapMpscRing vs the field ──\n");
+        std::printf("  BitmapMpsc batched<1024>:        %.3f ns/item\n", bm_b1024);
+        std::printf("  Vyukov MpscRing batched<1024>:   %.3f ns/item  (gap: %.2f×)\n",
+                    mpsc_b1024, mpsc_b1024 / bm_b1024);
+        std::printf("  SpscRing batched<1024> (floor):  %.3f ns/item  (gap: %.2f×)\n",
+                    spsc_b1024, bm_b1024 / spsc_b1024);
+        std::printf("  Single Bitmap.try_push:          %.3f ns/op\n", bm_single);
+        std::printf("\n  Out-of-band bitmap moves metadata OUT of the cell:\n");
+        std::printf("  cells stay packed at sizeof(T) (= 8B for u64), bitmap\n");
+        std::printf("  is 1 bit per cell (= 128 B for 1024 cells).  Working\n");
+        std::printf("  set: 8.125 KB vs Vyukov's 64 KB.  Fits L1d.\n");
     }
 
     bench::emit_reports_json(reports, json);
