@@ -238,6 +238,7 @@ crucible_bench(bench_mpmc_saturation)
 crucible_bench(bench_mpsc_contention)
 crucible_bench(bench_permissioned_calendar_grid)
 crucible_bench(bench_permissioned_zero_cost)
+crucible_bench(bench_permissioned_session_handle)
 crucible_bench(bench_scheduler_policies)
 
 # ── Visualization tool ────────────────────────────────────────────────
