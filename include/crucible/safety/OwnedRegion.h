@@ -73,6 +73,7 @@
 #include <crucible/Effects.h>
 #include <crucible/Platform.h>
 #include <crucible/permissions/Permission.h>
+#include <crucible/safety/PermissionTreeGenerator.h>
 
 #include <array>
 #include <cstddef>
@@ -83,24 +84,10 @@
 
 namespace crucible::safety {
 
-// ── Slice<Parent, I> — phantom slice tag ─────────────────────────────
-//
-// One distinct type per (Parent, I) pair.  Carries no data; pure
-// compile-time identity.  The splits_into_pack partial specialization
-// below proves disjointness for the Slice<Parent, 0..N-1> pattern.
-
-template <typename Parent, std::size_t I>
-struct Slice {
-    static constexpr std::size_t index = I;
-    using parent_type = Parent;
-};
-
-// One partial specialization handles ALL N values via index-pack
-// deduction.  permission_split_n<Slice<Parent, Is>...> succeeds for
-// any (Parent, sizeof...(Is)) pair without per-N user-side work.
-template <typename Parent, std::size_t... Is>
-struct splits_into_pack<Parent, Slice<Parent, Is>...>
-    : std::true_type {};
+// Slice<Parent, I> + the index-pack splits_into_pack<Parent,
+// Slice<Parent, Is>...> partial specialization moved to
+// safety/PermissionTreeGenerator.h (FOUND-A21).  OwnedRegion consumes
+// them via the include above.
 
 // ── OwnedRegion<T, Tag> ──────────────────────────────────────────────
 
