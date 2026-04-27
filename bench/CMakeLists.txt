@@ -233,6 +233,7 @@ crucible_bench(bench_smoke)
 crucible_bench(bench_swiss_table)
 crucible_bench(bench_trace_ring)
 crucible_bench(bench_concurrent_queues)
+crucible_bench(bench_concurrent_saturation)
 
 # ── Visualization tool ────────────────────────────────────────────────
 # Not a benchmark — a utility for rendering .crtrace traces as SVG.
