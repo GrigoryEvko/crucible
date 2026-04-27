@@ -11,14 +11,14 @@
 // Why SCQ is beyond Vyukov:
 //
 //   * Vyukov MPMC: CAS on Head/Tail.  Under contention, CAS retries
-//     waste work; FAA never fails.  Vyukov throughput collapses at
-//     16-way contention (~50ns/op).
+//     waste work; FAA never fails.  Vyukov throughput degrades sharply
+//     under heavy contention.
 //   * LCRQ (Morrison-Afek 2013): FAA with CAS2 (cmpxchg16b).  x86-only
 //     (not on ARMv8 without LSE, not on PowerPC/RISC-V/MIPS).  Livelock-
 //     prone → "closed" CRQs and churn.
 //   * SCQ: FAA with single-width CAS.  Portable everywhere.  Livelock-
 //     free via a threshold counter.  Memory-efficient (2n cells, no
-//     linked chunks).  2-4× Vyukov under contention.
+//     linked chunks).
 //
 // Plus our additions beyond the paper:
 //
@@ -47,15 +47,13 @@
 // layout.  For our thread-pool use case (16-byte Job payloads),
 // inline is fine.
 //
-// ─── Performance (steady state, uncontended) ────────────────────────
+// ─── Per-call atomic shape ──────────────────────────────────────────
 //
-//   try_push:  1 FAA(Tail) + 1 CAS(cell) + 1 load(Head) ≈ 15-25 ns
-//   try_pop:   1 FAA(Head) + 1 OR(cell) OR 1 CAS(cell) ≈ 15-25 ns
+//   try_push:  1 FAA(Tail) + 1 CAS(cell) + 1 load(Head)
+//   try_pop:   1 FAA(Head) + 1 OR(cell) OR 1 CAS(cell)
 //
-// Under 16-way contention:
-//
-//   Vyukov:  ~200 ns/op (CAS retry storm)
-//   SCQ:     ~30-60 ns/op (FAA never fails; only per-cell CAS contends)
+// FAA never fails, so per-thread work is bounded regardless of
+// contention; only the per-cell CAS may retry.
 //
 // ─── The livelock-prevention threshold ──────────────────────────────
 //

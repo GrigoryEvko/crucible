@@ -77,7 +77,7 @@ Everything out of scope is either (a) handled by a neighbor subsystem (Mimic for
 
 ## 2. The Linux syscall cost catastrophe
 
-This is the document's central thesis. Everything Linux provides synchronously is abysmally slow by the standards of Crucible's 5 ns/op dispatch budget. Concrete costs measured on Intel Sapphire Rapids / AMD Zen 4 with mitigations=off:
+This is the document's central thesis. Everything Linux provides synchronously is abysmally slow relative to per-op dispatch on the Crucible hot path: a single syscall costs orders of magnitude more cycles than the entire user-visible work for one recorded op. Concrete kernel-side costs measured on Intel Sapphire Rapids / AMD Zen 4 with mitigations=off — these are hardware/kernel facts, not Crucible promises:
 
 | Operation | Cost | Why it's a catastrophe |
 |---|---|---|
@@ -2957,10 +2957,10 @@ Required dependencies (find_package or vendored):
 
 ### 28.3 Performance tests
 
-- `test/perf_bench_scope_enter_exit.cpp` — measure scope cost; enforce p99 ≤ 30 ns
-- `test/perf_bench_rdpmc_roundtrip.cpp` — measure rdpmc via mmap; enforce p99 ≤ 15 ns
-- `test/perf_bench_sense_snap.cpp` — measure AVX2 gather; enforce p99 ≤ 10 ns
-- `test/perf_bench_ringbuf_drain_throughput.cpp` — measure 10 M events/s drain throughput
+- `test/perf_bench_scope_enter_exit.cpp` — measure scope cost and gate against the previously-recorded baseline on the dev hardware
+- `test/perf_bench_rdpmc_roundtrip.cpp` — measure rdpmc via mmap and gate against baseline
+- `test/perf_bench_sense_snap.cpp` — measure AVX2 gather and gate against baseline
+- `test/perf_bench_ringbuf_drain_throughput.cpp` — measure ringbuffer drain throughput and gate against baseline
 
 ### 28.4 Hardware-specific CI
 

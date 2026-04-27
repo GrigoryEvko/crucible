@@ -296,7 +296,7 @@ A tensor is two things at once: a piece of metadata (shape, strides, dtype, devi
 
 Crucible decouples them. A **ConductorTensorImpl** (shadow handle) is a real PyTorch tensor with correct metadata — shape, strides, dtype, device all match what the operation would have produced — but its storage points into the pre-planned memory pool (L3) at a pre-computed offset. The data at that offset is being written asynchronously by compiled kernels on a CUDA stream. Python holds the shadow, inspects its metadata (`.shape` returns the right thing, `.dtype` returns the right thing), passes it to the next operation (which in COMPILED mode just returns another shadow), and never knows the data isn't ready yet.
 
-The shadow handle is not a future or a promise. It's a full TensorImpl registered with `DispatchKey::Conductor` on its own key set. This means any operation on a shadow handle dispatches through Conductor's fallback — which in COMPILED mode returns yet another shadow. The shadows form a chain that mirrors the compiled execution plan. Python walks the chain at ~2ns per op. The GPU walks the actual computation at whatever speed the kernels run.
+The shadow handle is not a future or a promise. It's a full TensorImpl registered with `DispatchKey::Conductor` on its own key set. This means any operation on a shadow handle dispatches through Conductor's fallback — which in COMPILED mode returns yet another shadow. The shadows form a chain that mirrors the compiled execution plan. Python walks the chain at the lowest cost per op the underlying interpreter and dispatcher allow — there is no per-op compute on the foreground. The GPU walks the actual computation at whatever speed the kernels run.
 
 **Sync points** are the only moments Python blocks:
 - `.item()` — Python needs an actual scalar value. Crucible synchronizes the CUDA stream, reads the value, returns it.
@@ -1289,11 +1289,12 @@ Goal: Digital twin + continuous monitoring + model intelligence.
 
 **Phase 5: Compiled Tier 2-3**
 
-Goal: Shadow handles (~2ns/op) and CUDA Graph replay (~50ns/iteration).
+Goal: shadow handles and CUDA Graph replay — push the foreground past per-op
+compute into a model where the user-visible work is just metadata.
 
 - Shadow handles: ConductorTensorImpl with metadata pointing into PoolAllocator.
 - Batched kernel launch: accumulate compiled kernels, one stream submission.
-- CUDA Graph capture: record compiled kernels, replay at ~50ns/iteration.
+- CUDA Graph capture: record compiled kernels, replay as a single host-side call.
 - Integration: F\*X-proved kernel configs compiled into the graph. Meridian's stream assignment from topology-aware scheduling.
 
 **Phase 6: Keeper + Canopy + Cipher**

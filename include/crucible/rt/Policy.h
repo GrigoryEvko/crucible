@@ -189,10 +189,11 @@ struct Policy {
     //   • io_uring with SQPOLL — guest syscall elision is real savings
     //
     // Use this on managed K8s, ECS, GKE Standard, AKS, self-managed
-    // EC2, etc. Expect p99.9 tails 2-10× worse than bare-metal due to
-    // vCPU steal; absolute timings are noisy, but relative comparisons
-    // via Mann-Whitney U still hold. For actual realtime ML, request
-    // a bare-metal instance type and use Policy::production() instead.
+    // EC2, etc. Tail latency on cloud vCPUs is noisy regardless of
+    // tuning (vCPU steal); absolute timings are unreliable, but
+    // relative comparisons via Mann-Whitney U still hold. For actual
+    // realtime ML, request a bare-metal instance type and use
+    // Policy::production() instead.
     [[nodiscard]] static constexpr Policy cloud_vm() noexcept {
         Policy p;
         p.hot_enabled           = true;

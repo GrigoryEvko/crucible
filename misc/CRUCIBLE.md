@@ -2228,9 +2228,9 @@ Keeper health signals emitted to Canopy:
 
 Aggregated by Canopy; available via Prometheus scrape endpoint (`:9090/metrics`). Watched by the k8s-operator for autoscaling decisions.
 
-### 14.7 Per-Keeper latency budget
+### 14.7 Per-Keeper latency expectations
 
-Target numbers for a warm Keeper on a Hopper SXM5 host (Sapphire Rapids or Grace + PCIe Gen5 x16 + InfiniBand NDR 400). Deviations >10% trigger Augur drift detection (§13.3). Numbers without measurement-gate footnotes are compile-time design targets; those with a ✽ require CI-validation against real silicon before declaration as achieved.
+The numbers in this section are **modeled cost decompositions** for a warm Keeper on a Hopper SXM5 host (Sapphire Rapids or Grace + PCIe Gen5 x16 + InfiniBand NDR 400) — i.e. step-by-step accounting of where time should go based on the underlying hardware and protocol costs. They are NOT promises Crucible delivers a particular nanosecond figure on your hardware. The bench suite reports actual measurements; values marked with ✽ are design targets that require CI-validation against real silicon before being declared achieved. Augur drift detection (§13.3) uses the modeled values as a baseline against which actual measurements are compared, not as a contract on delivery.
 
 #### 14.7.1 Host-side dispatch
 

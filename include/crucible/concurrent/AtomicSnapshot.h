@@ -105,14 +105,13 @@
 //     contention.  For larger payloads use a different primitive
 //     (e.g., double-buffered atomic<T*> swap).
 //
-// ─── Performance targets ───────────────────────────────────────────
+// ─── Per-call atomic shape ─────────────────────────────────────────
 //
-//   Writer publish():  ~15 ns  (2 × atomic fetch_add, 1 × memcpy
-//                                of ≤ 256 B).
-//   Reader load() (uncontended):  ~5-10 ns  (2 × atomic load,
-//                                            1 × memcpy, 1 × fence).
-//   Reader load() (contended): worst case = 1 writer publish round
-//                              before retry succeeds = ~30 ns.
+//   Writer publish(): 2 × atomic fetch_add + 1 × memcpy of ≤ 256 B
+//   Reader load() (uncontended): 2 × atomic load + 1 × memcpy +
+//                                1 × acquire fence
+//   Reader load() (contended): retries until the seq pre/post pair
+//                              brackets a quiescent writer
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
@@ -133,10 +132,10 @@ namespace crucible::concurrent {
 // ── SnapshotValue concept ─────────────────────────────────────────
 //
 // Constrains T to types whose bytes can be safely memcpy'd in and
-// out of the seqlock storage.  The size cap is a soft hint — at
-// 256 B (4 cache lines) the writer's memcpy window is small enough
-// (~30-50 ns) that reader retry rates stay low under reasonable
-// contention.  Larger T should use a different primitive.
+// out of the seqlock storage.  The 256 B (4 cache line) cap is a
+// structural soft limit: a smaller writer-side memcpy window keeps
+// reader retry rates low under contention.  Larger T should use a
+// different primitive (e.g. double-buffered atomic<T*> swap).
 
 template <typename T>
 concept SnapshotValue =

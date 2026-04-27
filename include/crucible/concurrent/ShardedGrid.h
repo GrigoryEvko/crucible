@@ -6,11 +6,12 @@
 // "stay SPSC and shard" pattern.
 //
 // Instead of building one MPMC queue (CAS on every op for both
-// producer and consumer ends, ~30-50 ns/op), build M×N independent
-// SpscRings and route at the producer side.  Each ring cell
-// `rings[p][c]` is touched by exactly one producer thread `p` and
-// exactly one consumer thread `c` — no inter-producer or inter-
-// consumer contention.  Per-op cost stays at SPSC's ~5-8 ns.
+// producer and consumer ends), build M×N independent SpscRings and
+// route at the producer side.  Each ring cell `rings[p][c]` is
+// touched by exactly one producer thread `p` and exactly one
+// consumer thread `c` — no inter-producer or inter-consumer
+// contention.  Per-op cost stays at the SPSC shape: one acquire/
+// release atomic on isolated cache lines, no CAS.
 //
 // ─── The "decompose to SPSC" principle ──────────────────────────────
 //

@@ -788,7 +788,7 @@
 
   The gap (memory ordering) we close with TSan in CI. Everything else is compile-time.
 
-  This is the ceiling of what C++26 can do. No language except F*/Coq/Lean/Agda goes further. And those can't compile to zero-overhead native code that runs at 5ns/op.
+  This is the ceiling of what C++26 can do. No language except F*/Coq/Lean/Agda goes further. And those can't compile to zero-overhead native code that runs at hot-path-relevant speed.
 
   Want to build it?
 
@@ -1333,7 +1333,7 @@
   No other C++ project on earth does this. Most don't know it's possible. We're using GCC 16's reflection as a proof system, consteval as a model checker, and the type system as an effect tracker. Three orthogonal mechanisms, layered, covering
   different invariant classes, totaling compile-time soundness proofs for a systems runtime.
 
-  This is the ceiling. Beyond this you need Coq/F*/Lean — but those can't generate zero-overhead native code at 5ns/op.
+  This is the ceiling. Beyond this you need Coq/F*/Lean — but those can't generate zero-overhead native code at hot-path-relevant speed.
 
   Want to start building?
 
@@ -1771,7 +1771,7 @@
 
   This is a systems runtime where the build process is a formal verification pipeline. Z3 proves theorems. consteval catches UB. Reflection enforces completeness. The type system enforces boundaries. TSan catches the one thing compilers can't prove.
 
-  No runtime in existence — not in C++, not in Rust, not in any language — has this level of verified correctness with zero runtime overhead. The proofs happen at build time. The binary runs at 5ns/op.
+  No runtime in existence — not in C++, not in Rust, not in any language — has this level of verified correctness with zero runtime overhead. The proofs happen at build time. The binary runs at the lowest cost the underlying hardware allows.
 
   Your CaDiCaL-enhanced Z3 makes this practical. Standard Z3 might take minutes on the bitvector proofs. Your fork with dual-mode search, OTFS, ProbSAT walker — seconds.
 
@@ -4378,7 +4378,7 @@
 
   Phase 1: Foundation (DONE — 9.5K lines, 24 tests, Clang 22 + GCC 15)
 
-  - L3 Operations: TraceRing SPSC (~5ns/op), MetaLog, recording pipeline ✓
+  - L3 Operations: TraceRing SPSC, MetaLog, recording pipeline ✓
   - L5 Graphs: TraceGraph CSR with DATA_FLOW + ALIAS edges ✓
   - L6 Merkle DAG: RegionNode, BranchNode, content/merkle hashing ✓
   - L2 Memory: MemoryPlan sweep-line allocator, PoolAllocator ✓
@@ -4444,10 +4444,11 @@
 
   Phase 5: Compiled Tier 2-3
 
-  Goal: shadow handles (~2ns/op) and CUDA Graph replay (~50ns/iteration).
+  Goal: shadow handles and CUDA Graph replay — push the foreground past per-op
+  compute into a model where the user-visible work is just metadata.
   - Shadow handles: ConductorTensorImpl with correct metadata, storage pointing into PoolAllocator
   - Batched kernel launch: accumulate compiled kernels, launch in one stream submission
-  - CUDA Graph capture: record compiled kernels into cudaGraph, replay at ~50ns/iteration
+  - CUDA Graph capture: record compiled kernels into cudaGraph, replay as a single host-side call
   - Integration with Axiom: Z3-proved kernel configs compiled into the graph
   - Integration with Meridian: stream assignment from topology-aware scheduling
 

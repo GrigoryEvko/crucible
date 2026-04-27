@@ -115,12 +115,18 @@ namespace crucible::concurrent {
 // Mirror of safety::WorkBudget but lives here in the cost-model layer
 // to avoid a circular include with safety/Workload.h.  safety::Workload
 // includes this header and forwards through.
+//
+// per_item_compute_ns is a CALLER HINT used as one input to the
+// cache-tier rule — not a runtime guarantee or budget.  If the caller
+// supplies a value and it is wrong (or omits it entirely), the cost
+// model errs toward Sequential; the no-regression rule (sequential
+// must never lose to parallel at small footprints) is preserved.
 
 struct WorkBudget {
     std::size_t read_bytes           = 0;
     std::size_t write_bytes          = 0;
     std::size_t item_count           = 0;
-    std::size_t per_item_compute_ns  = 0;
+    std::size_t per_item_compute_ns  = 0;  // caller hint, not a promise
 };
 
 // ── Tier — where the working set lives in the cache hierarchy ───────

@@ -14,7 +14,7 @@ namespace crucible {
 
 // Parallel SPSC buffer for tensor metadata.
 //
-// The TraceRing stores 64B fingerprints per op (~5ns hot path). Full tensor
+// The TraceRing stores 64B fingerprints per op on the hot path. Full tensor
 // metadata (sizes, strides, dtype, device, data_ptr) is too large to inline.
 // MetaLog holds this "fat" metadata in a separate SPSC buffer; each ring
 // entry's corresponding meta_starts[] slot stores the index into here.
@@ -25,27 +25,26 @@ namespace crucible {
 //   - Overflow → MetaIndex::none() (entry still works for
 //     iteration detection; background skips DAG building for that op)
 //
-// Performance optimizations over naive SPSC:
+// Structural properties (orthogonal to any specific timing):
 //   1. Cached tail: producer caches last-seen tail locally. The tail atomic
-//      lives on the consumer's cache line; reading it from the producer forces
-//      a cross-core cache-line transfer (~20-40ns on multi-socket). Since the
-//      buffer is 1M entries deep and almost never full, the cached check passes
-//      on the fast path and we never touch the atomic. Only on apparent
-//      overflow do we reload the real tail (slow path).
+//      lives on the consumer's cache line; reading it from the producer
+//      forces a cross-core cache-line transfer. Since the buffer is 1M
+//      entries deep and almost never full, the cached check passes on the
+//      fast path and we never touch the atomic. Only on apparent overflow
+//      do we reload the real tail (slow path).
 //   2. Bulk memcpy: instead of per-element assignment with per-iteration
 //      masking ((h+i) & MASK), we split into contiguous vs wraparound cases.
-//      Contiguous (99.99% of calls): single memcpy of n*144 bytes.
-//      Wraparound: two memcpys. memcpy of 144B structs compiles to
-//      2-3 AVX-512 stores vs scalar field-by-field copy.
+//      Contiguous (the overwhelming majority of calls): single memcpy of
+//      n*144 bytes. Wraparound: two memcpys. memcpy of 144B structs
+//      compiles to a small number of vector stores instead of scalar
+//      field-by-field copy.
 //   3. Aligned allocation: 64-byte aligned buffer base for cache-line-
 //      friendly access patterns.
 //   4. Software prefetch: after each write, prefetch 3 cache lines for the
-//      NEXT write position. Hides ~50-100ns DRAM latency behind the caller's
-//      other work (TraceRing append, Python dispatch). Each TensorMeta is
-//      144B = 3 x 64B cache lines.
+//      NEXT write position. Each TensorMeta is 144B = 3 × 64B cache lines.
 //   5. Cache-line layout: head, cached_tail_, and entries pointer share one
-//      64-byte cache line (producer-only). tail on a separate line (consumer).
-//      Zero false sharing between threads.
+//      64-byte cache line (producer-only). tail on a separate line
+//      (consumer). Zero false sharing between threads.
 struct CRUCIBLE_OWNER MetaLog {
   static constexpr uint32_t CAPACITY = 1 << 20; // 1M entries (~168MB)
   static constexpr uint32_t MASK = CAPACITY - 1;
@@ -115,14 +114,12 @@ struct CRUCIBLE_OWNER MetaLog {
   //
   // Returns the start index, or MetaIndex::none() if the buffer is full.
   //
-  // Hot path cost breakdown (typical n=3, no wraparound, buffer not full):
-  //   - head relaxed load: ~1ns (same cache line as cached_tail_)
-  //   - cached_tail_ check: ~0ns (same cache line, always in L1)
-  //   - memcpy(3 * 144 = 432B): ~10ns (to prefetched cache lines)
-  //   - prefetch next 3 lines: ~1 cycle each (non-blocking)
-  //   - head release store: ~1ns
-  //   Total: ~12ns for 1 meta, ~33ns for 3 metas (measured)
-  //   Baseline: memcpy alone to advancing dst = 8.6ns (1 meta) / 10ns (3 metas)
+  // Hot path shape (typical n=3, no wraparound, buffer not full):
+  //   - head relaxed load (same cache line as cached_tail_)
+  //   - cached_tail_ check (same cache line, in L1d)
+  //   - memcpy(n * 144 B) to prefetched destination
+  //   - prefetch next 3 cache lines for the following append
+  //   - head release store
   // Foreground thread only (SPSC producer).
   // Safe by protocol: only one thread writes head + entries[head..head+n].
   CRUCIBLE_UNSAFE_BUFFER_USAGE
