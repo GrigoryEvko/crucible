@@ -879,6 +879,116 @@ public:
     void reset_under_quiescence(T value = T{}) noexcept {
         value_.store(value, std::memory_order_release);
     }
+
+    // ─── Explicit memory-order surface ──────────────────────────────
+    //
+    // The default get() / peek_relaxed() / advance() / bump() pair
+    // covers ~95% of monotonic-counter sites in Crucible (SPSC ring
+    // head/tail, Vigil step, MetaLog cursors).  The remaining ~5% —
+    // Chase-Lev's owner-vs-thief race, Vyukov MPMC's per-cell
+    // sequence, the seqlock fence-pair pattern — need explicit
+    // memory orders that the default surface deliberately hides.
+    //
+    // The methods below expose the underlying std::atomic's full
+    // ordering vocabulary while keeping the monotonicity contract
+    // intact at the type level.  They are NOT for everyday use;
+    // every call site must justify why the default acquire/release
+    // pair is insufficient.
+
+    // Explicit-order load.  Defaults to acquire (matching get()).
+    // Use seq_cst when the caller is implementing a fence-pair
+    // pattern (Chase-Lev pop_bottom, Lê 2013 algorithm 5 line 8).
+    [[nodiscard]] T load(std::memory_order order = std::memory_order_acquire)
+        const noexcept
+    {
+        return value_.load(order);
+    }
+
+    // Explicit-order store WITH the monotonicity contract.  The
+    // contract fires under enforce semantic if the new value would
+    // step backward in Cmp's direction.  For unconditional stores
+    // (reset, initialization), use reset_under_quiescence instead.
+    void store(T new_value,
+               std::memory_order order = std::memory_order_release) noexcept
+        pre (Cmp{}(value_.load(std::memory_order_acquire), new_value))
+    {
+        value_.store(new_value, order);
+    }
+
+    // ─── Compare-and-advance ────────────────────────────────────────
+    //
+    // CAS variants that enforce monotonicity at the type level.  The
+    // pre() condition rejects CAS attempts that would step backward
+    // (e.g., compare_exchange_advance(5, 3) on a kIsLess atomic) —
+    // the caller cannot accidentally invert the monotonic direction
+    // through the CAS API any more than they can through advance().
+    //
+    // Standard std::atomic CAS semantics:
+    //   * Returns true iff the CAS succeeded.
+    //   * On failure, `expected` is updated to the observed value
+    //     (caller can branch on it for retry decisions).
+    //   * Strong variant: no spurious failures.  Use for one-shot
+    //     race-resolution (Chase-Lev pop_bottom owner-vs-thief).
+    //   * Weak variant: permits spurious failures (cheaper on some
+    //     architectures).  Use inside CAS loops where retry is
+    //     already structured.
+    //
+    // Memory orders:
+    //   * success_order: applied on successful CAS (the RMW that
+    //     atomically installs `desired`).
+    //   * failure_order: applied on the load that observes the
+    //     CAS-losing value.  Must NOT be release or acq_rel (per
+    //     std::atomic spec); the type system can't catch this here
+    //     so caller discipline applies.
+    //
+    // Default orders (acq_rel / acquire) match the rest of
+    // AtomicMonotonic's surface and are correct for the majority of
+    // CAS-on-monotonic patterns.  Chase-Lev's pop_bottom needs
+    // seq_cst on success to act as the RMW fence — pass
+    // std::memory_order_seq_cst explicitly.
+    [[nodiscard]] bool compare_exchange_advance(
+        T& expected, T desired,
+        std::memory_order success_order = std::memory_order_acq_rel,
+        std::memory_order failure_order = std::memory_order_acquire) noexcept
+        requires (kIsLess || kIsGreater)
+        pre (Cmp{}(expected, desired))
+    {
+        return value_.compare_exchange_strong(
+            expected, desired, success_order, failure_order);
+    }
+
+    // Weak CAS variant — for use inside retry loops.  Spurious
+    // failures permitted by hardware (LL/SC architectures); caller
+    // must check the return value AND inspect `expected` to decide
+    // whether to recompute and retry.
+    [[nodiscard]] bool compare_exchange_advance_weak(
+        T& expected, T desired,
+        std::memory_order success_order = std::memory_order_acq_rel,
+        std::memory_order failure_order = std::memory_order_acquire) noexcept
+        requires (kIsLess || kIsGreater)
+        pre (Cmp{}(expected, desired))
+    {
+        return value_.compare_exchange_weak(
+            expected, desired, success_order, failure_order);
+    }
+
+    // ─── Standalone seq_cst fence ───────────────────────────────────
+    //
+    // Issues std::atomic_thread_fence(memory_order_seq_cst).  Belongs
+    // to AtomicMonotonic only because the canonical use sites
+    // (Chase-Lev pop_bottom and steal_top, Vyukov MPSC sequence
+    // protocol) ALWAYS bracket the fence with AtomicMonotonic loads/
+    // stores — colocating the fence helper makes the bug-prone
+    // pattern grep-discoverable from ChaseLevDeque.h /
+    // PermissionedChaseLevDeque.h to here.
+    //
+    // The fence is a pure global ordering operation — no atomic
+    // touch — so this is a static method.  Cost: zero on x86 for
+    // load-load / store-store reordering; non-trivial only on weak
+    // memory models (ARMv8 emits DMB ISH).
+    static void fence_seq_cst() noexcept {
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+    }
 };
 
 // ── MaxObserved<T> ─────────────────────────────────────────────────

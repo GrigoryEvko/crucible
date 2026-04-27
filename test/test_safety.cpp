@@ -469,6 +469,123 @@ static void test_mutation() {
         assert(ring_head.get() == 42ULL);
     }
 
+    // Explicit-order load/store — for callers that need seq_cst
+    // (Chase-Lev pop_bottom fence-pair pattern, Vyukov MPSC's
+    // sequence protocol).  Default surface is acquire/release; this
+    // exposes the underlying std::atomic ordering vocabulary while
+    // keeping the monotonicity contract on store.
+    {
+        AtomicMonotonic<std::uint64_t> counter{0};
+
+        // Default load == acquire (matches get()).
+        assert(counter.load() == 0ULL);
+
+        // Explicit-order load: seq_cst.
+        assert(counter.load(std::memory_order_seq_cst) == 0ULL);
+        assert(counter.load(std::memory_order_relaxed) == 0ULL);
+
+        // Default store == release (matches advance()).
+        counter.store(7ULL);
+        assert(counter.get() == 7ULL);
+
+        // Explicit-order store: seq_cst.  Forward-direction ok.
+        counter.store(42ULL, std::memory_order_seq_cst);
+        assert(counter.get() == 42ULL);
+
+        // store() honors the monotonicity contract — same pre() as
+        // advance().  Backward-direction stores are caller-error;
+        // we don't witness the contract here (covered by the
+        // contract-firing harness in safety_neg/), only confirm
+        // that the forward path round-trips.
+    }
+
+    // compare_exchange_advance (strong) — race-resolution CAS used
+    // by Chase-Lev's pop_bottom (owner-vs-thief on the LAST element).
+    // Successful CAS advances the value; failed CAS reports the
+    // observed-but-not-claimed value back through `expected`.
+    {
+        AtomicMonotonic<std::uint64_t> top{5};
+
+        // Success path: expected matches, desired is strictly forward.
+        std::uint64_t observed = 5ULL;
+        bool ok = top.compare_exchange_advance(observed, 6ULL);
+        assert(ok);
+        assert(top.get() == 6ULL);
+
+        // Failure path: expected stale.  CAS fails; observed is
+        // updated to the actual value (6 here).
+        observed = 5ULL;          // stale guess
+        ok = top.compare_exchange_advance(observed, 7ULL);
+        assert(!ok);
+        assert(observed == 6ULL); // CAS reported the real value back
+
+        // Retry with the freshly-observed value succeeds.
+        ok = top.compare_exchange_advance(observed, 7ULL);
+        assert(ok);
+        assert(top.get() == 7ULL);
+
+        // Explicit memory orders — the seq_cst-on-success variant
+        // that Chase-Lev's pop_bottom relies on.
+        observed = 7ULL;
+        ok = top.compare_exchange_advance(
+            observed, 8ULL,
+            std::memory_order_seq_cst,
+            std::memory_order_relaxed);
+        assert(ok);
+        assert(top.get() == 8ULL);
+    }
+
+    // compare_exchange_advance_weak — weak variant for CAS retry
+    // loops.  Spurious failures permitted; caller must always check
+    // the return value.
+    {
+        AtomicMonotonic<std::uint64_t> seq{100};
+
+        // Use inside a CAS loop pattern.
+        std::uint64_t observed = seq.get();
+        std::uint64_t target;
+        bool advanced = false;
+        for (int retries = 0; retries < 16 && !advanced; ++retries) {
+            target = observed + 1;
+            advanced = seq.compare_exchange_advance_weak(observed, target);
+        }
+        assert(advanced);
+        assert(seq.get() == 101ULL);
+    }
+
+    // fence_seq_cst — Chase-Lev's bare seq_cst fence (between the
+    // owner's bottom store and the top load) lives here so the
+    // bug-prone pattern is grep-discoverable from the AtomicMonotonic
+    // call sites that bracket it.
+    {
+        AtomicMonotonic<std::uint64_t> bottom{0};
+        AtomicMonotonic<std::uint64_t> top{0};
+
+        // Simulated Chase-Lev pop_bottom skeleton (single-thread —
+        // no actual race here, just exercise the API surface).
+        bottom.store(5ULL);
+        AtomicMonotonic<std::uint64_t>::fence_seq_cst();
+        const auto t = top.load(std::memory_order_relaxed);
+        assert(t == 0ULL);
+        assert(bottom.get() == 5ULL);
+    }
+
+    // greater<T> direction — compare_exchange_advance enforces
+    // backward-direction monotonicity (counter steps DOWN toward 0).
+    {
+        AtomicMonotonic<std::uint64_t, std::greater<std::uint64_t>> ttl{1000ULL};
+
+        std::uint64_t observed = 1000ULL;
+        bool ok = ttl.compare_exchange_advance(observed, 999ULL);
+        assert(ok);
+        assert(ttl.get() == 999ULL);
+
+        observed = 1000ULL;       // stale
+        ok = ttl.compare_exchange_advance(observed, 998ULL);
+        assert(!ok);
+        assert(observed == 999ULL);
+    }
+
     // Concurrent stress: N threads each push an exclusive range of values.
     // Final state must be the global max.  Total successful try_advance
     // returns must equal the number of strict-improvement events
