@@ -268,8 +268,12 @@ public:
                         // Skipped past empty buckets — advance the
                         // monotone counter.  Only this consumer
                         // writes current_bucket, so the advance is
-                        // race-free.
-                        shard.current_bucket.try_advance(this_b);
+                        // race-free.  Discard return: try_advance
+                        // is [[nodiscard]] but we don't care
+                        // whether the CAS landed (a slower consumer
+                        // may have advanced past us; either way the
+                        // counter ends up at >= this_b).
+                        (void)shard.current_bucket.try_advance(this_b);
                     }
                     return v;
                 }
