@@ -72,9 +72,9 @@ Plus `WriteOnce<T>` / `WriteOnceNonNull<T*>` / `BoundedMonotonic<T, Max>` / `Ord
 
 **Optional SMT tier (Z3, not F\*X).** The `verify` CMake preset runs Z3 over contract-annotated boundary code to discharge residual integer / Presburger obligations — the same scope TVM Analyzer uses (PR #1367): bounds, divisibility, modular arithmetic. Default timeout 5 ms per query; not on the hot path. Out of scope: kernel-optimality proofs, floating-point reasoning, cost-model decidability. Those are measurement problems.
 
-**Effect tokens.** `fx::Alloc / fx::IO / fx::Block / fx::Bg / fx::Init / fx::Test` in `Effects.h` — capability tags on function signatures, zero runtime cost. These are NOT F\*X proof obligations; they are C++-level capabilities enforced at compile time.
+**Capability tags (post-FOUND-B07 / METX-5 sweep).** `effects::Alloc / effects::IO / effects::Block` (the `cap::*` tags re-exported into the top-level `effects::` namespace) and `effects::Bg / effects::Init / effects::Test` context structs — capability tags on function signatures, zero runtime cost (one byte per cap, EBO-collapsed within contexts via `[[no_unique_address]]`). All defined in `effects/Capabilities.h`. These are NOT F\*X proof obligations; they are C++-level capabilities enforced at compile time. The legacy `fx::*` tree in `crucible/Effects.h` and the `compat/Fx.h` shim are deleted; production call sites use `effects::*` exclusively.
 
-**Met(X) effect rows (FOUND-B v1, shipped).** `effects/EffectRow.h` ships `Row<Es...>`, `Subrow<R1, R2>` concept, `row_union_t / row_difference_t / row_intersection_t`. `effects/Computation.h` ships the `Computation<Row, T>` carrier with `mk / extract / lift / weaken / map / then` per Tang-Lindley POPL 2026 / 25_04_2026.md §3.2. `effects/Capabilities.h` defines the `Effect` enum (Alloc/IO/Block/Bg/Init/Test). `effects/compat/Fx.h` re-exports legacy `fx::*` so the two systems coexist. Production-side migration (replace `fx::Bg` parameter types with `Computation<Row<Effect::Bg>, T>` returns) is the still-pending sweep — coexistence works fine until then. Tests: `test/test_effects.cpp` + `test/test_effects_compile.cpp`, both green.
+**Met(X) effect rows (FOUND-B, shipped).** `effects/EffectRow.h` ships `Row<Es...>`, `Subrow<R1, R2>` concept, `row_union_t / row_difference_t / row_intersection_t`. `effects/Computation.h` ships the `Computation<Row, T>` carrier with `mk / extract / lift / weaken / map / then` per Tang-Lindley POPL 2026 / 25_04_2026.md §3.2. `effects/Capabilities.h` defines the `Effect` enum (Alloc/IO/Block/Bg/Init/Test) AND the value-level `cap::*` tags AND the `Bg / Init / Test` context structs that mint them — one header serves every effect-system call site, hot or cold. Production-side `Subrow`-constrained-template signatures (replacing the cap-tag parameter form with `Computation<Row<...>, T>` returns) are the residual METX-AUDIT work; the cap-tag form is sufficient for every production hot path today. Tests: `test/test_effects.cpp` + `test/test_effects_compile.cpp`, both green.
 
 ---
 
@@ -475,7 +475,7 @@ Meridian = startup calibration (5-15s). Augur = continuous per-iteration monitor
 
 **Phase 1: Foundation (DONE — 9.5K lines, 24 tests, Clang 22 + GCC 15)**
 
-L4 Operations: TraceRing SPSC, MetaLog, recording pipeline. L6 Graphs: TraceGraph CSR. L7 Merkle DAG: RegionNode, BranchNode, content/merkle hashing. L3 Memory: MemoryPlan sweep-line, PoolAllocator. L4/L7 Compiled Tier 1: ReplayEngine, CrucibleContext, dispatch_op, divergence recovery. L2 Kernels: CKernel 146-op taxonomy. L14: Serialize/Deserialize, Cipher. L6 Graph IR: Graph.h, ExprPool, SymbolTable. L0 partial: Effects.h (fx::Alloc/IO/Block), Reflect.h (reflect_hash, reflect_print). Vessel: PyTorch adapter.
+L4 Operations: TraceRing SPSC, MetaLog, recording pipeline. L6 Graphs: TraceGraph CSR. L7 Merkle DAG: RegionNode, BranchNode, content/merkle hashing. L3 Memory: MemoryPlan sweep-line, PoolAllocator. L4/L7 Compiled Tier 1: ReplayEngine, CrucibleContext, dispatch_op, divergence recovery. L2 Kernels: CKernel 146-op taxonomy. L14: Serialize/Deserialize, Cipher. L6 Graph IR: Graph.h, ExprPool, SymbolTable. L0 partial: Met(X) effect rows + cap tags (`effects/Capabilities.h` defining `effects::Alloc / IO / Block` and `Bg / Init / Test`, `effects/Computation.h`, `effects/EffectRow.h`), Reflect.h (reflect_hash, reflect_print). Vessel: PyTorch adapter.
 
 **Phase 2a: Safety Foundation (IN FLIGHT)**
 
@@ -1867,7 +1867,7 @@ enum class CompileError : uint8_t {
 };
 
 [[nodiscard]] std::expected<CompiledKernel, CompileError>
-compile_kernel(fx::Bg bg, Arena& arena,
+compile_kernel(effects::Bg bg, Arena& arena,
                const KernelNode& k, const TargetCaps& caps)
     pre (k.recipe != nullptr)
     pre (k.tile != nullptr)
@@ -2359,7 +2359,7 @@ Test names (fuzzer property checks, gtest-style names) obey the same rule: `prop
 Five categories of short names are exempt because they ARE the standard vocabulary in their domain — renaming them would make the code less recognizable, not more:
 
 - **Crucible ontology primitives**: `Vigil`, `Keeper`, `Relay`, `Cipher`, `Canopy`, `Meridian`, `Augur`, `Vessel` are full words and fine at any length. Their short aliases in hot paths are not — use the full name.
-- **Hot-path idiomatic short names** canonical in Crucible: `op` (Op), `args` (const Expr* const*), `nargs` (uint8_t), `ndim` (uint8_t), `dtype` (ScalarType), `arena` (fx::Alloc), `ctx` (CrucibleContext), `bg` (fx::Bg token), `fg` (fx::Fg token), `ms` (MetaIndex strong ID), `ring` (TraceRing&). Established in TraceRing.h / ExprPool.h / MerkleDag.h; rename would be churn.
+- **Hot-path idiomatic short names** canonical in Crucible: `op` (Op), `args` (const Expr* const*), `nargs` (uint8_t), `ndim` (uint8_t), `dtype` (ScalarType), `arena` (`effects::Alloc` cap-tag — the canonical short name for the alloc-capability parameter on every Arena/ExprPool/MerkleDag/Graph allocator function), `ctx` (CrucibleContext), `bg` (`effects::Bg` context — local-variable name for the background-thread context that aggregates Alloc + IO + Block caps), `fg` (foreground sentinel; no `effects::*` analogue because hot-path code holds no capability), `ms` (MetaIndex strong ID), `ring` (TraceRing&). Established in TraceRing.h / ExprPool.h / MerkleDag.h; rename would be churn.
 - **Binary-operation sides** (the FX/parser convention, preserved): `lhs` / `rhs` inside `add(lhs, rhs)`, `mul(lhs, rhs)`, `compare(lhs, rhs)`. Fine in accessors (`binop_lhs()`, `binop_rhs()`) because they project fields whose semantics are exactly "left side" / "right side".
 - **Loop induction variables** over a compile-time small range: `i`, `j`, `d` (dimension), `k` inside `for (uint8_t d = 0; d < ndim; ++d)`. `d` for dimension is idiomatic because `ndim` is the canonical spelling of the upper bound.
 - **Template type parameters** in generic code: `T`, `U`, `V`, `T1`, `T2` are canonical STL-style naming. A template parameter named `Predicate` is fine; one named `Fn` or `F` depends on role — a type-erased callable is `Callable` or `Predicate`, not `F`. Single-letter OK only for type-level `T`-style.
