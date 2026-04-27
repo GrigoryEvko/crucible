@@ -221,6 +221,17 @@ public:
             const std::size_t b = grid_.bucket_for_(S, item);
             return grid_.shards_[S]->buckets[b].try_push(item);
         }
+
+        // Per-handle diagnostics — own-shard view (snapshot, NOT exact).
+        [[nodiscard]] std::size_t size_approx() const noexcept {
+            return grid_.size_approx(S);
+        }
+        [[nodiscard]] bool empty_approx() const noexcept {
+            return grid_.size_approx(S) == 0;
+        }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept {
+            return NumBuckets * BucketCap;
+        }
     };
 
     // ── ConsumerHandle<S> — linear ownership of shard S's consumer ─
@@ -279,6 +290,17 @@ public:
                 }
             }
             return std::nullopt;
+        }
+
+        // Per-handle diagnostics — own-shard view (snapshot, NOT exact).
+        [[nodiscard]] std::size_t size_approx() const noexcept {
+            return grid_.size_approx(S);
+        }
+        [[nodiscard]] bool empty_approx() const noexcept {
+            return grid_.size_approx(S) == 0;
+        }
+        [[nodiscard]] static constexpr std::size_t capacity() noexcept {
+            return NumBuckets * BucketCap;
         }
     };
 

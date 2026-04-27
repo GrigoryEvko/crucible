@@ -274,6 +274,20 @@ public:
         }
 
         // Diagnostics (own row only, since handle owns row P).
+        // Per-handle row view: sum across NumBuckets buckets of row P.
+        [[nodiscard]] std::size_t size_approx() const noexcept {
+            std::size_t total = 0;
+            for (std::size_t b = 0; b < NumBuckets; ++b) {
+                total += grid_.rings_[P][b].size_approx();
+            }
+            return total;
+        }
+        [[nodiscard]] bool empty_approx() const noexcept {
+            for (std::size_t b = 0; b < NumBuckets; ++b) {
+                if (!grid_.rings_[P][b].empty_approx()) return false;
+            }
+            return true;
+        }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept {
             return NumBuckets * BucketCap;
         }
@@ -378,9 +392,13 @@ public:
             return total;
         }
 
-        // Channel-level diagnostics.
+        // Channel-level diagnostics.  Consumer sees the whole grid
+        // (drains across all M producer rows × NumBuckets buckets).
         [[nodiscard]] bool empty_approx() const noexcept {
             return grid_.empty_approx();
+        }
+        [[nodiscard]] std::size_t size_approx() const noexcept {
+            return grid_.size_approx();
         }
         [[nodiscard]] std::uint64_t current_bucket() const noexcept {
             return grid_.current_bucket_.peek_relaxed();

@@ -263,6 +263,9 @@ public:
         [[nodiscard]] bool empty_approx() const noexcept {
             return ch_.ring_.empty_approx();
         }
+        [[nodiscard]] std::size_t size_approx() const noexcept {
+            return ch_.ring_.size_approx();
+        }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept {
             return Capacity;
         }
