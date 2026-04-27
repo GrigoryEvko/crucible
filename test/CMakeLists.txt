@@ -391,6 +391,16 @@ crucible_test(test_session_delegate)
 # exercises four patterns end-to-end through an in-memory wire.
 crucible_test(test_session_patterns)
 
+# PermissionedSessionHandle integration (FOUND-C Phase 3, tasks
+# #610-#615) — end-to-end exercises of the CSL × session integration:
+# End round trip, plain Send, Transferable Send (PS shrinks),
+# Recv Transferable + Send Returned (PS grows then shrinks), Loop
+# balance enforcement (Decision D3), Select branch convergence
+# (Decision D4 structural).  In-header smoke covers shape and sizeof;
+# this harness exercises real Transports through a FakeChannel
+# Resource so the runtime path is verified, not just the type level.
+crucible_test(test_permissioned_session_handle)
+
 # L2 typing context Γ (SEPLOG-I1, task #343) — Entry, Context,
 # compose_context_t, lookup_context_t, contains_key_v, domain_of_t,
 # update_entry_t, remove_entry_t.  Gateway to L5 (association),
