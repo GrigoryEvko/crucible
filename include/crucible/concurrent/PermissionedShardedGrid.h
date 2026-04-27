@@ -216,6 +216,23 @@ public:
             return grid_.grid_.try_push(I, item);
         }
 
+        // Per-handle diagnostics (snapshot, NOT exact).  Producer-row
+        // view: sum of size across the N consumer columns this handle's
+        // shard row feeds.  See PermissionedSpscChannel for the
+        // documented Permissioned* surface contract.
+        [[nodiscard]] std::size_t size_approx() const noexcept {
+            std::size_t total = 0;
+            for (std::size_t j = 0; j < N; ++j) {
+                total += grid_.grid_.size_approx(I, j);
+            }
+            return total;
+        }
+        [[nodiscard]] bool empty_approx() const noexcept {
+            for (std::size_t j = 0; j < N; ++j) {
+                if (grid_.grid_.size_approx(I, j) != 0) return false;
+            }
+            return true;
+        }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept {
             return Capacity;
         }
@@ -259,6 +276,22 @@ public:
             return grid_.grid_.try_pop(J);
         }
 
+        // Per-handle diagnostics (snapshot, NOT exact).  Consumer-column
+        // view: sum of size across the M producer rows that feed this
+        // handle's shard column.
+        [[nodiscard]] std::size_t size_approx() const noexcept {
+            std::size_t total = 0;
+            for (std::size_t i = 0; i < M; ++i) {
+                total += grid_.grid_.size_approx(i, J);
+            }
+            return total;
+        }
+        [[nodiscard]] bool empty_approx() const noexcept {
+            for (std::size_t i = 0; i < M; ++i) {
+                if (grid_.grid_.size_approx(i, J) != 0) return false;
+            }
+            return true;
+        }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept {
             return Capacity;
         }

@@ -210,6 +210,70 @@ void test_drained_refuses_with_consumer_out_and_rolls_back() {
     CRUCIBLE_TEST_REQUIRE(ran);
 }
 
+// FOUND-A07: session-typed handles.  After std::move(handle).close()
+// the returned Closed handle has no try_push / try_pop / close — the
+// type system refuses operations past protocol end.  We verify both
+// the runtime handoff (Closed destructor releases the pool share so a
+// subsequent drained_access succeeds) AND the compile-time gate via
+// concept assertions.
+template <typename H>
+concept HasTryPush = requires(H& h, int v) { h.try_push(v); };
+template <typename H>
+concept HasTryPop  = requires(H& h) { (void)h.try_pop(); };
+template <typename H>
+concept HasClose   = requires(H&& h) { std::move(h).close(); };
+
+void test_session_active_to_closed_transition() {
+    using Ch = IntChannel;
+    Ch ch;
+
+    // Active state has try_push/try_pop and close; Closed has none.
+    using PA = Ch::ProducerHandleT<mpmc_session::Active>;
+    using PC = Ch::ProducerHandleT<mpmc_session::Closed>;
+    using CA = Ch::ConsumerHandleT<mpmc_session::Active>;
+    using CC = Ch::ConsumerHandleT<mpmc_session::Closed>;
+
+    static_assert(HasTryPush<PA>,  "Active producer must allow try_push");
+    static_assert(HasClose<PA>,    "Active producer must allow close");
+    static_assert(!HasTryPush<PC>, "Closed producer must REFUSE try_push (compile error)");
+    static_assert(!HasClose<PC>,   "Closed producer must REFUSE second close");
+
+    static_assert(HasTryPop<CA>,   "Active consumer must allow try_pop");
+    static_assert(HasClose<CA>,    "Active consumer must allow close");
+    static_assert(!HasTryPop<CC>,  "Closed consumer must REFUSE try_pop (compile error)");
+    static_assert(!HasClose<CC>,   "Closed consumer must REFUSE second close");
+
+    // Backward-compat alias resolves to Active.
+    static_assert(std::is_same_v<Ch::ProducerHandle, PA>);
+    static_assert(std::is_same_v<Ch::ConsumerHandle, CA>);
+
+    // Runtime: an active handle pushes, gets closed, the Closed handle
+    // still holds its pool share until it goes out of scope; once the
+    // share is released, drained_access succeeds.
+    auto p = ch.producer();
+    CRUCIBLE_TEST_REQUIRE(p.has_value());
+    CRUCIBLE_TEST_REQUIRE(p->try_push(42));
+
+    auto closed = std::move(*p).close();
+    p.reset();  // active optional already consumed; reset is a no-op
+
+    // While the Closed handle is alive, drained_access still refuses
+    // (the share lives on through the Closed handle's destructor).
+    bool ran = false;
+    bool ok  = ch.with_drained_access([&]() noexcept { ran = true; });
+    CRUCIBLE_TEST_REQUIRE(!ok);   // refused — share outstanding
+    CRUCIBLE_TEST_REQUIRE(!ran);
+
+    // Drop the Closed handle; share released; drained_access succeeds.
+    {
+        auto closed_consumer_path = std::move(closed);
+        (void)closed_consumer_path;
+    }
+    ok = ch.with_drained_access([&]() noexcept { ran = true; });
+    CRUCIBLE_TEST_REQUIRE(ok);
+    CRUCIBLE_TEST_REQUIRE(ran);
+}
+
 }  // namespace
 
 int main() {
@@ -221,6 +285,8 @@ int main() {
              test_drained_refuses_with_producer_out);
     run_test("drained_refuses_with_consumer_out_and_rolls_back",
              test_drained_refuses_with_consumer_out_and_rolls_back);
+    run_test("session_active_to_closed_transition",
+             test_session_active_to_closed_transition);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);

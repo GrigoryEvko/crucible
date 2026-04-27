@@ -143,6 +143,24 @@ template <typename UserTag> struct Consumer {};
 
 }  // namespace mpmc_tag
 
+// ── Session states for MPMC handles (Honda 1998; THREADING.md §17.13) ─
+//
+// ProducerHandle / ConsumerHandle carry one of these tags as a
+// type-state.  Active = try_push/try_pop + close are allowed; Closed
+// = no operations remain (only the destructor releases the pool
+// share).  close() consumes the Active handle and produces a Closed
+// handle; the type system refuses post-close operations at compile
+// time.  Both states satisfy the FOUND-A24 diagnostic-trio surface
+// (size/empty/capacity) — observation is permitted in either state
+// since it does not advance the protocol.
+
+namespace mpmc_session {
+
+struct Active {};
+struct Closed {};
+
+}  // namespace mpmc_session
+
 // ── PermissionedMpmcChannel<T, Capacity, UserTag> ──────────────────
 
 template <MpmcValue T, std::size_t Capacity, typename UserTag = void>
@@ -168,84 +186,130 @@ public:
         : producer_pool_{safety::permission_root_mint<producer_tag>()}
         , consumer_pool_{safety::permission_root_mint<consumer_tag>()} {}
 
-    // ── ProducerHandle ────────────────────────────────────────────
+    // ── ProducerHandle<State> ─────────────────────────────────────
     //
     // Move-only via embedded SharedPermissionGuard's deleted copy.
-    // Constructed via producer() factory; holds a producer-pool
-    // refcount share for its lifetime.  EXPOSES try_push only.
+    // Constructed via producer() factory at session::Active; close()
+    // consumes the Active handle and yields a session::Closed handle
+    // whose only public operation is destruction.  All side-effecting
+    // protocol methods (try_push, try_push_batch, close) are gated
+    // by a `requires` clause on State == Active; calling them on a
+    // Closed handle is a compile error referencing the gated method.
 
-    class ProducerHandle {
+    template <typename State = mpmc_session::Active>
+    class ProducerHandleT {
         PermissionedMpmcChannel* ch_ = nullptr;
         safety::SharedPermissionGuard<producer_tag> guard_;
 
-        constexpr ProducerHandle(PermissionedMpmcChannel& c,
-                                 safety::SharedPermissionGuard<producer_tag>&& g) noexcept
+        constexpr ProducerHandleT(PermissionedMpmcChannel& c,
+                                  safety::SharedPermissionGuard<producer_tag>&& g) noexcept
             : ch_{&c}, guard_{std::move(g)} {}
         friend class PermissionedMpmcChannel;
+        // Cross-state friendship lets close() construct a Closed
+        // handle from this handle's moved-out members.
+        template <typename Other> friend class ProducerHandleT;
 
     public:
-        ProducerHandle(const ProducerHandle&)
+        using session_state = State;
+
+        ProducerHandleT(const ProducerHandleT&)
             = delete("ProducerHandle owns a producer-pool refcount share — copy would double-count");
-        ProducerHandle& operator=(const ProducerHandle&)
+        ProducerHandleT& operator=(const ProducerHandleT&)
             = delete("ProducerHandle owns a producer-pool refcount share — assignment would double-count");
-        constexpr ProducerHandle(ProducerHandle&&) noexcept = default;
+        constexpr ProducerHandleT(ProducerHandleT&&) noexcept = default;
 
         // Push — many producers may call concurrently.  Returns false
         // iff the ring is full or transient SCQ contention condition.
         // ~15-25 ns uncontended (FAA + CAS).
-        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
+        [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept
+            requires std::is_same_v<State, mpmc_session::Active>
+        {
             return ch_->ring_.try_push(item);
         }
 
         [[nodiscard, gnu::hot]] std::size_t try_push_batch(
             std::span<const T> items) noexcept
+            requires std::is_same_v<State, mpmc_session::Active>
         {
             return ch_->ring_.try_push_batch(items);
         }
 
+        // Protocol-end transition.  Consumes the Active handle, yields
+        // a Closed handle (which has no public side-effecting ops).
+        // The producer-pool share moves with the Closed handle and is
+        // released when the Closed handle is destroyed — matches the
+        // refcount semantics of letting an Active handle drop.
+        [[nodiscard]] ProducerHandleT<mpmc_session::Closed> close() && noexcept
+            requires std::is_same_v<State, mpmc_session::Active>
+        {
+            return ProducerHandleT<mpmc_session::Closed>{*ch_, std::move(guard_)};
+        }
+
+        // Diagnostics — observation, not protocol advancement.  Available
+        // in either state per FOUND-A24 unified surface.
         [[nodiscard]] bool empty_approx() const noexcept {
             return ch_->ring_.empty_approx();
+        }
+        [[nodiscard]] std::size_t size_approx() const noexcept {
+            return ch_->ring_.size_approx();
         }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept {
             return Capacity;
         }
     };
 
-    // ── ConsumerHandle ────────────────────────────────────────────
+    // ── ConsumerHandle<State> ─────────────────────────────────────
     //
-    // Symmetric to ProducerHandle.  Holds a consumer-pool refcount
-    // share for its lifetime.  EXPOSES try_pop only.
+    // Symmetric to ProducerHandle.  Same Active/Closed session
+    // discipline; try_pop / try_pop_batch / close are gated by
+    // State == Active.
 
-    class ConsumerHandle {
+    template <typename State = mpmc_session::Active>
+    class ConsumerHandleT {
         PermissionedMpmcChannel* ch_ = nullptr;
         safety::SharedPermissionGuard<consumer_tag> guard_;
 
-        constexpr ConsumerHandle(PermissionedMpmcChannel& c,
-                                 safety::SharedPermissionGuard<consumer_tag>&& g) noexcept
+        constexpr ConsumerHandleT(PermissionedMpmcChannel& c,
+                                  safety::SharedPermissionGuard<consumer_tag>&& g) noexcept
             : ch_{&c}, guard_{std::move(g)} {}
         friend class PermissionedMpmcChannel;
+        template <typename Other> friend class ConsumerHandleT;
 
     public:
-        ConsumerHandle(const ConsumerHandle&)
+        using session_state = State;
+
+        ConsumerHandleT(const ConsumerHandleT&)
             = delete("ConsumerHandle owns a consumer-pool refcount share — copy would double-count");
-        ConsumerHandle& operator=(const ConsumerHandle&)
+        ConsumerHandleT& operator=(const ConsumerHandleT&)
             = delete("ConsumerHandle owns a consumer-pool refcount share — assignment would double-count");
-        constexpr ConsumerHandle(ConsumerHandle&&) noexcept = default;
+        constexpr ConsumerHandleT(ConsumerHandleT&&) noexcept = default;
 
         // Pop — many consumers may call concurrently.  Returns nullopt
         // iff the ring is empty or transient SCQ contention condition.
-        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept {
+        [[nodiscard, gnu::hot]] std::optional<T> try_pop() noexcept
+            requires std::is_same_v<State, mpmc_session::Active>
+        {
             return ch_->ring_.try_pop();
         }
 
         [[nodiscard, gnu::hot]] std::size_t try_pop_batch(
             std::span<T> out) noexcept
+            requires std::is_same_v<State, mpmc_session::Active>
         {
             return ch_->ring_.try_pop_batch(out);
         }
 
+        [[nodiscard]] ConsumerHandleT<mpmc_session::Closed> close() && noexcept
+            requires std::is_same_v<State, mpmc_session::Active>
+        {
+            return ConsumerHandleT<mpmc_session::Closed>{*ch_, std::move(guard_)};
+        }
+
         [[nodiscard]] bool empty_approx() const noexcept {
             return ch_->ring_.empty_approx();
+        }
+        [[nodiscard]] std::size_t size_approx() const noexcept {
+            return ch_->ring_.size_approx();
         }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept {
             return Capacity;
@@ -254,8 +318,20 @@ public:
 
     // ── Factories ─────────────────────────────────────────────────
 
+    // Public aliases — pre-session-typing call sites refer to
+    // `ProducerHandle` / `ConsumerHandle` as plain types.  After
+    // FOUND-A07 those names alias the Active specialization so old
+    // code compiles unchanged; the Closed handle is reachable only
+    // through std::move(handle).close().
+    using ProducerHandle = ProducerHandleT<mpmc_session::Active>;
+    using ConsumerHandle = ConsumerHandleT<mpmc_session::Active>;
+    using ProducerHandleClosed = ProducerHandleT<mpmc_session::Closed>;
+    using ConsumerHandleClosed = ConsumerHandleT<mpmc_session::Closed>;
+
     // Producer endpoint — lends a producer-pool share.  Returns
     // nullopt iff exclusive mode is active on the producer pool.
+    // Handles always start at session::Active; transition to Closed
+    // is via std::move(handle).close().
     [[nodiscard]] std::optional<ProducerHandle> producer() noexcept {
         auto guard = producer_pool_.lend();
         if (!guard) return std::nullopt;

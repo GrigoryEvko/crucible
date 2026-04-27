@@ -115,6 +115,26 @@ struct HashKeyRouting {
     }
 };
 
+// AffinityRouting — consumer = producer_id % N.
+//
+// Producer p always routes to the same consumer (p % N).  Use when
+// producer/consumer pairs are pinned to the same NUMA node or L3
+// group: routing collapses to a single SPSC pair per producer, and
+// the M×N grid degenerates to M virtual SPSC channels (the unused
+// rings_[p][!p%N] cells stay empty but cost a constant factor of
+// memory).  Per-key ordering is NOT preserved (interleaved keys
+// from one producer end up at the same consumer regardless of key);
+// use HashKeyRouting if per-key ordering matters more than NUMA
+// locality.
+struct AffinityRouting {
+    template <typename T>
+    [[nodiscard, gnu::const]] static std::size_t route(
+        std::size_t producer_id, std::uint64_t /*seq*/,
+        std::size_t num_consumers, const T& /*item*/) noexcept {
+        return producer_id % num_consumers;
+    }
+};
+
 // ── ShardedSpscGrid<T, M, N, Capacity, Routing> ──────────────────
 
 template <SpscValue T,

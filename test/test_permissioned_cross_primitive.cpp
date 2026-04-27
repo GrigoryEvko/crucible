@@ -111,6 +111,19 @@ concept HasLinearRecombinedAccess =
             -> std::same_as<Permission<typename Ch::whole_tag>>;
     };
 
+// FOUND-A24 audit additions: every FIFO-style handle (every wrapper
+// except Snapshot, which carries version/load instead of FIFO size)
+// must expose the diagnostic trio uniformly.  Snapshot is excluded from
+// this concept because its observable surface is latest-value, not
+// queued-count.
+template <typename H>
+concept HasFifoHandleDiagnostics =
+    requires(const H& h) {
+        { h.size_approx()  } -> std::same_as<std::size_t>;
+        { h.empty_approx() } -> std::same_as<bool>;
+        { H::capacity()    } -> std::same_as<std::size_t>;
+    };
+
 // ── Tier 1: typedefs uniform across all six wrappers ────────────────
 
 void test_unified_typedefs_present() {
@@ -232,6 +245,68 @@ void test_unified_with_drained_access_pool_based() {
     CRUCIBLE_TEST_REQUIRE(
         snap.with_drained_access([&]() noexcept { body_ran = true; }));
     CRUCIBLE_TEST_REQUIRE(body_ran);
+}
+
+// ── Tier 3.5: handle diagnostic trio (FOUND-A24 audit) ─────────────
+//
+// Every FIFO-style handle (every wrapper except Snapshot) must expose
+// the size_approx / empty_approx / capacity trio uniformly.  Audit
+// closed gaps: ShardedGrid handles, MpmcChannel handles missing
+// size_approx; MpscChannel ConsumerHandle missing size_approx;
+// CalendarGrid ProducerHandle missing empty_approx + size_approx;
+// ShardedCalendarGrid handles missing all three.
+
+void test_unified_handle_diagnostics() {
+    using Spsc     = PermissionedSpscChannel<int, 64, SpscUserTag>;
+    using Mpsc     = PermissionedMpscChannel<int, 64, MpscUserTag>;
+    using Mpmc     = PermissionedMpmcChannel<int, 64, MpmcUserTag>;
+    using Grid     = PermissionedShardedGrid<int, 2, 2, 64, GridUserTag>;
+    using Deque    = PermissionedChaseLevDeque<int, 64, DequeUserTag>;
+    using Calendar = PermissionedCalendarGrid<CrossKeyJob, 2, 8, 16,
+                                              CrossKeyExtract,
+                                              1'000'000ULL,
+                                              CalendarUserTag>;
+
+    static_assert(HasFifoHandleDiagnostics<typename Spsc::ProducerHandle>,
+                  "PermissionedSpscChannel::ProducerHandle: diagnostic trio missing");
+    static_assert(HasFifoHandleDiagnostics<typename Spsc::ConsumerHandle>,
+                  "PermissionedSpscChannel::ConsumerHandle: diagnostic trio missing");
+    static_assert(HasFifoHandleDiagnostics<typename Mpsc::ProducerHandle>,
+                  "PermissionedMpscChannel::ProducerHandle: diagnostic trio missing");
+    static_assert(HasFifoHandleDiagnostics<typename Mpsc::ConsumerHandle>,
+                  "PermissionedMpscChannel::ConsumerHandle: diagnostic trio missing");
+    static_assert(HasFifoHandleDiagnostics<typename Mpmc::ProducerHandle>,
+                  "PermissionedMpmcChannel::ProducerHandle: diagnostic trio missing");
+    static_assert(HasFifoHandleDiagnostics<typename Mpmc::ConsumerHandle>,
+                  "PermissionedMpmcChannel::ConsumerHandle: diagnostic trio missing");
+    static_assert(HasFifoHandleDiagnostics<typename Grid::template ProducerHandle<0>>,
+                  "PermissionedShardedGrid::ProducerHandle: diagnostic trio missing");
+    static_assert(HasFifoHandleDiagnostics<typename Grid::template ConsumerHandle<0>>,
+                  "PermissionedShardedGrid::ConsumerHandle: diagnostic trio missing");
+    static_assert(HasFifoHandleDiagnostics<typename Deque::OwnerHandle>,
+                  "PermissionedChaseLevDeque::OwnerHandle: diagnostic trio missing");
+    static_assert(HasFifoHandleDiagnostics<typename Deque::ThiefHandle>,
+                  "PermissionedChaseLevDeque::ThiefHandle: diagnostic trio missing");
+    static_assert(HasFifoHandleDiagnostics<typename Calendar::template ProducerHandle<0>>,
+                  "PermissionedCalendarGrid::ProducerHandle: diagnostic trio missing");
+    static_assert(HasFifoHandleDiagnostics<typename Calendar::ConsumerHandle>,
+                  "PermissionedCalendarGrid::ConsumerHandle: diagnostic trio missing");
+
+    // Runtime sanity: a freshly-constructed channel reports empty/zero
+    // through every handle, then non-empty/non-zero after a push.
+    Spsc spsc;
+    auto sw = permission_root_mint<typename Spsc::whole_tag>();
+    auto [spp, scp] = permission_split<typename Spsc::producer_tag,
+                                       typename Spsc::consumer_tag>(std::move(sw));
+    auto sp = spsc.producer(std::move(spp));
+    auto sc = spsc.consumer(std::move(scp));
+    CRUCIBLE_TEST_REQUIRE(sp.empty_approx() && sc.empty_approx());
+    CRUCIBLE_TEST_REQUIRE(sp.size_approx() == 0u);
+    CRUCIBLE_TEST_REQUIRE(sc.size_approx() == 0u);
+    CRUCIBLE_TEST_REQUIRE(sp.try_push(99));
+    CRUCIBLE_TEST_REQUIRE(!sp.empty_approx() && !sc.empty_approx());
+    CRUCIBLE_TEST_REQUIRE(sp.size_approx() == 1u);
+    CRUCIBLE_TEST_REQUIRE(sc.size_approx() == 1u);
 }
 
 // ── Tier 4: with_recombined_access for Spsc (linear-token variant) ──
@@ -433,6 +508,8 @@ int main() {
              test_unified_is_exclusive_active);
     run_test("test_unified_with_drained_access_pool_based",
              test_unified_with_drained_access_pool_based);
+    run_test("test_unified_handle_diagnostics",
+             test_unified_handle_diagnostics);
     run_test("test_spsc_with_recombined_access",
              test_spsc_with_recombined_access);
     run_test("test_calendar_with_recombined_access",
