@@ -77,6 +77,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Mutation.h>
 #include <crucible/safety/Pinned.h>
 
 #include <array>
@@ -141,7 +142,9 @@ public:
     //   - bottom store: relaxed (release fence already sequenced)
     [[nodiscard]] bool push_bottom(T item) noexcept {
         const int64_t b = bottom_.load(std::memory_order_relaxed);
-        const int64_t t = top_.load(std::memory_order_acquire);
+        // top_.get() is acquire — pair with thieves' CAS-release in
+        // steal_top so we observe completed steals up to t.
+        const int64_t t = top_.get();
         if (b - t >= static_cast<int64_t>(Capacity)) [[unlikely]] {
             return false;  // full
         }
@@ -178,8 +181,15 @@ public:
     [[nodiscard]] std::optional<T> pop_bottom() noexcept {
         int64_t b = bottom_.load(std::memory_order_relaxed) - 1;
         bottom_.store(b, std::memory_order_relaxed);
-        std::atomic_thread_fence(std::memory_order_seq_cst);
-        int64_t t = top_.load(std::memory_order_relaxed);
+        // The seq_cst fence here is THE Lê 2013 §3.3 critical
+        // ordering point — orders the bottom decrement BEFORE the
+        // top load.  Co-located with the AtomicMonotonic call
+        // sites that bracket it.
+        safety::AtomicMonotonic<int64_t>::fence_seq_cst();
+        // top_.peek_relaxed() is correct here: the seq_cst fence
+        // above provides the cross-thread ordering; the load itself
+        // can be relaxed.
+        int64_t t = top_.peek_relaxed();
 
         if (t > b) {
             // Empty: restore bottom and return.  The "+1" undoes
@@ -201,7 +211,11 @@ public:
         // if it fails, a thief has incremented top to t+1 (= b+1)
         // and taken our item.  Either way, the deque is empty
         // after this call, so restore bottom.
-        if (!top_.compare_exchange_strong(t, t + 1,
+        //
+        // compare_exchange_advance enforces monotonicity at the
+        // type level (pre: t < t+1).  Seq_cst on success acts as
+        // the RMW fence Lê 2013 §3.3 requires.
+        if (!top_.compare_exchange_advance(t, t + 1,
                 std::memory_order_seq_cst,
                 std::memory_order_relaxed)) {
             // Thief got it.
@@ -234,8 +248,10 @@ public:
     //   - CAS top: seq_cst on success (race resolution), relaxed
     //              on failure.
     [[nodiscard]] std::optional<T> steal_top() noexcept {
-        int64_t t = top_.load(std::memory_order_acquire);
-        std::atomic_thread_fence(std::memory_order_seq_cst);
+        // top_.get() is acquire — sync with previous top updates from
+        // other thieves' CAS-release; see all stolen slots.
+        int64_t t = top_.get();
+        safety::AtomicMonotonic<int64_t>::fence_seq_cst();
         const int64_t b = bottom_.load(std::memory_order_acquire);
 
         if (t >= b) {
@@ -247,7 +263,12 @@ public:
         // claimed slot t.
         const T item = buffer_[t & MASK].load(std::memory_order_relaxed);
 
-        if (!top_.compare_exchange_strong(t, t + 1,
+        // compare_exchange_advance enforces monotonicity (pre: t < t+1).
+        // Seq_cst on success — race-resolution against owner pop_bottom
+        // and other thieves.  The pre() compiles to nothing under
+        // hot-TU contract semantics; the runtime CAS is the same
+        // libstdc++ compare_exchange_strong as before.
+        if (!top_.compare_exchange_advance(t, t + 1,
                 std::memory_order_seq_cst,
                 std::memory_order_relaxed)) {
             return std::nullopt;  // contention; caller may retry
@@ -263,7 +284,7 @@ public:
     // NEVER for correctness invariants in caller logic.
 
     [[nodiscard]] std::size_t size_approx() const noexcept {
-        const int64_t t = top_.load(std::memory_order_acquire);
+        const int64_t t = top_.get();          // acquire
         const int64_t b = bottom_.load(std::memory_order_acquire);
         const int64_t diff = b - t;
         return diff > 0 ? static_cast<std::size_t>(diff) : 0;
@@ -291,7 +312,18 @@ private:
     //              so we align the buffer too to keep the cells
     //              cleanly separated from the counters.
 
-    alignas(64) std::atomic<int64_t> top_{0};
+    // top_ migrated to AtomicMonotonic<int64_t> per FOUND-A20.
+    // The CAS on top_ in pop_bottom and steal_top routes through
+    // compare_exchange_advance, which carries the monotonicity
+    // contract (pre: new > observed) at the type level — making it
+    // structurally impossible to accidentally CAS top_ backward.
+    // Hot-path codegen identical to the prior bare atomic CAS.
+    //
+    // Pinned base — the original ChaseLevDeque already inherits
+    // Pinned, and AtomicMonotonic is itself Pinned, so this is a
+    // double-Pinned chain.  No double-base because Pinned is a
+    // CRTP marker (zero data).
+    alignas(64) safety::AtomicMonotonic<int64_t> top_{0};
     alignas(64) std::atomic<int64_t> bottom_{0};
     alignas(64) std::array<std::atomic<T>, Capacity> buffer_{};
 };
