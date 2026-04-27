@@ -41,8 +41,9 @@
 //                         result row = row_union_t<R, R₂>
 //                         (lvalue → invoke on const T&; rvalue → on T)
 //
-// See Capabilities.h (Effect atoms), EffectRow.h (Row + Subrow algebra),
-// compat/Fx.h (backward-compat fx::* aliases).
+// See Capabilities.h (Effect atoms + cap::* tag types + Bg/Init/Test
+// contexts), EffectRow.h (Row + Subrow algebra).  The legacy
+// crucible/Effects.h fx::* tree was deleted in FOUND-B07 / METX-5.
 
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>

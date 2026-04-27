@@ -3,22 +3,24 @@
 // ── crucible::effects umbrella ──────────────────────────────────────
 //
 // Include this to pull in the full Met(X) effect-row machinery: the
-// Effect atom catalog (Capabilities.h), the Row<...> set algebra
-// (EffectRow.h), the Computation<R, T> carrier (Computation.h), and
-// the backward-compat shim (compat/Fx.h) preserving the existing
-// fx::* spellings.
+// Effect atom catalog (Capabilities.h — also defines the cap::* tag
+// types and the Bg / Init / Test context types that mint them), the
+// Row<...> set algebra (EffectRow.h), and the Computation<R, T> carrier
+// (Computation.h).
 //
-// Hot-path TUs that only need a single piece should include the
-// targeted header instead — minimizes compile cost.
+// Hot-path TUs that only need the cap-tag parameter machinery (the
+// large majority — Arena, ExprPool, Graph, MerkleDag, BackgroundThread,
+// etc.) include `<crucible/effects/Capabilities.h>` directly to keep
+// header parse cost down.  This umbrella is for code that needs the
+// full row algebra + Computation carrier (rare today; expected to grow
+// as Met(X)-typed signatures replace the cap-tag form per
+// 25_04_2026.md §3.3).
 //
-// Foundation for 25_04_2026.md §3 Met(X) refactor.  Replaces the
-// per-token boilerplate in crucible/Effects.h with one row algebra
-// that subsumes every fx::* check via Subrow inclusion.  See METX-1
-// (#473), METX-2 (#474), METX-3 (#475), METX-4 (#476) for the
-// implementation tasks; METX-5 (#477) for the call-site sweep;
-// METX-7 (#479) for the legacy-header retirement.
+// The legacy `crucible/Effects.h` (fx::Alloc / IO / Block / Bg / Init
+// / Test) was deleted in FOUND-B07 / METX-5 (the production sweep);
+// no backward-compat shim remains.  See test/test_effects.cpp for the
+// canonical surface tests.
 
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/Computation.h>
 #include <crucible/effects/EffectRow.h>
-#include <crucible/effects/compat/Fx.h>
