@@ -334,6 +334,7 @@ crucible_test(test_read_view)
 crucible_test(test_topology)
 crucible_test(test_parallelism_cost_model)
 crucible_test(test_permissioned_snapshot)
+crucible_test(test_permissioned_mpsc_channel)
 crucible_test(test_concurrency_collision_fuzzer)
 crucible_test(test_region_cache)
 crucible_test(test_numerical_recipe)
@@ -1295,3 +1296,27 @@ crucible_neg_compile_test(neg_split_grid_call_zero
 # permission_split_n's framework static_assert.
 crucible_neg_compile_test(neg_slice_cross_parent_split
     "permission_split_n")
+
+# ── FOUND-A05 — PermissionedMpscChannel role-discrimination tests ──
+#
+# Three witnesses prove the type system rejects every misuse the
+# Permission/handle discipline was designed to catch:
+
+# (a) Consumer cannot push — try_push is structurally absent from
+#     ConsumerHandle's API.  GCC-WRAPPER-TEXT (no static_assert; the
+#     diagnostic is the overload-set rejection itself).  GCC's text
+#     is "has no member named 'try_push'" with fancy quotes.
+crucible_neg_compile_test(neg_mpsc_consumer_try_push
+    "has no member named.*try_push")
+
+# (b) Producer cannot pop — try_pop is structurally absent from
+#     ProducerHandle's API.  GCC-WRAPPER-TEXT.
+crucible_neg_compile_test(neg_mpsc_producer_try_pop
+    "has no member named.*try_pop")
+
+# (c) ConsumerHandle is non-copyable — copy would duplicate the
+#     linear Consumer Permission, silently allowing two consumers
+#     where MpscRing only supports one.  FRAMEWORK-CONTROLLED via
+#     the = delete reason string.
+crucible_neg_compile_test(neg_mpsc_consumer_copy
+    "ConsumerHandle owns the Consumer Permission")
