@@ -329,6 +329,7 @@ crucible_test(test_queue_facade)
 crucible_test(test_permission_shared)
 crucible_test(test_owned_region)
 crucible_test(test_permission_tree_generator)
+crucible_test(test_permission_grid_generator)
 crucible_test(test_read_view)
 crucible_test(test_topology)
 crucible_test(test_parallelism_cost_model)
@@ -1265,3 +1266,32 @@ crucible_neg_compile_test(neg_computation_weaken_non_subrow
 # row_union_t<R, ?> would have an undefined row arithmetic.
 crucible_neg_compile_test(neg_computation_then_non_computation_callback
     "IsComputation")
+
+# ── FOUND-A23 — auto-permission-tree neg-compile witnesses ──────────
+#
+# Prove that the FOUND-A21 (1D) and FOUND-A22 (2D) generators reject
+# every misuse the static_asserts were designed to catch.  All five
+# patterns are FRAMEWORK-CONTROLLED — diagnostics come from
+# auto_split_n / auto_split_grid / split_grid / permission_split_n's
+# own static_assert messages, not GCC phrasing.
+
+# 1D (FOUND-A21): N=0 split is structurally meaningless.
+crucible_neg_compile_test(neg_auto_split_n_zero
+    "N must be greater than zero")
+
+# 2D (FOUND-A22): zero producers / zero consumers in the descriptor.
+crucible_neg_compile_test(neg_auto_split_grid_zero_m
+    "M .producer count. must be > 0")
+crucible_neg_compile_test(neg_auto_split_grid_zero_n
+    "N .consumer count. must be > 0")
+
+# 2D (FOUND-A22): the factory call site re-checks independently of
+# the type-level descriptor — caller mistakes get their own pinpoint.
+crucible_neg_compile_test(neg_split_grid_call_zero
+    "M and N must both be greater than zero")
+
+# 1D (FOUND-A21): cross-parent slice mixing — splits_into_pack fires
+# only for matching Parent.  Non-matching parents trip
+# permission_split_n's framework static_assert.
+crucible_neg_compile_test(neg_slice_cross_parent_split
+    "permission_split_n")
