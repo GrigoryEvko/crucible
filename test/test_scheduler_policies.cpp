@@ -2,21 +2,25 @@
 // test_scheduler_policies.cpp
 //
 // Verifies the seven scheduler::Fifo / Lifo / RoundRobin /
-// LocalityAware / Deadline / Cfs / Eevdf policy types defined in
-// concurrent/scheduler/Policies.h.
+// LocalityAware / Deadline<K> / Cfs<K> / Eevdf<K> policy types defined
+// in concurrent/scheduler/Policies.h.
 //
-// What's tested:
+// What's tested (compile-time + runtime smoke):
 //   1. Each policy satisfies SchedulerPolicy<P, Job> for a sample Job.
 //   2. Each policy's queue_template<Job> satisfies
 //      traits::PermissionedChannel.
 //   3. Each policy's queue_template<Job> classifies into exactly ONE
 //      of {PoolBased, LinearOnly} — the topology dichotomy.
-//   4. needs_priority_key / needs_topology / is_scaffolding bits
-//      match the documented contract for every shipped policy.
-//   5. Deadline policy template instantiates with a user-supplied
-//      KeyExtractor and continues to satisfy SchedulerPolicy.
-//   6. A small runtime smoke — DefaultPolicy is LocalityAware, names
-//      are stable, scaffolding flag is detectable.
+//   4. priority_kind / needs_topology bits match the documented
+//      contract for every shipped policy.
+//   5. Distinct UserTags produce distinct queue_template<Job>
+//      instantiations even when KeyExtractor is identical (Deadline
+//      vs Cfs vs Eevdf with the same key extractor are DISTINCT
+//      types — type-system-level intent enforcement).
+//   6. needs_priority_key_v derives correctly from priority_kind.
+//   7. DefaultPolicy is LocalityAware, names are stable.
+//   8. Runtime: each queue_template<Job> default-constructs and
+//      reports plausible empty/capacity diagnostics.
 //
 // Reference: SEPLOG-H3 (#329), THREADING.md §5.5.2.
 // ═══════════════════════════════════════════════════════════════════
@@ -26,33 +30,42 @@
 #include <cstdio>
 #include <cstdlib>
 #include <string_view>
+#include <type_traits>
 
 namespace cs = crucible::concurrent::scheduler;
 namespace ct = crucible::concurrent::traits;
 
-// ── Sample Job types used across tests ─────────────────────────────
+// ── Sample Job + KeyExtractor ──────────────────────────────────────
 //
-// We use a plain uint64_t as the canonical "Job" because ChaseLevDeque's
-// DequeValue concept requires std::atomic<T>::is_always_lock_free.  A
-// 16-byte struct fails that check without -mcx16 (cmpxchg16b).  Real
-// production Jobs are typically a function-pointer or a small handle
-// id; this size discipline reflects the actual constraint of the
-// underlying lock-free primitives.
+// Job is std::uint64_t (lock-free atomic — required by ChaseLevDeque's
+// DequeValue concept) and the KeyExtractor returns the value itself
+// as the priority.  Real schedulers extract priority from richer Job
+// types; this test only needs the structural contract.
 
 using Job = std::uint64_t;
 
-// For Deadline the value IS the priority key — the simplest possible
-// extractor.
-struct DeadlineKey {
+struct PriorityKey {
     static std::uint64_t key(const Job& j) noexcept { return j; }
 };
 
-// Concrete Deadline instantiation usable like the flat policies.
-using DeadlinePolicy = cs::Deadline<DeadlineKey,
+// Concrete priority-keyed instantiations.
+using DeadlinePolicy = cs::Deadline<PriorityKey,
                                     /*NumProducers=*/4,
                                     /*NumBuckets=*/64,
                                     /*BucketCap=*/16,
-                                    /*QuantumNs=*/1'000'000ULL>;
+                                    /*Quantum=*/1'000'000ULL>;
+
+using CfsPolicy = cs::Cfs<PriorityKey,
+                          /*NumProducers=*/4,
+                          /*NumBuckets=*/64,
+                          /*BucketCap=*/16,
+                          /*Quantum=*/100'000ULL>;
+
+using EevdfPolicy = cs::Eevdf<PriorityKey,
+                              /*NumProducers=*/4,
+                              /*NumBuckets=*/64,
+                              /*BucketCap=*/16,
+                              /*Quantum=*/100'000ULL>;
 
 // ── Tier 1: every policy satisfies SchedulerPolicy ─────────────────
 
@@ -61,8 +74,8 @@ static_assert(cs::SchedulerPolicy<cs::Lifo,           Job>);
 static_assert(cs::SchedulerPolicy<cs::RoundRobin,     Job>);
 static_assert(cs::SchedulerPolicy<cs::LocalityAware,  Job>);
 static_assert(cs::SchedulerPolicy<DeadlinePolicy,     Job>);
-static_assert(cs::SchedulerPolicy<cs::Cfs,            Job>);
-static_assert(cs::SchedulerPolicy<cs::Eevdf,          Job>);
+static_assert(cs::SchedulerPolicy<CfsPolicy,          Job>);
+static_assert(cs::SchedulerPolicy<EevdfPolicy,        Job>);
 
 // ── Tier 2: each queue_template is a PermissionedChannel ──────────
 
@@ -71,13 +84,12 @@ static_assert(ct::PermissionedChannel<cs::Lifo::queue_template<Job>>);
 static_assert(ct::PermissionedChannel<cs::RoundRobin::queue_template<Job>>);
 static_assert(ct::PermissionedChannel<cs::LocalityAware::queue_template<Job>>);
 static_assert(ct::PermissionedChannel<DeadlinePolicy::queue_template<Job>>);
-static_assert(ct::PermissionedChannel<cs::Cfs::queue_template<Job>>);
-static_assert(ct::PermissionedChannel<cs::Eevdf::queue_template<Job>>);
+static_assert(ct::PermissionedChannel<CfsPolicy::queue_template<Job>>);
+static_assert(ct::PermissionedChannel<EevdfPolicy::queue_template<Job>>);
 
 // ── Tier 3: topology dichotomy is mutually exclusive ──────────────
 
-// Pool-based: Fifo (MPMC), Lifo (ChaseLevDeque), RoundRobin (MPSC),
-//             Cfs (MPMC), Eevdf (MPMC)
+// Pool-based: Fifo (MPMC), Lifo (ChaseLevDeque), RoundRobin (MPSC)
 static_assert( ct::PoolBasedChannel<cs::Fifo::queue_template<Job>>);
 static_assert(!ct::LinearOnlyChannel<cs::Fifo::queue_template<Job>>);
 
@@ -87,73 +99,70 @@ static_assert(!ct::LinearOnlyChannel<cs::Lifo::queue_template<Job>>);
 static_assert( ct::PoolBasedChannel<cs::RoundRobin::queue_template<Job>>);
 static_assert(!ct::LinearOnlyChannel<cs::RoundRobin::queue_template<Job>>);
 
-static_assert( ct::PoolBasedChannel<cs::Cfs::queue_template<Job>>);
-static_assert(!ct::LinearOnlyChannel<cs::Cfs::queue_template<Job>>);
-
-static_assert( ct::PoolBasedChannel<cs::Eevdf::queue_template<Job>>);
-static_assert(!ct::LinearOnlyChannel<cs::Eevdf::queue_template<Job>>);
-
-// Linear-only: LocalityAware (ShardedGrid), Deadline (CalendarGrid)
+// Linear-only: LocalityAware (ShardedGrid), Deadline/Cfs/Eevdf (CalendarGrid)
 static_assert(!ct::PoolBasedChannel<cs::LocalityAware::queue_template<Job>>);
 static_assert( ct::LinearOnlyChannel<cs::LocalityAware::queue_template<Job>>);
 
 static_assert(!ct::PoolBasedChannel<DeadlinePolicy::queue_template<Job>>);
 static_assert( ct::LinearOnlyChannel<DeadlinePolicy::queue_template<Job>>);
 
-// ── Tier 4: documented contract bits match per-policy ─────────────
+static_assert(!ct::PoolBasedChannel<CfsPolicy::queue_template<Job>>);
+static_assert( ct::LinearOnlyChannel<CfsPolicy::queue_template<Job>>);
 
-static_assert(!cs::Fifo::needs_priority_key);
+static_assert(!ct::PoolBasedChannel<EevdfPolicy::queue_template<Job>>);
+static_assert( ct::LinearOnlyChannel<EevdfPolicy::queue_template<Job>>);
+
+// ── Tier 4: PriorityKind matches per-policy intent ────────────────
+
+static_assert(cs::Fifo::priority_kind         == cs::PriorityKind::None);
+static_assert(cs::Lifo::priority_kind         == cs::PriorityKind::None);
+static_assert(cs::RoundRobin::priority_kind   == cs::PriorityKind::None);
+static_assert(cs::LocalityAware::priority_kind == cs::PriorityKind::None);
+static_assert(DeadlinePolicy::priority_kind   == cs::PriorityKind::Deadline);
+static_assert(CfsPolicy::priority_kind        == cs::PriorityKind::VirtualRuntime);
+static_assert(EevdfPolicy::priority_kind      == cs::PriorityKind::VirtualDeadline);
+
 static_assert(!cs::Fifo::needs_topology);
-
-static_assert(!cs::Lifo::needs_priority_key);
 static_assert(!cs::Lifo::needs_topology);
-
-static_assert(!cs::RoundRobin::needs_priority_key);
 static_assert(!cs::RoundRobin::needs_topology);
-
-static_assert(!cs::LocalityAware::needs_priority_key);
 static_assert( cs::LocalityAware::needs_topology);
-
-static_assert( DeadlinePolicy::needs_priority_key);
 static_assert(!DeadlinePolicy::needs_topology);
+static_assert(!CfsPolicy::needs_topology);
+static_assert(!EevdfPolicy::needs_topology);
 
-static_assert( cs::Cfs::needs_priority_key);
-static_assert(!cs::Cfs::needs_topology);
-static_assert( cs::Cfs::is_scaffolding);
+// ── Tier 5: needs_priority_key_v derives from priority_kind ───────
 
-static_assert( cs::Eevdf::needs_priority_key);
-static_assert(!cs::Eevdf::needs_topology);
-static_assert( cs::Eevdf::is_scaffolding);
+static_assert(!cs::needs_priority_key_v<cs::Fifo>);
+static_assert(!cs::needs_priority_key_v<cs::Lifo>);
+static_assert(!cs::needs_priority_key_v<cs::RoundRobin>);
+static_assert(!cs::needs_priority_key_v<cs::LocalityAware>);
+static_assert( cs::needs_priority_key_v<DeadlinePolicy>);
+static_assert( cs::needs_priority_key_v<CfsPolicy>);
+static_assert( cs::needs_priority_key_v<EevdfPolicy>);
 
-// Non-scaffolding policies have no is_scaffolding member; the trait
-// is_scaffolding_v defaults to false.
-static_assert(!cs::is_scaffolding_v<cs::Fifo>);
-static_assert(!cs::is_scaffolding_v<cs::Lifo>);
-static_assert(!cs::is_scaffolding_v<cs::RoundRobin>);
-static_assert(!cs::is_scaffolding_v<cs::LocalityAware>);
-static_assert( cs::is_scaffolding_v<cs::Cfs>);
-static_assert( cs::is_scaffolding_v<cs::Eevdf>);
-
-// ── Tier 5: DefaultPolicy is LocalityAware ────────────────────────
+// ── Tier 6: DefaultPolicy = LocalityAware ─────────────────────────
 
 static_assert(std::is_same_v<cs::DefaultPolicy, cs::LocalityAware>);
 
-// ── Tier 6: distinct policy_tag types — no cross-contamination ─────
+// ── Tier 7: distinct policy intents produce distinct types ────────
 //
-// The Permissioned wrappers tag their handles with the policy_tag
-// chained into the user_tag.  Two different policies must produce
-// distinct queue_template<Job> instantiations even for the same Job.
+// Even though Deadline, Cfs, Eevdf share the calendar-grid topology
+// and KeyExtractor, the distinct UserTags ripple through the
+// PermissionedCalendarGrid template parameters and produce distinct
+// queue_template<Job> instantiations.  Mixing them is a compile error.
 
+static_assert(!std::is_same_v<DeadlinePolicy::queue_template<Job>,
+                              CfsPolicy::queue_template<Job>>);
+static_assert(!std::is_same_v<DeadlinePolicy::queue_template<Job>,
+                              EevdfPolicy::queue_template<Job>>);
+static_assert(!std::is_same_v<CfsPolicy::queue_template<Job>,
+                              EevdfPolicy::queue_template<Job>>);
 static_assert(!std::is_same_v<cs::Fifo::queue_template<Job>,
-                              cs::Cfs::queue_template<Job>>);
-static_assert(!std::is_same_v<cs::Fifo::queue_template<Job>,
-                              cs::Eevdf::queue_template<Job>>);
-static_assert(!std::is_same_v<cs::Cfs::queue_template<Job>,
-                              cs::Eevdf::queue_template<Job>>);
+                              cs::RoundRobin::queue_template<Job>>);
 static_assert(!std::is_same_v<cs::LocalityAware::queue_template<Job>,
                               DeadlinePolicy::queue_template<Job>>);
 
-// ── Runtime smoke — names are stable, types instantiate at runtime ─
+// ── Runtime smoke ─────────────────────────────────────────────────
 
 namespace {
 
@@ -194,8 +203,8 @@ void test_policy_names_are_stable() {
     expect_eq_sv(cs::RoundRobin::name(),    "RoundRobin",    "RoundRobin::name");
     expect_eq_sv(cs::LocalityAware::name(), "LocalityAware", "LocalityAware::name");
     expect_eq_sv(DeadlinePolicy::name(),    "Deadline",      "Deadline::name");
-    expect_eq_sv(cs::Cfs::name(),           "Cfs",           "Cfs::name");
-    expect_eq_sv(cs::Eevdf::name(),         "Eevdf",         "Eevdf::name");
+    expect_eq_sv(CfsPolicy::name(),         "Cfs",           "Cfs::name");
+    expect_eq_sv(EevdfPolicy::name(),       "Eevdf",         "Eevdf::name");
 }
 
 void test_pool_based_queue_constructs() {
@@ -210,14 +219,20 @@ void test_pool_based_queue_constructs() {
 
 void test_linear_only_queue_constructs() {
     cs::LocalityAware::queue_template<Job> g;
-    if (!g.empty_approx())    throw Failure{};
-    if (g.capacity() == 0)    throw Failure{};
+    if (!g.empty_approx()) throw Failure{};
+    if (g.capacity() == 0) throw Failure{};
 }
 
-void test_deadline_queue_constructs() {
-    DeadlinePolicy::queue_template<Job> grid;
-    if (!grid.empty_approx()) throw Failure{};
-    if (grid.capacity() == 0) throw Failure{};
+void test_priority_keyed_queues_construct() {
+    DeadlinePolicy::queue_template<Job> dq;
+    CfsPolicy::queue_template<Job>      cq;
+    EevdfPolicy::queue_template<Job>    eq;
+    if (!dq.empty_approx()) throw Failure{};
+    if (!cq.empty_approx()) throw Failure{};
+    if (!eq.empty_approx()) throw Failure{};
+    if (dq.capacity() == 0) throw Failure{};
+    if (cq.capacity() == 0) throw Failure{};
+    if (eq.capacity() == 0) throw Failure{};
 }
 
 }  // namespace
@@ -225,10 +240,10 @@ void test_deadline_queue_constructs() {
 int main() {
     std::fprintf(stderr, "test_scheduler_policies\n");
 
-    run_test("policy names are stable",      test_policy_names_are_stable);
-    run_test("pool-based queue constructs",  test_pool_based_queue_constructs);
-    run_test("linear-only queue constructs", test_linear_only_queue_constructs);
-    run_test("Deadline queue constructs",    test_deadline_queue_constructs);
+    run_test("policy names are stable",          test_policy_names_are_stable);
+    run_test("pool-based queue constructs",      test_pool_based_queue_constructs);
+    run_test("linear-only queue constructs",     test_linear_only_queue_constructs);
+    run_test("priority-keyed queues construct",  test_priority_keyed_queues_construct);
 
     std::fprintf(stderr,
                  "\nresult: %d passed, %d failed\n",
