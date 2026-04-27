@@ -233,6 +233,16 @@ class [[nodiscard]] Permission {
     friend constexpr std::tuple<Permission<Children>...>
     permission_split_n(Permission<In>&&) noexcept;
 
+    // N-ary inverse of permission_split_n.  Added in FOUND-C Phase 1.5
+    // for session_fork's rebuild path: after permission_split_n hands
+    // out N child Permissions to N spawned bodies, and the bodies join,
+    // permission_combine_n folds the N children back into the parent
+    // exclusive Permission.  Same splits_into_pack_v<Parent, Children...>
+    // gate as split_n.
+    template <typename Parent, typename... Children>
+    friend constexpr Permission<Parent>
+    permission_combine_n(Permission<Children>&&...) noexcept;
+
     // PermissionFork rebuilds the parent Permission after children
     // have been consumed by their callables.  See safety/PermissionFork.h.
     template <typename T>
@@ -331,6 +341,31 @@ permission_split_n(Permission<In>&& parent) noexcept {
     return std::tuple<Permission<Children>...>{
         Permission<Children>{}...
     };
+}
+
+// ── permission_combine_n — N-ary inverse of split_n ─────────────────
+//
+// Folds N disjoint child Permissions back into the parent.  The
+// caller passes the children as separate rvalue arguments (typically
+// destructured from the tuple returned by permission_split_n).  Same
+// splits_into_pack_v<Parent, Children...> gate as split_n: every
+// rebuild site is checked against the same declarative manifest.
+//
+// Used by FOUND-C session_fork to reclaim the parent Permission after
+// all role bodies join.  The structural-join invariant guarantees no
+// child Permission outlives the join: each spawned body's lambda
+// destructor consumes the moved-in child token.
+template <typename Parent, typename... Children>
+[[nodiscard]] constexpr Permission<Parent>
+permission_combine_n(Permission<Children>&&... children) noexcept {
+    static_assert(splits_into_pack_v<Parent, Children...>,
+                  "permission_combine_n<Parent, Children...>("
+                  "Permission<Children>&&...) requires "
+                  "splits_into_pack<Parent, Children...>::value true.  "
+                  "The combine call must mirror the prior split_n; "
+                  "declare the manifest in the same TU as the tags.");
+    (void)std::tie(children...);  // consumed by move
+    return Permission<Parent>{};
 }
 
 // ── Internal: rebuild helper for PermissionFork ──────────────────────
@@ -714,6 +749,65 @@ template <typename Tag, typename Body>
     return std::optional{std::forward<Body>(body)(guard_opt->token())};
 }
 
+// ── Concept gates (FOUND-C Phase 1.5, FOUND-D consumption) ──────────
+//
+// IsPermission<T>           T is some Permission<Tag>.
+// IsSharedPermission<T>     T is some SharedPermission<Tag>.
+// IsPermissionFor<T, Tag>   T is exactly Permission<Tag>.
+// IsSharedPermissionFor<T, Tag>  T is exactly SharedPermission<Tag>.
+//
+// Every Permission<Tag> exposes `tag_type = Tag`; the concept tests
+// for the typedef plus structural identity to Permission<tag_type>.
+// Distinct from the class names (Permission, SharedPermission) by
+// design — concepts and classes occupy the same namespace member
+// lookup table, so `concept Permission` would shadow the class.
+
+namespace detail {
+
+template <typename T>
+struct is_permission_impl : std::false_type {};
+
+template <typename Tag>
+struct is_permission_impl<Permission<Tag>> : std::true_type {
+    using tag_type = Tag;
+};
+
+template <typename T>
+struct is_shared_permission_impl : std::false_type {};
+
+template <typename Tag>
+struct is_shared_permission_impl<SharedPermission<Tag>> : std::true_type {
+    using tag_type = Tag;
+};
+
+}  // namespace detail
+
+template <typename T>
+inline constexpr bool is_permission_v =
+    detail::is_permission_impl<std::remove_cvref_t<T>>::value;
+
+template <typename T>
+inline constexpr bool is_shared_permission_v =
+    detail::is_shared_permission_impl<std::remove_cvref_t<T>>::value;
+
+template <typename T>
+concept IsPermission = is_permission_v<T>;
+
+template <typename T>
+concept IsSharedPermission = is_shared_permission_v<T>;
+
+template <typename T, typename Tag>
+concept IsPermissionFor =
+    IsPermission<T> &&
+    std::is_same_v<typename detail::is_permission_impl<
+                       std::remove_cvref_t<T>>::tag_type, Tag>;
+
+template <typename T, typename Tag>
+concept IsSharedPermissionFor =
+    IsSharedPermission<T> &&
+    std::is_same_v<typename detail::is_shared_permission_impl<
+                       std::remove_cvref_t<T>>::tag_type, Tag>;
+
 // Void-return overload — separate template because optional<void>
 // doesn't exist.  Returns bool: true iff body ran (lend succeeded).
 template <typename Tag, typename Body>
@@ -776,5 +870,68 @@ static_assert(!std::is_copy_constructible_v<SharedPermissionPool<detail::seplog_
               "SharedPermissionPool<Tag> must be Pinned (non-copyable)");
 static_assert(!std::is_move_constructible_v<SharedPermissionPool<detail::seplog_test_tag>>,
               "SharedPermissionPool<Tag> must be Pinned (non-movable)");
+
+// ── Concept gates (FOUND-C Phase 1.5) ───────────────────────────────
+//
+// Positive: real Permission / SharedPermission instantiations satisfy
+// the gates.  Negative: random non-Permission types do not.
+
+static_assert(is_permission_v<Permission<detail::seplog_test_tag>>);
+static_assert(is_permission_v<Permission<detail::seplog_test_tag>&&>);
+static_assert(is_permission_v<const Permission<detail::seplog_test_tag>&>);
+static_assert(!is_permission_v<int>);
+static_assert(!is_permission_v<SharedPermission<detail::seplog_test_tag>>);
+static_assert(!is_permission_v<SharedPermissionGuard<detail::seplog_test_tag>>);
+
+static_assert(is_shared_permission_v<SharedPermission<detail::seplog_test_tag>>);
+static_assert(is_shared_permission_v<const SharedPermission<detail::seplog_test_tag>&>);
+static_assert(!is_shared_permission_v<int>);
+static_assert(!is_shared_permission_v<Permission<detail::seplog_test_tag>>);
+static_assert(!is_shared_permission_v<SharedPermissionGuard<detail::seplog_test_tag>>);
+
+static_assert(IsPermission<Permission<detail::seplog_test_tag>>);
+static_assert(IsSharedPermission<SharedPermission<detail::seplog_test_tag>>);
+static_assert(IsPermissionFor<Permission<detail::seplog_test_tag>,
+                              detail::seplog_test_tag>);
+static_assert(!IsPermissionFor<Permission<detail::seplog_test_tag>,
+                               detail::seplog_test_left>);
+static_assert(IsSharedPermissionFor<SharedPermission<detail::seplog_test_tag>,
+                                    detail::seplog_test_tag>);
+static_assert(!IsSharedPermissionFor<SharedPermission<detail::seplog_test_tag>,
+                                     detail::seplog_test_left>);
+
+// ── permission_combine_n smoke ──────────────────────────────────────
+//
+// Reuses the existing splits_into_pack manifest below.  Round-trip:
+// mint root, split_n into N children, recombine via combine_n,
+// successfully reconstruct parent.
+
+namespace detail {
+struct seplog_combine_n_parent {};
+struct seplog_combine_n_a {};
+struct seplog_combine_n_b {};
+struct seplog_combine_n_c {};
+}
+
+template <>
+struct splits_into_pack<detail::seplog_combine_n_parent,
+                        detail::seplog_combine_n_a,
+                        detail::seplog_combine_n_b,
+                        detail::seplog_combine_n_c>
+    : std::true_type {};
+
+namespace detail {
+constexpr bool combine_n_round_trip() noexcept {
+    auto whole = permission_root_mint<seplog_combine_n_parent>();
+    auto [a, b, c] = permission_split_n<seplog_combine_n_a,
+                                        seplog_combine_n_b,
+                                        seplog_combine_n_c>(std::move(whole));
+    auto rebuilt = permission_combine_n<seplog_combine_n_parent>(
+        std::move(a), std::move(b), std::move(c));
+    (void)rebuilt;
+    return true;
+}
+static_assert(combine_n_round_trip());
+}  // namespace detail
 
 }  // namespace crucible::safety
