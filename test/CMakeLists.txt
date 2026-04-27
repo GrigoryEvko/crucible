@@ -1417,60 +1417,94 @@ crucible_neg_compile_test(neg_deque_owner_copy
 
 # ─── FOUND-C Phase 7 — PermissionedSessionHandle neg-compile harness
 #
-# Seven fixtures probing permission-flow violations that the type
-# system catches via [PermissionImbalance] static_asserts in PSH's
-# close, send, step_to_next_permissioned (loop balance), and the
+# Ten fixtures probing permission-flow violations that the type system
+# catches via [PermissionImbalance] static_asserts in PSH's close,
+# send, step_to_next_permissioned (loop balance), and the
 # perm_set_union_t disjoint-operands assert.  Every regex below is
 # FRAMEWORK-CONTROLLED — matches a literal substring of a static_assert
-# message we own.  See test/sessions_neg/*.cpp for per-fixture
-# documentation of THE BUG / WHY THE TYPE SYSTEM CATCHES IT / WHY
-# IT'S TRICKY.
+# message we own.
+#
+# ─── Soundness — what each regex pins ─────────────────────────────
+#
+# Each pattern triple-anchors the diagnostic so a fixture cannot pass
+# for the wrong reason:
+#
+#   1. SOURCE FILE PATH   — PermissionedSession\.h or PermSet\.h.
+#      The assert MUST originate in our framework header, not in a
+#      stray static_assert in the user's .cpp.  GCC always names the
+#      file:line:col of the failing assert; we anchor on that path.
+#
+#   2. "static assertion failed"  — the literal GCC prefix for a true
+#      assert failure.  Distinguishes our static_assert from any other
+#      diagnostic mentioning [PermissionImbalance] (e.g. an in-comment
+#      reference, a doc-string, a #pragma message).
+#
+#   3. The specific message keyword for the intended check
+#      ("reached End", "payload type T requires", "Loop body's
+#      terminal PermSet", "disjoint operands").  Distinguishes which
+#      of the four [PermissionImbalance] sites fired.
+#
+# Per-fixture audit (commit ee2b755 follow-up):
+#
+#   - Each fixture verified to fire EXACTLY ONE static_assert
+#     (PermissionImbalance count = 1, static_assert count = 1).
+#     No fixture has dual failure modes that could mask which
+#     assertion actually fired.
+#
+#   - Each fixture's assert verified to come from the EXPECTED line
+#     in the EXPECTED header (PermissionedSession.h:184 / :319 / :474
+#     or PermSet.h:248).  No fixture accidentally fires from a
+#     different framework site.
+#
+#   - "Good twin" of fixture #1 (perm dropped before establish)
+#     verified to compile cleanly — proves the bad version fails for
+#     the leftover-perm reason, not some scaffolding bug.
 
 # (1) close at End with leftover Permission.  Establish with a Permission;
 #     close() before any surrender step.
 crucible_neg_compile_session_test(neg_psh_close_with_leftover_perm
-    "PermissionImbalance.*reached End with a non-empty")
+    "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*reached End")
 
 # (2) Send Transferable<T, X> from a handle whose PS does not contain X.
 crucible_neg_compile_session_test(neg_psh_send_transferable_without_holding
-    "PermissionImbalance.*payload type T requires")
+    "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*payload type T requires")
 
 # (3) Send Returned<T, X> from a handle whose PS does not contain X.
 crucible_neg_compile_session_test(neg_psh_send_returned_without_holding
-    "PermissionImbalance.*payload type T requires")
+    "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*payload type T requires")
 
 # (4) Loop body that DRAINS a permission per iteration without surrender.
 #     Continue's balance assert fires.
 crucible_neg_compile_session_test(neg_psh_loop_drains_perm_per_iteration
-    "PermissionImbalance.*Loop body's terminal PermSet")
+    "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*Loop body's terminal PermSet")
 
 # (5) Loop body that GAINS a permission per iteration without surrender
 #     (the symmetric inverse of #4).
 crucible_neg_compile_session_test(neg_psh_loop_gains_perm_per_iteration
-    "PermissionImbalance.*Loop body's terminal PermSet")
+    "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*Loop body's terminal PermSet")
 
 # (6) Recv Transferable then close at End without surrender.
 crucible_neg_compile_session_test(neg_psh_recv_imbalance_at_end
-    "PermissionImbalance.*reached End with a non-empty")
+    "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*reached End")
 
 # (7) Select with branch that closes without surrendering — Decision D4
 #     STRUCTURAL convergence: close on the imbalanced branch fires.
 crucible_neg_compile_session_test(neg_psh_select_diverging_branch
-    "PermissionImbalance.*reached End with a non-empty")
+    "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*reached End")
 
 # (8) Nested Loop where the OUTER body balances but the INNER body does
 #     not — exercises Decision D3's loop-context shadowing.
 crucible_neg_compile_session_test(neg_psh_nested_loop_inner_imbalance
-    "PermissionImbalance.*Loop body's terminal PermSet")
+    "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*Loop body's terminal PermSet")
 
 # (9) Multi-step body where MOST operations balance but the LAST step
 #     leaves PS imbalanced.  Subtle: balanced sub-chains hide a trailing
 #     half-pair that the type system catches via Continue's balance assert.
 crucible_neg_compile_session_test(neg_psh_subtle_chain_imbalance
-    "PermissionImbalance.*Loop body's terminal PermSet")
+    "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*Loop body's terminal PermSet")
 
 # (10) perm_set_union_t with overlapping operands — disjoint-union assert
 #      fires.  CSL frame rule violation: a permission cannot be held by
 #      two participants simultaneously.
 crucible_neg_compile_session_test(neg_perm_set_union_overlap
-    "PermissionImbalance.*disjoint operands")
+    "PermSet\\.h.*static assertion failed.*PermissionImbalance.*disjoint operands")
