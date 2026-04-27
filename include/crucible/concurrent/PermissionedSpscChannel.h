@@ -308,6 +308,51 @@ public:
         return ConsumerHandle{*this, std::move(perm)};
     }
 
+    // ── Mode transition: scoped exclusive access ──────────────────
+    //
+    // SPSC has linear (move-only, single-token) Permissions on both
+    // sides — there is no atomic refcount to drain.  The unified
+    // Permissioned* mode-transition pattern adapts to that reality:
+    // the caller surrenders the *recombined* whole permission as
+    // type-level proof that no handle is alive, body runs with
+    // exclusive access, and the whole permission is returned so the
+    // caller can re-split for the next session.
+    //
+    // Relationship to the pool-based variants:
+    //   * Mpsc / Mpmc / ChaseLevDeque / Snapshot use
+    //         with_drained_access(Body) -> bool
+    //     — the pool's atomic state is the proof of quiescence.
+    //   * Spsc uses
+    //         with_recombined_access(Permission<whole_tag>&&, Body)
+    //                 -> Permission<whole_tag>
+    //     — the Permission move is the proof of quiescence.
+    //
+    // The body always runs with exclusive access to the channel's
+    // underlying ring; what differs is the proof mechanism.
+    //
+    // Usage:
+    //   auto whole = safety::permission_root_mint<channel_t::whole_tag>();
+    //   auto [pp, cp] = safety::permission_split<
+    //       channel_t::producer_tag, channel_t::consumer_tag>(std::move(whole));
+    //   /* ... handles do work, then drop ... */
+    //   auto recombined = safety::permission_combine<channel_t::whole_tag>(
+    //       std::move(pp), std::move(cp));
+    //   recombined = ch.with_recombined_access(
+    //       std::move(recombined),
+    //       [&]() noexcept { /* exclusive access here */ });
+    //   /* re-split recombined as needed */
+    //
+    // Cost: ZERO atomic ops — the Permission move is purely type-level.
+    template <typename Body>
+        requires std::is_invocable_v<Body>
+    [[nodiscard]] safety::Permission<whole_tag>
+    with_recombined_access(safety::Permission<whole_tag>&& whole, Body&& body)
+        noexcept(std::is_nothrow_invocable_v<Body>)
+    {
+        std::forward<Body>(body)();
+        return std::move(whole);
+    }
+
     // ── Channel-level diagnostics (any thread, NOT exact) ─────────
 
     [[nodiscard]] bool empty_approx() const noexcept {
@@ -318,6 +363,14 @@ public:
     }
     [[nodiscard]] static constexpr std::size_t capacity() noexcept {
         return Capacity;
+    }
+
+    // SPSC has no atomic exclusivity flag — the linear Permissions ARE
+    // the proof of single-handle ownership.  This query exists for API
+    // uniformity with the pool-based wrappers; it always returns false
+    // because there is no in-flight upgrade state to observe.
+    [[nodiscard]] static constexpr bool is_exclusive_active() noexcept {
+        return false;
     }
 
 private:
