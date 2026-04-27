@@ -75,22 +75,51 @@
 // compute_perm_set_after_send_t / compute_perm_set_after_recv_t in
 // `sessions/SessionPermPayloads.h`.
 //
+// ─── Crash transport composition (FOUND-C Phase 5) ─────────────────
+//
+// PSH composes with the existing OneShotFlag-based crash signal
+// (`safety::OneShotFlag`, `bridges/CrashTransport.h::CrashWatchedHandle`)
+// via the framework's typed-detach idiom.  v1 ships the COMPOSITION
+// PATTERN — the `with_crash_check_or_detach` helper below + a
+// worked-example test in `test_permissioned_session_handle.cpp` —
+// rather than a fused `CrashWatchedPermissionedSessionHandle` class.
+// Per the wiring plan §10.3, the crash-stop discipline is:
+//
+//   1. Peek the OneShotFlag before each PSH op.
+//   2. If set: `std::move(h).detach(detach_reason::TransportClosedOutOfBand{})`
+//      drops the type-level PS (permissions are NOT recovered from a
+//      crashed peer — BSYZ22 crash-stop), and leaves the underlying
+//      Resource recoverable via the channel reference the user holds
+//      separately.
+//   3. If clear: proceed with the normal PSH op (send/recv/...).
+//
+// The pattern preserves PSH's send/recv API (no std::expected wrapping,
+// no API breakage) while giving the framework a typed escape hatch
+// for crash-driven cleanup.  Production callers wanting the type
+// system to AUTOMATICALLY check the flag at every PSH op (and return
+// std::expected<NextHandle, CrashEvent>) should use
+// `bridges/CrashTransport.h::CrashWatchedHandle` directly (which
+// gives crash-aware send/recv) and layer permission tracking outside
+// the type system, OR wait for v2's
+// `CrashWatchedPermissionedSessionHandle` fused class.
+//
 // ─── Scope (what this header does NOT include) ─────────────────────
 //
 //   * session_fork — Phase 4.  Stub provided that fires
 //     static_assert(false) directing the caller to Phase 4 once it
 //     lands.
-//   * OneShotFlag crash transport integration — Phase 5.  Use the
-//     existing bridges/CrashTransport.h::CrashWatchedHandle around
-//     the inner Resource as the v1 pattern.
+//   * Fused CrashWatchedPermissionedSessionHandle (single class with
+//     BOTH crash awareness AND PS evolution) — v2.  v1 composes via
+//     the `with_crash_check_or_detach` helper below (Phase 5 lite).
 //   * is_permission_balanced_v<Γ, InitialPerms> — Phase 6.  Standalone
 //     metafunction; not conjuncted with the unshipped is_safe_v.
-//   * Negative-compile harness — Phase 7.
-//   * Bench — Phase 8.
+//   * Negative-compile harness — Phase 7 (shipped).
+//   * Bench — Phase 8 (shipped).
 //   * Doc-update sweep — Phase 9.
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
+#include <crucible/handles/OneShotFlag.h>
 #include <crucible/permissions/PermSet.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/sessions/Session.h>
@@ -900,6 +929,79 @@ template <typename Proto, typename Resource, typename... InitPerms>
         return PermissionedSessionHandle<Proto, InitialPS, Resource,
                                           void>{std::move(r)};
     }
+}
+
+// ═════════════════════════════════════════════════════════════════
+// ── with_crash_check_or_detach — Phase 5 crash transport composition
+// ═════════════════════════════════════════════════════════════════
+//
+// Light-touch crash transport composition (per the wiring plan §10).
+// Peeks the OneShotFlag once; if signalled, detaches the handle with
+// `detach_reason::TransportClosedOutOfBand` and returns std::nullopt.
+// If clear, invokes `body(std::move(h))` and returns its result.
+//
+// This is the v1 composition pattern — no PSH API change, no fused
+// CrashWatchedPermissionedSessionHandle class (deferred to v2).  The
+// caller threads the OneShotFlag through their own production loop:
+//
+//   while (more_work) {
+//       auto next_opt = with_crash_check_or_detach(
+//           std::move(h), peer_flag,
+//           [&](auto h_in) { return std::move(h_in).send(...); });
+//       if (!next_opt) {
+//           // Crash detected: PS dropped (BSYZ22 crash-stop), Resource
+//           // recoverable via separately-held channel reference.
+//           break;
+//       }
+//       h = std::move(*next_opt);
+//   }
+//
+// Discipline:
+//
+//   * Detach on crash drops the type-level PermSet entirely.  Per the
+//     crash-stop discipline (BSYZ22), permissions are NOT recovered
+//     from a crashed peer — the type system reflects this by dropping
+//     PS at the abandonment point.  Any Transferable-acquired tokens
+//     in PS are leaked (correct: their value-level Permission objects
+//     destruct as PSH drops them).
+//
+//   * The Resource held by the handle is also lost from PSH's view
+//     when detached.  Callers wanting to recover the underlying
+//     channel must hold a separate reference (e.g. `Channel&` outside
+//     the handle).
+//
+//   * Body must be invocable as `Body(PSHType&&) -> NextHandleType`.
+//     std::optional<NextHandleType> is the return type; std::nullopt
+//     iff crash was detected before body ran.
+//
+//   * peek() is relaxed-ordered (per OneShotFlag::peek doc).  For
+//     production crash discipline, the producer's signal() is release-
+//     ordered, so any state mutations the producer made before signal
+//     are visible after the recipient's check_and_run pairs an
+//     acquire-fence.  This helper uses peek (not check_and_run) for
+//     the hot path — the discipline assumption is that a crash flag,
+//     once set, is monotonic (never cleared during a session), so the
+//     relaxed peek is sound.
+
+template <typename PSH, typename Body>
+    requires std::is_invocable_v<Body, PSH&&>
+[[nodiscard]] constexpr auto with_crash_check_or_detach(
+    PSH&& h,
+    ::crucible::safety::OneShotFlag& flag,
+    Body&& body)
+    noexcept(std::is_nothrow_invocable_v<Body, PSH&&>)
+    -> std::optional<std::invoke_result_t<Body, PSH&&>>
+{
+    if (flag.peek()) [[unlikely]] {
+        // Acquire-fence pairs with the producer's release-store in
+        // OneShotFlag::signal(), so any state the producer mutated
+        // before signal is visible here (matches CrashWatchedHandle's
+        // hot-path peek pattern from bridges/CrashTransport.h:354).
+        std::atomic_thread_fence(std::memory_order_acquire);
+        std::move(h).detach(detach_reason::TransportClosedOutOfBand{});
+        return std::nullopt;
+    }
+    return std::optional{std::forward<Body>(body)(std::forward<PSH>(h))};
 }
 
 // ═════════════════════════════════════════════════════════════════
