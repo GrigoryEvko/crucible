@@ -638,6 +638,23 @@ function(crucible_neg_compile_test name expected_diag)
     PASS_REGULAR_EXPRESSION "${expected_diag}")
 endfunction()
 
+# Sister harness for sessions_neg/.  Mirrors crucible_neg_compile_test
+# pattern exactly — only the source directory and label differ.
+# Sessions-side neg-compile tests (FOUND-C Phase 7, task #618) live
+# in test/sessions_neg/ rather than test/safety_neg/ to keep the
+# permission-flow witnesses adjacent to the PSH header they probe.
+function(crucible_neg_compile_session_test name expected_diag)
+  add_executable(${name} EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/sessions_neg/${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  add_test(NAME ${name}
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+            --target ${name} --config $<CONFIG>)
+  set_tests_properties(${name} PROPERTIES
+    LABELS "sessions_neg"
+    PASS_REGULAR_EXPRESSION "${expected_diag}")
+endfunction()
+
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
 # Each crucible_neg_compile_test below pairs a deliberately-broken
@@ -1397,3 +1414,63 @@ crucible_neg_compile_test(neg_deque_owner_try_steal
 #     FRAMEWORK-CONTROLLED via the = delete reason string.
 crucible_neg_compile_test(neg_deque_owner_copy
     "OwnerHandle owns the linear Owner Permission")
+
+# ─── FOUND-C Phase 7 — PermissionedSessionHandle neg-compile harness
+#
+# Seven fixtures probing permission-flow violations that the type
+# system catches via [PermissionImbalance] static_asserts in PSH's
+# close, send, step_to_next_permissioned (loop balance), and the
+# perm_set_union_t disjoint-operands assert.  Every regex below is
+# FRAMEWORK-CONTROLLED — matches a literal substring of a static_assert
+# message we own.  See test/sessions_neg/*.cpp for per-fixture
+# documentation of THE BUG / WHY THE TYPE SYSTEM CATCHES IT / WHY
+# IT'S TRICKY.
+
+# (1) close at End with leftover Permission.  Establish with a Permission;
+#     close() before any surrender step.
+crucible_neg_compile_session_test(neg_psh_close_with_leftover_perm
+    "PermissionImbalance.*reached End with a non-empty")
+
+# (2) Send Transferable<T, X> from a handle whose PS does not contain X.
+crucible_neg_compile_session_test(neg_psh_send_transferable_without_holding
+    "PermissionImbalance.*payload type T requires")
+
+# (3) Send Returned<T, X> from a handle whose PS does not contain X.
+crucible_neg_compile_session_test(neg_psh_send_returned_without_holding
+    "PermissionImbalance.*payload type T requires")
+
+# (4) Loop body that DRAINS a permission per iteration without surrender.
+#     Continue's balance assert fires.
+crucible_neg_compile_session_test(neg_psh_loop_drains_perm_per_iteration
+    "PermissionImbalance.*Loop body's terminal PermSet")
+
+# (5) Loop body that GAINS a permission per iteration without surrender
+#     (the symmetric inverse of #4).
+crucible_neg_compile_session_test(neg_psh_loop_gains_perm_per_iteration
+    "PermissionImbalance.*Loop body's terminal PermSet")
+
+# (6) Recv Transferable then close at End without surrender.
+crucible_neg_compile_session_test(neg_psh_recv_imbalance_at_end
+    "PermissionImbalance.*reached End with a non-empty")
+
+# (7) Select with branch that closes without surrendering — Decision D4
+#     STRUCTURAL convergence: close on the imbalanced branch fires.
+crucible_neg_compile_session_test(neg_psh_select_diverging_branch
+    "PermissionImbalance.*reached End with a non-empty")
+
+# (8) Nested Loop where the OUTER body balances but the INNER body does
+#     not — exercises Decision D3's loop-context shadowing.
+crucible_neg_compile_session_test(neg_psh_nested_loop_inner_imbalance
+    "PermissionImbalance.*Loop body's terminal PermSet")
+
+# (9) Multi-step body where MOST operations balance but the LAST step
+#     leaves PS imbalanced.  Subtle: balanced sub-chains hide a trailing
+#     half-pair that the type system catches via Continue's balance assert.
+crucible_neg_compile_session_test(neg_psh_subtle_chain_imbalance
+    "PermissionImbalance.*Loop body's terminal PermSet")
+
+# (10) perm_set_union_t with overlapping operands — disjoint-union assert
+#      fires.  CSL frame rule violation: a permission cannot be held by
+#      two participants simultaneously.
+crucible_neg_compile_session_test(neg_perm_set_union_overlap
+    "PermissionImbalance.*disjoint operands")
