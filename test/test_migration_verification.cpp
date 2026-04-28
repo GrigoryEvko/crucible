@@ -38,6 +38,7 @@
 #include <crucible/algebra/GradedTrait.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Linear.h>
+#include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Tagged.h>
@@ -93,6 +94,17 @@ static_assert(sizeof(Tagged<long, VerificationTag>) == sizeof(long));
 static_assert(sizeof(Secret<int>)                   == sizeof(int));
 static_assert(sizeof(Secret<long long>)             == sizeof(long long));
 
+// NumericalTier<T_at, T> — regime-1 EBO collapse via the
+// ToleranceLattice::At<T_at> singleton sub-lattice (FOUND-G01).
+// Witnessed across the tier spectrum at sizeof(double) since
+// recipe-tiered values production-typically wrap floating-point
+// payloads.
+static_assert(sizeof(NumericalTier<Tolerance::BITEXACT, int>)    == sizeof(int));
+static_assert(sizeof(NumericalTier<Tolerance::BITEXACT, double>) == sizeof(double));
+static_assert(sizeof(NumericalTier<Tolerance::ULP_FP16, double>) == sizeof(double));
+static_assert(sizeof(NumericalTier<Tolerance::RELAXED,  long long>)
+                                                                 == sizeof(long long));
+
 // Monotonic<T, std::less<T>> collapses value+grade into one T cell
 // via Graded's specialization for `T == element_type`.
 static_assert(sizeof(Monotonic<std::uint32_t>)      == sizeof(std::uint32_t));
@@ -118,6 +130,7 @@ static_assert(Refined<positive_local, int>::value_type_name().ends_with("int"));
 static_assert(SealedRefined<positive_local, int>::value_type_name().ends_with("int"));
 static_assert(Tagged<int, VerificationTag>::value_type_name().ends_with("int"));
 static_assert(Secret<int>::value_type_name().ends_with("int"));
+static_assert(NumericalTier<Tolerance::BITEXACT, int>::value_type_name().ends_with("int"));
 static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
            || Monotonic<std::uint64_t>::value_type_name().ends_with("long unsigned int"));
 static_assert(Stale<int>::value_type_name().ends_with("int"));
@@ -141,6 +154,7 @@ static_assert(!std::is_void_v<typename Refined<positive_local, int>::graded_type
 static_assert(!std::is_void_v<typename SealedRefined<positive_local, int>::graded_type>);
 static_assert(!std::is_void_v<typename Tagged<int, VerificationTag>::graded_type>);
 static_assert(!std::is_void_v<typename Secret<int>::graded_type>);
+static_assert(!std::is_void_v<typename NumericalTier<Tolerance::BITEXACT, int>::graded_type>);
 static_assert(!std::is_void_v<typename Monotonic<std::uint64_t>::graded_type>);
 static_assert(!std::is_void_v<typename AppendOnly<int>::graded_type>);
 static_assert(!std::is_void_v<typename Stale<int>::graded_type>);
@@ -166,6 +180,8 @@ static_assert(GradedWrapper<Refined<positive_local, int>>);
 static_assert(GradedWrapper<SealedRefined<positive_local, int>>);
 static_assert(GradedWrapper<Tagged<int, VerificationTag>>);
 static_assert(GradedWrapper<Secret<int>>);
+static_assert(GradedWrapper<NumericalTier<Tolerance::BITEXACT, int>>);
+static_assert(GradedWrapper<NumericalTier<Tolerance::ULP_FP16, double>>);
 static_assert(GradedWrapper<Monotonic<std::uint64_t>>);
 static_assert(GradedWrapper<AppendOnly<int>>);
 static_assert(GradedWrapper<Stale<int>>);
@@ -206,6 +222,8 @@ static_assert(forwarders_actually_forward<Refined<positive_local, int>>());
 static_assert(forwarders_actually_forward<SealedRefined<positive_local, int>>());
 static_assert(forwarders_actually_forward<Tagged<int, VerificationTag>>());
 static_assert(forwarders_actually_forward<Secret<int>>());
+static_assert(forwarders_actually_forward<NumericalTier<Tolerance::BITEXACT, int>>());
+static_assert(forwarders_actually_forward<NumericalTier<Tolerance::ULP_FP16, double>>());
 static_assert(forwarders_actually_forward<Monotonic<std::uint64_t>>());
 static_assert(forwarders_actually_forward<AppendOnly<int>>());
 static_assert(forwarders_actually_forward<Stale<int>>());
@@ -230,6 +248,12 @@ static_assert(SealedRefined<positive_local, int>::lattice_name()
 static_assert(Tagged<int, VerificationTag>::lattice_name()
                                                  .ends_with("VerificationTag"));
 static_assert(Secret<int>::lattice_name()       == "ConfLattice::At<Secret>");
+static_assert(NumericalTier<Tolerance::BITEXACT, int>::lattice_name()
+                                                 == "ToleranceLattice::At<BITEXACT>");
+static_assert(NumericalTier<Tolerance::ULP_FP16, double>::lattice_name()
+                                                 == "ToleranceLattice::At<ULP_FP16>");
+static_assert(NumericalTier<Tolerance::RELAXED,  long long>::lattice_name()
+                                                 == "ToleranceLattice::At<RELAXED>");
 static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");
 static_assert(AppendOnly<int>::lattice_name()   == "SeqPrefixLattice");
 static_assert(Stale<int>::lattice_name()        == "StalenessSemiring");
@@ -340,6 +364,35 @@ void runtime_smoke_secret() {
     if (v != 0xCAFE) std::abort();
 }
 
+void runtime_smoke_numerical_tier() {
+    // Construct at BITEXACT, relax to FP16, then to RELAXED.  The
+    // round-trip exercises the relax<LooserTier> requires-clause at
+    // runtime + the const& and && overloads.
+    NumericalTier<Tolerance::BITEXACT, int> bx{42};
+    if (bx.peek() != 42) std::abort();
+
+    auto fp16 = bx.relax<Tolerance::ULP_FP16>();           // const& form
+    if (fp16.peek() != 42) std::abort();
+    if (fp16.tier != Tolerance::ULP_FP16) std::abort();
+
+    auto relaxed = std::move(fp16).relax<Tolerance::RELAXED>();   // && form
+    if (relaxed.peek() != 42) std::abort();
+
+    // satisfies<...> reads at runtime.
+    static_assert(NumericalTier<Tolerance::BITEXACT, int>
+                      ::satisfies<Tolerance::ULP_FP16>);
+    static_assert(!NumericalTier<Tolerance::ULP_FP16, int>
+                       ::satisfies<Tolerance::BITEXACT>);
+
+    // peek_mut + swap.
+    NumericalTier<Tolerance::BITEXACT, int> a{10};
+    NumericalTier<Tolerance::BITEXACT, int> b{20};
+    a.peek_mut() = 100;
+    if (a.peek() != 100) std::abort();
+    a.swap(b);
+    if (a.peek() != 20 || b.peek() != 100) std::abort();
+}
+
 void runtime_smoke_monotonic() {
     Monotonic<std::uint64_t> m{10};
     if (m.get() != 10) std::abort();
@@ -397,6 +450,8 @@ int main() {
     std::fprintf(stderr, "  tagged:      OK\n");
     runtime_smoke_secret();
     std::fprintf(stderr, "  secret:      OK\n");
+    runtime_smoke_numerical_tier();
+    std::fprintf(stderr, "  numerical_tier:    OK\n");
     runtime_smoke_monotonic();
     std::fprintf(stderr, "  monotonic:   OK\n");
     runtime_smoke_append_only();
@@ -404,7 +459,7 @@ int main() {
     runtime_smoke_shared_permission();
     std::fprintf(stderr, "  shared_permission: OK\n");
 
-    std::fprintf(stderr, "\nALL PASSED — 10 migrated wrappers verified uniformly "
-                         "(9 Graded-backed + 1 façade)\n");
+    std::fprintf(stderr, "\nALL PASSED — 11 migrated wrappers verified uniformly "
+                         "(10 Graded-backed + 1 façade)\n");
     return EXIT_SUCCESS;
 }
