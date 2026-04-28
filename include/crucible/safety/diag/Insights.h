@@ -658,6 +658,350 @@ struct insight_provider<UnknownParameterShape> {
         "void f(float*, size_t); // raw ptr; not a canonical shape";
 };
 
+// ── VendorBackendMismatch ─────────────────────────────────────────
+template <>
+struct insight_provider<VendorBackendMismatch> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "Mimic per-vendor backends (mimic::nv / am / tpu / trn / cpu) "
+        "are NOT interchangeable — each emits an instruction stream "
+        "valid only for its target ISA.  A Vendor-tagged kernel "
+        "(MIMIC.md §22) must be routed to the matching backend; "
+        "feeding an `Vendor::AMD`-rowed KernelNode<...> to "
+        "mimic::nv::compile_kernel produces SASS that doesn't match "
+        "the AMD GPU's instruction set, then surfaces as a runtime "
+        "kernel-launch failure or silent miscompile.  The compile-"
+        "time fence catches this BEFORE the silicon does.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces when a kernel originally compiled for one vendor "
+        "is reused on another via a copy-paste of dispatch wiring "
+        "without updating the Vendor tag.  Less commonly: a fleet "
+        "join brings in peers of a different vendor and reshard "
+        "neglects to re-emit per-vendor.  The diagnostic fires at "
+        "the first mimic::*::compile_kernel call site whose row "
+        "doesn't include the backend's vendor tag.";
+    static constexpr std::string_view correct_example =
+        "mimic::nv::compile_kernel(node_with_Vendor_NV_row, ...);";
+    static constexpr std::string_view violating_example =
+        "mimic::nv::compile_kernel(node_with_Vendor_AMD_row, ...);  // WRONG";
+};
+
+// ── CrashClassMismatch ─────────────────────────────────────────────
+template <>
+struct insight_provider<CrashClassMismatch> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "BSYZ22 crash-stop session typing (sessions/SessionCrash.h) "
+        "classifies callees by failure mode: NoThrow (cannot fail), "
+        "ErrorReturn (returns std::expected), Throw (exceptions — "
+        "BANNED in Crucible), Abort (calls std::abort).  A NoThrow-"
+        "constrained context that invokes a Throw or Abort callee "
+        "loses its noexcept guarantee mid-protocol; the type system's "
+        "crash-aware composition rules silently break.  The fence "
+        "preserves the protocol-level reasoning for rollback / "
+        "recovery / replay.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces after a refactor that replaces an Error-returning "
+        "helper with one that aborts on failure (e.g., switching from "
+        "std::expected to a contract_assert).  The new helper's "
+        "Crash<Abort> grade no longer satisfies the caller's "
+        "Crash<NoThrow> requirement; the protocol step that was a "
+        "cleanly-recoverable boundary is now a process kill.  Caller "
+        "must either re-introduce error-returning, or relax the "
+        "Crash<...> bound (and update downstream rollback logic).";
+    static constexpr std::string_view correct_example =
+        "Crash<Crash::ErrorReturn, T> safe_op();  // recoverable";
+    static constexpr std::string_view violating_example =
+        "Crash<Crash::Abort, T> dangerous_op();  // kills NoThrow caller";
+};
+
+// ── ConsistencyMismatch ────────────────────────────────────────────
+template <>
+struct insight_provider<ConsistencyMismatch> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "Distributed-state consistency tiers (algebra/lattices/"
+        "ConsistencyLattice.h: EVENTUAL ⊑ READ_YOUR_WRITES ⊑ "
+        "CAUSAL_PREFIX ⊑ BOUNDED_STALENESS ⊑ STRONG) are NOT "
+        "interchangeable.  TP/PP axes in 5D parallelism (CRUCIBLE.md "
+        "§L13) require STRONG (every replica sees identical state at "
+        "every step); DP axes tolerate BOUNDED_STALENESS (DiLoCo "
+        "outer-step model).  Configuring a TP axis as EVENTUAL "
+        "produces silently-wrong gradients — the symptom is loss "
+        "divergence after some hours of training, attribution is "
+        "near-impossible without compile-time fencing.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces at fleet-join (Canopy reshard) when a peer's "
+        "declared consistency tier doesn't satisfy the partition's "
+        "axis requirement.  Or at BatchPolicy<Axis, Level> "
+        "construction in Forge Phase K when the level lattice fails "
+        "the axis's minimum.  Diagnostic names BOTH the axis and the "
+        "two consistency tiers (caller's vs callee's required).";
+    static constexpr std::string_view correct_example =
+        "BatchPolicy<TpAxis, Consistency::Strong>(...);";
+    static constexpr std::string_view violating_example =
+        "BatchPolicy<TpAxis, Consistency::Eventual>(...);  // BREAKS TP";
+};
+
+// ── LifetimeViolation ──────────────────────────────────────────────
+template <>
+struct insight_provider<LifetimeViolation> {
+    static constexpr Severity         severity = Severity::Fatal;
+    static constexpr std::string_view why_this_matters =
+        "OpaqueLifetime<L, T> (algebra/lattices/LifetimeLattice.h) "
+        "tags a value's persistence scope: PER_REQUEST ⊏ "
+        "PER_PROGRAM ⊏ PER_FLEET.  A PER_REQUEST value contains "
+        "request-local data (PII, session IDs, transient credentials); "
+        "promoting it to PER_FLEET via Cipher cold tier OR Canopy "
+        "Raft replication LEAKS the data across requests / tenants / "
+        "machines.  In multi-tenant deployments this is a security "
+        "incident requiring customer notification and (depending on "
+        "jurisdiction) regulatory disclosure.  Severity::Fatal "
+        "because the consequence class is data exfiltration, not "
+        "performance.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces when a refactor consolidates a per-request handler "
+        "with a per-fleet broadcast path and forgets to scrub the "
+        "request-local fields before publication.  Or when adding "
+        "telemetry to an inferlet (per-request user state) without "
+        "marking the metric as PER_FLEET-aggregated.  The diagnostic "
+        "names the source value's lifetime AND the destination's "
+        "required lifetime; remediation is almost always 'redact "
+        "first, then promote'.";
+    static constexpr std::string_view correct_example =
+        "publish_to_fleet(OpaqueLifetime<PER_FLEET, Aggregate>{value});";
+    static constexpr std::string_view violating_example =
+        "publish_to_fleet(OpaqueLifetime<PER_REQUEST, RawTrace>{value});";
+};
+
+// ── BudgetExceeded ─────────────────────────────────────────────────
+template <>
+struct insight_provider<BudgetExceeded> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "Budgeted<{BitsBudget, PeakBytes}, T> (28_04 §4.4.1, "
+        "Resource-bounded type theory arXiv:2512.06952) carries a "
+        "compile-time bound on the value's resource footprint: "
+        "either bits transferred (network) or peak bytes resident "
+        "(memory).  A composition that sums two Budgeted values into "
+        "a budget that exceeds the wrapper's declared cap fails the "
+        "ProductLattice's join check.  The fence prevents accidental "
+        "OOM (memory budget) or bandwidth saturation (bits budget) "
+        "in production deployments where the budget is the contract.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces when a precision-budget calibrator (28_04 §4.4.1) "
+        "composes two BitsBudget<N>-tagged candidates whose sum "
+        "exceeds the declared per-step cap.  Less commonly: a "
+        "Canopy collective whose per-peer PeakBytes sum exceeds the "
+        "configured fleet memory ceiling.  The diagnostic names "
+        "BOTH operands' budgets and the cap that was violated.";
+    static constexpr std::string_view correct_example =
+        "compose(Budgeted<{B<512>, P<1MB>}, T>, Budgeted<{B<256>, P<512KB>}, U>);";
+    static constexpr std::string_view violating_example =
+        "compose(Budgeted<{B<800>, P<2MB>}, T>, Budgeted<{B<500>, P<1MB>}, U>);"
+        "  // sum=1300 > cap=1024 OR sum=3MB > cap=2MB";
+};
+
+// ── ProgressClassViolation ─────────────────────────────────────────
+template <>
+struct insight_provider<ProgressClassViolation> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "Progress<Class, T> (28_04 §4.3.5) classifies termination "
+        "guarantees: MayDiverge ⊏ Terminating ⊏ Productive ⊏ "
+        "Bounded.  Forge phases are declared Bounded (FORGE.md §5 "
+        "hard wall-clock budgets); embedding a MayDiverge helper "
+        "(e.g., a `while (!converged)` loop without an iteration "
+        "cap) breaks the phase's wall-clock guarantee.  Lean proofs "
+        "demand Terminating; embedding a MayDiverge fact in a "
+        "Lean-extractable kernel breaks proof discharge.  The fence "
+        "preserves both the operational (wall-clock) and logical "
+        "(proof) termination contracts.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces when a refactor adds an unbounded fixed-point "
+        "iteration to a Bounded-phase helper without adding a "
+        "cap_iters parameter.  Or when an inferlet (MayDiverge by "
+        "design — escape hatch) is composed into a Terminating "
+        "outer wrapper.  Diagnostic names the offending helper's "
+        "Progress class and the outer's required class.";
+    static constexpr std::string_view correct_example =
+        "Progress<Bounded, T> phase_step(int max_iters) noexcept;";
+    static constexpr std::string_view violating_example =
+        "Progress<MayDiverge, T> unbounded_loop();  // breaks Bounded outer";
+};
+
+// ── CipherTierViolation ───────────────────────────────────────────
+template <>
+struct insight_provider<CipherTierViolation> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "CipherTier<Tier, T> (CRUCIBLE.md §L14: Hot ⊏ Warm ⊏ Cold) "
+        "carries a value's persistence tier.  Hot tier is other-Relay "
+        "RAM (RAID-style replication; ns-scale recovery on single-node "
+        "failure), Warm is local NVMe (1/N FSDP shard; second-scale "
+        "recovery from reboot), Cold is durable storage S3/GCS "
+        "(minute-scale recovery from total cluster failure).  "
+        "Mis-tiered persistence has hard consequences: a Hot value "
+        "demoted to Cold loses ns-recovery; a Cold value promoted "
+        "to Hot occupies precious other-Relay RAM that should hold "
+        "active state.  The fence preserves the recovery-time SLA.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces when Cipher::publish_warm is called on a value "
+        "whose CipherTier grade is Cold (e.g., a long-archive log "
+        "entry mistakenly routed through the warm tier).  Or when a "
+        "tier-promotion path (Hot → Warm at FSDP shard boundary) "
+        "loses the explicit tier marker via type erasure.  Diagnostic "
+        "names the source tier AND the destination's required tier.";
+    static constexpr std::string_view correct_example =
+        "Cipher::publish_warm(CipherTier<CipherTier::Warm, Shard>{value});";
+    static constexpr std::string_view violating_example =
+        "Cipher::publish_warm(CipherTier<CipherTier::Cold, Archive>{value});";
+};
+
+// ── ResidencyHeatViolation ────────────────────────────────────────
+template <>
+struct insight_provider<ResidencyHeatViolation> {
+    static constexpr Severity         severity = Severity::Warning;
+    static constexpr std::string_view why_this_matters =
+        "ResidencyHeat<Tier, T> (28_04 §4.3.8) is the storage-heat "
+        "lattice for any subsystem with hot/warm/cold residency: "
+        "KernelCache L1/L2/L3, Augur metrics, MAP-Elites archives.  "
+        "Distinct from CipherTier (which is Cipher-specific); "
+        "ResidencyHeat is the generic heat axis.  A Hot value "
+        "demoted to Cold loses LRU residency guarantees and slows "
+        "by orders of magnitude; a Cold value promoted to Hot "
+        "evicts other Hot entries.  Severity::Warning rather than "
+        "Error because mis-tiering degrades performance but doesn't "
+        "corrupt state — the framework can still serve correctly, "
+        "just slower.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces when a KernelCache::lookup at L1 is fed a "
+        "ResidencyHeat<Cold>-tagged key (the cache will never find "
+        "it because L1 only holds Hot entries).  Or when Augur's "
+        "drift attribution misclassifies a Cold-tier metric drift "
+        "as a Hot-path regression.  Diagnostic names the value's "
+        "current residency and the operation's required residency.";
+    static constexpr std::string_view correct_example =
+        "KernelCache::lookup_l1(ResidencyHeat<Hot, KeyId>{kid});";
+    static constexpr std::string_view violating_example =
+        "KernelCache::lookup_l1(ResidencyHeat<Cold, KeyId>{kid});  // miss";
+};
+
+// ── EpochMismatch ─────────────────────────────────────────────────
+template <>
+struct insight_provider<EpochMismatch> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "EpochVersioned<Epoch, Generation, T> (28_04 §4.4.2) carries "
+        "Canopy's Raft-committed fleet epoch alongside a per-Relay "
+        "generation counter.  After a membership change (peer join "
+        "OR peer death), the fleet advances epoch; values constructed "
+        "in the OLD epoch are stale relative to the NEW epoch's "
+        "topology.  Operating on a stale-epoch value during a "
+        "collective produces wrong gradients (the partition layout "
+        "the value was computed against no longer matches the live "
+        "fleet).  The fence prevents the silent staleness — caller "
+        "must rebuild the value at the new epoch via Canopy::reshard.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces immediately after Canopy::reshard fires (peer "
+        "join or peer-down detected) — any pending operation whose "
+        "operand was minted in the previous epoch fails the epoch "
+        "check.  Less commonly: a long-running Raft log replay "
+        "interleaves an old-epoch value with new-epoch metadata.  "
+        "Diagnostic names BOTH epochs and points at "
+        "Canopy::reshard for the rebuild path.";
+    static constexpr std::string_view correct_example =
+        "auto fresh = Canopy::reshard(stale_value).at_current_epoch();";
+    static constexpr std::string_view violating_example =
+        "do_collective(stale_value);  // epoch=N-1 but fleet at epoch=N";
+};
+
+// ── NumaPlacementMismatch ─────────────────────────────────────────
+template <>
+struct insight_provider<NumaPlacementMismatch> {
+    static constexpr Severity         severity = Severity::Warning;
+    static constexpr std::string_view why_this_matters =
+        "NumaPlacement<Node, Affinity, T> (28_04 §4.4.3) carries "
+        "a value's NUMA locality: which node owns its memory + the "
+        "thread affinity it expects.  A Node-3-tagged region "
+        "operated on by a Node-0-affined thread incurs cross-socket "
+        "memory latency on every access (~3-4× slower than local).  "
+        "Severity::Warning rather than Error because correctness is "
+        "preserved — only performance degrades — but on production "
+        "fleets this is a measurable revenue-cost regression.  The "
+        "fence catches the mis-placement BEFORE bench triage.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces when AdaptiveScheduler dispatches a NumaLocal-"
+        "tagged work item to a NumaSpread thread pool (or vice "
+        "versa).  Or when a NumaPlacement<Node-N> region is fed to "
+        "a body whose own NUMA preference targets a different node.  "
+        "Diagnostic names the value's node + affinity AND the "
+        "consuming operation's expected combination.";
+    static constexpr std::string_view correct_example =
+        "scheduler.dispatch_local(NumaPlacement<Node{0}, Local>{region});";
+    static constexpr std::string_view violating_example =
+        "scheduler.dispatch_local(NumaPlacement<Node{3}, Spread>{region});";
+};
+
+// ── RecipeSpecMismatch ────────────────────────────────────────────
+template <>
+struct insight_provider<RecipeSpecMismatch> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "RecipeSpec<Tier, Family, T> (28_04 §4.4.4) carries a "
+        "kernel's numerical recipe along TWO axes: ToleranceLattice "
+        "tier (BITEXACT_STRICT ⊐ BITEXACT_TC ⊐ ULP_FP64 ⊐ ... ⊐ "
+        "RELAXED) AND RecipeFamily (PAIRWISE / LINEAR / KAHAN / "
+        "BLOCK_STABLE).  Mismatched tiers produce nonequivalent "
+        "outputs (wrong by ULP); mismatched families break "
+        "associativity assumptions (a PAIRWISE-callable site fed "
+        "a LINEAR result has different reduction order, breaking "
+        "BITEXACT replay).  The fence ENFORCES the cross-vendor "
+        "numerics CI's (MIMIC.md §41) per-recipe equivalence "
+        "contract at the call site rather than in CI 12 hours later.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces when Forge Phase E.RecipeSelect picks a tier "
+        "different from the caller's declared bound, OR when a "
+        "fleet-intersection narrows the available recipes such "
+        "that no candidate satisfies the row's RecipeSpec "
+        "constraint.  Diagnostic names BOTH axes mismatched; "
+        "common remediation is a recipe-family change OR a "
+        "tier relaxation (with documented impact on bit-exactness).";
+    static constexpr std::string_view correct_example =
+        "compile(RecipeSpec<BITEXACT_TC, PAIRWISE, Kernel>{node});";
+    static constexpr std::string_view violating_example =
+        "compile(RecipeSpec<RELAXED, KAHAN, Kernel>{node});  // wrong axes";
+};
+
+// ── WaitStrategyViolation ──────────────────────────────────────────
+template <>
+struct insight_provider<WaitStrategyViolation> {
+    static constexpr Severity         severity = Severity::Error;
+    static constexpr std::string_view why_this_matters =
+        "Wait<Strategy, T> (28_04 §4.3.3) classifies wait costs: "
+        "SpinPause (≤40 ns intra-socket via MESI) ⊏ BoundedSpin "
+        "(N spins then back off) ⊏ UmwaitC01 (C0.1/C0.2 sleep) ⊏ "
+        "AcquireWait (atomic::wait/notify, futex-backed, ~1-5 us) "
+        "⊏ Park (jthread parking) ⊏ Block (mutex/condvar, ms).  "
+        "Hot-path callers admit only SpinPause; mixing in a Park "
+        "or Block via a transitively-called helper turns a 5 ns "
+        "recording into a 1-5 us syscall — a 1000× slowdown.  The "
+        "fence catches the regression at the call site, before "
+        "performance triage hours later.";
+    static constexpr std::string_view symptom_pattern =
+        "Surfaces after adding logging or metrics to a hot-path TU "
+        "where the new logger uses std::cout (line-buffered → "
+        "fwrite_lock → futex → Block).  Or replacing a custom "
+        "spin-wait with std::condition_variable for 'simplicity'.  "
+        "The diagnostic names the offending callee's Wait grade "
+        "(usually Park or Block) and the caller's required grade "
+        "(usually SpinPause).";
+    static constexpr std::string_view correct_example =
+        "while (!flag.load(acquire)) Wait<SpinPause>{}.do_pause();";
+    static constexpr std::string_view violating_example =
+        "flag.wait(false);  // Wait<AcquireWait> in a SpinPause caller";
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Trait: does this Tag have non-trivial insights? ────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -740,33 +1084,33 @@ static_assert(severity_name(Severity::Fatal)   == "Fatal");
 static_assert(insight_provider<EpochMismatch>::severity == Severity::Error,
     "Unspecialized tag's default severity should be Error.");
 
-// 10 specialized tags have insights.
+// All 22 foundation tags now have substantive insights.  Each
+// specialization is documented at its definition site above.  As
+// the wrapper-axes (FOUND-G series) ship, individual tags may gain
+// per-tag insights_quality_thresholds<Tag> overrides for tighter
+// minimums on the load-bearing prose fields.
 static_assert(has_insights_v<EffectRowMismatch>);
+static_assert(has_insights_v<UnknownParameterShape>);
+static_assert(has_insights_v<GradedWrapperViolation>);
+static_assert(has_insights_v<LinearityViolation>);
+static_assert(has_insights_v<RefinementViolation>);
 static_assert(has_insights_v<HotPathViolation>);
 static_assert(has_insights_v<DetSafeLeak>);
 static_assert(has_insights_v<NumericalTierMismatch>);
 static_assert(has_insights_v<MemOrderViolation>);
 static_assert(has_insights_v<AllocClassViolation>);
-static_assert(has_insights_v<GradedWrapperViolation>);
-static_assert(has_insights_v<LinearityViolation>);
-static_assert(has_insights_v<RefinementViolation>);
-static_assert(has_insights_v<UnknownParameterShape>);
-
-// 12 unspecialized foundation tags do NOT have insights (they
-// inherit the empty primary-template defaults).  Promoting them to
-// specialized requires authoring the four insight strings.
-static_assert(!has_insights_v<VendorBackendMismatch>);
-static_assert(!has_insights_v<CrashClassMismatch>);
-static_assert(!has_insights_v<ConsistencyMismatch>);
-static_assert(!has_insights_v<LifetimeViolation>);
-static_assert(!has_insights_v<WaitStrategyViolation>);
-static_assert(!has_insights_v<ProgressClassViolation>);
-static_assert(!has_insights_v<CipherTierViolation>);
-static_assert(!has_insights_v<ResidencyHeatViolation>);
-static_assert(!has_insights_v<EpochMismatch>);
-static_assert(!has_insights_v<BudgetExceeded>);
-static_assert(!has_insights_v<NumaPlacementMismatch>);
-static_assert(!has_insights_v<RecipeSpecMismatch>);
+static_assert(has_insights_v<VendorBackendMismatch>);
+static_assert(has_insights_v<CrashClassMismatch>);
+static_assert(has_insights_v<ConsistencyMismatch>);
+static_assert(has_insights_v<LifetimeViolation>);
+static_assert(has_insights_v<WaitStrategyViolation>);
+static_assert(has_insights_v<ProgressClassViolation>);
+static_assert(has_insights_v<CipherTierViolation>);
+static_assert(has_insights_v<ResidencyHeatViolation>);
+static_assert(has_insights_v<EpochMismatch>);
+static_assert(has_insights_v<BudgetExceeded>);
+static_assert(has_insights_v<NumaPlacementMismatch>);
+static_assert(has_insights_v<RecipeSpecMismatch>);
 
 // DetSafeLeak is Fatal (the 8th axiom is the load-bearing one).
 static_assert(insight_provider<DetSafeLeak>::severity == Severity::Fatal);
@@ -789,19 +1133,24 @@ struct user_tag : tag_base {
 static_assert(!has_insights_v<user_tag>);
 static_assert(insight_provider<user_tag>::severity == Severity::Error);
 
-// Concept gates exercised on foundation tags.
+// Concept gates exercised on foundation tags.  All 22 foundation
+// tags are now specialized; the rejection cases use a synthetic
+// user-defined tag that inherits the empty primary-template defaults.
 static_assert(WellInsightedTag<EffectRowMismatch>);
 static_assert(WellInsightedTag<DetSafeLeak>);
-static_assert(!WellInsightedTag<EpochMismatch>);  // unspecialized
+static_assert(WellInsightedTag<EpochMismatch>);   // specialized 2026-04-28
+static_assert(!WellInsightedTag<user_tag>);       // synthetic; empty defaults
 static_assert(!WellInsightedTag<int>);            // not a tag at all
 
-// HasSubstantiveInsights is the strictly stronger predicate — the 10
-// hand-authored foundation specializations all clear the QV thresholds
-// (since the prose was written deliberately).
+// HasSubstantiveInsights is the strictly stronger predicate — every
+// foundation specialization clears the QV thresholds (since the
+// prose was written deliberately).
 static_assert(HasSubstantiveInsights<EffectRowMismatch>);
 static_assert(HasSubstantiveInsights<HotPathViolation>);
 static_assert(HasSubstantiveInsights<DetSafeLeak>);
-static_assert(!HasSubstantiveInsights<EpochMismatch>);  // empty defaults fail QV
+static_assert(HasSubstantiveInsights<EpochMismatch>);
+static_assert(HasSubstantiveInsights<RecipeSpecMismatch>);
+static_assert(!HasSubstantiveInsights<user_tag>);  // empty defaults fail QV
 
 }  // namespace detail::insights_self_test
 
