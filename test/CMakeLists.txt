@@ -923,6 +923,43 @@ crucible_neg_compile_test(neg_graded_inject_on_absolute
 crucible_neg_compile_test(neg_graded_extract_on_relative_monad
   "constraints not satisfied|ComonadModality")
 
+# ─── FOUND-G03 NumericalTier wrapper neg-compiles (3 fixtures) ──────
+#
+# Pin the wrapper-level structural invariants of the §4.2.1 worked-
+# example wrapper from 28_04_2026_effects.md.  Each fixture catches
+# a class of bug a refactor of NumericalTier could introduce:
+#
+#   neg_numerical_tier_relax_to_tighter
+#       relax<TighterTier>() on a looser-pinned wrapper rejected by
+#       the requires-clause `ToleranceLattice::leq(LooserTier, T_at)`.
+#       Pins the lattice DIRECTION — going up the chain (loose →
+#       tight) is forbidden because the looser computation cannot
+#       satisfy the stricter contract.  Going down is the only
+#       legal motion and is positively-tested in NumericalTier.h's
+#       self-test block.
+#       [GCC-WRAPPER-TEXT] — requires-clause rejection.
+#
+#   neg_numerical_tier_cross_tier_assign
+#       Cross-tier assignment (NumericalTier<A, T> = NumericalTier<B, T>)
+#       rejected by the assignment operator's parameter type.  Pins
+#       per-tier identity at the assignment surface — the load-
+#       bearing structural property keeping BITEXACT and ULP_FP16
+#       slots disjoint.
+#       [GCC-WRAPPER-TEXT] — type-mismatch on operator=.
+#
+#   neg_numerical_tier_cross_tier_swap
+#       Cross-tier swap rejected (member AND ADL-friend forms).
+#       Pins per-tier identity at the swap surface — without this,
+#       a "convenience" cross-tier swap could let recipe-tier
+#       labels swap independently of value bytes.
+#       [GCC-WRAPPER-TEXT] — swap parameter-type mismatch.
+crucible_neg_compile_test(neg_numerical_tier_relax_to_tighter
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_numerical_tier_cross_tier_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_numerical_tier_cross_tier_swap
+  "no matching function|cannot convert|no match for")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's
