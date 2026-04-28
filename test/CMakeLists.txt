@@ -979,6 +979,22 @@ crucible_neg_compile_test(neg_consistency_cross_level_swap
 crucible_neg_compile_test(neg_consistency_cross_level_equality
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FOUND-G11 OpaqueLifetime wrapper neg-compiles (4 fixtures) ─────
+#
+# Mirror of the NumericalTier and Consistency neg-compile suites for
+# the §4.2.3 OpaqueLifetime<Scope, T> wrapper.  The relax-to-wider
+# fixture is the LOAD-BEARING one: it fences cross-request data
+# leaks (a PER_REQUEST state being widened to PER_FLEET would expose
+# request-scoped data across requests).
+crucible_neg_compile_test(neg_opaque_lifetime_relax_to_wider
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_opaque_lifetime_cross_scope_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_opaque_lifetime_cross_scope_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_opaque_lifetime_cross_scope_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's

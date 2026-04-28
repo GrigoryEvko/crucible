@@ -40,6 +40,7 @@
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/OpaqueLifetime.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Tagged.h>
@@ -113,6 +114,13 @@ static_assert(sizeof(Consistency<Consistency_v::CAUSAL_PREFIX,     double>) == s
 static_assert(sizeof(Consistency<Consistency_v::EVENTUAL,          long long>)
                                                                             == sizeof(long long));
 
+// OpaqueLifetime<Scope, T> — regime-1 EBO collapse via the
+// LifetimeLattice::At<Scope> singleton sub-lattice (FOUND-G09).
+static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_FLEET,   int>)    == sizeof(int));
+static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_PROGRAM, double>) == sizeof(double));
+static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_REQUEST, long long>)
+                                                                      == sizeof(long long));
+
 // Monotonic<T, std::less<T>> collapses value+grade into one T cell
 // via Graded's specialization for `T == element_type`.
 static_assert(sizeof(Monotonic<std::uint32_t>)      == sizeof(std::uint32_t));
@@ -140,6 +148,7 @@ static_assert(Tagged<int, VerificationTag>::value_type_name().ends_with("int"));
 static_assert(Secret<int>::value_type_name().ends_with("int"));
 static_assert(NumericalTier<Tolerance::BITEXACT, int>::value_type_name().ends_with("int"));
 static_assert(Consistency<Consistency_v::STRONG, int>::value_type_name().ends_with("int"));
+static_assert(OpaqueLifetime<Lifetime_v::PER_FLEET, int>::value_type_name().ends_with("int"));
 static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
            || Monotonic<std::uint64_t>::value_type_name().ends_with("long unsigned int"));
 static_assert(Stale<int>::value_type_name().ends_with("int"));
@@ -165,6 +174,7 @@ static_assert(!std::is_void_v<typename Tagged<int, VerificationTag>::graded_type
 static_assert(!std::is_void_v<typename Secret<int>::graded_type>);
 static_assert(!std::is_void_v<typename NumericalTier<Tolerance::BITEXACT, int>::graded_type>);
 static_assert(!std::is_void_v<typename Consistency<Consistency_v::STRONG, int>::graded_type>);
+static_assert(!std::is_void_v<typename OpaqueLifetime<Lifetime_v::PER_FLEET, int>::graded_type>);
 static_assert(!std::is_void_v<typename Monotonic<std::uint64_t>::graded_type>);
 static_assert(!std::is_void_v<typename AppendOnly<int>::graded_type>);
 static_assert(!std::is_void_v<typename Stale<int>::graded_type>);
@@ -194,6 +204,8 @@ static_assert(GradedWrapper<NumericalTier<Tolerance::BITEXACT, int>>);
 static_assert(GradedWrapper<NumericalTier<Tolerance::ULP_FP16, double>>);
 static_assert(GradedWrapper<Consistency<Consistency_v::STRONG, int>>);
 static_assert(GradedWrapper<Consistency<Consistency_v::CAUSAL_PREFIX, double>>);
+static_assert(GradedWrapper<OpaqueLifetime<Lifetime_v::PER_FLEET, int>>);
+static_assert(GradedWrapper<OpaqueLifetime<Lifetime_v::PER_REQUEST, double>>);
 static_assert(GradedWrapper<Monotonic<std::uint64_t>>);
 static_assert(GradedWrapper<AppendOnly<int>>);
 static_assert(GradedWrapper<Stale<int>>);
@@ -238,6 +250,8 @@ static_assert(forwarders_actually_forward<NumericalTier<Tolerance::BITEXACT, int
 static_assert(forwarders_actually_forward<NumericalTier<Tolerance::ULP_FP16, double>>());
 static_assert(forwarders_actually_forward<Consistency<Consistency_v::STRONG, int>>());
 static_assert(forwarders_actually_forward<Consistency<Consistency_v::EVENTUAL, double>>());
+static_assert(forwarders_actually_forward<OpaqueLifetime<Lifetime_v::PER_FLEET, int>>());
+static_assert(forwarders_actually_forward<OpaqueLifetime<Lifetime_v::PER_REQUEST, double>>());
 static_assert(forwarders_actually_forward<Monotonic<std::uint64_t>>());
 static_assert(forwarders_actually_forward<AppendOnly<int>>());
 static_assert(forwarders_actually_forward<Stale<int>>());
@@ -274,6 +288,12 @@ static_assert(Consistency<Consistency_v::CAUSAL_PREFIX, double>::lattice_name()
                                                  == "ConsistencyLattice::At<CAUSAL_PREFIX>");
 static_assert(Consistency<Consistency_v::EVENTUAL, long long>::lattice_name()
                                                  == "ConsistencyLattice::At<EVENTUAL>");
+static_assert(OpaqueLifetime<Lifetime_v::PER_FLEET,   int>::lattice_name()
+                                                 == "LifetimeLattice::At<PER_FLEET>");
+static_assert(OpaqueLifetime<Lifetime_v::PER_PROGRAM, double>::lattice_name()
+                                                 == "LifetimeLattice::At<PER_PROGRAM>");
+static_assert(OpaqueLifetime<Lifetime_v::PER_REQUEST, long long>::lattice_name()
+                                                 == "LifetimeLattice::At<PER_REQUEST>");
 static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");
 static_assert(AppendOnly<int>::lattice_name()   == "SeqPrefixLattice");
 static_assert(Stale<int>::lattice_name()        == "StalenessSemiring");
@@ -408,6 +428,56 @@ static_assert(!std::is_copy_constructible_v<ConsistencyOverLinear>,
     "transitively visible through the Consistency wrapper.");
 static_assert(std::is_move_constructible_v<ConsistencyOverLinear>);
 
+// OpaqueLifetime<Scope, T> ⊕ {Tagged, NumericalTier, Linear} cells —
+// parallel to the Consistency cross-composition coverage.
+//
+// Tagged<OpaqueLifetime<...>, Source> — provenance over scope pin.
+// Production: a Cipher cold-tier write carries OpaqueLifetime<PER_FLEET>
+// AND a Tagged<...,FromCipherWriter> source.
+using TaggedOpaqueLifetime =
+    Tagged<OpaqueLifetime<Lifetime_v::PER_FLEET, int>, VerificationTag>;
+static_assert(sizeof(TaggedOpaqueLifetime) == sizeof(int));
+
+// OpaqueLifetime<Scope, NumericalTier<Tier, T>> — scope-pinned recipe-
+// tier value.  Production: a fleet-replicated parameter shard at
+// BITEXACT tier — both regime-1 wrappers, both grades empty,
+// DOUBLE EBO collapse.
+using OpaqueLifetimeOverNumerical =
+    OpaqueLifetime<Lifetime_v::PER_FLEET,
+                   NumericalTier<Tolerance::BITEXACT, int>>;
+static_assert(sizeof(OpaqueLifetimeOverNumerical) == sizeof(int));
+
+// OpaqueLifetime<Scope, Linear<T>> — scope-pinned linear ownership.
+// Production: a request-scoped linear handle (e.g. a per-request
+// streaming cursor that consumes exactly once during the request).
+using OpaqueLifetimeOverLinear =
+    OpaqueLifetime<Lifetime_v::PER_REQUEST, Linear<int>>;
+static_assert(sizeof(OpaqueLifetimeOverLinear) == sizeof(int));
+static_assert(!std::is_copy_constructible_v<OpaqueLifetimeOverLinear>);
+static_assert(std::is_move_constructible_v<OpaqueLifetimeOverLinear>);
+
+// TRIPLE-NESTED witness — the universal-vocabulary claim made
+// concrete.  Production: a fleet-replicated, strongly-consistent,
+// bit-exact-tier parameter shard.  Three regime-1 wrappers stacked
+// over different lattices, all with empty grades; sizeof MUST
+// reduce all the way to sizeof(T).  This cell is the load-bearing
+// witness that the wrapper composition is actually compositional —
+// not just at two layers but at any depth.
+using TripleNested =
+    OpaqueLifetime<Lifetime_v::PER_FLEET,
+                   Consistency<Consistency_v::STRONG,
+                               NumericalTier<Tolerance::BITEXACT, int>>>;
+static_assert(sizeof(TripleNested) == sizeof(int),
+    "TRIPLE-nested OpaqueLifetime<Consistency<NumericalTier<T>>> must "
+    "EBO-collapse all the way to sizeof(T) — three regime-1 wrappers "
+    "stacked over distinct lattices, all with empty grades.  If this "
+    "fires, one of the three wrapper layers stopped using the EBO-"
+    "friendly Graded substrate.");
+static_assert(GradedWrapper<TripleNested>,
+    "TRIPLE-nested wrapper must satisfy GradedWrapper at the outermost "
+    "layer — proves the concept is compositional across distinct "
+    "lattice types.");
+
 // ── COVERAGE MATRIX — runtime API parity (smoke checks) ────────────
 //
 // Confirm peek / consume / construction round-trip for the four
@@ -534,6 +604,51 @@ void runtime_smoke_consistency() {
     if (inner_after_consume.peek() != 55) std::abort();
 }
 
+void runtime_smoke_opaque_lifetime() {
+    // Round-trip: PER_FLEET → PER_PROGRAM → PER_REQUEST via relax.
+    OpaqueLifetime<Lifetime_v::PER_FLEET, int> fleet{42};
+    if (fleet.peek() != 42) std::abort();
+
+    auto program = fleet.relax<Lifetime_v::PER_PROGRAM>();
+    if (program.peek() != 42) std::abort();
+    if (program.scope != Lifetime_v::PER_PROGRAM) std::abort();
+
+    auto request = std::move(program).relax<Lifetime_v::PER_REQUEST>();
+    if (request.peek() != 42) std::abort();
+
+    // satisfies<...> reads at runtime.
+    static_assert(OpaqueLifetime<Lifetime_v::PER_FLEET, int>
+                      ::satisfies<Lifetime_v::PER_REQUEST>);
+    static_assert(!OpaqueLifetime<Lifetime_v::PER_REQUEST, int>
+                       ::satisfies<Lifetime_v::PER_FLEET>);
+
+    // peek_mut + swap.
+    OpaqueLifetime<Lifetime_v::PER_FLEET, int> a{10};
+    OpaqueLifetime<Lifetime_v::PER_FLEET, int> b{20};
+    a.peek_mut() = 100;
+    if (a.peek() != 100) std::abort();
+    a.swap(b);
+    if (a.peek() != 20 || b.peek() != 100) std::abort();
+
+    // operator== — same-scope.
+    OpaqueLifetime<Lifetime_v::PER_FLEET, int> eq_a{42};
+    OpaqueLifetime<Lifetime_v::PER_FLEET, int> eq_b{42};
+    OpaqueLifetime<Lifetime_v::PER_FLEET, int> eq_c{43};
+    if (!(eq_a == eq_b)) std::abort();
+    if (  eq_a == eq_c)  std::abort();
+
+    // TRIPLE-nested cross-composition runtime witness.
+    TripleNested triple{
+        Consistency<Consistency_v::STRONG,
+                    NumericalTier<Tolerance::BITEXACT, int>>{
+            NumericalTier<Tolerance::BITEXACT, int>{77}
+        }
+    };
+    auto consistency_layer = std::move(triple).consume();      // peel OpaqueLifetime
+    auto numerical_layer   = std::move(consistency_layer).consume();  // peel Consistency
+    if (numerical_layer.peek() != 77) std::abort();
+}
+
 void runtime_smoke_monotonic() {
     Monotonic<std::uint64_t> m{10};
     if (m.get() != 10) std::abort();
@@ -595,6 +710,8 @@ int main() {
     std::fprintf(stderr, "  numerical_tier:    OK\n");
     runtime_smoke_consistency();
     std::fprintf(stderr, "  consistency:       OK\n");
+    runtime_smoke_opaque_lifetime();
+    std::fprintf(stderr, "  opaque_lifetime:   OK\n");
     runtime_smoke_monotonic();
     std::fprintf(stderr, "  monotonic:   OK\n");
     runtime_smoke_append_only();
@@ -602,7 +719,7 @@ int main() {
     runtime_smoke_shared_permission();
     std::fprintf(stderr, "  shared_permission: OK\n");
 
-    std::fprintf(stderr, "\nALL PASSED — 12 migrated wrappers verified uniformly "
-                         "(11 Graded-backed + 1 façade)\n");
+    std::fprintf(stderr, "\nALL PASSED — 13 migrated wrappers verified uniformly "
+                         "(12 Graded-backed + 1 façade)\n");
     return EXIT_SUCCESS;
 }
