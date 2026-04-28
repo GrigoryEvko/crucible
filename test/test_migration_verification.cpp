@@ -38,6 +38,7 @@
 #include <crucible/algebra/GradedTrait.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Consistency.h>
+#include <crucible/safety/DetSafe.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/OpaqueLifetime.h>
@@ -121,6 +122,15 @@ static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_PROGRAM, double>) == sizeof(
 static_assert(sizeof(OpaqueLifetime<Lifetime_v::PER_REQUEST, long long>)
                                                                       == sizeof(long long));
 
+// DetSafe<Tier, T> — regime-1 EBO collapse via the
+// DetSafeLattice::At<Tier> singleton sub-lattice (FOUND-G14).
+// THE LOAD-BEARING WRAPPER — fences the 8th axiom at the Cipher
+// write-fence boundary.
+static_assert(sizeof(DetSafe<DetSafeTier_v::Pure,                    int>)    == sizeof(int));
+static_assert(sizeof(DetSafe<DetSafeTier_v::PhiloxRng,               double>) == sizeof(double));
+static_assert(sizeof(DetSafe<DetSafeTier_v::MonotonicClockRead,      long long>)
+                                                                              == sizeof(long long));
+
 // Monotonic<T, std::less<T>> collapses value+grade into one T cell
 // via Graded's specialization for `T == element_type`.
 static_assert(sizeof(Monotonic<std::uint32_t>)      == sizeof(std::uint32_t));
@@ -149,6 +159,7 @@ static_assert(Secret<int>::value_type_name().ends_with("int"));
 static_assert(NumericalTier<Tolerance::BITEXACT, int>::value_type_name().ends_with("int"));
 static_assert(Consistency<Consistency_v::STRONG, int>::value_type_name().ends_with("int"));
 static_assert(OpaqueLifetime<Lifetime_v::PER_FLEET, int>::value_type_name().ends_with("int"));
+static_assert(DetSafe<DetSafeTier_v::Pure, int>::value_type_name().ends_with("int"));
 static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
            || Monotonic<std::uint64_t>::value_type_name().ends_with("long unsigned int"));
 static_assert(Stale<int>::value_type_name().ends_with("int"));
@@ -175,6 +186,7 @@ static_assert(!std::is_void_v<typename Secret<int>::graded_type>);
 static_assert(!std::is_void_v<typename NumericalTier<Tolerance::BITEXACT, int>::graded_type>);
 static_assert(!std::is_void_v<typename Consistency<Consistency_v::STRONG, int>::graded_type>);
 static_assert(!std::is_void_v<typename OpaqueLifetime<Lifetime_v::PER_FLEET, int>::graded_type>);
+static_assert(!std::is_void_v<typename DetSafe<DetSafeTier_v::Pure, int>::graded_type>);
 static_assert(!std::is_void_v<typename Monotonic<std::uint64_t>::graded_type>);
 static_assert(!std::is_void_v<typename AppendOnly<int>::graded_type>);
 static_assert(!std::is_void_v<typename Stale<int>::graded_type>);
@@ -206,6 +218,9 @@ static_assert(GradedWrapper<Consistency<Consistency_v::STRONG, int>>);
 static_assert(GradedWrapper<Consistency<Consistency_v::CAUSAL_PREFIX, double>>);
 static_assert(GradedWrapper<OpaqueLifetime<Lifetime_v::PER_FLEET, int>>);
 static_assert(GradedWrapper<OpaqueLifetime<Lifetime_v::PER_REQUEST, double>>);
+static_assert(GradedWrapper<DetSafe<DetSafeTier_v::Pure, int>>);
+static_assert(GradedWrapper<DetSafe<DetSafeTier_v::PhiloxRng, double>>);
+static_assert(GradedWrapper<DetSafe<DetSafeTier_v::MonotonicClockRead, long long>>);
 static_assert(GradedWrapper<Monotonic<std::uint64_t>>);
 static_assert(GradedWrapper<AppendOnly<int>>);
 static_assert(GradedWrapper<Stale<int>>);
@@ -252,6 +267,8 @@ static_assert(forwarders_actually_forward<Consistency<Consistency_v::STRONG, int
 static_assert(forwarders_actually_forward<Consistency<Consistency_v::EVENTUAL, double>>());
 static_assert(forwarders_actually_forward<OpaqueLifetime<Lifetime_v::PER_FLEET, int>>());
 static_assert(forwarders_actually_forward<OpaqueLifetime<Lifetime_v::PER_REQUEST, double>>());
+static_assert(forwarders_actually_forward<DetSafe<DetSafeTier_v::Pure, int>>());
+static_assert(forwarders_actually_forward<DetSafe<DetSafeTier_v::MonotonicClockRead, double>>());
 static_assert(forwarders_actually_forward<Monotonic<std::uint64_t>>());
 static_assert(forwarders_actually_forward<AppendOnly<int>>());
 static_assert(forwarders_actually_forward<Stale<int>>());
@@ -294,6 +311,12 @@ static_assert(OpaqueLifetime<Lifetime_v::PER_PROGRAM, double>::lattice_name()
                                                  == "LifetimeLattice::At<PER_PROGRAM>");
 static_assert(OpaqueLifetime<Lifetime_v::PER_REQUEST, long long>::lattice_name()
                                                  == "LifetimeLattice::At<PER_REQUEST>");
+static_assert(DetSafe<DetSafeTier_v::Pure, int>::lattice_name()
+                                                 == "DetSafeLattice::At<Pure>");
+static_assert(DetSafe<DetSafeTier_v::PhiloxRng, double>::lattice_name()
+                                                 == "DetSafeLattice::At<PhiloxRng>");
+static_assert(DetSafe<DetSafeTier_v::NonDeterministicSyscall, long long>::lattice_name()
+                                                 == "DetSafeLattice::At<NonDeterministicSyscall>");
 static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");
 static_assert(AppendOnly<int>::lattice_name()   == "SeqPrefixLattice");
 static_assert(Stale<int>::lattice_name()        == "StalenessSemiring");
@@ -478,6 +501,45 @@ static_assert(GradedWrapper<TripleNested>,
     "layer — proves the concept is compositional across distinct "
     "lattice types.");
 
+// DetSafe<Tier, T> ⊕ {Tagged, NumericalTier} cells.
+// Tagged<DetSafe<Pure, T>, Source> — provenance over determinism-
+// safety pin.  Production: a Cipher write carrying DetSafe<Pure>
+// AND a Tagged<...,FromPhiloxModule> source for audit trail.
+using TaggedDetSafe =
+    Tagged<DetSafe<DetSafeTier_v::Pure, int>, VerificationTag>;
+static_assert(sizeof(TaggedDetSafe) == sizeof(int));
+
+// DetSafe<Pure, NumericalTier<BITEXACT, T>> — both the recipe-tier
+// AND determinism-safety promise pinned at the type level.  Both
+// regime-1; DOUBLE EBO collapse.
+using DetSafeOverNumerical =
+    DetSafe<DetSafeTier_v::Pure,
+            NumericalTier<Tolerance::BITEXACT, int>>;
+static_assert(sizeof(DetSafeOverNumerical) == sizeof(int));
+
+// DetSafe<Pure, Linear<T>> — pure-tier owned linear handle.
+using DetSafeOverLinear = DetSafe<DetSafeTier_v::Pure, Linear<int>>;
+static_assert(sizeof(DetSafeOverLinear) == sizeof(int));
+static_assert(!std::is_copy_constructible_v<DetSafeOverLinear>);
+static_assert(std::is_move_constructible_v<DetSafeOverLinear>);
+
+// QUADRUPLE-NESTED witness — extends the TRIPLE story to FOUR
+// distinct lattices.  Production: a fleet-replicated, strongly-
+// consistent, bit-exact, Pure-determinism-safe parameter shard.
+// Four regime-1 wrappers over four DISTINCT lattices, all with
+// empty grades.  Universal-vocabulary claim at maximum depth.
+using QuadrupleNested =
+    OpaqueLifetime<Lifetime_v::PER_FLEET,
+                   Consistency<Consistency_v::STRONG,
+                               DetSafe<DetSafeTier_v::Pure,
+                                       NumericalTier<Tolerance::BITEXACT, int>>>>;
+static_assert(sizeof(QuadrupleNested) == sizeof(int),
+    "QUADRUPLE-nested OpaqueLifetime<Consistency<DetSafe<NumericalTier<T>>>>"
+    " must EBO-collapse to sizeof(T) — four regime-1 wrappers over "
+    "four DISTINCT lattices.  If this fires, one of the four wrapper "
+    "layers stopped using the EBO-friendly Graded substrate.");
+static_assert(GradedWrapper<QuadrupleNested>);
+
 // ── COVERAGE MATRIX — runtime API parity (smoke checks) ────────────
 //
 // Confirm peek / consume / construction round-trip for the four
@@ -649,6 +711,56 @@ void runtime_smoke_opaque_lifetime() {
     if (numerical_layer.peek() != 77) std::abort();
 }
 
+void runtime_smoke_det_safe() {
+    // Round-trip: Pure → PhiloxRng → MonotonicClockRead via relax.
+    DetSafe<DetSafeTier_v::Pure, int> pure{42};
+    if (pure.peek() != 42) std::abort();
+
+    auto philox = pure.relax<DetSafeTier_v::PhiloxRng>();
+    if (philox.peek() != 42) std::abort();
+    if (philox.tier != DetSafeTier_v::PhiloxRng) std::abort();
+
+    auto mono = std::move(philox).relax<DetSafeTier_v::MonotonicClockRead>();
+    if (mono.peek() != 42) std::abort();
+
+    // satisfies<...> reads at runtime — load-bearing scenarios.
+    static_assert( DetSafe<DetSafeTier_v::Pure, int>
+                        ::satisfies<DetSafeTier_v::PhiloxRng>);
+    static_assert(!DetSafe<DetSafeTier_v::MonotonicClockRead, int>
+                        ::satisfies<DetSafeTier_v::PhiloxRng>);
+
+    // peek_mut + swap.
+    DetSafe<DetSafeTier_v::Pure, int> a{10};
+    DetSafe<DetSafeTier_v::Pure, int> b{20};
+    a.peek_mut() = 100;
+    if (a.peek() != 100) std::abort();
+    a.swap(b);
+    if (a.peek() != 20 || b.peek() != 100) std::abort();
+
+    // operator== — same-tier.
+    DetSafe<DetSafeTier_v::Pure, int> eq_a{42};
+    DetSafe<DetSafeTier_v::Pure, int> eq_b{42};
+    DetSafe<DetSafeTier_v::Pure, int> eq_c{43};
+    if (!(eq_a == eq_b)) std::abort();
+    if (  eq_a == eq_c)  std::abort();
+
+    // QUADRUPLE-nested cross-composition runtime witness — peel all 4.
+    QuadrupleNested quad{
+        Consistency<Consistency_v::STRONG,
+                    DetSafe<DetSafeTier_v::Pure,
+                            NumericalTier<Tolerance::BITEXACT, int>>>{
+            DetSafe<DetSafeTier_v::Pure,
+                    NumericalTier<Tolerance::BITEXACT, int>>{
+                NumericalTier<Tolerance::BITEXACT, int>{99}
+            }
+        }
+    };
+    auto layer3 = std::move(quad).consume();        // peel OpaqueLifetime
+    auto layer2 = std::move(layer3).consume();      // peel Consistency
+    auto layer1 = std::move(layer2).consume();      // peel DetSafe
+    if (layer1.peek() != 99) std::abort();          // bare NumericalTier value
+}
+
 void runtime_smoke_monotonic() {
     Monotonic<std::uint64_t> m{10};
     if (m.get() != 10) std::abort();
@@ -712,6 +824,8 @@ int main() {
     std::fprintf(stderr, "  consistency:       OK\n");
     runtime_smoke_opaque_lifetime();
     std::fprintf(stderr, "  opaque_lifetime:   OK\n");
+    runtime_smoke_det_safe();
+    std::fprintf(stderr, "  det_safe:          OK\n");
     runtime_smoke_monotonic();
     std::fprintf(stderr, "  monotonic:   OK\n");
     runtime_smoke_append_only();
@@ -719,7 +833,7 @@ int main() {
     runtime_smoke_shared_permission();
     std::fprintf(stderr, "  shared_permission: OK\n");
 
-    std::fprintf(stderr, "\nALL PASSED — 13 migrated wrappers verified uniformly "
-                         "(12 Graded-backed + 1 façade)\n");
+    std::fprintf(stderr, "\nALL PASSED — 14 migrated wrappers verified uniformly "
+                         "(13 Graded-backed + 1 façade)\n");
     return EXIT_SUCCESS;
 }

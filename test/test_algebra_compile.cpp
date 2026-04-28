@@ -154,6 +154,10 @@ void test_tolerance_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::tolerance_lattice_self_test::runtime_smoke_test();
 }
 
+void test_det_safe_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::det_safe_lattice_self_test::runtime_smoke_test();
+}
+
 }  // namespace
 
 int main() {
@@ -184,6 +188,8 @@ int main() {
              test_consistency_lattice_runtime_smoke);
     run_test("test_tolerance_lattice_runtime_smoke",
              test_tolerance_lattice_runtime_smoke);
+    run_test("test_det_safe_lattice_runtime_smoke",
+             test_det_safe_lattice_runtime_smoke);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
