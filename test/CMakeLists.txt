@@ -995,6 +995,23 @@ crucible_neg_compile_test(neg_opaque_lifetime_cross_scope_swap
 crucible_neg_compile_test(neg_opaque_lifetime_cross_scope_equality
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FOUND-G16 DetSafe wrapper neg-compiles (4 fixtures) ────────────
+#
+# THE LOAD-BEARING NEG-COMPILES.  The relax-to-stronger fixture is
+# the foundation of the 8th-axiom (DetSafe) compile-time fence — it
+# proves that a clock-derived value cannot be re-typed as PhiloxRng
+# and silently flow into the Cipher replay log.  Without this
+# fixture (or the requires-clause it pins), the 8th axiom is no
+# better fenced than it is today (CI-only, 12h after a regression).
+crucible_neg_compile_test(neg_det_safe_relax_to_stronger
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_det_safe_cross_tier_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_det_safe_cross_tier_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_det_safe_cross_tier_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's
