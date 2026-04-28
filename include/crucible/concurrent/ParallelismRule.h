@@ -1,13 +1,20 @@
 #pragma once
 
 // ═══════════════════════════════════════════════════════════════════
-// concurrent::CostModel — cache-tier-aware parallelism decision
+// concurrent::ParallelismRule — cache-tier-aware parallelism decision
 //
-// Given a WorkBudget (read/write bytes + item count + per-item compute),
-// decide whether to run sequentially or in parallel — and if parallel,
-// at what factor and with what NUMA policy.  The rule is structural,
-// not tunable: it follows from cache-line ping-pong vs memory-bandwidth
+// Given a WorkBudget (read/write bytes + item count), decide whether
+// to run sequentially or in parallel — and if parallel, at what
+// factor and with what NUMA policy.  The rule is structural, not
+// tunable: it follows from cache-line ping-pong vs memory-bandwidth
 // economics, not from per-workload heuristics.
+//
+// NAMING NOTE: this header was previously `CostModel.h`.  Renamed to
+// avoid collision with Mimic's "cost model" — Mimic owns the
+// per-vendor kernel-compilation cost terminology (SASS/PTX cost
+// estimation, MAP-Elites scoring, tile-shape ranking).  The rule
+// here is the parallelism-dispatch rule for the runtime, separate
+// concern from kernel codegen costs.
 //
 // THE PROMISE: never regresses.  For any workload smaller than the
 // per-core L2, the recommendation is Sequential — adding cores would
@@ -16,30 +23,22 @@
 // then we cap by what the underlying memory hierarchy can actually
 // stream.
 //
-// ─── The decision tree (THREADING.md §5.4 / code_guide §IX) ────────
+// ─── The decision tree (THREADING.md §5.4 / 27_04 §5.7) ────────────
+//
+// Pure cache-driven.  No abstract cost dimensions (no nanoseconds-
+// per-item, no FLOP intensity).  Per 27_04 §1.2: "Cost is modeled
+// via concrete hardware facts only — bytes, cache sizes, NUMA
+// distances."
 //
 //   ws := budget.read_bytes + budget.write_bytes
-//   total_compute_ns := budget.item_count * budget.per_item_compute_ns
 //
-//   1. COMPUTE-BOUND OVERRIDE (data-set-size-independent)
-//      if per_item_compute_ns >= 100 AND item_count >= 64:
-//          → Parallel(min(cores_avail, 16), NumaIgnore)
-//      Rationale: per-item work amortizes spawn cost regardless of
-//      data footprint; pure compute parallelism doesn't depend on
-//      cache topology.
-//
-//   2. CACHE-TIER GATE
+//   1. CACHE-TIER GATE
 //      tier := classify(ws)
 //      if tier == L1Resident or L2Resident:  → Sequential
 //      Rationale: data already hot in one core's L1/L2; parallelism
 //      adds cache invalidation traffic strictly worse than no-op.
 //
-//   3. AMORTIZATION GATE
-//      if total_compute_ns < spawn_overhead_ns (~200µs):  → Sequential
-//      Rationale: pthread_create + join cost ~25µs × cores; without
-//      enough work, the spawn dominates the body.
-//
-//   4. L3-RESIDENT
+//   2. L3-RESIDENT
 //      if tier == L3Resident:
 //          → Parallel(min(cores_per_socket, cores_avail, 4), NumaLocal)
 //      Rationale: shared L3 within a socket — cap at cores-per-socket
@@ -47,13 +46,36 @@
 //      for L3-resident: more cores mean more L3 pressure, not more
 //      bandwidth.
 //
-//   5. DRAM-BOUND (default)
+//   3. DRAM-BOUND (default)
 //      factor := min(cores_avail, max(1, ws / l2_per_core))
 //      → Parallel(round_to_factor_ladder(factor),
 //                 NumaSpread if numa_nodes > 1 else NumaIgnore)
 //      Rationale: each worker's L1/L2 streams its share from DRAM;
 //      memory channels saturate after factor ≈ ws / l2.  Spreading
 //      across NUMA nodes uses parallel memory controllers.
+//
+// ─── What was removed (vs. earlier rule) ───────────────────────────
+//
+// Two branches were removed in the 27_04 §5.7 cleanup:
+//
+//   * COMPUTE-BOUND OVERRIDE — used a `per_item_compute_ns` caller
+//     hint to override cache classification.  Removed because: (a)
+//     the hint was unverifiable (no runtime check), (b) it conflicted
+//     with the "concrete hardware facts only" discipline, (c) when
+//     wrong it caused over-parallelization on cache-resident data.
+//
+//   * AMORTIZATION GATE — used a synthesized `total_compute_ns` to
+//     skip parallelism when total work was tiny.  Removed because:
+//     (a) it depended on the same unverifiable hint, (b) the cache
+//     classification already prevents over-parallelization on small
+//     workloads (small workloads land in L1/L2 → sequential).
+//
+// The honest scope of this rule is: "given the working set's bytes,
+// here is the parallelism that fits the cache hierarchy."  Compute-
+// bound workloads with cheap data are an open question — callers who
+// know they want parallelism for compute (not data) reasons should
+// dispatch directly via `parallel_for_views<N>` rather than route
+// through the cost model.
 //
 // ─── Factor ladder ──────────────────────────────────────────────────
 //
@@ -78,13 +100,13 @@
 // ─── Composition ────────────────────────────────────────────────────
 //
 //   parallel_for_smart(region, body, ns_per_item)
-//     → WorkingSetEstimator::recommend(budget)
+//     → ParallelismRule::recommend(budget)
 //     → switch on decision.factor
 //     → parallel_for_views<N>(region, body)
 //
 // Or callers can use the decision directly:
 //
-//   const auto dec = WorkingSetEstimator::recommend(budget);
+//   const auto dec = ParallelismRule::recommend(budget);
 //   if (dec.kind == ParallelismDecision::Kind::Sequential) {
 //       /* run inline */
 //   } else {
@@ -116,17 +138,19 @@ namespace crucible::concurrent {
 // to avoid a circular include with safety/Workload.h.  safety::Workload
 // includes this header and forwards through.
 //
-// per_item_compute_ns is a CALLER HINT used as one input to the
-// cache-tier rule — not a runtime guarantee or budget.  If the caller
-// supplies a value and it is wrong (or omits it entirely), the cost
-// model errs toward Sequential; the no-regression rule (sequential
-// must never lose to parallel at small footprints) is preserved.
+// Three concrete hardware-facts-only fields.  No abstract cost
+// dimensions (no nanoseconds-per-item, no FLOP intensity) — per
+// 27_04 §1.2 / CLAUDE.md "concrete over abstract" discipline.
+//
+// item_count is informational (telemetry; the cost model doesn't
+// branch on it any more).  Two of the three fields are load-bearing:
+// read_bytes + write_bytes form the working-set size that
+// classify() uses against the host's cache hierarchy.
 
 struct WorkBudget {
-    std::size_t read_bytes           = 0;
-    std::size_t write_bytes          = 0;
-    std::size_t item_count           = 0;
-    std::size_t per_item_compute_ns  = 0;  // caller hint, not a promise
+    std::size_t read_bytes  = 0;
+    std::size_t write_bytes = 0;
+    std::size_t item_count  = 0;  // informational; not consulted by the cost model
 };
 
 // ── Tier — where the working set lives in the cache hierarchy ───────
@@ -190,25 +214,12 @@ struct ParallelismDecision {
 
 // ── Constants ────────────────────────────────────────────────────────
 
-namespace cost_model_detail {
-
-// Spawn overhead (8 cores × ~25µs).  Below this, sequential always
-// wins regardless of cache tier.
-inline constexpr std::size_t kSpawnOverheadNs = 200'000;
+namespace parallelism_rule_detail {
 
 // Cap factor at this even on huge machines — past 16 the lock-step
 // jthread join cost typically dominates speedup.  AdaptiveScheduler
 // (C3) may grow this for genuinely embarrassingly-parallel workloads.
 inline constexpr std::size_t kMaxFactor = 16;
-
-// Compute-bound override: per-item work this expensive amortizes
-// spawn cost regardless of data footprint.  100 ns per item is ~1
-// memory access + a few ALU ops — anything heavier than that.
-inline constexpr std::size_t kComputeBoundNsPerItem = 100;
-
-// Need at least this many items to make compute-bound parallelism
-// worthwhile (avoids spawn on tiny iteration counts).
-inline constexpr std::size_t kMinItemsForCompute = 64;
 
 // L3-resident factor cap.  More cores past this just thrash L3.
 inline constexpr std::size_t kL3ResidentMaxFactor = 4;
@@ -225,17 +236,17 @@ round_to_factor_ladder(std::size_t want) noexcept {
     return 1;
 }
 
-}  // namespace cost_model_detail
+}  // namespace parallelism_rule_detail
 
-// ── WorkingSetEstimator ─────────────────────────────────────────────
+// ── ParallelismRule ─────────────────────────────────────────────
 //
 // Stateless utility class — all methods static.  Reads Topology at
 // decision time; the singleton has already done its sysfs probe by
 // the first call to instance() so this is a few atomic loads + math.
 
-class WorkingSetEstimator {
+class ParallelismRule {
 public:
-    WorkingSetEstimator() = delete;  // pure utility; no instances
+    ParallelismRule() = delete;  // pure utility; no instances
 
     // Classify a working-set size against the host's cache hierarchy.
     //
@@ -261,13 +272,14 @@ public:
     //
     // The returned decision is deterministic given the same Topology
     // and budget — no random choices, no per-call-site state.  Two
-    // identical budgets always yield identical decisions.
+    // identical budgets always yield identical decisions.  The rule
+    // is purely cache-driven (no abstract cost dimensions); see the
+    // header doc for the rationale and what was removed in the
+    // 27_04 §5.7 cleanup.
     [[nodiscard]] static ParallelismDecision
     recommend(WorkBudget budget) noexcept {
         const auto& topo = Topology::instance();
         const std::size_t ws = budget.read_bytes + budget.write_bytes;
-        const std::size_t total_compute_ns =
-            budget.item_count * budget.per_item_compute_ns;
 
         // Container-aware caps.
         const std::size_t cores_avail =
@@ -278,25 +290,7 @@ public:
         ParallelismDecision dec;
         dec.tier = classify(ws);
 
-        // ── Step 1: compute-bound override ──────────────────────────
-        //
-        // Per-item compute heavy enough to amortize spawn regardless
-        // of data footprint.  Per-item ≥ 100 ns AND item_count ≥ 64
-        // means total work ≥ ~6.4 µs which is enough to start
-        // benefiting from concurrency even with small data.
-        if (budget.per_item_compute_ns >= cost_model_detail::kComputeBoundNsPerItem &&
-            budget.item_count >= cost_model_detail::kMinItemsForCompute &&
-            cores_avail >= 2)
-        {
-            const std::size_t want =
-                std::min(cores_avail, cost_model_detail::kMaxFactor);
-            dec.kind   = ParallelismDecision::Kind::Parallel;
-            dec.factor = cost_model_detail::round_to_factor_ladder(want);
-            dec.numa   = NumaPolicy::NumaIgnore;
-            return dec;
-        }
-
-        // ── Step 2: cache-tier gate ─────────────────────────────────
+        // ── Step 1: cache-tier gate ─────────────────────────────────
         //
         // L1- or L2-resident → already hot in one core's cache.
         // Parallel would add cross-core invalidation traffic strictly
@@ -308,26 +302,7 @@ public:
             return dec;
         }
 
-        // ── Step 3: amortization gate ───────────────────────────────
-        //
-        // Working set is large enough to want parallelism, but the
-        // total compute won't pay back the spawn cost.  Stay
-        // sequential.
-        if (total_compute_ns < cost_model_detail::kSpawnOverheadNs &&
-            budget.per_item_compute_ns < cost_model_detail::kComputeBoundNsPerItem)
-        {
-            // The compute-bound override above didn't fire; without
-            // enough work to amortize the spawn cost, sequential wins.
-            // Memory-bound workloads with cheap per-item work (memcpy,
-            // simple transformations) often land here when data is
-            // L3-resident — fast to scan single-core, no parallel win.
-            dec.kind   = ParallelismDecision::Kind::Sequential;
-            dec.factor = 1;
-            dec.numa   = NumaPolicy::NumaIgnore;
-            return dec;
-        }
-
-        // ── Step 4: L3-resident parallel ────────────────────────────
+        // ── Step 2: L3-resident parallel ────────────────────────────
         //
         // Within a single socket's L3 — keep workers intra-socket so
         // cache-coherence traffic stays inside the chiplet/socket.
@@ -336,15 +311,15 @@ public:
             const std::size_t want = std::min({
                 cores_per_socket,
                 cores_avail,
-                cost_model_detail::kL3ResidentMaxFactor,
+                parallelism_rule_detail::kL3ResidentMaxFactor,
             });
             dec.kind   = ParallelismDecision::Kind::Parallel;
-            dec.factor = cost_model_detail::round_to_factor_ladder(want);
+            dec.factor = parallelism_rule_detail::round_to_factor_ladder(want);
             dec.numa   = NumaPolicy::NumaLocal;
             return dec;
         }
 
-        // ── Step 5: DRAM-bound parallel ─────────────────────────────
+        // ── Step 3: DRAM-bound parallel ─────────────────────────────
         //
         // Memory-bandwidth-bound; factor scales with how many L2-sized
         // chunks the working set divides into.  Spread across NUMA
@@ -356,38 +331,35 @@ public:
             cores_avail,
             std::max(std::size_t{1}, ws / l2));
         dec.kind   = ParallelismDecision::Kind::Parallel;
-        dec.factor = cost_model_detail::round_to_factor_ladder(want);
+        dec.factor = parallelism_rule_detail::round_to_factor_ladder(want);
         dec.numa   = (topo.numa_nodes() > 1) ? NumaPolicy::NumaSpread
                                               : NumaPolicy::NumaIgnore;
         return dec;
     }
 
-    // Convenience: derive a WorkBudget from a span of T plus a
-    // ns-per-item compute estimate.  Mirrors safety::WorkBudget::for_span
-    // but lives here so cost-model-only consumers don't need to pull in
-    // the safety/Workload.h chain.
+    // Convenience: derive a WorkBudget from a span of T.  Mirrors
+    // safety::WorkBudget::for_span but lives here so cost-model-only
+    // consumers don't need to pull in the safety/Workload.h chain.
     template <typename T>
     [[nodiscard]] static constexpr WorkBudget
-    budget_for_span(std::size_t count,
-                    std::size_t ns_per_item = 0) noexcept {
+    budget_for_span(std::size_t count) noexcept {
         const std::size_t bytes = count * sizeof(T);
         return WorkBudget{
-            .read_bytes          = bytes,
-            .write_bytes         = bytes,
-            .item_count          = count,
-            .per_item_compute_ns = ns_per_item,
+            .read_bytes  = bytes,
+            .write_bytes = bytes,
+            .item_count  = count,
         };
     }
 };
 
 // ── Convenience free function ───────────────────────────────────────
 //
-// Shorthand for WorkingSetEstimator::recommend.  Useful at call sites
+// Shorthand for ParallelismRule::recommend.  Useful at call sites
 // that want to read like prose.
 
 [[nodiscard]] inline ParallelismDecision
 recommend_parallelism(WorkBudget budget) noexcept {
-    return WorkingSetEstimator::recommend(budget);
+    return ParallelismRule::recommend(budget);
 }
 
 }  // namespace crucible::concurrent
