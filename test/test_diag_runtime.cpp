@@ -255,6 +255,68 @@ void unreachable_caller() noexcept {
         diag::Category::CrashClassMismatch, "unreachable", "should never run");
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// Test 9: source_location-capturing report_violation_at
+// ═════════════════════════════════════════════════════════════════════
+//
+// Verifies the location-captured variant emits a "<file>:<line>@<fn>"
+// composite via the test sink, with the expected file basename and
+// function name.
+
+[[gnu::cold]] void test_report_violation_at_captures_location() {
+    namespace diag = ::crucible::safety::diag;
+
+    auto previous = diag::set_violation_sink(&capture_sink);
+    reset_capture();
+
+    diag::report_violation_at(
+        diag::Category::RefinementViolation,
+        "value=-7 fails predicate `positive`");
+
+    EXPECT(g_captured.count.load() == 1,
+           "report_violation_at must invoke the sink exactly once");
+
+    // The captured fn-name is "<file>:<line>@<function>".
+    std::string_view fn{g_captured.last_fn};
+    EXPECT(fn.find("test_diag_runtime.cpp") != std::string_view::npos,
+           "captured location must include this TU's filename");
+    EXPECT(fn.find('@') != std::string_view::npos,
+           "captured location must include the @ delimiter");
+    EXPECT(fn.find("test_report_violation_at_captures_location")
+           != std::string_view::npos,
+           "captured location must include the calling function name");
+
+    diag::set_violation_sink(previous);
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// Test 10: CRUCIBLE_RUNTIME_VIOLATION macro
+// ═════════════════════════════════════════════════════════════════════
+
+[[gnu::cold]] void test_macro_captures_location() {
+    namespace diag = ::crucible::safety::diag;
+
+    auto previous = diag::set_violation_sink(&capture_sink);
+    reset_capture();
+
+    CRUCIBLE_RUNTIME_VIOLATION(
+        diag::Category::HotPathViolation,
+        "macro test detail");
+
+    EXPECT(g_captured.count.load() == 1,
+           "CRUCIBLE_RUNTIME_VIOLATION must route through the sink");
+    EXPECT(g_captured.last_cat == diag::Category::HotPathViolation,
+           "macro must pass Category through correctly");
+    EXPECT(std::string_view{g_captured.last_detail} == "macro test detail",
+           "macro must pass detail through correctly");
+
+    std::string_view fn{g_captured.last_fn};
+    EXPECT(fn.find("test_macro_captures_location") != std::string_view::npos,
+           "macro-captured location must name the calling function");
+
+    diag::set_violation_sink(previous);
+}
+
 }  // anonymous namespace covering all test functions
 
 // ═════════════════════════════════════════════════════════════════════
@@ -269,6 +331,8 @@ void unreachable_caller() noexcept {
     test_default_sink_handles_long_input();
     test_empty_strings_handled();
     test_sink_install_round_trips();
+    test_report_violation_at_captures_location();
+    test_macro_captures_location();
 
     if (g_failures > 0) {
         std::fprintf(stderr, "FAILURES: %d\n", g_failures);
