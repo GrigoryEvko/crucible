@@ -490,7 +490,7 @@ static_assert(detail::combine_ids(1, 2) != detail::combine_ids(2, 1));
 // stable_type_id<T> via volatile-bounded dispatch; calls stable_name_
 // of<T>.size() with the result fed to a volatile sink.
 
-inline void runtime_smoke_test() noexcept {
+inline void runtime_smoke_test_stable_name() noexcept {
     // Capture stable_type_id<T> values into a runtime-volatile array;
     // optimizer cannot fold the array into a static initializer once
     // the volatile bound is involved.
