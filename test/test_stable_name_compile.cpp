@@ -89,7 +89,7 @@ namespace diag = ::crucible::safety::diag;
 // ─── Tests ──────────────────────────────────────────────────────────
 
 void test_runtime_smoke() {
-    diag::runtime_smoke_test();
+    diag::runtime_smoke_test_stable_name();
 }
 
 void test_stable_name_non_empty() {
