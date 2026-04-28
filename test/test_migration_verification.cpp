@@ -319,6 +319,43 @@ static_assert(sizeof(LinearSealed) == sizeof(int));
 // SealedRefined<P, Linear<T>> would require a predicate invocable
 // on Linear<T> — same SKIP rationale as Refined<P, Linear<T>>.
 
+// Tagged<NumericalTier<T_at, T>, Source> — provenance over recipe-tier
+// pin.  Production: a Forge Phase E recipe-select output carries the
+// NumericalTier (recipe-tier promise) AND the Tagged source provenance
+// (which fleet member emitted the kernel).  Both wrappers are
+// regime-1 over At<>-style empty grades — the composed sizeof must
+// collapse to sizeof(T).
+using TaggedNumericalTier = Tagged<NumericalTier<Tolerance::BITEXACT, int>, VerificationTag>;
+static_assert(sizeof(TaggedNumericalTier) == sizeof(int),
+    "Tagged<NumericalTier<...>, Source> must EBO-collapse to sizeof(T) "
+    "— two regime-1 wrappers stacked, both with empty grade, must "
+    "preserve the underlying T's storage exactly.");
+
+// NumericalTier<T_at, Linear<T>> — recipe-tier pin over linear
+// ownership.  Production: a kernel emit returns Linear<DeviceBuffer>
+// pinned at BITEXACT — the buffer is consumed exactly once AND
+// satisfies the bit-exact contract.  The composed wrapper:
+//   * preserves Linear's move-only discipline (no copy ctor on
+//     NumericalTier<T_at, Linear<T>> because Linear deletes copy)
+//   * EBO-collapses to sizeof(Linear<T>) == sizeof(T)
+using NumericalTierOverLinear = NumericalTier<Tolerance::BITEXACT, Linear<int>>;
+static_assert(sizeof(NumericalTierOverLinear) == sizeof(int));
+static_assert(!std::is_copy_constructible_v<NumericalTierOverLinear>,
+    "NumericalTier<T_at, Linear<T>> must preserve Linear's "
+    "move-only discipline.  If this fires, Linear's copy-deletion "
+    "is no longer transitively visible through the NumericalTier "
+    "wrapper — investigate the defaulted-copy regression.");
+static_assert(std::is_move_constructible_v<NumericalTierOverLinear>);
+
+// NumericalTier<T_at, Refined<P, T>> — recipe-tier pin over predicate
+// refinement.  Production: a precision-budget calibrator carries
+// Refined<positive, double> pinned at ULP_FP32 — the value is
+// strictly positive AND meets the FP32 precision contract.  Both
+// regime-1 → EBO-collapse to sizeof(double).
+using NumericalTierOverRefined =
+    NumericalTier<Tolerance::ULP_FP32, Refined<positive_local, int>>;
+static_assert(sizeof(NumericalTierOverRefined) == sizeof(int));
+
 // ── COVERAGE MATRIX — runtime API parity (smoke checks) ────────────
 //
 // Confirm peek / consume / construction round-trip for the four
@@ -391,6 +428,19 @@ void runtime_smoke_numerical_tier() {
     if (a.peek() != 100) std::abort();
     a.swap(b);
     if (a.peek() != 20 || b.peek() != 100) std::abort();
+
+    // operator== — same-tier comparison delegates to peek().
+    NumericalTier<Tolerance::BITEXACT, int> eq_a{42};
+    NumericalTier<Tolerance::BITEXACT, int> eq_b{42};
+    NumericalTier<Tolerance::BITEXACT, int> eq_c{43};
+    if (!(eq_a == eq_b)) std::abort();
+    if (  eq_a == eq_c)  std::abort();
+
+    // Cross-composition runtime — Tagged over NumericalTier.
+    Tagged<NumericalTier<Tolerance::BITEXACT, int>, VerificationTag>
+        tagged_bx{NumericalTier<Tolerance::BITEXACT, int>{77}};
+    auto unwrapped_bx = std::move(tagged_bx).into();
+    if (unwrapped_bx.peek() != 77) std::abort();
 }
 
 void runtime_smoke_monotonic() {
