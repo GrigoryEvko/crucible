@@ -959,6 +959,8 @@ crucible_neg_compile_test(neg_numerical_tier_cross_tier_assign
   "no match for|cannot convert|no viable")
 crucible_neg_compile_test(neg_numerical_tier_cross_tier_swap
   "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_numerical_tier_cross_tier_equality
+  "no match for|cannot convert|no matching function|invalid operands")
 
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #

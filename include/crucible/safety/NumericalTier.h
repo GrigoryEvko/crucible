@@ -104,6 +104,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/ToleranceLattice.h>
 
+#include <cstdlib>      // std::abort in the runtime smoke test
 #include <string_view>
 #include <type_traits>
 #include <utility>
@@ -146,6 +147,18 @@ public:
     // Default: T{} at the pinned tier.  The pinned tier is a type-
     // level fact, not a per-instance one; default construction does
     // not need a tier argument.
+    //
+    // SEMANTIC NOTE: a default-constructed NumericalTier<BITEXACT, T>
+    // claims its T{} bytes were produced under BITEXACT discipline.
+    // For trivially-zero T (int{} == 0, double{} == 0.0), this is
+    // vacuously true — zero is bit-equal across every recipe.  For
+    // non-trivial T with non-zero T{}, the claim becomes meaningful
+    // only if the wrapper is constructed in a context that genuinely
+    // honors the tier (e.g. arena-zero-init in a BITEXACT-pinned
+    // kernel).  Production callers SHOULD prefer the explicit-T
+    // constructor at recipe emit sites — the default ctor exists
+    // for compatibility with std::array<NumericalTier<...>, N> /
+    // struct-field default-init contexts.
     constexpr NumericalTier() noexcept(
         std::is_nothrow_default_constructible_v<T>)
         : impl_{T{}, typename lattice_type::element_type{}} {}
@@ -177,6 +190,21 @@ public:
     constexpr NumericalTier& operator=(const NumericalTier&) = default;
     constexpr NumericalTier& operator=(NumericalTier&&)      = default;
     ~NumericalTier()                                         = default;
+
+    // Equality: compares value bytes within the SAME tier pin.  Cross-
+    // tier comparison is rejected at overload resolution because the
+    // friend takes two `NumericalTier const&` of identical
+    // <T_at, T> instantiation.  Comparing NumericalTier<BITEXACT, T>
+    // with NumericalTier<ULP_FP16, T> fails to find a viable operator==
+    // — the pinned-tier identity is preserved at the comparison
+    // boundary.  Mirrors Stale's family-parity discipline.
+    [[nodiscard]] friend constexpr bool operator==(
+        NumericalTier const& a, NumericalTier const& b) noexcept(
+        noexcept(a.peek() == b.peek()))
+        requires requires(T const& x, T const& y) { { x == y } -> std::convertible_to<bool>; }
+    {
+        return a.peek() == b.peek();
+    }
 
     // ── Diagnostic names (forwarded from Graded substrate) ─────────
     //
@@ -473,6 +501,74 @@ static_assert(free_swap_works());
     return a.peek() == 99;
 }
 static_assert(peek_mut_works());
+
+// ── operator== — same-tier, same-T comparison ─────────────────────
+//
+// Two BITEXACT-pinned wrappers comparing equal iff their value
+// bytes match.  The grade comparison is trivially-true for At<T_at>
+// (empty element_type, operator==(other) returns true) so the
+// outer comparison reduces to peek-equality.
+[[nodiscard]] consteval bool equality_compares_value_bytes() noexcept {
+    BitexactInt a{42};
+    BitexactInt b{42};
+    BitexactInt c{43};
+    return (a == b) && !(a == c);
+}
+static_assert(equality_compares_value_bytes());
+
+// SFINAE: operator== is only present when T has its own ==.  A
+// move-only-no-equality T causes the friend to drop out of the
+// candidate set — confirming the requires-clause guard.  This is
+// purely a structural property of the friend declaration; the
+// neg-compile fixture covers the cross-tier rejection separately.
+struct NoEqualityT {
+    int v{0};
+    NoEqualityT() = default;
+    explicit NoEqualityT(int x) : v{x} {}
+    NoEqualityT(NoEqualityT&&) = default;
+    NoEqualityT& operator=(NoEqualityT&&) = default;
+    NoEqualityT(NoEqualityT const&) = delete;
+    NoEqualityT& operator=(NoEqualityT const&) = delete;
+    // No operator==.
+};
+
+template <typename W>
+concept can_equality_compare = requires(W const& a, W const& b) {
+    { a == b } -> std::convertible_to<bool>;
+};
+
+static_assert( can_equality_compare<BitexactInt>);
+static_assert(!can_equality_compare<NumericalTier<Tolerance::BITEXACT, NoEqualityT>>,
+    "operator== must be SFINAE-disabled when T lacks operator== — "
+    "without the requires-clause guard, the friend would emit a hard "
+    "error inside operator==(NumericalTier&,NumericalTier&) that "
+    "callers cannot suppress with concept-based dispatch.");
+
+// ── relax reflexivity ─────────────────────────────────────────────
+//
+// relax<T_at>() on a T_at-pinned wrapper is the identity transform
+// — leq(T_at, T_at) holds (reflexive), so the requires-clause is
+// satisfied; the result is the same instantiation, same value bytes,
+// same tier.  Pinned at compile time to catch any regression where
+// a refactor introduces strict-less-than where leq was intended.
+[[nodiscard]] consteval bool relax_to_self_is_identity() noexcept {
+    BitexactInt a{99};
+    auto b = a.relax<Tolerance::BITEXACT>();
+    return b.peek() == 99 && b.tier == Tolerance::BITEXACT;
+}
+static_assert(relax_to_self_is_identity());
+
+// ── Stable-name introspection (FOUND-E07/H06 surface) ────────────
+//
+// graded_type's reflection-derived value_type_name and the substrate's
+// lattice_name forwarders MUST produce names that are usable by the
+// FOUND-I row_hash composer (recursive fmix64 over wrapper stack).
+// The smoke test here confirms the names are non-empty and end with
+// the expected suffixes; cross-process stability is the FOUND-I
+// concern.
+static_assert(BitexactInt::value_type_name().size() > 0);
+static_assert(BitexactInt::lattice_name().size() > 0);
+static_assert(BitexactInt::lattice_name().starts_with("ToleranceLattice::At<"));
 
 // ── Convenience aliases resolve correctly ────────────────────────
 static_assert(numerical_tier::Bitexact<int>::tier == Tolerance::BITEXACT);
