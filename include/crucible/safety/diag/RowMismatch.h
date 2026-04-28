@@ -41,22 +41,26 @@
 //
 // ── Format spec ─────────────────────────────────────────────────────
 //
-// Eight logical lines, separated by '\n'.  Each line carries a
+// Seven semantic lines, each terminated by '\n'.  Each line carries a
 // fixed-position semantic role; tooling (clangd, IDE plugins) parses
 // the format for hover-tooltip integration.
 //
-//   Line 1: [<Category::name>]
-//   Line 2:   at <function_display_name>
-//   Line 3:   caller row contains: <type_name<CallerRow>>
-//   Line 4:   callee requires:     Subrow<_, <type_name<CalleeRow>>>
-//   Line 5:   offending atoms:     <type_name<OffendingDiff>>
-//   Line 6:   remediation: <Tag::remediation>
-//   Line 7:   docs: see safety/Diagnostic.h, 28_04_2026_effects.md §7
-//   Line 8: <empty trailing newline>
+//   Line 1: [<Category::name>]\n
+//   Line 2:   at <function_display_name>\n
+//   Line 3:   caller row contains: <type_name<CallerRow>>\n
+//   Line 4:   callee requires:     Subrow<_, <type_name<CalleeRow>>>\n
+//   Line 5:   offending atoms:     <type_name<OffendingDiff>>\n
+//   Line 6:   remediation: <Tag::remediation>\n
+//   Line 7:   docs: see safety/Diagnostic.h, 28_04_2026_effects.md §7\n
+//
+// Total newline count is exactly 7 (one per line).  Total length is
+// `format_total_length(...)`.
 //
 // Format version: CRUCIBLE_DIAG_FORMAT_VERSION = 1.  When the
 // format evolves (e.g., adding source-location, line/column), bump
-// the version.  IDE consumers gate on the version to avoid breaking.
+// the version AND the FORMAT_LINES constant; the lock-in self-tests
+// at file end fire if either drifts without the other.  IDE consumers
+// gate on CRUCIBLE_DIAG_FORMAT_VERSION to avoid breaking.
 //
 // ── Why a consteval builder, not runtime formatting ─────────────────
 //
@@ -108,6 +112,7 @@
 #include <array>
 #include <cstddef>
 #include <meta>
+#include <source_location>
 #include <string_view>
 #include <type_traits>
 
@@ -121,8 +126,17 @@ namespace crucible::safety::diag {
 // gates on this version.  Bump on any breaking format change (line
 // reordering, semantic role change).  Additive line additions at the
 // END of the format are non-breaking and do NOT bump the version.
+//
+// Lock-in: the self-test block at file end asserts FORMAT_LINES (and
+// the cumulative literal-table size) matches the version.  Adding a
+// line without bumping the version OR vice versa fires a static_assert
+// at header inclusion.
 
 inline constexpr std::size_t CRUCIBLE_DIAG_FORMAT_VERSION = 1;
+
+// Number of '\n'-terminated semantic lines in the v1 format.  Used by
+// the self-test block to lock the version-vs-format invariant.
+inline constexpr std::size_t CRUCIBLE_DIAG_FORMAT_LINES   = 7;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── type_name<T> — diagnostic-facing type display (FOUND-E03) ──────
@@ -171,22 +185,70 @@ inline constexpr std::string_view type_name = stable_name_of<T>;
 // Used as the "at <function-name>" line of the structured row-
 // mismatch format.
 
-// V1 implementation note: GCC 16's P2996R13 implementation does NOT
-// accept `^^FnPtr` directly when FnPtr is an `auto`-NTTP value (the
-// splice operator requires an entity, not a value).  We work around
-// by reflecting on the function's TYPE via `decltype(FnPtr)` +
-// `remove_pointer_t`.  Result: the display string is the function-
-// pointer signature (e.g. "void(int)") rather than the qualified
-// function name (e.g. "my_module::dispatch_op").  This is sufficient
-// for diagnostic disambiguation; richer per-call-site names await a
-// future P2996 revision or an explicit FnType+FnPtr two-parameter
-// API (deferred to FOUND-E18 / IDE integration).
+// Implementation: GCC 16's P2996R13 does NOT accept `^^FnPtr` for an
+// `auto`-NTTP value (splice requires an entity, not a value).  But the
+// auto-NTTP value DOES appear in `__PRETTY_FUNCTION__` /
+// `std::source_location::current().function_name()` inside a function
+// templated on FnPtr.  We extract the function name from that string.
 //
-// Same workaround as `stable_function_id<auto FnPtr>` in StableName.h.
+// Per GCC's pretty-print convention, the function-name string for
+//   `function_name_helper<&::dispatch_op>()`
+// looks like:
+//   "consteval std::string_view ...function_name_helper() [with auto FnPtr = &dispatch_op]"
+// We find "FnPtr = " and read up to the closing "]".  The resulting
+// substring is the actual qualified function name as written at the
+// call site — superior to the function-pointer-type-only fallback.
+//
+// This is the SAME pattern fmt, magic_enum, ctti and other reflection
+// libraries use for ten years; well-validated across GCC versions
+// 8..16.  See `extract_pretty_fnptr` in detail/ for the parser.
+
+namespace detail {
+
+template <auto FnPtr>
+[[nodiscard]] consteval std::string_view function_name_helper() noexcept {
+    // C++26 std::source_location::current() inside a templated
+    // function captures the function's pretty name including template
+    // arguments at instantiation time.
+    return std::source_location::current().function_name();
+}
+
+[[nodiscard]] consteval std::string_view extract_pretty_fnptr(
+    std::string_view pretty) noexcept
+{
+    constexpr std::string_view marker{"FnPtr = "};
+    std::size_t start = pretty.size();  // sentinel: not found
+    for (std::size_t i = 0; i + marker.size() <= pretty.size(); ++i) {
+        bool match = true;
+        for (std::size_t j = 0; j < marker.size(); ++j) {
+            if (pretty[i + j] != marker[j]) { match = false; break; }
+        }
+        if (match) { start = i + marker.size(); break; }
+    }
+    if (start == pretty.size()) {
+        // Compiler's pretty-print format changed; return a sentinel
+        // the diagnostic still consumes.
+        return std::string_view{"<unknown function>"};
+    }
+    // GCC's pretty-print may include MULTIPLE template-arg
+    // substitutions inside the brackets, separated by ';'.  Example:
+    //   "[with auto FnPtr = &foo; std::string_view = std::..."
+    // Stop at ';' (next template arg) OR ']' (end of arg list),
+    // whichever comes first.  ';' is not a valid character in C++
+    // identifiers or fully-qualified names, so this boundary is safe.
+    std::size_t end = start;
+    for (; end < pretty.size(); ++end) {
+        char const c = pretty[end];
+        if (c == ']' || c == ';') break;
+    }
+    return pretty.substr(start, end - start);
+}
+
+}  // namespace detail
 
 template <auto FnPtr>
 inline constexpr std::string_view function_display_name =
-    std::meta::display_string_of(^^std::remove_pointer_t<decltype(FnPtr)>);
+    detail::extract_pretty_fnptr(detail::function_name_helper<FnPtr>());
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Internal: char-buffer + append helper for consteval composition
@@ -212,6 +274,70 @@ struct char_buffer {
         return std::string_view{data.data(), length};
     }
 };
+
+// ─── constexpr-safe buffer-shape helpers ───────────────────────────
+//
+// libstdc++ 16's `string_view::find` (and therefore `contains`,
+// `starts_with`, `ends_with`) uses pointer arithmetic inside
+// bits/string_view.tcc that is NOT constexpr-safe through
+// std::array<char, N>::data().  These helpers bypass the broken path
+// by indexing the buffer directly via `buf.data[i]` (which IS
+// constexpr-safe — std::array's operator[] is constexpr in C++20+
+// and direct, no offsetof+reinterpret_cast required).
+//
+// All three helpers are `consteval` (NOT `constexpr`) — they exist
+// to power the header self-test block; runtime callers should use
+// `view().starts_with(...)` etc. via the standard API.
+
+template <std::size_t N>
+[[nodiscard]] consteval bool buffer_starts_with(
+    char_buffer<N> const& buf, std::string_view prefix) noexcept
+{
+    if (prefix.size() > buf.length) return false;
+    for (std::size_t i = 0; i < prefix.size(); ++i) {
+        if (buf.data[i] != prefix[i]) return false;
+    }
+    return true;
+}
+
+template <std::size_t N>
+[[nodiscard]] consteval bool buffer_ends_with(
+    char_buffer<N> const& buf, std::string_view suffix) noexcept
+{
+    if (suffix.size() > buf.length) return false;
+    std::size_t const start = buf.length - suffix.size();
+    for (std::size_t i = 0; i < suffix.size(); ++i) {
+        if (buf.data[start + i] != suffix[i]) return false;
+    }
+    return true;
+}
+
+// True if `needle` appears at byte position `pos` of `buf` (no search;
+// the position is known by the caller from format-literal arithmetic).
+template <std::size_t N>
+[[nodiscard]] consteval bool buffer_substring_at(
+    char_buffer<N> const& buf, std::size_t pos,
+    std::string_view needle) noexcept
+{
+    if (pos + needle.size() > buf.length) return false;
+    for (std::size_t i = 0; i < needle.size(); ++i) {
+        if (buf.data[pos + i] != needle[i]) return false;
+    }
+    return true;
+}
+
+// Count occurrences of `needle_char` in the buffer.  Used by the
+// self-test to verify the format's exact newline count.
+template <std::size_t N>
+[[nodiscard]] consteval std::size_t buffer_count_char(
+    char_buffer<N> const& buf, char needle_char) noexcept
+{
+    std::size_t n = 0;
+    for (std::size_t i = 0; i < buf.length; ++i) {
+        if (buf.data[i] == needle_char) ++n;
+    }
+    return n;
+}
 
 }  // namespace detail
 
@@ -322,11 +448,55 @@ template <typename Tag, auto FnPtr, typename CallerRow,
 // invocation (which would require P2741R3 + complex grammar parsing
 // in the static_assert evaluator).
 
+// Routed diagnostic for tag-not-class misuse — mirrors Diagnostic.h's
+// `accessor_check` pattern (line 480+).  The natural form
+//
+//   template <typename Tag, ...>
+//       requires is_diagnostic_class_v<Tag>
+//   inline constexpr auto row_mismatch_message_v = ...;
+//
+// fails with a generic "constraints not satisfied" diagnostic that
+// varies in text across GCC versions.  Routing through a helper
+// struct lets us emit a stable, framework-controlled message.
+
+namespace detail {
+
+template <typename Tag, auto FnPtr, typename CallerRow,
+          typename CalleeRow, typename OffendingDiff,
+          bool IsTag>
+struct row_message_check;
+
 template <typename Tag, auto FnPtr, typename CallerRow,
           typename CalleeRow, typename OffendingDiff>
-    requires is_diagnostic_class_v<Tag>
-inline constexpr auto row_mismatch_message_v =
-    build_row_mismatch_message<Tag, FnPtr, CallerRow, CalleeRow, OffendingDiff>();
+struct row_message_check<Tag, FnPtr, CallerRow, CalleeRow, OffendingDiff, true> {
+    static constexpr auto value =
+        build_row_mismatch_message<Tag, FnPtr, CallerRow, CalleeRow,
+                                   OffendingDiff>();
+};
+
+template <typename Tag, auto FnPtr, typename CallerRow,
+          typename CalleeRow, typename OffendingDiff>
+struct row_message_check<Tag, FnPtr, CallerRow, CalleeRow, OffendingDiff, false> {
+    static_assert(is_diagnostic_class_v<Tag>,
+        "crucible::safety::diag [RowMismatchTag_NonTag]: "
+        "row_mismatch_message_v / CRUCIBLE_ROW_MISMATCH_ASSERT requires "
+        "Tag to be derived from safety::diag::tag_base.  See "
+        "safety/Diagnostic.h's catalog for the shipped tag classes; "
+        "user extensions inherit tag_base + provide constexpr "
+        "name/description/remediation.");
+    // Empty fallback so accidental down-stream use of `value` doesn't
+    // produce a SECOND error message that obscures the root cause.
+    static constexpr char_buffer<1> value{};
+};
+
+}  // namespace detail
+
+template <typename Tag, auto FnPtr, typename CallerRow,
+          typename CalleeRow, typename OffendingDiff>
+inline constexpr auto& row_mismatch_message_v =
+    detail::row_message_check<Tag, FnPtr, CallerRow, CalleeRow,
+                              OffendingDiff,
+                              is_diagnostic_class_v<Tag>>::value;
 
 }  // namespace crucible::safety::diag
 
@@ -414,18 +584,15 @@ static_assert(fmt_len == expected_len,
     "input string sizes; drift indicates a literal-table edit "
     "without a corresponding format_total_length update.");
 
-// ─── build_row_mismatch_message produces non-empty output ──────────
+// ─── build_row_mismatch_message produces correctly-shaped output ──
 //
-// Compile-time invariants we CAN verify at static_assert:
-//   * length > 0 (buffer non-empty)
-//   * length matches sum of literal sizes + per-input string sizes
-//
-// Compile-time invariants we CANNOT verify (libstdc++ 16 limitation):
-//   string_view::starts_with / contains / ends_with go through
-//   string_view::find which uses pointer arithmetic that isn't
-//   constexpr-safe over std::array<char, N>::data() in libstdc++ 16.
-//   Verified at RUNTIME in the sentinel TU (test_row_mismatch_compile)
-//   instead.
+// Per-line content verified at COMPILE TIME via the constexpr-safe
+// detail::buffer_starts_with / detail::buffer_substring_at /
+// detail::buffer_count_char helpers (which bypass libstdc++ 16's
+// constexpr-broken `string_view::find`).  Together these checks
+// pin the format structure: a future format edit that breaks any
+// per-line invariant fires a static_assert at header inclusion
+// rather than slipping through to a runtime test.
 
 constexpr auto sample_msg =
     build_row_mismatch_message<
@@ -435,26 +602,50 @@ constexpr auto sample_msg =
         float,
         double>();
 
+// Length: non-zero AND matches the predicted sum-of-parts.
 static_assert(sample_msg.length > 0,
     "build_row_mismatch_message returned an empty buffer; format-"
     "literal table or input strings collapsed somehow.");
-
-// Length matches sum-of-parts.
 static_assert(sample_msg.length == format_total_length(
-    EffectRowMismatch::name,
-    function_display_name<&sample_fn>,
-    type_name<int>,
-    type_name<float>,
-    type_name<double>,
-    EffectRowMismatch::remediation),
+        EffectRowMismatch::name,
+        function_display_name<&sample_fn>,
+        type_name<int>,
+        type_name<float>,
+        type_name<double>,
+        EffectRowMismatch::remediation),
     "build_row_mismatch_message buffer length diverged from "
     "format_total_length predicted size — fold-loop drift.");
 
-// First character is '[' (Line 1 prefix).
-static_assert(sample_msg.data[std::size_t{0}] == '[');
+// Newline count: exactly one per line.
+static_assert(buffer_count_char(sample_msg, '\n') == CRUCIBLE_DIAG_FORMAT_LINES,
+    "Newline count drifted from CRUCIBLE_DIAG_FORMAT_LINES; format-"
+    "version-lock-in violated.  Bump CRUCIBLE_DIAG_FORMAT_VERSION when "
+    "lines are added.");
 
-// Last character is '\n' (Line 7 suffix).
-static_assert(sample_msg.data[sample_msg.length - 1] == '\n');
+// Line 1 starts with "[" + Category::name + "]\n" at known position.
+static_assert(buffer_starts_with(sample_msg, "["));
+static_assert(buffer_substring_at(sample_msg, std::size_t{0}, L1_PREFIX));
+static_assert(buffer_substring_at(sample_msg,
+    L1_PREFIX.size(), EffectRowMismatch::name));
+static_assert(buffer_substring_at(sample_msg,
+    L1_PREFIX.size() + EffectRowMismatch::name.size(), L1_SUFFIX));
+
+// Line 2 starts with "  at " at the known offset.
+constexpr std::size_t line2_off =
+    L1_PREFIX.size() + EffectRowMismatch::name.size() + L1_SUFFIX.size();
+static_assert(buffer_substring_at(sample_msg, line2_off, L2_PREFIX));
+
+// Line 3 starts with "  caller row contains: " at the known offset.
+constexpr std::size_t line3_off = line2_off
+    + L2_PREFIX.size() + function_display_name<&sample_fn>.size()
+    + L2_SUFFIX.size();
+static_assert(buffer_substring_at(sample_msg, line3_off, L3_PREFIX));
+
+// Buffer ends with "\n" — Line 7 suffix.
+static_assert(buffer_ends_with(sample_msg, "\n"));
+
+// Buffer ends with the docs line, fully.
+static_assert(buffer_ends_with(sample_msg, L7_LINE));
 
 // ─── row_mismatch_message_v variable template caches correctly ─────
 
@@ -470,10 +661,26 @@ constexpr auto& cached_msg_again = row_mismatch_message_v<
     HotPathViolation, &sample_fn, int, float, double>;
 static_assert(&cached_msg == &cached_msg_again);
 
-// Different categories → different lengths (because remediation
-// strings differ in length per Tag).
-static_assert(cached_msg.length != cached_msg2.length
-              || cached_msg.data[std::size_t{1}] != cached_msg2.data[std::size_t{1}]);
+// Per-category content distinct: each category emits its own name.
+static_assert(buffer_substring_at(cached_msg,
+    L1_PREFIX.size(), HotPathViolation::name));
+static_assert(buffer_substring_at(cached_msg2,
+    L1_PREFIX.size(), DetSafeLeak::name));
+
+// ─── Format version lock-in ────────────────────────────────────────
+//
+// CRUCIBLE_DIAG_FORMAT_VERSION must move in lockstep with the line
+// count.  v1 = 7 lines.  Bumping the version requires bumping
+// FORMAT_LINES (and vice versa); the assertion fires on drift.
+
+static_assert(CRUCIBLE_DIAG_FORMAT_VERSION == 1,
+    "CRUCIBLE_DIAG_FORMAT_VERSION drifted from 1 — verify "
+    "CRUCIBLE_DIAG_FORMAT_LINES + literal-table sizes were updated "
+    "in lockstep, AND that downstream IDE consumers were notified.");
+
+static_assert(CRUCIBLE_DIAG_FORMAT_LINES == 7,
+    "CRUCIBLE_DIAG_FORMAT_LINES drifted from v1's 7 — verify "
+    "CRUCIBLE_DIAG_FORMAT_VERSION was bumped accordingly.");
 
 // ─── Format version is 1 ───────────────────────────────────────────
 
@@ -498,12 +705,18 @@ inline void runtime_smoke_test_row_mismatch() noexcept {
         int, float, double>;
 
     // Volatile sink — force the optimizer to keep the buffer alive
-    // and the size calculation runtime-evaluable.
+    // and the size calculation runtime-evaluable.  The intermediate
+    // unsigned char + size_t cast pair documents the signed→unsigned
+    // promotion path and silences -Wsign-conversion (char's
+    // signedness is implementation-defined; explicit cast makes it
+    // unsigned for the XOR).
     volatile std::size_t sink = msg.length;
-    sink ^= static_cast<std::size_t>(static_cast<unsigned char>(msg.data[std::size_t{0}]));
+    auto const first = static_cast<unsigned char>(msg.data[std::size_t{0}]);
+    sink ^= first;
     if (msg.length > 1) {
-        sink ^= static_cast<std::size_t>(
-            static_cast<unsigned char>(msg.data[msg.length - 1]));
+        auto const last =
+            static_cast<unsigned char>(msg.data[msg.length - 1]);
+        sink ^= last;
     }
     (void)sink;
 

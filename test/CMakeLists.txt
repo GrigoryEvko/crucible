@@ -1458,6 +1458,21 @@ crucible_neg_compile_test(neg_deque_owner_try_steal
 crucible_neg_compile_test(neg_deque_owner_copy
     "OwnerHandle owns the linear Owner Permission")
 
+# ─── FOUND-E diagnostic infrastructure — neg-compile harness ──────
+#
+# Four fixtures probing diagnostic-misuse paths that the framework
+# catches via routed `static_assert` in safety/Diagnostic.h and
+# safety/diag/RowMismatch.h.  Every regex is FRAMEWORK-CONTROLLED —
+# matches a literal substring of a `static_assert` message we own.
+crucible_neg_compile_test(neg_diag_non_tag_in_diagnostic_wrapper
+    "constraints not satisfied")
+crucible_neg_compile_test(neg_diag_non_tag_in_row_mismatch
+    "RowMismatchTag_NonTag")
+crucible_neg_compile_test(neg_diag_non_tag_accessor
+    "DiagnosticAccessor_NonTag")
+crucible_neg_compile_test(neg_diag_user_tag_not_in_catalog
+    "Tag is not registered in the foundation Catalog")
+
 # ─── FOUND-C Phase 7 — PermissionedSessionHandle neg-compile harness
 #
 # Ten fixtures probing permission-flow violations that the type system
