@@ -97,6 +97,20 @@ void test_function_display_name_non_empty() {
 
     // Different functions → different display names.
     EXPECT_TRUE(n1 != n2);
+
+    // The extracted name CONTAINS the actual function name (not just
+    // the function-pointer-type signature).  Per the GCC pretty-print
+    // convention, n1 should contain "sample_dispatch" and n2 should
+    // contain "sample_compute".  Runtime check via string_view::find
+    // (not constexpr-safe over static-array-backed views, but fine
+    // at runtime).
+    std::fprintf(stderr,
+        "\n      [function_display_name<&sample_dispatch>] = %.*s\n"
+        "      [function_display_name<&sample_compute>]  = %.*s\n      ",
+        static_cast<int>(n1.size()), n1.data(),
+        static_cast<int>(n2.size()), n2.data());
+    EXPECT_TRUE(n1.find("sample_dispatch") != std::string_view::npos);
+    EXPECT_TRUE(n2.find("sample_compute")  != std::string_view::npos);
 }
 
 void test_format_version() {
@@ -105,19 +119,27 @@ void test_format_version() {
 }
 
 void test_message_builder_format_shape() {
-    // libstdc++ 16's `string_view::find` (and therefore `contains` /
-    // `starts_with` / `ends_with`) uses pointer arithmetic inside
-    // bits/string_view.tcc that isn't constexpr-safe through
-    // std::array<char, N>::data().  Run substring checks at RUNTIME;
-    // the consteval-evaluable invariants (length > 0, length match,
-    // first/last char) are verified in the header self-test block.
+    // Compile-time content verification via the constexpr-safe
+    // buffer helpers (in detail namespace, exposed for sentinel TU
+    // use).  These bypass libstdc++ 16's broken `string_view::find`
+    // implementation by indexing the buffer directly, which IS
+    // constexpr-safe over std::array<char, N>.  The runtime EXPECT_TRUE
+    // checks via `view.starts_with(...)` work fine because the
+    // libstdc++ issue is constexpr-only.
 
     static constexpr auto msg = diag::build_row_mismatch_message<
         diag::EffectRowMismatch, &::sample_dispatch,
         int, float, double>();
 
-    std::string_view const view = msg.view();
+    // Compile-time: structural shape pinned to the v1 format.
+    static_assert(diag::detail::buffer_starts_with(msg, "[EffectRowMismatch]"));
+    static_assert(diag::detail::buffer_ends_with(msg, "\n"));
+    static_assert(diag::detail::buffer_count_char(msg, '\n')
+                  == diag::CRUCIBLE_DIAG_FORMAT_LINES);
 
+    // Runtime mirror: same checks via standard string_view API
+    // (works at runtime; runtime probe of consteval results).
+    std::string_view const view = msg.view();
     EXPECT_TRUE(view.starts_with("[EffectRowMismatch]"));
     EXPECT_TRUE(view.ends_with("\n"));
     EXPECT_TRUE(view.contains("\n  at "));
@@ -127,12 +149,11 @@ void test_message_builder_format_shape() {
     EXPECT_TRUE(view.contains("\n  remediation: "));
     EXPECT_TRUE(view.contains("\n  docs: "));
 
-    // 7 newlines for 7 lines.
     std::size_t newlines = 0;
     for (char c : view) {
         if (c == '\n') ++newlines;
     }
-    EXPECT_EQ(newlines, std::size_t{7});
+    EXPECT_EQ(newlines, std::size_t{diag::CRUCIBLE_DIAG_FORMAT_LINES});
 }
 
 void test_message_builder_per_category() {
