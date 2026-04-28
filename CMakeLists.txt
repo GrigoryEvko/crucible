@@ -10,7 +10,10 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Downstream tests/benches need `handle_contract_violation` defined at link
 # time (GCC 16 libstdc++ does not provide a default); the weak symbol lets
 # production binaries override with a stronger one that calls crucible_abort.
-add_library(crucible STATIC src/ContractHandler.cpp)
+add_library(crucible STATIC
+  src/ContractHandler.cpp
+  src/DiagRuntime.cpp
+)
 target_include_directories(crucible PUBLIC include/)
 set_target_properties(crucible PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
