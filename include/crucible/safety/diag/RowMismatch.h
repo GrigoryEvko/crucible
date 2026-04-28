@@ -107,6 +107,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Diagnostic.h>           // Tag types + is_diagnostic_class_v
+#include <crucible/safety/diag/Insights.h>        // insight_provider<Tag> + Severity
 #include <crucible/safety/diag/StableName.h>      // stable_name_of<T>
 
 #include <array>
@@ -498,7 +499,199 @@ inline constexpr auto& row_mismatch_message_v =
                               OffendingDiff,
                               is_diagnostic_class_v<Tag>>::value;
 
+// ═════════════════════════════════════════════════════════════════════
+// ── Deep diagnostic builder — consumes insight_provider<Tag> ───────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Same input shape as `build_row_mismatch_message<>` but emits a
+// 13-line block (when the Tag has full insights) that includes
+// severity, why-this-matters, symptom pattern, correct example, and
+// violating example.  Empty insight fields collapse — graceful
+// degradation back to the bare 8-line shape when a Tag has no
+// specialization.
+//
+// Format (when insights are populated):
+//
+//   [<Severity>: <Category>]
+//     at <function>
+//     caller row contains: <type>
+//     callee requires:     Subrow<_, <type>>
+//     offending atoms:     <type>
+//     ── why this matters ──
+//       <Tag::why_this_matters>
+//     ── symptom pattern ──
+//       <Tag::symptom_pattern>
+//     ── correct usage ──
+//       <Tag::correct_example>
+//     ── violating usage ──
+//       <Tag::violating_example>
+//     remediation: <Tag::remediation>
+//     docs: see safety/Diagnostic.h, 28_04_2026_effects.md §7
+
+namespace detail {
+
+inline constexpr std::string_view L_SEV_PREFIX = "[";
+inline constexpr std::string_view L_SEV_SEP    = ": ";
+inline constexpr std::string_view L_WHY_HEAD   = "  ── why this matters ──\n    ";
+inline constexpr std::string_view L_WHY_TAIL   = "\n";
+inline constexpr std::string_view L_SYM_HEAD   = "  ── symptom pattern ──\n    ";
+inline constexpr std::string_view L_SYM_TAIL   = "\n";
+inline constexpr std::string_view L_CORR_HEAD  = "  ── correct usage ──\n    ";
+inline constexpr std::string_view L_CORR_TAIL  = "\n";
+inline constexpr std::string_view L_VIOL_HEAD  = "  ── violating usage ──\n    ";
+inline constexpr std::string_view L_VIOL_TAIL  = "\n";
+
+[[nodiscard]] consteval std::size_t deep_format_total_length(
+    std::string_view sev_name,
+    std::string_view category,
+    std::string_view fn_name,
+    std::string_view caller_name,
+    std::string_view callee_name,
+    std::string_view offending,
+    std::string_view why,
+    std::string_view symptom,
+    std::string_view correct,
+    std::string_view violating,
+    std::string_view remediation) noexcept
+{
+    std::size_t n =
+          L_SEV_PREFIX.size() + sev_name.size() + L_SEV_SEP.size()
+        + category.size() + L1_SUFFIX.size()
+        + L2_PREFIX.size() + fn_name.size()     + L2_SUFFIX.size()
+        + L3_PREFIX.size() + caller_name.size() + L3_SUFFIX.size()
+        + L4_PREFIX.size() + callee_name.size() + L4_SUFFIX.size()
+        + L5_PREFIX.size() + offending.size()   + L5_SUFFIX.size();
+
+    if (!why.empty())       n += L_WHY_HEAD.size()  + why.size()       + L_WHY_TAIL.size();
+    if (!symptom.empty())   n += L_SYM_HEAD.size()  + symptom.size()   + L_SYM_TAIL.size();
+    if (!correct.empty())   n += L_CORR_HEAD.size() + correct.size()   + L_CORR_TAIL.size();
+    if (!violating.empty()) n += L_VIOL_HEAD.size() + violating.size() + L_VIOL_TAIL.size();
+
+    n += L6_PREFIX.size() + remediation.size() + L6_SUFFIX.size()
+       + L7_LINE.size();
+    return n;
+}
+
+}  // namespace detail
+
+template <typename Tag, auto FnPtr, typename CallerRow,
+          typename CalleeRow, typename OffendingDiff>
+    requires is_diagnostic_class_v<Tag>
+[[nodiscard]] consteval auto build_deep_diagnostic_message() noexcept {
+    using P = insight_provider<Tag>;
+    constexpr auto sev_name    = severity_name(P::severity);
+    constexpr auto category    = Tag::name;
+    constexpr auto remediation = Tag::remediation;
+    constexpr auto fn_name     = function_display_name<FnPtr>;
+    constexpr auto caller_str  = type_name<CallerRow>;
+    constexpr auto callee_str  = type_name<CalleeRow>;
+    constexpr auto offending   = type_name<OffendingDiff>;
+    constexpr auto why         = P::why_this_matters;
+    constexpr auto symptom     = P::symptom_pattern;
+    constexpr auto correct     = P::correct_example;
+    constexpr auto violating   = P::violating_example;
+
+    constexpr std::size_t N = detail::deep_format_total_length(
+        sev_name, category, fn_name, caller_str, callee_str, offending,
+        why, symptom, correct, violating, remediation);
+
+    detail::char_buffer<N> buf{};
+    buf.append(detail::L_SEV_PREFIX);
+    buf.append(sev_name);
+    buf.append(detail::L_SEV_SEP);
+    buf.append(category);
+    buf.append(detail::L1_SUFFIX);
+
+    buf.append(detail::L2_PREFIX); buf.append(fn_name);     buf.append(detail::L2_SUFFIX);
+    buf.append(detail::L3_PREFIX); buf.append(caller_str);  buf.append(detail::L3_SUFFIX);
+    buf.append(detail::L4_PREFIX); buf.append(callee_str);  buf.append(detail::L4_SUFFIX);
+    buf.append(detail::L5_PREFIX); buf.append(offending);   buf.append(detail::L5_SUFFIX);
+
+    if constexpr (!P::why_this_matters.empty()) {
+        buf.append(detail::L_WHY_HEAD); buf.append(why); buf.append(detail::L_WHY_TAIL);
+    }
+    if constexpr (!P::symptom_pattern.empty()) {
+        buf.append(detail::L_SYM_HEAD); buf.append(symptom); buf.append(detail::L_SYM_TAIL);
+    }
+    if constexpr (!P::correct_example.empty()) {
+        buf.append(detail::L_CORR_HEAD); buf.append(correct); buf.append(detail::L_CORR_TAIL);
+    }
+    if constexpr (!P::violating_example.empty()) {
+        buf.append(detail::L_VIOL_HEAD); buf.append(violating); buf.append(detail::L_VIOL_TAIL);
+    }
+
+    buf.append(detail::L6_PREFIX); buf.append(remediation); buf.append(detail::L6_SUFFIX);
+    buf.append(detail::L7_LINE);
+    return buf;
+}
+
+// Cached deep-message variable template (parallel to row_mismatch_
+// message_v but for the insightful builder).  Routed-diagnostic
+// pattern for non-tag misuse, same as the standard builder.
+
+namespace detail {
+
+template <typename Tag, auto FnPtr, typename CallerRow,
+          typename CalleeRow, typename OffendingDiff,
+          bool IsTag>
+struct deep_message_check;
+
+template <typename Tag, auto FnPtr, typename CallerRow,
+          typename CalleeRow, typename OffendingDiff>
+struct deep_message_check<Tag, FnPtr, CallerRow, CalleeRow, OffendingDiff, true> {
+    static constexpr auto value =
+        build_deep_diagnostic_message<Tag, FnPtr, CallerRow, CalleeRow,
+                                       OffendingDiff>();
+};
+
+template <typename Tag, auto FnPtr, typename CallerRow,
+          typename CalleeRow, typename OffendingDiff>
+struct deep_message_check<Tag, FnPtr, CallerRow, CalleeRow, OffendingDiff, false> {
+    static_assert(is_diagnostic_class_v<Tag>,
+        "crucible::safety::diag [DeepMismatchTag_NonTag]: "
+        "row_mismatch_deep_message_v / "
+        "CRUCIBLE_INSIGHTFUL_ROW_MISMATCH_ASSERT requires Tag to be "
+        "derived from safety::diag::tag_base.");
+    static constexpr char_buffer<1> value{};
+};
+
+}  // namespace detail
+
+template <typename Tag, auto FnPtr, typename CallerRow,
+          typename CalleeRow, typename OffendingDiff>
+inline constexpr auto& row_mismatch_deep_message_v =
+    detail::deep_message_check<Tag, FnPtr, CallerRow, CalleeRow,
+                               OffendingDiff,
+                               is_diagnostic_class_v<Tag>>::value;
+
 }  // namespace crucible::safety::diag
+
+// ═════════════════════════════════════════════════════════════════════
+// ── CRUCIBLE_INSIGHTFUL_ROW_MISMATCH_ASSERT macro ──────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Drop-in replacement for CRUCIBLE_ROW_MISMATCH_ASSERT that emits the
+// deep insightful diagnostic block.  Use this at concept-rejection
+// sites where the calling engineer would benefit from architectural
+// rationale + symptom-pattern recognition + correct/violating
+// examples.  Falls back to the bare 8-line format gracefully when
+// the Tag has no insight specialization.
+//
+// Usage (identical to the standard variant):
+//
+//   CRUCIBLE_INSIGHTFUL_ROW_MISMATCH_ASSERT(
+//       (Subrow<CalleeRow, CallerRow>),
+//       HotPathViolation,
+//       &my_module::dispatch_op,
+//       CallerRow,
+//       CalleeRow,
+//       row_difference_t<CalleeRow, CallerRow>);
+
+#define CRUCIBLE_INSIGHTFUL_ROW_MISMATCH_ASSERT(cond, tag, fn, caller, callee, offending) \
+    static_assert((cond),                                                                  \
+        ::crucible::safety::diag::row_mismatch_deep_message_v<                             \
+            ::crucible::safety::diag::tag, fn, caller, callee, offending>                  \
+            .view())
 
 // ═════════════════════════════════════════════════════════════════════
 // ── CRUCIBLE_ROW_MISMATCH_ASSERT macro ─────────────────────────────
