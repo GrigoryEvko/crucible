@@ -44,6 +44,7 @@
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/NotInherited.h>
 #include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/OpaqueLifetime.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Refined.h>
@@ -99,6 +100,9 @@ void test_not_inherited_compile()   {}
 void test_numerical_tier_compile()  {
     ::crucible::safety::detail::numerical_tier_self_test::runtime_smoke_test();
 }
+void test_opaque_lifetime_compile() {
+    ::crucible::safety::detail::opaque_lifetime_self_test::runtime_smoke_test();
+}
 void test_owned_region_compile()    {}
 void test_pinned_compile()          {}
 void test_refined_compile()         {}
@@ -129,6 +133,7 @@ int main() {
     run_test("test_mutation_compile",        test_mutation_compile);
     run_test("test_not_inherited_compile",   test_not_inherited_compile);
     run_test("test_numerical_tier_compile",  test_numerical_tier_compile);
+    run_test("test_opaque_lifetime_compile", test_opaque_lifetime_compile);
     run_test("test_owned_region_compile",    test_owned_region_compile);
     run_test("test_pinned_compile",          test_pinned_compile);
     run_test("test_refined_compile",         test_refined_compile);

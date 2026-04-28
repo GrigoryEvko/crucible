@@ -36,6 +36,7 @@
 //   Secret<T>                Graded<Comonad,     ConfLattice::At<Secret>, T>        1
 //   NumericalTier<Tol, T>    Graded<Absolute,    ToleranceLattice::At<Tol>, T>      1
 //   Consistency<Lvl, T>      Graded<Absolute,    ConsistencyLattice::At<Lvl>, T>    1
+//   OpaqueLifetime<Sc, T>    Graded<Absolute,    LifetimeLattice::At<Sc>, T>        1
 //   Monotonic<T, Cmp>        Graded<Absolute,    MonotoneLattice<T,Cmp>, T>         2
 //   AppendOnly<T, Storage>   Graded<Absolute,    SeqPrefixLattice<T>,   Storage<T>>  3
 //   Stale<T>                 Graded<Absolute,    StalenessSemiring,     T>          4
@@ -143,6 +144,7 @@
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/NotInherited.h>
 #include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/OpaqueLifetime.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Refined.h>
