@@ -361,10 +361,9 @@ void test_adaptive_picks_sequential_for_small_workload() {
     for (std::size_t i = 0; i < N; ++i) region.span()[i] = i + 1;
 
     WorkBudget tiny_budget{
-        .read_bytes = N * sizeof(std::uint64_t),
+        .read_bytes  = N * sizeof(std::uint64_t),
         .write_bytes = N * sizeof(std::uint64_t),
-        .item_count = N,
-        .per_item_compute_ns = 5
+        .item_count  = N,
     };
     // should_parallelize returns false for L1-resident workloads.
     CRUCIBLE_TEST_REQUIRE(!should_parallelize(tiny_budget));
@@ -392,10 +391,9 @@ void test_adaptive_picks_parallel_for_large_workload() {
     for (std::size_t i = 0; i < N; ++i) region.span()[i] = i;
 
     WorkBudget large_budget{
-        .read_bytes = N * sizeof(std::uint64_t),
+        .read_bytes  = N * sizeof(std::uint64_t),
         .write_bytes = N * sizeof(std::uint64_t),
-        .item_count = N,
-        .per_item_compute_ns = 50
+        .item_count  = N,
     };
     CRUCIBLE_TEST_REQUIRE(should_parallelize(large_budget));
 
@@ -421,17 +419,15 @@ void test_workbudget_for_span() {
         test_alloc_token(), arena, 1024, std::move(perm));
 
     // for_span auto-derives byte counts from the typed span.
-    const auto budget = WorkBudget::for_span<std::uint64_t>(
-        region.cspan(), /*ns_per_item=*/50);
+    const auto budget = WorkBudget::for_span<std::uint64_t>(region.cspan());
 
-    CRUCIBLE_TEST_REQUIRE(budget.item_count == 1024);
-    CRUCIBLE_TEST_REQUIRE(budget.read_bytes == 1024 * sizeof(std::uint64_t));
+    CRUCIBLE_TEST_REQUIRE(budget.item_count  == 1024);
+    CRUCIBLE_TEST_REQUIRE(budget.read_bytes  == 1024 * sizeof(std::uint64_t));
     CRUCIBLE_TEST_REQUIRE(budget.write_bytes == 1024 * sizeof(std::uint64_t));
-    CRUCIBLE_TEST_REQUIRE(budget.per_item_compute_ns == 50);
 
     // Read-only variant zeroes write_bytes.
-    const auto ro_budget = WorkBudget::for_span_read_only<std::uint64_t>(
-        region.cspan(), 50);
+    const auto ro_budget =
+        WorkBudget::for_span_read_only<std::uint64_t>(region.cspan());
     CRUCIBLE_TEST_REQUIRE(ro_budget.read_bytes == 1024 * sizeof(std::uint64_t));
     CRUCIBLE_TEST_REQUIRE(ro_budget.write_bytes == 0);
 }
@@ -468,8 +464,7 @@ void test_parallel_for_smart_large_workload() {
 
     auto recombined = parallel_for_smart(
         std::move(region),
-        [](auto sub) noexcept { for (auto& x : sub.span()) x = 42; },
-        /*ns_per_item=*/100  // bias toward parallelism
+        [](auto sub) noexcept { for (auto& x : sub.span()) x = 42; }
     );
 
     for (std::size_t i = 0; i < N; ++i) {

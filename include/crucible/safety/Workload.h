@@ -60,7 +60,7 @@
 // All bodies must be noexcept (Crucible's -fno-exceptions rule).
 
 #include <crucible/Platform.h>
-#include <crucible/concurrent/CostModel.h>
+#include <crucible/concurrent/ParallelismRule.h>
 #include <crucible/concurrent/Topology.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/permissions/Permission.h>
@@ -76,58 +76,51 @@ namespace crucible::safety {
 
 // ── WorkBudget — workload size descriptor ───────────────────────────
 //
-// Used by the cost-model gate to decide sequential vs parallel.
-// SEPLOG-C2 will replace this placeholder with a Topology-aware
-// decision; for now, a simple cache-tier heuristic.
-//
-// per_item_compute_ns is a CALLER HINT that feeds the cost-model
-// rule; it is not a runtime budget or guarantee.  When omitted (or
-// wrong), the rule errs toward Sequential and the no-regression
-// invariant still holds.
+// Used by the parallelism-rule gate to decide sequential vs parallel.
+// Per 27_04 §5.7 cleanup: ONLY concrete hardware facts (bytes +
+// item count for telemetry).  No abstract cost dimensions (no
+// per-item nanoseconds, no FLOP intensity).  The cost-model rule
+// is purely cache-driven — see concurrent/ParallelismRule.h.
 
 struct WorkBudget {
-    std::size_t read_bytes           = 0;
-    std::size_t write_bytes          = 0;
-    std::size_t item_count           = 0;
-    std::size_t per_item_compute_ns  = 0;  // caller hint, not a promise
+    std::size_t read_bytes  = 0;
+    std::size_t write_bytes = 0;
+    std::size_t item_count  = 0;  // informational; not consulted by the rule
 
     // ── Convenience constructors for the 95% case ──────────────────
     //
-    // for_span(span, ns_per_item) — auto-derive byte counts from a
-    // typed span.  Assumes read+write (in-place mutation) by default;
-    // override read_bytes / write_bytes after if access is read-only
-    // or write-only.
+    // for_span(span) — auto-derive byte counts from a typed span.
+    // Assumes read+write (in-place mutation) by default; override
+    // read_bytes / write_bytes after if access is read-only or
+    // write-only.
     template <typename T>
     [[nodiscard]] static constexpr WorkBudget
-    for_span(std::span<T const> data, std::size_t ns_per_item = 0) noexcept {
+    for_span(std::span<T const> data) noexcept {
         const std::size_t n = data.size();
         const std::size_t bytes = n * sizeof(T);
         return WorkBudget{
-            .read_bytes = bytes,
+            .read_bytes  = bytes,
             .write_bytes = bytes,
-            .item_count = n,
-            .per_item_compute_ns = ns_per_item,
+            .item_count  = n,
         };
     }
 
     // Read-only variant — for when the body only reads (parallel_reduce).
     template <typename T>
     [[nodiscard]] static constexpr WorkBudget
-    for_span_read_only(std::span<T const> data, std::size_t ns_per_item = 0) noexcept {
+    for_span_read_only(std::span<T const> data) noexcept {
         const std::size_t n = data.size();
         return WorkBudget{
-            .read_bytes = n * sizeof(T),
+            .read_bytes  = n * sizeof(T),
             .write_bytes = 0,
-            .item_count = n,
-            .per_item_compute_ns = ns_per_item,
+            .item_count  = n,
         };
     }
 };
 
-// Cost-model heuristic — picks parallelism per the multi-tier
-// decision table in concurrent/CostModel.h (SEPLOG-C2).  Considers
-// cache hierarchy (L1d / L2 / L3 / DRAM), compute-bound override,
-// container CPU caps, and spawn-amortization threshold.
+// Cost-model heuristic — picks parallelism per the cache-driven
+// decision table in concurrent/ParallelismRule.h (purely cache-driven
+// since the 27_04 §5.7 cleanup; no per-item compute hint).
 //
 // Returns true iff the recommendation is Parallel.  For finer-
 // grained decisions (factor + NUMA policy), call
@@ -135,10 +128,9 @@ struct WorkBudget {
 [[nodiscard]] inline bool
 should_parallelize(WorkBudget budget) noexcept {
     const crucible::concurrent::WorkBudget cost_budget{
-        .read_bytes          = budget.read_bytes,
-        .write_bytes         = budget.write_bytes,
-        .item_count          = budget.item_count,
-        .per_item_compute_ns = budget.per_item_compute_ns,
+        .read_bytes  = budget.read_bytes,
+        .write_bytes = budget.write_bytes,
+        .item_count  = budget.item_count,
     };
     return crucible::concurrent::recommend_parallelism(cost_budget).is_parallel();
 }
@@ -314,7 +306,6 @@ parallel_for_views_adaptive(OwnedRegion<T, Whole>&& region,
 //
 //   * the OwnedRegion to mutate
 //   * the noexcept body lambda
-//   * an optional ns/item compute estimate (default 0 = memory-bound)
 //
 // The factor ladder snap (1, 2, 4, 8, 16) lives in the cost model;
 // this function dispatches via switch.  AdaptiveScheduler (SEPLOG-C3)
@@ -322,20 +313,19 @@ parallel_for_views_adaptive(OwnedRegion<T, Whole>&& region,
 // the same decision struct.
 //
 // Always returns the recombined OwnedRegion; never throws; preserves
-// the no-regression guarantee.
+// the no-regression guarantee.  Per 27_04 §5.7: the cost model is
+// purely cache-driven; no per-item ns hint accepted.
 
 template <typename T, typename Whole, typename Body>
 [[nodiscard]] OwnedRegion<T, Whole>
 parallel_for_smart(OwnedRegion<T, Whole>&& region,
-                   Body body,
-                   std::size_t ns_per_item = 0) noexcept
+                   Body body) noexcept
 {
     const auto data = region.cspan();
     const crucible::concurrent::WorkBudget cost_budget{
-        .read_bytes          = data.size() * sizeof(T),
-        .write_bytes         = data.size() * sizeof(T),
-        .item_count          = data.size(),
-        .per_item_compute_ns = ns_per_item,
+        .read_bytes  = data.size() * sizeof(T),
+        .write_bytes = data.size() * sizeof(T),
+        .item_count  = data.size(),
     };
 
     const auto decision =
