@@ -67,6 +67,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/Diagnostic.h>           // Category enum
 
+#include <source_location>
 #include <string_view>
 
 namespace crucible::safety::diag {
@@ -159,4 +160,62 @@ void report_violation_and_abort(Category cat,
                                 std::string_view fn,
                                 std::string_view detail) noexcept;
 
+// ═════════════════════════════════════════════════════════════════════
+// ── report_violation_at — source_location-capturing variant ────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Convenience overload that captures the call site automatically via
+// std::source_location.  The default arg is constructed at the CALL
+// SITE (not inside the callee), so file/line/function are correct
+// without macro tricks.  Zero runtime cost over the explicit form
+// when the optimizer constant-folds the location's char* fields.
+//
+// Format (single line):
+//   crucible-violation: category=<Name> fn=<file:line@function> detail=<detail>
+//
+// Where `fn` is the source_location-derived "<file>:<line>@<function>"
+// composite — the parser script can split on `@` to recover the
+// function name + file/line.
+
+[[gnu::cold]]
+void report_violation_at(
+    Category cat,
+    std::string_view detail,
+    std::source_location loc = std::source_location::current()) noexcept;
+
+[[gnu::cold]] [[noreturn]]
+void report_violation_at_and_abort(
+    Category cat,
+    std::string_view detail,
+    std::source_location loc = std::source_location::current()) noexcept;
+
 }  // namespace crucible::safety::diag
+
+// ═════════════════════════════════════════════════════════════════════
+// ── CRUCIBLE_RUNTIME_VIOLATION macro — ergonomic wrapper ───────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Drop-in convenience for the most common violation site: capture
+// `__func__` + source_location automatically; caller just passes
+// the Category and a detail string.
+//
+// Pattern at a violation site:
+//
+//   if (!is_positive(value)) [[unlikely]] {
+//       CRUCIBLE_RUNTIME_VIOLATION(
+//           ::crucible::safety::diag::Category::RefinementViolation,
+//           "value=-7 fails predicate `positive`");
+//       return std::unexpected{Error::PredicateFailed};
+//   }
+//
+// Expands to a `report_violation_at(cat, detail)` call — the
+// source_location default arg captures the call site automatically.
+//
+// `_AND_ABORT` variant aborts after emission (use for unrecoverable
+// MemSafe / NullSafe / DetSafe axiom violations).
+
+#define CRUCIBLE_RUNTIME_VIOLATION(category, detail) \
+    ::crucible::safety::diag::report_violation_at((category), (detail))
+
+#define CRUCIBLE_RUNTIME_VIOLATION_AND_ABORT(category, detail) \
+    ::crucible::safety::diag::report_violation_at_and_abort((category), (detail))

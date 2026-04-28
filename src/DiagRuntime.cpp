@@ -122,4 +122,63 @@ void report_violation_and_abort(Category cat,
     std::abort();
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// ── report_violation_at ─────────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Format the source_location into a "file:line@function" composite
+// in a thread-local fixed buffer (no heap allocation on the cold
+// path, no shared mutex contention between concurrent emitters).
+// The buffer is sized for typical paths (<2KB) — pathological-long
+// paths get truncated, never overrun.
+//
+// Why thread_local: each emitter gets its own scratch buffer, so
+// concurrent calls don't race on a shared static buffer.  The TLS
+// allocation is one-time per thread (cold path; cost amortized
+// across the thread's lifetime).
+
+namespace {
+
+constexpr std::size_t loc_buf_capacity = 2048;
+thread_local char tls_loc_buf[loc_buf_capacity];
+
+// Format "<file>:<line>@<function>" into the TLS buffer, return view.
+// Uses snprintf which is bounded; truncation on overflow is silent
+// (the parser can detect via missing '@' marker).
+std::string_view format_loc(std::source_location loc) noexcept {
+    const int n = std::snprintf(
+        tls_loc_buf, loc_buf_capacity,
+        "%s:%u@%s",
+        loc.file_name(),
+        loc.line(),               // source_location::line() returns uint_least32_t
+        loc.function_name());
+    if (n < 0) {
+        // snprintf encoding error — return an empty view rather than
+        // emit garbage; the caller's diagnostic still includes
+        // category + detail.
+        tls_loc_buf[0] = '\0';
+        return {};
+    }
+    const std::size_t len =
+        static_cast<std::size_t>(n) >= loc_buf_capacity
+            ? loc_buf_capacity - 1
+            : static_cast<std::size_t>(n);
+    return {tls_loc_buf, len};
+}
+
+}  // namespace
+
+void report_violation_at(Category cat,
+                         std::string_view detail,
+                         std::source_location loc) noexcept {
+    report_violation(cat, format_loc(loc), detail);
+}
+
+void report_violation_at_and_abort(Category cat,
+                                   std::string_view detail,
+                                   std::source_location loc) noexcept {
+    report_violation_at(cat, detail, loc);
+    std::abort();
+}
+
 }  // namespace crucible::safety::diag
