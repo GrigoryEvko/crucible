@@ -37,6 +37,7 @@
 
 #include <crucible/algebra/GradedTrait.h>
 #include <crucible/permissions/Permission.h>
+#include <crucible/safety/Consistency.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/Refined.h>
@@ -105,6 +106,13 @@ static_assert(sizeof(NumericalTier<Tolerance::ULP_FP16, double>) == sizeof(doubl
 static_assert(sizeof(NumericalTier<Tolerance::RELAXED,  long long>)
                                                                  == sizeof(long long));
 
+// Consistency<Level, T> — regime-1 EBO collapse via the
+// ConsistencyLattice::At<Level> singleton sub-lattice (FOUND-G05).
+static_assert(sizeof(Consistency<Consistency_v::STRONG,            int>)    == sizeof(int));
+static_assert(sizeof(Consistency<Consistency_v::CAUSAL_PREFIX,     double>) == sizeof(double));
+static_assert(sizeof(Consistency<Consistency_v::EVENTUAL,          long long>)
+                                                                            == sizeof(long long));
+
 // Monotonic<T, std::less<T>> collapses value+grade into one T cell
 // via Graded's specialization for `T == element_type`.
 static_assert(sizeof(Monotonic<std::uint32_t>)      == sizeof(std::uint32_t));
@@ -131,6 +139,7 @@ static_assert(SealedRefined<positive_local, int>::value_type_name().ends_with("i
 static_assert(Tagged<int, VerificationTag>::value_type_name().ends_with("int"));
 static_assert(Secret<int>::value_type_name().ends_with("int"));
 static_assert(NumericalTier<Tolerance::BITEXACT, int>::value_type_name().ends_with("int"));
+static_assert(Consistency<Consistency_v::STRONG, int>::value_type_name().ends_with("int"));
 static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
            || Monotonic<std::uint64_t>::value_type_name().ends_with("long unsigned int"));
 static_assert(Stale<int>::value_type_name().ends_with("int"));
@@ -155,6 +164,7 @@ static_assert(!std::is_void_v<typename SealedRefined<positive_local, int>::grade
 static_assert(!std::is_void_v<typename Tagged<int, VerificationTag>::graded_type>);
 static_assert(!std::is_void_v<typename Secret<int>::graded_type>);
 static_assert(!std::is_void_v<typename NumericalTier<Tolerance::BITEXACT, int>::graded_type>);
+static_assert(!std::is_void_v<typename Consistency<Consistency_v::STRONG, int>::graded_type>);
 static_assert(!std::is_void_v<typename Monotonic<std::uint64_t>::graded_type>);
 static_assert(!std::is_void_v<typename AppendOnly<int>::graded_type>);
 static_assert(!std::is_void_v<typename Stale<int>::graded_type>);
@@ -182,6 +192,8 @@ static_assert(GradedWrapper<Tagged<int, VerificationTag>>);
 static_assert(GradedWrapper<Secret<int>>);
 static_assert(GradedWrapper<NumericalTier<Tolerance::BITEXACT, int>>);
 static_assert(GradedWrapper<NumericalTier<Tolerance::ULP_FP16, double>>);
+static_assert(GradedWrapper<Consistency<Consistency_v::STRONG, int>>);
+static_assert(GradedWrapper<Consistency<Consistency_v::CAUSAL_PREFIX, double>>);
 static_assert(GradedWrapper<Monotonic<std::uint64_t>>);
 static_assert(GradedWrapper<AppendOnly<int>>);
 static_assert(GradedWrapper<Stale<int>>);
@@ -224,6 +236,8 @@ static_assert(forwarders_actually_forward<Tagged<int, VerificationTag>>());
 static_assert(forwarders_actually_forward<Secret<int>>());
 static_assert(forwarders_actually_forward<NumericalTier<Tolerance::BITEXACT, int>>());
 static_assert(forwarders_actually_forward<NumericalTier<Tolerance::ULP_FP16, double>>());
+static_assert(forwarders_actually_forward<Consistency<Consistency_v::STRONG, int>>());
+static_assert(forwarders_actually_forward<Consistency<Consistency_v::EVENTUAL, double>>());
 static_assert(forwarders_actually_forward<Monotonic<std::uint64_t>>());
 static_assert(forwarders_actually_forward<AppendOnly<int>>());
 static_assert(forwarders_actually_forward<Stale<int>>());
@@ -254,6 +268,12 @@ static_assert(NumericalTier<Tolerance::ULP_FP16, double>::lattice_name()
                                                  == "ToleranceLattice::At<ULP_FP16>");
 static_assert(NumericalTier<Tolerance::RELAXED,  long long>::lattice_name()
                                                  == "ToleranceLattice::At<RELAXED>");
+static_assert(Consistency<Consistency_v::STRONG, int>::lattice_name()
+                                                 == "ConsistencyLattice::At<STRONG>");
+static_assert(Consistency<Consistency_v::CAUSAL_PREFIX, double>::lattice_name()
+                                                 == "ConsistencyLattice::At<CAUSAL_PREFIX>");
+static_assert(Consistency<Consistency_v::EVENTUAL, long long>::lattice_name()
+                                                 == "ConsistencyLattice::At<EVENTUAL>");
 static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");
 static_assert(AppendOnly<int>::lattice_name()   == "SeqPrefixLattice");
 static_assert(Stale<int>::lattice_name()        == "StalenessSemiring");
@@ -356,6 +376,38 @@ using NumericalTierOverRefined =
     NumericalTier<Tolerance::ULP_FP32, Refined<positive_local, int>>;
 static_assert(sizeof(NumericalTierOverRefined) == sizeof(int));
 
+// Tagged<Consistency<Level, T>, Source> — provenance over consistency
+// pin.  Production: a Canopy gossip event carries the parameter shard's
+// Consistency<STRONG> AND a Tagged<...,FromPeerNodeId> source — both
+// regime-1 wrappers over At<>-style empty grades; sizeof must collapse.
+using TaggedConsistency =
+    Tagged<Consistency<Consistency_v::STRONG, int>, VerificationTag>;
+static_assert(sizeof(TaggedConsistency) == sizeof(int));
+
+// Consistency<Level, NumericalTier<T_at, T>> — consistency over
+// recipe-tier (DOUBLE EBO collapse witness).  Production: a Forge
+// Phase K BatchPolicy<TP-axis, STRONG> AnyAxis carrying a
+// NumericalTier<BITEXACT, ResultTensor> — both wrappers regime-1,
+// both grades empty, sizeof reduces all the way down to sizeof(T).
+using ConsistencyOverNumerical =
+    Consistency<Consistency_v::STRONG,
+                NumericalTier<Tolerance::BITEXACT, int>>;
+static_assert(sizeof(ConsistencyOverNumerical) == sizeof(int),
+    "Consistency<...,NumericalTier<...,T>> must DOUBLE EBO-collapse "
+    "to sizeof(T) — two regime-1 wrappers stacked, both with empty "
+    "grade.");
+
+// Consistency<Level, Linear<T>> — consistency-pinned linear ownership.
+// Production: a Raft-replicated state shard owned linearly.  Asserts
+// transitive copy-deletion preservation.
+using ConsistencyOverLinear = Consistency<Consistency_v::STRONG, Linear<int>>;
+static_assert(sizeof(ConsistencyOverLinear) == sizeof(int));
+static_assert(!std::is_copy_constructible_v<ConsistencyOverLinear>,
+    "Consistency<Level, Linear<T>> must preserve Linear's move-only "
+    "discipline.  If this fires, Linear's copy-deletion is no longer "
+    "transitively visible through the Consistency wrapper.");
+static_assert(std::is_move_constructible_v<ConsistencyOverLinear>);
+
 // ── COVERAGE MATRIX — runtime API parity (smoke checks) ────────────
 //
 // Confirm peek / consume / construction round-trip for the four
@@ -443,6 +495,45 @@ void runtime_smoke_numerical_tier() {
     if (unwrapped_bx.peek() != 77) std::abort();
 }
 
+void runtime_smoke_consistency() {
+    // Round-trip: STRONG → CAUSAL_PREFIX → EVENTUAL via relax.
+    Consistency<Consistency_v::STRONG, int> strong{42};
+    if (strong.peek() != 42) std::abort();
+
+    auto causal = strong.relax<Consistency_v::CAUSAL_PREFIX>();
+    if (causal.peek() != 42) std::abort();
+    if (causal.level != Consistency_v::CAUSAL_PREFIX) std::abort();
+
+    auto eventual = std::move(causal).relax<Consistency_v::EVENTUAL>();
+    if (eventual.peek() != 42) std::abort();
+
+    // satisfies<...> reads at runtime.
+    static_assert(Consistency<Consistency_v::STRONG, int>
+                      ::satisfies<Consistency_v::CAUSAL_PREFIX>);
+    static_assert(!Consistency<Consistency_v::EVENTUAL, int>
+                       ::satisfies<Consistency_v::STRONG>);
+
+    // peek_mut + swap.
+    Consistency<Consistency_v::STRONG, int> a{10};
+    Consistency<Consistency_v::STRONG, int> b{20};
+    a.peek_mut() = 100;
+    if (a.peek() != 100) std::abort();
+    a.swap(b);
+    if (a.peek() != 20 || b.peek() != 100) std::abort();
+
+    // operator== — same-level comparison delegates to peek().
+    Consistency<Consistency_v::STRONG, int> eq_a{42};
+    Consistency<Consistency_v::STRONG, int> eq_b{42};
+    Consistency<Consistency_v::STRONG, int> eq_c{43};
+    if (!(eq_a == eq_b)) std::abort();
+    if (  eq_a == eq_c)  std::abort();
+
+    // DOUBLE-nested cross-composition: Consistency over NumericalTier.
+    ConsistencyOverNumerical nested{NumericalTier<Tolerance::BITEXACT, int>{55}};
+    auto inner_after_consume = std::move(nested).consume();
+    if (inner_after_consume.peek() != 55) std::abort();
+}
+
 void runtime_smoke_monotonic() {
     Monotonic<std::uint64_t> m{10};
     if (m.get() != 10) std::abort();
@@ -502,6 +593,8 @@ int main() {
     std::fprintf(stderr, "  secret:      OK\n");
     runtime_smoke_numerical_tier();
     std::fprintf(stderr, "  numerical_tier:    OK\n");
+    runtime_smoke_consistency();
+    std::fprintf(stderr, "  consistency:       OK\n");
     runtime_smoke_monotonic();
     std::fprintf(stderr, "  monotonic:   OK\n");
     runtime_smoke_append_only();
@@ -509,7 +602,7 @@ int main() {
     runtime_smoke_shared_permission();
     std::fprintf(stderr, "  shared_permission: OK\n");
 
-    std::fprintf(stderr, "\nALL PASSED — 11 migrated wrappers verified uniformly "
-                         "(10 Graded-backed + 1 façade)\n");
+    std::fprintf(stderr, "\nALL PASSED — 12 migrated wrappers verified uniformly "
+                         "(11 Graded-backed + 1 façade)\n");
     return EXIT_SUCCESS;
 }

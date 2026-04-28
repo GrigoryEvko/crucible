@@ -35,6 +35,7 @@
 //   Tagged<T, Source>        Graded<RelativeMonad, TrustLattice<Source>, T>          1
 //   Secret<T>                Graded<Comonad,     ConfLattice::At<Secret>, T>        1
 //   NumericalTier<Tol, T>    Graded<Absolute,    ToleranceLattice::At<Tol>, T>      1
+//   Consistency<Lvl, T>      Graded<Absolute,    ConsistencyLattice::At<Lvl>, T>    1
 //   Monotonic<T, Cmp>        Graded<Absolute,    MonotoneLattice<T,Cmp>, T>         2
 //   AppendOnly<T, Storage>   Graded<Absolute,    SeqPrefixLattice<T>,   Storage<T>>  3
 //   Stale<T>                 Graded<Absolute,    StalenessSemiring,     T>          4
@@ -135,6 +136,7 @@
 
 #include <crucible/safety/Checked.h>
 #include <crucible/safety/ConstantTime.h>
+#include <crucible/safety/Consistency.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Machine.h>

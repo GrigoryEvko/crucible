@@ -962,6 +962,23 @@ crucible_neg_compile_test(neg_numerical_tier_cross_tier_swap
 crucible_neg_compile_test(neg_numerical_tier_cross_tier_equality
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FOUND-G07 Consistency wrapper neg-compiles (4 fixtures) ────────
+#
+# Mirror of the NumericalTier neg-compile suite for the §4.2.2
+# Consistency<Level, T> wrapper.  Each fixture catches the same
+# class of bug a refactor of Consistency could introduce.  Pinning
+# four fixtures (relax-up / cross-level assign / cross-level swap /
+# cross-level equality) per wrapper is the load-bearing structural
+# discipline keeping per-Level identity a hard type-system fence.
+crucible_neg_compile_test(neg_consistency_relax_to_stronger
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_consistency_cross_level_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_consistency_cross_level_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_consistency_cross_level_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's
