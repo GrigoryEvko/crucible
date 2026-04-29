@@ -296,21 +296,28 @@ public:
 // ── Layout invariants — regime-4 (non-EBO) ──────────────────────────
 //
 // NumaPlacement<T> carries a placement_t = (NumaNodeId, AffinityMask)
-// = (1 byte, 8 bytes) = 9 bytes of grade nominally, but C++ aggregate
-// alignment on the AffinityMask (8-byte aligned uint64_t) forces
-// the placement_t to 16 bytes (1 byte + 7 padding + 8 bytes).
+// = (1 byte, kWords*8 = 32 bytes for kWords=4) = 33 bytes of grade
+// nominally, but C++ aggregate alignment on the AffinityMask
+// (8-byte-aligned array<uint64_t, kWords>) forces the placement_t
+// to 40 bytes (1 byte + 7 padding + 32 bytes).
+//
+// Total layout for T=uint64_t (8-byte aligned):
+//   value (8) + grade (40) = 48 bytes flat.
 namespace detail::numa_placement_layout {
 
-static_assert(sizeof(NumaPlacement<int>)       >= sizeof(int)    + 9);
-static_assert(sizeof(NumaPlacement<double>)    >= sizeof(double) + 9);
-static_assert(sizeof(NumaPlacement<char>)      >= sizeof(char)   + 9);
+constexpr std::size_t kAffinityBytes = AffinityMask::kWords * sizeof(std::uint64_t);
+constexpr std::size_t kPlacementBytes = 8 + kAffinityBytes;  // 1 byte + 7 pad + N words
 
-// For T=uint64_t with 8-byte alignment requirements:
-//   value (8) + alignment-padded grade (16) = 24 bytes.
-static_assert(sizeof(NumaPlacement<std::uint64_t>) == 24,
-    "NumaPlacement<uint64_t>: expected 8(value) + 16(aligned grade) "
-    "= 24 bytes.  If this fires, the ProductLattice element_type "
-    "alignment drifted — investigate before merging.");
+static_assert(sizeof(NumaPlacement<int>)       >= sizeof(int)    + kAffinityBytes + 1);
+static_assert(sizeof(NumaPlacement<double>)    >= sizeof(double) + kAffinityBytes + 1);
+static_assert(sizeof(NumaPlacement<char>)      >= sizeof(char)   + kAffinityBytes + 1);
+
+// For T=uint64_t with 8-byte alignment:
+//   value (8) + grade (1+7pad+kAffinityBytes) = 8 + 8 + kAffinityBytes
+static_assert(sizeof(NumaPlacement<std::uint64_t>) == 8 + kPlacementBytes,
+    "NumaPlacement<uint64_t>: layout drifted from value(8) + "
+    "aligned-grade(8 + AffinityMask::kWords*8) — investigate.  "
+    "Bumping AffinityMask::kWords requires updating this assertion.");
 
 }  // namespace detail::numa_placement_layout
 
