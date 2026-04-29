@@ -1065,6 +1065,34 @@ crucible_neg_compile_test(neg_hot_path_at_cross_tier_mixing
 crucible_neg_compile_test(neg_hot_path_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FOUND-G26 Wait wrapper neg-compiles (6 fixtures: 4+2) ──────────
+#
+# 4 wrapper-surface fixtures (mirrors HotPath / DetSafe pattern):
+#   - neg_wait_relax_to_stronger    LOAD-BEARING admission rejection
+#   - neg_wait_cross_strategy_assign      assignment-surface identity
+#   - neg_wait_cross_strategy_swap        swap-surface identity
+#   - neg_wait_cross_strategy_equality    operator==-surface identity
+#
+# 2 lattice-substrate fixtures:
+#   - neg_wait_at_cross_strategy_mixing       At<S> nested-struct identity
+#   - neg_wait_lattice_cross_lattice_mixing   WaitStrategy ≠ HotPathTier
+#
+# Together these fence the wait-strategy discipline at all FOUR
+# surfaces the dispatcher's hot-path waiter admission gate (per
+# 28_04 §6.4 + the canonical wrapper-nesting from §4.7) depends on.
+crucible_neg_compile_test(neg_wait_relax_to_stronger
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_wait_cross_strategy_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_wait_cross_strategy_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_wait_cross_strategy_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_wait_at_cross_strategy_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_wait_lattice_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's

@@ -53,6 +53,7 @@
 #include <crucible/algebra/lattices/StalenessSemiring.h>
 #include <crucible/algebra/lattices/ToleranceLattice.h>
 #include <crucible/algebra/lattices/TrustLattice.h>
+#include <crucible/algebra/lattices/WaitLattice.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -163,6 +164,10 @@ void test_hot_path_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::hot_path_lattice_self_test::runtime_smoke_test();
 }
 
+void test_wait_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::wait_lattice_self_test::runtime_smoke_test();
+}
+
 }  // namespace
 
 int main() {
@@ -197,6 +202,8 @@ int main() {
              test_det_safe_lattice_runtime_smoke);
     run_test("test_hot_path_lattice_runtime_smoke",
              test_hot_path_lattice_runtime_smoke);
+    run_test("test_wait_lattice_runtime_smoke",
+             test_wait_lattice_runtime_smoke);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

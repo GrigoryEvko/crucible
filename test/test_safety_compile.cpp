@@ -58,6 +58,7 @@
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/TimeOrdered.h>
+#include <crucible/safety/Wait.h>
 #include <crucible/safety/Workload.h>
 
 #include <cstdio>
@@ -126,6 +127,9 @@ void test_tagged_compile()          {}
 void test_time_ordered_compile()    {
     ::crucible::safety::detail::time_ordered_self_test::runtime_smoke_test();
 }
+void test_wait_compile()            {
+    ::crucible::safety::detail::wait_self_test::runtime_smoke_test();
+}
 void test_workload_compile()        {}
 
 }  // namespace
@@ -155,6 +159,7 @@ int main() {
     run_test("test_stale_compile",           test_stale_compile);
     run_test("test_tagged_compile",          test_tagged_compile);
     run_test("test_time_ordered_compile",    test_time_ordered_compile);
+    run_test("test_wait_compile",            test_wait_compile);
     run_test("test_workload_compile",        test_workload_compile);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
