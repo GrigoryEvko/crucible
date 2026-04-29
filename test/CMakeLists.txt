@@ -1191,6 +1191,11 @@ crucible_neg_compile_test(neg_alloc_class_lattice_cross_lattice_mixing
 crucible_neg_compile_test(neg_signature_traits_param_index_overflow
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# Boundary case: param_type_t<&nullary, 0> on arity-0 function.  Off-
+# by-one in the requires clause would slip through here.
+crucible_neg_compile_test(neg_signature_traits_param_index_on_nullary
+  "constraints not satisfied|template constraint failure|associated constraints")
+
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
 #
 # Pins the CipherTier wrapper's tier-pin discipline AND the underlying

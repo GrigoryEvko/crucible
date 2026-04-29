@@ -110,6 +110,37 @@
 namespace crucible::safety::extract {
 
 // ═════════════════════════════════════════════════════════════════════
+// ── detail: noexcept-ness via partial specialization ───────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Reflection in libstdc++ 16 does not (yet) expose a
+// `std::meta::is_noexcept(function_reflection)` query, so the
+// canonical type-trait pattern is used.  Specializes on the function
+// *type* (not pointer) — strip the pointer at the call site.
+
+namespace detail {
+
+template <typename F>
+struct is_noexcept_function : std::false_type {};
+
+// noexcept-qualified function types — every parameter pack arity.
+// The two specializations cover the entire matrix because the
+// function type is either noexcept or not; ref-qualifiers and
+// cv-qualifiers do not apply to free functions.
+
+template <typename R, typename... Args>
+struct is_noexcept_function<R(Args...) noexcept> : std::true_type {};
+
+template <typename R, typename... Args>
+struct is_noexcept_function<R(Args...)> : std::false_type {};
+
+template <typename F>
+inline constexpr bool is_noexcept_function_v =
+    is_noexcept_function<F>::value;
+
+}  // namespace detail
+
+// ═════════════════════════════════════════════════════════════════════
 // ── signature_traits<auto FnPtr> ───────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
@@ -145,6 +176,20 @@ struct signature_traits {
     // Return type — `void` is fully supported.
     using return_type =
         typename [:std::meta::return_type_of(function_reflection):];
+
+    // The bare function type (not the pointer).  Useful for
+    // `std::is_invocable`-style checks where the consumer wants the
+    // call-shape rather than the pointer kind.
+    using function_type =
+        typename [:^^std::remove_pointer_t<decltype(FnPtr)>:];
+
+    // noexcept-ness of the function — extracted via partial
+    // specialization on the function type.  Reflection's
+    // `is_noexcept` query is not yet shipped in libstdc++ 16, so the
+    // canonical type-trait pattern is used; the function_type is
+    // already in hand from above.
+    static constexpr bool is_noexcept =
+        detail::is_noexcept_function_v<function_type>;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -159,7 +204,13 @@ template <auto FnPtr>
 using return_type_t = typename signature_traits<FnPtr>::return_type;
 
 template <auto FnPtr>
+using function_type_t = typename signature_traits<FnPtr>::function_type;
+
+template <auto FnPtr>
 inline constexpr std::size_t arity_v = signature_traits<FnPtr>::arity;
+
+template <auto FnPtr>
+inline constexpr bool is_noexcept_v = signature_traits<FnPtr>::is_noexcept;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block — invariants asserted at header inclusion ──────
@@ -264,6 +315,64 @@ static_assert(arity_v<&witness_alpha> == arity_v<&witness_beta>);
 static_assert(std::is_same_v<
     param_type_t<&witness_alpha, 0>,
     param_type_t<&witness_beta, 0>>);
+
+// ── noexcept detection ────────────────────────────────────────────
+
+inline void witness_throwing(int)               { /* may throw */ }
+inline void witness_nothrowing(int) noexcept    {}
+
+static_assert(is_noexcept_v<&witness_nothrowing>);
+static_assert(!is_noexcept_v<&witness_throwing>);
+
+// witness_unary_int and witness_nullary above are noexcept; verify
+// that propagates through both the member and free-alias forms.
+static_assert(signature_traits<&witness_unary_int>::is_noexcept);
+static_assert(is_noexcept_v<&witness_unary_int>);
+static_assert(is_noexcept_v<&witness_nullary>);
+
+// ── function_type extraction (bare function type, not pointer) ────
+
+static_assert(std::is_same_v<
+    function_type_t<&witness_unary_int>, void(int) noexcept>);
+static_assert(std::is_same_v<
+    function_type_t<&witness_throwing>, void(int)>);
+static_assert(std::is_same_v<
+    function_type_t<&witness_nullary>, void() noexcept>);
+static_assert(std::is_same_v<
+    function_type_t<&witness_int_returning>, int() noexcept>);
+
+// ── Higher arity (4+ args) — confirms params indexing is not
+//     special-cased to small arities.  ───────────────────────────
+
+inline void witness_quaternary(int, double, char, float)
+    noexcept {}
+inline void witness_quinary(int, double, char, float, long)
+    noexcept {}
+
+static_assert(arity_v<&witness_quaternary> == 4);
+static_assert(arity_v<&witness_quinary> == 5);
+static_assert(std::is_same_v<
+    param_type_t<&witness_quaternary, 3>, float>);
+static_assert(std::is_same_v<
+    param_type_t<&witness_quinary, 4>, long>);
+
+// ── Array-decay parameters — `int[5]` decays to `int*` per the C
+//     adjusted-parameter-type rule. ─────────────────────────────
+
+inline void witness_array_decay(int[5]) noexcept {}
+
+static_assert(arity_v<&witness_array_decay> == 1);
+static_assert(std::is_same_v<
+    param_type_t<&witness_array_decay, 0>, int*>);
+
+// ── Function-decay parameters — `int()` decays to `int(*)()` per
+//     the C adjusted-parameter-type rule. ───────────────────────
+
+inline void witness_function_decay(int()) noexcept {}
+
+static_assert(arity_v<&witness_function_decay> == 1);
+static_assert(std::is_same_v<
+    param_type_t<&witness_function_decay, 0>, int(*)()>);
 
 }  // namespace detail::signature_traits_self_test
 

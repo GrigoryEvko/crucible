@@ -54,6 +54,26 @@ inline void sigt_unary_user_cref(SigtUserType const&) noexcept {}
 inline void sigt_alpha_int(int) noexcept {}
 inline void sigt_beta_int(int)  noexcept {}
 
+// noexcept witnesses
+inline void sigt_throwing(int)            { /* may throw */ }
+inline void sigt_nothrowing(int) noexcept {}
+
+// Higher arity (4+) — covers params indexing past the small-arity cases.
+inline void sigt_quaternary(int, double, char, float)
+    noexcept {}
+inline void sigt_quinary(int, double, char, float, long)
+    noexcept {}
+
+// Array decay: `int[5]` parameter decays to `int*`.
+inline void sigt_array_decay(int[5]) noexcept {}
+
+// Function decay: `int()` parameter decays to `int(*)()`.
+inline void sigt_function_decay(int()) noexcept {}
+
+// Function-pointer typedef — exercises the trait through an alias.
+using sigt_callback_t = void(int) noexcept;
+inline void sigt_callback_witness(int) noexcept {}  // matches sigt_callback_t
+
 namespace {
 
 struct TestFailure {};
@@ -182,6 +202,88 @@ void test_distinct_pointers_same_signature_parity() {
         extract::return_type_t<&::sigt_beta_int>>);
 }
 
+void test_noexcept_detection() {
+    // Direct claims.
+    static_assert(extract::is_noexcept_v<&::sigt_nothrowing>);
+    static_assert(!extract::is_noexcept_v<&::sigt_throwing>);
+
+    // Member-form parity.
+    static_assert(extract::signature_traits<&::sigt_nothrowing>::is_noexcept);
+    static_assert(!extract::signature_traits<&::sigt_throwing>::is_noexcept);
+
+    // The other witnesses are all noexcept (defined above) — confirm.
+    static_assert(extract::is_noexcept_v<&::sigt_unary_int>);
+    static_assert(extract::is_noexcept_v<&::sigt_binary>);
+    static_assert(extract::is_noexcept_v<&::sigt_quaternary>);
+}
+
+void test_function_type_extraction() {
+    static_assert(std::is_same_v<
+        extract::function_type_t<&::sigt_unary_int>,
+        void(int) noexcept>);
+    static_assert(std::is_same_v<
+        extract::function_type_t<&::sigt_throwing>,
+        void(int)>);
+    static_assert(std::is_same_v<
+        extract::function_type_t<&::sigt_nullary>,
+        void() noexcept>);
+    static_assert(std::is_same_v<
+        extract::function_type_t<&::sigt_int_returning>,
+        int() noexcept>);
+
+    // function_type matches the typedef-form parity for the callback.
+    static_assert(std::is_same_v<
+        extract::function_type_t<&::sigt_callback_witness>,
+        sigt_callback_t>);
+}
+
+void test_higher_arity() {
+    static_assert(extract::arity_v<&::sigt_quaternary> == 4);
+    static_assert(extract::arity_v<&::sigt_quinary> == 5);
+
+    static_assert(std::is_same_v<
+        extract::param_type_t<&::sigt_quaternary, 0>, int>);
+    static_assert(std::is_same_v<
+        extract::param_type_t<&::sigt_quaternary, 1>, double>);
+    static_assert(std::is_same_v<
+        extract::param_type_t<&::sigt_quaternary, 2>, char>);
+    static_assert(std::is_same_v<
+        extract::param_type_t<&::sigt_quaternary, 3>, float>);
+
+    static_assert(std::is_same_v<
+        extract::param_type_t<&::sigt_quinary, 4>, long>);
+
+    EXPECT_EQ(extract::arity_v<&::sigt_quaternary>, 4u);
+    EXPECT_EQ(extract::arity_v<&::sigt_quinary>, 5u);
+}
+
+void test_array_decay() {
+    // `int[5]` parameter decays to `int*` — the trait reports the
+    // post-decay (adjusted) parameter type.
+    static_assert(extract::arity_v<&::sigt_array_decay> == 1);
+    static_assert(std::is_same_v<
+        extract::param_type_t<&::sigt_array_decay, 0>, int*>);
+}
+
+void test_function_decay() {
+    // `int()` parameter decays to `int(*)()`.
+    static_assert(extract::arity_v<&::sigt_function_decay> == 1);
+    static_assert(std::is_same_v<
+        extract::param_type_t<&::sigt_function_decay, 0>, int(*)()>);
+}
+
+void test_callback_typedef() {
+    // The trait resolves through a function-pointer typedef.  Confirm
+    // it produces the same arity / param / return as a direct
+    // signature with matching shape.
+    static_assert(extract::arity_v<&::sigt_callback_witness> == 1);
+    static_assert(std::is_same_v<
+        extract::param_type_t<&::sigt_callback_witness, 0>, int>);
+    static_assert(std::is_same_v<
+        extract::return_type_t<&::sigt_callback_witness>, void>);
+    static_assert(extract::is_noexcept_v<&::sigt_callback_witness>);
+}
+
 void test_runtime_consistency() {
     // Volatile-bounded loop: arity is bit-stable across calls.
     volatile std::size_t const cap = 100;
@@ -216,6 +318,12 @@ int main() {
     run_test("test_param_type_multi_argument_ordering",       test_param_type_multi_argument_ordering);
     run_test("test_return_type",                              test_return_type);
     run_test("test_distinct_pointers_same_signature_parity",  test_distinct_pointers_same_signature_parity);
+    run_test("test_noexcept_detection",                       test_noexcept_detection);
+    run_test("test_function_type_extraction",                 test_function_type_extraction);
+    run_test("test_higher_arity",                             test_higher_arity);
+    run_test("test_array_decay",                              test_array_decay);
+    run_test("test_function_decay",                           test_function_decay);
+    run_test("test_callback_typedef",                         test_callback_typedef);
     run_test("test_runtime_consistency",                      test_runtime_consistency);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);
