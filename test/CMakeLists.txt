@@ -1154,6 +1154,33 @@ crucible_neg_compile_test(neg_progress_at_cross_class_mixing
 crucible_neg_compile_test(neg_progress_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FOUND-G41 AllocClass wrapper neg-compiles (6 fixtures: 4+2) ────
+#
+# SIXTH chain wrapper (first of Month-2 second-pass).  Type-fences
+# CLAUDE.md §VIII no-malloc-on-hot-path discipline at every call site.
+#
+# 4 wrapper-surface fixtures:
+#   - neg_alloc_class_relax_to_stronger    LOAD-BEARING no-malloc fence
+#   - neg_alloc_class_cross_tag_assign     assignment-surface identity
+#   - neg_alloc_class_cross_tag_swap       swap-surface identity
+#   - neg_alloc_class_cross_tag_equality   operator==-surface identity
+#
+# 2 lattice-substrate fixtures:
+#   - neg_alloc_class_at_cross_tag_mixing       At<T> nested-struct identity
+#   - neg_alloc_class_lattice_cross_lattice_mixing  AllocClassTag ≠ ProgressClass
+crucible_neg_compile_test(neg_alloc_class_relax_to_stronger
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_alloc_class_cross_tag_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_alloc_class_cross_tag_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_alloc_class_cross_tag_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_alloc_class_at_cross_tag_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_alloc_class_lattice_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's

@@ -58,6 +58,7 @@
 // granularity Crucible needs.
 
 // ── Shipped lattices ────────────────────────────────────────────────
+#include <crucible/algebra/lattices/AllocClassLattice.h> // FOUND-G38  — shipped
 #include <crucible/algebra/lattices/BoolLattice.h>       // ALGEBRA-5  (#450) — shipped
 #include <crucible/algebra/lattices/ConfLattice.h>       // ALGEBRA-6  (#451) — shipped
 #include <crucible/algebra/lattices/ConsistencyLattice.h>// ALGEBRA-14 (#459) — shipped (2/3)

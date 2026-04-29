@@ -37,6 +37,7 @@
 
 #include <crucible/algebra/GradedTrait.h>
 #include <crucible/permissions/Permission.h>
+#include <crucible/safety/AllocClass.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/HotPath.h>
@@ -170,6 +171,14 @@ static_assert(sizeof(Progress<ProgressClass_v::Productive, double>) == sizeof(do
 static_assert(sizeof(Progress<ProgressClass_v::MayDiverge, long long>)
                                                                      == sizeof(long long));
 
+// AllocClass<Tag, T> — regime-1 EBO collapse via AllocClassLattice::
+// At<Tag> singleton sub-lattice (FOUND-G39).  Type-fences CLAUDE.md
+// §VIII no-malloc-on-hot-path discipline.
+static_assert(sizeof(AllocClass<AllocClassTag_v::Stack,    int>)    == sizeof(int));
+static_assert(sizeof(AllocClass<AllocClassTag_v::Arena,    double>) == sizeof(double));
+static_assert(sizeof(AllocClass<AllocClassTag_v::HugePage, long long>)
+                                                                     == sizeof(long long));
+
 // Monotonic<T, std::less<T>> collapses value+grade into one T cell
 // via Graded's specialization for `T == element_type`.
 static_assert(sizeof(Monotonic<std::uint32_t>)      == sizeof(std::uint32_t));
@@ -203,6 +212,7 @@ static_assert(HotPath<HotPathTier_v::Hot, int>::value_type_name().ends_with("int
 static_assert(Wait<WaitStrategy_v::SpinPause, int>::value_type_name().ends_with("int"));
 static_assert(MemOrder<MemOrderTag_v::Relaxed, int>::value_type_name().ends_with("int"));
 static_assert(Progress<ProgressClass_v::Bounded, int>::value_type_name().ends_with("int"));
+static_assert(AllocClass<AllocClassTag_v::Stack, int>::value_type_name().ends_with("int"));
 static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
            || Monotonic<std::uint64_t>::value_type_name().ends_with("long unsigned int"));
 static_assert(Stale<int>::value_type_name().ends_with("int"));
@@ -234,6 +244,7 @@ static_assert(!std::is_void_v<typename HotPath<HotPathTier_v::Hot, int>::graded_
 static_assert(!std::is_void_v<typename Wait<WaitStrategy_v::SpinPause, int>::graded_type>);
 static_assert(!std::is_void_v<typename MemOrder<MemOrderTag_v::Relaxed, int>::graded_type>);
 static_assert(!std::is_void_v<typename Progress<ProgressClass_v::Bounded, int>::graded_type>);
+static_assert(!std::is_void_v<typename AllocClass<AllocClassTag_v::Stack, int>::graded_type>);
 static_assert(!std::is_void_v<typename Monotonic<std::uint64_t>::graded_type>);
 static_assert(!std::is_void_v<typename AppendOnly<int>::graded_type>);
 static_assert(!std::is_void_v<typename Stale<int>::graded_type>);
@@ -280,6 +291,9 @@ static_assert(GradedWrapper<MemOrder<MemOrderTag_v::SeqCst,  long long>>);
 static_assert(GradedWrapper<Progress<ProgressClass_v::Bounded,     int>>);
 static_assert(GradedWrapper<Progress<ProgressClass_v::Productive,  double>>);
 static_assert(GradedWrapper<Progress<ProgressClass_v::MayDiverge,  long long>>);
+static_assert(GradedWrapper<AllocClass<AllocClassTag_v::Stack,    int>>);
+static_assert(GradedWrapper<AllocClass<AllocClassTag_v::Arena,    double>>);
+static_assert(GradedWrapper<AllocClass<AllocClassTag_v::HugePage, long long>>);
 static_assert(GradedWrapper<Monotonic<std::uint64_t>>);
 static_assert(GradedWrapper<AppendOnly<int>>);
 static_assert(GradedWrapper<Stale<int>>);
@@ -340,6 +354,9 @@ static_assert(forwarders_actually_forward<MemOrder<MemOrderTag_v::SeqCst,  long 
 static_assert(forwarders_actually_forward<Progress<ProgressClass_v::Bounded,    int>>());
 static_assert(forwarders_actually_forward<Progress<ProgressClass_v::Productive, double>>());
 static_assert(forwarders_actually_forward<Progress<ProgressClass_v::MayDiverge, long long>>());
+static_assert(forwarders_actually_forward<AllocClass<AllocClassTag_v::Stack,    int>>());
+static_assert(forwarders_actually_forward<AllocClass<AllocClassTag_v::Arena,    double>>());
+static_assert(forwarders_actually_forward<AllocClass<AllocClassTag_v::HugePage, long long>>());
 static_assert(forwarders_actually_forward<Monotonic<std::uint64_t>>());
 static_assert(forwarders_actually_forward<AppendOnly<int>>());
 static_assert(forwarders_actually_forward<Stale<int>>());
@@ -412,6 +429,12 @@ static_assert(Progress<ProgressClass_v::Productive, double>::lattice_name()
                                                  == "ProgressLattice::At<Productive>");
 static_assert(Progress<ProgressClass_v::MayDiverge, long long>::lattice_name()
                                                  == "ProgressLattice::At<MayDiverge>");
+static_assert(AllocClass<AllocClassTag_v::Stack,    int>::lattice_name()
+                                                 == "AllocClassLattice::At<Stack>");
+static_assert(AllocClass<AllocClassTag_v::Arena,    double>::lattice_name()
+                                                 == "AllocClassLattice::At<Arena>");
+static_assert(AllocClass<AllocClassTag_v::HugePage, long long>::lattice_name()
+                                                 == "AllocClassLattice::At<HugePage>");
 static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");
 static_assert(AppendOnly<int>::lattice_name()   == "SeqPrefixLattice");
 static_assert(Stale<int>::lattice_name()        == "StalenessSemiring");
@@ -881,6 +904,50 @@ using StaleOverProgress =
 static_assert(sizeof(StaleOverProgress) == sizeof(Stale<int>));
 static_assert(GradedWrapper<StaleOverProgress>);
 
+// ── AllocClass<Tag, T> ⊕ {HotPath, Wait, Tagged, Linear, Stale} ──
+//
+// THE LOAD-BEARING TRIPLE — HotPath ⊃ Wait ⊃ AllocClass.  The
+// canonical foreground hot-path stack-only allocator caller per
+// CLAUDE.md §VIII (no malloc on hot path).
+using HotOverWaitOverAllocClass =
+    HotPath<HotPathTier_v::Hot,
+            Wait<WaitStrategy_v::SpinPause,
+                 AllocClass<AllocClassTag_v::Stack, int>>>;
+static_assert(sizeof(HotOverWaitOverAllocClass) == sizeof(int));
+static_assert(GradedWrapper<HotOverWaitOverAllocClass>);
+
+// AllocClass<Arena, DetSafe<Pure, T>> — arena-allocated AND replay-
+// deterministic.  Production: Arena::alloc_obj returning a Philox-
+// derived index.
+using AllocClassOverDetSafe =
+    AllocClass<AllocClassTag_v::Arena,
+               DetSafe<DetSafeTier_v::Pure, int>>;
+static_assert(sizeof(AllocClassOverDetSafe) == sizeof(int));
+static_assert(GradedWrapper<AllocClassOverDetSafe>);
+
+// Tagged<AllocClass<Stack, T>, Source> — provenance over allocator.
+using TaggedAllocClass =
+    Tagged<AllocClass<AllocClassTag_v::Stack, int>, VerificationTag>;
+static_assert(sizeof(TaggedAllocClass) == sizeof(int));
+
+// AllocClass<Arena, Linear<T>> — arena-allocated linear handle.
+using AllocClassOverLinear =
+    AllocClass<AllocClassTag_v::Arena, Linear<int>>;
+static_assert(sizeof(AllocClassOverLinear) == sizeof(int));
+static_assert(!std::is_copy_constructible_v<AllocClassOverLinear>);
+static_assert(std::is_move_constructible_v<AllocClassOverLinear>);
+
+// REGIME-1 ⊃ REGIME-4 cells.
+using AllocClassOverStale =
+    AllocClass<AllocClassTag_v::Arena, Stale<int>>;
+static_assert(sizeof(AllocClassOverStale) == sizeof(Stale<int>));
+static_assert(GradedWrapper<AllocClassOverStale>);
+
+using StaleOverAllocClass =
+    Stale<AllocClass<AllocClassTag_v::Arena, int>>;
+static_assert(sizeof(StaleOverAllocClass) == sizeof(Stale<int>));
+static_assert(GradedWrapper<StaleOverAllocClass>);
+
 // QUADRUPLE-NESTED witness — extends the TRIPLE story to FOUR
 // distinct lattices.  Production: a fleet-replicated, strongly-
 // consistent, bit-exact, Pure-determinism-safe parameter shard.
@@ -987,6 +1054,30 @@ static_assert(sizeof(OctupleNested) == sizeof(int),
     "fires, one of the eight wrapper layers stopped using the EBO-"
     "friendly Graded substrate.");
 static_assert(GradedWrapper<OctupleNested>);
+
+// NONUPLE-NESTED witness — adds AllocClass as the NINTH lattice.
+// Production: a foreground-hot-path, spin-only-waiter, AcqRel-
+// atomic-only, stack-allocated, fleet-replicated, strongly-
+// consistent, bit-exact, Pure-determinism-safe, wall-clock-bounded
+// value.  NINE regime-1 wrappers over NINE DISTINCT lattices.
+// Maximum-depth universal-vocabulary claim post-AllocClass ship.
+using NonupleNested =
+    HotPath<HotPathTier_v::Hot,
+            Wait<WaitStrategy_v::SpinPause,
+                 MemOrder<MemOrderTag_v::AcqRel,
+                          AllocClass<AllocClassTag_v::Stack,
+                                     Progress<ProgressClass_v::Bounded,
+                                              OpaqueLifetime<Lifetime_v::PER_FLEET,
+                                                             Consistency<Consistency_v::STRONG,
+                                                                         DetSafe<DetSafeTier_v::Pure,
+                                                                                 NumericalTier<Tolerance::BITEXACT, int>>>>>>>>>;
+static_assert(sizeof(NonupleNested) == sizeof(int),
+    "NONUPLE-nested HotPath<Wait<MemOrder<AllocClass<Progress<"
+    "OpaqueLifetime<Consistency<DetSafe<NumericalTier<T>>>>>>>>> "
+    "must EBO-collapse to sizeof(T) — NINE regime-1 wrappers over "
+    "NINE DISTINCT lattices.  If this fires, one of the nine "
+    "wrapper layers stopped using the EBO-friendly Graded substrate.");
+static_assert(GradedWrapper<NonupleNested>);
 
 // ── COVERAGE MATRIX — runtime API parity (smoke checks) ────────────
 //

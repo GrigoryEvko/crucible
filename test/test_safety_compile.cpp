@@ -36,6 +36,7 @@
 //   authoritative behavioral coverage.
 // ═══════════════════════════════════════════════════════════════════
 
+#include <crucible/safety/AllocClass.h>
 #include <crucible/safety/Checked.h>
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/Consistency.h>
@@ -93,6 +94,9 @@ void run_test(const char* name, F&& body) {
 // proves the include was processed under the test target's full
 // warning matrix without the embedded asserts firing.
 
+void test_alloc_class_compile()     {
+    ::crucible::safety::detail::alloc_class_self_test::runtime_smoke_test();
+}
 void test_checked_compile()         {}
 void test_constant_time_compile()   {}
 void test_consistency_compile()     {
@@ -145,6 +149,7 @@ void test_workload_compile()        {}
 int main() {
     std::fprintf(stderr, "test_safety_compile:\n");
 
+    run_test("test_alloc_class_compile",     test_alloc_class_compile);
     run_test("test_checked_compile",         test_checked_compile);
     run_test("test_constant_time_compile",   test_constant_time_compile);
     run_test("test_consistency_compile",     test_consistency_compile);

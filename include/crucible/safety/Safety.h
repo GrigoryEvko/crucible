@@ -42,6 +42,7 @@
 //   Wait<Strategy, T>        Graded<Absolute,    WaitLattice::At<Strategy>, T>      1
 //   MemOrder<Tag, T>         Graded<Absolute,    MemOrderLattice::At<Tag>, T>       1
 //   Progress<Class, T>       Graded<Absolute,    ProgressLattice::At<Class>, T>     1
+//   AllocClass<Tag, T>       Graded<Absolute,    AllocClassLattice::At<Tag>, T>     1
 //   Monotonic<T, Cmp>        Graded<Absolute,    MonotoneLattice<T,Cmp>, T>         2
 //   AppendOnly<T, Storage>   Graded<Absolute,    SeqPrefixLattice<T>,   Storage<T>>  3
 //   Stale<T>                 Graded<Absolute,    StalenessSemiring,     T>          4
@@ -140,6 +141,7 @@
 // retrofit the existing one.  The non-graded wrappers' callers
 // depend on the bare shape.
 
+#include <crucible/safety/AllocClass.h>
 #include <crucible/safety/Checked.h>
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/Consistency.h>
