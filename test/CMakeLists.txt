@@ -1433,6 +1433,19 @@ crucible_neg_compile_test(neg_numa_placement_axis_swap
 crucible_neg_compile_test(neg_numa_placement_admits_axis_swap
   "no match for|cannot convert|could not convert|no matching function")
 
+# ─── FOUND-G71 AffinityMask UB-fence neg-compile ─────────────────────
+#
+# Pins the contract guard on AffinityMask::single() that prevents UB
+# shifting uint64_t by ≥ 64 (or ≥ kBits = 256 for the multi-word
+# implementation).  THE FIRST CONTRACT-VIOLATION NEG-FIXTURE in the
+# wrapper family.
+#
+# Diagnostic comes from GCC's contract-pre-clause reporting; the
+# regex matches the most stable substring across G16 contract
+# implementations: "contract" + the failing clause's textual form.
+crucible_neg_compile_test(neg_affinity_mask_core_out_of_bounds
+  "contract|pre.*core|condition.*kMaxCore|core <= kMaxCore|in.*constant.*expression")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's
