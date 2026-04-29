@@ -1405,6 +1405,34 @@ crucible_neg_compile_test(neg_epoch_versioned_axis_swap
 crucible_neg_compile_test(neg_epoch_versioned_is_at_least_axis_swap
   "no match for|cannot convert|could not convert|no matching function")
 
+# ─── FOUND-G71/G72 NumaPlacement product-wrapper neg-compile fixtures ──
+#
+# Pins NumaPlacement<T>'s product-wrapper axis discipline.  Third
+# product-wrapper neg-fixture block; mirrors Budgeted/EpochVersioned.
+# Distinctive in that the two axes are STRUCTURALLY DIFFERENT (1-byte
+# enum vs 8-byte struct), so axis-swap is doubly-defended at the
+# C++ type-system level.
+#
+# 3 wrapper-surface fixtures (cross-T identity):
+#   - neg_numa_placement_cross_t_assign     assignment-surface identity
+#   - neg_numa_placement_cross_t_swap       swap-surface identity
+#   - neg_numa_placement_cross_t_equality   operator==-surface identity
+#
+# 2 wrapper-surface fixtures (cross-axis identity — load-bearing):
+#   - neg_numa_placement_axis_swap          ctor parameter-type fence
+#   - neg_numa_placement_admits_axis_swap   admission-gate parameter-
+#                                            type fence
+crucible_neg_compile_test(neg_numa_placement_cross_t_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_numa_placement_cross_t_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_numa_placement_cross_t_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_numa_placement_axis_swap
+  "no match for|cannot convert|could not convert|no matching function")
+crucible_neg_compile_test(neg_numa_placement_admits_axis_swap
+  "no match for|cannot convert|could not convert|no matching function")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's

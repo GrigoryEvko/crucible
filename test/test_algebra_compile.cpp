@@ -38,6 +38,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
 #include <crucible/algebra/Modality.h>
+#include <crucible/algebra/lattices/AffinityLattice.h>
 #include <crucible/algebra/lattices/AllLattices.h>
 #include <crucible/algebra/lattices/AllocClassLattice.h>
 #include <crucible/algebra/lattices/BitsBudgetLattice.h>
@@ -54,6 +55,7 @@
 #include <crucible/algebra/lattices/LifetimeLattice.h>
 #include <crucible/algebra/lattices/MemOrderLattice.h>
 #include <crucible/algebra/lattices/MonotoneLattice.h>
+#include <crucible/algebra/lattices/NumaNodeLattice.h>
 #include <crucible/algebra/lattices/PeakBytesLattice.h>
 #include <crucible/algebra/lattices/ProductLattice.h>
 #include <crucible/algebra/lattices/ProgressLattice.h>
@@ -207,6 +209,14 @@ void test_generation_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::generation_lattice_self_test::runtime_smoke_test();
 }
 
+void test_numa_node_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::numa_node_lattice_self_test::runtime_smoke_test();
+}
+
+void test_affinity_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::affinity_lattice_self_test::runtime_smoke_test();
+}
+
 void test_cipher_tier_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::cipher_tier_lattice_self_test::runtime_smoke_test();
 }
@@ -273,6 +283,10 @@ int main() {
              test_epoch_lattice_runtime_smoke);
     run_test("test_generation_lattice_runtime_smoke",
              test_generation_lattice_runtime_smoke);
+    run_test("test_numa_node_lattice_runtime_smoke",
+             test_numa_node_lattice_runtime_smoke);
+    run_test("test_affinity_lattice_runtime_smoke",
+             test_affinity_lattice_runtime_smoke);
     run_test("test_cipher_tier_lattice_runtime_smoke",
              test_cipher_tier_lattice_runtime_smoke);
     run_test("test_residency_heat_lattice_runtime_smoke",

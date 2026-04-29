@@ -43,6 +43,7 @@
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/Crash.h>
 #include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/NumaPlacement.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Linear.h>
@@ -1480,6 +1481,45 @@ static_assert(GradedWrapper<BudgetedOverEpochVersioned>);
 static_assert(EpochVersioned<int>::lattice_name().size() > 0);
 static_assert(EpochVersioned<double>::value_type_name().ends_with("double"));
 
+// ── NumaPlacement<T> ⊕ {chain wrappers, sister product wrappers} ─
+//
+// THIRD product-lattice wrapper.  Composes a partial-order
+// (NumaNodeLattice) with a boolean lattice (AffinityLattice) — the
+// FIRST mixed-shape product wrapper to ship (Budgeted and
+// EpochVersioned both compose two chain lattices).
+
+// Crash<NoThrow, NumaPlacement<int>> — chain over product.
+using CrashOverNumaPlacement = Crash<CrashClass_v::NoThrow, NumaPlacement<int>>;
+static_assert(sizeof(CrashOverNumaPlacement) == sizeof(NumaPlacement<int>),
+    "Crash<NoThrow, NumaPlacement<T>> must EBO-collapse the Crash "
+    "grade only — the inner NumaPlacement carries its regime-4 grade "
+    "unchanged.");
+static_assert(GradedWrapper<CrashOverNumaPlacement>);
+
+// Tagged<NumaPlacement<int>, Source> — provenance over placement.
+using TaggedNumaPlacement = Tagged<NumaPlacement<int>, VerificationTag>;
+static_assert(sizeof(TaggedNumaPlacement) == sizeof(NumaPlacement<int>),
+    "Tagged<NumaPlacement<T>, Source> must EBO-collapse Tagged.");
+
+// THE THREE-PRODUCT-WRAPPER STACK — NumaPlacement ⊃ EpochVersioned
+// ⊃ Budgeted.  Production-shape: a fleet-versioned (Canopy reshard
+// epoch + Relay generation), footprint-tracked (bits + peak bytes),
+// NUMA-pinned (node + affinity) value.  All three regime-4 grades
+// stack additively because no two are byte-equivalent (no EBO).
+using TripleProductStack = NumaPlacement<EpochVersioned<Budgeted<int>>>;
+static_assert(sizeof(TripleProductStack)
+              >= sizeof(Budgeted<int>) + 16    // EpochVersioned grade
+                                       + 16,   // NumaPlacement grade
+    "Triple-product wrapper stack must carry all three regime-4 "
+    "grades — sole instance of three non-empty grades stacked.  "
+    "Total layout dominated by alignment padding between the "
+    "various uint64-aligned components.");
+static_assert(GradedWrapper<TripleProductStack>);
+
+// Cell-level diagnostic check.
+static_assert(NumaPlacement<int>::lattice_name().size() > 0);
+static_assert(NumaPlacement<double>::value_type_name().ends_with("double"));
+
 // ── 4-way uint64_t-axis disjointness witness ─────────────────────
 //
 // THE CANONICAL FAMILY-LEVEL FENCE.  Four uint64_t-backed strong
@@ -1507,6 +1547,35 @@ static_assert(!std::is_same_v<crucible::safety::PeakBytes,
                               crucible::safety::Epoch>);
 static_assert(!std::is_same_v<crucible::safety::PeakBytes,
                               crucible::safety::Generation>);
+
+// ── 5-axis uint64-backed disjointness extension — Affinity ───────
+//
+// AffinityMask joins BitsBudget / PeakBytes / Epoch / Generation
+// as the FIFTH uint64-backed strong newtype across the wrapper
+// family.  C(5,2) = 10 pairs total; the four already covered above,
+// plus four AffinityMask cross-pairs here (the fifth pair is
+// AffinityMask vs itself, vacuously equal).
+//
+// NumaNodeId is structurally distinct from all five (different
+// underlying type — uint8 enum vs uint64 struct — so the assertion
+// is defensive but ships for completeness.
+static_assert(!std::is_same_v<crucible::safety::AffinityMask,
+                              crucible::safety::BitsBudget>);
+static_assert(!std::is_same_v<crucible::safety::AffinityMask,
+                              crucible::safety::PeakBytes>);
+static_assert(!std::is_same_v<crucible::safety::AffinityMask,
+                              crucible::safety::Epoch>);
+static_assert(!std::is_same_v<crucible::safety::AffinityMask,
+                              crucible::safety::Generation>);
+
+// NumaNodeId is uint8_t-backed enum, structurally cannot collide
+// with any uint64_t-backed struct.  Belt-and-suspenders.
+static_assert(!std::is_same_v<crucible::safety::NumaNodeId,
+                              crucible::safety::AffinityMask>);
+static_assert(!std::is_same_v<crucible::safety::NumaNodeId,
+                              crucible::safety::BitsBudget>);
+static_assert(!std::is_same_v<crucible::safety::NumaNodeId,
+                              crucible::safety::Epoch>);
 
 // THE FOUR-AXIS QUADRUPLE — CipherTier ⊃ ResidencyHeat × HotPath.
 // Demonstrates that CipherTier (storage-residency) and
