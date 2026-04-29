@@ -1433,6 +1433,33 @@ crucible_neg_compile_test(neg_numa_placement_axis_swap
 crucible_neg_compile_test(neg_numa_placement_admits_axis_swap
   "no match for|cannot convert|could not convert|no matching function")
 
+# ─── FOUND-G75/G76 RecipeSpec product-wrapper neg-compile fixtures ───
+#
+# Pins RecipeSpec<T>'s product-wrapper axis discipline.  Fourth and
+# FINAL product-wrapper neg-fixture block.  Both axes are uint8_t
+# strong scoped enums — distinct C++ types, but the structural
+# similarity makes the axis-swap fence specifically valuable.
+#
+# 3 wrapper-surface fixtures (cross-T identity):
+#   - neg_recipe_spec_cross_t_assign     assignment-surface identity
+#   - neg_recipe_spec_cross_t_swap       swap-surface identity
+#   - neg_recipe_spec_cross_t_equality   operator==-surface identity
+#
+# 2 wrapper-surface fixtures (cross-axis identity — load-bearing):
+#   - neg_recipe_spec_axis_swap          ctor parameter-type fence
+#   - neg_recipe_spec_admits_axis_swap   admission-gate parameter-
+#                                         type fence
+crucible_neg_compile_test(neg_recipe_spec_cross_t_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_recipe_spec_cross_t_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_recipe_spec_cross_t_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_recipe_spec_axis_swap
+  "no match for|cannot convert|could not convert|no matching function")
+crucible_neg_compile_test(neg_recipe_spec_admits_axis_swap
+  "no match for|cannot convert|could not convert|no matching function")
+
 # ─── FOUND-G71 AffinityMask UB-fence neg-compile ─────────────────────
 #
 # Pins the contract guard on AffinityMask::single() that prevents UB

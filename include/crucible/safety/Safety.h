@@ -53,6 +53,8 @@
 //                                                  GenerationLattice>, T>           4 (per-instance two-uint64 grade)
 //   NumaPlacement<T>         Graded<Absolute,    ProductLattice<NumaNodeLattice,
 //                                                  AffinityLattice>, T>             4 (partial-order × boolean)
+//   RecipeSpec<T>            Graded<Absolute,    ProductLattice<ToleranceLattice,
+//                                                  RecipeFamilyLattice>, T>         4 (chain × partial-order)
 //   Monotonic<T, Cmp>        Graded<Absolute,    MonotoneLattice<T,Cmp>, T>         2
 //   AppendOnly<T, Storage>   Graded<Absolute,    SeqPrefixLattice<T>,   Storage<T>>  3
 //   Stale<T>                 Graded<Absolute,    StalenessSemiring,     T>          4
@@ -158,6 +160,7 @@
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/NumaPlacement.h>
+#include <crucible/safety/RecipeSpec.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/Crash.h>
 #include <crucible/safety/DetSafe.h>

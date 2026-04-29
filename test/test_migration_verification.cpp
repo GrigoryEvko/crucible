@@ -44,6 +44,7 @@
 #include <crucible/safety/Crash.h>
 #include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/NumaPlacement.h>
+#include <crucible/safety/RecipeSpec.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Linear.h>
@@ -1519,6 +1520,36 @@ static_assert(GradedWrapper<TripleProductStack>);
 // Cell-level diagnostic check.
 static_assert(NumaPlacement<int>::lattice_name().size() > 0);
 static_assert(NumaPlacement<double>::value_type_name().ends_with("double"));
+
+// ── RecipeSpec<T> ⊕ {chain wrappers, sister product wrappers} ───
+//
+// Fourth and FINAL product-lattice wrapper.  Composes a CHAIN
+// (ToleranceLattice) with a PARTIAL-ORDER (RecipeFamilyLattice) —
+// the second mixed-shape product wrapper after NumaPlacement.
+
+using CrashOverRecipeSpec = Crash<CrashClass_v::NoThrow, RecipeSpec<int>>;
+static_assert(sizeof(CrashOverRecipeSpec) == sizeof(RecipeSpec<int>),
+    "Crash<NoThrow, RecipeSpec<T>> must EBO-collapse the Crash grade.");
+static_assert(GradedWrapper<CrashOverRecipeSpec>);
+
+using TaggedRecipeSpec = Tagged<RecipeSpec<int>, VerificationTag>;
+static_assert(sizeof(TaggedRecipeSpec) == sizeof(RecipeSpec<int>));
+
+// THE FOUR-PRODUCT-WRAPPER STACK — RecipeSpec ⊃ NumaPlacement
+// ⊃ EpochVersioned ⊃ Budgeted.  Production-shape: a numerically-
+// pinned, fleet-versioned, footprint-tracked, NUMA-pinned value.
+// All FOUR regime-4 grades stack additively because no two share
+// byte-equivalent representations.
+using QuadProductStack =
+    RecipeSpec<NumaPlacement<EpochVersioned<Budgeted<int>>>>;
+static_assert(sizeof(QuadProductStack)
+              >= sizeof(Budgeted<int>) + 16 + 16,    // EV + NumaP + RecipeSpec
+    "Four-product wrapper stack must carry all four regime-4 grades.");
+static_assert(GradedWrapper<QuadProductStack>);
+
+// Cell-level diagnostic check.
+static_assert(RecipeSpec<int>::lattice_name().size() > 0);
+static_assert(RecipeSpec<double>::value_type_name().ends_with("double"));
 
 // ── 4-way uint64_t-axis disjointness witness ─────────────────────
 //

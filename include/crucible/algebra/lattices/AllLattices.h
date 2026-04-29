@@ -80,6 +80,7 @@
 #include <crucible/algebra/lattices/PeakBytesLattice.h>  // FOUND-G63  — shipped (2/2 Budgeted axes)
 #include <crucible/algebra/lattices/ProductLattice.h>    // ALGEBRA-15 (#460) — shipped
 #include <crucible/algebra/lattices/QttSemiring.h>       // ALGEBRA-4  (#449) — shipped
+#include <crucible/algebra/lattices/RecipeFamilyLattice.h> // FOUND-G75  — shipped (1/2 RecipeSpec axes)
 #include <crucible/algebra/lattices/ResidencyHeatLattice.h> // FOUND-G48  — shipped
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>  // ALGEBRA-10 (#455) — shipped
 #include <crucible/algebra/lattices/StalenessSemiring.h> // ALGEBRA-11 (#456) — shipped

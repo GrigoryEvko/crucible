@@ -57,6 +57,7 @@
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Progress.h>
+#include <crucible/safety/RecipeSpec.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
 #include <crucible/safety/Vendor.h>
@@ -127,6 +128,9 @@ void test_epoch_versioned_compile() {
 void test_numa_placement_compile() {
     ::crucible::safety::detail::numa_placement_self_test::runtime_smoke_test();
 }
+void test_recipe_spec_compile() {
+    ::crucible::safety::detail::recipe_spec_self_test::runtime_smoke_test();
+}
 void test_hot_path_compile()        {
     ::crucible::safety::detail::hot_path_self_test::runtime_smoke_test();
 }
@@ -187,6 +191,7 @@ int main() {
     run_test("test_det_safe_compile",        test_det_safe_compile);
     run_test("test_epoch_versioned_compile", test_epoch_versioned_compile);
     run_test("test_numa_placement_compile",  test_numa_placement_compile);
+    run_test("test_recipe_spec_compile",     test_recipe_spec_compile);
     run_test("test_hot_path_compile",        test_hot_path_compile);
     run_test("test_linear_compile",          test_linear_compile);
     run_test("test_machine_compile",         test_machine_compile);

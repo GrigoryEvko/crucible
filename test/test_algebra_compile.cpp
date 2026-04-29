@@ -60,6 +60,7 @@
 #include <crucible/algebra/lattices/ProductLattice.h>
 #include <crucible/algebra/lattices/ProgressLattice.h>
 #include <crucible/algebra/lattices/QttSemiring.h>
+#include <crucible/algebra/lattices/RecipeFamilyLattice.h>
 #include <crucible/algebra/lattices/ResidencyHeatLattice.h>
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>
 #include <crucible/algebra/lattices/StalenessSemiring.h>
@@ -217,6 +218,10 @@ void test_affinity_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::affinity_lattice_self_test::runtime_smoke_test();
 }
 
+void test_recipe_family_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::recipe_family_lattice_self_test::runtime_smoke_test();
+}
+
 void test_cipher_tier_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::cipher_tier_lattice_self_test::runtime_smoke_test();
 }
@@ -287,6 +292,8 @@ int main() {
              test_numa_node_lattice_runtime_smoke);
     run_test("test_affinity_lattice_runtime_smoke",
              test_affinity_lattice_runtime_smoke);
+    run_test("test_recipe_family_lattice_runtime_smoke",
+             test_recipe_family_lattice_runtime_smoke);
     run_test("test_cipher_tier_lattice_runtime_smoke",
              test_cipher_tier_lattice_runtime_smoke);
     run_test("test_residency_heat_lattice_runtime_smoke",
