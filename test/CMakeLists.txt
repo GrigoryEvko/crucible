@@ -1123,6 +1123,37 @@ crucible_neg_compile_test(neg_mem_order_at_cross_tag_mixing
 crucible_neg_compile_test(neg_mem_order_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FOUND-G36 Progress wrapper neg-compiles (6 fixtures: 4+2) ──────
+#
+# FIFTH and FINAL Month-2 chain wrapper.  Type-fences FORGE.md §5
+# wall-clock budgets at every Forge phase admission gate.
+#
+# 4 wrapper-surface fixtures:
+#   - neg_progress_relax_to_stronger    LOAD-BEARING Forge wall-clock fence
+#   - neg_progress_cross_class_assign   assignment-surface identity
+#   - neg_progress_cross_class_swap     swap-surface identity
+#   - neg_progress_cross_class_equality operator==-surface identity
+#
+# 2 lattice-substrate fixtures:
+#   - neg_progress_at_cross_class_mixing      At<T> nested-struct identity
+#   - neg_progress_lattice_cross_lattice_mixing  ProgressClass ≠ MemOrderTag
+#
+# Together these fence the termination-class discipline at all FOUR
+# surfaces the dispatcher's Forge phase admission gate (per
+# 28_04 §6.4 + FORGE.md §5) depends on.
+crucible_neg_compile_test(neg_progress_relax_to_stronger
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_progress_cross_class_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_progress_cross_class_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_progress_cross_class_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_progress_at_cross_class_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_progress_lattice_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's

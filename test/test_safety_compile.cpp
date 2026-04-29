@@ -50,6 +50,7 @@
 #include <crucible/safety/OpaqueLifetime.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Pinned.h>
+#include <crucible/safety/Progress.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Safety.h>
 #include <crucible/safety/ScopedView.h>
@@ -118,6 +119,9 @@ void test_opaque_lifetime_compile() {
 }
 void test_owned_region_compile()    {}
 void test_pinned_compile()          {}
+void test_progress_compile()        {
+    ::crucible::safety::detail::progress_self_test::runtime_smoke_test();
+}
 void test_refined_compile()         {}
 void test_safety_umbrella_compile() {}
 void test_scoped_view_compile()     {}
@@ -155,6 +159,7 @@ int main() {
     run_test("test_opaque_lifetime_compile", test_opaque_lifetime_compile);
     run_test("test_owned_region_compile",    test_owned_region_compile);
     run_test("test_pinned_compile",          test_pinned_compile);
+    run_test("test_progress_compile",        test_progress_compile);
     run_test("test_refined_compile",         test_refined_compile);
     run_test("test_safety_umbrella_compile", test_safety_umbrella_compile);
     run_test("test_scoped_view_compile",     test_scoped_view_compile);

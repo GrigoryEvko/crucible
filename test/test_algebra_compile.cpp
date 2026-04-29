@@ -49,6 +49,7 @@
 #include <crucible/algebra/lattices/MemOrderLattice.h>
 #include <crucible/algebra/lattices/MonotoneLattice.h>
 #include <crucible/algebra/lattices/ProductLattice.h>
+#include <crucible/algebra/lattices/ProgressLattice.h>
 #include <crucible/algebra/lattices/QttSemiring.h>
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>
 #include <crucible/algebra/lattices/StalenessSemiring.h>
@@ -173,6 +174,10 @@ void test_mem_order_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::mem_order_lattice_self_test::runtime_smoke_test();
 }
 
+void test_progress_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::progress_lattice_self_test::runtime_smoke_test();
+}
+
 }  // namespace
 
 int main() {
@@ -211,6 +216,8 @@ int main() {
              test_wait_lattice_runtime_smoke);
     run_test("test_mem_order_lattice_runtime_smoke",
              test_mem_order_lattice_runtime_smoke);
+    run_test("test_progress_lattice_runtime_smoke",
+             test_progress_lattice_runtime_smoke);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

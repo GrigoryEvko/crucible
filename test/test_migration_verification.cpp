@@ -42,6 +42,7 @@
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/MemOrder.h>
+#include <crucible/safety/Progress.h>
 #include <crucible/safety/Wait.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/OpaqueLifetime.h>
@@ -160,6 +161,15 @@ static_assert(sizeof(MemOrder<MemOrderTag_v::AcqRel,  double>) == sizeof(double)
 static_assert(sizeof(MemOrder<MemOrderTag_v::SeqCst,  long long>)
                                                                 == sizeof(long long));
 
+// Progress<Class, T> — regime-1 EBO collapse via ProgressLattice::At
+// <Class> singleton sub-lattice (FOUND-G34).  Closes the Month-2
+// first-pass chain wrapper catalog (5/5 shipped).  Type-fences
+// FORGE.md §5 wall-clock budgets at every Forge phase boundary.
+static_assert(sizeof(Progress<ProgressClass_v::Bounded,    int>)    == sizeof(int));
+static_assert(sizeof(Progress<ProgressClass_v::Productive, double>) == sizeof(double));
+static_assert(sizeof(Progress<ProgressClass_v::MayDiverge, long long>)
+                                                                     == sizeof(long long));
+
 // Monotonic<T, std::less<T>> collapses value+grade into one T cell
 // via Graded's specialization for `T == element_type`.
 static_assert(sizeof(Monotonic<std::uint32_t>)      == sizeof(std::uint32_t));
@@ -192,6 +202,7 @@ static_assert(DetSafe<DetSafeTier_v::Pure, int>::value_type_name().ends_with("in
 static_assert(HotPath<HotPathTier_v::Hot, int>::value_type_name().ends_with("int"));
 static_assert(Wait<WaitStrategy_v::SpinPause, int>::value_type_name().ends_with("int"));
 static_assert(MemOrder<MemOrderTag_v::Relaxed, int>::value_type_name().ends_with("int"));
+static_assert(Progress<ProgressClass_v::Bounded, int>::value_type_name().ends_with("int"));
 static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
            || Monotonic<std::uint64_t>::value_type_name().ends_with("long unsigned int"));
 static_assert(Stale<int>::value_type_name().ends_with("int"));
@@ -222,6 +233,7 @@ static_assert(!std::is_void_v<typename DetSafe<DetSafeTier_v::Pure, int>::graded
 static_assert(!std::is_void_v<typename HotPath<HotPathTier_v::Hot, int>::graded_type>);
 static_assert(!std::is_void_v<typename Wait<WaitStrategy_v::SpinPause, int>::graded_type>);
 static_assert(!std::is_void_v<typename MemOrder<MemOrderTag_v::Relaxed, int>::graded_type>);
+static_assert(!std::is_void_v<typename Progress<ProgressClass_v::Bounded, int>::graded_type>);
 static_assert(!std::is_void_v<typename Monotonic<std::uint64_t>::graded_type>);
 static_assert(!std::is_void_v<typename AppendOnly<int>::graded_type>);
 static_assert(!std::is_void_v<typename Stale<int>::graded_type>);
@@ -265,6 +277,9 @@ static_assert(GradedWrapper<Wait<WaitStrategy_v::Block, long long>>);
 static_assert(GradedWrapper<MemOrder<MemOrderTag_v::Relaxed, int>>);
 static_assert(GradedWrapper<MemOrder<MemOrderTag_v::AcqRel,  double>>);
 static_assert(GradedWrapper<MemOrder<MemOrderTag_v::SeqCst,  long long>>);
+static_assert(GradedWrapper<Progress<ProgressClass_v::Bounded,     int>>);
+static_assert(GradedWrapper<Progress<ProgressClass_v::Productive,  double>>);
+static_assert(GradedWrapper<Progress<ProgressClass_v::MayDiverge,  long long>>);
 static_assert(GradedWrapper<Monotonic<std::uint64_t>>);
 static_assert(GradedWrapper<AppendOnly<int>>);
 static_assert(GradedWrapper<Stale<int>>);
@@ -322,6 +337,9 @@ static_assert(forwarders_actually_forward<Wait<WaitStrategy_v::Block, long long>
 static_assert(forwarders_actually_forward<MemOrder<MemOrderTag_v::Relaxed, int>>());
 static_assert(forwarders_actually_forward<MemOrder<MemOrderTag_v::AcqRel,  double>>());
 static_assert(forwarders_actually_forward<MemOrder<MemOrderTag_v::SeqCst,  long long>>());
+static_assert(forwarders_actually_forward<Progress<ProgressClass_v::Bounded,    int>>());
+static_assert(forwarders_actually_forward<Progress<ProgressClass_v::Productive, double>>());
+static_assert(forwarders_actually_forward<Progress<ProgressClass_v::MayDiverge, long long>>());
 static_assert(forwarders_actually_forward<Monotonic<std::uint64_t>>());
 static_assert(forwarders_actually_forward<AppendOnly<int>>());
 static_assert(forwarders_actually_forward<Stale<int>>());
@@ -388,6 +406,12 @@ static_assert(MemOrder<MemOrderTag_v::AcqRel,  double>::lattice_name()
                                                  == "MemOrderLattice::At<AcqRel>");
 static_assert(MemOrder<MemOrderTag_v::SeqCst,  long long>::lattice_name()
                                                  == "MemOrderLattice::At<SeqCst>");
+static_assert(Progress<ProgressClass_v::Bounded,    int>::lattice_name()
+                                                 == "ProgressLattice::At<Bounded>");
+static_assert(Progress<ProgressClass_v::Productive, double>::lattice_name()
+                                                 == "ProgressLattice::At<Productive>");
+static_assert(Progress<ProgressClass_v::MayDiverge, long long>::lattice_name()
+                                                 == "ProgressLattice::At<MayDiverge>");
 static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");
 static_assert(AppendOnly<int>::lattice_name()   == "SeqPrefixLattice");
 static_assert(Stale<int>::lattice_name()        == "StalenessSemiring");
@@ -810,6 +834,53 @@ using StaleOverMemOrder =
 static_assert(sizeof(StaleOverMemOrder) == sizeof(Stale<int>));
 static_assert(GradedWrapper<StaleOverMemOrder>);
 
+// ── Progress<Class, T> ⊕ {HotPath, Wait, MemOrder, Tagged, Linear,
+//                          Stale} cells ───────────────────────────
+//
+// THE LOAD-BEARING TRIPLE — HotPath ⊃ Progress ⊃ NumericalTier per
+// the Forge phase production discipline (FORGE.md §5 wall-clock
+// budgets).  A Forge phase declared Bounded uses NumericalTier-pinned
+// arithmetic, and the whole stack is admitted to the BackgroundThread
+// hot-path.
+using HotOverProgress =
+    HotPath<HotPathTier_v::Hot,
+            Progress<ProgressClass_v::Bounded, int>>;
+static_assert(sizeof(HotOverProgress) == sizeof(int));
+static_assert(GradedWrapper<HotOverProgress>);
+
+// Progress<Bounded, DetSafe<Pure, T>> — bounded-time AND replay-
+// deterministic.  Production: Forge Phase H Mimic compile bytecode
+// emit (must be wall-clock-bounded AND deterministically reproducible
+// across runs for cache-key stability).
+using ProgressOverDetSafe =
+    Progress<ProgressClass_v::Bounded,
+             DetSafe<DetSafeTier_v::Pure, int>>;
+static_assert(sizeof(ProgressOverDetSafe) == sizeof(int));
+static_assert(GradedWrapper<ProgressOverDetSafe>);
+
+// Tagged<Progress<Bounded, T>, Source> — provenance over termination.
+using TaggedProgress =
+    Tagged<Progress<ProgressClass_v::Bounded, int>, VerificationTag>;
+static_assert(sizeof(TaggedProgress) == sizeof(int));
+
+// Progress<Bounded, Linear<T>> — bounded-time linear handle.
+using ProgressOverLinear =
+    Progress<ProgressClass_v::Bounded, Linear<int>>;
+static_assert(sizeof(ProgressOverLinear) == sizeof(int));
+static_assert(!std::is_copy_constructible_v<ProgressOverLinear>);
+static_assert(std::is_move_constructible_v<ProgressOverLinear>);
+
+// REGIME-1 ⊃ REGIME-4 cells (audit-pass mirror — Stale crosses).
+using ProgressOverStale =
+    Progress<ProgressClass_v::Bounded, Stale<int>>;
+static_assert(sizeof(ProgressOverStale) == sizeof(Stale<int>));
+static_assert(GradedWrapper<ProgressOverStale>);
+
+using StaleOverProgress =
+    Stale<Progress<ProgressClass_v::Bounded, int>>;
+static_assert(sizeof(StaleOverProgress) == sizeof(Stale<int>));
+static_assert(GradedWrapper<StaleOverProgress>);
+
 // QUADRUPLE-NESTED witness — extends the TRIPLE story to FOUR
 // distinct lattices.  Production: a fleet-replicated, strongly-
 // consistent, bit-exact, Pure-determinism-safe parameter shard.
@@ -890,6 +961,32 @@ static_assert(sizeof(SeptupleNested) == sizeof(int),
     "lattices.  If this fires, one of the seven wrapper layers "
     "stopped using the EBO-friendly Graded substrate.");
 static_assert(GradedWrapper<SeptupleNested>);
+
+// OCTUPLE-NESTED witness — adds Progress as the EIGHTH lattice,
+// closing the Month-2 first-pass catalog.  Production: a foreground-
+// hot-path, spin-only-waiter, AcqRel-atomic-only, fleet-replicated,
+// strongly-consistent, bit-exact, Pure-determinism-safe, wall-clock-
+// bounded value (e.g., a Forge Phase H emitted kernel descriptor).
+// EIGHT regime-1 wrappers over EIGHT DISTINCT lattices, all with
+// empty grades.  Maximum-depth universal-vocabulary claim post-
+// Month-2 first-pass close.
+using OctupleNested =
+    HotPath<HotPathTier_v::Hot,
+            Wait<WaitStrategy_v::SpinPause,
+                 MemOrder<MemOrderTag_v::AcqRel,
+                          Progress<ProgressClass_v::Bounded,
+                                   OpaqueLifetime<Lifetime_v::PER_FLEET,
+                                                  Consistency<Consistency_v::STRONG,
+                                                              DetSafe<DetSafeTier_v::Pure,
+                                                                      NumericalTier<Tolerance::BITEXACT, int>>>>>>>>;
+static_assert(sizeof(OctupleNested) == sizeof(int),
+    "OCTUPLE-nested HotPath<Wait<MemOrder<Progress<OpaqueLifetime<"
+    "Consistency<DetSafe<NumericalTier<T>>>>>>>> must EBO-collapse "
+    "to sizeof(T) — EIGHT regime-1 wrappers over EIGHT DISTINCT "
+    "lattices.  This is the Month-2 first-pass close — if this "
+    "fires, one of the eight wrapper layers stopped using the EBO-"
+    "friendly Graded substrate.");
+static_assert(GradedWrapper<OctupleNested>);
 
 // ── COVERAGE MATRIX — runtime API parity (smoke checks) ────────────
 //
