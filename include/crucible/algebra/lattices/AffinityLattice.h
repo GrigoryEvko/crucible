@@ -220,6 +220,52 @@ static_assert(distributive_witness());
 }
 static_assert(complement_witness());
 
+// ── Transitivity of set inclusion — load-bearing for fan-in admit ─
+//
+// Subset is transitive: a ⊆ b ∧ b ⊆ c ⟹ a ⊆ c.  Lattice axiom for
+// the Lattice concept.  Verified at multiple representative chains.
+[[nodiscard]] consteval bool transitivity_witness() noexcept {
+    AffinityMask small  {0b0001};
+    AffinityMask medium {0b0011};
+    AffinityMask large  {0b1111};
+    return  AffinityLattice::leq(small,  medium)
+        &&  AffinityLattice::leq(medium, large)
+        &&  AffinityLattice::leq(small,  large)            // transitive
+        &&  AffinityLattice::leq(AffinityLattice::bottom(), small)
+        &&  AffinityLattice::leq(large,                    AffinityLattice::top());
+}
+static_assert(transitivity_witness());
+
+// ── De Morgan's laws — boolean-algebra structural witnesses ───────
+//
+// ¬(a ∨ b) = ¬a ∧ ¬b
+// ¬(a ∧ b) = ¬a ∨ ¬b
+//
+// Not required by the Lattice concept (which only knows about leq /
+// join / meet), but boolean lattices satisfy them.  A future
+// production caller using AffinityLattice as an admission-mask
+// algebra (e.g., "all cores EXCEPT this set") would rely on these
+// holding.  Verified here so a refactor doesn't drift.
+[[nodiscard]] consteval bool de_morgan_witness() noexcept {
+    AffinityMask a{0b1100};
+    AffinityMask b{0b0110};
+    AffinityMask cmp_a{~a.value};
+    AffinityMask cmp_b{~b.value};
+
+    // ¬(a ∨ b) = ¬a ∧ ¬b
+    AffinityMask not_join_ab{~AffinityLattice::join(a, b).value};
+    AffinityMask meet_neg_ab = AffinityLattice::meet(cmp_a, cmp_b);
+    bool law1 = not_join_ab == meet_neg_ab;
+
+    // ¬(a ∧ b) = ¬a ∨ ¬b
+    AffinityMask not_meet_ab{~AffinityLattice::meet(a, b).value};
+    AffinityMask join_neg_ab = AffinityLattice::join(cmp_a, cmp_b);
+    bool law2 = not_meet_ab == join_neg_ab;
+
+    return law1 && law2;
+}
+static_assert(de_morgan_witness());
+
 // Implicit conversion DOWN to uint64_t.
 static_assert([] consteval {
     AffinityMask  m{0b1010};

@@ -194,6 +194,104 @@ static_assert(NumaNodeLattice::meet(NumaNodeId{42}, NumaNodeLattice::top())    =
 static_assert(!NumaNodeLattice::leq(NumaNodeId{0}, NumaNodeId{1})
            && !NumaNodeLattice::leq(NumaNodeId{1}, NumaNodeId{0}));
 
+// ── Transitivity — load-bearing for partial-order axioms ─────────
+//
+// If leq(a, b) ∧ leq(b, c) then leq(a, c).  Verified at the four
+// corners of the partial-order: bottom→specific→top, plus same-
+// element chains.  Without transitivity, the wrapper's admission
+// gate could admit values via a fan-in chain that no single
+// pairwise leq accepts.
+[[nodiscard]] consteval bool transitivity_witness() noexcept {
+    NumaNodeId bot     = NumaNodeId::None;
+    NumaNodeId nodeA   {2};
+    NumaNodeId topv    = NumaNodeId::Any;
+    return  NumaNodeLattice::leq(bot,   nodeA)
+        &&  NumaNodeLattice::leq(nodeA, topv)
+        &&  NumaNodeLattice::leq(bot,   topv)            // transitive
+        &&  NumaNodeLattice::leq(bot,   bot)
+        &&  NumaNodeLattice::leq(topv,  topv);
+}
+static_assert(transitivity_witness());
+
+// ── NON-distributivity — STRUCTURAL CHARACTERIZATION ─────────────
+//
+// NumaNodeLattice is NOT distributive: three sibling nodes share
+// the same wildcard-top (Any) and sentinel-bottom (None), forming
+// the classical M3 non-distributive lattice as an embedded
+// substructure (Birkhoff's M3-N5 theorem).  Counterexample at
+// (Node{0}, Node{1}, Node{2}):
+//
+//   LHS: meet(Node{0}, join(Node{1}, Node{2}))
+//          = meet(Node{0}, Any)                       = Node{0}
+//   RHS: join(meet(Node{0}, Node{1}),
+//             meet(Node{0}, Node{2}))
+//          = join(None, None)                          = None
+//
+//   Node{0} ≠ None ⟹ NOT distributive.
+//
+// CONSEQUENCE FOR ProductLattice<NumaNodeLattice, AffinityLattice>:
+// the product is also non-distributive (componentwise products of a
+// non-distributive lattice with anything are non-distributive).
+// HOWEVER — the Lattice concept (algebra/Lattice.h) does NOT require
+// distributivity, only the four core axioms (idempotence, commutativity,
+// associativity, absorption).  All four hold componentwise in
+// NumaNodeLattice:
+//
+//   - Idempotence: leq(a, a) = true ✓ (verified above)
+//   - Commutativity: join(a, b) = join(b, a), meet(a, b) = meet(b, a) ✓
+//   - Associativity: structural — verified by the witness below
+//   - Absorption:    a ∨ (a ∧ b) = a ∧ a = a ✓
+//
+// Production safety: every callers' API surface uses join / meet /
+// leq pointwise — no distributivity-dependent simplifications anywhere
+// in the wrapper or admission gate.
+[[nodiscard]] consteval bool non_distributive_witness() noexcept {
+    NumaNodeId a{0}, b{1}, c{2};
+    auto lhs = NumaNodeLattice::meet(a, NumaNodeLattice::join(b, c));
+    auto rhs = NumaNodeLattice::join(NumaNodeLattice::meet(a, b),
+                                      NumaNodeLattice::meet(a, c));
+    return lhs == NumaNodeId{0}
+        && rhs == NumaNodeId::None
+        && lhs != rhs;            // NOT distributive — structural
+}
+static_assert(non_distributive_witness(),
+    "NumaNodeLattice's non-distributivity is a STRUCTURAL CLAIM "
+    "(M3 substructure).  If this fires, the lattice's join/meet "
+    "tables changed and the partial-order shape diverged from the "
+    "documented M3-with-sentinels topology.");
+
+// ── Associativity — required for the Lattice concept ─────────────
+[[nodiscard]] consteval bool associativity_witness() noexcept {
+    auto check = [](NumaNodeId a, NumaNodeId b, NumaNodeId c) {
+        auto lhs_join = NumaNodeLattice::join(NumaNodeLattice::join(a, b), c);
+        auto rhs_join = NumaNodeLattice::join(a, NumaNodeLattice::join(b, c));
+        auto lhs_meet = NumaNodeLattice::meet(NumaNodeLattice::meet(a, b), c);
+        auto rhs_meet = NumaNodeLattice::meet(a, NumaNodeLattice::meet(b, c));
+        return lhs_join == rhs_join && lhs_meet == rhs_meet;
+    };
+    return  check(NumaNodeId{0},     NumaNodeId{1},      NumaNodeId{2})
+         && check(NumaNodeId::None,  NumaNodeId{0},      NumaNodeId::Any)
+         && check(NumaNodeId{42},    NumaNodeId::Any,    NumaNodeId::None)
+         && check(NumaNodeId{5},     NumaNodeId{5},      NumaNodeId{6});
+}
+static_assert(associativity_witness());
+
+// ── Absorption — required for the Lattice concept ────────────────
+//
+// a ∨ (a ∧ b) = a   AND   a ∧ (a ∨ b) = a
+[[nodiscard]] consteval bool absorption_witness() noexcept {
+    auto check = [](NumaNodeId a, NumaNodeId b) {
+        auto lhs1 = NumaNodeLattice::join(a, NumaNodeLattice::meet(a, b));
+        auto lhs2 = NumaNodeLattice::meet(a, NumaNodeLattice::join(a, b));
+        return lhs1 == a && lhs2 == a;
+    };
+    return  check(NumaNodeId{0},     NumaNodeId{1})    // siblings
+         && check(NumaNodeId::None,  NumaNodeId::Any)  // bottom + top
+         && check(NumaNodeId{42},    NumaNodeId::Any)
+         && check(NumaNodeId::None,  NumaNodeId{0});
+}
+static_assert(absorption_witness());
+
 inline void runtime_smoke_test() {
     NumaNodeId                bot   = NumaNodeLattice::bottom();
     NumaNodeId                topv  = NumaNodeLattice::top();
