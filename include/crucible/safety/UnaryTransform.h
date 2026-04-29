@@ -15,8 +15,11 @@
 //                          - arity == 1
 //                          - parameter 0 is an OwnedRegion<T, Tag>
 //                            after cv-ref stripping
-//                          - parameter 0 is an rvalue reference
-//                            (the &&-consumed shape)
+//                          - parameter 0 is a NON-CONST rvalue
+//                            reference (the &&-consumed shape; const&&
+//                            is rejected because you cannot move from
+//                            a const value, defeating the consume-
+//                            ownership semantics)
 //                          - return type is either void or another
 //                            OwnedRegion<U, OutTag>
 //
@@ -24,6 +27,30 @@
 //                          Variable-template form for use inside
 //                          metaprogram folds where a value is more
 //                          ergonomic than a concept.
+//
+//   is_in_place_unary_transform_v<auto FnPtr>
+//                          Refinement: true iff UnaryTransform AND
+//                          return_type is void.  Used by the
+//                          dispatcher to pick between single-buffer
+//                          (in-place) and double-buffer (out-of-place)
+//                          lowerings.
+//
+//   unary_transform_input_tag_t<auto FnPtr>
+//                          The input OwnedRegion's Tag (extracted
+//                          from parameter 0 after cv-ref stripping).
+//                          Used to auto-generate splits_into_pack at
+//                          dispatch time.
+//
+//   unary_transform_input_value_t<auto FnPtr>
+//                          The input OwnedRegion's element type T.
+//                          Used to type the per-element callbacks
+//                          the dispatcher invokes.
+//
+//   unary_transform_output_tag_t<auto FnPtr>
+//                          The output OwnedRegion's Tag, OR `void`
+//                          when the transform is in-place (return
+//                          type is void).  Used for output region
+//                          allocation and permission emission.
 //
 // ── Lowering target ─────────────────────────────────────────────────
 //
@@ -90,6 +117,11 @@ concept UnaryTransform =
     // applies cv-ref stripping internally, so we check rvalue-ref
     // OUTSIDE the wrapper-detection.
     && std::is_rvalue_reference_v<param_type_t<FnPtr, 0>>
+    // CONST rvalue reference is rejected — you cannot move from a
+    // const value, defeating consume-ownership semantics.  We check
+    // this by stripping ONE reference level (turning && into the
+    // pointee) and verifying the pointee is non-const.
+    && !std::is_const_v<std::remove_reference_t<param_type_t<FnPtr, 0>>>
     // Parameter 0's stripped type — must be OwnedRegion<T, Tag>.
     && is_owned_region_v<param_type_t<FnPtr, 0>>
     // Return type — void (in-place) OR OwnedRegion (out-of-place).
@@ -98,6 +130,58 @@ concept UnaryTransform =
 
 template <auto FnPtr>
 inline constexpr bool is_unary_transform_v = UnaryTransform<FnPtr>;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Refinement + extractors ────────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+
+// In-place vs out-of-place refinement.  In-place transforms have
+// void return and need only one region; out-of-place transforms
+// allocate a new output region with potentially different tag /
+// element type.
+template <auto FnPtr>
+inline constexpr bool is_in_place_unary_transform_v =
+    UnaryTransform<FnPtr> && std::is_void_v<return_type_t<FnPtr>>;
+
+// Input region's Tag.  Constrained on UnaryTransform so non-matching
+// signatures are rejected at the alias declaration with a single
+// requires-clause diagnostic rather than a deep substitution failure.
+template <auto FnPtr>
+    requires UnaryTransform<FnPtr>
+using unary_transform_input_tag_t =
+    owned_region_tag_t<param_type_t<FnPtr, 0>>;
+
+// Input region's element type T.
+template <auto FnPtr>
+    requires UnaryTransform<FnPtr>
+using unary_transform_input_value_t =
+    owned_region_value_t<param_type_t<FnPtr, 0>>;
+
+// Output region's Tag, OR `void` when the transform is in-place.
+// We use a detail-namespace dispatcher to discriminate the void
+// case without creating a substitution failure on the void branch.
+namespace detail {
+
+template <auto FnPtr, bool IsInPlace>
+struct unary_transform_output_tag_select;
+
+template <auto FnPtr>
+struct unary_transform_output_tag_select<FnPtr, /*IsInPlace=*/true> {
+    using type = void;
+};
+
+template <auto FnPtr>
+struct unary_transform_output_tag_select<FnPtr, /*IsInPlace=*/false> {
+    using type = owned_region_tag_t<return_type_t<FnPtr>>;
+};
+
+}  // namespace detail
+
+template <auto FnPtr>
+    requires UnaryTransform<FnPtr>
+using unary_transform_output_tag_t = typename
+    detail::unary_transform_output_tag_select<
+        FnPtr, std::is_void_v<return_type_t<FnPtr>>>::type;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────

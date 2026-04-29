@@ -125,7 +125,27 @@ double f_int_int(int) noexcept;
 // Negative: pointer-to-region parameter (not OwnedRegion).
 void f_ptr_to_region(OR_in_f*) noexcept;
 
+// Audit: const&& parameter.  std::is_rvalue_reference_v<T const&&>
+// is TRUE — `T const&&` IS an rvalue reference.  But you cannot
+// MOVE from a const value, so this is NOT the consume-ownership
+// shape.  The concept must reject it.
+void f_const_rvalue_ref(OR_in_f const&&) noexcept;
+
+// Audit: volatile&& parameter — should still match (volatile is
+// orthogonal to ownership transfer).
+void f_volatile_rvalue_ref(OR_in_f volatile&&) noexcept;
+
 }  // namespace ut_test
+
+// NOTE: member function pointers are NOT in scope for the
+// UnaryTransform concept — signature_traits<&Class::method> throws
+// a reflection exception ("reflection does not represent a function
+// or function type") on member function pointers in C++26 P2996,
+// which propagates as a hard compile error rather than a
+// concept-failure false.  Discriminating member function pointers
+// from free-function pointers is a SignatureTraits concern (FOUND-
+// D01); UnaryTransform inherits whatever behavior signature_traits
+// gives it.
 
 namespace {
 
@@ -196,6 +216,76 @@ void test_concept_form_in_constraints() {
     EXPECT_TRUE(callable_with_unary.template operator()<&ut_test::f_different_tag>());
 }
 
+void test_negative_const_rvalue_ref() {
+    // const&& is an rvalue reference, but you cannot move from a
+    // const value.  The concept must reject the const-rvalue-ref
+    // shape because it defeats consume-ownership.
+    static_assert(!extract::UnaryTransform<&ut_test::f_const_rvalue_ref>);
+}
+
+void test_volatile_rvalue_ref_admitted() {
+    // volatile is orthogonal to ownership transfer; volatile&& IS
+    // a valid consume shape.  The concept should ADMIT this.
+    static_assert(extract::UnaryTransform<&ut_test::f_volatile_rvalue_ref>);
+}
+
+void test_in_place_refinement() {
+    // In-place: void return.
+    static_assert(extract::is_in_place_unary_transform_v<&ut_test::f_in_place>);
+
+    // Out-of-place: returns OwnedRegion.
+    static_assert(!extract::is_in_place_unary_transform_v<&ut_test::f_same_tag>);
+    static_assert(!extract::is_in_place_unary_transform_v<&ut_test::f_different_tag>);
+    static_assert(!extract::is_in_place_unary_transform_v<&ut_test::f_different_element>);
+
+    // Refinement of UnaryTransform — non-matching functions get
+    // false (NOT a substitution failure).
+    static_assert(!extract::is_in_place_unary_transform_v<&ut_test::f_int_param>);
+}
+
+void test_input_tag_extraction() {
+    static_assert(std::is_same_v<
+        extract::unary_transform_input_tag_t<&ut_test::f_in_place>,
+        in_tag>);
+    static_assert(std::is_same_v<
+        extract::unary_transform_input_tag_t<&ut_test::f_same_tag>,
+        in_tag>);
+    static_assert(std::is_same_v<
+        extract::unary_transform_input_tag_t<&ut_test::f_different_tag>,
+        in_tag>);
+}
+
+void test_input_value_type_extraction() {
+    static_assert(std::is_same_v<
+        extract::unary_transform_input_value_t<&ut_test::f_in_place>,
+        float>);
+    static_assert(std::is_same_v<
+        extract::unary_transform_input_value_t<&ut_test::f_different_element>,
+        float>);
+}
+
+void test_output_tag_extraction() {
+    // In-place: output tag is `void`.
+    static_assert(std::is_same_v<
+        extract::unary_transform_output_tag_t<&ut_test::f_in_place>,
+        void>);
+
+    // Out-of-place same-tag: output tag matches input tag.
+    static_assert(std::is_same_v<
+        extract::unary_transform_output_tag_t<&ut_test::f_same_tag>,
+        in_tag>);
+
+    // Out-of-place different-tag: output tag is the return-type's
+    // tag.
+    static_assert(std::is_same_v<
+        extract::unary_transform_output_tag_t<&ut_test::f_different_tag>,
+        out_tag>);
+
+    static_assert(std::is_same_v<
+        extract::unary_transform_output_tag_t<&ut_test::f_different_element>,
+        out_tag>);
+}
+
 void test_runtime_consistency() {
     volatile std::size_t const cap = 50;
     bool baseline_pos = extract::is_unary_transform_v<&ut_test::f_in_place>;
@@ -238,6 +328,18 @@ int main() {
              test_negative_pointer_param);
     run_test("test_concept_form_in_constraints",
              test_concept_form_in_constraints);
+    run_test("test_negative_const_rvalue_ref",
+             test_negative_const_rvalue_ref);
+    run_test("test_volatile_rvalue_ref_admitted",
+             test_volatile_rvalue_ref_admitted);
+    run_test("test_in_place_refinement",
+             test_in_place_refinement);
+    run_test("test_input_tag_extraction",
+             test_input_tag_extraction);
+    run_test("test_input_value_type_extraction",
+             test_input_value_type_extraction);
+    run_test("test_output_tag_extraction",
+             test_output_tag_extraction);
     run_test("test_runtime_consistency",
              test_runtime_consistency);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
