@@ -392,7 +392,7 @@ static_assert(std::is_same_v<
 // runtime-callable ABI.  Fails to link if the trait disagrees with
 // the function declarations.
 
-inline void runtime_smoke_test() noexcept {
+inline void signature_traits_smoke_test() noexcept {
     using namespace detail::signature_traits_self_test;
 
     // Nullary witness — arity 0, void return.

@@ -294,7 +294,7 @@ static_assert(!IsSharedPermissionFor<P_a, test_tag_a>);
 // values with a non-constant flag flow and confirming the trait's
 // claims are not optimized into something else.
 
-inline bool runtime_smoke_test() noexcept {
+inline bool is_permission_smoke_test() noexcept {
     using namespace detail::is_permission_self_test;
 
     // Volatile-bounded loop ensures the trait reads survive

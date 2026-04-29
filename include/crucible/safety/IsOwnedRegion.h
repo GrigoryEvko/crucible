@@ -172,7 +172,7 @@ static_assert(!std::is_same_v<
 // predicate value with a non-constant flag flow and confirming the
 // trait's claims are not optimized into something else.
 
-inline bool runtime_smoke_test() noexcept {
+inline bool is_owned_region_smoke_test() noexcept {
     using namespace detail::is_owned_region_self_test;
 
     // Volatile-bounded loop ensures the trait reads survive

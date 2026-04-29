@@ -73,7 +73,7 @@ using SP_y = ::crucible::safety::SharedPermission<test_tag_y>;
 using SG_x = ::crucible::safety::SharedPermissionGuard<test_tag_x>;
 
 void test_runtime_smoke() {
-    EXPECT_TRUE(extract::runtime_smoke_test());
+    EXPECT_TRUE(extract::is_permission_smoke_test());
 }
 
 void test_positive_permission() {

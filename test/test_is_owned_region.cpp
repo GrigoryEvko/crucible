@@ -64,7 +64,7 @@ using OR_float_x = ::crucible::safety::OwnedRegion<float, test_tag_x>;
 using OR_int_y   = ::crucible::safety::OwnedRegion<int, test_tag_y>;
 
 void test_runtime_smoke() {
-    EXPECT_TRUE(extract::runtime_smoke_test());
+    EXPECT_TRUE(extract::is_owned_region_smoke_test());
 }
 
 void test_positive_cases() {

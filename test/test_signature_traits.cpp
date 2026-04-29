@@ -108,7 +108,7 @@ namespace extract = ::crucible::safety::extract;
 // ─── Tests ──────────────────────────────────────────────────────────
 
 void test_runtime_smoke() {
-    extract::runtime_smoke_test();
+    extract::signature_traits_smoke_test();
 }
 
 void test_arity_zero() {

@@ -87,7 +87,7 @@ struct test_source_x {};
 struct test_provenance_y {};
 
 void test_runtime_smoke() {
-    EXPECT_TRUE(extract::runtime_smoke_test());
+    EXPECT_TRUE(extract::graded_extract_smoke_test());
 }
 
 void test_concept_form_real_wrappers() {

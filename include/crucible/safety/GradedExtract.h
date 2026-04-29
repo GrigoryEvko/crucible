@@ -234,7 +234,7 @@ static_assert(!is_graded_specialization_v<Lookalike_missing_surface>);
 // tests negative cases only (no wrapper instantiation needed); the
 // sentinel TU exercises the full positive matrix at runtime.
 
-inline bool runtime_smoke_test() noexcept {
+inline bool graded_extract_smoke_test() noexcept {
     using namespace detail::graded_extract_self_test;
 
     volatile std::size_t const cap = 4;
