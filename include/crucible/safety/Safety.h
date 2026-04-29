@@ -38,6 +38,7 @@
 //   Consistency<Lvl, T>      Graded<Absolute,    ConsistencyLattice::At<Lvl>, T>    1
 //   OpaqueLifetime<Sc, T>    Graded<Absolute,    LifetimeLattice::At<Sc>, T>        1
 //   DetSafe<Tier, T>         Graded<Absolute,    DetSafeLattice::At<Tier>, T>       1
+//   HotPath<Tier, T>         Graded<Absolute,    HotPathLattice::At<Tier>, T>       1
 //   Monotonic<T, Cmp>        Graded<Absolute,    MonotoneLattice<T,Cmp>, T>         2
 //   AppendOnly<T, Storage>   Graded<Absolute,    SeqPrefixLattice<T>,   Storage<T>>  3
 //   Stale<T>                 Graded<Absolute,    StalenessSemiring,     T>          4
@@ -140,6 +141,7 @@
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/DetSafe.h>
+#include <crucible/safety/HotPath.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Machine.h>

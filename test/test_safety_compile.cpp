@@ -40,6 +40,7 @@
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/DetSafe.h>
+#include <crucible/safety/HotPath.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Machine.h>
 #include <crucible/safety/Mutation.h>
@@ -97,6 +98,9 @@ void test_consistency_compile()     {
 void test_det_safe_compile()        {
     ::crucible::safety::detail::det_safe_self_test::runtime_smoke_test();
 }
+void test_hot_path_compile()        {
+    ::crucible::safety::detail::hot_path_self_test::runtime_smoke_test();
+}
 void test_linear_compile()          {}
 void test_machine_compile()         {}
 void test_mutation_compile()        {}
@@ -133,6 +137,7 @@ int main() {
     run_test("test_constant_time_compile",   test_constant_time_compile);
     run_test("test_consistency_compile",     test_consistency_compile);
     run_test("test_det_safe_compile",        test_det_safe_compile);
+    run_test("test_hot_path_compile",        test_hot_path_compile);
     run_test("test_linear_compile",          test_linear_compile);
     run_test("test_machine_compile",         test_machine_compile);
     run_test("test_mutation_compile",        test_mutation_compile);

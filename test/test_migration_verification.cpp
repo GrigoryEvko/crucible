@@ -39,6 +39,7 @@
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/DetSafe.h>
+#include <crucible/safety/HotPath.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/OpaqueLifetime.h>
@@ -131,6 +132,15 @@ static_assert(sizeof(DetSafe<DetSafeTier_v::PhiloxRng,               double>) ==
 static_assert(sizeof(DetSafe<DetSafeTier_v::MonotonicClockRead,      long long>)
                                                                               == sizeof(long long));
 
+// HotPath<Tier, T> — regime-1 EBO collapse via the HotPathLattice::At
+// <Tier> singleton sub-lattice (FOUND-G19).  Composes with DetSafe in
+// the canonical wrapper-nesting order per 28_04 §4.7:
+//   HotPath<Hot, DetSafe<Pure, NumericalTier<BITEXACT, T>>>
+static_assert(sizeof(HotPath<HotPathTier_v::Hot,  int>)    == sizeof(int));
+static_assert(sizeof(HotPath<HotPathTier_v::Warm, double>) == sizeof(double));
+static_assert(sizeof(HotPath<HotPathTier_v::Cold, long long>)
+                                                            == sizeof(long long));
+
 // Monotonic<T, std::less<T>> collapses value+grade into one T cell
 // via Graded's specialization for `T == element_type`.
 static_assert(sizeof(Monotonic<std::uint32_t>)      == sizeof(std::uint32_t));
@@ -160,6 +170,7 @@ static_assert(NumericalTier<Tolerance::BITEXACT, int>::value_type_name().ends_wi
 static_assert(Consistency<Consistency_v::STRONG, int>::value_type_name().ends_with("int"));
 static_assert(OpaqueLifetime<Lifetime_v::PER_FLEET, int>::value_type_name().ends_with("int"));
 static_assert(DetSafe<DetSafeTier_v::Pure, int>::value_type_name().ends_with("int"));
+static_assert(HotPath<HotPathTier_v::Hot, int>::value_type_name().ends_with("int"));
 static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
            || Monotonic<std::uint64_t>::value_type_name().ends_with("long unsigned int"));
 static_assert(Stale<int>::value_type_name().ends_with("int"));
@@ -187,6 +198,7 @@ static_assert(!std::is_void_v<typename NumericalTier<Tolerance::BITEXACT, int>::
 static_assert(!std::is_void_v<typename Consistency<Consistency_v::STRONG, int>::graded_type>);
 static_assert(!std::is_void_v<typename OpaqueLifetime<Lifetime_v::PER_FLEET, int>::graded_type>);
 static_assert(!std::is_void_v<typename DetSafe<DetSafeTier_v::Pure, int>::graded_type>);
+static_assert(!std::is_void_v<typename HotPath<HotPathTier_v::Hot, int>::graded_type>);
 static_assert(!std::is_void_v<typename Monotonic<std::uint64_t>::graded_type>);
 static_assert(!std::is_void_v<typename AppendOnly<int>::graded_type>);
 static_assert(!std::is_void_v<typename Stale<int>::graded_type>);
@@ -221,6 +233,9 @@ static_assert(GradedWrapper<OpaqueLifetime<Lifetime_v::PER_REQUEST, double>>);
 static_assert(GradedWrapper<DetSafe<DetSafeTier_v::Pure, int>>);
 static_assert(GradedWrapper<DetSafe<DetSafeTier_v::PhiloxRng, double>>);
 static_assert(GradedWrapper<DetSafe<DetSafeTier_v::MonotonicClockRead, long long>>);
+static_assert(GradedWrapper<HotPath<HotPathTier_v::Hot,  int>>);
+static_assert(GradedWrapper<HotPath<HotPathTier_v::Warm, double>>);
+static_assert(GradedWrapper<HotPath<HotPathTier_v::Cold, long long>>);
 static_assert(GradedWrapper<Monotonic<std::uint64_t>>);
 static_assert(GradedWrapper<AppendOnly<int>>);
 static_assert(GradedWrapper<Stale<int>>);
@@ -269,6 +284,9 @@ static_assert(forwarders_actually_forward<OpaqueLifetime<Lifetime_v::PER_FLEET, 
 static_assert(forwarders_actually_forward<OpaqueLifetime<Lifetime_v::PER_REQUEST, double>>());
 static_assert(forwarders_actually_forward<DetSafe<DetSafeTier_v::Pure, int>>());
 static_assert(forwarders_actually_forward<DetSafe<DetSafeTier_v::MonotonicClockRead, double>>());
+static_assert(forwarders_actually_forward<HotPath<HotPathTier_v::Hot,  int>>());
+static_assert(forwarders_actually_forward<HotPath<HotPathTier_v::Warm, double>>());
+static_assert(forwarders_actually_forward<HotPath<HotPathTier_v::Cold, long long>>());
 static_assert(forwarders_actually_forward<Monotonic<std::uint64_t>>());
 static_assert(forwarders_actually_forward<AppendOnly<int>>());
 static_assert(forwarders_actually_forward<Stale<int>>());
@@ -317,6 +335,12 @@ static_assert(DetSafe<DetSafeTier_v::PhiloxRng, double>::lattice_name()
                                                  == "DetSafeLattice::At<PhiloxRng>");
 static_assert(DetSafe<DetSafeTier_v::NonDeterministicSyscall, long long>::lattice_name()
                                                  == "DetSafeLattice::At<NonDeterministicSyscall>");
+static_assert(HotPath<HotPathTier_v::Hot,  int>::lattice_name()
+                                                 == "HotPathLattice::At<Hot>");
+static_assert(HotPath<HotPathTier_v::Warm, double>::lattice_name()
+                                                 == "HotPathLattice::At<Warm>");
+static_assert(HotPath<HotPathTier_v::Cold, long long>::lattice_name()
+                                                 == "HotPathLattice::At<Cold>");
 static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");
 static_assert(AppendOnly<int>::lattice_name()   == "SeqPrefixLattice");
 static_assert(Stale<int>::lattice_name()        == "StalenessSemiring");
@@ -547,6 +571,52 @@ using DetSafeOverRefined =
 static_assert(sizeof(DetSafeOverRefined) == sizeof(int));
 static_assert(GradedWrapper<DetSafeOverRefined>);
 
+// ── HotPath<Tier, T> ⊕ {DetSafe, NumericalTier, Tagged, Linear} cells ──
+//
+// HotPath ⊃ DetSafe is THE CANONICAL wrapper-nesting from 28_04 §4.7:
+//   HotPath<Hot, DetSafe<Pure, NumericalTier<BITEXACT, T>>>
+// — a foreground hot-path-safe, replay-deterministic, bit-exact value.
+// Production: TraceRing entries containing a Philox-derived counter
+// that must round-trip bit-identically through the replay log.
+using HotOverDetSafe =
+    HotPath<HotPathTier_v::Hot,
+            DetSafe<DetSafeTier_v::Pure, int>>;
+static_assert(sizeof(HotOverDetSafe) == sizeof(int));
+static_assert(GradedWrapper<HotOverDetSafe>);
+
+// THE CANONICAL TRIPLE — HotPath ⊃ DetSafe ⊃ NumericalTier.  Triple
+// EBO collapse over three regime-1 wrappers across three DISTINCT
+// lattices.  Per 28_04 §4.7's universal-vocabulary claim: the
+// dispatcher reads this stack via reflection, one generic dispatcher
+// consumes 25+ wrappers.
+using HotOverDetSafeOverNumerical =
+    HotPath<HotPathTier_v::Hot,
+            DetSafe<DetSafeTier_v::Pure,
+                    NumericalTier<Tolerance::BITEXACT, int>>>;
+static_assert(sizeof(HotOverDetSafeOverNumerical) == sizeof(int));
+static_assert(GradedWrapper<HotOverDetSafeOverNumerical>);
+
+// Tagged<HotPath<Hot, T>, Source> — provenance over hot-path budget.
+// Production: a TraceRing entry tagged with its source Vessel for
+// audit trail across multi-Vessel deployments.
+using TaggedHotPath =
+    Tagged<HotPath<HotPathTier_v::Hot, int>, VerificationTag>;
+static_assert(sizeof(TaggedHotPath) == sizeof(int));
+
+// HotPath<Hot, Linear<T>> — hot-path-tier linear handle.  Pins the
+// move-only-T propagation through the wrapper layer.
+using HotPathOverLinear = HotPath<HotPathTier_v::Hot, Linear<int>>;
+static_assert(sizeof(HotPathOverLinear) == sizeof(int));
+static_assert(!std::is_copy_constructible_v<HotPathOverLinear>);
+static_assert(std::is_move_constructible_v<HotPathOverLinear>);
+
+// HotPath<Hot, Refined<positive, int>> — predicate-refined hot-path
+// value.  Production: a positive-only buffer offset on the hot path.
+using HotPathOverRefined =
+    HotPath<HotPathTier_v::Hot, Refined<positive_local, int>>;
+static_assert(sizeof(HotPathOverRefined) == sizeof(int));
+static_assert(GradedWrapper<HotPathOverRefined>);
+
 // QUADRUPLE-NESTED witness — extends the TRIPLE story to FOUR
 // distinct lattices.  Production: a fleet-replicated, strongly-
 // consistent, bit-exact, Pure-determinism-safe parameter shard.
@@ -563,6 +633,25 @@ static_assert(sizeof(QuadrupleNested) == sizeof(int),
     "four DISTINCT lattices.  If this fires, one of the four wrapper "
     "layers stopped using the EBO-friendly Graded substrate.");
 static_assert(GradedWrapper<QuadrupleNested>);
+
+// QUINTUPLE-NESTED witness — adds HotPath as the FIFTH lattice.
+// Production: a foreground-hot-path, fleet-replicated, strongly-
+// consistent, bit-exact, Pure-determinism-safe value.  Five regime-1
+// wrappers over five DISTINCT lattices, all with empty grades.
+// Maximum-depth universal-vocabulary claim post-Month-2 first ship.
+using QuintupleNested =
+    HotPath<HotPathTier_v::Hot,
+            OpaqueLifetime<Lifetime_v::PER_FLEET,
+                           Consistency<Consistency_v::STRONG,
+                                       DetSafe<DetSafeTier_v::Pure,
+                                               NumericalTier<Tolerance::BITEXACT, int>>>>>;
+static_assert(sizeof(QuintupleNested) == sizeof(int),
+    "QUINTUPLE-nested HotPath<OpaqueLifetime<Consistency<DetSafe<"
+    "NumericalTier<T>>>>> must EBO-collapse to sizeof(T) — five "
+    "regime-1 wrappers over five DISTINCT lattices.  If this fires, "
+    "one of the five wrapper layers stopped using the EBO-friendly "
+    "Graded substrate.");
+static_assert(GradedWrapper<QuintupleNested>);
 
 // ── COVERAGE MATRIX — runtime API parity (smoke checks) ────────────
 //

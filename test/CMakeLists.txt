@@ -1038,6 +1038,33 @@ crucible_neg_compile_test(neg_det_safe_at_cross_tier_mixing
 crucible_neg_compile_test(neg_det_safe_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FOUND-G21 HotPath wrapper neg-compiles (6 fixtures: 4+2) ────────
+#
+# 4 wrapper-surface fixtures (relax / assign / swap / equality):
+#   - neg_hot_path_relax_to_stronger    — load-bearing hot-path admission
+#   - neg_hot_path_cross_tier_assign    — assignment-surface tier identity
+#   - neg_hot_path_cross_tier_swap      — swap-surface tier identity
+#   - neg_hot_path_cross_tier_equality  — operator==-surface tier identity
+#
+# 2 lattice-substrate fixtures:
+#   - neg_hot_path_at_cross_tier_mixing       — At<T> nested-struct identity
+#   - neg_hot_path_lattice_cross_lattice_mixing — HotPathTier vs DetSafeTier
+#
+# Together these fence the hot-path discipline at all FOUR surfaces
+# the dispatcher's hot-path admission gate (28_04 §6.4) depends on.
+crucible_neg_compile_test(neg_hot_path_relax_to_stronger
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_hot_path_cross_tier_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_hot_path_cross_tier_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_hot_path_cross_tier_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_hot_path_at_cross_tier_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_hot_path_lattice_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's
