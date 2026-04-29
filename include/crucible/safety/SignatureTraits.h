@@ -382,20 +382,39 @@ static_assert(std::is_same_v<
 //
 // Per CLAUDE.md memory feedback_algebra_runtime_smoke_test_discipline
 // — every algebra/effects/safety-substrate header ships an inline
-// runtime_smoke_test() that exercises non-constant arguments and
+// runtime_smoke_test that exercises non-constant arguments and
 // concept-based capability checks.  Pure static_assert tests mask
 // consteval/SFINAE/inline-body bugs the runtime path catches.
 //
+// Per the FOUND-D smoke-test convention (FOUND-D11 commit 3f45fd4):
+// header-specific name (signature_traits_smoke_test, NOT the colliding
+// extract::runtime_smoke_test()), inline bool noexcept, volatile-cap
+// loop to defeat dead-code elimination, returns ok.  The convention
+// is uniform across SignatureTraits / IsOwnedRegion / IsPermission /
+// GradedExtract / InferredPermissionTags / UnaryTransform /
+// BinaryTransform — every FOUND-D header's smoke test composes the
+// same way so a future audit-pass / sentinel-TU can call them all
+// uniformly.
+//
 // The trait is purely type-level; "exercising it at runtime" means
-// constructing the witness types and calling the witnessed functions
-// to confirm the signatures the trait claims actually match the
-// runtime-callable ABI.  Fails to link if the trait disagrees with
-// the function declarations.
+// constructing the witness types AND calling the witnessed functions
+// (to confirm the signatures the trait claims actually match the
+// runtime-callable ABI — fails to link if the trait disagrees with
+// the function declarations) AND recomputing the trait's claimed
+// arity / param-type identities under the volatile-cap loop.
 
-inline void signature_traits_smoke_test() noexcept {
+inline bool signature_traits_smoke_test() noexcept {
     using namespace detail::signature_traits_self_test;
 
-    // Nullary witness — arity 0, void return.
+    // Volatile-bounded loop ensures the trait reads survive
+    // dead-code elimination (matches the convention used by every
+    // other FOUND-D smoke test).
+    volatile std::size_t const cap = 4;
+    bool ok = true;
+
+    // Nullary witness — arity 0, void return.  Linker-level
+    // confirmation that the witness function declarations agree with
+    // the trait's claimed signatures.
     witness_nullary();
 
     // Int-returning nullary — call and consume return.
@@ -430,6 +449,19 @@ inline void signature_traits_smoke_test() noexcept {
     // Return-type witness.
     double const r1 = witness_returning_double(x);
     (void)r1;
+
+    for (std::size_t i = 0; i < cap; ++i) {
+        ok = ok && (arity_v<&witness_nullary> == 0);
+        ok = ok && (arity_v<&witness_unary_int> == 1);
+        ok = ok && (arity_v<&witness_binary> == 2);
+        ok = ok && std::is_same_v<
+            param_type_t<&witness_unary_int, 0>, int>;
+        ok = ok && std::is_same_v<
+            return_type_t<&witness_int_returning>, int>;
+        ok = ok && is_noexcept_v<&witness_nothrowing>;
+        ok = ok && !is_noexcept_v<&witness_throwing>;
+    }
+    return ok;
 }
 
 }  // namespace crucible::safety::extract

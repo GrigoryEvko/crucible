@@ -103,12 +103,22 @@ void run_test(const char* name, F&& body) {
         }                                                                  \
     } while (0)
 
+#define EXPECT_TRUE(cond)                                                  \
+    do {                                                                   \
+        if (!(cond)) {                                                     \
+            std::fprintf(stderr,                                           \
+                "    EXPECT_TRUE failed: %s (%s:%d)\n",                    \
+                #cond, __FILE__, __LINE__);                                \
+            throw TestFailure{};                                           \
+        }                                                                  \
+    } while (0)
+
 namespace extract = ::crucible::safety::extract;
 
 // ─── Tests ──────────────────────────────────────────────────────────
 
 void test_runtime_smoke() {
-    extract::signature_traits_smoke_test();
+    EXPECT_TRUE(extract::signature_traits_smoke_test());
 }
 
 void test_arity_zero() {
