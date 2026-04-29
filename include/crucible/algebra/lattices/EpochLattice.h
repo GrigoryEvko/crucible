@@ -124,6 +124,13 @@ static_assert(std::is_standard_layout_v<Epoch>);
 
 static_assert(!std::is_same_v<Epoch, std::uint64_t>);
 
+// Cross-axis disjointness — EpochLattice is included WHEREVER
+// EpochVersioned is, so this header pulls Generation into scope
+// transitively only when GenerationLattice.h is also included.
+// The cross-axis assertion lives at the wrapper layer (safety/
+// EpochVersioned.h) where both component newtypes are guaranteed
+// in scope.
+
 // Ordering witnesses.
 static_assert( EpochLattice::leq(Epoch{0},   Epoch{1}));
 static_assert( EpochLattice::leq(Epoch{42},  Epoch{42}));   // reflexive

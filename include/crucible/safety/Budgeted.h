@@ -350,6 +350,23 @@ public:
     }
 };
 
+// ── Cross-axis disjointness — load-bearing for axis-swap fence ────
+//
+// Both BitsBudget and PeakBytes wrap uint64_t but are STRUCTURALLY
+// DISJOINT C++ types.  This assertion catches a refactor that
+// accidentally collapses them into a shared `ResourceCount` alias
+// for "convenience" — every neg-fixture's compile error would
+// dissolve, and downstream gates checking
+//   `result.bits().value <= max_bits`
+// would silently compare against the peak-bytes counter.  Lives
+// at the wrapper layer because that's where both component
+// newtypes are guaranteed in scope.
+static_assert(!std::is_same_v<BitsBudget, PeakBytes>,
+    "BitsBudget and PeakBytes must be structurally distinct C++ "
+    "types even though both wrap uint64_t.  If this fires, the "
+    "strong-newtype discipline that fences Budgeted axis-swap bugs "
+    "has been broken.");
+
 // ── Layout invariants — regime-4 (non-EBO) ──────────────────────────
 //
 // Budgeted is REGIME-4: per-instance grade with two non-empty

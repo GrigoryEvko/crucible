@@ -296,6 +296,22 @@ static_assert(sizeof(EpochVersioned<std::uint64_t>) == 24,
 
 }  // namespace detail::epoch_versioned_layout
 
+// ── Cross-axis disjointness — load-bearing for axis-swap fence ────
+//
+// Both Epoch and Generation wrap uint64_t but are STRUCTURALLY
+// DISJOINT C++ types.  This assertion catches a refactor that
+// accidentally collapses them into a shared `VersionCounter`
+// alias for "convenience" — every neg-fixture's compile error
+// would dissolve, and downstream Canopy reshard validation gates
+// would silently mix epochs against generations.  Lives at the
+// wrapper layer (this file) because that's where both component
+// newtypes are guaranteed in scope.
+static_assert(!std::is_same_v<Epoch, Generation>,
+    "Epoch and Generation must be structurally distinct C++ types "
+    "even though both wrap uint64_t.  If this fires, the strong-"
+    "newtype discipline that fences EpochVersioned axis-swap bugs "
+    "has been broken.");
+
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::epoch_versioned_self_test {
 

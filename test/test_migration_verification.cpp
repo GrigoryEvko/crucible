@@ -1480,6 +1480,34 @@ static_assert(GradedWrapper<BudgetedOverEpochVersioned>);
 static_assert(EpochVersioned<int>::lattice_name().size() > 0);
 static_assert(EpochVersioned<double>::value_type_name().ends_with("double"));
 
+// ── 4-way uint64_t-axis disjointness witness ─────────────────────
+//
+// THE CANONICAL FAMILY-LEVEL FENCE.  Four uint64_t-backed strong
+// newtypes ship across the two product wrappers (Budgeted, EpochVersioned):
+//   - BitsBudget   (Budgeted axis 1 — bits transferred)
+//   - PeakBytes    (Budgeted axis 2 — peak bytes resident)
+//   - Epoch        (EpochVersioned axis 1 — fleet membership)
+//   - Generation   (EpochVersioned axis 2 — Relay restart counter)
+//
+// Each is a distinct C++ struct.  Mixing any two — passing an
+// Epoch where a BitsBudget is expected, or a Generation where a
+// PeakBytes is expected — is a compile error.  This fence pins
+// the WHOLE FAMILY's pairwise disjointness in one assertion block.
+// (C(4,2) = 6 pairs.)
+//
+// Per-wrapper distinctness lives in the wrapper headers (Budgeted.h
+// asserts BitsBudget ≠ PeakBytes; EpochVersioned.h asserts Epoch ≠
+// Generation).  This block adds the FOUR cross-wrapper pairs, the
+// only place where both wrappers are guaranteed in scope.
+static_assert(!std::is_same_v<crucible::safety::BitsBudget,
+                              crucible::safety::Epoch>);
+static_assert(!std::is_same_v<crucible::safety::BitsBudget,
+                              crucible::safety::Generation>);
+static_assert(!std::is_same_v<crucible::safety::PeakBytes,
+                              crucible::safety::Epoch>);
+static_assert(!std::is_same_v<crucible::safety::PeakBytes,
+                              crucible::safety::Generation>);
+
 // THE FOUR-AXIS QUADRUPLE — CipherTier ⊃ ResidencyHeat × HotPath.
 // Demonstrates that CipherTier (storage-residency) and
 // ResidencyHeat (cache-residency) compose orthogonally even though
