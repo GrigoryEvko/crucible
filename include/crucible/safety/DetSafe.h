@@ -447,6 +447,13 @@ static_assert(!can_relax<PhiloxInt, DetSafeTier_v::Pure>,                 // ✗
     "load-bearing bug class.");
 static_assert(!can_relax<MonoInt,   DetSafeTier_v::PhiloxRng>);           // ✗ up
 static_assert(!can_relax<NdsInt,    DetSafeTier_v::FilesystemMtime>);     // ✗ up
+// NDS reflexivity — the bottom of the chain still admits relax to
+// itself (leq is reflexive at every point including bottom).  Pinning
+// this proves the requires-clause uses ≤ not strict-< at the chain
+// endpoint; a refactor accidentally using strict-< would break NDS-
+// to-NDS identity and break user code that materialized NDS values
+// through the relax<> surface.
+static_assert( can_relax<NdsInt,    DetSafeTier_v::NonDeterministicSyscall>); // ✓ self at bottom
 
 // ── Diagnostic forwarders ─────────────────────────────────────────
 static_assert(PureInt::value_type_name().ends_with("int"));
@@ -508,6 +515,19 @@ concept can_equality_compare = requires(W const& a, W const& b) {
 
 static_assert( can_equality_compare<PureInt>);
 static_assert(!can_equality_compare<DetSafe<DetSafeTier_v::Pure, NoEqualityT>>);
+
+// NoEqualityT has DELETED copy ctor — DetSafe<Pure, NoEqualityT>
+// must inherit that deletion.  Pins the structural property that
+// T's move-only-ness propagates through the wrapper layer.  Mirrors
+// the Linear<int> cross-composition cell's discipline at the wrapper
+// boundary instead of the cross-wrapper composition surface.
+static_assert(!std::is_copy_constructible_v<DetSafe<DetSafeTier_v::Pure, NoEqualityT>>,
+    "DetSafe<Tier, T> must transitively inherit T's copy-deletion. "
+    "If this fires, NoEqualityT's deleted copy ctor is no longer "
+    "visible through the wrapper — the wrapper has accidentally "
+    "introduced its own copy ctor that bypasses T's move-only "
+    "discipline.");
+static_assert(std::is_move_constructible_v<DetSafe<DetSafeTier_v::Pure, NoEqualityT>>);
 
 // ── relax reflexivity ─────────────────────────────────────────────
 [[nodiscard]] consteval bool relax_to_self_is_identity() noexcept {

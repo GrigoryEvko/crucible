@@ -523,6 +523,17 @@ static_assert(sizeof(DetSafeOverLinear) == sizeof(int));
 static_assert(!std::is_copy_constructible_v<DetSafeOverLinear>);
 static_assert(std::is_move_constructible_v<DetSafeOverLinear>);
 
+// DetSafe<Pure, Refined<positive, int>> — pure-tier predicate-
+// refined value.  Production: a Philox.h-generated index that's
+// known to be strictly positive AND replay-safe.  Both regime-1
+// over At<>-style empty grades; sizeof reduces to sizeof(int).
+// Broadens cross-composition coverage to the predicate-refinement
+// family alongside the linear/tagged/numerical-tier families.
+using DetSafeOverRefined =
+    DetSafe<DetSafeTier_v::Pure, Refined<positive_local, int>>;
+static_assert(sizeof(DetSafeOverRefined) == sizeof(int));
+static_assert(GradedWrapper<DetSafeOverRefined>);
+
 // QUADRUPLE-NESTED witness — extends the TRIPLE story to FOUR
 // distinct lattices.  Production: a fleet-replicated, strongly-
 // consistent, bit-exact, Pure-determinism-safe parameter shard.
