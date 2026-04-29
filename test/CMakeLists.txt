@@ -326,6 +326,7 @@ crucible_test(test_bridges_compile)
 crucible_test(test_effects_compile)
 crucible_test(test_diagnostic_compile)
 crucible_test(test_stable_name_compile)
+crucible_test(test_signature_traits)
 crucible_test(test_row_mismatch_compile)
 crucible_test(test_insights_compile)
 crucible_test(test_cheat_probe_compile)
@@ -1180,6 +1181,15 @@ crucible_neg_compile_test(neg_alloc_class_at_cross_tag_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 crucible_neg_compile_test(neg_alloc_class_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
+
+# ─── FOUND-D01 — signature_traits<FnPtr> param-index overflow ─────
+#
+# The `requires (I < arity)` clause on signature_traits<FnPtr>::
+# param_type_t<I> rejects out-of-range indices with a clean
+# constraint-failure diagnostic rather than letting the splice fail
+# deep inside std::define_static_array / std::span::operator[].
+crucible_neg_compile_test(neg_signature_traits_param_index_overflow
+  "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
 #
