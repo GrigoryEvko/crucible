@@ -1608,6 +1608,44 @@ static_assert(!std::is_same_v<crucible::safety::NumaNodeId,
 static_assert(!std::is_same_v<crucible::safety::NumaNodeId,
                               crucible::safety::Epoch>);
 
+// ── 8-axis full disjointness witness — RecipeSpec extension ──────
+//
+// RecipeSpec adds two more strong-typed enums (Tolerance and
+// RecipeFamily) to the family.  Total now: 8 strong-typed axes
+// across the 4 product wrappers, all pairwise distinct.  C(8,2) =
+// 28 unordered pairs total; the rest of this block adds the 14
+// new pairs introduced by the two RecipeSpec axes.
+static_assert(!std::is_same_v<crucible::safety::Tolerance,
+                              crucible::safety::RecipeFamily>);
+
+// Tolerance vs each prior axis:
+static_assert(!std::is_same_v<crucible::safety::Tolerance,
+                              crucible::safety::BitsBudget>);
+static_assert(!std::is_same_v<crucible::safety::Tolerance,
+                              crucible::safety::PeakBytes>);
+static_assert(!std::is_same_v<crucible::safety::Tolerance,
+                              crucible::safety::Epoch>);
+static_assert(!std::is_same_v<crucible::safety::Tolerance,
+                              crucible::safety::Generation>);
+static_assert(!std::is_same_v<crucible::safety::Tolerance,
+                              crucible::safety::NumaNodeId>);
+static_assert(!std::is_same_v<crucible::safety::Tolerance,
+                              crucible::safety::AffinityMask>);
+
+// RecipeFamily vs each prior axis:
+static_assert(!std::is_same_v<crucible::safety::RecipeFamily,
+                              crucible::safety::BitsBudget>);
+static_assert(!std::is_same_v<crucible::safety::RecipeFamily,
+                              crucible::safety::PeakBytes>);
+static_assert(!std::is_same_v<crucible::safety::RecipeFamily,
+                              crucible::safety::Epoch>);
+static_assert(!std::is_same_v<crucible::safety::RecipeFamily,
+                              crucible::safety::Generation>);
+static_assert(!std::is_same_v<crucible::safety::RecipeFamily,
+                              crucible::safety::NumaNodeId>);
+static_assert(!std::is_same_v<crucible::safety::RecipeFamily,
+                              crucible::safety::AffinityMask>);
+
 // THE FOUR-AXIS QUADRUPLE — CipherTier ⊃ ResidencyHeat × HotPath.
 // Demonstrates that CipherTier (storage-residency) and
 // ResidencyHeat (cache-residency) compose orthogonally even though
