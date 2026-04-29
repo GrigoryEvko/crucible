@@ -39,6 +39,8 @@
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/AllocClass.h>
+#include <crucible/safety/Budgeted.h>
+#include <crucible/permissions/Permission.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -297,6 +299,118 @@ void test_distinct_wrappers_distinct_modalities() {
                   != extract::modality_of_v<Secret<int>>);
 }
 
+void test_shared_permission_facade() {
+    // Regime-5: SharedPermission<Tag> is a 1-byte phantom token; the
+    // atomic refcount lives in SharedPermissionPool<Tag>.  The
+    // wrapper exposes graded_type for diagnostic introspection
+    // (Permission.h:493-537 façade rationale) and conforms to
+    // GradedWrapper despite being structurally distinct from the
+    // four other regimes.
+    struct sp_test_tag {};
+    using SP = ::crucible::safety::SharedPermission<sp_test_tag>;
+
+    static_assert(extract::IsGradedWrapper<SP>);
+    static_assert(extract::IsGradedWrapper<SP&>);
+    static_assert(extract::IsGradedWrapper<SP const&>);
+    static_assert(extract::is_graded_wrapper_v<SP>);
+
+    // value_type for the façade is Tag itself (the region label).
+    static_assert(std::is_same_v<
+        extract::value_type_of_t<SP>, sp_test_tag>);
+
+    static_assert(extract::modality_of_v<SP>
+                  == ModalityKind::Absolute);
+}
+
+void test_product_lattice_wrapper_budgeted() {
+    // Budgeted<{BitsBudget, PeakBytes}, T> is a regime-4-shape
+    // wrapper over ProductLattice<BitsBudgetLattice, PeakBytesLattice>.
+    // Validates that the universal extractors handle product lattices
+    // — the lattice_type is itself a composite, and grade_type is a
+    // tuple-like element.  This is the path that FOUND-D10
+    // (inferred_row_t) will traverse when composing per-axis grades.
+    using ::crucible::safety::Budgeted;
+
+    static_assert(extract::IsGradedWrapper<Budgeted<int>>);
+    static_assert(extract::IsGradedWrapper<Budgeted<int>&&>);
+    static_assert(extract::is_graded_wrapper_v<Budgeted<int>>);
+
+    static_assert(std::is_same_v<
+        extract::value_type_of_t<Budgeted<int>>, int>);
+
+    static_assert(extract::modality_of_v<Budgeted<int>>
+                  == ModalityKind::Absolute);
+
+    // graded_type_of_t projects the substrate's bare Graded<...>.
+    // For Budgeted the substrate's lattice is the ProductLattice
+    // composition; the universal extractor MUST surface it without
+    // collapsing.
+    static_assert(extract::is_graded_specialization_v<
+        extract::graded_type_of_t<Budgeted<int>>>);
+}
+
+void test_nested_wrappers_satisfy_concept() {
+    // Linear<Refined<P, T>> is itself a GradedWrapper (Linear is one,
+    // independent of what it wraps).  The CONCEPT applies to the
+    // OUTERMOST wrapper only — Linear's value_type is Refined<P, T>.
+    // The dispatcher harvests Linear's lattice/grade/modality and
+    // ignores what the inside layer carries; if the dispatcher wants
+    // the inner layer it recurses into value_type_of_t.
+    using ::crucible::safety::Linear;
+    using ::crucible::safety::Refined;
+    using ::crucible::safety::Tagged;
+
+    using L_R = Linear<Refined<positive_local, int>>;
+    static_assert(extract::IsGradedWrapper<L_R>);
+    static_assert(extract::is_graded_wrapper_v<L_R>);
+
+    // Outermost surfaces — Linear's slots project, NOT Refined's.
+    static_assert(std::is_same_v<
+        extract::value_type_of_t<L_R>,
+        Refined<positive_local, int>>);
+    static_assert(extract::modality_of_v<L_R>
+                  == ModalityKind::Absolute);
+    static_assert(std::is_same_v<
+        extract::lattice_of_t<L_R>,
+        typename Linear<int>::lattice_type>);
+
+    // Recursing into the value_type re-enters the dispatcher's
+    // reading surface — the inner Refined IS itself a GradedWrapper.
+    static_assert(extract::IsGradedWrapper<
+        extract::value_type_of_t<L_R>>);
+    static_assert(extract::modality_of_v<
+        extract::value_type_of_t<L_R>>
+        == ModalityKind::Absolute);
+
+    // Triply-nested Tagged<Linear<Refined<P, T>>, S> follows the
+    // same rule — RelativeMonad modality at the OUTERMOST layer.
+    using T_L_R = Tagged<L_R, test_source_x>;
+    static_assert(extract::IsGradedWrapper<T_L_R>);
+    static_assert(extract::modality_of_v<T_L_R>
+                  == ModalityKind::RelativeMonad);
+}
+
+void test_graded_specialization_predicate() {
+    using ::crucible::safety::Linear;
+
+    // Bare types and lookalike structs are not specializations.
+    static_assert(!extract::is_graded_specialization_v<int>);
+    static_assert(!extract::is_graded_specialization_v<int*>);
+    static_assert(!extract::is_graded_specialization_v<void>);
+
+    // The bare substrate carrier IS a specialization.
+    static_assert(extract::is_graded_specialization_v<
+        typename Linear<int>::graded_type>);
+    static_assert(extract::is_graded_specialization_v<
+        typename Linear<int>::graded_type const&>);
+
+    // The WRAPPER is NOT itself a specialization (it wraps one).
+    // This distinction is load-bearing for the dispatcher: a bare
+    // Graded<...> passed where a wrapper is expected is a category
+    // error (the substrate has no wrapper-level forwarders).
+    static_assert(!extract::is_graded_specialization_v<Linear<int>>);
+}
+
 void test_runtime_consistency() {
     using ::crucible::safety::Linear;
     using ::crucible::safety::Stale;
@@ -334,6 +448,13 @@ int main() {
     run_test("test_grade_distinguishes_singletons", test_grade_distinguishes_singletons);
     run_test("test_distinct_wrappers_distinct_modalities",
                                                     test_distinct_wrappers_distinct_modalities);
+    run_test("test_shared_permission_facade",       test_shared_permission_facade);
+    run_test("test_product_lattice_wrapper_budgeted",
+                                                    test_product_lattice_wrapper_budgeted);
+    run_test("test_nested_wrappers_satisfy_concept",
+                                                    test_nested_wrappers_satisfy_concept);
+    run_test("test_graded_specialization_predicate",
+                                                    test_graded_specialization_predicate);
     run_test("test_runtime_consistency",            test_runtime_consistency);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);

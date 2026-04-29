@@ -9,21 +9,42 @@
 //
 // ── What this header ships ──────────────────────────────────────────
 //
-//   value_type_of_t<W>   The wrapper's USER-facing value type
-//                        (W::value_type).  Distinct from substrate's
-//                        graded_type::value_type when the wrapper
-//                        opts into value_type_decoupled (regime-3 —
-//                        AppendOnly's element_type vs container).
-//   lattice_of_t<W>      The wrapper's Lattice/Semiring instance
-//                        (W::lattice_type).
-//   grade_of_t<W>        The lattice's element type
-//                        (W::graded_type::grade_type, which is
-//                        algebra::LatticeElement<lattice_of_t<W>>).
-//   modality_of_v<W>     The wrapper's ModalityKind (W::modality).
-//   IsGradedWrapper<W>   Concept form of GradedWrapper for use in
-//                        constraint clauses inside the extract
-//                        namespace; thin re-export of
-//                        algebra::GradedWrapper.
+//   value_type_of_t<W>     The wrapper's USER-facing value type
+//                          (W::value_type).  Distinct from substrate's
+//                          graded_type::value_type when the wrapper
+//                          opts into value_type_decoupled (regime-3 —
+//                          AppendOnly's element_type vs container).
+//   lattice_of_t<W>        The wrapper's Lattice/Semiring instance
+//                          (W::lattice_type).
+//   grade_of_t<W>          The lattice's element type
+//                          (W::graded_type::grade_type, which is
+//                          algebra::LatticeElement<lattice_of_t<W>>).
+//   graded_type_of_t<W>    The substrate Graded<M, L, T> instance
+//                          (W::graded_type).  Useful when the
+//                          dispatcher needs to introspect the bare
+//                          algebraic carrier (e.g., to compose two
+//                          wrappers via lattice join at the substrate
+//                          level, or to check is_graded_specialization_v
+//                          recursively on a nested wrapper stack).
+//   modality_of_v<W>       The wrapper's ModalityKind (W::modality).
+//   IsGradedWrapper<W>     Concept form of GradedWrapper for use in
+//                          constraint clauses inside the extract
+//                          namespace; thin re-export of
+//                          algebra::GradedWrapper.
+//   is_graded_wrapper_v<W> Variable-template form of the concept.
+//                          Mirrors algebra::is_graded_wrapper_v but
+//                          applies cv-ref stripping like the
+//                          concept-form alias.  Useful inside
+//                          template-metaprogram folds where a
+//                          variable template is more ergonomic than
+//                          a concept (e.g., `if constexpr (is_*)`).
+//   is_graded_specialization_v<T>
+//                          true iff T is a bare Graded<M, L, T>
+//                          specialization (NOT a wrapper around
+//                          one).  Distinguishes substrate types
+//                          from wrappers — useful when the
+//                          dispatcher needs to refuse passing a
+//                          bare Graded<...> as if it were a wrapper.
 //
 // All four are constrained on `IsGradedWrapper<remove_cvref_t<W>>`
 // so non-conforming arguments are rejected at the alias declaration
@@ -133,6 +154,31 @@ template <typename W>
 inline constexpr ::crucible::algebra::ModalityKind modality_of_v =
     std::remove_cvref_t<W>::modality;
 
+// Wrapper's substrate Graded<M, L, T> instance.  CHEAT-1 (regime-3
+// AppendOnly case) means W::value_type may differ from
+// W::graded_type::value_type; this projection surfaces the
+// substrate's view, complementing value_type_of_t which surfaces
+// the wrapper's user-facing view.
+template <typename W>
+    requires IsGradedWrapper<W>
+using graded_type_of_t = typename std::remove_cvref_t<W>::graded_type;
+
+// Variable-template form of the IsGradedWrapper concept.  Inside
+// metaprogram folds (e.g., `if constexpr (is_*_v<T>)`) a value form
+// is more ergonomic than a concept form; both surfaces ship.
+template <typename W>
+inline constexpr bool is_graded_wrapper_v =
+    IsGradedWrapper<W>;
+
+// True iff T is a bare Graded<M, L, T> specialization (the
+// substrate type, NOT a wrapper around it).  Forwarding from
+// algebra::is_graded_specialization_v with cv-ref stripping for
+// uniformity with the rest of this namespace.
+template <typename T>
+inline constexpr bool is_graded_specialization_v =
+    ::crucible::algebra::is_graded_specialization_v<
+        std::remove_cvref_t<T>>;
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test discipline ───────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -161,9 +207,22 @@ static_assert(!IsGradedWrapper<void>);
 static_assert(!IsGradedWrapper<int&>);
 static_assert(!IsGradedWrapper<int(int)>);
 
+// is_graded_wrapper_v variable template mirrors the concept.
+static_assert(!is_graded_wrapper_v<int>);
+static_assert(!is_graded_wrapper_v<void>);
+static_assert(!is_graded_wrapper_v<int(int)>);
+
 // A struct missing the GradedWrapper surface fails the concept.
 struct Lookalike_missing_surface { using value_type = int; };
 static_assert(!IsGradedWrapper<Lookalike_missing_surface>);
+static_assert(!is_graded_wrapper_v<Lookalike_missing_surface>);
+
+// is_graded_specialization_v — distinguishes BARE Graded<M, L, T>
+// (the substrate) from wrappers.  Bare types and lookalikes are not
+// substrate specializations.
+static_assert(!is_graded_specialization_v<int>);
+static_assert(!is_graded_specialization_v<void*>);
+static_assert(!is_graded_specialization_v<Lookalike_missing_surface>);
 
 }  // namespace detail::graded_extract_self_test
 
@@ -184,6 +243,8 @@ inline bool runtime_smoke_test() noexcept {
         ok = ok && !IsGradedWrapper<int>;
         ok = ok && !IsGradedWrapper<void>;
         ok = ok && !IsGradedWrapper<Lookalike_missing_surface>;
+        ok = ok && !is_graded_wrapper_v<int>;
+        ok = ok && !is_graded_specialization_v<int>;
     }
     return ok;
 }
