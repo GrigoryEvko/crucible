@@ -49,6 +49,14 @@
 //                          The output region's Tag, OR `void` when
 //                          the transform is in-place.
 //
+//   binary_transform_has_same_tag_v<auto FnPtr>
+//                          Predicate: true iff lhs_tag == rhs_tag
+//                          (after cv-ref strip).  The dispatcher
+//                          uses this to choose between single-
+//                          permission-pool (same tag → one
+//                          splits_into_pack group) and dual-pool
+//                          (distinct tags → two groups) lowerings.
+//
 // ── Lowering target ─────────────────────────────────────────────────
 //
 // 27_04 §3.2 + §5.15 specify that the dispatcher routes
@@ -174,6 +182,15 @@ template <auto FnPtr>
 using binary_transform_output_tag_t = typename
     detail::binary_transform_output_tag_select<
         FnPtr, std::is_void_v<return_type_t<FnPtr>>>::type;
+
+// Same-tag predicate.  Constrained on BinaryTransform so non-
+// matching signatures are rejected at the variable-template's
+// `requires` clause.
+template <auto FnPtr>
+    requires BinaryTransform<FnPtr>
+inline constexpr bool binary_transform_has_same_tag_v =
+    std::is_same_v<binary_transform_lhs_tag_t<FnPtr>,
+                   binary_transform_rhs_tag_t<FnPtr>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Self-test block ────────────────────────────────────────────────

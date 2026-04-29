@@ -113,6 +113,12 @@ void f_rhs_int(OR_lhs_f&&, int) noexcept;
 
 int f_int_return(OR_lhs_f&&, OR_rhs_i&&) noexcept;
 
+// Volatile&& on either parameter — should still match (volatile is
+// orthogonal to ownership transfer).
+void f_lhs_volatile_rvalue_ref(OR_lhs_f volatile&&, OR_rhs_i&&) noexcept;
+void f_rhs_volatile_rvalue_ref(OR_lhs_f&&, OR_rhs_i volatile&&) noexcept;
+void f_both_volatile_rvalue_ref(OR_lhs_f volatile&&, OR_rhs_i volatile&&) noexcept;
+
 }  // namespace bt_test
 
 namespace {
@@ -248,6 +254,31 @@ void test_concept_form_in_constraints() {
         &bt_test::f_out_distinct>());
 }
 
+void test_volatile_rvalue_ref_admitted() {
+    // Volatile&& on lhs / rhs / both — concept must admit because
+    // volatile is orthogonal to ownership transfer.  Same as D12
+    // audit-pass test.
+    static_assert(extract::BinaryTransform<&bt_test::f_lhs_volatile_rvalue_ref>);
+    static_assert(extract::BinaryTransform<&bt_test::f_rhs_volatile_rvalue_ref>);
+    static_assert(extract::BinaryTransform<&bt_test::f_both_volatile_rvalue_ref>);
+}
+
+void test_has_same_tag_predicate() {
+    // f_in_place_distinct uses (lhs_tag, rhs_tag) — distinct.
+    static_assert(!extract::binary_transform_has_same_tag_v<
+        &bt_test::f_in_place_distinct>);
+    static_assert(!extract::binary_transform_has_same_tag_v<
+        &bt_test::f_out_distinct>);
+    static_assert(!extract::binary_transform_has_same_tag_v<
+        &bt_test::f_out_matches_lhs>);
+    // (f_out_matches_lhs returns OR<lhs_tag> but inputs are still
+    // (lhs_tag, rhs_tag) — same-tag is about the INPUTS only.)
+
+    // f_in_place_same_tag uses (lhs_tag, lhs_tag) — same.
+    static_assert(extract::binary_transform_has_same_tag_v<
+        &bt_test::f_in_place_same_tag>);
+}
+
 void test_runtime_consistency() {
     volatile std::size_t const cap = 50;
     bool baseline_pos =
@@ -302,6 +333,10 @@ int main() {
              test_output_tag_extraction);
     run_test("test_concept_form_in_constraints",
              test_concept_form_in_constraints);
+    run_test("test_volatile_rvalue_ref_admitted",
+             test_volatile_rvalue_ref_admitted);
+    run_test("test_has_same_tag_predicate",
+             test_has_same_tag_predicate);
     run_test("test_runtime_consistency",
              test_runtime_consistency);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
