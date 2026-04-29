@@ -1214,6 +1214,45 @@ crucible_neg_compile_test(neg_cipher_tier_at_cross_tier_mixing
 crucible_neg_compile_test(neg_cipher_tier_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FOUND-G51 ResidencyHeat negative-compile fixtures ──────────────
+#
+# Pins the ResidencyHeat wrapper's tier-pin discipline AND the
+# underlying ResidencyHeatLattice's per-At<T> nested-struct
+# identity.  Closes the load-bearing claim-stronger-than-source
+# path that would otherwise let a Cold-tier (L3-resident) value
+# silently flow into the KernelCache L1 fast-path admission gate,
+# breaking the per-call shape budget (~10× cache-miss penalty).
+# Type-fences CRUCIBLE.md §L2 KernelCache L1/L2/L3 + §L15 Augur
+# metric-heat tracking at every cache publish/lookup boundary.
+#
+# Cross-lattice fixture is LOAD-BEARING for the 28_04 §4.7
+# universal-vocabulary claim — three structurally-identical 3-tier
+# chains (HotPath / CipherTier / ResidencyHeat) must stay type-
+# disjoint even when their layout is byte-equivalent.
+#
+# 4 wrapper-surface fixtures:
+#   - neg_residency_heat_relax_to_stronger    LOAD-BEARING L1 fence
+#   - neg_residency_heat_cross_tier_assign    assignment-surface identity
+#   - neg_residency_heat_cross_tier_swap      swap-surface identity
+#   - neg_residency_heat_cross_tier_equality  operator==-surface identity
+#
+# 2 lattice-substrate fixtures:
+#   - neg_residency_heat_at_cross_tier_mixing       At<T> nested-struct
+#   - neg_residency_heat_lattice_cross_lattice_mixing  ResidencyHeatTag
+#                                                      ≠ CipherTierTag
+crucible_neg_compile_test(neg_residency_heat_relax_to_stronger
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_residency_heat_cross_tier_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_residency_heat_cross_tier_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_residency_heat_cross_tier_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_residency_heat_at_cross_tier_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_residency_heat_lattice_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's

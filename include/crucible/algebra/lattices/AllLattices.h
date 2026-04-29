@@ -73,6 +73,7 @@
 #include <crucible/algebra/lattices/MonotoneLattice.h>   // ALGEBRA-9  (#454) — shipped
 #include <crucible/algebra/lattices/ProductLattice.h>    // ALGEBRA-15 (#460) — shipped
 #include <crucible/algebra/lattices/QttSemiring.h>       // ALGEBRA-4  (#449) — shipped
+#include <crucible/algebra/lattices/ResidencyHeatLattice.h> // FOUND-G48  — shipped
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>  // ALGEBRA-10 (#455) — shipped
 #include <crucible/algebra/lattices/StalenessSemiring.h> // ALGEBRA-11 (#456) — shipped
 #include <crucible/algebra/lattices/ToleranceLattice.h>  // ALGEBRA-14 (#459) — shipped (3/3)

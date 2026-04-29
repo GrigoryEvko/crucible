@@ -53,6 +53,7 @@
 #include <crucible/algebra/lattices/ProductLattice.h>
 #include <crucible/algebra/lattices/ProgressLattice.h>
 #include <crucible/algebra/lattices/QttSemiring.h>
+#include <crucible/algebra/lattices/ResidencyHeatLattice.h>
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>
 #include <crucible/algebra/lattices/StalenessSemiring.h>
 #include <crucible/algebra/lattices/ToleranceLattice.h>
@@ -188,6 +189,10 @@ void test_cipher_tier_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::cipher_tier_lattice_self_test::runtime_smoke_test();
 }
 
+void test_residency_heat_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::residency_heat_lattice_self_test::runtime_smoke_test();
+}
+
 }  // namespace
 
 int main() {
@@ -232,6 +237,8 @@ int main() {
              test_alloc_class_lattice_runtime_smoke);
     run_test("test_cipher_tier_lattice_runtime_smoke",
              test_cipher_tier_lattice_runtime_smoke);
+    run_test("test_residency_heat_lattice_runtime_smoke",
+             test_residency_heat_lattice_runtime_smoke);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

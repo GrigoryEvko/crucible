@@ -45,6 +45,7 @@
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/MemOrder.h>
 #include <crucible/safety/Progress.h>
+#include <crucible/safety/ResidencyHeat.h>
 #include <crucible/safety/Wait.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/OpaqueLifetime.h>
@@ -190,6 +191,18 @@ static_assert(sizeof(CipherTier<CipherTierTag_v::Warm, double>) == sizeof(double
 static_assert(sizeof(CipherTier<CipherTierTag_v::Cold, long long>)
                                                                  == sizeof(long long));
 
+// ResidencyHeat<Tier, T> — regime-1 EBO collapse via
+// ResidencyHeatLattice::At<Tier> singleton sub-lattice (FOUND-G49).
+// Cache-residency / working-set heat dimension distinct from
+// CipherTier's storage-persistence axis AND from HotPath's
+// execution-budget axis.  Type-fences CRUCIBLE.md §L2 KernelCache
+// L1/L2/L3 + §L15 Augur metric-heat tracking at every cache
+// publish/lookup boundary.
+static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Hot,  int>)    == sizeof(int));
+static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Warm, double>) == sizeof(double));
+static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Cold, long long>)
+                                                                       == sizeof(long long));
+
 // Monotonic<T, std::less<T>> collapses value+grade into one T cell
 // via Graded's specialization for `T == element_type`.
 static_assert(sizeof(Monotonic<std::uint32_t>)      == sizeof(std::uint32_t));
@@ -225,6 +238,7 @@ static_assert(MemOrder<MemOrderTag_v::Relaxed, int>::value_type_name().ends_with
 static_assert(Progress<ProgressClass_v::Bounded, int>::value_type_name().ends_with("int"));
 static_assert(AllocClass<AllocClassTag_v::Stack, int>::value_type_name().ends_with("int"));
 static_assert(CipherTier<CipherTierTag_v::Hot, int>::value_type_name().ends_with("int"));
+static_assert(ResidencyHeat<ResidencyHeatTag_v::Hot, int>::value_type_name().ends_with("int"));
 static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
            || Monotonic<std::uint64_t>::value_type_name().ends_with("long unsigned int"));
 static_assert(Stale<int>::value_type_name().ends_with("int"));
@@ -258,6 +272,7 @@ static_assert(!std::is_void_v<typename MemOrder<MemOrderTag_v::Relaxed, int>::gr
 static_assert(!std::is_void_v<typename Progress<ProgressClass_v::Bounded, int>::graded_type>);
 static_assert(!std::is_void_v<typename AllocClass<AllocClassTag_v::Stack, int>::graded_type>);
 static_assert(!std::is_void_v<typename CipherTier<CipherTierTag_v::Hot, int>::graded_type>);
+static_assert(!std::is_void_v<typename ResidencyHeat<ResidencyHeatTag_v::Hot, int>::graded_type>);
 static_assert(!std::is_void_v<typename Monotonic<std::uint64_t>::graded_type>);
 static_assert(!std::is_void_v<typename AppendOnly<int>::graded_type>);
 static_assert(!std::is_void_v<typename Stale<int>::graded_type>);
@@ -310,6 +325,9 @@ static_assert(GradedWrapper<AllocClass<AllocClassTag_v::HugePage, long long>>);
 static_assert(GradedWrapper<CipherTier<CipherTierTag_v::Hot,  int>>);
 static_assert(GradedWrapper<CipherTier<CipherTierTag_v::Warm, double>>);
 static_assert(GradedWrapper<CipherTier<CipherTierTag_v::Cold, long long>>);
+static_assert(GradedWrapper<ResidencyHeat<ResidencyHeatTag_v::Hot,  int>>);
+static_assert(GradedWrapper<ResidencyHeat<ResidencyHeatTag_v::Warm, double>>);
+static_assert(GradedWrapper<ResidencyHeat<ResidencyHeatTag_v::Cold, long long>>);
 static_assert(GradedWrapper<Monotonic<std::uint64_t>>);
 static_assert(GradedWrapper<AppendOnly<int>>);
 static_assert(GradedWrapper<Stale<int>>);
@@ -376,6 +394,9 @@ static_assert(forwarders_actually_forward<AllocClass<AllocClassTag_v::HugePage, 
 static_assert(forwarders_actually_forward<CipherTier<CipherTierTag_v::Hot,  int>>());
 static_assert(forwarders_actually_forward<CipherTier<CipherTierTag_v::Warm, double>>());
 static_assert(forwarders_actually_forward<CipherTier<CipherTierTag_v::Cold, long long>>());
+static_assert(forwarders_actually_forward<ResidencyHeat<ResidencyHeatTag_v::Hot,  int>>());
+static_assert(forwarders_actually_forward<ResidencyHeat<ResidencyHeatTag_v::Warm, double>>());
+static_assert(forwarders_actually_forward<ResidencyHeat<ResidencyHeatTag_v::Cold, long long>>());
 static_assert(forwarders_actually_forward<Monotonic<std::uint64_t>>());
 static_assert(forwarders_actually_forward<AppendOnly<int>>());
 static_assert(forwarders_actually_forward<Stale<int>>());
@@ -460,6 +481,12 @@ static_assert(CipherTier<CipherTierTag_v::Warm, double>::lattice_name()
                                                  == "CipherTierLattice::At<Warm>");
 static_assert(CipherTier<CipherTierTag_v::Cold, long long>::lattice_name()
                                                  == "CipherTierLattice::At<Cold>");
+static_assert(ResidencyHeat<ResidencyHeatTag_v::Hot,  int>::lattice_name()
+                                                 == "ResidencyHeatLattice::At<Hot>");
+static_assert(ResidencyHeat<ResidencyHeatTag_v::Warm, double>::lattice_name()
+                                                 == "ResidencyHeatLattice::At<Warm>");
+static_assert(ResidencyHeat<ResidencyHeatTag_v::Cold, long long>::lattice_name()
+                                                 == "ResidencyHeatLattice::At<Cold>");
 static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");
 static_assert(AppendOnly<int>::lattice_name()   == "SeqPrefixLattice");
 static_assert(Stale<int>::lattice_name()        == "StalenessSemiring");
@@ -1039,6 +1066,125 @@ static_assert(sizeof(StaleOverCipherTier) == sizeof(Stale<int>),
     "shape is unchanged.");
 static_assert(GradedWrapper<StaleOverCipherTier>);
 
+// ── AUDIT-PASS: AllocClass × CipherTier cross-composition ─────────
+//
+// Both AllocClass and CipherTier are sister chain wrappers shipped
+// in adjacent FOUND-G batches.  The natural production pattern is
+// "Stack-allocated, Hot-tier RAM-replicated value" — a TraceRing
+// entry living in a fellow Relay's RAM (CipherTier<Hot>) AND
+// produced under no-allocator-on-hot-path discipline (AllocClass
+// <Stack>).  Both axes EBO-collapse independently.
+//
+// Production: Cipher event-sourced step entries on the hot-path
+// boundary — replicated across the fleet AND admitted to TraceRing
+// without dynamic allocation.  Pinning both orderings catches any
+// future regression where one wrapper's regime-1 EBO discipline
+// fails when nested with the other.
+using AllocClassOverCipherTier =
+    AllocClass<AllocClassTag_v::Stack,
+               CipherTier<CipherTierTag_v::Hot, int>>;
+static_assert(sizeof(AllocClassOverCipherTier) == sizeof(int),
+    "AllocClass<Stack, CipherTier<Hot, T>> must EBO-collapse both "
+    "regime-1 wrappers to sizeof(T).  If this fires, one of the two "
+    "wrappers (AllocClass or CipherTier) regressed its EBO "
+    "discipline when stacked with a sister chain wrapper.");
+static_assert(GradedWrapper<AllocClassOverCipherTier>);
+
+using CipherTierOverAllocClass =
+    CipherTier<CipherTierTag_v::Hot,
+               AllocClass<AllocClassTag_v::Stack, int>>;
+static_assert(sizeof(CipherTierOverAllocClass) == sizeof(int),
+    "CipherTier<Hot, AllocClass<Stack, T>> must EBO-collapse both "
+    "regime-1 wrappers to sizeof(T) — order-symmetric to the "
+    "AllocClassOverCipherTier cell above.");
+static_assert(GradedWrapper<CipherTierOverAllocClass>);
+
+// ── ResidencyHeat<Tier, T> ⊕ {HotPath, CipherTier, DetSafe, Tagged,
+//                              Linear, Stale} cells ───────────────
+//
+// THE THREE-AXIS TRIPLE — HotPath ⊃ CipherTier ⊃ ResidencyHeat.
+// Captures the canonical KernelCache hot-path publish boundary
+// (28_04 §4.7 + CRUCIBLE.md §L2 + §L14): a foreground hot-path-safe
+// (HotPath<Hot>) NVMe-backed (CipherTier<Warm>) L1-resident
+// (ResidencyHeat<Hot>) value.  All three tier axes EBO-collapse;
+// sizeof reduces to sizeof(T).
+using HotOverCipherTierOverResidencyHeat =
+    HotPath<HotPathTier_v::Hot,
+            CipherTier<CipherTierTag_v::Warm,
+                       ResidencyHeat<ResidencyHeatTag_v::Hot, int>>>;
+static_assert(sizeof(HotOverCipherTierOverResidencyHeat) == sizeof(int),
+    "HotPath ⊃ CipherTier ⊃ ResidencyHeat triple must EBO-collapse "
+    "all three regime-1 wrappers to sizeof(T).  If this fires, one "
+    "of the three orthogonal tier axes (execution-budget / storage-"
+    "residency / cache-heat) regressed its EBO discipline.");
+static_assert(GradedWrapper<HotOverCipherTierOverResidencyHeat>);
+
+// ResidencyHeat<Hot, DetSafe<Pure, T>> — L1-resident AND replay-
+// deterministic.  Production: KernelCache L1 IR002 hottest slot
+// holding a Philox-derived counter that must round-trip bit-
+// identically through replay.
+using ResidencyHeatOverDetSafe =
+    ResidencyHeat<ResidencyHeatTag_v::Hot,
+                  DetSafe<DetSafeTier_v::Pure, int>>;
+static_assert(sizeof(ResidencyHeatOverDetSafe) == sizeof(int));
+static_assert(GradedWrapper<ResidencyHeatOverDetSafe>);
+
+// Tagged<ResidencyHeat<Warm, T>, Source> — provenance over cache-
+// heat.  Production: an L2 IR003* slab tagged with its source
+// vendor-family for cross-vendor numerics CI traceability.
+using TaggedResidencyHeat =
+    Tagged<ResidencyHeat<ResidencyHeatTag_v::Warm, int>, VerificationTag>;
+static_assert(sizeof(TaggedResidencyHeat) == sizeof(int));
+
+// ResidencyHeat<Cold, Linear<T>> — cold-tier linear handle.
+// Production: a one-shot KernelCache L3 archive read consumed
+// exactly once during cold-start.
+using ResidencyHeatOverLinear =
+    ResidencyHeat<ResidencyHeatTag_v::Cold, Linear<int>>;
+static_assert(sizeof(ResidencyHeatOverLinear) == sizeof(int));
+static_assert(!std::is_copy_constructible_v<ResidencyHeatOverLinear>,
+    "ResidencyHeat<Tier, Linear<T>> must preserve Linear's move-only "
+    "discipline.  If this fires, Linear's copy-deletion is no longer "
+    "transitively visible through the ResidencyHeat wrapper.");
+static_assert(std::is_move_constructible_v<ResidencyHeatOverLinear>);
+
+// REGIME-1 ⊃ REGIME-4 cells (audit-pass mirror — Stale crosses).
+using ResidencyHeatOverStale =
+    ResidencyHeat<ResidencyHeatTag_v::Hot, Stale<int>>;
+static_assert(sizeof(ResidencyHeatOverStale) == sizeof(Stale<int>),
+    "ResidencyHeat<Hot, Stale<T>> must EBO-collapse the "
+    "ResidencyHeat grade only (Stale carries a runtime grade "
+    "alongside T, regime-4).");
+static_assert(GradedWrapper<ResidencyHeatOverStale>);
+
+using StaleOverResidencyHeat =
+    Stale<ResidencyHeat<ResidencyHeatTag_v::Hot, int>>;
+static_assert(sizeof(StaleOverResidencyHeat) == sizeof(Stale<int>),
+    "Stale<ResidencyHeat<Hot, T>> must equal sizeof(Stale<T>) — "
+    "ResidencyHeat's regime-1 EBO collapse means ResidencyHeat<Hot, "
+    "T> is byte-equivalent to T at the inner layer.");
+static_assert(GradedWrapper<StaleOverResidencyHeat>);
+
+// THE FOUR-AXIS QUADRUPLE — CipherTier ⊃ ResidencyHeat × HotPath.
+// Demonstrates that CipherTier (storage-residency) and
+// ResidencyHeat (cache-residency) compose orthogonally even though
+// they share the same 3-tier shape with Hot at top.  Production:
+// an NVMe-resident (CipherTier<Warm>) value warmed into the L1
+// working set (ResidencyHeat<Hot>) inside a foreground-execution-
+// budget (HotPath<Hot>) call.  Three Hot-at-top axes, three
+// distinct lattices, three regime-1 EBO collapses.
+using ThreeHotsAtTop =
+    HotPath<HotPathTier_v::Hot,
+            CipherTier<CipherTierTag_v::Warm,
+                       ResidencyHeat<ResidencyHeatTag_v::Hot, int>>>;
+static_assert(sizeof(ThreeHotsAtTop) == sizeof(int),
+    "Three Hot-at-top tier axes (HotPath / CipherTier / "
+    "ResidencyHeat) compose orthogonally — each carrying a "
+    "structurally-identical but SEMANTICALLY DISTINCT lattice. "
+    "EBO collapse must succeed for all three despite the shape "
+    "similarity.  If this fires, cross-lattice identity collapsed.");
+static_assert(GradedWrapper<ThreeHotsAtTop>);
+
 // QUADRUPLE-NESTED witness — extends the TRIPLE story to FOUR
 // distinct lattices.  Production: a fleet-replicated, strongly-
 // consistent, bit-exact, Pure-determinism-safe parameter shard.
@@ -1198,6 +1344,38 @@ static_assert(sizeof(DecupleNested) == sizeof(int),
     "the ten wrapper layers (most likely the just-shipped CipherTier) "
     "stopped using the EBO-friendly Graded substrate.");
 static_assert(GradedWrapper<DecupleNested>);
+
+// UNDECUPLE-NESTED witness — adds ResidencyHeat as the ELEVENTH
+// lattice.  Production: the canonical KernelCache L1 publish
+// boundary made type-precise.  A foreground-hot-path, spin-only-
+// waiter, AcqRel-atomic-only, stack-allocated, fleet-replicated,
+// strongly-consistent, bit-exact, Pure-determinism-safe, wall-
+// clock-bounded, Hot-tier-replicated, L1-resident value.  ELEVEN
+// regime-1 wrappers over ELEVEN DISTINCT lattices, all with empty
+// grades.  Universal-vocabulary claim at maximum depth post-
+// ResidencyHeat ship — proves that adding the cache-residency-
+// heat axis costs nothing at the EBO surface.
+using UndecupleNested =
+    HotPath<HotPathTier_v::Hot,
+            Wait<WaitStrategy_v::SpinPause,
+                 MemOrder<MemOrderTag_v::AcqRel,
+                          AllocClass<AllocClassTag_v::Stack,
+                                     CipherTier<CipherTierTag_v::Hot,
+                                                ResidencyHeat<ResidencyHeatTag_v::Hot,
+                                                              Progress<ProgressClass_v::Bounded,
+                                                                       OpaqueLifetime<Lifetime_v::PER_FLEET,
+                                                                                      Consistency<Consistency_v::STRONG,
+                                                                                                  DetSafe<DetSafeTier_v::Pure,
+                                                                                                          NumericalTier<Tolerance::BITEXACT, int>>>>>>>>>>>;
+static_assert(sizeof(UndecupleNested) == sizeof(int),
+    "UNDECUPLE-nested HotPath<Wait<MemOrder<AllocClass<CipherTier<"
+    "ResidencyHeat<Progress<OpaqueLifetime<Consistency<DetSafe<"
+    "NumericalTier<T>>>>>>>>>>> must EBO-collapse to sizeof(T) — "
+    "ELEVEN regime-1 wrappers over ELEVEN DISTINCT lattices.  If "
+    "this fires, one of the eleven wrapper layers (most likely the "
+    "just-shipped ResidencyHeat) stopped using the EBO-friendly "
+    "Graded substrate.");
+static_assert(GradedWrapper<UndecupleNested>);
 
 // ── COVERAGE MATRIX — runtime API parity (smoke checks) ────────────
 //
