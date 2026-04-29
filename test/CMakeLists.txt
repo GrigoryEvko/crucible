@@ -1253,6 +1253,46 @@ crucible_neg_compile_test(neg_residency_heat_at_cross_tier_mixing
 crucible_neg_compile_test(neg_residency_heat_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FOUND-G56 Vendor negative-compile fixtures ─────────────────────
+#
+# Pins the Vendor wrapper's PARTIAL-ORDER backend identity discipline
+# AND the underlying VendorLattice's per-At<T> nested-struct
+# identity.  THE FIRST WRAPPER WITH A PARTIAL-ORDER LATTICE: has
+# SEVEN fixtures instead of the chain wrappers' six because the
+# partial-order admits TWO load-bearing rejections (claim-stronger
+# AND cross-vendor) where chains have only one (claim-stronger).
+#
+# Type-fences MIMIC.md per-vendor backend identity at every IR003*
+# lowering and every cross-vendor numerics CI check.
+#
+# 5 wrapper-surface fixtures:
+#   - neg_vendor_relax_to_stronger     LOAD-BEARING claim-Portable fence
+#                                        (specific vendor → Portable rejected)
+#   - neg_vendor_cross_vendor_relax    LOAD-BEARING cross-vendor fence
+#                                        (NV → AMD rejected; THE wrapper's
+#                                        defining safety guarantee)
+#   - neg_vendor_cross_tier_assign     assignment-surface identity
+#   - neg_vendor_cross_tier_swap       swap-surface identity
+#   - neg_vendor_cross_tier_equality   operator==-surface identity
+#
+# 2 lattice-substrate fixtures:
+#   - neg_vendor_at_cross_tier_mixing       At<T> nested-struct identity
+#   - neg_vendor_lattice_cross_lattice_mixing  VendorBackend ≠ HotPathTier
+crucible_neg_compile_test(neg_vendor_relax_to_stronger
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_vendor_cross_vendor_relax
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_vendor_cross_tier_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_vendor_cross_tier_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_vendor_cross_tier_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_vendor_at_cross_tier_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_vendor_lattice_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's

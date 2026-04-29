@@ -55,6 +55,7 @@
 #include <crucible/safety/Progress.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/Vendor.h>
 #include <crucible/safety/Safety.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/SealedRefined.h>
@@ -136,6 +137,9 @@ void test_residency_heat_compile()  {
     ::crucible::safety::detail::residency_heat_self_test::runtime_smoke_test();
 }
 void test_safety_umbrella_compile() {}
+void test_vendor_compile()          {
+    ::crucible::safety::detail::vendor_self_test::runtime_smoke_test();
+}
 void test_scoped_view_compile()     {}
 void test_sealed_refined_compile()  {}
 void test_secret_compile()          {}
@@ -184,6 +188,7 @@ int main() {
     run_test("test_stale_compile",           test_stale_compile);
     run_test("test_tagged_compile",          test_tagged_compile);
     run_test("test_time_ordered_compile",    test_time_ordered_compile);
+    run_test("test_vendor_compile",          test_vendor_compile);
     run_test("test_wait_compile",            test_wait_compile);
     run_test("test_workload_compile",        test_workload_compile);
 

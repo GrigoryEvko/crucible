@@ -46,6 +46,7 @@
 #include <crucible/safety/MemOrder.h>
 #include <crucible/safety/Progress.h>
 #include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/Vendor.h>
 #include <crucible/safety/Wait.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/OpaqueLifetime.h>
@@ -203,6 +204,20 @@ static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Warm, double>) == sizeof(
 static_assert(sizeof(ResidencyHeat<ResidencyHeatTag_v::Cold, long long>)
                                                                        == sizeof(long long));
 
+// Vendor<Backend, T> — regime-1 EBO collapse via VendorLattice::
+// At<Backend> singleton sub-lattice (FOUND-G54).  THE FIRST WRAPPER
+// BACKED BY A PARTIAL-ORDER LATTICE rather than a chain.  The 8
+// backends (None / CPU / NV / AMD / TPU / TRN / CER / Portable)
+// form a diamond: None ⊑ X ⊑ Portable for every middle X; distinct
+// middle vendors are mutually incomparable.  Type-fences MIMIC.md
+// per-vendor backend identity at every IR003* lowering and every
+// cross-vendor numerics CI check.
+static_assert(sizeof(Vendor<VendorBackend_v::Portable, int>)    == sizeof(int));
+static_assert(sizeof(Vendor<VendorBackend_v::NV,       double>) == sizeof(double));
+static_assert(sizeof(Vendor<VendorBackend_v::AMD,      long long>)
+                                                                 == sizeof(long long));
+static_assert(sizeof(Vendor<VendorBackend_v::None,     int>)    == sizeof(int));
+
 // Monotonic<T, std::less<T>> collapses value+grade into one T cell
 // via Graded's specialization for `T == element_type`.
 static_assert(sizeof(Monotonic<std::uint32_t>)      == sizeof(std::uint32_t));
@@ -239,6 +254,7 @@ static_assert(Progress<ProgressClass_v::Bounded, int>::value_type_name().ends_wi
 static_assert(AllocClass<AllocClassTag_v::Stack, int>::value_type_name().ends_with("int"));
 static_assert(CipherTier<CipherTierTag_v::Hot, int>::value_type_name().ends_with("int"));
 static_assert(ResidencyHeat<ResidencyHeatTag_v::Hot, int>::value_type_name().ends_with("int"));
+static_assert(Vendor<VendorBackend_v::Portable, int>::value_type_name().ends_with("int"));
 static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
            || Monotonic<std::uint64_t>::value_type_name().ends_with("long unsigned int"));
 static_assert(Stale<int>::value_type_name().ends_with("int"));
@@ -273,6 +289,7 @@ static_assert(!std::is_void_v<typename Progress<ProgressClass_v::Bounded, int>::
 static_assert(!std::is_void_v<typename AllocClass<AllocClassTag_v::Stack, int>::graded_type>);
 static_assert(!std::is_void_v<typename CipherTier<CipherTierTag_v::Hot, int>::graded_type>);
 static_assert(!std::is_void_v<typename ResidencyHeat<ResidencyHeatTag_v::Hot, int>::graded_type>);
+static_assert(!std::is_void_v<typename Vendor<VendorBackend_v::Portable, int>::graded_type>);
 static_assert(!std::is_void_v<typename Monotonic<std::uint64_t>::graded_type>);
 static_assert(!std::is_void_v<typename AppendOnly<int>::graded_type>);
 static_assert(!std::is_void_v<typename Stale<int>::graded_type>);
@@ -328,6 +345,10 @@ static_assert(GradedWrapper<CipherTier<CipherTierTag_v::Cold, long long>>);
 static_assert(GradedWrapper<ResidencyHeat<ResidencyHeatTag_v::Hot,  int>>);
 static_assert(GradedWrapper<ResidencyHeat<ResidencyHeatTag_v::Warm, double>>);
 static_assert(GradedWrapper<ResidencyHeat<ResidencyHeatTag_v::Cold, long long>>);
+static_assert(GradedWrapper<Vendor<VendorBackend_v::Portable, int>>);
+static_assert(GradedWrapper<Vendor<VendorBackend_v::NV,       double>>);
+static_assert(GradedWrapper<Vendor<VendorBackend_v::AMD,      long long>>);
+static_assert(GradedWrapper<Vendor<VendorBackend_v::None,     int>>);
 static_assert(GradedWrapper<Monotonic<std::uint64_t>>);
 static_assert(GradedWrapper<AppendOnly<int>>);
 static_assert(GradedWrapper<Stale<int>>);
@@ -397,6 +418,10 @@ static_assert(forwarders_actually_forward<CipherTier<CipherTierTag_v::Cold, long
 static_assert(forwarders_actually_forward<ResidencyHeat<ResidencyHeatTag_v::Hot,  int>>());
 static_assert(forwarders_actually_forward<ResidencyHeat<ResidencyHeatTag_v::Warm, double>>());
 static_assert(forwarders_actually_forward<ResidencyHeat<ResidencyHeatTag_v::Cold, long long>>());
+static_assert(forwarders_actually_forward<Vendor<VendorBackend_v::Portable, int>>());
+static_assert(forwarders_actually_forward<Vendor<VendorBackend_v::NV,       double>>());
+static_assert(forwarders_actually_forward<Vendor<VendorBackend_v::AMD,      long long>>());
+static_assert(forwarders_actually_forward<Vendor<VendorBackend_v::None,     int>>());
 static_assert(forwarders_actually_forward<Monotonic<std::uint64_t>>());
 static_assert(forwarders_actually_forward<AppendOnly<int>>());
 static_assert(forwarders_actually_forward<Stale<int>>());
@@ -487,6 +512,14 @@ static_assert(ResidencyHeat<ResidencyHeatTag_v::Warm, double>::lattice_name()
                                                  == "ResidencyHeatLattice::At<Warm>");
 static_assert(ResidencyHeat<ResidencyHeatTag_v::Cold, long long>::lattice_name()
                                                  == "ResidencyHeatLattice::At<Cold>");
+static_assert(Vendor<VendorBackend_v::Portable, int>::lattice_name()
+                                                 == "VendorLattice::At<Portable>");
+static_assert(Vendor<VendorBackend_v::NV,       double>::lattice_name()
+                                                 == "VendorLattice::At<NV>");
+static_assert(Vendor<VendorBackend_v::AMD,      long long>::lattice_name()
+                                                 == "VendorLattice::At<AMD>");
+static_assert(Vendor<VendorBackend_v::None,     int>::lattice_name()
+                                                 == "VendorLattice::At<None>");
 static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");
 static_assert(AppendOnly<int>::lattice_name()   == "SeqPrefixLattice");
 static_assert(Stale<int>::lattice_name()        == "StalenessSemiring");
@@ -1165,6 +1198,91 @@ static_assert(sizeof(StaleOverResidencyHeat) == sizeof(Stale<int>),
     "T> is byte-equivalent to T at the inner layer.");
 static_assert(GradedWrapper<StaleOverResidencyHeat>);
 
+// ── Vendor<Backend, T> ⊕ {HotPath, DetSafe, Tagged, Linear, Stale}
+//
+// Vendor is THE FIRST WRAPPER backed by a partial-order lattice.
+// Despite the lattice's non-distributivity, the wrapper itself is
+// regime-1 (At<Backend> is a singleton sub-lattice; the per-wrapper
+// grade is empty).  Every cross-composition cell below verifies
+// that the partial-order wrapper composes cleanly with chain
+// wrappers AND with non-graded compositional partners.
+//
+// THE LOAD-BEARING TRIPLE — HotPath ⊃ Vendor ⊃ DetSafe.  Production
+// pattern from MIMIC.md cross-vendor numerics CI: a foreground
+// hot-path-safe (HotPath<Hot>) Portable kernel (Vendor<Portable>)
+// bit-exact under replay (DetSafe<Pure>) — three orthogonal axes,
+// three regime-1 EBO collapses, sizeof(int).
+using HotOverVendorOverDetSafe =
+    HotPath<HotPathTier_v::Hot,
+            Vendor<VendorBackend_v::Portable,
+                   DetSafe<DetSafeTier_v::Pure, int>>>;
+static_assert(sizeof(HotOverVendorOverDetSafe) == sizeof(int),
+    "HotPath ⊃ Vendor ⊃ DetSafe triple must EBO-collapse all three "
+    "regime-1 wrappers to sizeof(T).  If this fires, the partial-"
+    "order Vendor wrapper regressed its EBO discipline when nested "
+    "with chain wrappers.");
+static_assert(GradedWrapper<HotOverVendorOverDetSafe>);
+
+// Vendor<NV, DetSafe<Pure, T>> — NV-specific AND replay-deterministic.
+// Production: a Mimic NV kernel emit whose numerical recipe is
+// declared bit-exact under cross-vendor CI.
+using VendorOverDetSafe =
+    Vendor<VendorBackend_v::NV,
+           DetSafe<DetSafeTier_v::Pure, int>>;
+static_assert(sizeof(VendorOverDetSafe) == sizeof(int));
+static_assert(GradedWrapper<VendorOverDetSafe>);
+
+// Tagged<Vendor<NV, T>, Source> — provenance over backend.
+// Production: a Mimic NV kernel tagged with its source IR (which
+// Forge phase produced it) for cache-attribution traceability.
+using TaggedVendor =
+    Tagged<Vendor<VendorBackend_v::NV, int>, VerificationTag>;
+static_assert(sizeof(TaggedVendor) == sizeof(int));
+
+// Vendor<Portable, Linear<T>> — portable-tier linear handle.
+// Production: a Portable reference-oracle kernel handle consumed
+// exactly once during cross-vendor CI.
+using VendorOverLinear =
+    Vendor<VendorBackend_v::Portable, Linear<int>>;
+static_assert(sizeof(VendorOverLinear) == sizeof(int));
+static_assert(!std::is_copy_constructible_v<VendorOverLinear>,
+    "Vendor<Backend, Linear<T>> must preserve Linear's move-only "
+    "discipline.  If this fires, Linear's copy-deletion is no longer "
+    "transitively visible through the Vendor wrapper.");
+static_assert(std::is_move_constructible_v<VendorOverLinear>);
+
+// REGIME-1 ⊃ REGIME-4 cells (Stale crosses).
+using VendorOverStale =
+    Vendor<VendorBackend_v::NV, Stale<int>>;
+static_assert(sizeof(VendorOverStale) == sizeof(Stale<int>),
+    "Vendor<NV, Stale<T>> must EBO-collapse the Vendor grade only "
+    "(Stale carries a runtime grade alongside T, regime-4).");
+static_assert(GradedWrapper<VendorOverStale>);
+
+using StaleOverVendor =
+    Stale<Vendor<VendorBackend_v::NV, int>>;
+static_assert(sizeof(StaleOverVendor) == sizeof(Stale<int>),
+    "Stale<Vendor<NV, T>> must equal sizeof(Stale<T>) — Vendor's "
+    "regime-1 EBO collapse means Vendor<NV, T> is byte-equivalent "
+    "to T at the inner layer.");
+static_assert(GradedWrapper<StaleOverVendor>);
+
+// THE PARTIAL-ORDER COMPOSITION WITNESS — Vendor<Portable> over
+// CipherTier<Hot>.  Both wrappers are regime-1 with empty grades
+// at At<>, but Vendor's underlying lattice is a partial order
+// while CipherTier's is a chain.  EBO collapse must succeed
+// regardless of underlying lattice shape.
+using VendorPortableOverCipherTierHot =
+    Vendor<VendorBackend_v::Portable,
+           CipherTier<CipherTierTag_v::Hot, int>>;
+static_assert(sizeof(VendorPortableOverCipherTierHot) == sizeof(int),
+    "Vendor<Portable, CipherTier<Hot, T>> must EBO-collapse despite "
+    "the lattice-shape divergence.  If this fires, the partial-order "
+    "wrapper failed to compose with a chain-wrapper inner — would "
+    "indicate a regime-1 EBO discipline regression specific to "
+    "non-chain lattices.");
+static_assert(GradedWrapper<VendorPortableOverCipherTierHot>);
+
 // THE FOUR-AXIS QUADRUPLE — CipherTier ⊃ ResidencyHeat × HotPath.
 // Demonstrates that CipherTier (storage-residency) and
 // ResidencyHeat (cache-residency) compose orthogonally even though
@@ -1376,6 +1494,43 @@ static_assert(sizeof(UndecupleNested) == sizeof(int),
     "just-shipped ResidencyHeat) stopped using the EBO-friendly "
     "Graded substrate.");
 static_assert(GradedWrapper<UndecupleNested>);
+
+// DUODECUPLE-NESTED witness — adds Vendor as the TWELFTH lattice.
+// THE FIRST DEEP-NESTED WITNESS THAT INCLUDES A PARTIAL-ORDER
+// LATTICE alongside eleven chain lattices.  Production: a Mimic
+// IR003* lowering output: a foreground-hot-path, spin-only-waiter,
+// AcqRel-atomic-only, stack-allocated, fleet-replicated, strongly-
+// consistent, bit-exact, Pure-determinism-safe, wall-clock-bounded,
+// Hot-tier-replicated, L1-resident, NV-pinned kernel.  TWELVE
+// regime-1 wrappers over TWELVE DISTINCT lattices, all with empty
+// grades.  Universal-vocabulary claim at maximum depth — proves
+// that adding the partial-order Vendor axis costs nothing at the
+// EBO surface (the partial-order shape lives at the *cross-At<>*
+// level, not at At<> singleton level which is what EBO-collapses).
+using DuodecupleNested =
+    HotPath<HotPathTier_v::Hot,
+            Wait<WaitStrategy_v::SpinPause,
+                 MemOrder<MemOrderTag_v::AcqRel,
+                          AllocClass<AllocClassTag_v::Stack,
+                                     CipherTier<CipherTierTag_v::Hot,
+                                                ResidencyHeat<ResidencyHeatTag_v::Hot,
+                                                              Vendor<VendorBackend_v::NV,
+                                                                     Progress<ProgressClass_v::Bounded,
+                                                                              OpaqueLifetime<Lifetime_v::PER_FLEET,
+                                                                                             Consistency<Consistency_v::STRONG,
+                                                                                                         DetSafe<DetSafeTier_v::Pure,
+                                                                                                                 NumericalTier<Tolerance::BITEXACT, int>>>>>>>>>>>>;
+static_assert(sizeof(DuodecupleNested) == sizeof(int),
+    "DUODECUPLE-nested HotPath<Wait<MemOrder<AllocClass<CipherTier<"
+    "ResidencyHeat<Vendor<Progress<OpaqueLifetime<Consistency<"
+    "DetSafe<NumericalTier<T>>>>>>>>>>>> must EBO-collapse to "
+    "sizeof(T) — TWELVE regime-1 wrappers over TWELVE DISTINCT "
+    "lattices, ELEVEN chain-shaped + ONE partial-order-shaped.  "
+    "If this fires, either (a) Vendor's regime-1 At<> singleton "
+    "EBO discipline regressed, or (b) the partial-order substrate "
+    "leaked non-empty grade bytes into the wrapper layout — both "
+    "would defeat the wrapper-nesting universal-vocabulary thesis.");
+static_assert(GradedWrapper<DuodecupleNested>);
 
 // ── COVERAGE MATRIX — runtime API parity (smoke checks) ────────────
 //

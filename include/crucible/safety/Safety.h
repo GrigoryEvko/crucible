@@ -45,6 +45,7 @@
 //   AllocClass<Tag, T>       Graded<Absolute,    AllocClassLattice::At<Tag>, T>     1
 //   CipherTier<Tier, T>      Graded<Absolute,    CipherTierLattice::At<Tier>, T>    1
 //   ResidencyHeat<Tier, T>   Graded<Absolute,    ResidencyHeatLattice::At<Tier>, T> 1
+//   Vendor<Backend, T>       Graded<Absolute,    VendorLattice::At<Backend>, T>     1 (partial-order)
 //   Monotonic<T, Cmp>        Graded<Absolute,    MonotoneLattice<T,Cmp>, T>         2
 //   AppendOnly<T, Storage>   Graded<Absolute,    SeqPrefixLattice<T>,   Storage<T>>  3
 //   Stale<T>                 Graded<Absolute,    StalenessSemiring,     T>          4
@@ -153,6 +154,7 @@
 #include <crucible/safety/MemOrder.h>
 #include <crucible/safety/Progress.h>
 #include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/Vendor.h>
 #include <crucible/safety/Wait.h>
 #include <crucible/safety/Diagnostic.h>
 #include <crucible/safety/Linear.h>

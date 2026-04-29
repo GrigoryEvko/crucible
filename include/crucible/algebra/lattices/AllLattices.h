@@ -78,6 +78,7 @@
 #include <crucible/algebra/lattices/StalenessSemiring.h> // ALGEBRA-11 (#456) — shipped
 #include <crucible/algebra/lattices/ToleranceLattice.h>  // ALGEBRA-14 (#459) — shipped (3/3)
 #include <crucible/algebra/lattices/TrustLattice.h>      // ALGEBRA-7  (#452) — shipped
+#include <crucible/algebra/lattices/VendorLattice.h>     // FOUND-G53  — shipped
 #include <crucible/algebra/lattices/WaitLattice.h>       // FOUND-G23  — shipped
 
 namespace crucible::algebra::lattices {
