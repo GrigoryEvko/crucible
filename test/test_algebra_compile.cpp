@@ -46,7 +46,9 @@
 #include <crucible/algebra/lattices/ConfLattice.h>
 #include <crucible/algebra/lattices/ConsistencyLattice.h>
 #include <crucible/algebra/lattices/CrashLattice.h>
+#include <crucible/algebra/lattices/EpochLattice.h>
 #include <crucible/algebra/lattices/FractionalLattice.h>
+#include <crucible/algebra/lattices/GenerationLattice.h>
 #include <crucible/algebra/lattices/HappensBefore.h>
 #include <crucible/algebra/lattices/HotPathLattice.h>
 #include <crucible/algebra/lattices/LifetimeLattice.h>
@@ -197,6 +199,14 @@ void test_peak_bytes_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::peak_bytes_lattice_self_test::runtime_smoke_test();
 }
 
+void test_epoch_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::epoch_lattice_self_test::runtime_smoke_test();
+}
+
+void test_generation_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::generation_lattice_self_test::runtime_smoke_test();
+}
+
 void test_cipher_tier_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::cipher_tier_lattice_self_test::runtime_smoke_test();
 }
@@ -259,6 +269,10 @@ int main() {
              test_bits_budget_lattice_runtime_smoke);
     run_test("test_peak_bytes_lattice_runtime_smoke",
              test_peak_bytes_lattice_runtime_smoke);
+    run_test("test_epoch_lattice_runtime_smoke",
+             test_epoch_lattice_runtime_smoke);
+    run_test("test_generation_lattice_runtime_smoke",
+             test_generation_lattice_runtime_smoke);
     run_test("test_cipher_tier_lattice_runtime_smoke",
              test_cipher_tier_lattice_runtime_smoke);
     run_test("test_residency_heat_lattice_runtime_smoke",

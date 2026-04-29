@@ -1375,6 +1375,36 @@ crucible_neg_compile_test(neg_budgeted_combine_max_cross_t
 crucible_neg_compile_test(neg_budgeted_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands|could not convert")
 
+# ─── FOUND-G67/G68 EpochVersioned product-wrapper neg-compile fixtures ──
+#
+# Pins EpochVersioned<T>'s product-wrapper axis discipline AND the
+# underlying EpochLattice / GenerationLattice strong-newtype
+# disjointness.  Mirrors Budgeted's neg-fixture template at the
+# second product wrapper.
+#
+# 3 wrapper-surface fixtures (cross-T identity):
+#   - neg_epoch_versioned_cross_t_assign     assignment-surface identity
+#   - neg_epoch_versioned_cross_t_swap       swap-surface identity
+#   - neg_epoch_versioned_cross_t_equality   operator==-surface identity
+#
+# 2 wrapper-surface fixtures (cross-axis identity — load-bearing):
+#   - neg_epoch_versioned_axis_swap          ctor parameter-type fence —
+#                                             Epoch ↔ Generation flip at
+#                                             call site rejected
+#   - neg_epoch_versioned_is_at_least_axis_swap
+#                                             admission-gate parameter-
+#                                             type fence
+crucible_neg_compile_test(neg_epoch_versioned_cross_t_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_epoch_versioned_cross_t_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_epoch_versioned_cross_t_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_epoch_versioned_axis_swap
+  "no match for|cannot convert|could not convert|no matching function")
+crucible_neg_compile_test(neg_epoch_versioned_is_at_least_axis_swap
+  "no match for|cannot convert|could not convert|no matching function")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's

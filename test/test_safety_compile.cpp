@@ -44,6 +44,7 @@
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/Crash.h>
 #include <crucible/safety/DetSafe.h>
+#include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Machine.h>
@@ -119,6 +120,9 @@ void test_crash_compile()           {
 void test_det_safe_compile()        {
     ::crucible::safety::detail::det_safe_self_test::runtime_smoke_test();
 }
+void test_epoch_versioned_compile() {
+    ::crucible::safety::detail::epoch_versioned_self_test::runtime_smoke_test();
+}
 void test_hot_path_compile()        {
     ::crucible::safety::detail::hot_path_self_test::runtime_smoke_test();
 }
@@ -177,6 +181,7 @@ int main() {
     run_test("test_consistency_compile",     test_consistency_compile);
     run_test("test_crash_compile",           test_crash_compile);
     run_test("test_det_safe_compile",        test_det_safe_compile);
+    run_test("test_epoch_versioned_compile", test_epoch_versioned_compile);
     run_test("test_hot_path_compile",        test_hot_path_compile);
     run_test("test_linear_compile",          test_linear_compile);
     run_test("test_machine_compile",         test_machine_compile);

@@ -42,6 +42,7 @@
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/Crash.h>
+#include <crucible/safety/EpochVersioned.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Linear.h>
@@ -1432,6 +1433,52 @@ static_assert(GradedWrapper<StaleOverBudgeted>);
 // the product structure even at composition.
 static_assert(Budgeted<int>::lattice_name().size() > 0);
 static_assert(Budgeted<double>::value_type_name().ends_with("double"));
+
+// ── EpochVersioned<T> ⊕ {chain wrappers, sister product wrappers} ─
+//
+// Second product-lattice wrapper (sister to Budgeted).  Verifies
+// that two regime-4 product wrappers compose orthogonally — both
+// Budgeted (resource footprint) and EpochVersioned (fleet version)
+// must coexist on the same value at production-shape sites.
+
+// Crash<NoThrow, EpochVersioned<int>> — chain over product.
+using CrashOverEpochVersioned = Crash<CrashClass_v::NoThrow, EpochVersioned<int>>;
+static_assert(sizeof(CrashOverEpochVersioned) == sizeof(EpochVersioned<int>),
+    "Crash<NoThrow, EpochVersioned<T>> must EBO-collapse the Crash "
+    "grade only — the inner EpochVersioned carries its 16-byte "
+    "regime-4 grade unchanged.");
+static_assert(GradedWrapper<CrashOverEpochVersioned>);
+
+// Tagged<EpochVersioned<int>, Source> — provenance over version.
+using TaggedEpochVersioned = Tagged<EpochVersioned<int>, VerificationTag>;
+static_assert(sizeof(TaggedEpochVersioned) == sizeof(EpochVersioned<int>),
+    "Tagged<EpochVersioned<T>, Source> must EBO-collapse Tagged.");
+
+// THE TWO-PRODUCT-WRAPPER CELL — EpochVersioned ⊃ Budgeted.  A
+// fleet-versioned, footprint-tracked value at the same call site.
+// Both regime-4 grades carried; total layout:
+//   sizeof(int) + 16 (Budgeted grade) + 16 (EpochVersioned grade)
+//                         + alignment padding
+// = 40 + padding.  Both contributions are independent and visible.
+using EpochVersionedOverBudgeted = EpochVersioned<Budgeted<int>>;
+static_assert(sizeof(EpochVersionedOverBudgeted) >= sizeof(Budgeted<int>) + 16,
+    "EpochVersioned<Budgeted<T>> must carry both regime-4 grades — "
+    "the FIRST product-on-product cell.  Both inner Budgeted and "
+    "outer EpochVersioned grades are visible; no EBO collapse "
+    "happens between two non-empty grades.");
+static_assert(GradedWrapper<EpochVersionedOverBudgeted>);
+
+// Reverse nesting: Budgeted<EpochVersioned<int>>.  Same total
+// layout (the regime-4 contributions are commutative under
+// nesting — both add 16 bytes regardless of order).
+using BudgetedOverEpochVersioned = Budgeted<EpochVersioned<int>>;
+static_assert(sizeof(BudgetedOverEpochVersioned) >= sizeof(EpochVersioned<int>) + 16,
+    "Budgeted<EpochVersioned<T>> must carry both regime-4 grades.");
+static_assert(GradedWrapper<BudgetedOverEpochVersioned>);
+
+// Cell-level diagnostic check.
+static_assert(EpochVersioned<int>::lattice_name().size() > 0);
+static_assert(EpochVersioned<double>::value_type_name().ends_with("double"));
 
 // THE FOUR-AXIS QUADRUPLE — CipherTier ⊃ ResidencyHeat × HotPath.
 // Demonstrates that CipherTier (storage-residency) and
