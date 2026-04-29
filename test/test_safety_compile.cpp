@@ -43,6 +43,7 @@
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Machine.h>
+#include <crucible/safety/MemOrder.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/NotInherited.h>
 #include <crucible/safety/NumericalTier.h>
@@ -104,6 +105,9 @@ void test_hot_path_compile()        {
 }
 void test_linear_compile()          {}
 void test_machine_compile()         {}
+void test_mem_order_compile()       {
+    ::crucible::safety::detail::mem_order_self_test::runtime_smoke_test();
+}
 void test_mutation_compile()        {}
 void test_not_inherited_compile()   {}
 void test_numerical_tier_compile()  {
@@ -144,6 +148,7 @@ int main() {
     run_test("test_hot_path_compile",        test_hot_path_compile);
     run_test("test_linear_compile",          test_linear_compile);
     run_test("test_machine_compile",         test_machine_compile);
+    run_test("test_mem_order_compile",       test_mem_order_compile);
     run_test("test_mutation_compile",        test_mutation_compile);
     run_test("test_not_inherited_compile",   test_not_inherited_compile);
     run_test("test_numerical_tier_compile",  test_numerical_tier_compile);

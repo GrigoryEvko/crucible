@@ -66,6 +66,7 @@
 #include <crucible/algebra/lattices/HappensBefore.h>     // ALGEBRA-13 (#458) — shipped
 #include <crucible/algebra/lattices/HotPathLattice.h>    // FOUND-G18  — shipped
 #include <crucible/algebra/lattices/LifetimeLattice.h>   // ALGEBRA-14 (#459) — shipped (1/3)
+#include <crucible/algebra/lattices/MemOrderLattice.h>   // FOUND-G28  — shipped
 #include <crucible/algebra/lattices/MonotoneLattice.h>   // ALGEBRA-9  (#454) — shipped
 #include <crucible/algebra/lattices/ProductLattice.h>    // ALGEBRA-15 (#460) — shipped
 #include <crucible/algebra/lattices/QttSemiring.h>       // ALGEBRA-4  (#449) — shipped

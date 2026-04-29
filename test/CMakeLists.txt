@@ -1093,6 +1093,36 @@ crucible_neg_compile_test(neg_wait_at_cross_strategy_mixing
 crucible_neg_compile_test(neg_wait_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FOUND-G31 MemOrder wrapper neg-compiles (6 fixtures: 4+2) ──────
+#
+# Type-fences CLAUDE.md §VI seq_cst ban at the call site.
+#
+# 4 wrapper-surface fixtures:
+#   - neg_mem_order_relax_to_stronger    LOAD-BEARING seq_cst-ban fence
+#   - neg_mem_order_cross_tag_assign     assignment-surface identity
+#   - neg_mem_order_cross_tag_swap       swap-surface identity
+#   - neg_mem_order_cross_tag_equality   operator==-surface identity
+#
+# 2 lattice-substrate fixtures:
+#   - neg_mem_order_at_cross_tag_mixing       At<T> nested-struct identity
+#   - neg_mem_order_lattice_cross_lattice_mixing  MemOrderTag ≠ WaitStrategy
+#
+# Together these fence the seq_cst-ban discipline at all FOUR
+# surfaces the dispatcher's hot-path atomic-RMW admission gate
+# (per 28_04 §6.4 + CLAUDE.md §VI) depends on.
+crucible_neg_compile_test(neg_mem_order_relax_to_stronger
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_mem_order_cross_tag_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_mem_order_cross_tag_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_mem_order_cross_tag_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_mem_order_at_cross_tag_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_mem_order_lattice_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's

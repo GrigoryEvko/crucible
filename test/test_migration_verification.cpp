@@ -41,6 +41,7 @@
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Linear.h>
+#include <crucible/safety/MemOrder.h>
 #include <crucible/safety/Wait.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/OpaqueLifetime.h>
@@ -151,6 +152,14 @@ static_assert(sizeof(Wait<WaitStrategy_v::Park,        double>) == sizeof(double
 static_assert(sizeof(Wait<WaitStrategy_v::Block,       long long>)
                                                                  == sizeof(long long));
 
+// MemOrder<Tag, T> — regime-1 EBO collapse via the MemOrderLattice::
+// At<Tag> singleton sub-lattice (FOUND-G29).  Composes orthogonally
+// with HotPath / Wait — type-fences CLAUDE.md §VI's seq_cst ban.
+static_assert(sizeof(MemOrder<MemOrderTag_v::Relaxed, int>)    == sizeof(int));
+static_assert(sizeof(MemOrder<MemOrderTag_v::AcqRel,  double>) == sizeof(double));
+static_assert(sizeof(MemOrder<MemOrderTag_v::SeqCst,  long long>)
+                                                                == sizeof(long long));
+
 // Monotonic<T, std::less<T>> collapses value+grade into one T cell
 // via Graded's specialization for `T == element_type`.
 static_assert(sizeof(Monotonic<std::uint32_t>)      == sizeof(std::uint32_t));
@@ -182,6 +191,7 @@ static_assert(OpaqueLifetime<Lifetime_v::PER_FLEET, int>::value_type_name().ends
 static_assert(DetSafe<DetSafeTier_v::Pure, int>::value_type_name().ends_with("int"));
 static_assert(HotPath<HotPathTier_v::Hot, int>::value_type_name().ends_with("int"));
 static_assert(Wait<WaitStrategy_v::SpinPause, int>::value_type_name().ends_with("int"));
+static_assert(MemOrder<MemOrderTag_v::Relaxed, int>::value_type_name().ends_with("int"));
 static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
            || Monotonic<std::uint64_t>::value_type_name().ends_with("long unsigned int"));
 static_assert(Stale<int>::value_type_name().ends_with("int"));
@@ -211,6 +221,7 @@ static_assert(!std::is_void_v<typename OpaqueLifetime<Lifetime_v::PER_FLEET, int
 static_assert(!std::is_void_v<typename DetSafe<DetSafeTier_v::Pure, int>::graded_type>);
 static_assert(!std::is_void_v<typename HotPath<HotPathTier_v::Hot, int>::graded_type>);
 static_assert(!std::is_void_v<typename Wait<WaitStrategy_v::SpinPause, int>::graded_type>);
+static_assert(!std::is_void_v<typename MemOrder<MemOrderTag_v::Relaxed, int>::graded_type>);
 static_assert(!std::is_void_v<typename Monotonic<std::uint64_t>::graded_type>);
 static_assert(!std::is_void_v<typename AppendOnly<int>::graded_type>);
 static_assert(!std::is_void_v<typename Stale<int>::graded_type>);
@@ -251,6 +262,9 @@ static_assert(GradedWrapper<HotPath<HotPathTier_v::Cold, long long>>);
 static_assert(GradedWrapper<Wait<WaitStrategy_v::SpinPause, int>>);
 static_assert(GradedWrapper<Wait<WaitStrategy_v::AcquireWait, double>>);
 static_assert(GradedWrapper<Wait<WaitStrategy_v::Block, long long>>);
+static_assert(GradedWrapper<MemOrder<MemOrderTag_v::Relaxed, int>>);
+static_assert(GradedWrapper<MemOrder<MemOrderTag_v::AcqRel,  double>>);
+static_assert(GradedWrapper<MemOrder<MemOrderTag_v::SeqCst,  long long>>);
 static_assert(GradedWrapper<Monotonic<std::uint64_t>>);
 static_assert(GradedWrapper<AppendOnly<int>>);
 static_assert(GradedWrapper<Stale<int>>);
@@ -305,6 +319,9 @@ static_assert(forwarders_actually_forward<HotPath<HotPathTier_v::Cold, long long
 static_assert(forwarders_actually_forward<Wait<WaitStrategy_v::SpinPause, int>>());
 static_assert(forwarders_actually_forward<Wait<WaitStrategy_v::AcquireWait, double>>());
 static_assert(forwarders_actually_forward<Wait<WaitStrategy_v::Block, long long>>());
+static_assert(forwarders_actually_forward<MemOrder<MemOrderTag_v::Relaxed, int>>());
+static_assert(forwarders_actually_forward<MemOrder<MemOrderTag_v::AcqRel,  double>>());
+static_assert(forwarders_actually_forward<MemOrder<MemOrderTag_v::SeqCst,  long long>>());
 static_assert(forwarders_actually_forward<Monotonic<std::uint64_t>>());
 static_assert(forwarders_actually_forward<AppendOnly<int>>());
 static_assert(forwarders_actually_forward<Stale<int>>());
@@ -365,6 +382,12 @@ static_assert(Wait<WaitStrategy_v::AcquireWait, double>::lattice_name()
                                                  == "WaitLattice::At<AcquireWait>");
 static_assert(Wait<WaitStrategy_v::Block,       long long>::lattice_name()
                                                  == "WaitLattice::At<Block>");
+static_assert(MemOrder<MemOrderTag_v::Relaxed, int>::lattice_name()
+                                                 == "MemOrderLattice::At<Relaxed>");
+static_assert(MemOrder<MemOrderTag_v::AcqRel,  double>::lattice_name()
+                                                 == "MemOrderLattice::At<AcqRel>");
+static_assert(MemOrder<MemOrderTag_v::SeqCst,  long long>::lattice_name()
+                                                 == "MemOrderLattice::At<SeqCst>");
 static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");
 static_assert(AppendOnly<int>::lattice_name()   == "SeqPrefixLattice");
 static_assert(Stale<int>::lattice_name()        == "StalenessSemiring");
@@ -716,6 +739,77 @@ using WaitOverRefined =
 static_assert(sizeof(WaitOverRefined) == sizeof(int));
 static_assert(GradedWrapper<WaitOverRefined>);
 
+// REGIME-1 ⊃ REGIME-4 cross-composition for Wait (audit-pass mirror
+// of the HotPath cells above).  Stale carries a runtime grade
+// alongside T (regime-4, T+grade per instance, not EBO-collapsible);
+// Wait is regime-1 with empty grade.  Composing them in either
+// order must give sizeof == sizeof(Stale<T>) — Wait's grade EBO-
+// collapses, Stale's runtime grade is preserved.
+using WaitOverStale = Wait<WaitStrategy_v::SpinPause, Stale<int>>;
+static_assert(sizeof(WaitOverStale) == sizeof(Stale<int>),
+    "Wait<SpinPause, Stale<T>> must EBO-collapse the Wait grade only "
+    "(Stale carries a runtime grade alongside T, regime-4).  If this "
+    "fires, Wait's regime-1 EBO discipline regressed when wrapping "
+    "a non-empty-grade inner.");
+static_assert(GradedWrapper<WaitOverStale>);
+
+using StaleOverWait = Stale<Wait<WaitStrategy_v::SpinPause, int>>;
+static_assert(sizeof(StaleOverWait) == sizeof(Stale<int>),
+    "Stale<Wait<SpinPause, T>> must equal sizeof(Stale<T>) — Wait's "
+    "regime-1 EBO collapse means Wait<SpinPause, T> is byte-equivalent "
+    "to T at the inner layer, so Stale's storage shape is unchanged.");
+static_assert(GradedWrapper<StaleOverWait>);
+
+// ── MemOrder<Tag, T> ⊕ {HotPath, Wait, Tagged, Linear, Stale} cells ──
+//
+// THE LOAD-BEARING TRIPLE — HotPath ⊃ Wait ⊃ MemOrder.  The
+// canonical hot-path atomic-RMW caller per 28_04 §4.7:
+//
+//   HotPath<Hot, Wait<SpinPause, MemOrder<AcqRel, T>>>
+//
+// — a foreground hot-path function using only spin-pause waits and
+// at-most-AcqRel memory ordering.  All three axes EBO-collapse.
+using HotOverWaitOverMemOrder =
+    HotPath<HotPathTier_v::Hot,
+            Wait<WaitStrategy_v::SpinPause,
+                 MemOrder<MemOrderTag_v::AcqRel, int>>>;
+static_assert(sizeof(HotOverWaitOverMemOrder) == sizeof(int));
+static_assert(GradedWrapper<HotOverWaitOverMemOrder>);
+
+// MemOrder<AcqRel, DetSafe<Pure, T>> — AcqRel atomic on a Pure-
+// determinism-safe value.  Production: KernelCache slot CAS holding
+// a Philox-derived index.
+using MemOrderOverDetSafe =
+    MemOrder<MemOrderTag_v::AcqRel,
+             DetSafe<DetSafeTier_v::Pure, int>>;
+static_assert(sizeof(MemOrderOverDetSafe) == sizeof(int));
+static_assert(GradedWrapper<MemOrderOverDetSafe>);
+
+// Tagged<MemOrder<Relaxed, T>, Source> — provenance over memory
+// ordering.  Production: a TraceRing head counter tagged with its
+// Vessel source AND constrained to relaxed-only access.
+using TaggedMemOrder =
+    Tagged<MemOrder<MemOrderTag_v::Relaxed, int>, VerificationTag>;
+static_assert(sizeof(TaggedMemOrder) == sizeof(int));
+
+// MemOrder<Relaxed, Linear<T>> — relaxed-tier linear handle.
+using MemOrderOverLinear =
+    MemOrder<MemOrderTag_v::Relaxed, Linear<int>>;
+static_assert(sizeof(MemOrderOverLinear) == sizeof(int));
+static_assert(!std::is_copy_constructible_v<MemOrderOverLinear>);
+static_assert(std::is_move_constructible_v<MemOrderOverLinear>);
+
+// REGIME-1 ⊃ REGIME-4 cells (audit-pass mirror).
+using MemOrderOverStale =
+    MemOrder<MemOrderTag_v::Relaxed, Stale<int>>;
+static_assert(sizeof(MemOrderOverStale) == sizeof(Stale<int>));
+static_assert(GradedWrapper<MemOrderOverStale>);
+
+using StaleOverMemOrder =
+    Stale<MemOrder<MemOrderTag_v::Relaxed, int>>;
+static_assert(sizeof(StaleOverMemOrder) == sizeof(Stale<int>));
+static_assert(GradedWrapper<StaleOverMemOrder>);
+
 // QUADRUPLE-NESTED witness — extends the TRIPLE story to FOUR
 // distinct lattices.  Production: a fleet-replicated, strongly-
 // consistent, bit-exact, Pure-determinism-safe parameter shard.
@@ -774,6 +868,28 @@ static_assert(sizeof(SextupleNested) == sizeof(int),
     "fires, one of the six wrapper layers stopped using the EBO-"
     "friendly Graded substrate.");
 static_assert(GradedWrapper<SextupleNested>);
+
+// SEPTUPLE-NESTED witness — adds MemOrder as the SEVENTH lattice.
+// Production: a foreground-hot-path, spin-only-waiter, AcqRel-
+// atomic-only, fleet-replicated, strongly-consistent, bit-exact,
+// Pure-determinism-safe value.  Seven regime-1 wrappers over SEVEN
+// DISTINCT lattices, all with empty grades.  Maximum-depth
+// universal-vocabulary claim post-MemOrder ship.
+using SeptupleNested =
+    HotPath<HotPathTier_v::Hot,
+            Wait<WaitStrategy_v::SpinPause,
+                 MemOrder<MemOrderTag_v::AcqRel,
+                          OpaqueLifetime<Lifetime_v::PER_FLEET,
+                                         Consistency<Consistency_v::STRONG,
+                                                     DetSafe<DetSafeTier_v::Pure,
+                                                             NumericalTier<Tolerance::BITEXACT, int>>>>>>>;
+static_assert(sizeof(SeptupleNested) == sizeof(int),
+    "SEPTUPLE-nested HotPath<Wait<MemOrder<OpaqueLifetime<"
+    "Consistency<DetSafe<NumericalTier<T>>>>>>> must EBO-collapse "
+    "to sizeof(T) — seven regime-1 wrappers over seven DISTINCT "
+    "lattices.  If this fires, one of the seven wrapper layers "
+    "stopped using the EBO-friendly Graded substrate.");
+static_assert(GradedWrapper<SeptupleNested>);
 
 // ── COVERAGE MATRIX — runtime API parity (smoke checks) ────────────
 //
