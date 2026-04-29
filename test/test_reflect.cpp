@@ -2,7 +2,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
-#include <cassert>
+#include "test_assert.h"
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>

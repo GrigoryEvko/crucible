@@ -19,7 +19,7 @@
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cinttypes>
 #include <cstdio>
 #include <string_view>

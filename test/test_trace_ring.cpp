@@ -2,7 +2,7 @@
 #include <crucible/TraceRing.h>
 
 #include <atomic>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <thread>
 #include <vector>

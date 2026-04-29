@@ -12,7 +12,7 @@
 
 #include <crucible/safety/ScopedView.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <optional>
 #include <string>

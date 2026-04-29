@@ -9,8 +9,9 @@
 #include <crucible/MetaLog.h>
 #include <crucible/Platform.h>
 
+#include "test_assert.h"
+
 #include <atomic>
-#include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <thread>

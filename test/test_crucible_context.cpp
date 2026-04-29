@@ -1,7 +1,7 @@
 #include <crucible/CrucibleContext.h>
 #include <crucible/BackgroundThread.h>
 #include <crucible/effects/Capabilities.h>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>

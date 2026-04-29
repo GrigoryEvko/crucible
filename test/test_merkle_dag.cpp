@@ -1,6 +1,6 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/effects/Capabilities.h>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <cstring>
 

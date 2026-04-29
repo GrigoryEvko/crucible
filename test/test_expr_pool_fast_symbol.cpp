@@ -16,7 +16,7 @@
 #include <crucible/Expr.h>
 #include <crucible/ExprPool.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 
 using namespace crucible;

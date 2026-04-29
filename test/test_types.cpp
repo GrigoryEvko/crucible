@@ -7,8 +7,9 @@
 
 #include <crucible/Types.h>
 
+#include "test_assert.h"
+
 #include <bit>
-#include <cassert>
 #include <compare>
 #include <cstdint>
 #include <cstdio>

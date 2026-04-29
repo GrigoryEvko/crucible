@@ -18,8 +18,9 @@
 #include <crucible/DimHash.h>
 #include <crucible/MerkleDag.h>
 
+#include "test_assert.h"
+
 #include <array>
-#include <cassert>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>

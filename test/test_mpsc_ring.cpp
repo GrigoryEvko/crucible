@@ -20,7 +20,7 @@
 #include <crucible/concurrent/MpscRing.h>
 
 #include <atomic>
-#include <cassert>
+#include "test_assert.h"
 #include <chrono>
 #include <cstdint>
 #include <cstdio>

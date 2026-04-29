@@ -7,7 +7,7 @@
 
 #include <crucible/safety/Checked.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 #include <limits>

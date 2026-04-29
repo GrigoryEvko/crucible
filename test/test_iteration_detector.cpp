@@ -5,7 +5,7 @@
 
 #include <crucible/IterationDetector.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 

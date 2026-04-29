@@ -10,7 +10,7 @@
 
 #include <crucible/Vigil.h>
 #include "test_harness.h"
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <cstring>
 

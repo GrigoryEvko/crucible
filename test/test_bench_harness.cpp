@@ -24,7 +24,7 @@
 // stdlib
 #include <algorithm>
 #include <bit>
-#include <cassert>
+#include "test_assert.h"
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -158,7 +158,11 @@ void test_percentile_interp() {
 #ifdef NDEBUG
     {
         const std::vector<double> empty;
-        CHECK(bench::percentile_interp(empty, 0.5) == 0.0);
+        // Use approx() instead of `== 0.0` to dodge -Werror=float-equal
+        // under release flags.  The contract says "exactly 0.0", but
+        // express it via the project's eps comparator for uniformity
+        // with the rest of this file.
+        CHECK(approx(bench::percentile_interp(empty, 0.5), 0.0));
     }
 #endif
 

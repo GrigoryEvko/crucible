@@ -11,7 +11,7 @@
 #include <crucible/Philox.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <cmath>
 #include <cstdio>
 #include <cstring>

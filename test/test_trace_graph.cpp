@@ -5,7 +5,8 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/TraceGraph.h>
 
-#include <cassert>
+#include "test_assert.h"
+
 #include <cstdint>
 #include <cstdio>
 #include <vector>

@@ -2,7 +2,7 @@
 
 #include <memory>
 #include <crucible/effects/Capabilities.h>
-#include <cassert>
+#include "test_assert.h"
 #include <cinttypes>
 #include <cstdio>
 #include <cstring>

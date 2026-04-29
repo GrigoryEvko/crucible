@@ -22,7 +22,7 @@
 #include <crucible/CrucibleContext.h>
 #include <crucible/effects/Capabilities.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cmath>
 #include <cstdio>
 #include <random>

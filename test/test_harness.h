@@ -7,7 +7,7 @@
 // No sleep_for, no yield, no futex, no condition_variable — ever.
 
 #include <crucible/Vigil.h>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 
 #ifdef __linux__

@@ -25,7 +25,7 @@
 #include <crucible/RecipePool.h>
 #include <crucible/RecipeRegistry.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 
 namespace {

@@ -3,7 +3,8 @@
 #include <crucible/Ops.h>
 #include <crucible/SymbolTable.h>
 
-#include <cassert>
+#include "test_assert.h"
+
 #include <cmath>
 #include <cstdint>
 #include <cstdio>

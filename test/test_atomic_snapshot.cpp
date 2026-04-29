@@ -24,7 +24,7 @@
 #include <crucible/concurrent/AtomicSnapshot.h>
 
 #include <atomic>
-#include <cassert>
+#include "test_assert.h"
 #include <chrono>
 #include <cstdint>
 #include <cstdio>

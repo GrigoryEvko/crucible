@@ -1,7 +1,7 @@
 #include <crucible/CKernel.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/safety/Tagged.h>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <cstring>
 

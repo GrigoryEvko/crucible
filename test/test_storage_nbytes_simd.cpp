@@ -26,7 +26,7 @@
 #include <crucible/Types.h>
 
 #include <array>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 #include <cstring>

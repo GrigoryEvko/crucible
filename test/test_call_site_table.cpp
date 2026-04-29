@@ -2,7 +2,7 @@
 
 #include <crucible/CallSiteTable.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cstdint>
 #include <cstdio>
 

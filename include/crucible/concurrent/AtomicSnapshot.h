@@ -210,11 +210,14 @@ public:
         // requirement of this side: acquire semantics prevent the
         // memcpy below from being hoisted ABOVE this increment.  See
         // the long doc-comment above for why a plain release is wrong.
-        const uint64_t old_seq = seq_.bump_by(1);
+        [[maybe_unused]] const uint64_t old_seq = seq_.bump_by(1);
         // Single-writer invariant — debug-checked.  If this fires,
         // either (a) two threads called publish() concurrently
         // (the documented contract violation) or (b) seq_ was
-        // corrupted by external bug.
+        // corrupted by external bug.  CRUCIBLE_DEBUG_ASSERT strips
+        // to `((void)0)` under -DNDEBUG, so old_seq becomes the
+        // sole consumer; mark `[[maybe_unused]]` so -Werror=
+        // unused-variable does not fire under release flags.
         CRUCIBLE_DEBUG_ASSERT((old_seq & 1u) == 0u);
 
         // Non-atomic byte write of the value.  Bounded by sizeof(T);

@@ -10,7 +10,8 @@
 #include <crucible/effects/Computation.h>
 #include <crucible/effects/EffectRow.h>
 
-#include <cassert>
+#include "test_assert.h"
+
 #include <cstdio>
 #include <type_traits>
 

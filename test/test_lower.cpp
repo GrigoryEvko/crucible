@@ -1,6 +1,6 @@
 #include <crucible/Lower.h>
 #include <crucible/effects/Capabilities.h>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <memory>
 

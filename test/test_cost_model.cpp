@@ -10,7 +10,8 @@
 
 #include <crucible/CostModel.h>
 
-#include <cassert>
+#include "test_assert.h"
+
 #include <cmath>
 #include <cstdio>
 

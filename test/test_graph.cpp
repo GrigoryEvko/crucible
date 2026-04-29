@@ -2,7 +2,7 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/ExprPool.h>
 #include <crucible/Types.h>
-#include <cassert>
+#include "test_assert.h"
 #include <cstdio>
 #include <span>
 

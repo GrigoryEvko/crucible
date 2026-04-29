@@ -8,12 +8,12 @@
 #include <crucible/sessions/Sessions.h>
 #include <crucible/bridges/Bridges.h>
 
+#include "test_assert.h"
+
 #include <atomic>
-#include <cassert>
 #include <contracts>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <functional>
 #include <inplace_vector>

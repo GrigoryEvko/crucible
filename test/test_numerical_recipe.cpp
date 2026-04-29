@@ -13,7 +13,7 @@
 
 #include <crucible/NumericalRecipe.h>
 
-#include <cassert>
+#include "test_assert.h"
 #include <cinttypes>
 #include <cstdio>
 #include <type_traits>
