@@ -48,12 +48,16 @@
 //
 // ── Pattern ─────────────────────────────────────────────────────────
 //
-// Forwarder from `crucible::permissions::detail::is_permission_impl`
-// + `is_shared_permission_impl`.  The detail-namespace partial
-// specializations (Permission.h:767-781) carry the load-bearing
-// `tag_type = Tag` typedef; this header just exposes them through the
-// dispatcher's reading namespace and adds the `requires`-constrained
-// alias surface that FOUND-D's parameter-shape protocol consumes.
+// Forwarder from `crucible::safety::detail::is_permission_impl` +
+// `is_shared_permission_impl` (those impls live in the
+// `crucible::safety` namespace despite the file path being
+// `permissions/Permission.h` — see CLAUDE.md §L0 wrapper-namespace
+// convention).  The detail-namespace partial specializations
+// (Permission.h:767-781) carry the load-bearing `tag_type = Tag`
+// typedef; this header just exposes them through the dispatcher's
+// reading namespace `crucible::safety::extract` and adds the
+// `requires`-constrained alias surface that FOUND-D's
+// parameter-shape protocol consumes.
 //
 // `std::remove_cvref_t<T>` strips reference and top-level cv qualifiers
 // before the trait check so call sites can write the predicate against
