@@ -327,6 +327,7 @@ crucible_test(test_effects_compile)
 crucible_test(test_diagnostic_compile)
 crucible_test(test_stable_name_compile)
 crucible_test(test_signature_traits)
+crucible_test(test_is_owned_region)
 crucible_test(test_row_mismatch_compile)
 crucible_test(test_insights_compile)
 crucible_test(test_cheat_probe_compile)
@@ -1194,6 +1195,15 @@ crucible_neg_compile_test(neg_signature_traits_param_index_overflow
 # Boundary case: param_type_t<&nullary, 0> on arity-0 function.  Off-
 # by-one in the requires clause would slip through here.
 crucible_neg_compile_test(neg_signature_traits_param_index_on_nullary
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D03 — owned_region_value_t<T> on non-OwnedRegion T ─────
+#
+# The `requires is_owned_region_v<T>` constraint on
+# owned_region_value_t / owned_region_tag_t rejects non-OwnedRegion
+# arguments at the alias declaration rather than producing `void`
+# from the primary template's `value_type = void;`.
+crucible_neg_compile_test(neg_is_owned_region_value_t_on_non_region
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
