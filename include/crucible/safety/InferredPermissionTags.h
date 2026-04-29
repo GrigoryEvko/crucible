@@ -11,15 +11,37 @@
 //
 // ── What this header ships ──────────────────────────────────────────
 //
+//   inferred_permission_tags_raw_t<FnPtr>
+//                          The DECLARATION-ORDER PermSet harvested
+//                          from the parameter list — deduped via
+//                          unique-prepend but NOT canonically sorted.
+//                          Used when the dispatcher generates
+//                          splits_into_pack in caller-visible order
+//                          (e.g., when the user expects the tag list
+//                          to mirror their parameter order).
+//
 //   inferred_permission_tags_t<FnPtr>
-//                          A `crucible::safety::PermSet<Tags...>`
-//                          deduped + canonicalized, containing the
-//                          region tag of every parameter that is
+//                          A `crucible::safety::proto::PermSet<Tags...>`
+//                          deduped + CANONICALIZED (sorted), containing
+//                          the region tag of every parameter that is
 //                          either an OwnedRegion<T, Tag>, a
 //                          Permission<Tag>, or a SharedPermission<Tag>
 //                          (after cv-ref stripping).  Parameters
 //                          that are not tag-bearing wrappers
 //                          contribute nothing.
+//
+//   function_has_tag_v<FnPtr, Tag>
+//                          Point-query: true iff Tag appears in the
+//                          inferred set.  Useful for the dispatcher's
+//                          per-shape concept gates that ask "does
+//                          this function operate on region X?"
+//
+//   inferred_permission_tags_count_v<FnPtr>
+//                          Count of distinct tags in the inferred
+//                          set.  Used by the cache-tier rule
+//                          (CostModel.h) to pick a parallelism
+//                          factor when the function is recognized
+//                          as a multi-region transform.
 //
 //   IsTagFreeFunction<FnPtr>
 //                          Concept form: true iff
@@ -169,20 +191,44 @@ using infer_perm_tags_raw =
 // ── Public surface ─────────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
-// Inferred permission tags from the function's parameter list.
-// Canonicalized (sorted unique form) so callers can compare two
-// signatures' tag sets without caring about declaration order.
+// Inferred permission tags from the function's parameter list, in
+// DECLARATION ORDER.  Deduped via unique-prepend but NOT
+// canonically sorted; the dispatcher consumes this when emitting
+// splits_into_pack in caller-visible order.
+template <auto FnPtr>
+using inferred_permission_tags_raw_t =
+    detail::infer_perm_tags_raw<FnPtr>;
+
+// Inferred permission tags, CANONICALIZED (sorted unique form) so
+// callers can compare two signatures' tag sets without caring about
+// declaration order.  Required for federation cache-key stability —
+// the row hash (FOUND-I02) keys on the canonical form.
 template <auto FnPtr>
 using inferred_permission_tags_t =
     ::crucible::safety::proto::perm_set_canonicalize_t<
-        detail::infer_perm_tags_raw<FnPtr>>;
+        inferred_permission_tags_raw_t<FnPtr>>;
+
+// Point-query: does FnPtr's parameter list carry a tag-bearing
+// wrapper for THIS specific Tag?  Folds over the canonical form;
+// declaration-order independent.  Used by per-shape concept gates
+// in FOUND-D12+ that ask "does this function operate on region X?"
+template <auto FnPtr, typename Tag>
+inline constexpr bool function_has_tag_v =
+    ::crucible::safety::proto::perm_set_contains_v<
+        inferred_permission_tags_t<FnPtr>, Tag>;
+
+// Count of distinct tags in the inferred set.  Used by the
+// cache-tier rule (concurrent/CostModel.h) to set parallelism
+// factor when the dispatcher recognizes a multi-region transform —
+// each tag corresponds to one parallelizable axis.
+template <auto FnPtr>
+inline constexpr std::size_t inferred_permission_tags_count_v =
+    inferred_permission_tags_t<FnPtr>::size;
 
 // True iff the function takes no tag-bearing parameters.
 template <auto FnPtr>
 inline constexpr bool is_tag_free_function_v =
-    ::crucible::safety::proto::perm_set_equal_v<
-        inferred_permission_tags_t<FnPtr>,
-        ::crucible::safety::proto::EmptyPermSet>;
+    inferred_permission_tags_count_v<FnPtr> == 0;
 
 template <auto FnPtr>
 concept IsTagFreeFunction = is_tag_free_function_v<FnPtr>;
@@ -208,10 +254,17 @@ static_assert(::crucible::safety::proto::perm_set_equal_v<
 
 static_assert(is_tag_free_function_v<&f_no_tags>);
 static_assert(IsTagFreeFunction<&f_no_tags>);
+static_assert(inferred_permission_tags_count_v<&f_no_tags> == 0);
 
 // Nullary function — also empty.
 inline void f_nullary() noexcept {}
 static_assert(is_tag_free_function_v<&f_nullary>);
+static_assert(inferred_permission_tags_count_v<&f_nullary> == 0);
+
+// Raw form on tag-free function is also empty.
+static_assert(::crucible::safety::proto::perm_set_equal_v<
+    inferred_permission_tags_raw_t<&f_no_tags>,
+    ::crucible::safety::proto::EmptyPermSet>);
 
 }  // namespace detail::infer_perm_tags_self_test
 

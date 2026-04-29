@@ -228,6 +228,125 @@ void test_concept_form() {
     static_assert(!extract::IsTagFreeFunction<&f_mixed>);
 }
 
+// Many-parameter function (8 params) — exercises the recursive
+// fold's depth.  Production functions rarely exceed 8 params, but
+// the fold should handle 8+ without hitting GCC's default
+// instantiation limit (256+).  Mix of tag-bearing and
+// non-tag-bearing params verifies the skip-and-continue logic at
+// non-trivial depth.
+void f_eight_params(int, OR<int>&&, double, P_b&&,
+                    char*, ORc<float>&&, void*, SP_a&&) noexcept {}
+
+void f_ten_params(int, double, char*, void*, OR<int>&&,
+                  ORb<float>&&, ORc<double>&&, P_a&&, P_b&&,
+                  SP_a&&) noexcept {}
+
+// Function pointer parameter — a function pointer is not a
+// tag-bearing wrapper.  The fold must skip it without trying to
+// extract a tag from the pointee's parameter list.
+using IntFnPtr = void(*)(int);
+void f_with_fn_ptr_param(IntFnPtr, OR<int>&&) noexcept {}
+
+// Pointer-to-Permission and pointer-to-OwnedRegion — per FOUND-D04
+// audit, these are NOT tag-bearing (remove_cvref does not strip
+// pointers).  Verify D11 inherits the same discrimination.
+void f_with_ptr_to_permission(P_a*, OR<int>&&) noexcept {}
+void f_with_ptr_to_owned_region(OR<int>*, P_b&&) noexcept {}
+
+void test_many_param_function() {
+    // f_eight_params yields {a, b} — only the OR<a>, P_b, ORc, SP_a
+    // contribute; ints/double/char*/void* are skipped.  Tags
+    // collected (declaration order): a, b, c, a → deduped + sorted.
+    using TagsExpected =
+        proto::PermSet<region_tag_a, region_tag_b, region_tag_c>;
+    static_assert(proto::perm_set_equal_v<
+        extract::inferred_permission_tags_t<&f_eight_params>,
+        TagsExpected>);
+    static_assert(extract::inferred_permission_tags_count_v<&f_eight_params>
+                  == 3);
+
+    static_assert(proto::perm_set_equal_v<
+        extract::inferred_permission_tags_t<&f_ten_params>,
+        TagsExpected>);
+    static_assert(extract::inferred_permission_tags_count_v<&f_ten_params>
+                  == 3);
+}
+
+void test_function_pointer_param_skipped() {
+    // The IntFnPtr parameter does NOT contribute a tag.  Only OR<a>
+    // contributes.
+    using TagsExpected = proto::PermSet<region_tag_a>;
+    static_assert(proto::perm_set_equal_v<
+        extract::inferred_permission_tags_t<&f_with_fn_ptr_param>,
+        TagsExpected>);
+    static_assert(extract::inferred_permission_tags_count_v<&f_with_fn_ptr_param>
+                  == 1);
+}
+
+void test_pointer_to_wrapper_skipped() {
+    // Permission<Tag>* is NOT a Permission (per FOUND-D04 audit).
+    // Only the OR<int>&& contributes.
+    using TagsExpected = proto::PermSet<region_tag_a>;
+    static_assert(proto::perm_set_equal_v<
+        extract::inferred_permission_tags_t<&f_with_ptr_to_permission>,
+        TagsExpected>);
+
+    // Symmetric: OwnedRegion<T, Tag>* is NOT an OwnedRegion.
+    using TagsExpected2 = proto::PermSet<region_tag_b>;
+    static_assert(proto::perm_set_equal_v<
+        extract::inferred_permission_tags_t<&f_with_ptr_to_owned_region>,
+        TagsExpected2>);
+}
+
+void test_function_has_tag_predicate() {
+    // Point-query: does the function operate on a SPECIFIC tag?
+    static_assert( extract::function_has_tag_v<
+        &f_two_owned_regions, region_tag_a>);
+    static_assert( extract::function_has_tag_v<
+        &f_two_owned_regions, region_tag_b>);
+    static_assert(!extract::function_has_tag_v<
+        &f_two_owned_regions, region_tag_c>);
+
+    // Tag-free function does not have any tag.
+    static_assert(!extract::function_has_tag_v<
+        &f_no_tag_params, region_tag_a>);
+    static_assert(!extract::function_has_tag_v<
+        &f_nullary, region_tag_a>);
+
+    // Mixed shape — the canonical query sees through cv-ref.
+    static_assert( extract::function_has_tag_v<
+        &f_cvref_qualified, region_tag_a>);
+    static_assert( extract::function_has_tag_v<
+        &f_cvref_qualified, region_tag_b>);
+}
+
+void test_count_and_raw_form() {
+    // Count tracks size of the canonical set.
+    static_assert(extract::inferred_permission_tags_count_v<&f_no_tag_params>
+                  == 0);
+    static_assert(extract::inferred_permission_tags_count_v<&f_one_owned_region>
+                  == 1);
+    static_assert(extract::inferred_permission_tags_count_v<&f_two_owned_regions>
+                  == 2);
+    static_assert(extract::inferred_permission_tags_count_v<&f_three_owned_regions>
+                  == 3);
+
+    // Raw form preserves declaration order (deduped).  For
+    // f_three_owned_regions(a, b, c) the raw form's first element
+    // is region_tag_a (most recently inserted at the head of the
+    // unique-prepend chain — perm_set_insert_t prepends at the
+    // front of the list).  We check via perm_set_equal_v which is
+    // order-independent — the raw and canonical forms agree on
+    // the SET membership but may differ on order; for this 3-param
+    // function the deduped declaration order happens to also yield
+    // the canonical order under sort.
+    using RawExpected =
+        proto::PermSet<region_tag_a, region_tag_b, region_tag_c>;
+    static_assert(proto::perm_set_equal_v<
+        extract::inferred_permission_tags_raw_t<&f_three_owned_regions>,
+        RawExpected>);
+}
+
 void test_runtime_consistency() {
     volatile std::size_t const cap = 50;
     bool baseline_empty =
@@ -274,6 +393,16 @@ int main() {
              test_canonicalization_order_independence);
     run_test("test_concept_form",
              test_concept_form);
+    run_test("test_many_param_function",
+             test_many_param_function);
+    run_test("test_function_pointer_param_skipped",
+             test_function_pointer_param_skipped);
+    run_test("test_pointer_to_wrapper_skipped",
+             test_pointer_to_wrapper_skipped);
+    run_test("test_function_has_tag_predicate",
+             test_function_has_tag_predicate);
+    run_test("test_count_and_raw_form",
+             test_count_and_raw_form);
     run_test("test_runtime_consistency",
              test_runtime_consistency);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
