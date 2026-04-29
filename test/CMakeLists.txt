@@ -1368,6 +1368,10 @@ crucible_neg_compile_test(neg_budgeted_cross_t_equality
   "no match for|cannot convert|no matching function|invalid operands")
 crucible_neg_compile_test(neg_budgeted_axis_swap
   "no match for|cannot convert|could not convert|no matching function")
+crucible_neg_compile_test(neg_budgeted_satisfies_axis_swap
+  "no match for|cannot convert|could not convert|no matching function")
+crucible_neg_compile_test(neg_budgeted_combine_max_cross_t
+  "no match for|cannot convert|could not convert|no matching function|no viable")
 crucible_neg_compile_test(neg_budgeted_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands|could not convert")
 

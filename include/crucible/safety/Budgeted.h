@@ -552,6 +552,61 @@ static_assert(std::is_move_constructible_v<Budgeted<MoveOnlyT>>);
 }
 static_assert(combine_max_works_for_move_only());
 
+// accumulate && rvalue overload works on move-only T.
+//
+// AUDIT-PASS COVERAGE EXTENSION: combine_max already exercised on
+// move-only T; accumulate has the same overload pair (& and &&)
+// and the same value-provenance discipline (LHS keeps its value,
+// budgets are added).  A refactor that broke accumulate for
+// move-only T (e.g., dropped the && overload, accidentally
+// requiring copy_constructible) would surface here.
+[[nodiscard]] consteval bool accumulate_works_for_move_only() noexcept {
+    Budgeted<MoveOnlyT> a{MoveOnlyT{42}, BitsBudget{100}, PeakBytes{200}};
+    Budgeted<MoveOnlyT> b{MoveOnlyT{99}, BitsBudget{500}, PeakBytes{50}};
+    auto                c = std::move(a).accumulate(b);
+    return c.bits()       == BitsBudget{600}    // 100 + 500
+        && c.peak_bytes() == PeakBytes{250}     // 200 + 50
+        && c.peek().v     == 42;                // value from `a`, not `b`
+}
+static_assert(accumulate_works_for_move_only());
+
+// accumulate const& overload requires copy_constructible<T>; verify
+// it's REJECTED for move-only T at the SFINAE-detector level (so a
+// production caller routing const& accumulate on a move-only T
+// gets a clean concept-rejection diagnostic, not a deep
+// copy-construction error inside the wrapper body).
+template <typename W>
+concept can_accumulate_lvalue = requires(W const& a, W const& b) {
+    { a.accumulate(b) };
+};
+template <typename W>
+concept can_accumulate_rvalue = requires(W&& a, W const& b) {
+    { std::move(a).accumulate(b) };
+};
+static_assert( can_accumulate_lvalue<BudgetedInt>);
+static_assert( can_accumulate_rvalue<BudgetedInt>);
+static_assert(!can_accumulate_lvalue<Budgeted<MoveOnlyT>>,
+    "accumulate const& on move-only T must be rejected — the "
+    "const& overload requires copy_constructible<T>.");
+static_assert( can_accumulate_rvalue<Budgeted<MoveOnlyT>>);
+
+// Same SFINAE detectors for combine_max — completing the parity
+// between the two composition operations.
+template <typename W>
+concept can_combine_max_lvalue = requires(W const& a, W const& b) {
+    { a.combine_max(b) };
+};
+template <typename W>
+concept can_combine_max_rvalue = requires(W&& a, W const& b) {
+    { std::move(a).combine_max(b) };
+};
+static_assert( can_combine_max_lvalue<BudgetedInt>);
+static_assert( can_combine_max_rvalue<BudgetedInt>);
+static_assert(!can_combine_max_lvalue<Budgeted<MoveOnlyT>>,
+    "combine_max const& on move-only T must be rejected — the "
+    "const& overload requires copy_constructible<T>.");
+static_assert( can_combine_max_rvalue<Budgeted<MoveOnlyT>>);
+
 // ── Stable-name introspection (FOUND-E07/H06 surface) ────────────
 static_assert(BudgetedInt::value_type_name().size() > 0);
 static_assert(BudgetedInt::lattice_name().size()    > 0);

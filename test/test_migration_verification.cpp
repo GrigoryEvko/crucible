@@ -1715,6 +1715,39 @@ static_assert(sizeof(TredecupleNested) == sizeof(int),
     "lattices.");
 static_assert(GradedWrapper<TredecupleNested>);
 
+// QUATTUORDECUPLE-NESTED witness — adds Budgeted as the FOURTEENTH
+// lattice.  Production-shape: a NoThrow-classified, fleet-replicated,
+// L1-resident, NV-pinned kernel value WHOSE FOOTPRINT IS MEASURED
+// (the Budgeted layer carries actual bits-transferred + peak-bytes-
+// resident measurements at runtime).  REGIME-1 ⊃ ... ⊃ REGIME-1 ⊃
+// REGIME-4 — thirteen EBO-collapsed chain/partial-order wrappers
+// over a single regime-4 product wrapper at the inner layer.
+//
+// Total layout: sizeof(int) + 16 bytes + alignment padding (the
+// Budgeted layer's runtime grade is the only non-EBO contribution).
+using QuattuordecupleNested =
+    HotPath<HotPathTier_v::Hot,
+            Wait<WaitStrategy_v::SpinPause,
+                 MemOrder<MemOrderTag_v::AcqRel,
+                          AllocClass<AllocClassTag_v::Stack,
+                                     CipherTier<CipherTierTag_v::Hot,
+                                                ResidencyHeat<ResidencyHeatTag_v::Hot,
+                                                              Vendor<VendorBackend_v::NV,
+                                                                     Crash<CrashClass_v::NoThrow,
+                                                                           Progress<ProgressClass_v::Bounded,
+                                                                                    OpaqueLifetime<Lifetime_v::PER_FLEET,
+                                                                                                   Consistency<Consistency_v::STRONG,
+                                                                                                               DetSafe<DetSafeTier_v::Pure,
+                                                                                                                       NumericalTier<Tolerance::BITEXACT,
+                                                                                                                                     Budgeted<int>>>>>>>>>>>>>>;
+static_assert(sizeof(QuattuordecupleNested) == sizeof(Budgeted<int>),
+    "QUATTUORDECUPLE-nested wrapper stack must EBO-collapse the "
+    "outer thirteen regime-1 wrappers and carry only the inner "
+    "Budgeted's regime-4 grade at the layout root.  If this fires, "
+    "one of the chain/partial-order wrappers regressed regime-1 "
+    "EBO collapse, OR Budgeted's layout invariant changed.");
+static_assert(GradedWrapper<QuattuordecupleNested>);
+
 // ── COVERAGE MATRIX — runtime API parity (smoke checks) ────────────
 //
 // Confirm peek / consume / construction round-trip for the four
