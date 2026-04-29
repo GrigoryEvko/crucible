@@ -7,7 +7,7 @@
 // Row-major layout throughout (C contiguous).
 
 #include <algorithm>
-#include <cassert>
+#include "test_assert.h"
 #include <cmath>
 #include <cstring>
 
