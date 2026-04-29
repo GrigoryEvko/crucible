@@ -40,6 +40,7 @@
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/Consistency.h>
+#include <crucible/safety/Budgeted.h>
 #include <crucible/safety/Crash.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/HotPath.h>
@@ -1381,6 +1382,56 @@ static_assert(sizeof(CrashOverVendor) == sizeof(int),
     "Crash<NoThrow, Vendor<NV, T>> must EBO-collapse — chain Crash "
     "composing with partial-order Vendor at the inner layer.");
 static_assert(GradedWrapper<CrashOverVendor>);
+
+// ── Budgeted<T> ⊕ {chain wrappers} — FIRST PRODUCT WRAPPER ───────
+//
+// Budgeted is the FIRST product-lattice wrapper to ship: regime-4
+// per-instance grade carrying TWO uint64_t fields (BitsBudget +
+// PeakBytes).  Verifies that the product wrapper composes cleanly
+// with regime-1 EBO-collapsed chain wrappers AND with sister
+// regime-4 wrappers (Stale).
+
+// Crash<NoThrow, Budgeted<int>> — chain over product.  The outer
+// Crash EBO-collapses; the inner Budgeted carries 16 bytes of
+// runtime grade alongside the value.
+using CrashOverBudgeted = Crash<CrashClass_v::NoThrow, Budgeted<int>>;
+static_assert(sizeof(CrashOverBudgeted) == sizeof(Budgeted<int>),
+    "Crash<NoThrow, Budgeted<T>> must EBO-collapse the Crash grade "
+    "only — the inner Budgeted carries its 16-byte regime-4 grade "
+    "unchanged.");
+static_assert(GradedWrapper<CrashOverBudgeted>);
+
+// HotPath<Hot, Budgeted<int>> — production-shape: a hot-path-safe
+// resource-budgeted value.
+using HotPathOverBudgeted = HotPath<HotPathTier_v::Hot, Budgeted<int>>;
+static_assert(sizeof(HotPathOverBudgeted) == sizeof(Budgeted<int>),
+    "HotPath<Hot, Budgeted<T>> must EBO-collapse HotPath only.");
+static_assert(GradedWrapper<HotPathOverBudgeted>);
+
+// Tagged<Budgeted<int>, Source> — provenance over a budget-tracked
+// value.  Production: a Vessel-tagged DispatchRequest whose budget
+// is measured by the dispatch path.
+using TaggedBudgeted = Tagged<Budgeted<int>, VerificationTag>;
+static_assert(sizeof(TaggedBudgeted) == sizeof(Budgeted<int>),
+    "Tagged<Budgeted<T>, Source> must EBO-collapse Tagged.");
+
+// Stale<Budgeted<int>> — REGIME-4 ⊃ REGIME-4 cell.  Production:
+// a possibly-stale gradient shard with a measured budget.  Both
+// inner and outer carry runtime grades; the outer Stale's regime-4
+// adds 8 bytes (uint64_t staleness counter) over the inner
+// Budgeted's already-16-byte grade.  Total: sizeof(int) + 16 + 8
+// = 28 + alignment padding.  The exact size is Stale<Budgeted<int>>'s
+// natural composition, NOT EBO-collapsed.
+using StaleOverBudgeted = Stale<Budgeted<int>>;
+static_assert(sizeof(StaleOverBudgeted) >= sizeof(Budgeted<int>) + 8,
+    "Stale<Budgeted<T>> must carry both grades — REGIME-4 ⊃ REGIME-4 "
+    "is the sole non-EBO composition cell in this harness.");
+static_assert(GradedWrapper<StaleOverBudgeted>);
+
+// Cell-level diagnostic check — Budgeted's lattice_name reflects
+// the product structure even at composition.
+static_assert(Budgeted<int>::lattice_name().size() > 0);
+static_assert(Budgeted<double>::value_type_name().ends_with("double"));
 
 // THE FOUR-AXIS QUADRUPLE — CipherTier ⊃ ResidencyHeat × HotPath.
 // Demonstrates that CipherTier (storage-residency) and

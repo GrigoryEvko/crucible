@@ -40,6 +40,7 @@
 #include <crucible/algebra/Modality.h>
 #include <crucible/algebra/lattices/AllLattices.h>
 #include <crucible/algebra/lattices/AllocClassLattice.h>
+#include <crucible/algebra/lattices/BitsBudgetLattice.h>
 #include <crucible/algebra/lattices/BoolLattice.h>
 #include <crucible/algebra/lattices/CipherTierLattice.h>
 #include <crucible/algebra/lattices/ConfLattice.h>
@@ -51,6 +52,7 @@
 #include <crucible/algebra/lattices/LifetimeLattice.h>
 #include <crucible/algebra/lattices/MemOrderLattice.h>
 #include <crucible/algebra/lattices/MonotoneLattice.h>
+#include <crucible/algebra/lattices/PeakBytesLattice.h>
 #include <crucible/algebra/lattices/ProductLattice.h>
 #include <crucible/algebra/lattices/ProgressLattice.h>
 #include <crucible/algebra/lattices/QttSemiring.h>
@@ -187,6 +189,14 @@ void test_alloc_class_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::alloc_class_lattice_self_test::runtime_smoke_test();
 }
 
+void test_bits_budget_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::bits_budget_lattice_self_test::runtime_smoke_test();
+}
+
+void test_peak_bytes_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::peak_bytes_lattice_self_test::runtime_smoke_test();
+}
+
 void test_cipher_tier_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::cipher_tier_lattice_self_test::runtime_smoke_test();
 }
@@ -245,6 +255,10 @@ int main() {
              test_progress_lattice_runtime_smoke);
     run_test("test_alloc_class_lattice_runtime_smoke",
              test_alloc_class_lattice_runtime_smoke);
+    run_test("test_bits_budget_lattice_runtime_smoke",
+             test_bits_budget_lattice_runtime_smoke);
+    run_test("test_peak_bytes_lattice_runtime_smoke",
+             test_peak_bytes_lattice_runtime_smoke);
     run_test("test_cipher_tier_lattice_runtime_smoke",
              test_cipher_tier_lattice_runtime_smoke);
     run_test("test_residency_heat_lattice_runtime_smoke",

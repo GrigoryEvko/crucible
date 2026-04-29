@@ -59,6 +59,7 @@
 
 // ── Shipped lattices ────────────────────────────────────────────────
 #include <crucible/algebra/lattices/AllocClassLattice.h> // FOUND-G38  — shipped
+#include <crucible/algebra/lattices/BitsBudgetLattice.h> // FOUND-G63  — shipped (1/2 Budgeted axes)
 #include <crucible/algebra/lattices/BoolLattice.h>       // ALGEBRA-5  (#450) — shipped
 #include <crucible/algebra/lattices/CipherTierLattice.h> // FOUND-G43  — shipped
 #include <crucible/algebra/lattices/ConfLattice.h>       // ALGEBRA-6  (#451) — shipped
@@ -72,6 +73,7 @@
 #include <crucible/algebra/lattices/MemOrderLattice.h>   // FOUND-G28  — shipped
 #include <crucible/algebra/lattices/ProgressLattice.h>   // FOUND-G33  — shipped
 #include <crucible/algebra/lattices/MonotoneLattice.h>   // ALGEBRA-9  (#454) — shipped
+#include <crucible/algebra/lattices/PeakBytesLattice.h>  // FOUND-G63  — shipped (2/2 Budgeted axes)
 #include <crucible/algebra/lattices/ProductLattice.h>    // ALGEBRA-15 (#460) — shipped
 #include <crucible/algebra/lattices/QttSemiring.h>       // ALGEBRA-4  (#449) — shipped
 #include <crucible/algebra/lattices/ResidencyHeatLattice.h> // FOUND-G48  — shipped

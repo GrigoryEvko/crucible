@@ -1332,6 +1332,45 @@ crucible_neg_compile_test(neg_crash_at_cross_class_mixing
 crucible_neg_compile_test(neg_crash_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FOUND-G63/G64 Budgeted product-wrapper negative-compile fixtures ──
+#
+# Pins Budgeted<T>'s product-wrapper axis discipline AND the
+# underlying BitsBudgetLattice / PeakBytesLattice strong-newtype
+# disjointness.  THE FIRST PRODUCT-WRAPPER NEG-FIXTURE BLOCK.
+#
+# Distinct from chain-wrapper neg-fixtures: there is NO `relax<>()`
+# template, NO type-pinned class parameter, NO `at_cross_class`
+# fixture.  Instead the discipline is around:
+#   - Cross-T identity (Budgeted<int> ≠ Budgeted<double>).
+#   - Axis identity (BitsBudget ≠ PeakBytes — both uint64_t-backed
+#     but structurally distinct newtypes).
+#
+# 3 wrapper-surface fixtures (cross-T identity):
+#   - neg_budgeted_cross_t_assign     assignment-surface identity
+#   - neg_budgeted_cross_t_swap       swap-surface identity
+#   - neg_budgeted_cross_t_equality   operator==-surface identity
+#
+# 1 wrapper-surface fixture (cross-axis identity — load-bearing):
+#   - neg_budgeted_axis_swap          ctor parameter-type fence —
+#                                       BitsBudget ↔ PeakBytes flip
+#                                       at call site rejected.
+#
+# 1 lattice-substrate fixture:
+#   - neg_budgeted_lattice_cross_lattice_mixing
+#                                       BitsBudgetLattice::leq(b, p)
+#                                       cross-axis mixing rejected
+#                                       below the wrapper.
+crucible_neg_compile_test(neg_budgeted_cross_t_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_budgeted_cross_t_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_budgeted_cross_t_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_budgeted_axis_swap
+  "no match for|cannot convert|could not convert|no matching function")
+crucible_neg_compile_test(neg_budgeted_lattice_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands|could not convert")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's
