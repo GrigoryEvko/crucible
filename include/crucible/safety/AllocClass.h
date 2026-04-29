@@ -341,6 +341,16 @@ static_assert(!HeapInt::satisfies<AllocClassTag_v::Arena>,
 static_assert(!HeapInt::satisfies<AllocClassTag_v::Pool>);
 static_assert(!HeapInt::satisfies<AllocClassTag_v::Stack>);
 
+// Mmap (chain index 1) satisfies Mmap (self) + HugePage (below);
+// FAILS on Heap/Arena/Pool/Stack (above).  Audit-pass row covering
+// the previously-untested mid-tier cell.
+static_assert( MmapInt::satisfies<AllocClassTag_v::Mmap>);     // self
+static_assert( MmapInt::satisfies<AllocClassTag_v::HugePage>); // below
+static_assert(!MmapInt::satisfies<AllocClassTag_v::Heap>);     // above ✗
+static_assert(!MmapInt::satisfies<AllocClassTag_v::Arena>);
+static_assert(!MmapInt::satisfies<AllocClassTag_v::Pool>);
+static_assert(!MmapInt::satisfies<AllocClassTag_v::Stack>);
+
 // HugePage (chain bottom) satisfies only HugePage.
 static_assert( HugePageInt::satisfies<AllocClassTag_v::HugePage>);
 static_assert(!HugePageInt::satisfies<AllocClassTag_v::Mmap>);

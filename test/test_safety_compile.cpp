@@ -38,6 +38,7 @@
 
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/Checked.h>
+#include <crucible/safety/CipherTier.h>
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/DetSafe.h>
@@ -98,6 +99,9 @@ void test_alloc_class_compile()     {
     ::crucible::safety::detail::alloc_class_self_test::runtime_smoke_test();
 }
 void test_checked_compile()         {}
+void test_cipher_tier_compile()     {
+    ::crucible::safety::detail::cipher_tier_self_test::runtime_smoke_test();
+}
 void test_constant_time_compile()   {}
 void test_consistency_compile()     {
     ::crucible::safety::detail::consistency_self_test::runtime_smoke_test();
@@ -151,6 +155,7 @@ int main() {
 
     run_test("test_alloc_class_compile",     test_alloc_class_compile);
     run_test("test_checked_compile",         test_checked_compile);
+    run_test("test_cipher_tier_compile",     test_cipher_tier_compile);
     run_test("test_constant_time_compile",   test_constant_time_compile);
     run_test("test_consistency_compile",     test_consistency_compile);
     run_test("test_det_safe_compile",        test_det_safe_compile);

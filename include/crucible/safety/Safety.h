@@ -43,6 +43,7 @@
 //   MemOrder<Tag, T>         Graded<Absolute,    MemOrderLattice::At<Tag>, T>       1
 //   Progress<Class, T>       Graded<Absolute,    ProgressLattice::At<Class>, T>     1
 //   AllocClass<Tag, T>       Graded<Absolute,    AllocClassLattice::At<Tag>, T>     1
+//   CipherTier<Tier, T>      Graded<Absolute,    CipherTierLattice::At<Tier>, T>    1
 //   Monotonic<T, Cmp>        Graded<Absolute,    MonotoneLattice<T,Cmp>, T>         2
 //   AppendOnly<T, Storage>   Graded<Absolute,    SeqPrefixLattice<T>,   Storage<T>>  3
 //   Stale<T>                 Graded<Absolute,    StalenessSemiring,     T>          4
@@ -143,6 +144,7 @@
 
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/Checked.h>
+#include <crucible/safety/CipherTier.h>
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/DetSafe.h>

@@ -38,6 +38,7 @@
 #include <crucible/algebra/GradedTrait.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/AllocClass.h>
+#include <crucible/safety/CipherTier.h>
 #include <crucible/safety/Consistency.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/HotPath.h>
@@ -179,6 +180,16 @@ static_assert(sizeof(AllocClass<AllocClassTag_v::Arena,    double>) == sizeof(do
 static_assert(sizeof(AllocClass<AllocClassTag_v::HugePage, long long>)
                                                                      == sizeof(long long));
 
+// CipherTier<Tier, T> — regime-1 EBO collapse via CipherTierLattice::
+// At<Tier> singleton sub-lattice (FOUND-G44).  Storage-residency
+// dimension distinct from HotPath's execution-budget axis.  Type-
+// fences CRUCIBLE.md §L14 three-tier persistence at every Cipher
+// publish/flush boundary.
+static_assert(sizeof(CipherTier<CipherTierTag_v::Hot,  int>)    == sizeof(int));
+static_assert(sizeof(CipherTier<CipherTierTag_v::Warm, double>) == sizeof(double));
+static_assert(sizeof(CipherTier<CipherTierTag_v::Cold, long long>)
+                                                                 == sizeof(long long));
+
 // Monotonic<T, std::less<T>> collapses value+grade into one T cell
 // via Graded's specialization for `T == element_type`.
 static_assert(sizeof(Monotonic<std::uint32_t>)      == sizeof(std::uint32_t));
@@ -213,6 +224,7 @@ static_assert(Wait<WaitStrategy_v::SpinPause, int>::value_type_name().ends_with(
 static_assert(MemOrder<MemOrderTag_v::Relaxed, int>::value_type_name().ends_with("int"));
 static_assert(Progress<ProgressClass_v::Bounded, int>::value_type_name().ends_with("int"));
 static_assert(AllocClass<AllocClassTag_v::Stack, int>::value_type_name().ends_with("int"));
+static_assert(CipherTier<CipherTierTag_v::Hot, int>::value_type_name().ends_with("int"));
 static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
            || Monotonic<std::uint64_t>::value_type_name().ends_with("long unsigned int"));
 static_assert(Stale<int>::value_type_name().ends_with("int"));
@@ -245,6 +257,7 @@ static_assert(!std::is_void_v<typename Wait<WaitStrategy_v::SpinPause, int>::gra
 static_assert(!std::is_void_v<typename MemOrder<MemOrderTag_v::Relaxed, int>::graded_type>);
 static_assert(!std::is_void_v<typename Progress<ProgressClass_v::Bounded, int>::graded_type>);
 static_assert(!std::is_void_v<typename AllocClass<AllocClassTag_v::Stack, int>::graded_type>);
+static_assert(!std::is_void_v<typename CipherTier<CipherTierTag_v::Hot, int>::graded_type>);
 static_assert(!std::is_void_v<typename Monotonic<std::uint64_t>::graded_type>);
 static_assert(!std::is_void_v<typename AppendOnly<int>::graded_type>);
 static_assert(!std::is_void_v<typename Stale<int>::graded_type>);
@@ -294,6 +307,9 @@ static_assert(GradedWrapper<Progress<ProgressClass_v::MayDiverge,  long long>>);
 static_assert(GradedWrapper<AllocClass<AllocClassTag_v::Stack,    int>>);
 static_assert(GradedWrapper<AllocClass<AllocClassTag_v::Arena,    double>>);
 static_assert(GradedWrapper<AllocClass<AllocClassTag_v::HugePage, long long>>);
+static_assert(GradedWrapper<CipherTier<CipherTierTag_v::Hot,  int>>);
+static_assert(GradedWrapper<CipherTier<CipherTierTag_v::Warm, double>>);
+static_assert(GradedWrapper<CipherTier<CipherTierTag_v::Cold, long long>>);
 static_assert(GradedWrapper<Monotonic<std::uint64_t>>);
 static_assert(GradedWrapper<AppendOnly<int>>);
 static_assert(GradedWrapper<Stale<int>>);
@@ -357,6 +373,9 @@ static_assert(forwarders_actually_forward<Progress<ProgressClass_v::MayDiverge, 
 static_assert(forwarders_actually_forward<AllocClass<AllocClassTag_v::Stack,    int>>());
 static_assert(forwarders_actually_forward<AllocClass<AllocClassTag_v::Arena,    double>>());
 static_assert(forwarders_actually_forward<AllocClass<AllocClassTag_v::HugePage, long long>>());
+static_assert(forwarders_actually_forward<CipherTier<CipherTierTag_v::Hot,  int>>());
+static_assert(forwarders_actually_forward<CipherTier<CipherTierTag_v::Warm, double>>());
+static_assert(forwarders_actually_forward<CipherTier<CipherTierTag_v::Cold, long long>>());
 static_assert(forwarders_actually_forward<Monotonic<std::uint64_t>>());
 static_assert(forwarders_actually_forward<AppendOnly<int>>());
 static_assert(forwarders_actually_forward<Stale<int>>());
@@ -435,6 +454,12 @@ static_assert(AllocClass<AllocClassTag_v::Arena,    double>::lattice_name()
                                                  == "AllocClassLattice::At<Arena>");
 static_assert(AllocClass<AllocClassTag_v::HugePage, long long>::lattice_name()
                                                  == "AllocClassLattice::At<HugePage>");
+static_assert(CipherTier<CipherTierTag_v::Hot,  int>::lattice_name()
+                                                 == "CipherTierLattice::At<Hot>");
+static_assert(CipherTier<CipherTierTag_v::Warm, double>::lattice_name()
+                                                 == "CipherTierLattice::At<Warm>");
+static_assert(CipherTier<CipherTierTag_v::Cold, long long>::lattice_name()
+                                                 == "CipherTierLattice::At<Cold>");
 static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");
 static_assert(AppendOnly<int>::lattice_name()   == "SeqPrefixLattice");
 static_assert(Stale<int>::lattice_name()        == "StalenessSemiring");
@@ -948,6 +973,72 @@ using StaleOverAllocClass =
 static_assert(sizeof(StaleOverAllocClass) == sizeof(Stale<int>));
 static_assert(GradedWrapper<StaleOverAllocClass>);
 
+// ── CipherTier<Tier, T> ⊕ {HotPath, DetSafe, Tagged, Linear, Stale}
+//
+// THE LOAD-BEARING TRIPLE — HotPath ⊃ CipherTier.  Storage-residency
+// tier composes orthogonally with execution-budget tier.  Production
+// (CRUCIBLE.md §L14): a Hot-tier (RAM-replicated) Cipher write
+// performed inside a Warm-tier (BackgroundThread::drain) execution
+// budget — the canonical CSL × persistence pattern.  Both axes
+// EBO-collapse; sizeof reduces to sizeof(T).
+using HotOverCipherTier =
+    HotPath<HotPathTier_v::Warm,
+            CipherTier<CipherTierTag_v::Hot, int>>;
+static_assert(sizeof(HotOverCipherTier) == sizeof(int));
+static_assert(GradedWrapper<HotOverCipherTier>);
+
+// CipherTier<Hot, DetSafe<Pure, T>> — RAM-replicated AND replay-
+// deterministic.  Production: a Cipher::publish_hot taking a
+// Philox-derived event-sourced step that must round-trip bit-
+// identically through reincarnation.
+using CipherTierOverDetSafe =
+    CipherTier<CipherTierTag_v::Hot,
+               DetSafe<DetSafeTier_v::Pure, int>>;
+static_assert(sizeof(CipherTierOverDetSafe) == sizeof(int));
+static_assert(GradedWrapper<CipherTierOverDetSafe>);
+
+// Tagged<CipherTier<Warm, T>, Source> — provenance over storage tier.
+// Production: a Cipher warm-tier write tagged with its source Relay
+// for cross-Relay shard reconstruction at recovery time.
+using TaggedCipherTier =
+    Tagged<CipherTier<CipherTierTag_v::Warm, int>, VerificationTag>;
+static_assert(sizeof(TaggedCipherTier) == sizeof(int));
+
+// CipherTier<Cold, Linear<T>> — cold-tier linear handle.  Production:
+// a one-shot S3 download cursor that's consumed exactly once during
+// total-cluster recovery.  Pins move-only-T propagation through the
+// wrapper layer.
+using CipherTierOverLinear =
+    CipherTier<CipherTierTag_v::Cold, Linear<int>>;
+static_assert(sizeof(CipherTierOverLinear) == sizeof(int));
+static_assert(!std::is_copy_constructible_v<CipherTierOverLinear>,
+    "CipherTier<Tier, Linear<T>> must preserve Linear's move-only "
+    "discipline.  If this fires, Linear's copy-deletion is no longer "
+    "transitively visible through the CipherTier wrapper.");
+static_assert(std::is_move_constructible_v<CipherTierOverLinear>);
+
+// REGIME-1 ⊃ REGIME-4 cells (audit-pass mirror — Stale crosses).
+// Stale carries a runtime grade alongside T (regime-4); CipherTier
+// is regime-1 with empty grade.  Composing them in either order must
+// give sizeof == sizeof(Stale<T>).
+using CipherTierOverStale =
+    CipherTier<CipherTierTag_v::Hot, Stale<int>>;
+static_assert(sizeof(CipherTierOverStale) == sizeof(Stale<int>),
+    "CipherTier<Hot, Stale<T>> must EBO-collapse the CipherTier "
+    "grade only (Stale carries a runtime grade alongside T, "
+    "regime-4).  If this fires, CipherTier's regime-1 EBO discipline "
+    "regressed when wrapping a non-empty-grade inner.");
+static_assert(GradedWrapper<CipherTierOverStale>);
+
+using StaleOverCipherTier =
+    Stale<CipherTier<CipherTierTag_v::Hot, int>>;
+static_assert(sizeof(StaleOverCipherTier) == sizeof(Stale<int>),
+    "Stale<CipherTier<Hot, T>> must equal sizeof(Stale<T>) — "
+    "CipherTier's regime-1 EBO collapse means CipherTier<Hot, T> is "
+    "byte-equivalent to T at the inner layer, so Stale's storage "
+    "shape is unchanged.");
+static_assert(GradedWrapper<StaleOverCipherTier>);
+
 // QUADRUPLE-NESTED witness — extends the TRIPLE story to FOUR
 // distinct lattices.  Production: a fleet-replicated, strongly-
 // consistent, bit-exact, Pure-determinism-safe parameter shard.
@@ -1078,6 +1169,35 @@ static_assert(sizeof(NonupleNested) == sizeof(int),
     "NINE DISTINCT lattices.  If this fires, one of the nine "
     "wrapper layers stopped using the EBO-friendly Graded substrate.");
 static_assert(GradedWrapper<NonupleNested>);
+
+// DECUPLE-NESTED witness — adds CipherTier as the TENTH lattice.
+// Production: the canonical Cipher hot-tier publish boundary made
+// type-precise.  A foreground-hot-path, spin-only-waiter, AcqRel-
+// atomic-only, stack-allocated, fleet-replicated, strongly-
+// consistent, bit-exact, Pure-determinism-safe, wall-clock-bounded,
+// Hot-tier-replicated value.  TEN regime-1 wrappers over TEN
+// DISTINCT lattices, all with empty grades.  Universal-vocabulary
+// claim at maximum depth post-CipherTier ship — proves that adding
+// the storage-residency axis costs nothing at the EBO surface.
+using DecupleNested =
+    HotPath<HotPathTier_v::Hot,
+            Wait<WaitStrategy_v::SpinPause,
+                 MemOrder<MemOrderTag_v::AcqRel,
+                          AllocClass<AllocClassTag_v::Stack,
+                                     CipherTier<CipherTierTag_v::Hot,
+                                                Progress<ProgressClass_v::Bounded,
+                                                         OpaqueLifetime<Lifetime_v::PER_FLEET,
+                                                                        Consistency<Consistency_v::STRONG,
+                                                                                    DetSafe<DetSafeTier_v::Pure,
+                                                                                            NumericalTier<Tolerance::BITEXACT, int>>>>>>>>>>;
+static_assert(sizeof(DecupleNested) == sizeof(int),
+    "DECUPLE-nested HotPath<Wait<MemOrder<AllocClass<CipherTier<"
+    "Progress<OpaqueLifetime<Consistency<DetSafe<NumericalTier<T>"
+    ">>>>>>>>>> must EBO-collapse to sizeof(T) — TEN regime-1 "
+    "wrappers over TEN DISTINCT lattices.  If this fires, one of "
+    "the ten wrapper layers (most likely the just-shipped CipherTier) "
+    "stopped using the EBO-friendly Graded substrate.");
+static_assert(GradedWrapper<DecupleNested>);
 
 // ── COVERAGE MATRIX — runtime API parity (smoke checks) ────────────
 //

@@ -1181,6 +1181,39 @@ crucible_neg_compile_test(neg_alloc_class_at_cross_tag_mixing
 crucible_neg_compile_test(neg_alloc_class_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
+#
+# Pins the CipherTier wrapper's tier-pin discipline AND the underlying
+# CipherTierLattice's per-At<T> nested-struct identity.  Closes the
+# load-bearing claim-stronger-than-source path that would otherwise
+# let a Cold-tier (S3-resident) value silently flow into the Keeper
+# hot-tier reshard admission gate, blocking on minutes of disk IO at
+# the worst possible moment (cluster-failure recovery fan-in).
+# Type-fences CRUCIBLE.md §L14 three-tier persistence at every Cipher
+# publish/flush boundary.
+#
+# 4 wrapper-surface fixtures:
+#   - neg_cipher_tier_relax_to_stronger    LOAD-BEARING reshard fence
+#   - neg_cipher_tier_cross_tier_assign    assignment-surface identity
+#   - neg_cipher_tier_cross_tier_swap      swap-surface identity
+#   - neg_cipher_tier_cross_tier_equality  operator==-surface identity
+#
+# 2 lattice-substrate fixtures:
+#   - neg_cipher_tier_at_cross_tier_mixing       At<T> nested-struct identity
+#   - neg_cipher_tier_lattice_cross_lattice_mixing  CipherTierTag ≠ ProgressClass
+crucible_neg_compile_test(neg_cipher_tier_relax_to_stronger
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_cipher_tier_cross_tier_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_cipher_tier_cross_tier_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_cipher_tier_cross_tier_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_cipher_tier_at_cross_tier_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_cipher_tier_lattice_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's
