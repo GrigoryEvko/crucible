@@ -23,6 +23,8 @@
 
 #include <crucible/safety/UnaryTransform.h>
 
+#include <crucible/safety/BinaryTransform.h>
+#include <crucible/safety/InferredPermissionTags.h>
 #include <crucible/safety/OwnedRegion.h>
 
 #include <cstdio>
@@ -302,6 +304,51 @@ void test_runtime_consistency() {
     }
 }
 
+void test_cross_shape_exclusion_with_binary() {
+    // A function matching UnaryTransform must NOT match BinaryTransform
+    // — different arity is structural.  Symmetrically, a binary-shape
+    // function must NOT match UnaryTransform.  Load-bearing for the
+    // dispatcher's per-shape routing: each function must have AT MOST
+    // one canonical shape, never two.
+
+    // f_in_place is a UnaryTransform (arity 1, OR&&, void return).
+    static_assert( extract::UnaryTransform<&ut_test::f_in_place>);
+    static_assert(!extract::BinaryTransform<&ut_test::f_in_place>);
+
+    // f_two_params is a BinaryTransform shape (arity 2, OR&&, OR&&,
+    // void return).  Per the negative-test list above it is not a
+    // UnaryTransform — confirm it IS a BinaryTransform.
+    static_assert(!extract::UnaryTransform<&ut_test::f_two_params>);
+    static_assert( extract::BinaryTransform<&ut_test::f_two_params>);
+
+    // f_same_tag (out-of-place unary): unary yes, binary no.
+    static_assert( extract::UnaryTransform<&ut_test::f_same_tag>);
+    static_assert(!extract::BinaryTransform<&ut_test::f_same_tag>);
+}
+
+void test_cross_shape_exclusion_with_tag_free() {
+    // A UnaryTransform consumes an OwnedRegion → it MUST carry at
+    // least one inferred tag → it MUST NOT be tag-free.  Conversely,
+    // any tag-free function (no tag-bearing parameter) cannot be a
+    // UnaryTransform because UnaryTransform requires the parameter
+    // to be OwnedRegion.
+
+    // UnaryTransform → not tag-free.
+    static_assert( extract::UnaryTransform<&ut_test::f_in_place>);
+    static_assert(!extract::is_tag_free_function_v<&ut_test::f_in_place>);
+
+    // Tag-free fn (e.g., f_no_param, f_int_param) → not a
+    // UnaryTransform.
+    static_assert(!extract::UnaryTransform<&ut_test::f_no_param>);
+    static_assert( extract::is_tag_free_function_v<&ut_test::f_no_param>);
+    static_assert(!extract::UnaryTransform<&ut_test::f_int_param>);
+    static_assert( extract::is_tag_free_function_v<&ut_test::f_int_param>);
+
+    // f_int_int (int → double) — both tag-free and not unary.
+    static_assert(!extract::UnaryTransform<&ut_test::f_int_int>);
+    static_assert( extract::is_tag_free_function_v<&ut_test::f_int_int>);
+}
+
 }  // namespace
 
 int main() {
@@ -340,6 +387,10 @@ int main() {
              test_input_value_type_extraction);
     run_test("test_output_tag_extraction",
              test_output_tag_extraction);
+    run_test("test_cross_shape_exclusion_with_binary",
+             test_cross_shape_exclusion_with_binary);
+    run_test("test_cross_shape_exclusion_with_tag_free",
+             test_cross_shape_exclusion_with_tag_free);
     run_test("test_runtime_consistency",
              test_runtime_consistency);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
