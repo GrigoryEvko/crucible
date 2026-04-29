@@ -99,13 +99,32 @@ struct AffinityMask {
     // Designed for production call sites that build affinities
     // incrementally.
 
+    // Maximum valid core index in this 64-bit-mask incarnation.
+    // Future widening to a multi-word mask would lift this limit;
+    // for now, every public method that takes a `core` index
+    // contract-checks it against `kMaxCore`.
+    static constexpr std::uint8_t kMaxCore = 63;
+
     // Construct an AffinityMask containing exactly one core.
-    [[nodiscard]] static constexpr AffinityMask single(std::uint8_t core) noexcept {
+    //
+    // CONTRACT: core ≤ kMaxCore (= 63).  Shifting uint64_t by a
+    // count ≥ 64 is C++ undefined behavior; without this fence a
+    // caller passing core=64 (or any higher value within uint8_t
+    // range) would silently produce garbage.  The contract closes
+    // a subtle UB hole in the FOUND-G71 ship — uint8_t admits
+    // 0..255 but only 0..63 are valid bits in a 64-bit mask.
+    [[nodiscard]] static constexpr AffinityMask single(std::uint8_t core) noexcept
+        pre (core <= kMaxCore)
+    {
         return AffinityMask{std::uint64_t{1} << core};
     }
 
     // Test whether core is admitted by this affinity.
-    [[nodiscard]] constexpr bool contains(std::uint8_t core) const noexcept {
+    //
+    // CONTRACT: core ≤ kMaxCore.  Same UB rationale as `single`.
+    [[nodiscard]] constexpr bool contains(std::uint8_t core) const noexcept
+        pre (core <= kMaxCore)
+    {
         return (value & (std::uint64_t{1} << core)) != 0;
     }
 
@@ -165,6 +184,17 @@ static_assert(AffinityMask{0b1010}.contains(3));
 static_assert(!AffinityMask{0b1010}.contains(0));
 static_assert(AffinityMask{0b1010}.popcount() == 2);
 static_assert(AffinityMask{0}.popcount()      == 0);
+
+// Boundary: highest valid core (63) must succeed.
+static_assert(AffinityMask::single(AffinityMask::kMaxCore).value
+              == (std::uint64_t{1} << 63));
+static_assert(AffinityMask::single(63).contains(63));
+static_assert(!AffinityMask::single(63).contains(0));
+
+// kMaxCore is exactly 63 — pinned at the boundary.  A future
+// widening to a multi-word mask would lift this; the constant
+// is centrally located so production callers can refer to it.
+static_assert(AffinityMask::kMaxCore == 63);
 
 // ── Ordering witnesses (set inclusion) ───────────────────────────
 static_assert( AffinityLattice::leq(AffinityMask{0},     AffinityMask{0b111}));
