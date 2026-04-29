@@ -1,0 +1,259 @@
+% ═══════════════════════════════════════════════════════════════════
+% Chapter 9 — Portable Kernel IR: IR002
+% ═══════════════════════════════════════════════════════════════════
+
+\section{Portable Kernel IR: \IR{2}}
+\label{sec:ir002}
+
+\IR{2} is Crucible's portable kernel-level intermediate representation: the form in which a captured machine-learning computation is held between Forge's lowering pass (Phase~E, Section~\ref{sec:forge-phase-e}) and the per-vendor Mimic backends (Chapter~\ref{sec:mimic}).
+\IR{2} is the middle tier of Crucible's three-tier IR stack: above the per-vendor machine IRs \IRstar{3} (Chapter~\ref{sec:ir003}), below the operation-level \IR{1} (Chapter~\ref{sec:ir001}).
+
+\IR{2} is the layer at which kernel templates are committed, semantic layouts are pinned, numerical recipes are bound, and tile shapes are ranged.
+\IR{2} is vendor-neutral by construction: identical \IR{2} on every supported backend produces numerically equivalent results, because every backend realizes the same pinned algorithm rather than delegating to a vendor library.
+The portability contract --- the central commitment of Crucible's compilation discipline --- is encoded at \IR{2} (Chapter~\ref{sec:numerical-recipe}).
+
+This chapter specifies the data structures of \IR{2}, the kernel taxonomy, the per-kind attribute structures, the recipe and tile primitives, content hashing, and the structural commitments \IR{2} makes about what it does and does not represent.
+
+\subsection{KernelGraph and KernelNode}
+\label{sec:ir002-kernelgraph}
+
+The \IR{2} graph is a \struct{KernelGraph} of \struct{KernelNode}s.
+A \struct{KernelGraph} is the \IR{2} analog of \IR{1}'s \struct{Graph}: arena-owned, non-copyable, non-movable, with the same axiomatic discipline (NSDMI on every field, strong-typed identifiers, content-addressed equality, no fast path that bypasses the safety substrate).
+
+\begin{definition}[KernelGraph]
+\label{def:ir002-kernelgraph}
+A \struct{KernelGraph} owns: a per-graph arena; a topologically ordered array of \struct{KernelNode} pointers; a \struct{RecipePool} (Swiss-table interner for \struct{NumericalRecipe} values); a \struct{TilePool} (Swiss-table interner for \struct{TileSpec} values); per-kind attribute pools (one arena-backed pool per \struct{KernelKind}); slot-type metadata; references to the originating \IR{1} external inputs and outputs.
+The graph supports the standard mutation primitives at the kernel level: dead-kernel elimination, topological sort, kernel-level common-subexpression elimination via content hash, and kernel-compound fusion of GEMM-with-pointwise-epilogue.
+\end{definition}
+
+\begin{definition}[KernelNode]
+\label{def:ir002-kernelnode}
+A \struct{KernelNode} occupies one cache line and carries: an identifier, a \struct{KernelKind} (one of the twenty-two taxonomy entries), packed flags, a device index, dimensionality, input and output dtypes, semantic input and output layouts, input and output counts, a pointer to a kind-specific attribute structure, an interned \struct{NumericalRecipe} pointer, an interned \struct{TileSpec} pointer, arena-allocated arrays of input and output \struct{SlotId} references, and a memoized content hash.
+\end{definition}
+
+The cache-line constraint is structural: every operation Mimic performs while traversing the kernel graph touches the entire \struct{KernelNode}.
+Crossing a cache-line boundary on every node would dominate the cost of analyses such as kernel-level common-subexpression elimination.
+
+The byte-level layout of \struct{KernelNode}, the field offsets, and the static asserts that enforce them are documented in the yellowpaper.
+For the architecture-level discussion of this paper, the relevant facts are the kind, the attribute pointer, the recipe and tile, and the slot bindings; the rest is the substrate that supports them.
+
+\subsection{The kernel taxonomy: twenty-two kinds}
+\label{sec:ir002-kinds}
+
+\IR{2}'s operator surface is a fixed taxonomy of kernel families.
+The taxonomy is closed over the machine-learning operator surface; novel patterns either match an existing family or fall through to \code{CUSTOM} or \code{OPAQUE\_EXTERN}.
+The catalog and its structural rationale is documented in detail in the misc/FORGE.md design specification; the architecture-level summary follows.
+
+The twenty-two kinds divide into seven groups.
+
+\textbf{Matrix and tensor operations.}
+\code{GEMM} (two-dimensional matrix multiply), \code{BMM} (batched three-dimensional matrix multiply), \code{CONV} (one-, two-, or three-dimensional convolution), \code{DEQUANT\_GEMM} (low-precision dequantization fused with matrix multiply).
+
+\textbf{Attention family.}
+\code{ATTENTION} (standard scaled dot-product attention with a flash-style softmax recurrence), \code{PAGED\_ATTN} (page-table-indirect K/V gather for variable-context inference), \code{RAGGED\_ATTN} (sequence-packed THD layout for variable-length training).
+
+\textbf{Normalization, activation, and pointwise.}
+\code{NORM} (LayerNorm, RMSNorm, BatchNorm, GroupNorm, InstanceNorm under one structure), \code{SOFTMAX} (with online-LSE or naive recurrence per recipe), \code{POINTWISE} (arbitrary elementwise chain holding a \struct{ComputeBody} fragment).
+
+\textbf{Reductions and scans.}
+\code{REDUCE} (sum, mean, max, min, argmax, argmin, top-K), \code{SCAN} (prefix scan, cumulative sum or product, associative scan).
+
+\textbf{Indexing.}
+\code{GATHER\_SCATTER} (gather, scatter, masked variants), \code{EMBEDDING} (lookup with optional pooling).
+
+\textbf{Stochastic and distributed.}
+\code{RNG} (Philox-seeded counter-based generation), \code{COLLECTIVE} (all-reduce, all-gather, reduce-scatter, all-to-all, broadcast, point-to-point send and receive).
+
+\textbf{Recurrent, composition, and escape.}
+\code{SSM} (state-space models: Mamba and Mamba-2 SSD, RWKV, RetNet, xLSTM, under a unified state-transition structure), \code{FUSED\_COMPOUND} (kernel-kind-level fusion such as GEMM with bias and activation), \code{MOE\_ROUTE} (top-K routing with permute and grouped GEMM), \code{OPTIMIZER} (Adam, AdamW, Lion, Muon, Shampoo, SOAP, and user-defined update rules with state-shape and update-body extension points), \code{OPAQUE\_EXTERN} (linkage to a precompiled external kernel by vendor-neutral name), \code{CUSTOM} (escape valve for genuinely unrecognized patterns; the backend emits a generic loop nest).
+
+The taxonomy is deliberately not exhaustive at the level of atomic operations; many operations fold into a single \struct{KernelKind} via the per-kind attribute structure.
+Inplace variants (\code{add\_}, \code{relu\_}) are folded into the out-of-place form with mutation tracked separately; multiple framework hashes (\code{aten::softmax}, \code{aten::\_softmax}, JAX's \code{softmax}) collapse to one \struct{KernelKind}.
+The collapse is part of the portability discipline.
+
+\subsection{Per-kind attribute structures}
+\label{sec:ir002-attrs}
+
+Each \struct{KernelKind} has a corresponding attribute structure, arena-allocated and pointed to by the \struct{KernelNode}'s \code{attrs} field.
+The attribute structures share a common architectural pattern.
+
+\begin{property}[Attribute structure architecture]
+\label{prop:ir002-attrs-architecture}
+Each per-kind attribute structure has two classes of fields.
+\textbf{Structural fields} encode shape, layout, dtype, and algorithmic-variant choices that drive the per-vendor MAP-Elites tile search and the per-vendor lowering.
+\textbf{Extension-point fields} are pointers to \IR{1} \struct{ComputeBody} fragments, supplied by user code, that inline at \IR{2}-to-\IRstar{3} lowering and participate in peephole and register-allocation alongside the structural kernel code.
+Extension-point fields default to null; the lowering pass uses the structural variant unless a body is supplied.
+Every per-kind attribute structure also carries a shared eight-byte tail structure named \struct{ExecutionAttrs} encoding warp specialization split, register-allocation policy, and SM-partition handle.
+\end{property}
+
+The structural and extension-point separation is a load-bearing design choice.
+It is the mechanism by which Crucible delivers FlashAttention-class performance on arbitrary attention variants, custom layer norms, novel optimizer update rules, and structurally similar research patterns: structural performance via Mimic's MAP-Elites-tuned templates, content flexibility via user-supplied bodies that inline cost-free at lowering.
+The peephole pass at \IRstar{3} is extension-point-aware: it admits cross-boundary fusion when the body's micro-ops compose with the structural kernel's instructions (for example, a body multiplication followed by a structural addition that fuses into a single FMA), and refuses cross-boundary fusion that would breach the per-extension-point semantic boundary.
+
+The architecture-level descriptions of three exemplar attribute structures follow.
+The complete per-kind catalog --- including \struct{GemmAttrs}, \struct{AttentionAttrs}, \struct{ConvAttrs}, \struct{NormAttrs}, \struct{ReduceAttrs}, \struct{ScanAttrs}, \struct{PointwiseAttrs}, \struct{EmbeddingAttrs}, \struct{SsmAttrs}, \struct{RngAttrs}, \struct{CollectiveAttrs}, \struct{MoeRouteAttrs}, and \struct{OptimizerAttrs} --- is documented in the FORGE.md design specification.
+
+\textbf{\struct{GemmAttrs}.}
+Structural fields encode M, N, and K dimensions (each a \struct{Expr} pointer, concrete or symbolic with range bounds), input and output dtypes, input layouts, and flags for output transposition, bias presence, split-K accumulation, and accumulate-into-existing-output semantics.
+Extension points include a prologue body (applied to A or B tiles after load and before MMA), an epilogue body (applied to the accumulator tile after MMA, before output store), and a custom bias body.
+
+\textbf{\struct{AttentionAttrs}.}
+Structural fields encode batch, query length, key-value length, head dimension, head count, key-value head count (for grouped or multi-query attention), causal flag, paging flag, block-mask flag, ragged-layout flag, ring-attention flag, sliding-window size, query and value dtypes, and an algorithm enumeration (FLASH-2, FLASH-3, paged, ring, streaming, linear-attention, retention).
+Extension points are seven: query preprocessing (typically RoPE), key preprocessing, score modification (the FlexAttention-style score modifier), mask modification, custom softmax recurrence, value-accumulation body, and output post-processing.
+
+\textbf{\struct{OptimizerAttrs}.}
+Structural fields encode the optimizer kind enumeration (Adam, AdamW, Lion, Muon, Shampoo, SOAP, custom) and the symbolic hyperparameters (learning rate, beta1, beta2, epsilon, weight decay).
+Extension points are three: the per-parameter update body, a state-initialization body, and a preconditioner body (for Shampoo and SOAP variants that maintain a matrix preconditioner).
+The unified \code{OPTIMIZER} \struct{KernelKind} replaces the per-optimizer kernels of conventional ML stacks: Adam, Lion, Muon, and arbitrary user-defined update rules share one structural template.
+
+\subsection{ExecutionAttrs}
+\label{sec:ir002-execution-attrs}
+
+Every per-kind attribute structure carries a shared eight-byte \struct{ExecutionAttrs} tail.
+This is the architectural location at which warp specialization and SM-partition decisions are exposed as first-class compile output.
+
+\begin{definition}[ExecutionAttrs]
+\label{def:ir002-execution-attrs}
+\struct{ExecutionAttrs} carries: a \code{warp\_spec\_split} field selecting one of eight discrete warpgroup-role splits (no specialization, single-producer, all-consumer, one-producer-one-barrier-two-consumer, two-producer-one-consumer, two-producer-two-consumer, one-producer-two-consumer, two-producer-two-consumer); a \code{reg\_alloc\_policy} flag selecting between static (compile-time-fixed register count, identical across warps) and dynamic (runtime register rebalancing via the per-vendor primitive); a sixteen-bit SM-mask handle indexing into the per-Keeper green-context table; and per-role producer and consumer register counts.
+\end{definition}
+
+The MAP-Elites behavior axes (Chapter~\ref{sec:mimic}) extend to include warp-specialization split and register-allocation policy alongside the standard occupancy, register usage, fast-local-storage usage, pipeline depth, and MMA shape family axes.
+Per-vendor realization is asymmetric: NVIDIA Hopper and later expose dynamic register rebalancing via the \code{setmaxnreg} PTX instruction; AMD CDNA3 and later expose analogous behavior via \code{s\_setreg}; TPU's scalar processor manages execution-unit assignment; Trainium's per-engine register banks are static.
+On vendors lacking fine-grained primitives, MAP-Elites explores only the static \code{reg\_alloc\_policy} variants.
+
+\subsection{NumericalRecipe}
+\label{sec:ir002-recipe}
+
+A \struct{NumericalRecipe} pinned at \IR{2} is the cross-vendor portability contract.
+The full recipe specification, the four-tier determinism semantics, the recipe registry, and the per-vendor realization tables are documented in Chapter~\ref{sec:numerical-recipe}.
+This subsection records only the architectural facts that bear on \IR{2}.
+
+\begin{definition}[NumericalRecipe]
+\label{def:ir002-recipe}
+A \struct{NumericalRecipe} is an interned, sixteen-byte structure carrying: accumulator dtype, output dtype, reduction algorithm (pairwise, linear, Kahan, block-stable), rounding mode, scale policy, softmax-recurrence variant, determinism tier (\code{UNORDERED}, \code{ORDERED}, \code{BITEXACT\_TC}, \code{BITEXACT\_STRICT}), flag bits, and a hash for interning.
+Recipes are interned via Swiss-table; equal recipes share a pointer.
+\end{definition}
+
+The portability commitment is structural.
+Every per-vendor Mimic backend implements a \code{realize\_recipe} function that maps the recipe to vendor-specific instructions: WGMMA shapes plus FMA chains on NVIDIA, MFMA shapes plus accumulator-VGPR sequences on AMD, MXU plus high-precision HLO reductions on TPU, TensorEngine plus PSUM accumulator on Trainium.
+The realization is deterministic and is verified by the cross-vendor numerics CI (Chapter~\ref{sec:cross-vendor-ci}): a backend that produces output exceeding the recipe's declared cross-vendor tolerance fails the build.
+
+The recipe is the substrate of mixed-vendor training feasibility.
+A model trained on a mixed fleet (NVIDIA H100 plus AMD MI300X plus Google TPU v5p plus AWS Trainium) under a \code{BITEXACT\_TC} recipe produces gradients that are at most one ULP apart across all four vendors, with reductions composed in pinned canonical order; aggregated under a tree reduction sorted by canonical UUID, the joint update is bit-identical regardless of which subset of the fleet computed which shard.
+
+\subsection{TileSpec}
+\label{sec:ir002-tile}
+
+\begin{definition}[TileSpec]
+\label{def:ir002-tile}
+A \struct{TileSpec} is an interned, thirty-two-byte structure carrying: up to four dimension pointers (each an interned \struct{Expr}, concrete \code{INTEGER} or symbolic \code{SYMBOL} with range bounds in the \struct{SymbolTable}); abstract estimates for threads per CTA, registers per thread, and fast-local-storage bytes; abstract pipeline depth; flag bits (persistent, split-K, streaming); and a hash for interning.
+\end{definition}
+
+The dimension fields are vendor-neutral.
+A \struct{TileSpec} expresses, for example, a tile of M\,$\times$\,N\,$\times$\,K equal to 128\,$\times$\,128\,$\times$\,64 with eight pipeline stages and 192 registers per thread; it does not specify whether this maps to WGMMA \code{m64n128k16} on Hopper or to MFMA \code{32x32x8x4} on MI300 or to MXU \code{128x128} on TPU v5p.
+The per-vendor mapping is internal to Mimic.
+
+The same abstraction makes Forge's tile pruning (Phase~F.2) portable: the ranking is performed on the abstract \struct{TileSpec}, the backend-agnostic \code{mimic::fast\_cost} returns a ranking-accurate cycle estimate, and the per-vendor backend exercises only the surviving Pareto candidates during MAP-Elites.
+
+\subsection{Content hashing}
+\label{sec:ir002-content-hashing}
+
+\IR{2} carries a strict content-addressing discipline.
+Every \struct{KernelNode} computes a sixty-four-bit \struct{KernelContentHash} from a deterministic fold over its semantic content.
+
+\begin{property}[KernelContentHash composition]
+\label{prop:ir002-hash}
+The content hash of a \struct{KernelNode} is the wymix-fold of: the \struct{KernelKind} ordinal; the structural attribute hash (excluding extension-point fields); the body hashes for each present extension-point field; the recipe pointer hash; the tile pointer hash; the input slot type tuples; the output slot type tuples; the input layout; the output layout; and the parent \IR{1} region content hashes.
+Identical kernels produce identical hashes, regardless of provenance.
+\end{property}
+
+The composition is structural.
+Two researchers who write structurally identical \code{score\_mod} bodies (for example, ALiBi positional bias with the same slope coefficient) produce byte-identical body hashes, which fold into identical \struct{KernelContentHash}es, which share an L1 KernelCache entry (Chapter~\ref{sec:cipher}).
+A change to the slope coefficient produces a new body hash and a new cache entry; the structurally similar archive can warm-start the new compile (Chapter~\ref{sec:mimic}).
+
+The content-hash composition is the substrate of three properties at higher layers: kernel-level common-subexpression elimination (deduplicates kernels with identical hashes), L1 KernelCache federation safety (vendor-neutral; cross-installation shareable), and the cross-vendor numerics CI test matrix (kernels with identical hashes must produce equivalent numerical output across backends).
+
+\subsection{Properties}
+\label{sec:ir002-properties}
+
+The properties below are commitments of the \IR{2} specification.
+Each is enforced either structurally (by the type system or by intern-time invariants) or by the lowering algorithm (Phase~E, Section~\ref{sec:forge-phase-e}).
+
+\begin{property}[Vendor neutrality]
+\label{prop:ir002-vendor-neutral}
+\IR{2} contains no vendor-specific MMA shape, no vendor-specific instruction-scheduling hint, no vendor-specific address-space tag, and no vendor-specific binary-format reference.
+The same \IR{2} is the input of every supported Mimic backend.
+The per-vendor mapping from abstract \struct{TileSpec} dimensions to native instruction shapes, from abstract \struct{NumericalRecipe} fields to native instruction sequences, and from abstract \struct{ExecutionAttrs} to native primitives is internal to each per-vendor backend.
+\end{property}
+
+\begin{property}[Pinned numerical algorithm]
+\label{prop:ir002-pinned}
+Every \struct{KernelNode} pins a specific algorithmic realization via its \struct{NumericalRecipe}.
+No backend is permitted to substitute a different reduction order, a different rounding mode, or a different softmax recurrence variant for the one specified.
+A backend that cannot realize the pinned recipe must report \code{REJECTED} at compile time; it may not silently substitute.
+This is the structural mechanism that makes cross-vendor numerical equivalence verifiable rather than approximate.
+\end{property}
+
+\begin{property}[Compositional content addressing]
+\label{prop:ir002-compositional}
+\IR{2} content hashes compose with \IR{1} content hashes.
+The hash of a \struct{KernelNode} incorporates the content hashes of the parent \IR{1} regions whose operations it represents.
+The hash of an \IR{2} \struct{KernelGraph} composes from the hashes of its \struct{KernelNode}s.
+The compositional discipline supports L1 KernelCache lookup at the granularity of either kernel or graph.
+\end{property}
+
+\begin{property}[Pareto-ranged tile shapes]
+\label{prop:ir002-pareto}
+Each \struct{KernelNode} commits a \struct{TileSpec} (concrete or symbolic with range) and an additional Pareto set of candidate tile shapes for MAP-Elites.
+The \struct{TileSpec} on the node is the seed; the candidate set is the search space.
+Both are vendor-neutral; per-vendor specialization is the responsibility of the Mimic backend.
+\end{property}
+
+\begin{property}[Closure under extension-point bodies]
+\label{prop:ir002-extension}
+Extension-point fields default to null; null implies the structural variant of the kind (default softmax recurrence, default optimizer update, default normalization statistic).
+Non-null bodies are arena-allocated \IR{1} \struct{ComputeBody} fragments interned in the \IR{1} \struct{ExprPool}.
+Bodies are content-addressed: structurally identical bodies share a hash and an archive.
+\end{property}
+
+\subsection{What \IR{2} commits and does not commit}
+\label{sec:ir002-not}
+
+The boundary of \IR{2} is structural.
+\IR{2} commits the kernel template, the semantic input and output layouts, the algorithmic recipe, the tile-shape Pareto seed, and the slot bindings to the memory plan.
+\IR{2} does not commit:
+
+\begin{itemize}
+  \item \textbf{Vendor-specific tile shapes.}
+        A \struct{TileSpec} expresses M, N, K dimensions abstractly; the choice of WGMMA versus tcgen05 versus MFMA versus MXU is internal to the per-vendor backend.
+  \item \textbf{Address-space tags.}
+        Whether a tensor lives in shared memory, distributed shared memory, tensor memory, or main memory is decided by the per-vendor lowering pass, not by \IR{2}.
+  \item \textbf{Register allocation.}
+        The mapping from logical values to physical registers, including the spill decisions and the bank-conflict avoidance, is a property of \IRstar{3}, not \IR{2}.
+  \item \textbf{Instruction scheduling.}
+        Operand-collector queue management, scoreboard-slot assignment, and pipeline-stall hint emission are properties of \IRstar{3}.
+  \item \textbf{Vendor binary format.}
+        \IR{2} carries no cubin reference, no HSACO reference, no NEFF reference.
+        The mapping from \IR{2} to compiled bytes is the responsibility of the per-vendor encoder, which lives entirely inside Mimic.
+\end{itemize}
+
+The discipline is structural: the \IR{2} type system has no field that could carry the prohibited information.
+A backend that emitted vendor-specific tiles into \struct{TileSpec}, or a vendor address space into a \struct{KernelNode} layout field, would change the \IR{2} type system, not just its content.
+The boundary is therefore visible at the type level and is enforced by the safety substrate's negative-compile fixtures (Chapter~\ref{sec:axioms}).
+
+\subsection{Relationship to \IR{1} above and \IRstar{3} below}
+\label{sec:ir002-relationships}
+
+\IR{1} (Chapter~\ref{sec:ir001}) is more abstract than \IR{2}.
+\IR{1} represents operation-level semantics; \IR{2} represents kernel-level semantics with shape and recipe commitments.
+The transition from \IR{1} to \IR{2} is Forge's Phase~E (Section~\ref{sec:forge-phase-e}); it commits choices that \IR{1} did not have to make.
+
+\IRstar{3} (Chapter~\ref{sec:ir003}) is more concrete than \IR{2}.
+\IRstar{3} represents vendor-machine-level semantics with native ISA, register allocation, and instruction scheduling.
+The transition from \IR{2} to \IRstar{3} is per-vendor; each Mimic backend owns its own lowering, its own peephole rules, its own simulator, and its own MAP-Elites search.
+\IR{2} therefore sits at the layer where the architecture is uniform across vendors and the implementation begins to diverge.
+
+The L1 KernelCache (Chapter~\ref{sec:cipher}) keys on \IR{2} content hashes.
+Two installations running the same model produce byte-identical \IR{1} graphs and byte-identical \IR{2} kernel graphs (modulo fleet-recipe-intersection differences).
+Each installation independently lowers \IR{2} to its target's \IRstar{3} and emits its target's binary format, but the upstream \IR{2} entries are shareable across installations regardless of vendor mix.
+The federation safety of the L1 cache is therefore a direct consequence of \IR{2}'s vendor-neutrality.

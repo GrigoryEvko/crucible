@@ -1,0 +1,403 @@
+% ═══════════════════════════════════════════════════════════════════
+% Chapter 10 — Mimic: Per-Vendor Backend Framework
+% ═══════════════════════════════════════════════════════════════════
+
+\section{Mimic: Per-Vendor Backend Framework}
+\label{sec:mimic}
+
+Mimic is Crucible's per-vendor backend framework.
+It consumes \IR{2} (Chapter~\ref{sec:ir002}) and produces vendor binary code via per-vendor implementations of \IRstar{3} (Chapter~\ref{sec:ir003}).
+Mimic is structurally a shared core plus one self-contained backend per vendor: \code{mimic/nv/} for NVIDIA, \code{mimic/am/} for AMD, \code{mimic/tpu/} for Google, \code{mimic/trn/} for AWS Trainium, \code{mimic/cer/} for Cerebras, and \code{mimic/cpu/} for x86, AArch64, and RISC-V.
+
+Each backend owns its vendor's \IRstar{3} representation, its instruction encoder and decoder, its three-tier simulator with calibrated cost model, its MAP-Elites kernel search, its runtime library, its collective library, and its calibration harness.
+The shared core provides the simulator framework, MAP-Elites driver, archive machinery, mutation dispatch, the cross-vendor numerics CI harness, calibration skeleton, and effect-token plumbing.
+
+Mimic has no vendor-SDK dependency: zero cuBLAS, zero cuDNN, zero NCCL, zero rocBLAS, zero MIOpen, zero RCCL, zero libtpu, zero libnrt, zero libnccom, zero hcoll, zero libsharp.
+Each per-vendor runtime library wraps the kernel-driver ioctl protocol directly; each per-vendor collective library composes over the native fabric primitives via Crucible Native Transport Protocol (Chapter~\ref{sec:cntp}).
+The kernel driver (NVIDIA's \code{nvidia.ko}, AMD's \code{amdkfd}, Google's \code{accel\_*}, AWS's \code{neuron.ko}) is the only vendor-proprietary surface Crucible inherits.
+
+This chapter specifies Mimic's architecture: the per-vendor template, the public-API surface that Forge calls, the simulator-and-search internals, and the cross-vendor calibration discipline.
+The per-vendor specifications --- the SASS encoder for Hopper and Blackwell, the AMDGPU emitter for CDNA3 and RDNA3, the TPU executable format, the NEFF format, the Cerebras Software Language emitter --- are documented in the misc/MIMIC.md design specification.
+
+\subsection{The per-vendor template}
+\label{sec:mimic-template}
+
+Every per-vendor backend implements ten deliverables.
+The template is uniform across vendors; adding a new vendor is the cost of implementing the template once, with no changes to Forge or to the shared core.
+
+\begin{enumerate}
+  \item \textbf{\IRstar{3} type system, builder, verifier.}
+        The vendor-specific machine intermediate representation, encoded with the same axiomatic discipline as \IR{1} and \IR{2}: arena-owned, NSDMI on every field, strong-typed identifiers.
+  \item \textbf{\IR{2}-to-\IRstar{3} lowering.}
+        Conventional Static Single Assignment construction, address-space resolution, register allocation, instruction scheduling, recipe realization (Section~\ref{sec:mimic-recipe-realization}).
+  \item \textbf{Encoder and binary-format writer.}
+        \IRstar{3} to ISA bytes; ISA bytes to vendor binary format (cubin on NVIDIA, HSACO on AMD, executable on TPU, NEFF on Trainium, CSL on Cerebras, native ELF on CPU).
+  \item \textbf{Decoder.}
+        Inverse of the encoder, with round-trip correctness (Section~\ref{sec:mimic-roundtrip}).
+        Used for calibration validation, debugging, and loading cached binaries from Cipher (Chapter~\ref{sec:cipher}).
+  \item \textbf{Three-tier simulator.}
+        Fast tier (interval-based, 1 to 5 milliseconds per simulation, ranking-accurate), medium tier (event-driven, 10 to 30 milliseconds, 95-percent ranking accuracy and 5-to-8-percent absolute), accurate tier (cycle-stepping, 100 to 500 milliseconds, 99-percent ranking and 2-to-5-percent absolute).
+        Each tier shares the simulator framework from the shared core; per-vendor specialization adds the memory subsystem, the warp or wave scheduler, and the async-pipeline models.
+  \item \textbf{MAP-Elites mutation operators and insight catalog.}
+        The shared core ships approximately twenty vendor-agnostic insight kinds (high register pressure, fast-local-storage saturation, queue contention, scheduler imbalance); each backend adds approximately ten vendor-specific kinds (\code{WGMMA\_UNDERUTILIZED} on NVIDIA, \code{MFMA\_WAVE\_STALL} on AMD, \code{MXU\_INPUT\_STARVATION} on TPU).
+        Mutation operators are similarly factored into vendor-agnostic and vendor-specific.
+  \item \textbf{Peephole rule set.}
+        Approximately one hundred fifty rules per vendor, table-driven, applied in a single pass after register allocation and before encoding.
+  \item \textbf{Calibration harness.}
+        Approximately one hundred fifty microbenchmarks per vendor, run once per chip target, producing the calibrated \struct{TargetCaps} and \struct{OpcodeLatencyTable} (Section~\ref{sec:mimic-calibration}).
+  \item \textbf{Runtime library.}
+        Replacement for libcuda, libnrt, libtpu, libhsa, with the same surface (device discovery and open, memory pool management, binary loading, kernel submission, completion polling, graph capture).
+        Wraps the kernel-driver ioctl protocol directly.
+  \item \textbf{Collective library.}
+        Replacement for NCCL, RCCL, libnccom, hcoll, with the same surface (all-reduce, all-gather, reduce-scatter, all-to-all, broadcast, point-to-point) and additional CNTP integration for cross-vendor and cross-node fabrics.
+\end{enumerate}
+
+The shared core (\code{mimic/core/}) provides: the simulator framework skeleton (event queue, scheduler skeleton, memory-model skeleton), the MAP-Elites driver and Archive structure, the mutation dispatcher, the base insight catalog, the calibration-harness framework, the cross-vendor numerics CI harness (Chapter~\ref{sec:cross-vendor-ci}), and the standard arena and effect-token infrastructure.
+Each backend specializes the framework with its own memory subsystem, scheduler, and async pipelines.
+
+\subsection{The public interface}
+\label{sec:mimic-public-interface}
+
+Mimic exposes five entry points to Forge.
+The signatures are uniform across vendors; the dispatch by \code{TargetCaps::vendor\_id} is internal to Mimic's top-level shim.
+The five entries cover the full Forge--Mimic interaction surface; nothing else crosses the boundary.
+
+\begin{enumerate}
+  \item \code{mimic::fast\_cost(KernelNode, TargetCaps) -> Cycles}.
+        Approximate cycle count from the fast tier of the per-vendor simulator.
+        Approximately ten microseconds per call.
+        Used by Forge's Phase~B.5 (per-node cost estimation), Phase~D.2 (fusion-cost evaluation), and Phase~F.2 (tile pruning).
+        The estimate is ranking-accurate but not absolute-accurate; ten-to-twenty-percent absolute error is admissible as long as it preserves the ordering between candidates.
+
+  \item \code{mimic::propose\_tiles(KernelNode, TargetCaps) -> Span<AbstractTile>}.
+        Generates abstract tile candidates that are hardware-realizable on the current target.
+        Used by Forge's Phase~F.1 (tile proposal).
+        Sixteen to sixty-four candidates per call; per-vendor pruning of obviously-infeasible candidates is part of the implementation.
+
+  \item \code{mimic::compile\_kernel(KernelNode, TargetCaps, CompileConfig) -> CompiledKernel}.
+        The principal entry: produces an opaque \struct{CompiledKernel} with vendor binary bytes, predicted cycles, and structured insights.
+        Used by Forge's Phase~H.
+        Tens to hundreds of milliseconds per kernel; runs MAP-Elites internally; parallelizable across kernels via Forge's thread pool.
+        The \struct{CompileConfig} parameter selects the search mode (MAP-Elites only, MAP-Elites with hardware validation, or beam search) and the wall-clock and iteration budgets.
+
+  \item \code{mimic::predict(CompiledKernel, TargetCaps, SimTier) -> SimResult}.
+        Runs the simulator on an already-compiled kernel without re-compiling.
+        Used by Forge's Phase~L.2 (drift detection): the predicted cycles are compared against the measured cycles for a sampled invocation.
+        The simulator tier is configurable (fast for cheap drift checks, medium for primary use, accurate for calibration validation).
+
+  \item \code{mimic::probe\_counters(CompiledKernel, TargetCaps) -> Measurements}.
+        Reads the per-vendor hardware counters via the native profiling interface (CUPTI on NVIDIA, rocprof on AMD, the PJRT profiler on TPU, neuron-profile on Trainium, perf\_event\_open on CPU).
+        Returns a uniform \struct{Measurements} record carrying twelve signals.
+        Used by Forge's Phase~L (continuous validation).
+\end{enumerate}
+
+The dispatch shim is mechanical: the top-level \code{mimic::compile\_kernel} (and analogously each entry) reads \code{caps.vendor\_id} and delegates to the per-vendor namespace.
+The cost is a jump table; there is no runtime polymorphism, no virtual dispatch, no allocation.
+
+\subsection{The three subsystems}
+\label{sec:mimic-three-subsystems}
+
+Each per-vendor backend factors into three loosely coupled subsystems sharing target-model data: an encoder--decoder pair, a simulator (three tiers), and a MAP-Elites synthesizer.
+The shared data is the calibrated \struct{TargetCaps} and the \struct{OpcodeLatencyTable} (Section~\ref{sec:mimic-target-model}); each subsystem is independently testable.
+
+The encoder--decoder pair is publicly callable: Forge's Phase~J (\textsc{emit}, Section~\ref{sec:forge-phase-j}) calls the encoder; Augur's recovery path (Chapter~\ref{sec:augur}) calls the decoder.
+Round-trip correctness is asserted continuously: \code{decode(encode(program))} equals \code{program} for every valid \IRstar{3} program.
+
+The simulator is publicly callable through \code{mimic::predict}.
+It also runs internally during MAP-Elites search.
+The simulator tiers form an escalation chain (Section~\ref{sec:mimic-simulator}).
+
+The MAP-Elites synthesizer is the implementation of \code{mimic::compile\_kernel}.
+It uses the encoder to produce candidates, the simulator to score them, the archive to maintain diversity, and the decoder to verify round-trip correctness on the chosen winner.
+
+\subsection{The target model}
+\label{sec:mimic-target-model}
+
+Each per-vendor backend exposes a \struct{TargetCaps} structure that encodes the calibrated capabilities of a chip.
+The shared core defines the \emph{abstract} fields that Forge consumes; each backend extends with vendor-specific fields opaque to Forge.
+
+\begin{definition}[Abstract TargetCaps]
+\label{def:mimic-targetcaps}
+The abstract \struct{TargetCaps} structure carries: identity (vendor enumeration, chip family, chip variant, suffix flag); compute geometry (execution-unit count, threads per execution unit, maximum registers per thread, maximum concurrent threads per unit); fast-local-storage capacity; tensor-fragment-storage capacity; cacheable-storage capacity; main-memory capacity; bandwidth estimates (main memory, L2 cache, fast local, intra-node interconnect, inter-node interconnect); launch-overhead estimate; and an opaque pointer to the per-vendor extension.
+The structure is one cache line; vendor-specific fields live in a separately allocated \struct{TargetCaps<Vendor>} pointed at by the opaque field.
+\end{definition}
+
+The split between abstract and per-vendor fields is the structural mechanism that keeps Forge vendor-neutral.
+Forge reads \code{TargetCaps::execution\_units} and \code{TargetCaps::fast\_local\_bytes}; it never reads the per-vendor extension.
+The opaque pointer is dereferenced only by Mimic's per-vendor functions.
+
+The \struct{OpcodeLatencyTable} is per-SM (or per-CU, per-MXU) data: the latency, occupancy, throughput-inverse, and pipeline-assignment of every operator the per-vendor backend emits.
+The table is approximately one hundred kilobytes per chip target, loaded lazily from a JSON data file on first use.
+The data files (\code{crucible/mimic/<vendor>/data/<chip>.json}) are checked into version control and regenerated by the calibration harness.
+
+\subsection{The three-tier simulator}
+\label{sec:mimic-simulator}
+
+The simulator is the principal source of cost information in Mimic.
+A single simulator cannot serve both MAP-Elites throughput and calibration-validation accuracy; the answer is three tiers sharing model data.
+
+\textbf{Fast tier.}
+Interval-based critical-path analysis with analytical memory-bandwidth model and queue-depth estimation.
+Wall time is approximately one to five milliseconds per simulation on CPU, ten times faster on GPU when batched.
+Throughput is ten thousand candidates per second per CPU core or one hundred thousand per second on GPU.
+Absolute accuracy is ten to twenty percent; ranking accuracy is approximately ninety percent.
+The fast tier skips cycle-level warp scheduling, register-bank conflicts, operand-collector detail, the DRAM row-buffer model, and cache state.
+Used for: MAP-Elites coarse filtering (most candidates are rejected at the fast tier without further evaluation).
+
+\textbf{Medium tier.}
+Event-driven warp-scheduler simulator with scoreboard tracking, explicit memory-subsystem queues (L1, L2, main memory), functional-unit token pools, operand collector, per-warp state machines.
+Wall time is approximately ten to thirty milliseconds.
+Throughput is one hundred to three hundred candidates per second per CPU core.
+Absolute accuracy is five to eight percent; ranking accuracy exceeds ninety-five percent.
+Used for: MAP-Elites primary fitness evaluation, Forge's Phase~B.5 cost estimates, and Augur's prediction.
+
+\textbf{Accurate tier.}
+Cycle-by-cycle simulation of every pipe, register read port, scoreboard slot, DRAM command, bank-conflict resolution, and commit-group-aware async tracking.
+Wall time is approximately one hundred to five hundred milliseconds.
+Throughput is two to ten candidates per second.
+Absolute accuracy is two to five percent; ranking accuracy exceeds ninety-nine percent.
+Used for: calibration validation (the harness compares accurate-tier predictions against measured hardware on a regression set of fifty kernels), MAP-Elites tie-breaks on top candidates per generation, and debugging simulator discrepancies.
+
+The escalation policy in MAP-Elites is structural: every candidate is fast-tier evaluated; the bottom seventy percent are rejected; the top thirty percent receive medium-tier scoring; the top ten by medium fitness receive accurate-tier evaluation; the archive update uses the most accurate tier that evaluated the candidate.
+
+\subsection{Memory subsystem modeling}
+\label{sec:mimic-memory-model}
+
+The memory subsystem is the hardest part of GPU simulation and the principal source of accuracy loss in academic simulators.
+Mimic resolves the difficulty by leveraging the open NVIDIA driver source (through Hopper) and AMD's published register specifications: the memory-subsystem mechanisms in Mimic are derived from documented driver behavior, not reverse-engineered from microbenchmark residuals.
+
+The directly documented mechanisms include the L2 slice address-hash function (the GPC-to-FBP crossbar routing algorithm), the DRAM command scheduler (FR-FCFS with per-channel age prioritization), the row-buffer policy (open-page by default, with closing trigger on hit-rate drop), per-channel refresh scheduling and stall propagation, the L1 eviction policy (LRU with replacement bypass for streaming operations), the coalescer logic (128-byte transaction merging), the read-write turnaround budget, and the error-correction overhead percentage.
+
+The medium-tier model represents these mechanisms as a queue-aware latency function: an L1 hit returns at the calibrated L1 latency; an L1 miss routes to an L2 slice via the documented hash; the L2 hit latency is the base latency plus the queue-depth multiplier; an L2 miss routes to a main-memory channel; the main-memory latency is the row-hit or row-miss latency plus the read-write-turnaround penalty plus the queue-depth contribution.
+Refresh stalls are scheduled per channel.
+
+The accurate tier represents the mechanisms in full: per-bank row-buffer state explicit, DRAM commands scheduled individually, per-slice and per-channel queues simulated, refresh interleaved with reads and writes, write-combining buffers tracked, L2 hardware compression ratio applied.
+The accurate tier is approximately twenty times slower than the medium tier in exchange for two-to-three additional percentage points of absolute accuracy.
+
+The remaining residual error (two to five percent at the accurate tier) is attributable to effects below the silicon-software boundary: temperature-dependent DRAM timing, cross-kernel cache retention, exact compression ratio under non-microbenchmark workloads, and crossbar-arbitration details under extreme contention.
+These are not fixable from the driver source; they are accepted as the accuracy floor.
+
+\subsection{The warp scheduler model}
+\label{sec:mimic-warp-scheduler}
+
+NVIDIA's warp scheduler is Greedy-Then-Oldest with age-based boosting.
+The scheduler-level details are not publicly documented but are accessible from the driver source through Hopper.
+Mimic represents the policy as three interleaved rules: the greedy rule (stick with the last-picked warp while it is ready and within the burst budget), the oldest rule (fall back to the oldest-ready warp when greedy fails), and the boost rule (elevate any warp that has been stuck beyond the boost threshold).
+
+The three constants --- the greedy probability, the boost threshold, and the burst limit --- are calibrated via dedicated microbenchmarks: a two-warp benchmark with one fast and one slow warp fits the greedy probability; an N-warp benchmark with one stalled warp fits the boost threshold; a single-warp benchmark with a long dependency chain fits the burst limit.
+The same calibration discipline applies, with vendor-specific instantiations, to AMD's wave scheduler and TPU's scalar-processor dispatcher.
+
+\subsection{Async-pipeline modeling}
+\label{sec:mimic-async}
+
+NVIDIA Hopper introduces three async subsystems: WGMMA (warpgroup MMA), TMA (Tensor Memory Accelerator), and (on Blackwell) tcgen05 with TMEM.
+Each is modeled in Mimic's medium and accurate tiers as a separate pool of outstanding operations with explicit issue, deadline, and completion events.
+
+The principal correctness concern is the back-to-back pipeline overlap.
+A WGMMA's MMA pipe is busy for the \code{occupancy} cycles after issue, but the result does not land until \code{latency} cycles after issue.
+Other operations issue during the gap, delivering pipeline overlap.
+Modeling correctness requires releasing the MMA pipe token at \code{issue\_time + occupancy}, not at \code{issue\_time + latency}.
+Modeling this incorrectly underestimates throughput by a factor of two to eight.
+
+The same discipline applies, vendor-specifically, to AMD's MFMA (no asynchronous interface; \code{s\_waitcnt}-based synchronization), TPU's MXU (scheduled by the scalar processor), and Trainium's TensorEngine (per-engine state).
+
+\subsection{Insight extraction}
+\label{sec:mimic-insights}
+
+Insights are Mimic's second-most-important output after cycles.
+An insight is a structured diagnostic produced during simulation: a kind enumeration, a severity, a confidence, an instruction-level localization, a metric value, and an optional mutation hint.
+Approximately forty insight kinds are defined: high register pressure, fast-local-storage bank conflicts, main-memory bandwidth saturation, mid-pipeline contention, async-operation underutilization, scheduler imbalance, and so on.
+Approximately twenty kinds are vendor-agnostic and live in the shared core; the remainder are per-vendor.
+
+Each insight kind carries a canonical mutation hint mapping to one to three mutation operators.
+For instance, \code{REGISTER\_PRESSURE\_HIGH} hints at \code{DECREASE\_TILE\_SIZE}, \code{ENABLE\_UR\_PROMOTION}, or \code{REDUCE\_PIPELINE\_STAGES}; \code{WGMMA\_UNDERUTILIZED} hints at \code{INCREASE\_PIPELINE\_STAGES}, \code{INCREASE\_TILE\_K}, or \code{ENABLE\_WARP\_SPECIALIZATION}.
+The mapping is the structural mechanism that drives MAP-Elites's mutation selection: an insight-driven mutation is approximately three to eight times more effective than a random mutation, because it applies expert knowledge encoded in the catalog.
+
+Insights are extracted during simulation, not as a post-hoc pass.
+Each event handler in the simulator (instruction completion, scoreboard release, memory response) carries a hook that examines local state and emits an insight when a threshold is met.
+The cost is approximately ten to fifty nanoseconds per hook.
+
+\subsection{MAP-Elites kernel search}
+\label{sec:mimic-map-elites}
+
+MAP-Elites is Mimic's solution to the kernel-synthesis problem: given an \IR{2} \struct{KernelNode}, find an \IRstar{3} program that minimizes cycles subject to target constraints.
+Unlike greedy search (XLA's benchmark-best-wins) or random autotuning (Triton's config sweep), MAP-Elites maintains a behavior archive: a discretized grid where each cell stores the best solution at that behavior coordinate.
+
+\begin{definition}[Behavior archive]
+\label{def:mimic-archive}
+The MAP-Elites archive is a six-dimensional grid with eight buckets per dimension: occupancy, register usage, fast-local-storage usage, pipeline depth, MMA shape family, and warpgroup split.
+Total cells: 8\textsuperscript{6} = approximately 260\,000.
+A typical kernel family populates 500 to 5\,000 cells.
+Each cell holds the best (highest-fitness) candidate seen at that behavior coordinate, plus the candidate's content hash, fitness, mutation count, and structured insights.
+\end{definition}
+
+The fitness function is the efficiency ratio: theoretical-minimum cycles divided by simulated cycles, normalized to the unit interval.
+Perfect roofline utilization is 1.0; 0.5 is fifty-percent efficient; 0.9 is excellent; 0.95 is near-optimal; values above 0.98 are typically measurement error.
+
+The mutation catalog has approximately fifty operators in three classes.
+\textbf{Macro mutations} (about ten percent of applications) change the structural shape: tile-shape swap, warpgroup-split reassignment, grid-shape adjustment, cluster-size change, layout swap, split-K toggle, persistent-CTA conversion.
+\textbf{Meso mutations} (about forty percent) change the pipeline structure without altering tiles: pipeline-stages adjustment, swizzle-pattern change, MMA-shape variant, epilogue-scheme change, prefetch-stage addition or removal, register-allocation strategy change.
+\textbf{Micro mutations} (about fifty percent) make small tweaks: register-pair swap, instruction reordering, reuse-hint addition, warp-order adjustment, scoreboard-allocation change, stall-count adjustment.
+
+Mutation selection is insight-driven: with seventy-percent probability the mutator samples an insight from the parent's simulation result and applies one of the canonical hints; with thirty-percent probability the mutator samples uniformly across the macro/meso/micro distribution.
+
+The main loop runs concurrent batches of mutations against a thread pool sized by hardware concurrency, evaluates each batch through the simulator-tier escalation, and submits the candidates to the archive.
+Termination conditions are: efficiency ratio above 0.92 (near-optimal; stop), wall-clock budget exceeded, iteration budget exceeded, or fifty generations of stuck-at-best (no improvement).
+
+\textbf{Warm-start.}
+The archive is persisted to Cipher between compilations.
+A subsequent compilation of a structurally similar kernel (the same \struct{KernelKind}, comparable shape, comparable dtype) loads the previous archive and seeds MAP-Elites from the highest-fitness cells.
+The archive lookup is two-key: an exact match on \struct{KernelContentHash} returns the archive directly; a near match on \struct{StructuralHash} (the content hash with extension-point body hashes stripped) warm-starts from a structurally similar archive.
+Body-similar archives reduce convergence by approximately five-to-ten times for research variants of a familiar template.
+
+\textbf{Federation.}
+The archive is federation-shareable at Cipher's cold tier.
+Two installations running the same model produce comparable archives; sharing them via a shared cold-tier object store enables a kernel-compilation genome that grows monotonically across the user community.
+The privacy guarantees follow from \IR{2}'s vendor-neutrality: an L1 KernelCache entry contains kernel templates, recipes, and tile specs; no weights, no training data, no proprietary identifiers.
+
+\subsection{Calibration: how the simulator reaches 95-to-98-percent accuracy}
+\label{sec:mimic-calibration}
+
+The simulator's accuracy target is 95-to-98-percent on Forge-emitted instruction streams.
+Without calibration, the simulator would be 70-to-80-percent accurate (ballpark predictions from hardware specifications).
+With calibration, the additional fifteen-to-twenty percentage points come from a structured microbenchmark suite that fits the per-chip constants.
+
+The calibration harness has seven stages.
+
+\textbf{Stage 1: Isolation.}
+Single-warp, single-pipe, no memory access.
+Approximately thirty microbenchmarks per chip target measure per-opcode latency, occupancy, and throughput.
+
+\textbf{Stage 2: Functional-unit contention.}
+Multiple warps doing the same operation.
+Approximately twenty microbenchmarks measure per-pipe instance count and partition share.
+
+\textbf{Stage 3: Memory isolation.}
+Single-warp pointer-chase with varying stride.
+Approximately fifteen microbenchmarks measure L1, L2, and main-memory latencies in isolation.
+
+\textbf{Stage 4: Memory bandwidth.}
+Maximum-width strided loads with all warps.
+Approximately ten microbenchmarks measure aggregate-bandwidth ceilings at each level.
+
+\textbf{Stage 5: Scheduler.}
+Two-to-four warps with asymmetric stall patterns.
+Approximately ten microbenchmarks fit the GTO greedy probability, the boost threshold, and the burst limit.
+
+\textbf{Stage 6: Integration.}
+Tiled GEMM, softmax, FlashAttention.
+Approximately twenty microbenchmarks validate that the per-mechanism calibrations compose correctly.
+
+\textbf{Stage 7: Regression.}
+Five hundred real kernels with measured performance.
+The accurate-tier residual is required to satisfy a P95 cap below five percent.
+
+The total per-chip calibration time is approximately one to two months of engineering effort to reach 95-percent accuracy; reaching 98 percent requires another two-to-three months and provides diminishing returns for machine-learning workloads.
+
+\subsection{Per-vendor backends}
+\label{sec:mimic-per-vendor}
+
+The per-vendor backends share the template (Section~\ref{sec:mimic-template}) and the public interface (Section~\ref{sec:mimic-public-interface}); their internals diverge by vendor.
+The architecture-level overview of each follows; the misc/MIMIC.md design specification documents the vendor-specific instruction encoders, calibrated tables, simulator specializations, runtime ioctl protocols, and collective implementations.
+
+\textbf{NVIDIA (\code{mimic/nv/}).}
+\IR{3}NV is the Mercury SASS instruction stream for sm\_90 (Hopper), sm\_100 (Blackwell datacenter), sm\_103 (Blackwell Ultra), sm\_110 (Jetson Thor), sm\_120 and sm\_121 (Blackwell consumer and DGX Spark).
+The encoder produces 128-bit Mercury instruction words and packages them into cubin ELF.
+The simulator includes the Hopper warp scheduler (GTO with boost), the WGMMA and TMA async subsystems, the Blackwell tcgen05 with TMEM, and the four-level memory hierarchy.
+The runtime library wraps \code{/dev/nvidia*} ioctls, replacing libcuda, libcudart, libnvJitLink, and libnvrtc.
+The collective library implements ring, tree, halving-doubling, and hierarchical algorithms over NVLink (intra-node) and RDMA (inter-node).
+NVIDIA is Mimic's first and reference-complete backend.
+
+\textbf{AMD (\code{mimic/am/}).}
+\IR{3}AM is AMDGPU ISA for CDNA3 (gfx942 MI300X, gfx950 MI325X) and RDNA3 and later for consumer.
+The encoder may reuse LLVM-AMDGPU internally for ISA selection (the generator tables are open); the HSACO wrapper and the scheduler are Mimic's own.
+The runtime library wraps \code{/dev/kfd} and per-device \code{/dev/dri/renderD*}.
+The collective library targets XGMI intra-node and RoCE inter-node.
+
+\textbf{Google TPU (\code{mimic/tpu/}).}
+\IR{3}TPU targets v5p, v5e, v6e, and v7.
+The encoder produces TPU executable format (protobuf with opaque payload).
+The runtime library wraps \code{/dev/accel*}.
+The collective library implements the ICI torus topology with native in-fabric aggregation.
+
+\textbf{AWS Trainium (\code{mimic/trn/}).}
+\IR{3}TRN targets trn1, trn2, and trn3.
+The encoder produces NEFF (Neuron Executable File Format).
+The runtime library wraps \code{/dev/neuron*}.
+The collective library composes NeuronLink intra-node with EFA inter-node.
+
+\textbf{Cerebras (\code{mimic/cer/}).}
+\IR{3}CER targets WSE3 and later.
+The encoder produces Cerebras Software Language binary format.
+The runtime library wraps \code{/dev/cerebras*}.
+The collective library targets the SwarmX wafer fabric.
+
+\textbf{CPU (\code{mimic/cpu/}).}
+\IR{3}CPU targets x86\_64 (AVX-512 and AVX2), AArch64 (NEON and SVE2), and RISC-V (V extension).
+The encoder writes a native ELF shared object or stages C\nolinebreak\hspace{0.05em}\raisebox{0.4ex}{\tiny ++}\, source plus invokes a JIT compiler.
+The runtime library uses standard \code{malloc}, \code{mmap}, and pthreads.
+The CPU backend is the correctness oracle for the cross-vendor numerics CI: every \code{BITEXACT\_STRICT} recipe is realized as a scalar FMA chain on CPU, and every other backend's output is compared against the CPU reference.
+
+\subsection{The runtime library replacement}
+\label{sec:mimic-runtime}
+
+Each per-vendor backend ships its own runtime library at \code{mimic/<vendor>/rt/} replacing libcuda, libnrt, libtpu, libhsa, with the same surface and zero vendor-SDK dependency.
+The runtime library provides device discovery and open (one ioctl), memory-pool management (one large allocation at Keeper init, then position-independent pointer arithmetic), binary loading (the per-vendor binary format is parsed directly without vendor-supplied loaders), kernel submission (via the per-vendor pushbuffer or doorbell or DMA mechanism), graph capture (where supported by the vendor), and synchronization and completion polling.
+
+The submission path is the latency-critical surface.
+Each per-vendor backend documents the byte sequence the runtime emits per kernel launch.
+For NVIDIA Hopper: a four-dword pushbuffer entry plus a doorbell write, totaling thirty-two bytes of host-to-GPU traffic per launch with a CPU critical path of approximately 80 to 200 nanoseconds.
+For AMD CDNA3: a PM4 packet sequence plus a doorbell.
+For TPU and Trainium: a DMA-descriptor write to the device.
+
+The runtime library architecture and the per-vendor latency budgets are documented in detail in CRUCIBLE.md and MIMIC.md.
+
+\subsection{The collective library replacement}
+\label{sec:mimic-collective}
+
+Each per-vendor backend ships its own collective library at \code{mimic/<vendor>/comm/} replacing NCCL, RCCL, libnccom, hcoll, with the same surface and zero vendor-collective-library dependency.
+The collective library implements the standard primitives (all-reduce, all-gather, reduce-scatter, all-to-all, broadcast, point-to-point) with deterministic-reduction discipline (canonical pairwise-tree ordering by sorted UUID under \code{BITEXACT} recipes; algorithm selection per message size under \code{ORDERED}; opportunistic under \code{UNORDERED}).
+
+A distinguishing structural property: in Mimic, collectives are \emph{kernels} in the \struct{ExecutionPlan} (Chapter~\ref{sec:execution-plan}), not separate runtime entities driven by a proxy thread.
+A ring all-reduce is approximately two hundred bytes of pushbuffer (eight hops at sixteen bytes plus seven barriers), submitted in the same doorbell as the surrounding compute kernels.
+NCCL by contrast issues per-collective \code{cuLaunchKernel}, costing approximately four-to-six microseconds of host overhead per collective; the proxy thread that drives NCCL's progress is a separate runtime construct.
+The cost difference is structural, not engineering: collectives in Mimic move at the speed of pushbuffer and the fabric.
+
+\subsection{Properties}
+\label{sec:mimic-properties}
+
+The properties below are commitments of the Mimic specification.
+Each is enforced either structurally (by the per-vendor backend's type system) or by the cross-vendor numerics CI matrix (Chapter~\ref{sec:cross-vendor-ci}).
+
+\begin{property}[Vendor-SDK independence]
+\label{prop:mimic-no-sdk}
+No per-vendor backend links against any vendor SDK runtime library.
+Each backend wraps the kernel-driver ioctl protocol directly.
+The kernel driver is the only vendor-proprietary surface Crucible inherits.
+\end{property}
+
+\begin{property}[Per-vendor isolation]
+\label{prop:mimic-isolation}
+The per-vendor backends are mutually independent.
+Adding a new vendor changes no other backend, no shared-core code, and no Forge code.
+The five public entry points are uniform; the dispatch is mechanical.
+\end{property}
+
+\begin{property}[Recipe-realization fidelity]
+\label{prop:mimic-recipe-fidelity}
+Each per-vendor backend implements \code{realize\_recipe}, mapping a \struct{NumericalRecipe} to vendor-specific instructions.
+The realization is deterministic, documented per backend, and verified by the cross-vendor numerics CI matrix.
+A backend that violates the declared cross-vendor tolerance fails the build.
+\end{property}
+
+\begin{property}[Calibrated cost-model fidelity]
+\label{prop:mimic-calibrated}
+Each per-vendor simulator's medium-tier output satisfies a P95 absolute-error cap below five percent against measured hardware on the per-vendor regression set of approximately five hundred kernels.
+The accuracy target is preserved by Augur's continuous monitoring: drift triggers \code{mimic::recalibrate}, which re-runs the calibration harness during a cluster idle window.
+\end{property}
+
+\begin{property}[Round-trip-correct encoder]
+\label{prop:mimic-roundtrip}
+Each per-vendor backend's encoder satisfies \code{decode(encode(prog))} equals \code{prog} for every valid \IRstar{3} program.
+The property is asserted by continuous integration tests that generate random programs, encode and decode, and compare structurally.
+\end{property}

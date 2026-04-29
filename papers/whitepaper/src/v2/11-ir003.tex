@@ -1,0 +1,297 @@
+% =====================================================================
+% Chapter 11: Machine IR (IR003*)
+% =====================================================================
+
+\section{Machine IR (\IRstar{3})}
+\label{sec:ir003}
+
+The third intermediate representation is per-vendor.
+\IR{1} (Chapter~\ref{sec:ir001}) is one IR shared across the entire system; \IR{2} (Chapter~\ref{sec:ir002}) is one IR shared across the entire system; \IRstar{3} is a \emph{family} of IRs, one per accelerator vendor.
+The asterisk in the name denotes that specialization: \IRstar{3} stands for the set $\{\,\textsc{ir003nv}, \textsc{ir003am}, \textsc{ir003tpu}, \textsc{ir003trn}, \textsc{ir003cer}, \textsc{ir003cpu}\,\}$.
+
+The reason for the split is that the abstractions cease to be vendor-uniform at the machine level.
+Hopper Mercury SASS uses warpgroup-scoped \code{WGMMA} instructions, four-way warp schedulers per sub-partition, and per-thread scoreboard slots; CDNA3 uses \code{MFMA} instructions with wave-scoped accumulators and a single in-order dispatcher; TPU uses systolic-array \code{XLA-HLO}-derived bytecode with explicit prefetch windows; Trainium uses tensorized neuron-core instructions sequenced through a static schedule; Cerebras uses CSL with explicit on-fabric routing; CPU uses native AVX-512 or NEON or SVE through an LLVM-IR-based path.
+There is no useful common type that admits all of these simultaneously without becoming a thin wrapper over each.
+The Crucible decision is therefore to commit to per-vendor IRs at this layer and to specify a uniform protocol that each vendor's IR must satisfy.
+The protocol is what makes Mimic's surface uniform; the IRs themselves are not.
+
+\subsection{Position in the stack}
+\label{sec:ir003-position}
+
+\IRstar{3} is the closest IR to silicon.
+At the top of the stack, \IR{1} represents an operation graph that any backend could execute.
+\IR{2} narrows that to a kernel graph with shape, dtype, layout, and recipe commitments, but still without commitments to vendor-specific tile shapes, address spaces, register allocation, or instruction scheduling (Section~\ref{sec:ir002-not}).
+\IRstar{3} commits all of those.
+Specifically, every \IRstar{3} program contains:
+
+\begin{itemize}
+  \item A list of vendor-specific machine instructions in canonical SSA form (\emph{CSSA} --- Section~\ref{sec:ir003-cssa}).
+        Each instruction carries an opcode, operands, an output destination, scheduling-slot metadata, scoreboard or pipe annotations, and any vendor-specific decoration the ISA requires.
+  \item Address-space tags on every memory operand: which tier of the memory hierarchy the load or store touches (registers, fast-local-storage, distributed shared, tensor memory, main memory, special-purpose buffers).
+  \item A complete register allocation: the mapping from logical SSA values to physical registers including spill decisions, bank-conflict avoidance, and the precise live-range layout that determines occupancy.
+  \item An instruction schedule: cycle-accurate-or-approximate ordering, pipe assignments, scoreboard-slot reservations, dual-issue groupings, and the placement of synchronization primitives (mbarrier waits, named-barrier arrives, tcgen05-commit groups, MFMA wait-vmcnt sequences, TPU semaphore signals).
+  \item Memory-fence and synchronization primitives required by the recipe and the kernel's data-flow.
+  \item All metadata required by the binary format: register counts, smem usage, occupancy hints, debug-info entries, ELF-attribute tags.
+\end{itemize}
+
+\IRstar{3} therefore is the form of the program that maps one-to-one onto bytes in the per-vendor binary format (cubin, HSACO, NEFF, TPU executable, CSL, native ELF).
+Encoding \IRstar{3} produces those bytes; decoding the bytes recovers \IRstar{3}.
+The next step beyond \IRstar{3} is hardware execution; there is no further IR.
+
+\subsection{Common discipline}
+\label{sec:ir003-common}
+
+Although the IRs differ per vendor, they share a uniform discipline that the Mimic shared core can rely on without knowing the per-vendor details.
+The discipline is enumerated in MIMIC.md \S2 as a set of contractual obligations on every Mimic backend.
+For the whitepaper, the four most consequential common properties are:
+
+\begin{property}[Canonical SSA form]
+\label{prop:ir003-cssa}
+Every \IRstar{3} program is in CSSA: every value has exactly one definition; every instruction reads at most a fixed bounded number of operands per the vendor's ISA; the program contains no unstructured control flow other than what the vendor's ISA models natively (predication, branch-divergence-aware control, partial-warp predicates, etc.).
+The CSSA discipline is what allows the per-vendor register allocator and instruction scheduler to operate on a uniform abstract substrate even when the concrete instruction set differs.
+\end{property}
+
+\begin{property}[Address-space tagging]
+\label{prop:ir003-as-tags}
+Every memory operand is tagged with the address space it touches.
+The set of address-space tags is per-vendor (NV: registers / smem / distributed-smem / tensor-memory / global / constant-bank / instruction-cache; AMD: VGPRs / SGPRs / LDS / GDS / VRAM / scalar-cache; TPU: VMEM / SMEM / HBM / TileMemory; etc.).
+Crucible exposes a uniform abstract address-space taxonomy at the \IR{2}/\IRstar{3} boundary; per-vendor lowering refines abstract tags into concrete vendor tags.
+\end{property}
+
+\begin{property}[Scheduling-slot annotation]
+\label{prop:ir003-sched}
+Every instruction carries the scheduling metadata the vendor's hardware requires.
+On NVIDIA Hopper, this is the per-instruction stall count, scoreboard wait set, and dual-issue partner where applicable.
+On AMD CDNA3, this is the wait-vmcnt / wait-lgkmcnt / wait-expcnt vector and the wave-pipeline placement.
+On TPU, this is the explicit cycle index and pipe assignment in the static schedule.
+The scheduling metadata is structurally part of \IRstar{3} and survives encoding to the binary format.
+\end{property}
+
+\begin{property}[Round-trip-correct binary encoding]
+\label{prop:ir003-roundtrip}
+For every valid \IRstar{3} program $p$ on backend $V$, the equation
+\[
+    \mathrm{decode}_V(\mathrm{encode}_V(p)) = p
+\]
+holds modulo a documented set of normalization rewrites that the per-vendor decoder applies (e.g., re-canonicalization of equivalent encodings of the same instruction).
+This property is asserted continuously by the per-vendor encoder/decoder regression suite.
+A backend that ships an encoder change without a corresponding decoder change, or vice versa, fails the suite and the build is rejected.
+\end{property}
+
+The CSSA discipline is what makes the shared simulator framework, MAP-Elites driver, and insight extraction (Chapter~\ref{sec:mimic}) work uniformly across backends.
+The address-space tagging is what makes the cross-vendor numerics CI matrix (Chapter~\ref{sec:cross-vendor-ci}) able to compile the same \IR{2} program through every backend and verify that each backend's recipe realization stays within the recipe's declared tolerance.
+The scheduling-slot annotation is what makes \IRstar{3} a faithful proxy for the per-vendor binary's runtime behavior, and therefore what makes the simulator's medium-tier and accurate-tier predictions calibratable.
+The round-trip property is what makes the L2 KernelCache (Chapter~\ref{sec:cipher}) able to load a cached binary back into a usable \IRstar{3} representation for Augur's prediction path.
+
+\subsection{Canonical SSA form}
+\label{sec:ir003-cssa}
+
+The IR is in single-static-assignment form by construction; CSSA additionally requires that:
+
+\begin{enumerate}
+  \item \textbf{Definitions are unique by name.}
+        Every SSA value is identified by a vendor-typed name (\struct{NvssaName}, \struct{AmssaName}, etc.).
+        The name is a strong type with arena-bounded lifetime; no two definitions in the same program share a name.
+
+  \item \textbf{Operand reads are explicit.}
+        Every instruction declares its full set of input operands as named-value references.
+        There are no implicit reads (e.g., NV's status registers, AMD's VCC/EXEC, TPU's prefetch register file) other than those modeled as named values produced by upstream instructions.
+
+  \item \textbf{Predication is a value, not a flag.}
+        Predicated execution (NV: per-thread predicate registers; AMD: EXEC mask; TPU: per-lane predicate) is modeled as an SSA value produced by a predicate-defining instruction and consumed as a typed operand by predicated instructions.
+
+  \item \textbf{Side effects are explicit.}
+        Memory writes, shared-memory writes, fence operations, named-barrier arrives, and tensor-memory commits are SSA-formed: each has an explicit ordering token consumed by the subsequent fence or wait. No backend uses a global ``side-effect frame'' or implicit ordering.
+
+  \item \textbf{Scope structure follows the vendor's hardware model.}
+        On NV, the relevant scopes are thread / warp / warpgroup / cta / cga / grid; on AMD, lane / wave / workgroup / grid; on TPU, lane / sublane / tile / grid; on Trainium, neuron-core / device / fleet. Each \IRstar{3} variant exposes the scopes its ISA exposes.
+\end{enumerate}
+
+Property~\ref{prop:ir003-cssa} is the structural commitment.
+Per-vendor \IRstar{3} variants additionally publish a CSSA verifier (\code{verify\_cssa(prog) -> Result<void, CssaError>}) that the Mimic shared core invokes after every lowering pass and after every MAP-Elites mutation.
+A program that fails CSSA verification cannot be encoded; the search loop discards it and continues.
+
+\subsection{The per-vendor variants}
+\label{sec:ir003-variants}
+
+The current set of \IRstar{3} variants is six.
+The set is open: adding a vendor adds one variant.
+The structural template is the same for each.
+Table~\ref{tab:ir003-variants} summarizes the per-vendor variants at a glance; the per-vendor backend chapters in MIMIC.md (and the per-backend whitepaper appendices) elaborate.
+
+\begin{table}[h]
+\centering
+\footnotesize
+\begin{tabular}{l l l l l}
+\toprule
+\textbf{Variant} & \textbf{Vendor / chip family} & \textbf{Native MMA} & \textbf{Binary format} & \textbf{Driver protocol} \\
+\midrule
+\textsc{ir003nv}  & NVIDIA Hopper / Blackwell & WGMMA, tcgen05.mma   & cubin (ELF + EIATTR)         & \code{/dev/nvidia*} ioctl + UVM \\
+\textsc{ir003am}  & AMD CDNA3+ / RDNA3+        & MFMA, V\_MFMA\_F16   & HSACO (AMDGPU ELF)           & \code{/dev/kfd} + amdgpu KMD \\
+\textsc{ir003tpu} & Google TPUv4 / TPUv5       & MXU systolic array   & TPU executable               & libtpu-replacement ioctl plane \\
+\textsc{ir003trn} & AWS Trainium / Trainium2   & TensorEngine + GPSIMD & NEFF                         & libnrt-replacement ioctl plane \\
+\textsc{ir003cer} & Cerebras WSE-2 / WSE-3     & Wafer fabric routing & CSL + on-fabric program     & libcsl-replacement plane \\
+\textsc{ir003cpu} & x86\_64 / aarch64 / RISC-V & FP scalar + AVX-512 / NEON / SVE FMA & native ELF & direct execution \\
+\bottomrule
+\end{tabular}
+\caption{Per-vendor \IRstar{3} variants. Each is the full machine-IR for one accelerator family and is owned by the corresponding Mimic backend.}
+\label{tab:ir003-variants}
+\end{table}
+
+The \textsc{ir003cpu} variant deserves special note.
+The CPU backend is the \emph{reference oracle} for cross-vendor numerics CI (Chapter~\ref{sec:cross-vendor-ci}); it is not a high-performance target.
+Its discipline is therefore inverted relative to the GPU and accelerator backends: it commits to one specific scalar-FMA semantic (IEEE-754 with round-to-nearest-even, no contraction other than the recipe-declared FMA, no FTZ unless the recipe requires it), it produces bit-exactly the canonical-pairwise-tree reduction every recipe-tier requires, and it makes no attempt at vectorization that would jeopardize bit-equivalence under \code{BITEXACT\_STRICT}.
+The CPU variant's role is to be the source of truth that every other variant is verified against.
+
+\subsubsection{IR003NV in brief}
+
+The most-elaborated variant in the current implementation is \textsc{ir003nv}.
+It encodes Hopper SASS as a CSSA-form sequence over a finite set of opcodes (currently the count is materialized in \code{include/crucible/mimic/nv/Ir3Nv.h} and reported by the per-vendor sentinel TU; the whitepaper deliberately does not pin a specific number because the count grows as new ISA variants land).
+Each \IRstar{3}NV instruction carries: opcode, up to three input operands, up to one output destination, a 4-bit predicate operand, a stall count, a yield bit, a scoreboard wait/release vector, and a dual-issue partner index.
+Address-space tags on memory operands distinguish registers / shared memory / distributed shared memory / tensor memory / global memory / constant memory.
+The encoder produces 128-bit SASS instruction words and packages them into a cubin ELF with the full set of EIATTR codes the NVIDIA driver expects (see MIMIC.md \S20 for the exhaustive list).
+The decoder produces \struct{DecodedProgram}, a simulator-facing form that strips Forge-side metadata not needed for prediction.
+
+\subsubsection{IR003AM in brief}
+
+\textsc{ir003am} encodes the AMDGPU ISA for CDNA3 and RDNA3 generations.
+The structural pattern matches \textsc{ir003nv}: CSSA form, opcode table, per-instruction wait-cnt vector, VGPR / SGPR / AGPR allocation, LDS-tag on memory operands, MFMA pipeline placement.
+The binary-format target is HSACO (AMDGPU ELF with rodata kernel-descriptors and debug-info sections).
+The driver-target is a direct \code{/dev/kfd} ioctl plane that replaces \code{libhsa}, \code{libhsakmt}, and the upper layers of ROCm's runtime; the AMDGPU kernel module is the only AMD code in the runtime path.
+
+\subsubsection{IR003TPU and IR003TRN in brief}
+
+The TPU and Trainium variants differ structurally from GPU variants in two ways.
+First, both use \emph{statically scheduled} execution: the IR commits to a precise cycle-by-cycle schedule at compile time rather than relying on a hardware scoreboard at run time.
+The CSSA form therefore carries explicit cycle indices and pipe assignments, and the simulator's medium-tier becomes effectively cycle-accurate by construction (the schedule is the simulation).
+Second, both use \emph{tile-granularity} compute: the unit of work is a tile-sized batched matmul or convolution, not an individual scalar instruction.
+The IR's grain is therefore coarser, and the encoder produces tile-program bytecode (TPU exec, NEFF) rather than scalar instruction streams.
+The compensating discipline is that recipe realization at the tile level remains explicit and bit-exact under \code{BITEXACT\_STRICT}: the systolic array's fixed accumulator order is captured in the IR.
+
+\subsubsection{IR003CER in brief}
+
+The Cerebras variant differs from all others in modeling \emph{spatial} rather than temporal computation: the IR commits to fabric-tile placement, on-fabric routing, and per-tile CSL kernels rather than to a per-instruction schedule on a single chip.
+The structural template is preserved (CSSA, address-space tags, round-trip-correct encoding) but the scope hierarchy is fabric-tile / fabric-region / wafer rather than thread / warp / cta.
+Cerebras is currently the most-different variant from the GPU baseline; its presence in the design demonstrates that the per-vendor IR template tolerates substantial variation.
+
+\subsubsection{IR003CPU in brief}
+
+The CPU variant is the simplest because the binary target is the host's native ELF and the runtime path is direct execution.
+The CSSA form is essentially LLVM-IR shaped (\IRstar{3}CPU is in fact lowered through an LLVM-IR-derived intermediate, the only place in Crucible where LLVM is in the dependency graph).
+Address-space tags are minimal (registers / cache / DRAM); the schedule is whatever the host's out-of-order pipeline produces from a clean instruction stream.
+The CPU's role as the reference oracle is the load-bearing one: it must produce the canonical scalar-FMA result for every recipe and it must be available unconditionally (every developer machine, every CI runner).
+
+\subsection{Recipe realization at the \IRstar{3} level}
+\label{sec:ir003-recipe-realize}
+
+The \struct{NumericalRecipe} attached to every \struct{KernelNode} (Section~\ref{sec:ir002-recipe}) is realized in \IRstar{3}.
+Realization is per-vendor, deterministic, and verifiable.
+Each backend exposes a \code{realize\_recipe} entry point that, given a \struct{NumericalRecipe} and the per-vendor \struct{TargetCaps}, produces the concrete sequence of \IRstar{3} instructions that implement the recipe.
+The realization is documented in the per-vendor backend chapter; the structural commitments are:
+
+\begin{enumerate}
+  \item \textbf{Reduction tree.} The recipe declares one of \{unordered, ordered, BITEXACT\_TC, BITEXACT\_STRICT\}; the realization emits the corresponding reduction structure: free-form for unordered; per-warp tree-reduction for ordered; the recipe-declared tensor-core accumulator for BITEXACT\_TC; canonical pairwise binary tree sorted by lane-id for BITEXACT\_STRICT.
+  \item \textbf{Accumulator dtype.} The recipe pins the accumulator's representation; the realization emits the corresponding tensor-core or MFMA or MXU instruction with that accumulator dtype.
+  \item \textbf{FMA contraction.} If the recipe forbids FMA contraction across statements (the IEEE-754 default, used under \code{BITEXACT\_STRICT}), the realization breaks fused-multiply-add patterns into separate \code{FMUL} + \code{FADD} instructions; if the recipe allows contraction within a statement (the C++26 \code{ffp-contract=on} mode used elsewhere in Crucible, see Code Guide \S V), the realization emits FMA where the per-vendor scheduler benefits from it.
+  \item \textbf{Rounding and FTZ.} The recipe declares rounding mode and FTZ behavior; the realization emits the per-vendor instructions or mode bits that implement them.
+\end{enumerate}
+
+The cross-vendor numerics CI matrix (Chapter~\ref{sec:cross-vendor-ci}) verifies that the realization is faithful: for every (\struct{KernelKind}, \struct{NumericalRecipe}, target) triple, the matrix compiles the kernel through every per-vendor backend, executes it on real silicon (or on the simulator for absent silicon), and compares the result pairwise against the CPU reference oracle.
+A backend whose realization produces a result outside the recipe's declared tolerance fails the build.
+\IRstar{3} is therefore the layer at which the cross-vendor portability contract is mechanically discharged: \IR{2} declares the recipe, \IRstar{3} realizes it, and the CI matrix verifies the realization is correct.
+
+\subsection{The encoder/decoder pair}
+\label{sec:ir003-codec}
+
+Each per-vendor backend ships a paired encoder and decoder.
+The encoder maps an \IRstar{3} program to bytes in the vendor's binary format; the decoder maps bytes to \IRstar{3}.
+The two are derived from a single per-vendor instruction-encoding table, ensuring that they can never disagree about the bit layout of any instruction.
+
+The decoder's primary role is not loading kernels back into Crucible (Mimic's runtime library loads compiled kernels by their content hash and a binary-loader that does not need the IR back); it is enabling the simulator and Augur's \code{predict} path to reason about cached or third-party-supplied binaries.
+A binary loaded from the L3 KernelCache (Chapter~\ref{sec:cipher}) is decoded back to \struct{DecodedProgram} (the simulator-facing form) so the simulator can predict its performance under a new \struct{TargetCaps} during cross-chip migration.
+
+The round-trip property (Property~\ref{prop:ir003-roundtrip}) is asserted by a per-vendor regression suite that generates random \IRstar{3} programs (using a per-vendor seeded fuzzer that respects the IR's well-formedness constraints) and verifies that \code{decode(encode(prog)) == prog}.
+The suite is part of every PR build; encoder/decoder agreement is non-negotiable.
+
+\subsection{Verification at the \IRstar{3} level}
+\label{sec:ir003-verification}
+
+In addition to the per-vendor CSSA verifier (Section~\ref{sec:ir003-cssa}), each backend implements:
+
+\begin{itemize}
+  \item A \emph{register-pressure verifier} that asserts the program does not exceed the chip's per-thread register file capacity nor force the program below the recipe's declared minimum occupancy.
+  \item A \emph{scheduling verifier} that asserts every scoreboard read has a matching upstream write within the vendor's stall window, every named-barrier arrive has a matching wait, and every async-pipeline commit has a matching wait downstream.
+  \item A \emph{recipe-realization verifier} that, given the kernel's pinned \struct{NumericalRecipe}, asserts the emitted instruction sequence implements the declared reduction structure, accumulator dtype, FMA-contraction policy, and rounding mode.
+  \item A \emph{cross-vendor-numerics-CI participation flag} that asserts the kernel's \struct{NumericalRecipe} is on the per-vendor backend's \code{native\_on} bitmap; if not, the build is rejected at the \IR{2}\textrightarrow{}\IRstar{3} boundary, before lowering proceeds.
+\end{itemize}
+
+These verifiers run in Forge's Phase~H (Section~\ref{sec:forge-phase-h}) immediately after per-vendor lowering and again after every MAP-Elites mutation that touches the program structurally.
+Verification cost is on the order of one to two milliseconds per kernel and is part of the per-kernel compilation budget.
+
+\subsection{Properties}
+\label{sec:ir003-properties}
+
+The properties below are commitments of the \IRstar{3} specification, applying uniformly across all per-vendor variants.
+
+\begin{property}[Per-vendor specialization with uniform protocol]
+\label{prop:ir003-protocol}
+Each \IRstar{3} variant is per-vendor and need not share a type with any other variant.
+However, each variant satisfies the same protocol obligations: CSSA form, address-space tagging, scheduling-slot annotation, round-trip-correct encoding, recipe realization, and verification suites.
+A new vendor onboards by implementing the protocol; no other backend or shared-core code changes.
+\end{property}
+
+\begin{property}[Faithful proxy for binary]
+\label{prop:ir003-faithful}
+For every per-vendor backend, the bit-layout of the binary is determined by \IRstar{3}: encoding is a function of the \IRstar{3} program plus the binary-format header constants required by the loader.
+Two \IRstar{3} programs that differ in any structural respect produce different binaries; two \IRstar{3} programs that differ only in fields the binary format does not preserve (debug-only metadata, mutation-source tracking) produce identical binaries.
+The encoder is therefore a complete specification of the binary format from the IR's perspective.
+\end{property}
+
+\begin{property}[Recipe-realization is verifiable per program]
+\label{prop:ir003-recipe-verifiable}
+For every \IRstar{3} program $p$ on backend $V$ targeting recipe $r$, the realization is verifiable in time linear in $|p|$ by inspecting the emitted instruction stream against $r$'s declared structural properties.
+A program that fails recipe-realization verification at the \IRstar{3} level is rejected before encoding, ensuring that no compiled binary can violate its declared recipe contract.
+\end{property}
+
+\begin{property}[CPU reference oracle is bit-exact]
+\label{prop:ir003-cpu-bitexact}
+The \textsc{ir003cpu} variant produces, under \code{BITEXACT\_STRICT}, scalar-FMA results with canonical pairwise binary tree reduction sorted by index, IEEE-754 round-to-nearest-even, no contraction, and no FTZ.
+The result is platform-independent (x86\_64 vs.\ aarch64 vs.\ RISC-V produce the same bytes) by construction of the CPU lowering pass.
+This property is the ground truth that the cross-vendor CI matrix verifies every other backend's realization against.
+\end{property}
+
+\begin{property}[Decoder reconstructs simulator-facing form]
+\label{prop:ir003-decode-faithful}
+For every per-vendor binary $b$ produced by the per-vendor encoder, the per-vendor decoder produces a simulator-facing form (\struct{DecodedProgram}) sufficient to drive every simulator tier (fast / medium / accurate). The decoder's output may discard Forge-side metadata not needed for simulation, but it preserves all per-instruction structural information the simulator reads (opcode, operands, scheduling-slot, scoreboard, address-space, predicate).
+\end{property}
+
+\subsection{What \IRstar{3} does not contain}
+\label{sec:ir003-not}
+
+\IRstar{3} is the deepest IR but it is still an IR, not the silicon.
+Specifically, \IRstar{3} does not commit:
+
+\begin{itemize}
+  \item \textbf{Transient hardware state.} Branch-prediction history, cache-line-replacement state, fetch-pipeline pressure, and similar microarchitectural dynamics are not modeled in \IRstar{3}; they are properties of the runtime execution that the simulator approximates statistically.
+  \item \textbf{Dynamic dispatch decisions.} On chips with dynamic warp scheduling (NV's GTO, AMD's wave dispatch), the actual order in which warps progress at runtime is not pinned by \IRstar{3}; the schedule \IRstar{3} commits is the structural one (which instructions are dispatchable at which scoreboard state), not the temporal one (which warp gets the issue slot in cycle $t$).
+  \item \textbf{Memory-system contention.} L2 cache evictions, HBM bank conflicts, and fabric contention are runtime properties; \IRstar{3} commits the address-space tags and access patterns but not the contention outcomes.
+\end{itemize}
+
+These omissions are why the simulator's medium and accurate tiers are needed: \IRstar{3} pins enough to compute deterministic-execution properties exactly (cycle counts of the dependency-graph critical path, register-pressure timeline, scoreboard-stall structure) and enough to bound runtime-contended properties (HBM bandwidth ceiling, L2 hit-rate envelope), but it does not pretend to predict exact runtime behavior.
+That is the simulator's job, calibrated against measurement, with drift attributed by Augur and corrected by Mimic recalibration.
+
+\subsection{Summary of the IR stack}
+\label{sec:ir003-stack-summary}
+
+The three IRs together form the compilation pipeline.
+\IR{1} represents what the model computes.
+\IR{2} represents how the computation is organized into kernels with shape, dtype, layout, and recipe commitments, in a form that any vendor could lower.
+\IRstar{3} represents the per-vendor machine program that maps onto the silicon.
+Each IR is content-addressable; each is independently cacheable; each can be inspected, verified, and mutated.
+
+The L1, L2, L3 KernelCache hierarchy (Chapter~\ref{sec:cipher}) keys on the three IRs respectively: L1 keys on \IR{2} content hashes (federation-shareable across vendor mixes), L2 keys on \IRstar{3} content hashes (cross-chip-shareable within a vendor family), L3 keys on the per-chip binary hash (chip-specific).
+Two installations running the same model produce byte-identical \IR{1} graphs and byte-identical \IR{2} kernel graphs; their \IRstar{3} programs differ when their hardware differs; their binaries differ when their chips differ.
+The cache hierarchy is therefore aligned with the IR hierarchy by construction, and federation safety follows from the upstream IRs' vendor-neutrality.
+
+This concludes Part~III.
+The next part (Numerical Portability and Determinism) elaborates the cross-vendor numerics CI matrix, the four determinism tiers, and the recipe registry; the part after that (Execution and Memory) elaborates the \struct{ExecutionPlan} layer that consumes \IRstar{3}-derived binaries and the static memory plan that backs them.

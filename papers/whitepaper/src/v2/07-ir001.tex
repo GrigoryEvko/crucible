@@ -1,0 +1,170 @@
+% ═══════════════════════════════════════════════════════════════════
+% Chapter 7 — Tensor IR: IR001
+% ═══════════════════════════════════════════════════════════════════
+
+\section{Tensor IR: \IR{1}}
+\label{sec:ir001}
+
+\IR{1} is Crucible's tensor-level intermediate representation: the form in which a captured machine-learning computation is held between Vessel dispatch capture (Chapter~4) and Forge's lowering pass (Chapter~8).
+It is the highest tier of Crucible's three-tier IR stack, sitting above Forge's portable kernel IR \IR{2} (Chapter~9) and above the per-vendor machine IRs \IRstar{3} (Chapter~11).
+\IR{1} is constructed on Crucible's background thread immediately after a TraceRing drain, and is the input to every Forge phase prior to phase~E (\textsc{lower\_to\_kernels}).
+
+\IR{1} is vendor-neutral by construction.
+It encodes operator identity, tensor shape, dataflow structure, and symbolic dimension algebra; it does not encode tile shapes, register allocations, kernel templates, address spaces, instruction-scheduling hints, or any other hardware-specific concept.
+The boundary is structural: the \IR{1} type system exposes no field that could carry such information.
+Adding hardware concerns to \IR{1} would require visible changes to its types, not merely to its content.
+The deliberate boundary keeps the Vessel adapter layer (one per frontend) thin --- a Vessel knows how to translate its host framework's dispatch into \IR{1}, nothing more --- and concentrates all hardware adaptation into the Forge--Mimic compilation pipeline.
+
+\subsection{Components}
+\label{sec:ir001-components}
+
+\IR{1} comprises five interacting components.
+
+\textbf{Graph IR.}
+The mutable computation graph (header \code{Graph.h}).
+Each \struct{GraphNode} occupies exactly 64 bytes (one cache line) and carries node identity, kind, dimensionality, dtype, reduction operator, input-count, symbolic size and stride pointers, body or extern-info pointer, input-array pointer, use count, schedule order, group hash, and fused-group identifier.
+Compute bodies are flat instruction arrays of 8-byte SSA micro-ops (\struct{Inst}) drawn from a fixed micro-op set (approximately fifty opcodes).
+The Graph IR provides standard mutation primitives --- dead-code elimination via fixpoint, common-subexpression elimination via structural hashing, topological sort via Kahn's algorithm, and replace-all-uses-with --- all operating in $O(V{+}E)$ on counting-sort-built CSR adjacency.
+
+\textbf{Symbolic expression algebra.}
+\struct{Expr} (header \code{Expr.h}, pool \code{ExprPool.h}) is an interned, immutable expression algebra.
+Each \struct{Expr} node is 32 bytes and carries the operator, operands, dtype, and a vector of assumption flags (\code{is\_integer}, \code{is\_real}, \code{is\_finite}, \code{is\_positive}, \code{is\_negative}, \code{is\_nonnegative}, \code{is\_nonpositive}, \code{is\_zero}, \code{is\_even}, \code{is\_odd}, \code{is\_number}, \code{is\_symbol}, \code{is\_boolean}).
+The algebra covers arithmetic (add, subtract, multiply, divide), relational and logical operations, modular and floor-and-ceiling division, modulo, rounding, shifts, bitwise operations, conditionals (\code{where}, \code{min}, \code{max}), trigonometric and transcendental functions, negation, and bit reinterpretation (\code{bit\_cast}).
+Expressions are interned via a Swiss-table over the wyhash function: structurally equal expressions share a pointer.
+Two \struct{Expr*} compare equal if and only if they denote the same value --- structural equality reduces to pointer equality, the substrate primitive that drives all downstream symbolic analysis.
+
+\textbf{Operator taxonomy.}
+The \struct{CKernelId} catalog (header \code{CKernel.h}) is the device-agnostic operator namespace.
+Every captured operation resolves either to a taxonomy entry --- specific identities for linear algebra, convolution, attention, normalization, activations, elementwise binary and unary operations, reductions, pooling, data movement, embedding, copy, vision, fused variants, linear-algebra decompositions, state-space models, production inference operations (paged attention, MoE routing, ragged attention), three-dimensional rendering, structured matrix and graph operations, collective communication, input--output, random-number generation, and synchronization --- or to an \code{OPAQUE} placeholder for genuinely unrecognized operations.
+Taxonomy ordinals are frozen across releases for the substrate operators (Section~1 of the catalog); extensions land in a growth zone (Section~2) with strictly increasing ordinals.
+Two-phase registration ensures coverage: each Vessel registers a \struct{SchemaHash}\,$\to$\,\struct{CKernelId} mapping at startup, and \code{classify\_kernel} resolves each captured operation during \code{build\_trace}.
+
+\textbf{Symbol table.}
+\struct{SymbolTable} (header \code{SymbolTable.h}) holds per-symbol metadata: kind, hint, declared range, and flags.
+Symbols name the dynamic quantities that the symbolic algebra references --- typically dimensions of dynamic tensors (sequence length, batch size, vocabulary size), strides of non-contiguous tensors, and other scalar parameters bound at runtime.
+Range information is propagated through the algebra and consumed downstream by Forge's bucketed shape specialization (Phase~F.4).
+
+\textbf{Merkle structure.}
+The content-addressed graph of compilable units lives in \code{MerkleDag.h}.
+Three node kinds are defined:
+
+\begin{itemize}
+  \item \struct{RegionNode} --- a compilable operation sequence, the atomic unit of the kernel cache.
+        A region carries an arena-allocated array of \struct{TraceEntry} records, a \struct{ContentHash} computed by wymix-folding the schema hashes, per-tensor dimension and stride products, packed dtype and device metadata, and scalar arguments;
+        an atomic \struct{CompiledKernel*} pointer (background-written with release, foreground-read with acquire);
+        a \struct{MemoryPlan*}; and provenance fields.
+  \item \struct{BranchNode} --- a guard-based dispatch with a sorted array of arms for $O(\log n)$ lookup.
+        Each arm is a \code{(predicate, target)} pair.
+        The guard predicate is one of five kinds: shape-dimension mismatch, scalar-value mismatch, dtype mismatch, device mismatch, or operation-sequence mismatch.
+        BranchNodes are the substrate for every form of runtime adaptation: dynamic-shape dispatch, architecture mutation, attention-head replacement, hyperparameter changes, and continuous learning with A/B verification.
+  \item \struct{LoopNode} --- cyclic computation within the acyclic DAG framework.
+        A LoopNode wraps an acyclic body sub-DAG with an array of feedback edges and a termination predicate (fixed iteration count or convergence within an epsilon).
+        The Merkle hash of a LoopNode is salted to distinguish it from a RegionNode of the same body content.
+        LoopNodes encode bounded recurrence (recurrent neural networks executing as one body $\times$ $N$ iterations without a Python step), convergence-based execution (DEQ fixed-point iteration, diffusion denoising), and cross-iteration pipelining.
+\end{itemize}
+
+Every Merkle node carries a \struct{MerkleHash} that recursively combines its content hash with the merkle hashes of its children, providing $O(1)$ subtree equality and $O(\log N)$ structural diff.
+
+The five components compose: Graph IR provides the local optimization surface; \struct{Expr} provides the symbolic dimension and stride algebra; the operator taxonomy provides the unifying operator identity; the symbol table tracks dimensional unknowns; and the Merkle structure provides versioning, equality, and the kernel-cache key.
+
+\subsection{Properties}
+\label{sec:ir001-properties}
+
+The properties below are commitments of the \IR{1} specification.
+Each is enforced either structurally (by the type system or by component invariants) or by the construction algorithm (Section~\ref{sec:ir001-construction}).
+
+\begin{property}[Vendor neutrality]
+\label{prop:ir001-vendor-neutral}
+\IR{1} contains no vendor-specific opcode, no vendor-specific layout, no vendor address-space tag, and no vendor-specific datatype beyond the \struct{ScalarType} enumeration.
+Any well-formed \IR{1} graph is the input of every supported Forge configuration; Forge's choice of recipe and tile specialization (Phase~E) is independent of which Vessel produced the graph.
+\end{property}
+
+\begin{property}[Deterministic construction]
+\label{prop:ir001-determinism}
+Given the same TraceRing entries and the same MetaLog entries in the same order, \IR{1} construction produces a byte-identical graph.
+Every node's \struct{ContentHash} is determined by the operator identity, input shapes, strides, dtypes, devices, and scalar argument values --- quantities invariant under replay.
+This is the substrate of Crucible's replay-determinism guarantee (DetSafe, Chapter~22).
+\end{property}
+
+\begin{property}[Content addressing]
+\label{prop:ir001-content-addressing}
+Every \struct{RegionNode} carries a 64-bit \struct{ContentHash}.
+Identical computations produce identical hashes --- across iterations, across runs, across models, and across organizations --- with collision probability bounded by the wymix mixer's avalanche distribution.
+Every Merkle node carries a 64-bit \struct{MerkleHash} extending its content hash with the merkle hashes of its children, providing constant-time subtree equality.
+\end{property}
+
+\begin{property}[Affine-faithful symbolic algebra]
+\label{prop:ir001-expr-canonical}
+\struct{Expr} is a strongly normalizing affine-expression engine.
+Any expression involving constants, symbols, and the supported operators reduces to a unique canonical form during interning.
+Two expressions denoting the same value are interned to the same \struct{Expr*}; structural equality is therefore decidable in $O(1)$ via pointer comparison.
+This is the substrate that downstream phases use for shape arithmetic, stride computation, loop-bound analysis, and address calculation.
+\end{property}
+
+\begin{property}[Closure under capture]
+\label{prop:ir001-closure}
+Every operator dispatched by the Vessel layer resolves either to a \struct{CKernelId} taxonomy entry or to the \code{OPAQUE} placeholder.
+The taxonomy is closed over the machine-learning operator surface; \code{OPAQUE} provides the escape valve for genuinely unrecognized operators without requiring users to extend the IR.
+\end{property}
+
+\begin{property}[Compositionality with the safety substrate]
+\label{prop:ir001-substrate-compose}
+Arena allocation, non-static data-member initialization on every field, strong-typed identifiers (\struct{OpIndex}, \struct{SlotId}, \struct{NodeId}, \struct{SymbolId}, \struct{MetaIndex}), strong-typed hashes (\struct{SchemaHash}, \struct{ShapeHash}, \struct{ContentHash}, \struct{MerkleHash}, \struct{ScopeHash}, \struct{CallsiteHash}), and the eight safety axioms (Chapter~22) apply to every \IR{1} component without exception.
+There is no fast path that bypasses the discipline.
+\end{property}
+
+\subsection{Construction algorithm}
+\label{sec:ir001-construction}
+
+\IR{1} is constructed on Crucible's background thread by \code{BackgroundThread::run}, which drains the TraceRing in batches and constructs the graph incrementally.
+The procedure is single-pass: each ring entry is processed exactly once.
+There is no backwards traversal, no second normalization pass, no fixpoint iteration.
+
+\begin{enumerate}
+  \item Drain up to \code{BATCH\_SIZE} entries from the TraceRing into a per-iteration arena buffer.
+  \item For each entry, allocate a \struct{TraceEntry} record from the arena, populate operator identity, schema hash, shape hash, and copy \struct{TensorMeta} references from the MetaLog by index.
+  \item Track tensor identity via a generation-counter \struct{PtrMap} (open-addressing, no per-iteration \code{memset}): a match between an operation's input \code{data\_ptr} and a previously recorded output \code{data\_ptr} produces a \code{DATA\_FLOW} edge; aliased pointers (views, in-place mutations) produce \code{ALIAS} edges.
+  \item Construct bidirectional CSR adjacency simultaneously via prefix-sum and scatter.
+        Both source-sorted and destination-sorted adjacencies are built in $O(V{+}E)$ in a single sweep.
+  \item Detect iteration boundaries via the \struct{IterationDetector}: a $K{=}5$ schema-hash signature with two-match confirmation.
+        The first signature match locks a candidate iteration boundary; the second match confirms the boundary.
+        False-positive probability is bounded by $5 \times 2^{-320}$ under the hash-independence assumption.
+  \item At each confirmed boundary, fold the accumulated \struct{TraceEntry} array into a \struct{RegionNode} by computing its \struct{ContentHash} (wymix fold) and recursively its \struct{MerkleHash}.
+  \item Assign the new \struct{RegionNode} to the active graph chain via release-store on an atomic pointer, and signal Forge's compilation pipeline.
+\end{enumerate}
+
+The cost of construction is dominated by the CSR build (linear in vertex and edge count) and the content-hash fold (linear in the entry size).
+On a representative thousand-operation graph, \IR{1} construction completes in approximately 50 to 100 microseconds.
+All allocation is from the per-iteration arena; the arena is reset at iteration boundary, providing bulk free at $O(1)$.
+
+\subsection{What \IR{1} does not contain}
+\label{sec:ir001-not}
+
+The boundary of \IR{1} is as load-bearing as its content.
+\IR{1} does not contain any of the following.
+
+\begin{itemize}
+  \item Tile shapes, MMA-instruction shapes, vectorization widths, register counts, occupancy targets, or any other hardware-level resource decision.
+        These appear at \IR{2} (Chapter~9) and are committed by Forge's Phase~F.
+  \item \struct{NumericalRecipe} choices (accumulator dtype, reduction algorithm, rounding mode, scale policy, softmax recurrence variant, determinism tier).
+        These are pinned at \IR{2} by Forge's Phase~E (\textsc{lower\_to\_kernels}).
+  \item Address-space tags (global memory, shared memory, tensor memory, distributed shared memory), register-bank assignments, scoreboard slots, instruction-scheduling hints, or pipeline depths.
+        These appear at \IRstar{3} (Chapter~11) and are committed by the per-vendor Mimic backend.
+  \item Vendor library calls (cuBLAS, cuDNN, cuSPARSE, NCCL, rocBLAS, MIOpen, RCCL, libtpu, libnrt, libnccom, hcoll, libsharp), vendor compiler intermediates (PTX, HLO, NEFF, SPIR-V), or vendor binary format wrappers (cubin, HSACO, TPU executable, NEFF tarball).
+        These never appear in any Crucible IR; per-vendor Mimic backends emit the binary format directly from \IRstar{3}.
+\end{itemize}
+
+The discipline is structural.
+The \IR{1} type system exposes no field that could carry the prohibited information; adding such information would require visible type changes, not merely content changes, and would be caught at the boundary by inspection or by the negative-compile fixtures of the safety substrate (Chapter~22).
+
+\subsection{Relationship to downstream IRs}
+\label{sec:ir001-downstream}
+
+The compilation pipeline consumes \IR{1} in stages.
+Forge's Phases~A through D (Chapter~8) operate on \IR{1} in place: canonicalization, type and shape analysis, exhaustive rewriting, and global fusion.
+Phase~E lowers each \struct{FusedRegion} to one or more \struct{KernelNode}s in \IR{2}; this is the boundary at which kernel templates are matched, semantic layouts are committed, and \struct{NumericalRecipe}s are pinned.
+Phases~F and G operate on \IR{2}; Phase~H delegates each \struct{KernelNode} to the appropriate Mimic per-vendor backend, which lowers \IR{2} to its specific \IRstar{3} variant, performs MAP-Elites kernel search guided by a calibrated three-tier simulator, and emits the native binary format.
+
+\IR{1}, as the highest tier, sees only what is invariant across this pipeline: the operation identity, the tensor metadata, the symbolic shape and stride algebra, and the Merkle structure that anchors the kernel cache.
+Every choice that depends on the target hardware is deferred to \IR{2} and \IRstar{3}.
+The deferral is what makes the kernel cache federation-safe at the L1 layer (Chapter~21): two installations running the same model produce byte-identical \IR{1} and byte-identical \IR{2} (when their fleet recipe-intersections agree), regardless of the specific hardware they target.

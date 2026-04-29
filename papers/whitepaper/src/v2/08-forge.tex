@@ -1,0 +1,481 @@
+% ═══════════════════════════════════════════════════════════════════
+% Chapter 8 — Forge: Vendor-Agnostic Optimization
+% ═══════════════════════════════════════════════════════════════════
+
+\section{Forge: Vendor-Agnostic Optimization}
+\label{sec:forge}
+
+Forge is Crucible's vendor-agnostic optimizer.
+It consumes \IR{1} (Chapter~\ref{sec:ir001}) and produces \IR{2} (Chapter~\ref{sec:ir002}) through twelve phases running on Crucible's background thread within hard wall-clock budgets.
+Forge has zero vendor code: its source tree includes no vendor header, emits no vendor binary format, and links against no vendor SDK.
+Every decision Forge makes is expressible against the abstract \struct{TargetCaps} structure (Chapter~\ref{sec:meridian}) and the operator taxonomy (Chapter~\ref{sec:ir001}).
+Forge integrates with Mimic (Chapter~\ref{sec:mimic}) at exactly five entry points; below those entry points, no vendor concept reaches Forge.
+
+This chapter specifies the phase pipeline, the responsibilities and budgets of each phase, the structural rules that govern phase ordering, and the verification and determinism disciplines that apply to every phase exit.
+
+\subsection{The twelve-phase pipeline}
+\label{sec:forge-pipeline}
+
+The pipeline divides into three groups by IR level.
+Phases A through D operate on \IR{1} in place: canonicalization, structural analysis, exhaustive rewriting, and global fusion.
+Phase E is the layer boundary: each \struct{FusedRegion} is lowered to one or more \struct{KernelNode}s in \IR{2} by template matching, recipe pinning, and semantic-layout commitment.
+Phases F through L operate on \IR{2}: tile refinement, memory planning, per-kernel compilation (delegated to Mimic), scheduling, plan emission, distributed partitioning, and runtime validation.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{l l l l l}
+\toprule
+\textbf{Phase} & \textbf{Operates on} & \textbf{Sub-passes} & \textbf{Budget} & \textbf{Iterates?} \\
+\midrule
+A. \textsc{ingest}              & \IR{1}            & 7  & 8\,ms  & no \\
+B. \textsc{analyze}             & \IR{1}            & 8  & 20\,ms & shape eqns bounded \\
+C. \textsc{rewrite}             & \IR{1}            & 10 & 25\,ms & max 3 rounds \\
+D. \textsc{fuse}                & \IR{1}            & 6  & 35\,ms & single priority pass \\
+E. \textsc{lower\_to\_kernels}  & \IR{1}\,$\to$\,\IR{2} & 6  & 20\,ms & no \\
+F. \textsc{tile}                & \IR{2}            & 5  & 40\,ms & no, capped 64 candidates \\
+G. \textsc{memplan}             & \IR{2}            & 6  & 15\,ms & no \\
+H. \textsc{compile}             & delegated         & 2  & 60\,ms per kernel & MAP-Elites in Mimic \\
+I. \textsc{schedule}            & \IR{2}            & 4  & 10\,ms & no \\
+J. \textsc{emit}                & \struct{ExecutionPlan} & 4  & 25\,ms & no \\
+K. \textsc{distribute}          & \IR{2}            & 4  & 15\,ms & only if \code{world\_size}\,$>$\,1 \\
+L. \textsc{validate}            & runtime           & 5  & 10\,ms per sample & continuous \\
+\bottomrule
+\end{tabular}
+\caption{The twelve phases of Forge with budgets and iteration discipline.
+Total budget for a one-thousand-region graph: approximately 280\,ms worst case, 180\,ms typical, sub-10\,ms in cache-hit steady state.}
+\label{tab:forge-phases}
+\end{table}
+
+The total wall-clock budget for a one-thousand-region graph compares with order-of-seconds latencies for Inductor and order-of-minutes latencies for XLA; the comparison is documented in the related-work chapter.
+Cache hits at any of the three KernelCache levels (L1 \IR{2} snapshot, L2 \IRstar{3} snapshot, L3 compiled binary; Chapter~\ref{sec:cipher}) bypass most of the pipeline.
+
+Three structural rules govern phase ordering.
+Each rule has an explicit justification.
+
+\begin{enumerate}
+  \item \textbf{B precedes C} (analysis precedes rewriting).
+        Rewrites consult uniformity, dtype propagation, and shape information.
+        Running C without B would force every rewrite to recompute analyses.
+  \item \textbf{C precedes D} (rewriting precedes fusion).
+        Fusion cost is non-trivial; fusing dead or foldable code wastes the budget.
+  \item \textbf{D precedes E} (fusion precedes lowering).
+        Each \struct{FusedRegion} becomes one (or a small number of) \struct{KernelNode}s by template match.
+        Lowering before fusion would force Phase~E to undo work as fusion later identifies opportunities crossing template boundaries.
+\end{enumerate}
+
+Phases F through L are sequential by data dependency.
+Phase~F's tile decisions are inputs to Phase~G's slot sizing; Phase~G's plan is an input to Phase~H's per-kernel compilation; Phase~I's stream assignment is an input to Phase~J's launch records.
+Phase~K runs only when partitioning the graph across multiple devices; single-device compilation skips it.
+Phase~L is concurrent with the runtime; it is a continuous observer, not a gating compile phase.
+
+\subsection{Phase A --- \textsc{ingest}}
+\label{sec:forge-phase-a}
+
+Purpose: convert a \struct{RegionNode} from the L7 Merkle DAG into a canonical, shape-specialized, fully typed, common-subexpression-eliminated \IR{1} subgraph ready for downstream analysis.
+Phase~A does not change the semantics of the graph; it only normalizes its form.
+Budget: \bytes{8} milliseconds on a thousand-node graph.
+
+Phase~A comprises seven sub-passes.
+
+\textbf{A.1 ShapeSpecialize.}
+For each input \struct{TensorMeta}, substitute the recorded concrete dimensions and strides into \struct{Expr} nodes that referenced symbolic shapes.
+Partial specialization is supported: when only some dimensions are concrete, the remaining symbols are preserved with refined range bounds.
+A symbolic dimension whose specialization violates an operator's precondition (a reduction axis collapsing to zero, for instance) marks the region degenerate; Phase~A emits a trivial kernel and bypasses subsequent passes.
+
+\textbf{A.2 DtypePropagate.}
+Forward dataflow from input tensors meets backward dataflow from output tensor types.
+Where they meet at incompatible types, an explicit \code{cvt} node is inserted.
+Promotion rules respect Crucible's graded-type discipline: any rewrite that would silently lose precision against the declared tensor type is rejected with a diagnostic.
+Mixed-precision multiply--accumulate patterns (FP16 input with FP32 accumulator) are recognized as in-place promotions with no materialized cast, matching the underlying tensor-core semantics.
+
+\textbf{A.3 AlgebraicSimplify.}
+A finite, disjoint rule table of approximately forty entries is applied in a single bottom-up sweep.
+The rules cover the patterns that recur in machine-learning graphs: identity reductions ($x \cdot 1 = x$, $x + 0 = x$), transpose involution, commutativity normalization with hash-based ordering, dead-broadcast elimination, reduction composition, matrix-fusion identities, activation-sequence folding, quantize/dequantize roundtrips, and view normalization.
+The rules are chosen for local confluence: their combined effect is order-independent within the sub-pass.
+Convergence is one pass.
+
+This is one of Forge's structural advantages over compilers whose local rewrites lack confluence.
+Such compilers run their algebraic-simplification passes multiple times, interleaved with constant folding, in a fixed-point loop.
+Forge runs once because its rule table guarantees confluence by construction.
+
+\textbf{A.4 ConstantFold.}
+Every \struct{Expr} node whose operands are all integer or floating-point constants reduces to its computed value.
+Folding extends across shape arithmetic, stride expressions, and integer identities created by A.3.
+Floating-point folding respects IEEE 754 semantics including the target's flush-to-zero convention (which is captured in \struct{TargetCaps} and threaded through the fold).
+Integer overflow follows Crucible's graded-type semantics --- explicit wrap, saturate, or trap; no undefined behavior is admitted.
+
+\textbf{A.5 DeadCodeElim.}
+Backward liveness from output tensors removes any node that does not reach an output and has no side effect.
+Side-effecting operations (an output store, an all-reduce, a scatter) are never dead.
+Pure operations with no live consumers are dead and are removed.
+
+\textbf{A.6 CanonicalOrder.}
+Topological sort with hash-based tiebreak.
+Identical graphs produce identical node orderings, which is the precondition that lets A.7 run in linear time.
+
+\textbf{A.7 CseSubgraph.}
+Within a region, structurally identical subgraphs (already partially deduplicated by \struct{Expr} interning) are merged at the node level.
+The hash is the Merkle hash already attached to each node, so the test reduces to pointer comparison.
+Duplicate paths created by A.3 (two reductions with the same operands, for example) are collapsed.
+
+The output of Phase~A is a canonical, specialized, deduplicated, typed \IR{1} subgraph.
+Node count typically shrinks by ten to thirty percent.
+The graph is ready for analysis.
+
+\subsection{Phase B --- \textsc{analyze}}
+\label{sec:forge-phase-b}
+
+Purpose: compute the analyses that downstream passes consume.
+Phase~B produces no IR mutations; it produces side tables keyed by node identifier.
+Budget: 20 milliseconds.
+
+\textbf{B.1 DominatorTree and PostDominatorTree.}
+Lengauer--Tarjan in implementation; for the directed-acyclic-graph topology of typical \IR{1} regions, the simpler two-pass algorithm performs equivalently.
+Dominator information is consumed by C (LICM and GVN scope), D (fusion legality), E (layout propagation through branch-merge points), and Mimic's CSSA construction (Chapter~\ref{sec:mimic}).
+
+\textbf{B.2 LivenessAnalysis.}
+Classical backward dataflow over a per-tensor-class bitvector representation.
+Tensors, fragment registers, and predicate vectors are tracked in separate bitvectors so that the transfer function specializes per class.
+Liveness is computed once per compile, cached; passes that mutate the graph (C, D, H) re-run the analysis at their exit point.
+
+\textbf{B.3 UseDefChains.}
+Per-value lists of consumers and per-consumer lists of operands.
+Consumed by strength reduction, copy propagation, dead-code elimination, common-subexpression elimination, and rematerialization.
+
+\textbf{B.4 DependenceGraph.}
+Beyond Static Single Assignment use--def, Phase~B records memory dependencies (read-after-write, write-after-write, write-after-read over shared storage), barrier dependencies, cluster-barrier dependencies, and convergence dependencies.
+Each edge is labeled with its dependence kind.
+Phase~D consumes this graph for fusion legality; Mimic consumes it for instruction scheduling.
+
+\textbf{B.5 CostEstimate.}
+A bottom-up walk evaluates each node's cost via \code{mimic::fast\_cost} (Chapter~\ref{sec:mimic}, the first of Forge's five Mimic entry points).
+The estimate is ranking-accurate, not absolute-accurate: it preserves ordering between candidates.
+Estimates feed Phase~D's fusion cost function and Phase~F's tile pruning.
+
+\textbf{B.6 PersistenceAnalysis.}
+For each intermediate value, the smallest storage class that admits it is determined: register, fast local storage (shared memory, LDS, VMEM, SBUF, or analog), tensor fragment storage (TMEM, accumulator file), L1 or L2 caches, or main memory.
+The analysis is structural --- it follows from data-flow reachability and from the abstract resource budgets in \struct{TargetCaps} --- not vendor-specific.
+
+\textbf{B.7 CommunicationAnalysis.}
+For multi-device graphs, edges crossing device boundaries are identified and tagged.
+Phase~K consumes this for collective insertion and topology-aware routing.
+
+\textbf{B.8 UniformityAnalysis.}
+Crucible's graded-type system encodes uniformity at IR construction.
+Each value carries a \emph{warp shape} grade: \code{uniform} (all lanes hold the same value), \code{lane\_varying} (varies across lanes, uniform across CTAs), or \code{thread\_varying} (fully varying).
+B.8 is a structural propagation, not an iterative fixpoint.
+The cost is linear in the graph; the accuracy is exact.
+Uniformity drives uniform-register promotion in Mimic, address-space decisions in E, vectorization in Mimic, and scheduler decisions about warp divergence.
+
+The replacement of an iterative uniformity fixpoint by a structural propagation is one of Forge's structural simplifications: the information is encoded in the IR, so the analysis reduces to reading the type, not computing the type.
+
+\subsection{Phase C --- \textsc{rewrite}}
+\label{sec:forge-phase-c}
+
+Purpose: exhaustively canonicalize and optimize the \IR{1} graph using a fixed disjoint rule set within a bounded iteration budget.
+Maximum three rounds; rounds two and three are gated at optimization level O1 and above.
+Convergence is detected by hashing the graph at the start and end of each round; a stable hash exits the loop early.
+In practice most graphs converge in one or two rounds.
+Budget: 25 milliseconds.
+
+The ten sub-passes are: AlgebraicSimplification (with extended ML-specific patterns including attention canonicalization, layer-norm and RMS-norm recognition, gated-activation patterns, MoE routing patterns, and positional-encoding patterns), ConstantFolding (fires on values created by C.1), StrengthReduction (the critical pass for affine addressing arithmetic; converts in-loop \code{IMUL} chains into incremental \code{IADD} sequences using induction-variable analysis), CopyPropagation (forward single-hop \code{MOV} collapse), GlobalValueNumbering (hash-consed, dominator-scoped, with commutativity normalization), Loop-Invariant Code Motion (hoists invariants to the preheader; refuses to speculate across divergent control flow), IvNarrowing (32-bit narrowing of induction variables that demonstrably fit, by graded-type assumption flag analysis), BarrierElimination (bidirectional dataflow analyzes shared-memory effects around each barrier; eliminates barriers whose effect set is empty), DeadCodeElim (post-rewrite cleanup), and PeepholeFusion (table-driven pre-lowering peepholes including FMA recognition, predicate truth-table compaction via \code{LOP3}, and SiLU-pattern recognition).
+
+C.1 AlgebraicSimplification additionally recognizes high-level kernel templates and tags them with \struct{KernelPatternHint} annotations.
+The annotations are inputs to Phase~D's fusion decisions and to Phase~E's template matching.
+
+\subsection{Phase D --- \textsc{fuse}}
+\label{sec:forge-phase-d}
+
+Purpose: decide which \IR{1} nodes become one kernel.
+Phase~D is structurally distinguishing: Forge's fusion is global (over the whole graph), cost-driven (via \code{mimic::fast\_cost}), and bounded by hard budgets, not greedy or pairwise.
+Budget: 35 milliseconds.
+
+Phase~D uses six sub-passes.
+
+\textbf{D.1 BuildFusionLattice.}
+For each edge in \IR{1}, the set of compatible \struct{FuseKind} values is enumerated.
+The kinds are: \code{NONE} (intermediate goes through main memory), \code{REGISTER} (same iteration space, same lane), \code{LOCAL} (same compute aggregate, different iteration space; on NVIDIA this is shared memory, on AMD it is LDS, on TPU it is VMEM), \code{EPILOGUE} (matrix-multiply or convolution accumulator with elementwise tail in the accumulator), \code{PROLOGUE} (input transformed in registers before MMA), \code{BROADCAST} (reduction result broadcast through fast local storage), \code{LAYER} (full layer output to next layer input within a persistent kernel), \code{CGA} (cross-CTA via distributed shared memory; sm\_90+), and \code{TCGEN05\_TMEM} (tensor memory staged between tensor-core operations; sm\_100+).
+Each edge's compatibility set is a bitmask of nine bits; the lattice for a thousand-region graph is on the order of one hundred thousand edge--kind pairs.
+
+\textbf{D.2 CostFusionGroups.}
+The cost of fusing a candidate group under a candidate kind is analytic with five components: avoided main-memory traffic, saved kernel-launch overhead, register-pressure penalty (potential occupancy loss), fast-local-storage pressure penalty (potential exhaustion of the abstract budget), and pipeline-structural overhead (depth and synchronization cost).
+Each component is computed from the graph shape and the abstract budgets in \struct{TargetCaps}; no measurement is required.
+
+\textbf{D.3 SolveFusionDP.}
+For linear chains --- the common case --- the fusion problem is a one-dimensional dynamic program over the chain.
+The recurrence is the standard interval-decomposition with a constant-bounded maximum group size.
+Cost is $O(N \cdot k_\text{max})$, where $k_\text{max}$ is approximately fifty in practice.
+A thousand-node chain solves in one millisecond.
+
+\textbf{D.4 SolveFusionILP.}
+For DAGs (where a node has multiple consumers with conflicting fusion preferences), the fusion problem becomes a min-cost graph-partitioning integer program with one binary variable per edge.
+Constraints encode \struct{FuseKind} compatibility, abstract resource budgets, and target-capability flags.
+The objective minimizes the cost-function sum.
+For graphs of fewer than five thousand edges, solve times are tens to fifty milliseconds.
+For larger graphs, the solver falls back to greedy partitioning seeded from the DP solution.
+Phase~D.4 is gated at optimization level O3.
+
+\textbf{D.5 MultiLayerFuse.}
+The special case worth its own sub-pass: recognizing patterns where an entire layer or block fits within one persistent CTA.
+The trigger conditions are: estimated registers per CTA below sixty percent of budget, estimated fast-local-storage per CTA below seventy percent of budget, and at least one dimension iterating over all tokens or batch items.
+Patterns that fit at this scale include attention blocks (Q/K/V projection plus attention plus output projection plus residual plus layer norm), feed-forward blocks, full transformer blocks, and convolution blocks (depthwise plus pointwise plus normalization plus activation plus residual).
+The reference for the upper bound on fusion size is FlashAttention-2 and FlashAttention-3, generalized.
+
+\textbf{D.6 EmitFusedRegions.}
+Each fusion decision materializes as a \struct{FusedRegion}: an annotated view into the \IR{1} graph carrying member node identifiers in topological order, fuse kinds on internal edges, external input and output tensors, and a \struct{ContentHash} for kernel-cache lookup.
+
+The output of Phase~D for a typical machine-learning graph is five to fifty fused regions.
+Most regions are small (one to three operations); a few are large (twenty to two hundred operations after multi-layer fusion).
+The large regions dominate runtime and receive the most compilation effort downstream.
+
+\subsection{Phase E --- \textsc{lower\_to\_kernels}}
+\label{sec:forge-phase-e}
+
+Purpose: lower each \struct{FusedRegion} from Phase~D into one or more \struct{KernelNode}s in \IR{2} (Chapter~\ref{sec:ir002}) by matching against the kernel template catalog, committing semantic layouts, pinning a \struct{NumericalRecipe}, and materializing per-kind attribute structures.
+Phase~E is the boundary at which the IR transitions from operation-level semantics to kernel-level concrete shapes.
+Budget: 20 milliseconds.
+
+Phase~E uses six sub-passes.
+
+\textbf{E.1 MatchKernelTemplate.}
+The kernel-template catalog (Chapter~\ref{sec:ir002}) is walked in priority order; the first match wins.
+Each matcher is a structural pattern over \IR{1} nodes and fuse-edge kinds; it writes a \struct{KernelKind} and a per-kind attribute structure.
+Match order matters: a region that satisfies both \code{GEMM} and \code{FUSED\_COMPOUND(GEMM + bias + activation)} matches the fused form because the fused matcher has higher priority.
+Regions matching nothing fall through to \code{CUSTOM}, which wraps the \IR{1} nodes directly and lets Mimic emit a generic loop nest.
+
+\textbf{E.2 LayoutCommit.}
+Each \struct{KernelNode} commits an input layout and an output layout from the legal set: \code{Strided}, \code{RowMajor}, \code{ColMajor}, \code{Tiled}, \code{Swizzled}, or \code{Broadcast}.
+These are semantic layouts; vendor-specific realizations are deferred to Mimic.
+Commitment is by data-flow over the kernel graph, with conflict resolution by inserting explicit layout-cast nodes whose cost is non-zero.
+
+\textbf{E.3 RecipeSelect.}
+For each \struct{KernelNode}, a \struct{NumericalRecipe} is selected from the global recipe registry (Chapter~\ref{sec:numerical-recipe}) such that the recipe satisfies the kernel's required numerical semantics, is natively supported by every member of the current fleet, and minimizes the estimated cost.
+When the fleet's native intersection is empty for a required kernel, the fleet policy decides: \code{STRICT} (the default for training) refuses and signals the runtime; \code{ADAPT} (the default for inference) picks the best emulation-tolerant recipe.
+Recipes are interned: equal recipes share a pointer.
+
+\textbf{E.4 TileSpecSeed.}
+A \struct{TileSpec} is seeded from the kernel's attribute structure and the target's abstract capabilities.
+The seed is refined by Phase~F via \code{mimic::propose\_tiles}, but the seed is required so that Phase~G can compute slot lifetimes against initial tile sizes.
+
+\textbf{E.5 EmitKernelGraph.}
+The final \IR{2} \struct{KernelGraph} is materialized: nodes, recipes (interned), tiles (interned), per-kind attribute pools, slot type metadata, external input and output references.
+Allocation is from the per-compile arena.
+Same axiomatic discipline as the \IR{1} \struct{Graph} (non-copyable, non-movable, NSDMI on every field, strong-typed identifiers).
+
+\textbf{E.6 VerifyIr002.}
+Structural invariants are checked at the phase exit: every \struct{KernelNode} has a non-null interned recipe pointer, a non-null interned tile pointer, an attribute structure consistent with its kind, layout fields compatible with each input's producer (or with explicit cast), and a deterministic content hash.
+Verification failure is a Forge bug, not a user error; the diagnostic identifies which sub-pass produced the inconsistency.
+
+\subsection{Phase F --- \textsc{tile}}
+\label{sec:forge-phase-f}
+
+Purpose: refine the seeded \struct{TileSpec}s on each \struct{KernelNode} into a ranked Pareto set of concrete tile shapes.
+Phase~H's per-kernel MAP-Elites search (Chapter~\ref{sec:mimic}) operates within this Pareto set.
+Budget: 40 milliseconds; scales with the number of large kernels, since small kernels admit only a few candidates.
+
+\textbf{F.1 ProposeTiles.}
+For each \struct{KernelNode}, \code{mimic::propose\_tiles} returns abstract tile candidates that are hardware-realizable on the current target.
+The candidates carry only semantically portable fields: dimensions (concrete or symbolic with range bounds), threads per CTA, register estimate, fast-local-storage estimate, pipeline depth, and flags (persistent, split-K, streaming).
+No vendor-specific shapes are returned; the per-vendor mapping from abstract tile to native instruction shape is internal to Mimic.
+
+\textbf{F.2 RankByFastCost.}
+Each candidate is scored by \code{mimic::fast\_cost}, ranked, and pruned to the top eight to sixteen seeds for Phase~H's MAP-Elites population.
+The fast tier returns within ten microseconds per call, so the ranking is bounded.
+
+\textbf{F.3 FuseTileConstraints.}
+Compound kernels (FUSED\_COMPOUND, ATTENTION with epilogue, NORM with epilogue) impose per-component tile-shape constraints that must agree.
+For instance, a GEMM's output tile must match the consuming pointwise operation's input tile; an attention softmax tile must match the Q-times-K-transpose tile's N dimension.
+Candidates that would require cross-kernel tile disagreement are dropped.
+
+\textbf{F.4 ShapeRangeBucket.}
+Symbolic tile dimensions with range bounds are partitioned into log-spaced buckets.
+The number of buckets per dimension is per-kernel-family configurable, with defaults tuned for typical machine-learning shape distributions.
+MAP-Elites archive keys include the bucket; at runtime the dispatch identifies the bucket containing the actual value and uses that compiled kernel.
+This is how Forge handles dynamic shapes without per-shape recompilation: specialize per bucket, not per value.
+
+\textbf{F.5 CommitTilePareto.}
+The Pareto set lands in the \struct{KernelNode}'s tile-candidate field.
+Optimization-level gating: O0 and O1 commit the top candidate (no search); O2 commits the top four; O3 commits the top sixteen.
+The committed set is the seed for Phase~H's per-vendor MAP-Elites search.
+
+\subsection{Phase G --- \textsc{memplan}}
+\label{sec:forge-phase-g}
+
+Purpose: produce a static memory plan for all intermediate tensors of the \IR{2} kernel graph, deterministically derived from kernel-graph use--def chains and committed tile shapes.
+Budget: 15 milliseconds.
+
+The lifetime of each slot is computed from kernel topological indices: birth at producer index, death at last-consumer index.
+Slot size is computed from \struct{TileSpec} dimensions and dtype, taking the maximum over symbolic ranges.
+Aliases (views, transposes, in-place operations) are detected via union--find over slot identifiers.
+
+Offset assignment is a sweep-line first-fit on slot lifetimes, sorted by birth.
+The packing efficiency in practice is eighty-five to ninety-five percent.
+
+Activation checkpointing is decided per-slot: a forward activation needed in backward is recomputed if its store cost (size times read--write bandwidth times two) exceeds its recomputation cost (the \code{mimic::fast\_cost} of the producing subgraph) by a threshold.
+The threshold adapts to memory pressure: with surplus memory, store everything; under tight budgets, recompute aggressively.
+
+OOM is structurally impossible: Phase~G enforces \code{plan.pool\_bytes} $\le$ \code{device\_memory $-$ reserved}.
+When the constraint is violated, the planner first forces additional checkpointing, then reduces batch size by emitting a runtime diagnostic, then offloads optimizer state to host memory.
+\code{cudaMalloc} (or its equivalent) never fails after Phase~G commits.
+
+The plan is deterministic: same kernel graph produces the same plan, same offsets, same addresses.
+This is the substrate of Crucible's replay-determinism guarantee at the memory layer (Chapter~\ref{sec:execution-plan}).
+
+\subsection{Phase H --- \textsc{compile}}
+\label{sec:forge-phase-h}
+
+Purpose: hand each \IR{2} \struct{KernelNode} to the per-vendor Mimic backend (Chapter~\ref{sec:mimic}), receive back an opaque \struct{CompiledKernel} carrying the vendor binary bytes, predicted cycle count, and structured insights.
+Forge performs no compilation itself in Phase~H; everything below \IR{2} is Mimic's domain.
+Budget: 60 milliseconds per kernel, parallelizable across kernels.
+
+The phase has two sub-passes.
+H.1 \textsc{DispatchToBackend} calls \code{mimic::compile\_kernel}, which dispatches by \code{TargetCaps::vendor\_id} to the appropriate backend.
+H.2 \textsc{CollectResults} receives the \struct{CompiledKernel} and links it into the emerging \struct{ExecutionPlan} for Phase~J.
+
+Phase~H is the principal parallelization point of the pipeline.
+Multiple \struct{KernelNode}s compile concurrently on a thread pool sized by hardware concurrency.
+Per-kernel cache hits at the L3 level (compiled binary) skip Mimic entirely; L2 hits (\IRstar{3} snapshot) skip MAP-Elites and re-emit; L1 hits (\IR{2} snapshot) skip Phases~F through G plus most of Mimic's lowering.
+
+\subsection{Phase I --- \textsc{schedule}}
+\label{sec:forge-phase-i}
+
+Purpose: decide launch order, stream assignment, and cross-stream barriers, then emit abstract launch records.
+Capture into vendor-specific graph objects (CUDA Graph, HIP Graph, TPU plan, NEFF submission) happens inside Mimic's per-vendor runtime, not in Forge.
+Budget: 10 milliseconds.
+
+I.1 \textsc{StreamAssign} assigns kernels to abstract streams via topological sort with earliest-start-time prioritization.
+Independent kernels run on separate streams for concurrency; the typical assignment uses two to four streams.
+I.2 \textsc{BarrierInsert} produces \struct{BarrierRec} records at cross-stream dependency points; minimization via fan-out coalescing reduces barrier count.
+I.3 \textsc{LaunchOrder} commits the per-stream order.
+I.4 \textsc{GraphCaptureHint} sets a flag if the plan is captureable (all tile dimensions are concrete); the per-vendor runtime decides at execution time whether to capture.
+
+\subsection{Phase J --- \textsc{emit}}
+\label{sec:forge-phase-j}
+
+Purpose: serialize the \struct{ExecutionPlan} (Chapter~\ref{sec:execution-plan}) and commit it to Cipher.
+Budget: 25 milliseconds.
+
+J.1 \textsc{SerializePlan} packs the plan into a memory-mapped-friendly binary structure: memory plan, opaque \struct{CompiledKernel} handles, abstract launch records, barrier records, kernel content hashes, region content hashes, guards, the plan's content hash (Merkle over everything), the abstract \struct{TargetCaps} reference, and a compile-version triple.
+The plan is arena-allocated; size is typically one hundred kilobytes to a few megabytes for a full model.
+Vendor binary bytes live inside the \struct{CompiledKernel} handles and are opaque to Forge.
+
+J.2 \textsc{GenerateDispatchTable} emits the native C\nolinebreak\hspace{0.05em}\raisebox{0.4ex}{\tiny ++} dispatch table consumed by the runtime: \code{DispatchEntry} records carrying opaque kernel pointer, stream identifier, barrier wait and signal masks, argument count, and slot references.
+The dispatch table is generated as a single source file and compiled via cached compiler invocation.
+
+J.3 \textsc{RelocateSlotPointers} ensures the dispatch table carries \struct{SlotRef} pairs (slot identifier, offset) rather than absolute addresses.
+At runtime initialization, \code{runtime::resolve\_plan} walks once to materialize absolute pointers into a side table.
+The plan is therefore position-independent: the same plan operates at any pool base address, enabling cross-process reload and reincarnation.
+
+J.4 \textsc{CommitToCipher} persists the plan and its embedded \struct{CompiledKernel} handles to Cipher (Chapter~\ref{sec:cipher}).
+The plan hash indexes the Cipher entry; subsequent loads in different processes rehydrate the \struct{CompiledKernel} handles by reloading the vendor binaries through Mimic's per-vendor runtime.
+
+A separate sub-component of Phase~J is plan chaining: the emission of \struct{ChainEdge} records that compose multiple plans through pinned-memory semaphores.
+The runtime semantics of chain edges, the pool-allocation discipline for semaphores, and the recovery story across mid-chain failures are specified in Chapter~\ref{sec:execution-plan}.
+
+\subsection{Phase K --- \textsc{distribute}}
+\label{sec:forge-phase-k}
+
+Active only when \code{world\_size}\,$>$\,1.
+Purpose: partition the \IR{2} kernel graph across multiple devices, insert abstract collective primitives at partition boundaries, and optimize collective patterns.
+The collective implementation is per-vendor (Chapter~\ref{sec:cntp}); Forge owns the placement.
+Budget: 15 milliseconds.
+
+K.1 \textsc{PartitionGraph} runs a five-dimensional auto-tune over tensor parallelism, data parallelism, pipeline parallelism, expert parallelism (for mixture-of-experts), and context parallelism (for long-context attention).
+Each dimension carries a measured cost from the bandwidth and latency probes performed by Meridian (Chapter~\ref{sec:meridian}).
+The objective is to minimize predicted iteration time subject to per-device memory and recipe-intersection constraints.
+For typical eight-device setups, the integer program is tractable in well under one second.
+For larger topologies, the partitioner runs hierarchically.
+
+K.2 \textsc{InsertCollectives} introduces \code{COLLECTIVE} \struct{KernelNode}s at partition boundaries.
+Each carries a \struct{CollectiveAttrs} structure specifying operator, reduction, group, shard size, dtype, determinism requirement, and the pinned numerical recipe.
+The per-vendor Mimic backend realizes the collective via its native fabric primitives; CNTP composes the cross-node transport.
+
+K.3 \textsc{OptimizeCollectives} folds the per-step pattern into one of the known shapes: standard ring or tree; bucketed asynchronous reduce--scatter for gradient aggregation; DiLoCo-style outer-step synchronization with inner-step locality; hierarchical patterns combining intra-node fast fabric with inter-node slow fabric; selective synchronization to skip parameters with small deltas; and compressed pseudo-gradients via top-K sparsification with error feedback plus eight-bit quantization.
+
+K.4 \textsc{TopologyAware} re-routes collectives based on the measured network matrix.
+Degraded links are avoided; hot paths are preferred.
+The decisions are static (committed at Phase~K time); the live re-routing happens through Cipher-tracked topology updates that invalidate plans.
+
+\subsection{Phase L --- \textsc{validate}}
+\label{sec:forge-phase-l}
+
+Continuous, background, sample-based.
+Phase~L is not a compile phase but a runtime observer; it drives Phase~H recompilations when measured behavior diverges from Mimic's predictions.
+Sampling rate defaults to one percent of kernel executions; budget is approximately ten milliseconds per sampled invocation.
+
+L.1 \textsc{ProbeCounters} calls \code{mimic::probe\_counters} on the sampled kernel.
+Each per-vendor backend wraps its native profiling interface and returns a uniform \struct{Measurements} record carrying twelve signals.
+L.2 \textsc{CompareToModel} reads Mimic's prediction stored at compile time inside the \struct{CompiledKernel} and computes per-signal residuals.
+L.3 \textsc{DriftDetect} maintains a running 95th-percentile of residuals per signal per chip; sustained drift above ten percent triggers \code{mimic::recalibrate}, which re-runs the per-vendor microbenchmark suite and updates the calibrated \struct{TargetCaps}.
+L.4 \textsc{RegressionDetect} monitors cross-iteration consistency: when the same kernel on the same hardware suddenly runs slower, the cause is one of thermal throttling, error-correction overhead from increasing memory faults, clock-domain degradation, or firmware drift.
+The detection contributes to Augur's per-Keeper health signals (Chapter~\ref{sec:augur}).
+L.5 \textsc{CacheInvalidate} marks affected L3 cache entries for recompilation.
+L2 entries (per-vendor \IRstar{3} snapshots) typically survive recalibration; L1 entries (vendor-neutral \IR{2}) always survive.
+
+The closed loop is the soundness mechanism for Mimic's calibrated cost model: drift is detected, recalibration is triggered, recompilation re-aligns the binary with the measured hardware behavior.
+
+\subsection{Verification cadence}
+\label{sec:forge-verification}
+
+A structural verifier runs at the exit point of Phases~B, D, E, F, G, H, and J.
+The verifier is cheap (linear in node count) and checks structural invariants only --- it is not a proof.
+For Phase~B, the analyses must agree with each other (no node has dependence with no use--def edge).
+For Phase~D, the fuse kinds on each edge must satisfy the structural compatibility lattice.
+For Phase~E, every \struct{KernelNode} must have a non-null recipe and tile, an attribute structure consistent with its kind, and a content hash computable from the materialized fields.
+For Phase~F, the committed Pareto set must be a subset of the propose-tiles output, sorted by ranking-cost, with no duplicates.
+For Phase~G, slot offsets must not overlap for simultaneously live slots; the total pool bytes must satisfy the OOM constraint.
+For Phase~H, the returned \struct{CompiledKernel} must have an \IR{2} content hash matching the input.
+For Phase~J, the \struct{ExecutionPlan}'s content hash must compose deterministically from its components.
+
+A verifier failure is a Forge bug, not a user error.
+The verifier names the specific sub-pass and the specific invariant that fails, providing actionable diagnostics for development.
+
+\subsection{Determinism}
+\label{sec:forge-determinism}
+
+Every Forge phase is deterministic given its inputs and the abstract \struct{TargetCaps} signature.
+Concretely:
+
+\begin{itemize}
+  \item \textbf{No hash-table iteration order dependencies.} Where iteration over a hash-set is required, keys are sorted before iteration.
+  \item \textbf{No floating-point sums whose order depends on allocator state.} Numerical decisions in Forge use canonical reduction orders.
+  \item \textbf{No pointer-based ordering.} Events and decisions are ordered by deterministic tuples derived from content hashes and graph indices.
+  \item \textbf{No address-based allocator state.} Per-compile arenas bump in fixed order; the arena is fresh at each compile invocation.
+  \item \textbf{Random-number generation is Philox-seeded} from \code{content\_hash}.
+        Same region produces the same seed produces the same sequence of mutation choices in Phase~D's solver and Phase~F's tile pruning.
+  \item \textbf{Thread-pool result merging.} Per-kernel results from Phase~H are merged in deterministic order (by \struct{KernelId}, not by completion order).
+\end{itemize}
+
+Same inputs produce the same \IR{2}.
+Same \IR{2} on the same target capabilities produces the same \IRstar{3}.
+Same \IRstar{3} on the same chip produces the same compiled binary.
+The chain of determinism extends from Vessel capture through to compiled bytes, and is the substrate of the bit-exact replay invariant (Chapter~\ref{sec:execution-plan}).
+
+\subsection{The Mimic integration surface}
+\label{sec:forge-mimic-surface}
+
+Forge calls Mimic at exactly five entry points.
+The signatures and the responsibilities of each are specified in Chapter~\ref{sec:mimic}; the summary here establishes the boundary as part of Forge's specification.
+
+\begin{itemize}
+  \item \code{mimic::fast\_cost(KernelNode, TargetCaps)} returns an estimated cycle count.
+        Used by Phase~B.5 (per-node cost) and Phase~D.2 (fusion cost) and Phase~F.2 (tile ranking).
+        Approximate; ranking-accurate.
+  \item \code{mimic::propose\_tiles(KernelNode, TargetCaps)} returns abstract tile candidates.
+        Used by Phase~F.1.
+        Per-vendor; sixteen to sixty-four candidates per call.
+  \item \code{mimic::compile\_kernel(KernelNode, TargetCaps, CompileConfig)} returns a \struct{CompiledKernel}.
+        Used by Phase~H.1.
+        Tens to hundreds of milliseconds; runs MAP-Elites internally; parallelizable across kernels.
+  \item \code{mimic::predict(CompiledKernel, TargetCaps, SimTier)} returns a \struct{SimResult}.
+        Used by Phase~L.2 (drift detection).
+        Approximately ten milliseconds at the medium tier.
+  \item \code{mimic::probe\_counters(CompiledKernel, TargetCaps)} returns a \struct{Measurements} record from the per-vendor profiling interface.
+        Used by Phase~L.1.
+        Approximately ten milliseconds per sample.
+\end{itemize}
+
+What Forge does \emph{not} ask Mimic to do: kernel fusion decisions (Phase~D), kernel template matching (Phase~E), recipe selection (Phase~E.3), memory planning (Phase~G), stream scheduling (Phase~I), or collective placement (Phase~K).
+What Mimic owns and Forge never touches: \IRstar{3} construction and mutation, address-space resolution, register allocation, instruction scheduling, vendor-ISA encoding, the three-tier simulator, the MAP-Elites archive, math templates, peephole rewriters, the per-vendor runtime library, the per-vendor collective library, calibration.
+The cut is clean: Forge is the optimizer; Mimic is the portability layer.

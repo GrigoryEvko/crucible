@@ -1,0 +1,247 @@
+\documentclass[11pt, a4paper]{article}
+
+% ── Fonts ──────────────────────────────────────────────────────────────
+\usepackage{fontspec}
+\setmainfont[Ligatures=TeX]{STIX Two Text}
+\setsansfont[Scale=MatchLowercase]{NewComputerModernSans10}
+\setmonofont[Scale=0.82, Ligatures=]{NewComputerModernMono10}
+\usepackage{unicode-math}
+\setmathfont{STIX Two Math}
+
+% ── Page ───────────────────────────────────────────────────────────────
+\usepackage[a4paper, margin=0.95in, top=1in, bottom=1in]{geometry}
+\linespread{1.12}
+\setlength{\parskip}{0.3em plus 0.08em minus 0.04em}
+\setlength{\parindent}{0em}
+
+% ── Typography ─────────────────────────────────────────────────────────
+\usepackage{microtype}
+\frenchspacing
+\emergencystretch=1.5em
+\tolerance=1500
+\widowpenalty=10000
+\clubpenalty=10000
+
+% ── Colors ─────────────────────────────────────────────────────────────
+\usepackage{xcolor}
+\definecolor{rulegray}{HTML}{333333}
+\definecolor{codebg}{HTML}{F5F5F5}
+\definecolor{codefr}{HTML}{DDDDDD}
+\definecolor{kw}{HTML}{1a5276}
+\definecolor{cm}{HTML}{7f8c8d}
+\definecolor{st}{HTML}{196f3d}
+\definecolor{defbg}{HTML}{F5F7FA}
+\definecolor{defborder}{HTML}{C5CAD0}
+\definecolor{thmbg}{HTML}{FFFCF0}
+\definecolor{thmborder}{HTML}{D4A017}
+\definecolor{invbg}{HTML}{FFF5F5}
+\definecolor{invborder}{HTML}{C0392B}
+\definecolor{probg}{HTML}{F0FFF0}
+\definecolor{proborder}{HTML}{27AE60}
+
+% ── Sections ───────────────────────────────────────────────────────────
+\usepackage{titlesec}
+\titleformat{\part}
+  {\Huge\bfseries\sffamily\centering}
+  {\partname\ \thepart}{0.6em}{\vspace{0.4em}\hrule\vspace{0.4em}}
+\titleformat{\section}
+  {\Large\bfseries\sffamily}
+  {\thesection}{0.6em}{}
+  [\vspace{-0.1em}{\color{rulegray}\hrule height 0.6pt}]
+\titleformat{\subsection}{\large\bfseries\sffamily}{\thesubsection}{0.5em}{}
+\titleformat{\subsubsection}{\normalsize\bfseries\sffamily}{\thesubsubsection}{0.5em}{}
+\titlespacing*{\part}{0pt}{1em}{2em}
+\titlespacing*{\section}{0pt}{2em}{0.7em}
+\titlespacing*{\subsection}{0pt}{1.4em}{0.4em}
+\titlespacing*{\subsubsection}{0pt}{0.9em}{0.25em}
+
+% ── Header / Footer ───────────────────────────────────────────────────
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\footnotesize\textsf{\textcolor{black!40}{\nouppercase{\leftmark}}}}
+\fancyhead[R]{\footnotesize\textsf{\textcolor{black!40}{\thepage}}}
+\fancyfoot[C]{\footnotesize\textcolor{black!25}{\rule{0.3\textwidth}{0.3pt}}}
+\renewcommand{\headrulewidth}{0.3pt}
+\renewcommand{\headrule}{\color{black!15}\hrule height 0.3pt}
+\fancypagestyle{plain}{%
+  \fancyhf{}%
+  \fancyfoot[C]{\footnotesize\thepage}%
+  \renewcommand{\headrulewidth}{0pt}%
+}
+
+% ── Lists ──────────────────────────────────────────────────────────────
+\usepackage{enumitem}
+\setlist{nosep, leftmargin=1.5em, topsep=0.15em}
+\setlist[itemize]{label=\textcolor{black!40}{\textbullet}}
+\setlist[enumerate]{label=\textcolor{black!60}{\arabic*.}}
+
+% ── Tables ─────────────────────────────────────────────────────────────
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{tabularx}
+\usepackage{multirow}
+\renewcommand{\arraystretch}{1.12}
+
+% ── Code ───────────────────────────────────────────────────────────────
+\usepackage{listings}
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  frame=single, rulecolor=\color{codefr},
+  framesep=2.5pt, xleftmargin=4pt, xrightmargin=4pt,
+  breaklines=true, breakatwhitespace=true,
+  tabsize=4, showstringspaces=false,
+  keywordstyle=\color{kw}\bfseries,
+  commentstyle=\color{cm}\itshape,
+  stringstyle=\color{st},
+  aboveskip=0.5em, belowskip=0.3em,
+}
+
+% ── Math ───────────────────────────────────────────────────────────────
+\usepackage{amsmath}
+\usepackage{mathtools}
+\usepackage{stmaryrd}
+
+% Tighter display math spacing
+\AtBeginDocument{%
+  \setlength{\abovedisplayskip}{6pt plus 2pt minus 2pt}%
+  \setlength{\belowdisplayskip}{6pt plus 2pt minus 2pt}%
+  \setlength{\abovedisplayshortskip}{3pt plus 1pt minus 1pt}%
+  \setlength{\belowdisplayshortskip}{3pt plus 1pt minus 1pt}%
+}
+
+% ── Theorem environments ──────────────────────────────────────────────
+\usepackage{amsthm}
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{property}[definition]{Property}
+\newtheorem{invariant}[definition]{Invariant}
+\theoremstyle{plain}
+\newtheorem{theorem}[definition]{Theorem}
+\newtheorem{lemma}[definition]{Lemma}
+\theoremstyle{remark}
+\newtheorem{remark}[definition]{Remark}
+
+% ── Framed theorem styling ────────────────────────────────────────────
+\usepackage{tcolorbox}
+\tcbuselibrary{breakable}
+
+\tcolorboxenvironment{definition}{
+  colback=defbg, colframe=defborder,
+  boxrule=0.4pt, arc=1pt, left=5pt, right=5pt, top=3pt, bottom=3pt,
+  breakable, before skip=0.5em, after skip=0.4em,
+}
+\tcolorboxenvironment{property}{
+  colback=thmbg, colframe=thmborder,
+  boxrule=0.4pt, arc=1pt, left=5pt, right=5pt, top=3pt, bottom=3pt,
+  breakable, before skip=0.5em, after skip=0.4em,
+}
+\tcolorboxenvironment{invariant}{
+  colback=invbg, colframe=invborder,
+  boxrule=0.4pt, arc=1pt, left=5pt, right=5pt, top=3pt, bottom=3pt,
+  breakable, before skip=0.5em, after skip=0.4em,
+}
+
+% ── Diagrams ──────────────────────────────────────────────────────────
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning, calc, fit, backgrounds,
+                 decorations.pathreplacing, shapes.geometric,
+                 shadows.blur, matrix, chains}
+
+% ── Links ──────────────────────────────────────────────────────────────
+\usepackage[
+  colorlinks=true,
+  linkcolor=black!55,
+  urlcolor=blue!35!black,
+  citecolor=black!55,
+]{hyperref}
+\usepackage{cleveref}
+
+% ── Shortcuts ──────────────────────────────────────────────────────────
+\newcommand{\code}[1]{\texorpdfstring{\texttt{\small #1}}{#1}}
+\newcommand{\ent}[1]{\emph{#1}}
+\newcommand{\struct}[1]{{\ttfamily\small #1}}
+\newcommand{\bytes}[1]{#1\,B}
+\newcommand{\IR}[1]{\textsc{ir00#1}}
+\newcommand{\IRstar}[1]{\textsc{ir00#1}\textsuperscript{$\ast$}}
+
+% ══════════════════════════════════════════════════════════════════════
+\begin{document}
+
+% ── Title ──────────────────────────────────────────────────────────────
+\begin{titlepage}
+\begin{center}
+  \vspace*{2em}
+  {\color{rulegray}\rule{\textwidth}{1.2pt}}\\[1.5em]
+  {\fontsize{26}{30}\selectfont\sffamily\bfseries The Crucible Whitepaper}\\[0.8em]
+  {\Large\sffamily An Adaptive Runtime, Compiler, and Per-Vendor Backend\\[0.15em] Framework for Machine Learning}\\[2em]
+  {\normalsize Grigory Evko}\\[0.3em]
+  {\small\textcolor{black!45}{Version 2.0 \quad---\quad April 2026}}\\[1.5em]
+  {\color{rulegray}\rule{\textwidth}{1.2pt}}\\[2em]
+\end{center}
+
+\noindent\textit{This document is the architecture-level specification of Crucible.
+The companion yellowpaper specifies byte-level data structures, exact algorithms, protocol state machines, and proof obligations.
+The internal design specifications in \texttt{misc/CRUCIBLE.md}, \texttt{misc/FORGE.md}, and \texttt{misc/MIMIC.md} provide the per-component design rationale and build plans.}
+\end{titlepage}
+
+\thispagestyle{empty}
+\tableofcontents
+
+\newpage
+
+% ── Parts ──────────────────────────────────────────────────────────────
+
+% \part{Foundations}
+% \input{01-introduction}
+% \input{02-design-principles}
+% \input{03-architecture}
+
+% \part{Capture and Representation}
+% \input{04-vessel}
+% \input{05-recording-pipeline}
+% \input{06-merkle-dag}
+
+\part{IR Stack and Compilation}
+\input{07-ir001}
+\input{08-forge}
+\input{09-ir002}
+\input{10-mimic}
+\input{11-ir003}
+
+% \part{Numerical Portability and Determinism}
+% \input{12-numerical-recipe}
+% \input{13-cross-vendor-ci}
+
+% \part{Execution and Memory}
+% \input{14-memory-plan}
+% \input{15-execution-plan}
+
+% \part{Hardware Adaptation}
+% \input{16-meridian}
+% \input{17-augur}
+
+% \part{Distribution}
+% \input{18-canopy}
+% \input{19-cntp}
+% \input{20-heterogeneous}
+
+% \part{Persistence}
+% \input{21-cipher}
+
+% \part{Safety Foundation}
+% \input{22-axioms}
+% \input{23-graded}
+% \input{24-effects-sessions}
+
+% \part{Model-Aware Optimization}
+% \input{25-l8-l12}
+
+% \part{Closing}
+% \input{26-implementation}
+% \input{27-related}
+% \input{28-roadmap}
+% \input{29-conclusion}
+
+\end{document}
