@@ -319,19 +319,30 @@ template <typename T> using AbortC       = Crash<CrashClass_v::Abort,       T>;
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoThrowC,     char);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoThrowC,     int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoThrowC,     double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ErrorReturnC, char);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ErrorReturnC, int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ErrorReturnC, double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ThrowC,       char);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ThrowC,       int);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ThrowC,       double);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbortC,       char);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbortC,       int);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbortC,       double);
 
 }  // namespace detail::crash_layout
 
+static_assert(sizeof(Crash<CrashClass_v::NoThrow,     char>)   == sizeof(char));
 static_assert(sizeof(Crash<CrashClass_v::NoThrow,     int>)    == sizeof(int));
-static_assert(sizeof(Crash<CrashClass_v::ErrorReturn, int>)    == sizeof(int));
-static_assert(sizeof(Crash<CrashClass_v::Throw,       int>)    == sizeof(int));
-static_assert(sizeof(Crash<CrashClass_v::Abort,       int>)    == sizeof(int));
 static_assert(sizeof(Crash<CrashClass_v::NoThrow,     double>) == sizeof(double));
+static_assert(sizeof(Crash<CrashClass_v::ErrorReturn, char>)   == sizeof(char));
+static_assert(sizeof(Crash<CrashClass_v::ErrorReturn, int>)    == sizeof(int));
+static_assert(sizeof(Crash<CrashClass_v::ErrorReturn, double>) == sizeof(double));
+static_assert(sizeof(Crash<CrashClass_v::Throw,       char>)   == sizeof(char));
+static_assert(sizeof(Crash<CrashClass_v::Throw,       int>)    == sizeof(int));
+static_assert(sizeof(Crash<CrashClass_v::Throw,       double>) == sizeof(double));
+static_assert(sizeof(Crash<CrashClass_v::Abort,       char>)   == sizeof(char));
+static_assert(sizeof(Crash<CrashClass_v::Abort,       int>)    == sizeof(int));
+static_assert(sizeof(Crash<CrashClass_v::Abort,       double>) == sizeof(double));
 
 // ── Self-test ───────────────────────────────────────────────────────
 namespace detail::crash_self_test {
@@ -456,39 +467,66 @@ static_assert(ThrowInt::lattice_name()       == "CrashLattice::At<Throw>");
 static_assert(AbortInt::lattice_name()       == "CrashLattice::At<Abort>");
 
 // ── swap exchanges T values within the same class pin ───────────
-[[nodiscard]] consteval bool swap_exchanges_within_same_class() noexcept {
-    NoThrowInt a{10};
-    NoThrowInt b{20};
+//
+// Audit-pass extension: exercise the swap surface at all four classes
+// (not just NoThrow), because a refactor that broke swap for any one
+// class would silently regress mutability discipline at production
+// call sites pinned at that class.
+template <typename W>
+[[nodiscard]] consteval bool swap_exchanges_within(int x, int y) noexcept {
+    W a{x};
+    W b{y};
     a.swap(b);
-    return a.peek() == 20 && b.peek() == 10;
+    return a.peek() == y && b.peek() == x;
 }
-static_assert(swap_exchanges_within_same_class());
+static_assert(swap_exchanges_within<NoThrowInt>(10, 20));
+static_assert(swap_exchanges_within<ErrorReturnInt>(11, 21));
+static_assert(swap_exchanges_within<ThrowInt>(12, 22));
+static_assert(swap_exchanges_within<AbortInt>(13, 23));
 
-[[nodiscard]] consteval bool free_swap_works() noexcept {
-    NoThrowInt a{10};
-    NoThrowInt b{20};
+template <typename W>
+[[nodiscard]] consteval bool free_swap_within(int x, int y) noexcept {
+    W a{x};
+    W b{y};
     using std::swap;
     swap(a, b);
-    return a.peek() == 20 && b.peek() == 10;
+    return a.peek() == y && b.peek() == x;
 }
-static_assert(free_swap_works());
+static_assert(free_swap_within<NoThrowInt>(10, 20));
+static_assert(free_swap_within<ErrorReturnInt>(11, 21));
+static_assert(free_swap_within<ThrowInt>(12, 22));
+static_assert(free_swap_within<AbortInt>(13, 23));
 
 // ── peek_mut allows in-place mutation ─────────────────────────────
-[[nodiscard]] consteval bool peek_mut_works() noexcept {
-    NoThrowInt a{10};
-    a.peek_mut() = 99;
-    return a.peek() == 99;
+template <typename W>
+[[nodiscard]] consteval bool peek_mut_works_for(int initial, int target) noexcept {
+    W a{initial};
+    a.peek_mut() = target;
+    return a.peek() == target;
 }
-static_assert(peek_mut_works());
+static_assert(peek_mut_works_for<NoThrowInt>(10, 99));
+static_assert(peek_mut_works_for<ErrorReturnInt>(11, 88));
+static_assert(peek_mut_works_for<ThrowInt>(12, 77));
+static_assert(peek_mut_works_for<AbortInt>(13, 66));
 
 // ── operator== — same-class, same-T comparison ────────────────────
-[[nodiscard]] consteval bool equality_compares_value_bytes() noexcept {
-    NoThrowInt a{42};
-    NoThrowInt b{42};
-    NoThrowInt c{43};
+//
+// Audit-pass extension: exercise operator== at all four classes.
+// The friend operator== is per-instantiation; if a refactor weakened
+// the per-class restriction (e.g., made it a non-friend free template
+// over Class), cross-class comparison would silently start compiling.
+// Per-class verification ensures the invariant holds at every pin.
+template <typename W>
+[[nodiscard]] consteval bool equality_compares_value_bytes_for() noexcept {
+    W a{42};
+    W b{42};
+    W c{43};
     return (a == b) && !(a == c);
 }
-static_assert(equality_compares_value_bytes());
+static_assert(equality_compares_value_bytes_for<NoThrowInt>());
+static_assert(equality_compares_value_bytes_for<ErrorReturnInt>());
+static_assert(equality_compares_value_bytes_for<ThrowInt>());
+static_assert(equality_compares_value_bytes_for<AbortInt>());
 
 // SFINAE: operator== is only present when T has its own ==.
 struct NoEqualityT {

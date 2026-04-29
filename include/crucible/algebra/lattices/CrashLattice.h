@@ -353,11 +353,19 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(NoThrowGraded, double);
 template <typename T_>
 using ErrorReturnGraded = Graded<ModalityKind::Absolute,
                                  crash_class::ErrorReturnClass, T_>;
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ErrorReturnGraded, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(ErrorReturnGraded, EightByteValue);
+
+template <typename T_>
+using ThrowGraded = Graded<ModalityKind::Absolute,
+                           crash_class::ThrowClass, T_>;
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ThrowGraded, OneByteValue);
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(ThrowGraded, EightByteValue);
 
 template <typename T_>
 using AbortGraded = Graded<ModalityKind::Absolute,
                            crash_class::AbortClass, T_>;
+CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbortGraded, OneByteValue);
 CRUCIBLE_GRADED_LAYOUT_INVARIANT(AbortGraded, EightByteValue);
 
 inline void runtime_smoke_test() {
