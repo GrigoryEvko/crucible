@@ -1237,15 +1237,68 @@ crucible_neg_compile_test(neg_is_shared_permission_tag_t_on_non_shared_permissio
 
 # ─── FOUND-D09 — universal GradedWrapper extractors ──────────────
 #
-# Each of the four universal extractors (value_type_of_t /
-# lattice_of_t / grade_of_t / modality_of_v) carries its
-# `requires IsGradedWrapper<W>` constraint independently.  Two
-# fixtures pin the constraint propagation: bare primitive (int) and
-# concept-cheat lookalike struct.
+# Each of the FIVE universal extractors (value_type_of_t /
+# lattice_of_t / grade_of_t / modality_of_v / graded_type_of_t)
+# carries its `requires IsGradedWrapper<W>` constraint independently.
+# Five fixtures pin the constraint propagation — one per extractor —
+# probing both bare-primitive (int) and concept-cheat (lookalike
+# struct missing graded_type / lattice_type / modality) inputs.
 crucible_neg_compile_test(neg_grade_of_t_on_non_graded
   "constraints not satisfied|template constraint failure|associated constraints")
 
 crucible_neg_compile_test(neg_lattice_of_t_on_non_graded
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_value_type_of_t_on_non_graded
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_modality_of_v_on_non_graded
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_graded_type_of_t_on_non_graded
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D12 — UnaryTransform constrained extractors ───────────
+#
+# Each of the THREE constrained extractors on UnaryTransform.h
+# (unary_transform_input_tag_t / input_value_t / output_tag_t)
+# carries its `requires UnaryTransform<FnPtr>` clause independently.
+# Three fixtures pin the constraint propagation, each probing a
+# different shape-recognition failure mode (non-region parameter /
+# arity mismatch / lvalue-ref instead of rvalue-ref).  Together
+# they cover the three orthogonal failure axes of the UnaryTransform
+# concept.
+crucible_neg_compile_test(neg_unary_transform_input_tag_t_on_non_unary
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_unary_transform_input_value_t_on_non_unary
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_unary_transform_output_tag_t_on_non_unary
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D13 — BinaryTransform constrained extractors ──────────
+#
+# Each of the SIX constrained extractors on BinaryTransform.h
+# (binary_transform_lhs_tag_t / rhs_tag_t / lhs_value_t / rhs_value_t /
+# output_tag_t / has_same_tag_v) carries its
+# `requires BinaryTransform<FnPtr>` clause independently.  The
+# variable-template `has_same_tag_v` requires its own fixture
+# because the constraint propagation surface for variable templates
+# differs structurally from type aliases.  Four fixtures pin the
+# constraints; the lhs_value_t and rhs_value_t aliases share their
+# failure mode with the rhs_tag_t fixture (arity mismatch) so a
+# single fixture covers them — the requires clause is identical.
+crucible_neg_compile_test(neg_binary_transform_lhs_tag_t_on_non_binary
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_binary_transform_rhs_tag_t_on_non_binary
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_binary_transform_output_tag_t_on_non_binary
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_binary_transform_has_same_tag_v_on_non_binary
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
