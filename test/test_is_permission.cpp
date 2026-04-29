@@ -24,6 +24,10 @@
 
 #include <crucible/safety/IsPermission.h>
 
+#include <crucible/safety/Linear.h>
+#include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/Tagged.h>
+
 #include <cstdio>
 #include <cstdlib>
 #include <type_traits>
@@ -220,6 +224,73 @@ void test_cross_wrapper_tag_agreement() {
         extract::shared_permission_tag_t<SP_y>>);
 }
 
+void test_primitive_tag_positive() {
+    // Tag is open over the partial spec — non-class tag types resolve.
+    using P_int = ::crucible::safety::Permission<int>;
+    static_assert(extract::is_permission_v<P_int>);
+    static_assert(std::is_same_v<extract::permission_tag_t<P_int>, int>);
+}
+
+void test_nested_wrapper_rejection() {
+    // Linear<Permission<X>> is a Linear holding a Permission, NOT a
+    // Permission.  The dispatcher's tag-harvest (FOUND-D11) MUST NOT
+    // recurse into wrapped Permissions — only DIRECT-parameter
+    // Permissions count.  This case proves the trait does not falsely
+    // unwrap one level into the held value.
+    using L_P = ::crucible::safety::Linear<P_x>;
+    static_assert(!extract::is_permission_v<L_P>);
+    static_assert(!extract::is_shared_permission_v<L_P>);
+
+    // Tagged<Permission<X>, S> — same shape, different wrapper.
+    struct ProvenanceTag {};
+    using T_P = ::crucible::safety::Tagged<P_x, ProvenanceTag>;
+    static_assert(!extract::is_permission_v<T_P>);
+
+    // OwnedRegion<Permission<X>, R> — region whose ELEMENT TYPE is
+    // Permission.  Distinct from Permission<R>.
+    struct RegionTag {};
+    using OR_P = ::crucible::safety::OwnedRegion<P_x, RegionTag>;
+    static_assert(!extract::is_permission_v<OR_P>);
+}
+
+void test_array_and_function_type_rejection() {
+    // remove_cvref_t does NOT strip arrays or function types.  An
+    // array of Permission is not itself a Permission; a function
+    // returning Permission is not itself a Permission.  Catches the
+    // bug-class where a refactor adds incorrect array/function decay.
+    using P_arr5 = P_x[5];
+    static_assert(!extract::is_permission_v<P_arr5>);
+    static_assert(!extract::is_shared_permission_v<P_arr5>);
+
+    using SP_arr3 = SP_x[3];
+    static_assert(!extract::is_shared_permission_v<SP_arr3>);
+
+    using P_fn = P_x(int);
+    static_assert(!extract::is_permission_v<P_fn>);
+
+    using P_memptr = P_x test_tag_x::*;
+    static_assert(!extract::is_permission_v<P_memptr>);
+}
+
+void test_is_permission_for_concept() {
+    // Tag-bound concepts — verify the dispatcher's per-parameter
+    // "is this a Permission for THIS specific tag?" check.
+    static_assert(extract::IsPermissionFor<P_x, test_tag_x>);
+    static_assert(extract::IsPermissionFor<P_x&&, test_tag_x>);
+    static_assert(extract::IsPermissionFor<const P_x&, test_tag_x>);
+    static_assert(!extract::IsPermissionFor<P_x, test_tag_y>);
+    static_assert(!extract::IsPermissionFor<P_y, test_tag_x>);
+    static_assert(!extract::IsPermissionFor<int, test_tag_x>);
+    // Crucially, IsPermissionFor must NOT admit a SharedPermission
+    // even when the tag matches — the linear-vs-fractional discrim
+    // is preserved at the binding level.
+    static_assert(!extract::IsPermissionFor<SP_x, test_tag_x>);
+
+    static_assert(extract::IsSharedPermissionFor<SP_x, test_tag_x>);
+    static_assert(!extract::IsSharedPermissionFor<SP_x, test_tag_y>);
+    static_assert(!extract::IsSharedPermissionFor<P_x, test_tag_x>);
+}
+
 void test_runtime_consistency() {
     // Volatile-bounded loop confirms the predicates are bit-stable.
     volatile std::size_t const cap = 50;
@@ -260,6 +331,11 @@ int main() {
     run_test("test_distinct_tags_are_distinguished",
                                                     test_distinct_tags_are_distinguished);
     run_test("test_cross_wrapper_tag_agreement",    test_cross_wrapper_tag_agreement);
+    run_test("test_primitive_tag_positive",         test_primitive_tag_positive);
+    run_test("test_nested_wrapper_rejection",       test_nested_wrapper_rejection);
+    run_test("test_array_and_function_type_rejection",
+                                                    test_array_and_function_type_rejection);
+    run_test("test_is_permission_for_concept",      test_is_permission_for_concept);
     run_test("test_runtime_consistency",            test_runtime_consistency);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);

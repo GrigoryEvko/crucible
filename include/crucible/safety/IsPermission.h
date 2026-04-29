@@ -6,12 +6,13 @@
 // FOUND-D04 of 28_04_2026_effects.md §10 + 27_04_2026.md §5.5.  The
 // dispatcher-side reading surface for CSL permission tokens.  The
 // underlying predicates and partial specializations already live in
-// `::crucible::safety::detail` (permissions/Permission.h:765-810 —
-// the file lives in the permissions/ directory but the namespace is
-// crucible::safety, mirroring the rest of the safety/ tree); FOUND-
-// D04 re-exports them into `crucible::safety::extract` alongside
-// `is_owned_region_v` (FOUND-D03) so the dispatcher's per-parameter
-// introspection happens through ONE namespace, not three.
+// `::crucible::safety::detail` (permissions/Permission.h:765-783 +
+// concepts at 799-809 — the file lives in the permissions/ directory
+// but the namespace is crucible::safety, mirroring the rest of the
+// safety/ tree); FOUND-D04 re-exports them into `crucible::safety::
+// extract` alongside `is_owned_region_v` (FOUND-D03) so the
+// dispatcher's per-parameter introspection happens through ONE
+// namespace, not three.
 //
 // ── What this header ships ──────────────────────────────────────────
 //
@@ -21,6 +22,12 @@
 //   is_shared_permission_v<T>    Same for SharedPermission<Tag>.
 //   IsPermission<T>              Concept form for `requires`-clauses.
 //   IsSharedPermission<T>        Same for shared-fractional permissions.
+//   IsPermissionFor<T, Tag>      Concept binding T == Permission<Tag>
+//                                for a SPECIFIC Tag.  Used by
+//                                FOUND-D11's inferred_permission_tags_t
+//                                to verify a parameter exposes the
+//                                expected region tag.
+//   IsSharedPermissionFor<T,Tag> Same for SharedPermission<Tag>.
 //   permission_tag_t<T>          Alias to Tag when T is a Permission;
 //                                ill-formed (constraint failure)
 //                                otherwise.
@@ -92,6 +99,29 @@ concept IsPermission = is_permission_v<T>;
 
 template <typename T>
 concept IsSharedPermission = is_shared_permission_v<T>;
+
+// ── Tag-bound concept aliases ───────────────────────────────────────
+//
+// IsPermissionFor<T, Tag> binds the wrapper-detection check AND the
+// specific tag identity.  The dispatcher's parameter-shape
+// recognizers (FOUND-D11+) consume this when checking that a
+// function parameter exposes a Permission for a SPECIFIC region.
+
+template <typename T, typename Tag>
+concept IsPermissionFor =
+    is_permission_v<T> &&
+    std::is_same_v<
+        typename ::crucible::safety::detail::is_permission_impl<
+            std::remove_cvref_t<T>>::tag_type,
+        Tag>;
+
+template <typename T, typename Tag>
+concept IsSharedPermissionFor =
+    is_shared_permission_v<T> &&
+    std::is_same_v<
+        typename ::crucible::safety::detail::is_shared_permission_impl<
+            std::remove_cvref_t<T>>::tag_type,
+        Tag>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Tag extractors (constrained) ───────────────────────────────────
@@ -236,6 +266,22 @@ static_assert(!std::is_same_v<
 static_assert(std::is_same_v<
     permission_tag_t<P_a>,
     shared_permission_tag_t<SP_a>>);
+
+// ── IsPermissionFor / IsSharedPermissionFor ───────────────────────
+
+static_assert(IsPermissionFor<P_a, test_tag_a>);
+static_assert(IsPermissionFor<P_a const&, test_tag_a>);
+static_assert(IsPermissionFor<P_a&&, test_tag_a>);
+static_assert(!IsPermissionFor<P_a, test_tag_b>);  // wrong tag
+static_assert(!IsPermissionFor<P_b, test_tag_a>);  // wrong tag
+static_assert(!IsPermissionFor<int, test_tag_a>);  // not a Permission
+static_assert(!IsPermissionFor<SP_a, test_tag_a>); // not a Permission
+                                                   // (it's Shared)
+
+static_assert(IsSharedPermissionFor<SP_a, test_tag_a>);
+static_assert(IsSharedPermissionFor<SP_a const&, test_tag_a>);
+static_assert(!IsSharedPermissionFor<SP_a, test_tag_b>);
+static_assert(!IsSharedPermissionFor<P_a, test_tag_a>);
 
 }  // namespace detail::is_permission_self_test
 
