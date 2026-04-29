@@ -1404,6 +1404,10 @@ crucible_neg_compile_test(neg_epoch_versioned_axis_swap
   "no match for|cannot convert|could not convert|no matching function")
 crucible_neg_compile_test(neg_epoch_versioned_is_at_least_axis_swap
   "no match for|cannot convert|could not convert|no matching function")
+crucible_neg_compile_test(neg_epoch_versioned_combine_max_cross_t
+  "no match for|cannot convert|could not convert|no matching function|no viable")
+crucible_neg_compile_test(neg_epoch_versioned_lattice_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands|could not convert")
 
 # ─── FOUND-G71/G72 NumaPlacement product-wrapper neg-compile fixtures ──
 #
@@ -1432,6 +1436,10 @@ crucible_neg_compile_test(neg_numa_placement_axis_swap
   "no match for|cannot convert|could not convert|no matching function")
 crucible_neg_compile_test(neg_numa_placement_admits_axis_swap
   "no match for|cannot convert|could not convert|no matching function")
+crucible_neg_compile_test(neg_numa_placement_combine_max_cross_t
+  "no match for|cannot convert|could not convert|no matching function|no viable")
+crucible_neg_compile_test(neg_numa_placement_lattice_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands|could not convert")
 
 # ─── FOUND-G75/G76 RecipeSpec product-wrapper neg-compile fixtures ───
 #
@@ -1459,6 +1467,10 @@ crucible_neg_compile_test(neg_recipe_spec_axis_swap
   "no match for|cannot convert|could not convert|no matching function")
 crucible_neg_compile_test(neg_recipe_spec_admits_axis_swap
   "no match for|cannot convert|could not convert|no matching function")
+crucible_neg_compile_test(neg_recipe_spec_combine_max_cross_t
+  "no match for|cannot convert|could not convert|no matching function|no viable")
+crucible_neg_compile_test(neg_recipe_spec_lattice_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands|could not convert")
 
 # ─── FOUND-G71 AffinityMask UB-fence neg-compile ─────────────────────
 #
