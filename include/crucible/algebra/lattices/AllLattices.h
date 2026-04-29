@@ -63,6 +63,7 @@
 #include <crucible/algebra/lattices/CipherTierLattice.h> // FOUND-G43  — shipped
 #include <crucible/algebra/lattices/ConfLattice.h>       // ALGEBRA-6  (#451) — shipped
 #include <crucible/algebra/lattices/ConsistencyLattice.h>// ALGEBRA-14 (#459) — shipped (2/3)
+#include <crucible/algebra/lattices/CrashLattice.h>      // FOUND-G58  — shipped
 #include <crucible/algebra/lattices/DetSafeLattice.h>    // FOUND-G13  — shipped
 #include <crucible/algebra/lattices/FractionalLattice.h> // ALGEBRA-8  (#453) — shipped
 #include <crucible/algebra/lattices/HappensBefore.h>     // ALGEBRA-13 (#458) — shipped

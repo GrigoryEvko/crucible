@@ -40,6 +40,7 @@
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/Consistency.h>
+#include <crucible/safety/Crash.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Linear.h>
@@ -218,6 +219,17 @@ static_assert(sizeof(Vendor<VendorBackend_v::AMD,      long long>)
                                                                  == sizeof(long long));
 static_assert(sizeof(Vendor<VendorBackend_v::None,     int>)    == sizeof(int));
 
+// Crash<Class, T> — regime-1 EBO collapse via CrashLattice::At<Class>
+// singleton sub-lattice (FOUND-G59).  Failure-mode-strength
+// dimension distinct from every other axis.  Type-fences
+// bridges/CrashTransport.h::CrashWatchedHandle's runtime mechanism
+// at every OneShotFlag-guarded boundary.
+static_assert(sizeof(Crash<CrashClass_v::NoThrow,     int>)    == sizeof(int));
+static_assert(sizeof(Crash<CrashClass_v::ErrorReturn, double>) == sizeof(double));
+static_assert(sizeof(Crash<CrashClass_v::Throw,       long long>)
+                                                                == sizeof(long long));
+static_assert(sizeof(Crash<CrashClass_v::Abort,       int>)    == sizeof(int));
+
 // Monotonic<T, std::less<T>> collapses value+grade into one T cell
 // via Graded's specialization for `T == element_type`.
 static_assert(sizeof(Monotonic<std::uint32_t>)      == sizeof(std::uint32_t));
@@ -255,6 +267,7 @@ static_assert(AllocClass<AllocClassTag_v::Stack, int>::value_type_name().ends_wi
 static_assert(CipherTier<CipherTierTag_v::Hot, int>::value_type_name().ends_with("int"));
 static_assert(ResidencyHeat<ResidencyHeatTag_v::Hot, int>::value_type_name().ends_with("int"));
 static_assert(Vendor<VendorBackend_v::Portable, int>::value_type_name().ends_with("int"));
+static_assert(Crash<CrashClass_v::NoThrow, int>::value_type_name().ends_with("int"));
 static_assert(Monotonic<std::uint64_t>::value_type_name().ends_with("uint64_t")
            || Monotonic<std::uint64_t>::value_type_name().ends_with("long unsigned int"));
 static_assert(Stale<int>::value_type_name().ends_with("int"));
@@ -290,6 +303,7 @@ static_assert(!std::is_void_v<typename AllocClass<AllocClassTag_v::Stack, int>::
 static_assert(!std::is_void_v<typename CipherTier<CipherTierTag_v::Hot, int>::graded_type>);
 static_assert(!std::is_void_v<typename ResidencyHeat<ResidencyHeatTag_v::Hot, int>::graded_type>);
 static_assert(!std::is_void_v<typename Vendor<VendorBackend_v::Portable, int>::graded_type>);
+static_assert(!std::is_void_v<typename Crash<CrashClass_v::NoThrow, int>::graded_type>);
 static_assert(!std::is_void_v<typename Monotonic<std::uint64_t>::graded_type>);
 static_assert(!std::is_void_v<typename AppendOnly<int>::graded_type>);
 static_assert(!std::is_void_v<typename Stale<int>::graded_type>);
@@ -349,6 +363,10 @@ static_assert(GradedWrapper<Vendor<VendorBackend_v::Portable, int>>);
 static_assert(GradedWrapper<Vendor<VendorBackend_v::NV,       double>>);
 static_assert(GradedWrapper<Vendor<VendorBackend_v::AMD,      long long>>);
 static_assert(GradedWrapper<Vendor<VendorBackend_v::None,     int>>);
+static_assert(GradedWrapper<Crash<CrashClass_v::NoThrow,     int>>);
+static_assert(GradedWrapper<Crash<CrashClass_v::ErrorReturn, double>>);
+static_assert(GradedWrapper<Crash<CrashClass_v::Throw,       long long>>);
+static_assert(GradedWrapper<Crash<CrashClass_v::Abort,       int>>);
 static_assert(GradedWrapper<Monotonic<std::uint64_t>>);
 static_assert(GradedWrapper<AppendOnly<int>>);
 static_assert(GradedWrapper<Stale<int>>);
@@ -422,6 +440,10 @@ static_assert(forwarders_actually_forward<Vendor<VendorBackend_v::Portable, int>
 static_assert(forwarders_actually_forward<Vendor<VendorBackend_v::NV,       double>>());
 static_assert(forwarders_actually_forward<Vendor<VendorBackend_v::AMD,      long long>>());
 static_assert(forwarders_actually_forward<Vendor<VendorBackend_v::None,     int>>());
+static_assert(forwarders_actually_forward<Crash<CrashClass_v::NoThrow,     int>>());
+static_assert(forwarders_actually_forward<Crash<CrashClass_v::ErrorReturn, double>>());
+static_assert(forwarders_actually_forward<Crash<CrashClass_v::Throw,       long long>>());
+static_assert(forwarders_actually_forward<Crash<CrashClass_v::Abort,       int>>());
 static_assert(forwarders_actually_forward<Monotonic<std::uint64_t>>());
 static_assert(forwarders_actually_forward<AppendOnly<int>>());
 static_assert(forwarders_actually_forward<Stale<int>>());
@@ -520,6 +542,14 @@ static_assert(Vendor<VendorBackend_v::AMD,      long long>::lattice_name()
                                                  == "VendorLattice::At<AMD>");
 static_assert(Vendor<VendorBackend_v::None,     int>::lattice_name()
                                                  == "VendorLattice::At<None>");
+static_assert(Crash<CrashClass_v::NoThrow,     int>::lattice_name()
+                                                 == "CrashLattice::At<NoThrow>");
+static_assert(Crash<CrashClass_v::ErrorReturn, double>::lattice_name()
+                                                 == "CrashLattice::At<ErrorReturn>");
+static_assert(Crash<CrashClass_v::Throw,       long long>::lattice_name()
+                                                 == "CrashLattice::At<Throw>");
+static_assert(Crash<CrashClass_v::Abort,       int>::lattice_name()
+                                                 == "CrashLattice::At<Abort>");
 static_assert(Monotonic<std::uint64_t>::lattice_name() == "MonotoneLattice");
 static_assert(AppendOnly<int>::lattice_name()   == "SeqPrefixLattice");
 static_assert(Stale<int>::lattice_name()        == "StalenessSemiring");
@@ -1283,6 +1313,75 @@ static_assert(sizeof(VendorPortableOverCipherTierHot) == sizeof(int),
     "non-chain lattices.");
 static_assert(GradedWrapper<VendorPortableOverCipherTierHot>);
 
+// ── Crash<Class, T> ⊕ {HotPath, DetSafe, Tagged, Linear, Stale} ──
+//
+// THE LOAD-BEARING TRIPLE — HotPath ⊃ Crash ⊃ DetSafe.  Production:
+// a foreground hot-path-safe (HotPath<Hot>) NoThrow-classified
+// (Crash<NoThrow>) Pure-determinism-safe (DetSafe<Pure>) value —
+// the canonical TraceRing entry that the OneShotFlag-skipping fast
+// path admits.  All three axes EBO-collapse; sizeof reduces to
+// sizeof(T).
+using HotOverCrashOverDetSafe =
+    HotPath<HotPathTier_v::Hot,
+            Crash<CrashClass_v::NoThrow,
+                  DetSafe<DetSafeTier_v::Pure, int>>>;
+static_assert(sizeof(HotOverCrashOverDetSafe) == sizeof(int),
+    "HotPath ⊃ Crash ⊃ DetSafe triple must EBO-collapse all three "
+    "regime-1 wrappers to sizeof(T).");
+static_assert(GradedWrapper<HotOverCrashOverDetSafe>);
+
+// Crash<NoThrow, DetSafe<Pure, T>> — never-fails AND replay-safe.
+// Production: a Philox-derived RNG counter on the OneShotFlag-skip
+// fast path.
+using CrashOverDetSafe =
+    Crash<CrashClass_v::NoThrow,
+          DetSafe<DetSafeTier_v::Pure, int>>;
+static_assert(sizeof(CrashOverDetSafe) == sizeof(int));
+static_assert(GradedWrapper<CrashOverDetSafe>);
+
+// Tagged<Crash<NoThrow, T>, Source> — provenance over failure-mode.
+using TaggedCrash =
+    Tagged<Crash<CrashClass_v::NoThrow, int>, VerificationTag>;
+static_assert(sizeof(TaggedCrash) == sizeof(int));
+
+// Crash<Abort, Linear<T>> — abort-classified linear handle.
+// Production: a Keeper init-path resource consumed exactly once
+// during recovery.
+using CrashOverLinear =
+    Crash<CrashClass_v::Abort, Linear<int>>;
+static_assert(sizeof(CrashOverLinear) == sizeof(int));
+static_assert(!std::is_copy_constructible_v<CrashOverLinear>,
+    "Crash<Class, Linear<T>> must preserve Linear's move-only "
+    "discipline.");
+static_assert(std::is_move_constructible_v<CrashOverLinear>);
+
+// REGIME-1 ⊃ REGIME-4 cells.
+using CrashOverStale =
+    Crash<CrashClass_v::NoThrow, Stale<int>>;
+static_assert(sizeof(CrashOverStale) == sizeof(Stale<int>),
+    "Crash<NoThrow, Stale<T>> must EBO-collapse the Crash grade only "
+    "(Stale carries a runtime grade alongside T, regime-4).");
+static_assert(GradedWrapper<CrashOverStale>);
+
+using StaleOverCrash =
+    Stale<Crash<CrashClass_v::NoThrow, int>>;
+static_assert(sizeof(StaleOverCrash) == sizeof(Stale<int>),
+    "Stale<Crash<NoThrow, T>> must equal sizeof(Stale<T>) — Crash's "
+    "regime-1 EBO collapse means Crash<NoThrow, T> is byte-equivalent "
+    "to T at the inner layer.");
+static_assert(GradedWrapper<StaleOverCrash>);
+
+// THE TEN-WRAPPER STACKING WITNESS — Crash composes with the
+// just-shipped Vendor wrapper (the partial-order wrapper) cleanly.
+// Production: a Mimic NV kernel that's NoThrow-classified.
+using CrashOverVendor =
+    Crash<CrashClass_v::NoThrow,
+          Vendor<VendorBackend_v::NV, int>>;
+static_assert(sizeof(CrashOverVendor) == sizeof(int),
+    "Crash<NoThrow, Vendor<NV, T>> must EBO-collapse — chain Crash "
+    "composing with partial-order Vendor at the inner layer.");
+static_assert(GradedWrapper<CrashOverVendor>);
+
 // THE FOUR-AXIS QUADRUPLE — CipherTier ⊃ ResidencyHeat × HotPath.
 // Demonstrates that CipherTier (storage-residency) and
 // ResidencyHeat (cache-residency) compose orthogonally even though
@@ -1531,6 +1630,39 @@ static_assert(sizeof(DuodecupleNested) == sizeof(int),
     "leaked non-empty grade bytes into the wrapper layout — both "
     "would defeat the wrapper-nesting universal-vocabulary thesis.");
 static_assert(GradedWrapper<DuodecupleNested>);
+
+// TREDECUPLE-NESTED witness — adds Crash as the THIRTEENTH lattice.
+// Production: the canonical OneShotFlag-skipping fast path made
+// type-precise.  A foreground-hot-path, spin-only-waiter, AcqRel-
+// atomic-only, stack-allocated, fleet-replicated, strongly-
+// consistent, bit-exact, Pure-determinism-safe, wall-clock-bounded,
+// Hot-tier-replicated, L1-resident, NV-pinned, NoThrow-classified
+// kernel value.  THIRTEEN regime-1 wrappers over THIRTEEN DISTINCT
+// lattices (twelve chain-shaped + one partial-order-shaped).
+// Universal-vocabulary claim at maximum depth — proves the wrapper-
+// nesting story holds at extreme depth even with the partial-order
+// Vendor mixed in.
+using TredecupleNested =
+    HotPath<HotPathTier_v::Hot,
+            Wait<WaitStrategy_v::SpinPause,
+                 MemOrder<MemOrderTag_v::AcqRel,
+                          AllocClass<AllocClassTag_v::Stack,
+                                     CipherTier<CipherTierTag_v::Hot,
+                                                ResidencyHeat<ResidencyHeatTag_v::Hot,
+                                                              Vendor<VendorBackend_v::NV,
+                                                                     Crash<CrashClass_v::NoThrow,
+                                                                           Progress<ProgressClass_v::Bounded,
+                                                                                    OpaqueLifetime<Lifetime_v::PER_FLEET,
+                                                                                                   Consistency<Consistency_v::STRONG,
+                                                                                                               DetSafe<DetSafeTier_v::Pure,
+                                                                                                                       NumericalTier<Tolerance::BITEXACT, int>>>>>>>>>>>>>;
+static_assert(sizeof(TredecupleNested) == sizeof(int),
+    "TREDECUPLE-nested HotPath<Wait<MemOrder<AllocClass<CipherTier<"
+    "ResidencyHeat<Vendor<Crash<Progress<OpaqueLifetime<Consistency<"
+    "DetSafe<NumericalTier<T>>>>>>>>>>>>> must EBO-collapse to "
+    "sizeof(T) — THIRTEEN regime-1 wrappers over THIRTEEN DISTINCT "
+    "lattices.");
+static_assert(GradedWrapper<TredecupleNested>);
 
 // ── COVERAGE MATRIX — runtime API parity (smoke checks) ────────────
 //

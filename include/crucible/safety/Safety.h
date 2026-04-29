@@ -46,6 +46,7 @@
 //   CipherTier<Tier, T>      Graded<Absolute,    CipherTierLattice::At<Tier>, T>    1
 //   ResidencyHeat<Tier, T>   Graded<Absolute,    ResidencyHeatLattice::At<Tier>, T> 1
 //   Vendor<Backend, T>       Graded<Absolute,    VendorLattice::At<Backend>, T>     1 (partial-order)
+//   Crash<Class, T>          Graded<Absolute,    CrashLattice::At<Class>, T>        1
 //   Monotonic<T, Cmp>        Graded<Absolute,    MonotoneLattice<T,Cmp>, T>         2
 //   AppendOnly<T, Storage>   Graded<Absolute,    SeqPrefixLattice<T>,   Storage<T>>  3
 //   Stale<T>                 Graded<Absolute,    StalenessSemiring,     T>          4
@@ -149,6 +150,7 @@
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/Consistency.h>
+#include <crucible/safety/Crash.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/MemOrder.h>

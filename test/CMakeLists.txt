@@ -1293,6 +1293,45 @@ crucible_neg_compile_test(neg_vendor_at_cross_tier_mixing
 crucible_neg_compile_test(neg_vendor_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FOUND-G61 Crash negative-compile fixtures ──────────────────────
+#
+# Pins the Crash<Class, T> wrapper's failure-mode discipline AND
+# the underlying CrashLattice's per-At<T> nested-struct identity.
+# The TENTH chain wrapper (28_04 §4.3.10).  Type-fences the
+# OneShotFlag-skipping NoThrow-only admission gate that the
+# dispatcher's recovery-aware boundaries depend on (see
+# bridges/CrashTransport.h::CrashWatchedHandle).
+#
+# The bug class caught: a refactor that loosened the requires-
+# clause guarding relax<>() — specifically, a slip from
+# `CrashLattice::leq(WeakerClass, Class)` to a permissive form —
+# would silently allow an Abort-tier value to claim NoThrow
+# compatibility.  Today caught only by the Keeper noticing process
+# state inconsistency at recovery time; with the wrapper, becomes
+# a compile error.
+#
+# 4 wrapper-surface fixtures:
+#   - neg_crash_relax_to_stronger    LOAD-BEARING OneShotFlag fence
+#   - neg_crash_cross_class_assign   assignment-surface identity
+#   - neg_crash_cross_class_swap     swap-surface identity
+#   - neg_crash_cross_class_equality operator==-surface identity
+#
+# 2 lattice-substrate fixtures:
+#   - neg_crash_at_cross_class_mixing      At<T> nested-struct identity
+#   - neg_crash_lattice_cross_lattice_mixing  CrashClass ≠ ProgressClass
+crucible_neg_compile_test(neg_crash_relax_to_stronger
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_crash_cross_class_assign
+  "no match for|cannot convert|no viable")
+crucible_neg_compile_test(neg_crash_cross_class_swap
+  "no matching function|cannot convert|no match for")
+crucible_neg_compile_test(neg_crash_cross_class_equality
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_crash_at_cross_class_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_crash_lattice_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's

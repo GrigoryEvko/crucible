@@ -41,6 +41,7 @@
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/Consistency.h>
+#include <crucible/safety/Crash.h>
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Linear.h>
@@ -108,6 +109,9 @@ void test_constant_time_compile()   {}
 void test_consistency_compile()     {
     ::crucible::safety::detail::consistency_self_test::runtime_smoke_test();
 }
+void test_crash_compile()           {
+    ::crucible::safety::detail::crash_self_test::runtime_smoke_test();
+}
 void test_det_safe_compile()        {
     ::crucible::safety::detail::det_safe_self_test::runtime_smoke_test();
 }
@@ -166,6 +170,7 @@ int main() {
     run_test("test_cipher_tier_compile",     test_cipher_tier_compile);
     run_test("test_constant_time_compile",   test_constant_time_compile);
     run_test("test_consistency_compile",     test_consistency_compile);
+    run_test("test_crash_compile",           test_crash_compile);
     run_test("test_det_safe_compile",        test_det_safe_compile);
     run_test("test_hot_path_compile",        test_hot_path_compile);
     run_test("test_linear_compile",          test_linear_compile);

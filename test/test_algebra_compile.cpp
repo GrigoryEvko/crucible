@@ -44,6 +44,7 @@
 #include <crucible/algebra/lattices/CipherTierLattice.h>
 #include <crucible/algebra/lattices/ConfLattice.h>
 #include <crucible/algebra/lattices/ConsistencyLattice.h>
+#include <crucible/algebra/lattices/CrashLattice.h>
 #include <crucible/algebra/lattices/FractionalLattice.h>
 #include <crucible/algebra/lattices/HappensBefore.h>
 #include <crucible/algebra/lattices/HotPathLattice.h>
@@ -198,6 +199,10 @@ void test_vendor_lattice_runtime_smoke() {
     ::crucible::algebra::lattices::detail::vendor_lattice_self_test::runtime_smoke_test();
 }
 
+void test_crash_lattice_runtime_smoke() {
+    ::crucible::algebra::lattices::detail::crash_lattice_self_test::runtime_smoke_test();
+}
+
 }  // namespace
 
 int main() {
@@ -246,6 +251,8 @@ int main() {
              test_residency_heat_lattice_runtime_smoke);
     run_test("test_vendor_lattice_runtime_smoke",
              test_vendor_lattice_runtime_smoke);
+    run_test("test_crash_lattice_runtime_smoke",
+             test_crash_lattice_runtime_smoke);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
