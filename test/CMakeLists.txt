@@ -329,6 +329,7 @@ crucible_test(test_stable_name_compile)
 crucible_test(test_signature_traits)
 crucible_test(test_is_owned_region)
 crucible_test(test_is_permission)
+crucible_test(test_graded_extract)
 crucible_test(test_row_mismatch_compile)
 crucible_test(test_insights_compile)
 crucible_test(test_cheat_probe_compile)
@@ -1227,6 +1228,19 @@ crucible_neg_compile_test(neg_is_permission_tag_t_on_non_permission
 # the OTHER direction of the linear/fractional discrimination so the
 # two requires-clauses stay independently load-bearing.
 crucible_neg_compile_test(neg_is_shared_permission_tag_t_on_non_shared_permission
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D09 — universal GradedWrapper extractors ──────────────
+#
+# Each of the four universal extractors (value_type_of_t /
+# lattice_of_t / grade_of_t / modality_of_v) carries its
+# `requires IsGradedWrapper<W>` constraint independently.  Two
+# fixtures pin the constraint propagation: bare primitive (int) and
+# concept-cheat lookalike struct.
+crucible_neg_compile_test(neg_grade_of_t_on_non_graded
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_lattice_of_t_on_non_graded
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
