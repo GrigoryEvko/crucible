@@ -537,6 +537,60 @@ static_assert(std::is_move_constructible_v<DetSafe<DetSafeTier_v::Pure, NoEquali
 }
 static_assert(relax_to_self_is_identity());
 
+// ── relax<>() && works on move-only T ─────────────────────────────
+//
+// The relax() && overload moves T through `std::move(impl_).consume()`
+// — does NOT require copy_constructible<T>.  Pin the structural
+// claim explicitly: a DetSafe wrapping a move-only type can still
+// relax to a weaker tier without invoking T's copy ctor.  Mirrors
+// the DetSafeOverLinear cross-composition cell at the operation
+// surface.  Without this witness, a refactor accidentally adding
+// `requires std::copy_constructible<T>` to the && overload (mirroring
+// the const& overload) would silently break Linear<T> and other
+// move-only payloads.
+//
+// Concept-based witness: the && overload must be invocable on a
+// rvalue of DetSafe<Pure, MoveOnly>.
+struct MoveOnlyT {
+    int v{0};
+    constexpr MoveOnlyT() = default;
+    constexpr explicit MoveOnlyT(int x) : v{x} {}
+    constexpr MoveOnlyT(MoveOnlyT&&) = default;
+    constexpr MoveOnlyT& operator=(MoveOnlyT&&) = default;
+    MoveOnlyT(MoveOnlyT const&) = delete;
+    MoveOnlyT& operator=(MoveOnlyT const&) = delete;
+};
+static_assert(!std::is_copy_constructible_v<MoveOnlyT>);
+static_assert(std::is_move_constructible_v<MoveOnlyT>);
+
+template <typename W, DetSafeTier_v T_target>
+concept can_relax_rvalue = requires(W&& w) {
+    { std::move(w).template relax<T_target>() };
+};
+template <typename W, DetSafeTier_v T_target>
+concept can_relax_lvalue = requires(W const& w) {
+    { w.template relax<T_target>() };
+};
+
+using PureMoveOnly = DetSafe<DetSafeTier_v::Pure, MoveOnlyT>;
+static_assert( can_relax_rvalue<PureMoveOnly, DetSafeTier_v::PhiloxRng>,
+    "relax<>() && MUST work for move-only T — the rvalue overload "
+    "moves through consume(), no copy required.  If this fires, the "
+    "&& overload accidentally inherited a copy_constructible<T> "
+    "requirement and silently rejects move-only payloads.");
+static_assert(!can_relax_lvalue<PureMoveOnly, DetSafeTier_v::PhiloxRng>,
+    "relax<>() const& on move-only T MUST be rejected — the const& "
+    "overload requires copy_constructible<T>.  If this fires, the "
+    "const& overload silently invokes T's deleted copy ctor and "
+    "produces a confusing diagnostic deep in Graded's substrate.");
+
+[[nodiscard]] consteval bool relax_move_only_works() noexcept {
+    PureMoveOnly src{MoveOnlyT{77}};
+    auto dst = std::move(src).relax<DetSafeTier_v::PhiloxRng>();
+    return dst.peek().v == 77 && dst.tier == DetSafeTier_v::PhiloxRng;
+}
+static_assert(relax_move_only_works());
+
 // ── Stable-name introspection (FOUND-E07/H06 surface) ────────────
 static_assert(PureInt::value_type_name().size() > 0);
 static_assert(PureInt::lattice_name().size() > 0);

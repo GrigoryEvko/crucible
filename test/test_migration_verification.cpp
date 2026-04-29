@@ -517,6 +517,19 @@ using DetSafeOverNumerical =
             NumericalTier<Tolerance::BITEXACT, int>>;
 static_assert(sizeof(DetSafeOverNumerical) == sizeof(int));
 
+// REVERSE-ORDERING witness — NumericalTier<BITEXACT, DetSafe<Pure, T>>.
+// The two wrappers compose in either order; the substrate's wrapper-
+// nesting story (28_04 §4.7) is order-asymmetric SEMANTICALLY (outer
+// vs inner attribute) but structurally identical at the EBO surface.
+// Pinning both orderings at the migration-verification level catches
+// any regression in either wrapper's regime-1 EBO discipline.  Per
+// 28_04 §8.5.2: different cache_keys but identical layout.
+using NumericalOverDetSafe =
+    NumericalTier<Tolerance::BITEXACT,
+                  DetSafe<DetSafeTier_v::Pure, int>>;
+static_assert(sizeof(NumericalOverDetSafe) == sizeof(int));
+static_assert(GradedWrapper<NumericalOverDetSafe>);
+
 // DetSafe<Pure, Linear<T>> — pure-tier owned linear handle.
 using DetSafeOverLinear = DetSafe<DetSafeTier_v::Pure, Linear<int>>;
 static_assert(sizeof(DetSafeOverLinear) == sizeof(int));

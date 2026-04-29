@@ -1012,6 +1012,32 @@ crucible_neg_compile_test(neg_det_safe_cross_tier_swap
 crucible_neg_compile_test(neg_det_safe_cross_tier_equality
   "no match for|cannot convert|no matching function|invalid operands")
 
+# ─── FOUND-G16-AUDIT DetSafe LATTICE-level neg-compiles (2 fixtures) ──
+#
+# Mirror of the per-At<T> + cross-lattice mixing fixtures shipped for
+# Tolerance / Consistency / Lifetime.  The wrapper surface
+# (relax/assign/swap/equality) is fenced by the 4 fixtures above; THIS
+# pair fences the LATTICE substrate underlying the wrapper:
+#
+#   neg_det_safe_at_cross_tier_mixing
+#       DetSafeLattice::At<Pure>::leq cannot accept an At<PhiloxRng>::
+#       element_type.  Defends against a refactor extracting a shared
+#       singleton_carrier<DetSafeTier> alias above At<T>.
+#
+#   neg_det_safe_lattice_cross_lattice_mixing
+#       DetSafeLattice::leq rejects a non-DetSafeTier value (e.g.,
+#       Consistency).  Defends against a "let's collapse the per-
+#       lattice enums into a shared Tier:uint8_t" refactor.
+#
+# Without these, the wrapper's tier-pin survives but the LATTICE could
+# silently allow cross-tier or cross-lattice mixing to leak through
+# Graded's compose / weaken paths that take element_type values
+# directly.
+crucible_neg_compile_test(neg_det_safe_at_cross_tier_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+crucible_neg_compile_test(neg_det_safe_lattice_cross_lattice_mixing
+  "no match for|cannot convert|no matching function|invalid operands")
+
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
 # Three neg-compiles pinning the variadic primary template's
