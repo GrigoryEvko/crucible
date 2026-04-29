@@ -328,6 +328,7 @@ crucible_test(test_diagnostic_compile)
 crucible_test(test_stable_name_compile)
 crucible_test(test_signature_traits)
 crucible_test(test_is_owned_region)
+crucible_test(test_is_permission)
 crucible_test(test_row_mismatch_compile)
 crucible_test(test_insights_compile)
 crucible_test(test_cheat_probe_compile)
@@ -1209,6 +1210,23 @@ crucible_neg_compile_test(neg_is_owned_region_value_t_on_non_region
 # Sister fixture — owned_region_tag_t<void> independently locks in the
 # constraint on the tag-extractor alias.
 crucible_neg_compile_test(neg_is_owned_region_tag_t_on_non_region
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D04 — permission_tag_t<T> on non-Permission T ──────────
+#
+# The `requires is_permission_v<T>` constraint on permission_tag_t
+# rejects non-Permission arguments at the alias declaration.  The
+# fixture passes a SharedPermission<Tag> — guards against the
+# fractional ↔ linear confusion (a refactor that loosens the gate
+# would let SharedPermission slip through, breaking the linear/
+# fractional CSL discipline at the dispatcher boundary).
+crucible_neg_compile_test(neg_is_permission_tag_t_on_non_permission
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# Sister fixture — shared_permission_tag_t<Permission<Tag>> exercises
+# the OTHER direction of the linear/fractional discrimination so the
+# two requires-clauses stay independently load-bearing.
+crucible_neg_compile_test(neg_is_shared_permission_tag_t_on_non_shared_permission
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
