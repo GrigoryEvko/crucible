@@ -157,6 +157,57 @@ void test_distinct_specializations() {
         extract::owned_region_value_t<OR_float_x>>);
 }
 
+void test_nested_owned_region() {
+    // Nested: outer is OwnedRegion<OR_int_x, tag_y>; outer is detected,
+    // and value_type is the inner OwnedRegion (not the inner's int).
+    using Nested = ::crucible::safety::OwnedRegion<OR_int_x, test_tag_y>;
+    static_assert(extract::is_owned_region_v<Nested>);
+    static_assert(std::is_same_v<
+        extract::owned_region_value_t<Nested>, OR_int_x>);
+    static_assert(std::is_same_v<
+        extract::owned_region_tag_t<Nested>, test_tag_y>);
+
+    // The inner is also recognizable independently.
+    static_assert(extract::is_owned_region_v<
+        extract::owned_region_value_t<Nested>>);
+}
+
+void test_pointer_to_owned_region_rejected() {
+    // remove_cvref does NOT strip pointers — a pointer-to-OwnedRegion
+    // is NOT itself an OwnedRegion.  Catches the bug-class where a
+    // refactor adds incorrect pointer-decay to the trait.
+    using PtrOR = OR_int_x*;
+    static_assert(!extract::is_owned_region_v<PtrOR>);
+    static_assert(!extract::is_owned_region_v<OR_int_x* const>);
+    static_assert(!extract::is_owned_region_v<OR_int_x const*>);
+    static_assert(!extract::is_owned_region_v<OR_int_x* const&>);
+}
+
+void test_owned_region_with_array_element_type() {
+    // Array element types are not commonly used but the trait should
+    // not break on them.
+    using OR_array = ::crucible::safety::OwnedRegion<int[5], test_tag_x>;
+    static_assert(extract::is_owned_region_v<OR_array>);
+    static_assert(std::is_same_v<
+        extract::owned_region_value_t<OR_array>, int[5]>);
+}
+
+void test_owned_region_with_pointer_element_type() {
+    using OR_ptr = ::crucible::safety::OwnedRegion<int*, test_tag_x>;
+    static_assert(extract::is_owned_region_v<OR_ptr>);
+    static_assert(std::is_same_v<
+        extract::owned_region_value_t<OR_ptr>, int*>);
+}
+
+void test_volatile_only_qualifier() {
+    static_assert(extract::is_owned_region_v<OR_int_x volatile>);
+    static_assert(extract::is_owned_region_v<OR_int_x const volatile>);
+    static_assert(std::is_same_v<
+        extract::owned_region_value_t<OR_int_x volatile>, int>);
+    static_assert(std::is_same_v<
+        extract::owned_region_tag_t<OR_int_x const volatile>, test_tag_x>);
+}
+
 void test_runtime_consistency() {
     // Volatile-bounded loop confirms the predicate is bit-stable.
     volatile std::size_t const cap = 50;
@@ -182,6 +233,14 @@ int main() {
     run_test("test_tag_extraction",           test_tag_extraction);
     run_test("test_extraction_cvref_stripped", test_extraction_cvref_stripped);
     run_test("test_distinct_specializations", test_distinct_specializations);
+    run_test("test_nested_owned_region",      test_nested_owned_region);
+    run_test("test_pointer_to_owned_region_rejected",
+                                              test_pointer_to_owned_region_rejected);
+    run_test("test_owned_region_with_array_element_type",
+                                              test_owned_region_with_array_element_type);
+    run_test("test_owned_region_with_pointer_element_type",
+                                              test_owned_region_with_pointer_element_type);
+    run_test("test_volatile_only_qualifier",  test_volatile_only_qualifier);
     run_test("test_runtime_consistency",      test_runtime_consistency);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);

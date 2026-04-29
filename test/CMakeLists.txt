@@ -1206,6 +1206,11 @@ crucible_neg_compile_test(neg_signature_traits_param_index_on_nullary
 crucible_neg_compile_test(neg_is_owned_region_value_t_on_non_region
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# Sister fixture — owned_region_tag_t<void> independently locks in the
+# constraint on the tag-extractor alias.
+crucible_neg_compile_test(neg_is_owned_region_tag_t_on_non_region
+  "constraints not satisfied|template constraint failure|associated constraints")
+
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
 #
 # Pins the CipherTier wrapper's tier-pin discipline AND the underlying
