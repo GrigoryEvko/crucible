@@ -346,6 +346,7 @@ crucible_test(test_is_det_safe)
 crucible_test(test_is_cipher_tier)
 crucible_test(test_is_residency_heat)
 crucible_test(test_is_vendor)
+crucible_test(test_is_crash)
 crucible_test(test_is_producer_handle)
 crucible_test(test_is_consumer_handle)
 crucible_test(test_is_swmr_handle)
@@ -1466,6 +1467,13 @@ crucible_neg_compile_test(neg_vendor_value_t_on_non_vendor
   "constraints not satisfied|template constraint failure|associated constraints")
 
 crucible_neg_compile_test(neg_vendor_backend_v_on_non_vendor
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D30/Crash IsCrash constrained-extractor fixtures
+crucible_neg_compile_test(neg_crash_value_t_on_non_crash
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_crash_class_v_on_non_crash
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
