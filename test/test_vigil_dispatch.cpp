@@ -466,6 +466,162 @@ static void test_dispatch_pure_FOUND_I19() {
     std::printf("  test_dispatch_pure_FOUND_I19: PASSED\n");
 }
 
+// ── Test 7: FOUND-I19-AUDIT — divergence + recovery via dispatch_op_pure
+//
+// The base I19 test covered RECORD path + RECORD→COMPILED transition +
+// full compiled iteration via dispatch_op_pure.  Three execution legs of
+// the underlying state machine remain to probe through the wrapper:
+//
+//   (audit-A) DIVERGED leg — schema/shape mismatch hits handle_divergence_;
+//             wrapper must preserve {Action::RECORD, Status::DIVERGED}
+//             return contract and bump diverged_count().
+//   (audit-B) Post-divergence recovery — full divergence + clean re-feed +
+//             realignment + activated compiled iteration, ALL through
+//             dispatch_op_pure.  Pins state-machine continuity through
+//             the wrapper across every leg.
+//   (audit-C) F* alias parity on COMPILED leg — base test covered
+//             PureRow on full compiled iteration; this completes the
+//             matrix by witnessing TotRow + GhostRow on the same leg.
+//             A regression that special-cased one alias would slip
+//             past the per-alias RECORD-only coverage.
+static void test_dispatch_pure_FOUND_I19_AUDIT() {
+    // (audit-A): divergence path through dispatch_op_pure.
+    {
+        Vigil vigil;
+        feed_record(vigil, 0);
+        feed_record(vigil, 1);
+        feed_trigger(vigil, 2);
+        flush_and_wait_compiled(vigil);
+        align_and_activate(vigil, 3);
+
+        // First few ops of new iteration MATCH on COMPILED leg via pure.
+        for (uint32_t i = 0; i < 3; ++i) {
+            auto d = make_op(4, i);
+            auto r = vigil.dispatch_op_pure(
+                crucible::vouch(d.entry), d.metas, d.n_metas);
+            assert(r.action == DispatchResult::Action::COMPILED);
+            assert(r.status == ReplayStatus::MATCH);
+        }
+
+        // Wrong schema → DIVERGED via dispatch_op_pure.
+        TraceRing::Entry bad_entry{};
+        bad_entry.schema_hash = SchemaHash{0xBAD};
+        bad_entry.shape_hash = SHAPE[3];
+        bad_entry.num_inputs = 1;
+        bad_entry.num_outputs = 1;
+        TensorMeta bad_metas[2]{};
+        bad_metas[0] = make_meta(fake_ptr(4, 2));
+        bad_metas[1] = make_meta(fake_ptr(4, 3));
+
+        auto rdiv = vigil.dispatch_op_pure(
+            crucible::vouch(bad_entry), bad_metas, 2);
+        assert(rdiv.action == DispatchResult::Action::RECORD);
+        assert(rdiv.status == ReplayStatus::DIVERGED);
+        assert(vigil.diverged_count() == 1);
+        assert(!vigil.context().is_compiled());
+
+        // Subsequent dispatch_op_pure calls return RECORD (ctx deactivated).
+        auto d = make_op(4, 4);
+        auto r2 = vigil.dispatch_op_pure(
+            crucible::vouch(d.entry), d.metas, d.n_metas);
+        assert(r2.action == DispatchResult::Action::RECORD);
+    }
+
+    // (audit-B): full divergence + recovery sequence through dispatch_op_pure.
+    {
+        Vigil vigil;
+        feed_record(vigil, 0);
+        feed_record(vigil, 1);
+        feed_trigger(vigil, 2);
+        flush_and_wait_compiled(vigil);
+        align_and_activate(vigil, 3);
+
+        // Diverge through the wrapper.
+        TraceRing::Entry bad{};
+        bad.schema_hash = SchemaHash{0xBAD};
+        bad.shape_hash = SHAPE[0];
+        bad.num_inputs = 0;
+        bad.num_outputs = 1;
+        TensorMeta bad_meta = make_meta(fake_ptr(99, 0));
+
+        auto rdiv = vigil.dispatch_op_pure(
+            crucible::vouch(bad), &bad_meta, 1);
+        assert(rdiv.action == DispatchResult::Action::RECORD);
+        assert(rdiv.status == ReplayStatus::DIVERGED);
+        assert(!vigil.context().is_compiled());
+
+        // Feed clean iterations via record_op so bg can rebuild a region.
+        for (uint32_t iter = 10; iter < 16; iter++)
+            feed_record(vigil, iter);
+        feed_trigger(vigil, 16);
+        flush_and_wait_compiled(vigil);
+
+        // Re-align via dispatch_op_pure (instead of dispatch_op as
+        // align_and_activate does — we want the wrapper to drive
+        // alignment too, proving every leg of the state machine).
+        for (uint32_t i = 0; i < K; ++i) {
+            auto d = make_op(17, i);
+            auto r = vigil.dispatch_op_pure(
+                crucible::vouch(d.entry), d.metas, d.n_metas);
+            assert(r.action == DispatchResult::Action::RECORD);
+        }
+        assert(vigil.context().is_compiled());
+
+        // Partial compiled tail via dispatch_op_pure.
+        for (uint32_t i = K; i < NUM_OPS; ++i) {
+            auto d = make_op(17, i);
+            auto r = vigil.dispatch_op_pure(
+                crucible::vouch(d.entry), d.metas, d.n_metas);
+            assert(r.action == DispatchResult::Action::COMPILED);
+        }
+
+        // Full compiled iteration via dispatch_op_pure post-recovery.
+        for (uint32_t i = 0; i < NUM_OPS; ++i) {
+            auto d = make_op(18, i);
+            auto r = vigil.dispatch_op_pure(
+                crucible::vouch(d.entry), d.metas, d.n_metas);
+            assert(r.action == DispatchResult::Action::COMPILED);
+        }
+    }
+
+    // (audit-C): F* alias parity on COMPILED leg.  Base test (e) drove
+    // PureRow on full compiled iteration; complete the matrix with
+    // TotRow + GhostRow.  All three are Row<> aliases; this proves the
+    // wrapper accepts every alias on every leg, not just RECORD path.
+    {
+        Vigil vigil;
+        feed_record(vigil, 0);
+        feed_record(vigil, 1);
+        feed_trigger(vigil, 2);
+        flush_and_wait_compiled(vigil);
+        align_and_activate(vigil, 3);
+
+        // Iter 4: TotRow alias on full compiled iteration.
+        for (uint32_t i = 0; i < NUM_OPS; ++i) {
+            auto d = make_op(4, i);
+            auto r = vigil.dispatch_op_pure<eff::TotRow>(
+                crucible::vouch(d.entry), d.metas, d.n_metas);
+            assert(r.action == DispatchResult::Action::COMPILED);
+            assert(r.status == ReplayStatus::MATCH ||
+                   r.status == ReplayStatus::COMPLETE);
+        }
+
+        // Iter 5: GhostRow alias on full compiled iteration.
+        for (uint32_t i = 0; i < NUM_OPS; ++i) {
+            auto d = make_op(5, i);
+            auto r = vigil.dispatch_op_pure<eff::GhostRow>(
+                crucible::vouch(d.entry), d.metas, d.n_metas);
+            assert(r.action == DispatchResult::Action::COMPILED);
+            assert(r.status == ReplayStatus::MATCH ||
+                   r.status == ReplayStatus::COMPLETE);
+        }
+    }
+
+    std::printf("  test_dispatch_pure_FOUND_I19_AUDIT: "
+                "(audit-A diverged + audit-B recovery + "
+                "audit-C alias×COMPILED) PASSED\n");
+}
+
 int main() {
     std::printf("test_vigil_dispatch:\n");
     test_dispatch_basic();
@@ -474,6 +630,7 @@ int main() {
     test_dispatch_data_flow();
     test_dispatch_pool_bounds();
     test_dispatch_pure_FOUND_I19();
+    test_dispatch_pure_FOUND_I19_AUDIT();
     std::printf("test_vigil_dispatch: all tests passed\n");
     return 0;
 }
