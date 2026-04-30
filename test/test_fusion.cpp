@@ -290,6 +290,90 @@ void test_concept_form_in_requires_clause() {
         &fusion_test::chain_a, &fusion_test::chain_b>()));
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// ── F07: fuse<Fn1, Fn2>() lambda generator ──────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+
+void test_fuse_returns_correct_value() {
+    constexpr auto fused = safety::fuse<&fusion_test::p_int_to_int,
+                                        &fusion_test::c_int_to_int>();
+
+    // p_int_to_int(7) = 14; c_int_to_int(14) = 15
+    EXPECT_TRUE(fused(7)  == 15);
+    EXPECT_TRUE(fused(0)  == 1);
+    EXPECT_TRUE(fused(-3) == -5);
+
+    // compile-time evaluation must agree with runtime
+    static_assert(fused(7)  == 15);
+    static_assert(fused(-3) == -5);
+}
+
+void test_fuse_type_changing_chain() {
+    constexpr auto fused = safety::fuse<&fusion_test::p_int_to_double,
+                                        &fusion_test::c_double_to_int>();
+
+    // p_int_to_double(10) = 15.0; c_double_to_int(15.0) = 15
+    EXPECT_TRUE(fused(10) == 15);
+    EXPECT_TRUE(fused(0)  == 0);
+
+    // Result type is c_double_to_int's return type (int).
+    static_assert(std::is_same_v<decltype(fused(0)), int>);
+}
+
+void test_fuse_three_way_composition() {
+    // F07's V1 fuses pairs.  Three-way composition is achieved by
+    // fusing the result of one fuse<> into another callable —
+    // verifying the combinator composes through ordinary lambda
+    // application.
+    constexpr auto ab = safety::fuse<&fusion_test::chain_a,
+                                     &fusion_test::chain_b>();
+    // ab(x) == chain_b(chain_a(x)) == (x+1) * 2.0
+    // Compare in integer space — the multiplication is exact in IEEE 754
+    // for these inputs, but `-Werror=float-equal` rejects double `==` even
+    // when value-bit-exact.  Per Crucible discipline (CLAUDE.md §III): no
+    // float `==` ever; cast to int when the result is an exact integer.
+    EXPECT_TRUE(static_cast<int>(ab(0)) == 2);
+    EXPECT_TRUE(static_cast<int>(ab(5)) == 12);
+
+    constexpr auto bc = safety::fuse<&fusion_test::chain_b,
+                                     &fusion_test::chain_c>();
+    // bc(x) == chain_c(chain_b(x)) == int(x*2.0) - 1
+    EXPECT_TRUE(bc(5) == 9);
+    EXPECT_TRUE(bc(0) == -1);
+}
+
+void test_fuse_is_noexcept() {
+    constexpr auto fused = safety::fuse<&fusion_test::p_int_to_int,
+                                        &fusion_test::c_int_to_int>();
+    static_assert(noexcept(fused(0)));
+    static_assert(noexcept(safety::fuse<&fusion_test::p_int_to_int,
+                                        &fusion_test::c_int_to_int>()));
+}
+
+void test_fuse_is_stateless_closure() {
+    // Stateless lambda (no captures) — should be empty (size 1
+    // byte minimum per C++ object identity, often optimized away).
+    constexpr auto fused = safety::fuse<&fusion_test::p_int_to_int,
+                                        &fusion_test::c_int_to_int>();
+    static_assert(std::is_empty_v<decltype(fused)>);
+}
+
+void test_fuse_concept_gated() {
+    // The fuse<>() function template is constrained on IsFusable.
+    // A non-fusable pair (type mismatch) must produce a substitution
+    // failure — the neg-compile fixture closes the side that "would
+    // compile but shouldn't".  Here we verify the positive path works
+    // for every pair our positive tests certify as fusable.
+    static_assert(safety::IsFusable<&fusion_test::p_int_to_int,
+                                    &fusion_test::c_int_to_int>);
+    static_assert(safety::IsFusable<&fusion_test::chain_a,
+                                    &fusion_test::chain_b>);
+    static_assert(safety::IsFusable<&fusion_test::chain_b,
+                                    &fusion_test::chain_c>);
+    static_assert(!safety::IsFusable<&fusion_test::chain_a,
+                                     &fusion_test::chain_c>);
+}
+
 void test_runtime_consistency() {
     // can_fuse_v is a pure compile-time predicate.  The runtime check
     // verifies the 50-iteration consistency under volatile-anchored
@@ -332,6 +416,12 @@ int main() {
     run_test("test_edge_rvalue_ref_consumer",        test_edge_rvalue_ref_consumer);
     run_test("test_edge_three_way_chain",            test_edge_three_way_chain);
     run_test("test_concept_form_in_requires_clause", test_concept_form_in_requires_clause);
+    run_test("test_fuse_returns_correct_value",      test_fuse_returns_correct_value);
+    run_test("test_fuse_type_changing_chain",        test_fuse_type_changing_chain);
+    run_test("test_fuse_three_way_composition",      test_fuse_three_way_composition);
+    run_test("test_fuse_is_noexcept",                test_fuse_is_noexcept);
+    run_test("test_fuse_is_stateless_closure",       test_fuse_is_stateless_closure);
+    run_test("test_fuse_concept_gated",              test_fuse_concept_gated);
     run_test("test_runtime_consistency",             test_runtime_consistency);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);

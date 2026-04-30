@@ -150,7 +150,95 @@ inline constexpr bool can_fuse_v = detail::can_fuse_impl<Fn1, Fn2>();
 template <auto Fn1, auto Fn2>
 concept IsFusable = can_fuse_v<Fn1, Fn2>;
 
+// ═════════════════════════════════════════════════════════════════════
+// ── fuse<Fn1, Fn2>() — fused callable generator (FOUND-F07) ────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Returns a stateless callable equivalent to `Fn2(Fn1(x))` — the
+// composed pass with the intermediate held in a register across the
+// composition (no heap, no temporary array).  Gated on the F06
+// `IsFusable` concept so substitution fails loudly when the pair
+// is not composable.
+//
+// V1 implementation: a lambda that captures nothing and forwards its
+// argument by value into Fn1, then forwards the result by value into
+// Fn2.  Result type deduced via `decltype(Fn2(Fn1(x)))`.
+//
+// Why a lambda (not a free function template):
+//
+//   * The dispatcher consumes the FUSED CALLABLE as a plain value-
+//     typed object, not a function pointer — passing a lambda matches
+//     the consumer interface (std::function_ref or auto&&).
+//   * Stateless lambdas (no capture) decay to function pointers when
+//     the consumer wants one; no expressivity loss.
+//   * Inlining: every modern optimizer fully inlines stateless
+//     lambdas, so the fused form compiles identically to the manual
+//     `[](auto x) { return Fn2(Fn1(x)); }` written by hand.
+//
+// Why not return std::function<...>:
+//
+//   * std::function heap-allocates on capture (we ban it on hot path
+//     per CLAUDE.md §IV opt-out).  The fused lambda is a stateless
+//     closure — std::function would type-erase + indirect-call for no
+//     benefit.
+//
+// Usage:
+//
+//   inline int g(int x) noexcept { return x * 2; }
+//   inline int h(int x) noexcept { return x + 1; }
+//
+//   constexpr auto fused = ::crucible::safety::fuse<&g, &h>();
+//   int y = fused(7);    // == h(g(7)) == 15
+//
+//   // Or one-shot at the call site:
+//   int z = ::crucible::safety::fuse<&g, &h>()(7);
+
+template <auto Fn1, auto Fn2>
+    requires IsFusable<Fn1, Fn2>
+[[nodiscard]] constexpr auto fuse() noexcept {
+    // Stateless lambda — captures nothing.  Argument forwarded by
+    // value into Fn1; the intermediate is a temporary held in the
+    // call frame's register; Fn2 consumes it.
+    //
+    // The lambda's call operator is implicitly noexcept because both
+    // Fn1 and Fn2 are noexcept (gated by the F06 predicate).
+    return [](auto x) noexcept(noexcept(Fn2(Fn1(x))))
+        -> decltype(Fn2(Fn1(x)))
+    {
+        return Fn2(Fn1(x));
+    };
+}
+
 // ── Self-test ─────────────────────────────────────────────────────
+
+namespace detail::fuse_self_test {
+
+inline int p_double(int x)    noexcept { return x * 2; }
+inline int p_inc   (int x)    noexcept { return x + 1; }
+inline double p_to_double(int x) noexcept { return static_cast<double>(x); }
+inline int    p_to_int   (double x) noexcept { return static_cast<int>(x); }
+
+// Identity-shape: int → int composed with int → int.
+constexpr auto fused_double_then_inc = fuse<&p_double, &p_inc>();
+static_assert(fused_double_then_inc(7)  == 15);  // (7*2)+1
+static_assert(fused_double_then_inc(0)  == 1);
+static_assert(fused_double_then_inc(-3) == -5);  // (-3*2)+1 == -5
+
+// Type-changing: int → double → int.
+constexpr auto fused_promote = fuse<&p_to_double, &p_to_int>();
+static_assert(fused_promote(42) == 42);
+
+// noexcept propagation.
+static_assert(noexcept(fused_double_then_inc(0)));
+static_assert(noexcept(fused_promote(0)));
+
+// Result type deduction.
+static_assert(std::is_same_v<decltype(fused_double_then_inc(0)), int>);
+static_assert(std::is_same_v<decltype(fused_promote(0)), int>);
+
+}  // namespace detail::fuse_self_test
+
+// ── Self-test (can_fuse_v cases — original F06 self-test) ─────────
 
 namespace detail::fusion_self_test {
 
