@@ -337,6 +337,7 @@ crucible_test(test_producer_endpoint)
 crucible_test(test_consumer_endpoint)
 crucible_test(test_swmr_writer)
 crucible_test(test_swmr_reader)
+crucible_test(test_pipeline_stage)
 crucible_test(test_is_producer_handle)
 crucible_test(test_is_consumer_handle)
 crucible_test(test_is_swmr_handle)
@@ -1385,6 +1386,22 @@ crucible_neg_compile_test(neg_swmr_reader_returned_value_t_on_non_swmr_reader
   "constraints not satisfied|template constraint failure|associated constraints")
 
 crucible_neg_compile_test(neg_swmr_reader_value_consistent_v_on_non_swmr_reader
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D19 PipelineStage constrained-extractor fixtures ─────────
+#
+# Pins the THREE constrained extractors on PipelineStage.h:
+#   - pipeline_stage_input_value_t
+#   - pipeline_stage_output_value_t
+#   - pipeline_stage_is_value_preserving_v
+# Each constrained on `requires PipelineStage<FnPtr>`.
+crucible_neg_compile_test(neg_pipeline_stage_input_value_t_on_non_pipeline
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_pipeline_stage_output_value_t_on_non_pipeline
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_pipeline_stage_is_value_preserving_v_on_non_pipeline
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
