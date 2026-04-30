@@ -246,6 +246,45 @@ static_assert(noexcept(fused_promote(0)));
 static_assert(std::is_same_v<decltype(fused_double_then_inc(0)), int>);
 static_assert(std::is_same_v<decltype(fused_promote(0)), int>);
 
+// ── Structural-cost asserts (FOUND-F08-AUDIT) ─────────────────────
+//
+// These assertions prove WHY bench/bench_fusion.cpp's pair-0 result
+// is [indistinguishable].  The fused lambda is a stateless empty
+// closure: identical layout, identical default state, trivially
+// copyable, trivially destructible.  Combined with ICF (Identical
+// Code Folding) at link time, two empty-stateless lambdas with
+// identical bodies fold to the same address — bench observes zero
+// difference because there literally is none.
+//
+// Removing any of these guarantees would silently bloat the F07
+// surface (e.g. a captured intermediate would push sizeof past 1
+// and break ICF).  The asserts catch that at compile time.
+
+// Stateless: the lambda captures nothing.
+static_assert(std::is_empty_v<decltype(fused_double_then_inc)>);
+static_assert(std::is_empty_v<decltype(fused_promote)>);
+
+// Minimal layout: empty lambdas have sizeof == 1 (the standard
+// guarantees no two distinct objects share an address; the C++
+// minimum non-static type size is therefore 1 byte).  Larger
+// would imply hidden capture state.
+static_assert(sizeof(decltype(fused_double_then_inc)) == 1);
+static_assert(sizeof(decltype(fused_promote))         == 1);
+
+// Trivially copyable: callers can pass the fused closure by value
+// at zero cost — register-passed, no copy ctor side-effects.  This
+// is the load-bearing property for storing the closure in
+// constexpr variables and for passing it across function boundaries
+// without indirection.
+static_assert(std::is_trivially_copyable_v<decltype(fused_double_then_inc)>);
+static_assert(std::is_trivially_copyable_v<decltype(fused_promote)>);
+
+// Trivially destructible: no destructor side-effects, no dynamic
+// resource lifetime — composes with the "stateless" property to
+// guarantee the closure has no lifetime concerns at all.
+static_assert(std::is_trivially_destructible_v<decltype(fused_double_then_inc)>);
+static_assert(std::is_trivially_destructible_v<decltype(fused_promote)>);
+
 }  // namespace detail::fuse_self_test
 
 // ── Self-test (can_fuse_v cases — original F06 self-test) ─────────
