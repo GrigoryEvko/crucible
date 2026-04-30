@@ -114,8 +114,25 @@ using AllRow   = Row<Effect::Alloc, Effect::IO,   Effect::Block,
 
 // Sanity: AllRow must contain every atom in the Effect enum.  If a
 // future Effect atom is added without updating AllRow, this fires.
+//
+// The size check is necessary but not sufficient — a rename that
+// keeps the count constant would slip through.  The per-atom
+// membership checks below are the load-bearing guarantee.
 static_assert(row_size_v<AllRow> == effect_count,
     "AllRow must enumerate every atom in Effect; update both together");
+
+static_assert(row_contains_v<AllRow, Effect::Alloc>,
+    "AllRow missing Alloc — universe row out of sync with Effect enum");
+static_assert(row_contains_v<AllRow, Effect::IO>,
+    "AllRow missing IO — universe row out of sync with Effect enum");
+static_assert(row_contains_v<AllRow, Effect::Block>,
+    "AllRow missing Block — universe row out of sync with Effect enum");
+static_assert(row_contains_v<AllRow, Effect::Bg>,
+    "AllRow missing Bg — universe row out of sync with Effect enum");
+static_assert(row_contains_v<AllRow, Effect::Init>,
+    "AllRow missing Init — universe row out of sync with Effect enum");
+static_assert(row_contains_v<AllRow, Effect::Test>,
+    "AllRow missing Test — universe row out of sync with Effect enum");
 
 // ── Lattice-chain containment (compile-time witness) ───────────────
 //

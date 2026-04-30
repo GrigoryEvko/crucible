@@ -165,6 +165,76 @@ void test_lattice_size_invariants() {
     EXPECT_TRUE(fx::row_size_v<fx::AllRow>   == fx::effect_count);
 }
 
+void test_row_order_independence() {
+    // EffectRow.h's design note: row order is NOT canonicalized
+    // (`Row<A, B>` and `Row<B, A>` are distinct types).  But the
+    // Subrow concept is semantic — it's a membership check, not a
+    // structural-equality check.  Therefore both orderings must be
+    // admitted equivalently by every alias predicate.  This pins the
+    // semantic-vs-structural distinction at the IsX call site.
+    using R_ai = fx::Row<fx::Effect::Alloc, fx::Effect::IO>;
+    using R_ia = fx::Row<fx::Effect::IO,    fx::Effect::Alloc>;
+
+    // Distinct types — sanity check on the EffectRow.h non-
+    // canonicalization rule.
+    static_assert(!std::is_same_v<R_ai, R_ia>);
+
+    // But semantically equivalent under every predicate.
+    EXPECT_TRUE((accepts_st <R_ai>()));
+    EXPECT_TRUE((accepts_st <R_ia>()));
+    EXPECT_TRUE((accepts_all<R_ai>()));
+    EXPECT_TRUE((accepts_all<R_ia>()));
+
+    // Three-atom permutation also semantically equivalent.
+    using R_aib = fx::Row<fx::Effect::Alloc, fx::Effect::IO,    fx::Effect::Block>;
+    using R_iab = fx::Row<fx::Effect::IO,    fx::Effect::Alloc, fx::Effect::Block>;
+    using R_bia = fx::Row<fx::Effect::Block, fx::Effect::IO,    fx::Effect::Alloc>;
+    EXPECT_TRUE((accepts_st<R_aib>()));
+    EXPECT_TRUE((accepts_st<R_iab>()));
+    EXPECT_TRUE((accepts_st<R_bia>()));
+}
+
+void test_pure_tot_ghost_runtime_equivalence() {
+    // Header asserts these are the same type (no Ghost atom yet).
+    // Confirm the equivalence at the call-site predicate boundary too —
+    // a stronger guarantee than is_same_v alone, because it would
+    // catch any future divergence in concept-body specialization.
+    static_assert(std::is_same_v<fx::PureRow,  fx::TotRow>);
+    static_assert(std::is_same_v<fx::PureRow,  fx::GhostRow>);
+
+    using R = fx::Row<fx::Effect::Alloc>;
+    EXPECT_TRUE(!fx::IsPure <R>);
+    EXPECT_TRUE(!fx::IsTot  <R>);
+    EXPECT_TRUE(!fx::IsGhost<R>);
+
+    EXPECT_TRUE(fx::IsPure <fx::PureRow>);
+    EXPECT_TRUE(fx::IsTot  <fx::PureRow>);
+    EXPECT_TRUE(fx::IsGhost<fx::PureRow>);
+
+    // Symmetric: PureRow → IsTot, TotRow → IsPure, GhostRow → IsTot.
+    EXPECT_TRUE(fx::IsTot  <fx::TotRow>);
+    EXPECT_TRUE(fx::IsPure <fx::TotRow>);
+    EXPECT_TRUE(fx::IsGhost<fx::GhostRow>);
+    EXPECT_TRUE(fx::IsPure <fx::GhostRow>);
+}
+
+void test_all_row_contains_every_effect_atom() {
+    // The header static_assert wall checks per-atom membership at
+    // compile time.  Mirror it at runtime so reflection-based or
+    // template-instantiated callers actually exercise the check
+    // through the predicate surface.  This is the audit complement
+    // to the count-only check (which would miss a rename regression).
+    EXPECT_TRUE((accepts_all<fx::Row<fx::Effect::Alloc>>()));
+    EXPECT_TRUE((accepts_all<fx::Row<fx::Effect::IO>>()));
+    EXPECT_TRUE((accepts_all<fx::Row<fx::Effect::Block>>()));
+    EXPECT_TRUE((accepts_all<fx::Row<fx::Effect::Bg>>()));
+    EXPECT_TRUE((accepts_all<fx::Row<fx::Effect::Init>>()));
+    EXPECT_TRUE((accepts_all<fx::Row<fx::Effect::Test>>()));
+
+    // The full universe row goes through too.
+    EXPECT_TRUE(accepts_all<fx::AllRow>());
+}
+
 void test_runtime_consistency() {
     // Verify the predicate evaluates identically across 50 invocations
     // — pure compile-time predicates should be invariant, but the
@@ -202,6 +272,12 @@ int main() {
              test_strictness_at_each_lattice_step);
     run_test("test_lattice_size_invariants",
              test_lattice_size_invariants);
+    run_test("test_row_order_independence",
+             test_row_order_independence);
+    run_test("test_pure_tot_ghost_runtime_equivalence",
+             test_pure_tot_ghost_runtime_equivalence);
+    run_test("test_all_row_contains_every_effect_atom",
+             test_all_row_contains_every_effect_atom);
     run_test("test_runtime_consistency",
              test_runtime_consistency);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
