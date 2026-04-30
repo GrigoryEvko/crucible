@@ -1239,6 +1239,15 @@ crucible_neg_compile_test(neg_recipe_registry_pinned_with_family_template_arg
 crucible_neg_compile_test(neg_recipe_registry_spec_assigned_to_pinned_expected
   "conversion from|could not convert|cannot convert|no viable conversion|non-scalar type")
 
+# FOUND-G78-AUDIT-2 — symmetric companion fence.  Where the
+# spec→pinned fence above catches the two-axis-call → one-axis-
+# slot drift, this catches the OTHER direction: single-axis
+# (by_name_pinned<>) called but result-type slot typed as the
+# two-axis (RecipeSpec) return.  Closes the cross-API result-type
+# bug class in BOTH directions.
+crucible_neg_compile_test(neg_recipe_registry_pinned_assigned_to_spec_expected
+  "conversion from|could not convert|cannot convert|no viable conversion|non-scalar type")
+
 # ─── FOUND-G26 Wait wrapper neg-compiles (6 fixtures: 4+2) ──────────
 #
 # 4 wrapper-surface fixtures (mirrors HotPath / DetSafe pattern):

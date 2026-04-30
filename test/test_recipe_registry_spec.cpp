@@ -21,7 +21,7 @@
 //   FOUND-G78  → "tolerance AND family BOTH admit?  combinable
 //                  pointwise on both axes when streams converge?"
 //
-// Coverage axes (T01-T22):
+// Coverage axes (T01-T23):
 //   T01     recipe_family_of mapping correctness — every ReductionAlgo
 //           variant maps to its RecipeFamily category
 //   T02     by_name_spec hit path — populates BOTH axes from recipe
@@ -71,6 +71,13 @@
 //           and preserves wrapper move-only contract through the
 //           production overload surface (future-proofs for
 //           OwnedRecipe / Linear<RecipeBlob> extensions)
+//   T23     Sentinel-family admission semantics — orthogonal to
+//           T20.  T20 exercised sentinel PRODUCERS (Any-spec /
+//           None-spec); T23 exercises sentinel REQUESTS
+//           (admits(*, None) / admits(*, Any)).  Concrete specs
+//           admit None requests at every spec-admitted tier and
+//           reject Any requests; wildcard specs admit both
+//           sentinels.
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Arena.h>
@@ -678,6 +685,77 @@ int main() {
                          safety_RecipeFamily::Kahan));
     assert(!joined.admits(safety_Tolerance::ULP_FP16,
                           safety_RecipeFamily::Pairwise));
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // T23 — Sentinel-family admission semantics — orthogonal axis
+  //       to T20 which exercised sentinel PRODUCERS (Any-spec /
+  //       None-spec).  T23 exercises sentinel CONSUMERS — the
+  //       admits() request side at the partial-order axis caps:
+  //
+  //         req_family = None   — bottom: leq(None, anything) = true.
+  //                                Every concrete-family spec admits
+  //                                this request.  Production: a
+  //                                consumer that doesn't pin a
+  //                                family (recipe-agnostic data path)
+  //                                always admits.
+  //         req_family = Any    — top: leq(Any, X) = true ONLY when
+  //                                X = Any.  Concrete-family specs
+  //                                REJECT an Any-family request.
+  //                                Production: a consumer demanding
+  //                                "any family acceptable" passes
+  //                                only at wildcard producers.
+  //
+  //       Without this nuance, the sentinel cap could silently
+  //       admit / reject in ways that contradict the lattice.
+  //       Catches that drift at the call-site level.
+  // ═══════════════════════════════════════════════════════════════
+  {
+    // Concrete-family producer: f32_strict (BITEXACT, Pairwise).
+    auto strict_spec = reg.by_name_spec(names::kF32Strict).value();
+    assert(strict_spec.recipe_family() == safety_RecipeFamily::Pairwise);
+
+    // Bottom request — admitted at the strict spec's tier.
+    assert(strict_spec.admits(safety_Tolerance::BITEXACT,
+                              safety_RecipeFamily::None));
+    // Top request — REJECTED (concrete spec, not wildcard).
+    assert(!strict_spec.admits(safety_Tolerance::BITEXACT,
+                               safety_RecipeFamily::Any));
+
+    // Sweep all 8 starter recipes — every concrete-family spec
+    // admits None and rejects Any (at any tier the spec admits).
+    int none_admits = 0;
+    int any_rejects = 0;
+    for (const auto& entry : reg.entries()) {
+      auto spec = reg.by_name_spec(entry.name).value();
+      // The spec's own tier is the tightest tier admitted, so use
+      // it for both the None-admit and Any-reject probes.
+      if (spec.admits(spec.tolerance(), safety_RecipeFamily::None))
+        ++none_admits;
+      if (!spec.admits(spec.tolerance(), safety_RecipeFamily::Any))
+        ++any_rejects;
+    }
+    assert(none_admits == int{RecipeRegistry::STARTER_COUNT});
+    assert(any_rejects == int{RecipeRegistry::STARTER_COUNT});
+
+    // Wildcard producer at BITEXACT — admits BOTH sentinels.
+    RecipeSpec<const NumericalRecipe*> wildcard_spec{
+        nullptr, safety_Tolerance::BITEXACT, safety_RecipeFamily::Any};
+    assert(wildcard_spec.admits(safety_Tolerance::BITEXACT,
+                                safety_RecipeFamily::None));
+    assert(wildcard_spec.admits(safety_Tolerance::BITEXACT,
+                                safety_RecipeFamily::Any));
+
+    // Bottom None-family producer at BITEXACT — admits only None
+    // request, rejects Any (since None ≮ Any in this direction —
+    // wait, None IS below Any, so leq(Any, None) = false:
+    // a None-family spec REJECTS an Any-family request).
+    RecipeSpec<const NumericalRecipe*> none_spec{
+        nullptr, safety_Tolerance::BITEXACT, safety_RecipeFamily::None};
+    assert(none_spec.admits(safety_Tolerance::BITEXACT,
+                            safety_RecipeFamily::None));
+    assert(!none_spec.admits(safety_Tolerance::BITEXACT,
+                             safety_RecipeFamily::Any));
   }
 
   std::puts("ok");
