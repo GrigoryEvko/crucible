@@ -68,17 +68,64 @@ int main() {
   crucible::recompute_merkle(region);
   assert(static_cast<bool>(region->merkle_hash));
 
-  // Test KernelCache
+  // Test KernelCache.  FOUND-I05: lookup/insert keys are now
+  // (ContentHash, RowHash) pairs.  RowHash{0} is the bare-type
+  // baseline (RowHashFold.h §3) — the migration target for every
+  // legacy untyped call site.
   crucible::KernelCache cache;
-  assert(cache.lookup(ContentHash{0x1234}) == nullptr);
+  using crucible::RowHash;
+  assert(cache.lookup(ContentHash{0x1234}, RowHash{0}) == nullptr);
   struct FakeKernel { int x; };
   FakeKernel fk{42};
-  assert(cache.insert(ContentHash{0x1234}, reinterpret_cast<crucible::CompiledKernel*>(&fk)).has_value());
-  assert(cache.lookup(ContentHash{0x1234}) == reinterpret_cast<crucible::CompiledKernel*>(&fk));
-  // Duplicate insert: overwrites to newer variant
+  assert(cache.insert(ContentHash{0x1234}, RowHash{0},
+                      reinterpret_cast<crucible::CompiledKernel*>(&fk)).has_value());
+  assert(cache.lookup(ContentHash{0x1234}, RowHash{0})
+      == reinterpret_cast<crucible::CompiledKernel*>(&fk));
+  // Duplicate insert: overwrites to newer variant under the same row.
   FakeKernel fk2{99};
-  assert(cache.insert(ContentHash{0x1234}, reinterpret_cast<crucible::CompiledKernel*>(&fk2)).has_value());
-  assert(cache.lookup(ContentHash{0x1234}) == reinterpret_cast<crucible::CompiledKernel*>(&fk2));
+  assert(cache.insert(ContentHash{0x1234}, RowHash{0},
+                      reinterpret_cast<crucible::CompiledKernel*>(&fk2)).has_value());
+  assert(cache.lookup(ContentHash{0x1234}, RowHash{0})
+      == reinterpret_cast<crucible::CompiledKernel*>(&fk2));
+
+  // FOUND-I05 row-discrimination: identical content_hash with a
+  // distinct row_hash MUST cache to a different slot.  Prove that
+  // (0x1234, row=0xAA) does not alias the (0x1234, row=0) slot.
+  FakeKernel fk_row{777};
+  assert(cache.lookup(ContentHash{0x1234}, RowHash{0xAA}) == nullptr);
+  assert(cache.insert(ContentHash{0x1234}, RowHash{0xAA},
+                      reinterpret_cast<crucible::CompiledKernel*>(&fk_row)).has_value());
+  assert(cache.lookup(ContentHash{0x1234}, RowHash{0xAA})
+      == reinterpret_cast<crucible::CompiledKernel*>(&fk_row));
+  // Original row=0 entry is preserved — no cross-row pollution.
+  assert(cache.lookup(ContentHash{0x1234}, RowHash{0})
+      == reinterpret_cast<crucible::CompiledKernel*>(&fk2));
+  // A third row queries cleanly to a distinct empty slot.
+  assert(cache.lookup(ContentHash{0x1234}, RowHash{0xBB}) == nullptr);
+
+  // FOUND-I05 variant-update-pins-row invariant: an insert under
+  // (0x1234, RowHash{0xAA}) must REPLACE the kernel at that slot,
+  // NOT touch the (0x1234, RowHash{0}) sibling.  Proves the
+  // probe correctly distinguishes variant update from sibling row.
+  FakeKernel fk_row_v2{888};
+  assert(cache.insert(ContentHash{0x1234}, RowHash{0xAA},
+                      reinterpret_cast<crucible::CompiledKernel*>(&fk_row_v2)).has_value());
+  assert(cache.lookup(ContentHash{0x1234}, RowHash{0xAA})
+      == reinterpret_cast<crucible::CompiledKernel*>(&fk_row_v2));   // updated
+  assert(cache.lookup(ContentHash{0x1234}, RowHash{0})
+      == reinterpret_cast<crucible::CompiledKernel*>(&fk2));         // unchanged
+
+  // Sibling-row insertion under DIFFERENT content_hash also lands
+  // in its own slot (sanity check that the row-discrimination is
+  // not somehow bound to a specific content_hash slot index).
+  FakeKernel fk_other{555};
+  assert(cache.insert(ContentHash{0x9999}, RowHash{0xAA},
+                      reinterpret_cast<crucible::CompiledKernel*>(&fk_other)).has_value());
+  assert(cache.lookup(ContentHash{0x9999}, RowHash{0xAA})
+      == reinterpret_cast<crucible::CompiledKernel*>(&fk_other));
+  // Cross-content-cross-row queries are clean misses.
+  assert(cache.lookup(ContentHash{0x9999}, RowHash{0})    == nullptr);
+  assert(cache.lookup(ContentHash{0x1234}, RowHash{0xCC}) == nullptr);
 
   // Test element_size — returns ElementBytes strong type (#129).
   assert(crucible::element_size(crucible::ScalarType::Float)         == crucible::ElementBytes{4});
@@ -363,15 +410,16 @@ int main() {
     crucible::KernelCache rcache;
     struct FakeRecipeKernel { int tag; };
     FakeRecipeKernel tc_kernel{1};
-    assert(rcache.insert(r_tc->content_hash,
+    using crucible::RowHash;
+    assert(rcache.insert(r_tc->content_hash, RowHash{0},
                          reinterpret_cast<crucible::CompiledKernel*>(&tc_kernel))
                .has_value());
-    assert(rcache.lookup(r_tc->content_hash) ==
+    assert(rcache.lookup(r_tc->content_hash, RowHash{0}) ==
            reinterpret_cast<crucible::CompiledKernel*>(&tc_kernel));
     // Critical: lookup under the different-recipe content_hash MUST miss.
-    assert(rcache.lookup(r_strict->content_hash) == nullptr);
+    assert(rcache.lookup(r_strict->content_hash, RowHash{0}) == nullptr);
     // Lookup under the no-recipe content_hash ALSO misses.
-    assert(rcache.lookup(r_none->content_hash) == nullptr);
+    assert(rcache.lookup(r_none->content_hash, RowHash{0}) == nullptr);
   }
 
   std::printf("test_merkle_dag: all tests passed\n");

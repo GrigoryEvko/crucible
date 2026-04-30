@@ -281,27 +281,33 @@ int main() {
     assert(region_ord->content_hash     != region_bf16_tc->content_hash);
 
     KernelCache cache;
+    using crucible::RowHash;
+    // FOUND-I05: lookup/insert keys are now (ContentHash, RowHash).
+    // This test exercises recipe-disambiguation at the ContentHash
+    // axis, so all calls use RowHash{0} (the bare-type baseline).
+    // Recipe orthogonality vs row-orthogonality is by-design — both
+    // axes independently partition the cache.
 
     // "Train" under f16_tc: insert a fake compiled kernel.
     struct FakeKernel { const char* tag; };
     FakeKernel kernel_tc{"f16_tc-compiled"};
-    auto ins = cache.insert(region_tc->content_hash,
+    auto ins = cache.insert(region_tc->content_hash, RowHash{0},
         reinterpret_cast<CompiledKernel*>(&kernel_tc));
     assert(ins.has_value());
-    assert(cache.lookup(region_tc->content_hash) ==
+    assert(cache.lookup(region_tc->content_hash, RowHash{0}) ==
            reinterpret_cast<CompiledKernel*>(&kernel_tc));
 
     // "Switch to f16_ordered" — lookup under that recipe's
     // content_hash MUST miss the f16_tc-compiled kernel.  Without
     // recipe disambiguation, both regions would share a cache slot
     // and the f16_tc kernel would silently serve f16_ordered work.
-    assert(cache.lookup(region_ord->content_hash) == nullptr);
+    assert(cache.lookup(region_ord->content_hash, RowHash{0}) == nullptr);
 
     // "Switch to bf16_tc" — same isolation property.
-    assert(cache.lookup(region_bf16_tc->content_hash) == nullptr);
+    assert(cache.lookup(region_bf16_tc->content_hash, RowHash{0}) == nullptr);
 
     // "Switch back to f16_tc" — original kernel still served.
-    assert(cache.lookup(region_tc->content_hash) ==
+    assert(cache.lookup(region_tc->content_hash, RowHash{0}) ==
            reinterpret_cast<CompiledKernel*>(&kernel_tc));
 
     // Insert a separate kernel under f16_ordered's content_hash,
@@ -309,15 +315,15 @@ int main() {
     // disambiguation populates the cache key space cleanly with
     // no aliasing across recipes.
     FakeKernel kernel_ord{"f16_ordered-compiled"};
-    auto ins2 = cache.insert(region_ord->content_hash,
+    auto ins2 = cache.insert(region_ord->content_hash, RowHash{0},
         reinterpret_cast<CompiledKernel*>(&kernel_ord));
     assert(ins2.has_value());
-    assert(cache.lookup(region_tc->content_hash) ==
+    assert(cache.lookup(region_tc->content_hash, RowHash{0}) ==
            reinterpret_cast<CompiledKernel*>(&kernel_tc));
-    assert(cache.lookup(region_ord->content_hash) ==
+    assert(cache.lookup(region_ord->content_hash, RowHash{0}) ==
            reinterpret_cast<CompiledKernel*>(&kernel_ord));
     // No cross-pollution.
-    assert(cache.lookup(region_bf16_tc->content_hash) == nullptr);
+    assert(cache.lookup(region_bf16_tc->content_hash, RowHash{0}) == nullptr);
   }
 
   std::printf("test_recipe_integration: all tests passed\n");

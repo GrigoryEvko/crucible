@@ -778,47 +778,93 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// KernelCache: Global thread-safe content_hash -> CompiledKernel* map
+// KernelCache: Global thread-safe (content_hash, row_hash) -> CompiledKernel* map
 //
-// Open-addressing hash map. Lock-free reads via atomic pointers.
-// Thread-safe inserts via CAS on the content_hash slot. Capacity
+// Open-addressing hash map.  Lock-free reads via atomic pointers.
+// Thread-safe inserts via CAS on the content_hash slot.  Capacity
 // must be a power of two.
+//
+// ── L1 federation cache key (FOUND-I05) ────────────────────────────
+//
+// The lookup key is the pair (ContentHash, RowHash):
+//
+//   ContentHash — IR001 region content identity (compute_content_hash;
+//                 schema + tensor metadata + scalar args + recipe).
+//   RowHash     — Met(X) effect-row identity over the wrapper-nesting
+//                 stack (RowHashFold.h, FOUND-I02).  RowHash{0} is the
+//                 bare-type / no-row baseline; non-zero rows
+//                 discriminate Pure / IO / Block / etc.
+//
+// Two regions with byte-identical ops but different row signatures
+// (e.g. one IO-tagged, one Pure) MUST cache to distinct slots — a
+// Pure-row kernel is federation-shareable; an IO-row kernel is not.
+// Sharing a slot between them silently breaks the federation
+// contract documented in CRUCIBLE.md §10 / FORGE.md §23.2.  The
+// probe loop treats "same content_hash, different row_hash" exactly
+// like "different content_hash" — keep probing.
 //
 // ── Per-slot state machine ─────────────────────────────────────────
 //
-// The slot is the pair (content_hash: atomic<u64>, kernel: atomic<CompiledKernel*>).
-// Only the transitions below are legal; the protocol guarantees that
-// no other (hash, kernel) combination is reachable from a legal start:
+// The slot is the triple
+//   (content_hash: atomic<u64>,
+//    row_hash:     atomic<u64>,
+//    kernel:       atomic<CompiledKernel*>).
 //
-//     ┌────────────┐   hash CAS(0 → H) acq_rel   ┌────────────┐
-//     │   EMPTY    │────────────────────────────▶│  CLAIMED   │
-//     │ h=0 k=null │                             │ h=H k=null │
-//     └────────────┘                             └─────┬──────┘
-//           ▲                                          │
-//           │                                          │ kernel.store(K) release
-//           │                                          ▼
-//           │                                    ┌────────────┐
-//           │                                    │ PUBLISHED  │◀───┐
-//           │                                    │ h=H k=K    │    │ kernel.store(K') release
-//           │                                    └─────┬──────┘────┘ (variant update)
-//           │                                          │
-//           └──── (never) ─── slots are insert-only ───┘
+// Only these transitions are legal; the protocol guarantees that
+// no other (hash, row, kernel) combination is reachable from a
+// legal start:
 //
-// EMPTY     — probing terminates here: "definitely not in the cache"
-// CLAIMED   — transient; an inserter has reserved the slot but has not yet
-//             published the kernel. The window is ~1 instruction wide. A
-//             concurrent reader that sees CLAIMED must wait or miss; it
-//             CANNOT conclude "not in the cache" because the inserter
-//             will publish imminently.
+//   ┌────────────────┐   content CAS(0 → H) acq_rel   ┌────────────────┐
+//   │     EMPTY      │───────────────────────────────▶│    CLAIMED     │
+//   │ h=0 r=* k=null │                                │ h=H r=* k=null │
+//   └────────────────┘                                └────────┬───────┘
+//          ▲                                                   │
+//          │                                                   │ row.store(R) release
+//          │                                                   │ kernel.store(K) release
+//          │                                                   ▼
+//          │                                          ┌────────────────┐
+//          │                                          │   PUBLISHED    │◀──┐
+//          │                                          │ h=H r=R k=K    │   │ kernel.store(K') rel
+//          │                                          └────────┬───────┘───┘  (variant update;
+//          │                                                   │              row pinned)
+//          └──── (never) ─── slots are insert-only ────────────┘
+//
+// EMPTY     — probing terminates here: "definitely not in the cache".
+// CLAIMED   — transient; an inserter has reserved the slot but has
+//             not yet published row_hash + kernel.  The window is a
+//             few release-store instructions wide.  A concurrent
+//             reader that sees CLAIMED on its target content_hash
+//             must wait (await_claimed_), not miss, because the
+//             inserter will publish imminently.
 // PUBLISHED — stable; variant updates (kernel re-store under the same
-//             hash) stay in PUBLISHED.
+//             content_hash + row_hash pair) stay in PUBLISHED.
+//             row_hash is WRITE-ONCE per slot: once published, never
+//             rewritten — only kernel can be updated under variant
+//             admission.
 //
-// Before this refactor, the reader treated CLAIMED as a miss and
-// returned nullptr, even though the insert was already mid-flight —
-// causing spurious misses under concurrent insert+lookup (which leak
-// into re-compilation storms in the Keeper). Now lookup() spins a
-// bounded number of PAUSE-cycles on CLAIMED before giving up, turning
-// the race window into a deterministic micro-wait.
+// ── Memory-ordering chain ──────────────────────────────────────────
+//
+// Inserter (after content CAS claims slot):
+//   1. row_hash.store(R, release)
+//   2. kernel.store(K, release)
+//
+// Reader (after content match):
+//   1. kernel.load(acquire)        — synchronizes-with kernel.store
+//   2. if kernel != nullptr:
+//        row_hash.load(acquire)    — guaranteed to read R
+//      else (CLAIMED):
+//        await_claimed_(entry)     — spins on kernel; same chain
+//
+// The release-acquire on kernel includes EVERY prior inserter
+// write — including row_hash.  So reader's row_hash.load(acquire)
+// after seeing kernel != nullptr is guaranteed to read the
+// inserter's published row_hash, never the default 0.
+//
+// Before the FOUND-I05 refactor, the cache was content-addressed
+// only.  A row mismatch between cached and requested computations
+// produced a silent hit on the WRONG kernel — a federation-key
+// integrity violation.  After this refactor, the cache fences row
+// hashes too: a row mismatch is a probe continuation, never a hit.
 // ═══════════════════════════════════════════════════════════════════
 
 class CRUCIBLE_OWNER KernelCache {
@@ -853,7 +899,7 @@ class CRUCIBLE_OWNER KernelCache {
   // preemption), the reader misses and the caller re-dispatches.
   static constexpr uint32_t kClaimedSpinBudget = 64;
 
-  // Lock-free lookup via atomic load. Any thread, safe by CAS protocol.
+  // Lock-free lookup via atomic load.  Any thread, safe by CAS protocol.
   // gnu::hot: called per dispatch_op in COMPILED mode (millions/sec).
   //
   // pre(content_hash.raw() != 0): the zero hash is the slot-empty
@@ -862,11 +908,19 @@ class CRUCIBLE_OWNER KernelCache {
   // path on the hot lookup function, which sees millions of calls
   // per second.  Legitimate callers never synthesize the zero hash;
   // a caller that did is always a bug.
-  // [[assume]] propagates the fact to the optimizer: the probe's
-  // `key == 0 -> miss` branch remains honest, but the input is
-  // known-non-zero so downstream reasoning holds.
+  //
+  // row_hash has NO precondition: RowHash{0} is the canonical
+  // bare-type / no-row baseline (RowHashFold.h, FOUND-I02 design
+  // contract §3) — it is a valid lookup target, distinct from the
+  // empty-row hash (cardinality_seed(0)) and from any singleton
+  // effect-row hash.  All three values can coexist in the cache.
+  //
+  // [[assume]] propagates the content-hash fact to the optimizer:
+  // the probe's `key == 0 -> miss` branch remains honest, but the
+  // input is known-non-zero so downstream reasoning holds.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
-  [[nodiscard, gnu::hot]] CompiledKernel* lookup(ContentHash content_hash) const noexcept
+  [[nodiscard, gnu::hot]] CompiledKernel* lookup(
+      ContentHash content_hash, RowHash row_hash) const noexcept
       CRUCIBLE_NO_THREAD_SAFETY
       pre (content_hash.raw() != 0)
   {
@@ -875,22 +929,34 @@ class CRUCIBLE_OWNER KernelCache {
     // having the same name at both the probe seed and the slot-key
     // comparison makes the dataflow obvious to a reader.
     const uint64_t lookup_hash = content_hash.raw();
+    const uint64_t lookup_row  = row_hash.raw();
     const uint32_t mask = capacity_ - 1;
     const uint32_t slot_index = static_cast<uint32_t>(lookup_hash) & mask;
     for (uint32_t probe = 0; probe < capacity_; probe++) {
       auto& entry = table_[(slot_index + probe) & mask];
       uint64_t key = entry.content_hash.load(std::memory_order_acquire);
-      if (key == lookup_hash) {
-        CompiledKernel* kernel_ptr = entry.kernel.load(std::memory_order_acquire);
-        if (kernel_ptr != nullptr) [[likely]]
-          return kernel_ptr;        // PUBLISHED
-        // CLAIMED: an inserter is mid-flight (between content_hash
-        // CAS and kernel.store). The window is a few nanoseconds on
-        // x86 (acq_rel CAS + release store), so spin briefly.
-        return await_claimed_(entry);
-      }
       if (key == 0)
-        return nullptr; // EMPTY slot -> miss
+        return nullptr; // EMPTY slot -> miss (ends probe chain)
+      if (key != lookup_hash)
+        continue;       // foreign-content sibling — keep probing
+      // Content matches; verify row_hash.  We must load `kernel`
+      // FIRST (acquire) so the subsequent `row_hash` load sees a
+      // value released by the inserter (release-acquire chain on
+      // kernel synchronizes-with all prior writes including row).
+      CompiledKernel* kernel_ptr = entry.kernel.load(std::memory_order_acquire);
+      if (kernel_ptr == nullptr) [[unlikely]] {
+        // CLAIMED: an inserter is mid-flight (between content_hash
+        // CAS and the row+kernel release stores).  The window is a
+        // few nanoseconds on x86, so spin briefly.
+        kernel_ptr = await_claimed_(entry);
+        if (kernel_ptr == nullptr) [[unlikely]]
+          return nullptr;  // inserter exceeded spin budget
+      }
+      // PUBLISHED: kernel non-null implies row_hash visible.
+      uint64_t entry_row = entry.row_hash.load(std::memory_order_acquire);
+      if (entry_row == lookup_row) [[likely]]
+        return kernel_ptr;      // HIT — content + row both match
+      // Foreign-row sibling under same content_hash — continue probing.
     }
     return nullptr;
   }
@@ -905,21 +971,38 @@ class CRUCIBLE_OWNER KernelCache {
                 // behavior and hid capacity pressure.
   };
 
-  // Thread-safe insert via CAS. Overwrites if key already exists.
+  // Thread-safe insert via CAS.  Overwrites if key already exists
+  // (variant update under the SAME (content_hash, row_hash) pair —
+  // row_hash is write-once-per-slot; mismatched-row siblings get
+  // distinct slots via probe continuation).
+  //
   // Background thread primary writer, safe by atomic CAS protocol.
   //
   // Transition contract (enforced by memory ordering, not contract_assert):
-  //   EMPTY ──CAS(acq_rel)──▶ CLAIMED ──store(release)──▶ PUBLISHED
-  //   PUBLISHED(old) ──store(release)──▶ PUBLISHED(new)    [variant update]
+  //   EMPTY ──content CAS(acq_rel)──▶ CLAIMED
+  //         ──row.store(release)──▶ row published
+  //         ──kernel.store(release)──▶ PUBLISHED
+  //   PUBLISHED(old) ──kernel.store(release)──▶ PUBLISHED(new)    [variant update]
+  //
+  // row_hash is published BEFORE kernel: a reader that sees
+  // kernel != nullptr (acquire) is guaranteed to see the matching
+  // row (release-acquire chain on kernel includes row's prior store).
   //
   // Returns {} on success (including the update-existing-slot path).
-  // Returns std::unexpected(TableFull) iff the entire probe chain was
-  // full of foreign keys — no slot was free AND no match for this hash.
-  // [[nodiscard]] forces callers to handle the error explicitly: the
-  // previous silent-fail behavior made cache pressure invisible.
+  // Returns std::unexpected(TableFull) iff the entire probe chain
+  // was occupied AND no (content, row) match was found — the row-
+  // typed cache treats foreign-row siblings exactly like foreign-
+  // content slots for probing purposes.
+  // [[nodiscard]] forces callers to handle the error explicitly:
+  // the previous silent-fail behavior made cache pressure invisible.
+  //
+  // pre(content_hash.raw() != 0): zero is the EMPTY sentinel.
+  // No precondition on row_hash: RowHash{0} (bare-type baseline)
+  // is valid and distinct from any row-bearing hash.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] std::expected<void, InsertError>
-  insert(ContentHash content_hash, CompiledKernel* kernel) CRUCIBLE_NO_THREAD_SAFETY
+  insert(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel)
+      CRUCIBLE_NO_THREAD_SAFETY
       pre (content_hash.raw() != 0)  // zero is the sentinel for empty slots
       pre (kernel != nullptr)
   {
@@ -928,16 +1011,18 @@ class CRUCIBLE_OWNER KernelCache {
     // local makes the "this exact 64-bit value is what we publish"
     // invariant readable.
     const uint64_t lookup_hash = content_hash.raw();
+    const uint64_t lookup_row  = row_hash.raw();
     const uint32_t mask = capacity_ - 1;
     const uint32_t slot_index = static_cast<uint32_t>(lookup_hash) & mask;
     for (uint32_t probe = 0; probe < capacity_; probe++) {
       auto& entry = table_[(slot_index + probe) & mask];
       uint64_t expected = 0;
-      // EMPTY → CLAIMED transition.
+      // EMPTY → CLAIMED transition (we own the slot if CAS succeeds).
       if (entry.content_hash.compare_exchange_strong(
               expected, lookup_hash, std::memory_order_acq_rel)) {
-        // CLAIMED → PUBLISHED transition. Any reader that sees the
-        // hash (acquire) after this store will also see the kernel.
+        // CLAIMED → PUBLISHED.  Order: row_hash BEFORE kernel.  Any
+        // reader that sees kernel (acquire) will also see row_hash.
+        entry.row_hash.store(lookup_row, std::memory_order_release);
         entry.kernel.store(kernel, std::memory_order_release);
         // Relaxed: size_ is informational only (no control flow depends
         // on its exact value). The real synchronization is content_hash CAS.
@@ -945,12 +1030,43 @@ class CRUCIBLE_OWNER KernelCache {
         return {};
       }
       if (expected == lookup_hash) {
-        // PUBLISHED(old) → PUBLISHED(new): variant update.
-        // A concurrent reader may briefly observe either kernel value
-        // — both are valid by the insert contract (insert() only runs
-        // with kernel != nullptr; kernel is never demoted to nullptr).
-        entry.kernel.store(kernel, std::memory_order_release);
-        return {};
+        // Same content_hash slot already exists — must verify row.
+        // The CAS that owns this slot (whoever inserted first) has
+        // already published row_hash (because the insert protocol
+        // stores row_hash BEFORE the content_hash CAS becomes
+        // visible? — NO: content CAS is FIRST.  But our content
+        // CAS LOST (expected == lookup_hash means the slot's value
+        // was already lookup_hash).  That implies an earlier
+        // inserter has at least committed the content CAS.  They
+        // may not yet have published row_hash + kernel; but
+        // row_hash is monotone: once written, never rewritten,
+        // so a parallel inserter racing for the same slot reads
+        // row via acquire here.  If the slot is mid-claim
+        // (row_hash still 0), we must spin briefly OR continue
+        // probing (a concurrent inserter for the same content_hash
+        // either has a matching row — variant — or a different
+        // row — sibling slot, must be elsewhere).
+        //
+        // Spin until row_hash is observable.  This is the
+        // companion to the lookup-side await_claimed_ but for
+        // insert's variant-update path.
+        uint64_t existing_row = entry.row_hash.load(std::memory_order_acquire);
+        for (uint32_t spin = 0; spin < kClaimedSpinBudget && existing_row == 0; ++spin) {
+          CRUCIBLE_SPIN_PAUSE;
+          existing_row = entry.row_hash.load(std::memory_order_acquire);
+        }
+        if (existing_row == lookup_row) {
+          // PUBLISHED(old) → PUBLISHED(new): variant update.
+          // row pinned; only kernel changes.  A concurrent reader
+          // may briefly observe either kernel value — both valid
+          // by the insert contract.
+          entry.kernel.store(kernel, std::memory_order_release);
+          return {};
+        }
+        // Same content, different row (or inserter exceeded budget,
+        // which is functionally equivalent to "row mismatch" since
+        // this slot already belongs to someone else): keep probing
+        // for OUR (content, row) slot.
       }
     }
     return std::unexpected(InsertError::TableFull);
@@ -978,11 +1094,29 @@ class CRUCIBLE_OWNER KernelCache {
  private:
   struct Entry {
     // NOT relaxed: lock-free hash table protocol.
-    // content_hash CAS(acq_rel) claims the slot; kernel.store(release)
-    // publishes the compiled kernel. Readers load both with acquire
-    // to see consistent (hash, kernel) pairs. Relaxed = reader sees
-    // a hash match but loads a stale/null kernel pointer.
+    //
+    //   content_hash CAS(acq_rel)        — claims the slot
+    //   row_hash.store(release)          — publishes the row identity
+    //   kernel.store(release)            — publishes the compiled kernel
+    //
+    // Readers load all three with acquire to see consistent
+    // (content, row, kernel) triples.  Relaxed loads would let a
+    // reader observe a content match but an incoherent row/kernel
+    // pair, which the cache MUST NOT permit (would silently serve
+    // a kernel under the wrong row identity).
+    //
+    // row_hash NSDMI = 0: the bare-type / no-row baseline
+    // (RowHashFold.h, FOUND-I02 design contract §3).  EMPTY-slot
+    // entries leave row_hash at 0 — harmless because EMPTY is
+    // detected via content_hash == 0 BEFORE row is consulted.
+    //
+    // FOUND-I05 layout extension: prior to this revision Entry was
+    // 16 bytes (two atomic<u64> equivalents on x86-64); the row
+    // extension brings it to 24 bytes — still cache-line-friendly
+    // (≤ one Entry per quarter line), and the table_'s contiguous
+    // arrangement lets the prefetcher walk ~2.7 entries per line.
     std::atomic<uint64_t> content_hash{0};
+    std::atomic<uint64_t> row_hash{0};
     std::atomic<CompiledKernel*> kernel{nullptr};
   };
 
@@ -1308,7 +1442,16 @@ inline void recompute_merkle(TraceNode* node) {
   // publish() requires non-null; skip when the lookup missed — the
   // field's default-constructed null is preserved, which is correct
   // for "no compiled kernel yet".
-  if (auto* cached_kernel = kernel_cache.lookup(new_region->content_hash)) {
+  //
+  // FOUND-I05 row-keyed lookup: pass RowHash{0} (the bare-type
+  // baseline) until the dispatch path threads a row through to
+  // add_branch (FOUND-I19 wires Vigil::dispatch_op row-typed).
+  // Until then, every untyped call site queries the row=0 slot,
+  // which is the CONSISTENT and LOSSLESS migration target — every
+  // cached kernel inserted under row=0 looks up under row=0, and
+  // future row-tagged callers (FOUND-G* lattice consumers) cache
+  // to disjoint slots without polluting the legacy slot.
+  if (auto* cached_kernel = kernel_cache.lookup(new_region->content_hash, RowHash{0})) {
     new_region->compiled.publish(cached_kernel);
   }
 
