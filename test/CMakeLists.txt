@@ -343,6 +343,7 @@ crucible_test(test_is_numerical_tier)
 crucible_test(test_is_consistency)
 crucible_test(test_is_opaque_lifetime)
 crucible_test(test_is_det_safe)
+crucible_test(test_is_cipher_tier)
 crucible_test(test_is_producer_handle)
 crucible_test(test_is_consumer_handle)
 crucible_test(test_is_swmr_handle)
@@ -1442,6 +1443,13 @@ crucible_neg_compile_test(neg_det_safe_value_t_on_non_det_safe
   "constraints not satisfied|template constraint failure|associated constraints")
 
 crucible_neg_compile_test(neg_det_safe_tier_v_on_non_det_safe
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D30/CipherTier IsCipherTier constrained-extractor fixtures
+crucible_neg_compile_test(neg_cipher_tier_value_t_on_non_cipher_tier
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_cipher_tier_tag_v_on_non_cipher_tier
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
