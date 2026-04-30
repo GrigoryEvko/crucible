@@ -1898,6 +1898,19 @@ crucible_neg_compile_test(neg_fusion_fuse_rejects_throwing_producer
 crucible_neg_compile_test(neg_fusion_fuse_rejects_impure_producer
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# ─── FOUND-F09-AUDIT-2 IsCacheableFunction concept rejection ────────
+# `auto FnPtr` accepts ANY structural NTTP — without the concept
+# fence the dispatcher cache would silently produce nonsense slots
+# for integral constants, data-pointers, or member-function
+# pointers.  Three orthogonal rejection classes mirror the three
+# wrong-shape NTTP categories the production API guards against.
+crucible_neg_compile_test(neg_computation_cache_integral_nttp
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_computation_cache_data_ptr_nttp
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_computation_cache_member_fn_nttp
+  "constraints not satisfied|template constraint failure|associated constraints")
+
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
 # Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.
 # Mechanical extension of the D30-batch pattern; closes the

@@ -148,6 +148,39 @@ namespace crucible::cipher {
 struct CompiledBody;
 
 // ═════════════════════════════════════════════════════════════════════
+// ── IsCacheableFunction — concept fence on FnPtr (FOUND-F09-AUDIT-2)
+// ═════════════════════════════════════════════════════════════════════
+//
+// Without this constraint, `auto FnPtr` accepts any structural NTTP:
+// data-pointer globals, member-function pointers, integral constants
+// — all of which compile silently into nonsense cache slots.
+//
+// We require FnPtr to be a pointer to a free / static function:
+// `decltype(FnPtr)` must be `R(*)(Args...)` (after cv-ref strip),
+// and the pointee type must satisfy `std::is_function_v`.  Member-
+// function pointers (`R(C::*)(Args...)`) are explicitly rejected
+// because they require a `this` argument the cache cannot represent
+// in its key.
+//
+// nullptr-rejection note:  C++ comparison of an `auto` function-
+// pointer NTTP against `nullptr` is not always a constant
+// expression in GCC 16, so we don't write `FnPtr != nullptr` in
+// the concept.  The structural type check is the load-bearing
+// part — production call sites pass `&fn` for some named function,
+// which is unconditionally non-null; explicitly materializing a
+// null function-pointer NTTP requires deliberate
+// `static_cast<R(*)(Args...)>(nullptr)`, an obvious construction
+// that no production call site would type by accident.
+//
+// The concept is consteval-evaluable, so failure is a hard
+// requires-clause diagnostic at the call site naming the violation.
+
+template <auto FnPtr>
+concept IsCacheableFunction =
+    std::is_pointer_v<decltype(FnPtr)>
+    && std::is_function_v<std::remove_pointer_t<decltype(FnPtr)>>;
+
+// ═════════════════════════════════════════════════════════════════════
 // ── computation_cache_key — canonical 64-bit cache key ─────────────
 // ═════════════════════════════════════════════════════════════════════
 //
@@ -203,6 +236,7 @@ namespace detail {
 // function NAME hash AND the function TYPE hash.
 // Order-sensitive by construction (Boost-style).
 template <auto FnPtr, typename... Args>
+    requires ::crucible::cipher::IsCacheableFunction<FnPtr>
 [[nodiscard]] consteval std::uint64_t computation_cache_key_impl() noexcept {
     // Function name hash — distinguishes same-signature, different-
     // identity functions.  reflect_constant materializes the NTTP
@@ -225,6 +259,7 @@ template <auto FnPtr, typename... Args>
 }  // namespace detail
 
 template <auto FnPtr, typename... Args>
+    requires IsCacheableFunction<FnPtr>
 inline constexpr std::uint64_t computation_cache_key =
     detail::computation_cache_key_impl<FnPtr, Args...>();
 
@@ -238,6 +273,7 @@ namespace detail {
 // linker dedups across TUs.  Default-constructs to nullptr (BSS,
 // zero-initialized at program-start).
 template <auto FnPtr, typename... Args>
+    requires ::crucible::cipher::IsCacheableFunction<FnPtr>
 inline std::atomic<CompiledBody*> compiled_body_slot{nullptr};
 
 }  // namespace detail
@@ -251,6 +287,7 @@ inline std::atomic<CompiledBody*> compiled_body_slot{nullptr};
 // idempotent contract).
 
 template <auto FnPtr, typename... Args>
+    requires IsCacheableFunction<FnPtr>
 [[nodiscard]] CompiledBody*
 lookup_computation_cache() noexcept {
     return detail::compiled_body_slot<FnPtr, Args...>
@@ -270,6 +307,7 @@ lookup_computation_cache() noexcept {
 // from a miss, defeating the cache's purpose.
 
 template <auto FnPtr, typename... Args>
+    requires IsCacheableFunction<FnPtr>
 void insert_computation_cache(CompiledBody* body) noexcept
     pre (body != nullptr)
 {
@@ -357,6 +395,23 @@ static_assert(::crucible::cipher::computation_cache_key<&s_fn_one, int>
 // construction; the fold can't zero out a non-zero seed).
 static_assert(::crucible::cipher::computation_cache_key<&p_unary, int> != 0);
 static_assert(::crucible::cipher::computation_cache_key<&p_binary, int, double> != 0);
+
+// ── IsCacheableFunction concept witnesses (FOUND-F09-AUDIT-2) ─────
+//
+// Positive witnesses — function pointers satisfy the concept.
+static_assert(::crucible::cipher::IsCacheableFunction<&p_unary>);
+static_assert(::crucible::cipher::IsCacheableFunction<&p_binary>);
+static_assert(::crucible::cipher::IsCacheableFunction<&p_returning>);
+
+// Negative witnesses — non-function NTTPs do NOT satisfy.  These
+// REJECT shapes that the dispatcher cache cannot meaningfully
+// represent: integral constants (no function identity), data
+// pointers (not callable in a way the cache understands), and
+// pointers-to-data (same).  Member-function pointers are also
+// rejected (see neg_computation_cache_member_fn_nttp.cpp).
+inline int s_data_global = 0;
+static_assert(!::crucible::cipher::IsCacheableFunction<42>);
+static_assert(!::crucible::cipher::IsCacheableFunction<&s_data_global>);
 
 // ── Structural-cost asserts (FOUND-F09-AUDIT) ─────────────────────
 //
