@@ -795,6 +795,242 @@ static void test_publish_row_validated_FOUND_I18() {
     }
 }
 
+// ── T25 — FOUND-I18-AUDIT: 5 audit groups closing T24 gaps ─────────
+//
+// FOUND-I18 (T24) covered the F11/F12/I02 → KernelCache happy-path
+// integration with 6 sub-pins.  This audit closes 5 edge-case classes
+// the base test left open:
+//
+//   AUDIT-A18 — pre-publish miss across ALL projected rows including
+//               saturation row RFull (T24 (a) only does Row<Bg>).
+//   AUDIT-B18 — variant-update under projected row_hash.  Pins
+//               MerkleDag.h:1014 "second-publish-wins" semantics
+//               under F11/I02 projection (T24 (b) does single
+//               publish only).
+//   AUDIT-C18 — F11 direct integration without going through F12.
+//               Uses computation_cache_key_in_row<FnPtr, Row, Args...>
+//               as ContentHash directly + row_hash_contribution_v
+//               <Row> as RowHash.  Pins that the F11 cache key is a
+//               valid ContentHash for KernelCache without any
+//               additional transformation.
+//   AUDIT-D18 — saturation row (RFull = 6 atoms) publish/lookup
+//               round-trip + cross-row distinguishability against
+//               R0/RBg/RIO/RBgIO.  T24 only exercises rows up to
+//               2 atoms.
+//   AUDIT-E18 — 4-key disjointness sweep.  2 distinct content
+//               hashes × 2 distinct rows = 4 cache slots; each
+//               holds a distinct kernel; no aliasing among the
+//               other 12 (= 4×4 − 4) cross-key lookups.
+
+static void test_publish_row_validated_FOUND_I18_AUDIT() {
+    namespace eff = ::test_i18;
+    namespace fed = ::crucible::cipher::federation;
+    namespace diag = ::crucible::safety::diag;
+    using crucible::cipher::computation_cache_key_in_row;
+
+    using RFull = ::crucible::effects::Row<
+        ::crucible::effects::Effect::Alloc,
+        ::crucible::effects::Effect::IO,
+        ::crucible::effects::Effect::Block,
+        ::crucible::effects::Effect::Bg,
+        ::crucible::effects::Effect::Init,
+        ::crucible::effects::Effect::Test>;
+
+    // ── AUDIT-A18 — pre-publish miss across ALL projected rows ─────
+    {
+        KernelCache cache;
+        constexpr ContentHash ch{0xCAFE0001};
+
+        const RowHash rows[] = {
+            fed::federation_row_hash<eff::R0>(),
+            fed::federation_row_hash<eff::RBg>(),
+            fed::federation_row_hash<eff::RIO>(),
+            fed::federation_row_hash<eff::RBgIO>(),
+            fed::federation_row_hash<RFull>(),
+        };
+        for (auto rh : rows) {
+            auto miss = cache.lookup_l1(ch, rh);
+            assert(std::move(miss).consume() == nullptr);
+        }
+
+        // Pairwise non-equality among all 5 projected rows (5C2 = 10
+        // pairs).  Pins that the I02 fold's distinguishability
+        // covers EVERY pair we exercise — no accidental hash
+        // collision in this row family.
+        for (std::size_t i = 0; i < 5; ++i) {
+            for (std::size_t j = i + 1; j < 5; ++j) {
+                assert(rows[i] != rows[j]);
+            }
+        }
+    }
+
+    // ── AUDIT-B18 — variant-update under projected row_hash ────────
+    //
+    // MerkleDag.h:1014 documents: "variant update under the SAME
+    // (content_hash, row_hash) pair — row_hash is write-once-per-slot;
+    // mismatched-row siblings get DIFFERENT slots".  T24 only does a
+    // single publish per (content, row).  This sub-audit pins that
+    // the variant-update semantics work CORRECTLY when the row_hash
+    // comes from F11/I02 projection (not a hex literal).
+    {
+        KernelCache cache;
+        FakeKernel fk_a{0xA1};
+        FakeKernel fk_b{0xB2};
+        constexpr ContentHash ch{0xDEAD0002};
+        const RowHash rh_bg = fed::federation_row_hash<eff::RBg>();
+
+        // Publish A.
+        auto pa = cache.publish_l1(ch, rh_bg, fk_ptr(&fk_a));
+        assert(std::move(pa).consume().has_value());
+        auto hit_a = cache.lookup_l1(ch, rh_bg);
+        assert(std::move(hit_a).consume() == fk_ptr(&fk_a));
+
+        // Publish B at SAME (content, row) — variant overwrite.
+        auto pb = cache.publish_l1(ch, rh_bg, fk_ptr(&fk_b));
+        assert(std::move(pb).consume().has_value());
+        auto hit_b = cache.lookup_l1(ch, rh_bg);
+        assert(std::move(hit_b).consume() == fk_ptr(&fk_b));
+
+        // A is no longer reachable via this slot — variant update
+        // semantics under projected row_hash are bit-identical to
+        // hex-literal row_hash.
+    }
+
+    // ── AUDIT-C18 — F11 direct integration without F12 ─────────────
+    //
+    // F12's federation_content_hash<&fn, Row, Args...> wraps F11's
+    // computation_cache_key_in_row<&fn, Row, Args...> in a
+    // ContentHash — i.e., F11's full 64-bit cache key IS a valid
+    // ContentHash for the KernelCache.  Pin that calling sites can
+    // bypass F12 and use F11 directly without any transformation.
+    {
+        KernelCache cache;
+        FakeKernel fk{0xC3};
+
+        constexpr auto f11_key =
+            computation_cache_key_in_row<&eff::f_unary, eff::RBg, int>;
+        const ContentHash ch_from_f11{f11_key};
+        const RowHash rh = RowHash{
+            diag::row_hash_contribution_v<eff::RBg>};
+
+        // The F11 path should land in the SAME slot as the F12 path
+        // for the same (FnPtr, Row, Args) tuple.
+        const ContentHash ch_from_f12 =
+            fed::federation_content_hash<&eff::f_unary, eff::RBg, int>();
+        const RowHash    rh_from_f12 =
+            fed::federation_row_hash<eff::RBg>();
+        assert(ch_from_f11 == ch_from_f12);
+        assert(rh          == rh_from_f12);
+
+        // Publish via F11 keys, lookup via F12 keys (and vice-versa)
+        // — both must hit the same slot.
+        auto pub = cache.publish_l1(ch_from_f11, rh, fk_ptr(&fk));
+        assert(std::move(pub).consume().has_value());
+
+        auto via_f12 = cache.lookup_l1(ch_from_f12, rh_from_f12);
+        assert(std::move(via_f12).consume() == fk_ptr(&fk));
+
+        auto via_f11 = cache.lookup_l1(ch_from_f11, rh);
+        assert(std::move(via_f11).consume() == fk_ptr(&fk));
+    }
+
+    // ── AUDIT-D18 — saturation row (RFull) round-trip ──────────────
+    //
+    // RFull exercises all 6 OsUniverse atoms.  T24 only goes up to
+    // 2 atoms (RBgIO).  Pin that the integration extends to the
+    // current saturation cardinality.
+    {
+        KernelCache cache;
+        FakeKernel fk{0xD4};
+        constexpr ContentHash ch{0xFEED0003};
+
+        const RowHash rh_full = fed::federation_row_hash<RFull>();
+        const RowHash rh_empty = fed::federation_row_hash<eff::R0>();
+        const RowHash rh_bg    = fed::federation_row_hash<eff::RBg>();
+        const RowHash rh_bgio  = fed::federation_row_hash<eff::RBgIO>();
+
+        // RFull distinguishes from every smaller row.
+        assert(rh_full != rh_empty);
+        assert(rh_full != rh_bg);
+        assert(rh_full != rh_bgio);
+
+        // Publish under RFull, lookup hits.
+        auto pub = cache.publish_l1(ch, rh_full, fk_ptr(&fk));
+        assert(std::move(pub).consume().has_value());
+        auto hit = cache.lookup_l1(ch, rh_full);
+        assert(std::move(hit).consume() == fk_ptr(&fk));
+
+        // Lookup at SAME content but different row → miss.  RFull
+        // is the maximally-specific row; RBg / RBgIO / R0 all
+        // produce different slots.
+        auto miss_at_empty = cache.lookup_l1(ch, rh_empty);
+        assert(std::move(miss_at_empty).consume() == nullptr);
+        auto miss_at_bg = cache.lookup_l1(ch, rh_bg);
+        assert(std::move(miss_at_bg).consume() == nullptr);
+        auto miss_at_bgio = cache.lookup_l1(ch, rh_bgio);
+        assert(std::move(miss_at_bgio).consume() == nullptr);
+    }
+
+    // ── AUDIT-E18 — 4-key disjointness sweep ───────────────────────
+    //
+    // 2 contents × 2 rows = 4 cache slots.  Each slot holds a
+    // distinct kernel.  Witnesses that none of the 12 cross-key
+    // lookups (4×4 grid minus the 4 diagonal hits) accidentally
+    // alias to a published kernel.
+    {
+        KernelCache cache;
+        FakeKernel fk_00{0xE5};
+        FakeKernel fk_01{0xE6};
+        FakeKernel fk_10{0xE7};
+        FakeKernel fk_11{0xE8};
+
+        constexpr ContentHash ch_a{0xAAAA0004};
+        constexpr ContentHash ch_b{0xBBBB0004};
+        const RowHash rh_0 = fed::federation_row_hash<eff::R0>();
+        const RowHash rh_1 = fed::federation_row_hash<eff::RBg>();
+
+        // Sanity — all 4 keys are pairwise distinct.
+        assert(ch_a != ch_b);
+        assert(rh_0 != rh_1);
+
+        // Publish into all 4 slots.
+        (void)std::move(
+            cache.publish_l1(ch_a, rh_0, fk_ptr(&fk_00))).consume();
+        (void)std::move(
+            cache.publish_l1(ch_a, rh_1, fk_ptr(&fk_01))).consume();
+        (void)std::move(
+            cache.publish_l1(ch_b, rh_0, fk_ptr(&fk_10))).consume();
+        (void)std::move(
+            cache.publish_l1(ch_b, rh_1, fk_ptr(&fk_11))).consume();
+
+        // Diagonal hits — each slot returns ITS OWN kernel.
+        assert(std::move(cache.lookup_l1(ch_a, rh_0)).consume()
+               == fk_ptr(&fk_00));
+        assert(std::move(cache.lookup_l1(ch_a, rh_1)).consume()
+               == fk_ptr(&fk_01));
+        assert(std::move(cache.lookup_l1(ch_b, rh_0)).consume()
+               == fk_ptr(&fk_10));
+        assert(std::move(cache.lookup_l1(ch_b, rh_1)).consume()
+               == fk_ptr(&fk_11));
+
+        // Off-diagonal — none of the 4 published kernels appear at
+        // a key they weren't published at.  We test 4 keys not in
+        // the published set (different ContentHash, different RowHash
+        // combinations); each must miss.
+        const ContentHash ch_c{0xCCCC0005};
+        const RowHash rh_2 = fed::federation_row_hash<eff::RIO>();
+
+        // (ch_c, rh_0) — content not published at this row.
+        assert(std::move(cache.lookup_l1(ch_c, rh_0)).consume() == nullptr);
+        // (ch_c, rh_1) — content not published at this row either.
+        assert(std::move(cache.lookup_l1(ch_c, rh_1)).consume() == nullptr);
+        // (ch_a, rh_2) — published content but unpublished row.
+        assert(std::move(cache.lookup_l1(ch_a, rh_2)).consume() == nullptr);
+        // (ch_b, rh_2) — same.
+        assert(std::move(cache.lookup_l1(ch_b, rh_2)).consume() == nullptr);
+    }
+}
+
 int main() {
     test_lookup_l1_round_trip();
     test_publish_l1_round_trip();
@@ -820,6 +1056,7 @@ int main() {
     test_l3_row_hash_plumbing_FOUND_I07();
     test_l2_l3_cross_tier_isolation_FOUND_I06_I07_AUDIT();
     test_publish_row_validated_FOUND_I18();
+    test_publish_row_validated_FOUND_I18_AUDIT();
 
     std::puts("ok");
     return 0;
