@@ -114,6 +114,25 @@ struct hybrid_handle {
     [[nodiscard]] int  try_pop() noexcept { return 0; }
 };
 
+// Producer-shaped with NON-noexcept try_push.  D05 admits — its
+// signature decomp has two specialisations, one for `noexcept` and
+// one without.  D15 must therefore admit too.
+struct producer_handle_int_no_noexcept {
+    [[nodiscard]] bool try_push(int const&) { return true; }
+};
+
+// Producer-shaped with const-qualified try_push.  D05 REJECTS —
+// the signature decomp specialisations match unqualified member-
+// function-pointer types only.  Reject propagates to D15.
+struct producer_handle_const_push {
+    [[nodiscard]] bool try_push(int const&) const noexcept { return true; }
+};
+
+// Producer-shaped with rvalue-ref-qualified try_push.  D05 REJECTS.
+struct producer_handle_rref_push {
+    [[nodiscard]] bool try_push(int const&) && noexcept { return true; }
+};
+
 using OR_int_in   = ::crucible::safety::OwnedRegion<int,    ::in_tag>;
 using OR_float_in = ::crucible::safety::OwnedRegion<float,  ::in_tag>;
 using OR_int_out  = ::crucible::safety::OwnedRegion<int,    ::out_tag>;
@@ -191,6 +210,19 @@ OR_int_out f_region_return(producer_handle_int&&, OR_int_in&&) noexcept;
 // Both params are OwnedRegion — this is a BinaryTransform shape,
 // NOT a ProducerEndpoint.  Mutual exclusion check.
 void f_two_regions(OR_int_in&&, OR_int_in&&) noexcept;
+
+// Non-noexcept producer handle — D05 admits via the second decomp
+// specialisation; D15 must therefore admit too.
+void f_no_noexcept_producer(producer_handle_int_no_noexcept&&,
+                            OR_int_in&&) noexcept;
+
+// Const-qualified try_push on producer — D05 rejects.
+void f_const_push_in_producer_slot(producer_handle_const_push&&,
+                                   OR_int_in&&) noexcept;
+
+// Rvalue-ref-qualified try_push on producer — D05 rejects.
+void f_rref_push_in_producer_slot(producer_handle_rref_push&&,
+                                  OR_int_in&&) noexcept;
 
 }  // namespace pe_test
 
@@ -271,6 +303,36 @@ void test_negative_two_regions_is_binary() {
     // not a ProducerEndpoint.  Confirm the exclusion.
     static_assert(!extract::ProducerEndpoint<&pe_test::f_two_regions>);
     static_assert( extract::BinaryTransform<&pe_test::f_two_regions>);
+}
+
+void test_positive_non_noexcept_try_push() {
+    // D05 has TWO signature_decomp specialisations:
+    //   bool(C::*)(P const&)           [non-noexcept]
+    //   bool(C::*)(P const&) noexcept  [noexcept]
+    // Both must be admitted by D15.  This test exercises the
+    // non-noexcept branch — the noexcept branch is exercised by
+    // every other f_well_formed-style test.
+    static_assert( extract::ProducerEndpoint<
+        &pe_test::f_no_noexcept_producer>);
+    static_assert(std::is_same_v<
+        extract::producer_endpoint_handle_value_t<
+            &pe_test::f_no_noexcept_producer>,
+        int>);
+}
+
+void test_negative_cv_qualified_try_push() {
+    // D05's signature_decomp matches member-function-pointer types
+    // WITHOUT cv-ref qualifiers on the method.  A const-qualified
+    // try_push produces `bool (C::*)(P const&) const [noexcept]`
+    // which does NOT match either decomp specialisation, so D05
+    // rejects.  D15 inherits the rejection.
+    static_assert(!extract::ProducerEndpoint<
+        &pe_test::f_const_push_in_producer_slot>);
+
+    // Same for rvalue-ref-qualified try_push — `bool (C::*)(P
+    // const&) && [noexcept]`.
+    static_assert(!extract::ProducerEndpoint<
+        &pe_test::f_rref_push_in_producer_slot>);
 }
 
 void test_volatile_admitted_on_either_or_both() {
@@ -442,6 +504,10 @@ int main() {
              test_negative_non_void_return);
     run_test("test_negative_two_regions_is_binary",
              test_negative_two_regions_is_binary);
+    run_test("test_positive_non_noexcept_try_push",
+             test_positive_non_noexcept_try_push);
+    run_test("test_negative_cv_qualified_try_push",
+             test_negative_cv_qualified_try_push);
     run_test("test_volatile_admitted_on_either_or_both",
              test_volatile_admitted_on_either_or_both);
     run_test("test_handle_value_extraction",

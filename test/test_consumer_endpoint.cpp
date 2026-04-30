@@ -118,6 +118,26 @@ struct consumer_handle_int_returning {
     [[nodiscard]] int try_pop() noexcept { return 0; }
 };
 
+// Consumer-shaped with NON-noexcept try_pop.  D06 admits — its
+// signature decomp has two specialisations, one for `noexcept` and
+// one without.  D16 must therefore admit too.
+struct consumer_handle_int_no_noexcept {
+    [[nodiscard]] std::optional<int> try_pop() { return 0; }
+};
+
+// Consumer-shaped with const-qualified try_pop.  D06 REJECTS —
+// the signature decomp specialisations match unqualified member-
+// function-pointer types only.  Reject propagates to D16.
+struct consumer_handle_const_pop {
+    [[nodiscard]] std::optional<int> try_pop() const noexcept { return 0; }
+};
+
+// Consumer-shaped with rvalue-ref-qualified try_pop.  D06 REJECTS
+// for the same reason as above.
+struct consumer_handle_rref_pop {
+    [[nodiscard]] std::optional<int> try_pop() && noexcept { return 0; }
+};
+
 using OR_int_out   = ::crucible::safety::OwnedRegion<int,    ::out_tag>;
 using OR_float_out = ::crucible::safety::OwnedRegion<float,  ::out_tag>;
 using OR_int_in    = ::crucible::safety::OwnedRegion<int,    ::in_tag>;
@@ -202,6 +222,19 @@ OR_int_in f_region_return(consumer_handle_int&&, OR_int_out&&) noexcept;
 // Both params are OwnedRegion — that's a BinaryTransform shape.
 void f_two_regions(OR_int_in&&, OR_int_out&&) noexcept;
 
+// Non-noexcept consumer handle — D06 admits via the second decomp
+// specialisation; D16 must therefore admit too.
+void f_no_noexcept_consumer(consumer_handle_int_no_noexcept&&,
+                            OR_int_out&&) noexcept;
+
+// Const-qualified try_pop on consumer — D06 rejects.
+void f_const_pop_in_consumer_slot(consumer_handle_const_pop&&,
+                                  OR_int_out&&) noexcept;
+
+// Rvalue-ref-qualified try_pop on consumer — D06 rejects.
+void f_rref_pop_in_consumer_slot(consumer_handle_rref_pop&&,
+                                 OR_int_out&&) noexcept;
+
 }  // namespace ce_test
 
 namespace {
@@ -266,6 +299,36 @@ void test_negative_int_returning_pop() {
     // try_pop returning int (not optional<P>) — D06 doesn't recognize.
     static_assert(!extract::ConsumerEndpoint<
         &ce_test::f_int_returning_pop_in_slot>);
+}
+
+void test_positive_non_noexcept_try_pop() {
+    // D06 has TWO signature_decomp specialisations:
+    //   std::optional<P>(C::*)()           [non-noexcept]
+    //   std::optional<P>(C::*)() noexcept  [noexcept]
+    // Both must be admitted by D16.  This test exercises the
+    // non-noexcept branch — the noexcept branch is exercised by
+    // every other f_well_formed-style test.
+    static_assert( extract::ConsumerEndpoint<
+        &ce_test::f_no_noexcept_consumer>);
+    static_assert(std::is_same_v<
+        extract::consumer_endpoint_handle_value_t<
+            &ce_test::f_no_noexcept_consumer>,
+        int>);
+}
+
+void test_negative_cv_qualified_try_pop() {
+    // D06's signature_decomp matches member-function-pointer types
+    // WITHOUT cv-ref qualifiers on the method.  A const-qualified
+    // try_pop produces `optional<P> (C::*)() const [noexcept]` which
+    // does NOT match either decomp specialisation, so D06 rejects.
+    // D16 inherits the rejection.
+    static_assert(!extract::ConsumerEndpoint<
+        &ce_test::f_const_pop_in_consumer_slot>);
+
+    // Same for rvalue-ref-qualified try_pop — `optional<P> (C::*)()
+    // && [noexcept]`.
+    static_assert(!extract::ConsumerEndpoint<
+        &ce_test::f_rref_pop_in_consumer_slot>);
 }
 
 void test_negative_region_slot_not_region() {
@@ -442,6 +505,10 @@ int main() {
              test_negative_hybrid_in_consumer_slot);
     run_test("test_negative_int_returning_pop",
              test_negative_int_returning_pop);
+    run_test("test_positive_non_noexcept_try_pop",
+             test_positive_non_noexcept_try_pop);
+    run_test("test_negative_cv_qualified_try_pop",
+             test_negative_cv_qualified_try_pop);
     run_test("test_negative_region_slot_not_region",
              test_negative_region_slot_not_region);
     run_test("test_negative_non_void_return",
