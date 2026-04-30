@@ -58,6 +58,7 @@
 #include <crucible/Platform.h>
 #include <crucible/RecipePool.h>
 #include <crucible/Types.h>
+#include <crucible/safety/NumericalTier.h>
 
 #include <array>
 #include <cstddef>
@@ -70,20 +71,103 @@ namespace crucible {
 
 // ─── Error taxonomy ─────────────────────────────────────────────────
 //
-// Two distinct miss conditions:
+// Three distinct miss conditions:
 //   - NameNotFound — user or pin referenced an unknown recipe name.
 //     Recoverable: fall back to a default; log; etc.
 //   - HashNotFound — Cipher loaded a persisted RecipeHash that the
 //     current-process registry cannot resolve.  Indicates either a
 //     registry downgrade (the hash was persisted by a newer build
 //     that knew a recipe this build doesn't) or file corruption.
+//   - ToleranceMismatch — by_name_pinned/by_hash_pinned (FOUND-G04)
+//     found the recipe but its tolerance class does not satisfy the
+//     pinned admission tier.  Captures the load-bearing
+//     "BITEXACT_STRICT consumer accidentally invokes UNORDERED
+//     reduction" / "ULP_FP16-class consumer admits an ORDERED 4-ULP
+//     recipe" bug class at the registry-lookup boundary instead of
+//     in the cross-vendor numerics CI 12 hours later.  Ordinal 3
+//     appended at the END so existing serialized blobs that pinned
+//     by NameNotFound (=1) / HashNotFound (=2) keep their meaning.
 //
 // Enum ordinals are stable across versions — new recipes are added by
 // appending entries to the registry, not by renumbering the errors.
 enum class RecipeError : uint8_t {
-  NameNotFound = 1,
-  HashNotFound = 2,
+  NameNotFound      = 1,
+  HashNotFound      = 2,
+  ToleranceMismatch = 3,
 };
+
+// ─── tolerance_for_dtype — output-precision → Tolerance tier mapping ─
+//
+// Static helper.  Used by tolerance_of() below to map a recipe's
+// out_dtype + determinism into the canonical safety::Tolerance class.
+// Exposed at namespace scope so call sites verifying the mapping
+// against an external recipe file can re-use it.
+//
+// The mapping is INTENTIONALLY conservative — every entry is the
+// strongest tier the dtype's 1-ULP error budget can sustain.  Coarser
+// budgets (e.g. ORDERED's ≤4 ULP at FP16) MUST NOT collapse into the
+// per-dtype 1-ULP class — that would defeat the load-bearing
+// admission-gate rejection.
+[[nodiscard, gnu::const]] constexpr safety::Tolerance
+tolerance_for_dtype(ScalarType dtype) noexcept {
+  switch (dtype) {
+    case ScalarType::Double:        return safety::Tolerance::ULP_FP64;
+    case ScalarType::Float:         return safety::Tolerance::ULP_FP32;
+    case ScalarType::Half:          return safety::Tolerance::ULP_FP16;
+    case ScalarType::BFloat16:      return safety::Tolerance::ULP_FP16;
+    case ScalarType::Float8_e4m3fn: return safety::Tolerance::ULP_FP8;
+    case ScalarType::Float8_e5m2:   return safety::Tolerance::ULP_FP8;
+    case ScalarType::Char:
+    case ScalarType::Byte:          return safety::Tolerance::ULP_INT8;
+    default:                        return safety::Tolerance::RELAXED;
+  }
+}
+
+// ─── tolerance_of — recipe → satisfied tolerance class ──────────────
+//
+// Maps the (determinism, out_dtype) pair to the strongest Tolerance
+// tier the recipe is admitted to claim.  Invariant:
+//
+//   tolerance_of(r) == BITEXACT  ⟺  determinism == BITEXACT_STRICT.
+//   tolerance_of(r) == ULP_FP*   ⟺  determinism == BITEXACT_TC
+//                                    (per the storage dtype's 1-ULP class).
+//   tolerance_of(r) == RELAXED   ⟺  determinism ∈ {ORDERED, UNORDERED}
+//                                    (ORDERED's ≤4 ULP cross-vendor is
+//                                    coarser than the lattice's finest
+//                                    ULP_* tier — strict mapping).
+//
+// Why ORDERED → RELAXED, not ULP_FP*: ORDERED guarantees ≤4 ULP at
+// the storage dtype, but our 7-tier Tolerance lattice's ULP_FP*
+// classes denote 1-ULP-at-precision.  Mapping ORDERED to ULP_FP16
+// for an FP16 recipe would let a 4-ULP recipe silently flow into a
+// consumer asking for 1-ULP-tolerance — the load-bearing bug class
+// the wrapper exists to prevent.  Conservative is correct.
+[[nodiscard, gnu::const]] constexpr safety::Tolerance
+tolerance_of(NumericalRecipe const& r) noexcept {
+  switch (r.determinism) {
+    case ReductionDeterminism::BITEXACT_STRICT:
+      // 0 ULP byte-identical across every supported chip.  The only
+      // recipe class that can claim BITEXACT.
+      return safety::Tolerance::BITEXACT;
+    case ReductionDeterminism::BITEXACT_TC:
+      // 0-1 ULP cross-vendor at TC fragment level; admit at the
+      // out_dtype's 1-ULP class.  Strictly stronger than ORDERED but
+      // not bit-identical (the "0-1" includes the case where it's 1).
+      return tolerance_for_dtype(r.out_dtype);
+    case ReductionDeterminism::ORDERED:
+    case ReductionDeterminism::UNORDERED:
+      // ≤4 ULP (ORDERED) or unbounded (UNORDERED); coarser than any
+      // 1-ULP class.  Conservative: admit only at RELAXED (lattice
+      // bottom).  See header comment for rationale.
+      return safety::Tolerance::RELAXED;
+    default:
+      // Defensive: -Werror=switch-default requires this arm even
+      // though the four-tier enum is exhaustive above.  Future
+      // ReductionDeterminism additions land here as RELAXED until
+      // their tolerance class is explicitly mapped.
+      return safety::Tolerance::RELAXED;
+  }
+}
 
 class CRUCIBLE_OWNER RecipeRegistry {
  public:
@@ -177,6 +261,80 @@ class CRUCIBLE_OWNER RecipeRegistry {
   // tables and CI.
   [[nodiscard, gnu::const]] static constexpr std::size_t size() noexcept {
     return STARTER_COUNT;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FOUND-G04: NumericalTier-pinned recipe lookup
+  // ═══════════════════════════════════════════════════════════════
+  //
+  // Type-pinned overlay for by_name / by_hash that lifts the
+  // recipe's runtime tolerance class into the type system at the
+  // boundary.  A consumer pinned at, e.g., `safety::Tolerance::
+  // BITEXACT` can ONLY obtain a `NumericalTier<BITEXACT, const
+  // NumericalRecipe*>` from the registry — registry returns
+  // ToleranceMismatch for any recipe whose `tolerance_of(*r)` does
+  // not subsume the requested static tier.
+  //
+  // The bug class caught: a refactor that pins a hot-path recipe
+  // consumer to ULP_FP16 but accidentally accepts a recipe with
+  // `ReductionDeterminism::ORDERED` (≤4 ULP, NOT ≤1 ULP at FP16).
+  // Today caught by cross-vendor numerics CI 12 hours after the
+  // commit lands; with the pinned overload, caught at the registry
+  // boundary the moment the recipe is pulled.
+  //
+  // Subsumption semantics (per ToleranceLattice):
+  //
+  //   Bottom = RELAXED (loosest); Top = BITEXACT (tightest).
+  //   leq(loose, tight) reads "loose is below tight."  A producer
+  //   at HIGHER tier (BITEXACT) satisfies a consumer at LOWER tier
+  //   (ULP_FP16) — stronger promise serves weaker requirement.
+  //
+  //   So: `by_name_pinned<RELAXED>("any_recipe")` always succeeds
+  //   (every recipe satisfies RELAXED).
+  //
+  //   And:  `by_name_pinned<BITEXACT>("f32_strict")` succeeds.
+  //         `by_name_pinned<BITEXACT>("f32_ordered")` returns
+  //         ToleranceMismatch — ORDERED maps to RELAXED, which
+  //         does NOT satisfy BITEXACT.
+  //
+  // Error priority: NameNotFound / HashNotFound take precedence
+  // over ToleranceMismatch.  An unknown name surfaces NameNotFound
+  // even if the static tier is RELAXED — symmetric with by_name's
+  // contract; pinned is purely additive.
+  //
+  // Cost: ~5-10 ns hit (linear scan + tolerance_of switch + leq
+  // compare); ~15 ns miss.  No heap, no atomic, no CAS — same as
+  // the non-pinned variant.
+
+  // ── by_name_pinned — name lookup with tier admission ────────────
+  template <safety::Tolerance T>
+  [[nodiscard, gnu::pure]]
+  std::expected<safety::NumericalTier<T, const NumericalRecipe*>, RecipeError>
+  by_name_pinned(std::string_view name) const noexcept {
+    auto base = by_name(name);
+    if (!base) return std::unexpected(base.error());
+    const NumericalRecipe* recipe = *base;
+    // tolerance_of cannot be null (recipe pointer is guaranteed
+    // non-null by by_name's contract).  Verify the runtime class
+    // subsumes the static request: leq(Required, Actual).
+    if (!safety::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
+      return std::unexpected(RecipeError::ToleranceMismatch);
+    }
+    return safety::NumericalTier<T, const NumericalRecipe*>{recipe};
+  }
+
+  // ── by_hash_pinned — hash lookup with tier admission ────────────
+  template <safety::Tolerance T>
+  [[nodiscard, gnu::pure]]
+  std::expected<safety::NumericalTier<T, const NumericalRecipe*>, RecipeError>
+  by_hash_pinned(RecipeHash hash) const noexcept {
+    auto base = by_hash(hash);
+    if (!base) return std::unexpected(base.error());
+    const NumericalRecipe* recipe = *base;
+    if (!safety::ToleranceLattice::leq(T, tolerance_of(*recipe))) {
+      return std::unexpected(RecipeError::ToleranceMismatch);
+    }
+    return safety::NumericalTier<T, const NumericalRecipe*>{recipe};
   }
 
  private:

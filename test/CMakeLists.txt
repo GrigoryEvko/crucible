@@ -409,6 +409,7 @@ crucible_test(test_recipe_pool)
 crucible_test(test_recipe_registry)
 crucible_test(test_recipe_integration)
 crucible_test(test_recipe_coverage)
+crucible_test(test_recipe_registry_tier)
 
 # bench harness unit tests — include bench/ for bench_harness.h + bpf_senses.h.
 # CRUCIBLE_BENCH_HAVE_BPF is intentionally unset: the test exercises only
@@ -1188,6 +1189,18 @@ crucible_neg_compile_test(neg_mem_order_acqrel_at_acquire_fence
 # possible rejection claim in the lattice — proves the requires-clause
 # correctly handles maximal cross-tier flow, not just adjacent gaps.
 crucible_neg_compile_test(neg_mem_order_seqcst_at_relaxed_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
+# ─── FOUND-G04 NumericalTier production-call-site neg-compile ──────
+#
+# Load-bearing rejection at the consumer-fence level: a RELAXED-tier
+# value (origin = ORDERED or UNORDERED recipe via tolerance_of() →
+# RELAXED mapping) cannot reach a BITEXACT-fence consumer (the CPU-
+# oracle / deterministic-replay / cross-vendor numerics CI pattern
+# that FOUND-G04 production sites flow into).  Captures the
+# "tolerance downgrade silently flowed into BITEXACT-tier consumer"
+# bug class — strongest possible rejection across the 7-tier lattice.
+crucible_neg_compile_test(neg_recipe_registry_relaxed_at_bitexact_fence
   "constraints not satisfied|no matching function|associated constraints")
 
 # ─── FOUND-G26 Wait wrapper neg-compiles (6 fixtures: 4+2) ──────────
