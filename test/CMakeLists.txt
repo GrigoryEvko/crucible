@@ -316,6 +316,7 @@ crucible_test(test_philox)
 crucible_test(test_philox_simd)
 crucible_test(test_philox_det)
 crucible_test(test_arena_alloc_class)
+crucible_test(test_pool_allocator_alloc_class)
 crucible_test(test_atomic_snapshot)
 crucible_test(test_chase_lev_deque)
 crucible_test(test_mpsc_ring)
@@ -1238,6 +1239,16 @@ crucible_neg_compile_test(neg_alloc_class_at_cross_tag_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 crucible_neg_compile_test(neg_alloc_class_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
+
+# FOUND-G42 — production-call-site fence: a hot-path consumer
+# requiring AllocClass<Pool> rejects an AllocClass<Heap> source.
+# This is the load-bearing rejection for the no-malloc-on-hot-path
+# discipline at the production call boundary (slot_ptr_pinned ⇄
+# consumer template).  Without this fence, jemalloc allocations
+# (50-200 ns setup) could silently flow into TraceRing/MetaLog/
+# Vigil hot-path sites budgeted at 2-3 ns per call.
+crucible_neg_compile_test(neg_alloc_class_heap_at_pool_fence
+  "constraints not satisfied|no matching function|associated constraints")
 
 # ─── FOUND-D01 — signature_traits<FnPtr> param-index overflow ─────
 #

@@ -17,6 +17,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/rt/Registry.h>
+#include <crucible/safety/AllocClass.h>
 #include <crucible/safety/Checked.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
@@ -296,6 +297,78 @@ struct CRUCIBLE_OWNER PoolAllocator {
   [[nodiscard, gnu::pure]] uint32_t num_slots()      const noexcept { return num_slots_; }
   [[nodiscard, gnu::pure]] uint32_t num_external()   const noexcept { return num_external_; }
   [[nodiscard, gnu::pure]] bool     is_initialized() const noexcept { return ptr_table_ != nullptr; }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // FOUND-G42: AllocClass-pinned production surface
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // The PoolAllocator hot-path surface (slot_ptr) returns AllocClass<
+  // AllocClassTag_v::Pool, void*> — a slot pointer is sourced from a
+  // preallocated freelist (the ptr_table_ + pool_ machinery), which by
+  // the AllocClass lattice is Pool tier (HugePage ⊑ Mmap ⊑ Heap ⊑
+  // Arena ⊑ Pool ⊑ Stack).
+  //
+  // pool_base() returns Pool tier as the SAFE pinning: when init() was
+  // called with pool_bytes ≥ kHugePageBytes, the underlying allocation
+  // is huge-page-aligned (HugePage), which is WEAKER than Pool — so
+  // claiming Pool tier ALWAYS holds.  Callers wanting the stronger
+  // huge-page-aligned guarantee can call pool_base_huge_pinned(), which
+  // requires `pool_bytes_ >= kHugePageBytes` as a precondition.
+  //
+  // Why additive (not replacing): the raw slot_ptr / pool_base surface
+  // is consumed by ReplayEngine, CrucibleContext, and several Vigil
+  // paths; a churn migration without immediate benefit is rejected.
+  // The _pinned variants are for NEW production sites that explicitly
+  // want the type-level fence.
+  //
+  // Cost: each pinned variant is a one-line forward to the raw call
+  // followed by an EBO-collapsed AllocClass wrapping (sizeof wrapper
+  // == sizeof(void*)).  Constructor is a single move; the [[nodiscard,
+  // gnu::pure, gnu::hot]] attributes are preserved on the slot_ptr
+  // variant so the optimizer treats the call identically to the raw.
+
+  // Hot path — returns AllocClass<Pool, void*>, requires InitializedView.
+  // Pinning Pool tier rejects callers that would accept the slot
+  // pointer at AllocClass<Stack, ...> — Stack is STRONGER than Pool
+  // (no allocator at all), and slot pointers DO go through an
+  // allocator at init time.
+  [[nodiscard, gnu::pure, gnu::hot, gnu::always_inline]]
+  inline safety::AllocClass<safety::AllocClassTag_v::Pool, void*>
+  slot_ptr_pinned(SlotId sid, InitializedView const& view) const noexcept
+      CRUCIBLE_LIFETIMEBOUND
+      pre (sid.raw() < num_slots_)
+  {
+    return safety::AllocClass<safety::AllocClassTag_v::Pool, void*>{
+        slot_ptr(sid, view)};
+  }
+
+  // Pool-tier-pinned base pointer.  This is the SAFE pinning: when
+  // pool_bytes_ < kHugePageBytes, the buffer is 256B-aligned (Pool
+  // tier).  When pool_bytes_ ≥ kHugePageBytes, the buffer is 2MB-
+  // aligned (HugePage tier, weaker than Pool — Pool claim still
+  // holds).
+  //
+  // Returned pointer can be null when pool_bytes_ == 0; callers must
+  // discriminate via the AllocClass::peek() result.
+  [[nodiscard, gnu::pure]]
+  inline safety::AllocClass<safety::AllocClassTag_v::Pool, void*>
+  pool_base_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND {
+    return safety::AllocClass<safety::AllocClassTag_v::Pool, void*>{pool_};
+  }
+
+  // HugePage-tier-pinned base pointer.  Requires pool_bytes_ ≥
+  // kHugePageBytes — when this precondition holds, init() chose
+  // page_align = kHugePageBytes and the returned pointer is 2MB-
+  // aligned.  Callers wanting to declare "I require huge-page-backed
+  // memory" use this overload; the precondition fence rejects the
+  // small-pool case at the boundary.
+  [[nodiscard, gnu::pure]]
+  inline safety::AllocClass<safety::AllocClassTag_v::HugePage, void*>
+  pool_base_huge_pinned() const noexcept CRUCIBLE_LIFETIMEBOUND
+      pre (pool_bytes_ >= crucible::rt::kHugePageBytes)
+  {
+    return safety::AllocClass<safety::AllocClassTag_v::HugePage, void*>{pool_};
+  }
 
   // ── ScopedView predicates (ADL-discovered by safety::mint_view) ──
   [[nodiscard]] friend constexpr bool view_ok(
