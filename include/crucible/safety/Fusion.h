@@ -192,6 +192,16 @@ concept IsFusable = can_fuse_v<Fn1, Fn2>;
 //
 //   // Or one-shot at the call site:
 //   int z = ::crucible::safety::fuse<&g, &h>()(7);
+//
+// Empirical validation:
+//
+//   `bench/bench_fusion.cpp` (FOUND-F08) benches three (manual,
+//   fused) pairs of differing arithmetic depth and reports the
+//   per-pair cycle delta.  Read its banner for the dev-hardware
+//   findings; semantic equivalence is enforced by the F06 +
+//   self-test asserts above, while the bench documents the
+//   regime where compiler scheduling is identical (Pair 0 ICF)
+//   vs where it diverges by a single cycle (Pair 2).
 
 template <auto Fn1, auto Fn2>
     requires IsFusable<Fn1, Fn2>
