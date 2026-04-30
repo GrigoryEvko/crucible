@@ -26,6 +26,7 @@
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <crucible/rt/Registry.h>
+#include <crucible/safety/HotPath.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Tagged.h>
 
@@ -282,6 +283,41 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     return true;
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // FOUND-G22: HotPath-pinned producer surface
+  // ═══════════════════════════════════════════════════════════════
+  //
+  // try_append is the foreground per-op recording site — the
+  // canonical Hot-path operation per HotPath.h docblock.  Per
+  // CRUCIBLE.md §L4, this is shape-budgeted at ~5 ns per call and
+  // absolutely forbids any class of heavy operation (alloc, syscall,
+  // block, futex).  The body satisfies that contract by construction
+  // (SPSC ring + acquire/release atomics + _mm_pause spin only;
+  // see §IX latency hierarchy).
+  //
+  // try_append_pinned() declares this fact at the type level so
+  // any consumer of the boolean return who declares
+  // `requires HotPath::satisfies<Hot>` gets compile-time confirmation
+  // that the value originated from a hot-path-safe producer.  A
+  // refactor that, e.g., adds a printf or std::format to the body
+  // would have to weaken the wrapper's tier from Hot to Cold —
+  // and every downstream Hot-fenced consumer rejects the call.
+  //
+  // ADDITIVE: existing try_append() callers stay unchanged.  Only
+  // new sites that participate in the row-typed dispatch network
+  // call try_append_pinned().
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
+  [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE
+  crucible::safety::HotPath<crucible::safety::HotPathTier_v::Hot, bool>
+  try_append_pinned(
+      const Entry& e,
+      MetaIndex    meta_start    = MetaIndex::none(),
+      ScopeHash    scope_hash    = {},
+      CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+    return crucible::safety::HotPath<crucible::safety::HotPathTier_v::Hot, bool>{
+        try_append(e, meta_start, scope_hash, callsite_hash)};
+  }
+
   // ── Consumer (background): drain up to max_count entries ────────────
   // Copies into `out` and the three optional parallel-array buffers (any
   // may be null). Returns the number of entries drained. Uses memcpy for
@@ -335,6 +371,32 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // overwriting.  count > 0 guaranteed above ⟹ t+count > t ⟹ pre OK.
     tail.advance(t + count);
     return count;
+  }
+
+  // ── FOUND-G22: HotPath-pinned bg drain ─────────────────────────────
+  //
+  // drain() runs on the BackgroundThread and is allowed to do alloc,
+  // memcpy of large buffers, and other Warm-tier operations (per
+  // HotPath.h docblock: "BackgroundThread::drain — declared Warm").
+  // Wrapping the count-returned in HotPath<Warm, ...> declares the
+  // Warm tier at the type level so a consumer that requires Hot-tier
+  // (e.g., a fg dispatch path mistakenly wired to a bg counter) is
+  // rejected at compile time.
+  //
+  // ADDITIVE: existing drain() callers stay unchanged.
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
+  [[nodiscard, gnu::hot]]
+  crucible::safety::HotPath<crucible::safety::HotPathTier_v::Warm, uint32_t>
+  drain_pinned(
+      Entry*        out,
+      uint32_t      max_count,
+      MetaIndex*    out_meta_starts     = nullptr,
+      ScopeHash*    out_scope_hashes    = nullptr,
+      CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY
+      pre (max_count == 0 || out != nullptr)
+  {
+    return crucible::safety::HotPath<crucible::safety::HotPathTier_v::Warm, uint32_t>{
+        drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes)};
   }
 
   // ── Consumer (background): bulk SPSC drain with REQUIRED outputs ────

@@ -322,6 +322,7 @@ crucible_test(test_atomic_snapshot_wait)
 crucible_test(test_cipher_wait)
 crucible_test(test_cipher_publish_tier)
 crucible_test(test_kernel_cache_residency_heat)
+crucible_test(test_trace_ring_hot_path)
 crucible_test(test_atomic_snapshot)
 crucible_test(test_chase_lev_deque)
 crucible_test(test_mpsc_ring)
@@ -1128,6 +1129,15 @@ crucible_neg_compile_test(neg_hot_path_at_cross_tier_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 crucible_neg_compile_test(neg_hot_path_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
+
+# ─── FOUND-G22 HotPath production-call-site neg-compile ─────────────
+#
+# Load-bearing rejection at the CONSUMER-FENCE level (the hot-dispatch
+# admission gate that TraceRing::try_append_pinned and
+# MetaLog::try_append_pinned flow into).  Companion to the FOUND-G21
+# wrapper-surface and lattice-substrate fixtures above.
+crucible_neg_compile_test(neg_hot_path_cold_at_hot_fence
+  "constraints not satisfied|no matching function|associated constraints")
 
 # ─── FOUND-G26 Wait wrapper neg-compiles (6 fixtures: 4+2) ──────────
 #

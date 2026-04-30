@@ -8,6 +8,7 @@
 #include <crucible/Platform.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/rt/Registry.h>
+#include <crucible/safety/HotPath.h>
 #include <crucible/safety/Mutation.h>
 
 namespace crucible {
@@ -185,6 +186,32 @@ struct CRUCIBLE_OWNER MetaLog {
     // n > 0 guaranteed by the early return at the top.
     head.advance(h + n);
     return MetaIndex{h};
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FOUND-G22: HotPath-pinned producer surface
+  // ═══════════════════════════════════════════════════════════════
+  //
+  // try_append is the foreground per-op TensorMeta append site —
+  // declared Hot per HotPath.h docblock.  The body satisfies the
+  // hot-path contract (SPSC ring + memcpy + acquire/release atomics
+  // + prefetch; no alloc, no syscall, no block).
+  //
+  // try_append_pinned() declares this fact at the type level so a
+  // consumer of the returned MetaIndex who declares
+  // `requires HotPath::satisfies<Hot>` gets compile-time
+  // confirmation that the value originated from a hot-path-safe
+  // producer.  ADDITIVE: existing try_append() callers stay
+  // unchanged.
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
+  [[nodiscard]] CRUCIBLE_INLINE
+  crucible::safety::HotPath<crucible::safety::HotPathTier_v::Hot, MetaIndex>
+  try_append_pinned(const TensorMeta* metas, uint32_t n)
+      CRUCIBLE_NO_THREAD_SAFETY
+      pre (n == 0 || metas != nullptr)
+  {
+    return crucible::safety::HotPath<crucible::safety::HotPathTier_v::Hot, MetaIndex>{
+        try_append(metas, n)};
   }
 
   // Background thread only (SPSC consumer): read meta at absolute index.
