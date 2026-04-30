@@ -13,6 +13,7 @@
 #include "effects/Capabilities.h"
 #include "Platform.h"
 #include "Saturate.h"
+#include "safety/AllocClass.h"
 #include "safety/Mutation.h"
 #include "safety/Refined.h"
 
@@ -153,6 +154,73 @@ class CRUCIBLE_OWNER Arena {
     return static_cast<T*>(alloc(a,
         crucible::safety::Positive<size_t>{nbytes},
         crucible::safety::PowerOfTwo<size_t>{alignof(T)}));
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // FOUND-G42: AllocClass-pinned production surface
+  // ═══════════════════════════════════════════════════════════════════
+  //
+  // These wrappers return `safety::AllocClass<AllocClassTag_v::Arena, T*>`,
+  // pinning the allocation tier at the type level so consumers can
+  // declare `requires AllocClass<...>::satisfies<Arena>` (or stronger)
+  // gates that REJECT heap-allocated pointers at compile time.
+  //
+  // Tier rationale: every pinned variant returns Arena tier — the
+  // pointer points into a bump-allocated arena chunk.  By the
+  // AllocClass lattice (HugePage ⊑ Mmap ⊑ Heap ⊑ Arena ⊑ Pool ⊑
+  // Stack), Arena-tier pointers satisfy any consumer whose required
+  // tier is Arena-or-weaker (Heap / Mmap / HugePage), but FAIL the
+  // gate at Pool or Stack tier — those tiers promise stronger
+  // bounds (Pool = preallocated freelist, no bump cost; Stack = no
+  // allocator call at all).
+  //
+  // Why additive (not replacing) the raw alloc_obj/alloc_array:
+  //
+  //   The raw alloc_obj<T> surface is consumed by ~50+ call sites
+  //   in the production tree (TraceGraph, MerkleDag, Graph, etc.).
+  //   Most do not yet need type-level allocation-tier discipline;
+  //   forcing the wrapper everywhere is a churn migration without
+  //   immediate benefit.  The `_pinned` variants are for NEW
+  //   production sites that explicitly want the type-level fence
+  //   (CLAUDE.md §VIII memory-plan discipline at the type system).
+  //
+  // The pinned variants forward to the raw alloc_obj / alloc_array /
+  // alloc_array_nonzero with no additional cost — the AllocClass
+  // wrapper is EBO-collapsed (sizeof(AllocClass<Arena, T*>) ==
+  // sizeof(T*)) and the constructor is a single move.
+
+  // Allocate a single default-constructible T, return AllocClass<Arena, T*>.
+  // Mirrors alloc_obj's contract: never returns a null wrapper (the
+  // pointer inside is always non-null per gnu::returns_nonnull).
+  template <typename T>
+  [[nodiscard]] CRUCIBLE_INLINE
+  safety::AllocClass<safety::AllocClassTag_v::Arena, T*>
+  alloc_obj_pinned(effects::Alloc a) noexcept CRUCIBLE_LIFETIMEBOUND {
+    return safety::AllocClass<safety::AllocClassTag_v::Arena, T*>{
+        alloc_obj<T>(a)};
+  }
+
+  // Allocate N elements of T, return AllocClass<Arena, T*>.  n == 0
+  // produces a wrapper around nullptr (same contract as alloc_array).
+  template <typename T>
+  [[nodiscard]] CRUCIBLE_INLINE
+  safety::AllocClass<safety::AllocClassTag_v::Arena, T*>
+  alloc_array_pinned(effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND {
+    return safety::AllocClass<safety::AllocClassTag_v::Arena, T*>{
+        alloc_array<T>(a, n)};
+  }
+
+  // Allocate N > 0 elements of T, return AllocClass<Arena, T*>.  The
+  // contract on n > 0 is preserved; the wrapped pointer is always
+  // non-null.
+  template <typename T>
+  [[nodiscard]] CRUCIBLE_INLINE
+  safety::AllocClass<safety::AllocClassTag_v::Arena, T*>
+  alloc_array_nonzero_pinned(effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND
+      pre (n > 0)
+  {
+    return safety::AllocClass<safety::AllocClassTag_v::Arena, T*>{
+        alloc_array_nonzero<T>(a, n)};
   }
 
   // Copy a null-terminated string into the arena. Returns nullptr iff src is
