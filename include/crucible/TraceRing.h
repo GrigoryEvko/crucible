@@ -25,6 +25,8 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/FxAliases.h>
 #include <crucible/rt/Registry.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Mutation.h>
@@ -318,6 +320,52 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
         try_append(e, meta_start, scope_hash, callsite_hash)};
   }
 
+  // ═══════════════════════════════════════════════════════════════
+  // FOUND-I16: row-typed facade — pins try_append as Pure
+  // ═══════════════════════════════════════════════════════════════
+  //
+  // Sibling of MetaLog::try_append_pure (FOUND-I17).  try_append is
+  // a hot-path memory-only operation: SPSC ring slot store +
+  // acquire/release atomic publish + producer-local cache update.
+  // No I/O, no blocking, no allocation, no init/test/bg context.
+  // In F* effect terms, it is `Pure` (the bottom of the OsUniverse
+  // effect-row lattice — empty row).  This facade pins that fact at
+  // the type level via an `IsPure<CallerRow>` constraint.
+  //
+  // Caller-row contract: the CallerRow template argument MUST satisfy
+  // `Subrow<CallerRow, Row<>>`, i.e., the caller's row must be empty.
+  // A caller in any of the following contexts is REJECTED at compile
+  // time:
+  //   • Row<Effect::Alloc> — allocating context cannot append
+  //   • Row<Effect::IO>    — IO context cannot append
+  //   • Row<Effect::Block> — blocking context cannot append
+  //   • Row<Effect::Bg>    — bg consumer-side cannot append
+  //   • Row<Effect::Init>  — init-time code cannot append (hot path)
+  //   • Row<Effect::Test>  — test-only code cannot append in prod
+  //   • Any non-trivial row containing one or more atoms
+  //
+  // The facade is ADDITIVE: existing try_append() / try_append_pinned()
+  // callers stay unchanged.  Production hot-path callers can migrate
+  // by replacing `try_append(...)` with `try_append_pure<>(...)` to
+  // gain the compile-time check.  Default template argument is `Row<>`
+  // so `try_append_pure(...)` (no template-arg) is equivalent to
+  // `try_append_pure<Row<>>(...)` — the most common case at production
+  // hot-path call sites.
+  //
+  // Implementation: thin forwarder to try_append; zero runtime cost
+  // (one inlined branchless tail-call under -O3).  The IsPure
+  // constraint is checked at substitution time, not at runtime.
+  template <typename CallerRow = ::crucible::effects::Row<>>
+      requires ::crucible::effects::IsPure<CallerRow>
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
+  [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE bool try_append_pure(
+      const Entry& e,
+      MetaIndex    meta_start    = MetaIndex::none(),
+      ScopeHash    scope_hash    = {},
+      CallsiteHash callsite_hash = {}) noexcept CRUCIBLE_NO_THREAD_SAFETY {
+    return try_append(e, meta_start, scope_hash, callsite_hash);
+  }
+
   // ── Consumer (background): drain up to max_count entries ────────────
   // Copies into `out` and the three optional parallel-array buffers (any
   // may be null). Returns the number of entries drained. Uses memcpy for
@@ -397,6 +445,43 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   {
     return crucible::safety::HotPath<crucible::safety::HotPathTier_v::Warm, uint32_t>{
         drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes)};
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FOUND-I16: row-typed facade — pins drain as Pure
+  // ═══════════════════════════════════════════════════════════════
+  //
+  // Sibling of try_append_pure on the consumer side.  drain reads
+  // produced entries into a caller-supplied buffer + advances the
+  // tail pointer with a release atomic.  Functionally pure at the
+  // C++ level: no I/O, no blocking, no allocation, no syscalls.
+  // The bg thread that *owns* the consumer side is itself in a Bg
+  // context, but each drain() call is a pure memory-only operation
+  // and can be invoked by any caller that declares Pure (the wrap-
+  // ping bg thread declares Bg via context structs, not via this
+  // call's row).
+  //
+  // Caller-row contract: identical to try_append_pure — the row
+  // must be empty.  This catches the bug where, e.g., an init-time
+  // cleanup path (Init context) or a fallback eager-execution path
+  // (Block context) inadvertently calls drain on the SPSC ring; the
+  // row mismatch rejects the call before it can corrupt the consumer-
+  // side tail.
+  //
+  // Implementation: thin forwarder to drain; zero runtime cost; the
+  // IsPure constraint is checked at substitution time.
+  template <typename CallerRow = ::crucible::effects::Row<>>
+      requires ::crucible::effects::IsPure<CallerRow>
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
+  [[nodiscard, gnu::hot]] uint32_t drain_pure(
+      Entry*        out,
+      uint32_t      max_count,
+      MetaIndex*    out_meta_starts     = nullptr,
+      ScopeHash*    out_scope_hashes    = nullptr,
+      CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY
+      pre (max_count == 0 || out != nullptr)
+  {
+    return drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes);
   }
 
   // ── Consumer (background): bulk SPSC drain with REQUIRED outputs ────

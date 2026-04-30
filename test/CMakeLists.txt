@@ -2012,6 +2012,46 @@ crucible_neg_compile_test(neg_metalog_try_append_pure_io_block
 crucible_neg_compile_test(neg_metalog_try_append_pure_full_row
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# ─── FOUND-I16 TraceRing row-fence — full per-axis matrix on both legs ─
+# TraceRing::try_append_pure<CallerRow> AND TraceRing::drain_pure<CallerRow>
+# both require IsPure<CallerRow>.  Sibling of the MetaLog::try_append_pure
+# matrix above.  16 fixtures = 8 per direction (per-axis × 6 atoms +
+# multi-atom + saturation).  Pins both directions of the SPSC ring.
+# Producer side:
+crucible_neg_compile_test(neg_tracering_try_append_pure_alloc
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_tracering_try_append_pure_io
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_tracering_try_append_pure_block
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_tracering_try_append_pure_bg
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_tracering_try_append_pure_init
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_tracering_try_append_pure_test
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_tracering_try_append_pure_io_block
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_tracering_try_append_pure_full_row
+  "constraints not satisfied|template constraint failure|associated constraints")
+# Consumer side:
+crucible_neg_compile_test(neg_tracering_drain_pure_alloc
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_tracering_drain_pure_io
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_tracering_drain_pure_block
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_tracering_drain_pure_bg
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_tracering_drain_pure_init
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_tracering_drain_pure_test
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_tracering_drain_pure_io_block
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_tracering_drain_pure_full_row
+  "constraints not satisfied|template constraint failure|associated constraints")
+
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
 # Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.
 # Mechanical extension of the D30-batch pattern; closes the

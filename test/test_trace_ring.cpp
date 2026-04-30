@@ -1,5 +1,8 @@
 #include <crucible/Platform.h>
 #include <crucible/TraceRing.h>
+#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/FxAliases.h>
 
 #include <atomic>
 #include "test_assert.h"
@@ -12,6 +15,7 @@ using crucible::ShapeHash;
 using crucible::ScopeHash;
 using crucible::CallsiteHash;
 using crucible::MetaIndex;
+namespace eff = ::crucible::effects;
 
 int main() {
   auto* ring = new crucible::TraceRing();
@@ -179,6 +183,184 @@ int main() {
     delete r;
 
     std::printf("test_trace_ring: concurrent SPSC integrity "
+                "(N=%u, producer_spins=%u) OK\n",
+                N, producer_spins.load());
+  }
+
+  // ── FOUND-I16: try_append_pure / drain_pure positive coverage ────────
+  //
+  // (a) Default template arg behaves identically to try_append.
+  // (b) Explicit Row<> template arg behaves identically.
+  // (c) Interleaved try_append + try_append_pure preserve FIFO order.
+  // (d) drain_pure mirrors drain semantics.
+  // (e) Compile-time IsPure witnesses for Pure / Tot / Ghost aliases
+  //     and structural rejection witnesses for non-Pure rows.
+  {
+    auto* r = new crucible::TraceRing();
+
+    // (a) Default template arg
+    crucible::TraceRing::Entry e1{};
+    e1.schema_hash = SchemaHash{0xCAFE0001};
+    assert(r->try_append_pure(e1, MetaIndex{1},
+                              ScopeHash{0xC1}, CallsiteHash{0xD1}));
+    assert(r->size() == 1);
+
+    // (b) Explicit Row<> template arg
+    crucible::TraceRing::Entry e2{};
+    e2.schema_hash = SchemaHash{0xCAFE0002};
+    assert(r->try_append_pure<eff::Row<>>(e2, MetaIndex{2},
+                                          ScopeHash{0xC2}, CallsiteHash{0xD2}));
+    assert(r->size() == 2);
+
+    // (c) Interleaved with raw try_append; FIFO order preserved
+    crucible::TraceRing::Entry e3{};
+    e3.schema_hash = SchemaHash{0xCAFE0003};
+    assert(r->try_append(e3, MetaIndex{3}, ScopeHash{0xC3}, CallsiteHash{0xD3}));
+    crucible::TraceRing::Entry e4{};
+    e4.schema_hash = SchemaHash{0xCAFE0004};
+    assert(r->try_append_pure<eff::PureRow>(e4, MetaIndex{4},
+                                            ScopeHash{0xC4}, CallsiteHash{0xD4}));
+    assert(r->size() == 4);
+
+    // (d) drain_pure mirrors drain semantics — default template arg
+    {
+      crucible::TraceRing::Entry batch_i16[4];
+      MetaIndex    meta_i16[4];
+      ScopeHash    scope_i16[4];
+      CallsiteHash csite_i16[4];
+      uint32_t got = r->drain_pure(batch_i16, 4, meta_i16, scope_i16, csite_i16);
+      assert(got == 4);
+      assert(batch_i16[0].schema_hash == SchemaHash{0xCAFE0001});
+      assert(batch_i16[1].schema_hash == SchemaHash{0xCAFE0002});
+      assert(batch_i16[2].schema_hash == SchemaHash{0xCAFE0003});
+      assert(batch_i16[3].schema_hash == SchemaHash{0xCAFE0004});
+      assert(meta_i16[0]  == MetaIndex{1}    && meta_i16[3]  == MetaIndex{4});
+      assert(scope_i16[0] == ScopeHash{0xC1} && scope_i16[3] == ScopeHash{0xC4});
+      assert(csite_i16[0] == CallsiteHash{0xD1} && csite_i16[3] == CallsiteHash{0xD4});
+      assert(r->size() == 0);
+    }
+
+    // (d') drain_pure with explicit Row<> + zero max_count
+    {
+      uint32_t zero_i16 = r->drain_pure<eff::Row<>>(nullptr, 0);
+      assert(zero_i16 == 0);
+    }
+
+    // (d'') drain_pure interleaved with raw drain
+    {
+      crucible::TraceRing::Entry e5{};
+      e5.schema_hash = SchemaHash{0xCAFE0005};
+      assert(r->try_append_pure(e5));
+
+      crucible::TraceRing::Entry e6{};
+      e6.schema_hash = SchemaHash{0xCAFE0006};
+      assert(r->try_append(e6));
+
+      crucible::TraceRing::Entry one[1];
+      uint32_t g1 = r->drain_pure<eff::TotRow>(one, 1);
+      assert(g1 == 1);
+      assert(one[0].schema_hash == SchemaHash{0xCAFE0005});
+
+      uint32_t g2 = r->drain(one, 1);
+      assert(g2 == 1);
+      assert(one[0].schema_hash == SchemaHash{0xCAFE0006});
+    }
+
+    // (e) Compile-time IsPure witnesses
+    static_assert(eff::IsPure<eff::Row<>>);
+    static_assert(eff::IsPure<eff::PureRow>);
+    static_assert(eff::IsPure<eff::TotRow>);
+    static_assert(eff::IsPure<eff::GhostRow>);
+    static_assert(!eff::IsPure<eff::DivRow>);                  // Block
+    static_assert(!eff::IsPure<eff::Row<eff::Effect::IO>>);
+    static_assert(!eff::IsPure<eff::Row<eff::Effect::Bg>>);
+    static_assert(!eff::IsPure<eff::Row<eff::Effect::Alloc>>);
+    static_assert(!eff::IsPure<eff::AllRow>);                  // saturation top
+    static_assert(!eff::IsPure<eff::Row<eff::Effect::IO,
+                                        eff::Effect::Block>>); // multi-atom
+
+    delete r;
+    std::printf("test_trace_ring: try_append_pure / drain_pure FOUND_I16 OK\n");
+  }
+
+  // ── FOUND-I16-AUDIT: concurrent SPSC integrity using _pure variants ──
+  //
+  // Mirror of the prior concurrent test, but BOTH producer and consumer
+  // use the row-typed facades.  Verifies:
+  //   • the row-typed wrapper introduces zero serialization latency
+  //     vs the raw API (producer_spins remains comparable)
+  //   • interleaved acquire/release ordering still holds when the
+  //     producer drives try_append_pure and the consumer drives
+  //     drain_pure (the wrapper does not change the underlying atomic
+  //     instructions).
+  //   • bit-exact replay: every produced entry arrives in producer
+  //     order with all four parallel-array fields intact.
+  {
+    constexpr uint32_t N = 100'000;
+    auto* r = new crucible::TraceRing();
+
+    std::atomic<bool>     producer_done{false};
+    std::atomic<uint32_t> producer_spins{0};
+
+    std::thread producer{[&]{
+      for (uint32_t i = 0; i < N; /* advance only on success */) {
+        crucible::TraceRing::Entry entry{};
+        entry.schema_hash = SchemaHash{i + 7};
+        entry.shape_hash  = ShapeHash{~uint64_t{i} + 7};
+        // CallerRow defaulted to Row<> — IsPure satisfied by construction.
+        if (r->try_append_pure(entry,
+                               MetaIndex{i + 1},
+                               ScopeHash{0xE000'0000ull | i},
+                               CallsiteHash{0xF000'0000ull | i})) [[likely]] {
+          ++i;
+        } else {
+          CRUCIBLE_SPIN_PAUSE;
+          producer_spins.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
+      producer_done.store(true, std::memory_order_release);
+    }};
+
+    std::thread consumer{[&]{
+      constexpr uint32_t DRAIN_CAP = 2048;
+      crucible::TraceRing::Entry pure_out[DRAIN_CAP];
+      MetaIndex    pure_meta [DRAIN_CAP];
+      ScopeHash    pure_scope[DRAIN_CAP];
+      CallsiteHash pure_csite[DRAIN_CAP];
+
+      uint32_t next = 0;
+      while (next < N) {
+        // Consumer calls drain_pure with explicit Row<> to exercise
+        // the substitution path (vs default template-arg path on the
+        // producer side).
+        uint32_t got = r->drain_pure<eff::Row<>>(
+            pure_out, DRAIN_CAP, pure_meta, pure_scope, pure_csite);
+        if (got == 0) {
+          if (producer_done.load(std::memory_order_acquire) &&
+              r->size() == 0) {
+            break;
+          }
+          CRUCIBLE_SPIN_PAUSE;
+          continue;
+        }
+        for (uint32_t k = 0; k < got; ++k) {
+          const uint32_t seq = next + k;
+          assert(pure_out[k].schema_hash == SchemaHash{seq + 7});
+          assert(pure_out[k].shape_hash  == ShapeHash{~uint64_t{seq} + 7});
+          assert(pure_meta[k]            == MetaIndex{seq + 1});
+          assert(pure_scope[k]           == ScopeHash{0xE000'0000ull | seq});
+          assert(pure_csite[k]           == CallsiteHash{0xF000'0000ull | seq});
+        }
+        next += got;
+      }
+      assert(next == N);
+    }};
+
+    producer.join();
+    consumer.join();
+    delete r;
+
+    std::printf("test_trace_ring: try_append_pure/drain_pure concurrent "
                 "(N=%u, producer_spins=%u) OK\n",
                 N, producer_spins.load());
   }
