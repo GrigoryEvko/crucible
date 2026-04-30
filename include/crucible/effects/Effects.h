@@ -24,3 +24,5 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/Computation.h>
 #include <crucible/effects/EffectRow.h>
+#include <crucible/effects/EffectRowLattice.h>
+#include <crucible/effects/OsUniverse.h>

@@ -84,6 +84,21 @@
 
 namespace crucible::effects {
 
+// ── Carrier-width invariant (FOUND-H01-AUDIT-2) ─────────────────────
+//
+// EffectRowLattice's carrier is std::uint64_t.  Bit position i is
+// derived from the underlying value of the i-th Effect enumerator;
+// `EL{1} << effect_count` is undefined behavior the moment effect_count
+// reaches 64.  The append-only Universe discipline (28_04_2026_effects
+// §8.5.3, FOUND-I04) keeps the bit positions of existing atoms stable;
+// this guard preempts the carrier-width regression at the moment a 64th
+// atom would be added — at which point the lattice MUST migrate to a
+// wider carrier (uint128 / std::bitset<N>) before the new atom lands.
+static_assert(effect_count <= 64,
+    "EffectRowLattice carrier is uint64_t — extend to a wider carrier "
+    "(uint128 / std::bitset<effect_count>) before adding a 65th Effect "
+    "atom.  See 28_04_2026_effects.md §8.5.3 (append-only Universe).");
+
 // ── EffectRowLattice ───────────────────────────────────────────────
 
 struct EffectRowLattice {
@@ -125,6 +140,76 @@ struct EffectRowLattice {
     [[nodiscard]] static consteval std::string_view name() noexcept {
         return "EffectRow";
     }
+
+    // ── At<Effect... Atoms> singleton sub-lattice (FOUND-H01-AUDIT-1) ──
+    //
+    // Per 28_04_2026_effects.md §5.2: the Graded substrate's `Modality::
+    // Relative` slot expects a *type-level grade* — the row pinned in
+    // the type, NOT carried as a runtime field.  H03's `Computation<R,
+    // T>` alias resolves through `EffectRowLattice::At<Es...>` so the
+    // grade-slot collapses to zero bytes via Graded's `[[no_unique_
+    // address]] grade_type grade_;` member, mirroring `ConfLattice::At
+    // <Conf>`, `ToleranceLattice::At<Tolerance>`, `QttSemiring::At<Qtt
+    // Grade>`.
+    //
+    // The sub-lattice is the singleton `{value}` over the parent's
+    // bitmask carrier:
+    //
+    //   At<Atoms...>::value          = OR of bit(Atoms)
+    //   At<Atoms...>::element_type   = empty struct (zero-byte carrier)
+    //   At<>::bottom() == top()      = the singleton's element
+    //   leq(any, any)                = true       (singleton trivially)
+    //   join/meet                    = the singleton's element
+    //
+    // Lattice axioms hold trivially because every operation returns the
+    // single inhabitant.  Birkhoff (Lattice.h:269) guarantees a bounded
+    // sub-lattice of a distributive lattice is itself distributive.
+    template <Effect... Atoms>
+    struct At {
+        // The bitmask encoding the pinned set of atoms.  Computed via
+        // fold-or; empty pack collapses to 0.  Bit position i comes
+        // from the underlying value of Effect::i — stable across
+        // append-only Universe extensions per 28_04 §8.5.3.
+        static constexpr std::uint64_t value =
+            ((std::uint64_t{1} << static_cast<std::uint8_t>(Atoms)) | ...
+             | std::uint64_t{0});
+
+        // Singleton element — empty struct so Graded's
+        // [[no_unique_address]] grade_type grade_ collapses to zero.
+        struct element_type {
+            constexpr element_type() noexcept = default;
+            [[nodiscard]] constexpr bool operator==(
+                element_type) const noexcept { return true; }
+        };
+        static_assert(std::is_empty_v<element_type>,
+            "At<Atoms...>::element_type must be empty so Graded's "
+            "[[no_unique_address]] grade_ slot collapses to 0 bytes.");
+
+        [[nodiscard]] static constexpr element_type bottom() noexcept {
+            return {};
+        }
+        [[nodiscard]] static constexpr element_type top() noexcept {
+            return {};
+        }
+        [[nodiscard]] static constexpr bool leq(
+            element_type, element_type) noexcept { return true; }
+        [[nodiscard]] static constexpr element_type join(
+            element_type, element_type) noexcept { return {}; }
+        [[nodiscard]] static constexpr element_type meet(
+            element_type, element_type) noexcept { return {}; }
+
+        [[nodiscard]] static consteval std::string_view name() noexcept {
+            return "EffectRow::At";
+        }
+
+        // Bridge to the parent lattice's bitmask carrier.  Consumers
+        // wanting the runtime bitmask (cache-key generation, runtime
+        // diagnostics) read `At<...>::bits()` to escape the type-level
+        // singleton encoding back to the parent lattice's element_type.
+        [[nodiscard]] static constexpr std::uint64_t bits() noexcept {
+            return value;
+        }
+    };
 };
 
 // ── Bridge: Row<Es...> → bitmask ────────────────────────────────────
@@ -153,6 +238,57 @@ static_assert(::crucible::algebra::Lattice<EffectRowLattice>);
 static_assert(::crucible::algebra::BoundedBelowLattice<EffectRowLattice>);
 static_assert(::crucible::algebra::BoundedAboveLattice<EffectRowLattice>);
 static_assert(::crucible::algebra::BoundedLattice<EffectRowLattice>);
+
+// At<Atoms...> singleton sub-lattice (FOUND-H01-AUDIT-1) — every pinned
+// pack must satisfy the same Lattice / BoundedLattice concept chain so
+// downstream Graded<Modality::Relative, EffectRowLattice::At<Es...>, T>
+// instantiations type-check uniformly.  Spot-witness across the empty
+// pack, single atom, multi-atom, and the universe.
+static_assert(::crucible::algebra::Lattice<EffectRowLattice::At<>>);
+static_assert(::crucible::algebra::BoundedLattice<EffectRowLattice::At<>>);
+static_assert(::crucible::algebra::Lattice<
+    EffectRowLattice::At<Effect::Alloc>>);
+static_assert(::crucible::algebra::BoundedLattice<
+    EffectRowLattice::At<Effect::Alloc>>);
+static_assert(::crucible::algebra::Lattice<
+    EffectRowLattice::At<Effect::Bg, Effect::Alloc, Effect::IO>>);
+static_assert(::crucible::algebra::BoundedLattice<
+    EffectRowLattice::At<Effect::Bg, Effect::Alloc, Effect::IO>>);
+
+// At<>::element_type is empty — the Graded grade slot collapses to 0
+// bytes, mirroring ConfLattice::At, ToleranceLattice::At, QttSemiring::
+// At.  Without this property the type-level grade pinning would force
+// a runtime carrier into every Computation<R, T> instance.
+static_assert(std::is_empty_v<EffectRowLattice::At<>::element_type>);
+static_assert(std::is_empty_v<
+    EffectRowLattice::At<Effect::Alloc>::element_type>);
+static_assert(std::is_empty_v<
+    EffectRowLattice::At<Effect::Alloc, Effect::IO>::element_type>);
+
+// At<...>::bits() is a stable bridge to the parent's bitmask carrier;
+// the encoding agrees with row_descriptor_v at every spot witness.
+static_assert(EffectRowLattice::At<>::bits() == 0);
+static_assert(EffectRowLattice::At<Effect::Alloc>::bits() ==
+    (std::uint64_t{1} << static_cast<std::uint8_t>(Effect::Alloc)));
+static_assert(EffectRowLattice::At<Effect::IO>::bits() ==
+    (std::uint64_t{1} << static_cast<std::uint8_t>(Effect::IO)));
+static_assert(EffectRowLattice::At<Effect::Alloc, Effect::IO>::bits() ==
+    EffectRowLattice::join(
+        EffectRowLattice::At<Effect::Alloc>::bits(),
+        EffectRowLattice::At<Effect::IO>::bits()));
+
+// At<>::bits() agrees with row_descriptor_v<Row<Atoms...>> — the two
+// type-level descriptors collapse to the same bitmask, proving the
+// At<> ↔ Row<> bridge needed by H03's Computation alias.
+static_assert(EffectRowLattice::At<>::bits()
+              == row_descriptor_v<Row<>>);
+static_assert(EffectRowLattice::At<Effect::Alloc>::bits()
+              == row_descriptor_v<Row<Effect::Alloc>>);
+static_assert(EffectRowLattice::At<Effect::Alloc, Effect::IO>::bits()
+              == row_descriptor_v<Row<Effect::Alloc, Effect::IO>>);
+// Order independence — At<A,B>::bits() == At<B,A>::bits() (set-fold).
+static_assert(EffectRowLattice::At<Effect::Alloc, Effect::IO>::bits()
+              == EffectRowLattice::At<Effect::IO, Effect::Alloc>::bits());
 
 // ── Self-test block ────────────────────────────────────────────────
 
@@ -328,6 +464,23 @@ inline void runtime_smoke_test_lattice() noexcept {
     // visible at the boundary, not just inside the self-test ns.
     [[maybe_unused]] EL d_pure  = row_descriptor_v<Row<>>;
     [[maybe_unused]] EL d_alloc = row_descriptor_v<Row<Effect::Alloc>>;
+
+    // At<> singleton sub-lattice (FOUND-H01-AUDIT-1) — drive the
+    // type-level grade-pin surface so its accessors get instantiated
+    // alongside the parent lattice's.  Same discipline as the parent
+    // smoke test: instantiate every consteval/constexpr accessor with
+    // non-constant args + concept-based capability checks.
+    using AtAlloc = L::template At<Effect::Alloc>;
+    using AtAB    = L::template At<Effect::Alloc, Effect::IO>;
+
+    [[maybe_unused]] auto at_b = AtAlloc::bottom();
+    [[maybe_unused]] auto at_t = AtAlloc::top();
+    [[maybe_unused]] bool at_le = AtAlloc::leq(at_b, at_t);
+    [[maybe_unused]] auto at_join = AtAlloc::join(at_b, at_t);
+    [[maybe_unused]] auto at_meet = AtAlloc::meet(at_b, at_t);
+    [[maybe_unused]] auto at_nm   = AtAlloc::name();
+    [[maybe_unused]] std::uint64_t at_bits = AtAlloc::bits();
+    [[maybe_unused]] std::uint64_t ab_bits = AtAB::bits();
 }
 
 }  // namespace crucible::effects

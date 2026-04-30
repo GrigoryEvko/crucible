@@ -55,7 +55,14 @@ inline constexpr std::size_t effect_count =
     std::meta::enumerators_of(^^Effect).size();
 
 // ── Diagnostic name emitter ─────────────────────────────────────────
-[[nodiscard]] consteval std::string_view effect_name(Effect e) noexcept {
+//
+// constexpr (not consteval) so the runtime smoke-test discipline can
+// drive every Effect atom through this accessor with non-constant
+// arguments — per feedback_algebra_runtime_smoke_test_discipline.
+// Constant-evaluated when called from consteval contexts (e.g.,
+// every_effect_has_name() below) — the demotion costs nothing at
+// compile time and unblocks runtime probing.
+[[nodiscard]] constexpr std::string_view effect_name(Effect e) noexcept {
     switch (e) {
         case Effect::Alloc: return "Alloc";
         case Effect::IO:    return "IO";

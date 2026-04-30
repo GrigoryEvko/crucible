@@ -22,6 +22,7 @@
 #include <crucible/effects/EffectRowLattice.h>
 #include <crucible/effects/Effects.h>
 #include <crucible/effects/FxAliases.h>
+#include <crucible/effects/OsUniverse.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -60,6 +61,12 @@ void test_effect_row_lattice_compile() {
     // accessor + bridge through a non-constant-args path.
     ::crucible::effects::runtime_smoke_test_lattice();
 }
+void test_os_universe_compile() {
+    // Same discipline for the H02 OsUniverse descriptor — drive
+    // every Universe accessor (name / atom_name / bit_position /
+    // lattice typedef) through a non-constant-args path.
+    ::crucible::effects::runtime_smoke_test_os_universe();
+}
 
 }  // namespace
 
@@ -72,6 +79,7 @@ int main() {
     run_test("test_fx_aliases_compile",    test_fx_aliases_compile);
     run_test("test_effect_row_lattice_compile",
              test_effect_row_lattice_compile);
+    run_test("test_os_universe_compile",   test_os_universe_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");

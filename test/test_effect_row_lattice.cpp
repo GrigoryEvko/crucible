@@ -147,6 +147,114 @@ void test_lattice_subrow_bridge_agreement_runtime() {
                  fx::AllRow, fx::PureRow>()));
 }
 
+void test_subrow_leq_agreement_exhaustive() {
+    // FOUND-H01-AUDIT-3: exhaustive enumerative Subrow ↔ leq agreement
+    // over the Effect × Effect cartesian product of singleton rows.
+    //
+    // The semantic guarantee `is_subrow_v<R1, R2>` ⇔
+    // `L::leq(row_descriptor_v<R1>, row_descriptor_v<R2>)` MUST hold
+    // for every pair of singleton rows AND for the empty/universe
+    // edge cases — not just the four hand-picked spot witnesses in
+    // test_lattice_subrow_bridge_agreement_runtime above.
+    //
+    // Implemented as a constexpr block with explicit static_asserts
+    // for every Effect × Effect singleton pair.  Reflection-based
+    // template-for would also work but explicit pairs make the
+    // diagnostic point-precise on regression: a future renumbering of
+    // the Effect enum would produce one failed assertion per pair
+    // affected.
+    //
+    // 36 single-atom × single-atom pairs + 6 empty↔single pairs +
+    // 6 single↔universe pairs + the empty↔universe edge = 49 cases.
+
+    auto check = []<typename R1, typename R2>() noexcept -> bool {
+        constexpr bool type_level = fx::is_subrow_v<R1, R2>;
+        constexpr bool bitmask    = L::leq(
+            fx::row_descriptor_v<R1>, fx::row_descriptor_v<R2>);
+        return type_level == bitmask;
+    };
+
+    // 36 single-atom × single-atom pairs — leq is true iff R1 == R2.
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Alloc>, fx::Row<fx::Effect::Alloc>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Alloc>, fx::Row<fx::Effect::IO>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Alloc>, fx::Row<fx::Effect::Block>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Alloc>, fx::Row<fx::Effect::Bg>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Alloc>, fx::Row<fx::Effect::Init>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Alloc>, fx::Row<fx::Effect::Test>>()));
+
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::IO>,    fx::Row<fx::Effect::Alloc>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::IO>,    fx::Row<fx::Effect::IO>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::IO>,    fx::Row<fx::Effect::Block>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::IO>,    fx::Row<fx::Effect::Bg>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::IO>,    fx::Row<fx::Effect::Init>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::IO>,    fx::Row<fx::Effect::Test>>()));
+
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Block>, fx::Row<fx::Effect::Alloc>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Block>, fx::Row<fx::Effect::IO>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Block>, fx::Row<fx::Effect::Block>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Block>, fx::Row<fx::Effect::Bg>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Block>, fx::Row<fx::Effect::Init>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Block>, fx::Row<fx::Effect::Test>>()));
+
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Bg>,    fx::Row<fx::Effect::Alloc>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Bg>,    fx::Row<fx::Effect::IO>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Bg>,    fx::Row<fx::Effect::Block>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Bg>,    fx::Row<fx::Effect::Bg>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Bg>,    fx::Row<fx::Effect::Init>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Bg>,    fx::Row<fx::Effect::Test>>()));
+
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Init>,  fx::Row<fx::Effect::Alloc>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Init>,  fx::Row<fx::Effect::IO>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Init>,  fx::Row<fx::Effect::Block>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Init>,  fx::Row<fx::Effect::Bg>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Init>,  fx::Row<fx::Effect::Init>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Init>,  fx::Row<fx::Effect::Test>>()));
+
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Test>,  fx::Row<fx::Effect::Alloc>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Test>,  fx::Row<fx::Effect::IO>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Test>,  fx::Row<fx::Effect::Block>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Test>,  fx::Row<fx::Effect::Bg>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Test>,  fx::Row<fx::Effect::Init>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Test>,  fx::Row<fx::Effect::Test>>()));
+
+    // 6 empty ↔ single pairs — empty is subrow of every singleton;
+    // no singleton is subrow of empty.
+    EXPECT_TRUE((check.template operator()<fx::Row<>, fx::Row<fx::Effect::Alloc>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<>, fx::Row<fx::Effect::IO>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<>, fx::Row<fx::Effect::Block>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<>, fx::Row<fx::Effect::Bg>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<>, fx::Row<fx::Effect::Init>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<>, fx::Row<fx::Effect::Test>>()));
+
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Alloc>, fx::Row<>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::IO>,    fx::Row<>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Block>, fx::Row<>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Bg>,    fx::Row<>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Init>,  fx::Row<>>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Test>,  fx::Row<>>()));
+
+    // 6 single ↔ universe pairs — every singleton is subrow of the
+    // universe; the universe is subrow of no singleton.
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Alloc>, fx::AllRow>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::IO>,    fx::AllRow>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Block>, fx::AllRow>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Bg>,    fx::AllRow>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Init>,  fx::AllRow>()));
+    EXPECT_TRUE((check.template operator()<fx::Row<fx::Effect::Test>,  fx::AllRow>()));
+
+    EXPECT_TRUE((check.template operator()<fx::AllRow, fx::Row<fx::Effect::Alloc>>()));
+    EXPECT_TRUE((check.template operator()<fx::AllRow, fx::Row<fx::Effect::IO>>()));
+    EXPECT_TRUE((check.template operator()<fx::AllRow, fx::Row<fx::Effect::Block>>()));
+    EXPECT_TRUE((check.template operator()<fx::AllRow, fx::Row<fx::Effect::Bg>>()));
+    EXPECT_TRUE((check.template operator()<fx::AllRow, fx::Row<fx::Effect::Init>>()));
+    EXPECT_TRUE((check.template operator()<fx::AllRow, fx::Row<fx::Effect::Test>>()));
+
+    // Empty ↔ universe edge case — empty is subrow of universe; not
+    // the other way around.
+    EXPECT_TRUE((check.template operator()<fx::Row<>, fx::AllRow>()));
+    EXPECT_TRUE((check.template operator()<fx::AllRow, fx::Row<>>()));
+}
+
 void test_lattice_is_distributive_at_runtime() {
     // Powerset lattice is distributive — verify at runtime witnesses
     // (the static_assert wall already proves it at compile time).
@@ -197,6 +305,8 @@ int main() {
              test_row_descriptor_bridge_runtime);
     run_test("test_lattice_subrow_bridge_agreement_runtime",
              test_lattice_subrow_bridge_agreement_runtime);
+    run_test("test_subrow_leq_agreement_exhaustive",
+             test_subrow_leq_agreement_exhaustive);
     run_test("test_lattice_is_distributive_at_runtime",
              test_lattice_is_distributive_at_runtime);
     run_test("test_lattice_name_runtime",
