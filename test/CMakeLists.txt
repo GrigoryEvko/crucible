@@ -335,6 +335,7 @@ crucible_test(test_unary_transform)
 crucible_test(test_binary_transform)
 crucible_test(test_producer_endpoint)
 crucible_test(test_consumer_endpoint)
+crucible_test(test_swmr_writer)
 crucible_test(test_is_producer_handle)
 crucible_test(test_is_consumer_handle)
 crucible_test(test_is_swmr_handle)
@@ -1348,6 +1349,25 @@ crucible_neg_compile_test(neg_consumer_endpoint_region_value_t_on_non_endpoint
   "constraints not satisfied|template constraint failure|associated constraints")
 
 crucible_neg_compile_test(neg_consumer_endpoint_value_consistent_v_on_non_endpoint
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D17 SwmrWriter constrained-extractor fixtures ────────────
+#
+# Pins the THREE constrained extractors on SwmrWriter.h:
+#   - swmr_writer_handle_value_t
+#   - swmr_writer_published_value_t
+#   - swmr_writer_value_consistent_v
+# Each constrained on `requires SwmrWriter<FnPtr>`.  Without the
+# constraint, diagnostics would land in D07's swmr_writer_value_t
+# requires clause (or in std::remove_cv_t deep templates) rather
+# than at the SWMR-writer-shape boundary.
+crucible_neg_compile_test(neg_swmr_writer_handle_value_t_on_non_swmr_writer
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_swmr_writer_published_value_t_on_non_swmr_writer
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_swmr_writer_value_consistent_v_on_non_swmr_writer
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
