@@ -1,0 +1,183 @@
+// FOUND-I02: RowHash recursive fmix64 fold over wrapper stack.
+//
+// Sentinel TU for `safety/diag/RowHashFold.h` — closes the
+// header-only static_assert blind spot (feedback memory) by ensuring
+// every embedded compile-time check runs under the project's full
+// warning matrix at least once.  Also exercises the runtime smoke
+// test per feedback_algebra_runtime_smoke_test_discipline.
+//
+// The volatile-sink discipline below defeats constant-folding so the
+// optimizer cannot collapse these to compile-time-only checks: every
+// raw u64 result must materialize through a volatile store.
+
+#include <crucible/safety/diag/RowHashFold.h>
+#include <crucible/Types.h>
+
+#include "test_assert.h"
+
+#include <cstdio>
+#include <cstdint>
+
+namespace ce = crucible::effects;
+namespace cd = crucible::safety::diag;
+using crucible::RowHash;
+
+// ─────────────────────────────────────────────────────────────────────
+// Permutation invariance — every pack permutation yields the same
+// row hash.  The header asserts this at compile time; the runtime
+// peer ensures the fold isn't a consteval-only fast-path masking a
+// runtime miscompile.
+static void test_runtime_permutation_invariance() {
+    using ce::Effect;
+    using ce::Row;
+
+    // 2-way: every pair permutation hashes identically.
+    volatile std::uint64_t sink_ai =
+        cd::row_hash_of_v<Row<Effect::Alloc, Effect::IO>>.raw();
+    volatile std::uint64_t sink_ia =
+        cd::row_hash_of_v<Row<Effect::IO, Effect::Alloc>>.raw();
+    assert(sink_ai == sink_ia);
+
+    volatile std::uint64_t sink_bg =
+        cd::row_hash_of_v<Row<Effect::Block, Effect::Bg>>.raw();
+    volatile std::uint64_t sink_gb =
+        cd::row_hash_of_v<Row<Effect::Bg, Effect::Block>>.raw();
+    assert(sink_bg == sink_gb);
+
+    // 3-way: triplet permutations hash identically.
+    volatile std::uint64_t sink_aib =
+        cd::row_hash_of_v<Row<Effect::Alloc, Effect::IO, Effect::Block>>.raw();
+    volatile std::uint64_t sink_bia =
+        cd::row_hash_of_v<Row<Effect::Block, Effect::IO, Effect::Alloc>>.raw();
+    volatile std::uint64_t sink_iba =
+        cd::row_hash_of_v<Row<Effect::IO, Effect::Block, Effect::Alloc>>.raw();
+    assert(sink_aib == sink_bia);
+    assert(sink_aib == sink_iba);
+    assert(sink_bia == sink_iba);
+
+    std::printf("  test_permutation_invariance:    PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Cardinality discrimination — adding a single effect must always
+// change the row hash.  The cache cannot collapse `Row<Alloc>` and
+// `Row<Alloc, IO>` into the same slot; doing so silently breaks the
+// federation contract because Row<Alloc> ⊊ Row<Alloc, IO>.
+static void test_runtime_cardinality_discrimination() {
+    using ce::Effect;
+    using ce::Row;
+
+    volatile std::uint64_t h0 = cd::row_hash_of_v<Row<>>.raw();
+    volatile std::uint64_t h1 = cd::row_hash_of_v<Row<Effect::Alloc>>.raw();
+    volatile std::uint64_t h2 =
+        cd::row_hash_of_v<Row<Effect::Alloc, Effect::IO>>.raw();
+    volatile std::uint64_t h3 =
+        cd::row_hash_of_v<Row<Effect::Alloc, Effect::IO, Effect::Block>>.raw();
+    volatile std::uint64_t h6 = cd::row_hash_of_v<
+        Row<Effect::Alloc, Effect::IO, Effect::Block,
+            Effect::Bg,    Effect::Init, Effect::Test>>.raw();
+
+    assert(h0 != h1);
+    assert(h1 != h2);
+    assert(h2 != h3);
+    assert(h3 != h6);
+    assert(h0 != h6);
+
+    // None of these are zero (bare-type sentinel) or UINT64_MAX
+    // (KernelCache EMPTY-slot marker).  Real row hashes occupy the
+    // interior of the 64-bit space.
+    assert(h0 != 0);
+    assert(h1 != 0);
+    assert(h6 != 0);
+    assert(h0 != static_cast<std::uint64_t>(-1));
+    assert(h6 != static_cast<std::uint64_t>(-1));
+
+    std::printf("  test_cardinality:               PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Bare types contribute zero — confirms the row_hash_contribution
+// primary template fires for non-row-bearing T, and that the result
+// flows through `row_hash_of_v` as `RowHash{0}`.
+static void test_runtime_bare_types_zero() {
+    volatile std::uint64_t h_int    = cd::row_hash_of_v<int>.raw();
+    volatile std::uint64_t h_float  = cd::row_hash_of_v<float>.raw();
+    volatile std::uint64_t h_double = cd::row_hash_of_v<double>.raw();
+    volatile std::uint64_t h_void   = cd::row_hash_of_v<void>.raw();
+
+    assert(h_int    == 0);
+    assert(h_float  == 0);
+    assert(h_double == 0);
+    assert(h_void   == 0);
+
+    // Bare-type RowHash is the default sentinel value (zero) but NOT
+    // the EMPTY-slot sentinel (UINT64_MAX).  These are semantically
+    // distinct cache states.
+    auto rh_int = cd::row_hash_of_v<int>;
+    assert(!rh_int.is_sentinel());
+    assert(rh_int == RowHash{});
+
+    std::printf("  test_bare_types_zero:           PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// EmptyRow vs bare-type discrimination — semantically critical.
+// `Computation<EmptyRow, T>` is a row-typed Met(X) carrier; bare T
+// is just a payload.  The cache must distinguish them.
+static void test_runtime_empty_row_distinct_from_bare() {
+    volatile std::uint64_t h_empty_row = cd::row_hash_of_v<ce::EmptyRow>.raw();
+    volatile std::uint64_t h_bare      = cd::row_hash_of_v<int>.raw();
+
+    assert(h_empty_row != h_bare);
+    assert(h_empty_row != 0);
+    assert(h_bare      == 0);
+
+    // EmptyRow hash is the published constant; pin it so any change
+    // to the seed strategy is caught at runtime as well as compile
+    // time.
+    assert(h_empty_row == cd::detail::EMPTY_ROW_HASH);
+
+    std::printf("  test_empty_row_distinct:        PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Determinism — repeated calls must produce identical hashes
+// (exercises the `inline constexpr` storage of the variable
+// template).  Different invocation contexts also yield the same
+// hash; the volatile sink defeats hoisting.
+static void test_runtime_determinism() {
+    using ce::Effect;
+    using ce::Row;
+
+    auto get_hash = []() noexcept -> std::uint64_t {
+        return cd::row_hash_of_v<Row<Effect::Alloc, Effect::IO>>.raw();
+    };
+
+    volatile std::uint64_t a = get_hash();
+    volatile std::uint64_t b = get_hash();
+    volatile std::uint64_t c = get_hash();
+    assert(a == b);
+    assert(b == c);
+    assert(a == c);
+
+    std::printf("  test_determinism:               PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Header's own runtime smoke test — drives every documented runtime
+// claim through ABI-visible code.
+static void test_header_runtime_smoke() {
+    cd::runtime_smoke_test_row_hash_fold();
+    std::printf("  test_header_smoke:              PASSED\n");
+}
+
+int main() {
+    test_runtime_permutation_invariance();
+    test_runtime_cardinality_discrimination();
+    test_runtime_bare_types_zero();
+    test_runtime_empty_row_distinct_from_bare();
+    test_runtime_determinism();
+    test_header_runtime_smoke();
+    std::printf("test_row_hash_fold: 6 groups, all passed\n");
+    return 0;
+}
