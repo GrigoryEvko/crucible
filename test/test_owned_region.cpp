@@ -707,6 +707,254 @@ void test_parallel_reduce_views_mapper_invoked_n_times() {
         mapper_invocations.load(std::memory_order_acquire) == SHARDS);
 }
 
+// ── Tier 4b: parallel_apply_pair<N> co-iterated pair — FOUND-F02 ─────
+
+// FOUND-F02-A1 — basic pair: vector add y = x + y in parallel.
+// Both regions size 4096; N=8 even split.  After the call, region_b
+// holds element-wise sum of input region_a + region_b.
+void test_parallel_apply_pair_vector_add() {
+    Arena arena;
+    constexpr std::size_t N = 4096;
+
+    auto perm_a = permission_root_mint<DataA>();
+    auto region_a = OwnedRegion<std::uint64_t, DataA>::adopt(
+        test_alloc_token(), arena, N, std::move(perm_a));
+    auto perm_b = permission_root_mint<DataB>();
+    auto region_b = OwnedRegion<std::uint64_t, DataB>::adopt(
+        test_alloc_token(), arena, N, std::move(perm_b));
+
+    for (std::size_t i = 0; i < N; ++i) {
+        region_a.span()[i] = i;
+        region_b.span()[i] = 2 * i;
+    }
+
+    auto [recombined_a, recombined_b] = parallel_apply_pair<8>(
+        std::move(region_a), std::move(region_b),
+        [](auto sub_a, auto sub_b) noexcept {
+            // sub_a.size() == sub_b.size() because regions have
+            // matching size and identical chunk math.
+            CRUCIBLE_TEST_REQUIRE_NX(sub_a.size() == sub_b.size());
+            auto src = sub_a.cspan();
+            auto dst = sub_b.span();
+            for (std::size_t i = 0; i < dst.size(); ++i) {
+                dst[i] = src[i] + dst[i];  // y = x + y
+            }
+        }
+    );
+
+    // recombined_a unchanged (we only read from it).
+    // recombined_b[i] should equal i + 2i == 3i.
+    for (std::size_t i = 0; i < N; ++i) {
+        CRUCIBLE_TEST_REQUIRE(recombined_a.cspan()[i] == i);
+        CRUCIBLE_TEST_REQUIRE(recombined_b.cspan()[i] == 3 * i);
+    }
+    CRUCIBLE_TEST_REQUIRE(recombined_a.size() == N);
+    CRUCIBLE_TEST_REQUIRE(recombined_b.size() == N);
+}
+
+// FOUND-F02-A2 — sequential N=1 fast path.  No jthread spawn; body
+// invoked inline on (whole_a, whole_b) wrapped as single-shard
+// sub-regions.
+void test_parallel_apply_pair_sequential_n1() {
+    Arena arena;
+    constexpr std::size_t N = 100;
+
+    auto region_a = OwnedRegion<std::uint64_t, DataA>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+    auto region_b = OwnedRegion<std::uint64_t, DataB>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataB>());
+
+    for (std::size_t i = 0; i < N; ++i) {
+        region_a.span()[i] = i;
+        region_b.span()[i] = 0;
+    }
+
+    auto [out_a, out_b] = parallel_apply_pair<1>(
+        std::move(region_a), std::move(region_b),
+        [](auto sub_a, auto sub_b) noexcept {
+            CRUCIBLE_TEST_REQUIRE_NX(sub_a.size() == 100);
+            CRUCIBLE_TEST_REQUIRE_NX(sub_b.size() == 100);
+            auto src = sub_a.cspan();
+            auto dst = sub_b.span();
+            for (std::size_t i = 0; i < dst.size(); ++i) dst[i] = src[i] * 7;
+        }
+    );
+
+    for (std::size_t i = 0; i < N; ++i) {
+        CRUCIBLE_TEST_REQUIRE(out_b.cspan()[i] == i * 7);
+    }
+}
+
+// FOUND-F02-A3 — smallest-parallel-N (N==2).  4 elements split across
+// 2 shards.  Pins that the smallest-genuinely-parallel case works and
+// that pair iteration aligns shard I of A with shard I of B.
+void test_parallel_apply_pair_n2_smallest_parallel() {
+    Arena arena;
+    constexpr std::size_t N = 4;
+
+    auto region_a = OwnedRegion<std::uint64_t, DataA>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+    auto region_b = OwnedRegion<std::uint64_t, DataB>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataB>());
+    region_a.span()[0] = 1; region_a.span()[1] = 2;
+    region_a.span()[2] = 3; region_a.span()[3] = 4;
+    for (std::size_t i = 0; i < N; ++i) region_b.span()[i] = 0;
+
+    auto [out_a, out_b] = parallel_apply_pair<2>(
+        std::move(region_a), std::move(region_b),
+        [](auto sub_a, auto sub_b) noexcept {
+            // Per-shard sub_a == sub_b in element count (chunk math
+            // identical because parent sizes match).
+            CRUCIBLE_TEST_REQUIRE_NX(sub_a.size() == sub_b.size());
+            auto src = sub_a.cspan();
+            auto dst = sub_b.span();
+            for (std::size_t i = 0; i < dst.size(); ++i) {
+                dst[i] = src[i] * src[i];  // square
+            }
+        }
+    );
+
+    CRUCIBLE_TEST_REQUIRE(out_b.cspan()[0] == 1);   // 1²
+    CRUCIBLE_TEST_REQUIRE(out_b.cspan()[1] == 4);   // 2²
+    CRUCIBLE_TEST_REQUIRE(out_b.cspan()[2] == 9);   // 3²
+    CRUCIBLE_TEST_REQUIRE(out_b.cspan()[3] == 16);  // 4²
+}
+
+// FOUND-F02-A4 — uneven split.  100 elements / 8 shards (last shard
+// has the remainder).  Pin that pair iteration handles uneven chunk
+// math correctly: every (sub_a_I, sub_b_I) has matching shard size,
+// no element skipped or double-touched.
+void test_parallel_apply_pair_uneven_split() {
+    Arena arena;
+    constexpr std::size_t N = 100;
+
+    auto region_a = OwnedRegion<std::uint64_t, DataA>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+    auto region_b = OwnedRegion<std::uint64_t, DataB>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataB>());
+
+    for (std::size_t i = 0; i < N; ++i) {
+        region_a.span()[i] = i + 1;
+        region_b.span()[i] = 0;
+    }
+
+    auto [out_a, out_b] = parallel_apply_pair<8>(
+        std::move(region_a), std::move(region_b),
+        [](auto sub_a, auto sub_b) noexcept {
+            CRUCIBLE_TEST_REQUIRE_NX(sub_a.size() == sub_b.size());
+            auto src = sub_a.cspan();
+            auto dst = sub_b.span();
+            for (std::size_t i = 0; i < dst.size(); ++i) dst[i] = src[i];
+        }
+    );
+
+    for (std::size_t i = 0; i < N; ++i) {
+        CRUCIBLE_TEST_REQUIRE(out_b.cspan()[i] == i + 1);
+    }
+}
+
+// FOUND-F02-A5 — body is invoked exactly N times when N >= 1.  Use a
+// shared atomic counter to confirm worker dispatch.
+void test_parallel_apply_pair_body_invoked_n_times() {
+    Arena arena;
+    constexpr std::size_t SHARDS = 8;
+    constexpr std::size_t N = 800;
+
+    auto region_a = OwnedRegion<std::uint32_t, DataA>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+    auto region_b = OwnedRegion<std::uint32_t, DataB>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataB>());
+
+    std::atomic<std::size_t> body_invocations{0};
+
+    auto recombined = parallel_apply_pair<SHARDS>(
+        std::move(region_a), std::move(region_b),
+        [&body_invocations](auto sub_a, auto sub_b) noexcept {
+            body_invocations.fetch_add(1, std::memory_order_relaxed);
+            (void)sub_a; (void)sub_b;
+        }
+    );
+
+    CRUCIBLE_TEST_REQUIRE(
+        body_invocations.load(std::memory_order_acquire) == SHARDS);
+    CRUCIBLE_TEST_REQUIRE(recombined.first.size() == N);
+    CRUCIBLE_TEST_REQUIRE(recombined.second.size() == N);
+}
+
+// FOUND-F02-A6 — DetSafe: same input + same body, run twice, identical
+// output.  Workers writing to disjoint shards plus jthread::join's
+// happens-before guarantee a deterministic post-recombine state
+// regardless of worker scheduling order.  Use a non-commutative
+// per-element op (XOR mask depending on index) to ensure shard
+// alignment matters.
+void test_parallel_apply_pair_deterministic_across_runs() {
+    Arena arena;
+    constexpr std::size_t N = 1024;
+
+    auto run_once = [&arena]() noexcept {
+        auto src = OwnedRegion<std::uint64_t, DataA>::adopt(
+            test_alloc_token(), arena, N, permission_root_mint<DataA>());
+        auto dst = OwnedRegion<std::uint64_t, DataB>::adopt(
+            test_alloc_token(), arena, N, permission_root_mint<DataB>());
+        for (std::size_t i = 0; i < N; ++i) {
+            src.span()[i] = std::uint64_t{i} * 31u + 7u;
+            dst.span()[i] = std::uint64_t{i} * 17u + 3u;
+        }
+
+        auto [_a, out_b] = parallel_apply_pair<8>(
+            std::move(src), std::move(dst),
+            [](auto sub_a, auto sub_b) noexcept {
+                auto a = sub_a.cspan();
+                auto b = sub_b.span();
+                for (std::size_t i = 0; i < b.size(); ++i) {
+                    b[i] = a[i] ^ b[i] ^ static_cast<std::uint64_t>(i);
+                }
+            }
+        );
+        std::array<std::uint64_t, N> snapshot{};
+        for (std::size_t i = 0; i < N; ++i) snapshot[i] = out_b.cspan()[i];
+        return snapshot;
+    };
+
+    auto first  = run_once();
+    auto second = run_once();
+    auto third  = run_once();
+    CRUCIBLE_TEST_REQUIRE(first == second);
+    CRUCIBLE_TEST_REQUIRE(second == third);
+}
+
+// FOUND-F02-A7 — heterogeneous element types and tags.  The regions
+// don't have to share T or W.  This pins that template parameter
+// flexibility: T1=float, T2=int32; W1=DataA, W2=DataB.
+void test_parallel_apply_pair_heterogeneous_types() {
+    Arena arena;
+    constexpr std::size_t N = 64;
+
+    auto region_a = OwnedRegion<float, DataA>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+    auto region_b = OwnedRegion<std::int32_t, DataB>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataB>());
+    for (std::size_t i = 0; i < N; ++i) {
+        region_a.span()[i] = static_cast<float>(i) + 0.5f;
+        region_b.span()[i] = 0;
+    }
+
+    auto [out_a, out_b] = parallel_apply_pair<4>(
+        std::move(region_a), std::move(region_b),
+        [](auto sub_a, auto sub_b) noexcept {
+            auto src = sub_a.cspan();
+            auto dst = sub_b.span();
+            for (std::size_t i = 0; i < dst.size(); ++i) {
+                dst[i] = static_cast<std::int32_t>(src[i]);  // truncate
+            }
+        }
+    );
+
+    for (std::size_t i = 0; i < N; ++i) {
+        CRUCIBLE_TEST_REQUIRE(out_b.cspan()[i] == static_cast<std::int32_t>(i));
+    }
+}
+
 // ── Tier 5: parallel_for_views<1> sequential fast path ──────────
 
 void test_parallel_for_views_sequential_n1() {
@@ -925,6 +1173,20 @@ int main() {
              test_parallel_reduce_views_n2_smallest_parallel);
     run_test("test_parallel_reduce_views_uneven_split",
              test_parallel_reduce_views_uneven_split);
+    run_test("test_parallel_apply_pair_vector_add",
+             test_parallel_apply_pair_vector_add);
+    run_test("test_parallel_apply_pair_sequential_n1",
+             test_parallel_apply_pair_sequential_n1);
+    run_test("test_parallel_apply_pair_n2_smallest_parallel",
+             test_parallel_apply_pair_n2_smallest_parallel);
+    run_test("test_parallel_apply_pair_uneven_split",
+             test_parallel_apply_pair_uneven_split);
+    run_test("test_parallel_apply_pair_body_invoked_n_times",
+             test_parallel_apply_pair_body_invoked_n_times);
+    run_test("test_parallel_apply_pair_deterministic_across_runs",
+             test_parallel_apply_pair_deterministic_across_runs);
+    run_test("test_parallel_apply_pair_heterogeneous_types",
+             test_parallel_apply_pair_heterogeneous_types);
     run_test("test_parallel_for_views_sequential_n1",        test_parallel_for_views_sequential_n1);
     run_test("test_adaptive_picks_sequential_for_small_workload",
              test_adaptive_picks_sequential_for_small_workload);

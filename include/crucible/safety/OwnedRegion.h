@@ -125,6 +125,15 @@ class [[nodiscard]] OwnedRegion {
     friend std::pair<R, OwnedRegion<U, Whole>>
     parallel_reduce_views(OwnedRegion<U, Whole>&&, R, Mapper, Reducer) noexcept;
 
+    // FOUND-F02 — parallel_apply_pair<N> takes TWO regions and
+    // rebuilds both after worker join; needs friendship to call
+    // rebuild_parent_ on each.
+    template <std::size_t N, typename T1, typename W1,
+              typename T2, typename W2, typename Body>
+    friend std::pair<OwnedRegion<T1, W1>, OwnedRegion<T2, W2>>
+    parallel_apply_pair(OwnedRegion<T1, W1>&&, OwnedRegion<T2, W2>&&,
+                        Body) noexcept;
+
 public:
     using value_type = T;
     using tag_type   = Tag;

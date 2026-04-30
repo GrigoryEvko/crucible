@@ -1661,6 +1661,24 @@ crucible_neg_compile_test(neg_parallel_for_views_move_only_body
 crucible_neg_compile_test(neg_parallel_reduce_views_move_only_mapper
   "must be CopyConstructible|static_assert|static assertion")
 
+# ─── FOUND-F02 — parallel_apply_pair static_assert fences ────────────
+#
+# Mirrors the F01 / F04 patterns for the pair-iterated primitive in
+# safety/Workload.h.  Three body static_asserts in
+# `parallel_apply_pair<N>` (N > 0; body noexcept-invocable when
+# N >= 1; body CopyConstructible when N >= 2) each get a neg-compile
+# fixture so a refactor that drops or weakens any assertion is caught
+# at build time rather than at runtime / in deep std::jthread template
+# instantiation diagnostics.
+crucible_neg_compile_test(neg_parallel_apply_pair_n_zero
+  "parallel_apply_pair<N> requires N > 0|static_assert|static assertion")
+
+crucible_neg_compile_test(neg_parallel_apply_pair_throwing_body
+  "body must be noexcept-invocable|static_assert|static assertion")
+
+crucible_neg_compile_test(neg_parallel_apply_pair_move_only_body
+  "must be CopyConstructible|static_assert|static assertion")
+
 # ─── FOUND-D15 ProducerEndpoint constrained-extractor fixtures ──────
 #
 # Pins the four constrained extractors on ProducerEndpoint.h:

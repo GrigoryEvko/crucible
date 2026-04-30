@@ -52,6 +52,14 @@
 //     main thread reduces partials via reducer(R, R) starting from
 //     init.  No shared atomic accumulator.  R returned by value.
 //
+//   parallel_apply_pair<N>(region_a, region_b, body)
+//                              -> std::pair<OwnedRegion<T1, W1>,
+//                                           OwnedRegion<T2, W2>>
+//     Co-iterated pair variant.  Each worker receives the I-th
+//     sub-region of BOTH regions and invokes body(sub_a, sub_b).
+//     Sizes must match; chunk math is identical for both regions.
+//     Returns the recombined pair.
+//
 //   parallel_for_views_adaptive<N>(region, body, budget)
 //                              -> OwnedRegion<T, Whole>
 //     Cost-model gated.  Same return type; sequential or parallel
@@ -171,6 +179,24 @@ void spawn_workers_with_partials_(Tup&& subs, Mapper mapper,
              mapper, &slot = partials[Is]]
             (std::stop_token) mutable noexcept {
                 slot = mapper(std::move(sub));
+            }
+        }...
+    };
+}
+
+// Pair variant: each worker captures sub_a_I and sub_b_I (BOTH by
+// move, one shard per region), plus body by copy.  Body is called
+// with both sub-regions for the I-th shard.
+template <typename TupA, typename TupB, typename Body, std::size_t... Is>
+void spawn_workers_pair_(TupA&& subs_a, TupB&& subs_b, Body body,
+                          std::index_sequence<Is...>) noexcept
+{
+    [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {
+        std::jthread{
+            [sub_a = std::move(std::get<Is>(std::forward<TupA>(subs_a))),
+             sub_b = std::move(std::get<Is>(std::forward<TupB>(subs_b))),
+             body](std::stop_token) mutable noexcept {
+                body(std::move(sub_a), std::move(sub_b));
             }
         }...
     };
@@ -402,6 +428,129 @@ parallel_reduce_views(OwnedRegion<T, Whole>&& region, R init,
     return std::pair<R, OwnedRegion<T, Whole>>{
         std::move(result),
         OwnedRegion<T, Whole>::template rebuild_parent_<Whole>(base, count)
+    };
+}
+
+// ── parallel_apply_pair<N, T1, W1, T2, W2, Body> ─────────────────────
+//
+// Co-iterated pair variant.  Each worker receives the I-th sub-region
+// of BOTH input regions and invokes body(sub_a, sub_b).  Both input
+// regions are split independently into N shards via
+// OwnedRegion::split_into<N>(); the I-th sub-region of region_a is
+// paired with the I-th sub-region of region_b.
+//
+// ── API contract (FOUND-F02) ────────────────────────────────────────
+//
+//   * Element-count match required: region_a.size() == region_b.size().
+//                       Enforced by CRUCIBLE_ASSERT (P2900 boundary
+//                       contract; semantic respects per-TU policy).
+//                       When sizes are equal, the chunk math
+//                       (chunk = ceil(count/N)) is identical for both
+//                       regions, so shard I of A and shard I of B
+//                       have the same element count.
+//
+//   * N == 1 fast path: no jthread spawn; body invoked inline on
+//                       (region_a, region_b) wrapped as single-shard
+//                       sub-regions.
+//   * N >= 2:           N jthreads spawn, each invoking body on its
+//                       (sub_a_I, sub_b_I) pair; RAII join via
+//                       std::array destructor before recombine.
+//
+// Body invocation count: exactly N for any N >= 1.  Workers see
+// disjoint shards of each region.
+//
+// Body must be noexcept-invocable per the static_assert; throwing
+// across thread boundaries violates -fno-exceptions and triggers
+// std::terminate inside the worker jthread.
+//
+// Body must be CopyConstructible when N >= 2: spawn_workers_pair_
+// captures body by value into each per-worker jthread lambda (one
+// copy per worker, N copies total).  Move-only bodies are rejected
+// by the API-boundary static_assert (mirrors the F01 / F04 fences).
+//
+// Tag policy: W1 and W2 may be the same tag or different tags.  When
+// distinct (the common case — separate read/write regions, or two
+// independent inputs), Slice<W1, I> != Slice<W2, I> and the per-shard
+// types are unambiguously distinct.  When equal (both regions share
+// the same root tag, e.g. two halves of a previously-split workspace
+// reunified into separate OwnedRegions), each region's permission
+// chain is independent and the parallel split is sound by structural
+// argument from `permission_fork`.
+//
+// DetSafe: workers write to disjoint shards of disjoint regions;
+// the recombined OwnedRegion pair's content is deterministic in the
+// body's writes.  Worker scheduling order does NOT affect the result
+// because shards are disjoint (no inter-shard or inter-region
+// read-after-write).
+//
+// Lowering target for FOUND-D13 BinaryTransform — the dispatcher
+// routes binary-transform-shaped functions
+//   void f(OwnedRegion<T1, W1>&&, OwnedRegion<T2, W2>&&)
+// to this primitive when the cost model picks parallel.
+
+template <std::size_t N, typename T1, typename W1, typename T2, typename W2,
+          typename Body>
+[[nodiscard]] std::pair<OwnedRegion<T1, W1>, OwnedRegion<T2, W2>>
+parallel_apply_pair(OwnedRegion<T1, W1>&& region_a,
+                    OwnedRegion<T2, W2>&& region_b,
+                    Body body) noexcept
+{
+    static_assert(N > 0, "parallel_apply_pair<N> requires N > 0");
+    static_assert(
+        std::is_nothrow_invocable_v<Body&,
+                                    OwnedRegion<T1, Slice<W1, 0>>&&,
+                                    OwnedRegion<T2, Slice<W2, 0>>&&>,
+        "parallel_apply_pair body must be noexcept-invocable as "
+        "void(OwnedRegion<T1, Slice<W1, I>>&&, OwnedRegion<T2, Slice<W2, I>>&&) "
+        "— typically a generic lambda.  Required by Crucible's "
+        "-fno-exceptions rule.");
+
+    // Element-count match per FOUND-F02 / 27_04 §3.2 — body sees
+    // both shards simultaneously and a mismatch would mean shards
+    // walk past each other (chunk math diverges between regions).
+    // Runtime contract because sizes are runtime quantities; respects
+    // per-TU contract-evaluation-semantic.
+    CRUCIBLE_ASSERT(region_a.size() == region_b.size());
+
+    // Snapshot base+count BEFORE moving (split_into consumes each).
+    T1*               base_a  = region_a.data();
+    const std::size_t count_a = region_a.size();
+    T2*               base_b  = region_b.data();
+    const std::size_t count_b = region_b.size();
+
+    if constexpr (N == 1) {
+        // Sequential fast path: invoke body inline on the (single)
+        // sub-region pair.  No jthread spawn.  Body is consumed by
+        // direct call; copy-constructibility is NOT required here.
+        auto subs_a = std::move(region_a).template split_into<1>();
+        auto subs_b = std::move(region_b).template split_into<1>();
+        body(std::move(std::get<0>(subs_a)),
+             std::move(std::get<0>(subs_b)));
+    } else {
+        // Parallel path: spawn_workers_pair_ captures body BY VALUE
+        // into each per-worker jthread lambda (one copy per worker).
+        // Lift the contract from the spawn_workers_pair_ depths to
+        // the API boundary so move-only bodies yield a clean
+        // diagnostic naming the contract.  Mirrors F01 / F04 fences.
+        static_assert(std::is_copy_constructible_v<Body>,
+            "parallel_apply_pair<N> body must be CopyConstructible "
+            "when N >= 2 — captured by value into each per-worker "
+            "jthread lambda.  Move-only callables are rejected by "
+            "this gate.");
+
+        auto subs_a = std::move(region_a).template split_into<N>();
+        auto subs_b = std::move(region_b).template split_into<N>();
+        detail::spawn_workers_pair_(std::move(subs_a), std::move(subs_b),
+                                     body, std::make_index_sequence<N>{});
+        // ~std::array<jthread, N> joins all workers above.
+    }
+
+    // Rebuild both parent OwnedRegions.  Each call is structurally
+    // sound by the same `permission_fork`-derived argument used in
+    // parallel_for_views.  Caller receives both regions as a pair.
+    return std::pair<OwnedRegion<T1, W1>, OwnedRegion<T2, W2>>{
+        OwnedRegion<T1, W1>::template rebuild_parent_<W1>(base_a, count_a),
+        OwnedRegion<T2, W2>::template rebuild_parent_<W2>(base_b, count_b)
     };
 }
 
