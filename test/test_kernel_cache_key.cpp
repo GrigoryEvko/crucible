@@ -199,6 +199,115 @@ static void test_axis_swap_rejected() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Cross-strong-hash isolation — RowHash must not silently convert to
+// any other Family-A persistent hash.  Each strong hash is its own
+// type island; mixing them at a call site is a compile error.
+//
+// This audit closes the "I added a strong type but forgot to make it
+// distinct from the other strong types" failure mode.  CRUCIBLE_STRONG_HASH
+// already guarantees this structurally (each macro expansion produces
+// a distinct unrelated struct), but pinning it as a test catches future
+// edits that might accidentally widen the conversion surface.
+static void test_rowhash_isolation() {
+    // RowHash neither converts to nor from any other Family-A hash.
+    static_assert(!std::is_convertible_v<RowHash, ContentHash>);
+    static_assert(!std::is_convertible_v<RowHash, MerkleHash>);
+    static_assert(!std::is_convertible_v<RowHash, SchemaHash>);
+    static_assert(!std::is_convertible_v<RowHash, ShapeHash>);
+    static_assert(!std::is_convertible_v<RowHash, ScopeHash>);
+    static_assert(!std::is_convertible_v<RowHash, CallsiteHash>);
+    static_assert(!std::is_convertible_v<RowHash, RecipeHash>);
+
+    static_assert(!std::is_convertible_v<ContentHash,  RowHash>);
+    static_assert(!std::is_convertible_v<MerkleHash,   RowHash>);
+    static_assert(!std::is_convertible_v<SchemaHash,   RowHash>);
+    static_assert(!std::is_convertible_v<ShapeHash,    RowHash>);
+    static_assert(!std::is_convertible_v<ScopeHash,    RowHash>);
+    static_assert(!std::is_convertible_v<CallsiteHash, RowHash>);
+    static_assert(!std::is_convertible_v<RecipeHash,   RowHash>);
+
+    // Raw uint64_t doesn't silently become a RowHash either — explicit
+    // ctor only.  Construction works (ctor exists), conversion does not.
+    static_assert(!std::is_convertible_v<uint64_t, RowHash>);
+    static_assert(std::is_constructible_v<RowHash, uint64_t>);
+
+    // Same shape as the other Family-A hashes — keeps the macro
+    // expansion uniform.  If RowHash ever drifts (e.g. someone adds
+    // arithmetic), this trips first.
+    static_assert(sizeof(RowHash) == sizeof(uint64_t));
+    static_assert(std::is_trivially_copyable_v<RowHash>);
+    static_assert(std::is_standard_layout_v<RowHash>);
+    static_assert(std::is_nothrow_default_constructible_v<RowHash>);
+
+    // KernelCacheKey constructible from (ContentHash, RowHash) — the
+    // ONLY two-arg shape that compiles.
+    static_assert(std::is_constructible_v<KernelCacheKey,
+                                          ContentHash, RowHash>);
+
+    std::printf("  test_rowhash_isolation:         PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Full noexcept propagation — every member function is noexcept.  A
+// future edit that accidentally throws (e.g. by adding a logging
+// hook) would break SPSC-ring usage where the cache key is the SPSC
+// payload and any throw would leak the producer side.
+static void test_full_noexcept() {
+    static_assert(std::is_nothrow_default_constructible_v<KernelCacheKey>);
+    static_assert(std::is_nothrow_copy_constructible_v<KernelCacheKey>);
+    static_assert(std::is_nothrow_move_constructible_v<KernelCacheKey>);
+    static_assert(std::is_nothrow_copy_assignable_v<KernelCacheKey>);
+    static_assert(std::is_nothrow_move_assignable_v<KernelCacheKey>);
+    static_assert(std::is_nothrow_destructible_v<KernelCacheKey>);
+
+    constexpr KernelCacheKey k1{};
+    constexpr KernelCacheKey k2{};
+    static_assert(noexcept(k1.is_zero()));
+    static_assert(noexcept(k1.is_sentinel()));
+    static_assert(noexcept(KernelCacheKey::sentinel()));
+    static_assert(noexcept(k1 <=> k2));
+    static_assert(noexcept(k1 == k2));
+    static_assert(noexcept(k1 != k2));
+
+    std::printf("  test_full_noexcept:             PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Designated-initializer construction — KernelCacheKey is an
+// aggregate, so all of these forms must work.  This is the typical
+// call-site shape when the caller has only one axis and wants the
+// other defaulted.
+static void test_designated_init_forms() {
+    constexpr KernelCacheKey k_full{
+        .content_hash = ContentHash{42},
+        .row_hash     = RowHash{99},
+    };
+    static_assert(k_full.content_hash == ContentHash{42});
+    static_assert(k_full.row_hash     == RowHash{99});
+
+    constexpr KernelCacheKey k_content_only{
+        .content_hash = ContentHash{42},
+    };
+    static_assert(k_content_only.content_hash == ContentHash{42});
+    static_assert(k_content_only.row_hash     == RowHash{}); // default
+    static_assert(k_content_only.row_hash.raw() == 0);
+
+    constexpr KernelCacheKey k_row_only{
+        .row_hash = RowHash{99},
+    };
+    static_assert(k_row_only.content_hash == ContentHash{}); // default
+    static_assert(k_row_only.row_hash     == RowHash{99});
+
+    // Positional brace-init with single argument also works (rest
+    // defaulted via NSDMI).
+    constexpr KernelCacheKey k_positional_one{ContentHash{42}};
+    static_assert(k_positional_one.content_hash == ContentHash{42});
+    static_assert(k_positional_one.row_hash.raw() == 0);
+
+    std::printf("  test_designated_init:           PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Runtime peer for the constexpr claims above — ensures the
 // constexpr static_asserts aren't masking a runtime miscompile via
 // some constexpr-only fast path.  Volatile-anchored to defeat
@@ -300,9 +409,12 @@ int main() {
     test_per_axis_distinctness();
     test_lexicographic_ordering();
     test_axis_swap_rejected();
+    test_rowhash_isolation();
+    test_full_noexcept();
+    test_designated_init_forms();
     test_runtime_peer();
     test_partial_sentinel_not_full_sentinel();
     test_bit_cast_round_trip();
-    std::printf("test_kernel_cache_key: 9 groups, all passed\n");
+    std::printf("test_kernel_cache_key: 12 groups, all passed\n");
     return 0;
 }
