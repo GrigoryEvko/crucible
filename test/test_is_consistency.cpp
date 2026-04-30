@@ -8,7 +8,9 @@
 
 #include <crucible/safety/IsConsistency.h>
 
+#include <crucible/algebra/GradedTrait.h>
 #include <crucible/safety/Consistency.h>
+#include <crucible/safety/GradedExtract.h>
 #include <crucible/safety/IsNumericalTier.h>
 #include <crucible/safety/IsOwnedRegion.h>
 #include <crucible/safety/NumericalTier.h>
@@ -279,6 +281,86 @@ void test_local_alias_round_trip() {
                   == extract::Consistency_v::CAUSAL_PREFIX);
 }
 
+void test_zero_cost_layout_invariant() {
+    // The wrapper-detection trait must be a pure metaprogram — it
+    // doesn't add storage to the wrapped value.  Pin the regime-1
+    // EBO collapse claim from Consistency.h L342-347 from the
+    // dispatcher-side perspective: if a function takes a
+    // Consistency<L, T> by value, the ABI is the same as taking T.
+    static_assert(sizeof(C_int_strong)   == sizeof(int));
+    static_assert(sizeof(C_int_eventual) == sizeof(int));
+    static_assert(sizeof(C_double_strong) == sizeof(double));
+    static_assert(sizeof(C_struct_strong) == sizeof(payload_struct));
+}
+
+void test_public_convenience_aliases() {
+    // safety::consistency::Strong<T> etc. are PUBLIC aliases (not
+    // detail::).  They must round-trip through the trait identically
+    // to their expanded forms.
+    using StrongInt    = safety::consistency::Strong<int>;
+    using EventualInt  = safety::consistency::Eventual<int>;
+    using CausalDouble = safety::consistency::CausalPrefix<double>;
+    using BoundedFloat = safety::consistency::BoundedStaleness<float>;
+    using RywChar      = safety::consistency::ReadYourWrites<char>;
+
+    // All aliases admitted.
+    static_assert( extract::is_consistency_v<StrongInt>);
+    static_assert( extract::is_consistency_v<EventualInt>);
+    static_assert( extract::is_consistency_v<CausalDouble>);
+    static_assert( extract::is_consistency_v<BoundedFloat>);
+    static_assert( extract::is_consistency_v<RywChar>);
+
+    // Levels recovered correctly through the alias.
+    static_assert(extract::consistency_level_v<StrongInt>
+                  == extract::Consistency_v::STRONG);
+    static_assert(extract::consistency_level_v<EventualInt>
+                  == extract::Consistency_v::EVENTUAL);
+    static_assert(extract::consistency_level_v<CausalDouble>
+                  == extract::Consistency_v::CAUSAL_PREFIX);
+    static_assert(extract::consistency_level_v<BoundedFloat>
+                  == extract::Consistency_v::BOUNDED_STALENESS);
+    static_assert(extract::consistency_level_v<RywChar>
+                  == extract::Consistency_v::READ_YOUR_WRITES);
+
+    // Element types preserved.
+    static_assert(std::is_same_v<
+        extract::consistency_value_t<StrongInt>, int>);
+    static_assert(std::is_same_v<
+        extract::consistency_value_t<CausalDouble>, double>);
+    static_assert(std::is_same_v<
+        extract::consistency_value_t<RywChar>, char>);
+
+    // Aliases are the SAME TYPE as their expanded form (not just
+    // semantically equivalent — the alias declares no new type).
+    static_assert(std::is_same_v<StrongInt, C_int_strong>);
+    static_assert(std::is_same_v<EventualInt, C_int_eventual>);
+}
+
+void test_graded_wrapper_conformance() {
+    // Consistency satisfies the GradedWrapper concept (FOUND-G05).
+    // This means the FOUND-D09 universal extractors agree with the
+    // FOUND-D22 specific extractors:
+    //   value_type_of_t<C> == consistency_value_t<C>
+    // (D09's predicate works on every GradedWrapper, while D22's
+    // works specifically on Consistency<>; they should agree on
+    // any Consistency<>.)
+
+    static_assert( extract::is_graded_wrapper_v<C_int_strong>);
+    static_assert( extract::is_graded_wrapper_v<C_double_strong>);
+
+    // Universal extractor agrees with specific extractor.
+    static_assert(std::is_same_v<
+        extract::value_type_of_t<C_int_strong>,
+        extract::consistency_value_t<C_int_strong>>);
+    static_assert(std::is_same_v<
+        extract::value_type_of_t<C_double_strong>,
+        extract::consistency_value_t<C_double_strong>>);
+
+    // Bare int is neither wrapper.
+    static_assert(!extract::is_graded_wrapper_v<int>);
+    static_assert(!extract::is_consistency_v<int>);
+}
+
 void test_cross_wrapper_exclusion() {
     // Consistency vs OwnedRegion vs NumericalTier — fully disjoint.
     static_assert( extract::is_consistency_v<C_int_strong>);
@@ -345,6 +427,12 @@ int main() {
              test_dispatcher_function_parameter_use_case);
     run_test("test_local_alias_round_trip",
              test_local_alias_round_trip);
+    run_test("test_zero_cost_layout_invariant",
+             test_zero_cost_layout_invariant);
+    run_test("test_public_convenience_aliases",
+             test_public_convenience_aliases);
+    run_test("test_graded_wrapper_conformance",
+             test_graded_wrapper_conformance);
     run_test("test_cross_wrapper_exclusion",
              test_cross_wrapper_exclusion);
     run_test("test_runtime_consistency", test_runtime_consistency);
