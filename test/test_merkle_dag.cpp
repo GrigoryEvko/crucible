@@ -127,6 +127,84 @@ int main() {
   assert(cache.lookup(ContentHash{0x9999}, RowHash{0})    == nullptr);
   assert(cache.lookup(ContentHash{0x1234}, RowHash{0xCC}) == nullptr);
 
+  // ── FOUND-I05-AUDIT — sentinel row + table-full + many-rows ──
+  //
+  // Sentinel row (RowHash::sentinel() == UINT64_MAX) is a valid
+  // lookup target — RowHash is a strong type whose sentinel()
+  // factory is reserved for end-of-region markers, but at the
+  // KernelCache level it is just another 64-bit row identity.
+  // The cache must NOT treat it specially; it is a row like any
+  // other.
+  FakeKernel fk_sentinel{0xFEED};
+  assert(cache.lookup(ContentHash{0x1234}, RowHash::sentinel()) == nullptr);
+  assert(cache.insert(ContentHash{0x1234}, RowHash::sentinel(),
+                      reinterpret_cast<crucible::CompiledKernel*>(&fk_sentinel)).has_value());
+  assert(cache.lookup(ContentHash{0x1234}, RowHash::sentinel())
+      == reinterpret_cast<crucible::CompiledKernel*>(&fk_sentinel));
+  // Sentinel-row entry does NOT alias any other (C, R).
+  assert(cache.lookup(ContentHash{0x1234}, RowHash{0})
+      == reinterpret_cast<crucible::CompiledKernel*>(&fk2));         // unchanged
+  assert(cache.lookup(ContentHash{0x1234}, RowHash{0xAA})
+      == reinterpret_cast<crucible::CompiledKernel*>(&fk_row_v2));   // unchanged
+
+  // Many rows under same content_hash — exercises probe-chain
+  // wraparound under row pressure.  Insert N distinct rows
+  // sharing one content_hash and verify each is independently
+  // retrievable.
+  {
+    crucible::KernelCache row_pressure_cache(/*capacity=*/16);
+    constexpr uint32_t N = 8;  // half the table — leaves room for probes
+    FakeKernel row_kernels[N];
+    for (uint32_t i = 0; i < N; ++i) {
+      row_kernels[i] = FakeKernel{static_cast<int>(0x1000 + i)};
+      assert(row_pressure_cache.insert(
+          ContentHash{0xABCDEF},                          // ALL share one content
+          RowHash{0x100 + i},                             // distinct rows
+          reinterpret_cast<crucible::CompiledKernel*>(&row_kernels[i])).has_value());
+    }
+    for (uint32_t i = 0; i < N; ++i) {
+      auto* k = row_pressure_cache.lookup(ContentHash{0xABCDEF}, RowHash{0x100 + i});
+      assert(k == reinterpret_cast<crucible::CompiledKernel*>(&row_kernels[i]));
+    }
+    // A row not in the set queries cleanly to nullptr — proves
+    // the probe correctly terminates without false-positive on
+    // a foreign-row sibling.
+    assert(row_pressure_cache.lookup(ContentHash{0xABCDEF}, RowHash{0xDEAD}) == nullptr);
+  }
+
+  // TableFull under row pressure — cap=4, insert 5 distinct
+  // (C, R) pairs under SAME content; the 5th must return TableFull.
+  {
+    crucible::KernelCache tiny_cache(/*capacity=*/4);
+    FakeKernel small_kernels[5];
+    for (uint32_t i = 0; i < 4; ++i) {
+      small_kernels[i] = FakeKernel{static_cast<int>(i)};
+      assert(tiny_cache.insert(
+          ContentHash{0x42},
+          RowHash{0xA00 + i},
+          reinterpret_cast<crucible::CompiledKernel*>(&small_kernels[i])).has_value());
+    }
+    // Fifth insert finds NO empty slot (all 4 occupied by
+    // (0x42, R_i) pairs with R_i != lookup_row); returns TableFull.
+    small_kernels[4] = FakeKernel{4};
+    auto fifth = tiny_cache.insert(
+        ContentHash{0x42},
+        RowHash{0xA04},                                   // novel row
+        reinterpret_cast<crucible::CompiledKernel*>(&small_kernels[4]));
+    assert(!fifth.has_value());
+    assert(fifth.error() == crucible::KernelCache::InsertError::TableFull);
+    // Variant update of an existing slot still succeeds — TableFull
+    // is only returned when no (content, row) match exists.
+    FakeKernel variant_replacement{0xC};
+    auto variant = tiny_cache.insert(
+        ContentHash{0x42},
+        RowHash{0xA00},                                   // existing row
+        reinterpret_cast<crucible::CompiledKernel*>(&variant_replacement));
+    assert(variant.has_value());
+    assert(tiny_cache.lookup(ContentHash{0x42}, RowHash{0xA00})
+        == reinterpret_cast<crucible::CompiledKernel*>(&variant_replacement));
+  }
+
   // Test element_size — returns ElementBytes strong type (#129).
   assert(crucible::element_size(crucible::ScalarType::Float)         == crucible::ElementBytes{4});
   assert(crucible::element_size(crucible::ScalarType::Double)        == crucible::ElementBytes{8});

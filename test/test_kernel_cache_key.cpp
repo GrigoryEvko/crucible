@@ -34,10 +34,12 @@ using namespace crucible;
 
 // ─────────────────────────────────────────────────────────────────────
 // Layout — exactly two persistent 64-bit hashes, no padding, 8B align.
-// The KernelCache Entry is a 16-byte slot today (atomic<uint64_t>
-// content_hash + atomic<CompiledKernel*> kernel — MerkleDag.h §979);
-// the future row-extended slot is 16-byte key + 8-byte pointer = 24,
-// which only fits cleanly if the key itself is exactly 16.
+// The KernelCache Entry is a 24-byte slot post-FOUND-I05 (atomic<u64>
+// content_hash + atomic<u64> row_hash + atomic<CompiledKernel*> kernel
+// — MerkleDag.h §979 + the FOUND-I05-AUDIT static_assert).  The
+// KernelCacheKey ITSELF is 16 bytes (just the two hashes); the
+// 8-byte kernel pointer brings the slot to 24.  The size pin in
+// MerkleDag.h::Entry guards against accidental field additions.
 static void test_layout_invariants() {
     static_assert(sizeof(KernelCacheKey) == 16);
     static_assert(alignof(KernelCacheKey) == 8);

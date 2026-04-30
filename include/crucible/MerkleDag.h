@@ -1032,24 +1032,10 @@ class CRUCIBLE_OWNER KernelCache {
       if (expected == lookup_hash) {
         // Same content_hash slot already exists — must verify row.
         // The CAS that owns this slot (whoever inserted first) has
-        // already published row_hash (because the insert protocol
-        // stores row_hash BEFORE the content_hash CAS becomes
-        // visible? — NO: content CAS is FIRST.  But our content
-        // CAS LOST (expected == lookup_hash means the slot's value
-        // was already lookup_hash).  That implies an earlier
-        // inserter has at least committed the content CAS.  They
-        // may not yet have published row_hash + kernel; but
-        // row_hash is monotone: once written, never rewritten,
-        // so a parallel inserter racing for the same slot reads
-        // row via acquire here.  If the slot is mid-claim
-        // (row_hash still 0), we must spin briefly OR continue
-        // probing (a concurrent inserter for the same content_hash
-        // either has a matching row — variant — or a different
-        // row — sibling slot, must be elsewhere).
-        //
-        // Spin until row_hash is observable.  This is the
-        // companion to the lookup-side await_claimed_ but for
-        // insert's variant-update path.
+        // already committed the content CAS.  They may not yet have
+        // published row_hash + kernel; spin briefly until row_hash
+        // is observable (the companion to the lookup-side
+        // await_claimed_, but for insert's variant-update path).
         uint64_t existing_row = entry.row_hash.load(std::memory_order_acquire);
         for (uint32_t spin = 0; spin < kClaimedSpinBudget && existing_row == 0; ++spin) {
           CRUCIBLE_SPIN_PAUSE;
@@ -1063,10 +1049,38 @@ class CRUCIBLE_OWNER KernelCache {
           entry.kernel.store(kernel, std::memory_order_release);
           return {};
         }
-        // Same content, different row (or inserter exceeded budget,
-        // which is functionally equivalent to "row mismatch" since
-        // this slot already belongs to someone else): keep probing
-        // for OUR (content, row) slot.
+        // Same content, different row (OR inserter exceeded the
+        // spin budget — see "Rare race" below): keep probing for
+        // OUR (content, row) slot.
+        //
+        // ── Rare race (FOUND-I05-AUDIT) ────────────────────────
+        // If inserter A wins the content CAS but is preempted
+        // before its row.store(R), and inserter B with the SAME
+        // (C, R) arrives, B's bounded spin can time out with
+        // existing_row == 0.  B then mistakes the still-CLAIMED
+        // slot for "different row" and continues probing,
+        // creating a DUPLICATE slot for (C, R) at probe position
+        // p_B > p_A.
+        //
+        // Functionally not catastrophic: subsequent lookup(C, R)
+        // finds A's slot first (lower probe position) and returns
+        // A's kernel; B's kernel becomes orphaned but visible only
+        // when A's slot is somehow evicted (which never happens —
+        // slots are insert-only).
+        //
+        // Cost: one wasted slot under preemption between A's
+        // content-CAS and A's row-store (≤ a few ns on x86; total
+        // window is ~2 release stores).  kClaimedSpinBudget = 64
+        // PAUSE cycles = ~2.5 µs at 25 ns/PAUSE on Skylake — A
+        // would have to be preempted for >2.5 µs in a 2-store
+        // window.  In production, this is so rare that the
+        // wasted slot is preferable to the alternative (spin
+        // forever / abort if A crashed mid-insert).
+        //
+        // If a future workload makes this race common, the fix
+        // is to widen kClaimedSpinBudget OR add a "slot-claim
+        // timestamp" field that lets B distinguish "A is stalled"
+        // from "A crashed", but neither is needed today.
       }
     }
     return std::unexpected(InsertError::TableFull);
@@ -1119,6 +1133,26 @@ class CRUCIBLE_OWNER KernelCache {
     std::atomic<uint64_t> row_hash{0};
     std::atomic<CompiledKernel*> kernel{nullptr};
   };
+  // ── Layout pin (FOUND-I05-AUDIT) ──────────────────────────────────
+  // A 24-byte Entry packs ~2.7 entries per 64-byte line.  An accidental
+  // field addition (e.g. a version counter) would grow Entry to 32 B
+  // and SILENTLY halve prefetcher throughput on probe walks.  Pin the
+  // layout here so any size regression is a compile error, not a
+  // p99 perf cliff observed three months later.
+  //
+  // This also pins the FOUND-I05 wire-format contract for
+  // KernelCache slots: every slot is exactly (8B content + 8B row +
+  // 8B kernel*) = 24 bytes.  Federation protocol designers reading
+  // this file can rely on the slot triple shape.
+  static_assert(sizeof(Entry)  == 24,
+      "KernelCache::Entry layout drift — wire-format break risk.  "
+      "Pre-FOUND-I05 was 16; FOUND-I05 brings it to 24 (added 8B "
+      "row_hash).  Any further growth is a deliberate change that "
+      "should bump CDAG_VERSION and update this assertion.");
+  static_assert(alignof(Entry) == 8,
+      "KernelCache::Entry alignment drift — atomic<uint64_t> + "
+      "atomic<ptr> require 8B align; over-alignment via alignas(N>8) "
+      "would waste cache space without performance benefit.");
 
   // Static classifier — evaluates the state machine from the observed
   // (hash, kernel) pair. No atomic reads; caller provides the snapshot.
