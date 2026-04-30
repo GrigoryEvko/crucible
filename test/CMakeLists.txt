@@ -2052,6 +2052,29 @@ crucible_neg_compile_test(neg_tracering_drain_pure_io_block
 crucible_neg_compile_test(neg_tracering_drain_pure_full_row
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# ─── FOUND-I19 Vigil::dispatch_op row-fence ─────────────────────────
+# Vigil::dispatch_op_pure<CallerRow> requires IsPure<CallerRow>.
+# Sibling of TraceRing's I16 matrix and MetaLog's I17 matrix; the
+# foreground per-op recording entry point is the canonical Pure
+# operation per CRUCIBLE.md §L4.  8 fixtures complete the per-axis
+# matrix on the Vigil leg of the row-fence cluster.
+crucible_neg_compile_test(neg_vigil_dispatch_op_pure_alloc
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_vigil_dispatch_op_pure_io
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_vigil_dispatch_op_pure_block
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_vigil_dispatch_op_pure_bg
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_vigil_dispatch_op_pure_init
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_vigil_dispatch_op_pure_test
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_vigil_dispatch_op_pure_io_block
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_vigil_dispatch_op_pure_full_row
+  "constraints not satisfied|template constraint failure|associated constraints")
+
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
 # Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.
 # Mechanical extension of the D30-batch pattern; closes the

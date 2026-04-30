@@ -9,6 +9,9 @@
 //   5. Pool bounds + activation wiring
 
 #include <crucible/Vigil.h>
+#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/FxAliases.h>
 #include "test_harness.h"
 #include "test_assert.h"
 #include <cstdio>
@@ -347,6 +350,122 @@ static void test_dispatch_pool_bounds() {
     std::printf("  test_dispatch_pool_bounds: PASSED\n");
 }
 
+// ── Test 6: FOUND-I19 — dispatch_op_pure row-typed facade ──────────
+//
+// Verifies the row-typed dispatch_op_pure<CallerRow> wrapper:
+//   (a) Default template arg (Row<>) behaves identically to dispatch_op
+//       on RECORD path.
+//   (b) Explicit Row<> template arg behaves identically.
+//   (c) PureRow / TotRow / GhostRow F* aliases all dispatch correctly.
+//   (d) Interleaved dispatch_op + dispatch_op_pure preserves SPSC FIFO.
+//   (e) Through full RECORD → COMPILED transition (alignment +
+//       activation), driven entirely through dispatch_op_pure.
+//   (f) Compile-time IsPure witnesses for the F* alias family vs
+//       structurally-rejected non-Pure rows.
+namespace eff = ::crucible::effects;
+
+static void test_dispatch_pure_FOUND_I19() {
+    // (a) + (b) + (c): RECORD path through default + explicit + alias.
+    {
+        Vigil vigil;
+        auto d0 = make_op(0, 0);
+        auto r0 = vigil.dispatch_op_pure(crucible::vouch(d0.entry),
+                                         d0.metas, d0.n_metas);
+        assert(r0.action == DispatchResult::Action::RECORD);
+
+        auto d1 = make_op(0, 1);
+        auto r1 = vigil.dispatch_op_pure<eff::Row<>>(
+            crucible::vouch(d1.entry), d1.metas, d1.n_metas);
+        assert(r1.action == DispatchResult::Action::RECORD);
+
+        auto d2 = make_op(0, 2);
+        auto r2 = vigil.dispatch_op_pure<eff::PureRow>(
+            crucible::vouch(d2.entry), d2.metas, d2.n_metas);
+        assert(r2.action == DispatchResult::Action::RECORD);
+
+        auto d3 = make_op(0, 3);
+        auto r3 = vigil.dispatch_op_pure<eff::TotRow>(
+            crucible::vouch(d3.entry), d3.metas, d3.n_metas);
+        assert(r3.action == DispatchResult::Action::RECORD);
+
+        auto d4 = make_op(0, 4);
+        auto r4 = vigil.dispatch_op_pure<eff::GhostRow>(
+            crucible::vouch(d4.entry), d4.metas, d4.n_metas);
+        assert(r4.action == DispatchResult::Action::RECORD);
+    }
+
+    // (d): Interleaved dispatch_op + dispatch_op_pure preserves FIFO.
+    {
+        Vigil vigil;
+        for (uint32_t i = 0; i < NUM_OPS; ++i) {
+            auto d = make_op(0, i);
+            DispatchResult r;
+            if (i % 2 == 0) {
+                r = vigil.dispatch_op(crucible::vouch(d.entry),
+                                      d.metas, d.n_metas);
+            } else {
+                r = vigil.dispatch_op_pure(crucible::vouch(d.entry),
+                                           d.metas, d.n_metas);
+            }
+            assert(r.action == DispatchResult::Action::RECORD);
+        }
+    }
+
+    // (e): Full RECORD → COMPILED transition driven through
+    //      dispatch_op_pure (mirror of test_dispatch_basic).
+    {
+        Vigil vigil;
+        feed_record(vigil, 0);
+        feed_record(vigil, 1);
+        feed_trigger(vigil, 2);
+        flush_and_wait_compiled(vigil);
+
+        // Alignment phase via dispatch_op_pure (instead of dispatch_op).
+        for (uint32_t i = 0; i < K; ++i) {
+            auto d = make_op(3, i);
+            auto r = vigil.dispatch_op_pure(
+                crucible::vouch(d.entry), d.metas, d.n_metas);
+            assert(r.action == DispatchResult::Action::RECORD
+                   && "alignment via _pure should still RECORD");
+        }
+        assert(vigil.context().is_compiled()
+               && "CrucibleContext should be compiled after K _pure aligns");
+
+        // Partial tail in COMPILED mode via dispatch_op_pure.
+        for (uint32_t i = K; i < NUM_OPS; ++i) {
+            auto d = make_op(3, i);
+            auto r = vigil.dispatch_op_pure(
+                crucible::vouch(d.entry), d.metas, d.n_metas);
+            assert(r.action == DispatchResult::Action::COMPILED);
+        }
+
+        // Full compiled iteration via dispatch_op_pure with PureRow alias.
+        for (uint32_t i = 0; i < NUM_OPS; ++i) {
+            auto d = make_op(4, i);
+            auto r = vigil.dispatch_op_pure<eff::PureRow>(
+                crucible::vouch(d.entry), d.metas, d.n_metas);
+            assert(r.action == DispatchResult::Action::COMPILED);
+        }
+    }
+
+    // (f): Compile-time IsPure witnesses (mirrors I16/I17 pattern).
+    static_assert(eff::IsPure<eff::Row<>>);
+    static_assert(eff::IsPure<eff::PureRow>);
+    static_assert(eff::IsPure<eff::TotRow>);
+    static_assert(eff::IsPure<eff::GhostRow>);
+    static_assert(!eff::IsPure<eff::DivRow>);                  // Block
+    static_assert(!eff::IsPure<eff::Row<eff::Effect::IO>>);
+    static_assert(!eff::IsPure<eff::Row<eff::Effect::Bg>>);
+    static_assert(!eff::IsPure<eff::Row<eff::Effect::Alloc>>);
+    static_assert(!eff::IsPure<eff::Row<eff::Effect::Init>>);
+    static_assert(!eff::IsPure<eff::Row<eff::Effect::Test>>);
+    static_assert(!eff::IsPure<eff::AllRow>);                  // saturation top
+    static_assert(!eff::IsPure<eff::Row<eff::Effect::IO,
+                                        eff::Effect::Block>>); // multi-atom
+
+    std::printf("  test_dispatch_pure_FOUND_I19: PASSED\n");
+}
+
 int main() {
     std::printf("test_vigil_dispatch:\n");
     test_dispatch_basic();
@@ -354,6 +473,7 @@ int main() {
     test_dispatch_recovery();
     test_dispatch_data_flow();
     test_dispatch_pool_bounds();
+    test_dispatch_pure_FOUND_I19();
     std::printf("test_vigil_dispatch: all tests passed\n");
     return 0;
 }

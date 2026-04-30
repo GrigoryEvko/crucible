@@ -32,6 +32,8 @@
 #include <crucible/RegionCache.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Transaction.h>
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/FxAliases.h>
 #include <crucible/safety/Mutation.h>
 
 #include <atomic>
@@ -185,6 +187,58 @@ class Vigil {
         (void)record_op(ve, metas, n_metas, scope_hash, callsite_hash);
         return {.action = DispatchResult::Action::RECORD, .status = ReplayStatus::MATCH, .pad = {},
                 .op_index = OpIndex{}};
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FOUND-I19: row-typed facade — pins dispatch_op as Pure
+    // ═══════════════════════════════════════════════════════════════
+    //
+    // Sibling of TraceRing::try_append_pure (FOUND-I16) and
+    // MetaLog::try_append_pure (FOUND-I17).  Per CRUCIBLE.md §L4,
+    // dispatch_op is the canonical foreground per-op recording site —
+    // shape-budgeted at ~5 ns per call, forbidden from any class of
+    // heavy operation (alloc, syscall, block, futex).  Functionally
+    // pure at the C++ level: a single SPSC-ring append (RECORD path)
+    // OR a guard-check + ScopedView mint + advance (COMPILED path) —
+    // both leaves are memory-only, no I/O, no blocking, no allocation,
+    // no init/test/bg context.  In F* effect terms, it is `Pure`
+    // (the bottom of the OsUniverse effect-row lattice).  This facade
+    // pins that fact at the type level via an `IsPure<CallerRow>`
+    // constraint.
+    //
+    // Caller-row contract: CallerRow MUST satisfy `Subrow<CallerRow,
+    // Row<>>`, i.e., the caller's row must be empty.  A caller in any
+    // of {Alloc, IO, Block, Bg, Init, Test} context is REJECTED at
+    // compile time.  The bug class caught: a fallback eager-execution
+    // path (Block context), an init-time setup helper, a bg pumping
+    // helper, or a test-only fixture that inadvertently invokes
+    // dispatch_op on the foreground hot path; the row mismatch
+    // catches the miscategorization at compile time before the SPSC
+    // ring head advances.
+    //
+    // The facade is ADDITIVE: existing dispatch_op() callers stay
+    // unchanged.  Production hot-path callers can migrate by replacing
+    // `dispatch_op(...)` with `dispatch_op_pure<>(...)` to gain the
+    // compile-time check.
+    //
+    // Implementation: thin forwarder to dispatch_op; zero runtime
+    // cost (one inlined branchless tail-call under -O3).  The IsPure
+    // constraint is checked at substitution time, not at runtime.
+    //
+    // Default template argument is `Row<>` so `dispatch_op_pure(...)`
+    // (no template-arg) is equivalent to `dispatch_op_pure<Row<>>(...)`
+    // — the most common case at production hot-path call sites.
+    template <typename CallerRow = ::crucible::effects::Row<>>
+        requires ::crucible::effects::IsPure<CallerRow>
+    [[nodiscard, gnu::hot, gnu::flatten]] CRUCIBLE_INLINE DispatchResult dispatch_op_pure(
+        TraceRing::ValidatedEntryPtr ve,
+        const TensorMeta*            metas,
+        uint32_t                     n_metas,
+        ScopeHash                    scope_hash    = {},
+        CallsiteHash                 callsite_hash = {})
+        pre(ve.value() != nullptr)
+    {
+        return dispatch_op(ve, metas, n_metas, scope_hash, callsite_hash);
     }
 
 #ifndef NDEBUG
