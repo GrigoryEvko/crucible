@@ -317,6 +317,7 @@ crucible_test(test_philox_simd)
 crucible_test(test_philox_det)
 crucible_test(test_arena_alloc_class)
 crucible_test(test_pool_allocator_alloc_class)
+crucible_test(test_one_shot_flag_crash)
 crucible_test(test_atomic_snapshot)
 crucible_test(test_chase_lev_deque)
 crucible_test(test_mpsc_ring)
@@ -1248,6 +1249,15 @@ crucible_neg_compile_test(neg_alloc_class_lattice_cross_lattice_mixing
 # (50-200 ns setup) could silently flow into TraceRing/MetaLog/
 # Vigil hot-path sites budgeted at 2-3 ns per call.
 crucible_neg_compile_test(neg_alloc_class_heap_at_pool_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
+# FOUND-G62 — production-call-site fence: a NoThrow steady-state
+# consumer rejects a Throw-classified value.  Models the
+# OneShotFlag::peek_nothrow ⇄ consumer pattern at the boundary.
+# Without this fence, signal-side values would silently flow into
+# hot-path observation gates that require the "this call NEVER
+# fails" guarantee.
+crucible_neg_compile_test(neg_crash_throw_at_nothrow_fence
   "constraints not satisfied|no matching function|associated constraints")
 
 # ─── FOUND-D01 — signature_traits<FnPtr> param-index overflow ─────

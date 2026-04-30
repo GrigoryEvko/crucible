@@ -28,6 +28,7 @@
 //                   [[likely]]).
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Crash.h>
 
 #include <atomic>
 #include <concepts>
@@ -92,6 +93,86 @@ public:
     // exists at the call site.
     void reset_unsafe() noexcept {
         flag_.store(false, std::memory_order_relaxed);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FOUND-G62: Crash-pinned production surface
+    // ═══════════════════════════════════════════════════════════════
+    //
+    // The OneShotFlag-guarded boundary discipline (28_04 §4.3.10)
+    // assigns a CrashClass to each call site:
+    //
+    //   peek_nothrow() → Crash<NoThrow, bool>   — STEADY-STATE consumer.
+    //                    The peek itself is a single relaxed atomic
+    //                    load + branch; it never fails, never throws,
+    //                    never blocks, never aborts.  The recovery
+    //                    branch (when peek returns true) is handled
+    //                    separately at a wider call boundary.  The
+    //                    NoThrow class is the strongest in the
+    //                    CrashLattice, so this value satisfies any
+    //                    consumer-side gate (NoThrow / ErrorReturn /
+    //                    Throw / Abort).
+    //
+    //   signal_throw() → Crash<Throw, void>     — PRODUCER side.
+    //                    The signal action raises the crash signal;
+    //                    pinning Throw class declares "this call may
+    //                    initiate a peer-failure transition".  The
+    //                    return type is `void` (no value), so the
+    //                    wrapper tags an empty marker — used by
+    //                    diagnostic call-site discipline only.
+    //                    void requires special handling — we wrap
+    //                    a tag struct.  See `signal_marker` below.
+    //
+    //   try_acknowledge_error_return(F) → Crash<ErrorReturn, bool>
+    //                    — RECOVERY-HANDLER variant of check_and_run.
+    //                    Pins ErrorReturn class because the body F is
+    //                    invoked only on the unlikely true path; that
+    //                    body is the recovery action, which by the
+    //                    Crash discipline returns errors via
+    //                    std::expected and is classified ErrorReturn.
+    //                    Returns true iff body was invoked.
+    //
+    // Why additive (not replacing): peek/signal/check_and_run are
+    // consumed by ~10 production call sites in CrashTransport.h and
+    // related crash-watched handles.  An additive overlay preserves
+    // those without churn while letting NEW call sites declare their
+    // crash-classification at the type level.
+
+    // Empty tag returned by signal_throw — encodes "the signal call
+    // happened" without carrying a value.  Allows wrapping in
+    // Crash<Throw, signal_marker> for type-level call-site auditing.
+    struct signal_marker { };
+
+    // Steady-state consumer pin — peek returns Crash<NoThrow, bool>.
+    [[nodiscard]] CRUCIBLE_INLINE
+    Crash<CrashClass_v::NoThrow, bool>
+    peek_nothrow() const noexcept {
+        return Crash<CrashClass_v::NoThrow, bool>{
+            flag_.load(std::memory_order_relaxed)};
+    }
+
+    // Producer-side signal — pins the action class as Throw.  The
+    // returned marker is consumed (move-only) by the type system so
+    // a refactor that drops the discriminator surfaces as an unused-
+    // result diagnostic on the [[nodiscard]] Crash type.
+    [[nodiscard]] CRUCIBLE_INLINE
+    Crash<CrashClass_v::Throw, signal_marker>
+    signal_throw() noexcept {
+        flag_.store(true, std::memory_order_release);
+        return Crash<CrashClass_v::Throw, signal_marker>{signal_marker{}};
+    }
+
+    // Recovery-handler classification — body F runs only on the
+    // unlikely true path, so the call is pinned ErrorReturn.
+    template <typename F>
+        requires std::is_invocable_v<F>
+    [[nodiscard]] CRUCIBLE_INLINE
+    Crash<CrashClass_v::ErrorReturn, bool>
+    try_acknowledge_error_return(F&& body)
+        noexcept(std::is_nothrow_invocable_v<F>)
+    {
+        return Crash<CrashClass_v::ErrorReturn, bool>{
+            check_and_run(std::forward<F>(body))};
     }
 };
 
