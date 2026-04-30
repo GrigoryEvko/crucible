@@ -865,6 +865,32 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 // produced a silent hit on the WRONG kernel — a federation-key
 // integrity violation.  After this refactor, the cache fences row
 // hashes too: a row mismatch is a probe continuation, never a hit.
+//
+// ── FOUND-I05-AUDIT-2: the kernel-spin invariant ───────────────────
+//
+// Both insert (variant-update path) and lookup MUST spin on KERNEL
+// — not row_hash — when the slot is in CLAIMED state.  The reason:
+// row_hash NSDMI = 0 is also a VALID row_hash value (the bare-type
+// baseline, RowHashFold.h §3).  A spin on row_hash cannot
+// distinguish "still CLAIMED, row not yet stored" from "PUBLISHED
+// with row==0".  An insert that spins on row would write into a
+// slot whose ultimate row identity belongs to a different
+// inserter — silent lost-insert.  A lookup that spins on row could
+// false-positive on a CLAIMED slot when lookup_row==0.
+//
+// The kernel-spin invariant solves both: kernel.store IS the LAST
+// release-store of the publish sequence.  A non-null kernel
+// acquire-load synchronizes-with all prior writes including row.
+// Until kernel is non-null, the slot's identity is undecidable —
+// neither insert nor lookup commits to a decision based on it.
+//
+// On spin-budget exhaustion (inserter stalled or crashed):
+//   - Insert: treat as foreign, continue probing.  Worst case is
+//     a duplicate slot under preemption (same (C, R) at both
+//     p_A and p_B); slots are insert-only, so the duplicate is
+//     harmless wasted space.
+//   - Lookup: treat as foreign, continue probing.  A stalled claim
+//     at p_A must NOT mask a valid (C, R) hit at p_B > p_A.
 // ═══════════════════════════════════════════════════════════════════
 
 class CRUCIBLE_OWNER KernelCache {
@@ -949,8 +975,20 @@ class CRUCIBLE_OWNER KernelCache {
         // CAS and the row+kernel release stores).  The window is a
         // few nanoseconds on x86, so spin briefly.
         kernel_ptr = await_claimed_(entry);
-        if (kernel_ptr == nullptr) [[unlikely]]
-          return nullptr;  // inserter exceeded spin budget
+        if (kernel_ptr == nullptr) [[unlikely]] {
+          // ── FOUND-I05-AUDIT-2 fix ────────────────────────────
+          // Spin budget exhausted — inserter is stalled or
+          // crashed.  Pre-FOUND-I05 (single-key cache), `return
+          // nullptr` was correct: there could only be one slot
+          // per content_hash, so a stalled claim meant the cache
+          // had nothing to offer.  Post-FOUND-I05, the SAME
+          // content_hash can occupy multiple slots (one per row),
+          // and a stalled claim at p_A could mask a valid row-
+          // matched hit at p_B > p_A.  Continue probing — give
+          // the rest of the chain a chance to satisfy our
+          // (content, row) lookup.
+          continue;
+        }
       }
       // PUBLISHED: kernel non-null implies row_hash visible.
       uint64_t entry_row = entry.row_hash.load(std::memory_order_acquire);
@@ -1031,56 +1069,64 @@ class CRUCIBLE_OWNER KernelCache {
       }
       if (expected == lookup_hash) {
         // Same content_hash slot already exists — must verify row.
-        // The CAS that owns this slot (whoever inserted first) has
-        // already committed the content CAS.  They may not yet have
-        // published row_hash + kernel; spin briefly until row_hash
-        // is observable (the companion to the lookup-side
-        // await_claimed_, but for insert's variant-update path).
-        uint64_t existing_row = entry.row_hash.load(std::memory_order_acquire);
-        for (uint32_t spin = 0; spin < kClaimedSpinBudget && existing_row == 0; ++spin) {
+        // ── FOUND-I05-AUDIT-2 fix ────────────────────────────────
+        //
+        // CRITICAL: spin on KERNEL, not row.  The lookup-side
+        // ordering applies here too: kernel.store is the LAST
+        // release store of the publish sequence, so a non-null
+        // kernel acquire-load synchronizes-with the prior row.store
+        // — once kernel is non-null, row_hash is guaranteed visible.
+        //
+        // The ORIGINAL FOUND-I05 logic spun on row_hash, which is
+        // unsafe: a CLAIMED slot has row_hash == 0 (NSDMI default)
+        // until the inserter publishes.  If lookup_row == 0 (the
+        // bare-type baseline, a perfectly valid lookup target) and
+        // the inserter is preempted, the row.load returns 0 →
+        // existing_row == lookup_row (0 == 0) is TRUE → variant-
+        // update path writes kernel into a slot whose ultimate row
+        // belongs to a DIFFERENT inserter.  When that inserter
+        // resumes, its row.store + kernel.store overwrite the
+        // mistaken write — the second-arriver's insert returned {}
+        // (success) but the (C, 0) slot does NOT exist in the
+        // cache.  Silent lost-insert.
+        //
+        // Spinning on kernel sidesteps the issue entirely: until
+        // kernel is non-null, the slot is in CLAIMED state and we
+        // simply do not write to it.  If the spin budget exhausts
+        // (inserter is stalled or crashed), we treat the slot as
+        // foreign and continue probing — the worst case becomes
+        // "duplicate slot for the same (C, R) under preemption,"
+        // which is wasted space but never lost data.
+        CompiledKernel* existing_kernel =
+            entry.kernel.load(std::memory_order_acquire);
+        for (uint32_t spin = 0;
+             spin < kClaimedSpinBudget && existing_kernel == nullptr;
+             ++spin) {
           CRUCIBLE_SPIN_PAUSE;
-          existing_row = entry.row_hash.load(std::memory_order_acquire);
+          existing_kernel = entry.kernel.load(std::memory_order_acquire);
         }
-        if (existing_row == lookup_row) {
-          // PUBLISHED(old) → PUBLISHED(new): variant update.
-          // row pinned; only kernel changes.  A concurrent reader
-          // may briefly observe either kernel value — both valid
-          // by the insert contract.
-          entry.kernel.store(kernel, std::memory_order_release);
-          return {};
+        if (existing_kernel != nullptr) {
+          // Kernel published — row_hash also visible via the
+          // release-acquire chain on kernel.
+          uint64_t existing_row =
+              entry.row_hash.load(std::memory_order_acquire);
+          if (existing_row == lookup_row) {
+            // PUBLISHED(old) → PUBLISHED(new): variant update.
+            // row pinned; only kernel changes.  A concurrent
+            // reader may briefly observe either kernel value —
+            // both valid by the insert contract.
+            entry.kernel.store(kernel, std::memory_order_release);
+            return {};
+          }
+          // Foreign-row sibling under same content_hash —
+          // continue probing for OUR (content, row) slot.
         }
-        // Same content, different row (OR inserter exceeded the
-        // spin budget — see "Rare race" below): keep probing for
-        // OUR (content, row) slot.
-        //
-        // ── Rare race (FOUND-I05-AUDIT) ────────────────────────
-        // If inserter A wins the content CAS but is preempted
-        // before its row.store(R), and inserter B with the SAME
-        // (C, R) arrives, B's bounded spin can time out with
-        // existing_row == 0.  B then mistakes the still-CLAIMED
-        // slot for "different row" and continues probing,
-        // creating a DUPLICATE slot for (C, R) at probe position
-        // p_B > p_A.
-        //
-        // Functionally not catastrophic: subsequent lookup(C, R)
-        // finds A's slot first (lower probe position) and returns
-        // A's kernel; B's kernel becomes orphaned but visible only
-        // when A's slot is somehow evicted (which never happens —
-        // slots are insert-only).
-        //
-        // Cost: one wasted slot under preemption between A's
-        // content-CAS and A's row-store (≤ a few ns on x86; total
-        // window is ~2 release stores).  kClaimedSpinBudget = 64
-        // PAUSE cycles = ~2.5 µs at 25 ns/PAUSE on Skylake — A
-        // would have to be preempted for >2.5 µs in a 2-store
-        // window.  In production, this is so rare that the
-        // wasted slot is preferable to the alternative (spin
-        // forever / abort if A crashed mid-insert).
-        //
-        // If a future workload makes this race common, the fix
-        // is to widen kClaimedSpinBudget OR add a "slot-claim
-        // timestamp" field that lets B distinguish "A is stalled"
-        // from "A crashed", but neither is needed today.
+        // else: spin budget exhausted, kernel still null.
+        // Inserter is stalled or crashed.  We treat the slot as
+        // foreign and continue probing.  Worst case: duplicate
+        // slot for the same (C, R) when the stalled inserter
+        // eventually publishes the same row we wanted.  Wasted
+        // space, never lost data.
       }
     }
     return std::unexpected(InsertError::TableFull);

@@ -205,6 +205,56 @@ int main() {
         == reinterpret_cast<crucible::CompiledKernel*>(&variant_replacement));
   }
 
+  // ── FOUND-I05-AUDIT-2 — RowHash{0} is a first-class lookup target ──
+  //
+  // Regression test for the silent-lost-insert bug: prior to the
+  // kernel-spin invariant fix, an insert(C, RowHash{0}, K) racing
+  // against a CLAIMED-but-mid-publish slot for content C could
+  // mistakenly variant-update the still-claiming inserter's slot,
+  // causing B's K to be overwritten by A's eventual publish.
+  //
+  // Single-threaded version exercises the SAME observation that the
+  // multi-threaded race produces: insert(C, 0, K1), then insert(C, R, K2)
+  // for R != 0, then insert(C, 0, K3) (variant update on the row=0
+  // slot).  The fix guarantees K3 lands at the (C, 0) slot, NOT at
+  // the (C, R) slot.
+  {
+    crucible::KernelCache audit2_cache(/*capacity=*/16);
+    FakeKernel k_row0_v1{1};
+    FakeKernel k_rowR_v1{2};
+    FakeKernel k_row0_v2{3};
+
+    // Step 1: insert (C, 0, K1).
+    assert(audit2_cache.insert(ContentHash{0x55AA}, RowHash{0},
+        reinterpret_cast<crucible::CompiledKernel*>(&k_row0_v1)).has_value());
+
+    // Step 2: insert (C, 0xBEEF, K2) — distinct row, must land at
+    // a different slot than the (C, 0) slot.
+    assert(audit2_cache.insert(ContentHash{0x55AA}, RowHash{0xBEEF},
+        reinterpret_cast<crucible::CompiledKernel*>(&k_rowR_v1)).has_value());
+
+    // Both lookups return the slot-specific kernel.
+    assert(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0})
+        == reinterpret_cast<crucible::CompiledKernel*>(&k_row0_v1));
+    assert(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0xBEEF})
+        == reinterpret_cast<crucible::CompiledKernel*>(&k_rowR_v1));
+
+    // Step 3: variant-update the (C, 0) slot with K3.  The kernel
+    // at the (C, 0) slot must change; the (C, 0xBEEF) slot must
+    // be untouched.
+    assert(audit2_cache.insert(ContentHash{0x55AA}, RowHash{0},
+        reinterpret_cast<crucible::CompiledKernel*>(&k_row0_v2)).has_value());
+
+    // Post-condition: (C, 0) → K3, (C, 0xBEEF) → K2.  If the
+    // pre-fix code had instead spun on row_hash and mistakenly
+    // landed on the (C, 0xBEEF) slot under a hypothetical
+    // CLAIMED-state observation, this assertion would fail.
+    assert(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0})
+        == reinterpret_cast<crucible::CompiledKernel*>(&k_row0_v2));
+    assert(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0xBEEF})
+        == reinterpret_cast<crucible::CompiledKernel*>(&k_rowR_v1));
+  }
+
   // Test element_size — returns ElementBytes strong type (#129).
   assert(crucible::element_size(crucible::ScalarType::Float)         == crucible::ElementBytes{4});
   assert(crucible::element_size(crucible::ScalarType::Double)        == crucible::ElementBytes{8});
