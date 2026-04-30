@@ -2243,6 +2243,39 @@ Rules for code review and grep-guards:
 - A `Permission<Tag>` stored in a struct field of a type that is itself shared between threads (i.e., not Pinned + not handle-pattern) → reject; defeats linearity.
 - Bypassing `AdaptiveScheduler` to spawn N raw threads when working set is L2-resident → questioned; cache-tier rule (§IX) says sequential wins. Override requires bench evidence and a justification comment.
 
+### Canonical wrapper-nesting order (FOUND-I03)
+
+Composition is **wrapper-nesting**, not mega-product-lattice. Each `Graded<Modality, Lattice, T>` instantiation is one algebraic slice; multi-axis composition stacks them, outer-to-inner. The order is canonical, not aesthetic — wrapper-nesting is order-sensitive (`Stale<Tagged<T>>` ≢ `Tagged<Stale<T>>`) and the canonical order is what `row_hash` (`safety/diag/RowHashFold.h`, FOUND-I02) folds along when computing federation cache keys. Out-of-order stacks compile fine but produce DIFFERENT row hashes; review questions deviations unless the author documents a deliberate-different-cache-slot intent.
+
+```
+HotPath ⊃ DetSafe ⊃ NumericalTier ⊃ Vendor ⊃ ResidencyHeat ⊃
+  CipherTier ⊃ AllocClass ⊃ Wait ⊃ MemOrder ⊃ Progress ⊃
+  Stale ⊃ Tagged ⊃ Refined ⊃ Secret ⊃ Linear ⊃ Computation
+```
+
+Outer wrappers carry "higher-level" properties (where in the system this runs, what tier it serves); inner wrappers are "closer to the value" (provenance tags, refinement predicates, classification, ownership). Reading example bottom-up: the value `T` is wrapped in `Computation<Row, T>` to declare its OS-effect row, then in `Linear<>` to declare exclusive ownership, then in `Secret<>` to mark as classified, and so on outward. Reading top-down: `HotPath<Hot, ...>` says "this lives on the hot path", and the rest of the stack refines what kind of hot-path value.
+
+Worked example — a tensor that comes back from a Bg-context kernel, BITEXACT, NV vendor, hot-path:
+
+```cpp
+HotPath<HotPathTier::Hot,
+    DetSafe<DetSafeTier::Pure,
+        NumericalTier<NumericalTier::BITEXACT,
+            Vendor<VendorBackend::NV,
+                Computation<Row<Effect::Bg>, ResultTensor>>>>>
+```
+
+Each layer EBO-collapses if its grade is a type-level singleton (regime-1 or regime-2 per `algebra/GradedTrait.h`). The 5-deep nest is `sizeof(ResultTensor) + at most a few bytes for non-singleton grades + alignment` — usually exactly `sizeof(T)`.
+
+**F\*-style named aliases** (FOUND-G79/80, `effects/FxAliases.h`) provide canonical compositions for the common cases — `Pure<int>` is "Progress<Terminating, DetSafe<Pure, Computation<Row<>, int>>>", `Tot<E_os, T>` is "Progress<Terminating, DetSafe<Pure, Computation<E_os, T>>>", etc. Use the aliases at production call sites; the substrate's per-wrapper composition is the authoritative algebraic story but verbose for everyday code.
+
+**Order-discipline summary:**
+
+1. Wrapper authors construct stacks in canonical order. Deviations question on review unless commented with a deliberate cache-slot-separation rationale.
+2. `row_hash_contribution<W<Inner>>` specializations follow: `combine_ids(<W's tag bits>, row_hash_contribution_v<Inner>)`. The Boost-style combiner is order-sensitive — that's exactly what makes `HotPath<DetSafe<T>>` and `DetSafe<HotPath<T>>` produce different hashes (different cache slots, different semantics).
+3. `Computation<R, T>` is the innermost member of every effect stack — it is the carrier; everything else is metadata about the carrier. The `row_hash_contribution<Computation<R, T>>` specialization (FOUND-I02-AUDIT) folds the row R "outer" and the payload T's contribution "inner".
+4. **Append-only Universe extension** (FOUND-I04 backlog): adding a new effect atom (e.g., `Effect::Refute`) is permitted only at the next free position; existing atom positions never change. This bounds cache invalidation to entries that actually mention the new atom — `Row<Effect::Bg>` keeps the same hash forever because `Effect::Bg`'s underlying value never changes.
+
 ### GCC 16 contracts — implementation gotchas
 
 Real-world issues encountered implementing the wrappers.  Document them here so the next person doesn't rediscover them.
