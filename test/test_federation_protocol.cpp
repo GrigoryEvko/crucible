@@ -22,6 +22,7 @@
 //                 deserialize.
 
 #include <crucible/cipher/FederationProtocol.h>
+#include <crucible/Serialize.h>           // FOUND-I08-AUDIT (Finding G): CDAG_MAGIC
 #include <crucible/Types.h>
 #include <crucible/effects/OsUniverse.h>
 
@@ -692,6 +693,362 @@ static void test_codec_is_noexcept() {
     std::printf("  test_codec_is_noexcept:                         PASSED\n");
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// FOUND-I08-AUDIT — additional rigor pass
+// ═════════════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit Group A — UINT16_MAX cardinality boundary.  The 16-bit field
+// supports up to 65535 atoms; the predicate + codec must handle the
+// extreme without arithmetic surprise.
+
+static void test_audit_a_cardinality_boundary_uint16_max() {
+    constexpr std::uint16_t MAX_CARD = 0xFFFFu;
+
+    // Predicate (consteval-friendly).
+    static_assert( fed::federation_accepts_cardinality(MAX_CARD, MAX_CARD));
+    static_assert( fed::federation_accepts_cardinality(0, MAX_CARD));
+    static_assert(!fed::federation_accepts_cardinality(MAX_CARD, MAX_CARD - 1));
+
+    // Wire-format witness: encode-with-stamp(MAX) + decode-with-MAX.
+    std::array<std::uint8_t, 32> buf{};
+    fed::FederationEntryHeader hdr{};
+    hdr.magic = fed::FEDERATION_MAGIC;
+    hdr.protocol_version = fed::FEDERATION_PROTOCOL_V1;
+    hdr.universe_cardinality = MAX_CARD;
+    hdr.content_hash = ContentHash{0x42};
+    hdr.row_hash     = RowHash{0x43};
+    hdr.payload_size = 0u;
+    hdr.reserved     = 0u;
+    std::memcpy(buf.data(), &hdr, sizeof(hdr));
+
+    auto accept = fed::deserialize_federation_entry(buf, MAX_CARD);
+    ASSERT_TRUE(accept.has_value());
+    assert(accept->header.universe_cardinality == MAX_CARD);
+
+    // Equal-MAX-MAX boundary case (both ends).
+    auto reject_one_below =
+        fed::deserialize_federation_entry(buf, MAX_CARD - 1u);
+    ASSERT_TRUE(!reject_one_below.has_value());
+    assert(reject_one_below.error() ==
+           fed::FederationError::UniverseCardinalityTooHigh);
+
+    std::printf("  [AUDIT-A] cardinality_boundary_uint16_max:      PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit Group B — buffer-exactly-fits acceptance.  serialize must
+// accept an out_buf whose size equals header + payload exactly (no
+// slack).  The boundary case is tested explicitly because off-by-one
+// in the size check would produce a silent "OutputBufferTooSmall"
+// for buffers that should have worked.
+
+static void test_audit_b_buffer_exactly_fits() {
+    const KernelCacheKey key{
+        ContentHash{0x1111'2222'3333'4444ULL},
+        RowHash{0x5555'6666'7777'8888ULL},
+    };
+    const std::array<std::uint8_t, 16> payload = {
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
+    };
+
+    // out_buf sized EXACTLY to header + payload.
+    std::array<std::uint8_t, 48> buf{};  // 32 + 16
+    auto written = fed::serialize_federation_entry(buf, key, payload);
+    ASSERT_TRUE(written.has_value());
+    assert(*written == 48u);
+
+    // out_buf sized 1 byte short → reject.
+    std::array<std::uint8_t, 47> short_buf{};
+    auto rejected =
+        fed::serialize_federation_entry(short_buf, key, payload);
+    ASSERT_TRUE(!rejected.has_value());
+    assert(rejected.error() ==
+           fed::FederationError::OutputBufferTooSmall);
+
+    // Empty payload, out_buf exactly 32 bytes → accept.
+    std::array<std::uint8_t, 32> tight_buf{};
+    auto tight =
+        fed::serialize_federation_entry(tight_buf, key,
+                                         std::span<const std::uint8_t>{});
+    ASSERT_TRUE(tight.has_value());
+    assert(*tight == 32u);
+
+    std::printf("  [AUDIT-B] buffer_exactly_fits:                   PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit Group C — extra bytes at end are ignored (zero-copy aliasing
+// semantics witness).  A federation transport that batches multiple
+// entries into one byte buffer would pass a buffer with leftover
+// bytes after the first entry; deserialize_federation_entry must
+// return a payload span that caps at header.payload_size, NOT the
+// full remaining bytes.
+
+static void test_audit_c_extra_bytes_at_end() {
+    const KernelCacheKey key{ContentHash{0x42}, RowHash{0x43}};
+    const std::array<std::uint8_t, 4> payload = {0xAA, 0xBB, 0xCC, 0xDD};
+
+    // First serialize a 36-byte entry into a 64-byte buffer.
+    std::array<std::uint8_t, 64> buf{};
+    auto written = fed::serialize_federation_entry(buf, key, payload);
+    ASSERT_TRUE(written.has_value());
+    assert(*written == 36u);
+
+    // Fill the leftover bytes with sentinel data — these must NOT
+    // appear in the payload span.
+    for (std::size_t i = 36; i < buf.size(); ++i) {
+        buf[i] = 0xEE;
+    }
+
+    // Deserialize using the FULL 64-byte buffer (not just the 36
+    // bytes we wrote).
+    auto view = fed::deserialize_federation_entry(
+        buf, static_cast<std::uint16_t>(
+            crucible::effects::OsUniverse::cardinality));
+    ASSERT_TRUE(view.has_value());
+    assert(view->header.payload_size == 4u);
+    assert(view->payload.size() == 4u);  // exactly payload_size, not 32
+    assert(view->payload[0] == 0xAA);
+    assert(view->payload[1] == 0xBB);
+    assert(view->payload[2] == 0xCC);
+    assert(view->payload[3] == 0xDD);
+    // Extra bytes 0xEE never appear in the view.
+
+    std::printf("  [AUDIT-C] extra_bytes_at_end:                    PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit Group D — partial-sentinel acceptance.  ONLY the FULL
+// sentinel (both axes UINT64_MAX) is rejected.  A key with one axis
+// at UINT64_MAX and the other at a real hash IS a valid federation
+// key — astronomically unlikely under FNV/fmix64 avalanche, but not
+// structurally forbidden.
+
+static void test_audit_d_partial_sentinel_accepted() {
+    constexpr std::uint64_t MAX = std::numeric_limits<std::uint64_t>::max();
+
+    // (a) content_hash = UINT64_MAX, row_hash = real → accept.
+    {
+        const KernelCacheKey key{
+            ContentHash{MAX},
+            RowHash{0xAAAA'BBBB'CCCC'DDDDULL},
+        };
+        assert(!key.is_sentinel());  // partial sentinel != full
+        assert(!key.is_zero());
+
+        std::array<std::uint8_t, 32> buf{};
+        auto written = fed::serialize_federation_entry(
+            buf, key, std::span<const std::uint8_t>{});
+        ASSERT_TRUE(written.has_value());
+
+        auto view = fed::deserialize_federation_entry(
+            buf, static_cast<std::uint16_t>(
+                crucible::effects::OsUniverse::cardinality));
+        ASSERT_TRUE(view.has_value());
+        assert(view->header.content_hash.raw() == MAX);
+    }
+
+    // (b) row_hash = UINT64_MAX, content_hash = real → accept.
+    {
+        const KernelCacheKey key{
+            ContentHash{0x1234'5678'9ABC'DEF0ULL},
+            RowHash{MAX},
+        };
+        assert(!key.is_sentinel());
+        assert(!key.is_zero());
+
+        std::array<std::uint8_t, 32> buf{};
+        auto written = fed::serialize_federation_entry(
+            buf, key, std::span<const std::uint8_t>{});
+        ASSERT_TRUE(written.has_value());
+
+        auto view = fed::deserialize_federation_entry(
+            buf, static_cast<std::uint16_t>(
+                crucible::effects::OsUniverse::cardinality));
+        ASSERT_TRUE(view.has_value());
+        assert(view->header.row_hash.raw() == MAX);
+    }
+
+    // (c) Partial-zero (one axis 0, other axis real) → accept.
+    // is_zero() requires BOTH axes 0; partial zero is a real key.
+    {
+        const KernelCacheKey key{
+            ContentHash{0u},
+            RowHash{0xDEAD'BEEFULL},
+        };
+        assert(!key.is_zero());
+        assert(!key.is_sentinel());
+
+        std::array<std::uint8_t, 32> buf{};
+        auto written = fed::serialize_federation_entry(
+            buf, key, std::span<const std::uint8_t>{});
+        ASSERT_TRUE(written.has_value());
+    }
+
+    std::printf("  [AUDIT-D] partial_sentinel_accepted:             PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit Group E — same bit pattern in both axes.  A real federation
+// key MAY have content_hash == row_hash (same 64 bits); the codec
+// must round-trip this losslessly without confusing the axes.
+
+static void test_audit_e_same_bit_pattern_axes() {
+    constexpr std::uint64_t SHARED_BITS = 0xDEAD'BEEF'CAFE'BABEULL;
+    const KernelCacheKey key{
+        ContentHash{SHARED_BITS},
+        RowHash{SHARED_BITS},
+    };
+    const std::array<std::uint8_t, 4> payload = {0x01, 0x02, 0x03, 0x04};
+
+    std::array<std::uint8_t, 64> buf{};
+    auto written = fed::serialize_federation_entry(buf, key, payload);
+    ASSERT_TRUE(written.has_value());
+
+    auto view = fed::deserialize_federation_entry(
+        std::span<const std::uint8_t>(buf.data(), *written),
+        static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
+    ASSERT_TRUE(view.has_value());
+    assert(view->header.content_hash.raw() == SHARED_BITS);
+    assert(view->header.row_hash.raw()     == SHARED_BITS);
+    assert(view->header.content_hash       == key.content_hash);
+    assert(view->header.row_hash           == key.row_hash);
+
+    // Pin the byte-position discipline by inspecting the buffer:
+    // bytes [8..15] should equal bytes [16..23] when content == row.
+    for (std::size_t i = 0; i < 8; ++i) {
+        assert(buf[8 + i] == buf[16 + i]);
+    }
+
+    std::printf("  [AUDIT-E] same_bit_pattern_axes:                 PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit Group F — constexpr witness for predicate + error_name.
+// Pin via static_assert at namespace scope that both functions can
+// be evaluated in a constant-expression context.  The codec
+// (serialize/deserialize) is intentionally NOT constexpr (uses
+// std::memcpy on a buffer, which is runtime-only); only the
+// query-side predicates fold at compile time.
+
+namespace audit_f_constexpr_witnesses {
+    // federation_accepts_cardinality is consteval-friendly.
+    static_assert(fed::federation_accepts_cardinality(0, 0));
+    static_assert(fed::federation_accepts_cardinality(6, 6));
+    static_assert(!fed::federation_accepts_cardinality(7, 6));
+
+    // federation_error_name is consteval-friendly.
+    static_assert(fed::federation_error_name(fed::FederationError::None)
+                  == "None");
+    static_assert(fed::federation_error_name(fed::FederationError::BadMagic)
+                  == "BadMagic");
+    static_assert(fed::federation_error_name(
+                      fed::FederationError::UniverseCardinalityTooHigh)
+                  == "UniverseCardinalityTooHigh");
+
+    // Constants are constexpr-reachable.
+    static_assert(fed::FEDERATION_MAGIC == 0x44454643u);
+    static_assert(fed::FEDERATION_PROTOCOL_V1 == 1u);
+    static_assert(fed::FEDERATION_HEADER_BYTES == 32u);
+}
+
+static void test_audit_f_constexpr_witnesses() {
+    // Runtime peer to ensure the namespace-scope static_asserts above
+    // are reachable at runtime too (header inclusion fence — if the
+    // header gets edited to make these non-constexpr, the static_asserts
+    // fire AND the runtime test stops compiling).
+    [[maybe_unused]] auto card_check =
+        fed::federation_accepts_cardinality(6, 6);
+    [[maybe_unused]] auto name_check =
+        fed::federation_error_name(fed::FederationError::None);
+    assert(card_check);
+    assert(name_check == "None");
+
+    std::printf("  [AUDIT-F] constexpr_witnesses:                   PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit Group G — magic-collision guard with CDAG_MAGIC.  If a future
+// refactor reassigns CDAG_MAGIC (Serialize.h:27) to FEDERATION_MAGIC,
+// a federation byte stream and a Merkle DAG snapshot would silently
+// dispatch to the wrong codec.  Pin the inequality as a runtime
+// witness that pulls in BOTH headers.
+
+static void test_audit_g_magic_collision_with_cdag() {
+    // Both magics are namespace-distinct constants.
+    static_assert(fed::FEDERATION_MAGIC == 0x44454643u);
+    static_assert(crucible::CDAG_MAGIC  == 0x43444147u);
+    static_assert(fed::FEDERATION_MAGIC != crucible::CDAG_MAGIC,
+        "FEDERATION_MAGIC must not collide with CDAG_MAGIC.");
+
+    // ASCII spelling check: 'CFED' vs 'GDAG' — distinct first byte
+    // ensures an early-truncate magic-check rejects the wrong codec
+    // immediately rather than after a full 4-byte compare.
+    constexpr auto fed_first_byte =
+        static_cast<std::uint8_t>(fed::FEDERATION_MAGIC & 0xFFu);
+    constexpr auto cdag_first_byte =
+        static_cast<std::uint8_t>(crucible::CDAG_MAGIC & 0xFFu);
+    static_assert(fed_first_byte == 'C');
+    static_assert(cdag_first_byte == 'G');
+    static_assert(fed_first_byte != cdag_first_byte);
+
+    std::printf("  [AUDIT-G] magic_collision_with_cdag:             PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit Group H — header field-width pin (mirror header static_asserts
+// at runtime so the doc-comment is reachable from a debugger).
+
+static void test_audit_h_field_width_pins() {
+    static_assert(sizeof(fed::FederationEntryHeader::magic)                == 4);
+    static_assert(sizeof(fed::FederationEntryHeader::protocol_version)     == 2);
+    static_assert(sizeof(fed::FederationEntryHeader::universe_cardinality) == 2);
+    static_assert(sizeof(fed::FederationEntryHeader::content_hash)         == 8);
+    static_assert(sizeof(fed::FederationEntryHeader::row_hash)             == 8);
+    static_assert(sizeof(fed::FederationEntryHeader::payload_size)         == 4);
+    static_assert(sizeof(fed::FederationEntryHeader::reserved)             == 4);
+
+    // Sum = 32 (no padding).
+    static_assert(4 + 2 + 2 + 8 + 8 + 4 + 4 == 32);
+
+    std::printf("  [AUDIT-H] field_width_pins:                      PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit Group I — full round-trip via std::vector buffer with
+// alternating-byte payload pattern (catches off-by-one in offset
+// arithmetic that would shift bytes).
+
+static void test_audit_i_vector_buffer_roundtrip() {
+    const KernelCacheKey key{
+        ContentHash{0x0F0F'0F0F'0F0F'0F0FULL},
+        RowHash{0xF0F0'F0F0'F0F0'F0F0ULL},
+    };
+
+    // 1024-byte alternating-bit payload — 0x55, 0xAA, 0x55, 0xAA, ...
+    std::vector<std::uint8_t> payload(1024);
+    for (std::size_t i = 0; i < payload.size(); ++i) {
+        payload[i] = (i & 1u) ? 0xAAu : 0x55u;
+    }
+
+    std::vector<std::uint8_t> buf(fed::FEDERATION_HEADER_BYTES + payload.size());
+    auto written = fed::serialize_federation_entry(buf, key, payload);
+    ASSERT_TRUE(written.has_value());
+    assert(*written == buf.size());
+
+    auto view = fed::deserialize_federation_entry(
+        std::span<const std::uint8_t>(buf.data(), *written),
+        static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
+    ASSERT_TRUE(view.has_value());
+    assert(view->payload.size() == payload.size());
+    for (std::size_t i = 0; i < payload.size(); ++i) {
+        assert(view->payload[i] == payload[i]);
+    }
+
+    std::printf("  [AUDIT-I] vector_buffer_roundtrip:               PASSED\n");
+}
+
 int main() {
     std::printf("test_federation_protocol — FOUND-I08 wire-format witness\n");
     test_header_layout_invariants();
@@ -717,6 +1074,16 @@ int main() {
     test_axis_swap_distinct_on_wire();
     test_receiver_cardinality_is_explicit();
     test_codec_is_noexcept();
-    std::printf("test_federation_protocol: 23 groups, all passed\n");
+    std::printf("--- FOUND-I08-AUDIT ---\n");
+    test_audit_a_cardinality_boundary_uint16_max();
+    test_audit_b_buffer_exactly_fits();
+    test_audit_c_extra_bytes_at_end();
+    test_audit_d_partial_sentinel_accepted();
+    test_audit_e_same_bit_pattern_axes();
+    test_audit_f_constexpr_witnesses();
+    test_audit_g_magic_collision_with_cdag();
+    test_audit_h_field_width_pins();
+    test_audit_i_vector_buffer_roundtrip();
+    std::printf("test_federation_protocol: 23 + 9 audit groups, all passed\n");
     return 0;
 }

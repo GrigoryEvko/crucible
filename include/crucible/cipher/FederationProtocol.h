@@ -205,6 +205,57 @@ static_assert(::crucible::effects::OsUniverse::cardinality
               <= std::uint16_t{0xFFFF},
     "OsUniverse::cardinality must fit in the uint16_t wire field.");
 
+// ── Defensive cross-stream magic collision guard ────────────────────
+//
+// FOUND-I08-AUDIT (Finding G).  Crucible has TWO distinct binary
+// stream formats with magic words: this protocol (FEDERATION_MAGIC,
+// 'CFED') and the Merkle DAG snapshot (CDAG_MAGIC, 'GDAG' =
+// 0x43444147, defined in Serialize.h:27).  A receiver that mis-
+// dispatches a federation byte stream to the CDAG codec — or vice
+// versa — would silently misinterpret 28 bytes of header before
+// hitting a content mismatch.  Pin the magic-distinctness invariant
+// HERE (the literal value of CDAG_MAGIC inlined, not pulled via
+// Serialize.h to keep this header lightweight); the test side
+// includes both headers and asserts the constants disagree.
+//
+// A future protocol that wants to add a new magic must update both
+// (a) this static_assert with the new constant, and (b) the test
+// side's cross-magic table.  If CDAG_MAGIC is ever reassigned to a
+// value matching FEDERATION_MAGIC, the runtime witness in
+// test_federation_protocol.cpp::test_magic_collision_with_cdag fails.
+static_assert(FEDERATION_MAGIC != 0x43444147u,
+    "FEDERATION_MAGIC must not collide with CDAG_MAGIC ('GDAG' LE) — "
+    "a federation stream and a Merkle DAG snapshot must dispatch to "
+    "different codecs at the magic-check step.  See Serialize.h:27.");
+
+// ── Payload-size field cap pin ──────────────────────────────────────
+//
+// FOUND-I08-AUDIT (Finding F).  payload_size is uint32_t; the
+// natural cap is std::numeric_limits<std::uint32_t>::max() = 4 GiB - 1.
+// A federation transport that wants to ship larger artifacts must
+// fragment them into multiple entries (or bump the protocol version
+// to V2 with a 64-bit payload_size).  The serialize-side check
+// (`payload.size() > UINT32_MAX → reject`) is the runtime guard;
+// this static_assert pins the structural cap so the compile-time
+// invariant cannot drift if the field width ever changes.
+static_assert(sizeof(FederationEntryHeader::payload_size) == 4,
+    "payload_size MUST be a 32-bit field — caps the per-entry "
+    "payload at 4 GiB.  Larger payloads must fragment into multiple "
+    "entries or bump to a V2 protocol with 64-bit payload_size.");
+static_assert(sizeof(FederationEntryHeader::universe_cardinality) == 2,
+    "universe_cardinality MUST be a 16-bit field — caps the Effect "
+    "atom catalog at 65535 entries (well above EffectRowLattice's "
+    "structural cap of 64 from the uint64_t carrier).");
+static_assert(sizeof(FederationEntryHeader::magic) == 4,
+    "magic MUST be a 32-bit field — pinned for byte-stable cross-"
+    "platform protocol identification.");
+static_assert(sizeof(FederationEntryHeader::protocol_version) == 2,
+    "protocol_version MUST be a 16-bit field — supports up to 65536 "
+    "wire-format revisions.");
+static_assert(sizeof(FederationEntryHeader::reserved) == 4,
+    "reserved MUST be a 32-bit field — preserves V1 → V2 layout "
+    "compatibility (V2 fields can use this slot).");
+
 // ── Error codes ─────────────────────────────────────────────────────
 //
 // FederationError is the structured error channel returned by
