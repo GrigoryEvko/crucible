@@ -27,6 +27,7 @@
 
 #include <crucible/safety/InferredPermissionTags.h>
 #include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/reduce_into.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -89,9 +90,16 @@ struct swmr_writer_int {
 struct swmr_reader_int {
     int load() const noexcept { return 0; }
 };
+// D14 reducer — stateless function object satisfying is_reduction_op_v.
+struct reducer_int_plus {
+    constexpr int operator()(int const& a, int const& b) const noexcept {
+        return a + b;
+    }
+};
 
 using OR_in  = ::crucible::safety::OwnedRegion<int, ::in_tag>;
 using OR_out = ::crucible::safety::OwnedRegion<int, ::out_tag>;
+using RI_int = ::crucible::safety::reduce_into<int, reducer_int_plus>;
 
 // One canonical worked example PER shape (D12-D19).
 
@@ -100,6 +108,10 @@ OR_out f_unary(OR_in&&) noexcept;
 
 // D13 BinaryTransform — in-place void return, two regions.
 void f_binary(OR_in&&, OR_out&&) noexcept;
+
+// D14 Reduction — input region in slot 0, reduce_into accumulator
+// borrowed by lvalue-ref in slot 1, void return.
+void f_reduction(OR_in&&, RI_int&) noexcept;
 
 // D15 ProducerEndpoint — handle in slot 0, region in slot 1.
 void f_producer(producer_int&&, OR_in&&) noexcept;
@@ -146,6 +158,15 @@ void test_binary_transform_recognized() {
                   == extract::CanonicalShapeKind::BinaryTransform);
     static_assert(extract::canonical_shape_name_of_v<&cs_test::f_binary>
                   == std::string_view{"BinaryTransform"});
+}
+
+void test_reduction_recognized() {
+    static_assert( extract::CanonicalShape<&cs_test::f_reduction>);
+    static_assert(!extract::NonCanonical<&cs_test::f_reduction>);
+    static_assert(extract::canonical_shape_kind_v<&cs_test::f_reduction>
+                  == extract::CanonicalShapeKind::Reduction);
+    static_assert(extract::canonical_shape_name_of_v<&cs_test::f_reduction>
+                  == std::string_view{"Reduction"});
 }
 
 void test_producer_endpoint_recognized() {
@@ -213,6 +234,7 @@ void test_mutual_exclusivity_unary() {
     // predicates must be false.
     static_assert( extract::UnaryTransform<&cs_test::f_unary>);
     static_assert(!extract::BinaryTransform<&cs_test::f_unary>);
+    static_assert(!extract::Reduction<&cs_test::f_unary>);
     static_assert(!extract::ProducerEndpoint<&cs_test::f_unary>);
     static_assert(!extract::ConsumerEndpoint<&cs_test::f_unary>);
     static_assert(!extract::SwmrWriter<&cs_test::f_unary>);
@@ -223,6 +245,7 @@ void test_mutual_exclusivity_unary() {
 void test_mutual_exclusivity_binary() {
     static_assert(!extract::UnaryTransform<&cs_test::f_binary>);
     static_assert( extract::BinaryTransform<&cs_test::f_binary>);
+    static_assert(!extract::Reduction<&cs_test::f_binary>);
     static_assert(!extract::ProducerEndpoint<&cs_test::f_binary>);
     static_assert(!extract::ConsumerEndpoint<&cs_test::f_binary>);
     static_assert(!extract::SwmrWriter<&cs_test::f_binary>);
@@ -230,9 +253,26 @@ void test_mutual_exclusivity_binary() {
     static_assert(!extract::PipelineStage<&cs_test::f_binary>);
 }
 
+void test_mutual_exclusivity_reduction() {
+    // For Reduction's worked example, all OTHER shape predicates
+    // must be false.  Cross-shape exclusion vs BinaryTransform is
+    // load-bearing — both are arity-2 with OwnedRegion in slot 0;
+    // the discriminator is param 1's wrapper kind (OwnedRegion vs
+    // reduce_into) AND the lvalue-ref/rvalue-ref distinction.
+    static_assert(!extract::UnaryTransform<&cs_test::f_reduction>);
+    static_assert(!extract::BinaryTransform<&cs_test::f_reduction>);
+    static_assert( extract::Reduction<&cs_test::f_reduction>);
+    static_assert(!extract::ProducerEndpoint<&cs_test::f_reduction>);
+    static_assert(!extract::ConsumerEndpoint<&cs_test::f_reduction>);
+    static_assert(!extract::SwmrWriter<&cs_test::f_reduction>);
+    static_assert(!extract::SwmrReader<&cs_test::f_reduction>);
+    static_assert(!extract::PipelineStage<&cs_test::f_reduction>);
+}
+
 void test_mutual_exclusivity_producer() {
     static_assert(!extract::UnaryTransform<&cs_test::f_producer>);
     static_assert(!extract::BinaryTransform<&cs_test::f_producer>);
+    static_assert(!extract::Reduction<&cs_test::f_producer>);
     static_assert( extract::ProducerEndpoint<&cs_test::f_producer>);
     static_assert(!extract::ConsumerEndpoint<&cs_test::f_producer>);
     static_assert(!extract::SwmrWriter<&cs_test::f_producer>);
@@ -243,6 +283,7 @@ void test_mutual_exclusivity_producer() {
 void test_mutual_exclusivity_consumer() {
     static_assert(!extract::UnaryTransform<&cs_test::f_consumer>);
     static_assert(!extract::BinaryTransform<&cs_test::f_consumer>);
+    static_assert(!extract::Reduction<&cs_test::f_consumer>);
     static_assert(!extract::ProducerEndpoint<&cs_test::f_consumer>);
     static_assert( extract::ConsumerEndpoint<&cs_test::f_consumer>);
     static_assert(!extract::SwmrWriter<&cs_test::f_consumer>);
@@ -253,6 +294,7 @@ void test_mutual_exclusivity_consumer() {
 void test_mutual_exclusivity_swmr_writer() {
     static_assert(!extract::UnaryTransform<&cs_test::f_swmr_writer>);
     static_assert(!extract::BinaryTransform<&cs_test::f_swmr_writer>);
+    static_assert(!extract::Reduction<&cs_test::f_swmr_writer>);
     static_assert(!extract::ProducerEndpoint<&cs_test::f_swmr_writer>);
     static_assert(!extract::ConsumerEndpoint<&cs_test::f_swmr_writer>);
     static_assert( extract::SwmrWriter<&cs_test::f_swmr_writer>);
@@ -263,6 +305,7 @@ void test_mutual_exclusivity_swmr_writer() {
 void test_mutual_exclusivity_swmr_reader() {
     static_assert(!extract::UnaryTransform<&cs_test::f_swmr_reader>);
     static_assert(!extract::BinaryTransform<&cs_test::f_swmr_reader>);
+    static_assert(!extract::Reduction<&cs_test::f_swmr_reader>);
     static_assert(!extract::ProducerEndpoint<&cs_test::f_swmr_reader>);
     static_assert(!extract::ConsumerEndpoint<&cs_test::f_swmr_reader>);
     static_assert(!extract::SwmrWriter<&cs_test::f_swmr_reader>);
@@ -273,6 +316,7 @@ void test_mutual_exclusivity_swmr_reader() {
 void test_mutual_exclusivity_pipeline() {
     static_assert(!extract::UnaryTransform<&cs_test::f_pipeline>);
     static_assert(!extract::BinaryTransform<&cs_test::f_pipeline>);
+    static_assert(!extract::Reduction<&cs_test::f_pipeline>);
     static_assert(!extract::ProducerEndpoint<&cs_test::f_pipeline>);
     static_assert(!extract::ConsumerEndpoint<&cs_test::f_pipeline>);
     static_assert(!extract::SwmrWriter<&cs_test::f_pipeline>);
@@ -327,6 +371,9 @@ void test_name_of_v_matches_name_of_kind_v() {
     static_assert(extract::canonical_shape_name_of_v<&cs_test::f_binary>
                   == extract::canonical_shape_name(
                       extract::canonical_shape_kind_v<&cs_test::f_binary>));
+    static_assert(extract::canonical_shape_name_of_v<&cs_test::f_reduction>
+                  == extract::canonical_shape_name(
+                      extract::canonical_shape_kind_v<&cs_test::f_reduction>));
     static_assert(extract::canonical_shape_name_of_v<&cs_test::f_producer>
                   == extract::canonical_shape_name(
                       extract::canonical_shape_kind_v<&cs_test::f_producer>));
@@ -363,6 +410,8 @@ void test_non_canonical_fails_every_shape_predicate() {
         &cs_test::f_non_canonical_two_ints>);
     static_assert(!extract::BinaryTransform<
         &cs_test::f_non_canonical_two_ints>);
+    static_assert(!extract::Reduction<
+        &cs_test::f_non_canonical_two_ints>);
     static_assert(!extract::ProducerEndpoint<
         &cs_test::f_non_canonical_two_ints>);
     static_assert(!extract::ConsumerEndpoint<
@@ -379,6 +428,8 @@ void test_non_canonical_fails_every_shape_predicate() {
     static_assert(!extract::UnaryTransform<
         &cs_test::f_non_canonical_three_params>);
     static_assert(!extract::BinaryTransform<
+        &cs_test::f_non_canonical_three_params>);
+    static_assert(!extract::Reduction<
         &cs_test::f_non_canonical_three_params>);
     static_assert(!extract::ProducerEndpoint<
         &cs_test::f_non_canonical_three_params>);
@@ -405,20 +456,23 @@ void test_dispatcher_integration_example() {
                              extract::CanonicalShapeKind::BinaryTransform) {
             return 2;
         } else if constexpr (kind ==
-                             extract::CanonicalShapeKind::ProducerEndpoint) {
+                             extract::CanonicalShapeKind::Reduction) {
             return 3;
         } else if constexpr (kind ==
-                             extract::CanonicalShapeKind::ConsumerEndpoint) {
+                             extract::CanonicalShapeKind::ProducerEndpoint) {
             return 4;
         } else if constexpr (kind ==
-                             extract::CanonicalShapeKind::SwmrWriter) {
+                             extract::CanonicalShapeKind::ConsumerEndpoint) {
             return 5;
         } else if constexpr (kind ==
-                             extract::CanonicalShapeKind::SwmrReader) {
+                             extract::CanonicalShapeKind::SwmrWriter) {
             return 6;
         } else if constexpr (kind ==
-                             extract::CanonicalShapeKind::PipelineStage) {
+                             extract::CanonicalShapeKind::SwmrReader) {
             return 7;
+        } else if constexpr (kind ==
+                             extract::CanonicalShapeKind::PipelineStage) {
+            return 8;
         } else {
             // §3.8 catch-all — dispatcher would emit a diagnostic
             // here naming the unrecognized shape.
@@ -430,16 +484,18 @@ void test_dispatcher_integration_example() {
                   == 1);
     static_assert(select_lowering.template operator()<&cs_test::f_binary>()
                   == 2);
-    static_assert(select_lowering.template operator()<&cs_test::f_producer>()
+    static_assert(select_lowering.template operator()<&cs_test::f_reduction>()
                   == 3);
-    static_assert(select_lowering.template operator()<&cs_test::f_consumer>()
+    static_assert(select_lowering.template operator()<&cs_test::f_producer>()
                   == 4);
+    static_assert(select_lowering.template operator()<&cs_test::f_consumer>()
+                  == 5);
     static_assert(select_lowering.template operator()<
-                      &cs_test::f_swmr_writer>() == 5);
+                      &cs_test::f_swmr_writer>() == 6);
     static_assert(select_lowering.template operator()<
-                      &cs_test::f_swmr_reader>() == 6);
+                      &cs_test::f_swmr_reader>() == 7);
     static_assert(select_lowering.template operator()<&cs_test::f_pipeline>()
-                  == 7);
+                  == 8);
     static_assert(select_lowering.template operator()<
                       &cs_test::f_non_canonical_two_ints>() == 0);
 }
@@ -451,6 +507,8 @@ void test_kind_to_name_round_trip() {
         extract::CanonicalShapeKind::UnaryTransform).empty());
     static_assert(!extract::canonical_shape_name(
         extract::CanonicalShapeKind::BinaryTransform).empty());
+    static_assert(!extract::canonical_shape_name(
+        extract::CanonicalShapeKind::Reduction).empty());
     static_assert(!extract::canonical_shape_name(
         extract::CanonicalShapeKind::ProducerEndpoint).empty());
     static_assert(!extract::canonical_shape_name(
@@ -528,6 +586,8 @@ int main() {
              test_unary_transform_recognized);
     run_test("test_binary_transform_recognized",
              test_binary_transform_recognized);
+    run_test("test_reduction_recognized",
+             test_reduction_recognized);
     run_test("test_producer_endpoint_recognized",
              test_producer_endpoint_recognized);
     run_test("test_consumer_endpoint_recognized",
@@ -544,6 +604,8 @@ int main() {
              test_mutual_exclusivity_unary);
     run_test("test_mutual_exclusivity_binary",
              test_mutual_exclusivity_binary);
+    run_test("test_mutual_exclusivity_reduction",
+             test_mutual_exclusivity_reduction);
     run_test("test_mutual_exclusivity_producer",
              test_mutual_exclusivity_producer);
     run_test("test_mutual_exclusivity_consumer",

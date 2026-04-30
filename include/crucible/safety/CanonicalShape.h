@@ -15,20 +15,12 @@
 //                          least one of:
 //                            - UnaryTransform     (D12)
 //                            - BinaryTransform    (D13)
+//                            - Reduction          (D14)
 //                            - ProducerEndpoint   (D15)
 //                            - ConsumerEndpoint   (D16)
 //                            - SwmrWriter         (D17)
 //                            - SwmrReader         (D18)
 //                            - PipelineStage      (D19)
-//
-//                          NOTE: Reduction (D14) is NOT in the
-//                          umbrella yet — it's blocked on the
-//                          reduce_into<R, Op> wrapper not having
-//                          shipped.  When D14 lands, add a
-//                          `|| Reduction<FnPtr>` clause here AND
-//                          add a `Reduction` enum value to
-//                          `CanonicalShapeKind`.  See the comment
-//                          block below.
 //
 //   NonCanonical<auto FnPtr>
 //                          Concept satisfied iff !CanonicalShape.
@@ -75,12 +67,13 @@
 //
 //   1. UnaryTransform   (most specific arity-1 case)
 //   2. BinaryTransform  (most specific arity-2 same-shape case)
-//   3. ProducerEndpoint (arity-2 with Producer in slot 0)
-//   4. ConsumerEndpoint (arity-2 with Consumer in slot 0)
-//   5. SwmrWriter       (arity-2 with SwmrWriter in slot 0)
-//   6. SwmrReader       (arity-1 with SwmrReader return)
-//   7. PipelineStage    (arity-2 Consumer+Producer)
-//   8. NonCanonical     (fallback)
+//   3. Reduction        (arity-2 OwnedRegion + reduce_into)
+//   4. ProducerEndpoint (arity-2 with Producer in slot 0)
+//   5. ConsumerEndpoint (arity-2 with Consumer in slot 0)
+//   6. SwmrWriter       (arity-2 with SwmrWriter in slot 0)
+//   7. SwmrReader       (arity-1 with SwmrReader return)
+//   8. PipelineStage    (arity-2 Consumer+Producer)
+//   9. NonCanonical     (fallback)
 //
 // Because the shapes are mutually exclusive, the order matters only
 // for diagnostic-message stability — the matched kind is the same
@@ -100,6 +93,7 @@
 #include <crucible/safety/ConsumerEndpoint.h>
 #include <crucible/safety/PipelineStage.h>
 #include <crucible/safety/ProducerEndpoint.h>
+#include <crucible/safety/Reduction.h>
 #include <crucible/safety/SwmrReader.h>
 #include <crucible/safety/SwmrWriter.h>
 #include <crucible/safety/UnaryTransform.h>
@@ -117,16 +111,12 @@ template <auto FnPtr>
 concept CanonicalShape =
        UnaryTransform<FnPtr>
     || BinaryTransform<FnPtr>
+    || Reduction<FnPtr>
     || ProducerEndpoint<FnPtr>
     || ConsumerEndpoint<FnPtr>
     || SwmrWriter<FnPtr>
     || SwmrReader<FnPtr>
     || PipelineStage<FnPtr>;
-    // TODO(FOUND-D14): || Reduction<FnPtr> — blocked on
-    // safety/reduce_into.h (the reduce_into<R, Op> wrapper).  Add
-    // here AND add CanonicalShapeKind::Reduction below AND extend
-    // the canonical_shape_kind() chain AND extend
-    // canonical_shape_name().
 
 template <auto FnPtr>
 concept NonCanonical = !CanonicalShape<FnPtr>;
@@ -145,12 +135,12 @@ enum class CanonicalShapeKind : std::uint8_t {
     NonCanonical = 0,
     UnaryTransform,
     BinaryTransform,
+    Reduction,
     ProducerEndpoint,
     ConsumerEndpoint,
     SwmrWriter,
     SwmrReader,
     PipelineStage,
-    // TODO(FOUND-D14): Reduction
 };
 
 namespace detail {
@@ -161,6 +151,8 @@ consteval CanonicalShapeKind canonical_shape_kind_impl() noexcept {
         return CanonicalShapeKind::UnaryTransform;
     } else if constexpr (BinaryTransform<FnPtr>) {
         return CanonicalShapeKind::BinaryTransform;
+    } else if constexpr (Reduction<FnPtr>) {
+        return CanonicalShapeKind::Reduction;
     } else if constexpr (ProducerEndpoint<FnPtr>) {
         return CanonicalShapeKind::ProducerEndpoint;
     } else if constexpr (ConsumerEndpoint<FnPtr>) {
@@ -196,13 +188,13 @@ inline constexpr CanonicalShapeKind canonical_shape_kind_v =
     switch (k) {
         case CanonicalShapeKind::UnaryTransform:    return "UnaryTransform";
         case CanonicalShapeKind::BinaryTransform:   return "BinaryTransform";
+        case CanonicalShapeKind::Reduction:         return "Reduction";
         case CanonicalShapeKind::ProducerEndpoint:  return "ProducerEndpoint";
         case CanonicalShapeKind::ConsumerEndpoint:  return "ConsumerEndpoint";
         case CanonicalShapeKind::SwmrWriter:        return "SwmrWriter";
         case CanonicalShapeKind::SwmrReader:        return "SwmrReader";
         case CanonicalShapeKind::PipelineStage:     return "PipelineStage";
         case CanonicalShapeKind::NonCanonical:      return "NonCanonical";
-        // TODO(FOUND-D14): case CanonicalShapeKind::Reduction:    return "Reduction";
         default: return "Unknown";  // unreachable under exhaustive enum
     }
 }
