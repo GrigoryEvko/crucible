@@ -410,6 +410,7 @@ crucible_test(test_recipe_registry)
 crucible_test(test_recipe_integration)
 crucible_test(test_recipe_coverage)
 crucible_test(test_recipe_registry_tier)
+crucible_test(test_recipe_registry_spec)
 
 # bench harness unit tests — include bench/ for bench_harness.h + bpf_senses.h.
 # CRUCIBLE_BENCH_HAVE_BPF is intentionally unset: the test exercises only
@@ -1217,6 +1218,16 @@ crucible_neg_compile_test(neg_recipe_registry_fp64_at_bitexact_fence
   "constraints not satisfied|no matching function|associated constraints")
 crucible_neg_compile_test(neg_recipe_registry_fp16_at_bitexact_fence
   "constraints not satisfied|no matching function|associated constraints")
+
+# FOUND-G78 production-call-site fence — distinct axis-kind from
+# the regime-1 by_name_pinned<Tolerance T> overload.  A consumer
+# wanting two-axis admission (Tolerance × RecipeFamily) must use
+# `by_name_spec(name)` then `.admits(req_tier, req_family)`; reaching
+# for `by_name_pinned<RecipeFamily::Kahan>` is a substitution failure
+# at the template parameter.  Catches the canonical "wrong-API-for-
+# wrong-axis" bug class at the registry boundary.
+crucible_neg_compile_test(neg_recipe_registry_pinned_with_family_template_arg
+  "could not convert|cannot convert|no matching function|enum class|conversion from")
 
 # ─── FOUND-G26 Wait wrapper neg-compiles (6 fixtures: 4+2) ──────────
 #

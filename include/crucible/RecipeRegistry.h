@@ -59,6 +59,7 @@
 #include <crucible/RecipePool.h>
 #include <crucible/Types.h>
 #include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/RecipeSpec.h>
 
 #include <array>
 #include <cstddef>
@@ -166,6 +167,48 @@ tolerance_of(NumericalRecipe const& r) noexcept {
       // ReductionDeterminism additions land here as RELAXED until
       // their tolerance class is explicitly mapped.
       return safety::Tolerance::RELAXED;
+  }
+}
+
+// ─── recipe_family_of — recipe → RecipeFamily category ─────────────
+//
+// Maps a NumericalRecipe's `reduction_algo` to the RecipeFamily
+// algebraic-category label used by safety::RecipeSpec.  Unlike
+// tolerance_of() this mapping is 1:1 categorical: each ReductionAlgo
+// is its own incomparable family (Linear / Pairwise / Kahan /
+// BlockStable are SIBLINGS in the partial-order RecipeFamilyLattice,
+// not chain-ordered).
+//
+// Invariant:
+//
+//   recipe_family_of(r) == Pairwise    ⟺  reduction_algo == PAIRWISE.
+//   recipe_family_of(r) == Linear      ⟺  reduction_algo == LINEAR.
+//   recipe_family_of(r) == Kahan       ⟺  reduction_algo == KAHAN.
+//   recipe_family_of(r) == BlockStable ⟺  reduction_algo == BLOCK_STABLE.
+//
+// Why no wildcard / sentinel mapping: `ReductionAlgo` is a closed
+// strong-enum of four named algorithms.  None of them is "any" or
+// "unbound" — every recipe in the registry HAS a specific algorithmic
+// strategy.  The bottom (None) and top (Any) wildcards in
+// RecipeFamilyLattice exist for the LATTICE algebra (sentinel pre-
+// RecipeSelect state, recipe-agnostic data) but never for a
+// concrete registry entry.  The default arm collapses to None as a
+// defensive position for future ReductionAlgo additions.
+[[nodiscard, gnu::const]] constexpr safety::RecipeFamily
+recipe_family_of(NumericalRecipe const& r) noexcept {
+  switch (r.reduction_algo) {
+    case ReductionAlgo::PAIRWISE:     return safety::RecipeFamily::Pairwise;
+    case ReductionAlgo::LINEAR:       return safety::RecipeFamily::Linear;
+    case ReductionAlgo::KAHAN:        return safety::RecipeFamily::Kahan;
+    case ReductionAlgo::BLOCK_STABLE: return safety::RecipeFamily::BlockStable;
+    default:
+      // Defensive: -Werror=switch-default requires this arm even
+      // though the four-algo enum is exhaustive above.  Future
+      // ReductionAlgo additions land here as None (bottom) until
+      // their family is explicitly named — strictly safe because
+      // None subsumes nothing (admits returns false for any specific
+      // family request).
+      return safety::RecipeFamily::None;
   }
 }
 
@@ -335,6 +378,77 @@ class CRUCIBLE_OWNER RecipeRegistry {
       return std::unexpected(RecipeError::ToleranceMismatch);
     }
     return safety::NumericalTier<T, const NumericalRecipe*>{recipe};
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FOUND-G78: RecipeSpec product-wrapper recipe lookup
+  // ═══════════════════════════════════════════════════════════════
+  //
+  // Per-instance two-axis recipe specification overlay — pairs a
+  // recipe pointer with its (tolerance_tier, recipe_family) at
+  // RUNTIME inside a `safety::RecipeSpec<const NumericalRecipe*>`.
+  // Unlike by_name_pinned / by_hash_pinned (FOUND-G04, regime-1
+  // single-axis static admission), RecipeSpec is regime-4 (per-
+  // instance grade carried in 2 bytes of runtime state) — so the
+  // overload takes NO template parameter.  Both the tolerance tier
+  // AND the recipe-family axis are populated from the recipe's
+  // runtime fields via tolerance_of() + recipe_family_of().
+  //
+  // THE LOAD-BEARING USE CASE — Forge Phase E.RecipeSelect dispatch:
+  //
+  //   auto spec = registry.by_name_spec("f16_f32accum_tc")
+  //                  .value();   // RecipeSpec<const NumericalRecipe*>
+  //   if (!spec.admits(consumer_req_tier, consumer_req_family))
+  //     return reject_recipe_mismatch();
+  //   auto* recipe = spec.peek();   // canonical interned pointer
+  //
+  // The `admits()` gate fences a TWO-DIMENSIONAL bug class that the
+  // single-axis pinned overload cannot:
+  //
+  //   1. tolerance-only mismatch — caught by by_name_pinned today.
+  //   2. recipe-family mismatch — Forge intersection solver picks
+  //      a Pairwise recipe but the consumer requires Kahan
+  //      (e.g., Adam moment-buffer accumulator with strict ε
+  //      growth).  Different ALGORITHMS, same tolerance band.
+  //   3. JOINT failure — both axes off; admits() short-circuits at
+  //      the first failing axis but reports failure regardless of
+  //      which axis tripped (consumer's responsibility to inspect).
+  //
+  // The combine_max() composition also lifts here: at sites where
+  // multiple recipe-tagged streams converge (e.g., multi-vendor
+  // pipeline reductions), `a.combine_max(b)` joins both axes
+  // pointwise — tolerance promotes to the max tier, family
+  // promotes to wildcard (Any) when the two streams disagree.
+  //
+  // Error priority: NameNotFound / HashNotFound take precedence
+  // over any joint-axis mismatch (mismatch is per-call, not per-
+  // entry — the registry hands out the spec, the caller decides
+  // whether it admits).  Symmetric with the pinned overload.
+  //
+  // Cost: ~5-10 ns hit (linear scan + tolerance_of switch +
+  // recipe_family_of switch + RecipeSpec construction with two
+  // 1-byte stores); ~15 ns miss.  No heap, no atomic, no CAS.
+
+  // ── by_name_spec — name lookup with two-axis spec wrap ──────────
+  [[nodiscard, gnu::pure]]
+  std::expected<safety::RecipeSpec<const NumericalRecipe*>, RecipeError>
+  by_name_spec(std::string_view name) const noexcept {
+    auto base = by_name(name);
+    if (!base) return std::unexpected(base.error());
+    const NumericalRecipe* recipe = *base;
+    return safety::RecipeSpec<const NumericalRecipe*>{
+        recipe, tolerance_of(*recipe), recipe_family_of(*recipe)};
+  }
+
+  // ── by_hash_spec — hash lookup with two-axis spec wrap ──────────
+  [[nodiscard, gnu::pure]]
+  std::expected<safety::RecipeSpec<const NumericalRecipe*>, RecipeError>
+  by_hash_spec(RecipeHash hash) const noexcept {
+    auto base = by_hash(hash);
+    if (!base) return std::unexpected(base.error());
+    const NumericalRecipe* recipe = *base;
+    return safety::RecipeSpec<const NumericalRecipe*>{
+        recipe, tolerance_of(*recipe), recipe_family_of(*recipe)};
   }
 
  private:
