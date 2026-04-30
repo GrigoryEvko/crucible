@@ -350,6 +350,251 @@ static void test_t15_payload_aliases_input() {
     std::printf("  T15 payload_aliases_input:                   PASSED\n");
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// ── FOUND-F12-AUDIT — per-axis isolation + wire-byte fences ────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Five audit groups closing gaps in the base T01-T15 surface:
+//
+//   AUDIT-A — content axis is row-aware INDEPENDENT of the row axis.
+//             T05 only proves the COMPOSITE key differs across rows;
+//             this group isolates each axis's contribution.
+//   AUDIT-B — wire-byte-offset stability.  Pin that content_hash
+//             occupies bytes [8..15] and row_hash occupies bytes
+//             [16..23] of the I08 32-byte header, little-endian.
+//             Without this, a refactor of the header layout could
+//             silently shift fields and break cross-version
+//             compatibility.
+//   AUDIT-C — cross-Universe-cardinality receiver rejection.
+//             Inherits I04 append-only discipline through F12: a
+//             receiver with a smaller universe must reject entries
+//             written from a larger universe.
+//   AUDIT-D — row-permutation byte-level invariance.  T08 proves
+//             keys equal under row permutation; this group proves
+//             the WIRE bytes are byte-identical.
+//   AUDIT-E — saturation-row (RFull = 6 atoms) round-trip + key
+//             well-formedness.
+
+// ─────────────────────────────────────────────────────────────────────
+// AUDIT-A — content axis row-aware in isolation.
+//
+// federation_content_hash<&f, R, Args...> ALONE must differ across
+// rows even though we don't compare the row_hash axis.  This pins
+// that F11's `computation_cache_key_in_row` mixes the row hash into
+// the content axis (the load-bearing slot-isolation invariant), not
+// just relying on the row axis to disambiguate.
+
+static void test_audit_a_content_axis_row_isolation() {
+    static_assert(fed::federation_content_hash<&t_unary, R0, int>()
+                  != fed::federation_content_hash<&t_unary, RBg, int>(),
+        "F12-AUDIT-A: content hash MUST differ across rows even when "
+        "the row axis is read separately — the F11 in_row fold mixes "
+        "row contribution into the content key.");
+    static_assert(fed::federation_content_hash<&t_unary, RBg, int>()
+                  != fed::federation_content_hash<&t_unary, RIO, int>());
+    static_assert(fed::federation_content_hash<&t_unary, RBgIO, int>()
+                  != fed::federation_content_hash<&t_unary, RFull, int>());
+
+    // Conversely, content hash MUST match under row permutation
+    // (sort-fold inheritance from I02 through F11).
+    static_assert(fed::federation_content_hash<&t_unary, RBgIO, int>()
+                  == fed::federation_content_hash<&t_unary, RIOBg, int>(),
+        "F12-AUDIT-A: content hash inherits row-permutation invariance "
+        "from F11+I02 sort-fold.");
+
+    std::printf("  AUDIT-A content_axis_row_isolation:          PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// AUDIT-B — wire-byte-offset stability.
+//
+// Per the I08 spec at FederationProtocol.h:21-27, the 32-byte
+// header has:
+//   offset 0..3   magic ('CFED' = 0x44454643u, little-endian)
+//   offset 4..5   protocol_version
+//   offset 6..7   universe_cardinality
+//   offset 8..15  content_hash
+//   offset 16..23 row_hash
+//   offset 24..27 payload_size
+//   offset 28..31 reserved (must be 0)
+//
+// This group memcpy's bytes from the serialized buffer and compares
+// them to the projected hashes — if a refactor moves a field, this
+// fires immediately.
+
+static void test_audit_b_wire_byte_offset_stability() {
+    constexpr auto k = fed::federation_key<&t_unary, RBgIO, int>();
+    const auto expected_content = k.content_hash.raw();
+    const auto expected_row     = k.row_hash.raw();
+
+    std::array<std::uint8_t, 64> buf{};
+    auto written = fed::serialize_computation_cache_federation_entry<
+        &t_unary, RBgIO, int>(buf, std::span<const std::uint8_t>{});
+    ASSERT_TRUE(written.has_value());
+    ASSERT_TRUE(*written == fed::FEDERATION_HEADER_BYTES);  // empty payload
+
+    // Read 8 bytes at offset 8 and compare to expected content hash.
+    std::uint64_t observed_content = 0;
+    for (std::size_t i = 0; i < 8; ++i) {
+        observed_content |= static_cast<std::uint64_t>(buf[8 + i])
+                            << (i * 8);
+    }
+    assert(observed_content == expected_content);
+
+    // Read 8 bytes at offset 16 and compare to expected row hash.
+    std::uint64_t observed_row = 0;
+    for (std::size_t i = 0; i < 8; ++i) {
+        observed_row |= static_cast<std::uint64_t>(buf[16 + i])
+                        << (i * 8);
+    }
+    assert(observed_row == expected_row);
+
+    // Magic at offset 0..3.
+    std::uint32_t observed_magic = 0;
+    for (std::size_t i = 0; i < 4; ++i) {
+        observed_magic |= static_cast<std::uint32_t>(buf[i]) << (i * 8);
+    }
+    assert(observed_magic == fed::FEDERATION_MAGIC);
+
+    std::printf("  AUDIT-B wire_byte_offset_stability:          PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// AUDIT-C — cross-Universe-cardinality receiver rejection.
+//
+// FOUND-I04 invariant: Universe.cardinality is append-only — atoms
+// only get added, never removed or reordered.  The federation
+// protocol stamps the writer's cardinality in the header at offset
+// 6..7.  A receiver with a SMALLER cardinality cannot understand
+// entries whose universe_cardinality field exceeds its own — those
+// entries might mention atoms the receiver hasn't yet defined.  The
+// I08 codec rejects such entries with FederationError::
+// UniverseCardinalityTooHigh.
+//
+// This audit pins that the F12 bridge inherits this rejection: a
+// receiver claiming `cardinality - 1` MUST reject an entry written
+// at the current cardinality, even though F12 itself doesn't
+// directly write the cardinality field (it's stamped by the I08
+// serialize path the bridge calls into).
+
+static void test_audit_c_cross_universe_cardinality_rejection() {
+    constexpr auto current_cardinality =
+        static_cast<std::uint16_t>(eff::OsUniverse::cardinality);
+    static_assert(current_cardinality >= 1u,
+        "F12-AUDIT-C: this fixture requires cardinality >= 1 to "
+        "construct a strictly-smaller receiver cardinality.");
+
+    std::array<std::uint8_t, 64> buf{};
+    const std::array<std::uint8_t, 4> body = {0xAA, 0xBB, 0xCC, 0xDD};
+
+    auto written = fed::serialize_computation_cache_federation_entry<
+        &t_unary, RFull, int>(buf, body);
+    ASSERT_TRUE(written.has_value());
+
+    // Receiver at current cardinality — should accept.
+    {
+        auto view = fed::deserialize_federation_entry(
+            std::span<const std::uint8_t>(buf.data(), *written),
+            current_cardinality);
+        ASSERT_TRUE(view.has_value());
+    }
+
+    // Receiver at cardinality - 1 — must reject.
+    {
+        auto view = fed::deserialize_federation_entry(
+            std::span<const std::uint8_t>(buf.data(), *written),
+            static_cast<std::uint16_t>(current_cardinality - 1u));
+        ASSERT_TRUE(!view.has_value());
+        assert(view.error()
+               == crucible::cipher::federation::FederationError::
+                      UniverseCardinalityTooHigh);
+    }
+
+    std::printf("  AUDIT-C cross_universe_cardinality_rejection: PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// AUDIT-D — row-permutation byte-level invariance.
+//
+// T08 proves federation_key<&fn, Row<Bg,IO>, int>() ==
+//                federation_key<&fn, Row<IO,Bg>, int>().
+// This audit goes further: the SERIALIZED BYTES must be identical
+// too — same magic + version + cardinality + content_hash +
+// row_hash + payload_size + reserved + payload.  If a refactor
+// were to make the codec sensitive to template-arg order beyond
+// what the key projection exposes, the wire bytes would drift even
+// with identical keys.
+
+static void test_audit_d_row_permutation_byte_invariance() {
+    const std::array<std::uint8_t, 8> body = {0x10, 0x20, 0x30, 0x40,
+                                                0x50, 0x60, 0x70, 0x80};
+
+    std::array<std::uint8_t, 64> buf_bgio{};
+    std::array<std::uint8_t, 64> buf_iobg{};
+
+    auto wa = fed::serialize_computation_cache_federation_entry<
+        &t_unary, RBgIO, int>(buf_bgio, body);
+    auto wb = fed::serialize_computation_cache_federation_entry<
+        &t_unary, RIOBg, int>(buf_iobg, body);
+    ASSERT_TRUE(wa.has_value());
+    ASSERT_TRUE(wb.has_value());
+    assert(*wa == *wb);
+
+    // Byte-for-byte equality across the entire written region.
+    for (std::size_t i = 0; i < *wa; ++i) {
+        assert(buf_bgio[i] == buf_iobg[i]);
+    }
+
+    std::printf("  AUDIT-D row_permutation_byte_invariance:     PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// AUDIT-E — saturation-row (RFull = 6 atoms) round-trip.
+//
+// RFull = Row<Alloc, IO, Block, Bg, Init, Test> exercises every
+// Effect atom in the current OsUniverse.  Pins that:
+//   1. The federation key for RFull is well-formed (non-zero,
+//      non-sentinel).
+//   2. RFull row hash differs from each single-atom row.
+//   3. Round-trip preserves both axes.
+
+static void test_audit_e_saturation_row_round_trip() {
+    constexpr auto k_full = fed::federation_key<&t_unary, RFull, int>();
+    static_assert(!k_full.is_zero());
+    static_assert(!k_full.is_sentinel());
+    static_assert(k_full.row_hash.raw() != 0);
+
+    static_assert(fed::federation_row_hash<RFull>()
+                  != fed::federation_row_hash<R0>());
+    static_assert(fed::federation_row_hash<RFull>()
+                  != fed::federation_row_hash<RBg>());
+    static_assert(fed::federation_row_hash<RFull>()
+                  != fed::federation_row_hash<RIO>());
+    static_assert(fed::federation_row_hash<RFull>()
+                  != fed::federation_row_hash<RBgIO>());
+
+    const std::array<std::uint8_t, 12> body = {0xDE, 0xAD, 0xBE, 0xEF,
+                                                 0xCA, 0xFE, 0xBA, 0xBE,
+                                                 0x01, 0x02, 0x03, 0x04};
+    std::array<std::uint8_t, 64> buf{};
+    auto written = fed::serialize_computation_cache_federation_entry<
+        &t_unary, RFull, int>(buf, body);
+    ASSERT_TRUE(written.has_value());
+
+    auto view = fed::deserialize_federation_entry(
+        std::span<const std::uint8_t>(buf.data(), *written),
+        static_cast<std::uint16_t>(eff::OsUniverse::cardinality));
+    ASSERT_TRUE(view.has_value());
+    assert(view->header.content_hash == k_full.content_hash);
+    assert(view->header.row_hash     == k_full.row_hash);
+    assert(view->payload.size() == body.size());
+    for (std::size_t i = 0; i < body.size(); ++i) {
+        assert(view->payload[i] == body[i]);
+    }
+
+    std::printf("  AUDIT-E saturation_row_round_trip:           PASSED\n");
+}
+
 int main() {
     std::printf("test_computation_cache_federation — FOUND-F12 bridge\n");
     test_t01_content_hash_well_formed();
@@ -367,6 +612,11 @@ int main() {
     test_t13_composes_with_f11_cache_key();
     test_t14_header_smoke_test();
     test_t15_payload_aliases_input();
-    std::printf("test_computation_cache_federation: 15 groups, all passed\n");
+    test_audit_a_content_axis_row_isolation();
+    test_audit_b_wire_byte_offset_stability();
+    test_audit_c_cross_universe_cardinality_rejection();
+    test_audit_d_row_permutation_byte_invariance();
+    test_audit_e_saturation_row_round_trip();
+    std::printf("test_computation_cache_federation: 20 groups, all passed\n");
     return 0;
 }

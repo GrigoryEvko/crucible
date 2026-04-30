@@ -1967,6 +1967,20 @@ crucible_neg_compile_test(neg_cipher_record_event_alloc_only
 crucible_neg_compile_test(neg_cipher_record_event_bg_only
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# ─── FOUND-F12-AUDIT federation-bridge concept-fence parity ─────────
+# F12's federation primitives carry the SAME `IsCacheableFunction<FnPtr>
+# && IsEffectRow<Row>` constraint pair as F11's `*_in_row` family.  The
+# F11 path has its own fence-rejection witnesses
+# (neg_computation_cache_in_row_non_row_param +
+# neg_computation_cache_in_row_non_function_nttp); these two fixtures
+# extend the matrix to the F12 federation surface so a regression in
+# the bridge doesn't silently pass non-Row / non-Fn args through to a
+# row-blind federation key.
+crucible_neg_compile_test(neg_computation_cache_federation_non_row
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_computation_cache_federation_non_fn
+  "constraints not satisfied|template constraint failure|associated constraints")
+
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
 # Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.
 # Mechanical extension of the D30-batch pattern; closes the
