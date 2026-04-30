@@ -459,6 +459,14 @@ inline int s_data_global = 0;
 static_assert(!::crucible::cipher::IsCacheableFunction<42>);
 static_assert(!::crucible::cipher::IsCacheableFunction<&s_data_global>);
 
+// FOUND-F09-AUDIT-4 — `nullptr` literal rejection.  `decltype(nullptr)`
+// is `std::nullptr_t`, NOT a pointer type, so `is_pointer_v` is false
+// and the concept rejects.  This pins the rejection at compile-time;
+// production callers who deliberately pass `nullptr` as the FnPtr NTTP
+// (e.g., in a generic forwarder) get a hard requires-clause
+// diagnostic instead of a silent nonsense slot.
+static_assert(!::crucible::cipher::IsCacheableFunction<nullptr>);
+
 // ── Structural-cost asserts (FOUND-F09-AUDIT) ─────────────────────
 //
 // Pin the runtime properties that the API contract depends on:
@@ -546,6 +554,44 @@ inline bool computation_cache_smoke_test() noexcept {
     ::crucible::cipher::drain_computation_cache(std::chrono::seconds{0});
     ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>()
                 == body_a);
+
+    // ── (6) FOUND-F09-AUDIT-4: empty-Args round-trip ─────────────
+    // Pins the runtime side of the empty-fold case (AUDIT-3 covered
+    // it at compile time).  Verifies `lookup<&p_void>()` exercises a
+    // distinct atomic slot from `lookup<&p_unary, int>()`, that the
+    // miss/insert/hit cycle behaves identically with no Args, and
+    // that the empty-pack instantiation didn't accidentally collapse
+    // to a non-template overload.
+    auto* body_c = reinterpret_cast<CompiledBody*>(
+        static_cast<std::uintptr_t>(0x3));
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_void>()
+                == nullptr);                      // miss before insert
+    ::crucible::cipher::insert_computation_cache<&p_void>(body_c);
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_void>()
+                == body_c);                       // hit after insert
+    // p_unary<int> slot still has body_a, untouched by p_void insert.
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_unary, int>()
+                == body_a);
+
+    // ── (7) FOUND-F09-AUDIT-4: noexcept slot isolation runtime ───
+    // Compile-time invariant (key<&p_throwing,int> != key<&p_noexcept,int>)
+    // is pinned in the self-test block.  This sub-test pins the
+    // RUNTIME complement: distinct keys → distinct atomic slots.
+    // Insert into the throwing slot only; verify the noexcept slot
+    // still misses.  If the inline-atomic deduplication ever broke
+    // such that throwing and noexcept aliased, this would fail.
+    auto* body_d = reinterpret_cast<CompiledBody*>(
+        static_cast<std::uintptr_t>(0x4));
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_throwing, int>()
+                == nullptr);                      // throwing miss
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_noexcept, int>()
+                == nullptr);                      // noexcept miss
+    ::crucible::cipher::insert_computation_cache<&p_throwing, int>(body_d);
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_throwing, int>()
+                == body_d);                       // throwing hit
+    ok = ok && (::crucible::cipher::lookup_computation_cache<&p_noexcept, int>()
+                == nullptr);                      // noexcept STILL miss
+                                                  // — slot isolation holds.
 
     return ok;
 }
