@@ -1910,6 +1910,11 @@ crucible_neg_compile_test(neg_computation_cache_data_ptr_nttp
   "constraints not satisfied|template constraint failure|associated constraints")
 crucible_neg_compile_test(neg_computation_cache_member_fn_nttp
   "constraints not satisfied|template constraint failure|associated constraints")
+# F09-AUDIT-3 sister rejection — member-DATA pointers (vs member-fn
+# pointers above).  Closes the rejection-space symmetry across all
+# four NTTP categories the cache cannot key on.
+crucible_neg_compile_test(neg_computation_cache_member_data_ptr_nttp
+  "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
 # Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.

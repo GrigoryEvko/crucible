@@ -349,6 +349,23 @@ inline void p_unary(int) noexcept {}
 inline void p_binary(int, double) noexcept {}
 inline int  p_returning(int) noexcept { return 0; }
 
+// Zero-args function — exercises the empty-fold case in the cache
+// key (no Args... contributions, just the function-name +
+// function-type seed).  Pins that an empty pack doesn't degenerate
+// the hash.
+inline void p_void() noexcept {}
+
+// noexcept-vs-throwing distinction probe.  GCC's type system
+// distinguishes `void(*)(int)` from `void(*)(int) noexcept`,
+// which means stable_function_id<> sees different function-pointer
+// types, which means computation_cache_key produces different
+// keys, which means the cache slot is isolated.  This is the
+// load-bearing invariant: a function that gets `noexcept`-qualified
+// (or has it removed) re-keys its compiled body, never aliases
+// the old slot.
+inline void p_throwing(int) {}  // NOT noexcept
+inline void p_noexcept(int) noexcept {}
+
 // ── Cache keys: distinct instantiations → distinct keys ───────────
 
 // Different functions → different keys.
@@ -395,6 +412,35 @@ static_assert(::crucible::cipher::computation_cache_key<&s_fn_one, int>
 // construction; the fold can't zero out a non-zero seed).
 static_assert(::crucible::cipher::computation_cache_key<&p_unary, int> != 0);
 static_assert(::crucible::cipher::computation_cache_key<&p_binary, int, double> != 0);
+
+// FOUND-F09-AUDIT-3 — empty-fold case (Args... == {}).  The cache
+// key must be non-zero AND distinct from any non-empty-Args key
+// for the same function.  Empty fold returns the seeded
+// (name + type) hash; combining `int` into the seed must produce
+// a different key.
+static_assert(::crucible::cipher::computation_cache_key<&p_void> != 0);
+static_assert(::crucible::cipher::computation_cache_key<&p_void>
+              != ::crucible::cipher::computation_cache_key<&p_unary>);
+// Empty-Args key for void(void) ≠ Args=int key for void(int) — even
+// though both unary calls return same shape, the parameter pack
+// distinguishes.
+static_assert(::crucible::cipher::computation_cache_key<&p_unary>
+              != ::crucible::cipher::computation_cache_key<&p_unary, int>);
+
+// FOUND-F09-AUDIT-3 — noexcept distinguishes cache slots.  GCC's
+// type system gives `void(*)(int)` and `void(*)(int) noexcept`
+// different identities; stable_function_id<> sees different
+// function-pointer types; the keys diverge.  This is the
+// load-bearing isolation property: a function gaining or losing
+// `noexcept` re-keys its compiled body so the dispatcher cannot
+// dispatch a maybe-throwing body through a noexcept call site.
+static_assert(::crucible::cipher::computation_cache_key<&p_throwing, int>
+              != ::crucible::cipher::computation_cache_key<&p_noexcept, int>,
+              "noexcept-vs-throwing function-pointer types MUST "
+              "produce different cache keys; otherwise the "
+              "dispatcher can dispatch a maybe-throwing compiled "
+              "body through a noexcept caller and break the "
+              "noexcept guarantee.");
 
 // ── IsCacheableFunction concept witnesses (FOUND-F09-AUDIT-2) ─────
 //
