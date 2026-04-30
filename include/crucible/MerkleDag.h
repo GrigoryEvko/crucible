@@ -1234,6 +1234,21 @@ class CRUCIBLE_OWNER KernelCache {
   }
 
   // ── L1 publish — REAL (wraps existing insert) ────────────────────
+  //
+  // FOUND-I18 (row-validated integration contract): callers should
+  // derive `row_hash` from a typed effect row via either
+  //
+  //   safety::diag::row_hash_contribution_v<Row>     // raw u64
+  //   crucible::cipher::federation::federation_row_hash<Row>()
+  //                                                  // RowHash{...}
+  //
+  // both of which evaluate to the same bytes (F12 wraps I02 with no
+  // transformation; FOUND-I18 witness pins this end-to-end).
+  // Constructing a `RowHash` from a literal hex value is supported
+  // for the row-blind baseline (RowHash{0} = bare-type slot, see
+  // §RowHashFold §3) and for legacy callers, but new production
+  // call sites should project from a typed Row to keep the cache
+  // key derivable from the row vocabulary.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]]
   safety::residency_heat::Hot<std::expected<void, InsertError>>

@@ -30,8 +30,12 @@
 //          publishes return success-marker but don't persist)
 
 #include <crucible/MerkleDag.h>
+#include <crucible/cipher/ComputationCacheFederation.h>
+#include <crucible/effects/Capabilities.h>
+#include <crucible/effects/EffectRow.h>
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/diag/RowHashFold.h>
 #include "test_assert.h"
 
 #include <cstdio>
@@ -636,6 +640,161 @@ static void test_l2_l3_cross_tier_isolation_FOUND_I06_I07_AUDIT() {
     assert(std::move(l3_shared).consume() == nullptr);
 }
 
+// ── T24 — FOUND-I18: KernelCache::publish row-validated end-to-end ─
+//
+// FOUND-I18 — "KernelCache::publish row-validated".  Pins that the
+// F11/I02 row-hash projection (`row_hash_contribution_v<Row>` for
+// typed `effects::Row<...>`) flows through publish_l1 → lookup_l1
+// (and publish_l2/l3 → lookup_l2/l3 stubs) WITH SEMANTICS-PRESERVING
+// ROUND-TRIP.  Closes the integration gap between:
+//
+//   • F11   `computation_cache_key_in_row<FnPtr, Row, Args...>`
+//   • F12   `federation_row_hash<Row>`
+//   • I02   `row_hash_contribution_v<Row>`
+//   • I05/I06/I07  KernelCache::{lookup,publish}_l{1,2,3}
+//
+// PRIOR GAP: T21/T22 use HAND-ROLLED hex literals like
+// `RowHash{0xAAAA}` to populate the row-hash slot.  None of the
+// existing tests pass a row_hash that came from
+// `row_hash_contribution_v<Row<...>>`.  A refactor of the I02 fold
+// could silently break this integration without any existing test
+// failing.  T24 closes that gap.
+//
+// PINS:
+//   (a) row_hash_contribution_v<Row<>> is non-zero (cardinality-
+//       seeded I02 invariant) and lookup_l1 with the projected
+//       row_hash returns nullptr-pinned BEFORE publish.
+//   (b) publish_l1 with (content, row_hash_contribution_v<R>, kernel)
+//       succeeds and the same lookup returns the kernel.
+//   (c) Two distinct rows R1 != R2 produce distinct row_hashes,
+//       publish-then-lookup with R1 returns the kernel, with R2
+//       returns nullptr — row discriminates at the hash level.
+//   (d) Permuted rows (Row<Bg, IO> vs Row<IO, Bg>) project to the
+//       SAME row_hash (sort-fold I02 invariant), so a publish with
+//       Row<Bg, IO>'s projection is observable via Row<IO, Bg>'s
+//       projection — the cache treats them as the same slot, as
+//       it should under semantic equivalence.
+//   (e) federation_row_hash<R> == row_hash_contribution_v<R> at the
+//       byte level — F12's projection is a thin RowHash{} wrap
+//       around the I02 fold, and the cache accepts either form.
+//   (f) L2/L3 stubs accept the projected row_hash without rejection
+//       — pins API plumbing in the future-Phase-5 path.
+
+namespace test_i18 {
+namespace eff = ::crucible::effects;
+namespace fed = ::crucible::cipher::federation;
+
+inline void f_unary(int) noexcept {}
+inline void f_binary(int, double) noexcept {}
+
+using R0    = eff::Row<>;
+using RBg   = eff::Row<eff::Effect::Bg>;
+using RIO   = eff::Row<eff::Effect::IO>;
+using RBgIO = eff::Row<eff::Effect::Bg, eff::Effect::IO>;
+using RIOBg = eff::Row<eff::Effect::IO, eff::Effect::Bg>;
+}  // namespace test_i18
+
+static void test_publish_row_validated_FOUND_I18() {
+    namespace eff = ::test_i18;
+    namespace fed = ::crucible::cipher::federation;
+    namespace diag = ::crucible::safety::diag;
+
+    // (a) — Projected row_hash for Row<> is non-zero (cardinality-
+    //       seeded I02 invariant); cache miss before any publish.
+    static_assert(diag::row_hash_contribution_v<eff::R0> != 0u,
+        "FOUND-I18: even Row<> projects to a non-zero row_hash via "
+        "the I02 cardinality-seeded fold — this is the load-bearing "
+        "invariant for KernelCache slot-id non-collision.");
+    static_assert(diag::row_hash_contribution_v<eff::RBg> != 0u);
+    static_assert(diag::row_hash_contribution_v<eff::RIO> != 0u);
+    static_assert(diag::row_hash_contribution_v<eff::RBgIO> != 0u);
+
+    KernelCache cache;
+    FakeKernel fk_a{0xA1};
+    FakeKernel fk_b{0xB2};
+
+    constexpr ContentHash ch_a{0xAAAA0001};
+    constexpr ContentHash ch_b{0xBBBB0002};
+
+    // (e) — F12's federation_row_hash<R> wraps row_hash_contribution_v
+    //       with no transformation.  The cache accepts either form.
+    static_assert(fed::federation_row_hash<eff::R0>().raw()
+                  == diag::row_hash_contribution_v<eff::R0>);
+    static_assert(fed::federation_row_hash<eff::RBg>().raw()
+                  == diag::row_hash_contribution_v<eff::RBg>);
+
+    const RowHash rh_empty = fed::federation_row_hash<eff::R0>();
+    const RowHash rh_bg    = fed::federation_row_hash<eff::RBg>();
+    const RowHash rh_io    = fed::federation_row_hash<eff::RIO>();
+    const RowHash rh_bgio  = fed::federation_row_hash<eff::RBgIO>();
+    const RowHash rh_iobg  = fed::federation_row_hash<eff::RIOBg>();
+
+    // (a) — pre-publish miss for the projected key.
+    {
+        auto pre = cache.lookup_l1(ch_a, rh_bg);
+        assert(std::move(pre).consume() == nullptr);
+    }
+
+    // (b) — publish under projected row, lookup must hit.
+    {
+        auto pub = cache.publish_l1(ch_a, rh_bg, fk_ptr(&fk_a));
+        auto r = std::move(pub).consume();
+        assert(r.has_value());
+
+        auto post = cache.lookup_l1(ch_a, rh_bg);
+        assert(std::move(post).consume() == fk_ptr(&fk_a));
+    }
+
+    // (c) — same content, DIFFERENT row → different slot.
+    {
+        // R0 != RBg → distinct row_hash bytes.
+        assert(rh_empty != rh_bg);
+        assert(rh_bg    != rh_io);
+        assert(rh_io    != rh_bgio);
+
+        auto miss_at_empty = cache.lookup_l1(ch_a, rh_empty);
+        assert(std::move(miss_at_empty).consume() == nullptr);
+        auto miss_at_io = cache.lookup_l1(ch_a, rh_io);
+        assert(std::move(miss_at_io).consume() == nullptr);
+    }
+
+    // (d) — permuted rows project to the SAME row_hash; the cache
+    //       treats them as the same slot.  Publish under RBgIO and
+    //       observe via RIOBg.
+    {
+        assert(rh_bgio == rh_iobg);  // sort-fold I02 invariant
+
+        auto pub = cache.publish_l1(ch_b, rh_bgio, fk_ptr(&fk_b));
+        auto r = std::move(pub).consume();
+        assert(r.has_value());
+
+        // Same row_hash bytes → cache observes the kernel via either
+        // projection.  This pins that the cache key is the BYTES of
+        // the row_hash, not the underlying Row TYPE — so semantic
+        // equivalences induced by I02's permutation invariance map
+        // to physical slot identity.
+        auto via_iobg = cache.lookup_l1(ch_b, rh_iobg);
+        assert(std::move(via_iobg).consume() == fk_ptr(&fk_b));
+    }
+
+    // (f) — L2/L3 stubs accept projected row_hash without rejection
+    //       and behave per Phase-5-stub semantics (lookup miss; publish
+    //       returns success-marker but does not persist).
+    {
+        auto l2_miss = cache.lookup_l2(ch_a, rh_bg);
+        assert(std::move(l2_miss).consume() == nullptr);
+
+        auto l3_miss = cache.lookup_l3(ch_a, rh_bg);
+        assert(std::move(l3_miss).consume() == nullptr);
+
+        auto p2 = cache.publish_l2(ch_a, rh_bg, fk_ptr(&fk_a));
+        assert(std::move(p2).consume().has_value());
+
+        auto p3 = cache.publish_l3(ch_a, rh_bg, fk_ptr(&fk_a));
+        assert(std::move(p3).consume().has_value());
+    }
+}
+
 int main() {
     test_lookup_l1_round_trip();
     test_publish_l1_round_trip();
@@ -660,6 +819,7 @@ int main() {
     test_l2_row_hash_plumbing_FOUND_I06();
     test_l3_row_hash_plumbing_FOUND_I07();
     test_l2_l3_cross_tier_isolation_FOUND_I06_I07_AUDIT();
+    test_publish_row_validated_FOUND_I18();
 
     std::puts("ok");
     return 0;
