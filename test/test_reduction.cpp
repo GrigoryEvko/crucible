@@ -32,6 +32,7 @@
 #include <crucible/safety/Reduction.h>
 
 #include <crucible/safety/BinaryTransform.h>
+#include <crucible/safety/InferredPermissionTags.h>
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/UnaryTransform.h>
 #include <crucible/safety/reduce_into.h>
@@ -342,6 +343,77 @@ void test_cross_shape_exclusion_with_binary() {
     static_assert(!extract::BinaryTransform<&red_test::f_sum_into>);
 }
 
+// ── FOUND-D14-AUDIT — D11 integration & extended cross-shape ────
+
+void test_inferred_tags_match_input_tag() {
+    // The dispatcher's auto-routing for Reduction depends on the
+    // inferred-tag set matching the per-extractor input tag.  Critical
+    // semantic claim: a Reduction harvests EXACTLY ONE permission tag
+    // (the input region's), and reduce_into's R/Op DO NOT enter the
+    // permission set.  Without this guarantee the dispatcher would
+    // emit nonsensical permission_split machinery for the accumulator
+    // R/Op types — which are not regions and have no associated
+    // ownership semantics.
+    //
+    // This test pins the load-bearing semantic round-trip between the
+    // FOUND-D11 inferred_permission_tags_t harvester and FOUND-D14's
+    // reduction_input_tag_t extractor.
+
+    namespace proto = ::crucible::safety::proto;
+
+    // sum_into uses input_tag; reduce_into<int, PlusOp> contributes
+    // ZERO tags (R=int and Op=PlusOp are not OwnedRegion / Permission /
+    // SharedPermission specializations).
+    using TagsExpected = proto::PermSet<input_tag>;
+    static_assert(proto::perm_set_equal_v<
+        extract::inferred_permission_tags_t<&red_test::f_sum_into>,
+        TagsExpected>);
+
+    // Count agrees: exactly one tag (the input region's), NOT three
+    // (input + R + Op) — that would be the bug-class this test pins.
+    static_assert(extract::inferred_permission_tags_count_v<
+        &red_test::f_sum_into> == 1);
+
+    // Distinct input-tag Reduction harvests the OTHER tag.
+    using TagsExpectedOther = proto::PermSet<other_tag>;
+    static_assert(proto::perm_set_equal_v<
+        extract::inferred_permission_tags_t<&red_test::f_other_tag>,
+        TagsExpectedOther>);
+
+    // Struct accumulator (HistArray) — same one-tag claim.  The R
+    // type is std::array<int, 256>, NOT a region tag, NOT a
+    // Permission specialization → not in the harvested set.
+    static_assert(extract::inferred_permission_tags_count_v<
+        &red_test::f_hist_into> == 1);
+
+    // The harvested tag agrees with reduction_input_tag_t.
+    static_assert(extract::function_has_tag_v<
+        &red_test::f_sum_into,
+        extract::reduction_input_tag_t<&red_test::f_sum_into>>);
+}
+
+void test_cross_shape_exclusion_with_tag_free() {
+    // A Reduction always carries exactly one input tag (the input
+    // OwnedRegion's) — by construction it CANNOT be tag-free.
+    // Symmetrically, a tag-free function cannot satisfy Reduction.
+    // This is load-bearing for the dispatcher's pure-shape recognizer
+    // (which routes tag-free vs tag-bearing functions to disjoint
+    // lowering trees).
+    static_assert(!extract::is_tag_free_function_v<&red_test::f_sum_into>);
+    static_assert(!extract::is_tag_free_function_v<&red_test::f_max_into>);
+    static_assert(!extract::is_tag_free_function_v<&red_test::f_hist_into>);
+
+    // f_no_param is tag-free (no parameters) → cannot be Reduction.
+    static_assert( extract::is_tag_free_function_v<&red_test::f_no_param>);
+    static_assert(!extract::Reduction<&red_test::f_no_param>);
+
+    // f_int_first(int, RI&) — the int parameter has no tag, but the
+    // RI& also doesn't contribute (reduce_into is not a permission
+    // wrapper).  So f_int_first is tag-free AND not a Reduction.
+    static_assert( extract::is_tag_free_function_v<&red_test::f_int_first>);
+    static_assert(!extract::Reduction<&red_test::f_int_first>);
+}
+
 // ── Runtime consistency ─────────────────────────────────────────
 
 void test_runtime_consistency() {
@@ -388,6 +460,9 @@ int main() {
     run_test("test_concept_form_in_constraints",      test_concept_form_in_constraints);
     run_test("test_cross_shape_exclusion_with_unary",  test_cross_shape_exclusion_with_unary);
     run_test("test_cross_shape_exclusion_with_binary", test_cross_shape_exclusion_with_binary);
+    run_test("test_inferred_tags_match_input_tag",     test_inferred_tags_match_input_tag);
+    run_test("test_cross_shape_exclusion_with_tag_free",
+                                                       test_cross_shape_exclusion_with_tag_free);
     run_test("test_runtime_consistency",              test_runtime_consistency);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);

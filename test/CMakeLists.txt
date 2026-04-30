@@ -1591,6 +1591,30 @@ crucible_neg_compile_test(neg_binary_transform_output_tag_t_on_non_binary
 crucible_neg_compile_test(neg_binary_transform_has_same_tag_v_on_non_binary
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# ─── FOUND-D14 — Reduction constrained extractors ────────────────
+#
+# Four constrained extractors on Reduction.h
+# (reduction_input_tag_t / input_value_t / accumulator_t / reducer_t)
+# each carry their `requires Reduction<FnPtr>` clause independently.
+# Without the constraint, the aliases would chain through
+# owned_region_*_t / reduce_into_*_t and surface a confusing
+# inner-layer diagnostic naming the harvested mismatch instead of the
+# parameter-shape mismatch.  Four fixtures, one per extractor, keep
+# all four requires-clauses independently load-bearing.  Each fixture
+# witnesses a distinct shape-recognition failure mode so a refactor
+# that breaks one alias doesn't accidentally pass the others.
+crucible_neg_compile_test(neg_reduction_input_tag_t_on_non_reduction
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_reduction_input_value_t_on_non_reduction
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_reduction_accumulator_t_on_non_reduction
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_reduction_reducer_t_on_non_reduction
+  "constraints not satisfied|template constraint failure|associated constraints")
+
 # ─── FOUND-D15 ProducerEndpoint constrained-extractor fixtures ──────
 #
 # Pins the four constrained extractors on ProducerEndpoint.h:
