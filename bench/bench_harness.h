@@ -185,6 +185,53 @@ template <typename T>
     asm volatile("" : : : "memory");
 }
 
+// ── clobber_array<T>(std::span<T>) — array-side DCE kill ──────────
+//
+// Companion to `do_not_optimize()` (single-value DCE kill) and
+// `clobber()` (global memory barrier).  Use when the bench body
+// fills or scans an array and the array's memory is otherwise dead
+// at the timed region's exit — without this, the optimizer is free
+// to elide the fill / scan because nothing observably consumes the
+// result.
+//
+// Implementation: `[[gnu::noipa]]` empty function, same discipline
+// as `do_not_optimize`.  The span (data pointer + length) is passed
+// through real ABI registers; noipa blocks IPA so from the
+// optimizer's point of view the function could read or write any
+// memory reachable from those arguments — therefore the writes/
+// reads to the array's elements MUST be materialized.
+//
+// Why not the asm `"+m,r"` form: per the project memory
+// `feedback/project_gcc16_miscompile`, that idiom miscompiles on
+// some types under GCC 16.  noipa is the recommended replacement.
+//
+// Two overloads — mutable and const — so callers don't need to
+// const_cast a read-only scan.  std::span deduces T from any
+// contiguous range (vector, array, C array, raw pointer + size).
+//
+// Cost: one real call instruction per use (same as do_not_optimize).
+// Acceptable for benchmark scaffolding.
+//
+// Usage:
+//
+//   std::array<int, N> data;
+//   for (auto& v : data) v = compute(...);
+//   bench::clobber_array(std::span{data});  // forces materialization
+//
+//   std::vector<float> readings(N);
+//   bench::Run("scan").measure([&]() noexcept {
+//       float sum = 0;
+//       for (float x : readings) sum += x;
+//       bench::clobber_array(std::span<const float>{readings});
+//       bench::do_not_optimize(sum);
+//   });
+
+template <typename T>
+[[gnu::noipa]] void clobber_array(std::span<T> s) noexcept { (void)s; }
+
+template <typename T>
+[[gnu::noipa]] void clobber_array(std::span<const T> s) noexcept { (void)s; }
+
 // ── Timer: ns/cycle calibration + rdtsc overhead (Meyer singleton) ──
 
 class Timer {

@@ -25,10 +25,13 @@
 #include <algorithm>
 #include <bit>
 #include "test_assert.h"
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <span>
+#include <type_traits>
 #include <vector>
 
 // crucible / bench
@@ -433,6 +436,133 @@ void test_snapshot_subtract() {
     }
 }
 
+// ── FOUND-F05: bench::clobber_array — array-side DCE kill ───────────
+//
+// Companion to bench::do_not_optimize (single-value DCE kill).  Tests:
+//
+//   1. The function compiles and is callable.
+//   2. It is noexcept.
+//   3. It does NOT modify array contents — the [[gnu::noipa]] empty
+//      body is a pure pass-through.
+//   4. The mutable + const overloads both resolve.
+//   5. Multiple element types (int, double, struct) and source
+//      containers (std::array, std::vector, C array) all classify
+//      via the std::span constructor.
+//
+// The test cannot directly verify "the optimizer materialized the
+// writes" because that's an absence-of-elision property; what it
+// CAN verify is that the function is callable, noexcept, and
+// pass-through.  The optimizer-blocking semantics flow from the
+// [[gnu::noipa]] attribute, which is tested by GCC's own regression
+// suite and pinned in our codebase by feedback_gcc16_miscompile
+// (the noipa idiom is the documented-correct replacement for the
+// `"+m,r"` asm form).
+
+void test_clobber_array_noexcept() {
+    using std::is_same_v;
+
+    // Mutable overload: deduces T from std::span<T>.
+    int arr_int[4] = {1, 2, 3, 4};
+    static_assert(noexcept(bench::clobber_array(std::span<int>{arr_int})));
+
+    // Const overload: deduces T from std::span<const T>.
+    int const arr_const[4] = {1, 2, 3, 4};
+    static_assert(noexcept(bench::clobber_array(std::span<int const>{arr_const})));
+
+    // The two function overloads are different return-type-void
+    // functions but have the same observable signature shape (both
+    // take a span, both noexcept-void) — sanity-pin that both
+    // compile in the same TU.
+    static_assert(is_same_v<
+        decltype(bench::clobber_array(std::span<int>{arr_int})), void>);
+    static_assert(is_same_v<
+        decltype(bench::clobber_array(std::span<int const>{arr_const})), void>);
+}
+
+void test_clobber_array_does_not_mutate() {
+    // Mutable span on int[].  Pre-fill, clobber, verify unchanged.
+    std::array<int, 5> data{10, 20, 30, 40, 50};
+    bench::clobber_array(std::span<int>{data});
+    CHECK(data[0] == 10);
+    CHECK(data[1] == 20);
+    CHECK(data[2] == 30);
+    CHECK(data[3] == 40);
+    CHECK(data[4] == 50);
+
+    // const span — same data, different overload.
+    bench::clobber_array(std::span<int const>{data});
+    CHECK(data[0] == 10);
+    CHECK(data[4] == 50);
+}
+
+void test_clobber_array_various_types() {
+    // double — IEEE-bit-stable; clobber preserves bit pattern.
+    std::vector<double> dbls{1.5, -2.25, 3.125};
+    bench::clobber_array(std::span<double>{dbls});
+    CHECK(approx(dbls[0],  1.5));
+    CHECK(approx(dbls[1], -2.25));
+    CHECK(approx(dbls[2],  3.125));
+
+    // struct — non-trivial element type.
+    struct Pair { int a; double b; };
+    Pair pairs[3] = {{1, 1.5}, {2, 2.5}, {3, 3.5}};
+    bench::clobber_array(std::span<Pair>{pairs});
+    CHECK(pairs[0].a == 1);
+    CHECK(approx(pairs[2].b, 3.5));
+
+    // std::uint64_t — the canonical timestamp/cycle-count container
+    // type that benchmark scaffolding fills hot.
+    std::array<std::uint64_t, 8> cycles{};
+    for (std::size_t i = 0; i < cycles.size(); ++i) cycles[i] = i * 100;
+    bench::clobber_array(std::span<std::uint64_t>{cycles});
+    for (std::size_t i = 0; i < cycles.size(); ++i) {
+        CHECK(cycles[i] == i * 100);
+    }
+}
+
+void test_clobber_array_empty_and_single() {
+    // Empty span — clobber is a valid no-op.
+    int empty_arr[1] = {};  // C99 forbids zero-length arrays; minimum 1
+    std::span<int> empty{empty_arr, 0};  // length-0 view
+    CHECK(empty.empty());
+    bench::clobber_array(empty);
+    // No mutation possible; reach this line == clobber returned.
+    CHECK(empty.empty());
+
+    // Single-element span.
+    int one[1] = {42};
+    bench::clobber_array(std::span<int>{one});
+    CHECK(one[0] == 42);
+}
+
+void test_clobber_array_source_container_diversity() {
+    // std::array<int, N>
+    {
+        std::array<int, 3> a{7, 8, 9};
+        bench::clobber_array(std::span<int>{a});
+        CHECK(a[1] == 8);
+    }
+
+    // std::vector<int>
+    {
+        std::vector<int> v{100, 200, 300, 400};
+        bench::clobber_array(std::span<int>{v});
+        CHECK(v.size() == 4);
+        CHECK(v[2] == 300);
+    }
+
+    // Raw pointer + size (heap-allocated array).
+    {
+        constexpr std::size_t N = 16;
+        auto* heap = new int[N];
+        for (std::size_t i = 0; i < N; ++i) heap[i] = static_cast<int>(i);
+        bench::clobber_array(std::span<int>{heap, N});
+        CHECK(heap[5] == 5);
+        CHECK(heap[15] == 15);
+        delete[] heap;
+    }
+}
+
 } // namespace
 
 int main() {
@@ -443,8 +573,13 @@ int main() {
     test_bootstrap_ci();
     test_compare();
     test_snapshot_subtract();
+    test_clobber_array_noexcept();
+    test_clobber_array_does_not_mutate();
+    test_clobber_array_various_types();
+    test_clobber_array_empty_and_single();
+    test_clobber_array_source_container_diversity();
 
-    constexpr int kNumGroups = 5;
+    constexpr int kNumGroups = 10;
     if (g_failures == 0) {
         std::fprintf(stderr,
             "test_bench_harness: PASS (%d groups, 0 failures)\n", kNumGroups);
