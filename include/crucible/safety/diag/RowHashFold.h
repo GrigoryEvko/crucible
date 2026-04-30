@@ -629,6 +629,58 @@ static_assert(
     row_hash_contribution_v<effects::Computation<FullRow_canonical, int>>
  != static_cast<std::uint64_t>(-1));
 
+// ─── Federation hash stability — the wire-format pin (FOUND-I04) ───
+//
+// PINNED CANONICAL ROW HASHES.  These hex literals are the bit-for-
+// bit federation contract: every L1 / L2 / L3 cache entry whose key
+// includes one of these row hashes encodes that exact 64-bit value
+// in its serialized form.  Any change here — to the underlying
+// Effect values (Capabilities.h), to fmix64 / FNV1A_OFFSET_BASIS
+// (Expr.h / StableName.h), or to the cardinality_seed / fmix64_fold
+// algorithm (this header) — invalidates every published cache entry
+// across every fleet on the network.
+//
+// **DO NOT EDIT THESE LITERALS** unless you are deliberately
+// performing the federation-cache wire-format-break ceremony
+// documented in `effects/Capabilities.h` § "Major-version event
+// procedure".  A drift WITHOUT that ceremony is silent corruption
+// of every federation peer's cache.
+//
+// The comprehensive set covers: EmptyRow + every singleton + a
+// representative pair + the full-Universe row.  Adding new pins
+// for additional rows is fine; CHANGING existing pins is the
+// wire-format break.
+
+static_assert(row_hash_contribution_v<EmptyRow>
+           == 0xEFD01F60BA992926ULL,
+    "EmptyRow row_hash drifted — federation wire-format break.  "
+    "See FOUND-I04 ceremony in Capabilities.h.");
+static_assert(row_hash_contribution_v<Row<Effect::Alloc>>
+           == 0x436DAF9EDCB565C3ULL,
+    "Row<Alloc> row_hash drifted — federation wire-format break.");
+static_assert(row_hash_contribution_v<Row<Effect::IO>>
+           == 0x6FBFD0F707B63BECULL,
+    "Row<IO> row_hash drifted — federation wire-format break.");
+static_assert(row_hash_contribution_v<Row<Effect::Block>>
+           == 0x3117F06B828C9247ULL,
+    "Row<Block> row_hash drifted — federation wire-format break.");
+static_assert(row_hash_contribution_v<Row<Effect::Bg>>
+           == 0x008A519814C8FC81ULL,
+    "Row<Bg> row_hash drifted — federation wire-format break.");
+static_assert(row_hash_contribution_v<Row<Effect::Init>>
+           == 0x9E23FC5AC81DA675ULL,
+    "Row<Init> row_hash drifted — federation wire-format break.");
+static_assert(row_hash_contribution_v<Row<Effect::Test>>
+           == 0x26A9EB08E748D58FULL,
+    "Row<Test> row_hash drifted — federation wire-format break.");
+static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO>>
+           == 0x6CC046F52E6D7663ULL,
+    "Row<Alloc, IO> row_hash drifted — federation wire-format break.");
+static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO,
+                Effect::Block, Effect::Bg, Effect::Init, Effect::Test>>
+           == 0x1C9D0E4F548FAAD6ULL,
+    "Full-Universe row row_hash drifted — federation wire-format break.");
+
 // ─── Bubble-sort helper correctness ────────────────────────────────
 
 static_assert(detail::sorted_uints(std::array<std::uint64_t, 0>{})

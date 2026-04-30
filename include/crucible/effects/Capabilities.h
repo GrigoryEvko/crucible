@@ -7,17 +7,20 @@
 // The legacy crucible/Effects.h fx::* tree was deleted in
 // FOUND-B07 / METX-5 — this header IS the production capability surface.
 //
-//   Effect    | Carried by
-//   ----------+-----------------------------------------------------
-//   Alloc     | heap allocation, arena alloc, push_back
-//   IO        | file/network I/O (fprintf, send, recv)
-//   Block     | mutex, sleep, futex, spin-wait
-//   Bg        | background thread context (Alloc + IO + Block)
-//   Init      | initialization context (Alloc + IO)
-//   Test      | test context (unrestricted: Alloc + IO + Block)
+//   Effect    | Underlying value | Carried by
+//   ----------+------------------+-------------------------------------
+//   Alloc     | 0                | heap allocation, arena alloc, push_back
+//   IO        | 1                | file/network I/O (fprintf, send, recv)
+//   Block     | 2                | mutex, sleep, futex, spin-wait
+//   Bg        | 3                | background thread context (Alloc + IO + Block)
+//   Init      | 4                | initialization context (Alloc + IO)
+//   Test      | 5                | test context (unrestricted: Alloc + IO + Block)
 //
 //   Axiom coverage: TypeSafe — strong enum with explicit underlying
 //                   type; reflection traversal sees all atoms.
+//                   DetSafe — underlying values are FROZEN; row_hash
+//                   federation depends on bit-for-bit value stability
+//                   (see "Append-only Universe extension" below).
 //   Runtime cost:   zero — atoms are compile-time tags only.  The
 //                   companion cap::* value-level tag types and the
 //                   Bg / Init / Test context structs collapse to one
@@ -27,8 +30,46 @@
 // every effectful call.  See Computation.h for the carrier and
 // EffectRow.h for the set algebra (Subrow / row_union_t / etc.).
 //
-// Self-test block at file end proves the atom catalog is exhaustive
-// and that diagnostic-name emission covers every atom.
+// ── Append-only Universe extension (FOUND-I04) ──────────────────────
+//
+// **Existing atom values are immutable.**  A change to any value
+// already shipped (re-numbering Bg from 3 to anything else, deleting
+// Test, swapping Alloc and IO) is a wire-format-breaking event for
+// row_hash (safety/diag/RowHashFold.h) federation cache keys.  All
+// Family-A persistent hashes (CDAG_VERSION, Types.h taxonomy) tied
+// to those rows would silently re-key, invalidating every published
+// L1 / L2 / L3 cache entry across every fleet that consumed those
+// rows.
+//
+// **New atoms append only.**  An additional capability (e.g. a
+// hypothetical `Refute = 6`) joins at the next free underlying value;
+// existing atom values stay pinned.  This bounds federation-cache
+// invalidation to entries that mention the new atom — pre-existing
+// `Row<Bg>` keeps the same row_hash forever because `Effect::Bg`
+// keeps underlying value 3 forever.
+//
+// **Enforcement.**  The self-test block at file end pins each
+// underlying value with an explicit `static_assert`.  A re-numbering
+// fires the static_assert at the offending atom, naming the value
+// drift.  An additional sentinel block in
+// `safety/diag/RowHashFold.h` pins the resulting `row_hash` for
+// every singleton row plus EmptyRow plus the full-Universe row to
+// hex literals — that catches both enum-value drift AND any change
+// to the fold algorithm itself.  Cardinality `effect_count` is
+// derived via reflection (P2996R13) and pinned at six.
+//
+// **Major-version event procedure.**  If a change to an existing
+// value is genuinely required (e.g., reflection-driven re-codification
+// of the catalog), bump CDAG_VERSION (Types.h Family-A taxonomy),
+// flush every L1/L2/L3 cache entry, document the wire-format break
+// in MIMIC.md / FORGE.md / CRUCIBLE.md, and re-pin the canonical
+// hashes in RowHashFold.h's self-test block to the new values.
+// Until that ceremony lands, the static_asserts in this header
+// MUST stay green.
+//
+// Self-test block at file end proves the atom catalog is exhaustive,
+// underlying values are pinned, and diagnostic-name emission covers
+// every atom.
 
 #include <cstdint>
 #include <meta>
@@ -225,6 +266,40 @@ static_assert(every_effect_has_name(),
     "effect_name() switch is missing an arm for at least one Effect "
     "atom — add the arm or the new atom leaks the '<unknown Effect>' "
     "sentinel into diagnostics.");
+
+// ── Append-only Universe pin (FOUND-I04) ────────────────────────────
+//
+// Underlying values are FROZEN.  A change here is a federation-cache
+// wire-format break — see the "Append-only Universe extension" block
+// at the file head for the audit / migration ceremony.  These
+// assertions fire instantly on any drift, naming the offending atom.
+//
+// A new atom (e.g. Refute) MUST land at the next free value (6, 7,
+// ...) without disturbing the existing pin lines below.  Adding a
+// new `static_assert(... == 6)` line below this block at the same
+// time keeps the pin set complete.
+static_assert(static_cast<std::uint8_t>(Effect::Alloc) == 0,
+    "Effect::Alloc value drifted — federation row_hash invalidated.  "
+    "Restore Alloc=0 or follow the major-version migration ceremony "
+    "documented at file head.");
+static_assert(static_cast<std::uint8_t>(Effect::IO)    == 1,
+    "Effect::IO value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(Effect::Block) == 2,
+    "Effect::Block value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(Effect::Bg)    == 3,
+    "Effect::Bg value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(Effect::Init)  == 4,
+    "Effect::Init value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(Effect::Test)  == 5,
+    "Effect::Test value drifted — federation row_hash invalidated.");
+
+// Underlying type pinned at uint8_t — a future widen to uint16_t or
+// uint32_t silently changes ABI of any struct that uses Effect by
+// value.  Federation row_hash sees only the underlying value (cast
+// to uint64_t inside fmix64_fold) so type widening is invisible to
+// the hash, but still ABI-breaking for transport structs.
+static_assert(std::is_same_v<std::underlying_type_t<Effect>, std::uint8_t>,
+    "Effect underlying type drifted from uint8_t — ABI change.");
 
 // Every atom satisfies the concept gate.
 static_assert(IsEffect<Effect::Alloc>);

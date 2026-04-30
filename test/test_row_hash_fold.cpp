@@ -236,6 +236,54 @@ static void test_runtime_computation_specialization() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Federation hash-stability runtime peer (FOUND-I04).  The header's
+// static_asserts pin the canonical row hashes at compile time; this
+// test exercises the same pinning discipline through runtime sinks
+// per feedback_algebra_runtime_smoke_test_discipline.  The hex
+// literals MUST match the static_assert pins in
+// `safety/diag/RowHashFold.h` exactly — drift between the two would
+// indicate a consteval-only specialization that differs at runtime,
+// the exact bug class the runtime smoke test discipline catches.
+static void test_runtime_federation_hash_pins() {
+    using ce::Effect;
+    using ce::EmptyRow;
+    using ce::Row;
+
+    volatile std::uint64_t sink;
+
+    sink = cd::row_hash_of_v<EmptyRow>.raw();
+    assert(sink == 0xEFD01F60BA992926ULL);
+
+    sink = cd::row_hash_of_v<Row<Effect::Alloc>>.raw();
+    assert(sink == 0x436DAF9EDCB565C3ULL);
+
+    sink = cd::row_hash_of_v<Row<Effect::IO>>.raw();
+    assert(sink == 0x6FBFD0F707B63BECULL);
+
+    sink = cd::row_hash_of_v<Row<Effect::Block>>.raw();
+    assert(sink == 0x3117F06B828C9247ULL);
+
+    sink = cd::row_hash_of_v<Row<Effect::Bg>>.raw();
+    assert(sink == 0x008A519814C8FC81ULL);
+
+    sink = cd::row_hash_of_v<Row<Effect::Init>>.raw();
+    assert(sink == 0x9E23FC5AC81DA675ULL);
+
+    sink = cd::row_hash_of_v<Row<Effect::Test>>.raw();
+    assert(sink == 0x26A9EB08E748D58FULL);
+
+    sink = cd::row_hash_of_v<Row<Effect::Alloc, Effect::IO>>.raw();
+    assert(sink == 0x6CC046F52E6D7663ULL);
+
+    sink = cd::row_hash_of_v<Row<Effect::Alloc, Effect::IO,
+                Effect::Block, Effect::Bg, Effect::Init,
+                Effect::Test>>.raw();
+    assert(sink == 0x1C9D0E4F548FAAD6ULL);
+
+    std::printf("  test_federation_hash_pins:       PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Header's own runtime smoke test — drives every documented runtime
 // claim through ABI-visible code.
 static void test_header_runtime_smoke() {
@@ -250,7 +298,8 @@ int main() {
     test_runtime_empty_row_distinct_from_bare();
     test_runtime_determinism();
     test_runtime_computation_specialization();
+    test_runtime_federation_hash_pins();
     test_header_runtime_smoke();
-    std::printf("test_row_hash_fold: 7 groups, all passed\n");
+    std::printf("test_row_hash_fold: 8 groups, all passed\n");
     return 0;
 }
