@@ -607,6 +607,100 @@ struct RecipeSpecMismatch : tag_base {
 };
 
 // ═════════════════════════════════════════════════════════════════════
+// ── F*-style alias diagnostics (FOUND-E18) ─────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Three new categories specialize EffectRowMismatch (Category 0) for
+// the F* alias predicates from effects/FxAliases.h.  They fire when a
+// templated caller's `requires IsX<R>` fails — same row-mismatch shape
+// as EffectRowMismatch, but the failure cause is the F* lattice bound
+// rather than an arbitrary Subrow comparison.
+//
+// Why three (not four/six):
+//
+//   PureRow == TotRow == GhostRow — all three are Row<>, and so all
+//   three violations are STRUCTURALLY the same.  One PureFunctionViolation
+//   tag covers any of {IsPure, IsTot, IsGhost} that fails; the
+//   description distinguishes the F* intent in prose.
+//
+//   AllRow is the universe — the lattice top.  IsAll<R> is satisfied
+//   by every row (Subrow<R, AllRow> always holds), so an AllViolation
+//   would be unreachable.  Not a tag.
+//
+//   The two remaining intermediate aliases (Div, ST) get a category
+//   each because the failure shape is genuinely different: Div bans
+//   state effects (Alloc / IO), ST bans context tags (Bg / Init / Test).
+//   Same diagnostic surface = wrong remediation.
+
+// ── 23. PureFunctionViolation ──────────────────────────────────────
+struct PureFunctionViolation : tag_base {
+    static constexpr std::string_view name = "PureFunctionViolation";
+    static constexpr std::string_view description =
+        "A function declared as IsPure<R> / IsTot<R> / IsGhost<R> was "
+        "called with a row R that contains at least one Effect atom.  "
+        "PureRow / TotRow / GhostRow all encode the EMPTY effect row "
+        "— pure functions have no observable effects in F*.  Adding "
+        "Alloc, IO, Block, Bg, Init, or Test to a pure function's row "
+        "structurally violates F*'s PURE effect class.  Distinct from "
+        "EffectRowMismatch (Category 0) because the bound is the F* "
+        "lattice bottom, not an arbitrary caller-imposed row.";
+    static constexpr std::string_view remediation =
+        "Either remove the offending operation from the function body "
+        "(replace allocation with stack storage; replace I/O with "
+        "in-memory data; replace blocking call with a non-blocking "
+        "alternative), OR lift the function's declaration up the F* "
+        "lattice — IsPure → IsDiv (admits Block) → IsST (admits Block "
+        "+ Alloc + IO) → IsAll (admits anything).  Use the most "
+        "restrictive predicate that the function actually needs; the "
+        "F* substitution principle (every IsPure function automatically "
+        "satisfies IsDiv / IsST / IsAll) propagates the looser bound "
+        "to every caller.";
+};
+
+// ── 24. DivergenceBudgetViolation ──────────────────────────────────
+struct DivergenceBudgetViolation : tag_base {
+    static constexpr std::string_view name = "DivergenceBudgetViolation";
+    static constexpr std::string_view description =
+        "A function declared as IsDiv<R> was called with a row R "
+        "containing a state-effect atom (Alloc or IO).  DivRow = "
+        "Row<Block> — the F* DIV effect class extends PURE only with "
+        "non-termination, NOT with state mutation or external "
+        "observable effects.  In F*, ST is strictly above DIV in the "
+        "effect lattice; using state effects forces the function to "
+        "be lifted at least to IsST.";
+    static constexpr std::string_view remediation =
+        "Either remove the Alloc / IO operation from the function "
+        "body, OR lift the function's declaration to IsST (admits "
+        "Block + Alloc + IO) or higher.  The F* lattice is "
+        "Pure ⊑ Div ⊑ ST ⊑ All — moving up admits more effects but "
+        "narrows the call sites that can use the function (only callers "
+        "that already permit ST can pass arguments).  See "
+        "effects/FxAliases.h for the full alias-row catalog.";
+};
+
+// ── 25. StateBudgetViolation ───────────────────────────────────────
+struct StateBudgetViolation : tag_base {
+    static constexpr std::string_view name = "StateBudgetViolation";
+    static constexpr std::string_view description =
+        "A function declared as IsST<R> was called with a row R "
+        "containing a context-tag atom (Bg, Init, or Test).  STRow = "
+        "Row<Block, Alloc, IO> — the F* ST effect class admits state "
+        "mutation and divergence but NOT context-bound capabilities.  "
+        "Bg / Init / Test are dispatch hints, not state effects; they "
+        "carry caller-side capability that ST cannot accept "
+        "structurally.  Use IsAll for context-bound code.";
+    static constexpr std::string_view remediation =
+        "Either remove the context tag from the function's parameters "
+        "(if the function is genuinely state-only, the cap-tag "
+        "shouldn't be in its signature), OR lift the function's "
+        "declaration to IsAll (admits the universe row).  Context tags "
+        "encode dispatch position — Bg is bg-thread-only, Init is "
+        "startup-only, Test is test-harness-only.  A function that "
+        "needs a context tag MUST be IsAll because only IsAll's "
+        "AllRow includes the context-tag atoms.";
+};
+
+// ═════════════════════════════════════════════════════════════════════
 // ── is_diagnostic_class_v<T> ───────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
@@ -752,6 +846,9 @@ inline constexpr bool is_diagnostic_v = is_diagnostic<T>::value;
 //   [19] BudgetExceeded
 //   [20] NumaPlacementMismatch
 //   [21] RecipeSpecMismatch
+//   [22] PureFunctionViolation       (FOUND-E18)
+//   [23] DivergenceBudgetViolation   (FOUND-E18)
+//   [24] StateBudgetViolation        (FOUND-E18)
 
 using Catalog = std::tuple<
     EffectRowMismatch,        //  0
@@ -775,7 +872,10 @@ using Catalog = std::tuple<
     EpochMismatch,            // 18
     BudgetExceeded,           // 19
     NumaPlacementMismatch,    // 20
-    RecipeSpecMismatch        // 21
+    RecipeSpecMismatch,       // 21
+    PureFunctionViolation,    // 22
+    DivergenceBudgetViolation,// 23
+    StateBudgetViolation      // 24
 >;
 
 inline constexpr std::size_t catalog_size = std::tuple_size_v<Catalog>;
@@ -826,6 +926,9 @@ enum class Category : std::uint8_t {
     BudgetExceeded           = 19,
     NumaPlacementMismatch    = 20,
     RecipeSpecMismatch       = 21,
+    PureFunctionViolation    = 22,
+    DivergenceBudgetViolation= 23,
+    StateBudgetViolation     = 24,
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -967,6 +1070,9 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::BudgetExceeded:           return BudgetExceeded::name;
         case Category::NumaPlacementMismatch:    return NumaPlacementMismatch::name;
         case Category::RecipeSpecMismatch:       return RecipeSpecMismatch::name;
+        case Category::PureFunctionViolation:    return PureFunctionViolation::name;
+        case Category::DivergenceBudgetViolation:return DivergenceBudgetViolation::name;
+        case Category::StateBudgetViolation:     return StateBudgetViolation::name;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -995,6 +1101,9 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::BudgetExceeded:           return BudgetExceeded::description;
         case Category::NumaPlacementMismatch:    return NumaPlacementMismatch::description;
         case Category::RecipeSpecMismatch:       return RecipeSpecMismatch::description;
+        case Category::PureFunctionViolation:    return PureFunctionViolation::description;
+        case Category::DivergenceBudgetViolation:return DivergenceBudgetViolation::description;
+        case Category::StateBudgetViolation:     return StateBudgetViolation::description;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1023,6 +1132,9 @@ inline constexpr Category category_of_v = detail::category_of_impl<Tag>::value;
         case Category::BudgetExceeded:           return BudgetExceeded::remediation;
         case Category::NumaPlacementMismatch:    return NumaPlacementMismatch::remediation;
         case Category::RecipeSpecMismatch:       return RecipeSpecMismatch::remediation;
+        case Category::PureFunctionViolation:    return PureFunctionViolation::remediation;
+        case Category::DivergenceBudgetViolation:return DivergenceBudgetViolation::remediation;
+        case Category::StateBudgetViolation:     return StateBudgetViolation::remediation;
         default:                                 return std::string_view{"<unknown Category>"};
     }
 }
@@ -1193,15 +1305,16 @@ static_assert(diagnostic_name_v<user_defined_tag> == "UserDefinedTag");
 
 // ─── Catalog cardinality matches Category enum cardinality ────────
 //
-// 22 tags shipped in this version.  Adding a tag bumps both the
-// Catalog tuple size AND requires a Category enumerator at the same
-// integer value.  The bijection self-test below asserts both in lock
-// step.
+// 25 tags shipped in this version (22 wrapper-axis tags from FOUND-E01
+// + 3 F*-style alias tags from FOUND-E18).  Adding a tag bumps both
+// the Catalog tuple size AND requires a Category enumerator at the
+// same integer value.  The bijection self-test below asserts both in
+// lock step.
 
-static_assert(catalog_size == 22,
-    "Catalog cardinality drifted from the original 22-tag inventory "
-    "— confirm the new tag was added to Catalog AND to Category at "
-    "the same integer index.");
+static_assert(catalog_size == 25,
+    "Catalog cardinality drifted from the 25-tag inventory "
+    "(22 wrapper-axis + 3 F* alias) — confirm the new tag was "
+    "added to Catalog AND to Category at the same integer index.");
 
 // ─── Catalog ↔ Category bijection ─────────────────────────────────
 //
@@ -1391,7 +1504,7 @@ static_assert(categories_v.size() == catalog_size,
     "categories_v cardinality drifted from catalog_size — both must "
     "track the same source of truth.");
 static_assert(categories_v[0] == Category::EffectRowMismatch);
-static_assert(categories_v[catalog_size - 1] == Category::RecipeSpecMismatch);
+static_assert(categories_v[catalog_size - 1] == Category::StateBudgetViolation);
 
 template <std::size_t... Is>
 [[nodiscard]] consteval bool categories_array_matches_enum_impl(
