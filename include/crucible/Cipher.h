@@ -614,6 +614,53 @@ class CRUCIBLE_OWNER Cipher {
             ::crucible::effects::Effect::IO,
             ::crucible::effects::Effect::Block>;
 
+    // ── Required-row content fence (FOUND-I09-AUDIT, Finding H) ────
+    //
+    // Pin the EXACT contents of record_event_required_row so a
+    // future refactor that "improves" the typedef (drops Block,
+    // adds Init, swaps to a different alias) fails loudly here
+    // rather than silently widening the fence.  The static_asserts
+    // are header-level: every TU that includes Cipher.h verifies
+    // the contract, NOT just the cipher_record_event test TU.
+    //
+    // Rationale: a refactor like
+    //   using record_event_required_row = effects::Row<IO>;
+    // would compile and pass the neg_pure_row fixture (Row<> still
+    // fails Subrow), but would now silently accept Row<IO> callers
+    // — defeating the Block-fence.  The neg-compile fixtures for
+    // IO-only / Block-only / Alloc-only / Bg-only callers (added
+    // alongside this fence in the AUDIT) would also catch it, but
+    // the static_asserts here fire FIRST during compilation, with
+    // a clearer error message.
+    static_assert(
+        std::is_same_v<
+            record_event_required_row,
+            ::crucible::effects::Row<
+                ::crucible::effects::Effect::IO,
+                ::crucible::effects::Effect::Block>>,
+        "Cipher::record_event_required_row MUST be exactly "
+        "Row<IO, Block>.  Adding/removing atoms is a deliberate "
+        "API tightening that breaks every FOUND-I11..I15 migration "
+        "call site — bump the contract first, update the migration "
+        "batches second.");
+    static_assert(
+        ::crucible::effects::row_size_v<record_event_required_row> == 2u,
+        "record_event_required_row size MUST be exactly 2 atoms "
+        "(IO + Block).");
+    static_assert(
+        ::crucible::effects::row_contains_v<
+            record_event_required_row,
+            ::crucible::effects::Effect::IO>,
+        "record_event_required_row MUST contain Effect::IO — the "
+        "fence's reason for existence (HEAD + log file writes).");
+    static_assert(
+        ::crucible::effects::row_contains_v<
+            record_event_required_row,
+            ::crucible::effects::Effect::Block>,
+        "record_event_required_row MUST contain Effect::Block — "
+        "the fence's reason for existence (file writes block on "
+        "the kernel).");
+
     // Templated wrapper.  CallerRow is the row the caller declares
     // it holds; Subrow<required, CallerRow> checks
     // {IO, Block} ⊆ CallerRow at substitution time.

@@ -1948,6 +1948,24 @@ crucible_neg_compile_test(neg_subset_row_mask_geq_64
 crucible_neg_compile_test(neg_cipher_record_event_pure_row
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# ─── FOUND-I09-AUDIT (Finding A) per-axis neg-compile parity ────────
+# Each fixture pins a distinct rejection leg of the
+# Subrow<Row<IO, Block>, CallerRow> constraint:
+#   • io_only    — Row<IO> rejects (missing Block leg)
+#   • block_only — Row<Block> rejects (missing IO leg)
+#   • alloc_only — Row<Alloc> rejects (wrong axis entirely)
+#   • bg_only    — Row<Bg> rejects (Bg-tag does not imply IO/Block)
+# Together with neg_pure_row, these four prevent any silent widening
+# of the constraint via single-atom drift.
+crucible_neg_compile_test(neg_cipher_record_event_io_only
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_cipher_record_event_block_only
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_cipher_record_event_alloc_only
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_cipher_record_event_bg_only
+  "constraints not satisfied|template constraint failure|associated constraints")
+
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
 # Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.
 # Mechanical extension of the D30-batch pattern; closes the
