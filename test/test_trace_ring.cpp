@@ -365,6 +365,176 @@ int main() {
                 N, producer_spins.load());
   }
 
+  // ── FOUND-I16-AUDIT: edge-case probes for the row-typed facades ──────
+  //
+  // The base I16 commit covered the canonical positive surface
+  // (default-arg, explicit Row<>, alias variants, interleave, full
+  // 4-output drain, zero-count drain, 2-output drain, concurrent SPSC).
+  // The audit closes 4 narrow gaps that the canonical coverage does
+  // not exercise:
+  //
+  // (audit-A) Bare `try_append_pure(e)` with no callsite args — all
+  //           three MetaIndex / ScopeHash / CallsiteHash defaults
+  //           materialize simultaneously.
+  //
+  // (audit-B) Capacity-full path through try_append_pure — drives the
+  //           ring to CAPACITY entries, then asserts the wrapper
+  //           returns `false` deterministically (no concurrency).
+  //           Without this, a wrapper bug that always returned `true`
+  //           on full could slip past the concurrent test (the
+  //           producer_spins counter would just be lower than expected,
+  //           a muddled signal).
+  //
+  // (audit-C) Wrap-around path through drain_pure — single-threaded,
+  //           deterministic mirror of the raw-drain wrap-around block
+  //           at lines 71-92 above, but driven through drain_pure.
+  //           Witnesses the wrapper preserves the two-segment memcpy
+  //           path and the {head, tail} mod CAPACITY arithmetic.
+  //
+  // (audit-D) Mixed-nullable parallel-buffer outputs — drain_pure
+  //           supplies SOME but not all of the optional out_meta_starts
+  //           / out_scope_hashes / out_callsite_hashes buffers, in a
+  //           pattern (meta=non-null, scope=null, csite=non-null) that
+  //           the canonical 4-output and zero-output tests do not cover.
+  //           Pins per-buffer null-ness independence at the wrapper
+  //           level (each output is forwarded individually to drain).
+  {
+    constexpr uint32_t CAP = crucible::TraceRing::CAPACITY;
+    auto* r = new crucible::TraceRing();
+
+    // (audit-A) Bare default-arg call — no callsite args.
+    {
+      crucible::TraceRing::Entry e_bare{};
+      e_bare.schema_hash = SchemaHash{0xA0AA};
+      assert(r->try_append_pure(e_bare));    // all defaults
+      assert(r->size() == 1);
+
+      // Drain it back via drain_pure(out, max_count) — 2-arg form,
+      // no parallel-array outputs.
+      crucible::TraceRing::Entry one_a[1];
+      uint32_t got_a = r->drain_pure(one_a, 1);
+      assert(got_a == 1);
+      assert(one_a[0].schema_hash == SchemaHash{0xA0AA});
+      assert(r->size() == 0);
+    }
+
+    // (audit-B) Capacity-full deterministic — fill ring exactly,
+    // assert next try_append_pure returns false.
+    {
+      for (uint32_t i = 0; i < CAP; ++i) {
+        crucible::TraceRing::Entry full_e{};
+        full_e.schema_hash = SchemaHash{0xB000'0000u | i};
+        bool ok = r->try_append_pure(full_e);
+        assert(ok && "ring should accept CAPACITY entries");
+      }
+      assert(r->size() == CAP);
+
+      // One more append must fail — ring is at capacity.
+      crucible::TraceRing::Entry overflow_e{};
+      overflow_e.schema_hash = SchemaHash{0xDEAD'BEEF};
+      bool ok_overflow = r->try_append_pure(overflow_e);
+      assert(!ok_overflow);
+      assert(r->size() == CAP);  // size unchanged
+
+      // Drain everything back, verify FIFO order.
+      std::vector<crucible::TraceRing::Entry> full_drain(CAP);
+      uint32_t got_b = r->drain_pure(full_drain.data(), CAP);
+      assert(got_b == CAP);
+      for (uint32_t i = 0; i < CAP; ++i) {
+        assert(full_drain[i].schema_hash == SchemaHash{0xB000'0000u | i});
+      }
+      assert(r->size() == 0);
+    }
+
+    // (audit-C) Wrap-around through drain_pure — drive head/tail past
+    // CAPACITY so the wrapper exercises the two-segment memcpy path.
+    {
+      // Get head/tail to (CAP - 100, CAP - 100) so the next 200
+      // appends will straddle the slot-index wrap.
+      for (uint32_t i = 0; i < CAP - 100; ++i) {
+        crucible::TraceRing::Entry pad_e{};
+        pad_e.schema_hash = SchemaHash{0xC000'0000u | i};
+        assert(r->try_append_pure(pad_e));
+      }
+      std::vector<crucible::TraceRing::Entry> pad_drain(CAP);
+      uint32_t got_pad = r->drain_pure(pad_drain.data(), CAP);
+      assert(got_pad == CAP - 100);
+      // head = tail = CAP - 100 logical, slot = (CAP - 100) % CAP
+
+      // Append 200 more — slot indices wrap around at CAP.
+      for (uint32_t i = 0; i < 200; ++i) {
+        crucible::TraceRing::Entry wrap_e{};
+        wrap_e.schema_hash = SchemaHash{0xCAFE'0000u | i};
+        assert(r->try_append_pure(wrap_e));
+      }
+
+      // drain_pure must emit the 200 entries in correct order via the
+      // two-segment memcpy path.  All 4 parallel-array slots requested
+      // (default-init MetaIndex / ScopeHash / CallsiteHash on each).
+      std::vector<crucible::TraceRing::Entry> wrap_drain(CAP);
+      std::vector<MetaIndex>    wrap_meta (CAP);
+      std::vector<ScopeHash>    wrap_scope(CAP);
+      std::vector<CallsiteHash> wrap_csite(CAP);
+      uint32_t got_wrap = r->drain_pure(
+          wrap_drain.data(), CAP,
+          wrap_meta.data(), wrap_scope.data(), wrap_csite.data());
+      assert(got_wrap == 200);
+      for (uint32_t i = 0; i < 200; ++i) {
+        assert(wrap_drain[i].schema_hash == SchemaHash{0xCAFE'0000u | i});
+        assert(wrap_meta[i]              == MetaIndex::none());  // default
+        assert(wrap_scope[i]             == ScopeHash{});         // default
+        assert(wrap_csite[i]             == CallsiteHash{});      // default
+      }
+    }
+
+    // (audit-D) Mixed-nullable parallel-buffer outputs — meta=non-null,
+    // scope=NULL, csite=non-null.  Pin per-buffer null-ness independence.
+    {
+      crucible::TraceRing::Entry mix_e{};
+      mix_e.schema_hash = SchemaHash{0xD0D0};
+      assert(r->try_append_pure(
+          mix_e, MetaIndex{42},
+          ScopeHash{0xDEAD},  CallsiteHash{0xBEEF}));
+
+      crucible::TraceRing::Entry mix_out[1];
+      MetaIndex    mix_meta[1];
+      CallsiteHash mix_csite[1];
+      // out_scope_hashes deliberately nullptr; meta + csite supplied.
+      uint32_t got_mix = r->drain_pure(mix_out, 1, mix_meta,
+                                       /*out_scope_hashes=*/nullptr,
+                                       mix_csite);
+      assert(got_mix == 1);
+      assert(mix_out[0].schema_hash == SchemaHash{0xD0D0});
+      assert(mix_meta[0]            == MetaIndex{42});
+      assert(mix_csite[0]           == CallsiteHash{0xBEEF});
+      // ScopeHash{0xDEAD} was produced but not delivered (nullptr buffer);
+      // the wrapper must not crash, and meta + csite must be intact.
+
+      // Symmetric variant: meta=NULL, scope=non-null, csite=NULL.
+      crucible::TraceRing::Entry mix_e2{};
+      mix_e2.schema_hash = SchemaHash{0xD2D2};
+      assert(r->try_append_pure(
+          mix_e2, MetaIndex{99},
+          ScopeHash{0xCAFE}, CallsiteHash{0xF00D}));
+
+      crucible::TraceRing::Entry mix_out2[1];
+      ScopeHash    mix_scope2[1];
+      uint32_t got_mix2 = r->drain_pure(mix_out2, 1,
+                                        /*out_meta_starts=*/nullptr,
+                                        mix_scope2,
+                                        /*out_callsite_hashes=*/nullptr);
+      assert(got_mix2 == 1);
+      assert(mix_out2[0].schema_hash == SchemaHash{0xD2D2});
+      assert(mix_scope2[0]           == ScopeHash{0xCAFE});
+      assert(r->size() == 0);
+    }
+
+    delete r;
+    std::printf("test_trace_ring: try_append_pure/drain_pure FOUND_I16_AUDIT "
+                "(audit-A bare-default + audit-B capacity-full + "
+                "audit-C wrap-around + audit-D mixed-nullable) OK\n");
+  }
+
   std::printf("test_trace_ring: all tests passed\n");
   return 0;
 }
