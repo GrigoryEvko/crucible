@@ -7,16 +7,19 @@
 // via the non-type template parameter Tier.  Seventh chain wrapper
 // from the 28_04_2026_effects.md §4.3.7 catalog (FOUND-G44) — composes
 // directly with HotPath / DetSafe / AllocClass in canonical wrapper-
-// nesting order:
+// nesting order (CLAUDE.md §XVI / FOUND-I03 — HotPath ⊃ DetSafe ⊃
+// ... ⊃ CipherTier ⊃ AllocClass):
 //
-//   CipherTier<Hot,
-//       HotPath<Warm,
-//           DetSafe<DetCheap,
+//   HotPath<Warm,
+//       DetSafe<DetCheap,
+//           CipherTier<Hot,
 //               AllocClass<Pool, T>>>>
 //
 // Each layer EBO-collapses; the wrapper-nesting cost is sizeof(T)
-// at -O3.  Per 28_04 §4.7: wrappers compose orthogonally; the
-// dispatcher (FOUND-D) reads the stack via reflection.
+// at -O3.  Per 28_04 §4.7 / CLAUDE.md §XVI: wrappers compose
+// orthogonally in canonical order so row_hash
+// (safety/diag/RowHashFold.h, FOUND-I02) folds deterministically;
+// the dispatcher (FOUND-D) reads the stack via reflection.
 //
 //   Substrate: Graded<ModalityKind::Absolute,
 //                     CipherTierLattice::At<Tier>,

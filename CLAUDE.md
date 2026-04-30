@@ -2272,9 +2272,16 @@ Each layer EBO-collapses if its grade is a type-level singleton (regime-1 or reg
 **Order-discipline summary:**
 
 1. Wrapper authors construct stacks in canonical order. Deviations question on review unless commented with a deliberate cache-slot-separation rationale.
-2. `row_hash_contribution<W<Inner>>` specializations follow: `combine_ids(<W's tag bits>, row_hash_contribution_v<Inner>)`. The Boost-style combiner is order-sensitive — that's exactly what makes `HotPath<DetSafe<T>>` and `DetSafe<HotPath<T>>` produce different hashes (different cache slots, different semantics).
+2. `row_hash_contribution<W<Inner>>` specializations follow: `combine_ids(<W's tag bits>, row_hash_contribution_v<Inner>)`. The Boost-style combiner is order-sensitive — once a wrapper W ships its specialization, `W<X>` and `X` fold to different hashes, and stacks `W1<W2<T>>` vs `W2<W1<T>>` produce different hashes (different cache slots, different semantics).
 3. `Computation<R, T>` is the innermost member of every effect stack — it is the carrier; everything else is metadata about the carrier. The `row_hash_contribution<Computation<R, T>>` specialization (FOUND-I02-AUDIT) folds the row R "outer" and the payload T's contribution "inner".
 4. **Append-only Universe extension** (FOUND-I04 backlog): adding a new effect atom (e.g., `Effect::Refute`) is permitted only at the next free position; existing atom positions never change. This bounds cache invalidation to entries that actually mention the new atom — `Row<Effect::Bg>` keeps the same hash forever because `Effect::Bg`'s underlying value never changes.
+
+**Currently shipped row_hash specializations (FOUND-I02 + FOUND-I02-AUDIT):**
+
+- `row_hash_contribution<effects::Row<Es...>>` — sort-fold over Effect underlying values, cardinality-seeded.
+- `row_hash_contribution<effects::Computation<R, T>>` — combine_ids(R-hash, T-hash); payload-blind for bare T, row-discriminating, nested-non-collapsing.
+
+The remaining 14 wrappers in the canonical order list (HotPath, DetSafe, NumericalTier, Vendor, ResidencyHeat, CipherTier, AllocClass, Wait, MemOrder, Progress, Stale, Tagged, Refined, Secret, Linear) **DO NOT YET** ship `row_hash_contribution` specializations — they fall through the primary template to value=0. This is intentional: FOUND-I02 ships the *infrastructure*; per-wrapper specializations land alongside their production call sites (FOUND-I05/06/07 for the cache levels and FOUND-I16-I20 for the per-component row-typed signatures). Until then, a wrapped value's row_hash equals the row_hash of its innermost row-bearing component (typically `Computation<R, T>` or just the bare `Row<Es...>`).
 
 ### GCC 16 contracts — implementation gotchas
 

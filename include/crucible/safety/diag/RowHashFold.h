@@ -66,6 +66,34 @@
 //    alongside their wrapper's production call site (FOUND-I05/06/07
 //    for the cache levels and the FOUND-G* lattice family).
 //
+// ── Currently shipped specializations (FOUND-I02 + I02-AUDIT) ──────
+//
+// As of this header revision, only TWO row-bearing specializations
+// are wired:
+//
+//   row_hash_contribution<effects::Row<Es...>>
+//       — sort-fold over Effect underlying values; cardinality-
+//         seeded.  See spec block below.
+//
+//   row_hash_contribution<effects::Computation<R, T>>
+//       — combine_ids(R-hash, T-hash); payload-blind for bare T,
+//         row-discriminating, nested-non-collapsing.  See spec
+//         block below.
+//
+// The remaining 14 chain wrappers in the canonical order
+// (HotPath / DetSafe / NumericalTier / Vendor / ResidencyHeat /
+// CipherTier / AllocClass / Wait / MemOrder / Progress / Stale /
+// Tagged / Refined / Secret / Linear) DO NOT YET ship
+// `row_hash_contribution` specializations — they fall through to
+// the primary template (value = 0).  This means a wrapped value's
+// row_hash equals the row_hash of its innermost row-bearing
+// component (typically Computation<R, T> or a bare Row<Es...>).
+// Per-wrapper specializations land alongside their production call
+// sites (FOUND-I05+ batch).
+//
+// CLAUDE.md §XVI / FOUND-I03 documents this scope at user-facing
+// resolution.
+//
 // ── References ──────────────────────────────────────────────────────
 //
 //   28_04_2026_effects.md §7.3 + §8     — design rationale
