@@ -296,6 +296,154 @@ void test_canonical_xor_non_canonical() {
                       &cs_test::f_non_canonical_two_ints>);
 }
 
+void test_non_canonical_zero_default() {
+    // NonCanonical is the enum's default value (0).  This matters
+    // because:
+    //   1. Default-initialised CanonicalShapeKind storage reads as
+    //      NonCanonical, NOT a valid shape — fail-safe semantics.
+    //   2. The dispatcher's catch-all branch can be implemented as
+    //      `if (kind == 0)` without needing the enum name.
+    // Pin the invariant so a future re-ordering of the enum doesn't
+    // silently break code relying on this.
+    static_assert(static_cast<std::uint8_t>(
+        extract::CanonicalShapeKind::NonCanonical) == 0u);
+
+    // Default-initialised storage reads as NonCanonical.
+    extract::CanonicalShapeKind k{};
+    EXPECT_TRUE(k == extract::CanonicalShapeKind::NonCanonical);
+}
+
+void test_name_of_v_matches_name_of_kind_v() {
+    // Two extractors compute the same fact via different paths.
+    // canonical_shape_name_of_v<F> should equal
+    // canonical_shape_name(canonical_shape_kind_v<F>) for every F.
+    // If they ever disagree, one path has a bug — this test
+    // catches it before the dispatcher's diagnostic emits a
+    // contradictory message.
+
+    static_assert(extract::canonical_shape_name_of_v<&cs_test::f_unary>
+                  == extract::canonical_shape_name(
+                      extract::canonical_shape_kind_v<&cs_test::f_unary>));
+    static_assert(extract::canonical_shape_name_of_v<&cs_test::f_binary>
+                  == extract::canonical_shape_name(
+                      extract::canonical_shape_kind_v<&cs_test::f_binary>));
+    static_assert(extract::canonical_shape_name_of_v<&cs_test::f_producer>
+                  == extract::canonical_shape_name(
+                      extract::canonical_shape_kind_v<&cs_test::f_producer>));
+    static_assert(extract::canonical_shape_name_of_v<&cs_test::f_consumer>
+                  == extract::canonical_shape_name(
+                      extract::canonical_shape_kind_v<&cs_test::f_consumer>));
+    static_assert(extract::canonical_shape_name_of_v<&cs_test::f_swmr_writer>
+                  == extract::canonical_shape_name(
+                      extract::canonical_shape_kind_v<
+                          &cs_test::f_swmr_writer>));
+    static_assert(extract::canonical_shape_name_of_v<&cs_test::f_swmr_reader>
+                  == extract::canonical_shape_name(
+                      extract::canonical_shape_kind_v<
+                          &cs_test::f_swmr_reader>));
+    static_assert(extract::canonical_shape_name_of_v<&cs_test::f_pipeline>
+                  == extract::canonical_shape_name(
+                      extract::canonical_shape_kind_v<&cs_test::f_pipeline>));
+    static_assert(extract::canonical_shape_name_of_v<
+                      &cs_test::f_non_canonical_two_ints>
+                  == extract::canonical_shape_name(
+                      extract::canonical_shape_kind_v<
+                          &cs_test::f_non_canonical_two_ints>));
+}
+
+void test_non_canonical_fails_every_shape_predicate() {
+    // For non-canonical signatures, NOT just CanonicalShape but
+    // EVERY individual shape predicate must be false.  This is
+    // implied by NonCanonical = !CanonicalShape AND CanonicalShape =
+    // disjunction-of-shapes, but pinning it explicitly catches
+    // bugs where a concept might accidentally match a "shouldn't
+    // match" signature.
+
+    static_assert(!extract::UnaryTransform<
+        &cs_test::f_non_canonical_two_ints>);
+    static_assert(!extract::BinaryTransform<
+        &cs_test::f_non_canonical_two_ints>);
+    static_assert(!extract::ProducerEndpoint<
+        &cs_test::f_non_canonical_two_ints>);
+    static_assert(!extract::ConsumerEndpoint<
+        &cs_test::f_non_canonical_two_ints>);
+    static_assert(!extract::SwmrWriter<
+        &cs_test::f_non_canonical_two_ints>);
+    static_assert(!extract::SwmrReader<
+        &cs_test::f_non_canonical_two_ints>);
+    static_assert(!extract::PipelineStage<
+        &cs_test::f_non_canonical_two_ints>);
+
+    // f_non_canonical_three_params (int, int, int) → arity 3,
+    // never matches anything.
+    static_assert(!extract::UnaryTransform<
+        &cs_test::f_non_canonical_three_params>);
+    static_assert(!extract::BinaryTransform<
+        &cs_test::f_non_canonical_three_params>);
+    static_assert(!extract::ProducerEndpoint<
+        &cs_test::f_non_canonical_three_params>);
+    static_assert(!extract::ConsumerEndpoint<
+        &cs_test::f_non_canonical_three_params>);
+    static_assert(!extract::SwmrWriter<
+        &cs_test::f_non_canonical_three_params>);
+    static_assert(!extract::SwmrReader<
+        &cs_test::f_non_canonical_three_params>);
+    static_assert(!extract::PipelineStage<
+        &cs_test::f_non_canonical_three_params>);
+}
+
+void test_dispatcher_integration_example() {
+    // Worked example showing how a dispatcher would use D20:
+    // route at compile time on canonical_shape_kind_v, with the
+    // catch-all branch firing for NonCanonical.
+
+    auto select_lowering = []<auto FnPtr>() consteval {
+        constexpr auto kind = extract::canonical_shape_kind_v<FnPtr>;
+        if constexpr (kind == extract::CanonicalShapeKind::UnaryTransform) {
+            return 1;
+        } else if constexpr (kind ==
+                             extract::CanonicalShapeKind::BinaryTransform) {
+            return 2;
+        } else if constexpr (kind ==
+                             extract::CanonicalShapeKind::ProducerEndpoint) {
+            return 3;
+        } else if constexpr (kind ==
+                             extract::CanonicalShapeKind::ConsumerEndpoint) {
+            return 4;
+        } else if constexpr (kind ==
+                             extract::CanonicalShapeKind::SwmrWriter) {
+            return 5;
+        } else if constexpr (kind ==
+                             extract::CanonicalShapeKind::SwmrReader) {
+            return 6;
+        } else if constexpr (kind ==
+                             extract::CanonicalShapeKind::PipelineStage) {
+            return 7;
+        } else {
+            // §3.8 catch-all — dispatcher would emit a diagnostic
+            // here naming the unrecognized shape.
+            return 0;
+        }
+    };
+
+    static_assert(select_lowering.template operator()<&cs_test::f_unary>()
+                  == 1);
+    static_assert(select_lowering.template operator()<&cs_test::f_binary>()
+                  == 2);
+    static_assert(select_lowering.template operator()<&cs_test::f_producer>()
+                  == 3);
+    static_assert(select_lowering.template operator()<&cs_test::f_consumer>()
+                  == 4);
+    static_assert(select_lowering.template operator()<
+                      &cs_test::f_swmr_writer>() == 5);
+    static_assert(select_lowering.template operator()<
+                      &cs_test::f_swmr_reader>() == 6);
+    static_assert(select_lowering.template operator()<&cs_test::f_pipeline>()
+                  == 7);
+    static_assert(select_lowering.template operator()<
+                      &cs_test::f_non_canonical_two_ints>() == 0);
+}
+
 void test_kind_to_name_round_trip() {
     // Every enum value has a non-empty string mapping.  Static
     // verification — names are compile-time constants.
@@ -408,6 +556,14 @@ int main() {
              test_mutual_exclusivity_pipeline);
     run_test("test_canonical_xor_non_canonical",
              test_canonical_xor_non_canonical);
+    run_test("test_non_canonical_zero_default",
+             test_non_canonical_zero_default);
+    run_test("test_name_of_v_matches_name_of_kind_v",
+             test_name_of_v_matches_name_of_kind_v);
+    run_test("test_non_canonical_fails_every_shape_predicate",
+             test_non_canonical_fails_every_shape_predicate);
+    run_test("test_dispatcher_integration_example",
+             test_dispatcher_integration_example);
     run_test("test_kind_to_name_round_trip",
              test_kind_to_name_round_trip);
     run_test("test_concept_form_in_constraints",
