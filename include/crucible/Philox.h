@@ -20,13 +20,43 @@
 // element_offset is the flat index into the output tensor.
 // Result: deterministic per-element, per-op, per-iteration randomness
 // that reproduces identically across CPU/CUDA/ROCm/XLA.
+//
+// ── Two surfaces: raw + DetSafe-pinned (FOUND-G17) ─────────────────
+//
+// `Philox::generate` / `to_uniform` / `to_uniform_d` / `box_muller`
+// / `op_key` are RAW primitives — they return primitive types
+// (uint32_t, Ctr, float, std::pair, uint64_t) without any
+// determinism-tier metadata.  Used by:
+//   - SIMD bit-equality oracle (PhiloxSimd.h's lane-by-lane
+//     verification calls scalar Philox::generate as the truth)
+//   - Test fuzzers (test_philox.cpp / test_philox_simd.cpp /
+//     fuzz/property/prop_philox_*) where bit-level introspection
+//     is the entire point of the test
+//   - Bench harness (bench_philox.cpp) which measures the raw
+//     primitive's cycle cost
+//
+// `Philox::generate_det` / `to_uniform_det` / `to_uniform_d_det` /
+// `box_muller_det` / `op_key_det` are DetSafe-PINNED surfaces — they
+// return `safety::DetSafe<DetSafeTier_v::PhiloxRng, T>` (or `Pure`
+// for `op_key_det` whose inputs are themselves Pure).  Production
+// callers (kernel emit, dropout op, sampling op, normal-init op,
+// Box-Muller-based gradient noise) MUST use the `_det` variants;
+// the type-level pin satisfies the Cipher write-fence
+// (`requires DetSafe<...>::satisfies<PhiloxRng>`) at compile time
+// per CLAUDE.md §II.8 (the 8th axiom).
+//
+// The two surfaces are bit-equal: `generate(a, b) ==
+// generate_det(a, b).peek()` for all (a, b).  Verified by
+// `test_philox_det.cpp`.
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
+#include <crucible/safety/DetSafe.h>
 
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <utility>
 
 namespace crucible {
 
@@ -131,6 +161,78 @@ struct Philox {
         h = fnv_mix_(h, static_cast<uint64_t>(op_index));
         h = fnv_mix_(h, content_hash.raw());
         return h;
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FOUND-G17: DetSafe-pinned production surface
+    // ═══════════════════════════════════════════════════════════════
+    //
+    // These wrappers return `safety::DetSafe<DetSafeTier_v::PhiloxRng,
+    // T>` (or `Pure` for `op_key_det`).  Production callers MUST
+    // route through the `_det` surface; the type-level pin is what
+    // the Cipher write-fence consumes to refuse non-deterministic
+    // event-recording at compile time.
+    //
+    // Tier rationale:
+    //   - generate_det:      PhiloxRng — bytes derive from the Philox
+    //                        chain.  This is the load-bearing tier
+    //                        for the 8th axiom: PhiloxRng-pinned
+    //                        bytes are admissible to the replay log;
+    //                        non-pinned bytes are not.
+    //   - to_uniform_det:    PhiloxRng — derived from a PhiloxRng-tier
+    //                        uint32 by deterministic float math.
+    //                        Tier propagates from the source.
+    //   - box_muller_det:    PhiloxRng — same: deterministic transform
+    //                        of two PhiloxRng-tier uint32 values.
+    //   - op_key_det:        Pure — bit-mix of three Pure inputs
+    //                        (master_counter, op_index, content_hash
+    //                        are all DAG/Cipher-derived deterministic
+    //                        scalars).  Stronger than PhiloxRng;
+    //                        relax<PhiloxRng>() admits it as a key.
+    //
+    // Bit-equality contract: `generate_det(a, b).peek() ==
+    // generate(a, b)` for ALL (a, b).  Same for the other four
+    // wrappers.  Verified by test_philox_det.cpp.
+
+    using DetSafePhiloxCtr = safety::DetSafe<
+        safety::DetSafeTier_v::PhiloxRng, Ctr>;
+    using DetSafePhiloxFloat = safety::DetSafe<
+        safety::DetSafeTier_v::PhiloxRng, float>;
+    using DetSafePhiloxDouble = safety::DetSafe<
+        safety::DetSafeTier_v::PhiloxRng, double>;
+    using DetSafePhiloxFloatPair = safety::DetSafe<
+        safety::DetSafeTier_v::PhiloxRng, std::pair<float, float>>;
+    using DetSafePureKey = safety::DetSafe<
+        safety::DetSafeTier_v::Pure, uint64_t>;
+
+    [[nodiscard]] static constexpr DetSafePhiloxCtr
+    generate_det(Ctr ctr, Key key) {
+        return DetSafePhiloxCtr{generate(ctr, key)};
+    }
+
+    [[nodiscard]] static constexpr DetSafePhiloxCtr
+    generate_det(uint64_t offset, uint64_t key) {
+        return DetSafePhiloxCtr{generate(offset, key)};
+    }
+
+    [[nodiscard]] static constexpr DetSafePhiloxFloat
+    to_uniform_det(uint32_t x) {
+        return DetSafePhiloxFloat{to_uniform(x)};
+    }
+
+    [[nodiscard]] static constexpr DetSafePhiloxDouble
+    to_uniform_d_det(uint32_t x) {
+        return DetSafePhiloxDouble{to_uniform_d(x)};
+    }
+
+    [[nodiscard]] static DetSafePhiloxFloatPair
+    box_muller_det(uint32_t u1_raw, uint32_t u2_raw) {
+        return DetSafePhiloxFloatPair{box_muller(u1_raw, u2_raw)};
+    }
+
+    [[nodiscard]] static constexpr DetSafePureKey
+    op_key_det(uint64_t master_counter, uint32_t op_index, ContentHash content_hash) {
+        return DetSafePureKey{op_key(master_counter, op_index, content_hash)};
     }
 
  private:
