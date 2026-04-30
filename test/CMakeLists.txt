@@ -1514,6 +1514,31 @@ crucible_neg_compile_test(neg_inferred_row_pure_concept_rejects_alloc_fn
 crucible_neg_compile_test(neg_fusion_concept_rejects_arity_mismatch
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
+# Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.
+# Mechanical extension of the D30-batch pattern; closes the
+# detector-side neg-compile coverage symmetry.
+crucible_neg_compile_test(neg_hot_path_value_t_on_non_hot_path
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_hot_path_tier_v_on_non_hot_path
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_wait_value_t_on_non_wait
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_wait_strategy_v_on_non_wait
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_mem_order_value_t_on_non_mem_order
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_mem_order_tag_v_on_non_mem_order
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_progress_value_t_on_non_progress
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_progress_class_v_on_non_progress
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_alloc_class_value_t_on_non_alloc_class
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_alloc_class_tag_v_on_non_alloc_class
+  "constraints not satisfied|template constraint failure|associated constraints")
+
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
 #
 # Pins the CipherTier wrapper's tier-pin discipline AND the underlying
