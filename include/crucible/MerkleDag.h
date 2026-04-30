@@ -28,6 +28,7 @@
 #include <crucible/TraceRing.h>
 #include <crucible/handles/PublishOnce.h>
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/ResidencyHeat.h>
 
 #include <crucible/Types.h>
 
@@ -1130,6 +1131,131 @@ class CRUCIBLE_OWNER KernelCache {
       }
     }
     return std::unexpected(InsertError::TableFull);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FOUND-G52: ResidencyHeat-pinned three-level cache surface
+  // ═══════════════════════════════════════════════════════════════
+  //
+  // CRUCIBLE.md §L2 defines the KernelCache as a three-level
+  // hierarchy mirroring the Forge IR pipeline:
+  //
+  //   L1 — IR002 (vendor-neutral hot working-set, federation-
+  //                shareable cross-vendor).  RAM-resident.
+  //   L2 — IR003* (per-vendor-family, federation-shareable cross-
+  //                chip within family).  Slower lookup, broader
+  //                applicability.
+  //   L3 — compiled-bytes per-chip (cold archive, S3-backed
+  //                federation).  Per-chip ISA, slowest path.
+  //
+  // Today only L1 exists physically (the single (content,row) →
+  // CompiledKernel* table).  L2 and L3 are Phase 5 deferred surfaces
+  // — wired now at the TYPE level so production call sites already
+  // speak the cache-tier vocabulary.  When Phase 5 ships separate
+  // L2/L3 backing stores, the bodies grow without API churn.
+  //
+  // Mapping (per ResidencyHeat.h docblock):
+  //
+  //   lookup_l1 / publish_l1  → ResidencyHeat<Hot,  T>  — REAL today
+  //   lookup_l2 / publish_l2  → ResidencyHeat<Warm, T>  — Phase 5 stub
+  //   lookup_l3 / publish_l3  → ResidencyHeat<Cold, T>  — Phase 5 stub
+  //
+  // The bug class caught: a refactor that loads from L3 (cold,
+  // disk-backed) and feeds the result into a hot dispatch path
+  // expecting `ResidencyHeat<Hot>` — silently paying ~hundreds of
+  // ns of cold-cache penalty on a per-op recording site budgeted
+  // at ~5 ns.  With the type-pinned overlay, the call boundary
+  // rejects the value at compile time.
+  //
+  // Lattice direction (ResidencyHeatLattice.h):
+  //     Cold(weakest) ⊑ Warm ⊑ Hot(strongest)
+  //
+  // satisfies<Required> = leq(Required, Self).  Hot subsumes Warm
+  // and Cold (stronger heat serves weaker requirement); Cold
+  // satisfies only Cold.
+  //
+  // SEMANTIC NOTE on the L2/L3 stubs: lookup_l2/l3 always return
+  // a nullptr-pinned wrapper (no kernel found) until Phase 5 wires
+  // separate backing stores.  publish_l2/l3 return success-marker
+  // wrappers but do NOT actually persist (Phase 5 will land the
+  // separate backing stores).  Today's behavior is therefore
+  // "L2/L3 paths are not yet active" — a downstream consumer that
+  // depends on L2/L3 hit rates measures zero today, reflecting
+  // physical reality.
+
+  // ── L1 lookup — REAL (wraps existing lookup) ─────────────────────
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
+  [[nodiscard, gnu::hot]] safety::residency_heat::Hot<CompiledKernel*>
+  lookup_l1(ContentHash content_hash, RowHash row_hash) const noexcept
+      CRUCIBLE_NO_THREAD_SAFETY
+      pre (content_hash.raw() != 0)
+  {
+    return safety::residency_heat::Hot<CompiledKernel*>{
+        lookup(content_hash, row_hash)};
+  }
+
+  // ── L2 lookup — Phase 5 STUB ─────────────────────────────────────
+  //
+  // Today: returns nullptr-pinned-Warm.  Phase 5: queries the per-
+  // vendor-family L2 store (cross-chip federation within family),
+  // returning whatever IR003* kernel was published there.
+  [[nodiscard]] safety::residency_heat::Warm<CompiledKernel*>
+  lookup_l2(ContentHash /*content_hash*/, RowHash /*row_hash*/) const noexcept
+      CRUCIBLE_NO_THREAD_SAFETY
+  {
+    return safety::residency_heat::Warm<CompiledKernel*>{nullptr};
+  }
+
+  // ── L3 lookup — Phase 5 STUB ─────────────────────────────────────
+  //
+  // Today: returns nullptr-pinned-Cold.  Phase 5: queries the per-
+  // chip compiled-bytes archive (S3-backed federation cold tier).
+  [[nodiscard]] safety::residency_heat::Cold<CompiledKernel*>
+  lookup_l3(ContentHash /*content_hash*/, RowHash /*row_hash*/) const noexcept
+      CRUCIBLE_NO_THREAD_SAFETY
+  {
+    return safety::residency_heat::Cold<CompiledKernel*>{nullptr};
+  }
+
+  // ── L1 publish — REAL (wraps existing insert) ────────────────────
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
+  [[nodiscard]]
+  safety::residency_heat::Hot<std::expected<void, InsertError>>
+  publish_l1(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel)
+      CRUCIBLE_NO_THREAD_SAFETY
+      pre (content_hash.raw() != 0)
+      pre (kernel != nullptr)
+  {
+    return safety::residency_heat::Hot<std::expected<void, InsertError>>{
+        insert(content_hash, row_hash, kernel)};
+  }
+
+  // ── L2 publish — Phase 5 STUB ────────────────────────────────────
+  //
+  // Today: returns success-marker pinned at Warm but does NOT
+  // actually persist anywhere.  Phase 5: writes to the per-vendor-
+  // family L2 store.
+  [[nodiscard]]
+  safety::residency_heat::Warm<std::expected<void, InsertError>>
+  publish_l2(ContentHash /*content_hash*/, RowHash /*row_hash*/,
+             CompiledKernel* /*kernel*/) noexcept
+  {
+    return safety::residency_heat::Warm<std::expected<void, InsertError>>{
+        std::expected<void, InsertError>{}};
+  }
+
+  // ── L3 publish — Phase 5 STUB ────────────────────────────────────
+  //
+  // Today: returns success-marker pinned at Cold but does NOT
+  // actually persist anywhere.  Phase 5: writes to the per-chip
+  // compiled-bytes archive (S3-backed cold federation).
+  [[nodiscard]]
+  safety::residency_heat::Cold<std::expected<void, InsertError>>
+  publish_l3(ContentHash /*content_hash*/, RowHash /*row_hash*/,
+             CompiledKernel* /*kernel*/) noexcept
+  {
+    return safety::residency_heat::Cold<std::expected<void, InsertError>>{
+        std::expected<void, InsertError>{}};
   }
 
   // Relaxed: informational counter, no ordering dependency.

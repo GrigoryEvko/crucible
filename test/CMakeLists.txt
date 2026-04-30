@@ -321,6 +321,7 @@ crucible_test(test_one_shot_flag_crash)
 crucible_test(test_atomic_snapshot_wait)
 crucible_test(test_cipher_wait)
 crucible_test(test_cipher_publish_tier)
+crucible_test(test_kernel_cache_residency_heat)
 crucible_test(test_atomic_snapshot)
 crucible_test(test_chase_lev_deque)
 crucible_test(test_mpsc_ring)
@@ -1307,6 +1308,16 @@ crucible_neg_compile_test(neg_cipher_tier_warm_at_hot_fence
 # iteration publish path, breaking Augur recommendations-engine
 # integrity).
 crucible_neg_compile_test(neg_cipher_tier_cold_at_warm_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
+# FOUND-G52 — production-call-site fence: a hot-dispatch consumer
+# requiring ResidencyHeat::satisfies<Hot> rejects a
+# ResidencyHeat<Cold> source.  This is the load-bearing rejection
+# for the per-op recording site / Vigil hot-path budget (CRUCIBLE.md
+# §L4 + §L2).  Cold-tier (L3 compiled-bytes archive, S3-backed) has
+# hundreds-of-ns to ms latency, two-to-five orders of magnitude
+# above the ~5 ns per-call shape budget.
+crucible_neg_compile_test(neg_residency_heat_cold_at_hot_fence
   "constraints not satisfied|no matching function|associated constraints")
 
 # ─── FOUND-D01 — signature_traits<FnPtr> param-index overflow ─────
