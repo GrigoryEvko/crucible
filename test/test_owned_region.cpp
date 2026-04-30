@@ -634,6 +634,49 @@ void test_parallel_reduce_views_n2_smallest_parallel() {
     CRUCIBLE_TEST_REQUIRE(total == 100);
 }
 
+// FOUND-F04-AUDIT-2 — uneven split for parallel_reduce_views<N, R>.
+// Mirrors the F01-A4 fixture (uneven split for parallel_for_views).
+// Existing F04 tests used exactly-divisible region sizes (4096/8,
+// 4/2); production workloads have arbitrary sizes.  Pin that uneven
+// splits (100 elements / 8 shards) sum correctly with init
+// participating exactly once and every element folded into the
+// reducer (no shard skipping its slice of the suffix).
+//
+// Reducer is left-to-right + associative (integer addition); the
+// arithmetic identity is:
+//
+//   total = init + sum(mapper(s_0)) + ... + sum(mapper(s_7))
+//         = 7  + 1*100 (every element is 1)
+//         = 107
+//
+// Validates that Slice<Whole, I>::adopt's chunk-math distributes
+// the suffix correctly under the uneven regime: the LAST shard
+// receives the remainder (100 - (7 * 12) = 16 elements, given
+// chunk = (count + N - 1) / N = 13 for non-last shards).
+void test_parallel_reduce_views_uneven_split() {
+    Arena arena;
+    auto perm = permission_root_mint<DataA>();
+    constexpr std::size_t N = 100;
+    auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
+        test_alloc_token(), arena, N, std::move(perm));
+    for (std::size_t i = 0; i < N; ++i) region.span()[i] = 1;
+
+    auto [total, _] = parallel_reduce_views<8, std::uint64_t>(
+        std::move(region),
+        /*init=*/std::uint64_t{7},
+        [](auto sub) noexcept -> std::uint64_t {
+            std::uint64_t s = 0;
+            for (auto x : sub.cspan()) s += x;
+            return s;
+        },
+        [](std::uint64_t a, std::uint64_t b) noexcept { return a + b; }
+    );
+
+    // Every element of the recombined region must be folded — no
+    // shard skipped its slice of the suffix.
+    CRUCIBLE_TEST_REQUIRE(total == 107);
+}
+
 // FOUND-F04-A5 — mapper is invoked exactly N times when N >= 1.  Use
 // a shared atomic counter to confirm worker dispatch (well-defined
 // because the counter is std::atomic).
@@ -880,6 +923,8 @@ int main() {
              test_parallel_reduce_views_mapper_invoked_n_times);
     run_test("test_parallel_reduce_views_n2_smallest_parallel",
              test_parallel_reduce_views_n2_smallest_parallel);
+    run_test("test_parallel_reduce_views_uneven_split",
+             test_parallel_reduce_views_uneven_split);
     run_test("test_parallel_for_views_sequential_n1",        test_parallel_for_views_sequential_n1);
     run_test("test_adaptive_picks_sequential_for_small_workload",
              test_adaptive_picks_sequential_for_small_workload);

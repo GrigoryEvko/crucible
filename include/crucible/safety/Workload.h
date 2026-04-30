@@ -231,11 +231,23 @@ parallel_for_views(OwnedRegion<T, Whole>&& region, Body body) noexcept
 
     if constexpr (N == 1) {
         // Sequential fast path: invoke body inline on the (only)
-        // sub-region.  No jthread spawn.
+        // sub-region.  No jthread spawn.  Body is consumed by direct
+        // call; copy-constructibility is NOT required here.
         auto subs = std::move(region).template split_into<1>();
         body(std::move(std::get<0>(subs)));
     } else {
-        // Parallel path: split, spawn, RAII-join.
+        // Parallel path: spawn_workers_ captures body BY VALUE into
+        // each per-worker jthread lambda (one copy per worker, N total).
+        // Lift the contract from the spawn_workers_ depths to the API
+        // boundary so a move-only body (capturing unique_ptr, Linear<T>,
+        // etc.) yields a clean diagnostic naming the contract instead
+        // of a deep std::__invoke_impl / std::jthread error.
+        static_assert(std::is_copy_constructible_v<Body>,
+            "parallel_for_views<N> body must be CopyConstructible when "
+            "N >= 2 — captured by value into each per-worker jthread "
+            "lambda.  Move-only callables (capturing unique_ptr, "
+            "Linear<T>, etc.) are rejected by this gate.");
+
         auto subs = std::move(region).template split_into<N>();
         detail::spawn_workers_(std::move(subs), body,
                                 std::make_index_sequence<N>{});
@@ -349,9 +361,25 @@ parallel_reduce_views(OwnedRegion<T, Whole>&& region, R init,
 
     if constexpr (N == 1) {
         // Sequential fast path: one mapper call, fold with init.
+        // Mapper is consumed by direct call; copy-constructibility is
+        // NOT required here.
         auto subs = std::move(region).template split_into<1>();
         result = reducer(result, mapper(std::move(std::get<0>(subs))));
     } else {
+        // Parallel path: spawn_workers_with_partials_ captures mapper
+        // BY VALUE into each per-worker jthread lambda (one copy per
+        // worker, N copies total).  Lift the contract from the
+        // spawn_workers_with_partials_ depths to the API boundary so a
+        // move-only mapper yields a clean diagnostic naming the
+        // contract instead of a deep std::__invoke_impl / std::jthread
+        // error.  Reducer is used by reference in the post-join fold,
+        // so it does NOT require copy-constructibility.
+        static_assert(std::is_copy_constructible_v<Mapper>,
+            "parallel_reduce_views<N, R> mapper must be CopyConstructible "
+            "when N >= 2 — captured by value into each per-worker "
+            "jthread lambda.  Move-only callables are rejected by this "
+            "gate.");
+
         // Stack-allocated partials.  Each worker writes its slot;
         // no atomic needed (workers write disjoint slots).
         std::array<R, N> partials{};

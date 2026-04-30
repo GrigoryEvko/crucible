@@ -1646,6 +1646,21 @@ crucible_neg_compile_test(neg_parallel_for_views_n_zero
 crucible_neg_compile_test(neg_parallel_for_views_throwing_body
   "body must be noexcept-invocable|static_assert|static assertion")
 
+# ─── FOUND-F01-AUDIT-3 / F04-AUDIT-2 — copy-constructibility fences ──
+#
+# parallel_for_views<N> and parallel_reduce_views<N, R> capture body /
+# mapper BY VALUE into per-worker jthread lambdas (one copy per worker
+# in the N >= 2 branch).  Without an API-boundary fence, a move-only
+# callable fails deep inside std::jthread machinery with a "use of
+# deleted function" diagnostic.  These fixtures pin the boundary
+# static_asserts so the diagnostic stays at the API boundary even
+# under future refactor.
+crucible_neg_compile_test(neg_parallel_for_views_move_only_body
+  "must be CopyConstructible|static_assert|static assertion")
+
+crucible_neg_compile_test(neg_parallel_reduce_views_move_only_mapper
+  "must be CopyConstructible|static_assert|static assertion")
+
 # ─── FOUND-D15 ProducerEndpoint constrained-extractor fixtures ──────
 #
 # Pins the four constrained extractors on ProducerEndpoint.h:
