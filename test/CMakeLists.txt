@@ -1919,6 +1919,15 @@ crucible_neg_compile_test(neg_computation_cache_member_data_ptr_nttp
 # rejected from the row-aware cache API.
 crucible_neg_compile_test(neg_computation_cache_in_row_non_row_param
   "constraints not satisfied|template constraint failure|associated constraints")
+# F11-AUDIT cross-constraint coverage — IsCacheableFunction conjunct
+# on the row-aware path.  The `_in_row` template carries TWO
+# constraints (`IsCacheableFunction<FnPtr> && IsEffectRow<Row>`); the
+# row-blind neg fixtures cover the IsCacheableFunction half on the
+# legacy path and `neg_computation_cache_in_row_non_row_param` covers
+# the IsEffectRow half on the row-aware path — this fixture closes
+# the matrix on the row-aware × IsCacheableFunction cell.
+crucible_neg_compile_test(neg_computation_cache_in_row_non_function_nttp
+  "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
 # Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.

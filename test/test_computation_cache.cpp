@@ -98,6 +98,25 @@ inline void ct_fn_t1(int) noexcept {}
 inline void ct_fn_t2(int) noexcept {}
 inline void ct_fn_t3(int) noexcept {}
 
+// FOUND-F11-AUDIT: row-aware concurrency-test-only functions.
+// Mirror of the row-blind ct_fn_t0..t3 set, but stresses the
+// row-aware atomic-slot family (computation_cache_in_row).
+// Each thread targets ITS OWN slot — the test verifies that
+// distinct (FnPtr, Row, Args...) instantiations have isolated
+// atomics on the row-aware side too.  Distinct fixtures (not
+// reuse of the row-blind ones) keep the row-blind and row-aware
+// concurrency tests independent: both can run in any order
+// without cross-state corruption.
+inline void cr_fn_t0(int) noexcept {}
+inline void cr_fn_t1(int) noexcept {}
+inline void cr_fn_t2(int) noexcept {}
+inline void cr_fn_t3(int) noexcept {}
+
+// FOUND-F11-AUDIT: same-slot contention fixture for row-aware
+// path.  Distinct from row-blind test_fn_c so the row-aware
+// first-wins test starts from a confirmed-empty slot.
+inline int  cr_contention_fn(int) noexcept { return 0; }
+
 // ── Stub CompiledBody pointers ────────────────────────────────────
 // The cache stores pointers opaquely; the contents are never
 // dereferenced by the cache itself, so we use bit-pattern stubs.
@@ -491,6 +510,125 @@ int main() {
             cipher::lookup_computation_cache_in_row<
                 &test_fn_a, eff::Row<eff::Effect::IO, eff::Effect::Bg>, int>()
             == nullptr);  // distinct type → distinct slot, miss.
+    });
+
+    // ── (M) FOUND-F11-AUDIT: concurrent inserts on disjoint
+    //                         row-aware slots ────────────────────────
+    // Mirror of the row-blind concurrent_inserts_disjoint_slots
+    // sub-test, but on the row-aware atomic-slot family.  Four
+    // threads race to insert into FOUR DISTINCT (FnPtr, Row, Args)
+    // tuples — different cr_fn_t* fixtures plus a fixed EmptyRow.
+    // Post-condition: every row-aware slot has its expected body,
+    // none is null, none is corrupted, no cross-instantiation
+    // contamination.  The same MESI-coherent acquire/release
+    // primitives that protect the row-blind atomic must protect
+    // the row-aware atomic — F11's parallel template instantiation
+    // family produces identical machine code per slot, so the
+    // proof obligation is structural, not statistical.  But
+    // running the test pins the obligation against any future
+    // refactor that accidentally regresses memory_order discipline
+    // on the _in_row variants.
+    run_test("concurrent_inserts_disjoint_slots_in_row", []{
+        constexpr std::uintptr_t base = 0x30000;
+        std::atomic<int> ready{0};
+        std::atomic<bool> go{false};
+
+        auto worker = [&](auto* body, auto inserter) {
+            ready.fetch_add(1, std::memory_order_release);
+            while (!go.load(std::memory_order_acquire)) { /* spin */ }
+            inserter(body);
+        };
+
+        std::array<std::jthread, 4> workers = {
+            std::jthread{[&]{
+                worker(make_stub(base + 0), [](cipher::CompiledBody* b){
+                    cipher::insert_computation_cache_in_row<
+                        &cr_fn_t0, EmptyR, int>(b);
+                });
+            }},
+            std::jthread{[&]{
+                worker(make_stub(base + 1), [](cipher::CompiledBody* b){
+                    cipher::insert_computation_cache_in_row<
+                        &cr_fn_t1, EmptyR, int>(b);
+                });
+            }},
+            std::jthread{[&]{
+                worker(make_stub(base + 2), [](cipher::CompiledBody* b){
+                    cipher::insert_computation_cache_in_row<
+                        &cr_fn_t2, EmptyR, int>(b);
+                });
+            }},
+            std::jthread{[&]{
+                worker(make_stub(base + 3), [](cipher::CompiledBody* b){
+                    cipher::insert_computation_cache_in_row<
+                        &cr_fn_t3, EmptyR, int>(b);
+                });
+            }},
+        };
+
+        while (ready.load(std::memory_order_acquire) < 4) { /* spin */ }
+        go.store(true, std::memory_order_release);
+        for (auto& t : workers) { t.join(); }
+
+        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<
+                        &cr_fn_t0, EmptyR, int>()
+                    == make_stub(base + 0));
+        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<
+                        &cr_fn_t1, EmptyR, int>()
+                    == make_stub(base + 1));
+        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<
+                        &cr_fn_t2, EmptyR, int>()
+                    == make_stub(base + 2));
+        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<
+                        &cr_fn_t3, EmptyR, int>()
+                    == make_stub(base + 3));
+    });
+
+    // ── (N) FOUND-F11-AUDIT: row-aware concurrent inserts on SAME
+    //                         slot, first-wins ─────────────────────
+    // Mirror of the row-blind concurrent_inserts_same_slot_first_wins
+    // sub-test on the row-aware atomic-slot family.  Four threads
+    // race to insert into the SAME row-aware slot
+    // (cr_contention_fn, EmptyRow, int) with four distinct bodies.
+    // The CAS-on-empty store discipline used by
+    // insert_computation_cache_in_row guarantees first-writer-wins
+    // idempotency.  Verify the slot ends up at exactly one of the
+    // four candidates — same idempotent contract, same atomic
+    // primitive, just a different template instantiation.
+    run_test("concurrent_inserts_same_slot_first_wins_in_row", []{
+        EXPECT_TRUE(cipher::lookup_computation_cache_in_row<
+                        &cr_contention_fn, EmptyR, int>()
+                    == nullptr);
+
+        constexpr std::uintptr_t base = 0x40000;
+        std::array<cipher::CompiledBody*, 4> candidates = {
+            make_stub(base + 0), make_stub(base + 1),
+            make_stub(base + 2), make_stub(base + 3),
+        };
+        std::atomic<int> ready{0};
+        std::atomic<bool> go{false};
+
+        std::array<std::jthread, 4> workers;
+        for (std::size_t i = 0; i < 4; ++i) {
+            workers[i] = std::jthread{[&, i]{
+                ready.fetch_add(1, std::memory_order_release);
+                while (!go.load(std::memory_order_acquire)) { /* spin */ }
+                cipher::insert_computation_cache_in_row<
+                    &cr_contention_fn, EmptyR, int>(candidates[i]);
+            }};
+        }
+        while (ready.load(std::memory_order_acquire) < 4) { /* spin */ }
+        go.store(true, std::memory_order_release);
+        for (auto& t : workers) { t.join(); }
+
+        auto* winner = cipher::lookup_computation_cache_in_row<
+            &cr_contention_fn, EmptyR, int>();
+        EXPECT_TRUE(winner != nullptr);
+        bool is_one_of = false;
+        for (auto* c : candidates) {
+            if (winner == c) { is_one_of = true; break; }
+        }
+        EXPECT_TRUE(is_one_of);
     });
 
     std::fprintf(stderr, "\ntotal: %d passed, %d failed\n",

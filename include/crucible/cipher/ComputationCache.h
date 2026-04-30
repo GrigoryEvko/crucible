@@ -622,6 +622,24 @@ static_assert(::crucible::cipher::IsEffectRow<
               ::crucible::effects::Row<::crucible::effects::Effect::Bg,
                                        ::crucible::effects::Effect::IO>>);
 
+// FOUND-F11-AUDIT — EmptyRow alias transparency.  `EmptyRow` is the
+// header-defined alias for `Row<>`; concept satisfaction must see
+// through the alias.  Explicit witness pins the property — a future
+// rename or wrapping of EmptyRow would break this static_assert
+// rather than silently producing a different cache slot for callers
+// who reach for the alias instead of the bare `Row<>`.
+static_assert(::crucible::cipher::IsEffectRow<::crucible::effects::EmptyRow>);
+// Same key from EmptyRow alias and Row<>: alias transparency at
+// the cache-key level.
+static_assert(
+    ::crucible::cipher::computation_cache_key_in_row<
+        &p_unary, ::crucible::effects::EmptyRow, int>
+    ==
+    ::crucible::cipher::computation_cache_key_in_row<
+        &p_unary, ::crucible::effects::Row<>, int>,
+    "EmptyRow and Row<> must hash to the same key — the alias is "
+    "transparent through the cache.");
+
 // Negative: bare types do NOT.
 static_assert(!::crucible::cipher::IsEffectRow<int>);
 static_assert(!::crucible::cipher::IsEffectRow<void>);
