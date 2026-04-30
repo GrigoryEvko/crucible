@@ -122,7 +122,18 @@ struct subset_row_helper<Mask, 6u, Atoms...> {
     using type = eff::Row<Atoms...>;
 };
 
+// FOUND-F13-AUDIT (Finding B) — Mask precondition.  The internal
+// helper recurses Bit ∈ [0, 6).  High bits of Mask (≥ 64) are
+// silently IGNORED — without the requires-clause below, subset_row<63>
+// and subset_row<127> would produce the same Row<> type (full
+// universe), aliasing four high-bit-garbage masks to a single Row.
+// The internal helper is only ever called with Mask < 64; the
+// requires-clause on the public alias entry pins the precondition
+// at substitution time, so any future caller passing Mask ≥ 64
+// fails loudly with a constraint violation instead of producing
+// surprising aliased rows.
 template <unsigned Mask>
+    requires (Mask < 64u)
 using subset_row = typename subset_row_helper<Mask, 0u>::type;
 
 // Spot-check the helper at compile time before building the full
@@ -251,6 +262,68 @@ static_assert(
     all_subset_keys[1]  == cache_key_for_subset<1u>);
 static_assert(
     all_subset_keys[63] == cache_key_for_subset<63u>);
+
+// FOUND-F13-AUDIT (Finding A) — permutation invariance witness for
+// canonical_pin_fn.  `subset_row<Mask>` always produces atoms in
+// ASCENDING order — the 64-key matrix above never compares two
+// keys whose underlying Row<> types are permutations of each other.
+// row_hash_contribution<Row<Es...>> is a sort-fold over Effect
+// underlying values (per FOUND-I02 RowHashFold.h), so semantically
+// equivalent rows under permutation MUST yield the same key.
+// test_computation_cache.cpp already pins this for &p_unary; this
+// witness re-pins it at the F13 canonical-fixture level so any
+// drift in the row_hash sort-fold (e.g., a refactor that
+// accidentally folds in declaration order instead of underlying-
+// value order) surfaces in the F13 invalidation TU specifically.
+//
+// Coverage: 2-atom and 6-atom permutations exercise both the
+// "pair-row" fold edge and the "full-universe" fold edge.
+
+static_assert(
+    cipher::computation_cache_key_in_row<
+        &found_f13_pins::canonical_pin_fn,
+        eff::Row<eff::Effect::Alloc, eff::Effect::IO>, int>
+    ==
+    cipher::computation_cache_key_in_row<
+        &found_f13_pins::canonical_pin_fn,
+        eff::Row<eff::Effect::IO, eff::Effect::Alloc>, int>,
+    "F13: cache key for Row<Alloc, IO> must equal cache key for "
+    "Row<IO, Alloc> — row_hash is a sort-fold over Effect underlying "
+    "values, so permutation of atoms in the Row pack is a no-op for "
+    "the federation key.  A drift here means the sort-fold has been "
+    "refactored to read declaration order; investigate "
+    "row_hash_contribution<Row<Es...>> in safety/diag/RowHashFold.h.");
+
+// Full-universe permutation — six atoms in two different orders.
+static_assert(
+    cipher::computation_cache_key_in_row<
+        &found_f13_pins::canonical_pin_fn,
+        eff::Row<eff::Effect::Alloc, eff::Effect::IO,
+                 eff::Effect::Block, eff::Effect::Bg,
+                 eff::Effect::Init,  eff::Effect::Test>, int>
+    ==
+    cipher::computation_cache_key_in_row<
+        &found_f13_pins::canonical_pin_fn,
+        eff::Row<eff::Effect::Test,  eff::Effect::Init,
+                 eff::Effect::Bg,    eff::Effect::Block,
+                 eff::Effect::IO,    eff::Effect::Alloc>, int>,
+    "F13: full-universe Row in ascending-atom-order must hash to "
+    "the same cache key as the same Row in descending-atom-order "
+    "— sort-fold permutation invariance.");
+
+// AND the ascending-order full-universe key MUST equal the F13
+// matrix's subset_row<63> key (the ascending-order producer).
+static_assert(
+    cipher::computation_cache_key_in_row<
+        &found_f13_pins::canonical_pin_fn,
+        eff::Row<eff::Effect::Test,  eff::Effect::Init,
+                 eff::Effect::Bg,    eff::Effect::Block,
+                 eff::Effect::IO,    eff::Effect::Alloc>, int>
+    == cache_key_for_subset<63u>,
+    "F13: descending-order full-universe Row hashes to the same "
+    "cache key as subset_row<63> (ascending order).  Pins the "
+    "permutation-invariance bridge between the manually-spelled "
+    "Row<> and the helper-generated Row<>.");
 
 // ── Variadic ASSERT macro ───────────────────────────────────────────
 //

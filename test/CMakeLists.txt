@@ -1930,6 +1930,13 @@ crucible_neg_compile_test(neg_computation_cache_in_row_non_row_param
 # the matrix on the row-aware × IsCacheableFunction cell.
 crucible_neg_compile_test(neg_computation_cache_in_row_non_function_nttp
   "constraints not satisfied|template constraint failure|associated constraints")
+# F13-AUDIT subset_row Mask precondition — pins the requires-clause
+# on the subset_row<Mask> alias used by the F13 invalidation TU.
+# Without the `requires (Mask < 64u)` fence, high bits of Mask would
+# be silently truncated, aliasing multiple Mask values to the same
+# Row<> type.  Catches the drift at substitution time.
+crucible_neg_compile_test(neg_subset_row_mask_geq_64
+  "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
 # Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.
