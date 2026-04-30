@@ -1514,6 +1514,19 @@ crucible_neg_compile_test(neg_inferred_row_pure_concept_rejects_alloc_fn
 crucible_neg_compile_test(neg_fusion_concept_rejects_arity_mismatch
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# ─── FOUND-F07 fuse<>() entry-point substitution-failure fixtures ───
+# F06's fixture above tests IsFusable through a custom local template;
+# these three fixtures call ::crucible::safety::fuse<>() directly,
+# which is the production-shape failure surface.  Three distinct
+# rejection classes — composability, throwing, impurity — to cover
+# the three orthogonal axes of the V1 predicate.
+crucible_neg_compile_test(neg_fusion_fuse_rejects_type_mismatch
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_fusion_fuse_rejects_throwing_producer
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_fusion_fuse_rejects_impure_producer
+  "constraints not satisfied|template constraint failure|associated constraints")
+
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
 # Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.
 # Mechanical extension of the D30-batch pattern; closes the
