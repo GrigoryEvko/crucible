@@ -45,6 +45,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <optional>
 #include <type_traits>
 
 namespace {
@@ -125,6 +126,26 @@ struct reader_void_load {
     void load() const noexcept {}
 };
 
+// Reader-shape with EXTRA unrelated methods.  D07 detects only
+// publish/load; extras are structurally invisible.  D18 inherits.
+struct reader_with_extras {
+    int  load() const noexcept { return 0; }
+    void unrelated_helper() noexcept {}
+    int  another_method(int) const noexcept { return 0; }
+};
+
+// Reader returning std::optional<P> — D07 admits this because
+// load_signature_decomp's P deduces to `optional<int>` (which is
+// non-void).  The IsSwmrHandle.h header comment at L80-82 says
+// optional<T> returns "would signal a non-blocking try-load... a
+// different shape" — but that intent is NOT enforced; the current
+// implementation accepts.  D18 inherits the acceptance.  This
+// witness pins the current behaviour so any future tightening of
+// D07 is detected via a CI red.
+struct reader_optional_load {
+    std::optional<int> load() const noexcept { return 0; }
+};
+
 // User-defined struct payload.
 struct payload_struct { int a; double b; };
 struct reader_struct {
@@ -203,6 +224,21 @@ int f_non_const_load_in_reader_slot(reader_non_const_load&&) noexcept;
 
 // Param 0 is reader-shaped but load returns void — D07 rejects.
 int f_void_load_in_reader_slot(reader_void_load&&) noexcept;
+
+// Reader with extra unrelated methods — admitted; extras are
+// structurally invisible to D07.
+int f_reader_with_extras(reader_with_extras&&) noexcept;
+
+// Reader returning optional<int> — admitted (current behaviour;
+// see witness comment above).  Both handle_value_t and
+// returned_value_t are `std::optional<int>`.
+std::optional<int> f_optional_reader(reader_optional_load&&) noexcept;
+
+// True UnaryTransform signature — confirms the cross-shape
+// exclusion direction we DIDN'T cover yet: a known UnaryTransform
+// must NOT be a SwmrReader.  (Same tag on input and output is a
+// valid UnaryTransform shape.)
+OR_int_out f_unary_transform_witness(OR_int_out&&) noexcept;
 
 }  // namespace sr_test
 
@@ -298,6 +334,50 @@ void test_negative_non_const_load() {
 void test_negative_void_load() {
     static_assert(!extract::SwmrReader<
         &sr_test::f_void_load_in_reader_slot>);
+}
+
+void test_positive_handle_with_extras_admitted() {
+    // D07's structural detection only checks publish/load.  Extra
+    // unrelated methods don't break recognition — the trait is
+    // duck-typed, not nominal.
+    static_assert( extract::SwmrReader<&sr_test::f_reader_with_extras>);
+    static_assert(std::is_same_v<
+        extract::swmr_reader_handle_value_t<
+            &sr_test::f_reader_with_extras>,
+        int>);
+}
+
+void test_optional_returning_load_admitted() {
+    // CURRENT-BEHAVIOUR test (NOT a desired-state test):
+    // D07 admits readers with `optional<P> load() const` because
+    // load_signature_decomp's P deduces to optional<int>, which is
+    // non-void.  The IsSwmrHandle.h header comment claims optional
+    // returns "would signal a non-blocking try-load... a different
+    // shape" — but that intent is NOT enforced.
+    //
+    // D18 inherits the acceptance.  This test pins the current
+    // state so any future tightening of D07's signature_decomp
+    // (e.g., excluding optional<T> payloads) lights up this red.
+    static_assert( extract::SwmrReader<&sr_test::f_optional_reader>);
+    static_assert(std::is_same_v<
+        extract::swmr_reader_handle_value_t<&sr_test::f_optional_reader>,
+        std::optional<int>>);
+    static_assert(std::is_same_v<
+        extract::swmr_reader_returned_value_t<&sr_test::f_optional_reader>,
+        std::optional<int>>);
+    static_assert(extract::swmr_reader_value_consistent_v<
+        &sr_test::f_optional_reader>);
+}
+
+void test_unary_transform_witness_not_swmr_reader() {
+    // Confirms the cross-shape exclusion in the OPPOSITE direction
+    // from test_cross_shape_exclusion_full_matrix: a known
+    // UnaryTransform must NOT be a SwmrReader.  IsSwmrReader
+    // requires param 0 to be SWMR-reader-shaped (has const-qualified
+    // load + no publish); OwnedRegion is not SWMR-reader-shaped, so
+    // the exclusion is structurally enforced.
+    static_assert( extract::UnaryTransform<&sr_test::f_unary_transform_witness>);
+    static_assert(!extract::SwmrReader<&sr_test::f_unary_transform_witness>);
 }
 
 void test_handle_value_extraction() {
@@ -430,6 +510,12 @@ int main() {
              test_negative_non_const_load);
     run_test("test_negative_void_load",
              test_negative_void_load);
+    run_test("test_positive_handle_with_extras_admitted",
+             test_positive_handle_with_extras_admitted);
+    run_test("test_optional_returning_load_admitted",
+             test_optional_returning_load_admitted);
+    run_test("test_unary_transform_witness_not_swmr_reader",
+             test_unary_transform_witness_not_swmr_reader);
     run_test("test_handle_value_extraction",
              test_handle_value_extraction);
     run_test("test_returned_value_extraction",
