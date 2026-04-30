@@ -69,10 +69,44 @@
 //     CrashWatchedHandle, and outlives the session.  The wrapper
 //     itself is move-only (single-consumer linearity preserved).
 //
+// ─── Row-typed surface (FOUND-G62) ────────────────────────────────
+//
+// Each CrashWatchedHandle consumer call site has a static CrashClass
+// per CrashLattice (Abort ⊑ Throw ⊑ ErrorReturn ⊑ NoThrow).  The
+// classifications are enforced at the type level via OneShotFlag's
+// pinned-surface methods (handles/OneShotFlag.h, FOUND-G62):
+//
+//     site                              underlying       CrashClass
+//     ────────────────────────────────  ─────────────    ──────────
+//     producer-side: signal()           atomic store     Throw
+//                  → signal_throw()     (FOUND-G62)
+//
+//     consumer-side: peek() steady      atomic load      NoThrow
+//       (the false-on-flag path)        + branch
+//                  → peek_nothrow()     (FOUND-G62)
+//
+//     recovery-handler: peek() true     acquire-fence    ErrorReturn
+//       (the unlikely true path that    + recovery
+//        returns CrashEvent via         + std::expected
+//        std::expected; FOUND-C v1 PSH  return
+//        composition)
+//                  → try_acknowledge_error_return(F)  (FOUND-G62)
+//
+// New code wiring CrashWatchedHandle into a NEW protocol arm should
+// use the pinned surface so the handle carries its CrashClass
+// classification at the type level.  Existing call sites (Send /
+// Recv / Select / Offer / close specializations below) continue to
+// use the raw peek() — the additive overlay preserves the per-call
+// shape without churn.  Audit migration is a follow-up task.
+//
 // ─── References ───────────────────────────────────────────────────
 //
 //   misc/24_04_2026_safety_integration.md §11 — design rationale
+//   misc/28_04_2026_effects.md §4.3.10        — FOUND-G62 type-level
+//                                               classification rationale
 //   safety/OneShotFlag.h          — the underlying signal primitive
+//                                   + FOUND-G62 pinned-surface methods
+//   safety/Crash.h                — the CrashClass wrapper type
 //   safety/SessionCrash.h          — type-level crash semantics
 //   safety/RecordingSessionHandle.h — sibling wrapper using the same
 //                                     per-Proto specialization scaffold

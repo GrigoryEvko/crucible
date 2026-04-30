@@ -1260,6 +1260,21 @@ crucible_neg_compile_test(neg_alloc_class_heap_at_pool_fence
 crucible_neg_compile_test(neg_crash_throw_at_nothrow_fence
   "constraints not satisfied|no matching function|associated constraints")
 
+# FOUND-G62-AUDIT — additional crash-class boundary fences:
+# Abort rejected at ErrorReturn (recovery-aware boundary); admitting
+# a value from a Keeper init path that may have called
+# crucible_abort() into a recovery-handler branch would defeat the
+# recovery code's right-to-run invariant.
+crucible_neg_compile_test(neg_crash_abort_at_error_return_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
+# ErrorReturn rejected at NoThrow (steady-state hot-path observer);
+# admitting an error-returning value into a shape-budgeted observer
+# would silently break the "this call NEVER fails" guarantee that
+# hot-path code depends on.
+crucible_neg_compile_test(neg_crash_error_return_at_nothrow_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
 # ─── FOUND-D01 — signature_traits<FnPtr> param-index overflow ─────
 #
 # The `requires (I < arity)` clause on signature_traits<FnPtr>::
