@@ -310,6 +310,301 @@ inline constexpr auto kCheckOpKeyDetConstexpr =
     Philox::op_key_det(0ull, 0u, ContentHash{0});
 static_assert(kCheckOpKeyDetConstexpr.tier == DetSafeTier_v::Pure);
 
+// ═══════════════════════════════════════════════════════════════════
+// FOUND-G17-AUDIT: rigor improvements — type identity, reflexive
+// satisfies, move semantics, type-level chain composition,
+// negative-tier-pin witnesses
+// ═══════════════════════════════════════════════════════════════════
+
+// ── 8. Type-identity static_asserts — value_type AND tier together ─
+//
+// The plain `tier == PhiloxRng` checks above don't catch a refactor
+// that accidentally changes the inner value_type (e.g., returning
+// `DetSafe<PhiloxRng, std::array<uint32_t, 2>>` instead of
+// `DetSafe<PhiloxRng, Ctr>`).  Pin BOTH dimensions: tier AND
+// value_type, then prove the full type-identity against the raw
+// return type.
+
+static_assert(std::is_same_v<
+        decltype(Philox::generate_det(Philox::Ctr{}, Philox::Key{})),
+        DetSafe<DetSafeTier_v::PhiloxRng, Philox::Ctr>>,
+    "generate_det((Ctr, Key)) MUST return EXACTLY DetSafe<PhiloxRng, Ctr>. "
+    "If this fires, the wrapper return type has drifted (e.g., a refactor "
+    "renamed Ctr or changed the tier).");
+
+static_assert(std::is_same_v<
+        decltype(Philox::generate_det(uint64_t{0}, uint64_t{0})),
+        DetSafe<DetSafeTier_v::PhiloxRng, Philox::Ctr>>,
+    "generate_det((u64, u64)) MUST return EXACTLY DetSafe<PhiloxRng, Ctr>.");
+
+static_assert(std::is_same_v<
+        decltype(Philox::to_uniform_det(0u)),
+        DetSafe<DetSafeTier_v::PhiloxRng, float>>,
+    "to_uniform_det MUST return EXACTLY DetSafe<PhiloxRng, float>.");
+
+static_assert(std::is_same_v<
+        decltype(Philox::to_uniform_d_det(0u)),
+        DetSafe<DetSafeTier_v::PhiloxRng, double>>,
+    "to_uniform_d_det MUST return EXACTLY DetSafe<PhiloxRng, double>.");
+
+static_assert(std::is_same_v<
+        decltype(Philox::box_muller_det(0u, 0u)),
+        DetSafe<DetSafeTier_v::PhiloxRng, std::pair<float, float>>>,
+    "box_muller_det MUST return EXACTLY DetSafe<PhiloxRng, "
+    "std::pair<float, float>>.  If a future refactor re-shapes the "
+    "Box-Muller return (e.g., to std::array<float, 2>), this must be "
+    "considered an API break and propagated downstream.");
+
+static_assert(std::is_same_v<
+        decltype(Philox::op_key_det(0ull, 0u, ContentHash{0})),
+        DetSafe<DetSafeTier_v::Pure, uint64_t>>,
+    "op_key_det MUST return EXACTLY DetSafe<Pure, uint64_t>.  The Pure "
+    "tier is LOAD-BEARING: a refactor downgrading op_key_det to "
+    "PhiloxRng would prevent it from satisfying a `requires Pure` gate "
+    "downstream (Pure-strictly consumers in kernel-emit precondition "
+    "code would break).");
+
+// Public alias visibility — pinning the alias names ensures they are
+// reachable from production callers and from the diagnostic surface.
+static_assert(std::is_same_v<Philox::DetSafePhiloxCtr,
+                             DetSafe<DetSafeTier_v::PhiloxRng, Philox::Ctr>>);
+static_assert(std::is_same_v<Philox::DetSafePhiloxFloat,
+                             DetSafe<DetSafeTier_v::PhiloxRng, float>>);
+static_assert(std::is_same_v<Philox::DetSafePhiloxDouble,
+                             DetSafe<DetSafeTier_v::PhiloxRng, double>>);
+static_assert(std::is_same_v<Philox::DetSafePhiloxFloatPair,
+                             DetSafe<DetSafeTier_v::PhiloxRng,
+                                     std::pair<float, float>>>);
+static_assert(std::is_same_v<Philox::DetSafePureKey,
+                             DetSafe<DetSafeTier_v::Pure, uint64_t>>);
+
+// value_type accessor — the Graded substrate exposes value_type, the
+// wrapper forwards it.  Pin that the wrapper's value_type IS the raw
+// inner type, so production code can write `decltype(rng)::value_type
+// raw_bytes = std::move(rng).consume()` and have the type system
+// prove the unwrapping shape.
+static_assert(std::is_same_v<Philox::DetSafePhiloxCtr::value_type, Philox::Ctr>);
+static_assert(std::is_same_v<Philox::DetSafePhiloxFloat::value_type, float>);
+static_assert(std::is_same_v<Philox::DetSafePhiloxDouble::value_type, double>);
+static_assert(std::is_same_v<Philox::DetSafePhiloxFloatPair::value_type,
+                             std::pair<float, float>>);
+static_assert(std::is_same_v<Philox::DetSafePureKey::value_type, uint64_t>);
+
+// ── 9. Negative-tier-pin witnesses — load-bearing rejections ──────
+//
+// Pin that the wrappers do NOT accidentally claim the WRONG tier.
+// A refactor that changes the tier from PhiloxRng → Pure would break
+// these.  Symmetric to the positive identity assertions above; the
+// specific bug class this catches is "I'll just bump generate_det's
+// tier to Pure, that won't break anything" — an incorrect promotion
+// that defeats the load-bearing PhiloxRng-boundary classification.
+
+static_assert(!std::is_same_v<
+        decltype(Philox::generate_det(uint64_t{0}, uint64_t{0})),
+        DetSafe<DetSafeTier_v::Pure, Philox::Ctr>>,
+    "generate_det MUST NOT claim Pure tier — Philox-derived bytes are "
+    "PhiloxRng-tier, not Pure.  Promoting to Pure would silently lie "
+    "about the source class.");
+
+static_assert(!std::is_same_v<
+        decltype(Philox::op_key_det(0ull, 0u, ContentHash{0})),
+        DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>>,
+    "op_key_det MUST claim Pure tier (not PhiloxRng).  op_key is a "
+    "pure bit-mix; downgrading the tier loses an information that "
+    "downstream `requires Pure` gates depend on.");
+
+// ── 10. Reflexive + cross-tier satisfies coverage ─────────────────
+
+// op_key_det is Pure → satisfies every weaker tier (the entire chain).
+using OpKeyResult = decltype(Philox::op_key_det(0ull, 0u, ContentHash{0}));
+static_assert(OpKeyResult::satisfies<DetSafeTier_v::Pure>,
+    "op_key_det's Pure result MUST satisfy Pure (reflexivity at top).");
+static_assert(OpKeyResult::satisfies<DetSafeTier_v::PhiloxRng>);
+static_assert(OpKeyResult::satisfies<DetSafeTier_v::MonotonicClockRead>);
+static_assert(OpKeyResult::satisfies<DetSafeTier_v::WallClockRead>);
+static_assert(OpKeyResult::satisfies<DetSafeTier_v::EntropyRead>);
+static_assert(OpKeyResult::satisfies<DetSafeTier_v::FilesystemMtime>);
+static_assert(OpKeyResult::satisfies<DetSafeTier_v::NonDeterministicSyscall>,
+    "op_key_det's Pure result MUST satisfy NDS (the bottom of the chain). "
+    "Pure-tier bytes are admissible at every consumer including the "
+    "weakest one.");
+
+// generate_det is PhiloxRng → satisfies PhiloxRng-or-weaker but NOT Pure.
+using GenResult = decltype(Philox::generate_det(uint64_t{0}, uint64_t{0}));
+static_assert( GenResult::satisfies<DetSafeTier_v::PhiloxRng>);
+static_assert( GenResult::satisfies<DetSafeTier_v::MonotonicClockRead>);
+static_assert( GenResult::satisfies<DetSafeTier_v::NonDeterministicSyscall>);
+static_assert(!GenResult::satisfies<DetSafeTier_v::Pure>,
+    "generate_det's PhiloxRng result MUST NOT satisfy Pure — claiming "
+    "Pure would mean the bytes are pure-from-declared-inputs (no PRNG "
+    "state observable), which is FALSE for Philox output.  This is the "
+    "reflexive load-bearing rejection: a future refactor to relax UP "
+    "(forbidden) would break this assertion.");
+
+// to_uniform_det / to_uniform_d_det / box_muller_det are PhiloxRng →
+// MUST NOT satisfy Pure.  Same load-bearing rejection class.
+using UniformResult = decltype(Philox::to_uniform_det(0u));
+static_assert(!UniformResult::satisfies<DetSafeTier_v::Pure>);
+using UniformDResult = decltype(Philox::to_uniform_d_det(0u));
+static_assert(!UniformDResult::satisfies<DetSafeTier_v::Pure>);
+using BoxMullerResult = decltype(Philox::box_muller_det(0u, 0u));
+static_assert(!BoxMullerResult::satisfies<DetSafeTier_v::Pure>);
+
+// ── 11. Move-semantics witness — consume() on rvalue ──────────────
+//
+// Pin that `Philox::generate_det(...).consume()` works (rvalue overload
+// of DetSafe::consume).  This is structurally important: production
+// callers may need to move the value out of the wrapper into a
+// destination buffer (e.g., std::array<uint32_t, 4> dst = std::move(
+// rng).consume();) without an extra copy.
+
+static void test_move_semantics_through_wrapper() {
+    std::printf("  move-semantics through DetSafe wrapper...\n");
+
+    auto rng = Philox::generate_det(uint64_t{1}, uint64_t{2});
+    static_assert(std::is_same_v<
+        decltype(std::move(rng).consume()), Philox::Ctr>,
+        "DetSafe::consume() && MUST return T by value (move).");
+
+    Philox::Ctr extracted = std::move(rng).consume();
+    const auto raw = Philox::generate(uint64_t{1}, uint64_t{2});
+    assert(extracted[0] == raw[0]);
+    assert(extracted[1] == raw[1]);
+    assert(extracted[2] == raw[2]);
+    assert(extracted[3] == raw[3]);
+
+    // Pure-tier op_key path moves through too.
+    auto key_pure = Philox::op_key_det(0xCAFEull, 7u, ContentHash{0xBEEFull});
+    uint64_t key_extracted = std::move(key_pure).consume();
+    assert(key_extracted == Philox::op_key(0xCAFEull, 7u, ContentHash{0xBEEFull}));
+}
+
+// ── 12. Type-level chain composition — generate_det(uint64, DetSafe key) ─
+//
+// Exercises the third overload added in FOUND-G17-AUDIT.  The key's
+// DetSafe-tier flows through the type system end-to-end: a Pure-
+// tier key (from op_key_det) feeds a generate_det that REQUIRES
+// PhiloxRng-or-stronger.  The compile error if the key tier is too
+// weak is the load-bearing rejection.
+
+static_assert(std::is_same_v<
+        decltype(Philox::generate_det(uint64_t{0},
+                     DetSafe<DetSafeTier_v::Pure, uint64_t>{0ull})),
+        Philox::DetSafePhiloxCtr>,
+    "generate_det(uint64, DetSafe<Pure, uint64>) MUST return "
+    "DetSafePhiloxCtr.  The Pure key satisfies the PhiloxRng-or-stronger "
+    "requires-clause.");
+
+static_assert(std::is_same_v<
+        decltype(Philox::generate_det(uint64_t{0},
+                     DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>{0ull})),
+        Philox::DetSafePhiloxCtr>,
+    "generate_det(uint64, DetSafe<PhiloxRng, uint64>) MUST return "
+    "DetSafePhiloxCtr.  PhiloxRng key satisfies the gate at the boundary.");
+
+// SFINAE detector — proves that the requires-clause REJECTS weaker
+// tiers.  Without this, a future relaxation of the requires-clause
+// (e.g., "all tiers admissible") would silently break the chain
+// composition's load-bearing guarantee.
+template <DetSafeTier_v KeyTier>
+concept can_compose_chain =
+    requires(uint64_t off, DetSafe<KeyTier, uint64_t> k) {
+        { Philox::generate_det(off, std::move(k)) }
+            -> std::same_as<Philox::DetSafePhiloxCtr>;
+    };
+
+static_assert( can_compose_chain<DetSafeTier_v::Pure>);
+static_assert( can_compose_chain<DetSafeTier_v::PhiloxRng>);
+static_assert(!can_compose_chain<DetSafeTier_v::MonotonicClockRead>,
+    "generate_det MUST REJECT a MonotonicClockRead key — clock-read "
+    "values cannot be Philox keys without defeating the cross-replay "
+    "determinism contract.  THE LOAD-BEARING REJECTION at the chain "
+    "composition surface.");
+static_assert(!can_compose_chain<DetSafeTier_v::WallClockRead>);
+static_assert(!can_compose_chain<DetSafeTier_v::EntropyRead>);
+static_assert(!can_compose_chain<DetSafeTier_v::FilesystemMtime>);
+static_assert(!can_compose_chain<DetSafeTier_v::NonDeterministicSyscall>);
+
+// Constexpr witness for the type-level chain.
+inline constexpr auto kChainConstexpr =
+    Philox::generate_det(uint64_t{0},
+        DetSafe<DetSafeTier_v::Pure, uint64_t>{42ull});
+static_assert(kChainConstexpr.tier == DetSafeTier_v::PhiloxRng);
+
+// Bit-equality of the type-level chain vs the .peek() form.  Both
+// MUST produce the same bytes; the type-system version just adds
+// compile-time checking, not runtime divergence.
+static void test_typed_chain_bit_equal_to_peek_chain() {
+    std::printf("  typed chain bit-equality with peek chain...\n");
+
+    constexpr uint64_t offset = 0x1234567890ABCDEFull;
+    constexpr uint64_t key_raw = 0xDEADBEEFCAFEBABEull;
+
+    // Form 1: peek()-then-pass.
+    auto key_form1 = DetSafe<DetSafeTier_v::Pure, uint64_t>{key_raw};
+    auto rng_form1 = Philox::generate_det(offset, key_form1.peek());
+
+    // Form 2: pass DetSafe directly.
+    auto rng_form2 = Philox::generate_det(offset,
+        DetSafe<DetSafeTier_v::Pure, uint64_t>{key_raw});
+
+    // Form 3: PhiloxRng-tier key directly.
+    auto rng_form3 = Philox::generate_det(offset,
+        DetSafe<DetSafeTier_v::PhiloxRng, uint64_t>{key_raw});
+
+    assert(rng_form1.peek()[0] == rng_form2.peek()[0]);
+    assert(rng_form1.peek()[1] == rng_form2.peek()[1]);
+    assert(rng_form1.peek()[2] == rng_form2.peek()[2]);
+    assert(rng_form1.peek()[3] == rng_form2.peek()[3]);
+
+    assert(rng_form1.peek()[0] == rng_form3.peek()[0]);
+    assert(rng_form1.peek()[1] == rng_form3.peek()[1]);
+    assert(rng_form1.peek()[2] == rng_form3.peek()[2]);
+    assert(rng_form1.peek()[3] == rng_form3.peek()[3]);
+
+    // And bit-equal to raw.
+    auto raw = Philox::generate(offset, key_raw);
+    assert(rng_form1.peek()[0] == raw[0]);
+    assert(rng_form1.peek()[1] == raw[1]);
+    assert(rng_form1.peek()[2] == raw[2]);
+    assert(rng_form1.peek()[3] == raw[3]);
+}
+
+// ── 13. End-to-end production-style chain (op_key_det + relax + chain) ─
+//
+// Reformulates the chain test using the type-level overload, so the
+// `.peek()`-the-tier-away pattern is replaced with type-system
+// composition.
+
+static void test_e2e_typed_chain() {
+    std::printf("  end-to-end typed chain: op_key_det → relax → generate_det...\n");
+
+    // Pure-tier key from a Pure-tier mix.
+    auto key_pure = Philox::op_key_det(
+        0xCAFEBABEDEADBEEFull, 42u,
+        ContentHash{0xDEADBEEFCAFEBABEull});
+    static_assert(decltype(key_pure)::tier == DetSafeTier_v::Pure);
+
+    // Relax to PhiloxRng — same bytes, weaker tier promise.
+    auto key_philox = std::move(key_pure).relax<DetSafeTier_v::PhiloxRng>();
+    static_assert(decltype(key_philox)::tier == DetSafeTier_v::PhiloxRng);
+
+    // Pass directly to generate_det's typed overload.  No .peek()
+    // erases the tier; the type system verifies admissibility.
+    auto rng = Philox::generate_det(/*offset=*/0u, std::move(key_philox));
+    static_assert(decltype(rng)::tier == DetSafeTier_v::PhiloxRng);
+
+    // Bit-equality cross-check.
+    const uint64_t key_bytes_raw = Philox::op_key(
+        0xCAFEBABEDEADBEEFull, 42u,
+        ContentHash{0xDEADBEEFCAFEBABEull});
+    auto rng_raw = Philox::generate(uint64_t{0}, key_bytes_raw);
+    assert(rng.peek()[0] == rng_raw[0]);
+    assert(rng.peek()[1] == rng_raw[1]);
+    assert(rng.peek()[2] == rng_raw[2]);
+    assert(rng.peek()[3] == rng_raw[3]);
+}
+
 // ── Main ───────────────────────────────────────────────────────────
 
 int main() {
@@ -320,6 +615,9 @@ int main() {
     test_box_muller_det_bit_equal();
     test_op_key_det_bit_equal();
     test_chain_composition();
+    test_move_semantics_through_wrapper();
+    test_typed_chain_bit_equal_to_peek_chain();
+    test_e2e_typed_chain();
 
     std::printf("PASS\n");
     return 0;

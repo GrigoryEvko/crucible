@@ -180,10 +180,16 @@ struct Philox {
     //                        bytes are admissible to the replay log;
     //                        non-pinned bytes are not.
     //   - to_uniform_det:    PhiloxRng — derived from a PhiloxRng-tier
-    //                        uint32 by deterministic float math.
-    //                        Tier propagates from the source.
-    //   - box_muller_det:    PhiloxRng — same: deterministic transform
-    //                        of two PhiloxRng-tier uint32 values.
+    //                        uint32 by deterministic float math (a
+    //                        single multiplication).  IEEE 754 makes
+    //                        this bit-stable across hardware, so the
+    //                        PhiloxRng promise (cross-hardware bit-
+    //                        equality) is honest.
+    //   - box_muller_det:    PhiloxRng — but see the libm caveat
+    //                        below.  The DetSafe tier classifies
+    //                        bytes by SOURCE CLASS (Philox-derived);
+    //                        cross-platform bit-equality is a
+    //                        separate concern.
     //   - op_key_det:        Pure — bit-mix of three Pure inputs
     //                        (master_counter, op_index, content_hash
     //                        are all DAG/Cipher-derived deterministic
@@ -191,8 +197,38 @@ struct Philox {
     //                        relax<PhiloxRng>() admits it as a key.
     //
     // Bit-equality contract: `generate_det(a, b).peek() ==
-    // generate(a, b)` for ALL (a, b).  Same for the other four
-    // wrappers.  Verified by test_philox_det.cpp.
+    // generate(a, b)` for ALL (a, b).  Same for `to_uniform_det`,
+    // `to_uniform_d_det`, `op_key_det`.  `box_muller_det` is bit-
+    // equal to `box_muller` ON THE SAME PLATFORM (see caveat below).
+    // Verified by test_philox_det.cpp.
+    //
+    // ── Libm bit-stability caveat for box_muller_det (FOUND-G17-AUDIT) ─
+    //
+    // box_muller invokes `std::sin / cos / log / sqrt` from libm, and
+    // these are NOT bit-stable across glibc / musl / Apple libm /
+    // MSVC CRT — different libm implementations may emit different
+    // bits in the last 1-3 ULPs even at identical inputs.  The
+    // DetSafe::PhiloxRng tier classification is HONEST in terms of
+    // SOURCE CLASS — the bytes ARE Philox-derived (the two uint32
+    // inputs come from the Philox chain) — but cross-PLATFORM bit-
+    // equality is conditional on libm consistency.
+    //
+    // For SAME-PLATFORM replay (the common case — replay happens on
+    // the same Relay or within the same fleet): box_muller_det is
+    // bit-stable and admissible to the Cipher write-fence.
+    //
+    // For CROSS-PLATFORM replay: production callers MUST route
+    // through a recipe-tier-pinned numerical recipe with a bit-
+    // stable transcendental implementation (e.g., the polynomial
+    // approximation in mimic/cpu/Math.h) instead of invoking
+    // box_muller_det directly.  This is a recipe-tier concern
+    // (see FORGE.md §20 for the four-tier numerical determinism
+    // model — UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT),
+    // not a DetSafe-tier concern.
+    //
+    // The to_uniform / to_uniform_d wrappers are exempt from this
+    // caveat: they perform a single IEEE 754 multiplication that
+    // is bit-stable across all conforming implementations.
 
     using DetSafePhiloxCtr = safety::DetSafe<
         safety::DetSafeTier_v::PhiloxRng, Ctr>;
@@ -213,6 +249,32 @@ struct Philox {
     [[nodiscard]] static constexpr DetSafePhiloxCtr
     generate_det(uint64_t offset, uint64_t key) {
         return DetSafePhiloxCtr{generate(offset, key)};
+    }
+
+    // ── Type-level chain composition (FOUND-G17-AUDIT) ──────────────
+    //
+    // Third overload: accept a DetSafe-typed key and verify at compile
+    // time that its tier subsumes PhiloxRng (i.e., the key's source
+    // class is at PhiloxRng or stronger).  Production callers can
+    // chain `op_key_det(...) → relax<PhiloxRng>()` (or pass the
+    // Pure-tier result directly via subsumption, since Pure ⊒ PhiloxRng
+    // in the lattice direction) into this overload, and the type
+    // system enforces "the key is PhiloxRng-or-stronger" at the
+    // call site without `.peek()`-ing the type-level promise away.
+    //
+    // Negative witness — passing a `DetSafe<MonotonicClockRead,
+    // uint64_t>` would fail the requires-clause: the
+    // MonotonicClockRead-tier key cannot satisfy the PhiloxRng-or-
+    // stronger gate.  This is the LOAD-BEARING REJECTION at the
+    // chain composition surface.
+
+    template <safety::DetSafeTier_v KeyTier>
+        requires (safety::DetSafeLattice::leq(
+            safety::DetSafeTier_v::PhiloxRng, KeyTier))
+    [[nodiscard]] static constexpr DetSafePhiloxCtr
+    generate_det(uint64_t offset,
+                 safety::DetSafe<KeyTier, uint64_t> key) {
+        return DetSafePhiloxCtr{generate(offset, std::move(key).consume())};
     }
 
     [[nodiscard]] static constexpr DetSafePhiloxFloat
