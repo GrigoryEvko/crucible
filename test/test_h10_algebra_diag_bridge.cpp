@@ -72,6 +72,13 @@ namespace diag = ::crucible::safety::diag;
 //    algebra/Lattice.h).
 using TBL = alg::detail::lattice_self_test::TrivialBoolLattice;
 
+// Second trivial lattice for diff-leg ProductLattice probes
+// (FOUND-H10-AUDIT-2).  Lives in graded_self_test internal namespace
+// — same internal-detail reach as TBL.  TEL has element_type =
+// integral_constant<int, 1> (empty) and is a different lattice TYPE,
+// which is all that matters for stable_name_of distinctness.
+using TEL = alg::detail::graded_self_test::TrivialEmptyLattice;
+
 // ── Move-only T witness (FOUND-H10-AUDIT-1) ─────────────────────────
 //
 // The federation cache (FOUND-I) will index over wrapper-stack
@@ -115,6 +122,20 @@ inline void bridge_fn_takes_graded(
 
 inline void bridge_fn_takes_graded_other(
     alg::Graded<alg::ModalityKind::Absolute, TBL, double>) noexcept {}
+
+// FOUND-H10-AUDIT-2C: function pointers RETURNING Graded<>.  The
+// FOUND-F09 Cipher computation cache hashes a function's return type
+// into its cache key; if return-type variation collapses to the same
+// stable_function_id as a different return type, the cache produces
+// wrong results.  These witnesses pin that the return type axis is
+// captured.
+inline alg::Graded<alg::ModalityKind::Absolute, TBL, int>
+bridge_fn_returns_graded_int(int) noexcept { return {}; }
+
+inline alg::Graded<alg::ModalityKind::Absolute, TBL, double>
+bridge_fn_returns_graded_double(int) noexcept { return {}; }
+
+inline int bridge_fn_returns_int_same_arity(int) noexcept { return 0; }
 
 namespace {
 
@@ -445,6 +466,117 @@ void test_runtime_modality_distinctness_peer() {
     }
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// ── H10-AUDIT-2: deeper edge-case coverage post-AUDIT-1 review ────
+// ═════════════════════════════════════════════════════════════════════
+
+// ─── Audit gap (D): ProductLattice with TWO DIFFERENT legs ─────────
+//
+// AUDIT-1B used ProductLattice<TBL, TBL> — same lattice both sides.
+// A buggy impl that only hashed the FIRST leg would still produce a
+// distinct ID from plain TBL (because ProductLattice<L, L> is named
+// differently from L itself), so AUDIT-1B's distinctness assertion
+// could hide that bug.  Use TWO DIFFERENT lattices to force the impl
+// to capture BOTH legs:
+//
+//   ProductLattice<TBL, TEL>    !=    ProductLattice<TEL, TBL>
+//
+// — leg ORDER must matter, which it will iff both legs are read.
+
+void test_stable_type_id_on_product_lattice_diff_legs() {
+    using PL_AB = alg::lattices::ProductLattice<TBL, TEL>;
+    using PL_BA = alg::lattices::ProductLattice<TEL, TBL>;
+    using G_AB  = alg::Graded<alg::ModalityKind::Absolute, PL_AB, int>;
+    using G_BA  = alg::Graded<alg::ModalityKind::Absolute, PL_BA, int>;
+
+    // Diff-order composites must yield distinct IDs — captures BOTH
+    // legs in the rendering, not just the first.
+    static_assert(diag::stable_type_id<G_AB> != diag::stable_type_id<G_BA>);
+
+    // Both stay distinct from each individual constituent.
+    using G_TBL = alg::Graded<alg::ModalityKind::Absolute, TBL, int>;
+    using G_TEL = alg::Graded<alg::ModalityKind::Absolute, TEL, int>;
+    static_assert(diag::stable_type_id<G_AB> != diag::stable_type_id<G_TBL>);
+    static_assert(diag::stable_type_id<G_AB> != diag::stable_type_id<G_TEL>);
+    static_assert(diag::stable_type_id<G_BA> != diag::stable_type_id<G_TBL>);
+    static_assert(diag::stable_type_id<G_BA> != diag::stable_type_id<G_TEL>);
+
+    // Sibling sanity — TBL and TEL themselves yield distinct names
+    // (the test's premise).
+    static_assert(diag::stable_type_id<G_TBL> != diag::stable_type_id<G_TEL>);
+}
+
+// ─── Audit gap (E): canonicalize_pack with Graded<> stutter ────────
+//
+// V1 contract (StableName.h:243-246): canonicalize_pack SORTS but
+// does NOT dedup.  The header self-test pins this for plain types
+// (canonicalize_pack_t<int, int> == tuple<int, int>).  At the
+// bridge, the federation cache might encounter `Graded<...>` packs
+// with adjacent duplicates from a wrapper-stack composite; the
+// behavior MUST be identical — duplicates survive the canonical
+// form, and downstream code is responsible for dedup if it wants
+// it.
+
+void test_canonicalize_pack_with_graded_stutter() {
+    using G_int  = alg::Graded<alg::ModalityKind::Absolute, TBL, int>;
+    using G_dbl  = alg::Graded<alg::ModalityKind::Absolute, TBL, double>;
+
+    // Adjacent Graded<> duplicates — V1 keeps both copies.
+    using PStutter = diag::canonicalize_pack_t<G_int, G_int>;
+    static_assert(std::is_same_v<PStutter, std::tuple<G_int, G_int>>);
+
+    // Mixed stutter — duplicates survive AND the surrounding pack
+    // sorts correctly.
+    using PMixed1 = diag::canonicalize_pack_t<G_int, G_int, G_dbl>;
+    using PMixed2 = diag::canonicalize_pack_t<G_dbl, G_int, G_int>;
+    using PMixed3 = diag::canonicalize_pack_t<G_int, G_dbl, G_int>;
+
+    // All three permutations of (G_int, G_int, G_dbl) collapse to the
+    // SAME canonical form (sort is stable + dedup-deferred).
+    static_assert(std::is_same_v<PMixed1, PMixed2>);
+    static_assert(std::is_same_v<PMixed2, PMixed3>);
+
+    // Cardinality preserved — three input elements → three output
+    // elements (no dedup at this layer).
+    static_assert(std::tuple_size_v<PMixed1> == 3);
+}
+
+// ─── Audit gap (F): stable_function_id over fn RETURNING Graded ───
+//
+// AUDIT-1 covered Graded<> in PARAMETER positions (bridge_fn_takes_
+// graded vs bridge_fn_takes_graded_other).  The RETURN-TYPE axis was
+// uncovered.  FOUND-F09 Cipher computation cache hashes (return-type,
+// fn-type, args) into one key; if a future refactor only hashes
+// parameter types, the return-type axis silently collides at the
+// cache.
+
+void test_stable_function_id_on_graded_return_signatures() {
+    constexpr auto id_returns_int_graded =
+        diag::stable_function_id<&bridge_fn_returns_graded_int>;
+    constexpr auto id_returns_dbl_graded =
+        diag::stable_function_id<&bridge_fn_returns_graded_double>;
+    constexpr auto id_returns_plain_int =
+        diag::stable_function_id<&bridge_fn_returns_int_same_arity>;
+
+    // Return-type axis discriminates: same parameter list, different
+    // Graded<> return type → distinct IDs.
+    static_assert(id_returns_int_graded != id_returns_dbl_graded);
+
+    // Graded<> return type vs plain return type: same parameter
+    // list, different return type → distinct IDs.
+    static_assert(id_returns_int_graded != id_returns_plain_int);
+
+    // And distinct from parameter-side Graded<> callees (sanity —
+    // captures that param-axis vs return-axis are independent
+    // contributions to the hash, not aliasing).
+    static_assert(id_returns_int_graded !=
+                  diag::stable_function_id<&bridge_fn_takes_graded>);
+
+    // Non-zero invariant.
+    static_assert(id_returns_int_graded != 0);
+    static_assert(id_returns_dbl_graded != 0);
+}
+
 void test_runtime_smoke_diversity() {
     // Spot-print a few names for human-eye verification on first
     // execution.  Not a tight assertion — just a witness that the
@@ -496,6 +628,13 @@ int main() {
              test_stable_type_id_on_product_lattice_composites);
     run_test("test_runtime_modality_distinctness_peer",
              test_runtime_modality_distinctness_peer);
+    // ── H10-AUDIT-2 (#841): three more audit-tightenings ───────────
+    run_test("test_stable_type_id_on_product_lattice_diff_legs",
+             test_stable_type_id_on_product_lattice_diff_legs);
+    run_test("test_canonicalize_pack_with_graded_stutter",
+             test_canonicalize_pack_with_graded_stutter);
+    run_test("test_stable_function_id_on_graded_return_signatures",
+             test_stable_function_id_on_graded_return_signatures);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
