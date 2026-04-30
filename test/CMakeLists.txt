@@ -324,6 +324,7 @@ crucible_test(test_cipher_publish_tier)
 crucible_test(test_kernel_cache_residency_heat)
 crucible_test(test_trace_ring_hot_path)
 crucible_test(test_cipher_commit_lifetime)
+crucible_test(test_atomic_snapshot_mem_order)
 crucible_test(test_atomic_snapshot)
 crucible_test(test_chase_lev_deque)
 crucible_test(test_mpsc_ring)
@@ -1162,6 +1163,15 @@ crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_fleet_fence
 crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_program_fence
   "constraints not satisfied|no matching function|associated constraints")
 crucible_neg_compile_test(neg_opaque_lifetime_per_program_at_per_fleet_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
+# ─── FOUND-G32 MemOrder production-call-site neg-compile ───────────
+#
+# Load-bearing rejection at the consumer-fence level: a SeqCst-emitting
+# site (the canonical "make a race go away" bypass) cannot reach an
+# Acquire-fence consumer (the AtomicSnapshot::load_mo_pinned reader
+# pattern).  Captures the SeqCst-creep hot-path regression class.
+crucible_neg_compile_test(neg_mem_order_seqcst_at_acquire_fence
   "constraints not satisfied|no matching function|associated constraints")
 
 # ─── FOUND-G26 Wait wrapper neg-compiles (6 fixtures: 4+2) ──────────

@@ -115,6 +115,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
+#include <crucible/safety/MemOrder.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Wait.h>
@@ -369,6 +370,66 @@ public:
     [[nodiscard]] safety::Wait<safety::WaitStrategy_v::SpinPause, T>
     load_pinned() const noexcept {
         return safety::Wait<safety::WaitStrategy_v::SpinPause, T>{load()};
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FOUND-G32: MemOrder-pinned production surface
+    // ═══════════════════════════════════════════════════════════════
+    //
+    // load() / try_load() / version() all use Acquire ordering on the
+    // seq counter and an Acquire fence between the data memcpy and
+    // the seq_post comparison (see "Memory ordering — both sides of
+    // data reads need a fence" docblock above).  The OPERATION'S
+    // memory-order classification is Acquire — the strongest claim
+    // the reader makes about the synchronization with the writer's
+    // Release publication.
+    //
+    // load_mo_pinned() / try_load_mo_pinned() / version_mo_pinned()
+    // pin that classification at the type level.  Hot-path consumers
+    // that declare `requires MemOrder::satisfies<Acquire>` admit
+    // these values (Acquire trivially satisfies Acquire); consumers
+    // expecting Release-or-stronger reject them (the reader side
+    // legitimately is Acquire, so a Release-fence-requiring
+    // consumer is in the wrong slot of the producer/consumer
+    // pairing).
+    //
+    // Lattice direction (MemOrderLattice.h):
+    //   SeqCst(weakest) ⊑ AcqRel ⊑ Release ⊑ Acquire ⊑ Relaxed(strongest)
+    //
+    // satisfies<Required> = leq(Required, Self).  Stronger hardware-
+    // friendliness subsumes weaker required-friendliness.  The load-
+    // bearing rejection: a SeqCst-emitting site (added during a
+    // refactor to make a bug go away) cannot reach a hot-path
+    // consumer requiring Acquire — leq(Acquire, SeqCst) = false.
+    //
+    // Why additive: existing load() callers (Augur metrics broadcast,
+    // SnapshotValue tests) consume bare T.  The pinned overlay is
+    // for NEW production consumers that want the SeqCst-creep rejection
+    // at the consumer fence.
+
+    // Acquire-classified load — returns MemOrder<Acquire, T>.
+    [[nodiscard]] safety::MemOrder<safety::MemOrderTag_v::Acquire, T>
+    load_mo_pinned() const noexcept {
+        return safety::MemOrder<safety::MemOrderTag_v::Acquire, T>{load()};
+    }
+
+    // Acquire-classified try_load — returns optional<MemOrder<Acquire, T>>.
+    [[nodiscard]] std::optional<
+        safety::MemOrder<safety::MemOrderTag_v::Acquire, T>>
+    try_load_mo_pinned() const noexcept {
+        auto opt = try_load();
+        if (!opt) return std::nullopt;
+        return safety::MemOrder<safety::MemOrderTag_v::Acquire, T>{
+            std::move(*opt)};
+    }
+
+    // Acquire-classified version — returns MemOrder<Acquire, uint64_t>.
+    // The seq_.get() is acquire-load on the seqlock counter; the
+    // returned epoch number is an Acquire-tier observation.
+    [[nodiscard]] safety::MemOrder<safety::MemOrderTag_v::Acquire, uint64_t>
+    version_mo_pinned() const noexcept {
+        return safety::MemOrder<safety::MemOrderTag_v::Acquire, uint64_t>{
+            version()};
     }
 
     // ── version (number of completed publishes) ───────────────────
