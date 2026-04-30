@@ -340,6 +340,7 @@ crucible_test(test_swmr_reader)
 crucible_test(test_pipeline_stage)
 crucible_test(test_canonical_shape)
 crucible_test(test_is_numerical_tier)
+crucible_test(test_is_consistency)
 crucible_test(test_is_producer_handle)
 crucible_test(test_is_consumer_handle)
 crucible_test(test_is_swmr_handle)
@@ -1416,6 +1417,15 @@ crucible_neg_compile_test(neg_numerical_tier_value_t_on_non_numerical_tier
   "constraints not satisfied|template constraint failure|associated constraints")
 
 crucible_neg_compile_test(neg_numerical_tier_v_on_non_numerical_tier
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D22 IsConsistency constrained-extractor fixtures ─────────
+#
+# Pins the TWO constrained extractors on IsConsistency.h.
+crucible_neg_compile_test(neg_consistency_value_t_on_non_consistency
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_consistency_level_v_on_non_consistency
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
