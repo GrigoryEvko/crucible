@@ -347,6 +347,7 @@ crucible_test(test_is_cipher_tier)
 crucible_test(test_is_residency_heat)
 crucible_test(test_is_vendor)
 crucible_test(test_is_crash)
+crucible_test(test_is_budgeted)
 crucible_test(test_is_producer_handle)
 crucible_test(test_is_consumer_handle)
 crucible_test(test_is_swmr_handle)
@@ -1474,6 +1475,12 @@ crucible_neg_compile_test(neg_crash_value_t_on_non_crash
   "constraints not satisfied|template constraint failure|associated constraints")
 
 crucible_neg_compile_test(neg_crash_class_v_on_non_crash
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D30/Budgeted IsBudgeted constrained-extractor fixture
+# Single fixture (no tag-extractor — Budgeted is the FIRST product
+# wrapper; its grade axes are runtime, not compile-time NTTPs).
+crucible_neg_compile_test(neg_budgeted_value_t_on_non_budgeted
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
