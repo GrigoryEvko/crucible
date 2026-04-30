@@ -179,6 +179,31 @@ void spawn_workers_with_partials_(Tup&& subs, Mapper mapper,
 }  // namespace detail
 
 // ── parallel_for_views<N> ────────────────────────────────────────────
+//
+// ── API contract (FOUND-F01 audit, locked-in 2026-04-30) ────────
+//
+//   * N == 1 fast path: no jthread spawn; body invoked inline on
+//                       the whole region (single-shard).
+//   * N >= 2:           N jthreads spawn, each invoking body on its
+//                       own sub-region; RAII join via std::array
+//                       destructor before recombine.
+//
+// Body invocation count: exactly N for any N >= 1 (one per
+// sub-region).  Workers see disjoint shards (compile-time-proved
+// by Slice<Whole, I> tag distinction).
+//
+// Body must be noexcept-invocable per the static_assert; throwing
+// across thread boundaries violates -fno-exceptions and triggers
+// std::terminate inside the worker jthread.
+//
+// DetSafe: workers write to disjoint shards; the recombined
+// OwnedRegion's content is deterministic in the body's writes.
+// Worker scheduling order does NOT affect the result because
+// shards are disjoint (no inter-shard read-after-write).
+//
+// The recombined OwnedRegion's bytes equal the body's writes per
+// shard, in canonical sub-region index order — ready for further
+// parallel_for_views / parallel_reduce_views chaining.
 
 template <std::size_t N, typename T, typename Whole, typename Body>
 [[nodiscard]] OwnedRegion<T, Whole>

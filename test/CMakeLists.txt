@@ -1633,6 +1633,19 @@ crucible_neg_compile_test(neg_parallel_reduce_views_throwing_mapper
 crucible_neg_compile_test(neg_parallel_reduce_views_throwing_reducer
   "Reducer must be noexcept-invocable|static_assert|static assertion")
 
+# ─── FOUND-F01-AUDIT — parallel_for_views static_assert fences ───
+#
+# Mirrors the F04-AUDIT pattern for the sibling primitive in
+# safety/Workload.h.  Two body static_asserts in `parallel_for_views<N>`
+# (N > 0; body noexcept-invocable) each get a neg-compile fixture so a
+# refactor that drops or weakens either assertion is caught at build
+# time rather than at runtime.
+crucible_neg_compile_test(neg_parallel_for_views_n_zero
+  "parallel_for_views<N> requires N > 0|static_assert|static assertion")
+
+crucible_neg_compile_test(neg_parallel_for_views_throwing_body
+  "body must be noexcept-invocable|static_assert|static assertion")
+
 # ─── FOUND-D15 ProducerEndpoint constrained-extractor fixtures ──────
 #
 # Pins the four constrained extractors on ProducerEndpoint.h:

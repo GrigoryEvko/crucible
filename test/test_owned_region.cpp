@@ -260,6 +260,113 @@ void test_parallel_for_views_uses_correct_slice_indices() {
     }
 }
 
+// ── FOUND-F01 audit: API contract pinning ────────────────────────
+//
+// Pin invariants of `parallel_for_views<N>` so future refactors
+// cannot silently change the body-invocation-count, worker-
+// disjointness, or DetSafe properties.
+
+// FOUND-F01-A1 — body invoked exactly N times for any N >= 1.
+// Locks in worker dispatch via a shared atomic counter.
+void test_parallel_for_views_body_invoked_n_times() {
+    Arena arena;
+    constexpr std::size_t SHARDS = 8;
+    constexpr std::size_t N = 4096;
+    auto region = OwnedRegion<std::uint32_t, DataA>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+    for (std::size_t i = 0; i < N; ++i) region.span()[i] = 0;
+
+    std::atomic<std::size_t> body_invocations{0};
+
+    auto recombined = parallel_for_views<SHARDS>(
+        std::move(region),
+        [&body_invocations](auto sub) noexcept {
+            body_invocations.fetch_add(1, std::memory_order_relaxed);
+            for (auto& x : sub.span()) x = 1;  // mark as visited
+        }
+    );
+
+    CRUCIBLE_TEST_REQUIRE(
+        body_invocations.load(std::memory_order_acquire) == SHARDS);
+    // Every element marked, confirming all shards executed.
+    for (std::size_t i = 0; i < N; ++i) {
+        CRUCIBLE_TEST_REQUIRE(recombined.cspan()[i] == 1);
+    }
+}
+
+// FOUND-F01-A2 — smallest non-trivial parallel case: N==2 with 4
+// elements split 2+2.  Existing tests jump from N==1 (sequential)
+// directly to N==8; this fixture pins the smallest genuinely-
+// parallel case works.
+void test_parallel_for_views_n2_smallest_parallel() {
+    Arena arena;
+    auto perm = permission_root_mint<DataB>();
+    constexpr std::size_t N = 4;
+    auto region = OwnedRegion<std::uint64_t, DataB>::adopt(
+        test_alloc_token(), arena, N, std::move(perm));
+    region.span()[0] = 1;
+    region.span()[1] = 2;
+    region.span()[2] = 3;
+    region.span()[3] = 4;
+
+    auto recombined = parallel_for_views<2>(
+        std::move(region),
+        [](auto sub) noexcept {
+            for (auto& x : sub.span()) x = x * 10;
+        }
+    );
+
+    CRUCIBLE_TEST_REQUIRE(recombined.cspan()[0] == 10);
+    CRUCIBLE_TEST_REQUIRE(recombined.cspan()[1] == 20);
+    CRUCIBLE_TEST_REQUIRE(recombined.cspan()[2] == 30);
+    CRUCIBLE_TEST_REQUIRE(recombined.cspan()[3] == 40);
+}
+
+// FOUND-F01-A3 — DetSafe: same input, run twice, identical output.
+// Workers writing to disjoint shards plus jthread::join's happens-
+// before guarantee a deterministic post-recombine state regardless
+// of worker scheduling.
+void test_parallel_for_views_deterministic_across_runs() {
+    Arena arena_a, arena_b;
+    constexpr std::size_t N = 1024;
+
+    auto run = [](Arena& arena, auto perm) noexcept {
+        auto region = OwnedRegion<std::uint32_t, DataA>::adopt(
+            test_alloc_token(), arena, N, std::move(perm));
+        for (std::size_t i = 0; i < N; ++i) {
+            region.span()[i] = static_cast<std::uint32_t>(i * 31 + 7);
+        }
+        return parallel_for_views<4>(
+            std::move(region),
+            [](auto sub) noexcept {
+                for (auto& x : sub.span()) x = x ^ 0xA5A5A5A5u;
+            }
+        );
+    };
+
+    // Each run must use a fresh tag — Permission tags are linear and
+    // mint-once-per-program-per-tag.
+    auto r1 = run(arena_a, permission_root_mint<DataA>());
+
+    auto r2_arena_perm = permission_root_mint<DataB>();
+    auto region_b = OwnedRegion<std::uint32_t, DataB>::adopt(
+        test_alloc_token(), arena_b, N, std::move(r2_arena_perm));
+    for (std::size_t i = 0; i < N; ++i) {
+        region_b.span()[i] = static_cast<std::uint32_t>(i * 31 + 7);
+    }
+    auto r2 = parallel_for_views<4>(
+        std::move(region_b),
+        [](auto sub) noexcept {
+            for (auto& x : sub.span()) x = x ^ 0xA5A5A5A5u;
+        }
+    );
+
+    CRUCIBLE_TEST_REQUIRE(r1.size() == r2.size());
+    for (std::size_t i = 0; i < N; ++i) {
+        CRUCIBLE_TEST_REQUIRE(r1.cspan()[i] == r2.cspan()[i]);
+    }
+}
+
 // ── Tier 4: parallel_reduce_views<N, R> ──────────────────────────
 
 void test_parallel_reduce_views_sum() {
@@ -723,6 +830,12 @@ int main() {
     run_test("test_parallel_for_views_squares",              test_parallel_for_views_squares);
     run_test("test_parallel_for_views_uses_correct_slice_indices",
              test_parallel_for_views_uses_correct_slice_indices);
+    run_test("test_parallel_for_views_body_invoked_n_times",
+             test_parallel_for_views_body_invoked_n_times);
+    run_test("test_parallel_for_views_n2_smallest_parallel",
+             test_parallel_for_views_n2_smallest_parallel);
+    run_test("test_parallel_for_views_deterministic_across_runs",
+             test_parallel_for_views_deterministic_across_runs);
     run_test("test_parallel_reduce_views_sum",               test_parallel_reduce_views_sum);
     run_test("test_parallel_reduce_views_max_abs",           test_parallel_reduce_views_max_abs);
     run_test("test_parallel_reduce_views_n1_init_participates",
