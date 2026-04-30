@@ -121,6 +121,17 @@ int main() {
         EXPECT_TRUE(cipher::computation_cache_smoke_test());
     });
 
+    // ── (A2) FOUND-F09-AUDIT-5: single-call guard ────────────────
+    // The header's smoke test is single-call-per-process — sub-blocks
+    // (1)/(4)/(6)/(7) check miss-before-insert assertions that hold
+    // only on first invocation.  A second call hits the static guard
+    // and returns false, surfacing accidental re-invocation as a
+    // clear test failure instead of a silent miss-becomes-hit
+    // discrepancy.  Verifies the contract is observably enforced.
+    run_test("smoke_test_guard_rejects_reinvocation", []{
+        EXPECT_TRUE(cipher::computation_cache_smoke_test() == false);
+    });
+
     // ── (B) Lookup-before-insert: miss ───────────────────────────
     run_test("lookup_before_insert_returns_nullptr", []{
         EXPECT_TRUE(cipher::lookup_computation_cache<&test_fn_a, int>()

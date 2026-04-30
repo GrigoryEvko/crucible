@@ -507,12 +507,43 @@ static_assert(sizeof(std::atomic<::crucible::cipher::CompiledBody*>)
 //   2. Insert + lookup round-trips (hit).
 //   3. Second insert is idempotent (first writer wins).
 //   4. Distinct (FnPtr, Args...) instantiations have isolated slots.
+//   5. drain_computation_cache is a Phase-5 no-op stub.
+//   6. Empty-Args round-trip exercises the empty-fold case.
+//   7. noexcept-vs-throwing slots are runtime-isolated.
 //
 // Uses two of-the-test functions and stub `CompiledBody` pointers
 // (cast from non-null integer addresses — never dereferenced).
+//
+// CONTRACT — single-call-per-process (FOUND-F09-AUDIT-5):
+//   Sub-blocks (1), (4), (6), (7) check miss-before-insert
+//   assertions that hold only on the FIRST invocation.  The
+//   underlying atomic slots are `inline std::atomic` globals
+//   that persist for program lifetime — once populated, they
+//   stay populated.  A second invocation would observe the
+//   slots already non-null and the miss checks would fail.
+//
+//   To make this contract enforceable rather than fragile, we
+//   gate entry on a static atomic counter:
+//     * First call: runs the full body, returns the test result.
+//     * Subsequent calls: return false fail-fast.
+//
+//   The fail-fast signal flows up through the calling test's
+//   EXPECT_TRUE check, surfacing accidental re-invocation as a
+//   clear failure rather than as a silent miss-becomes-hit
+//   discrepancy in the existing assertions.
 
 inline bool computation_cache_smoke_test() noexcept {
     using namespace detail::computation_cache_self_test;
+
+    // FOUND-F09-AUDIT-5 — single-call guard.  See doc-block above.
+    // `relaxed` is sufficient: the test is single-threaded and the
+    // counter is itself the synchronization point.  fetch_add returns
+    // the PRIOR value, so first call sees 0 and proceeds; second sees
+    // 1 and bails.
+    static std::atomic<int> call_counter{0};
+    if (call_counter.fetch_add(1, std::memory_order_relaxed) > 0) {
+        return false;  // Re-invocation breaks miss-before-insert assumptions.
+    }
 
     // Stub bodies — never dereferenced; the cache stores pointers
     // opaquely.  Different non-null addresses suffice.
