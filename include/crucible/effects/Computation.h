@@ -14,21 +14,45 @@
 //                   `Subrow` requires-clause per call site; the type
 //                   system enforces propagation, not discipline.
 //                   DetSafe — every row operation is consteval.
-//   Runtime cost:   zero.  T is the only stored field; the row is
-//                   purely a type-level tag.  EBO via
-//                   `[[no_unique_address]]` collapses Computation to
-//                   sizeof(T) when the parent uses
-//                   `[[no_unique_address]]` on its Computation member.
+//   Runtime cost:   zero.  Storage is the H03 substrate
+//                   `ComputationGraded<R, T>` whose grade slot
+//                   EBO-collapses to 0 bytes; with
+//                   `[[no_unique_address]]` on impl_ this carrier is
+//                   exactly sizeof(T) regardless of how many atoms R
+//                   carries.
 //
-// STATUS: METX-1 (#473) bodies SHIPPED — full Met(X) monadic surface.
-//   The row-arithmetic policy (left-biased: R1 atoms appear before
-//   R2's, with duplicates absorbed at insert time) is fixed by
-//   row_union_t's recursion (METX-2 #474) and consistent across both
-//   `then` overloads.  Production callers wanting a different bias
-//   can post-process via `weaken<canonical_t<R>>()` once a canonical
-//   form lands; until then, semantic Subrow equality is the contract.
+// ── FOUND-H04 façade migration (substrate-backed) ───────────────────
 //
-// Operations now live:
+// The Computation class IS now a thin façade over ComputationGraded
+// (`include/crucible/effects/ComputationGraded.h`).  The public API
+// surface (mk / extract / lift<Cap> / weaken<R2> / map / then) is
+// preserved at the source level — every prior caller of these
+// methods continues to work without source changes.
+//
+// Internally, the storage is `[[no_unique_address]] graded_type
+// impl_{};` where `graded_type = ComputationGraded<R, T>`.  Member
+// functions reroute through `impl_.peek()` / `std::move(impl_).
+// consume()` for value access, and construct new Computation
+// instances with new R/T template parameters for type-level row
+// arithmetic (the parts the substrate cannot express because
+// changing R changes the type).
+//
+// Cross-specialization access (then's body must read the inner T
+// out of a different `Computation<R2, U>`) uses the standard
+// monadic-carrier friend-template idiom:
+//
+//   template <typename, typename> friend class Computation;
+//
+// ── Substrate escape hatch ──────────────────────────────────────────
+//
+// Code that wants the substrate view (e.g., to compute `lattice` /
+// `modality` / `grade()` for diagnostics or cache keying) reads
+// `Computation<R, T>::graded_type` and the new `.graded()` accessor,
+// which forwards to the underlying ComputationGraded.  This is the
+// non-breaking on-ramp for downstream FOUND-I-series code that
+// targets the substrate uniformly.
+//
+// Operations:
 //   mk(T)              — lift a pure T into Computation<EmptyRow, T>
 //   extract()          — collapse Computation<EmptyRow, T> back to T
 //                         (lvalue → const T&; rvalue → T)
@@ -40,13 +64,18 @@
 //   then(k)            — bind: k : T -> Computation<R₂, U>
 //                         result row = row_union_t<R, R₂>
 //                         (lvalue → invoke on const T&; rvalue → on T)
+//   graded()           — substrate accessor (FOUND-H04 escape hatch)
+//                         lvalue → const graded_type&; rvalue → graded_type
 //
 // See Capabilities.h (Effect atoms + cap::* tag types + Bg/Init/Test
-// contexts), EffectRow.h (Row + Subrow algebra).  The legacy
-// crucible/Effects.h fx::* tree was deleted in FOUND-B07 / METX-5.
+// contexts), EffectRow.h (Row + Subrow algebra), EffectRowLattice.h
+// (the value-level lattice + At<> singleton sub-lattice), and
+// ComputationGraded.h (the substrate alias H04 wraps).
 
 #include <crucible/effects/Capabilities.h>
+#include <crucible/effects/ComputationGraded.h>
 #include <crucible/effects/EffectRow.h>
+#include <crucible/effects/EffectRowLattice.h>
 
 #include <string_view>
 #include <type_traits>
@@ -76,16 +105,38 @@ concept IsComputation =
 // ── Computation<R, T> ───────────────────────────────────────────────
 template <typename R, typename T>
 class [[nodiscard]] Computation {
+    // Cross-specialization friendship — `then`'s body needs to read
+    // the inner T of a Computation<R2, U> returned from the bind
+    // callback.  Standard monadic-carrier idiom; no broader access.
+    template <typename, typename> friend class Computation;
+
 public:
     // ── Public type aliases ─────────────────────────────────────────
-    using row_type   = R;
-    using value_type = T;
+    using row_type    = R;
+    using value_type  = T;
+
+    // The substrate identity (FOUND-H04).  Downstream code targeting
+    // the Graded substrate uniformly (FOUND-I cache key federation,
+    // FOUND-J row-typed Forge IR) reaches it through this typedef
+    // and the `graded()` accessor.
+    using graded_type = ComputationGraded<R, T>;
 
     static constexpr std::size_t row_size = row_size_v<R>;
 
-    // ── Layout (NSDMI per InitSafe) ─────────────────────────────────
-    [[no_unique_address]] T inner_{};
+private:
+    // ── Layout: substrate-backed (FOUND-H04) ────────────────────────
+    //
+    // Storage IS the substrate.  graded_type's grade slot
+    // EBO-collapses to 0 bytes (At<Es...>::element_type is empty by
+    // FOUND-H01-AUDIT-1), so sizeof(Computation<R, T>) ==
+    // sizeof(graded_type) == sizeof(T) — the layout invariant macro
+    // CRUCIBLE_COMPUTATION_LAYOUT_INVARIANT below pins this.
+    //
+    // NSDMI per InitSafe: graded_type's own NSDMI initializes its
+    // inner_{} and grade_{} members; we inherit that here.
+    [[no_unique_address]] graded_type impl_{};
 
+public:
     // ── Diagnostic ──────────────────────────────────────────────────
     //
     // Static rather than per-instance; the row is type-level only.
@@ -107,11 +158,15 @@ public:
     // `explicit` so an implicit conversion T → Computation<R, T> can
     // never happen — every lift is visible at the source.  Required
     // by mk / lift / weaken which all funnel construction through it.
+    //
+    // Forwards into the substrate's two-arg ctor with a default-
+    // constructed grade (the empty-struct singleton inhabitant of
+    // At<Es...>::element_type).
     explicit constexpr Computation(T x)
         noexcept(std::is_nothrow_move_constructible_v<T>)
-        : inner_{std::move(x)} {}
+        : impl_{std::move(x), typename graded_type::grade_type{}} {}
 
-    // ── Public operations (METX-1 #473 bodies) ──────────────────────
+    // ── Public operations (METX-1 #473 bodies, H04 substrate-routed) ─
     //
     // `mk` — pure-value lift into the empty row.  Concrete row R must
     // BE the empty row (substitution principle is the caller's job at
@@ -125,18 +180,18 @@ public:
 
     // `extract` — unwrap a pure value out of an empty-row Computation.
     // Two overloads: lvalue returns const-ref (no copy on inspection),
-    // rvalue returns by value (move out of inner_).
+    // rvalue returns by value (move out of impl_).
     [[nodiscard]] constexpr const T& extract() const & noexcept
         requires (row_size_v<R> == 0)
     {
-        return inner_;
+        return impl_.peek();
     }
 
     [[nodiscard]] constexpr T extract() &&
         noexcept(std::is_nothrow_move_constructible_v<T>)
         requires (row_size_v<R> == 0)
     {
-        return std::move(inner_);
+        return std::move(impl_).consume();
     }
 
     // `lift<Cap>` — construct a Computation at row {Cap} from a raw T.
@@ -156,12 +211,18 @@ public:
     // substitution principle: a function declared at row R may be
     // satisfied by a Computation declared at any narrower row.  Two
     // overloads to avoid an unnecessary copy on rvalue uses.
+    //
+    // Type-level row widening (R → R2 in the result type) is a
+    // SEPARATE operation from the substrate's runtime weaken (which
+    // operates on the singleton grade and is degenerate).  This
+    // member function performs the type-level widening; the substrate
+    // grade carries no information here.
     template <typename R2>
         requires Subrow<R, R2>
     [[nodiscard]] constexpr Computation<R2, T> weaken() const &
         noexcept(std::is_nothrow_copy_constructible_v<T>)
     {
-        return Computation<R2, T>{inner_};
+        return Computation<R2, T>{impl_.peek()};
     }
 
     template <typename R2>
@@ -169,7 +230,7 @@ public:
     [[nodiscard]] constexpr Computation<R2, T> weaken() &&
         noexcept(std::is_nothrow_move_constructible_v<T>)
     {
-        return Computation<R2, T>{std::move(inner_)};
+        return Computation<R2, T>{std::move(impl_).consume()};
     }
 
     // ── map(f) — functor fmap, preserves row R ──────────────────────
@@ -191,7 +252,7 @@ public:
         -> Computation<R, std::invoke_result_t<F, const T&>>
     {
         using U = std::invoke_result_t<F, const T&>;
-        return Computation<R, U>{std::forward<F>(f)(inner_)};
+        return Computation<R, U>{std::forward<F>(f)(impl_.peek())};
     }
 
     template <typename F>
@@ -203,7 +264,8 @@ public:
         -> Computation<R, std::invoke_result_t<F, T>>
     {
         using U = std::invoke_result_t<F, T>;
-        return Computation<R, U>{std::forward<F>(f)(std::move(inner_))};
+        return Computation<R, U>{
+            std::forward<F>(f)(std::move(impl_).consume())};
     }
 
     // ── then(k) — monadic bind, accumulates effect rows ─────────────
@@ -221,7 +283,9 @@ public:
     // should call .map(f) directly.
     //
     // Two overloads for lvalue/rvalue source; both forward the inner
-    // result's value into a fresh Result.
+    // result's value into a fresh Result.  The cross-specialization
+    // friend template grants then access to `intermediate.impl_` —
+    // no public-field exposure required.
 
     template <typename F>
         requires std::is_invocable_v<F, const T&>
@@ -235,8 +299,8 @@ public:
         using R2     = typename Inner::row_type;
         using U      = typename Inner::value_type;
         using Result = Computation<row_union_t<R, R2>, U>;
-        Inner intermediate = std::forward<F>(k)(inner_);
-        return Result{std::move(intermediate.inner_)};
+        Inner intermediate = std::forward<F>(k)(impl_.peek());
+        return Result{std::move(intermediate.impl_).consume()};
     }
 
     template <typename F>
@@ -251,8 +315,26 @@ public:
         using R2     = typename Inner::row_type;
         using U      = typename Inner::value_type;
         using Result = Computation<row_union_t<R, R2>, U>;
-        Inner intermediate = std::forward<F>(k)(std::move(inner_));
-        return Result{std::move(intermediate.inner_)};
+        Inner intermediate = std::forward<F>(k)(std::move(impl_).consume());
+        return Result{std::move(intermediate.impl_).consume()};
+    }
+
+    // ── graded() — substrate-view escape hatch (FOUND-H04) ──────────
+    //
+    // Exposes the underlying ComputationGraded<R, T> for downstream
+    // code that wants the substrate's uniform diagnostic surface
+    // (modality_name / lattice_name / grade), cache-key composition
+    // (FOUND-I-series row_hash), or any future Graded-targeting
+    // operation.  Two overloads to allow zero-copy borrow on lvalue
+    // and move-out on rvalue source.
+    [[nodiscard]] constexpr const graded_type& graded() const & noexcept {
+        return impl_;
+    }
+
+    [[nodiscard]] constexpr graded_type graded() &&
+        noexcept(std::is_nothrow_move_constructible_v<graded_type>)
+    {
+        return std::move(impl_);
     }
 };
 
@@ -289,12 +371,19 @@ using C_eight_byte  = Computation<Row<Effect::Bg>, EightByteValue>;
 static_assert(std::is_same_v<C_empty::row_type,   Row<>>);
 static_assert(std::is_same_v<C_empty::value_type, EmptyValue>);
 
+// FOUND-H04: substrate identity reachable through graded_type alias.
+static_assert(std::is_same_v<C_empty::graded_type,
+                             ComputationGraded<Row<>, EmptyValue>>);
+static_assert(std::is_same_v<C_eight_byte::graded_type,
+                             ComputationGraded<Row<Effect::Bg>, EightByteValue>>);
+
 // Default-constructible.
 static_assert(std::is_default_constructible_v<C_empty>);
 static_assert(std::is_default_constructible_v<C_one_byte>);
 static_assert(std::is_default_constructible_v<C_eight_byte>);
 
-// Layout — the row is type-level only, no runtime cost.
+// Layout — the row is type-level only, no runtime cost.  H04
+// substrate-backed storage preserves this exactly via Graded's EBO.
 static_assert(sizeof(C_empty)      == 1);
 static_assert(sizeof(C_one_byte)   == sizeof(OneByteValue));
 static_assert(sizeof(C_eight_byte) == sizeof(EightByteValue));
@@ -328,11 +417,15 @@ static_assert([] consteval {
 "lift<Bg> did not produce Computation<Row<Bg>, T>.");
 
 // `weaken` widens by Subrow.  Empty → {Bg} → {Bg, Alloc, IO} chain.
+//
+// Final value access uses the H04 substrate accessor since `widest`
+// has a non-empty row (cannot use extract() — gated off).  Equivalent
+// observation: the wrapped value survives every type-level widening.
 static_assert([] consteval {
     auto bg     = Computation<Row<>, int>::lift<Effect::Bg>(13);
     auto wider  = bg.template weaken<Row<Effect::Bg, Effect::Alloc>>();
     auto widest = wider.template weaken<Row<Effect::Bg, Effect::Alloc, Effect::IO>>();
-    return widest.inner_ == 13;
+    return widest.graded().peek() == 13;
 }(),
 "weaken-chain through nested Subrow did not preserve the inner value.");
 
@@ -426,6 +519,31 @@ static_assert([] consteval {
 "then on empty rows produces a result also at the empty row (monad "
 "left/right unit law instance).");
 
+// ── FOUND-H04 substrate accessor coverage ──────────────────────────
+//
+// graded() returns the underlying ComputationGraded.  Drive both
+// lvalue and rvalue overloads + verify the type identity.
+
+static_assert([] consteval {
+    auto pure = Computation<Row<>, int>::mk(99);
+    auto const& g = pure.graded();
+    using G = std::remove_cvref_t<decltype(g)>;
+    return std::is_same_v<G, ComputationGraded<Row<>, int>>
+        && g.peek() == 99;
+}(),
+"graded() lvalue overload exposes the substrate view at the correct "
+"specialization.");
+
+static_assert([] consteval {
+    auto pure = Computation<Row<Effect::Bg>, int>{77};
+    auto g    = std::move(pure).graded();   // rvalue overload
+    using G = decltype(g);
+    return std::is_same_v<G, ComputationGraded<Row<Effect::Bg>, int>>
+        && g.peek() == 77;
+}(),
+"graded() rvalue overload moves the substrate out at the correct "
+"specialization.");
+
 }  // namespace detail::computation_self_test
 
 // ── Runtime smoke test ──────────────────────────────────────────────
@@ -488,6 +606,15 @@ inline void runtime_smoke_test_computation() {
     >);
     (void)then_lvalue;
     (void)then_rvalue;
+
+    // FOUND-H04 substrate accessor — drive both overloads at runtime.
+    auto graded_lvalue_owner = Computation<Row<Effect::Bg>, int>{555};
+    auto const& g_view = graded_lvalue_owner.graded();   // const& overload
+    [[maybe_unused]] int peeked = g_view.peek();
+
+    auto graded_rvalue_owner = Computation<Row<Effect::Bg>, int>{666};
+    auto g_moved = std::move(graded_rvalue_owner).graded();   // && overload
+    [[maybe_unused]] int peeked_moved = g_moved.peek();
 }
 
 }  // namespace crucible::effects
