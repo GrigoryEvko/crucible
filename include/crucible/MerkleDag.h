@@ -1199,10 +1199,21 @@ class CRUCIBLE_OWNER KernelCache {
   // Today: returns nullptr-pinned-Warm.  Phase 5: queries the per-
   // vendor-family L2 store (cross-chip federation within family),
   // returning whatever IR003* kernel was published there.
+  //
+  // FOUND-I06/I07-AUDIT (Finding B) — precondition mirrors L1's
+  // discipline.  ContentHash{0} is reserved as the empty-slot
+  // sentinel in the L1 hash table; any future Phase-5 L2 store
+  // that uses content-addressed slot lookup needs the same
+  // sentinel discipline, so callers must not pass zero.  Adding
+  // the pre-clause now means Phase-5 implementations inherit the
+  // contract; weakening it later requires re-establishing the
+  // sentinel discipline at the call sites.
   [[nodiscard]] safety::residency_heat::Warm<CompiledKernel*>
-  lookup_l2(ContentHash /*content_hash*/, RowHash /*row_hash*/) const noexcept
+  lookup_l2(ContentHash content_hash, RowHash /*row_hash*/) const noexcept
       CRUCIBLE_NO_THREAD_SAFETY
+      pre (content_hash.raw() != 0)
   {
+    (void)content_hash;
     return safety::residency_heat::Warm<CompiledKernel*>{nullptr};
   }
 
@@ -1210,10 +1221,15 @@ class CRUCIBLE_OWNER KernelCache {
   //
   // Today: returns nullptr-pinned-Cold.  Phase 5: queries the per-
   // chip compiled-bytes archive (S3-backed federation cold tier).
+  //
+  // FOUND-I06/I07-AUDIT (Finding B) — precondition mirrors L1's
+  // discipline; same rationale as lookup_l2.
   [[nodiscard]] safety::residency_heat::Cold<CompiledKernel*>
-  lookup_l3(ContentHash /*content_hash*/, RowHash /*row_hash*/) const noexcept
+  lookup_l3(ContentHash content_hash, RowHash /*row_hash*/) const noexcept
       CRUCIBLE_NO_THREAD_SAFETY
+      pre (content_hash.raw() != 0)
   {
+    (void)content_hash;
     return safety::residency_heat::Cold<CompiledKernel*>{nullptr};
   }
 
@@ -1235,11 +1251,25 @@ class CRUCIBLE_OWNER KernelCache {
   // Today: returns success-marker pinned at Warm but does NOT
   // actually persist anywhere.  Phase 5: writes to the per-vendor-
   // family L2 store.
+  //
+  // FOUND-I06/I07-AUDIT (Finding B) — preconditions mirror
+  // publish_l1's discipline.  ContentHash{0} is the empty-slot
+  // sentinel in the L1 hash table and any future Phase-5 L2 store
+  // following the same content-addressed contract needs the same
+  // discipline.  nullptr kernel makes no sense as a publication
+  // target — the cache stores compiled-body pointers, not absences.
+  // Adding both pre-clauses now means Phase-5 implementations
+  // inherit the contract; weakening either later is a contract
+  // break that requires explicit caller-side migration.
   [[nodiscard]]
   safety::residency_heat::Warm<std::expected<void, InsertError>>
-  publish_l2(ContentHash /*content_hash*/, RowHash /*row_hash*/,
-             CompiledKernel* /*kernel*/) noexcept
+  publish_l2(ContentHash content_hash, RowHash /*row_hash*/,
+             CompiledKernel* kernel) noexcept
+      pre (content_hash.raw() != 0)
+      pre (kernel != nullptr)
   {
+    (void)content_hash;
+    (void)kernel;
     return safety::residency_heat::Warm<std::expected<void, InsertError>>{
         std::expected<void, InsertError>{}};
   }
@@ -1249,11 +1279,18 @@ class CRUCIBLE_OWNER KernelCache {
   // Today: returns success-marker pinned at Cold but does NOT
   // actually persist anywhere.  Phase 5: writes to the per-chip
   // compiled-bytes archive (S3-backed cold federation).
+  //
+  // FOUND-I06/I07-AUDIT (Finding B) — preconditions mirror
+  // publish_l1's discipline; same rationale as publish_l2.
   [[nodiscard]]
   safety::residency_heat::Cold<std::expected<void, InsertError>>
-  publish_l3(ContentHash /*content_hash*/, RowHash /*row_hash*/,
-             CompiledKernel* /*kernel*/) noexcept
+  publish_l3(ContentHash content_hash, RowHash /*row_hash*/,
+             CompiledKernel* kernel) noexcept
+      pre (content_hash.raw() != 0)
+      pre (kernel != nullptr)
   {
+    (void)content_hash;
+    (void)kernel;
     return safety::residency_heat::Cold<std::expected<void, InsertError>>{
         std::expected<void, InsertError>{}};
   }

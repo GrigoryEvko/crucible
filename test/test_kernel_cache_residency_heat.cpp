@@ -577,6 +577,65 @@ static void test_l3_row_hash_plumbing_FOUND_I07() {
     assert(std::move(l3_miss).consume() == nullptr);
 }
 
+// ── T23 — FOUND-I06/I07-AUDIT: L2 ↔ L3 cross-tier isolation ────
+//
+// FOUND-I06/I07-AUDIT (Finding A) — T13 covers L1↔L2 and L1↔L3
+// isolation (publish_l2/l3 don't leak into L1).  But the
+// L2↔L3 pair was never directly witnessed.  When Phase 5 wires
+// the actual L2 (per-vendor-family) and L3 (per-chip cold
+// archive) stores, a refactor that accidentally shared the
+// backing store between the two tiers (e.g., a single shared
+// hash table mistakenly indexed by both lookup_l2 and lookup_l3)
+// would not be caught by any existing test.  T23 closes the
+// final isolation cell: publish_l2 at a key MUST be invisible
+// to lookup_l3 at the same key, and vice-versa.
+//
+// Today the assertion holds trivially because both stubs return
+// nullptr regardless of inputs.  When Phase 5 lands real backing
+// stores, T23 will be the load-bearing witness that those stores
+// are physically separate.
+static void test_l2_l3_cross_tier_isolation_FOUND_I06_I07_AUDIT() {
+    KernelCache cache;
+    FakeKernel fk_l2_only{42};
+    FakeKernel fk_l3_only{43};
+
+    // Publish ONLY into L2 at (0x70000, 0xD00D).
+    auto p2 = cache.publish_l2(
+        ContentHash{0x70000}, RowHash{0xD00D}, fk_ptr(&fk_l2_only));
+    (void)std::move(p2).consume();
+
+    // L3 at the same key MUST miss — L2 publish does not leak into L3.
+    auto l3_miss = cache.lookup_l3(ContentHash{0x70000}, RowHash{0xD00D});
+    assert(std::move(l3_miss).consume() == nullptr);
+
+    // Now publish ONLY into L3 at a different key (0x80000, 0xF00D).
+    auto p3 = cache.publish_l3(
+        ContentHash{0x80000}, RowHash{0xF00D}, fk_ptr(&fk_l3_only));
+    (void)std::move(p3).consume();
+
+    // L2 at the same key MUST miss — L3 publish does not leak into L2.
+    auto l2_miss = cache.lookup_l2(ContentHash{0x80000}, RowHash{0xF00D});
+    assert(std::move(l2_miss).consume() == nullptr);
+
+    // Cross-publication at a SHARED key (0x90000, 0xCEED) — both L2
+    // and L3 should hold their own state independently.
+    auto p2_shared = cache.publish_l2(
+        ContentHash{0x90000}, RowHash{0xCEED}, fk_ptr(&fk_l2_only));
+    auto p3_shared = cache.publish_l3(
+        ContentHash{0x90000}, RowHash{0xCEED}, fk_ptr(&fk_l3_only));
+    (void)std::move(p2_shared).consume();
+    (void)std::move(p3_shared).consume();
+
+    // Both lookups today return nullptr (Phase-5 stub).  When Phase 5
+    // wires real stores, EACH side should observe its OWN published
+    // kernel (not the other side's).  T23 will be tightened at that
+    // time to assert per-tier kernel identity.
+    auto l2_shared = cache.lookup_l2(ContentHash{0x90000}, RowHash{0xCEED});
+    auto l3_shared = cache.lookup_l3(ContentHash{0x90000}, RowHash{0xCEED});
+    assert(std::move(l2_shared).consume() == nullptr);
+    assert(std::move(l3_shared).consume() == nullptr);
+}
+
 int main() {
     test_lookup_l1_round_trip();
     test_publish_l1_round_trip();
@@ -600,6 +659,7 @@ int main() {
     test_cannot_tighten_to_stronger_tier();
     test_l2_row_hash_plumbing_FOUND_I06();
     test_l3_row_hash_plumbing_FOUND_I07();
+    test_l2_l3_cross_tier_isolation_FOUND_I06_I07_AUDIT();
 
     std::puts("ok");
     return 0;
