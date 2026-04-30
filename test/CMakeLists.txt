@@ -351,6 +351,7 @@ crucible_test(test_is_budgeted)
 crucible_test(test_is_epoch_versioned)
 crucible_test(test_is_numa_placement)
 crucible_test(test_is_recipe_spec)
+crucible_test(test_inferred_row)
 crucible_test(test_is_producer_handle)
 crucible_test(test_is_consumer_handle)
 crucible_test(test_is_swmr_handle)
@@ -1497,6 +1498,12 @@ crucible_neg_compile_test(neg_numa_placement_value_t_on_non_numa_placement
 # ─── FOUND-D30/RecipeSpec IsRecipeSpec constrained-extractor
 # CLOSES the D30 batch — final wrapper-detector for the 8-wrapper set.
 crucible_neg_compile_test(neg_recipe_spec_value_t_on_non_recipe_spec
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D10 IsPureFunction concept rejection ──────────────────────
+# Pins the substitution-failure path: a function with a non-empty
+# inferred row must NOT match `requires IsPureFunction<FnPtr>`.
+crucible_neg_compile_test(neg_inferred_row_pure_concept_rejects_alloc_fn
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
