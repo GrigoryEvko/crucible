@@ -1499,6 +1499,31 @@ crucible_neg_compile_test(neg_is_permission_tag_t_on_non_permission
 crucible_neg_compile_test(neg_is_shared_permission_tag_t_on_non_shared_permission
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# ─── FOUND-D07-AUDIT — reduce_into_*_t<T> on non-reduce_into T ────
+#
+# The `requires is_reduce_into_v<T>` constraint on
+# reduce_into_accumulator_t / reduce_into_reducer_t rejects
+# non-reduce_into arguments at the alias declaration.  Without the
+# constraint, the alias would resolve to `void` from the primary
+# template's `accumulator_type = void; reducer_type = void;`,
+# silently propagating that void into downstream type machinery
+# (e.g. the FOUND-D14 Reduction concept).  Two fixtures, one per
+# extractor alias, keep both requires-clauses independently
+# load-bearing.
+crucible_neg_compile_test(neg_reduce_into_accumulator_t_on_non_reduce_into
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_reduce_into_reducer_t_on_non_reduce_into
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# Move-only fence on the reduce_into wrapper itself.  Mirrors
+# neg_permission_copy_attempt — the reduce_into accumulator is unique
+# state (linear semantics); copying would defeat parallel-reduce
+# linearity.  Catches a future edit that accidentally relaxes the
+# `reduce_into(reduce_into const&) = delete` line.
+crucible_neg_compile_test(neg_reduce_into_copy_attempt
+  "use of deleted function|deleted|copy")
+
 # ─── FOUND-D09 — universal GradedWrapper extractors ──────────────
 #
 # Each of the FIVE universal extractors (value_type_of_t /

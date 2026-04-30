@@ -342,6 +342,102 @@ void test_runtime_consistency() {
     }
 }
 
+// ── FOUND-D07-AUDIT — extended positive coverage ───────────────────
+
+// Non-arithmetic R type — confirms the partial specialization
+// matches reduce_into<StructR, Op> as readily as reduce_into<int, Op>,
+// with no hidden arithmetic-type assumption in the trait machinery.
+struct StatsAcc {
+    int sum   = 0;
+    int count = 0;
+    constexpr bool operator==(StatsAcc const&) const = default;
+};
+
+struct MergeStatsOp {
+    constexpr StatsAcc operator()(
+        StatsAcc const& a, StatsAcc const& b) const noexcept {
+        return StatsAcc{a.sum + b.sum, a.count + b.count};
+    }
+};
+
+using RI_stats_merge =
+    crucible::safety::reduce_into<StatsAcc, MergeStatsOp>;
+
+void test_struct_accumulator_specialization() {
+    // is_reduce_into_v matches with a struct R type just as it does
+    // with an arithmetic R type — confirms the specialization
+    // machinery is not silently constrained on `std::is_arithmetic_v`.
+    EXPECT_TRUE(extract::is_reduce_into_v<RI_stats_merge>);
+    EXPECT_TRUE(extract::is_reduce_into_v<RI_stats_merge const&>);
+    EXPECT_TRUE(extract::is_reduce_into_v<RI_stats_merge&&>);
+
+    // Extractors round-trip the struct types.
+    static_assert(std::is_same_v<
+        extract::reduce_into_accumulator_t<RI_stats_merge>, StatsAcc>);
+    static_assert(std::is_same_v<
+        extract::reduce_into_reducer_t<RI_stats_merge>, MergeStatsOp>);
+
+    // Distinct specialization vs the arithmetic-R case.  Extra parens
+    // wrap commas inside is_same_v's template args so EXPECT_TRUE's
+    // function-like-macro parser sees a single argument.
+    EXPECT_TRUE((!std::is_same_v<RI_stats_merge, RI_int_plus>));
+    EXPECT_TRUE((!std::is_same_v<
+        extract::reduce_into_accumulator_t<RI_stats_merge>,
+        extract::reduce_into_accumulator_t<RI_int_plus>>));
+
+    // Wrapper itself works on the struct R: combine folds, peek
+    // returns an equal struct, consume extracts.
+    RI_stats_merge r{StatsAcc{}, MergeStatsOp{}};
+    r.combine(StatsAcc{3, 1});
+    r.combine(StatsAcc{4, 1});
+    auto const expected_after_combine = StatsAcc{7, 2};
+    EXPECT_TRUE(r.peek() == expected_after_combine);
+
+    StatsAcc const out = std::move(r).consume();
+    EXPECT_TRUE(out == expected_after_combine);
+}
+
+// Op whose return type is convertible to R but not exactly R —
+// confirms the is_reduction_op_v concept's `convertible_to` clause is
+// load-bearing.  PlusOpReturnsShort returns short (a narrowing cast
+// from int + int reduced through `static_cast`); short is convertible
+// to long, so is_reduction_op_v<PlusOpReturnsShort, long> must hold.
+struct PlusOpReturnsShort {
+    constexpr short operator()(
+        long const& a, long const& b) const noexcept {
+        return static_cast<short>(a + b);
+    }
+};
+
+// Op whose return type is NOT convertible to R — the concept must
+// reject.  ReturnsStruct returns StatsAcc which is not convertible
+// to int.
+struct ReturnsStruct {
+    constexpr StatsAcc operator()(
+        int const&, int const&) const noexcept {
+        return StatsAcc{};
+    }
+};
+
+void test_op_return_convertibility() {
+    // Positive — short is convertible to long → satisfies concept.
+    EXPECT_TRUE((crucible::safety::is_reduction_op_v<
+                    PlusOpReturnsShort, long>));
+
+    // Negative — StatsAcc is not convertible to int → fails concept.
+    EXPECT_TRUE((!crucible::safety::is_reduction_op_v<
+                    ReturnsStruct, int>));
+
+    // Same Op + different R re-evaluates the convertibility clause:
+    // short→int is fine, short→short is fine.
+    EXPECT_TRUE((crucible::safety::is_reduction_op_v<
+                    PlusOpReturnsShort, int>));
+    // PlusOpReturnsShort takes `long const&` — it is callable with
+    // `int const&` (implicit conversion); concept admits.
+    EXPECT_TRUE((crucible::safety::is_reduction_op_v<
+                    PlusOpReturnsShort, short>));
+}
+
 }  // namespace
 
 int main() {
@@ -372,6 +468,9 @@ int main() {
                                                    test_reduce_into_move_preserves_state);
     run_test("test_double_reduce_into",            test_double_reduce_into);
     run_test("test_runtime_consistency",           test_runtime_consistency);
+    run_test("test_struct_accumulator_specialization",
+                                                   test_struct_accumulator_specialization);
+    run_test("test_op_return_convertibility",      test_op_return_convertibility);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
