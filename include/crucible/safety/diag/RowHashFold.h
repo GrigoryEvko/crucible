@@ -681,6 +681,46 @@ static_assert(row_hash_contribution_v<Row<Effect::Alloc, Effect::IO,
            == 0x1C9D0E4F548FAAD6ULL,
     "Full-Universe row row_hash drifted — federation wire-format break.");
 
+// ─── Computation<R, T> hash pins (FOUND-I04 + FOUND-I02-AUDIT) ─────
+//
+// The Computation<R, T> specialization (FOUND-I02-AUDIT) folds the
+// row R via combine_ids with the payload T's row contribution.  Pin
+// canonical values to detect drift in EITHER:
+//   • the combine_ids algorithm (StableName.h),
+//   • the Computation<R, T> specialization itself (this file), or
+//   • the inner Row<Es...> contributions (already pinned above).
+//
+// Coverage:
+//   (1) Empty-row + bare payload  — combine_ids(EMPTY_ROW_HASH, 0)
+//   (2) Singleton row + bare payload — Bg-context kernel return value
+//   (3) Pair-row + bare payload — Alloc+IO carrier
+//   (4) Nested Computation — outer empty, inner has IO row.  Pins
+//       that nested non-collapsing flows through combine_ids.
+//
+// Same federation-wire-format-break severity as the Row pins above.
+
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>>
+           == 0x49A55BE1CFC23FB0ULL,
+    "Computation<EmptyRow, int> row_hash drifted — federation wire-"
+    "format break.  Either combine_ids or Computation<R, T> "
+    "specialization changed.");
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::Bg>, int>>
+ == 0x3ACE35615F0F9243ULL,
+    "Computation<Row<Bg>, int> row_hash drifted — wire-format break.");
+static_assert(
+    row_hash_contribution_v<effects::Computation<
+        Row<Effect::Alloc, Effect::IO>, int>>
+ == 0x83D432DE6CDEACA7ULL,
+    "Computation<Row<Alloc, IO>, int> row_hash drifted — break.");
+static_assert(
+    row_hash_contribution_v<effects::Computation<EmptyRow,
+        effects::Computation<Row<Effect::IO>, int>>>
+ == 0x94EC56B861A6B8FDULL,
+    "Nested Computation<EmptyRow, Computation<Row<IO>, int>> "
+    "row_hash drifted — wire-format break.  Inner-row "
+    "non-collapsing through combine_ids must remain bit-stable.");
+
 // ─── Bubble-sort helper correctness ────────────────────────────────
 
 static_assert(detail::sorted_uints(std::array<std::uint64_t, 0>{})

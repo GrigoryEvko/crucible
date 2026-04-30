@@ -280,6 +280,24 @@ static void test_runtime_federation_hash_pins() {
                 Effect::Test>>.raw();
     assert(sink == 0x1C9D0E4F548FAAD6ULL);
 
+    // Computation<R, T> pins — detect drift in combine_ids + the
+    // Computation specialization (FOUND-I02-AUDIT).
+    using ce::Computation;
+
+    sink = cd::row_hash_of_v<Computation<EmptyRow, int>>.raw();
+    assert(sink == 0x49A55BE1CFC23FB0ULL);
+
+    sink = cd::row_hash_of_v<Computation<Row<Effect::Bg>, int>>.raw();
+    assert(sink == 0x3ACE35615F0F9243ULL);
+
+    sink = cd::row_hash_of_v<Computation<
+        Row<Effect::Alloc, Effect::IO>, int>>.raw();
+    assert(sink == 0x83D432DE6CDEACA7ULL);
+
+    sink = cd::row_hash_of_v<Computation<EmptyRow,
+        Computation<Row<Effect::IO>, int>>>.raw();
+    assert(sink == 0x94EC56B861A6B8FDULL);
+
     std::printf("  test_federation_hash_pins:       PASSED\n");
 }
 
