@@ -473,6 +473,110 @@ static void test_cannot_tighten_to_stronger_tier() {
     static_assert(!can_tighten<ColdT, ResidencyHeatTag_v::Hot>);
 }
 
+// ── T21 — FOUND-I06: L2 row_hash plumbing witness ──────────────
+//
+// FOUND-I06 — "L2 IR003* cache lookup updated to consume row_hash".
+// The L1 cache (FOUND-I05) discriminates entries by (content_hash,
+// row_hash); the L2 path is documented as the per-vendor-family
+// cross-chip federation tier and its API surface accepts the same
+// (ContentHash, RowHash) shape.  Today L2 is a Phase-5 stub
+// (returns Warm-pinned nullptr regardless of inputs), but the
+// row_hash slot MUST be plumbed end-to-end through the API so
+// Phase 5 can wire the actual store without API churn.
+//
+// This test pins:
+//   (a) lookup_l2 accepts diverse non-zero row_hashes — the API
+//       does not silently truncate or special-case RowHash{0}.
+//   (b) Each diverse-row_hash lookup returns Warm-pinned nullptr
+//       (stub behavior — not influenced by row_hash value).
+//   (c) publish_l2 accepts diverse row_hashes and returns the
+//       success-marker for each (stub semantics).
+//   (d) L2 stub with NON-empty L1 cache state does NOT accidentally
+//       leak into or mirror L1 — L2 lookups stay nullptr even when
+//       L1 has a live entry at the same (content, row).
+static void test_l2_row_hash_plumbing_FOUND_I06() {
+    KernelCache cache;
+    FakeKernel fk{1};
+
+    // (a) + (b) — diverse row_hashes, each lookup_l2 returns nullptr-Warm.
+    constexpr RowHash diverse_rows[] = {
+        RowHash{0x0001}, RowHash{0x00FF}, RowHash{0xAAAA},
+        RowHash{0xDEADBEEF}, RowHash{0xFFFFFFFFFFFFFFFFULL},
+    };
+    for (auto rh : diverse_rows) {
+        auto pinned = cache.lookup_l2(ContentHash{0x10000}, rh);
+        // Type identity preserved across all row_hashes.
+        static_assert(std::is_same_v<decltype(pinned),
+            ResidencyHeat<ResidencyHeatTag_v::Warm, CompiledKernel*>>);
+        assert(std::move(pinned).consume() == nullptr);
+    }
+
+    // (c) — publish_l2 with diverse row_hashes succeeds at type level.
+    for (auto rh : diverse_rows) {
+        auto pub = cache.publish_l2(ContentHash{0x20000}, rh, fk_ptr(&fk));
+        auto r = std::move(pub).consume();
+        assert(r.has_value());
+    }
+
+    // (d) — populate L1 at (0x30000, 0xCAFE), then verify L2 stays
+    // nullptr for the SAME key.  Pins that L2 stub does not mirror
+    // L1's live entries — when Phase 5 wires the L2 store, this
+    // test continues to red ONLY if the implementation correctly
+    // treats L2 as a separate physical store from L1 (not a fallback
+    // to L1).  The test will be UPDATED at that time with explicit
+    // l2-publish-then-l2-lookup expectations.
+    auto pub_l1 = cache.publish_l1(
+        ContentHash{0x30000}, RowHash{0xCAFE}, fk_ptr(&fk));
+    (void)std::move(pub_l1).consume();
+    auto l1_hit = cache.lookup_l1(ContentHash{0x30000}, RowHash{0xCAFE});
+    assert(std::move(l1_hit).consume() == fk_ptr(&fk));  // L1 has it.
+    auto l2_miss = cache.lookup_l2(ContentHash{0x30000}, RowHash{0xCAFE});
+    assert(std::move(l2_miss).consume() == nullptr);     // L2 doesn't.
+}
+
+// ── T22 — FOUND-I07: L3 row_hash plumbing witness ──────────────
+//
+// FOUND-I07 — "L3 compiled-bytes cache lookup updated to consume
+// row_hash".  Mirror of T21 for the L3 (per-chip cold archive)
+// tier.  Same Phase-5-stub semantics as L2; same API discipline.
+// Pins the row_hash plumbing through lookup_l3 / publish_l3 so
+// Phase 5's S3-backed L3 store can drop in without API churn.
+static void test_l3_row_hash_plumbing_FOUND_I07() {
+    KernelCache cache;
+    FakeKernel fk{1};
+
+    constexpr RowHash diverse_rows[] = {
+        RowHash{0x0001}, RowHash{0x00FF}, RowHash{0xAAAA},
+        RowHash{0xDEADBEEF}, RowHash{0xFFFFFFFFFFFFFFFFULL},
+    };
+
+    // (a) + (b) — diverse row_hashes, each lookup_l3 returns nullptr-Cold.
+    for (auto rh : diverse_rows) {
+        auto pinned = cache.lookup_l3(ContentHash{0x40000}, rh);
+        static_assert(std::is_same_v<decltype(pinned),
+            ResidencyHeat<ResidencyHeatTag_v::Cold, CompiledKernel*>>);
+        assert(std::move(pinned).consume() == nullptr);
+    }
+
+    // (c) — publish_l3 with diverse row_hashes succeeds at type level.
+    for (auto rh : diverse_rows) {
+        auto pub = cache.publish_l3(ContentHash{0x50000}, rh, fk_ptr(&fk));
+        auto r = std::move(pub).consume();
+        assert(r.has_value());
+    }
+
+    // (d) — populate L1 at (0x60000, 0xBABE), then verify L3 stays
+    // nullptr for the SAME key.  Same isolation invariant as T21
+    // for L2.
+    auto pub_l1 = cache.publish_l1(
+        ContentHash{0x60000}, RowHash{0xBABE}, fk_ptr(&fk));
+    (void)std::move(pub_l1).consume();
+    auto l1_hit = cache.lookup_l1(ContentHash{0x60000}, RowHash{0xBABE});
+    assert(std::move(l1_hit).consume() == fk_ptr(&fk));
+    auto l3_miss = cache.lookup_l3(ContentHash{0x60000}, RowHash{0xBABE});
+    assert(std::move(l3_miss).consume() == nullptr);
+}
+
 int main() {
     test_lookup_l1_round_trip();
     test_publish_l1_round_trip();
@@ -494,6 +598,8 @@ int main() {
     test_cross_lattice_non_mixing();
     test_augur_cache_tier_classifier();
     test_cannot_tighten_to_stronger_tier();
+    test_l2_row_hash_plumbing_FOUND_I06();
+    test_l3_row_hash_plumbing_FOUND_I07();
 
     std::puts("ok");
     return 0;
