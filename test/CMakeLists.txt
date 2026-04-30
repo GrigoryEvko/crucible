@@ -354,6 +354,7 @@ crucible_test(test_is_recipe_spec)
 crucible_test(test_inferred_row)
 crucible_test(test_cheat_probe_wrappers)
 crucible_test(test_h10_algebra_diag_bridge)
+crucible_test(test_fusion)
 crucible_test(test_is_producer_handle)
 crucible_test(test_is_consumer_handle)
 crucible_test(test_is_swmr_handle)
@@ -1506,6 +1507,10 @@ crucible_neg_compile_test(neg_recipe_spec_value_t_on_non_recipe_spec
 # Pins the substitution-failure path: a function with a non-empty
 # inferred row must NOT match `requires IsPureFunction<FnPtr>`.
 crucible_neg_compile_test(neg_inferred_row_pure_concept_rejects_alloc_fn
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-F06 IsFusable concept rejection on arity mismatch ──────
+crucible_neg_compile_test(neg_fusion_concept_rejects_arity_mismatch
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
