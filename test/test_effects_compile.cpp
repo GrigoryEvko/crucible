@@ -19,6 +19,7 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/Computation.h>
 #include <crucible/effects/EffectRow.h>
+#include <crucible/effects/EffectRowLattice.h>
 #include <crucible/effects/Effects.h>
 #include <crucible/effects/FxAliases.h>
 
@@ -54,6 +55,11 @@ void test_fx_aliases_compile()    {
     // -Werror matrix (per feedback_algebra_runtime_smoke_test_discipline).
     ::crucible::effects::runtime_smoke_test();
 }
+void test_effect_row_lattice_compile() {
+    // Same discipline for the H01 lattice surface — drive every
+    // accessor + bridge through a non-constant-args path.
+    ::crucible::effects::runtime_smoke_test_lattice();
+}
 
 }  // namespace
 
@@ -64,6 +70,8 @@ int main() {
     run_test("test_effect_row_compile",    test_effect_row_compile);
     run_test("test_effects_umbrella",      test_effects_umbrella);
     run_test("test_fx_aliases_compile",    test_fx_aliases_compile);
+    run_test("test_effect_row_lattice_compile",
+             test_effect_row_lattice_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");

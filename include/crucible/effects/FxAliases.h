@@ -68,6 +68,21 @@
 //     ST" alias.  AllRow is the only alias that names them.  This is
 //     intentional — context tags are NOT computational effects in the
 //     F* sense; they are dispatch hints.
+//
+// ── Diagnostic surface (FOUND-E18) ──────────────────────────────────
+//
+// Violations of these predicates surface as three diagnostic categories
+// in safety/Diagnostic.h:
+//
+//   PureFunctionViolation        — IsPure / IsTot / IsGhost rejection
+//   DivergenceBudgetViolation    — IsDiv rejection (state effect added)
+//   StateBudgetViolation         — IsST rejection (context tag added)
+//
+// IsAll has no diagnostic — the substitution always succeeds.  Adding,
+// removing, or renaming an alias here MUST be reflected in Diagnostic.h's
+// Catalog + Category, or the cross-reference below the diagnostic
+// docblock will name a tag that no longer ships.  See Diagnostic.h's
+// FOUND-E18 section for the symmetric back-reference.
 
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
