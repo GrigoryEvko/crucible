@@ -1679,6 +1679,11 @@ crucible_neg_compile_test(neg_parallel_apply_pair_throwing_body
 crucible_neg_compile_test(neg_parallel_apply_pair_move_only_body
   "must be CopyConstructible|static_assert|static assertion")
 
+# FOUND-F02-AUDIT — wrong body shape (body uses one tag for both
+# parameter positions when the regions have different tags).
+crucible_neg_compile_test(neg_parallel_apply_pair_wrong_body_shape
+  "body must be noexcept-invocable|static_assert|static assertion")
+
 # ─── FOUND-D15 ProducerEndpoint constrained-extractor fixtures ──────
 #
 # Pins the four constrained extractors on ProducerEndpoint.h:

@@ -923,6 +923,85 @@ void test_parallel_apply_pair_deterministic_across_runs() {
     CRUCIBLE_TEST_REQUIRE(second == third);
 }
 
+// FOUND-F02-A8 — same-tag scenario.  Both regions use DataA (W1 == W2);
+// each region carries its own independent root permission obtained
+// from a separate root_mint call.  This pins that the API does NOT
+// require distinct tags — `Slice<DataA, I>` for both regions is a
+// valid composition because the root permissions are independent
+// and split chains do not collide.
+void test_parallel_apply_pair_same_tag() {
+    Arena arena;
+    constexpr std::size_t N = 64;
+
+    // Two regions with the SAME tag (DataA), each with its own
+    // independent root permission.  Each region's split chain is
+    // independent.
+    auto region_a = OwnedRegion<std::uint64_t, DataA>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+    auto region_b = OwnedRegion<std::uint64_t, DataA>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+
+    for (std::size_t i = 0; i < N; ++i) {
+        region_a.span()[i] = i;
+        region_b.span()[i] = 0;
+    }
+
+    auto [out_a, out_b] = parallel_apply_pair<4>(
+        std::move(region_a), std::move(region_b),
+        [](auto sub_a, auto sub_b) noexcept {
+            // Both sub-regions have the SAME type (Slice<DataA, I>);
+            // distinct base pointers prove they don't alias.
+            CRUCIBLE_TEST_REQUIRE_NX(sub_a.data() != sub_b.data());
+            auto src = sub_a.cspan();
+            auto dst = sub_b.span();
+            for (std::size_t i = 0; i < dst.size(); ++i) dst[i] = src[i] * 11;
+        }
+    );
+
+    for (std::size_t i = 0; i < N; ++i) {
+        CRUCIBLE_TEST_REQUIRE(out_b.cspan()[i] == i * 11);
+    }
+}
+
+// FOUND-F02-A9 — disjoint shard verification.  Each worker writes its
+// shard_idx into every element of its sub_b slice.  After recombine,
+// each chunk in region_b must hold its shard index — proves no shard
+// touched another's slice (no overlap) and every element was written
+// (no skip).  Mirrors test_parallel_for_views_uses_correct_slice_indices.
+void test_parallel_apply_pair_disjoint_shards() {
+    Arena arena;
+    constexpr std::size_t N = 800;  // 8 × 100, exact division.
+
+    auto region_a = OwnedRegion<std::uint64_t, DataA>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+    auto region_b = OwnedRegion<std::uint64_t, DataB>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataB>());
+
+    // Sentinel.
+    for (std::size_t i = 0; i < N; ++i) {
+        region_a.span()[i] = 0xCAFE;
+        region_b.span()[i] = 0xDEAD;
+    }
+
+    auto [out_a, out_b] = parallel_apply_pair<8>(
+        std::move(region_a), std::move(region_b),
+        [](auto sub_a, auto sub_b) noexcept {
+            using SubB = std::remove_cvref_t<decltype(sub_b)>;
+            constexpr std::size_t shard_idx = SubB::tag_type::index;
+            (void)sub_a;  // read-only side intentionally untouched
+            for (auto& x : sub_b.span()) x = shard_idx;
+        }
+    );
+
+    // region_a unchanged (sentinel); region_b shows per-shard markers.
+    for (std::size_t shard = 0; shard < 8; ++shard) {
+        for (std::size_t i = 0; i < 100; ++i) {
+            CRUCIBLE_TEST_REQUIRE(out_a.cspan()[shard * 100 + i] == 0xCAFE);
+            CRUCIBLE_TEST_REQUIRE(out_b.cspan()[shard * 100 + i] == shard);
+        }
+    }
+}
+
 // FOUND-F02-A7 — heterogeneous element types and tags.  The regions
 // don't have to share T or W.  This pins that template parameter
 // flexibility: T1=float, T2=int32; W1=DataA, W2=DataB.
@@ -1187,6 +1266,10 @@ int main() {
              test_parallel_apply_pair_deterministic_across_runs);
     run_test("test_parallel_apply_pair_heterogeneous_types",
              test_parallel_apply_pair_heterogeneous_types);
+    run_test("test_parallel_apply_pair_same_tag",
+             test_parallel_apply_pair_same_tag);
+    run_test("test_parallel_apply_pair_disjoint_shards",
+             test_parallel_apply_pair_disjoint_shards);
     run_test("test_parallel_for_views_sequential_n1",        test_parallel_for_views_sequential_n1);
     run_test("test_adaptive_picks_sequential_for_small_workload",
              test_adaptive_picks_sequential_for_small_workload);
