@@ -615,6 +615,211 @@ static void test_audit_g_f_star_alias_closure() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Audit-H — Forwarder-fidelity at signature level.  Prove
+// run_in_row<R>() has the SAME signature shape as run():
+//   • return type void
+//   • zero runtime parameters
+//   • non-noexcept (run() is non-noexcept; the forwarder must
+//     preserve this — adding noexcept would change exception
+//     semantics, even though we run with -fno-exceptions)
+//   • non-const, non-volatile member (matches run())
+//
+// Catches a regression where a future refactor accidentally
+// introduces a noexcept specifier, an extra parameter, or
+// changes return type to bool/expected — any of which would
+// break the "thin forwarder" contract.
+
+static void test_audit_h_forwarder_fidelity_signature() {
+    using Required = BackgroundThread::run_required_row;
+
+    // Return type is void.  Probed via decltype on an
+    // unevaluated call expression.
+    BackgroundThread* p = nullptr;
+    using RunInRowRet    = decltype(p->template run_in_row<Required>());
+    static_assert(std::is_same_v<RunInRowRet, void>);
+
+    // noexcept-ness witness.  run_in_row<R>() is non-noexcept (the
+    // bg loop body invokes std::vector::push_back, which can throw
+    // bad_alloc; under -fno-exceptions this terminates, but the
+    // type-system signature still records non-noexcept).
+    static_assert(!noexcept(p->template run_in_row<Required>()),
+        "run_in_row<R>() must be non-noexcept — matching run()'s "
+        "signature.  A thin forwarder cannot strengthen the spec.");
+
+    // Pointer-to-member-function shape: void(BackgroundThread::*)()
+    // — no parameters, void return, non-const, non-volatile,
+    // non-noexcept.  The MFN type encodes every signature axis.
+    static_assert(std::is_same_v<
+        decltype(&BackgroundThread::template run_in_row<Required>),
+        void (BackgroundThread::*)()>);
+
+    // Universe-row instantiation has identical MFN shape.
+    static_assert(std::is_same_v<
+        decltype(&BackgroundThread::template run_in_row<eff::AllRow>),
+        void (BackgroundThread::*)()>);
+
+    // SuperRow (Bg + Alloc + IO + Block + Init + Test) instantiation
+    // has identical MFN shape.  Confirms template parameter does
+    // NOT leak into the function type.
+    using SuperRow = eff::Row<
+        eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO,
+        eff::Effect::Block, eff::Effect::Init, eff::Effect::Test>;
+    static_assert(std::is_same_v<
+        decltype(&BackgroundThread::template run_in_row<SuperRow>),
+        void (BackgroundThread::*)()>);
+
+    // The MFN address is distinct per template instantiation
+    // (different specialization → different code addresses), but
+    // shape identity below confirms ABI compatibility — any caller
+    // can dispatch to any instantiation through the same MFN slot.
+    constexpr auto p1 = &BackgroundThread::template run_in_row<Required>;
+    constexpr auto p2 = &BackgroundThread::template run_in_row<eff::AllRow>;
+    static_assert(std::is_same_v<decltype(p1), decltype(p2)>);
+
+    std::printf("  audit-H forwarder_fidelity_signature:      PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit-I — Large-batch drain through run_in_row.  Pushes a batch
+// well over BATCH_SIZE-aligned thresholds (32 unique-hash entries)
+// and verifies the row-typed entry drains them all without hang or
+// regression.  The hashes are intentionally unique so the
+// IterationDetector signature never fires — exercising
+// on_iteration_boundary() would require sealing the global schema
+// and ckernel tables (start() does this; this test bypasses start()
+// to exercise run_in_row directly), so we keep the drain loop on
+// the no-boundary code path.
+//
+// Catches a regression where run_in_row's drain loop terminates
+// prematurely (e.g. exits the inner-loop before consuming the full
+// drained_count batch).  Validates per-entry advance through the
+// drain machinery.
+
+static void test_audit_i_large_batch_drain() {
+    BackgroundThread bt;
+    auto ring = std::make_unique<TraceRing>();
+    auto metalog = std::make_unique<MetaLog>();
+    bt.ring.set(BackgroundThread::RingPtr{ring.get()});
+    bt.meta_log.set(BackgroundThread::MetaLogPtr{metalog.get()});
+    bt.running.store(true, std::memory_order_release);
+
+    using Required = BackgroundThread::run_required_row;
+
+    std::thread bg_thread([&]() {
+        bt.run_in_row<Required>();
+    });
+
+    // 32 unique schema_hashes — IterationDetector signature never
+    // completes (each entry breaks any partial K-match), so
+    // on_iteration_boundary() is never called.  Pure drain motion.
+    constexpr uint32_t TOTAL = 32;
+    for (uint32_t i = 0; i < TOTAL; ++i) {
+        crucible::TraceRing::Entry e{};
+        e.schema_hash = crucible::SchemaHash{0xABCD'0001ULL + i};
+        e.shape_hash  = crucible::ShapeHash{0xDEAD'0001ULL + i};
+        while (!ring->try_append_pinned(
+                  e, crucible::MetaIndex::none(),
+                  crucible::ScopeHash{0},
+                  crucible::CallsiteHash{0}).peek()) {
+            std::this_thread::yield();
+        }
+    }
+
+    // Wait for total_processed to reach TOTAL.  Bound by deadline.
+    auto deadline = std::chrono::steady_clock::now()
+                  + std::chrono::seconds(5);
+    while (bt.total_processed.load() < TOTAL
+        && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    const uint64_t processed_after_push = bt.total_processed.load();
+    assert(processed_after_push >= TOTAL);
+
+    // Stop and join.
+    bt.running.store(false, std::memory_order_release);
+    bg_thread.join();
+
+    // Sanity: with unique hashes, IterationDetector's signature
+    // never fully matched twice, so iterations_completed is 0.
+    // The bg drained entries WITHOUT firing the boundary path.
+    assert(bt.iterations_completed.get() == 0u);
+
+    std::printf("  audit-I large_batch_drain:                 "
+                "PASSED (processed=%llu of %u)\n",
+                static_cast<unsigned long long>(processed_after_push),
+                TOTAL);
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit-J — Re-arm cycle.  spawn → stop → spawn → stop sequence
+// via run_in_row.  Validates the row-typed entry tolerates re-entry
+// and the running flag re-arms cleanly.  Each cycle pushes a small
+// batch and waits for drain.
+//
+// Catches a regression where the wrapper accidentally captures
+// state that prevents a second invocation — e.g. a thread_local
+// once-flag, a static guard inside the template instantiation, or
+// a destructor that was supposed to fire but didn't.
+
+static void test_audit_j_rearm_cycle() {
+    BackgroundThread bt;
+    auto ring = std::make_unique<TraceRing>();
+    auto metalog = std::make_unique<MetaLog>();
+    bt.ring.set(BackgroundThread::RingPtr{ring.get()});
+    bt.meta_log.set(BackgroundThread::MetaLogPtr{metalog.get()});
+
+    using Required = BackgroundThread::run_required_row;
+    constexpr uint32_t PER_CYCLE = 4;
+
+    uint64_t prev_processed = 0;
+
+    for (uint32_t cycle = 0; cycle < 2; ++cycle) {
+        bt.running.store(true, std::memory_order_release);
+
+        std::thread bg([&]() {
+            bt.run_in_row<Required>();
+        });
+
+        for (uint32_t i = 0; i < PER_CYCLE; ++i) {
+            crucible::TraceRing::Entry e{};
+            // Distinct hashes per cycle so the IterationDetector
+            // doesn't accidentally tie the two cycles together.
+            e.schema_hash = crucible::SchemaHash{
+                0x10000ULL + (cycle << 16) + i};
+            e.shape_hash  = crucible::ShapeHash{0x20000ULL + i};
+            while (!ring->try_append_pinned(
+                      e, crucible::MetaIndex::none(),
+                      crucible::ScopeHash{0},
+                      crucible::CallsiteHash{0}).peek()) {
+                std::this_thread::yield();
+            }
+        }
+
+        const uint64_t target = prev_processed + PER_CYCLE;
+        auto deadline = std::chrono::steady_clock::now()
+                      + std::chrono::seconds(5);
+        while (bt.total_processed.load() < target
+            && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        assert(bt.total_processed.load() >= target);
+
+        bt.running.store(false, std::memory_order_release);
+        bg.join();
+
+        prev_processed = bt.total_processed.load();
+    }
+
+    // After 2 cycles, total_processed >= 2 * PER_CYCLE — both
+    // invocations of run_in_row observably consumed entries.
+    assert(bt.total_processed.load() >= 2 * PER_CYCLE);
+
+    std::printf("  audit-J rearm_cycle:                       "
+                "PASSED (total=%llu over 2 cycles)\n",
+                static_cast<unsigned long long>(bt.total_processed.load()));
+}
+
+// ─────────────────────────────────────────────────────────────────────
 int main() {
     std::printf("test_background_thread_run_in_row — FOUND-I20 "
                 "8th-axiom fence\n");
@@ -634,8 +839,11 @@ int main() {
     test_audit_e_saturation_minus_one_matrix();
     test_audit_f_concurrent_spsc_drain();
     test_audit_g_f_star_alias_closure();
+    test_audit_h_forwarder_fidelity_signature();
+    test_audit_i_large_batch_drain();
+    test_audit_j_rearm_cycle();
 
-    std::printf("test_background_thread_run_in_row: 7 + 7 audit "
+    std::printf("test_background_thread_run_in_row: 7 + 10 audit "
                 "groups, all passed\n");
     return 0;
 }
