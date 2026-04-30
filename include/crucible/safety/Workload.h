@@ -223,6 +223,56 @@ parallel_for_views(OwnedRegion<T, Whole>&& region, Body body) noexcept
 // After join, main thread folds the partials via reducer(R, R)
 // starting from `init`.  No shared atomic accumulator; partials
 // land in a stack-allocated std::array<R, N>.
+//
+// ── API contract (FOUND-F04 audit, locked-in 2026-04-30) ────────
+//
+// Result identity (independent of N):
+//
+//   result == reducer(... reducer(reducer(init, mapper(s_0)),
+//                                          mapper(s_1)) ...,
+//                                          mapper(s_{N-1}))
+//
+// where s_0, ..., s_{N-1} are the sub-regions produced by
+// `region.split_into<N>()` in INDEX ORDER.
+//
+//   * N == 1 fast path: no jthread spawn; result is exactly
+//                       reducer(init, mapper(whole_region)).
+//   * N >= 2:           N jthreads spawn, each writes mapper(s_I)
+//                       into partials[I]; main thread folds left-to-
+//                       right starting from init after RAII join.
+//
+// DetSafe: the fold order is fixed by the index_sequence; reducer
+// must be associative for correctness, but commutativity is NOT
+// required — the API contract is "left-to-right fold, deterministic".
+//
+// The mapper is invoked EXACTLY N times (one per sub-region).  No
+// shared accumulator; per-shard writes target disjoint slots in
+// `partials`.
+//
+// The recombined OwnedRegion's bytes are bit-identical to the
+// input — `parallel_reduce_views` does not mutate the buffer.  A
+// follow-on consumer can read the same data.
+//
+// Mapper and Reducer must both be noexcept-invocable per the static
+// asserts; bodies that throw violate Crucible's -fno-exceptions rule.
+//
+// ── Relationship to FOUND-D14 Reduction concept ─────────────────
+//
+// The D14 Reduction concept (safety/Reduction.h) describes a
+// SINGLE-WORKER function shape:
+//
+//   void f(OwnedRegion<T, Tag>&& input, reduce_into<R, Op>& acc);
+//
+// — a function that consumes one input region and folds into a
+// borrowed reduce_into accumulator.  `parallel_reduce_views<N, R>`
+// is the multi-worker dispatcher: it spawns N workers, each running
+// what is morally a Reduction-shaped per-worker step (with the
+// reducer baked into the per-worker mapper return), then folds the
+// N partials on the main thread.  A future API evolution may add a
+// `parallel_reduce_views_into(region, reduce_into<R, Op>&)` overload
+// that takes the accumulator directly per D14, but the current
+// (init, mapper, reducer) shape is sufficient and stable for
+// existing call sites.
 
 template <std::size_t N, typename R, typename T, typename Whole,
           typename Mapper, typename Reducer>

@@ -324,6 +324,180 @@ void test_parallel_reduce_views_max_abs() {
     CRUCIBLE_TEST_REQUIRE(max_abs == 999'999);
 }
 
+// ── FOUND-F04 audit: API contract pinning ────────────────────────
+//
+// The audit-tier tests below pin invariants of `parallel_reduce_views`
+// that any future API evolution must preserve.  Each test names the
+// invariant it pins.
+
+// FOUND-F04-A1 — N==1 sequential fast path: result is exactly
+// reducer(init, mapper(whole_region)).  The `if constexpr (N == 1)`
+// branch in Workload.h:247-250 must NOT spawn a worker.
+void test_parallel_reduce_views_n1_init_participates() {
+    Arena arena;
+    auto perm = permission_root_mint<DataA>();
+    constexpr std::size_t N = 100;
+    auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
+        test_alloc_token(), arena, N, std::move(perm));
+    for (std::size_t i = 0; i < N; ++i) region.span()[i] = 1;
+
+    // Fast path: N=1 single-shard, init seeds the fold.
+    auto [total, _] = parallel_reduce_views<1, std::uint64_t>(
+        std::move(region),
+        std::uint64_t{1000},               // init contributes
+        [](auto sub) noexcept {
+            std::uint64_t s = 0;
+            for (auto x : sub.cspan()) s += x;
+            return s;                       // mapper = sum = 100
+        },
+        [](std::uint64_t a, std::uint64_t b) noexcept { return a + b; }
+    );
+
+    // init (1000) + mapper(whole) (100) = 1100.
+    CRUCIBLE_TEST_REQUIRE(total == 1100);
+}
+
+// FOUND-F04-A2 — non-trivial R type (struct accumulator) preserves
+// layout across the partials array and the fold.  Locks in support
+// for the FOUND-D14 reduce_into worked example with struct R.
+void test_parallel_reduce_views_struct_accumulator() {
+    struct Stats { std::uint64_t count = 0; std::uint64_t sum = 0; };
+
+    Arena arena;
+    auto perm = permission_root_mint<DataA>();
+    constexpr std::size_t N = 10'000;
+    auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
+        test_alloc_token(), arena, N, std::move(perm));
+    for (std::size_t i = 0; i < N; ++i) region.span()[i] = i + 1;
+
+    auto [stats, _] = parallel_reduce_views<8, Stats>(
+        std::move(region),
+        Stats{},                            // identity = {0, 0}
+        [](auto sub) noexcept {
+            Stats local{};
+            for (auto x : sub.cspan()) {
+                local.count += 1;
+                local.sum   += x;
+            }
+            return local;
+        },
+        [](Stats a, Stats b) noexcept {
+            return Stats{a.count + b.count, a.sum + b.sum};
+        }
+    );
+
+    const std::uint64_t expected_sum =
+        static_cast<std::uint64_t>(N) * (static_cast<std::uint64_t>(N) + 1) / 2;
+    CRUCIBLE_TEST_REQUIRE(stats.count == N);
+    CRUCIBLE_TEST_REQUIRE(stats.sum   == expected_sum);
+}
+
+// FOUND-F04-A3 — recombined region's data is BIT-IDENTICAL to input.
+// `parallel_reduce_views` must not mutate the underlying buffer; the
+// rebuilt parent OwnedRegion exposes the original bytes for a
+// follow-on read-only consumer.
+void test_parallel_reduce_views_recombined_data_unchanged() {
+    Arena arena;
+    auto perm = permission_root_mint<DataA>();
+    constexpr std::size_t N = 1024;
+    auto region = OwnedRegion<std::uint32_t, DataA>::adopt(
+        test_alloc_token(), arena, N, std::move(perm));
+    // Seed with a recognizable pattern.
+    for (std::size_t i = 0; i < N; ++i) {
+        region.span()[i] = static_cast<std::uint32_t>(i * 31 + 7);
+    }
+
+    auto [total, recombined] = parallel_reduce_views<8, std::uint64_t>(
+        std::move(region),
+        std::uint64_t{0},
+        [](auto sub) noexcept {
+            std::uint64_t s = 0;
+            for (auto x : sub.cspan()) s += x;
+            return s;
+        },
+        [](std::uint64_t a, std::uint64_t b) noexcept { return a + b; }
+    );
+    (void)total;
+
+    // Region bytes must survive the reduce step intact.
+    for (std::size_t i = 0; i < N; ++i) {
+        CRUCIBLE_TEST_REQUIRE(
+            recombined.cspan()[i] == static_cast<std::uint32_t>(i * 31 + 7));
+    }
+}
+
+// FOUND-F04-A4 — DetSafe: same input → same output across two runs
+// over a non-commutative reducer.  The fold-order contract (left-to-
+// right over the partials array) is what makes this true even when
+// the reducer is sensitive to argument order.
+void test_parallel_reduce_views_deterministic_across_runs() {
+    Arena arena_a, arena_b;
+    constexpr std::size_t N = 1024;
+
+    // First run.
+    auto region_a = OwnedRegion<std::uint32_t, DataA>::adopt(
+        test_alloc_token(), arena_a, N, permission_root_mint<DataA>());
+    for (std::size_t i = 0; i < N; ++i) {
+        region_a.span()[i] = static_cast<std::uint32_t>(i % 17);
+    }
+
+    // Non-commutative-y reducer: `2*a - b`.  Same partials produce
+    // the same fold IFF the iteration order is fixed.
+    auto reducer = [](std::int64_t a, std::int64_t b) noexcept {
+        return 2 * a - b;
+    };
+    auto mapper = [](auto sub) noexcept {
+        std::int64_t s = 0;
+        for (auto x : sub.cspan()) s += x;
+        return s;
+    };
+
+    auto [r1, _r1] = parallel_reduce_views<4, std::int64_t>(
+        std::move(region_a), std::int64_t{0}, mapper, reducer);
+
+    // Second run with identical input.
+    auto region_b = OwnedRegion<std::uint32_t, DataB>::adopt(
+        test_alloc_token(), arena_b, N, permission_root_mint<DataB>());
+    for (std::size_t i = 0; i < N; ++i) {
+        region_b.span()[i] = static_cast<std::uint32_t>(i % 17);
+    }
+
+    auto [r2, _r2] = parallel_reduce_views<4, std::int64_t>(
+        std::move(region_b), std::int64_t{0}, mapper, reducer);
+
+    CRUCIBLE_TEST_REQUIRE(r1 == r2);
+}
+
+// FOUND-F04-A5 — mapper is invoked exactly N times when N >= 1.  Use
+// a shared atomic counter to confirm worker dispatch (well-defined
+// because the counter is std::atomic).
+void test_parallel_reduce_views_mapper_invoked_n_times() {
+    Arena arena;
+    constexpr std::size_t SHARDS = 8;
+    constexpr std::size_t N = 4096;
+    auto region = OwnedRegion<std::uint32_t, DataA>::adopt(
+        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+    for (std::size_t i = 0; i < N; ++i) region.span()[i] = 1;
+
+    std::atomic<std::size_t> mapper_invocations{0};
+
+    auto [total, _] = parallel_reduce_views<SHARDS, std::uint64_t>(
+        std::move(region),
+        std::uint64_t{0},
+        [&mapper_invocations](auto sub) noexcept {
+            mapper_invocations.fetch_add(1, std::memory_order_relaxed);
+            std::uint64_t s = 0;
+            for (auto x : sub.cspan()) s += x;
+            return s;
+        },
+        [](std::uint64_t a, std::uint64_t b) noexcept { return a + b; }
+    );
+
+    CRUCIBLE_TEST_REQUIRE(total == N);
+    CRUCIBLE_TEST_REQUIRE(
+        mapper_invocations.load(std::memory_order_acquire) == SHARDS);
+}
+
 // ── Tier 5: parallel_for_views<1> sequential fast path ──────────
 
 void test_parallel_for_views_sequential_n1() {
@@ -520,6 +694,16 @@ int main() {
              test_parallel_for_views_uses_correct_slice_indices);
     run_test("test_parallel_reduce_views_sum",               test_parallel_reduce_views_sum);
     run_test("test_parallel_reduce_views_max_abs",           test_parallel_reduce_views_max_abs);
+    run_test("test_parallel_reduce_views_n1_init_participates",
+             test_parallel_reduce_views_n1_init_participates);
+    run_test("test_parallel_reduce_views_struct_accumulator",
+             test_parallel_reduce_views_struct_accumulator);
+    run_test("test_parallel_reduce_views_recombined_data_unchanged",
+             test_parallel_reduce_views_recombined_data_unchanged);
+    run_test("test_parallel_reduce_views_deterministic_across_runs",
+             test_parallel_reduce_views_deterministic_across_runs);
+    run_test("test_parallel_reduce_views_mapper_invoked_n_times",
+             test_parallel_reduce_views_mapper_invoked_n_times);
     run_test("test_parallel_for_views_sequential_n1",        test_parallel_for_views_sequential_n1);
     run_test("test_adaptive_picks_sequential_for_small_workload",
              test_adaptive_picks_sequential_for_small_workload);
