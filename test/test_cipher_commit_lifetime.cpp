@@ -361,6 +361,175 @@ static void test_layout_invariant() {
                   == sizeof(int));
 }
 
+// ─────────────────────────────────────────────────────────────────
+// FOUND-G12-AUDIT — extended positive coverage
+// ─────────────────────────────────────────────────────────────────
+
+// ── T16 — relax DOWN-the-lattice before commit ─────────────────
+//
+// A PER_FLEET-pinned source can be relaxed step-by-step toward
+// PER_REQUEST and still flow into commit_per_request.  This proves
+// that the relax<>() path (FOUND-G09 OpaqueLifetime API) composes
+// with the production commit boundary — the wrapper survives
+// widening-then-narrowing without losing the satisfies<> property.
+static void test_relax_down_then_commit_per_request() {
+    auto tmp = tmp_root_for("t16");
+    Cipher c = Cipher::open(tmp.string());
+    Arena arena;
+    MetaLog log;
+    auto* region = mint_region(arena, 16);
+
+    OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*> fleet{region};
+    auto program = std::move(fleet).relax<Lifetime_v::PER_PROGRAM>();
+    auto request = std::move(program).relax<Lifetime_v::PER_REQUEST>();
+
+    static_assert(std::is_same_v<
+        decltype(request),
+        OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*>>);
+
+    auto pinned = c.commit_per_request(c.mint_open_view(),
+                                       std::move(request), &log);
+    static_assert(std::is_same_v<decltype(pinned), Hot<ContentHash>>);
+    (void)std::move(pinned).consume();
+    std::filesystem::remove_all(tmp);
+}
+
+// ── T17 — opaque_lifetime_scope_v reflective trait agreement ───
+//
+// The reflective trait (FOUND-D23 IsOpaqueLifetime) must agree with
+// the wrapper's static `scope` member.  Production sites that read
+// the scope via the trait (e.g., for diagnostic printing or row-
+// hash folding) MUST see the same value the wrapper would report
+// via .scope.  Drift between the two is a silent diagnostic bug.
+static void test_reflective_trait_agreement() {
+    using crucible::safety::extract::opaque_lifetime_scope_v;
+
+    using PR = OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*>;
+    using PP = OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*>;
+    using PF = OpaqueLifetime<Lifetime_v::PER_FLEET,   const RegionNode*>;
+
+    static_assert(opaque_lifetime_scope_v<PR> == PR::scope);
+    static_assert(opaque_lifetime_scope_v<PP> == PP::scope);
+    static_assert(opaque_lifetime_scope_v<PF> == PF::scope);
+
+    // Same trait through cv-ref — wrapper-detection strips qualifiers.
+    static_assert(opaque_lifetime_scope_v<PR&>       == PR::scope);
+    static_assert(opaque_lifetime_scope_v<PR const&> == PR::scope);
+    static_assert(opaque_lifetime_scope_v<PR&&>      == PR::scope);
+}
+
+// ── T18 — idempotent commit_per_program (content-addressing) ────
+//
+// Cipher's persistence is content-addressed: the same region
+// committed via commit_per_program twice produces the same
+// ContentHash and a single on-disk file.  The lifetime overlay
+// must NOT introduce any non-deterministic salt — DetSafe axiom
+// at the persistence boundary.
+static void test_idempotent_commit_per_program() {
+    auto tmp = tmp_root_for("t18");
+    Cipher c = Cipher::open(tmp.string());
+    Arena arena;
+    MetaLog log;
+    auto* region = mint_region(arena, 18);
+
+    auto first = c.commit_per_program(
+        c.mint_open_view(),
+        OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*>{region},
+        &log);
+    ContentHash first_hash = std::move(first).consume();
+
+    auto second = c.commit_per_program(
+        c.mint_open_view(),
+        OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*>{region},
+        &log);
+    ContentHash second_hash = std::move(second).consume();
+
+    assert(first_hash == second_hash);
+    assert(static_cast<bool>(first_hash));
+    std::filesystem::remove_all(tmp);
+}
+
+// ── T19 — move-only enforcement (Graded-derived) ────────────────
+//
+// OpaqueLifetime is move-only via Graded's substrate.  Code that
+// would rely on copying the wrapper at the commit_per_* call site
+// MUST fail to compile.  We cannot witness the failure here (this
+// is a positive test), but we CAN witness the type-trait shape that
+// the requires-clause + move-into-by-value relies on.
+static void test_move_only_witness() {
+    using PF = OpaqueLifetime<Lifetime_v::PER_FLEET, const RegionNode*>;
+
+    // Move-constructible (consume() needs this for std::move(w) into
+    // commit_per_*'s by-value parameter).
+    static_assert(std::is_move_constructible_v<PF>);
+
+    // Trivially move-constructible because Graded's substrate is
+    // [[no_unique_address]] over a pointer T — zero-cost move.
+    static_assert(std::is_trivially_move_constructible_v<PF>);
+
+    // The wrapper consumes via && rvalue-only consume() — captured
+    // via std::move at the call site.  This shape is what makes
+    // commit_per_*(std::move(w), ...) the only valid call form.
+}
+
+// ── T20 — API completeness matrix ────────────────────────────────
+//
+// All six commit_per_* overloads (3 scopes × 2 shapes: view-mint
+// vs legacy) must exist with matching CipherTier output types.
+// A regression that drops one overload would silently fall back
+// to the publish_* layer at unprepared call sites.
+static void test_api_completeness_matrix() {
+    auto tmp = tmp_root_for("t20");
+    Cipher c = Cipher::open(tmp.string());
+    Arena arena;
+    MetaLog log;
+    auto* region = mint_region(arena, 20);
+
+    using PR = OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*>;
+    using PP = OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*>;
+    using PF = OpaqueLifetime<Lifetime_v::PER_FLEET,   const RegionNode*>;
+
+    // View-shape — three.
+    static_assert(std::is_same_v<
+        decltype(c.commit_per_request(c.mint_open_view(),
+                                      std::declval<PR&&>(), &log)),
+        Hot<ContentHash>>);
+    static_assert(std::is_same_v<
+        decltype(c.commit_per_program(c.mint_open_view(),
+                                      std::declval<PP&&>(), &log)),
+        Warm<ContentHash>>);
+    static_assert(std::is_same_v<
+        decltype(c.commit_per_fleet(c.mint_open_view(),
+                                    std::declval<PF&&>(), &log)),
+        Cold<ContentHash>>);
+
+    // Legacy-shape — three.
+    static_assert(std::is_same_v<
+        decltype(c.commit_per_request(std::declval<PR&&>(), &log)),
+        Hot<ContentHash>>);
+    static_assert(std::is_same_v<
+        decltype(c.commit_per_program(std::declval<PP&&>(), &log)),
+        Warm<ContentHash>>);
+    static_assert(std::is_same_v<
+        decltype(c.commit_per_fleet(std::declval<PF&&>(), &log)),
+        Cold<ContentHash>>);
+
+    // Smoke: invoke all six (consume the return).
+    auto a = c.commit_per_request(c.mint_open_view(), PR{region}, &log);
+    auto b = c.commit_per_program(c.mint_open_view(), PP{region}, &log);
+    auto d = c.commit_per_fleet  (c.mint_open_view(), PF{region}, &log);
+    auto e = c.commit_per_request(PR{region}, &log);
+    auto f = c.commit_per_program(PP{region}, &log);
+    auto g = c.commit_per_fleet  (PF{region}, &log);
+    (void)std::move(a).consume();
+    (void)std::move(b).consume();
+    (void)std::move(d).consume();
+    (void)std::move(e).consume();
+    (void)std::move(f).consume();
+    (void)std::move(g).consume();
+    std::filesystem::remove_all(tmp);
+}
+
 // ── T15 — Content-hash equality across the lifetime overlay ────
 static void test_content_hash_equality_across_overlay() {
     auto tmp = tmp_root_for("t15");
@@ -403,6 +572,13 @@ int main() {
     test_non_opaque_lifetime_rejected();
     test_layout_invariant();
     test_content_hash_equality_across_overlay();
+
+    // FOUND-G12-AUDIT
+    test_relax_down_then_commit_per_request();
+    test_reflective_trait_agreement();
+    test_idempotent_commit_per_program();
+    test_move_only_witness();
+    test_api_completeness_matrix();
 
     std::puts("ok");
     return 0;

@@ -1152,6 +1152,18 @@ crucible_neg_compile_test(neg_hot_path_cold_at_hot_fence
 crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_fleet_fence
   "constraints not satisfied|no matching function|associated constraints")
 
+# FOUND-G12-AUDIT — matrix-fill of the lifetime → tier rejection set:
+#   neg_opaque_lifetime_per_request_at_per_program_fence — secondary
+#       leak fence (request data cannot promise program-long persistence;
+#       Warm-tier cross-restart leak class).
+#   neg_opaque_lifetime_per_program_at_per_fleet_fence — distinct bug
+#       class (program-instance scratch replicated across fleet =
+#       canary / blue-green contamination on reshard).
+crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_program_fence
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_opaque_lifetime_per_program_at_per_fleet_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
 # ─── FOUND-G26 Wait wrapper neg-compiles (6 fixtures: 4+2) ──────────
 #
 # 4 wrapper-surface fixtures (mirrors HotPath / DetSafe pattern):
