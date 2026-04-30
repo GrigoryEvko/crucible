@@ -111,6 +111,27 @@ struct hybrid_handle {
     int  load() const noexcept { return 0; }
 };
 
+// Writer-shaped but publish is const-qualified — D07's
+// publish_signature_decomp matches `void(C::*)(P const&)` and
+// `void(C::*)(P const&) noexcept` only; the const-qualified mptr
+// type does not match either, so D07 rejects.
+struct writer_const_publish {
+    void publish(int const&) const noexcept {}
+};
+
+// User-defined struct payload — exercises non-fundamental value type.
+struct payload_struct { int a; double b; };
+
+struct writer_struct {
+    void publish(payload_struct const&) noexcept {}
+};
+
+// Pointer-payload writer — D07 admits because publish_signature_decomp's
+// P deduces to `int*`.
+struct writer_ptr {
+    void publish(int* const&) noexcept {}
+};
+
 using OR_int_in = ::crucible::safety::OwnedRegion<int, ::in_tag>;
 
 // ── Positive shapes ─────────────────────────────────────────────
@@ -166,6 +187,26 @@ void f_region_in_value_slot(writer_int&&, OR_int_in&&) noexcept;
 
 // Non-void return.
 int f_int_return(writer_int&&, int) noexcept;
+
+// Writer with const-qualified publish in handle slot — D07 rejects.
+void f_const_publish_in_writer_slot(writer_const_publish&&, int) noexcept;
+
+// Const-qualified value param — `int const` is by-value (not a
+// reference), so the concept ADMITS.  After cv-strip in
+// published_value_t, the type is `int`.
+void f_const_value(writer_int&&, int const) noexcept;
+
+// (Volatile-by-value parameters are C++20-deprecated and rejected
+// by -Werror=volatile, so we don't witness them here.  cv-stripping
+// behaviour is fully covered by the const case above.)
+
+// Pointer-type value param — admitted (pointer is a value type
+// per §3.6's literal `T value` wording).  Handle's payload type
+// is also int*, so value_consistent_v is true.
+void f_pointer_value(writer_ptr&&, int*) noexcept;
+
+// Struct-type value param — exercises non-fundamental T.
+void f_struct_value(writer_struct&&, payload_struct) noexcept;
 
 }  // namespace sw_test
 
@@ -235,6 +276,61 @@ void test_negative_reader_in_writer_slot() {
 
 void test_negative_hybrid_in_writer_slot() {
     static_assert(!extract::SwmrWriter<&sw_test::f_hybrid_in_writer_slot>);
+}
+
+void test_negative_const_qualified_publish() {
+    // D07's publish_signature_decomp matches mptr types WITHOUT
+    // cv-ref qualifiers on the method.  A const-qualified publish
+    // produces `void (C::*)(int const&) const [noexcept]`, which
+    // does not match either decomp specialisation.  D07 rejects
+    // → D17 inherits the rejection.
+    static_assert(!extract::SwmrWriter<
+        &sw_test::f_const_publish_in_writer_slot>);
+}
+
+void test_positive_cv_qualified_value_admitted() {
+    // `int const` is by-value (not a reference), so the concept
+    // ADMITS.  published_value_t cv-strips to `int`.
+    // (Volatile-by-value is C++20-deprecated and rejected by
+    // -Werror=volatile, so we don't witness it.)
+    static_assert( extract::SwmrWriter<&sw_test::f_const_value>);
+
+    static_assert(std::is_same_v<
+        extract::swmr_writer_published_value_t<&sw_test::f_const_value>,
+        int>);
+
+    // Value-consistent with handle (writer_int has int payload).
+    static_assert(extract::swmr_writer_value_consistent_v<
+        &sw_test::f_const_value>);
+}
+
+void test_positive_pointer_value() {
+    // §3.6's `T value` wording admits pointer types — they are
+    // by-value too (the pointer itself is the value).  writer_ptr
+    // declares publish(int* const&); D07 deduces P = int*.
+    static_assert( extract::SwmrWriter<&sw_test::f_pointer_value>);
+
+    static_assert(std::is_same_v<
+        extract::swmr_writer_handle_value_t<&sw_test::f_pointer_value>,
+        int*>);
+    static_assert(std::is_same_v<
+        extract::swmr_writer_published_value_t<&sw_test::f_pointer_value>,
+        int*>);
+    static_assert(extract::swmr_writer_value_consistent_v<
+        &sw_test::f_pointer_value>);
+}
+
+void test_positive_struct_value() {
+    // Non-fundamental value type — exercises the deduction path
+    // for user-defined types.
+    static_assert( extract::SwmrWriter<&sw_test::f_struct_value>);
+
+    static_assert(std::is_same_v<
+        extract::swmr_writer_handle_value_t<&sw_test::f_struct_value>,
+        sw_test::payload_struct>);
+    static_assert(std::is_same_v<
+        extract::swmr_writer_published_value_t<&sw_test::f_struct_value>,
+        sw_test::payload_struct>);
 }
 
 void test_negative_owned_region_in_value_slot() {
@@ -378,6 +474,14 @@ int main() {
              test_negative_reader_in_writer_slot);
     run_test("test_negative_hybrid_in_writer_slot",
              test_negative_hybrid_in_writer_slot);
+    run_test("test_negative_const_qualified_publish",
+             test_negative_const_qualified_publish);
+    run_test("test_positive_cv_qualified_value_admitted",
+             test_positive_cv_qualified_value_admitted);
+    run_test("test_positive_pointer_value",
+             test_positive_pointer_value);
+    run_test("test_positive_struct_value",
+             test_positive_struct_value);
     run_test("test_negative_owned_region_in_value_slot",
              test_negative_owned_region_in_value_slot);
     run_test("test_negative_non_void_return",
