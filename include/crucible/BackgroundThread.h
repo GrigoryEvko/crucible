@@ -17,6 +17,8 @@
 #include <crucible/Platform.h>
 #include <crucible/Saturate.h>
 #include <crucible/SchemaTable.h>
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/FxAliases.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/handles/OneShotFlag.h>
 #include <crucible/safety/Refined.h>
@@ -396,7 +398,122 @@ struct BackgroundThread {
   }
 
   // ── Main loop ──
+ public:
+  //
+  // FOUND-I20: row-typed compile-time fence for the bg-thread main loop.
+  //
+  // The bg drain runs forever until `running` is cleared.  By construction
+  // it performs:
+  //   • Bg     — every line executes inside the bg-thread context tag.
+  //   • Alloc  — `current_trace.push_back` grows; `on_iteration_boundary`
+  //              calls `make_region` which arena-allocates RegionNode
+  //              + per-op metadata.
+  //   • IO     — `region_ready_cb` is fired with the freshly-built
+  //              region; the callback is the bg's only externally
+  //              observable side effect (audit log, KernelCache publish,
+  //              federated-cache enqueue).  IO is also conservatively
+  //              charged for the ring drain (MetaLog reads cross the
+  //              SPSC fence).
+  //   • Block  — the SPSC drain spin-pauses on empty rings, and the
+  //              std::thread itself parks the OS scheduler.  Both are
+  //              observable blocking effects.
+  //
+  // The required row is therefore `Row<Bg, Alloc, IO, Block>`.  Callers
+  // (Vigil setup, test harnesses, future Keeper init) must declare a
+  // CallerRow that is a SUPERSET — i.e. the bg admits at most these
+  // four atoms; declaring fewer is a compile error.
+  //
+  // This is the structural inverse of FOUND-I16/I17/I19 (those use
+  // `IsPure<CallerRow>` — caller declares AT MOST nothing).  Here the
+  // direction is `Subrow<required, CallerRow>` — caller declares AT
+  // LEAST {Bg, Alloc, IO, Block}.  Same algebraic machinery, opposite
+  // polarity.  Mirrors Cipher::record_event's row fence (FOUND-I09).
+  using run_required_row =
+      ::crucible::effects::Row<
+          ::crucible::effects::Effect::Bg,
+          ::crucible::effects::Effect::Alloc,
+          ::crucible::effects::Effect::IO,
+          ::crucible::effects::Effect::Block>;
 
+  // ── Required-row content fence (FOUND-I20-AUDIT, finding mirrored
+  // from Cipher::record_event_required_row) ────────────────────────
+  //
+  // Pin the EXACT contents so a future refactor that "improves" the
+  // typedef (drops Block, adds Init, swaps to a different alias)
+  // fails loudly here rather than silently widening or narrowing
+  // the fence.  Header-level: every TU that includes
+  // BackgroundThread.h verifies the contract, NOT just the bg-row
+  // test TU.
+  static_assert(
+      std::is_same_v<
+          run_required_row,
+          ::crucible::effects::Row<
+              ::crucible::effects::Effect::Bg,
+              ::crucible::effects::Effect::Alloc,
+              ::crucible::effects::Effect::IO,
+              ::crucible::effects::Effect::Block>>,
+      "BackgroundThread::run_required_row MUST be exactly "
+      "Row<Bg, Alloc, IO, Block>.  Adding/removing atoms is a "
+      "deliberate API tightening — every callsite spawning a bg "
+      "thread (Vigil setup, Keeper init, tests) must update its "
+      "CallerRow declaration first.");
+  static_assert(
+      ::crucible::effects::row_size_v<run_required_row> == 4u,
+      "run_required_row size MUST be exactly 4 atoms "
+      "(Bg + Alloc + IO + Block).");
+  static_assert(
+      ::crucible::effects::row_contains_v<
+          run_required_row,
+          ::crucible::effects::Effect::Bg>,
+      "run_required_row MUST contain Effect::Bg — the bg thread "
+      "by definition runs in the Bg context.");
+  static_assert(
+      ::crucible::effects::row_contains_v<
+          run_required_row,
+          ::crucible::effects::Effect::Alloc>,
+      "run_required_row MUST contain Effect::Alloc — region "
+      "construction and current_trace growth are allocations.");
+  static_assert(
+      ::crucible::effects::row_contains_v<
+          run_required_row,
+          ::crucible::effects::Effect::IO>,
+      "run_required_row MUST contain Effect::IO — region_ready_cb "
+      "fires with the freshly-built region (audit log, federated "
+      "cache enqueue).");
+  static_assert(
+      ::crucible::effects::row_contains_v<
+          run_required_row,
+          ::crucible::effects::Effect::Block>,
+      "run_required_row MUST contain Effect::Block — the SPSC "
+      "drain spin-pauses on empty rings and the OS scheduler "
+      "parks the std::thread.");
+
+  // Templated wrapper.  CallerRow is the row the caller declares it
+  // holds; Subrow<required, CallerRow> checks
+  // {Bg, Alloc, IO, Block} ⊆ CallerRow at substitution time.
+  //
+  // Single-line forwarder to run() — the entire fence lives in the
+  // requires-clause.  Zero runtime cost; the bg loop is the same
+  // instruction sequence either way.
+  //
+  // Use case: a callsite that explicitly demands the bg thread admits
+  // at most a declared budget of effects can spawn the thread via
+  //   bg.run_in_row<effects::Row<Bg, Alloc, IO, Block>>()
+  // or any superset (e.g. AllRow).  Pure / Tot / Div / ST contexts
+  // cannot satisfy the constraint and the template substitution fails
+  // with the standard "constraints not satisfied" diagnostic.
+  template <typename CallerRow>
+      requires ::crucible::effects::Subrow<
+          run_required_row, CallerRow>
+  void run_in_row() CRUCIBLE_NO_THREAD_SAFETY {
+      run();
+  }
+
+#ifdef CRUCIBLE_BENCH
+ public:
+#else
+ private:
+#endif
   void run() CRUCIBLE_NO_THREAD_SAFETY {
     effects::Bg bg;
     TraceRing::Entry batch[BATCH_SIZE];

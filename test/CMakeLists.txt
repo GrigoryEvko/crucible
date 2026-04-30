@@ -375,6 +375,7 @@ crucible_test(test_computation_cache_integration)
 crucible_test(test_computation_cache_invalidation)
 crucible_test(test_federation_protocol)
 crucible_test(test_cipher_record_event)
+crucible_test(test_background_thread_run_in_row)
 crucible_test(test_computation_cache_federation)
 crucible_test(test_fx_aliases)
 crucible_test(test_fx_alias_diagnostic)
@@ -2073,6 +2074,38 @@ crucible_neg_compile_test(neg_vigil_dispatch_op_pure_test
 crucible_neg_compile_test(neg_vigil_dispatch_op_pure_io_block
   "constraints not satisfied|template constraint failure|associated constraints")
 crucible_neg_compile_test(neg_vigil_dispatch_op_pure_full_row
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-I20 BackgroundThread::run row-fence ──────────────────────
+# BackgroundThread::run_in_row<CallerRow> requires
+# Subrow<Row<Bg, Alloc, IO, Block>, CallerRow>.  Structural inverse of
+# the I16/I17/I19 hot-path Pure fences: instead of "caller declares
+# AT MOST nothing", this is "caller declares AT LEAST {Bg, Alloc, IO,
+# Block}".  9 fixtures cover the per-axis missing-atom matrix + the
+# orthogonal-row rejections (Init/Test).  Mirrors the FOUND-I09
+# Cipher::record_event fence (Subrow<Row<IO, Block>, CallerRow>) but
+# at higher cardinality.
+crucible_neg_compile_test(neg_background_thread_run_in_row_empty
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_background_thread_run_in_row_bg_only
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_background_thread_run_in_row_alloc_only
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_background_thread_run_in_row_io_only
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_background_thread_run_in_row_block_only
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_background_thread_run_in_row_missing_bg
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_background_thread_run_in_row_missing_alloc
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_background_thread_run_in_row_missing_io
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_background_thread_run_in_row_missing_block
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_background_thread_run_in_row_init_only
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_background_thread_run_in_row_test_only
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
