@@ -124,6 +124,38 @@ struct swmr_reader {
     int load() const noexcept { return 0; }
 };
 
+// Pointer-payload handles — D05/D06 admit because P deduces to int*.
+struct consumer_ptr {
+    [[nodiscard]] std::optional<int*> try_pop() noexcept { return nullptr; }
+};
+struct producer_ptr {
+    [[nodiscard]] bool try_push(int* const&) noexcept { return true; }
+};
+
+// Handles with extra unrelated methods — D05/D06 detect publish/pop
+// only; extras are structurally invisible.
+struct consumer_with_extras {
+    [[nodiscard]] std::optional<int> try_pop() noexcept { return 0; }
+    void unrelated_helper() noexcept {}
+    int  another_method(int) const noexcept { return 0; }
+};
+struct producer_with_extras {
+    [[nodiscard]] bool try_push(int const&) noexcept { return true; }
+    void unrelated_helper() noexcept {}
+};
+
+// cv-qualified consumer method (try_pop is const) — D06 rejects
+// because load_signature_decomp matches mptr types WITHOUT cv-ref
+// qualifiers on the method.
+struct consumer_const_pop {
+    [[nodiscard]] std::optional<int> try_pop() const noexcept { return 0; }
+};
+
+// cv-qualified producer method (try_push is const) — D05 rejects.
+struct producer_const_push {
+    [[nodiscard]] bool try_push(int const&) const noexcept { return true; }
+};
+
 using OR_int = ::crucible::safety::OwnedRegion<int, ::in_tag>;
 
 // ── Positive shapes ─────────────────────────────────────────────
@@ -150,6 +182,21 @@ void f_consumer_volatile(consumer_int volatile&&,
                          producer_int&&) noexcept;
 void f_producer_volatile(consumer_int&&,
                          producer_int volatile&&) noexcept;
+
+// Volatile&& on BOTH slots — also admitted.
+void f_both_volatile(consumer_int volatile&&,
+                     producer_int volatile&&) noexcept;
+
+// Pointer-payload pipeline stage — admitted; pass-through.
+void f_pointer_pass_through(consumer_ptr&&, producer_ptr&&) noexcept;
+
+// Stage with extras-bearing handles — admitted; structural detection.
+void f_extras_handles(consumer_with_extras&&,
+                      producer_with_extras&&) noexcept;
+
+// Both slots non-noexcept — admitted; both decomp branches active.
+void f_both_no_noexcept(consumer_int_no_noexcept&&,
+                        producer_int_no_noexcept&&) noexcept;
 
 // ── Negative shapes ─────────────────────────────────────────────
 
@@ -197,6 +244,14 @@ void f_int_in_producer_slot(consumer_int&&, int) noexcept;
 // Non-void return.
 int f_int_return(consumer_int&&, producer_int&&) noexcept;
 
+// cv-qualified handle method on consumer slot — D06 rejects.
+void f_const_pop_in_consumer_slot(consumer_const_pop&&,
+                                  producer_int&&) noexcept;
+
+// cv-qualified handle method on producer slot — D05 rejects.
+void f_const_push_in_producer_slot(consumer_int&&,
+                                   producer_const_push&&) noexcept;
+
 }  // namespace ps_test
 
 namespace {
@@ -240,6 +295,38 @@ void test_positive_non_noexcept_handles() {
 void test_positive_volatile_either_slot() {
     static_assert( extract::PipelineStage<&ps_test::f_consumer_volatile>);
     static_assert( extract::PipelineStage<&ps_test::f_producer_volatile>);
+}
+
+void test_positive_volatile_both_slots() {
+    static_assert( extract::PipelineStage<&ps_test::f_both_volatile>);
+}
+
+void test_positive_pointer_payload_pass_through() {
+    // Pointer-payload pipeline stage — D05/D06 admit because P
+    // deduces to int*.  Both extractors yield int*; value-preserving.
+    static_assert( extract::PipelineStage<
+        &ps_test::f_pointer_pass_through>);
+    static_assert(std::is_same_v<
+        extract::pipeline_stage_input_value_t<
+            &ps_test::f_pointer_pass_through>,
+        int*>);
+    static_assert(std::is_same_v<
+        extract::pipeline_stage_output_value_t<
+            &ps_test::f_pointer_pass_through>,
+        int*>);
+    static_assert(extract::pipeline_stage_is_value_preserving_v<
+        &ps_test::f_pointer_pass_through>);
+}
+
+void test_positive_extras_handles_admitted() {
+    // D05/D06 detect publish/pop only.  Extra unrelated methods on
+    // either handle don't break recognition.
+    static_assert( extract::PipelineStage<&ps_test::f_extras_handles>);
+}
+
+void test_positive_both_slots_non_noexcept() {
+    // Both decomp branches active simultaneously — admitted.
+    static_assert( extract::PipelineStage<&ps_test::f_both_no_noexcept>);
 }
 
 void test_negative_arity_mismatch() {
@@ -300,6 +387,18 @@ void test_negative_non_handle_slot() {
 
 void test_negative_non_void_return() {
     static_assert(!extract::PipelineStage<&ps_test::f_int_return>);
+}
+
+void test_negative_cv_qualified_handle_methods() {
+    // D05/D06's signature_decomp specialisations match mptr types
+    // WITHOUT cv-ref qualifiers on the method.  Const-qualified
+    // try_pop / try_push produces `(C::*)(...) const [noexcept]`
+    // which doesn't match either branch — D05/D06 reject, D19
+    // inherits the rejection from either side.
+    static_assert(!extract::PipelineStage<
+        &ps_test::f_const_pop_in_consumer_slot>);
+    static_assert(!extract::PipelineStage<
+        &ps_test::f_const_push_in_producer_slot>);
 }
 
 void test_input_value_extraction() {
@@ -409,6 +508,14 @@ int main() {
              test_positive_non_noexcept_handles);
     run_test("test_positive_volatile_either_slot",
              test_positive_volatile_either_slot);
+    run_test("test_positive_volatile_both_slots",
+             test_positive_volatile_both_slots);
+    run_test("test_positive_pointer_payload_pass_through",
+             test_positive_pointer_payload_pass_through);
+    run_test("test_positive_extras_handles_admitted",
+             test_positive_extras_handles_admitted);
+    run_test("test_positive_both_slots_non_noexcept",
+             test_positive_both_slots_non_noexcept);
     run_test("test_negative_arity_mismatch",
              test_negative_arity_mismatch);
     run_test("test_negative_consumer_not_rvalue_ref",
@@ -427,6 +534,8 @@ int main() {
              test_negative_non_handle_slot);
     run_test("test_negative_non_void_return",
              test_negative_non_void_return);
+    run_test("test_negative_cv_qualified_handle_methods",
+             test_negative_cv_qualified_handle_methods);
     run_test("test_input_value_extraction",
              test_input_value_extraction);
     run_test("test_output_value_extraction",
