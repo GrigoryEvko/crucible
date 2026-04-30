@@ -1203,6 +1203,21 @@ crucible_neg_compile_test(neg_mem_order_seqcst_at_relaxed_fence
 crucible_neg_compile_test(neg_recipe_registry_relaxed_at_bitexact_fence
   "constraints not satisfied|no matching function|associated constraints")
 
+# FOUND-G04-AUDIT companion fixtures — span the lattice rejection
+# surface across the 7-tier ToleranceLattice:
+#   - relaxed_at_bitexact_fence  (FOUND-G04 baseline) — 6-tier-gap (max)
+#   - fp64_at_bitexact_fence     (FOUND-G04-AUDIT)    — 1-tier-gap (adjacent)
+#   - fp16_at_bitexact_fence     (FOUND-G04-AUDIT)    — 3-tier-gap (mid;
+#                                                       matches starter
+#                                                       BITEXACT_TC + FP16
+#                                                       starter recipes)
+# Together: adjacent / mid-range / max gaps prove rejection is
+# structural across the entire lattice, not boundary-special-cased.
+crucible_neg_compile_test(neg_recipe_registry_fp64_at_bitexact_fence
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_recipe_registry_fp16_at_bitexact_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
 # ─── FOUND-G26 Wait wrapper neg-compiles (6 fixtures: 4+2) ──────────
 #
 # 4 wrapper-surface fixtures (mirrors HotPath / DetSafe pattern):
