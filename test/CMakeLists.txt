@@ -334,6 +334,7 @@ crucible_test(test_inferred_permission_tags)
 crucible_test(test_unary_transform)
 crucible_test(test_binary_transform)
 crucible_test(test_producer_endpoint)
+crucible_test(test_consumer_endpoint)
 crucible_test(test_is_producer_handle)
 crucible_test(test_is_consumer_handle)
 crucible_test(test_is_swmr_handle)
@@ -1326,6 +1327,27 @@ crucible_neg_compile_test(neg_producer_endpoint_region_value_t_on_non_endpoint
   "constraints not satisfied|template constraint failure|associated constraints")
 
 crucible_neg_compile_test(neg_producer_endpoint_value_consistent_v_on_non_endpoint
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D16 ConsumerEndpoint constrained-extractor fixtures ──────
+#
+# Symmetric to D15 — pins the four constrained extractors on
+# ConsumerEndpoint.h: handle_value_t / region_tag_t / region_value_t /
+# value_consistent_v.  Each is constrained on
+# `requires ConsumerEndpoint<FnPtr>`.  Without the constraint,
+# diagnostics would land deep inside consumer_handle_value_t /
+# owned_region_*_t requires clauses rather than at the consumer-
+# endpoint-shape boundary.
+crucible_neg_compile_test(neg_consumer_endpoint_handle_value_t_on_non_endpoint
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_consumer_endpoint_region_tag_t_on_non_endpoint
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_consumer_endpoint_region_value_t_on_non_endpoint
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_consumer_endpoint_value_consistent_v_on_non_endpoint
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
