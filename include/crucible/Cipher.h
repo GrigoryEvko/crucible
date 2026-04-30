@@ -32,7 +32,9 @@
 #include <crucible/Serialize.h>
 #include <crucible/handles/FileHandle.h>
 #include <crucible/safety/CipherTier.h>
+#include <crucible/safety/IsOpaqueLifetime.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/OpaqueLifetime.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Tagged.h>
@@ -329,6 +331,143 @@ class CRUCIBLE_OWNER Cipher {
     [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
     publish_cold(const RegionNode* /*region*/, const MetaLog* /*meta_log*/) noexcept {
         return safety::cipher_tier::Cold<ContentHash>{ContentHash{}};
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FOUND-G12: OpaqueLifetime-pinned commit surface
+    // ═══════════════════════════════════════════════════════════════
+    //
+    // Cipher tier promotion has two ORTHOGONAL axes that the user
+    // previously had to track manually:
+    //
+    //   (a) STORAGE RESIDENCY (Hot / Warm / Cold) — covered by
+    //       publish_hot / publish_warm / publish_cold (FOUND-G47).
+    //   (b) DATA LIFETIME SCOPE (PER_REQUEST / PER_PROGRAM /
+    //       PER_FLEET) — the SOURCE-side promise: how long the
+    //       caller meant the value to live.
+    //
+    // The two axes correlate but are not the same.  PER_REQUEST data
+    // BELONGS in Hot tier (peer RAM, dies on session close) and is
+    // a CROSS-REQUEST-LEAK BUG if it reaches Cold (S3, durable across
+    // fleet).  This is precisely the inferlet-pattern bug class
+    // documented in OpaqueLifetime.h docblock + 25_04_2026.md §16
+    // SessionOpaqueState — a PdaState declared PER_REQUEST silently
+    // committed to PER_FLEET cold storage leaks user grammar state
+    // across requests.
+    //
+    // commit_per_{request,program,fleet}() encodes axis (b) at the
+    // type level by accepting only OpaqueLifetime<MatchingScope, *>-
+    // pinned values, and routes to the correct CipherTier on output:
+    //
+    //   commit_per_request → publish_hot   (PER_REQUEST → Hot,
+    //                                       peer RAM, session-scoped)
+    //   commit_per_program → publish_warm  (PER_PROGRAM → Warm,
+    //                                       NVMe, program-scoped)
+    //   commit_per_fleet   → publish_cold  (PER_FLEET → Cold,
+    //                                       S3/GCS, fleet-durable)
+    //
+    // Lattice direction (LifetimeLattice.h):
+    //     PER_REQUEST(narrowest) ⊑ PER_PROGRAM ⊑ PER_FLEET(widest)
+    //
+    // satisfies<Required> = leq(Required, Self).  Wider scope serves
+    // narrower requirement (a fleet-scoped value is trivially safe
+    // within a single request).  THE LOAD-BEARING DIRECTION:
+    // a PER_REQUEST-pinned value DOES NOT satisfy<PER_FLEET>
+    // (leq(PER_FLEET, PER_REQUEST) is false), so commit_per_fleet
+    // REJECTS PER_REQUEST values at compile time — fencing the
+    // cross-request leak at the persistence boundary.
+    //
+    // Why additive: existing publish_* callers stay unchanged.  The
+    // commit_per_* layer is the lifetime-aware overlay; downstream
+    // call sites that have already classified their data's lifetime
+    // (inferlet user state, RegionNode owner annotations) graduate
+    // from publish_* to commit_per_* and gain the leak fence.
+
+    // PER_REQUEST commit — accepts only PER_REQUEST-pinned input.
+    // Routes to publish_hot (peer-RAM RAID, dies on session close).
+    // Most permissive — wider lifetimes (PER_PROGRAM, PER_FLEET)
+    // also satisfy and are accepted (their availability subsumes
+    // the request scope).
+    template <typename W>
+        requires (safety::extract::is_opaque_lifetime_v<W>
+                  && W::template satisfies<safety::Lifetime_v::PER_REQUEST>)
+    [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
+    commit_per_request(OpenView const& view,
+                       W lifetime_pinned_region,
+                       const MetaLog* meta_log) noexcept {
+        // Consume the OpaqueLifetime wrapper to recover the bare
+        // RegionNode*; route to the existing publish_hot path.
+        const RegionNode* region =
+            std::move(lifetime_pinned_region).consume();
+        return publish_hot(view, region, meta_log);
+    }
+
+    // Legacy-shape PER_REQUEST commit — mints view locally.
+    template <typename W>
+        requires (safety::extract::is_opaque_lifetime_v<W>
+                  && W::template satisfies<safety::Lifetime_v::PER_REQUEST>)
+    [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
+    commit_per_request(W lifetime_pinned_region,
+                       const MetaLog* meta_log) noexcept {
+        const RegionNode* region =
+            std::move(lifetime_pinned_region).consume();
+        return publish_hot(region, meta_log);
+    }
+
+    // PER_PROGRAM commit — accepts PER_PROGRAM and PER_FLEET (wider).
+    // REJECTS PER_REQUEST: a request-scoped value cannot promise
+    // program-long persistence.  Routes to publish_warm (NVMe).
+    template <typename W>
+        requires (safety::extract::is_opaque_lifetime_v<W>
+                  && W::template satisfies<safety::Lifetime_v::PER_PROGRAM>)
+    [[nodiscard]] safety::cipher_tier::Warm<ContentHash>
+    commit_per_program(OpenView const& view,
+                       W lifetime_pinned_region,
+                       const MetaLog* meta_log) {
+        const RegionNode* region =
+            std::move(lifetime_pinned_region).consume();
+        return publish_warm(view, region, meta_log);
+    }
+
+    // Legacy-shape PER_PROGRAM commit — mints view locally.
+    template <typename W>
+        requires (safety::extract::is_opaque_lifetime_v<W>
+                  && W::template satisfies<safety::Lifetime_v::PER_PROGRAM>)
+    [[nodiscard]] safety::cipher_tier::Warm<ContentHash>
+    commit_per_program(W lifetime_pinned_region,
+                       const MetaLog* meta_log) {
+        const RegionNode* region =
+            std::move(lifetime_pinned_region).consume();
+        return publish_warm(region, meta_log);
+    }
+
+    // PER_FLEET commit — accepts ONLY PER_FLEET-pinned input.
+    // REJECTS PER_REQUEST and PER_PROGRAM: only fleet-scoped data
+    // may be Raft-replicated to durable cold storage.  Routes to
+    // publish_cold (S3/GCS).  THIS IS THE LOAD-BEARING REJECTION
+    // SITE for the inferlet cross-request leak bug class.
+    template <typename W>
+        requires (safety::extract::is_opaque_lifetime_v<W>
+                  && W::template satisfies<safety::Lifetime_v::PER_FLEET>)
+    [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
+    commit_per_fleet(OpenView const& view,
+                     W lifetime_pinned_region,
+                     const MetaLog* meta_log) noexcept {
+        const RegionNode* region =
+            std::move(lifetime_pinned_region).consume();
+        return publish_cold(view, region, meta_log);
+    }
+
+    // Legacy-shape PER_FLEET commit — mints view locally.
+    template <typename W>
+        requires (safety::extract::is_opaque_lifetime_v<W>
+                  && W::template satisfies<safety::Lifetime_v::PER_FLEET>)
+    [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
+    commit_per_fleet(W lifetime_pinned_region,
+                     const MetaLog* meta_log) noexcept {
+        const RegionNode* region =
+            std::move(lifetime_pinned_region).consume();
+        return publish_cold(region, meta_log);
     }
 
     // ─── Load ───────────────────────────────────────────────────────

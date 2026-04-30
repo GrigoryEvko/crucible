@@ -323,6 +323,7 @@ crucible_test(test_cipher_wait)
 crucible_test(test_cipher_publish_tier)
 crucible_test(test_kernel_cache_residency_heat)
 crucible_test(test_trace_ring_hot_path)
+crucible_test(test_cipher_commit_lifetime)
 crucible_test(test_atomic_snapshot)
 crucible_test(test_chase_lev_deque)
 crucible_test(test_mpsc_ring)
@@ -1137,6 +1138,18 @@ crucible_neg_compile_test(neg_hot_path_lattice_cross_lattice_mixing
 # MetaLog::try_append_pinned flow into).  Companion to the FOUND-G21
 # wrapper-surface and lattice-substrate fixtures above.
 crucible_neg_compile_test(neg_hot_path_cold_at_hot_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
+# ─── FOUND-G12 OpaqueLifetime production-call-site neg-compile ─────
+#
+# Load-bearing rejection at the persistence boundary: an
+# OpaqueLifetime<PER_REQUEST, T> value rejected by Cipher::
+# commit_per_fleet, whose requires-clause demands satisfies<PER_FLEET>.
+# Captures the inferlet cross-request leak bug class (PdaState /
+# user state declared PER_REQUEST silently flowed to fleet-durable
+# cold storage).  Companion to the FOUND-G11 wrapper-surface
+# matrix-fill fixtures.
+crucible_neg_compile_test(neg_opaque_lifetime_per_request_at_per_fleet_fence
   "constraints not satisfied|no matching function|associated constraints")
 
 # ─── FOUND-G26 Wait wrapper neg-compiles (6 fixtures: 4+2) ──────────
