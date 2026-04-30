@@ -254,6 +254,11 @@ CRUCIBLE_STRONG_HASH(CallsiteHash);  // Python source location identity
 CRUCIBLE_STRONG_HASH(ContentHash);   // region content identity (kernel cache key)
 CRUCIBLE_STRONG_HASH(MerkleHash);    // subtree identity (includes all descendants)
 CRUCIBLE_STRONG_HASH(RecipeHash);    // NumericalRecipe identity (FORGE.md §19, §20)
+CRUCIBLE_STRONG_HASH(RowHash);       // effect-row content identity — fmix64 fold
+                                     // over the wrapper-nesting order, see
+                                     // FOUND-I02 (#761) for the canonical
+                                     // algorithm and FOUND-I05/06/07 for the
+                                     // L1/L2/L3 KernelCache lookup wiring.
 
 #undef CRUCIBLE_STRONG_HASH
 
@@ -287,7 +292,9 @@ CRUCIBLE_STRONG_HASH(RecipeHash);    // NumericalRecipe identity (FORGE.md §19,
 //   ShapeHash        — tensor geometry
 //   ScopeHash        — module hierarchy path
 //   CallsiteHash     — Python source-location identity
-//   (future) RecipeHash / KernelContentHash / PlanHash — FORGE.md §19, §23
+//   RecipeHash       — NumericalRecipe identity (FORGE.md §19, §20)
+//   RowHash          — effect-row content identity (Met(X) wrapper stack)
+//   (future) KernelContentHash / PlanHash — FORGE.md §23
 //
 // Members (by function):
 //   compute_content_hash(TensorMeta...)      MerkleDag.h
@@ -353,5 +360,86 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(CallsiteHash);
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(ContentHash);
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(MerkleHash);
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(RecipeHash);
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(RowHash);
+
+// ═══════════════════════════════════════════════════════════════════
+// KernelCacheKey — composite identity for the federation-shared
+// KernelCache (CRUCIBLE.md §10, FORGE.md §23.2, Phase 5 of the
+// development plan).  FOUND-I01.
+//
+// Two orthogonal axes — neither sufficient alone:
+//
+//   • content_hash : ContentHash
+//       Region structural identity.  What the kernel *does* (op
+//       sequence, shapes, strides, dtypes, scalar args).  Frozen by
+//       compute_content_hash(...) at trace-build time.
+//
+//   • row_hash : RowHash
+//       Met(X) effect-row content identity.  What capabilities /
+//       guarantees the kernel *promises* (Pure ⊑ Tot ⊑ Div ⊑ ST ⊑ All
+//       and the cap stack: Alloc / IO / Block / DetSafe / Hot /
+//       Wait / Mem / Numerical / Recipe / ResidencyHeat / Vendor /
+//       Crash / ...).  Computed by the FOUND-I02 fmix64-fold over the
+//       canonical wrapper-nesting order (FOUND-I03).
+//
+// Two regions with byte-identical content_hash but different
+// row_hash represent the *same computation under different effect
+// regimes* — they MUST cache to distinct slots.  A Pure-row kernel
+// is trivially federatable; an IO-row kernel is not; sharing a slot
+// between them silently breaks the federation contract.
+//
+// Layout:  16 bytes — content_hash (8B) + row_hash (8B).  Both axes
+// are Family-A persistent hashes (see taxonomy above), so the entire
+// key is byte-stable across processes within a CDAG_VERSION window.
+//
+// API surface intentionally minimal at FOUND-I01: NSDMI defaults
+// (zero — meaning "unset"), `<=>` comparison, `is_zero()`,
+// `sentinel()` factory.  Combination into a single 64-bit slot probe
+// (the actual KernelCache::lookup signature change) is FOUND-I05/06/
+// 07 — the right fold strategy depends on which cache level (L1
+// IR002 / L2 IR003* / L3 compiled bytes) is doing the lookup.
+struct KernelCacheKey {
+    ContentHash content_hash{};   // NSDMI: zero — Family-A persistent
+    RowHash     row_hash{};       // NSDMI: zero — Family-A persistent
+
+    // Default ctor is constexpr-implicit via NSDMI.  Defaulted <=>
+    // forms a strict weak order on (content_hash, row_hash) — content
+    // axis is the major key, row axis breaks ties.  Sufficient for
+    // flat_map / sorted-array storage.
+    auto operator<=>(const KernelCacheKey&) const noexcept = default;
+
+    // is_zero(): both axes at default — typically means "unset", not
+    // "matches a real region".  Real region hashes are extremely
+    // unlikely to collide with zero by accident (FNV/fmix64 avalanche
+    // properties), but the sentinel() / is_sentinel() pair below is
+    // the *guaranteed* unused value for end-of-region markers.
+    [[nodiscard]] constexpr bool is_zero() const noexcept {
+        return !content_hash && !row_hash;
+    }
+
+    // sentinel(): both axes at UINT64_MAX — guaranteed never produced
+    // by any real hash function.  Used as the EMPTY-slot marker in
+    // the open-addressing probe table (KernelCache Entry layout —
+    // MerkleDag.h §979).
+    [[nodiscard]] static constexpr KernelCacheKey sentinel() noexcept {
+        return KernelCacheKey{ContentHash::sentinel(), RowHash::sentinel()};
+    }
+
+    [[nodiscard]] constexpr bool is_sentinel() const noexcept {
+        return content_hash.is_sentinel() && row_hash.is_sentinel();
+    }
+};
+
+// Layout invariant — the key is exactly two 64-bit hashes, no
+// padding.  KernelCache slot probes assume this for AoS / SoA
+// flexibility (FOUND-I05/06/07 will choose per cache level).
+static_assert(sizeof(KernelCacheKey) == 16,
+              "KernelCacheKey must be exactly 16 bytes "
+              "(ContentHash + RowHash, no padding).");
+static_assert(alignof(KernelCacheKey) == 8,
+              "KernelCacheKey must be 8-byte aligned for atomic-pair "
+              "compatibility on x86-64 / aarch64.");
+
+CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(KernelCacheKey);
 
 } // namespace crucible
