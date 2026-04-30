@@ -18,6 +18,7 @@
 
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/Computation.h>
+#include <crucible/effects/ComputationGraded.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/EffectRowLattice.h>
 #include <crucible/effects/Effects.h>
@@ -67,6 +68,14 @@ void test_os_universe_compile() {
     // lattice typedef) through a non-constant-args path.
     ::crucible::effects::runtime_smoke_test_os_universe();
 }
+void test_computation_graded_compile() {
+    // Same discipline for the H03 ComputationGraded alias — drive
+    // every Graded accessor reachable through the alias (peek /
+    // consume / grade / peek_mut / swap / weaken / compose) plus
+    // the concept-based capability gates through a non-constant-
+    // args path.
+    ::crucible::effects::runtime_smoke_test_computation_graded();
+}
 
 }  // namespace
 
@@ -80,6 +89,8 @@ int main() {
     run_test("test_effect_row_lattice_compile",
              test_effect_row_lattice_compile);
     run_test("test_os_universe_compile",   test_os_universe_compile);
+    run_test("test_computation_graded_compile",
+             test_computation_graded_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");

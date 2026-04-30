@@ -290,6 +290,68 @@ static_assert(EffectRowLattice::At<Effect::Alloc, Effect::IO>::bits()
 static_assert(EffectRowLattice::At<Effect::Alloc, Effect::IO>::bits()
               == EffectRowLattice::At<Effect::IO, Effect::Alloc>::bits());
 
+// ── Bridge: Row<Es...> → At<Es...> (FOUND-H03 prerequisite) ────────
+//
+// Type-level lifting from `Row<Es...>` into the matching singleton
+// `At<Es...>` sub-lattice.  H03's `ComputationGraded<R, T>` alias
+// resolves to `Graded<Modality::Relative, effect_row_to_at_t<R>, T>`
+// — the helper performs the `Row → At` pattern-match so the alias
+// stays a pure typedef with no per-call lookup cost.
+//
+// No primary template definition: the *only* admitted argument shape
+// is `Row<Es...>`.  Passing a non-Row type to `effect_row_to_at_t`
+// produces a hard error ("incomplete type") at the point of use,
+// surfacing the misuse at the alias declaration rather than silently
+// succeeding with a wrong grade.  This is the same discipline applied
+// to GradedTrait's `graded_modality` (algebra/GradedTrait.h:159).
+
+namespace detail {
+template <typename R> struct effect_row_to_at;  // primary undefined on purpose
+
+template <Effect... Es>
+struct effect_row_to_at<Row<Es...>> {
+    using type = EffectRowLattice::template At<Es...>;
+};
+}  // namespace detail
+
+template <typename R>
+using effect_row_to_at_t = typename detail::effect_row_to_at<R>::type;
+
+// ── effect_row_to_at_t agreement witnesses ──────────────────────────
+//
+// Spot-check the helper against direct `At<Es...>` instantiations
+// across the empty pack, single atom, and multi-atom cases.  Order-
+// independence + bit-position stability already proven at the At<>
+// level; here we just verify the pattern-match.
+static_assert(std::is_same_v<
+    effect_row_to_at_t<Row<>>,
+    EffectRowLattice::At<>>);
+static_assert(std::is_same_v<
+    effect_row_to_at_t<Row<Effect::Alloc>>,
+    EffectRowLattice::At<Effect::Alloc>>);
+static_assert(std::is_same_v<
+    effect_row_to_at_t<Row<Effect::Bg>>,
+    EffectRowLattice::At<Effect::Bg>>);
+static_assert(std::is_same_v<
+    effect_row_to_at_t<Row<Effect::Alloc, Effect::IO>>,
+    EffectRowLattice::At<Effect::Alloc, Effect::IO>>);
+static_assert(std::is_same_v<
+    effect_row_to_at_t<Row<
+        Effect::Alloc, Effect::IO, Effect::Block,
+        Effect::Bg,    Effect::Init, Effect::Test>>,
+    EffectRowLattice::At<
+        Effect::Alloc, Effect::IO, Effect::Block,
+        Effect::Bg,    Effect::Init, Effect::Test>>);
+
+// Helper output's bits() agrees with row_descriptor_v on the input —
+// the round-trip Row → At → bits matches the direct Row → bits bridge.
+static_assert(effect_row_to_at_t<Row<>>::bits()
+              == row_descriptor_v<Row<>>);
+static_assert(effect_row_to_at_t<Row<Effect::Alloc>>::bits()
+              == row_descriptor_v<Row<Effect::Alloc>>);
+static_assert(effect_row_to_at_t<Row<Effect::Alloc, Effect::IO>>::bits()
+              == row_descriptor_v<Row<Effect::Alloc, Effect::IO>>);
+
 // ── Self-test block ────────────────────────────────────────────────
 
 namespace detail::effect_row_lattice_self_test {
