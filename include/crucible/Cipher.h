@@ -35,6 +35,7 @@
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Tagged.h>
+#include <crucible/safety/Wait.h>
 
 #include <charconv>
 #include <chrono>
@@ -165,6 +166,45 @@ class CRUCIBLE_OWNER Cipher {
     // contract if the Cipher is Closed.
     [[nodiscard]] ContentHash store(const RegionNode* region, const MetaLog* meta_log) {
         return store(mint_open_view(), region, meta_log);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FOUND-G27: Wait-pinned production surface
+    // ═══════════════════════════════════════════════════════════════
+    //
+    // Cipher::store performs a blocking `f.write()` to the warm-tier
+    // NVMe shard.  The wait strategy is Block — std::ofstream::write
+    // may invoke the kernel's writeback path; on a busy system this
+    // blocks tens of microseconds to milliseconds (well above any
+    // hot-path budget).
+    //
+    // store_pinned() pins this classification at the type level so
+    // that hot-path consumers declaring `requires Wait::satisfies<
+    // SpinPause>` REJECT the value at compile time.  The Wait
+    // lattice direction (Block(weakest) ⊑ Park ⊑ ... ⊑ SpinPause)
+    // means a Block-tier value satisfies only Block-tier-and-weaker
+    // (degenerate — Block is the bottom).
+    //
+    // Why additive: the existing store() callers are bg-thread
+    // persistence paths that already accept blocking I/O.  The
+    // additive overlay declares Block tier at the type level for
+    // any new consumer that wants the rejection to fire when wired
+    // into the wrong context.
+
+    // Block-tier-pinned store — for new bg / IO-classified call sites.
+    [[nodiscard]] safety::Wait<safety::WaitStrategy_v::Block, ContentHash>
+    store_pinned(OpenView const& view,
+                 const RegionNode* region,
+                 const MetaLog* meta_log) {
+        return safety::Wait<safety::WaitStrategy_v::Block, ContentHash>{
+            store(view, region, meta_log)};
+    }
+
+    // Legacy-shape pinned variant — mints view locally.
+    [[nodiscard]] safety::Wait<safety::WaitStrategy_v::Block, ContentHash>
+    store_pinned(const RegionNode* region, const MetaLog* meta_log) {
+        return safety::Wait<safety::WaitStrategy_v::Block, ContentHash>{
+            store(region, meta_log)};
     }
 
     // ─── Load ───────────────────────────────────────────────────────
