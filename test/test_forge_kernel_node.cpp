@@ -108,14 +108,86 @@ static_assert(static_cast<uint8_t>(fk::KernelKind::COUNT) == 22);
 
 // audit-A: ordinal stability — content_hash includes kind ordinals
 // (per FOUND-I02), and changing them breaks every persisted Cipher
-// entry.  Pin the prefix so reordering fires here, not in deserialize.
-static_assert(static_cast<uint8_t>(fk::KernelKind::GEMM)        == 0);
-static_assert(static_cast<uint8_t>(fk::KernelKind::BMM)         == 1);
-static_assert(static_cast<uint8_t>(fk::KernelKind::CONV)        == 2);
-static_assert(static_cast<uint8_t>(fk::KernelKind::DEQUANT_GEMM) == 3);
-static_assert(static_cast<uint8_t>(fk::KernelKind::ATTENTION)   == 4);
+// entry.  Pin EVERY ordinal so any reorder fires here, not in
+// deserialize.  Round-2 extension: the original audit-A only pinned
+// GEMM/BMM/CONV/DEQUANT_GEMM/ATTENTION/CUSTOM (6 of 22), leaving 16
+// middle ordinals unpinned.  Now all 22 are locked.
+static_assert(static_cast<uint8_t>(fk::KernelKind::GEMM)           ==  0);
+static_assert(static_cast<uint8_t>(fk::KernelKind::BMM)            ==  1);
+static_assert(static_cast<uint8_t>(fk::KernelKind::CONV)           ==  2);
+static_assert(static_cast<uint8_t>(fk::KernelKind::DEQUANT_GEMM)   ==  3);
+static_assert(static_cast<uint8_t>(fk::KernelKind::ATTENTION)      ==  4);
+static_assert(static_cast<uint8_t>(fk::KernelKind::PAGED_ATTN)     ==  5);
+static_assert(static_cast<uint8_t>(fk::KernelKind::RAGGED_ATTN)    ==  6);
+static_assert(static_cast<uint8_t>(fk::KernelKind::NORM)           ==  7);
+static_assert(static_cast<uint8_t>(fk::KernelKind::SOFTMAX)        ==  8);
+static_assert(static_cast<uint8_t>(fk::KernelKind::POINTWISE)      ==  9);
+static_assert(static_cast<uint8_t>(fk::KernelKind::REDUCE)         == 10);
+static_assert(static_cast<uint8_t>(fk::KernelKind::SCAN)           == 11);
+static_assert(static_cast<uint8_t>(fk::KernelKind::GATHER_SCATTER) == 12);
+static_assert(static_cast<uint8_t>(fk::KernelKind::EMBEDDING)      == 13);
+static_assert(static_cast<uint8_t>(fk::KernelKind::RNG)            == 14);
+static_assert(static_cast<uint8_t>(fk::KernelKind::COLLECTIVE)     == 15);
+static_assert(static_cast<uint8_t>(fk::KernelKind::SSM)            == 16);
+static_assert(static_cast<uint8_t>(fk::KernelKind::FUSED_COMPOUND) == 17);
+static_assert(static_cast<uint8_t>(fk::KernelKind::MOE_ROUTE)      == 18);
+static_assert(static_cast<uint8_t>(fk::KernelKind::OPTIMIZER)      == 19);
+static_assert(static_cast<uint8_t>(fk::KernelKind::OPAQUE_EXTERN)  == 20);
+static_assert(static_cast<uint8_t>(fk::KernelKind::CUSTOM)         == 21);
 static_assert(static_cast<uint8_t>(fk::KernelKind::CUSTOM) ==
               static_cast<uint8_t>(fk::KernelKind::COUNT) - 1);
+
+// audit-K: field offset discipline.  FORGE.md §18.2 documents the
+// 64-byte layout via the field-comment widths but the C++ field-order
+// is the ONLY structural lock today.  Pin every offset so a future
+// field reorder (which preserves sizeof but moves bytes around) fires
+// at compile time instead of cratering Cipher byte-stream serialization.
+//
+// Layout per FORGE.md §18.2:
+//   bytes  0.. 3  id              (KernelId, 4B)
+//   byte    4     kind            (1B)
+//   byte    5     flags           (1B)
+//   byte    6     device_idx      (1B)
+//   byte    7     ndim            (1B)
+//   byte    8     in_dtype        (1B)
+//   byte    9     out_dtype       (1B)
+//   byte   10     layout_in       (1B)
+//   byte   11     layout_out      (1B)
+//   bytes 12..13  num_inputs      (2B)
+//   bytes 14..15  num_outputs     (2B)
+//   bytes 16..23  attrs           (8B)
+//   bytes 24..31  recipe          (8B)
+//   bytes 32..39  tile            (8B)
+//   bytes 40..47  input_slots     (8B)
+//   bytes 48..55  output_slots    (8B)
+//   bytes 56..63  content_hash    (8B)
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, id)           ==  0);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, kind)         ==  4);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, flags)        ==  5);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, device_idx)   ==  6);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, ndim)         ==  7);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, in_dtype)     ==  8);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, out_dtype)    ==  9);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, layout_in)    == 10);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, layout_out)   == 11);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, num_inputs)   == 12);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, num_outputs)  == 14);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, attrs)        == 16);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, recipe)       == 24);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, tile)         == 32);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, input_slots)  == 40);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, output_slots) == 48);
+static_assert(offsetof(fk::KernelNode<eff::PureRow>, content_hash) == 56);
+
+// Field offsets must be Row-INDEPENDENT (Row contributes zero bytes).
+// Compare AllRow against PureRow for every field — drift here means a
+// future Row-typed field accidentally landed inside the record.
+static_assert(offsetof(fk::KernelNode<eff::AllRow>, id)
+           == offsetof(fk::KernelNode<eff::PureRow>, id));
+static_assert(offsetof(fk::KernelNode<eff::AllRow>, kind)
+           == offsetof(fk::KernelNode<eff::PureRow>, kind));
+static_assert(offsetof(fk::KernelNode<eff::AllRow>, content_hash)
+           == offsetof(fk::KernelNode<eff::PureRow>, content_hash));
 
 // ═════════════════════════════════════════════════════════════════════
 // Runtime witnesses (T04 + audit-D, E, F)
@@ -455,6 +527,121 @@ void test_audit_i_independent_instances() {
     std::printf("  audit-I independent_instances:           PASSED\n");
 }
 
+void test_audit_m_permutation_row_byte_equality() {
+    // audit-M: permutation rows must be byte-IDENTICAL even though
+    // they're STRUCTURALLY distinct types.  This is the load-bearing
+    // property that lets row_hash (FOUND-I02) sort-fold rows into a
+    // canonical hash while KernelNode preserves the structural-type-
+    // identity needed for Phase E intermediate disambiguation.
+    //
+    // Without this witness, a future regression that adds a Row-typed
+    // field (defeating the type-level-only property) would still pass
+    // audit-H (F* aliases byte-equal — those happen to be in canonical
+    // order) but would BREAK at the cross-permutation pair.
+
+    using R_BA = eff::Row<eff::Effect::Bg, eff::Effect::Alloc>;
+    using R_AB = eff::Row<eff::Effect::Alloc, eff::Effect::Bg>;
+    using R_IO_BLOCK = eff::Row<eff::Effect::IO, eff::Effect::Block>;
+    using R_BLOCK_IO = eff::Row<eff::Effect::Block, eff::Effect::IO>;
+
+    static_assert(!std::is_same_v<fk::KernelNode<R_BA>, fk::KernelNode<R_AB>>);
+    static_assert(!std::is_same_v<
+        fk::KernelNode<R_IO_BLOCK>, fk::KernelNode<R_BLOCK_IO>>);
+
+    fk::KernelNode<R_BA>       kn_ba{};
+    fk::KernelNode<R_AB>       kn_ab{};
+    fk::KernelNode<R_IO_BLOCK> kn_io_block{};
+    fk::KernelNode<R_BLOCK_IO> kn_block_io{};
+
+    static_assert(sizeof(kn_ba) == sizeof(kn_ab));
+    static_assert(sizeof(kn_io_block) == sizeof(kn_block_io));
+
+    assert(std::memcmp(&kn_ba, &kn_ab, sizeof(kn_ba)) == 0);
+    assert(std::memcmp(&kn_io_block, &kn_block_io, sizeof(kn_io_block)) == 0);
+
+    // 3-atom permutation as harder cross-section
+    using R_ABC = eff::Row<eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block>;
+    using R_BCA = eff::Row<eff::Effect::Block, eff::Effect::Alloc, eff::Effect::IO>;
+    using R_CAB = eff::Row<eff::Effect::IO, eff::Effect::Block, eff::Effect::Alloc>;
+
+    static_assert(!std::is_same_v<fk::KernelNode<R_ABC>, fk::KernelNode<R_BCA>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_BCA>, fk::KernelNode<R_CAB>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_ABC>, fk::KernelNode<R_CAB>>);
+
+    fk::KernelNode<R_ABC> kn_abc{};
+    fk::KernelNode<R_BCA> kn_bca{};
+    fk::KernelNode<R_CAB> kn_cab{};
+
+    assert(std::memcmp(&kn_abc, &kn_bca, sizeof(kn_abc)) == 0);
+    assert(std::memcmp(&kn_bca, &kn_cab, sizeof(kn_bca)) == 0);
+
+    std::printf("  audit-M permutation_row_byte_equality:   PASSED\n");
+}
+
+void test_audit_n_single_atom_row_matrix() {
+    // audit-N: every single-atom row admitted by the partial spec
+    // produces a well-formed 64-byte record AND distinguishes itself
+    // at the type level from every other single-atom row.
+    //
+    // Six atoms × six atoms = 36 cells; the diagonal is is_same and
+    // the off-diagonal must be is_NOT_same.  Property tested at compile
+    // time (concrete pairs) and runtime byte-equality (default-init
+    // identical content because Row is type-level only).
+
+    using R_Alloc = eff::Row<eff::Effect::Alloc>;
+    using R_IO    = eff::Row<eff::Effect::IO>;
+    using R_Block = eff::Row<eff::Effect::Block>;
+    using R_Bg    = eff::Row<eff::Effect::Bg>;
+    using R_Init  = eff::Row<eff::Effect::Init>;
+    using R_Test  = eff::Row<eff::Effect::Test>;
+
+    // Diagonal: each KernelNode<R_X> equals itself (trivial but
+    // pins that the alias resolution is consistent).
+    static_assert(std::is_same_v<fk::KernelNode<R_Alloc>, fk::KernelNode<R_Alloc>>);
+    static_assert(std::is_same_v<fk::KernelNode<R_IO>,    fk::KernelNode<R_IO>>);
+    static_assert(std::is_same_v<fk::KernelNode<R_Block>, fk::KernelNode<R_Block>>);
+    static_assert(std::is_same_v<fk::KernelNode<R_Bg>,    fk::KernelNode<R_Bg>>);
+    static_assert(std::is_same_v<fk::KernelNode<R_Init>,  fk::KernelNode<R_Init>>);
+    static_assert(std::is_same_v<fk::KernelNode<R_Test>,  fk::KernelNode<R_Test>>);
+
+    // Off-diagonal: every other pair must be DISTINCT.  6×5/2 = 15
+    // unordered pairs; we exhaustively assert all of them.
+    static_assert(!std::is_same_v<fk::KernelNode<R_Alloc>, fk::KernelNode<R_IO>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_Alloc>, fk::KernelNode<R_Block>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_Alloc>, fk::KernelNode<R_Bg>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_Alloc>, fk::KernelNode<R_Init>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_Alloc>, fk::KernelNode<R_Test>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_IO>,    fk::KernelNode<R_Block>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_IO>,    fk::KernelNode<R_Bg>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_IO>,    fk::KernelNode<R_Init>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_IO>,    fk::KernelNode<R_Test>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_Block>, fk::KernelNode<R_Bg>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_Block>, fk::KernelNode<R_Init>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_Block>, fk::KernelNode<R_Test>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_Bg>,    fk::KernelNode<R_Init>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_Bg>,    fk::KernelNode<R_Test>>);
+    static_assert(!std::is_same_v<fk::KernelNode<R_Init>,  fk::KernelNode<R_Test>>);
+
+    // Runtime: every single-atom default-init produces byte-IDENTICAL
+    // content to PureRow (Row is type-level only).
+    fk::KernelNode<eff::PureRow> kn_pure{};
+    fk::KernelNode<R_Alloc>      kn_alloc{};
+    fk::KernelNode<R_IO>         kn_io{};
+    fk::KernelNode<R_Block>      kn_block{};
+    fk::KernelNode<R_Bg>         kn_bg{};
+    fk::KernelNode<R_Init>       kn_init{};
+    fk::KernelNode<R_Test>       kn_test{};
+
+    assert(std::memcmp(&kn_pure, &kn_alloc, sizeof(kn_pure)) == 0);
+    assert(std::memcmp(&kn_pure, &kn_io,    sizeof(kn_pure)) == 0);
+    assert(std::memcmp(&kn_pure, &kn_block, sizeof(kn_pure)) == 0);
+    assert(std::memcmp(&kn_pure, &kn_bg,    sizeof(kn_pure)) == 0);
+    assert(std::memcmp(&kn_pure, &kn_init,  sizeof(kn_pure)) == 0);
+    assert(std::memcmp(&kn_pure, &kn_test,  sizeof(kn_pure)) == 0);
+
+    std::printf("  audit-N single_atom_row_matrix (6×6):    PASSED\n");
+}
+
 void test_audit_j_trait_closure() {
     // audit-J: closure of structural traits — every row instantiation
     // must satisfy the same C++26 type traits.  These are the
@@ -512,7 +699,9 @@ int main() {
     test_audit_h_f_star_alias_byte_layout();
     test_audit_i_independent_instances();
     test_audit_j_trait_closure();
+    test_audit_m_permutation_row_byte_equality();
+    test_audit_n_single_atom_row_matrix();
 
-    std::printf("test_forge_kernel_node: 1 + 8 audit groups, all passed\n");
+    std::printf("test_forge_kernel_node: 1 + 10 audit groups, all passed\n");
     return 0;
 }
