@@ -747,6 +747,15 @@ crucible_neg_compile_effects_test(neg_lift_unknown_capability
 crucible_neg_compile_effects_test(neg_computation_graded_non_row
     "incomplete type|incomplete and cannot be|has no member named .type|invalid use of incomplete type")
 
+# FOUND-H04-AUDIT-1: encapsulation witness for the H04 façade migration.
+# Proves the cross-specialization friendship is bounded — external
+# code reaching for the private impl_ field must hard-fail.  If the
+# friendship is ever accidentally widened (or impl_ moved back to
+# public), this fixture starts compiling and CI catches the
+# regression.
+crucible_neg_compile_effects_test(neg_computation_impl_private
+    "is private within this context|private member|non-public member|is private")
+
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
 # Each crucible_neg_compile_test below pairs a deliberately-broken

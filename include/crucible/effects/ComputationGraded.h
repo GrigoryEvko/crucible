@@ -3,11 +3,10 @@
 // ── crucible::effects::ComputationGraded<R, T> ──────────────────────
 //
 // FOUND-H03.  The Met(X) carrier as a thin Graded<> alias per
-// 28_04_2026_effects.md §H03 / 25_04_2026.md §3.2.  Replaces the bespoke
-// Computation<R, T> class (still in Computation.h, kept until H04 lands
-// the façade migration shim) with one substrate primitive — there is
-// no parallel "row carrier" hierarchy; every effect-row computation is
-// one Graded instantiation.
+// 28_04_2026_effects.md §H03 / 25_04_2026.md §3.2.  The substrate
+// behind the Computation<R, T> façade (Computation.h, post-H04) —
+// one substrate primitive, no parallel "row carrier" hierarchy;
+// every effect-row computation is one Graded instantiation.
 //
 //   ComputationGraded<R, T> := Graded<
 //                                ModalityKind::Relative,
@@ -49,21 +48,24 @@
 //
 // ── What this header DOES NOT do ────────────────────────────────────
 //
-// The friendly Met(X) API (`mk` / `extract` / `lift<Cap>` /
-// `weaken<R2>` / `map(f)` / `then(k)`) is the H04 façade migration
-// shim's scope.  H03 is intentionally narrow — it lands the substrate
-// alias so downstream code (FOUND-I-series cache key federation,
-// FOUND-J row-typed Forge IR) can target it incrementally without
-// waiting for H04.  The legacy Computation<R, T> in Computation.h is
-// untouched and remains the production carrier until H04+H05 verify
-// the migration is byte-equivalent.
+// This header ships the bare substrate alias only.  The friendly
+// Met(X) API (`mk` / `extract` / `lift<Cap>` / `weaken<R2>` /
+// `map(f)` / `then(k)`) is published by Computation<R, T> in
+// Computation.h, which IS now a thin façade wrapping
+// ComputationGraded as its [[no_unique_address]] storage member
+// (FOUND-H04 façade migration, shipped).  Downstream code that
+// wants the substrate view directly reaches it via
+// `Computation<R, T>::graded_type` and the `graded()` accessor;
+// downstream code that wants the named API uses the façade.
 //
-// ── Forward link to FOUND-H04 ───────────────────────────────────────
+// ── Composition with Computation ────────────────────────────────────
 //
-// H04 wraps ComputationGraded behind a small façade class (or
-// repurposes the existing Computation class as the façade) that
-// re-exposes the named API surface above.  The wrapping is the
-// MIGRATE-* alias pattern from algebra/Graded.h:71-83.
+// Computation<R, T>::graded_type IS exactly ComputationGraded<R, T>;
+// Computation's storage IS [[no_unique_address]] graded_type impl_{};
+// so sizeof(Computation<R, T>) == sizeof(ComputationGraded<R, T>) ==
+// sizeof(T) under the regime-1 EBO collapse described above.  The
+// façade adds zero bytes; it adds only methods + a friend declaration
+// for cross-spec access in then()'s body.
 
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Modality.h>

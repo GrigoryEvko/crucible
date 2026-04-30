@@ -388,6 +388,26 @@ static_assert(sizeof(C_empty)      == 1);
 static_assert(sizeof(C_one_byte)   == sizeof(OneByteValue));
 static_assert(sizeof(C_eight_byte) == sizeof(EightByteValue));
 
+// FOUND-H04-AUDIT-2: layout parity with the substrate.  sizeof was
+// already checked above; alignof + trivially_copyable_v + standard-
+// layout parity lock the wrapping further so that ANY divergence
+// from the substrate's layout — including padding insertion or a
+// codegen-visible attribute change — is caught at compile time.
+static_assert(alignof(C_empty)      == alignof(typename C_empty::graded_type));
+static_assert(alignof(C_one_byte)   == alignof(typename C_one_byte::graded_type));
+static_assert(alignof(C_eight_byte) == alignof(typename C_eight_byte::graded_type));
+
+// Trivial copyability is preserved when T is itself trivially
+// copyable — graded_type stores T by value in regime-1 EBO, so the
+// composition is trivially copyable iff T is.  Locks the property
+// the substrate already promises.
+static_assert(std::is_trivially_copyable_v<C_empty>
+              == std::is_trivially_copyable_v<typename C_empty::graded_type>);
+static_assert(std::is_trivially_copyable_v<C_one_byte>
+              == std::is_trivially_copyable_v<typename C_one_byte::graded_type>);
+static_assert(std::is_trivially_copyable_v<C_eight_byte>
+              == std::is_trivially_copyable_v<typename C_eight_byte::graded_type>);
+
 // Effect counts on row reachable.
 static_assert(C_empty::effect_count_in_row()      == 0);
 static_assert(C_one_byte::effect_count_in_row()   == 0);
