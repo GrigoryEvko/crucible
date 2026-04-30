@@ -349,6 +349,153 @@ void test_audit_c_row_distinctness_runtime() {
     std::printf("  audit-C row_distinctness_runtime:        PASSED\n");
 }
 
+void test_audit_g_kernel_kind_exhaustive_round_trip() {
+    // audit-G: every KernelKind variant must round-trip through the
+    // KernelNode.kind field unchanged.  This pins the enum's underlying
+    // type compatibility with the 1-byte storage and catches any
+    // future variant whose ordinal accidentally exceeds 255.
+    //
+    // Twenty-two variants × store-then-read.  The default (CUSTOM)
+    // is implied by the NSDMI test (T04); here we exhaustively cover
+    // the remaining 21.
+
+    constexpr fk::KernelKind kinds[] = {
+        fk::KernelKind::GEMM,           fk::KernelKind::BMM,
+        fk::KernelKind::CONV,           fk::KernelKind::DEQUANT_GEMM,
+        fk::KernelKind::ATTENTION,      fk::KernelKind::PAGED_ATTN,
+        fk::KernelKind::RAGGED_ATTN,    fk::KernelKind::NORM,
+        fk::KernelKind::SOFTMAX,        fk::KernelKind::POINTWISE,
+        fk::KernelKind::REDUCE,         fk::KernelKind::SCAN,
+        fk::KernelKind::GATHER_SCATTER, fk::KernelKind::EMBEDDING,
+        fk::KernelKind::RNG,            fk::KernelKind::COLLECTIVE,
+        fk::KernelKind::SSM,            fk::KernelKind::FUSED_COMPOUND,
+        fk::KernelKind::MOE_ROUTE,      fk::KernelKind::OPTIMIZER,
+        fk::KernelKind::OPAQUE_EXTERN,  fk::KernelKind::CUSTOM
+    };
+    constexpr size_t expected_count =
+        static_cast<size_t>(fk::KernelKind::COUNT);
+    static_assert(sizeof(kinds) / sizeof(kinds[0]) == expected_count,
+        "audit-G: kinds array must enumerate every KernelKind — adding "
+        "a kernel family requires extending this audit");
+
+    for (size_t i = 0; i < expected_count; ++i) {
+        fk::KernelNode<eff::AllRow> kn{};
+        kn.kind = kinds[i];
+        assert(kn.kind == kinds[i]);
+        assert(static_cast<uint8_t>(kn.kind) == static_cast<uint8_t>(kinds[i]));
+        // Each ordinal must fit in the 1-byte storage
+        assert(static_cast<uint8_t>(kn.kind) < 22u);
+    }
+
+    std::printf("  audit-G kernel_kind_exhaustive (22):     PASSED\n");
+}
+
+void test_audit_h_f_star_alias_byte_layout() {
+    // audit-H: every F* alias row (PureRow / DivRow / STRow / AllRow)
+    // produces a default-init KernelNode with the same byte layout.
+    // This is the runtime witness that the Row parameter contributes
+    // ZERO bytes to the record — without it, a regression that put an
+    // [[no_unique_address]] Row member into the struct would still
+    // pass the sizeof() check (Row is empty) but might rearrange
+    // layout via padding.  Byte-by-byte memcmp catches the gap.
+
+    fk::KernelNode<eff::PureRow> kn_pure{};
+    fk::KernelNode<eff::TotRow>  kn_tot{};
+    fk::KernelNode<eff::DivRow>  kn_div{};
+    fk::KernelNode<eff::STRow>   kn_st{};
+    fk::KernelNode<eff::AllRow>  kn_all{};
+
+    static_assert(sizeof(kn_pure) == sizeof(kn_all));
+    static_assert(sizeof(kn_pure) == sizeof(kn_div));
+    static_assert(sizeof(kn_pure) == sizeof(kn_st));
+
+    // All five must have IDENTICAL byte content after default-init.
+    assert(std::memcmp(&kn_pure, &kn_tot, sizeof(kn_pure)) == 0);
+    assert(std::memcmp(&kn_pure, &kn_div, sizeof(kn_pure)) == 0);
+    assert(std::memcmp(&kn_pure, &kn_st,  sizeof(kn_pure)) == 0);
+    assert(std::memcmp(&kn_pure, &kn_all, sizeof(kn_pure)) == 0);
+
+    std::printf("  audit-H f_star_alias_byte_layout:        PASSED (5 aliases)\n");
+}
+
+void test_audit_i_independent_instances() {
+    // audit-I: two distinct KernelNode<R> objects must not alias each
+    // other.  Mutating one MUST NOT touch the other — basic guarantee
+    // that each is a freestanding 64-byte record with no shared static
+    // state.  The trivially-relocatable property only governs memcpy
+    // shape; this catches accidental shared-pointer designs.
+
+    fk::KernelNode<eff::AllRow> kn_a{};
+    fk::KernelNode<eff::AllRow> kn_b{};
+
+    kn_a.kind = fk::KernelKind::ATTENTION;
+    kn_a.id = fk::KernelId::from_raw(7);
+    kn_a.ndim = 4;
+    kn_a.content_hash = fk::KernelContentHash::from_raw(0xAAAAAAAAAAAAAAAAULL);
+
+    // kn_b must remain at NSDMI defaults
+    assert(kn_b.kind == fk::KernelKind::CUSTOM);
+    assert(!kn_b.id.is_valid());
+    assert(kn_b.ndim == 0);
+    assert(kn_b.content_hash.raw() == 0u);
+
+    // And the modification on kn_a is preserved
+    assert(kn_a.kind == fk::KernelKind::ATTENTION);
+    assert(kn_a.id.raw() == 7u);
+    assert(kn_a.ndim == 4);
+    assert(kn_a.content_hash.raw() == 0xAAAAAAAAAAAAAAAAULL);
+
+    // Cross-row pair: KernelNode<DivRow> vs KernelNode<AllRow> — same
+    // structural property but different types.
+    fk::KernelNode<eff::DivRow> kn_div{};
+    kn_div.flags = 0xF0u;
+    assert(kn_a.flags == 0u);   // unchanged, even though kn_div was modified
+    assert(kn_div.flags == 0xF0u);
+
+    std::printf("  audit-I independent_instances:           PASSED\n");
+}
+
+void test_audit_j_trait_closure() {
+    // audit-J: closure of structural traits — every row instantiation
+    // must satisfy the same C++26 type traits.  These are the
+    // pre-conditions for arena allocation + memcpy + serialization
+    // discipline; if any trait flips per-row, the FORGE.md §18.2
+    // contract is violated.
+
+    using KN_Pure = fk::KernelNode<eff::PureRow>;
+    using KN_Div  = fk::KernelNode<eff::DivRow>;
+    using KN_All  = fk::KernelNode<eff::AllRow>;
+    using KN_Bg   = fk::KernelNode<eff::Row<eff::Effect::Bg>>;
+
+    // Trivially copyable: required for Arena bulk-memcpy.
+    static_assert(std::is_trivially_copyable_v<KN_Pure>);
+    static_assert(std::is_trivially_copyable_v<KN_Div>);
+    static_assert(std::is_trivially_copyable_v<KN_All>);
+    static_assert(std::is_trivially_copyable_v<KN_Bg>);
+
+    // Default-constructible: required for NSDMI default-init.
+    static_assert(std::is_default_constructible_v<KN_Pure>);
+    static_assert(std::is_default_constructible_v<KN_Div>);
+    static_assert(std::is_default_constructible_v<KN_All>);
+    static_assert(std::is_default_constructible_v<KN_Bg>);
+
+    // Trivially destructible: required for Arena (no destructor calls).
+    static_assert(std::is_trivially_destructible_v<KN_Pure>);
+    static_assert(std::is_trivially_destructible_v<KN_Div>);
+    static_assert(std::is_trivially_destructible_v<KN_All>);
+    static_assert(std::is_trivially_destructible_v<KN_Bg>);
+
+    // Move-constructible / copy-constructible: required for value-
+    // returning factory APIs (Phase E.LowerToKernels emits via
+    // value semantics until we wire it to Arena placement).
+    static_assert(std::is_copy_constructible_v<KN_Pure>);
+    static_assert(std::is_move_constructible_v<KN_Pure>);
+    static_assert(std::is_copy_assignable_v<KN_Pure>);
+    static_assert(std::is_move_assignable_v<KN_Pure>);
+
+    std::printf("  audit-J trait_closure:                   PASSED\n");
+}
+
 }  // anonymous namespace
 
 int main() {
@@ -361,7 +508,11 @@ int main() {
     test_audit_d_layout_byte_zero_witness();
     test_audit_e_field_mutation_roundtrip();
     test_audit_f_arena_memcpy_parity();
+    test_audit_g_kernel_kind_exhaustive_round_trip();
+    test_audit_h_f_star_alias_byte_layout();
+    test_audit_i_independent_instances();
+    test_audit_j_trait_closure();
 
-    std::printf("test_forge_kernel_node: 1 + 4 audit groups, all passed\n");
+    std::printf("test_forge_kernel_node: 1 + 8 audit groups, all passed\n");
     return 0;
 }
