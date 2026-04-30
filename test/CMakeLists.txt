@@ -1320,6 +1320,20 @@ crucible_neg_compile_test(neg_cipher_tier_cold_at_warm_fence
 crucible_neg_compile_test(neg_residency_heat_cold_at_hot_fence
   "constraints not satisfied|no matching function|associated constraints")
 
+# FOUND-G52-AUDIT — matrix-fill: Warm rejected at Hot fence (one-tier-
+# off refactor bug — L2-fetched kernel pointer misused at the
+# foreground L1 dispatch path, paying tens-of-ns L2 access penalty
+# per call against a ~5 ns budget).
+crucible_neg_compile_test(neg_residency_heat_warm_at_hot_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
+# FOUND-G52-AUDIT — matrix-fill: Cold rejected at Warm fence
+# (federation freshness violation — L3 archive entry misused at L2
+# publish path, broadcasting stale entries into per-vendor-family
+# federation and breaking Forge recompile-decision integrity).
+crucible_neg_compile_test(neg_residency_heat_cold_at_warm_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
 # ─── FOUND-D01 — signature_traits<FnPtr> param-index overflow ─────
 #
 # The `requires (I < arity)` clause on signature_traits<FnPtr>::

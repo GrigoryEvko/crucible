@@ -30,6 +30,7 @@
 //          publishes return success-marker but don't persist)
 
 #include <crucible/MerkleDag.h>
+#include <crucible/safety/CipherTier.h>
 #include <crucible/safety/ResidencyHeat.h>
 #include "test_assert.h"
 
@@ -294,6 +295,184 @@ static void test_three_level_federation_publish() {
     assert(std::move(l1_hit).consume() == fk_ptr(&fk));
 }
 
+// ── T15 — lookup_l1 miss path ──────────────────────────────────
+//
+// Audit-pass test: explicit MISS case via lookup_l1 (the main
+// commit's tests only exercise hits).  An empty cache must return
+// nullptr-pinned-Hot for every lookup, and the type-pin survives
+// the miss.
+static void test_lookup_l1_miss_returns_nullptr_pinned() {
+    KernelCache cache;
+    auto miss = cache.lookup_l1(ContentHash{0xDEAD}, RowHash{0xBEEF});
+    static_assert(std::is_same_v<decltype(miss),
+        ResidencyHeat<ResidencyHeatTag_v::Hot, CompiledKernel*>>);
+    assert(std::move(miss).consume() == nullptr);
+
+    // After publishing under a DIFFERENT key, the original key
+    // still misses (no probe pollution).
+    FakeKernel fk{1};
+    auto pub = cache.publish_l1(ContentHash{0x1234}, RowHash{0}, fk_ptr(&fk));
+    (void)std::move(pub).consume();
+
+    auto miss2 = cache.lookup_l1(ContentHash{0xDEAD}, RowHash{0xBEEF});
+    assert(std::move(miss2).consume() == nullptr);
+}
+
+// ── T16 — publish_l1 variant-update through the wrapper ────────
+//
+// Audit-pass test: publish_l1 followed by another publish_l1 under
+// the SAME (content, row) pair must overwrite the slot — preserving
+// the existing variant-update semantics of the underlying insert().
+// Without this test, a refactor could accidentally make the wrapper
+// reject re-publication, breaking optimizer-driven kernel-variant
+// rotation (the production pattern where a better-compiled variant
+// replaces an older one at the same key).
+static void test_publish_l1_variant_update() {
+    KernelCache cache;
+    FakeKernel fk_v1{1};
+    FakeKernel fk_v2{2};
+
+    // Initial publish.
+    auto p1 = cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, fk_ptr(&fk_v1));
+    assert(std::move(p1).consume().has_value());
+
+    // Variant-update: same key, new kernel pointer.
+    auto p2 = cache.publish_l1(ContentHash{0xAAAA}, RowHash{0}, fk_ptr(&fk_v2));
+    assert(std::move(p2).consume().has_value());
+
+    // Lookup observes the newer variant.
+    auto hit = cache.lookup_l1(ContentHash{0xAAAA}, RowHash{0});
+    assert(std::move(hit).consume() == fk_ptr(&fk_v2));
+}
+
+// ── T17 — publish_l1 row-discrimination (FOUND-I05 inheritance) ─
+//
+// Audit-pass test: identical content_hash with distinct row_hash
+// values must cache to DIFFERENT slots even when accessed via the
+// L1 wrapper.  Pins the row-discrimination invariant (FOUND-I05)
+// across the type-pinned overlay — without this test, a refactor
+// that "simplifies" the wrapper to ignore row_hash would silently
+// break the row-typed cache.
+static void test_publish_l1_row_discrimination() {
+    KernelCache cache;
+    FakeKernel fk_row_a{1};
+    FakeKernel fk_row_b{2};
+
+    auto pa = cache.publish_l1(ContentHash{0x1234}, RowHash{0xAAAA}, fk_ptr(&fk_row_a));
+    auto pb = cache.publish_l1(ContentHash{0x1234}, RowHash{0xBBBB}, fk_ptr(&fk_row_b));
+    assert(std::move(pa).consume().has_value());
+    assert(std::move(pb).consume().has_value());
+
+    // Each row resolves to its own kernel.
+    auto hit_a = cache.lookup_l1(ContentHash{0x1234}, RowHash{0xAAAA});
+    auto hit_b = cache.lookup_l1(ContentHash{0x1234}, RowHash{0xBBBB});
+    assert(std::move(hit_a).consume() == fk_ptr(&fk_row_a));
+    assert(std::move(hit_b).consume() == fk_ptr(&fk_row_b));
+
+    // A third row queries cleanly to nullptr (no cross-row pollution).
+    auto miss = cache.lookup_l1(ContentHash{0x1234}, RowHash{0xCCCC});
+    assert(std::move(miss).consume() == nullptr);
+}
+
+// ── T18 — cross-lattice non-mixing (ResidencyHeat ≠ CipherTier) ─
+//
+// Audit-pass test: ResidencyHeat<Hot, T> and CipherTier<Hot, T>
+// have IDENTICAL tier-name spelling ("Hot") but are STRUCTURALLY
+// distinct types — they sit on orthogonal lattices (cache-residency
+// vs storage-residency).  Captures the bug class where a refactor
+// folds "the three Hot wrappers" into a single shared template,
+// silently allowing a Cipher RAM-replicated value to flow into a
+// hot-dispatch path expecting an L1-resident kernel.
+static void test_cross_lattice_non_mixing() {
+    using crucible::safety::CipherTier;
+    using crucible::safety::CipherTierTag_v;
+
+    using RhHot = ResidencyHeat<ResidencyHeatTag_v::Hot, int>;
+    using CtHot = CipherTier<CipherTierTag_v::Hot, int>;
+
+    static_assert(!std::is_same_v<RhHot, CtHot>,
+        "ResidencyHeat<Hot, T> and CipherTier<Hot, T> are orthogonal "
+        "lattices — a Cipher-Hot value MUST NOT silently flow into "
+        "a ResidencyHeat-Hot consumer or vice versa.  If this fires, "
+        "a refactor has folded the wrappers into a single shared "
+        "template, defeating the orthogonal-axis discipline.");
+
+    // Cross-construction is rejected — neither wraps the other.
+    static_assert(!std::is_constructible_v<RhHot, CtHot>);
+    static_assert(!std::is_constructible_v<CtHot, RhHot>);
+}
+
+// ── T19 — Augur diagnostic tier-reader pattern ──────────────────
+//
+// Audit-pass test: the static `tier` accessor permits zero-runtime-
+// cost dispatch on the cache-residency tier.  Augur's drift-
+// attribution logic uses this to label residuals against the
+// appropriate baseline ("L1 lookup miss rate" vs "L3 access
+// latency" — distinct metrics that share the same RowHash but
+// belong to different tier dashboards).  Today Augur isn't wired,
+// but the static-tier API is the load-bearing primitive that
+// Phase 3 Augur builds on; this test pins the API at the
+// production call site, not just at the wrapper definition.
+template <typename W>
+[[nodiscard]] static constexpr int classify_cache_tier_for_augur() noexcept {
+    if constexpr (W::tier == ResidencyHeatTag_v::Hot)  return 1;
+    if constexpr (W::tier == ResidencyHeatTag_v::Warm) return 2;
+    if constexpr (W::tier == ResidencyHeatTag_v::Cold) return 3;
+    return 0;
+}
+
+static void test_augur_cache_tier_classifier() {
+    KernelCache cache;
+    FakeKernel fk{1};
+    auto p = cache.publish_l1(ContentHash{0x9999}, RowHash{0}, fk_ptr(&fk));
+    (void)std::move(p).consume();
+
+    auto l1 = cache.lookup_l1(ContentHash{0x9999}, RowHash{0});
+    auto l2 = cache.lookup_l2(ContentHash{0x9999}, RowHash{0});
+    auto l3 = cache.lookup_l3(ContentHash{0x9999}, RowHash{0});
+
+    static_assert(classify_cache_tier_for_augur<decltype(l1)>() == 1);
+    static_assert(classify_cache_tier_for_augur<decltype(l2)>() == 2);
+    static_assert(classify_cache_tier_for_augur<decltype(l3)>() == 3);
+
+    (void)std::move(l1).consume();
+    (void)std::move(l2).consume();
+    (void)std::move(l3).consume();
+}
+
+// ── T20 — exhaustive cannot-tighten matrix ─────────────────────
+//
+// Audit-pass test: pins the SFINAE detection at the test site for
+// every UPWARD relax<> attempt in the ResidencyHeat lattice.
+// Mirror of the FOUND-G47-AUDIT T17 cannot-tighten test for
+// CipherTier — the discipline is identical across all chain
+// lattices, the test is per-lattice load-bearing.
+template <typename W, ResidencyHeatTag_v T_target>
+concept can_tighten = requires(W&& w) {
+    { std::move(w).template relax<T_target>() };
+};
+
+static void test_cannot_tighten_to_stronger_tier() {
+    using HotT  = ResidencyHeat<ResidencyHeatTag_v::Hot,  CompiledKernel*>;
+    using WarmT = ResidencyHeat<ResidencyHeatTag_v::Warm, CompiledKernel*>;
+    using ColdT = ResidencyHeat<ResidencyHeatTag_v::Cold, CompiledKernel*>;
+
+    // Down (relax) — admissible.
+    static_assert( can_tighten<HotT,  ResidencyHeatTag_v::Warm>);
+    static_assert( can_tighten<HotT,  ResidencyHeatTag_v::Cold>);
+    static_assert( can_tighten<WarmT, ResidencyHeatTag_v::Cold>);
+
+    // Self — admissible (lattice reflexivity).
+    static_assert( can_tighten<HotT,  ResidencyHeatTag_v::Hot>);
+    static_assert( can_tighten<WarmT, ResidencyHeatTag_v::Warm>);
+    static_assert( can_tighten<ColdT, ResidencyHeatTag_v::Cold>);
+
+    // Up — REJECTED at every step (load-bearing).
+    static_assert(!can_tighten<WarmT, ResidencyHeatTag_v::Hot>);
+    static_assert(!can_tighten<ColdT, ResidencyHeatTag_v::Warm>);
+    static_assert(!can_tighten<ColdT, ResidencyHeatTag_v::Hot>);
+}
+
 int main() {
     test_lookup_l1_round_trip();
     test_publish_l1_round_trip();
@@ -309,6 +488,12 @@ int main() {
     test_e2e_hot_dispatch_consumer();
     test_phase5_stub_semantics();
     test_three_level_federation_publish();
+    test_lookup_l1_miss_returns_nullptr_pinned();
+    test_publish_l1_variant_update();
+    test_publish_l1_row_discrimination();
+    test_cross_lattice_non_mixing();
+    test_augur_cache_tier_classifier();
+    test_cannot_tighten_to_stronger_tier();
 
     std::puts("ok");
     return 0;
