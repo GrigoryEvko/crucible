@@ -355,6 +355,7 @@ crucible_test(test_inferred_row)
 crucible_test(test_cheat_probe_wrappers)
 crucible_test(test_h10_algebra_diag_bridge)
 crucible_test(test_fusion)
+crucible_test(test_fx_aliases)
 crucible_test(test_d25_d29_detector_headers)
 crucible_test(test_is_producer_handle)
 crucible_test(test_is_consumer_handle)
@@ -1512,6 +1513,17 @@ crucible_neg_compile_test(neg_inferred_row_pure_concept_rejects_alloc_fn
 
 # ─── FOUND-F06 IsFusable concept rejection on arity mismatch ──────
 crucible_neg_compile_test(neg_fusion_concept_rejects_arity_mismatch
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-G79 / G80 F*-style alias predicate rejection fixtures ────
+# Three fixtures, one per orthogonal lattice violation: empty-row vs
+# state, divergence vs state, state vs context-tag.  Pin the production-
+# shape failure surface (templated caller with `requires IsX<R>`).
+crucible_neg_compile_test(neg_fx_aliases_pure_rejects_alloc_row
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_fx_aliases_div_rejects_alloc_row
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_fx_aliases_st_rejects_bg_row
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-F07 fuse<>() entry-point substitution-failure fixtures ───

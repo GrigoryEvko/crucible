@@ -6,17 +6,21 @@
 // Forces every effects/* header through the test target's full
 // -Werror matrix.
 //
-// Coverage: 4 headers (Capabilities, Computation, EffectRow, Effects
-// umbrella).  When a new effects/* header ships, add its include below.
-// The legacy crucible/Effects.h fx::* tree and the compat/Fx.h shim
-// were both deleted in FOUND-B07 / METX-5; the cap::* / Bg / Init /
-// Test surface lives in Capabilities.h alongside the Effect enum.
+// Coverage: 5 headers (Capabilities, Computation, EffectRow, Effects
+// umbrella, FxAliases).  When a new effects/* header ships, add its
+// include below.  The legacy crucible/Effects.h fx::* tree and the
+// compat/Fx.h shim were both deleted in FOUND-B07 / METX-5; the
+// cap::* / Bg / Init / Test surface lives in Capabilities.h alongside
+// the Effect enum.  FxAliases.h ships F*-style PureRow / DivRow / STRow
+// / AllRow named aliases + IsPure / IsDiv / IsST / IsAll concepts
+// (FOUND-G79 / G80).
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/Computation.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/Effects.h>
+#include <crucible/effects/FxAliases.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -44,6 +48,12 @@ void test_capabilities_compile()  {}
 void test_computation_compile()   {}
 void test_effect_row_compile()    {}
 void test_effects_umbrella()      {}
+void test_fx_aliases_compile()    {
+    // Drive the runtime smoke test so the consteval/constexpr accessor
+    // surfaces actually get instantiated under the test target's full
+    // -Werror matrix (per feedback_algebra_runtime_smoke_test_discipline).
+    ::crucible::effects::runtime_smoke_test();
+}
 
 }  // namespace
 
@@ -53,6 +63,7 @@ int main() {
     run_test("test_computation_compile",   test_computation_compile);
     run_test("test_effect_row_compile",    test_effect_row_compile);
     run_test("test_effects_umbrella",      test_effects_umbrella);
+    run_test("test_fx_aliases_compile",    test_fx_aliases_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");
