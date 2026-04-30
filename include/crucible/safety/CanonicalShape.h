@@ -54,9 +54,9 @@
 //
 // 27_04 §5.6 stipulates that the canonical shapes are mutually
 // exclusive: a function satisfies AT MOST ONE shape predicate.  The
-// per-shape concepts in D12-D19 enforce this structurally via per-
-// param wrapper-detection clauses + per-return-type clauses + slot-
-// order constraints.  This header verifies the property in the
+// eight per-shape concepts in D12-D19 enforce this structurally via
+// per-param wrapper-detection clauses + per-return-type clauses +
+// slot-order constraints.  This header verifies the property in the
 // sentinel TU: for every shape's worked example, exactly one shape
 // predicate is true (and `canonical_shape_kind_v` matches).
 //
@@ -84,7 +84,7 @@
 //
 //   InitSafe / NullSafe / MemSafe / BorrowSafe / ThreadSafe / LeakSafe
 //     — N/A; pure consteval shape recognition.
-//   TypeSafe — disjunction of seven mutually-exclusive predicates;
+//   TypeSafe — disjunction of eight mutually-exclusive predicates;
 //              non-canonical signatures fall through to
 //              CanonicalShapeKind::NonCanonical.
 //   DetSafe — same FnPtr → same recognition result.

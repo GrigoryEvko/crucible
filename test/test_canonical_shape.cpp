@@ -8,12 +8,12 @@
 // matching enum value.
 //
 // Coverage:
-//   * For each of D12-D19 (7 shapes today), instantiate a worked
-//     example function and confirm:
+//   * For each of D12-D19 (8 shapes), instantiate a worked example
+//     function and confirm:
 //       - CanonicalShape<&fn> is true
 //       - canonical_shape_kind_v<&fn> == expected enum
 //       - canonical_shape_name_of_v<&fn> == expected string
-//       - All 6 OTHER shape predicates are false (mutual exclusion)
+//       - All 7 OTHER shape predicates are false (mutual exclusion)
 //   * For non-canonical signatures, confirm:
 //       - CanonicalShape<&fn> is false
 //       - NonCanonical<&fn> is true
