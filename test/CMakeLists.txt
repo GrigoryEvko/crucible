@@ -1303,6 +1303,31 @@ crucible_neg_compile_test(neg_binary_transform_output_tag_t_on_non_binary
 crucible_neg_compile_test(neg_binary_transform_has_same_tag_v_on_non_binary
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# ─── FOUND-D15 ProducerEndpoint constrained-extractor fixtures ──────
+#
+# Pins the four constrained extractors on ProducerEndpoint.h:
+#   - producer_endpoint_handle_value_t
+#   - producer_endpoint_region_tag_t
+#   - producer_endpoint_region_value_t
+#   - producer_endpoint_value_consistent_v
+# Each is constrained on `requires ProducerEndpoint<FnPtr>`; without
+# the constraint, the alias would chain through `param_type_t<FnPtr,
+# 0>` followed by `producer_handle_value_t` (or owned_region_*_t) and
+# emit a diagnostic far from the actual mistake.  These fixtures
+# guarantee the constraint stays in place and the diagnostic lands
+# at the producer-endpoint-shape-recognition boundary.
+crucible_neg_compile_test(neg_producer_endpoint_handle_value_t_on_non_endpoint
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_producer_endpoint_region_tag_t_on_non_endpoint
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_producer_endpoint_region_value_t_on_non_endpoint
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_producer_endpoint_value_consistent_v_on_non_endpoint
+  "constraints not satisfied|template constraint failure|associated constraints")
+
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
 #
 # Pins the CipherTier wrapper's tier-pin discipline AND the underlying
