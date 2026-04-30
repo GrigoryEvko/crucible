@@ -31,6 +31,7 @@
 #include <crucible/MetaLog.h>
 #include <crucible/Serialize.h>
 #include <crucible/handles/FileHandle.h>
+#include <crucible/safety/CipherTier.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
@@ -205,6 +206,129 @@ class CRUCIBLE_OWNER Cipher {
     store_pinned(const RegionNode* region, const MetaLog* meta_log) {
         return safety::Wait<safety::WaitStrategy_v::Block, ContentHash>{
             store(region, meta_log)};
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FOUND-G47: CipherTier-pinned publication surface
+    // ═══════════════════════════════════════════════════════════════
+    //
+    // The Cipher persistence model defines three storage tiers
+    // (CRUCIBLE.md §L14):
+    //
+    //   Hot  — peer-Relay RAM (RAID-like replication, single-node
+    //          failure recovery; zero-cost reshard).
+    //   Warm — local NVMe per Relay (1/N FSDP shard, reboot recovery
+    //          in seconds).
+    //   Cold — durable storage (S3/GCS, total cluster-failure recovery
+    //          in minutes).
+    //
+    // Today only the Warm tier is implemented (NVMe via store());
+    // publish_hot and publish_cold are Phase 5 deferred surfaces (per
+    // CRUCIBLE.md "Phase 5: Keeper + Canopy + Cipher").  The TYPE-
+    // level surfaces ship NOW so production call sites already speak
+    // the tier vocabulary; the behavioral implementation lands in
+    // Phase 5 without any downstream API churn.
+    //
+    //   publish_warm  → wraps store() — REAL implementation (NVMe write).
+    //                   Returns CipherTier<Warm, ContentHash>.
+    //   publish_hot   → Phase 5 stub.  Returns CipherTier<Hot,
+    //                   ContentHash>{ContentHash{}} — typed at Hot,
+    //                   carries no actual replication today.
+    //   publish_cold  → Phase 5 stub.  Returns CipherTier<Cold,
+    //                   ContentHash>{ContentHash{}} — typed at Cold,
+    //                   no S3/GCS write today.
+    //
+    // SEMANTIC NOTE on the stubs: returning ContentHash{} (the
+    // "none" sentinel — `static_cast<bool>(h) == false`) is a
+    // deliberate non-lie.  The wrapper's TYPE claims "this value
+    // is at tier T"; the VALUE bytes (ContentHash{}) carry no
+    // false positive about durability — a downstream consumer
+    // checking `static_cast<bool>(h)` distinguishes "no tier-T
+    // store happened" from "tier-T store succeeded".  When Phase 5
+    // ships the real Hot/Cold backends, the stubs become real
+    // writes WITHOUT changing the type signature — this is
+    // exactly the non-churn contract the additive-pinned pattern
+    // promises.
+    //
+    // Why additive: existing store() callers are tier-agnostic bg-
+    // thread persistence paths.  The CipherTier-pinned overlay
+    // declares storage residency at the type level so:
+    //   - A function `requires CipherTier::satisfies<Hot>` REJECTS
+    //     values coming from publish_warm / publish_cold at compile
+    //     time.  Captures the Keeper hot-tier reincarnation gate
+    //     (zero-loss reshard requires RAM-replicated state, NEVER
+    //     NVMe/S3).
+    //   - Augur drift attribution can read the static `tier` to
+    //     distinguish "S3 latency spike" from "Hot-tier issue"
+    //     without a runtime tier-tagged enum field.
+    //   - replay_engine accepts CipherTier<Cold> historical archives
+    //     during recovery; production hot-path code declaring
+    //     `requires CipherTier::satisfies<Hot>` rejects them.
+    //
+    // Lattice direction (CipherTierLattice.h):
+    //     Cold(weakest) ⊑ Warm ⊑ Hot(strongest)
+    //
+    // satisfies<Required> = leq(Required, Self).  Hot satisfies Warm
+    // and Cold (stronger subsumes weaker for use); Cold satisfies
+    // only Cold (bottom of chain).
+
+    // Warm-tier publish — REAL implementation (forwards to store()).
+    [[nodiscard]] safety::cipher_tier::Warm<ContentHash>
+    publish_warm(OpenView const& view,
+                 const RegionNode* region,
+                 const MetaLog* meta_log) {
+        return safety::cipher_tier::Warm<ContentHash>{
+            store(view, region, meta_log)};
+    }
+
+    // Legacy-shape Warm publish — mints view locally.
+    [[nodiscard]] safety::cipher_tier::Warm<ContentHash>
+    publish_warm(const RegionNode* region, const MetaLog* meta_log) {
+        return safety::cipher_tier::Warm<ContentHash>{
+            store(region, meta_log)};
+    }
+
+    // Hot-tier publish — Phase 5 STUB.
+    //
+    // Today: returns CipherTier<Hot, ContentHash{}> — the type
+    // declares Hot residency, the value-bytes (none-hash) carry no
+    // false positive.  When Phase 5 ships peer-RAM RAID replication,
+    // the body grows to perform the actual replication; no caller
+    // change required because the type signature is stable.
+    [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
+    publish_hot(OpenView const&,
+                const RegionNode* /*region*/,
+                const MetaLog* /*meta_log*/) noexcept {
+        // Phase 5: invoke peer-RAM RAID replication here, returning
+        // the ContentHash of the replicated shard.  Until then, the
+        // stub returns the none-hash — callers must check
+        // `static_cast<bool>(h)` to detect "Hot tier not yet wired".
+        return safety::cipher_tier::Hot<ContentHash>{ContentHash{}};
+    }
+
+    // Legacy-shape Hot publish.
+    [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
+    publish_hot(const RegionNode* /*region*/, const MetaLog* /*meta_log*/) noexcept {
+        return safety::cipher_tier::Hot<ContentHash>{ContentHash{}};
+    }
+
+    // Cold-tier publish — Phase 5 STUB.
+    //
+    // Today: returns CipherTier<Cold, ContentHash{}>.  When Phase 5
+    // ships the S3/GCS backend, the body grows to PUT the serialized
+    // region into durable storage; no caller change required.
+    [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
+    publish_cold(OpenView const&,
+                 const RegionNode* /*region*/,
+                 const MetaLog* /*meta_log*/) noexcept {
+        // Phase 5: durable-storage PUT here.
+        return safety::cipher_tier::Cold<ContentHash>{ContentHash{}};
+    }
+
+    // Legacy-shape Cold publish.
+    [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
+    publish_cold(const RegionNode* /*region*/, const MetaLog* /*meta_log*/) noexcept {
+        return safety::cipher_tier::Cold<ContentHash>{ContentHash{}};
     }
 
     // ─── Load ───────────────────────────────────────────────────────

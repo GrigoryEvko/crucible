@@ -320,6 +320,7 @@ crucible_test(test_pool_allocator_alloc_class)
 crucible_test(test_one_shot_flag_crash)
 crucible_test(test_atomic_snapshot_wait)
 crucible_test(test_cipher_wait)
+crucible_test(test_cipher_publish_tier)
 crucible_test(test_atomic_snapshot)
 crucible_test(test_chase_lev_deque)
 crucible_test(test_mpsc_ring)
@@ -1283,6 +1284,16 @@ crucible_neg_compile_test(neg_crash_error_return_at_nothrow_fence
 # (CLAUDE.md §IX).  Park's ~1-5 μs futex wakeup latency is two
 # orders of magnitude above the per-call shape budget.
 crucible_neg_compile_test(neg_wait_park_at_spin_pause_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
+# FOUND-G47 — production-call-site fence: a hot-tier reincarnation
+# consumer requiring CipherTier::satisfies<Hot> rejects a
+# CipherTier<Cold> source.  This is the load-bearing rejection for
+# the Keeper hot-tier reshard gate (CRUCIBLE.md §L14).  Cold tier
+# carries minutes-of-S3-GET latency, never appropriate at single-
+# node-failure reincarnation where the recovery path has
+# microseconds-to-milliseconds budget at most.
+crucible_neg_compile_test(neg_cipher_tier_cold_at_hot_fence
   "constraints not satisfied|no matching function|associated constraints")
 
 # ─── FOUND-D01 — signature_traits<FnPtr> param-index overflow ─────
