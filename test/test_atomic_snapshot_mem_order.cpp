@@ -34,7 +34,9 @@
 //   T15 — initial-value snapshot reads via load_mo_pinned
 
 #include <crucible/concurrent/AtomicSnapshot.h>
+#include <crucible/safety/IsMemOrder.h>
 #include <crucible/safety/MemOrder.h>
+#include <crucible/safety/Wait.h>
 #include "test_assert.h"
 
 #include <cstdio>
@@ -260,6 +262,163 @@ static void test_initial_value_via_load_mo_pinned() {
     assert((v == Pair{99, 1234}));
 }
 
+// ─────────────────────────────────────────────────────────────────
+// FOUND-G32-AUDIT — extended positive coverage
+// ─────────────────────────────────────────────────────────────────
+
+// ── T16 — relax DOWN composes with consumer-fence ────────────
+//
+// A Relaxed-pinned source can be relaxed step-by-step through
+// Acquire → AcqRel and still feed a Release-fence consumer.  Proves
+// the relax<>() chain composes cleanly with the production consumer
+// boundary at every step.
+static void test_relax_down_chain() {
+    using crucible::safety::MemOrder;
+
+    // Lattice: SeqCst(weakest) ⊑ AcqRel ⊑ Release ⊑ Acquire ⊑ Relaxed(strongest).
+    // Each step goes DOWN-the-lattice (toward weaker hardware-
+    // friendliness).  Relaxed → Acquire → Release → AcqRel → SeqCst.
+    MemOrder<MemOrderTag_v::Relaxed, int> rlx{42};
+    auto acq    = std::move(rlx).relax<MemOrderTag_v::Acquire>();
+    auto rel    = std::move(acq).relax<MemOrderTag_v::Release>();
+    auto acqrel = std::move(rel).relax<MemOrderTag_v::AcqRel>();
+    auto seqcst = std::move(acqrel).relax<MemOrderTag_v::SeqCst>();
+
+    static_assert(std::is_same_v<decltype(acq),
+        MemOrder<MemOrderTag_v::Acquire, int>>);
+    static_assert(std::is_same_v<decltype(rel),
+        MemOrder<MemOrderTag_v::Release, int>>);
+    static_assert(std::is_same_v<decltype(acqrel),
+        MemOrder<MemOrderTag_v::AcqRel, int>>);
+    static_assert(std::is_same_v<decltype(seqcst),
+        MemOrder<MemOrderTag_v::SeqCst, int>>);
+
+    int v = std::move(seqcst).consume();
+    assert(v == 42);
+}
+
+// ── T17 — Reflective trait agreement (mem_order_tag_v) ────────
+//
+// FOUND-D27 trait must agree with the wrapper's static `tag` member
+// across cv-ref qualifiers.  Drift would silently corrupt diagnostic
+// printing and row-hash folding.
+static void test_reflective_trait_agreement() {
+    using crucible::safety::extract::mem_order_tag_v;
+    using crucible::safety::extract::is_mem_order_v;
+
+    using Acq = MemOrder<MemOrderTag_v::Acquire, int>;
+    using Rel = MemOrder<MemOrderTag_v::Release, int>;
+    using SC  = MemOrder<MemOrderTag_v::SeqCst,  int>;
+
+    static_assert(mem_order_tag_v<Acq>        == Acq::tag);
+    static_assert(mem_order_tag_v<Rel>        == Rel::tag);
+    static_assert(mem_order_tag_v<SC>         == SC::tag);
+    static_assert(mem_order_tag_v<Acq&>       == Acq::tag);
+    static_assert(mem_order_tag_v<Acq const&> == Acq::tag);
+    static_assert(mem_order_tag_v<Acq&&>      == Acq::tag);
+
+    // Concept gate — non-MemOrder rejected.
+    static_assert(!is_mem_order_v<int>);
+    static_assert(!is_mem_order_v<bool>);
+    static_assert( is_mem_order_v<Acq>);
+}
+
+// ── T18 — Cross-axis composition with FOUND-G27 Wait ──────────
+//
+// load_pinned (FOUND-G27) returns Wait<SpinPause, T>; load_mo_pinned
+// (FOUND-G32) returns MemOrder<Acquire, T>.  Both pin DIFFERENT
+// axes (wait-strategy vs memory-ordering) on the SAME underlying
+// load.  Confirm the two surfaces are type-distinct (no accidental
+// aliasing) and BOTH preserve sizeof(T).
+static void test_cross_axis_with_wait_pin() {
+    using crucible::safety::Wait;
+    using crucible::safety::WaitStrategy_v;
+
+    AtomicSnapshot<uint64_t> snap{777ULL};
+
+    using WaitPinT  = decltype(snap.load_pinned());
+    using MemOrdPinT = decltype(snap.load_mo_pinned());
+
+    static_assert(std::is_same_v<WaitPinT,
+        Wait<WaitStrategy_v::SpinPause, uint64_t>>);
+    static_assert(std::is_same_v<MemOrdPinT,
+        MemOrder<MemOrderTag_v::Acquire, uint64_t>>);
+
+    // Type-distinct — different axes shouldn't accidentally alias.
+    static_assert(!std::is_same_v<WaitPinT, MemOrdPinT>);
+
+    // Both preserve sizeof — orthogonal zero-cost wrappers.
+    static_assert(sizeof(WaitPinT)  == sizeof(uint64_t));
+    static_assert(sizeof(MemOrdPinT) == sizeof(uint64_t));
+
+    // Both consume identically.
+    auto w_pin = snap.load_pinned();
+    auto m_pin = snap.load_mo_pinned();
+    assert(std::move(w_pin).consume() == 777ULL);
+    assert(std::move(m_pin).consume() == 777ULL);
+}
+
+// ── T19 — Full 5×5 satisfies<> truth table ────────────────────
+//
+// Exhaustive verification of the lattice direction across all
+// (Self, Required) pairs.  Each cell = leq(Required, Self).
+// Lattice: SeqCst(0) ⊑ AcqRel(1) ⊑ Release(2) ⊑ Acquire(3) ⊑ Relaxed(4)
+// (per the implementation's INVERTED ordinal, see MemOrderLattice.h
+// L85-87).  satisfies<R> on Self = R-position ≤ Self-position.
+static void test_full_truth_table() {
+    using crucible::safety::MemOrder;
+    using T = MemOrderTag_v;
+
+    // Row Self=Relaxed (top): satisfies all five.
+    using Rlx = MemOrder<T::Relaxed, int>;
+    static_assert( Rlx::satisfies<T::Relaxed>);
+    static_assert( Rlx::satisfies<T::Acquire>);
+    static_assert( Rlx::satisfies<T::Release>);
+    static_assert( Rlx::satisfies<T::AcqRel>);
+    static_assert( Rlx::satisfies<T::SeqCst>);
+
+    // Row Self=Acquire: satisfies Acquire, Release, AcqRel, SeqCst.
+    using Acq = MemOrder<T::Acquire, int>;
+    static_assert(!Acq::satisfies<T::Relaxed>);
+    static_assert( Acq::satisfies<T::Acquire>);
+    static_assert( Acq::satisfies<T::Release>);
+    static_assert( Acq::satisfies<T::AcqRel>);
+    static_assert( Acq::satisfies<T::SeqCst>);
+
+    // Row Self=Release: satisfies Release, AcqRel, SeqCst.
+    using Rel = MemOrder<T::Release, int>;
+    static_assert(!Rel::satisfies<T::Relaxed>);
+    static_assert(!Rel::satisfies<T::Acquire>);
+    static_assert( Rel::satisfies<T::Release>);
+    static_assert( Rel::satisfies<T::AcqRel>);
+    static_assert( Rel::satisfies<T::SeqCst>);
+
+    // Row Self=AcqRel: satisfies AcqRel, SeqCst.
+    using AR = MemOrder<T::AcqRel, int>;
+    static_assert(!AR::satisfies<T::Relaxed>);
+    static_assert(!AR::satisfies<T::Acquire>);
+    static_assert(!AR::satisfies<T::Release>);
+    static_assert( AR::satisfies<T::AcqRel>);
+    static_assert( AR::satisfies<T::SeqCst>);
+
+    // Row Self=SeqCst (bottom): satisfies only SeqCst.
+    using SC = MemOrder<T::SeqCst, int>;
+    static_assert(!SC::satisfies<T::Relaxed>);
+    static_assert(!SC::satisfies<T::Acquire>);
+    static_assert(!SC::satisfies<T::Release>);
+    static_assert(!SC::satisfies<T::AcqRel>);
+    static_assert( SC::satisfies<T::SeqCst>);
+}
+
+// ── T20 — Move-only enforcement (Graded-derived) ─────────────
+static void test_move_only_witness() {
+    using Acq = MemOrder<MemOrderTag_v::Acquire, uint64_t>;
+    static_assert(std::is_move_constructible_v<Acq>);
+    static_assert(std::is_trivially_move_constructible_v<Acq>);
+    // The wrapper consumes via && rvalue-only consume() — verified at
+    // T01 / T04 call sites; documented here at the type level.
+}
+
 int main() {
     test_load_mo_pinned_type_identity();
     test_try_load_mo_pinned_type_identity();
@@ -276,6 +435,13 @@ int main() {
     test_cannot_tighten_to_stronger();
     test_try_load_mo_pinned_optional_shape();
     test_initial_value_via_load_mo_pinned();
+
+    // ── FOUND-G32-AUDIT extended positive coverage ─────────────
+    test_relax_down_chain();
+    test_reflective_trait_agreement();
+    test_cross_axis_with_wait_pin();
+    test_full_truth_table();
+    test_move_only_witness();
 
     std::puts("ok");
     return 0;

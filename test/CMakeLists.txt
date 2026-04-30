@@ -1174,6 +1174,22 @@ crucible_neg_compile_test(neg_opaque_lifetime_per_program_at_per_fleet_fence
 crucible_neg_compile_test(neg_mem_order_seqcst_at_acquire_fence
   "constraints not satisfied|no matching function|associated constraints")
 
+# FOUND-G32-AUDIT companion fixtures — prove the consumer-fence rejection
+# is STRUCTURAL across the lattice, not a SeqCst-special-case.
+#
+# One-tier rejection: AcqRel does NOT satisfy Acquire (AcqRel is one tier
+# below Acquire in the hardware-friendliness lattice).  Captures the
+# "RMW-upgrade crept onto an Acquire-load hot path" regression.
+crucible_neg_compile_test(neg_mem_order_acqrel_at_acquire_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
+# Three-tier-gap rejection: SeqCst is THREE positions below Relaxed in the
+# chain (SeqCst ⊑ AcqRel ⊑ Release ⊑ Acquire ⊑ Relaxed).  Strongest
+# possible rejection claim in the lattice — proves the requires-clause
+# correctly handles maximal cross-tier flow, not just adjacent gaps.
+crucible_neg_compile_test(neg_mem_order_seqcst_at_relaxed_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
 # ─── FOUND-G26 Wait wrapper neg-compiles (6 fixtures: 4+2) ──────────
 #
 # 4 wrapper-surface fixtures (mirrors HotPath / DetSafe pattern):
