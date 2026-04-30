@@ -350,6 +350,7 @@ crucible_test(test_is_crash)
 crucible_test(test_is_budgeted)
 crucible_test(test_is_epoch_versioned)
 crucible_test(test_is_numa_placement)
+crucible_test(test_is_recipe_spec)
 crucible_test(test_is_producer_handle)
 crucible_test(test_is_consumer_handle)
 crucible_test(test_is_swmr_handle)
@@ -1491,6 +1492,11 @@ crucible_neg_compile_test(neg_epoch_versioned_value_t_on_non_epoch_versioned
 
 # ─── FOUND-D30/NumaPlacement IsNumaPlacement constrained-extractor
 crucible_neg_compile_test(neg_numa_placement_value_t_on_non_numa_placement
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D30/RecipeSpec IsRecipeSpec constrained-extractor
+# CLOSES the D30 batch — final wrapper-detector for the 8-wrapper set.
+crucible_neg_compile_test(neg_recipe_spec_value_t_on_non_recipe_spec
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
