@@ -2108,6 +2108,21 @@ crucible_neg_compile_test(neg_background_thread_run_in_row_init_only
 crucible_neg_compile_test(neg_background_thread_run_in_row_test_only
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# ─── FOUND-I20-AUDIT saturation-minus-one matrix ────────────────────
+# Maximum-cardinality (5 atoms) rejection witnesses — proves the
+# fence is sharp at the high-cardinality boundary, not just at
+# cardinality 3 or below.  Catches regressions where a future
+# refactor switches to a size-based check (cardinality ≥ 4) instead
+# of the membership-based Subrow.
+crucible_neg_compile_test(neg_background_thread_run_in_row_all_but_bg
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_background_thread_run_in_row_all_but_alloc
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_background_thread_run_in_row_all_but_io
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_background_thread_run_in_row_all_but_block
+  "constraints not satisfied|template constraint failure|associated constraints")
+
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
 # Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.
 # Mechanical extension of the D30-batch pattern; closes the

@@ -37,12 +37,14 @@
 //             Div/ST partially rejected, AllRow/STRow superset accepted
 
 #include <crucible/BackgroundThread.h>
+#include <crucible/Cipher.h>
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/FxAliases.h>
 #include "test_assert.h"
 
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <thread>
 #include <type_traits>
@@ -394,6 +396,225 @@ static void test_audit_c_f_star_alias_matrix() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Audit-D — Cross-fence compositional consistency.  The bg drain
+// loop (run_in_row) is a downstream caller of Cipher::record_event
+// (FOUND-I09).  By transitivity of Subrow, any caller satisfying
+// run_required_row MUST also satisfy record_event_required_row,
+// otherwise the bg cannot legitimately invoke advance_head/log
+// writes during region commit.  The test proves this row inclusion
+// at compile time.
+//
+// Catches a future regression where the bg's row is silently
+// narrowed (e.g. drops Block) but Cipher::record_event still
+// requires Block — the inclusion below would fire and a CI signal
+// arrives BEFORE any caller runs into the actual constraint
+// violation downstream.
+
+static void test_audit_d_cross_fence_consistency() {
+    using BgRow     = BackgroundThread::run_required_row;
+    using RecordRow = ::crucible::Cipher::record_event_required_row;
+
+    // BgRow must contain RecordRow's atoms — the bg drain admits
+    // every effect that record_event requires.
+    static_assert(eff::Subrow<RecordRow, BgRow>,
+        "BackgroundThread::run_required_row MUST contain "
+        "Cipher::record_event_required_row.  The bg drain calls "
+        "record_event during region commit — if the bg's row "
+        "doesn't admit IO+Block, the call site cannot satisfy the "
+        "downstream fence.");
+
+    // Per-atom check — record_event needs IO + Block; the bg row
+    // has BOTH.  Symmetric inclusion would mean BgRow == RecordRow,
+    // which is FALSE: the bg additionally admits Bg + Alloc.
+    static_assert(eff::row_contains_v<BgRow, eff::Effect::IO>);
+    static_assert(eff::row_contains_v<BgRow, eff::Effect::Block>);
+    static_assert(!eff::Subrow<BgRow, RecordRow>,
+        "BgRow ⊋ RecordRow — the bg drain admits strictly more "
+        "than record_event requires (Bg + Alloc are extra).");
+
+    // Cardinality witness: |BgRow| > |RecordRow|.
+    static_assert(eff::row_size_v<BgRow> > eff::row_size_v<RecordRow>);
+    static_assert(eff::row_size_v<BgRow> == 4u);
+    static_assert(eff::row_size_v<RecordRow> == 2u);
+
+    std::printf("  audit-D cross_fence_consistency:           PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit-E — Saturation-minus-one matrix.  At cardinality 5 (every
+// atom of the OS universe minus one), exactly four out of six
+// "missing one atom" rows are valid Subrows of run_required_row's
+// supersets — the four where the missing atom is Init or Test (not
+// in run_required_row) become legitimate supersets, and the four
+// where the missing atom IS in run_required_row (Bg/Alloc/IO/Block)
+// must REJECT.
+//
+// Catches a regression where the fence is silently widened to "any
+// row of cardinality ≥ 4" — a check based on size rather than atom
+// membership.  At cardinality 5, the fence still fires for the
+// missing-required-atom rows.
+
+static void test_audit_e_saturation_minus_one_matrix() {
+    using R = BackgroundThread::run_required_row;
+
+    // Saturation-minus-Init: every atom EXCEPT Init.  Required
+    // atoms all present → ACCEPT.
+    using MinusInit = eff::Row<
+        eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO,
+        eff::Effect::Block, eff::Effect::Test>;
+    static_assert(eff::Subrow<R, MinusInit>);
+    static_assert(eff::row_size_v<MinusInit> == 5u);
+
+    // Saturation-minus-Test: similar.
+    using MinusTest = eff::Row<
+        eff::Effect::Bg, eff::Effect::Alloc, eff::Effect::IO,
+        eff::Effect::Block, eff::Effect::Init>;
+    static_assert(eff::Subrow<R, MinusTest>);
+
+    // Saturation-minus-Bg: 5 atoms but Bg missing → REJECT.
+    using MinusBg = eff::Row<
+        eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block,
+        eff::Effect::Init,  eff::Effect::Test>;
+    static_assert(!eff::Subrow<R, MinusBg>);
+    static_assert(eff::row_size_v<MinusBg> == 5u);
+
+    // Saturation-minus-Alloc: 5 atoms but Alloc missing → REJECT.
+    using MinusAlloc = eff::Row<
+        eff::Effect::Bg,    eff::Effect::IO, eff::Effect::Block,
+        eff::Effect::Init,  eff::Effect::Test>;
+    static_assert(!eff::Subrow<R, MinusAlloc>);
+
+    // Saturation-minus-IO: 5 atoms but IO missing → REJECT.
+    using MinusIo = eff::Row<
+        eff::Effect::Bg,    eff::Effect::Alloc, eff::Effect::Block,
+        eff::Effect::Init,  eff::Effect::Test>;
+    static_assert(!eff::Subrow<R, MinusIo>);
+
+    // Saturation-minus-Block: 5 atoms but Block missing → REJECT.
+    using MinusBlock = eff::Row<
+        eff::Effect::Bg,    eff::Effect::Alloc, eff::Effect::IO,
+        eff::Effect::Init,  eff::Effect::Test>;
+    static_assert(!eff::Subrow<R, MinusBlock>);
+
+    // Confirm: of the 6 "missing one atom" rows at cardinality 5,
+    // exactly 2 accept (missing Init or Test, the orthogonal atoms)
+    // and 4 reject (missing Bg/Alloc/IO/Block, the required atoms).
+    // Cardinality-based "≥ 4" check would accept all 6.
+
+    std::printf("  audit-E saturation_minus_one_matrix:       PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit-F — Concurrent SPSC drain witness.  Mirrors FOUND-I17-AUDIT's
+// concurrent SPSC test: spawns the bg via run_in_row<Required> with
+// running=true, fg pushes a small batch into the TraceRing, signals
+// stop, joins.  Validates:
+//   • run_in_row honors the SPSC contract (head/tail acquire/release)
+//   • the row-typed wrapper is a TRUE thin forwarder, not a re-
+//     implementation that adds synchronization
+//   • the trailing-drain path completes without hanging
+//
+// The test is structurally simple: we are NOT exercising the full
+// IterationDetector machinery (no K=5 signature, no region build).
+// We push ENTRIES that look like ops with no tensor metadata so the
+// detector advances but never closes a region.  The point is to
+// observe ring drain proceeds via the row-typed entry point.
+
+static void test_audit_f_concurrent_spsc_drain() {
+    BackgroundThread bt;
+    auto ring = std::make_unique<TraceRing>();
+    auto metalog = std::make_unique<MetaLog>();
+    bt.ring.set(BackgroundThread::RingPtr{ring.get()});
+    bt.meta_log.set(BackgroundThread::MetaLogPtr{metalog.get()});
+    bt.running.store(true, std::memory_order_release);
+
+    using Required = BackgroundThread::run_required_row;
+
+    // Spawn the bg via run_in_row<Required>.  The fence is
+    // satisfied; the bg blocks on try_pop_batch + spin_pause.
+    std::thread bg_thread([&]() {
+        bt.run_in_row<Required>();
+    });
+
+    // Push a small batch.  Each entry has a unique schema_hash so
+    // the IterationDetector won't fire (we just want drain motion).
+    constexpr uint32_t N = 8;
+    for (uint32_t i = 0; i < N; ++i) {
+        crucible::TraceRing::Entry e{};
+        e.schema_hash = crucible::SchemaHash{0x1000ULL + i};
+        e.shape_hash  = crucible::ShapeHash{0x2000ULL + i};
+        // Push via the regular (non-row-typed) try_append_pinned API
+        // — fg-side row-typing is a separate fence (FOUND-I16).
+        // Here we test ONLY the consumer side's row fence.
+        // try_append_pinned returns HotPath<Hot, bool>; .peek()
+        // unwraps to const bool& for the loop predicate.
+        while (!ring->try_append_pinned(
+                  e, crucible::MetaIndex::none(),
+                  crucible::ScopeHash{0}, crucible::CallsiteHash{0}).peek()) {
+            std::this_thread::yield();
+        }
+    }
+
+    // Allow bg to drain.  We bound the wait by polling
+    // total_processed; once it reaches N, the bg has consumed
+    // every entry through try_pop_batch.
+    auto deadline = std::chrono::steady_clock::now()
+                  + std::chrono::seconds(5);
+    while (bt.total_processed.load() < N
+        && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    assert(bt.total_processed.load() >= N);
+
+    // Signal stop and join.  The bg's loop body sees running=false
+    // and falls through to the trailing-drain path (which is empty).
+    bt.running.store(false, std::memory_order_release);
+    bg_thread.join();
+
+    std::printf("  audit-F concurrent_spsc_drain:             PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
+// Audit-G — F* alias closure under Subrow.  For every alias in
+// FxAliases.h, either it fully satisfies the run_required_row fence
+// or it fully rejects — there are no "partially satisfying" cases.
+// Catches a regression where a future alias rename mutates one
+// alias to a partial position (e.g. STRow gains Bg, becomes
+// "almost-required-but-missing-Alloc").
+
+static void test_audit_g_f_star_alias_closure() {
+    using R = BackgroundThread::run_required_row;
+
+    // Aliases the F* lattice declares — see FxAliases.h.
+    static_assert(!eff::Subrow<R, eff::PureRow>);
+    static_assert(!eff::Subrow<R, eff::TotRow>);
+    static_assert(!eff::Subrow<R, eff::GhostRow>);
+    static_assert(!eff::Subrow<R, eff::DivRow>);
+    static_assert(!eff::Subrow<R, eff::STRow>);
+    static_assert( eff::Subrow<R, eff::AllRow>);
+
+    // Closure witness: 5 of 6 F* aliases reject; 1 accepts.  The
+    // chain (Pure ⊑ Tot ⊑ Ghost ⊑ Div ⊑ ST ⊑ All) means rejection
+    // propagates "downward" through the chain — once an alias
+    // contains the required row, every superset alias does too.
+    // The accepting boundary is between STRow and AllRow.
+    static_assert(eff::is_subrow_v<eff::STRow, eff::AllRow>);
+    static_assert(!eff::is_subrow_v<eff::AllRow, eff::STRow>);
+
+    // The atom that flips the boundary is exactly Bg (since STRow
+    // already has Block + Alloc + IO; the gap to AllRow is
+    // {Bg, Init, Test}, but only Bg is in run_required_row).
+    using StPlusBg = eff::Row<
+        eff::Effect::Block, eff::Effect::Alloc, eff::Effect::IO,
+        eff::Effect::Bg>;
+    static_assert(eff::Subrow<R, StPlusBg>);
+    // STRow alone (no Bg) must fail.
+    static_assert(!eff::Subrow<R, eff::STRow>);
+
+    std::printf("  audit-G f_star_alias_closure:              PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
 int main() {
     std::printf("test_background_thread_run_in_row — FOUND-I20 "
                 "8th-axiom fence\n");
@@ -409,8 +630,12 @@ int main() {
     test_audit_a_required_row_header_fence();
     test_audit_b_per_axis_missing_atom_matrix();
     test_audit_c_f_star_alias_matrix();
+    test_audit_d_cross_fence_consistency();
+    test_audit_e_saturation_minus_one_matrix();
+    test_audit_f_concurrent_spsc_drain();
+    test_audit_g_f_star_alias_closure();
 
-    std::printf("test_background_thread_run_in_row: 7 + 3 audit "
+    std::printf("test_background_thread_run_in_row: 7 + 7 audit "
                 "groups, all passed\n");
     return 0;
 }
