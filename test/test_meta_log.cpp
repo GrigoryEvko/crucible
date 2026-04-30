@@ -292,6 +292,82 @@ static void test_try_append_pure_FOUND_I17() {
     std::printf("  test_try_append_pure_FOUND_I17: PASSED\n");
 }
 
+// ── FOUND-I17-AUDIT — concurrent SPSC integrity via try_append_pure ─
+//
+// The base FOUND-I17 test (above) covered single-threaded interleaving
+// of try_append + try_append_pure to pin the facade is a forwarder.
+// This audit additionally proves the row-typed facade preserves SPSC
+// integrity under genuine cross-thread contention — same scenario as
+// test_spsc_concurrent_integrity but driving the producer through the
+// row-typed entry point.  If the facade had any hidden synchronization,
+// extra atomic, or different memory ordering, this test would either
+// red the assertions or expose torn reads.
+//
+// PINS:
+//   • Producer uses try_append_pure exclusively; the IsPure constraint
+//     is checked at substitution time (compile-time).
+//   • Consumer uses unchanged at()/advance_tail (the Bg side).
+//   • All N=50_000 producer messages reach the consumer in order, no
+//     loss, no duplication, no torn reads.
+
+static void test_try_append_pure_concurrent_FOUND_I17_AUDIT() {
+    constexpr uint32_t N = 50'000;
+    MetaLog log;
+
+    std::atomic<bool>     producer_done{false};
+    std::atomic<uint32_t> lost_spin{0};
+
+    std::thread producer{[&]{
+        for (uint32_t i = 0; i < N; /* advance only on success */) {
+            TensorMeta m = make_meta(
+                reinterpret_cast<void*>(static_cast<uintptr_t>(i + 1) << 16));
+            // FOUND-I17: row-typed facade with default Row<>.
+            auto idx = log.try_append_pure(&m, 1);
+            if (idx.is_valid()) [[likely]] {
+                ++i;
+            } else {
+                CRUCIBLE_SPIN_PAUSE;
+                lost_spin.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+        producer_done.store(true, std::memory_order_release);
+    }};
+
+    std::thread consumer{[&]{
+        uint32_t next = 0;
+        while (next < N) {
+            const uint32_t avail = log.size();
+            if (avail == 0) {
+                if (producer_done.load(std::memory_order_acquire) &&
+                    log.size() == 0) {
+                    break;
+                }
+                CRUCIBLE_SPIN_PAUSE;
+                continue;
+            }
+            for (uint32_t k = 0; k < avail; ++k) {
+                const TensorMeta& m = log.at(next + k);
+                const uintptr_t expected =
+                    static_cast<uintptr_t>(next + k + 1) << 16;
+                assert(reinterpret_cast<uintptr_t>(m.data_ptr) == expected);
+                assert(m.sizes[0]    == 128);
+                assert(m.sizes[1]    == 256);
+                assert(m.dtype       == ScalarType::Float);
+                assert(m.device_type == DeviceType::CUDA);
+            }
+            log.advance_tail(next + avail);
+            next += avail;
+        }
+        assert(next == N);
+    }};
+
+    producer.join();
+    consumer.join();
+    std::printf("  test_try_append_pure_concurrent_FOUND_I17_AUDIT: "
+                "PASSED (N=%u, producer_spins=%u)\n",
+                N, lost_spin.load());
+}
+
 int main() {
     test_empty_state();
     test_single_append_returns_index_zero();
@@ -301,6 +377,7 @@ int main() {
     test_try_contiguous_wrap_returns_null();
     test_spsc_concurrent_integrity();
     test_try_append_pure_FOUND_I17();
-    std::printf("test_meta_log: 8 groups, all passed\n");
+    test_try_append_pure_concurrent_FOUND_I17_AUDIT();
+    std::printf("test_meta_log: 9 groups, all passed\n");
     return 0;
 }

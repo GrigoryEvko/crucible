@@ -1992,6 +1992,26 @@ crucible_neg_compile_test(neg_metalog_try_append_pure_io
 crucible_neg_compile_test(neg_metalog_try_append_pure_bg
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# ─── FOUND-I17-AUDIT per-axis matrix completion ─────────────────────
+# Per-axis neg-compile parity: 4 fixtures completing the {Alloc, IO,
+# Block, Bg, Init, Test} matrix (IO + Bg are above), plus 2 composite
+# fixtures pinning multi-atom + saturation-row rejection.  Together
+# these prevent silent widening of the IsPure constraint via any
+# single-atom drift OR multi-atom composition that might slip through
+# a per-axis-only audit.
+crucible_neg_compile_test(neg_metalog_try_append_pure_alloc
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_metalog_try_append_pure_block
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_metalog_try_append_pure_init
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_metalog_try_append_pure_test
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_metalog_try_append_pure_io_block
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_metalog_try_append_pure_full_row
+  "constraints not satisfied|template constraint failure|associated constraints")
+
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
 # Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.
 # Mechanical extension of the D30-batch pattern; closes the
