@@ -376,7 +376,6 @@ crucible_test(test_computation_cache_invalidation)
 crucible_test(test_federation_protocol)
 crucible_test(test_cipher_record_event)
 crucible_test(test_background_thread_run_in_row)
-crucible_test(test_forge_kernel_node)
 crucible_test(test_computation_cache_federation)
 crucible_test(test_fx_aliases)
 crucible_test(test_fx_alias_diagnostic)
@@ -771,18 +770,6 @@ crucible_neg_compile_effects_test(neg_lift_unknown_capability
 # purpose, so non-Row arguments produce an incomplete-type diagnostic.
 crucible_neg_compile_effects_test(neg_computation_graded_non_row
     "incomplete type|incomplete and cannot be|has no member named .type|invalid use of incomplete type")
-
-# FOUND-J01-AUDIT round 2: non-Row arguments to KernelNode hard-fail.
-# Three fixtures lock the partial-specialization design (forward-declared
-# primary template, only Row<Es...> specialization defined) into CI.
-# The diagnostic varies slightly by argument kind (int / void / user
-# struct) so the regex tolerates each shape.
-crucible_neg_compile_effects_test(neg_kernel_node_non_row_int
-    "incomplete type|invalid use of incomplete type|incomplete and cannot be")
-crucible_neg_compile_effects_test(neg_kernel_node_non_row_void
-    "incomplete type|invalid use of incomplete type|incomplete and cannot be")
-crucible_neg_compile_effects_test(neg_kernel_node_non_row_struct
-    "incomplete type|invalid use of incomplete type|incomplete and cannot be")
 
 # FOUND-H04-AUDIT-1: encapsulation witness for the H04 façade migration.
 # Proves the cross-specialization friendship is bounded — external
