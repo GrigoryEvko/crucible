@@ -117,6 +117,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Pinned.h>
+#include <crucible/safety/Wait.h>
 
 #include <atomic>
 #include <concepts>
@@ -337,6 +338,37 @@ public:
             return std::nullopt;  // torn — writer started new round
         }
         return *std::start_lifetime_as<T>(buf);
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // FOUND-G27: Wait-pinned production surface
+    // ═══════════════════════════════════════════════════════════════
+    //
+    // load() spins on the seqlock with CRUCIBLE_SPIN_PAUSE while the
+    // writer is mid-publish (~30 ns expected window).  The wait
+    // strategy IS SpinPause — top of the WaitLattice (Block ⊑ Park
+    // ⊑ AcquireWait ⊑ UmwaitC01 ⊑ BoundedSpin ⊑ SpinPause).
+    //
+    // load_pinned() pins that classification at the type level:
+    // hot-path consumers declaring `requires Wait::satisfies<
+    // SpinPause>` admit the value; consumers expecting Park or
+    // weaker tiers reject it (would be a bug — they should use a
+    // Park-strategy primitive instead).
+    //
+    // Why additive (not replacing): existing call sites of load()
+    // (Augur metrics broadcast, the snapshot consumer pattern in
+    // the audit harness) consume bare T.  An additive overlay
+    // preserves those sites while letting NEW production consumers
+    // declare their wait-strategy constraint at the type level.
+    //
+    // Cost: zero overhead beyond load().  Wait<SpinPause, T> is EBO-
+    // collapsed; the constructor is a single move; the same memcpy/
+    // start_lifetime_as machinery runs.
+
+    // Hot-path-classified load — returns Wait<SpinPause, T>.
+    [[nodiscard]] safety::Wait<safety::WaitStrategy_v::SpinPause, T>
+    load_pinned() const noexcept {
+        return safety::Wait<safety::WaitStrategy_v::SpinPause, T>{load()};
     }
 
     // ── version (number of completed publishes) ───────────────────

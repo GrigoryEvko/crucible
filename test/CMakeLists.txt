@@ -318,6 +318,7 @@ crucible_test(test_philox_det)
 crucible_test(test_arena_alloc_class)
 crucible_test(test_pool_allocator_alloc_class)
 crucible_test(test_one_shot_flag_crash)
+crucible_test(test_atomic_snapshot_wait)
 crucible_test(test_atomic_snapshot)
 crucible_test(test_chase_lev_deque)
 crucible_test(test_mpsc_ring)
@@ -1273,6 +1274,14 @@ crucible_neg_compile_test(neg_crash_abort_at_error_return_fence
 # would silently break the "this call NEVER fails" guarantee that
 # hot-path code depends on.
 crucible_neg_compile_test(neg_crash_error_return_at_nothrow_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
+# FOUND-G27 — production-call-site fence: a hot-path consumer
+# requiring Wait<SpinPause> rejects a Wait<Park> source.  This is
+# the load-bearing rejection for the no-park-on-hot-path discipline
+# (CLAUDE.md §IX).  Park's ~1-5 μs futex wakeup latency is two
+# orders of magnitude above the per-call shape budget.
+crucible_neg_compile_test(neg_wait_park_at_spin_pause_fence
   "constraints not satisfied|no matching function|associated constraints")
 
 # ─── FOUND-D01 — signature_traits<FnPtr> param-index overflow ─────
