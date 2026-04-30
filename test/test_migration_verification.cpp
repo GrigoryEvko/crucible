@@ -377,6 +377,19 @@ static_assert(GradedWrapper<Stale<int>>);
 static_assert(GradedWrapper<TimeOrdered<int, 4>>);
 static_assert(GradedWrapper<SharedPermission<VerificationTag>>);
 
+// Round-N (FOUND-D RED-TEAM 2026-04-30) — bare GradedWrapper coverage
+// for the four product-lattice wrappers.  Previously these only
+// appeared in composition tests downstream (lines ~1400-1546); a
+// regression that broke their substrate would silently pass
+// composition tests because the OUTERMOST wrapper's GradedWrapper
+// conformance is independent of the inner.  The four bare assertions
+// below close the coverage hole.  See misc/29_04_2026_graded_
+// integration_redteam.md §G3.
+static_assert(GradedWrapper<Budgeted<int>>);
+static_assert(GradedWrapper<EpochVersioned<int>>);
+static_assert(GradedWrapper<NumaPlacement<int>>);
+static_assert(GradedWrapper<RecipeSpec<int>>);
+
 // The is_graded_wrapper_v variable template auto-specializes from
 // the concept — same coverage, value-form for use in metaprograms.
 static_assert(is_graded_wrapper_v<Linear<int>>);
