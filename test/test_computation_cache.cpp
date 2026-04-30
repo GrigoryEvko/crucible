@@ -380,6 +380,119 @@ int main() {
         EXPECT_TRUE(is_one_of);
     });
 
+    // ── (J) FOUND-F11: row-aware cache slots are isolated ────────
+    // Same FnPtr, different Row → DIFFERENT atomic slots.  Insert
+    // into the EmptyRow slot only; verify the Bg-row slot still
+    // misses, and the IO-row slot still misses.  This is the
+    // load-bearing F11 invariant: the dispatcher must not alias
+    // compiled bodies across effect rows.
+    namespace eff = ::crucible::effects;
+    using EmptyR  = eff::Row<>;
+    using BgR     = eff::Row<eff::Effect::Bg>;
+    using IOR     = eff::Row<eff::Effect::IO>;
+    using BgIOR   = eff::Row<eff::Effect::Bg, eff::Effect::IO>;
+
+    run_test("row_aware_slots_are_isolated_by_row", []{
+        auto* body_empty = make_stub(0xE0);
+        // All three rows miss before any insert.
+        EXPECT_TRUE(
+            cipher::lookup_computation_cache_in_row<&test_fn_a, EmptyR, int>()
+            == nullptr);
+        EXPECT_TRUE(
+            cipher::lookup_computation_cache_in_row<&test_fn_a, BgR, int>()
+            == nullptr);
+        EXPECT_TRUE(
+            cipher::lookup_computation_cache_in_row<&test_fn_a, IOR, int>()
+            == nullptr);
+
+        // Insert ONLY into EmptyRow slot.
+        cipher::insert_computation_cache_in_row<&test_fn_a, EmptyR, int>(body_empty);
+
+        // EmptyRow slot now hits.
+        EXPECT_TRUE(
+            cipher::lookup_computation_cache_in_row<&test_fn_a, EmptyR, int>()
+            == body_empty);
+        // Bg and IO slots STILL miss — slot isolation across rows.
+        EXPECT_TRUE(
+            cipher::lookup_computation_cache_in_row<&test_fn_a, BgR, int>()
+            == nullptr);
+        EXPECT_TRUE(
+            cipher::lookup_computation_cache_in_row<&test_fn_a, IOR, int>()
+            == nullptr);
+    });
+
+    // ── (K) FOUND-F11: row-aware vs row-blind slots disjoint ─────
+    // Even when the row-aware row is EmptyRow, the row-aware slot
+    // must NOT alias the row-blind slot for the same (FnPtr,
+    // Args...).  Insert into row-blind <&test_fn_b, int, double>;
+    // verify row-aware <&test_fn_b, EmptyRow, int, double> still
+    // misses.  Tests the documented disjoint-slot invariant.
+    run_test("row_blind_and_row_aware_slots_disjoint", []{
+        auto* body_blind = make_stub(0xB1);
+        // Row-blind slot was already populated by sub-test (C):
+        // insert_then_lookup_roundtrips on <&test_fn_b, int, double>.
+        // Use a fresh Args pack to avoid that.  test_fn_b takes
+        // (int, double) — instantiate with the SAME types here, but
+        // since this slot was already filled in sub-test (C) with
+        // its own value, we can't re-test miss behavior on the
+        // row-blind side.  Instead: test ONLY the row-aware-side
+        // miss invariant — row-aware <&test_fn_b, EmptyRow, int,
+        // double> is a fresh instantiation that has NEVER been
+        // touched, so it must miss.
+        EXPECT_TRUE(
+            cipher::lookup_computation_cache_in_row<
+                &test_fn_b, EmptyR, int, double>()
+            == nullptr);
+
+        // Insert into the row-aware slot now.
+        cipher::insert_computation_cache_in_row<
+            &test_fn_b, EmptyR, int, double>(body_blind);
+
+        // Row-aware slot hits the new body.
+        EXPECT_TRUE(
+            cipher::lookup_computation_cache_in_row<
+                &test_fn_b, EmptyR, int, double>()
+            == body_blind);
+    });
+
+    // ── (L) FOUND-F11: row-aware permutation invariance ──────────
+    // Row<Bg, IO> and Row<IO, Bg> are different TYPES but
+    // row_hash is sort-fold over Effect underlying values, so they
+    // yield the same hash and thus the SAME computation_cache_key.
+    // BUT: they are different `inline` template instantiations,
+    // so they are different ATOMIC SLOTS.  Pin the runtime-side
+    // expectation: insert into one ordering and verify the OTHER
+    // ordering still misses (slot identity is type-driven, not
+    // hash-driven, even though keys agree).
+    run_test("row_aware_slot_id_is_type_driven_not_hash_driven", []{
+        auto* body_bgio = make_stub(0xC0);
+        EXPECT_TRUE(
+            cipher::lookup_computation_cache_in_row<
+                &test_fn_a, BgIOR, int>()
+            == nullptr);
+        // Pin the key-equality compile-time invariant has runtime peer.
+        EXPECT_TRUE(
+            cipher::computation_cache_key_in_row<&test_fn_a, BgIOR, int>
+            ==
+            cipher::computation_cache_key_in_row<
+                &test_fn_a, eff::Row<eff::Effect::IO, eff::Effect::Bg>, int>);
+        cipher::insert_computation_cache_in_row<&test_fn_a, BgIOR, int>(body_bgio);
+        // Same slot regardless of ordering visible to the key, but
+        // type-equal-after-sort? Actually NO — the slots are keyed on
+        // the TYPE Row<Bg, IO> vs Row<IO, Bg>; these are distinct C++
+        // types and produce DIFFERENT inline atomic slots.  The hash
+        // matches; the slot identity does not.  This is by design:
+        // the cache slot is type-driven, the federation key is hash-
+        // driven; both can be true simultaneously.
+        EXPECT_TRUE(
+            cipher::lookup_computation_cache_in_row<&test_fn_a, BgIOR, int>()
+            == body_bgio);
+        EXPECT_TRUE(
+            cipher::lookup_computation_cache_in_row<
+                &test_fn_a, eff::Row<eff::Effect::IO, eff::Effect::Bg>, int>()
+            == nullptr);  // distinct type → distinct slot, miss.
+    });
+
     std::fprintf(stderr, "\ntotal: %d passed, %d failed\n",
                  total_passed, total_failed);
     return total_failed == 0 ? 0 : 1;

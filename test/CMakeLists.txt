@@ -1915,6 +1915,10 @@ crucible_neg_compile_test(neg_computation_cache_member_fn_nttp
 # four NTTP categories the cache cannot key on.
 crucible_neg_compile_test(neg_computation_cache_member_data_ptr_nttp
   "constraints not satisfied|template constraint failure|associated constraints")
+# F11 IsEffectRow concept fence — non-effects::Row<...> Row params
+# rejected from the row-aware cache API.
+crucible_neg_compile_test(neg_computation_cache_in_row_non_row_param
+  "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
 # Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.

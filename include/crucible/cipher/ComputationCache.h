@@ -128,6 +128,8 @@
 //                pointer.
 
 #include <crucible/safety/diag/StableName.h>   // stable_function_id, stable_type_id, combine_ids, hash_name
+#include <crucible/safety/diag/RowHashFold.h>  // row_hash_contribution_v (FOUND-I02 / F11)
+#include <crucible/effects/EffectRow.h>        // effects::Row<Es...> (FOUND-H02 / F11)
 
 #include <atomic>
 #include <chrono>
@@ -179,6 +181,39 @@ template <auto FnPtr>
 concept IsCacheableFunction =
     std::is_pointer_v<decltype(FnPtr)>
     && std::is_function_v<std::remove_pointer_t<decltype(FnPtr)>>;
+
+// ═════════════════════════════════════════════════════════════════════
+// ── IsEffectRow — concept fence on Row template parameter (FOUND-F11)
+// ═════════════════════════════════════════════════════════════════════
+//
+// The row-aware cache API (`*_in_row` family below) takes a `Row`
+// template parameter — must be `effects::Row<Es...>` for some
+// (possibly empty) effect pack `Es...`.
+//
+// Without this fence, `typename Row` would accept any type — the
+// row-hash fold would compile to 0 for non-Row types (the primary
+// `row_hash_contribution<T>::value == 0`) and silently produce a
+// row-blind cache key indistinguishable from the legacy unrowed API.
+// Worse: the user might intend `lookup_in_row<&fn, int, double>()`
+// where `int` is supposed to be the first Arg — accidental binding
+// to Row would produce a nonsense key.
+//
+// Detection via class-template specialization: any
+// `effects::Row<Es...>` matches; everything else returns false.
+// The concept then tests the trait.
+
+namespace detail {
+
+template <typename R>
+inline constexpr bool is_effect_row_v = false;
+
+template <::crucible::effects::Effect... Es>
+inline constexpr bool is_effect_row_v<::crucible::effects::Row<Es...>> = true;
+
+}  // namespace detail
+
+template <typename R>
+concept IsEffectRow = detail::is_effect_row_v<R>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── computation_cache_key — canonical 64-bit cache key ─────────────
@@ -319,6 +354,116 @@ void insert_computation_cache(CompiledBody* body) noexcept
     // Idempotent: if expected was non-null, CAS failed and we leave
     // the existing entry alone.  The caller can re-lookup to
     // discover the actual cached pointer.
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Row-aware API (FOUND-F11) ──────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// The `_in_row` family threads an `effects::Row<Es...>` through the
+// cache key fold so that two calls to the same function under
+// different effect rows hit different cache slots.
+//
+// ── Why a parallel API instead of replacing the row-blind one ──────
+//
+// The row-blind API has shipped and is contract-stable (8-axiom
+// audited, 6-layer audit chain).  Adding a Row template parameter
+// would either (a) break every existing call site, or (b) require
+// a default `Row = effects::Row<>` which silently changes the
+// inference of an existing `lookup<&fn, int>()` (today: FnPtr,
+// Arg=int; with default: FnPtr, Row=int — wrong!).  Neither is
+// acceptable.
+//
+// Instead the row-aware variants live as parallel templates with
+// `_in_row` suffix.  Production migration will move call sites
+// individually; the row-blind path stays available as the legacy
+// surface.  The two paths' atomic slots are KEYED DIFFERENTLY (the
+// row-aware slots include row-hash in their fold) so they never
+// alias each other — even when the row is `effects::Row<>` (empty).
+//
+// ── Cache-key formula ──────────────────────────────────────────────
+//
+// computation_cache_key_in_row<FnPtr, Row, Args...> =
+//     combine_ids(name_hash<FnPtr>,
+//        combine_ids(stable_function_id<FnPtr>,
+//           combine_ids(row_hash_contribution_v<Row>,
+//              fold_combine_ids(stable_type_id<Args>...))))
+//
+// Properties (pinned by static_asserts in the self-test block):
+//   * Same FnPtr + same Row + same Args → same key (deterministic).
+//   * Different Row → different key (the load-bearing F11 invariant).
+//   * Permutation of Es in Row<Es...> → SAME key (row_hash is
+//     sort-fold over Effect underlying values).
+//   * Different from row-blind key for the same (FnPtr, Args...) —
+//     the cache slot identity DIFFERS even when Row is EmptyRow,
+//     because the row-aware key folds row_hash AND because the
+//     atomic slots are different `inline` template instantiations.
+
+namespace detail {
+
+// Row-aware variant of computation_cache_key_impl.  Same shape as
+// the row-blind impl (above) but folds the Row's content hash in
+// after the function-type seed.
+template <auto FnPtr, typename Row, typename... Args>
+    requires ::crucible::cipher::IsCacheableFunction<FnPtr>
+          && ::crucible::cipher::IsEffectRow<Row>
+[[nodiscard]] consteval std::uint64_t
+computation_cache_key_in_row_impl() noexcept {
+    std::uint64_t k = ::crucible::safety::diag::detail::hash_name(
+        std::meta::display_string_of(std::meta::reflect_constant(FnPtr)));
+    k = ::crucible::safety::diag::detail::combine_ids(
+        k, ::crucible::safety::diag::stable_function_id<FnPtr>);
+    // Row contribution — the F11 differentiator.  combine_ids is
+    // order-sensitive and Boost-style mixed; even a zero-row
+    // contribution (impossible for valid Row<Es...> per RowHashFold's
+    // cardinality-seed) would still differ from the row-blind key
+    // because the position of the row-hash slot in the fold is
+    // unique to the row-aware variant.
+    k = ::crucible::safety::diag::detail::combine_ids(
+        k, ::crucible::safety::diag::row_hash_contribution_v<Row>);
+    ((k = ::crucible::safety::diag::detail::combine_ids(
+              k, ::crucible::safety::diag::stable_type_id<Args>)),
+     ...);
+    return k;
+}
+
+}  // namespace detail
+
+template <auto FnPtr, typename Row, typename... Args>
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+inline constexpr std::uint64_t computation_cache_key_in_row =
+    detail::computation_cache_key_in_row_impl<FnPtr, Row, Args...>();
+
+namespace detail {
+
+// One atomic per (FnPtr, Row, Args...) tuple.  Disjoint from
+// `compiled_body_slot<FnPtr, Args...>` — different template, different
+// linker-deduplicated symbol.
+template <auto FnPtr, typename Row, typename... Args>
+    requires ::crucible::cipher::IsCacheableFunction<FnPtr>
+          && ::crucible::cipher::IsEffectRow<Row>
+inline std::atomic<CompiledBody*> compiled_body_slot_in_row{nullptr};
+
+}  // namespace detail
+
+template <auto FnPtr, typename Row, typename... Args>
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+[[nodiscard]] CompiledBody*
+lookup_computation_cache_in_row() noexcept {
+    return detail::compiled_body_slot_in_row<FnPtr, Row, Args...>
+        .load(std::memory_order_acquire);
+}
+
+template <auto FnPtr, typename Row, typename... Args>
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+void insert_computation_cache_in_row(CompiledBody* body) noexcept
+    pre (body != nullptr)
+{
+    CompiledBody* expected = nullptr;
+    detail::compiled_body_slot_in_row<FnPtr, Row, Args...>
+        .compare_exchange_strong(expected, body,
+                                  std::memory_order_acq_rel,
+                                  std::memory_order_acquire);
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -466,6 +611,98 @@ static_assert(!::crucible::cipher::IsCacheableFunction<&s_data_global>);
 // (e.g., in a generic forwarder) get a hard requires-clause
 // diagnostic instead of a silent nonsense slot.
 static_assert(!::crucible::cipher::IsCacheableFunction<nullptr>);
+
+// ── FOUND-F11 — IsEffectRow concept witnesses ─────────────────────
+//
+// Positive: every concrete `effects::Row<Es...>` satisfies.
+static_assert(::crucible::cipher::IsEffectRow<::crucible::effects::Row<>>);
+static_assert(::crucible::cipher::IsEffectRow<
+              ::crucible::effects::Row<::crucible::effects::Effect::Bg>>);
+static_assert(::crucible::cipher::IsEffectRow<
+              ::crucible::effects::Row<::crucible::effects::Effect::Bg,
+                                       ::crucible::effects::Effect::IO>>);
+
+// Negative: bare types do NOT.
+static_assert(!::crucible::cipher::IsEffectRow<int>);
+static_assert(!::crucible::cipher::IsEffectRow<void>);
+// Effect itself is the atom enum, not a row — must be wrapped.
+static_assert(!::crucible::cipher::IsEffectRow<::crucible::effects::Effect>);
+
+// ── FOUND-F11 — row-aware cache key witnesses ─────────────────────
+//
+// Same FnPtr, different Row → different key (the load-bearing
+// F11 invariant — the dispatcher MUST differentiate "same fn,
+// different effect row" or it would alias semantically distinct
+// compiled bodies).
+static_assert(
+    ::crucible::cipher::computation_cache_key_in_row<
+        &p_unary, ::crucible::effects::Row<>, int>
+    !=
+    ::crucible::cipher::computation_cache_key_in_row<
+        &p_unary, ::crucible::effects::Row<::crucible::effects::Effect::Bg>, int>,
+    "F11: row-aware cache must distinguish keys for same FnPtr+Args "
+    "but different Row.");
+
+// Different FnPtr, same Row, same Args → different key (FnPtr still
+// load-bearing).
+static_assert(
+    ::crucible::cipher::computation_cache_key_in_row<
+        &p_unary, ::crucible::effects::Row<>, int>
+    !=
+    ::crucible::cipher::computation_cache_key_in_row<
+        &p_binary, ::crucible::effects::Row<>, int, double>);
+
+// Same FnPtr, same Row, same Args → same key (deterministic).
+static_assert(
+    ::crucible::cipher::computation_cache_key_in_row<
+        &p_unary, ::crucible::effects::Row<>, int>
+    ==
+    ::crucible::cipher::computation_cache_key_in_row<
+        &p_unary, ::crucible::effects::Row<>, int>);
+
+// Permutation invariance: row_hash_contribution<Row<Es...>> is a
+// sort-fold over the effect underlying values, so re-ordering the
+// effects in the row pack produces the SAME row hash → SAME cache
+// key.  This is the documented row_hash design (RowHashFold.h
+// FOUND-I02).
+static_assert(
+    ::crucible::cipher::computation_cache_key_in_row<
+        &p_unary,
+        ::crucible::effects::Row<::crucible::effects::Effect::Bg,
+                                 ::crucible::effects::Effect::IO>, int>
+    ==
+    ::crucible::cipher::computation_cache_key_in_row<
+        &p_unary,
+        ::crucible::effects::Row<::crucible::effects::Effect::IO,
+                                 ::crucible::effects::Effect::Bg>, int>,
+    "F11: row-aware cache key must be permutation-invariant in the "
+    "Row's effect pack — row_hash is sort-fold over Effect underlying "
+    "values per FOUND-I02.");
+
+// Row-aware key MUST differ from row-blind key for the same
+// (FnPtr, Args...) — even when the row is EmptyRow.  This pins the
+// disjoint-slot invariant: a row-blind insert into <&fn, int> never
+// aliases a row-aware <&fn, EmptyRow, int>.
+static_assert(
+    ::crucible::cipher::computation_cache_key<&p_unary, int>
+    !=
+    ::crucible::cipher::computation_cache_key_in_row<
+        &p_unary, ::crucible::effects::Row<>, int>,
+    "F11: row-aware cache key MUST differ from row-blind key even "
+    "for EmptyRow — otherwise migration would silently alias legacy "
+    "and row-typed compiled bodies.");
+
+// Empty Args fold edge — row-aware variant.  `<&p_void, EmptyRow>`
+// must produce a non-zero, distinct-from-row-blind-empty-args key.
+static_assert(
+    ::crucible::cipher::computation_cache_key_in_row<
+        &p_void, ::crucible::effects::Row<>>
+    != 0);
+static_assert(
+    ::crucible::cipher::computation_cache_key_in_row<
+        &p_void, ::crucible::effects::Row<>>
+    !=
+    ::crucible::cipher::computation_cache_key<&p_void>);
 
 // ── Structural-cost asserts (FOUND-F09-AUDIT) ─────────────────────
 //
