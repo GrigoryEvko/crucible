@@ -374,6 +374,7 @@ crucible_test(test_computation_cache)
 crucible_test(test_computation_cache_integration)
 crucible_test(test_computation_cache_invalidation)
 crucible_test(test_federation_protocol)
+crucible_test(test_cipher_record_event)
 crucible_test(test_fx_aliases)
 crucible_test(test_fx_alias_diagnostic)
 crucible_test(test_effect_row_lattice)
@@ -1937,6 +1938,14 @@ crucible_neg_compile_test(neg_computation_cache_in_row_non_function_nttp
 # be silently truncated, aliasing multiple Mask values to the same
 # Row<> type.  Catches the drift at substitution time.
 crucible_neg_compile_test(neg_subset_row_mask_geq_64
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-I09 record_event row-fence ───────────────────────────────
+# Cipher::record_event<CallerRow> requires Subrow<Row<IO, Block>,
+# CallerRow>.  Empty / Hot / Pure caller rows fail substitution at
+# the requires-clause; this fixture pins that the fence fires loudly
+# instead of silently misdispatching to the file-I/O path.
+crucible_neg_compile_test(neg_cipher_record_event_pure_row
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────

@@ -30,6 +30,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/Serialize.h>
+#include <crucible/effects/EffectRow.h>           // FOUND-I09
 #include <crucible/handles/FileHandle.h>
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/IsOpaqueLifetime.h>
@@ -567,6 +568,69 @@ class CRUCIBLE_OWNER Cipher {
     // Legacy: mints OpenView locally.
     void advance_head(ContentHash content_hash, uint64_t step_id) {
         advance_head(mint_open_view(), content_hash, step_id);
+    }
+
+    // ─── Row-typed event recording (FOUND-I09) ──────────────────────
+    //
+    // The 8th-axiom fence on the event-recording surface.  Wraps
+    // advance_head with a compile-time effect-row constraint that
+    // forces the caller to declare its row, and statically verifies
+    // the row contains the capabilities record_event actually uses:
+    //
+    //   • Effect::IO    — record_event writes to HEAD file and
+    //                     appends to the log file (file I/O).
+    //   • Effect::Block — file writes may block on the kernel
+    //                     (the std::ofstream destructor flushes;
+    //                     write/fsync syscalls are blocking).
+    //
+    // Rationale (DetSafe — the 8th axiom):
+    //   record_event is a deterministic state mutation: same
+    //   (head_, content_hash, step_id) always produces the same
+    //   on-disk bytes (HEAD overwrite + log append).  The row
+    //   constraint is the type-level proof that callers are in a
+    //   context that legitimately holds these capabilities — a
+    //   foreground hot-path caller (Hot/DetSafe::Pure context, no
+    //   IO or Block in row) MUST NOT invoke record_event because
+    //   the file-I/O side effect would break replay determinism on
+    //   the hot path.  The constraint catches this at compile time.
+    //
+    // Usage:
+    //   cipher.record_event<effects::Row<effects::Effect::IO,
+    //                                    effects::Effect::Block>>(
+    //       open_view, content_hash, step_id);
+    //
+    // A caller in a `effects::Bg` context (which by construction
+    // holds Alloc + IO + Block + Bg caps) satisfies the constraint
+    // by passing any superset of {IO, Block} as CallerRow.  A caller
+    // in a Hot/Pure context cannot satisfy the constraint and the
+    // template substitution fails with the standard "constraints
+    // not satisfied" diagnostic.
+    //
+    // The minimum-required-row constant is exposed below as
+    // `record_event_required_row` so downstream Subrow checks (e.g.,
+    // FOUND-I11-I15 migration batches) can refer to it by name.
+    using record_event_required_row =
+        ::crucible::effects::Row<
+            ::crucible::effects::Effect::IO,
+            ::crucible::effects::Effect::Block>;
+
+    // Templated wrapper.  CallerRow is the row the caller declares
+    // it holds; Subrow<required, CallerRow> checks
+    // {IO, Block} ⊆ CallerRow at substitution time.
+    //
+    // The implementation is a single-line forwarder to advance_head
+    // — the entire fence lives in the requires-clause.  No runtime
+    // cost; no extra branch; no side effect beyond what advance_head
+    // already does.
+    template <typename CallerRow>
+        requires ::crucible::effects::Subrow<
+            record_event_required_row, CallerRow>
+    void record_event(OpenView const& view,
+                      ContentHash content_hash,
+                      uint64_t step_id)
+        pre (log_.empty() || step_id >= log_.back().step_id)
+    {
+        advance_head(view, content_hash, step_id);
     }
 
     // ─── Time travel ────────────────────────────────────────────────
