@@ -309,6 +309,42 @@ void test_graded_wrapper_conformance() {
     static_assert(!extract::is_opaque_lifetime_v<int>);
 }
 
+void test_outer_wrapper_identity_dominates_nested() {
+    // Composition discipline: when wrappers nest, the OUTER
+    // wrapper's identity is determined ONLY by the outer template.
+    // Inner wrappers do NOT "leak through" to the outside.
+    //
+    //   Consistency<Strong, OpaqueLifetime<Fleet, int>>
+    //     → IS Consistency
+    //     → is NOT OpaqueLifetime
+    //
+    //   OpaqueLifetime<Fleet, Consistency<Strong, int>>
+    //     → IS OpaqueLifetime
+    //     → is NOT Consistency
+    //
+    // Catches a refactor that accidentally writes a partial spec
+    // matching ANY wrapper of an Opaque-shaped value (would be
+    // semantically wrong).
+
+    using ConsistencyOfLifetime = safety::Consistency<
+        extract::Consistency_v::STRONG, OL_int_fleet>;
+    using LifetimeOfConsistency = safety::OpaqueLifetime<
+        extract::Lifetime_v::PER_FLEET, C_int_strong>;
+
+    // Outer Consistency wraps OpaqueLifetime — outer wins.
+    static_assert( extract::is_consistency_v<ConsistencyOfLifetime>);
+    static_assert(!extract::is_opaque_lifetime_v<ConsistencyOfLifetime>);
+    // Inner is reachable via the value-type extraction.
+    static_assert( extract::is_opaque_lifetime_v<
+        extract::consistency_value_t<ConsistencyOfLifetime>>);
+
+    // Outer OpaqueLifetime wraps Consistency — outer wins.
+    static_assert( extract::is_opaque_lifetime_v<LifetimeOfConsistency>);
+    static_assert(!extract::is_consistency_v<LifetimeOfConsistency>);
+    static_assert( extract::is_consistency_v<
+        extract::opaque_lifetime_value_t<LifetimeOfConsistency>>);
+}
+
 void test_cross_wrapper_exclusion() {
     // OpaqueLifetime vs OwnedRegion vs NumericalTier vs Consistency
     // — fully disjoint.
@@ -380,6 +416,8 @@ int main() {
              test_public_convenience_aliases);
     run_test("test_graded_wrapper_conformance",
              test_graded_wrapper_conformance);
+    run_test("test_outer_wrapper_identity_dominates_nested",
+             test_outer_wrapper_identity_dominates_nested);
     run_test("test_cross_wrapper_exclusion", test_cross_wrapper_exclusion);
     run_test("test_runtime_consistency", test_runtime_consistency);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
