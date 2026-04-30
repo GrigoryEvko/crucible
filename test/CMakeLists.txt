@@ -1296,6 +1296,19 @@ crucible_neg_compile_test(neg_wait_park_at_spin_pause_fence
 crucible_neg_compile_test(neg_cipher_tier_cold_at_hot_fence
   "constraints not satisfied|no matching function|associated constraints")
 
+# FOUND-G47-AUDIT — matrix-fill: Warm rejected at Hot fence (one-tier-
+# off refactor bug — NVMe-backed value misused at the RAM-replicated
+# hot path, silently degrading recovery latency by 100-1000×).
+crucible_neg_compile_test(neg_cipher_tier_warm_at_hot_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
+# FOUND-G47-AUDIT — matrix-fill: Cold rejected at Warm fence (freshness-
+# guarantee violation — replay-engine S3 archive misused at a per-
+# iteration publish path, breaking Augur recommendations-engine
+# integrity).
+crucible_neg_compile_test(neg_cipher_tier_cold_at_warm_fence
+  "constraints not satisfied|no matching function|associated constraints")
+
 # ─── FOUND-D01 — signature_traits<FnPtr> param-index overflow ─────
 #
 # The `requires (I < arity)` clause on signature_traits<FnPtr>::

@@ -304,6 +304,155 @@ static void test_phase5_stub_semantics(const char* dir) {
     assert(!static_cast<bool>(h_cold));
 }
 
+// ── T14 — Augur tier-reader diagnostic simulation ───────────────
+//
+// Augur's drift-attribution logic reads the static `tier` accessor
+// to distinguish "Hot-tier issue" vs "S3 latency spike" without a
+// runtime tier-tagged enum field.  This test exercises that pattern
+// — a generic function that switches on the tier at COMPILE time
+// and emits different diagnostic categories.  Per CipherTier.h
+// docblock: "Augur drift attribution can read the static `tier`".
+template <typename W>
+[[nodiscard]] static constexpr int classify_tier_for_drift_attribution() noexcept {
+    if constexpr (W::tier == CipherTierTag_v::Hot)  return 1;
+    if constexpr (W::tier == CipherTierTag_v::Warm) return 2;
+    if constexpr (W::tier == CipherTierTag_v::Cold) return 3;
+    return 0;
+}
+
+static void test_augur_tier_reader_pattern(const char* dir) {
+    Arena arena(1 << 16);
+    auto* region = make_test_region(arena, 14);
+    auto cipher = Cipher::open(dir);
+
+    // The static `tier` accessor permits zero-runtime-cost dispatch
+    // on the publication tier.  Augur uses this to label drift
+    // residuals against the appropriate baseline (Hot-tier
+    // residuals attribute to single-node-failure recovery latency;
+    // Cold-tier residuals attribute to S3 GET P99).
+    auto warm_v = cipher.publish_warm(region, nullptr);
+    auto hot_v  = cipher.publish_hot(region, nullptr);
+    auto cold_v = cipher.publish_cold(region, nullptr);
+
+    static_assert(classify_tier_for_drift_attribution<decltype(warm_v)>() == 2);
+    static_assert(classify_tier_for_drift_attribution<decltype(hot_v)>()  == 1);
+    static_assert(classify_tier_for_drift_attribution<decltype(cold_v)>() == 3);
+
+    // Drain the values so the test doesn't fault on [[nodiscard]].
+    (void)std::move(warm_v).consume();
+    (void)std::move(hot_v).consume();
+    (void)std::move(cold_v).consume();
+}
+
+// ── T15 — replay_engine Cold-archive admission ──────────────────
+//
+// replay_engine accepts CipherTier<Cold> historical archives at
+// recovery time — this is the OPPOSITE polarity from the Keeper
+// hot-reshard gate.  Instead of REJECTING Cold (as hot-fence
+// consumers do), the replay_engine consumer admits anything tier-
+// pinned, treating Cold as the canonical replay source.  Tests
+// that the loose gate `requires CipherTier::satisfies<Cold>`
+// admits ALL tiers (Cold, Warm, Hot — bottom of lattice = weakest
+// gate, accepts everything stronger).
+template <typename W>
+    requires (W::template satisfies<CipherTierTag_v::Cold>)
+static ContentHash replay_consumer(W wrapped) noexcept {
+    return std::move(wrapped).consume();
+}
+
+static void test_replay_engine_admits_all_tiers(const char* dir) {
+    Arena arena(1 << 16);
+    auto* region = make_test_region(arena, 15);
+    auto cipher = Cipher::open(dir);
+
+    // Cold gate admits Cold (self).
+    auto cold = cipher.publish_cold(region, nullptr);
+    (void)replay_consumer(std::move(cold));
+
+    // Cold gate admits Warm (subsumption — Warm is stronger).
+    auto warm = cipher.publish_warm(region, nullptr);
+    ContentHash h = replay_consumer(std::move(warm));
+    assert(static_cast<bool>(h));   // real NVMe write happened
+
+    // Cold gate admits Hot (subsumption — Hot is strongest).
+    auto hot = cipher.publish_hot(region, nullptr);
+    (void)replay_consumer(std::move(hot));
+}
+
+// ── T16 — sequential publish across all three tiers ─────────────
+//
+// Production scenario: a single region published to all three
+// tiers in one Keeper iteration (Hot for fellow-Relay
+// replication, Warm for local NVMe shard, Cold for durable
+// archive).  Each publication produces an independently-typed
+// value; no cross-tier interference at the type level.
+static void test_sequential_three_tier_publish(const char* dir) {
+    Arena arena(1 << 16);
+    auto* region = make_test_region(arena, 16);
+    auto cipher = Cipher::open(dir);
+
+    auto view = cipher.mint_open_view();
+
+    // Order matters per CRUCIBLE.md L13: Hot first (peer RAM),
+    // then Warm (local NVMe), then Cold (durable).  Compile-time
+    // type identity demonstrates the three values cannot be
+    // accidentally interchanged at the type level.
+    auto h_pub = cipher.publish_hot(view,  region, nullptr);
+    auto w_pub = cipher.publish_warm(view, region, nullptr);
+    auto c_pub = cipher.publish_cold(view, region, nullptr);
+
+    static_assert(!std::is_same_v<decltype(h_pub), decltype(w_pub)>);
+    static_assert(!std::is_same_v<decltype(w_pub), decltype(c_pub)>);
+    static_assert(!std::is_same_v<decltype(h_pub), decltype(c_pub)>);
+
+    // Drain values; only Warm has real bytes today.
+    ContentHash h_hash = std::move(h_pub).consume();
+    ContentHash w_hash = std::move(w_pub).consume();
+    ContentHash c_hash = std::move(c_pub).consume();
+
+    assert(!static_cast<bool>(h_hash));         // Phase 5 stub
+    assert( static_cast<bool>(w_hash));         // real NVMe write
+    assert(!static_cast<bool>(c_hash));         // Phase 5 stub
+}
+
+// ── T17 — Cold-archive cannot upgrade (relax<Hot> rejected) ─────
+//
+// Pins the most-load-bearing tightening rejection: a
+// CipherTier<Cold, T> CANNOT relax to CipherTier<Hot, T>.  Even
+// though `relax` semantically says "weaken the claim", the
+// underlying lattice machinery rejects ANY direction that would
+// CLAIM more strength than the source has.
+//
+// (Note: `relax<Hot>` on a Warm value being rejected — the
+// other direction in the same lattice — is covered by static_asserts
+// in CipherTier.h's self-test block; here we verify the SFINAE
+// detection at the test site too.)
+template <typename W, CipherTierTag_v T_target>
+concept can_tighten = requires(W&& w) {
+    { std::move(w).template relax<T_target>() };
+};
+
+static void test_cannot_tighten_to_stronger_tier() {
+    using HotT  = CipherTier<CipherTierTag_v::Hot,  ContentHash>;
+    using WarmT = CipherTier<CipherTierTag_v::Warm, ContentHash>;
+    using ColdT = CipherTier<CipherTierTag_v::Cold, ContentHash>;
+
+    // Down (relax) — admissible.
+    static_assert( can_tighten<HotT,  CipherTierTag_v::Warm>);
+    static_assert( can_tighten<HotT,  CipherTierTag_v::Cold>);
+    static_assert( can_tighten<WarmT, CipherTierTag_v::Cold>);
+
+    // Self — admissible (lattice reflexivity).
+    static_assert( can_tighten<HotT,  CipherTierTag_v::Hot>);
+    static_assert( can_tighten<WarmT, CipherTierTag_v::Warm>);
+    static_assert( can_tighten<ColdT, CipherTierTag_v::Cold>);
+
+    // Up — REJECTED at every step (load-bearing).
+    static_assert(!can_tighten<WarmT, CipherTierTag_v::Hot>);
+    static_assert(!can_tighten<ColdT, CipherTierTag_v::Warm>);
+    static_assert(!can_tighten<ColdT, CipherTierTag_v::Hot>);
+}
+
 int main() {
     char tmpdir[] = "/tmp/crucible_cipher_publish_XXXXXX";
     char* dir = mkdtemp(tmpdir);
@@ -322,6 +471,10 @@ int main() {
     test_e2e_hot_fence_consumer(dir);
     test_e2e_warm_fence_admits_hot_and_warm(dir);
     test_phase5_stub_semantics(dir);
+    test_augur_tier_reader_pattern(dir);
+    test_replay_engine_admits_all_tiers(dir);
+    test_sequential_three_tier_publish(dir);
+    test_cannot_tighten_to_stronger_tier();
 
     std::filesystem::remove_all(dir);
     std::puts("ok");
