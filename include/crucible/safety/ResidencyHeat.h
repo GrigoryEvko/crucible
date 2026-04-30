@@ -8,17 +8,21 @@
 // Tier.  Eighth chain wrapper from the 28_04_2026_effects.md §4.3.8
 // catalog (FOUND-G49) — composes directly with the seven sister
 // chain wrappers (HotPath / DetSafe / Wait / MemOrder / Progress /
-// AllocClass / CipherTier) in canonical wrapper-nesting order:
+// AllocClass / CipherTier) in canonical wrapper-nesting order
+// (CLAUDE.md §XVI / FOUND-I03 — HotPath ⊃ DetSafe ⊃ ... ⊃
+// ResidencyHeat ⊃ CipherTier ⊃ AllocClass ⊃ Wait ⊃ MemOrder ⊃ ...):
 //
 //   HotPath<Hot,
-//       CipherTier<Warm,
+//       DetSafe<Pure,
 //           ResidencyHeat<Hot,
-//               DetSafe<Pure,
+//               CipherTier<Warm,
 //                   AllocClass<Stack, T>>>>>
 //
 // Each layer EBO-collapses; the wrapper-nesting cost is sizeof(T)
-// at -O3.  Per 28_04 §4.7: wrappers compose orthogonally; the
-// dispatcher (FOUND-D) reads the stack via reflection.
+// at -O3.  Per 28_04 §4.7 / CLAUDE.md §XVI: wrappers compose
+// orthogonally in canonical order so row_hash
+// (safety/diag/RowHashFold.h, FOUND-I02) folds deterministically;
+// the dispatcher (FOUND-D) reads the stack via reflection.
 //
 //   Substrate: Graded<ModalityKind::Absolute,
 //                     ResidencyHeatLattice::At<Tier>,
