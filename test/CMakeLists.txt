@@ -1981,6 +1981,17 @@ crucible_neg_compile_test(neg_computation_cache_federation_non_row
 crucible_neg_compile_test(neg_computation_cache_federation_non_fn
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# ─── FOUND-I17 try_append_pure row-fence ────────────────────────────
+# MetaLog::try_append_pure<CallerRow> requires IsPure<CallerRow>
+# (CallerRow ⊆ Row<>).  These two fixtures cover distinct rejection
+# legs: a caller declaring IO context and a caller declaring Bg
+# context.  Together they pin that the IsPure constraint hasn't been
+# silently widened to accept any single non-empty atom.
+crucible_neg_compile_test(neg_metalog_try_append_pure_io
+  "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_metalog_try_append_pure_bg
+  "constraints not satisfied|template constraint failure|associated constraints")
+
 # ─── FOUND-D25-D29 constrained-extractor fixtures (10 total) ────────
 # Two per detector — value_t + tier_v / strategy_v / tag_v / class_v.
 # Mechanical extension of the D30-batch pattern; closes the

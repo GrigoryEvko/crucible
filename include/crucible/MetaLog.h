@@ -7,6 +7,8 @@
 
 #include <crucible/Platform.h>
 #include <crucible/MerkleDag.h>
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/FxAliases.h>
 #include <crucible/rt/Registry.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Mutation.h>
@@ -212,6 +214,49 @@ struct CRUCIBLE_OWNER MetaLog {
   {
     return crucible::safety::HotPath<crucible::safety::HotPathTier_v::Hot, MetaIndex>{
         try_append(metas, n)};
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FOUND-I17: row-typed facade — pins try_append as Pure
+  // ═══════════════════════════════════════════════════════════════
+  //
+  // try_append is a hot-path memory-only operation: it does NOT do
+  // I/O, blocking, or allocation; it is not init/test/bg context.
+  // In F* effect terms, it is `Pure` (the bottom of the effect-row
+  // lattice — no atoms in the row).  This facade pins that fact at
+  // the type level via an `IsPure<CallerRow>` constraint.
+  //
+  // Caller-row contract: the CallerRow template argument MUST satisfy
+  // `Subrow<CallerRow, Row<>>`, i.e., the caller's row must be empty.
+  // A caller in any of the following contexts is REJECTED:
+  //   • Row<Effect::IO>     — IO context cannot append to MetaLog
+  //   • Row<Effect::Block>  — blocking context cannot append
+  //   • Row<Effect::Bg>     — bg consumer-side cannot append
+  //   • Row<Effect::Init>   — init-time code cannot append (hot path)
+  //   • Row<Effect::Test>   — test-only code cannot append in prod
+  //   • Row<Effect::Alloc>  — allocating context cannot append
+  //
+  // The facade is ADDITIVE: existing try_append() / try_append_pinned()
+  // callers stay unchanged.  Production hot-path callers can migrate
+  // by replacing `try_append(...)` with `try_append_pure<>(...)` to
+  // gain the compile-time check.
+  //
+  // Implementation: thin forwarder to try_append; zero runtime cost
+  // (one inlined branchless tail-call under -O3).  The IsPure
+  // constraint is checked at substitution time, not at runtime.
+  //
+  // Default template argument is `Row<>` so `try_append_pure(...)`
+  // (no template-arg) is equivalent to `try_append_pure<Row<>>(...)`
+  // — the most common case at production hot-path call sites.
+  template <typename CallerRow = ::crucible::effects::Row<>>
+      requires ::crucible::effects::IsPure<CallerRow>
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
+  [[nodiscard]] CRUCIBLE_INLINE MetaIndex
+  try_append_pure(const TensorMeta* metas, uint32_t n)
+      CRUCIBLE_NO_THREAD_SAFETY
+      pre (n == 0 || metas != nullptr)
+  {
+    return try_append(metas, n);
   }
 
   // Background thread only (SPSC consumer): read meta at absolute index.

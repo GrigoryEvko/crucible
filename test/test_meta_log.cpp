@@ -8,6 +8,8 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/Platform.h>
+#include <crucible/effects/EffectRow.h>
+#include <crucible/effects/FxAliases.h>
 
 #include "test_assert.h"
 
@@ -212,6 +214,84 @@ static void test_spsc_concurrent_integrity() {
                 N, lost_spin.load());
 }
 
+// ── FOUND-I17: try_append_pure row-typed facade ──────────────────
+//
+// Pins the IsPure-constrained facade method behaves bit-identically
+// to try_append for a Row<>-context caller, while the IsPure
+// constraint is verified at substitution time (the neg-compile
+// fixtures cover the rejection legs).
+//
+// Three sub-pins:
+//   (a) Default template arg (Row<>) calls succeed and return the
+//       same MetaIndex as try_append on a fresh buffer.
+//   (b) Explicit template arg <Row<>> calls succeed and produce
+//       the same monotonic index sequence.
+//   (c) Mixed try_append + try_append_pure interleaved produce a
+//       contiguous monotonic sequence (no slot duplication, no
+//       gap) — pinning the facade is a thin forwarder, not a
+//       parallel storage path.
+
+static void test_try_append_pure_FOUND_I17() {
+    namespace eff = crucible::effects;
+
+    // (a) — default template arg.
+    {
+        MetaLog log;
+        TensorMeta m = make_meta(reinterpret_cast<void*>(0xA0));
+        auto idx = log.try_append_pure(&m, 1);
+        assert(idx.is_valid());
+        assert(idx.raw() == 0);
+        assert(log.size() == 1);
+        const auto& got = log.at(idx);
+        assert(got.data_ptr == m.data_ptr);
+    }
+
+    // (b) — explicit Row<> template arg.
+    {
+        MetaLog log;
+        TensorMeta m1 = make_meta(reinterpret_cast<void*>(0xB0));
+        TensorMeta m2 = make_meta(reinterpret_cast<void*>(0xC0));
+        auto idx1 = log.try_append_pure<eff::Row<>>(&m1, 1);
+        auto idx2 = log.try_append_pure<eff::Row<>>(&m2, 1);
+        assert(idx1.is_valid() && idx2.is_valid());
+        assert(idx1.raw() == 0);
+        assert(idx2.raw() == 1);
+        assert(log.size() == 2);
+    }
+
+    // (c) — interleave try_append + try_append_pure.  Both must
+    //       contribute to the SAME monotonic sequence, witnessing
+    //       the facade is a forwarder (not a parallel storage path).
+    {
+        MetaLog log;
+        TensorMeta m = make_meta(reinterpret_cast<void*>(0xD0));
+        auto i0 = log.try_append(&m, 1);            // index 0
+        auto i1 = log.try_append_pure(&m, 1);       // index 1
+        auto i2 = log.try_append(&m, 1);            // index 2
+        auto i3 = log.try_append_pure<eff::Row<>>(&m, 1);  // index 3
+        assert(i0.raw() == 0);
+        assert(i1.raw() == 1);
+        assert(i2.raw() == 2);
+        assert(i3.raw() == 3);
+        assert(log.size() == 4);
+    }
+
+    // (d) — concept-fence positive witnesses.  Pin the IsPure
+    //       relationship between Row<> and the various F* aliases at
+    //       compile time so a refinement that broke the bottom of
+    //       the lattice would fire here, not just at the neg-compile
+    //       fixtures.
+    static_assert(eff::IsPure<eff::Row<>>);
+    static_assert(eff::IsPure<eff::PureRow>);
+    static_assert(eff::IsPure<eff::TotRow>);     // synonym of Pure
+    static_assert(eff::IsPure<eff::GhostRow>);   // synonym of Pure
+    static_assert(!eff::IsPure<eff::DivRow>);    // {Block} ⊄ ∅
+    static_assert(!eff::IsPure<eff::Row<eff::Effect::IO>>);
+    static_assert(!eff::IsPure<eff::Row<eff::Effect::Bg>>);
+
+    std::printf("  test_try_append_pure_FOUND_I17: PASSED\n");
+}
+
 int main() {
     test_empty_state();
     test_single_append_returns_index_zero();
@@ -220,6 +300,7 @@ int main() {
     test_reset_zeroes_both_pointers();
     test_try_contiguous_wrap_returns_null();
     test_spsc_concurrent_integrity();
-    std::printf("test_meta_log: 7 groups, all passed\n");
+    test_try_append_pure_FOUND_I17();
+    std::printf("test_meta_log: 8 groups, all passed\n");
     return 0;
 }
