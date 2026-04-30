@@ -215,6 +215,45 @@ CRUCIBLE_GRADED_LAYOUT_INVARIANT(CompOverAll, EightByteValue);
 
 }  // namespace detail::computation_graded_layout
 
+// ── EmptyRow alias agreement (FOUND-H03-AUDIT-1) ────────────────────
+//
+// EffectRow.h:61 ships `using EmptyRow = Row<>;`.  The alias must be
+// transparent — `ComputationGraded<EmptyRow, T>` resolves to exactly
+// the same type as `ComputationGraded<Row<>, T>`.  Pin this so a
+// future refactor that accidentally specializes EmptyRow distinctly
+// (e.g. `struct EmptyRow {};` instead of an alias) fires here.
+
+static_assert(std::is_same_v<
+    ComputationGraded<EmptyRow, int>,
+    ComputationGraded<Row<>, int>>);
+static_assert(std::is_same_v<
+    typename ComputationGraded<EmptyRow, int>::lattice_type,
+    typename ComputationGraded<Row<>, int>::lattice_type>);
+static_assert(sizeof(ComputationGraded<EmptyRow, int>)
+              == sizeof(ComputationGraded<Row<>, int>));
+
+// ── at_bottom() reachability (FOUND-H03-AUDIT-1) ────────────────────
+//
+// At<Es...> satisfies BoundedBelowLattice (proved in EffectRowLattice.h
+// concept-conformance block) so Graded's `at_bottom(value)` static
+// factory MUST be reachable on every ComputationGraded instantiation.
+// Concept-driven detection so the gate is checked structurally, not
+// just by spot-instantiation.
+
+namespace detail::computation_graded_caps {
+template <typename G> concept HasAtBottom =
+    requires(typename G::value_type v) { G::at_bottom(v); };
+}  // namespace detail::computation_graded_caps
+
+static_assert(detail::computation_graded_caps::HasAtBottom<
+    ComputationGraded<Row<>, int>>);
+static_assert(detail::computation_graded_caps::HasAtBottom<
+    ComputationGraded<Row<Effect::Bg>, int>>);
+static_assert(detail::computation_graded_caps::HasAtBottom<
+    ComputationGraded<Row<
+        Effect::Alloc, Effect::IO, Effect::Block,
+        Effect::Bg,    Effect::Init, Effect::Test>, int>>);
+
 // ── Object semantics ────────────────────────────────────────────────
 //
 // All inherited from Graded — defaulted copy / move / destructor.
@@ -336,6 +375,12 @@ inline void runtime_smoke_test_computation_graded() noexcept {
     G_pure pure_c{value_runtime, G_pure::grade_type{}};
     G_pure pure_d{value_runtime + 2, G_pure::grade_type{}};
     [[maybe_unused]] G_pure composed = pure_c.compose(pure_d);
+
+    // at_bottom(value) — At<Es...> is BoundedBelowLattice so this
+    // factory must be reachable on every ComputationGraded.  Drive
+    // with a non-constant value to instantiate the body.
+    [[maybe_unused]] G_pure pure_bot = G_pure::at_bottom(value_runtime);
+    [[maybe_unused]] G_bg   bg_bot   = G_bg::at_bottom(value_runtime + 3);
 
     // Concept-based capability check at the boundary (per
     // feedback_algebra_runtime_smoke_test_discipline).

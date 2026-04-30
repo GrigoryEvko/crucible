@@ -740,6 +740,13 @@ crucible_neg_compile_effects_test(neg_weaken_to_disjoint_row
 crucible_neg_compile_effects_test(neg_lift_unknown_capability
     "associated constraints are not satisfied|IsEffect")
 
+# FOUND-H03-AUDIT-2 (#838): non-Row R rejection in ComputationGraded.
+# Witnesses that effect_row_to_at_t<NotARow> hard-errors at the alias
+# instantiation point — the helper's primary template is undefined on
+# purpose, so non-Row arguments produce an incomplete-type diagnostic.
+crucible_neg_compile_effects_test(neg_computation_graded_non_row
+    "incomplete type|incomplete and cannot be|has no member named .type|invalid use of incomplete type")
+
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
 # Each crucible_neg_compile_test below pairs a deliberately-broken

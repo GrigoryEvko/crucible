@@ -333,6 +333,53 @@ void test_runtime_construction_and_access() {
     ENSURE(consumed == 77);
 }
 
+// ── AUDIT-1a. EmptyRow alias agreement (FOUND-H03-AUDIT-1) ──────────
+
+void test_emptyrow_alias_agreement() {
+    static_assert(std::is_same_v<
+        cef::ComputationGraded<cef::EmptyRow, int>,
+        cef::ComputationGraded<cef::Row<>, int>>);
+    static_assert(std::is_same_v<
+        cef::ComputationGraded<cef::EmptyRow, double>,
+        cef::ComputationGraded<cef::Row<>, double>>);
+    static_assert(sizeof(cef::ComputationGraded<cef::EmptyRow, int>)
+                  == sizeof(int));
+
+    // Also drive a runtime construction through both spellings to
+    // confirm value semantics are identical.
+    using G_via_alias  = cef::ComputationGraded<cef::EmptyRow, int>;
+    using G_via_direct = cef::ComputationGraded<cef::Row<>, int>;
+    static_assert(std::is_same_v<G_via_alias, G_via_direct>);
+
+    G_via_alias  via_alias{17, G_via_alias::grade_type{}};
+    G_via_direct via_direct{17, G_via_direct::grade_type{}};
+    ENSURE(via_alias.peek() == via_direct.peek());
+}
+
+// ── AUDIT-1b. at_bottom() factory reachability (FOUND-H03-AUDIT-1) ──
+//
+// At<> satisfies BoundedBelowLattice (proved at H01); Graded provides
+// at_bottom(value) for every BoundedBelowLattice instantiation.  Drive
+// the factory with non-constant args + verify the constructed result
+// has bottom-equivalent grade.
+
+void test_at_bottom_factory_reachable() {
+    using G = cef::ComputationGraded<cef::Row<cef::Effect::Bg>, int>;
+
+    int seed = 31;
+    G g_bot = G::at_bottom(seed);
+
+    // Value preserved, grade is the singleton bottom (== top, in this
+    // degenerate sub-lattice).
+    ENSURE(g_bot.peek() == 31);
+
+    // The grade type is empty — operator==(empty, empty) returns true
+    // by the H01 At<> definition.  Spot-witness via the lattice's leq.
+    auto bottom_grade = G::lattice_type::bottom();
+    ENSURE(G::lattice_type::leq(g_bot.grade(), bottom_grade));
+    ENSURE(G::lattice_type::leq(bottom_grade, g_bot.grade()));
+}
+
 // ── 12. weaken/compose at runtime via the empty-grade no-op path ────
 
 void test_runtime_weaken_and_compose() {
@@ -369,6 +416,8 @@ int main() {
     run_test("test_runtime_construction_and_access",
              test_runtime_construction_and_access);
     run_test("test_runtime_weaken_and_compose",   test_runtime_weaken_and_compose);
+    run_test("test_emptyrow_alias_agreement",     test_emptyrow_alias_agreement);
+    run_test("test_at_bottom_factory_reachable",  test_at_bottom_factory_reachable);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
