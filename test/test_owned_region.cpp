@@ -322,6 +322,34 @@ void test_parallel_for_views_n2_smallest_parallel() {
     CRUCIBLE_TEST_REQUIRE(recombined.cspan()[3] == 40);
 }
 
+// FOUND-F01-A4 — uneven split: region size NOT divisible by N.  Most
+// production workloads have arbitrary sizes; existing tests used
+// only exact divisions (800/8, 4096/8).  Pin that uneven splits
+// (100 elements across 8 shards) execute correctly: all elements
+// visited, no overlap, no skipped suffix.
+void test_parallel_for_views_uneven_split() {
+    Arena arena;
+    auto perm = permission_root_mint<DataA>();
+    constexpr std::size_t N = 100;
+    auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
+        test_alloc_token(), arena, N, std::move(perm));
+    for (std::size_t i = 0; i < N; ++i) region.span()[i] = 0;
+
+    auto recombined = parallel_for_views<8>(
+        std::move(region),
+        [](auto sub) noexcept {
+            for (auto& x : sub.span()) x = 1;  // mark every visited element
+        }
+    );
+
+    // Every element of the recombined region must be marked — no
+    // shard skipped its slice of the suffix.
+    for (std::size_t i = 0; i < N; ++i) {
+        CRUCIBLE_TEST_REQUIRE(recombined.cspan()[i] == 1);
+    }
+    CRUCIBLE_TEST_REQUIRE(recombined.size() == N);
+}
+
 // FOUND-F01-A3 — DetSafe: same input, run twice, identical output.
 // Workers writing to disjoint shards plus jthread::join's happens-
 // before guarantee a deterministic post-recombine state regardless
@@ -834,6 +862,8 @@ int main() {
              test_parallel_for_views_body_invoked_n_times);
     run_test("test_parallel_for_views_n2_smallest_parallel",
              test_parallel_for_views_n2_smallest_parallel);
+    run_test("test_parallel_for_views_uneven_split",
+             test_parallel_for_views_uneven_split);
     run_test("test_parallel_for_views_deterministic_across_runs",
              test_parallel_for_views_deterministic_across_runs);
     run_test("test_parallel_reduce_views_sum",               test_parallel_reduce_views_sum);

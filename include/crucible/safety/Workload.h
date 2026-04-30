@@ -196,6 +196,14 @@ void spawn_workers_with_partials_(Tup&& subs, Mapper mapper,
 // across thread boundaries violates -fno-exceptions and triggers
 // std::terminate inside the worker jthread.
 //
+// Body must be CopyConstructible: `spawn_workers_` captures body
+// by value into each jthread's lambda (one copy per worker).  Most
+// lambdas are CopyConstructible by default; capturing a move-only
+// type (unique_ptr, Linear<T>) makes the body itself move-only
+// and triggers an "use of deleted function" diagnostic deep inside
+// std::jthread machinery.  Documented here so the diagnostic
+// surface is predictable.
+//
 // DetSafe: workers write to disjoint shards; the recombined
 // OwnedRegion's content is deterministic in the body's writes.
 // Worker scheduling order does NOT affect the result because
@@ -280,6 +288,15 @@ parallel_for_views(OwnedRegion<T, Whole>&& region, Body body) noexcept
 //
 // Mapper and Reducer must both be noexcept-invocable per the static
 // asserts; bodies that throw violate Crucible's -fno-exceptions rule.
+//
+// Mapper must be CopyConstructible: `spawn_workers_with_partials_`
+// captures mapper by value into each jthread's lambda (one copy per
+// worker, N copies total when N >= 2).  A move-only mapper
+// (capturing unique_ptr, Linear<T>, etc.) triggers an
+// "use of deleted function" diagnostic inside std::jthread
+// machinery.  Reducer is used by reference in the post-join fold
+// loop, so it does NOT require copy-constructibility beyond the
+// initial parameter binding (which itself can move).
 //
 // R must be CopyConstructible AND CopyAssignable.  The N>=2 path
 // initialises std::array<R, N> partials with `for (auto& p : partials)
