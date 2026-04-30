@@ -32,8 +32,13 @@
 #include <crucible/safety/Reduction.h>
 
 #include <crucible/safety/BinaryTransform.h>
+#include <crucible/safety/ConsumerEndpoint.h>
 #include <crucible/safety/InferredPermissionTags.h>
 #include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/PipelineStage.h>
+#include <crucible/safety/ProducerEndpoint.h>
+#include <crucible/safety/SwmrReader.h>
+#include <crucible/safety/SwmrWriter.h>
 #include <crucible/safety/UnaryTransform.h>
 #include <crucible/safety/reduce_into.h>
 
@@ -177,6 +182,13 @@ void f_int_first(int, RI_int_plus&) noexcept;
 
 // Non-reduce_into second parameter.
 void f_non_reduce_into(OR_int_input&&, int&) noexcept;
+
+// ── Throwing reducer (D14-AUDIT-2) ──────────────────────────────
+//
+// Reduction-shaped signature WITHOUT noexcept — the concept must
+// admit this form per the sibling pattern (D12 / D13 also admit
+// noexcept-false).  Distinct from f_sum_into which is noexcept.
+void f_throws(OR_int_input&&, RI_int_plus&);
 
 }  // namespace red_test
 
@@ -343,7 +355,94 @@ void test_cross_shape_exclusion_with_binary() {
     static_assert(!extract::BinaryTransform<&red_test::f_sum_into>);
 }
 
-// ── FOUND-D14-AUDIT — D11 integration & extended cross-shape ────
+// ── FOUND-D14-AUDIT-2 — full cross-shape exclusion matrix ───────
+//
+// The dispatcher's load-bearing claim is that EVERY function has AT
+// MOST ONE canonical shape — a function is dispatched to UnaryTransform
+// OR BinaryTransform OR Reduction OR ProducerEndpoint OR
+// ConsumerEndpoint OR SwmrWriter OR SwmrReader OR PipelineStage, never
+// two simultaneously.  D14-AUDIT pinned exclusion against
+// UnaryTransform + BinaryTransform; D14-AUDIT-2 pins exclusion against
+// the remaining FIVE per-shape concepts in the FOUND-D series.
+//
+// Without this matrix, a future edit that loosened (say)
+// ConsumerEndpoint's param-1 wrapper-detection clause could let a
+// Reduction-shaped function silently match BOTH concepts, and the
+// dispatcher would dispatch it via whichever shape its routing tries
+// first — a planted bug invisible at the call site.
+
+void test_cross_shape_exclusion_with_producer_endpoint() {
+    // ProducerEndpoint requires param 0 to be a producer-handle; a
+    // Reduction has param 0 as OwnedRegion.  Param 0 wrapper-detection
+    // mismatch is the load-bearing exclusion — without it, a future
+    // edit that taught is_producer_handle_v to admit OwnedRegion-shape
+    // would silently let Reductions match ProducerEndpoint.
+    static_assert( extract::Reduction<&red_test::f_sum_into>);
+    static_assert(!extract::ProducerEndpoint<&red_test::f_sum_into>);
+    static_assert(!extract::ProducerEndpoint<&red_test::f_hist_into>);
+}
+
+void test_cross_shape_exclusion_with_consumer_endpoint() {
+    // ConsumerEndpoint requires param 0 to be a consumer-handle.
+    // Same exclusion logic as ProducerEndpoint.
+    static_assert( extract::Reduction<&red_test::f_sum_into>);
+    static_assert(!extract::ConsumerEndpoint<&red_test::f_sum_into>);
+    static_assert(!extract::ConsumerEndpoint<&red_test::f_max_into>);
+}
+
+void test_cross_shape_exclusion_with_swmr_writer() {
+    // SwmrWriter requires param 0 to be a swmr-writer-handle and
+    // param 1 to be by-value (not reference).  Reduction's param 1
+    // is reduce_into<R, Op>& — lvalue ref to a wrapper.  Two
+    // structural mismatches; either alone would suffice.
+    static_assert( extract::Reduction<&red_test::f_sum_into>);
+    static_assert(!extract::SwmrWriter<&red_test::f_sum_into>);
+}
+
+void test_cross_shape_exclusion_with_swmr_reader() {
+    // SwmrReader requires arity == 1 and a non-void return.
+    // Reduction has arity == 2 and void return — TWO orthogonal
+    // structural mismatches.  Pinning both directions ensures the
+    // exclusion holds even if either is loosened independently.
+    static_assert( extract::Reduction<&red_test::f_sum_into>);
+    static_assert(!extract::SwmrReader<&red_test::f_sum_into>);
+}
+
+void test_cross_shape_exclusion_with_pipeline_stage() {
+    // PipelineStage requires param 0 to be a consumer-handle and
+    // param 1 to be a producer-handle.  Reduction's params are
+    // OwnedRegion + reduce_into — neither matches the pipeline-stage
+    // wrapper detections.
+    static_assert( extract::Reduction<&red_test::f_sum_into>);
+    static_assert(!extract::PipelineStage<&red_test::f_sum_into>);
+    static_assert(!extract::PipelineStage<&red_test::f_hist_into>);
+}
+
+// ── FOUND-D14-AUDIT-2 — noexcept(false) admission ────────────────
+//
+// The Reduction concept does NOT fence on noexcept-specifier — the
+// concept admits both noexcept and throwing reductions per the
+// established sibling pattern (D12, D13).  This is deliberate: the
+// project compiles with -fno-exceptions globally, so noexcept-vs-not
+// is a documentation-only distinction at the type-system level.  The
+// dispatcher routes both forms identically.  Pin the admission so a
+// future edit that adds a noexcept fence to the concept doesn't
+// silently exclude legitimate throwing-reducer signatures.
+
+void test_noexcept_false_admitted() {
+    // f_throws is a Reduction-shaped signature WITHOUT noexcept.  The
+    // concept must admit it — exclusion would be a regression vs the
+    // established sibling pattern.
+    static_assert( extract::Reduction<&red_test::f_throws>);
+    static_assert(std::is_same_v<
+        extract::reduction_input_tag_t<&red_test::f_throws>,
+        input_tag>);
+    static_assert(std::is_same_v<
+        extract::reduction_accumulator_t<&red_test::f_throws>,
+        int>);
+}
+
+// ── FOUND-D11 integration & extended cross-shape ────────────────
 
 void test_inferred_tags_match_input_tag() {
     // The dispatcher's auto-routing for Reduction depends on the
@@ -460,6 +559,17 @@ int main() {
     run_test("test_concept_form_in_constraints",      test_concept_form_in_constraints);
     run_test("test_cross_shape_exclusion_with_unary",  test_cross_shape_exclusion_with_unary);
     run_test("test_cross_shape_exclusion_with_binary", test_cross_shape_exclusion_with_binary);
+    run_test("test_cross_shape_exclusion_with_producer_endpoint",
+                                                       test_cross_shape_exclusion_with_producer_endpoint);
+    run_test("test_cross_shape_exclusion_with_consumer_endpoint",
+                                                       test_cross_shape_exclusion_with_consumer_endpoint);
+    run_test("test_cross_shape_exclusion_with_swmr_writer",
+                                                       test_cross_shape_exclusion_with_swmr_writer);
+    run_test("test_cross_shape_exclusion_with_swmr_reader",
+                                                       test_cross_shape_exclusion_with_swmr_reader);
+    run_test("test_cross_shape_exclusion_with_pipeline_stage",
+                                                       test_cross_shape_exclusion_with_pipeline_stage);
+    run_test("test_noexcept_false_admitted",          test_noexcept_false_admitted);
     run_test("test_inferred_tags_match_input_tag",     test_inferred_tags_match_input_tag);
     run_test("test_cross_shape_exclusion_with_tag_free",
                                                        test_cross_shape_exclusion_with_tag_free);
