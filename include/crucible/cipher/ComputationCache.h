@@ -127,11 +127,12 @@
 //                Same (FnPtr, Args...) → same slot → same cached
 //                pointer.
 
-#include <crucible/safety/diag/StableName.h>   // stable_function_id, stable_type_id, combine_ids
+#include <crucible/safety/diag/StableName.h>   // stable_function_id, stable_type_id, combine_ids, hash_name
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <meta>                                // std::meta::reflect_constant
 
 namespace crucible::cipher {
 
@@ -164,15 +165,56 @@ struct CompiledBody;
 //     normalization is implementation-defined; see StableName.h
 //     §federation contract).
 //
-// Empty Args... reduces to just stable_function_id<FnPtr>.
+// Empty Args... still distinguishes by function NAME — two
+// functions with the SAME SIGNATURE but different identifiers
+// produce DIFFERENT keys (FOUND-F09-AUDIT — see WHY below).
 
 namespace detail {
 
-// Fold combine_ids over the parameter pack, seeded with the
-// function ID.  Order-sensitive by construction (Boost-style).
+// FOUND-F09-AUDIT — Why we don't just use stable_function_id:
+//
+//   stable_function_id<FnPtr> hashes ONLY the function POINTER
+//   TYPE (`void(int)`), not the function identity.  Two distinct
+//   functions with the same signature produce the SAME
+//   stable_function_id — verified empirically via
+//   /tmp/check_sfid.cpp during the F09 audit:
+//
+//       inline void fn_alpha(int) noexcept {}
+//       inline void fn_beta (int) noexcept {}
+//       static_assert(stable_function_id<&fn_alpha>
+//                     == stable_function_id<&fn_beta>);  // collides!
+//
+//   For the in-memory cache this is fine — the per-instantiation
+//   atomic slot's storage is keyed on the NTTP value of FnPtr, not
+//   on stable_function_id.  But for FEDERATION / SERIALIZATION,
+//   the 64-bit cache key MUST distinguish identical-signature
+//   functions, otherwise the dispatcher would alias unrelated
+//   compiled bodies on the wire.
+//
+// The fix: hash the function's reflected NAME via
+// std::meta::reflect_constant(FnPtr) + display_string_of, which
+// returns the function identifier (e.g., "fn_alpha" vs
+// "fn_beta").  We also fold the function type (preserves
+// signature distinguishability — two distinct functions with the
+// same name in different scopes / overloads / TUs would still
+// differ at the TYPE).  Belt-and-suspenders.
+
+// Fold combine_ids over the parameter pack, seeded with both the
+// function NAME hash AND the function TYPE hash.
+// Order-sensitive by construction (Boost-style).
 template <auto FnPtr, typename... Args>
 [[nodiscard]] consteval std::uint64_t computation_cache_key_impl() noexcept {
-    std::uint64_t k = ::crucible::safety::diag::stable_function_id<FnPtr>;
+    // Function name hash — distinguishes same-signature, different-
+    // identity functions.  reflect_constant materializes the NTTP
+    // as a meta::info for which display_string_of returns the
+    // identifier.
+    std::uint64_t k = ::crucible::safety::diag::detail::hash_name(
+        std::meta::display_string_of(std::meta::reflect_constant(FnPtr)));
+    // Combine with function-TYPE hash — guards against future
+    // refactors that might canonicalize the name string but not
+    // the type.
+    k = ::crucible::safety::diag::detail::combine_ids(
+        k, ::crucible::safety::diag::stable_function_id<FnPtr>);
     // Fold-expression: combine_ids(k, stable_type_id<Arg_i>) for each Arg_i.
     ((k = ::crucible::safety::diag::detail::combine_ids(
               k, ::crucible::safety::diag::stable_type_id<Args>)),
@@ -289,16 +331,61 @@ static_assert(::crucible::cipher::computation_cache_key<&p_unary, int>
 static_assert(::crucible::cipher::computation_cache_key<&p_binary, int, double>
               != ::crucible::cipher::computation_cache_key<&p_binary, double, int>);
 
-// Empty Args... → key reduces to just the function ID.
+// Empty Args... → key still distinguishes distinct functions
+// (function-name hash + function-type hash, no parameter fold).
 static_assert(::crucible::cipher::computation_cache_key<&p_unary>
               != ::crucible::cipher::computation_cache_key<&p_binary>);
-static_assert(::crucible::cipher::computation_cache_key<&p_unary>
-              == ::crucible::safety::diag::stable_function_id<&p_unary>);
+
+// FOUND-F09-AUDIT: same-signature distinct functions MUST yield
+// distinct keys.  This is the load-bearing post-condition of
+// switching from stable_function_id (signature-keyed) to a
+// reflect_constant-based name hash.  Verified at compile time
+// using two functions with identical signatures.
+namespace fnames_collision_check {
+inline void s_fn_one(int) noexcept {}
+inline void s_fn_two(int) noexcept {}
+static_assert(::crucible::cipher::computation_cache_key<&s_fn_one>
+              != ::crucible::cipher::computation_cache_key<&s_fn_two>,
+              "computation_cache_key MUST distinguish same-signature "
+              "different-name functions; otherwise federation aliases "
+              "unrelated compiled bodies on the wire.");
+static_assert(::crucible::cipher::computation_cache_key<&s_fn_one, int>
+              != ::crucible::cipher::computation_cache_key<&s_fn_two, int>);
+}  // namespace fnames_collision_check
 
 // Keys are non-zero (the underlying hash_name is non-zero by
 // construction; the fold can't zero out a non-zero seed).
 static_assert(::crucible::cipher::computation_cache_key<&p_unary, int> != 0);
 static_assert(::crucible::cipher::computation_cache_key<&p_binary, int, double> != 0);
+
+// ── Structural-cost asserts (FOUND-F09-AUDIT) ─────────────────────
+//
+// Pin the runtime properties that the API contract depends on:
+//
+//   (a) The atomic slot is ALWAYS lock-free on this platform.
+//       If a future libstdc++ rewrites std::atomic<T*> to fall back
+//       to a lock for some pointer-size combination, lookup would
+//       no longer be ~1-3 ns and the hot-path claim would break.
+//       The static_assert catches that at compile time.
+//
+//   (b) The atomic slot's storage is exactly sizeof(CompiledBody*).
+//       No padding, no auxiliary state.  This is the
+//       zero-runtime-overhead claim made in the header doc-block.
+//       A bigger atomic (e.g., DCAS-backed) would silently inflate
+//       BSS and slow the hot path; the static_assert catches that.
+//
+// These pin platform assumptions documented in CLAUDE.md §XIV
+// (64-bit, naturally-aligned atomic pointers are lock-free on
+// x86-64 + aarch64).
+
+static_assert(std::atomic<::crucible::cipher::CompiledBody*>::is_always_lock_free,
+              "ComputationCache slot must be lock-free; otherwise "
+              "lookup is no longer the documented ~1-3 ns hot path.");
+
+static_assert(sizeof(std::atomic<::crucible::cipher::CompiledBody*>)
+              == sizeof(::crucible::cipher::CompiledBody*),
+              "ComputationCache slot must be exactly pointer-sized; "
+              "otherwise BSS-per-instantiation cost is silently inflated.");
 
 }  // namespace detail::computation_cache_self_test
 
