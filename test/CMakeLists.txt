@@ -341,6 +341,7 @@ crucible_test(test_pipeline_stage)
 crucible_test(test_canonical_shape)
 crucible_test(test_is_numerical_tier)
 crucible_test(test_is_consistency)
+crucible_test(test_is_opaque_lifetime)
 crucible_test(test_is_producer_handle)
 crucible_test(test_is_consumer_handle)
 crucible_test(test_is_swmr_handle)
@@ -1426,6 +1427,13 @@ crucible_neg_compile_test(neg_consistency_value_t_on_non_consistency
   "constraints not satisfied|template constraint failure|associated constraints")
 
 crucible_neg_compile_test(neg_consistency_level_v_on_non_consistency
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+# ─── FOUND-D23 IsOpaqueLifetime constrained-extractor fixtures ──────
+crucible_neg_compile_test(neg_opaque_lifetime_value_t_on_non_opaque_lifetime
+  "constraints not satisfied|template constraint failure|associated constraints")
+
+crucible_neg_compile_test(neg_opaque_lifetime_scope_v_on_non_opaque_lifetime
   "constraints not satisfied|template constraint failure|associated constraints")
 
 # ─── FOUND-G46 CipherTier negative-compile fixtures ─────────────────
