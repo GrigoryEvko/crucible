@@ -1229,6 +1229,16 @@ crucible_neg_compile_test(neg_recipe_registry_fp16_at_bitexact_fence
 crucible_neg_compile_test(neg_recipe_registry_pinned_with_family_template_arg
   "could not convert|cannot convert|no matching function|enum class|conversion from")
 
+# FOUND-G78-AUDIT — symmetric misuse: correct two-axis API
+# (by_name_spec) called but result-type slot typed as the
+# regime-1 single-axis NumericalTier overload's return.
+# RecipeSpec<T> ≠ NumericalTier<T_static, T> structurally; the
+# std::expected<T, E> conversion is rejected.  Catches the
+# "copy-pasted a sibling call site's return type" refactor
+# footgun in Forge Phase E.RecipeSelect integration.
+crucible_neg_compile_test(neg_recipe_registry_spec_assigned_to_pinned_expected
+  "conversion from|could not convert|cannot convert|no viable conversion|non-scalar type")
+
 # ─── FOUND-G26 Wait wrapper neg-compiles (6 fixtures: 4+2) ──────────
 #
 # 4 wrapper-surface fixtures (mirrors HotPath / DetSafe pattern):

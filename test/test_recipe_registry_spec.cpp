@@ -21,7 +21,7 @@
 //   FOUND-G78  → "tolerance AND family BOTH admit?  combinable
 //                  pointwise on both axes when streams converge?"
 //
-// Coverage axes (T01-T16):
+// Coverage axes (T01-T22):
 //   T01     recipe_family_of mapping correctness — every ReductionAlgo
 //           variant maps to its RecipeFamily category
 //   T02     by_name_spec hit path — populates BOTH axes from recipe
@@ -48,6 +48,29 @@
 //   T15     spec.peek() identity — same pointer as by_name returned
 //   T16     determinism — repeated by_name_spec / by_hash_spec calls
 //           on the same recipe produce specs that compare equal
+//
+// G78-AUDIT extended coverage (T17-T22) — matches the G04-AUDIT
+// matrix-fill discipline lifted to the two-axis product lattice:
+//   T17     Full Tolerance × RecipeFamily admission matrix sweep
+//           (8 starter recipes × 7 tiers × 4 named families = 224
+//           admission decisions, every one verified against
+//           pointwise leq)
+//   T18     Sibling-family adjacency probe — every C(4,2) = 6
+//           unordered pair × 2 directions = 12 cross-family
+//           rejections (M3-substructure witness at production)
+//   T19     combine_max sibling-pair join sweep — every C(4,2) = 6
+//           sibling pair joins to Any wildcard (regime-4 runtime
+//           preservation of join semantics)
+//   T20     Wildcard semantics — Any-family admits all four named
+//           families; None-family admits ONLY None (lattice cap)
+//   T21     Hash → Spec persistence-replay determinism — Cipher
+//           recovery simulation: persist hash, drop registry,
+//           re-construct, verify by_hash_spec admits the same
+//           (tier, family) set as the live name-lookup
+//   T22     Move-only T witness — RecipeSpec<MoveOnlyT> compiles
+//           and preserves wrapper move-only contract through the
+//           production overload surface (future-proofs for
+//           OwnedRecipe / Linear<RecipeBlob> extensions)
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Arena.h>
@@ -394,6 +417,267 @@ int main() {
     // operator is not a no-op.
     auto s4 = reg.by_name_spec(names::kF32Strict).value();
     assert(!(s1 == s4));
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // FOUND-G78-AUDIT — extended coverage matching the G04-AUDIT
+  //                   matrix-fill discipline for the two-axis
+  //                   product lattice.
+  // ═══════════════════════════════════════════════════════════════
+
+  // ═══════════════════════════════════════════════════════════════
+  // T17 — Full Tolerance × RecipeFamily admission matrix sweep.
+  //       For every starter recipe, probe the FULL grid of
+  //       (req_tier, req_family) admission requests across all 7
+  //       Tolerance tiers and all 4 named RecipeFamily values
+  //       (excluding sentinels — they're covered in T11/T20).
+  //       Each cell's admit/reject decision MUST agree with the
+  //       pointwise leq predicate over each axis.
+  //
+  //       Coverage: 8 starter recipes × 7 tiers × 4 named families
+  //       = 224 admission decisions, every one verified against
+  //       both the pre-computed expectation AND the runtime
+  //       admits() return.  Catches any drift between the runtime
+  //       admit() body and the underlying lattice leq predicates.
+  // ═══════════════════════════════════════════════════════════════
+  {
+    using crucible::algebra::lattices::ToleranceLattice;
+    using crucible::algebra::lattices::RecipeFamilyLattice;
+
+    constexpr safety_Tolerance kTiers[] = {
+        safety_Tolerance::RELAXED,
+        safety_Tolerance::ULP_INT8,
+        safety_Tolerance::ULP_FP8,
+        safety_Tolerance::ULP_FP16,
+        safety_Tolerance::ULP_FP32,
+        safety_Tolerance::ULP_FP64,
+        safety_Tolerance::BITEXACT,
+    };
+    constexpr safety_RecipeFamily kFamilies[] = {
+        safety_RecipeFamily::Linear,
+        safety_RecipeFamily::Pairwise,
+        safety_RecipeFamily::Kahan,
+        safety_RecipeFamily::BlockStable,
+    };
+
+    int total_decisions = 0;
+    for (const auto& entry : reg.entries()) {
+      auto spec = reg.by_name_spec(entry.name).value();
+      const auto spec_tier = spec.tolerance();
+      const auto spec_fam  = spec.recipe_family();
+      for (auto req_tier : kTiers) {
+        for (auto req_fam : kFamilies) {
+          const bool tier_ok =
+              ToleranceLattice::leq(req_tier, spec_tier);
+          const bool fam_ok  =
+              RecipeFamilyLattice::leq(req_fam, spec_fam);
+          const bool expected = tier_ok && fam_ok;
+          assert(spec.admits(req_tier, req_fam) == expected);
+          ++total_decisions;
+        }
+      }
+    }
+    assert(total_decisions == 8 * 7 * 4);  // 224
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // T18 — Sibling-family adjacency probe.  For every UNORDERED
+  //       PAIR of distinct named families {Linear, Pairwise,
+  //       Kahan, BlockStable}, construct two synthetic specs at
+  //       the SAME tolerance tier but at SIBLING families.  Each
+  //       must reject the OTHER's family request (M3-substructure
+  //       witness lifted from the production wrapper into the
+  //       call-site context).  C(4,2) = 6 unordered pairs × 2
+  //       directions = 12 cross-family rejections.
+  // ═══════════════════════════════════════════════════════════════
+  {
+    constexpr safety_RecipeFamily kFamilies[] = {
+        safety_RecipeFamily::Linear,
+        safety_RecipeFamily::Pairwise,
+        safety_RecipeFamily::Kahan,
+        safety_RecipeFamily::BlockStable,
+    };
+
+    int rejection_count = 0;
+    for (size_t i = 0; i < 4; ++i) {
+      for (size_t j = i + 1; j < 4; ++j) {
+        // Synthesize specs at the same tier but with sibling
+        // families.  Both directions must reject.
+        RecipeSpec<const NumericalRecipe*> spec_i{
+            nullptr, safety_Tolerance::BITEXACT, kFamilies[i]};
+        RecipeSpec<const NumericalRecipe*> spec_j{
+            nullptr, safety_Tolerance::BITEXACT, kFamilies[j]};
+        // i admits j? — should be no.
+        assert(!spec_i.admits(safety_Tolerance::BITEXACT, kFamilies[j]));
+        // j admits i? — should be no.
+        assert(!spec_j.admits(safety_Tolerance::BITEXACT, kFamilies[i]));
+        rejection_count += 2;
+      }
+    }
+    assert(rejection_count == 12);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // T19 — combine_max joins to Any across every sibling pair.  The
+  //       M3-substructure witness from the wrapper repeated at the
+  //       production-call-site level.  Six unordered sibling pairs
+  //       all promote to Any.  Verifies the join semantics survive
+  //       the regime-4 runtime carriage (no degradation between
+  //       wrapper-level and production-level join).
+  // ═══════════════════════════════════════════════════════════════
+  {
+    constexpr safety_RecipeFamily kFamilies[] = {
+        safety_RecipeFamily::Linear,
+        safety_RecipeFamily::Pairwise,
+        safety_RecipeFamily::Kahan,
+        safety_RecipeFamily::BlockStable,
+    };
+
+    auto base_recipe = reg.by_name_spec(names::kF32Strict).value().peek();
+
+    int join_count = 0;
+    for (size_t i = 0; i < 4; ++i) {
+      for (size_t j = i + 1; j < 4; ++j) {
+        RecipeSpec<const NumericalRecipe*> spec_i{
+            base_recipe, safety_Tolerance::ULP_FP16, kFamilies[i]};
+        RecipeSpec<const NumericalRecipe*> spec_j{
+            base_recipe, safety_Tolerance::ULP_FP16, kFamilies[j]};
+        auto joined = spec_i.combine_max(spec_j);
+        assert(joined.tolerance()     == safety_Tolerance::ULP_FP16);
+        assert(joined.recipe_family() == safety_RecipeFamily::Any);
+        ++join_count;
+      }
+    }
+    assert(join_count == 6);  // C(4,2)
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // T20 — Wildcard semantics — Any-family spec admits any of the
+  //       four named families at every tier; None-family spec
+  //       admits ONLY a None request.  Caps the partial-order axis.
+  // ═══════════════════════════════════════════════════════════════
+  {
+    constexpr safety_RecipeFamily kFamilies[] = {
+        safety_RecipeFamily::Linear,
+        safety_RecipeFamily::Pairwise,
+        safety_RecipeFamily::Kahan,
+        safety_RecipeFamily::BlockStable,
+    };
+
+    // Top wildcard at BITEXACT — admits every named family.
+    RecipeSpec<const NumericalRecipe*> any_spec{
+        nullptr, safety_Tolerance::BITEXACT, safety_RecipeFamily::Any};
+    for (auto fam : kFamilies) {
+      assert(any_spec.admits(safety_Tolerance::BITEXACT, fam));
+    }
+    // None-bottom is also admissible at the wildcard.
+    assert(any_spec.admits(safety_Tolerance::BITEXACT,
+                           safety_RecipeFamily::None));
+
+    // Bottom None at BITEXACT — admits ONLY None.
+    RecipeSpec<const NumericalRecipe*> none_spec{
+        nullptr, safety_Tolerance::BITEXACT, safety_RecipeFamily::None};
+    for (auto fam : kFamilies) {
+      assert(!none_spec.admits(safety_Tolerance::BITEXACT, fam));
+    }
+    assert(none_spec.admits(safety_Tolerance::BITEXACT,
+                            safety_RecipeFamily::None));
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // T21 — Hash → Spec persistence-replay determinism.  For every
+  //       starter recipe simulate a Cipher load: persist hash, drop
+  //       the registry, re-construct, look up by hash, verify the
+  //       resolved spec admits the SAME (req_tier, req_family) set
+  //       as the live name-lookup did.  Captures the load-bearing
+  //       Cipher recovery → recipe-admission consistency invariant.
+  // ═══════════════════════════════════════════════════════════════
+  {
+    using crucible::algebra::lattices::ToleranceLattice;
+    using crucible::algebra::lattices::RecipeFamilyLattice;
+
+    constexpr safety_Tolerance kTiers[] = {
+        safety_Tolerance::RELAXED,
+        safety_Tolerance::ULP_FP16,
+        safety_Tolerance::BITEXACT,
+    };
+    constexpr safety_RecipeFamily kFamilies[] = {
+        safety_RecipeFamily::None,
+        safety_RecipeFamily::Pairwise,
+        safety_RecipeFamily::Kahan,
+        safety_RecipeFamily::Any,
+    };
+
+    // Snapshot every starter's hash.
+    std::array<RecipeHash, RecipeRegistry::STARTER_COUNT> persisted{};
+    for (std::size_t i = 0; i < RecipeRegistry::STARTER_COUNT; ++i) {
+      persisted[i] = reg.entries()[i].recipe->hash;
+    }
+
+    // Re-construct on a fresh pool / arena — simulates Cipher
+    // loading the persisted hash on a fresh process.
+    Arena    arena2{};
+    RecipePool     pool2{arena2, alloc_cap()};
+    RecipeRegistry reg2{pool2, alloc_cap()};
+
+    for (std::size_t i = 0; i < RecipeRegistry::STARTER_COUNT; ++i) {
+      auto live_spec = reg.by_name_spec(reg.entries()[i].name).value();
+      auto recovered = reg2.by_hash_spec(persisted[i]).value();
+
+      // Same axes — admission must agree on every probe.
+      assert(live_spec.tolerance()     == recovered.tolerance());
+      assert(live_spec.recipe_family() == recovered.recipe_family());
+
+      for (auto t : kTiers) {
+        for (auto f : kFamilies) {
+          assert(live_spec.admits(t, f) == recovered.admits(t, f));
+        }
+      }
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // T22 — Move-only T witness.  RecipeSpec<MoveOnlyT> compiles and
+  //       carries the wrapper's move-only contract through the
+  //       production overload surface.  The registry today returns
+  //       const NumericalRecipe* (trivially copyable) but the
+  //       admission contract via .admits() / combine_max() must
+  //       work for arbitrary T including non-copyable carriers —
+  //       captures the future-proofing for OwnedRecipe<T> /
+  //       Linear<RecipeBlob> production extensions.
+  // ═══════════════════════════════════════════════════════════════
+  {
+    struct MoveOnlyT {
+      int v{0};
+      MoveOnlyT() = default;
+      explicit MoveOnlyT(int x) : v{x} {}
+      MoveOnlyT(MoveOnlyT&&) = default;
+      MoveOnlyT& operator=(MoveOnlyT&&) = default;
+      MoveOnlyT(MoveOnlyT const&) = delete;
+      MoveOnlyT& operator=(MoveOnlyT const&) = delete;
+    };
+
+    static_assert(!std::is_copy_constructible_v<RecipeSpec<MoveOnlyT>>);
+    static_assert( std::is_move_constructible_v<RecipeSpec<MoveOnlyT>>);
+
+    RecipeSpec<MoveOnlyT> a{
+        MoveOnlyT{42}, safety_Tolerance::ULP_FP16,
+        safety_RecipeFamily::Kahan};
+    RecipeSpec<MoveOnlyT> b{
+        MoveOnlyT{99}, safety_Tolerance::BITEXACT,
+        safety_RecipeFamily::Kahan};
+
+    // combine_max && rvalue overload must work.
+    auto joined = std::move(a).combine_max(b);
+    assert(joined.tolerance()     == safety_Tolerance::BITEXACT);
+    assert(joined.recipe_family() == safety_RecipeFamily::Kahan);
+    assert(joined.peek().v        == 42);
+
+    // admits() works on move-only carriers.
+    assert(joined.admits(safety_Tolerance::ULP_FP8,
+                         safety_RecipeFamily::Kahan));
+    assert(!joined.admits(safety_Tolerance::ULP_FP16,
+                          safety_RecipeFamily::Pairwise));
   }
 
   std::puts("ok");
