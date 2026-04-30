@@ -468,6 +468,37 @@ void test_parallel_reduce_views_deterministic_across_runs() {
     CRUCIBLE_TEST_REQUIRE(r1 == r2);
 }
 
+// FOUND-F04-A6 — smallest-parallel-N (N==2) with the smallest workload
+// where parallelism is non-trivial: 4 elements split across 2 shards.
+// The existing tests jump from N==1 (sequential) directly to N==4/8;
+// this fixture pins that the smallest-genuinely-parallel case
+// (one partial per worker, both summed in the post-join fold) works.
+void test_parallel_reduce_views_n2_smallest_parallel() {
+    Arena arena;
+    auto perm = permission_root_mint<DataA>();
+    constexpr std::size_t N = 4;
+    auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
+        test_alloc_token(), arena, N, std::move(perm));
+    region.span()[0] = 10;
+    region.span()[1] = 20;
+    region.span()[2] = 30;
+    region.span()[3] = 40;
+
+    auto [total, _] = parallel_reduce_views<2, std::uint64_t>(
+        std::move(region),
+        std::uint64_t{0},
+        [](auto sub) noexcept {
+            std::uint64_t s = 0;
+            for (auto x : sub.cspan()) s += x;
+            return s;
+        },
+        [](std::uint64_t a, std::uint64_t b) noexcept { return a + b; }
+    );
+
+    // shard_0 = 10 + 20 = 30; shard_1 = 30 + 40 = 70; total = 30 + 70 = 100.
+    CRUCIBLE_TEST_REQUIRE(total == 100);
+}
+
 // FOUND-F04-A5 — mapper is invoked exactly N times when N >= 1.  Use
 // a shared atomic counter to confirm worker dispatch (well-defined
 // because the counter is std::atomic).
@@ -704,6 +735,8 @@ int main() {
              test_parallel_reduce_views_deterministic_across_runs);
     run_test("test_parallel_reduce_views_mapper_invoked_n_times",
              test_parallel_reduce_views_mapper_invoked_n_times);
+    run_test("test_parallel_reduce_views_n2_smallest_parallel",
+             test_parallel_reduce_views_n2_smallest_parallel);
     run_test("test_parallel_for_views_sequential_n1",        test_parallel_for_views_sequential_n1);
     run_test("test_adaptive_picks_sequential_for_small_workload",
              test_adaptive_picks_sequential_for_small_workload);

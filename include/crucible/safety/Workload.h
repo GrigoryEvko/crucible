@@ -256,6 +256,17 @@ parallel_for_views(OwnedRegion<T, Whole>&& region, Body body) noexcept
 // Mapper and Reducer must both be noexcept-invocable per the static
 // asserts; bodies that throw violate Crucible's -fno-exceptions rule.
 //
+// R must be CopyConstructible AND CopyAssignable.  The N>=2 path
+// initialises std::array<R, N> partials with `for (auto& p : partials)
+// p = init;` (copy-assignment) and the post-join fold writes
+// `result = reducer(result, p)` — both require non-deleted copy
+// operations on R.  Move-only R types are not supported by the
+// current API; if a move-only R becomes desirable (e.g. R holding a
+// unique_ptr or Linear<T>), the implementation will need a
+// std::move-aware fold loop and a partials initialiser that
+// move-constructs from a thunked `init`.  Documented as a future
+// API evolution; the current contract is "R copyable".
+//
 // ── Relationship to FOUND-D14 Reduction concept ─────────────────
 //
 // The D14 Reduction concept (safety/Reduction.h) describes a

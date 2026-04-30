@@ -1615,6 +1615,24 @@ crucible_neg_compile_test(neg_reduction_accumulator_t_on_non_reduction
 crucible_neg_compile_test(neg_reduction_reducer_t_on_non_reduction
   "constraints not satisfied|template constraint failure|associated constraints")
 
+# ─── FOUND-F04-AUDIT — parallel_reduce_views static_assert fences ─
+#
+# Three body static_asserts in safety/Workload.h's
+# `parallel_reduce_views<N, R>` definition each get their own
+# neg-compile fixture.  Without these, a refactor that accidentally
+# weakened ANY of the three assertions (e.g. dropped `static_assert(N>0)`
+# on a "looks like a redundant check" review pass, or relaxed the
+# noexcept clauses to plain is_invocable_v) would compile cleanly and
+# only manifest as a runtime std::terminate inside a jthread body.
+crucible_neg_compile_test(neg_parallel_reduce_views_n_zero
+  "parallel_reduce_views<N, R> requires N > 0|static_assert|static assertion")
+
+crucible_neg_compile_test(neg_parallel_reduce_views_throwing_mapper
+  "Mapper must be noexcept-invocable|static_assert|static assertion")
+
+crucible_neg_compile_test(neg_parallel_reduce_views_throwing_reducer
+  "Reducer must be noexcept-invocable|static_assert|static assertion")
+
 # ─── FOUND-D15 ProducerEndpoint constrained-extractor fixtures ──────
 #
 # Pins the four constrained extractors on ProducerEndpoint.h:
