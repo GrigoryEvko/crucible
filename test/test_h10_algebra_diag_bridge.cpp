@@ -52,6 +52,7 @@
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
 #include <crucible/algebra/Modality.h>
+#include <crucible/algebra/lattices/ProductLattice.h>
 #include <crucible/safety/diag/StableName.h>
 
 #include <cstddef>
@@ -61,6 +62,7 @@
 #include <string_view>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 namespace alg  = ::crucible::algebra;
 namespace diag = ::crucible::safety::diag;
@@ -69,6 +71,31 @@ namespace diag = ::crucible::safety::diag;
 //    block — using directly through the public TrivialBoolLattice in
 //    algebra/Lattice.h).
 using TBL = alg::detail::lattice_self_test::TrivialBoolLattice;
+
+// ── Move-only T witness (FOUND-H10-AUDIT-1) ─────────────────────────
+//
+// The federation cache (FOUND-I) will index over wrapper-stack
+// composites whose innermost T is sometimes a move-only resource
+// (file handles, OwnedFd, Linear<...>, etc.).  Verify the diag
+// primitives produce sensible names for `Graded<...>` instantiated
+// with a move-only T — no copy, no default needed by reflection.
+//
+// stable_name_of<T> is defined for ANY type that has a name (every
+// type does).  Move-only is irrelevant to the reflection machinery;
+// this test pins that the bridge inherits that property and a future
+// refactor accidentally requiring copy-construction (e.g., to
+// materialize a witness instance) would surface here.
+struct MoveOnlyWitness {
+    int v = 0;
+    constexpr MoveOnlyWitness() = default;
+    constexpr explicit MoveOnlyWitness(int x) noexcept : v{x} {}
+    MoveOnlyWitness(MoveOnlyWitness const&)            = delete;
+    MoveOnlyWitness& operator=(MoveOnlyWitness const&) = delete;
+    constexpr MoveOnlyWitness(MoveOnlyWitness&&) noexcept            = default;
+    constexpr MoveOnlyWitness& operator=(MoveOnlyWitness&&) noexcept = default;
+};
+static_assert(!std::is_copy_constructible_v<MoveOnlyWitness>);
+static_assert( std::is_move_constructible_v<MoveOnlyWitness>);
 
 // ── Function pointers used by stable_function_id tests.  Must be
 //    declared at namespace scope BEFORE the runtime test functions
@@ -306,6 +333,118 @@ void test_runtime_determinism_loop() {
     }
 }
 
+// ═════════════════════════════════════════════════════════════════════
+// ── H10-AUDIT-1: edge-case and federation-prep coverage ───────────
+// ═════════════════════════════════════════════════════════════════════
+
+// ─── Audit gap (A): move-only T witness ────────────────────────────
+//
+// Federation cache will see Graded<...> instances whose T is a
+// move-only resource.  The bridge must produce sensible IDs without
+// requiring copy-constructibility from T.  This test pins that the
+// reflection / hash path is purely type-level — no instance is ever
+// constructed.
+
+void test_stable_name_on_move_only_T() {
+    using G_move = alg::Graded<alg::ModalityKind::Absolute, TBL,
+                               MoveOnlyWitness>;
+    using G_int  = alg::Graded<alg::ModalityKind::Absolute, TBL, int>;
+
+    // The name machinery does not require T be copy-constructible.
+    constexpr auto name_move = diag::stable_name_of<G_move>;
+    constexpr auto name_int  = diag::stable_name_of<G_int>;
+
+    static_assert(!name_move.empty());
+    static_assert( name_move.find("MoveOnlyWitness") != std::string_view::npos);
+    static_assert( name_move != name_int);
+
+    // Distinctness flows through to stable_type_id (the federation
+    // cache key).
+    static_assert(diag::stable_type_id<G_move> != diag::stable_type_id<G_int>);
+    static_assert(diag::stable_type_id<G_move> != 0);
+}
+
+// ─── Audit gap (B): ProductLattice composite distinctness ──────────
+//
+// The FOUND-G63+ product wrappers (Budgeted / EpochVersioned /
+// NumaPlacement / RecipeSpec) compose lattices via ProductLattice<L1,
+// L2>.  The federation cache MUST distinguish a Graded over a product
+// composite from a Graded over either constituent.  This test pins
+// that property at the bridge boundary.
+
+void test_stable_type_id_on_product_lattice_composites() {
+    using PL    = alg::lattices::ProductLattice<TBL, TBL>;
+    using G_pl  = alg::Graded<alg::ModalityKind::Absolute, PL,  int>;
+    using G_tbl = alg::Graded<alg::ModalityKind::Absolute, TBL, int>;
+
+    // Composite carries a different name from its constituent — the
+    // ProductLattice<...> wrapping appears in the rendered display
+    // string.
+    constexpr auto name_pl  = diag::stable_name_of<G_pl>;
+    constexpr auto name_tbl = diag::stable_name_of<G_tbl>;
+
+    static_assert(name_pl.find("ProductLattice") != std::string_view::npos);
+    static_assert(name_pl != name_tbl);
+
+    // Distinctness flows through to stable_type_id.  Federation cache
+    // key MUST distinguish a Budgeted = Graded<A, ProductLattice<...>,
+    // T> from a Graded<A, BitsBudgetLattice, T> — the inner-pair
+    // information is load-bearing.
+    static_assert(diag::stable_type_id<G_pl>  != diag::stable_type_id<G_tbl>);
+    static_assert(diag::stable_type_id<G_pl>  != 0);
+
+    // Different element-types under the same product still
+    // distinguished.
+    using G_pl_double = alg::Graded<alg::ModalityKind::Absolute, PL, double>;
+    static_assert(diag::stable_type_id<G_pl> != diag::stable_type_id<G_pl_double>);
+}
+
+// ─── Audit gap (C): runtime peer for cross-modality distinctness ──
+//
+// The consteval distinctness asserts in
+// test_stable_type_id_distinctness_on_graded_axes prove the IDs
+// differ at compile time.  The discipline (per
+// feedback_algebra_runtime_smoke_test_discipline) demands a runtime
+// peer driving the same matrix through volatile-anchored loads —
+// catches consteval/runtime divergence that pure static_assert
+// coverage misses.
+
+void test_runtime_modality_distinctness_peer() {
+    using G_Abs  = alg::Graded<alg::ModalityKind::Absolute,      TBL, int>;
+    using G_Rel  = alg::Graded<alg::ModalityKind::Relative,      TBL, int>;
+    using G_Cmd  = alg::Graded<alg::ModalityKind::Comonad,       TBL, int>;
+    using G_RMnd = alg::Graded<alg::ModalityKind::RelativeMonad, TBL, int>;
+
+    // Materialize each ID through a volatile sink so the optimizer
+    // cannot collapse the comparison to a constant; runtime evaluation
+    // path is exercised on every iteration.
+    volatile std::uint64_t id_abs  = diag::stable_type_id<G_Abs>;
+    volatile std::uint64_t id_rel  = diag::stable_type_id<G_Rel>;
+    volatile std::uint64_t id_cmd  = diag::stable_type_id<G_Cmd>;
+    volatile std::uint64_t id_rmnd = diag::stable_type_id<G_RMnd>;
+
+    EXPECT_TRUE(id_abs  != id_rel);
+    EXPECT_TRUE(id_abs  != id_cmd);
+    EXPECT_TRUE(id_abs  != id_rmnd);
+    EXPECT_TRUE(id_rel  != id_cmd);
+    EXPECT_TRUE(id_rel  != id_rmnd);
+    EXPECT_TRUE(id_cmd  != id_rmnd);
+
+    // Determinism within the same runtime call: re-reading produces
+    // the same value as the volatile-anchored snapshot.
+    EXPECT_TRUE(id_abs == diag::stable_type_id<G_Abs>);
+
+    // Volatile-anchored cap loop pinning that no per-iteration
+    // codegen path exists; every iteration sees identical IDs.
+    volatile std::size_t const cap = 25;
+    for (std::size_t i = 0; i < cap; ++i) {
+        EXPECT_TRUE(id_abs  == diag::stable_type_id<G_Abs>);
+        EXPECT_TRUE(id_rel  == diag::stable_type_id<G_Rel>);
+        EXPECT_TRUE(id_cmd  == diag::stable_type_id<G_Cmd>);
+        EXPECT_TRUE(id_rmnd == diag::stable_type_id<G_RMnd>);
+    }
+}
+
 void test_runtime_smoke_diversity() {
     // Spot-print a few names for human-eye verification on first
     // execution.  Not a tight assertion — just a witness that the
@@ -350,6 +489,13 @@ int main() {
              test_runtime_determinism_loop);
     run_test("test_runtime_smoke_diversity",
              test_runtime_smoke_diversity);
+    // ── H10-AUDIT-1 (#840): three audit-tightenings ────────────────
+    run_test("test_stable_name_on_move_only_T",
+             test_stable_name_on_move_only_T);
+    run_test("test_stable_type_id_on_product_lattice_composites",
+             test_stable_type_id_on_product_lattice_composites);
+    run_test("test_runtime_modality_distinctness_peer",
+             test_runtime_modality_distinctness_peer);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
