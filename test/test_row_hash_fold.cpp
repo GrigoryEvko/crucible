@@ -12,6 +12,7 @@
 
 #include <crucible/safety/diag/RowHashFold.h>
 #include <crucible/Types.h>
+#include <crucible/effects/Computation.h>
 
 #include "test_assert.h"
 
@@ -164,6 +165,77 @@ static void test_runtime_determinism() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Computation<R, T> runtime peer — closes the audit blind spot
+// (FOUND-I02-AUDIT, 2026-04-30).  Exercises the four invariants the
+// header's static_asserts pin:
+//   (a) distinct from bare T
+//   (b) distinct from bare row
+//   (c) payload-blind for bare T
+//   (d) row-discriminating
+//   (e) permutation invariance lifts through carrier
+//   (f) cardinality discrimination lifts through carrier
+//   (g) nested Computation contributes inner row
+static void test_runtime_computation_specialization() {
+    using ce::Effect;
+    using ce::EmptyRow;
+    using ce::Row;
+    using ce::Computation;
+
+    // (a) Computation distinct from bare T.
+    volatile std::uint64_t sink_comp_int =
+        cd::row_hash_of_v<Computation<EmptyRow, int>>.raw();
+    volatile std::uint64_t sink_int = cd::row_hash_of_v<int>.raw();
+    assert(sink_comp_int != sink_int);
+    assert(sink_comp_int != 0);
+
+    // (b) Computation<EmptyRow, int> distinct from bare EmptyRow row.
+    volatile std::uint64_t sink_empty_row = cd::row_hash_of_v<EmptyRow>.raw();
+    assert(sink_comp_int != sink_empty_row);
+
+    // (c) Payload-blind: Computation<EmptyRow, int> ==
+    // Computation<EmptyRow, double>.
+    volatile std::uint64_t sink_comp_double =
+        cd::row_hash_of_v<Computation<EmptyRow, double>>.raw();
+    assert(sink_comp_int == sink_comp_double);
+
+    volatile std::uint64_t sink_comp_alloc_int =
+        cd::row_hash_of_v<Computation<Row<Effect::Alloc>, int>>.raw();
+    volatile std::uint64_t sink_comp_alloc_char =
+        cd::row_hash_of_v<Computation<Row<Effect::Alloc>, char>>.raw();
+    assert(sink_comp_alloc_int == sink_comp_alloc_char);
+
+    // (d) Row-discriminating: Alloc-row carrier != IO-row carrier.
+    volatile std::uint64_t sink_comp_io_int =
+        cd::row_hash_of_v<Computation<Row<Effect::IO>, int>>.raw();
+    assert(sink_comp_alloc_int != sink_comp_io_int);
+    assert(sink_comp_alloc_int != sink_comp_int);  // vs EmptyRow carrier
+
+    // (e) Permutation invariance lifts through Computation.
+    volatile std::uint64_t sink_comp_alloc_io =
+        cd::row_hash_of_v<Computation<Row<Effect::Alloc, Effect::IO>, int>>.raw();
+    volatile std::uint64_t sink_comp_io_alloc =
+        cd::row_hash_of_v<Computation<Row<Effect::IO, Effect::Alloc>, int>>.raw();
+    assert(sink_comp_alloc_io == sink_comp_io_alloc);
+
+    // (f) Cardinality discrimination lifts through Computation.
+    assert(sink_comp_alloc_int != sink_comp_alloc_io);
+
+    // (g) Nested Computation: inner row participates in outer hash.
+    volatile std::uint64_t sink_nested =
+        cd::row_hash_of_v<
+            Computation<EmptyRow, Computation<Row<Effect::IO>, int>>>.raw();
+    assert(sink_nested != sink_comp_int);          // != flat EmptyRow carrier
+    assert(sink_nested != sink_comp_io_int);       // != flat IO-row carrier
+
+    // No accidental sentinel collision.
+    assert(sink_comp_int != static_cast<std::uint64_t>(-1));
+    assert(sink_comp_alloc_int != static_cast<std::uint64_t>(-1));
+    assert(sink_nested != static_cast<std::uint64_t>(-1));
+
+    std::printf("  test_computation_specialization: PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Header's own runtime smoke test — drives every documented runtime
 // claim through ABI-visible code.
 static void test_header_runtime_smoke() {
@@ -177,7 +249,8 @@ int main() {
     test_runtime_bare_types_zero();
     test_runtime_empty_row_distinct_from_bare();
     test_runtime_determinism();
+    test_runtime_computation_specialization();
     test_header_runtime_smoke();
-    std::printf("test_row_hash_fold: 6 groups, all passed\n");
+    std::printf("test_row_hash_fold: 7 groups, all passed\n");
     return 0;
 }

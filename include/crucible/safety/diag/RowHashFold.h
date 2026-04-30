@@ -91,6 +91,19 @@
 #include <cstdint>
 #include <type_traits>
 
+// Forward-declare effects::Computation rather than pull in
+// `effects/Computation.h`'s full graded substrate (which would
+// transitively drag Graded.h, the lattice family, and stringly-typed
+// reflection paths into every TU that includes RowHashFold).  A
+// specialization of row_hash_contribution<effects::Computation<R, T>>
+// only needs to deduce its template parameters; the class definition
+// is irrelevant.  Any TU that USES Computation<...> as the argument
+// type must include effects/Computation.h itself — that's the standard
+// IWYU rule, not a constraint we add here.
+namespace crucible::effects {
+template <typename R, typename T> class Computation;
+}  // namespace crucible::effects
+
 namespace crucible::safety::diag {
 
 // ═════════════════════════════════════════════════════════════════════
@@ -212,6 +225,61 @@ struct row_hash_contribution<effects::Row<Es...>> {
             return detail::fmix64_fold(detail::sorted_uints(raw_vals), seed);
         }
     }();
+};
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Computation<R, T> specialization — the primary Met(X) consumer ─
+// ═════════════════════════════════════════════════════════════════════
+//
+// `effects::Computation<R, T>` is the canonical row-typed Met(X)
+// carrier (Computation.h, FOUND-B, Tang-Lindley POPL 2026).  It is
+// THE primary consumer of row hashes: the federation cache key for
+// any compiled kernel that lifts its result through a row carrier
+// must reflect *both* the row R and the payload T's row contribution.
+//
+// Two design constraints any specialization here must satisfy:
+//
+//   (1) **Distinct from bare R.**  `row_hash_contribution_v<Row<A>>`
+//       must not equal `row_hash_contribution_v<Computation<Row<A>,
+//       int>>`.  A bare row is metadata; a Computation is a value.
+//       The cache must distinguish them or two semantically-different
+//       calls would collide at the same slot.
+//
+//   (2) **Payload-blind for bare T.**  `Computation<R, int>` and
+//       `Computation<R, double>` MUST hash identically — the cache
+//       key is row-shape, not payload-shape (payload identity is
+//       carried by `ContentHash`, the other half of KernelCacheKey).
+//
+//   (3) **Non-collapsing for row-bearing T.**  When T is itself row-
+//       bearing (e.g. nested `Computation<Row<IO>, int>` inside a
+//       `Computation<EmptyRow, ...>`), the inner row participates in
+//       the outer hash so that nested vs. flat carriers cannot alias.
+//       This protects the cache against a pathological "monad-in-
+//       monad" stash that semantically differs from the flattened
+//       form even before `then` collapses it.
+//
+// `combine_ids(row_hash_v<R>, row_hash_v<T>)` satisfies all three:
+//
+//   - combine_ids is order-sensitive and Boost-style golden-ratio
+//     mixed; for any non-trivial X, `combine_ids(X, 0) ≠ X` —
+//     guarantees (1) when T is a bare type contributing 0.
+//   - For T1, T2 with `row_hash_contribution_v<T1> ==
+//     row_hash_contribution_v<T2> == 0` (bare types), the result is
+//     identical — guarantees (2).
+//   - When T is row-bearing, its non-zero contribution flows in —
+//     guarantees (3).
+//
+// Order-sensitivity (combine_ids(R, T) ≠ combine_ids(T, R)) is
+// deliberate.  It pins the canonical ROW-FIRST nesting order: the
+// row R is "outer", the payload T is "inner".  This is the same
+// nesting documented for FOUND-I03's wrapper-stack discipline.
+
+template <typename R, typename T>
+struct row_hash_contribution<effects::Computation<R, T>> {
+    static constexpr std::uint64_t value =
+        detail::combine_ids(
+            row_hash_contribution_v<R>,
+            row_hash_contribution_v<T>);
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -424,6 +492,115 @@ static_assert(row_hash_contribution_v<Row<Effect::Alloc>>
 static_assert(row_hash_contribution_v<FullRow_canonical>
            != static_cast<std::uint64_t>(-1));
 
+// Same sentinel discipline for every singleton — any future Effect
+// renumbering that lands a row hash on UINT64_MAX would silently
+// poison the cache (real row claims an EMPTY slot).  Cheap to check,
+// catastrophic to miss.
+static_assert(row_hash_contribution_v<Row<Effect::IO>>
+           != static_cast<std::uint64_t>(-1));
+static_assert(row_hash_contribution_v<Row<Effect::Block>>
+           != static_cast<std::uint64_t>(-1));
+static_assert(row_hash_contribution_v<Row<Effect::Bg>>
+           != static_cast<std::uint64_t>(-1));
+static_assert(row_hash_contribution_v<Row<Effect::Init>>
+           != static_cast<std::uint64_t>(-1));
+static_assert(row_hash_contribution_v<Row<Effect::Test>>
+           != static_cast<std::uint64_t>(-1));
+
+// ─── Computation<R, T> — payload-blind, row-discriminating ─────────
+//
+// AUDIT REGRESSION ANCHORS (FOUND-I02-AUDIT, 2026-04-30): closing the
+// gap that motivated the audit pass — without these, `Computation`
+// (the primary Met(X) consumer of row hashes) had NO specialization
+// and fell through to the primary template's `value = 0`, aliasing
+// every bare type and every other Computation instantiation.
+
+// (a) Distinct from bare types.  A Computation<EmptyRow, int> is a
+// row-typed carrier; a bare int has no row.  Cache must distinguish.
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>>
+           != row_hash_contribution_v<int>);
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>> != 0);
+
+// (b) Distinct from the bare row.  Combining the row with the (zero-
+// contribution) payload via combine_ids changes the value; this is
+// exactly what (combine_ids(X, 0) ≠ X) buys us — without it,
+// Computation<EmptyRow, int> would alias EmptyRow and the cache could
+// not tell "the carrier" from "the row metadata".
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>>
+           != row_hash_contribution_v<EmptyRow>);
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
+ != row_hash_contribution_v<Row<Effect::Alloc>>);
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::IO>, int>>
+ != row_hash_contribution_v<Row<Effect::IO>>);
+
+// (c) Payload-blind for bare T.  ContentHash carries payload identity;
+// row_hash MUST be payload-blind so a kernel that returns int and one
+// that returns double share row signatures (different cache slots
+// thanks to ContentHash, same row).
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>>
+           == row_hash_contribution_v<effects::Computation<EmptyRow, double>>);
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>>
+           == row_hash_contribution_v<effects::Computation<EmptyRow, float>>);
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
+ == row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, char>>);
+
+// (d) Row-discriminating.  Same payload, different row → different
+// hash.  Federation correctness depends on this: an Alloc-row kernel
+// and an IO-row kernel that compute the same int must NOT share a
+// cache slot.
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
+ != row_hash_contribution_v<effects::Computation<Row<Effect::IO>, int>>);
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
+ != row_hash_contribution_v<effects::Computation<EmptyRow, int>>);
+
+// (e) Permutation invariance lifts through Computation — Row<A,B> and
+// Row<B,A> hash identically inside the carrier.  Direct corollary of
+// the inner Row<Es...> specialization, but pin it explicitly so a
+// future combine_ids implementation change can't silently break it.
+static_assert(
+    row_hash_contribution_v<
+        effects::Computation<Row<Effect::Alloc, Effect::IO>, int>>
+ == row_hash_contribution_v<
+        effects::Computation<Row<Effect::IO, Effect::Alloc>, int>>);
+
+// (f) Cardinality discrimination lifts through Computation — Row<A>
+// strictly less than Row<A,B>, so wrapping each in Computation cannot
+// alias.  Direct corollary, pinned explicitly.
+static_assert(
+    row_hash_contribution_v<effects::Computation<Row<Effect::Alloc>, int>>
+ != row_hash_contribution_v<
+        effects::Computation<Row<Effect::Alloc, Effect::IO>, int>>);
+
+// (g) Nested Computation — the inner row participates.  This is the
+// "monad-in-monad" non-collapsing guarantee: a `Computation<EmptyRow,
+// Computation<Row<IO>, int>>` carries a non-zero T contribution that
+// MUST flow up into the outer hash, distinguishing it from the flat
+// `Computation<EmptyRow, int>`.  This protects the cache against
+// pathological nested stashes that semantically differ even before
+// `then` flattens them.
+static_assert(
+    row_hash_contribution_v<
+        effects::Computation<EmptyRow,
+            effects::Computation<Row<Effect::IO>, int>>>
+ != row_hash_contribution_v<effects::Computation<EmptyRow, int>>);
+static_assert(
+    row_hash_contribution_v<
+        effects::Computation<EmptyRow,
+            effects::Computation<Row<Effect::IO>, int>>>
+ != row_hash_contribution_v<effects::Computation<Row<Effect::IO>, int>>);
+
+// (h) Computation<R, T> never sentinel-collides on common rows.
+static_assert(row_hash_contribution_v<effects::Computation<EmptyRow, int>>
+           != static_cast<std::uint64_t>(-1));
+static_assert(
+    row_hash_contribution_v<effects::Computation<FullRow_canonical, int>>
+ != static_cast<std::uint64_t>(-1));
+
 // ─── Bubble-sort helper correctness ────────────────────────────────
 
 static_assert(detail::sorted_uints(std::array<std::uint64_t, 0>{})
@@ -485,6 +662,14 @@ inline void runtime_smoke_test_row_hash_fold() noexcept {
     (void)sink;
     (void)perm_eq;
     (void)empty_distinct;
+
+    // NOTE: Computation<R, T> runtime smoke is exercised in the
+    // dedicated sentinel TU `test/test_row_hash_fold.cpp` rather than
+    // here, because instantiating `effects::Computation<...>` requires
+    // its full definition (`effects/Computation.h`) — pulling that
+    // into RowHashFold.h's TU would defeat the forward-decl decision
+    // documented at the top of this file.  The sentinel TU includes
+    // both headers and runs the runtime peer there.
 }
 
 }  // namespace crucible::safety::diag
