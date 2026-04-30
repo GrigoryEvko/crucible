@@ -26,6 +26,7 @@
 #include <crucible/safety/IsPermission.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/OwnedRegion.h>
+#include <crucible/safety/SignatureTraits.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -79,6 +80,30 @@ using NT_float_bitexact   = safety::NumericalTier<extract::Tolerance::BITEXACT, 
 // Cross-wrapper exclusion witnesses.
 struct test_tag {};
 using OR_int_test = safety::OwnedRegion<int, test_tag>;
+
+// Non-fundamental wrapped type (struct with members).
+struct payload_struct { double a; int b; };
+using NT_struct_bitexact = safety::NumericalTier<
+    extract::Tolerance::BITEXACT, payload_struct>;
+
+// Nested NumericalTier — outer wrapper around an inner-wrapped value.
+using NT_nested = safety::NumericalTier<
+    extract::Tolerance::BITEXACT, NT_int_bitexact>;
+
+}  // namespace
+
+// Function declarations exercising the dispatcher use case live in
+// a NAMED namespace because anonymous-namespace functions referenced
+// via `&fn` in static_asserts trigger -Werror=unused-function (the
+// linker-internal name is unique per TU but the analyzer doesn't
+// treat the static_assert reference as a use).
+namespace nt_test {
+void f_takes_bitexact_int(NT_int_bitexact const&) noexcept;
+void f_takes_relaxed_int(NT_int_relaxed&&) noexcept;
+NT_double_bitexact f_returns_bitexact_double(int) noexcept;
+}  // namespace nt_test
+
+namespace {
 
 void test_runtime_smoke() {
     EXPECT_TRUE(extract::is_numerical_tier_smoke_test());
@@ -237,6 +262,82 @@ void test_dispatcher_integration_example() {
     static_assert(select_lowering.template operator()<NT_int_relaxed>()  == 1);
 }
 
+void test_positive_non_fundamental_wrapped_type() {
+    // Wrapping a struct works identically to wrapping a fundamental.
+    static_assert( extract::is_numerical_tier_v<NT_struct_bitexact>);
+    static_assert(std::is_same_v<
+        extract::numerical_tier_value_t<NT_struct_bitexact>,
+        payload_struct>);
+    static_assert(extract::numerical_tier_v<NT_struct_bitexact>
+                  == extract::Tolerance::BITEXACT);
+}
+
+void test_positive_nested_numerical_tier() {
+    // Nested NumericalTier — outer wrapper around an inner-wrapped
+    // value.  The OUTER predicate matches; the value_type extraction
+    // recovers the inner-wrapped TYPE (which is itself a
+    // NumericalTier specialization).
+    static_assert( extract::is_numerical_tier_v<NT_nested>);
+    static_assert(std::is_same_v<
+        extract::numerical_tier_value_t<NT_nested>, NT_int_bitexact>);
+    // The inner value type is itself a NumericalTier — recursive
+    // detection works.
+    static_assert( extract::is_numerical_tier_v<
+        extract::numerical_tier_value_t<NT_nested>>);
+    // Recursing one more level recovers the bare int.
+    static_assert(std::is_same_v<
+        extract::numerical_tier_value_t<
+            extract::numerical_tier_value_t<NT_nested>>,
+        int>);
+}
+
+void test_dispatcher_function_parameter_use_case() {
+    // The actual dispatcher use case — param_type_t flows through
+    // the wrapper-detection trait.  This verifies the trait works
+    // end-to-end with the FOUND-D02 splice helper.
+
+    namespace ex = ::crucible::safety::extract;
+
+    // f_takes_bitexact_int takes NT_int_bitexact const& as param 0.
+    using P0 = ex::param_type_t<&nt_test::f_takes_bitexact_int, 0>;
+    static_assert( ex::is_numerical_tier_v<P0>);
+    // Cv-ref strip in the trait recovers the underlying tier.
+    static_assert(ex::numerical_tier_v<P0> == ex::Tolerance::BITEXACT);
+    static_assert(std::is_same_v<ex::numerical_tier_value_t<P0>, int>);
+
+    // f_takes_relaxed_int takes NT_int_relaxed&& as param 0.
+    using P0_relaxed = ex::param_type_t<&nt_test::f_takes_relaxed_int, 0>;
+    static_assert( ex::is_numerical_tier_v<P0_relaxed>);
+    static_assert(ex::numerical_tier_v<P0_relaxed>
+                  == ex::Tolerance::RELAXED);
+
+    // Return type also flows through the trait.
+    using R = ex::return_type_t<&nt_test::f_returns_bitexact_double>;
+    static_assert( ex::is_numerical_tier_v<R>);
+    static_assert(std::is_same_v<ex::numerical_tier_value_t<R>, double>);
+    static_assert(ex::numerical_tier_v<R> == ex::Tolerance::BITEXACT);
+}
+
+void test_local_alias_round_trip() {
+    // User-defined aliases over NumericalTier — common pattern in
+    // production where a project pins commonly-used tier+type pairs
+    // to short names.  The trait must look through any user-defined
+    // aliasing.
+    using LocalBitexactInt = safety::NumericalTier<
+        extract::Tolerance::BITEXACT, int>;
+    using LocalFp32Double  = safety::NumericalTier<
+        extract::Tolerance::ULP_FP32, double>;
+
+    static_assert( extract::is_numerical_tier_v<LocalBitexactInt>);
+    static_assert( extract::is_numerical_tier_v<LocalFp32Double>);
+    static_assert(extract::numerical_tier_v<LocalBitexactInt>
+                  == extract::Tolerance::BITEXACT);
+    static_assert(extract::numerical_tier_v<LocalFp32Double>
+                  == extract::Tolerance::ULP_FP32);
+    static_assert(std::is_same_v<
+        extract::numerical_tier_value_t<LocalBitexactInt>, int>);
+}
+
 void test_cross_wrapper_exclusion() {
     // Each wrapper-detection predicate distinguishes its OWN
     // wrapper from the others.  NumericalTier is NOT OwnedRegion,
@@ -301,6 +402,14 @@ int main() {
              test_distinct_tiers_distinct_specs);
     run_test("test_dispatcher_integration_example",
              test_dispatcher_integration_example);
+    run_test("test_positive_non_fundamental_wrapped_type",
+             test_positive_non_fundamental_wrapped_type);
+    run_test("test_positive_nested_numerical_tier",
+             test_positive_nested_numerical_tier);
+    run_test("test_dispatcher_function_parameter_use_case",
+             test_dispatcher_function_parameter_use_case);
+    run_test("test_local_alias_round_trip",
+             test_local_alias_round_trip);
     run_test("test_cross_wrapper_exclusion",
              test_cross_wrapper_exclusion);
     run_test("test_runtime_consistency", test_runtime_consistency);
