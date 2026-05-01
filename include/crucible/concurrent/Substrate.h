@@ -189,6 +189,66 @@ using substrate_user_tag_t = typename substrate_traits<S>::user_tag;
 template <IsSubstrate S>
 inline constexpr std::size_t substrate_capacity_v = substrate_traits<S>::capacity;
 
+// ── Working-set footprint ───────────────────────────────────────────
+//
+// channel_byte_footprint_v<S>: bytes of channel storage (ring buffer
+// or single Snapshot slot).  Used by SubstrateFitsCtxResidency in
+// concurrent/SubstrateCtxFit.h to verify a Ctx's claimed residency
+// tier can hold the channel's working set.  Does NOT include
+// alignment padding, control-block overhead, or per-thread cached
+// counters — captures the dominant data footprint only.
+//
+// Snapshot has capacity = 0 in substrate_traits but holds one T
+// slot, so the footprint is sizeof(T).  Ring substrates have
+// capacity = N and the footprint is sizeof(T) * N.
+
+template <IsSubstrate S>
+inline constexpr std::size_t channel_byte_footprint_v =
+    substrate_capacity_v<S> > 0
+        ? sizeof(substrate_value_type_t<S>) * substrate_capacity_v<S>
+        : sizeof(substrate_value_type_t<S>);  // Snapshot single-slot
+
+// ── Topology recommendation ─────────────────────────────────────────
+//
+// recommend_topology(num_producers, num_consumers, latest_only) —
+// pick the canonical ChannelTopology for a given producer/consumer
+// cardinality.  consteval; usable at template-instantiation sites
+// that want to derive the topology from compile-time configuration.
+//
+//   1 producer, 1 consumer            → OneToOne (SPSC)
+//   N producers, 1 consumer           → ManyToOne (MPSC)
+//   N producers, N consumers          → ManyToMany (MPMC)
+//   1 producer, N consumers, latest    → OneToMany_Latest (Snapshot)
+//   1 producer, N consumers, !latest  → ManyToMany (caller wants
+//                                       stream fan-out; closest
+//                                       primitive is MPMC at N=1
+//                                       producer side)
+//
+// WorkStealing is NOT recommended automatically — it requires a
+// task-shape decision (variable-cost work items distributed across
+// thieves) that's orthogonal to producer/consumer cardinality.
+// Callers wanting Chase-Lev semantics select WorkStealing
+// explicitly.
+
+[[nodiscard]] consteval ChannelTopology recommend_topology(
+    std::size_t num_producers,
+    std::size_t num_consumers,
+    bool        latest_only = false) noexcept {
+    if (num_producers == 1 && num_consumers == 1) return ChannelTopology::OneToOne;
+    if (num_producers >  1 && num_consumers == 1) return ChannelTopology::ManyToOne;
+    if (num_producers == 1 && num_consumers >  1 && latest_only)
+        return ChannelTopology::OneToMany_Latest;
+    if (num_producers >  1 && num_consumers >  1) return ChannelTopology::ManyToMany;
+    // 1 producer, N consumers without latest_only:
+    // closest match is ManyToMany at producer-side N=1 (the MPMC
+    // ring degenerates to SPMC when only one producer is active).
+    if (num_producers == 1 && num_consumers >  1) return ChannelTopology::ManyToMany;
+    // num_producers == 0 || num_consumers == 0: caller error;
+    // default to OneToOne which static_asserts on capacity > 0
+    // downstream.
+    return ChannelTopology::OneToOne;
+}
+
 // ── ChannelTopology discrimination concepts ────────────────────────────────
 //
 // Selective dispatch on a substrate's topology — useful for code that
@@ -271,6 +331,25 @@ static_assert( IsWorkStealingSubstrate<DequeT>);
 // ── Sizeof preserved (no wrapper indirection) ───────────────────────
 static_assert(sizeof(Substrate_t<ChannelTopology::OneToOne, int, 1024, VesselOpStream>) ==
               sizeof(PermissionedSpscChannel<int, 1024, VesselOpStream>));
+
+// ── channel_byte_footprint_v pinning ───────────────────────────────
+//
+// SPSC<int, 1024> = 4 KB.  MPMC<int, 64> = 256 B.  Snapshot<double>
+// = 8 B (single slot).  Catches drift in either sizeof(T) or capacity.
+
+static_assert(channel_byte_footprint_v<SpscT>  == sizeof(int) * 1024);
+static_assert(channel_byte_footprint_v<MpscT>  == sizeof(int) * 64);
+static_assert(channel_byte_footprint_v<SnapT>  == sizeof(double));      // single slot
+static_assert(channel_byte_footprint_v<MpmcT>  == sizeof(int) * 32);
+static_assert(channel_byte_footprint_v<DequeT> == sizeof(int) * 256);
+
+// ── recommend_topology pinning ──────────────────────────────────────
+static_assert(recommend_topology(1, 1)         == ChannelTopology::OneToOne);
+static_assert(recommend_topology(4, 1)         == ChannelTopology::ManyToOne);
+static_assert(recommend_topology(8, 8)         == ChannelTopology::ManyToMany);
+static_assert(recommend_topology(1, 4, true)   == ChannelTopology::OneToMany_Latest);
+static_assert(recommend_topology(1, 4, false)  == ChannelTopology::ManyToMany);
+static_assert(recommend_topology(1, 1, true)   == ChannelTopology::OneToOne);  // 1-1 trumps latest
 
 }  // namespace detail::substrate_self_test
 

@@ -857,6 +857,16 @@ crucible_neg_compile_effects_test(neg_substrate_unrecognized
 crucible_neg_compile_effects_test(neg_substrate_topology_dispatch
     "associated constraints are not satisfied|IsOneToOneSubstrate")
 
+# ─── Tier 1 cross-tree audit (#858): Substrate ↔ Ctx fit gates ────
+#
+# Two fixtures: SubstrateFitsCtxResidency rejects L1-claiming ctx
+# with 4 MB substrate; same for L2-claiming ctx.  Bound shifts
+# detected by either fixture.
+crucible_neg_compile_effects_test(neg_substrate_does_not_fit_l1
+    "associated constraints are not satisfied|SubstrateFitsCtxResidency|fits_in_tier")
+crucible_neg_compile_effects_test(neg_substrate_required_tier_unfit_ctx
+    "associated constraints are not satisfied|SubstrateFitsCtxResidency|fits_in_tier")
+
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
 # Each crucible_neg_compile_test below pairs a deliberately-broken

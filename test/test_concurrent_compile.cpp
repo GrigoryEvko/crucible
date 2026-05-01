@@ -16,6 +16,7 @@
 
 #include <crucible/concurrent/ExecCtxBridge.h>
 #include <crucible/concurrent/Substrate.h>
+#include <crucible/concurrent/SubstrateCtxFit.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -53,13 +54,20 @@ void test_substrate_compile() {
     // the runtime smoke instantiates each substrate type.
     ::crucible::concurrent::runtime_smoke_test_substrate();
 }
+void test_substrate_ctx_fit_compile() {
+    // SubstrateFitsCtxResidency cross-tree composition: drive the
+    // residency-fit check + required-tier inverse on canonical
+    // (Substrate, Ctx) pairs.
+    ::crucible::concurrent::runtime_smoke_test_substrate_ctx_fit();
+}
 
 }  // namespace
 
 int main() {
     std::fprintf(stderr, "test_concurrent_compile:\n");
-    run_test("test_exec_ctx_bridge_compile", test_exec_ctx_bridge_compile);
-    run_test("test_substrate_compile",       test_substrate_compile);
+    run_test("test_exec_ctx_bridge_compile",  test_exec_ctx_bridge_compile);
+    run_test("test_substrate_compile",        test_substrate_compile);
+    run_test("test_substrate_ctx_fit_compile", test_substrate_ctx_fit_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");
