@@ -848,6 +848,15 @@ crucible_neg_compile_effects_test(neg_alloc_class_from_unbound_ctx
 crucible_neg_compile_effects_test(neg_ctx_dispatch_wrong_tier
     "associated constraints are not satisfied|IsL1ResidentCtx")
 
+# ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
+#
+# Two fixtures: IsSubstrate rejects non-Permissioned* types;
+# IsOneToOneSubstrate selective dispatch rejects non-SPSC substrates.
+crucible_neg_compile_effects_test(neg_substrate_unrecognized
+    "associated constraints are not satisfied|IsSubstrate")
+crucible_neg_compile_effects_test(neg_substrate_topology_dispatch
+    "associated constraints are not satisfied|IsOneToOneSubstrate")
+
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
 # Each crucible_neg_compile_test below pairs a deliberately-broken

@@ -15,6 +15,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/concurrent/ExecCtxBridge.h>
+#include <crucible/concurrent/Substrate.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -46,12 +47,19 @@ void test_exec_ctx_bridge_compile() {
     // values are usable as runtime arguments to recommend_parallelism.
     ::crucible::concurrent::runtime_smoke_test_exec_ctx_bridge();
 }
+void test_substrate_compile() {
+    // Substrate<Topology, T, Cap, UserTag> metafunction: drive every
+    // topology pattern through the static_assert chain and verify
+    // the runtime smoke instantiates each substrate type.
+    ::crucible::concurrent::runtime_smoke_test_substrate();
+}
 
 }  // namespace
 
 int main() {
     std::fprintf(stderr, "test_concurrent_compile:\n");
     run_test("test_exec_ctx_bridge_compile", test_exec_ctx_bridge_compile);
+    run_test("test_substrate_compile",       test_substrate_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");
