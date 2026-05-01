@@ -811,6 +811,20 @@ crucible_neg_compile_effects_test(neg_exec_ctx_ctx_owns_capability
 crucible_neg_compile_effects_test(neg_exec_ctx_alloc_unbound_no_bridge
     "incomplete type|incomplete and cannot be|has no member named|invalid use of incomplete type")
 
+# ─── P1-AUDIT-3 (#854): Capability linearity + mint authorization ──
+#
+# Four fixtures locking the Capability<E, S> proof-token discipline:
+# CanMintCap rejects Fg, Init→Block, copy is deleted (linearity),
+# default ctor is private.
+crucible_neg_compile_effects_test(neg_capability_mint_from_fg
+    "associated constraints are not satisfied|CanMintCap")
+crucible_neg_compile_effects_test(neg_capability_init_mint_block
+    "associated constraints are not satisfied|CanMintCap")
+crucible_neg_compile_effects_test(neg_capability_copy_attempt
+    "use of deleted function|deleted copy|copy constructor.*deleted")
+crucible_neg_compile_effects_test(neg_capability_default_construct
+    "is private within this context|private member|non-public member|is private")
+
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
 # Each crucible_neg_compile_test below pairs a deliberately-broken

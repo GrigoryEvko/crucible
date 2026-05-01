@@ -19,6 +19,7 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/Computation.h>
 #include <crucible/effects/ComputationGraded.h>
+#include <crucible/effects/Capability.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/EffectRowLattice.h>
 #include <crucible/effects/Effects.h>
@@ -84,6 +85,12 @@ void test_exec_ctx_compile() {
     // / ColdInitCtx / TestRunnerCtx) are constructible at runtime.
     ::crucible::effects::runtime_smoke_test_exec_ctx();
 }
+void test_capability_compile() {
+    // Capability<E, S> linear cap proof tokens: drive mint_cap from
+    // each authorized (Effect, Source) pair, exercise move + consume,
+    // verify recognition / extractors / discrimination at runtime.
+    ::crucible::effects::runtime_smoke_test_capability();
+}
 
 }  // namespace
 
@@ -100,6 +107,7 @@ int main() {
     run_test("test_computation_graded_compile",
              test_computation_graded_compile);
     run_test("test_exec_ctx_compile",      test_exec_ctx_compile);
+    run_test("test_capability_compile",    test_capability_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");
