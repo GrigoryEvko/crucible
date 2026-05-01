@@ -796,6 +796,21 @@ crucible_neg_compile_effects_test(neg_exec_ctx_heat_resid_incoherent
 crucible_neg_compile_effects_test(neg_exec_ctx_pinned_negative_node
     "static assertion failed|Pinned.*requires N >= 0|Node >= 0")
 
+# ─── P1-AUDIT-2 (#853): composition-point witnesses ─────────────────
+#
+# Four fixtures locking the composition concepts and bridge traits:
+# CtxAdmits substitution, IsSubCtx parent-derivation, CtxOwnsCapability
+# per-atom check, and the deliberate hole in to_alloc_class_tag_v for
+# ctx_alloc::Unbound (no analogue in the lattice enum).
+crucible_neg_compile_effects_test(neg_exec_ctx_admits_unfit_row
+    "associated constraints are not satisfied|CtxAdmits|Subrow")
+crucible_neg_compile_effects_test(neg_exec_ctx_subctx_violation
+    "associated constraints are not satisfied|IsSubCtx")
+crucible_neg_compile_effects_test(neg_exec_ctx_ctx_owns_capability
+    "associated constraints are not satisfied|CtxOwnsCapability|row_contains")
+crucible_neg_compile_effects_test(neg_exec_ctx_alloc_unbound_no_bridge
+    "incomplete type|incomplete and cannot be|has no member named|invalid use of incomplete type")
+
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
 # Each crucible_neg_compile_test below pairs a deliberately-broken

@@ -78,6 +78,9 @@
 // vocabulary lives here.
 
 #include <crucible/Platform.h>
+#include <crucible/algebra/lattices/AllocClassLattice.h>     // AllocClassTag enum
+#include <crucible/algebra/lattices/HotPathLattice.h>        // HotPathTier enum
+#include <crucible/algebra/lattices/ResidencyHeatLattice.h>  // ResidencyHeatTag enum
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 
@@ -602,6 +605,181 @@ template <class Ctx, class WantNuma>
 concept HasNumaPolicy = IsExecCtx<Ctx>
                      && std::is_same_v<numa_policy_of_t<Ctx>, WantNuma>;
 
+// ── Cap discrimination shortcuts ────────────────────────────────────
+template <class Ctx> concept IsFgCtx   = HasCap<Ctx, ctx_cap::Fg>;
+template <class Ctx> concept IsBgCtx   = HasCap<Ctx, Bg>;
+template <class Ctx> concept IsInitCtx = HasCap<Ctx, Init>;
+template <class Ctx> concept IsTestCtx = HasCap<Ctx, Test>;
+
+// ── Heat-tier discrimination ────────────────────────────────────────
+template <class Ctx>
+concept IsHotCtx  = IsExecCtx<Ctx>
+                 && std::is_same_v<hot_path_tier_of_t<Ctx>, ctx_heat::Hot>;
+template <class Ctx>
+concept IsWarmCtx = IsExecCtx<Ctx>
+                 && std::is_same_v<hot_path_tier_of_t<Ctx>, ctx_heat::Warm>;
+template <class Ctx>
+concept IsColdCtx = IsExecCtx<Ctx>
+                 && std::is_same_v<hot_path_tier_of_t<Ctx>, ctx_heat::Cold>;
+
+// ── Alloc-class discrimination ──────────────────────────────────────
+template <class Ctx>
+concept IsArenaCtx    = IsExecCtx<Ctx>
+                     && std::is_same_v<alloc_class_of_t<Ctx>, ctx_alloc::Arena>;
+template <class Ctx>
+concept IsHugePageCtx = IsExecCtx<Ctx>
+                     && std::is_same_v<alloc_class_of_t<Ctx>, ctx_alloc::HugePage>;
+template <class Ctx>
+concept IsHeapCtx     = IsExecCtx<Ctx>
+                     && std::is_same_v<alloc_class_of_t<Ctx>, ctx_alloc::Heap>;
+template <class Ctx>
+concept IsStackCtx    = IsExecCtx<Ctx>
+                     && std::is_same_v<alloc_class_of_t<Ctx>, ctx_alloc::Stack>;
+template <class Ctx>
+concept IsPoolCtx     = IsExecCtx<Ctx>
+                     && std::is_same_v<alloc_class_of_t<Ctx>, ctx_alloc::Pool>;
+
+// ── Composition concepts ────────────────────────────────────────────
+//
+// CtxAdmits<Ctx, R>: a function returning Computation<R, T> may be
+// called from a context with Ctx::row_type if R ⊆ Ctx::row_type.
+// This is the substitution-principle gate that production call sites
+// use when accepting a Ctx and dispatching into a row-typed body.
+//
+//     template <IsExecCtx Ctx>
+//         requires CtxAdmits<Ctx, Row<Effect::Bg, Effect::Alloc>>
+//     auto BackgroundThread::build_trace(Ctx const&) -> ...;
+//
+// IsSubCtx<Child, Parent>: child carries the same Cap as parent, and
+// child's row is a subset of parent's row.  Used for fork-join: a
+// child task derived from a parent must not enlarge the parent's
+// authorized effect set.
+//
+// SiblingCtx<A, B>: A and B share a Cap.  Used to verify two tasks
+// running on the same thread (same Cap) for fork-join safety.
+//
+// CtxOwnsCapability<Ctx, Cap>: the Effect Cap atom is in Ctx's
+// permitted row.  Used by per-cap helpers (e.g., a function that
+// performs Alloc must verify the Ctx authorizes Effect::Alloc).
+
+template <class Ctx, class R>
+concept CtxAdmits = IsExecCtx<Ctx>
+                 && IsEffectRow<R>
+                 && Subrow<R, row_type_of_t<Ctx>>;
+
+template <class Child, class Parent>
+concept IsSubCtx = IsExecCtx<Child>
+                && IsExecCtx<Parent>
+                && std::is_same_v<cap_type_of_t<Child>, cap_type_of_t<Parent>>
+                && Subrow<row_type_of_t<Child>, row_type_of_t<Parent>>;
+
+template <class A, class B>
+concept SiblingCtx = IsExecCtx<A>
+                  && IsExecCtx<B>
+                  && std::is_same_v<cap_type_of_t<A>, cap_type_of_t<B>>;
+
+template <class Ctx, Effect Cap>
+concept CtxOwnsCapability = IsExecCtx<Ctx>
+                         && row_contains_v<row_type_of_t<Ctx>, Cap>;
+
+// ── Wrapper-enum bridges ────────────────────────────────────────────
+//
+// ExecCtx's per-axis tags live in ctx_*::* namespaces; the existing
+// safety::HotPath / safety::AllocClass / safety::ResidencyHeat
+// wrappers consume enum tags from algebra::lattices::*.  These
+// bridge metafunctions project an ExecCtx axis tag onto the matching
+// lattice enum value — usable by any consumer that wants to flow
+// ExecCtx into the wrapper world without spelling the mapping.
+//
+// Conventions:
+//   • Each bridge maps a CTX tag to a single lattice enum value.
+//   • Mappings are 1-1 where possible; ctx_resid → ResidencyHeatTag
+//     collapses 4 levels into 3 (L1/L2 are both "Hot" residency at
+//     the wrapper level; L3 → Warm; DRAM → Cold).
+//   • ctx_alloc::Unbound has NO wrapper mapping; the trait is
+//     undefined for it (consumers attempting to bridge an Unbound
+//     allocator hit a hard error — correct behaviour, since Unbound
+//     means "no policy committed").
+
+template <class HeatTag> struct to_hot_path_tier;
+template <> struct to_hot_path_tier<ctx_heat::Hot> {
+    static constexpr auto value = ::crucible::algebra::lattices::HotPathTier::Hot;
+};
+template <> struct to_hot_path_tier<ctx_heat::Warm> {
+    static constexpr auto value = ::crucible::algebra::lattices::HotPathTier::Warm;
+};
+template <> struct to_hot_path_tier<ctx_heat::Cold> {
+    static constexpr auto value = ::crucible::algebra::lattices::HotPathTier::Cold;
+};
+template <class HeatTag>
+inline constexpr auto to_hot_path_tier_v = to_hot_path_tier<HeatTag>::value;
+
+template <class AllocTag> struct to_alloc_class_tag;
+template <> struct to_alloc_class_tag<ctx_alloc::Stack> {
+    static constexpr auto value = ::crucible::algebra::lattices::AllocClassTag::Stack;
+};
+template <> struct to_alloc_class_tag<ctx_alloc::Arena> {
+    static constexpr auto value = ::crucible::algebra::lattices::AllocClassTag::Arena;
+};
+template <> struct to_alloc_class_tag<ctx_alloc::Pool> {
+    static constexpr auto value = ::crucible::algebra::lattices::AllocClassTag::Pool;
+};
+template <> struct to_alloc_class_tag<ctx_alloc::Heap> {
+    static constexpr auto value = ::crucible::algebra::lattices::AllocClassTag::Heap;
+};
+template <> struct to_alloc_class_tag<ctx_alloc::HugePage> {
+    static constexpr auto value = ::crucible::algebra::lattices::AllocClassTag::HugePage;
+};
+// ctx_alloc::Unbound: no specialization; the bridge is uninhabited.
+template <class AllocTag>
+inline constexpr auto to_alloc_class_tag_v = to_alloc_class_tag<AllocTag>::value;
+
+template <class ResidTag> struct to_residency_heat_tag;
+template <> struct to_residency_heat_tag<ctx_resid::L1> {
+    static constexpr auto value = ::crucible::algebra::lattices::ResidencyHeatTag::Hot;
+};
+template <> struct to_residency_heat_tag<ctx_resid::L2> {
+    static constexpr auto value = ::crucible::algebra::lattices::ResidencyHeatTag::Hot;
+};
+template <> struct to_residency_heat_tag<ctx_resid::L3> {
+    static constexpr auto value = ::crucible::algebra::lattices::ResidencyHeatTag::Warm;
+};
+template <> struct to_residency_heat_tag<ctx_resid::DRAM> {
+    static constexpr auto value = ::crucible::algebra::lattices::ResidencyHeatTag::Cold;
+};
+template <class ResidTag>
+inline constexpr auto to_residency_heat_tag_v = to_residency_heat_tag<ResidTag>::value;
+
+// ── Atomic batch-builder ────────────────────────────────────────────
+//
+// rebuild_to<NewCtx>() — single-step transition from one ExecCtx to
+// another.  Necessary because individual builder methods evaluate
+// the cross-axis coherence rules (heat × resid, heat × alloc) on
+// each intermediate type, so a chain that advances Heat before
+// Resid fires the invariant on the intermediate state.
+// rebuild_to<NewCtx>() creates the destination type in ONE step,
+// bypassing intermediate-state checks.  The destination's own
+// invariants still fire when the resulting NewCtx is itself
+// instantiated, so soundness is preserved.
+//
+// Example:
+//
+//     constexpr auto bg_drain =
+//         HotFgCtx{}.rebuild_to<BgDrainCtx>();
+//
+// is equivalent to `BgDrainCtx{}` but expresses the call site's
+// intent that the new context is *derived from* the old one.
+
+// Defined as a free function rather than a member so the source
+// type need not be known up front — usable on any ExecCtx via ADL
+// or qualified call.  Constraint: NewCtx must be a recognized
+// ExecCtx instantiation.
+template <class NewCtx, IsExecCtx OldCtx>
+    requires IsExecCtx<NewCtx>
+[[nodiscard]] consteval NewCtx rebuild_ctx_to(OldCtx const&) noexcept {
+    return NewCtx{};
+}
+
 // ── Self-test block ─────────────────────────────────────────────────
 //
 // Per the algebra/effects runtime-smoke-test discipline (memory rule
@@ -897,6 +1075,106 @@ static_assert(heat_alloc_coherent_v<typename ColdInitCtx::hot_path_tier,
                                      typename ColdInitCtx::alloc_class>);
 static_assert(heat_alloc_coherent_v<typename MaxCtx::hot_path_tier,
                                      typename MaxCtx::alloc_class>);
+
+// ── Discrimination concepts ─────────────────────────────────────────
+static_assert( IsHotCtx<HotFgCtx>);
+static_assert(!IsHotCtx<BgDrainCtx>);
+static_assert(!IsHotCtx<ColdInitCtx>);
+
+static_assert( IsWarmCtx<BgDrainCtx>);
+static_assert( IsWarmCtx<BgCompileCtx>);
+static_assert(!IsWarmCtx<HotFgCtx>);
+
+static_assert( IsColdCtx<ColdInitCtx>);
+static_assert( IsColdCtx<TestRunnerCtx>);
+static_assert(!IsColdCtx<HotFgCtx>);
+
+static_assert( IsFgCtx<HotFgCtx>);
+static_assert(!IsFgCtx<BgDrainCtx>);
+
+static_assert( IsBgCtx<BgDrainCtx>);
+static_assert( IsBgCtx<BgCompileCtx>);
+static_assert(!IsBgCtx<HotFgCtx>);
+
+static_assert( IsInitCtx<ColdInitCtx>);
+static_assert(!IsInitCtx<BgDrainCtx>);
+
+static_assert( IsTestCtx<TestRunnerCtx>);
+static_assert(!IsTestCtx<BgDrainCtx>);
+
+static_assert( IsArenaCtx<BgDrainCtx>);
+static_assert( IsArenaCtx<BgCompileCtx>);
+static_assert(!IsArenaCtx<HotFgCtx>);
+static_assert( IsHugePageCtx<MaxCtx>);
+static_assert( IsHeapCtx<ColdInitCtx>);
+static_assert( IsHeapCtx<TestRunnerCtx>);
+static_assert( IsStackCtx<HotFgCtx>);
+
+// ── Composition concepts ────────────────────────────────────────────
+
+// CtxAdmits — Ctx absorbs a row R iff R ⊆ Ctx::row_type.
+static_assert( CtxAdmits<HotFgCtx, Row<>>);                        // empty row always admitted
+static_assert(!CtxAdmits<HotFgCtx, Row<Effect::Bg>>);              // Fg cannot admit Bg
+static_assert( CtxAdmits<BgDrainCtx, Row<Effect::Bg>>);            // Bg admits Bg
+static_assert( CtxAdmits<BgDrainCtx, Row<Effect::Bg, Effect::Alloc>>);
+static_assert(!CtxAdmits<BgDrainCtx, Row<Effect::IO>>);            // BgDrain (Bg+Alloc) cannot admit IO
+static_assert( CtxAdmits<BgCompileCtx, Row<Effect::IO>>);          // BgCompile carries IO
+static_assert( CtxAdmits<TestRunnerCtx, Row<Effect::Block>>);
+
+// IsSubCtx — Child has same Cap and a Row that's a subset of Parent's.
+static_assert( IsSubCtx<BgDrainCtx,    BgCompileCtx>);             // Row<Bg, Alloc> ⊆ Row<Bg, Alloc, IO>
+static_assert(!IsSubCtx<BgCompileCtx,  BgDrainCtx>);               // reverse: superset, not subset
+static_assert(!IsSubCtx<HotFgCtx,      BgDrainCtx>);               // different cap
+static_assert( IsSubCtx<HotFgCtx,      HotFgCtx>);                 // reflexive
+
+// SiblingCtx — same Cap.
+static_assert( SiblingCtx<BgDrainCtx,  BgCompileCtx>);             // both Bg
+static_assert(!SiblingCtx<HotFgCtx,    BgDrainCtx>);               // Fg vs Bg
+
+// CtxOwnsCapability — atom in row.
+static_assert( CtxOwnsCapability<BgDrainCtx,    Effect::Bg>);
+static_assert( CtxOwnsCapability<BgDrainCtx,    Effect::Alloc>);
+static_assert(!CtxOwnsCapability<BgDrainCtx,    Effect::IO>);
+static_assert( CtxOwnsCapability<BgCompileCtx,  Effect::IO>);
+static_assert(!CtxOwnsCapability<HotFgCtx,      Effect::Bg>);
+
+// ── Wrapper-enum bridges ────────────────────────────────────────────
+
+namespace lat = ::crucible::algebra::lattices;
+
+static_assert(to_hot_path_tier_v<ctx_heat::Hot>  == lat::HotPathTier::Hot);
+static_assert(to_hot_path_tier_v<ctx_heat::Warm> == lat::HotPathTier::Warm);
+static_assert(to_hot_path_tier_v<ctx_heat::Cold> == lat::HotPathTier::Cold);
+
+static_assert(to_alloc_class_tag_v<ctx_alloc::Stack>    == lat::AllocClassTag::Stack);
+static_assert(to_alloc_class_tag_v<ctx_alloc::Arena>    == lat::AllocClassTag::Arena);
+static_assert(to_alloc_class_tag_v<ctx_alloc::Pool>     == lat::AllocClassTag::Pool);
+static_assert(to_alloc_class_tag_v<ctx_alloc::Heap>     == lat::AllocClassTag::Heap);
+static_assert(to_alloc_class_tag_v<ctx_alloc::HugePage> == lat::AllocClassTag::HugePage);
+// ctx_alloc::Unbound deliberately has no bridge — instantiating
+// to_alloc_class_tag_v<ctx_alloc::Unbound> would hard-error.
+
+static_assert(to_residency_heat_tag_v<ctx_resid::L1>   == lat::ResidencyHeatTag::Hot);
+static_assert(to_residency_heat_tag_v<ctx_resid::L2>   == lat::ResidencyHeatTag::Hot);
+static_assert(to_residency_heat_tag_v<ctx_resid::L3>   == lat::ResidencyHeatTag::Warm);
+static_assert(to_residency_heat_tag_v<ctx_resid::DRAM> == lat::ResidencyHeatTag::Cold);
+
+// Bridge applied to canonical aliases — flow ExecCtx into the
+// wrapper enum world in one consteval lookup per axis.
+static_assert(to_hot_path_tier_v<typename HotFgCtx::hot_path_tier>     == lat::HotPathTier::Hot);
+static_assert(to_alloc_class_tag_v<typename BgDrainCtx::alloc_class>   == lat::AllocClassTag::Arena);
+static_assert(to_residency_heat_tag_v<typename BgDrainCtx::residency>  == lat::ResidencyHeatTag::Hot);
+static_assert(to_alloc_class_tag_v<typename MaxCtx::alloc_class>       == lat::AllocClassTag::HugePage);
+
+// ── Atomic batch-builder ────────────────────────────────────────────
+//
+// rebuild_ctx_to<NewCtx>(old) bypasses the per-link cross-axis
+// invariants that would fire on intermediate builder states (e.g.,
+// when widening Heat ahead of Resid).  Soundness is preserved
+// because the destination type's own static_asserts still fire.
+
+constexpr auto _rebuilt = rebuild_ctx_to<BgDrainCtx>(HotFgCtx{});
+static_assert(std::is_same_v<decltype(_rebuilt), const BgDrainCtx>);
 
 }  // namespace detail::exec_ctx_self_test
 

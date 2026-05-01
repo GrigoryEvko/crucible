@@ -302,11 +302,27 @@ template <class PType, auto... Preds>
 inline constexpr bool disjunct_matches =
     ((std::is_same_v<std::remove_cv_t<decltype(Preds)>, PType>) || ...);
 
+// Transitive elimination — true iff some conjunct Pᵢ implies QType
+// via the existing predicate_implies trait.  This lets composed
+// predicates participate in the lattice through ATOMIC predicates'
+// known implications (positive ⇒ non_negative, etc.).
+template <class QType, auto... Preds>
+inline constexpr bool any_pred_transitively_implies =
+    ((predicate_implies<std::remove_cv_t<decltype(Preds)>, QType>::value) || ...);
+
 }  // namespace detail
 
-// AllOf<P1, ..., Pn> ⇒ Pi for any i.  Conjunction elimination.
+// AllOf<P1, ..., Pn> ⇒ Q if either:
+//   • Q matches one of the conjuncts directly (conjunction
+//     elimination), or
+//   • some conjunct Pᵢ already implies Q via predicate_implies
+//     (transitive elimination).
+//
+// Both shapes wired through one specialisation; the requires-clause
+// disjunction keeps it a single partial ordering.
 template <auto... Preds, class QType>
-    requires detail::conjunct_matches<QType, Preds...>
+    requires (detail::conjunct_matches<QType, Preds...>
+           || detail::any_pred_transitively_implies<QType, Preds...>)
 struct predicate_implies<refined_algebra::AllOf<Preds...>, QType>
     : std::true_type {};
 
@@ -446,6 +462,15 @@ static_assert(implies_v<non_zero, any_of<positive, non_zero>>);
 // Non-implication: AllOf does NOT imply a predicate that is not one
 // of its conjuncts.
 static_assert(!implies_v<all_of<positive, bounded_above<100>>, non_null>);
+
+// Transitive elimination — AllOf<positive, ...> ⇒ non_negative
+// because positive ⇒ non_negative is in the existing
+// predicate_implies lattice.
+static_assert(implies_v<all_of<positive, bounded_above<100>>, non_negative>);
+// Same for non_zero (positive ⇒ non_zero).
+static_assert(implies_v<all_of<positive>, non_zero>);
+// Power-of-two ⇒ non_zero, transitively through AllOf.
+static_assert(implies_v<all_of<power_of_two, bounded_above<1024u>>, non_zero>);
 // AnyOf does NOT imply individual disjuncts (the disjunction does
 // not entail any single branch).
 static_assert(!implies_v<any_of<positive, non_zero>, positive>);
