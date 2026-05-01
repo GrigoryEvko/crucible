@@ -33,6 +33,7 @@
 #include <crucible/sessions/SessionPayloadSubsort.h>
 #include <crucible/sessions/SessionPermPayloads.h>
 #include <crucible/sessions/SessionQueue.h>
+#include <crucible/sessions/SessionRowExtraction.h>
 #include <crucible/sessions/SessionSubtype.h>
 #include <crucible/sessions/SessionSubtypeReason.h>
 #include <crucible/sessions/SessionView.h>
@@ -82,6 +83,9 @@ void test_permissioned_session_compile() {
     crucible::safety::proto::detail::permissioned_session_smoke::runtime_smoke_test();
 }
 void test_session_queue_compile()            {}
+void test_session_row_extraction_compile() {
+    crucible::sessions::runtime_smoke_test_payload_row();
+}
 void test_session_subtype_compile()          {}
 void test_session_subtype_reason_compile()   {}
 void test_session_view_compile()             {}
@@ -108,6 +112,7 @@ int main() {
     run_test("test_session_perm_payloads_compile",    test_session_perm_payloads_compile);
     run_test("test_permissioned_session_compile",     test_permissioned_session_compile);
     run_test("test_session_queue_compile",            test_session_queue_compile);
+    run_test("test_session_row_extraction_compile",   test_session_row_extraction_compile);
     run_test("test_session_subtype_compile",          test_session_subtype_compile);
     run_test("test_session_subtype_reason_compile",   test_session_subtype_reason_compile);
     run_test("test_session_view_compile",             test_session_view_compile);
