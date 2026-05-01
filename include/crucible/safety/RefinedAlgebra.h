@@ -76,6 +76,7 @@
 // implications.  See the `predicate_implies` family in Refined.h.
 
 #include <crucible/Platform.h>
+#include <crucible/algebra/GradedTrait.h>      // GradedWrapper concept verification
 #include <crucible/safety/Refined.h>
 
 #include <array>
@@ -486,6 +487,36 @@ static_assert(divisible_by<8>(64));
 
 [[maybe_unused]] constexpr auto _b_normal = Bounded<0, 100, int>{50};
 [[maybe_unused]] constexpr auto _b_equal  = Bounded<5,   5, int>{5};
+
+// ── GradedWrapper concept verification ─────────────────────────────
+//
+// Refined<combinator-predicate, T> must remain a valid GradedWrapper
+// — the combinators don't break the substrate's lattice / value /
+// modality contract.  If a future revision of AllOf / AnyOf / Negate
+// / Implies disturbs the BoolLattice<Pred> substrate or the
+// Absolute modality, these static_asserts fire.
+//
+// The single-predicate (atomic) refinements already satisfy
+// GradedWrapper by way of Refined.h's own MIGRATE-2 work; here we
+// pin the COMPOSED forms.
+
+namespace alg = ::crucible::algebra;
+
+static_assert(alg::GradedWrapper<Refined<all_of<positive>, int>>,
+    "Refined<all_of<...>, T> must satisfy GradedWrapper");
+static_assert(alg::GradedWrapper<Refined<all_of<positive, bounded_above<100>>, int>>);
+static_assert(alg::GradedWrapper<Refined<any_of<positive, non_zero>, int>>);
+static_assert(alg::GradedWrapper<Refined<negate<positive>, int>>);
+static_assert(alg::GradedWrapper<Refined<implies<positive, non_zero>, int>>);
+static_assert(alg::GradedWrapper<Refined<all_of<all_of<positive>, bounded_above<1024>>, int>>,
+    "nested combinators (AllOf<AllOf<...>, ...>) must also satisfy");
+
+// And the type aliases shipped above:
+static_assert(alg::GradedWrapper<AlignedTo<64, void*>>);
+static_assert(alg::GradedWrapper<Bounded<0, 100, int>>);
+static_assert(alg::GradedWrapper<Capped<255, std::uint32_t>>);
+static_assert(alg::GradedWrapper<Floored<1, int>>);
+static_assert(alg::GradedWrapper<DivisibleByN<4, std::size_t>>);
 
 // ── Runtime smoke test (per the algebra discipline) ─────────────────
 //

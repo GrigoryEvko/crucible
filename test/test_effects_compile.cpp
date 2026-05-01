@@ -20,6 +20,7 @@
 #include <crucible/effects/Computation.h>
 #include <crucible/effects/ComputationGraded.h>
 #include <crucible/effects/Capability.h>
+#include <crucible/effects/CtxWrapperLift.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/EffectRowLattice.h>
 #include <crucible/effects/Effects.h>
@@ -91,6 +92,12 @@ void test_capability_compile() {
     // verify recognition / extractors / discrimination at runtime.
     ::crucible::effects::runtime_smoke_test_capability();
 }
+void test_ctx_wrapper_lift_compile() {
+    // HotPathFromCtx / AllocClassFromCtx / ResidencyHeatFromCtx —
+    // verify the lifts construct cleanly at runtime against canonical
+    // contexts.
+    ::crucible::effects::runtime_smoke_test_ctx_wrapper_lift();
+}
 
 }  // namespace
 
@@ -108,6 +115,7 @@ int main() {
              test_computation_graded_compile);
     run_test("test_exec_ctx_compile",      test_exec_ctx_compile);
     run_test("test_capability_compile",    test_capability_compile);
+    run_test("test_ctx_wrapper_lift_compile", test_ctx_wrapper_lift_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");

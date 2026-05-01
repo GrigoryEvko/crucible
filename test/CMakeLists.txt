@@ -839,6 +839,15 @@ crucible_neg_compile_effects_test(neg_capability_cap_matches_ctx
 crucible_neg_compile_effects_test(neg_capability_extract_bare_thread_atom
     "no matching function for call|constraints not satisfied|extract_bare")
 
+# ─── P1-AUDIT-5 (#856): wrapper-lift + tier-discrimination gates ───
+#
+# Two fixtures: AllocClassFromCtx rejects Unbound (no wrapper
+# analogue); IsL1ResidentCtx rejects non-L1 contexts.
+crucible_neg_compile_effects_test(neg_alloc_class_from_unbound_ctx
+    "static assertion failed|AllocClassFromCtx|Unbound")
+crucible_neg_compile_effects_test(neg_ctx_dispatch_wrong_tier
+    "associated constraints are not satisfied|IsL1ResidentCtx")
+
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
 # Each crucible_neg_compile_test below pairs a deliberately-broken

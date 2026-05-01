@@ -165,6 +165,51 @@ template <::crucible::effects::IsExecCtx Ctx>
     return resid_to_tier_v<typename Ctx::residency>;
 }
 
+// ── Discrimination concepts on the bridged enums ───────────────────
+//
+// Selective dispatch on a Ctx's residency or NUMA policy, projected
+// through the consteval bridges.  These mirror the per-axis
+// discrimination concepts in ExecCtx.h (IsHotCtx, IsArenaCtx, etc.)
+// but operate on the concurrent::Tier / NumaPolicy enum side, useful
+// when downstream code branches on those types directly (e.g.,
+// AdaptiveScheduler picks worker-binding strategy from NumaPolicy).
+
+template <class Ctx>
+concept IsL1ResidentCtx = ::crucible::effects::IsExecCtx<Ctx>
+                       && ctx_residency_tier<Ctx>() == Tier::L1Resident;
+template <class Ctx>
+concept IsL2ResidentCtx = ::crucible::effects::IsExecCtx<Ctx>
+                       && ctx_residency_tier<Ctx>() == Tier::L2Resident;
+template <class Ctx>
+concept IsL3ResidentCtx = ::crucible::effects::IsExecCtx<Ctx>
+                       && ctx_residency_tier<Ctx>() == Tier::L3Resident;
+template <class Ctx>
+concept IsDRAMBoundCtx  = ::crucible::effects::IsExecCtx<Ctx>
+                       && ctx_residency_tier<Ctx>() == Tier::DRAMBound;
+
+template <class Ctx>
+concept IsNumaIgnoreCtx = ::crucible::effects::IsExecCtx<Ctx>
+                       && ctx_numa_policy<Ctx>() == NumaPolicy::NumaIgnore;
+template <class Ctx>
+concept IsNumaLocalCtx  = ::crucible::effects::IsExecCtx<Ctx>
+                       && ctx_numa_policy<Ctx>() == NumaPolicy::NumaLocal;
+template <class Ctx>
+concept IsNumaSpreadCtx = ::crucible::effects::IsExecCtx<Ctx>
+                       && ctx_numa_policy<Ctx>() == NumaPolicy::NumaSpread;
+
+// ── Parallelism decision from Ctx (one-call ergonomic) ─────────────
+//
+// The composition closure: given a Ctx, get the runtime parallelism
+// decision in one call.  recommend_parallelism is RUNTIME (consults
+// Topology singleton) so this wrapper is `inline`, not consteval —
+// the WorkBudget extraction is consteval, the actual decision is
+// resolved at the first call after Topology is initialized.
+
+template <::crucible::effects::IsExecCtx Ctx>
+[[nodiscard]] inline auto parallelism_decision_for() noexcept {
+    return recommend_parallelism(ctx_workbudget<Ctx>());
+}
+
 // ── Self-test block ─────────────────────────────────────────────────
 namespace detail::exec_ctx_bridge_self_test {
 
@@ -239,6 +284,28 @@ static_assert(ctx_residency_tier<MaxCtx>() == Tier::L1Resident);
 static_assert(ctx_workbudget<MaxCtx>().read_bytes  == 1024 * 1024);
 static_assert(ctx_workbudget<MaxCtx>().write_bytes == 1024 * 1024);
 
+// ── Discrimination concepts ─────────────────────────────────────────
+
+static_assert( IsL1ResidentCtx<eff::HotFgCtx>);
+static_assert(!IsL1ResidentCtx<eff::BgDrainCtx>);
+static_assert( IsL2ResidentCtx<eff::BgDrainCtx>);
+static_assert( IsL2ResidentCtx<eff::BgCompileCtx>);
+static_assert(!IsL2ResidentCtx<eff::HotFgCtx>);
+static_assert( IsDRAMBoundCtx<eff::ColdInitCtx>);
+static_assert( IsDRAMBoundCtx<eff::TestRunnerCtx>);
+static_assert(!IsDRAMBoundCtx<eff::HotFgCtx>);
+
+static_assert( IsNumaLocalCtx<eff::HotFgCtx>);     // Local
+static_assert( IsNumaLocalCtx<eff::BgDrainCtx>);    // Local
+static_assert(!IsNumaLocalCtx<eff::ColdInitCtx>);   // Spread
+static_assert( IsNumaSpreadCtx<eff::ColdInitCtx>);
+static_assert( IsNumaIgnoreCtx<eff::TestRunnerCtx>);
+static_assert(!IsNumaIgnoreCtx<eff::HotFgCtx>);
+
+// Pinned<N> reports as Local at the policy level (the node id is
+// exposed separately via numa_node_of_v).
+static_assert( IsNumaLocalCtx<MaxCtx>);
+
 }  // namespace detail::exec_ctx_bridge_self_test
 
 // ── Runtime smoke test ──────────────────────────────────────────────
@@ -263,6 +330,18 @@ static_assert(ctx_workbudget<MaxCtx>().write_bytes == 1024 * 1024);
     [[maybe_unused]] auto decision = recommend_parallelism(
         ctx_workbudget<eff::BgCompileCtx>());
     static_cast<void>(decision);
+
+    // Same composition via the parallelism_decision_for ergonomic
+    // wrapper — one-call shorthand.
+    [[maybe_unused]] auto bg_decision   = parallelism_decision_for<eff::BgDrainCtx>();
+    [[maybe_unused]] auto cold_decision = parallelism_decision_for<eff::ColdInitCtx>();
+    static_cast<void>(bg_decision);
+    static_cast<void>(cold_decision);
+
+    // Discrimination concepts are usable as runtime gates too — the
+    // result is a constexpr bool, so branches fold at -O3.
+    static_assert(IsL1ResidentCtx<eff::HotFgCtx>);
+    static_assert(IsNumaSpreadCtx<eff::ColdInitCtx>);
 }
 
 }  // namespace crucible::concurrent
