@@ -22,6 +22,7 @@
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/EffectRowLattice.h>
 #include <crucible/effects/Effects.h>
+#include <crucible/effects/ExecCtx.h>
 #include <crucible/effects/FxAliases.h>
 #include <crucible/effects/OsUniverse.h>
 
@@ -76,6 +77,13 @@ void test_computation_graded_compile() {
     // args path.
     ::crucible::effects::runtime_smoke_test_computation_graded();
 }
+void test_exec_ctx_compile() {
+    // ExecCtx<...> universal context carrier: drive the consteval
+    // builder chain through a non-constant args path and confirm the
+    // canonical-alias instances (HotFgCtx / BgDrainCtx / BgCompileCtx
+    // / ColdInitCtx / TestRunnerCtx) are constructible at runtime.
+    ::crucible::effects::runtime_smoke_test_exec_ctx();
+}
 
 }  // namespace
 
@@ -91,6 +99,7 @@ int main() {
     run_test("test_os_universe_compile",   test_os_universe_compile);
     run_test("test_computation_graded_compile",
              test_computation_graded_compile);
+    run_test("test_exec_ctx_compile",      test_exec_ctx_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");
