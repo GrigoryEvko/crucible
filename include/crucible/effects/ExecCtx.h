@@ -682,6 +682,23 @@ template <class Ctx, Effect Cap>
 concept CtxOwnsCapability = IsExecCtx<Ctx>
                          && row_contains_v<row_type_of_t<Ctx>, Cap>;
 
+// CtxCanMint<Ctx, E>: the Cap-source associated with this Ctx is
+// authorized to mint Effect E.  Reduces to membership in the Ctx's
+// cap-permitted row (NOT the Ctx's row — those are different: row
+// is what's claimed in this scope; permitted_row is what could be
+// claimed if needed).  Used by mint_from_ctx in Capability.h.
+//
+// Example: HotFgCtx has cap_type = ctx_cap::Fg whose permitted_row
+// is empty, so CtxCanMint<HotFgCtx, anything> is false.  BgDrainCtx
+// has cap_type = Bg whose permitted_row = {Bg, Alloc, IO, Block},
+// so CtxCanMint<BgDrainCtx, Effect::IO> is true even though IO is
+// NOT in BgDrainCtx::row_type (which is Row<Bg, Alloc>).  The Ctx
+// could promote IO into its row via in_row<>(); CtxCanMint says
+// "the source has authority to do that".
+template <class Ctx, Effect E>
+concept CtxCanMint = IsExecCtx<Ctx>
+                  && row_contains_v<cap_permitted_row_t<cap_type_of_t<Ctx>>, E>;
+
 // ── Wrapper-enum bridges ────────────────────────────────────────────
 //
 // ExecCtx's per-axis tags live in ctx_*::* namespaces; the existing
@@ -1137,6 +1154,24 @@ static_assert( CtxOwnsCapability<BgDrainCtx,    Effect::Alloc>);
 static_assert(!CtxOwnsCapability<BgDrainCtx,    Effect::IO>);
 static_assert( CtxOwnsCapability<BgCompileCtx,  Effect::IO>);
 static_assert(!CtxOwnsCapability<HotFgCtx,      Effect::Bg>);
+
+// CtxCanMint — atom in cap_permitted_row<Ctx::cap_type>.  Distinct
+// from CtxOwnsCapability: this checks the SOURCE'S authority, not
+// what the Ctx currently claims in its row.  BgDrainCtx::row_type
+// is Row<Bg, Alloc> (CURRENT claim), but the Source Bg permits
+// {Bg, Alloc, IO, Block} so CtxCanMint admits all four.
+static_assert( CtxCanMint<BgDrainCtx,   Effect::Alloc>);
+static_assert( CtxCanMint<BgDrainCtx,   Effect::IO>);     // Bg-permitted, not in current row
+static_assert( CtxCanMint<BgDrainCtx,   Effect::Block>);
+static_assert( CtxCanMint<BgDrainCtx,   Effect::Bg>);
+static_assert(!CtxCanMint<BgDrainCtx,   Effect::Init>);   // Bg can't mint Init
+static_assert( CtxCanMint<BgCompileCtx, Effect::Block>);
+static_assert( CtxCanMint<ColdInitCtx,  Effect::Alloc>);
+static_assert( CtxCanMint<ColdInitCtx,  Effect::IO>);
+static_assert(!CtxCanMint<ColdInitCtx,  Effect::Block>); // Init can't mint Block
+static_assert(!CtxCanMint<HotFgCtx,     Effect::Alloc>); // Fg permits nothing
+static_assert(!CtxCanMint<HotFgCtx,     Effect::Bg>);
+static_assert( CtxCanMint<TestRunnerCtx, Effect::Block>);
 
 // ── Wrapper-enum bridges ────────────────────────────────────────────
 

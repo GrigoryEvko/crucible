@@ -190,6 +190,9 @@ concept HasCapAndSource = std::is_same_v<T, Capability<E, S>>;
 // cap_of_v<T>: the Effect atom T was minted for.
 // source_of_t<T>: the Source phantom T was minted from.
 // Both undefined on non-Capability T (hard error — correct).
+//
+// Declared HERE (before ExecCtx-driven minting / CapMatchesCtx)
+// because those downstream consumers reference cap_of_v.
 
 template <class T> struct cap_of;
 template <Effect E, class S>
@@ -200,6 +203,80 @@ template <class T> struct source_of;
 template <Effect E, class S>
 struct source_of<Capability<E, S>> { using type = S; };
 template <class T> using source_of_t = typename source_of<T>::type;
+
+// ── ExecCtx-driven minting ──────────────────────────────────────────
+//
+// mint_from_ctx<E>(Ctx const&) — mint a Capability<E, Source> where
+// Source is automatically extracted from the Ctx's cap_type.  The
+// constraint CtxCanMint<Ctx, E> is the same authorization gate as
+// the bare mint_cap factory; this just saves the caller from spelling
+// `typename Ctx::cap_type{}`.
+//
+// Example:
+//   void worker(Ctx const& ctx)
+//       requires CtxCanMint<Ctx, Effect::Alloc>
+//   {
+//       auto alloc_cap = mint_from_ctx<Effect::Alloc>(ctx);
+//       arena_alloc(std::move(alloc_cap), ...);
+//   }
+
+template <Effect E, IsExecCtx Ctx>
+    requires CtxCanMint<Ctx, E>
+[[nodiscard]] constexpr Capability<E, cap_type_of_t<Ctx>>
+mint_from_ctx(Ctx const&) noexcept {
+    using Source = cap_type_of_t<Ctx>;
+    return mint_cap<E>(Source{});
+}
+
+// ── Cap-Ctx alignment concept ──────────────────────────────────────
+//
+// CapMatchesCtx<Cap, Ctx>: the Effect carried by Cap is in the Ctx's
+// row (i.e., the surrounding scope claims authority for this Effect).
+// Useful as a defensive constraint when a function accepts both a
+// Capability and a Ctx — the cap might have been minted in a
+// different scope, but the current Ctx must still be authorized to
+// "see" it.
+
+template <class Cap, class Ctx>
+concept CapMatchesCtx = IsCapability<Cap>
+                     && IsExecCtx<Ctx>
+                     && row_contains_v<row_type_of_t<Ctx>, cap_of_v<Cap>>;
+
+// ── Bare-cap extraction ────────────────────────────────────────────
+//
+// extract_bare(Capability<E, S>&&) consumes the linear cap and
+// returns the corresponding existing cap::* value-token.  This is
+// the migration bridge: production code that takes effects::Alloc
+// (the bare value-token) by value can be wrapped by callers minting
+// a Capability and consuming it via extract_bare.
+//
+// Only defined for Effect::Alloc / IO / Block — the thread-effect
+// atoms (Bg / Init / Test) have no value-level token.
+//
+// The function is a friend of Capability to access the consume()
+// path, but the move IS the consumption — extract_bare just exposes
+// the bare token after the move.
+
+template <Effect E, class S>
+[[nodiscard]] constexpr cap::Alloc extract_bare(Capability<E, S>&& c) noexcept
+    requires (E == Effect::Alloc) {
+    std::move(c).consume();
+    return cap::Alloc{};
+}
+
+template <Effect E, class S>
+[[nodiscard]] constexpr cap::IO extract_bare(Capability<E, S>&& c) noexcept
+    requires (E == Effect::IO) {
+    std::move(c).consume();
+    return cap::IO{};
+}
+
+template <Effect E, class S>
+[[nodiscard]] constexpr cap::Block extract_bare(Capability<E, S>&& c) noexcept
+    requires (E == Effect::Block) {
+    std::move(c).consume();
+    return cap::Block{};
+}
 
 // ── Self-test block ─────────────────────────────────────────────────
 namespace detail::capability_self_test {
@@ -293,6 +370,24 @@ static_assert( HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::Alloc, Bg>
 static_assert(!HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::Alloc, Init>);  // wrong source
 static_assert(!HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::IO,    Bg>);    // wrong cap
 
+// ── CapMatchesCtx ───────────────────────────────────────────────────
+//
+// Effect of the Cap must be in Ctx's row.  Source-matching is NOT
+// required (caps from different scopes can flow through ctxs that
+// authorize the same effect — caps are universal proofs of effect-
+// authorization, not source-locked).
+
+static_assert( CapMatchesCtx<Capability<Effect::Bg,    Bg>, BgDrainCtx>);    // Bg in Row<Bg, Alloc>
+static_assert( CapMatchesCtx<Capability<Effect::Alloc, Bg>, BgDrainCtx>);    // Alloc in Row<Bg, Alloc>
+static_assert(!CapMatchesCtx<Capability<Effect::IO,    Bg>, BgDrainCtx>);    // IO not in Row<Bg, Alloc>
+static_assert( CapMatchesCtx<Capability<Effect::IO,    Bg>, BgCompileCtx>);  // IO in compile row
+static_assert(!CapMatchesCtx<Capability<Effect::Bg,    Bg>, HotFgCtx>);      // Fg row is empty
+static_assert( CapMatchesCtx<Capability<Effect::Test,  Test>, TestRunnerCtx>);
+
+// Source-mismatch is permitted (caps are not source-locked).
+static_assert( CapMatchesCtx<Capability<Effect::Alloc, Init>, BgDrainCtx>);  // Init-minted cap, Bg-ctx
+static_assert( CapMatchesCtx<Capability<Effect::Alloc, Test>, BgCompileCtx>);
+
 }  // namespace detail::capability_self_test
 
 // ── Runtime smoke test ──────────────────────────────────────────────
@@ -341,6 +436,28 @@ static_assert(!HasCapAndSource<Capability<Effect::Alloc, Bg>, Effect::IO,    Bg>
     static_cast<void>(init_self);
     static_cast<void>(test_alloc);
     static_cast<void>(test_block);
+
+    // ── ExecCtx-driven minting ──────────────────────────────────────
+    BgDrainCtx     bg_ctx;
+    BgCompileCtx   bg_compile_ctx;
+    auto from_ctx_alloc = mint_from_ctx<Effect::Alloc>(bg_ctx);
+    auto from_ctx_io    = mint_from_ctx<Effect::IO>(bg_compile_ctx);
+    static_assert(std::is_same_v<decltype(from_ctx_alloc),
+                                  Capability<Effect::Alloc, Bg>>);
+    static_assert(std::is_same_v<decltype(from_ctx_io),
+                                  Capability<Effect::IO, Bg>>);
+    static_cast<void>(from_ctx_alloc);
+    static_cast<void>(from_ctx_io);
+
+    // ── Bare-cap extraction (migration bridge) ──────────────────────
+    auto a = mint_cap<Effect::Alloc>(bg);
+    [[maybe_unused]] cap::Alloc bare_a = extract_bare(std::move(a));
+
+    auto i = mint_cap<Effect::IO>(bg);
+    [[maybe_unused]] cap::IO bare_i = extract_bare(std::move(i));
+
+    auto b = mint_cap<Effect::Block>(bg);
+    [[maybe_unused]] cap::Block bare_b = extract_bare(std::move(b));
 }
 
 }  // namespace crucible::effects

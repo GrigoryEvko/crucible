@@ -337,6 +337,7 @@ crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
 crucible_test(test_bridges_compile)
 crucible_test(test_effects_compile)
+crucible_test(test_concurrent_compile)
 crucible_test(test_diagnostic_compile)
 crucible_test(test_stable_name_compile)
 crucible_test(test_signature_traits)
@@ -824,6 +825,19 @@ crucible_neg_compile_effects_test(neg_capability_copy_attempt
     "use of deleted function|deleted copy|copy constructor.*deleted")
 crucible_neg_compile_effects_test(neg_capability_default_construct
     "is private within this context|private member|non-public member|is private")
+
+# ─── P1-AUDIT-4 (#855): ExecCtx-driven Capability composition ──────
+#
+# Three fixtures locking the cross-layer composition gates:
+# CtxCanMint rejects Fg-driven minting; CapMatchesCtx rejects caps
+# whose effect isn't in the consumer's row; extract_bare rejects
+# thread-effect atoms (no value-level cap::* analogue).
+crucible_neg_compile_effects_test(neg_capability_mint_from_fg_ctx
+    "associated constraints are not satisfied|CtxCanMint")
+crucible_neg_compile_effects_test(neg_capability_cap_matches_ctx
+    "associated constraints are not satisfied|CapMatchesCtx")
+crucible_neg_compile_effects_test(neg_capability_extract_bare_thread_atom
+    "no matching function for call|constraints not satisfied|extract_bare")
 
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
