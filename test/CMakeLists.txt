@@ -780,6 +780,22 @@ crucible_neg_compile_effects_test(neg_computation_graded_non_row
 crucible_neg_compile_effects_test(neg_computation_impl_private
     "is private within this context|private member|non-public member|is private")
 
+# ─── P1-AUDIT (#852): ExecCtx soundness invariants ─────────────────
+#
+# Five fixtures locking the cap-permitted-row coherence rule, the
+# per-axis concept gates on builder methods, the Heat × Resid
+# cross-axis rule, and the ctx_numa::Pinned<N> non-negative-N guard.
+crucible_neg_compile_effects_test(neg_exec_ctx_with_cap_non_axis
+    "associated constraints are not satisfied|IsCapType")
+crucible_neg_compile_effects_test(neg_exec_ctx_in_row_non_row
+    "associated constraints are not satisfied|IsEffectRow")
+crucible_neg_compile_effects_test(neg_exec_ctx_cap_row_incoherent
+    "static assertion failed|cap_permitted_row|Subrow")
+crucible_neg_compile_effects_test(neg_exec_ctx_heat_resid_incoherent
+    "static assertion failed|heat_resid_coherent|Heat × Resid")
+crucible_neg_compile_effects_test(neg_exec_ctx_pinned_negative_node
+    "static assertion failed|Pinned.*requires N >= 0|Node >= 0")
+
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
 # Each crucible_neg_compile_test below pairs a deliberately-broken
@@ -2539,6 +2555,17 @@ crucible_neg_compile_test(neg_writeoncenonnull_non_pointer
   "WriteOnceNonNull_NonPointer_Type")
 crucible_neg_compile_test(neg_appendonly_over_writeoncenonnull
   "AppendOnly_Over_WriteOnceNonNull_Redundant")
+
+# ─── P1-AUDIT (#852): RefinedAlgebra type-level guards ─────────────
+#
+# DivisibleBy<0>: modulo by zero is UB; the predicate's own
+# static_assert fires at instantiation.  Bounded<Lo, Hi, T> with
+# Lo > Hi: empty range, no value satisfies; the bounded_alias
+# trampoline's static_assert fires.
+crucible_neg_compile_test(neg_refined_algebra_divisible_by_zero
+  "DivisibleBy.*0.*undefined|modulo by zero|Divisor != ")
+crucible_neg_compile_test(neg_refined_algebra_bounded_inverted
+  "Bounded.*range is empty|Lo <= Hi|Lo > Hi")
 
 # SessionResource pin-discipline rejection (task #406, SAFEINT-B17 from
 # misc/24_04_2026_safety_integration.md §17).  make_session_handle

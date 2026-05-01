@@ -191,9 +191,14 @@ inline constexpr BoundedBelow<Min> bounded_below{};
 
 // DivisibleBy<N>: x % N == 0.  Useful for SIMD trip-count gates and
 // alignment-of-count refinements (separate from byte-alignment, which
-// is `aligned<N>`).
+// is `aligned<N>`).  N == 0 is undefined (modulo by zero) — caught
+// at the type level so `divisible_by<0>` fires at instantiation
+// rather than producing UB at runtime.
 template <auto Divisor>
 struct DivisibleBy {
+    static_assert(Divisor != decltype(Divisor){0},
+        "DivisibleBy<0> is undefined (modulo by zero).  Pick a non-"
+        "zero divisor or omit the predicate.");
     constexpr bool operator()(auto x) const noexcept {
         return (x % decltype(x)(Divisor)) == decltype(x){0};
     }
@@ -218,8 +223,24 @@ template <std::size_t N, class S>
 using Sized = Refined<exact_size<N>, S>;
 
 // Bounded<Lo, Hi, T>: T with value in the closed range [Lo, Hi].
+// Lo > Hi is rejected: the range would be empty (no value satisfies),
+// which is always a programming error.  The struct trampoline below
+// fires at alias instantiation rather than failing the contract for
+// every constructed value.
+namespace detail {
+    template <auto Lo, auto Hi, class T>
+    struct bounded_alias {
+        static_assert(Lo <= Hi,
+            "Bounded<Lo, Hi, T>: range is empty (Lo > Hi).  No value "
+            "of T can satisfy this refinement.  Swap the arguments "
+            "or use Capped<Hi, T> / Floored<Lo, T> for single-sided "
+            "bounds.");
+        using type = Refined<in_range<Lo, Hi>, T>;
+    };
+}
+
 template <auto Lo, auto Hi, class T>
-using Bounded = Refined<in_range<Lo, Hi>, T>;
+using Bounded = typename detail::bounded_alias<Lo, Hi, T>::type;
 
 // Capped<Max, T>: T with value ≤ Max.  Single-sided alias of in_range.
 template <auto Max, class T>
@@ -247,6 +268,53 @@ using CacheLineAligned = AlignedTo<64, T*>;
 
 template <class T>
 using HugePageAligned = AlignedTo<2 * 1024 * 1024, T*>;
+
+// ── predicate_implies for combinators ───────────────────────────────
+//
+// AllOf<P1, ..., Pn> implies any single Pi.  This is the conjunction
+// elimination rule: if every Pi holds (the AND), then in particular
+// each Pi holds individually.  Wired through the existing
+// predicate_implies trait from Refined.h so a refined value
+// satisfying a composed predicate participates in is_subsort like
+// its individual conjuncts.
+//
+// AnyOf is the dual: P implies AnyOf<P, ...> (disjunction
+// introduction).  If P holds, then P ∨ Q ∨ ... holds.
+//
+// Reflexivity (X ⇒ X) is NOT installed here for the same reason
+// Refined.h omits it: SessionSubtype.h's std::is_same fall-through
+// already handles reflexivity at the is_subsort level, and
+// duplicating it here invites drift.
+
+namespace detail {
+
+// True iff the type QType is structurally one of the conjunct types.
+// Each Preds<i> is a value (auto NTTP); we strip cv from its decltype
+// to compare against QType, mirroring the pattern in Refined.h's
+// existing predicate_implies specialisations.
+template <class QType, auto... Preds>
+inline constexpr bool conjunct_matches =
+    ((std::is_same_v<std::remove_cv_t<decltype(Preds)>, QType>) || ...);
+
+// Symmetric dual for AnyOf: true iff PType matches one of the
+// disjuncts in the AnyOf.
+template <class PType, auto... Preds>
+inline constexpr bool disjunct_matches =
+    ((std::is_same_v<std::remove_cv_t<decltype(Preds)>, PType>) || ...);
+
+}  // namespace detail
+
+// AllOf<P1, ..., Pn> ⇒ Pi for any i.  Conjunction elimination.
+template <auto... Preds, class QType>
+    requires detail::conjunct_matches<QType, Preds...>
+struct predicate_implies<refined_algebra::AllOf<Preds...>, QType>
+    : std::true_type {};
+
+// P ⇒ AnyOf<..., P, ...>.  Disjunction introduction.
+template <class PType, auto... Preds>
+    requires detail::disjunct_matches<PType, Preds...>
+struct predicate_implies<PType, refined_algebra::AnyOf<Preds...>>
+    : std::true_type {};
 
 // ── Self-test block ─────────────────────────────────────────────────
 //
@@ -362,6 +430,37 @@ using AlignedNonNullPtr = Refined<all_of<non_null, aligned<64>>, void*>;
 
 [[maybe_unused]] constexpr auto _pc1 = PositiveCapped{42, PositiveCapped::Trusted{}};
 [[maybe_unused]] constexpr auto _pc2 = PositiveCapped{1,  PositiveCapped::Trusted{}};
+
+// ── predicate_implies: AllOf / AnyOf wiring ─────────────────────────
+
+// AllOf elimination — every conjunct is implied.
+static_assert(implies_v<all_of<positive, bounded_above<100>>, positive>);
+static_assert(implies_v<all_of<positive, bounded_above<100>>, bounded_above<100>>);
+static_assert(implies_v<all_of<non_null, aligned<64>>, non_null>);
+static_assert(implies_v<all_of<non_null, aligned<64>>, aligned<64>>);
+
+// AnyOf introduction — each disjunct implies the disjunction.
+static_assert(implies_v<positive, any_of<positive, non_zero>>);
+static_assert(implies_v<non_zero, any_of<positive, non_zero>>);
+
+// Non-implication: AllOf does NOT imply a predicate that is not one
+// of its conjuncts.
+static_assert(!implies_v<all_of<positive, bounded_above<100>>, non_null>);
+// AnyOf does NOT imply individual disjuncts (the disjunction does
+// not entail any single branch).
+static_assert(!implies_v<any_of<positive, non_zero>, positive>);
+
+// ── DivisibleBy / Bounded type-level guards ────────────────────────
+//
+// Positive coverage: legitimate divisors compile cleanly, bounds in
+// proper order produce a usable Bounded type.  Negative coverage
+// lives in test/safety_neg/ — instantiating divisible_by<0> or
+// Bounded<10, 5, int> fires at compile time.
+static_assert(divisible_by<1>(0));
+static_assert(divisible_by<8>(64));
+
+[[maybe_unused]] constexpr auto _b_normal = Bounded<0, 100, int>{50};
+[[maybe_unused]] constexpr auto _b_equal  = Bounded<5,   5, int>{5};
 
 // ── Runtime smoke test (per the algebra discipline) ─────────────────
 //
