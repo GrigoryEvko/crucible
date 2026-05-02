@@ -921,6 +921,20 @@ crucible_neg_compile_effects_test(neg_mint_stage_non_pipeline_stage
 crucible_neg_compile_effects_test(neg_mint_stage_non_exec_ctx
     "associated constraints are not satisfied|CtxFitsStage|IsExecCtx")
 
+# Audit round 2 (#864): three additional fixtures hardening Stage's
+# soundness gates beyond the 2-fixture HS14 minimum:
+#   (c) handle-type mismatch via the non-deduced typename binding
+#       — substitution failure, NOT a concept failure
+#   (d) copy attempt — = delete("Stage holds linear Permission tokens
+#       via the consumer/producer handles") fires
+#   (e) .run() on lvalue Stage — && ref-qualifier fires
+crucible_neg_compile_effects_test(neg_mint_stage_handle_type_mismatch
+    "invalid initialization of reference|no matching function for call|cannot convert|cannot bind")
+crucible_neg_compile_effects_test(neg_stage_copy_attempt
+    "use of deleted function|deleted with|holds linear Permission tokens")
+crucible_neg_compile_effects_test(neg_stage_run_on_lvalue
+    "no matching function for call|cannot bind|passing.*as.*'this'|discards qualifiers")
+
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the
 # SessionMint walker handles BSYZ22 crash-stop's Stop the same way
 # as End — vacuously admitted, but the surrounding Send's payload
