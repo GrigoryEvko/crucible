@@ -1516,6 +1516,15 @@ crucible_neg_compile_test(neg_fair_pool_burst_zero
 crucible_neg_compile_test(neg_fair_pool_copy_attempt
   "use of deleted function|deleted|FairSharedPermissionPool")
 
+# mint_crash_watched_session — Universal Mint Pattern (CLAUDE.md §XXI)
+# soundness fixtures (HS14):
+#   * non-handle first argument fails substitution (parameter-type gate).
+#   * missing PeerTag template arg fails resolution (non-deduced ctx).
+crucible_neg_compile_test(neg_mint_crash_watched_session_non_handle
+  "no matching function|could not match|cannot convert")
+crucible_neg_compile_test(neg_mint_crash_watched_session_missing_peer_tag
+  "no matching function|could not (deduce|infer)|missing template argument")
+
 # FOUND-G42 — production-call-site fence: a hot-path consumer
 # requiring AllocClass<Pool> rejects an AllocClass<Heap> source.
 # This is the load-bearing rejection for the no-malloc-on-hot-path

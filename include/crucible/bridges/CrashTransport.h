@@ -698,15 +698,37 @@ public:
 };
 
 // ═════════════════════════════════════════════════════════════════════
-// ── crash_watch — convenience factory ──────────────────────────────
+// ── mint_crash_watched_session<PeerTag> — Universal Mint Pattern ───
 // ═════════════════════════════════════════════════════════════════════
 //
-// Wrap an existing SessionHandle in a CrashWatchedHandle.  PeerTag
-// must be specified explicitly (it's not deducible from the handle's
-// type — the same handle could be watched against different peers).
+// Token mint per CLAUDE.md §XXI — wraps an existing bare SessionHandle
+// in a CrashWatchedHandle bound to the supplied OneShotFlag and the
+// compile-time PeerTag.  Authority derives from holding a
+// SessionHandle: the parameter type IS the gate (only the canonical
+// SessionHandle template specialisation matches; non-handle inputs
+// fail substitution at the parameter binding, not deeper inside the
+// body — a non-deduced-context "no matching function" diagnostic).
+//
+// PeerTag must be specified explicitly — it is NOT deducible from the
+// handle's type because the same handle can be watched against
+// different peers (multi-peer sessions wrap a chain of CrashWatched-
+// Handles, one per peer).
+//
+// Convention compliance (CLAUDE.md §XXI):
+//   * Name follows mint_<noun>: mint_crash_watched_session.
+//   * Signature is a TOKEN MINT (no Ctx parameter); ownership of the
+//     SessionHandle is the proof of authority.
+//   * [[nodiscard]] constexpr noexcept — purely structural wrap.
+//   * Returns the concrete type CrashWatchedHandle<Proto, Resource,
+//     PeerTag, LoopCtx>; never type-erased.
+//   * Discoverable via `grep "mint_crash_watched_session"`.
+//
+// Negative-compile fixtures (HS14):
+//   test/safety_neg/neg_mint_crash_watched_session_non_handle.cpp
+//   test/safety_neg/neg_mint_crash_watched_session_missing_peer_tag.cpp
 
 template <typename PeerTag, typename Proto, typename Resource, typename LoopCtx>
-[[nodiscard]] constexpr auto crash_watch(
+[[nodiscard]] constexpr auto mint_crash_watched_session(
     SessionHandle<Proto, Resource, LoopCtx> handle,
     OneShotFlag& flag) noexcept
 {

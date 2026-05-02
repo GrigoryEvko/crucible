@@ -23,7 +23,8 @@
 //                   extraction preserves the Proto + Resource +
 //                   LoopCtx tuple.
 //                   InitSafe — both wrappers ship via existing
-//                   factories (mint_recording_session, crash_watch).
+//                   factories (mint_recording_session,
+//                   mint_crash_watched_session).
 //                   MemSafe — Endpoint's && consumes the source;
 //                   the resulting bridge wrapper owns the typed view.
 //                   BorrowSafe — single-owner discipline preserved
@@ -125,7 +126,7 @@ template <class PeerTag,
     ::crucible::concurrent::Endpoint<Substr, Dir, Ctx>&& ep,
     ::crucible::safety::OneShotFlag& flag) noexcept
 {
-    return ::crucible::safety::proto::crash_watch<PeerTag>(
+    return ::crucible::safety::proto::mint_crash_watched_session<PeerTag>(
         std::move(ep).into_bare_session(),
         flag);
 }

@@ -73,7 +73,7 @@ int run_happy_path() {
     Channel         ch{&wire, 42};
 
     auto bare    = mint_session_handle<P>(std::move(ch));
-    auto watched = crash_watch<ServerPeer>(std::move(bare), flag);
+    auto watched = mint_crash_watched_session<ServerPeer>(std::move(bare), flag);
 
     // Send 100.
     auto r1 = std::move(watched).send(
@@ -107,7 +107,7 @@ int run_crash_before_send() {
     Channel         ch{&wire, 7};
 
     auto bare    = mint_session_handle<P>(std::move(ch));
-    auto watched = crash_watch<ServerPeer>(std::move(bare), flag);
+    auto watched = mint_crash_watched_session<ServerPeer>(std::move(bare), flag);
 
     // Signal crash BEFORE the send.
     flag.signal();
@@ -134,7 +134,7 @@ int run_crash_mid_protocol() {
     Channel         ch{&wire, 13};
 
     auto bare    = mint_session_handle<P>(std::move(ch));
-    auto watched = crash_watch<ServerPeer>(std::move(bare), flag);
+    auto watched = mint_crash_watched_session<ServerPeer>(std::move(bare), flag);
 
     // First op succeeds (flag not yet signalled).
     auto r1 = std::move(watched).send(
@@ -169,7 +169,7 @@ int run_cross_thread_crash() {
     Channel         ch{&wire, 99};
 
     auto bare    = mint_session_handle<P>(std::move(ch));
-    auto watched = crash_watch<ServerPeer>(std::move(bare), flag);
+    auto watched = mint_crash_watched_session<ServerPeer>(std::move(bare), flag);
 
     std::atomic<bool> ready{false};
     std::jthread producer([&]{
@@ -232,10 +232,10 @@ int run_multi_peer_independent() {
     Channel ch_b{&wire_b, 2};
 
     auto bare_a    = mint_session_handle<P>(std::move(ch_a));
-    auto watched_a = crash_watch<ServerPeer>(std::move(bare_a), flag_server);
+    auto watched_a = mint_crash_watched_session<ServerPeer>(std::move(bare_a), flag_server);
 
     auto bare_b    = mint_session_handle<P>(std::move(ch_b));
-    auto watched_b = crash_watch<OtherPeer>(std::move(bare_b), flag_other);
+    auto watched_b = mint_crash_watched_session<OtherPeer>(std::move(bare_b), flag_other);
 
     // Fire ONLY the ServerPeer flag.
     flag_server.signal();
@@ -285,7 +285,7 @@ int run_worked_example_cntp_pattern() {
         ++attempts;
 
         auto bare = mint_session_handle<RequestReply>(std::move(ch));
-        auto watched = crash_watch<ServerPeer>(std::move(bare), flag);
+        auto watched = mint_crash_watched_session<ServerPeer>(std::move(bare), flag);
 
         // Send request.
         auto r1 = std::move(watched).send(
