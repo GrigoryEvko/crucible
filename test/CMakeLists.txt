@@ -1636,6 +1636,26 @@ crucible_neg_compile_test(neg_borrowed_ref_default_ctor
 crucible_neg_compile_test(neg_borrowed_cross_source
   "no match for|no matching function|cannot convert|no known conversion")
 
+# safety::FixedArray<T, N> structural-wrapper — HS14 fixtures (#1081):
+#   * neg_fixed_array_zero_sized        FixedArray<T, 0> must fail
+#                                       (the (N > 0) concept gate
+#                                       guarantees front()/back() are
+#                                       always valid AND the index_type
+#                                       Refined<bounded_above<N-1>>
+#                                       is well-defined for N >= 1).
+#   * neg_fixed_array_in_place_wrong_arity   FixedArray<int, 8>(in_place,
+#                                       3 args) must fail (the
+#                                       requires(sizeof...(Args) == N)
+#                                       gate prevents partially-filled
+#                                       arrays slipping through with
+#                                       uninitialized tail — defeats
+#                                       the NSDMI default-zero
+#                                       guarantee).
+crucible_neg_compile_test(neg_fixed_array_zero_sized
+  "constraints not satisfied|associated constraints|no matching|no type named")
+crucible_neg_compile_test(neg_fixed_array_in_place_wrong_arity
+  "no matching function|constraints not satisfied|associated constraints|cannot convert")
+
 # FairSharedPermissionPool fairness wrapper — audit fixtures (#861-followup):
 #   * BurstLimit=0 fires the static_assert ("must be > 0").
 #   * Copying the Pinned wrapper fires the deleted-copy diagnostic.

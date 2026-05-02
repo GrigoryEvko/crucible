@@ -164,6 +164,7 @@
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/ConstantTime.h>
 #include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/FixedArray.h>
 #include <crucible/safety/NumaPlacement.h>
 #include <crucible/safety/RecipeSpec.h>
 #include <crucible/safety/Consistency.h>
