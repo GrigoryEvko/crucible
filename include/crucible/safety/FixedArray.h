@@ -542,6 +542,55 @@ static_assert(!can_in_place_construct<FA8,
 // Wrapper-kind diagnostic.
 static_assert(FA8::wrapper_kind() == "structural::FixedArray");
 
+// ── N=1 boundary case (audit r2) ───────────────────────────────────
+//
+// Smallest valid FixedArray.  index_type is Refined<bounded_above<0>,
+// size_t> — only index 0 is admissible.  Verifies front()/back() both
+// resolve to the same element and the in-place ctor with exactly one
+// argument satisfies the (sizeof...(Args) == N) gate when N=1.
+using FA1 = FixedArray<int, 1>;
+static_assert(sizeof(FA1) == sizeof(int));
+static_assert(FA1::capacity == 1);
+
+[[nodiscard]] consteval bool n_one_boundary() noexcept {
+    FA1 a{};                                       // NSDMI zero-init
+    if (a[0] != 0) return false;
+    if (a.front() != a.back()) return false;       // both alias data_[0]
+
+    FA1 b{std::in_place, 42};                      // exactly-1-arg in_place
+    if (b[0] != 42) return false;
+    if (b.front() != 42 || b.back() != 42) return false;
+    if (b.size() != 1 || b.empty()) return false;
+
+    // Refined-typed at(0) is valid; bounded_above<0> means x <= 0.
+    using Idx = FA1::index_type;
+    Idx i0{std::size_t{0}};
+    if (b.at(i0) != 42) return false;
+
+    // Compile-time-bounded at<0>() also valid.
+    if (b.at<0>() != 42) return false;
+
+    // fill_with on N=1.
+    auto c = FA1::fill_with(7);
+    if (c.front() != 7) return false;
+
+    // operator== between two FA1.
+    FA1 eq_a{std::in_place, 5};
+    FA1 eq_b{std::in_place, 5};
+    if (!(eq_a == eq_b)) return false;
+    return true;
+}
+static_assert(n_one_boundary());
+
+// at<I>() compile-time rejection on N=1 — only at<0>() is valid.
+template <class FA, std::size_t I>
+concept can_compile_at_n1 = requires(FA a) { { a.template at<I>() }; };
+static_assert( can_compile_at_n1<FA1, 0>);
+static_assert(!can_compile_at_n1<FA1, 1>,
+    "at<1>() on FA1 (N=1, valid index 0 only) MUST be ill-formed.  "
+    "If this fires, the (I < N) requires-clause has regressed for "
+    "the boundary case N=1 — the smallest valid wrapper.");
+
 // FixedArray DEFAULT ctor is INVOKABLE without args (load-bearing —
 // NSDMI is the differentiator vs std::array's aggregate-init semantics).
 static_assert(std::is_default_constructible_v<FA8>);

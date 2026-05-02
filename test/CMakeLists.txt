@@ -1651,10 +1651,21 @@ crucible_neg_compile_test(neg_borrowed_cross_source
 #                                       uninitialized tail — defeats
 #                                       the NSDMI default-zero
 #                                       guarantee).
+#   * neg_fixed_array_at_template_oob   FixedArray<int, 8>::at<99>()
+#                                       must fail at TU-scope (the
+#                                       template's (I < N) requires-
+#                                       clause makes compile-time-known
+#                                       OOB access ill-formed — distinct
+#                                       from the in-self-test
+#                                       can_compile_at concept which
+#                                       only exercises the gate inside
+#                                       a single consteval evaluation).
 crucible_neg_compile_test(neg_fixed_array_zero_sized
   "constraints not satisfied|associated constraints|no matching|no type named")
 crucible_neg_compile_test(neg_fixed_array_in_place_wrong_arity
   "no matching function|constraints not satisfied|associated constraints|cannot convert")
+crucible_neg_compile_test(neg_fixed_array_at_template_oob
+  "no matching function|constraints not satisfied|associated constraints")
 
 # FairSharedPermissionPool fairness wrapper — audit fixtures (#861-followup):
 #   * BurstLimit=0 fires the static_assert ("must be > 0").
