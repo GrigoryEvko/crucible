@@ -12,8 +12,8 @@
 // This is the canonical session-side instance of the universal mint
 // pattern shipped across Tier 1: `mint_X(ctx, args...) → X`
 // constrained on `CtxFitsX<X, Ctx>`.  Symmetric to
-// effects::mint_cap, effects::mint_from_ctx, and the upcoming
-// concurrent::mint_endpoint / stages::mint_stage / mint_pipeline.
+// effects::mint_cap, effects::mint_from_ctx, concurrent::mint_endpoint,
+// concurrent::mint_stage, and concurrent::mint_pipeline.
 //
 //   Axiom coverage: TypeSafe — proto_row_admitted_by walks the tree
 //                   at template-instantiation; mismatches surface
