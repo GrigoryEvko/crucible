@@ -2685,6 +2685,17 @@ crucible_neg_compile_test(neg_refined_algebra_divisible_by_zero
 crucible_neg_compile_test(neg_refined_algebra_bounded_inverted
   "Bounded.*range is empty|Lo <= Hi|Lo > Hi")
 
+# PROD-WRAP-8 (#537): Graph::num_nodes_ migrated to safety::Monotonic
+# <uint32_t>.  These two fixtures pin the discipline-load-bearing
+# absences on the Monotonic wrapper itself: the field cannot be
+# silently subverted by raw assignment, and it cannot be silently
+# read via implicit conversion.  Future refactors that re-add either
+# escape hatch break these tests, surfacing the policy regression.
+crucible_neg_compile_test(neg_monotonic_assign_from_raw
+  "no match for|no known conversion")
+crucible_neg_compile_test(neg_monotonic_implicit_to_raw
+  "cannot convert|invalid conversion|no viable conversion")
+
 # SessionResource pin-discipline rejection (task #406, SAFEINT-B17 from
 # misc/24_04_2026_safety_integration.md §17).  make_session_handle
 # called with Resource = lvalue reference to a NON-Pinned object must

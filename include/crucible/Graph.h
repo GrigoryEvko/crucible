@@ -385,7 +385,8 @@ class CRUCIBLE_OWNER Graph {
   [[gnu::cold]] explicit Graph(effects::Alloc a, ExprPool* pool, SymbolTable* tab = nullptr)
       : pool_(pool), tab_(tab),
         nodes_(nullptr), input_slots_(nullptr), output_slots_(nullptr),
-        num_nodes_(0), capacity_(0),
+        // num_nodes_ default-initialized by NSDMI to Monotonic<uint32_t>{0}.
+        capacity_(0),
         input_ids_(nullptr), num_inputs_(0),
         output_ids_(nullptr), num_outputs_(0) {
     grow_(a, 1024);
@@ -539,7 +540,7 @@ class CRUCIBLE_OWNER Graph {
   // during hot graph traversals like DCE or topological sort).
 
   void set_input_slots(effects::Alloc a, NodeId node_id, std::span<const SlotId> slots)
-      pre (node_id.raw() < num_nodes_)
+      pre (node_id.raw() < num_nodes_.get())
   {
     if (slots.empty()) { input_slots_[node_id.raw()] = nullptr; return; }
     input_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(a, slots.size());
@@ -547,7 +548,7 @@ class CRUCIBLE_OWNER Graph {
   }
 
   void set_output_slots(effects::Alloc a, NodeId node_id, std::span<const SlotId> slots)
-      pre (node_id.raw() < num_nodes_)
+      pre (node_id.raw() < num_nodes_.get())
   {
     if (slots.empty()) { output_slots_[node_id.raw()] = nullptr; return; }
     output_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(a, slots.size());
@@ -555,13 +556,13 @@ class CRUCIBLE_OWNER Graph {
   }
 
   [[nodiscard]] const SlotId* input_slots(NodeId node_id) const CRUCIBLE_LIFETIMEBOUND
-      pre (node_id.raw() < num_nodes_)
+      pre (node_id.raw() < num_nodes_.get())
   {
     return input_slots_[node_id.raw()];
   }
 
   [[nodiscard]] const SlotId* output_slots(NodeId node_id) const CRUCIBLE_LIFETIMEBOUND
-      pre (node_id.raw() < num_nodes_)
+      pre (node_id.raw() < num_nodes_.get())
   {
     return output_slots_[node_id.raw()];
   }
@@ -574,7 +575,8 @@ class CRUCIBLE_OWNER Graph {
   void replace_all_uses(GraphNode* old_node, GraphNode* new_node) {
     if (old_node == new_node)
       return;
-    for (uint32_t i = 0; i < num_nodes_; ++i) {
+    const uint32_t n_nodes = num_nodes_.get();
+    for (uint32_t i = 0; i < n_nodes; ++i) {
       GraphNode* n = nodes_[i];
       if (n->flags & NodeFlags::DEAD)
         continue;
@@ -605,7 +607,7 @@ class CRUCIBLE_OWNER Graph {
     bool changed = true;
     while (changed) {
       changed = false;
-      for (uint32_t i = num_nodes_; i-- > 0;) {
+      for (uint32_t i = num_nodes_.get(); i-- > 0;) {
         GraphNode* current_node = nodes_[i];
         if (current_node->flags & NodeFlags::DEAD)
           continue;
@@ -623,14 +625,15 @@ class CRUCIBLE_OWNER Graph {
   // each live node. O(V + E) using a flat successor array built
   // from the nodes' inputs lists.
   void topological_sort(effects::Alloc a) {
-    auto* in_deg = arena_.alloc_array<uint32_t>(a, num_nodes_);
-    auto* succ_cnt = arena_.alloc_array<uint32_t>(a, num_nodes_);
-    std::memset(in_deg, 0, num_nodes_ * sizeof(uint32_t));
-    std::memset(succ_cnt, 0, num_nodes_ * sizeof(uint32_t));
+    const uint32_t n_nodes = num_nodes_.get();
+    auto* in_deg = arena_.alloc_array<uint32_t>(a, n_nodes);
+    auto* succ_cnt = arena_.alloc_array<uint32_t>(a, n_nodes);
+    std::memset(in_deg, 0, n_nodes * sizeof(uint32_t));
+    std::memset(succ_cnt, 0, n_nodes * sizeof(uint32_t));
 
     // Count edges and compute in-degree
     uint32_t total_edges = 0;
-    for (uint32_t i = 0; i < num_nodes_; ++i) {
+    for (uint32_t i = 0; i < n_nodes; ++i) {
       GraphNode* current_node = nodes_[i];
       if (current_node->flags & NodeFlags::DEAD)
         continue;
@@ -645,15 +648,15 @@ class CRUCIBLE_OWNER Graph {
     }
 
     // Build flat successor array via prefix-sum offsets
-    auto* offset = arena_.alloc_array<uint32_t>(a, num_nodes_ + 1);
+    auto* offset = arena_.alloc_array<uint32_t>(a, n_nodes + 1);
     offset[0] = 0;
-    for (uint32_t i = 0; i < num_nodes_; ++i)
+    for (uint32_t i = 0; i < n_nodes; ++i)
       offset[i + 1] = offset[i] + succ_cnt[i];
 
     auto* succs =
         arena_.alloc_array<uint32_t>(a, total_edges > 0 ? total_edges : 1);
-    std::memset(succ_cnt, 0, num_nodes_ * sizeof(uint32_t));
-    for (uint32_t i = 0; i < num_nodes_; ++i) {
+    std::memset(succ_cnt, 0, n_nodes * sizeof(uint32_t));
+    for (uint32_t i = 0; i < n_nodes; ++i) {
       GraphNode* current_node = nodes_[i];
       if (current_node->flags & NodeFlags::DEAD)
         continue;
@@ -665,9 +668,9 @@ class CRUCIBLE_OWNER Graph {
     }
 
     // BFS from zero in-degree nodes
-    auto* queue = arena_.alloc_array<uint32_t>(a, num_nodes_);
+    auto* queue = arena_.alloc_array<uint32_t>(a, n_nodes);
     uint32_t head = 0, tail = 0;
-    for (uint32_t i = 0; i < num_nodes_; ++i) {
+    for (uint32_t i = 0; i < n_nodes; ++i) {
       if (!(nodes_[i]->flags & NodeFlags::DEAD) && in_deg[i] == 0)
         queue[tail++] = i;
     }
@@ -698,19 +701,21 @@ class CRUCIBLE_OWNER Graph {
   [[nodiscard]] uint32_t eliminate_common_subexpressions(effects::Alloc a) {
     topological_sort(a);
 
+    const uint32_t n_nodes = num_nodes_.get();
+
     // Canonical map: node_id → canonical representative.
     // Initially identity. Updated when a duplicate is found.
-    auto* canonical_representative = arena_.alloc_array<GraphNode*>(a, num_nodes_);
-    for (uint32_t i = 0; i < num_nodes_; ++i)
+    auto* canonical_representative = arena_.alloc_array<GraphNode*>(a, n_nodes);
+    for (uint32_t i = 0; i < n_nodes; ++i)
       canonical_representative[i] = nodes_[i];
 
     // Build processing order: O(n) scatter via schedule_order
     // (schedule_order is 0..num_live_nodes-1 from topological_sort)
     uint32_t num_live_nodes = 0;
-    for (uint32_t i = 0; i < num_nodes_; ++i)
+    for (uint32_t i = 0; i < n_nodes; ++i)
       if (!(nodes_[i]->flags & NodeFlags::DEAD)) ++num_live_nodes;
     auto* topological_order = arena_.alloc_array<GraphNode*>(a, num_live_nodes > 0 ? num_live_nodes : 1);
-    for (uint32_t i = 0; i < num_nodes_; ++i) {
+    for (uint32_t i = 0; i < n_nodes; ++i) {
       if (!(nodes_[i]->flags & NodeFlags::DEAD))
         topological_order[nodes_[i]->schedule_order] = nodes_[i];
     }
@@ -749,7 +754,7 @@ class CRUCIBLE_OWNER Graph {
 
     if (eliminated_count > 0) {
       // Single O(V × avg_inputs) rewrite pass
-      for (uint32_t i = 0; i < num_nodes_; ++i) {
+      for (uint32_t i = 0; i < n_nodes; ++i) {
         GraphNode* current_node = nodes_[i];
         if (current_node->flags & NodeFlags::DEAD) continue;
         for (uint16_t j = 0; j < current_node->num_inputs; ++j)
@@ -789,18 +794,20 @@ class CRUCIBLE_OWNER Graph {
   [[nodiscard]] uint32_t compute_fusion_groups(effects::Alloc a) {
     topological_sort(a);
 
+    const uint32_t n_nodes = num_nodes_.get();
+
     // Build ordered list via O(n) scatter
     uint32_t num_live_nodes = 0;
-    for (uint32_t i = 0; i < num_nodes_; ++i)
+    for (uint32_t i = 0; i < n_nodes; ++i)
       if (!(nodes_[i]->flags & NodeFlags::DEAD)) ++num_live_nodes;
     auto* topological_order = arena_.alloc_array<GraphNode*>(a, num_live_nodes > 0 ? num_live_nodes : 1);
-    for (uint32_t i = 0; i < num_nodes_; ++i) {
+    for (uint32_t i = 0; i < n_nodes; ++i) {
       if (!(nodes_[i]->flags & NodeFlags::DEAD))
         topological_order[nodes_[i]->schedule_order] = nodes_[i];
     }
 
     // Reset all group IDs
-    for (uint32_t i = 0; i < num_nodes_; ++i) {
+    for (uint32_t i = 0; i < n_nodes; ++i) {
       nodes_[i]->fused_group_id = 0;
       nodes_[i]->group_hash = 0;
     }
@@ -852,7 +859,8 @@ class CRUCIBLE_OWNER Graph {
   // Count nodes in a specific fusion group
   [[nodiscard, gnu::pure]] uint32_t group_size(uint32_t group_id) const noexcept {
     uint32_t match_count = 0;
-    for (uint32_t i = 0; i < num_nodes_; ++i)
+    const uint32_t n_nodes = num_nodes_.get();
+    for (uint32_t i = 0; i < n_nodes; ++i)
       if (nodes_[i]->fused_group_id == group_id) ++match_count;
     return match_count;
   }
@@ -861,13 +869,15 @@ class CRUCIBLE_OWNER Graph {
   void clear_visited() {
     constexpr auto CLEAR_VISITED =
         static_cast<uint8_t>(~NodeFlags::VISITED);
-    for (uint32_t i = 0; i < num_nodes_; ++i)
+    const uint32_t n_nodes = num_nodes_.get();
+    for (uint32_t i = 0; i < n_nodes; ++i)
       nodes_[i]->flags &= CLEAR_VISITED;
   }
 
   [[nodiscard, gnu::pure]] uint32_t count_live() const noexcept {
     uint32_t live_count = 0;
-    for (uint32_t i = 0; i < num_nodes_; ++i) {
+    const uint32_t n_nodes = num_nodes_.get();
+    for (uint32_t i = 0; i < n_nodes; ++i) {
       if (!(nodes_[i]->flags & NodeFlags::DEAD))
         ++live_count;
     }
@@ -877,20 +887,20 @@ class CRUCIBLE_OWNER Graph {
   // ── Accessors ──────────────────────────────────────────────────
 
   [[nodiscard, gnu::pure]] GraphNode* node(NodeId id) const noexcept CRUCIBLE_LIFETIMEBOUND
-      pre (id.raw() < num_nodes_)
+      pre (id.raw() < num_nodes_.get())
   {
-    [[assume(id.raw() < num_nodes_)]];
+    [[assume(id.raw() < num_nodes_.get())]];
     return nodes_[id.raw()];
   }
 
   [[nodiscard, gnu::pure]] GraphNode* node(uint32_t id) const noexcept CRUCIBLE_LIFETIMEBOUND
-      pre (id < num_nodes_)
+      pre (id < num_nodes_.get())
   {
-    [[assume(id < num_nodes_)]];
+    [[assume(id < num_nodes_.get())]];
     return nodes_[id];
   }
 
-  [[nodiscard, gnu::pure]] uint32_t num_nodes() const noexcept { return num_nodes_; }
+  [[nodiscard, gnu::pure]] uint32_t num_nodes() const noexcept { return num_nodes_.get(); }
   [[nodiscard, gnu::pure]] uint32_t num_graph_inputs() const noexcept { return num_inputs_; }
   [[nodiscard, gnu::pure]] uint32_t num_graph_outputs() const noexcept { return num_outputs_; }
   [[nodiscard, gnu::pure]] const NodeId* graph_input_ids() const noexcept CRUCIBLE_LIFETIMEBOUND { return input_ids_; }
@@ -903,11 +913,12 @@ class CRUCIBLE_OWNER Graph {
  private:
   // Allocate a zeroed, 64-byte-aligned GraphNode
   GraphNode* alloc_node_(effects::Alloc a) {
-    if (num_nodes_ >= capacity_)
+    if (num_nodes_.get() >= capacity_)
       grow_(a, capacity_ * 2);
     auto* n = ::new (arena_.alloc_obj<GraphNode>(a)) GraphNode{};
-    n->id = NodeId{num_nodes_};
-    nodes_[num_nodes_++] = n;
+    n->id = NodeId{num_nodes_.get()};
+    nodes_[num_nodes_.get()] = n;
+    num_nodes_.bump();   // contract catches wraparound at uint32_t::max
     return n;
   }
 
@@ -915,14 +926,15 @@ class CRUCIBLE_OWNER Graph {
     auto** buf = arena_.alloc_array<GraphNode*>(a, new_cap);
     auto** is_buf = arena_.alloc_array<SlotId*>(a, new_cap);
     auto** os_buf = arena_.alloc_array<SlotId*>(a, new_cap);
+    const uint32_t n_nodes = num_nodes_.get();
     if (nodes_) {
-      std::memcpy(buf, nodes_, num_nodes_ * sizeof(GraphNode*));
-      std::memcpy(is_buf, input_slots_, num_nodes_ * sizeof(SlotId*));
-      std::memcpy(os_buf, output_slots_, num_nodes_ * sizeof(SlotId*));
+      std::memcpy(buf, nodes_, n_nodes * sizeof(GraphNode*));
+      std::memcpy(is_buf, input_slots_, n_nodes * sizeof(SlotId*));
+      std::memcpy(os_buf, output_slots_, n_nodes * sizeof(SlotId*));
     }
     // Zero-fill new entries so unset slots read as nullptr.
-    std::memset(is_buf + num_nodes_, 0, (new_cap - num_nodes_) * sizeof(SlotId*));
-    std::memset(os_buf + num_nodes_, 0, (new_cap - num_nodes_) * sizeof(SlotId*));
+    std::memset(is_buf + n_nodes, 0, (new_cap - n_nodes) * sizeof(SlotId*));
+    std::memset(os_buf + n_nodes, 0, (new_cap - n_nodes) * sizeof(SlotId*));
     nodes_ = buf;
     input_slots_ = is_buf;
     output_slots_ = os_buf;
@@ -1134,10 +1146,11 @@ class CRUCIBLE_OWNER Graph {
 
   // Recompute all use counts from scratch (handles stale counts)
   void recompute_uses_() {
-    for (uint32_t i = 0; i < num_nodes_; ++i)
+    const uint32_t n_nodes = num_nodes_.get();
+    for (uint32_t i = 0; i < n_nodes; ++i)
       nodes_[i]->num_uses = 0;
 
-    for (uint32_t i = 0; i < num_nodes_; ++i) {
+    for (uint32_t i = 0; i < n_nodes; ++i) {
       GraphNode* current_node = nodes_[i];
       if (current_node->flags & NodeFlags::DEAD)
         continue;
@@ -1158,7 +1171,14 @@ class CRUCIBLE_OWNER Graph {
   GraphNode** nodes_;
   SlotId** input_slots_;   // [node_id] → per-node input slot ID array (or nullptr)
   SlotId** output_slots_;  // [node_id] → per-node output slot ID array (or nullptr)
-  uint32_t num_nodes_;
+  // num_nodes_ is monotonic-by-increment: alloc_node_ is the only mutator
+  // (calls .bump() once per allocation; never decreases or resets).  The
+  // Monotonic wrapper makes the discipline explicit at the type level —
+  // any future code that tries to assign or decrement the counter fails
+  // to compile.  Bonus: bump()'s contract catches uint32_t wraparound.
+  // sizeof(Monotonic<uint32_t>) == sizeof(uint32_t) per Mutation.h
+  // static_assert; layout-preserving.
+  safety::Monotonic<uint32_t> num_nodes_{0};
   uint32_t capacity_;
 
   NodeId* input_ids_;
