@@ -1667,6 +1667,23 @@ crucible_neg_compile_test(neg_fixed_array_in_place_wrong_arity
 crucible_neg_compile_test(neg_fixed_array_at_template_oob
   "no matching function|constraints not satisfied|associated constraints")
 
+# safety::Saturated<T> structural-wrapper — HS14 fixtures (#1084 piece):
+#   * neg_saturated_non_arithmetic   Saturated<MyStruct> must fail
+#                                    (the std::is_arithmetic_v<T>
+#                                    requires-clause prevents non-
+#                                    arithmetic instantiations where
+#                                    saturating arithmetic + clamped
+#                                    semantics are meaningless).
+#   * neg_saturated_implicit_to_t    `unsigned long x = sat;` must
+#                                    fail (the operator T() is
+#                                    explicit — prevents accidentally
+#                                    dropping the was_clamped() signal
+#                                    through implicit conversion).
+crucible_neg_compile_test(neg_saturated_non_arithmetic
+  "constraints not satisfied|associated constraints|no matching|no type named")
+crucible_neg_compile_test(neg_saturated_implicit_to_t
+  "cannot convert|no matching function|conversion from|invalid conversion")
+
 # FairSharedPermissionPool fairness wrapper — audit fixtures (#861-followup):
 #   * BurstLimit=0 fires the static_assert ("must be > 0").
 #   * Copying the Pinned wrapper fires the deleted-copy diagnostic.

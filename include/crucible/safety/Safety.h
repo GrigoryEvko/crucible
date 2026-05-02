@@ -190,6 +190,7 @@
 #include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Secret.h>
 #include <crucible/safety/Simd.h>
+#include <crucible/safety/Saturated.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/TimeOrdered.h>
