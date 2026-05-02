@@ -951,6 +951,19 @@ crucible_neg_compile_effects_test(neg_mint_pipeline_non_stage
 crucible_neg_compile_effects_test(neg_mint_pipeline_non_exec_ctx
     "associated constraints are not satisfied|CtxFitsPipeline|IsExecCtx")
 
+# Pipeline.h audit round 2 (#866): three additional fixtures hardening
+# Pipeline's soundness gates beyond the 3-fixture concept-gate set:
+#   (d) copy attempt — = delete("Pipeline holds move-only Stages, ...")
+#       fires
+#   (e) .run() on lvalue Pipeline — && ref-qualifier fires
+#   (f) empty stages pack — pipeline_chain rejects sizeof...(Stages) == 0
+crucible_neg_compile_effects_test(neg_pipeline_copy_attempt
+    "use of deleted function|deleted with|holds move-only Stages")
+crucible_neg_compile_effects_test(neg_pipeline_run_on_lvalue
+    "no matching function for call|cannot bind|passing.*as.*'this'|discards qualifiers")
+crucible_neg_compile_effects_test(neg_mint_pipeline_empty_pack
+    "associated constraints are not satisfied|CtxFitsPipeline|pipeline_chain")
+
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the
 # SessionMint walker handles BSYZ22 crash-stop's Stop the same way
 # as End — vacuously admitted, but the surrounding Send's payload
