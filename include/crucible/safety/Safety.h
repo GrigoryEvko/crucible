@@ -156,6 +156,9 @@
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/Bits.h>
 #include <crucible/safety/Borrowed.h>
+#include <crucible/safety/IsBits.h>
+#include <crucible/safety/IsBorrowed.h>
+#include <crucible/safety/IsBorrowedRef.h>
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/Checked.h>
 #include <crucible/safety/CipherTier.h>
