@@ -1611,6 +1611,22 @@ crucible_neg_compile_test(neg_bits_int_ctor
 crucible_neg_compile_test(neg_bits_cross_enum
   "no match for|no matching function|cannot convert|invalid operands")
 
+# safety::Borrowed / BorrowedRef structural-wrappers — HS14 fixtures (#1080):
+#   * neg_borrowed_ref_default_ctor  BorrowedRef<T>{} default ctor must
+#                                    fail (deleted to forbid the null
+#                                    sentinel state — every dereference
+#                                    assumes the pointer is bound).
+#   * neg_borrowed_cross_source      Borrowed<T, A> = Borrowed<T, B>
+#                                    cross-source assignment must fail
+#                                    (Source phantom distinguishes the
+#                                    instantiations; load-bearing for
+#                                    "char* from ExprPool" vs "char*
+#                                    from SchemaTable" confusion).
+crucible_neg_compile_test(neg_borrowed_ref_default_ctor
+  "use of deleted function|deleted|default constructor|no matching")
+crucible_neg_compile_test(neg_borrowed_cross_source
+  "no match for|no matching function|cannot convert|no known conversion")
+
 # FairSharedPermissionPool fairness wrapper — audit fixtures (#861-followup):
 #   * BurstLimit=0 fires the static_assert ("must be > 0").
 #   * Copying the Pinned wrapper fires the deleted-copy diagnostic.
