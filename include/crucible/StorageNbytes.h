@@ -76,6 +76,7 @@
 #include <crucible/Platform.h>
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
+#include <crucible/safety/FixedArray.h>
 #include <crucible/safety/Simd.h>
 
 #include <cstdint>
@@ -255,9 +256,21 @@ uint64_t compute_storage_nbytes_simd(const TensorMeta& meta) noexcept {
   extents = std::simd::select(valid_mask, extents, i64x8(0));
 
   // Spill to stack for the scalar fold.
-  alignas(64) int64_t extents_buf[8];
+  // FixedArray<int64_t, 8> (#1019 production migration of #1081):
+  //   - Carries alignas(64) propagation as a member-level alignment
+  //     (the wrapping `alignas(64)` aligns the entire FixedArray
+  //     struct to 64, which means data_[0] sits at offset 0 = 64B
+  //     aligned — matching the SIMD-aligned discipline the bare
+  //     C array used to enforce structurally).
+  //   - NSDMI zero-init replaces the bare-array uninit-before-store
+  //     window (the std::simd::unchecked_store overwrites all 8
+  //     lanes immediately, so this is defense-in-depth, not a
+  //     correctness fix).
+  //   - .data() returns int64_t* — drop-in replacement for the
+  //     bare-array pointer the SIMD store and operator[] expect.
+  alignas(64) safety::FixedArray<int64_t, 8> extents_buf{};
   std::simd::unchecked_store(
-      extents, extents_buf, i64x8::size(), std::simd::flag_aligned);
+      extents, extents_buf.data(), i64x8::size(), std::simd::flag_aligned);
 
   // Scalar fold: per-lane sign-based dispatch into max_offset /
   // min_offset, with __builtin_add_overflow check.  Multiplication

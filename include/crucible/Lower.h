@@ -16,6 +16,7 @@
 #include <crucible/ExprPool.h>
 #include <crucible/Graph.h>
 #include <crucible/TraceGraph.h>
+#include <crucible/safety/FixedArray.h>
 
 #include <cstring>
 
@@ -68,13 +69,17 @@ inline void lower_trace_to_graph(
       if (extern_map[sid.raw()]) continue; // already created
 
       // Create INPUT node with symbolic sizes from the TensorMeta.
+      // FixedArray<const Expr*, 8> (#932 production migration of #1081):
+      // NSDMI zero-init replaces the bare-array uninit-before-store window
+      // (the loop fills [0, ndim) and the std::span limits consumers to
+      // the populated prefix, so this is defense-in-depth, not correctness).
       const TensorMeta& m = te.input_metas[j];
-      const Expr* sizes[8];
+      safety::FixedArray<const Expr*, 8> sizes{};
       const uint8_t ndim = (m.ndim <= 8) ? m.ndim : 8;
       for (uint8_t d = 0; d < ndim; d++)
         sizes[d] = pool.integer(a, m.sizes[d]);
 
-      auto* inp = graph.add_input(a, m.dtype, m.device_idx, std::span{sizes, ndim});
+      auto* inp = graph.add_input(a, m.dtype, m.device_idx, std::span{sizes.data(), ndim});
       graph.set_output_slots(a, inp->id, std::span{&sid, 1u});
       extern_map[sid.raw()] = inp;
     }
@@ -89,10 +94,13 @@ inline void lower_trace_to_graph(
     const NodeKind kind = classify_node_kind(te.kernel_id);
 
     // Output metadata from primary output tensor.
+    // FixedArray<const Expr*, 8> (#932 production migration of #1081):
+    // NSDMI default-init matches the prior `= {}` zero-init AND carries
+    // the type identity through to the std::span consumers below.
     uint8_t ndim = 0;
     ScalarType dtype = ScalarType::Undefined;
     int8_t dev = -1;
-    const Expr* sizes[8] = {};
+    safety::FixedArray<const Expr*, 8> sizes{};
 
     if (te.num_outputs > 0 && te.output_metas) {
       const TensorMeta& m = te.output_metas[0];
@@ -148,7 +156,7 @@ inline void lower_trace_to_graph(
     if (kind == NodeKind::POINTWISE) {
       node = graph.add_pointwise(
           a,
-          std::span{sizes, ndim}, dtype, dev,
+          std::span{sizes.data(), ndim}, dtype, dev,
           nullptr,
           std::span{deps, real_count});
     } else {
@@ -159,7 +167,7 @@ inline void lower_trace_to_graph(
           ckernel_name(te.kernel_id),
           ckernel_name(te.kernel_id),
           dtype, dev,
-          std::span{sizes, ndim},
+          std::span{sizes.data(), ndim},
           std::span{deps, real_count});
       node->kind = kind;
     }
