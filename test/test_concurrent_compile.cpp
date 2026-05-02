@@ -14,9 +14,11 @@
 // their includes + run_test invocations here.
 // ═══════════════════════════════════════════════════════════════════
 
+#include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/ExecCtxBridge.h>
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/SubstrateCtxFit.h>
+#include <crucible/concurrent/SubstrateSessionBridge.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -60,14 +62,27 @@ void test_substrate_ctx_fit_compile() {
     // (Substrate, Ctx) pairs.
     ::crucible::concurrent::runtime_smoke_test_substrate_ctx_fit();
 }
+void test_substrate_session_bridge_compile() {
+    // mint_substrate_session<Substr, Dir>(ctx, handle) — drive the
+    // substrate→session bridge factory through a real
+    // PermissionedSpscChannel + permission split + handle.
+    ::crucible::concurrent::runtime_smoke_test_substrate_session_bridge();
+}
+void test_endpoint_compile() {
+    // Endpoint<Substr, Dir, Ctx> + mint_endpoint factory + raw view +
+    // .into_session() upgrade.  The big Tier 2 keystone.
+    ::crucible::concurrent::runtime_smoke_test_endpoint();
+}
 
 }  // namespace
 
 int main() {
     std::fprintf(stderr, "test_concurrent_compile:\n");
-    run_test("test_exec_ctx_bridge_compile",  test_exec_ctx_bridge_compile);
-    run_test("test_substrate_compile",        test_substrate_compile);
-    run_test("test_substrate_ctx_fit_compile", test_substrate_ctx_fit_compile);
+    run_test("test_exec_ctx_bridge_compile",         test_exec_ctx_bridge_compile);
+    run_test("test_substrate_compile",               test_substrate_compile);
+    run_test("test_substrate_ctx_fit_compile",       test_substrate_ctx_fit_compile);
+    run_test("test_substrate_session_bridge_compile",test_substrate_session_bridge_compile);
+    run_test("test_endpoint_compile",                test_endpoint_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");

@@ -41,6 +41,7 @@
 //     32 MB) and ARM server (Neoverse N1 16 MB).  Conservative is
 //     ~16 MB — accommodates desktop / 4-channel server SKUs.
 
+#include <crucible/concurrent/ExecCtxBridge.h>         // ctx_residency_tier<Ctx>()
 #include <crucible/concurrent/ParallelismRule.h>      // Tier enum
 #include <crucible/concurrent/Substrate.h>            // ChannelTopology + extractors
 #include <crucible/effects/ExecCtx.h>                 // IsExecCtx + ctx_residency_tier_of_t

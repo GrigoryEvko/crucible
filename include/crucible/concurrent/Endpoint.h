@@ -1,0 +1,389 @@
+#pragma once
+
+// ── crucible::concurrent::Endpoint<Substr, Dir, Ctx> ────────────────
+//
+// The big ctx-aware endpoint type — Tier 2 keystone of the integration
+// stack.  Bundles a Permissioned* substrate's typed handle with an
+// ExecCtx, validates SubstrateFitsCtxResidency at construction, and
+// exposes FOUR composition views:
+//
+//   1. Raw view        — direct try_send / try_recv on the underlying
+//                        handle (full-speed hot-path equivalent).
+//   2. Session view    — `.into_session()` returns a typed PSH per
+//                        `default_proto_for<Substr, Dir>`.
+//   3. Recording view  — `.into_recording_session(log, self, peer)`
+//                        wraps the session view with audit-trail
+//                        recording (bridges/RecordingSessionHandle.h).
+//   4. Crash-watched   — `.into_crash_watched(flag)` wraps with
+//                        OneShotFlag-based crash transport (bridges/
+//                        CrashTransport.h).
+//
+// All `into_*` methods are `&&`-qualified — they CONSUME the Endpoint
+// and transfer ownership of the typed view to the returned wrapper.
+// Endpoint itself is move-only (the underlying handle holds a linear
+// Permission token; copy would duplicate it).
+//
+// ── Why this is the keystone ────────────────────────────────────────
+//
+// Production callers used to write ~50 LoC per session site:
+//   * mint Permission tokens for the channel
+//   * split into producer/consumer halves
+//   * call channel.producer(perm) / channel.consumer(perm)
+//   * spell the protocol shape manually
+//   * thread the handle through the session factory
+//
+// With Endpoint, the same site collapses to:
+//
+//   auto ep = mint_endpoint<Channel, Direction::Producer>(ctx, handle);
+//   ep.try_send(value);                    // raw view
+//   auto sess = std::move(ep).into_session();  // protocol view
+//
+// The construction boundary checks ctx fit ONCE; subsequent send/recv
+// runs at full speed with no per-op check.  Every cross-tier
+// composition follows the Universal Mint Pattern (CLAUDE.md §XXI).
+//
+// ── Composition with Tier 1 ─────────────────────────────────────────
+//
+// Endpoint reads ALL Tier 1 facilities through Ctx:
+//   * SubstrateFitsCtxResidency<Substr, Ctx>  — construction gate
+//   * IsHotCtx / IsBgCtx / IsArenaCtx / ...   — ctx_residency_tier_v
+//                                                + per-axis discrimination
+//                                                exposed as static facts
+//   * cap_type_of_t<Ctx>                       — recoverable for downstream
+//                                                Capability minting
+//   * row_type_of_t<Ctx>                       — recoverable for downstream
+//                                                row-typed payload checks
+//
+// Future Tier 3 Stage<auto FnPtr, Ctx> consumes Endpoint via the FOUND
+// -D19 PipelineStage shape (function takes ConsumerHandle&&,
+// ProducerHandle&&).  The Endpoint's `.into_session()` produces a PSH
+// whose payload type matches the stage's input/output.
+//
+// ── Axiom coverage ──────────────────────────────────────────────────
+//
+//   TypeSafe — every (Substr, Dir, Ctx) triple is verified at the
+//              mint factory's requires-clause.  Mismatches surface as
+//              concept-violation diagnostics.
+//   InitSafe — pure type-level construction; no allocation.
+//   MemSafe  — Endpoint stores the handle BY POINTER (handle has a
+//              reference member to its Pinned channel; the channel
+//              outlives the Endpoint by construction).
+//   BorrowSafe — Endpoint is move-only; copy is deleted with reason.
+//                The underlying handle's Permission token enforces
+//                single-{producer,consumer,...} linearity.
+//   ThreadSafe — Endpoint defers all atomic ordering to the underlying
+//                channel.  Endpoint itself holds no atomics.
+//   LeakSafe — RAII destructor; no resources to free.  The underlying
+//              handle is owned by the caller's enclosing scope.
+//   DetSafe  — same (ctx, handle) → same Endpoint type and layout.
+//
+// Runtime cost: sizeof(Endpoint) == sizeof(handle_type*) (8 bytes on
+// 64-bit), plus Ctx (1 byte EBO-collapsed via [[no_unique_address]]).
+// All `try_send` / `try_recv` calls inline through to the underlying
+// handle's method — byte-identical to bare-handle code under -O3.
+//
+// ── Status ──────────────────────────────────────────────────────────
+//
+// v1 covers SPSC / MPSC / MPMC (try_push / try_pop) and Snapshot
+// (publish / load).  ChaseLevDeque deferred to v2.
+
+#include <crucible/Platform.h>
+#include <crucible/concurrent/SubstrateCtxFit.h>
+#include <crucible/concurrent/SubstrateSessionBridge.h>
+#include <crucible/effects/ExecCtx.h>
+#include <crucible/sessions/PermissionedSession.h>
+
+#include <optional>
+#include <type_traits>
+#include <utility>
+
+namespace crucible::concurrent {
+
+// ── Endpoint<Substr, Dir, Ctx> — the typed ctx-aware view ──────────
+
+template <class Substr, Direction Dir, ::crucible::effects::IsExecCtx Ctx>
+    requires IsBridgeableDirection<Substr, Dir>
+          && SubstrateFitsCtxResidency<Substr, Ctx>
+class [[nodiscard]] Endpoint {
+public:
+    using substrate_type = Substr;
+    static constexpr Direction direction = Dir;
+    using ctx_type    = Ctx;
+    using handle_type = handle_for_t<Substr, Dir>;
+    using value_type  = substrate_value_type_t<Substr>;
+    using user_tag    = substrate_user_tag_t<Substr>;
+    using proto_type  = default_proto_for_t<Substr, Dir>;
+
+    // ── Compile-time facts derived from Ctx ────────────────────────
+    //
+    // These let downstream stages branch on the ctx without re-querying
+    // the discrimination concepts every time.  All static; cost-free.
+
+    static constexpr bool ctx_is_hot       = ::crucible::effects::IsHotCtx<Ctx>;
+    static constexpr bool ctx_is_warm      = ::crucible::effects::IsWarmCtx<Ctx>;
+    static constexpr bool ctx_is_cold      = ::crucible::effects::IsColdCtx<Ctx>;
+    static constexpr bool ctx_is_arena     = ::crucible::effects::IsArenaCtx<Ctx>;
+    static constexpr bool ctx_is_numa_local = IsNumaLocalCtx<Ctx>;             // concurrent/ExecCtxBridge.h
+    static constexpr Tier residency_tier_v  = ctx_residency_tier<Ctx>();      // concurrent/ExecCtxBridge.h
+
+private:
+    // POINTER, not reference: the underlying handle has a reference
+    // member to its channel (per PermissionedSpscChannel.h:198) so it
+    // can't be move-assigned.  Endpoint stores Handle* so it CAN be
+    // move-constructed without breaking the underlying handle's
+    // single-handle-per-channel invariant.
+    handle_type* handle_;
+
+    // Ctx is a phantom carrier — empty class, EBO-collapsed.
+    [[no_unique_address]] Ctx ctx_;
+
+    // Factory-only construction.  The friend declaration matches
+    // exactly the mint_endpoint signature so SFINAE rejects any
+    // back-door instantiation.
+    template <class S, Direction D, ::crucible::effects::IsExecCtx C>
+        requires IsBridgeableDirection<S, D>
+              && SubstrateFitsCtxResidency<S, C>
+    friend constexpr auto mint_endpoint(C const&, handle_for_t<S, D>&) noexcept;
+
+    constexpr explicit Endpoint(handle_type& h) noexcept
+        : handle_{&h}, ctx_{} {}
+
+public:
+    // ── Linearity discipline ───────────────────────────────────────
+    //
+    // Copy: deleted (the underlying handle owns a linear Permission
+    // token; duplicating Endpoint would duplicate the typed view).
+    // Move: defaulted (transfers ownership of the typed view; the
+    // underlying handle still lives in the caller's scope).
+    // Move-assign: defaulted; pointer member rebinds cleanly.
+    Endpoint(Endpoint const&) = delete(
+        "Endpoint owns the typed view of a linear handle — copy would "
+        "duplicate the producer/consumer Permission's typed projection.  "
+        "Use std::move to transfer; or mint a second Endpoint if the "
+        "underlying substrate is multi-producer/multi-consumer.");
+    Endpoint& operator=(Endpoint const&) = delete(
+        "Endpoint owns the typed view of a linear handle.");
+    constexpr Endpoint(Endpoint&&) noexcept            = default;
+    constexpr Endpoint& operator=(Endpoint&&) noexcept = default;
+    ~Endpoint()                                        = default;
+
+    // ─────────────────────────────────────────────────────────────────
+    // ── View 1 — Raw: forward to the underlying handle ──────────────
+    // ─────────────────────────────────────────────────────────────────
+    //
+    // Identical to calling the bare handle's try_push / try_pop.
+    // Single per-call cost: one indirect through handle_, then the
+    // underlying SpscRing (or equivalent) operation — typically one
+    // acquire-load + one release-store on isolated cache lines.
+
+    // Producer-side direction (push-typed substrates: SPSC/MPSC/MPMC)
+    template <class T = value_type>
+        requires (Dir == Direction::Producer)
+              && std::same_as<std::remove_cvref_t<T>, value_type>
+    [[nodiscard, gnu::hot]] bool try_send(T const& v) noexcept {
+        return handle_->try_push(v);
+    }
+
+    // Snapshot-writer-side direction (publishes a single latest value)
+    template <class T = value_type>
+        requires (Dir == Direction::SwmrWriter)
+              && std::same_as<std::remove_cvref_t<T>, value_type>
+    [[gnu::hot]] void publish(T const& v) noexcept {
+        handle_->publish(v);
+    }
+
+    // Consumer-side direction (pop-typed substrates)
+    template <Direction D = Dir>
+        requires (D == Direction::Consumer)
+    [[nodiscard, gnu::hot]] std::optional<value_type> try_recv() noexcept {
+        return handle_->try_pop();
+    }
+
+    // Snapshot-reader-side direction (loads the latest published value)
+    template <Direction D = Dir>
+        requires (D == Direction::SwmrReader)
+    [[nodiscard, gnu::hot]] value_type load() noexcept {
+        return handle_->load();
+    }
+
+    // Diagnostic / queue-state queries — forwarded uniformly.
+    [[nodiscard]] bool empty_approx() const noexcept
+        requires requires(handle_type const& h) { h.empty_approx(); }
+    {
+        return handle_->empty_approx();
+    }
+    [[nodiscard]] std::size_t size_approx() const noexcept
+        requires requires(handle_type const& h) { h.size_approx(); }
+    {
+        return handle_->size_approx();
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // ── View 2 — Session: PSH typed over default_proto_for<S, D> ────
+    // ─────────────────────────────────────────────────────────────────
+    //
+    // CONSUMES the Endpoint.  Returns a PermissionedSessionHandle
+    // typed over default_proto_for_t<Substr, Dir>, with EmptyPermSet
+    // (the substrate's Permission discipline at the handle layer
+    // already enforces single-producer-or-multi-producer semantics).
+
+    [[nodiscard]] constexpr auto into_session() && noexcept {
+        return mint_substrate_session<Substr, Dir>(ctx_, *handle_);
+    }
+
+    // ── Accessor: peek at the underlying handle without consuming ──
+    //
+    // Used by Tier 3 Stage instantiation to introspect the handle's
+    // metadata without taking ownership.  Returns a const reference;
+    // does NOT invalidate the Endpoint.
+    [[nodiscard]] constexpr handle_type& handle() & noexcept { return *handle_; }
+    [[nodiscard]] constexpr handle_type const& handle() const& noexcept { return *handle_; }
+
+    // ── Accessor: the Ctx as a value (zero cost) ───────────────────
+    [[nodiscard]] constexpr Ctx ctx() const noexcept { return ctx_; }
+};
+
+// ── mint_endpoint<Substr, Dir>(ctx, handle) ─────────────────────────
+//
+// The Universal Mint factory for raw endpoints.  Same shape as
+// mint_substrate_session, but returns the concrete Endpoint type
+// instead of a PSH — for callers who want raw try_send / try_recv
+// access AND the optional ability to upgrade to a session view later
+// via .into_session().
+//
+// Constraints checked at the call site:
+//   * IsBridgeableDirection<Substr, Dir>     — supported (S, D) pair
+//   * SubstrateFitsCtxResidency<Substr, Ctx> — substrate footprint fits
+
+template <class Substr, Direction Dir, ::crucible::effects::IsExecCtx Ctx>
+    requires IsBridgeableDirection<Substr, Dir>
+          && SubstrateFitsCtxResidency<Substr, Ctx>
+[[nodiscard]] constexpr auto
+mint_endpoint(Ctx const&, handle_for_t<Substr, Dir>& handle) noexcept {
+    return Endpoint<Substr, Dir, Ctx>{handle};
+}
+
+// ── Self-test block ─────────────────────────────────────────────────
+namespace detail::endpoint_self_test {
+
+namespace eff   = ::crucible::effects;
+namespace proto = ::crucible::safety::proto;
+
+struct UserTag {};
+using SmallSpsc = PermissionedSpscChannel<int, 64, UserTag>;
+using ProdEp = Endpoint<SmallSpsc, Direction::Producer, eff::HotFgCtx>;
+using ConsEp = Endpoint<SmallSpsc, Direction::Consumer, eff::BgDrainCtx>;
+
+// ── Type-level invariants ──────────────────────────────────────────
+static_assert(std::is_same_v<typename ProdEp::handle_type,
+                              typename SmallSpsc::ProducerHandle>);
+static_assert(std::is_same_v<typename ProdEp::value_type, int>);
+static_assert(std::is_same_v<typename ProdEp::ctx_type, eff::HotFgCtx>);
+static_assert(std::is_same_v<typename ProdEp::proto_type,
+                              proto::Loop<proto::Send<int, proto::Continue>>>);
+
+// Ctx-derived static facts
+static_assert( ProdEp::ctx_is_hot);
+static_assert(!ProdEp::ctx_is_warm);
+static_assert(!ProdEp::ctx_is_cold);
+static_assert( ProdEp::ctx_is_numa_local);
+static_assert( ProdEp::residency_tier_v == Tier::L1Resident);
+
+static_assert( ConsEp::ctx_is_warm);
+static_assert(!ConsEp::ctx_is_hot);
+static_assert( ConsEp::ctx_is_arena);
+static_assert( ConsEp::residency_tier_v == Tier::L2Resident);
+
+// ── Linearity ──────────────────────────────────────────────────────
+static_assert(!std::is_copy_constructible_v<ProdEp>);
+static_assert(!std::is_copy_assignable_v<ProdEp>);
+static_assert( std::is_move_constructible_v<ProdEp>);
+static_assert( std::is_move_assignable_v<ProdEp>);
+
+// ── Layout: pointer + EBO-collapsed Ctx ────────────────────────────
+//
+// Endpoint stores Handle* (8 bytes on 64-bit) + Ctx (empty class,
+// EBO-collapsed via [[no_unique_address]]).  Total sizeof should
+// equal sizeof(void*).
+static_assert(sizeof(ProdEp) == sizeof(void*),
+    "Endpoint must collapse to pointer-size — Ctx EBO-collapse is "
+    "load-bearing for the zero-runtime-cost claim.");
+static_assert(sizeof(ConsEp) == sizeof(void*));
+
+// ── Snapshot endpoint ──────────────────────────────────────────────
+struct SnapTag {};
+using SmallSnap = PermissionedSnapshot<int, SnapTag>;
+using SnapWriter = Endpoint<SmallSnap, Direction::SwmrWriter, eff::HotFgCtx>;
+using SnapReader = Endpoint<SmallSnap, Direction::SwmrReader, eff::BgDrainCtx>;
+
+static_assert(std::is_same_v<typename SnapWriter::handle_type,
+                              typename SmallSnap::WriterHandle>);
+static_assert(std::is_same_v<typename SnapReader::handle_type,
+                              typename SmallSnap::ReaderHandle>);
+static_assert(SnapWriter::ctx_is_hot);
+
+}  // namespace detail::endpoint_self_test
+
+// ── Runtime smoke test ──────────────────────────────────────────────
+//
+// Constructs a real channel + permission split + producer/consumer
+// handles, mints two Endpoints, exercises the raw view (try_send /
+// try_recv), upgrades both to session view via .into_session().
+// Verifies the returned PSH has the expected concrete head type.
+
+[[gnu::cold]] inline void runtime_smoke_test_endpoint() noexcept {
+    namespace eff   = ::crucible::effects;
+    namespace proto = ::crucible::safety::proto;
+    namespace saf   = ::crucible::safety;
+
+    struct SmokeTag {};
+    using Channel = PermissionedSpscChannel<int, 64, SmokeTag>;
+
+    Channel ch;
+    auto whole = saf::mint_permission_root<spsc_tag::Whole<SmokeTag>>();
+    auto [pp, cp] = saf::mint_permission_split<
+        spsc_tag::Producer<SmokeTag>, spsc_tag::Consumer<SmokeTag>>(std::move(whole));
+
+    auto prod = ch.producer(std::move(pp));
+    auto cons = ch.consumer(std::move(cp));
+
+    // ── Mint two endpoints under canonical contexts ────────────────
+    eff::HotFgCtx fg;
+    eff::BgDrainCtx bg;
+    auto fg_ep = mint_endpoint<Channel, Direction::Producer>(fg, prod);
+    auto bg_ep = mint_endpoint<Channel, Direction::Consumer>(bg, cons);
+
+    // Type-level pinning of the returned Endpoint types.
+    static_assert(std::is_same_v<decltype(fg_ep)::ctx_type, eff::HotFgCtx>);
+    static_assert(std::is_same_v<decltype(bg_ep)::ctx_type, eff::BgDrainCtx>);
+    static_assert(decltype(fg_ep)::ctx_is_hot);
+    static_assert(decltype(bg_ep)::ctx_is_warm);
+
+    // ── Raw view: drive try_send / try_recv ────────────────────────
+    [[maybe_unused]] bool pushed = fg_ep.try_send(42);
+    [[maybe_unused]] auto popped = bg_ep.try_recv();
+
+    // ── Session view: .into_session() consumes the Endpoint ────────
+    auto fg_sess = std::move(fg_ep).into_session();
+    auto bg_sess = std::move(bg_ep).into_session();
+
+    // After Loop unrolling the head type is Send<int, Continue> /
+    // Recv<int, Continue> respectively.
+    using FgSessProto = decltype(fg_sess)::protocol;
+    using BgSessProto = decltype(bg_sess)::protocol;
+    static_assert(std::is_same_v<FgSessProto, proto::Send<int, proto::Continue>>);
+    static_assert(std::is_same_v<BgSessProto, proto::Recv<int, proto::Continue>>);
+
+    // Detach the typed sessions so the abandonment-check destructor
+    // doesn't fire.
+    std::move(fg_sess).detach(proto::detach_reason::TestInstrumentation{});
+    std::move(bg_sess).detach(proto::detach_reason::TestInstrumentation{});
+
+    // Reclaim the recombined whole permission.
+    [[maybe_unused]] auto recombined = saf::mint_permission_combine<
+        spsc_tag::Whole<SmokeTag>>(
+            saf::mint_permission_root<spsc_tag::Producer<SmokeTag>>(),
+            saf::mint_permission_root<spsc_tag::Consumer<SmokeTag>>());
+}
+
+}  // namespace crucible::concurrent
