@@ -55,10 +55,11 @@
 #include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>
+#include <crucible/sessions/SessionContentAddressed.h>
 
 #include <type_traits>
 
-namespace crucible::sessions {
+namespace crucible::safety::proto {
 
 // ── payload_row<T> — primary trait + canonical specialisations ──────
 
@@ -111,6 +112,14 @@ struct payload_row<::crucible::safety::Linear<T>>
 
 template <class T>
 struct payload_row<::crucible::safety::Stale<T>>
+    : payload_row<T> {};
+
+// ContentAddressed<T> is a session-level payload marker that quotients
+// payloads by content hash (Appendix D.5).  It carries no effects of
+// its own — the underlying T is what carries the row.  Transparent
+// unwrap.
+template <class T>
+struct payload_row<ContentAddressed<T>>
     : payload_row<T> {};
 
 // ── User alias ──────────────────────────────────────────────────────
@@ -233,6 +242,27 @@ static_assert(std::is_same_v<
     payload_row_t<BarelyComposedT>,
     eff::Row<>>);
 
+// ── ContentAddressed<T> unwraps ────────────────────────────────────
+//
+// CA is a session-level quotient marker; the underlying T's row is
+// preserved.  Composes with the other unwrap chains.
+
+static_assert(std::is_same_v<
+    payload_row_t<ContentAddressed<int>>,
+    eff::Row<>>);
+
+static_assert(std::is_same_v<
+    payload_row_t<ContentAddressed<eff::Computation<eff::Row<eff::Effect::Bg>, int>>>,
+    eff::Row<eff::Effect::Bg>>);
+
+// Composed: ContentAddressed<Refined<P, Computation<R, T>>> → R.
+using CaRefinedT =
+    ContentAddressed<saf::Refined<saf::positive,
+        eff::Computation<eff::Row<eff::Effect::IO>, int>>>;
+static_assert(std::is_same_v<
+    payload_row_t<CaRefinedT>,
+    eff::Row<eff::Effect::IO>>);
+
 }  // namespace detail::payload_row_self_test
 
 // ── Runtime smoke test ──────────────────────────────────────────────
@@ -260,4 +290,4 @@ static_assert(std::is_same_v<
                                   eff::Row<eff::Effect::Bg>>);
 }
 
-}  // namespace crucible::sessions
+}  // namespace crucible::safety::proto

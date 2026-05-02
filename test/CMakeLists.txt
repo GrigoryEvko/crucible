@@ -386,6 +386,7 @@ crucible_test(test_computation_graded)
 crucible_test(test_d25_d29_detector_headers)
 crucible_test(test_is_producer_handle)
 crucible_test(test_is_consumer_handle)
+crucible_test(test_is_session_handle)
 crucible_test(test_is_swmr_handle)
 crucible_test(test_row_mismatch_compile)
 crucible_test(test_insights_compile)
@@ -866,6 +867,21 @@ crucible_neg_compile_effects_test(neg_substrate_does_not_fit_l1
     "associated constraints are not satisfied|SubstrateFitsCtxResidency|fits_in_tier")
 crucible_neg_compile_effects_test(neg_substrate_required_tier_unfit_ctx
     "associated constraints are not satisfied|SubstrateFitsCtxResidency|fits_in_tier")
+
+# ─── Session integration B (#860): SessionMint walker fit-checks ───
+#
+# Four fixtures that prove the proto_row_admitted_by walker fires on
+# each kind of mismatch: too-narrow ctx for Send, unfit Recv payload,
+# non-IsExecCtx parameter, CheckpointedSession with unfit rollback
+# branch.
+crucible_neg_compile_effects_test(neg_session_mint_too_narrow_ctx
+    "associated constraints are not satisfied|CtxFitsProtocol")
+crucible_neg_compile_effects_test(neg_session_mint_unfit_recv
+    "associated constraints are not satisfied|CtxFitsProtocol")
+crucible_neg_compile_effects_test(neg_session_mint_non_exec_ctx
+    "associated constraints are not satisfied|IsExecCtx|CtxFitsProtocol")
+crucible_neg_compile_effects_test(neg_session_mint_checkpointed_unfit_rollback
+    "associated constraints are not satisfied|CtxFitsProtocol")
 
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
