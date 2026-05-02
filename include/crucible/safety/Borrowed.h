@@ -256,6 +256,28 @@ public:
     // accepting APIs.
     [[nodiscard]] constexpr span_type as_span() const noexcept { return span_; }
 
+    // ── subview — source-preserving sub-extent extraction ─────────
+    //
+    // Returns a Borrowed<T, Source> covering [offset, offset + count)
+    // of this Borrowed's range.  PRESERVES the Source phantom — a
+    // sub-window of a RegionNode borrow is still a RegionNode borrow.
+    //
+    // Without this, callers slicing a Borrowed had to escape via
+    // .as_span().subspan(...) which produces a bare std::span<T> and
+    // loses the Source tag.  With subview() the Source propagates
+    // automatically through the slice operation.
+    //
+    // Bounds invariant: offset + count ≤ size().  Not contract-
+    // checked here (gotcha-6b: pre clauses on constexpr members
+    // called from consteval contexts blow up).  std::span::subspan's
+    // UB-on-out-of-range + libstdc++ -D_GLIBCXX_DEBUG bounds-overlay
+    // catch at runtime.
+    [[nodiscard]] constexpr Borrowed
+    subview(std::size_t offset, std::size_t count) const noexcept
+    {
+        return Borrowed{span_.subspan(offset, count)};
+    }
+
     // Equality compares (data, size) pair — two Borrowed instances
     // are equal iff they cover the same memory range.  Does NOT
     // compare element values.
@@ -396,6 +418,41 @@ static_assert(span_binds_ptr_count());
 }
 static_assert(span_equality_compares_extent());
 
+// ── subview source-preserving slice (#1090) ─────────────────────────
+
+[[nodiscard]] consteval bool subview_extracts_window() noexcept {
+    int arr[5] = {10, 20, 30, 40, 50};
+    Borrowed<int, OwnerA> full{arr};
+    auto window = full.subview(1, 3);   // {20, 30, 40}
+    if (window.size() != 3) return false;
+    if (window[0] != 20 || window[1] != 30 || window[2] != 40) return false;
+    return true;
+}
+static_assert(subview_extracts_window());
+
+[[nodiscard]] consteval bool subview_preserves_source() noexcept {
+    int arr[3] = {1, 2, 3};
+    Borrowed<int, OwnerA> b{arr};
+    auto sub = b.subview(0, 2);
+    // Load-bearing claim: subview's return type carries the SAME
+    // Source phantom as the parent.  Cross-source assignment from
+    // a subview MUST still fail.
+    static_assert(std::is_same_v<decltype(sub), Borrowed<int, OwnerA>>,
+        "subview MUST return Borrowed<T, Source> with the SAME Source "
+        "phantom as the parent.  If this fires, the source tag has "
+        "been lost — every slice operation would need re-tagging.");
+    return sub.size() == 2;
+}
+static_assert(subview_preserves_source());
+
+[[nodiscard]] consteval bool subview_empty_at_zero_count() noexcept {
+    int arr[3] = {1, 2, 3};
+    Borrowed<int, OwnerA> b{arr};
+    auto empty = b.subview(0, 0);   // valid empty extraction
+    return empty.size() == 0 && empty.empty();
+}
+static_assert(subview_empty_at_zero_count());
+
 // ── Type-system rejections (load-bearing) ───────────────────────────
 
 // Cross-source Borrowed is a different instantiation — assignment
@@ -483,6 +540,13 @@ inline void runtime_smoke_test() {
     // Span escape.
     auto raw_span = b.as_span();
     if (raw_span.size() != 5) std::abort();
+
+    // subview preserves source + extracts window.
+    auto window = b.subview(1, 3);
+    if (window.size() != 3) std::abort();
+    if (window[0] != 20 || window[2] != 40) std::abort();
+    auto empty_window = b.subview(0, 0);
+    if (!empty_window.empty()) std::abort();
 }
 
 }  // namespace detail::borrowed_self_test
