@@ -964,6 +964,19 @@ crucible_neg_compile_effects_test(neg_pipeline_run_on_lvalue
 crucible_neg_compile_effects_test(neg_mint_pipeline_empty_pack
     "associated constraints are not satisfied|CtxFitsPipeline|pipeline_chain")
 
+# ─── #868: Endpoint↔Stage bridge gate fixtures ───────────────────────
+#
+# Two fixtures pin the CtxFitsStageFromEndpoints<FnPtr, Ctx, ConsumerEp,
+# ProducerEp> conjunction at the mint_stage_from_endpoints boundary:
+#   (g) handle-type mismatch — endpoint wraps wrong payload-type handle
+#       compared to FnPtr's PipelineStage signature.
+#   (h) direction-swapped endpoints — Producer endpoint passed where
+#       Consumer expected (and vice versa).
+crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_handle_mismatch
+    "associated constraints are not satisfied|CtxFitsStageFromEndpoints|StageHandlesMatchEndpoints")
+crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_swapped_direction
+    "associated constraints are not satisfied|CtxFitsStageFromEndpoints|IsConsumerEndpoint|IsProducerEndpoint")
+
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the
 # SessionMint walker handles BSYZ22 crash-stop's Stop the same way
 # as End — vacuously admitted, but the surrounding Send's payload

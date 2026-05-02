@@ -2544,6 +2544,7 @@ The convention has TWO modes, distinguished by whether the mint threads ctx-driv
 | ✅ | Bridge wrap | `mint_crash_watched_session<PeerTag>(handle, flag)` | parameter-type gate (SessionHandle specialisation); PeerTag non-deducible | `CrashWatchedHandle<Proto, R, PeerTag, LoopCtx>` |
 | ✅ | Tier 3 | `mint_stage<auto FnPtr>(ctx, in, out)` | `CtxFitsStage<FnPtr, Ctx>` (≡ `PipelineStage<FnPtr> ∧ IsExecCtx<Ctx>`) | `Stage<FnPtr, Ctx>` |
 | ✅ | Tier 3 | `mint_pipeline(ctx, stages...)` | `CtxFitsPipeline<Ctx, Stages...>` (≡ `IsExecCtx<Ctx> ∧ pipeline_chain<Stages...>`; chain folds `stages_chain<S_i, S_{i+1}>` over adjacent pairs) | `Pipeline<Stages...>` |
+| ✅ | Tier 2→3 bridge | `mint_stage_from_endpoints<auto FnPtr>(ctx, in_ep, out_ep)` | `CtxFitsStageFromEndpoints<FnPtr, Ctx, ConsumerEp, ProducerEp>` (≡ `PipelineStage<FnPtr> ∧ IsExecCtx<Ctx> ∧ IsConsumerEndpoint<ConsumerEp> ∧ IsProducerEndpoint<ProducerEp> ∧ StageHandlesMatchEndpoints<FnPtr, ConsumerEp, ProducerEp>`); consumes endpoints via `into_handle()`, threads through `mint_stage` | `Stage<FnPtr, Ctx>` |
 | 🔮 | Tier 4 | `mint_vigil<L, D, C>(ctx, parts...)` | per-component fit | `Vigil<L, D, C>` |
 | 🔮 | Tier 5 | `mint_keeper<Vigils...>(ctx, vigils, topo)` | per-Vigil fit | `Keeper<Vigils..., ...>` |
 | 🔮 | Tier 6 | `mint_canopy<Keepers...>(ctx, keepers, mesh)` | per-Keeper fit | `Canopy<Keepers..., ...>` |

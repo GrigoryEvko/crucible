@@ -18,6 +18,7 @@
 #include <crucible/concurrent/ExecCtxBridge.h>
 #include <crucible/concurrent/Pipeline.h>
 #include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/StageEndpointBridge.h>
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/SubstrateCtxFit.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
@@ -99,6 +100,16 @@ void test_pipeline_real_integration() {
     bool ok = ::crucible::concurrent::pipeline_real_integration_smoke_test();
     if (!ok) throw TestFailure{};
 }
+void test_stage_endpoint_bridge() {
+    // Tier 2 → Tier 3 bridge smoke (#868): exercises the full
+    // mint_endpoint → mint_stage_from_endpoints → mint_pipeline →
+    // run() chain.  Distinct from pipeline_real_integration which
+    // bypasses Endpoint and feeds raw handles directly to mint_stage.
+    // This proves the Endpoint-mediated path (with substrate-fit
+    // validation at Tier 2) composes cleanly into Tier 3.
+    bool ok = ::crucible::concurrent::stage_endpoint_bridge_smoke_test();
+    if (!ok) throw TestFailure{};
+}
 
 }  // namespace
 
@@ -112,6 +123,7 @@ int main() {
     run_test("test_stage_compile",                   test_stage_compile);
     run_test("test_pipeline_compile",                test_pipeline_compile);
     run_test("test_pipeline_real_integration",       test_pipeline_real_integration);
+    run_test("test_stage_endpoint_bridge",            test_stage_endpoint_bridge);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");

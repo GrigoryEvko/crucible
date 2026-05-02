@@ -318,6 +318,55 @@ public:
     [[nodiscard]] constexpr handle_type& handle() & noexcept { return *handle_; }
     [[nodiscard]] constexpr handle_type const& handle() const& noexcept { return *handle_; }
 
+    // ─────────────────────────────────────────────────────────────────
+    // ── View 3 — Tier 3 bridge: consume into the underlying handle ─
+    // ─────────────────────────────────────────────────────────────────
+    //
+    // CONSUMES the Endpoint and returns the underlying handle BY MOVE.
+    // After this call:
+    //   * the Endpoint is in a moved-from state (handle_ == nullptr,
+    //     same as after std::move);
+    //   * the externally-owned handle (the lvalue the user passed to
+    //     mint_endpoint) is in a moved-from state — its embedded
+    //     Permission token has been transferred to the returned
+    //     handle, but its reference-to-channel remains bound (so
+    //     calling try_push/try_pop on the moved-from original would
+    //     still hit the channel's ring; the user must NOT do that).
+    //
+    // This is the canonical Tier 2 → Tier 3 bridge: Endpoint validates
+    // SubstrateFitsCtxResidency at mint time, then into_handle()
+    // releases the validated handle into Stage's mint_stage<FnPtr>(...)
+    // (or directly into mint_stage_from_endpoints, which calls this
+    // internally on both sides of the stage).
+    //
+    // Why both Endpoint AND the original handle are left moved-from:
+    //   ConsumerHandle / ProducerHandle hold a REFERENCE to the
+    //   channel — references can't be rebound.  Moving the handle
+    //   move-constructs a new handle with the same channel reference
+    //   and the moved-from Permission.  The ORIGINAL handle (in
+    //   user's scope) becomes moved-from but its reference stays
+    //   bound to the (still-alive) channel.  The discipline:
+    //   "after std::move(ep).into_handle(), the original lvalue
+    //   handle the user passed to mint_endpoint is moved-from; do
+    //   not touch it."  Consistent with standard moved-from
+    //   semantics.
+    //
+    // Axiom coverage:
+    //   MemSafe — handle_ nulled-out post-move; the moved handle
+    //             owns the linear Permission going forward.
+    //   BorrowSafe — the linear Permission is in exactly one place
+    //             (the returned handle); typed-view aliasing
+    //             impossible because Endpoint no longer holds a
+    //             non-null pointer.
+    //   LeakSafe — the returned handle's destructor releases the
+    //             Permission cleanly when it goes out of scope.
+
+    [[nodiscard]] constexpr handle_type into_handle() && noexcept {
+        handle_type extracted = std::move(*handle_);
+        handle_ = nullptr;
+        return extracted;
+    }
+
     // ── Accessor: the Ctx as a value (zero cost) ───────────────────
     [[nodiscard]] constexpr Ctx ctx() const noexcept { return ctx_; }
 };
