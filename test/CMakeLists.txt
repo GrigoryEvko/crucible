@@ -908,6 +908,19 @@ crucible_neg_compile_effects_test(neg_substrate_session_unfit_residency
 crucible_neg_compile_effects_test(neg_substrate_session_non_bridgeable
     "associated constraints are not satisfied|IsBridgeableDirection")
 
+# ─── Tier 3 commit 1 (#863, HS14): mint_stage gate fixtures ──────────
+#
+# Two fixtures pin the CtxFitsStage<FnPtr, Ctx> conjunction at the
+# mint_stage<auto FnPtr>(ctx, in, out) boundary:
+#   (a) FnPtr that is not a PipelineStage (wrong arity here) →
+#       PipelineStage<FnPtr> conjunct fires.
+#   (b) Ctx that is not an ExecCtx (bare int) →
+#       IsExecCtx<Ctx> conjunct fires.
+crucible_neg_compile_effects_test(neg_mint_stage_non_pipeline_stage
+    "associated constraints are not satisfied|CtxFitsStage|PipelineStage")
+crucible_neg_compile_effects_test(neg_mint_stage_non_exec_ctx
+    "associated constraints are not satisfied|CtxFitsStage|IsExecCtx")
+
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the
 # SessionMint walker handles BSYZ22 crash-stop's Stop the same way
 # as End — vacuously admitted, but the surrounding Send's payload

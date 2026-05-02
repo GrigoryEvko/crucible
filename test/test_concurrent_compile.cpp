@@ -16,6 +16,7 @@
 
 #include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/ExecCtxBridge.h>
+#include <crucible/concurrent/Stage.h>
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/SubstrateCtxFit.h>
 #include <crucible/concurrent/SubstrateSessionBridge.h>
@@ -73,6 +74,13 @@ void test_endpoint_compile() {
     // .into_session() upgrade.  The big Tier 2 keystone.
     ::crucible::concurrent::runtime_smoke_test_endpoint();
 }
+void test_stage_compile() {
+    // Stage<auto FnPtr, Ctx> + mint_stage factory.  Tier 3 keystone:
+    // bundles a PipelineStage-shaped function pointer with its ctx
+    // and the pair of typed handles it consumes on .run().
+    bool ok = ::crucible::concurrent::stage_runtime_smoke_test();
+    if (!ok) throw TestFailure{};
+}
 
 }  // namespace
 
@@ -83,6 +91,7 @@ int main() {
     run_test("test_substrate_ctx_fit_compile",       test_substrate_ctx_fit_compile);
     run_test("test_substrate_session_bridge_compile",test_substrate_session_bridge_compile);
     run_test("test_endpoint_compile",                test_endpoint_compile);
+    run_test("test_stage_compile",                   test_stage_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");
