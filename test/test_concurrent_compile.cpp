@@ -16,6 +16,7 @@
 
 #include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/ExecCtxBridge.h>
+#include <crucible/concurrent/Pipeline.h>
 #include <crucible/concurrent/Stage.h>
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/SubstrateCtxFit.h>
@@ -81,6 +82,13 @@ void test_stage_compile() {
     bool ok = ::crucible::concurrent::stage_runtime_smoke_test();
     if (!ok) throw TestFailure{};
 }
+void test_pipeline_compile() {
+    // Pipeline<Stages...> + mint_pipeline factory.  Tier 3 commit 2:
+    // composes N Stages with chain-compatible payload types into a
+    // jthread-per-stage pipeline that .run() spawns + RAII-joins.
+    bool ok = ::crucible::concurrent::pipeline_runtime_smoke_test();
+    if (!ok) throw TestFailure{};
+}
 
 }  // namespace
 
@@ -92,6 +100,7 @@ int main() {
     run_test("test_substrate_session_bridge_compile",test_substrate_session_bridge_compile);
     run_test("test_endpoint_compile",                test_endpoint_compile);
     run_test("test_stage_compile",                   test_stage_compile);
+    run_test("test_pipeline_compile",                test_pipeline_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");

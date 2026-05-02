@@ -935,6 +935,22 @@ crucible_neg_compile_effects_test(neg_stage_copy_attempt
 crucible_neg_compile_effects_test(neg_stage_run_on_lvalue
     "no matching function for call|cannot bind|passing.*as.*'this'|discards qualifiers")
 
+# ─── Tier 3 commit 2 (#865, HS14): mint_pipeline gate fixtures ───────
+#
+# Three fixtures pin the CtxFitsPipeline<Ctx, Stages...> conjunction
+# at the mint_pipeline boundary:
+#   (a) pipeline_chain mismatch — adjacent (i, i+1) stages have
+#       incompatible payload types (output_i ≠ input_{i+1}).
+#   (b) Pack contains a non-Stage element — IsStage<E> fails for
+#       some E in Stages...
+#   (c) Ctx is not an IsExecCtx — bare int.
+crucible_neg_compile_effects_test(neg_mint_pipeline_chain_mismatch
+    "associated constraints are not satisfied|CtxFitsPipeline|pipeline_chain")
+crucible_neg_compile_effects_test(neg_mint_pipeline_non_stage
+    "associated constraints are not satisfied|CtxFitsPipeline|pipeline_chain|IsStage")
+crucible_neg_compile_effects_test(neg_mint_pipeline_non_exec_ctx
+    "associated constraints are not satisfied|CtxFitsPipeline|IsExecCtx")
+
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the
 # SessionMint walker handles BSYZ22 crash-stop's Stop the same way
 # as End — vacuously admitted, but the surrounding Send's payload
