@@ -977,6 +977,26 @@ crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_handle_mismatch
 crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_swapped_direction
     "associated constraints are not satisfied|CtxFitsStageFromEndpoints|IsConsumerEndpoint|IsProducerEndpoint")
 
+# AUDIT-ROUND-2 (#868): three additional operational fixtures that
+# exercise real-world misuse patterns beyond the HS14 minimum two.
+# Each axis distinct from the other two and from (g)/(h) above:
+#   (i)  fnptr-wrong-arity — FnPtr is a 3-arg function (not 2-arg);
+#        proves the CtxFitsStage conjunct of CtxFitsStageFromEndpoints
+#        fires independently of StageHandlesMatchEndpoints.
+#   (j)  same-direction — both consumer endpoints (no producer);
+#        IsProducerEndpoint conjunct fires on the second-position arg.
+#   (k)  raw-handle-bypass — raw ConsumerHandle/ProducerHandle (which
+#        satisfy IsConsumerHandle/IsProducerHandle) passed where the
+#        bridge expects Endpoint specialization; proves the bridge
+#        prevents users from accidentally bypassing mint_endpoint's
+#        substrate-fit validation by routing raw handles through.
+crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_fnptr_wrong_arity
+    "associated constraints are not satisfied|CtxFitsStageFromEndpoints|CtxFitsStage|PipelineStage")
+crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_both_consumers
+    "associated constraints are not satisfied|CtxFitsStageFromEndpoints|IsProducerEndpoint")
+crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_raw_handle
+    "associated constraints are not satisfied|CtxFitsStageFromEndpoints|IsConsumerEndpoint|IsProducerEndpoint")
+
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the
 # SessionMint walker handles BSYZ22 crash-stop's Stop the same way
 # as End — vacuously admitted, but the surrounding Send's payload
