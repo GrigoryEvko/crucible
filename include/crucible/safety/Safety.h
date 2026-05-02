@@ -154,6 +154,7 @@
 // depend on the bare shape.
 
 #include <crucible/safety/AllocClass.h>
+#include <crucible/safety/Bits.h>
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/Checked.h>
 #include <crucible/safety/CipherTier.h>

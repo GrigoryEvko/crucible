@@ -37,6 +37,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/safety/AllocClass.h>
+#include <crucible/safety/Bits.h>
 #include <crucible/safety/Budgeted.h>
 #include <crucible/safety/Checked.h>
 #include <crucible/safety/CipherTier.h>
@@ -105,6 +106,9 @@ void run_test(const char* name, F&& body) {
 
 void test_alloc_class_compile()     {
     ::crucible::safety::detail::alloc_class_self_test::runtime_smoke_test();
+}
+void test_bits_compile()            {
+    ::crucible::safety::detail::bits_self_test::runtime_smoke_test();
 }
 void test_budgeted_compile()        {
     ::crucible::safety::detail::budgeted_self_test::runtime_smoke_test();
@@ -186,6 +190,7 @@ int main() {
     std::fprintf(stderr, "test_safety_compile:\n");
 
     run_test("test_alloc_class_compile",     test_alloc_class_compile);
+    run_test("test_bits_compile",            test_bits_compile);
     run_test("test_budgeted_compile",        test_budgeted_compile);
     run_test("test_checked_compile",         test_checked_compile);
     run_test("test_cipher_tier_compile",     test_cipher_tier_compile);

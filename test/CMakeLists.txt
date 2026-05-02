@@ -1597,6 +1597,20 @@ crucible_neg_compile_test(neg_alloc_class_at_cross_tag_mixing
 crucible_neg_compile_test(neg_alloc_class_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 
+# safety::Bits<EnumType> structural-wrapper — HS14 fixtures (#1079):
+#   * neg_bits_int_ctor      raw int literal in Bits<E>{42} ctor must
+#                            fail (only initializer_list<E> ctor is
+#                            public; from_raw is the only raw escape).
+#   * neg_bits_cross_enum    Bits<E1> | Bits<E2> mixing two distinct
+#                            scoped enums must fail (friend operator|
+#                            only matches same-instantiation pairs;
+#                            the load-bearing rejection that prevents
+#                            silent NodeFlags vs RecipeFlags confusion).
+crucible_neg_compile_test(neg_bits_int_ctor
+  "no matching function|could not convert|cannot convert|no match for|invalid conversion")
+crucible_neg_compile_test(neg_bits_cross_enum
+  "no match for|no matching function|cannot convert|invalid operands")
+
 # FairSharedPermissionPool fairness wrapper — audit fixtures (#861-followup):
 #   * BurstLimit=0 fires the static_assert ("must be > 0").
 #   * Copying the Pinned wrapper fires the deleted-copy diagnostic.
