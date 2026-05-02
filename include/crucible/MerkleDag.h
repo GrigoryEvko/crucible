@@ -27,6 +27,7 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
 #include <crucible/handles/PublishOnce.h>
+#include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
 
@@ -224,39 +225,67 @@ struct TraceEntry {
   SlotId* input_slot_ids = nullptr;       // 8B — which pool slot each input reads from
   SlotId* output_slot_ids = nullptr;      // 8B — slot ID assigned to each output tensor
 
-  // ── Span accessors (NullSafe: bounds-checked access to variable-length arrays) ──
+  // ── Borrowed accessors (NullSafe: bounds-checked access to variable-length
+  //    arrays + Source-tagged provenance per WRAP-Borrowed-Integration-2 #1088).
+  //
+  // Returns Borrowed<T, TraceEntry> instead of bare std::span<T>: the Source
+  // phantom encodes "this view came from a TraceEntry" at the type level.
+  // A function that takes Borrowed<T, TraceEntry> cannot accidentally accept
+  // a Borrowed<T, OtherSource>, even though both wrap std::span<T>.  Sized
+  // identically to std::span (sizeof preserved), trivially_copyable, range-
+  // for compatible (begin/end exposed identically).
+  //
+  // Callers that need a bare std::span (e.g. crossing into external APIs)
+  // call .as_span() to escape — the source tag drops at that boundary,
+  // marked explicitly at the escape site.
 
-  [[nodiscard]] std::span<const TensorMeta> input_span() const CRUCIBLE_LIFETIMEBOUND {
-    return input_metas ? std::span{input_metas, num_inputs}
-                       : std::span<const TensorMeta>{};
+  [[nodiscard]] safety::Borrowed<const TensorMeta, TraceEntry>
+  input_span() const CRUCIBLE_LIFETIMEBOUND {
+    return input_metas
+      ? safety::Borrowed<const TensorMeta, TraceEntry>{input_metas, num_inputs}
+      : safety::Borrowed<const TensorMeta, TraceEntry>{};
   }
-  [[nodiscard]] std::span<TensorMeta> input_span() CRUCIBLE_LIFETIMEBOUND {
-    return input_metas ? std::span{input_metas, num_inputs}
-                       : std::span<TensorMeta>{};
+  [[nodiscard]] safety::Borrowed<TensorMeta, TraceEntry>
+  input_span() CRUCIBLE_LIFETIMEBOUND {
+    return input_metas
+      ? safety::Borrowed<TensorMeta, TraceEntry>{input_metas, num_inputs}
+      : safety::Borrowed<TensorMeta, TraceEntry>{};
   }
-  [[nodiscard]] std::span<const TensorMeta> output_span() const CRUCIBLE_LIFETIMEBOUND {
-    return output_metas ? std::span{output_metas, num_outputs}
-                        : std::span<const TensorMeta>{};
+  [[nodiscard]] safety::Borrowed<const TensorMeta, TraceEntry>
+  output_span() const CRUCIBLE_LIFETIMEBOUND {
+    return output_metas
+      ? safety::Borrowed<const TensorMeta, TraceEntry>{output_metas, num_outputs}
+      : safety::Borrowed<const TensorMeta, TraceEntry>{};
   }
-  [[nodiscard]] std::span<TensorMeta> output_span() CRUCIBLE_LIFETIMEBOUND {
-    return output_metas ? std::span{output_metas, num_outputs}
-                        : std::span<TensorMeta>{};
+  [[nodiscard]] safety::Borrowed<TensorMeta, TraceEntry>
+  output_span() CRUCIBLE_LIFETIMEBOUND {
+    return output_metas
+      ? safety::Borrowed<TensorMeta, TraceEntry>{output_metas, num_outputs}
+      : safety::Borrowed<TensorMeta, TraceEntry>{};
   }
-  [[nodiscard]] std::span<const int64_t> scalar_span() const CRUCIBLE_LIFETIMEBOUND {
-    return scalar_args ? std::span{scalar_args, num_scalar_args}
-                       : std::span<const int64_t>{};
+  [[nodiscard]] safety::Borrowed<const int64_t, TraceEntry>
+  scalar_span() const CRUCIBLE_LIFETIMEBOUND {
+    return scalar_args
+      ? safety::Borrowed<const int64_t, TraceEntry>{scalar_args, num_scalar_args}
+      : safety::Borrowed<const int64_t, TraceEntry>{};
   }
-  [[nodiscard]] std::span<const OpIndex> trace_index_span() const CRUCIBLE_LIFETIMEBOUND {
-    return input_trace_indices ? std::span{input_trace_indices, num_inputs}
-                               : std::span<const OpIndex>{};
+  [[nodiscard]] safety::Borrowed<const OpIndex, TraceEntry>
+  trace_index_span() const CRUCIBLE_LIFETIMEBOUND {
+    return input_trace_indices
+      ? safety::Borrowed<const OpIndex, TraceEntry>{input_trace_indices, num_inputs}
+      : safety::Borrowed<const OpIndex, TraceEntry>{};
   }
-  [[nodiscard]] std::span<const SlotId> input_slot_span() const CRUCIBLE_LIFETIMEBOUND {
-    return input_slot_ids ? std::span{input_slot_ids, num_inputs}
-                          : std::span<const SlotId>{};
+  [[nodiscard]] safety::Borrowed<const SlotId, TraceEntry>
+  input_slot_span() const CRUCIBLE_LIFETIMEBOUND {
+    return input_slot_ids
+      ? safety::Borrowed<const SlotId, TraceEntry>{input_slot_ids, num_inputs}
+      : safety::Borrowed<const SlotId, TraceEntry>{};
   }
-  [[nodiscard]] std::span<const SlotId> output_slot_span() const CRUCIBLE_LIFETIMEBOUND {
-    return output_slot_ids ? std::span{output_slot_ids, num_outputs}
-                           : std::span<const SlotId>{};
+  [[nodiscard]] safety::Borrowed<const SlotId, TraceEntry>
+  output_slot_span() const CRUCIBLE_LIFETIMEBOUND {
+    return output_slot_ids
+      ? safety::Borrowed<const SlotId, TraceEntry>{output_slot_ids, num_outputs}
+      : safety::Borrowed<const SlotId, TraceEntry>{};
   }
 };
 
