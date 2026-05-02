@@ -105,6 +105,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <latch>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -236,6 +237,15 @@ static_assert(sizeof(CookieSnapshot) == 40);
 void test_atomic_snapshot_cookie_fuzzer() {
     constexpr int NUM_READERS    = 8;
     constexpr int NUM_PUBLISHES  = 50'000;
+    // Each reader does a FIXED minimum of MIN_READER_LOADS that does
+    // NOT depend on writer_done state.  Without this, an aggressive
+    // scheduler can run the writer to completion before any reader
+    // gets CPU time, leaving total_loads at 0 — a flaky "did we
+    // exercise it" assert that depends on scheduler fairness.  The
+    // AtomicSnapshot protocol guarantees CORRECTNESS (no torn reads
+    // observed, retry-on-seq-mismatch) but does not promise reader
+    // liveness; if the OS doesn't schedule readers, none will load.
+    constexpr std::uint64_t MIN_READER_LOADS = 64;
 
     AtomicSnapshot<CookieSnapshot> snap{make_cookie_snapshot_(0)};
     std::atomic<int>          publishes_done{0};
@@ -244,7 +254,13 @@ void test_atomic_snapshot_cookie_fuzzer() {
     std::atomic<std::uint64_t> total_loads{0};
     std::atomic<std::uint64_t> max_observed_epoch{0};
 
+    // Synchronized startup: writer + N readers rendezvous before
+    // doing any work.  Removes the "writer ran to completion before
+    // any reader started" failure mode.
+    std::latch start_latch{NUM_READERS + 1};
+
     std::jthread writer_t([&](std::stop_token) noexcept {
+        start_latch.arrive_and_wait();
         for (int i = 1; i <= NUM_PUBLISHES; ++i) {
             snap.publish(make_cookie_snapshot_(static_cast<std::uint64_t>(i)));
             publishes_done.fetch_add(1, std::memory_order_acq_rel);
@@ -255,16 +271,33 @@ void test_atomic_snapshot_cookie_fuzzer() {
     std::vector<std::jthread> readers;
     for (int r = 0; r < NUM_READERS; ++r) {
         readers.emplace_back([&](std::stop_token) noexcept {
-            std::uint64_t local_max = 0;
-            while (!writer_done.load(std::memory_order_acquire)) {
-                total_loads.fetch_add(1, std::memory_order_relaxed);
+            start_latch.arrive_and_wait();
+            std::uint64_t local_max   = 0;
+            std::uint64_t local_loads = 0;
+
+            auto do_one_load = [&]() noexcept {
                 const auto observed = snap.load();
                 if (!verify_cookie_snapshot_(observed)) {
                     torn_reads_observed.fetch_add(1,
                         std::memory_order_acq_rel);
                 }
                 if (observed.epoch > local_max) local_max = observed.epoch;
+                ++local_loads;
+            };
+
+            // Phase 1 — MANDATORY: at least MIN_READER_LOADS loads,
+            // independent of writer_done.  Guarantees the
+            // total_loads > 0 assert holds deterministically.
+            while (local_loads < MIN_READER_LOADS) {
+                do_one_load();
             }
+
+            // Phase 2 — DRAIN: keep loading while the writer is still
+            // publishing, for additional concurrency stress.
+            while (!writer_done.load(std::memory_order_acquire)) {
+                do_one_load();
+            }
+
             // Final consistency: post-writer-done load must observe
             // the final epoch.
             const auto final_load = snap.load();
@@ -272,6 +305,9 @@ void test_atomic_snapshot_cookie_fuzzer() {
                 torn_reads_observed.fetch_add(1, std::memory_order_acq_rel);
             }
             if (final_load.epoch > local_max) local_max = final_load.epoch;
+            ++local_loads;
+
+            total_loads.fetch_add(local_loads, std::memory_order_relaxed);
             // Update global max via atomic max.
             std::uint64_t prev = max_observed_epoch.load(std::memory_order_acquire);
             while (local_max > prev &&
@@ -287,8 +323,14 @@ void test_atomic_snapshot_cookie_fuzzer() {
     // The cookie-fingerprint catches ANY byte corruption from torn
     // reads.  Zero observed = seqlock retry protocol works.
     CRUCIBLE_TEST_REQUIRE(torn_reads_observed.load() == 0);
-    CRUCIBLE_TEST_REQUIRE(total_loads.load() > 0);
-    // At least one reader must have observed the final epoch.
+    // Now deterministic: every reader did at least MIN_READER_LOADS
+    // loads + 1 final, so total ≥ NUM_READERS * (MIN_READER_LOADS+1).
+    CRUCIBLE_TEST_REQUIRE(
+        total_loads.load() >=
+            static_cast<std::uint64_t>(NUM_READERS) * (MIN_READER_LOADS + 1));
+    // At least one reader must have observed the final epoch (every
+    // reader does a final load post-writer-done; the latest publish
+    // already happened).
     CRUCIBLE_TEST_REQUIRE(
         max_observed_epoch.load() == static_cast<std::uint64_t>(NUM_PUBLISHES));
 }
@@ -658,6 +700,13 @@ void test_pool_mode_transition_torture() {
 
     constexpr int NUM_READERS = 4;
     constexpr int DURATION_MS = 200;
+    // Each reader does a FIXED minimum MIN_READER_LOADS regardless
+    // of `stop` state.  Without this, an aggressive scheduler can
+    // run the coordinator (writer) to completion before any reader
+    // gets CPU time, leaving total_loads at 0 — a flaky "did we
+    // exercise it" assert.  The PermissionedSnapshot protocol
+    // guarantees CORRECTNESS but does not promise reader liveness.
+    constexpr std::uint64_t MIN_READER_LOADS = 32;
 
     std::atomic<bool>          stop{false};
     std::atomic<std::uint64_t> torn_observed{0};
@@ -665,6 +714,11 @@ void test_pool_mode_transition_torture() {
     std::atomic<std::uint64_t> exclusive_iterations{0};
     std::atomic<std::uint64_t> exclusive_blocked{0};
     std::atomic<std::uint64_t> total_loads{0};
+
+    // Synchronized startup: coordinator + N readers rendezvous
+    // before doing any work.  Removes the "writer ran to completion
+    // first" failure mode.
+    std::latch start_latch{NUM_READERS + 1};
 
     // Continuous reader threads.  We can't reliably check
     // "nullopt iff exclusive_active" from the reader's perspective
@@ -676,27 +730,38 @@ void test_pool_mode_transition_torture() {
     std::vector<std::jthread> readers;
     for (int i = 0; i < NUM_READERS; ++i) {
         readers.emplace_back([&](std::stop_token) noexcept {
-            while (!stop.load(std::memory_order_acquire)) {
-                total_loads.fetch_add(1, std::memory_order_relaxed);
+            start_latch.arrive_and_wait();
+            std::uint64_t local_loads = 0;
+
+            auto do_one_load = [&]() noexcept {
+                ++local_loads;
                 auto r = snap.reader();
-                if (!r) {
-                    // Exclusive mode was active at lend time.  Yield
-                    // and retry; we cannot race-verify the contract
-                    // from this side (see comment above).
-                    std::this_thread::yield();
-                    continue;
-                }
+                if (!r) return;          // exclusive in flight; legal
                 const auto observed = r->load();
                 if (!verify_cookie_snapshot_(observed)) {
                     torn_observed.fetch_add(1,
                         std::memory_order_acq_rel);
                 }
+            };
+
+            // Phase 1 — MANDATORY: at least MIN_READER_LOADS attempts.
+            while (local_loads < MIN_READER_LOADS) {
+                do_one_load();
             }
+
+            // Phase 2 — DRAIN: keep loading while coordinator is
+            // running, for additional concurrency stress.
+            while (!stop.load(std::memory_order_acquire)) {
+                do_one_load();
+            }
+
+            total_loads.fetch_add(local_loads, std::memory_order_relaxed);
         });
     }
 
     // Writer + exclusive scheduler.
     std::jthread coordinator([&](std::stop_token) noexcept {
+        start_latch.arrive_and_wait();
         auto handle = snap.writer(std::move(writer_perm));
         std::uint64_t epoch = 1;
         const auto t_start = std::chrono::steady_clock::now();
@@ -740,10 +805,18 @@ void test_pool_mode_transition_torture() {
     for (auto& r : readers) r.join();
 
     CRUCIBLE_TEST_REQUIRE(torn_observed.load() == 0);
-    CRUCIBLE_TEST_REQUIRE(total_loads.load() > 0);
-    // We should observe at least a handful of successful exclusive
-    // entries OR at least proof that the system was actively
-    // attempting them (blocked counter > 0).
+    // Now deterministic: every reader did at least MIN_READER_LOADS
+    // load attempts, so total_loads ≥ NUM_READERS * MIN_READER_LOADS.
+    CRUCIBLE_TEST_REQUIRE(
+        total_loads.load() >=
+            static_cast<std::uint64_t>(NUM_READERS) * MIN_READER_LOADS);
+    // The coordinator runs for DURATION_MS (200 ms); over that
+    // window it WILL hit at least one with_drained_access attempt
+    // because the readers' lend operations happen in bounded time
+    // and the coordinator's outer while-loop iterates much faster
+    // than the duration (each iteration: 50 publishes + one
+    // attempted exclusive).  Either it succeeds (iterations > 0)
+    // or readers block it (blocked > 0).  In practice both happen.
     CRUCIBLE_TEST_REQUIRE(
         exclusive_iterations.load() + exclusive_blocked.load() > 0);
     CRUCIBLE_TEST_REQUIRE(snap.outstanding_readers() == 0);

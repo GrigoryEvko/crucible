@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <latch>
 #include <thread>
 #include <vector>
 
@@ -278,8 +279,17 @@ struct GuardedCounter {
 };
 
 void test_swmr_sees_consistent_state() {
-    constexpr int NUM_READERS = 6;
-    constexpr int ITERATIONS  = 1000;
+    constexpr int NUM_READERS    = 6;
+    constexpr int ITERATIONS     = 1000;
+    // Each reader does a FIXED minimum of MIN_READER_ITERS that is NOT
+    // gated on writer_done.  Without this, an aggressive scheduler can
+    // run the writer to completion before any reader gets CPU time,
+    // leaving reader_iters_total at 0 — a flaky "did we exercise it"
+    // assert that depends on scheduler fairness, NOT on the
+    // SharedPermissionPool protocol (which guarantees CORRECTNESS but
+    // makes NO liveness/fairness claim — see Permission.h §"naive
+    // design" doc-block).
+    constexpr int MIN_READER_ITERS = 32;
 
     auto exc = mint_permission_root<MetricsRegion>();
     SharedPermissionPool<MetricsRegion> pool{std::move(exc)};
@@ -289,7 +299,14 @@ void test_swmr_sees_consistent_state() {
     std::atomic<bool> reader_violation{false};
     std::atomic<std::uint64_t> reader_iters_total{0};
 
-    std::jthread writer([&pool, &counter, &writer_done](std::stop_token) {
+    // Synchronized startup: writer + N readers all rendezvous before
+    // doing any work.  Removes the "writer wins because it ran first"
+    // failure mode.  The arrival count is N+1 (N readers + 1 writer).
+    std::latch start_latch{NUM_READERS + 1};
+
+    std::jthread writer([&pool, &counter, &writer_done, &start_latch]
+                        (std::stop_token) {
+        start_latch.arrive_and_wait();
         for (int i = 0; i < ITERATIONS; ++i) {
             // Spin until upgrade succeeds.
             for (;;) {
@@ -312,26 +329,51 @@ void test_swmr_sees_consistent_state() {
     std::vector<std::jthread> readers;
     for (int t = 0; t < NUM_READERS; ++t) {
         readers.emplace_back([&pool, &counter, &writer_done,
-                              &reader_violation, &reader_iters_total]
+                              &reader_violation, &reader_iters_total,
+                              &start_latch]
                              (std::stop_token) {
-            std::uint64_t local_iters = 0;
-            while (!writer_done.load(std::memory_order_acquire)) {
+            start_latch.arrive_and_wait();
+
+            // Helper: one read iteration.  Returns true iff the
+            // iteration actually acquired a guard and read both halves.
+            auto do_one_iter = [&]() noexcept {
                 auto guard = pool.lend();
-                if (!guard) {
-                    // Writer is up; spin briefly.
-                    std::this_thread::yield();
-                    continue;
-                }
-                // Inside shared critical section: lo and hi MUST be
-                // equal (writer always writes them together).
+                if (!guard) return false;
                 const std::uint64_t lo = counter.lo;
                 const std::uint64_t hi = counter.hi;
                 if (lo != hi) {
                     reader_violation.store(true, std::memory_order_release);
                 }
-                ++local_iters;
-                // guard's destructor releases the share.
+                return true;
+            };
+
+            std::uint64_t local_iters = 0;
+
+            // Phase 1 — MANDATORY: do MIN_READER_ITERS successful
+            // iterations regardless of writer_done state.  Spins on
+            // lend() failure (writer-up); guaranteed to eventually
+            // succeed because the writer's deposit_exclusive yields a
+            // window where lend() is permitted (the protocol does
+            // not livelock — every deposit clears the exclusive bit
+            // and any reader-in-flight CAS will then succeed).
+            while (local_iters < MIN_READER_ITERS) {
+                if (do_one_iter()) {
+                    ++local_iters;
+                } else {
+                    std::this_thread::yield();
+                }
             }
+
+            // Phase 2 — DRAIN: keep exercising until writer_done.
+            // Adds extra concurrency stress past the mandatory floor.
+            while (!writer_done.load(std::memory_order_acquire)) {
+                if (do_one_iter()) {
+                    ++local_iters;
+                } else {
+                    std::this_thread::yield();
+                }
+            }
+
             reader_iters_total.fetch_add(local_iters, std::memory_order_acq_rel);
         });
     }
@@ -342,8 +384,11 @@ void test_swmr_sees_consistent_state() {
     CRUCIBLE_TEST_REQUIRE(!reader_violation.load(std::memory_order_acquire));
     CRUCIBLE_TEST_REQUIRE(counter.lo == counter.hi);
     CRUCIBLE_TEST_REQUIRE(counter.lo == ITERATIONS);
-    // Sanity: readers should have made progress.
-    CRUCIBLE_TEST_REQUIRE(reader_iters_total.load() > 0);
+    // Now deterministic: every reader did at least MIN_READER_ITERS
+    // successful iterations, so total ≥ NUM_READERS * MIN_READER_ITERS.
+    CRUCIBLE_TEST_REQUIRE(
+        reader_iters_total.load() >=
+            static_cast<std::uint64_t>(NUM_READERS) * MIN_READER_ITERS);
 }
 
 // ── Tier 5: with_shared_read scoped helper ────────────────────────
