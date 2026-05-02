@@ -2496,6 +2496,65 @@ A parallel design that regresses small workloads is worse than no parallelism at
 
 ---
 
+## XXI. The Universal Mint Pattern
+
+**Every cross-tier composition factory in Crucible follows ONE shape:**
+
+```cpp
+template <ParametricArgs..., eff::IsExecCtx Ctx, RuntimeArgs...>
+    requires CtxFitsX<X<...>, Ctx>
+[[nodiscard]] constexpr auto mint_X(Ctx const&, RuntimeArgs...) noexcept -> X<...>;
+```
+
+The `mint_*` prefix is load-bearing. It marks every site where the type system verifies a CROSS-TIER FIT and synthesizes a fresh authoritative instance of `X`. After mint, the value is trusted; subsequent operations run at full speed with no further check.
+
+### The canonical mints (current and projected)
+
+| Layer | Mint | Concept gate | Returns |
+|---|---|---|---|
+| Permission root | `mint_permission_root<Tag>()` | (none — root authority) | `Permission<Tag>` |
+| Permission split | `mint_permission_split<L, R>(parent)` | `splits_into<P, L, R>` | `pair<Permission<L>, Permission<R>>` |
+| Permission combine | `mint_permission_combine<P>(l, r)` | `splits_into<P, L, R>` | `Permission<P>` |
+| Capability (bare source) | `mint_cap<E>(source)` | `CanMintCap<E, S>` | `Capability<E, S>` |
+| Capability (ctx-driven) | `mint_from_ctx<E>(ctx)` | `CtxCanMint<Ctx, E>` | `Capability<E, ctx_cap_t<Ctx>>` |
+| Bare session handle | `mint_session_handle<Proto>(res)` | `is_well_formed_v<Proto> ∧ SessionResource<Res>` | `SessionHandle<Proto, Res>` |
+| Two-endpoint channel | `mint_channel<Proto>(rA, rB)` | duality + well-formedness | `pair<SessionHandle<Proto,A>, SessionHandle<dual<Proto>,B>>` |
+| Permissioned session | `mint_permissioned_session<Proto>(res, perms...)` | `is_well_formed_v<Proto>` | `PermissionedSessionHandle<Proto, PS, Res>` |
+| Ctx-checked session | `mint_session<Proto>(ctx, res)` | `CtxFitsProtocol<Proto, Ctx>` | `SessionHandle<Proto, Res>` |
+| Substrate session | `mint_substrate_session<Substr, Dir>(ctx, channel, perm)` | `SubstrateFitsCtxResidency<Substr, Ctx>` | `PSH<default_proto_for_t<...>, ...>` |
+| Producer endpoint (typed) | `mint_producer_session<Channel>(handle)` | substrate-shape | `PSH<Loop<Send<T,Continue>>, ...>` |
+| Consumer endpoint (typed) | `mint_consumer_session<Channel>(handle)` | substrate-shape | `PSH<Loop<Recv<T,Continue>>, ...>` |
+| Endpoint (Tier 2) | `mint_endpoint<Substr, Dir>(ctx, handle)` | `SubstrateFitsCtxResidency<Substr, Ctx>` | `Endpoint<Substr, Dir, Ctx>` |
+| Recording session bridge | `mint_recording_session(ctx, h, log, self, peer)` | `CtxAdmitsAuthority<Ctx, Conductor>` | `RecordingSessionHandle<Proto, R, L>` |
+| Crash-watched session | `mint_crash_watched_session(ctx, h, flag)` | `CtxAdmitsCrash<Ctx, Class>` | `CrashWatchedHandle<Proto, R>` |
+| Stage (Tier 3, planned) | `mint_stage<auto FnPtr>(ctx, in, out)` | `PipelineStage<FnPtr> ∧ CtxFitsStage<FnPtr, Ctx>` | `Stage<FnPtr, Ctx>` |
+| Pipeline (Tier 3, planned) | `mint_pipeline(ctx, stages...)` | chain of `CtxFitsStage` + `pipeline_chain<Stages...>` | `Pipeline<Stages...>` |
+| Vigil (Tier 4, planned) | `mint_vigil<L, D, C>(ctx, parts...)` | per-component fit | `Vigil<L, D, C>` |
+| Keeper (Tier 5, planned) | `mint_keeper<Vigils...>(ctx, vigils, topo)` | per-Vigil fit | `Keeper<Vigils..., ...>` |
+| Canopy (Tier 6, planned) | `mint_canopy<Keepers...>(ctx, keepers, mesh)` | per-Keeper fit | `Canopy<Keepers..., ...>` |
+
+### Why the pattern is load-bearing
+
+1. **Single grep target.** `grep "mint_"` finds every authorization point in the codebase. Every cross-tier composition is discoverable in O(1) review time.
+2. **Construction-time validation.** The `requires` clause is the type-level proof that runs ONCE at the boundary. Subsequent ops on the returned X are concept-free — full speed, no per-call check.
+3. **Uniform shape across tiers.** A production engineer who learns one mint learns them all. A maintainer who adds Tier 7 follows the template. New contributors recognize the pattern instantly.
+4. **No naming drift.** `make_*` / `establish_*` / `create_*` / `build_*` are NOT minters and MUST NOT be used for cross-tier composition. They allocate or initialize bare structures; they don't carry the type-level fit-check semantics.
+
+### Discipline rules
+
+- **Every cross-tier composition factory MUST be named `mint_<noun>`.** No exceptions.
+- **The first parameter MUST be `Ctx const&`** (when the factory threads ctx-driven policy). Permission/capability mints that DON'T take a ctx still use the prefix because they mint authoritative tokens.
+- **The `requires` clause MUST be a single `CtxFitsX<X, Ctx>` concept** (or one of its decompositions). Multi-clause requires-lists belong INSIDE `CtxFitsX`, not at the call site.
+- **Every mint MUST be `[[nodiscard]] constexpr noexcept`** unless the factory genuinely allocates (in which case it is `[[nodiscard]] noexcept` only — `constexpr` would lie about the runtime cost).
+- **Returned types are CONCRETE, not type-erased.** `mint_endpoint<...>(ctx, h)` returns `Endpoint<Substr, Dir, Ctx>`, not `auto`-erased-into-virtual. Concept-overloaded specialization downstream depends on the concrete type.
+- **Diagnostics route through `safety::diag::Category`.** A mint that fails its `requires` clause emits a category-tagged diagnostic so user-facing errors stay readable.
+
+### Anti-pattern: the runtime registry
+
+Do NOT replace mint with a runtime registry / factory function table / virtual dispatch. The mint pattern is **compile-time-resolved** — every call site has the full type information visible to the optimizer. A runtime registry would defeat EBO collapse, branch prediction, inlining, and the whole zero-runtime-cost claim of the substrate.
+
+---
+
 ZERO COPY. ZERO ALLOC ON HOT PATH. EVERY INSTRUCTION JUSTIFIED.
 L1d = 48 KB. L2 = 2 MB. Squat upfront, point into it, write into it.
 
