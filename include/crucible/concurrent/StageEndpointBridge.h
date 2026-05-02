@@ -295,6 +295,35 @@ static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, eff::HotFgCtx, ProdEp,
 //   * Non-IsExecCtx
 static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, int,           ConsEp, ProdEp>);
 
+// ── Payload-type mismatch coverage (StageHandlesMatchEndpoints axis) ──
+// Belt-and-suspenders: static_assert proof of payload-mismatch
+// rejection at HEADER level (the runtime fixture neg_mint_stage_from_
+// endpoints_handle_mismatch proves the same axis at the test layer;
+// this static_assert proves it independently, so a refactor that
+// breaks StageHandlesMatchEndpoints' payload-type discrimination
+// would fail the header's own consistency check, NOT just the test).
+
+struct UTagFloat {};
+using ChFloat   = PermissionedSpscChannel<float, 64, UTagFloat>;
+using FloatConsEp = Endpoint<ChFloat, Direction::Consumer, eff::HotFgCtx>;
+using FloatProdEp = Endpoint<ChFloat, Direction::Producer, eff::HotFgCtx>;
+
+// FloatConsEp's handle_type is Channel<float>::ConsumerHandle, but
+// int_stage_body expects Channel<int>::ConsumerHandle on slot 0.
+// Direction matches; FnPtr shape matches; Ctx fits — only the
+// handle-payload-type axis disagrees.  Bridge must reject.
+static_assert( IsConsumerEndpoint<FloatConsEp>);
+static_assert( IsProducerEndpoint<FloatProdEp>);
+static_assert(!StageHandlesMatchEndpoints<&int_stage_body, FloatConsEp, ProdEp>);
+static_assert(!StageHandlesMatchEndpoints<&int_stage_body, ConsEp, FloatProdEp>);
+static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, eff::HotFgCtx, FloatConsEp, ProdEp>);
+static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, eff::HotFgCtx, ConsEp, FloatProdEp>);
+
+// Conversely: the matching int pair MUST satisfy
+// StageHandlesMatchEndpoints (positive control to avoid a false
+// "everything rejects" pathology).
+static_assert( StageHandlesMatchEndpoints<&int_stage_body, ConsEp, ProdEp>);
+
 }  // namespace detail::stage_endpoint_bridge_self_test
 
 // ═════════════════════════════════════════════════════════════════════
