@@ -11,6 +11,7 @@
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
+#include <crucible/safety/Bits.h>
 
 #include <bit>
 #include <cstdint>
@@ -30,10 +31,15 @@ enum class SymKind : uint8_t {
 };
 
 // Per-symbol flags (separate from ExprFlags on Expr nodes).
-struct SymFlags {
-  static constexpr uint8_t IS_SIZE_LIKE = 1 << 0; // can assume ≥ 2 in size-oblivious mode
-  static constexpr uint8_t HAS_HINT     = 1 << 1; // hint field is valid
-  static constexpr uint8_t IS_BACKED    = 1 << 2; // symbol originates from real tensor metadata
+//
+// Worn through safety::Bits<SymFlags> on the SymbolEntry field — the
+// type system rejects mixing this 1-byte slot with any other flag enum
+// (NodeFlags, ExprFlags, RecipeFlags) because each lives in its own
+// Bits<E> instantiation and they do not compose.
+enum class SymFlags : std::uint8_t {
+  IS_SIZE_LIKE = 1 << 0, // can assume ≥ 2 in size-oblivious mode
+  HAS_HINT     = 1 << 1, // hint field is valid
+  IS_BACKED    = 1 << 2, // symbol originates from real tensor metadata
 };
 
 struct SymbolEntry {
@@ -41,7 +47,7 @@ struct SymbolEntry {
   int64_t range_lower = 0;        // lower bound (kIntNegInf = unknown)
   int64_t range_upper = 0;        // upper bound (kIntPosInf = unknown)
   SymKind kind = SymKind::SIZE;   // 1 byte
-  uint8_t sym_flags = 0;          // SymFlags bitfield
+  safety::Bits<SymFlags> sym_flags{};  // 1 byte — typed bit-field
   uint16_t expr_flags = 0;        // ExprFlags to stamp on Expr nodes (IS_INTEGER, IS_POSITIVE, etc.)
   // 4 bytes padding to align to 32 bytes (3 × int64_t + 4 × uint8/16)
   uint32_t _pad = 0;
@@ -69,7 +75,7 @@ class CRUCIBLE_OWNER SymbolTable {
     e.hint = kNoHint;
     e.kind = kind;
     e.expr_flags = expr_flags;
-    e.sym_flags = is_backed ? SymFlags::IS_BACKED : 0;
+    if (is_backed) e.sym_flags.set(SymFlags::IS_BACKED);
 
     // Default ranges based on kind
     switch (kind) {
@@ -105,14 +111,14 @@ class CRUCIBLE_OWNER SymbolTable {
   void set_hint(SymbolId id, int64_t hint) {
     auto& e = entry_at_mut(id);
     e.hint = hint;
-    e.sym_flags |= SymFlags::HAS_HINT;
+    e.sym_flags.set(SymFlags::HAS_HINT);
   }
 
   // Set float hint (bitcast to int64_t).
   void set_hint_float(SymbolId id, double hint) {
     auto& e = entry_at_mut(id);
     e.hint = bitcast_double(hint);
-    e.sym_flags |= SymFlags::HAS_HINT;
+    e.sym_flags.set(SymFlags::HAS_HINT);
   }
 
   // Tighten the integer range. Only narrows, never widens.
@@ -141,7 +147,7 @@ class CRUCIBLE_OWNER SymbolTable {
   }
 
   void set_size_like(SymbolId id) {
-    entry_at_mut(id).sym_flags |= SymFlags::IS_SIZE_LIKE;
+    entry_at_mut(id).sym_flags.set(SymFlags::IS_SIZE_LIKE);
   }
 
   // ---- Queries ----
@@ -151,7 +157,7 @@ class CRUCIBLE_OWNER SymbolTable {
   }
 
   [[nodiscard, gnu::pure]] bool has_hint(SymbolId id) const noexcept {
-    return entry_at(id).sym_flags & SymFlags::HAS_HINT;
+    return entry_at(id).sym_flags.test(SymFlags::HAS_HINT);
   }
 
   [[nodiscard, gnu::pure]] int64_t hint(SymbolId id) const noexcept {
@@ -171,11 +177,11 @@ class CRUCIBLE_OWNER SymbolTable {
   }
 
   [[nodiscard, gnu::pure]] bool is_size_like(SymbolId id) const noexcept {
-    return entry_at(id).sym_flags & SymFlags::IS_SIZE_LIKE;
+    return entry_at(id).sym_flags.test(SymFlags::IS_SIZE_LIKE);
   }
 
   [[nodiscard, gnu::pure]] bool is_backed(SymbolId id) const noexcept {
-    return entry_at(id).sym_flags & SymFlags::IS_BACKED;
+    return entry_at(id).sym_flags.test(SymFlags::IS_BACKED);
   }
 
   [[nodiscard, gnu::pure]] SymKind kind(SymbolId id) const noexcept {
