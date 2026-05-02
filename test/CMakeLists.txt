@@ -767,6 +767,15 @@ crucible_neg_compile_effects_test(neg_weaken_to_disjoint_row
 crucible_neg_compile_effects_test(neg_lift_unknown_capability
     "associated constraints are not satisfied|IsEffect")
 
+# WRAP-Bits-Integration-2 (#1087): Row → Bits<Effect> projection
+# bridge.  IsEffectRow concept gate rejects non-Row inputs at the
+# call site — neither bits_from_row<int>() nor row_subsumes_bits<int>
+# are admissible.
+crucible_neg_compile_effects_test(neg_bits_from_row_non_row
+    "associated constraints are not satisfied|constraints not satisfied|no matching|IsEffectRow")
+crucible_neg_compile_effects_test(neg_row_subsumes_bits_non_row
+    "associated constraints are not satisfied|constraints not satisfied|no matching|IsEffectRow")
+
 # FOUND-H03-AUDIT-2 (#838): non-Row R rejection in ComputationGraded.
 # Witnesses that effect_row_to_at_t<NotARow> hard-errors at the alias
 # instantiation point — the helper's primary template is undefined on

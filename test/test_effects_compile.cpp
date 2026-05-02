@@ -23,6 +23,7 @@
 #include <crucible/effects/CtxWrapperLift.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/EffectRowLattice.h>
+#include <crucible/effects/EffectRowProjection.h>
 #include <crucible/effects/Effects.h>
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/effects/FxAliases.h>
@@ -98,6 +99,15 @@ void test_ctx_wrapper_lift_compile() {
     // contexts.
     ::crucible::effects::runtime_smoke_test_ctx_wrapper_lift();
 }
+void test_effect_row_projection_compile() {
+    // bits_from_row<R> / bits_for<Es...> / row_subsumes_bits /
+    // bits_subsumes_row — drive the Row→Bits<Effect> projection
+    // bridge through a non-constant args path so the consteval
+    // surfaces actually instantiate under the test target's full
+    // -Werror matrix.
+    ::crucible::effects::detail::effect_row_projection_self_test::
+        runtime_smoke_test();
+}
 
 }  // namespace
 
@@ -116,6 +126,8 @@ int main() {
     run_test("test_exec_ctx_compile",      test_exec_ctx_compile);
     run_test("test_capability_compile",    test_capability_compile);
     run_test("test_ctx_wrapper_lift_compile", test_ctx_wrapper_lift_compile);
+    run_test("test_effect_row_projection_compile",
+             test_effect_row_projection_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");

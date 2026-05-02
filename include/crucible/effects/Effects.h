@@ -26,4 +26,5 @@
 #include <crucible/effects/ComputationGraded.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/EffectRowLattice.h>
+#include <crucible/effects/EffectRowProjection.h>
 #include <crucible/effects/OsUniverse.h>
