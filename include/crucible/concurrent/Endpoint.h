@@ -252,6 +252,24 @@ public:
         return mint_substrate_session<Substr, Dir>(ctx_, *handle_);
     }
 
+    // ─────────────────────────────────────────────────────────────────
+    // ── View 2b — Bare session: SessionHandle (no PermSet wrapper) ──
+    // ─────────────────────────────────────────────────────────────────
+    //
+    // Returns a bare `SessionHandle<Proto, Handle*>` (NOT a PSH).
+    // Useful as input to bridge wrappers (RecordingSessionHandle,
+    // CrashWatchedHandle) which take SessionHandle directly — see
+    // bridges/EndpointMint.h for the bridge mint helpers.
+    //
+    // The underlying handle's Permission discipline still enforces
+    // single-{producer,consumer,...} linearity at the channel layer;
+    // dropping the EmptyPermSet wrapper is safe because EmptyPermSet
+    // carries no per-step PermSet evolution.
+
+    [[nodiscard]] constexpr auto into_bare_session() && noexcept {
+        return ::crucible::safety::proto::mint_session_handle<proto_type>(handle_);
+    }
+
     // ── Accessor: peek at the underlying handle without consuming ──
     //
     // Used by Tier 3 Stage instantiation to introspect the handle's

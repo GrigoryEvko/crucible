@@ -13,6 +13,7 @@
 
 #include <crucible/bridges/Bridges.h>
 #include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/EndpointMint.h>
 #include <crucible/bridges/MachineSessionBridge.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
 
@@ -42,6 +43,13 @@ void test_bridges_umbrella()                  {}
 void test_crash_transport_compile()           {}
 void test_machine_session_bridge_compile()    {}
 void test_recording_session_handle_compile()  {}
+void test_endpoint_mint_compile() {
+    // Bridge views for Endpoint: mint_recording_endpoint /
+    // mint_crash_watched_endpoint.  Drives the runtime smoke that
+    // constructs a real channel + endpoint, mints both bridge views,
+    // detaches them.
+    ::crucible::bridges::runtime_smoke_test_endpoint_mint();
+}
 
 }  // namespace
 
@@ -51,6 +59,7 @@ int main() {
     run_test("test_crash_transport_compile",           test_crash_transport_compile);
     run_test("test_machine_session_bridge_compile",    test_machine_session_bridge_compile);
     run_test("test_recording_session_handle_compile",  test_recording_session_handle_compile);
+    run_test("test_endpoint_mint_compile",             test_endpoint_mint_compile);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");
