@@ -15,6 +15,7 @@
 #include <crucible/CKernel.h>
 #include <crucible/Expr.h>
 #include <crucible/Platform.h>
+#include <crucible/safety/Bits.h>
 
 #include <cassert>
 #include <cstdint>
@@ -83,11 +84,22 @@ enum class FuseKind : uint8_t {
 
 enum class ReduceHint : uint8_t { DEFAULT, INNER, OUTER };
 
-struct NodeFlags {
-  static constexpr uint8_t DEAD     = 1 << 0;
-  static constexpr uint8_t VISITED  = 1 << 1;
-  static constexpr uint8_t FUSED    = 1 << 2;
-  static constexpr uint8_t REALIZED = 1 << 3;
+// NodeFlags — scoped enum over the 1-byte GraphNode flag bits.
+//
+// Worn through safety::Bits<NodeFlags> at the field level so the type
+// system rejects the dominant bug class: silent mixing of two unrelated
+// flag enums on the same uint8_t (e.g. a refactor that writes
+// `node.flags |= RecipeFlags::Foo`).  Bits<NodeFlags> and
+// Bits<RecipeFlags> are different template instantiations and do NOT
+// compose — caught at compile time, not at the next replay divergence.
+//
+// Layout: underlying uint8_t preserves the 1-byte slot in GraphNode's
+// hand-packed 64 B layout (see static_assert(sizeof(GraphNode) == 64)).
+enum class NodeFlags : std::uint8_t {
+  DEAD     = 1 << 0,
+  VISITED  = 1 << 1,
+  FUSED    = 1 << 2,
+  REALIZED = 1 << 3,
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -261,7 +273,7 @@ struct GraphNode {
   // ── Identity + type (8B) ──────────────────────────
   NodeId id;                    // Unique ID (= buffer name "buf{id}")
   NodeKind kind = NodeKind::NOP; // 1B
-  uint8_t flags = 0;            // 1B — NodeFlags bits
+  safety::Bits<NodeFlags> flags{};  // 1B — typed bit-field (sizeof preserved)
   uint8_t ndim = 0;             // 1B — output dimensions
   uint8_t nred = 0;             // 1B — reduction dimensions (0 for non-reductions)
 
@@ -291,7 +303,7 @@ struct GraphNode {
 
   // ── Accessors ──
 
-  [[nodiscard]] bool is_dead() const { return flags & NodeFlags::DEAD; }
+  [[nodiscard]] bool is_dead() const { return flags.test(NodeFlags::DEAD); }
 
   // ── Device placement queries ──
   //
@@ -578,7 +590,7 @@ class CRUCIBLE_OWNER Graph {
     const uint32_t n_nodes = num_nodes_.get();
     for (uint32_t i = 0; i < n_nodes; ++i) {
       GraphNode* n = nodes_[i];
-      if (n->flags & NodeFlags::DEAD)
+      if (n->flags.test(NodeFlags::DEAD))
         continue;
       for (uint16_t j = 0; j < n->num_inputs; ++j) {
         if (n->inputs[j] == old_node) {
@@ -609,10 +621,10 @@ class CRUCIBLE_OWNER Graph {
       changed = false;
       for (uint32_t i = num_nodes_.get(); i-- > 0;) {
         GraphNode* current_node = nodes_[i];
-        if (current_node->flags & NodeFlags::DEAD)
+        if (current_node->flags.test(NodeFlags::DEAD))
           continue;
         if (current_node->num_uses == 0 && current_node->kind != NodeKind::MUTATION) {
-          current_node->flags |= NodeFlags::DEAD;
+          current_node->flags.set(NodeFlags::DEAD);
           for (uint16_t j = 0; j < current_node->num_inputs; ++j)
             --current_node->inputs[j]->num_uses;
           changed = true;
@@ -635,11 +647,11 @@ class CRUCIBLE_OWNER Graph {
     uint32_t total_edges = 0;
     for (uint32_t i = 0; i < n_nodes; ++i) {
       GraphNode* current_node = nodes_[i];
-      if (current_node->flags & NodeFlags::DEAD)
+      if (current_node->flags.test(NodeFlags::DEAD))
         continue;
       for (uint16_t j = 0; j < current_node->num_inputs; ++j) {
         GraphNode* dep_node = current_node->inputs[j];
-        if (!(dep_node->flags & NodeFlags::DEAD)) {
+        if (!(dep_node->flags.test(NodeFlags::DEAD))) {
           ++in_deg[i];
           ++succ_cnt[dep_node->id.raw()];
           ++total_edges;
@@ -658,11 +670,11 @@ class CRUCIBLE_OWNER Graph {
     std::memset(succ_cnt, 0, n_nodes * sizeof(uint32_t));
     for (uint32_t i = 0; i < n_nodes; ++i) {
       GraphNode* current_node = nodes_[i];
-      if (current_node->flags & NodeFlags::DEAD)
+      if (current_node->flags.test(NodeFlags::DEAD))
         continue;
       for (uint16_t j = 0; j < current_node->num_inputs; ++j) {
         uint32_t dep_id = current_node->inputs[j]->id.raw();
-        if (!(nodes_[dep_id]->flags & NodeFlags::DEAD))
+        if (!(nodes_[dep_id]->flags.test(NodeFlags::DEAD)))
           succs[offset[dep_id] + succ_cnt[dep_id]++] = i;
       }
     }
@@ -671,7 +683,7 @@ class CRUCIBLE_OWNER Graph {
     auto* queue = arena_.alloc_array<uint32_t>(a, n_nodes);
     uint32_t head = 0, tail = 0;
     for (uint32_t i = 0; i < n_nodes; ++i) {
-      if (!(nodes_[i]->flags & NodeFlags::DEAD) && in_deg[i] == 0)
+      if (!(nodes_[i]->flags.test(NodeFlags::DEAD)) && in_deg[i] == 0)
         queue[tail++] = i;
     }
 
@@ -713,10 +725,10 @@ class CRUCIBLE_OWNER Graph {
     // (schedule_order is 0..num_live_nodes-1 from topological_sort)
     uint32_t num_live_nodes = 0;
     for (uint32_t i = 0; i < n_nodes; ++i)
-      if (!(nodes_[i]->flags & NodeFlags::DEAD)) ++num_live_nodes;
+      if (!(nodes_[i]->flags.test(NodeFlags::DEAD))) ++num_live_nodes;
     auto* topological_order = arena_.alloc_array<GraphNode*>(a, num_live_nodes > 0 ? num_live_nodes : 1);
     for (uint32_t i = 0; i < n_nodes; ++i) {
-      if (!(nodes_[i]->flags & NodeFlags::DEAD))
+      if (!(nodes_[i]->flags.test(NodeFlags::DEAD)))
         topological_order[nodes_[i]->schedule_order] = nodes_[i];
     }
 
@@ -745,7 +757,7 @@ class CRUCIBLE_OWNER Graph {
         if (cse_table_hashes[probe_slot_index] == node_cse_hash &&
             cse_equal_(current_node, cse_table_nodes[probe_slot_index], canonical_representative)) {
           canonical_representative[current_node->id.raw()] = cse_table_nodes[probe_slot_index];
-          current_node->flags |= NodeFlags::DEAD;
+          current_node->flags.set(NodeFlags::DEAD);
           ++eliminated_count;
           break;
         }
@@ -756,7 +768,7 @@ class CRUCIBLE_OWNER Graph {
       // Single O(V × avg_inputs) rewrite pass
       for (uint32_t i = 0; i < n_nodes; ++i) {
         GraphNode* current_node = nodes_[i];
-        if (current_node->flags & NodeFlags::DEAD) continue;
+        if (current_node->flags.test(NodeFlags::DEAD)) continue;
         for (uint16_t j = 0; j < current_node->num_inputs; ++j)
           current_node->inputs[j] = canonical_representative[current_node->inputs[j]->id.raw()];
       }
@@ -799,10 +811,10 @@ class CRUCIBLE_OWNER Graph {
     // Build ordered list via O(n) scatter
     uint32_t num_live_nodes = 0;
     for (uint32_t i = 0; i < n_nodes; ++i)
-      if (!(nodes_[i]->flags & NodeFlags::DEAD)) ++num_live_nodes;
+      if (!(nodes_[i]->flags.test(NodeFlags::DEAD))) ++num_live_nodes;
     auto* topological_order = arena_.alloc_array<GraphNode*>(a, num_live_nodes > 0 ? num_live_nodes : 1);
     for (uint32_t i = 0; i < n_nodes; ++i) {
-      if (!(nodes_[i]->flags & NodeFlags::DEAD))
+      if (!(nodes_[i]->flags.test(NodeFlags::DEAD)))
         topological_order[nodes_[i]->schedule_order] = nodes_[i];
     }
 
@@ -846,7 +858,7 @@ class CRUCIBLE_OWNER Graph {
         // Full ranges check (group_hash collision possible)
         if (ranges_compatible_(current_node, input_node)) {
           current_node->fused_group_id = input_node->fused_group_id;
-          current_node->flags |= NodeFlags::FUSED;
+          current_node->flags.set(NodeFlags::FUSED);
           break;
         }
       }
@@ -865,20 +877,19 @@ class CRUCIBLE_OWNER Graph {
     return match_count;
   }
 
-  // Clear VISITED flag on all nodes
+  // Clear VISITED flag on all nodes — Bits<E>::unset turns the manual
+  // ~bitmask + AND-NOT pattern into a single typed call site.
   void clear_visited() {
-    constexpr auto CLEAR_VISITED =
-        static_cast<uint8_t>(~NodeFlags::VISITED);
     const uint32_t n_nodes = num_nodes_.get();
     for (uint32_t i = 0; i < n_nodes; ++i)
-      nodes_[i]->flags &= CLEAR_VISITED;
+      nodes_[i]->flags.unset(NodeFlags::VISITED);
   }
 
   [[nodiscard, gnu::pure]] uint32_t count_live() const noexcept {
     uint32_t live_count = 0;
     const uint32_t n_nodes = num_nodes_.get();
     for (uint32_t i = 0; i < n_nodes; ++i) {
-      if (!(nodes_[i]->flags & NodeFlags::DEAD))
+      if (!(nodes_[i]->flags.test(NodeFlags::DEAD)))
         ++live_count;
     }
     return live_count;
@@ -1152,14 +1163,14 @@ class CRUCIBLE_OWNER Graph {
 
     for (uint32_t i = 0; i < n_nodes; ++i) {
       GraphNode* current_node = nodes_[i];
-      if (current_node->flags & NodeFlags::DEAD)
+      if (current_node->flags.test(NodeFlags::DEAD))
         continue;
       for (uint16_t j = 0; j < current_node->num_inputs; ++j)
         ++current_node->inputs[j]->num_uses;
     }
     // Graph outputs are roots: keep them alive
     for (uint32_t i = 0; i < num_outputs_; ++i) {
-      if (!(nodes_[output_ids_[i].raw()]->flags & NodeFlags::DEAD))
+      if (!(nodes_[output_ids_[i].raw()]->flags.test(NodeFlags::DEAD)))
         ++nodes_[output_ids_[i].raw()]->num_uses;
     }
   }
