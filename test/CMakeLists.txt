@@ -399,6 +399,7 @@ crucible_test(test_expr_pool_fast_symbol)
 crucible_test(test_sharded_grid)
 crucible_test(test_queue_facade)
 crucible_test(test_permission_shared)
+crucible_test(test_fair_permission_shared)
 crucible_test(test_owned_region)
 crucible_test(test_permission_tree_generator)
 crucible_test(test_permission_grid_generator)
@@ -1506,6 +1507,14 @@ crucible_neg_compile_test(neg_alloc_class_at_cross_tag_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 crucible_neg_compile_test(neg_alloc_class_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
+
+# FairSharedPermissionPool fairness wrapper — audit fixtures (#861-followup):
+#   * BurstLimit=0 fires the static_assert ("must be > 0").
+#   * Copying the Pinned wrapper fires the deleted-copy diagnostic.
+crucible_neg_compile_test(neg_fair_pool_burst_zero
+  "BurstLimit must be > 0|static assertion failed")
+crucible_neg_compile_test(neg_fair_pool_copy_attempt
+  "use of deleted function|deleted|FairSharedPermissionPool")
 
 # FOUND-G42 — production-call-site fence: a hot-path consumer
 # requiring AllocClass<Pool> rejects an AllocClass<Heap> source.
