@@ -81,19 +81,23 @@ int main(int argc, char** argv) {
             // satisfying the pre() contract.  If the function
             // aborts on any input here, ASan / contract handler
             // fires.
-            const uint64_t r1 = compute_storage_nbytes(*mp);
+            //
+            // After #1018: returns safety::Saturated<uint64_t>;
+            // determinism check uses the defaulted operator==
+            // (compares value AND clamped flag).
+            const auto r1 = compute_storage_nbytes(*mp);
 
             // Property 3: determinism.  Same input, repeated calls.
             for (int k = 0; k < 4; ++k) {
                 if (compute_storage_nbytes(*mp) != r1) return false;
             }
 
-            // Property 4: UINT64_MAX is the saturation sentinel
-            // (returned on overflow).  Other results are real
-            // byte counts.  Either way, the value is well-defined
-            // (no garbage); we don't enforce a specific value
-            // since the formula is complex and overflow conditions
-            // depend on the exact sizes/strides.
+            // Property 4: clamped=true is the saturation sentinel
+            // (returned on any internal overflow).  Other results
+            // carry value + clamped=false.  Either way, the
+            // observation is well-defined (no garbage); we don't
+            // enforce a specific value since the formula is complex
+            // and overflow conditions depend on the exact sizes/strides.
             (void)r1;
             return true;
         });

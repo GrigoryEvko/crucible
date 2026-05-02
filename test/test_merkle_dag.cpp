@@ -20,13 +20,18 @@ int main() {
   m.strides[0] = 64;
   m.strides[1] = 1;
   m.dtype = crucible::ScalarType::Float;
-  uint64_t nbytes = crucible::compute_storage_nbytes(m);
+  // compute_storage_nbytes returns Saturated<uint64_t> (#1018).  Happy
+  // path: clamp flag is false, value matches the bare-arithmetic answer.
+  auto nbytes = crucible::compute_storage_nbytes(m);
   // (31*64 + 63*1 + 1) * 4 = 2048 * 4 = 8192 (= 32 * 64 * sizeof(float))
-  assert(nbytes == 8192);
+  assert(nbytes.value() == 8192);
+  assert(!nbytes.was_clamped() && "well-formed tensor must not saturate");
 
   // Overflow path: sizes × strides that wrap int64_t.  The pre-fix
-  // implementation silently wrapped to a tiny value; the new code
-  // returns UINT64_MAX so downstream alloc/recording rejects cleanly.
+  // implementation silently wrapped to a tiny value; the migrated
+  // code returns Saturated<uint64_t>{UINT64_MAX, true} so downstream
+  // alloc/recording rejects cleanly AND the clamp flag is observable
+  // at the call site.
   {
     crucible::TensorMeta huge{};
     huge.ndim = 2;
@@ -35,8 +40,9 @@ int main() {
     huge.sizes[1]   = 1;
     huge.strides[1] = 1;
     huge.dtype = crucible::ScalarType::Float;
-    uint64_t nb = crucible::compute_storage_nbytes(huge);
-    assert(nb == UINT64_MAX && "huge tensor must saturate to UINT64_MAX");
+    auto nb = crucible::compute_storage_nbytes(huge);
+    assert(nb.value() == UINT64_MAX && "huge tensor must saturate value to UINT64_MAX");
+    assert(nb.was_clamped() && "huge tensor must carry clamped=true");
   }
 
   // Test make_region

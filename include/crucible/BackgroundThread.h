@@ -958,7 +958,11 @@ struct BackgroundThread {
           slot_info.birth_op = OpIndex{0};
           slot_info.death_op = OpIndex{i};
           slot_info.is_external = true;
-          slot_info.nbytes = compute_storage_nbytes(te.input_metas[j]);
+          // compute_storage_nbytes returns Saturated<uint64_t>; .value()
+          // strips the clamped flag.  Saturation propagates as
+          // UINT64_MAX, which fails downstream pool allocation cleanly
+          // — same behavior as the pre-#1018 bare-uint64_t API.
+          slot_info.nbytes = compute_storage_nbytes(te.input_metas[j]).value();
           slot_info.dtype = te.input_metas[j].dtype;
           slot_info.device_type = te.input_metas[j].device_type;
           slot_info.device_idx = te.input_metas[j].device_idx;
@@ -987,7 +991,8 @@ struct BackgroundThread {
           if (result.old_slot.raw() < slot_cap) {
             auto& slot_info = local_slots[result.old_slot.raw()];
             slot_info.death_op = std::max(slot_info.death_op, OpIndex{i});
-            uint64_t output_nbytes = compute_storage_nbytes(te.output_metas[j]);
+            const uint64_t output_nbytes =
+                compute_storage_nbytes(te.output_metas[j]).value();
             slot_info.nbytes = std::max(slot_info.nbytes, output_nbytes);
           }
           if (result.old_op.is_valid()) {
@@ -1003,7 +1008,7 @@ struct BackgroundThread {
           slot_info.birth_op = OpIndex{i};
           slot_info.death_op = OpIndex{i};
           slot_info.is_external = false;
-          slot_info.nbytes = compute_storage_nbytes(te.output_metas[j]);
+          slot_info.nbytes = compute_storage_nbytes(te.output_metas[j]).value();
           slot_info.dtype = te.output_metas[j].dtype;
           slot_info.device_type = te.output_metas[j].device_type;
           slot_info.device_idx = te.output_metas[j].device_idx;

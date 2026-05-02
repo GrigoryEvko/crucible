@@ -194,27 +194,27 @@ int main() {
         // scalar path is faster (single mul, no load).  At ndim=8
         // the SIMD wins on the dim multiply + masked accumulation.
         bench::run("compute_storage_nbytes_scalar (ndim=1)", [&]{
-            uint64_t b = compute_storage_nbytes_scalar(m1);
+            auto b = compute_storage_nbytes_scalar(m1);
             bench::do_not_optimize(b);
         }),
         bench::run("compute_storage_nbytes_simd   (ndim=1)", [&]{
-            uint64_t b = compute_storage_nbytes_simd(m1);
+            auto b = compute_storage_nbytes_simd(m1);
             bench::do_not_optimize(b);
         }),
         bench::run("compute_storage_nbytes_scalar (ndim=4)", [&]{
-            uint64_t b = compute_storage_nbytes_scalar(m4);
+            auto b = compute_storage_nbytes_scalar(m4);
             bench::do_not_optimize(b);
         }),
         bench::run("compute_storage_nbytes_simd   (ndim=4)", [&]{
-            uint64_t b = compute_storage_nbytes_simd(m4);
+            auto b = compute_storage_nbytes_simd(m4);
             bench::do_not_optimize(b);
         }),
         bench::run("compute_storage_nbytes_scalar (ndim=8)", [&]{
-            uint64_t b = compute_storage_nbytes_scalar(m8);
+            auto b = compute_storage_nbytes_scalar(m8);
             bench::do_not_optimize(b);
         }),
         bench::run("compute_storage_nbytes_simd   (ndim=8)", [&]{
-            uint64_t b = compute_storage_nbytes_simd(m8);
+            auto b = compute_storage_nbytes_simd(m8);
             bench::do_not_optimize(b);
         }),
 

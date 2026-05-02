@@ -77,6 +77,7 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/Types.h>
 #include <crucible/safety/FixedArray.h>
+#include <crucible/safety/Saturated.h>
 #include <crucible/safety/Simd.h>
 
 #include <cstdint>
@@ -96,30 +97,31 @@ namespace crucible::detail {
 // AND update the equivalence fuzzer.
 
 [[nodiscard, gnu::const]] CRUCIBLE_INLINE
-uint64_t compute_storage_nbytes_scalar(const TensorMeta& meta) noexcept {
+safety::Saturated<uint64_t> compute_storage_nbytes_scalar(const TensorMeta& meta) noexcept {
+  using Sat = safety::Saturated<uint64_t>;
   if (meta.ndim == 0) {
-    return element_size(meta.dtype).raw();
+    return Sat{element_size(meta.dtype).raw()};
   }
   int64_t max_offset = 0;
   int64_t min_offset = 0;
   for (uint8_t d = 0; d < meta.ndim; ++d) {
-    if (meta.sizes[d] == 0) return 0;  // zero-size tensor
+    if (meta.sizes[d] == 0) return Sat{uint64_t{0}};  // zero-size tensor
     int64_t dim_extent_bytes;
     // (sizes[d] - 1) * strides[d] can overflow int64 for huge dims.
     // sizes[d] is positive, so the subtraction never underflows.
     if (__builtin_mul_overflow(meta.sizes[d] - 1, meta.strides[d],
                                &dim_extent_bytes)) [[unlikely]] {
-      return UINT64_MAX;
+      return Sat{UINT64_MAX, true};
     }
     if (dim_extent_bytes > 0) {
       if (__builtin_add_overflow(max_offset, dim_extent_bytes,
                                  &max_offset)) [[unlikely]] {
-        return UINT64_MAX;
+        return Sat{UINT64_MAX, true};
       }
     } else {
       if (__builtin_add_overflow(min_offset, dim_extent_bytes,
                                  &min_offset)) [[unlikely]] {
-        return UINT64_MAX;
+        return Sat{UINT64_MAX, true};
       }
     }
   }
@@ -128,20 +130,20 @@ uint64_t compute_storage_nbytes_scalar(const TensorMeta& meta) noexcept {
   int64_t span_signed;
   if (__builtin_sub_overflow(max_offset, min_offset,
                              &span_signed)) [[unlikely]] {
-    return UINT64_MAX;
+    return Sat{UINT64_MAX, true};
   }
   if (__builtin_add_overflow(span_signed, int64_t{1},
                              &span_signed)) [[unlikely]] {
-    return UINT64_MAX;
+    return Sat{UINT64_MAX, true};
   }
   // span is non-negative (max >= 0 >= min, so max - min >= 0).
   uint64_t total_bytes;
   if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed),
                              static_cast<uint64_t>(element_size(meta.dtype).raw()),
                              &total_bytes)) [[unlikely]] {
-    return UINT64_MAX;
+    return Sat{UINT64_MAX, true};
   }
-  return total_bytes;
+  return Sat{total_bytes};
 }
 
 // ── Helper: pre-screen safety check ──────────────────────────────
@@ -217,10 +219,11 @@ bool storage_nbytes_simd_safe_(const TensorMeta& meta) noexcept {
 // arithmetic step.
 
 [[nodiscard, gnu::const]] CRUCIBLE_INLINE
-uint64_t compute_storage_nbytes_simd(const TensorMeta& meta) noexcept {
+safety::Saturated<uint64_t> compute_storage_nbytes_simd(const TensorMeta& meta) noexcept {
+  using Sat = safety::Saturated<uint64_t>;
   // Edge case: scalar tensor.  Same as scalar path.
   if (meta.ndim == 0) {
-    return element_size(meta.dtype).raw();
+    return Sat{element_size(meta.dtype).raw()};
   }
 
   using simd::i64x8;
@@ -238,12 +241,12 @@ uint64_t compute_storage_nbytes_simd(const TensorMeta& meta) noexcept {
   // is 0.  Cheap SIMD check via masked equality + any_of.
   auto zero_size_mask = (sizes == i64x8(0)) && valid_mask;
   if (any_of(zero_size_mask)) [[unlikely]] {
-    return 0;
+    return Sat{uint64_t{0}};
   }
 
   // Pre-screen for overflow safety.  If any per-lane multiply
   // could overflow, fall back to scalar (which detects + returns
-  // UINT64_MAX cleanly).
+  // a clamped Saturated<uint64_t> cleanly).
   if (!storage_nbytes_simd_safe_(meta)) [[unlikely]] {
     return compute_storage_nbytes_scalar(meta);
   }
@@ -283,12 +286,12 @@ uint64_t compute_storage_nbytes_simd(const TensorMeta& meta) noexcept {
     if (e > 0) {
       if (__builtin_add_overflow(max_offset, e,
                                  &max_offset)) [[unlikely]] {
-        return UINT64_MAX;
+        return Sat{UINT64_MAX, true};
       }
     } else {
       if (__builtin_add_overflow(min_offset, e,
                                  &min_offset)) [[unlikely]] {
-        return UINT64_MAX;
+        return Sat{UINT64_MAX, true};
       }
     }
   }
@@ -297,19 +300,19 @@ uint64_t compute_storage_nbytes_simd(const TensorMeta& meta) noexcept {
   int64_t span_signed;
   if (__builtin_sub_overflow(max_offset, min_offset,
                              &span_signed)) [[unlikely]] {
-    return UINT64_MAX;
+    return Sat{UINT64_MAX, true};
   }
   if (__builtin_add_overflow(span_signed, int64_t{1},
                              &span_signed)) [[unlikely]] {
-    return UINT64_MAX;
+    return Sat{UINT64_MAX, true};
   }
   uint64_t total_bytes;
   if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed),
                              static_cast<uint64_t>(element_size(meta.dtype).raw()),
                              &total_bytes)) [[unlikely]] {
-    return UINT64_MAX;
+    return Sat{UINT64_MAX, true};
   }
-  return total_bytes;
+  return Sat{total_bytes};
 }
 
 }  // namespace crucible::detail

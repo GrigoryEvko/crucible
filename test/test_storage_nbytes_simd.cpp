@@ -62,15 +62,22 @@ using namespace crucible::detail;
 // ── Assertion helper: SIMD == scalar ──────────────────────────────
 
 static void check_equiv(const TensorMeta& meta, const char* what) noexcept {
-    const uint64_t scalar = compute_storage_nbytes_scalar(meta);
-    const uint64_t simd_v = compute_storage_nbytes_simd(meta);
+    // Saturated<uint64_t>::operator== is defaulted: compares BOTH the
+    // value AND the clamped flag.  The DetSafe contract demands scalar
+    // and SIMD agree on both — a divergence in the clamp flag would
+    // mean one path silently saturated while the other returned a real
+    // byte count.  #1018 preserves the contract verbatim.
+    const auto scalar = compute_storage_nbytes_scalar(meta);
+    const auto simd_v = compute_storage_nbytes_simd(meta);
     if (scalar != simd_v) {
         std::fprintf(stderr,
-            "[%s] MISMATCH: scalar=%llu simd=%llu\n"
+            "[%s] MISMATCH: scalar=%llu(clamped=%d) simd=%llu(clamped=%d)\n"
             "  ndim=%u dtype=%d sizes=[",
             what,
-            static_cast<unsigned long long>(scalar),
-            static_cast<unsigned long long>(simd_v),
+            static_cast<unsigned long long>(scalar.value()),
+            int(scalar.was_clamped()),
+            static_cast<unsigned long long>(simd_v.value()),
+            int(simd_v.was_clamped()),
             unsigned(meta.ndim),
             int(meta.dtype));
         for (uint8_t d = 0; d < meta.ndim; ++d) {
@@ -223,8 +230,18 @@ static void test_overflow_multiply() {
     // sizes = [2^32 + 2], strides = [2^32] → (2^32+1) * 2^32 ≈ 2^64,
     // overflows int64.
     auto m1 = make_meta({(int64_t{1} << 32) + 2}, {int64_t{1} << 32});
-    assert(compute_storage_nbytes_scalar(m1) == UINT64_MAX);
-    assert(compute_storage_nbytes_simd(m1) == UINT64_MAX);
+    // Saturation result: value=UINT64_MAX AND clamped=true.  The
+    // defaulted Saturated::operator== requires BOTH to match.
+    {
+        const auto sc = compute_storage_nbytes_scalar(m1);
+        assert(sc.value() == UINT64_MAX);
+        assert(sc.was_clamped());
+    }
+    {
+        const auto sv = compute_storage_nbytes_simd(m1);
+        assert(sv.value() == UINT64_MAX);
+        assert(sv.was_clamped());
+    }
     check_equiv(m1, "overflow-mul-1d");
 
     // 2D where one dim's product overflows: sizes=[3, 2^32+1],

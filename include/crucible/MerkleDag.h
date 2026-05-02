@@ -28,6 +28,7 @@
 #include <crucible/TraceRing.h>
 #include <crucible/handles/PublishOnce.h>
 #include <crucible/safety/Borrowed.h>
+#include <crucible/safety/Saturated.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
 
@@ -140,45 +141,52 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(MemoryPlan);
 // path for downstream code to consume a wrapped-around byte count and
 // either underallocate (use-after-free) or trip a contract.  Each
 // arithmetic step is now overflow-checked via __builtin_*_overflow;
-// any overflow returns UINT64_MAX so allocators downstream fail clean
-// on "tensor too large" rather than silently wrap.
-[[nodiscard]] constexpr uint64_t compute_storage_nbytes(const TensorMeta& meta)
+// any overflow yields a Saturated<uint64_t>{UINT64_MAX, true} — the
+// `clamped` flag is the type-system surface for "this value was
+// produced by saturation, not by arithmetic".  Pre-#1018 callers that
+// took the bare uint64_t had no way to distinguish a real 2^64-1
+// byte tensor from an overflow sentinel; Saturated<T> forces the
+// observation to be either propagated (`.value()`) or acted upon
+// (`.was_clamped()`) at every call site.
+[[nodiscard]] constexpr safety::Saturated<uint64_t>
+compute_storage_nbytes(const TensorMeta& meta)
     pre (meta.ndim <= 8)
 {
+  using Sat = safety::Saturated<uint64_t>;
   if (meta.ndim == 0)
-    return element_size(meta.dtype).raw();
+    return Sat{element_size(meta.dtype).raw()};
   int64_t max_offset = 0;
   int64_t min_offset = 0;
   for (uint8_t d = 0; d < meta.ndim; d++) {
-    if (meta.sizes[d] == 0) return 0; // zero-size tensor
+    if (meta.sizes[d] == 0) return Sat{uint64_t{0}}; // zero-size tensor
     int64_t dim_extent_bytes;
     // (sizes[d] - 1) * strides[d] can overflow for huge dims.
     // sizes[d] is positive, so the subtraction never overflows.
     if (__builtin_mul_overflow(meta.sizes[d] - 1, meta.strides[d],
                                &dim_extent_bytes)) [[unlikely]]
-      return UINT64_MAX;
+      return Sat{UINT64_MAX, true};
     if (dim_extent_bytes > 0) {
       if (__builtin_add_overflow(max_offset, dim_extent_bytes, &max_offset)) [[unlikely]]
-        return UINT64_MAX;
+        return Sat{UINT64_MAX, true};
     } else {
       if (__builtin_add_overflow(min_offset, dim_extent_bytes, &min_offset)) [[unlikely]]
-        return UINT64_MAX;
+        return Sat{UINT64_MAX, true};
     }
   }
   // span = max_offset - min_offset + 1; both subtractions can overflow
   // when max and min straddle int64 limits.
   int64_t span_signed;
   if (__builtin_sub_overflow(max_offset, min_offset, &span_signed)) [[unlikely]]
-    return UINT64_MAX;
+    return Sat{UINT64_MAX, true};
   if (__builtin_add_overflow(span_signed, int64_t{1}, &span_signed)) [[unlikely]]
-    return UINT64_MAX;
+    return Sat{UINT64_MAX, true};
   // span is non-negative here (max >= 0 >= min, so max - min >= 0).
   uint64_t total_bytes;
   if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed),
                              static_cast<uint64_t>(element_size(meta.dtype).raw()),
                              &total_bytes)) [[unlikely]]
-    return UINT64_MAX;
-  return total_bytes;
+    return Sat{UINT64_MAX, true};
+  return Sat{total_bytes};
 }
 
 // ═══════════════════════════════════════════════════════════════════

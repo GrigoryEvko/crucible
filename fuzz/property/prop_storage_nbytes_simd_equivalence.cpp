@@ -88,17 +88,25 @@ int main(int argc, char** argv) {
             return meta;
         },
         [](const TensorMeta& meta) {
-            const uint64_t scalar = compute_storage_nbytes_scalar(meta);
-            const uint64_t simd_v = compute_storage_nbytes_simd(meta);
+            // After #1018: returns safety::Saturated<uint64_t>.  The
+            // defaulted operator== compares value AND clamped flag —
+            // exactly the DetSafe contract this fuzzer enforces.  Both
+            // paths must agree on whether saturation occurred, not just
+            // the surface value, or the SIMD path silently masks an
+            // overflow the scalar oracle catches (or vice-versa).
+            const auto scalar = compute_storage_nbytes_scalar(meta);
+            const auto simd_v = compute_storage_nbytes_simd(meta);
 
             if (scalar != simd_v) {
                 std::fprintf(stderr,
                     "\nSIMD/scalar divergence:\n"
-                    "  scalar=%llu simd=%llu\n"
+                    "  scalar=%llu(clamped=%d) simd=%llu(clamped=%d)\n"
                     "  ndim=%u dtype=%d\n"
                     "  sizes=[",
-                    static_cast<unsigned long long>(scalar),
-                    static_cast<unsigned long long>(simd_v),
+                    static_cast<unsigned long long>(scalar.value()),
+                    int(scalar.was_clamped()),
+                    static_cast<unsigned long long>(simd_v.value()),
+                    int(simd_v.was_clamped()),
                     unsigned(meta.ndim),
                     int(meta.dtype));
                 for (uint8_t d = 0; d < meta.ndim; ++d) {
