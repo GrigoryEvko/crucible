@@ -35,6 +35,23 @@
 //
 // See Capabilities.h (atoms), Computation.h (carrier), compat/Fx.h
 // (backward-compat aliases).
+//
+// ── See also: typed-set triad (misc/typed_sets.md) ─────────────────
+//
+// Row<Es...> is the TYPE-LEVEL face of a triad of typed-set
+// primitives.  Sister primitives:
+//
+//   safety::Bits<E>              — runtime value-level set (bitwise,
+//                                  mask-encoded enums).
+//   permissions::proto::PermSet  — type-only set of TAG TYPES.
+//   effects::EffectMask          — runtime dual of Row<Es...>;
+//                                  bridge via bits_from_row<R>() in
+//                                  effects/EffectRowProjection.h.
+//                                  EffectMask is dedicated (NOT
+//                                  Bits<Effect>) because Effect is
+//                                  position-encoded — see
+//                                  misc/typed_sets.md §5 for the
+//                                  encoding caveat.
 
 #include <crucible/effects/Capabilities.h>
 

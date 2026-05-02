@@ -9,6 +9,20 @@
 // session_wiring.md` §6 for the full spec.  The fifteen FOUND-C tasks
 // land in nine phases; this header is the first.
 //
+// ─── See also: typed-set triad (misc/typed_sets.md) ────────────────
+//
+// PermSet<Tags...> is the TYPE-ONLY-WITH-TAG-TYPES face of a triad
+// of typed-set primitives.  Sister primitives:
+//
+//   safety::Bits<E>              — runtime value-level set
+//   effects::Row<Es...>          — type-only set of enum values
+//   effects::EffectMask          — runtime dual of Row<Es...>
+//
+// PermSet has no runtime dual because its elements are TYPES (not
+// enum values); types don't survive type erasure to runtime.  See
+// misc/typed_sets.md for the full triad relationship + naming
+// convergence discussion.
+//
 // ─── What this header is ───────────────────────────────────────────
 //
 // A type-level set algebra over CSL permission Tag types.  Empty class

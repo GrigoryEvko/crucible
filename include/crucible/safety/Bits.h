@@ -119,6 +119,23 @@
 //   CLAUDE.md §II        — 8 axioms
 //   CLAUDE.md §XVI       — safety wrapper catalog (structural family)
 //   CLAUDE.md §XVIII HS14 — neg-compile fixture requirement (≥2)
+//
+// ── See also: typed-set triad (misc/typed_sets.md) ─────────────────
+//
+// Bits<E> is the RUNTIME VALUE-LEVEL face of a triad of typed-set
+// primitives.  Sister primitives:
+//
+//   effects::Row<Es...>          — type-only set (consteval algebra)
+//   permissions::proto::PermSet  — type-only set of TAG TYPES
+//   effects::EffectMask          — runtime dual of Row<Es...>
+//                                  (position-encoded enum needs its
+//                                  own bits-shaped wrapper because
+//                                  Bits<E> assumes mask-encoded)
+//
+// See misc/typed_sets.md for the full triad relationship + naming
+// convergence discussion + the Bits<E> mask-vs-position encoding
+// caveat.  Also note: `algebra::lattices::BitsBudgetLattice` is an
+// UNRELATED memory-budget axis (named similarly, namespace-isolated).
 
 #include <crucible/Platform.h>
 
