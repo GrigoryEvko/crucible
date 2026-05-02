@@ -2456,6 +2456,8 @@ Every PR passes all hard stops or is rejected.
 
 **HS13.** No regression at the chosen parallelism factor. If `AdaptiveScheduler` or any new threading code chooses parallel(N), the SEPLOG-E1 bench harness must show ≤5% regression vs sequential at that workload's footprint tier. Cache-resident workloads stay sequential by default; DRAM-bound workloads parallelize.
 
+**HS14.** Every new mint factory ships with at least 2 negative-compile fixtures. Per the Universal Mint Pattern (§XXI) discipline, a `mint_X(ctx, args...)` factory's `requires` clause is the single load-bearing soundness gate — and a soundness gate without a witness that it FIRES is just a comment. Each fixture lives in `test/effects_neg/` (or `test/safety_neg/`) and demonstrates a distinct mismatch class (unfit ctx residency, non-bridgeable direction, malformed parameter, etc.). The Tier 1 audit rounds set the bar at 29 fixtures across 7 headers; Tier 2 keystones must match the discipline.
+
 ---
 
 ## XIX. When to Update This Guide
@@ -2508,30 +2510,43 @@ template <ParametricArgs..., eff::IsExecCtx Ctx, RuntimeArgs...>
 
 The `mint_*` prefix is load-bearing. It marks every site where the type system verifies a CROSS-TIER FIT and synthesizes a fresh authoritative instance of `X`. After mint, the value is trusted; subsequent operations run at full speed with no further check.
 
-### The canonical mints (current and projected)
+### Two flavors of mint
 
-| Layer | Mint | Concept gate | Returns |
-|---|---|---|---|
-| Permission root | `mint_permission_root<Tag>()` | (none — root authority) | `Permission<Tag>` |
-| Permission split | `mint_permission_split<L, R>(parent)` | `splits_into<P, L, R>` | `pair<Permission<L>, Permission<R>>` |
-| Permission combine | `mint_permission_combine<P>(l, r)` | `splits_into<P, L, R>` | `Permission<P>` |
-| Capability (bare source) | `mint_cap<E>(source)` | `CanMintCap<E, S>` | `Capability<E, S>` |
-| Capability (ctx-driven) | `mint_from_ctx<E>(ctx)` | `CtxCanMint<Ctx, E>` | `Capability<E, ctx_cap_t<Ctx>>` |
-| Bare session handle | `mint_session_handle<Proto>(res)` | `is_well_formed_v<Proto> ∧ SessionResource<Res>` | `SessionHandle<Proto, Res>` |
-| Two-endpoint channel | `mint_channel<Proto>(rA, rB)` | duality + well-formedness | `pair<SessionHandle<Proto,A>, SessionHandle<dual<Proto>,B>>` |
-| Permissioned session | `mint_permissioned_session<Proto>(res, perms...)` | `is_well_formed_v<Proto>` | `PermissionedSessionHandle<Proto, PS, Res>` |
-| Ctx-checked session | `mint_session<Proto>(ctx, res)` | `CtxFitsProtocol<Proto, Ctx>` | `SessionHandle<Proto, Res>` |
-| Substrate session | `mint_substrate_session<Substr, Dir>(ctx, channel, perm)` | `SubstrateFitsCtxResidency<Substr, Ctx>` | `PSH<default_proto_for_t<...>, ...>` |
-| Producer endpoint (typed) | `mint_producer_session<Channel>(handle)` | substrate-shape | `PSH<Loop<Send<T,Continue>>, ...>` |
-| Consumer endpoint (typed) | `mint_consumer_session<Channel>(handle)` | substrate-shape | `PSH<Loop<Recv<T,Continue>>, ...>` |
-| Endpoint (Tier 2) | `mint_endpoint<Substr, Dir>(ctx, handle)` | `SubstrateFitsCtxResidency<Substr, Ctx>` | `Endpoint<Substr, Dir, Ctx>` |
-| Recording session bridge | `mint_recording_session(ctx, h, log, self, peer)` | `CtxAdmitsAuthority<Ctx, Conductor>` | `RecordingSessionHandle<Proto, R, L>` |
-| Crash-watched session | `mint_crash_watched_session(ctx, h, flag)` | `CtxAdmitsCrash<Ctx, Class>` | `CrashWatchedHandle<Proto, R>` |
-| Stage (Tier 3, planned) | `mint_stage<auto FnPtr>(ctx, in, out)` | `PipelineStage<FnPtr> ∧ CtxFitsStage<FnPtr, Ctx>` | `Stage<FnPtr, Ctx>` |
-| Pipeline (Tier 3, planned) | `mint_pipeline(ctx, stages...)` | chain of `CtxFitsStage` + `pipeline_chain<Stages...>` | `Pipeline<Stages...>` |
-| Vigil (Tier 4, planned) | `mint_vigil<L, D, C>(ctx, parts...)` | per-component fit | `Vigil<L, D, C>` |
-| Keeper (Tier 5, planned) | `mint_keeper<Vigils...>(ctx, vigils, topo)` | per-Vigil fit | `Keeper<Vigils..., ...>` |
-| Canopy (Tier 6, planned) | `mint_canopy<Keepers...>(ctx, keepers, mesh)` | per-Keeper fit | `Canopy<Keepers..., ...>` |
+The convention has TWO modes, distinguished by whether the mint threads ctx-driven policy:
+
+- **Token mint** — synthesizes a fresh authoritative token whose authority derives from a parent token (or root authority). NO Ctx parameter; no `CtxFitsX` gate. Examples: `mint_permission_root<Tag>()`, `mint_permission_split<L,R>(parent)`, `mint_cap<E>(source)`, `mint_session_handle<Proto>(res)`.
+  - Note that `mint_permission_split` and `mint_permission_combine` consume a parent token and produce fresh children/parent — the children/parent are authoritative tokens that didn't exist before the call. Mint applies even though the operation is shape-preserving decomposition/composition.
+
+- **Ctx-bound mint** — threads ctx-driven policy through the constructed type. Ctx is the FIRST parameter; the requires-clause is a single `CtxFitsX<X, Ctx>` concept. Examples: `mint_from_ctx<E>(ctx)`, `mint_session<Proto>(ctx, res)`, `mint_substrate_session<...>(ctx, handle)`, `mint_endpoint<...>(ctx, handle)`.
+
+### The canonical mints (status legend: ✅ shipped • 🚧 planned • 🔮 future tier)
+
+| Status | Layer | Mint | Concept gate | Returns |
+|---|---|---|---|---|
+| ✅ | Permission token | `mint_permission_root<Tag>()` | (none — root authority) | `Permission<Tag>` |
+| ✅ | Permission token | `mint_permission_split<L, R>(parent)` | `splits_into<P, L, R>` | `pair<Permission<L>, Permission<R>>` |
+| ✅ | Permission token | `mint_permission_combine<P>(l, r)` | `splits_into<P, L, R>` | `Permission<P>` |
+| ✅ | Permission token | `mint_permission_split_n<...>(parent)` | `splits_into_pack<...>` | `tuple<Permission<...>...>` |
+| ✅ | Permission token | `mint_permission_combine_n<P>(...)` | `splits_into_pack<...>` | `Permission<P>` |
+| ✅ | Permission token | `mint_permission_share<Tag>(p, pool)` | (none — fractional from pool) | `SharedPermission<Tag>` |
+| ✅ | Permission token | `mint_permission_fork<Children...>(parent, callables...)` | `splits_into_pack<...>` | `Permission<parent>` (after join) |
+| ✅ | Capability token | `mint_cap<E>(source)` | `CanMintCap<E, S>` | `Capability<E, S>` |
+| ✅ | Ctx-bound | `mint_from_ctx<E>(ctx)` | `CtxCanMint<Ctx, E>` | `Capability<E, ctx_cap_t<Ctx>>` |
+| ✅ | Session token | `mint_session_handle<Proto>(res)` | `is_well_formed_v<Proto> ∧ SessionResource<Res>` | `SessionHandle<Proto, Res>` |
+| ✅ | Session token | `mint_channel<Proto>(rA, rB)` | duality + well-formedness | `pair<SessionHandle<Proto,A>, SessionHandle<dual<Proto>,B>>` |
+| ✅ | Session token | `mint_permissioned_session<Proto>(res, perms...)` | `is_well_formed_v<Proto>` | `PermissionedSessionHandle<Proto, PS, Res>` |
+| ✅ | Session token | `mint_producer_session<Channel>(handle)` | substrate-shape | `PSH<Loop<Send<T,Continue>>, ...>` |
+| ✅ | Session token | `mint_consumer_session<Channel>(handle)` | substrate-shape | `PSH<Loop<Recv<T,Continue>>, ...>` |
+| ✅ | Ctx-bound | `mint_session<Proto>(ctx, res)` | `CtxFitsProtocol<Proto, Ctx>` | `SessionHandle<Proto, Res>` |
+| ✅ | Ctx-bound | `mint_substrate_session<Substr, Dir>(ctx, handle)` | `IsBridgeableDirection<Substr, Dir> ∧ SubstrateFitsCtxResidency<Substr, Ctx>` | `PSH<default_proto_for_t<...>, ...>` |
+| ✅ | Ctx-bound (Tier 2) | `mint_endpoint<Substr, Dir>(ctx, handle)` | `IsBridgeableDirection<Substr, Dir> ∧ SubstrateFitsCtxResidency<Substr, Ctx>` | `Endpoint<Substr, Dir, Ctx>` |
+| ✅ | Bridge wrap | `mint_recording_session(handle, log, self, peer)` | `IsSessionHandle<H>` | `RecordingSessionHandle<Proto, R, L>` |
+| 🚧 | Bridge wrap | `mint_crash_watched_session(ctx, h, flag)` | `CtxAdmitsCrash<Ctx, Class>` | `CrashWatchedHandle<Proto, R>` |
+| 🚧 | Tier 3 | `mint_stage<auto FnPtr>(ctx, in, out)` | `PipelineStage<FnPtr> ∧ CtxFitsStage<FnPtr, Ctx>` | `Stage<FnPtr, Ctx>` |
+| 🚧 | Tier 3 | `mint_pipeline(ctx, stages...)` | chain of `CtxFitsStage` + `pipeline_chain<Stages...>` | `Pipeline<Stages...>` |
+| 🔮 | Tier 4 | `mint_vigil<L, D, C>(ctx, parts...)` | per-component fit | `Vigil<L, D, C>` |
+| 🔮 | Tier 5 | `mint_keeper<Vigils...>(ctx, vigils, topo)` | per-Vigil fit | `Keeper<Vigils..., ...>` |
+| 🔮 | Tier 6 | `mint_canopy<Keepers...>(ctx, keepers, mesh)` | per-Keeper fit | `Canopy<Keepers..., ...>` |
 
 ### Why the pattern is load-bearing
 
@@ -2543,11 +2558,13 @@ The `mint_*` prefix is load-bearing. It marks every site where the type system v
 ### Discipline rules
 
 - **Every cross-tier composition factory MUST be named `mint_<noun>`.** No exceptions.
-- **The first parameter MUST be `Ctx const&`** (when the factory threads ctx-driven policy). Permission/capability mints that DON'T take a ctx still use the prefix because they mint authoritative tokens.
-- **The `requires` clause MUST be a single `CtxFitsX<X, Ctx>` concept** (or one of its decompositions). Multi-clause requires-lists belong INSIDE `CtxFitsX`, not at the call site.
+- **For ctx-bound mints, the first parameter MUST be `Ctx const&`.** Token mints (which derive authority from a parent token rather than from a ctx) take the parent/source as the first parameter.
+- **The `requires` clause MUST be a single concept** (`CtxFitsX<X, Ctx>` for ctx-bound mints, or the equivalent token-validity concept for token mints). Multi-clause requires-lists belong INSIDE the concept definition, not at the call site.
 - **Every mint MUST be `[[nodiscard]] constexpr noexcept`** unless the factory genuinely allocates (in which case it is `[[nodiscard]] noexcept` only — `constexpr` would lie about the runtime cost).
 - **Returned types are CONCRETE, not type-erased.** `mint_endpoint<...>(ctx, h)` returns `Endpoint<Substr, Dir, Ctx>`, not `auto`-erased-into-virtual. Concept-overloaded specialization downstream depends on the concrete type.
 - **Diagnostics route through `safety::diag::Category`.** A mint that fails its `requires` clause emits a category-tagged diagnostic so user-facing errors stay readable.
+- **Internal helpers do NOT use the `mint_` prefix.** The convention marks USER-FACING authorization points; internal detail-namespace helpers carry the trailing-underscore convention (e.g., `permission_fork_spawn_`, `permission_fork_rebuild_`) so `grep "mint_"` returns only the public surface.
+- **Every new mint factory MUST ship at least 2 negative-compile fixtures** demonstrating the `requires` clause fires on each kind of mismatch. See HS14.
 
 ### Anti-pattern: the runtime registry
 
