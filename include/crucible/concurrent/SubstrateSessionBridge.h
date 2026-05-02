@@ -258,7 +258,12 @@ concept IsBridgeableDirection =
 // ── mint_substrate_session<Substr, Dir>(ctx, handle) ───────────────
 //
 // The Universal Mint factory.  Validates:
-//   * Substrate ↔ Ctx residency fit (SubstrateFitsCtxResidency)
+//   * Substrate ↔ Ctx residency fit (SubstrateFitsCtxResidency).
+//     Post-#861 this checks per_call_working_set_v<S> against the
+//     ctx's residency tier — the HOT-PATH access pattern, NOT total
+//     channel storage.  Large-N rings compose honestly with hot
+//     ctxs (the producer/consumer touches O(1) cache lines per call
+//     regardless of capacity).
 //   * Substrate × Direction is bridgeable (has handle_for and
 //     default_proto_for specializations)
 //

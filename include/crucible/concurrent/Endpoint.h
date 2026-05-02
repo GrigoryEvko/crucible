@@ -45,10 +45,24 @@
 // ── Composition with Tier 1 ─────────────────────────────────────────
 //
 // Endpoint reads ALL Tier 1 facilities through Ctx:
-//   * SubstrateFitsCtxResidency<Substr, Ctx>  — construction gate
+//   * SubstrateFitsCtxResidency<Substr, Ctx>  — construction gate on
+//                                                per_call_working_set_v
+//                                                (HOT-PATH access pattern,
+//                                                NOT total channel storage —
+//                                                see SubstrateCtxFit.h #861).
+//                                                Large-N SpscRing on
+//                                                HotFgCtx is VALID because
+//                                                producer/consumer touch
+//                                                ~3 cache lines per call
+//                                                regardless of capacity.
 //   * IsHotCtx / IsBgCtx / IsArenaCtx / ...   — ctx_residency_tier_v
 //                                                + per-axis discrimination
 //                                                exposed as static facts
+//   * SubstrateBenefitsFromParallelism<Substr> — cliff signal: TOTAL
+//                                                storage > L2/core ⇒ this
+//                                                workload could benefit
+//                                                from sharding (informational;
+//                                                NOT a hard rejection).
 //   * cap_type_of_t<Ctx>                       — recoverable for downstream
 //                                                Capability minting
 //   * row_type_of_t<Ctx>                       — recoverable for downstream
@@ -125,6 +139,32 @@ public:
     static constexpr bool ctx_is_arena     = ::crucible::effects::IsArenaCtx<Ctx>;
     static constexpr bool ctx_is_numa_local = IsNumaLocalCtx<Ctx>;             // concurrent/ExecCtxBridge.h
     static constexpr Tier residency_tier_v  = ctx_residency_tier<Ctx>();      // concurrent/ExecCtxBridge.h
+
+    // Substrate-side compile-time facts the downstream stage can branch
+    // on without re-querying Substrate.h's metafunctions.
+    //
+    // benefits_from_parallelism: total channel storage exceeds the
+    //   conservative L2/core bound (256 KB).  Per ParallelismRule
+    //   (concurrent/ParallelismRule.h), workloads above the cliff
+    //   benefit from sharding / parallelization.  Stage<>/Pipeline
+    //   downstream may use this to recommend a Sharded* alternative
+    //   or to wire NumaSpread placement.  NOT a hard rejection — 1×1
+    //   substrates above the cliff (TraceRing-style) remain valid.
+    //
+    // per_call_working_set: bytes the producer/consumer's hot path
+    //   actually touches per try_send / try_recv / publish / load
+    //   call.  Independent of total capacity.  Useful for Stage<>
+    //   tile-shape decisions that assume per-call WS dictates the
+    //   prefetch budget.
+    //
+    // total_channel_bytes: total static storage of the channel.
+    //   Diagnostic / placement decisions (NUMA, hugepage hint).
+    static constexpr bool        benefits_from_parallelism =
+        SubstrateBenefitsFromParallelism<Substr>;
+    static constexpr std::size_t per_call_working_set =
+        per_call_working_set_v<Substr>;
+    static constexpr std::size_t total_channel_bytes =
+        channel_byte_footprint_v<Substr>;
 
 private:
     // POINTER, not reference: the underlying handle has a reference
@@ -332,6 +372,31 @@ static_assert( ConsEp::ctx_is_warm);
 static_assert(!ConsEp::ctx_is_hot);
 static_assert( ConsEp::ctx_is_arena);
 static_assert( ConsEp::residency_tier_v == Tier::L2Resident);
+
+// Substrate-side static facts.  SmallSpsc<int, 64> = 256 B total →
+// well below the cliff; per-call WS = 192 B (3 cache lines).
+static_assert(!ProdEp::benefits_from_parallelism);   // 256 B < L2/core
+static_assert( ProdEp::per_call_working_set == 192);  // 2 head/tail + 1 cell line
+static_assert( ProdEp::total_channel_bytes == sizeof(int) * 64);
+
+// ── Cliff-crossing pin: large-N SPSC on HotFgCtx is now VALID ──────
+//
+// Before #861, this pairing was rejected (TOTAL storage check).
+// After #861, the gate uses per-call WS so large-N SPSCs compose
+// honestly with HotFgCtx.  benefits_from_parallelism flags the
+// developer that sharding could win, but it's an INFORMATIONAL
+// signal, not a hard rejection.
+
+using HugeSpsc = PermissionedSpscChannel<int, 1024 * 1024, UserTag>;
+using HugeProdEp = Endpoint<HugeSpsc, Direction::Producer, eff::HotFgCtx>;
+static_assert( HugeProdEp::ctx_is_hot);
+static_assert( HugeProdEp::residency_tier_v == Tier::L1Resident);
+static_assert( HugeProdEp::per_call_working_set == 192);
+static_assert( HugeProdEp::total_channel_bytes == 4 * 1024 * 1024);
+static_assert( HugeProdEp::benefits_from_parallelism);
+// The mint factory accepts (HugeSpsc, HotFgCtx) — exactly the
+// regression #861 fixes.  TraceRing-style large rings now compose
+// honestly with the ctx that documents their hot-path access.
 
 // ── Linearity ──────────────────────────────────────────────────────
 static_assert(!std::is_copy_constructible_v<ProdEp>);

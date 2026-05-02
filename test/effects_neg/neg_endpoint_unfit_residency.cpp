@@ -1,14 +1,16 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// AUDIT-3 (CLAUDE.md §XXI HS14): mint_endpoint<Substr, Dir>(ctx, h)
+// AUDIT-3 (CLAUDE.md §XXI HS14) + #861 reshape: mint_endpoint
 // rejects a HotFgCtx (L1Resident) paired with a substrate whose
-// channel_byte_footprint exceeds the conservative L1d bound (32 KB).
+// PER-CALL WORKING SET exceeds the conservative L1d bound.
 //
-// Violation: SPSC<int, 1024 * 1024> = 4 MB.  HotFgCtx claims
-// L1Resident.  4 MB ≫ 32 KB; SubstrateFitsCtxResidency fails.
+// Pre-#861 this used SPSC<int, 1M> (4 MB total).  No longer a
+// violation: per-call WS for SPSC<int, anything> = 192 B << L1d.
+// The reshape uses a 64-KB cell so that one cell legitimately
+// overflows L1d; the per-call WS gate fires on that.
 //
-// Expected diagnostic: "associated constraints are not satisfied"
-// pointing at SubstrateFitsCtxResidency.
+// Violation: SPSC<Big{64 KB}, 4>.  Per-call WS ≥ 64 KB ≫ 32 KB.
+// HotFgCtx claims L1Resident.  SubstrateFitsCtxResidency fails.
 
 #include <crucible/concurrent/Endpoint.h>
 
@@ -18,10 +20,16 @@ namespace saf  = crucible::safety;
 
 struct UserTag {};
 
-int main() {
-    using LargeSpsc = conc::PermissionedSpscChannel<int, 1024 * 1024, UserTag>;
+// 64-KB cell.
+struct alignas(64) Big {
+    char buf[64 * 1024];
+    auto operator<=>(Big const&) const = default;
+};
 
-    LargeSpsc ch;
+int main() {
+    using BigCellSpsc = conc::PermissionedSpscChannel<Big, 4, UserTag>;
+
+    BigCellSpsc ch;
     auto whole = saf::mint_permission_root<conc::spsc_tag::Whole<UserTag>>();
     auto [pp, cp] = saf::mint_permission_split<
         conc::spsc_tag::Producer<UserTag>,
@@ -29,7 +37,7 @@ int main() {
     auto handle = ch.producer(std::move(pp));
 
     eff::HotFgCtx fg;
-    auto bad = conc::mint_endpoint<LargeSpsc, conc::Direction::Producer>(fg, handle);
+    auto bad = conc::mint_endpoint<BigCellSpsc, conc::Direction::Producer>(fg, handle);
     (void)bad;
     (void)cp;
     return 0;

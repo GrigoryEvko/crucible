@@ -189,24 +189,148 @@ using substrate_user_tag_t = typename substrate_traits<S>::user_tag;
 template <IsSubstrate S>
 inline constexpr std::size_t substrate_capacity_v = substrate_traits<S>::capacity;
 
-// ── Working-set footprint ───────────────────────────────────────────
+// ── Two distinct footprint metrics ──────────────────────────────────
 //
-// channel_byte_footprint_v<S>: bytes of channel storage (ring buffer
-// or single Snapshot slot).  Used by SubstrateFitsCtxResidency in
-// concurrent/SubstrateCtxFit.h to verify a Ctx's claimed residency
-// tier can hold the channel's working set.  Does NOT include
-// alignment padding, control-block overhead, or per-thread cached
-// counters — captures the dominant data footprint only.
+// A queue/ring substrate has TWO independent byte budgets that often
+// confuse "fit" checks.  Make them distinct, named, and documented.
 //
-// Snapshot has capacity = 0 in substrate_traits but holds one T
-// slot, so the footprint is sizeof(T).  Ring substrates have
-// capacity = N and the footprint is sizeof(T) * N.
+// 1. channel_byte_footprint_v<S> — TOTAL static storage (ring buffer
+//    or single Snapshot slot).  Diagnostic for:
+//      * NUMA placement decisions (where to allocate the channel)
+//      * Allocator-tier selection (huge-page hint?  arena fit?)
+//      * The cliff recommender (storage > L2/core ⇒ benefits from
+//        sharding/parallelization)
+//    Does NOT include alignment padding, control-block overhead, or
+//    per-thread cached counters — captures the dominant data
+//    footprint only.  Snapshot has capacity = 0 in substrate_traits
+//    but holds one T slot, so total is sizeof(T).
+//
+// 2. per_call_working_set_v<S> — bytes the producer/consumer's HOT
+//    PATH actually touches per try_send / try_recv / publish / load
+//    call.  Independent of total capacity: a 4 MB SpscRing's
+//    producer touches the SAME cache lines per call as a 4 KB
+//    SpscRing's producer (head counter + tail counter + 1
+//    destination cell).  This is what hot-path Ctx residency
+//    (HotFgCtx = L1Resident, BgDrainCtx = L2Resident, …) should be
+//    checked against — NOT total storage.  See SubstrateCtxFit.h.
+//
+// The two metrics serve orthogonal questions:
+//
+//   "Does my hot path stay cache-resident?"
+//     → per_call_working_set_v<S> vs ctx_residency_tier<HotCtx>()
+//
+//   "Will the whole channel fit in L3?  Should I shard?"
+//     → channel_byte_footprint_v<S> vs ParallelismRule cache bounds
+//
+// Confusing them rejects valid configurations (large-N SpscRing on
+// HotFgCtx — the hot path IS L1d-fitting because per_call_WS << 32
+// KB even when total is 4 MB).
 
 template <IsSubstrate S>
 inline constexpr std::size_t channel_byte_footprint_v =
     substrate_capacity_v<S> > 0
         ? sizeof(substrate_value_type_t<S>) * substrate_capacity_v<S>
         : sizeof(substrate_value_type_t<S>);  // Snapshot single-slot
+
+// ── per_call_working_set_v<S>: hot-path access footprint ───────────
+//
+// Bytes the producer/consumer touches per single op.  Counts:
+//   * 1 cache line for each cross-thread atomic counter the hot path
+//     reads/writes (head, tail, threshold, sequence, …).  All
+//     primitives use alignas(64) on those counters per CLAUDE.md
+//     §VIII (false-sharing isolation), so each costs one full line.
+//   * The destination/source cell rounded up to a cache line
+//     (sizeof(T) rounded up to the nearest 64-byte boundary).  T
+//     values smaller than 64 B still occupy one whole line under
+//     the alignas(64) cell layout used by every Permissioned*
+//     primitive's underlying ring.
+//
+// Does NOT count:
+//   * Total ring capacity (irrelevant — producer never reads the
+//     other 99.9% of slots in steady state).
+//   * Per-thread caches like SpscRing's `cached_tail_` (subsumed
+//     under the head/tail line counts).
+//   * Padding outside the touched lines.
+//
+// The numbers are CONSERVATIVE upper bounds, not measured truth.
+// Every value here errs on the side of "touches more lines than it
+// actually does," matching SubstrateFitsCtxResidency's safety
+// posture (reject MORE than the runtime check would, never fewer).
+//
+// Per-topology breakdown (one cache line = 64 B; computed from each
+// primitive's hot-path source):
+//
+//   OneToOne (SpscRing):
+//     1 line (head_) + 1 line (tail_) + 1 line (cell)        = 192 B
+//
+//   ManyToOne (MpscRing):
+//     1 line (head_) + 1 line (tail_) +
+//     1 line (cell sequence atomic) + 1 line (cell payload)  = 256 B
+//
+//   ManyToMany (MpmcRing/SCQ):
+//     1 line (Tail) + 1 line (Head) + 1 line (Threshold) +
+//     1 line (cell state + payload)                          = 256 B
+//
+//   OneToMany_Latest (AtomicSnapshot):
+//     1 line (seq counter) + ceil(sizeof(T)/64) lines for the
+//     buffer (the writer memcpys the whole T; readers memcpy back).
+//     Sized at min 1 line for tiny T, capped at 5 lines (320 B)
+//     for the AtomicSnapshot 256-B max-T limit.
+//
+//   WorkStealing (ChaseLevDeque):
+//     1 line (top_) + 1 line (bottom_) + 1 line (cell)       = 192 B
+//
+// All values fit comfortably within ANY supported host's L1d
+// (conservative bound 32 KB, real-world 32–64 KB) — every hot-path
+// primitive in the zoo is L1d-resident on its access pattern,
+// independent of total channel capacity.  Substrate-fit-vs-ctx
+// rejection should ONLY fire when sizeof(T) is so large that one
+// cell exceeds the tier's bound (e.g., a 64-KB struct in a HotFgCtx
+// would correctly fail the L1d gate).
+
+namespace detail {
+
+// Cache line size used for per-call WS estimation.  Matches the
+// alignas(64) discipline pervasive in the Permissioned* primitives
+// (CLAUDE.md §VIII — x86-64 + Graviton/Neoverse 64 B; Apple
+// Silicon's 128 B handled separately when it lands).
+inline constexpr std::size_t kHotPathCacheLineBytes = 64;
+
+// Round sizeof(T) up to the nearest cache line.  A 4 B int still
+// occupies one full cache line under cell-aligned layout.
+[[nodiscard]] consteval std::size_t
+cell_line_footprint(std::size_t value_bytes) noexcept {
+    if (value_bytes == 0) return 0;
+    return ((value_bytes + kHotPathCacheLineBytes - 1)
+                / kHotPathCacheLineBytes) * kHotPathCacheLineBytes;
+}
+
+}  // namespace detail
+
+// Primary per_call_working_set computation, dispatched on topology.
+template <IsSubstrate S>
+inline constexpr std::size_t per_call_working_set_v = [] consteval {
+    constexpr std::size_t cell =
+        detail::cell_line_footprint(sizeof(substrate_value_type_t<S>));
+    constexpr ChannelTopology topo = substrate_topology_v<S>;
+    if constexpr (topo == ChannelTopology::OneToOne) {
+        // SpscRing: head + tail + cell.
+        return 2 * detail::kHotPathCacheLineBytes + cell;
+    } else if constexpr (topo == ChannelTopology::ManyToOne) {
+        // MpscRing: head + tail + cell-sequence + cell-payload.
+        return 3 * detail::kHotPathCacheLineBytes + cell;
+    } else if constexpr (topo == ChannelTopology::ManyToMany) {
+        // MpmcRing/SCQ: Tail + Head + Threshold + cell.
+        return 3 * detail::kHotPathCacheLineBytes + cell;
+    } else if constexpr (topo == ChannelTopology::OneToMany_Latest) {
+        // AtomicSnapshot: seq + memcpy(T).  cell is at least one
+        // line; for small T this is sizeof(seq line) + 1 cell line.
+        return detail::kHotPathCacheLineBytes + (cell == 0 ? detail::kHotPathCacheLineBytes : cell);
+    } else /* WorkStealing */ {
+        // ChaseLevDeque owner-side: top + bottom + cell.
+        return 2 * detail::kHotPathCacheLineBytes + cell;
+    }
+}();
 
 // ── Topology recommendation ─────────────────────────────────────────
 //
@@ -246,6 +370,66 @@ inline constexpr std::size_t channel_byte_footprint_v =
     // num_producers == 0 || num_consumers == 0: caller error;
     // default to OneToOne which static_asserts on capacity > 0
     // downstream.
+    return ChannelTopology::OneToOne;
+}
+
+// ── recommend_topology_for_workload — the cliff-aware variant ──────
+//
+// Same call signature plus a workload byte-budget.  Layers
+// ParallelismRule's cache-tier rule on top of cardinality:
+//
+//   ws ≤ conservative_l2_per_core (256 KB)
+//     → cardinality dictates topology (sequential is optimal;
+//       sharding wouldn't pay back its overhead)
+//
+//   ws > conservative_l2_per_core
+//     → recommend ManyToMany even when a single producer/consumer
+//       was requested, BECAUSE crossing the cliff means the workload
+//       benefits from sharding/parallelization.  Caller should then
+//       wire ShardedSpscGrid<T, M, N> rather than a bare OneToOne.
+//
+// "OneToOne / ManyToOne / OneToMany_Latest above the cliff" is a
+// VALID configuration (small per-call WS, large total storage —
+// e.g., TraceRing); the recommender just emits "consider sharding
+// if you have multiple bg drainers."  It's a SUGGESTION layer for
+// the developer; SubstrateFitsCtxResidency is the HARD GATE on
+// per-call hot-path WS (separate concern).
+//
+// Conservative bound used here matches SubstrateCtxFit.h's
+// conservative_l2_per_core (256 KB) — the cliff per ParallelismRule
+// §27_04.
+
+inline constexpr std::size_t conservative_cliff_l2_per_core = 256ULL * 1024;
+
+[[nodiscard]] consteval ChannelTopology recommend_topology_for_workload(
+    std::size_t num_producers,
+    std::size_t num_consumers,
+    std::size_t workload_bytes,
+    bool        latest_only = false) noexcept {
+    // Below the cliff: cardinality alone decides.
+    if (workload_bytes <= conservative_cliff_l2_per_core) {
+        return recommend_topology(num_producers, num_consumers, latest_only);
+    }
+    // Above the cliff: WS benefits from parallelization.  Snapshot
+    // (latest_only) is a special case — it has no FIFO ordering to
+    // shard, so we keep OneToMany_Latest regardless of size.
+    if (num_producers == 1 && num_consumers > 1 && latest_only) {
+        return ChannelTopology::OneToMany_Latest;
+    }
+    // Single producer × single consumer ABOVE the cliff is the
+    // TraceRing-style pattern: OneToOne is structurally correct
+    // (one-thread-each-side) but per_call_working_set_v stays
+    // L1-resident.  Recommend OneToOne; the storage-tier check
+    // (StorageFitsCtxResidency in SubstrateCtxFit.h) catches the
+    // total-storage decision separately.
+    if (num_producers == 1 && num_consumers == 1) {
+        return ChannelTopology::OneToOne;
+    }
+    // Genuine N×M above the cliff: sharding/MPMC wins.
+    if (num_producers > 1 && num_consumers == 1) return ChannelTopology::ManyToOne;
+    if (num_producers > 1 && num_consumers > 1) return ChannelTopology::ManyToMany;
+    if (num_producers == 1 && num_consumers > 1) return ChannelTopology::ManyToMany;
+    // 0 producer or 0 consumer: caller error; mirror recommend_topology.
     return ChannelTopology::OneToOne;
 }
 
@@ -350,6 +534,87 @@ static_assert(recommend_topology(8, 8)         == ChannelTopology::ManyToMany);
 static_assert(recommend_topology(1, 4, true)   == ChannelTopology::OneToMany_Latest);
 static_assert(recommend_topology(1, 4, false)  == ChannelTopology::ManyToMany);
 static_assert(recommend_topology(1, 1, true)   == ChannelTopology::OneToOne);  // 1-1 trumps latest
+
+// ── per_call_working_set_v pinning ──────────────────────────────────
+//
+// Numbers below are the conservative upper bounds documented in the
+// per_call_working_set_v doc-block (head/tail/threshold lines + cell
+// rounded up to a 64 B cache line).  Drift in the underlying ring's
+// hot-path-touched-line count fires here.
+//
+// All values are well under the L1d conservative bound (32 KB), so
+// every primitive in the zoo passes SubstrateFitsCtxResidency on
+// HotFgCtx (L1Resident) regardless of total channel capacity.
+
+// kHotPathCacheLineBytes lives in crucible::concurrent::detail (the
+// parent of this self-test namespace).  Spell it fully-qualified to
+// avoid the unqualified `detail::` lookup landing inside the
+// self-test namespace itself.
+inline constexpr std::size_t kLine = ::crucible::concurrent::detail::kHotPathCacheLineBytes;
+
+// SPSC: 2 lines (head/tail) + 1 cell line (sizeof(int) padded to 64 B).
+static_assert(per_call_working_set_v<SpscT> == 3 * kLine);
+
+// MPSC: 3 lines (head/tail/cell-sequence) + 1 cell line.
+static_assert(per_call_working_set_v<MpscT> == 4 * kLine);
+
+// MPMC (SCQ): 3 lines (Tail/Head/Threshold) + 1 cell line.
+static_assert(per_call_working_set_v<MpmcT> == 4 * kLine);
+
+// Snapshot<double>: seq line + 1 cell line (8 B padded to 64 B).
+static_assert(per_call_working_set_v<SnapT> == 2 * kLine);
+
+// ChaseLevDeque: 2 lines (top/bottom) + 1 cell line.
+static_assert(per_call_working_set_v<DequeT> == 3 * kLine);
+
+// Cell-line scaling: a 100 B T occupies 2 cache lines (rounded up
+// from 100 to 128).  An SPSC<100B-struct, N> hot path therefore
+// touches 2 head/tail lines + 2 cell lines = 256 B regardless of N.
+struct OneHundredByteValue {
+    char pad[100];
+    auto operator<=>(OneHundredByteValue const&) const = default;
+};
+using BigCellSpsc = Substrate_t<ChannelTopology::OneToOne,
+                                 OneHundredByteValue, 16, VesselOpStream>;
+static_assert(per_call_working_set_v<BigCellSpsc>
+              == 2 * kLine + 128);  // 2 lines + 2 lines
+
+// Per-call WS is INDEPENDENT of capacity.  An SPSC<int, 1M> has the
+// SAME per-call WS as an SPSC<int, 64> — that's the load-bearing
+// claim of the metric.  4 MB total storage but only 192 B touched
+// per push.
+using HugeSpsc = Substrate_t<ChannelTopology::OneToOne, int, 1024 * 1024, VesselOpStream>;
+static_assert(channel_byte_footprint_v<HugeSpsc>  == 4 * 1024 * 1024);
+static_assert(per_call_working_set_v<HugeSpsc>    == 3 * kLine);
+
+// ── recommend_topology_for_workload pinning ────────────────────────
+//
+// Below the cliff (≤ 256 KB): cardinality dictates.  Above the
+// cliff: 1×1 stays OneToOne (TraceRing-style), genuine N×M climbs
+// to MPSC/MPMC.  Latest-only stays Snapshot regardless.
+
+inline constexpr std::size_t kSmall = 4 * 1024;        //   4 KB
+inline constexpr std::size_t kMid   = 64 * 1024;       //  64 KB (still below cliff)
+inline constexpr std::size_t kBig   = 4 * 1024 * 1024; //   4 MB (above cliff)
+
+// Below the cliff: identical to recommend_topology.
+static_assert(recommend_topology_for_workload(1, 1, kSmall) == ChannelTopology::OneToOne);
+static_assert(recommend_topology_for_workload(4, 1, kSmall) == ChannelTopology::ManyToOne);
+static_assert(recommend_topology_for_workload(8, 8, kMid)   == ChannelTopology::ManyToMany);
+static_assert(recommend_topology_for_workload(1, 4, kMid, true) == ChannelTopology::OneToMany_Latest);
+
+// Above the cliff:
+// 1×1 stays OneToOne (TraceRing-style large SPSC is valid; per-call
+// WS L1-resident, total storage L3-class).
+static_assert(recommend_topology_for_workload(1, 1, kBig)  == ChannelTopology::OneToOne);
+// N×1 climbs to MPSC.
+static_assert(recommend_topology_for_workload(4, 1, kBig)  == ChannelTopology::ManyToOne);
+// N×N climbs to MPMC.
+static_assert(recommend_topology_for_workload(8, 8, kBig)  == ChannelTopology::ManyToMany);
+// 1×N latest-only stays Snapshot regardless of size.
+static_assert(recommend_topology_for_workload(1, 4, kBig, true) == ChannelTopology::OneToMany_Latest);
+// 1×N stream above the cliff: ManyToMany (SPMC degeneration).
+static_assert(recommend_topology_for_workload(1, 4, kBig, false) == ChannelTopology::ManyToMany);
 
 }  // namespace detail::substrate_self_test
 
