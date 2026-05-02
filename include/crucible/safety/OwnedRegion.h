@@ -112,7 +112,7 @@ class [[nodiscard]] OwnedRegion {
     // freshly-rebuilt Permission and constructs the OwnedRegion.
     template <typename Parent>
     static OwnedRegion<T, Parent> rebuild_parent_(T* base, std::size_t count) noexcept {
-        return OwnedRegion<T, Parent>{base, count, mint_permission_fork_rebuild_<Parent>()};
+        return OwnedRegion<T, Parent>{base, count, permission_fork_rebuild_<Parent>()};
     }
 
     // Friend the Workload primitives so they may rebuild parents.

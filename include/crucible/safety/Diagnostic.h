@@ -1214,13 +1214,17 @@ constexpr void enumerate_categories(F&& f) noexcept {
 }
 
 // ═════════════════════════════════════════════════════════════════════
-// ── make_diagnostic<Tag>(ctx...) — ergonomic Diagnostic<> factory ──
+// ── mint_diagnostic<Tag>(ctx...) — Universal Mint Pattern ─────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Deduces the context pack from the function's argument types, sparing
-// the caller from spelling out `Diagnostic<Tag, decltype(args)...>`
-// explicitly.  Useful for metafunction returns where the context types
-// follow from the failure site's local values.
+// Token mint per CLAUDE.md §XXI — constructs a Diagnostic<Tag, Ctx...>
+// with the context pack deduced from argument types, sparing the
+// caller from spelling `Diagnostic<Tag, decltype(args)...>` explicitly.
+//
+// Authority derives from the `is_diagnostic_class_v<Tag>` proof: only
+// types deriving from safety::diag::tag_base may name a diagnostic.
+// This is the canonical authorization point for emitting a typed
+// diagnostic at a metafunction failure site.
 //
 // Note: Ctx... is deduced from `Args&&...`; types are decayed via
 // std::remove_cvref_t to match the type-level Diagnostic<Tag, Ctx...>
@@ -1228,7 +1232,7 @@ constexpr void enumerate_categories(F&& f) noexcept {
 
 template <typename Tag, typename... Args>
     requires is_diagnostic_class_v<Tag>
-[[nodiscard]] consteval auto make_diagnostic(Args&&...)
+[[nodiscard]] consteval auto mint_diagnostic(Args&&...)
     -> Diagnostic<Tag, std::remove_cvref_t<Args>...>
 {
     return Diagnostic<Tag, std::remove_cvref_t<Args>...>{};
@@ -1542,14 +1546,14 @@ static_assert(enumerate_categories_count() == catalog_size,
     "Likely cause: index_sequence dispatch broken or fold expression "
     "regression.");
 
-// ─── make_diagnostic<Tag>(args...) deduces context correctly ──────
+// ─── mint_diagnostic<Tag>(args...) deduces context correctly ──────
 
 static_assert(std::is_same_v<
-    decltype(make_diagnostic<EffectRowMismatch>(int{}, float{})),
+    decltype(mint_diagnostic<EffectRowMismatch>(int{}, float{})),
     Diagnostic<EffectRowMismatch, int, float>>);
 
 static_assert(std::is_same_v<
-    decltype(make_diagnostic<HotPathViolation>()),
+    decltype(mint_diagnostic<HotPathViolation>()),
     Diagnostic<HotPathViolation>>);
 
 }  // namespace crucible::safety::diag::detail::diag_self_test

@@ -110,7 +110,7 @@ namespace detail {
 // arbitrary N at compile time without recursion.
 
 template <typename Children, typename Callables, std::size_t... Is>
-void mint_permission_fork_spawn_(Children&& children,
+void permission_fork_spawn_(Children&& children,
                              Callables&& callables,
                              std::index_sequence<Is...>) noexcept
 {
@@ -172,7 +172,7 @@ template <typename... Children, typename Parent, typename... Callables>
     };
 
     // Step 3: spawn jthreads, join via array destructor.
-    detail::mint_permission_fork_spawn_(
+    detail::permission_fork_spawn_(
         std::move(child_perms),
         std::move(callable_pack),
         std::index_sequence_for<Children...>{});
@@ -182,7 +182,7 @@ template <typename... Children, typename Parent, typename... Callables>
     // exclusive in the caller's scope.  See discipline note in
     // safety/Permission.h about why this is sound under the
     // linearity/no-exceptions invariants.
-    return mint_permission_fork_rebuild_<Parent>();
+    return permission_fork_rebuild_<Parent>();
 }
 
 }  // namespace crucible::safety

@@ -246,7 +246,7 @@ class [[nodiscard]] Permission {
     // PermissionFork rebuilds the parent Permission after children
     // have been consumed by their callables.  See safety/PermissionFork.h.
     template <typename T>
-    friend constexpr Permission<T> mint_permission_fork_rebuild_() noexcept;
+    friend constexpr Permission<T> permission_fork_rebuild_() noexcept;
 
     // The Pool's try_upgrade re-emits the parked Permission when the
     // refcount of outstanding shares hits zero.  Construction is sound:
@@ -387,7 +387,7 @@ mint_permission_combine_n(Permission<Children>&&... children) noexcept {
 //
 // NOT a public API; users must go through mint_permission_fork.
 template <typename T>
-[[nodiscard]] constexpr Permission<T> mint_permission_fork_rebuild_() noexcept {
+[[nodiscard]] constexpr Permission<T> permission_fork_rebuild_() noexcept {
     return Permission<T>{};
 }
 

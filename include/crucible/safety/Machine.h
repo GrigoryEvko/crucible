@@ -84,10 +84,16 @@ public:
 template <typename State>
 Machine(State) -> Machine<State>;
 
-// Factory: construct Machine<State> by forwarding args to State's constructor.
+// ── mint_machine<State>(args...) — Universal Mint Pattern ─────────
+//
+// Token mint per CLAUDE.md §XXI — constructs Machine<State> by
+// forwarding args to State's constructor.  Authority derives from the
+// constructibility proof; this is the canonical authorization point
+// for entering the typed state machine (subsequent transitions go
+// through transition_to_state, machine_transition, etc.).
 template <typename State, typename... Args>
     requires std::is_constructible_v<State, Args...>
-[[nodiscard]] constexpr Machine<State> make_machine(Args&&... args)
+[[nodiscard]] constexpr Machine<State> mint_machine(Args&&... args)
     noexcept(std::is_nothrow_constructible_v<State, Args...>)
 {
     return Machine<State>{std::in_place, std::forward<Args>(args)...};

@@ -283,7 +283,7 @@ parallel_for_views(OwnedRegion<T, Whole>&& region, Body body) noexcept
 
     // Rebuild the parent OwnedRegion.  All sub-region Permissions
     // have been consumed (each worker's lambda destructed its sub-
-    // region at body exit).  mint_permission_fork_rebuild_ is sound here
+    // region at body exit).  permission_fork_rebuild_ is sound here
     // by the same structural argument as mint_permission_fork.
     return OwnedRegion<T, Whole>::template rebuild_parent_<Whole>(base, count);
 }

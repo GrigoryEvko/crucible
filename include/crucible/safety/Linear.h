@@ -30,7 +30,7 @@
 //          T>
 //
 // per misc/25_04_2026.md §2.3.  The wrapper preserves every existing
-// public API surface (consume / peek / peek_mut / swap / make_linear /
+// public API surface (consume / peek / peek_mut / swap / mint_linear /
 // drop / in_place ctor / [[nodiscard]] / move-only deletion).  Storage
 // is delegated to Graded; the lattice's element_type is empty
 // (singleton "linearity grade One") and EBO collapses both grade_ and
@@ -179,12 +179,19 @@ public:
 template <typename T>
 Linear(T) -> Linear<T>;
 
-// Factory: construct a Linear<T> by forwarding args to T's constructor.
+// ── mint_linear<T>(args...) — Universal Mint Pattern ──────────────
+//
+// Token mint per CLAUDE.md §XXI — constructs a Linear<T> by forwarding
+// args to T's constructor.  Authority derives from the constructibility
+// proof (`requires std::is_constructible_v<T, Args...>`); this is the
+// canonical authorization point for promoting a raw value into the
+// linear-typed wrapper carrying its consume-once obligation.
+//
 // Equivalent to Linear<T>{std::in_place, args...} but deduces T less
 // ambiguously.
 template <typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
-[[nodiscard]] constexpr Linear<T> make_linear(Args&&... args)
+[[nodiscard]] constexpr Linear<T> mint_linear(Args&&... args)
     noexcept(std::is_nothrow_constructible_v<T, Args...>)
 {
     return Linear<T>{std::in_place, std::forward<Args>(args)...};

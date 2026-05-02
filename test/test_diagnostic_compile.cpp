@@ -231,17 +231,17 @@ void test_enumerate_categories_visits_all() {
     EXPECT_EQ(visited.back(), diag::StateBudgetViolation::name);
 }
 
-void test_make_diagnostic_factory() {
+void test_mint_diagnostic_factory() {
     // Deduces context types from arguments; cv-qualifiers and reference
     // qualifiers are stripped via remove_cvref_t.
-    auto d1 = diag::make_diagnostic<diag::EffectRowMismatch>(int{}, float{});
+    auto d1 = diag::mint_diagnostic<diag::EffectRowMismatch>(int{}, float{});
     using d1_t = decltype(d1);
     static_assert(std::is_same_v<d1_t,
         diag::Diagnostic<diag::EffectRowMismatch, int, float>>);
     EXPECT_EQ(d1_t::name, std::string_view{"EffectRowMismatch"});
 
     // Empty-context construction.
-    auto d2 = diag::make_diagnostic<diag::HotPathViolation>();
+    auto d2 = diag::mint_diagnostic<diag::HotPathViolation>();
     using d2_t = decltype(d2);
     static_assert(std::is_same_v<d2_t,
         diag::Diagnostic<diag::HotPathViolation>>);
@@ -249,7 +249,7 @@ void test_make_diagnostic_factory() {
 
     // Reference and const-qualified arguments collapse to bare types.
     int const x = 7;
-    auto d3 = diag::make_diagnostic<diag::DetSafeLeak>(x);
+    auto d3 = diag::mint_diagnostic<diag::DetSafeLeak>(x);
     static_assert(std::is_same_v<decltype(d3),
         diag::Diagnostic<diag::DetSafeLeak, int>>);
 }
@@ -292,8 +292,8 @@ int main() {
              test_categories_array);
     run_test("test_enumerate_categories_visits_all",
              test_enumerate_categories_visits_all);
-    run_test("test_make_diagnostic_factory",
-             test_make_diagnostic_factory);
+    run_test("test_mint_diagnostic_factory",
+             test_mint_diagnostic_factory);
     run_test("test_diagnostic_accessor_strings_match_tag_fields",
              test_diagnostic_accessor_strings_match_tag_fields);
     std::fprintf(stderr, "\n%d passed, %d failed\n",

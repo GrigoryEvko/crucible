@@ -223,10 +223,15 @@ public:
 template <typename T>
 Secret(T) -> Secret<T>;
 
-// Factory: construct Secret<T> by forwarding to T's constructor.
+// ── mint_secret<T>(args...) — Universal Mint Pattern ──────────────
+//
+// Token mint per CLAUDE.md §XXI — constructs Secret<T> by forwarding
+// to T's constructor.  Authority derives from the constructibility
+// proof; this is the canonical authorization point for classifying a
+// raw value as Secret (escapes only via declassify<Policy>()).
 template <typename T, typename... Args>
     requires std::is_constructible_v<T, Args...>
-[[nodiscard]] constexpr Secret<T> make_secret(Args&&... args)
+[[nodiscard]] constexpr Secret<T> mint_secret(Args&&... args)
     noexcept(std::is_nothrow_constructible_v<T, Args...>)
 {
     return Secret<T>{std::in_place, std::forward<Args>(args)...};

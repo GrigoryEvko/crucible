@@ -87,7 +87,7 @@ int run_construct_in_place() {
 // ── Test: construct from a pre-built Machine ──────────────────────
 
 int run_construct_from_machine() {
-    auto m = make_machine<VigilState>(VigilState::Mode::Replaying, 100u);
+    auto m = mint_machine<VigilState>(VigilState::Mode::Replaying, 100u);
     VigilBridge bridge{std::move(m)};
 
     if (bridge.state().mode  != VigilState::Mode::Replaying) return 1;
