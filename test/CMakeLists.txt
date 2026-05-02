@@ -883,6 +883,14 @@ crucible_neg_compile_effects_test(neg_session_mint_non_exec_ctx
 crucible_neg_compile_effects_test(neg_session_mint_checkpointed_unfit_rollback
     "associated constraints are not satisfied|CtxFitsProtocol")
 
+# AUDIT-2 closure (CLAUDE.md §XXI HS14): payload_row transparent-
+# unwrap for HotPath<Tier, T> sees through to the inner Computation's
+# row.  Without the spec, the walker silently admits Bg-effect
+# payloads on HotFgCtx — soundness false-negative.  This fixture
+# pins the soundness fix.
+crucible_neg_compile_effects_test(neg_session_mint_hotpath_hides_bg
+    "associated constraints are not satisfied|CtxFitsProtocol")
+
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
 # Each crucible_neg_compile_test below pairs a deliberately-broken

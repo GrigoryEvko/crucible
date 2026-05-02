@@ -50,11 +50,37 @@
 #include <crucible/effects/Capability.h>
 #include <crucible/effects/Computation.h>
 #include <crucible/effects/EffectRow.h>
+// Value-level wrappers — every wrapper that can appear in a Send/Recv
+// payload position must specialize payload_row<>.  Per CLAUDE.md §XXI's
+// AUDIT-2 closure: missing specializations are SOUNDNESS BUGS — the
+// walker silently undercounts effects when an unrecognized wrapper
+// hides a Computation<R, T> inside it.  All shipped graded wrappers
+// from safety/Safety.h are specialized below.
+#include <crucible/safety/AllocClass.h>
+#include <crucible/safety/Budgeted.h>
+#include <crucible/safety/CipherTier.h>
+#include <crucible/safety/Consistency.h>
+#include <crucible/safety/Crash.h>
+#include <crucible/safety/DetSafe.h>
+#include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/HotPath.h>
 #include <crucible/safety/Linear.h>
+#include <crucible/safety/MemOrder.h>
+#include <crucible/safety/Mutation.h>
+#include <crucible/safety/NumaPlacement.h>
+#include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/OpaqueLifetime.h>
+#include <crucible/safety/Progress.h>
+#include <crucible/safety/RecipeSpec.h>
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/ResidencyHeat.h>
 #include <crucible/safety/SealedRefined.h>
+#include <crucible/safety/Secret.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/Tagged.h>
+#include <crucible/safety/TimeOrdered.h>
+#include <crucible/safety/Vendor.h>
+#include <crucible/safety/Wait.h>
 #include <crucible/sessions/SessionContentAddressed.h>
 
 #include <type_traits>
@@ -120,6 +146,115 @@ struct payload_row<::crucible::safety::Stale<T>>
 // unwrap.
 template <class T>
 struct payload_row<ContentAddressed<T>>
+    : payload_row<T> {};
+
+// ── Single-axis policy wrappers (chain-lattice family) ─────────────
+//
+// Each of these wrappers carries a compile-time POLICY axis (HotPath
+// tier, DetSafe tier, AllocClass tag, etc.) but NO effect of its own.
+// The payload's effect row lives entirely in the underlying T.
+// Transparent unwrap so payload_row sees through the policy layer to
+// the inner Computation/Capability/etc.
+//
+// AUDIT-2 closure (CLAUDE.md §XXI): missing specializations are
+// SOUNDNESS BUGS — without these specs, a `Send<HotPath<Hot,
+// Computation<Row<Bg>, T>>, End>` would silently fall to the primary
+// template's Row<> default, hiding the Bg effect from the walker and
+// admitting the protocol on a HotFgCtx (Row<>) that should reject it.
+
+template <auto V, class T>
+struct payload_row<::crucible::safety::HotPath<V, T>>        : payload_row<T> {};
+
+template <auto V, class T>
+struct payload_row<::crucible::safety::DetSafe<V, T>>        : payload_row<T> {};
+
+template <auto V, class T>
+struct payload_row<::crucible::safety::AllocClass<V, T>>     : payload_row<T> {};
+
+template <auto V, class T>
+struct payload_row<::crucible::safety::ResidencyHeat<V, T>>  : payload_row<T> {};
+
+template <auto V, class T>
+struct payload_row<::crucible::safety::CipherTier<V, T>>     : payload_row<T> {};
+
+template <auto V, class T>
+struct payload_row<::crucible::safety::MemOrder<V, T>>       : payload_row<T> {};
+
+template <auto V, class T>
+struct payload_row<::crucible::safety::Wait<V, T>>           : payload_row<T> {};
+
+template <auto V, class T>
+struct payload_row<::crucible::safety::Progress<V, T>>       : payload_row<T> {};
+
+template <auto V, class T>
+struct payload_row<::crucible::safety::NumericalTier<V, T>>  : payload_row<T> {};
+
+template <auto V, class T>
+struct payload_row<::crucible::safety::Vendor<V, T>>         : payload_row<T> {};
+
+template <auto V, class T>
+struct payload_row<::crucible::safety::Crash<V, T>>          : payload_row<T> {};
+
+template <auto V, class T>
+struct payload_row<::crucible::safety::Consistency<V, T>>    : payload_row<T> {};
+
+template <auto V, class T>
+struct payload_row<::crucible::safety::OpaqueLifetime<V, T>> : payload_row<T> {};
+
+// ── Single-T policy wrappers (no axis parameter) ───────────────────
+//
+// These wrappers carry their grade INTERNALLY (per-instance), with no
+// type-level axis parameter.  The payload's effect row still lives in
+// the underlying T.
+
+template <class T>
+struct payload_row<::crucible::safety::Secret<T>>            : payload_row<T> {};
+
+template <class T>
+struct payload_row<::crucible::safety::Budgeted<T>>          : payload_row<T> {};
+
+template <class T>
+struct payload_row<::crucible::safety::EpochVersioned<T>>    : payload_row<T> {};
+
+template <class T>
+struct payload_row<::crucible::safety::NumaPlacement<T>>     : payload_row<T> {};
+
+template <class T>
+struct payload_row<::crucible::safety::RecipeSpec<T>>        : payload_row<T> {};
+
+// ── Mutation family — state-holder wrappers ────────────────────────
+//
+// Monotonic / AppendOnly / WriteOnce / etc. wrap a value or a
+// container.  The payload's effect row lives in the element type T.
+// AppendOnly's Storage<T> container is opaque at the row level — only
+// T matters for effect propagation.
+
+template <class T, class Cmp>
+struct payload_row<::crucible::safety::Monotonic<T, Cmp>>    : payload_row<T> {};
+
+template <class T, auto Max, class Cmp>
+struct payload_row<::crucible::safety::BoundedMonotonic<T, Max, Cmp>>
+    : payload_row<T> {};
+
+template <class T>
+struct payload_row<::crucible::safety::WriteOnce<T>>         : payload_row<T> {};
+
+template <class T, class Cmp>
+    requires std::is_trivially_copyable_v<T>
+struct payload_row<::crucible::safety::AtomicMonotonic<T, Cmp>>
+    : payload_row<T> {};
+
+template <class T, template <class...> class Storage>
+struct payload_row<::crucible::safety::AppendOnly<T, Storage>>
+    : payload_row<T> {};
+
+// ── TimeOrdered — happens-before lattice wrapper ───────────────────
+//
+// T carries the payload effect; N is the happens-before capacity, Tag
+// is identity.  Transparent unwrap to T.
+
+template <class T, std::size_t N, class Tag>
+struct payload_row<::crucible::safety::TimeOrdered<T, N, Tag>>
     : payload_row<T> {};
 
 // ── User alias ──────────────────────────────────────────────────────
@@ -262,6 +397,89 @@ using CaRefinedT =
 static_assert(std::is_same_v<
     payload_row_t<CaRefinedT>,
     eff::Row<eff::Effect::IO>>);
+
+// ── AUDIT-2: cross-wrapper soundness — every shipped graded wrapper
+//            propagates inner effect rows transparently ────────────
+//
+// For each wrapper W shipped in safety/Safety.h, verify:
+//   (a) bare W<T>            → Row<>         (T has no effects)
+//   (b) W<Computation<R, T>> → R             (transparent unwrap)
+//
+// Without these specs the walker silently undercounts effects — a
+// HotPath<Hot, Computation<Row<Bg>, T>> sent to a Fg ctx would PASS
+// the proto walker (false-positive admission) and be admitted into
+// HotFgCtx, which is unsound.
+
+using BgComp = eff::Computation<eff::Row<eff::Effect::Bg>, int>;
+using BareInt = int;
+
+// Single-axis policy wrappers — verify Bg-effect propagation through
+// each.  (Axis values picked to be valid for each enum.)
+static_assert(std::is_same_v<payload_row_t<saf::HotPath<saf::HotPathTier_v::Hot, BgComp>>,
+                              eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<saf::HotPath<saf::HotPathTier_v::Hot, BareInt>>,
+                              eff::Row<>>);
+
+static_assert(std::is_same_v<payload_row_t<saf::DetSafe<saf::DetSafeTier_v::Pure, BgComp>>,
+                              eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<saf::DetSafe<saf::DetSafeTier_v::Pure, BareInt>>,
+                              eff::Row<>>);
+
+static_assert(std::is_same_v<payload_row_t<saf::AllocClass<saf::AllocClassTag_v::Arena, BgComp>>,
+                              eff::Row<eff::Effect::Bg>>);
+
+static_assert(std::is_same_v<payload_row_t<saf::ResidencyHeat<saf::ResidencyHeatTag_v::Hot, BgComp>>,
+                              eff::Row<eff::Effect::Bg>>);
+
+static_assert(std::is_same_v<payload_row_t<saf::CipherTier<saf::CipherTierTag_v::Hot, BgComp>>,
+                              eff::Row<eff::Effect::Bg>>);
+
+static_assert(std::is_same_v<payload_row_t<saf::MemOrder<saf::MemOrderTag_v::Acquire, BgComp>>,
+                              eff::Row<eff::Effect::Bg>>);
+
+static_assert(std::is_same_v<payload_row_t<saf::Wait<saf::WaitStrategy_v::SpinPause, BgComp>>,
+                              eff::Row<eff::Effect::Bg>>);
+
+static_assert(std::is_same_v<payload_row_t<saf::Progress<saf::ProgressClass_v::Terminating, BgComp>>,
+                              eff::Row<eff::Effect::Bg>>);
+
+static_assert(std::is_same_v<payload_row_t<saf::Vendor<saf::VendorBackend_v::CPU, BgComp>>,
+                              eff::Row<eff::Effect::Bg>>);
+
+static_assert(std::is_same_v<payload_row_t<saf::Crash<saf::CrashClass_v::NoThrow, BgComp>>,
+                              eff::Row<eff::Effect::Bg>>);
+
+// Single-T policy wrappers — verify Bg propagation.
+static_assert(std::is_same_v<payload_row_t<saf::Secret<BgComp>>,
+                              eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<saf::Secret<BareInt>>,
+                              eff::Row<>>);
+
+// Mutation family — verify Bg propagation.
+static_assert(std::is_same_v<payload_row_t<saf::Monotonic<BgComp>>,
+                              eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<payload_row_t<saf::WriteOnce<BgComp>>,
+                              eff::Row<eff::Effect::Bg>>);
+
+// TimeOrdered — verify Bg propagation.
+struct TimeTag {};
+static_assert(std::is_same_v<payload_row_t<saf::TimeOrdered<BgComp, 4, TimeTag>>,
+                              eff::Row<eff::Effect::Bg>>);
+
+// ── Cross-axis nesting: HotPath<Hot, Refined<P, Computation<R, T>>> ─
+//
+// The classic composed wrapper stack from CLAUDE.md §XVI canonical-
+// nesting-order.  Bg row should propagate through ALL outer layers.
+
+// NumericalTier uses bare `Tolerance` (no `_v` alias) — fully qualify.
+using DeepStack =
+    saf::HotPath<saf::HotPathTier_v::Hot,
+        saf::DetSafe<saf::DetSafeTier_v::Pure,
+            saf::NumericalTier<::crucible::algebra::lattices::Tolerance::BITEXACT,
+                saf::Refined<saf::positive,
+                    eff::Computation<eff::Row<eff::Effect::Bg, eff::Effect::Alloc>, int>>>>>;
+static_assert(std::is_same_v<payload_row_t<DeepStack>,
+                              eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
 
 }  // namespace detail::payload_row_self_test
 
