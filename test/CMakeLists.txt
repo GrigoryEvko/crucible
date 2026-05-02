@@ -891,6 +891,22 @@ crucible_neg_compile_effects_test(neg_session_mint_checkpointed_unfit_rollback
 crucible_neg_compile_effects_test(neg_session_mint_hotpath_hides_bg
     "associated constraints are not satisfied|CtxFitsProtocol")
 
+# AUDIT-3 closure (CLAUDE.md §XXI HS14): Tier 2 keystone gate
+# fixtures.  Endpoint and SubstrateSessionBridge mints are required
+# to fire on (a) substrate-residency mismatch, (b) non-bridgeable
+# (Substrate, Direction) pair, (c) non-IsExecCtx ctx parameter.
+# 5 fixtures pin all three failure classes across both factories.
+crucible_neg_compile_effects_test(neg_endpoint_unfit_residency
+    "associated constraints are not satisfied|SubstrateFitsCtxResidency|fits_in_tier")
+crucible_neg_compile_effects_test(neg_endpoint_non_bridgeable_direction
+    "associated constraints are not satisfied|IsBridgeableDirection")
+crucible_neg_compile_effects_test(neg_endpoint_non_exec_ctx
+    "associated constraints are not satisfied|SubstrateFitsCtxResidency|IsExecCtx")
+crucible_neg_compile_effects_test(neg_substrate_session_unfit_residency
+    "associated constraints are not satisfied|SubstrateFitsCtxResidency|fits_in_tier")
+crucible_neg_compile_effects_test(neg_substrate_session_non_bridgeable
+    "associated constraints are not satisfied|IsBridgeableDirection")
+
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
 # Each crucible_neg_compile_test below pairs a deliberately-broken
