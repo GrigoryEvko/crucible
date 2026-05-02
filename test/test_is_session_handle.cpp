@@ -8,7 +8,13 @@
 
 #include <crucible/safety/IsSessionHandle.h>
 
+#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionEventLog.h>
+#include <crucible/handles/OneShotFlag.h>
+#include <crucible/safety/Pinned.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -125,6 +131,50 @@ void test_distinct_protos_distinguish() {
         extract::session_handle_proto_t<RecvIntEndH>>);
 }
 
+// ── AUDIT-4 (S2.3): coverage for derived session-handle wrappers ───
+//
+// FOUND-D08's docstring claims is_session_handle_v detects every
+// shipping session-handle wrapper (SessionHandle, PermissionedSession
+// Handle, RecordingSessionHandle, CrashWatchedHandle).  The original
+// 9 tests only verified bare SessionHandle.  These additional
+// fixtures pin the derived-wrapper detection.
+
+void test_permissioned_session_handle_matches() {
+    // PermissionedSessionHandle inherits SessionHandleBase via CRTP
+    // (PermissionedSession.h:289-291).  Should be detected.
+    using PSH = ::crucible::safety::proto::PermissionedSessionHandle<
+        proto::End,
+        ::crucible::safety::proto::EmptyPermSet,
+        fake_resource>;
+    static_assert(extract::is_session_handle_v<PSH>);
+    static_assert(extract::IsSessionHandle<PSH>);
+    static_assert(std::is_same_v<
+        extract::session_handle_proto_t<PSH>, proto::End>);
+}
+
+void test_recording_session_handle_matches() {
+    // RecordingSessionHandle wraps a bare SessionHandle and inherits
+    // SessionHandleBase (RecordingSessionHandle.h:24-30).  Should be
+    // detected.
+    using RecH = ::crucible::safety::proto::RecordingSessionHandle<
+        proto::End, fake_resource, /*LoopCtx*/ void>;
+    static_assert(extract::is_session_handle_v<RecH>);
+    static_assert(extract::IsSessionHandle<RecH>);
+    static_assert(std::is_same_v<
+        extract::session_handle_proto_t<RecH>, proto::End>);
+}
+
+void test_crash_watched_handle_matches() {
+    // CrashWatchedHandle wraps a SessionHandle and inherits
+    // SessionHandleBase per the bridges/CrashTransport.h pattern.
+    using CrH = ::crucible::safety::proto::CrashWatchedHandle<
+        proto::End, fake_resource, /*LoopCtx*/ void>;
+    static_assert(extract::is_session_handle_v<CrH>);
+    static_assert(extract::IsSessionHandle<CrH>);
+    static_assert(std::is_same_v<
+        extract::session_handle_proto_t<CrH>, proto::End>);
+}
+
 }  // namespace
 
 int main() {
@@ -138,6 +188,9 @@ int main() {
     run_test("test_proto_extraction_cvref_stripped",       test_proto_extraction_cvref_stripped);
     run_test("test_pointer_to_handle_rejected",            test_pointer_to_handle_rejected);
     run_test("test_distinct_protos_distinguish",           test_distinct_protos_distinguish);
+    run_test("test_permissioned_session_handle_matches",   test_permissioned_session_handle_matches);
+    run_test("test_recording_session_handle_matches",      test_recording_session_handle_matches);
+    run_test("test_crash_watched_handle_matches",          test_crash_watched_handle_matches);
     std::fprintf(stderr, "\n%d passed, %d failed\n",
                  total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

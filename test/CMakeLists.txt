@@ -907,6 +907,13 @@ crucible_neg_compile_effects_test(neg_substrate_session_unfit_residency
 crucible_neg_compile_effects_test(neg_substrate_session_non_bridgeable
     "associated constraints are not satisfied|IsBridgeableDirection")
 
+# AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the
+# SessionMint walker handles BSYZ22 crash-stop's Stop the same way
+# as End — vacuously admitted, but the surrounding Send's payload
+# row still counts.
+crucible_neg_compile_effects_test(neg_session_mint_stop_terminator_unfit
+    "associated constraints are not satisfied|CtxFitsProtocol")
+
 # ─── Pattern stability classification (#371, SEPLOG-BUG-7) ──────────
 #
 # Each crucible_neg_compile_test below pairs a deliberately-broken
