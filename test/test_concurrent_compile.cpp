@@ -89,6 +89,16 @@ void test_pipeline_compile() {
     bool ok = ::crucible::concurrent::pipeline_runtime_smoke_test();
     if (!ok) throw TestFailure{};
 }
+void test_pipeline_real_integration() {
+    // Real-channel integration smoke (Tier 3 audit round 3): exercises
+    // the full Tier 1 (PermissionedSpscChannel + permission split) →
+    // Tier 2 (real producer/consumer handles via channel.producer /
+    // .consumer factories) → Tier 3 (Stage with real handle types,
+    // Pipeline composition, jthread spawn/join) chain.  Distinct from
+    // pipeline_runtime_smoke_test which uses local Fake* fixtures.
+    bool ok = ::crucible::concurrent::pipeline_real_integration_smoke_test();
+    if (!ok) throw TestFailure{};
+}
 
 }  // namespace
 
@@ -101,6 +111,7 @@ int main() {
     run_test("test_endpoint_compile",                test_endpoint_compile);
     run_test("test_stage_compile",                   test_stage_compile);
     run_test("test_pipeline_compile",                test_pipeline_compile);
+    run_test("test_pipeline_real_integration",       test_pipeline_real_integration);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
     std::fprintf(stderr, "ALL PASSED\n");

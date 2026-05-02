@@ -122,8 +122,10 @@
 //   CLAUDE.md §XVIII HS14          — neg-compile fixture requirement
 
 #include <crucible/Platform.h>
+#include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/concurrent/Stage.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/permissions/Permission.h>
 
 #include <array>
 #include <thread>
@@ -420,6 +422,105 @@ inline bool pipeline_runtime_smoke_test() noexcept {
     // Run consumes it; bodies are no-ops so jthreads exit immediately.
     std::move(pipeline_moved).run();
 
+    return true;
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Real-channel integration smoke (audit round 3) ─────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// The pipeline_runtime_smoke_test() above uses local FakeConsumer /
+// FakeProducer fixtures — sufficient to exercise the structural
+// composition but it never proves that real PermissionedSpscChannel
+// ProducerHandle / ConsumerHandle types actually flow through the
+// Tier 1 → Tier 2 → Tier 3 chain.
+//
+// This test mints a real PermissionedSpscChannel, splits its Whole
+// permission into Producer + Consumer, constructs the typed handles,
+// passes those handles into mint_stage, composes into a Pipeline of
+// 1, and runs it.  The stage body is a no-op (returns immediately
+// without draining); the test proves the COMPOSITION compiles and
+// the jthread spawn/join sequence completes — NOT that the body
+// drains the channel.
+//
+// What this pins:
+//   * IsConsumerHandle<PermissionedSpscChannel<...>::ConsumerHandle>
+//     actually holds (proven by mint_stage accepting it as the
+//     consumer slot of a real PipelineStage-shape FnPtr).
+//   * IsProducerHandle<PermissionedSpscChannel<...>::ProducerHandle>
+//     actually holds.
+//   * Stage's typename binding (consumer_handle_type / producer_handle_type)
+//     resolves correctly when FnPtr's parameters are nested types of a
+//     class template.
+//   * Pipeline<Stage<FnPtr, Ctx>> with N=1 runs cleanly via the same
+//     jthread-spawn/array-join code path used for N≥2.
+
+namespace detail::pipeline_real_smoke {
+
+struct InTag  {};
+struct OutTag {};
+
+using ChIn  = PermissionedSpscChannel<int, 64, InTag>;
+using ChOut = PermissionedSpscChannel<int, 64, OutTag>;
+
+// Real PipelineStage-shape body — no-op forwarder that returns
+// immediately without draining (so the jthread completes promptly
+// and the smoke test doesn't hang).
+inline void real_stage_body(typename ChIn::ConsumerHandle&&,
+                            typename ChOut::ProducerHandle&&) noexcept {}
+
+// Compile-time witnesses — the structural facts the test exercises
+// at runtime must also hold at compile time.
+static_assert(::crucible::safety::extract::is_consumer_handle_v<typename ChIn::ConsumerHandle>);
+static_assert(::crucible::safety::extract::is_producer_handle_v<typename ChOut::ProducerHandle>);
+static_assert(::crucible::safety::extract::PipelineStage<&real_stage_body>);
+
+}  // namespace detail::pipeline_real_smoke
+
+inline bool pipeline_real_integration_smoke_test() noexcept {
+    namespace eff  = ::crucible::effects;
+    namespace saf  = ::crucible::safety;
+    using namespace detail::pipeline_real_smoke;
+
+    // Two real channels: one for the stage's input drain, one for
+    // its output push (the body never actually drives them; this
+    // test exercises the COMPOSITION only).
+    ChIn  ch_in;
+    ChOut ch_out;
+
+    // Mint + split permissions for both channels.
+    auto whole_in = saf::mint_permission_root<spsc_tag::Whole<InTag>>();
+    auto [pp_in, cp_in] = saf::mint_permission_split<
+        spsc_tag::Producer<InTag>, spsc_tag::Consumer<InTag>>(std::move(whole_in));
+
+    auto whole_out = saf::mint_permission_root<spsc_tag::Whole<OutTag>>();
+    auto [pp_out, cp_out] = saf::mint_permission_split<
+        spsc_tag::Producer<OutTag>, spsc_tag::Consumer<OutTag>>(std::move(whole_out));
+
+    // Construct the handles the stage body will own.  pp_in (input-
+    // side producer) and cp_out (output-side consumer) are the
+    // "external" sides — left as raw permission tokens that destruct
+    // at scope exit; in a real pipeline a driver / downstream consumer
+    // would convert them to handles.
+    auto consumer_h = ch_in.consumer(std::move(cp_in));
+    auto producer_h = ch_out.producer(std::move(pp_out));
+
+    // Mint the stage with REAL handles — exercises Stage's typename
+    // binding against PermissionedSpscChannel nested handle types.
+    eff::HotFgCtx ctx;
+    auto stage = mint_stage<&real_stage_body>(
+        ctx, std::move(consumer_h), std::move(producer_h));
+
+    // Compose into a 1-stage pipeline (vacuously chain-compatible);
+    // run it (jthread spawn → no-op body → jthread join).
+    auto pipeline = mint_pipeline(ctx, std::move(stage));
+    std::move(pipeline).run();
+
+    // Suppress unused-permission warnings.  In a real pipeline these
+    // would be converted to handles owned by upstream/downstream
+    // actors.
+    (void)pp_in;
+    (void)cp_out;
     return true;
 }
 
