@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Violation: using make_session_handle<Proto> with Proto containing
+// Violation: using mint_session_handle<Proto> with Proto containing
 // a free Continue (outside any enclosing Loop).  L1 Session.h's
-// well-formedness check in make_session_handle rejects this.
+// well-formedness check in mint_session_handle rejects this.
 
 #include <crucible/sessions/Session.h>
 
@@ -14,8 +14,8 @@ using IllFormedProto = Send<int, Continue>;
 struct FakeRes {};
 
 int main() {
-    // make_session_handle enforces is_well_formed_v — fires a static_assert.
-    auto h = make_session_handle<IllFormedProto>(FakeRes{});
+    // mint_session_handle enforces is_well_formed_v — fires a static_assert.
+    auto h = mint_session_handle<IllFormedProto>(FakeRes{});
     (void)h;
     return 0;
 }

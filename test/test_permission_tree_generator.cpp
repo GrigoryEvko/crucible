@@ -13,7 +13,7 @@
 //      it's parsed).
 //   2. Calls the inline runtime_smoke_test() entry point with
 //      non-constant arguments — exercises the actual factory chain
-//      (permission_root_mint → permission_split_n → destruction)
+//      (mint_permission_root → mint_permission_split_n → destruction)
 //      which static_asserts cannot.
 //   3. Exercises the auto_split_n traits at non-trivial N values
 //      that the in-header sentinel asserts skip (16, 64, larger
@@ -94,15 +94,15 @@ static_assert(stress_pack_<>(std::make_index_sequence<16>{}));
 static_assert(stress_pack_<>(std::make_index_sequence<32>{}));
 
 // ── Runtime exercise — calls the header's smoke test which itself
-//                       runs permission_root_mint → split_n → drop.
+//                       runs mint_permission_root → split_n → drop.
 
 void run_runtime_smoke() {
     runtime_smoke_test();
 
     // Larger split exercised here (the header keeps its smoke at N=4
     // to stay readable; the sentinel TU pushes it further).
-    auto parent = permission_root_mint<MyData>();
-    auto eight = permission_split_n<
+    auto parent = mint_permission_root<MyData>();
+    auto eight = mint_permission_split_n<
         Slice<MyData, 0>, Slice<MyData, 1>,
         Slice<MyData, 2>, Slice<MyData, 3>,
         Slice<MyData, 4>, Slice<MyData, 5>,

@@ -44,7 +44,7 @@
 //   struct splits_into_pack<Parent, Slice<Parent, Is>...>
 //       : std::true_type {};
 //
-// permission_split_n<Slice<Parent, Is>...> succeeds for any (Parent,
+// mint_permission_split_n<Slice<Parent, Is>...> succeeds for any (Parent,
 // sizeof...(Is)) pair without per-N user-side declaration.  The
 // permission factory checks the trait via splits_into_pack_v; the
 // trait fires for any number of distinct Slice<Parent, I> children.
@@ -62,7 +62,7 @@
 // OwnedRegion<T, Tag>::split_into<N>() returns a
 // std::tuple<OwnedRegion<T, Slice<Tag, Is>>...> — one sub-region per
 // shard.  Each sub-region's Permission<Slice<Tag, I>> token is
-// derived via permission_split_n, validated against the auto-
+// derived via mint_permission_split_n, validated against the auto-
 // generated splits_into_pack specialization in this header.
 //
 // PermissionedShardedGrid<UserTag, M, N> reuses the same Slice<>
@@ -98,7 +98,7 @@ struct Slice {
 };
 
 // One partial specialization handles ALL N values via index-pack
-// deduction.  permission_split_n<Slice<Parent, Is>...> succeeds for
+// deduction.  mint_permission_split_n<Slice<Parent, Is>...> succeeds for
 // any (Parent, sizeof...(Is)) pair without per-N user-side work.
 
 template <typename Parent, std::size_t... Is>
@@ -110,7 +110,7 @@ struct splits_into_pack<Parent, Slice<Parent, Is>...>
 // Convenience alias producing the heterogeneous tuple of N distinct
 // Slice<Parent, 0..N-1> tag types.  Consumed by primitives that need
 // to construct N child Permission tokens at once via
-// permission_split_n.
+// mint_permission_split_n.
 //
 // Usage:
 //   using slice_pack_t = auto_split_n<MyTag, 8>::type;
@@ -140,7 +140,7 @@ struct auto_split_n {
         detail::auto_split_tuple_<Parent>(std::make_index_sequence<N>{}));
 
     // Tuple of the slice Permission tokens (the actual return type of
-    // permission_split_n<Slice<Parent, Is>...>(parent_perm)).
+    // mint_permission_split_n<Slice<Parent, Is>...>(parent_perm)).
     using permissions_type = decltype(
         detail::auto_split_perms_<Parent>(std::make_index_sequence<N>{}));
 };
@@ -229,9 +229,9 @@ static_assert(std::is_same_v<
 inline void runtime_smoke_test() {
     // Mint a parent permission, split it into 4 child Slice<> tokens.
     using Tag = detail::ptg_test_tag_;
-    auto parent = permission_root_mint<Tag>();
+    auto parent = mint_permission_root<Tag>();
 
-    auto children = permission_split_n<
+    auto children = mint_permission_split_n<
         Slice<Tag, 0>, Slice<Tag, 1>,
         Slice<Tag, 2>, Slice<Tag, 3>>(std::move(parent));
 

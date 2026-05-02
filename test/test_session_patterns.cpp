@@ -63,7 +63,7 @@ int run_request_response_once() {
     Wire b{&wire};
 
     auto [client, server] =
-        establish_channel<RequestResponseOnce_Client<Req, Resp>>(std::move(a), std::move(b));
+        mint_channel<RequestResponseOnce_Client<Req, Resp>>(std::move(a), std::move(b));
 
     auto client2 = std::move(client).send(Req{"hello"}, send_req);
     auto [got_req, server2] = std::move(server).recv(recv_req);
@@ -92,7 +92,7 @@ int run_fan_out() {
     std::deque<std::string> wire;
     Wire coord{&wire};
 
-    auto handle = make_session_handle<FanOut<3, Req>>(std::move(coord));
+    auto handle = mint_session_handle<FanOut<3, Req>>(std::move(coord));
     auto h1 = std::move(handle).send(Req{"job0"}, send_req);
     auto h2 = std::move(h1).send(Req{"job1"}, send_req);
     auto h3 = std::move(h2).send(Req{"job2"}, send_req);
@@ -115,7 +115,7 @@ int run_scatter_gather() {
     Wire server_res{&wire};
 
     auto [coord, worker] =
-        establish_channel<ScatterGather<N, Req, Resp>>(std::move(client_res),
+        mint_channel<ScatterGather<N, Req, Resp>>(std::move(client_res),
                                                        std::move(server_res));
 
     // Coordinator sends N tasks.
@@ -183,7 +183,7 @@ int run_two_phase_commit() {
     Wire b{&wire};
 
     using Proto = TwoPhaseCommit_Coord<Prepare, Vote, Commit, Abort>;
-    auto [coord, follower] = establish_channel<Proto>(std::move(a), std::move(b));
+    auto [coord, follower] = mint_channel<Proto>(std::move(a), std::move(b));
 
     // Coordinator → follower: Prepare
     auto coord2 = std::move(coord).send(Prepare{42}, send_prepare);

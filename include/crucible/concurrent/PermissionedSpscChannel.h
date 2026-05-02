@@ -95,8 +95,8 @@
 //   struct MyChannel {};
 //   PermissionedSpscChannel<int, 1024, MyChannel> channel;
 //
-//   auto whole = permission_root_mint<spsc_tag::Whole<MyChannel>>();
-//   auto [prod_perm, cons_perm] = permission_split<
+//   auto whole = mint_permission_root<spsc_tag::Whole<MyChannel>>();
+//   auto [prod_perm, cons_perm] = mint_permission_split<
 //       spsc_tag::Producer<MyChannel>,
 //       spsc_tag::Consumer<MyChannel>>(std::move(whole));
 //
@@ -128,7 +128,7 @@
 //
 //   THREADING.md §5.5 — Tier 4 queue facade design
 //   PermissionedSnapshot.h — sibling SWMR worked example
-//   safety/Permission.h — Permission/permission_split machinery
+//   safety/Permission.h — Permission/mint_permission_split machinery
 //   concurrent/SpscRing.h — underlying lock-free ring primitive
 //   session_types.md §IV.2 — TraceRing as a typed session
 //   CRUCIBLE.md §IV.2 — TraceRing runtime spec
@@ -295,8 +295,8 @@ public:
     // ── Factories ─────────────────────────────────────────────────
 
     // Producer endpoint — consumes the Producer Permission token.
-    // Caller mints via `permission_root_mint<whole_tag>()` then
-    // `permission_split<producer_tag, consumer_tag>(whole)` at startup,
+    // Caller mints via `mint_permission_root<whole_tag>()` then
+    // `mint_permission_split<producer_tag, consumer_tag>(whole)` at startup,
     // moves the producer half into producer().  Returns the unique
     // ProducerHandle for this channel.
     [[nodiscard]] ProducerHandle producer(safety::Permission<producer_tag>&& perm) noexcept {
@@ -331,11 +331,11 @@ public:
     // underlying ring; what differs is the proof mechanism.
     //
     // Usage:
-    //   auto whole = safety::permission_root_mint<channel_t::whole_tag>();
-    //   auto [pp, cp] = safety::permission_split<
+    //   auto whole = safety::mint_permission_root<channel_t::whole_tag>();
+    //   auto [pp, cp] = safety::mint_permission_split<
     //       channel_t::producer_tag, channel_t::consumer_tag>(std::move(whole));
     //   /* ... handles do work, then drop ... */
-    //   auto recombined = safety::permission_combine<channel_t::whole_tag>(
+    //   auto recombined = safety::mint_permission_combine<channel_t::whole_tag>(
     //       std::move(pp), std::move(cp));
     //   recombined = ch.with_recombined_access(
     //       std::move(recombined),
@@ -386,7 +386,7 @@ private:
 // (Whole → Producer + Consumer) decomposition without per-tag
 // boilerplate.  Both forms (binary splits_into and N-ary
 // splits_into_pack) are specialized so users can use either
-// permission_split (binary) or permission_split_n (variadic).
+// mint_permission_split (binary) or mint_permission_split_n (variadic).
 
 namespace crucible::safety {
 

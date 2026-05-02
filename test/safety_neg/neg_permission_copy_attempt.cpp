@@ -30,9 +30,9 @@ struct MyTag {};
 
 int main() {
     using crucible::safety::Permission;
-    using crucible::safety::permission_root_mint;
+    using crucible::safety::mint_permission_root;
 
-    auto p1 = permission_root_mint<MyTag>();
+    auto p1 = mint_permission_root<MyTag>();
 
     // Should FAIL: Permission<Tag>'s copy constructor is = delete
     // with reason "linear — duplicating creates two simultaneous

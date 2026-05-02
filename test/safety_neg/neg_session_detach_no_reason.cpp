@@ -14,7 +14,7 @@ using namespace crucible::safety::proto;
 struct R { int sentinel = 1; };
 
 int main() {
-    auto h = make_session_handle<End>(R{});
+    auto h = mint_session_handle<End>(R{});
     // Detaching without a reason tag — the deleted overload outranks
     // the templated detach<Reason>(Reason) for a zero-arg call, so
     // GCC fires the framework-controlled "[DetachReason_Required] ..."

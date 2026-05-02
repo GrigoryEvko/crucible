@@ -192,7 +192,7 @@ struct UnknownParameterShape : tag_base {
         "(UnaryTransform, BinaryTransform, Reduction, ProducerEndpoint, "
         "ConsumerEndpoint, SwmrWriter, SwmrReader, PipelineStage).  No "
         "automatic lowering is selected; manual orchestration via "
-        "parallel_for_views / permission_fork / Queue::* is required.";
+        "parallel_for_views / mint_permission_fork / Queue::* is required.";
     static constexpr std::string_view remediation =
         "Either reshape the function signature to match a canonical "
         "shape (most commonly: change a raw `T*` to `OwnedRegion<T, Tag>&&` "

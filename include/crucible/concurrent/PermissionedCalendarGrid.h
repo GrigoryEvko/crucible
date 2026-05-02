@@ -76,7 +76,7 @@
 //   Re-uses the FOUND-A22 split_grid<Whole, M, 1> factory with
 //   N=1 — the consumer side has exactly one slot.
 //
-//     auto whole = permission_root_mint<calendar_tag::Whole<X>>();
+//     auto whole = mint_permission_root<calendar_tag::Whole<X>>();
 //     auto perms = split_grid<calendar_tag::Whole<X>, M, 1>(whole);
 //     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
 //     auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));

@@ -96,7 +96,7 @@ static_assert(!std::is_default_constructible_v<C0>);
 
 template <typename UserTag, std::size_t M, std::size_t N>
 auto fresh_grid_perms() {
-    auto whole = permission_root_mint<grid_tag::Whole<UserTag>>();
+    auto whole = mint_permission_root<grid_tag::Whole<UserTag>>();
     return split_grid<grid_tag::Whole<UserTag>, M, N>(std::move(whole));
 }
 

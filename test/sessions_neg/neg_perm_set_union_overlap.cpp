@@ -7,7 +7,7 @@
 //   typically when threading two participants through the same
 //   protocol — e.g., two producer roles minted with the same Tag.
 //   The overlap is sometimes invisible at the call site because
-//   the PermSets come from disparate establish_permissioned calls.
+//   the PermSets come from disparate mint_permissioned_session calls.
 //
 // WHY THE TYPE SYSTEM CATCHES IT:
 //   perm_set_union_t carries a static_assert(((!contains<PS1, T2s>)

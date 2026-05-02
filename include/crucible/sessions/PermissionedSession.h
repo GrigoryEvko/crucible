@@ -300,7 +300,7 @@ class [[nodiscard]] PermissionedSessionHandle<End, PS, Resource, LoopCtx>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
     template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto establish_permissioned(
+    friend constexpr auto mint_permissioned_session(
         Res, Permission<InitPerms>&&...) noexcept;
 
 public:
@@ -454,7 +454,7 @@ class [[nodiscard]] PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
     template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto establish_permissioned(
+    friend constexpr auto mint_permissioned_session(
         Res, Permission<InitPerms>&&...) noexcept;
 
 public:
@@ -551,7 +551,7 @@ class [[nodiscard]] PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
     template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto establish_permissioned(
+    friend constexpr auto mint_permissioned_session(
         Res, Permission<InitPerms>&&...) noexcept;
 
 public:
@@ -641,7 +641,7 @@ class [[nodiscard]] PermissionedSessionHandle<Select<Branches...>, PS,
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
     template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto establish_permissioned(
+    friend constexpr auto mint_permissioned_session(
         Res, Permission<InitPerms>&&...) noexcept;
 
 public:
@@ -757,7 +757,7 @@ class [[nodiscard]] PermissionedSessionHandle<Offer<Branches...>, PS,
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
     template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto establish_permissioned(
+    friend constexpr auto mint_permissioned_session(
         Res, Permission<InitPerms>&&...) noexcept;
 
 public:
@@ -878,7 +878,7 @@ private:
 };
 
 // ═════════════════════════════════════════════════════════════════
-// ── Factory: establish_permissioned<Proto, Resource, InitPerms…> ─
+// ── Factory: mint_permissioned_session<Proto, Resource, InitPerms…> ─
 // ═════════════════════════════════════════════════════════════════
 //
 // Mints a PermissionedSessionHandle by consuming the supplied
@@ -890,24 +890,24 @@ private:
 // dropped at End.
 //
 // Loop-prefixed protocols are unrolled the same way bare
-// make_session_handle does it.  Continue at the top level is
+// mint_session_handle does it.  Continue at the top level is
 // rejected — same diagnostic shape as bare framework.
 
 template <typename Proto, typename Resource, typename... InitPerms>
-[[nodiscard]] constexpr auto establish_permissioned(
+[[nodiscard]] constexpr auto mint_permissioned_session(
     Resource r,
     Permission<InitPerms>&&... perms) noexcept
 {
     static_assert(is_well_formed_v<Proto>,
         "crucible::session::diagnostic [Protocol_Ill_Formed]: "
-        "establish_permissioned<Proto>: protocol is ill-formed.");
+        "mint_permissioned_session<Proto>: protocol is ill-formed.");
     static_assert(!is_empty_choice_v<Proto>,
         "crucible::session::diagnostic [Empty_Choice_Combinator]: "
-        "establish_permissioned<Proto>: cannot construct a runnable "
+        "mint_permissioned_session<Proto>: cannot construct a runnable "
         "handle on Select<> or Offer<> with zero branches.");
     static_assert(SessionResource<Resource>,
         "crucible::session::diagnostic [SessionResource_NotPinned]: "
-        "establish_permissioned<Proto, Resource>: Resource fails the "
+        "mint_permissioned_session<Proto, Resource>: Resource fails the "
         "pin-discipline.  See SessionResource concept in Session.h.");
 
     // Consume the Permission tokens — their tags become the initial PS.
@@ -928,7 +928,7 @@ template <typename Proto, typename Resource, typename... InitPerms>
     } else {
         static_assert(!std::is_same_v<Proto, Continue>,
             "crucible::session::diagnostic [Continue_Without_Loop]: "
-            "establish_permissioned<Continue>: Continue cannot be the "
+            "mint_permissioned_session<Continue>: Continue cannot be the "
             "top-level protocol.");
         return PermissionedSessionHandle<Proto, InitialPS, Resource,
                                           void>{std::forward<Resource>(r)};
@@ -1023,7 +1023,7 @@ template <typename PSH, typename Body>
 //     coinductive merging (Task #381) — until that lands, those
 //     globals fail at the Project<...> instantiation site, naming
 //     the divergent branch.
-//   * permissions/PermissionFork.h::permission_fork for the structured
+//   * permissions/PermissionFork.h::mint_permission_fork for the structured
 //     fork-join over std::jthread + RAII Whole rebuild on join.
 //   * splits_into_pack<Whole, RolePerms...> manifest must be declared
 //     by the user in the same TU as the role-tag definitions (per
@@ -1050,7 +1050,7 @@ template <typename PSH, typename Body>
 //                                                       PermSet<Role_i>,
 //                                                       SharedChannel&>&&)
 //                    -> void`
-//                    (must be noexcept, per permission_fork's invariant)
+//                    (must be noexcept, per mint_permission_fork's invariant)
 //
 // Returns: the rebuilt Permission<Whole> after all role threads join.
 //
@@ -1081,7 +1081,7 @@ template <typename PSH, typename Body>
 
 namespace detail {
 
-// Build the per-role lambda that establish_permissioned + invokes body.
+// Build the per-role lambda that mint_permissioned_session + invokes body.
 // Pulled out so the parameter pack expansion at the call site stays
 // readable.
 template <typename G, typename Role, typename SharedChannel, typename Body>
@@ -1092,11 +1092,11 @@ template <typename G, typename Role, typename SharedChannel, typename Body>
     return [&ch, body = std::forward<Body>(body)](
                Permission<Role>&& role_perm) mutable noexcept {
         using LocalProto = typename Project<G, Role>::type;
-        // establish_permissioned consumes the per-role Permission and
+        // mint_permissioned_session consumes the per-role Permission and
         // produces the projected PSH whose Resource is the shared
         // channel by reference.  LocalProto may begin with Loop —
         // establish unrolls it.
-        auto handle = establish_permissioned<LocalProto, SharedChannel&,
+        auto handle = mint_permissioned_session<LocalProto, SharedChannel&,
                                               Role>(ch, std::move(role_perm));
         std::move(body)(std::move(handle));
     };
@@ -1130,13 +1130,13 @@ template <typename G, typename Whole, typename... RolePerms,
         "must be stable across the spawned threads' lifetimes).  "
         "Derive your channel from safety::Pinned<ChannelType>.");
 
-    // Compose: each role's lambda calls establish_permissioned with
+    // Compose: each role's lambda calls mint_permissioned_session with
     // the role's projected protocol + the role permission token; then
-    // invokes the user's body with the constructed PSH.  permission_fork
+    // invokes the user's body with the constructed PSH.  mint_permission_fork
     // does the heavy lifting: split Whole into per-role tokens, spawn
     // one jthread per role, join via RAII array destructor, rebuild
     // Whole on return.
-    return permission_fork<RolePerms...>(
+    return mint_permission_fork<RolePerms...>(
         std::move(whole_perm),
         detail::session_fork_role_lambda<G, RolePerms, SharedChannel,
                                           Bodies>(
@@ -1235,16 +1235,16 @@ inline void runtime_smoke_test() noexcept {
         if (out.last_sent != 42) std::abort();
     }
 
-    // establish_permissioned with a single Permission, then close at
+    // mint_permissioned_session with a single Permission, then close at
     // End — but PS would be PermSet<WorkPerm>, which fails the
     // close() static_assert (PS must be empty).  So instead, mint a
     // permission, drop it via permission_drop, then establish with no
     // perms and close.
     {
-        auto perm = ::crucible::safety::permission_root_mint<WorkPerm>();
+        auto perm = ::crucible::safety::mint_permission_root<WorkPerm>();
         ::crucible::safety::permission_drop(std::move(perm));
 
-        auto handle = establish_permissioned<End>(FakeChannel{7});
+        auto handle = mint_permissioned_session<End>(FakeChannel{7});
         FakeChannel out = std::move(handle).close();
         if (out.last_sent != 7) std::abort();
     }
@@ -1273,7 +1273,7 @@ inline void runtime_smoke_test() noexcept {
     {
         using LoopProto = Loop<Send<int, Continue>>;  // plain int — no PS
         using LoopHandle =
-            decltype(establish_permissioned<LoopProto>(FakeChannel{}));
+            decltype(mint_permissioned_session<LoopProto>(FakeChannel{}));
         static_assert(std::is_same_v<typename LoopHandle::protocol,
                                      Send<int, Continue>>);
         static_assert(std::is_same_v<typename LoopHandle::perm_set,

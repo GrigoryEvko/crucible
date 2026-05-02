@@ -72,7 +72,7 @@ static_assert(std::is_base_of_v<
 // ── Runtime: handle properly consumed via close() ──────────────
 
 int run_consume_via_close() {
-    auto h = make_session_handle<End>(FakeRes{});
+    auto h = mint_session_handle<End>(FakeRes{});
     auto r = std::move(h).close();
     (void)r;
     return 0;
@@ -108,7 +108,7 @@ int run_consume_via_chain() {
     Wire b{&wire};
 
     auto [client, server] =
-        establish_channel<PingPongClient>(std::move(a), std::move(b));
+        mint_channel<PingPongClient>(std::move(a), std::move(b));
 
     auto c1 = std::move(client).send(Ping{42}, send_ping);
     auto [got_ping, s1] = std::move(server).recv(recv_ping);
@@ -132,7 +132,7 @@ int run_detach_infinite_loop() {
     std::deque<std::string> wire;
     Wire res{&wire};
 
-    auto h = make_session_handle<InfiniteProducer>(std::move(res));
+    auto h = mint_session_handle<InfiniteProducer>(std::move(res));
     // Send a single ping then detach — the protocol has no close
     // branch, so close() isn't available.
     auto h2 = std::move(h).send(Ping{99}, send_ping);
@@ -143,7 +143,7 @@ int run_detach_infinite_loop() {
 // ── Runtime: Stop handle is terminal — no detach needed ────────
 
 int run_stop_terminal() {
-    auto h = make_session_handle<Stop>(FakeRes{});
+    auto h = mint_session_handle<Stop>(FakeRes{});
     // Stop is terminal (is_terminal_state_v<Stop> == true); the
     // destructor check skips.  close() is available for symmetry
     // with End but not required.
@@ -162,7 +162,7 @@ int run_moved_from_safe() {
     std::deque<std::string> wire;
     Wire res{&wire};
 
-    auto h = make_session_handle<PingPongClient>(std::move(res));
+    auto h = mint_session_handle<PingPongClient>(std::move(res));
     auto h2 = std::move(h).send(Ping{1}, send_ping);
     // At this point `h` is moved-from; its destructor at function
     // exit must not fire the abandonment check.
@@ -229,7 +229,7 @@ int run_protocol_name_smoke() {
 
     // SessionHandle for a looped protocol is positioned at the body
     // with Loop as LoopCtx (Loop<...> isn't a valid head — it unrolls
-    // at make_session_handle time).  protocol_name() shows the body
+    // at mint_session_handle time).  protocol_name() shows the body
     // shape; the LoopCtx is template state, not part of the handle's
     // protocol identity for this rendering.
     using LSP_Body = Send<Ping, Continue>;
@@ -317,7 +317,7 @@ int run_self_move_preserves_tracker_state() {
     // operator= compiles, the [[unlikely]] short-circuit doesn't
     // crash, and detaching after self-move is well-formed.
     {
-        auto h = make_session_handle<Send<int, End>>(FakeRes{});
+        auto h = mint_session_handle<Send<int, End>>(FakeRes{});
         auto& alias = h;
         h = std::move(alias);  // self-move-assign via alias
         std::move(h).detach(detach_reason::TestInstrumentation{});  // consume; no abort in debug

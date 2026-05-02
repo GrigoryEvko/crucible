@@ -47,7 +47,7 @@
 //     dual(Loop<P>)         = Loop<dual(P)>
 //
 // Involution: dual(dual(P)) == P, verified as a framework-level
-// static_assert for every protocol encountered by establish_channel.
+// static_assert for every protocol encountered by mint_channel.
 //
 // ─── Recursion semantics — how Loop / Continue actually work ────────
 //
@@ -72,8 +72,8 @@
 // `is_well_formed_v<P>` checks at compile time that every Continue
 // has an enclosing Loop (otherwise the protocol would be stuck: no
 // state to loop back to).  All other combinators are well-formed
-// unconditionally.  This check runs at every establish_channel and
-// make_session_handle site; ill-formed protocols fail compilation
+// unconditionally.  This check runs at every mint_channel and
+// mint_session_handle site; ill-formed protocols fail compilation
 // with a named static_assert message rather than degrading to a
 // runtime fault.
 //
@@ -328,7 +328,7 @@ template <typename P> inline constexpr bool is_continue_v = is_continue<P>::valu
 // leave the protocol stuck at a dead-end state.
 //
 // `is_empty_choice_v<P>` detects exactly this shape.  Used by
-// make_session_handle's static_assert to reject handle instantiation
+// mint_session_handle's static_assert to reject handle instantiation
 // at the runnable boundary while leaving the type-level trait
 // machinery in SessionSubtype.h untouched.  Complements
 // is_well_formed_v, which covers structural illegality (free
@@ -1170,7 +1170,7 @@ public:
     // Explicit source-location-capturing ctor (#429 improvement C).
     // Derived-class ctors propagate `std::source_location::current()`
     // (defaulted in their own signatures, so the captured site is the
-    // user's call to make_session_handle / .send / .recv / etc.).
+    // user's call to mint_session_handle / .send / .recv / etc.).
     // RELEASE collapses the loc into a no-op via consumed_tracker's
     // empty-class branch — zero per-handle overhead.
     constexpr explicit SessionHandleBase(std::source_location loc) noexcept
@@ -1349,7 +1349,7 @@ public:
             //   B. Protocol-head-driven next-method hint (suggests
             //      .send / .recv / .pick / .branch — whatever was
             //      supposed to advance Proto's head).
-            //   C. Construction site captured at make_session_handle
+            //   C. Construction site captured at mint_session_handle
             //      / .send / .recv / etc. via std::source_location's
             //      default-arg call-site capture.  Tells the
             //      developer where the now-orphaned handle was born,
@@ -1510,7 +1510,7 @@ class [[nodiscard]] SessionHandle<End, Resource, LoopCtx>
     friend class SessionHandle;
 
     template <typename P, typename R>
-    friend constexpr auto make_session_handle(R r) noexcept;
+    friend constexpr auto mint_session_handle(R r) noexcept;
 
     template <typename R, typename Res, typename L>
     friend constexpr auto detail::step_to_next(Res) noexcept;
@@ -1563,7 +1563,7 @@ class [[nodiscard]] SessionHandle<Send<T, R>, Resource, LoopCtx>
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
     template <typename P, typename Res>
-    friend constexpr auto make_session_handle(Res) noexcept;
+    friend constexpr auto mint_session_handle(Res) noexcept;
     template <typename U, typename Res, typename L>
     friend constexpr auto detail::step_to_next(Res) noexcept;
 
@@ -1619,7 +1619,7 @@ class [[nodiscard]] SessionHandle<Recv<T, R>, Resource, LoopCtx>
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
     template <typename P, typename Res>
-    friend constexpr auto make_session_handle(Res) noexcept;
+    friend constexpr auto mint_session_handle(Res) noexcept;
     template <typename U, typename Res, typename L>
     friend constexpr auto detail::step_to_next(Res) noexcept;
 
@@ -1675,7 +1675,7 @@ class [[nodiscard]] SessionHandle<Select<Branches...>, Resource, LoopCtx>
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
     template <typename P, typename Res>
-    friend constexpr auto make_session_handle(Res) noexcept;
+    friend constexpr auto mint_session_handle(Res) noexcept;
     template <typename U, typename Res, typename L>
     friend constexpr auto detail::step_to_next(Res) noexcept;
 
@@ -1688,7 +1688,7 @@ public:
 
     // Belt-and-braces empty-choice rejection (#364).  Direct
     // construction of `SessionHandle<Select<>, ...>` (bypassing
-    // make_session_handle's own static_assert) lands here and fires
+    // mint_session_handle's own static_assert) lands here and fires
     // the same named diagnostic, so users can't sneak past the
     // discipline by going around the factory.  Subtyping-level uses
     // of `Select<>` (Gay-Hole 2005 minimum subtype) are unaffected
@@ -1697,7 +1697,7 @@ public:
         "crucible::session::diagnostic [Empty_Choice_Combinator]: "
         "SessionHandle<Select<>>: cannot construct a runnable handle "
         "on Select<> with zero branches — there is no branch for "
-        ".pick<I>() to select.  See make_session_handle for the full "
+        ".pick<I>() to select.  See mint_session_handle for the full "
         "diagnostic and remediation.");
 
     constexpr explicit SessionHandle(
@@ -1812,7 +1812,7 @@ class [[nodiscard]] SessionHandle<Offer<Branches...>, Resource, LoopCtx>
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
     template <typename P, typename Res>
-    friend constexpr auto make_session_handle(Res) noexcept;
+    friend constexpr auto mint_session_handle(Res) noexcept;
     template <typename U, typename Res, typename L>
     friend constexpr auto detail::step_to_next(Res) noexcept;
 
@@ -1832,7 +1832,7 @@ public:
         "crucible::session::diagnostic [Empty_Choice_Combinator]: "
         "SessionHandle<Offer<>>: cannot construct a runnable handle "
         "on Offer<> with zero branches — there is no label the peer "
-        "can send.  See make_session_handle for the full diagnostic "
+        "can send.  See mint_session_handle for the full diagnostic "
         "and remediation.");
 
     constexpr explicit SessionHandle(
@@ -2046,7 +2046,7 @@ concept SessionResource =
                               safety::Pinned<std::remove_reference_t<Resource>>>);
 
 // ═════════════════════════════════════════════════════════════════
-// ── Factory: make_session_handle<Proto>(resource) ───────────────
+// ── Factory: mint_session_handle<Proto>(resource) ───────────────
 // ═════════════════════════════════════════════════════════════════
 //
 // Entry point for constructing a SessionHandle.  If Proto starts with
@@ -2058,7 +2058,7 @@ concept SessionResource =
 // or if Resource fails the SessionResource pin-discipline check.
 
 template <typename Proto, typename Resource>
-[[nodiscard]] constexpr auto make_session_handle(
+[[nodiscard]] constexpr auto mint_session_handle(
     Resource r,
     std::source_location loc = std::source_location::current()) noexcept
 {
@@ -2078,7 +2078,7 @@ template <typename Proto, typename Resource>
     // construction stays safe.
     static_assert(!is_empty_choice_v<Proto>,
         "crucible::session::diagnostic [Empty_Choice_Combinator]: "
-        "proto: make_session_handle<Select<>> or make_session_handle"
+        "proto: mint_session_handle<Select<>> or mint_session_handle"
         "<Offer<>> — cannot construct a runnable handle on a choice "
         "combinator with zero branches.  Select<> has no branch for "
         ".pick<I>() to select; Offer<> has no label the peer can "
@@ -2089,7 +2089,7 @@ template <typename Proto, typename Resource>
 
     static_assert(SessionResource<Resource>,
         "crucible::session::diagnostic [SessionResource_NotPinned]: "
-        "make_session_handle<Proto, Resource>: Resource must be either "
+        "mint_session_handle<Proto, Resource>: Resource must be either "
         "a value type (handle owns it by value) or an lvalue reference "
         "to a type derived from safety::Pinned<T>.  An lvalue reference "
         "to a non-Pinned object lets a subsequent move of the channel "
@@ -2106,7 +2106,7 @@ template <typename Proto, typename Resource>
         using Body = typename Proto::body;
         // Recursively unroll — Body could itself begin with Loop,
         // though that's unusual.  step_to_next handles the recursion
-        // uniformly.  Forward `loc` so the user's make_session_handle
+        // uniformly.  Forward `loc` so the user's mint_session_handle
         // call site is what shows up in the abandonment diagnostic
         // (#429 improvement C), even after a Loop unroll inserted an
         // intermediate handle.
@@ -2120,7 +2120,7 @@ template <typename Proto, typename Resource>
 }
 
 // ═════════════════════════════════════════════════════════════════
-// ── establish_channel<Proto>(resA, resB) ────────────────────────
+// ── mint_channel<Proto>(resA, resB) ────────────────────────
 // ═════════════════════════════════════════════════════════════════
 //
 // Construct two endpoints of a channel with dual protocols.  The
@@ -2129,7 +2129,7 @@ template <typename Proto, typename Resource>
 // applied throughout P.
 
 template <typename Proto, typename ResourceA, typename ResourceB>
-[[nodiscard]] constexpr auto establish_channel(ResourceA ra, ResourceB rb) noexcept
+[[nodiscard]] constexpr auto mint_channel(ResourceA ra, ResourceB rb) noexcept
 {
     static_assert(is_well_formed_v<Proto>,
         "crucible::session::diagnostic [Protocol_Ill_Formed]: "
@@ -2143,18 +2143,18 @@ template <typename Proto, typename ResourceA, typename ResourceB>
 
     static_assert(SessionResource<ResourceA>,
         "crucible::session::diagnostic [SessionResource_NotPinned]: "
-        "establish_channel<Proto, ResourceA, ResourceB>: ResourceA "
+        "mint_channel<Proto, ResourceA, ResourceB>: ResourceA "
         "fails the pin-discipline.  See the SessionResource concept "
         "documentation in Session.h for the allowed shapes.");
     static_assert(SessionResource<ResourceB>,
         "crucible::session::diagnostic [SessionResource_NotPinned]: "
-        "establish_channel<Proto, ResourceA, ResourceB>: ResourceB "
+        "mint_channel<Proto, ResourceA, ResourceB>: ResourceB "
         "fails the pin-discipline.  See the SessionResource concept "
         "documentation in Session.h for the allowed shapes.");
 
     return std::pair{
-        make_session_handle<Proto>(std::move(ra)),
-        make_session_handle<dual_of_t<Proto>>(std::move(rb))
+        mint_session_handle<Proto>(std::move(ra)),
+        mint_session_handle<dual_of_t<Proto>>(std::move(rb))
     };
 }
 

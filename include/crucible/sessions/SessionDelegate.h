@@ -76,7 +76,7 @@
 //   they OWN by delegating it with Delegate<T, K>.
 // - For "the peer spawns a new session alongside":  that's not
 //   delegation — that's fresh session establishment via
-//   `establish_channel`.  Delegate transfers an EXISTING session.
+//   `mint_channel`.  Delegate transfers an EXISTING session.
 //
 // ─── References ────────────────────────────────────────────────────
 //
@@ -332,7 +332,7 @@ class [[nodiscard]] SessionHandle<Delegate<T, K>, Resource, LoopCtx>
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
     template <typename P, typename Res>
-    friend constexpr auto make_session_handle(Res) noexcept;
+    friend constexpr auto mint_session_handle(Res) noexcept;
     template <typename U, typename Res, typename L>
     friend constexpr auto detail::step_to_next(Res) noexcept;
 
@@ -470,7 +470,7 @@ class [[nodiscard]] SessionHandle<Accept<T, K>, Resource, LoopCtx>
 
     template <typename P, typename Res, typename L> friend class SessionHandle;
     template <typename P, typename Res>
-    friend constexpr auto make_session_handle(Res) noexcept;
+    friend constexpr auto mint_session_handle(Res) noexcept;
     template <typename U, typename Res, typename L>
     friend constexpr auto detail::step_to_next(Res) noexcept;
 
@@ -506,7 +506,7 @@ public:
     {
         DelegatedResource delegated_res = std::invoke(transport, resource_);
         this->mark_consumed_();
-        auto delegated_handle = make_session_handle<T>(std::move(delegated_res));
+        auto delegated_handle = mint_session_handle<T>(std::move(delegated_res));
         auto continuation_handle =
             detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
         return std::pair{std::move(delegated_handle),
@@ -524,7 +524,7 @@ public:
                  && std::is_nothrow_move_constructible_v<DelegatedResource>)
     {
         this->mark_consumed_();
-        auto delegated_handle = make_session_handle<T>(std::move(delegated_res));
+        auto delegated_handle = mint_session_handle<T>(std::move(delegated_res));
         auto continuation_handle =
             detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
         return std::pair{std::move(delegated_handle),

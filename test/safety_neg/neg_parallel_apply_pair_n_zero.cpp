@@ -29,10 +29,10 @@ int main() {
     constexpr std::size_t N = 8;
     auto region_a = safety::OwnedRegion<std::uint64_t, DataNegA>::adopt(
         effects::Test{}.alloc, arena, N,
-        safety::permission_root_mint<DataNegA>());
+        safety::mint_permission_root<DataNegA>());
     auto region_b = safety::OwnedRegion<std::uint64_t, DataNegB>::adopt(
         effects::Test{}.alloc, arena, N,
-        safety::permission_root_mint<DataNegB>());
+        safety::mint_permission_root<DataNegB>());
 
     // Should FAIL: N=0 violates the `static_assert(N > 0)` precondition.
     auto recombined = safety::parallel_apply_pair<0>(

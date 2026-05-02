@@ -115,16 +115,16 @@ public:
     // The Reader permission is minted internally and parked in the
     // Pool — fractional model means the framework manages its own
     // share-tracking root.  The user keeps the Writer permission
-    // separately (mint with permission_root_mint<writer_tag>(),
+    // separately (mint with mint_permission_root<writer_tag>(),
     // hand to writer() factory below).
 
     PermissionedSnapshot() noexcept
         : snap_{}
-        , reader_pool_{safety::permission_root_mint<reader_tag>()} {}
+        , reader_pool_{safety::mint_permission_root<reader_tag>()} {}
 
     explicit PermissionedSnapshot(const T& initial) noexcept
         : snap_{initial}
-        , reader_pool_{safety::permission_root_mint<reader_tag>()} {}
+        , reader_pool_{safety::mint_permission_root<reader_tag>()} {}
 
     // ── WriterHandle ──────────────────────────────────────────────
     //
@@ -198,7 +198,7 @@ public:
     // ── Factories ─────────────────────────────────────────────────
 
     // Writer endpoint — consumes the Writer permission token.
-    // Caller mints via permission_root_mint<writer_tag>() at startup,
+    // Caller mints via mint_permission_root<writer_tag>() at startup,
     // moves it through writer() to obtain the unique WriterHandle.
     [[nodiscard]] WriterHandle writer(safety::Permission<writer_tag>&& perm) noexcept {
         return WriterHandle{*this, std::move(perm)};

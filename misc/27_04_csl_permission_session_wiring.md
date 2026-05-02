@@ -36,7 +36,7 @@ The user explicitly requested **"full functionality"** on 2026-04-27. This pins 
 
 ### 1.1 One-paragraph thesis
 
-**Crucible has three orthogonal correctness substrates: (1) Graded value invariants — `Refined<P, T>`, `Tagged<T, V>`, `Linear<T>`, `Secret<T>` — proving per-value predicates at construction; (2) CSL permissions — `Permission<Tag>`, `SharedPermission<Tag>`, `permission_split/combine/fork` — proving regional ownership at every handoff; (3) session types — `Send/Recv/Select/Offer/Loop/End` over `SessionHandle<Proto, Resource, LoopCtx>` — proving event ordering between named participants. Each substrate is internally complete and individually shipping. Their pairwise compositions are partial: payload subsort axioms wire (1)↔(3) (`SessionPayloadSubsort.h`); `concurrent/Permissioned*.h` wire (2)↔(runtime channels). The three-way composition (1)×(2)×(3) — proving that values flowing through a typed protocol carry their permissions correctly — is unshipped. FOUND-C ships it as `PermissionedSessionHandle<Proto, PermSet, Resource, LoopCtx>`: a CRTP-inheriting wrapper over `SessionHandle` that carries a type-level `PermSet<Tags…>` and evolves it on every `send`/`recv`/`pick`/`branch`/`close` per the payload's permission-flow marker.**
+**Crucible has three orthogonal correctness substrates: (1) Graded value invariants — `Refined<P, T>`, `Tagged<T, V>`, `Linear<T>`, `Secret<T>` — proving per-value predicates at construction; (2) CSL permissions — `Permission<Tag>`, `SharedPermission<Tag>`, `mint_permission_split/combine/fork` — proving regional ownership at every handoff; (3) session types — `Send/Recv/Select/Offer/Loop/End` over `SessionHandle<Proto, Resource, LoopCtx>` — proving event ordering between named participants. Each substrate is internally complete and individually shipping. Their pairwise compositions are partial: payload subsort axioms wire (1)↔(3) (`SessionPayloadSubsort.h`); `concurrent/Permissioned*.h` wire (2)↔(runtime channels). The three-way composition (1)×(2)×(3) — proving that values flowing through a typed protocol carry their permissions correctly — is unshipped. FOUND-C ships it as `PermissionedSessionHandle<Proto, PermSet, Resource, LoopCtx>`: a CRTP-inheriting wrapper over `SessionHandle` that carries a type-level `PermSet<Tags…>` and evolves it on every `send`/`recv`/`pick`/`branch`/`close` per the payload's permission-flow marker.**
 
 ### 1.2 What ships
 
@@ -64,7 +64,7 @@ What this axis does NOT prove: temporal ordering, ownership, multi-thread synchr
 
 ### 2.2 Axis 2: CSL permissions
 
-Spatial/ownership invariants. Substrate: `permissions/Permission.h:208-264`. `Permission<Tag>` is an empty class, `sizeof == 1`, EBO-collapsible to 0, move-only, default-ctor private, friended factories only. `splits_into<Parent, L, R>` and `splits_into_pack<Parent, Children…>` traits manifest the region tree at compile time (`Permission.h:182-198`). Factories: `permission_root_mint<Tag>()`, `permission_split<L, R>(Permission<In>&&)`, `permission_combine<In>(L&&, R&&)`, `permission_split_n<Children…>(In&&)` (`Permission.h:288-334`). Fractional family: `SharedPermission<Tag>` (regime-5 façade, NOT a literal `Graded<...>`), `SharedPermissionPool<Tag>` (atomic state machine with `EXCLUSIVE_OUT_BIT`), `SharedPermissionGuard<Tag>` (RAII refcount holder), `permission_share<Tag>`, `with_shared_read<Tag>` (`Permission.h:441-729`). Auto-tree generators: `safety/PermissionTreeGenerator.h` (1D Slice<Parent, I>) and `safety/PermissionGridGenerator.h` (2D Producer/Consumer side-split). Structured-concurrency primitive: `permission_fork<Children…>(parent, callables…)` (`PermissionFork.h:149-186`).
+Spatial/ownership invariants. Substrate: `permissions/Permission.h:208-264`. `Permission<Tag>` is an empty class, `sizeof == 1`, EBO-collapsible to 0, move-only, default-ctor private, friended factories only. `splits_into<Parent, L, R>` and `splits_into_pack<Parent, Children…>` traits manifest the region tree at compile time (`Permission.h:182-198`). Factories: `mint_permission_root<Tag>()`, `mint_permission_split<L, R>(Permission<In>&&)`, `mint_permission_combine<In>(L&&, R&&)`, `mint_permission_split_n<Children…>(In&&)` (`Permission.h:288-334`). Fractional family: `SharedPermission<Tag>` (regime-5 façade, NOT a literal `Graded<...>`), `SharedPermissionPool<Tag>` (atomic state machine with `EXCLUSIVE_OUT_BIT`), `SharedPermissionGuard<Tag>` (RAII refcount holder), `mint_permission_share<Tag>`, `with_shared_read<Tag>` (`Permission.h:441-729`). Auto-tree generators: `safety/PermissionTreeGenerator.h` (1D Slice<Parent, I>) and `safety/PermissionGridGenerator.h` (2D Producer/Consumer side-split). Structured-concurrency primitive: `mint_permission_fork<Children…>(parent, callables…)` (`PermissionFork.h:149-186`).
 
 What this axis proves: linearity-by-Tag-identity at every handoff; declared `splits_into` manifest discipline; mode-transition atomicity (lend-vs-upgrade race resolved via single CAS).
 
@@ -72,9 +72,9 @@ What this axis does NOT prove: that a Tag corresponds to the memory the caller c
 
 ### 2.3 Axis 3: Session types (protocol/ordering)
 
-Temporal/ordering invariants between named participants. Substrate: `sessions/Session.h` (the L1 combinator core) — 2,324 lines (revised count per Agent 1 survey, doc said ~1,185). `Send/Recv/Select/Offer/Loop/Continue/End` plus MPST `Sender<Role>`/`AnonymousPeer`. Type-level metafunctions: `dual_of_t`, `compose_t`, `compose_at_branch_t`, `is_well_formed_v`, `is_empty_choice_v`, `is_terminal_state_v`. CRTP base: `SessionHandleBase<Proto, Derived=void>` with `[[no_unique_address]] consumed_tracker` (zero-byte release / `bool flag_ + std::source_location loc_` debug). Per-protocol-head specialisations: `SessionHandle<End|Send|Recv|Select|Offer|Stop|Delegate|Accept|CheckpointedSession, Resource, LoopCtx>`. Resource concept: `SessionResource` (Pinned discipline). Factories: `make_session_handle<Proto>(Resource)`, `establish_channel<Proto>(rA, rB)`. Detach reasons: `detach_reason::*` extension-friendly tag namespace. Existing wrapper sub-classes via CRTP: `CrashWatchedHandle<P, R, PeerTag, L>` (`bridges/CrashTransport.h:271`) and `RecordingSessionHandle<P, R, L>` (`bridges/RecordingSessionHandle.h:90`) — proof that the inheritance pattern works.
+Temporal/ordering invariants between named participants. Substrate: `sessions/Session.h` (the L1 combinator core) — 2,324 lines (revised count per Agent 1 survey, doc said ~1,185). `Send/Recv/Select/Offer/Loop/Continue/End` plus MPST `Sender<Role>`/`AnonymousPeer`. Type-level metafunctions: `dual_of_t`, `compose_t`, `compose_at_branch_t`, `is_well_formed_v`, `is_empty_choice_v`, `is_terminal_state_v`. CRTP base: `SessionHandleBase<Proto, Derived=void>` with `[[no_unique_address]] consumed_tracker` (zero-byte release / `bool flag_ + std::source_location loc_` debug). Per-protocol-head specialisations: `SessionHandle<End|Send|Recv|Select|Offer|Stop|Delegate|Accept|CheckpointedSession, Resource, LoopCtx>`. Resource concept: `SessionResource` (Pinned discipline). Factories: `mint_session_handle<Proto>(Resource)`, `mint_channel<Proto>(rA, rB)`. Detach reasons: `detach_reason::*` extension-friendly tag namespace. Existing wrapper sub-classes via CRTP: `CrashWatchedHandle<P, R, PeerTag, L>` (`bridges/CrashTransport.h:271`) and `RecordingSessionHandle<P, R, L>` (`bridges/RecordingSessionHandle.h:90`) — proof that the inheritance pattern works.
 
-What this axis proves: peer-pair duality (compile-time at `establish_channel`); state-respecting method dispatch (calling `.send()` in a Recv state is a compile error); the eventual L7 φ-family once shipped.
+What this axis proves: peer-pair duality (compile-time at `mint_channel`); state-respecting method dispatch (calling `.send()` in a Recv state is a compile error); the eventual L7 φ-family once shipped.
 
 What this axis does NOT prove (today): φ-properties are aspirational (Task #346, all of `is_safe_v`/`is_df_v`/`is_live+_v` unshipped per `session_types.md` Part IX.1); async ⩽_a is unshipped (Task #348); full coinductive merging is unshipped (Task #381); permission balance is FOUND-C's job; causality ≺_II/≺_IO/≺_OO is unshipped (Task #340).
 
@@ -153,8 +153,8 @@ This doc is the FOUND-C spec; per Decision D7 it stays normative. Refinements bu
   - L184 `template <typename Proto, typename PS, typename Resource, typename LoopCtx = void>` matches v1.
   - L196-201 `SendablePayload<T, PS>` concept matches v1.
   - L205 `requires SendablePayload<T, PS>` matches v1.
-  - L213-214 `establish_permissioned<Proto, Resource, InitPerms…>` matches v1.
-  - L217-222 `establish_n_party_permissioned<G, Whole, RolePerms…>` — RENAMED to `session_fork<G, Whole, RolePerms…>` per 27_04 §5.2 (more idiomatic) and to match the existing `permission_fork` factory. Mark renaming in SHIPPED-AS marker.
+  - L213-214 `mint_permissioned_session<Proto, Resource, InitPerms…>` matches v1.
+  - L217-222 `establish_n_party_permissioned<G, Whole, RolePerms…>` — RENAMED to `session_fork<G, Whole, RolePerms…>` per 27_04 §5.2 (more idiomatic) and to match the existing `mint_permission_fork` factory. Mark renaming in SHIPPED-AS marker.
   - L225-232 wrapper-class layout — SHIPPED, with one addition: PS is the second template parameter (between Proto and Resource), not nested in `class` body. Doc says "tracks Proto state AND PermSet" — clarify that PS is a template parameter.
 - **§6 lines 264-294 (Tagged-provenance subsort axioms):** SHIPPED in `SessionPayloadSubsort.h` (predates FOUND-C). No update.
 - **§7 lines 320-378 (Refined subsort axioms):** Same — SHIPPED in `SessionPayloadSubsort.h`. No update.
@@ -162,7 +162,7 @@ This doc is the FOUND-C spec; per Decision D7 it stays normative. Refinements bu
 - **§10 lines 540-594 (Machine ↔ Session bridge):** Out of scope for FOUND-C v1. No update; remains pending.
 - **§11 lines 595-634 (OneShotFlag crash transport):** Partially shipped via `bridges/CrashTransport.h::CrashWatchedHandle`. FOUND-C v1 wires `OneShotFlag::peek()` into `PermissionedSessionHandle`'s send/recv; the underlying `CrashWatchedHandle` pattern is the model. Add SHIPPED-AS note: "`PermissionedSessionHandle` integrates `OneShotFlag` per-peer crash signals via the existing `CrashWatchedHandle` pattern; `notify_crash(PeerId)` global hook is NOT shipped — callers wire `OneShotFlag::signal()` themselves from their detection layer."
 - **§43 lines 1196-1206 (Epoch II "PermissionedSessionHandle thesis weeks 3-5"):** This IS FOUND-C. Update timeline to "weeks 1-3 of FOUND-C series, landed 2026-04-XX" once shipped.
-- **§44 line 1216 ("§5 PermissionedSessionHandle | 600 | 0 | Medium-high"):** Line estimate revised to ~1,100 lines for full functionality (three markers, all five protocol-head specialisations, Loop balance + branch convergence enforcement, debug diagnostic enrichment, both `establish_permissioned` and `session_fork` factories). Update the Risk column from "Medium-high" to "Medium" — the implementation has fewer unknowns post-Agent surveys.
+- **§44 line 1216 ("§5 PermissionedSessionHandle | 600 | 0 | Medium-high"):** Line estimate revised to ~1,100 lines for full functionality (three markers, all five protocol-head specialisations, Loop balance + branch convergence enforcement, debug diagnostic enrichment, both `mint_permissioned_session` and `session_fork` factories). Update the Risk column from "Medium-high" to "Medium" — the implementation has fewer unknowns post-Agent surveys.
 - **§50 line 1290-1294 (Lean modules):** `PermissionFlow.lean` (#419) follows FOUND-C C++ landing. No update needed; remains tracked as separate Lean phase.
 
 ### 3.3 `misc/25_04_2026.md` (1,913 lines) — Graded foundation refactor
@@ -205,14 +205,14 @@ Three doc-comment updates inside existing headers, bundled with the implementati
 
 ### 4.1 What ships (no work needed)
 
-- `sessions/Session.h` (2,324 lines) — combinator core, dual_of_t, compose_t, is_well_formed_v, SessionHandleBase CRTP with abandonment-tracker, per-protocol-head SessionHandle specialisations (End/Send/Recv/Select/Offer/Stop), make_session_handle, establish_channel, SessionResource concept, detach_reason::* tags. Solid; reused as-is.
+- `sessions/Session.h` (2,324 lines) — combinator core, dual_of_t, compose_t, is_well_formed_v, SessionHandleBase CRTP with abandonment-tracker, per-protocol-head SessionHandle specialisations (End/Send/Recv/Select/Offer/Stop), mint_session_handle, mint_channel, SessionResource concept, detach_reason::* tags. Solid; reused as-is.
 - `sessions/SessionContext.h` (693), `SessionQueue.h` (558), `SessionGlobal.h` (1,112), `SessionAssoc.h` (551), `SessionSubtype.h` (858), `SessionSubtypeReason.h` (610), `SessionCrash.h` (776), `SessionDelegate.h` (909), `SessionCheckpoint.h` (460), `SessionContentAddressed.h` (562), `SessionDeclassify.h` (382), `SessionCT.h` (395), `SessionEventLog.h` (349), `SessionPayloadSubsort.h` (582), `SessionPatterns.h` (910), `SessionDiagnostic.h` (825), `SessionView.h` (411). Total ~13,316 lines, 24 test files, 102/102 tests green. Reused as-is.
 - `bridges/CrashTransport.h::CrashWatchedHandle` and `bridges/RecordingSessionHandle.h::RecordingSessionHandle` — existing wrapper sub-classes via CRTP `SessionHandleBase<P, Self>`. Pattern reused for FOUND-C.
 - `permissions/Permission.h:208-264` — `Permission<Tag>` linear token. Reused.
 - `permissions/Permission.h:441-664` — `SharedPermission<Tag>`, `SharedPermissionPool<Tag>`, `SharedPermissionGuard<Tag>`. Reused.
-- `permissions/Permission.h:288-334` — factories `permission_root_mint`, `permission_split`, `permission_combine`, `permission_split_n`. Reused.
+- `permissions/Permission.h:288-334` — factories `mint_permission_root`, `mint_permission_split`, `mint_permission_combine`, `mint_permission_split_n`. Reused.
 - `permissions/Permission.h:275-278` — `permission_drop<Tag>`. Reused.
-- `permissions/PermissionFork.h` — `permission_fork<Children…>`. Reused.
+- `permissions/PermissionFork.h` — `mint_permission_fork<Children…>`. Reused.
 - `permissions/ReadView.h` — `ReadView<Tag>` for scoped read borrow. Reused.
 - `safety/PermissionTreeGenerator.h` and `safety/PermissionGridGenerator.h` — auto-tree generators (FOUND-A21/A22). Reused.
 - `safety/OneShotFlag.h` — `OneShotFlag` for one-shot crash signal. Reused.
@@ -222,7 +222,7 @@ Three doc-comment updates inside existing headers, bundled with the implementati
 - **Header A:** `permissions/PermSet.h` (~120 lines new). Type-list of permission tags + ops.
 - **Header B:** `sessions/SessionPermPayloads.h` (~100 lines new). Three markers + traits.
 - **Header C:** `sessions/PermissionedSession.h` (~700 lines new). The CRTP wrapper + factories + crash wiring.
-- **Helper:** `permissions/Permission.h:334+` extension (~30 lines): `permission_combine_n<Parent, Children…>(perms…)` to invert `permission_split_n`. Currently only the binary `permission_combine` exists; needed for `session_fork`'s rebuild path.
+- **Helper:** `permissions/Permission.h:334+` extension (~30 lines): `mint_permission_combine_n<Parent, Children…>(perms…)` to invert `mint_permission_split_n`. Currently only the binary `mint_permission_combine` exists; needed for `session_fork`'s rebuild path.
 - **Concept gates:** Add to `permissions/Permission.h` (~20 lines): `concept Permission<T>` and `concept SharedPermissionFor<T, Tag>` for FOUND-D consumption later. Bundling these with FOUND-C avoids two passes through the same file.
 - **Test target:** `test/test_permissioned_session_handle.cpp` (~150 lines new). Positive runtime + compile-time fixtures.
 - **Negative-compile target:** `test/sessions_neg/permission_imbalance.cpp` (~50 lines new). Ten failing-by-design fixtures with classified diagnostics.
@@ -256,7 +256,7 @@ Verified by Agent 3 grep sweep: zero stub code exists for FOUND-C anywhere in th
 │  - Loop body PS-balance enforcement (R1)                             │
 │  - Select/Offer cross-branch PS convergence (R2)                     │
 │  - Debug abandonment-tracker enrichment with leaked tags (R3)        │
-│  - establish_permissioned<Proto, Resource, InitPerms...>             │
+│  - mint_permissioned_session<Proto, Resource, InitPerms...>             │
 │  - session_fork<G, Whole, RolePerms...>                              │
 │  - OneShotFlag-based crash transport per-peer                        │
 │  - is_permission_balanced_v<Γ, InitialPerms> standalone              │
@@ -285,7 +285,7 @@ Verified by Agent 3 grep sweep: zero stub code exists for FOUND-C anywhere in th
 │                                                                      │
 │   sessions/Session.h ─ SessionHandleBase<Proto, Derived>             │
 │                          per-head SessionHandle specialisations       │
-│                          make_session_handle, establish_channel       │
+│                          mint_session_handle, mint_channel       │
 │                          SessionResource concept, detach_reason::*    │
 │                                                                      │
 │   sessions/SessionGlobal.h ─ project_t<G, Role> for session_fork     │
@@ -293,9 +293,9 @@ Verified by Agent 3 grep sweep: zero stub code exists for FOUND-C anywhere in th
 │   sessions/SessionCrash.h ─ Stop, Crash<P>, ReliableSet              │
 │                                                                      │
 │   permissions/Permission.h ─ Permission<Tag>, splits_into[_pack]     │
-│                              permission_root_mint/split/combine[_n]   │
+│                              mint_permission_root/split/combine[_n]   │
 │                              SharedPermission<Tag>, Pool, Guard       │
-│   permissions/PermissionFork.h ─ permission_fork                     │
+│   permissions/PermissionFork.h ─ mint_permission_fork                     │
 │   permissions/ReadView.h ─ ReadView<Tag>                             │
 │   safety/PermissionTreeGenerator.h ─ 1D Slice                        │
 │   safety/PermissionGridGenerator.h ─ 2D side-split                   │
@@ -379,7 +379,7 @@ constexpr std::string_view perm_set_name = /* P2996 display */;
 
 ### 6.3 Ancillary additions to `permissions/Permission.h`
 
-- **`permission_combine_n<Parent, Children…>(Permission<Children>&&...)`** — N-ary inverse of `permission_split_n`. Currently only binary `permission_combine` exists. Needed by `session_fork` to rebuild the parent permission after all role bodies join. Same `splits_into_pack_v<Parent, Children…>` static_assert gate. ~20 lines added.
+- **`mint_permission_combine_n<Parent, Children…>(Permission<Children>&&...)`** — N-ary inverse of `mint_permission_split_n`. Currently only binary `mint_permission_combine` exists. Needed by `session_fork` to rebuild the parent permission after all role bodies join. Same `splits_into_pack_v<Parent, Children…>` static_assert gate. ~20 lines added.
 - **`concept Permission`** — holds when `T = Permission<Tag>` for some `Tag` (introspectable via `T::tag_type`). ~5 lines.
 - **`concept SharedPermissionFor<T, Tag>`** — holds when `T = SharedPermission<Tag>`. ~5 lines.
 
@@ -681,7 +681,7 @@ Zero release-mode cost — `if constexpr (PS::size > 0)` and the `fprintf` are w
 namespace crucible::safety::proto {
 
 // Walks Γ's reduction LTS, verifying that the union of active perm sets
-// across all participants is constant modulo permission_split/combine
+// across all participants is constant modulo mint_permission_split/combine
 // at fork points.  Standalone in v1 — does NOT compose with is_safe_v
 // (unshipped).  Defer the composition to L7 (Task #346).
 template <typename Gamma, typename InitialPerms>
@@ -694,13 +694,13 @@ Per Decision D6, this is shipped as a standalone metafunction. It does NOT defin
 
 ---
 
-## 9. Spec — establish_permissioned + session_fork (~150 lines, in Header C)
+## 9. Spec — mint_permissioned_session + session_fork (~150 lines, in Header C)
 
-### 9.1 `establish_permissioned`
+### 9.1 `mint_permissioned_session`
 
 ```cpp
 template <typename Proto, typename Resource, typename... InitPerms>
-[[nodiscard]] auto establish_permissioned(
+[[nodiscard]] auto mint_permissioned_session(
     Resource r,
     Permission<InitPerms>&&... perms) noexcept
     -> PermissionedSessionHandle<Proto, PermSet<InitPerms...>, Resource>
@@ -727,7 +727,7 @@ template <typename G, typename Whole, typename... RolePerms,
           && (sizeof...(RolePerms) == roles_of_t<G>::size)
 {
     // 1. Split Whole into per-role permissions.
-    auto perms = permission_split_n<RolePerms...>(std::move(whole_perm));
+    auto perms = mint_permission_split_n<RolePerms...>(std::move(whole_perm));
 
     // 2. Project G to per-role local types.  WARNING: uses plain merging
     //    only; diverging-multiparty protocols (Raft, 2PC-with-multi-followers)
@@ -737,12 +737,12 @@ template <typename G, typename Whole, typename... RolePerms,
     // For plain-mergeable protocols (binary, FanOut, FanIn, RequestResponse,
     //    SwimProbe, simple multiparty), session_fork works in v1.
 
-    // 3. Spawn each body via permission_fork.  Each body receives:
+    // 3. Spawn each body via mint_permission_fork.  Each body receives:
     //    - its projected PermissionedSessionHandle<project_t<G, Role_i>,
     //                                              PermSet<RolePerm_i>,
     //                                              SharedChannel&>
-    return permission_fork<RolePerms...>(
-        permission_combine_n<Whole, RolePerms...>(std::move(perms)),
+    return mint_permission_fork<RolePerms...>(
+        mint_permission_combine_n<Whole, RolePerms...>(std::move(perms)),
         [&ch, b = std::forward<Bodies>(bodies)](auto&& role_perm) noexcept {
             using Role = typename std::remove_reference_t<decltype(role_perm)>::tag_type;
             using LocalProto = project_t<G, Role>;
@@ -759,11 +759,11 @@ Notes on D2 / D5 (session_fork in v1):
 
 - Works for binary sessions and plain-mergeable multiparty (FanOut, FanIn, RequestResponse, SwimProbe). Any G whose `project_t<G, Role>` for non-sender/non-receiver roles converges under plain merge.
 - Diverging multiparty (Raft, 2PC-with-multi-followers, MoE all-to-all) produces a `static_assert` failure from the underlying `project_t` — this is `SessionGlobal.h`'s plain-merge-only limitation, not FOUND-C's. Diagnostic message names the divergent branch and points at Task #381 for the full coinductive merging implementation.
-- After all bodies join via `permission_fork`'s RAII array-of-jthreads, the parent permission is rebuilt via `permission_combine_n` and returned to the caller for the next session.
+- After all bodies join via `mint_permission_fork`'s RAII array-of-jthreads, the parent permission is rebuilt via `mint_permission_combine_n` and returned to the caller for the next session.
 
 ### 9.3 Test coverage
 
-- `establish_permissioned` round-trip: mint Whole, split, establish, send/recv loop, close, recombine.
+- `mint_permissioned_session` round-trip: mint Whole, split, establish, send/recv loop, close, recombine.
 - `session_fork` for FanOut: 3 producer roles, 1 consumer role, plain-mergeable protocol.
 - `session_fork` static_assert failure: Raft's diverging projection — verify the diagnostic names the divergence.
 
@@ -783,7 +783,7 @@ The pattern is already implemented in `bridges/CrashTransport.h::CrashWatchedHan
 // User pattern:
 auto crash_flag = OneShotFlag{};
 auto resource_with_crash = CrashWatchedResource{my_channel, crash_flag};
-auto handle = establish_permissioned<MyProto>(
+auto handle = mint_permissioned_session<MyProto>(
     resource_with_crash,
     std::move(my_perm));
 
@@ -823,7 +823,7 @@ namespace crucible::safety::proto {
 // For a given Γ (typing context) and InitialPerms (initial permission
 // distribution), verify that at every reachable LTS state the union of
 // active permission sets across all participants matches InitialPerms
-// (modulo permission_split/combine at fork points).
+// (modulo mint_permission_split/combine at fork points).
 //
 // v1: compile-time bounded BFS, fuel = 1024 states.  Adequate for
 // Crucible's bounded protocols.
@@ -855,7 +855,7 @@ Fixtures:
 6. Establish a session with init perms that conflict (same Tag twice) — diagnostic from `perm_set_union`'s static_assert.
 7. session_fork on a Raft-shaped protocol — diagnostic from `project_t`'s plain-merge-only limitation, suggesting Task #381.
 8. Bare `permission_drop` on a tag held by an active PermissionedSessionHandle — diagnostic from `Permission`'s consume-once discipline.
-9. Two PermissionedSessionHandles for the same Whole tag established simultaneously — diagnostic from `permission_root_mint`'s once-per-program convention (review-discoverable, not compile-enforced; this fixture is documentation-only).
+9. Two PermissionedSessionHandles for the same Whole tag established simultaneously — diagnostic from `mint_permission_root`'s once-per-program convention (review-discoverable, not compile-enforced; this fixture is documentation-only).
 10. `PermissionedSessionHandle<End, PermSet<X>, R, L>::close()` — diagnostic `[PermissionImbalance]` from the close static_assert.
 
 ---
@@ -911,7 +911,7 @@ Each phase is one commit (or a tight sequence). All 210 existing tests must rema
 - Sentinel TU `test/test_permset_compile.cpp` to force the smoke test into a TU under project warning flags.
 
 **Phase 1.5 — `permissions/Permission.h` extensions (~50 lines).**
-- Add `permission_combine_n<Parent, Children…>`.
+- Add `mint_permission_combine_n<Parent, Children…>`.
 - Add `concept Permission` and `concept SharedPermissionFor<T, Tag>`.
 - Bundled because they all touch one file; no separate commit needed.
 
@@ -925,7 +925,7 @@ Each phase is one commit (or a tight sequence). All 210 existing tests must rema
 - `step_to_next_permissioned` with Loop/Continue resolution + balance enforcement.
 - All branch convergence enforcement.
 - Debug-mode abandonment-tracker enrichment.
-- `establish_permissioned` factory.
+- `mint_permissioned_session` factory.
 - Stub `session_fork` returning `static_assert(false, "Phase 4")` until Phase 4 lands; lets the Phase 3 commit compile cleanly without depending on `SessionGlobal.h::project_t`.
 
 **Phase 4 — `session_fork` implementation (~150 lines, same file).**
@@ -1044,14 +1044,14 @@ Items deliberately deferred from v1 with explicit criteria for promotion:
 | #612 FOUND-C08 | Recv method with PermSet evolution per payload | Phase 3 | ~100 |
 | #613 FOUND-C09 | Select/Offer/branch methods with PermSet | Phase 3 | ~150 |
 | #614 FOUND-C10 | close() with permission surrender | Phase 3 | ~30 |
-| #615 FOUND-C11 | establish_permissioned factory | Phase 3 | ~30 |
+| #615 FOUND-C11 | mint_permissioned_session factory | Phase 3 | ~30 |
 | #616 FOUND-C12 | session_fork multi-party establishment | Phase 4 | ~150 |
 | #617 FOUND-C13 | OneShotFlag-driven crash transport for sessions | Phase 5 | ~150 |
 | #618 FOUND-C14 | Negative-compile tests for permission imbalance | Phase 7 | ~50 |
 | #619 FOUND-C15 | Bench: PermissionedSessionHandle vs bare SessionHandle | Phase 8 | ~30 |
 | (new) | PermSet.h sentinel TU + smoke test | Phase 1 | ~50 |
 | (new) | SessionPermPayloads.h sentinel TU + smoke test | Phase 2 | ~80 |
-| (new) | permission_combine_n in Permission.h | Phase 1.5 | ~20 |
+| (new) | mint_permission_combine_n in Permission.h | Phase 1.5 | ~20 |
 | (new) | concept Permission + concept SharedPermissionFor | Phase 1.5 | ~10 |
 | (new) | is_permission_balanced_v standalone | Phase 6 | ~50 |
 | (new) | Doc updates per §3 | Phase 9 | ~120 (across docs) |
@@ -1069,7 +1069,7 @@ Items deliberately deferred from v1 with explicit criteria for promotion:
 | Anyone updating predecessor docs | §3 per-doc breakdown | Apply listed edits; remove staleness |
 | Anyone depending on SessionHandle | §2, §5, §15 | Nothing breaks — SessionHandle untouched; PermissionedSessionHandle is opt-in |
 | Anyone designing future Permissioned* primitives | §2.4, §15 | SESSIONS-AUDIT held — sessions remain structural; future primitives follow same discipline |
-| Anyone wiring production callers (K-series) | §10, §17 | Use establish_permissioned for binary; session_fork for plain-mergeable multiparty; defer diverging until Task #381 |
+| Anyone wiring production callers (K-series) | §10, §17 | Use mint_permissioned_session for binary; session_fork for plain-mergeable multiparty; defer diverging until Task #381 |
 
 ---
 

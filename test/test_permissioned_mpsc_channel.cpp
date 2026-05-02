@@ -96,7 +96,7 @@ void test_single_thread_round_trip() {
     PermissionedMpscChannel<int, 64, InboxChannel> ch;
 
     auto cons_perm =
-        permission_root_mint<mpsc_tag::Consumer<InboxChannel>>();
+        mint_permission_root<mpsc_tag::Consumer<InboxChannel>>();
     auto consumer = ch.consumer(std::move(cons_perm));
 
     // Lend a producer; push 5 values; consume them.
@@ -126,7 +126,7 @@ void test_multi_producer_drain() {
     PermissionedMpscChannel<int, 1024, WorkerInboxChannel> ch;
 
     auto cons_perm =
-        permission_root_mint<mpsc_tag::Consumer<WorkerInboxChannel>>();
+        mint_permission_root<mpsc_tag::Consumer<WorkerInboxChannel>>();
     auto consumer = ch.consumer(std::move(cons_perm));
 
     std::atomic<int> total_pushed{0};
@@ -172,7 +172,7 @@ void test_multi_producer_drain() {
 void test_drained_access_refuses_while_shares_out() {
     PermissionedMpscChannel<int, 32, DrainedChannel> ch;
     auto cons_perm =
-        permission_root_mint<mpsc_tag::Consumer<DrainedChannel>>();
+        mint_permission_root<mpsc_tag::Consumer<DrainedChannel>>();
     auto consumer = ch.consumer(std::move(cons_perm));
 
     // Hold an outstanding producer share — drained-access must refuse.

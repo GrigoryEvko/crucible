@@ -35,7 +35,7 @@
 
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
-using ::crucible::safety::permission_root_mint;
+using ::crucible::safety::mint_permission_root;
 
 namespace {
 struct WorkItem {};
@@ -43,10 +43,10 @@ struct FakeChannel { int last_int = 0; };
 }
 
 int main() {
-    auto perm = permission_root_mint<WorkItem>();
+    auto perm = mint_permission_root<WorkItem>();
     // Two branches: one closes immediately (leaks X), one drains
     // X via send.  Establish with X.
-    auto h = establish_permissioned<
+    auto h = mint_permissioned_session<
         Select<End,
                Send<Transferable<int, WorkItem>, End>>>(
         FakeChannel{}, std::move(perm));

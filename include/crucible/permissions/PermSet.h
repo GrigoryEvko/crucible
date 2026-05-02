@@ -251,7 +251,7 @@ struct perm_set_union_impl<PermSet<T1s...>, PermSet<T2s...>> {
         "tag appears in both PermSets.  A CSL permission cannot be "
         "held by two participants simultaneously.  Verify the call "
         "site does not double-insert a tag, and check that "
-        "permission_split's children remain disjoint along the "
+        "mint_permission_split's children remain disjoint along the "
         "session protocol.");
     using type = PermSet<T1s..., T2s...>;
 };

@@ -85,7 +85,7 @@ The scope is also limited by what GCC 16 can express today. P2900R14 contracts, 
 >
 > - **Header location**: `sessions/PermissionedSession.h`, not `safety/PermissionedSession.h` (sessions/ tree moved out of safety/).
 > - **Template parameter order**: `<Proto, PS, Resource, LoopCtx>` (PS second, between Proto and Resource — mirrors CRTP base inheritance) rather than the original L184 ordering.
-> - **§9 multi-party factory renamed**: `establish_n_party_permissioned` → `session_fork` (more idiomatic; matches `permission_fork`).
+> - **§9 multi-party factory renamed**: `establish_n_party_permissioned` → `session_fork` (more idiomatic; matches `mint_permission_fork`).
 > - **Decision D6 — `is_csl_safe_v` deferred**: `is_permission_balanced_v<Γ, InitialPerms>` ships standalone in v1; the conjunction `is_csl_safe_v = is_safe_v ∧ is_permission_balanced_v` is deferred to v2 since `is_safe_v` (Task #346 / L7) is unshipped — over-claiming would violate Part IX's honest-assessment discipline.
 > - **§11 crash-transport partial integration**: `with_crash_check_or_detach(handle, OneShotFlag&, body)` helper shipped (uses the existing `bridges/CrashTransport.h::CrashWatchedHandle` pattern). The proposed `notify_crash(PeerId)` global hook is NOT shipped — callers wire `OneShotFlag::signal()` themselves from their detection layer.
 > - **Resource-as-reference support**: PSH supports both value-type Resource (e.g. `FakeChannel`) AND lvalue-ref Resource (e.g. `SharedChan&`) via `std::forward<Resource>(...)` throughout per-head ctors / step_to_next / branch dispatch / establish. Required for `session_fork`'s SharedChannel pattern; the bare `std::move(...)` form would have hit all K-series production migrations.
@@ -217,7 +217,7 @@ concept SendablePayload =
 // Establishment factory: requires the caller to surrender all permissions
 // the protocol's first state requires.
 template <typename Proto, typename Resource, typename... InitPerms>
-[[nodiscard]] auto establish_permissioned(
+[[nodiscard]] auto mint_permissioned_session(
     Resource r,
     Permission<InitPerms>&&... perms) noexcept
     -> PermissionedSessionHandle<Proto, PermSet<InitPerms...>, Resource>;
@@ -453,11 +453,11 @@ bg-thread pipeline stages: the drain stage produces an `OwnedRegion<TraceEntry, 
 
 Around three hundred lines: the StreamSource/Sink type aliases, the establishment factory, the Resource adapter that bridges OwnedRegion's span/cursor to the SessionHandle's transport invocation. Pays for itself the first time a production caller eliminates a per-message allocation.
 
-## 9. permission_fork × multi-party session establishment
+## 9. mint_permission_fork × multi-party session establishment
 
-> **SHIPPED-AS marker (added 2026-04-27).** Shipped as `session_fork<G, Whole, RolePerms…, SharedChannel, Bodies…>` (renamed from `establish_n_party_permissioned` for symmetry with `permission_fork`). Works for binary + plain-mergeable multiparty in v1; diverging multiparty (Raft, 2PC-with-multi-followers, MoE all-to-all) is blocked on Task #381 (full coinductive merging in `SessionGlobal.h::plain_merge_t`) and produces a clean projection-failure diagnostic from `Project<G, Role>` until that lands. The role tag and permission tag are unified into a single `RolePerms` template parameter (each tag does double duty: projection role identity in G AND `Permission<RolePerm>` linear token), keeping the API narrow and the `splits_into_pack<Whole, RolePerms…>` manifest small.
+> **SHIPPED-AS marker (added 2026-04-27).** Shipped as `session_fork<G, Whole, RolePerms…, SharedChannel, Bodies…>` (renamed from `establish_n_party_permissioned` for symmetry with `mint_permission_fork`). Works for binary + plain-mergeable multiparty in v1; diverging multiparty (Raft, 2PC-with-multi-followers, MoE all-to-all) is blocked on Task #381 (full coinductive merging in `SessionGlobal.h::plain_merge_t`) and produces a clean projection-failure diagnostic from `Project<G, Role>` until that lands. The role tag and permission tag are unified into a single `RolePerms` template parameter (each tag does double duty: projection role identity in G AND `Permission<RolePerm>` linear token), keeping the API narrow and the `splits_into_pack<Whole, RolePerms…>` manifest small.
 
-Multi-party sessions currently have no first-class establishment factory. The session_types.md §V documentation describes N-party MPMC channels and §IV.18 documents N-party collectives, but neither has a one-call establishment path that ties N participants to N projected local protocols with N permission roots and N worker threads. The integration uses `permission_fork` as the substrate.
+Multi-party sessions currently have no first-class establishment factory. The session_types.md §V documentation describes N-party MPMC channels and §IV.18 documents N-party collectives, but neither has a one-call establishment path that ties N participants to N projected local protocols with N permission roots and N worker threads. The integration uses `mint_permission_fork` as the substrate.
 
 ### 9.1 Design
 
@@ -476,17 +476,17 @@ template <typename G, typename SessionTag, typename Resource,
     using RoleList = roles_of_t<G>;
 
     // Step 1: split the whole permission into per-role permissions.
-    auto perms = permission_split_n<RolePerm<SessionTag, Roles>...>(
+    auto perms = mint_permission_split_n<RolePerm<SessionTag, Roles>...>(
         std::move(whole));
 
     // Step 2: project G to per-role local types at compile time.
     // (Each LocalProto_i is project_t<G, Role_i>.)
 
-    // Step 3: dispatch via permission_fork — each child callable receives
+    // Step 3: dispatch via mint_permission_fork — each child callable receives
     // its projected handle + its role-permission. RAII jthread destructor
     // joins all bodies before this function returns.
-    return permission_fork<RolePerm<SessionTag, Roles>...>(
-        permission_combine_n<RolePerm<SessionTag, Roles>...>(std::move(perms)),
+    return mint_permission_fork<RolePerm<SessionTag, Roles>...>(
+        mint_permission_combine_n<RolePerm<SessionTag, Roles>...>(std::move(perms)),
         [&shared_channel](auto&& role_perm, auto&& body) noexcept {
             using Role        = typename decltype(role_perm)::tag_type;
             using LocalProto  = project_t<G, Role>;
@@ -511,7 +511,7 @@ The shared_channel is a single Pinned resource (an MpmcRing, an AtomicSnapshot, 
 
 ```cpp
 // All-reduce of N peers, sum operation.
-auto whole = permission_root_mint<AllReduceSession<N>>();
+auto whole = mint_permission_root<AllReduceSession<N>>();
 auto rebuilt = session_fork<G_AllReduceSum<N>, AllReduceSession<N>>(
     bcast_channel, std::move(whole),
     /* peer_0 body */ [](auto handle) noexcept { /* leaf protocol */ },
@@ -522,7 +522,7 @@ auto rebuilt = session_fork<G_AllReduceSum<N>, AllReduceSession<N>>(
 // `rebuilt` is the full permission, ready for the next collective.
 
 // Two-phase commit with K followers.
-auto whole = permission_root_mint<TwoPCSession>();
+auto whole = mint_permission_root<TwoPCSession>();
 auto rebuilt = session_fork<G_TwoPC<K>, TwoPCSession>(
     raft_channel, std::move(whole),
     /* coord */     [](auto h) noexcept { /* coordinator protocol */ },
@@ -532,7 +532,7 @@ auto rebuilt = session_fork<G_TwoPC<K>, TwoPCSession>(
 );
 
 // Multi-producer pipeline with one drain consumer.
-auto whole = permission_root_mint<PipelineSession>();
+auto whole = mint_permission_root<PipelineSession>();
 session_fork<G_Pipeline<NumProducers>, PipelineSession>(
     bg_pipeline_channel, std::move(whole),
     /* producer_0 */ ...,
@@ -580,7 +580,7 @@ class SessionFromMachine {
     SessionHandle<Proto, M*> handle_;
 public:
     explicit SessionFromMachine(M&& m) noexcept
-        : machine_{std::move(m)}, handle_{make_session_handle<Proto>(&machine_)} {}
+        : machine_{std::move(m)}, handle_{mint_session_handle<Proto>(&machine_)} {}
 
     // Forward Send/Recv through to the Machine; each event invokes a
     // corresponding transition_to<NewState> on the inner Machine.
@@ -711,7 +711,7 @@ Useful at: Cipher cold-tier S3 uploads (object bytes), Canopy peer authenticatio
 
 ## 14. PublishOnce / SetOnce for session establishment
 
-Session establishment currently happens synchronously: `establish_channel<Proto>(rA, rB)` constructs both endpoint handles in one call. For asynchronous establishment patterns — Vessel startup that publishes a channel before the dispatch path tries to observe it, Cipher hot-tier registration that publishes a peer's QP before the local Keeper attempts a fetch — the natural primitive is `PublishOnce<ChannelResource*>`.
+Session establishment currently happens synchronously: `mint_channel<Proto>(rA, rB)` constructs both endpoint handles in one call. For asynchronous establishment patterns — Vessel startup that publishes a channel before the dispatch path tries to observe it, Cipher hot-tier registration that publishes a peer's QP before the local Keeper attempts a fetch — the natural primitive is `PublishOnce<ChannelResource*>`.
 
 ```cpp
 template <typename Proto, typename Resource>
@@ -725,7 +725,7 @@ public:
     {
         Resource* r = resource_.observe();
         if (!r) return std::nullopt;
-        return make_session_handle<Proto>(*r);
+        return mint_session_handle<Proto>(*r);
     }
 };
 ```
@@ -803,7 +803,7 @@ concept SessionResource =
     || /* explicit opt-out marker for known-stable types like spans */;
 
 template <typename Proto, SessionResource Resource>
-auto make_session_handle(Resource r) -> SessionHandle<Proto, Resource>;
+auto mint_session_handle(Resource r) -> SessionHandle<Proto, Resource>;
 ```
 
 Channels that are Pinned (MpmcRing, AtomicSnapshot, ChaseLevDeque) compile through. Channels that hold references to Pinned values (`SpscRing<T, N>&`) compile through. Plain values that are not Pinned (POD structs, `std::vector<T>`) are rejected with a routed diagnostic naming the missing `Pinned<>` derivation.
@@ -1076,7 +1076,7 @@ About two hundred lines; resolves task #101 and #164.
 
 ## 31. TraceRing → PermissionedSpscChannel + Tagged
 
-> **SHIPPED-AS marker (added 2026-04-27, partial).** The session-typed wiring SHAPE shipped as `sessions/SpscSession.h` (commit c2ceb86, refined in SPSC-FIX-1..4). This is the framework + tooling: typed-session factories `producer_session<Channel>(handle&)` / `consumer_session<Channel>(handle&)` over `PermissionedSpscChannel<T, N, Tag>`, transport helpers `blocking_push` / `blocking_pop`, integration test `test/test_spsc_session.cpp`, head-to-head bench `bench/bench_spsc_session.cpp`. Asm-comparison capability ships generic via `cmake -DCRUCIBLE_DUMP_ASM=ON`. **Honest scope**: SpscSession.h uses EmptyPermSet by design (TraceRing-shape SPSC streams plain payloads, no wire-permission transfer); the §5 PermSet evolution path is exercised by FOUND-C v1's own integration test. **Still pending**: the production-side switchover — Vigil's recording path, BackgroundThread's drain, MerkleDag's TraceRing consumer, vessel_api's dispatch hot path all still call into `TraceRing.h` directly with hand-coded acquire/release. The TraceRing-internal rewrite (replace TraceRing's atomics with PermissionedSpscChannel internally + plumb the typed handles to consumers) is the still-pending finish of SAFEINT-R31. Adding Tagged<TraceEntry, vessel_trust::Validated> to the wire (§5/§6 composition) is the next layer.
+> **SHIPPED-AS marker (added 2026-04-27, partial).** The session-typed wiring SHAPE shipped as `sessions/SpscSession.h` (commit c2ceb86, refined in SPSC-FIX-1..4). This is the framework + tooling: typed-session factories `mint_producer_session<Channel>(handle&)` / `mint_consumer_session<Channel>(handle&)` over `PermissionedSpscChannel<T, N, Tag>`, transport helpers `blocking_push` / `blocking_pop`, integration test `test/test_spsc_session.cpp`, head-to-head bench `bench/bench_spsc_session.cpp`. Asm-comparison capability ships generic via `cmake -DCRUCIBLE_DUMP_ASM=ON`. **Honest scope**: SpscSession.h uses EmptyPermSet by design (TraceRing-shape SPSC streams plain payloads, no wire-permission transfer); the §5 PermSet evolution path is exercised by FOUND-C v1's own integration test. **Still pending**: the production-side switchover — Vigil's recording path, BackgroundThread's drain, MerkleDag's TraceRing consumer, vessel_api's dispatch hot path all still call into `TraceRing.h` directly with hand-coded acquire/release. The TraceRing-internal rewrite (replace TraceRing's atomics with PermissionedSpscChannel internally + plumb the typed handles to consumers) is the still-pending finish of SAFEINT-R31. Adding Tagged<TraceEntry, vessel_trust::Validated> to the wire (§5/§6 composition) is the next layer.
 
 `include/crucible/TraceRing.h` is a Pinned SPSC ring with hand-coded acquire/release. Task #384 (SEPLOG-INT-1) wants to wire it as a `PermissionedSpscChannel<TraceEntry, N, TraceRingTag>`. The §5/§6 integration extends to add Tagged provenance:
 
@@ -1119,7 +1119,7 @@ The refactor:
 
 About six hundred lines; resolves #355, #356, #357, #358 (the K-series production tasks). The largest refactor in the integration plan; depends on all prior Tier S/A integrations landing first.
 
-## 35. BackgroundThread pipeline → permission_fork + StreamSession
+## 35. BackgroundThread pipeline → mint_permission_fork + StreamSession
 
 `include/crucible/BackgroundThread.h` runs a sequential pipeline (drain → build → transform → compile). Task #315 (SEPLOG-D1) wants it as a staged pipeline; the §9 integration uses `session_fork` over a global type `G_BgPipeline` whose roles are the four stages; the §8 integration backs each inter-stage channel with `OwnedRegion<StageMessage, StageTag>`.
 
@@ -1230,7 +1230,7 @@ The remaining Tier-B/C integrations (§13 Secret payloads, §14 PublishOnce esta
 | §22 implies_v wiring | 50 | 50 | Low |
 | §5 PermissionedSessionHandle | 1,300 (shipped 2026-04-27 — full functionality, all 5 protocol-head specialisations, Loop balance + branch convergence enforcement, debug abandonment-tracker enrichment, three payload markers, both establishment factories) | 0 | Low (shipped) |
 | §11 OneShotFlag crash | 50 (shipped — `with_crash_check_or_detach` helper composes with existing `bridges/CrashTransport.h::CrashWatchedHandle`) | 0 | Low (shipped, partial — global `notify_crash` hook explicitly NOT shipped per FOUND-C SHIPPED-AS) |
-| §9 session_fork | 100 (shipped — delegates to `permission_fork`, projects per role via `Project<G, Role>`, RAII rebuild on join) | 0 | Low (shipped) |
+| §9 session_fork | 100 (shipped — delegates to `mint_permission_fork`, projects per role via `Project<G, Role>`, RAII rebuild on join) | 0 | Low (shipped) |
 | **PermSet algebra** (new line) | 370 (shipped 2026-04-27 — `permissions/PermSet.h`) | 0 | Low (shipped) |
 | **SessionPermPayloads** (new line) | 410 (shipped 2026-04-27 — `sessions/SessionPermPayloads.h`) | 0 | Low (shipped) |
 | **PSH integration test + bench + neg-compile** (new line) | 730 (shipped 2026-04-27) | 0 | Low (shipped) |

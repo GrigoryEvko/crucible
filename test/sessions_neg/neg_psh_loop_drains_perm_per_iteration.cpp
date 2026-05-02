@@ -30,7 +30,7 @@
 
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
-using ::crucible::safety::permission_root_mint;
+using ::crucible::safety::mint_permission_root;
 
 namespace {
 struct WorkItem {};
@@ -45,11 +45,11 @@ using LoopProto = Loop<BodyProto>;
 }
 
 int main() {
-    auto perm = permission_root_mint<WorkItem>();
-    auto h = establish_permissioned<LoopProto>(FakeChannel{},
+    auto perm = mint_permission_root<WorkItem>();
+    auto h = mint_permissioned_session<LoopProto>(FakeChannel{},
                                                 std::move(perm));
 
-    Transferable<int, WorkItem> payload{1, permission_root_mint<WorkItem>()};
+    Transferable<int, WorkItem> payload{1, mint_permission_root<WorkItem>()};
     // The send compiles (PS contains WorkItem at body entry); but the
     // returned handle's step-to-Continue resolution fires the loop-
     // balance assert because PS at Continue is Empty, not {WorkItem}.

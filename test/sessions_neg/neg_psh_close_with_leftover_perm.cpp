@@ -27,7 +27,7 @@
 
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
-using ::crucible::safety::permission_root_mint;
+using ::crucible::safety::mint_permission_root;
 
 namespace {
 struct WorkItem {};
@@ -35,8 +35,8 @@ struct FakeChannel { int last_int = 0; };
 }
 
 int main() {
-    auto perm = permission_root_mint<WorkItem>();
-    auto h = establish_permissioned<End>(FakeChannel{},
+    auto perm = mint_permission_root<WorkItem>();
+    auto h = mint_permissioned_session<End>(FakeChannel{},
                                           std::move(perm));
     // PS at this point: PermSet<WorkItem>.
     // close() requires PS == EmptyPermSet → fires.

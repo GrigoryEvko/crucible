@@ -148,8 +148,8 @@ void test_real_spsc_value_type() {
 
 void test_runtime_round_trip() {
     SpscChannel ch;
-    auto whole = safety::permission_root_mint<typename SpscChannel::whole_tag>();
-    auto split = safety::permission_split<
+    auto whole = safety::mint_permission_root<typename SpscChannel::whole_tag>();
+    auto split = safety::mint_permission_split<
         typename SpscChannel::producer_tag,
         typename SpscChannel::consumer_tag>(std::move(whole));
     auto prod = ch.producer(std::move(split.first));

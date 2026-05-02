@@ -30,7 +30,7 @@ int main() {
     using namespace crucible;
 
     Arena arena;
-    auto perm = safety::permission_root_mint<DataNeg>();
+    auto perm = safety::mint_permission_root<DataNeg>();
     constexpr std::size_t N = 8;
     auto region = safety::OwnedRegion<std::uint64_t, DataNeg>::adopt(
         effects::Test{}.alloc, arena, N, std::move(perm));

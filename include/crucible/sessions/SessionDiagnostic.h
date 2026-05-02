@@ -358,14 +358,14 @@ struct Merge_Branches_Diverge : tag_base {
 
 // ─── Tag added by the Pinned-constraint integration (#406) ─────────
 //
-// Cover the make_session_handle / establish_channel pin-discipline
+// Cover the mint_session_handle / mint_channel pin-discipline
 // rejection path: lvalue-reference Resource to a non-Pinned type, or
 // rvalue-reference Resource at all.
 
 struct SessionResource_NotPinned : tag_base {
     static constexpr std::string_view name = "SessionResource_NotPinned";
     static constexpr std::string_view description =
-        "make_session_handle / establish_channel was called with a "
+        "mint_session_handle / mint_channel was called with a "
         "Resource that fails the pin-discipline: either an lvalue "
         "reference to a type not derived from safety::Pinned<T>, or "
         "an rvalue reference (which would bind the handle to a "

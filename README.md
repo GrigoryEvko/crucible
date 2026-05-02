@@ -73,7 +73,7 @@ include/crucible/        Tensor-level IR + runtime
                          PermissionedSessionHandle (CSL × session integration)
   effects/               Met(X) effect rows, EffectRow, Computation<R, T>,
                          capability tags (Alloc / IO / Block / Bg / Init / Test)
-  permissions/           Permission<Tag>, SharedPermission + pool, permission_fork
+  permissions/           Permission<Tag>, SharedPermission + pool, mint_permission_fork
                          (Concurrent Separation Logic primitives)
   concurrent/            SPSC / MPSC / MPMC rings, ChaseLevDeque, AtomicSnapshot,
                          AdaptiveScheduler, NumaThreadPool

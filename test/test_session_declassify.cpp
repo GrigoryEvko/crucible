@@ -158,7 +158,7 @@ struct MockChannel {
 
 int run_worked_example_auth_handshake() {
     MockChannel channel;
-    auto handle = make_session_handle<AuthHandshake>(&channel);
+    auto handle = mint_session_handle<AuthHandshake>(&channel);
 
     // Sender side: construct the classified payload at the call
     // site, hand it to the transport which extracts the bytes via
@@ -193,7 +193,7 @@ int run_worked_example_auth_handshake() {
 // ── Runtime: trait extraction from a session-typed handle ─────────
 
 int run_trait_extraction() {
-    using H = decltype(make_session_handle<AuthHandshake>(
+    using H = decltype(mint_session_handle<AuthHandshake>(
         std::declval<MockChannel*>()));
 
     // The handle's compile-time Proto is `Send<TokenWire, Recv<AuthAck, End>>`.

@@ -41,7 +41,7 @@
 
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
-using ::crucible::safety::permission_root_mint;
+using ::crucible::safety::mint_permission_root;
 
 namespace {
 struct WorkX {};
@@ -50,12 +50,12 @@ struct FakeChannel { int last_int = 0; };
 
 Transferable<int, WorkX> wire_recv_x(FakeChannel& ch) noexcept {
     return Transferable<int, WorkX>{ch.last_int,
-                                     permission_root_mint<WorkX>()};
+                                     mint_permission_root<WorkX>()};
 }
 
 Transferable<int, WorkY> wire_recv_y(FakeChannel& ch) noexcept {
     return Transferable<int, WorkY>{ch.last_int,
-                                     permission_root_mint<WorkY>()};
+                                     mint_permission_root<WorkY>()};
 }
 
 void wire_send_ret_x(FakeChannel& ch, Returned<int, WorkX>&& r) noexcept {
@@ -69,7 +69,7 @@ using LoopProto = Loop<BodyProto>;
 }
 
 int main() {
-    auto h = establish_permissioned<LoopProto>(FakeChannel{});
+    auto h = mint_permissioned_session<LoopProto>(FakeChannel{});
 
     // Step 1: recv X — PS becomes {X}.
     auto [val_x, h2] = std::move(h).recv(wire_recv_x);

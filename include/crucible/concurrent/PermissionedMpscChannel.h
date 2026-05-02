@@ -43,7 +43,7 @@
 //      Permission would force the user to either hand off the
 //      Permission token between producer threads (defeating the
 //      "many concurrent producers" property) or split the token
-//      via permission_split_n into M phantom producer slots
+//      via mint_permission_split_n into M phantom producer slots
 //      (defeating dynamic membership).  Fractional permissions
 //      handle dynamic membership naturally.
 //
@@ -84,7 +84,7 @@
 //   // Mint Consumer Permission ONLY — the channel mints its own
 //   // producer root internally.  Mirror of PermissionedSnapshot
 //   // (which mints reader root internally; user mints writer).
-//   auto cons_perm = permission_root_mint<
+//   auto cons_perm = mint_permission_root<
 //       mpsc_tag::Consumer<InboxChannel>>();
 //   auto consumer = ch.consumer(std::move(cons_perm));
 //
@@ -160,7 +160,7 @@ public:
     // and parks it in the Pool — same convention as
     // PermissionedSnapshot mints its Reader root internally.  The
     // user keeps the Consumer Permission separately (mint via
-    // permission_root_mint<consumer_tag>(), hand to consumer()
+    // mint_permission_root<consumer_tag>(), hand to consumer()
     // factory below) — symmetric to PermissionedSnapshot's Writer
     // permission flow.
     //
@@ -171,7 +171,7 @@ public:
     // Pool the single mint site for its tag.
 
     PermissionedMpscChannel() noexcept
-        : producer_pool_{safety::permission_root_mint<producer_tag>()} {}
+        : producer_pool_{safety::mint_permission_root<producer_tag>()} {}
 
     // ── ProducerHandle ────────────────────────────────────────────
     //
@@ -346,8 +346,8 @@ private:
 //
 // User declares Permission<Whole<MyTag>> at startup; framework does
 // the rest.  Both binary (splits_into) and N-ary (splits_into_pack)
-// forms specialized so users can use either permission_split or
-// permission_split_n.
+// forms specialized so users can use either mint_permission_split or
+// mint_permission_split_n.
 
 namespace crucible::safety {
 

@@ -122,8 +122,8 @@ static_assert(sizeof(SizeChan::ConsumerHandle) == sizeof(SizeChan*),
 
 int run_single_threaded() {
     PChan channel;
-    auto whole = permission_root_mint<spsc_tag::Whole<ChannelSingle>>();
-    auto [pp, cp] = permission_split<spsc_tag::Producer<ChannelSingle>,
+    auto whole = mint_permission_root<spsc_tag::Whole<ChannelSingle>>();
+    auto [pp, cp] = mint_permission_split<spsc_tag::Producer<ChannelSingle>,
                                       spsc_tag::Consumer<ChannelSingle>>(
                                           std::move(whole));
     auto p = channel.producer(std::move(pp));
@@ -153,8 +153,8 @@ int run_single_threaded() {
 
 int run_capacity_bound() {
     PermissionedSpscChannel<int, 4, ChannelCap> small;
-    auto whole = permission_root_mint<spsc_tag::Whole<ChannelCap>>();
-    auto [pp, cp] = permission_split<spsc_tag::Producer<ChannelCap>,
+    auto whole = mint_permission_root<spsc_tag::Whole<ChannelCap>>();
+    auto [pp, cp] = mint_permission_split<spsc_tag::Producer<ChannelCap>,
                                       spsc_tag::Consumer<ChannelCap>>(
                                           std::move(whole));
     auto p = small.producer(std::move(pp));
@@ -184,8 +184,8 @@ int run_capacity_bound() {
 
 int run_cross_thread() {
     PermissionedSpscChannel<int, 256, ChannelXT> channel;
-    auto whole = permission_root_mint<spsc_tag::Whole<ChannelXT>>();
-    auto [pp, cp] = permission_split<spsc_tag::Producer<ChannelXT>,
+    auto whole = mint_permission_root<spsc_tag::Whole<ChannelXT>>();
+    auto [pp, cp] = mint_permission_split<spsc_tag::Producer<ChannelXT>,
                                       spsc_tag::Consumer<ChannelXT>>(
                                           std::move(whole));
     auto p = channel.producer(std::move(pp));

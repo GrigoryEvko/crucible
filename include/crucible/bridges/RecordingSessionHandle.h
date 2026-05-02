@@ -53,14 +53,14 @@
 //                                                  branch(transport, handler)
 //
 // Loop<B> / Continue / Stop are unrolled by the framework's existing
-// step_to_next / make_session_handle machinery before the wrapper
+// step_to_next / mint_session_handle machinery before the wrapper
 // sees them — same as for plain SessionHandle.
 //
 // ─── Worked-example pattern ────────────────────────────────────────
 //
 //   SessionEventLog log{SessionTagId{42}};
-//   auto bare = make_session_handle<MyProto>(my_resource);
-//   auto rec  = make_recording<MyProto, R>(
+//   auto bare = mint_session_handle<MyProto>(my_resource);
+//   auto rec  = mint_recording_session<MyProto, R>(
 //       std::move(bare), log,
 //       /*self*/ RoleTagId{1}, /*peer*/ RoleTagId{2});
 //
@@ -508,7 +508,7 @@ public:
 };
 
 // ═════════════════════════════════════════════════════════════════════
-// ── make_recording — convenience factory ────────────────────────────
+// ── mint_recording_session — convenience factory ────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
 // Wrap an existing SessionHandle in a RecordingSessionHandle.  Just a
@@ -516,7 +516,7 @@ public:
 // resource template parameters are deducible at the call site.
 
 template <typename Proto, typename Resource, typename LoopCtx>
-[[nodiscard]] constexpr auto make_recording(
+[[nodiscard]] constexpr auto mint_recording_session(
     SessionHandle<Proto, Resource, LoopCtx> inner,
     SessionEventLog& log,
     RoleTagId self,

@@ -22,11 +22,11 @@ void exercise_oob_slot() {
     crucible::concurrent::PermissionedShardedGrid<int, 3, 2, 32, BadGrid> grid;
 
     // We need a Permission<Producer<BadGrid, 5>> to even attempt
-    // the call.  Mint a fake one via permission_root_mint — this is
+    // the call.  Mint a fake one via mint_permission_root — this is
     // unsafe outside test code but works for the negative witness:
     // even if the user manages to construct the type, the producer<I>
     // factory's static_assert fires.
-    auto fake = crucible::safety::permission_root_mint<
+    auto fake = crucible::safety::mint_permission_root<
         crucible::concurrent::grid_tag::Producer<BadGrid, 5>>();
 
     [[maybe_unused]] auto p = grid.template producer<5>(std::move(fake));

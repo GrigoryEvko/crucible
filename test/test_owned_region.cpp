@@ -121,7 +121,7 @@ void test_compile_time_properties() {
 
 void test_adopt_and_view() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     auto region = OwnedRegion<float, DataA>::adopt(
         test_alloc_token(), arena, 64, std::move(perm));
 
@@ -144,7 +144,7 @@ void test_adopt_and_view() {
 
 void test_split_into_chunk_math() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, 1000, std::move(perm));
 
@@ -169,7 +169,7 @@ void test_split_into_chunk_math() {
 
 void test_split_uneven() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, 1001, std::move(perm));
 
@@ -185,7 +185,7 @@ void test_split_uneven() {
 
 void test_split_smaller_than_n() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, 5, std::move(perm));
 
@@ -204,7 +204,7 @@ void test_split_smaller_than_n() {
 
 void test_parallel_for_views_squares() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     constexpr std::size_t N = 100'000;
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -233,7 +233,7 @@ void test_parallel_for_views_uses_correct_slice_indices() {
     // Verify each worker only touches its own sub-region by writing
     // a per-shard marker into the first element of each shard's span.
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     constexpr std::size_t N = 800;  // 8 × 100, exact division
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -273,7 +273,7 @@ void test_parallel_for_views_body_invoked_n_times() {
     constexpr std::size_t SHARDS = 8;
     constexpr std::size_t N = 4096;
     auto region = OwnedRegion<std::uint32_t, DataA>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+        test_alloc_token(), arena, N, mint_permission_root<DataA>());
     for (std::size_t i = 0; i < N; ++i) region.span()[i] = 0;
 
     std::atomic<std::size_t> body_invocations{0};
@@ -300,7 +300,7 @@ void test_parallel_for_views_body_invoked_n_times() {
 // parallel case works.
 void test_parallel_for_views_n2_smallest_parallel() {
     Arena arena;
-    auto perm = permission_root_mint<DataB>();
+    auto perm = mint_permission_root<DataB>();
     constexpr std::size_t N = 4;
     auto region = OwnedRegion<std::uint64_t, DataB>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -329,7 +329,7 @@ void test_parallel_for_views_n2_smallest_parallel() {
 // visited, no overlap, no skipped suffix.
 void test_parallel_for_views_uneven_split() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     constexpr std::size_t N = 100;
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -374,9 +374,9 @@ void test_parallel_for_views_deterministic_across_runs() {
 
     // Each run must use a fresh tag — Permission tags are linear and
     // mint-once-per-program-per-tag.
-    auto r1 = run(arena_a, permission_root_mint<DataA>());
+    auto r1 = run(arena_a, mint_permission_root<DataA>());
 
-    auto r2_arena_perm = permission_root_mint<DataB>();
+    auto r2_arena_perm = mint_permission_root<DataB>();
     auto region_b = OwnedRegion<std::uint32_t, DataB>::adopt(
         test_alloc_token(), arena_b, N, std::move(r2_arena_perm));
     for (std::size_t i = 0; i < N; ++i) {
@@ -399,7 +399,7 @@ void test_parallel_for_views_deterministic_across_runs() {
 
 void test_parallel_reduce_views_sum() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     constexpr std::size_t N = 50'000;
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -430,7 +430,7 @@ void test_parallel_reduce_views_sum() {
 void test_parallel_reduce_views_max_abs() {
     // Reduction with a non-commutative-but-associative reducer (max).
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     constexpr std::size_t N = 10'000;
     auto region = OwnedRegion<std::int64_t, DataA>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -470,7 +470,7 @@ void test_parallel_reduce_views_max_abs() {
 // branch in Workload.h:247-250 must NOT spawn a worker.
 void test_parallel_reduce_views_n1_init_participates() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     constexpr std::size_t N = 100;
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -499,7 +499,7 @@ void test_parallel_reduce_views_struct_accumulator() {
     struct Stats { std::uint64_t count = 0; std::uint64_t sum = 0; };
 
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     constexpr std::size_t N = 10'000;
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -533,7 +533,7 @@ void test_parallel_reduce_views_struct_accumulator() {
 // follow-on read-only consumer.
 void test_parallel_reduce_views_recombined_data_unchanged() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     constexpr std::size_t N = 1024;
     auto region = OwnedRegion<std::uint32_t, DataA>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -571,7 +571,7 @@ void test_parallel_reduce_views_deterministic_across_runs() {
 
     // First run.
     auto region_a = OwnedRegion<std::uint32_t, DataA>::adopt(
-        test_alloc_token(), arena_a, N, permission_root_mint<DataA>());
+        test_alloc_token(), arena_a, N, mint_permission_root<DataA>());
     for (std::size_t i = 0; i < N; ++i) {
         region_a.span()[i] = static_cast<std::uint32_t>(i % 17);
     }
@@ -592,7 +592,7 @@ void test_parallel_reduce_views_deterministic_across_runs() {
 
     // Second run with identical input.
     auto region_b = OwnedRegion<std::uint32_t, DataB>::adopt(
-        test_alloc_token(), arena_b, N, permission_root_mint<DataB>());
+        test_alloc_token(), arena_b, N, mint_permission_root<DataB>());
     for (std::size_t i = 0; i < N; ++i) {
         region_b.span()[i] = static_cast<std::uint32_t>(i % 17);
     }
@@ -610,7 +610,7 @@ void test_parallel_reduce_views_deterministic_across_runs() {
 // (one partial per worker, both summed in the post-join fold) works.
 void test_parallel_reduce_views_n2_smallest_parallel() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     constexpr std::size_t N = 4;
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -655,7 +655,7 @@ void test_parallel_reduce_views_n2_smallest_parallel() {
 // chunk = (count + N - 1) / N = 13 for non-last shards).
 void test_parallel_reduce_views_uneven_split() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     constexpr std::size_t N = 100;
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -685,7 +685,7 @@ void test_parallel_reduce_views_mapper_invoked_n_times() {
     constexpr std::size_t SHARDS = 8;
     constexpr std::size_t N = 4096;
     auto region = OwnedRegion<std::uint32_t, DataA>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+        test_alloc_token(), arena, N, mint_permission_root<DataA>());
     for (std::size_t i = 0; i < N; ++i) region.span()[i] = 1;
 
     std::atomic<std::size_t> mapper_invocations{0};
@@ -716,10 +716,10 @@ void test_parallel_apply_pair_vector_add() {
     Arena arena;
     constexpr std::size_t N = 4096;
 
-    auto perm_a = permission_root_mint<DataA>();
+    auto perm_a = mint_permission_root<DataA>();
     auto region_a = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, N, std::move(perm_a));
-    auto perm_b = permission_root_mint<DataB>();
+    auto perm_b = mint_permission_root<DataB>();
     auto region_b = OwnedRegion<std::uint64_t, DataB>::adopt(
         test_alloc_token(), arena, N, std::move(perm_b));
 
@@ -760,9 +760,9 @@ void test_parallel_apply_pair_sequential_n1() {
     constexpr std::size_t N = 100;
 
     auto region_a = OwnedRegion<std::uint64_t, DataA>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+        test_alloc_token(), arena, N, mint_permission_root<DataA>());
     auto region_b = OwnedRegion<std::uint64_t, DataB>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataB>());
+        test_alloc_token(), arena, N, mint_permission_root<DataB>());
 
     for (std::size_t i = 0; i < N; ++i) {
         region_a.span()[i] = i;
@@ -793,9 +793,9 @@ void test_parallel_apply_pair_n2_smallest_parallel() {
     constexpr std::size_t N = 4;
 
     auto region_a = OwnedRegion<std::uint64_t, DataA>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+        test_alloc_token(), arena, N, mint_permission_root<DataA>());
     auto region_b = OwnedRegion<std::uint64_t, DataB>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataB>());
+        test_alloc_token(), arena, N, mint_permission_root<DataB>());
     region_a.span()[0] = 1; region_a.span()[1] = 2;
     region_a.span()[2] = 3; region_a.span()[3] = 4;
     for (std::size_t i = 0; i < N; ++i) region_b.span()[i] = 0;
@@ -829,9 +829,9 @@ void test_parallel_apply_pair_uneven_split() {
     constexpr std::size_t N = 100;
 
     auto region_a = OwnedRegion<std::uint64_t, DataA>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+        test_alloc_token(), arena, N, mint_permission_root<DataA>());
     auto region_b = OwnedRegion<std::uint64_t, DataB>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataB>());
+        test_alloc_token(), arena, N, mint_permission_root<DataB>());
 
     for (std::size_t i = 0; i < N; ++i) {
         region_a.span()[i] = i + 1;
@@ -861,9 +861,9 @@ void test_parallel_apply_pair_body_invoked_n_times() {
     constexpr std::size_t N = 800;
 
     auto region_a = OwnedRegion<std::uint32_t, DataA>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+        test_alloc_token(), arena, N, mint_permission_root<DataA>());
     auto region_b = OwnedRegion<std::uint32_t, DataB>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataB>());
+        test_alloc_token(), arena, N, mint_permission_root<DataB>());
 
     std::atomic<std::size_t> body_invocations{0};
 
@@ -893,9 +893,9 @@ void test_parallel_apply_pair_deterministic_across_runs() {
 
     auto run_once = [&arena]() noexcept {
         auto src = OwnedRegion<std::uint64_t, DataA>::adopt(
-            test_alloc_token(), arena, N, permission_root_mint<DataA>());
+            test_alloc_token(), arena, N, mint_permission_root<DataA>());
         auto dst = OwnedRegion<std::uint64_t, DataB>::adopt(
-            test_alloc_token(), arena, N, permission_root_mint<DataB>());
+            test_alloc_token(), arena, N, mint_permission_root<DataB>());
         for (std::size_t i = 0; i < N; ++i) {
             src.span()[i] = std::uint64_t{i} * 31u + 7u;
             dst.span()[i] = std::uint64_t{i} * 17u + 3u;
@@ -937,9 +937,9 @@ void test_parallel_apply_pair_same_tag() {
     // independent root permission.  Each region's split chain is
     // independent.
     auto region_a = OwnedRegion<std::uint64_t, DataA>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+        test_alloc_token(), arena, N, mint_permission_root<DataA>());
     auto region_b = OwnedRegion<std::uint64_t, DataA>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+        test_alloc_token(), arena, N, mint_permission_root<DataA>());
 
     for (std::size_t i = 0; i < N; ++i) {
         region_a.span()[i] = i;
@@ -973,9 +973,9 @@ void test_parallel_apply_pair_disjoint_shards() {
     constexpr std::size_t N = 800;  // 8 × 100, exact division.
 
     auto region_a = OwnedRegion<std::uint64_t, DataA>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+        test_alloc_token(), arena, N, mint_permission_root<DataA>());
     auto region_b = OwnedRegion<std::uint64_t, DataB>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataB>());
+        test_alloc_token(), arena, N, mint_permission_root<DataB>());
 
     // Sentinel.
     for (std::size_t i = 0; i < N; ++i) {
@@ -1010,9 +1010,9 @@ void test_parallel_apply_pair_heterogeneous_types() {
     constexpr std::size_t N = 64;
 
     auto region_a = OwnedRegion<float, DataA>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataA>());
+        test_alloc_token(), arena, N, mint_permission_root<DataA>());
     auto region_b = OwnedRegion<std::int32_t, DataB>::adopt(
-        test_alloc_token(), arena, N, permission_root_mint<DataB>());
+        test_alloc_token(), arena, N, mint_permission_root<DataB>());
     for (std::size_t i = 0; i < N; ++i) {
         region_a.span()[i] = static_cast<float>(i) + 0.5f;
         region_b.span()[i] = 0;
@@ -1038,7 +1038,7 @@ void test_parallel_apply_pair_heterogeneous_types() {
 
 void test_parallel_for_views_sequential_n1() {
     Arena arena;
-    auto perm = permission_root_mint<DataSeq>();
+    auto perm = mint_permission_root<DataSeq>();
     constexpr std::size_t N = 100;
     auto region = OwnedRegion<std::uint64_t, DataSeq>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -1063,7 +1063,7 @@ void test_parallel_for_views_sequential_n1() {
 
 void test_adaptive_picks_sequential_for_small_workload() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     constexpr std::size_t N = 100;  // tiny — fits in L1 cache
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -1093,7 +1093,7 @@ void test_adaptive_picks_sequential_for_small_workload() {
 
 void test_adaptive_picks_parallel_for_large_workload() {
     Arena arena{1ULL << 24};  // 16 MB block to fit a large region
-    auto perm = permission_root_mint<DataB>();
+    auto perm = mint_permission_root<DataB>();
     constexpr std::size_t N = 200'000;  // ~1.6 MB > L2_per_core
     auto region = OwnedRegion<std::uint64_t, DataB>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -1124,7 +1124,7 @@ void test_adaptive_picks_parallel_for_large_workload() {
 
 void test_workbudget_for_span() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, 1024, std::move(perm));
 
@@ -1144,7 +1144,7 @@ void test_workbudget_for_span() {
 
 void test_parallel_for_smart_small_workload() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     constexpr std::size_t N = 100;  // tiny — should run sequentially
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -1165,7 +1165,7 @@ void test_parallel_for_smart_small_workload() {
 
 void test_parallel_for_smart_large_workload() {
     Arena arena{1ULL << 24};  // 16 MB block
-    auto perm = permission_root_mint<DataB>();
+    auto perm = mint_permission_root<DataB>();
     constexpr std::size_t N = 200'000;  // ~1.6 MB > L2_per_core typically
     auto region = OwnedRegion<std::uint64_t, DataB>::adopt(
         test_alloc_token(), arena, N, std::move(perm));
@@ -1191,7 +1191,7 @@ void test_log_topology_at_startup() {
 
 void test_stress_parallel_for_repeated() {
     Arena arena;
-    auto perm = permission_root_mint<DataA>();
+    auto perm = mint_permission_root<DataA>();
     constexpr std::size_t N = 16'384;
     auto region = OwnedRegion<std::uint64_t, DataA>::adopt(
         test_alloc_token(), arena, N, std::move(perm));

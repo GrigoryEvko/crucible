@@ -66,9 +66,9 @@
 //
 //   namespace ses = crucible::safety::proto::spsc_session;
 //
-//   auto whole = crucible::safety::permission_root_mint<
+//   auto whole = crucible::safety::mint_permission_root<
 //       crucible::concurrent::spsc_tag::Whole<TraceRingTag>>();
-//   auto [pp, cp] = crucible::safety::permission_split<
+//   auto [pp, cp] = crucible::safety::mint_permission_split<
 //       crucible::concurrent::spsc_tag::Producer<TraceRingTag>,
 //       crucible::concurrent::spsc_tag::Consumer<TraceRingTag>>(
 //           std::move(whole));
@@ -77,7 +77,7 @@
 //   auto cons = ch.consumer(std::move(cp));
 //
 //   std::jthread producer{[&prod](auto) mutable {
-//       auto psh = ses::producer_session<decltype(ch)>(prod);
+//       auto psh = ses::mint_producer_session<decltype(ch)>(prod);
 //       for (int i = 0; i < 1000; ++i) {
 //           auto next = std::move(psh).send(i, ses::blocking_push);
 //           psh = std::move(next);
@@ -87,7 +87,7 @@
 //   }};
 //
 //   std::jthread consumer{[&cons](auto) mutable {
-//       auto psh = ses::consumer_session<decltype(ch)>(cons);
+//       auto psh = ses::mint_consumer_session<decltype(ch)>(cons);
 //       for (int i = 0; i < 1000; ++i) {
 //           auto [v, next] = std::move(psh).recv(ses::blocking_pop);
 //           (void)v;
@@ -145,7 +145,7 @@
 // Loop<Choice<Send<T, Continue>, Stop>> for graceful shutdown,
 // Loop<Send<Req, Recv<Resp, Continue>>> for request-response over
 // SPSC) define their own ProducerProto / ConsumerProto and use
-// establish_permissioned directly — this header is the canonical
+// mint_permissioned_session directly — this header is the canonical
 // streaming-SPSC factory, not an exhaustive protocol library.
 //
 // FIRST PRODUCTION-SHAPED EXERCISE.  This is the framework's first
@@ -212,19 +212,19 @@ using ConsumerProto = Loop<Recv<T, Continue>>;
 
 template <typename Channel>
 [[nodiscard]] constexpr auto
-producer_session(typename Channel::ProducerHandle& handle) noexcept
+mint_producer_session(typename Channel::ProducerHandle& handle) noexcept
 {
     using T = typename Channel::value_type;
-    return establish_permissioned<ProducerProto<T>,
+    return mint_permissioned_session<ProducerProto<T>,
                                    typename Channel::ProducerHandle*>(&handle);
 }
 
 template <typename Channel>
 [[nodiscard]] constexpr auto
-consumer_session(typename Channel::ConsumerHandle& handle) noexcept
+mint_consumer_session(typename Channel::ConsumerHandle& handle) noexcept
 {
     using T = typename Channel::value_type;
-    return establish_permissioned<ConsumerProto<T>,
+    return mint_permissioned_session<ConsumerProto<T>,
                                    typename Channel::ConsumerHandle*>(&handle);
 }
 
@@ -280,7 +280,7 @@ using ProdHandle   = SmallChannel::ProducerHandle;
 using ConsHandle   = SmallChannel::ConsumerHandle;
 
 // Sizeof-equality is asserted on the CONCRETE HEAD types that
-// establish_permissioned<ProducerProto<int>>(...) actually returns
+// mint_permissioned_session<ProducerProto<int>>(...) actually returns
 // after Loop unrolling, NOT on `Loop<...>` itself (which is a
 // shape-only template with no SessionHandle / PSH specialisation —
 // Loop unrolls at establishment to a per-head handle wrapping its

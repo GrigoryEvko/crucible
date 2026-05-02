@@ -516,7 +516,7 @@ static_assert(std::is_move_constructible_v<Borrowed<int, WorkPerm>>);
 inline void runtime_smoke_test() noexcept {
     // Round-trip a Transferable to make sure construction + move-only
     // chain compiles and links at runtime.
-    auto perm = ::crucible::safety::permission_root_mint<WorkPerm>();
+    auto perm = ::crucible::safety::mint_permission_root<WorkPerm>();
     Transferable<int, WorkPerm> t{42, std::move(perm)};
     Transferable<int, WorkPerm> t2 = std::move(t);
     (void)t2.value;
@@ -527,7 +527,7 @@ inline void runtime_smoke_test() noexcept {
     (void)b_copy.value;
 
     // Returned: same move-only shape as Transferable.
-    auto perm2 = ::crucible::safety::permission_root_mint<HotPerm>();
+    auto perm2 = ::crucible::safety::mint_permission_root<HotPerm>();
     Returned<double, HotPerm> r{3.14, std::move(perm2)};
     auto r2 = std::move(r);
     (void)r2.value;

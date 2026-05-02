@@ -34,8 +34,8 @@
 //                     ConsumerSide<Whole> → N Slice<ConsumerSide<Whole>, J>
 //
 // Both steps are existing primitives:
-//   * step 1 uses splits_into / permission_split (binary)
-//   * step 2 uses splits_into_pack / permission_split_n via the
+//   * step 1 uses splits_into / mint_permission_split (binary)
+//   * step 2 uses splits_into_pack / mint_permission_split_n via the
 //     1D Slice mechanism in safety/PermissionTreeGenerator.h
 //
 // The 2D-ness is conceptual — the permission system sees M+N
@@ -167,7 +167,7 @@ template <typename Whole, std::size_t... Is>
     Permission<ProducerSide<Whole>>&& side,
     std::index_sequence<Is...>) noexcept
 {
-    return permission_split_n<Slice<ProducerSide<Whole>, Is>...>(
+    return mint_permission_split_n<Slice<ProducerSide<Whole>, Is>...>(
         std::move(side));
 }
 
@@ -176,7 +176,7 @@ template <typename Whole, std::size_t... Js>
     Permission<ConsumerSide<Whole>>&& side,
     std::index_sequence<Js...>) noexcept
 {
-    return permission_split_n<Slice<ConsumerSide<Whole>, Js>...>(
+    return mint_permission_split_n<Slice<ConsumerSide<Whole>, Js>...>(
         std::move(side));
 }
 
@@ -189,7 +189,7 @@ template <typename Whole, std::size_t M, std::size_t N>
     static_assert(M > 0 && N > 0,
         "split_grid<Whole, M, N>: M and N must both be greater than zero");
 
-    auto sides = permission_split<ProducerSide<Whole>, ConsumerSide<Whole>>(
+    auto sides = mint_permission_split<ProducerSide<Whole>, ConsumerSide<Whole>>(
         std::move(parent));
 
     return GridPermissions<Whole, M, N>{
@@ -266,7 +266,7 @@ inline void runtime_smoke_test_grid() {
     using Tag = detail::grid_test_tag_;
 
     // Mint, split into 4-producer × 3-consumer grid.
-    auto whole = permission_root_mint<Tag>();
+    auto whole = mint_permission_root<Tag>();
     auto grid = split_grid<Tag, 4, 3>(std::move(whole));
 
     static_assert(std::is_same_v<

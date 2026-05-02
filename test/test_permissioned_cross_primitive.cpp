@@ -295,8 +295,8 @@ void test_unified_handle_diagnostics() {
     // Runtime sanity: a freshly-constructed channel reports empty/zero
     // through every handle, then non-empty/non-zero after a push.
     Spsc spsc;
-    auto sw = permission_root_mint<typename Spsc::whole_tag>();
-    auto [spp, scp] = permission_split<typename Spsc::producer_tag,
+    auto sw = mint_permission_root<typename Spsc::whole_tag>();
+    auto [spp, scp] = mint_permission_split<typename Spsc::producer_tag,
                                        typename Spsc::consumer_tag>(std::move(sw));
     auto sp = spsc.producer(std::move(spp));
     auto sc = spsc.consumer(std::move(scp));
@@ -319,7 +319,7 @@ void test_spsc_with_recombined_access() {
 
     Spsc spsc;
 
-    auto whole = permission_root_mint<typename Spsc::whole_tag>();
+    auto whole = mint_permission_root<typename Spsc::whole_tag>();
     bool body_ran = false;
     auto returned = spsc.with_recombined_access(
         std::move(whole),
@@ -327,7 +327,7 @@ void test_spsc_with_recombined_access() {
 
     CRUCIBLE_TEST_REQUIRE(body_ran);
     // Returned permission can be re-split for the next session.
-    auto [pp, cp] = permission_split<typename Spsc::producer_tag,
+    auto [pp, cp] = mint_permission_split<typename Spsc::producer_tag,
                                       typename Spsc::consumer_tag>(
         std::move(returned));
     auto producer = spsc.producer(std::move(pp));
@@ -354,7 +354,7 @@ void test_calendar_with_recombined_access() {
 
     Calendar cal;
 
-    auto whole = permission_root_mint<typename Calendar::whole_tag>();
+    auto whole = mint_permission_root<typename Calendar::whole_tag>();
     bool body_ran = false;
     auto returned = cal.with_recombined_access(
         std::move(whole),
@@ -449,23 +449,23 @@ void test_pipeline_three_wrappers() {
     Mpsc mpsc;
     Snap snap{0};
 
-    auto spsc_whole = permission_root_mint<typename Spsc::whole_tag>();
-    auto mpsc_whole = permission_root_mint<typename Mpsc::whole_tag>();
-    auto snap_whole = permission_root_mint<typename Snap::whole_tag>();
+    auto spsc_whole = mint_permission_root<typename Spsc::whole_tag>();
+    auto mpsc_whole = mint_permission_root<typename Mpsc::whole_tag>();
+    auto snap_whole = mint_permission_root<typename Snap::whole_tag>();
 
-    auto [spsc_pp, spsc_cp] = permission_split<
+    auto [spsc_pp, spsc_cp] = mint_permission_split<
         typename Spsc::producer_tag,
         typename Spsc::consumer_tag>(std::move(spsc_whole));
     // Mpsc: producer side is POOL (no Permission arg, returns optional);
     //       consumer side is LINEAR (takes Permission).  Caller only
     //       holds the linear Permission — pool side mints its root from
     //       the channel itself at construction.
-    auto [mpsc_pp, mpsc_cp] = permission_split<
+    auto [mpsc_pp, mpsc_cp] = mint_permission_split<
         typename Mpsc::producer_tag,
         typename Mpsc::consumer_tag>(std::move(mpsc_whole));
     (void)mpsc_pp;  // pool side — Permission is not consumed by handle factory
     // Snapshot: writer side is LINEAR; reader side is POOL.
-    auto [snap_wp, snap_rp] = permission_split<
+    auto [snap_wp, snap_rp] = mint_permission_split<
         typename Snap::writer_tag,
         typename Snap::reader_tag>(std::move(snap_whole));
     (void)snap_rp;  // pool side

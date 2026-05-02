@@ -19,7 +19,7 @@ struct BadChan {};
 
 void exercise_consumer_try_push() {
     crucible::concurrent::PermissionedMpscChannel<int, 64, BadChan> ch;
-    auto cons_perm = crucible::safety::permission_root_mint<
+    auto cons_perm = crucible::safety::mint_permission_root<
         crucible::concurrent::mpsc_tag::Consumer<BadChan>>();
     auto consumer = ch.consumer(std::move(cons_perm));
 

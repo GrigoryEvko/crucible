@@ -79,7 +79,7 @@
 //         Recv<AuthAck, End>>;
 //
 //     // Sender side:
-//     auto sender = make_session_handle<AuthHandshake>(channel);
+//     auto sender = mint_session_handle<AuthHandshake>(channel);
 //     auto next = std::move(sender).send(
 //         DeclassifyOnSend<AuthToken, secret_policy::WireSerialize>{
 //             Secret<AuthToken>{ make_token() }

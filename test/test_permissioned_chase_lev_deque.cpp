@@ -78,7 +78,7 @@ static_assert(!std::is_move_assignable_v<ThiefH>);
 
 void test_single_thread_owner_round_trip() {
     PermissionedChaseLevDeque<int, 64, PoolDeque> deque;
-    auto owner_perm = permission_root_mint<deque_tag::Owner<PoolDeque>>();
+    auto owner_perm = mint_permission_root<deque_tag::Owner<PoolDeque>>();
     auto owner = deque.owner(std::move(owner_perm));
 
     for (int i = 0; i < 5; ++i) {
@@ -103,7 +103,7 @@ void test_owner_pushes_thieves_steal() {
     constexpr int N_PUSHES  = 5000;
 
     PermissionedChaseLevDeque<int, 1024, PoolDeque> deque;
-    auto owner_perm = permission_root_mint<deque_tag::Owner<PoolDeque>>();
+    auto owner_perm = mint_permission_root<deque_tag::Owner<PoolDeque>>();
 
     std::atomic<int> total_handled{0};
     std::atomic<bool> owner_done{false};

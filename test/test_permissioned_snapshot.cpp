@@ -6,7 +6,7 @@
 //
 //   * Compile-time type discrimination of writer vs reader
 //   * Pool refcount tracks active readers
-//   * permission_fork integration: 1 writer + N readers, TSan-clean
+//   * mint_permission_fork integration: 1 writer + N readers, TSan-clean
 //   * Mode transition: with_drained_access succeeds iff readers
 //     are quiesced
 // ═══════════════════════════════════════════════════════════════════
@@ -104,7 +104,7 @@ void test_compile_time_properties() {
 void test_single_thread_publish_and_load() {
     PermissionedSnapshot<Metrics, AppMetrics> snap{};
 
-    auto writer_perm = permission_root_mint<
+    auto writer_perm = mint_permission_root<
         snapshot_tag::Writer<AppMetrics>>();
 
     auto writer = snap.writer(std::move(writer_perm));
@@ -165,7 +165,7 @@ void test_reader_handle_destruction_decrements() {
 void test_with_drained_access_succeeds_when_idle() {
     PermissionedSnapshot<Metrics, AppMetrics> snap{Metrics{0, 0, 0}};
     auto writer = snap.writer(
-        permission_root_mint<snapshot_tag::Writer<AppMetrics>>());
+        mint_permission_root<snapshot_tag::Writer<AppMetrics>>());
 
     bool body_ran = false;
     const bool ok = snap.with_drained_access([&] {
@@ -198,7 +198,7 @@ void test_with_drained_access_fails_when_readers_present() {
 
 // ── Tier 5: SWMR concurrency stress (TSan-validated) ────────────
 //
-// 1 writer + 8 readers via permission_fork-style spawning.  Writer
+// 1 writer + 8 readers via mint_permission_fork-style spawning.  Writer
 // publishes increments to a counter pair (lo, hi) — an SWMR test
 // where both halves must always read consistently (otherwise the
 // reader sees a torn write).  No user-level atomics on the data.
@@ -230,7 +230,7 @@ void test_swmr_under_load() {
     PermissionedSnapshot<CounterPair, LatencyTrack> snap{
         CounterPair{0, 0}};
 
-    auto writer_perm = permission_root_mint<
+    auto writer_perm = mint_permission_root<
         snapshot_tag::Writer<LatencyTrack>>();
 
     std::atomic<int>          publishes_done{0};
@@ -289,19 +289,19 @@ void test_swmr_under_load() {
     CRUCIBLE_TEST_REQUIRE(snap.outstanding_readers() == 0);
 }
 
-// ── Tier 6: permission_fork integration ─────────────────────────
+// ── Tier 6: mint_permission_fork integration ─────────────────────────
 //
 // Demonstrates the canonical pattern: one Permission<Whole> at
 // startup, split into Writer + Reader (note: Reader is parked in
 // the Pool internally via the Snapshot's constructor).  The Writer
-// permission is moved through permission_fork into the writer body.
+// permission is moved through mint_permission_fork into the writer body.
 
-void test_permission_fork_integration() {
+void test_mint_permission_fork_integration() {
     PermissionedSnapshot<std::uint64_t, ConfigBcast> snap{0};
 
     // Mint just the Writer permission externally — Reader is
     // managed internally by the Pool.
-    auto writer_perm = permission_root_mint<
+    auto writer_perm = mint_permission_root<
         snapshot_tag::Writer<ConfigBcast>>();
 
     std::atomic<int> reader_observations{0};
@@ -343,8 +343,8 @@ int main() {
              test_with_drained_access_fails_when_readers_present);
     run_test("test_swmr_under_load",
              test_swmr_under_load);
-    run_test("test_permission_fork_integration",
-             test_permission_fork_integration);
+    run_test("test_mint_permission_fork_integration",
+             test_mint_permission_fork_integration);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

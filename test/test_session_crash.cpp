@@ -61,7 +61,7 @@ int run_stop_terminal() {
     std::deque<std::string> wire;
     Wire res{&wire};
 
-    auto handle = make_session_handle<Stop>(std::move(res));
+    auto handle = mint_session_handle<Stop>(std::move(res));
 
     // Shape check at the protocol level.
     static_assert(std::is_same_v<decltype(handle)::protocol, Stop>);
@@ -101,7 +101,7 @@ int run_crash_success_path() {
     Wire b{&wire};
 
     auto [client, server] =
-        establish_channel<CrashHandledClient>(std::move(a), std::move(b));
+        mint_channel<CrashHandledClient>(std::move(a), std::move(b));
 
     // Client sends request.
     auto client2 = std::move(client).send(Request{"hello"}, send_req);
@@ -159,7 +159,7 @@ int run_crash_recovery_path() {
     Wire b{&wire};
 
     auto [client, server] =
-        establish_channel<CrashHandledClient>(std::move(a), std::move(b));
+        mint_channel<CrashHandledClient>(std::move(a), std::move(b));
 
     auto client2 = std::move(client).send(Request{"hello"}, send_req);
 

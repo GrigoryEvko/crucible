@@ -5,7 +5,7 @@
 //                    (SAFEINT-B14, #403,
 //                    misc/24_04_2026_safety_integration.md §14)
 //
-// Synchronous session establishment via `establish_channel<Proto>()`
+// Synchronous session establishment via `mint_channel<Proto>()`
 // constructs both endpoint handles in one call.  Several Crucible
 // patterns need ASYNCHRONOUS establishment: Vessel startup publishes
 // a channel before the dispatch path tries to observe it; Cipher
@@ -116,7 +116,7 @@
 //
 //   misc/24_04_2026_safety_integration.md §14 — design.
 //   safety/PublishOnce.h — the lock-free pointer-handoff primitive.
-//   safety/Session.h — SessionHandle + make_session_handle.
+//   safety/Session.h — SessionHandle + mint_session_handle.
 //   safety/Pinned.h — address-stability discipline.
 // ═══════════════════════════════════════════════════════════════════
 
@@ -155,7 +155,7 @@ public:
     // unconditionally; the user does NOT need to make Resource Pinned
     // for the framework's discipline to apply.
     using session_handle_type =
-        decltype(safety::proto::make_session_handle<Proto>(
+        decltype(safety::proto::mint_session_handle<Proto>(
             std::declval<Resource*>()));
 
     // Default-construct: PublishOnce starts un-published.
@@ -203,7 +203,7 @@ public:
     [[nodiscard]] std::optional<session_handle_type> observe() noexcept {
         Resource* r = resource_.observe();
         if (!r) return std::nullopt;
-        return safety::proto::make_session_handle<Proto>(r);
+        return safety::proto::mint_session_handle<Proto>(r);
     }
 
     // ── Diagnostic ──────────────────────────────────────────────────
@@ -277,7 +277,7 @@ static_assert(std::is_same_v<typename LEC::protocol,      SimpleProto>);
 static_assert(std::is_same_v<typename LEC::resource_type, DummyChannel>);
 
 // session_handle_type is the SessionHandle specialisation produced
-// by make_session_handle<SimpleProto>(DummyChannel*).  Loop unrolls
+// by mint_session_handle<SimpleProto>(DummyChannel*).  Loop unrolls
 // at construction, so the resulting handle's compile-time Proto is
 // the loop body (a Select), with Loop<...> as LoopCtx.
 using ExpectedSession = safety::proto::SessionHandle<

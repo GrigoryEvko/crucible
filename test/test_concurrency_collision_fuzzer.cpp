@@ -308,7 +308,7 @@ struct DisjointWhole {};
 template <std::size_t N>
 void test_owned_region_disjoint_split_impl_() {
     Arena arena{1ULL << 22};
-    auto perm = permission_root_mint<DisjointWhole>();
+    auto perm = mint_permission_root<DisjointWhole>();
     constexpr std::size_t TOTAL_BYTES = 1ULL << 18;  // 256 KB
     auto region = OwnedRegion<std::uint8_t, DisjointWhole>::adopt(
         test_alloc_token_(), arena, TOTAL_BYTES, std::move(perm));
@@ -363,7 +363,7 @@ void test_owned_region_disjoint_split_n16() {
 void test_owned_region_disjoint_split_uneven() {
     // Constructed so TOTAL_BYTES % 7 != 0.
     Arena arena{1ULL << 20};
-    auto perm = permission_root_mint<DisjointWhole>();
+    auto perm = mint_permission_root<DisjointWhole>();
     constexpr std::size_t TOTAL_BYTES = 100'003;  // prime, not divisible by 7
     auto region = OwnedRegion<std::uint8_t, DisjointWhole>::adopt(
         test_alloc_token_(), arena, TOTAL_BYTES, std::move(perm));
@@ -654,7 +654,7 @@ void test_pool_mode_transition_torture() {
         make_cookie_snapshot_(0)};
 
     auto writer_perm =
-        permission_root_mint<snapshot_tag::Writer<ModeTrans>>();
+        mint_permission_root<snapshot_tag::Writer<ModeTrans>>();
 
     constexpr int NUM_READERS = 4;
     constexpr int DURATION_MS = 200;
@@ -795,7 +795,7 @@ struct NestedTest {};
 
 void test_parallel_for_nested_integrity() {
     Arena arena{1ULL << 22};
-    auto perm = permission_root_mint<NestedTest>();
+    auto perm = mint_permission_root<NestedTest>();
     constexpr std::size_t N = 16'384;
     auto region = OwnedRegion<std::uint64_t, NestedTest>::adopt(
         test_alloc_token_(), arena, N, std::move(perm));
@@ -1232,7 +1232,7 @@ void drive_pmpsc_cookie_(Channel& ch) {
     constexpr std::uint64_t EXPECTED_TOTAL =
         static_cast<std::uint64_t>(NUM_PRODUCERS) * MSGS_PER_PRODUCER;
 
-    auto cons_perm = permission_root_mint<typename Channel::consumer_tag>();
+    auto cons_perm = mint_permission_root<typename Channel::consumer_tag>();
     auto consumer  = ch.consumer(std::move(cons_perm));
 
     std::atomic<bool>          producers_done{false};
@@ -1312,7 +1312,7 @@ void drive_pchase_lev_cookie_(Channel& deq) {
         static_cast<std::uint32_t>(Channel::capacity() - 16);
     constexpr int       NUM_THIEVES = 4;
 
-    auto owner_perm = permission_root_mint<typename Channel::owner_tag>();
+    auto owner_perm = mint_permission_root<typename Channel::owner_tag>();
     auto owner = deq.owner(std::move(owner_perm));
 
     // Owner pushes all items first.
@@ -1402,7 +1402,7 @@ void drive_psharded_grid_cookie_(Channel& grid) {
         static_cast<std::uint64_t>(M) * MSGS_PER_PROD;
 
     using WT = typename Channel::whole_tag;
-    auto whole = permission_root_mint<WT>();
+    auto whole = mint_permission_root<WT>();
     auto perms = split_grid<WT, M, N>(std::move(whole));
 
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
@@ -1513,7 +1513,7 @@ void drive_pcalendar_cookie_(Channel& grid) {
         static_cast<std::uint32_t>(M) * MSGS_PER_PROD;
 
     using WT = typename Channel::whole_tag;
-    auto whole = permission_root_mint<WT>();
+    auto whole = mint_permission_root<WT>();
     auto perms = split_grid<WT, M, 1>(std::move(whole));
 
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
@@ -1604,8 +1604,8 @@ void drive_pspsc_cookie_(Channel& ch) {
 
     constexpr std::uint32_t NUM_MSGS = 5'000;
 
-    auto whole = permission_root_mint<typename Channel::whole_tag>();
-    auto [pp, cp] = permission_split<typename Channel::producer_tag,
+    auto whole = mint_permission_root<typename Channel::whole_tag>();
+    auto [pp, cp] = mint_permission_split<typename Channel::producer_tag,
                                       typename Channel::consumer_tag>(
         std::move(whole));
     auto producer = ch.producer(std::move(pp));

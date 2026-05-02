@@ -19,8 +19,8 @@
 //   Tier B — RUNTIME ROUND-TRIP:
 //     Two jthreads exchange N items through a real PermissionedSpsc-
 //     Channel via the typed-session API.  Producer side uses
-//     producer_session<Channel> + blocking_push; consumer side uses
-//     consumer_session<Channel> + blocking_pop.  Verifies (a) PSH's
+//     mint_producer_session<Channel> + blocking_push; consumer side uses
+//     mint_consumer_session<Channel> + blocking_pop.  Verifies (a) PSH's
 //     send/recv compose with the Permission-typed handles, (b) the
 //     Loop<Send|Recv, Continue> protocol shape iterates correctly,
 //     (c) detach_reason::TestInstrumentation cleanly drops both PSHs.
@@ -121,14 +121,14 @@ void run_test(const char* name, Body body) {
 
 void test_typed_session_round_trip() {
     namespace ses = ::crucible::safety::proto::spsc_session;
-    using ::crucible::safety::permission_root_mint;
-    using ::crucible::safety::permission_split;
+    using ::crucible::safety::mint_permission_root;
+    using ::crucible::safety::mint_permission_split;
     using ::crucible::safety::proto::detach_reason::TestInstrumentation;
 
     Channel ch;
 
-    auto whole = permission_root_mint<Channel::whole_tag>();
-    auto [pp, cp] = permission_split<Channel::producer_tag,
+    auto whole = mint_permission_root<Channel::whole_tag>();
+    auto [pp, cp] = mint_permission_split<Channel::producer_tag,
                                       Channel::consumer_tag>(std::move(whole));
 
     auto prod_handle = ch.producer(std::move(pp));
@@ -141,7 +141,7 @@ void test_typed_session_round_trip() {
 
     std::jthread producer{
         [&prod_handle, &producer_done](auto) mutable {
-            auto psh = ses::producer_session<Channel>(prod_handle);
+            auto psh = ses::mint_producer_session<Channel>(prod_handle);
             for (int i = 0; i < kCount; ++i) {
                 auto next = std::move(psh).send(i, ses::blocking_push);
                 psh = std::move(next);
@@ -153,7 +153,7 @@ void test_typed_session_round_trip() {
 
     std::jthread consumer{
         [&cons_handle, &received](auto) mutable {
-            auto psh = ses::consumer_session<Channel>(cons_handle);
+            auto psh = ses::mint_consumer_session<Channel>(cons_handle);
             for (int i = 0; i < kCount; ++i) {
                 auto [v, next] = std::move(psh).recv(ses::blocking_pop);
                 received.push_back(v);
@@ -182,21 +182,21 @@ void test_typed_session_round_trip() {
 
 void test_typed_session_immediate_detach() {
     namespace ses = ::crucible::safety::proto::spsc_session;
-    using ::crucible::safety::permission_root_mint;
-    using ::crucible::safety::permission_split;
+    using ::crucible::safety::mint_permission_root;
+    using ::crucible::safety::mint_permission_split;
     using ::crucible::safety::proto::detach_reason::TestInstrumentation;
 
     Channel ch;
 
-    auto whole = permission_root_mint<Channel::whole_tag>();
-    auto [pp, cp] = permission_split<Channel::producer_tag,
+    auto whole = mint_permission_root<Channel::whole_tag>();
+    auto [pp, cp] = mint_permission_split<Channel::producer_tag,
                                       Channel::consumer_tag>(std::move(whole));
 
     auto prod_handle = ch.producer(std::move(pp));
     auto cons_handle = ch.consumer(std::move(cp));
 
-    auto prod_psh = ses::producer_session<Channel>(prod_handle);
-    auto cons_psh = ses::consumer_session<Channel>(cons_handle);
+    auto prod_psh = ses::mint_producer_session<Channel>(prod_handle);
+    auto cons_psh = ses::mint_consumer_session<Channel>(cons_handle);
 
     std::move(prod_psh).detach(TestInstrumentation{});
     std::move(cons_psh).detach(TestInstrumentation{});
@@ -212,7 +212,7 @@ void test_typed_session_immediate_detach() {
 // load-bearing static_asserts on the concrete CONSTRUCTED head types
 // (End, Send<int, End>) — Loop<...> is a shape-only template that
 // has no SessionHandle / PSH specialisation (it unrolls to its body's
-// head at establish_permissioned).  Re-asserting under the
+// head at mint_permissioned_session).  Re-asserting under the
 // production-tagged channel here pins the witness to THIS TU's build
 // flags, catching any silent ABI drift between the header's witness
 // and the production-target instantiation.

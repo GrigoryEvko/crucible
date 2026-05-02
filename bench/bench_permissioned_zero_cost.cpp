@@ -31,7 +31,7 @@
 //   - Pop-side benches pre-fill enough items to never hit empty
 //     during measurement.
 //   - Consumer-handle construction takes a Permission token (linear);
-//     produced via permission_root_mint in the bench setup.
+//     produced via mint_permission_root in the bench setup.
 
 #include <array>
 #include <cstdio>
@@ -59,7 +59,7 @@ using Item = std::uint64_t;
 constexpr std::size_t kCap = 1U << 20;  // 1M slots — never fills
 
 // Per-wrapper UserTag — keeps each Permission tree distinct so the
-// permission_root_mint sites don't collide across the bench.
+// mint_permission_root sites don't collide across the bench.
 struct MpscBenchTag {};
 struct MpmcBenchTag {};
 struct GridBenchTag {};
@@ -109,7 +109,7 @@ bench::Report wrapped_mpsc_pop() {
         auto p = std::move(*p_opt);
         for (Item i = 0; i < kCap / 2; ++i) (void)p.try_push(i);
     }
-    auto cons_perm = crucible::safety::permission_root_mint<
+    auto cons_perm = crucible::safety::mint_permission_root<
         typename Ch::consumer_tag>();
     auto c = ch->consumer(std::move(cons_perm));
     return bench::run("wrapped Permissioned MPSC.ConsumerHandle::try_pop", [&]{
@@ -191,7 +191,7 @@ bench::Report wrapped_grid_push() {
     using PG = crucible::concurrent::PermissionedShardedGrid<Item, 1, 1, kCap,
                                                               GridBenchTag>;
     auto grid = std::make_unique<PG>();
-    auto whole = crucible::safety::permission_root_mint<
+    auto whole = crucible::safety::mint_permission_root<
         typename PG::whole_tag>();
     auto perms = crucible::safety::split_grid<typename PG::whole_tag, 1, 1>(
         std::move(whole));
@@ -218,7 +218,7 @@ bench::Report wrapped_grid_recv() {
     using PG = crucible::concurrent::PermissionedShardedGrid<Item, 1, 1, kCap,
                                                               GridBenchTag>;
     auto grid = std::make_unique<PG>();
-    auto whole = crucible::safety::permission_root_mint<
+    auto whole = crucible::safety::mint_permission_root<
         typename PG::whole_tag>();
     auto perms = crucible::safety::split_grid<typename PG::whole_tag, 1, 1>(
         std::move(whole));
@@ -252,7 +252,7 @@ bench::Report wrapped_deque_push() {
     using PD = crucible::concurrent::PermissionedChaseLevDeque<Item, kCap,
                                                                 DequeBenchTag>;
     auto dq = std::make_unique<PD>();
-    auto own_perm = crucible::safety::permission_root_mint<
+    auto own_perm = crucible::safety::mint_permission_root<
         typename PD::owner_tag>();
     auto own = dq->owner(std::move(own_perm));
     Item i = 0;
@@ -275,7 +275,7 @@ bench::Report wrapped_deque_pop() {
     using PD = crucible::concurrent::PermissionedChaseLevDeque<Item, kCap,
                                                                 DequeBenchTag>;
     auto dq = std::make_unique<PD>();
-    auto own_perm = crucible::safety::permission_root_mint<
+    auto own_perm = crucible::safety::mint_permission_root<
         typename PD::owner_tag>();
     auto own = dq->owner(std::move(own_perm));
     for (Item i = 0; i < kCap / 2; ++i) (void)own.try_push(i);
@@ -299,7 +299,7 @@ bench::Report wrapped_deque_steal() {
                                                                 DequeBenchTag>;
     auto dq = std::make_unique<PD>();
     {
-        auto own_perm = crucible::safety::permission_root_mint<
+        auto own_perm = crucible::safety::mint_permission_root<
             typename PD::owner_tag>();
         auto own = dq->owner(std::move(own_perm));
         for (Item i = 0; i < kCap / 2; ++i) (void)own.try_push(i);

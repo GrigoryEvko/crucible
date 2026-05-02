@@ -14,7 +14,7 @@ using namespace crucible::safety::proto;
 struct R { int sentinel = 1; };
 
 void compile_time_reject() {
-    auto h = make_session_handle<Select<Send<int, End>, Send<int, End>>>(R{});
+    auto h = mint_session_handle<Select<Send<int, End>, Send<int, End>>>(R{});
     // Bare select<0>() — pre-#377 this silently selected the in-memory
     // variant; now it's a compile error pointing at the discipline.
     auto next = std::move(h).select<0>();

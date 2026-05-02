@@ -63,7 +63,7 @@ namespace {
 
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
-using ::crucible::safety::permission_root_mint;
+using ::crucible::safety::mint_permission_root;
 
 // ── Test boilerplate (matches existing test files' shape) ─────────
 
@@ -113,7 +113,7 @@ struct AckSlot  {};   // ownership of one ack slot
 // concept admits any non-reference type or any lvalue ref to Pinned).
 // We deliberately use value-by-move here to mirror the existing
 // session-test pattern in test_session_patterns.cpp:
-// `establish_channel<...>(std::move(a), std::move(b))`.
+// `mint_channel<...>(std::move(a), std::move(b))`.
 
 struct FakeChannel {
     int last_int = 0;
@@ -138,7 +138,7 @@ void send_int(FakeChannel& ch, int v) noexcept { ch.last_int = v; }
 // producer through a CSL handoff (the channel's internal Pool +
 // SharedPermissionGuard would carry that flow); the FakeChannel here
 // simulates the transferred Permission by minting a fresh one — which
-// is sound because permission_root_mint<X> is the canonical mint
+// is sound because mint_permission_root<X> is the canonical mint
 // site and the receiver legitimately has authority over X after the
 // recv at the protocol-type level.
 
@@ -156,7 +156,7 @@ Transferable<int, WorkItem> recv_transferable_int(FakeChannel& ch) noexcept {
     // (The handle owns this FakeChannel by value, so the counter
     // accumulates across iterations within the handle's lifetime.)
     return Transferable<int, WorkItem>{++ch.counter,
-                                        permission_root_mint<WorkItem>()};
+                                        mint_permission_root<WorkItem>()};
 }
 
 // ── Returned<int, WorkItem> Transports — symmetric to Transferable
@@ -190,7 +190,7 @@ void send_returned_int(FakeChannel& ch,
 
 void test_end_round_trip() {
     FakeChannel ch{42};
-    auto h = establish_permissioned<End>(ch);
+    auto h = mint_permissioned_session<End>(ch);
 
     // Type-level checks at the establish boundary.
     static_assert(std::is_same_v<typename decltype(h)::protocol, End>);
@@ -211,7 +211,7 @@ void test_end_round_trip() {
 
 void test_plain_send_end() {
     FakeChannel ch{};
-    auto h = establish_permissioned<Send<int, End>>(ch);
+    auto h = mint_permissioned_session<Send<int, End>>(ch);
     static_assert(std::is_same_v<typename decltype(h)::perm_set,
                                  EmptyPermSet>);
 
@@ -234,7 +234,7 @@ void test_plain_send_end() {
 // because PS == EmptyPermSet at that point.
 //
 // This exercises:
-//   * establish_permissioned<P, R, InitPerms...> consumes the
+//   * mint_permissioned_session<P, R, InitPerms...> consumes the
 //     Permission<WorkItem> token from the caller and records its
 //     tag in the initial PS.
 //   * SendablePayload<Transferable<int, WorkItem>, PermSet<WorkItem>>
@@ -245,8 +245,8 @@ void test_plain_send_end() {
 
 void test_transferable_send_end() {
     FakeChannel ch{};
-    auto perm = permission_root_mint<WorkItem>();
-    auto h = establish_permissioned<Send<Transferable<int, WorkItem>, End>>(
+    auto perm = mint_permission_root<WorkItem>();
+    auto h = mint_permissioned_session<Send<Transferable<int, WorkItem>, End>>(
         ch, std::move(perm));
 
     static_assert(std::is_same_v<typename decltype(h)::perm_set,
@@ -254,7 +254,7 @@ void test_transferable_send_end() {
                   "Initial PS should reflect the InitPerms... tag pack");
 
     Transferable<int, WorkItem> payload{99,
-                                         permission_root_mint<WorkItem>()};
+                                         mint_permission_root<WorkItem>()};
     auto h_after = std::move(h).send(std::move(payload),
                                      send_transferable_int);
 
@@ -278,7 +278,7 @@ void test_transferable_send_end() {
 
 void test_recv_transferable_send_returned() {
     FakeChannel ch{};
-    auto h = establish_permissioned<
+    auto h = mint_permissioned_session<
         Recv<Transferable<int, WorkItem>,
              Send<Returned<int, WorkItem>, End>>>(ch);
 
@@ -337,7 +337,7 @@ void test_loop_balanced_iteration() {
     using LoopProto = Loop<BodyProto>;
 
     FakeChannel ch{};
-    auto h = establish_permissioned<LoopProto>(ch);
+    auto h = mint_permissioned_session<LoopProto>(ch);
 
     static_assert(std::is_same_v<typename decltype(h)::protocol, BodyProto>);
     static_assert(std::is_same_v<typename decltype(h)::perm_set, EmptyPermSet>);
@@ -390,14 +390,14 @@ void test_loop_balanced_iteration() {
 void test_select_local_pick_branch() {
     {
         FakeChannel ch{1};
-        auto h = establish_permissioned<Select<End, Send<int, End>>>(ch);
+        auto h = mint_permissioned_session<Select<End, Send<int, End>>>(ch);
         auto h_end = std::move(h).template select_local<0>();
         FakeChannel out = std::move(h_end).close();
         CRUCIBLE_TEST_REQUIRE(out.last_int == 1);  // unmodified
     }
     {
         FakeChannel ch{};
-        auto h = establish_permissioned<Select<End, Send<int, End>>>(ch);
+        auto h = mint_permissioned_session<Select<End, Send<int, End>>>(ch);
         auto h_send = std::move(h).template select_local<1>();
         auto h_end  = std::move(h_send).send(123, send_int);
         FakeChannel out = std::move(h_end).close();
@@ -431,7 +431,7 @@ void test_crash_transport_happy_path() {
 
     FakeChannel ch{};
     ::crucible::safety::OneShotFlag flag;  // never set
-    auto h = establish_permissioned<LoopProto>(ch);
+    auto h = mint_permissioned_session<LoopProto>(ch);
 
     int sum = 0;
     constexpr int kIterations = 5;
@@ -457,7 +457,7 @@ void test_crash_transport_crash_path() {
 
     FakeChannel ch{};
     ::crucible::safety::OneShotFlag flag;
-    auto h = establish_permissioned<LoopProto>(ch);
+    auto h = mint_permissioned_session<LoopProto>(ch);
 
     int sum = 0;
     bool crash_observed = false;
@@ -588,7 +588,7 @@ void test_session_fork_two_role_request_reply() {
     fork_test::g_client_received.store(-1, std::memory_order_relaxed);
     fork_test::g_server_received.store(-1, std::memory_order_relaxed);
 
-    auto whole = ::crucible::safety::permission_root_mint<fork_test::Whole>();
+    auto whole = ::crucible::safety::mint_permission_root<fork_test::Whole>();
 
     auto rebuilt = session_fork<G, fork_test::Whole,
                                  fork_test::ClientRole,

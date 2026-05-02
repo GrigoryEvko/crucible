@@ -25,9 +25,9 @@
 
 using namespace crucible::concurrent;
 using crucible::safety::Permission;
-using crucible::safety::permission_fork;
-using crucible::safety::permission_root_mint;
-using crucible::safety::permission_split;
+using crucible::safety::mint_permission_fork;
+using crucible::safety::mint_permission_root;
+using crucible::safety::mint_permission_split;
 
 // ── Test harness ─────────────────────────────────────────────────
 
@@ -560,7 +560,7 @@ void test_auto_queue_t_deduction() {
 
 // ── Permission-driven SPSC test ──────────────────────────────────
 //
-// Demonstrates the full SEPLOG integration: Permission<Tag> + permission_fork
+// Demonstrates the full SEPLOG integration: Permission<Tag> + mint_permission_fork
 // + Queue's PermissionedProducerHandle/PermissionedConsumerHandle.
 //
 // Compare to test_spsc_multi_thread above — that version uses raw
@@ -575,7 +575,7 @@ void test_auto_queue_t_deduction() {
 //
 //   * Producer body counts pushes → returns when N pushed
 //   * Consumer body counts pops → returns when N popped
-//   * permission_fork's array<jthread> RAII destructor joins both
+//   * mint_permission_fork's array<jthread> RAII destructor joins both
 //   * The join provides happens-before, so plain reads of the result
 //     after fork return are well-defined per the C++ memory model
 //
@@ -599,28 +599,28 @@ namespace permissioned_test {
     struct SpscChannel {};
 }
 
-void test_spsc_permission_fork() {
+void test_spsc_mint_permission_fork() {
     using namespace crucible::concurrent::queue_tag;
 
     Queue<std::uint64_t, kind::spsc<1024>> q;
     constexpr std::uint64_t N = 50'000;
 
     // Plain (non-atomic) result slot.  Synchronization with the
-    // consumer thread comes from permission_fork's jthread join,
+    // consumer thread comes from mint_permission_fork's jthread join,
     // which provides happens-before per C++ memory model.  No atomic
     // needed — this is the structural-sync win.
     std::uint64_t received_sum   = 0;
     std::uint64_t received_count = 0;
 
     // Mint root permission for this channel.
-    auto whole = permission_root_mint<Whole<permissioned_test::SpscChannel>>();
+    auto whole = mint_permission_root<Whole<permissioned_test::SpscChannel>>();
 
-    // Fork into producer + consumer threads.  permission_fork:
+    // Fork into producer + consumer threads.  mint_permission_fork:
     //   1. splits whole into Producer<...> + Consumer<...>
     //   2. spawns a jthread per child, passing it the consumed Permission
     //   3. joins both jthreads (RAII via std::array<jthread> destructor)
     //   4. rebuilds and returns Permission<Whole<...>>
-    auto rebuilt = permission_fork<
+    auto rebuilt = mint_permission_fork<
         Producer<permissioned_test::SpscChannel>,
         Consumer<permissioned_test::SpscChannel>>(
         std::move(whole),
@@ -662,7 +662,7 @@ void test_spsc_permission_fork() {
         }
     );
 
-    // After permission_fork returns, both jthreads have joined.
+    // After mint_permission_fork returns, both jthreads have joined.
     // happens-before: worker writes happen-before join() returns;
     // join() happens-before this point.  Plain reads are safe.
     const std::uint64_t expected_sum = N * (N + 1) / 2;
@@ -755,8 +755,8 @@ int main() {
     run_test("test_auto_queue_t_deduction",      test_auto_queue_t_deduction);
 
     // Permission-driven test: replaces the entire atomic-counter +
-    // spin-loop coordination pattern with permission_fork's RAII join.
-    run_test("test_spsc_permission_fork",        test_spsc_permission_fork);
+    // spin-loop coordination pattern with mint_permission_fork's RAII join.
+    run_test("test_spsc_mint_permission_fork",        test_spsc_mint_permission_fork);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;

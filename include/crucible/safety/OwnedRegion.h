@@ -45,7 +45,7 @@
 //   struct splits_into_pack<Parent, Slice<Parent, Is>...>
 //       : std::true_type {};
 //
-// permission_split_n then succeeds for any (Parent, N) pair without
+// mint_permission_split_n then succeeds for any (Parent, N) pair without
 // per-N user-side declaration.
 //
 // ─── Why this composes with everything else ─────────────────────────
@@ -112,7 +112,7 @@ class [[nodiscard]] OwnedRegion {
     // freshly-rebuilt Permission and constructs the OwnedRegion.
     template <typename Parent>
     static OwnedRegion<T, Parent> rebuild_parent_(T* base, std::size_t count) noexcept {
-        return OwnedRegion<T, Parent>{base, count, permission_fork_rebuild_<Parent>()};
+        return OwnedRegion<T, Parent>{base, count, mint_permission_fork_rebuild_<Parent>()};
     }
 
     // Friend the Workload primitives so they may rebuild parents.
@@ -258,13 +258,13 @@ auto OwnedRegion<T, Tag>::split_into_impl_(std::index_sequence<Is...>) && noexce
     static_assert(sizeof...(Is) == N, "index_sequence size mismatch");
 
     // Snapshot base+count BEFORE consuming the permission.  After
-    // permission_split_n the parent's `perm_` is moved-from but base_/
+    // mint_permission_split_n the parent's `perm_` is moved-from but base_/
     // count_ remain readable until *this destructs.
     T*                base  = base_;
     const std::size_t total = count_;
 
     // Split the parent permission into N child Slice<Tag, I> permissions.
-    auto sub_perms = permission_split_n<Slice<Tag, Is>...>(std::move(perm_));
+    auto sub_perms = mint_permission_split_n<Slice<Tag, Is>...>(std::move(perm_));
 
     // Construct one OwnedRegion<T, Slice<Tag, I>> per shard, pointing
     // into the same buffer at chunk offsets.

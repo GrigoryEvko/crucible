@@ -549,7 +549,7 @@ template <typename Channel>
 template <typename Channel>
 [[nodiscard]] bench::Report bench_floor_pmpsc_(const char* name, Channel& ch) {
     auto producer = must_lend_(ch.producer(), "rr producer");
-    auto cons_perm = permission_root_mint<typename Channel::consumer_tag>();
+    auto cons_perm = mint_permission_root<typename Channel::consumer_tag>();
     auto consumer  = ch.consumer(std::move(cons_perm));
     SimpleJob j{0};
     return bench::run(name, [&]{
@@ -569,7 +569,7 @@ template <typename Channel>
     constexpr std::size_t batches_per_prod =
         (ITEMS_FIFO_PER_PROD + BATCH_PER_PROD - 1) / BATCH_PER_PROD;
 
-    auto cons_perm = permission_root_mint<typename Channel::consumer_tag>();
+    auto cons_perm = mint_permission_root<typename Channel::consumer_tag>();
     auto consumer  = ch.consumer(std::move(cons_perm));
 
     std::vector<std::vector<double>> per_prod_ns(NUM_PRODUCERS);
@@ -646,7 +646,7 @@ template <typename Channel>
     // wrapper rejects (only one linear consumer per channel).  Pattern
     // matches: the consumer thread inside the body lends from this
     // permanent permission.
-    auto cons_perm = permission_root_mint<typename Ch::consumer_tag>();
+    auto cons_perm = mint_permission_root<typename Ch::consumer_tag>();
     auto consumer  = ch.consumer(std::move(cons_perm));
 
     return bench::Run{name}
@@ -690,7 +690,7 @@ template <typename Channel>
 
 template <typename Channel>
 [[nodiscard]] bench::Report bench_floor_lifo_(const char* name, Channel& deq) {
-    auto owner_perm = permission_root_mint<typename Channel::owner_tag>();
+    auto owner_perm = mint_permission_root<typename Channel::owner_tag>();
     auto owner = deq.owner(std::move(owner_perm));
     std::uint64_t v = 0;
     return bench::run(name, [&]{
@@ -711,7 +711,7 @@ template <typename Channel>
     constexpr std::size_t batches_per_owner =
         (ITEMS_LIFO + BATCH_PER_PROD - 1) / BATCH_PER_PROD;
 
-    auto owner_perm = permission_root_mint<typename Channel::owner_tag>();
+    auto owner_perm = mint_permission_root<typename Channel::owner_tag>();
     auto owner = deq.owner(std::move(owner_perm));
 
     // Owner runs in the bench main thread — pin once, lasts across iters.
@@ -794,7 +794,7 @@ template <typename Channel>
     // Owner permission minted ONCE; owner handle long-lived across
     // iters.  Queue is empty between iters because the body drains
     // before signalling thieves to stop.
-    auto owner_perm = permission_root_mint<typename Ch::owner_tag>();
+    auto owner_perm = mint_permission_root<typename Ch::owner_tag>();
     auto owner = deq.owner(std::move(owner_perm));
 
     return bench::Run{name}
@@ -838,7 +838,7 @@ template <typename Channel>
 template <typename Channel>
 [[nodiscard]] bench::Report bench_floor_sharded_(const char* name, Channel& grid) {
     using WT = typename Channel::whole_tag;
-    auto whole = permission_root_mint<WT>();
+    auto whole = mint_permission_root<WT>();
     auto perms = split_grid<WT, 4, 4>(std::move(whole));
     // Hold one producer + ALL 4 consumers — RoundRobinRouting sends
     // p0's pushes round-robin across consumer columns, so we must
@@ -870,7 +870,7 @@ template <typename Channel>
         (ITEMS_FIFO_PER_PROD + BATCH_PER_PROD - 1) / BATCH_PER_PROD;
 
     using WT = typename Channel::whole_tag;
-    auto whole = permission_root_mint<WT>();
+    auto whole = mint_permission_root<WT>();
     auto perms = split_grid<WT, 4, 4>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));
@@ -959,7 +959,7 @@ template <typename Channel>
     // Permissions minted once and split into the 4×4 grid; handles
     // long-lived across all bench iterations (queue is empty between
     // iters because each iter drains exactly TOTAL items).
-    auto whole = permission_root_mint<WT>();
+    auto whole = mint_permission_root<WT>();
     auto perms = split_grid<WT, 4, 4>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));
@@ -1020,7 +1020,7 @@ template <typename Channel>
 template <typename Channel>
 [[nodiscard]] bench::Report bench_floor_calendar_(const char* name, Channel& grid) {
     using WT = typename Channel::whole_tag;
-    auto whole = permission_root_mint<WT>();
+    auto whole = mint_permission_root<WT>();
     auto perms = split_grid<WT, 4, 1>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto cons = grid.consumer(std::move(std::get<0>(perms.consumers)));
@@ -1044,7 +1044,7 @@ template <typename Channel>
     constexpr std::size_t TOTAL_PER_ITER = NUM_PRODUCERS * ITEMS_PRIORITY_PER_PROD;
 
     using WT = typename Channel::whole_tag;
-    auto whole = permission_root_mint<WT>();
+    auto whole = mint_permission_root<WT>();
     auto perms = split_grid<WT, 4, 1>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));
@@ -1134,7 +1134,7 @@ template <typename Channel>
     // Permissions minted ONCE — calendar grid is ~13 MB; per-iter
     // factory() would dominate the measurement (3-10× the actual
     // workload).  Long-lived handles, queue empty between iters.
-    auto whole = permission_root_mint<WT>();
+    auto whole = mint_permission_root<WT>();
     auto perms = split_grid<WT, 4, 1>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));
@@ -1191,7 +1191,7 @@ template <typename Channel>
     const char* name, Channel& grid)
 {
     using WT = typename Channel::whole_tag;
-    auto whole = permission_root_mint<WT>();
+    auto whole = mint_permission_root<WT>();
     auto perms = split_grid<WT, 4, 4>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto c0 = grid.template consumer<0>(std::move(std::get<0>(perms.consumers)));
@@ -1215,7 +1215,7 @@ template <typename Channel>
     constexpr std::size_t TOTAL_PER_ITER = NUM_PRODUCERS * ITEMS_PRIORITY_PER_PROD;
 
     using WT = typename Channel::whole_tag;
-    auto whole = permission_root_mint<WT>();
+    auto whole = mint_permission_root<WT>();
     auto perms = split_grid<WT, 4, 4>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));
@@ -1314,7 +1314,7 @@ template <typename Channel>
     using WT = typename Channel::whole_tag;
     constexpr std::size_t TOTAL = NUM_PRODUCERS * ITEMS_PRIORITY_PER_PROD;
 
-    auto whole = permission_root_mint<WT>();
+    auto whole = mint_permission_root<WT>();
     auto perms = split_grid<WT, 4, 4>(std::move(whole));
     auto p0 = grid.template producer<0>(std::move(std::get<0>(perms.producers)));
     auto p1 = grid.template producer<1>(std::move(std::get<1>(perms.producers)));

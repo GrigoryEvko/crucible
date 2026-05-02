@@ -212,7 +212,7 @@ int run_worked_example_hmac_verify() {
         channel.claimed_tag.bytes[i] = static_cast<unsigned char>(0x11);
     }
 
-    auto handle = make_session_handle<AuthVerifyProto>(&channel);
+    auto handle = mint_session_handle<AuthVerifyProto>(&channel);
 
     // Receive the claimed tag.
     auto [received_payload, after_recv] = std::move(handle).recv(
@@ -255,7 +255,7 @@ int run_worked_example_hmac_mismatch() {
         channel.claimed_tag.bytes[i] = static_cast<unsigned char>(0x22);
     }
 
-    auto handle = make_session_handle<AuthVerifyProto>(&channel);
+    auto handle = mint_session_handle<AuthVerifyProto>(&channel);
     auto [received_payload, after_recv] = std::move(handle).recv(
         [](MockChannel*& c) noexcept -> TagPayload {
             return TagPayload{c->claimed_tag};

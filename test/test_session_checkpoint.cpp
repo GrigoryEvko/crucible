@@ -88,7 +88,7 @@ int run_commit_path() {
     Wire s{&wire};
 
     auto [client, server] =
-        establish_channel<ClientProto>(std::move(c), std::move(s));
+        mint_channel<ClientProto>(std::move(c), std::move(s));
 
     // Client decides to COMMIT — take the base path.
     auto client_base = std::move(client).base();
@@ -119,7 +119,7 @@ int run_rollback_path() {
     Wire s{&wire};
 
     auto [client, server] =
-        establish_channel<ClientProto>(std::move(c), std::move(s));
+        mint_channel<ClientProto>(std::move(c), std::move(s));
 
     // Client decides to ROLLBACK — take the rollback path.
     // (In practice: application-level logic detected verify-reject

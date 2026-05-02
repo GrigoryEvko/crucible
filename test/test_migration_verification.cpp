@@ -2219,7 +2219,7 @@ void runtime_smoke_append_only() {
 // drop, then upgrades back to exclusive.  Exercises the full façade
 // migration loop in one self-contained block.
 void runtime_smoke_shared_permission() {
-    auto exclusive = permission_root_mint<VerificationTag>();
+    auto exclusive = mint_permission_root<VerificationTag>();
     SharedPermissionPool<VerificationTag> pool{std::move(exclusive)};
 
     auto guard1 = pool.lend();

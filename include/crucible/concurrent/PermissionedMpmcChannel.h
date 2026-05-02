@@ -183,8 +183,8 @@ public:
     // PermissionedSnapshot reader-pool convention.
 
     PermissionedMpmcChannel() noexcept
-        : producer_pool_{safety::permission_root_mint<producer_tag>()}
-        , consumer_pool_{safety::permission_root_mint<consumer_tag>()} {}
+        : producer_pool_{safety::mint_permission_root<producer_tag>()}
+        , consumer_pool_{safety::mint_permission_root<consumer_tag>()} {}
 
     // ── ProducerHandle<State> ─────────────────────────────────────
     //

@@ -191,8 +191,8 @@ static void test_session() {
     // `make_session<Send<Request>, Recv<Response>, End>(...)` is no
     // longer the API — both `Send` and `Recv` are now two-arg
     // combinators with explicit continuations, and the factory is
-    // `make_session_handle<Proto>`.)
-    auto s = make_session_handle<Send<Request, Recv<Response, End>>>(FakePipe{});
+    // `mint_session_handle<Proto>`.)
+    auto s = mint_session_handle<Send<Request, Recv<Response, End>>>(FakePipe{});
 
     auto s1 = std::move(s).send(Request{7},
         [](FakePipe& p, Request&& req) noexcept {

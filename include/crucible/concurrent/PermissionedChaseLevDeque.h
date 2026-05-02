@@ -93,7 +93,7 @@
 //   * Each PermissionedChaseLevDeque uses a distinct UserTag.  Per
 //     Permission.h's grep-discoverable rule, mint each Whole<UserTag>
 //     EXACTLY ONCE per program.  The user keeps the Owner Permission
-//     separately (mint via permission_root_mint<owner_tag>(), hand
+//     separately (mint via mint_permission_root<owner_tag>(), hand
 //     to owner() factory).  Thief pool's root is minted internally.
 //   * OwnerHandle and ThiefHandle are move-only.
 //
@@ -104,7 +104,7 @@
 //
 //   // Mint Owner Permission ONLY — the deque mints the thief pool
 //   // root internally (mirrors PermissionedSnapshot reader pool).
-//   auto owner_perm = permission_root_mint<
+//   auto owner_perm = mint_permission_root<
 //       deque_tag::Owner<CompilePoolDeque>>();
 //   auto owner = deque.owner(std::move(owner_perm));
 //
@@ -180,7 +180,7 @@ public:
     // hands the Owner Permission to owner() factory.
 
     PermissionedChaseLevDeque() noexcept
-        : thief_pool_{safety::permission_root_mint<thief_tag>()} {}
+        : thief_pool_{safety::mint_permission_root<thief_tag>()} {}
 
     // ── OwnerHandle ───────────────────────────────────────────────
     //

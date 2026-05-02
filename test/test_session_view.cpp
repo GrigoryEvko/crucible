@@ -73,7 +73,7 @@ static_assert(session_view_branch_count_v<OfferView_t> == 3);
 // ── Runtime: mint a view at each combinator-head position ──────────
 
 int run_mint_at_send() {
-    auto h = make_session_handle<Send<Msg, End>>(FakeRes{99});
+    auto h = mint_session_handle<Send<Msg, End>>(FakeRes{99});
 
     auto view = mint_session_view<AtSend>(h);
     if (view->resource().sentinel != 99) return 1;
@@ -93,7 +93,7 @@ int run_mint_at_send() {
 }
 
 int run_mint_at_recv() {
-    auto h = make_session_handle<Recv<Msg, End>>(FakeRes{77});
+    auto h = mint_session_handle<Recv<Msg, End>>(FakeRes{77});
 
     auto view = mint_session_view<AtRecv>(h);
     if (view->resource().sentinel != 77) return 1;
@@ -113,7 +113,7 @@ int run_mint_at_recv() {
 }
 
 int run_mint_at_select() {
-    auto h = make_session_handle<Select<Send<Msg, End>, End>>(FakeRes{55});
+    auto h = mint_session_handle<Select<Send<Msg, End>, End>>(FakeRes{55});
 
     auto view = mint_session_view<AtSelect>(h);
     if (view->resource().sentinel != 55) return 1;
@@ -127,7 +127,7 @@ int run_mint_at_select() {
 }
 
 int run_mint_at_offer() {
-    auto h = make_session_handle<Offer<Recv<Msg, End>, End>>(FakeRes{33});
+    auto h = mint_session_handle<Offer<Recv<Msg, End>, End>>(FakeRes{33});
 
     auto view = mint_session_view<AtOffer>(h);
     if (view->resource().sentinel != 33) return 1;
@@ -140,7 +140,7 @@ int run_mint_at_offer() {
 }
 
 int run_mint_at_end_and_terminal() {
-    auto h = make_session_handle<End>(FakeRes{11});
+    auto h = mint_session_handle<End>(FakeRes{11});
 
     auto end_view = mint_session_view<AtEnd>(h);
     if (end_view->resource().sentinel != 11) return 1;
@@ -155,7 +155,7 @@ int run_mint_at_end_and_terminal() {
 }
 
 int run_mint_at_stop() {
-    auto h = make_session_handle<Stop>(FakeRes{22});
+    auto h = mint_session_handle<Stop>(FakeRes{22});
 
     auto stop_view = mint_session_view<AtStop>(h);
     if (stop_view->resource().sentinel != 22) return 1;
@@ -171,7 +171,7 @@ int run_mint_at_stop() {
 // ── Runtime: views are read-only borrows; multiple may coexist ────
 
 int run_multiple_views_coexist() {
-    auto h = make_session_handle<Send<Msg, End>>(FakeRes{88});
+    auto h = mint_session_handle<Send<Msg, End>>(FakeRes{88});
 
     auto v1 = mint_session_view<AtSend>(h);
     auto v2 = mint_session_view<AtSend>(h);   // second view of same handle
@@ -196,7 +196,7 @@ int run_multiple_views_coexist() {
 // ── Runtime: protocol_name accessor through the view ──────────────
 
 int run_view_protocol_name() {
-    auto h = make_session_handle<Send<Msg, End>>(FakeRes{});
+    auto h = mint_session_handle<Send<Msg, End>>(FakeRes{});
     auto view = mint_session_view<AtSend>(h);
 
     // session_view_protocol_name<View>() forwards to the carrier's
@@ -230,7 +230,7 @@ int report_pending_recv(ScopedView<Handle, AtRecv> view) noexcept {
 }
 
 int run_worked_example_typed_metrics() {
-    auto h = make_session_handle<Recv<Msg, End>>(FakeRes{999});
+    auto h = mint_session_handle<Recv<Msg, End>>(FakeRes{999});
 
     auto view = mint_session_view<AtRecv>(h);
     if (int rc = report_pending_recv(view); rc != 0) return rc;
@@ -248,12 +248,12 @@ int run_worked_example_typed_metrics() {
 //    head, not at Loop ──────────────────────────────────────────────
 
 int run_loop_body_position() {
-    // Loop<Send<Msg, Continue>> — make_session_handle unrolls one
+    // Loop<Send<Msg, Continue>> — mint_session_handle unrolls one
     // iteration; the resulting handle's compile-time Proto is
     // Send<Msg, Continue>, with Loop<...> as LoopCtx.
     using P  = Loop<Send<Msg, Continue>>;
     using Body = Send<Msg, Continue>;
-    auto h = make_session_handle<P>(FakeRes{44});
+    auto h = mint_session_handle<P>(FakeRes{44});
 
     // Verify the handle's compile-time type matches the unroll.
     static_assert(std::is_same_v<decltype(h),

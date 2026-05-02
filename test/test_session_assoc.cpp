@@ -83,7 +83,7 @@ int run_trace_via_context_lookup() {
     static_assert(std::is_same_v<dual_of_t<ProducerLocal>, ConsumerLocal>);
 
     auto [prod, cons] =
-        establish_channel<ProducerLocal>(std::move(p_res), std::move(c_res));
+        mint_channel<ProducerLocal>(std::move(p_res), std::move(c_res));
 
     // Producer sends three Events through the looping Send<Event,
     // Continue>; Consumer receives each in order.

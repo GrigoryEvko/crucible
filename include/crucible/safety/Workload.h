@@ -27,7 +27,7 @@
 //
 // No user-level atomics in the body.  No spin loops on peer signals.
 // No "is producer done?" exit conditions.  The structural argument
-// from `permission_fork` carries over.  This is the primitive that
+// from `mint_permission_fork` carries over.  This is the primitive that
 // SHARDED test's deadlocked exit condition would have prevented.
 //
 // ─── Cost-model integration ─────────────────────────────────────────
@@ -283,8 +283,8 @@ parallel_for_views(OwnedRegion<T, Whole>&& region, Body body) noexcept
 
     // Rebuild the parent OwnedRegion.  All sub-region Permissions
     // have been consumed (each worker's lambda destructed its sub-
-    // region at body exit).  permission_fork_rebuild_ is sound here
-    // by the same structural argument as permission_fork.
+    // region at body exit).  mint_permission_fork_rebuild_ is sound here
+    // by the same structural argument as mint_permission_fork.
     return OwnedRegion<T, Whole>::template rebuild_parent_<Whole>(base, count);
 }
 
@@ -475,7 +475,7 @@ parallel_reduce_views(OwnedRegion<T, Whole>&& region, R init,
 // the same root tag, e.g. two halves of a previously-split workspace
 // reunified into separate OwnedRegions), each region's permission
 // chain is independent and the parallel split is sound by structural
-// argument from `permission_fork`.
+// argument from `mint_permission_fork`.
 //
 // DetSafe: workers write to disjoint shards of disjoint regions;
 // the recombined OwnedRegion pair's content is deterministic in the
@@ -546,7 +546,7 @@ parallel_apply_pair(OwnedRegion<T1, W1>&& region_a,
     }
 
     // Rebuild both parent OwnedRegions.  Each call is structurally
-    // sound by the same `permission_fork`-derived argument used in
+    // sound by the same `mint_permission_fork`-derived argument used in
     // parallel_for_views.  Caller receives both regions as a pair.
     return std::pair<OwnedRegion<T1, W1>, OwnedRegion<T2, W2>>{
         OwnedRegion<T1, W1>::template rebuild_parent_<W1>(base_a, count_a),

@@ -138,7 +138,7 @@ namespace crucible::concurrent {
 // User picks a UserTag type to discriminate one Queue instance from
 // another (so each (Whole, Producer, Consumer) triple is unique to
 // one logical channel).  splits_into<Whole<U>, Producer<U>, Consumer<U>>
-// is specialized true below the namespace, so permission_split works
+// is specialized true below the namespace, so mint_permission_split works
 // out-of-the-box.
 //
 // Why namespace-level templates rather than nested class templates:
@@ -305,8 +305,8 @@ public:
     // (sizeof unchanged from bare handle; Permission is empty class).
     // Move-only: the embedded Permission's deleted copy ctor propagates
     // structurally.  Handle lifetime ≡ Permission lifetime: when this
-    // handle destructs (e.g. exiting a permission_fork lambda), the
-    // Permission destructs too, and permission_fork's parent-rebuild
+    // handle destructs (e.g. exiting a mint_permission_fork lambda), the
+    // Permission destructs too, and mint_permission_fork's parent-rebuild
     // becomes structurally sound — not "trust me bro" discipline.
     //
     // Maximum-rigor CSL encoding: the type system enforces that you
@@ -377,9 +377,9 @@ public:
 
     // Permission-typed factories — consume the Permission token; return
     // a handle that OWNS it via [[no_unique_address]].  The handle's
-    // destructor releases the Permission, making permission_fork's
-    // parent-rebuild structurally sound.  Pair with permission_split /
-    // permission_fork; see safety/PermissionFork.h.
+    // destructor releases the Permission, making mint_permission_fork's
+    // parent-rebuild structurally sound.  Pair with mint_permission_split /
+    // mint_permission_fork; see safety/PermissionFork.h.
     template <typename UserTag>
     [[nodiscard]] PermissionedProducerHandle<UserTag> producer_handle(
         safety::Permission<queue_tag::Producer<UserTag>>&& perm) noexcept
@@ -453,7 +453,7 @@ public:
 
     // PermissionedProducerHandle owns the Permission token.  For MPSC,
     // each producer thread typically gets its own Permission via
-    // permission_split_n on a sharded producer tag tree.  v1 reuses
+    // mint_permission_split_n on a sharded producer tag tree.  v1 reuses
     // the SPSC-style queue_tag::Producer<UserTag>; for fan-in patterns
     // with type-distinct producers, define your own indexed sub-tags
     // and split_n into them.
@@ -805,7 +805,7 @@ struct splits_into<concurrent::queue_tag::Whole<UserTag>,
                    concurrent::queue_tag::Consumer<UserTag>>
     : std::true_type {};
 
-// And the n-ary form (used by permission_fork — it always invokes
+// And the n-ary form (used by mint_permission_fork — it always invokes
 // splits_into_pack regardless of arity).  Same Whole → (Producer,
 // Consumer) split, just spelled in the variadic trait.
 template <typename UserTag>

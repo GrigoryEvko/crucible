@@ -86,7 +86,7 @@
 //
 //   misc/24_04_2026_safety_integration.md §10 — design rationale.
 //   safety/Machine.h         — typestate primitive.
-//   safety/Session.h         — SessionHandle, make_session_handle,
+//   safety/Session.h         — SessionHandle, mint_session_handle,
 //                              the SessionResource concept (#406)
 //                              that this header upholds via Pinned.
 //   safety/Pinned.h          — address-stability mixin.
@@ -133,7 +133,7 @@ public:
     // Resource fully determine its specialisation.  Exposed so callers
     // can name the type without re-deriving it.
     using session_handle_type =
-        decltype(safety::proto::make_session_handle<Proto>(
+        decltype(safety::proto::mint_session_handle<Proto>(
             std::declval<machine_type*>()));
 
     // ── Constructors ─────────────────────────────────────────────────
@@ -200,7 +200,7 @@ public:
     // is the same as for any &-borrow of the Machine.
 
     [[nodiscard]] auto session_view() & noexcept -> session_handle_type {
-        return safety::proto::make_session_handle<Proto>(&machine_);
+        return safety::proto::mint_session_handle<Proto>(&machine_);
     }
 
     // ── Static accessor — protocol name without instantiating ────────
@@ -372,7 +372,7 @@ static_assert(std::is_same_v<typename Bridge::machine_type, Machine<VigilModeSta
 static_assert(std::is_same_v<typename Bridge::protocol,     VigilProto>);
 
 // session_handle_type is the SessionHandle specialisation produced
-// by make_session_handle<Proto>(&machine_).  Loop unrolls one step
+// by mint_session_handle<Proto>(&machine_).  Loop unrolls one step
 // at construction, so the resulting handle's compile-time Proto is
 // the loop body (a Select), with Loop<...> as the LoopCtx.
 using ExpectedSession = safety::proto::SessionHandle<

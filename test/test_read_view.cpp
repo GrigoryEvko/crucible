@@ -6,7 +6,7 @@
 //   Tier 2: factory — lend_read produces ReadView; multiple coexist
 //   Tier 3: with_read_view scoped helper (void + non-void return)
 //   Tier 4: composition — ReadView as member via [[no_unique_address]]
-//   Tier 5: composition with permission_fork — read-only side info
+//   Tier 5: composition with mint_permission_fork — read-only side info
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/permissions/Permission.h>
@@ -94,7 +94,7 @@ static_assert(sizeof(EboHost) == sizeof(void*),
 // ── Tier 2: lend_read factory ────────────────────────────────────
 
 void test_lend_read_basic() {
-    auto perm = permission_root_mint<ConfigData>();
+    auto perm = mint_permission_root<ConfigData>();
     auto view = lend_read(perm);
 
     // ReadView is an empty proof token; nothing observable to check
@@ -103,7 +103,7 @@ void test_lend_read_basic() {
 }
 
 void test_multiple_views_coexist() {
-    auto perm = permission_root_mint<ConfigData>();
+    auto perm = mint_permission_root<ConfigData>();
     auto v1 = lend_read(perm);
     auto v2 = lend_read(perm);
     auto v3 = lend_read(perm);
@@ -121,7 +121,7 @@ void test_multiple_views_coexist() {
 // ── Tier 3: with_read_view scoped helper ─────────────────────────
 
 void test_with_read_view_void_body() {
-    auto perm = permission_root_mint<ConfigData>();
+    auto perm = mint_permission_root<ConfigData>();
     bool ran = false;
 
     with_read_view(perm, [&ran](ReadView<ConfigData>) noexcept {
@@ -132,7 +132,7 @@ void test_with_read_view_void_body() {
 }
 
 void test_with_read_view_returning_value() {
-    auto perm = permission_root_mint<LoopBounds>();
+    auto perm = mint_permission_root<LoopBounds>();
     constexpr int sentinel = 12345;
 
     int observed = with_read_view(perm,
@@ -147,7 +147,7 @@ void test_with_read_view_returning_struct() {
         std::uint64_t hi;
     };
 
-    auto perm = permission_root_mint<LoopBounds>();
+    auto perm = mint_permission_root<LoopBounds>();
     auto r = with_read_view(perm,
         [](ReadView<LoopBounds>) noexcept {
             return Result{42, 99};
@@ -180,8 +180,8 @@ void test_handle_composition_zero_cost() {
     static_assert(sizeof(WorkerHandle) <= 2,
                   "WorkerHandle composing two empty proof tokens must be at most 2 bytes");
 
-    auto config_perm = permission_root_mint<ConfigData>();
-    auto worker_perm = permission_root_mint<WorkerSlice>();
+    auto config_perm = mint_permission_root<ConfigData>();
+    auto worker_perm = mint_permission_root<WorkerSlice>();
     auto cv = lend_read(config_perm);
 
     WorkerHandle h{std::move(worker_perm), cv};
@@ -189,7 +189,7 @@ void test_handle_composition_zero_cost() {
     // Handle owns the write permission; read view is a borrow.
 }
 
-// ── Tier 5: integration with permission_fork ─────────────────────
+// ── Tier 5: integration with mint_permission_fork ─────────────────────
 
 namespace fork_tags {
     struct Whole  {};
@@ -207,17 +207,17 @@ struct splits_into_pack<fork_tags::Whole, fork_tags::Left, fork_tags::Right>
 
 namespace {
 
-// permission_fork into two writers, each receiving a separate
+// mint_permission_fork into two writers, each receiving a separate
 // Permission AND a read-only view of the shared config.
 void test_fork_with_shared_read_view() {
-    auto config_perm = permission_root_mint<ConfigData>();
+    auto config_perm = mint_permission_root<ConfigData>();
     const auto cv = lend_read(config_perm);  // copyable; safe to share
 
     std::atomic<int> left_done{0};
     std::atomic<int> right_done{0};
 
-    auto whole = permission_root_mint<fork_tags::Whole>();
-    auto rebuilt = permission_fork<fork_tags::Left, fork_tags::Right>(
+    auto whole = mint_permission_root<fork_tags::Whole>();
+    auto rebuilt = mint_permission_fork<fork_tags::Left, fork_tags::Right>(
         std::move(whole),
         [cv, &left_done](Permission<fork_tags::Left>) noexcept {
             // Worker sees read view of config; type system confirms

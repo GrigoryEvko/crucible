@@ -96,7 +96,7 @@ void run_runtime_smoke() {
     runtime_smoke_test_grid();
 
     // Stress at 16 × 8 (beyond the in-header sentinel range).
-    auto parent = permission_root_mint<GridChannel>();
+    auto parent = mint_permission_root<GridChannel>();
     auto big_grid = split_grid<GridChannel, 16, 8>(std::move(parent));
 
     static_assert(std::tuple_size_v<decltype(big_grid.producers)> == 16);
@@ -106,13 +106,13 @@ void run_runtime_smoke() {
         GridPermissions<GridChannel, 16, 8>>);
 
     // Asymmetric — many producers, few consumers (scatter pattern).
-    auto p2 = permission_root_mint<GridChannel>();
+    auto p2 = mint_permission_root<GridChannel>();
     auto scatter = split_grid<GridChannel, 32, 1>(std::move(p2));
     static_assert(std::tuple_size_v<decltype(scatter.producers)> == 32);
     static_assert(std::tuple_size_v<decltype(scatter.consumers)> == 1);
 
     // Asymmetric — one producer, many consumers (broadcast pattern).
-    auto p3 = permission_root_mint<GridChannel>();
+    auto p3 = mint_permission_root<GridChannel>();
     auto broadcast = split_grid<GridChannel, 1, 32>(std::move(p3));
     static_assert(std::tuple_size_v<decltype(broadcast.producers)> == 1);
     static_assert(std::tuple_size_v<decltype(broadcast.consumers)> == 32);

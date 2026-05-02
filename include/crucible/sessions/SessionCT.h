@@ -80,7 +80,7 @@
 //     using AuthAck = bool;
 //     using AuthVerify = Recv<CTPayload<HmacTag>, Send<AuthAck, End>>;
 //
-//     auto handle = make_session_handle<AuthVerify>(channel);
+//     auto handle = mint_session_handle<AuthVerify>(channel);
 //     auto [received_tag, after_recv] = std::move(handle).recv(
 //         [](Channel*& c) noexcept -> CTPayload<HmacTag> {
 //             return CTPayload<HmacTag>{ c->read_hmac() };

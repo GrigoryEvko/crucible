@@ -17,7 +17,7 @@ struct GridTag {};
 }  // namespace
 
 void exercise_zero_M_call() {
-    auto p = crucible::safety::permission_root_mint<GridTag>();
+    auto p = crucible::safety::mint_permission_root<GridTag>();
     // (M=0, N=1) — fails the factory-side static_assert.
     [[maybe_unused]] auto bad = crucible::safety::split_grid<GridTag, 0, 1>(
         std::move(p));

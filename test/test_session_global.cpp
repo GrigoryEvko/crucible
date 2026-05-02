@@ -112,7 +112,7 @@ int run_projected_2pc() {
 
     // Establish the channel using the PROJECTED types (not hand-written).
     auto [coord, follower] =
-        establish_channel<CoordProto>(std::move(a), std::move(b));
+        mint_channel<CoordProto>(std::move(a), std::move(b));
 
     // Step 1: coord sends Prepare.
     auto coord2 = std::move(coord).send(Prepare{99}, send_prepare);

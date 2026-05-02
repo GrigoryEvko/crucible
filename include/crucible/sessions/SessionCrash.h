@@ -216,7 +216,7 @@ struct is_subtype_sync<Stop, U> : std::true_type {};
 //
 // No post-crash operations are exposed — the handle is terminal.  A
 // user who wants to restart the channel establishes a new session
-// (establish_channel) rather than advancing this handle.
+// (mint_channel) rather than advancing this handle.
 
 template <typename Resource, typename LoopCtx>
 class [[nodiscard]] SessionHandle<Stop, Resource, LoopCtx>
@@ -229,7 +229,7 @@ class [[nodiscard]] SessionHandle<Stop, Resource, LoopCtx>
     friend class SessionHandle;
 
     template <typename P, typename R>
-    friend constexpr auto make_session_handle(R r) noexcept;
+    friend constexpr auto mint_session_handle(R r) noexcept;
 
     template <typename R, typename Res, typename L>
     friend constexpr auto detail::step_to_next(Res) noexcept;

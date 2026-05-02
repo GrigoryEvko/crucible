@@ -22,8 +22,8 @@ using DelegatedProto = Send<int, End>;
 void compile_time_reject() {
     // Carrier: Delegate<DelegatedProto, End> — Alice sends the
     // delegated endpoint to Bob, then advances to End.
-    auto carrier  = make_session_handle<Delegate<DelegatedProto, End>>(R{});
-    auto delegated = make_session_handle<DelegatedProto>(DelegatedR{});
+    auto carrier  = mint_session_handle<Delegate<DelegatedProto, End>>(R{});
+    auto delegated = mint_session_handle<DelegatedProto>(DelegatedR{});
 
     // Bare `.delegate(delegated_handle)` — pre-#369 silently dropped
     // the delegated endpoint; now a compile error.

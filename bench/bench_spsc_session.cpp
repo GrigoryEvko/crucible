@@ -148,7 +148,7 @@ bench::Report bench_typed_send_bare_pop(Channel::ProducerHandle& prod,
     namespace ses = ::crucible::safety::proto::spsc_session;
 
     drain_ring(cons);
-    auto psh = ses::producer_session<Channel>(prod);
+    auto psh = ses::mint_producer_session<Channel>(prod);
     Item i = 0;
     auto report = bench::run("round-trip: typed PSH.send + bare pop",
         [&]{
@@ -176,7 +176,7 @@ bench::Report bench_bare_push_typed_recv(Channel::ProducerHandle& prod,
     namespace ses = ::crucible::safety::proto::spsc_session;
 
     drain_ring(cons);
-    auto psh = ses::consumer_session<Channel>(cons);
+    auto psh = ses::mint_consumer_session<Channel>(cons);
     Item i = 0;
     auto report = bench::run("round-trip: bare push + typed PSH.recv",
         [&]{
@@ -197,8 +197,8 @@ bench::Report bench_typed_send_typed_recv(Channel::ProducerHandle& prod,
     namespace ses = ::crucible::safety::proto::spsc_session;
 
     drain_ring(cons);
-    auto prod_psh = ses::producer_session<Channel>(prod);
-    auto cons_psh = ses::consumer_session<Channel>(cons);
+    auto prod_psh = ses::mint_producer_session<Channel>(prod);
+    auto cons_psh = ses::mint_consumer_session<Channel>(cons);
     Item i = 0;
     auto report = bench::run("round-trip: typed PSH.send + typed PSH.recv",
         [&]{
@@ -250,8 +250,8 @@ int main(int argc, char** argv) {
     auto ch_owner = std::make_unique<Channel>();
     Channel& ch = *ch_owner;
 
-    auto whole = ::crucible::safety::permission_root_mint<Channel::whole_tag>();
-    auto [pp, cp] = ::crucible::safety::permission_split<
+    auto whole = ::crucible::safety::mint_permission_root<Channel::whole_tag>();
+    auto [pp, cp] = ::crucible::safety::mint_permission_split<
         Channel::producer_tag, Channel::consumer_tag>(std::move(whole));
     auto prod = ch.producer(std::move(pp));
     auto cons = ch.consumer(std::move(cp));

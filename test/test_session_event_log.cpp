@@ -144,15 +144,15 @@ int run_request_reply_recorded() {
 
     using ClientProto = Send<ReqMsg, Recv<RepMsg, End>>;
     // ServerProto = dual_of_t<ClientProto> — implicit, used inside
-    // establish_channel; not named here to keep -Werror=unused-local-typedefs happy.
+    // mint_channel; not named here to keep -Werror=unused-local-typedefs happy.
 
     SessionEventLog log{SessionTagId{2026}};
 
     auto [client_bare, server_bare] =
-        establish_channel<ClientProto>(std::move(c_wire), std::move(s_wire));
+        mint_channel<ClientProto>(std::move(c_wire), std::move(s_wire));
 
-    auto client = make_recording(std::move(client_bare), log, kClient, kServer);
-    auto server = make_recording(std::move(server_bare), log, kServer, kClient);
+    auto client = mint_recording_session(std::move(client_bare), log, kClient, kServer);
+    auto server = mint_recording_session(std::move(server_bare), log, kServer, kClient);
 
     // Client sends request.
     auto client_recv = std::move(client).send(
@@ -231,8 +231,8 @@ int run_replay_determinism_property() {
 
     auto drive = [](SessionEventLog& log) {
         struct R { int sentinel = 0; };
-        auto bare = make_session_handle<P>(R{});
-        auto rec  = make_recording(std::move(bare), log, kClient, kServer);
+        auto bare = mint_session_handle<P>(R{});
+        auto rec  = mint_recording_session(std::move(bare), log, kClient, kServer);
         // pick<0> twice (Send branch), then pick<1> (End).
         auto h1 = std::move(rec).template select_local<0>();
         auto h2 = std::move(h1).send(11, [](R&, int) noexcept {});
@@ -303,8 +303,8 @@ int run_payload_hash_opt_in() {
 
     using P = Send<HashedPayload, End>;
     struct R {};
-    auto bare = make_session_handle<P>(R{});
-    auto rec  = make_recording(std::move(bare), log, kClient, kServer);
+    auto bare = mint_session_handle<P>(R{});
+    auto rec  = mint_recording_session(std::move(bare), log, kClient, kServer);
     auto end  = std::move(rec).send(HashedPayload{7},
                                     [](R&, HashedPayload) noexcept {});
     (void)std::move(end).close();
@@ -334,10 +334,10 @@ int run_offer_branch_recorded() {
     WireBuf s_wire{&wire};
 
     auto [sel_bare, off_bare] =
-        establish_channel<SelectProto>(std::move(c_wire), std::move(s_wire));
+        mint_channel<SelectProto>(std::move(c_wire), std::move(s_wire));
 
-    auto sel = make_recording(std::move(sel_bare), log, kClient, kServer);
-    auto off = make_recording(std::move(off_bare), log, kServer, kClient);
+    auto sel = mint_recording_session(std::move(sel_bare), log, kClient, kServer);
+    auto off = mint_recording_session(std::move(off_bare), log, kServer, kClient);
 
     // Client picks branch 0 (Send<int, End> on its side, Recv<int, End> on
     // server's side).  Sends 99, then closes.  Server branches on 0,

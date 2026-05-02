@@ -9,7 +9,7 @@
 //   accepts it.  But the type-level PermSet on the handle does not
 //   actually contain the X tag, so the send is a fabrication: there's
 //   no real Permission<X> being moved through the protocol — the
-//   payload was constructed with permission_root_mint at the call
+//   payload was constructed with mint_permission_root at the call
 //   site, which is the canonical (grep-discoverable) mint pattern,
 //   but minting a fresh root is NOT the same as transferring an
 //   existing held permission.
@@ -21,7 +21,7 @@
 //   demands that for Transferable<T, X>, X ∈ PS.
 //
 // WHY IT'S TRICKY:
-//   The user CAN call permission_root_mint<X>() inline because mint
+//   The user CAN call mint_permission_root<X>() inline because mint
 //   is review-discoverable, not type-blocked.  The protocol-level
 //   check is what enforces "X is in flight from sender to receiver",
 //   and that's the static_assert here.
@@ -30,7 +30,7 @@
 
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
-using ::crucible::safety::permission_root_mint;
+using ::crucible::safety::mint_permission_root;
 
 namespace {
 struct WorkItem {};
@@ -43,13 +43,13 @@ void wire_send(FakeChannel& ch, Transferable<int, WorkItem>&& t) noexcept {
 
 int main() {
     // Establish without holding WorkItem — PS == EmptyPermSet.
-    auto h = establish_permissioned<Send<Transferable<int, WorkItem>, End>>(
+    auto h = mint_permissioned_session<Send<Transferable<int, WorkItem>, End>>(
         FakeChannel{});
 
-    // User constructs payload inline using permission_root_mint —
+    // User constructs payload inline using mint_permission_root —
     // looks like a valid Transferable, but the handle has no PS to
     // back it.  The send's body static_assert fires.
-    Transferable<int, WorkItem> payload{42, permission_root_mint<WorkItem>()};
+    Transferable<int, WorkItem> payload{42, mint_permission_root<WorkItem>()};
     [[maybe_unused]] auto h2 = std::move(h).send(std::move(payload),
                                                   wire_send);
     return 0;

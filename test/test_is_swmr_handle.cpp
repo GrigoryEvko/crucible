@@ -163,7 +163,7 @@ void test_real_payload_extraction() {
 
 void test_runtime_round_trip() {
     Snap snap{42};
-    auto wperm = safety::permission_root_mint<typename Snap::writer_tag>();
+    auto wperm = safety::mint_permission_root<typename Snap::writer_tag>();
     auto w = snap.writer(std::move(wperm));
     w.publish(99);
     auto rh_opt = snap.reader();

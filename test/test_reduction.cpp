@@ -450,7 +450,7 @@ void test_inferred_tags_match_input_tag() {
     // semantic claim: a Reduction harvests EXACTLY ONE permission tag
     // (the input region's), and reduce_into's R/Op DO NOT enter the
     // permission set.  Without this guarantee the dispatcher would
-    // emit nonsensical permission_split machinery for the accumulator
+    // emit nonsensical mint_permission_split machinery for the accumulator
     // R/Op types — which are not regions and have no associated
     // ownership semantics.
     //

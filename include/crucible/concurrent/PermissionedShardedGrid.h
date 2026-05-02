@@ -15,7 +15,7 @@
 // All permissions are derived from a single Whole<UserTag> root via
 // the FOUND-A22 split_grid factory:
 //
-//   auto whole = permission_root_mint<grid_tag::Whole<UserTag>>();
+//   auto whole = mint_permission_root<grid_tag::Whole<UserTag>>();
 //   auto grid  = split_grid<grid_tag::Whole<UserTag>, M, N>(whole);
 //   //                                                ^^ M+N tokens
 //
@@ -84,7 +84,7 @@
 //   PermissionedShardedGrid<int, 4, 3, 256, WorkChannel> grid;
 //
 //   // Mint root + split via FOUND-A22 generator.
-//   auto whole = permission_root_mint<
+//   auto whole = mint_permission_root<
 //       safety::grid_whole<WorkChannel>>();
 //   auto perms = safety::split_grid<
 //       safety::grid_whole<WorkChannel>, 4, 3>(std::move(whole));

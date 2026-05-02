@@ -90,7 +90,7 @@ int run_carrier() {
 
     // Establish carrier channel
     auto [alice_h, bob_h] =
-        establish_channel<CarrierProto>(std::move(carrier_alice),
+        mint_channel<CarrierProto>(std::move(carrier_alice),
                                          std::move(carrier_bob));
 
     // Bob initiates by sending the delegated-endpoint's name as a
@@ -113,7 +113,7 @@ int run_carrier() {
     MockChannel delegated_src{.name = "src-channel-for-ping",
                                .wire_bytes = &wire};
     auto delegated_handle =
-        make_session_handle<DelegatedProto>(std::move(delegated_src));
+        mint_session_handle<DelegatedProto>(std::move(delegated_src));
 
     // Alice delegates: alice_h2 is Delegate<DelegatedProto, End>.
     // After delegate(), alice_h3 is End.
@@ -165,7 +165,7 @@ int run_carrier() {
     // at the other end of the delegated channel is connected.
     bob_delegated.resource().wire_bytes = &delegated_wire;
     auto delegated_peer_h =
-        make_session_handle<dual_of_t<DelegatedProto>>(
+        mint_session_handle<dual_of_t<DelegatedProto>>(
             std::move(delegated_peer_res));
 
     // Bob sends a PingReq through his delegated handle.  (Transport

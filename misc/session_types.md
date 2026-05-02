@@ -647,7 +647,7 @@ Compositionality theorems require compatibility. The catalog, organized by which
 
 **Permission disjointness** (for parallel, for CSL):
 - `Perm(Γ₁) ∩ Perm(Γ₂) = ∅` — disjoint CSL permission sets
-- Enforced by `permission_fork` in Permission.h; checked at each split point
+- Enforced by `mint_permission_fork` in Permission.h; checked at each split point
 
 **Queue-endpoint disjointness** (for parallel in async):
 - σ-endpoints of Γ₁ and Γ₂ refer to different channels
@@ -1075,11 +1075,11 @@ class SessionHandle;
 
 // Factory
 template <typename Proto, typename Resource>
-auto make_session_handle(Resource r) -> SessionHandle<Proto, Resource>;
+auto mint_session_handle(Resource r) -> SessionHandle<Proto, Resource>;
 
 // Establish dual pair
 template <typename Proto, typename Resource>
-auto establish_channel(Resource r)
+auto mint_channel(Resource r)
     -> std::pair<SessionHandle<Proto, Resource>, SessionHandle<dual_of_t<Proto>, Resource>>;
 
 } // namespace
@@ -1156,7 +1156,7 @@ Return type is `std::expected` — either the next-state handle or a CrashEvent 
 ```cpp
 void do_query(QueryRequest const& req, Keeper& keeper) {
     // Establish a session. Resource outlives the handle.
-    auto [client, server] = establish_channel<QueryProto>(keeper.get_channel());
+    auto [client, server] = mint_channel<QueryProto>(keeper.get_channel());
 
     // Step 1: send request. client is consumed; new client2 has next-state type.
     auto client2 = std::move(client).send(req);
@@ -1185,7 +1185,7 @@ The abandoned-check catches bugs of the form "forgot to loop back to Continue" o
 ```cpp
 // test/safety_neg/test_handle_abandoned.cpp  (must NOT compile)
 void abandoned_protocol() {
-    auto [c, s] = establish_channel<RequestResponse<Req, Resp>>(res);
+    auto [c, s] = mint_channel<RequestResponse<Req, Resp>>(res);
     // Never send. Return. c's destructor must fire abandonment check.
     // Under -Werror=session-abandoned, this is a compile error.
 }  // expected: error: 'SessionHandle<…>' abandoned without reaching End or Stop
@@ -1869,7 +1869,7 @@ class [[nodiscard]] PermissionedSessionHandle
 
 // Establishment — consumes Permission tokens; their tags become the initial PS.
 template <typename Proto, typename Resource, typename... InitPerms>
-[[nodiscard]] auto establish_permissioned(Resource r, Permission<InitPerms>&&... perms);
+[[nodiscard]] auto mint_permissioned_session(Resource r, Permission<InitPerms>&&... perms);
 
 // Multi-party fork — splits Whole into RolePerms, projects G per role,
 // spawns one std::jthread per role, RAII rebuilds Whole on join.
@@ -1904,11 +1904,11 @@ template <typename PSH, typename Body>
 - **D6 — `is_permission_balanced_v<Γ, InitialPerms>` ships standalone**, NOT conjuncted with `is_safe_v` (Task #346, unshipped). The earlier doc-claimed conjunction `is_csl_safe_v = is_safe_v ∧ is_permission_balanced_v` is **deferred to v2** — over-claiming would violate Part IX's honest-assessment discipline. Promotion criterion: L7 SessionSafety.h ships.
 - **D7 — Doc-update sweep bundled with implementation PR.** This rewrite is part of that sweep.
 
-**The permission-transfer invariant.** When a handle with active PS sends a `Transferable<T, X>` (or `Returned<T, X>`), PS' = `perm_set_remove_t<PS, X>`; the recipient's PS' = `perm_set_insert_t<PS, X>`. Protocol-level invariant: the union of active PSets across all participants is constant modulo `permission_split` / `permission_combine` at fork points. `Borrowed<T, X>` lends a `ReadView<X>` scoped to the next protocol step — recipient's PS is unchanged.
+**The permission-transfer invariant.** When a handle with active PS sends a `Transferable<T, X>` (or `Returned<T, X>`), PS' = `perm_set_remove_t<PS, X>`; the recipient's PS' = `perm_set_insert_t<PS, X>`. Protocol-level invariant: the union of active PSets across all participants is constant modulo `mint_permission_split` / `mint_permission_combine` at fork points. `Borrowed<T, X>` lends a `ReadView<X>` scoped to the next protocol step — recipient's PS is unchanged.
 
 **Compile-time enforcement.** Every send dispatches on the payload SHAPE (Transferable / Borrowed / Returned / plain) and statically asserts the sender's PS contains the required tag. Receiving evolves PS automatically per the SessionPayloadSubsort axioms (which compose orthogonally — see `SessionPayloadSubsort.h:90-99`'s integration block). At `close()` PS must equal `EmptyPermSet`; otherwise compile error with `[PermissionImbalance]` diagnostic listing the leaked tags. Loop body PS-balance and branch-terminal PS convergence are both enforced statically.
 
-**`csl_compose` is NOT shipped.** This combinator was invented in an earlier draft of this document; no other doc spec, no FOUND-C task tracks it. Deferred to v2 explicitly. Composition of two PermissionedSessionHandles is currently expressed via `permission_fork` + `establish_permissioned`, which is what `session_fork` does internally.
+**`csl_compose` is NOT shipped.** This combinator was invented in an earlier draft of this document; no other doc spec, no FOUND-C task tracks it. Deferred to v2 explicitly. Composition of two PermissionedSessionHandles is currently expressed via `mint_permission_fork` + `mint_permissioned_session`, which is what `session_fork` does internally.
 
 **Relation to CRUCIBLE.md §5.1.** CNTP's permission-carrying messages (gradient buckets with `Permission<Grad<k>>`, KernelCache publications with `Permission<CompiledKernel<hash>>`) are the next consumers — see K-series tasks #355–#358. v1 ships the framework; production wiring is the next phase.
 
@@ -3049,7 +3049,7 @@ G_flr = HostCPU detects fault (BAR0=0xFFFFFFFF, MSI-X fatal, watchdog timeout) .
         HostCPU → GPU : restore_pci_config .
         HostCPU → GPU : upload_gsp_firmware (from cache) .
         HostCPU → GPU : init_rpc_handshake .
-        HostCPU → GPU : re_establish_channel .
+        HostCPU → GPU : re_mint_channel .
         HostCPU → GPU : pin_clocks .
         HostCPU loads cipher checkpoint T_0 .
         HostCPU re-submits plans from T_0 forward (replay determinism §10) .
@@ -3462,7 +3462,7 @@ Dependency-ordered delivery of the twelve-layer stack.
 
 **M8 — L8 Crash-stop.**  ⚠️ PARTIAL.  SessionCrash.h ships Stop, Crash<p>, UnavailableQueue, ReliableSet, has_crash_branch_for_peer_v + assert_has_crash_branch_for.  **DEFERRED**: Γ-level aggregate check that walks every Offer in every entry's local type (Task SEPLOG-BUG-4 / #368) and the prerequisite Sender-role-on-Offer (Task SEPLOG-STRUCT-1 / #367).  Per-Offer trait shipped is essentially useless for nested Offers (which is most real protocols).  Task #347 (pending — partial).  Current line count: **627**.
 
-**M9 — L9 CSL × session.**  ✅ SHIPPED as FOUND-C v1, 2026-04-27.  `sessions/PermissionedSession.h` (~1,300 lines) + `permissions/PermSet.h` (~370) + `sessions/SessionPermPayloads.h` (~410).  Three payload markers (Transferable / Borrowed / Returned), per-protocol-head specialisations (End / Stop / Send / Recv / Select / Offer), Loop body permission-balance enforcement (Decision D3), branch-terminal PS convergence enforced structurally (Decision D4), debug-mode abandonment-tracker enrichment with leaked tags (Decision D5), `establish_permissioned` factory, `session_fork<G, Whole, RolePerms…>` multi-party establishment (Decision D2; works for binary + plain-mergeable multiparty, diverging-multiparty waits on Task #381), `with_crash_check_or_detach` OneShotFlag composition.  9-test integration suite + 10 negative-compile fixtures + zero-cost bench (sizeof-equal + asm-identical, two-tier evidence).  221/221 ctest green at landing.  Tasks #605–#619 (15/15 completed).  See `misc/27_04_csl_permission_session_wiring.md` for the full implementation plan.  **`is_permission_balanced_v` ships standalone**; the conjunction `is_csl_safe_v = is_safe_v ∧ is_permission_balanced_v` is **deferred to v2** (Decision D6) — promotion criterion is L7 SessionSafety.h landing (M7 / Task #346).
+**M9 — L9 CSL × session.**  ✅ SHIPPED as FOUND-C v1, 2026-04-27.  `sessions/PermissionedSession.h` (~1,300 lines) + `permissions/PermSet.h` (~370) + `sessions/SessionPermPayloads.h` (~410).  Three payload markers (Transferable / Borrowed / Returned), per-protocol-head specialisations (End / Stop / Send / Recv / Select / Offer), Loop body permission-balance enforcement (Decision D3), branch-terminal PS convergence enforced structurally (Decision D4), debug-mode abandonment-tracker enrichment with leaked tags (Decision D5), `mint_permissioned_session` factory, `session_fork<G, Whole, RolePerms…>` multi-party establishment (Decision D2; works for binary + plain-mergeable multiparty, diverging-multiparty waits on Task #381), `with_crash_check_or_detach` OneShotFlag composition.  9-test integration suite + 10 negative-compile fixtures + zero-cost bench (sizeof-equal + asm-identical, two-tier evidence).  221/221 ctest green at landing.  Tasks #605–#619 (15/15 completed).  See `misc/27_04_csl_permission_session_wiring.md` for the full implementation plan.  **`is_permission_balanced_v` ships standalone**; the conjunction `is_csl_safe_v = is_safe_v ∧ is_permission_balanced_v` is **deferred to v2** (Decision D6) — promotion criterion is L7 SessionSafety.h landing (M7 / Task #346).
 
 **M10 — The MPMC flagship.**  ⚠️ PARTIAL.  `PermissionedMpmcChannel<T, N, Cap>` ships (FOUND-A06–A10, completed 2026-04 in concurrent/PermissionedMpmcChannel.h with TWO fractional pools per THREADING.md §5.5.1, cookie-fingerprint debug mode, mode-transition `with_drained_access`, full bench coverage). The TYPE-LEVEL PermSet correctness now composes via the M9 PermissionedSessionHandle; the conjunction with `is_safe_v` still depends on M7. Remaining: Tasks #328 (MPMC protocol instantiation as ProducerProto / ConsumerProto via session framework), #381 (full coinductive merging for diverging projections), #382/383 (L7 prereqs).  See **Part V** for the design.
 
@@ -3535,7 +3535,7 @@ What the framework does NOT have at the **semantic** level:
 - ❌ φ predicates that actually verify properties.  Every is_safe_v / is_df_v / is_live+_v claim in Part VI is currently aspirational — those metafunctions don't exist (Task #346 / SessionSafety.h).  The Part VI table reads as "channel X requires φ(N)" but no compile-time witness can be produced for any channel today.
 - ❌ Async subtyping ⩽_a (Task #348).  Sync-only is too strict for MPMC (Section §V.4 documents the async-pipelining requirement; the type system can't currently certify it).
 - ❌ Coinductive full merging (Task #381).  Plain merge cannot project Raft / 2PC-with-multi-followers / any DIVERGING multiparty global type onto third-party roles.
-- ✅ CSL × session integration shipped as `PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>` per FOUND-C v1 (2026-04-27).  Transferable / Borrowed / Returned payload markers (`sessions/SessionPermPayloads.h`); PermSet algebra (`permissions/PermSet.h`); Loop body permission-balance enforcement at every Continue (Decision D3); branch-terminal PS convergence enforced structurally (Decision D4); debug abandonment-tracker enrichment with leaked tags (Decision D5).  `establish_permissioned` + `session_fork` factories.  `is_permission_balanced_v` ships standalone; the conjunction `is_csl_safe_v = is_safe_v ∧ is_permission_balanced_v` deferred to v2 until Task #346 (L7) lands (Decision D6).
+- ✅ CSL × session integration shipped as `PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>` per FOUND-C v1 (2026-04-27).  Transferable / Borrowed / Returned payload markers (`sessions/SessionPermPayloads.h`); PermSet algebra (`permissions/PermSet.h`); Loop body permission-balance enforcement at every Continue (Decision D3); branch-terminal PS convergence enforced structurally (Decision D4); debug abandonment-tracker enrichment with leaked tags (Decision D5).  `mint_permissioned_session` + `session_fork` factories.  `is_permission_balanced_v` ships standalone; the conjunction `is_csl_safe_v = is_safe_v ∧ is_permission_balanced_v` deferred to v2 until Task #346 (L7) lands (Decision D6).
 - ❌ Causality analysis ≺_II / ≺_IO / ≺_OO (Task #340).  Without these, deadlock-freedom claims have no foundation.
 - ❌ Reachable-contexts BFS (Task #382).  L7's φ predicates need this; without it, L7 can't be implemented.
 - ❌ Association preservation theorem (HYK24 Thm 5.8).  Single-point association check shipped; preservation across reductions needs reduction semantics from L7.
@@ -3638,7 +3638,7 @@ using RequestResponse = Loop<Send<Req, Recv<Resp, Continue>>>;
 **Usage**:
 ```cpp
 using QueryProto = RequestResponse<QueryReq, QueryResp>;
-auto [client, server] = establish_channel<QueryProto, SomeResource>(res);
+auto [client, server] = mint_channel<QueryProto, SomeResource>(res);
 
 // Client side:
 auto client2 = client.send(QueryReq{...});
@@ -3670,7 +3670,7 @@ auto server3 = server2.send(QueryResp{...});
 
 **Compile error example** (wrong-state send):
 ```cpp
-auto [client, server] = establish_channel<QueryProto, Res>(res);
+auto [client, server] = mint_channel<QueryProto, Res>(res);
 auto client2 = client.send(QueryReq{...});
 // Try to send again without recv — should be a compile error:
 auto client3_bad = client2.send(QueryReq{...});  // error
@@ -3857,7 +3857,7 @@ static_assert(compatible_parallel_v<Gamma, YetAnotherGamma>);
 ```cpp
 class ChannelResource { /* the underlying transport */ };
 
-auto establish_channel() -> std::pair<
+auto mint_channel() -> std::pair<
     SessionHandle<T_A, ChannelResource>,
     SessionHandle<T_B, ChannelResource>
 >;

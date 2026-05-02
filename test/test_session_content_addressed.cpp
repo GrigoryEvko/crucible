@@ -70,7 +70,7 @@ int run_content_addressed_loop() {
     Wire p{&wire};
     Wire s{&wire};
 
-    auto [pub, sub] = establish_channel<CaPublisher>(std::move(p), std::move(s));
+    auto [pub, sub] = mint_channel<CaPublisher>(std::move(p), std::move(s));
 
     // Publish three kernel entries; subscriber receives all three.
     auto p1 = std::move(pub).send(ContentAddressed<KernelEntry>{}, send_ca_entry);
@@ -101,7 +101,7 @@ int run_raw_loop() {
     Wire p{&wire};
     Wire s{&wire};
 
-    auto [pub, sub] = establish_channel<RawPublisher>(std::move(p), std::move(s));
+    auto [pub, sub] = mint_channel<RawPublisher>(std::move(p), std::move(s));
 
     auto p1 = std::move(pub).send(KernelEntry{100}, send_entry);
     auto p2 = std::move(p1).send(KernelEntry{200}, send_entry);

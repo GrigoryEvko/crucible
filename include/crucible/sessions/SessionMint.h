@@ -56,11 +56,11 @@
 //
 // ── Migration ───────────────────────────────────────────────────────
 //
-// Production code that calls make_session_handle<Proto>(resource)
+// Production code that calls mint_session_handle<Proto>(resource)
 // directly today opts in by replacing one line:
 //
 //     // Before:
-//     auto h = make_session_handle<Proto>(resource);
+//     auto h = mint_session_handle<Proto>(resource);
 //     // After:
 //     auto h = mint_session<Proto>(ctx, resource);
 //
@@ -204,7 +204,7 @@ concept CtxFitsProtocol = ::crucible::effects::IsExecCtx<Ctx>
 // ── mint_session<Proto>(ctx, resource) ─────────────────────────────
 //
 // Factory.  Requires CtxFitsProtocol<Proto, Ctx>; returns the
-// existing make_session_handle<Proto>(resource) result.  The
+// existing mint_session_handle<Proto>(resource) result.  The
 // session machinery (Session.h's static_asserts on Proto well-
 // formedness, SessionResource pin discipline, etc.) all run as
 // before.  The added value is the protocol-vs-ctx check — every
@@ -217,7 +217,7 @@ template <class Proto, ::crucible::effects::IsExecCtx Ctx, class Resource>
     Resource&& resource,
     std::source_location loc = std::source_location::current()) noexcept
 {
-    return make_session_handle<Proto>(std::forward<Resource>(resource), loc);
+    return mint_session_handle<Proto>(std::forward<Resource>(resource), loc);
 }
 
 // ── Self-test block ─────────────────────────────────────────────────

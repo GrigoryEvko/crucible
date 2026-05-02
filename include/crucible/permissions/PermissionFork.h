@@ -1,6 +1,6 @@
 #pragma once
 
-// ── crucible::safety::permission_fork — CSL parallel rule encoding ───
+// ── crucible::safety::mint_permission_fork — CSL parallel rule encoding ───
 //
 // Direct C++ encoding of Concurrent Separation Logic's parallel
 // composition rule:
@@ -9,7 +9,7 @@
 //   ────────────────────────────────────────────────────────────────────────
 //   {P1 * P2 * ... * Pn} (C1 || C2 || ... || Cn) {Q1 * Q2 * ... * Qn}
 //
-// permission_fork takes a parent Permission, splits it into N disjoint
+// mint_permission_fork takes a parent Permission, splits it into N disjoint
 // children via splits_into_pack, spawns one std::jthread per child
 // passing it the child Permission, joins all threads (RAII), and
 // returns the parent Permission.  The parent is the SAME Tag the
@@ -29,19 +29,19 @@
 //     spin-loops on conditions) for "all done" — error-prone, the
 //     SHARDED-test deadlock that motivated this file is exactly that
 //     pattern's failure mode.
-//   * permission_fork joins on RAII (jthread destructor in scope-exit
+//   * mint_permission_fork joins on RAII (jthread destructor in scope-exit
 //     order); the parent Permission is returned only AFTER all children
 //     have finished.  No counter, no condition, no spin.
 //
 // Compare to std::async / std::future:
 //   * std::async returns a std::future which the caller must remember
 //     to .get() — easy to leak (future destructor blocks if not got).
-//   * permission_fork is a single expression; the join is automatic.
+//   * mint_permission_fork is a single expression; the join is automatic.
 //
 // Compare to OpenMP / TBB parallel_for:
 //   * Those rely on runtime task-stealing pools (overhead) and don't
 //     plumb permissions through to the bodies.
-//   * permission_fork is zero-overhead beyond jthread spawn/join, and
+//   * mint_permission_fork is zero-overhead beyond jthread spawn/join, and
 //     each child receives a TYPED permission proving its disjoint
 //     region access.
 //
@@ -77,9 +77,9 @@
 //   }
 //
 //   // 2. Mint and fork:
-//   auto whole = permission_root_mint<work::Whole>();
+//   auto whole = mint_permission_root<work::Whole>();
 //
-//   auto returned_whole = permission_fork<work::Left, work::Right>(
+//   auto returned_whole = mint_permission_fork<work::Left, work::Right>(
 //       std::move(whole),
 //       [](Permission<work::Left>) noexcept  { /* mutate left region */ },
 //       [](Permission<work::Right>) noexcept { /* mutate right region */ }
@@ -110,7 +110,7 @@ namespace detail {
 // arbitrary N at compile time without recursion.
 
 template <typename Children, typename Callables, std::size_t... Is>
-void permission_fork_spawn_(Children&& children,
+void mint_permission_fork_spawn_(Children&& children,
                              Callables&& callables,
                              std::index_sequence<Is...>) noexcept
 {
@@ -136,7 +136,7 @@ void permission_fork_spawn_(Children&& children,
 
 }  // namespace detail
 
-// ── permission_fork<Children...>(parent, callables...) ──────────────
+// ── mint_permission_fork<Children...>(parent, callables...) ──────────────
 //
 // Encodes CSL's parallel composition rule.  Returns the rebuilt
 // parent Permission after all children have joined.
@@ -147,24 +147,24 @@ void permission_fork_spawn_(Children&& children,
 //   * each Callable_i invocable as Callable_i(Permission<Child_i>&&)
 
 template <typename... Children, typename Parent, typename... Callables>
-[[nodiscard]] Permission<Parent> permission_fork(
+[[nodiscard]] Permission<Parent> mint_permission_fork(
     Permission<Parent>&& parent,
     Callables&&... callables) noexcept
 {
     static_assert(splits_into_pack_v<Parent, Children...>,
-        "permission_fork<Children...>(Permission<Parent>&&, ...) requires "
+        "mint_permission_fork<Children...>(Permission<Parent>&&, ...) requires "
         "splits_into_pack<Parent, Children...>::value to be specialized true.");
     static_assert(sizeof...(Children) == sizeof...(Callables),
-        "permission_fork: number of Child tags must match number of callables.");
+        "mint_permission_fork: number of Child tags must match number of callables.");
     static_assert((std::is_invocable_v<Callables, Permission<Children>> && ...),
-        "permission_fork: each callable must be invocable as "
+        "mint_permission_fork: each callable must be invocable as "
         "Callable_i(Permission<Child_i>&&).");
     static_assert((std::is_nothrow_invocable_v<Callables, Permission<Children>> && ...),
-        "permission_fork: callables must be noexcept (Crucible -fno-exceptions).");
+        "mint_permission_fork: callables must be noexcept (Crucible -fno-exceptions).");
 
     // Step 1: split the parent into disjoint child Permissions.
     auto child_perms =
-        permission_split_n<Children...>(std::move(parent));
+        mint_permission_split_n<Children...>(std::move(parent));
 
     // Step 2: pack the callables for index_sequence-driven spawn.
     auto callable_pack = std::tuple<std::decay_t<Callables>...>{
@@ -172,7 +172,7 @@ template <typename... Children, typename Parent, typename... Callables>
     };
 
     // Step 3: spawn jthreads, join via array destructor.
-    detail::permission_fork_spawn_(
+    detail::mint_permission_fork_spawn_(
         std::move(child_perms),
         std::move(callable_pack),
         std::index_sequence_for<Children...>{});
@@ -182,7 +182,7 @@ template <typename... Children, typename Parent, typename... Callables>
     // exclusive in the caller's scope.  See discipline note in
     // safety/Permission.h about why this is sound under the
     // linearity/no-exceptions invariants.
-    return permission_fork_rebuild_<Parent>();
+    return mint_permission_fork_rebuild_<Parent>();
 }
 
 }  // namespace crucible::safety

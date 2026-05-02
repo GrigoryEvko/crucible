@@ -231,7 +231,7 @@ class [[nodiscard]] SessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>,
     friend class SessionHandle;
 
     template <typename P, typename R>
-    friend constexpr auto make_session_handle(R r) noexcept;
+    friend constexpr auto mint_session_handle(R r) noexcept;
 
     template <typename R, typename Res, typename L>
     friend constexpr auto detail::step_to_next(Res) noexcept;

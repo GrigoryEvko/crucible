@@ -22,8 +22,8 @@
 //   Linear (move-only)  → "exactly one owner at any moment"  (the * of CSL)
 //   Tag                 → "which region this permission covers" (the labels)
 //   move                → "ownership transfers"                  (frame's R)
-//   permission_split    → "splitting a region into disjoint parts" (P * Q ⊢ P, Q)
-//   permission_combine  → "merging two parts back"                (P, Q ⊢ P * Q)
+//   mint_permission_split    → "splitting a region into disjoint parts" (P * Q ⊢ P, Q)
+//   mint_permission_combine  → "merging two parts back"                (P, Q ⊢ P * Q)
 //
 // A thread that wants to mutate region R must hold Permission<R>.  By
 // linearity, no two simultaneously-live Permission<R> values can
@@ -78,8 +78,8 @@
 //     regime-4 (T + grade carried per instance: Stale/TimeOrdered).
 //
 // Permission<Tag>, SharedPermissionPool, ReadView<Tag>, and the
-// permission_root_mint / permission_split / permission_combine /
-// permission_split_n factories stay structural — they encode the CSL
+// mint_permission_root / mint_permission_split / mint_permission_combine /
+// mint_permission_split_n factories stay structural — they encode the CSL
 // frame rule's discharge mechanics, not a graded value.  Do not
 // extend SharedPermission with new specializations — extend the
 // Graded algebra instead.
@@ -121,15 +121,15 @@
 //   }
 //
 //   // 2. Mint root at startup (single call per Whole tag):
-//   auto whole = permission_root_mint<ring_tags::Whole>();
+//   auto whole = mint_permission_root<ring_tags::Whole>();
 //
 //   // 3. Split into disjoint subregions:
-//   auto [prod, cons] = permission_split<ring_tags::Producer,
+//   auto [prod, cons] = mint_permission_split<ring_tags::Producer,
 //                                        ring_tags::Consumer>(
 //                                                std::move(whole));
 //
 //   // 4. Hand off across threads via std::jthread move (or use
-//   //    permission_fork for structured fork-join — see
+//   //    mint_permission_fork for structured fork-join — see
 //   //    safety/PermissionFork.h):
 //   std::jthread producer_thread{[p = std::move(prod)](auto) mutable {
 //       /* p is the only Permission<Producer> in the program */
@@ -141,7 +141,7 @@
 //    that is shared between threads.  The struct may be aliased and
 //    the type system can't see it; defeats linearity.
 // 2. Mint each root tag exactly once.  No machinery enforces this —
-//    the rule is grep-discoverable (`permission_root_mint<` is the
+//    the rule is grep-discoverable (`mint_permission_root<` is the
 //    only construction call).
 // 3. Tag tree splits_into specializations belong in the SAME
 //    translation unit as the tag definitions.  Reviewers should see
@@ -175,9 +175,9 @@ template <typename Tag> class SharedPermissionPool;
 //   template <> struct splits_into<Whole, Producer, Consumer>
 //                : std::true_type {};
 //
-// permission_split<L, R>(Permission<In>&&) requires
+// mint_permission_split<L, R>(Permission<In>&&) requires
 // splits_into<In, L, R>::value.  Same trait constrains
-// permission_combine<In>(Permission<L>&&, Permission<R>&&).
+// mint_permission_combine<In>(Permission<L>&&, Permission<R>&&).
 
 template <typename Parent, typename L, typename R>
 struct splits_into : std::false_type {};
@@ -219,34 +219,34 @@ class [[nodiscard]] Permission {
     // a new way to mint a Permission and demands review.
 
     template <typename T>
-    friend constexpr Permission<T> permission_root_mint() noexcept;
+    friend constexpr Permission<T> mint_permission_root() noexcept;
 
     template <typename L, typename R, typename In>
     friend constexpr std::pair<Permission<L>, Permission<R>>
-    permission_split(Permission<In>&&) noexcept;
+    mint_permission_split(Permission<In>&&) noexcept;
 
     template <typename In, typename L, typename R>
     friend constexpr Permission<In>
-    permission_combine(Permission<L>&&, Permission<R>&&) noexcept;
+    mint_permission_combine(Permission<L>&&, Permission<R>&&) noexcept;
 
     template <typename... Children, typename In>
     friend constexpr std::tuple<Permission<Children>...>
-    permission_split_n(Permission<In>&&) noexcept;
+    mint_permission_split_n(Permission<In>&&) noexcept;
 
-    // N-ary inverse of permission_split_n.  Added in FOUND-C Phase 1.5
-    // for session_fork's rebuild path: after permission_split_n hands
+    // N-ary inverse of mint_permission_split_n.  Added in FOUND-C Phase 1.5
+    // for session_fork's rebuild path: after mint_permission_split_n hands
     // out N child Permissions to N spawned bodies, and the bodies join,
-    // permission_combine_n folds the N children back into the parent
+    // mint_permission_combine_n folds the N children back into the parent
     // exclusive Permission.  Same splits_into_pack_v<Parent, Children...>
     // gate as split_n.
     template <typename Parent, typename... Children>
     friend constexpr Permission<Parent>
-    permission_combine_n(Permission<Children>&&...) noexcept;
+    mint_permission_combine_n(Permission<Children>&&...) noexcept;
 
     // PermissionFork rebuilds the parent Permission after children
     // have been consumed by their callables.  See safety/PermissionFork.h.
     template <typename T>
-    friend constexpr Permission<T> permission_fork_rebuild_() noexcept;
+    friend constexpr Permission<T> mint_permission_fork_rebuild_() noexcept;
 
     // The Pool's try_upgrade re-emits the parked Permission when the
     // refcount of outstanding shares hits zero.  Construction is sound:
@@ -254,9 +254,9 @@ class [[nodiscard]] Permission {
     // at the moment of issue.  See SharedPermissionPool below.
     template <typename T> friend class SharedPermissionPool;
 
-    // Note: permission_share does NOT need friend access — it consumes
+    // Note: mint_permission_share does NOT need friend access — it consumes
     // a Permission via rvalue-ref (public move binding) and constructs
-    // a SharedPermission (which friends permission_share itself).
+    // a SharedPermission (which friends mint_permission_share itself).
 
 public:
     using tag_type = Tag;
@@ -279,7 +279,7 @@ public:
 // "I am intentionally discarding this permission" at the call site.
 // The corresponding region is unowned forever after this — a fresh
 // permission cannot be re-minted at the same Tag (or rather, can only
-// be done by re-calling permission_root_mint, which is discouraged
+// be done by re-calling mint_permission_root, which is discouraged
 // outside startup).
 
 template <typename Tag>
@@ -291,11 +291,11 @@ constexpr void permission_drop(Permission<Tag>&&) noexcept {
 
 // Root mint.  Call exactly once per Tag at startup.  No machinery
 // detects double-mint; the call site is grep-discoverable
-// (`permission_root_mint<` matches every minting site).
+// (`mint_permission_root<` matches every minting site).
 //
 // Cost: returns a 1-byte empty token.  Inlined to a no-op.
 template <typename Tag>
-[[nodiscard]] constexpr Permission<Tag> permission_root_mint() noexcept {
+[[nodiscard]] constexpr Permission<Tag> mint_permission_root() noexcept {
     return Permission<Tag>{};
 }
 
@@ -304,9 +304,9 @@ template <typename Tag>
 // splits_into<In, L, R> hasn't been specialized true.
 template <typename L, typename R, typename In>
 [[nodiscard]] constexpr std::pair<Permission<L>, Permission<R>>
-permission_split(Permission<In>&& parent) noexcept {
+mint_permission_split(Permission<In>&& parent) noexcept {
     static_assert(splits_into_v<In, L, R>,
-                  "permission_split<L, R>(Permission<In>&&) requires "
+                  "mint_permission_split<L, R>(Permission<In>&&) requires "
                   "splits_into<In, L, R>::value to be specialized true.  "
                   "Declare the split in the same TU that defines the tags.");
     (void)parent;
@@ -319,9 +319,9 @@ permission_split(Permission<In>&& parent) noexcept {
 // Symmetric to split — same splits_into constraint.
 template <typename In, typename L, typename R>
 [[nodiscard]] constexpr Permission<In>
-permission_combine(Permission<L>&& left, Permission<R>&& right) noexcept {
+mint_permission_combine(Permission<L>&& left, Permission<R>&& right) noexcept {
     static_assert(splits_into_v<In, L, R>,
-                  "permission_combine<In>(Permission<L>&&, Permission<R>&&) "
+                  "mint_permission_combine<In>(Permission<L>&&, Permission<R>&&) "
                   "requires splits_into<In, L, R>::value true.");
     (void)left;
     (void)right;
@@ -333,9 +333,9 @@ permission_combine(Permission<L>&& left, Permission<R>&& right) noexcept {
 // the structured-concurrency fork primitive (PermissionFork.h).
 template <typename... Children, typename In>
 [[nodiscard]] constexpr std::tuple<Permission<Children>...>
-permission_split_n(Permission<In>&& parent) noexcept {
+mint_permission_split_n(Permission<In>&& parent) noexcept {
     static_assert(splits_into_pack_v<In, Children...>,
-                  "permission_split_n<Children...>(Permission<In>&&) "
+                  "mint_permission_split_n<Children...>(Permission<In>&&) "
                   "requires splits_into_pack<In, Children...>::value true.");
     (void)parent;
     return std::tuple<Permission<Children>...>{
@@ -343,11 +343,11 @@ permission_split_n(Permission<In>&& parent) noexcept {
     };
 }
 
-// ── permission_combine_n — N-ary inverse of split_n ─────────────────
+// ── mint_permission_combine_n — N-ary inverse of split_n ─────────────────
 //
 // Folds N disjoint child Permissions back into the parent.  The
 // caller passes the children as separate rvalue arguments (typically
-// destructured from the tuple returned by permission_split_n).  Same
+// destructured from the tuple returned by mint_permission_split_n).  Same
 // splits_into_pack_v<Parent, Children...> gate as split_n: every
 // rebuild site is checked against the same declarative manifest.
 //
@@ -357,9 +357,9 @@ permission_split_n(Permission<In>&& parent) noexcept {
 // destructor consumes the moved-in child token.
 template <typename Parent, typename... Children>
 [[nodiscard]] constexpr Permission<Parent>
-permission_combine_n(Permission<Children>&&... children) noexcept {
+mint_permission_combine_n(Permission<Children>&&... children) noexcept {
     static_assert(splits_into_pack_v<Parent, Children...>,
-                  "permission_combine_n<Parent, Children...>("
+                  "mint_permission_combine_n<Parent, Children...>("
                   "Permission<Children>&&...) requires "
                   "splits_into_pack<Parent, Children...>::value true.  "
                   "The combine call must mirror the prior split_n; "
@@ -385,9 +385,9 @@ permission_combine_n(Permission<Children>&&... children) noexcept {
 // structural: the handle's destructor at the end of the lambda body
 // destructs the embedded Permission.
 //
-// NOT a public API; users must go through permission_fork.
+// NOT a public API; users must go through mint_permission_fork.
 template <typename T>
-[[nodiscard]] constexpr Permission<T> permission_fork_rebuild_() noexcept {
+[[nodiscard]] constexpr Permission<T> mint_permission_fork_rebuild_() noexcept {
     return Permission<T>{};
 }
 
@@ -471,7 +471,7 @@ template <typename T>
 // Copyable empty class; sizeof 1 (EBO-collapsible to 0).  Multiple
 // instances may co-exist for the same Tag — that's the point of
 // fractional permissions.  Construction is friended: Pool::Guard
-// produces them, or permission_share() converts an exclusive.
+// produces them, or mint_permission_share() converts an exclusive.
 
 template <typename Tag>
 class [[nodiscard]] SharedPermission {
@@ -480,7 +480,7 @@ class [[nodiscard]] SharedPermission {
     template <typename T> friend class SharedPermissionGuard;
     template <typename T>
     friend constexpr SharedPermission<T>
-    permission_share(Permission<T>&&) noexcept;
+    mint_permission_share(Permission<T>&&) noexcept;
 
 public:
     using tag_type = Tag;
@@ -719,7 +719,7 @@ inline SharedPermissionGuard<Tag>::~SharedPermissionGuard() {
 // caller's scope).
 template <typename Tag>
 [[nodiscard]] constexpr SharedPermission<Tag>
-permission_share(Permission<Tag>&& exc) noexcept {
+mint_permission_share(Permission<Tag>&& exc) noexcept {
     (void)exc;  // consumed
     return SharedPermission<Tag>{};
 }
@@ -900,7 +900,7 @@ static_assert(IsSharedPermissionFor<SharedPermission<detail::seplog_test_tag>,
 static_assert(!IsSharedPermissionFor<SharedPermission<detail::seplog_test_tag>,
                                      detail::seplog_test_left>);
 
-// ── permission_combine_n smoke ──────────────────────────────────────
+// ── mint_permission_combine_n smoke ──────────────────────────────────────
 //
 // Reuses the existing splits_into_pack manifest below.  Round-trip:
 // mint root, split_n into N children, recombine via combine_n,
@@ -922,11 +922,11 @@ struct splits_into_pack<detail::seplog_combine_n_parent,
 
 namespace detail {
 constexpr bool combine_n_round_trip() noexcept {
-    auto whole = permission_root_mint<seplog_combine_n_parent>();
-    auto [a, b, c] = permission_split_n<seplog_combine_n_a,
+    auto whole = mint_permission_root<seplog_combine_n_parent>();
+    auto [a, b, c] = mint_permission_split_n<seplog_combine_n_a,
                                         seplog_combine_n_b,
                                         seplog_combine_n_c>(std::move(whole));
-    auto rebuilt = permission_combine_n<seplog_combine_n_parent>(
+    auto rebuilt = mint_permission_combine_n<seplog_combine_n_parent>(
         std::move(a), std::move(b), std::move(c));
     (void)rebuilt;
     return true;

@@ -29,7 +29,7 @@
 
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
-using ::crucible::safety::permission_root_mint;
+using ::crucible::safety::mint_permission_root;
 
 namespace {
 struct WorkItem {};
@@ -37,12 +37,12 @@ struct FakeChannel { int last_int = 0; };
 
 Transferable<int, WorkItem> wire_recv(FakeChannel& ch) noexcept {
     return Transferable<int, WorkItem>{ch.last_int,
-                                        permission_root_mint<WorkItem>()};
+                                        mint_permission_root<WorkItem>()};
 }
 }
 
 int main() {
-    auto h = establish_permissioned<
+    auto h = mint_permissioned_session<
         Recv<Transferable<int, WorkItem>, End>>(FakeChannel{});
 
     auto [val, h2] = std::move(h).recv(wire_recv);

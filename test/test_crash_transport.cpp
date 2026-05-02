@@ -72,7 +72,7 @@ int run_happy_path() {
     OneShotFlag     flag;   // never signalled
     Channel         ch{&wire, 42};
 
-    auto bare    = make_session_handle<P>(std::move(ch));
+    auto bare    = mint_session_handle<P>(std::move(ch));
     auto watched = crash_watch<ServerPeer>(std::move(bare), flag);
 
     // Send 100.
@@ -106,7 +106,7 @@ int run_crash_before_send() {
     OneShotFlag     flag;
     Channel         ch{&wire, 7};
 
-    auto bare    = make_session_handle<P>(std::move(ch));
+    auto bare    = mint_session_handle<P>(std::move(ch));
     auto watched = crash_watch<ServerPeer>(std::move(bare), flag);
 
     // Signal crash BEFORE the send.
@@ -133,7 +133,7 @@ int run_crash_mid_protocol() {
     OneShotFlag     flag;
     Channel         ch{&wire, 13};
 
-    auto bare    = make_session_handle<P>(std::move(ch));
+    auto bare    = mint_session_handle<P>(std::move(ch));
     auto watched = crash_watch<ServerPeer>(std::move(bare), flag);
 
     // First op succeeds (flag not yet signalled).
@@ -168,7 +168,7 @@ int run_cross_thread_crash() {
     OneShotFlag     flag;
     Channel         ch{&wire, 99};
 
-    auto bare    = make_session_handle<P>(std::move(ch));
+    auto bare    = mint_session_handle<P>(std::move(ch));
     auto watched = crash_watch<ServerPeer>(std::move(bare), flag);
 
     std::atomic<bool> ready{false};
@@ -231,10 +231,10 @@ int run_multi_peer_independent() {
     Channel ch_a{&wire_a, 1};
     Channel ch_b{&wire_b, 2};
 
-    auto bare_a    = make_session_handle<P>(std::move(ch_a));
+    auto bare_a    = mint_session_handle<P>(std::move(ch_a));
     auto watched_a = crash_watch<ServerPeer>(std::move(bare_a), flag_server);
 
-    auto bare_b    = make_session_handle<P>(std::move(ch_b));
+    auto bare_b    = mint_session_handle<P>(std::move(ch_b));
     auto watched_b = crash_watch<OtherPeer>(std::move(bare_b), flag_other);
 
     // Fire ONLY the ServerPeer flag.
@@ -284,7 +284,7 @@ int run_worked_example_cntp_pattern() {
         Channel         ch{&wire, 100 + retry};
         ++attempts;
 
-        auto bare = make_session_handle<RequestReply>(std::move(ch));
+        auto bare = mint_session_handle<RequestReply>(std::move(ch));
         auto watched = crash_watch<ServerPeer>(std::move(bare), flag);
 
         // Send request.

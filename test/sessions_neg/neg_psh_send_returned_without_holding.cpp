@@ -27,7 +27,7 @@
 
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
-using ::crucible::safety::permission_root_mint;
+using ::crucible::safety::mint_permission_root;
 
 namespace {
 struct HotPerm {};
@@ -40,11 +40,11 @@ void wire_send(FakeChannel& ch, Returned<int, HotPerm>&& r) noexcept {
 
 int main() {
     // Establish without HotPerm.
-    auto h = establish_permissioned<Send<Returned<int, HotPerm>, End>>(
+    auto h = mint_permissioned_session<Send<Returned<int, HotPerm>, End>>(
         FakeChannel{});
 
     // Try to "return" a permission the handle never held.
-    Returned<int, HotPerm> payload{99, permission_root_mint<HotPerm>()};
+    Returned<int, HotPerm> payload{99, mint_permission_root<HotPerm>()};
     [[maybe_unused]] auto h2 = std::move(h).send(std::move(payload),
                                                   wire_send);
     return 0;

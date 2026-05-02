@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════════════════
-// test_permission_shared — SharedPermission + Pool + Guard (SEPLOG-A2)
+// test_mint_permission_shared — SharedPermission + Pool + Guard (SEPLOG-A2)
 //
 // Coverage:
 //   Tier 1: structural — sizeof, copy/move semantics (compile-time)
@@ -76,7 +76,7 @@ void test_compile_time_properties() {
 // ── Tier 2: single-thread Pool semantics ──────────────────────────
 
 void test_pool_lend_basic() {
-    auto exc = permission_root_mint<ConfigRegion>();
+    auto exc = mint_permission_root<ConfigRegion>();
     SharedPermissionPool<ConfigRegion> pool{std::move(exc)};
 
     CRUCIBLE_TEST_REQUIRE(pool.outstanding() == 0);
@@ -105,7 +105,7 @@ void test_pool_lend_basic() {
 }
 
 void test_guard_move_semantics() {
-    auto exc = permission_root_mint<ConfigRegion>();
+    auto exc = mint_permission_root<ConfigRegion>();
     SharedPermissionPool<ConfigRegion> pool{std::move(exc)};
 
     {
@@ -125,7 +125,7 @@ void test_guard_move_semantics() {
 }
 
 void test_try_upgrade_succeeds_when_idle() {
-    auto exc = permission_root_mint<ConfigRegion>();
+    auto exc = mint_permission_root<ConfigRegion>();
     SharedPermissionPool<ConfigRegion> pool{std::move(exc)};
 
     auto recovered = pool.try_upgrade();
@@ -144,7 +144,7 @@ void test_try_upgrade_succeeds_when_idle() {
 }
 
 void test_try_upgrade_fails_when_outstanding() {
-    auto exc = permission_root_mint<ConfigRegion>();
+    auto exc = mint_permission_root<ConfigRegion>();
     SharedPermissionPool<ConfigRegion> pool{std::move(exc)};
 
     auto guard = pool.lend();
@@ -175,7 +175,7 @@ void test_lend_vs_upgrade_no_simultaneity() {
     constexpr int NUM_THREADS = 8;
     constexpr int ITERATIONS  = 5000;
 
-    auto exc = permission_root_mint<MetricsRegion>();
+    auto exc = mint_permission_root<MetricsRegion>();
     SharedPermissionPool<MetricsRegion> pool{std::move(exc)};
 
     // "Number of threads logically inside an exclusive section."
@@ -281,7 +281,7 @@ void test_swmr_sees_consistent_state() {
     constexpr int NUM_READERS = 6;
     constexpr int ITERATIONS  = 1000;
 
-    auto exc = permission_root_mint<MetricsRegion>();
+    auto exc = mint_permission_root<MetricsRegion>();
     SharedPermissionPool<MetricsRegion> pool{std::move(exc)};
     GuardedCounter counter;  // protected by the SharedPermission protocol
 
@@ -349,7 +349,7 @@ void test_swmr_sees_consistent_state() {
 // ── Tier 5: with_shared_read scoped helper ────────────────────────
 
 void test_with_shared_read_helper() {
-    auto exc = permission_root_mint<ConfigRegion>();
+    auto exc = mint_permission_root<ConfigRegion>();
     SharedPermissionPool<ConfigRegion> pool{std::move(exc)};
 
     // Non-void body: returns a value through optional.
@@ -380,11 +380,11 @@ void test_with_shared_read_helper() {
     pool.deposit_exclusive(std::move(*upgrade));
 }
 
-// ── permission_share (untracked one-shot conversion) ──────────────
+// ── mint_permission_share (untracked one-shot conversion) ──────────────
 
-void test_permission_share() {
-    auto exc = permission_root_mint<ConfigRegion>();
-    auto shared = permission_share(std::move(exc));
+void test_mint_permission_share() {
+    auto exc = mint_permission_root<ConfigRegion>();
+    auto shared = mint_permission_share(std::move(exc));
     static_assert(std::is_same_v<decltype(shared), SharedPermission<ConfigRegion>>);
     // Copyable now.
     SharedPermission<ConfigRegion> shared2 = shared;
@@ -395,7 +395,7 @@ void test_permission_share() {
 }  // namespace
 
 int main() {
-    std::fprintf(stderr, "test_permission_shared:\n");
+    std::fprintf(stderr, "test_mint_permission_shared:\n");
 
     test_compile_time_properties();  // pure compile-time
 
@@ -406,7 +406,7 @@ int main() {
     run_test("test_lend_vs_upgrade_no_simultaneity", test_lend_vs_upgrade_no_simultaneity);
     run_test("test_swmr_sees_consistent_state",      test_swmr_sees_consistent_state);
     run_test("test_with_shared_read_helper",         test_with_shared_read_helper);
-    run_test("test_permission_share",                test_permission_share);
+    run_test("test_mint_permission_share",                test_mint_permission_share);
 
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     if (total_failed > 0) return EXIT_FAILURE;
