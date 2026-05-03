@@ -142,17 +142,23 @@ cmake --build --preset bench --target bench-caps
 ```
 
 The ELF xattr is destroyed on every relink, so re-run after rebuilds. If BPF still fails to
-load, set `CRUCIBLE_BENCH_BPF_VERBOSE=1` to see libbpf diagnostics on stderr.
+load, set `CRUCIBLE_PERF_VERBOSE=1` (or the legacy `CRUCIBLE_BENCH_BPF_VERBOSE=1`) to see
+libbpf diagnostics on stderr.
 
 ## Environment variables
+
+The `CRUCIBLE_PERF_*` names are the canonical post-promotion (GAPS-004a, 2026-05-03) form:
+the SenseHub now lives at `<crucible/perf/SenseHub.h>` and is shared between bench and
+production code. The legacy `CRUCIBLE_BENCH_BPF_*` names are still honoured as
+backward-compatible aliases for existing bench workflows; either form works at any time.
 
 | Variable | Controls | Default | Example |
 |----------|----------|---------|---------|
 | `CRUCIBLE_BENCH_SAMPLES` | Per-bench sample count when `.samples(N)` not set. | `100000` | `CRUCIBLE_BENCH_SAMPLES=1000000 ./bench_arena` |
 | `CRUCIBLE_BENCH_CORE` | CPU to pin to (read by individual bench mains). `-1` → harness auto-pick (first isolcpu, else current). | `-1` | `CRUCIBLE_BENCH_CORE=3 ./bench_arena` |
 | `CRUCIBLE_BENCH_JSON` | Emit one-JSON-object-per-bench instead of text when non-empty and not `"0"`. | unset | `CRUCIBLE_BENCH_JSON=1 ./bench_arena > out.jsonl` |
-| `CRUCIBLE_BENCH_BPF_VERBOSE` | Route libbpf log callbacks to stderr (load / verifier diagnostics). | unset | `CRUCIBLE_BENCH_BPF_VERBOSE=1 ./bench_arena` |
-| `CRUCIBLE_BENCH_BPF_QUIET` | Suppress the one-line BPF load-failure diagnostic. | unset | `CRUCIBLE_BENCH_BPF_QUIET=1 ./bench_arena` |
+| `CRUCIBLE_PERF_VERBOSE` (or legacy `CRUCIBLE_BENCH_BPF_VERBOSE`) | Route libbpf log callbacks to stderr (load / verifier diagnostics). | unset | `CRUCIBLE_PERF_VERBOSE=1 ./bench_arena` |
+| `CRUCIBLE_PERF_QUIET` (or legacy `CRUCIBLE_BENCH_BPF_QUIET`) | Suppress the one-line BPF load-failure diagnostic. | unset | `CRUCIBLE_PERF_QUIET=1 ./bench_arena` |
 
 ## Interpreting "clean" vs non-clean
 

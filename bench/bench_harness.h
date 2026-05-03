@@ -63,14 +63,29 @@
   #include <sys/resource.h>
 #endif
 
-#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
-  #include "bpf_senses.h"
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
+  // Promoted on 2026-05-03 (GAPS-004a) from bench-local bpf_senses.h
+  // to the production observability substrate at
+  // include/crucible/perf/SenseHub.h.  The namespace alias below
+  // keeps every existing `bench::bpf::*` reference compiling at
+  // zero runtime cost (alias is a compile-time symlink); a future
+  // mechanical rename can drop the alias and replace
+  // `bench::bpf::` with `crucible::perf::` everywhere in one sweep.
+  #include <crucible/perf/SenseHub.h>
 #endif
 
 #include <crucible/rt/Hardening.h>
 #include <crucible/rt/Policy.h>
 
 namespace bench {
+
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
+// Backwards-compatible alias: every legacy `bench::bpf::Snapshot`,
+// `bench::bpf::SCHED_CTX_INVOL`, `bench::bpf::SenseHub::load()` etc.
+// resolves to the canonical crucible::perf:: symbol post-promotion.
+namespace bpf = ::crucible::perf;
+#endif
+
 
 // ── CpuId strong type (TypeSafe axiom) ─────────────────────────────
 //
@@ -349,9 +364,16 @@ namespace detail {
 // CAP_BPF, kernel.unprivileged_bpf_disabled=2, kernel too old).
 
 namespace detail {
-#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
 [[nodiscard]] inline const bench::bpf::SenseHub* bpf_instance() noexcept {
-    static std::optional<bench::bpf::SenseHub> slot = bench::bpf::SenseHub::load();
+    // SenseHub::load(effects::Init) takes a 1-byte init capability tag
+    // (post-GAPS-004a hardening, 2026-05-03).  Static-init context is
+    // load-bearing init; constructing Init{} here is the canonical
+    // form.  Hot-path code holds no Init capability and therefore
+    // cannot synthesize the argument — this guarantees the entire
+    // call chain rooted at SenseHub::load() never reaches a hot frame.
+    static std::optional<bench::bpf::SenseHub> slot =
+        bench::bpf::SenseHub::load(::crucible::effects::Init{});
     return slot.has_value() ? &*slot : nullptr;
 }
 #else
@@ -477,7 +499,7 @@ struct Report {
     // RSS_{ANON,FILE,SHMEM}_BYTES, RSS_SWAP_ENTRIES) the post - pre
     // difference is meaningless; callers wanting those instantaneous
     // values should pull them from the post snapshot directly.
-#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     bench::bpf::Snapshot bpf_delta{};
     size_t               bpf_attached = 0;  // # programs the kernel accepted
 #endif
@@ -567,7 +589,7 @@ struct Report {
         if (freq_drift_flag)   std::fprintf(out, "  [freq-drift]");
         std::fprintf(out, "\n");
 
-#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         // One-line sensory summary. When BPF is attached and every
         // interesting counter is zero we still emit "└─ sched clean"
         // as confirmation that senses ARE attached (so the reader can
@@ -626,14 +648,14 @@ struct Report {
             cycles_per_op,
             static_cast<unsigned long>(freq_start_hz),
             static_cast<unsigned long>(freq_end_hz));
-#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         print_bpf_json_(out);
 #endif
         std::fputc('}', out);
     }
 
  private:
-#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     // Print every monotonic counter that actually incremented during the
     // run, in unit-scaled form. The gauge-valued Idx slots listed in
     // bpf_senses.h's Snapshot::operator- comment (FD_CURRENT, TCP_
@@ -996,7 +1018,7 @@ class Run {
 
         const uint64_t freq_start = detail::read_cpu_freq_hz(pinned_cpu.raw());
 
-#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         const bench::bpf::SenseHub* hub = detail::bpf_instance();
         bench::bpf::Snapshot        bpf_pre{};
         bench::bpf::Snapshot        bpf_post{};
@@ -1008,7 +1030,7 @@ class Run {
         std::vector<double> ns_samples(S);
         size_t              filled = 0;
 
-#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         if (hub != nullptr) bpf_pre = hub->read();
 #endif
         const auto wall0 = std::chrono::steady_clock::now();
@@ -1039,7 +1061,7 @@ class Run {
         ns_samples.resize(filled);
 
         const auto wall1 = std::chrono::steady_clock::now();
-#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         if (hub != nullptr) bpf_post = hub->read();
 #endif
         const uint64_t freq_end = detail::read_cpu_freq_hz(pinned_cpu.raw());
@@ -1098,10 +1120,15 @@ class Run {
             r.cycles_per_op = r.pct.mean * tsc_hz / 1e9;
         }
 
-#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         if (hub != nullptr) {
             r.bpf_delta    = bpf_post - bpf_pre;
-            r.bpf_attached = hub->attached_programs();
+            // attached_programs() returns Refined<bounded_above<64>, size_t>
+            // post-GAPS-004a — the type carries a structural ≤64 bound that
+            // matches inplace_vector<bpf_link*, 64>'s capacity.  Unwrap with
+            // .value() for the raw count expected by the bench Report
+            // struct (kept as plain size_t for printf-friendly emission).
+            r.bpf_attached = hub->attached_programs().value();
         }
 #endif
 
@@ -1322,11 +1349,11 @@ inline void print_system_info(FILE* out = stdout) {
             "cycles/op will read 0.\n");
     }
 
-#if defined(CRUCIBLE_BENCH_HAVE_BPF) && CRUCIBLE_BENCH_HAVE_BPF
+#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     const bench::bpf::SenseHub* hub = detail::bpf_instance();
     if (hub != nullptr) {
         std::fprintf(out, "  BPF senses: loaded (%zu tracepoints attached)\n",
-                     hub->attached_programs());
+                     hub->attached_programs().value());
     } else {
         std::fprintf(out,
             "  BPF senses: UNAVAILABLE — set CRUCIBLE_BENCH_BPF_VERBOSE=1 for libbpf logs;\n"

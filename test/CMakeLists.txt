@@ -424,18 +424,32 @@ crucible_test(test_recipe_coverage)
 crucible_test(test_recipe_registry_tier)
 crucible_test(test_recipe_registry_spec)
 
-# bench harness unit tests — include bench/ for bench_harness.h + bpf_senses.h.
-# CRUCIBLE_BENCH_HAVE_BPF is intentionally unset: the test exercises only
-# the non-BPF statistical primitives plus Snapshot::operator- (which is
-# a header-only inline using crucible::sat::sub_sat from Saturate.h).
-# Use SYSTEM include to silence -Werror diagnostics from the headers we
-# don't own (other agents' territory); our .cpp still honours -Werror.
+# bench harness unit tests — include bench/ for bench_harness.h.
+# Snapshot now lives at <crucible/perf/SenseHub.h> (post-promotion via
+# GAPS-004a, 2026-05-03) and is reached through the standard `crucible`
+# include path; the bench-local include below carries only
+# bench_harness.h itself.  CRUCIBLE_HAVE_BPF is intentionally unset for
+# this TU — the test exercises only the non-BPF statistical primitives
+# plus Snapshot::operator- (a header-only inline using
+# crucible::sat::sub_sat from Saturate.h, doesn't need libbpf at link
+# time).  Use SYSTEM include to silence -Werror diagnostics from the
+# headers we don't own (other agents' territory); our .cpp still
+# honours -Werror.
 crucible_test(test_bench_harness)
 # Exercises the crucible::rt module — realtime policy rails
 # (SCHED_FIFO/RR priority clamp, mlock, CPU-pin helpers). Header-only,
 # no special capabilities required at test time (the smoke checks the
 # policy arithmetic / guard object semantics, not live scheduler calls).
 crucible_test(test_rt_policy)
+
+# crucible::perf::SenseHub sentinel TU (GAPS-004a, 2026-05-03).
+# Verifies the promoted observability substrate compiles + links
+# through the standard `crucible` PUBLIC include path and that the
+# Idx fence-post ordinals haven't drifted.  When CRUCIBLE_HAVE_BPF=1
+# the test also calls SenseHub::load() once to confirm the loader
+# symbol is link-reachable (return value is don't-care; depends on
+# the running kernel's caps, see test docstring).
+crucible_test(test_perf_sense_hub_smoke)
 target_include_directories(test_bench_harness SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
 

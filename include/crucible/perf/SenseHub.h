@@ -1,21 +1,41 @@
 #pragma once
 
-// eBPF-backed sensory hub for the Crucible bench harness.
+// crucible::perf::SenseHub — eBPF-backed observability substrate.
 //
-// Ports the symbiotic sense_hub to C++: the same BPF program
-// (bench/bpf/sense_hub.bpf.c, 96 counters, 58 tracepoints) is compiled
-// at build time, embedded as bytecode, loaded into the kernel via
-// libbpf at runtime. Counters live in a BPF_F_MMAPABLE array map;
-// userspace reads are volatile mmap loads — one syscall-free volatile
-// read of 12 cache lines, ~50 ns. Zero cost inside the benched code:
-// tracepoint handlers run in kernel context on the event, not on our
-// measurement path.
+// 96 counters spanning 11 cache lines, populated by the kernel-side
+// BPF program at include/crucible/perf/bpf/sense_hub.bpf.c via 58
+// tracepoints (sched_switch, sched_migrate_task, futex_wait, all the
+// page-fault / mmap / brk / iowait / softirq / page-cache /
+// readahead / TCP / UDP / signal / OOM tracepoints).  Counters live
+// in a BPF_F_MMAPABLE array map; userspace reads are volatile mmap
+// loads — one syscall-free volatile read of 12 cache lines, ~50 ns.
+// Zero cost on the foreground path: tracepoint handlers run in
+// kernel context on the event, not on our measurement path.
 //
-// Typical bench integration:
+// ─── History ──────────────────────────────────────────────────────
 //
-//     if (auto h = bench::bpf::SenseHub::load()) {
+// Promoted to include/crucible/perf/ on 2026-05-03 (GAPS-004a) from
+// its original home under bench/bpf_senses.{h,cpp}.  The substrate
+// is production-grade — full ERR_PTR-aware libbpf binding, autoload
+// disable for unavailable tracepoints, partial-coverage diagnostics,
+// PIMPL'd state, RAII destructor — and conceptually belongs to
+// Augur (the L15 prediction/monitoring layer) rather than to bench.
+// Bench remains a consumer via a one-line `namespace bench::bpf =
+// crucible::perf;` alias; the canonical API is `crucible::perf::*`.
+//
+// ─── Two-tier observability design ─────────────────────────────────
+//
+// SenseHub answers "is something slow" with cheap, always-on global
+// counters.  The 6 sibling per-key probes (sched_switch, pmu_sample,
+// lock_contention, syscall_latency, sched_tp_btf, syscall_tp_btf)
+// answer "where is it slow" — per-lock-address, per-IP, per-call-
+// site, per-syscall attribution that's heavier and opt-in.
+//
+// Production usage:
+//
+//     if (auto h = crucible::perf::SenseHub::load()) {
 //         auto pre  = h->read();
-//         // ... run bench ...
+//         // ... run workload ...
 //         auto post = h->read();
 //         auto delta = post - pre;
 //         // delta.counters[SCHED_CTX_INVOL] = preemptions during run
@@ -25,21 +45,21 @@
 // libbpf load/verify fails), load() returns nullopt and the caller
 // proceeds without sensory data — ns/cycles latencies are unaffected.
 
+#include <crucible/effects/Capabilities.h>  // effects::Init capability tag
+#include <crucible/safety/Borrowed.h>       // safety::Borrowed<T, Source>
+#include <crucible/safety/Refined.h>        // safety::Refined / bounded_above
+
 #include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
 
-namespace bench::bpf {
+namespace crucible::perf {
 
-// Counter indices — must match enum sense_idx in bench/bpf/sense_hub.bpf.c.
-// Gaps in the numbering (e.g. 38–39, 75–95) are reserved slots mapped
-// to zero; they exist so each subsystem lives on its own cache line.
-//
-// TODO: enum class upgrade requires updating all 62 call sites in
-// bench_harness.h — unscoped enum is kept intentionally for now so the
-// TypeSafe axiom trade-off (implicit Idx→uint32_t conversions inside
-// counter_set/get helpers) stays local to this header.
+// Counter indices — must match enum sense_idx in
+// include/crucible/perf/bpf/sense_hub.bpf.c.  Gaps in the numbering
+// (e.g. 38–39, 75–95) are reserved slots mapped to zero; they exist
+// so each subsystem lives on its own cache line.
 enum Idx : uint32_t {
     // ── Cache line 0: Network State ──────────────────────────────
     NET_TCP_ESTABLISHED     = 0,
@@ -138,11 +158,12 @@ enum Idx : uint32_t {
     NUM_COUNTERS            = 96,
 };
 
-// A point-in-time read of all 96 counters. Diffing two snapshots gives
-// per-run deltas; the subsystems with monotonic semantics (NET_TX_BYTES,
-// MEM_PAGE_FAULTS_*, SCHED_*, etc.) read meaningfully as b - a.
-// Counters that behave as gauges (FD_CURRENT, TCP_MIN_SRTT_US,
-// THERMAL_MAX_TRIP) are snapshots of instantaneous state — use b.
+// A point-in-time read of all 96 counters.  Diffing two snapshots
+// gives per-run deltas; the subsystems with monotonic semantics
+// (NET_TX_BYTES, MEM_PAGE_FAULTS_*, SCHED_*, etc.) read meaningfully
+// as b - a.  Counters that behave as gauges (FD_CURRENT,
+// TCP_MIN_SRTT_US, THERMAL_MAX_TRIP) are snapshots of instantaneous
+// state — use b.
 struct Snapshot {
     std::array<uint64_t, NUM_COUNTERS> counters{};
 
@@ -161,24 +182,24 @@ struct Snapshot {
     //
     //   FD_CURRENT, TCP_{MIN,MAX}_SRTT_US, TCP_LAST_CWND,
     //   THERMAL_MAX_TRIP, SIGNAL_LAST_SIGNO, OOM_KILL_US,
-    //   RECLAIM_STALL_LOOPS, NET_TCP_*, NET_UDP_ACTIVE, NET_UNIX_ACTIVE,
-    //   RSS_{ANON,FILE,SHMEM}_BYTES, RSS_SWAP_ENTRIES
+    //   RECLAIM_STALL_LOOPS, NET_TCP_*, NET_UDP_ACTIVE,
+    //   NET_UNIX_ACTIVE, RSS_{ANON,FILE,SHMEM}_BYTES,
+    //   RSS_SWAP_ENTRIES
     //
     // For these, post < pre is physically possible (a TCP connection
-    // closed, RSS shrank). A raw u64 subtraction wraps to ~2^64 and the
-    // pretty-printer would render "18.4E" garbage. Saturate the
+    // closed, RSS shrank).  A raw u64 subtraction wraps to ~2^64 and
+    // the pretty-printer would render "18.4E" garbage.  Saturate the
     // subtraction to 0 so gauges that decreased simply read as "no
-    // delta" in diffs — accurate enough for the bench harness without
-    // poisoning the table.
+    // delta" in diffs — accurate enough without poisoning the table.
     //
     // Callers that need the true gauge value should pull it from the
     // post snapshot directly.
     //
     // std::sub_sat (P0543, C++26) would fit perfectly here, but
     // libstdc++ 16.0.1 hasn't wired __glibcxx_saturation_arithmetic
-    // through yet. Using __builtin_sub_overflow directly lowers to a
-    // single SUB + CMOV on x86-64, identical to what std::sub_sat would
-    // emit once available.
+    // through yet.  Using __builtin_sub_overflow directly lowers to a
+    // single SUB + CMOV on x86-64, identical to what std::sub_sat
+    // would emit once available.
     [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
         Snapshot r;
         for (size_t i = 0; i < NUM_COUNTERS; ++i) {
@@ -206,31 +227,65 @@ static_assert(sizeof(Snapshot) == NUM_COUNTERS * sizeof(uint64_t),
 class SenseHub {
  public:
     // Load the embedded BPF program, set target_tgid to getpid(),
-    // attach every tracepoint, mmap the counter array. Returns
+    // attach every tracepoint, mmap the counter array.  Returns
     // std::nullopt if any step fails (missing CAP_BPF, kernel lacks
     // a tracepoint, verifier rejects, etc.).
     //
+    // The first parameter is a `::crucible::effects::Init` capability
+    // tag (1 byte, EBO-collapsed at most call sites) — load() is a
+    // one-shot startup operation that consumes Alloc + IO and must
+    // never be reachable from a hot-path frame.  Hot-path frames
+    // hold no `effects::Init` token and therefore cannot construct
+    // the argument; the absence of the cap is the type-system gate
+    // that prevents accidental hot-path SenseHub::load() calls.
+    // Init-time call sites construct the tag inline:
+    //
+    //     auto hub = crucible::perf::SenseHub::load(crucible::effects::Init{});
+    //
+    // The returned optional is typically cached in a process-wide
+    // static so the load cost is paid exactly once.
+    //
     // The diagnostic line (if any) is printed to stderr unless
-    // CRUCIBLE_BENCH_BPF_QUIET=1 is set in the environment.
-    [[nodiscard]] static std::optional<SenseHub> load() noexcept;
+    // CRUCIBLE_PERF_QUIET=1 (or the legacy CRUCIBLE_BENCH_BPF_QUIET=1)
+    // is set in the environment.
+    [[nodiscard]] static std::optional<SenseHub>
+        load(::crucible::effects::Init) noexcept;
 
     // ~50 ns volatile read of 12 cache lines.
     [[nodiscard]] Snapshot read() const noexcept;
 
-    // Direct pointer to the mmap'd counter array — for advanced readers
-    // that want to pull specific slots without cloning the whole vector.
-    [[nodiscard]] const volatile uint64_t* counters_ptr() const noexcept;
+    // Direct view into the mmap'd counter array — for advanced
+    // readers that want to pull specific slots without cloning the
+    // whole vector.  Returned as a `safety::Borrowed<...>` typed
+    // span: the lifetime of the underlying mmap is owned by the
+    // SenseHub instance, so the Borrowed view's `Source` parameter
+    // names that owner explicitly.  The view always spans
+    // NUM_COUNTERS elements when present, and is the empty span
+    // (`.empty() == true`) on a moved-from / un-loaded SenseHub.
+    [[nodiscard]] safety::Borrowed<const volatile uint64_t, SenseHub>
+        counters_view() const noexcept;
 
-    // Number of bpf_link attachments the kernel accepted. For every
-    // unattachable tracepoint (old kernel, CONFIG_* missing), one
-    // program is silently dropped; inspect this to know how much
-    // coverage we have.
-    [[nodiscard]] size_t attached_programs() const noexcept;
+    // Number of bpf_link attachments the kernel accepted.  Bounded
+    // above by the State::links inplace_vector capacity (64); the
+    // `Refined<bounded_above<64>, size_t>` return type encodes the
+    // bound at the type level so consumers can rely on it without
+    // re-validating, and a future bump of the inplace_vector cap
+    // will surface as a single point of edit (this header) rather
+    // than an audit across every consumer.  Use `.value()` for the
+    // raw count.  For every unattachable tracepoint (old kernel,
+    // CONFIG_* missing), one program is silently dropped; inspect
+    // this to know how much coverage we have.
+    [[nodiscard]] safety::Refined<safety::bounded_above<64>, std::size_t>
+        attached_programs() const noexcept;
 
-    // Number of bpf_program__attach calls that failed (returned NULL
-    // or an ERR_PTR). Non-zero means some subsystems are dark; set
-    // CRUCIBLE_BENCH_BPF_VERBOSE=1 to see which ones.
-    [[nodiscard]] size_t attach_failures()   const noexcept;
+    // Number of bpf_program__attach calls that failed (returned
+    // NULL or an ERR_PTR).  Same `bounded_above<64>` envelope as
+    // attached_programs() — both counters originate from the same
+    // bounded program-iteration loop.  Non-zero means some
+    // subsystems are dark; set CRUCIBLE_PERF_VERBOSE=1 (or the
+    // legacy CRUCIBLE_BENCH_BPF_VERBOSE=1) to see which ones.
+    [[nodiscard]] safety::Refined<safety::bounded_above<64>, std::size_t>
+        attach_failures() const noexcept;
 
     SenseHub(const SenseHub&) =
         delete("SenseHub owns unique BPF object + mmap — copying would double-close");
@@ -247,4 +302,4 @@ class SenseHub {
     std::unique_ptr<State> state_;
 };
 
-} // namespace bench::bpf
+}  // namespace crucible::perf

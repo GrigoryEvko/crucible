@@ -1,25 +1,26 @@
 // Unit tests for bench/bench_harness.h statistical primitives and for
-// bench/bpf_senses.h Snapshot delta.
+// crucible::perf::Snapshot delta semantics.
 //
 // Coverage (one invariant per test function):
-//   1. bench::percentile_interp        — R type 7 (Hyndman & Fan 1996)
-//   2. bench::Percentiles::compute     — sort + per-percentile + moments
-//   3. bench::bootstrap_ci             — Efron (1979) bootstrap CI, seed-deterministic
-//   4. bench::compare                  — Mann-Whitney U (Mann & Whitney 1947)
-//   5. bench::bpf::Snapshot::operator- — saturating per-counter delta (gauge-safe)
+//   1. bench::percentile_interp           — R type 7 (Hyndman & Fan 1996)
+//   2. bench::Percentiles::compute        — sort + per-percentile + moments
+//   3. bench::bootstrap_ci                — Efron (1979) bootstrap CI, seed-deterministic
+//   4. bench::compare                     — Mann-Whitney U (Mann & Whitney 1947)
+//   5. crucible::perf::Snapshot::operator-— saturating per-counter delta (gauge-safe)
 //
 // Methodology:
-//   Raw main() + CHECK macro. No gtest, no catch2. Every failure prints
-//   file:line to stderr but the test continues so we see all failures
-//   per run. main() returns nonzero iff any CHECK failed and prints a
-//   final PASS/FAIL summary.
+//   Raw main() + CHECK macro.  No gtest, no catch2.  Every failure
+//   prints file:line to stderr but the test continues so we see all
+//   failures per run.  main() returns nonzero iff any CHECK failed
+//   and prints a final PASS/FAIL summary.
 //
 // Build context:
-//   Default preset (GCC 16, -std=c++26 -Werror). CRUCIBLE_BENCH_HAVE_BPF
-//   is NOT defined here → bench_harness.h's BPF-gated code paths are
-//   inactive, and bpf_senses.h is included directly for Snapshot only
-//   (we never instantiate SenseHub, which lives in bpf_senses.cpp and
-//   is not linked).
+//   Default preset (GCC 16, -std=c++26 -Werror).  CRUCIBLE_HAVE_BPF
+//   is NOT defined here (test/ doesn't link the BPF substrate) →
+//   bench_harness.h's BPF-gated code paths are inactive, and
+//   <crucible/perf/SenseHub.h> is included directly for Snapshot only
+//   (we never instantiate SenseHub, which lives in src/perf/SenseHub.cpp
+//   and is not linked into this test TU).
 
 // stdlib
 #include <algorithm>
@@ -36,7 +37,15 @@
 
 // crucible / bench
 #include "bench_harness.h"
-#include "bpf_senses.h"
+#include <crucible/perf/SenseHub.h>
+
+// Promoted on 2026-05-03 (GAPS-004a): test code uses `bench::bpf::*`
+// historically; the alias re-roots them at the canonical
+// crucible::perf:: namespace at zero runtime cost.  Namespace
+// aliases must be declared INSIDE an opening `namespace bench {}`
+// — C++ does not parse `namespace bench::bpf = ...` as a nested
+// alias declaration.
+namespace bench { namespace bpf = ::crucible::perf; }
 
 namespace {
 

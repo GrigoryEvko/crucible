@@ -14,172 +14,23 @@
 # Usage: `cmake --build --preset bench --target bench-caps`
 # See the target's own comment block for rationale + caveats.
 
-# ── eBPF sense hub ──────────────────────────────────────────────────
+# eBPF sense hub: previously compiled+embedded here as
+# `crucible_bench_bpf`.  As of GAPS-004a (2026-05-03) the substrate
+# moved to include/crucible/perf/SenseHub.h + src/perf/SenseHub.cpp,
+# and is bundled into the production `crucible_perf` static library
+# wired by the root CMakeLists.txt via cmake/CrucibleBpf.cmake.
+# Bench targets get the loader transitively when they link
+# `crucible` — no per-bench BPF wiring needed below.
 #
-# When libbpf + a BPF-capable clang are available, compile the kernel
-# sense_hub.bpf.c program (96 counters, 58 tracepoints) to BPF
-# bytecode, embed it into a static library as a byte array via xxd,
-# and link that library into every bench target. Benches that don't
-# care about the senses simply don't call SenseHub::load().
+# The CRUCIBLE_HAVE_BPF compile definition is set PUBLIC on the
+# `crucible` target (1 if the substrate compiled in, 0 otherwise),
+# so bench_harness.h's #if defined(CRUCIBLE_HAVE_BPF)... gate fires
+# correctly for every bench target without re-declaring the macro
+# below.
 #
-# Opt out via: cmake --preset bench -DCRUCIBLE_BENCH_BPF=OFF
-option(CRUCIBLE_BENCH_BPF "Compile + embed the eBPF sense hub" ON)
-
-set(CRUCIBLE_BENCH_BPF_AVAILABLE FALSE)
-
-if (CRUCIBLE_BENCH_BPF)
-  find_package(PkgConfig QUIET)
-  if (PkgConfig_FOUND)
-    pkg_check_modules(LIBBPF QUIET IMPORTED_TARGET libbpf)
-  endif()
-
-  # Prefer the system clang (/usr/bin, /usr/local/bin) for BPF because
-  # the user's personal toolchain under ~/.local/llvm/bin is a newer
-  # clang (22.x) that may reject the installed kernel's BTF or emit
-  # relocations libbpf doesn't yet understand. The system clang is the
-  # version matched against the running kernel's BPF ABI. Fall back to
-  # whatever's on PATH if no system clang is installed.
-  find_program(CLANG_BPF_COMPILER NAMES clang
-    PATHS /usr/bin /usr/local/bin NO_DEFAULT_PATH)
-  if (NOT CLANG_BPF_COMPILER)
-    find_program(CLANG_BPF_COMPILER NAMES clang)
-  endif()
-
-  find_program(XXD_EXECUTABLE NAMES xxd)
-
-  # setcap for the bench-caps convenience target (kernel ≥ 5.8 requires
-  # CAP_BPF + CAP_PERFMON for tracepoint programs; setcap bakes these
-  # into the ELF file's security.capability xattr). Mirror the clang
-  # lookup: prefer /usr/sbin /sbin (the canonical location on most
-  # distros), fall back to default PATH in case it's packaged under
-  # /usr/bin somewhere unusual.
-  find_program(SETCAP_EXECUTABLE NAMES setcap PATHS /usr/sbin /sbin NO_DEFAULT_PATH)
-  if (NOT SETCAP_EXECUTABLE)
-    find_program(SETCAP_EXECUTABLE NAMES setcap)
-  endif()
-
-  if (LIBBPF_FOUND AND CLANG_BPF_COMPILER AND XXD_EXECUTABLE)
-    set(CRUCIBLE_BENCH_BPF_AVAILABLE TRUE)
-    if (LIBBPF_VERSION)
-      message(STATUS "bench: eBPF sense hub ENABLED (libbpf ${LIBBPF_VERSION}, ${CLANG_BPF_COMPILER})")
-    else()
-      message(STATUS "bench: eBPF sense hub ENABLED (libbpf, ${CLANG_BPF_COMPILER})")
-    endif()
-    if (SETCAP_EXECUTABLE)
-      message(STATUS "bench: `cmake --build --preset bench --target bench-caps` to apply BPF caps (sudo)")
-    else()
-      message(STATUS "bench: setcap not found — benches will need sudo/run-as-root at invocation")
-    endif()
-  else()
-    message(STATUS "bench: eBPF sense hub DISABLED — missing:"
-      "$<$<NOT:$<BOOL:${LIBBPF_FOUND}>>: libbpf>"
-      "$<$<NOT:$<BOOL:${CLANG_BPF_COMPILER}>>: clang>"
-      "$<$<NOT:$<BOOL:${XXD_EXECUTABLE}>>: xxd>")
-  endif()
-endif()
-
-# Gate the BPF __TARGET_ARCH_* define on the build host. BPF CO-RE
-# headers (libbpf's bpf_helpers.h, vmlinux.h) use this to select the
-# per-arch pt_regs layout and syscall conventions. Hardcoding x86
-# silently miscompiles on aarch64 (register layout differs; argument
-# extraction from pt_regs reads the wrong fields). Disable BPF on
-# architectures we haven't vetted rather than generate broken bytecode.
-if (CRUCIBLE_BENCH_BPF_AVAILABLE)
-  if (CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
-    set(_crucible_bpf_arch_define "-D__TARGET_ARCH_x86")
-  elseif (CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
-    set(_crucible_bpf_arch_define "-D__TARGET_ARCH_arm64")
-  else()
-    message(WARNING "bench: unsupported BPF arch ${CMAKE_SYSTEM_PROCESSOR}, disabling BPF")
-    set(CRUCIBLE_BENCH_BPF_AVAILABLE FALSE)
-  endif()
-endif()
-
-if (CRUCIBLE_BENCH_BPF_AVAILABLE)
-  set(BPF_DIR "${CMAKE_SOURCE_DIR}/include/crucible/perf/bpf")
-  set(BPF_SRC "${BPF_DIR}/sense_hub.bpf.c")
-  set(BPF_OBJ "${CMAKE_CURRENT_BINARY_DIR}/sense_hub.bpf.o")
-  set(BPF_EMBED_DIR "${CMAKE_CURRENT_BINARY_DIR}/bpf_embed")
-  set(BPF_EMBED_STAGED "${BPF_EMBED_DIR}/sense_hub_bpf_bytecode")
-  set(BPF_EMBED_C "${CMAKE_CURRENT_BINARY_DIR}/sense_hub_bpf_bytecode.c")
-
-  # Compile BPF program: clang -target bpf, with -O2 (verifier
-  # requires optimized code for larger programs) and BTF debug info
-  # (-g) for CO-RE field relocations. -fdebug-prefix-map scrubs the
-  # absolute build path from .debug_str so the generated .o (and the
-  # embedded byte array) are reproducible across checkouts.
-  # IMPLICIT_DEPENDS CXX walks #includes in sense_hub.bpf.c to track
-  # every header (common.h, vmlinux.h, plus any new file added under
-  # bench/bpf/) automatically, instead of a brittle manual list.
-  add_custom_command(
-    OUTPUT  ${BPF_OBJ}
-    COMMAND ${CLANG_BPF_COMPILER}
-            -target bpf
-            ${_crucible_bpf_arch_define}
-            -I${BPF_DIR}
-            -O2 -g
-            -fdebug-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=.
-            -Wall -Wno-unused-function -Wno-address-of-packed-member
-            -c ${BPF_SRC}
-            -o ${BPF_OBJ}
-    DEPENDS ${BPF_SRC}
-    IMPLICIT_DEPENDS CXX ${BPF_SRC}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    VERBATIM
-    COMMENT "Compiling BPF sense_hub.bpf.c → sense_hub.bpf.o")
-
-  # Convert .bpf.o → C array via xxd -i. xxd derives the C identifier
-  # from the input *path as given*, so we stage the .o into a file
-  # named exactly `sense_hub_bpf_bytecode` (no extension) and run xxd
-  # from that directory with the bare basename. The generated array is
-  # `unsigned char sense_hub_bpf_bytecode[]`, matching the extern
-  # declarations in bpf_senses.cpp.
-  #
-  # The staging file lives in a dedicated bpf_embed/ subdirectory so
-  # it can't collide with any other build artifact in the bench
-  # binary dir that happens to pick the same extensionless name
-  # (e.g. a parallel jobs race if a future target stages something
-  # similar). Removing the staged file at the end keeps the tree clean.
-  add_custom_command(
-    OUTPUT  ${BPF_EMBED_C}
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${BPF_EMBED_DIR}
-    COMMAND ${CMAKE_COMMAND} -E copy ${BPF_OBJ} ${BPF_EMBED_STAGED}
-    COMMAND sh -c "cd ${BPF_EMBED_DIR} && ${XXD_EXECUTABLE} -i sense_hub_bpf_bytecode > ${CMAKE_CURRENT_BINARY_DIR}/sense_hub_bpf_bytecode.c.tmp"
-    COMMAND ${CMAKE_COMMAND} -E rename sense_hub_bpf_bytecode.c.tmp ${BPF_EMBED_C}
-    COMMAND ${CMAKE_COMMAND} -E remove -f ${BPF_EMBED_STAGED}
-    DEPENDS ${BPF_OBJ}
-    WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    VERBATIM
-    COMMENT "Embedding BPF bytecode into C array")
-
-  # The embed file is xxd-generated (not present at configure time).
-  # We compile it as C++ rather than enabling C project-wide — the
-  # file is pure data (`unsigned char ...[] = { ... };`) and parses
-  # identically in both languages. -w silences any warnings that
-  # would otherwise trip -Werror. COMPILE_OPTIONS is the list-based
-  # modern API; COMPILE_FLAGS is the deprecated string form. The
-  # redundant -x c++ override is gone — LANGUAGE CXX already routes
-  # the file through the C++ compiler.
-  set_source_files_properties(${BPF_EMBED_C} PROPERTIES
-    GENERATED TRUE
-    LANGUAGE CXX
-    COMPILE_OPTIONS "-w")
-
-  add_library(crucible_bench_bpf STATIC
-    bpf_senses.cpp
-    ${BPF_EMBED_C})
-  target_include_directories(crucible_bench_bpf PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR})
-  target_link_libraries(crucible_bench_bpf PUBLIC
-    PkgConfig::LIBBPF)
-  # Benches compile with -O3 -march=native; match that for the BPF
-  # loader so runtime overhead of SenseHub::read() is minimal.
-  target_compile_options(crucible_bench_bpf PRIVATE
-    -O3 -march=native -mtune=native -fno-omit-frame-pointer)
-  # No CRUCIBLE_NO_WERROR needed here: this target doesn't link
-  # crucible, so it inherits none of crucible's PUBLIC options (where
-  # -Werror lives). The property would be a no-op.
-endif()
+# `setcap` discovery (for the bench-caps target further down) is
+# also moved into the cmake module, which exposes SETCAP_EXECUTABLE
+# at the root scope.
 
 function(crucible_bench name)
   add_executable(${name} ${name}.cpp)
@@ -187,14 +38,17 @@ function(crucible_bench name)
   target_compile_options(${name} PRIVATE
     -O3 -march=native -mtune=native -fno-omit-frame-pointer)
   target_compile_definitions(${name} PRIVATE CRUCIBLE_BENCH)
-  if (CRUCIBLE_BENCH_BPF_AVAILABLE)
-    target_link_libraries(${name} PRIVATE crucible_bench_bpf)
-    target_compile_definitions(${name} PRIVATE CRUCIBLE_BENCH_HAVE_BPF=1)
+  # The CRUCIBLE_HAVE_BPF compile definition (1 when libbpf+clang+xxd
+  # are available, 0 otherwise) is set PUBLIC on the `crucible`
+  # target by the root CMakeLists.txt and propagates here via the
+  # link above.  Bench harness gates on it directly — no per-bench
+  # macro definition needed.  The bench-caps target only applies to
+  # binaries that actually load BPF programs, so registration still
+  # gates on CRUCIBLE_HAVE_BPF.
+  if (CRUCIBLE_HAVE_BPF)
     # Register for the bench-caps target — applied after all benches
     # are declared so we can batch them into one sudo invocation.
     set_property(GLOBAL APPEND PROPERTY CRUCIBLE_BENCH_CAP_TARGETS ${name})
-  else()
-    target_compile_definitions(${name} PRIVATE CRUCIBLE_BENCH_HAVE_BPF=0)
   endif()
   # Opt out of -Werror: benches ignore nodiscard returns by design.
   set_target_properties(${name} PROPERTIES CRUCIBLE_NO_WERROR TRUE)
@@ -286,7 +140,7 @@ set_target_properties(render_trace PROPERTIES CRUCIBLE_NO_WERROR TRUE)
 # entirely. The SenseHub setup path accepts either route — runtime
 # behaviour is identical either way.
 get_property(_crucible_bench_cap_targets GLOBAL PROPERTY CRUCIBLE_BENCH_CAP_TARGETS)
-if (CRUCIBLE_BENCH_BPF_AVAILABLE AND SETCAP_EXECUTABLE AND _crucible_bench_cap_targets)
+if (CRUCIBLE_HAVE_BPF AND SETCAP_EXECUTABLE AND _crucible_bench_cap_targets)
   set(_crucible_bench_caps_commands
     COMMAND ${CMAKE_COMMAND} -E echo
       "Applying CAP_BPF+CAP_PERFMON to ${_crucible_bench_cap_targets}")
