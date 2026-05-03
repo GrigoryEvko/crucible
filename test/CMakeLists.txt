@@ -450,6 +450,7 @@ crucible_test(test_rt_policy)
 # symbol is link-reachable (return value is don't-care; depends on
 # the running kernel's caps, see test docstring).
 crucible_test(test_perf_sense_hub_smoke)
+crucible_test(test_perf_sched_switch_smoke)
 target_include_directories(test_bench_harness SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
 

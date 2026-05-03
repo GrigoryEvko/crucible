@@ -76,13 +76,15 @@ target_compile_options(crucible PUBLIC
 # the .cpp to the crucible_perf source list below.
 include(${CMAKE_SOURCE_DIR}/cmake/CrucibleBpf.cmake)
 
-crucible_bpf_program(sense_hub include/crucible/perf/bpf/sense_hub.bpf.c)
+crucible_bpf_program(sense_hub    include/crucible/perf/bpf/sense_hub.bpf.c)
+crucible_bpf_program(sched_switch include/crucible/perf/bpf/sched_switch.bpf.c)
 
 if (CRUCIBLE_HAVE_BPF)
   get_property(_CRUCIBLE_BPF_EMBED_SOURCES
     GLOBAL PROPERTY CRUCIBLE_BPF_EMBED_SOURCES)
   add_library(crucible_perf STATIC
     src/perf/SenseHub.cpp
+    src/perf/SchedSwitch.cpp
     ${_CRUCIBLE_BPF_EMBED_SOURCES})
   target_include_directories(crucible_perf PUBLIC include/)
   target_link_libraries(crucible_perf PUBLIC PkgConfig::LIBBPF)
