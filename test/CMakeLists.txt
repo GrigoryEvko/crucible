@@ -1067,18 +1067,31 @@ crucible_neg_compile_test(neg_graded_concept_bare_int
 # ─── DimensionTraits Tier-S/V concept gates (Phase 0 P0-3, #1094) ──
 #
 # Two neg-compile fixtures pinning the Tier concept gates exposed
-# by safety/DimensionTraits.h.  The Tier-S gate must reject a
-# lattice-only carrier (no add/mul/zero/one); the Tier-V gate must
-# reject a bare scalar (no element_type, no compatible(a, b)).
-# Both diagnostics surface as "constraints not satisfied" pointing
-# at the SemiringGrade<G> / VersionedGrade<G> evaluation.
+# by safety/DimensionTraits.h.  Five fixtures — one per concept
+# family — pin the gate behavior independently:
 #
-# The remaining concept gates (LatticeGrade, TypestateGrade,
-# FoundationalGrade) get neg-compile coverage in P0-6 (#1099) as
-# part of the broader 30-fixture corpus.
+#   SemiringGrade   — rejects TestLattice (lattice without add/mul)
+#   VersionedGrade  — rejects bare int (no element_type, no compatible)
+#   LatticeGrade    — rejects bare int (no leq/join/meet primitives)
+#   TypestateGrade  — rejects TestLattice (lattice has no state_type/
+#                     transition_type — typestate ≠ lattice)
+#   FoundationalGrade — rejects void (is_object_v<void> is false)
+#
+# All five diagnostics surface as "constraints not satisfied"
+# pointing at the per-concept evaluation site.  Together they
+# complete per-concept-family coverage of DimensionTraits's gate
+# surface; a maintainer adding a sixth concept family must ship a
+# matching neg-compile fixture or the per-concept rejection
+# behavior is unwitnessed.
 crucible_neg_compile_test(neg_dimension_traits_semiring_rejects_lattice_only
   "constraints not satisfied")
 crucible_neg_compile_test(neg_dimension_traits_versioned_rejects_bare_int
+  "constraints not satisfied")
+crucible_neg_compile_test(neg_dimension_traits_lattice_rejects_int
+  "constraints not satisfied")
+crucible_neg_compile_test(neg_dimension_traits_typestate_rejects_lattice
+  "constraints not satisfied")
+crucible_neg_compile_test(neg_dimension_traits_foundational_rejects_void
   "constraints not satisfied")
 
 # ─── Fn aggregator type-slot discipline (Phase 0 P0-1, #1095) ──────
