@@ -20,14 +20,22 @@
 //       (popcount != 1) and zero-valued enumerators are deliberately
 //       SKIPPED — only single-bit named flags participate.  The return
 //       value follows POSIX snprintf: a return ≥ cap means truncation
-//       happened.
+//       happened.  Contract `pre(cap == 0 || out != nullptr)` —
+//       passing a nullptr buffer with non-zero capacity is rejected
+//       at the boundary.  If E declares two single-bit aliases for
+//       the same value (e.g., `A=1; AliasOfA=1`), BOTH names are
+//       emitted whenever that bit is set; deduplication is a caller
+//       concern.
 //
 //   enumerator_name<E>(E value) → std::string_view
 //       Returns the enumerator's identifier when `value` exactly
 //       equals an enumerator value.  Composite values (e.g.
 //       `Flag::A | Flag::B` when only A and B are named) return an
 //       empty view.  The string_view points to compile-time-immortal
-//       data — safe to store, hand off, or return.
+//       data — safe to store, hand off, or return.  When E declares
+//       multiple enumerators with the same value (aliasing), the
+//       FIRST one in declaration order wins; any later alias is
+//       ignored even though it would also `==` match.
 //
 //   for_each_enumerator<E>(F&& f)
 //       Iteration over E's enumerators — runtime-callable and
@@ -187,10 +195,15 @@ constexpr void for_each_single_bit_enumerator(F&& f) {
 
 template <ScopedEnum E>
 [[nodiscard]] constexpr std::string_view enumerator_name(E value) noexcept {
+    // First-match-wins.  Iteration over the unrolled `template for`
+    // visits every enumerator at compile time, but the `result.empty()`
+    // guard short-circuits subsequent matches at runtime.  This makes
+    // the alias case (two enumerators with the same value) deterministic
+    // and predictable: the FIRST enumerator in declaration order wins.
     std::string_view result{};
     for_each_enumerator<E>(
         [&](E candidate, std::string_view name) noexcept {
-            if (candidate == value) {
+            if (result.empty() && candidate == value) {
                 result = name;
             }
         });
@@ -219,7 +232,9 @@ template <ScopedEnum E>
 // (snprintf probing convention).
 
 template <ScopedEnum E>
-[[nodiscard]] constexpr size_t bits_to_string(Bits<E> b, char* out, size_t cap) noexcept {
+[[nodiscard]] constexpr size_t bits_to_string(Bits<E> b, char* out, size_t cap) noexcept
+    pre (cap == 0 || out != nullptr)
+{
     size_t needed = 0;   // chars that would be written, excluding NUL
     bool   first  = true;
 
@@ -290,6 +305,22 @@ static_assert(name_alphabeta == "AlphaBeta");
     return enumerator_name(raw).empty();
 }
 static_assert(composite_value_lookup_returns_empty());
+
+// Zero-VALUE enumerator IS named — enumerator_name returns its name
+// regardless of the popcount-skipping rule that bits_to_string uses.
+inline constexpr auto name_none = enumerator_name(TF::None);
+static_assert(name_none == "None");
+
+// First-match-wins discipline — TF has AlphaBeta=0x03, but composing
+// Alpha|Beta at runtime produces value 0x03 too; AlphaBeta wins because
+// it's the first (only) enumerator declared with value 0x03.  Document
+// this here so a future enum that adds AliasOfAlphaBeta=0x03 after
+// AlphaBeta can predict the answer (still "AlphaBeta", first-match).
+static_assert(enumerator_name(static_cast<TF>(0x03)) == "AlphaBeta");
+
+// Truly-unnamed value returns empty view (not garbage, not the
+// last-iterated name).
+static_assert(enumerator_name(static_cast<TF>(0xFF)).empty());
 
 // ── bits_to_string positive ─────────────────────────────────────────
 
@@ -374,6 +405,44 @@ static_assert(zero_capacity_probes_size());
     return buf[0] == '\0' && n == 5;
 }
 static_assert(unit_capacity_writes_nul_only());
+
+// Boundary case: cap == needed + 1 fits the FULL string + NUL exactly.
+// One byte less (cap == needed) would already truncate.
+[[nodiscard]] consteval bool exact_fit_capacity_no_truncation() noexcept {
+    // "Alpha|Beta" needs 10 chars + NUL = 11 bytes.
+    char  buf[11] = {};
+    BTF   b{TF::Alpha, TF::Beta};
+    auto  n = bits_to_string<TF>(b, buf, sizeof(buf));
+    if (n != 10) return false;
+    if (std::string_view{buf} != "Alpha|Beta") return false;
+    return buf[10] == '\0';
+}
+static_assert(exact_fit_capacity_no_truncation());
+
+[[nodiscard]] consteval bool one_byte_short_truncates_one_char() noexcept {
+    // "Alpha|Beta" needs 10 + NUL = 11 bytes; cap=10 is one short.
+    char  buf[10] = {};
+    BTF   b{TF::Alpha, TF::Beta};
+    auto  n = bits_to_string<TF>(b, buf, sizeof(buf));
+    if (n != 10) return false;
+    // cap=10 → write 9 chars + NUL at index 9.
+    if (std::string_view{buf} != "Alpha|Bet") return false;
+    return buf[9] == '\0';
+}
+static_assert(one_byte_short_truncates_one_char());
+
+// All-flags set — full coverage of the iteration body across every
+// single-bit enumerator.  Composite (AlphaBeta) and zero (None)
+// stay out of the output even when their bits are nominally in raw.
+[[nodiscard]] consteval bool all_flags_set_emits_every_single_bit() noexcept {
+    char  buf[64] = {};
+    BTF   b{TF::Alpha, TF::Beta, TF::Gamma, TF::Delta,
+            TF::AlphaBeta, TF::None};   // composite + zero are no-ops
+    auto  n = bits_to_string<TF>(b, buf, sizeof(buf));
+    return std::string_view{buf} == "Alpha|Beta|Gamma|Delta"
+        && n == std::string_view{buf}.size();
+}
+static_assert(all_flags_set_emits_every_single_bit());
 
 // ── Determinism — same input, same output ────────────────────────────
 
@@ -470,9 +539,33 @@ inline void runtime_smoke_test() {
     if (std::string_view{small} != "Alpha|B") std::abort();
     if (small[7] != '\0') std::abort();
 
-    // Probe (cap=0).
+    // Probe (cap=0).  out=nullptr is permitted ONLY when cap==0; the
+    // contract enforces that combination.  The function still computes
+    // the chars-needed count (snprintf-style probing convention).
     auto np = bits_to_string<TF>(abc, nullptr, 0);
     if (np != std::string_view{"Alpha|Beta|Gamma"}.size()) std::abort();
+
+    // Exact-fit capacity boundary — runtime check on the consteval test.
+    {
+        char tight[11] = {};
+        auto nfit = bits_to_string<TF>(BTF{TF::Alpha, TF::Beta},
+                                       tight, sizeof(tight));
+        if (nfit != 10) std::abort();
+        if (std::string_view{tight} != "Alpha|Beta") std::abort();
+        if (tight[10] != '\0') std::abort();
+    }
+    // One-byte-short — runtime mirror of the consteval test.
+    {
+        char short_buf[10] = {};
+        auto nshort = bits_to_string<TF>(BTF{TF::Alpha, TF::Beta},
+                                         short_buf, sizeof(short_buf));
+        if (nshort != 10) std::abort();
+        if (std::string_view{short_buf} != "Alpha|Bet") std::abort();
+        if (short_buf[9] != '\0') std::abort();
+    }
+    // Zero-named enumerator — enumerator_name returns "None" even
+    // though bits_to_string skips it.
+    if (enumerator_name(TF::None) != "None") std::abort();
 
     // enumerator_name positive.
     if (enumerator_name(TF::Alpha) != "Alpha") std::abort();

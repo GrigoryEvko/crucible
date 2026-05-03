@@ -1637,10 +1637,21 @@ crucible_neg_compile_test(neg_bits_cross_enum
 #                                   NTTP-info sketch that was
 #                                   rejected for immediate-escalation
 #                                   reasons; see Reflected.h doc).
+#   * neg_reflected_null_buffer_with_capacity
+#                                   bits_to_string(b, nullptr, cap>0)
+#                                   must fail at compile time per the
+#                                   pre(cap==0 || out!=nullptr)
+#                                   contract (load-bearing — without
+#                                   this guard the function silently
+#                                   dereferences nullptr at the first
+#                                   write_byte call; audit caught the
+#                                   missing contract on first read).
 crucible_neg_compile_test(neg_reflected_unscoped_enum
   "constraints not satisfied|ScopedEnum|no matching function|cannot convert|use of deleted")
 crucible_neg_compile_test(neg_reflected_lambda_arity
   "no match for call|no matching function|wrong number of arguments|too many arguments")
+crucible_neg_compile_test(neg_reflected_null_buffer_with_capacity
+  "contract predicate is false|false in constant expression|predicate is false|pre")
 
 # safety::Borrowed / BorrowedRef structural-wrappers — HS14 fixtures (#1080):
 #   * neg_borrowed_ref_default_ctor  BorrowedRef<T>{} default ctor must
