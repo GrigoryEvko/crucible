@@ -451,6 +451,7 @@ crucible_test(test_rt_policy)
 # the running kernel's caps, see test docstring).
 crucible_test(test_perf_sense_hub_smoke)
 crucible_test(test_perf_sched_switch_smoke)
+crucible_test(test_perf_pmu_sample_smoke)
 target_include_directories(test_bench_harness SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
 
@@ -1039,6 +1040,13 @@ crucible_neg_compile_effects_test(neg_perf_sense_hub_load_no_cap
 crucible_neg_compile_effects_test(neg_perf_sched_switch_load_wrong_cap
     "could not convert|no matching function|cannot convert|expected.*Init")
 crucible_neg_compile_effects_test(neg_perf_sched_switch_load_no_cap
+    "too few arguments|no matching function|candidate expects 1 argument")
+
+# GAPS-004c (#1279): PmuSample::load() cap-tag gate.  Same Init-by-value
+# discipline as SenseHub/SchedSwitch.
+crucible_neg_compile_effects_test(neg_perf_pmu_sample_load_wrong_cap
+    "could not convert|no matching function|cannot convert|expected.*Init")
+crucible_neg_compile_effects_test(neg_perf_pmu_sample_load_no_cap
     "too few arguments|no matching function|candidate expects 1 argument")
 
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the

@@ -101,6 +101,16 @@ static __always_inline int emit_pmu_sample(struct bpf_perf_event_data *ctx, __u8
         tl->events[slot].ip = ip;
         tl->events[slot].tid = get_tid();
         tl->events[slot].event_type = etype;
+        /* Compiler barrier — GAPS-004c (2026-05-04, same fix as
+         * sched_switch.bpf.c per GAPS-004b-AUDIT).  Forces clang
+         * to emit the prior 3 stores BEFORE the ts_ns store; without
+         * this, -O2 may reorder and break the documented
+         * "ts_ns LAST as completion marker" contract.  Zero machine
+         * cost (asm volatile with empty body emits no instruction;
+         * the "memory" clobber tells the compiler not to reorder
+         * across this point).  Pairs with userspace's
+         * __atomic_load_n(&ts_ns, ACQUIRE). */
+        __asm__ __volatile__("" ::: "memory");
         /* ts_ns LAST — completion marker */
         tl->events[slot].ts_ns = bpf_ktime_get_ns();
     }

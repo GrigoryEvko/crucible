@@ -162,8 +162,17 @@ struct pmu_sample_event {
     __u64 ip;           /* instruction pointer (userspace virtual addr) */
     __u32 tid;          /* thread ID */
     __u8  event_type;   /* PMU event discriminator */
-    __u8  _pad[3];      /* align to 8 bytes */
+    __u8  _pad[3];      /* align ts_ns to 8 bytes */
     __u64 ts_ns;        /* bpf_ktime_get_ns() — WRITTEN LAST */
+    __u64 _pad8;        /* GAPS-004c (2026-05-04): cache-line-
+                         * coresidence pad.  Same bug + same fix
+                         * as TimelineSchedEvent — without this
+                         * 24+8=32 byte struct, slots straddle
+                         * 64-byte boundaries and torn reads on
+                         * the second line silently break the
+                         * "ts_ns LAST as completion marker"
+                         * contract.  Zero per-event runtime
+                         * cost (we don't write _pad8). */
 };
 
 struct pmu_sample_timeline {
