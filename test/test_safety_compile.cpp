@@ -51,6 +51,7 @@
 #include <crucible/safety/DetSafe.h>
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/Fn.h>
 #include <crucible/safety/FixedArray.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/NumaPlacement.h>
@@ -156,6 +157,9 @@ void test_epoch_versioned_compile() {
 void test_fixed_array_compile()     {
     ::crucible::safety::detail::fixed_array_self_test::runtime_smoke_test();
 }
+void test_fn_compile()              {
+    ::crucible::safety::fn::detail::fn_self_test::runtime_smoke_test();
+}
 void test_numa_placement_compile() {
     ::crucible::safety::detail::numa_placement_self_test::runtime_smoke_test();
 }
@@ -237,6 +241,7 @@ int main() {
     run_test("test_dimension_traits_compile", test_dimension_traits_compile);
     run_test("test_epoch_versioned_compile", test_epoch_versioned_compile);
     run_test("test_fixed_array_compile",     test_fixed_array_compile);
+    run_test("test_fn_compile",              test_fn_compile);
     run_test("test_numa_placement_compile",  test_numa_placement_compile);
     run_test("test_recipe_spec_compile",     test_recipe_spec_compile);
     run_test("test_hot_path_compile",        test_hot_path_compile);

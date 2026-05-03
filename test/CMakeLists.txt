@@ -1081,6 +1081,19 @@ crucible_neg_compile_test(neg_dimension_traits_semiring_rejects_lattice_only
 crucible_neg_compile_test(neg_dimension_traits_versioned_rejects_bare_int
   "constraints not satisfied")
 
+# ─── Fn aggregator type-slot discipline (Phase 0 P0-1, #1095) ──────
+#
+# Two neg-compile fixtures pinning the type constraint on
+# Fn<Type, ...>'s primary template static_assert.  The aggregator
+# rejects void, reference types, bare function types, and abstract
+# classes — every Fn::value_ member must be a complete object type.
+# Both diagnostics surface as "requires Type to be a complete
+# object type" pointing at the class-template body's static_assert.
+crucible_neg_compile_test(neg_fn_rejects_void_type
+  "complete object type")
+crucible_neg_compile_test(neg_fn_rejects_reference_type
+  "complete object type")
+
 # ─── Graded modality discipline (Phase 2a foundation) ───────────────
 #
 # Three neg-compile tests pinning the modality gates on Graded<>:
