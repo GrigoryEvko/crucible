@@ -72,56 +72,47 @@
 //     workloads will MISS off-CPU events for non-main threads — the
 //     BPF program populates switch_start[other_tid] on switch-OUT,
 //     but never finds other_tid in our_tids on switch-IN, so the
-//     entry never gets popped.  After ~65536 such orphaned entries,
-//     the switch_start hash map's LRU eviction silently drops the
-//     oldest pending switch-OUT records.  Workaround for now: only
-//     load() from a single-threaded process or accept partial
-//     coverage.  GAPS-004x will iterate /proc/self/task/* and
-//     populate every TID at load time.
+//     entry never gets popped.  GAPS-004b-AUDIT (2026-05-04) made
+//     this self-healing by changing switch_start to LRU_HASH —
+//     orphaned entries auto-evict instead of accumulating to
+//     MAX_ENTRIES=65536.  Coverage is still partial (non-main
+//     threads' off-CPU events are simply not captured), but no
+//     leak.  Future GAPS-004x can opt in by registering all TIDs
+//     via /proc/self/task/* iteration if accuracy > TID-reuse-risk
+//     trade-off changes.
 //
-// (2) **switch_stack[] map leaks on thread exit.**  When a thread
-//     switches OUT (populates switch_stack[tid]) and never switches
-//     back IN — e.g. it exits — switch_stack[tid] is never deleted.
-//     Same MAX_ENTRIES=65536 LRU pressure as (1).  Workaround: long-
-//     running profiles that span many thread births/deaths should
-//     load() periodically rather than holding the SchedSwitch for
-//     the entire run.  Long-term fix: BPF-side sched_process_exit
-//     tracepoint paired delete.
-//
-// (3) **Timeline events that span two cache lines are not torn-write
-//     atomic.**  Each TimelineSchedEvent is 24 bytes; events at
-//     slots whose byte offset crosses a 64-byte boundary (most
-//     slots, since 24 doesn't divide 64) span TWO cache lines.  The
-//     BPF program's `events[slot].field = ...` writes are u64-
-//     atomic at the field level (each member is naturally aligned),
-//     but a reader observing one cache line in MODIFIED state and
-//     the other in SHARED state may see some fields updated and
-//     some stale.  The ts_ns-LAST completion-marker discipline
-//     mitigates: the reader checks ts_ns != 0 first; only the
-//     final cache line's atomic store reveals ts_ns, which for
-//     8-byte-aligned ts_ns_offset==16 always lives in the SAME
-//     cache line as on_cpu (offset 12, also in the second half).
-//     Off_cpu_ns (offset 0) and tid (offset 8) live in the first
-//     half.  So torn reads CAN occur where ts_ns and on_cpu are
-//     visible but off_cpu_ns and tid are stale.  Workaround:
-//     consumers that need exact off_cpu_ns/tid pairing should
-//     compare ts_ns BEFORE and AFTER reading the other fields and
-//     retry on mismatch (typical seqlock pattern, not yet wrapped
-//     in a helper).  The BPF program's claim in common.h about
-//     "all fields share the same cache line" is INCORRECT for
-//     non-cache-line-aligned slots; documented here so the next
-//     consumer doesn't re-discover it.
-//
-// (4) **Timeline ring-buffer slot reuse races on wrap.**  The 4096-
+// (2) **Timeline ring-buffer slot reuse races on wrap.**  The 4096-
 //     event ring wraps every ~100ms on a busy system (one
 //     sched_switch every ~25 µs).  Two cores both incrementing
 //     write_idx get DIFFERENT idx values (good), but `idx & MASK`
-//     can collide on the same slot after wrap, leading to two
-//     producers concurrently writing the SAME slot.  This is a
-//     known limit of the BPF_MAP_TYPE_ARRAY mmap'd ring approach;
-//     the canonical fix is BPF_MAP_TYPE_RINGBUF (kernel-side ring
-//     with built-in producer arbitration).  Out of scope for the
-//     C++ facade; tracked for the eventual BPF program upgrade.
+//     can collide on the same slot after wrap if Core A's BPF
+//     program is preempted between bump and write.  In practice
+//     BPF runs with preemption disabled, so the window is the
+//     time between Core A's bump and Core A's writes completing
+//     (microseconds), and Core B would need to bump 4096 events
+//     within that same microsecond on a different core — extremely
+//     unlikely on a single workload.  Documented limit; canonical
+//     fix is BPF_MAP_TYPE_RINGBUF (kernel-side producer
+//     arbitration).  Out of scope for this facade.
+//
+// (3) **max_ns is approximate under concurrent writes.**  The BPF
+//     program's `if (delta > val->max_ns) val->max_ns = delta;`
+//     is not atomic; concurrent writers can race and the smaller
+//     delta may overwrite a true max.  A CAS loop would cost
+//     ~50-100 ns per offcpu-completion event, which on a busy
+//     system (1M events/sec) translates to 5-10% CPU overhead.
+//     Accepted as approximation in exchange for the BPF cost
+//     budget.  Reported via offcpu map iteration (future API).
+//
+// FIXED in GAPS-004b-AUDIT (2026-05-04):
+// — switch_start + switch_stack maps now LRU_HASH (was HASH);
+//   orphaned entries auto-evict, no MAX_ENTRIES silent-rejection.
+// — TimelineSchedEvent padded to 32 B; cache-line-coresident slots
+//   eliminate torn-read window on the second cache line.
+// — Compiler barrier (`asm volatile ("" ::: "memory")`) before the
+//   ts_ns store prevents -O2 reordering of the field writes;
+//   "ts_ns LAST as completion marker" is now an enforced contract
+//   rather than wishful thinking.
 
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
 #include <crucible/safety/Borrowed.h>       // safety::Borrowed<T, Source>
@@ -142,19 +133,33 @@ namespace crucible::perf {
 //
 // The struct layout is wire-load-bearing: the BPF program writes
 // into the same byte offsets userspace reads.  static_assert below
-// pins the tight 24-byte layout so an accidental member reorder or
-// padding insertion fails compilation rather than producing
-// garbage events.
+// pins the 32-byte layout so an accidental member reorder or
+// padding change fails compilation rather than producing garbage
+// events.
+//
+// GAPS-004b-AUDIT (2026-05-04): the trailing _pad makes the struct
+// 32 bytes — 32 divides 64 (cache line size) evenly, so each slot
+// in the `events[TIMELINE_CAPACITY]` array sits cleanly within a
+// single cache line.  Without the pad, the struct is 24 bytes and
+// ~25% of slots (those whose byte offset crosses a 64-byte
+// boundary) span two cache lines.  Crossing means the reader can
+// observe ts_ns (in second line) committed to memory while
+// off_cpu_ns/tid/on_cpu (in first line) are still stale —
+// silently breaking the "ts_ns LAST as completion marker"
+// contract.  The pad costs 32 KB extra mmap (8 B × 4096 slots),
+// zero per-event runtime cost (we never write to _pad).
 struct TimelineSchedEvent {
     uint64_t off_cpu_ns;  //  8 B  duration thread was off-CPU (ns)
     uint32_t tid;         //  4 B  thread that switched IN
     uint32_t on_cpu;      //  4 B  CPU core thread switched onto
     uint64_t ts_ns;       //  8 B  bpf_ktime_get_ns() — WRITTEN LAST
+    uint64_t _pad;        //  8 B  cache-line-coresidence pad
 };
-static_assert(sizeof(TimelineSchedEvent) == 24,
-    "TimelineSchedEvent must be tight 24 B to match the BPF "
-    "program's struct timeline_sched_event in common.h — wire "
-    "contract with BPF_F_MMAPABLE map");
+static_assert(sizeof(TimelineSchedEvent) == 32,
+    "TimelineSchedEvent must be 32 B (with 8 B trailing pad) to "
+    "match the BPF program's struct timeline_sched_event in "
+    "common.h — wire contract with BPF_F_MMAPABLE map.  32 divides "
+    "64 evenly, so events[N] never spans two cache lines.");
 
 // Mirrors `struct timeline_header` in common.h.  64 B (one cache
 // line) so the events array starts cache-aligned.  write_idx is

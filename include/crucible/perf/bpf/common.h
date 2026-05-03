@@ -92,6 +92,18 @@ struct timeline_sched_event {
     __u32 tid;
     __u32 on_cpu;      /* CPU core switched onto */
     __u64 ts_ns;       /* bpf_ktime_get_ns() — WRITTEN LAST */
+    __u64 _pad;        /* GAPS-004b-AUDIT (2026-05-04): pad to 32 B
+                        * so the events array's slots are always
+                        * cache-line-coresident (32 divides 64
+                        * evenly).  Without this, slot N at byte
+                        * (64 + 24*N) would straddle two 64-byte
+                        * cache lines for N ∈ {2, 5} (mod 8), and
+                        * the reader could see ts_ns visible while
+                        * off_cpu_ns/tid/on_cpu are still in a
+                        * stale cache line — silently breaking the
+                        * "ts_ns LAST as completion marker"
+                        * contract documented above.  We don't
+                        * write to _pad; struct padding is free. */
 };
 
 struct timeline_syscall_event {

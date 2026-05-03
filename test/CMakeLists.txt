@@ -1033,6 +1033,14 @@ crucible_neg_compile_effects_test(neg_perf_sense_hub_load_wrong_cap
 crucible_neg_compile_effects_test(neg_perf_sense_hub_load_no_cap
     "too few arguments|no matching function|candidate expects 1 argument")
 
+# GAPS-004b-AUDIT (#1289): SchedSwitch::load() cap-tag gate.  Same
+# discipline as SenseHub::load — Init-by-value parameter, no implicit
+# conversion from Bg/Test contexts, mandatory argument.
+crucible_neg_compile_effects_test(neg_perf_sched_switch_load_wrong_cap
+    "could not convert|no matching function|cannot convert|expected.*Init")
+crucible_neg_compile_effects_test(neg_perf_sched_switch_load_no_cap
+    "too few arguments|no matching function|candidate expects 1 argument")
+
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the
 # SessionMint walker handles BSYZ22 crash-stop's Stop the same way
 # as End — vacuously admitted, but the surrounding Send's payload

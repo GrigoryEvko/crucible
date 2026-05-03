@@ -15,17 +15,25 @@
 
 /* ─── Maps ──────────────────────────────────────────────────────────── */
 
-/* tid → switch-out timestamp */
+/* tid → switch-out timestamp.
+ *
+ * GAPS-004b-AUDIT (2026-05-04): LRU_HASH (not plain HASH) — orphaned
+ * entries (thread switched OUT but never observed switching IN, e.g.
+ * non-our_tids threads or threads that exited) are auto-evicted on
+ * insert pressure rather than accumulating to MAX_ENTRIES and silently
+ * blocking new inserts.  Zero per-event cost vs HASH; the kernel's LRU
+ * list update piggybacks on the existing bucket walk. */
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, MAX_ENTRIES);
     __type(key, __u32);
     __type(value, __u64);
 } switch_start SEC(".maps");
 
-/* tid → stack_id captured at switch-out */
+/* tid → stack_id captured at switch-out.  LRU_HASH for the same
+ * reason as switch_start — see comment above. */
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, MAX_ENTRIES);
     __type(key, __u32);
     __type(value, __s32);
@@ -156,6 +164,16 @@ int handle_sched_switch(struct trace_event_raw_sched_switch *ctx)
                     tl->events[slot].off_cpu_ns = delta;
                     tl->events[slot].tid = next_pid;
                     tl->events[slot].on_cpu = bpf_get_smp_processor_id();
+                    /* Compiler barrier — GAPS-004b-AUDIT (2026-05-04).
+                     * Forces clang to emit the prior 3 stores BEFORE
+                     * the ts_ns store; without this, -O2 may reorder
+                     * and break the "ts_ns LAST as completion marker"
+                     * contract.  Zero machine cost (asm volatile with
+                     * empty body emits no instruction; the "memory"
+                     * clobber tells the compiler not to reorder
+                     * across this point).  Pairs with the userspace
+                     * reader's __atomic_load_n(&ts_ns, ACQUIRE). */
+                    __asm__ __volatile__("" ::: "memory");
                     tl->events[slot].ts_ns = ts; /* completion marker */
                 }
             }

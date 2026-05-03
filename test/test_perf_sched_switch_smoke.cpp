@@ -36,17 +36,19 @@ namespace {
 
 // ── (2) + (3) Wire-contract fence-posts ────────────────────────────
 
-static_assert(sizeof(crucible::perf::TimelineSchedEvent) == 24,
-    "TimelineSchedEvent must be tight 24 B = off_cpu_ns(8) + tid(4) "
-    "+ on_cpu(4) + ts_ns(8); a regression here means the BPF program "
-    "in include/crucible/perf/bpf/sched_switch.bpf.c writes a "
-    "different layout than userspace reads, producing garbage events");
+static_assert(sizeof(crucible::perf::TimelineSchedEvent) == 32,
+    "TimelineSchedEvent must be 32 B = off_cpu_ns(8) + tid(4) + "
+    "on_cpu(4) + ts_ns(8) + _pad(8); a regression here means the "
+    "BPF program in include/crucible/perf/bpf/sched_switch.bpf.c "
+    "writes a different layout than userspace reads, producing "
+    "garbage events.  GAPS-004b-AUDIT (2026-05-04) added the 8 B "
+    "trailing pad so each slot is cache-line-coresident (32 divides "
+    "64 evenly) — eliminates the torn-read window.");
 
 // Per-field offset asserts — wire-contract is offset-sensitive, not
 // just size-sensitive.  A reorder of off_cpu_ns vs ts_ns would still
-// produce a 24-byte struct but the BPF kernel would write ts_ns
+// produce a 32-byte struct but the BPF kernel would write ts_ns
 // first instead of last, breaking the completion-marker discipline.
-// GAPS-004b-AUDIT (#1288 analogue) — pin the layout exactly.
 static_assert(offsetof(crucible::perf::TimelineSchedEvent, off_cpu_ns) == 0,
     "off_cpu_ns must be at offset 0 — the BPF program writes it FIRST");
 static_assert(offsetof(crucible::perf::TimelineSchedEvent, tid)        == 8,
@@ -57,6 +59,19 @@ static_assert(offsetof(crucible::perf::TimelineSchedEvent, ts_ns)      == 16,
     "ts_ns MUST be at offset 16 — the BPF program writes it LAST as the "
     "completion marker; a reorder would have readers seeing other "
     "fields appear non-zero before ts_ns lands");
+static_assert(offsetof(crucible::perf::TimelineSchedEvent, _pad)       == 24,
+    "_pad must be at offset 24 — the cache-line-coresidence pad. "
+    "The BPF program's writes do NOT touch this field; it exists "
+    "to make sizeof(TimelineSchedEvent) divide 64 evenly.");
+
+// Cache-line-coresidence sanity: the events array starts at offset 64
+// (after TimelineHeader); each slot at byte (64 + 32*N) for slot N.
+// 32 divides 64, so each slot fits within one 64-byte cache line.
+// Verify with an arithmetic static_assert on the alignment relationship.
+static_assert(64 % sizeof(crucible::perf::TimelineSchedEvent) == 0,
+    "Cache line size (64) must be evenly divisible by event size (32); "
+    "otherwise events would straddle cache-line boundaries and "
+    "reintroduce the torn-read bug GAPS-004b-AUDIT fixed");
 
 static_assert(sizeof(crucible::perf::TimelineHeader) == 64,
     "TimelineHeader must be exactly one cache line; the events "
