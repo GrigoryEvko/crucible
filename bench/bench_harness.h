@@ -72,6 +72,7 @@
   // mechanical rename can drop the alias and replace
   // `bench::bpf::` with `crucible::perf::` everywhere in one sweep.
   #include <crucible/perf/SenseHub.h>
+  #include <crucible/perf/SchedSwitch.h>
 #endif
 
 #include <crucible/rt/Hardening.h>
@@ -376,8 +377,25 @@ namespace detail {
         bench::bpf::SenseHub::load(::crucible::effects::Init{});
     return slot.has_value() ? &*slot : nullptr;
 }
+
+// SchedSwitch off-CPU drill-down — sibling to SenseHub but per-event
+// granularity.  Loaded lazily; ~150 ms one-time startup cost, then
+// per-sched_switch BPF overhead is ~3-5 µs (the BPF program runs in
+// kernel context, NOT in this bench process — only the timeline
+// reads at bench-end pay any userspace cost).  Combined with
+// SenseHub already attaching sched_switch, total per-event kernel
+// cost is ~6-10 µs × ~7 events per 30 ms bench = ~0.2% overhead.
+[[nodiscard]] inline const ::crucible::perf::SchedSwitch*
+sched_switch_instance() noexcept {
+    static std::optional<::crucible::perf::SchedSwitch> slot =
+        ::crucible::perf::SchedSwitch::load(::crucible::effects::Init{});
+    return slot.has_value() ? &*slot : nullptr;
+}
 #else
 [[nodiscard]] inline const void* bpf_instance() noexcept { return nullptr; }
+[[nodiscard]] inline const void* sched_switch_instance() noexcept {
+    return nullptr;
+}
 #endif
 } // namespace detail
 
@@ -502,6 +520,19 @@ struct Report {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
     bench::bpf::Snapshot bpf_delta{};
     size_t               bpf_attached = 0;  // # programs the kernel accepted
+
+    // SchedSwitch off-CPU drill-down for the bench window.  Pre/post
+    // are timeline_write_index() captures (~1 ns each, no syscall);
+    // events in [pre, post) are the off-CPU records that completed
+    // during this run.  At print time we walk that range to extract
+    // the largest single off-CPU spike — explains *which* preempt
+    // cost the most when SenseHub's `preempt`/`wait` deltas are
+    // non-zero.  All zero on systems without SchedSwitch loaded.
+    uint64_t sched_pre_idx       = 0;
+    uint64_t sched_post_idx      = 0;
+    uint64_t sched_offcpu_max_ns = 0;  // longest off-CPU spike (ns)
+    uint32_t sched_offcpu_cpu    = 0;  // CPU it was scheduled onto
+    uint32_t sched_offcpu_count  = 0;  // # off-CPU events in window
 #endif
 
     std::vector<double> samples;  // kept for bootstrap_ci, compare
@@ -791,6 +822,23 @@ struct Report {
             std::fprintf(out, "%s=", f.label);
             print_scaled_(out, v, f.unit);
         }
+        // SchedSwitch off-CPU peak — appended inline (same line) as the
+        // SenseHub deltas, post-GAPS-004b-AUDIT (#1289).  This is the
+        // dense answer to "what was the worst single preempt during
+        // this bench window".  SenseHub already shows aggregate
+        // `preempt`/`yield` counts and total `wait`/`sleep` ns; the
+        // off-CPU peak says WHICH preempt cost the most + which CPU
+        // we ended up on.
+        if (sched_offcpu_max_ns > 0) {
+            if (!first) std::fprintf(out, " · ");
+            first = false;
+            std::fprintf(out, "offcpu_max=");
+            print_scaled_(out, sched_offcpu_max_ns, Unit::Ns);
+            std::fprintf(out, "@cpu%u", sched_offcpu_cpu);
+            if (sched_offcpu_count > 1) {
+                std::fprintf(out, " (×%u)", sched_offcpu_count);
+            }
+        }
         if (first) std::fprintf(out, "clean");
         std::fputc('\n', out);
     }
@@ -1019,9 +1067,15 @@ class Run {
         const uint64_t freq_start = detail::read_cpu_freq_hz(pinned_cpu.raw());
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        const bench::bpf::SenseHub* hub = detail::bpf_instance();
-        bench::bpf::Snapshot        bpf_pre{};
-        bench::bpf::Snapshot        bpf_post{};
+        const bench::bpf::SenseHub*           hub = detail::bpf_instance();
+        bench::bpf::Snapshot                  bpf_pre{};
+        bench::bpf::Snapshot                  bpf_post{};
+        // SchedSwitch — see detail::sched_switch_instance() docblock for
+        // cost analysis.  Pre/post are ~1 ns volatile loads each; the
+        // walk happens at print time on bg thread, never per-iteration.
+        const ::crucible::perf::SchedSwitch* sw = detail::sched_switch_instance();
+        uint64_t                              sched_pre_idx  = 0;
+        uint64_t                              sched_post_idx = 0;
 #endif
 
         // Pre-sized to S; if the wall-cap cutoff fires early, we trim to
@@ -1032,6 +1086,7 @@ class Run {
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         if (hub != nullptr) bpf_pre = hub->read();
+        if (sw  != nullptr) sched_pre_idx = sw->timeline_write_index();
 #endif
         const auto wall0 = std::chrono::steady_clock::now();
 
@@ -1063,6 +1118,7 @@ class Run {
         const auto wall1 = std::chrono::steady_clock::now();
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         if (hub != nullptr) bpf_post = hub->read();
+        if (sw  != nullptr) sched_post_idx = sw->timeline_write_index();
 #endif
         const uint64_t freq_end = detail::read_cpu_freq_hz(pinned_cpu.raw());
 
@@ -1129,6 +1185,43 @@ class Run {
             // .value() for the raw count expected by the bench Report
             // struct (kept as plain size_t for printf-friendly emission).
             r.bpf_attached = hub->attached_programs().value();
+        }
+        // SchedSwitch off-CPU peak — walk the timeline events that
+        // landed during this bench window and pick the longest single
+        // off-CPU spike.  All work is on the bg thread; per-iteration
+        // cost is the 2 × ~1 ns timeline_write_index() reads done
+        // pre/post the loop.
+        r.sched_pre_idx  = sched_pre_idx;
+        r.sched_post_idx = sched_post_idx;
+        if (sw != nullptr && sched_post_idx > sched_pre_idx) {
+            const uint64_t window_size =
+                std::min(sched_post_idx - sched_pre_idx,
+                         static_cast<uint64_t>(::crucible::perf::TIMELINE_CAPACITY));
+            const auto view = sw->timeline_view();
+            const auto* events = view.data();
+            if (events != nullptr) {
+                for (uint64_t i = 0; i < window_size; ++i) {
+                    // Walk newest-to-oldest so that on a wrap-overflow
+                    // (window_size hit cap), we read the most-recent
+                    // events rather than the wrapped-over stale ones.
+                    const uint64_t global_idx = sched_post_idx - 1 - i;
+                    const uint32_t slot = static_cast<uint32_t>(
+                        global_idx & ::crucible::perf::TIMELINE_MASK);
+                    // Acquire load on ts_ns pairs with the BPF program's
+                    // compiler barrier before the ts_ns store (post-
+                    // GAPS-004b-AUDIT).  ts_ns == 0 → producer hasn't
+                    // committed this slot yet; skip.
+                    const uint64_t ts = __atomic_load_n(&events[slot].ts_ns,
+                                                       __ATOMIC_ACQUIRE);
+                    if (ts == 0) continue;
+                    const uint64_t off = events[slot].off_cpu_ns;
+                    if (off > r.sched_offcpu_max_ns) {
+                        r.sched_offcpu_max_ns = off;
+                        r.sched_offcpu_cpu    = events[slot].on_cpu;
+                    }
+                    ++r.sched_offcpu_count;
+                }
+            }
         }
 #endif
 
