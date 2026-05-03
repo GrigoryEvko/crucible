@@ -182,10 +182,24 @@ struct pmu_sample_timeline {
 
 /* ─── Helpers: target filter + tid extraction ────────────────────────── */
 
+/*
+ * GAPS-004c-AUDIT-2 (2026-05-04): defense-in-depth hardening.
+ * Match sense_hub.bpf.c's is_target() — `target_tgid != 0` guard
+ * makes the function return false when userspace's .rodata rewrite
+ * silently failed (target_tgid stays 0).  Without this, tgid==0
+ * (swapper/idle) would silently match and pollute downstream maps:
+ * - sched_switch tracks swapper context switches → wastes map slots
+ * - syscall_latency / lock_contention same risk
+ * - pmu_sample is protected by exclude_kernel=1 already, but
+ *   defense-in-depth costs nothing (~1 ns extra register compare)
+ * Cost: one comparison; called O(events/sec) per BPF program.
+ * Pure additive — when target_tgid != 0 (normal case), behavior
+ * identical to the previous form.
+ */
 static __always_inline bool is_target(void)
 {
     __u32 tgid = bpf_get_current_pid_tgid() >> 32;
-    return tgid == target_tgid;
+    return target_tgid != 0 && tgid == target_tgid;
 }
 
 static __always_inline __u32 get_tid(void)

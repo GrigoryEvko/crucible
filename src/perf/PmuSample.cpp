@@ -112,13 +112,20 @@ static_assert(sizeof(PerfFd) == sizeof(int));
 // be changed without re-attaching; caching at first call is a
 // no-op vs always-getenv() for the cold path.
 //
-// Returns 0 (= use the spec table default) if the env var is
-// missing, empty, malformed, or 0.  Negative-value strings parse
-// to 0 via strtoul truncation, matching the "treat invalid as
-// default" policy.
+// Returns the fallback if the env var is missing, empty, malformed,
+// negative, zero, or unparseable.
+//
+// GAPS-004c-AUDIT-2 (2026-05-04) tightening: the v1 implementation
+// claimed "negative-value strings parse to 0 via strtoul truncation"
+// — that is INCORRECT.  strtoull("-5", ...) recognizes the leading
+// '-' and returns 0 - 5 in unsigned arithmetic = ULLONG_MAX - 4 ≈
+// 18 quintillion.  Passed as sample_period this means "sample once
+// every 18 quintillion events" = effectively never.  User who set
+// PERIOD_HW=-5 would get silent suppression — bad UX.  Explicit
+// '-' check rejects this and falls back to the spec table default.
 [[nodiscard]] uint64_t env_period(const char* name, uint64_t fallback) noexcept {
     const char* v = std::getenv(name);
-    if (v == nullptr || v[0] == '\0') return fallback;
+    if (v == nullptr || v[0] == '\0' || v[0] == '-') return fallback;
     char* end = nullptr;
     const unsigned long long parsed = std::strtoull(v, &end, 10);
     if (end == v || parsed == 0) return fallback;  // unparseable / zero → default

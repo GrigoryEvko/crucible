@@ -102,6 +102,45 @@
 //     (extremely rare; usually a corrupt context).  Skip such
 //     samples in your aggregation rather than counting them as
 //     a real instruction.
+//   • event_type values 0 and 1 are RESERVED for cycles + L1D
+//     miss respectively but are NOT emitted by this BPF facade
+//     (those events fire too frequently for BPF — they belong
+//     on a future PerfEventRing path).  A reader that
+//     defensively switch()es on event_type should treat 0/1 as
+//     "unknown / skip" rather than asserting they cannot occur
+//     (a future BPF program might add them).
+//   • **Slot order, not ts_ns, is the wire-time order.**
+//     Multiple cores fire PMI in parallel; two events landing
+//     in the same nanosecond can have ts_ns_A == ts_ns_B but
+//     write_idx_A < write_idx_B.  Within a single bench window
+//     [pre, post), iterate slots in write_idx order — that is
+//     the canonical event sequence.  Use ts_ns for absolute
+//     timestamps (e.g. cross-program correlation), not for
+//     ordering adjacent samples.
+//
+// ─── Sample-period safety guidance ─────────────────────────────────
+//
+// The kernel applies a global per-CPU rate limit
+// (kernel.perf_event_max_sample_rate, default 100 kHz) and will
+// throttle high-frequency event sources, BUT very low
+// sample_period values can still cause:
+//   • Sustained ~100 kHz NMI handler invocation per CPU
+//   • BPF program wakeup at every overflow (~3-5 µs each)
+//   • At 16 cores × 100 kHz: ~5 ms/sec/core = 8% per-core CPU
+//     burnt on PMU bookkeeping alone — competing with the
+//     workload you wanted to profile
+//
+// Practical floors (default sample_period for context):
+//   • PERIOD_HW  ≥ 1000 (default 10000) — values < 1000 risk
+//     kernel-wide NMI flood that throttles other workloads
+//   • PERIOD_IBS ≥ 10000 (default 100000) — IBS events are more
+//     expensive per-overflow than generic PMU
+//   • PERIOD_SW  = 1 is fine (SW events are intrinsically rare:
+//     <100/sec/process baseline)
+//
+// load() does NOT enforce a floor — diagnostic users may
+// legitimately want ultra-dense sampling.  CRUCIBLE_PERF_VERBOSE=1
+// surfaces the effective period so you can verify what got attached.
 //
 // ─── Known limits (GAPS-004c-AUDIT, 2026-05-04) ────────────────────
 //
@@ -230,6 +269,13 @@ class PmuSample {
     // (IBS-Op / IBS-Fetch skipped); systems with paranoid >= 1
     // for HW events get 3 (just SW); etc.  `(post)/8` is the
     // structural rate.
+    //
+    // GAPS-004c-AUDIT-2 (2026-05-04) caveat: this is a COARSE
+    // count — it doesn't tell you WHICH event types attached.
+    // For per-event-type attribution, set CRUCIBLE_PERF_VERBOSE=1
+    // and read the "[crucible::perf] pmu_sample attached <name> ..."
+    // log lines on stderr at load time.  A future GAPS-004x
+    // refactor may expose a per-type bitmask accessor.
     [[nodiscard]] safety::Refined<safety::bounded_above<8>, std::size_t>
         attached_programs() const noexcept;
 
