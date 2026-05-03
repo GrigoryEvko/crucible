@@ -29,8 +29,10 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>   // setenv (POSIX); needed for CRUCIBLE_PERF_QUIET hint below
+#include <memory>    // std::unique_ptr for the EBO sizeof witness
 #include <optional>
 #include <type_traits>
+#include <utility>   // std::move for the moved-from defenses test
 
 namespace {
 
@@ -68,6 +70,26 @@ static_assert(!std::is_copy_constructible_v<crucible::perf::SenseHub>,
 static_assert(std::is_move_constructible_v<crucible::perf::SenseHub>,
     "SenseHub must be movable so the process-wide singleton can "
     "be constructed-then-emplaced into std::optional");
+
+// GAPS-004a-AUDIT (#1288): EBO size witness.  SenseHub holds a
+// single std::unique_ptr<State> (an opaque PIMPL pointer).  Any
+// future field added without `[[no_unique_address]]` would inflate
+// sizeof(SenseHub) past sizeof(unique_ptr<State>) and quietly burn
+// cache footprint at every consumer that holds an `optional<SenseHub>`
+// in static storage.  The static_assert is structural — it catches
+// the regression at compile time rather than via a separate
+// "are we still 8 bytes" benchmark.
+//
+// The state_ field is the SOLE non-static data member; both the
+// SenseHub object and its inplace_vector links / WriteOnce mmap
+// pointer / Monotonic counter live behind the unique_ptr, off the
+// SenseHub footprint.
+struct DummyState{};
+static_assert(sizeof(crucible::perf::SenseHub) ==
+              sizeof(std::unique_ptr<DummyState>),
+    "SenseHub must equal sizeof(std::unique_ptr<State>); a regression "
+    "indicates a non-EBO field was added without [[no_unique_address]] "
+    "(or a polymorphic vptr crept in via a virtual function)");
 
 }  // namespace
 
@@ -219,6 +241,84 @@ int main() {
             const crucible::safety::Borrowed<
                 const volatile std::uint64_t,
                 crucible::perf::SenseHub>>);
+        // ── (5) Borrowed view spans NUM_COUNTERS u64 cells.
+        //
+        // GAPS-004a-AUDIT (#1288): the wire-contract claim in
+        // SenseHub.cpp:497 is `state_->counters.get(), NUM_COUNTERS`
+        // — the loaded view MUST span exactly NUM_COUNTERS elements.
+        // Mismatch here means either the BPF map was sized wrong
+        // (verifier would reject, so unreachable) or the wrapper
+        // construction lost the count.  view.size() should equal 96.
+        if (view.size() != crucible::perf::NUM_COUNTERS) {
+            std::fprintf(stderr,
+                "perf::SenseHub::counters_view() — expected NUM_COUNTERS "
+                "(96) elements, got %zu\n", view.size());
+            return 1;
+        }
+        if (view.empty()) {
+            std::fprintf(stderr,
+                "perf::SenseHub::counters_view() — view should be "
+                "non-empty when hub.has_value()\n");
+            return 1;
+        }
+
+        // ── (6) Moved-from semantics — defenses on each accessor.
+        //
+        // GAPS-004a-AUDIT (#1288): every public accessor has an
+        // explicit `state_ == nullptr` early-return that yields a
+        // documented "empty" value — Snapshot{}, empty Borrowed,
+        // Refined{0}.  These defenses make moved-from SenseHub
+        // instances safe to query without crashing, which matters
+        // because std::optional<SenseHub>::reset() leaves the
+        // optional in an empty state but client code may keep a
+        // reference around longer than that.  This block exercises
+        // the moved-from branch on every accessor so a future move-op
+        // refactor that breaks the guard fails the test rather than
+        // silently dereferencing nullptr.
+        crucible::perf::SenseHub moved_into = std::move(*hub);
+        // hub now holds the moved-from state — every accessor must
+        // tolerate state_ == nullptr.
+        const auto zeroed_snapshot   = hub->read();
+        const auto empty_view        = hub->counters_view();
+        const auto attached_after    = hub->attached_programs();
+        const auto failures_after    = hub->attach_failures();
+
+        for (uint32_t i = 0; i < crucible::perf::NUM_COUNTERS; ++i) {
+            if (zeroed_snapshot.counters[i] != 0u) {
+                std::fprintf(stderr,
+                    "perf::SenseHub::read() on moved-from — slot %u "
+                    "should be 0, got %llu\n", i,
+                    static_cast<unsigned long long>(
+                        zeroed_snapshot.counters[i]));
+                return 1;
+            }
+        }
+        if (!empty_view.empty()) {
+            std::fprintf(stderr,
+                "perf::SenseHub::counters_view() on moved-from — "
+                "expected empty Borrowed, got size=%zu\n",
+                empty_view.size());
+            return 1;
+        }
+        if (attached_after.value() != 0u || failures_after.value() != 0u) {
+            std::fprintf(stderr,
+                "perf::SenseHub::attached_programs/attach_failures "
+                "on moved-from — expected 0, got attached=%zu "
+                "failures=%zu\n",
+                attached_after.value(), failures_after.value());
+            return 1;
+        }
+        // Sanity check: the move RECIPIENT should still hold the live
+        // hub.  This isn't strictly an audit gap (the move ctor is
+        // defaulted off unique_ptr) but it's the symmetric witness
+        // for the moved-from defenses above.
+        if (moved_into.attached_programs().value() != attached) {
+            std::fprintf(stderr,
+                "perf::SenseHub move semantics — recipient lost "
+                "attached count (was %zu, now %zu)\n",
+                attached, moved_into.attached_programs().value());
+            return 1;
+        }
     }
 #endif
 

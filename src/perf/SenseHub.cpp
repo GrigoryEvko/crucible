@@ -117,6 +117,27 @@ static_assert(sizeof(Fd)   == sizeof(int));
 // CRUCIBLE_BENCH_BPF_* names are honoured so the bench harness
 // retains backward-compatible env-var contracts after the SenseHub
 // promotion (GAPS-004a).
+//
+// ─── Caching trap (GAPS-004a-AUDIT, #1288) ──────────────────────────
+//
+// `static const bool kQuiet = env_true_either(...);` decides FOREVER
+// at the FIRST call to quiet() in process lifetime.  setenv() AFTER
+// that point has no effect on subsequent quiet() returns — the cache
+// captured the value before the setenv landed.
+//
+// This is intentional: getenv on every call costs a `strcmp` walk of
+// `environ` which is ~50-200ns, dwarfing the actual diagnostic cost
+// in the rare-but-not-zero stderr-write path.  But it means tests
+// that want to toggle behaviour mid-process MUST setenv BEFORE the
+// SenseHub is ever loaded — once load()'s diagnostic path or the bench
+// harness banner has run, the cache is locked.
+//
+// In practice this is fine because both flags are deployment-time
+// decisions (set once in the systemd unit, the docker env, or the
+// sentinel test's first line).  If a future use case demands
+// re-evaluating per call, swap the function-local-static pattern for
+// a simple `getenv(...) != nullptr && getenv(...)[0] == '1'` body.
+// The 200ns cost only matters if a hot-path frame asks; today none do.
 [[nodiscard]] bool env_true(const char* name) noexcept {
     const char* v = std::getenv(name);
     return v != nullptr && v[0] == '1';

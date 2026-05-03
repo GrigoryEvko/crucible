@@ -1020,6 +1020,18 @@ crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_both_consumers
 crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_raw_handle
     "associated constraints are not satisfied|CtxFitsStageFromEndpoints|IsConsumerEndpoint|IsProducerEndpoint")
 
+# GAPS-004a-AUDIT (#1288): SenseHub::load() takes effects::Init by
+# value as its sole parameter.  The cap-typing gate is structural —
+# Bg/Init/Test are distinct 1-byte structs with no implicit conversion,
+# so a hot-path / background frame holding only Bg cannot reach the
+# startup-only loader.  These two fixtures pin the gate at
+# compile time as the regression-witness for the SenseHub.h docblock
+# claim at lines 234-240.
+crucible_neg_compile_effects_test(neg_perf_sense_hub_load_wrong_cap
+    "could not convert|no matching function|cannot convert|expected.*Init")
+crucible_neg_compile_effects_test(neg_perf_sense_hub_load_no_cap
+    "too few arguments|no matching function|candidate expects 1 argument")
+
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the
 # SessionMint walker handles BSYZ22 crash-stop's Stop the same way
 # as End — vacuously admitted, but the surrounding Send's payload
