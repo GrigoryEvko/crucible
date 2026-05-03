@@ -464,6 +464,17 @@ if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "")
   add_subdirectory(test)
 endif()
 
+# Examples — worked production-shape demonstrations of substrate
+# concepts (Phase 0 P0-5 ships examples/fn/* for the Fn<...>
+# aggregator).  Built alongside tests because they double as
+# regression smoke tests for the substrate's public surface; opt-out
+# via -DCRUCIBLE_EXAMPLES=OFF for minimal builds.
+option(CRUCIBLE_EXAMPLES "Build worked examples of substrate concepts" ON)
+if(CRUCIBLE_EXAMPLES AND
+   (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL ""))
+  add_subdirectory(examples)
+endif()
+
 # Benchmarks (opt-in: only built if -DCRUCIBLE_BENCH=ON)
 option(CRUCIBLE_BENCH "Build benchmark executables" OFF)
 if(CRUCIBLE_BENCH)
