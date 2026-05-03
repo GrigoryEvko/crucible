@@ -308,21 +308,56 @@ template <
     typename       Staleness    = stale::Fresh
 >
 struct Fn {
-    // ── Type constraint ──────────────────────────────────────────
+    // ── Type constraint (audit round 2 — five gates) ─────────────
     //
-    // Fn<Type, ...> demands a complete object type (not void, not
-    // reference, not bare function type, not abstract).  Fixy
-    // function bindings emit as function POINTERS or callable
-    // structs — never as bare function types — so the rejection
-    // is structural for every Fixy callsite.  The test_safety_neg
-    // fixtures `neg_fn_rejects_void_type` and `neg_fn_rejects_
-    // reference_type` pin this contract.
+    // Fn<Type, ...> demands a complete object type that is also
+    // (a) non-cv-qualified — const/volatile silently break copy-
+    //     and move-assignment via implicit deletion of the
+    //     defaulted assignment ops (Fn<const int>{}.operator=(...)
+    //     gets quietly synthesized as deleted), defeating the
+    //     wrapper's discipline; and
+    // (b) non-array — `std::is_object_v<int[N]>` is true but the
+    //     constructor `Fn(Type v)` would silently rebind to a
+    //     pointer (array-to-pointer decay), turning an intended
+    //     array copy into a pointer alias.
+    //
+    // Fixy function bindings emit as function POINTERS or callable
+    // structs — never as bare function types — so the void / ref /
+    // function-type rejection is structural for every Fixy
+    // callsite.  The five test_safety_neg fixtures
+    // `neg_fn_rejects_{void,reference,const,volatile,array}_type`
+    // pin each gate independently.
+    //
+    // Diagnostic discipline: each static_assert states the
+    // ROOT-CAUSE failure (what breaks downstream) and the FIX
+    // (which Fn shape or substrate type to use instead) so a
+    // reviewer reaches for the right alternative without reading
+    // the wrapper's source.
     static_assert(std::is_object_v<Type>,
         "Fn<Type, ...> requires Type to be a complete object type. "
-        "Reject: void, reference types, bare function types, "
-        "abstract classes.  For Fixy function bindings, use a "
-        "function pointer or callable struct, not the bare function "
-        "type.");
+        "Reject: void, reference types, bare function types.  For "
+        "Fixy function bindings, use a function pointer or callable "
+        "struct, not the bare function type.");
+    static_assert(!std::is_const_v<Type>,
+        "Fn<const T, ...> is malformed.  Const-qualifying the value "
+        "type silently deletes copy- and move-assignment of the "
+        "wrapper, breaking move semantics + the universal mint "
+        "discipline.  Use Fn<T, ..., MutationMode::Immutable> to "
+        "express logical immutability while keeping the wrapper's "
+        "value-category discipline intact.");
+    static_assert(!std::is_volatile_v<Type>,
+        "Fn<volatile T, ...> is malformed.  volatile is a hardware-"
+        "memory annotation (memory-mapped I/O, signal-safe storage) "
+        "— it is not a property the Fn grade vector models.  Use "
+        "std::atomic<T> for concurrent access or annotate the "
+        "volatility at the Type definition site.");
+    static_assert(!std::is_array_v<Type>,
+        "Fn<T[N], ...> is malformed.  C arrays decay to pointers "
+        "in function parameters, so the wrapper's `Fn(Type v)` "
+        "constructor would silently rebind to a pointer rather "
+        "than copying the array.  Use Fn<std::array<T, N>, ...> "
+        "for value-semantic fixed arrays or Fn<Borrowed<T, "
+        "Source>, ...> for a borrowed view.");
 
     // ── Per-axis introspection surface (compile-time accessors) ───
     using type_t                                       = Type;
@@ -363,6 +398,26 @@ struct Fn {
     [[nodiscard]] constexpr auto&& value(this Self&& self) noexcept {
         return std::forward<Self>(self).value_;
     }
+
+    // ── ValidComposition gate (P0-2 hookup point) ───────────────
+    //
+    // Routes through the same concept that `mint_fn` uses — but at
+    // the class-template body level, AFTER all per-axis static
+    // members are declared, so direct construction
+    // (`Fn<X, BadGrades...>{}` bypassing the factory) is gated
+    // identically to the mint path.  Without this, when
+    // CollisionCatalog.h (P0-2) ships, a user could circumvent the
+    // 12 §6.8 rules by writing `Fn<X, BadCombo...>` directly.
+    //
+    // Placeholder behavior: ValidComposition is `concept ... = true;`
+    // so this static_assert is a no-op until P0-2 lands, at which
+    // point the gate fires with structured per-rule diagnostics
+    // routed through `safety::diag::CollisionCatalog`.
+    static_assert(ValidComposition<Fn>,
+        "Fn<...> grade combination violates a §6.8 collision rule. "
+        "When CollisionCatalog.h (P0-2) ships, this assert points at "
+        "the specific rejected rule (I002 / L002 / E044 / ...) via "
+        "safety::diag::CollisionCatalog.");
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -552,6 +607,33 @@ static_assert(std::is_nothrow_move_assignable_v<Fn<int>>);
 static_assert(std::is_nothrow_copy_constructible_v<Fn<int>>);
 static_assert(std::is_trivially_destructible_v<Fn<int>>);
 
+// ── Audit-round-2 gates (positive coverage) ──────────────────────
+//
+// The new !is_const_v / !is_volatile_v / !is_array_v static_asserts
+// in the Fn class body must NOT fire on legitimate types.  These
+// instantiations exercise representative valid types so a future
+// regression (over-broad rejection) is caught here, not at downstream
+// call sites.
+
+// Mutable scalars — pass.
+static_assert(sizeof(Fn<unsigned int>) == sizeof(unsigned int));
+static_assert(sizeof(Fn<long long>)    == sizeof(long long));
+
+// Aggregates carrying const/array MEMBERS (vs. const/array Type) — pass.
+struct AggregateWithConstMember { const int x = 0; int y = 0; };
+struct AggregateWithArrayMember { int xs[4]{}; };
+static_assert(sizeof(Fn<AggregateWithConstMember>) == sizeof(AggregateWithConstMember));
+static_assert(sizeof(Fn<AggregateWithArrayMember>) == sizeof(AggregateWithArrayMember));
+
+// Pointer to const T — pass (the POINTER is non-const, the pointee is const).
+static_assert(sizeof(Fn<const int*>) == sizeof(const int*));
+
+// Reference to T as Source-tagged Borrowed — pass (Borrowed is itself
+// an object type).  Sentinel — Borrowed isn't included here directly
+// to keep this header lightweight; the principle is that wrapping a
+// reference inside another wrapper is allowed because the wrapper IS
+// an object.
+
 }  // namespace detail::fn_self_test
 
 // ═════════════════════════════════════════════════════════════════════
@@ -564,6 +646,27 @@ static_assert(std::is_trivially_destructible_v<Fn<int>>);
 // Called from test/test_safety_compile.cpp.
 
 namespace detail::fn_self_test {
+
+// ── Move-only witness for runtime_smoke_test ─────────────────────
+//
+// File-scope (not inside the inline function) because GCC requires
+// types-with-deleted-special-members to be addressable for
+// instantiation; defining inline a function would tie the type's
+// linkage to the function and confuse the static-data-member
+// initialization rules.
+//
+// Hand-rolled rather than std::unique_ptr: keeps the smoke test
+// dependency-free and exercises Fn's interaction with deleted-copy
+// + defaulted-move discipline directly.
+struct MoveOnly {
+    int v = 0;
+    constexpr MoveOnly() noexcept = default;
+    explicit constexpr MoveOnly(int x) noexcept : v{x} {}
+    constexpr MoveOnly(const MoveOnly&)            = delete;
+    constexpr MoveOnly& operator=(const MoveOnly&) = delete;
+    constexpr MoveOnly(MoveOnly&&) noexcept            = default;
+    constexpr MoveOnly& operator=(MoveOnly&&) noexcept = default;
+};
 
 inline void runtime_smoke_test() {
     // Default-grade construction + accessor read.
@@ -596,6 +699,19 @@ inline void runtime_smoke_test() {
     // Move semantics.
     Fn<int> moved = std::move(f1);
     [[maybe_unused]] auto vm = moved.value();
+
+    // Move-only type — Fn must support T with deleted copy ops
+    // because Linear<T>, OwnedRegion, and other production wrappers
+    // that flow into Fn carry no copy ctor.  If a future refactor
+    // adds a copy-using path inside Fn, this fails to compile.
+    Fn<MoveOnly> mo{MoveOnly{99}};
+    [[maybe_unused]] auto& mov = mo.value();
+    Fn<MoveOnly> mo2 = std::move(mo);
+    [[maybe_unused]] auto& mov2 = mo2.value();
+
+    // mint_fn with a move-only type.
+    [[maybe_unused]] auto mint_mo = mint_fn(MoveOnly{123});
+    static_assert(std::is_same_v<decltype(mint_mo), Fn<MoveOnly>>);
 }
 
 }  // namespace detail::fn_self_test

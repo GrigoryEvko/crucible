@@ -1083,16 +1083,35 @@ crucible_neg_compile_test(neg_dimension_traits_versioned_rejects_bare_int
 
 # ─── Fn aggregator type-slot discipline (Phase 0 P0-1, #1095) ──────
 #
-# Two neg-compile fixtures pinning the type constraint on
-# Fn<Type, ...>'s primary template static_assert.  The aggregator
-# rejects void, reference types, bare function types, and abstract
-# classes — every Fn::value_ member must be a complete object type.
-# Both diagnostics surface as "requires Type to be a complete
-# object type" pointing at the class-template body's static_assert.
+# Five neg-compile fixtures pinning the FIVE type-slot rejection
+# gates on Fn<Type, ...>'s class-template body:
+#
+#   1. void                — caught by std::is_object_v<Type>
+#   2. reference types     — caught by std::is_object_v<Type>
+#   3. const-qualified     — caught by !std::is_const_v<Type>
+#   4. volatile-qualified  — caught by !std::is_volatile_v<Type>
+#   5. C array types       — caught by !std::is_array_v<Type>
+#
+# Each gate is independent — the audit-round-2 commit added gates
+# 3-5 to close footguns the original is_object_v gate did not
+# catch (`is_object_v<int[N]>` is true; const T silently deletes
+# the wrapper's assignment ops; volatile T defeats the optimizer's
+# zero-cost claim).  See Fn.h's "Type constraint" comment block.
+#
+# HS14 (≥2 fixtures per mint factory) is satisfied 2.5× — Fn's
+# mint_fn factory has 5 gates, each pinned independently.  When
+# CollisionCatalog (P0-2) ships a 6th class of rejection
+# (composition), per-rule fixtures join this set.
 crucible_neg_compile_test(neg_fn_rejects_void_type
   "complete object type")
 crucible_neg_compile_test(neg_fn_rejects_reference_type
   "complete object type")
+crucible_neg_compile_test(neg_fn_rejects_const_type
+  "Const-qualifying the value type")
+crucible_neg_compile_test(neg_fn_rejects_volatile_type
+  "volatile is a hardware-memory annotation")
+crucible_neg_compile_test(neg_fn_rejects_array_type
+  "C arrays decay to pointers")
 
 # ─── Graded modality discipline (Phase 2a foundation) ───────────────
 #
