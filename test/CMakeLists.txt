@@ -1064,6 +1064,23 @@ crucible_neg_compile_test(neg_graded_concept_no_lattice_type
 crucible_neg_compile_test(neg_graded_concept_bare_int
   "constraints not satisfied")
 
+# ─── DimensionTraits Tier-S/V concept gates (Phase 0 P0-3, #1094) ──
+#
+# Two neg-compile fixtures pinning the Tier concept gates exposed
+# by safety/DimensionTraits.h.  The Tier-S gate must reject a
+# lattice-only carrier (no add/mul/zero/one); the Tier-V gate must
+# reject a bare scalar (no element_type, no compatible(a, b)).
+# Both diagnostics surface as "constraints not satisfied" pointing
+# at the SemiringGrade<G> / VersionedGrade<G> evaluation.
+#
+# The remaining concept gates (LatticeGrade, TypestateGrade,
+# FoundationalGrade) get neg-compile coverage in P0-6 (#1099) as
+# part of the broader 30-fixture corpus.
+crucible_neg_compile_test(neg_dimension_traits_semiring_rejects_lattice_only
+  "constraints not satisfied")
+crucible_neg_compile_test(neg_dimension_traits_versioned_rejects_bare_int
+  "constraints not satisfied")
+
 # ─── Graded modality discipline (Phase 2a foundation) ───────────────
 #
 # Three neg-compile tests pinning the modality gates on Graded<>:

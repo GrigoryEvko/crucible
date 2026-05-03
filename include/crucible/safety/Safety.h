@@ -177,6 +177,7 @@
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/Wait.h>
 #include <crucible/safety/Diagnostic.h>
+#include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/Linear.h>
 #include <crucible/safety/Machine.h>
 #include <crucible/safety/Mutation.h>
