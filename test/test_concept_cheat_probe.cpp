@@ -327,6 +327,83 @@ struct Cheat18_FunctionTemplateForwarder {
 };
 static constexpr bool cheat18_admits = GradedWrapper<Cheat18_FunctionTemplateForwarder>;
 
+// ── Round-6 cheats — per-wrapper concept-gate attacks ───────────────
+//
+// Round-1..5 above target the GENERIC GradedWrapper concept.  Round-6
+// extends the harness with adversarial cheats specific to the FOUND-G*
+// wrappers (NumericalTier, DetSafe, HotPath, Vendor, ...) — each
+// wrapper ships an Is<X> partial-specialization-driven DETECTION trait
+// in `crucible::safety::extract` whose attack surface is DIFFERENT
+// from GradedWrapper's.  Round-1..5 catch generic substrate/value-
+// type/modality lies; Round-6 catches per-wrapper detection-trait
+// lies (derived-class admittance, trait-spec injection on the
+// per-wrapper detail trait).
+//
+// Per-wrapper convention (×17 wrappers × ≥2 cheats each ⇒ ≥34 probes
+// when FOUND-E17 #826 fully closes):
+//   - One LOCKED rejection — typically a derived-from-W cheat that
+//     the partial-spec correctly refuses to match.  Catches future
+//     regressions that would weaken the trait to family-match (e.g.,
+//     a misguided "be permissive on subclasses" change).
+//   - One DOCUMENTED architectural limit — trait-spec injection on
+//     the detail::is_<x>_impl primary template.  Identical escape
+//     mechanism to Cheats 11/12 against GradedWrapper; defended by
+//     the same review discipline (grep guard on `is_*_impl<` outside
+//     the safety/* tree).
+
+#include <crucible/safety/IsNumericalTier.h>
+
+// ── NumericalTier (FOUND-G01 / #826 batch 1/17) ─────────────────────
+
+// Cheat 19: derived-from-NumericalTier (REJECTED — partial-spec
+// matches the EXACT wrapper template `NumericalTier<T_at, U>`, not
+// its derived classes; even though the derived type inherits the
+// wrapper's typedefs and API, IsNumericalTier resolves the trait
+// against the type's own identity, not its base.  If admitted, code
+// that demands a NumericalTier-shaped argument would silently accept
+// any subclass — defeating the wrapper's identity guarantee at
+// boundaries (Substrate, dispatcher, mint factories per CLAUDE.md
+// §XXI), since a subclass could carry arbitrary additional state /
+// invariants the dispatcher does not anticipate).
+struct Cheat19_DerivedFromNumericalTier
+    : crucible::safety::NumericalTier<
+          crucible::safety::Tolerance::BITEXACT, int> {};
+static constexpr bool cheat19_admits =
+    crucible::safety::extract::IsNumericalTier<
+        Cheat19_DerivedFromNumericalTier>;
+
+// Cheat 20 fixture — at global namespace scope so its specialization
+// in crucible::safety::extract::detail can name it via `::`.
+struct Cheat20_FakeViaTraitInjection {
+    int payload{0};
+};
+
+// Trait-spec injection — the load-bearing escape mechanism (mirror
+// of Cheats 11, 12 which inject into crucible::algebra:: traits).
+// Specializing the per-wrapper detection trait in its originating
+// namespace bypasses the partial-spec gate entirely.
+namespace crucible::safety::extract::detail {
+template <>
+struct is_numerical_tier_impl<::Cheat20_FakeViaTraitInjection>
+    : std::true_type
+{
+    using value_type = int;
+    static constexpr ::crucible::safety::Tolerance tier =
+        ::crucible::safety::Tolerance::BITEXACT;
+    static constexpr bool has_tier = true;
+};
+}  // namespace crucible::safety::extract::detail
+
+// Cheat 20: a non-NumericalTier passes IsNumericalTier because the
+// user specialized the detection trait.  Same architectural-limit
+// caveat as Cheats 11/12: no purely-concept-level defense exists
+// against deliberate trait-spec injection in the originating
+// namespace.  Defense is review discipline + a CI grep guard on
+// `is_numerical_tier_impl<` outside the safety/* tree.
+static constexpr bool cheat20_admits =
+    crucible::safety::extract::IsNumericalTier<
+        ::Cheat20_FakeViaTraitInjection>;
+
 // Print the verdicts at compile time:
 template <bool B> struct ShowAdmits { static constexpr bool value = B; };
 
@@ -368,5 +445,34 @@ static_assert( cheat18_admits,
     "[CHEAT 18 STATUS CHANGED] function-template forwarder with default "
     "template arg is now REJECTED — flip assertion to !cheat18_admits if "
     "the rejection is intentional, or accept the admission as harmless.");
+
+// ── Round-6 verdicts (per-wrapper concept-gate cheats) ─────────────
+//
+// NumericalTier (FOUND-G01, batch 1/17 of FOUND-E17 #826).
+//
+// Locked-in REJECTIONS — firing means a regression weakened
+// IsNumericalTier from "exact-match partial-spec" to "family-match"
+// (or worse).  The wrapper-detection trait MUST refuse derived
+// classes; if a subclass is admitted, the subclass's added state
+// flows undetected through every IsNumericalTier-gated boundary.
+static_assert(!cheat19_admits,
+    "[CHEAT 19 ADMITTED] derived-from-NumericalTier passed "
+    "IsNumericalTier — partial-spec matched a subclass instead of "
+    "only the exact wrapper template.  Substrate / dispatcher / mint "
+    "factories now silently accept arbitrary subclasses with extra "
+    "state, defeating the wrapper's identity guarantee.");
+
+// Documented ARCHITECTURAL LIMITS — firing means the trait gained a
+// defense (e.g., the impl trait moved to a private/inaccessible
+// namespace, or a CI grep guard rejects user-namespace specializations).
+// When this triggers, flip the assertion to !cheatN_admits and document
+// the new defense in this file's verdict-of-record block.
+static_assert( cheat20_admits,
+    "[CHEAT 20 STATUS CHANGED] trait-spec injection on "
+    "is_numerical_tier_impl in crucible::safety::extract::detail is "
+    "now REJECTED — flip assertion to !cheat20_admits and document "
+    "the new defense (likely: relocate the impl trait to a "
+    "review-protected namespace, OR ship a CI grep guard on "
+    "`is_numerical_tier_impl<` outside the safety/* tree).");
 
 int main() { return 0; }
