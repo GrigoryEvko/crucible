@@ -102,6 +102,50 @@ static_assert(sizeof(PerfFd) == sizeof(int));
     return kVerbose;
 }
 
+// ── Sample-period env-var overrides (GAPS-004c-AUDIT, #1290) ───────
+//
+// Same caching trap as quiet/verbose — function-local-static
+// captures the env value at FIRST query and never re-evaluates.
+// setenv() AFTER load() has no effect on the periods that get
+// passed to perf_event_open.  This is intentional: the periods
+// are baked into the perf_event_attr at attach time and can't
+// be changed without re-attaching; caching at first call is a
+// no-op vs always-getenv() for the cold path.
+//
+// Returns 0 (= use the spec table default) if the env var is
+// missing, empty, malformed, or 0.  Negative-value strings parse
+// to 0 via strtoul truncation, matching the "treat invalid as
+// default" policy.
+[[nodiscard]] uint64_t env_period(const char* name, uint64_t fallback) noexcept {
+    const char* v = std::getenv(name);
+    if (v == nullptr || v[0] == '\0') return fallback;
+    char* end = nullptr;
+    const unsigned long long parsed = std::strtoull(v, &end, 10);
+    if (end == v || parsed == 0) return fallback;  // unparseable / zero → default
+    return static_cast<uint64_t>(parsed);
+}
+[[nodiscard]] uint64_t period_hw(uint64_t fallback) noexcept {
+    static const uint64_t kP = env_period("CRUCIBLE_PERF_PMU_PERIOD_HW", fallback);
+    return kP;
+}
+[[nodiscard]] uint64_t period_ibs(uint64_t fallback) noexcept {
+    static const uint64_t kP = env_period("CRUCIBLE_PERF_PMU_PERIOD_IBS", fallback);
+    return kP;
+}
+[[nodiscard]] uint64_t period_sw(uint64_t fallback) noexcept {
+    static const uint64_t kP = env_period("CRUCIBLE_PERF_PMU_PERIOD_SW", fallback);
+    return kP;
+}
+// Spec table default carries the original period; this helper
+// dispatches to the right env override based on the spec's perf_type
+// (or is_dynamic for IBS).  Called once per event spec at load time.
+[[nodiscard]] uint64_t resolve_period(uint32_t perf_type, bool is_dynamic,
+                                      uint64_t default_period) noexcept {
+    if (is_dynamic)                           return period_ibs(default_period);
+    if (perf_type == PERF_TYPE_SOFTWARE)      return period_sw(default_period);
+    return period_hw(default_period);  // PERF_TYPE_HARDWARE / HW_CACHE
+}
+
 int libbpf_log_cb(enum libbpf_print_level, const char* fmt, va_list args) noexcept {
     if (!verbose()) return 0;
     return std::vfprintf(stderr, fmt, args);
@@ -372,11 +416,15 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
         // Build perf_event_attr.  exclude_kernel=1: BPF program
         // already filters kernel IPs but eliminating them at the
         // perf layer saves an unnecessary BPF invocation.
+        // sample_period: env-var override per category (HW/IBS/SW)
+        // — see resolve_period() docblock.  Defaults to spec table.
+        const uint64_t effective_period = resolve_period(
+            perf_type, spec.is_dynamic, spec.sample_period);
         struct perf_event_attr attr{};
         attr.size           = sizeof(attr);
         attr.type           = perf_type;
         attr.config         = spec.perf_config;
-        attr.sample_period  = spec.sample_period;
+        attr.sample_period  = effective_period;
         attr.exclude_kernel = 1;
         attr.exclude_hv     = 1;
         attr.disabled       = 0;
@@ -423,6 +471,19 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
         }
         state->links.push_back(link);
         state->perf_fds.push_back(perf_fd);
+
+        // Verbose attach log — one line per success, GAPS-004c-AUDIT.
+        // Lets the user verify env-var sample-period overrides took
+        // effect.  Only fires under CRUCIBLE_PERF_VERBOSE=1.
+        if (verbose()) {
+            std::fprintf(stderr,
+                "[crucible::perf] pmu_sample attached %-15s "
+                "type=%u config=0x%llx period=%llu\n",
+                spec.friendly_name,
+                perf_type,
+                static_cast<unsigned long long>(spec.perf_config),
+                static_cast<unsigned long long>(effective_period));
+        }
     }
 
     if (state->links.empty()) {

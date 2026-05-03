@@ -169,6 +169,21 @@ int main() {
         static_assert(std::is_same_v<decltype(write_idx), const uint64_t>);
         (void)write_idx;
 
+        // Wire-contract check: timeline_view().data() must be the
+        // start of the events array, which is page-aligned within
+        // the mmap (mmap returns page-aligned, then we offset by
+        // sizeof(PmuSampleHeader)=64).  Verify the events pointer
+        // is non-null when populated.  (We can't easily check page
+        // alignment of the underlying mmap from this side without
+        // exposing internals; the address-non-null check is the
+        // structural property that matters here.)
+        if (view.data() == nullptr) {
+            std::fprintf(stderr,
+                "perf::PmuSample::timeline_view() — data() is null "
+                "when hub.has_value()\n");
+            return 1;
+        }
+
         // ── (8) Moved-from defenses.
         crucible::perf::PmuSample moved_into = std::move(*hub);
         const uint64_t write_idx_after = hub->timeline_write_index();

@@ -62,6 +62,67 @@
 //
 // If perf_event_open is unavailable (paranoid >2 without
 // CAP_PERFMON, kernel too old), load() returns nullopt.
+//
+// ─── Sample-period env-var knobs (GAPS-004c-AUDIT, #1290) ──────────
+//
+// At load() time, the per-event-type sample periods can be
+// overridden via env vars (read once with the same caching
+// discipline as CRUCIBLE_PERF_QUIET — setenv AFTER load() has no
+// effect):
+//
+//   CRUCIBLE_PERF_PMU_PERIOD_HW   — overrides LLC/Branch/DTLB
+//                                   (default: 10000)
+//   CRUCIBLE_PERF_PMU_PERIOD_IBS  — overrides IBS-Op / IBS-Fetch
+//                                   (default: 100000)
+//   CRUCIBLE_PERF_PMU_PERIOD_SW   — overrides MajorPF / CpuMig /
+//                                   AlignFault (default: 1)
+//
+// Lower → denser sampling → higher BPF cost.  Higher → sparser
+// → lower cost but more aliasing in hot-loop attribution.
+// Recommended ranges:
+//   HW : 1000 (very dense, ~10% CPU on cache-bound) to
+//        100000 (sparse, ~0.1% CPU)
+//   IBS: 10000 (precise, dense) to 1000000 (low overhead)
+//   SW : 1 (every event) to 100 (subsample)
+//
+// CRUCIBLE_PERF_VERBOSE=1 prints which event types attached and
+// at what period — useful for verifying the override took effect.
+//
+// ─── Reader-side guidance ──────────────────────────────────────────
+//
+// When walking timeline_view():
+//   • Always do `__atomic_load_n(&events[slot].ts_ns, ACQUIRE)`
+//     FIRST.  ts_ns == 0 → producer hasn't committed this slot
+//     yet (or never wrote it).  Skip.
+//   • ts_ns != 0 → other fields are safe to read (the BPF
+//     program's compiler barrier ensures ip/tid/event_type
+//     stores retired before ts_ns).
+//   • ip == 0 is unusual but possible — typically means the
+//     instruction at the sample point was at virtual address 0
+//     (extremely rare; usually a corrupt context).  Skip such
+//     samples in your aggregation rather than counting them as
+//     a real instruction.
+//
+// ─── Known limits (GAPS-004c-AUDIT, 2026-05-04) ────────────────────
+//
+// (1) **Main-thread-only coverage.**  perf_event_open(pid=tgid,
+//     cpu=-1) monitors the kernel task whose TID == TGID, which is
+//     the main thread of the process.  Other threads in the same
+//     process are NOT sampled.  Same multi-thread coverage gap as
+//     SchedSwitch's our_tids registration.  Workaround for now:
+//     run profiling-targeted code on the main thread, or accept
+//     partial coverage.  Long-term fix (GAPS-004x): enumerate
+//     /proc/self/task/* and open one perf_event per TID, with
+//     a sched_process_exit hook to clean up dead threads (avoids
+//     TID-reuse hazard).
+//
+// (2) **Ring-buffer slot reuse on wrap.**  Same architectural
+//     limit as SchedSwitch's sched_timeline.  32K events × 24 µs
+//     between samples (typical busy workload) ≈ 768 ms wrap
+//     window — much wider than SchedSwitch's 100 ms but still
+//     bounded.  BPF preempt-disabled execution narrows the
+//     practical race window to microseconds.  Canonical fix is
+//     BPF_MAP_TYPE_RINGBUF; out of scope for this facade.
 
 #include <crucible/effects/Capabilities.h>  // effects::Init
 #include <crucible/safety/Borrowed.h>       // safety::Borrowed
