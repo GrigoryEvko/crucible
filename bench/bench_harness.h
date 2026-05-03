@@ -524,15 +524,20 @@ struct Report {
     // SchedSwitch off-CPU drill-down for the bench window.  Pre/post
     // are timeline_write_index() captures (~1 ns each, no syscall);
     // events in [pre, post) are the off-CPU records that completed
-    // during this run.  At print time we walk that range to extract
-    // the largest single off-CPU spike — explains *which* preempt
-    // cost the most when SenseHub's `preempt`/`wait` deltas are
-    // non-zero.  All zero on systems without SchedSwitch loaded.
-    uint64_t sched_pre_idx       = 0;
-    uint64_t sched_post_idx      = 0;
-    uint64_t sched_offcpu_max_ns = 0;  // longest off-CPU spike (ns)
-    uint32_t sched_offcpu_cpu    = 0;  // CPU it was scheduled onto
-    uint32_t sched_offcpu_count  = 0;  // # off-CPU events in window
+    // during this run.  At print time we walk that range and keep a
+    // sorted top-K of the longest off-CPU spikes — explains *which*
+    // preempts cost the most when SenseHub's `preempt`/`wait` deltas
+    // are non-zero.  K=5 covers the common diagnosis scenario (a few
+    // big spikes + many tiny ones); the `(×N)` suffix on print
+    // discloses the total event count when N > K.  All zero on
+    // systems without SchedSwitch loaded.
+    static constexpr uint32_t kSchedOffCpuTopK = 5;
+    uint64_t sched_pre_idx                          = 0;
+    uint64_t sched_post_idx                         = 0;
+    uint64_t sched_offcpu_top_ns [kSchedOffCpuTopK] = {};  // sorted desc
+    uint32_t sched_offcpu_top_cpu[kSchedOffCpuTopK] = {};  // parallel
+    uint32_t sched_offcpu_top_n                     = 0;   // # used
+    uint32_t sched_offcpu_count                     = 0;   // total events
 #endif
 
     std::vector<double> samples;  // kept for bootstrap_ci, compare
@@ -822,20 +827,29 @@ struct Report {
             std::fprintf(out, "%s=", f.label);
             print_scaled_(out, v, f.unit);
         }
-        // SchedSwitch off-CPU peak — appended inline (same line) as the
-        // SenseHub deltas, post-GAPS-004b-AUDIT (#1289).  This is the
-        // dense answer to "what was the worst single preempt during
-        // this bench window".  SenseHub already shows aggregate
-        // `preempt`/`yield` counts and total `wait`/`sleep` ns; the
-        // off-CPU peak says WHICH preempt cost the most + which CPU
-        // we ended up on.
-        if (sched_offcpu_max_ns > 0) {
+        // SchedSwitch off-CPU top-K — appended inline (same line) as
+        // the SenseHub deltas, post-GAPS-004b-AUDIT (#1289).  Dense
+        // answer to "WHICH preempts cost the most during this bench
+        // window".  SenseHub already shows aggregate `preempt`/`yield`
+        // counts and total `wait`/`sleep` ns; the top-K shows the
+        // longest individual off-CPU spikes + which CPUs we ended up
+        // on.  Format:
+        //   offcpu=19µs@1/17µs@1/15µs@5            (3 events, all shown)
+        //   offcpu=19µs@1/17µs@1/15µs@5 (×8)       (top 3 of 8 total)
+        // `/` separates events; `@N` is the CPU we landed on; `(×N)`
+        // appears only when the timeline saw more events than K, so
+        // the reader knows the top-K is a truncation rather than the
+        // exhaustive list.
+        if (sched_offcpu_top_n > 0) {
             if (!first) std::fprintf(out, " · ");
             first = false;
-            std::fprintf(out, "offcpu_max=");
-            print_scaled_(out, sched_offcpu_max_ns, Unit::Ns);
-            std::fprintf(out, "@cpu%u", sched_offcpu_cpu);
-            if (sched_offcpu_count > 1) {
+            std::fprintf(out, "offcpu=");
+            for (uint32_t i = 0; i < sched_offcpu_top_n; ++i) {
+                if (i > 0) std::fputc('/', out);
+                print_scaled_(out, sched_offcpu_top_ns[i], Unit::Ns);
+                std::fprintf(out, "@%u", sched_offcpu_top_cpu[i]);
+            }
+            if (sched_offcpu_count > sched_offcpu_top_n) {
                 std::fprintf(out, " (×%u)", sched_offcpu_count);
             }
         }
@@ -1186,11 +1200,14 @@ class Run {
             // struct (kept as plain size_t for printf-friendly emission).
             r.bpf_attached = hub->attached_programs().value();
         }
-        // SchedSwitch off-CPU peak — walk the timeline events that
-        // landed during this bench window and pick the longest single
-        // off-CPU spike.  All work is on the bg thread; per-iteration
-        // cost is the 2 × ~1 ns timeline_write_index() reads done
-        // pre/post the loop.
+        // SchedSwitch off-CPU top-K — walk the timeline events that
+        // landed during this bench window and maintain a sorted
+        // top-K (K=5) of the longest spikes.  All work is on the bg
+        // thread; per-iteration cost is the 2 × ~1 ns
+        // timeline_write_index() reads done pre/post the loop.
+        // Per-event walk cost is ≤ K comparisons + at most K element
+        // shifts — for K=5 that's <50 ns per event, totalled across
+        // ≤TIMELINE_CAPACITY events per bench.
         r.sched_pre_idx  = sched_pre_idx;
         r.sched_post_idx = sched_post_idx;
         if (sw != nullptr && sched_post_idx > sched_pre_idx) {
@@ -1200,6 +1217,7 @@ class Run {
             const auto view = sw->timeline_view();
             const auto* events = view.data();
             if (events != nullptr) {
+                constexpr uint32_t K = Report::kSchedOffCpuTopK;
                 for (uint64_t i = 0; i < window_size; ++i) {
                     // Walk newest-to-oldest so that on a wrap-overflow
                     // (window_size hit cap), we read the most-recent
@@ -1214,12 +1232,31 @@ class Run {
                     const uint64_t ts = __atomic_load_n(&events[slot].ts_ns,
                                                        __ATOMIC_ACQUIRE);
                     if (ts == 0) continue;
-                    const uint64_t off = events[slot].off_cpu_ns;
-                    if (off > r.sched_offcpu_max_ns) {
-                        r.sched_offcpu_max_ns = off;
-                        r.sched_offcpu_cpu    = events[slot].on_cpu;
-                    }
                     ++r.sched_offcpu_count;
+                    const uint64_t off = events[slot].off_cpu_ns;
+                    const uint32_t cpu = events[slot].on_cpu;
+                    // Insertion-sort into top-K (descending by `off`).
+                    // Skip cheap if (a) top is full AND (b) new
+                    // event is smaller than the smallest kept.
+                    if (r.sched_offcpu_top_n == K &&
+                        off <= r.sched_offcpu_top_ns[K - 1]) {
+                        continue;
+                    }
+                    // Slot to start shifting from: either past-end
+                    // (when top isn't full) or the last kept slot
+                    // (which we'll displace).
+                    uint32_t pos =
+                        (r.sched_offcpu_top_n < K) ? r.sched_offcpu_top_n
+                                                   : K - 1;
+                    if (r.sched_offcpu_top_n < K) ++r.sched_offcpu_top_n;
+                    while (pos > 0 &&
+                           r.sched_offcpu_top_ns[pos - 1] < off) {
+                        r.sched_offcpu_top_ns[pos]  = r.sched_offcpu_top_ns[pos - 1];
+                        r.sched_offcpu_top_cpu[pos] = r.sched_offcpu_top_cpu[pos - 1];
+                        --pos;
+                    }
+                    r.sched_offcpu_top_ns[pos]  = off;
+                    r.sched_offcpu_top_cpu[pos] = cpu;
                 }
             }
         }
