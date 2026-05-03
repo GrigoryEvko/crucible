@@ -2,13 +2,16 @@
 
 #include <crucible/Ops.h>
 #include <crucible/SymbolTable.h>
+#include <crucible/safety/Reflected.h>
 
 #include "test_assert.h"
 
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <limits>
+#include <string_view>
 
 using namespace crucible;
 
@@ -129,6 +132,89 @@ static void test_kind_roundtrip() {
     std::printf("  test_kind:                      PASSED\n");
 }
 
+// Audit-fill for #1031 (sym_flags uint8_t → safety::Bits<SymFlags>).
+//
+// Three properties the per-flag tests above don't catch on their own:
+//
+//   1. Multi-flag coexistence under the typed surface — IS_BACKED,
+//      HAS_HINT, and IS_SIZE_LIKE must be independently set and
+//      independently readable on the SAME entry, not just one at a
+//      time.  Bits<E> uses underlying-OR; a wrong specialization
+//      could collapse two flags into one bit.
+//   2. The is_backed=false branch leaves IS_BACKED clear so
+//      synthetic / Vessel-injected symbols do not claim provenance
+//      they don't have.
+//   3. Runtime layout sanity: sizeof(SymbolEntry) at the call site
+//      still equals the header static_assert, AND offsetof(sym_flags)
+//      lives at byte 25 (3 * int64_t + SymKind + Bits<SymFlags>),
+//      which is what the recipe-registry / Cipher serializers
+//      already encode.
+//
+// Bonus: exercises safety::reflected::bits_to_string<SymFlags> from
+// #1089 — the same Bits<SymFlags> surface that any future Cipher /
+// diagnostics dump would print.
+static void test_sym_flags_bits_typed_surface() {
+    namespace ref = crucible::safety::reflected;
+
+    // ── (1) + (2) Multi-flag coexistence + is_backed=false branch ─
+    //
+    // Add BOTH symbols up front so subsequent push_back reallocations
+    // cannot invalidate the references we read below.  Capturing
+    // `entries_` references between mutations is a vector-realloc
+    // trap (push_back grows O(n) at capacity overflow); the
+    // SymbolTable surface itself is unchanged, but tests must survive
+    // it.
+    SymbolTable t;
+    auto s = t.add(SymKind::SIZE, ExprFlags::IS_INTEGER);            // is_backed=true → IS_BACKED set
+    auto f = t.add(SymKind::UNBACKED_FLOAT, ExprFlags::IS_REAL,
+                   /*is_backed=*/false);                              // → IS_BACKED clear
+    t.set_hint(s, 17);                                                // → HAS_HINT set
+    t.set_size_like(s);                                               // → IS_SIZE_LIKE set
+
+    // Public-API readback.
+    assert(t.is_backed(s));
+    assert(t.has_hint(s));
+    assert(t.is_size_like(s));
+    assert(!t.is_backed(f));
+
+    // Direct typed-surface readback — fetch references AFTER all
+    // mutations so they cannot dangle.
+    const auto& e_s = t[s];
+    assert(e_s.sym_flags.test(SymFlags::IS_BACKED));
+    assert(e_s.sym_flags.test(SymFlags::HAS_HINT));
+    assert(e_s.sym_flags.test(SymFlags::IS_SIZE_LIKE));
+    assert(e_s.sym_flags.popcount() == 3);
+
+    const auto& e_f = t[f];
+    assert(!e_f.sym_flags.test(SymFlags::IS_BACKED));
+    assert(e_f.sym_flags.popcount() == 0);
+
+    // ── (3) Runtime layout sanity ─────────────────────────────────
+    static_assert(sizeof(SymbolEntry) == 32);
+    static_assert(offsetof(SymbolEntry, sym_flags) == 25);
+    SymbolEntry probe{};
+    assert(reinterpret_cast<const char*>(&probe.sym_flags) -
+           reinterpret_cast<const char*>(&probe) == 25);
+
+    // ── (4) Reflection-driven diagnostic surface ──────────────────
+    // bits_to_string<SymFlags> over the multi-flag entry.  Output
+    // order = enum declaration order: IS_SIZE_LIKE, HAS_HINT, IS_BACKED.
+    char buf[64] = {};
+    auto n = ref::bits_to_string<SymFlags>(e_s.sym_flags, buf, sizeof(buf));
+    const std::string_view want = "IS_SIZE_LIKE|HAS_HINT|IS_BACKED";
+    assert(std::string_view{buf} == want);
+    assert(n == want.size());
+
+    // Empty bits → empty string + zero needed.
+    char empty_buf[16] = {};
+    auto n_empty = ref::bits_to_string<SymFlags>(e_f.sym_flags,
+                                                 empty_buf, sizeof(empty_buf));
+    assert(n_empty == 0);
+    assert(empty_buf[0] == '\0');
+
+    std::printf("  test_sym_flags_bits_typed_surface: PASSED\n");
+}
+
 int main() {
     test_add_assigns_monotonic_ids();
     test_default_ranges_by_kind();
@@ -138,6 +224,7 @@ int main() {
     test_size_like_flag();
     test_range_predicates();
     test_kind_roundtrip();
-    std::printf("test_symbol_table: 8 groups, all passed\n");
+    test_sym_flags_bits_typed_surface();
+    std::printf("test_symbol_table: 9 groups, all passed\n");
     return 0;
 }

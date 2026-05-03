@@ -1620,6 +1620,28 @@ crucible_neg_compile_test(neg_bits_int_ctor
 crucible_neg_compile_test(neg_bits_cross_enum
   "no match for|no matching function|cannot convert|invalid operands")
 
+# safety::reflected::* (Reflected.h) — HS14 fixtures (#1089):
+#   * neg_reflected_unscoped_enum   bits_to_string<UnscopedEnum>(...)
+#                                   must fail because ScopedEnum
+#                                   concept rejects unscoped enums
+#                                   (load-bearing — unscoped enum
+#                                   silently converts from int and
+#                                   defeats the typed-bit-field
+#                                   discipline Bits<E> exists for).
+#   * neg_reflected_lambda_arity    for_each_enumerator<E>([]{}) with
+#                                   a zero-arg lambda must fail; the
+#                                   runtime callback contract is
+#                                   `f(E value, std::string_view name)`
+#                                   (load-bearing — pins the
+#                                   value+name API away from the old
+#                                   NTTP-info sketch that was
+#                                   rejected for immediate-escalation
+#                                   reasons; see Reflected.h doc).
+crucible_neg_compile_test(neg_reflected_unscoped_enum
+  "constraints not satisfied|ScopedEnum|no matching function|cannot convert|use of deleted")
+crucible_neg_compile_test(neg_reflected_lambda_arity
+  "no match for call|no matching function|wrong number of arguments|too many arguments")
+
 # safety::Borrowed / BorrowedRef structural-wrappers — HS14 fixtures (#1080):
 #   * neg_borrowed_ref_default_ctor  BorrowedRef<T>{} default ctor must
 #                                    fail (deleted to forbid the null

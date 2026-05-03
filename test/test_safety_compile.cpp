@@ -64,6 +64,7 @@
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Progress.h>
 #include <crucible/safety/RecipeSpec.h>
+#include <crucible/safety/Reflected.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/RefinedAlgebra.h>
 #include <crucible/safety/ResidencyHeat.h>
@@ -178,6 +179,9 @@ void test_pinned_compile()          {}
 void test_progress_compile()        {
     ::crucible::safety::detail::progress_self_test::runtime_smoke_test();
 }
+void test_reflected_compile()       {
+    ::crucible::safety::reflected::detail::reflected_self_test::runtime_smoke_test();
+}
 void test_refined_compile()         {}
 void test_refined_algebra_compile() {
     ::crucible::safety::detail::refined_algebra_self_test::runtime_smoke_test();
@@ -241,6 +245,7 @@ int main() {
     run_test("test_owned_region_compile",    test_owned_region_compile);
     run_test("test_pinned_compile",          test_pinned_compile);
     run_test("test_progress_compile",        test_progress_compile);
+    run_test("test_reflected_compile",       test_reflected_compile);
     run_test("test_refined_compile",         test_refined_compile);
     run_test("test_refined_algebra_compile", test_refined_algebra_compile);
     run_test("test_residency_heat_compile",  test_residency_heat_compile);
