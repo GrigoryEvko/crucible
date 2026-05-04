@@ -144,26 +144,27 @@ BPF cross-references are listed for completeness.
 |---|---|
 | `senses.md`            | `crucible::perf::Senses` — load-all + on-demand-subset façade composing every per-program facade.  Single entry point for "the organism's complete sensory nervous system" — the original aspirational name in `sense_hub.bpf.c` line 3. |
 
-## Userspace-only PMU facades (NOT in this directory)
+## Userspace-only PMU facades (sibling tree)
 
 These need no BPF program (counting-mode `perf_event_open` +
-mmap'd `perf_event_mmap_page` + `RDPMC` instruction).  Planned at
-`include/crucible/perf/_planned/` (a sibling `_planned/` dir to be
-created when needed):
+mmap'd `perf_event_mmap_page` + `RDPMC` instruction).  Stubs live
+at `include/crucible/perf/_planned/` — see that directory's
+`INDEX.md` for the master listing.  12 facades total:
 
-| Facade | Mechanism |
+| Stub | Eventual path |
 |---|---|
-| `PmuCounters.h`   | 8 HW counters in counting mode, group_fd batched, RDPMC read at bench boundaries |
-| `PmuTopDown.h`    | `MSR_PERF_METRICS` direct read → 4 quadrant percentages |
-| `PmuRapl.h`       | `PERF_TYPE_POWER` per power domain → joules per region |
-| `PmuUncoreImc.h`  | `uncore_imc_*` per-channel DRAM bandwidth |
-| `PmuUncoreFabric.h` | `uncore_upi_*` / AMD Infinity Fabric per-link traffic |
-| `PmuUncoreIio.h`  | `uncore_iio_*` per-PCIe-stack throughput |
-| `PmuCmtMbm.h`     | Intel CMT (LLC occupancy) + MBM (memory bandwidth) per-process |
-| `PmuCxl.h`        | `cxl_pmu` CXL fabric counters (kernel 6.6+) |
-| `NvmePmu.h`       | `nvme_pmu` per-queue NVMe controller counters (kernel 6.5+) |
-| `IntelPtOutlierReplay.h` | `intel_pt//u` on-demand instruction trace for outlier post-mortem |
-| `PsiReader.h`     | `/proc/pressure/{cpu,memory,io}` reader (no perf_event) |
+| `PmuCounters.md` | `include/crucible/perf/PmuCounters.h` |
+| `PmuTopDown.md` | `include/crucible/perf/PmuTopDown.h` |
+| `PmuRapl.md` | `include/crucible/perf/PmuRapl.h` |
+| `PmuUncoreImc.md` | `include/crucible/perf/PmuUncoreImc.h` |
+| `PmuUncoreFabric.md` | `include/crucible/perf/PmuUncoreFabric.h` |
+| `PmuUncoreIio.md` | `include/crucible/perf/PmuUncoreIio.h` |
+| `PmuCmtMbm.md` | `include/crucible/perf/PmuCmtMbm.h` |
+| `PmuCxl.md` | `include/crucible/perf/PmuCxl.h` |
+| `NvmePmu.md` | `include/crucible/perf/NvmePmu.h` |
+| `IntelPtOutlierReplay.md` | `include/crucible/perf/IntelPtOutlierReplay.h` |
+| `PerfEventRing.md` | `include/crucible/perf/PerfEventRing.h` (the **third** perf_event mode — high-freq sampling via mmap'd ring) |
+| `PsiReader.md` | `include/crucible/perf/PsiReader.h` |
 
 ## Out-of-scope (explicitly NOT planned)
 
@@ -199,5 +200,9 @@ doesn't ask "why didn't we do X" without finding the rationale:
 - 35 BPF program stubs (this directory's `.bpf.c` files)
 - 3 extension docs (`_ext_*.md`)
 - 1 aggregator doc (`senses.md`)
-- 11 userspace-only PMU facade stubs (sibling tree)
-- = **50 ship-units total** (per "benchmarkmaxxing" plan, 2026-05-04)
+- 12 userspace-only PMU facade stubs (sibling
+  `include/crucible/perf/_planned/`, including the third
+  perf_event mode `PerfEventRing` that earlier counts missed)
+- = **51 ship-units total** (per "benchmarkmaxxing" plan, 2026-05-04;
+  was "~50" — count corrected after audit identified `PerfEventRing`
+  as the missing third perf_event mode)
