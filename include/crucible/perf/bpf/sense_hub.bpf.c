@@ -230,8 +230,13 @@ struct {
 
 /* ─── Helper maps (BPF-internal) ────────────────────────────────────── */
 
+/* GAPS-004g-AUDIT-3 (2026-05-04): LRU_HASH (was plain HASH).
+ * socket_fds tracks open sockets across the process lifetime; close()
+ * removes the entry.  With plain HASH and MAX_ENTRIES=4096, a workload
+ * opening >4096 sockets has subsequent socket() calls silently dropped.
+ * LRU evicts the oldest entry — graceful degradation. */
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 4096);
     __type(key, __u32);
     __type(value, __u8);
@@ -242,15 +247,25 @@ struct socket_args {
     __u32 type;
 };
 
+/* GAPS-004g-AUDIT-3: LRU_HASH (was plain HASH).  enter/exit-paired —
+ * orphan if socket() syscall is interrupted mid-call.  Rare but
+ * accumulates to MAX_ENTRIES=256 then silently rejects new enters. */
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 256);
     __type(key, __u32);
     __type(value, struct socket_args);
 } socket_enter SEC(".maps");
 
+/* GAPS-004g-AUDIT-3: LRU_HASH (was plain HASH).  Same orphaned-entry
+ * leak class as lock_contention.bpf.c's wait_start (fixed GAPS-004d-
+ * AUDIT) and syscall_latency.bpf.c's syscall_start (fixed GAPS-004e):
+ * a sched_switch enter not followed by a matching exit (thread killed
+ * mid-context-switch, prev_pid filtering rejected exit, etc.) orphans
+ * the timestamp; orphans accumulate to MAX_ENTRIES=1024 then silently
+ * block new inserts. */
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 1024);
     __type(key, __u32);
     __type(value, __u64);
@@ -266,17 +281,22 @@ struct {
     __type(value, __u8);
 } our_tids SEC(".maps");
 
-/* Futex enter timestamps: tid -> ktime_ns */
+/* Futex enter timestamps: tid -> ktime_ns
+ *
+ * GAPS-004g-AUDIT-3: LRU_HASH (was plain HASH).  Same fix class as
+ * lock_contention.bpf.c's wait_start (GAPS-004d-AUDIT). */
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 1024);
     __type(key, __u32);
     __type(value, __u64);
 } futex_ts SEC(".maps");
 
-/* Kernel lock contention timestamps: tid -> ktime_ns */
+/* Kernel lock contention timestamps: tid -> ktime_ns
+ *
+ * GAPS-004g-AUDIT-3: LRU_HASH (was plain HASH).  Same fix class. */
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 1024);
     __type(key, __u32);
     __type(value, __u64);
@@ -296,9 +316,12 @@ struct {
     __type(value, __u64);
 } softirq_ts SEC(".maps");
 
-/* Direct reclaim timestamps: tid -> ktime_ns */
+/* Direct reclaim timestamps: tid -> ktime_ns
+ *
+ * GAPS-004g-AUDIT-3: LRU_HASH (was plain HASH).  Same fix class as
+ * lock_contention.bpf.c's wait_start (GAPS-004d-AUDIT). */
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 256);
     __type(key, __u32);
     __type(value, __u64);
