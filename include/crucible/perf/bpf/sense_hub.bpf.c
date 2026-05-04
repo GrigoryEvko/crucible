@@ -1078,10 +1078,16 @@ SEC("tracepoint/vmscan/mm_vmscan_direct_reclaim_end")
 int sense_reclaim_end(struct sense_reclaim_end_ctx *ctx)
 {
     if (!is_target()) return 0;
+    /* GAPS-004g-AUDIT-5 (2026-05-04): single bpf_ktime_get_ns() call —
+     * was two before (one for delta, one wasted on the early-out path).
+     * Same discipline as lock_contention.bpf.c GAPS-004d-AUDIT and
+     * syscall_latency.bpf.c GAPS-004e: capture once at handler entry,
+     * reuse for delta. Saves ~50 ns per event. */
+    __u64 now = bpf_ktime_get_ns();
     __u32 tid = get_tid();
     __u64 *start = bpf_map_lookup_elem(&reclaim_ts, &tid);
     if (start && *start > 0) {
-        __u64 elapsed = bpf_ktime_get_ns() - *start;
+        __u64 elapsed = now - *start;
         counter_add(DIRECT_RECLAIM_NS, elapsed);
     }
     bpf_map_delete_elem(&reclaim_ts, &tid);
@@ -1311,6 +1317,11 @@ int sense_futex_exit(struct trace_event_raw_sys_exit *ctx)
 {
     if (!is_target()) return 0;
 
+    /* GAPS-004g-AUDIT-5 (2026-05-04): single bpf_ktime_get_ns() — captured
+     * once at exit-handler entry, reused for delta. Mirrors the discipline
+     * applied in lock_contention.bpf.c (GAPS-004d-AUDIT) and the upfront
+     * fix in syscall_latency.bpf.c. */
+    __u64 now = bpf_ktime_get_ns();
     __u32 tid = get_tid();
     __u64 *enter_ts = bpf_map_lookup_elem(&futex_ts, &tid);
     if (!enter_ts) return 0;
@@ -1319,7 +1330,7 @@ int sense_futex_exit(struct trace_event_raw_sys_exit *ctx)
     bpf_map_delete_elem(&futex_ts, &tid);
 
     if (start > 0) {
-        __u64 elapsed = bpf_ktime_get_ns() - start;
+        __u64 elapsed = now - start;
         counter_add(FUTEX_WAIT_COUNT, 1);
         counter_add(FUTEX_WAIT_NS, elapsed);
     }
@@ -1343,10 +1354,14 @@ SEC("tracepoint/lock/contention_end")
 int sense_lock_end(struct sense_lock_end_ctx *ctx)
 {
     if (!is_target()) return 0;
+    /* GAPS-004g-AUDIT-5 (2026-05-04): single bpf_ktime_get_ns() captured
+     * once at exit-handler entry, reused for delta. Same fix-class as
+     * lock_contention.bpf.c GAPS-004d-AUDIT. */
+    __u64 now = bpf_ktime_get_ns();
     __u32 tid = get_tid();
     __u64 *start = bpf_map_lookup_elem(&lock_ts, &tid);
     if (start && *start > 0) {
-        __u64 elapsed = bpf_ktime_get_ns() - *start;
+        __u64 elapsed = now - *start;
         counter_add(KERNEL_LOCK_COUNT, 1);
         counter_add(KERNEL_LOCK_NS, elapsed);
     }
@@ -1387,9 +1402,13 @@ int sense_softirq_exit(struct trace_event_raw_softirq *ctx)
 {
     __u32 vec = BPF_CORE_READ(ctx, vec);
     if (vec >= 10) return 0;
+    /* GAPS-004g-AUDIT-5 (2026-05-04): single bpf_ktime_get_ns() captured
+     * once at exit-handler entry, reused for delta. Same fix-class as
+     * lock_contention.bpf.c GAPS-004d-AUDIT. */
+    __u64 now = bpf_ktime_get_ns();
     __u64 *start = bpf_map_lookup_elem(&softirq_ts, &vec);
     if (start && *start > 0) {
-        __u64 elapsed = bpf_ktime_get_ns() - *start;
+        __u64 elapsed = now - *start;
         counter_add(SOFTIRQ_STOLEN_NS, elapsed);
         __u64 z = 0;
         bpf_map_update_elem(&softirq_ts, &vec, &z, BPF_ANY);
@@ -1452,10 +1471,14 @@ int sense_block_io_start(struct sense_block_io_ctx *ctx)
 SEC("tracepoint/block/block_io_done")
 int sense_block_io_done(struct sense_block_io_ctx *ctx)
 {
+    /* GAPS-004g-AUDIT-5 (2026-05-04): single bpf_ktime_get_ns() captured
+     * once at exit-handler entry, reused for delta. Same fix-class as
+     * lock_contention.bpf.c GAPS-004d-AUDIT. */
+    __u64 now = bpf_ktime_get_ns();
     __u64 key = bio_key(ctx->dev, ctx->sector, ctx->bytes);
     __u64 *start = bpf_map_lookup_elem(&bio_ts, &key);
     if (start && *start > 0) {
-        __u64 elapsed = bpf_ktime_get_ns() - *start;
+        __u64 elapsed = now - *start;
         counter_add(DISK_IO_LATENCY_NS, elapsed);
     }
     bpf_map_delete_elem(&bio_ts, &key);
