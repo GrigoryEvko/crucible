@@ -457,6 +457,11 @@ crucible_test(test_perf_syscall_latency_smoke)
 crucible_test(test_perf_senses_smoke)
 crucible_test(test_perf_sched_tp_btf_smoke)
 crucible_test(test_perf_syscall_tp_btf_smoke)
+# GAPS-004g (#1283): rt::DeadlineWatchdog wires SchedSwitch context-
+# switch telemetry into Policy's miss-budget enforcement.  Smoke
+# verifies type-shape (move-only, ≤64 B), nullptr-Senses graceful
+# degradation, demote_one_step ladder, and reset() semantics.
+crucible_test(test_rt_deadline_watchdog_smoke)
 target_include_directories(test_bench_harness SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
 
@@ -1087,6 +1092,15 @@ crucible_neg_compile_effects_test(neg_perf_syscall_tp_btf_load_wrong_cap
     "could not convert|no matching function|cannot convert|expected.*Init")
 crucible_neg_compile_effects_test(neg_perf_syscall_tp_btf_load_no_cap
     "too few arguments|no matching function|candidate expects 1 argument")
+
+# GAPS-004g (#1283): rt::DeadlineWatchdog cap-tag gate.  Construction
+# takes effects::Init by value as the third parameter — wrong-cap and
+# no-cap fixtures pin the gate against silent default-arg regressions.
+# Init-by-value discipline matches the Senses-touching facades upstream.
+crucible_neg_compile_effects_test(neg_rt_deadline_watchdog_wrong_cap
+    "could not convert|no matching function|cannot convert|expected.*Init")
+crucible_neg_compile_effects_test(neg_rt_deadline_watchdog_no_cap
+    "too few arguments|no matching function|candidate expects 3 arguments")
 
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the
 # SessionMint walker handles BSYZ22 crash-stop's Stop the same way
