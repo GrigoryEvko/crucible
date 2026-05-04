@@ -329,10 +329,13 @@ int main() {
                 }
             });
         }(),
-        // (G) Snapshot::operator- — sub_sat cost on a 2-field timeline
-        // Snapshot.  Should be ~1-2 ns (two __builtin_sub_overflow).
-        // SchedSwitch chosen as the representative; the other 5 are
-        // structurally identical.
+        // (G) Snapshot::operator- — sub_sat cost on each facade's
+        // Snapshot.  Should be ~1-2 ns (one or two __builtin_sub_overflow).
+        // Cost is dominated by the paired snapshot() calls (which the
+        // bench body must call to get a meaningful baseline), so the
+        // delta itself is essentially free relative to the surrounding
+        // syscall.  Per-facade coverage proves no facade's operator-
+        // got accidentally elided by templated dead-code-elimination.
         [&]{
             crucible::perf::SchedSwitch::Snapshot ss_pre{};
             if (const auto* h = s.sched_switch()) ss_pre = h->snapshot();
@@ -341,6 +344,271 @@ int main() {
                     const auto post  = h->snapshot();
                     const auto delta = post - ss_pre;
                     bench::do_not_optimize(delta);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            crucible::perf::PmuSample::Snapshot pm_pre{};
+            if (const auto* h = s.pmu_sample()) pm_pre = h->snapshot();
+            return bench::run("pmu_sample::Snapshot::operator- [1 sub_sat]", [&]{
+                if (const auto* h = s.pmu_sample()) {
+                    const auto post  = h->snapshot();
+                    const auto delta = post - pm_pre;
+                    bench::do_not_optimize(delta);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            crucible::perf::LockContention::Snapshot lc_pre{};
+            if (const auto* h = s.lock_contention()) lc_pre = h->snapshot();
+            return bench::run("lock_contention::Snapshot::operator- [2 sub_sat]", [&]{
+                if (const auto* h = s.lock_contention()) {
+                    const auto post  = h->snapshot();
+                    const auto delta = post - lc_pre;
+                    bench::do_not_optimize(delta);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            crucible::perf::SyscallLatency::Snapshot sl_pre{};
+            if (const auto* h = s.syscall_latency()) sl_pre = h->snapshot();
+            return bench::run("syscall_latency::Snapshot::operator- [2 sub_sat]", [&]{
+                if (const auto* h = s.syscall_latency()) {
+                    const auto post  = h->snapshot();
+                    const auto delta = post - sl_pre;
+                    bench::do_not_optimize(delta);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            crucible::perf::SchedTpBtf::Snapshot stp_pre{};
+            if (const auto* h = s.sched_tp_btf()) stp_pre = h->snapshot();
+            return bench::run("sched_tp_btf::Snapshot::operator- [2 sub_sat]", [&]{
+                if (const auto* h = s.sched_tp_btf()) {
+                    const auto post  = h->snapshot();
+                    const auto delta = post - stp_pre;
+                    bench::do_not_optimize(delta);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            crucible::perf::SyscallTpBtf::Snapshot syt_pre{};
+            if (const auto* h = s.syscall_tp_btf()) syt_pre = h->snapshot();
+            return bench::run("syscall_tp_btf::Snapshot::operator- [2 sub_sat]", [&]{
+                if (const auto* h = s.syscall_tp_btf()) {
+                    const auto post  = h->snapshot();
+                    const auto delta = post - syt_pre;
+                    bench::do_not_optimize(delta);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        // (I) timeline_view() — the drain-path entry.  Each call
+        // returns a Borrowed<TimelineXxxEvent> span over the mmap'd
+        // ring buffer (no syscall, no copy — just a span constructor
+        // wrapping the cached mmap base).  Cost: ~1-3 ns.  Consumer
+        // pattern: call timeline_view() once + read timeline_write_index()
+        // once + walk the index range checking ts_ns != 0 per event.
+        // The walk cost is workload-dependent; this bench measures
+        // the per-call entry-point cost, which is the consumer's
+        // baseline overhead even when the workload produced zero new
+        // events in the window.
+        [&]{
+            return bench::run("sched_switch->timeline_view() [Borrowed span ctor]", [&]{
+                if (const auto* h = s.sched_switch()) {
+                    const auto v = h->timeline_view();
+                    bench::do_not_optimize(v);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            return bench::run("pmu_sample->timeline_view() [Borrowed span ctor]", [&]{
+                if (const auto* h = s.pmu_sample()) {
+                    const auto v = h->timeline_view();
+                    bench::do_not_optimize(v);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            return bench::run("lock_contention->timeline_view() [Borrowed span ctor]", [&]{
+                if (const auto* h = s.lock_contention()) {
+                    const auto v = h->timeline_view();
+                    bench::do_not_optimize(v);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            return bench::run("syscall_latency->timeline_view() [Borrowed span ctor]", [&]{
+                if (const auto* h = s.syscall_latency()) {
+                    const auto v = h->timeline_view();
+                    bench::do_not_optimize(v);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            return bench::run("sched_tp_btf->timeline_view() [Borrowed span ctor]", [&]{
+                if (const auto* h = s.sched_tp_btf()) {
+                    const auto v = h->timeline_view();
+                    bench::do_not_optimize(v);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            return bench::run("syscall_tp_btf->timeline_view() [Borrowed span ctor]", [&]{
+                if (const auto* h = s.syscall_tp_btf()) {
+                    const auto v = h->timeline_view();
+                    bench::do_not_optimize(v);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        // (J) Per-facade drain walk — read snapshot.timeline_index +
+        // walk the last N events, ts_ns ACQUIRE-load on each.  This
+        // is the consumer's hot per-iteration cost: producer-side
+        // events are already mmap'd; the consumer pays N × cache-line
+        // load for the walk plus one acquire fence per event.
+        //
+        // Walk size = 64 events (one cache line worth per ts_ns
+        // column on x86-64 = 8 ts_ns reads × 8 events per line).
+        // Tight enough to cleanly separate the drain cost from the
+        // surrounding bench overhead.
+        [&]{
+            return bench::run("sched_switch drain 64 events [64x acquire-load]", [&]{
+                if (const auto* h = s.sched_switch()) {
+                    const auto view = h->timeline_view();
+                    if (view.empty()) { bench::do_not_optimize(view); return; }
+                    const uint64_t end = h->timeline_write_index();
+                    const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
+                    uint64_t live = 0;
+                    for (uint64_t i = 0; i < 64; ++i) {
+                        const uint64_t slot = (end - 1 - i) & mask;
+                        const uint64_t ts =
+                            __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
+                        if (ts != 0) ++live;
+                    }
+                    bench::do_not_optimize(live);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            return bench::run("pmu_sample drain 64 events [64x acquire-load]", [&]{
+                if (const auto* h = s.pmu_sample()) {
+                    const auto view = h->timeline_view();
+                    if (view.empty()) { bench::do_not_optimize(view); return; }
+                    const uint64_t end = h->timeline_write_index();
+                    const uint64_t mask = crucible::perf::PMU_SAMPLE_CAPACITY - 1;
+                    uint64_t live = 0;
+                    for (uint64_t i = 0; i < 64; ++i) {
+                        const uint64_t slot = (end - 1 - i) & mask;
+                        const uint64_t ts =
+                            __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
+                        if (ts != 0) ++live;
+                    }
+                    bench::do_not_optimize(live);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            return bench::run("lock_contention drain 64 events [64x acquire-load]", [&]{
+                if (const auto* h = s.lock_contention()) {
+                    const auto view = h->timeline_view();
+                    if (view.empty()) { bench::do_not_optimize(view); return; }
+                    const uint64_t end = h->timeline_write_index();
+                    const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
+                    uint64_t live = 0;
+                    for (uint64_t i = 0; i < 64; ++i) {
+                        const uint64_t slot = (end - 1 - i) & mask;
+                        const uint64_t ts =
+                            __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
+                        if (ts != 0) ++live;
+                    }
+                    bench::do_not_optimize(live);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            return bench::run("syscall_latency drain 64 events [64x acquire-load]", [&]{
+                if (const auto* h = s.syscall_latency()) {
+                    const auto view = h->timeline_view();
+                    if (view.empty()) { bench::do_not_optimize(view); return; }
+                    const uint64_t end = h->timeline_write_index();
+                    const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
+                    uint64_t live = 0;
+                    for (uint64_t i = 0; i < 64; ++i) {
+                        const uint64_t slot = (end - 1 - i) & mask;
+                        const uint64_t ts =
+                            __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
+                        if (ts != 0) ++live;
+                    }
+                    bench::do_not_optimize(live);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            return bench::run("sched_tp_btf drain 64 events [64x acquire-load]", [&]{
+                if (const auto* h = s.sched_tp_btf()) {
+                    const auto view = h->timeline_view();
+                    if (view.empty()) { bench::do_not_optimize(view); return; }
+                    const uint64_t end = h->timeline_write_index();
+                    const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
+                    uint64_t live = 0;
+                    for (uint64_t i = 0; i < 64; ++i) {
+                        const uint64_t slot = (end - 1 - i) & mask;
+                        const uint64_t ts =
+                            __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
+                        if (ts != 0) ++live;
+                    }
+                    bench::do_not_optimize(live);
+                } else {
+                    bench::do_not_optimize(h);
+                }
+            });
+        }(),
+        [&]{
+            return bench::run("syscall_tp_btf drain 64 events [64x acquire-load]", [&]{
+                if (const auto* h = s.syscall_tp_btf()) {
+                    const auto view = h->timeline_view();
+                    if (view.empty()) { bench::do_not_optimize(view); return; }
+                    const uint64_t end = h->timeline_write_index();
+                    const uint64_t mask = crucible::perf::TIMELINE_CAPACITY - 1;
+                    uint64_t live = 0;
+                    for (uint64_t i = 0; i < 64; ++i) {
+                        const uint64_t slot = (end - 1 - i) & mask;
+                        const uint64_t ts =
+                            __atomic_load_n(&view[slot].ts_ns, __ATOMIC_ACQUIRE);
+                        if (ts != 0) ++live;
+                    }
+                    bench::do_not_optimize(live);
                 } else {
                     bench::do_not_optimize(h);
                 }
@@ -477,6 +745,90 @@ int main() {
     if (cov.attached_count() == 0) {
         std::printf("  (no facades attached; deltas would have been printed here.\n"
                     "   Grant CAP_BPF+CAP_PERFMON to see real metric movement.)\n");
+    }
+
+    // Drain pass — consumer pattern of "walk the new events in the ring
+    // buffer and process each".  Counts events with ts_ns != 0 in the
+    // [pre.timeline_index, post.timeline_index) range, masked into the
+    // capacity-bounded ring.  When the window contains more than
+    // TIMELINE_CAPACITY new events the older ones got overwritten and
+    // the count saturates at capacity — that's the structural cost
+    // of the consumer falling behind.
+    auto drain_count = []<class Span, class Event>(Span events, std::size_t capacity,
+                                                   uint64_t pre_idx, uint64_t post_idx) -> std::size_t {
+        if (events.empty()) return 0;
+        const uint64_t delta = (post_idx >= pre_idx) ? (post_idx - pre_idx) : 0;
+        const std::size_t to_walk = (delta > capacity) ? capacity : static_cast<std::size_t>(delta);
+        const uint64_t mask = capacity - 1;
+        std::size_t live = 0;
+        for (std::size_t i = 0; i < to_walk; ++i) {
+            const uint64_t slot = (pre_idx + i) & mask;
+            // Volatile load of ts_ns — completion marker per wire contract.
+            const uint64_t ts =
+                __atomic_load_n(&events[slot].ts_ns, __ATOMIC_ACQUIRE);
+            if (ts != 0) ++live;
+        }
+        return live;
+    };
+    if (cov.sched_switch_attached) {
+        if (const auto* h = s.sched_switch()) {
+            const auto view = h->timeline_view();
+            const std::size_t n = drain_count.template operator()<decltype(view),
+                                                                  crucible::perf::TimelineSchedEvent>(
+                view, crucible::perf::TIMELINE_CAPACITY,
+                ss_pre.timeline_index, ss_post.timeline_index);
+            std::printf("  SchedSwitch.drain:     %zu live event(s) in window\n", n);
+        }
+    }
+    if (cov.pmu_sample_attached) {
+        if (const auto* h = s.pmu_sample()) {
+            const auto view = h->timeline_view();
+            const std::size_t n = drain_count.template operator()<decltype(view),
+                                                                  crucible::perf::PmuSampleEvent>(
+                view, crucible::perf::PMU_SAMPLE_CAPACITY,
+                pm_pre.samples, pm_post.samples);
+            std::printf("  PmuSample.drain:       %zu live sample(s) in window\n", n);
+        }
+    }
+    if (cov.lock_contention_attached) {
+        if (const auto* h = s.lock_contention()) {
+            const auto view = h->timeline_view();
+            const std::size_t n = drain_count.template operator()<decltype(view),
+                                                                  crucible::perf::TimelineLockEvent>(
+                view, crucible::perf::TIMELINE_CAPACITY,
+                lc_pre.timeline_index, lc_post.timeline_index);
+            std::printf("  LockContention.drain:  %zu live event(s) in window\n", n);
+        }
+    }
+    if (cov.syscall_latency_attached) {
+        if (const auto* h = s.syscall_latency()) {
+            const auto view = h->timeline_view();
+            const std::size_t n = drain_count.template operator()<decltype(view),
+                                                                  crucible::perf::TimelineSyscallEvent>(
+                view, crucible::perf::TIMELINE_CAPACITY,
+                sl_pre.timeline_index, sl_post.timeline_index);
+            std::printf("  SyscallLatency.drain:  %zu live event(s) in window\n", n);
+        }
+    }
+    if (cov.sched_tp_btf_attached) {
+        if (const auto* h = s.sched_tp_btf()) {
+            const auto view = h->timeline_view();
+            const std::size_t n = drain_count.template operator()<decltype(view),
+                                                                  crucible::perf::TimelineSchedEvent>(
+                view, crucible::perf::TIMELINE_CAPACITY,
+                stp_pre.timeline_index, stp_post.timeline_index);
+            std::printf("  SchedTpBtf.drain:      %zu live event(s) in window\n", n);
+        }
+    }
+    if (cov.syscall_tp_btf_attached) {
+        if (const auto* h = s.syscall_tp_btf()) {
+            const auto view = h->timeline_view();
+            const std::size_t n = drain_count.template operator()<decltype(view),
+                                                                  crucible::perf::TimelineSyscallEvent>(
+                view, crucible::perf::TIMELINE_CAPACITY,
+                syt_pre.timeline_index, syt_post.timeline_index);
+            std::printf("  SyscallTpBtf.drain:    %zu live event(s) in window\n", n);
+        }
     }
 
     bench::emit_reports_json(reports, json);
