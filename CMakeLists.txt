@@ -127,7 +127,9 @@ if (CRUCIBLE_HAVE_BPF)
     src/perf/LockContention.cpp
     src/perf/SyscallLatency.cpp)
   if (CRUCIBLE_SENSE_HUB_V2)
-    list(APPEND _CRUCIBLE_PERF_SOURCES src/perf/SenseHubV2.cpp)
+    list(APPEND _CRUCIBLE_PERF_SOURCES
+      src/perf/SenseHubV2.cpp
+      src/perf/ProcGauges.cpp)
   endif()
   add_library(crucible_perf STATIC
     ${_CRUCIBLE_PERF_SOURCES}
