@@ -14,13 +14,18 @@
  *
  * ─── MECHANISM ────────────────────────────────────────────────────────
  * BPF program type: tracepoint
- * Attachment points:
+ * Attachment points (verified against include/trace/events/huge_memory.h
+ * — note: NO mm_split_huge_pmd/pud tracepoints exist in mainline; split
+ * paths are covered via kprobe/fentry on __split_huge_pmd / __split_huge_pud
+ * in mm/huge_memory.c):
  *   - tracepoint/huge_memory/mm_collapse_huge_page         — collapse attempt
  *   - tracepoint/huge_memory/mm_collapse_huge_page_isolate — isolate stage
  *   - tracepoint/huge_memory/mm_collapse_huge_page_swapin  — swap-in stage
- *   - tracepoint/huge_memory/mm_split_huge_pmd             — PMD split
- *   - tracepoint/huge_memory/mm_split_huge_pud             — PUD split
- *   - tracepoint/huge_memory/mm_khugepaged_scan_pmd        — khugepaged scan
+ *   - tracepoint/huge_memory/mm_khugepaged_scan_pmd        — khugepaged anon scan
+ *   - tracepoint/huge_memory/mm_khugepaged_scan_file       — khugepaged file scan
+ *   - tracepoint/huge_memory/mm_khugepaged_collapse_file   — file collapse
+ *   - fentry/__split_huge_pmd                              — PMD split (kprobe)
+ *   - fentry/__split_huge_pud                              — PUD split (kprobe)
  * Args carry: status enum, address, mm pointer.
  *
  * ─── MAPS ─────────────────────────────────────────────────────────────

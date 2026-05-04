@@ -15,14 +15,17 @@
  *
  * ─── MECHANISM ────────────────────────────────────────────────────────
  * BPF program type: tracepoint
- * Attachment points:
+ * Attachment points (verified against /sys/kernel/tracing/events/vmscan
+ * on 6.17 — note `mm_vmscan_writepage` was removed in the folio
+ * refactor):
  *   - tracepoint/vmscan/mm_vmscan_kswapd_wake
  *   - tracepoint/vmscan/mm_vmscan_kswapd_sleep
- *   - tracepoint/vmscan/mm_vmscan_lru_isolate     — pages isolated
+ *   - tracepoint/vmscan/mm_vmscan_wakeup_kswapd     — direct wake
+ *   - tracepoint/vmscan/mm_vmscan_lru_isolate       — pages isolated
  *   - tracepoint/vmscan/mm_vmscan_lru_shrink_active
  *   - tracepoint/vmscan/mm_vmscan_lru_shrink_inactive
- *   - tracepoint/vmscan/mm_vmscan_writepage       — already in SenseHub
- * Kernel min: 4.0 (all).
+ *   - tracepoint/vmscan/mm_shrink_slab_start / _end — shrinker invocation
+ * Kernel min: 4.0 (kswapd/lru_*); shrink_slab_* since 4.16.
  *
  * ─── MAPS ─────────────────────────────────────────────────────────────
  * - kswapd_state: PERCPU_ARRAY[1] — current kswapd CPU's run start ts

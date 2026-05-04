@@ -53,8 +53,10 @@
  * the bench CPUs.
  *
  * ─── KNOWN LIMITS ─────────────────────────────────────────────────────
- * - Requires CONFIG_SCHED_CLASS_EXT=y and `sysctl kernel.sched_ext.enabled=1`.
- * - sched_ext API is still stabilizing (6.12+ LTS); minor breakage
+ * - Requires CONFIG_SCHED_CLASS_EXT=y.  Enablement is via attaching
+ *   a struct_ops scheduler (no sysctl); kernel exposes status via
+ *   /sys/kernel/sched_ext/state and the static key __scx_enabled.
+ * - sched_ext API is still stabilizing (6.12+); minor breakage
  *   between 6.12 and 6.18 expected.  Pin to a kernel range in the
  *   facade and refuse to load on out-of-range kernels.
  * - Detaching the scheduler returns the kernel to CFS — verify this
@@ -71,6 +73,7 @@
 #include <bpf/bpf_helpers.h>
 
 /* TODO: implement.  Reference: tools/sched_ext/scx_simple.bpf.c in the
- * Linux source tree.  Implement struct sched_ext_ops with our policy. */
+ * Linux source tree (uses scx/common.bpf.h, UEI_DEFINE, SCX_DSQ_GLOBAL).
+ * Implement struct sched_ext_ops with our policy. */
 
 char LICENSE[] SEC("license") = "Dual BSD/GPL";

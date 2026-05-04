@@ -14,14 +14,13 @@
  *
  * ─── MECHANISM ────────────────────────────────────────────────────────
  * BPF program type: tracepoint
- * Attachment points:
- *   - tracepoint/kmem/kmem_cache_alloc       — slab object alloc'd
- *   - tracepoint/kmem/kmem_cache_alloc_node  — same, NUMA-explicit
- *   - tracepoint/kmem/kmem_cache_free        — returned
- *   - tracepoint/kmem/kfree                  — generic kfree
- *   - tracepoint/kmem/kmalloc                — kmalloc
- *   - tracepoint/kmem/kmalloc_node           — kmalloc NUMA-explicit
- * Kernel min: 4.0; SLUB-only path on modern kernels (SLAB removed in 6.5).
+ * Attachment points (verified against /sys/kernel/tracing/events/kmem
+ * on 6.17 — `_node` variants merged into base events long ago):
+ *   - tracepoint/kmem/kmem_cache_alloc  — slab object alloc'd
+ *   - tracepoint/kmem/kmem_cache_free   — returned
+ *   - tracepoint/kmem/kfree             — generic kfree
+ *   - tracepoint/kmem/kmalloc           — kmalloc (carries node id)
+ * Kernel min: 4.0; SLUB-only path on modern kernels (SLAB removed in 6.8).
  *
  * ─── MAPS ─────────────────────────────────────────────────────────────
  * - cache_stats: HASH[(cache_struct *) → {alloc_count, free_count,

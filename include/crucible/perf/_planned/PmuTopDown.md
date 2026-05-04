@@ -19,10 +19,17 @@ in the front of the pipeline (icache, BTB) or the back (memory, ALU)".
 
 ## Mechanism
 
-Intel SPR+ (Sapphire Rapids and later) and AMD Zen5+ expose the
-TopDown values directly via `MSR_PERF_METRICS` (one MSR read per
-quadrant).  Older Intel (Icelake — Sapphire Rapids minus 1) requires
-deriving from raw events; supported but messier.
+Intel Icelake+ (and later — Sapphire Rapids, Granite Rapids) expose
+TopDown values directly via `MSR_PERF_METRICS` (0x329) + fixed counter
+3 (slots).  Verified against arch/x86/events/intel/core.c on 6.17:
+TOPDOWN_BAD_SPECULATION.ALL (0x0073), TOPDOWN_FE_BOUND.ALL (0x019c),
+TOPDOWN_RETIRING.ALL (0x02c2), TOPDOWN_BE_BOUND.ALL via the metric.
+
+AMD does NOT ship MSR_PERF_METRICS (no references in
+arch/x86/events/amd/ as of 6.17 mainline).  AMD Zen TopDown-equivalent
+analysis must derive from raw IBS_OP / pipeline-utilization events;
+materially different mechanism — file a sibling PmuAmdPipeUtil.h when
+needed rather than pretending one PMU surface fits both.
 
 ```cpp
 // Intel SPR+ path:
@@ -70,10 +77,13 @@ public:
 
 ## Limits
 
-- Intel SPR+ / Icelake (with derivation) / AMD Zen5+ only.  Older
-  CPUs return nullopt at load().
-- ARM Neoverse has its own TopDown method (TopDown L1/L2) — different
-  config; vendor-discriminated at load time.
+- Intel Icelake+ only (verified — kernel TopDown machinery in
+  arch/x86/events/intel/core.c gates on PERF_X86_EVENT_TOPDOWN).
+  AMD: NOT supported via this facade.  Older Intel + AMD return
+  nullopt at load().
+- ARM Neoverse has its own TopDown method (TopDown L1/L2) handled in
+  drivers/perf/arm_pmu*.c — different config; if/when needed file
+  PmuArmTopDown.h as a sibling.
 - The 4 quadrants don't include "instructions retired vs total slots"
   resolution — for issue-port pressure breakdown, drill into
   TopDown L2 (8 sub-quadrants).  Out of scope for v1.

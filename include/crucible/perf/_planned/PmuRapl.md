@@ -18,13 +18,22 @@ since Zen — exposes per-power-domain energy via MSRs.  Linux exposes
 these as a `power` PMU type:
 
 ```cpp
+// PERF_TYPE_POWER does NOT exist as a UAPI constant.  RAPL uses a
+// DYNAMIC type discovered at runtime:
+int rapl_type = read_dynamic_pmu_type(
+    "/sys/bus/event_source/devices/power/type");
 struct perf_event_attr attr{};
-attr.type   = PERF_TYPE_POWER;            // dynamic; read from
-                                          // /sys/bus/event_source/devices/power/type
-attr.config = 0x1;  // PSys (Intel) — total platform energy
-                    // 0x2 = PKG (CPU package), 0x3 = DRAM,
-                    // 0x4 = PP0 (cores), 0x5 = PP1 (uncore/GPU)
+attr.type   = rapl_type;
+attr.config = 0x1;  // rapl_energy_cores (PP0)
+                    // 0x2 = rapl_energy_pkg (CPU package)
+                    // 0x3 = rapl_energy_ram (DRAM, server only)
+                    // 0x4 = rapl_energy_gpu (PP1, client only)
+                    // 0x5 = rapl_energy_psys (Intel platform)
 ```
+
+Codes verified against arch/x86/events/rapl.c on 6.17 — the canonical
+config codes are pp0=0x1, pkg=0x2, dram=0x3.  /sys/bus/event_source/
+devices/power/events/* lists which codes the local CPU exposes.
 
 Counters return cumulative energy in microjoules (Intel) or kilojoules
 (scaled per `/sys/bus/event_source/devices/power/events/energy-pkg.scale`).

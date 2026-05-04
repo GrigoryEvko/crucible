@@ -12,12 +12,16 @@
  * the throttle/unthrottle events.
  *
  * ─── MECHANISM ────────────────────────────────────────────────────────
- * BPF program type: tracepoint (or fentry on cfs_throttled / unthrottled)
+ * BPF program type: fentry/fexit (NO `sched_cfs_throttle` / `unthrottle`
+ * tracepoints exist in mainline as of 6.17 — verified against
+ * include/trace/events/sched.h).
  * Attachment points:
- *   - tracepoint/sched/sched_cfs_throttle      — cfs_rq throttled (out)
- *   - tracepoint/sched/sched_cfs_unthrottle    — cfs_rq unthrottled (in)
- *   (or kprobe on `throttle_cfs_rq` / `unthrottle_cfs_rq` for older
- *    kernels lacking the tracepoints)
+ *   - fentry/throttle_cfs_rq                   — cfs_rq throttled (out)
+ *     (kernel/sched/fair.c, returns bool — pair with fexit for true-only)
+ *   - fentry/unthrottle_cfs_rq                 — cfs_rq unthrottled (in)
+ *     (kernel/sched/fair.c)
+ * Both functions are static-but-BTF-traceable.  Fragile across kernel
+ * versions; pin to BTF + verify symbol availability at load.
  *
  * ─── MAPS ─────────────────────────────────────────────────────────────
  * - throttle_state: HASH[cgroup_id → {throttle_ts, throttled_count}]

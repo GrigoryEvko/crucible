@@ -28,8 +28,8 @@ applicable.
 | `timer/hrtimer_expire_entry` | `HRTIMER_FIRES` | High-frequency hrtimer (a profiler running concurrent? a test harness leak?) → wakeups that look like preemptions in our SchedSwitch view. |
 | `irq/irq_handler_entry` + `irq/irq_handler_exit` | `HARDIRQ_COUNT`, `HARDIRQ_NS` | Aggregate hardware IRQ time stolen (sibling to existing `SOFTIRQ_STOLEN_NS`).  Per-IRQ breakdown is in the standalone `hardirq.bpf.c` Tier-B program. |
 | `iommu/io_page_fault` | `IOMMU_FAULTS` | Process tried to DMA from unmapped page.  Should be zero in healthy compute; non-zero = serious bug. |
-| `ras/aer_uncorrectable_error` + `ras/aer_correctable_error` | `PCIE_AER_CORR`, `PCIE_AER_UNCORR` | PCIe AER (Advanced Error Reporting) → flaky link to GPU/NIC.  Reliability signal. |
-| `edac/memory_failure_event` | `EDAC_DRAM_CE` | DRAM correctable error (channel-attributed via the standalone if needed).  Reliability signal — high CE rate predicts UE. |
+| `ras/aer_event` (single tracepoint; bucket on `severity` field — 2=Corrected, 1=Fatal, 0=Uncorrected non-fatal) | `PCIE_AER_CORR`, `PCIE_AER_UNCORR` | PCIe AER (Advanced Error Reporting) → flaky link to GPU/NIC.  Reliability signal.  Note: kernel does NOT split into `aer_correctable_error`/`aer_uncorrectable_error` tracepoints — single `aer_event` with `severity` discriminator. |
+| `ras/memory_failure_event` (and/or `ras/mc_event` for richer DRAM channel/rank attribution) | `EDAC_DRAM_CE` | DRAM correctable error.  Reliability signal — high CE rate predicts UE.  Note: there is NO `edac/*` tracepoint subsystem; the EDAC subsystem publishes via `ras/mc_event`. |
 | `sched/sched_process_fork` | `PROCESS_FORKS` | Fork rate.  Pairs with existing `THREADS_CREATED` (clone) — fork-bomb-style behavior detection. |
 | `sched/sched_process_exec` | `PROCESS_EXECS` | exec() rate.  Should be zero during steady-state bench. |
 | `signal/signal_deliver` | `SIGNAL_DELIVERED` | Signal actually delivered (vs SenseHub's existing `SIGNAL_LAST_SIGNO` / `SIGNAL_FATAL_COUNT` which track generation). |

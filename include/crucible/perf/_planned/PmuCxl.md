@@ -20,13 +20,17 @@ enough to build the integration substrate now.
 ## Mechanism
 
 ```
-/sys/bus/event_source/devices/cxl_pmu_*/  — per-CXL-device PMU
+/sys/bus/event_source/devices/cxl_pmu_mem<N>.<idx>/  — per-CXL-device PMU
+                          (verified naming pattern from
+                          drivers/perf/cxl_pmu.c devm_kasprintf call;
+                          dot separator, not underscore — earlier
+                          revision of this stub had it wrong)
 events: M2S_REQ (memory-to-system requests), S2M_NDR_*, etc.
         per CXL.cache and CXL.mem traffic types
 ```
 
 ```cpp
-int type = read_dynamic_pmu_type("/sys/bus/event_source/devices/cxl_pmu_mem0_0/type");
+int type = read_dynamic_pmu_type("/sys/bus/event_source/devices/cxl_pmu_mem0.0/type");
 struct perf_event_attr attr{};
 attr.type   = type;
 attr.config = M2S_REQ;

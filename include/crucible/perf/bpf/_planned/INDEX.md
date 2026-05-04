@@ -138,33 +138,91 @@ BPF cross-references are listed for completeness.
 | `cpu_idle.bpf.c`       | `power/cpu_idle` per-CPU idle state residency (C0/C1/C1E/C2/C3...). |
 | `vfs_hot.bpf.c`        | fentry on `vfs_read` / `vfs_write` / `vfs_open` for VFS-layer attribution. |
 
+## Audit-round-3 additions (2026-05-04, kernel 6.17 verified)
+
+Added after the `_planned/` audit pruned bullshit and corrected facts.
+ALL cited tracepoints verified against `/sys/kernel/tracing/events/`
+on running 6.17 + `/root/Downloads/linux/include/trace/events/` —
+no fabrications.
+
+### Self-observation (1 BPF; companion userspace stubs in sibling tree)
+
+| Stub | One-liner |
+|---|---|
+| `bpf_trace.bpf.c` | `tracepoint/bpf_trace/bpf_trace_printk` — catch any BPF program (ours or third-party) using debug `bpf_printk` in production (~1 µs per call slow path). |
+
+Companions in `include/crucible/perf/_planned/`: `BpfStats.md`,
+`PerfRecordObserver.md`, `TracingSubscriberStats.md`, `DamonReader.md`.
+
+### Verified-real tracepoint additions (10 BPF)
+
+| Stub | Subsystem (event count, verified) | One-liner |
+|---|---|---|
+| `csd.bpf.c` | `csd/` (3) | Cross-CPU `smp_call_function_single` queue → entry → exit latency. |
+| `irq_vectors.bpf.c` | `irq_vectors/` (~36 events x86) | Per-APIC-vector entry/exit (`reschedule`, `call_function`, `local_timer`, `thermal`, `irq_work`, `vector_alloc/clear/teardown`).  Far richer than generic `irq/irq_handler_entry`. |
+| `error_report.bpf.c` | `error_report/error_report_end` (1, load-bearing) | KASAN/KFENCE/UBSAN/WARN bench-reliability disaster early warning. |
+| `power_amd_pstate.bpf.c` | `amd_cpu/amd_pstate_*` (2) | AMD-specific P-state EPP / performance request changes. |
+| `damon.bpf.c` | `damon/` (4) | DAMON memory-access-pattern aggregation events.  Pairs with userspace `DamonReader.md`. |
+| `handshake.bpf.c` | `handshake/` (16 events) | Kernel TLS handshake upcall + tls_alert_recv/send + handshake-daemon command interface.  SUPERSEDES partial `ktls_offload.bpf.c` coverage (corrects audit-round-2 mistake — `tls_alert_*` exists under `handshake/`, not `tls/`). |
+| `fib_lookup.bpf.c` | `fib/fib_table_lookup` + `fib6/fib6_table_lookup` | IPv4 + IPv6 routing-decision attribution.  Federation cold-start latency. |
+| `alarmtimer.bpf.c` | `alarmtimer/` (4) | POSIX alarm sleep/wake observation.  Bench-window preemption attribution. |
+| `filemap.bpf.c` | `filemap/` (5 incl. `mm_filemap_fault`) | Page cache lookup/fault/map per file.  Sample-period gated (high rate). |
+| `context_tracking.bpf.c` | `context_tracking/user_enter|user_exit` (2) | Kernel↔user mode transitions per CPU. |
+
 ## Tier-Z — aggregator (1)
 
 | Stub | One-liner |
 |---|---|
 | `senses.md`            | `crucible::perf::Senses` — load-all + on-demand-subset façade composing every per-program facade.  Single entry point for "the organism's complete sensory nervous system" — the original aspirational name in `sense_hub.bpf.c` line 3. |
 
-## Userspace-only PMU facades (sibling tree)
+## Userspace facades (sibling tree)
 
-These need no BPF program (counting-mode `perf_event_open` +
-mmap'd `perf_event_mmap_page` + `RDPMC` instruction).  Stubs live
-at `include/crucible/perf/_planned/` — see that directory's
-`INDEX.md` for the master listing.  12 facades total:
+Pure userspace — no custom BPF program.  Stubs live at
+`include/crucible/perf/_planned/`; see that directory's `INDEX.md`
+for the master listing.  Categories:
+
+### Self-observation (4) — Tier-1, NEW 2026-05-04
+
+| Stub | Eventual path | Mechanism |
+|---|---|---|
+| `BpfStats.md` | `perf/BpfStats.h` | `BPF_OBJ_GET_INFO_BY_FD` per-program runtime accounting |
+| `PerfRecordObserver.md` | `perf/PerfRecordObserver.h` | mmap'd perf_event ring: PERF_RECORD_LOST/THROTTLE/MMAP2/COMM/FORK/EXIT/KSYMBOL/BPF_EVENT/CGROUP/TEXT_POKE/NAMESPACES/SWITCH (replaces deleted `perf_throttle.bpf.c`) |
+| `TracingSubscriberStats.md` | `perf/TracingSubscriberStats.h` | `/sys/kernel/debug/tracing/per_cpu/cpuN/stats` polling — detect tracepoint subscriber overrun |
+| `DamonReader.md` | `perf/DamonReader.h` | `/sys/kernel/mm/damon/admin/` + `tracepoint/damon/*` — memory access patterns |
+
+### PMU facades (11)
 
 | Stub | Eventual path |
 |---|---|
-| `PmuCounters.md` | `include/crucible/perf/PmuCounters.h` |
-| `PmuTopDown.md` | `include/crucible/perf/PmuTopDown.h` |
-| `PmuRapl.md` | `include/crucible/perf/PmuRapl.h` |
-| `PmuUncoreImc.md` | `include/crucible/perf/PmuUncoreImc.h` |
-| `PmuUncoreFabric.md` | `include/crucible/perf/PmuUncoreFabric.h` |
-| `PmuUncoreIio.md` | `include/crucible/perf/PmuUncoreIio.h` |
-| `PmuCmtMbm.md` | `include/crucible/perf/PmuCmtMbm.h` |
-| `PmuCxl.md` | `include/crucible/perf/PmuCxl.h` |
-| `NvmePmu.md` | `include/crucible/perf/NvmePmu.h` |
-| `IntelPtOutlierReplay.md` | `include/crucible/perf/IntelPtOutlierReplay.h` |
-| `PerfEventRing.md` | `include/crucible/perf/PerfEventRing.h` (the **third** perf_event mode — high-freq sampling via mmap'd ring) |
-| `PsiReader.md` | `include/crucible/perf/PsiReader.h` |
+| `PmuCounters.md` | `perf/PmuCounters.h` (Tier-A keystone) |
+| `PmuTopDown.md` | `perf/PmuTopDown.h` (Intel-only after audit-round-2 correction) |
+| `PmuRapl.md` | `perf/PmuRapl.h` (dynamic-PMU-type, not PERF_TYPE_POWER) |
+| `PmuUncoreImc.md` | `perf/PmuUncoreImc.h` |
+| `PmuUncoreFabric.md` | `perf/PmuUncoreFabric.h` |
+| `PmuUncoreIio.md` | `perf/PmuUncoreIio.h` |
+| `PmuCmtMbm.md` | `perf/PmuCmtMbm.h` (resctrl path on AMD; PERF_TYPE_INTEL_CQM removed) |
+| `PmuCxl.md` | `perf/PmuCxl.h` (`cxl_pmu_mem<N>.<idx>` — dot, not underscore) |
+| `IntelPtOutlierReplay.md` | `perf/IntelPtOutlierReplay.h` |
+| `PerfEventRing.md` | `perf/PerfEventRing.h` (the **third** perf_event mode) |
+| `PsiReader.md` | `perf/PsiReader.h` |
+| `NvmePmu.md` (DELETED 2026-05-04) | no `nvme_pmu` driver in mainline |
+
+### Cheap polling readers (10) — Tier-3, NEW 2026-05-04
+
+`/proc` and `/sys` polling at 1 Hz; <0.01% CPU each.  Effectively free.
+
+| Stub | Path read |
+|---|---|
+| `MsrAperfMperfReader.md` | `msr` PMU `aperf`/`mperf`/`tsc`/`irperf` events — TRUE delivered CPU freq |
+| `SchedstatReader.md` | `/proc/schedstat` |
+| `InterruptsReader.md` | `/proc/interrupts` |
+| `SoftirqsReader.md` | `/proc/softirqs` |
+| `BuddyinfoReader.md` | `/proc/buddyinfo` |
+| `VmstatReader.md` | `/proc/vmstat` |
+| `CpufreqReader.md` | `/sys/devices/system/cpu/cpufreq/policy*/` |
+| `CpuidleReader.md` | `/sys/devices/system/cpu/cpu*/cpuidle/state*/` |
+| `NumastatReader.md` | `/sys/devices/system/node/node*/numastat` |
+| `DiskstatsReader.md` | `/proc/diskstats` |
 
 ## Out-of-scope (explicitly NOT planned)
 
@@ -197,12 +255,28 @@ doesn't ask "why didn't we do X" without finding the rationale:
 
 ## Counting
 
-- 35 BPF program stubs (this directory's `.bpf.c` files)
+BPF tree (`include/crucible/perf/bpf/_planned/`):
+- 45 .bpf.c stubs (34 audit-round-1 + 11 audit-round-3, post-deletion of `perf_throttle.bpf.c`)
 - 3 extension docs (`_ext_*.md`)
 - 1 aggregator doc (`senses.md`)
-- 12 userspace-only PMU facade stubs (sibling
-  `include/crucible/perf/_planned/`, including the third
-  perf_event mode `PerfEventRing` that earlier counts missed)
-- = **51 ship-units total** (per "benchmarkmaxxing" plan, 2026-05-04;
-  was "~50" — count corrected after audit identified `PerfEventRing`
-  as the missing third perf_event mode)
+- 1 INDEX.md
+- = **50 files**
+
+Userspace tree (`include/crucible/perf/_planned/`):
+- 11 PMU facade stubs (post-NvmePmu deletion)
+- 4 self-observation stubs (Tier-1, NEW 2026-05-04)
+- 10 cheap polling reader stubs (Tier-3, NEW 2026-05-04)
+- 1 INDEX.md
+- = **26 files**
+
+**Grand total: 76 files across both `_planned/` trees.**
+
+Per ship-unit (counting facades + stubs but not INDEX.md):
+- 45 BPF programs + 3 extension docs + 1 aggregator = 49 BPF ship-units
+- 25 userspace facades = 25 userspace ship-units
+- = **74 ship-units total** (was 49 before audit-round-3 added 25)
+
+All audit-round-3 additions verified against `/sys/kernel/tracing/events/`
+on running kernel 6.17 + `/root/Downloads/linux/include/trace/events/`.
+Self-observation triad (BpfStats + PerfRecordObserver + TracingSubscriberStats)
+makes the "<1% overhead" claim structurally verifiable for the first time.

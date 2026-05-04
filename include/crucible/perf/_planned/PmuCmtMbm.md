@@ -27,16 +27,9 @@ perf events.  Two paths:
    ```
    Setup: mkdir + echo `<pid>` to `tasks` file.
 
-2. **perf_event path**:
-   ```cpp
-   attr.type = PERF_TYPE_INTEL_CQM;  // ~16 (kernel-assigned)
-   attr.config = QOS_EVENT_LLC_OCCUPANCY;  // or LOCAL_BYTES, TOTAL_BYTES
-   attr.sample_period = 0;
-   ```
-   Per-CPU per-event open as usual.
-
-resctrl is the modern recommended path; perf_event is older and
-deprecated on newer kernels.  We'll use resctrl.
+2. **perf_event path** — REMOVED.  arch/x86/events/intel/cqm.c was
+   deleted from mainline; PERF_TYPE_INTEL_CQM is no longer available.
+   Only the resctrl filesystem remains.
 
 ## API shape
 
@@ -67,8 +60,11 @@ public:
 
 ## Known limits
 
-- Intel only (Skylake-SP and later); AMD has no equivalent.
-  Load() returns nullopt on non-Intel.
+- Intel (Skylake-SP+) AND AMD (Zen2+ via resctrl, see
+  arch/x86/kernel/cpu/resctrl/core.c X86_VENDOR_AMD branches and
+  MBM_CNTR_WIDTH_OFFSET_AMD).  Load() inspects /sys/fs/resctrl/info
+  to detect supported events; returns nullopt only when CONFIG_X86_CPU_RESCTRL
+  is off or the CPU does not advertise any L3_MON capabilities.
 - LLC occupancy is INSTANTANEOUS (gauge); use snapshot value
   directly, not delta.
 - MBM has counter-wrap concerns at high BW (24-bit counter on some

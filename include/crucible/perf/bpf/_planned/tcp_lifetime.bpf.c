@@ -13,11 +13,16 @@
  *
  * ─── MECHANISM ────────────────────────────────────────────────────────
  * BPF program type: tracepoint
- * Attachment points:
+ * Attachment points (verified against include/trace/events/tcp.h):
  *   - tracepoint/tcp/tcp_destroy_sock         — connection torn down
  *   - tracepoint/tcp/tcp_rcv_space_adjust     — RX window expanded
- *   - tracepoint/tcp/tcp_send_loss_probe      — TLP fired
+ *   - tracepoint/tcp/tcp_retransmit_skb       — any retransmit (includes
+ *                                                TLP, RTO, fast-retx;
+ *                                                no separate TLP tp)
+ *   - tracepoint/tcp/tcp_retransmit_synack    — SYN-ACK retransmit
  *   - tracepoint/tcp/tcp_receive_reset        — RST received
+ *   - tracepoint/tcp/tcp_send_reset           — RST sent
+ *   - tracepoint/tcp/tcp_rcvbuf_grow          — adaptive rcvbuf growth
  *
  * ─── MAPS ─────────────────────────────────────────────────────────────
  * - per_peer:    LRU_HASH[peer_ip → {connect_count, destroy_count,

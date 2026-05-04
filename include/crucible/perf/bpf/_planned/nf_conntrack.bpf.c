@@ -11,11 +11,20 @@
  * when conntrack saturates.
  *
  * ─── MECHANISM ────────────────────────────────────────────────────────
- * BPF program type: tracepoint
- * Attachment points:
- *   - tracepoint/conntrack/destroy
- *   - tracepoint/conntrack/new
- *   - tracepoint/conntrack/update
+ * Conntrack ships NO TRACE_EVENT macros (verified absence in
+ * include/trace/events/, no /sys/kernel/tracing/events/conntrack
+ * subsystem).  Real attachment points:
+ *
+ * BPF program type: kprobe / fentry
+ * Attachment points (functions, not tracepoints):
+ *   - fentry/__nf_conntrack_alloc        — new conntrack entry
+ *   - fentry/nf_conntrack_destroy        — entry destroyed
+ *   - fentry/nf_ct_delete                — explicit deletion
+ *   - fentry/nf_conntrack_in             — main entry path (per-packet)
+ *
+ * Plus per-CPU netns counters under /proc/sys/net/netfilter/
+ * (`nf_conntrack_count`, `nf_conntrack_max`) polled at startup +
+ * snapshots at bench boundaries.
  *
  * ─── MAPS ─────────────────────────────────────────────────────────────
  * - conntrack_stats: ARRAY[1] — {new_count, destroy_count, update_count,

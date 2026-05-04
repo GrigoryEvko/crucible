@@ -14,12 +14,15 @@
  * ─── MECHANISM ────────────────────────────────────────────────────────
  * BPF program type: tracepoint
  * Attachment points:
- *   - tracepoint/timer/hrtimer_init        — timer armed
+ *   - tracepoint/timer/hrtimer_setup       — timer initialised + armed
+ *                                             (renamed from hrtimer_init in
+ *                                              kernel 6.15; older kernels expose
+ *                                              hrtimer_init under timer/ as well)
  *   - tracepoint/timer/hrtimer_start       — timer (re)started
  *   - tracepoint/timer/hrtimer_expire_entry — timer fired (begin)
  *   - tracepoint/timer/hrtimer_expire_exit  — timer handler returned
  *   - tracepoint/timer/hrtimer_cancel       — timer cancelled
- * Kernel min: 2.6.31.
+ * Kernel min: 2.6.31 (with hrtimer_setup spelled hrtimer_init pre-6.15).
  *
  * ─── MAPS ─────────────────────────────────────────────────────────────
  * - hrt_func_count: HASH[function_ptr → fire_count] — top-K hot
