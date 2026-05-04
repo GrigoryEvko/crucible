@@ -33,8 +33,8 @@
 //
 // Senses is a thin C++ wrapper — zero per-event runtime cost.  Each
 // subprogram retains its own cost budget; aggregating doesn't change
-// the per-event model.  Senses adds one-time load-cost (~50-200ms
-// for libbpf attach across all 5 programs) and one accessor-call cost
+// the per-event model.  Senses adds one-time load-cost (~50-200ms per
+// program × 7 programs for libbpf attach) and one accessor-call cost
 // (single pointer comparison) per query.
 //
 // Per-facade cost budgets (steady state):
@@ -43,10 +43,14 @@
 //   • PmuSample:       ~0.01-0.1 % CPU (perf event sampling at 99 Hz)
 //   • LockContention:  ~0.01-0.05 % CPU (futex enter/exit pairs)
 //   • SyscallLatency:  ~0.05-0.2 % CPU (raw_syscalls/sys_enter+exit)
+//   • SchedTpBtf:      ~0.04-0.15 % CPU (BTF tp_btf/sched_switch — same
+//                       events as SchedSwitch, ~30 % cheaper per event)
+//   • SyscallTpBtf:    ~0.04-0.15 % CPU (BTF tp_btf/sys_{enter,exit})
 //
-// Senses::load_all() therefore costs ~0.3-1.2 % CPU steady-state.
-// load_subset() lets callers stay under 0.5 % by skipping the
-// expensive ones.
+// Senses::load_all() therefore costs ~0.4-1.5 % CPU steady-state with
+// all 7 attached.  load_subset() lets callers stay under 0.5 % by
+// skipping the expensive ones (BTF facades observe the same events
+// as the legacy ones — loading both in production doubles cost).
 //
 // ─── HS14 NEG-COMPILE FIXTURES ────────────────────────────────────────
 //

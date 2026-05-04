@@ -4,22 +4,24 @@
 // What this bench measures, end-to-end:
 //
 //   (A) ONE-SHOT load cost: `Senses::load_all()` and `load_subset()`.  Both
-//       are libbpf-bound; expected wall-clock is ~50-200 ms total for 5
-//       programs (verifier + attach + mmap).  Printed as a banner — NOT
-//       a bench-iteration body.  Putting libbpf load into a `.measure(...)`
-//       loop would be a textbook misuse: each iteration would re-attach and
-//       blow past the 1-second total budget on the first call.
+//       are libbpf-bound; expected wall-clock is ~50-200 ms per program ×
+//       7 programs (5 legacy + 2 BTF GAPS-004f) for the verifier + attach +
+//       mmap path — total in the ~300-1500 ms range with the BTF facades
+//       loaded.  Printed as a banner — NOT a bench-iteration body.
+//       Putting libbpf load into a `.measure(...)` loop would be a
+//       textbook misuse: each iteration would re-attach and blow past
+//       the 1-second total budget on the first call.
 //
 //   (B) Per-call accessor cost: `s.sense_hub()`, `s.sched_switch()`, etc.
 //       Each is a single load from the optional's bit (held in cache),
 //       sub-ns in steady state — the cost a production caller pays per
 //       facade access.  Demonstrates that the aggregator adds zero overhead
-//       on the read path vs hand-holding 5 std::optional<Facade>.
+//       on the read path vs hand-holding 7 std::optional<Facade>.
 //
 //   (C) Coverage diagnostics: `s.coverage()` plus `attached_count()`.  Used
 //       by Augur for drift attribution ("can't read CPU stalls — PmuSample
 //       is missing") and by bench banners.  Both sub-ns; we bench them
-//       separately because attached_count() does 5 conditional adds and
+//       separately because attached_count() does 7 conditional adds and
 //       could in principle be slower than the bare struct read.
 //
 //   (D) The "real" hot read: `SenseHub::read()` over 96 counters = 768 B

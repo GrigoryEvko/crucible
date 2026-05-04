@@ -441,8 +441,18 @@ static __always_inline void counter_sub_sat(__u32 idx, __u64 delta)
 
 /*
  * Record a map-update failure so userspace can see when tracepoint state
- * is getting dropped due to capacity pressure. Cheap: one map lookup +
- * one atomic add. Call site: wherever bpf_map_update_elem returns non-zero.
+ * is getting dropped. Cheap: one map lookup + one atomic add.  Call
+ * site: wherever bpf_map_update_elem returns non-zero.
+ *
+ * Post GAPS-004g-AUDIT-3 (LRU_HASH conversion of socket_fds, socket_enter,
+ * switch_ts, futex_ts, lock_ts, reclaim_ts, bio_ts), capacity pressure on
+ * THOSE maps is handled by LRU eviction — they don't fail-on-full any
+ * more.  This counter still fires for:
+ *   • the remaining plain HASH (`our_tids`)
+ *   • LRU maps reporting E2BIG (malformed key) or other non-zero return
+ *     paths libbpf may emit.
+ *   • PERCPU_ARRAY (softirq_ts) on indices >= max_entries (we already
+ *     bound to <10 inline so this can't fire today).
  */
 static __always_inline void note_map_full(void)
 {
