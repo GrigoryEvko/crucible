@@ -76,6 +76,7 @@ crucible_bench(bench_phases)
 # the phase breakdown clean percentages without sub-phase quantization.
 target_compile_definitions(bench_phases PRIVATE
   CRUCIBLE_BENCH_DEFAULT_TRACE="${CMAKE_SOURCE_DIR}/vessel/torch/examples/traces/sd15_unet.crtrace")
+crucible_bench(bench_perf_loader)
 crucible_bench(bench_philox)
 crucible_bench(bench_pool_allocator)
 crucible_bench(bench_reflect)
