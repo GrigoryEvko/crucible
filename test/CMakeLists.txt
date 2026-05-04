@@ -455,6 +455,8 @@ crucible_test(test_perf_pmu_sample_smoke)
 crucible_test(test_perf_lock_contention_smoke)
 crucible_test(test_perf_syscall_latency_smoke)
 crucible_test(test_perf_senses_smoke)
+crucible_test(test_perf_sched_tp_btf_smoke)
+crucible_test(test_perf_syscall_tp_btf_smoke)
 target_include_directories(test_bench_harness SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
 
@@ -1071,6 +1073,19 @@ crucible_neg_compile_effects_test(neg_perf_syscall_latency_load_no_cap
 crucible_neg_compile_effects_test(neg_perf_senses_load_wrong_cap
     "could not convert|no matching function|cannot convert|expected.*Init")
 crucible_neg_compile_effects_test(neg_perf_senses_load_no_cap
+    "too few arguments|no matching function|candidate expects 1 argument")
+
+# GAPS-004f (#1282): SchedTpBtf::load() + SyscallTpBtf::load() cap-tag
+# gates.  Same Init-by-value discipline as the legacy facades they
+# parallel — hot-path frames hold no Init token, so structurally
+# can't reach the BTF loaders either.
+crucible_neg_compile_effects_test(neg_perf_sched_tp_btf_load_wrong_cap
+    "could not convert|no matching function|cannot convert|expected.*Init")
+crucible_neg_compile_effects_test(neg_perf_sched_tp_btf_load_no_cap
+    "too few arguments|no matching function|candidate expects 1 argument")
+crucible_neg_compile_effects_test(neg_perf_syscall_tp_btf_load_wrong_cap
+    "could not convert|no matching function|cannot convert|expected.*Init")
+crucible_neg_compile_effects_test(neg_perf_syscall_tp_btf_load_no_cap
     "too few arguments|no matching function|candidate expects 1 argument")
 
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the

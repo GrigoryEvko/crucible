@@ -21,17 +21,25 @@
 
 #include "common.h"
 
-/* ─── Maps (identical to sched_switch.bpf.c) ─────────────────────────── */
+/* ─── Maps ──────────────────────────────────────────────────────────── */
 
+/* tid → switch-out timestamp.
+ *
+ * GAPS-004f-AUDIT (2026-05-04): LRU_HASH (not plain HASH) — orphaned
+ * entries (thread switched OUT but never observed switching IN, e.g.
+ * non-our_tids threads or threads that exited) auto-evict on insert
+ * pressure rather than accumulating to MAX_ENTRIES.  Same fix class
+ * as SchedSwitch GAPS-004b-AUDIT. */
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, MAX_ENTRIES);
     __type(key, __u32);
     __type(value, __u64);
 } switch_start SEC(".maps");
 
+/* tid → stack_id captured at switch-out.  LRU_HASH — same rationale. */
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, MAX_ENTRIES);
     __type(key, __u32);
     __type(value, __s32);
@@ -147,7 +155,7 @@ int handle_sched_switch_btf(u64 *ctx)
                 bpf_map_update_elem(&offcpu, &key, &new_val, BPF_NOEXIST);
             }
 
-            /* Emit to zero-copy timeline */
+            /* Emit to zero-copy timeline (ts_ns written last for ordering) */
             __u32 tl_zero = 0;
             struct sched_timeline *tl = bpf_map_lookup_elem(&sched_timeline, &tl_zero);
             if (tl) {
@@ -157,7 +165,13 @@ int handle_sched_switch_btf(u64 *ctx)
                     tl->events[slot].off_cpu_ns = delta;
                     tl->events[slot].tid = next_pid;
                     tl->events[slot].on_cpu = bpf_get_smp_processor_id();
-                    tl->events[slot].ts_ns = ts;
+                    /* Compiler barrier — GAPS-004f-AUDIT (2026-05-04).
+                     * Forces clang to emit the prior 3 stores BEFORE
+                     * the ts_ns store; pairs with the userspace reader's
+                     * __atomic_load_n(&ts_ns, ACQUIRE).  Same fix class
+                     * as SchedSwitch GAPS-004b-AUDIT. */
+                    __asm__ __volatile__("" ::: "memory");
+                    tl->events[slot].ts_ns = ts; /* completion marker */
                 }
             }
 

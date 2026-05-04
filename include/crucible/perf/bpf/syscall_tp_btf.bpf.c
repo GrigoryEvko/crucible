@@ -21,7 +21,7 @@
 
 #include "common.h"
 
-/* ─── Maps (identical to syscall_latency.bpf.c) ─────────────────────── */
+/* ─── Maps ──────────────────────────────────────────────────────────── */
 
 struct syscall_start_val {
     __u64 ts;
@@ -29,8 +29,15 @@ struct syscall_start_val {
     __u32 _pad;
 };
 
+/* GAPS-004f-AUDIT (2026-05-04): LRU_HASH (not plain HASH) — orphaned
+ * entries (sys_enter recorded but matching sys_exit never arrives, e.g.
+ * thread killed mid-syscall, exec replacing thread, target_tgid filter
+ * accepted enter but rejected exit) auto-evict on capacity pressure
+ * rather than accumulating to MAX_ENTRIES=65536 and silently blocking
+ * new inserts via BPF_NOEXIST.  Same fix class as syscall_latency
+ * GAPS-004e and SchedSwitch GAPS-004b-AUDIT. */
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, MAX_ENTRIES);
     __type(key, __u32);
     __type(value, struct syscall_start_val);
@@ -100,12 +107,19 @@ int handle_sys_exit_btf(u64 *ctx)
     if (!is_target())
         return 0;
 
+    /* GAPS-004f-AUDIT (2026-05-04): single bpf_ktime_get_ns() per event.
+     * Was two calls (one for delta, one for ts_ns) — wasted ~50 ns/event.
+     * Capture once at function entry and reuse for both purposes;
+     * matches the canonical syscall_latency GAPS-004e / SchedSwitch
+     * GAPS-004b-AUDIT pattern. */
+    __u64 now = bpf_ktime_get_ns();
+
     __u32 tid = get_tid();
     struct syscall_start_val *start = bpf_map_lookup_elem(&syscall_start, &tid);
     if (!start)
         return 0;
 
-    __u64 delta = bpf_ktime_get_ns() - start->ts;
+    __u64 delta = now - start->ts;
     __u32 nr = start->nr;
     bpf_map_delete_elem(&syscall_start, &tid);
 
@@ -138,7 +152,15 @@ int handle_sys_exit_btf(u64 *ctx)
             tl->events[slot].duration_ns = delta;
             tl->events[slot].tid = tid;
             tl->events[slot].syscall_nr = nr;
-            tl->events[slot].ts_ns = bpf_ktime_get_ns();
+            /* Compiler barrier — GAPS-004f-AUDIT (2026-05-04).
+             * Forces clang to emit the prior 3 stores BEFORE the ts_ns
+             * store; without this, -O2 may reorder and break the
+             * "ts_ns LAST as completion marker" contract.  Zero machine
+             * cost; pairs with userspace reader's __atomic_load_n
+             * (&ts_ns, ACQUIRE).  Same fix class as syscall_latency
+             * GAPS-004e and SchedSwitch GAPS-004b-AUDIT. */
+            __asm__ __volatile__("" ::: "memory");
+            tl->events[slot].ts_ns = now; /* completion marker */
         }
     }
 
