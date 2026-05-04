@@ -82,6 +82,29 @@ crucible_bpf_program(pmu_sample       include/crucible/perf/bpf/pmu_sample.bpf.c
 crucible_bpf_program(lock_contention  include/crucible/perf/bpf/lock_contention.bpf.c)
 crucible_bpf_program(syscall_latency  include/crucible/perf/bpf/syscall_latency.bpf.c)
 
+# ─── BTF-typed tracepoint variants (GAPS-004f, deferred) ──────────────
+#
+# include/crucible/perf/bpf/sched_tp_btf.bpf.c and syscall_tp_btf.bpf.c
+# exist as orphans — BPF programs using SEC("tp_btf/...") instead of
+# SEC("tracepoint/..."), ~30% lower per-event cost via BTF + CO-RE.
+# Two reasons they are NOT wired here:
+#
+#   1. The bodies predate the b-AUDIT / e-AUDIT cost-discipline sweep —
+#      they use BPF_MAP_TYPE_HASH (not LRU_HASH), paired ktime_get_ns
+#      reads, and bpf_get_stackid where the legacy versions now use
+#      simpler patterns.  Promotion needs the audit-1 fixes carried
+#      forward + a userspace facade (SchedTpBtf.h / SyscallTpBtf.h).
+#
+#   2. Compile-only wiring (just to verify build) inflates the
+#      libcrucible_perf.a footprint by ~900 KB for sched_tp_btf alone
+#      — BTF programs ship with full CO-RE relocation metadata, which
+#      is meaningful at runtime but pure ballast for unused code.
+#
+# When someone wants the BTF perf benefit, they (a) carry the audit-1
+# fixes from sched_switch.bpf.c into sched_tp_btf.bpf.c, (b) write the
+# SchedTpBtf.h facade, (c) wire crucible_bpf_program here.  Step (c) is
+# a one-liner; (a) + (b) are the real work.
+
 # ─── SenseHub v2 — opt-in dual-tier hub (basic 128 + extended 256) ───
 #
 # v2 ships the architectural surface (counters/gauges segregation,
