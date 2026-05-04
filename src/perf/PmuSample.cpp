@@ -23,29 +23,22 @@
 
 #include <crucible/perf/PmuSample.h>
 
+#include <crucible/perf/detail/BpfLoader.h>  // GAPS-004x shared loader helpers
+
 #include <crucible/safety/Mutation.h>  // safety::WriteOnce / WriteOnceNonNull / Monotonic
 #include <crucible/safety/Pinned.h>    // safety::NonMovable<T>
-#include <crucible/safety/Tagged.h>    // safety::Tagged<T, Source>
 
-#include <bpf/bpf.h>
-#include <bpf/libbpf.h>
-#include <bpf/libbpf_legacy.h>  // libbpf_get_error
 #include <linux/perf_event.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/syscall.h>
-#include <sys/types.h>
-#include <unistd.h>
+#include <sys/syscall.h>          // SYS_perf_event_open (PMU-specific)
 
 #include <cerrno>
-#include <cstdarg>
+#include <cstdint>
 #include <cstdio>
-#include <cstdlib>
+#include <cstdlib>                // strtoull (PMU-specific env_period parser)
 #include <cstring>
-#include <fstream>
-#include <mutex>
-#include <string>
-#include <string_view>
+#include <fstream>                // read_dynamic_pmu_type ifstream
 
 #include <inplace_vector>
 
@@ -58,49 +51,27 @@ namespace crucible::perf {
 
 namespace {
 
-// ── TU-private provenance source tags ───────────────────────────────
-namespace source {
-    struct Kernel  {};
-    struct BpfMap  {};
+// Shared loader helpers from detail::BpfLoader (GAPS-004x).
+namespace source = ::crucible::perf::detail::source;
+using ::crucible::perf::detail::Tgid;
+using ::crucible::perf::detail::Tid;
+using ::crucible::perf::detail::Fd;
+using ::crucible::perf::detail::current_tgid;
+using ::crucible::perf::detail::find_rodata;
+using ::crucible::perf::detail::disable_unavailable_programs;
+using ::crucible::perf::detail::libbpf_errno;
+using ::crucible::perf::detail::install_libbpf_log_cb_once;
+using ::crucible::perf::detail::quiet;
+using ::crucible::perf::detail::verbose;
+
+// PMU-specific provenance: a perf_event_open() FD is NOT a libbpf
+// map FD even though both reduce to int.  Kept TU-local so the
+// distinction is visible right next to the consumer.
+namespace local_source {
     struct PerfEvent {};  // FD returned by perf_event_open()
 }
-
-using Tgid    = ::crucible::safety::Tagged<uint32_t, source::Kernel>;
-using Tid     = ::crucible::safety::Tagged<uint32_t, source::Kernel>;
-using BpfFd   = ::crucible::safety::Tagged<int, source::BpfMap>;
-using PerfFd  = ::crucible::safety::Tagged<int, source::PerfEvent>;
-static_assert(sizeof(Tgid)   == sizeof(uint32_t));
-static_assert(sizeof(Tid)    == sizeof(uint32_t));
-static_assert(sizeof(BpfFd)  == sizeof(int));
+using PerfFd = ::crucible::safety::Tagged<int, local_source::PerfEvent>;
 static_assert(sizeof(PerfFd) == sizeof(int));
-
-[[nodiscard]] Tgid current_tgid() noexcept {
-    return Tgid{static_cast<uint32_t>(::getpid())};
-}
-
-// ── Env-var knobs (cached once at first touch) ──────────────────────
-//
-// Same caching trap as SenseHub.cpp / SchedSwitch.cpp documents:
-// function-local-static captures the env value at FIRST query and
-// never re-evaluates.  setenv() AFTER the first call has no effect.
-[[nodiscard]] bool env_true(const char* name) noexcept {
-    const char* v = std::getenv(name);
-    return v != nullptr && v[0] == '1';
-}
-[[nodiscard]] bool env_true_either(const char* canonical,
-                                   const char* legacy) noexcept {
-    return env_true(canonical) || env_true(legacy);
-}
-[[nodiscard]] bool quiet()   noexcept {
-    static const bool kQuiet =
-        env_true_either("CRUCIBLE_PERF_QUIET", "CRUCIBLE_BENCH_BPF_QUIET");
-    return kQuiet;
-}
-[[nodiscard]] bool verbose() noexcept {
-    static const bool kVerbose =
-        env_true_either("CRUCIBLE_PERF_VERBOSE", "CRUCIBLE_BENCH_BPF_VERBOSE");
-    return kVerbose;
-}
 
 // ── Sample-period env-var overrides (GAPS-004c-AUDIT, #1290) ───────
 //
@@ -151,27 +122,6 @@ static_assert(sizeof(PerfFd) == sizeof(int));
     if (is_dynamic)                           return period_ibs(default_period);
     if (perf_type == PERF_TYPE_SOFTWARE)      return period_sw(default_period);
     return period_hw(default_period);  // PERF_TYPE_HARDWARE / HW_CACHE
-}
-
-int libbpf_log_cb(enum libbpf_print_level, const char* fmt, va_list args) noexcept {
-    if (!verbose()) return 0;
-    return std::vfprintf(stderr, fmt, args);
-}
-
-void install_libbpf_log_cb_once() noexcept {
-    static std::once_flag once;
-    std::call_once(once, [] { libbpf_set_print(libbpf_log_cb); });
-}
-
-[[nodiscard]] struct bpf_map* find_rodata(struct bpf_object* obj) noexcept {
-    struct bpf_map* map = nullptr;
-    bpf_object__for_each_map(map, obj) {
-        const char* n = bpf_map__name(map);
-        if (n == nullptr) continue;
-        const std::string_view name{n};
-        if (name.ends_with(".rodata")) return map;
-    }
-    return nullptr;
 }
 
 // ── perf_event_open helper ──────────────────────────────────────────
@@ -268,11 +218,6 @@ constexpr size_t kEventSpecCount = sizeof(kEventSpecs) / sizeof(kEventSpecs[0]);
 static_assert(kEventSpecCount == 8,
     "Event spec table must match 8 SEC(\"perf_event\") programs in "
     "include/crucible/perf/bpf/pmu_sample.bpf.c");
-
-[[nodiscard]] int libbpf_errno(const void* p, int fallback) noexcept {
-    const long le = libbpf_get_error(p);
-    return le ? static_cast<int>(-le) : fallback;
-}
 
 }  // namespace
 
@@ -506,7 +451,7 @@ std::optional<PmuSample> PmuSample::load(::crucible::effects::Init) noexcept {
         report("pmu_sample_buf map not found in object (bytecode/header out of sync — rebuild)");
         return std::nullopt;
     }
-    const BpfFd timeline_fd{bpf_map__fd(timeline_map)};
+    const Fd timeline_fd{bpf_map__fd(timeline_map)};
 
     const long page_l = ::sysconf(_SC_PAGESIZE);
     if (page_l <= 0) {

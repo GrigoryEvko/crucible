@@ -23,26 +23,17 @@
 
 #include <crucible/perf/SchedTpBtf.h>
 
+#include <crucible/perf/detail/BpfLoader.h>  // GAPS-004x shared loader helpers
+
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Pinned.h>
-#include <crucible/safety/Tagged.h>
 
-#include <bpf/bpf.h>
-#include <bpf/libbpf.h>
-#include <bpf/libbpf_legacy.h>
 #include <sys/mman.h>
-#include <sys/syscall.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include <cerrno>
-#include <cstdarg>
+#include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
-#include <mutex>
-#include <string>
-#include <string_view>
 
 #include <inplace_vector>
 
@@ -55,74 +46,22 @@ namespace crucible::perf {
 
 namespace {
 
-// Same TU-private provenance source tags as SchedSwitch.cpp uses;
-// GAPS-004x will surface as `crucible::perf::detail::source::*`.
-namespace source {
-    struct Kernel {};
-    struct BpfMap {};
-}
-
-using Tgid = ::crucible::safety::Tagged<uint32_t, source::Kernel>;
-using Tid  = ::crucible::safety::Tagged<uint32_t, source::Kernel>;
-using Fd   = ::crucible::safety::Tagged<int,      source::BpfMap>;
-static_assert(sizeof(Tgid) == sizeof(uint32_t));
-static_assert(sizeof(Tid)  == sizeof(uint32_t));
-static_assert(sizeof(Fd)   == sizeof(int));
-
-[[nodiscard]] Tgid current_tgid() noexcept {
-    return Tgid{static_cast<uint32_t>(::getpid())};
-}
-[[nodiscard]] Tid  current_tid()  noexcept {
-    return Tid{static_cast<uint32_t>(::syscall(SYS_gettid))};
-}
-[[nodiscard]] Fd   map_fd(struct bpf_map* m) noexcept {
-    return Fd{bpf_map__fd(m)};
-}
-
-// Same env-var caching shape as SchedSwitch.cpp.
-[[nodiscard]] bool env_true(const char* name) noexcept {
-    const char* v = std::getenv(name);
-    return v != nullptr && v[0] == '1';
-}
-[[nodiscard]] bool env_true_either(const char* canonical,
-                                   const char* legacy) noexcept {
-    return env_true(canonical) || env_true(legacy);
-}
-[[nodiscard]] bool quiet()   noexcept {
-    static const bool kQuiet =
-        env_true_either("CRUCIBLE_PERF_QUIET", "CRUCIBLE_BENCH_BPF_QUIET");
-    return kQuiet;
-}
-[[nodiscard]] bool verbose() noexcept {
-    static const bool kVerbose =
-        env_true_either("CRUCIBLE_PERF_VERBOSE", "CRUCIBLE_BENCH_BPF_VERBOSE");
-    return kVerbose;
-}
-
-int libbpf_log_cb(enum libbpf_print_level, const char* fmt, va_list args) noexcept {
-    if (!verbose()) return 0;
-    return std::vfprintf(stderr, fmt, args);
-}
-void install_libbpf_log_cb_once() noexcept {
-    static std::once_flag once;
-    std::call_once(once, [] { libbpf_set_print(libbpf_log_cb); });
-}
-
-[[nodiscard]] struct bpf_map* find_rodata(struct bpf_object* obj) noexcept {
-    struct bpf_map* map = nullptr;
-    bpf_object__for_each_map(map, obj) {
-        const char* n = bpf_map__name(map);
-        if (n == nullptr) continue;
-        const std::string_view name{n};
-        if (name.ends_with(".rodata")) return map;
-    }
-    return nullptr;
-}
-
-[[nodiscard]] int libbpf_errno(const void* p, int fallback) noexcept {
-    const long le = libbpf_get_error(p);
-    return le ? static_cast<int>(-le) : fallback;
-}
+// Shared loader helpers from detail::BpfLoader (GAPS-004x).
+// BTF-typed tp_btf programs attach via BTF, not by tracepoint name —
+// so disable_unavailable_programs / tracepoint_exists are unused
+// here (and the unused inline helpers vanish at link time).
+namespace source = ::crucible::perf::detail::source;
+using ::crucible::perf::detail::Tgid;
+using ::crucible::perf::detail::Tid;
+using ::crucible::perf::detail::Fd;
+using ::crucible::perf::detail::current_tgid;
+using ::crucible::perf::detail::current_tid;
+using ::crucible::perf::detail::map_fd;
+using ::crucible::perf::detail::find_rodata;
+using ::crucible::perf::detail::libbpf_errno;
+using ::crucible::perf::detail::install_libbpf_log_cb_once;
+using ::crucible::perf::detail::quiet;
+using ::crucible::perf::detail::verbose;
 
 }  // namespace
 

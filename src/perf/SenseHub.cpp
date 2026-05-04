@@ -24,26 +24,21 @@
 
 #include <crucible/perf/SenseHub.h>
 
+// detail::BpfLoader brings the shared anonymous-namespace helpers
+// (Tagged provenance typedefs, env-var caches, libbpf log control,
+// .rodata + tracepoint discovery, libbpf_errno).  GAPS-004x extracted
+// these from the 7 BPF facade .cpp files that had each cloned them.
+#include <crucible/perf/detail/BpfLoader.h>
+
 #include <crucible/safety/Mutation.h>  // safety::WriteOnce / WriteOnceNonNull / Monotonic
 #include <crucible/safety/Pinned.h>    // safety::NonMovable<T>
-#include <crucible/safety/Tagged.h>    // safety::Tagged<T, Source>
 
-#include <bpf/bpf.h>
-#include <bpf/libbpf.h>
-#include <bpf/libbpf_legacy.h>  // libbpf_get_error (IS_ERR detection)
 #include <sys/mman.h>
-#include <sys/syscall.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include <cerrno>
-#include <cstdarg>
+#include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
-#include <mutex>
-#include <string>
-#include <string_view>
 
 // 64 slots comfortably covers the 58 tracepoints shipped today with
 // headroom.  GCC 16 ships std::inplace_vector unconditionally.
@@ -58,176 +53,25 @@ namespace crucible::perf {
 
 namespace {
 
-// ── TU-private provenance source tags ───────────────────────────────
-//
-// Anonymous-namespace-scoped (TU-private) source tags consumed by
-// safety::Tagged<T, Source>.  Defining them locally keeps the SenseHub
-// loader's provenance vocabulary self-contained — no risk of clashing
-// with the global `safety::source::*` namespace, no risk of a future
-// codebase-wide rename touching this file.
-namespace source {
-    struct Kernel  {};  // value originated from a kernel syscall
-                        // (getpid / gettid).  Trusted provenance —
-                        // kernel doesn't lie, but it can be lied TO
-                        // by syscall interposition; this tag draws
-                        // the line.
-    struct BpfMap  {};  // file descriptor returned by libbpf for an
-                        // eBPF map handle.  Distinct from a generic
-                        // open() FD because the lifetime is tied to
-                        // the bpf_object's load/close cycle, not to
-                        // close() syscall.
-}
-
-// ── Tiny TU-private strong types (TypeSafe + provenance axioms) ──
-//
-// getpid() / gettid() / bpf_map__fd() return raw integers that mean
-// different things.  Promoting to safety::Tagged<T, Source> threads
-// provenance through the type system — a Tgid (kernel-sourced PID)
-// cannot be passed where a Fd (BPF map descriptor) was expected,
-// even though both ultimately reduce to platform integers.  The
-// `Source` phantom parameter is empty (TrustLattice<Tag>::element_type
-// is empty) so sizeof(Tagged<...>) == sizeof(T) under EBO collapse.
-using Tgid = ::crucible::safety::Tagged<uint32_t, source::Kernel>;
-using Tid  = ::crucible::safety::Tagged<uint32_t, source::Kernel>;
-using Fd   = ::crucible::safety::Tagged<int,      source::BpfMap>;
-static_assert(sizeof(Tgid) == sizeof(uint32_t),
-    "Tagged<uint32_t, source::Kernel> must EBO-collapse the empty "
-    "TrustLattice element to sizeof(uint32_t) — see Tagged.h zero-cost "
-    "guarantee block");
-static_assert(sizeof(Tid)  == sizeof(uint32_t));
-static_assert(sizeof(Fd)   == sizeof(int));
-
-[[nodiscard]] Tgid current_tgid() noexcept {
-    return Tgid{static_cast<uint32_t>(::getpid())};
-}
-[[nodiscard]] Tid  current_tid()  noexcept {
-    return Tid{static_cast<uint32_t>(::syscall(SYS_gettid))};
-}
-[[nodiscard]] Fd   map_fd(struct bpf_map* m) noexcept {
-    return Fd{bpf_map__fd(m)};
-}
-
-// ── Env-var knobs (cached once at first touch) ──────────────────────
-//
-// getenv() walks environ every call.  Load-time decisions and the
-// (rare) diagnostic path both want the same two flags; cache them in
-// function-local statics so they cost a single atomic load thereafter.
-//
-// Both the canonical CRUCIBLE_PERF_* names and the legacy
-// CRUCIBLE_BENCH_BPF_* names are honoured so the bench harness
-// retains backward-compatible env-var contracts after the SenseHub
-// promotion (GAPS-004a).
-//
-// ─── Caching trap (GAPS-004a-AUDIT, #1288) ──────────────────────────
-//
-// `static const bool kQuiet = env_true_either(...);` decides FOREVER
-// at the FIRST call to quiet() in process lifetime.  setenv() AFTER
-// that point has no effect on subsequent quiet() returns — the cache
-// captured the value before the setenv landed.
-//
-// This is intentional: getenv on every call costs a `strcmp` walk of
-// `environ` which is ~50-200ns, dwarfing the actual diagnostic cost
-// in the rare-but-not-zero stderr-write path.  But it means tests
-// that want to toggle behaviour mid-process MUST setenv BEFORE the
-// SenseHub is ever loaded — once load()'s diagnostic path or the bench
-// harness banner has run, the cache is locked.
-//
-// In practice this is fine because both flags are deployment-time
-// decisions (set once in the systemd unit, the docker env, or the
-// sentinel test's first line).  If a future use case demands
-// re-evaluating per call, swap the function-local-static pattern for
-// a simple `getenv(...) != nullptr && getenv(...)[0] == '1'` body.
-// The 200ns cost only matters if a hot-path frame asks; today none do.
-[[nodiscard]] bool env_true(const char* name) noexcept {
-    const char* v = std::getenv(name);
-    return v != nullptr && v[0] == '1';
-}
-[[nodiscard]] bool env_true_either(const char* canonical,
-                                   const char* legacy) noexcept {
-    return env_true(canonical) || env_true(legacy);
-}
-[[nodiscard]] bool quiet()   noexcept {
-    static const bool kQuiet =
-        env_true_either("CRUCIBLE_PERF_QUIET", "CRUCIBLE_BENCH_BPF_QUIET");
-    return kQuiet;
-}
-[[nodiscard]] bool verbose() noexcept {
-    static const bool kVerbose =
-        env_true_either("CRUCIBLE_PERF_VERBOSE", "CRUCIBLE_BENCH_BPF_VERBOSE");
-    return kVerbose;
-}
-
-// Silence libbpf's INFO/WARN spew by default — we emit a single clean
-// diagnostic from load() on failure.  Forward everything when the
-// user explicitly asks for verbose output.  noexcept because libbpf
-// stores and invokes this as a C function pointer; throwing across a
-// C callback frame is undefined behavior.
-int libbpf_log_cb(enum libbpf_print_level, const char* fmt, va_list args) noexcept {
-    if (!verbose()) return 0;
-    return std::vfprintf(stderr, fmt, args);
-}
-
-// Register the libbpf print callback exactly once across all
-// SenseHub::load() invocations — subsequent calls are no-ops.
-void install_libbpf_log_cb_once() noexcept {
-    static std::once_flag once;
-    std::call_once(once, [] { libbpf_set_print(libbpf_log_cb); });
-}
-
-// .rodata maps are named "<progname>.rodata" with progname truncated
-// to fit 15 chars total in the map name.  We want the main .rodata
-// (where target_tgid lives at offset 0), not .rodata.str1.1 or any
-// other compiler-emitted companion section — match the exact suffix.
-[[nodiscard]] struct bpf_map* find_rodata(struct bpf_object* obj) noexcept {
-    struct bpf_map* map = nullptr;
-    bpf_object__for_each_map(map, obj) {
-        const char* n = bpf_map__name(map);
-        if (n == nullptr) continue;
-        const std::string_view name{n};
-        if (name.ends_with(".rodata")) return map;
-    }
-    return nullptr;
-}
-
-// Returns true iff /sys/kernel/tracing/events/<category>/<event>/id
-// exists.  Called for every SEC("tracepoint/…") program before load
-// — missing tracepoints get autoload disabled so the object can
-// still load.
-[[nodiscard]] bool tracepoint_exists(const char* category_slash_event) noexcept {
-    std::string path = "/sys/kernel/tracing/events/";
-    path.append(category_slash_event);
-    path.append("/id");
-    if (::access(path.c_str(), F_OK) == 0) return true;
-    // Older kernels expose it via debugfs instead.
-    path.assign("/sys/kernel/debug/tracing/events/");
-    path.append(category_slash_event);
-    path.append("/id");
-    return ::access(path.c_str(), F_OK) == 0;
-}
-
-void disable_unavailable_programs(struct bpf_object* obj) noexcept {
-    struct bpf_program* prog = nullptr;
-    bpf_object__for_each_program(prog, obj) {
-        const char* sec = bpf_program__section_name(prog);
-        if (sec == nullptr) continue;
-        // "tracepoint/<cat>/<event>" — strip the prefix, check sysfs.
-        static constexpr const char kPrefix[] = "tracepoint/";
-        if (std::strncmp(sec, kPrefix, sizeof(kPrefix) - 1) != 0) continue;
-        const char* tp = sec + (sizeof(kPrefix) - 1);
-        if (!tracepoint_exists(tp)) {
-            (void)bpf_program__set_autoload(prog, false);
-        }
-    }
-}
-
-// Translate a libbpf return pointer into an errno-ish int for the
-// report helper.  Prefers libbpf_get_error() (which returns -errno
-// encoded in the pointer) because libbpf doesn't promise to touch
-// the thread-local errno on NULL returns.
-[[nodiscard]] int libbpf_errno(const void* p, int fallback) noexcept {
-    const long le = libbpf_get_error(p);
-    return le ? static_cast<int>(-le) : fallback;
-}
+// All shared helpers live in ::crucible::perf::detail (BpfLoader.h).
+// Pull them into the anonymous namespace so call sites below remain
+// syntactically identical to pre-extraction.  The implicit using-
+// directive from anon-ns to enclosing crucible::perf namespace
+// (per [basic.namespace]/4) propagates these names to the
+// SenseHub::State member-declaration scope below the closing }.
+namespace source = ::crucible::perf::detail::source;
+using ::crucible::perf::detail::Tgid;
+using ::crucible::perf::detail::Tid;
+using ::crucible::perf::detail::Fd;
+using ::crucible::perf::detail::current_tgid;
+using ::crucible::perf::detail::current_tid;
+using ::crucible::perf::detail::map_fd;
+using ::crucible::perf::detail::find_rodata;
+using ::crucible::perf::detail::disable_unavailable_programs;
+using ::crucible::perf::detail::libbpf_errno;
+using ::crucible::perf::detail::install_libbpf_log_cb_once;
+using ::crucible::perf::detail::quiet;
+using ::crucible::perf::detail::verbose;
 
 }  // namespace
 
