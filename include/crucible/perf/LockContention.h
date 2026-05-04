@@ -67,13 +67,17 @@
 //     CAS, no syscall) are NOT — those are zero-cost and need no
 //     contention attribution anyway.
 //
-// (2) **Per-tid `wait_start` keyed by raw tid (HASH, not LRU).**
-//     Orphaned entries (futex_enter without matching futex_exit —
-//     e.g. thread killed mid-wait) accumulate to MAX_ENTRIES=65536
-//     and then BPF_NOEXIST blocks new inserts.  Future GAPS-004x
-//     can promote to LRU_HASH (same fix as SchedSwitch GAPS-004b-AUDIT
-//     for switch_start).  Today: only matters for >65K threads
-//     dying mid-futex-wait per process lifetime.
+// (2) **Per-tid `wait_start` keyed by raw tid.**  Multi-threaded
+//     workloads can lose wait events when a thread is killed
+//     mid-futex-wait (futex_enter recorded, no matching futex_exit
+//     ever arrives).  GAPS-004d-AUDIT (2026-05-04) made this self-
+//     healing by changing `wait_start` to `BPF_MAP_TYPE_LRU_HASH` —
+//     orphaned entries auto-evict on capacity pressure rather than
+//     accumulating to MAX_ENTRIES=65536 and silently blocking new
+//     inserts via BPF_NOEXIST.  Same fix class as SchedSwitch
+//     GAPS-004b-AUDIT for switch_start.  Coverage is unchanged
+//     (we still record one entry per inflight futex_wait); the
+//     leak is gone.
 //
 // (3) **Stack walk via BPF_F_USER_STACK + BPF_F_FAST_STACK_CMP** —
 //     fast (no full DWARF unwind in BPF; uses frame-pointer walk
@@ -93,6 +97,19 @@
 //     microseconds.  Documented limit; canonical fix is
 //     BPF_MAP_TYPE_RINGBUF (kernel-side producer arbitration).
 //     Out of scope for this facade.
+//
+// FIXED in GAPS-004d-AUDIT (2026-05-04):
+// — `wait_start` map is now `BPF_MAP_TYPE_LRU_HASH` (was `HASH`);
+//   orphaned entries auto-evict, no MAX_ENTRIES silent-rejection.
+// — Compiler barrier (`__asm__ __volatile__ ("" ::: "memory")`)
+//   inserted before the `ts_ns` store so clang -O2 cannot reorder
+//   the field stores past the completion marker.  Pairs with the
+//   userspace reader's `__atomic_load_n(&ts_ns, ACQUIRE)` —
+//   "ts_ns LAST as completion marker" is now an enforced contract,
+//   not wishful thinking.  Same fix class as SchedSwitch GAPS-004b-AUDIT.
+// — Single `bpf_ktime_get_ns()` call per event (was two — one for
+//   delta, one for ts_ns).  Matches SchedSwitch's canonical pattern;
+//   saves one helper call (~50 ns per event).
 
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
 #include <crucible/safety/Borrowed.h>       // safety::Borrowed<T, Source>

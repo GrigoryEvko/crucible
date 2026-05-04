@@ -20,7 +20,15 @@
 
 /* ─── Maps ──────────────────────────────────────────────────────────── */
 
-/* (tid) → (futex_addr, start_ts, stack_id) for in-flight waits */
+/* (tid) → (futex_addr, start_ts, stack_id) for in-flight waits.
+ *
+ * GAPS-004d-AUDIT (2026-05-04): LRU_HASH (not plain HASH) — orphaned
+ * entries (futex_enter recorded but matching futex_exit never arrives,
+ * e.g. thread killed mid-wait, syscall returns via signal, or
+ * target_tgid filter accepted enter but rejected exit) are auto-
+ * evicted on capacity pressure rather than accumulating to
+ * MAX_ENTRIES=65536 and silently blocking new inserts via BPF_NOEXIST.
+ * Same fix as SchedSwitch GAPS-004b-AUDIT for switch_start. */
 struct wait_info {
     __u64 addr;
     __u64 ts;
@@ -29,7 +37,7 @@ struct wait_info {
 };
 
 struct {
-    __uint(type, BPF_MAP_TYPE_HASH);
+    __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, MAX_ENTRIES);
     __type(key, __u32);
     __type(value, struct wait_info);
@@ -110,12 +118,18 @@ int handle_futex_exit(struct trace_event_raw_sys_exit *ctx)
     if (!is_target())
         return 0;
 
+    /* GAPS-004d-AUDIT (2026-05-04): single bpf_ktime_get_ns() call.
+     * Was two calls (one for delta, one for ts_ns) — wasted ~50 ns
+     * per event.  SchedSwitch and the canonical pattern capture once
+     * at function entry and reuse for both purposes; mirrored here. */
+    __u64 now = bpf_ktime_get_ns();
+
     __u32 tid = get_tid();
     struct wait_info *info = bpf_map_lookup_elem(&wait_start, &tid);
     if (!info)
         return 0;
 
-    __u64 delta = bpf_ktime_get_ns() - info->ts;
+    __u64 delta = now - info->ts;
     struct lock_key key = {
         .addr = info->addr,
         .stack_id = info->stack_id,
@@ -133,7 +147,17 @@ int handle_futex_exit(struct trace_event_raw_sys_exit *ctx)
             tl->events[slot].futex_addr = info->addr;
             tl->events[slot].wait_ns = delta;
             tl->events[slot].tid = tid;
-            tl->events[slot].ts_ns = bpf_ktime_get_ns(); /* completion marker */
+            /* Compiler barrier — GAPS-004d-AUDIT (2026-05-04).
+             * Forces clang to emit the prior 3 stores BEFORE the
+             * ts_ns store; without this, -O2 may reorder and break
+             * the "ts_ns LAST as completion marker" contract.  Zero
+             * machine cost (asm volatile with empty body emits no
+             * instruction; the "memory" clobber tells the compiler
+             * not to reorder across this point).  Pairs with the
+             * userspace reader's __atomic_load_n(&ts_ns, ACQUIRE).
+             * Same fix class as SchedSwitch GAPS-004b-AUDIT. */
+            __asm__ __volatile__("" ::: "memory");
+            tl->events[slot].ts_ns = now; /* completion marker */
         }
     }
 
