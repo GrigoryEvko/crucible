@@ -84,9 +84,13 @@ using steady = std::chrono::steady_clock;
 }
 
 void print_coverage(const crucible::perf::CoverageReport& cov) {
-    std::printf("  attached: %zu/5", cov.attached_count());
+    // GAPS-004g-AUDIT-4: denominator is 7 (5 legacy facades + 2 BTF
+    // variants per GAPS-004f), not 5.  The "/5" was correct at GAPS-004y
+    // ship time but never updated when SchedTpBtf+SyscallTpBtf were added
+    // to the aggregator (commit d165811).
+    std::printf("  attached: %zu/7", cov.attached_count());
     if (cov.attached_count() == 0) {
-        // Coverage 0/5 is the most common surprise.  Tell the user how to
+        // Coverage 0/7 is the most common surprise.  Tell the user how to
         // fix it instead of leaving them to grep.  Two recovery paths:
         //   • make bench-caps  (one-time, sticky until rebuild)
         //   • sudo ./bench_perf_loader  (per-invocation)
@@ -94,10 +98,12 @@ void print_coverage(const crucible::perf::CoverageReport& cov) {
                     " or invoke under sudo");
     }
     std::printf("\n  sense_hub=%d sched_switch=%d pmu_sample=%d "
-                "lock_contention=%d syscall_latency=%d\n",
+                "lock_contention=%d syscall_latency=%d "
+                "sched_tp_btf=%d syscall_tp_btf=%d\n",
                 cov.sense_hub_attached, cov.sched_switch_attached,
                 cov.pmu_sample_attached, cov.lock_contention_attached,
-                cov.syscall_latency_attached);
+                cov.syscall_latency_attached,
+                cov.sched_tp_btf_attached, cov.syscall_tp_btf_attached);
 }
 
 } // namespace
@@ -192,7 +198,23 @@ int main() {
                 bench::do_not_optimize(p);
             });
         }(),
-        // (C) Coverage diagnostic — 5 bools by value (≤ 4 B).  Augur reads
+        // GAPS-004g-AUDIT-4: BTF-typed facades (GAPS-004f) had no
+        // accessor bench.  Same shape as the legacy facades — single
+        // optional-bit load — so cost is sub-ns identical, but the
+        // omission left the API-surface coverage incomplete.
+        [&]{
+            return bench::run("senses.sched_tp_btf()", [&]{
+                const auto* p = s.sched_tp_btf();
+                bench::do_not_optimize(p);
+            });
+        }(),
+        [&]{
+            return bench::run("senses.syscall_tp_btf()", [&]{
+                const auto* p = s.syscall_tp_btf();
+                bench::do_not_optimize(p);
+            });
+        }(),
+        // (C) Coverage diagnostic — 7 bools by value (≤ 4 B).  Augur reads
         // this once per drift-detection sample.
         [&]{
             return bench::run("senses.coverage()", [&]{
@@ -201,7 +223,7 @@ int main() {
             });
         }(),
         [&]{
-            return bench::run("coverage.attached_count() [5 cond. adds]", [&]{
+            return bench::run("coverage.attached_count() [7 cond. adds]", [&]{
                 const std::size_t n = s.coverage().attached_count();
                 bench::do_not_optimize(n);
             });
