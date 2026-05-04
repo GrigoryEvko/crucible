@@ -111,6 +111,18 @@ struct timeline_syscall_event {
     __u32 tid;
     __u32 syscall_nr;
     __u64 ts_ns;       /* bpf_ktime_get_ns() — WRITTEN LAST */
+    __u64 _pad;        /* GAPS-004e (2026-05-04): pad to 32 B so the
+                        * events array's slots are always cache-line-
+                        * coresident (32 divides 64 evenly).  Without
+                        * this, slot N at byte (64 + 24*N) straddles
+                        * two 64-byte cache lines for N ∈ {2, 5} (mod 8),
+                        * and the reader could observe ts_ns visible
+                        * while duration_ns/tid/syscall_nr are still
+                        * stale — silently breaking the "ts_ns LAST as
+                        * completion marker" contract documented above.
+                        * Same fix class as TimelineSchedEvent
+                        * GAPS-004b-AUDIT and TimelineLockEvent at
+                        * GAPS-004d ship time. */
 };
 
 struct timeline_lock_event {
