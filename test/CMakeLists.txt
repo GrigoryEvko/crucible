@@ -462,6 +462,13 @@ crucible_test(test_perf_syscall_tp_btf_smoke)
 # verifies type-shape (move-only, ≤64 B), nullptr-Senses graceful
 # degradation, demote_one_step ladder, and reset() semantics.
 crucible_test(test_rt_deadline_watchdog_smoke)
+# GAPS-004h (#1284): perf::WorkloadProfiler wires SenseHub counters
+# into ParallelismRule's parallel-vs-sequential decision.  Smoke
+# verifies type-shape (move-only), nullptr-Senses pass-through over
+# bare ParallelismRule, L1-resident short-circuit (cache-tier gate
+# fires without telemetry read), reset() semantics, and the never-
+# promote invariant.
+crucible_test(test_perf_workload_profiler_smoke)
 target_include_directories(test_bench_harness SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
 
@@ -1101,6 +1108,16 @@ crucible_neg_compile_effects_test(neg_rt_deadline_watchdog_wrong_cap
     "could not convert|no matching function|cannot convert|expected.*Init")
 crucible_neg_compile_effects_test(neg_rt_deadline_watchdog_no_cap
     "too few arguments|no matching function|candidate expects 3 arguments")
+
+# GAPS-004h (#1284): perf::WorkloadProfiler cap-tag gate.  Construction
+# takes effects::Init by value as the second parameter (third is the
+# defaulted Config) — wrong-cap and no-cap fixtures pin the gate against
+# silent default-arg regressions.  Hot-path frames hold no Init token,
+# so structurally can't construct a profiler from a hot call site.
+crucible_neg_compile_effects_test(neg_perf_workload_profiler_wrong_cap
+    "could not convert|no matching function|cannot convert|expected.*Init")
+crucible_neg_compile_effects_test(neg_perf_workload_profiler_no_cap
+    "too few arguments|no matching function|candidate expects 2-3 arguments")
 
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the
 # SessionMint walker handles BSYZ22 crash-stop's Stop the same way
