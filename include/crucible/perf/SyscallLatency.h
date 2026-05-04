@@ -162,6 +162,31 @@ namespace crucible::perf {
 
 class SyscallLatency {
  public:
+    // ─── Snapshot — consumer-shaped delta semantics ──────────────────
+    //
+    // Same shape as SchedSwitch::Snapshot.  `delta.total_syscalls` =
+    // syscalls completed in window; `delta.timeline_index` = events
+    // produced into the ring.
+    struct Snapshot {
+        uint64_t total_syscalls = 0;
+        uint64_t timeline_index = 0;
+
+        [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
+            Snapshot r;
+            if (__builtin_sub_overflow(total_syscalls, older.total_syscalls,
+                                        &r.total_syscalls)) [[unlikely]] {
+                r.total_syscalls = 0;
+            }
+            if (__builtin_sub_overflow(timeline_index, older.timeline_index,
+                                        &r.timeline_index)) [[unlikely]] {
+                r.timeline_index = 0;
+            }
+            return r;
+        }
+    };
+
+    [[nodiscard]] Snapshot snapshot() const noexcept;
+
     // Load the embedded BPF program (syscall_latency.bpf.c), set
     // target_tgid to getpid(), attach the raw_syscalls/sys_enter +
     // sys_exit tracepoints, mmap the syscall_timeline.  Returns

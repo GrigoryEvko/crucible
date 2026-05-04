@@ -83,6 +83,31 @@ namespace crucible::perf {
 
 class SyscallTpBtf {
  public:
+    // ─── Snapshot — consumer-shaped delta semantics ──────────────────
+    //
+    // Same shape as SyscallLatency::Snapshot — BTF-typed syscalls
+    // produce the same TimelineSyscallEvent layout, so consumers that
+    // accept either facade can use the same Snapshot diff idiom.
+    struct Snapshot {
+        uint64_t total_syscalls = 0;
+        uint64_t timeline_index = 0;
+
+        [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
+            Snapshot r;
+            if (__builtin_sub_overflow(total_syscalls, older.total_syscalls,
+                                        &r.total_syscalls)) [[unlikely]] {
+                r.total_syscalls = 0;
+            }
+            if (__builtin_sub_overflow(timeline_index, older.timeline_index,
+                                        &r.timeline_index)) [[unlikely]] {
+                r.timeline_index = 0;
+            }
+            return r;
+        }
+    };
+
+    [[nodiscard]] Snapshot snapshot() const noexcept;
+
     // Load the embedded BPF program (syscall_tp_btf.bpf.c), set
     // target_tgid to getpid(), attach the tp_btf/sys_enter +
     // tp_btf/sys_exit programs, mmap the syscall_timeline ring.

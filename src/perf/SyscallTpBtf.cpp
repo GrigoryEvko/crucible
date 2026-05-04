@@ -273,4 +273,11 @@ SyscallTpBtf::attach_failures() const noexcept {
                                  : std::size_t{0}};
 }
 
+SyscallTpBtf::Snapshot SyscallTpBtf::snapshot() const noexcept {
+    return Snapshot{
+        .total_syscalls = total_syscalls(),
+        .timeline_index = timeline_write_index(),
+    };
+}
+
 }  // namespace crucible::perf

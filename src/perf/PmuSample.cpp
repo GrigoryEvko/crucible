@@ -525,4 +525,8 @@ PmuSample::attach_failures() const noexcept {
                                  : std::size_t{0}};
 }
 
+PmuSample::Snapshot PmuSample::snapshot() const noexcept {
+    return Snapshot{.samples = timeline_write_index()};
+}
+
 }  // namespace crucible::perf

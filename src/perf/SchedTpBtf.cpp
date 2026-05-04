@@ -286,4 +286,11 @@ SchedTpBtf::attach_failures() const noexcept {
                                  : std::size_t{0}};
 }
 
+SchedTpBtf::Snapshot SchedTpBtf::snapshot() const noexcept {
+    return Snapshot{
+        .ctx_switches   = context_switches(),
+        .timeline_index = timeline_write_index(),
+    };
+}
+
 }  // namespace crucible::perf

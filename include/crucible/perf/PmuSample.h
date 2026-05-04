@@ -229,6 +229,34 @@ constexpr uint32_t PMU_SAMPLE_MASK     = PMU_SAMPLE_CAPACITY - 1;
 
 class PmuSample {
  public:
+    // ─── Snapshot — consumer-shaped delta semantics ──────────────────
+    //
+    // PmuSample's primary metric is the count of recorded perf samples,
+    // which equals the timeline_write_index (each ring slot is one
+    // sample).  No separate scalar accessor is needed — the index IS
+    // the sample count.
+    //
+    // Mirrors the Snapshot/operator- pattern shipped on every other
+    // GAPS-004 facade.  `delta.samples` is the count of samples
+    // recorded between pre and post.
+    struct Snapshot {
+        uint64_t samples = 0;  // matches timeline_write_index() at snapshot
+
+        [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
+            Snapshot r;
+            if (__builtin_sub_overflow(samples, older.samples,
+                                        &r.samples)) [[unlikely]] {
+                r.samples = 0;
+            }
+            return r;
+        }
+    };
+
+    // Capture the sample count.  Cost: single volatile load on the
+    // mmap'd page header (~1 ns).  Cheaper than the other facades'
+    // snapshots because PmuSample has no syscall-backed scalar.
+    [[nodiscard]] Snapshot snapshot() const noexcept;
+
     // Load embedded BPF program, set target_tgid to getpid(),
     // perf_event_open all 8 event types tracking this PID across
     // all CPUs (cpu=-1), attach BPF programs, mmap the

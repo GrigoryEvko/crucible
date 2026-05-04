@@ -79,6 +79,31 @@ namespace crucible::perf {
 
 class SchedTpBtf {
  public:
+    // ─── Snapshot — consumer-shaped delta semantics ──────────────────
+    //
+    // Same shape as SchedSwitch::Snapshot — BTF-typed sched_switch
+    // produces the same TimelineSchedEvent layout, so consumers that
+    // accept either facade can use the same Snapshot diff idiom.
+    struct Snapshot {
+        uint64_t ctx_switches   = 0;
+        uint64_t timeline_index = 0;
+
+        [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
+            Snapshot r;
+            if (__builtin_sub_overflow(ctx_switches, older.ctx_switches,
+                                        &r.ctx_switches)) [[unlikely]] {
+                r.ctx_switches = 0;
+            }
+            if (__builtin_sub_overflow(timeline_index, older.timeline_index,
+                                        &r.timeline_index)) [[unlikely]] {
+                r.timeline_index = 0;
+            }
+            return r;
+        }
+    };
+
+    [[nodiscard]] Snapshot snapshot() const noexcept;
+
     // Load the embedded BPF program (sched_tp_btf.bpf.c), set
     // target_tgid to getpid(), populate our_tids with the main TID,
     // attach the tp_btf/sched_switch program, mmap the

@@ -169,6 +169,34 @@ namespace crucible::perf {
 
 class LockContention {
  public:
+    // ─── Snapshot — consumer-shaped delta semantics ──────────────────
+    //
+    // Same shape as SchedSwitch::Snapshot: scalar (wait_count) plus
+    // timeline write index.  `delta.wait_count` = futex_wait events
+    // accumulated in the window; `delta.timeline_index` = events
+    // produced into the ring (caps at TIMELINE_CAPACITY-overwrite).
+    struct Snapshot {
+        uint64_t wait_count     = 0;  // matches wait_count() at snapshot
+        uint64_t timeline_index = 0;  // matches timeline_write_index() at snapshot
+
+        [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
+            Snapshot r;
+            if (__builtin_sub_overflow(wait_count, older.wait_count,
+                                        &r.wait_count)) [[unlikely]] {
+                r.wait_count = 0;
+            }
+            if (__builtin_sub_overflow(timeline_index, older.timeline_index,
+                                        &r.timeline_index)) [[unlikely]] {
+                r.timeline_index = 0;
+            }
+            return r;
+        }
+    };
+
+    // Cost: dominated by wait_count() at ~1 µs (bpf_map_lookup_elem
+    // syscall).  Same Keeper-tick-cadence guidance as SchedSwitch.
+    [[nodiscard]] Snapshot snapshot() const noexcept;
+
     // Load the embedded BPF program (lock_contention.bpf.c), set
     // target_tgid to getpid(), attach the syscalls/sys_enter_futex +
     // sys_exit_futex tracepoints, mmap the lock_timeline.  Returns

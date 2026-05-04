@@ -384,4 +384,11 @@ SchedSwitch::attach_failures() const noexcept {
                                  : std::size_t{0}};
 }
 
+SchedSwitch::Snapshot SchedSwitch::snapshot() const noexcept {
+    return Snapshot{
+        .ctx_switches   = context_switches(),
+        .timeline_index = timeline_write_index(),
+    };
+}
+
 }  // namespace crucible::perf

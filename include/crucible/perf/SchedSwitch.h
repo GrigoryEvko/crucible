@@ -183,6 +183,56 @@ constexpr uint32_t TIMELINE_MASK     = TIMELINE_CAPACITY - 1;
 
 class SchedSwitch {
  public:
+    // ─── Snapshot — consumer-shaped delta semantics ──────────────────
+    //
+    // Captures the two interesting metrics — the global context-switch
+    // counter and the timeline-ring write index — in one struct.
+    // Pair pre/post snapshots and compute `post - pre` to get
+    // window-shaped deltas (events seen in the window, ctx-switches
+    // accumulated in the window).
+    //
+    // `operator-` saturates on underflow.  Both fields are monotonic
+    // by construction (context_switches accumulates, timeline_index
+    // counts events forever), so a properly ordered post-pre subtract
+    // never underflows in practice — the saturation is a defense
+    // against caller bugs (swapped pre/post, races on reads from a
+    // moved-from facade) rather than expected behaviour.
+    //
+    // Mirrors SenseHub::Snapshot's shape so consumers (DeadlineWatchdog,
+    // future WorkloadProfiler, Augur drift attribution) can use the
+    // same `pre = facade.snapshot(); ...; post = facade.snapshot();
+    // delta = post - pre;` idiom across every GAPS-004 facade.
+    //
+    // GAPS-004g (DeadlineWatchdog) currently rolls its own delta
+    // computation against `context_switches()`.  Once this Snapshot
+    // ships, the next watchdog audit can migrate to it.
+    struct Snapshot {
+        uint64_t ctx_switches   = 0;  // matches context_switches() at snapshot
+        uint64_t timeline_index = 0;  // matches timeline_write_index() at snapshot
+
+        [[nodiscard]] Snapshot operator-(const Snapshot& older) const noexcept {
+            Snapshot r;
+            if (__builtin_sub_overflow(ctx_switches, older.ctx_switches,
+                                        &r.ctx_switches)) [[unlikely]] {
+                r.ctx_switches = 0;
+            }
+            if (__builtin_sub_overflow(timeline_index, older.timeline_index,
+                                        &r.timeline_index)) [[unlikely]] {
+                r.timeline_index = 0;
+            }
+            return r;
+        }
+    };
+
+    // Capture both metrics atomically-ish.  Cost: dominated by
+    // context_switches() at ~1 µs (one bpf_map_lookup_elem syscall).
+    // The timeline_write_index() volatile load is ~1 ns.  NOT a hot-
+    // path call; OK at Keeper-tick granularity (~10-100 ms cadence).
+    //
+    // Returns a zero-initialized Snapshot on a moved-from / un-loaded
+    // SchedSwitch — same as the underlying accessors.
+    [[nodiscard]] Snapshot snapshot() const noexcept;
+
     // Load the embedded BPF program (sched_switch.bpf.c), set
     // target_tgid to getpid(), populate our_tids with our main
     // TID, attach the sched_switch tracepoint, mmap the

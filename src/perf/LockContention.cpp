@@ -297,4 +297,11 @@ LockContention::attach_failures() const noexcept {
                                  : std::size_t{0}};
 }
 
+LockContention::Snapshot LockContention::snapshot() const noexcept {
+    return Snapshot{
+        .wait_count     = wait_count(),
+        .timeline_index = timeline_write_index(),
+    };
+}
+
 }  // namespace crucible::perf
