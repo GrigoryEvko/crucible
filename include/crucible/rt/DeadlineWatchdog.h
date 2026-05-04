@@ -77,6 +77,33 @@
 // 100ms-1s (Keeper main loop tick).  At 10 Hz, watchdog cost is
 // 10 µs/sec = 0.001 % CPU.  At 1 Hz, 0.0001 %.  Truly cold path.
 //
+// ─── AXIOM POSTURE (per Crucible Code Guide §II) ──────────────────────
+//
+// • InitSafe   ✓ All fields NSDMI-defaulted; padding-free POD layout.
+// • TypeSafe   ✓ effects::Init cap-tag at construction; SchedClass and
+//                WatchdogVerdict are strong enums; counts are uint64_t
+//                throughout (matches SchedSwitch::context_switches()).
+// • NullSafe   ✓ Every senses_ deref guarded; nullptr-Senses + null
+//                sched_switch() both degrade to InsufficientData.
+// • MemSafe    ✓ No heap allocation; senses_ is a NON-OWNING borrow
+//                (heap-owned by Keeper / bench harness elsewhere).
+//                Copy-deleted with reason; move-only.
+// • BorrowSafe ✓ Private state never aliased; senses_ raw pointer is
+//                read-only and pointer-comparable.
+// • ThreadSafe ⚠ SINGLE-THREAD ONLY.  observe() / reset() mutate the
+//                rolling-window state without atomics; concurrent
+//                callers race.  Callers must serialize (Keeper main
+//                loop is single-threaded by construction).  If a future
+//                multi-threaded consumer appears, wrap with a mutex
+//                outside the watchdog — do NOT add atomics inside.
+// • LeakSafe   ✓ No resources owned; trivial dtor.
+// • DetSafe    ✗ NON-DETERMINISTIC by design — observe() reads
+//                steady_clock::now() and a kernel BPF-map counter that
+//                varies with system load.  The watchdog is an OBSERVER
+//                of wall-clock reality; it is not part of the bit-exact
+//                replay path.  Calling it from a deterministic context
+//                (e.g. replay verifier) is a structural bug.
+//
 // ─── HS14 NEG-COMPILE FIXTURES ────────────────────────────────────────
 //
 // • neg_rt_deadline_watchdog_no_cap.cpp     — construct without Init
@@ -85,9 +112,11 @@
 // Same Init-by-value gate as every Senses-touching surface in the
 // GAPS-004 series.
 
+#include <crucible/Platform.h>              // CRUCIBLE_PURE for getters
 #include <crucible/effects/Capabilities.h>  // effects::Init capability tag
 #include <crucible/perf/Senses.h>           // Senses + SchedSwitch facade
 #include <crucible/rt/Policy.h>             // Policy + SchedClass + budget
+#include <crucible/safety/Checked.h>        // crucible::sat::sub_sat
 
 #include <chrono>
 #include <cstdint>
@@ -131,14 +160,19 @@ watchdog_verdict_name(WatchdogVerdict v) noexcept {
 // Construction takes `effects::Init` — building the watchdog is a
 // startup-only act (it captures the baseline for the first window).
 // Subsequent `observe()` calls are cold-path-callable from any
-// context.
+// context (single-thread; see A6 above).
 //
-// The Senses pointer must outlive the DeadlineWatchdog.  Lifetime is
-// not enforced at the type level — Senses is heap-owned by Keeper /
-// bench harness; Watchdog is a stack-local on the same scope.
-// Callers that pass nullptr get a permanently-InsufficientData
-// watchdog (no crash), useful in unit tests and on systems where
-// libbpf is absent.
+// ── Borrow contract for `senses_` ─────────────────────────────────
+// The Senses pointer is a NON-OWNING borrow.  The lifetime contract
+// is: the Senses instance outlives the DeadlineWatchdog.  This is not
+// expressible via `safety::BorrowedRef<const Senses>` because the
+// nullptr case is part of the watchdog's degraded-mode contract
+// (callers without libbpf, unit tests, bench harness on a kernel
+// missing CAP_BPF) — BorrowedRef is non-null by design, and wrapping
+// in `Optional<BorrowedRef<...>>` adds a layer without eliminating a
+// bug class the existing nullptr guards don't already prevent.
+// Documented contract instead of typed contract — this matches the
+// rt/Hardening.h convention for borrowed Linux-syscall state.
 
 class DeadlineWatchdog {
 public:
@@ -245,19 +279,23 @@ public:
     // Augur reads these to attribute drift events to the SchedSwitch
     // signal.
 
-    [[nodiscard]] uint64_t baseline_count() const noexcept     { return baseline_count_; }
-    [[nodiscard]] uint64_t latest_count() const noexcept       { return latest_count_; }
-    [[nodiscard]] uint64_t window_started_ns() const noexcept  { return window_started_ns_; }
-    [[nodiscard]] uint32_t miss_budget() const noexcept        { return miss_budget_; }
-    [[nodiscard]] uint64_t window_ns() const noexcept          { return window_ns_; }
+    // CRUCIBLE_PURE = [[gnu::pure, nodiscard]] — these getters depend
+    // only on member state; the optimizer can CSE redundant calls
+    // (e.g. an Augur loop that reads baseline_count + latest_count
+    // back-to-back compiles to two MOV reads, no aliasing assumed).
+    CRUCIBLE_PURE uint64_t baseline_count() const noexcept     { return baseline_count_; }
+    CRUCIBLE_PURE uint64_t latest_count() const noexcept       { return latest_count_; }
+    CRUCIBLE_PURE uint64_t window_started_ns() const noexcept  { return window_started_ns_; }
+    CRUCIBLE_PURE uint32_t miss_budget() const noexcept        { return miss_budget_; }
+    CRUCIBLE_PURE uint64_t window_ns() const noexcept          { return window_ns_; }
 
-    // Misses observed since window start.  Saturates at zero on
-    // baseline-not-captured and on rare counter-reset edge cases
-    // (e.g. SchedSwitch reload between observations).
-    [[nodiscard]] uint64_t misses_in_window() const noexcept {
-        return (latest_count_ >= baseline_count_)
-            ? (latest_count_ - baseline_count_)
-            : 0u;
+    // Misses observed since window start.  `crucible::sat::sub_sat`
+    // saturates to zero on the rare counter-reset edge case (e.g.
+    // SchedSwitch reload between observations) — the open-coded
+    // ternary previously here was equivalent but didn't grep-locate
+    // alongside Crucible's other saturation sites.
+    CRUCIBLE_PURE uint64_t misses_in_window() const noexcept {
+        return ::crucible::sat::sub_sat<uint64_t>(latest_count_, baseline_count_);
     }
 
     // Move-only — no shared mutable state, but we want move semantics

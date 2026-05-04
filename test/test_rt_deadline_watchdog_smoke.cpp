@@ -108,10 +108,10 @@ int main() {
     // ── (4) nullptr Senses → permanently InsufficientData ──────────
     {
         Policy policy = Policy::production();  // nonzero budget
-        DeadlineWatchdog wd{
+        DeadlineWatchdog watchdog{
             /*senses=*/nullptr, policy, ::crucible::effects::Init{}};
         for (int i = 0; i < 5; ++i) {
-            const auto v = wd.observe();
+            const auto v = watchdog.observe();
             if (v != WatchdogVerdict::InsufficientData) {
                 std::fprintf(stderr,
                     "nullptr-Senses Watchdog should return "
@@ -122,15 +122,15 @@ int main() {
         }
         // Diagnostics should remain at sentinel zero — we never
         // captured a baseline because we never read a counter.
-        if (wd.baseline_count() != 0u || wd.latest_count() != 0u
-            || wd.window_started_ns() != 0u
-            || wd.misses_in_window() != 0u) {
+        if (watchdog.baseline_count() != 0u || watchdog.latest_count() != 0u
+            || watchdog.window_started_ns() != 0u
+            || watchdog.misses_in_window() != 0u) {
             std::fprintf(stderr,
                 "nullptr-Senses Watchdog diagnostics should be all "
                 "zero; got baseline=%llu latest=%llu window=%llu\n",
-                static_cast<unsigned long long>(wd.baseline_count()),
-                static_cast<unsigned long long>(wd.latest_count()),
-                static_cast<unsigned long long>(wd.window_started_ns()));
+                static_cast<unsigned long long>(watchdog.baseline_count()),
+                static_cast<unsigned long long>(watchdog.latest_count()),
+                static_cast<unsigned long long>(watchdog.window_started_ns()));
             ++failures;
         }
     }
@@ -139,19 +139,19 @@ int main() {
     {
         Policy policy = Policy::none();  // budget unset by default
         policy.deadline_miss_budget = 0;
-        DeadlineWatchdog wd{
+        DeadlineWatchdog watchdog{
             /*senses=*/nullptr, policy, ::crucible::effects::Init{}};
-        const auto v = wd.observe();
+        const auto v = watchdog.observe();
         if (v != WatchdogVerdict::InsufficientData) {
             std::fprintf(stderr,
                 "budget=0 should disable watchdog; got %s\n",
                 watchdog_verdict_name(v));
             ++failures;
         }
-        if (wd.miss_budget() != 0u) {
+        if (watchdog.miss_budget() != 0u) {
             std::fprintf(stderr,
                 "budget getter returns %u; expected 0\n",
-                wd.miss_budget());
+                watchdog.miss_budget());
             ++failures;
         }
     }
@@ -191,29 +191,29 @@ int main() {
     // ── (7) Diagnostics on fresh watchdog ──────────────────────────
     {
         Policy policy = Policy::production();
-        DeadlineWatchdog wd{
+        DeadlineWatchdog watchdog{
             /*senses=*/nullptr, policy, ::crucible::effects::Init{}};
-        if (wd.miss_budget() != policy.deadline_miss_budget) {
+        if (watchdog.miss_budget() != policy.deadline_miss_budget) {
             std::fprintf(stderr,
                 "miss_budget() = %u; expected %u\n",
-                wd.miss_budget(), policy.deadline_miss_budget);
+                watchdog.miss_budget(), policy.deadline_miss_budget);
             ++failures;
         }
         const uint64_t expected_window_ns =
             static_cast<uint64_t>(policy.watchdog_window_sec)
             * 1'000'000'000ull;
-        if (wd.window_ns() != expected_window_ns) {
+        if (watchdog.window_ns() != expected_window_ns) {
             std::fprintf(stderr,
                 "window_ns() = %llu; expected %llu\n",
-                static_cast<unsigned long long>(wd.window_ns()),
+                static_cast<unsigned long long>(watchdog.window_ns()),
                 static_cast<unsigned long long>(expected_window_ns));
             ++failures;
         }
         // Pre-observe state
-        if (wd.baseline_count() != 0u
-            || wd.latest_count() != 0u
-            || wd.window_started_ns() != 0u
-            || wd.misses_in_window() != 0u) {
+        if (watchdog.baseline_count() != 0u
+            || watchdog.latest_count() != 0u
+            || watchdog.window_started_ns() != 0u
+            || watchdog.misses_in_window() != 0u) {
             std::fprintf(stderr,
                 "fresh watchdog diagnostics not at zero\n");
             ++failures;
@@ -223,13 +223,13 @@ int main() {
     // ── (8) reset() restores zero-baseline state ───────────────────
     {
         Policy policy = Policy::production();
-        DeadlineWatchdog wd{
+        DeadlineWatchdog watchdog{
             /*senses=*/nullptr, policy, ::crucible::effects::Init{}};
-        (void)wd.observe();  // observe with nullptr Senses — no state change
-        wd.reset();
-        if (wd.baseline_count() != 0u
-            || wd.latest_count() != 0u
-            || wd.window_started_ns() != 0u) {
+        (void)watchdog.observe();  // observe with nullptr Senses — no state change
+        watchdog.reset();
+        if (watchdog.baseline_count() != 0u
+            || watchdog.latest_count() != 0u
+            || watchdog.window_started_ns() != 0u) {
             std::fprintf(stderr,
                 "reset() should zero diagnostics\n");
             ++failures;
@@ -239,10 +239,10 @@ int main() {
     // ── Move-construct sanity: the moved-into watchdog is usable ───
     {
         Policy policy = Policy::production();
-        DeadlineWatchdog wd1{
+        DeadlineWatchdog watchdog_src{
             /*senses=*/nullptr, policy, ::crucible::effects::Init{}};
-        DeadlineWatchdog wd2 = std::move(wd1);
-        const auto v = wd2.observe();
+        DeadlineWatchdog watchdog_sink = std::move(watchdog_src);
+        const auto v = watchdog_sink.observe();
         if (v != WatchdogVerdict::InsufficientData) {
             std::fprintf(stderr,
                 "moved-into watchdog should still observe; got %s\n",
