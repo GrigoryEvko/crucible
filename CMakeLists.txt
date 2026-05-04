@@ -125,7 +125,8 @@ if (CRUCIBLE_HAVE_BPF)
     src/perf/SchedSwitch.cpp
     src/perf/PmuSample.cpp
     src/perf/LockContention.cpp
-    src/perf/SyscallLatency.cpp)
+    src/perf/SyscallLatency.cpp
+    src/perf/Senses.cpp)
   if (CRUCIBLE_SENSE_HUB_V2)
     list(APPEND _CRUCIBLE_PERF_SOURCES
       src/perf/SenseHubV2.cpp

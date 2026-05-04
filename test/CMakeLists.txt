@@ -454,6 +454,7 @@ crucible_test(test_perf_sched_switch_smoke)
 crucible_test(test_perf_pmu_sample_smoke)
 crucible_test(test_perf_lock_contention_smoke)
 crucible_test(test_perf_syscall_latency_smoke)
+crucible_test(test_perf_senses_smoke)
 target_include_directories(test_bench_harness SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
 
@@ -1063,6 +1064,13 @@ crucible_neg_compile_effects_test(neg_perf_lock_contention_load_no_cap
 crucible_neg_compile_effects_test(neg_perf_syscall_latency_load_wrong_cap
     "could not convert|no matching function|cannot convert|expected.*Init")
 crucible_neg_compile_effects_test(neg_perf_syscall_latency_load_no_cap
+    "too few arguments|no matching function|candidate expects 1 argument")
+
+# GAPS-004y (#1287): Senses::load_all() cap-tag gate.  Same
+# Init-by-value discipline as the underlying per-program facades.
+crucible_neg_compile_effects_test(neg_perf_senses_load_wrong_cap
+    "could not convert|no matching function|cannot convert|expected.*Init")
+crucible_neg_compile_effects_test(neg_perf_senses_load_no_cap
     "too few arguments|no matching function|candidate expects 1 argument")
 
 # AUDIT-4 closure (S2.4): Stop terminator coverage.  Pins that the
