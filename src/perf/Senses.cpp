@@ -44,11 +44,20 @@ Senses::~Senses() noexcept                   = default;
 
 Senses Senses::load_subset(::crucible::effects::Init init,
                            SensesMask which) noexcept {
-    auto s = std::make_unique<State>();
+    // GAPS-004g-AUDIT-5: nothrow-new (was std::make_unique).  load_subset
+    // is marked noexcept and the docstring promises "never fails
+    // wholesale" — but std::make_unique uses throwing new under
+    // -fexceptions (the project's default), so an OOM here would invoke
+    // std::terminate via the noexcept boundary, contradicting the
+    // promise.  nothrow new returns nullptr on OOM, the existing
+    // !s branch handles it, and the caller gets an empty Senses that
+    // reports coverage().attached_count() == 0.
+    auto* raw = new (std::nothrow) State();
+    std::unique_ptr<State> s{raw};
     if (!s) {
         // OOM at startup → return empty Senses; caller's coverage()
-        // will report all-false.  This is preferable to abort or
-        // throwing — Senses is supposed to never fail wholesale.
+        // will report all-false.  Preferable to abort or terminate —
+        // Senses is supposed to never fail wholesale.
         return Senses{nullptr};
     }
 
