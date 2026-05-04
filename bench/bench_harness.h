@@ -73,6 +73,11 @@
   // `bench::bpf::` with `crucible::perf::` everywhere in one sweep.
   #include <crucible/perf/SenseHub.h>
   #include <crucible/perf/SchedSwitch.h>
+  // Senses aggregator — single entry point for senses_instance() below.
+  // Lifted to harness scope by GAPS-004y wire-in (2026-05-04) so every
+  // bench shares one Senses singleton instead of separate SenseHub +
+  // SchedSwitch loaders.
+  #include <crucible/perf/Senses.h>
 #endif
 
 #include <crucible/rt/Hardening.h>
@@ -356,44 +361,52 @@ namespace detail {
 
 } // namespace detail
 
-// ── BPF sense hub accessor (shared singleton) ──────────────────────
+// ── BPF perf::Senses accessor (shared aggregator singleton) ───────
 //
-// All Runs in the same process share one loaded BPF program — the
-// kernel tracepoints stay attached for the lifetime of the bench
-// binary. First call loads + attaches; subsequent calls are a simple
-// pointer return. Returns nullptr if BPF is unavailable (missing
-// CAP_BPF, kernel.unprivileged_bpf_disabled=2, kernel too old).
+// Single entry point for every BPF program the harness consumes.
+// Replaces the prior bpf_instance() + sched_switch_instance() pair
+// (GAPS-004y closing wire-in, 2026-05-04 — the docblock at the top
+// of this file noted the sweep was deferred; this is that sweep).
+//
+// All Runs in the same process share one loaded set of BPF programs
+// via crucible::perf::Senses — the kernel tracepoints stay attached
+// for the lifetime of the bench binary.  First call loads + attaches;
+// subsequent calls are a simple pointer return.  load_subset() is
+// used so the harness pays the same per-event cost as before (only
+// the two facades the harness actually consumes: SenseHub + SchedSwitch);
+// callers that want richer telemetry (PmuSample / LockContention /
+// SyscallLatency) can construct their own Senses with a wider mask.
+//
+// Per-facade availability is queried via Senses accessors:
+//   senses_instance()->sense_hub()    — 96-counter mmap snapshot
+//   senses_instance()->sched_switch() — per-tenant off-CPU timeline
+// Either may return nullptr if that facade failed to attach (missing
+// CAP_BPF, kernel.unprivileged_bpf_disabled=2, kernel too old);
+// senses_instance() itself is never nullptr (Senses is a value).
 
 namespace detail {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-[[nodiscard]] inline const bench::bpf::SenseHub* bpf_instance() noexcept {
-    // SenseHub::load(effects::Init) takes a 1-byte init capability tag
-    // (post-GAPS-004a hardening, 2026-05-03).  Static-init context is
-    // load-bearing init; constructing Init{} here is the canonical
-    // form.  Hot-path code holds no Init capability and therefore
-    // cannot synthesize the argument — this guarantees the entire
-    // call chain rooted at SenseHub::load() never reaches a hot frame.
-    static std::optional<bench::bpf::SenseHub> slot =
-        bench::bpf::SenseHub::load(::crucible::effects::Init{});
-    return slot.has_value() ? &*slot : nullptr;
-}
-
-// SchedSwitch off-CPU drill-down — sibling to SenseHub but per-event
-// granularity.  Loaded lazily; ~150 ms one-time startup cost, then
-// per-sched_switch BPF overhead is ~3-5 µs (the BPF program runs in
-// kernel context, NOT in this bench process — only the timeline
-// reads at bench-end pay any userspace cost).  Combined with
-// SenseHub already attaching sched_switch, total per-event kernel
-// cost is ~6-10 µs × ~7 events per 30 ms bench = ~0.2% overhead.
-[[nodiscard]] inline const ::crucible::perf::SchedSwitch*
-sched_switch_instance() noexcept {
-    static std::optional<::crucible::perf::SchedSwitch> slot =
-        ::crucible::perf::SchedSwitch::load(::crucible::effects::Init{});
-    return slot.has_value() ? &*slot : nullptr;
+[[nodiscard]] inline const ::crucible::perf::Senses* senses_instance() noexcept {
+    // Senses::load_subset(effects::Init, mask) loads only the masked
+    // facades — same per-event cost as the old 2-singleton form
+    // because only sense_hub + sched_switch are masked in.  Static-
+    // init context is load-bearing init; constructing Init{} here is
+    // the canonical form.  Hot-path code holds no Init capability and
+    // therefore cannot synthesize the argument — this guarantees the
+    // entire call chain rooted at Senses::load_subset() never reaches
+    // a hot frame.  Senses is move-only; static direct-init move-
+    // constructs from the rvalue return.
+    static ::crucible::perf::Senses slot =
+        ::crucible::perf::Senses::load_subset(
+            ::crucible::effects::Init{},
+            ::crucible::perf::SensesMask{
+                .sense_hub    = true,
+                .sched_switch = true,
+            });
+    return &slot;
 }
 #else
-[[nodiscard]] inline const void* bpf_instance() noexcept { return nullptr; }
-[[nodiscard]] inline const void* sched_switch_instance() noexcept {
+[[nodiscard]] inline const void* senses_instance() noexcept {
     return nullptr;
 }
 #endif
@@ -1081,13 +1094,14 @@ class Run {
         const uint64_t freq_start = detail::read_cpu_freq_hz(pinned_cpu.raw());
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-        const bench::bpf::SenseHub*           hub = detail::bpf_instance();
+        const ::crucible::perf::Senses*       senses = detail::senses_instance();
+        const ::crucible::perf::SenseHub*     hub    = senses->sense_hub();
         bench::bpf::Snapshot                  bpf_pre{};
         bench::bpf::Snapshot                  bpf_post{};
-        // SchedSwitch — see detail::sched_switch_instance() docblock for
-        // cost analysis.  Pre/post are ~1 ns volatile loads each; the
-        // walk happens at print time on bg thread, never per-iteration.
-        const ::crucible::perf::SchedSwitch* sw = detail::sched_switch_instance();
+        // SchedSwitch — see detail::senses_instance() docblock for cost
+        // analysis.  Pre/post are ~1 ns volatile loads each; the walk
+        // happens at print time on bg thread, never per-iteration.
+        const ::crucible::perf::SchedSwitch* sw = senses->sched_switch();
         uint64_t                              sched_pre_idx  = 0;
         uint64_t                              sched_post_idx = 0;
 #endif
@@ -1480,10 +1494,21 @@ inline void print_system_info(FILE* out = stdout) {
     }
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    const bench::bpf::SenseHub* hub = detail::bpf_instance();
+    const ::crucible::perf::Senses*    senses = detail::senses_instance();
+    const ::crucible::perf::SenseHub*  hub    = senses->sense_hub();
+    const auto                         cov    = senses->coverage();
     if (hub != nullptr) {
-        std::fprintf(out, "  BPF senses: loaded (%zu tracepoints attached)\n",
-                     hub->attached_programs().value());
+        // Show both the SenseHub-internal tracepoint count and the
+        // Senses-aggregator coverage, so a 0/2 attached banner is
+        // distinguishable from a partial sense_hub-only attach.
+        std::fprintf(out,
+            "  BPF senses: loaded (%zu tracepoints attached, %zu/2 facades)\n",
+            hub->attached_programs().value(), cov.attached_count());
+    } else if (cov.attached_count() > 0) {
+        std::fprintf(out,
+            "  BPF senses: partial — %zu/2 facades attached (sense_hub failed; "
+            "set CRUCIBLE_BENCH_BPF_VERBOSE=1 for libbpf logs)\n",
+            cov.attached_count());
     } else {
         std::fprintf(out,
             "  BPF senses: UNAVAILABLE — set CRUCIBLE_BENCH_BPF_VERBOSE=1 for libbpf logs;\n"
