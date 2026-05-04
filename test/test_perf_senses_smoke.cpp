@@ -5,7 +5,7 @@
 //   1. <crucible/perf/Senses.h> reachable through the public crucible
 //      include path.
 //   2. Senses is move-only (deleted copy ctor is load-bearing because
-//      it owns 5 BPF objects + 5 mmaps).
+//      it owns 7 BPF objects + 7 mmaps).
 //   3. SensesMask::all() and SensesMask::any() work as expected.
 //   4. CoverageReport::attached_count() returns 0 on empty state.
 //   5. When CRUCIBLE_HAVE_BPF=1, load_all(Init{}) returns a Senses
@@ -29,7 +29,7 @@ namespace {
 // ── (2) Move-only sanity ──────────────────────────────────────────────
 
 static_assert(!std::is_copy_constructible_v<crucible::perf::Senses>,
-    "Senses owns 5 BPF objects + 5 mmaps; copying would double-close — "
+    "Senses owns 7 BPF objects + 7 mmaps; copying would double-close — "
     "the deleted copy ctor is load-bearing");
 static_assert(std::is_move_constructible_v<crucible::perf::Senses>,
     "Senses must be movable so factories can return-by-value");
@@ -52,10 +52,11 @@ static_assert(crucible::perf::SensesMask::all().syscall_latency == true);
 static_assert(crucible::perf::SensesMask::all().sched_tp_btf == true);
 static_assert(crucible::perf::SensesMask::all().syscall_tp_btf == true);
 
-// SensesMask should fit in a single byte (5 bool bitfields).
+// SensesMask should fit in a single byte (7 bool bitfields per GAPS-004f).
 static_assert(sizeof(crucible::perf::SensesMask) <= 4,
-    "SensesMask is 5 bool : 1 bitfields; should pack into ≤ 4 B "
-    "(typically 1 B); larger means a bitfield-packing regression");
+    "SensesMask is 7 bool : 1 bitfields (5 legacy + 2 BTF GAPS-004f); "
+    "should pack into ≤ 4 B (typically 1 B); larger means a bitfield-"
+    "packing regression");
 
 // ── (4) CoverageReport empty-state ────────────────────────────────────
 
