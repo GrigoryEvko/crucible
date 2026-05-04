@@ -82,15 +82,55 @@ crucible_bpf_program(pmu_sample       include/crucible/perf/bpf/pmu_sample.bpf.c
 crucible_bpf_program(lock_contention  include/crucible/perf/bpf/lock_contention.bpf.c)
 crucible_bpf_program(syscall_latency  include/crucible/perf/bpf/syscall_latency.bpf.c)
 
+# ─── SenseHub v2 — opt-in dual-tier hub (basic 128 + extended 256) ───
+#
+# v2 ships the architectural surface (counters/gauges segregation,
+# meta-versioned wire contract, /proc gauge poller) alongside v1.  v1
+# remains the active production loader during the transition; v2's
+# load() impl will land in subsequent PRs as the v1-handler-carry-
+# forward + extended-handler bodies fill in.  See:
+#   include/crucible/perf/bpf/sense_hub_v2.bpf.c
+#   include/crucible/perf/SenseHubV2.h
+#   include/crucible/perf/ProcGauges.h
+#
+# CRUCIBLE_SENSE_HUB_V2  (default OFF)   — compile v2 BPF + userspace
+#                                          stub .cpp; doesn't replace v1
+# CRUCIBLE_SENSE_HUB_EXTENDED (default OFF) — flip v2 to 256/64 debug
+#                                             hub at compile time.
+#                                             Has no effect unless
+#                                             CRUCIBLE_SENSE_HUB_V2=ON.
+option(CRUCIBLE_SENSE_HUB_V2
+  "Compile SenseHub v2 (counters+gauges segregated, meta-versioned).
+   Default OFF — v1 remains the active production loader." OFF)
+option(CRUCIBLE_SENSE_HUB_EXTENDED
+  "Use 256-counter / 64-gauge SenseHub v2 'debug hub' instead of
+   128/32 default.  Requires CRUCIBLE_SENSE_HUB_V2=ON." OFF)
+
+if (CRUCIBLE_SENSE_HUB_V2)
+  if (CRUCIBLE_SENSE_HUB_EXTENDED)
+    set(_CRUCIBLE_SENSE_HUB_V2_FLAGS "-DCRUCIBLE_SENSE_HUB_EXTENDED=1")
+  else()
+    set(_CRUCIBLE_SENSE_HUB_V2_FLAGS "")
+  endif()
+  crucible_bpf_program(sense_hub_v2
+    include/crucible/perf/bpf/sense_hub_v2.bpf.c
+    EXTRA_FLAGS ${_CRUCIBLE_SENSE_HUB_V2_FLAGS})
+endif()
+
 if (CRUCIBLE_HAVE_BPF)
   get_property(_CRUCIBLE_BPF_EMBED_SOURCES
     GLOBAL PROPERTY CRUCIBLE_BPF_EMBED_SOURCES)
-  add_library(crucible_perf STATIC
+  set(_CRUCIBLE_PERF_SOURCES
     src/perf/SenseHub.cpp
     src/perf/SchedSwitch.cpp
     src/perf/PmuSample.cpp
     src/perf/LockContention.cpp
-    src/perf/SyscallLatency.cpp
+    src/perf/SyscallLatency.cpp)
+  if (CRUCIBLE_SENSE_HUB_V2)
+    list(APPEND _CRUCIBLE_PERF_SOURCES src/perf/SenseHubV2.cpp)
+  endif()
+  add_library(crucible_perf STATIC
+    ${_CRUCIBLE_PERF_SOURCES}
     ${_CRUCIBLE_BPF_EMBED_SOURCES})
   target_include_directories(crucible_perf PUBLIC include/)
   target_link_libraries(crucible_perf PUBLIC PkgConfig::LIBBPF)

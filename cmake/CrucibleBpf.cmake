@@ -140,10 +140,19 @@ endif()
 # accidents when GAPS-004b/c/d/e/f land more programs.)
 set_property(GLOBAL PROPERTY CRUCIBLE_BPF_EMBED_SOURCES "")
 
-# crucible_bpf_program(<name> <source>)
+# crucible_bpf_program(<name> <source> [EXTRA_FLAGS <flag>...])
 #
 # Compiles <source> (a .bpf.c file path relative to CMAKE_SOURCE_DIR)
 # to BPF bytecode and embeds it as a C array via xxd.
+#
+# Optional EXTRA_FLAGS <flag>... — additional clang flags to pass at
+# BPF compile time.  Used when a BPF program has a build-time switch
+# (e.g. SenseHub v2's `-DCRUCIBLE_SENSE_HUB_EXTENDED=1` selecting
+# 256-counter / 64-gauge debug hub vs the 128/32 default).  The same
+# definitions MUST also be applied to the userspace facade TU via
+# `target_compile_definitions(crucible_perf PRIVATE ...)` — the
+# wire-contract `meta` map's `layout_hash` gates a runtime mismatch
+# but compile-time agreement is the primary discipline.
 #
 # The embedded array is named exactly `<name>_bpf_bytecode` (with a
 # companion `<name>_bpf_bytecode_len`).  Userspace code uses:
@@ -167,6 +176,8 @@ function(crucible_bpf_program name source)
     return()
   endif()
 
+  cmake_parse_arguments(_CBP "" "" "EXTRA_FLAGS" ${ARGN})
+
   set(_BPF_DIR          "${CMAKE_SOURCE_DIR}/include/crucible/perf/bpf")
   set(_BPF_SRC          "${CMAKE_SOURCE_DIR}/${source}")
   set(_BPF_OBJ          "${CMAKE_CURRENT_BINARY_DIR}/${name}.bpf.o")
@@ -188,6 +199,7 @@ function(crucible_bpf_program name source)
     COMMAND ${CLANG_BPF_COMPILER}
             -target bpf
             ${_CRUCIBLE_BPF_ARCH_DEFINE}
+            ${_CBP_EXTRA_FLAGS}
             -I${_BPF_DIR}
             -O2 -g
             -fdebug-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}=.
