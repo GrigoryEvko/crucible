@@ -556,8 +556,8 @@ void ProcGauges::read_loadavg_x100_(uint64_t& out_1m,
 }
 
 uint64_t ProcGauges::read_pressure_avg10_x100_(int fd,
-                                               std::string_view kind) const noexcept {
-    if (fd < 0)
+                                               const char* kind) const noexcept {
+    if (fd < 0 || kind == nullptr)
         return UNAVAILABLE;
     char buf[512];
     ssize_t n;
@@ -573,7 +573,7 @@ uint64_t ProcGauges::read_pressure_avg10_x100_(int fd,
     // We expose `some avg10` × 100 — captures any-task-blocked %.
     const char* p   = buf;
     const char* end = buf + n;
-    const char* hit = find_str(p, end, kind.data());
+    const char* hit = find_str(p, end, kind);
     if (hit == end) return UNAVAILABLE;
     const char* tag = find_str(hit, end, "avg10=");
     if (tag == end) return UNAVAILABLE;

@@ -217,8 +217,14 @@ private:
                                               uint64_t& out_15m) const noexcept;
     // PSI readers return UNAVAILABLE if /proc/pressure/* failed to
     // open (kernel <4.20 OR CONFIG_PSI=n).
+    //
+    // GAPS-004g-AUDIT-5 (2026-05-04): `kind` MUST be NUL-terminated —
+    // the parser calls `strlen` on it via `find_str`. Was `string_view`
+    // (whose `data()` is not guaranteed NUL-terminated, latent walk-off
+    // for any future caller passing a sub-view); changed to `const char*`
+    // so the contract is stated honestly in the type.
     [[nodiscard]] uint64_t read_pressure_avg10_x100_(int fd,
-                                                     std::string_view kind) const noexcept;
+                                                     const char* kind) const noexcept;
 #endif
 };
 
