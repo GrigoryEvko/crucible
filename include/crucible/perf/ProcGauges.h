@@ -79,8 +79,10 @@ public:
     ScopedFd() noexcept = default;
     explicit ScopedFd(int fd) noexcept : fd_{fd} {}
     ~ScopedFd() noexcept;
-    ScopedFd(const ScopedFd&) = delete;
-    ScopedFd& operator=(const ScopedFd&) = delete;
+    ScopedFd(const ScopedFd&) =
+        delete("ScopedFd owns a Linux file descriptor; copying would double-close on destruct");
+    ScopedFd& operator=(const ScopedFd&) =
+        delete("ScopedFd owns a Linux file descriptor; copying would double-close on destruct");
     ScopedFd(ScopedFd&& other) noexcept : fd_{other.fd_} { other.fd_ = -1; }
     ScopedFd& operator=(ScopedFd&& other) noexcept {
         if (this != &other) { close_(); fd_ = other.fd_; other.fd_ = -1; }
@@ -136,8 +138,10 @@ public:
     [[nodiscard]] std::size_t open_count() const noexcept;
 
     // Move-only — owns multiple ScopedFd + heap scratch buffer.
-    ProcGauges(const ProcGauges&) = delete;
-    ProcGauges& operator=(const ProcGauges&) = delete;
+    ProcGauges(const ProcGauges&) =
+        delete("ProcGauges owns multiple ScopedFds + scratch buffer; copying would double-close all FDs");
+    ProcGauges& operator=(const ProcGauges&) =
+        delete("ProcGauges owns multiple ScopedFds + scratch buffer; copying would double-close all FDs");
     ProcGauges(ProcGauges&&) noexcept = default;
     ProcGauges& operator=(ProcGauges&&) noexcept = default;
     ~ProcGauges() noexcept = default;

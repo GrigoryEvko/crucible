@@ -196,10 +196,16 @@ public:
     // if window_ns has elapsed since the last reset, and emit a
     // verdict.  Cheap; safe to call from any cold path.
     [[nodiscard]] WatchdogVerdict observe() noexcept {
-        // Disabled by configuration: budget = 0 means "don't watch".
-        // Used by Policy::dev_quiet() / Policy::cloud_vm() which set
-        // their own budgets, but operators can opt out with budget=0.
-        if (miss_budget_ == 0) {
+        // Disabled by configuration: budget = 0 OR window = 0 both
+        // mean "don't watch".  Budget 0 is the documented opt-out;
+        // window 0 was a latent BUG before the audit-2 sweep — every
+        // observe() saw `elapsed_ns >= window_ns_` (== 0) trivially
+        // true on every call after the first, rebasing the window and
+        // emitting a verdict against a sub-microsecond observation.
+        // A custom Policy with `watchdog_window_sec = 0` would have
+        // produced random Downgrade verdicts.  Both knobs guarded as
+        // disabled-when-zero now.
+        if (miss_budget_ == 0 || window_ns_ == 0) {
             return WatchdogVerdict::InsufficientData;
         }
 
@@ -236,9 +242,19 @@ public:
         // Window elapsed → rebase, return verdict for THIS window
         // before resetting.  The verdict is computed on the just-
         // closed window; the next observe() starts a fresh window.
+        //
+        // sub_sat (audit-2 fix): a non-monotonic counter snapshot
+        // (e.g. SchedSwitch was unloaded and reloaded mid-watchdog,
+        // a documented borrow-contract violation but tolerable as
+        // "no signal" rather than "phantom Downgrade") would have
+        // underflowed `count - baseline_count_` to a giant positive
+        // and triggered a false Downgrade.  Saturate to 0 instead;
+        // a degenerate baseline produces InsufficientData on the
+        // next observe() once it rebases.
         const uint64_t elapsed_ns = now_ns - window_started_ns_;
         if (elapsed_ns >= window_ns_) {
-            const uint64_t misses = count - baseline_count_;
+            const uint64_t misses = ::crucible::sat::sub_sat<uint64_t>(
+                count, baseline_count_);
             const WatchdogVerdict v = (misses > miss_budget_)
                 ? WatchdogVerdict::Downgrade
                 : WatchdogVerdict::Healthy;
@@ -251,8 +267,10 @@ public:
         // Window not yet elapsed — early-warning check: if budget
         // already exceeded mid-window, signal Downgrade immediately
         // rather than waiting for the window to close.  Avoids a
-        // window-length lag in pathological miss storms.
-        const uint64_t misses = count - baseline_count_;
+        // window-length lag in pathological miss storms.  Same
+        // sub_sat rationale as above.
+        const uint64_t misses = ::crucible::sat::sub_sat<uint64_t>(
+            count, baseline_count_);
         if (misses > miss_budget_) {
             // Don't reset the window — the next observe() will see
             // the exceeded state again until the window naturally

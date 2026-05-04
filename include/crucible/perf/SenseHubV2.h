@@ -533,9 +533,12 @@ public:
     static constexpr std::string_view build_name() noexcept { return BUILD_NAME; }
 
     // Move-only — owns BPF object + mmap regions (deleted copy is
-    // load-bearing).
-    SenseHubV2(const SenseHubV2&) = delete;
-    SenseHubV2& operator=(const SenseHubV2&) = delete;
+    // load-bearing).  Same delete-with-reason discipline as the
+    // v1 SenseHub and every per-program facade in the GAPS-004 series.
+    SenseHubV2(const SenseHubV2&) =
+        delete("SenseHubV2 owns unique BPF object + mmap; copying would double-close");
+    SenseHubV2& operator=(const SenseHubV2&) =
+        delete("SenseHubV2 owns unique BPF object + mmap; copying would double-close");
     SenseHubV2(SenseHubV2&&) noexcept;
     SenseHubV2& operator=(SenseHubV2&&) noexcept;
     ~SenseHubV2() noexcept;

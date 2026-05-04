@@ -184,9 +184,14 @@ public:
     // bench harness banner and Augur drift-attribution.
     [[nodiscard]] CoverageReport coverage() const noexcept;
 
-    // Move-only — owns 5 std::optional<facade>, each with a BPF object.
-    Senses(const Senses&)            = delete;
-    Senses& operator=(const Senses&) = delete;
+    // Move-only — owns 7 std::optional<facade>, each with a BPF object
+    // + mmap.  Copying would double-close the BPF objects on
+    // destruction.  Same delete-with-reason discipline as every
+    // per-program facade in the GAPS-004 series.
+    Senses(const Senses&)            =
+        delete("Senses owns 7 BPF objects + mmaps; copying would double-close");
+    Senses& operator=(const Senses&) =
+        delete("Senses owns 7 BPF objects + mmaps; copying would double-close");
     Senses(Senses&&) noexcept;
     Senses& operator=(Senses&&) noexcept;
     ~Senses() noexcept;

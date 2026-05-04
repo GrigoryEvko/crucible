@@ -156,6 +156,35 @@ int main() {
         }
     }
 
+    // ── (5b) AUDIT-2 regression: window_sec=0 (disabled) ───────────
+    // Before audit-2, budget>0 + window_sec=0 produced random
+    // verdicts because every observe() saw `elapsed_ns >= 0` trivially
+    // true and rebased on every call.  Both knobs are now disabled-
+    // when-zero.  Witness: budget=10 + window=0 must NOT produce
+    // Healthy or Downgrade.
+    {
+        Policy policy             = Policy::production();  // budget=10 default
+        policy.watchdog_window_sec = 0;                    // forced bug-trigger
+        DeadlineWatchdog watchdog{
+            /*senses=*/nullptr, policy, ::crucible::effects::Init{}};
+        for (int i = 0; i < 5; ++i) {
+            const auto v = watchdog.observe();
+            if (v != WatchdogVerdict::InsufficientData) {
+                std::fprintf(stderr,
+                    "AUDIT-2 regression: window_sec=0 should disable "
+                    "watchdog; got %s on iteration %d\n",
+                    watchdog_verdict_name(v), i);
+                ++failures;
+            }
+        }
+        if (watchdog.window_ns() != 0u) {
+            std::fprintf(stderr,
+                "window_ns() = %llu; expected 0 for window_sec=0\n",
+                static_cast<unsigned long long>(watchdog.window_ns()));
+            ++failures;
+        }
+    }
+
     // ── (6) demote_one_step walks Deadline → Fifo → Other ──────────
     if (demote_one_step(SchedClass::Deadline) != SchedClass::Fifo) {
         std::fprintf(stderr,
