@@ -1,8 +1,8 @@
 // crucible::perf::Senses — multi-facade aggregator implementation.
 //
-// Thin wrapper over (SenseHub, SchedSwitch, PmuSample, LockContention,
-// SyscallLatency).  Each subprogram is loaded independently; failures
-// are tolerated and recorded in coverage().  Move-only.
+// Thin wrapper over 7 BPF facades (5 legacy + 2 BTF parallel).  Each
+// subprogram is loaded independently; failures are tolerated and
+// recorded in coverage().  Move-only.
 
 #include <crucible/perf/Senses.h>
 
@@ -10,12 +10,14 @@
 
 namespace crucible::perf {
 
-// ─── State — holds 5 std::optional<facade> ──────────────────────────
+// ─── State — holds 7 std::optional<facade> ──────────────────────────
 //
 // Each facade is move-only and owns its own BPF object + mmap.
 // std::optional gives us the "loaded vs not-loaded" discriminator
 // without an extra bool.  Order doesn't matter for correctness;
 // kept sense_hub-first to match the documented program order.
+// BTF variants (GAPS-004f) appended at end so the existing 5
+// facades' field offsets are preserved.
 
 struct Senses::State {
     std::optional<SenseHub>       sense_hub;
@@ -23,6 +25,8 @@ struct Senses::State {
     std::optional<PmuSample>      pmu_sample;
     std::optional<LockContention> lock_contention;
     std::optional<SyscallLatency> syscall_latency;
+    std::optional<SchedTpBtf>     sched_tp_btf;
+    std::optional<SyscallTpBtf>   syscall_tp_btf;
 };
 
 Senses::Senses(std::unique_ptr<State> s) noexcept : state_{std::move(s)} {}
@@ -53,6 +57,8 @@ Senses Senses::load_subset(::crucible::effects::Init init,
     if (which.pmu_sample)      s->pmu_sample      = PmuSample::load(init);
     if (which.lock_contention) s->lock_contention = LockContention::load(init);
     if (which.syscall_latency) s->syscall_latency = SyscallLatency::load(init);
+    if (which.sched_tp_btf)    s->sched_tp_btf    = SchedTpBtf::load(init);
+    if (which.syscall_tp_btf)  s->syscall_tp_btf  = SyscallTpBtf::load(init);
 
     return Senses{std::move(s)};
 }
@@ -90,6 +96,16 @@ const SyscallLatency* Senses::syscall_latency() const noexcept {
     return &(*state_->syscall_latency);
 }
 
+const SchedTpBtf* Senses::sched_tp_btf() const noexcept {
+    if (!state_ || !state_->sched_tp_btf.has_value()) return nullptr;
+    return &(*state_->sched_tp_btf);
+}
+
+const SyscallTpBtf* Senses::syscall_tp_btf() const noexcept {
+    if (!state_ || !state_->syscall_tp_btf.has_value()) return nullptr;
+    return &(*state_->syscall_tp_btf);
+}
+
 // ─── coverage ────────────────────────────────────────────────────────
 
 CoverageReport Senses::coverage() const noexcept {
@@ -100,6 +116,8 @@ CoverageReport Senses::coverage() const noexcept {
         r.pmu_sample_attached      = state_->pmu_sample.has_value();
         r.lock_contention_attached = state_->lock_contention.has_value();
         r.syscall_latency_attached = state_->syscall_latency.has_value();
+        r.sched_tp_btf_attached    = state_->sched_tp_btf.has_value();
+        r.syscall_tp_btf_attached  = state_->syscall_tp_btf.has_value();
     }
     return r;
 }

@@ -47,6 +47,10 @@ static_assert(crucible::perf::SensesMask::all().sched_switch == true);
 static_assert(crucible::perf::SensesMask::all().pmu_sample == true);
 static_assert(crucible::perf::SensesMask::all().lock_contention == true);
 static_assert(crucible::perf::SensesMask::all().syscall_latency == true);
+// GAPS-004f wire-in: BTF-typed parallel facades must be in
+// SensesMask::all() so load_all() literally loads all 7.
+static_assert(crucible::perf::SensesMask::all().sched_tp_btf == true);
+static_assert(crucible::perf::SensesMask::all().syscall_tp_btf == true);
 
 // SensesMask should fit in a single byte (5 bool bitfields).
 static_assert(sizeof(crucible::perf::SensesMask) <= 4,
@@ -103,8 +107,17 @@ int main() {
         std::fprintf(stderr, "Senses: syscall_latency coverage mismatch\n");
         return 1;
     }
-    if (cov.attached_count() > 5) {
-        std::fprintf(stderr, "Senses: attached_count out of range\n");
+    if ((cov.sched_tp_btf_attached) != (s.sched_tp_btf() != nullptr)) {
+        std::fprintf(stderr, "Senses: sched_tp_btf coverage mismatch\n");
+        return 1;
+    }
+    if ((cov.syscall_tp_btf_attached) != (s.syscall_tp_btf() != nullptr)) {
+        std::fprintf(stderr, "Senses: syscall_tp_btf coverage mismatch\n");
+        return 1;
+    }
+    if (cov.attached_count() > 7) {
+        std::fprintf(stderr, "Senses: attached_count out of range "
+                     "(have 7 facades, got %zu)\n", cov.attached_count());
         return 1;
     }
 
@@ -131,6 +144,16 @@ int main() {
             "Senses::load_subset masked off syscall_latency but it's loaded\n");
         return 1;
     }
+    if (sub.sched_tp_btf() != nullptr || sub_cov.sched_tp_btf_attached) {
+        std::fprintf(stderr,
+            "Senses::load_subset masked off sched_tp_btf but it's loaded\n");
+        return 1;
+    }
+    if (sub.syscall_tp_btf() != nullptr || sub_cov.syscall_tp_btf_attached) {
+        std::fprintf(stderr,
+            "Senses::load_subset masked off syscall_tp_btf but it's loaded\n");
+        return 1;
+    }
     // sense_hub / pmu_sample MAY have failed to load (e.g. no CAP_BPF
     // in the test env).  We don't insist on success — coverage() is
     // what reports it.
@@ -149,6 +172,8 @@ int main() {
     if (s.pmu_sample()      != nullptr) { std::fprintf(stderr, "Senses: moved-from pmu_sample() not null\n");      return 1; }
     if (s.lock_contention() != nullptr) { std::fprintf(stderr, "Senses: moved-from lock_contention() not null\n"); return 1; }
     if (s.syscall_latency() != nullptr) { std::fprintf(stderr, "Senses: moved-from syscall_latency() not null\n"); return 1; }
+    if (s.sched_tp_btf()    != nullptr) { std::fprintf(stderr, "Senses: moved-from sched_tp_btf() not null\n");    return 1; }
+    if (s.syscall_tp_btf()  != nullptr) { std::fprintf(stderr, "Senses: moved-from syscall_tp_btf() not null\n");  return 1; }
 
     (void)moved_into;
 #endif

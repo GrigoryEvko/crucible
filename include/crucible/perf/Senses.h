@@ -57,8 +57,10 @@
 #include <crucible/perf/LockContention.h>
 #include <crucible/perf/PmuSample.h>
 #include <crucible/perf/SchedSwitch.h>
+#include <crucible/perf/SchedTpBtf.h>
 #include <crucible/perf/SenseHub.h>
 #include <crucible/perf/SyscallLatency.h>
+#include <crucible/perf/SyscallTpBtf.h>
 
 #include <cstdint>
 #include <memory>
@@ -78,6 +80,15 @@ namespace crucible::perf {
 //       .syscall_latency= true});
 //
 // 1-byte struct, EBO-friendly, fits in a single register at call site.
+//
+// GAPS-004f wire-in (2026-05-04): added sched_tp_btf + syscall_tp_btf
+// for the BTF-typed parallel facades (~30% lower per-event cost on
+// kernels with CONFIG_DEBUG_INFO_BTF=y).  load_all() now loads all 7;
+// callers wanting cost-discipline pick the legacy-only / BTF-only
+// subset explicitly.  Both BTF and legacy facades observe the same
+// kernel events, so loading both records duplicates — that's fine
+// at the API level (each facade has its own counters and timeline)
+// but doubles the libbpf attach cost (~50 ms per program).
 
 struct SensesMask {
     bool sense_hub       : 1 = false;
@@ -85,6 +96,8 @@ struct SensesMask {
     bool pmu_sample      : 1 = false;
     bool lock_contention : 1 = false;
     bool syscall_latency : 1 = false;
+    bool sched_tp_btf    : 1 = false;
+    bool syscall_tp_btf  : 1 = false;
 
     [[nodiscard]] static constexpr SensesMask all() noexcept {
         return SensesMask{
@@ -93,12 +106,15 @@ struct SensesMask {
             .pmu_sample      = true,
             .lock_contention = true,
             .syscall_latency = true,
+            .sched_tp_btf    = true,
+            .syscall_tp_btf  = true,
         };
     }
 
     [[nodiscard]] constexpr bool any() const noexcept {
         return sense_hub || sched_switch || pmu_sample ||
-               lock_contention || syscall_latency;
+               lock_contention || syscall_latency ||
+               sched_tp_btf || syscall_tp_btf;
     }
 };
 
@@ -114,13 +130,17 @@ struct CoverageReport {
     bool pmu_sample_attached      = false;
     bool lock_contention_attached = false;
     bool syscall_latency_attached = false;
+    bool sched_tp_btf_attached    = false;
+    bool syscall_tp_btf_attached  = false;
 
     [[nodiscard]] std::size_t attached_count() const noexcept {
         return (sense_hub_attached       ? 1u : 0u)
              + (sched_switch_attached    ? 1u : 0u)
              + (pmu_sample_attached      ? 1u : 0u)
              + (lock_contention_attached ? 1u : 0u)
-             + (syscall_latency_attached ? 1u : 0u);
+             + (syscall_latency_attached ? 1u : 0u)
+             + (sched_tp_btf_attached    ? 1u : 0u)
+             + (syscall_tp_btf_attached  ? 1u : 0u);
     }
 };
 
@@ -155,6 +175,10 @@ public:
     [[nodiscard]] const PmuSample*      pmu_sample()      const noexcept;
     [[nodiscard]] const LockContention* lock_contention() const noexcept;
     [[nodiscard]] const SyscallLatency* syscall_latency() const noexcept;
+    // GAPS-004f: BTF-typed parallel facades (lower per-event cost on
+    // kernels with CONFIG_DEBUG_INFO_BTF=y + ≥ 5.5).
+    [[nodiscard]] const SchedTpBtf*     sched_tp_btf()    const noexcept;
+    [[nodiscard]] const SyscallTpBtf*   syscall_tp_btf()  const noexcept;
 
     // Coverage report — which subprograms attached, used by
     // bench harness banner and Augur drift-attribution.
