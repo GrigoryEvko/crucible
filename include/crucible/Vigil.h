@@ -34,6 +34,9 @@
 #include <crucible/Transaction.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/FxAliases.h>
+#include <crucible/perf/Senses.h>
+#include <crucible/rt/DeadlineWatchdog.h>
+#include <crucible/rt/Policy.h>
 #include <crucible/safety/Mutation.h>
 
 #include <atomic>
@@ -42,6 +45,7 @@
 #include <memory>
 #include <optional>
 #include <thread>
+#include <utility>  // std::unreachable
 
 namespace crucible {
 
@@ -58,6 +62,38 @@ class Vigil {
         int32_t     world_size       = 0;
         uint64_t    device_capability = 0;
         std::string cipher_path;   // empty = no persistence
+
+        // GAPS-004h follow-up: scheduler deadline-miss watchdog wiring.
+        //
+        // When `enable_deadline_watchdog` is true, Vigil loads the
+        // SchedSwitch BPF subprogram and instantiates a DeadlineWatchdog
+        // observing the dispatcher tid's preempt count.  observe() runs
+        // on the background thread inside on_region_ready (per-iteration
+        // cadence, ~10-100ms — well within the watchdog's documented
+        // 100ms-1s tick budget), and the verdict is published via
+        // atomic counters readable through watchdog_*() accessors.
+        //
+        // Vigil is an OBSERVER — it does NOT actuate.  Callers consume
+        // the verdict (e.g. Keeper sees Downgrade → re-applies Policy
+        // with `demote_one_step(hot_sched)`).  Vigil itself never
+        // changes scheduler class; the bg-thread cost of observe() is
+        // bounded to ~1 µs per iteration boundary regardless of verdict.
+        //
+        // Disabled by default — requires CAP_BPF and a kernel with
+        // sched_switch tracepoint BTF support.  CI runs / restricted
+        // environments / unit tests should leave this off; the
+        // Senses::load_subset call is graceful (returns a Senses with
+        // sched_switch() == nullptr), but the watchdog's observe()
+        // returns InsufficientData every call when the facade is
+        // unattached, so the cost is paid for no signal.
+        bool        enable_deadline_watchdog = false;
+
+        // Policy supplied to the watchdog.  Only `deadline_miss_budget`
+        // and `watchdog_window_sec` are read; the rest of Policy is
+        // ignored at this site (Hardening.h would consume the rest).
+        // Default: production() — 10 misses per 60-second window before
+        // verdict flips to Downgrade.
+        rt::Policy  watchdog_policy = rt::Policy::production();
     };
 
     // Number of consecutive op matches required to confirm an iteration
@@ -82,6 +118,24 @@ class Vigil {
 
         // Wire the background thread callback to our on_region_ready.
         bg_.region_ready_cb = [this](RegionNode* region) { on_region_ready(region); };
+
+        // GAPS-004h follow-up: load Senses + construct DeadlineWatchdog
+        // BEFORE bg_.start() so on_region_ready can call wd_->observe()
+        // on the very first region transition without nullptr-checks at
+        // the call site.  Senses::load_subset is noexcept; if libbpf
+        // can't attach SchedSwitch the watchdog's observe() returns
+        // InsufficientData every call (recorded in
+        // wd_insufficient_count_), which is correct behaviour.  Both
+        // wd_ and senses_ are declared BEFORE bg_, so destruction
+        // order (reverse declaration) joins the bg thread first, then
+        // tears down wd_, then senses_ — no UAF on the borrow.
+        if (cfg_.enable_deadline_watchdog) {
+            senses_.emplace(::crucible::perf::Senses::load_subset(
+                ::crucible::effects::Init{},
+                ::crucible::perf::SensesMask{ .sched_switch = true }));
+            wd_.emplace(&*senses_, cfg_.watchdog_policy,
+                        ::crucible::effects::Init{});
+        }
 
         bg_.start(ring_.get(), meta_log_.get(),
                   cfg_.rank, cfg_.world_size, cfg_.device_capability);
@@ -446,6 +500,58 @@ class Vigil {
     [[nodiscard]] uint32_t bg_detector_boundaries() const { return bg_.detector.boundaries_detected.get(); }
     [[nodiscard]] bool     bg_detector_confirmed() const { return bg_.detector.confirmed; }
 
+    // ─── Deadline watchdog diagnostics (GAPS-004h follow-up) ───────
+    //
+    // True iff this Vigil was constructed with
+    // `Config::enable_deadline_watchdog = true` AND Senses::load_subset
+    // attached the SchedSwitch subprogram successfully.  False in all
+    // other cases (disabled by Config, libbpf missing, SchedSwitch
+    // failed to attach).  Use this to gate diagnostic output / Augur
+    // attribution paths.
+    //
+    // Note: a true return does NOT guarantee that observe() has
+    // produced a non-InsufficientData verdict — the very first
+    // window's observations always yield InsufficientData while the
+    // baseline is captured.  Check `last_watchdog_verdict()` for the
+    // current verdict.
+    [[nodiscard]] bool watchdog_enabled() const noexcept {
+        return wd_.has_value();
+    }
+
+    // Most recent verdict published by the bg-thread observe() call.
+    // Acquire load — pairs with the release store in on_region_ready.
+    // Returns InsufficientData on a freshly-constructed Vigil (no
+    // region transitions yet) or on a Vigil with watchdog disabled.
+    [[nodiscard]] ::crucible::rt::WatchdogVerdict
+    last_watchdog_verdict() const noexcept {
+        return wd_last_verdict_.load(std::memory_order_acquire);
+    }
+
+    // Cumulative verdict counters.  Each region transition increments
+    // exactly one of these (when the watchdog is enabled).  Acquire
+    // load — pairs with release fetch_add on the bg thread.  Useful
+    // for Augur attribution ("how many Healthy ticks since last
+    // Downgrade?") and for tests that assert observe() ran.
+    [[nodiscard]] uint32_t watchdog_healthy_count() const noexcept {
+        return wd_healthy_count_.load(std::memory_order_acquire);
+    }
+    [[nodiscard]] uint32_t watchdog_downgrade_count() const noexcept {
+        return wd_downgrade_count_.load(std::memory_order_acquire);
+    }
+    [[nodiscard]] uint32_t watchdog_insufficient_count() const noexcept {
+        return wd_insufficient_count_.load(std::memory_order_acquire);
+    }
+
+    // Note: DeadlineWatchdog itself is NOT exposed by const-ref.  It
+    // documents "SINGLE-THREAD ONLY" — its `baseline_count_`,
+    // `latest_count_`, and `window_started_ns_` fields are non-atomic
+    // and the bg thread mutates them inside observe().  A main-thread
+    // read via a leaked pointer would be a data race per the C++
+    // memory model (TSan would flag).  The atomic verdict + 3
+    // cumulative counters above are the diagnostic surface; if Augur
+    // needs more state (e.g. baseline_count for window-start
+    // attribution), publish it from on_region_ready as another atomic.
+
  private:
     // ─── Background thread callback ────────────────────────────────
     //
@@ -481,6 +587,36 @@ class Vigil {
         if (cipher_.has_value()) {
             auto open_view = cipher_->mint_open_view();
             (void)cipher_->store(open_view, region, meta_log_.get());
+        }
+
+        // GAPS-004h follow-up: poll the deadline watchdog at the
+        // iteration boundary (bg-thread cold path).  observe() reads
+        // SchedSwitch::context_switches() and emits a verdict; we
+        // publish it via atomic counters for fg-thread / Augur /
+        // Keeper consumers.  ~1 µs per call (single bpf_map_lookup +
+        // one steady_clock::now()), invoked at most once per region
+        // transition (~10-100ms steady-state) — total overhead well
+        // under 0.01 % even on a tight inference loop.
+        if (wd_) {
+            const auto v = wd_->observe();
+            wd_last_verdict_.store(v, std::memory_order_release);
+            switch (v) {
+                case ::crucible::rt::WatchdogVerdict::Healthy:
+                    wd_healthy_count_.fetch_add(1, std::memory_order_release);
+                    break;
+                case ::crucible::rt::WatchdogVerdict::Downgrade:
+                    wd_downgrade_count_.fetch_add(1, std::memory_order_release);
+                    break;
+                case ::crucible::rt::WatchdogVerdict::InsufficientData:
+                    wd_insufficient_count_.fetch_add(1, std::memory_order_release);
+                    break;
+                default:
+                    // WatchdogVerdict's underlying type is uint8_t with
+                    // exactly three named values; observe() never returns
+                    // anything else.  std::unreachable lets the compiler
+                    // delete the default arm in release.
+                    std::unreachable();
+            }
         }
     }
 
@@ -743,6 +879,30 @@ class Vigil {
     uint32_t                        alignment_pos_{0};  // consecutive matched ops from region start
     CrucibleContext                 ctx_;               // fg-only replay
     RegionCache                     region_cache_;      // fg-only: cached alternate regions
+
+    // ─── GAPS-004h follow-up: deadline watchdog state ──────────────
+    //
+    // senses_ MUST precede wd_: DeadlineWatchdog stores a const Senses*
+    // borrow.  Destruction is reverse declaration order, so wd_ goes
+    // before senses_ — the borrow's lifetime is upheld.
+    //
+    // Both MUST precede bg_: the bg thread's on_region_ready callback
+    // calls wd_->observe(), which reads senses_'s SchedSwitch subprog.
+    // bg_'s destruction joins the thread first; then wd_ tears down
+    // (no more observe() calls possible); then senses_ unloads the
+    // BPF subprograms (no more borrow holders).
+    //
+    // wd_*_count_ + wd_last_verdict_ are atomics — no inter-field
+    // lifetime constraint, but kept here for cache-line locality with
+    // wd_ (the bg thread writes wd_'s state and these counters in the
+    // same on_region_ready frame).
+    std::optional<::crucible::perf::Senses>             senses_;
+    std::optional<::crucible::rt::DeadlineWatchdog>     wd_;
+    std::atomic<::crucible::rt::WatchdogVerdict>        wd_last_verdict_{
+        ::crucible::rt::WatchdogVerdict::InsufficientData};
+    std::atomic<uint32_t>                               wd_healthy_count_{0};
+    std::atomic<uint32_t>                               wd_downgrade_count_{0};
+    std::atomic<uint32_t>                               wd_insufficient_count_{0};
 
     BackgroundThread                bg_;  // MUST be declared last
 };

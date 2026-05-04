@@ -469,6 +469,11 @@ crucible_test(test_rt_deadline_watchdog_smoke)
 # fires without telemetry read), reset() semantics, and the never-
 # promote invariant.
 crucible_test(test_perf_workload_profiler_smoke)
+# Vigil ↔ DeadlineWatchdog wiring (GAPS-004h follow-up): verifies the
+# bg-thread-write / fg-thread-read atomic counter publication path
+# does not block the main thread, and that disabled/enabled Config
+# behave correctly across a region transition.
+crucible_test(test_vigil_deadline_watchdog)
 target_include_directories(test_bench_harness SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
 
