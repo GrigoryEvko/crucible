@@ -38,26 +38,25 @@
 
 #include <crucible/perf/SchedSwitch.h>
 
+// detail::BpfLoader brings the shared anonymous-namespace helpers
+// (Tagged provenance typedefs, env-var caches, libbpf log control,
+// .rodata + tracepoint discovery, libbpf_errno).  Pulling them via
+// using-declarations below keeps every call site syntactically
+// unchanged but eliminates the cross-facade duplication that 5 audit
+// rounds repeatedly found drift in.  GAPS-004x context block in the
+// header explains why this lives in `detail/` (TU-internal helpers,
+// not a public API).
+#include <crucible/perf/detail/BpfLoader.h>
+
 #include <crucible/safety/Mutation.h>  // safety::WriteOnce / WriteOnceNonNull / Monotonic
 #include <crucible/safety/Pinned.h>    // safety::NonMovable<T>
-#include <crucible/safety/Tagged.h>    // safety::Tagged<T, Source>
 
-#include <bpf/bpf.h>
-#include <bpf/libbpf.h>
-#include <bpf/libbpf_legacy.h>  // libbpf_get_error (IS_ERR detection)
 #include <sys/mman.h>
-#include <sys/syscall.h>
-#include <sys/types.h>
-#include <unistd.h>
 
 #include <cerrno>
-#include <cstdarg>
+#include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
-#include <mutex>
-#include <string>
-#include <string_view>
 
 // 8 slots — sched_switch.bpf.c contains exactly one program today,
 // but the cap stays at the inplace_vector<...,8> shape used by
@@ -74,113 +73,25 @@ namespace crucible::perf {
 
 namespace {
 
-// ── TU-private provenance source tags ───────────────────────────────
-//
-// Same naming as SenseHub.cpp's anon-namespace tags (intentional
-// duplication — the GAPS-004x BpfLoader extraction will surface
-// these as a shared `crucible::perf::detail::source::*` namespace).
-namespace source {
-    struct Kernel {};  // value originated from a kernel syscall
-                       // (getpid / gettid).
-    struct BpfMap {};  // file descriptor returned by libbpf for an
-                       // eBPF map handle.
-}
-
-using Tgid = ::crucible::safety::Tagged<uint32_t, source::Kernel>;
-using Tid  = ::crucible::safety::Tagged<uint32_t, source::Kernel>;
-using Fd   = ::crucible::safety::Tagged<int,      source::BpfMap>;
-static_assert(sizeof(Tgid) == sizeof(uint32_t));
-static_assert(sizeof(Tid)  == sizeof(uint32_t));
-static_assert(sizeof(Fd)   == sizeof(int));
-
-[[nodiscard]] Tgid current_tgid() noexcept {
-    return Tgid{static_cast<uint32_t>(::getpid())};
-}
-[[nodiscard]] Tid  current_tid()  noexcept {
-    return Tid{static_cast<uint32_t>(::syscall(SYS_gettid))};
-}
-[[nodiscard]] Fd   map_fd(struct bpf_map* m) noexcept {
-    return Fd{bpf_map__fd(m)};
-}
-
-// ── Env-var knobs (cached once at first touch) ──────────────────────
-//
-// Same caching trap as SenseHub.cpp documents: function-local-static
-// captures the env value at FIRST query and never re-evaluates.
-// setenv() AFTER the first call has no effect.  The trade-off (50-
-// 200 ns getenv strcmp walk avoided per diagnostic-path call) is
-// the same as SenseHub's, and mirroring the cache shape means a
-// single setenv("CRUCIBLE_PERF_QUIET","1",0) at the top of a sentinel
-// silences both facades.
-[[nodiscard]] bool env_true(const char* name) noexcept {
-    const char* v = std::getenv(name);
-    return v != nullptr && v[0] == '1';
-}
-[[nodiscard]] bool env_true_either(const char* canonical,
-                                   const char* legacy) noexcept {
-    return env_true(canonical) || env_true(legacy);
-}
-[[nodiscard]] bool quiet()   noexcept {
-    static const bool kQuiet =
-        env_true_either("CRUCIBLE_PERF_QUIET", "CRUCIBLE_BENCH_BPF_QUIET");
-    return kQuiet;
-}
-[[nodiscard]] bool verbose() noexcept {
-    static const bool kVerbose =
-        env_true_either("CRUCIBLE_PERF_VERBOSE", "CRUCIBLE_BENCH_BPF_VERBOSE");
-    return kVerbose;
-}
-
-int libbpf_log_cb(enum libbpf_print_level, const char* fmt, va_list args) noexcept {
-    if (!verbose()) return 0;
-    return std::vfprintf(stderr, fmt, args);
-}
-
-void install_libbpf_log_cb_once() noexcept {
-    static std::once_flag once;
-    std::call_once(once, [] { libbpf_set_print(libbpf_log_cb); });
-}
-
-[[nodiscard]] struct bpf_map* find_rodata(struct bpf_object* obj) noexcept {
-    struct bpf_map* map = nullptr;
-    bpf_object__for_each_map(map, obj) {
-        const char* n = bpf_map__name(map);
-        if (n == nullptr) continue;
-        const std::string_view name{n};
-        if (name.ends_with(".rodata")) return map;
-    }
-    return nullptr;
-}
-
-[[nodiscard]] bool tracepoint_exists(const char* category_slash_event) noexcept {
-    std::string path = "/sys/kernel/tracing/events/";
-    path.append(category_slash_event);
-    path.append("/id");
-    if (::access(path.c_str(), F_OK) == 0) return true;
-    path.assign("/sys/kernel/debug/tracing/events/");
-    path.append(category_slash_event);
-    path.append("/id");
-    return ::access(path.c_str(), F_OK) == 0;
-}
-
-void disable_unavailable_programs(struct bpf_object* obj) noexcept {
-    struct bpf_program* prog = nullptr;
-    bpf_object__for_each_program(prog, obj) {
-        const char* sec = bpf_program__section_name(prog);
-        if (sec == nullptr) continue;
-        static constexpr const char kPrefix[] = "tracepoint/";
-        if (std::strncmp(sec, kPrefix, sizeof(kPrefix) - 1) != 0) continue;
-        const char* tp = sec + (sizeof(kPrefix) - 1);
-        if (!tracepoint_exists(tp)) {
-            (void)bpf_program__set_autoload(prog, false);
-        }
-    }
-}
-
-[[nodiscard]] int libbpf_errno(const void* p, int fallback) noexcept {
-    const long le = libbpf_get_error(p);
-    return le ? static_cast<int>(-le) : fallback;
-}
+// All shared helpers live in ::crucible::perf::detail (BpfLoader.h).
+// Pull them into the anonymous namespace so call sites below remain
+// syntactically identical to the pre-extraction code.  Anon-namespace
+// using-declarations have an implicit using-directive into the
+// enclosing namespace (per [basic.namespace]/4) so members of struct
+// State below also see Fd / Tgid / Tid via name lookup.
+namespace source = ::crucible::perf::detail::source;
+using ::crucible::perf::detail::Tgid;
+using ::crucible::perf::detail::Tid;
+using ::crucible::perf::detail::Fd;
+using ::crucible::perf::detail::current_tgid;
+using ::crucible::perf::detail::current_tid;
+using ::crucible::perf::detail::map_fd;
+using ::crucible::perf::detail::find_rodata;
+using ::crucible::perf::detail::disable_unavailable_programs;
+using ::crucible::perf::detail::libbpf_errno;
+using ::crucible::perf::detail::install_libbpf_log_cb_once;
+using ::crucible::perf::detail::quiet;
+using ::crucible::perf::detail::verbose;
 
 }  // namespace
 
