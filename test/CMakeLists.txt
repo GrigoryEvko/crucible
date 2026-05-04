@@ -452,6 +452,7 @@ crucible_test(test_rt_policy)
 crucible_test(test_perf_sense_hub_smoke)
 crucible_test(test_perf_sched_switch_smoke)
 crucible_test(test_perf_pmu_sample_smoke)
+crucible_test(test_perf_lock_contention_smoke)
 target_include_directories(test_bench_harness SYSTEM PRIVATE
   ${CMAKE_SOURCE_DIR}/bench)
 
