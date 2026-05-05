@@ -839,6 +839,26 @@ public:
 // ── Ergonomic surface ──────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
+// Delegate-compatibility trait.  Plain closed session protocols are
+// delegate-compatible by default: a Delegate<T, K> handoff consumes the
+// sender's SessionHandle<T, ...> and produces the same typed handle at
+// the acceptor.  Protocol families with extra external authority can
+// specialise this trait to false until their handoff semantics are
+// wired explicitly.
+template <typename Proto>
+struct is_delegate_compatible : std::bool_constant<is_well_formed_v<Proto>> {};
+
+template <typename Proto>
+inline constexpr bool is_delegate_compatible_v =
+    is_delegate_compatible<Proto>::value;
+
+template <typename Proto, typename RecipientTag>
+inline constexpr bool can_delegate_v =
+    is_delegate_compatible_v<Proto> && is_well_formed_v<Proto>;
+
+template <typename Proto, typename RecipientTag>
+concept CanDelegate = can_delegate_v<Proto, RecipientTag>;
+
 // Concept: is CarrierProto's head a Delegate/Accept of a T-typed
 // session?  Use at boundary functions that demand a specific
 // delegation contract.

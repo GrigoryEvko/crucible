@@ -27,6 +27,10 @@
 //     those aliases with PatternCrashSafety<..., CrashSafetyPending>
 //     contracts for unreliable peers, and separately proves concrete
 //     Crash<>-branch witnesses with SessionCrash.h's Offer walker.
+//   * Delegate-compatible — every baseline alias is checked as a
+//     valid inner protocol for Delegate<Inner, K> / Accept<Inner, K>,
+//     including delegated-recipient crash propagation with a recovery
+//     carrier continuation.
 //
 // Subtype refinement note: this header does not expose public
 // `*_Strong` / `*_Weak` pattern aliases yet.  The self-test block
@@ -123,6 +127,7 @@
 #include <crucible/sessions/SessionSubtype.h>
 #ifdef CRUCIBLE_SESSION_SELF_TESTS
 #include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/SessionDelegate.h>
 #endif
 
 #include <cstddef>
@@ -147,6 +152,9 @@ namespace crucible::safety::proto::pattern {
 struct CrashSafetyVerified {};
 struct CrashSafetyPending {};
 struct BaselinePatternNeedsCrashAwareVariant {};
+struct DelegateCompatible {};
+struct DelegateCompatibilityPending {};
+struct PatternHasNoDelegateBoundaryConstraints {};
 
 template <typename Proto, typename R, typename Status,
           typename Reason = BaselinePatternNeedsCrashAwareVariant>
@@ -167,6 +175,25 @@ inline constexpr bool pattern_crash_safety_verified_v = Contract::verified;
 
 template <typename Contract>
 inline constexpr bool pattern_crash_safety_pending_v = Contract::pending;
+
+template <typename Proto, typename Status,
+          typename Reason = PatternHasNoDelegateBoundaryConstraints>
+struct PatternDelegateCompatibility {
+    using protocol = Proto;
+    using status   = Status;
+    using reason   = Reason;
+
+    static constexpr bool compatible =
+        std::is_same_v<Status, DelegateCompatible>;
+    static constexpr bool pending =
+        std::is_same_v<Status, DelegateCompatibilityPending>;
+};
+
+template <typename Contract>
+inline constexpr bool pattern_delegate_compatible_v = Contract::compatible;
+
+template <typename Contract>
+inline constexpr bool pattern_delegate_pending_v = Contract::pending;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Request / response ─────────────────────────────────────────────
@@ -533,6 +560,7 @@ struct CollectorRole   {};
 struct ProducerRole    {};
 struct ConsumerRole    {};
 struct FollowerRole    {};
+struct DelegatedRecipientRole {};
 
 // ─── RequestResponse family ────────────────────────────────────────
 
@@ -1234,6 +1262,117 @@ static_assert(every_offer_has_crash_branch_for_peer_v<
     CrashAwareHandshakeClient, ServerRole>);
 static_assert(verified_contract_ok<VerifiedCrashContract<
     CrashAwareHandshakeClient, ClientRole>>());
+
+// ─── Delegate compatibility contracts (GAPS-056) ─────────────────
+//
+// No pattern in this header carries external linear authority beyond
+// its SessionHandle, so each baseline alias is delegate-compatible.
+// Permission-bearing delegated payloads are handled in the later PSH
+// layer; this section only proves ordinary Delegate/Accept compatibility
+// and delegated-recipient crash propagation for the local protocols.
+
+using DelegateRecoveryK = Offer<Sender<DelegatedRecipientRole>,
+    Recv<Crash<DelegatedRecipientRole>, End>>;
+
+template <typename Proto>
+using CompatibleDelegateContract =
+    PatternDelegateCompatibility<Proto, DelegateCompatible>;
+
+template <typename Proto>
+consteval bool delegate_compatible_pattern_ok() {
+    using Contract = CompatibleDelegateContract<Proto>;
+    static_assert(pattern_delegate_compatible_v<Contract>);
+    static_assert(!pattern_delegate_pending_v<Contract>);
+    static_assert(is_delegate_compatible_v<Proto>);
+    static_assert(can_delegate_v<Proto, DelegatedRecipientRole>);
+    static_assert(DelegatesTo<Delegate<Proto, End>, Proto>);
+    static_assert(AcceptsFrom<Accept<Proto, End>, Proto>);
+
+    using Propagation = delegated_crash_propagation_t<
+        Proto,
+        DelegatedRecipientRole,
+        DelegateRecoveryK>;
+    static_assert(!std::is_same_v<Propagation, IllFormed>);
+    assert_delegated_crash_propagates<
+        Proto,
+        DelegatedRecipientRole,
+        DelegateRecoveryK>();
+    return true;
+}
+
+static_assert(delegate_compatible_pattern_ok<
+    RequestResponseOnce_Client<Req, Resp>>());
+static_assert(delegate_compatible_pattern_ok<
+    RequestResponseOnce_Server<Req, Resp>>());
+static_assert(delegate_compatible_pattern_ok<
+    RequestResponse_Client<Req, Resp>>());
+static_assert(delegate_compatible_pattern_ok<
+    RequestResponse_Server<Req, Resp>>());
+static_assert(delegate_compatible_pattern_ok<
+    RequestResponseLoop_Client<Req, Resp>>());
+static_assert(delegate_compatible_pattern_ok<
+    RequestResponseLoop_Server<Req, Resp>>());
+
+static_assert(delegate_compatible_pattern_ok<PipelineSource<Job>>());
+static_assert(delegate_compatible_pattern_ok<PipelineSink<Job>>());
+static_assert(delegate_compatible_pattern_ok<PipelineStage<Req, Resp>>());
+
+static_assert(delegate_compatible_pattern_ok<TxClient>());
+static_assert(delegate_compatible_pattern_ok<TxServer>());
+
+static_assert(delegate_compatible_pattern_ok<FanOut<3, Job>>());
+static_assert(delegate_compatible_pattern_ok<FanIn<3, Job>>());
+static_assert(delegate_compatible_pattern_ok<Broadcast<3, Job>>());
+static_assert(delegate_compatible_pattern_ok<
+    ScatterGather<2, Task, Result>>());
+
+static_assert(delegate_compatible_pattern_ok<MpmcProducer<Job>>());
+static_assert(delegate_compatible_pattern_ok<MpmcConsumer<Job>>());
+
+static_assert(delegate_compatible_pattern_ok<ConcreteCoord>());
+static_assert(delegate_compatible_pattern_ok<ConcreteFollower>());
+
+static_assert(delegate_compatible_pattern_ok<
+    SwimProbe_Client<Probe, Ack>>());
+static_assert(delegate_compatible_pattern_ok<
+    SwimProbe_Server<Probe, Ack>>());
+
+static_assert(delegate_compatible_pattern_ok<
+    Handshake_Client<Hello, Welcome, Reject>>());
+static_assert(delegate_compatible_pattern_ok<
+    Handshake_Server<Hello, Welcome, Reject>>());
+
+// Representative higher-order compositions from the task.  The first
+// hands a request-response server endpoint to a worker and then waits
+// for a final Result on the carrier.  The second stands in for a
+// three-party MPST projection with the local-view patterns available
+// in this header: scatter/gather plus a three-peer fan-out unit.
+using DelegateRequestResponseServer =
+    Delegate<RequestResponse_Server<Req, Resp>, Recv<Result, End>>;
+using AcceptRequestResponseServer = dual_of_t<DelegateRequestResponseServer>;
+
+static_assert(DelegatesTo<
+    DelegateRequestResponseServer,
+    RequestResponse_Server<Req, Resp>>);
+static_assert(AcceptsFrom<
+    AcceptRequestResponseServer,
+    RequestResponse_Server<Req, Resp>>);
+static_assert(is_well_formed_v<DelegateRequestResponseServer>);
+static_assert(is_well_formed_v<AcceptRequestResponseServer>);
+
+using DelegateThreePartyProjection = Delegate<
+    ScatterGather<2, Task, Result>,
+    Delegate<FanOut<3, Job>, End>>;
+using AcceptThreePartyProjection = dual_of_t<DelegateThreePartyProjection>;
+
+static_assert(DelegatesTo<
+    DelegateThreePartyProjection,
+    ScatterGather<2, Task, Result>>);
+static_assert(AcceptsFrom<
+    AcceptThreePartyProjection,
+    ScatterGather<2, Task, Result>>);
+static_assert(is_well_formed_v<DelegateThreePartyProjection>);
+static_assert(is_well_formed_v<AcceptThreePartyProjection>);
 
 // ─── Cross-pattern composition ────────────────────────────────────
 //
