@@ -19,12 +19,16 @@
 // peer dies.  The session-handle CONSUMERS (the per-op Send/Recv/
 // Select/Offer/close) check the flag with a relaxed atomic peek
 // before each operation; on the unlikely true path they take the
-// acquire fence and return a `CrashEvent<PeerTag>` via
-// `std::expected`.
+// acquire fence, detach the permissioned inner handle, mint inherited
+// survivor permissions, and return a `CrashEvent<PeerTag, Resource,
+// SurvivorTags...>` via `std::expected`.
 //
-// `CrashWatchedHandle<Proto, Resource, PeerTag, LoopCtx>` wraps a
-// bare `SessionHandle<Proto, Resource, LoopCtx>` and a
-// `OneShotFlag&`.  Each consumer method:
+// `CrashWatchedHandle<Proto, Resource, PeerTag, LoopCtx, PS>` wraps a
+// `PermissionedSessionHandle<Proto, PS, Resource, LoopCtx>` and a
+// `OneShotFlag&`.  The public mint also accepts a bare
+// `SessionHandle<Proto, Resource, LoopCtx>` and adapts it to
+// `PS = EmptyPermSet` for backward-compatible non-permissioned callers.
+// Each consumer method:
 //
 //   1. Peeks the flag (one relaxed load + branch — the spec's
 //      ~1 cycle / op overhead budget).
@@ -33,9 +37,11 @@
 //      `CrashWatchedHandle` (bound to the same flag and peer tag).
 //   3. On crash: takes an acquire fence (paired with the producer's
 //      release in OneShotFlag::signal), marks itself consumed,
-//      returns std::unexpected(CrashEvent<PeerTag>{recovered Resource}).
+//      returns std::unexpected(CrashEvent<PeerTag, Resource,
+//      SurvivorTags...>{recovered Resource, inherited permissions}).
 //      The Resource flows out so callers can re-establish a new
-//      channel with whatever endpoint state survived.
+//      channel with whatever endpoint state survived; the inherited
+//      Permission tokens flow out per `survivors_t<PeerTag>`.
 //
 // ─── Design decisions ─────────────────────────────────────────────
 //
@@ -68,6 +74,14 @@
 //     lishmentService allocates the flag, hands a reference to the
 //     CrashWatchedHandle, and outlives the session.  The wrapper
 //     itself is move-only (single-consumer linearity preserved).
+//
+// 6.  **Permission inheritance is explicit**: on peer death, surviving
+//     permissions inherit only through the `inherits_from<DeadTag,
+//     SurvivorTag>` / `survivor_registry<DeadTag>` lattice from
+//     permissions/PermissionInherit.h.  Specializing that registry at
+//     the peer tag declaration site is load-bearing: a PeerTag with no
+//     declared survivor list is rejected before CrashWatchedHandle can
+//     be minted.
 //
 // ─── Row-typed surface (FOUND-G62) ────────────────────────────────
 //
@@ -114,12 +128,15 @@
 
 #include <crucible/Platform.h>
 #include <crucible/handles/OneShotFlag.h>
+#include <crucible/permissions/PermissionInherit.h>
+#include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCrash.h>
 
 #include <atomic>
 #include <cstddef>
 #include <expected>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -135,7 +152,7 @@ template <typename PeerTag,
     InnerHandle&& inner, Reason reason_tag, Resource recovered) noexcept;
 
 // ═════════════════════════════════════════════════════════════════════
-// ── CrashEvent<PeerTag> — the unexpected payload ───────────────────
+// ── CrashEvent<PeerTag, Resource, SurvivorTags...> ─────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
 // Carries the peer identity (compile-time) and the recovered
@@ -153,7 +170,7 @@ template <typename PeerTag,
 // the construction with the mandatory `inner.detach(reason)` step that
 // every wrapper crash-path must perform.  This makes the bug from
 // #400 — wrapper crash-paths that returned `std::unexpected(CrashEvent
-// {...})` WITHOUT first detaching their inner SessionHandle, causing
+// {...})` WITHOUT first detaching their inner handle, causing
 // a silent abandonment abort via the inner's destructor — STRUCTURALLY
 // IMPOSSIBLE.
 //
@@ -183,33 +200,86 @@ class WrapCrashReturnKey {
     friend constexpr auto wrap_crash_return(InnerHandle2&&, Reason2, Resource2) noexcept;
 };
 
-template <typename PeerTag, typename Resource>
+template <typename PeerTag, typename Resource, typename... SurvivorTags>
 class CrashEvent {
 public:
     using peer          = PeerTag;
     using resource_type = Resource;
+    using survivors     = ::crucible::permissions::inheritance_list<SurvivorTags...>;
+    using permissions_type =
+        std::tuple<::crucible::safety::Permission<SurvivorTags>...>;
 
     // Public read-access — backward-compatible with handler code that
     // reads `event.resource.field` directly (#430 keeps this open).
     Resource resource;
+    [[no_unique_address]] permissions_type permissions;
 
     // Pass-key-protected ctor.  Direct user construction
     // `CrashEvent<P, R>{r}` cannot compile — the user has no way to
     // mint a `WrapCrashReturnKey`.  The only authorized constructor
     // is `wrap_crash_return`, which is friended on the key class.
-    constexpr CrashEvent(WrapCrashReturnKey, Resource r) noexcept
-        : resource{std::move(r)} {}
+    constexpr CrashEvent(WrapCrashReturnKey, Resource r, permissions_type perms) noexcept
+        : resource{std::move(r)}, permissions{std::move(perms)} {}
 };
+
+namespace detail {
+
+template <typename PeerTag, typename Resource, typename Survivors>
+struct crash_event_from_survivors;
+
+template <typename PeerTag, typename Resource, typename... SurvivorTags>
+struct crash_event_from_survivors<
+    PeerTag,
+    Resource,
+    ::crucible::permissions::inheritance_list<SurvivorTags...>>
+{
+    using type = CrashEvent<PeerTag, Resource, SurvivorTags...>;
+};
+
+template <typename PeerTag, typename Resource>
+using crash_event_for_t = typename crash_event_from_survivors<
+    PeerTag,
+    Resource,
+    ::crucible::permissions::survivors_t<PeerTag>>::type;
+
+template <typename Event>
+struct crash_event_matches_survivors : std::false_type {};
+
+template <typename PeerTag, typename Resource, typename... SurvivorTags>
+struct crash_event_matches_survivors<
+    CrashEvent<PeerTag, Resource, SurvivorTags...>>
+    : std::is_same<
+          CrashEvent<PeerTag, Resource, SurvivorTags...>,
+          crash_event_for_t<PeerTag, Resource>> {};
+
+template <typename Event>
+inline constexpr bool crash_event_matches_survivors_v =
+    crash_event_matches_survivors<Event>::value;
+
+template <typename PeerTag>
+consteval void require_crash_survivors_declared_() {
+    static_assert(!::crucible::permissions::inheritance_list_empty_v<
+        ::crucible::permissions::survivors_t<PeerTag>>,
+        "CrashWatchedHandle requires permission_inherit survivors for "
+        "PeerTag. Specialize survivor_registry<PeerTag> at the peer tag "
+        "declaration site before enabling crash recovery.");
+}
+
+}  // namespace detail
+
+template <typename Event>
+concept CrashEventMatchesSurvivors =
+    detail::crash_event_matches_survivors_v<Event>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── wrap_crash_return — wrapper-side crash-path bundler (#430) ─────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Every wrapper around SessionHandle that returns
-// `std::expected<NextHandle, CrashEvent<PeerTag, Resource>>` on a
+// Every wrapper around PermissionedSessionHandle that returns
+// `std::expected<NextHandle, detail::crash_event_for_t<PeerTag, Resource>>` on a
 // crash path MUST perform two operations atomically:
 //
-//   1. Detach the inner SessionHandle (`inner.detach(reason_tag)`) so
+//   1. Detach the inner PermissionedSessionHandle (`inner.detach(reason_tag)`) so
 //      its destructor sees the consumed flag and skips the abandonment
 //      abort.  Without this, the inner — at non-terminal protocol state
 //      — fires SessionHandleBase's destructor abort when the wrapper's
@@ -219,9 +289,9 @@ public:
 //      inner's destructor; debug-instrumentation localised the hole and
 //      the fix was a second pass that applied detach uniformly.
 //
-//   2. Construct the `CrashEvent<PeerTag, Resource>{recovered}` and
-//      wrap in `std::unexpected{...}` so the caller gets the typed
-//      crash signal back through `std::expected`'s error channel.
+//   2. Construct the survivor-aware CrashEvent and wrap it in
+//      `std::unexpected{...}` so the caller gets the recovered Resource
+//      plus Permission tokens minted from `survivors_t<PeerTag>`.
 //
 // `wrap_crash_return` BUNDLES the two operations.  It is the ONLY
 // construction site for `CrashEvent` (per the friend declaration above),
@@ -247,6 +317,12 @@ template <typename PeerTag,
     Reason reason_tag,
     Resource recovered) noexcept
 {
+    using Inner = std::remove_cvref_t<InnerHandle>;
+    static_assert(std::is_same_v<std::remove_cvref_t<Resource>,
+                                 typename Inner::resource_type>,
+        "wrap_crash_return recovered resource type must match inner "
+        "resource_type.");
+
     // The detach call is what saves the inner from firing its
     // destructor's abandonment abort.  detach()'s `requires
     // DetachReason<Reason>` constraint enforces that `reason_tag`
@@ -259,9 +335,13 @@ template <typename PeerTag,
     // construction outside this body cannot mint a key, so the
     // unexpected-without-detach pattern from #400 is now a compile
     // error rather than a runtime abort.
+    detail::require_crash_survivors_declared_<PeerTag>();
+
     return std::unexpected{
-        CrashEvent<PeerTag, Resource>{
-            WrapCrashReturnKey{}, std::move(recovered)}};
+        detail::crash_event_for_t<PeerTag, Resource>{
+            WrapCrashReturnKey{},
+            std::move(recovered),
+            ::crucible::permissions::permission_inherit<PeerTag>()}};
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -269,10 +349,35 @@ template <typename PeerTag,
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename Proto, typename Resource,
-          typename PeerTag, typename LoopCtx = void>
+          typename PeerTag, typename LoopCtx = void,
+          typename PS = EmptyPermSet>
 class CrashWatchedHandle;
 
 namespace detail {
+
+template <typename LoopCtx, typename PS>
+struct permissioned_loop_ctx_from_bare {
+    using type = LoopCtx;
+};
+
+template <typename PS>
+struct permissioned_loop_ctx_from_bare<void, PS> {
+    using type = void;
+};
+
+template <typename Body, typename PS>
+struct permissioned_loop_ctx_from_bare<Loop<Body>, PS> {
+    using type = LoopContext<Body, PS>;
+};
+
+template <typename Body, typename EntryPS, typename PS>
+struct permissioned_loop_ctx_from_bare<LoopContext<Body, EntryPS>, PS> {
+    using type = LoopContext<Body, EntryPS>;
+};
+
+template <typename LoopCtx, typename PS>
+using permissioned_loop_ctx_from_bare_t =
+    typename permissioned_loop_ctx_from_bare<LoopCtx, PS>::type;
 
 // Build a CrashWatchedHandle around a freshly-stepped inner handle,
 // preserving the framework's Continue / Loop resolution.  Mirrors
@@ -285,7 +390,8 @@ template <typename PeerTag, typename NextHandle>
     using NextProto    = typename NextHandle::protocol;
     using NextResource = typename NextHandle::resource_type;
     using NextLoopCtx  = typename NextHandle::loop_ctx;
-    return CrashWatchedHandle<NextProto, NextResource, PeerTag, NextLoopCtx>{
+    using NextPS       = typename NextHandle::perm_set;
+    return CrashWatchedHandle<NextProto, NextResource, PeerTag, NextLoopCtx, NextPS>{
         std::move(inner), flag};
 }
 
@@ -301,12 +407,12 @@ template <typename PeerTag, typename NextHandle>
 // can't actually deliver the next message.)  Still peek for symmetry
 // in the audit trail; do not gate on it.
 
-template <typename Resource, typename PeerTag, typename LoopCtx>
-class [[nodiscard]] CrashWatchedHandle<End, Resource, PeerTag, LoopCtx>
+template <typename Resource, typename PeerTag, typename LoopCtx, typename PS>
+class [[nodiscard]] CrashWatchedHandle<End, Resource, PeerTag, LoopCtx, PS>
     : public SessionHandleBase<End,
-                               CrashWatchedHandle<End, Resource, PeerTag, LoopCtx>>
+                               CrashWatchedHandle<End, Resource, PeerTag, LoopCtx, PS>>
 {
-    SessionHandle<End, Resource, LoopCtx> inner_;
+    PermissionedSessionHandle<End, PS, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
 
 public:
@@ -314,15 +420,19 @@ public:
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
     using peer          = PeerTag;
-    using inner_type    = SessionHandle<End, Resource, LoopCtx>;
+    using perm_set      = PS;
+    using inner_type    = PermissionedSessionHandle<End, PS, Resource, LoopCtx>;
 
     constexpr CrashWatchedHandle(
         inner_type inner,
         OneShotFlag& flag,
         std::source_location loc = std::source_location::current()) noexcept
         : SessionHandleBase<End,
-                            CrashWatchedHandle<End, Resource, PeerTag, LoopCtx>>{loc}
-        , inner_{std::move(inner)}, flag_{&flag} {}
+                            CrashWatchedHandle<End, Resource, PeerTag, LoopCtx, PS>>{loc}
+        , inner_{std::move(inner)}, flag_{&flag}
+    {
+        detail::require_crash_survivors_declared_<PeerTag>();
+    }
 
     constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
@@ -345,12 +455,12 @@ public:
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename T, typename R, typename Resource,
-          typename PeerTag, typename LoopCtx>
-class [[nodiscard]] CrashWatchedHandle<Send<T, R>, Resource, PeerTag, LoopCtx>
+          typename PeerTag, typename LoopCtx, typename PS>
+class [[nodiscard]] CrashWatchedHandle<Send<T, R>, Resource, PeerTag, LoopCtx, PS>
     : public SessionHandleBase<Send<T, R>,
-                               CrashWatchedHandle<Send<T, R>, Resource, PeerTag, LoopCtx>>
+                               CrashWatchedHandle<Send<T, R>, Resource, PeerTag, LoopCtx, PS>>
 {
-    SessionHandle<Send<T, R>, Resource, LoopCtx> inner_;
+    PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
 
 public:
@@ -360,15 +470,19 @@ public:
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
     using peer          = PeerTag;
-    using inner_type    = SessionHandle<Send<T, R>, Resource, LoopCtx>;
+    using perm_set      = PS;
+    using inner_type    = PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx>;
 
     constexpr CrashWatchedHandle(
         inner_type inner,
         OneShotFlag& flag,
         std::source_location loc = std::source_location::current()) noexcept
         : SessionHandleBase<Send<T, R>,
-                            CrashWatchedHandle<Send<T, R>, Resource, PeerTag, LoopCtx>>{loc}
-        , inner_{std::move(inner)}, flag_{&flag} {}
+                            CrashWatchedHandle<Send<T, R>, Resource, PeerTag, LoopCtx, PS>>{loc}
+        , inner_{std::move(inner)}, flag_{&flag}
+    {
+        detail::require_crash_survivors_declared_<PeerTag>();
+    }
 
     constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
@@ -381,7 +495,7 @@ public:
             decltype(detail::wrap_crash_next_<PeerTag>(
                 std::declval<inner_type>().send(std::move(value), std::move(transport)),
                 std::declval<OneShotFlag&>())),
-            CrashEvent<PeerTag, Resource>>
+            detail::crash_event_for_t<PeerTag, Resource>>
     {
         // Hot-path peek: one relaxed atomic load.  No fence on the
         // happy path.
@@ -419,12 +533,12 @@ public:
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename T, typename R, typename Resource,
-          typename PeerTag, typename LoopCtx>
-class [[nodiscard]] CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, LoopCtx>
+          typename PeerTag, typename LoopCtx, typename PS>
+class [[nodiscard]] CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, LoopCtx, PS>
     : public SessionHandleBase<Recv<T, R>,
-                               CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, LoopCtx>>
+                               CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, LoopCtx, PS>>
 {
-    SessionHandle<Recv<T, R>, Resource, LoopCtx> inner_;
+    PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
 
 public:
@@ -434,15 +548,19 @@ public:
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
     using peer          = PeerTag;
-    using inner_type    = SessionHandle<Recv<T, R>, Resource, LoopCtx>;
+    using perm_set      = PS;
+    using inner_type    = PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx>;
 
     constexpr CrashWatchedHandle(
         inner_type inner,
         OneShotFlag& flag,
         std::source_location loc = std::source_location::current()) noexcept
         : SessionHandleBase<Recv<T, R>,
-                            CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, LoopCtx>>{loc}
-        , inner_{std::move(inner)}, flag_{&flag} {}
+                            CrashWatchedHandle<Recv<T, R>, Resource, PeerTag, LoopCtx, PS>>{loc}
+        , inner_{std::move(inner)}, flag_{&flag}
+    {
+        detail::require_crash_survivors_declared_<PeerTag>();
+    }
 
     constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
@@ -458,7 +576,7 @@ public:
             std::pair<T, decltype(detail::wrap_crash_next_<PeerTag>(
                 std::declval<inner_type>().recv(std::move(transport)).second,
                 std::declval<OneShotFlag&>()))>,
-            CrashEvent<PeerTag, Resource>>
+            detail::crash_event_for_t<PeerTag, Resource>>
     {
         if (flag_->peek()) [[unlikely]] {
             std::atomic_thread_fence(std::memory_order_acquire);
@@ -493,12 +611,12 @@ public:
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename... Branches, typename Resource,
-          typename PeerTag, typename LoopCtx>
-class [[nodiscard]] CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, LoopCtx>
+          typename PeerTag, typename LoopCtx, typename PS>
+class [[nodiscard]] CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, LoopCtx, PS>
     : public SessionHandleBase<Select<Branches...>,
-                               CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, LoopCtx>>
+                               CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, LoopCtx, PS>>
 {
-    SessionHandle<Select<Branches...>, Resource, LoopCtx> inner_;
+    PermissionedSessionHandle<Select<Branches...>, PS, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
 
 public:
@@ -506,7 +624,8 @@ public:
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
     using peer          = PeerTag;
-    using inner_type    = SessionHandle<Select<Branches...>, Resource, LoopCtx>;
+    using perm_set      = PS;
+    using inner_type    = PermissionedSessionHandle<Select<Branches...>, PS, Resource, LoopCtx>;
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
@@ -515,8 +634,11 @@ public:
         OneShotFlag& flag,
         std::source_location loc = std::source_location::current()) noexcept
         : SessionHandleBase<Select<Branches...>,
-                            CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, LoopCtx>>{loc}
-        , inner_{std::move(inner)}, flag_{&flag} {}
+                            CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, LoopCtx, PS>>{loc}
+        , inner_{std::move(inner)}, flag_{&flag}
+    {
+        detail::require_crash_survivors_declared_<PeerTag>();
+    }
 
     constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
@@ -531,7 +653,7 @@ public:
             decltype(detail::wrap_crash_next_<PeerTag>(
                 std::declval<inner_type>().template select<I>(std::move(transport)),
                 std::declval<OneShotFlag&>())),
-            CrashEvent<PeerTag, Resource>>
+            detail::crash_event_for_t<PeerTag, Resource>>
     {
         if (flag_->peek()) [[unlikely]] {
             std::atomic_thread_fence(std::memory_order_acquire);
@@ -567,7 +689,7 @@ public:
             decltype(detail::wrap_crash_next_<PeerTag>(
                 std::declval<inner_type>().template select_local<I>(),
                 std::declval<OneShotFlag&>())),
-            CrashEvent<PeerTag, Resource>>
+            detail::crash_event_for_t<PeerTag, Resource>>
     {
         if (flag_->peek()) [[unlikely]] {
             std::atomic_thread_fence(std::memory_order_acquire);
@@ -618,12 +740,12 @@ public:
 //   Offer for crash branches" with this header's runtime wire).
 
 template <typename... Branches, typename Resource,
-          typename PeerTag, typename LoopCtx>
-class [[nodiscard]] CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, LoopCtx>
+          typename PeerTag, typename LoopCtx, typename PS>
+class [[nodiscard]] CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, LoopCtx, PS>
     : public SessionHandleBase<Offer<Branches...>,
-                               CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, LoopCtx>>
+                               CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, LoopCtx, PS>>
 {
-    SessionHandle<Offer<Branches...>, Resource, LoopCtx> inner_;
+    PermissionedSessionHandle<Offer<Branches...>, PS, Resource, LoopCtx> inner_;
     OneShotFlag* flag_ = nullptr;
 
 public:
@@ -631,7 +753,8 @@ public:
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
     using peer          = PeerTag;
-    using inner_type    = SessionHandle<Offer<Branches...>, Resource, LoopCtx>;
+    using perm_set      = PS;
+    using inner_type    = PermissionedSessionHandle<Offer<Branches...>, PS, Resource, LoopCtx>;
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
@@ -640,8 +763,11 @@ public:
         OneShotFlag& flag,
         std::source_location loc = std::source_location::current()) noexcept
         : SessionHandleBase<Offer<Branches...>,
-                            CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, LoopCtx>>{loc}
-        , inner_{std::move(inner)}, flag_{&flag} {}
+                            CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, LoopCtx, PS>>{loc}
+        , inner_{std::move(inner)}, flag_{&flag}
+    {
+        detail::require_crash_survivors_declared_<PeerTag>();
+    }
 
     constexpr CrashWatchedHandle(CrashWatchedHandle&&) noexcept            = default;
     constexpr CrashWatchedHandle& operator=(CrashWatchedHandle&&) noexcept = default;
@@ -657,7 +783,7 @@ public:
             decltype(detail::wrap_crash_next_<PeerTag>(
                 std::declval<inner_type>().template pick_local<I>(),
                 std::declval<OneShotFlag&>())),
-            CrashEvent<PeerTag, Resource>>
+            detail::crash_event_for_t<PeerTag, Resource>>
     {
         if (flag_->peek()) [[unlikely]] {
             std::atomic_thread_fence(std::memory_order_acquire);
@@ -701,26 +827,31 @@ public:
 // ── mint_crash_watched_session<PeerTag> — Universal Mint Pattern ───
 // ═════════════════════════════════════════════════════════════════════
 //
-// Token mint per CLAUDE.md §XXI — wraps an existing bare SessionHandle
-// in a CrashWatchedHandle bound to the supplied OneShotFlag and the
-// compile-time PeerTag.  Authority derives from holding a
-// SessionHandle: the parameter type IS the gate (only the canonical
-// SessionHandle template specialisation matches; non-handle inputs
-// fail substitution at the parameter binding, not deeper inside the
-// body — a non-deduced-context "no matching function" diagnostic).
+// Token mint per CLAUDE.md §XXI — wraps either an existing bare
+// SessionHandle or a PermissionedSessionHandle in a CrashWatchedHandle
+// bound to the supplied OneShotFlag and compile-time PeerTag.  Bare
+// handles are adapted to `PS = EmptyPermSet`; permissioned handles
+// preserve their exact consumer-side PermSet through every next-state
+// wrapper.
 //
 // PeerTag must be specified explicitly — it is NOT deducible from the
 // handle's type because the same handle can be watched against
 // different peers (multi-peer sessions wrap a chain of CrashWatched-
 // Handles, one per peer).
 //
+// `PeerTag` must have a non-empty `survivor_registry<PeerTag>`.
+// On peer death, surviving permissions inherit per the
+// `survivor_registry` / `inherits_from<DeadTag, SurvivorTag>` lattice
+// in PermissionInherit.h.  Specializing the survivor registry at the
+// peer tag declaration site is the load-bearing discipline.
+//
 // Convention compliance (CLAUDE.md §XXI):
 //   * Name follows mint_<noun>: mint_crash_watched_session.
 //   * Signature is a TOKEN MINT (no Ctx parameter); ownership of the
-//     SessionHandle is the proof of authority.
+//     incoming handle is the proof of authority.
 //   * [[nodiscard]] constexpr noexcept — purely structural wrap.
 //   * Returns the concrete type CrashWatchedHandle<Proto, Resource,
-//     PeerTag, LoopCtx>; never type-erased.
+//     PeerTag, LoopCtx, PS>; never type-erased.
 //   * Discoverable via `grep "mint_crash_watched_session"`.
 //
 // Negative-compile fixtures (HS14):
@@ -732,7 +863,26 @@ template <typename PeerTag, typename Proto, typename Resource, typename LoopCtx>
     SessionHandle<Proto, Resource, LoopCtx> handle,
     OneShotFlag& flag) noexcept
 {
-    return CrashWatchedHandle<Proto, Resource, PeerTag, LoopCtx>{
+    detail::require_crash_survivors_declared_<PeerTag>();
+
+    Resource recovered = std::move(handle.resource());
+    std::move(handle).detach(detach_reason::OwnerLifetimeBoundEarlyExit{});
+    using PSLoopCtx =
+        detail::permissioned_loop_ctx_from_bare_t<LoopCtx, EmptyPermSet>;
+    return CrashWatchedHandle<Proto, Resource, PeerTag, PSLoopCtx, EmptyPermSet>{
+        PermissionedSessionHandle<Proto, EmptyPermSet, Resource, PSLoopCtx>{
+            std::move(recovered)},
+        flag};
+}
+
+template <typename PeerTag, typename Proto, typename PS, typename Resource, typename LoopCtx>
+[[nodiscard]] constexpr auto mint_crash_watched_session(
+    PermissionedSessionHandle<Proto, PS, Resource, LoopCtx> handle,
+    OneShotFlag& flag) noexcept
+{
+    detail::require_crash_survivors_declared_<PeerTag>();
+
+    return CrashWatchedHandle<Proto, Resource, PeerTag, LoopCtx, PS>{
         std::move(handle), flag};
 }
 
@@ -742,13 +892,13 @@ template <typename PeerTag, typename Proto, typename Resource, typename LoopCtx>
 //
 // Convenience for the common caller pattern: try a session op, fall
 // through to crash recovery on the unexpected branch.  The recovery
-// callback receives the `CrashEvent<PeerTag, Resource>` by value
-// and is expected to return whatever the caller's downstream code
-// needs (usually a re-establishment outcome or a typed error to
-// propagate further up).
+// callback receives the survivor-aware CrashEvent by value and is
+// expected to return whatever the caller's downstream code needs
+// (usually a re-establishment outcome or a typed error to propagate
+// further up).
 //
 //     auto outcome = on_crash(std::move(h).send(msg, tx),
-//         [](CrashEvent<PeerTag, R> ev) { ...recover... });
+//         [](detail::crash_event_for_t<PeerTag, R> ev) { ...recover... });
 
 template <typename Expected, typename CrashHandler>
 [[nodiscard]] constexpr auto on_crash(Expected&& result, CrashHandler&& handler)
@@ -756,6 +906,10 @@ template <typename Expected, typename CrashHandler>
                 CrashHandler&&,
                 typename std::remove_cvref_t<Expected>::error_type>)
 {
+    using Error = typename std::remove_cvref_t<Expected>::error_type;
+    static_assert(CrashEventMatchesSurvivors<Error>,
+        "CrashEvent survivor list must match survivors_t<PeerTag>.");
+
     if (result) {
         return std::forward<Expected>(result);
     }

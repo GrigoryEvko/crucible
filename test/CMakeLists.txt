@@ -2013,6 +2013,14 @@ crucible_neg_compile_test(neg_mint_crash_watched_session_non_handle
   "no matching function|could not match|cannot convert")
 crucible_neg_compile_test(neg_mint_crash_watched_session_missing_peer_tag
   "no matching function|could not (deduce|infer)|missing template argument")
+crucible_neg_compile_test(neg_crash_watched_no_survivors
+  "CrashWatchedHandle requires permission_inherit survivors")
+crucible_neg_compile_test(neg_crash_event_missing_survivor
+  "CrashEvent survivor list must match survivors_t")
+crucible_neg_compile_test(neg_crash_watched_ps_mismatch
+  "no matching function|cannot convert")
+crucible_neg_compile_test(neg_crash_return_resource_mismatch
+  "wrap_crash_return recovered resource type must match inner resource_type")
 
 # FOUND-G42 — production-call-site fence: a hot-path consumer
 # requiring AllocClass<Pool> rejects an AllocClass<Heap> source.

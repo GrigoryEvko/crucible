@@ -5,8 +5,8 @@
 // Coverage:
 //   * Compile-time: CrashWatchedHandle specializations for every
 //     combinator head (End/Send/Recv/Select/Offer); move-only,
-//     linear, inherits from SessionHandleBase; CrashEvent<PeerTag,
-//     Resource> layout.
+//     linear, inherits from SessionHandleBase; survivor-aware
+//     CrashEvent layout.
 //   * Runtime: happy path (no crash, all ops succeed); crash mid-
 //     protocol (signal before send → unexpected); crash detected
 //     cross-thread (producer thread fires flag, consumer observes
@@ -23,6 +23,7 @@
 #include <cstdio>
 #include <deque>
 #include <thread>
+#include <tuple>
 #include <utility>
 
 namespace {
@@ -34,11 +35,32 @@ using namespace crucible::safety::proto;
 
 struct ServerPeer {};
 struct OtherPeer  {};
+struct ServerSurvivor {};
+struct OtherSurvivor {};
+struct WorkerPerm {};
 
 struct Channel {
     std::deque<int>* wire = nullptr;
     int              session_id = 0;
 };
+
+}  // namespace
+
+namespace crucible::permissions {
+
+template <>
+struct survivor_registry<ServerPeer> {
+    using type = inheritance_list<ServerSurvivor>;
+};
+
+template <>
+struct survivor_registry<OtherPeer> {
+    using type = inheritance_list<OtherSurvivor>;
+};
+
+}  // namespace crucible::permissions
+
+namespace {
 
 // ── Compile-time witnesses ───────────────────────────────────────
 
@@ -62,6 +84,12 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
                   CrashEvent<ServerPeer, Channel>::resource_type,
                   Channel>);
+static_assert(std::is_same_v<
+                  proto::detail::crash_event_for_t<ServerPeer, Channel>,
+                  CrashEvent<ServerPeer, Channel, ServerSurvivor>>);
+static_assert(std::is_same_v<
+                  CrashEvent<ServerPeer, Channel, ServerSurvivor>::permissions_type,
+                  std::tuple<Permission<ServerSurvivor>>>);
 
 // ── Test: happy path — no crash, full protocol completes ────────
 
@@ -81,7 +109,7 @@ int run_happy_path() {
     if (!r1)                         return 1;
 
     // Recv.
-    auto r2 = std::move(r1).value().recv(
+    auto r2 = std::move(*r1).recv(
         [](Channel& c) noexcept -> int {
             int x = c.wire->front();
             c.wire->pop_front();
@@ -89,7 +117,7 @@ int run_happy_path() {
         });
     if (!r2)                         return 2;
 
-    auto [received, h_end] = std::move(r2).value();
+    auto [received, h_end] = std::move(*r2);
     if (received != 100)             return 3;
 
     auto recovered = std::move(h_end).close();
@@ -124,6 +152,62 @@ int run_crash_before_send() {
     return 0;
 }
 
+// ── Test: PSH-aware crash before Transferable send ──────────────
+//
+// Non-empty PermSet enters CrashWatchedHandle through the PSH mint,
+// the crash path fires before the PermissionedSessionHandle consumes
+// the Transferable payload, and the returned CrashEvent carries the
+// survivor permissions dictated by survivor_registry<ServerPeer>.
+
+int run_permissioned_crash_before_transferable_send() {
+    using P = Send<Transferable<int, WorkerPerm>, End>;
+
+    std::deque<int> wire;
+    OneShotFlag     flag;
+    Channel         ch{&wire, 17};
+    bool            transport_invoked = false;
+
+    auto initial_perm = mint_permission_root<WorkerPerm>();
+    auto psh = mint_permissioned_session<P>(std::move(ch), std::move(initial_perm));
+    static_assert(std::is_same_v<typename decltype(psh)::perm_set,
+                                 PermSet<WorkerPerm>>);
+
+    auto watched = mint_crash_watched_session<ServerPeer>(std::move(psh), flag);
+    static_assert(std::is_same_v<typename decltype(watched)::perm_set,
+                                 PermSet<WorkerPerm>>);
+
+    flag.signal();
+
+    Transferable<int, WorkerPerm> payload{
+        123,
+        mint_permission_root<WorkerPerm>()};
+
+    auto r = std::move(watched).send(
+        std::move(payload),
+        [&](Channel& c, Transferable<int, WorkerPerm>&& t) noexcept {
+            transport_invoked = true;
+            c.wire->push_back(t.value);
+        });
+
+    using Result = decltype(r);
+    static_assert(std::is_same_v<
+        typename Result::error_type,
+        CrashEvent<ServerPeer, Channel, ServerSurvivor>>);
+
+    if (r)                                             return 1;
+    auto& crash = r.error();
+    if (crash.resource.session_id != 17)               return 2;
+    if (transport_invoked)                             return 3;
+    if (!wire.empty())                                 return 4;
+
+    auto survivor_permissions = std::move(crash.permissions);
+    static_assert(std::is_same_v<
+        decltype(survivor_permissions),
+        std::tuple<Permission<ServerSurvivor>>>);
+    (void)survivor_permissions;
+    return 0;
+}
+
 // ── Test: crash mid-protocol (signal between send and recv) ─────
 
 int run_crash_mid_protocol() {
@@ -146,7 +230,7 @@ int run_crash_mid_protocol() {
     flag.signal();
 
     // Second op observes the crash.
-    auto r2 = std::move(r1).value().recv(
+    auto r2 = std::move(*r1).recv(
         [](Channel& c) noexcept -> int { return c.wire->back(); });
     if (r2)                                       return 3;
     if (r2.error().resource.session_id != 13)     return 4;
@@ -196,7 +280,7 @@ int run_cross_thread_crash() {
             return 0;   // observed cross-thread crash
         }
         // Send — happy path, loop back.
-        auto r2 = std::move(r).value().send(
+        auto r2 = std::move(*r).send(
             i, [](Channel& c, int v) noexcept { c.wire->push_back(v); });
         if (!r2) {
             if (r2.error().resource.session_id != 99) return 2;
@@ -205,7 +289,7 @@ int run_cross_thread_crash() {
         }
         // r2 is CrashWatchedHandle at the Loop-resolved Select
         // again.  Re-bind watched for the next iteration.
-        watched = std::move(r2).value();
+        watched = std::move(*r2);
     }
 
     producer.join();
@@ -257,7 +341,7 @@ int run_multi_peer_independent() {
     static_assert(std::is_same_v<ErrorA::peer, ServerPeer>);
     static_assert(std::is_same_v<ErrorB::peer, OtherPeer>);
 
-    auto recovered_b = std::move(r_b).value().close();
+    auto recovered_b = std::move(*r_b).close();
     if (recovered_b.session_id != 2)               return 5;
     return 0;
 }
@@ -296,7 +380,7 @@ int run_worked_example_cntp_pattern() {
         if (retry == 0) flag.signal();
 
         // Recv reply.
-        auto r2 = std::move(r1).value().recv(
+        auto r2 = std::move(*r1).recv(
             [](Channel& c) noexcept -> int {
                 int x = c.wire->front();
                 c.wire->pop_front();
@@ -310,7 +394,7 @@ int run_worked_example_cntp_pattern() {
             continue;
         }
 
-        auto [received, h_end] = std::move(r2).value();
+        auto [received, h_end] = std::move(*r2);
         (void)std::move(h_end).close();
         resolved_result = received;
         break;
@@ -326,12 +410,13 @@ int run_worked_example_cntp_pattern() {
 int main() {
     if (int rc = run_happy_path();                rc != 0) return rc;
     if (int rc = run_crash_before_send();         rc != 0) return 100 + rc;
+    if (int rc = run_permissioned_crash_before_transferable_send(); rc != 0) return 150 + rc;
     if (int rc = run_crash_mid_protocol();        rc != 0) return 200 + rc;
     if (int rc = run_cross_thread_crash();        rc != 0) return 300 + rc;
     if (int rc = run_multi_peer_independent();    rc != 0) return 400 + rc;
     if (int rc = run_worked_example_cntp_pattern(); rc != 0) return 500 + rc;
 
-    std::puts("crash_transport: happy + crash-before + crash-mid + "
-              "cross-thread + multi-peer + CNTP-pattern OK");
+    std::puts("crash_transport: happy + crash-before + permissioned-crash + "
+              "crash-mid + cross-thread + multi-peer + CNTP-pattern OK");
     return 0;
 }
