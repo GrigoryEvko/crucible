@@ -231,8 +231,8 @@ template <typename RecipientTag, typename CarrierK>
 struct delegated_crash_propagation_impl<End, RecipientTag, CarrierK>
     : std::type_identity<Recovers<CarrierK>> {};
 
-template <typename RecipientTag, typename CarrierK>
-struct delegated_crash_propagation_impl<Stop, RecipientTag, CarrierK>
+template <CrashClass C, typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<Stop_g<C>, RecipientTag, CarrierK>
     : std::type_identity<IllFormed> {};
 
 template <typename RecipientTag, typename CarrierK>
@@ -520,14 +520,14 @@ struct compose<Delegate<T, K>, Q> {
     using type = Delegate<T, typename compose<K, Q>::type>;
 };
 
-template <typename K, typename Q>
-struct compose<Delegate<Stop, K>, Q> {
-    using type = Stop;
+template <CrashClass C, typename K, typename Q>
+struct compose<Delegate<Stop_g<C>, K>, Q> {
+    using type = Stop_g<C>;
 };
 
-template <typename K>
-struct compose<End, Delegate<Stop, K>> {
-    using type = Stop;
+template <CrashClass C, typename K>
+struct compose<End, Delegate<Stop_g<C>, K>> {
+    using type = Stop_g<C>;
 };
 
 template <typename T, typename K, typename Q>
@@ -545,8 +545,8 @@ struct compose<Accept<T, K>, Q> {
 // the handle operation itself is deleted below so callers cannot use a
 // Delegate<Stop, K> state to manufacture a live K continuation.
 
-template <typename K>
-struct is_subtype_sync<Delegate<Stop, K>, K> : std::true_type {};
+template <CrashClass C, typename K>
+struct is_subtype_sync<Delegate<Stop_g<C>, K>, K> : std::true_type {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Well-formedness ────────────────────────────────────────────────
@@ -971,6 +971,10 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     compose_t<Delegate<Stop, Send<int, End>>, Recv<Ack, End>>,
     Stop>);
+static_assert(std::is_same_v<
+    compose_t<Delegate<Stop_g<CrashClass::Throw>, Send<int, End>>,
+              Recv<Ack, End>>,
+    Stop_g<CrashClass::Throw>>);
 
 // Right-side Delegate<Stop, K> is sequenced as Q;;Stop by the End
 // substitution rule.
@@ -978,6 +982,14 @@ using ComposeThenDelegateStop =
     compose_t<Send<int, End>, Delegate<Stop, Recv<Ack, End>>>;
 static_assert(std::is_same_v<ComposeThenDelegateStop, Send<int, Stop>>);
 static_assert(is_well_formed_v<ComposeThenDelegateStop>);
+
+using ComposeThenDelegateStopG =
+    compose_t<Send<int, End>,
+              Delegate<Stop_g<CrashClass::ErrorReturn>, Recv<Ack, End>>>;
+static_assert(std::is_same_v<
+    ComposeThenDelegateStopG,
+    Send<int, Stop_g<CrashClass::ErrorReturn>>>);
+static_assert(is_well_formed_v<ComposeThenDelegateStopG>);
 
 // Stop on either side stays Stop.
 static_assert(std::is_same_v<

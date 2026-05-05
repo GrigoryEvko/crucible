@@ -174,8 +174,8 @@ struct handle_is_at<SessionHandle<End, Resource, LoopCtx>, AtEnd>
 
 // ─── AtStop ───────────────────────────────────────────────────────
 
-template <typename Resource, typename LoopCtx>
-struct handle_is_at<SessionHandle<Stop, Resource, LoopCtx>, AtStop>
+template <CrashClass C, typename Resource, typename LoopCtx>
+struct handle_is_at<SessionHandle<Stop_g<C>, Resource, LoopCtx>, AtStop>
     : std::true_type {};
 
 // ─── AtTerminal — End OR Stop ──────────────────────────────────────
@@ -188,8 +188,8 @@ template <typename Resource, typename LoopCtx>
 struct handle_is_at<SessionHandle<End,  Resource, LoopCtx>, AtTerminal>
     : std::true_type {};
 
-template <typename Resource, typename LoopCtx>
-struct handle_is_at<SessionHandle<Stop, Resource, LoopCtx>, AtTerminal>
+template <CrashClass C, typename Resource, typename LoopCtx>
+struct handle_is_at<SessionHandle<Stop_g<C>, Resource, LoopCtx>, AtTerminal>
     : std::true_type {};
 
 // ─── AtCheckpointed ───────────────────────────────────────────────
@@ -352,8 +352,12 @@ static_assert( handle_is_at_v<SessionHandle<Select<Send<Msg, End>>, FakeRes>, At
 static_assert( handle_is_at_v<SessionHandle<Offer<Recv<Msg, End>>,  FakeRes>, AtOffer>);
 static_assert( handle_is_at_v<SessionHandle<End,  FakeRes>,                   AtEnd>);
 static_assert( handle_is_at_v<SessionHandle<Stop, FakeRes>,                   AtStop>);
+static_assert( handle_is_at_v<
+    SessionHandle<Stop_g<CrashClass::NoThrow>, FakeRes>, AtStop>);
 static_assert( handle_is_at_v<SessionHandle<End,  FakeRes>,                   AtTerminal>);
 static_assert( handle_is_at_v<SessionHandle<Stop, FakeRes>,                   AtTerminal>);
+static_assert( handle_is_at_v<
+    SessionHandle<Stop_g<CrashClass::NoThrow>, FakeRes>, AtTerminal>);
 static_assert( handle_is_at_v<SessionHandle<Delegate<Send<Msg, End>, End>, FakeRes>,
                               AtDelegate>);
 static_assert( handle_is_at_v<SessionHandle<Accept<Send<Msg, End>,   End>, FakeRes>,

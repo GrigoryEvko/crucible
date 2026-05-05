@@ -382,10 +382,10 @@ public:
 // is_terminal_state<Stop> is specialised true.  Same close()
 // semantics as End: PS must be empty.
 
-template <typename PS, typename Resource, typename LoopCtx>
-class [[nodiscard]] PermissionedSessionHandle<Stop, PS, Resource, LoopCtx>
-    : public SessionHandleBase<Stop,
-                               PermissionedSessionHandle<Stop, PS,
+template <CrashClass C, typename PS, typename Resource, typename LoopCtx>
+class [[nodiscard]] PermissionedSessionHandle<Stop_g<C>, PS, Resource, LoopCtx>
+    : public SessionHandleBase<Stop_g<C>,
+                               PermissionedSessionHandle<Stop_g<C>, PS,
                                                          Resource, LoopCtx>>
 {
     Resource                           resource_;
@@ -398,17 +398,18 @@ class [[nodiscard]] PermissionedSessionHandle<Stop, PS, Resource, LoopCtx>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
 public:
-    using protocol      = Stop;
+    using protocol      = Stop_g<C>;
     using perm_set      = PS;
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
+    static constexpr CrashClass crash_class = C;
 
     constexpr explicit PermissionedSessionHandle(
         Resource r,
         std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Stop,
-                            PermissionedSessionHandle<Stop, PS, Resource, LoopCtx>>{loc}
+        : SessionHandleBase<Stop_g<C>,
+                            PermissionedSessionHandle<Stop_g<C>, PS, Resource, LoopCtx>>{loc}
         , resource_{std::forward<Resource>(r)} {}
 
     constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;

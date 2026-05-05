@@ -5,13 +5,14 @@
 //
 // Adds first-class CRASH SEMANTICS to the session-type framework:
 //
-//   * Stop                   — terminal combinator representing a
-//                              crashed endpoint.  Bottom of the
-//                              subtype order: Stop ⩽ T for any T.
-//                              Self-dual (dual(Stop) = Stop).
-//                              Preserved under compose
-//                              (compose<Stop, Q> = Stop — a crashed
-//                              endpoint does not continue).
+//   * Stop_g<CrashClass C>   — terminal combinator representing a
+//                              crashed endpoint with a type-visible
+//                              CrashLattice grade.  Stop is the
+//                              backward-compatible alias
+//                              Stop_g<CrashClass::Abort>.  Each
+//                              Stop_g<C> remains terminal and
+//                              self-dual; Stop_g<C1> <= Stop_g<C2>
+//                              follows CrashLattice::leq(C1, C2).
 //
 //   * Crash<PeerTag>         — payload marker used in Offer<> branches
 //                              to signal "peer PeerTag has crashed".
@@ -36,14 +37,15 @@
 // Framework integration:
 //
 //   * is_stop_v<P>                            shape trait
-//   * dual_of<Stop>           = Stop          self-dual
-//   * compose<Stop, Q>        = Stop          bottom preserved
+//   * dual_of<Stop_g<C>>      = Stop_g<C>     self-dual
+//   * compose<Stop_g<C>, Q>   = Stop_g<C>     bottom preserved
 //     compose × Delegate<Stop, K> rules ship in SessionDelegate.h
 //     via the GAPS-048 specialisations: delegate-of-Stop collapses
 //     to Stop rather than entering K.
-//   * is_well_formed<Stop, C> = true          any LoopCtx
-//   * is_subtype_sync<Stop, U> = true         bottom of subtype order
-//   * SessionHandle<Stop, Res, LoopCtx>       terminal handle with
+//   * is_well_formed<Stop_g<C>, L> = true     any LoopCtx
+//   * is_subtype_sync<Stop_g<C>, U> = true    bottom for non-Stop U
+//   * is_subtype_sync<Stop_g<C1>, Stop_g<C2>> = CrashLattice order
+//   * SessionHandle<Stop_g<C>, Res, LoopCtx>  terminal handle with
 //                                              close() method
 //
 // ─── BSYZ22 / BHYZ23 semantics ─────────────────────────────────────
@@ -110,6 +112,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
+#include <crucible/algebra/lattices/CrashLattice.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionSubtype.h>
 
@@ -119,8 +122,11 @@
 
 namespace crucible::safety::proto {
 
+using ::crucible::algebra::lattices::CrashClass;
+using ::crucible::algebra::lattices::CrashLattice;
+
 // ═════════════════════════════════════════════════════════════════════
-// ── Stop: terminal crashed-endpoint combinator ─────────────────────
+// ── Stop_g: terminal crashed-endpoint combinator ───────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
 // A participant whose local type is Stop has crashed — no further
@@ -128,15 +134,20 @@ namespace crucible::safety::proto {
 // queue's transition to UnavailableQueue or via an Offer's Crash<>
 // branch firing.
 
-struct Stop {};
+template <CrashClass C>
+struct Stop_g {
+    static constexpr CrashClass crash_class = C;
+};
+
+using Stop = Stop_g<CrashClass::Abort>;
 
 // ─── Shape trait ──────────────────────────────────────────────────
 
 template <typename P>
 struct is_stop : std::false_type {};
 
-template <>
-struct is_stop<Stop> : std::true_type {};
+template <CrashClass C>
+struct is_stop<Stop_g<C>> : std::true_type {};
 
 template <typename P>
 inline constexpr bool is_stop_v = is_stop<P>::value;
@@ -151,8 +162,8 @@ inline constexpr bool is_stop_v = is_stop<P>::value;
 // destruction at state Proto is safe (no abort) or is abandonment
 // (fire in debug).
 
-template <>
-struct is_terminal_state<Stop> : std::true_type {};
+template <CrashClass C>
+struct is_terminal_state<Stop_g<C>> : std::true_type {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── dual_of<Stop> = Stop (self-dual) ───────────────────────────────
@@ -161,8 +172,8 @@ struct is_terminal_state<Stop> : std::true_type {};
 // Both ends of a channel see Stop when the channel has crashed; the
 // dual of a crashed participant is itself crashed.
 
-template <>
-struct dual_of<Stop> { using type = Stop; };
+template <CrashClass C>
+struct dual_of<Stop_g<C>> { using type = Stop_g<C>; };
 
 // ═════════════════════════════════════════════════════════════════════
 // ── compose<Stop, Q> = Stop (bottom preserved) ─────────────────────
@@ -172,15 +183,15 @@ struct dual_of<Stop> { using type = Stop; };
 // endpoint does not continue executing.  Distinct from compose<End, Q>
 // = Q (normal termination DOES advance into Q).
 
-template <typename Q>
-struct compose<Stop, Q> { using type = Stop; };
+template <CrashClass C, typename Q>
+struct compose<Stop_g<C>, Q> { using type = Stop_g<C>; };
 
 // ═════════════════════════════════════════════════════════════════════
 // ── is_well_formed<Stop, LoopCtx> = true ───────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
-template <typename LoopCtx>
-struct is_well_formed<Stop, LoopCtx> : std::true_type {};
+template <CrashClass C, typename LoopCtx>
+struct is_well_formed<Stop_g<C>, LoopCtx> : std::true_type {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── is_subtype_sync<Stop, U> = true (Stop is the bottom) ───────────
@@ -204,8 +215,12 @@ struct is_well_formed<Stop, LoopCtx> : std::true_type {};
 //     is the bottom, not the top.  (Reflexive Stop ⩽ Stop is true
 //     via this same spec with U=Stop.)
 
-template <typename U>
-struct is_subtype_sync<Stop, U> : std::true_type {};
+template <CrashClass C, typename U>
+struct is_subtype_sync<Stop_g<C>, U> : std::true_type {};
+
+template <CrashClass C1, CrashClass C2>
+struct is_subtype_sync<Stop_g<C1>, Stop_g<C2>>
+    : std::bool_constant<CrashLattice::leq(C1, C2)> {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── SessionHandle<Stop, Resource, LoopCtx> — terminal handle ───────
@@ -221,10 +236,10 @@ struct is_subtype_sync<Stop, U> : std::true_type {};
 // user who wants to restart the channel establishes a new session
 // (mint_channel) rather than advancing this handle.
 
-template <typename Resource, typename LoopCtx>
-class [[nodiscard]] SessionHandle<Stop, Resource, LoopCtx>
-    : public SessionHandleBase<Stop,
-                               SessionHandle<Stop, Resource, LoopCtx>>
+template <CrashClass C, typename Resource, typename LoopCtx>
+class [[nodiscard]] SessionHandle<Stop_g<C>, Resource, LoopCtx>
+    : public SessionHandleBase<Stop_g<C>,
+                               SessionHandle<Stop_g<C>, Resource, LoopCtx>>
 {
     Resource resource_;
 
@@ -238,16 +253,17 @@ class [[nodiscard]] SessionHandle<Stop, Resource, LoopCtx>
     friend constexpr auto detail::step_to_next(Res) noexcept;
 
 public:
-    using protocol      = Stop;
+    using protocol      = Stop_g<C>;
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
+    static constexpr CrashClass crash_class = C;
 
     constexpr explicit SessionHandle(
         Resource r,
         std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
-        : SessionHandleBase<Stop,
-                            SessionHandle<Stop, Resource, LoopCtx>>{loc}
+        : SessionHandleBase<Stop_g<C>,
+                            SessionHandle<Stop_g<C>, Resource, LoopCtx>>{loc}
         , resource_{std::move(r)} {}
 
     constexpr SessionHandle(SessionHandle&&) noexcept            = default;
@@ -490,8 +506,8 @@ struct all_offers_have_crash_branch;
 template <typename PeerTag>
 struct all_offers_have_crash_branch<End, PeerTag> : std::true_type {};
 
-template <typename PeerTag>
-struct all_offers_have_crash_branch<Stop, PeerTag> : std::true_type {};
+template <CrashClass C, typename PeerTag>
+struct all_offers_have_crash_branch<Stop_g<C>, PeerTag> : std::true_type {};
 
 template <typename PeerTag>
 struct all_offers_have_crash_branch<Continue, PeerTag> : std::true_type {};
@@ -588,12 +604,17 @@ struct Ack  {};
 // ─── Stop shape traits ────────────────────────────────────────────
 
 static_assert( is_stop_v<Stop>);
+static_assert( is_stop_v<Stop_g<CrashClass::Throw>>);
+static_assert(Stop::crash_class == CrashClass::Abort);
+static_assert(Stop_g<CrashClass::NoThrow>::crash_class
+              == CrashClass::NoThrow);
 static_assert(!is_stop_v<End>);
 static_assert(!is_stop_v<Send<int, End>>);
 static_assert(!is_stop_v<Loop<Send<int, Continue>>>);
 
 static_assert( is_terminal_state_v<End>);
 static_assert( is_terminal_state_v<Stop>);
+static_assert( is_terminal_state_v<Stop_g<CrashClass::NoThrow>>);
 static_assert(!is_terminal_state_v<Send<int, End>>);
 static_assert(!is_terminal_state_v<Loop<Send<int, Continue>>>);
 static_assert(!is_terminal_state_v<Continue>);
@@ -606,6 +627,9 @@ static_assert(is_head_v<End>);
 // ─── dual(Stop) = Stop (self-dual) ────────────────────────────────
 
 static_assert(std::is_same_v<dual_of_t<Stop>, Stop>);
+static_assert(std::is_same_v<
+    dual_of_t<Stop_g<CrashClass::ErrorReturn>>,
+    Stop_g<CrashClass::ErrorReturn>>);
 // Involution under dual.
 static_assert(std::is_same_v<dual_of_t<dual_of_t<Stop>>, Stop>);
 
@@ -616,6 +640,9 @@ static_assert(std::is_same_v<compose_t<Stop, Send<int, End>>, Stop>);
 static_assert(std::is_same_v<
     compose_t<Stop, Loop<Send<int, Continue>>>,
     Stop>);
+static_assert(std::is_same_v<
+    compose_t<Stop_g<CrashClass::Throw>, Send<int, End>>,
+    Stop_g<CrashClass::Throw>>);
 
 // Compose does NOT reach through Send's continuation when that
 // continuation is End — End is replaced, not preserved.  But when the
@@ -632,6 +659,7 @@ static_assert(std::is_same_v<
 // ─── Well-formedness ──────────────────────────────────────────────
 
 static_assert(is_well_formed_v<Stop>);
+static_assert(is_well_formed_v<Stop_g<CrashClass::NoThrow>>);
 // Stop inside a Loop is well-formed (terminal branch of a choice).
 static_assert(is_well_formed_v<Loop<Select<Send<int, Continue>, Stop>>>);
 
@@ -644,6 +672,17 @@ static_assert(is_subtype_sync_v<Stop, Recv<int, End>>);
 static_assert(is_subtype_sync_v<Stop, Select<End>>);
 static_assert(is_subtype_sync_v<Stop, Offer<End, End>>);
 static_assert(is_subtype_sync_v<Stop, Loop<Send<int, Continue>>>);
+
+// Stop_g participates in CrashLattice order when compared to another
+// Stop_g.  Bare Stop is the Abort-grade alias.
+static_assert(is_subtype_sync_v<
+    Stop_g<CrashClass::Abort>, Stop_g<CrashClass::NoThrow>>);
+static_assert(is_subtype_sync_v<
+    Stop_g<CrashClass::Throw>, Stop_g<CrashClass::ErrorReturn>>);
+static_assert(!is_subtype_sync_v<
+    Stop_g<CrashClass::NoThrow>, Stop_g<CrashClass::Abort>>);
+static_assert(!is_subtype_sync_v<
+    Stop_g<CrashClass::ErrorReturn>, Stop_g<CrashClass::Throw>>);
 
 // Reverse direction: T ⩽ Stop is FALSE for T ≠ Stop.
 static_assert(!is_subtype_sync_v<End, Stop>);
