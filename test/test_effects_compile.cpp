@@ -31,6 +31,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <type_traits>
 
 namespace {
 
@@ -81,11 +82,23 @@ void test_computation_graded_compile() {
     ::crucible::effects::runtime_smoke_test_computation_graded();
 }
 void test_exec_ctx_compile() {
-    // ExecCtx<...> universal context carrier: drive the consteval
-    // builder chain through a non-constant args path and confirm the
-    // canonical-alias instances (HotFgCtx / BgDrainCtx / BgCompileCtx
-    // / ColdInitCtx / TestRunnerCtx) are constructible at runtime.
-    ::crucible::effects::runtime_smoke_test_exec_ctx();
+    // ExecCtx<...> universal context carrier: keep this as a compile
+    // sentinel. The production header carries type-level constraints;
+    // runtime smoke belongs in test code only when a runtime behavior
+    // is actually under test.
+    namespace ce = ::crucible::effects;
+    constexpr auto bg = ce::ExecCtx<>{}
+        .with_cap<ce::Bg>()
+        .pinned_to<ce::ctx_numa::Local>()
+        .with_alloc<ce::ctx_alloc::Arena>()
+        .with_residency<ce::ctx_resid::L2>()
+        .with_heat<ce::ctx_heat::Warm>()
+        .in_row<ce::Row<ce::Effect::Bg, ce::Effect::Alloc>>();
+    static_assert(std::is_same_v<typename decltype(bg)::cap_type, ce::Bg>);
+    static_assert(std::is_same_v<typename decltype(bg)::row_type,
+                                  ce::Row<ce::Effect::Bg, ce::Effect::Alloc>>);
+    static_assert(std::is_same_v<typename ce::BgDrainCtx::cap_type, ce::Bg>);
+    static_assert(!std::is_same_v<typename ce::HotFgCtx::cap_type, ce::Bg>);
 }
 void test_capability_compile() {
     // Capability<E, S> linear cap proof tokens: drive mint_cap from

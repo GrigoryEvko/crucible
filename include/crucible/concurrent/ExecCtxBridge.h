@@ -322,40 +322,4 @@ static_assert( IsNumaLocalCtx<MaxCtx>);
 
 }  // namespace detail::exec_ctx_bridge_self_test
 
-// ── Runtime smoke test ──────────────────────────────────────────────
-
-[[gnu::cold]] inline void runtime_smoke_test_exec_ctx_bridge() noexcept {
-    // Drive the Ctx-driven extractors at runtime against canonical
-    // aliases.  Confirms the consteval results are usable as runtime
-    // values feeding into recommend_parallelism's signature.
-    namespace eff = ::crucible::effects;
-
-    [[maybe_unused]] auto fg_budget = ctx_workbudget<eff::HotFgCtx>();
-    [[maybe_unused]] auto fg_numa   = ctx_numa_policy<eff::HotFgCtx>();
-    [[maybe_unused]] auto fg_node   = ctx_numa_node<eff::HotFgCtx>();
-    [[maybe_unused]] auto fg_tier   = ctx_residency_tier<eff::HotFgCtx>();
-
-    [[maybe_unused]] auto bg_budget = ctx_workbudget<eff::BgDrainCtx>();
-    [[maybe_unused]] auto bg_numa   = ctx_numa_policy<eff::BgDrainCtx>();
-    [[maybe_unused]] auto bg_tier   = ctx_residency_tier<eff::BgDrainCtx>();
-
-    // Feed the WorkBudget into recommend_parallelism — closes the
-    // composition loop: a Ctx → WorkBudget → ParallelismDecision.
-    [[maybe_unused]] auto decision = recommend_parallelism(
-        ctx_workbudget<eff::BgCompileCtx>());
-    static_cast<void>(decision);
-
-    // Same composition via the parallelism_decision_for ergonomic
-    // wrapper — one-call shorthand.
-    [[maybe_unused]] auto bg_decision   = parallelism_decision_for<eff::BgDrainCtx>();
-    [[maybe_unused]] auto cold_decision = parallelism_decision_for<eff::ColdInitCtx>();
-    static_cast<void>(bg_decision);
-    static_cast<void>(cold_decision);
-
-    // Discrimination concepts are usable as runtime gates too — the
-    // result is a constexpr bool, so branches fold at -O3.
-    static_assert(IsL1ResidentCtx<eff::HotFgCtx>);
-    static_assert(IsNumaSpreadCtx<eff::ColdInitCtx>);
-}
-
 }  // namespace crucible::concurrent

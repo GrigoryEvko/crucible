@@ -649,32 +649,4 @@ static_assert(recommend_topology_for_workload(4, 4, k16GiB)  == ChannelTopology:
 
 }  // namespace detail::substrate_self_test
 
-// ── Runtime smoke test ──────────────────────────────────────────────
-
-[[gnu::cold]] inline void runtime_smoke_test_substrate() noexcept {
-    // Type-level lookups don't need actual instances; the smoke test
-    // confirms the metafunction resolves to a constructible type for
-    // each topology and the extractors agree.
-    struct UserTag {};
-
-    using SpscT = Substrate_t<ChannelTopology::OneToOne, int, 64, UserTag>;
-    using MpscT = Substrate_t<ChannelTopology::ManyToOne, int, 64, UserTag>;
-    using SnapT = Substrate_t<ChannelTopology::OneToMany_Latest, int, 0, UserTag>;
-    using MpmcT = Substrate_t<ChannelTopology::ManyToMany, int, 64, UserTag>;
-    using DequeT = Substrate_t<ChannelTopology::WorkStealing, int, 64, UserTag>;
-
-    // Type-level coverage at runtime context: ensure every
-    // metafunction resolution is callable.
-    static_assert(substrate_topology_v<SpscT>  == ChannelTopology::OneToOne);
-    static_assert(substrate_topology_v<MpscT>  == ChannelTopology::ManyToOne);
-    static_assert(substrate_topology_v<SnapT>  == ChannelTopology::OneToMany_Latest);
-    static_assert(substrate_topology_v<MpmcT>  == ChannelTopology::ManyToMany);
-    static_assert(substrate_topology_v<DequeT> == ChannelTopology::WorkStealing);
-
-    // Concept-based capability checks.
-    static_assert( IsSubstrate<SpscT>);
-    static_assert( IsOneToOneSubstrate<SpscT>);
-    static_assert(!IsManyToManySubstrate<SpscT>);
-}
-
 }  // namespace crucible::concurrent

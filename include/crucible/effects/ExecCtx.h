@@ -828,13 +828,8 @@ template <class NewCtx, IsExecCtx OldCtx>
 
 // ── Self-test block ─────────────────────────────────────────────────
 //
-// Per the algebra/effects runtime-smoke-test discipline (memory rule
-// `feedback_algebra_runtime_smoke_test_discipline`): pure
-// static_assert blocks mask consteval/SFINAE/inline-body bugs.  Each
-// header that ships consteval surface MUST also expose an
-// `inline void runtime_smoke_test()` callable from a sentinel TU
-// (test/test_effects_compile.cpp) to force every accessor through
-// the project's full -Werror matrix.
+// Compile-time witnesses for the context algebra. Runtime behavior
+// checks belong in dedicated tests, not in this production header.
 namespace detail::exec_ctx_self_test {
 
 // ── EBO collapse: every canonical ctx is one byte ───────────────────
@@ -1241,68 +1236,5 @@ constexpr auto _rebuilt = rebuild_ctx_to<BgDrainCtx>(HotFgCtx{});
 static_assert(std::is_same_v<decltype(_rebuilt), const BgDrainCtx>);
 
 }  // namespace detail::exec_ctx_self_test
-
-// ── Runtime smoke test (per the algebra discipline) ─────────────────
-//
-// Drives the consteval builder chain inside a runtime function with
-// non-constant operations, confirming the generated code is callable
-// and the resulting types are usable from runtime contexts.  Named
-// `runtime_smoke_test_exec_ctx` per the effects/* convention used by
-// FxAliases.h / EffectRowLattice.h / OsUniverse.h /
-// ComputationGraded.h, where each header exposes a uniquely-named
-// runtime-smoke entry at the `crucible::effects` namespace level so
-// the test/test_effects_compile.cpp sentinel can call them all by
-// distinct names.
-
-[[gnu::cold]] inline void runtime_smoke_test_exec_ctx() noexcept {
-    // ── Default ctx ─────────────────────────────────────────────────
-    HotFgCtx fg;
-    static_cast<void>(fg);
-    static_assert(sizeof(fg) == 1);
-
-    // ── Builder chain at runtime, against a non-constant arg ────────
-    //
-    // The builder methods are consteval, but their RESULT can be held
-    // in a runtime variable.  The chain composes through each link.
-    // Residency precedes heat by convention — the cross-axis
-    // heat_resid_coherent_v invariant fires on intermediate types
-    // when heat advances ahead of residency, so the canonical builder
-    // order is `with_residency<>()` then `with_heat<>()`.
-    constexpr auto build_bg_drain = []() consteval {
-        return ExecCtx<>{}
-            .with_cap<Bg>()
-            .pinned_to<ctx_numa::Local>()
-            .with_alloc<ctx_alloc::Arena>()
-            .with_residency<ctx_resid::L2>()
-            .with_heat<ctx_heat::Warm>()
-            .in_row<Row<Effect::Bg, Effect::Alloc>>();
-    };
-    auto bg = build_bg_drain();
-    static_cast<void>(bg);
-    static_assert(std::is_same_v<typename decltype(bg)::cap_type, Bg>);
-    static_assert(std::is_same_v<typename decltype(bg)::row_type,
-                                  Row<Effect::Bg, Effect::Alloc>>);
-
-    // ── Canonical aliases construct cleanly at runtime ──────────────
-    BgDrainCtx     bg_drain;
-    BgCompileCtx   bg_compile;
-    ColdInitCtx    init_ctx;
-    TestRunnerCtx  test_ctx;
-    static_cast<void>(bg_drain);
-    static_cast<void>(bg_compile);
-    static_cast<void>(init_ctx);
-    static_cast<void>(test_ctx);
-
-    // ── Concept-based capability check ──────────────────────────────
-    //
-    // A consumer that wants to assert "this Ctx exposes the Bg cap"
-    // does so by querying cap_type at the type level.  We exercise
-    // the discrimination here:
-    static_assert(std::is_same_v<typename BgDrainCtx::cap_type, Bg>);
-    static_assert(!std::is_same_v<typename HotFgCtx::cap_type,  Bg>);
-
-    // ── Diagnostic emitter ──────────────────────────────────────────
-    [[maybe_unused]] auto name = ExecCtx<>::kind_name();
-}
 
 }  // namespace crucible::effects

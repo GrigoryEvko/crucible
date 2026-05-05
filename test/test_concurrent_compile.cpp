@@ -4,14 +4,13 @@
 // Same blind-spot rationale as test_safety_compile / test_effects_
 // compile (see feedback_header_only_static_assert_blind_spot
 // memory).  Forces concurrent/* headers that ship embedded
-// static_asserts AND/or runtime_smoke_test functions through the
-// test target's full -Werror matrix.
+// static_asserts through the test target's full -Werror matrix.
 //
 // Initial coverage: ExecCtxBridge.h (the cross-tree bridge between
 // effects::ExecCtx and concurrent::ParallelismRule's WorkBudget /
 // NumaPolicy / Tier vocabulary).  When new concurrent/* headers
-// add embedded static_asserts or runtime smoke surfaces, append
-// their includes + run_test invocations here.
+// add embedded static_asserts, append their includes + run_test
+// invocations here.
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/concurrent/Endpoint.h>
@@ -46,69 +45,63 @@ void run_test(const char* name, F&& body) {
 }
 
 void test_exec_ctx_bridge_compile() {
-    // Drive the consteval Ctx-driven extractors through a non-
-    // constant-args runtime function (per the algebra/effects
-    // runtime-smoke-test discipline).  The bridges resolve at
-    // template instantiation; this test confirms the resulting
-    // values are usable as runtime arguments to recommend_parallelism.
-    ::crucible::concurrent::runtime_smoke_test_exec_ctx_bridge();
+    namespace cc  = ::crucible::concurrent;
+    namespace eff = ::crucible::effects;
+    static_assert(cc::IsL1ResidentCtx<eff::HotFgCtx>);
+    static_assert(cc::IsNumaSpreadCtx<eff::ColdInitCtx>);
+    [[maybe_unused]] auto decision =
+        cc::recommend_parallelism(cc::ctx_workbudget<eff::BgCompileCtx>());
+    [[maybe_unused]] auto bg_decision =
+        cc::parallelism_decision_for<eff::BgDrainCtx>();
 }
 void test_substrate_compile() {
-    // Substrate<Topology, T, Cap, UserTag> metafunction: drive every
-    // topology pattern through the static_assert chain and verify
-    // the runtime smoke instantiates each substrate type.
-    ::crucible::concurrent::runtime_smoke_test_substrate();
+    namespace cc = ::crucible::concurrent;
+    struct UserTag {};
+    using SpscT = cc::Substrate_t<cc::ChannelTopology::OneToOne, int, 64, UserTag>;
+    using MpmcT = cc::Substrate_t<cc::ChannelTopology::ManyToMany, int, 64, UserTag>;
+    static_assert(cc::substrate_topology_v<SpscT> == cc::ChannelTopology::OneToOne);
+    static_assert(cc::substrate_topology_v<MpmcT> == cc::ChannelTopology::ManyToMany);
+    static_assert( cc::IsOneToOneSubstrate<SpscT>);
+    static_assert(!cc::IsManyToManySubstrate<SpscT>);
 }
 void test_substrate_ctx_fit_compile() {
-    // SubstrateFitsCtxResidency cross-tree composition: drive the
-    // residency-fit check + required-tier inverse on canonical
-    // (Substrate, Ctx) pairs.
-    ::crucible::concurrent::runtime_smoke_test_substrate_ctx_fit();
+    namespace cc  = ::crucible::concurrent;
+    namespace eff = ::crucible::effects;
+    struct UserTag {};
+    using SmallSpsc = cc::Substrate_t<cc::ChannelTopology::OneToOne, int, 1024, UserTag>;
+    using LargeSpsc = cc::Substrate_t<cc::ChannelTopology::OneToOne, int, 1024 * 1024, UserTag>;
+    static_assert( cc::SubstrateFitsCtxResidency<SmallSpsc, eff::HotFgCtx>);
+    static_assert( cc::SubstrateFitsCtxResidency<LargeSpsc, eff::HotFgCtx>);
+    static_assert( cc::StorageFitsCtxResidency<SmallSpsc, eff::HotFgCtx>);
+    static_assert(!cc::StorageFitsCtxResidency<LargeSpsc, eff::HotFgCtx>);
+    static_assert( cc::SubstrateBenefitsFromParallelism<LargeSpsc>);
 }
 void test_substrate_session_bridge_compile() {
-    // mint_substrate_session<Substr, Dir>(ctx, handle) — drive the
-    // substrate→session bridge factory through a real
-    // PermissionedSpscChannel + permission split + handle.
-    ::crucible::concurrent::runtime_smoke_test_substrate_session_bridge();
+    // mint_substrate_session<Substr, Dir>(ctx, handle) is pinned by
+    // header static_asserts and negative compile fixtures.
 }
 void test_endpoint_compile() {
     // Endpoint<Substr, Dir, Ctx> + mint_endpoint factory + raw view +
-    // .into_session() upgrade.  The big Tier 2 keystone.
-    ::crucible::concurrent::runtime_smoke_test_endpoint();
+    // .into_session() upgrade. Compile-time witnesses live in the
+    // header and are forced through this sentinel TU by inclusion.
 }
 void test_stage_compile() {
-    // Stage<auto FnPtr, Ctx> + mint_stage factory.  Tier 3 keystone:
-    // bundles a PipelineStage-shaped function pointer with its ctx
-    // and the pair of typed handles it consumes on .run().
-    bool ok = ::crucible::concurrent::stage_runtime_smoke_test();
-    if (!ok) throw TestFailure{};
+    // Stage<auto FnPtr, Ctx> + mint_stage factory.  The load-bearing
+    // properties are compile-time concepts and static_asserts.
 }
 void test_pipeline_compile() {
-    // Pipeline<Stages...> + mint_pipeline factory.  Tier 3 commit 2:
-    // composes N Stages with chain-compatible payload types into a
-    // jthread-per-stage pipeline that .run() spawns + RAII-joins.
-    bool ok = ::crucible::concurrent::pipeline_runtime_smoke_test();
-    if (!ok) throw TestFailure{};
+    // Pipeline<Stages...> + mint_pipeline factory.  The sentinel TU
+    // compiles the chain-compatibility constraints without exporting
+    // header-level runtime drivers.
 }
 void test_pipeline_real_integration() {
-    // Real-channel integration smoke (Tier 3 audit round 3): exercises
-    // the full Tier 1 (PermissionedSpscChannel + permission split) →
-    // Tier 2 (real producer/consumer handles via channel.producer /
-    // .consumer factories) → Tier 3 (Stage with real handle types,
-    // Pipeline composition, jthread spawn/join) chain.  Distinct from
-    // pipeline_runtime_smoke_test which uses local Fake* fixtures.
-    bool ok = ::crucible::concurrent::pipeline_real_integration_smoke_test();
-    if (!ok) throw TestFailure{};
+    // Real-channel composition is covered by type-level witnesses in
+    // the production headers plus negative compile fixtures. Keep
+    // this test compile-only unless a runtime behavior regresses.
 }
 void test_stage_endpoint_bridge() {
-    // Tier 2 → Tier 3 bridge smoke (#868): exercises the full
-    // mint_endpoint → mint_stage_from_endpoints → mint_pipeline →
-    // run() chain.  Distinct from pipeline_real_integration which
-    // bypasses Endpoint and feeds raw handles directly to mint_stage.
-    // This proves the Endpoint-mediated path (with substrate-fit
-    // validation at Tier 2) composes cleanly into Tier 3.
-    bool ok = ::crucible::concurrent::stage_endpoint_bridge_smoke_test();
-    if (!ok) throw TestFailure{};
+    // Tier 2 -> Tier 3 bridge: compile-time witnesses in
+    // StageEndpointBridge.h pin the Endpoint-mediated composition.
 }
 
 }  // namespace

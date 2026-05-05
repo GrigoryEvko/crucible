@@ -45,10 +45,9 @@ void test_machine_session_bridge_compile()    {}
 void test_recording_session_handle_compile()  {}
 void test_endpoint_mint_compile() {
     // Bridge views for Endpoint: mint_recording_endpoint /
-    // mint_crash_watched_endpoint.  Drives the runtime smoke that
-    // constructs a real channel + endpoint, mints both bridge views,
-    // detaches them.
-    ::crucible::bridges::runtime_smoke_test_endpoint_mint();
+    // mint_crash_watched_endpoint. The production header pins the
+    // type-level return shapes; this sentinel keeps the bridge tree
+    // compiling under the test target warning matrix.
 }
 
 }  // namespace

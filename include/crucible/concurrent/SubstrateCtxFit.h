@@ -320,39 +320,4 @@ static_assert(substrate_hot_path_required_tier_v<BigCellSpsc>  == Tier::L2Reside
 
 }  // namespace detail::substrate_ctx_fit_self_test
 
-// ── Runtime smoke test ──────────────────────────────────────────────
-
-[[gnu::cold]] inline void runtime_smoke_test_substrate_ctx_fit() noexcept {
-    namespace eff = ::crucible::effects;
-    struct UserTag {};
-
-    using SmallSpsc = Substrate_t<ChannelTopology::OneToOne, int, 1024, UserTag>;
-    using LargeSpsc = Substrate_t<ChannelTopology::OneToOne, int, 1024 * 1024, UserTag>;
-
-    // POST-FIX: per-call WS gate accepts large-N SPSC on HotFgCtx
-    // because the producer/consumer hot path is L1d-resident
-    // regardless of total capacity.  This is the fix for #861.
-    static_assert( SubstrateFitsCtxResidency<SmallSpsc, eff::HotFgCtx>);
-    static_assert( SubstrateFitsCtxResidency<LargeSpsc, eff::HotFgCtx>);
-
-    // Storage gate still draws the original line: total-storage fit.
-    static_assert( StorageFitsCtxResidency<SmallSpsc, eff::HotFgCtx>);
-    static_assert(!StorageFitsCtxResidency<LargeSpsc, eff::HotFgCtx>);
-    static_assert( StorageFitsCtxResidency<LargeSpsc, eff::ColdInitCtx>);
-
-    // The cliff signal: 4 MB SPSC benefits from parallelization.
-    static_assert(!SubstrateBenefitsFromParallelism<SmallSpsc>);
-    static_assert( SubstrateBenefitsFromParallelism<LargeSpsc>);
-
-    // Inverse mappings.
-    [[maybe_unused]] constexpr Tier small_t  = substrate_required_tier_v<SmallSpsc>;
-    [[maybe_unused]] constexpr Tier large_t  = substrate_required_tier_v<LargeSpsc>;
-    [[maybe_unused]] constexpr Tier hp_small = substrate_hot_path_required_tier_v<SmallSpsc>;
-    [[maybe_unused]] constexpr Tier hp_large = substrate_hot_path_required_tier_v<LargeSpsc>;
-    static_assert(small_t  == Tier::L1Resident);
-    static_assert(large_t  == Tier::L3Resident);
-    static_assert(hp_small == Tier::L1Resident);
-    static_assert(hp_large == Tier::L1Resident);
-}
-
 }  // namespace crucible::concurrent

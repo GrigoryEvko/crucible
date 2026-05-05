@@ -401,33 +401,4 @@ static_assert( std::is_move_assignable_v<S1>);
 
 }  // namespace detail::stage_self_test
 
-// ═════════════════════════════════════════════════════════════════════
-// ── Runtime smoke test ─────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Per the project's runtime-smoke-test discipline (auto-memory:
-// feedback_algebra_runtime_smoke_test_discipline) every header that
-// ships consteval / SFINAE machinery must include a runtime call site
-// to defeat compiler eliding bugs that pure static_assert can mask.
-
-inline bool stage_runtime_smoke_test() noexcept {
-    namespace dst = detail::stage_self_test;
-    namespace eff = ::crucible::effects;
-
-    eff::HotFgCtx ctx;
-    dst::FakeConsumer<int> in;
-    dst::FakeProducer<int> out;
-
-    auto stage = mint_stage<&dst::stage_pass_through>(
-        ctx, std::move(in), std::move(out));
-
-    // Move it once to exercise the move ctor.
-    auto stage_moved = std::move(stage);
-
-    // Run consumes it (the body is a no-op so this is safe).
-    std::move(stage_moved).run();
-
-    return true;
-}
-
 }  // namespace crucible::concurrent
