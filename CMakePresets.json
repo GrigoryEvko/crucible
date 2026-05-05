@@ -46,7 +46,7 @@
     {
       "name": "verify",
       "inherits": "default",
-      "displayName": "GCC 16 + Z3 formal verification (Axiom)",
+      "displayName": "GCC 16 + internal-SMT verify (deferred — interim: contracts-only)",
       "binaryDir": "${sourceDir}/build-verify",
       "cacheVariables": {
         "CRUCIBLE_VERIFY": "ON",

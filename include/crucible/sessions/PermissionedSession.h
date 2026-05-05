@@ -37,9 +37,11 @@
 //   D5 — Debug-mode abandonment-tracker enrichment lists the LEAKED
 //        permission tags before the base SessionHandleBase destructor
 //        prints its standard diagnostic and aborts.  Zero release cost.
-//   D6 — is_permission_balanced_v<Γ, InitialPerms> ships standalone
-//        in Phase 6 — NOT conjuncted with is_safe_v (unshipped, Task
-//        #346) per the Part IX honest-assessment discipline.
+//   D6 — is_permission_balanced_v<Γ, InitialPerms> SHIPPED standalone
+//        (GAPS-002) in `sessions/SessionContext.h` as the structural
+//        delta-fold over Γ's entries.  NOT conjuncted with is_safe_v
+//        (unshipped, Task #346 / wiring plan §11 bounded-LTS walk)
+//        per the Part IX honest-assessment discipline.
 //   D7 — Doc-update sweep is bundled with the implementation PR.
 //
 // ─── Why CRTP over composition ─────────────────────────────────────
@@ -111,8 +113,12 @@
 //   * Fused CrashWatchedPermissionedSessionHandle (single class with
 //     BOTH crash awareness AND PS evolution) — v2.  v1 composes via
 //     the `with_crash_check_or_detach` helper below (Phase 5 lite).
-//   * is_permission_balanced_v<Γ, InitialPerms> — Phase 6.  Standalone
-//     metafunction; not conjuncted with the unshipped is_safe_v.
+//   * is_permission_balanced_v<Γ, InitialPerms> — SHIPPED (GAPS-002)
+//     in `sessions/SessionContext.h`.  Structural delta-fold over Γ's
+//     entries: balanced iff per-Tag send/recv counts match AND every
+//     transferred tag is in InitialPerms.  Borrowed contributes
+//     nothing.  Not conjuncted with the unshipped is_safe_v (Task
+//     #346, bounded LTS walk per wiring plan §11).
 //   * Negative-compile harness — Phase 7 (shipped).
 //   * Bench — Phase 8 (shipped).
 //   * Doc-update sweep — Phase 9.

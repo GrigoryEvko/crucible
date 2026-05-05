@@ -16,7 +16,7 @@ Python describes. Crucible executes. The 492,000 lines of framework overhead bet
 | **Cipher** | Soul | Persistent state — DAG chain, weight snapshots, KernelCache (three-level: L1 IR002 vendor-neutral / L2 IR003\* per-vendor-family / L3 compiled bytes per-chip), RNG state, MAP-Elites archives, calibration data, recipe registry snapshots. Event-sourced. Survives death, reincarnates on new hardware. |
 | **Canopy** | Collective | Mesh of Keepers — distributed awareness, gossip, consensus, self-healing. No master node. |
 | **Vessel** | Interface | PyTorch — the 2,000+ ATen operators Crucible intercepts via the Dispatcher. |
-| **Meridian** | Map | Startup calibration. Measured hardware truth. Z3 joint 5D partition search (topology, parallelism, communication, placement) over calibrated `CollectiveBenchmarks` + `TopologyMatrix`. Re-solves on topology change. |
+| **Meridian** | Map | Startup calibration. Measured hardware truth. Discrete-search joint 5D partition optimization (topology, parallelism, communication, placement) over calibrated `CollectiveBenchmarks` + `TopologyMatrix`, driven by `mimic::fast_cost`. Re-solves on topology change or under Augur-detected congestion drift. No external SMT dependency — Crucible ships no Z3, no CVC, no proprietary solver; the partition optimizer is a bounded-depth branch-and-bound over the cost-model surface. |
 | **Augur** | Sight | Continuous prediction, monitoring, model intelligence. Digital twin. Loss landscape analysis. Convergence bounds. Scaling laws. Bottleneck diagnosis. Recommendations engine. |
 | **Crucible** | Whole | The organism. Everything together. |
 
@@ -70,7 +70,7 @@ Plus `WriteOnce<T>` / `WriteOnceNonNull<T*>` / `BoundedMonotonic<T, Max>` / `Ord
 
 **Soundness via measurement, not proof.** Numerical correctness lives in the cross-vendor CI matrix (MIMIC.md §41): every IR002 kernel × recipe × backend runs on real silicon, outputs are compared pairwise against a CPU scalar-FMA oracle, tolerance enforced per the recipe's declared `ReductionDeterminism` tier (UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT). A backend that violates tolerance fails the build.
 
-**Optional SMT tier (Z3, not F\*X).** The `verify` CMake preset runs Z3 over contract-annotated boundary code to discharge residual integer / Presburger obligations — the same scope TVM Analyzer uses (PR #1367): bounds, divisibility, modular arithmetic. Default timeout 5 ms per query; not on the hot path. Out of scope: kernel-optimality proofs, floating-point reasoning, cost-model decidability. Those are measurement problems.
+**No external SMT dependency.** Crucible ships no Z3, no CVC5, no third-party SMT solver. The `verify` CMake preset is reserved for an internal small-SMT solver (deferred — interim: contract-only enforcement at boundaries) that will discharge residual integer / Presburger obligations only — bounds, divisibility, modular arithmetic, the same narrow scope TVM Analyzer (PR #1367) uses. Default budget 5 ms per query; not on the hot path. Out of scope (and never planned): kernel-optimality proofs, floating-point reasoning, cost-model decidability. Those are measurement problems handled by the cross-vendor CI harness (MIMIC.md §41), not theorem proving.
 
 **Capability tags (post-FOUND-B07 / METX-5 sweep).** `effects::Alloc / effects::IO / effects::Block` (the `cap::*` tags re-exported into the top-level `effects::` namespace) and `effects::Bg / effects::Init / effects::Test` context structs — capability tags on function signatures, zero runtime cost (one byte per cap, EBO-collapsed within contexts via `[[no_unique_address]]`). All defined in `effects/Capabilities.h`. These are NOT F\*X proof obligations; they are C++-level capabilities enforced at compile time. The legacy `fx::*` tree in `crucible/Effects.h` and the `compat/Fx.h` shim are deleted; production call sites use `effects::*` exclusively.
 
@@ -441,7 +441,7 @@ Meridian = startup calibration (5-15s). Augur = continuous per-iteration monitor
 - GPU profiling: GEMM→actual TFLOPS, streaming copy→HBM/PCIe BW, NVML→power/temp/ECC/memory
 - Network probing: N×N latency/bandwidth matrix, topology detection
 - Per-vendor calibration microbenchmarks populate `TargetCaps` + `OpcodeLatencyTable`; Mimic's MAP-Elites search warm-starts from Cipher-persisted archives for the measured hardware
-- Z3 joint 5D partition search (FORGE.md §25.6): TP×DP×PP×EP×CP factorization + schedule + bucket size, minimizing predicted step time from `CollectiveBenchmarks` + `mimic::fast_cost`
+- Discrete-search joint 5D partition optimization (FORGE.md §25.6): TP×DP×PP×EP×CP factorization + schedule + bucket size + per-link weight assignment, minimizing predicted step time from `CollectiveBenchmarks` + `mimic::fast_cost` + per-link congestion telemetry. Bounded branch-and-bound over the calibrated cost surface; no external SMT solver.
 - Output: complete device-specific kernel set + MeridianConfig. Re-probes on topology change.
 
 **Augur (continuous):**
@@ -486,7 +486,7 @@ Goal: complete the L0 structural-guarantee layer — axioms, safety wrappers, se
 - **CSL permissions** (THREADING.md) — `Permission<Tag>`, `SharedPermission` + pool, `permission_fork` (CSL parallel rule as RAII fork-join), cache-tier cost model (L1/L2 → sequential, L3/DRAM → parallel).
 - **Production refactors**: Vigil → Machine + Session, TraceRing → PermissionedSpscChannel, KernelCache → SwmrSession + ContentAddressed, Cipher tiers → Delegate + Tagged, CNTP layers → Session over Session. ~70 tracked tasks in the backlog.
 - **Lean proofs** (Phase 5 of safety-integration plan): PermissionFlow, AssociationPreservation, StreamSessionLifetime, CrashFlow, SecretFlow. `lean/Crucible/` already has 36 modules / 1,312 theorems / zero sorry covering L0-L17.
-- **`verify` preset (Z3)** for residual integer-arithmetic proof obligations only — scope matches TVM Analyzer PR #1367: bounds, divisibility, modular. Not a kernel-optimality engine.
+- **`verify` preset (internal small SMT — deferred)** reserved for residual integer-arithmetic proof obligations only — scope matches TVM Analyzer PR #1367: bounds, divisibility, modular. No external solver dependency. Interim mode: contract enforcement only. Not a kernel-optimality engine.
 
 **Phase 2b: Forge + Mimic Core (IN PARALLEL)**
 
@@ -503,7 +503,7 @@ Goal: vendor-agnostic optimizer + per-vendor backend framework per FORGE.md / MI
 
 Goal: hardware calibration + continuous monitoring as one operational intelligence layer.
 
-- GPU profiling + network probing at startup. Z3 joint 5D partition search (FORGE.md §25.6) picks topology from calibrated `CollectiveBenchmarks` + `mimic::fast_cost`.
+- GPU profiling + network probing at startup. Discrete-search joint 5D partition optimization (FORGE.md §25.6) picks topology from calibrated `CollectiveBenchmarks` + `mimic::fast_cost`. Per-link congestion telemetry (TX/RX bytes, drop rate, queue depth, sysctl-derived effective capacity) feeds into the cost surface so decisions adapt to heterogeneous-NIC fleets and live load.
 - Digital twin: DAG + Mimic kernel predictions + calibration corrections → iteration prediction (±5-10%).
 - Continuous monitoring, bottleneck diagnosis, recommendations engine. Augur drift detection triggers per-vendor Mimic recalibration when P95 residual > 10% for 100+ samples.
 - Model intelligence: Hessian spectrum, gradient health, effective rank, CKA, scaling laws.
@@ -588,7 +588,7 @@ Design intent: **the lowest foreground recording and shadow-dispatch latency the
 | `release` | GCC 16.0.1            | Production. `-O3 -march=native -flto=auto -DNDEBUG` |
 | `bench`   | GCC 16.0.1            | Release + `CRUCIBLE_BENCH=ON`                 |
 | `tsan`    | GCC 16.0.1            | ThreadSanitizer (mutually exclusive with ASan)|
-| `verify`  | GCC 16.0.1            | + Z3 formal verification suite                |
+| `verify`  | GCC 16.0.1            | + internal small-SMT verification suite (deferred — interim: contracts-only, no external solver) |
 
 **GCC 16 is the only supported compiler.** Crucible's safety axioms structurally depend on features that exist only there:
 
@@ -1015,7 +1015,7 @@ Common flags +
 
 ### Verify preset
 
-Release flags + Z3 SMT solver + `-fcontract-evaluation-semantic=enforce` + `-fanalyzer`.
+Release flags + `-fcontract-evaluation-semantic=enforce` + `-fanalyzer`. The internal small-SMT verification tier is reserved for residual integer-arithmetic obligations (deferred — interim: contracts-only). No external solver dependency: Crucible ships no Z3, no CVC, no proprietary SMT engine, period.
 
 ### NEVER (kills determinism or wastes perf)
 
@@ -2033,7 +2033,7 @@ ctest --preset stress
 # Release: perf-bound tests, catches release-only codegen bugs
 cmake --preset release && cmake --build --preset release && ctest --preset release
 
-# Verify: all axioms via Z3 formal proofs
+# Verify: contract enforcement + internal small-SMT (deferred)
 cmake --preset verify && cmake --build --preset verify && ctest --preset verify
 ```
 
@@ -2350,7 +2350,7 @@ template for (constexpr auto m : members) { ... }
 - **Alias analysis.** `Linear<>` catches double-consume on a single value but not two pointers to the same underlying object created through unsafe channels. Review + `-fsanitize=address` + the axioms from §II are the line of defense.
 - **Compile-time information flow.** Branching on a `Secret<>` value is not rejected at compile time. `ct::*` primitives and the constant-time discipline (§III opt-out of `memory_order::consume`, crypto paths using `ct::select`) are opt-in.
 
-For those properties, the `verify` preset runs SMT (Z3) over the annotated code; see §I.
+For those properties, the `verify` preset reserves space for an internal small-SMT solver (deferred — interim: contract enforcement only); see §I. No external solver dependency.
 
 ---
 

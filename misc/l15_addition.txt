@@ -1,3 +1,32 @@
+═══════════════════════════════════════════════════════════════════
+SUPERSEDED — 2026-05-03
+
+The Z3 dependency described throughout this document has been
+DROPPED from the Crucible architecture per direct user direction.
+Crucible ships no external SMT solver (no Z3, no CVC5, no
+proprietary solver). The verification roles described here remain
+load-bearing as design intent, but the mechanism is reassigned to:
+
+- An internal small-SMT solver for residual integer-arithmetic
+  proof obligations (bounds, divisibility, modular). DEFERRED —
+  no implementation yet. Interim: contracts-only enforcement.
+
+- For optimization roles (memory layout, kernel config, topology
+  partitioning, instruction scheduling, etc.): bounded
+  discrete-search / branch-and-bound over the calibrated cost
+  model surface, NOT theorem proving. The cost model is
+  measurement-driven (Meridian + cross-vendor CI), not solver-
+  derived.
+
+- For "proves for all inputs" claims that genuinely require SMT:
+  contracts at boundaries, runtime checks in debug, and the
+  internal small-SMT solver when shipped (deferred).
+
+DO NOT IMPLEMENT THE Z3 INTEGRATION DESCRIBED BELOW. Read the rest
+of this document for context only — the architectural intent is
+preserved, the mechanism is replaced.
+═══════════════════════════════════════════════════════════════════
+
   Updated Ontology
 
   Name: Relay

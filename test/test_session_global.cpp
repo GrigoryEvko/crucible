@@ -207,10 +207,16 @@ static_assert(std::is_same_v<
     project_t<G_after_crash, Alice>,
     Send<Ping, Stop>>);
 
-// Bob's projection ends in End (Alice crashed; Bob's protocol is over).
+// Bob's projection ends in Stop (Alice crashed; Bob INTERACTED with
+// Alice — received Ping from her — so per BHYZ23 [GR-✂] crash
+// propagation, Bob's protocol terminates with crash-induced Stop, not
+// clean End.  The fix (GAPS-001) walks the root global type to detect
+// this; previously the rule unconditionally returned End and lost the
+// crash-safety information.  Stop ⩽ End in the subtype lattice
+// (Stop is bottom — SessionCrash.h:205), so this is a tightening.
 static_assert(std::is_same_v<
     project_t<G_after_crash, Bob>,
-    Recv<Ping, End>>);
+    Recv<Ping, Stop>>);
 
 // ── Runtime smoke ─────────────────────────────────────────────
 
