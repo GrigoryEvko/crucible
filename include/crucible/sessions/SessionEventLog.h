@@ -136,6 +136,15 @@ struct CheckpointId {
     constexpr bool operator==(const CheckpointId&)  const noexcept = default;
 };
 
+// Hash of the permission set transferred with a delegated session.
+// Zero means "no inner permission set recorded" and is the correct
+// default for plain SessionHandle delegation.
+struct InnerPermSetHash {
+    uint64_t value = 0;
+    constexpr auto operator<=>(const InnerPermSetHash&) const noexcept = default;
+    constexpr bool operator==(const InnerPermSetHash&)  const noexcept = default;
+};
+
 // Monotonic per-log step counter.  Strictly non-decreasing within a
 // SessionEventLog (enforced by OrderedAppendOnly's contract).  Distinct
 // SessionEventLogs maintain separate StepId sequences.
@@ -161,6 +170,8 @@ enum class SessionOp : uint8_t {
     Stop   = 7,   // Stop_g<C>::close() — crash-stop terminal observed
     Checkpoint_Base     = 8,  // CheckpointedSession::base()
     Checkpoint_Rollback = 9,  // CheckpointedSession::rollback()
+    Delegate = 10, // Delegate<T, K>::delegate()
+    Accept   = 11, // Accept<T, K>::accept()
 };
 
 }  // namespace event_detail
@@ -178,6 +189,8 @@ using SessionOp = event_detail::SessionOp;
         case SessionOp::Stop:   return "Stop";
         case SessionOp::Checkpoint_Base:     return "Checkpoint_Base";
         case SessionOp::Checkpoint_Rollback: return "Checkpoint_Rollback";
+        case SessionOp::Delegate: return "Delegate";
+        case SessionOp::Accept:   return "Accept";
         default:                return "?";
     }
 }
@@ -217,6 +230,11 @@ enum class CheckpointChoice : uint8_t {
 //   payload_schema.value -> checkpoint_id
 //   payload_hash.value   -> saved_state_content_hash.raw()
 //   reason_kind          -> CheckpointChoice
+//
+// Delegate/Accept events reuse the role fields plus the payload lanes:
+//   from_role/to_role    -> sender/recipient role
+//   payload_schema.value -> delegated_proto_hash.raw()
+//   payload_hash.value   -> inner_perm_set_hash
 //
 // The typed helpers below make that variant payload explicit without
 // adding storage or runtime dispatch.
@@ -282,6 +300,36 @@ struct SessionEvent {
         };
     }
 
+    [[nodiscard]] static constexpr SessionEvent delegate_handoff(
+        RoleTagId sender,
+        RoleTagId recipient,
+        ::crucible::ContentHash delegated_proto_hash,
+        InnerPermSetHash inner_perm_set = {}) noexcept
+    {
+        return SessionEvent{
+            .from_role      = sender,
+            .to_role        = recipient,
+            .payload_schema = SchemaHash{delegated_proto_hash.raw()},
+            .payload_hash   = PayloadHash{inner_perm_set.value},
+            .op             = SessionOp::Delegate,
+        };
+    }
+
+    [[nodiscard]] static constexpr SessionEvent accept_handoff(
+        RoleTagId recipient,
+        RoleTagId sender,
+        ::crucible::ContentHash accepted_proto_hash,
+        InnerPermSetHash inner_perm_set = {}) noexcept
+    {
+        return SessionEvent{
+            .from_role      = sender,
+            .to_role        = recipient,
+            .payload_schema = SchemaHash{accepted_proto_hash.raw()},
+            .payload_hash   = PayloadHash{inner_perm_set.value},
+            .op             = SessionOp::Accept,
+        };
+    }
+
     [[nodiscard]] constexpr RoleTagId stop_peer_tag() const noexcept {
         return RoleTagId{payload_schema.value};
     }
@@ -305,6 +353,23 @@ struct SessionEvent {
     [[nodiscard]] constexpr ::crucible::ContentHash
     checkpoint_saved_state_content_hash() const noexcept {
         return ::crucible::ContentHash::from_raw(payload_hash.value);
+    }
+
+    [[nodiscard]] constexpr ::crucible::ContentHash
+    delegated_proto_hash() const noexcept {
+        return ::crucible::ContentHash::from_raw(payload_schema.value);
+    }
+
+    [[nodiscard]] constexpr RoleTagId delegate_recipient_role_tag() const noexcept {
+        return to_role;
+    }
+
+    [[nodiscard]] constexpr RoleTagId accept_sender_role_tag() const noexcept {
+        return from_role;
+    }
+
+    [[nodiscard]] constexpr InnerPermSetHash inner_perm_set_hash() const noexcept {
+        return InnerPermSetHash{payload_hash.value};
     }
 };
 
@@ -370,6 +435,10 @@ template <typename T>
 inline constexpr SchemaHash default_schema_hash{
     detail::fnv1a_64(detail::pretty_function_for<T>())
 };
+
+template <typename T>
+inline constexpr ::crucible::ContentHash default_proto_hash =
+    ::crucible::ContentHash::from_raw(default_schema_hash<T>.value);
 
 // ═════════════════════════════════════════════════════════════════════
 // ── default_payload_hash<T> — opt-in payload hashing ────────────────

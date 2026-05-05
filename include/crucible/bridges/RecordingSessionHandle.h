@@ -55,6 +55,12 @@
 //   RecordingSessionHandle<CheckpointedSession<B, R>, Res, L>
 //                                               → base([id], [hash]),
 //                                                 rollback([id], [hash])
+//   RecordingSessionHandle<Delegate<T, K>, R, L>
+//                                               → delegate(handle, transport,
+//                                                          [perm_hash])
+//   RecordingSessionHandle<Accept<T, K>,   R, L>
+//                                               → accept(transport,
+//                                                        [perm_hash])
 //
 // Loop<B> / Continue are unrolled by the framework's existing
 // step_to_next / mint_session_handle machinery before the wrapper
@@ -83,6 +89,7 @@
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/SessionEventLog.h>
 
 #include <cstddef>
@@ -296,6 +303,165 @@ public:
         this->mark_consumed_();
         auto next = std::move(inner_).rollback();
         return detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
+    }
+
+    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
+};
+
+// ═════════════════════════════════════════════════════════════════════
+// ── RecordingSessionHandle<Delegate<T, K>, …> ──────────────────────
+// ═════════════════════════════════════════════════════════════════════
+
+template <typename T, typename K, typename Resource, typename LoopCtx>
+class [[nodiscard]] RecordingSessionHandle<Delegate<T, K>, Resource, LoopCtx>
+    : public SessionHandleBase<Delegate<T, K>,
+                               RecordingSessionHandle<Delegate<T, K>,
+                                                      Resource, LoopCtx>>
+{
+    SessionHandle<Delegate<T, K>, Resource, LoopCtx> inner_;
+    SessionEventLog* log_      = nullptr;
+    RoleTagId        self_role_{};
+    RoleTagId        peer_role_{};
+
+public:
+    using protocol        = Delegate<T, K>;
+    using delegated_proto = T;
+    using continuation    = K;
+    using resource_type   = Resource;
+    using loop_ctx        = LoopCtx;
+    using inner_type      = SessionHandle<Delegate<T, K>, Resource, LoopCtx>;
+
+    constexpr RecordingSessionHandle(
+        inner_type inner,
+        SessionEventLog& log,
+        RoleTagId self,
+        RoleTagId peer,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<Delegate<T, K>,
+                            RecordingSessionHandle<Delegate<T, K>,
+                                                   Resource, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, log_{&log},
+          self_role_{self}, peer_role_{peer} {}
+
+    constexpr RecordingSessionHandle(RecordingSessionHandle&&) noexcept = default;
+    constexpr RecordingSessionHandle& operator=(RecordingSessionHandle&&) noexcept = default;
+    ~RecordingSessionHandle() = default;
+
+    template <typename DelegatedResource, typename DelegatedLoopCtx,
+              typename Transport>
+        requires (!is_stop_v<T> &&
+                  std::is_invocable_v<Transport, Resource&, DelegatedResource&&>)
+    [[nodiscard]] constexpr auto delegate(
+        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated,
+        Transport transport,
+        InnerPermSetHash inner_perm_set = {}) &&
+        noexcept(std::is_nothrow_invocable_v<Transport, Resource&, DelegatedResource&&>
+                 && std::is_nothrow_move_constructible_v<Resource>)
+    {
+        log_->append_event(SessionEvent::delegate_handoff(
+            self_role_, peer_role_, default_proto_hash<T>, inner_perm_set));
+        this->mark_consumed_();
+        auto next = std::move(inner_).delegate(
+            std::move(delegated), std::move(transport));
+        return detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
+    }
+
+    template <typename DelegatedResource, typename DelegatedLoopCtx>
+        requires (!is_stop_v<T>)
+    [[nodiscard]] constexpr auto delegate_local(
+        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated,
+        InnerPermSetHash inner_perm_set = {}) &&
+        noexcept(std::is_nothrow_move_constructible_v<Resource>
+                 && std::is_nothrow_destructible_v<DelegatedResource>)
+    {
+        log_->append_event(SessionEvent::delegate_handoff(
+            self_role_, peer_role_, default_proto_hash<T>, inner_perm_set));
+        this->mark_consumed_();
+        auto next = std::move(inner_).delegate_local(std::move(delegated));
+        return detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
+    }
+
+    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
+};
+
+// ═════════════════════════════════════════════════════════════════════
+// ── RecordingSessionHandle<Accept<T, K>, …> ────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+
+template <typename T, typename K, typename Resource, typename LoopCtx>
+class [[nodiscard]] RecordingSessionHandle<Accept<T, K>, Resource, LoopCtx>
+    : public SessionHandleBase<Accept<T, K>,
+                               RecordingSessionHandle<Accept<T, K>,
+                                                      Resource, LoopCtx>>
+{
+    SessionHandle<Accept<T, K>, Resource, LoopCtx> inner_;
+    SessionEventLog* log_      = nullptr;
+    RoleTagId        self_role_{};
+    RoleTagId        peer_role_{};
+
+public:
+    using protocol        = Accept<T, K>;
+    using delegated_proto = T;
+    using continuation    = K;
+    using resource_type   = Resource;
+    using loop_ctx        = LoopCtx;
+    using inner_type      = SessionHandle<Accept<T, K>, Resource, LoopCtx>;
+
+    constexpr RecordingSessionHandle(
+        inner_type inner,
+        SessionEventLog& log,
+        RoleTagId self,
+        RoleTagId peer,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<Accept<T, K>,
+                            RecordingSessionHandle<Accept<T, K>,
+                                                   Resource, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, log_{&log},
+          self_role_{self}, peer_role_{peer} {}
+
+    constexpr RecordingSessionHandle(RecordingSessionHandle&&) noexcept = default;
+    constexpr RecordingSessionHandle& operator=(RecordingSessionHandle&&) noexcept = default;
+    ~RecordingSessionHandle() = default;
+
+    template <typename Transport,
+              typename DelegatedResource = std::invoke_result_t<Transport, Resource&>>
+        requires std::is_invocable_v<Transport, Resource&>
+    [[nodiscard]] constexpr auto accept(
+        Transport transport,
+        InnerPermSetHash inner_perm_set = {}) &&
+        noexcept(std::is_nothrow_invocable_v<Transport, Resource&>
+                 && std::is_nothrow_move_constructible_v<Resource>
+                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
+    {
+        auto [delegated_handle, next] =
+            std::move(inner_).accept(std::move(transport));
+        log_->append_event(SessionEvent::accept_handoff(
+            self_role_, peer_role_, default_proto_hash<T>, inner_perm_set));
+        this->mark_consumed_();
+        auto wrapped_next =
+            detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
+        return std::pair{std::move(delegated_handle), std::move(wrapped_next)};
+    }
+
+    template <typename DelegatedResource>
+    [[nodiscard]] constexpr auto accept_with(
+        DelegatedResource delegated_res,
+        InnerPermSetHash inner_perm_set = {}) &&
+        noexcept(std::is_nothrow_move_constructible_v<Resource>
+                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
+    {
+        auto [delegated_handle, next] =
+            std::move(inner_).accept_with(std::move(delegated_res));
+        log_->append_event(SessionEvent::accept_handoff(
+            self_role_, peer_role_, default_proto_hash<T>, inner_perm_set));
+        this->mark_consumed_();
+        auto wrapped_next =
+            detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
+        return std::pair{std::move(delegated_handle), std::move(wrapped_next)};
     }
 
     [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }

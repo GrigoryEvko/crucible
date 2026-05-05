@@ -38,6 +38,10 @@ static_assert(session_op_name(SessionOp::Checkpoint_Base) ==
               std::string_view{"Checkpoint_Base"});
 static_assert(session_op_name(SessionOp::Checkpoint_Rollback) ==
               std::string_view{"Checkpoint_Rollback"});
+static_assert(session_op_name(SessionOp::Delegate) ==
+              std::string_view{"Delegate"});
+static_assert(session_op_name(SessionOp::Accept) ==
+              std::string_view{"Accept"});
 
 static_assert(default_schema_hash<int>          != default_schema_hash<long>);
 static_assert(default_schema_hash<int>          == default_schema_hash<int>);
@@ -549,6 +553,120 @@ int run_recording_checkpoint_paths_recorded() {
     return 0;
 }
 
+// ── Worked: Delegate/Accept event replay round-trip ────────────────
+
+int run_delegate_event_replay_roundtrip() {
+    SessionEventLog log{SessionTagId{708}};
+    constexpr auto kProtoHash = default_proto_hash<End>;
+    constexpr InnerPermSetHash kPerms{0xC0FFEE1234567890ULL};
+
+    log.append_event(SessionEvent::delegate_handoff(
+        kClient, kServer, kProtoHash, kPerms));
+    log.append_event(SessionEvent::accept_handoff(
+        kServer, kClient, kProtoHash, kPerms));
+
+    if (log.size() != 2)                                      return 1;
+
+    auto replay = log.replay_iter();
+    auto it = replay.begin();
+    if (it == replay.end())                                   return 2;
+    const SessionEvent delegated = *it++;
+    if (it == replay.end())                                   return 3;
+    const SessionEvent accepted = *it++;
+    if (it != replay.end())                                   return 4;
+
+    if (std::memcmp(&delegated, &log[0], sizeof(SessionEvent)) != 0) {
+        return 5;
+    }
+    if (std::memcmp(&accepted, &log[1], sizeof(SessionEvent)) != 0) {
+        return 6;
+    }
+
+    if (delegated.op != SessionOp::Delegate)                  return 7;
+    if (delegated.from_role != kClient)                       return 8;
+    if (delegated.delegate_recipient_role_tag() != kServer)   return 9;
+    if (delegated.delegated_proto_hash() != kProtoHash)       return 10;
+    if (delegated.inner_perm_set_hash() != kPerms)            return 11;
+
+    if (accepted.op != SessionOp::Accept)                     return 12;
+    if (accepted.to_role != kServer)                          return 13;
+    if (accepted.accept_sender_role_tag() != kClient)         return 14;
+    if (accepted.delegated_proto_hash() != kProtoHash)        return 15;
+    if (accepted.inner_perm_set_hash() != kPerms)             return 16;
+
+    return 0;
+}
+
+// ── Worked: RecordingSessionHandle Delegate/Accept handoff events ──
+
+int run_recording_delegate_accept_recorded() {
+    struct CarrierResource { int transferred_endpoint = 0; };
+    struct DelegatedResource { int endpoint = 0; };
+
+    using DelegatedEndpoint = End;
+    using DelegateCarrier = Delegate<DelegatedEndpoint, End>;
+    using AcceptCarrier = Accept<DelegatedEndpoint, End>;
+
+    constexpr InnerPermSetHash kPerms{0x1111222233334444ULL};
+
+    auto delegate_transport =
+        [](CarrierResource& carrier, DelegatedResource&& delegated) noexcept {
+            carrier.transferred_endpoint = delegated.endpoint;
+        };
+    auto accept_transport =
+        [](CarrierResource& carrier) noexcept -> DelegatedResource {
+            return DelegatedResource{carrier.transferred_endpoint};
+        };
+
+    SessionEventLog log{SessionTagId{709}};
+
+    auto delegate_bare =
+        mint_session_handle<DelegateCarrier>(CarrierResource{});
+    auto delegate_rec = mint_recording_session(
+        std::move(delegate_bare), log, kClient, kServer);
+    auto delegated_handle =
+        mint_session_handle<DelegatedEndpoint>(DelegatedResource{77});
+
+    auto delegate_end = std::move(delegate_rec).delegate(
+        std::move(delegated_handle), delegate_transport, kPerms);
+    CarrierResource carrier_after_delegate = std::move(delegate_end).close();
+
+    if (carrier_after_delegate.transferred_endpoint != 77)     return 1;
+
+    auto accept_bare =
+        mint_session_handle<AcceptCarrier>(carrier_after_delegate);
+    auto accept_rec = mint_recording_session(
+        std::move(accept_bare), log, kServer, kClient);
+    auto [accepted_handle, accept_end] =
+        std::move(accept_rec).accept(accept_transport, kPerms);
+
+    DelegatedResource accepted_resource =
+        std::move(accepted_handle).close();
+    CarrierResource carrier_after_accept = std::move(accept_end).close();
+
+    if (accepted_resource.endpoint != 77)                      return 2;
+    if (carrier_after_accept.transferred_endpoint != 77)        return 3;
+    if (log.size() != 4)                                       return 4;
+
+    if (log[0].op != SessionOp::Delegate)                      return 5;
+    if (log[0].from_role != kClient)                           return 6;
+    if (log[0].delegate_recipient_role_tag() != kServer)       return 7;
+    if (log[0].delegated_proto_hash() !=
+        default_proto_hash<DelegatedEndpoint>)                 return 8;
+    if (log[0].inner_perm_set_hash() != kPerms)                return 9;
+    if (log[1].op != SessionOp::Close)                         return 10;
+
+    if (log[2].op != SessionOp::Accept)                        return 11;
+    if (log[2].to_role != kServer)                             return 12;
+    if (log[2].accept_sender_role_tag() != kClient)            return 13;
+    if (log[2].delegated_proto_hash() !=
+        default_proto_hash<DelegatedEndpoint>)                 return 14;
+    if (log[2].inner_perm_set_hash() != kPerms)                return 15;
+    if (log[3].op != SessionOp::Close)                         return 16;
+
+    return 0;
+}
+
 }  // anonymous namespace
 
 int main() {
@@ -564,9 +682,11 @@ int main() {
     if (int rc = run_recording_stop_close_recorded();   rc != 0) return 900 + rc;
     if (int rc = run_checkpoint_event_replay_roundtrip(); rc != 0) return 1000 + rc;
     if (int rc = run_recording_checkpoint_paths_recorded(); rc != 0) return 1100 + rc;
+    if (int rc = run_delegate_event_replay_roundtrip(); rc != 0) return 1200 + rc;
+    if (int rc = run_recording_delegate_accept_recorded(); rc != 0) return 1300 + rc;
 
     std::puts("session_event_log: log primitive + RecordingSessionHandle "
               "wrapper + bilateral capture + replay-determinism + Offer "
-              "branch capture + Stop + Checkpoint replay OK");
+              "branch capture + Stop + Checkpoint + Delegate replay OK");
     return 0;
 }
