@@ -230,8 +230,6 @@ struct AutoRouteRuntimeProfile {
     std::size_t workload_bytes,
     std::size_t max_shards = 16,
     AutoRouteRuntimeProfile profile = {}) noexcept {
-    if (max_shards == 0) return 1;
-
     const std::size_t l2_cliff =
         profile.l2_per_core_bytes != 0
             ? profile.l2_per_core_bytes

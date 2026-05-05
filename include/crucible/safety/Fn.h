@@ -389,7 +389,7 @@ struct Fn {
     // ── Sole runtime member ──────────────────────────────────────
     // The 19-axis grade vector is type-level only — no per-axis
     // member fields, so EBO is automatic via the absence of empty
-    // bases.  See sizeof invariant in detail::fn_self_test.
+    // bases.  The sentinel TU pins the sizeof invariant.
     Type value_{};
 
     // ── Construction ────────────────────────────────────────────
@@ -645,86 +645,6 @@ static_assert(sizeof(Fn<const int*>) == sizeof(const int*));
 // to keep this header lightweight; the principle is that wrapping a
 // reference inside another wrapper is allowed because the wrapper IS
 // an object.
-
-}  // namespace detail::fn_self_test
-
-// ═════════════════════════════════════════════════════════════════════
-// ── Runtime smoke test ─────────────────────────────────────────────
-// ═════════════════════════════════════════════════════════════════════
-//
-// Exercises the type surface with non-constant args.  Catches the
-// consteval/SFINAE/inline-body trap that pure static_assert tests
-// miss (per feedback_algebra_runtime_smoke_test_discipline).
-// Called from test/test_safety_compile.cpp.
-
-namespace detail::fn_self_test {
-
-// ── Move-only witness for runtime_smoke_test ─────────────────────
-//
-// File-scope (not inside the inline function) because GCC requires
-// types-with-deleted-special-members to be addressable for
-// instantiation; defining inline a function would tie the type's
-// linkage to the function and confuse the static-data-member
-// initialization rules.
-//
-// Hand-rolled rather than std::unique_ptr: keeps the smoke test
-// dependency-free and exercises Fn's interaction with deleted-copy
-// + defaulted-move discipline directly.
-struct MoveOnly {
-    int v = 0;
-    constexpr MoveOnly() noexcept = default;
-    explicit constexpr MoveOnly(int x) noexcept : v{x} {}
-    constexpr MoveOnly(const MoveOnly&)            = delete;
-    constexpr MoveOnly& operator=(const MoveOnly&) = delete;
-    constexpr MoveOnly(MoveOnly&&) noexcept            = default;
-    constexpr MoveOnly& operator=(MoveOnly&&) noexcept = default;
-};
-
-inline void runtime_smoke_test() {
-    // Default-grade construction + accessor read.
-    Fn<int> f1{42};
-    [[maybe_unused]] auto v1 = f1.value();
-
-    // Non-trivial type construction.
-    Fn<double> f2{3.14159};
-    [[maybe_unused]] auto v2 = f2.value();
-
-    // Custom-grade construction.
-    Fn<float, pred::True, UsageMode::Affine, effects::Row<>,
-       SecLevel::Public, proto::None, lifetime::Static,
-       source::FromUser, trust::Tested, ReprKind::C> f3{1.5f};
-    [[maybe_unused]] auto v3 = f3.value();
-
-    // mint_fn factory call.
-    [[maybe_unused]] auto m1 = mint_fn(7);
-    [[maybe_unused]] auto m2 = mint_fn(2.71);
-
-    // Per-axis enum value-level access.
-    [[maybe_unused]] auto u  = decltype(f1)::usage_v;
-    [[maybe_unused]] auto s  = decltype(f1)::security_v;
-    [[maybe_unused]] auto r  = decltype(f1)::repr_v;
-    [[maybe_unused]] auto o  = decltype(f1)::overflow_v;
-    [[maybe_unused]] auto m  = decltype(f1)::mutation_v;
-    [[maybe_unused]] auto re = decltype(f1)::reentrancy_v;
-    [[maybe_unused]] auto vr = decltype(f1)::version_v;
-
-    // Move semantics.
-    Fn<int> moved = std::move(f1);
-    [[maybe_unused]] auto vm = moved.value();
-
-    // Move-only type — Fn must support T with deleted copy ops
-    // because Linear<T>, OwnedRegion, and other production wrappers
-    // that flow into Fn carry no copy ctor.  If a future refactor
-    // adds a copy-using path inside Fn, this fails to compile.
-    Fn<MoveOnly> mo{MoveOnly{99}};
-    [[maybe_unused]] auto& mov = mo.value();
-    Fn<MoveOnly> mo2 = std::move(mo);
-    [[maybe_unused]] auto& mov2 = mo2.value();
-
-    // mint_fn with a move-only type.
-    [[maybe_unused]] auto mint_mo = mint_fn(MoveOnly{123});
-    static_assert(std::is_same_v<decltype(mint_mo), Fn<MoveOnly>>);
-}
 
 }  // namespace detail::fn_self_test
 
