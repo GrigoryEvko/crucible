@@ -3553,6 +3553,10 @@ crucible_neg_compile_test(neg_auto_split_n_zero
     "N must be greater than zero")
 crucible_neg_compile_test(neg_auto_router_stream_void_payload
     "AutoRouter Stream payload does not satisfy|SpscValue")
+crucible_neg_compile_test(neg_auto_router_zero_producers
+    "AutoRouter Stream requires Producers > 0")
+crucible_neg_compile_test(neg_auto_router_zero_max_shards
+    "AutoRouter requires MaxShards > 0|AutoRouter Shardable requires MaxShards > 0")
 crucible_neg_compile_test(neg_auto_split_bad_exec_ctx_type
     "AutoSplit body exec_ctx_type must satisfy|IsExecCtx")
 crucible_neg_compile_test(neg_auto_split_move_only_body

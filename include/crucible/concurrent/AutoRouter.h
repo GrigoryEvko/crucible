@@ -259,10 +259,6 @@ struct AutoRouteRuntimeProfile {
     std::size_t workload_bytes,
     std::size_t max_shards = 16,
     AutoRouteRuntimeProfile profile = {}) noexcept {
-    producers = producers == 0 ? 1 : producers;
-    consumers = consumers == 0 ? 1 : consumers;
-    max_shards = max_shards == 0 ? 1 : max_shards;
-
     if (intent == RouteIntent::Latest) {
         return AutoRouteDecision{
             .kind           = RouteKind::Snapshot,
