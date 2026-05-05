@@ -6,7 +6,7 @@
 // Task #404 SAFEINT-B15 from misc/24_04_2026_safety_integration.md
 // §15.  Promotes the bit-exact-replay discipline from an ad-hoc
 // trace to a typed structure: every Send / Recv / Select / Offer /
-// close on a session can be recorded into an OrderedAppendOnly log
+// Stop / close on a session can be recorded into an OrderedAppendOnly log
 // whose monotonic step_id provides total ordering and whose append-
 // only invariant structurally forbids in-place rewrite of past
 // events.
@@ -118,6 +118,14 @@ struct PayloadHash {
     constexpr bool operator==(const PayloadHash&)  const noexcept = default;
 };
 
+// Hash of the recovery path chosen after a Stop event.  Zero is the
+// sentinel for "no recovery path was selected or recorded".
+struct RecoveryPathHash {
+    uint64_t value = 0;
+    constexpr auto operator<=>(const RecoveryPathHash&) const noexcept = default;
+    constexpr bool operator==(const RecoveryPathHash&)  const noexcept = default;
+};
+
 // Monotonic per-log step counter.  Strictly non-decreasing within a
 // SessionEventLog (enforced by OrderedAppendOnly's contract).  Distinct
 // SessionEventLogs maintain separate StepId sequences.
@@ -131,6 +139,8 @@ struct StepId {
 // ── SessionOp — what kind of operation produced this event ──────────
 // ═════════════════════════════════════════════════════════════════════
 
+namespace event_detail {
+
 enum class SessionOp : uint8_t {
     Send   = 1,   // Send<T, K>::send() — payload sent to peer
     Recv   = 2,   // Recv<T, K>::recv() — payload received from peer
@@ -138,7 +148,12 @@ enum class SessionOp : uint8_t {
     Offer  = 4,   // Offer<Bs...>::pick<I>() — branch chosen by peer
     Close  = 5,   // End::close() — terminal, session completed
     Detach = 6,   // SessionHandle::detach(reason) — abandoned at non-terminal
+    Stop   = 7,   // Stop_g<C>::close() — crash-stop terminal observed
 };
+
+}  // namespace event_detail
+
+using SessionOp = event_detail::SessionOp;
 
 [[nodiscard]] constexpr std::string_view session_op_name(SessionOp op) noexcept {
     switch (op) {
@@ -148,9 +163,19 @@ enum class SessionOp : uint8_t {
         case SessionOp::Offer:  return "Offer";
         case SessionOp::Close:  return "Close";
         case SessionOp::Detach: return "Detach";
+        case SessionOp::Stop:   return "Stop";
         default:                return "?";
     }
 }
+
+// Reason classifier for SessionOp::Stop.  Kept as a one-byte enum so
+// the fixed 56-byte SessionEvent layout survives the Stop extension.
+enum class StopReasonKind : uint8_t {
+    Unknown     = 0,
+    PeerCrashed = 1,
+    LocalAbort  = 2,
+    Recovery    = 3,
+};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── SessionEvent — the per-operation record ─────────────────────────
@@ -159,6 +184,14 @@ enum class SessionOp : uint8_t {
 // Layout: 56 bytes.  TriviallyCopyable for memcpy-bulk-drain into
 // the Cipher's cold tier.  Field ordering minimises padding while
 // keeping the most-queried fields (step_id, session, op) at the head.
+//
+// Stop events reuse the two generic payload lanes to preserve the
+// fixed-size record:
+//   payload_schema.value -> peer_tag
+//   payload_hash.value   -> recovery_path_hash
+//   reason_kind          -> StopReasonKind
+// The typed helpers below make that variant payload explicit without
+// adding storage or runtime dispatch.
 
 struct SessionEvent {
     StepId       step_id        {};
@@ -169,7 +202,37 @@ struct SessionEvent {
     PayloadHash  payload_hash   {};
     SessionOp    op             = SessionOp::Send;
     uint8_t      branch_index   = 0;   // Select/Offer: chosen index; else 0
-    uint8_t      pad[6]{};              // explicit zero-init padding
+    uint8_t      reason_kind    = 0;   // Stop: StopReasonKind; else 0
+    uint8_t      pad[5]{};              // explicit zero-init padding
+
+    [[nodiscard]] static constexpr SessionEvent stop(
+        RoleTagId self,
+        RoleTagId peer,
+        RoleTagId stopped_peer,
+        StopReasonKind reason = StopReasonKind::PeerCrashed,
+        RecoveryPathHash recovery_path = {}) noexcept
+    {
+        return SessionEvent{
+            .from_role      = self,
+            .to_role        = peer,
+            .payload_schema = SchemaHash{stopped_peer.value},
+            .payload_hash   = PayloadHash{recovery_path.value},
+            .op             = SessionOp::Stop,
+            .reason_kind    = static_cast<uint8_t>(reason),
+        };
+    }
+
+    [[nodiscard]] constexpr RoleTagId stop_peer_tag() const noexcept {
+        return RoleTagId{payload_schema.value};
+    }
+
+    [[nodiscard]] constexpr StopReasonKind stop_reason_kind() const noexcept {
+        return static_cast<StopReasonKind>(reason_kind);
+    }
+
+    [[nodiscard]] constexpr RecoveryPathHash stop_recovery_path_hash() const noexcept {
+        return RecoveryPathHash{payload_hash.value};
+    }
 };
 
 static_assert(sizeof(SessionEvent) == 56,
@@ -318,6 +381,27 @@ public:
         ev.step_id = next_step();
         ev.session = session_id_;
         log_.append(std::move(ev));
+    }
+
+    // Canonical event append entrypoint used by replay-facing wrappers.
+    // It preserves the same stamping semantics as record_now while
+    // making the call site read in protocol-event vocabulary.
+    void append_event(SessionEvent ev) {
+        record_now(std::move(ev));
+    }
+
+    struct ReplayRange {
+        using const_iterator = SessionEventLog::storage_type::const_iterator;
+
+        const_iterator first{};
+        const_iterator last {};
+
+        [[nodiscard]] const_iterator begin() const noexcept { return first; }
+        [[nodiscard]] const_iterator end()   const noexcept { return last;  }
+    };
+
+    [[nodiscard]] ReplayRange replay_iter() const noexcept {
+        return ReplayRange{log_.begin(), log_.end()};
     }
 
     // Read-only accessors.

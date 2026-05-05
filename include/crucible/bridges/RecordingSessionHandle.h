@@ -5,7 +5,7 @@
 //
 // Task #404 SAFEINT-B15 from misc/24_04_2026_safety_integration.md
 // §15 — the audit-trail wrapper around SessionHandle that records
-// every Send / Recv / Select / Offer / close into a SessionEventLog.
+// every Send / Recv / Select / Offer / Stop / close into a SessionEventLog.
 //
 // Design contract:
 //
@@ -51,8 +51,9 @@
 //   RecordingSessionHandle<Select<Bs...>, R, L>  → select<I>([transport])
 //   RecordingSessionHandle<Offer<Bs...>,  R, L>  → pick<I>(),
 //                                                  branch(transport, handler)
+//   RecordingSessionHandle<Stop_g<C>,     R, L>  → close([reason], [recovery])
 //
-// Loop<B> / Continue / Stop are unrolled by the framework's existing
+// Loop<B> / Continue are unrolled by the framework's existing
 // step_to_next / mint_session_handle machinery before the wrapper
 // sees them — same as for plain SessionHandle.
 //
@@ -77,6 +78,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionEventLog.h>
 
 #include <cstddef>
@@ -168,6 +170,58 @@ public:
     [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
 
+    [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
+};
+
+// ═════════════════════════════════════════════════════════════════════
+// ── RecordingSessionHandle<Stop_g<C>, …> — crash terminal wrapper ──
+// ═════════════════════════════════════════════════════════════════════
+
+template <CrashClass C, typename Resource, typename LoopCtx>
+class [[nodiscard]] RecordingSessionHandle<Stop_g<C>, Resource, LoopCtx>
+    : public SessionHandleBase<Stop_g<C>,
+                               RecordingSessionHandle<Stop_g<C>, Resource, LoopCtx>>
+{
+    SessionHandle<Stop_g<C>, Resource, LoopCtx> inner_;
+    SessionEventLog* log_      = nullptr;
+    RoleTagId        self_role_{};
+    RoleTagId        peer_role_{};
+
+public:
+    using protocol      = Stop_g<C>;
+    using resource_type = Resource;
+    using loop_ctx      = LoopCtx;
+    using inner_type    = SessionHandle<Stop_g<C>, Resource, LoopCtx>;
+    static constexpr CrashClass crash_class = C;
+
+    constexpr RecordingSessionHandle(
+        inner_type inner,
+        SessionEventLog& log,
+        RoleTagId self,
+        RoleTagId peer,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<Stop_g<C>,
+                            RecordingSessionHandle<Stop_g<C>, Resource, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, log_{&log},
+          self_role_{self}, peer_role_{peer} {}
+
+    constexpr RecordingSessionHandle(RecordingSessionHandle&&) noexcept = default;
+    constexpr RecordingSessionHandle& operator=(RecordingSessionHandle&&) noexcept = default;
+    ~RecordingSessionHandle() = default;
+
+    [[nodiscard]] constexpr Resource close(
+        StopReasonKind reason = StopReasonKind::PeerCrashed,
+        RecoveryPathHash recovery_path = {}) &&
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+    {
+        log_->append_event(SessionEvent::stop(
+            self_role_, peer_role_, peer_role_, reason, recovery_path));
+        this->mark_consumed_();
+        return std::move(inner_).close();
+    }
+
+    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
     [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
 };
 

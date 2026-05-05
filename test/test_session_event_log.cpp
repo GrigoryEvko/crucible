@@ -19,6 +19,7 @@
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/sessions/SessionEventLog.h>
 
+#include <cstring>
 #include <cstdio>
 #include <deque>
 #include <string>
@@ -32,6 +33,7 @@ using namespace crucible::safety::proto;
 
 static_assert(sizeof(SessionEvent) == 56);
 static_assert(std::is_trivially_copyable_v<SessionEvent>);
+static_assert(session_op_name(SessionOp::Stop) == std::string_view{"Stop"});
 
 static_assert(default_schema_hash<int>          != default_schema_hash<long>);
 static_assert(default_schema_hash<int>          == default_schema_hash<int>);
@@ -393,6 +395,63 @@ int run_offer_branch_recorded() {
     return 0;
 }
 
+// ── Worked: Stop event replay round-trip ───────────────────────────
+
+int run_stop_event_replay_roundtrip() {
+    SessionEventLog log{SessionTagId{303}};
+    constexpr RecoveryPathHash kRecovery{0xBADC0FFEE0DDF00DULL};
+
+    log.append_event(SessionEvent::stop(
+        kServer, kClient, kClient,
+        StopReasonKind::PeerCrashed,
+        kRecovery));
+
+    if (log.size() != 1)                                      return 1;
+
+    auto replay = log.replay_iter();
+    auto it = replay.begin();
+    if (it == replay.end())                                   return 2;
+
+    const SessionEvent replayed = *it;
+    ++it;
+    if (it != replay.end())                                   return 3;
+
+    if (std::memcmp(&replayed, &log[0], sizeof(SessionEvent)) != 0) return 4;
+    if (replayed.session.value != 303u)                       return 5;
+    if (replayed.op != SessionOp::Stop)                       return 6;
+    if (replayed.from_role != kServer)                        return 7;
+    if (replayed.to_role != kClient)                          return 8;
+    if (replayed.stop_peer_tag() != kClient)                  return 9;
+    if (replayed.stop_reason_kind() != StopReasonKind::PeerCrashed) return 10;
+    if (replayed.stop_recovery_path_hash() != kRecovery)      return 11;
+    return 0;
+}
+
+// ── Worked: RecordingSessionHandle<Stop> emits Stop, not Close ─────
+
+int run_recording_stop_close_recorded() {
+    struct StopResource { int sentinel = 0; };
+
+    SessionEventLog log{SessionTagId{404}};
+    auto bare = mint_session_handle<Stop>(StopResource{17});
+    auto rec = mint_recording_session(std::move(bare), log, kServer, kClient);
+
+    StopResource resource = std::move(rec).close(
+        StopReasonKind::PeerCrashed,
+        RecoveryPathHash{0x123456789ABCDEF0ULL});
+
+    if (resource.sentinel != 17)                              return 1;
+    if (log.size() != 1)                                      return 2;
+    if (log[0].op != SessionOp::Stop)                         return 3;
+    if (log[0].from_role != kServer)                          return 4;
+    if (log[0].to_role != kClient)                            return 5;
+    if (log[0].stop_peer_tag() != kClient)                    return 6;
+    if (log[0].stop_reason_kind() != StopReasonKind::PeerCrashed) return 7;
+    if (log[0].stop_recovery_path_hash().value !=
+        0x123456789ABCDEF0ULL)                                return 8;
+    return 0;
+}
+
 }  // anonymous namespace
 
 int main() {
@@ -404,9 +463,11 @@ int main() {
     if (int rc = run_replay_determinism_property();     rc != 0) return 500 + rc;
     if (int rc = run_payload_hash_opt_in();             rc != 0) return 600 + rc;
     if (int rc = run_offer_branch_recorded();           rc != 0) return 700 + rc;
+    if (int rc = run_stop_event_replay_roundtrip();     rc != 0) return 800 + rc;
+    if (int rc = run_recording_stop_close_recorded();   rc != 0) return 900 + rc;
 
     std::puts("session_event_log: log primitive + RecordingSessionHandle "
               "wrapper + bilateral capture + replay-determinism + Offer "
-              "branch capture OK");
+              "branch capture + Stop replay OK");
     return 0;
 }
