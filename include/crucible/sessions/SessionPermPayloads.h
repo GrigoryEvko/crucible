@@ -10,7 +10,7 @@
 //
 // ─── What this header is ───────────────────────────────────────────
 //
-// Three payload wrappers + their per-marker permission-flow dispatch
+// Four payload wrappers + their per-marker permission-flow dispatch
 // metafunctions.  PermissionedSessionHandle (Phase 3) reads the
 // payload's marker shape and evolves its PermSet accordingly:
 //
@@ -19,6 +19,10 @@
 //                       next protocol step (recipient gets ReadView<X>).
 //   Returned<T, X>      sender RETURNS a previously-borrowed Permission
 //                       to its origin; recipient GAINS it.
+//   DelegatedSession<P, PS>
+//                       sender LOSES every token in inner PermSet PS;
+//                       recipient GAINS that inner PermSet with the
+//                       delegated endpoint.
 //   Plain T             no permission flow (the default).
 //
 // PermSet evolution table (the central dispatch — wiring plan §7.2):
@@ -29,10 +33,12 @@
 //   Send<Transferable<T, X>, K>                 PS' = remove<PS, X>
 //   Send<Borrowed<T, X>, K>                     PS' = PS  (borrow scoped)
 //   Send<Returned<T, X>, K>                     PS' = remove<PS, X>
+//   Send<DelegatedSession<P, InnerPS>, K>       PS' = PS \ InnerPS
 //   Recv<Plain T, K>                            PS' = PS
 //   Recv<Transferable<T, X>, K>                 PS' = insert<PS, X>
 //   Recv<Borrowed<T, X>, K>                     PS' = PS  (ReadView only)
 //   Recv<Returned<T, X>, K>                     PS' = insert<PS, X>
+//   Recv<DelegatedSession<P, InnerPS>, K>       PS' = PS ∪ InnerPS
 //
 // ─── Why three markers, not just one ───────────────────────────────
 //
@@ -53,8 +59,11 @@
 //     separate Transferables and PS bookkeeping at the protocol level
 //     rather than the message level.
 //
-// The three-marker design is normative per 24_04 §5.2 and the wiring
-// plan §7.3.
+// DelegatedSession extends the marker family for Honda 1998
+// throw/catch: the payload is a session endpoint, and the endpoint's
+// own PermSet moves with it.  This header ships the marker and pure
+// PermSet evolution; PermissionedSessionHandle specialisations that
+// use it arrive in the next layer.
 //
 // ─── Composition with SessionPayloadSubsort.h ──────────────────────
 //
@@ -170,6 +179,21 @@ struct [[nodiscard]] Returned {
     ~Returned() = default;
 };
 
+// ── DelegatedSession<InnerProto, InnerPS> ──────────────────────────
+//
+// Payload marker for higher-order session handoff with permissions.
+// Send<DelegatedSession<P, PS>, K> transfers an existing endpoint of
+// protocol P together with every permission token in PS.  The marker
+// is type-only: the runtime endpoint resource is moved by Delegate /
+// Accept transport code, while this wrapper tells the type-level
+// PermSet evolution how authority moves across the same handoff.
+
+template <typename InnerProto, typename InnerPS>
+struct [[nodiscard]] DelegatedSession {
+    using inner_proto    = InnerProto;
+    using inner_perm_set = InnerPS;
+};
+
 // ── Marker recognisers ──────────────────────────────────────────────
 
 namespace detail {
@@ -192,6 +216,14 @@ struct is_returned_impl<Returned<T, Tag>> : std::true_type {
     using returned = Tag;
 };
 
+template <typename T> struct is_delegated_session_impl : std::false_type {};
+template <typename InnerProto, typename InnerPS>
+struct is_delegated_session_impl<DelegatedSession<InnerProto, InnerPS>>
+    : std::true_type {
+    using inner_proto    = InnerProto;
+    using inner_perm_set = InnerPS;
+};
+
 }  // namespace detail
 
 template <typename T>
@@ -207,8 +239,13 @@ inline constexpr bool is_returned_v =
     detail::is_returned_impl<std::remove_cvref_t<T>>::value;
 
 template <typename T>
+inline constexpr bool is_delegated_session_v =
+    detail::is_delegated_session_impl<std::remove_cvref_t<T>>::value;
+
+template <typename T>
 inline constexpr bool is_plain_payload_v =
-    !is_transferable_v<T> && !is_borrowed_v<T> && !is_returned_v<T>;
+    !is_transferable_v<T> && !is_borrowed_v<T> &&
+    !is_returned_v<T> && !is_delegated_session_v<T>;
 
 // ── Tag extraction ──────────────────────────────────────────────────
 //
@@ -254,6 +291,26 @@ struct payload_perm_tag {
 
 template <typename T>
 using payload_perm_tag_t = typename payload_perm_tag<T>::type;
+
+template <typename T>
+struct delegated_session_inner_proto {
+    using type = typename detail::is_delegated_session_impl<
+        std::remove_cvref_t<T>>::inner_proto;
+};
+
+template <typename T>
+using delegated_session_inner_proto_t =
+    typename delegated_session_inner_proto<T>::type;
+
+template <typename T>
+struct delegated_session_perm_set {
+    using type = typename detail::is_delegated_session_impl<
+        std::remove_cvref_t<T>>::inner_perm_set;
+};
+
+template <typename T>
+using delegated_session_perm_set_t =
+    typename delegated_session_perm_set<T>::type;
 
 // ── compute_perm_set_after_send / _after_recv ───────────────────────
 //
@@ -332,6 +389,18 @@ struct recv_evolve<PS, T, /*Transferable=*/false, /*Borrowed=*/false, /*Returned
 template <typename PS, typename T>
 struct compute_perm_set_after_send : detail::send_evolve<PS, T> {};
 
+template <typename PS, typename InnerProto, typename InnerPS>
+struct compute_perm_set_after_send<PS, DelegatedSession<InnerProto, InnerPS>> {
+    static_assert(perm_set_subset_v<InnerPS, PS>,
+        "crucible::session::diagnostic [PermissionImbalance]: "
+        "Send<DelegatedSession<P, InnerPS>, K> requires the sender "
+        "PermSet to contain every token in InnerPS before delegation. "
+        "The inner endpoint's authority moves with the delegated "
+        "session handle; mint or transfer those permissions before "
+        "attempting the handoff.");
+    using type = perm_set_difference_t<PS, InnerPS>;
+};
+
 template <typename PS, typename T>
 using compute_perm_set_after_send_t =
     typename compute_perm_set_after_send<PS, T>::type;
@@ -339,9 +408,48 @@ using compute_perm_set_after_send_t =
 template <typename PS, typename T>
 struct compute_perm_set_after_recv : detail::recv_evolve<PS, T> {};
 
+template <typename PS, typename InnerProto, typename InnerPS>
+struct compute_perm_set_after_recv<PS, DelegatedSession<InnerProto, InnerPS>> {
+    using type = perm_set_union_t<PS, InnerPS>;
+};
+
 template <typename PS, typename T>
 using compute_perm_set_after_recv_t =
     typename compute_perm_set_after_recv<PS, T>::type;
+
+// ── apply_payload_permission<Payload, SenderPS, RecipientPS> ───────
+//
+// Pair-form dispatch used by handoff code that wants both sides'
+// PermSet evolution at once.  The per-side compute_* aliases above are
+// still the single-source rules; this wrapper only packages the two
+// results under stable names.
+
+template <typename SenderPS, typename RecipientPS>
+struct PayloadPermissionResult {
+    using sender_perm_set    = SenderPS;
+    using recipient_perm_set = RecipientPS;
+};
+
+template <typename Payload, typename SenderPS, typename RecipientPS>
+struct apply_payload_permission {
+    using type = PayloadPermissionResult<
+        compute_perm_set_after_send_t<SenderPS, Payload>,
+        compute_perm_set_after_recv_t<RecipientPS, Payload>>;
+};
+
+template <typename Payload, typename SenderPS, typename RecipientPS>
+using apply_payload_permission_t =
+    typename apply_payload_permission<Payload, SenderPS, RecipientPS>::type;
+
+template <typename Payload, typename SenderPS, typename RecipientPS>
+using apply_payload_permission_sender_t =
+    typename apply_payload_permission_t<
+        Payload, SenderPS, RecipientPS>::sender_perm_set;
+
+template <typename Payload, typename SenderPS, typename RecipientPS>
+using apply_payload_permission_recipient_t =
+    typename apply_payload_permission_t<
+        Payload, SenderPS, RecipientPS>::recipient_perm_set;
 
 // ── SendablePayload concept ─────────────────────────────────────────
 //
@@ -357,6 +465,7 @@ using compute_perm_set_after_recv_t =
 //                            origin discipline).
 //   * Transferable<T, X>:    sendable iff X ∈ PS.
 //   * Returned<T, X>:        sendable iff X ∈ PS (same as Transferable).
+//   * DelegatedSession<P, InnerPS>: sendable iff InnerPS ⊆ PS.
 //
 // The Recv-side has no analogous gate: receiving a payload always
 // succeeds at the type-system level; the PermSet evolution captures
@@ -369,7 +478,9 @@ concept SendablePayload =
     || (is_transferable_v<T>
         && perm_set_contains_v<PS, payload_perm_tag_t<T>>)
     || (is_returned_v<T>
-        && perm_set_contains_v<PS, payload_perm_tag_t<T>>);
+        && perm_set_contains_v<PS, payload_perm_tag_t<T>>)
+    || (is_delegated_session_v<T>
+        && perm_set_subset_v<delegated_session_perm_set_t<T>, PS>);
 
 template <typename T, typename PS>
 concept ReceivablePayload = true;
@@ -385,11 +496,13 @@ namespace crucible::safety::proto::detail::session_perm_payloads_smoke {
 struct WorkPerm {};
 struct HotPerm  {};
 struct CfgPerm  {};
+struct RequestResponseProto {};
 
 using PS_empty = EmptyPermSet;
 using PS_work  = PermSet<WorkPerm>;
 using PS_hot   = PermSet<HotPerm>;
 using PS_both  = PermSet<WorkPerm, HotPerm>;
+using DelegatedWork = DelegatedSession<RequestResponseProto, PS_work>;
 
 // ── Marker recognisers — positive ──────────────────────────────────
 static_assert( is_transferable_v<Transferable<int, WorkPerm>>);
@@ -406,11 +519,16 @@ static_assert( is_returned_v<Returned<int, WorkPerm>>);
 static_assert(!is_returned_v<int>);
 static_assert(!is_returned_v<Transferable<int, WorkPerm>>);
 
+static_assert( is_delegated_session_v<DelegatedWork>);
+static_assert(!is_delegated_session_v<int>);
+static_assert(!is_delegated_session_v<Transferable<int, WorkPerm>>);
+
 static_assert( is_plain_payload_v<int>);
 static_assert( is_plain_payload_v<double>);
 static_assert(!is_plain_payload_v<Transferable<int, WorkPerm>>);
 static_assert(!is_plain_payload_v<Borrowed<int, WorkPerm>>);
 static_assert(!is_plain_payload_v<Returned<int, WorkPerm>>);
+static_assert(!is_plain_payload_v<DelegatedWork>);
 
 // ── Tag extraction ─────────────────────────────────────────────────
 static_assert(std::is_same_v<payload_perm_tag_t<int>, void>);
@@ -420,6 +538,10 @@ static_assert(std::is_same_v<
     payload_perm_tag_t<Borrowed<int, HotPerm>>, HotPerm>);
 static_assert(std::is_same_v<
     payload_perm_tag_t<Returned<int, CfgPerm>>, CfgPerm>);
+static_assert(std::is_same_v<
+    delegated_session_inner_proto_t<DelegatedWork>, RequestResponseProto>);
+static_assert(perm_set_equal_v<
+    delegated_session_perm_set_t<DelegatedWork>, PS_work>);
 
 // ── compute_perm_set_after_send ────────────────────────────────────
 //
@@ -447,6 +569,14 @@ static_assert(std::is_same_v<
     compute_perm_set_after_send_t<PS_hot, Returned<int, HotPerm>>,
     PS_empty>);
 
+// DelegatedSession: removes the entire inner PermSet from sender.
+static_assert(perm_set_equal_v<
+    compute_perm_set_after_send_t<PS_work, DelegatedWork>,
+    PS_empty>);
+static_assert(perm_set_equal_v<
+    compute_perm_set_after_send_t<PS_both, DelegatedWork>,
+    PS_hot>);
+
 // ── compute_perm_set_after_recv ────────────────────────────────────
 //
 // Plain: PS unchanged.
@@ -471,6 +601,24 @@ static_assert(std::is_same_v<
     compute_perm_set_after_recv_t<PS_empty, Returned<int, HotPerm>>,
     PermSet<HotPerm>>);
 
+// DelegatedSession: inserts the whole inner PermSet into recipient.
+static_assert(perm_set_equal_v<
+    compute_perm_set_after_recv_t<PS_empty, DelegatedWork>,
+    PS_work>);
+static_assert(perm_set_equal_v<
+    compute_perm_set_after_recv_t<PS_hot, DelegatedWork>,
+    PS_both>);
+
+// Pair-form dispatch mirrors per-side evolution.
+using DelegatedApplied =
+    apply_payload_permission_t<DelegatedWork, PS_both, PS_empty>;
+static_assert(perm_set_equal_v<
+    typename DelegatedApplied::sender_perm_set,
+    PS_hot>);
+static_assert(perm_set_equal_v<
+    typename DelegatedApplied::recipient_perm_set,
+    PS_work>);
+
 // ── SendablePayload concept ────────────────────────────────────────
 static_assert(SendablePayload<int, PS_empty>);             // plain always OK
 static_assert(SendablePayload<int, PS_work>);
@@ -480,6 +628,9 @@ static_assert(!SendablePayload<Transferable<int, WorkPerm>, PS_empty>); // missi
 static_assert(!SendablePayload<Transferable<int, HotPerm>, PS_work>);   // wrong tag
 static_assert(SendablePayload<Returned<int, HotPerm>, PS_hot>);
 static_assert(!SendablePayload<Returned<int, HotPerm>, PS_empty>);
+static_assert(SendablePayload<DelegatedWork, PS_work>);
+static_assert(SendablePayload<DelegatedWork, PS_both>);
+static_assert(!SendablePayload<DelegatedWork, PS_empty>);
 
 static_assert(ReceivablePayload<int, PS_empty>);
 static_assert(ReceivablePayload<Transferable<int, HotPerm>, PS_empty>);
@@ -501,6 +652,7 @@ static_assert(sizeof(Borrowed<double, WorkPerm>) == sizeof(double));
 static_assert(sizeof(Returned<int,    WorkPerm>) == sizeof(int));
 static_assert(sizeof(Returned<char,   WorkPerm>) == sizeof(char));
 static_assert(sizeof(Returned<double, WorkPerm>) == sizeof(double));
+static_assert(sizeof(DelegatedWork) == 1);
 
 // Move-only discipline for permission-carrying markers.
 static_assert(!std::is_copy_constructible_v<Transferable<int, WorkPerm>>);

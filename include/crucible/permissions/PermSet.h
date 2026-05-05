@@ -55,10 +55,14 @@
 //   Send<Transferable<T, X>, K>  PS' = perm_set_remove_t<PS, X>  (sender loses)
 //   Send<Borrowed<T, X>, K>      PS' = PS                      (scoped borrow)
 //   Send<Returned<T, X>, K>      PS' = perm_set_remove_t<PS, X>  (sender returns)
+//   Send<DelegatedSession<P, S>, K>
+//                                PS' = perm_set_difference_t<PS, S>
 //   Recv<Plain T, K>             PS' = PS                      (unchanged)
 //   Recv<Transferable<T, X>, K>  PS' = perm_set_insert_t<PS, X>  (recipient gains)
 //   Recv<Borrowed<T, X>, K>      PS' = PS                      (ReadView only)
 //   Recv<Returned<T, X>, K>      PS' = perm_set_insert_t<PS, X>  (recipient gains)
+//   Recv<DelegatedSession<P, S>, K>
+//                                PS' = perm_set_union_t<PS, S>
 //
 // Loop body balance enforcement (Decision D3 in the wiring plan):
 // every Continue site asserts `perm_set_equal_v<PS_at_continue,
