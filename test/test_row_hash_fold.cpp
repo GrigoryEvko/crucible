@@ -3,8 +3,8 @@
 // Sentinel TU for `safety/diag/RowHashFold.h` — closes the
 // header-only static_assert blind spot (feedback memory) by ensuring
 // every embedded compile-time check runs under the project's full
-// warning matrix at least once.  Also exercises the runtime smoke
-// test per feedback_algebra_runtime_smoke_test_discipline.
+// warning matrix at least once.  Runtime peer checks live here rather
+// than in the production header.
 //
 // The volatile-sink discipline below defeats constant-folding so the
 // optimizer cannot collapse these to compile-time-only checks: every
@@ -302,13 +302,6 @@ static void test_runtime_federation_hash_pins() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// Header's own runtime smoke test — drives every documented runtime
-// claim through ABI-visible code.
-static void test_header_runtime_smoke() {
-    cd::runtime_smoke_test_row_hash_fold();
-    std::printf("  test_header_smoke:              PASSED\n");
-}
-
 int main() {
     test_runtime_permutation_invariance();
     test_runtime_cardinality_discrimination();
@@ -317,7 +310,6 @@ int main() {
     test_runtime_determinism();
     test_runtime_computation_specialization();
     test_runtime_federation_hash_pins();
-    test_header_runtime_smoke();
-    std::printf("test_row_hash_fold: 8 groups, all passed\n");
+    std::printf("test_row_hash_fold: 7 groups, all passed\n");
     return 0;
 }

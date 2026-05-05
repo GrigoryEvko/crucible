@@ -2296,7 +2296,7 @@ Each layer EBO-collapses if its grade is a type-level singleton (regime-1 or reg
 - `row_hash_contribution<Secret<T>>`
 - `row_hash_contribution<Linear<T>>`
 
-All 16 entries in the canonical wrapper-nesting order ship `row_hash_contribution` specializations as of 2026-05-05. Nested compositions hash differently based on wrapper order — `Stale<Tagged<T>>` and `Tagged<Stale<T>>` produce distinct federation-cache-slot keys. The discipline is regression-tested in `test/test_migration_verification.cpp` nesting-order cells per GAPS-029.
+All 16 entries in the canonical wrapper-nesting order ship `row_hash_contribution` specializations as of 2026-05-05 (`cc11141`). Nested compositions hash differently based on wrapper order — `Stale<Tagged<T>>` and `Tagged<Stale<T>>` produce distinct federation-cache-slot keys. The discipline is regression-tested in `test/test_migration_verification.cpp` nesting-order cells per GAPS-029.
 
 `safety/DimensionTraits.h` also pins the wrapper × lattice × modality × tier quadruple for every shipped Graded-backed safety wrapper via `wrapper_dimension<W>`, `wrapper_tier_v<W>`, and `verify_quadruple<W>()` (GAPS-091). `TimeOrdered<T, N, Tag>` is deliberately Tier-L (`Representation`) over `HappensBeforeLattice<N, Tag>`; `EpochVersioned<T>` is deliberately Tier-V (`Version`) over the epoch/generation product lattice.
 
