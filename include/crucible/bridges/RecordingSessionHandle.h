@@ -52,6 +52,9 @@
 //   RecordingSessionHandle<Offer<Bs...>,  R, L>  → pick<I>(),
 //                                                  branch(transport, handler)
 //   RecordingSessionHandle<Stop_g<C>,     R, L>  → close([reason], [recovery])
+//   RecordingSessionHandle<CheckpointedSession<B, R>, Res, L>
+//                                               → base([id], [hash]),
+//                                                 rollback([id], [hash])
 //
 // Loop<B> / Continue are unrolled by the framework's existing
 // step_to_next / mint_session_handle machinery before the wrapper
@@ -78,6 +81,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionEventLog.h>
 
@@ -218,6 +222,80 @@ public:
             self_role_, peer_role_, peer_role_, reason, recovery_path));
         this->mark_consumed_();
         return std::move(inner_).close();
+    }
+
+    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
+};
+
+// ═════════════════════════════════════════════════════════════════════
+// ── RecordingSessionHandle<CheckpointedSession<B, R>, …> ───────────
+// ═════════════════════════════════════════════════════════════════════
+
+template <typename ProtoBase, typename ProtoRollback,
+          typename Resource, typename LoopCtx>
+class [[nodiscard]]
+RecordingSessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>,
+                       Resource, LoopCtx>
+    : public SessionHandleBase<
+          CheckpointedSession<ProtoBase, ProtoRollback>,
+          RecordingSessionHandle<
+              CheckpointedSession<ProtoBase, ProtoRollback>,
+              Resource, LoopCtx>>
+{
+    SessionHandle<CheckpointedSession<ProtoBase, ProtoRollback>,
+                  Resource, LoopCtx> inner_;
+    SessionEventLog* log_      = nullptr;
+    RoleTagId        self_role_{};
+    RoleTagId        peer_role_{};
+
+public:
+    using protocol = CheckpointedSession<ProtoBase, ProtoRollback>;
+    using base_protocol     = ProtoBase;
+    using rollback_protocol = ProtoRollback;
+    using resource_type     = Resource;
+    using loop_ctx          = LoopCtx;
+    using inner_type        = SessionHandle<protocol, Resource, LoopCtx>;
+
+    constexpr RecordingSessionHandle(
+        inner_type inner,
+        SessionEventLog& log,
+        RoleTagId self,
+        RoleTagId peer,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<
+              protocol,
+              RecordingSessionHandle<protocol, Resource, LoopCtx>>{loc}
+        , inner_{std::move(inner)}, log_{&log},
+          self_role_{self}, peer_role_{peer} {}
+
+    constexpr RecordingSessionHandle(RecordingSessionHandle&&) noexcept = default;
+    constexpr RecordingSessionHandle& operator=(RecordingSessionHandle&&) noexcept = default;
+    ~RecordingSessionHandle() = default;
+
+    [[nodiscard]] constexpr auto base(
+        CheckpointId checkpoint = {},
+        ::crucible::ContentHash saved_state = {}) &&
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+    {
+        log_->append_event(SessionEvent::checkpoint_base(
+            self_role_, peer_role_, checkpoint, saved_state));
+        this->mark_consumed_();
+        auto next = std::move(inner_).base();
+        return detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
+    }
+
+    [[nodiscard]] constexpr auto rollback(
+        CheckpointId checkpoint = {},
+        ::crucible::ContentHash saved_state = {}) &&
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+    {
+        log_->append_event(SessionEvent::checkpoint_rollback(
+            self_role_, peer_role_, checkpoint, saved_state));
+        this->mark_consumed_();
+        auto next = std::move(inner_).rollback();
+        return detail::wrap_next_(std::move(next), *log_, self_role_, peer_role_);
     }
 
     [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }

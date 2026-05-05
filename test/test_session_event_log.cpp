@@ -34,6 +34,10 @@ using namespace crucible::safety::proto;
 static_assert(sizeof(SessionEvent) == 56);
 static_assert(std::is_trivially_copyable_v<SessionEvent>);
 static_assert(session_op_name(SessionOp::Stop) == std::string_view{"Stop"});
+static_assert(session_op_name(SessionOp::Checkpoint_Base) ==
+              std::string_view{"Checkpoint_Base"});
+static_assert(session_op_name(SessionOp::Checkpoint_Rollback) ==
+              std::string_view{"Checkpoint_Rollback"});
 
 static_assert(default_schema_hash<int>          != default_schema_hash<long>);
 static_assert(default_schema_hash<int>          == default_schema_hash<int>);
@@ -452,6 +456,99 @@ int run_recording_stop_close_recorded() {
     return 0;
 }
 
+// ── Worked: Checkpoint base/rollback event replay round-trip ───────
+
+int run_checkpoint_event_replay_roundtrip() {
+    SessionEventLog log{SessionTagId{505}};
+    constexpr CheckpointId kBaseId{11};
+    constexpr CheckpointId kRollbackId{12};
+    constexpr auto kBaseHash =
+        crucible::ContentHash::from_raw(0x1010101010101010ULL);
+    constexpr auto kRollbackHash =
+        crucible::ContentHash::from_raw(0x2020202020202020ULL);
+
+    log.append_event(SessionEvent::checkpoint_base(
+        kClient, kServer, kBaseId, kBaseHash));
+    log.append_event(SessionEvent::checkpoint_rollback(
+        kClient, kServer, kRollbackId, kRollbackHash));
+
+    if (log.size() != 2)                                            return 1;
+
+    auto replay = log.replay_iter();
+    auto it = replay.begin();
+    if (it == replay.end())                                         return 2;
+    const SessionEvent base = *it++;
+    if (it == replay.end())                                         return 3;
+    const SessionEvent rollback = *it++;
+    if (it != replay.end())                                         return 4;
+
+    if (std::memcmp(&base, &log[0], sizeof(SessionEvent)) != 0)      return 5;
+    if (std::memcmp(&rollback, &log[1], sizeof(SessionEvent)) != 0)  return 6;
+
+    if (base.op != SessionOp::Checkpoint_Base)                      return 7;
+    if (base.checkpoint_id() != kBaseId)                            return 8;
+    if (base.checkpoint_choice() != CheckpointChoice::Base)          return 9;
+    if (base.checkpoint_saved_state_content_hash() != kBaseHash)     return 10;
+
+    if (rollback.op != SessionOp::Checkpoint_Rollback)              return 11;
+    if (rollback.checkpoint_id() != kRollbackId)                    return 12;
+    if (rollback.checkpoint_choice() != CheckpointChoice::Rollback)  return 13;
+    if (rollback.checkpoint_saved_state_content_hash() != kRollbackHash) {
+        return 14;
+    }
+
+    return 0;
+}
+
+// ── Worked: RecordingSessionHandle<CheckpointedSession> events ─────
+
+int run_recording_checkpoint_paths_recorded() {
+    struct CheckpointResource { int sentinel = 0; };
+    using CkptProto = CheckpointedSession<End, End>;
+    constexpr auto kBaseHash =
+        crucible::ContentHash::from_raw(0xABCD000000000001ULL);
+    constexpr auto kRollbackHash =
+        crucible::ContentHash::from_raw(0xABCD000000000002ULL);
+
+    SessionEventLog base_log{SessionTagId{606}};
+    auto base_bare = mint_session_handle<CkptProto>(CheckpointResource{31});
+    auto base_rec = mint_recording_session(
+        std::move(base_bare), base_log, kClient, kServer);
+    auto base_end = std::move(base_rec).base(CheckpointId{91}, kBaseHash);
+    auto base_resource = std::move(base_end).close();
+
+    if (base_resource.sentinel != 31)                               return 1;
+    if (base_log.size() != 2)                                       return 2;
+    if (base_log[0].op != SessionOp::Checkpoint_Base)               return 3;
+    if (base_log[0].checkpoint_id() != CheckpointId{91})            return 4;
+    if (base_log[0].checkpoint_choice() != CheckpointChoice::Base)  return 5;
+    if (base_log[0].checkpoint_saved_state_content_hash() != kBaseHash) {
+        return 6;
+    }
+    if (base_log[1].op != SessionOp::Close)                         return 7;
+
+    SessionEventLog rollback_log{SessionTagId{607}};
+    auto rollback_bare = mint_session_handle<CkptProto>(
+        CheckpointResource{41});
+    auto rollback_rec = mint_recording_session(
+        std::move(rollback_bare), rollback_log, kClient, kServer);
+    auto rollback_end = std::move(rollback_rec).rollback(
+        CheckpointId{92}, kRollbackHash);
+    auto rollback_resource = std::move(rollback_end).close();
+
+    if (rollback_resource.sentinel != 41)                           return 8;
+    if (rollback_log.size() != 2)                                   return 9;
+    if (rollback_log[0].op != SessionOp::Checkpoint_Rollback)       return 10;
+    if (rollback_log[0].checkpoint_id() != CheckpointId{92})        return 11;
+    if (rollback_log[0].checkpoint_choice() !=
+        CheckpointChoice::Rollback)                                 return 12;
+    if (rollback_log[0].checkpoint_saved_state_content_hash() !=
+        kRollbackHash)                                              return 13;
+    if (rollback_log[1].op != SessionOp::Close)                     return 14;
+
+    return 0;
+}
+
 }  // anonymous namespace
 
 int main() {
@@ -465,9 +562,11 @@ int main() {
     if (int rc = run_offer_branch_recorded();           rc != 0) return 700 + rc;
     if (int rc = run_stop_event_replay_roundtrip();     rc != 0) return 800 + rc;
     if (int rc = run_recording_stop_close_recorded();   rc != 0) return 900 + rc;
+    if (int rc = run_checkpoint_event_replay_roundtrip(); rc != 0) return 1000 + rc;
+    if (int rc = run_recording_checkpoint_paths_recorded(); rc != 0) return 1100 + rc;
 
     std::puts("session_event_log: log primitive + RecordingSessionHandle "
               "wrapper + bilateral capture + replay-determinism + Offer "
-              "branch capture + Stop replay OK");
+              "branch capture + Stop + Checkpoint replay OK");
     return 0;
 }

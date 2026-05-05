@@ -60,6 +60,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
+#include <crucible/Types.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Pinned.h>
 
@@ -126,6 +127,15 @@ struct RecoveryPathHash {
     constexpr bool operator==(const RecoveryPathHash&)  const noexcept = default;
 };
 
+// Identifier for an application-level checkpoint.  The event log does
+// not interpret it; replay code uses it to match a transition against
+// the saved state selected by the application/Cipher layer.
+struct CheckpointId {
+    uint64_t value = 0;
+    constexpr auto operator<=>(const CheckpointId&) const noexcept = default;
+    constexpr bool operator==(const CheckpointId&)  const noexcept = default;
+};
+
 // Monotonic per-log step counter.  Strictly non-decreasing within a
 // SessionEventLog (enforced by OrderedAppendOnly's contract).  Distinct
 // SessionEventLogs maintain separate StepId sequences.
@@ -149,6 +159,8 @@ enum class SessionOp : uint8_t {
     Close  = 5,   // End::close() — terminal, session completed
     Detach = 6,   // SessionHandle::detach(reason) — abandoned at non-terminal
     Stop   = 7,   // Stop_g<C>::close() — crash-stop terminal observed
+    Checkpoint_Base     = 8,  // CheckpointedSession::base()
+    Checkpoint_Rollback = 9,  // CheckpointedSession::rollback()
 };
 
 }  // namespace event_detail
@@ -164,6 +176,8 @@ using SessionOp = event_detail::SessionOp;
         case SessionOp::Close:  return "Close";
         case SessionOp::Detach: return "Detach";
         case SessionOp::Stop:   return "Stop";
+        case SessionOp::Checkpoint_Base:     return "Checkpoint_Base";
+        case SessionOp::Checkpoint_Rollback: return "Checkpoint_Rollback";
         default:                return "?";
     }
 }
@@ -175,6 +189,14 @@ enum class StopReasonKind : uint8_t {
     PeerCrashed = 1,
     LocalAbort  = 2,
     Recovery    = 3,
+};
+
+// Choice classifier for CheckpointedSession events.  Stored in the
+// same one-byte control slot as StopReasonKind; the SessionOp selects
+// which interpretation is valid.
+enum class CheckpointChoice : uint8_t {
+    Base     = 1,
+    Rollback = 2,
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -190,6 +212,12 @@ enum class StopReasonKind : uint8_t {
 //   payload_schema.value -> peer_tag
 //   payload_hash.value   -> recovery_path_hash
 //   reason_kind          -> StopReasonKind
+//
+// Checkpoint events reuse the same lanes:
+//   payload_schema.value -> checkpoint_id
+//   payload_hash.value   -> saved_state_content_hash.raw()
+//   reason_kind          -> CheckpointChoice
+//
 // The typed helpers below make that variant payload explicit without
 // adding storage or runtime dispatch.
 
@@ -222,6 +250,38 @@ struct SessionEvent {
         };
     }
 
+    [[nodiscard]] static constexpr SessionEvent checkpoint_base(
+        RoleTagId self,
+        RoleTagId peer,
+        CheckpointId checkpoint,
+        ::crucible::ContentHash saved_state = {}) noexcept
+    {
+        return SessionEvent{
+            .from_role      = self,
+            .to_role        = peer,
+            .payload_schema = SchemaHash{checkpoint.value},
+            .payload_hash   = PayloadHash{saved_state.raw()},
+            .op             = SessionOp::Checkpoint_Base,
+            .reason_kind    = static_cast<uint8_t>(CheckpointChoice::Base),
+        };
+    }
+
+    [[nodiscard]] static constexpr SessionEvent checkpoint_rollback(
+        RoleTagId self,
+        RoleTagId peer,
+        CheckpointId checkpoint,
+        ::crucible::ContentHash saved_state = {}) noexcept
+    {
+        return SessionEvent{
+            .from_role      = self,
+            .to_role        = peer,
+            .payload_schema = SchemaHash{checkpoint.value},
+            .payload_hash   = PayloadHash{saved_state.raw()},
+            .op             = SessionOp::Checkpoint_Rollback,
+            .reason_kind    = static_cast<uint8_t>(CheckpointChoice::Rollback),
+        };
+    }
+
     [[nodiscard]] constexpr RoleTagId stop_peer_tag() const noexcept {
         return RoleTagId{payload_schema.value};
     }
@@ -232,6 +292,19 @@ struct SessionEvent {
 
     [[nodiscard]] constexpr RecoveryPathHash stop_recovery_path_hash() const noexcept {
         return RecoveryPathHash{payload_hash.value};
+    }
+
+    [[nodiscard]] constexpr CheckpointId checkpoint_id() const noexcept {
+        return CheckpointId{payload_schema.value};
+    }
+
+    [[nodiscard]] constexpr CheckpointChoice checkpoint_choice() const noexcept {
+        return static_cast<CheckpointChoice>(reason_kind);
+    }
+
+    [[nodiscard]] constexpr ::crucible::ContentHash
+    checkpoint_saved_state_content_hash() const noexcept {
+        return ::crucible::ContentHash::from_raw(payload_hash.value);
     }
 };
 
