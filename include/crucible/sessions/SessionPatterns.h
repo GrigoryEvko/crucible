@@ -19,7 +19,18 @@
 //   * Composable — patterns compose via compose_t<P, Q>; patterns
 //     refine via is_subtype_sync_v; patterns dualise via dual_of_t.
 //   * Self-verifying — every pattern ships with static_assert checks
-//     for dual involution, well-formedness, and structural expansion.
+//     for dual involution, well-formedness, structural expansion, and
+//     synchronous subtype refinement against documented aliases and
+//     local branch-refinement witnesses.
+//
+// Subtype refinement note: this header does not expose public
+// `*_Strong` / `*_Weak` pattern aliases yet.  The self-test block
+// therefore verifies equivalence for aliases that are intentionally
+// identical, double-dual subtype refinement for every named pattern,
+// and strict local witnesses for the patterns whose structure admits
+// true Gay-Hole refinement today: Select narrowing and Offer widening.
+// Public named strong/weak variants remain future work once protocol
+// evolution APIs need stable names for those witnesses.
 //
 // ─── Scope and non-goals ──────────────────────────────────────────
 //
@@ -104,6 +115,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionSubtype.h>
 
 #include <cstddef>
 #include <type_traits>
@@ -461,6 +473,8 @@ struct Ack     {};
 struct Hello   {};
 struct Welcome {};
 struct Reject  {};
+struct Cancel  {};
+struct Retry   {};
 
 // ─── RequestResponse family ────────────────────────────────────────
 
@@ -816,6 +830,188 @@ static_assert(std::is_same_v<
 
 static_assert(is_well_formed_v<Handshake_Client<Hello, Welcome, Reject>>);
 static_assert(is_well_formed_v<Handshake_Server<Hello, Welcome, Reject>>);
+
+// ─── Subtype refinement coverage (GAPS-054) ───────────────────────
+//
+// Public named strong/weak aliases do not exist yet.  These assertions
+// pin the subtype surface that is meaningful for today's pattern set:
+// every named pattern refines itself and its double dual; structural
+// aliases are bidirectionally equivalent; and branch-bearing patterns
+// have local strict witnesses for Select narrowing / Offer widening.
+
+template <typename P>
+inline constexpr bool refines_self_and_double_dual_v =
+    is_subtype_sync_v<P, P> &&
+    is_subtype_sync_v<P, dual_of_t<dual_of_t<P>>>;
+
+// Every public named pattern refines its own double dual.  This is the
+// subtype-strengthened form of the dual-involution checks above.
+static_assert(refines_self_and_double_dual_v<
+    RequestResponseOnce_Client<Req, Resp>>);
+static_assert(refines_self_and_double_dual_v<
+    RequestResponseOnce_Server<Req, Resp>>);
+static_assert(refines_self_and_double_dual_v<
+    RequestResponse_Client<Req, Resp>>);
+static_assert(refines_self_and_double_dual_v<
+    RequestResponse_Server<Req, Resp>>);
+static_assert(refines_self_and_double_dual_v<
+    RequestResponseLoop_Client<Req, Resp>>);
+static_assert(refines_self_and_double_dual_v<
+    RequestResponseLoop_Server<Req, Resp>>);
+
+static_assert(refines_self_and_double_dual_v<PipelineSource<Job>>);
+static_assert(refines_self_and_double_dual_v<PipelineSink<Job>>);
+static_assert(refines_self_and_double_dual_v<PipelineStage<Req, Resp>>);
+
+static_assert(refines_self_and_double_dual_v<TxClient>);
+static_assert(refines_self_and_double_dual_v<TxServer>);
+
+static_assert(refines_self_and_double_dual_v<FanOut<3, Job>>);
+static_assert(refines_self_and_double_dual_v<FanIn<3, Job>>);
+static_assert(refines_self_and_double_dual_v<Broadcast<3, Job>>);
+static_assert(refines_self_and_double_dual_v<
+    ScatterGather<2, Task, Result>>);
+
+static_assert(refines_self_and_double_dual_v<MpmcProducer<Job>>);
+static_assert(refines_self_and_double_dual_v<MpmcConsumer<Job>>);
+
+static_assert(refines_self_and_double_dual_v<ConcreteCoord>);
+static_assert(refines_self_and_double_dual_v<ConcreteFollower>);
+
+static_assert(refines_self_and_double_dual_v<
+    SwimProbe_Client<Probe, Ack>>);
+static_assert(refines_self_and_double_dual_v<
+    SwimProbe_Server<Probe, Ack>>);
+
+static_assert(refines_self_and_double_dual_v<
+    Handshake_Client<Hello, Welcome, Reject>>);
+static_assert(refines_self_and_double_dual_v<
+    Handshake_Server<Hello, Welcome, Reject>>);
+
+// Alias families are not merely syntactically equal; they are pinned
+// as bidirectional subtype equivalents.
+static_assert(equivalent_sync_v<
+    PipelineStage<Req, Resp>,
+    RequestResponse_Server<Req, Resp>>);
+static_assert(equivalent_sync_v<Broadcast<4, Job>, FanOut<4, Job>>);
+static_assert(equivalent_sync_v<
+    ScatterGather<1, Task, Result>,
+    RequestResponseOnce_Client<Task, Result>>);
+static_assert(equivalent_sync_v<
+    SwimProbe_Client<Probe, Ack>,
+    RequestResponseOnce_Client<Probe, Ack>>);
+static_assert(equivalent_sync_v<
+    SwimProbe_Server<Probe, Ack>,
+    RequestResponseOnce_Server<Probe, Ack>>);
+
+// The close-free and in-band-close request/response variants are
+// intentionally distinct shapes, not a subtype ladder.
+static_assert(!is_subtype_sync_v<
+    RequestResponse_Client<Req, Resp>,
+    RequestResponseLoop_Client<Req, Resp>>);
+static_assert(!is_subtype_sync_v<
+    RequestResponseLoop_Client<Req, Resp>,
+    RequestResponse_Client<Req, Resp>>);
+static_assert(!is_subtype_sync_v<
+    RequestResponse_Server<Req, Resp>,
+    RequestResponseLoop_Server<Req, Resp>>);
+static_assert(!is_subtype_sync_v<
+    RequestResponseLoop_Server<Req, Resp>,
+    RequestResponse_Server<Req, Resp>>);
+
+// RequestResponseLoop: client-side Select narrowing and server-side
+// Offer widening are the proper strict refinement directions.
+using RRLoopClientSendOnly = Loop<Select<
+    Send<Req, Recv<Resp, Continue>>>>;
+static_assert(is_strict_subtype_sync_v<
+    RRLoopClientSendOnly,
+    RequestResponseLoop_Client<Req, Resp>>);
+static_assert(!is_subtype_sync_v<
+    RequestResponseLoop_Client<Req, Resp>,
+    RRLoopClientSendOnly>);
+
+using RRLoopServerWithRetry = Loop<Offer<
+    Recv<Req, Send<Resp, Continue>>,
+    End,
+    Recv<Retry, End>>>;
+static_assert(is_strict_subtype_sync_v<
+    RRLoopServerWithRetry,
+    RequestResponseLoop_Server<Req, Resp>>);
+static_assert(!is_subtype_sync_v<
+    RequestResponseLoop_Server<Req, Resp>,
+    RRLoopServerWithRetry>);
+
+// Transaction: a client may narrow choices; a server may handle more
+// choices while preserving the documented first three branch positions.
+using TxClientOpsOnly = Send<Prepare, Loop<Select<
+    Send<Req, Continue>>>>;
+static_assert(is_strict_subtype_sync_v<TxClientOpsOnly, TxClient>);
+static_assert(!is_subtype_sync_v<TxClient, TxClientOpsOnly>);
+
+using TxServerWithCancel = Recv<Prepare, Loop<Offer<
+    Recv<Req, Continue>,
+    Recv<Commit, Send<Ack, End>>,
+    Recv<Abort, End>,
+    Recv<Cancel, End>>>>;
+static_assert(is_strict_subtype_sync_v<TxServerWithCancel, TxServer>);
+static_assert(!is_subtype_sync_v<TxServer, TxServerWithCancel>);
+
+// MPMC: producer push-only is a Select narrowing; consumer extra close
+// handling is an Offer widening.
+using MpmcProducerPushOnly = Loop<Select<Send<Job, Continue>>>;
+static_assert(is_strict_subtype_sync_v<
+    MpmcProducerPushOnly,
+    MpmcProducer<Job>>);
+static_assert(!is_subtype_sync_v<
+    MpmcProducer<Job>,
+    MpmcProducerPushOnly>);
+
+using MpmcConsumerWithCancel = Loop<Offer<
+    Recv<Job, Continue>,
+    End,
+    Recv<Cancel, End>>>;
+static_assert(is_strict_subtype_sync_v<
+    MpmcConsumerWithCancel,
+    MpmcConsumer<Job>>);
+static_assert(!is_subtype_sync_v<
+    MpmcConsumer<Job>,
+    MpmcConsumerWithCancel>);
+
+// Two-phase commit: coordinator narrows the final decision; follower
+// accepts a compatible future extension branch.
+using CoordCommitOnly = Send<Prepare, Recv<Vote, Select<
+    Send<Commit, End>>>>;
+static_assert(is_strict_subtype_sync_v<CoordCommitOnly, ConcreteCoord>);
+static_assert(!is_subtype_sync_v<ConcreteCoord, CoordCommitOnly>);
+
+using FollowerWithRetry = Recv<Prepare, Send<Vote, Offer<
+    Recv<Commit, End>,
+    Recv<Abort, End>,
+    Recv<Retry, End>>>>;
+static_assert(is_strict_subtype_sync_v<FollowerWithRetry, ConcreteFollower>);
+static_assert(!is_subtype_sync_v<ConcreteFollower, FollowerWithRetry>);
+
+// Handshake: the client may handle an extra offered outcome; the
+// server may narrow its selected outcome.
+using HandshakeClientWithRetry = Send<Hello, Offer<
+    Recv<Welcome, End>,
+    Recv<Reject, End>,
+    Recv<Retry, End>>>;
+static_assert(is_strict_subtype_sync_v<
+    HandshakeClientWithRetry,
+    Handshake_Client<Hello, Welcome, Reject>>);
+static_assert(!is_subtype_sync_v<
+    Handshake_Client<Hello, Welcome, Reject>,
+    HandshakeClientWithRetry>);
+
+using HandshakeServerWelcomeOnly = Recv<Hello, Select<
+    Send<Welcome, End>>>;
+static_assert(is_strict_subtype_sync_v<
+    HandshakeServerWelcomeOnly,
+    Handshake_Server<Hello, Welcome, Reject>>);
+static_assert(!is_subtype_sync_v<
+    Handshake_Server<Hello, Welcome, Reject>,
+    HandshakeServerWelcomeOnly>);
 
 // ─── Cross-pattern composition ────────────────────────────────────
 //
