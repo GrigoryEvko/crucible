@@ -864,6 +864,9 @@ crucible_neg_compile_session_test(neg_delegate_stop_continuation
 crucible_neg_compile_session_test(neg_delegate_stop_without_continuation_capability
     "DelegateStop_NoContinuation")
 
+crucible_neg_compile_session_test(neg_delegate_compose_incompatible_crash_classes
+    "CrashLattice composition rejects: Abort x NoThrow incompatible")
+
 crucible_neg_compile_session_test(neg_delegate_recipient_crash_no_propagation_metafunction
     "DelegatedCrashPropagation_PrimaryTemplate|primary template fires")
 

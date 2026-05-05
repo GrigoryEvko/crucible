@@ -522,7 +522,7 @@ struct compose<Delegate<T, K>, Q> {
 
 template <CrashClass C, typename K, typename Q>
 struct compose<Delegate<Stop_g<C>, K>, Q> {
-    using type = Stop_g<C>;
+    using type = typename compose<Stop_g<C>, Q>::type;
 };
 
 template <CrashClass C, typename K>

@@ -186,6 +186,15 @@ struct dual_of<Stop_g<C>> { using type = Stop_g<C>; };
 template <CrashClass C, typename Q>
 struct compose<Stop_g<C>, Q> { using type = Stop_g<C>; };
 
+template <CrashClass C1, CrashClass C2>
+struct compose<Stop_g<C1>, Stop_g<C2>> {
+    static_assert(CrashLattice::leq(C2, C1),
+        "crucible::session::diagnostic "
+        "[CrashLattice_Composition_Incompatible]: "
+        "CrashLattice composition rejects: Abort x NoThrow incompatible.");
+    using type = Stop_g<C1>;
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── is_well_formed<Stop, LoopCtx> = true ───────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -643,6 +652,9 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     compose_t<Stop_g<CrashClass::Throw>, Send<int, End>>,
     Stop_g<CrashClass::Throw>>);
+static_assert(std::is_same_v<
+    compose_t<Stop_g<CrashClass::NoThrow>, Stop_g<CrashClass::Abort>>,
+    Stop_g<CrashClass::NoThrow>>);
 
 // Compose does NOT reach through Send's continuation when that
 // continuation is End — End is replaced, not preserved.  But when the
