@@ -19,8 +19,9 @@
 #include <crucible/bridges/RecordingSessionHandle.h>
 #include <crucible/sessions/SessionEventLog.h>
 
-#include <cstring>
+#include <array>
 #include <cstdio>
+#include <cstring>
 #include <deque>
 #include <string>
 #include <utility>
@@ -146,6 +147,27 @@ struct WireBuf { std::deque<int>* bytes = nullptr; };
 
 constexpr RoleTagId kClient{1};
 constexpr RoleTagId kServer{2};
+
+struct CrashPeer {};
+struct CrashSurvivor {};
+
+struct CrashWire {
+    std::deque<int>* bytes = nullptr;
+    int session_id = 0;
+};
+
+}  // anonymous namespace
+
+namespace crucible::permissions {
+
+template <>
+struct survivor_registry<CrashPeer> {
+    using type = inheritance_list<CrashSurvivor>;
+};
+
+}  // namespace crucible::permissions
+
+namespace {
 
 int run_request_reply_recorded() {
     std::deque<int> wire;
@@ -460,6 +482,177 @@ int run_recording_stop_close_recorded() {
     return 0;
 }
 
+// ── Worked: Recording wrapper over CrashWatchedHandle happy path ───
+
+int run_recording_crash_watched_happy_path_records_ops() {
+    using P = Select<Send<int, End>, End>;
+
+    std::deque<int> wire;
+    crucible::safety::OneShotFlag flag;
+    SessionEventLog log{SessionTagId{405}};
+
+    auto bare = mint_session_handle<P>(CrashWire{&wire, 71});
+    auto watched = mint_crash_watched_session<CrashPeer>(std::move(bare), flag);
+    auto rec = mint_recording_session(std::move(watched), log, kClient, kServer);
+
+    static_assert(!std::is_copy_constructible_v<decltype(rec)>);
+    static_assert(std::is_same_v<typename decltype(rec)::peer, CrashPeer>);
+
+    auto selected = std::move(rec).template select<0>(
+        [](CrashWire& w, std::size_t branch) noexcept {
+            w.bytes->push_back(static_cast<int>(branch));
+        });
+    if (!selected)                                             return 1;
+
+    auto sent = std::move(*selected).send(
+        42,
+        [](CrashWire& w, int value) noexcept {
+            w.bytes->push_back(value);
+        });
+    if (!sent)                                                 return 2;
+
+    CrashWire recovered = std::move(*sent).close();
+    if (recovered.session_id != 71)                            return 3;
+    if (wire.size() != 2 || wire[0] != 0 || wire[1] != 42)      return 4;
+
+    if (log.size() != 3)                                       return 5;
+    if (log[0].op != SessionOp::Select || log[0].branch_index != 0) return 6;
+    if (log[1].op != SessionOp::Send)                          return 7;
+    if (log[1].payload_schema != default_schema_hash<int>)     return 8;
+    if (log[2].op != SessionOp::Close)                         return 9;
+    for (const SessionEvent& event : log) {
+        if (event.op == SessionOp::Stop)                       return 10;
+    }
+    return 0;
+}
+
+// ── Worked: CrashWatchedHandle peer death records Stop only ────────
+
+int run_recording_crash_watched_send_crash_records_stop_only() {
+    using P = Send<int, End>;
+
+    std::deque<int> wire;
+    crucible::safety::OneShotFlag flag;
+    SessionEventLog log{SessionTagId{406}};
+    bool transport_invoked = false;
+
+    auto bare = mint_session_handle<P>(CrashWire{&wire, 81});
+    auto watched = mint_crash_watched_session<CrashPeer>(std::move(bare), flag);
+    auto rec = mint_recording_session(std::move(watched), log, kClient, kServer);
+
+    flag.signal();
+
+    auto result = std::move(rec).send(
+        9,
+        [&](CrashWire& w, int value) noexcept {
+            transport_invoked = true;
+            w.bytes->push_back(value);
+        });
+
+    if (result)                                                return 1;
+    if (result.error().resource.session_id != 81)              return 2;
+    if (transport_invoked)                                     return 3;
+    if (!wire.empty())                                         return 4;
+
+    if (log.size() != 1)                                       return 5;
+    if (log[0].op != SessionOp::Stop)                          return 6;
+    if (log[0].from_role != kClient)                           return 7;
+    if (log[0].to_role != kServer)                             return 8;
+    if (log[0].stop_peer_tag() != kServer)                     return 9;
+    if (log[0].stop_reason_kind() != StopReasonKind::PeerCrashed) return 10;
+    return 0;
+}
+
+// ── Worked: recv-side crash records Stop after prior success ───────
+
+int run_recording_crash_watched_recv_crash_records_stop() {
+    using P = Send<int, Recv<int, End>>;
+
+    std::deque<int> wire;
+    crucible::safety::OneShotFlag flag;
+    SessionEventLog log{SessionTagId{407}};
+    bool recv_invoked = false;
+
+    auto bare = mint_session_handle<P>(CrashWire{&wire, 91});
+    auto watched = mint_crash_watched_session<CrashPeer>(std::move(bare), flag);
+    auto rec = mint_recording_session(std::move(watched), log, kClient, kServer);
+
+    auto sent = std::move(rec).send(
+        5,
+        [](CrashWire& w, int value) noexcept {
+            w.bytes->push_back(value);
+        });
+    if (!sent)                                                 return 1;
+    if (log.size() != 1 || log[0].op != SessionOp::Send)       return 2;
+
+    flag.signal();
+
+    auto received = std::move(*sent).recv(
+        [&](CrashWire& w) noexcept -> int {
+            recv_invoked = true;
+            return w.bytes->front();
+        });
+
+    if (received)                                              return 3;
+    if (received.error().resource.session_id != 91)            return 4;
+    if (recv_invoked)                                          return 5;
+    if (wire.size() != 1 || wire.front() != 5)                 return 6;
+
+    if (log.size() != 2)                                       return 7;
+    if (log[1].op != SessionOp::Stop)                          return 8;
+    if (log[1].from_role != kClient)                           return 9;
+    if (log[1].stop_peer_tag() != kServer)                     return 10;
+    return 0;
+}
+
+// ── Worked: select/offer crash paths also record Stop ──────────────
+
+int run_recording_crash_watched_choice_crash_records_stop() {
+    {
+        using P = Select<End, End>;
+
+        std::deque<int> wire;
+        crucible::safety::OneShotFlag flag;
+        SessionEventLog log{SessionTagId{408}};
+
+        auto bare = mint_session_handle<P>(CrashWire{&wire, 101});
+        auto watched = mint_crash_watched_session<CrashPeer>(std::move(bare), flag);
+        auto rec = mint_recording_session(std::move(watched), log, kClient, kServer);
+
+        flag.signal();
+
+        auto result = std::move(rec).template select_local<1>();
+        if (result)                                            return 1;
+        if (result.error().resource.session_id != 101)         return 2;
+        if (log.size() != 1)                                   return 3;
+        if (log[0].op != SessionOp::Stop)                      return 4;
+        if (log[0].stop_peer_tag() != kServer)                 return 5;
+    }
+
+    {
+        using P = Offer<End, End>;
+
+        std::deque<int> wire;
+        crucible::safety::OneShotFlag flag;
+        SessionEventLog log{SessionTagId{409}};
+
+        auto bare = mint_session_handle<P>(CrashWire{&wire, 111});
+        auto watched = mint_crash_watched_session<CrashPeer>(std::move(bare), flag);
+        auto rec = mint_recording_session(std::move(watched), log, kServer, kClient);
+
+        flag.signal();
+
+        auto result = std::move(rec).template pick_local<0>();
+        if (result)                                            return 11;
+        if (result.error().resource.session_id != 111)         return 12;
+        if (log.size() != 1)                                   return 13;
+        if (log[0].op != SessionOp::Stop)                      return 14;
+        if (log[0].stop_peer_tag() != kClient)                 return 15;
+    }
+
+    return 0;
+}
+
 // ── Worked: Checkpoint base/rollback event replay round-trip ───────
 
 int run_checkpoint_event_replay_roundtrip() {
@@ -667,6 +860,90 @@ int run_recording_delegate_accept_recorded() {
     return 0;
 }
 
+// ── Worked: every SessionOp round-trips bit-exactly ────────────────
+
+int run_all_session_ops_bit_exact_replay() {
+    constexpr auto kProtoHash =
+        crucible::ContentHash::from_raw(0xE0111E0111E0111ULL);
+    constexpr auto kSavedHash =
+        crucible::ContentHash::from_raw(0xD0222D0222D0222ULL);
+    constexpr InnerPermSetHash kPerms{0xA0333A0333A0333ULL};
+    constexpr RecoveryPathHash kRecovery{0xB0444B0444B0444ULL};
+
+    const std::array<SessionEvent, 11> events{{
+        SessionEvent{
+            .from_role      = kClient,
+            .to_role        = kServer,
+            .payload_schema = default_schema_hash<int>,
+            .payload_hash   = PayloadHash{1},
+            .op             = SessionOp::Send,
+        },
+        SessionEvent{
+            .from_role      = kServer,
+            .to_role        = kClient,
+            .payload_schema = default_schema_hash<int>,
+            .payload_hash   = PayloadHash{2},
+            .op             = SessionOp::Recv,
+        },
+        SessionEvent{
+            .from_role    = kClient,
+            .to_role      = kServer,
+            .op           = SessionOp::Select,
+            .branch_index = 1,
+        },
+        SessionEvent{
+            .from_role    = kServer,
+            .to_role      = kClient,
+            .op           = SessionOp::Offer,
+            .branch_index = 2,
+        },
+        SessionEvent{
+            .from_role = kClient,
+            .to_role   = kServer,
+            .op        = SessionOp::Close,
+        },
+        SessionEvent{
+            .from_role = kClient,
+            .to_role   = kServer,
+            .op        = SessionOp::Detach,
+        },
+        SessionEvent::stop(
+            kServer, kClient, kClient,
+            StopReasonKind::PeerCrashed,
+            kRecovery),
+        SessionEvent::checkpoint_base(
+            kClient, kServer, CheckpointId{31}, kSavedHash),
+        SessionEvent::checkpoint_rollback(
+            kClient, kServer, CheckpointId{32}, kSavedHash),
+        SessionEvent::delegate_handoff(
+            kClient, kServer, kProtoHash, kPerms),
+        SessionEvent::accept_handoff(
+            kServer, kClient, kProtoHash, kPerms),
+    }};
+
+    SessionEventLog log{SessionTagId{808}};
+    for (SessionEvent event : events) {
+        log.append_event(event);
+    }
+
+    if (log.size() != events.size())                              return 1;
+
+    auto replay = log.replay_iter();
+    auto it = replay.begin();
+    for (std::size_t i = 0; i < events.size(); ++i, ++it) {
+        if (it == replay.end())                                   return 10;
+        if (std::memcmp(&*it, &log[i], sizeof(SessionEvent)) != 0) return 20;
+        if (log[i].op != events[i].op)                            return 30;
+        if (log[i].session.value != 808u)                         return 40;
+        if (i > 0 && !(log[i - 1].step_id.value < log[i].step_id.value)) {
+            return 50;
+        }
+    }
+    if (it != replay.end())                                       return 60;
+
+    return 0;
+}
+
 }  // anonymous namespace
 
 int main() {
@@ -680,13 +957,27 @@ int main() {
     if (int rc = run_offer_branch_recorded();           rc != 0) return 700 + rc;
     if (int rc = run_stop_event_replay_roundtrip();     rc != 0) return 800 + rc;
     if (int rc = run_recording_stop_close_recorded();   rc != 0) return 900 + rc;
+    if (int rc = run_recording_crash_watched_happy_path_records_ops(); rc != 0) {
+        return 950 + rc;
+    }
+    if (int rc = run_recording_crash_watched_send_crash_records_stop_only(); rc != 0) {
+        return 960 + rc;
+    }
+    if (int rc = run_recording_crash_watched_recv_crash_records_stop(); rc != 0) {
+        return 970 + rc;
+    }
+    if (int rc = run_recording_crash_watched_choice_crash_records_stop(); rc != 0) {
+        return 980 + rc;
+    }
     if (int rc = run_checkpoint_event_replay_roundtrip(); rc != 0) return 1000 + rc;
     if (int rc = run_recording_checkpoint_paths_recorded(); rc != 0) return 1100 + rc;
     if (int rc = run_delegate_event_replay_roundtrip(); rc != 0) return 1200 + rc;
     if (int rc = run_recording_delegate_accept_recorded(); rc != 0) return 1300 + rc;
+    if (int rc = run_all_session_ops_bit_exact_replay(); rc != 0) return 1400 + rc;
 
     std::puts("session_event_log: log primitive + RecordingSessionHandle "
               "wrapper + bilateral capture + replay-determinism + Offer "
-              "branch capture + Stop + Checkpoint + Delegate replay OK");
+              "branch capture + CrashWatched Stop capture + full "
+              "SessionOp replay OK");
     return 0;
 }

@@ -70,6 +70,14 @@
 // paths produce well-typed handles; the RUNTIME semantics of
 // "rollback" is application-defined.
 //
+// ─── Event-log integration ─────────────────────────────────────────
+//
+// The bare SessionHandle below remains zero-overhead and does not own
+// a log pointer.  Replay/audit users wrap it with
+// bridges/RecordingSessionHandle.h; that wrapper records
+// SessionOp::Checkpoint_Base / SessionOp::Checkpoint_Rollback into
+// SessionEventLog before advancing into the chosen branch (GAPS-051).
+//
 // ─── Compose rule rationale ────────────────────────────────────────
 //
 // compose<CheckpointedSession<P, R>, Q> could reasonably extend
@@ -99,6 +107,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionEventLog.h>
 #include <crucible/sessions/SessionSubtype.h>
 
 #include <type_traits>

@@ -76,6 +76,15 @@
 // nothing will ever receive from Stop, so Stop is compatible with
 // every context that expects some T.
 //
+// ─── Event-log integration ─────────────────────────────────────────
+//
+// RecordingSessionHandle<Stop_g<C>, ...> emits SessionOp::Stop with
+// peer_tag, reason_kind, and recovery_path_hash payload lanes when a
+// typed Stop terminal is closed (GAPS-050).  CrashWatchedHandle
+// reports runtime peer death as CrashEvent; wrapping that handle with
+// mint_recording_session(...) emits SessionOp::Stop when the
+// expected-valued operation observes the peer-death flag (GAPS-053).
+//
 // ─── What this ships; what's deferred ─────────────────────────────
 //
 // Shipped:
@@ -114,6 +123,7 @@
 #include <crucible/Platform.h>
 #include <crucible/algebra/lattices/CrashLattice.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionEventLog.h>
 #include <crucible/sessions/SessionSubtype.h>
 
 #include <cstddef>

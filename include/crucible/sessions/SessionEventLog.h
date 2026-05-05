@@ -5,19 +5,21 @@
 //
 // Task #404 SAFEINT-B15 from misc/24_04_2026_safety_integration.md
 // §15.  Promotes the bit-exact-replay discipline from an ad-hoc
-// trace to a typed structure: every Send / Recv / Select / Offer /
-// Stop / close on a session can be recorded into an OrderedAppendOnly log
-// whose monotonic step_id provides total ordering and whose append-
-// only invariant structurally forbids in-place rewrite of past
-// events.
+// trace to a typed structure.  The log records the original L1
+// combinators (Send / Recv / Select / Offer / Close), explicit
+// non-terminal detaches, and the GAPS-050..052 extension set:
+// Stop, Checkpoint_Base, Checkpoint_Rollback, Delegate, and Accept.
+// OrderedAppendOnly gives every event a monotonic step_id and
+// structurally forbids in-place rewrite of past events.
 //
 // Two pieces ship in this header:
 //
 //   * `SessionEvent` — the per-operation record (POD, 56 bytes,
 //     TriviallyCopyable for fast bulk-drain to Cipher).  Carries
-//     step_id, session, from_role, to_role, payload schema, payload
-//     hash, op kind, and (for Select / Offer) the chosen branch
-//     index.
+//     step_id, session, from_role, to_role, op kind, and two typed
+//     64-bit payload lanes interpreted by the selected SessionOp
+//     (payload schema/hash for Send/Recv, checkpoint ids, delegated
+//     protocol hashes, crash recovery hashes, etc.).
 //
 //   * `SessionEventLog` — the log primitive.  Wraps an
 //     OrderedAppendOnly<SessionEvent, StepIdKeyFn> (step monotonicity
@@ -55,8 +57,11 @@
 //
 //   misc/24_04_2026_safety_integration.md §15 — design rationale
 //   safety/Mutation.h — OrderedAppendOnly + AtomicMonotonic
-//   safety/RecordingSessionHandle.h — the wrapper that emits events
+//   bridges/RecordingSessionHandle.h — the wrapper that emits events
 //   safety/Pinned.h — Pinned constraint
+//   GAPS-050 — Stop event representation
+//   GAPS-051 — Checkpoint_Base / Checkpoint_Rollback events
+//   GAPS-052 — Delegate / Accept handoff events
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>

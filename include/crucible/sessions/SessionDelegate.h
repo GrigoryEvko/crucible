@@ -78,6 +78,14 @@
 //   delegation — that's fresh session establishment via
 //   `mint_channel`.  Delegate transfers an EXISTING session.
 //
+// ─── Event-log integration ─────────────────────────────────────────
+//
+// The bare Delegate/Accept SessionHandle specialisations below do not
+// carry an event log.  Replay/audit users wrap the carrier handle with
+// bridges/RecordingSessionHandle.h; the recording wrapper emits
+// SessionOp::Delegate / SessionOp::Accept with delegated_proto_hash,
+// peer role, and inner_perm_set_hash payload lanes (GAPS-052).
+//
 // ─── References ────────────────────────────────────────────────────
 //
 //   Honda, K. (1993 & 1998).  "Types for Dyadic Interaction" +
@@ -104,6 +112,7 @@
 
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/SessionEventLog.h>
 
 #include <concepts>
 #include <type_traits>
