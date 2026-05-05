@@ -36,6 +36,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/algebra/GradedTrait.h>
+#include <crucible/effects/Computation.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/CipherTier.h>
@@ -62,6 +63,7 @@
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Stale.h>
 #include <crucible/safety/TimeOrdered.h>
+#include <crucible/safety/diag/RowHashFold.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -82,6 +84,10 @@ inline constexpr PositiveCheck positive_local{};
 
 // Witness tag for Tagged.
 struct VerificationTag {};
+
+struct ResultTensor {
+    int value;
+};
 
 // ── COVERAGE MATRIX — sizeof preservation ──────────────────────────
 //
@@ -222,6 +228,93 @@ static_assert(sizeof(Vendor<VendorBackend_v::NV,       double>) == sizeof(double
 static_assert(sizeof(Vendor<VendorBackend_v::AMD,      long long>)
                                                                  == sizeof(long long));
 static_assert(sizeof(Vendor<VendorBackend_v::None,     int>)    == sizeof(int));
+
+// ── COVERAGE MATRIX — row_hash wrapper nesting order ───────────────
+//
+// GAPS-029 regression anchors: every wrapper in the canonical stack
+// must contribute to RowHash, and swapping wrapper order must produce
+// a distinct federation-cache slot.
+
+namespace cd = ::crucible::safety::diag;
+namespace ce = ::crucible::effects;
+using ce::Computation;
+using ce::Effect;
+using ce::Row;
+
+using BgCarrier = Computation<Row<Effect::Bg>, int>;
+
+static_assert(cd::row_hash_contribution_v<Stale<Tagged<int, VerificationTag>>>
+           != cd::row_hash_contribution_v<Tagged<Stale<int>, VerificationTag>>);
+static_assert(cd::row_hash_contribution_v<Refined<positive_local, Linear<int>>>
+           != cd::row_hash_contribution_v<Linear<Refined<positive_local, int>>>);
+static_assert(cd::row_hash_contribution_v<Secret<Tagged<int, VerificationTag>>>
+           != cd::row_hash_contribution_v<Tagged<Secret<int>, VerificationTag>>);
+static_assert(
+    cd::row_hash_contribution_v<
+        HotPath<HotPathTier_v::Hot,
+            NumericalTier<Tolerance::BITEXACT, int>>>
+ != cd::row_hash_contribution_v<
+        NumericalTier<Tolerance::BITEXACT,
+            HotPath<HotPathTier_v::Hot, int>>>);
+static_assert(
+    cd::row_hash_contribution_v<
+        Vendor<VendorBackend_v::NV,
+            CipherTier<CipherTierTag_v::Hot, int>>>
+ != cd::row_hash_contribution_v<
+        CipherTier<CipherTierTag_v::Hot,
+            Vendor<VendorBackend_v::NV, int>>>);
+
+using CanonicalFiveDeep =
+    HotPath<HotPathTier_v::Hot,
+        DetSafe<DetSafeTier_v::Pure,
+            NumericalTier<Tolerance::BITEXACT,
+                Vendor<VendorBackend_v::NV,
+                    Computation<Row<Effect::Bg>, ResultTensor>>>>>;
+using ShuffledFiveDeep =
+    NumericalTier<Tolerance::BITEXACT,
+        HotPath<HotPathTier_v::Hot,
+            DetSafe<DetSafeTier_v::Pure,
+                Vendor<VendorBackend_v::NV,
+                    Computation<Row<Effect::Bg>, ResultTensor>>>>>;
+
+static_assert(cd::row_hash_contribution_v<CanonicalFiveDeep>
+           != cd::row_hash_contribution_v<ShuffledFiveDeep>);
+
+static_assert(cd::row_hash_contribution_v<HotPath<HotPathTier_v::Hot, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<DetSafe<DetSafeTier_v::Pure, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<NumericalTier<Tolerance::BITEXACT, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<Vendor<VendorBackend_v::NV, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<ResidencyHeat<ResidencyHeatTag_v::Hot, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<CipherTier<CipherTierTag_v::Hot, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<AllocClass<AllocClassTag_v::Stack, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<Wait<WaitStrategy_v::SpinPause, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<MemOrder<MemOrderTag_v::Relaxed, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<Progress<ProgressClass_v::Terminating, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<Stale<BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<Tagged<BgCarrier, VerificationTag>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<Refined<positive_local, BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<Secret<BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+static_assert(cd::row_hash_contribution_v<Linear<BgCarrier>>
+           != cd::row_hash_contribution_v<BgCarrier>);
+
+static_assert(cd::row_hash_contribution_v<CanonicalFiveDeep>
+           == cd::row_hash_contribution_v<CanonicalFiveDeep>);
+static_assert(cd::row_hash_contribution_v<Linear<BgCarrier>>
+           == cd::row_hash_contribution_v<Linear<BgCarrier>>);
 
 // Crash<Class, T> — regime-1 EBO collapse via CrashLattice::At<Class>
 // singleton sub-lattice (FOUND-G59).  Failure-mode-strength

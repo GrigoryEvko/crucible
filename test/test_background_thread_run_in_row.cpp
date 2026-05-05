@@ -214,7 +214,7 @@ static void test_t05_runtime_smoke() {
     // pre-clear running so the bg loop body is skipped entirely.
     bt.ring.set(BackgroundThread::RingPtr{ring.get()});
     bt.meta_log.set(BackgroundThread::MetaLogPtr{metalog.get()});
-    bt.running.store(false, std::memory_order_relaxed);
+    bt.stop_requested.signal();
 
     using Required = BackgroundThread::run_required_row;
 
@@ -242,7 +242,7 @@ static void test_t06_f_star_alias_all_row() {
     auto metalog = std::make_unique<MetaLog>();
     bt.ring.set(BackgroundThread::RingPtr{ring.get()});
     bt.meta_log.set(BackgroundThread::MetaLogPtr{metalog.get()});
-    bt.running.store(false, std::memory_order_relaxed);
+    bt.stop_requested.signal();
 
     bool done = false;
     std::thread t([&]() {
@@ -281,7 +281,7 @@ static void test_t07_multi_row_caller() {
     auto metalog = std::make_unique<MetaLog>();
     bt.ring.set(BackgroundThread::RingPtr{ring.get()});
     bt.meta_log.set(BackgroundThread::MetaLogPtr{metalog.get()});
-    bt.running.store(false, std::memory_order_relaxed);
+    bt.stop_requested.signal();
 
     bool done = false;
     std::thread t([&]() {
@@ -526,7 +526,7 @@ static void test_audit_f_concurrent_spsc_drain() {
     auto metalog = std::make_unique<MetaLog>();
     bt.ring.set(BackgroundThread::RingPtr{ring.get()});
     bt.meta_log.set(BackgroundThread::MetaLogPtr{metalog.get()});
-    bt.running.store(true, std::memory_order_release);
+    bt.stop_requested.reset_unsafe();
 
     using Required = BackgroundThread::run_required_row;
 
@@ -568,7 +568,7 @@ static void test_audit_f_concurrent_spsc_drain() {
 
     // Signal stop and join.  The bg's loop body sees running=false
     // and falls through to the trailing-drain path (which is empty).
-    bt.running.store(false, std::memory_order_release);
+    bt.stop_requested.signal();
     bg_thread.join();
 
     std::printf("  audit-F concurrent_spsc_drain:             PASSED\n");
@@ -619,9 +619,8 @@ static void test_audit_g_f_star_alias_closure() {
 // run_in_row<R>() has the SAME signature shape as run():
 //   • return type void
 //   • zero runtime parameters
-//   • non-noexcept (run() is non-noexcept; the forwarder must
-//     preserve this — adding noexcept would change exception
-//     semantics, even though we run with -fno-exceptions)
+//   • noexcept (run() now launches the structural pipeline whose
+//     stage bodies terminate rather than propagate exceptions)
 //   • non-const, non-volatile member (matches run())
 //
 // Catches a regression where a future refactor accidentally
@@ -638,25 +637,25 @@ static void test_audit_h_forwarder_fidelity_signature() {
     using RunInRowRet    = decltype(p->template run_in_row<Required>());
     static_assert(std::is_same_v<RunInRowRet, void>);
 
-    // noexcept-ness witness.  run_in_row<R>() is non-noexcept (the
-    // bg loop body invokes std::vector::push_back, which can throw
-    // bad_alloc; under -fno-exceptions this terminates, but the
-    // type-system signature still records non-noexcept).
-    static_assert(!noexcept(p->template run_in_row<Required>()),
-        "run_in_row<R>() must be non-noexcept — matching run()'s "
-        "signature.  A thin forwarder cannot strengthen the spec.");
+    // noexcept-ness witness.  The pipeline-run surface is noexcept:
+    // allocation or jthread failures terminate under the project's
+    // no-exceptions runtime discipline instead of crossing the bg
+    // entry boundary.
+    static_assert(noexcept(p->template run_in_row<Required>()),
+        "run_in_row<R>() must be noexcept — matching run()'s "
+        "pipeline entry signature.");
 
     // Pointer-to-member-function shape: void(BackgroundThread::*)()
     // — no parameters, void return, non-const, non-volatile,
-    // non-noexcept.  The MFN type encodes every signature axis.
+    // noexcept.  The MFN type encodes every signature axis.
     static_assert(std::is_same_v<
         decltype(&BackgroundThread::template run_in_row<Required>),
-        void (BackgroundThread::*)()>);
+        void (BackgroundThread::*)() noexcept>);
 
     // Universe-row instantiation has identical MFN shape.
     static_assert(std::is_same_v<
         decltype(&BackgroundThread::template run_in_row<eff::AllRow>),
-        void (BackgroundThread::*)()>);
+        void (BackgroundThread::*)() noexcept>);
 
     // SuperRow (Bg + Alloc + IO + Block + Init + Test) instantiation
     // has identical MFN shape.  Confirms template parameter does
@@ -666,7 +665,7 @@ static void test_audit_h_forwarder_fidelity_signature() {
         eff::Effect::Block, eff::Effect::Init, eff::Effect::Test>;
     static_assert(std::is_same_v<
         decltype(&BackgroundThread::template run_in_row<SuperRow>),
-        void (BackgroundThread::*)()>);
+        void (BackgroundThread::*)() noexcept>);
 
     // The MFN address is distinct per template instantiation
     // (different specialization → different code addresses), but
@@ -701,7 +700,7 @@ static void test_audit_i_large_batch_drain() {
     auto metalog = std::make_unique<MetaLog>();
     bt.ring.set(BackgroundThread::RingPtr{ring.get()});
     bt.meta_log.set(BackgroundThread::MetaLogPtr{metalog.get()});
-    bt.running.store(true, std::memory_order_release);
+    bt.stop_requested.reset_unsafe();
 
     using Required = BackgroundThread::run_required_row;
 
@@ -736,7 +735,7 @@ static void test_audit_i_large_batch_drain() {
     assert(processed_after_push >= TOTAL);
 
     // Stop and join.
-    bt.running.store(false, std::memory_order_release);
+    bt.stop_requested.signal();
     bg_thread.join();
 
     // Sanity: with unique hashes, IterationDetector's signature
@@ -774,7 +773,7 @@ static void test_audit_j_rearm_cycle() {
     uint64_t prev_processed = 0;
 
     for (uint32_t cycle = 0; cycle < 2; ++cycle) {
-        bt.running.store(true, std::memory_order_release);
+        bt.stop_requested.reset_unsafe();
 
         std::thread bg([&]() {
             bt.run_in_row<Required>();
@@ -804,7 +803,7 @@ static void test_audit_j_rearm_cycle() {
         }
         assert(bt.total_processed.load() >= target);
 
-        bt.running.store(false, std::memory_order_release);
+        bt.stop_requested.signal();
         bg.join();
 
         prev_processed = bt.total_processed.load();

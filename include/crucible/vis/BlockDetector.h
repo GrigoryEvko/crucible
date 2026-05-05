@@ -63,6 +63,8 @@ enum class BlockKind : uint8_t {
   OPTIMIZER,    // parameter updates
   EPILOGUE,     // trailing cleanup
   ROOT,         // ops outside any module scope
+  BRANCH,       // live Merkle DAG guard node
+  LOOP,         // live Merkle DAG loop node
 };
 
 [[nodiscard]] constexpr const char* block_kind_name(BlockKind k) {
@@ -72,6 +74,8 @@ enum class BlockKind : uint8_t {
     case BlockKind::OPTIMIZER:  return "Optimizer";
     case BlockKind::EPILOGUE:   return "Epilogue";
     case BlockKind::ROOT:       return "Root";
+    case BlockKind::BRANCH:     return "Branch";
+    case BlockKind::LOOP:       return "Loop";
   }
   std::unreachable();
 }
@@ -83,6 +87,8 @@ enum class BlockKind : uint8_t {
     case BlockKind::OPTIMIZER:  return "\xe2\x9a\x99";
     case BlockKind::EPILOGUE:   return "\xc2\xb7";
     case BlockKind::ROOT:       return "\xe2\x94\x80";
+    case BlockKind::BRANCH:     return "?";
+    case BlockKind::LOOP:       return "@";
   }
   std::unreachable();
 }

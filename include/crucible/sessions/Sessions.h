@@ -31,6 +31,9 @@
 //                              first production-shape wiring; covers
 //                              TraceRing / MetaLog / CNTP-style
 //                              streaming SPSC channels).
+//   SwmrSession.h           — typed-session facade for SWMR latest-
+//                              value publication over AtomicSnapshot
+//                              + SharedPermissionPool.
 //
 // Hot-path TUs needing a single piece include the targeted header.
 // PermissionedSession.h ships per FOUND-C v1
@@ -56,3 +59,4 @@
 #include <crucible/sessions/SessionSubtype.h>
 #include <crucible/sessions/SessionSubtypeReason.h>
 #include <crucible/sessions/SessionView.h>
+#include <crucible/sessions/SwmrSession.h>

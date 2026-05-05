@@ -14,10 +14,11 @@
 //               derived from EffectRow per fixy.md §24.1)
 //   Tier basis: routes through DimensionTraits.h (P0-3, #1094) —
 //               TierKind / DimensionAxis / tier_of_axis<D>
-//   ValidComposition gate: PLACEHOLDER (always-true) — the 12 §6.8
-//               collision rules ship in safety/CollisionCatalog.h
-//               (P0-2, #1096); when that lands, this concept gate
-//               picks up the disjunction body
+//   ValidComposition gate: routes through safety/CollisionCatalog.h
+//               (P0-2, #1096).  The 12 §6.8 collision rules fire at
+//               Fn instantiation time, including direct
+//               `Fn<X, BadGrades...>` construction that bypasses
+//               `mint_fn`.
 //   Universal mint pattern: `mint_fn(value)` per CLAUDE.md §XXI
 //               (token mint flavor — derives authority from the
 //               caller-supplied per-axis grade pack, no Ctx)
@@ -161,7 +162,9 @@ enum class UsageMode : std::uint8_t {
     Linear = 0,   // exactly-once consumption (default)
     Affine = 1,   // at-most-once
     Copy   = 2,   // copyable, non-linear
-    Ghost  = 3,   // erased at codegen, ghost-only
+    Ghost      = 3,  // erased at codegen, ghost-only
+    Borrow     = 4,  // non-owning borrow capture
+    Capability = 5,  // ephemeral external capability
 };
 
 // ── Dim 5 Security (Tier-S) ────────────────────────────────────────
@@ -201,6 +204,7 @@ enum class ReprKind : std::uint8_t {
     Packed  = 2,  // repr(packed) — no padding
     Aligned = 3,  // repr(align(N)) — alignment hint
     Simd    = 4,  // SIMD-vector layout
+    Atomic  = 5,  // atomic representation / CAS-capable carrier
 };
 
 // ── Dim 13 Complexity (Tier-S) — cost annotation ──────────────────
@@ -264,18 +268,20 @@ namespace stale {
 }
 
 // ═════════════════════════════════════════════════════════════════════
-// ── ValidComposition concept gate (Phase 0 P0-1 placeholder) ───────
+// ── ValidComposition concept gate (Phase 0 P0-2) ───────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// The 12 §6.8 collision rules ship in safety/CollisionCatalog.h
-// (P0-2, #1096).  When CollisionCatalog.h lands it specializes this
-// concept's body to the disjunction `!(I002 || L002 || E044 || ...)`
-// with structured per-rule diagnostics via safety/diag/CollisionCatalog.h.
-// Until then, every Fn<...> instantiation passes this gate — that's
-// intentional: P0-1 ships the SHAPE, P0-2 ships the BODY.
+// CollisionRules<F> is forward-declared here and specialized for
+// Fn<...> in safety/CollisionCatalog.h after the Fn template body is
+// visible.  This keeps the class-body static_assert dependent: direct
+// `Fn<Bad...>` instantiations are rejected, while the catalog can read
+// Fn's per-axis aliases (`type_t`, `effect_row_t`, `usage_v`, ...).
 
 template <typename F>
-concept ValidComposition = true;
+struct CollisionRules;
+
+template <typename F>
+concept ValidComposition = CollisionRules<F>::valid;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Fn<...> aggregator template ─────────────────────────────────────
@@ -409,16 +415,23 @@ struct Fn {
     // CollisionCatalog.h (P0-2) ships, a user could circumvent the
     // 12 §6.8 rules by writing `Fn<X, BadCombo...>` directly.
     //
-    // Placeholder behavior: ValidComposition is `concept ... = true;`
-    // so this static_assert is a no-op until P0-2 lands, at which
-    // point the gate fires with structured per-rule diagnostics
-    // routed through `safety::diag::CollisionCatalog`.
+    // The gate fires with named per-rule diagnostics from
+    // CollisionCatalog.h (I002 / L002 / E044 / I003 / M012 / P002 /
+    // I004 / N002 / L003 / M011 / S010 / S011).
     static_assert(ValidComposition<Fn>,
         "Fn<...> grade combination violates a §6.8 collision rule. "
-        "When CollisionCatalog.h (P0-2) ships, this assert points at "
-        "the specific rejected rule (I002 / L002 / E044 / ...) via "
-        "safety::diag::CollisionCatalog.");
+        "See safety/CollisionCatalog.h for the specific rejected rule "
+        "(I002 / L002 / E044 / I003 / M012 / P002 / I004 / N002 / "
+        "L003 / M011 / S010 / S011).");
 };
+
+}  // namespace crucible::safety::fn
+
+#define CRUCIBLE_SAFETY_FN_COLLISION_CATALOG_INTEGRATION 1
+#include <crucible/safety/CollisionCatalog.h>
+#undef CRUCIBLE_SAFETY_FN_COLLISION_CATALOG_INTEGRATION
+
+namespace crucible::safety::fn {
 
 // ═════════════════════════════════════════════════════════════════════
 // ── mint_fn — universal mint pattern (CLAUDE.md §XXI) ──────────────
@@ -427,8 +440,8 @@ struct Fn {
 // Token-mint flavor: derives Fn<Type, ...> authority from the
 // caller-supplied per-axis grade pack (no Ctx parameter, no
 // CtxFitsX gate).  The single concept gate is `ValidComposition`;
-// when CollisionCatalog.h (P0-2) lands, the gate fires for the 12
-// rejected dimension compositions with structured diagnostics.
+// the gate fires for the 12 rejected dimension compositions with
+// structured diagnostics.
 //
 // Two overloads:
 //   1. Default-axis: `mint_fn(value)` — every axis takes its
@@ -512,10 +525,9 @@ static_assert(CustomFn::mutation_v   == MutationMode::Mutable);
 static_assert(CustomFn::reentrancy_v == ReentrancyMode::Reentrant);
 static_assert(CustomFn::version_v    == 3);
 
-// ── ValidComposition placeholder behavior ─────────────────────────
+// ── ValidComposition default behavior ─────────────────────────────
 static_assert(ValidComposition<Fn<int>>,
-    "P0-1 placeholder admits every Fn<...> — when P0-2 lands the "
-    "12 §6.8 rules supersede this and selectively reject.");
+    "Default Fn<...> grades must satisfy the §6.8 collision catalog.");
 static_assert(ValidComposition<CustomFn>);
 
 // ── mint_fn smoke ─────────────────────────────────────────────────
@@ -550,12 +562,12 @@ static_assert(std::is_same_v<decltype(mint_fn(3.14)), Fn<double>>);
     return std::meta::enumerators_of(^^ReentrancyMode).size();
 }
 
-static_assert(usage_mode_count()      == 4,
+static_assert(usage_mode_count()      == 6,
     "UsageMode enumerator count drift — every consumer with switch "
     "arms on UsageMode must add the new arm.");
 static_assert(sec_level_count()       == 5,
     "SecLevel enumerator count drift.");
-static_assert(repr_kind_count()       == 5,
+static_assert(repr_kind_count()       == 6,
     "ReprKind enumerator count drift.");
 static_assert(overflow_mode_count()   == 4,
     "OverflowMode enumerator count drift.");

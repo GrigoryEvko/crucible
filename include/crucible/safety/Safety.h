@@ -180,6 +180,7 @@
 #include <crucible/safety/DimensionTraits.h>
 #include <crucible/safety/Fn.h>
 #include <crucible/safety/Linear.h>
+#include <crucible/safety/IsLinear.h>
 #include <crucible/safety/Machine.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/NotInherited.h>
@@ -188,12 +189,16 @@
 #include <crucible/safety/OwnedRegion.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/IsRefined.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/SealedRefined.h>
 #include <crucible/safety/Secret.h>
+#include <crucible/safety/IsSecret.h>
 #include <crucible/safety/Simd.h>
 #include <crucible/safety/Saturated.h>
 #include <crucible/safety/Stale.h>
+#include <crucible/safety/IsStale.h>
 #include <crucible/safety/Tagged.h>
+#include <crucible/safety/IsTagged.h>
 #include <crucible/safety/TimeOrdered.h>
 #include <crucible/safety/Workload.h>

@@ -398,6 +398,14 @@ inline constexpr std::size_t per_call_working_set_v = [] consteval {
 // Conservative bound used here matches SubstrateCtxFit.h's
 // conservative_l2_per_core (256 KB) — the cliff per ParallelismRule
 // §27_04.
+//
+// Production consumer: Endpoint.h's mint_endpoint gate reads
+// ctx_workload::ChannelBudget<Bytes, Producers, Consumers, LatestOnly>
+// through ExecCtx and compares the chosen Substrate topology against
+// this recommender.  That gate is intentionally cardinality-aware:
+// large 1×1 streams stay OneToOne (TraceRing-style), while large
+// N×M streams require ManyToMany unless the selected topology is an
+// explicitly accepted over-provisioned diagnostic case.
 
 inline constexpr std::size_t conservative_cliff_l2_per_core = 256ULL * 1024;
 
@@ -615,6 +623,29 @@ static_assert(recommend_topology_for_workload(8, 8, kBig)  == ChannelTopology::M
 static_assert(recommend_topology_for_workload(1, 4, kBig, true) == ChannelTopology::OneToMany_Latest);
 // 1×N stream above the cliff: ManyToMany (SPMC degeneration).
 static_assert(recommend_topology_for_workload(1, 4, kBig, false) == ChannelTopology::ManyToMany);
+
+// Five representative sizes pinned for the Endpoint mint gate:
+// 16 KB and 256 KB are below/at the cliff; 16 MB, 1 GB, and 16 GB
+// cross it.  Current policy deliberately keeps 1×1 streams as
+// OneToOne at every size, but promotes N×M stream workloads above
+// the cliff to ManyToMany.
+inline constexpr std::size_t k16KiB = 16ULL * 1024ULL;
+inline constexpr std::size_t k256KiB = 256ULL * 1024ULL;
+inline constexpr std::size_t k16MiB = 16ULL * 1024ULL * 1024ULL;
+inline constexpr std::size_t k1GiB = 1024ULL * 1024ULL * 1024ULL;
+inline constexpr std::size_t k16GiB = 16ULL * 1024ULL * 1024ULL * 1024ULL;
+
+static_assert(recommend_topology_for_workload(1, 1, k16KiB)  == ChannelTopology::OneToOne);
+static_assert(recommend_topology_for_workload(1, 1, k256KiB) == ChannelTopology::OneToOne);
+static_assert(recommend_topology_for_workload(1, 1, k16MiB)  == ChannelTopology::OneToOne);
+static_assert(recommend_topology_for_workload(1, 1, k1GiB)   == ChannelTopology::OneToOne);
+static_assert(recommend_topology_for_workload(1, 1, k16GiB)  == ChannelTopology::OneToOne);
+
+static_assert(recommend_topology_for_workload(4, 4, k16KiB)  == ChannelTopology::ManyToMany);
+static_assert(recommend_topology_for_workload(4, 4, k256KiB) == ChannelTopology::ManyToMany);
+static_assert(recommend_topology_for_workload(4, 4, k16MiB)  == ChannelTopology::ManyToMany);
+static_assert(recommend_topology_for_workload(4, 4, k1GiB)   == ChannelTopology::ManyToMany);
+static_assert(recommend_topology_for_workload(4, 4, k16GiB)  == ChannelTopology::ManyToMany);
 
 }  // namespace detail::substrate_self_test
 

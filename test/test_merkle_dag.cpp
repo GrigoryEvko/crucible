@@ -1,8 +1,10 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/effects/Capabilities.h>
+#include <crucible/safety/IsSwmrHandle.h>
 #include "test_assert.h"
 #include <cstdio>
 #include <cstring>
+#include <type_traits>
 
 using crucible::SchemaHash;
 using crucible::ContentHash;
@@ -80,6 +82,24 @@ int main() {
   // legacy untyped call site.
   crucible::KernelCache cache;
   using crucible::RowHash;
+  using KernelSlot = crucible::KernelCache::KernelCacheSlot;
+  using SlotSnapshot = crucible::KernelCache::KernelCacheSlotSnapshot;
+  static_assert(sizeof(KernelSlot) == 24);
+  static_assert(alignof(KernelSlot) == 8);
+  static_assert(sizeof(SlotSnapshot) == 24);
+  static_assert(crucible::safety::extract::IsSwmrWriter<
+                KernelSlot::WriterHandle>);
+  static_assert(crucible::safety::extract::IsSwmrReader<
+                KernelSlot::ReaderHandle>);
+  static_assert(std::is_same_v<
+      crucible::safety::extract::swmr_writer_value_t<
+          KernelSlot::WriterHandle>,
+      SlotSnapshot>);
+  static_assert(std::is_same_v<
+      crucible::safety::extract::swmr_reader_value_t<
+          KernelSlot::ReaderHandle>,
+      SlotSnapshot>);
+
   assert(cache.lookup(ContentHash{0x1234}, RowHash{0}) == nullptr);
   struct FakeKernel { int x; };
   FakeKernel fk{42};

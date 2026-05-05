@@ -179,7 +179,7 @@ static_assert(sizeof(TimelineHeader) == 64,
 // TIMELINE_CAPACITY in common.h — bumping this constant on either
 // side without the other re-build breaks the wire contract.
 constexpr uint32_t TIMELINE_CAPACITY = 4096;
-constexpr uint32_t TIMELINE_MASK     = TIMELINE_CAPACITY - 1;
+[[maybe_unused]] constexpr uint32_t TIMELINE_MASK = TIMELINE_CAPACITY - 1;
 
 class SchedSwitch {
  public:

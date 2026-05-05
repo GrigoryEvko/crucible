@@ -27,7 +27,9 @@
 //                                     mint_pipeline.  Conjunction of
 //                                     IsExecCtx<Ctx>,
 //                                     (IsStage<Stages> && ...), and
-//                                     pipeline_chain<Stages...>.
+//                                     pipeline_chain<Stages...>, and
+//                                     pipeline_row_union_t<Stages...>
+//                                     admitted by Ctx::row_type.
 //
 //   Pipeline<Stages...>             — value-typed bundle of N stages,
 //                                     held in a std::tuple.
@@ -63,26 +65,35 @@
 // background drain pipeline, a kernel-compile pool's stage chain) the
 // thread spawn cost amortizes to zero.
 //
-// ── Substrate-level fit checks happen at Stage mint, not here ──────
+// ── Stage-level fit checks happen at Stage mint ─────────────────────
 //
 // Each Stage was minted via mint_stage<FnPtr_i>(ctx_i, in_i, out_i),
 // at which point CtxFitsStage<FnPtr_i, Ctx_i> validated the per-stage
 // invariants.  The endpoint handles in_i and out_i themselves came
 // from Endpoint mints (Tier 2) that already validated
-// SubstrateFitsCtxResidency.  Pipeline's job is to verify the CHAIN
-// invariant (output_i ≡ input_{i+1}); per-stage and per-substrate
-// soundness is upstream.
+// SubstrateFitsCtxResidency.  Pipeline's remaining jobs are:
+//   * verify the CHAIN invariant (output_i ≡ input_{i+1}); and
+//   * verify coordinator row admission.  The union of all stage rows,
+//     pipeline_row_union_t<Stages...>, must be a Subrow of the
+//     coordinator Ctx::row_type.
+//
+// The row-union gate is pinned by
+// test/effects_neg/neg_mint_pipeline_{row_union_exceeds_ctx,
+// chain_payload_compat_ok_row_mismatch,capability_propagation}.cpp and
+// emits safety::diag::EffectRowMismatch at the mint boundary.
 //
 // ── Universal Mint Pattern compliance ───────────────────────────────
 //
 //   * Name: mint_pipeline (mint_<noun>, §XXI rule).
 //   * First parameter: Ctx const& (ctx-bound mint flavor, §XXI).
-//   * Single concept gate: CtxFitsPipeline<Ctx, Stages...>.
+//   * Single authorization boundary: ctx + pipeline_chain in the
+//     requires clause; coordinator row admission via EffectRowMismatch
+//     static assertion before constructing the Pipeline.
 //   * [[nodiscard]] constexpr noexcept (no allocation in mint itself;
 //     the jthread allocations happen at .run() time).
 //   * Returns concrete Pipeline<Stages...> — never type-erased.
 //   * Discoverable via `grep "mint_pipeline"`.
-//   * 3 HS14 negative-compile fixtures alongside.
+//   * HS14 negative-compile fixtures alongside.
 //
 // ── Axiom coverage ──────────────────────────────────────────────────
 //
@@ -125,7 +136,9 @@
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/concurrent/Stage.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/EffectRow.h>
 #include <crucible/permissions/Permission.h>
+#include <crucible/safety/diag/RowMismatch.h>
 
 #include <array>
 #include <thread>
@@ -216,13 +229,44 @@ concept pipeline_chain =
 //   2. pipeline_chain<Stages...> — IsStage on each, plus adjacent-pair
 //      payload-type compatibility folded across the pack.
 //
+//   3. pipeline_row_union_t<Stages...> ⊆ Ctx::row_type — the
+//      coordinator must admit every effect row represented by the
+//      staged execution contexts it is about to run.
+//
 // Per-stage CtxFitsStage was checked at each Stage's mint boundary;
-// re-checking here would be redundant.
+// re-checking payload rows here would be redundant.
+
+namespace detail {
+
+inline void mint_pipeline_row_admission_anchor() noexcept {}
+
+template <class... Stages>
+struct pipeline_row_union_impl;
+
+template <>
+struct pipeline_row_union_impl<> {
+    using type = ::crucible::effects::Row<>;
+};
+
+template <class Stage0, class... Rest>
+struct pipeline_row_union_impl<Stage0, Rest...> {
+    using stage_row = typename std::remove_cvref_t<Stage0>::ctx_type::row_type;
+    using rest_row = typename pipeline_row_union_impl<Rest...>::type;
+    using type = ::crucible::effects::row_union_t<stage_row, rest_row>;
+};
+
+}  // namespace detail
+
+template <class... Stages>
+using pipeline_row_union_t =
+    typename detail::pipeline_row_union_impl<std::remove_cvref_t<Stages>...>::type;
 
 template <class Ctx, class... Stages>
 concept CtxFitsPipeline =
     ::crucible::effects::IsExecCtx<Ctx>
- && pipeline_chain<Stages...>;
+ && pipeline_chain<Stages...>
+ && ::crucible::effects::Subrow<pipeline_row_union_t<Stages...>,
+                                typename Ctx::row_type>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Pipeline<Stages...> ────────────────────────────────────────────
@@ -301,11 +345,24 @@ private:
 // at the call site.
 
 template <::crucible::effects::IsExecCtx Ctx, class... Stages>
-    requires CtxFitsPipeline<Ctx, std::remove_cvref_t<Stages>...>
+    requires pipeline_chain<std::remove_cvref_t<Stages>...>
 [[nodiscard]] constexpr auto mint_pipeline(
     Ctx const& /*ctx*/,
     Stages&&... stages) noexcept
 {
+    using ctx_row = typename Ctx::row_type;
+    using required_row = pipeline_row_union_t<std::remove_cvref_t<Stages>...>;
+    using offending_row =
+        ::crucible::effects::row_difference_t<required_row, ctx_row>;
+
+    CRUCIBLE_ROW_MISMATCH_ASSERT(
+        (::crucible::effects::Subrow<required_row, ctx_row>),
+        EffectRowMismatch,
+        &::crucible::concurrent::detail::mint_pipeline_row_admission_anchor,
+        ctx_row,
+        required_row,
+        offending_row);
+
     return Pipeline<std::remove_cvref_t<Stages>...>{
         std::forward<Stages>(stages)...
     };
@@ -338,6 +395,8 @@ static_assert(saf::PipelineStage<&stage_transform_float_to_double>);
 using S_int_to_int       = Stage<&stage_pass_through,            eff::HotFgCtx>;
 using S_int_to_float     = Stage<&stage_transform_int_to_float,  eff::HotFgCtx>;
 using S_float_to_double  = Stage<&stage_transform_float_to_double, eff::HotFgCtx>;
+using S_bg_int_to_int    = Stage<&stage_pass_through,            eff::BgDrainCtx>;
+using S_init_int_to_int  = Stage<&stage_pass_through,            eff::ColdInitCtx>;
 
 // IsStage admits / rejects appropriately.
 static_assert( IsStage<S_int_to_int>);
@@ -358,17 +417,30 @@ static_assert(!stages_chain<S_int_to_int,      int>);                // non-Stag
 static_assert( pipeline_chain<S_int_to_int>);                                              // N=1, vacuous
 static_assert( pipeline_chain<S_int_to_int, S_int_to_int>);                                // N=2, matched
 static_assert( pipeline_chain<S_int_to_int, S_int_to_float, S_float_to_double>);           // N=3, transforms align
+static_assert( pipeline_chain<S_bg_int_to_int, S_int_to_int>);                             // context row is separate from payload chain
 static_assert(!pipeline_chain<S_int_to_int, S_float_to_double>);                           // N=2, mismatch
 static_assert(!pipeline_chain<S_int_to_int, S_int_to_int, S_float_to_double>);             // N=3, last pair mismatch
 static_assert(!pipeline_chain<int>);                                                       // non-Stage
 static_assert(!pipeline_chain<>);                                                          // empty pack
 
+static_assert(eff::Subrow<pipeline_row_union_t<S_int_to_int>, eff::Row<>>);
+static_assert(eff::Subrow<
+    pipeline_row_union_t<S_bg_int_to_int>,
+    eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
+static_assert(eff::Subrow<
+    pipeline_row_union_t<S_bg_int_to_int, S_init_int_to_int>,
+    eff::Row<eff::Effect::Bg, eff::Effect::Alloc,
+             eff::Effect::Init, eff::Effect::IO>>);
+
 // CtxFitsPipeline conjunction.
 static_assert( CtxFitsPipeline<eff::HotFgCtx,   S_int_to_int>);
 static_assert( CtxFitsPipeline<eff::BgDrainCtx, S_int_to_float, S_float_to_double>);
+static_assert( CtxFitsPipeline<eff::BgDrainCtx, S_bg_int_to_int, S_int_to_int>);
 static_assert(!CtxFitsPipeline<int,             S_int_to_int>);                            // non-Ctx
 static_assert(!CtxFitsPipeline<eff::HotFgCtx,   S_int_to_int, S_float_to_double>);         // mismatch
 static_assert(!CtxFitsPipeline<eff::HotFgCtx,   int>);                                     // non-Stage
+static_assert(!CtxFitsPipeline<eff::HotFgCtx,   S_bg_int_to_int>);                         // coordinator row too narrow
+static_assert(!CtxFitsPipeline<eff::ColdInitCtx, S_bg_int_to_int>);                        // Init ctx does not admit Bg
 
 // Pipeline<...> type-level invariants.
 using P1 = Pipeline<S_int_to_int>;

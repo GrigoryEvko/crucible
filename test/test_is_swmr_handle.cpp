@@ -11,6 +11,7 @@
 
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/permissions/Permission.h>
+#include <crucible/sessions/SwmrSession.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -49,6 +50,7 @@ void run_test(const char* name, F&& body) {
 namespace extract = ::crucible::safety::extract;
 namespace concur  = ::crucible::concurrent;
 namespace safety  = ::crucible::safety;
+namespace ses     = ::crucible::safety::proto::swmr_session;
 
 // ── Synthetic witnesses ─────────────────────────────────────────────
 
@@ -81,6 +83,22 @@ struct synth_void_load {
 
 struct cross_check_tag {};
 using Snap = concur::PermissionedSnapshot<int, cross_check_tag>;
+
+struct swmr_writer_tag {};
+struct swmr_reader_tag {};
+using Session = ses::SwmrSession<int, swmr_writer_tag, swmr_reader_tag>;
+using SessionWriter = Session::WriterHandle;
+using SessionReader = Session::ReaderHandle;
+
+static_assert(extract::is_swmr_writer_v<SessionWriter>);
+static_assert(extract::IsSwmrWriter<SessionWriter>);
+static_assert(extract::is_swmr_reader_v<SessionReader>);
+static_assert(extract::IsSwmrReader<SessionReader>);
+static_assert(ses::SwmrSessionSurface<Session>);
+static_assert(!extract::is_swmr_reader_v<SessionWriter>);
+static_assert(!extract::is_swmr_writer_v<SessionReader>);
+static_assert(std::is_same_v<extract::swmr_writer_value_t<SessionWriter>, int>);
+static_assert(std::is_same_v<extract::swmr_reader_value_t<SessionReader>, int>);
 
 void test_runtime_smoke() {
     EXPECT_TRUE(extract::is_swmr_handle_smoke_test());

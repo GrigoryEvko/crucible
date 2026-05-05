@@ -1502,12 +1502,15 @@ inline void print_system_info(FILE* out = stdout) {
         // Senses-aggregator coverage, so a 0/2 attached banner is
         // distinguishable from a partial sense_hub-only attach.
         std::fprintf(out,
-            "  BPF senses: loaded (%zu tracepoints attached, %zu/2 facades)\n",
+            "  BPF senses: harness subset loaded "
+            "(SenseHub=%zu tracepoints, %zu/2 harness facades; "
+            "full suite is reported by bench_perf_loader)\n",
             hub->attached_programs().value(), cov.attached_count());
     } else if (cov.attached_count() > 0) {
         std::fprintf(out,
-            "  BPF senses: partial — %zu/2 facades attached (sense_hub failed; "
-            "set CRUCIBLE_BENCH_BPF_VERBOSE=1 for libbpf logs)\n",
+            "  BPF senses: harness subset partial — %zu/2 facades attached "
+            "(sense_hub failed; set CRUCIBLE_BENCH_BPF_VERBOSE=1 "
+            "for libbpf logs)\n",
             cov.attached_count());
     } else {
         std::fprintf(out,

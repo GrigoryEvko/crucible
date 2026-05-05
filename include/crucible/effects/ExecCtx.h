@@ -195,6 +195,30 @@ namespace ctx_workload {
             "ctx_workload::ItemBudget<N> requires N > 0; use "
             "ctx_workload::Unspecified when no budget is declared.");
     };
+
+    // ChannelBudget<Bytes, Producers, Consumers, LatestOnly>: declares
+    // the communication shape at a channel/endpoint mint boundary.
+    // ByteBudget<N> is enough for scheduler cost decisions, but endpoint
+    // topology recommendation also needs producer/consumer cardinality
+    // and whether one-to-many traffic is latest-value broadcast.
+    template <std::size_t Bytes,
+              std::size_t Producers,
+              std::size_t Consumers,
+              bool LatestOnly = false>
+    struct ChannelBudget {
+        static_assert(Bytes > 0,
+            "ctx_workload::ChannelBudget requires Bytes > 0; use "
+            "ctx_workload::Unspecified when no budget is declared.");
+        static_assert(Producers > 0,
+            "ctx_workload::ChannelBudget requires Producers > 0.");
+        static_assert(Consumers > 0,
+            "ctx_workload::ChannelBudget requires Consumers > 0.");
+
+        static constexpr std::size_t bytes = Bytes;
+        static constexpr std::size_t producers = Producers;
+        static constexpr std::size_t consumers = Consumers;
+        static constexpr bool latest_only = LatestOnly;
+    };
 }
 
 // ── Per-axis concept gates ──────────────────────────────────────────
@@ -261,6 +285,10 @@ template <class T>           struct is_workload_hint                            
 template <>                  struct is_workload_hint<ctx_workload::Unspecified>   : std::true_type  {};
 template <std::size_t N>     struct is_workload_hint<ctx_workload::ByteBudget<N>> : std::true_type  {};
 template <std::size_t N>     struct is_workload_hint<ctx_workload::ItemBudget<N>> : std::true_type  {};
+template <std::size_t Bytes, std::size_t Producers, std::size_t Consumers, bool LatestOnly>
+struct is_workload_hint<
+    ctx_workload::ChannelBudget<Bytes, Producers, Consumers, LatestOnly>>
+    : std::true_type {};
 template <class T>           inline constexpr bool is_workload_hint_v = is_workload_hint<T>::value;
 template <class T>           concept IsWorkloadHint = is_workload_hint_v<T>;
 
@@ -385,7 +413,8 @@ struct [[nodiscard]] ExecCtx {
         "specialization");
     static_assert(is_workload_hint_v<Workload>,
         "ExecCtx Workload parameter must be one of "
-        "ctx_workload::Unspecified / ByteBudget<N> / ItemBudget<N>");
+        "ctx_workload::Unspecified / ByteBudget<N> / ItemBudget<N> / "
+        "ChannelBudget<Bytes, Producers, Consumers, LatestOnly>");
     static_assert(Subrow<Row, cap_permitted_row_t<Cap>>,
         "ExecCtx Row must be a Subrow of Cap's permitted row.  "
         "Foreground (ctx_cap::Fg) permits only Row<>; Bg permits "

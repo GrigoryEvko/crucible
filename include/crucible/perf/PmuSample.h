@@ -225,7 +225,7 @@ static_assert(sizeof(PmuSampleHeader) == 64,
 // higher than sched_switch rates, especially under cache-thrashing
 // workloads where a single hot loop can fire 10K+ LLC misses/sec.
 constexpr uint32_t PMU_SAMPLE_CAPACITY = 32768;
-constexpr uint32_t PMU_SAMPLE_MASK     = PMU_SAMPLE_CAPACITY - 1;
+[[maybe_unused]] constexpr uint32_t PMU_SAMPLE_MASK = PMU_SAMPLE_CAPACITY - 1;
 
 class PmuSample {
  public:

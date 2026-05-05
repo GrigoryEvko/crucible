@@ -1,8 +1,9 @@
 #pragma once
 
-// TraceVisualizer: end-to-end trace → SVG rendering.
+// TraceVisualizer: end-to-end trace / live Merkle DAG → SVG rendering.
 //
-// Pipeline: load .crtrace → detect blocks → build edges → layout → render SVG
+// Forensic pipeline: load .crtrace → detect blocks → build edges → layout → render SVG
+// Live pipeline: TraceNode/RegionNode → MerkleDagAdapter → Sugiyama layout → render SVG
 //
 // Two rendering modes:
 //   - Block-level: blocks as containers with labels, inter-block edges
@@ -10,7 +11,7 @@
 //
 // Uses SugiyamaLayout for both intra-block and inter-block positioning.
 
-#include <crucible/vis/BlockDetector.h>
+#include <crucible/vis/MerkleDagAdapter.h>
 #include <crucible/vis/SugiyamaLayout.h>
 #include <crucible/vis/SvgRenderer.h>
 
@@ -61,8 +62,22 @@ struct NodeColors {
       return {palette::BLOCK_OPTIM, Color::hex(0x9D174D)};
     case BlockKind::ROOT:
       return {palette::BLOCK_GENERIC, Color::hex(0x6B7280)};
+    case BlockKind::BRANCH:
+      return {palette::ATTN_FILL, palette::ATTN_BORDER};
+    case BlockKind::LOOP:
+      return {palette::CONV_FILL, palette::CONV_BORDER};
   }
   return {palette::BLOCK_GENERIC, Color::hex(0x6B7280)};
+}
+
+[[nodiscard]] inline Color color_for_dag_edge(DagEdgeKind kind) {
+  switch (kind) {
+    case DagEdgeKind::SEQUENTIAL:    return palette::EDGE_DATA_FLOW;
+    case DagEdgeKind::BRANCH_ARM:    return Color::hex(0x7C3AED);
+    case DagEdgeKind::LOOP_BODY:     return Color::hex(0x059669);
+    case DagEdgeKind::LOOP_FEEDBACK: return palette::EDGE_SKIP;
+    default:                         return palette::EDGE_DATA_FLOW;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -672,6 +687,120 @@ inline void render_legend(SvgRenderer& svg, float lx, float ly) {
   render_legend(svg, max_x - 180, max_y + 12);
   svg.embed_interactivity();
 
+  svg.end();
+  return svg.take();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Live Merkle DAG rendering — structural edges supplied by adapter
+// ═══════════════════════════════════════════════════════════════════
+
+[[nodiscard]] inline std::string render_live_block_svg(
+    const MerkleDagBlockView& view,
+    std::string_view title = "Crucible Live Trace") {
+
+  const auto& blocks = view.detection.blocks;
+  if (blocks.empty()) return {};
+
+  std::vector<LayoutNode> nodes;
+  nodes.reserve(blocks.size());
+  for (const auto& block : blocks) {
+    const float width = std::min(
+        260.0f,
+        std::max(104.0f, static_cast<float>(block.label.size()) * 7.0f + 28.0f));
+    LayoutNode node;
+    node.lw = width * 0.5f;
+    node.rw = width * 0.5f;
+    node.min_height = 32.0f;
+    nodes.push_back(node);
+  }
+
+  std::vector<LayoutEdge> layout_edges;
+  layout_edges.reserve(view.edges.size());
+  for (const auto& edge : view.edges) {
+    if (edge.src_block >= blocks.size() || edge.dst_block >= blocks.size()) continue;
+    if (edge.kind == DagEdgeKind::LOOP_FEEDBACK) continue;
+    if (edge.src_block == edge.dst_block) continue;
+    layout_edges.push_back({edge.src_block, edge.dst_block});
+  }
+
+  LayoutParams params;
+  params.node_h_gap = 32.0f;
+  params.layer_v_gap = 52.0f;
+  params.padding = 36.0f;
+  auto layout = sugiyama_layout(std::move(nodes), layout_edges, params);
+
+  float svg_w = std::max(240.0f, layout.total_width + 24.0f);
+  float svg_h = std::max(120.0f, layout.total_height + 80.0f);
+
+  SvgRenderer svg;
+  svg.begin(svg_w, svg_h, title);
+
+  svg.begin_group("live-dag-edges");
+  for (const auto& edge : view.edges) {
+    if (edge.src_block >= blocks.size() || edge.dst_block >= blocks.size()) continue;
+    const auto& src = layout.nodes[edge.src_block];
+    const auto& dst = layout.nodes[edge.dst_block];
+    const Color color = color_for_dag_edge(edge.kind);
+
+    const float x1 = src.x;
+    const float y1 = src.y + src.min_height;
+    const float x2 = dst.x;
+    const float y2 = dst.y;
+
+    if (edge.kind == DagEdgeKind::LOOP_FEEDBACK) {
+      const float sx = src.x + src.rw;
+      const float sy = src.y + src.min_height * 0.5f;
+      const float dx = dst.x - dst.lw;
+      const float dy = dst.y + dst.min_height * 0.5f;
+      const float lift = std::max(28.0f, std::abs(sy - dy) + 18.0f);
+      svg.bezier_arrow(sx, sy, sx + 34.0f, sy - lift,
+                       dx - 34.0f, dy - lift, dx, dy,
+                       color, 0.7f, true);
+      if (!edge.label.empty()) {
+        svg.text_mono((sx + dx) * 0.5f, std::min(sy, dy) - lift,
+                      edge.label, 7.0f, color);
+      }
+      continue;
+    }
+
+    svg.bezier_arrow(x1, y1, x1, (y1 + y2) * 0.5f,
+                     x2, (y1 + y2) * 0.5f, x2, y2,
+                     color, edge.kind == DagEdgeKind::SEQUENTIAL ? 0.55f : 0.75f,
+                     edge.kind == DagEdgeKind::BRANCH_ARM);
+    if (!edge.label.empty()) {
+      svg.text_mono((x1 + x2) * 0.5f + 4.0f, (y1 + y2) * 0.5f - 4.0f,
+                    edge.label, 7.0f, color);
+    }
+  }
+  svg.end_group();
+
+  svg.begin_group("live-dag-blocks");
+  for (uint32_t i = 0; i < blocks.size(); ++i) {
+    const auto& block = blocks[i];
+    const auto& node = layout.nodes[i];
+    const float x = node.x - node.lw;
+    const float y = node.y;
+    const float w = node.width();
+    const float h = node.min_height;
+    auto [fill, border] = colors_for_block(block.kind);
+
+    std::string info = std::string{block_kind_name(block.kind)}
+        + " | " + std::to_string(block.num_ops) + " ops";
+    if (!block.scope_path.empty()) info += " | " + block.scope_path;
+    svg.begin_block_group(info);
+    svg.rect(x, y, w, h, fill, border, 4, 0.8f, true);
+    svg.text(x + w * 0.5f, y + h * 0.5f + 2.0f,
+             block.label, 8.0f, Color::hex(0x1F2937), "middle", true);
+    if (block.num_ops != 0) {
+      svg.text(x + w - 4.0f, y + h - 4.0f,
+               std::to_string(block.num_ops), 5.5f, Color::hex(0x6B7280), "end");
+    }
+    svg.end_group();
+  }
+  svg.end_group();
+
+  svg.embed_interactivity();
   svg.end();
   return svg.take();
 }

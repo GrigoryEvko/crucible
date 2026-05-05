@@ -133,6 +133,7 @@
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionGlobal.h>
 #include <crucible/sessions/SessionPermPayloads.h>
+#include <crucible/sessions/SessionSubtype.h>
 
 #include <cstdio>
 #include <optional>
@@ -503,12 +504,13 @@ public:
     //     SessionHandle's send contract.  Stays in the requires
     //     because Transport-shape mismatch is a structural signature
     //     mismatch, not a permission-flow issue.
-    template <typename Transport>
-        requires std::is_invocable_v<Transport, Resource&, T&&>
-    [[nodiscard]] constexpr auto send(T value, Transport transport) &&
-        noexcept(std::is_nothrow_invocable_v<Transport, Resource&, T&&>
+    template <typename U = T, typename Transport>
+        requires is_subsort_v<std::remove_cvref_t<U>, T> &&
+                 std::is_invocable_v<Transport, Resource&, U&&>
+    [[nodiscard]] constexpr auto send(U value, Transport transport) &&
+        noexcept(std::is_nothrow_invocable_v<Transport, Resource&, U&&>
                  && std::is_nothrow_move_constructible_v<Resource>
-                 && std::is_nothrow_move_constructible_v<T>)
+                 && std::is_nothrow_move_constructible_v<U>)
     {
         static_assert(SendablePayload<T, PS>,
             "crucible::session::diagnostic [PermissionImbalance]: "

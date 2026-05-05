@@ -8,6 +8,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <thread>
 #include <vector>
 
@@ -17,8 +20,12 @@
 #include <crucible/Platform.h>
 #include <crucible/Saturate.h>
 #include <crucible/SchemaTable.h>
+#include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/Pipeline.h>
 #include <crucible/effects/EffectRow.h>
+#include <crucible/effects/ExecCtx.h>
 #include <crucible/effects/FxAliases.h>
+#include <crucible/permissions/Permission.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/handles/OneShotFlag.h>
 #include <crucible/safety/Refined.h>
@@ -125,13 +132,14 @@ struct BackgroundThread {
   // Same append-only lifecycle.
   crucible::safety::AppendOnly<TraceGraph*> iteration_graphs;
 
-  // Thread control — relaxed ordering.
-  // std::thread ctor (in start()) provides happens-before for init data.
-  // thread::join() (in stop()) provides happens-before for teardown.
-  // The flag is just a loop-termination signal with no data dependencies;
-  // worst case the bg thread spins one extra iteration before seeing false.
-  std::atomic<bool> running{false};
-  std::thread thread;
+  // Thread control.  stop_requested is a one-way signal for one run()
+  // invocation; start() / tests re-arm it under quiescence with
+  // reset_unsafe() before launching the next pipeline.  The signal has
+  // no data dependency beyond termination, but using OneShotFlag keeps
+  // the release/acquire discipline structural instead of hand-rolled
+  // atomic<bool> loads and stores.
+  alignas(64) crucible::safety::OneShotFlag stop_requested;
+  std::jthread pipeline_thread;
 
   // Total entries fully processed by the bg thread.  AtomicMonotonic
   // lifts the counter's monotonicity into the type system: no decrement,
@@ -165,6 +173,346 @@ struct BackgroundThread {
   // copies of the bg-only fields on the same line.
   alignas(64) crucible::safety::OneShotFlag reset_requested;
 
+  static constexpr uint32_t BATCH_SIZE = 4096;
+
+  struct BgTraceBatch {
+    BackgroundThread* owner = nullptr;
+    uint32_t count = 0;
+    TraceRing::Entry entries[BATCH_SIZE]{};
+    MetaIndex meta_starts[BATCH_SIZE]{};
+    ScopeHash scope_hashes[BATCH_SIZE]{};
+    CallsiteHash callsite_hashes[BATCH_SIZE]{};
+  };
+
+  struct BgBuildWork {
+    BackgroundThread* owner = nullptr;
+    bool commit_only = false;
+    uint32_t commit_count = 0;
+    uint32_t completed_len = 0;
+    std::vector<TraceRing::Entry> trace;
+    std::vector<MetaIndex> meta_starts;
+    std::vector<ScopeHash> scope_hashes;
+    std::vector<CallsiteHash> callsite_hashes;
+  };
+
+  struct BgRegionWork {
+    BackgroundThread* owner = nullptr;
+    bool commit_only = false;
+    uint32_t commit_count = 0;
+    TraceGraph* graph = nullptr;
+  };
+
+  struct BgPipelineDone {};
+  struct BgPipelineStart {
+    BackgroundThread* owner = nullptr;
+  };
+  struct BgPipelineStartTag {};
+  struct BgTraceBatchTag {};
+  struct BgBuildWorkTag {};
+  struct BgRegionWorkTag {};
+
+  using StartChannel =
+      concurrent::PermissionedSpscChannel<BgPipelineStart, 1, BgPipelineStartTag>;
+  using TraceBatchChannel =
+      concurrent::PermissionedSpscChannel<BgTraceBatch*, 64, BgTraceBatchTag>;
+  using BuildWorkChannel =
+      concurrent::PermissionedSpscChannel<BgBuildWork*, 64, BgBuildWorkTag>;
+  using RegionWorkChannel =
+      concurrent::PermissionedSpscChannel<BgRegionWork*, 64, BgRegionWorkTag>;
+
+  struct BgSinkProducerHandle {
+    [[nodiscard]] bool try_push(BgPipelineDone* const& done) noexcept {
+      delete done;
+      return true;
+    }
+  };
+
+  std::mutex bg_pipeline_arena_mutex_;
+
+  template <class Producer, class T>
+  static void push_pipeline(Producer& producer, T const& value) {
+    while (!producer.try_push(value)) {
+      CRUCIBLE_SPIN_PAUSE;
+    }
+  }
+
+  [[nodiscard]] BgBuildWork* make_commit_work(uint32_t count) {
+    auto* work = new BgBuildWork{};
+    work->owner = this;
+    work->commit_only = true;
+    work->commit_count = count;
+    return work;
+  }
+
+  [[nodiscard]] BgRegionWork* make_commit_region_work(uint32_t count) {
+    auto* work = new BgRegionWork{};
+    work->owner = this;
+    work->commit_only = true;
+    work->commit_count = count;
+    return work;
+  }
+
+  [[nodiscard]] BgBuildWork* prepare_iteration_build_work() {
+    uint32_t total = static_cast<uint32_t>(current_trace.size());
+    const uint32_t iter_len = detector.last_completed_len;
+
+    const uint32_t warmup = crucible::sat::sub_sat(
+        crucible::sat::sub_sat(total, IterationDetector::K),
+        iter_len);
+    if (warmup > 0) [[unlikely]] {
+      auto shift = [warmup](auto& vec) {
+        const auto n = vec.size();
+        if (warmup < n) {
+          std::memmove(vec.data(), vec.data() + warmup,
+                       (n - warmup) * sizeof(vec[0]));
+          vec.resize(n - warmup);
+        } else {
+          vec.clear();
+        }
+      };
+      shift(current_trace);
+      shift(current_meta_starts);
+      shift(current_scope_hashes);
+      shift(current_callsite_hashes);
+      total = crucible::sat::sub_sat(total, warmup);
+    }
+
+    const uint32_t completed_len =
+        crucible::sat::sub_sat(total, IterationDetector::K);
+    last_iteration_length = completed_len;
+    iterations_completed.bump();
+
+    BgBuildWork* work = nullptr;
+    if (meta_log && completed_len > 0) {
+      work = new BgBuildWork{};
+      work->owner = this;
+      work->completed_len = completed_len;
+      work->trace.assign(current_trace.begin(),
+                         current_trace.begin() + completed_len);
+      work->meta_starts.assign(current_meta_starts.begin(),
+                               current_meta_starts.begin() + completed_len);
+      work->scope_hashes.assign(current_scope_hashes.begin(),
+                                current_scope_hashes.begin() + completed_len);
+      work->callsite_hashes.assign(current_callsite_hashes.begin(),
+                                   current_callsite_hashes.begin() + completed_len);
+    }
+
+    auto retain_tail = [](auto& vec) {
+      constexpr uint32_t K = IterationDetector::K;
+      const auto n = vec.size();
+      if (n > K) {
+        std::memmove(vec.data(), vec.data() + n - K,
+                     K * sizeof(vec[0]));
+        vec.resize(K);
+      }
+    };
+    retain_tail(current_trace);
+    retain_tail(current_meta_starts);
+    retain_tail(current_scope_hashes);
+    retain_tail(current_callsite_hashes);
+
+    return work;
+  }
+
+  void publish_trace_graph(effects::Alloc a, TraceGraph* graph)
+      CRUCIBLE_NO_THREAD_SAFETY {
+    if (!graph) return;
+
+    iteration_graphs.append(graph);
+
+    auto* region = make_region(
+        a, arena, graph->ops, graph->num_ops, graph->content_hash);
+
+    if (graph->slots && graph->num_slots > 0) {
+      region->plan = compute_memory_plan(a, graph->slots, graph->num_slots);
+    }
+
+    if (graph->max_meta_end > 0) {
+      meta_log.get().value()->advance_tail(graph->max_meta_end);
+    }
+
+    recompute_merkle(region);
+    uncompiled_regions.append(region);
+
+    active_region.store(region, std::memory_order_release);
+    if (region_ready_cb) region_ready_cb(region);
+  }
+
+  static void DrainTraceRingFn(typename StartChannel::ConsumerHandle&& in,
+                               typename TraceBatchChannel::ProducerHandle&& out) {
+    BackgroundThread* owner = nullptr;
+    while (!owner) {
+      auto start = in.try_pop();
+      if (!start) {
+        CRUCIBLE_SPIN_PAUSE;
+        continue;
+      }
+      owner = start->owner;
+    }
+
+    while (true) {
+      if (owner->stop_requested.peek()) break;
+
+      auto batch = std::make_unique<BgTraceBatch>();
+      batch->owner = owner;
+      batch->count = owner->ring.get().value()->try_pop_batch(
+          batch->entries, batch->meta_starts, batch->scope_hashes,
+          batch->callsite_hashes, BATCH_SIZE);
+
+      if (batch->count == 0) {
+        CRUCIBLE_SPIN_PAUSE;
+        continue;
+      }
+
+      push_pipeline(out, batch.get());
+      batch.release();
+    }
+
+    auto final_batch = std::make_unique<BgTraceBatch>();
+    final_batch->owner = owner;
+    final_batch->count = owner->ring.get().value()->try_pop_batch(
+        final_batch->entries, final_batch->meta_starts,
+        final_batch->scope_hashes, final_batch->callsite_hashes,
+        BATCH_SIZE);
+    if (final_batch->count > 0) {
+      push_pipeline(out, final_batch.get());
+      final_batch.release();
+    }
+
+    BgTraceBatch* stop = nullptr;
+    push_pipeline(out, stop);
+  }
+
+  static void DetectIterationFn(typename TraceBatchChannel::ConsumerHandle&& in,
+                                typename BuildWorkChannel::ProducerHandle&& out) {
+    effects::Bg bg;
+
+    while (true) {
+      auto maybe_batch = in.try_pop();
+      if (!maybe_batch) {
+        CRUCIBLE_SPIN_PAUSE;
+        continue;
+      }
+
+      std::unique_ptr<BgTraceBatch> batch{*maybe_batch};
+      if (!batch) {
+        BgBuildWork* stop = nullptr;
+        push_pipeline(out, stop);
+        return;
+      }
+
+      BackgroundThread* owner = batch->owner;
+      auto do_reset = [&]() noexcept {
+        owner->detector.reset();
+        owner->current_trace.clear();
+        owner->current_meta_starts.clear();
+        owner->current_scope_hashes.clear();
+        owner->current_callsite_hashes.clear();
+      };
+
+      (void)owner->reset_requested.check_and_run(do_reset);
+
+      for (uint32_t i = 0; i < batch->count; ++i) {
+        (void)owner->reset_requested.check_and_run(do_reset);
+
+        owner->current_trace.push_back(batch->entries[i]);
+        owner->current_meta_starts.push_back(batch->meta_starts[i]);
+        owner->current_scope_hashes.push_back(batch->scope_hashes[i]);
+        owner->current_callsite_hashes.push_back(batch->callsite_hashes[i]);
+
+        if (owner->detector.check(batch->entries[i].schema_hash)) {
+          if (auto work = std::unique_ptr<BgBuildWork>(
+                  owner->prepare_iteration_build_work())) {
+            push_pipeline(out, work.get());
+            work.release();
+          }
+        }
+      }
+
+      auto commit = std::unique_ptr<BgBuildWork>(
+          owner->make_commit_work(batch->count));
+      push_pipeline(out, commit.get());
+      commit.release();
+      (void)bg;
+    }
+  }
+
+  static void BuildTraceFn(typename BuildWorkChannel::ConsumerHandle&& in,
+                           typename RegionWorkChannel::ProducerHandle&& out) {
+    effects::Bg bg;
+
+    while (true) {
+      auto maybe_work = in.try_pop();
+      if (!maybe_work) {
+        CRUCIBLE_SPIN_PAUSE;
+        continue;
+      }
+
+      std::unique_ptr<BgBuildWork> work{*maybe_work};
+      if (!work) {
+        BgRegionWork* stop = nullptr;
+        push_pipeline(out, stop);
+        return;
+      }
+
+      BackgroundThread* owner = work->owner;
+      if (work->commit_only) {
+        auto region_work = std::unique_ptr<BgRegionWork>(
+            owner->make_commit_region_work(work->commit_count));
+        push_pipeline(out, region_work.get());
+        region_work.release();
+        continue;
+      }
+
+      TraceGraph* graph = nullptr;
+      {
+        std::lock_guard lock(owner->bg_pipeline_arena_mutex_);
+        graph = owner->build_trace_from(
+            bg.alloc, work->completed_len,
+            work->trace.data(), work->meta_starts.data(),
+            work->scope_hashes.data(), work->callsite_hashes.data());
+      }
+
+      auto region_work = std::make_unique<BgRegionWork>();
+      region_work->owner = owner;
+      region_work->graph = graph;
+      push_pipeline(out, region_work.get());
+      region_work.release();
+    }
+  }
+
+  static void MakeRegionFn(typename RegionWorkChannel::ConsumerHandle&& in,
+                           BgSinkProducerHandle&& out) {
+    effects::Bg bg;
+
+    while (true) {
+      auto maybe_work = in.try_pop();
+      if (!maybe_work) {
+        CRUCIBLE_SPIN_PAUSE;
+        continue;
+      }
+
+      std::unique_ptr<BgRegionWork> work{*maybe_work};
+      if (!work) {
+        auto done = std::make_unique<BgPipelineDone>();
+        push_pipeline(out, done.get());
+        done.release();
+        return;
+      }
+
+      BackgroundThread* owner = work->owner;
+      if (work->commit_only) {
+        (void)owner->total_processed.bump_by(work->commit_count);
+        continue;
+      }
+
+      {
+        std::lock_guard lock(owner->bg_pipeline_arena_mutex_);
+        owner->publish_trace_graph(bg.alloc, work->graph);
+      }
+    }
+  }
+
   // Start the background thread. ring/meta_log must be set first.
   //
   // Seals the global registration tables as part of start(): after this
@@ -186,15 +534,15 @@ struct BackgroundThread {
     rank = rank_;
     world_size = world_size_;
     device_capability = device_cap;
-    running.store(true, std::memory_order_relaxed);
-    thread = std::thread([this] { run(); });
+    stop_requested.reset_unsafe();
+    pipeline_thread = std::jthread([this](std::stop_token) { run(); });
   }
 
   // Signal the thread to stop and join.
   void stop() CRUCIBLE_NO_THREAD_SAFETY {
-    running.store(false, std::memory_order_relaxed);
-    if (thread.joinable()) {
-      thread.join();
+    stop_requested.signal();
+    if (pipeline_thread.joinable()) {
+      pipeline_thread.join();
     }
   }
 
@@ -206,18 +554,16 @@ struct BackgroundThread {
   }
 
   BackgroundThread() = default;
-  BackgroundThread(const BackgroundThread&) = delete("BackgroundThread owns a std::thread");
-  BackgroundThread& operator=(const BackgroundThread&) = delete("BackgroundThread owns a std::thread");
-  BackgroundThread(BackgroundThread&&) = delete("BackgroundThread owns a std::thread with captured this");
-  BackgroundThread& operator=(BackgroundThread&&) = delete("BackgroundThread owns a std::thread with captured this");
+  BackgroundThread(const BackgroundThread&) = delete("BackgroundThread owns a pipeline jthread");
+  BackgroundThread& operator=(const BackgroundThread&) = delete("BackgroundThread owns a pipeline jthread");
+  BackgroundThread(BackgroundThread&&) = delete("BackgroundThread owns a pipeline jthread with captured this");
+  BackgroundThread& operator=(BackgroundThread&&) = delete("BackgroundThread owns a pipeline jthread with captured this");
 
 #ifdef CRUCIBLE_BENCH
  public:  // Bench needs access to scratch buffers for isolated sub-phase timing.
 #else
  private:
 #endif
-  static constexpr uint32_t BATCH_SIZE = 4096;
-
   // ── Scratch buffer capacities ──────────────────────────────────────
   //
   // Dynamically sized to the workload. Grown (never shrunk) as needed.
@@ -505,7 +851,7 @@ struct BackgroundThread {
   template <typename CallerRow>
       requires ::crucible::effects::Subrow<
           run_required_row, CallerRow>
-  void run_in_row() CRUCIBLE_NO_THREAD_SAFETY {
+  void run_in_row() noexcept CRUCIBLE_NO_THREAD_SAFETY {
       run();
   }
 
@@ -514,86 +860,72 @@ struct BackgroundThread {
 #else
  private:
 #endif
-  void run() CRUCIBLE_NO_THREAD_SAFETY {
-    effects::Bg bg;
-    TraceRing::Entry batch[BATCH_SIZE];
-    MetaIndex meta_batch[BATCH_SIZE];
-    ScopeHash scope_batch[BATCH_SIZE];
-    CallsiteHash callsite_batch[BATCH_SIZE];
+  void run() noexcept CRUCIBLE_NO_THREAD_SAFETY {
+    using namespace crucible::concurrent;
+    namespace saf = crucible::safety;
 
-    // Reset-on-divergence body — same code for the top-of-loop check
-    // and the inner-loop check.  OneShotFlag::check_and_run fuses the
-    // (relaxed test → acquire fence → body → release clear) dance.
-    auto do_reset = [&]() noexcept {
-        detector.reset();
-        current_trace.clear();
-        current_meta_starts.clear();
-        current_scope_hashes.clear();
-        current_callsite_hashes.clear();
-    };
+    TraceBatchChannel trace_batches;
+    BuildWorkChannel build_work;
+    RegionWorkChannel region_work;
 
-    while (running.load(std::memory_order_relaxed)) {
-      // Check for divergence reset signal from fg thread.
-      (void)reset_requested.check_and_run(do_reset);
+    StartChannel start;
+    auto start_whole = saf::mint_permission_root<
+        spsc_tag::Whole<BgPipelineStartTag>>();
+    auto [start_prod_perm, start_cons_perm] =
+        saf::mint_permission_split<
+            spsc_tag::Producer<BgPipelineStartTag>,
+            spsc_tag::Consumer<BgPipelineStartTag>>(std::move(start_whole));
 
-      // SIMD-12: try_pop_batch instead of drain — same SPSC mechanism,
-      // same FIFO order (proven by test_trace_ring_pop_batch's
-      // equivalence test), but the all-required-outputs contract
-      // eliminates drain()'s 6-12 conditional null branches per call.
-      // Hot bg drain runs at ~10M ops/sec; per-call branch saving
-      // amortizes meaningfully across BATCH_SIZE entries.
-      uint32_t drained_count = ring.get().value()->try_pop_batch(
-          batch, meta_batch, scope_batch, callsite_batch, BATCH_SIZE);
-      if (drained_count == 0) {
-        CRUCIBLE_SPIN_PAUSE;
-        continue;
-      }
+    auto trace_whole = saf::mint_permission_root<
+        spsc_tag::Whole<BgTraceBatchTag>>();
+    auto [trace_prod_perm, trace_cons_perm] =
+        saf::mint_permission_split<
+            spsc_tag::Producer<BgTraceBatchTag>,
+            spsc_tag::Consumer<BgTraceBatchTag>>(std::move(trace_whole));
 
-      for (uint32_t i = 0; i < drained_count; i++) {
-        // Check for divergence reset INSIDE the drain loop.
-        //
-        // Race without this: fg sets reset_requested AFTER the top-of-loop
-        // check but BEFORE/DURING this drain batch. The bg thread then
-        // processes new post-divergence entries with stale retained-tail
-        // entries and an old detector state. The detector fires a false
-        // boundary from the stale + new entries, building a region whose
-        // ops are shifted from the true iteration start.
-        //
-        // Cost: one relaxed atomic load per entry (~1ns). Acceptable on
-        // the bg thread (~50-100ns/entry). Acquire fence deferred to the
-        // rare case where the flag is true — OneShotFlag handles that.
-        (void)reset_requested.check_and_run(do_reset);
+    auto build_whole = saf::mint_permission_root<
+        spsc_tag::Whole<BgBuildWorkTag>>();
+    auto [build_prod_perm, build_cons_perm] =
+        saf::mint_permission_split<
+            spsc_tag::Producer<BgBuildWorkTag>,
+            spsc_tag::Consumer<BgBuildWorkTag>>(std::move(build_whole));
 
-        current_trace.push_back(batch[i]);
-        current_meta_starts.push_back(meta_batch[i]);
-        current_scope_hashes.push_back(scope_batch[i]);
-        current_callsite_hashes.push_back(callsite_batch[i]);
+    auto region_whole = saf::mint_permission_root<
+        spsc_tag::Whole<BgRegionWorkTag>>();
+    auto [region_prod_perm, region_cons_perm] =
+        saf::mint_permission_split<
+            spsc_tag::Producer<BgRegionWorkTag>,
+            spsc_tag::Consumer<BgRegionWorkTag>>(std::move(region_whole));
 
-        if (detector.check(batch[i].schema_hash)) {
-          on_iteration_boundary(bg.alloc);
-        }
-      }
+    auto start_prod = start.producer(std::move(start_prod_perm));
+    auto start_cons = start.consumer(std::move(start_cons_perm));
+    auto trace_prod = trace_batches.producer(std::move(trace_prod_perm));
+    auto trace_cons = trace_batches.consumer(std::move(trace_cons_perm));
+    auto build_prod = build_work.producer(std::move(build_prod_perm));
+    auto build_cons = build_work.consumer(std::move(build_cons_perm));
+    auto region_prod = region_work.producer(std::move(region_prod_perm));
+    auto region_cons = region_work.consumer(std::move(region_cons_perm));
 
-      // Signal: all entries in this batch are fully processed, including
-      // any on_iteration_boundary() calls (build_trace, make_region,
-      // region_ready_cb).  bump_by's acq_rel pairs with acquire in
-      // Vigil::flush() — publishes all bg side effects (pending_region_,
-      // active_region, region data) to fg thread.  Return value
-      // (previous count) discarded; the SPSC publish is the side effect
-      // that matters here, not the slot index.
-      (void)total_processed.bump_by(drained_count);
+    auto ctx = effects::BgDrainCtx{}.template in_row<run_required_row>();
+    while (!start_prod.try_push(BgPipelineStart{this})) {
+      CRUCIBLE_SPIN_PAUSE;
     }
+    auto drain_stage = concurrent::mint_stage<&DrainTraceRingFn>(
+        ctx, std::move(start_cons), std::move(trace_prod));
+    auto detect_stage = concurrent::mint_stage<&DetectIterationFn>(
+        ctx, std::move(trace_cons), std::move(build_prod));
+    auto build_stage = concurrent::mint_stage<&BuildTraceFn>(
+        ctx, std::move(build_cons), std::move(region_prod));
+    auto region_stage = concurrent::mint_stage<&MakeRegionFn>(
+        ctx, std::move(region_cons), BgSinkProducerHandle{});
 
-    // Drain remaining on shutdown.  Same try_pop_batch path as the
-    // hot loop above — see SIMD-12 comment there for rationale.
-    uint32_t drained_count = ring.get().value()->try_pop_batch(
-        batch, meta_batch, scope_batch, callsite_batch, BATCH_SIZE);
-    for (uint32_t i = 0; i < drained_count; i++) {
-      current_trace.push_back(batch[i]);
-      current_meta_starts.push_back(meta_batch[i]);
-      current_scope_hashes.push_back(scope_batch[i]);
-      current_callsite_hashes.push_back(callsite_batch[i]);
-    }
+    auto pipeline = concurrent::mint_pipeline(
+        ctx,
+        std::move(drain_stage),
+        std::move(detect_stage),
+        std::move(build_stage),
+        std::move(region_stage));
+    std::move(pipeline).run();
   }
 
   void on_iteration_boundary(effects::Alloc a) CRUCIBLE_NO_THREAD_SAFETY {
@@ -684,17 +1016,21 @@ struct BackgroundThread {
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] TraceGraph* build_trace(effects::Alloc a, uint32_t count)
       CRUCIBLE_NO_THREAD_SAFETY {
-    // ── Hoist vector data pointers into locals ─────────────────────
-    //
-    // vector::operator[] reloads base+end from this->member on every
-    // iteration because the compiler can't prove arena writes don't
-    // alias vector storage.  Local pointers live on the stack — the
-    // compiler keeps them in registers and eliminates bounds checks.
-    // Intel PT showed this saves ~22% of build_trace cycles.
-    const TraceRing::Entry* trace_data = current_trace.data();
-    const MetaIndex* meta_data = current_meta_starts.data();
-    const ScopeHash* scope_data = current_scope_hashes.data();
-    const CallsiteHash* callsite_data = current_callsite_hashes.data();
+    return build_trace_from(
+        a, count,
+        current_trace.data(), current_meta_starts.data(),
+        current_scope_hashes.data(), current_callsite_hashes.data());
+  }
+
+  CRUCIBLE_UNSAFE_BUFFER_USAGE
+  [[nodiscard]] TraceGraph* build_trace_from(
+      effects::Alloc a,
+      uint32_t count,
+      const TraceRing::Entry* trace_data,
+      const MetaIndex* meta_data,
+      const ScopeHash* scope_data,
+      const CallsiteHash* callsite_data)
+      CRUCIBLE_NO_THREAD_SAFETY {
 
     // ── Phase 0: Scan — compute totals, check MetaLog overflow ──
 

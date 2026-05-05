@@ -2276,12 +2276,29 @@ Each layer EBO-collapses if its grade is a type-level singleton (regime-1 or reg
 3. `Computation<R, T>` is the innermost member of every effect stack — it is the carrier; everything else is metadata about the carrier. The `row_hash_contribution<Computation<R, T>>` specialization (FOUND-I02-AUDIT) folds the row R "outer" and the payload T's contribution "inner".
 4. **Append-only Universe extension** (FOUND-I04 backlog): adding a new effect atom (e.g., `Effect::Refute`) is permitted only at the next free position; existing atom positions never change. This bounds cache invalidation to entries that actually mention the new atom — `Row<Effect::Bg>` keeps the same hash forever because `Effect::Bg`'s underlying value never changes.
 
-**Currently shipped row_hash specializations (FOUND-I02 + FOUND-I02-AUDIT):**
+**Currently shipped row_hash specializations (FOUND-I02 + FOUND-I02-AUDIT + GAPS-028/029):**
 
 - `row_hash_contribution<effects::Row<Es...>>` — sort-fold over Effect underlying values, cardinality-seeded.
 - `row_hash_contribution<effects::Computation<R, T>>` — combine_ids(R-hash, T-hash); payload-blind for bare T, row-discriminating, nested-non-collapsing.
+- `row_hash_contribution<HotPath<Tier, T>>`
+- `row_hash_contribution<DetSafe<Tier, T>>`
+- `row_hash_contribution<NumericalTier<Tier, T>>`
+- `row_hash_contribution<Vendor<Backend, T>>`
+- `row_hash_contribution<ResidencyHeat<Tier, T>>`
+- `row_hash_contribution<CipherTier<Tier, T>>`
+- `row_hash_contribution<AllocClass<Tag, T>>`
+- `row_hash_contribution<Wait<Strategy, T>>`
+- `row_hash_contribution<MemOrder<Tag, T>>`
+- `row_hash_contribution<Progress<Class, T>>`
+- `row_hash_contribution<Stale<T>>`
+- `row_hash_contribution<Tagged<T, Source>>`
+- `row_hash_contribution<Refined<Pred, T>>`
+- `row_hash_contribution<Secret<T>>`
+- `row_hash_contribution<Linear<T>>`
 
-The remaining 14 wrappers in the canonical order list (HotPath, DetSafe, NumericalTier, Vendor, ResidencyHeat, CipherTier, AllocClass, Wait, MemOrder, Progress, Stale, Tagged, Refined, Secret, Linear) **DO NOT YET** ship `row_hash_contribution` specializations — they fall through the primary template to value=0. This is intentional: FOUND-I02 ships the *infrastructure*; per-wrapper specializations land alongside their production call sites (FOUND-I05/06/07 for the cache levels and FOUND-I16-I20 for the per-component row-typed signatures). Until then, a wrapped value's row_hash equals the row_hash of its innermost row-bearing component (typically `Computation<R, T>` or just the bare `Row<Es...>`).
+All 16 entries in the canonical wrapper-nesting order ship `row_hash_contribution` specializations as of 2026-05-05. Nested compositions hash differently based on wrapper order — `Stale<Tagged<T>>` and `Tagged<Stale<T>>` produce distinct federation-cache-slot keys. The discipline is regression-tested in `test/test_migration_verification.cpp` nesting-order cells per GAPS-029.
+
+`safety/DimensionTraits.h` also pins the wrapper × lattice × modality × tier quadruple for every shipped Graded-backed safety wrapper via `wrapper_dimension<W>`, `wrapper_tier_v<W>`, and `verify_quadruple<W>()` (GAPS-091). `TimeOrdered<T, N, Tag>` is deliberately Tier-L (`Representation`) over `HappensBeforeLattice<N, Tag>`; `EpochVersioned<T>` is deliberately Tier-V (`Version`) over the epoch/generation product lattice.
 
 ### GCC 16 contracts — implementation gotchas
 
@@ -2542,8 +2559,8 @@ The convention has TWO modes, distinguished by whether the mint threads ctx-driv
 | ✅ | Ctx-bound (Tier 2) | `mint_endpoint<Substr, Dir>(ctx, handle)` | `IsBridgeableDirection<Substr, Dir> ∧ SubstrateFitsCtxResidency<Substr, Ctx>` | `Endpoint<Substr, Dir, Ctx>` |
 | ✅ | Bridge wrap | `mint_recording_session(handle, log, self, peer)` | `IsSessionHandle<H>` | `RecordingSessionHandle<Proto, R, L>` |
 | ✅ | Bridge wrap | `mint_crash_watched_session<PeerTag>(handle, flag)` | parameter-type gate (SessionHandle specialisation); PeerTag non-deducible | `CrashWatchedHandle<Proto, R, PeerTag, LoopCtx>` |
-| ✅ | Tier 3 | `mint_stage<auto FnPtr>(ctx, in, out)` | `CtxFitsStage<FnPtr, Ctx>` (≡ `PipelineStage<FnPtr> ∧ IsExecCtx<Ctx>`) | `Stage<FnPtr, Ctx>` |
-| ✅ | Tier 3 | `mint_pipeline(ctx, stages...)` | `CtxFitsPipeline<Ctx, Stages...>` (≡ `IsExecCtx<Ctx> ∧ pipeline_chain<Stages...>`; chain folds `stages_chain<S_i, S_{i+1}>` over adjacent pairs) | `Pipeline<Stages...>` |
+| ✅ | Tier 3 | `mint_stage<auto FnPtr>(ctx, in, out)` | shape/ctx gate plus `EffectRowMismatch` assertions equivalent to `CtxFitsStage<FnPtr, Ctx>` (≡ `PipelineStage<FnPtr> ∧ IsExecCtx<Ctx> ∧ Subrow<payload_row_t<input_value_type>, Ctx::row_type> ∧ Subrow<payload_row_t<output_value_type>, Ctx::row_type>`) | `Stage<FnPtr, Ctx>` |
+| ✅ | Tier 3 | `mint_pipeline(ctx, stages...)` | chain/ctx gate plus `EffectRowMismatch` assertion equivalent to `CtxFitsPipeline<Ctx, Stages...>` (≡ `IsExecCtx<Ctx> ∧ pipeline_chain<Stages...> ∧ Subrow<pipeline_row_union_t<Stages...>, Ctx::row_type>`; chain folds `stages_chain<S_i, S_{i+1}>` over adjacent pairs) | `Pipeline<Stages...>` |
 | ✅ | Tier 2→3 bridge | `mint_stage_from_endpoints<auto FnPtr>(ctx, in_ep, out_ep)` | `CtxFitsStageFromEndpoints<FnPtr, Ctx, ConsumerEp, ProducerEp>` (≡ `PipelineStage<FnPtr> ∧ IsExecCtx<Ctx> ∧ IsConsumerEndpoint<ConsumerEp> ∧ IsProducerEndpoint<ProducerEp> ∧ StageHandlesMatchEndpoints<FnPtr, ConsumerEp, ProducerEp>`); consumes endpoints via `into_handle()`, threads through `mint_stage` | `Stage<FnPtr, Ctx>` |
 | 🔮 | Tier 4 | `mint_vigil<L, D, C>(ctx, parts...)` | per-component fit | `Vigil<L, D, C>` |
 | 🔮 | Tier 5 | `mint_keeper<Vigils...>(ctx, vigils, topo)` | per-Vigil fit | `Keeper<Vigils..., ...>` |

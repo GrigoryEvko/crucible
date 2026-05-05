@@ -56,20 +56,16 @@
 //    persistent-hash taxonomy in Types.h.
 //
 // 6. **Recursive fold over wrapper stack.**  The trait
-//    `row_hash_contribution<T>` is the open extension point.  Future
-//    wrappers that carry row-relevant state (HotPath<T, Tier>,
-//    DetSafe<T, Tier>, Permission<Tag>, ...) supply specializations
-//    that fold *their* contribution with the inner type's row hash
-//    via `combine_ids` — the same Boost-style combiner used by
-//    StableName.h.  FOUND-I02 ships the *infrastructure* and the
-//    `Row<Es...>` specialization; per-wrapper specializations land
-//    alongside their wrapper's production call site (FOUND-I05/06/07
-//    for the cache levels and the FOUND-G* lattice family).
+//    `row_hash_contribution<T>` is the open extension point.  Wrappers
+//    that carry row-relevant state supply specializations that fold
+//    *their* contribution with the inner type's row hash via
+//    `combine_ids` — the same Boost-style combiner used by
+//    StableName.h.
 //
 // ── Currently shipped specializations (FOUND-I02 + I02-AUDIT) ──────
 //
-// As of this header revision, only TWO row-bearing specializations
-// are wired:
+// As of this header revision, the row-bearing core and every wrapper
+// in the canonical wrapper-nesting order are wired:
 //
 //   row_hash_contribution<effects::Row<Es...>>
 //       — sort-fold over Effect underlying values; cardinality-
@@ -80,16 +76,11 @@
 //         row-discriminating, nested-non-collapsing.  See spec
 //         block below.
 //
-// The remaining 14 chain wrappers in the canonical order
-// (HotPath / DetSafe / NumericalTier / Vendor / ResidencyHeat /
-// CipherTier / AllocClass / Wait / MemOrder / Progress / Stale /
-// Tagged / Refined / Secret / Linear) DO NOT YET ship
-// `row_hash_contribution` specializations — they fall through to
-// the primary template (value = 0).  This means a wrapped value's
-// row_hash equals the row_hash of its innermost row-bearing
-// component (typically Computation<R, T> or a bare Row<Es...>).
-// Per-wrapper specializations land alongside their production call
-// sites (FOUND-I05+ batch).
+//   row_hash_contribution<W<...Inner...>>
+//       — combine_ids(wrapper-stable-tag, Inner-hash) for:
+//         HotPath / DetSafe / NumericalTier / Vendor / ResidencyHeat /
+//         CipherTier / AllocClass / Wait / MemOrder / Progress / Stale /
+//         Tagged / Refined / Secret / Linear.
 //
 // CLAUDE.md §XVI / FOUND-I03 documents this scope at user-facing
 // resolution.
@@ -132,6 +123,37 @@ namespace crucible::effects {
 template <typename R, typename T> class Computation;
 }  // namespace crucible::effects
 
+namespace crucible::algebra::lattices {
+enum class AllocClassTag : std::uint8_t;
+enum class CipherTierTag : std::uint8_t;
+enum class DetSafeTier : std::uint8_t;
+enum class HotPathTier : std::uint8_t;
+enum class MemOrderTag : std::uint8_t;
+enum class ProgressClass : std::uint8_t;
+enum class ResidencyHeatTag : std::uint8_t;
+enum class Tolerance : std::uint8_t;
+enum class VendorBackend : std::uint8_t;
+enum class WaitStrategy : std::uint8_t;
+}  // namespace crucible::algebra::lattices
+
+namespace crucible::safety {
+template <algebra::lattices::AllocClassTag Tag, typename T> class AllocClass;
+template <algebra::lattices::CipherTierTag Tier, typename T> class CipherTier;
+template <algebra::lattices::DetSafeTier Tier, typename T> class DetSafe;
+template <algebra::lattices::HotPathTier Tier, typename T> class HotPath;
+template <algebra::lattices::MemOrderTag Tag, typename T> class MemOrder;
+template <algebra::lattices::ProgressClass Class, typename T> class Progress;
+template <algebra::lattices::ResidencyHeatTag Tier, typename T> class ResidencyHeat;
+template <algebra::lattices::Tolerance Tier, typename T> class NumericalTier;
+template <algebra::lattices::VendorBackend Backend, typename T> class Vendor;
+template <algebra::lattices::WaitStrategy Strategy, typename T> class Wait;
+template <typename T> class Linear;
+template <auto Pred, typename T> class Refined;
+template <typename T> class Secret;
+template <typename T> class Stale;
+template <typename T, typename Tag> class Tagged;
+}  // namespace crucible::safety
+
 namespace crucible::safety::diag {
 
 // ═════════════════════════════════════════════════════════════════════
@@ -139,6 +161,22 @@ namespace crucible::safety::diag {
 // ═════════════════════════════════════════════════════════════════════
 
 namespace detail {
+
+inline constexpr std::uint64_t WRAPPER_HOTPATH_TAG        = 0x0100'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_DETSAFE_TAG        = 0x0200'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_NUMERICAL_TIER_TAG = 0x0300'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_VENDOR_TAG         = 0x0400'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_RESIDENCY_HEAT_TAG = 0x0500'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_CIPHER_TIER_TAG    = 0x0600'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_ALLOC_CLASS_TAG    = 0x0700'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_WAIT_TAG           = 0x0800'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_MEM_ORDER_TAG      = 0x0900'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_PROGRESS_TAG       = 0x0A00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_STALE_TAG          = 0x0B00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_TAGGED_TAG         = 0x0C00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_REFINED_TAG        = 0x0D00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_SECRET_TAG         = 0x0E00'0000'0000'0000ULL;
+inline constexpr std::uint64_t WRAPPER_LINEAR_TAG         = 0x0F00'0000'0000'0000ULL;
 
 // Bubble-sort a fixed-size std::array<uint64_t, N> in place at
 // consteval.  N is bounded by `effects::effect_count` (≤ 64 by
@@ -308,6 +346,126 @@ struct row_hash_contribution<effects::Computation<R, T>> {
         detail::combine_ids(
             row_hash_contribution_v<R>,
             row_hash_contribution_v<T>);
+};
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Canonical safety-wrapper stack specializations ─────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// These specializations keep the row hash sensitive to wrapper order.
+// Wrapper attributes participate where they are part of the type-level
+// semantics: enum tiers fold their underlying value, Tagged folds the
+// source tag type, and Refined folds the predicate object's type.  The
+// wrapper tag itself lives in the high byte so enum values cannot
+// collide across wrapper families.
+
+template <algebra::lattices::HotPathTier Tier, typename Inner>
+struct row_hash_contribution<safety::HotPath<Tier, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_HOTPATH_TAG | static_cast<std::uint64_t>(Tier),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::DetSafeTier Tier, typename Inner>
+struct row_hash_contribution<safety::DetSafe<Tier, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_DETSAFE_TAG | static_cast<std::uint64_t>(Tier),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::Tolerance Tier, typename Inner>
+struct row_hash_contribution<safety::NumericalTier<Tier, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_NUMERICAL_TIER_TAG | static_cast<std::uint64_t>(Tier),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::VendorBackend Backend, typename Inner>
+struct row_hash_contribution<safety::Vendor<Backend, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_VENDOR_TAG | static_cast<std::uint64_t>(Backend),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::ResidencyHeatTag Tier, typename Inner>
+struct row_hash_contribution<safety::ResidencyHeat<Tier, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_RESIDENCY_HEAT_TAG | static_cast<std::uint64_t>(Tier),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::CipherTierTag Tier, typename Inner>
+struct row_hash_contribution<safety::CipherTier<Tier, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_CIPHER_TIER_TAG | static_cast<std::uint64_t>(Tier),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::AllocClassTag Tag, typename Inner>
+struct row_hash_contribution<safety::AllocClass<Tag, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_ALLOC_CLASS_TAG | static_cast<std::uint64_t>(Tag),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::WaitStrategy Strategy, typename Inner>
+struct row_hash_contribution<safety::Wait<Strategy, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_WAIT_TAG | static_cast<std::uint64_t>(Strategy),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::MemOrderTag Tag, typename Inner>
+struct row_hash_contribution<safety::MemOrder<Tag, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_MEM_ORDER_TAG | static_cast<std::uint64_t>(Tag),
+        row_hash_contribution_v<Inner>);
+};
+
+template <algebra::lattices::ProgressClass Class, typename Inner>
+struct row_hash_contribution<safety::Progress<Class, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_PROGRESS_TAG | static_cast<std::uint64_t>(Class),
+        row_hash_contribution_v<Inner>);
+};
+
+template <typename Inner>
+struct row_hash_contribution<safety::Stale<Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_STALE_TAG,
+        row_hash_contribution_v<Inner>);
+};
+
+template <typename Inner, typename Source>
+struct row_hash_contribution<safety::Tagged<Inner, Source>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::combine_ids(
+            detail::WRAPPER_TAGGED_TAG,
+            stable_type_id<Source>),
+        row_hash_contribution_v<Inner>);
+};
+
+template <auto Pred, typename Inner>
+struct row_hash_contribution<safety::Refined<Pred, Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::combine_ids(
+            detail::WRAPPER_REFINED_TAG,
+            stable_type_id<std::remove_cvref_t<decltype(Pred)>>),
+        row_hash_contribution_v<Inner>);
+};
+
+template <typename Inner>
+struct row_hash_contribution<safety::Secret<Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_SECRET_TAG,
+        row_hash_contribution_v<Inner>);
+};
+
+template <typename Inner>
+struct row_hash_contribution<safety::Linear<Inner>> {
+    static constexpr std::uint64_t value = detail::combine_ids(
+        detail::WRAPPER_LINEAR_TAG,
+        row_hash_contribution_v<Inner>);
 };
 
 // ═════════════════════════════════════════════════════════════════════

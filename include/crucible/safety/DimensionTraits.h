@@ -93,6 +93,31 @@
 
 #include <crucible/algebra/GradedTrait.h>
 #include <crucible/algebra/Lattice.h>
+#include <crucible/safety/AllocClass.h>
+#include <crucible/safety/Budgeted.h>
+#include <crucible/safety/CipherTier.h>
+#include <crucible/safety/Consistency.h>
+#include <crucible/safety/Crash.h>
+#include <crucible/safety/DetSafe.h>
+#include <crucible/safety/EpochVersioned.h>
+#include <crucible/safety/HotPath.h>
+#include <crucible/safety/Linear.h>
+#include <crucible/safety/MemOrder.h>
+#include <crucible/safety/Mutation.h>
+#include <crucible/safety/NumaPlacement.h>
+#include <crucible/safety/NumericalTier.h>
+#include <crucible/safety/OpaqueLifetime.h>
+#include <crucible/safety/Progress.h>
+#include <crucible/safety/RecipeSpec.h>
+#include <crucible/safety/Refined.h>
+#include <crucible/safety/ResidencyHeat.h>
+#include <crucible/safety/SealedRefined.h>
+#include <crucible/safety/Secret.h>
+#include <crucible/safety/Stale.h>
+#include <crucible/safety/Tagged.h>
+#include <crucible/safety/TimeOrdered.h>
+#include <crucible/safety/Vendor.h>
+#include <crucible/safety/Wait.h>
 
 #include <concepts>
 #include <cstdint>
@@ -344,6 +369,182 @@ inline constexpr TierKind dimension_tier_v =
     tier_for_grade_v<typename W::lattice_type>;
 
 // ═════════════════════════════════════════════════════════════════════
+// ── wrapper_dimension / verify_quadruple — exact wrapper table ──────
+// ═════════════════════════════════════════════════════════════════════
+//
+// `dimension_tier_v<W>` above is intentionally heuristic: it derives a
+// Tier from the lattice carrier's structural concept shape.  GAPS-091
+// needs the inverse discipline: each shipped Graded-backed wrapper names
+// the dimension it is meant to carry, then a consteval verifier checks
+// the wrapper's (lattice, modality, tier) surface against that explicit
+// declaration.  This table is deliberately small and exact; adding a new
+// Graded-backed wrapper means adding one specialization here.
+
+template <typename W>
+struct wrapper_dimension;
+
+template <typename W>
+concept DimensionedGradedWrapper =
+    algebra::GradedWrapper<std::remove_cvref_t<W>> &&
+    requires { wrapper_dimension<std::remove_cvref_t<W>>::value; };
+
+template <DimensionedGradedWrapper W>
+inline constexpr DimensionAxis wrapper_dimension_v =
+    wrapper_dimension<std::remove_cvref_t<W>>::value;
+
+template <DimensionedGradedWrapper W>
+inline constexpr TierKind wrapper_tier_v =
+    tier_of_axis(wrapper_dimension_v<W>);
+
+template <DimensionedGradedWrapper W>
+using wrapper_lattice_t = typename std::remove_cvref_t<W>::lattice_type;
+
+template <DimensionedGradedWrapper W>
+inline constexpr algebra::ModalityKind wrapper_modality_v =
+    std::remove_cvref_t<W>::modality;
+
+template <typename T>
+struct wrapper_dimension<Linear<T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Usage> {};
+
+template <auto Pred, typename T>
+struct wrapper_dimension<Refined<Pred, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Refinement> {};
+
+template <auto Pred, typename T>
+struct wrapper_dimension<SealedRefined<Pred, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Refinement> {};
+
+template <typename T, typename Tag>
+struct wrapper_dimension<Tagged<T, Tag>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Provenance> {};
+
+template <typename T>
+struct wrapper_dimension<Secret<T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Security> {};
+
+template <typename T>
+struct wrapper_dimension<Stale<T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Staleness> {};
+
+template <typename T, std::size_t N, typename Tag>
+struct wrapper_dimension<TimeOrdered<T, N, Tag>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Representation> {};
+
+template <typename T, typename Cmp>
+struct wrapper_dimension<Monotonic<T, Cmp>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Mutation> {};
+
+template <typename T, template <typename...> class Storage>
+struct wrapper_dimension<AppendOnly<T, Storage>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Mutation> {};
+
+template <HotPathTier_v Tier, typename T>
+struct wrapper_dimension<HotPath<Tier, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Complexity> {};
+
+template <DetSafeTier_v Tier, typename T>
+struct wrapper_dimension<DetSafe<Tier, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Effect> {};
+
+template <Tolerance Tier, typename T>
+struct wrapper_dimension<NumericalTier<Tier, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Precision> {};
+
+template <VendorBackend_v Backend, typename T>
+struct wrapper_dimension<Vendor<Backend, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Representation> {};
+
+template <ResidencyHeatTag_v Tier, typename T>
+struct wrapper_dimension<ResidencyHeat<Tier, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Space> {};
+
+template <CipherTierTag_v Tier, typename T>
+struct wrapper_dimension<CipherTier<Tier, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Security> {};
+
+template <AllocClassTag_v Tag, typename T>
+struct wrapper_dimension<AllocClass<Tag, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Space> {};
+
+template <WaitStrategy_v Strategy, typename T>
+struct wrapper_dimension<Wait<Strategy, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Reentrancy> {};
+
+template <MemOrderTag_v Tag, typename T>
+struct wrapper_dimension<MemOrder<Tag, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Reentrancy> {};
+
+template <ProgressClass_v Class, typename T>
+struct wrapper_dimension<Progress<Class, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Complexity> {};
+
+template <Consistency_v Level, typename T>
+struct wrapper_dimension<Consistency<Level, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Version> {};
+
+template <Lifetime_v Scope, typename T>
+struct wrapper_dimension<OpaqueLifetime<Scope, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Lifetime> {};
+
+template <CrashClass_v Class, typename T>
+struct wrapper_dimension<Crash<Class, T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Effect> {};
+
+template <typename T>
+struct wrapper_dimension<Budgeted<T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Space> {};
+
+template <typename T>
+struct wrapper_dimension<EpochVersioned<T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Version> {};
+
+template <typename T>
+struct wrapper_dimension<NumaPlacement<T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Representation> {};
+
+template <typename T>
+struct wrapper_dimension<RecipeSpec<T>>
+    : std::integral_constant<DimensionAxis, DimensionAxis::Precision> {};
+
+template <TierKind Tier, typename Lattice>
+[[nodiscard]] consteval bool tier_admits_lattice() noexcept {
+    if constexpr (Tier == TierKind::Typestate) {
+        return TypestateGrade<Lattice>;
+    } else if constexpr (Tier == TierKind::Foundational) {
+        return true;
+    } else {
+        // Tier-S / Tier-L / Tier-V wrappers in the current safety tree
+        // are all lattice-backed at minimum.  Tier-S semiring laws are
+        // enforced by the specific wrapper semantics where the carrier is
+        // a type-level singleton or product lattice rather than by
+        // requiring every grade carrier to publish add/mul.
+        return LatticeGrade<Lattice>;
+    }
+}
+
+template <TierKind, algebra::ModalityKind Modality>
+[[nodiscard]] consteval bool tier_admits_modality() noexcept {
+    return algebra::IsModality<Modality>;
+}
+
+template <DimensionedGradedWrapper W>
+[[nodiscard]] consteval bool verify_quadruple() noexcept {
+    using X = std::remove_cvref_t<W>;
+    using L = wrapper_lattice_t<X>;
+    constexpr auto tier = wrapper_tier_v<X>;
+    constexpr auto modality = wrapper_modality_v<X>;
+
+    return std::is_same_v<L, typename X::lattice_type>
+        && std::is_same_v<L, typename X::graded_type::lattice_type>
+        && modality == X::modality
+        && modality == algebra::graded_modality_v<typename X::graded_type>
+        && tier_kind_name(tier) != std::string_view{"<unknown TierKind>"}
+        && tier_admits_lattice<tier, L>()
+        && tier_admits_modality<tier, modality>();
+}
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Self-test (compile-time + reflection-driven coverage) ──────────
 // ═════════════════════════════════════════════════════════════════════
 
@@ -568,6 +769,70 @@ static_assert(tier_of_axis_v<DimensionAxis::Type>     == TierKind::Foundational)
 static_assert(tier_of_axis_v<DimensionAxis::Effect>   == TierKind::Semiring);
 static_assert(tier_of_axis_v<DimensionAxis::Version>  == TierKind::Versioned);
 
+// ── Wrapper × lattice × modality × tier verification ────────────────
+
+struct QuadTag {};
+using WLinear          = Linear<int>;
+using WRefined         = Refined<positive, int>;
+using WSealedRefined   = SealedRefined<positive, int>;
+using WTagged          = Tagged<int, source::FromUser>;
+using WSecret          = Secret<int>;
+using WStale           = Stale<int>;
+using WTimeOrdered     = TimeOrdered<int, 4, QuadTag>;
+using WMonotonic       = Monotonic<std::uint64_t>;
+using WAppendOnly      = AppendOnly<int>;
+using WHotPath         = HotPath<HotPathTier_v::Hot, int>;
+using WDetSafe         = DetSafe<DetSafeTier_v::Pure, int>;
+using WNumericalTier   = NumericalTier<Tolerance::BITEXACT, int>;
+using WVendor          = Vendor<VendorBackend_v::Portable, int>;
+using WResidencyHeat   = ResidencyHeat<ResidencyHeatTag_v::Hot, int>;
+using WCipherTier      = CipherTier<CipherTierTag_v::Hot, int>;
+using WAllocClass      = AllocClass<AllocClassTag_v::Arena, int>;
+using WWait            = Wait<WaitStrategy_v::SpinPause, int>;
+using WMemOrder        = MemOrder<MemOrderTag_v::SeqCst, int>;
+using WProgress        = Progress<ProgressClass_v::Bounded, int>;
+using WConsistency     = Consistency<Consistency_v::STRONG, int>;
+using WOpaqueLifetime  = OpaqueLifetime<Lifetime_v::PER_REQUEST, int>;
+using WCrash           = Crash<CrashClass_v::NoThrow, int>;
+using WBudgeted        = Budgeted<int>;
+using WEpochVersioned  = EpochVersioned<int>;
+using WNumaPlacement   = NumaPlacement<int>;
+using WRecipeSpec      = RecipeSpec<int>;
+
+static_assert(wrapper_tier_v<WLinear>         == TierKind::Semiring);
+static_assert(wrapper_tier_v<WRefined>        == TierKind::Foundational);
+static_assert(wrapper_tier_v<WTagged>         == TierKind::Semiring);
+static_assert(wrapper_tier_v<WSecret>         == TierKind::Semiring);
+static_assert(wrapper_tier_v<WTimeOrdered>    == TierKind::Lattice);
+static_assert(wrapper_tier_v<WEpochVersioned> == TierKind::Versioned);
+
+static_assert(verify_quadruple<WLinear>());
+static_assert(verify_quadruple<WRefined>());
+static_assert(verify_quadruple<WSealedRefined>());
+static_assert(verify_quadruple<WTagged>());
+static_assert(verify_quadruple<WSecret>());
+static_assert(verify_quadruple<WStale>());
+static_assert(verify_quadruple<WTimeOrdered>());
+static_assert(verify_quadruple<WMonotonic>());
+static_assert(verify_quadruple<WAppendOnly>());
+static_assert(verify_quadruple<WHotPath>());
+static_assert(verify_quadruple<WDetSafe>());
+static_assert(verify_quadruple<WNumericalTier>());
+static_assert(verify_quadruple<WVendor>());
+static_assert(verify_quadruple<WResidencyHeat>());
+static_assert(verify_quadruple<WCipherTier>());
+static_assert(verify_quadruple<WAllocClass>());
+static_assert(verify_quadruple<WWait>());
+static_assert(verify_quadruple<WMemOrder>());
+static_assert(verify_quadruple<WProgress>());
+static_assert(verify_quadruple<WConsistency>());
+static_assert(verify_quadruple<WOpaqueLifetime>());
+static_assert(verify_quadruple<WCrash>());
+static_assert(verify_quadruple<WBudgeted>());
+static_assert(verify_quadruple<WEpochVersioned>());
+static_assert(verify_quadruple<WNumaPlacement>());
+static_assert(verify_quadruple<WRecipeSpec>());
+
 }  // namespace detail::dimension_traits_self_test
 
 // ═════════════════════════════════════════════════════════════════════
@@ -633,6 +898,14 @@ inline void runtime_smoke_test() {
     [[maybe_unused]] TierKind tg_typ = tier_for_grade_v<TestTypestate>;
     [[maybe_unused]] TierKind tg_ver = tier_for_grade_v<TestVersioned>;
     [[maybe_unused]] TierKind tg_fnd = tier_for_grade_v<TestBareFoundational>;
+
+    // Exact wrapper table smoke reads.
+    [[maybe_unused]] DimensionAxis dim_lin = wrapper_dimension_v<WLinear>;
+    [[maybe_unused]] TierKind tier_lin = wrapper_tier_v<WLinear>;
+    [[maybe_unused]] TierKind tier_to = wrapper_tier_v<WTimeOrdered>;
+    [[maybe_unused]] TierKind tier_ev = wrapper_tier_v<WEpochVersioned>;
+    [[maybe_unused]] bool quad_lin = verify_quadruple<WLinear>();
+    [[maybe_unused]] bool quad_ev = verify_quadruple<WEpochVersioned>();
 }
 
 }  // namespace detail::dimension_traits_self_test

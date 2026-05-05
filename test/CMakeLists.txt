@@ -293,6 +293,8 @@ crucible_test(test_iteration_detector)
 crucible_test(test_arena)
 crucible_test(test_trace_ring)
 crucible_test(test_merkle_dag)
+crucible_test(test_merkle_dag_adapter)
+set_target_properties(test_merkle_dag_adapter PROPERTIES CRUCIBLE_NO_WERROR TRUE)
 crucible_test(test_memory_plan)
 crucible_test(test_serialize)
 crucible_test(test_cipher)
@@ -332,15 +334,31 @@ crucible_test(test_algebra_compile)
 crucible_test(test_safety_compile)
 crucible_test(test_migration_verification)
 crucible_test(test_concept_cheat_probe)
+add_test(NAME trait_guard
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.sh)
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
 crucible_test(test_bridges_compile)
 crucible_test(test_effects_compile)
 crucible_test(test_concurrent_compile)
+crucible_test(test_auto_split)
 crucible_test(test_diagnostic_compile)
 crucible_test(test_stable_name_compile)
 crucible_test(test_signature_traits)
+crucible_test(test_is_alloc_class)
+crucible_test(test_is_bits)
+crucible_test(test_is_borrowed)
+crucible_test(test_is_borrowed_ref)
+crucible_test(test_is_hot_path)
+crucible_test(test_is_mem_order)
+crucible_test(test_is_progress)
+crucible_test(test_is_wait)
+crucible_test(test_is_linear)
+crucible_test(test_is_refined)
+crucible_test(test_is_secret)
+crucible_test(test_is_stale)
+crucible_test(test_is_tagged)
 crucible_test(test_is_owned_region)
 crucible_test(test_is_permission)
 crucible_test(test_is_reduce_into)
@@ -407,6 +425,7 @@ crucible_test(test_read_view)
 crucible_test(test_topology)
 crucible_test(test_parallelism_rule)
 crucible_test(test_permissioned_snapshot)
+crucible_test(test_auto_router)
 crucible_test(test_permissioned_mpsc_channel)
 crucible_test(test_permissioned_mpmc_channel)
 crucible_test(test_permissioned_sharded_grid)
@@ -524,6 +543,13 @@ crucible_test(test_permissioned_session_handle)
 # the framework's first wired-in end-to-end exercise.
 crucible_test(test_spsc_session)
 
+# SwmrSession.h (GAPS-019 / GAPS-020) — typed-session facade for
+# AtomicSnapshot + SharedPermissionPool.  Covers writer publication,
+# multi-reader lifetime accounting, late-reader visibility, matching
+# SharedPermission proof minting, and PSH send/recv wrapper execution.
+crucible_test(test_swmr_session)
+crucible_test(test_augur_metrics_swmr)
+
 # L2 typing context Γ (SEPLOG-I1, task #343) — Entry, Context,
 # compose_context_t, lookup_context_t, contains_key_v, domain_of_t,
 # update_entry_t, remove_entry_t.  Gateway to L5 (association),
@@ -582,6 +608,13 @@ crucible_test(test_session_diagnostic)
 # default per THREADING.md §5.5.2.  Inheritance-based detection; user
 # extensions plug in with zero boilerplate.
 crucible_test(test_scheduler_policy)
+
+# AdaptiveScheduler Pool<Policy> (GAPS-032) — runnable policy-parametric
+# worker pool over scheduler/Policies.h, with dispatch(), topology
+# consultation for locality-aware policies, completion smoke coverage
+# across all shipped queue-template policies, and the Substrate
+# recommendation bridge.
+crucible_test(test_adaptive_scheduler)
 
 # ContentAddressed<T> quotient combinator (SEPLOG-L1, task #361,
 # session_types.md Appendix D.5) — payload wrapper marking a value
@@ -950,6 +983,8 @@ crucible_neg_compile_effects_test(neg_endpoint_non_bridgeable_direction
     "associated constraints are not satisfied|IsBridgeableDirection")
 crucible_neg_compile_effects_test(neg_endpoint_non_exec_ctx
     "associated constraints are not satisfied|SubstrateFitsCtxResidency|IsExecCtx")
+crucible_neg_compile_effects_test(neg_endpoint_topology_recommendation_mismatch
+    "associated constraints are not satisfied|SubstrateMatchesEndpointRecommendation|recommend_topology_for_workload|ChannelTopology")
 crucible_neg_compile_effects_test(neg_substrate_session_unfit_residency
     "associated constraints are not satisfied|SubstrateFitsCtxResidency|fits_in_tier")
 crucible_neg_compile_effects_test(neg_substrate_session_non_bridgeable
@@ -957,16 +992,27 @@ crucible_neg_compile_effects_test(neg_substrate_session_non_bridgeable
 
 # ─── Tier 3 commit 1 (#863, HS14): mint_stage gate fixtures ──────────
 #
-# Two fixtures pin the CtxFitsStage<FnPtr, Ctx> conjunction at the
+# Six fixtures pin the CtxFitsStage<FnPtr, Ctx> conjunction at the
 # mint_stage<auto FnPtr>(ctx, in, out) boundary:
 #   (a) FnPtr that is not a PipelineStage (wrong arity here) →
 #       PipelineStage<FnPtr> conjunct fires.
 #   (b) Ctx that is not an ExecCtx (bare int) →
 #       IsExecCtx<Ctx> conjunct fires.
+#   (c-f) input/output payload row mismatch cases, including
+#       Capability<E, S> payload propagation, prove the Subrow gate
+#       fires for both stage boundaries.
 crucible_neg_compile_effects_test(neg_mint_stage_non_pipeline_stage
     "associated constraints are not satisfied|CtxFitsStage|PipelineStage")
 crucible_neg_compile_effects_test(neg_mint_stage_non_exec_ctx
     "associated constraints are not satisfied|CtxFitsStage|IsExecCtx")
+crucible_neg_compile_effects_test(neg_mint_stage_input_row_mismatch
+    "EffectRowMismatch|StageInputRowAdmitted|Subrow")
+crucible_neg_compile_effects_test(neg_mint_stage_output_row_mismatch
+    "EffectRowMismatch|StageOutputRowAdmitted|Subrow")
+crucible_neg_compile_effects_test(neg_mint_stage_both_rows_mismatch
+    "EffectRowMismatch|StageInputRowAdmitted|StageOutputRowAdmitted|Subrow")
+crucible_neg_compile_effects_test(neg_mint_stage_capability_payload_no_admit
+    "EffectRowMismatch|StageInputRowAdmitted|Subrow")
 
 # Audit round 2 (#864): three additional fixtures hardening Stage's
 # soundness gates beyond the 2-fixture HS14 minimum:
@@ -984,19 +1030,28 @@ crucible_neg_compile_effects_test(neg_stage_run_on_lvalue
 
 # ─── Tier 3 commit 2 (#865, HS14): mint_pipeline gate fixtures ───────
 #
-# Three fixtures pin the CtxFitsPipeline<Ctx, Stages...> conjunction
+# Six fixtures pin the CtxFitsPipeline<Ctx, Stages...> conjunction
 # at the mint_pipeline boundary:
 #   (a) pipeline_chain mismatch — adjacent (i, i+1) stages have
 #       incompatible payload types (output_i ≠ input_{i+1}).
 #   (b) Pack contains a non-Stage element — IsStage<E> fails for
 #       some E in Stages...
 #   (c) Ctx is not an IsExecCtx — bare int.
+#   (d-f) coordinator row admission failures prove
+#       pipeline_row_union_t<Stages...> is checked even when the
+#       payload chain itself is well-formed.
 crucible_neg_compile_effects_test(neg_mint_pipeline_chain_mismatch
     "associated constraints are not satisfied|CtxFitsPipeline|pipeline_chain")
 crucible_neg_compile_effects_test(neg_mint_pipeline_non_stage
     "associated constraints are not satisfied|CtxFitsPipeline|pipeline_chain|IsStage")
 crucible_neg_compile_effects_test(neg_mint_pipeline_non_exec_ctx
     "associated constraints are not satisfied|CtxFitsPipeline|IsExecCtx")
+crucible_neg_compile_effects_test(neg_mint_pipeline_row_union_exceeds_ctx
+    "EffectRowMismatch|pipeline_row_union_t|Subrow")
+crucible_neg_compile_effects_test(neg_mint_pipeline_chain_payload_compat_ok_row_mismatch
+    "EffectRowMismatch|pipeline_row_union_t|Subrow")
+crucible_neg_compile_effects_test(neg_mint_pipeline_capability_propagation
+    "EffectRowMismatch|pipeline_row_union_t|Subrow")
 
 # Pipeline.h audit round 2 (#866): three additional fixtures hardening
 # Pipeline's soundness gates beyond the 3-fixture concept-gate set:
@@ -1211,6 +1266,8 @@ crucible_neg_compile_test(neg_dimension_traits_typestate_rejects_lattice
   "constraints not satisfied")
 crucible_neg_compile_test(neg_dimension_traits_foundational_rejects_void
   "constraints not satisfied")
+crucible_neg_compile_test(neg_dimension_traits_quadruple_tier_mismatch
+  "QUADRUPLE_TIER_MISMATCH")
 
 # ─── Fn aggregator type-slot discipline (Phase 0 P0-1, #1095) ──────
 #
@@ -1243,6 +1300,49 @@ crucible_neg_compile_test(neg_fn_rejects_volatile_type
   "volatile is a hardware-memory annotation")
 crucible_neg_compile_test(neg_fn_rejects_array_type
   "C arrays decay to pointers")
+
+# ─── Fn collision catalog (GAPS-005..018, P0-2 #1096) ───────────────
+#
+# Each fixture instantiates an otherwise well-formed Fn<...> whose
+# cross-axis composition violates exactly one fixy.md §24.2 rule.
+# The catalog uses marker traits for body-level facts until Fixy IR
+# analysis exists; these tests pin the Phase-0 annotation path.
+crucible_neg_compile_test(neg_collision_I002_classified_fail_payload
+  "I002:")
+crucible_neg_compile_test(neg_collision_L002_borrow_async
+  "L002:")
+crucible_neg_compile_test(neg_collision_E044_ct_async
+  "E044:")
+crucible_neg_compile_test(neg_collision_I003_ct_fail_secret
+  "I003:")
+crucible_neg_compile_test(neg_collision_M012_monotonic_concurrent_no_atomic
+  "M012:")
+crucible_neg_compile_test(neg_collision_P002_ghost_runtime
+  "P002:")
+crucible_neg_compile_test(neg_collision_I004_classified_async_session_no_ct
+  "I004:")
+crucible_neg_compile_test(neg_collision_N002_decimal_overflow_wrap
+  "N002:")
+crucible_neg_compile_test(neg_collision_L003_unscoped_spawn_borrow_capture
+  "L003:")
+crucible_neg_compile_test(neg_collision_M011_linear_fail_no_cleanup
+  "M011:")
+crucible_neg_compile_test(neg_collision_S010_stale_ct
+  "S010:")
+crucible_neg_compile_test(neg_collision_S011_capability_replay
+  "S011:")
+
+# ─── SwmrSession role and token discipline (GAPS-021) ────────────────
+crucible_neg_compile_test(neg_swmr_writer_cannot_recv
+  "recv")
+crucible_neg_compile_test(neg_swmr_reader_cannot_send
+  "send")
+crucible_neg_compile_test(neg_swmr_double_mint_writer
+  "cannot bind|no matching function|use of deleted")
+crucible_neg_compile_test(neg_swmr_mint_wrong_reader_token
+  "no matching function|could not convert|cannot convert")
+crucible_neg_compile_test(neg_swmr_mint_non_swmr_surface
+  "SwmrSessionSurface|constraints not satisfied|reader\\(\\)")
 
 # ─── Graded modality discipline (Phase 2a foundation) ───────────────
 #
@@ -3451,6 +3551,12 @@ crucible_neg_compile_test(neg_computation_then_non_computation_callback
 # 1D (FOUND-A21): N=0 split is structurally meaningless.
 crucible_neg_compile_test(neg_auto_split_n_zero
     "N must be greater than zero")
+crucible_neg_compile_test(neg_auto_router_stream_void_payload
+    "AutoRouter Stream payload does not satisfy|SpscValue")
+crucible_neg_compile_test(neg_auto_split_bad_exec_ctx_type
+    "AutoSplit body exec_ctx_type must satisfy|IsExecCtx")
+crucible_neg_compile_test(neg_auto_split_move_only_body
+    "AutoSplitShardBody|copy_constructible|constraints not satisfied")
 
 # 2D (FOUND-A22): zero producers / zero consumers in the descriptor.
 crucible_neg_compile_test(neg_auto_split_grid_zero_m

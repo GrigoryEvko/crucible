@@ -27,6 +27,7 @@
 #include <crucible/TensorMeta.h>
 #include <crucible/TraceRing.h>
 #include <crucible/handles/PublishOnce.h>
+#include <crucible/permissions/Permission.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Saturated.h>
 #include <crucible/safety/Refined.h>
@@ -37,9 +38,11 @@
 #include <atomic>
 #include <cassert>
 #include <cmath>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <expected>
+#include <new>
 #include <span>
 #include <utility>
 
@@ -933,6 +936,189 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 
 class CRUCIBLE_OWNER KernelCache {
  public:
+  struct KernelCompileTag {};
+  struct KernelCacheReaderTag {};
+
+  struct KernelCacheSlotSnapshot {
+    uint64_t content_hash = 0;
+    uint64_t row_hash = 0;
+    CompiledKernel* kernel = nullptr;
+  };
+
+  static_assert(sizeof(KernelCacheSlotSnapshot) == 24,
+      "KernelCacheSlotSnapshot must preserve the FOUND-I05 federation "
+      "wire triple: 8B content + 8B row + 8B kernel pointer.");
+  static_assert(alignof(KernelCacheSlotSnapshot) == 8,
+      "KernelCacheSlotSnapshot must stay naturally 8-byte aligned.");
+
+  // Layout-neutral SWMR slot facade.
+  //
+  // Directly embedding SwmrSession<KernelCacheSlotSnapshot, ...> cannot
+  // satisfy the FOUND-I05 24-byte slot pin: AtomicSnapshot isolates its
+  // seq counter and storage on cache lines, and SwmrSession adds a reader
+  // pool.  KernelCache therefore keeps the original three-atomic wire
+  // layout and exposes SWMR-shaped endpoints over it.  The hot lookup
+  // path can still read the individual fields in probe order, while
+  // tests and dispatcher-side concepts see a typed writer/reader surface.
+  class KernelCacheSlot {
+    friend class KernelCache;
+
+   public:
+    using snapshot_type = KernelCacheSlotSnapshot;
+    using writer_tag = KernelCompileTag;
+    using reader_tag = KernelCacheReaderTag;
+
+    KernelCacheSlot() noexcept = default;
+
+    class WriterHandle {
+      KernelCacheSlot* slot_ = nullptr;
+      [[no_unique_address]] safety::Permission<writer_tag> perm_;
+
+      constexpr WriterHandle(KernelCacheSlot& slot,
+                             safety::Permission<writer_tag>&& perm) noexcept
+          : slot_{&slot}, perm_{std::move(perm)} {}
+
+      friend class KernelCacheSlot;
+
+     public:
+      using value_type = snapshot_type;
+      using tag_type = writer_tag;
+
+      WriterHandle(WriterHandle const&)
+          = delete("KernelCacheSlot::WriterHandle owns the linear writer permission");
+      WriterHandle& operator=(WriterHandle const&)
+          = delete("KernelCacheSlot::WriterHandle owns the linear writer permission");
+      constexpr WriterHandle(WriterHandle&&) noexcept = default;
+      constexpr WriterHandle& operator=(WriterHandle&&) noexcept = default;
+
+      void publish(snapshot_type const& snapshot) noexcept
+          pre (snapshot.content_hash != 0)
+          pre (snapshot.kernel != nullptr)
+      {
+        // content_hash is claimed by CAS before this writer endpoint is
+        // minted.  The publish sequence must remain row-before-kernel:
+        // kernel.store(release) is the synchronization point that makes
+        // the row identity visible to readers.
+        contract_assert(
+            slot_->content_hash_.load(std::memory_order_acquire) ==
+            snapshot.content_hash);
+        slot_->row_hash_.store(snapshot.row_hash, std::memory_order_release);
+        slot_->kernel_.store(snapshot.kernel, std::memory_order_release);
+      }
+
+      void publish_kernel_variant(CompiledKernel* kernel) noexcept
+          pre (kernel != nullptr)
+      {
+        slot_->kernel_.store(kernel, std::memory_order_release);
+      }
+    };
+
+    class ReaderHandle {
+      KernelCacheSlot const* slot_ = nullptr;
+
+      constexpr explicit ReaderHandle(KernelCacheSlot const& slot) noexcept
+          : slot_{&slot} {}
+
+      friend class KernelCacheSlot;
+
+     public:
+      using value_type = snapshot_type;
+      using tag_type = reader_tag;
+
+      [[nodiscard]] snapshot_type load() const noexcept {
+        CompiledKernel* kernel =
+            slot_->kernel_.load(std::memory_order_acquire);
+        uint64_t row = 0;
+        if (kernel != nullptr) {
+          row = slot_->row_hash_.load(std::memory_order_acquire);
+        }
+        return snapshot_type{
+            .content_hash = slot_->content_hash_.load(std::memory_order_acquire),
+            .row_hash = row,
+            .kernel = kernel,
+        };
+      }
+
+      [[nodiscard]] CRUCIBLE_INLINE uint64_t content_hash() const noexcept {
+        return slot_->content_hash_.load(std::memory_order_acquire);
+      }
+
+      [[nodiscard]] CRUCIBLE_INLINE uint64_t row_hash() const noexcept {
+        return slot_->row_hash_.load(std::memory_order_acquire);
+      }
+
+      [[nodiscard]] CRUCIBLE_INLINE CompiledKernel* kernel() const noexcept {
+        return slot_->kernel_.load(std::memory_order_acquire);
+      }
+    };
+
+    [[nodiscard]] WriterHandle writer(
+        safety::Permission<writer_tag>&& perm) noexcept
+    {
+      return WriterHandle{*this, std::move(perm)};
+    }
+
+    [[nodiscard]] ReaderHandle reader() const noexcept {
+      return ReaderHandle{*this};
+    }
+
+    [[nodiscard]] CRUCIBLE_INLINE uint64_t content_hash() const noexcept {
+      return content_hash_.load(std::memory_order_acquire);
+    }
+
+    [[nodiscard]] CRUCIBLE_INLINE uint64_t row_hash() const noexcept {
+      return row_hash_.load(std::memory_order_acquire);
+    }
+
+    [[nodiscard]] CRUCIBLE_INLINE CompiledKernel* kernel() const noexcept {
+      return kernel_.load(std::memory_order_acquire);
+    }
+
+    [[nodiscard]] CRUCIBLE_INLINE bool try_claim_content_hash(
+        uint64_t& expected, uint64_t desired) noexcept
+        pre (desired != 0)
+    {
+      return content_hash_.compare_exchange_strong(
+          expected, desired, std::memory_order_acq_rel);
+    }
+
+   private:
+    // NOT relaxed: lock-free hash table protocol.
+    //
+    //   content_hash CAS(acq_rel)        — claims the slot
+    //   row_hash.store(release)          — publishes the row identity
+    //   kernel.store(release)            — publishes the compiled kernel
+    //
+    // Readers load all three with acquire to see consistent
+    // (content, row, kernel) triples.  Relaxed loads would let a
+    // reader observe a content match but an incoherent row/kernel
+    // pair, which the cache MUST NOT permit (would silently serve
+    // a kernel under the wrong row identity).
+    //
+    // row_hash NSDMI = 0: the bare-type / no-row baseline
+    // (RowHashFold.h, FOUND-I02 design contract §3).  EMPTY-slot
+    // entries leave row_hash at 0 — harmless because EMPTY is
+    // detected via content_hash == 0 BEFORE row is consulted.
+    //
+    // FOUND-I05 layout extension: prior to this revision Entry was
+    // 16 bytes (two atomic<u64> equivalents on x86-64); the row
+    // extension brings it to 24 bytes — still cache-line-friendly
+    // (≤ one Entry per quarter line), and the table_'s contiguous
+    // arrangement lets the prefetcher walk ~2.7 entries per line.
+    std::atomic<uint64_t> content_hash_{0};
+    std::atomic<uint64_t> row_hash_{0};
+    std::atomic<CompiledKernel*> kernel_{nullptr};
+  };
+
+  static_assert(sizeof(KernelCacheSlot) == 24,
+      "KernelCacheSlot layout drift — wire-format break risk.  "
+      "Slot must remain exactly 8B content + 8B row + 8B kernel*.");
+  static_assert(alignof(KernelCacheSlot) == 8,
+      "KernelCacheSlot alignment drift — atomic<uint64_t> + "
+      "atomic<ptr> require 8B alignment; over-alignment wastes cache.");
+  static_assert(sizeof(KernelCacheSlot::WriterHandle) == sizeof(KernelCacheSlot*),
+      "KernelCacheSlot::WriterHandle must EBO-collapse its Permission.");
+
   // Slot's observable state (computed from the atomic pair). Private
   // to the class; exposed publicly only as a diagnostic type.
   enum class SlotState : uint8_t {
@@ -942,13 +1128,14 @@ class CRUCIBLE_OWNER KernelCache {
   };
 
   explicit KernelCache(uint32_t capacity = 4096) : capacity_(capacity) {
-    assert((capacity & (capacity - 1)) == 0 && "capacity must be power of 2");
-    table_ = static_cast<Entry*>(std::calloc(capacity_, sizeof(Entry)));
+    assert(capacity != 0 && (capacity & (capacity - 1)) == 0
+           && "capacity must be a non-zero power of 2");
+    table_ = allocate_table_(capacity_);
     if (!table_) [[unlikely]] std::abort(); // OOM is unrecoverable
     size_.store(0, std::memory_order_relaxed);
   }
 
-  ~KernelCache() { std::free(table_); }
+  ~KernelCache() { destroy_table_(table_, capacity_); }
 
   KernelCache(const KernelCache&) = delete("lock-free hash map with atomic state cannot be copied");
   KernelCache& operator=(const KernelCache&) = delete("lock-free hash map with atomic state cannot be copied");
@@ -998,7 +1185,7 @@ class CRUCIBLE_OWNER KernelCache {
     const uint32_t slot_index = static_cast<uint32_t>(lookup_hash) & mask;
     for (uint32_t probe = 0; probe < capacity_; probe++) {
       auto& entry = table_[(slot_index + probe) & mask];
-      uint64_t key = entry.content_hash.load(std::memory_order_acquire);
+      uint64_t key = entry.content_hash_.load(std::memory_order_acquire);
       if (key == 0)
         return nullptr; // EMPTY slot -> miss (ends probe chain)
       if (key != lookup_hash)
@@ -1007,7 +1194,8 @@ class CRUCIBLE_OWNER KernelCache {
       // FIRST (acquire) so the subsequent `row_hash` load sees a
       // value released by the inserter (release-acquire chain on
       // kernel synchronizes-with all prior writes including row).
-      CompiledKernel* kernel_ptr = entry.kernel.load(std::memory_order_acquire);
+      CompiledKernel* kernel_ptr =
+          entry.kernel_.load(std::memory_order_acquire);
       if (kernel_ptr == nullptr) [[unlikely]] {
         // CLAIMED: an inserter is mid-flight (between content_hash
         // CAS and the row+kernel release stores).  The window is a
@@ -1029,7 +1217,7 @@ class CRUCIBLE_OWNER KernelCache {
         }
       }
       // PUBLISHED: kernel non-null implies row_hash visible.
-      uint64_t entry_row = entry.row_hash.load(std::memory_order_acquire);
+      uint64_t entry_row = entry.row_hash_.load(std::memory_order_acquire);
       if (entry_row == lookup_row) [[likely]]
         return kernel_ptr;      // HIT — content + row both match
       // Foreign-row sibling under same content_hash — continue probing.
@@ -1094,12 +1282,16 @@ class CRUCIBLE_OWNER KernelCache {
       auto& entry = table_[(slot_index + probe) & mask];
       uint64_t expected = 0;
       // EMPTY → CLAIMED transition (we own the slot if CAS succeeds).
-      if (entry.content_hash.compare_exchange_strong(
-              expected, lookup_hash, std::memory_order_acq_rel)) {
+      if (entry.try_claim_content_hash(expected, lookup_hash)) {
         // CLAIMED → PUBLISHED.  Order: row_hash BEFORE kernel.  Any
         // reader that sees kernel (acquire) will also see row_hash.
-        entry.row_hash.store(lookup_row, std::memory_order_release);
-        entry.kernel.store(kernel, std::memory_order_release);
+        auto writer = entry.writer(
+            safety::mint_permission_root<KernelCompileTag>());
+        writer.publish(KernelCacheSlotSnapshot{
+            .content_hash = lookup_hash,
+            .row_hash = lookup_row,
+            .kernel = kernel,
+        });
         // Relaxed: size_ is informational only (no control flow depends
         // on its exact value). The real synchronization is content_hash CAS.
         size_.fetch_add(1, std::memory_order_relaxed);
@@ -1135,25 +1327,25 @@ class CRUCIBLE_OWNER KernelCache {
         // foreign and continue probing — the worst case becomes
         // "duplicate slot for the same (C, R) under preemption,"
         // which is wasted space but never lost data.
-        CompiledKernel* existing_kernel =
-            entry.kernel.load(std::memory_order_acquire);
+        CompiledKernel* existing_kernel = entry.kernel();
         for (uint32_t spin = 0;
              spin < kClaimedSpinBudget && existing_kernel == nullptr;
              ++spin) {
           CRUCIBLE_SPIN_PAUSE;
-          existing_kernel = entry.kernel.load(std::memory_order_acquire);
+          existing_kernel = entry.kernel();
         }
         if (existing_kernel != nullptr) {
           // Kernel published — row_hash also visible via the
           // release-acquire chain on kernel.
-          uint64_t existing_row =
-              entry.row_hash.load(std::memory_order_acquire);
+          uint64_t existing_row = entry.row_hash();
           if (existing_row == lookup_row) {
             // PUBLISHED(old) → PUBLISHED(new): variant update.
             // row pinned; only kernel changes.  A concurrent
             // reader may briefly observe either kernel value —
             // both valid by the insert contract.
-            entry.kernel.store(kernel, std::memory_order_release);
+            auto writer = entry.writer(
+                safety::mint_permission_root<KernelCompileTag>());
+            writer.publish_kernel_variant(kernel);
             return {};
           }
           // Foreign-row sibling under same content_hash —
@@ -1361,60 +1553,12 @@ class CRUCIBLE_OWNER KernelCache {
       CRUCIBLE_NO_THREAD_SAFETY
       pre (slot_index < capacity_)
   {
-    const Entry& entry = table_[slot_index];
-    return classify_(entry.content_hash.load(std::memory_order_acquire),
-                     entry.kernel.load(std::memory_order_acquire));
+    const KernelCacheSlot& entry = table_[slot_index];
+    return classify_(entry.content_hash_.load(std::memory_order_acquire),
+                     entry.kernel_.load(std::memory_order_acquire));
   }
 
  private:
-  struct Entry {
-    // NOT relaxed: lock-free hash table protocol.
-    //
-    //   content_hash CAS(acq_rel)        — claims the slot
-    //   row_hash.store(release)          — publishes the row identity
-    //   kernel.store(release)            — publishes the compiled kernel
-    //
-    // Readers load all three with acquire to see consistent
-    // (content, row, kernel) triples.  Relaxed loads would let a
-    // reader observe a content match but an incoherent row/kernel
-    // pair, which the cache MUST NOT permit (would silently serve
-    // a kernel under the wrong row identity).
-    //
-    // row_hash NSDMI = 0: the bare-type / no-row baseline
-    // (RowHashFold.h, FOUND-I02 design contract §3).  EMPTY-slot
-    // entries leave row_hash at 0 — harmless because EMPTY is
-    // detected via content_hash == 0 BEFORE row is consulted.
-    //
-    // FOUND-I05 layout extension: prior to this revision Entry was
-    // 16 bytes (two atomic<u64> equivalents on x86-64); the row
-    // extension brings it to 24 bytes — still cache-line-friendly
-    // (≤ one Entry per quarter line), and the table_'s contiguous
-    // arrangement lets the prefetcher walk ~2.7 entries per line.
-    std::atomic<uint64_t> content_hash{0};
-    std::atomic<uint64_t> row_hash{0};
-    std::atomic<CompiledKernel*> kernel{nullptr};
-  };
-  // ── Layout pin (FOUND-I05-AUDIT) ──────────────────────────────────
-  // A 24-byte Entry packs ~2.7 entries per 64-byte line.  An accidental
-  // field addition (e.g. a version counter) would grow Entry to 32 B
-  // and SILENTLY halve prefetcher throughput on probe walks.  Pin the
-  // layout here so any size regression is a compile error, not a
-  // p99 perf cliff observed three months later.
-  //
-  // This also pins the FOUND-I05 wire-format contract for
-  // KernelCache slots: every slot is exactly (8B content + 8B row +
-  // 8B kernel*) = 24 bytes.  Federation protocol designers reading
-  // this file can rely on the slot triple shape.
-  static_assert(sizeof(Entry)  == 24,
-      "KernelCache::Entry layout drift — wire-format break risk.  "
-      "Pre-FOUND-I05 was 16; FOUND-I05 brings it to 24 (added 8B "
-      "row_hash).  Any further growth is a deliberate change that "
-      "should bump CDAG_VERSION and update this assertion.");
-  static_assert(alignof(Entry) == 8,
-      "KernelCache::Entry alignment drift — atomic<uint64_t> + "
-      "atomic<ptr> require 8B align; over-alignment via alignas(N>8) "
-      "would waste cache space without performance benefit.");
-
   // Static classifier — evaluates the state machine from the observed
   // (hash, kernel) pair. No atomic reads; caller provides the snapshot.
   [[nodiscard, gnu::const]] static constexpr SlotState classify_(
@@ -1425,14 +1569,42 @@ class CRUCIBLE_OWNER KernelCache {
     return SlotState::Published;
   }
 
+  static constexpr std::size_t kTableAlignment = 64;
+  static_assert(kTableAlignment % alignof(KernelCacheSlot) == 0);
+
+  [[nodiscard]] static KernelCacheSlot* allocate_table_(
+      uint32_t capacity) noexcept
+  {
+    const auto bytes =
+        static_cast<std::size_t>(capacity) * sizeof(KernelCacheSlot);
+    void* raw = ::operator new(
+        bytes, std::align_val_t{kTableAlignment}, std::nothrow);
+    if (raw == nullptr) return nullptr;
+    auto* slots = static_cast<KernelCacheSlot*>(raw);
+    for (uint32_t i = 0; i < capacity; ++i) {
+      ::new (static_cast<void*>(&slots[i])) KernelCacheSlot();
+    }
+    return slots;
+  }
+
+  static void destroy_table_(KernelCacheSlot* table, uint32_t capacity) noexcept {
+    if (table == nullptr) return;
+    for (uint32_t i = 0; i < capacity; ++i) {
+      table[i].~KernelCacheSlot();
+    }
+    ::operator delete(
+        static_cast<void*>(table), std::align_val_t{kTableAlignment});
+  }
+
   // Cold path: reader saw CLAIMED and waits for PUBLISHED.  Outlined
   // so the hot lookup stays compact (one cache line).
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[gnu::cold, gnu::noinline]]
-  static CompiledKernel* await_claimed_(const Entry& entry) noexcept {
+  static CompiledKernel* await_claimed_(const KernelCacheSlot& entry) noexcept {
     for (uint32_t spin = 0; spin < kClaimedSpinBudget; ++spin) {
       CRUCIBLE_SPIN_PAUSE;
-      CompiledKernel* kernel_ptr = entry.kernel.load(std::memory_order_acquire);
+      CompiledKernel* kernel_ptr =
+          entry.kernel_.load(std::memory_order_acquire);
       if (kernel_ptr != nullptr) return kernel_ptr;
     }
     // Inserter exceeded the spin budget (preempted?). Treat as miss.
@@ -1441,7 +1613,7 @@ class CRUCIBLE_OWNER KernelCache {
     return nullptr;
   }
 
-  Entry* table_;
+  KernelCacheSlot* table_;
   uint32_t capacity_;
   std::atomic<uint32_t> size_;
 };

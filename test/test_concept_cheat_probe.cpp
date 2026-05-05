@@ -42,6 +42,7 @@
 #include <crucible/algebra/GradedTrait.h>
 #include <crucible/algebra/lattices/QttSemiring.h>
 #include <crucible/algebra/lattices/BoolLattice.h>
+#include <crucible/safety/IsLinear.h>
 
 #include <string_view>
 #include <type_traits>
@@ -180,9 +181,15 @@ struct CyclicRef {
 };
 static constexpr bool cheat10_admits = GradedWrapper<CyclicRef<int>>;
 
-// Cheat 11 SKIPPED — would need Linear.h include + safety:: namespace.
-// Inheritance-from-wrapper case: derived class inherits the typedefs,
-// satisfies GradedWrapper trivially.  Probably acceptable behavior.
+// Wrapper-detector inheritance probe: a class derived from Linear<int>
+// inherits Linear's public surface, but must not satisfy is_linear_v.  The
+// detector is exact-template-specialization based, not "has Linear's typedefs".
+struct CheatLinear_Derived : ::crucible::safety::Linear<int> {
+    using ::crucible::safety::Linear<int>::Linear;
+};
+static_assert(!::crucible::safety::extract::is_linear_v<CheatLinear_Derived>,
+    "[IS_LINEAR DERIVED ADMITTED] is_linear_v must reject Linear-derived "
+    "lookalikes; only exact Linear<T> specializations are Linear wrappers.");
 
 // ── Round-5 cheats (deeper adversarial probe, 2026-04-27) ──────────
 //
@@ -190,10 +197,11 @@ static constexpr bool cheat10_admits = GradedWrapper<CyclicRef<int>>;
 // any user who specializes the trait machinery in the originating
 // namespace can bypass any concept clause that depends on that
 // trait.  No purely-concept-level defense is possible against
-// deliberate trait-spec injection.  Defense is review discipline:
+// deliberate trait-spec injection.  Defense is CI grep enforcement
+// via scripts/check-trait-injection.sh plus review discipline:
 // `is_graded_specialization`, `value_type_decoupled`, `graded_modality`
 // specializations OUTSIDE the algebra/safety/permissions tree are
-// review-rejected on grep.
+// rejected outside canonical substrate code and this intentional fixture.
 //
 // Cheats 14-17 expose syntax-shape rejections (correctly fired by
 // the strengthened concept).
@@ -398,8 +406,9 @@ struct is_numerical_tier_impl<::Cheat20_FakeViaTraitInjection>
 // user specialized the detection trait.  Same architectural-limit
 // caveat as Cheats 11/12: no purely-concept-level defense exists
 // against deliberate trait-spec injection in the originating
-// namespace.  Defense is review discipline + a CI grep guard on
-// `is_numerical_tier_impl<` outside the safety/* tree.
+// namespace.  Defense is scripts/check-trait-injection.sh + review
+// discipline: `is_numerical_tier_impl<` is rejected outside safety/*
+// and this intentional fixture.
 static constexpr bool cheat20_admits =
     crucible::safety::extract::IsNumericalTier<
         ::Cheat20_FakeViaTraitInjection>;
@@ -464,7 +473,7 @@ static_assert(!cheat19_admits,
 
 // Documented ARCHITECTURAL LIMITS — firing means the trait gained a
 // defense (e.g., the impl trait moved to a private/inaccessible
-// namespace, or a CI grep guard rejects user-namespace specializations).
+// namespace, or the CI grep guard rejects this fixture too).
 // When this triggers, flip the assertion to !cheatN_admits and document
 // the new defense in this file's verdict-of-record block.
 static_assert( cheat20_admits,
@@ -472,7 +481,6 @@ static_assert( cheat20_admits,
     "is_numerical_tier_impl in crucible::safety::extract::detail is "
     "now REJECTED — flip assertion to !cheat20_admits and document "
     "the new defense (likely: relocate the impl trait to a "
-    "review-protected namespace, OR ship a CI grep guard on "
-    "`is_numerical_tier_impl<` outside the safety/* tree).");
+    "review-protected namespace, OR tighten scripts/check-trait-injection.sh).");
 
 int main() { return 0; }

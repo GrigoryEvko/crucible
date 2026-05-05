@@ -63,6 +63,15 @@
 //                                                workload could benefit
 //                                                from sharding (informational;
 //                                                NOT a hard rejection).
+//   * recommend_topology_for_workload          — when Ctx carries
+//                                                ctx_workload::ChannelBudget,
+//                                                mint_endpoint checks the
+//                                                selected Substrate topology
+//                                                against the declared
+//                                                producer/consumer/workload
+//                                                shape.  This is the
+//                                                production consumer for the
+//                                                cliff-aware recommender.
 //   * cap_type_of_t<Ctx>                       — recoverable for downstream
 //                                                Capability minting
 //   * row_type_of_t<Ctx>                       — recoverable for downstream
@@ -113,11 +122,121 @@
 
 namespace crucible::concurrent {
 
+namespace endpoint_detail {
+
+template <class Workload>
+struct workload_shape {
+    static constexpr bool has_channel_shape = false;
+    static constexpr bool has_bytes = false;
+    static constexpr std::size_t bytes = 0;
+    static constexpr std::size_t producers = 0;
+    static constexpr std::size_t consumers = 0;
+    static constexpr bool latest_only = false;
+};
+
+template <std::size_t Bytes>
+struct workload_shape<::crucible::effects::ctx_workload::ByteBudget<Bytes>> {
+    static constexpr bool has_channel_shape = false;
+    static constexpr bool has_bytes = true;
+    static constexpr std::size_t bytes = Bytes;
+    static constexpr std::size_t producers = 0;
+    static constexpr std::size_t consumers = 0;
+    static constexpr bool latest_only = false;
+};
+
+template <std::size_t Bytes,
+          std::size_t Producers,
+          std::size_t Consumers,
+          bool LatestOnly>
+struct workload_shape<
+    ::crucible::effects::ctx_workload::ChannelBudget<
+        Bytes, Producers, Consumers, LatestOnly>> {
+    static constexpr bool has_channel_shape = true;
+    static constexpr bool has_bytes = true;
+    static constexpr std::size_t bytes = Bytes;
+    static constexpr std::size_t producers = Producers;
+    static constexpr std::size_t consumers = Consumers;
+    static constexpr bool latest_only = LatestOnly;
+};
+
+template <ChannelTopology Topology>
+struct default_topology_shape {
+    static constexpr std::size_t producers = 1;
+    static constexpr std::size_t consumers = 1;
+    static constexpr bool latest_only = false;
+};
+
+template <>
+struct default_topology_shape<ChannelTopology::ManyToOne> {
+    static constexpr std::size_t producers = 2;
+    static constexpr std::size_t consumers = 1;
+    static constexpr bool latest_only = false;
+};
+
+template <>
+struct default_topology_shape<ChannelTopology::OneToMany_Latest> {
+    static constexpr std::size_t producers = 1;
+    static constexpr std::size_t consumers = 2;
+    static constexpr bool latest_only = true;
+};
+
+template <>
+struct default_topology_shape<ChannelTopology::ManyToMany> {
+    static constexpr std::size_t producers = 2;
+    static constexpr std::size_t consumers = 2;
+    static constexpr bool latest_only = false;
+};
+
+template <>
+struct default_topology_shape<ChannelTopology::WorkStealing> {
+    static constexpr std::size_t producers = 1;
+    static constexpr std::size_t consumers = 2;
+    static constexpr bool latest_only = false;
+};
+
+template <IsSubstrate Substr, ::crucible::effects::IsExecCtx Ctx>
+struct endpoint_recommendation {
+    using shape = workload_shape<typename Ctx::workload_hint>;
+    static constexpr ChannelTopology selected = substrate_topology_v<Substr>;
+    using fallback = default_topology_shape<selected>;
+
+    static constexpr std::size_t workload_bytes =
+        shape::has_bytes ? shape::bytes : channel_byte_footprint_v<Substr>;
+    static constexpr std::size_t producers =
+        shape::has_channel_shape ? shape::producers : fallback::producers;
+    static constexpr std::size_t consumers =
+        shape::has_channel_shape ? shape::consumers : fallback::consumers;
+    static constexpr bool latest_only =
+        shape::has_channel_shape ? shape::latest_only : fallback::latest_only;
+
+    static constexpr ChannelTopology recommended =
+        recommend_topology_for_workload(
+            producers, consumers, workload_bytes, latest_only);
+
+    static constexpr bool exact = selected == recommended;
+    static constexpr bool explicit_work_stealing =
+        selected == ChannelTopology::WorkStealing;
+    static constexpr bool overprovisioned =
+        selected == ChannelTopology::ManyToMany
+     && recommended == ChannelTopology::OneToOne;
+    static constexpr bool admissible =
+        exact || explicit_work_stealing || overprovisioned;
+};
+
+}  // namespace endpoint_detail
+
+template <class Substr, class Ctx>
+concept SubstrateMatchesEndpointRecommendation =
+    IsSubstrate<Substr>
+ && ::crucible::effects::IsExecCtx<Ctx>
+ && endpoint_detail::endpoint_recommendation<Substr, Ctx>::admissible;
+
 // ── Endpoint<Substr, Dir, Ctx> — the typed ctx-aware view ──────────
 
 template <class Substr, Direction Dir, ::crucible::effects::IsExecCtx Ctx>
     requires IsBridgeableDirection<Substr, Dir>
           && SubstrateFitsCtxResidency<Substr, Ctx>
+          && SubstrateMatchesEndpointRecommendation<Substr, Ctx>
 class [[nodiscard]] Endpoint {
 public:
     using substrate_type = Substr;
@@ -165,6 +284,20 @@ public:
         per_call_working_set_v<Substr>;
     static constexpr std::size_t total_channel_bytes =
         channel_byte_footprint_v<Substr>;
+    static constexpr std::size_t recommendation_workload_bytes =
+        endpoint_detail::endpoint_recommendation<Substr, Ctx>::workload_bytes;
+    static constexpr std::size_t recommendation_producers =
+        endpoint_detail::endpoint_recommendation<Substr, Ctx>::producers;
+    static constexpr std::size_t recommendation_consumers =
+        endpoint_detail::endpoint_recommendation<Substr, Ctx>::consumers;
+    static constexpr bool recommendation_latest_only =
+        endpoint_detail::endpoint_recommendation<Substr, Ctx>::latest_only;
+    static constexpr ChannelTopology recommended_topology =
+        endpoint_detail::endpoint_recommendation<Substr, Ctx>::recommended;
+    static constexpr bool topology_matches_recommendation =
+        endpoint_detail::endpoint_recommendation<Substr, Ctx>::exact;
+    static constexpr bool topology_overprovisioned =
+        endpoint_detail::endpoint_recommendation<Substr, Ctx>::overprovisioned;
 
 private:
     // POINTER, not reference: the underlying handle has a reference
@@ -183,6 +316,7 @@ private:
     template <class S, Direction D, ::crucible::effects::IsExecCtx C>
         requires IsBridgeableDirection<S, D>
               && SubstrateFitsCtxResidency<S, C>
+              && SubstrateMatchesEndpointRecommendation<S, C>
     friend constexpr auto mint_endpoint(C const&, handle_for_t<S, D>&) noexcept;
 
     constexpr explicit Endpoint(handle_type& h) noexcept
@@ -382,10 +516,13 @@ public:
 // Constraints checked at the call site:
 //   * IsBridgeableDirection<Substr, Dir>     — supported (S, D) pair
 //   * SubstrateFitsCtxResidency<Substr, Ctx> — substrate footprint fits
+//   * SubstrateMatchesEndpointRecommendation — selected topology matches
+//                                             Ctx's ChannelBudget shape
 
 template <class Substr, Direction Dir, ::crucible::effects::IsExecCtx Ctx>
     requires IsBridgeableDirection<Substr, Dir>
           && SubstrateFitsCtxResidency<Substr, Ctx>
+          && SubstrateMatchesEndpointRecommendation<Substr, Ctx>
 [[nodiscard]] constexpr auto
 mint_endpoint(Ctx const&, handle_for_t<Substr, Dir>& handle) noexcept {
     return Endpoint<Substr, Dir, Ctx>{handle};
@@ -401,6 +538,31 @@ struct UserTag {};
 using SmallSpsc = PermissionedSpscChannel<int, 64, UserTag>;
 using ProdEp = Endpoint<SmallSpsc, Direction::Producer, eff::HotFgCtx>;
 using ConsEp = Endpoint<SmallSpsc, Direction::Consumer, eff::BgDrainCtx>;
+using SmallOneToOneCtx = eff::ExecCtx<
+    eff::ctx_cap::Fg,
+    eff::ctx_numa::Local,
+    eff::ctx_alloc::Stack,
+    eff::ctx_heat::Hot,
+    eff::ctx_resid::L1,
+    eff::Row<>,
+    eff::ctx_workload::ChannelBudget<16 * 1024, 1, 1, false>>;
+using HugeManyToManyCtx = eff::ExecCtx<
+    eff::ctx_cap::Fg,
+    eff::ctx_numa::Local,
+    eff::ctx_alloc::Stack,
+    eff::ctx_heat::Hot,
+    eff::ctx_resid::L1,
+    eff::Row<>,
+    eff::ctx_workload::ChannelBudget<16ULL * 1024ULL * 1024ULL * 1024ULL,
+                                     4, 4, false>>;
+using SmallOneToOneOverprovisionedCtx = eff::ExecCtx<
+    eff::ctx_cap::Fg,
+    eff::ctx_numa::Local,
+    eff::ctx_alloc::Stack,
+    eff::ctx_heat::Hot,
+    eff::ctx_resid::L1,
+    eff::Row<>,
+    eff::ctx_workload::ChannelBudget<16 * 1024, 1, 1, false>>;
 
 // ── Type-level invariants ──────────────────────────────────────────
 static_assert(std::is_same_v<typename ProdEp::handle_type,
@@ -427,6 +589,24 @@ static_assert( ConsEp::residency_tier_v == Tier::L2Resident);
 static_assert(!ProdEp::benefits_from_parallelism);   // 256 B < L2/core
 static_assert( ProdEp::per_call_working_set == 192);  // 2 head/tail + 1 cell line
 static_assert( ProdEp::total_channel_bytes == sizeof(int) * 64);
+static_assert( ProdEp::recommended_topology == ChannelTopology::OneToOne);
+static_assert( ProdEp::topology_matches_recommendation);
+
+// ── Workload/cardinality recommendation gate ──────────────────────
+using SmallBudgetSpscEp = Endpoint<SmallSpsc, Direction::Producer, SmallOneToOneCtx>;
+static_assert(SmallBudgetSpscEp::recommended_topology == ChannelTopology::OneToOne);
+static_assert(SmallBudgetSpscEp::topology_matches_recommendation);
+
+using SmallMpmc = PermissionedMpmcChannel<int, 64, UserTag>;
+using HugeBudgetMpmcEp = Endpoint<SmallMpmc, Direction::Producer, HugeManyToManyCtx>;
+static_assert(HugeBudgetMpmcEp::recommended_topology == ChannelTopology::ManyToMany);
+static_assert(HugeBudgetMpmcEp::topology_matches_recommendation);
+
+using OverprovisionedMpmcEp =
+    Endpoint<SmallMpmc, Direction::Producer, SmallOneToOneOverprovisionedCtx>;
+static_assert(OverprovisionedMpmcEp::recommended_topology == ChannelTopology::OneToOne);
+static_assert(!OverprovisionedMpmcEp::topology_matches_recommendation);
+static_assert(OverprovisionedMpmcEp::topology_overprovisioned);
 
 // ── Cliff-crossing pin: large-N SPSC on HotFgCtx is now VALID ──────
 //
@@ -519,6 +699,39 @@ static_assert(std::is_nothrow_move_assignable_v<ProdEp>);
     // ── Raw view: drive try_send / try_recv ────────────────────────
     [[maybe_unused]] bool pushed = fg_ep.try_send(42);
     [[maybe_unused]] auto popped = bg_ep.try_recv();
+
+    // ── Recommendation gate: production-shaped ChannelBudget contexts ─
+    //
+    // Small 1×1 channel work stays OneToOne and mints an SPSC endpoint.
+    // Huge 4×4 channel work recommends ManyToMany and mints an MPMC
+    // endpoint.  The negative fixture pins the inverse rejection.
+    using SmallBudgetCtx = detail::endpoint_self_test::SmallOneToOneCtx;
+    Channel budget_ch;
+    auto budget_whole = saf::mint_permission_root<spsc_tag::Whole<SmokeTag>>();
+    auto [budget_pp, budget_cp] = saf::mint_permission_split<
+        spsc_tag::Producer<SmokeTag>, spsc_tag::Consumer<SmokeTag>>(
+            std::move(budget_whole));
+    auto budget_prod = budget_ch.producer(std::move(budget_pp));
+    auto small_budget_ep =
+        mint_endpoint<Channel, Direction::Producer>(SmallBudgetCtx{}, budget_prod);
+    static_assert(decltype(small_budget_ep)::recommended_topology ==
+                  ChannelTopology::OneToOne);
+    static_assert(decltype(small_budget_ep)::topology_matches_recommendation);
+    (void)budget_cp;
+
+    using HugeBudgetCtx = detail::endpoint_self_test::HugeManyToManyCtx;
+    using MpmcChannel = PermissionedMpmcChannel<int, 64, SmokeTag>;
+    MpmcChannel mpmc_ch;
+    auto mpmc_prod = mpmc_ch.producer();
+    auto mpmc_cons = mpmc_ch.consumer();
+    auto huge_budget_ep =
+        mint_endpoint<MpmcChannel, Direction::Producer>(
+            HugeBudgetCtx{}, *mpmc_prod);
+    static_assert(decltype(huge_budget_ep)::recommended_topology ==
+                  ChannelTopology::ManyToMany);
+    static_assert(decltype(huge_budget_ep)::topology_matches_recommendation);
+    [[maybe_unused]] bool mpmc_pushed = huge_budget_ep.try_send(7);
+    (void)mpmc_cons;
 
     // ── Session view: .into_session() consumes the Endpoint ────────
     auto fg_sess = std::move(fg_ep).into_session();

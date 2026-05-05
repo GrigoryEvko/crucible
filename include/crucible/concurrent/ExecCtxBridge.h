@@ -136,6 +136,16 @@ struct workload_to_budget<::crucible::effects::ctx_workload::ItemBudget<N>> {
     static constexpr WorkBudget value{0, 0, N};
 };
 
+template <std::size_t Bytes,
+          std::size_t Producers,
+          std::size_t Consumers,
+          bool LatestOnly>
+struct workload_to_budget<
+    ::crucible::effects::ctx_workload::ChannelBudget<
+        Bytes, Producers, Consumers, LatestOnly>> {
+    static constexpr WorkBudget value{Bytes / 2, Bytes - Bytes / 2, 0};
+};
+
 template <class WlT>
 inline constexpr WorkBudget workload_to_budget_v = workload_to_budget<WlT>::value;
 
@@ -250,6 +260,10 @@ static_assert(workload_to_budget_v<eff::ctx_workload::ByteBudget<7>>.write_bytes
 static_assert(workload_to_budget_v<eff::ctx_workload::ItemBudget<128>>.read_bytes  ==   0);
 static_assert(workload_to_budget_v<eff::ctx_workload::ItemBudget<128>>.write_bytes ==   0);
 static_assert(workload_to_budget_v<eff::ctx_workload::ItemBudget<128>>.item_count  == 128);
+static_assert(workload_to_budget_v<
+    eff::ctx_workload::ChannelBudget<4097, 4, 2, false>>.read_bytes == 2048);
+static_assert(workload_to_budget_v<
+    eff::ctx_workload::ChannelBudget<4097, 4, 2, false>>.write_bytes == 2049);
 
 // ── Ctx-driven extractors on canonical contexts ─────────────────────
 

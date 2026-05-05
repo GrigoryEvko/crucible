@@ -34,7 +34,15 @@
 // Construction is via mint_stage<FnPtr>(ctx, in, out) per the Universal
 // Mint Pattern (CLAUDE.md §XXI).  The mint's `requires` clause binds
 // the FnPtr to the PipelineStage shape AND verifies the ctx is a
-// well-formed ExecCtx.
+// well-formed ExecCtx.  The stage's input and output payload rows must
+// each be a Subrow of Ctx::row_type, enforced by
+// CtxFitsStage<FnPtr, Ctx> through StageInputRowAdmitted and
+// StageOutputRowAdmitted.  The mint boundary emits
+// safety::diag::EffectRowMismatch for row failures, and those failures
+// are pinned by
+// test/effects_neg/neg_mint_stage_{input_row_mismatch,
+// output_row_mismatch,both_rows_mismatch,
+// capability_payload_no_admit}.cpp.
 //
 // SUBSTRATE-FIT NOT RE-VALIDATED HERE.  The two handles passed in came
 // from already-validated Endpoints (Tier 2, concurrent/Endpoint.h), each
@@ -61,12 +69,14 @@
 //
 //   * Name: mint_stage  (mint_<noun>, §XXI rule).
 //   * First parameter: Ctx const& (ctx-bound mint, §XXI flavor).
-//   * Single concept gate: CtxFitsStage<FnPtr, Ctx>.
+//   * Single authorization boundary: shape/ctx in the requires clause;
+//     input/output payload-row admission via EffectRowMismatch static
+//     assertions before constructing the Stage.
 //   * [[nodiscard]] constexpr noexcept — pure structural composition,
 //     no allocation.
 //   * Returns concrete Stage<FnPtr, Ctx> — never type-erased.
 //   * Discoverable via `grep "mint_stage"`.
-//   * 2 HS14 negative-compile fixtures shipped alongside (see
+//   * HS14 negative-compile fixtures shipped alongside (see
 //     test/effects_neg/neg_mint_stage_*).
 //
 // ── Axiom coverage ──────────────────────────────────────────────────
@@ -105,8 +115,11 @@
 
 #include <crucible/Platform.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/effects/EffectRow.h>
 #include <crucible/safety/PipelineStage.h>
 #include <crucible/safety/SignatureTraits.h>
+#include <crucible/safety/diag/RowMismatch.h>
+#include <crucible/sessions/SessionRowExtraction.h>
 
 #include <optional>
 #include <type_traits>
@@ -127,15 +140,38 @@ namespace crucible::concurrent {
 //   2. IsExecCtx<Ctx> — Ctx is a well-formed ExecCtx with the four
 //      static facts (residency_tier, cap_type, row_type, locality_hint).
 //
+//   3. StageInputRowAdmitted / StageOutputRowAdmitted — each payload
+//      row carried by the stage boundary is a Subrow of Ctx::row_type.
+//
 // Substrate-level residency fit is NOT checked here — see header
 // docstring "SUBSTRATE-FIT NOT RE-VALIDATED HERE" for rationale.
 // Pipeline-level chain consistency lives in pipeline_chain<Stages...>
 // (concurrent/Pipeline.h, follow-up).
 
 template <auto FnPtr, class Ctx>
+concept StageInputRowAdmitted =
+    ::crucible::safety::extract::PipelineStage<FnPtr>
+ && ::crucible::effects::IsExecCtx<Ctx>
+ && ::crucible::effects::Subrow<
+        ::crucible::safety::proto::payload_row_t<
+            ::crucible::safety::extract::pipeline_stage_input_value_t<FnPtr>>,
+        typename Ctx::row_type>;
+
+template <auto FnPtr, class Ctx>
+concept StageOutputRowAdmitted =
+    ::crucible::safety::extract::PipelineStage<FnPtr>
+ && ::crucible::effects::IsExecCtx<Ctx>
+ && ::crucible::effects::Subrow<
+        ::crucible::safety::proto::payload_row_t<
+            ::crucible::safety::extract::pipeline_stage_output_value_t<FnPtr>>,
+        typename Ctx::row_type>;
+
+template <auto FnPtr, class Ctx>
 concept CtxFitsStage =
     ::crucible::safety::extract::PipelineStage<FnPtr>
- && ::crucible::effects::IsExecCtx<Ctx>;
+ && ::crucible::effects::IsExecCtx<Ctx>
+ && StageInputRowAdmitted<FnPtr, Ctx>
+ && StageOutputRowAdmitted<FnPtr, Ctx>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Stage<auto FnPtr, Ctx> ─────────────────────────────────────────
@@ -229,12 +265,40 @@ private:
 // load-bearing site that pins WHICH stage body runs.
 
 template <auto FnPtr, ::crucible::effects::IsExecCtx Ctx>
-    requires CtxFitsStage<FnPtr, Ctx>
+    requires ::crucible::safety::extract::PipelineStage<FnPtr>
 [[nodiscard]] constexpr auto mint_stage(
     Ctx const&                                                       ctx,
-    typename Stage<FnPtr, Ctx>::consumer_handle_type&& in,
-    typename Stage<FnPtr, Ctx>::producer_handle_type&& out) noexcept
+    std::remove_reference_t<
+        ::crucible::safety::extract::param_type_t<FnPtr, 0>>&& in,
+    std::remove_reference_t<
+        ::crucible::safety::extract::param_type_t<FnPtr, 1>>&& out) noexcept
 {
+    using ctx_row = typename Ctx::row_type;
+    using input_row = ::crucible::safety::proto::payload_row_t<
+        ::crucible::safety::extract::pipeline_stage_input_value_t<FnPtr>>;
+    using output_row = ::crucible::safety::proto::payload_row_t<
+        ::crucible::safety::extract::pipeline_stage_output_value_t<FnPtr>>;
+    using input_offending_row =
+        ::crucible::effects::row_difference_t<input_row, ctx_row>;
+    using output_offending_row =
+        ::crucible::effects::row_difference_t<output_row, ctx_row>;
+
+    CRUCIBLE_ROW_MISMATCH_ASSERT(
+        (::crucible::effects::Subrow<input_row, ctx_row>),
+        EffectRowMismatch,
+        FnPtr,
+        ctx_row,
+        input_row,
+        input_offending_row);
+
+    CRUCIBLE_ROW_MISMATCH_ASSERT(
+        (::crucible::effects::Subrow<output_row, ctx_row>),
+        EffectRowMismatch,
+        FnPtr,
+        ctx_row,
+        output_row,
+        output_offending_row);
+
     return Stage<FnPtr, Ctx>{ctx, std::move(in), std::move(out)};
 }
 
@@ -276,6 +340,19 @@ static_assert(saf::PipelineStage<&stage_pass_through>);
 inline void stage_transform_int_to_float(FakeConsumer<int>&&, FakeProducer<float>&&) noexcept {}
 static_assert(saf::PipelineStage<&stage_transform_int_to_float>);
 
+using BgPayload = eff::Computation<eff::Row<eff::Effect::Bg>, int>;
+using IoPayload = eff::Computation<eff::Row<eff::Effect::IO>, int>;
+using AllocCapPayload = eff::Capability<eff::Effect::Alloc, eff::Bg>;
+
+inline void stage_bg_input(FakeConsumer<BgPayload>&&, FakeProducer<int>&&) noexcept {}
+inline void stage_io_output(FakeConsumer<int>&&, FakeProducer<IoPayload>&&) noexcept {}
+inline void stage_alloc_cap_input(FakeConsumer<AllocCapPayload>&&,
+                                  FakeProducer<int>&&) noexcept {}
+
+static_assert(saf::PipelineStage<&stage_bg_input>);
+static_assert(saf::PipelineStage<&stage_io_output>);
+static_assert(saf::PipelineStage<&stage_alloc_cap_input>);
+
 // ── Non-PipelineStage candidates ──────────────────────────────────
 inline void stage_wrong_arity(FakeConsumer<int>&&) noexcept {}
 inline int  stage_returns_int(FakeConsumer<int>&&, FakeProducer<int>&&) noexcept { return 0; }
@@ -289,9 +366,16 @@ static_assert(!saf::PipelineStage<&stage_wrong_param_kind>);
 static_assert( CtxFitsStage<&stage_pass_through,           eff::HotFgCtx>);
 static_assert( CtxFitsStage<&stage_pass_through,           eff::BgDrainCtx>);
 static_assert( CtxFitsStage<&stage_transform_int_to_float, eff::HotFgCtx>);
+static_assert( CtxFitsStage<&stage_bg_input,               eff::BgDrainCtx>);
+static_assert( CtxFitsStage<&stage_io_output,              eff::BgCompileCtx>);
+static_assert( CtxFitsStage<&stage_alloc_cap_input,        eff::BgDrainCtx>);
 static_assert(!CtxFitsStage<&stage_wrong_arity,            eff::HotFgCtx>);
 static_assert(!CtxFitsStage<&stage_returns_int,            eff::HotFgCtx>);
 static_assert(!CtxFitsStage<&stage_pass_through,           int>);  // int isn't an ExecCtx
+static_assert(!CtxFitsStage<&stage_bg_input,               eff::HotFgCtx>);
+static_assert(!CtxFitsStage<&stage_io_output,              eff::HotFgCtx>);
+static_assert(!CtxFitsStage<&stage_io_output,              eff::BgDrainCtx>);
+static_assert(!CtxFitsStage<&stage_alloc_cap_input,        eff::HotFgCtx>);
 
 // ── Stage<...> type-level invariants ───────────────────────────────
 using S1 = Stage<&stage_pass_through, eff::HotFgCtx>;
