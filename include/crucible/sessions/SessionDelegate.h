@@ -144,8 +144,9 @@ struct Accept {
 //                  so recipient crash must be propagated, but K does
 //                  not expose an immediate Crash<RecipientTag> branch.
 //   IllFormed    — the T/K pair has crash semantics this layer does
-//                  not define.  Delegate<Stop, K> is intentionally
-//                  left for GAPS-048's Delegate<Stop, K> compose rule.
+//                  not define.  Delegate<Stop, K> itself is handled
+//                  by the compose rules below: it collapses to Stop
+//                  instead of entering K.
 //
 // The structural recursion is bounded by protocol depth.  Loop bodies
 // are inspected once; Continue is treated as the bounded loop edge.
@@ -450,16 +451,47 @@ struct dual_of<Accept<T, K>> {
 // compose<Delegate<T, K>, Q> = Delegate<T, compose<K, Q>> — delegation
 // is syntactically like Send/Recv in that the End to be replaced by
 // Q lives within the continuation K, not the delegated T.
+//
+// compose<Delegate<Stop, K>, Q> = Stop — the delegated channel was
+// already crashed before handoff, so the carrier cannot advance into K.
+//
+// compose<Q, Delegate<Stop, K>> is represented at the End-substitution
+// point: compose<End, Delegate<Stop, K>> = Stop.  Existing recursive
+// compose rules then produce Q;;Stop for every structured Q without
+// introducing an ambiguous cross-shape partial specialisation.
 
 template <typename T, typename K, typename Q>
 struct compose<Delegate<T, K>, Q> {
     using type = Delegate<T, typename compose<K, Q>::type>;
 };
 
+template <typename K, typename Q>
+struct compose<Delegate<Stop, K>, Q> {
+    using type = Stop;
+};
+
+template <typename K>
+struct compose<End, Delegate<Stop, K>> {
+    using type = Stop;
+};
+
 template <typename T, typename K, typename Q>
 struct compose<Accept<T, K>, Q> {
     using type = Accept<T, typename compose<K, Q>::type>;
 };
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Crash-stop subtyping for Delegate<Stop, K> ─────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// A delegate-of-Stop is at most as restrictive as its continuation:
+// the stopped delegated endpoint cannot produce any future behaviour
+// that K would not already admit.  This is a type-level relation only;
+// the handle operation itself is deleted below so callers cannot use a
+// Delegate<Stop, K> state to manufacture a live K continuation.
+
+template <typename K>
+struct is_subtype_sync<Delegate<Stop, K>, K> : std::true_type {};
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Well-formedness ────────────────────────────────────────────────
@@ -549,7 +581,8 @@ public:
     // handle's type-state is consumed by the && overload guarantee.
     template <typename DelegatedResource, typename DelegatedLoopCtx,
               typename Transport>
-        requires std::is_invocable_v<Transport, Resource&, DelegatedResource&&>
+        requires (!is_stop_v<T> &&
+                  std::is_invocable_v<Transport, Resource&, DelegatedResource&&>)
     [[nodiscard]] constexpr auto delegate(
         SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated,
         Transport transport) &&
@@ -563,6 +596,18 @@ public:
         this->mark_consumed_();
         return detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
     }
+
+    template <typename DelegatedResource, typename DelegatedLoopCtx,
+              typename Transport>
+        requires is_stop_v<T>
+    void delegate(
+        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&,
+        Transport) && = delete(
+        "[DelegateStop_NoContinuation] SessionHandle<Delegate<Stop, K>> "
+        "cannot delegate an already-crashed endpoint and continue as K.  "
+        "The type-level compose rule collapses Delegate<Stop, K> to Stop; "
+        "recover by handling Stop/crash before this handoff point instead "
+        "of expecting K's continuation-side authority.");
 
     // Transport-less variant (#369 / #377 parallel): renamed from
     // bare `delegate(handle)` to `delegate_local(handle)` so the wire
@@ -589,6 +634,7 @@ public:
     //   grep "delegate_local("    — every wire-omitting delegation
     //   grep "\.delegate(.*,.*)"  — every wire-based delegation
     template <typename DelegatedResource, typename DelegatedLoopCtx>
+        requires (!is_stop_v<T>)
     [[nodiscard]] constexpr auto delegate_local(
         SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated) &&
         noexcept(std::is_nothrow_move_constructible_v<Resource>
@@ -602,6 +648,15 @@ public:
         this->mark_consumed_();
         return detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
     }
+
+    template <typename DelegatedResource, typename DelegatedLoopCtx>
+        requires is_stop_v<T>
+    void delegate_local(
+        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&) && = delete(
+        "[DelegateStop_NoContinuation] SessionHandle<Delegate<Stop, K>> "
+        "cannot locally delegate an already-crashed endpoint and continue "
+        "as K.  Delegate<Stop, K> collapses to Stop; handle recovery "
+        "before this state.");
 
     // Deleted bare `delegate(handle)` overload (#369) — forces every
     // call site to make the wire-vs-in-memory distinction explicit.
@@ -855,6 +910,32 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     compose_t<Accept<DelegatedAsymmetric, End>, End>,
     Accept<DelegatedAsymmetric, End>>);
+
+// Delegate<Stop, K> composition: the delegated endpoint is already
+// crashed, so the handoff does not enter K.
+static_assert(std::is_same_v<
+    compose_t<Delegate<Stop, Send<int, End>>, Recv<Ack, End>>,
+    Stop>);
+
+// Right-side Delegate<Stop, K> is sequenced as Q;;Stop by the End
+// substitution rule.
+using ComposeThenDelegateStop =
+    compose_t<Send<int, End>, Delegate<Stop, Recv<Ack, End>>>;
+static_assert(std::is_same_v<ComposeThenDelegateStop, Send<int, Stop>>);
+static_assert(is_well_formed_v<ComposeThenDelegateStop>);
+
+// Stop on either side stays Stop.
+static_assert(std::is_same_v<
+    compose_t<Stop, Delegate<Stop, Recv<Ack, End>>>,
+    Stop>);
+static_assert(std::is_same_v<
+    compose_t<Delegate<Stop, Send<int, End>>, Stop>,
+    Stop>);
+
+// Subtype rule: delegate-of-Stop is no more demanding than K.
+static_assert(is_subtype_sync_v<
+    Delegate<Stop, Send<int, End>>,
+    Send<int, End>>);
 
 // ── Well-formedness ────────────────────────────────────────────────
 

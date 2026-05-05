@@ -38,6 +38,9 @@
 //   * is_stop_v<P>                            shape trait
 //   * dual_of<Stop>           = Stop          self-dual
 //   * compose<Stop, Q>        = Stop          bottom preserved
+//     compose × Delegate<Stop, K> rules ship in SessionDelegate.h
+//     via the GAPS-048 specialisations: delegate-of-Stop collapses
+//     to Stop rather than entering K.
 //   * is_well_formed<Stop, C> = true          any LoopCtx
 //   * is_subtype_sync<Stop, U> = true         bottom of subtype order
 //   * SessionHandle<Stop, Res, LoopCtx>       terminal handle with

@@ -849,6 +849,12 @@ endfunction()
 crucible_neg_compile_session_test(neg_delegate_recipient_crash_unrecovered
     "SessionDelegate\\.h.*static assertion failed.*CrashBranch_Missing_In_Tree")
 
+# GAPS-048: Delegate<Stop, K> has no K continuation at the handle
+# surface; the operation is explicitly deleted with a framework-owned
+# diagnostic.
+crucible_neg_compile_session_test(neg_delegate_stop_continuation
+    "DelegateStop_NoContinuation")
+
 # FOUND-B13 (#602): Met(X) negative-compile witnesses.  Three
 # fixtures probing the Subrow / IsEffect concept gates that enforce
 # the substitution principle for capability propagation.
