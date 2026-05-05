@@ -244,7 +244,13 @@ endif()
 
 # ── Test target factory ──────────────────────────────────────
 function(crucible_test name)
-  add_executable(${name} ${name}.cpp)
+  if(ARGN)
+    set(CRUCIBLE_TEST_SOURCES ${ARGN})
+  else()
+    set(CRUCIBLE_TEST_SOURCES ${name}.cpp)
+  endif()
+
+  add_executable(${name} ${CRUCIBLE_TEST_SOURCES})
   target_link_libraries(${name} PRIVATE crucible)
 
   # Sanitizers — test targets only (not the shared library).
@@ -741,15 +747,24 @@ crucible_test(test_session_sender_role)
 
 # OneShotFlag × runtime crash transport (#400, SAFEINT-A11).
 # Wires the type-level Stop/Crash semantics from SessionCrash.h into
-# a runtime wire: CrashWatchedHandle<Proto, R, PeerTag> wraps a bare
-# SessionHandle with a OneShotFlag& and returns std::expected<
-# NextHandle, CrashEvent<PeerTag, R>> from every consumer method.
+# a runtime wire: CrashWatchedHandle<Proto, R, PeerTag, LoopCtx, PS>
+# wraps a PermissionedSessionHandle with a OneShotFlag& and returns
+# std::expected<NextHandle, survivor-aware CrashEvent> from every
+# consumer method.
 # On-crash the per-op peek routes into the unexpected branch;
 # happy-path overhead is one relaxed atomic load.  Validates happy
 # path, crash-before-send, crash-mid-protocol, cross-thread crash
 # detection (jthread producer + spinning consumer), multi-peer
 # independent watches, and the CNTP request/reply + retry pattern.
 crucible_test(test_crash_transport)
+
+# GAPS-046 — CrashWatchedPSH permission-recovery race harness.
+# Runs under every preset, and under the `tsan` preset with
+# -fsanitize=thread through the shared crucible_test factory.  The
+# body stress-runs 50 iterations covering clean peer death, death
+# racing a send, concurrent deaths, and fallback survivor observation.
+crucible_test(test_crash_watched_psh_tsan
+  tsan/test_crash_watched_psh_tsan.cpp)
 
 # AppendOnly session event log + RecordingSessionHandle wrapper
 # (#404, SAFEINT-B15).  Promotes bit-exact-replay discipline from an
