@@ -62,8 +62,8 @@
 // DelegatedSession extends the marker family for Honda 1998
 // throw/catch: the payload is a session endpoint, and the endpoint's
 // own PermSet moves with it.  This header ships the marker and pure
-// PermSet evolution; PermissionedSessionHandle specialisations that
-// use it arrive in the next layer.
+// PermSet evolution; PermissionedSessionHandle's Delegate / Accept
+// heads use the same marker for higher-order handoff.
 //
 // ─── Composition with SessionPayloadSubsort.h ──────────────────────
 //

@@ -3830,3 +3830,18 @@ crucible_neg_compile_session_test(neg_psh_subtle_chain_imbalance
 #      two participants simultaneously.
 crucible_neg_compile_session_test(neg_perm_set_union_overlap
     "PermSet\\.h.*static assertion failed.*PermissionImbalance.*disjoint operands")
+
+# GAPS-058: PermissionedSessionHandle × Delegate/Accept bridge.  These
+# pin the DelegatedSession<P, InnerPS> handoff boundary so higher-order
+# session transfer cannot fabricate, duplicate, or leak InnerPS.
+crucible_neg_compile_session_test(neg_psh_delegate_inner_ps_not_in_sender
+    "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*PermSet does not contain inner_ps tokens")
+
+crucible_neg_compile_session_test(neg_psh_accept_inner_ps_already_owned
+    "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*inner_ps already owned")
+
+crucible_neg_compile_session_test(neg_psh_delegate_inner_proto_unbalanced
+    "PermissionedSession\\.h.*static assertion failed.*PermissionImbalance.*is_permission_balanced_v<InnerProto> against InnerPS rejects")
+
+crucible_neg_compile_session_test(neg_psh_delegate_to_self
+    "ProtocolViolation_Self_Loop|self-loop")

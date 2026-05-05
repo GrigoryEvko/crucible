@@ -37,6 +37,7 @@
 //   perm_set_insert_t<S, T>      unique-prepend (no-op if T already in S)
 //   perm_set_remove_t<S, T>      filter (no-op if T not in S)
 //   perm_set_subset_v<A, B>      A ⊆ B
+//   perm_set_disjoint_v<A, B>    A ∩ B = ∅
 //   perm_set_equal_v<A, B>       order-insensitive equality
 //   perm_set_union_t<A, B>       disjoint union (compile error on overlap)
 //   perm_set_difference_t<A, B>  A \ B
@@ -230,6 +231,27 @@ template <typename PS1, typename PS2>
 inline constexpr bool perm_set_subset_v =
     detail::perm_set_subset_impl<PS1, PS2>::value;
 
+// ── perm_set_disjoint_v (PS1 ∩ PS2 = ∅) ────────────────────────────
+//
+// True iff no tag appears in both sets.  Used by permissioned session
+// delegation to reject accepting an inner endpoint whose InnerPS
+// overlaps the carrier handle's current PS.
+
+namespace detail {
+
+template <typename PS1, typename PS2>
+struct perm_set_disjoint_impl;
+
+template <typename... T1s, typename PS2>
+struct perm_set_disjoint_impl<PermSet<T1s...>, PS2>
+    : std::bool_constant<((!perm_set_contains_v<PS2, T1s>) && ...)> {};
+
+}  // namespace detail
+
+template <typename PS1, typename PS2>
+inline constexpr bool perm_set_disjoint_v =
+    detail::perm_set_disjoint_impl<PS1, PS2>::value;
+
 // ── perm_set_equal_v (order-insensitive equality) ───────────────────
 //
 // Two PermSets are equal iff they have the same size and every element
@@ -419,6 +441,14 @@ static_assert( perm_set_subset_v<PermSet<A_tag>, PermSet<A_tag>>);
 static_assert( perm_set_subset_v<PermSet<A_tag>, PermSet<A_tag, B_tag>>);
 static_assert(!perm_set_subset_v<PermSet<A_tag, C_tag>, PermSet<A_tag, B_tag>>);
 static_assert(!perm_set_subset_v<PermSet<A_tag>, EmptyPermSet>);
+
+// ── disjoint ───────────────────────────────────────────────────────
+static_assert( perm_set_disjoint_v<EmptyPermSet, EmptyPermSet>);
+static_assert( perm_set_disjoint_v<EmptyPermSet, PermSet<A_tag>>);
+static_assert( perm_set_disjoint_v<PermSet<A_tag>, EmptyPermSet>);
+static_assert( perm_set_disjoint_v<PermSet<A_tag>, PermSet<B_tag, C_tag>>);
+static_assert(!perm_set_disjoint_v<PermSet<A_tag>, PermSet<A_tag>>);
+static_assert(!perm_set_disjoint_v<PermSet<A_tag, B_tag>, PermSet<C_tag, B_tag>>);
 
 // ── equality (order-insensitive) ───────────────────────────────────
 static_assert( perm_set_equal_v<EmptyPermSet, EmptyPermSet>);

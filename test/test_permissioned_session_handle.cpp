@@ -10,6 +10,7 @@
 //   Tier 3: Send<Transferable<int, X>, End>         PS shrinks on send
 //   Tier 4: Recv<Transferable<int, X>,              PS grows on recv,
 //             Send<Returned<int, X>, End>>            shrinks on returned send
+//   Tier 4b: Delegate/Accept<DelegatedSession<P,S>> inner PSH moves
 //   Tier 5: Loop<Recv<Transferable<int, X>,         Loop balance enforcement
 //             Send<Returned<int, X>, Continue>>>      (Decision D3)
 //   Tier 6: Select<End, Send<int, End>>             branch convergence
@@ -120,6 +121,11 @@ struct FakeChannel {
     int counter  = 0;  // monotonic per recv_transferable_int call
 };
 
+struct CarrierChannel {
+    int delegated_last_int = 0;
+    int carrier_int        = 0;
+};
+
 // ── Plain-int Transport (send only — recv variant unused in this
 //    file; recv-side test arrives via Transferable in Tier 4) ──────
 
@@ -170,6 +176,23 @@ Transferable<int, WorkItem> recv_transferable_int(FakeChannel& ch) noexcept {
 void send_returned_int(FakeChannel& ch,
                        Returned<int, WorkItem>&& r) noexcept {
     ch.last_int = r.value;
+}
+
+void delegate_worker_channel(CarrierChannel& carrier,
+                             FakeChannel&& delegated) noexcept {
+    carrier.delegated_last_int = delegated.last_int;
+}
+
+FakeChannel accept_worker_channel(CarrierChannel& carrier) noexcept {
+    return FakeChannel{.last_int = carrier.delegated_last_int};
+}
+
+void carrier_send_int(CarrierChannel& carrier, int value) noexcept {
+    carrier.carrier_int = value;
+}
+
+int carrier_recv_int(CarrierChannel& carrier) noexcept {
+    return carrier.carrier_int;
 }
 
 // Note: recv_returned_int (Returned<int, WorkItem>(FakeChannel&)) is
@@ -305,6 +328,72 @@ void test_recv_transferable_send_returned() {
     FakeChannel out = std::move(h3).close();
     // send_returned_int wrote val.value * 2 = 2 into out.last_int.
     CRUCIBLE_TEST_REQUIRE(out.last_int == 2);
+}
+
+// ═════════════════════════════════════════════════════════════════
+// ── Tier 4b: PSH Delegate/Accept transfers inner endpoint PS ─────
+// ═════════════════════════════════════════════════════════════════
+//
+// Carrier delegates a worker endpoint mid-protocol.  The delegated
+// endpoint is itself permissioned: InnerProto starts at
+// Send<Transferable<int, WorkItem>, End> with InnerPS={WorkItem}.
+// Delegate consumes the sender's inner PSH; Accept recreates the
+// recipient's inner PSH with the same InnerPS.
+
+void test_permissioned_delegate_accept_handoff() {
+    using InnerProto = Send<Transferable<int, WorkItem>, End>;
+    using InnerPS    = PermSet<WorkItem>;
+    using Payload    = DelegatedSession<InnerProto, InnerPS>;
+    using SenderProto = Delegate<Payload, Send<int, End>>;
+    using AccepterProto = Accept<Payload, Recv<int, End>>;
+
+    static_assert(std::is_same_v<dual_of_t<SenderProto>, AccepterProto>);
+
+    auto worker_perm = mint_permission_root<WorkItem>();
+    auto inner = mint_permissioned_session<InnerProto>(
+        FakeChannel{.last_int = 314}, std::move(worker_perm));
+
+    CarrierChannel carrier{};
+    auto sender = mint_permissioned_session<SenderProto>(carrier);
+
+    auto sender_after_delegate = std::move(sender).delegate(
+        std::move(inner), delegate_worker_channel);
+
+    static_assert(std::is_same_v<typename decltype(sender_after_delegate)::protocol,
+                                 Send<int, End>>);
+    static_assert(std::is_same_v<typename decltype(sender_after_delegate)::perm_set,
+                                 EmptyPermSet>);
+
+    auto sender_end = std::move(sender_after_delegate).send(
+        777, carrier_send_int);
+    CarrierChannel wire_state = std::move(sender_end).close();
+    CRUCIBLE_TEST_REQUIRE(wire_state.delegated_last_int == 314);
+    CRUCIBLE_TEST_REQUIRE(wire_state.carrier_int == 777);
+
+    auto accepter = mint_permissioned_session<AccepterProto>(wire_state);
+    auto [accepted_inner, accepter_after_accept] =
+        std::move(accepter).accept(accept_worker_channel);
+
+    static_assert(std::is_same_v<typename decltype(accepted_inner)::protocol,
+                                 InnerProto>);
+    static_assert(std::is_same_v<typename decltype(accepted_inner)::perm_set,
+                                 InnerPS>);
+    static_assert(std::is_same_v<typename decltype(accepter_after_accept)::protocol,
+                                 Recv<int, End>>);
+    static_assert(std::is_same_v<typename decltype(accepter_after_accept)::perm_set,
+                                 EmptyPermSet>);
+
+    auto [carrier_value, accepter_end] =
+        std::move(accepter_after_accept).recv(carrier_recv_int);
+    CRUCIBLE_TEST_REQUIRE(carrier_value == 777);
+    (void)std::move(accepter_end).close();
+
+    Transferable<int, WorkItem> payload{
+        12, mint_permission_root<WorkItem>()};
+    auto accepted_inner_end = std::move(accepted_inner).send(
+        std::move(payload), send_transferable_int);
+    FakeChannel inner_out = std::move(accepted_inner_end).close();
+    CRUCIBLE_TEST_REQUIRE(inner_out.last_int == 12);
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -667,6 +756,8 @@ int main() {
     run_test("plain_send_end",                  test_plain_send_end);
     run_test("transferable_send_end",           test_transferable_send_end);
     run_test("recv_transferable_send_returned", test_recv_transferable_send_returned);
+    run_test("permissioned_delegate_accept_handoff",
+             test_permissioned_delegate_accept_handoff);
     run_test("loop_balanced_iteration",         test_loop_balanced_iteration);
     run_test("select_local_pick_branch",        test_select_local_pick_branch);
     run_test("crash_transport_happy_path",      test_crash_transport_happy_path);
