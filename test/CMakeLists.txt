@@ -3508,6 +3508,14 @@ crucible_neg_compile_test(neg_linear_copy_attempt
 crucible_neg_compile_test(neg_permission_copy_attempt
     "linear")
 
+# GAPS-044 — Permission inheritance is explicit and acyclic.  Crash-stop
+# recovery may mint survivor permissions only for declared inheritance
+# edges; a peer cannot inherit to itself.
+crucible_neg_compile_test(neg_permission_inherit_without_specialization
+    "permission_inherit requires inherits_from")
+crucible_neg_compile_test(neg_permission_inherit_self_cycle
+    "permission_inherit forbids circular inheritance")
+
 # ── METX-1 #473 — Computation::extract requires empty row ────────
 # Effect-row substrate (Tang-Lindley POPL 2026, 25_04_2026.md §3).
 # `extract()` on a Computation<R, T> requires `row_size_v<R> == 0` —

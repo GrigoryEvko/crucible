@@ -163,6 +163,27 @@
 
 namespace crucible::safety {
 
+template <typename Tag>
+class Permission;
+
+}  // namespace crucible::safety
+
+namespace crucible::permissions {
+
+template <typename DeadTag, typename... SurvivorTags>
+[[nodiscard]] constexpr auto permission_inherit() noexcept;
+
+namespace detail {
+
+template <typename Tag>
+struct permission_inherit_minter_;
+
+}  // namespace detail
+
+}  // namespace crucible::permissions
+
+namespace crucible::safety {
+
 // ── Forward declarations for fractional-permission family ───────────
 template <typename Tag> class SharedPermission;
 template <typename Tag> class SharedPermissionGuard;
@@ -247,6 +268,18 @@ class [[nodiscard]] Permission {
     // have been consumed by their callables.  See safety/PermissionFork.h.
     template <typename T>
     friend constexpr Permission<T> permission_fork_rebuild_() noexcept;
+
+    // Permission-inheritance recovery path for crash-stop sessions.
+    // The factory is constrained by permissions::inherits_from and is
+    // the only non-root mint path that can re-issue survivor tokens
+    // after the previous holder is structurally dead.
+    template <typename DeadTag, typename... SurvivorTags>
+    friend constexpr auto
+    ::crucible::permissions::permission_inherit() noexcept;
+
+    template <typename T>
+    friend struct ::crucible::permissions::detail::permission_inherit_minter_;
+
 
     // The Pool's try_upgrade re-emits the parked Permission when the
     // refcount of outstanding shares hits zero.  Construction is sound:
