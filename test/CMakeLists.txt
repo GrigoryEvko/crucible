@@ -849,11 +849,23 @@ endfunction()
 crucible_neg_compile_session_test(neg_delegate_recipient_crash_unrecovered
     "SessionDelegate\\.h.*static assertion failed.*CrashBranch_Missing_In_Tree")
 
+# GAPS-049: exact-name delegated-crash rejection fixtures.  These pin
+# the public consteval assertion boundary so custom call sites do not
+# have to infer the failure from the broader crash-walker diagnostic.
+crucible_neg_compile_session_test(neg_delegate_to_unreliable_no_crash_branch
+    "DelegatedCrashPropagation_MissingRecovery|recipient is unreliable but carrier K has no crash-recovery branch")
+
 # GAPS-048: Delegate<Stop, K> has no K continuation at the handle
 # surface; the operation is explicitly deleted with a framework-owned
 # diagnostic.
 crucible_neg_compile_session_test(neg_delegate_stop_continuation
     "DelegateStop_NoContinuation")
+
+crucible_neg_compile_session_test(neg_delegate_stop_without_continuation_capability
+    "DelegateStop_NoContinuation")
+
+crucible_neg_compile_session_test(neg_delegate_recipient_crash_no_propagation_metafunction
+    "DelegatedCrashPropagation_PrimaryTemplate|primary template fires")
 
 # FOUND-B13 (#602): Met(X) negative-compile witnesses.  Three
 # fixtures probing the Subrow / IsEffect concept gates that enforce

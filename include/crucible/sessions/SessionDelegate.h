@@ -296,6 +296,61 @@ template <typename T, typename RecipientTag, typename CarrierK>
 using delegated_crash_propagation_t =
     typename delegated_crash_propagation<T, RecipientTag, CarrierK>::type;
 
+namespace detail::delegate_crash {
+
+template <typename>
+inline constexpr bool dependent_false_v = false;
+
+template <typename Result>
+struct propagation_assertion {
+    template <typename Actual = Result>
+    static consteval void check() noexcept {
+        static_assert(dependent_false_v<Actual>,
+            "crucible::session::diagnostic "
+            "[DelegatedCrashPropagation_UnknownResult]: "
+            "delegated_crash_propagation returned an unsupported "
+            "classification.  Expected Recovers<RecoveryProto>, "
+            "MustAbort, or IllFormed.");
+    }
+};
+
+template <typename RecoveryProto>
+struct propagation_assertion<Recovers<RecoveryProto>> {
+    static consteval void check() noexcept {}
+};
+
+template <>
+struct propagation_assertion<MustAbort> {
+    template <typename Actual = MustAbort>
+    static consteval void check() noexcept {
+        static_assert(dependent_false_v<Actual>,
+            "crucible::session::diagnostic "
+            "[DelegatedCrashPropagation_MissingRecovery]: "
+            "delegated_crash_propagation rejects: recipient is "
+            "unreliable but carrier K has no crash-recovery branch.");
+    }
+};
+
+template <>
+struct propagation_assertion<IllFormed> {
+    template <typename Actual = IllFormed>
+    static consteval void check() noexcept {
+        static_assert(dependent_false_v<Actual>,
+            "crucible::session::diagnostic "
+            "[DelegatedCrashPropagation_PrimaryTemplate]: "
+            "delegated_crash_propagation<T, R, K> primary template "
+            "fires -- specialize for your delegated type.");
+    }
+};
+
+}  // namespace detail::delegate_crash
+
+template <typename T, typename RecipientTag, typename CarrierK>
+consteval void assert_delegated_crash_propagates() noexcept {
+    using Result = delegated_crash_propagation_t<T, RecipientTag, CarrierK>;
+    detail::delegate_crash::propagation_assertion<Result>::check();
+}
+
 }  // namespace crucible::safety::proto
 
 // ─── #368 crash-walker specialisations for Delegate / Accept ──────
@@ -1042,6 +1097,25 @@ consteval bool check_assert_delegates() {
     return true;
 }
 static_assert(check_assert_delegates());
+
+// Delegated-crash propagation helper succeeds only when the carrier
+// continuation has an immediate Crash<Recipient> recovery branch for
+// delegated protocols that can emit before finishing.
+struct DelegatedRecipient {};
+using CarrierCrashRecovery =
+    Offer<Recv<Ack, End>, Recv<Crash<DelegatedRecipient>, End>>;
+
+static_assert(std::is_same_v<
+    delegated_crash_propagation_t<
+        Send<Req, End>, DelegatedRecipient, CarrierCrashRecovery>,
+    Recovers<End>>);
+
+consteval bool check_assert_delegated_crash_propagates() {
+    assert_delegated_crash_propagates<
+        Send<Req, End>, DelegatedRecipient, CarrierCrashRecovery>();
+    return true;
+}
+static_assert(check_assert_delegated_crash_propagates());
 
 // ── Delegate_seq / Accept_seq ──────────────────────────────────────
 

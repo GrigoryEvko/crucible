@@ -7,10 +7,12 @@
 #include <crucible/sessions/SessionDelegate.h>
 
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <optional>
 #include <string>
+#include <type_traits>
 #include <utility>
 
 namespace {
@@ -30,12 +32,25 @@ struct MockChannel {
     std::optional<std::string> pending_delegation = std::nullopt;
 };
 
+struct IntChannel {
+    int last_int = 0;
+};
+
 // ── Protocols for the test ─────────────────────────────────────────
 
 // The delegated session's protocol: simple request-response.
 struct PingReq { int payload; };
 struct PingAck { int echoed; };
+struct DelegatedRecipient {};
 using DelegatedProto = Send<PingReq, Recv<PingAck, End>>;
+using DelegatedOutboundProto = Send<PingReq, End>;
+
+using CarrierCrashRecovery = Offer<
+    Recv<PingAck, End>,
+    Recv<Crash<DelegatedRecipient>, End>>;
+
+using CarrierSurvivesRecipientCrash =
+    Delegate<DelegatedOutboundProto, CarrierCrashRecovery>;
 
 // The outer (carrier) session's protocol: receive a name string,
 // delegate a DelegatedProto-typed session, end.
@@ -77,6 +92,20 @@ MockChannel transport_accept(MockChannel& carrier_res) {
     std::string delegated_name = token.substr(std::strlen("DELEGATED:"));
     return MockChannel{.name        = std::move(delegated_name),
                         .wire_bytes  = carrier_res.wire_bytes};
+}
+
+std::size_t recv_branch_index(MockChannel& res) {
+    std::string token = std::move(res.wire_bytes->front());
+    res.wire_bytes->pop_front();
+    return static_cast<std::size_t>(std::atoi(token.c_str()));
+}
+
+Crash<DelegatedRecipient> recv_delegated_crash(MockChannel&) noexcept {
+    return Crash<DelegatedRecipient>{};
+}
+
+void send_int(IntChannel& res, int value) noexcept {
+    res.last_int = value;
 }
 
 // ── End-to-end exercise ────────────────────────────────────────────
@@ -213,9 +242,83 @@ int run_carrier() {
     return 0;
 }
 
+int run_carrier_survives_delegated_recipient_crash() {
+    std::deque<std::string> wire;
+    wire.push_back("1");  // branch 1 is Recv<Crash<DelegatedRecipient>, End>
+
+    auto carrier = mint_session_handle<CarrierCrashRecovery>(
+        MockChannel{.name = "carrier-recovery", .wire_bytes = &wire});
+
+    bool crash_branch_seen = false;
+    int rc = std::move(carrier).branch(
+        recv_branch_index,
+        [&](auto branch_handle) -> int {
+            using BranchHandle = decltype(branch_handle);
+            using BranchProto  = typename BranchHandle::protocol;
+
+            if constexpr (std::is_same_v<
+                              BranchProto,
+                              Recv<Crash<DelegatedRecipient>, End>>) {
+                auto [crash, end_handle] =
+                    std::move(branch_handle).recv(recv_delegated_crash);
+                (void)crash;
+                crash_branch_seen = true;
+                (void)std::move(end_handle).close();
+                return 0;
+            } else {
+                std::fprintf(stderr,
+                             "delegate crash recovery: wrong branch selected\n");
+                return 1;
+            }
+        });
+
+    if (rc != 0) return rc;
+    if (!crash_branch_seen) {
+        std::fprintf(stderr,
+                     "delegate crash recovery: crash branch did not fire\n");
+        return 1;
+    }
+    return 0;
+}
+
+int run_delegate_stop_composition() {
+    using RecoveryProto = Recv<PingAck, End>;
+    using DelegateStopNoOp =
+        compose_t<Delegate<Stop, RecoveryProto>, Send<int, End>>;
+    using QThenDelegateStop =
+        compose_t<Send<int, End>, Delegate<Stop, RecoveryProto>>;
+
+    static_assert(std::is_same_v<DelegateStopNoOp, Stop>);
+    static_assert(std::is_same_v<QThenDelegateStop, Send<int, Stop>>);
+
+    auto stop_handle = mint_session_handle<DelegateStopNoOp>(IntChannel{});
+    (void)std::move(stop_handle).close();
+
+    auto q_handle = mint_session_handle<QThenDelegateStop>(IntChannel{});
+    auto stop_after_q = std::move(q_handle).send(7, send_int);
+    IntChannel released = std::move(stop_after_q).close();
+    if (released.last_int != 7) {
+        std::fprintf(stderr,
+                     "delegate stop composition: Q did not run first\n");
+        return 1;
+    }
+
+    return 0;
+}
+
 // ── Compile-time: DelegatesTo concept + assert_delegates_to helper ─
 static_assert(DelegatesTo<Delegate<DelegatedProto, End>, DelegatedProto>);
 static_assert(AcceptsFrom<Accept<DelegatedProto, End>,   DelegatedProto>);
+
+static_assert(std::is_same_v<
+    delegated_crash_propagation_t<
+        DelegatedOutboundProto,
+        DelegatedRecipient,
+        CarrierCrashRecovery>,
+    Recovers<End>>);
+static_assert(every_offer_has_crash_branch_for_peer_v<
+    CarrierSurvivesRecipientCrash,
+    DelegatedRecipient>);
 
 // Invoking the assert helpers at namespace scope would trigger their
 // consteval path even if we don't have a top-level consteval context;
@@ -225,6 +328,10 @@ consteval bool exercise_assert_helpers() {
                          DelegatedProto>();
     assert_accepts_from<Accept<DelegatedProto, Recv<int, End>>,
                          DelegatedProto>();
+    assert_delegated_crash_propagates<
+        DelegatedOutboundProto,
+        DelegatedRecipient,
+        CarrierCrashRecovery>();
     return true;
 }
 static_assert(exercise_assert_helpers());
@@ -233,6 +340,10 @@ static_assert(exercise_assert_helpers());
 
 int main() {
     if (int rc = run_carrier(); rc != 0) return rc;
+    if (int rc = run_carrier_survives_delegated_recipient_crash(); rc != 0) {
+        return rc;
+    }
+    if (int rc = run_delegate_stop_composition(); rc != 0) return rc;
     std::puts("session_delegate: delegation + delegated-endpoint-usage OK");
     return 0;
 }
