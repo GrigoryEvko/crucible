@@ -22,6 +22,11 @@
 //     for dual involution, well-formedness, structural expansion, and
 //     synchronous subtype refinement against documented aliases and
 //     local branch-refinement witnesses.
+//   * Crash-status explicit — baseline pattern aliases preserve their
+//     original crash-oblivious wire shape.  The self-test harness marks
+//     those aliases with PatternCrashSafety<..., CrashSafetyPending>
+//     contracts for unreliable peers, and separately proves concrete
+//     Crash<>-branch witnesses with SessionCrash.h's Offer walker.
 //
 // Subtype refinement note: this header does not expose public
 // `*_Strong` / `*_Weak` pattern aliases yet.  The self-test block
@@ -116,11 +121,52 @@
 #include <crucible/Platform.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionSubtype.h>
+#ifdef CRUCIBLE_SESSION_SELF_TESTS
+#include <crucible/sessions/SessionCrash.h>
+#endif
 
 #include <cstddef>
 #include <type_traits>
 
+namespace crucible::safety::proto {
+template <typename... Roles>
+struct ReliableSet;
+}  // namespace crucible::safety::proto
+
 namespace crucible::safety::proto::pattern {
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Crash-safety contract markers ─────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// The aliases below are intentionally compile-time-only markers.  They
+// let a pattern declaration say whether the local protocol has been
+// proved crash-aware under some reliability set R without changing the
+// underlying protocol type or adding runtime checks.
+
+struct CrashSafetyVerified {};
+struct CrashSafetyPending {};
+struct BaselinePatternNeedsCrashAwareVariant {};
+
+template <typename Proto, typename R, typename Status,
+          typename Reason = BaselinePatternNeedsCrashAwareVariant>
+struct PatternCrashSafety {
+    using protocol     = Proto;
+    using reliable_set = R;
+    using status       = Status;
+    using reason       = Reason;
+
+    static constexpr bool verified =
+        std::is_same_v<Status, CrashSafetyVerified>;
+    static constexpr bool pending =
+        std::is_same_v<Status, CrashSafetyPending>;
+};
+
+template <typename Contract>
+inline constexpr bool pattern_crash_safety_verified_v = Contract::verified;
+
+template <typename Contract>
+inline constexpr bool pattern_crash_safety_pending_v = Contract::pending;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Request / response ─────────────────────────────────────────────
@@ -387,8 +433,9 @@ using MpmcConsumer = Loop<Offer<
 //
 // BSYZ22 §6 gives the multiparty form with crash-stop extensions;
 // the binary fragment here is sufficient for the coordinator's pair-
-// wise interaction with each follower.  Crash branches (peer failure
-// during 2PC) arrive with SessionCrash.h.
+// wise interaction with each follower.  This baseline alias is the
+// crash-oblivious wire shape; crash-aware 2PC wraps the Vote/decision
+// points in Sender<>-annotated Offer branches carrying Crash<Peer>.
 template <typename Prepare, typename Vote, typename Commit, typename Abort>
 using TwoPhaseCommit_Coord =
     Send<Prepare,
@@ -475,6 +522,17 @@ struct Welcome {};
 struct Reject  {};
 struct Cancel  {};
 struct Retry   {};
+
+struct ClientRole      {};
+struct ServerRole      {};
+struct SourceRole      {};
+struct SinkRole        {};
+struct StageRole       {};
+struct CoordinatorRole {};
+struct CollectorRole   {};
+struct ProducerRole    {};
+struct ConsumerRole    {};
+struct FollowerRole    {};
 
 // ─── RequestResponse family ────────────────────────────────────────
 
@@ -1012,6 +1070,170 @@ static_assert(is_strict_subtype_sync_v<
 static_assert(!is_subtype_sync_v<
     Handshake_Server<Hello, Welcome, Reject>,
     HandshakeServerWelcomeOnly>);
+
+// ─── Crash-safety contracts (GAPS-055) ────────────────────────────
+//
+// Existing public aliases stay wire-compatible and therefore remain
+// crash-oblivious.  We mark that status explicitly for unreliable-peer
+// deployments, then prove representative crash-aware witnesses using
+// Sender<>-annotated Offer branches from SessionCrash.h.
+
+template <typename Proto, typename SelfRole>
+using PendingCrashContract = PatternCrashSafety<
+    Proto,
+    ReliableSet<SelfRole>,
+    CrashSafetyPending,
+    BaselinePatternNeedsCrashAwareVariant>;
+
+template <typename Proto, typename SelfRole>
+using VerifiedCrashContract = PatternCrashSafety<
+    Proto,
+    ReliableSet<SelfRole>,
+    CrashSafetyVerified>;
+
+template <typename Contract>
+consteval bool pending_contract_ok() {
+    return pattern_crash_safety_pending_v<Contract> &&
+           !pattern_crash_safety_verified_v<Contract>;
+}
+
+template <typename Contract>
+consteval bool verified_contract_ok() {
+    return pattern_crash_safety_verified_v<Contract> &&
+           !pattern_crash_safety_pending_v<Contract>;
+}
+
+// Baseline pattern contracts.  Reliability set R is the local role
+// assumed reliable for this endpoint; the peer side is not assumed
+// reliable and needs an explicit Crash<Peer> branch in a crash-aware
+// variant.
+static_assert(pending_contract_ok<PendingCrashContract<
+    RequestResponseOnce_Client<Req, Resp>, ClientRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<
+    RequestResponseOnce_Server<Req, Resp>, ServerRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<
+    RequestResponse_Client<Req, Resp>, ClientRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<
+    RequestResponse_Server<Req, Resp>, ServerRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<
+    RequestResponseLoop_Client<Req, Resp>, ClientRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<
+    RequestResponseLoop_Server<Req, Resp>, ServerRole>>());
+
+static_assert(pending_contract_ok<PendingCrashContract<
+    PipelineSource<Job>, SourceRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<
+    PipelineSink<Job>, SinkRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<
+    PipelineStage<Req, Resp>, StageRole>>());
+
+static_assert(pending_contract_ok<PendingCrashContract<TxClient, ClientRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<TxServer, ServerRole>>());
+
+static_assert(pending_contract_ok<PendingCrashContract<
+    FanOut<3, Job>, CoordinatorRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<
+    FanIn<3, Job>, CollectorRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<
+    Broadcast<3, Job>, CoordinatorRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<
+    ScatterGather<2, Task, Result>, CoordinatorRole>>());
+
+static_assert(pending_contract_ok<PendingCrashContract<
+    MpmcProducer<Job>, ProducerRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<
+    MpmcConsumer<Job>, ConsumerRole>>());
+
+static_assert(pending_contract_ok<PendingCrashContract<
+    ConcreteCoord, CoordinatorRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<
+    ConcreteFollower, FollowerRole>>());
+
+static_assert(pending_contract_ok<PendingCrashContract<
+    SwimProbe_Client<Probe, Ack>, ClientRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<
+    SwimProbe_Server<Probe, Ack>, ServerRole>>());
+
+static_assert(pending_contract_ok<PendingCrashContract<
+    Handshake_Client<Hello, Welcome, Reject>, ClientRole>>());
+static_assert(pending_contract_ok<PendingCrashContract<
+    Handshake_Server<Hello, Welcome, Reject>, ServerRole>>());
+
+// The Offer walker catches the currently-unprotected branch protocols.
+// Protocols without Offer nodes are still marked pending above: the
+// local type lacks sender-role context, so an Offer-only predicate has
+// no sound way to infer "this Recv came from an unreliable peer."
+static_assert(!every_offer_has_crash_branch_for_peer_v<
+    RequestResponseLoop_Server<Req, Resp>, ClientRole>);
+static_assert(!every_offer_has_crash_branch_for_peer_v<TxServer, ClientRole>);
+static_assert(!every_offer_has_crash_branch_for_peer_v<
+    MpmcConsumer<Job>, ProducerRole>);
+static_assert(!every_offer_has_crash_branch_for_peer_v<
+    ConcreteFollower, CoordinatorRole>);
+static_assert(!every_offer_has_crash_branch_for_peer_v<
+    Handshake_Client<Hello, Welcome, Reject>, ServerRole>);
+
+using CrashAwareOnceClient = Send<Req, Offer<Sender<ServerRole>,
+    Recv<Resp, End>,
+    Recv<Crash<ServerRole>, End>>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<
+    CrashAwareOnceClient, ServerRole>);
+static_assert(verified_contract_ok<VerifiedCrashContract<
+    CrashAwareOnceClient, ClientRole>>());
+
+using CrashAwareLoopServer = Loop<Offer<Sender<ClientRole>,
+    Recv<Req, Send<Resp, Continue>>,
+    End,
+    Recv<Crash<ClientRole>, End>>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<
+    CrashAwareLoopServer, ClientRole>);
+static_assert(verified_contract_ok<VerifiedCrashContract<
+    CrashAwareLoopServer, ServerRole>>());
+
+using CrashAwareTxServer = Recv<Prepare, Loop<Offer<Sender<ClientRole>,
+    Recv<Req, Continue>,
+    Recv<Commit, Send<Ack, End>>,
+    Recv<Abort, End>,
+    Recv<Crash<ClientRole>, End>>>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<
+    CrashAwareTxServer, ClientRole>);
+static_assert(verified_contract_ok<VerifiedCrashContract<
+    CrashAwareTxServer, ServerRole>>());
+
+using CrashAwareMpmcConsumer = Loop<Offer<Sender<ProducerRole>,
+    Recv<Job, Continue>,
+    End,
+    Recv<Crash<ProducerRole>, End>>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<
+    CrashAwareMpmcConsumer, ProducerRole>);
+static_assert(verified_contract_ok<VerifiedCrashContract<
+    CrashAwareMpmcConsumer, ConsumerRole>>());
+
+using CrashAwareCoord = Send<Prepare, Offer<Sender<FollowerRole>,
+    Recv<Vote, Select<Send<Commit, End>, Send<Abort, End>>>,
+    Recv<Crash<FollowerRole>, End>>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<
+    CrashAwareCoord, FollowerRole>);
+static_assert(verified_contract_ok<VerifiedCrashContract<
+    CrashAwareCoord, CoordinatorRole>>());
+
+using CrashAwareFollower = Recv<Prepare, Send<Vote, Offer<Sender<CoordinatorRole>,
+    Recv<Commit, End>,
+    Recv<Abort, End>,
+    Recv<Crash<CoordinatorRole>, End>>>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<
+    CrashAwareFollower, CoordinatorRole>);
+static_assert(verified_contract_ok<VerifiedCrashContract<
+    CrashAwareFollower, FollowerRole>>());
+
+using CrashAwareHandshakeClient = Send<Hello, Offer<Sender<ServerRole>,
+    Recv<Welcome, End>,
+    Recv<Reject, End>,
+    Recv<Crash<ServerRole>, End>>>;
+static_assert(every_offer_has_crash_branch_for_peer_v<
+    CrashAwareHandshakeClient, ServerRole>);
+static_assert(verified_contract_ok<VerifiedCrashContract<
+    CrashAwareHandshakeClient, ClientRole>>());
 
 // ─── Cross-pattern composition ────────────────────────────────────
 //
