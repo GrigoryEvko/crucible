@@ -843,6 +843,12 @@ function(crucible_neg_compile_effects_test name expected_diag)
     PASS_REGULAR_EXPRESSION "${expected_diag}")
 endfunction()
 
+# GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
+# the public crash walker.  This fixture pins the unrecovered outbound
+# delegated-protocol case at the consteval assertion boundary.
+crucible_neg_compile_session_test(neg_delegate_recipient_crash_unrecovered
+    "SessionDelegate\\.h.*static assertion failed.*CrashBranch_Missing_In_Tree")
+
 # FOUND-B13 (#602): Met(X) negative-compile witnesses.  Three
 # fixtures probing the Subrow / IsEffect concept gates that enforce
 # the substitution principle for capability propagation.

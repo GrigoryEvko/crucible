@@ -89,6 +89,17 @@
 //   Dardha, O., Giachino, E., Sangiorgi, D. (2012).  "Session Types
 //     Revisited."  Proves delegation is representable in linear-π
 //     via Channel-carrying values.
+//
+// ─── Crash-stop integration ────────────────────────────────────────
+//
+// Delegate<T, K>'s crash-safety is conjunctive: the delegated
+// recipient-side protocol T must either be cleanly abandonable at its
+// current position, or the carrier continuation K must expose a
+// Recv<Crash<RecipientTag>, RecoveryProto> branch that can recover
+// if the recipient dies after the handoff.  The
+// delegated_crash_propagation<T, RecipientTag, K> metafunction below
+// discharges that bonding rule for the crash walker; it prevents the
+// carrier from treating "recipient's problem" as a proof hole.
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/sessions/Session.h>
@@ -120,20 +131,190 @@ struct Accept {
 
 }  // namespace crucible::safety::proto
 
+// ─── Delegated-recipient crash propagation ─────────────────────────
+//
+// Classifies the carrier-side obligation created by Delegate<T, K>.
+// T is the protocol now held by RecipientTag.  CarrierK is the
+// delegator's continuation after the handoff.
+//
+//   Recovers<P>  — the carrier has a valid recovery continuation P
+//                  (P may be CarrierK itself when T is receive-only
+//                  and can be cleanly abandoned at this position).
+//   MustAbort    — T can emit / select / delegate before termination,
+//                  so recipient crash must be propagated, but K does
+//                  not expose an immediate Crash<RecipientTag> branch.
+//   IllFormed    — the T/K pair has crash semantics this layer does
+//                  not define.  Delegate<Stop, K> is intentionally
+//                  left for GAPS-048's Delegate<Stop, K> compose rule.
+//
+// The structural recursion is bounded by protocol depth.  Loop bodies
+// are inspected once; Continue is treated as the bounded loop edge.
+
+namespace crucible::safety::proto {
+
+template <typename RecoveryProto>
+struct Recovers {
+    using recovery_proto = RecoveryProto;
+};
+
+struct MustAbort {};
+struct IllFormed {};
+
+namespace detail::delegate_crash {
+
+template <typename Result>
+struct propagation_is_recoverable : std::false_type {};
+
+template <typename RecoveryProto>
+struct propagation_is_recoverable<Recovers<RecoveryProto>> : std::true_type {};
+
+template <typename Result>
+inline constexpr bool propagation_is_recoverable_v =
+    propagation_is_recoverable<Result>::value;
+
+template <typename Branch, typename RecipientTag>
+struct crash_recovery_branch : std::false_type {};
+
+template <typename RecipientTag, typename RecoveryProto>
+struct crash_recovery_branch<Recv<Crash<RecipientTag>, RecoveryProto>,
+                             RecipientTag> : std::true_type {
+    using recovery_proto = RecoveryProto;
+};
+
+template <typename RecipientTag, typename... Branches>
+struct first_crash_recovery;
+
+template <typename RecipientTag>
+struct first_crash_recovery<RecipientTag> {
+    using type = MustAbort;
+};
+
+template <bool IsRecovery, typename RecipientTag, typename Head, typename... Tail>
+struct first_crash_recovery_step;
+
+template <typename RecipientTag, typename Head, typename... Tail>
+struct first_crash_recovery_step<true, RecipientTag, Head, Tail...> {
+    using type = Recovers<
+        typename crash_recovery_branch<Head, RecipientTag>::recovery_proto>;
+};
+
+template <typename RecipientTag, typename Head, typename... Tail>
+struct first_crash_recovery_step<false, RecipientTag, Head, Tail...>
+    : first_crash_recovery<RecipientTag, Tail...> {};
+
+template <typename RecipientTag, typename Head, typename... Tail>
+struct first_crash_recovery<RecipientTag, Head, Tail...>
+    : first_crash_recovery_step<
+          crash_recovery_branch<Head, RecipientTag>::value,
+          RecipientTag, Head, Tail...> {};
+
+template <typename CarrierK, typename RecipientTag>
+struct carrier_crash_recovery : std::type_identity<MustAbort> {};
+
+template <typename RecipientTag, typename... Branches>
+struct carrier_crash_recovery<Offer<Branches...>, RecipientTag>
+    : first_crash_recovery<RecipientTag, Branches...> {};
+
+template <typename Role, typename RecipientTag, typename... Branches>
+struct carrier_crash_recovery<Offer<Sender<Role>, Branches...>, RecipientTag>
+    : first_crash_recovery<RecipientTag, Branches...> {};
+
+template <typename Body, typename RecipientTag>
+struct carrier_crash_recovery<Loop<Body>, RecipientTag>
+    : carrier_crash_recovery<Body, RecipientTag> {};
+
+template <typename T, typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl : std::type_identity<IllFormed> {};
+
+template <typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<End, RecipientTag, CarrierK>
+    : std::type_identity<Recovers<CarrierK>> {};
+
+template <typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<Stop, RecipientTag, CarrierK>
+    : std::type_identity<IllFormed> {};
+
+template <typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<Continue, RecipientTag, CarrierK>
+    : std::type_identity<Recovers<CarrierK>> {};
+
+template <typename Msg, typename Next, typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<Recv<Msg, Next>, RecipientTag, CarrierK>
+    : delegated_crash_propagation_impl<Next, RecipientTag, CarrierK> {};
+
+template <typename Msg, typename Next, typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<Send<Msg, Next>, RecipientTag, CarrierK>
+    : carrier_crash_recovery<CarrierK, RecipientTag> {};
+
+template <typename... Branches, typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<Offer<Branches...>, RecipientTag, CarrierK> {
+    using type = std::conditional_t<
+        (propagation_is_recoverable_v<
+             typename delegated_crash_propagation_impl<
+                 Branches, RecipientTag, CarrierK>::type> && ...),
+        Recovers<CarrierK>,
+        typename carrier_crash_recovery<CarrierK, RecipientTag>::type>;
+};
+
+template <typename Role, typename... Branches,
+          typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<
+    Offer<Sender<Role>, Branches...>, RecipientTag, CarrierK> {
+    using type = std::conditional_t<
+        (propagation_is_recoverable_v<
+             typename delegated_crash_propagation_impl<
+                 Branches, RecipientTag, CarrierK>::type> && ...),
+        Recovers<CarrierK>,
+        typename carrier_crash_recovery<CarrierK, RecipientTag>::type>;
+};
+
+template <typename... Branches, typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<Select<Branches...>, RecipientTag, CarrierK>
+    : carrier_crash_recovery<CarrierK, RecipientTag> {};
+
+template <typename Body, typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<Loop<Body>, RecipientTag, CarrierK>
+    : delegated_crash_propagation_impl<Body, RecipientTag, CarrierK> {};
+
+template <typename T, typename K, typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<Delegate<T, K>, RecipientTag, CarrierK>
+    : carrier_crash_recovery<CarrierK, RecipientTag> {};
+
+template <typename T, typename K, typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<Accept<T, K>, RecipientTag, CarrierK>
+    : delegated_crash_propagation_impl<K, RecipientTag, CarrierK> {};
+
+}  // namespace detail::delegate_crash
+
+template <typename T, typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation
+    : detail::delegate_crash::delegated_crash_propagation_impl<
+          T, RecipientTag, CarrierK> {};
+
+template <typename T, typename RecipientTag, typename CarrierK>
+using delegated_crash_propagation_t =
+    typename delegated_crash_propagation<T, RecipientTag, CarrierK>::type;
+
+}  // namespace crucible::safety::proto
+
 // ─── #368 crash-walker specialisations for Delegate / Accept ──────
 //
-// Both Delegate and Accept recurse into their continuation K only.
-// The delegated protocol T (the session being handed off) is
-// executed by the RECIPIENT; its crash-safety is a check against
-// the recipient's reliability model, not ours.  The walker for our
-// local protocol bypasses T and only considers K, which is what
-// WE still execute after the handoff.
+// Delegate checks BOTH the local continuation K and the delegated
+// protocol T's recipient-crash propagation obligation.  Accept still
+// recurses into K: receiving a handle gives this participant the
+// delegated endpoint, so subsequent crash safety is checked when that
+// endpoint is used as its own local protocol.
 
 namespace crucible::safety::proto::detail::crash {
 
 template <typename T, typename K, typename PeerTag>
 struct all_offers_have_crash_branch<Delegate<T, K>, PeerTag>
-    : all_offers_have_crash_branch<K, PeerTag> {};
+    : std::bool_constant<
+          all_offers_have_crash_branch<K, PeerTag>::value &&
+          ::crucible::safety::proto::detail::delegate_crash::
+              propagation_is_recoverable_v<
+              delegated_crash_propagation_t<T, PeerTag, K>>
+      > {};
 
 template <typename T, typename K, typename PeerTag>
 struct all_offers_have_crash_branch<Accept<T, K>, PeerTag>
@@ -902,6 +1083,51 @@ namespace transport_concept_test {
     static_assert(!TransportForAccept<ValidDelegateTransport,  CarrierRes, DelegatedRes>);
     static_assert(!TransportForAccept<WrongReturnTransport,    CarrierRes, DelegatedRes>);
 }
+
+// ── delegated_crash_propagation ───────────────────────────────────
+
+struct RecipientTag {};
+struct Result {};
+
+using RecvOnlyDelegated = Recv<int, End>;
+using CleanCarrierK = Loop<Send<Result, Continue>>;
+
+static_assert(std::is_same_v<
+    delegated_crash_propagation_t<
+        RecvOnlyDelegated, RecipientTag, CleanCarrierK>,
+    Recovers<CleanCarrierK>>);
+
+using SendingDelegated = Send<int, End>;
+using NoCrashRecoveryK = Recv<Ack, End>;
+
+static_assert(std::is_same_v<
+    delegated_crash_propagation_t<
+        SendingDelegated, RecipientTag, NoCrashRecoveryK>,
+    MustAbort>);
+
+using CrashRecoveringK = Offer<
+    Recv<Ack, End>,
+    Recv<Crash<RecipientTag>, Send<Result, End>>>;
+
+static_assert(std::is_same_v<
+    delegated_crash_propagation_t<
+        SendingDelegated, RecipientTag, CrashRecoveringK>,
+    Recovers<Send<Result, End>>>);
+
+using SenderAnnotatedCrashRecoveringK = Offer<
+    Sender<RecipientTag>,
+    Recv<Ack, End>,
+    Recv<Crash<RecipientTag>, Send<Result, End>>>;
+
+static_assert(std::is_same_v<
+    delegated_crash_propagation_t<
+        SendingDelegated, RecipientTag, SenderAnnotatedCrashRecoveringK>,
+    Recovers<Send<Result, End>>>);
+
+static_assert(std::is_same_v<
+    delegated_crash_propagation_t<
+        Stop, RecipientTag, CrashRecoveringK>,
+    IllFormed>);
 
 }  // namespace detail::delegate_self_test
 #endif  // CRUCIBLE_SESSION_SELF_TESTS

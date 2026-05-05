@@ -115,10 +115,12 @@ static_assert( every_offer_has_crash_branch_for_peer_v<LoopCrashSafe, Unreliable
 using LoopCrashUnsafe = Loop<Offer<Recv<Ping, Continue>>>;
 static_assert(!every_offer_has_crash_branch_for_peer_v<LoopCrashUnsafe, UnreliablePeer>);
 
-// ── 7. Delegate / Accept — walker recurses into K only, not T ──────
+// ── 7. Delegate / Accept — continuation + delegated crash bonding ──
 //
-// Delegated protocol T is executed by the recipient; walker skips it.
-// Continuation K is executed by us; walker recurses into it.
+// Continuation K is executed by us; walker recurses into it.  Delegate
+// also checks the delegated protocol T's recipient-crash propagation:
+// receive-only T can be cleanly abandoned, while outbound T requires
+// K to expose an immediate Crash<Recipient> recovery branch.
 
 // Delegate with a crash-safe continuation — passes.
 using DelegateCrashSafe = Delegate<Recv<Msg, End>, OfferWithCrash>;
@@ -129,11 +131,23 @@ using DelegateCrashUnsafe = Delegate<Recv<Msg, End>, OfferWithoutCrash>;
 static_assert(!every_offer_has_crash_branch_for_peer_v<DelegateCrashUnsafe, UnreliablePeer>);
 
 // Notably: the DELEGATED protocol T (the `Recv<Msg, End>` above) is
-// deliberately SKIPPED by the walker — even if T contained a bad
-// Offer, the walker of the LOCAL protocol doesn't flag it.
+// still not walked as OUR local protocol — even if T contained a bad
+// Offer, that Offer belongs to the recipient-side endpoint.  The
+// delegated-crash classifier separately decides whether recipient
+// failure must be propagated back through K.
 using TWithBadOffer = OfferWithoutCrash;                   // bad at T
 using DelegateSkipsT = Delegate<TWithBadOffer, End>;       // K is End (safe)
 static_assert( every_offer_has_crash_branch_for_peer_v<DelegateSkipsT, UnreliablePeer>);
+
+// If the delegated recipient can emit before finishing, the carrier
+// continuation must expose a recovery branch for that recipient.
+using DelegateRecipientCrashRecovered = Delegate<Send<Msg, End>, OfferWithCrash>;
+static_assert( every_offer_has_crash_branch_for_peer_v<
+    DelegateRecipientCrashRecovered, UnreliablePeer>);
+
+using DelegateRecipientCrashUnrecovered = Delegate<Send<Msg, End>, End>;
+static_assert(!every_offer_has_crash_branch_for_peer_v<
+    DelegateRecipientCrashUnrecovered, UnreliablePeer>);
 
 // Accept: same recursion pattern.
 using AcceptCrashSafe = Accept<Recv<Msg, End>, OfferWithCrash>;
