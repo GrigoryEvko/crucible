@@ -71,9 +71,9 @@
 //
 // ── Status ──────────────────────────────────────────────────────────
 //
-// v1 covers: SPSC, MPSC, MPMC, Snapshot, ChaseLevDeque.
-// v2 deferred: ShardedGrid / CalendarGrid (multi-shard substrates
-//              need per-shard mint factories).
+// v1 covers: SPSC, MPSC, MPMC, Snapshot, ChaseLevDeque, ShardedGrid.
+// v2 deferred: CalendarGrid / ShardedCalendarGrid (calendar substrates
+//              need priority-bucket-indexed mint factories).
 
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
 #include <crucible/concurrent/PermissionedMpscChannel.h>
@@ -85,6 +85,7 @@
 #include <crucible/sessions/ChaseLevDequeSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionMint.h>
+#include <crucible/sessions/ShardedGridSession.h>
 
 #include <cstdint>
 #include <source_location>
@@ -107,12 +108,17 @@ enum class Direction : std::uint8_t {
     Thief       = 5,   // ChaseLevDeque: steal_top only
 };
 
+template <std::size_t I>
+struct ShardId {
+    static constexpr std::size_t value = I;
+};
+
 // ── handle_for<Substr, Dir>: substrate × direction → handle ────────
 //
 // Primary template undefined; partial specs map every recognized
 // (Substrate, Direction) pair.
 
-template <class Substr, Direction Dir>
+template <class Substr, Direction Dir, class Shard = void>
 struct handle_for;
 
 // SPSC: Producer/Consumer
@@ -167,8 +173,46 @@ struct handle_for<PermissionedChaseLevDeque<T, Cap, UserTag>, Direction::Thief> 
     using type = typename PermissionedChaseLevDeque<T, Cap, UserTag>::ThiefHandle;
 };
 
-template <class Substr, Direction Dir>
-using handle_for_t = typename handle_for<Substr, Dir>::type;
+// ShardedGrid: ProducerHandle<I> / ConsumerHandle<J>, where the shard
+// index is explicit in the bridge type through ShardId<I>.
+template <class T,
+          std::size_t M,
+          std::size_t N,
+          std::size_t Cap,
+          class UserTag,
+          class Routing,
+          std::size_t I>
+struct handle_for<PermissionedShardedGrid<T, M, N, Cap, UserTag, Routing>,
+                  Direction::Producer,
+                  ShardId<I>> {
+    static_assert(I < M,
+        "crucible::concurrent::diagnostic "
+        "[ShardedGridBridge_ProducerShardOutOfRange]: producer shard I "
+        "must be less than M.");
+    using type = typename PermissionedShardedGrid<
+        T, M, N, Cap, UserTag, Routing>::template ProducerHandle<I>;
+};
+
+template <class T,
+          std::size_t M,
+          std::size_t N,
+          std::size_t Cap,
+          class UserTag,
+          class Routing,
+          std::size_t J>
+struct handle_for<PermissionedShardedGrid<T, M, N, Cap, UserTag, Routing>,
+                  Direction::Consumer,
+                  ShardId<J>> {
+    static_assert(J < N,
+        "crucible::concurrent::diagnostic "
+        "[ShardedGridBridge_ConsumerShardOutOfRange]: consumer shard J "
+        "must be less than N.");
+    using type = typename PermissionedShardedGrid<
+        T, M, N, Cap, UserTag, Routing>::template ConsumerHandle<J>;
+};
+
+template <class Substr, Direction Dir, class Shard = void>
+using handle_for_t = typename handle_for<Substr, Dir, Shard>::type;
 
 // ── default_proto_for<Substr, Dir>: substrate × direction → proto ──
 //
@@ -182,7 +226,7 @@ using handle_for_t = typename handle_for<Substr, Dir>::type;
 // reason; the channel's Permission discipline at the handle layer
 // handles single-producer-or-multi-producer semantics independently.
 
-template <class Substr, Direction Dir>
+template <class Substr, Direction Dir, class Shard = void>
 struct default_proto_for;
 
 // Producer-side: streaming send loop
@@ -258,8 +302,46 @@ struct default_proto_for<PermissionedChaseLevDeque<T, Cap, UserTag>,
             T, typename PermissionedChaseLevDeque<T, Cap, UserTag>::thief_tag>;
 };
 
-template <class Substr, Direction Dir>
-using default_proto_for_t = typename default_proto_for<Substr, Dir>::type;
+template <class T,
+          std::size_t M,
+          std::size_t N,
+          std::size_t Cap,
+          class UserTag,
+          class Routing,
+          std::size_t I>
+struct default_proto_for<
+    PermissionedShardedGrid<T, M, N, Cap, UserTag, Routing>,
+    Direction::Producer,
+    ShardId<I>> {
+    static_assert(I < M,
+        "crucible::concurrent::diagnostic "
+        "[ShardedGridBridge_ProducerShardOutOfRange]: producer shard I "
+        "must be less than M.");
+    using type =
+        ::crucible::safety::proto::sharded_grid_session::ProducerProto<T>;
+};
+
+template <class T,
+          std::size_t M,
+          std::size_t N,
+          std::size_t Cap,
+          class UserTag,
+          class Routing,
+          std::size_t J>
+struct default_proto_for<
+    PermissionedShardedGrid<T, M, N, Cap, UserTag, Routing>,
+    Direction::Consumer,
+    ShardId<J>> {
+    static_assert(J < N,
+        "crucible::concurrent::diagnostic "
+        "[ShardedGridBridge_ConsumerShardOutOfRange]: consumer shard J "
+        "must be less than N.");
+    using type =
+        ::crucible::safety::proto::sharded_grid_session::ConsumerProto<T>;
+};
+
+template <class Substr, Direction Dir, class Shard = void>
+using default_proto_for_t = typename default_proto_for<Substr, Dir, Shard>::type;
 
 // ── Recognition concept ────────────────────────────────────────────
 //
@@ -275,6 +357,51 @@ concept HasHandleFor = requires { typename handle_for<Substr, Dir>::type; };
 template <class Substr, Direction Dir>
 concept HasDefaultProtoFor = requires { typename default_proto_for<Substr, Dir>::type; };
 
+template <class Substr, class Shard, Direction Dir>
+concept HasShardHandleFor =
+    requires { typename handle_for<Substr, Dir, Shard>::type; };
+
+template <class Substr, class Shard, Direction Dir>
+concept HasShardDefaultProtoFor =
+    requires { typename default_proto_for<Substr, Dir, Shard>::type; };
+
+template <class Substr, class Shard, Direction Dir>
+struct shard_per_call_working_set;
+
+template <class T,
+          std::size_t M,
+          std::size_t N,
+          std::size_t Cap,
+          class UserTag,
+          class Routing,
+          std::size_t I>
+struct shard_per_call_working_set<
+    PermissionedShardedGrid<T, M, N, Cap, UserTag, Routing>,
+    ShardId<I>,
+    Direction::Producer> {
+    static constexpr std::size_t cell =
+        ::crucible::concurrent::detail::cell_line_footprint(sizeof(T));
+    static constexpr std::size_t value =
+        2 * ::crucible::concurrent::detail::kHotPathCacheLineBytes + cell;
+};
+
+template <class T,
+          std::size_t M,
+          std::size_t N,
+          std::size_t Cap,
+          class UserTag,
+          class Routing,
+          std::size_t J>
+struct shard_per_call_working_set<
+    PermissionedShardedGrid<T, M, N, Cap, UserTag, Routing>,
+    ShardId<J>,
+    Direction::Consumer> {
+    static constexpr std::size_t cell =
+        ::crucible::concurrent::detail::cell_line_footprint(sizeof(T));
+    static constexpr std::size_t value =
+        M * (2 * ::crucible::concurrent::detail::kHotPathCacheLineBytes + cell);
+};
+
 }  // namespace detail
 
 template <class Substr, Direction Dir>
@@ -282,6 +409,20 @@ concept IsBridgeableDirection =
     IsSubstrate<Substr>
  && detail::HasHandleFor<Substr, Dir>
  && detail::HasDefaultProtoFor<Substr, Dir>;
+
+template <class Substr, class Shard, Direction Dir>
+concept IsBridgeableShardDirection =
+    ::crucible::safety::proto::sharded_grid_session::
+        ShardedGridSessionSurface<Substr>
+ && detail::HasShardHandleFor<Substr, Shard, Dir>
+ && detail::HasShardDefaultProtoFor<Substr, Shard, Dir>;
+
+template <class Substr, class Shard, Direction Dir, class Ctx>
+concept ShardSubstrateFitsCtxResidency =
+    ::crucible::effects::IsExecCtx<Ctx>
+ && fits_in_tier_v<detail::shard_per_call_working_set<
+                       Substr, Shard, Dir>::value,
+                   ctx_residency_tier<Ctx>()>;
 
 // ── mint_substrate_session<Substr, Dir, LoopCtx>(ctx, handle) ──────
 //
@@ -332,6 +473,29 @@ mint_substrate_session(Ctx const&, handle_for_t<Substr, Dir>& handle) noexcept
             LoopCtx>(&handle, std::source_location::current());
 }
 
+template <class Substr,
+          class Shard,
+          Direction Dir,
+          typename LoopCtx = void,
+          ::crucible::effects::IsExecCtx Ctx>
+    requires IsBridgeableShardDirection<Substr, Shard, Dir>
+          && ShardSubstrateFitsCtxResidency<Substr, Shard, Dir, Ctx>
+          && ::crucible::safety::proto::CtxFitsPermissionedProtocol<
+                 default_proto_for_t<Substr, Dir, Shard>, Ctx,
+                 ::crucible::safety::proto::EmptyPermSet, LoopCtx>
+[[nodiscard]] constexpr auto
+mint_substrate_session(Ctx const&, handle_for_t<Substr, Dir, Shard>& handle) noexcept
+{
+    using Proto = default_proto_for_t<Substr, Dir, Shard>;
+    using Handle = handle_for_t<Substr, Dir, Shard>;
+    return ::crucible::safety::proto::detail::
+        mint_permissioned_session_with_loc<
+            Proto,
+            ::crucible::safety::proto::EmptyPermSet,
+            Handle*,
+            LoopCtx>(&handle, std::source_location::current());
+}
+
 // ── Self-test block ─────────────────────────────────────────────────
 namespace detail::substrate_session_bridge_self_test {
 
@@ -347,6 +511,7 @@ using Mpsc      = PermissionedMpscChannel<int, 64, UserTag>;
 using Mpmc      = PermissionedMpmcChannel<int, 64, UserTag>;
 using SnapT     = PermissionedSnapshot<int, UserTag>;
 using DequeT    = PermissionedChaseLevDeque<int, 64, UserTag>;
+using GridT     = PermissionedShardedGrid<int, 4, 8, 64, UserTag>;
 using NvInt     = ::crucible::safety::Vendor<proto::VendorBackend::NV, int>;
 using AmdInt    = ::crucible::safety::Vendor<proto::VendorBackend::AMD, int>;
 using NvSpsc    = PermissionedSpscChannel<NvInt, 64, UserTag>;
@@ -372,6 +537,10 @@ static_assert(std::is_same_v<handle_for_t<DequeT, Direction::Owner>,
                               typename DequeT::OwnerHandle>);
 static_assert(std::is_same_v<handle_for_t<DequeT, Direction::Thief>,
                               typename DequeT::ThiefHandle>);
+static_assert(std::is_same_v<handle_for_t<GridT, Direction::Producer, ShardId<2>>,
+                              typename GridT::template ProducerHandle<2>>);
+static_assert(std::is_same_v<handle_for_t<GridT, Direction::Consumer, ShardId<7>>,
+                              typename GridT::template ConsumerHandle<7>>);
 
 // ── default_proto_for<> resolves to the canonical Loop<Send/Recv> ──
 
@@ -396,6 +565,12 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     default_proto_for_t<DequeT, Direction::Thief>,
     proto::chaselev_session::ThiefProto<int, DequeT::thief_tag>>);
+static_assert(std::is_same_v<
+    default_proto_for_t<GridT, Direction::Producer, ShardId<2>>,
+    proto::sharded_grid_session::ProducerProto<int>>);
+static_assert(std::is_same_v<
+    default_proto_for_t<GridT, Direction::Consumer, ShardId<7>>,
+    proto::sharded_grid_session::ConsumerProto<int>>);
 
 // ── IsBridgeableDirection concept ──────────────────────────────────
 
@@ -405,6 +580,8 @@ static_assert( IsBridgeableDirection<SnapT, Direction::SwmrWriter>);
 static_assert( IsBridgeableDirection<SnapT, Direction::SwmrReader>);
 static_assert( IsBridgeableDirection<DequeT, Direction::Owner>);
 static_assert( IsBridgeableDirection<DequeT, Direction::Thief>);
+static_assert( IsBridgeableShardDirection<GridT, ShardId<0>, Direction::Producer>);
+static_assert( IsBridgeableShardDirection<GridT, ShardId<7>, Direction::Consumer>);
 
 // SPSC has no SwmrWriter direction; the metafunction resolution fails.
 static_assert(!IsBridgeableDirection<Spsc, Direction::SwmrWriter>);
@@ -413,6 +590,9 @@ static_assert(!IsBridgeableDirection<SnapT, Direction::Producer>);
 // ChaseLevDeque has role-specific Owner/Thief directions only.
 static_assert(!IsBridgeableDirection<DequeT, Direction::Producer>);
 static_assert(!IsBridgeableDirection<DequeT, Direction::Consumer>);
+// ShardedGrid requires an explicit ShardId<I>; the non-indexed form is
+// intentionally not bridgeable.
+static_assert(!IsBridgeableDirection<GridT, Direction::Producer>);
 
 // Non-substrate types are rejected by IsSubstrate gate.
 static_assert(!IsBridgeableDirection<int, Direction::Producer>);
@@ -464,6 +644,25 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     typename DequeThiefSession::protocol,
     proto::Recv<proto::Borrowed<int, DequeT::thief_tag>, proto::Continue>>);
+
+using GridProducerSession = decltype(mint_substrate_session<
+    GridT,
+    ShardId<2>,
+    Direction::Producer>(
+        std::declval<eff::HotFgCtx const&>(),
+        std::declval<handle_for_t<GridT, Direction::Producer, ShardId<2>>&>()));
+using GridConsumerSession = decltype(mint_substrate_session<
+    GridT,
+    ShardId<7>,
+    Direction::Consumer>(
+        std::declval<eff::HotFgCtx const&>(),
+        std::declval<handle_for_t<GridT, Direction::Consumer, ShardId<7>>&>()));
+static_assert(std::is_same_v<
+    typename GridProducerSession::protocol,
+    proto::Send<int, proto::Continue>>);
+static_assert(std::is_same_v<
+    typename GridConsumerSession::protocol,
+    proto::Recv<int, proto::Continue>>);
 
 }  // namespace detail::substrate_session_bridge_self_test
 

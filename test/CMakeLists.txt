@@ -447,6 +447,7 @@ crucible_test(test_permissioned_sharded_grid)
 crucible_test(test_permissioned_chase_lev_deque)
 crucible_test(test_chaselev_deque_session)
 crucible_test(test_chaselev_substrate_session_bridge)
+crucible_test(test_sharded_grid_substrate_session_bridge)
 crucible_test(test_permissioned_cross_primitive)
 crucible_test(test_permissioned_calendar_grid)
 crucible_test(test_scheduler_policies)
@@ -4167,6 +4168,18 @@ crucible_neg_compile_session_test(neg_chaselev_substrate_thief_send
 
 crucible_neg_compile_session_test(neg_chaselev_endpoint_thief_try_send
     "no matching function for call|constraints not satisfied|candidate")
+
+# GAPS-082: indexed ShardedGrid substrate sessions.  ShardId<I>
+# selects the statically-indexed producer/consumer handle, and role
+# misuse remains rejected through the generic bridge.
+crucible_neg_compile_session_test(neg_sharded_grid_substrate_consumer_send
+    "has no member named.*send")
+
+crucible_neg_compile_session_test(neg_sharded_grid_substrate_producer_recv
+    "has no member named.*recv")
+
+crucible_neg_compile_session_test(neg_sharded_grid_bridge_producer_shard_oob
+    "ShardedGridBridge_ProducerShardOutOfRange|producer shard I")
 
 # GAPS-062: ChainEdge one-shot session facade.  SignalerProto is
 # Send-only; WaiterProto is Recv-only.

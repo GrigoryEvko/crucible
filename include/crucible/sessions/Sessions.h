@@ -44,6 +44,8 @@
 //   ChaseLevDequeSession.h  — typed-session facade for
 //                              PermissionedChaseLevDeque owner/thief
 //                              work-stealing roles.
+//   ShardedGridSession.h    — typed-session facade for statically
+//                              indexed PermissionedShardedGrid shards.
 //
 // Hot-path TUs needing a single piece include the targeted header.
 // PermissionedSession.h ships per FOUND-C v1
@@ -76,3 +78,4 @@
 #include <crucible/sessions/ChainEdgeSession.h>
 #include <crucible/sessions/SwmrSession.h>
 #include <crucible/sessions/ChaseLevDequeSession.h>
+#include <crucible/sessions/ShardedGridSession.h>
