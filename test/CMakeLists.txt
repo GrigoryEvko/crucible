@@ -4051,6 +4051,15 @@ crucible_neg_compile_session_test(neg_mint_session_no_ctx
 crucible_neg_compile_session_test(neg_mint_session_ctx_no_admit_proto
     "associated constraints are not satisfied|CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
+crucible_neg_compile_session_test(neg_send_transferable_io_payload_to_pure_ctx
+    "associated constraints are not satisfied|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+
+crucible_neg_compile_session_test(neg_send_borrowed_io_payload_to_pure_ctx
+    "associated constraints are not satisfied|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+
+crucible_neg_compile_session_test(neg_send_returned_io_payload_to_pure_ctx
+    "associated constraints are not satisfied|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+
 crucible_neg_compile_session_test(neg_mint_session_perms_unbalanced
     "associated constraints are not satisfied|CtxFitsPermissionedProtocol|permission_flow_closes")
 

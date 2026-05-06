@@ -949,6 +949,23 @@ static_assert( CtxFitsPermissionedProtocol<
 static_assert(!CtxFitsPermissionedProtocol<
     TransferBgComp, eff::HotFgCtx, PermSet<WorkPerm>>);
 
+using IoComp = eff::Computation<eff::Row<eff::Effect::IO>, int>;
+using TransferIoComp = Send<Transferable<IoComp, WorkPerm>, End>;
+using BorrowedIoComp = Send<Borrowed<IoComp, WorkPerm>, End>;
+using ReturnedIoComp = Send<Returned<IoComp, WorkPerm>, End>;
+static_assert(!CtxFitsProtocol<TransferIoComp, eff::HotFgCtx>);
+static_assert(!CtxFitsProtocol<BorrowedIoComp, eff::HotFgCtx>);
+static_assert(!CtxFitsProtocol<ReturnedIoComp, eff::HotFgCtx>);
+static_assert( CtxFitsProtocol<TransferIoComp, eff::BgCompileCtx>);
+static_assert( CtxFitsProtocol<BorrowedIoComp, eff::BgCompileCtx>);
+static_assert( CtxFitsProtocol<ReturnedIoComp, eff::BgCompileCtx>);
+static_assert( CtxFitsPermissionedProtocol<
+    TransferIoComp, eff::BgCompileCtx, PermSet<WorkPerm>>);
+static_assert( CtxFitsPermissionedProtocol<
+    BorrowedIoComp, eff::BgCompileCtx, EmptyPermSet>);
+static_assert( CtxFitsPermissionedProtocol<
+    ReturnedIoComp, eff::BgCompileCtx, PermSet<WorkPerm>>);
+
 using NvIntPayload =
     ::crucible::safety::Vendor<VendorBackend::NV, int>;
 using AmdIntPayload =

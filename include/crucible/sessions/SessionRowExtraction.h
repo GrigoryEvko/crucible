@@ -453,6 +453,21 @@ static_assert(std::is_same_v<
     payload_row_t<CaRefinedT>,
     eff::Row<eff::Effect::IO>>);
 
+// Permission-flow markers are row-transparent: they move or lend CSL
+// authority, but they must not hide the carried value's effect row from
+// the protocol admission walker.
+struct WirePerm {};
+using IoComp = eff::Computation<eff::Row<eff::Effect::IO>, int>;
+static_assert(std::is_same_v<
+    payload_row_t<Transferable<IoComp, WirePerm>>,
+    eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<
+    payload_row_t<Borrowed<IoComp, WirePerm>>,
+    eff::Row<eff::Effect::IO>>);
+static_assert(std::is_same_v<
+    payload_row_t<Returned<IoComp, WirePerm>>,
+    eff::Row<eff::Effect::IO>>);
+
 // ── AUDIT-2: cross-wrapper soundness — every shipped graded wrapper
 //            propagates inner effect rows transparently ────────────
 //
