@@ -23,6 +23,20 @@ namespace crucible::concurrent {
 
 using ::crucible::algebra::lattices::VendorBackend;
 
+template <VendorBackend Backend, typename UserTag>
+class PermissionedChainEdge;
+
+namespace detail {
+
+class ChainEdgeAccess {
+    constexpr ChainEdgeAccess() noexcept = default;
+
+    template <VendorBackend Backend, typename UserTag>
+    friend class ::crucible::concurrent::PermissionedChainEdge;
+};
+
+}  // namespace detail
+
 struct PlanId {
 private:
     std::uint32_t value_ = 0;
@@ -114,23 +128,37 @@ public:
         };
     }
 
-    void signal(const SemaphoreSignal& signal) noexcept {
-        mimic::detail::semaphore_signal<Backend>(semaphore_, signal.value);
-    }
+    void signal(const SemaphoreSignal&) noexcept
+        = delete("raw ChainEdge::signal is substrate-only; use PermissionedChainEdge::SignalerHandle so the Signaler Permission gates the operation.");
 
-    [[nodiscard]] bool wait(const SemaphoreSignal& signal) const noexcept {
-        return mimic::detail::semaphore_wait<Backend>(semaphore_, signal.value);
-    }
+    [[nodiscard]] bool wait(const SemaphoreSignal&) const noexcept
+        = delete("raw ChainEdge::wait is substrate-only; use PermissionedChainEdge::WaiterHandle so the Waiter Permission gates the operation.");
 
     [[nodiscard]] std::uint64_t current_value() const noexcept {
         return value_.load(std::memory_order_acquire);
     }
 
-    void reset_under_quiescence(std::uint64_t value = 0) noexcept {
+    void reset_under_quiescence(std::uint64_t value = 0) noexcept
+        = delete("raw ChainEdge::reset_under_quiescence is substrate-only; use PermissionedChainEdge::reset_under_quiescence with the Whole Permission.");
+
+private:
+    template <VendorBackend, typename>
+    friend class PermissionedChainEdge;
+
+    void signal(detail::ChainEdgeAccess, const SemaphoreSignal& signal) noexcept {
+        mimic::detail::semaphore_signal<Backend>(semaphore_, signal.value);
+    }
+
+    [[nodiscard]] bool wait(detail::ChainEdgeAccess,
+                            const SemaphoreSignal& signal) const noexcept {
+        return mimic::detail::semaphore_wait<Backend>(semaphore_, signal.value);
+    }
+
+    void reset_under_quiescence(detail::ChainEdgeAccess,
+                                std::uint64_t value = 0) noexcept {
         value_.store(value, std::memory_order_release);
     }
 
-private:
     PlanId upstream_;
     PlanId downstream_;
     ChainEdgeId edge_;

@@ -3929,6 +3929,15 @@ crucible_neg_compile_test(neg_chainedge_signaler_wait
 crucible_neg_compile_test(neg_chainedge_waiter_signal
     "has no member named.*signal")
 
+crucible_neg_compile_test(neg_chainedge_raw_signal
+    "raw ChainEdge::signal is substrate-only")
+
+crucible_neg_compile_test(neg_chainedge_raw_wait
+    "raw ChainEdge::wait is substrate-only")
+
+crucible_neg_compile_test(neg_chainedge_raw_reset
+    "raw ChainEdge::reset_under_quiescence is substrate-only")
+
 # ─── FOUND-E diagnostic infrastructure — neg-compile harness ──────
 #
 # Four fixtures probing diagnostic-misuse paths that the framework

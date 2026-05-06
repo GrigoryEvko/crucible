@@ -71,12 +71,12 @@ public:
         }
 
         void signal(const value_type& signal) noexcept {
-            owner_.edge_.signal(signal);
+            owner_.signal_substrate_(signal);
         }
 
         [[nodiscard]] value_type signal() noexcept {
             value_type signal = expected_signal();
-            owner_.edge_.signal(signal);
+            owner_.signal_substrate_(signal);
             return signal;
         }
 
@@ -111,7 +111,7 @@ public:
         }
 
         [[nodiscard]] bool try_wait(const value_type& signal) const noexcept {
-            return owner_.edge_.wait(signal);
+            return owner_.wait_substrate_(signal);
         }
 
         [[nodiscard]] std::uint64_t current_value() const noexcept {
@@ -129,6 +129,13 @@ public:
         return WaiterHandle{*this, std::move(perm)};
     }
 
+    [[nodiscard]] safety::Permission<whole_tag>
+    reset_under_quiescence(safety::Permission<whole_tag>&& perm,
+                           std::uint64_t value = 0) noexcept {
+        reset_substrate_(value);
+        return std::move(perm);
+    }
+
     [[nodiscard]] edge_type& edge() noexcept {
         return edge_;
     }
@@ -138,6 +145,18 @@ public:
     }
 
 private:
+    void signal_substrate_(const value_type& signal) noexcept {
+        edge_.signal(detail::ChainEdgeAccess{}, signal);
+    }
+
+    [[nodiscard]] bool wait_substrate_(const value_type& signal) const noexcept {
+        return edge_.wait(detail::ChainEdgeAccess{}, signal);
+    }
+
+    void reset_substrate_(std::uint64_t value = 0) noexcept {
+        edge_.reset_under_quiescence(detail::ChainEdgeAccess{}, value);
+    }
+
     edge_type edge_;
 };
 

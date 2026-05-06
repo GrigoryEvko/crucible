@@ -38,20 +38,6 @@ void run_test(const char* name, Body body) {
 }
 
 template <::crucible::concurrent::VendorBackend Backend>
-void test_raw_chainedge_backend() {
-    using namespace ::crucible::concurrent;
-
-    ChainEdge<Backend> edge{PlanId{10}, PlanId{20}, ChainEdgeId{30}, 4};
-    const SemaphoreSignal signal = edge.expected_signal();
-
-    CRUCIBLE_TEST_REQUIRE(!edge.wait(signal));
-    edge.signal(signal);
-    CRUCIBLE_TEST_REQUIRE(edge.wait(signal));
-    CRUCIBLE_TEST_REQUIRE(edge.current_value() == 4);
-    CRUCIBLE_TEST_REQUIRE(signal.backend == Backend);
-}
-
-template <::crucible::concurrent::VendorBackend Backend>
 void test_permissioned_chainedge_backend() {
     using namespace ::crucible::concurrent;
     using ::crucible::safety::mint_permission_root;
@@ -62,6 +48,7 @@ void test_permissioned_chainedge_backend() {
 
     Edge edge{PlanId{11}, PlanId{21}, ChainEdgeId{31}, 5};
     auto whole = mint_permission_root<typename Edge::whole_tag>();
+    whole = edge.reset_under_quiescence(std::move(whole));
     auto [sp, wp] = mint_permission_split<typename Edge::signaler_tag,
                                           typename Edge::waiter_tag>(
         std::move(whole));
@@ -75,6 +62,7 @@ void test_permissioned_chainedge_backend() {
     CRUCIBLE_TEST_REQUIRE(signal.edge == ChainEdgeId{31});
     CRUCIBLE_TEST_REQUIRE(signal.upstream == PlanId{11});
     CRUCIBLE_TEST_REQUIRE(signal.downstream == PlanId{21});
+    CRUCIBLE_TEST_REQUIRE(signal.backend == Backend);
 }
 
 void test_typed_session_round_trip() {
@@ -116,16 +104,20 @@ int main() {
     using ::crucible::concurrent::VendorBackend;
 
     std::fprintf(stderr, "[test_chainedge_session]\n");
-    run_test("raw_cpu", [] { test_raw_chainedge_backend<VendorBackend::CPU>(); });
-    run_test("raw_nv_stub", [] { test_raw_chainedge_backend<VendorBackend::NV>(); });
-    run_test("raw_amd_stub", [] { test_raw_chainedge_backend<VendorBackend::AMD>(); });
-    run_test("raw_tpu_stub", [] { test_raw_chainedge_backend<VendorBackend::TPU>(); });
-    run_test("raw_trn_stub", [] { test_raw_chainedge_backend<VendorBackend::TRN>(); });
     run_test("permissioned_cpu", [] {
         test_permissioned_chainedge_backend<VendorBackend::CPU>();
     });
     run_test("permissioned_nv_stub", [] {
         test_permissioned_chainedge_backend<VendorBackend::NV>();
+    });
+    run_test("permissioned_amd_stub", [] {
+        test_permissioned_chainedge_backend<VendorBackend::AMD>();
+    });
+    run_test("permissioned_tpu_stub", [] {
+        test_permissioned_chainedge_backend<VendorBackend::TPU>();
+    });
+    run_test("permissioned_trn_stub", [] {
+        test_permissioned_chainedge_backend<VendorBackend::TRN>();
     });
     run_test("typed_session_round_trip", test_typed_session_round_trip);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
