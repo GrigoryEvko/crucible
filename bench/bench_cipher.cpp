@@ -70,9 +70,12 @@ int main() {
     }
     std::printf("=== cipher ===\n  tmpdir: %s\n\n", dir);
 
-    // 3 Runs × 2 region sizes = 6 Reports. Each (num_ops) scope holds
-    // its Cipher + warm-region fixture across three IIFE-lambdas.
+    // 5 Runs × 2 region sizes = 10 Reports. Each (num_ops) scope holds
+    // its Cipher + warm-region fixture across the per-size lambdas.
     std::vector<bench::Report> reports;
+    std::size_t idx_256_cold = 0;
+    std::size_t idx_256_warm = 0;
+    std::size_t idx_256_ca_warm = 0;
 
     for (uint32_t num_ops : {16u, 256u}) {
         // Cipher + warm_region live in THIS scope, shared across the
@@ -83,16 +86,22 @@ int main() {
         Arena warm_arena{1 << 18};
         auto* warm_region = synth_region(warm_arena, num_ops, 0xC0FFEE + num_ops);
         (void)cipher.store(warm_region, nullptr);   // prime the warm path
+        const auto warm_payload = Cipher::content_addressed(warm_region);
         const ContentHash warm_h = warm_region->content_hash;
 
         // Cold write: distinct content_hash per iteration, so every
         // sample hits the filesystem. Auto-batch is fine: each body
         // allocates its own arena + region, so state doesn't grow
         // unboundedly across batches.
-        char label_cold[64], label_warm[64], label_read[64];
-        std::snprintf(label_cold, sizeof(label_cold), "store cold  (%u ops, distinct)",  num_ops);
-        std::snprintf(label_warm, sizeof(label_warm), "store warm  (%u ops, dedup hit)", num_ops);
-        std::snprintf(label_read, sizeof(label_read), "load  cold  (%u ops)",            num_ops);
+        char label_cold[64], label_warm[64], label_ca_warm[64];
+        char label_read[64], label_ca_read[64];
+        std::snprintf(label_cold, sizeof(label_cold), "store cold  (%u ops, distinct)",     num_ops);
+        std::snprintf(label_warm, sizeof(label_warm), "store warm  (%u ops, dedup hit)",    num_ops);
+        std::snprintf(label_ca_warm, sizeof(label_ca_warm), "store CA    (%u ops, dedup hit)", num_ops);
+        std::snprintf(label_read, sizeof(label_read), "load  cold  (%u ops)",               num_ops);
+        std::snprintf(label_ca_read, sizeof(label_ca_read), "load  CA    (%u ops, cache hit)", num_ops);
+
+        const std::size_t base_idx = reports.size();
 
         reports.push_back([&]{
             uint64_t salt = static_cast<uint64_t>(num_ops) << 32;
@@ -109,11 +118,29 @@ int main() {
             bench::do_not_optimize(h);
         }));
 
+        reports.push_back(bench::run(label_ca_warm, [&]{
+            auto h = cipher.store(warm_payload, nullptr);
+            bench::do_not_optimize(h);
+        }));
+
         reports.push_back(bench::run(label_read, [&]{
             Arena read_arena{1 << 18};
             auto* r = cipher.load(A, warm_h, read_arena);
             bench::do_not_optimize(r);
         }));
+
+        reports.push_back(bench::run(label_ca_read, [&]{
+            Arena read_arena{1 << 18};
+            auto r = cipher.load_content_addressed(A, warm_h, read_arena);
+            bench::do_not_optimize(r.get());
+            bench::do_not_optimize(r.cache_hit());
+        }));
+
+        if (num_ops == 256u) {
+            idx_256_cold = base_idx;
+            idx_256_warm = base_idx + 1;
+            idx_256_ca_warm = base_idx + 2;
+        }
     }
 
     bench::emit_reports_text(reports);
@@ -122,7 +149,10 @@ int main() {
     // orders of magnitude faster; filesystem::exists + compare vs. a
     // full write.
     std::printf("\n=== compare — store dedup win (256 ops) ===\n  ");
-    bench::compare(reports[3], reports[4]).print_text(stdout);
+    bench::compare(reports[idx_256_cold], reports[idx_256_warm]).print_text(stdout);
+
+    std::printf("\n=== compare — ContentAddressed wrapper overhead (256 ops) ===\n  ");
+    bench::compare(reports[idx_256_warm], reports[idx_256_ca_warm]).print_text(stdout);
 
     std::filesystem::remove_all(dir);
     std::printf("\n%s: cleaned\n", dir);

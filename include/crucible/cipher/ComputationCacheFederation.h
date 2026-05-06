@@ -84,7 +84,7 @@ namespace crucible::cipher::federation {
 template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
 struct ComputationCacheFederationKeyTag {
-    static constexpr auto fn = FnPtr;
+    [[maybe_unused]] static constexpr auto fn = FnPtr;
     using row_type = Row;
 };
 
@@ -105,6 +105,48 @@ template <auto FnPtr, typename Row, typename... Args>
 using ComputationCacheFederationCoordProto =
     ::crucible::safety::proto::federation::CoordProto<
         ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
+
+template <typename Payload>
+class [[nodiscard]] ContentAddressedFederationPayload {
+ public:
+    using value_type = Payload;
+    using payload_type =
+        ::crucible::safety::proto::ContentAddressed<Payload>;
+
+    constexpr ContentAddressedFederationPayload() noexcept = default;
+    constexpr explicit ContentAddressedFederationPayload(
+        std::span<const std::uint8_t> bytes) noexcept
+        : bytes_(bytes) {}
+
+    [[nodiscard]] static constexpr ContentAddressedFederationPayload
+    hash_only() noexcept {
+        return ContentAddressedFederationPayload{};
+    }
+
+    [[nodiscard]] constexpr std::span<const std::uint8_t>
+    bytes() const noexcept {
+        return bytes_;
+    }
+
+    [[nodiscard]] constexpr bool elides_wire_bytes() const noexcept {
+        return bytes_.empty();
+    }
+
+ private:
+    std::span<const std::uint8_t> bytes_{};
+};
+
+template <auto FnPtr, typename Row, typename... Args>
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+using ComputationCacheFederationPayload =
+    ::crucible::safety::proto::federation::FederationEntryPayload<
+        ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
+
+template <auto FnPtr, typename Row, typename... Args>
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+using ComputationCacheFederationContentAddressedPayload =
+    ContentAddressedFederationPayload<
+        ComputationCacheFederationPayload<FnPtr, Row, Args...>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Per-axis projections ────────────────────────────────────────────
@@ -163,11 +205,24 @@ template <auto FnPtr, typename Row, typename... Args>
 [[nodiscard]] inline std::expected<std::size_t, FederationError>
 serialize_computation_cache_federation_entry(
     std::span<std::uint8_t> out_buf,
-    std::span<const std::uint8_t> dispatcher_payload) noexcept {
+    ComputationCacheFederationContentAddressedPayload<
+        FnPtr, Row, Args...> dispatcher_payload) noexcept {
     return serialize_federation_entry(
         out_buf,
         federation_key<FnPtr, Row, Args...>(),
-        dispatcher_payload);
+        dispatcher_payload.bytes());
+}
+
+template <auto FnPtr, typename Row, typename... Args>
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+[[nodiscard]] inline std::expected<std::size_t, FederationError>
+serialize_computation_cache_federation_entry(
+    std::span<std::uint8_t> out_buf,
+    std::span<const std::uint8_t> dispatcher_payload) noexcept {
+    return serialize_computation_cache_federation_entry<FnPtr, Row, Args...>(
+        out_buf,
+        ComputationCacheFederationContentAddressedPayload<
+            FnPtr, Row, Args...>{dispatcher_payload});
 }
 
 // Deserialize is delegated to the I08 codec — the (FnPtr, Row,
@@ -231,6 +286,12 @@ static_assert(::crucible::safety::proto::federation::role_protocol_matches_v<
     ::crucible::safety::proto::federation::SenderRole,
     ComputationCacheFederationSenderProto<&f12_p_unary, EmptyR, int>,
     ComputationCacheFederationKeyTag<&f12_p_unary, EmptyR, int>>);
+static_assert(::crucible::safety::proto::is_content_addressed_v<
+    typename ComputationCacheFederationContentAddressedPayload<
+        &f12_p_unary, EmptyR, int>::payload_type>);
+static_assert(sizeof(ComputationCacheFederationContentAddressedPayload<
+                  &f12_p_unary, EmptyR, int>)
+              == sizeof(std::span<const std::uint8_t>));
 
 // ── Same (FnPtr, Row, Args...) → same key (deterministic) ─────────
 
@@ -365,6 +426,19 @@ inline bool computation_cache_federation_smoke_test() noexcept {
             if (buf_empty[i] != buf_bg[i]) { any_diff = true; break; }
         }
         ok = ok && any_diff;
+    }
+
+    // Content-addressed payload can announce hash-only: the serialized
+    // entry is exactly the 32-byte header and carries zero payload bytes.
+    {
+        std::array<std::uint8_t, 32> buf{};
+        using Payload = ComputationCacheFederationContentAddressedPayload<
+            &f12_p_unary, EmptyR, int>;
+        auto written = serialize_computation_cache_federation_entry<
+            &f12_p_unary, EmptyR, int>(buf, Payload::hash_only());
+        ok = ok && written.has_value();
+        if (!written.has_value()) return false;
+        ok = ok && (*written == FEDERATION_HEADER_BYTES);
     }
 
     return ok;

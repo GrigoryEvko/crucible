@@ -40,19 +40,75 @@
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Wait.h>
+#include <crucible/sessions/SessionContentAddressed.h>
 
 #include <charconv>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <span>
 #include <string>
 #include <system_error>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace crucible {
+
+namespace cipher {
+
+template <typename T>
+class [[nodiscard]] ContentAddressedPayload {
+ public:
+    using value_type = T;
+    using payload_type = safety::proto::ContentAddressed<T>;
+
+    constexpr explicit ContentAddressedPayload(const T* value) noexcept
+        : value_(value) {}
+
+    [[nodiscard]] constexpr const T* get() const noexcept { return value_; }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {
+        return value_ != nullptr;
+    }
+
+ private:
+    const T* value_ = nullptr;
+};
+
+template <typename T>
+class [[nodiscard]] LoadedContentAddressedPayload {
+ public:
+    using value_type = T;
+    using payload_type = safety::proto::ContentAddressed<T>;
+
+    constexpr LoadedContentAddressedPayload() noexcept = default;
+    constexpr LoadedContentAddressedPayload(std::nullptr_t) noexcept {}
+
+    constexpr LoadedContentAddressedPayload(T* value, bool cache_hit) noexcept
+        : value_(value), cache_hit_(cache_hit) {}
+
+    [[nodiscard]] constexpr T* get() const noexcept { return value_; }
+    [[nodiscard]] constexpr bool cache_hit() const noexcept { return cache_hit_; }
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {
+        return value_ != nullptr;
+    }
+    [[nodiscard]] constexpr operator T*() const noexcept { return value_; }
+
+ private:
+    T* value_ = nullptr;
+    bool cache_hit_ = false;
+};
+
+template <typename T>
+[[nodiscard]] constexpr ContentAddressedPayload<T>
+content_addressed_payload(const T* value) noexcept {
+    return ContentAddressedPayload<T>{value};
+}
+
+}  // namespace cipher
 
 // ── Cipher state tag ────────────────────────────────────────────────
 // Open denotes: open() has run, objects/ exists, root_ is non-empty.
@@ -63,6 +119,16 @@ namespace cipher_state {
 
 class CRUCIBLE_OWNER Cipher {
  public:
+    using ContentAddressedRegionPayload =
+        cipher::ContentAddressedPayload<RegionNode>;
+    using LoadedContentAddressedRegionPayload =
+        cipher::LoadedContentAddressedPayload<RegionNode>;
+
+    [[nodiscard]] static constexpr ContentAddressedRegionPayload
+    content_addressed(const RegionNode* region) noexcept {
+        return ContentAddressedRegionPayload{region};
+    }
+
     // Factory: open (or create) a Cipher rooted at `root`.
     // Creates the objects/ subdirectory if absent, loads HEAD + log from disk.
     // gnu::cold: startup-only path, never on the op-dispatch hot path.
@@ -135,8 +201,9 @@ class CRUCIBLE_OWNER Cipher {
 
     // Typed: caller has proved Open.  Zero runtime state check.
     [[nodiscard]] ContentHash store(OpenView const&,
-                                    const RegionNode* region,
+                                    ContentAddressedRegionPayload payload,
                                     const MetaLog* meta_log) {
+        const RegionNode* region = payload.get();
         if (!region) return ContentHash{};
         const ContentHash hash = region->content_hash;
         if (!hash) return ContentHash{};
@@ -163,13 +230,30 @@ class CRUCIBLE_OWNER Cipher {
         if (!f) return ContentHash{};
         f.write(reinterpret_cast<const char*>(buf.data()),
                 static_cast<std::streamsize>(n));
-        return f ? hash : ContentHash{};
+        if (!f) return ContentHash{};
+        remember_cached_bytes(hash, std::span<const uint8_t>{buf.data(), n});
+        return hash;
+    }
+
+    // Raw RegionNode callers are the value-level counterpart of
+    // ContentAddressed<RegionNode>'s subsort-symmetry: existing call
+    // sites keep passing RegionNode*, while the canonical overload
+    // above records the dedup-eligible payload type.
+    [[nodiscard]] ContentHash store(OpenView const& view,
+                                    const RegionNode* region,
+                                    const MetaLog* meta_log) {
+        return store(view, content_addressed(region), meta_log);
     }
 
     // Legacy: mints OpenView locally; fires mint_open_view()'s pre()
     // contract if the Cipher is Closed.
     [[nodiscard]] ContentHash store(const RegionNode* region, const MetaLog* meta_log) {
         return store(mint_open_view(), region, meta_log);
+    }
+
+    [[nodiscard]] ContentHash store(ContentAddressedRegionPayload payload,
+                                    const MetaLog* meta_log) {
+        return store(mint_open_view(), payload, meta_log);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -198,10 +282,17 @@ class CRUCIBLE_OWNER Cipher {
     // Block-tier-pinned store — for new bg / IO-classified call sites.
     [[nodiscard]] safety::Wait<safety::WaitStrategy_v::Block, ContentHash>
     store_pinned(OpenView const& view,
-                 const RegionNode* region,
+                 ContentAddressedRegionPayload payload,
                  const MetaLog* meta_log) {
         return safety::Wait<safety::WaitStrategy_v::Block, ContentHash>{
-            store(view, region, meta_log)};
+            store(view, payload, meta_log)};
+    }
+
+    [[nodiscard]] safety::Wait<safety::WaitStrategy_v::Block, ContentHash>
+    store_pinned(OpenView const& view,
+                 const RegionNode* region,
+                 const MetaLog* meta_log) {
+        return store_pinned(view, content_addressed(region), meta_log);
     }
 
     // Legacy-shape pinned variant — mints view locally.
@@ -209,6 +300,12 @@ class CRUCIBLE_OWNER Cipher {
     store_pinned(const RegionNode* region, const MetaLog* meta_log) {
         return safety::Wait<safety::WaitStrategy_v::Block, ContentHash>{
             store(region, meta_log)};
+    }
+
+    [[nodiscard]] safety::Wait<safety::WaitStrategy_v::Block, ContentHash>
+    store_pinned(ContentAddressedRegionPayload payload, const MetaLog* meta_log) {
+        return safety::Wait<safety::WaitStrategy_v::Block, ContentHash>{
+            store(payload, meta_log)};
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -278,10 +375,17 @@ class CRUCIBLE_OWNER Cipher {
     // Warm-tier publish — REAL implementation (forwards to store()).
     [[nodiscard]] safety::cipher_tier::Warm<ContentHash>
     publish_warm(OpenView const& view,
-                 const RegionNode* region,
+                 ContentAddressedRegionPayload payload,
                  const MetaLog* meta_log) {
         return safety::cipher_tier::Warm<ContentHash>{
-            store(view, region, meta_log)};
+            store(view, payload, meta_log)};
+    }
+
+    [[nodiscard]] safety::cipher_tier::Warm<ContentHash>
+    publish_warm(OpenView const& view,
+                 const RegionNode* region,
+                 const MetaLog* meta_log) {
+        return publish_warm(view, content_addressed(region), meta_log);
     }
 
     // Legacy-shape Warm publish — mints view locally.
@@ -289,6 +393,12 @@ class CRUCIBLE_OWNER Cipher {
     publish_warm(const RegionNode* region, const MetaLog* meta_log) {
         return safety::cipher_tier::Warm<ContentHash>{
             store(region, meta_log)};
+    }
+
+    [[nodiscard]] safety::cipher_tier::Warm<ContentHash>
+    publish_warm(ContentAddressedRegionPayload payload, const MetaLog* meta_log) {
+        return safety::cipher_tier::Warm<ContentHash>{
+            store(payload, meta_log)};
     }
 
     // Hot-tier publish — Phase 5 STUB.
@@ -300,7 +410,7 @@ class CRUCIBLE_OWNER Cipher {
     // change required because the type signature is stable.
     [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
     publish_hot(OpenView const&,
-                const RegionNode* /*region*/,
+                ContentAddressedRegionPayload /*payload*/,
                 const MetaLog* /*meta_log*/) noexcept {
         // Phase 5: invoke peer-RAM RAID replication here, returning
         // the ContentHash of the replicated shard.  Until then, the
@@ -309,10 +419,23 @@ class CRUCIBLE_OWNER Cipher {
         return safety::cipher_tier::Hot<ContentHash>{ContentHash{}};
     }
 
+    [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
+    publish_hot(OpenView const& view,
+                const RegionNode* region,
+                const MetaLog* meta_log) noexcept {
+        return publish_hot(view, content_addressed(region), meta_log);
+    }
+
     // Legacy-shape Hot publish.
     [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
-    publish_hot(const RegionNode* /*region*/, const MetaLog* /*meta_log*/) noexcept {
+    publish_hot(ContentAddressedRegionPayload /*payload*/,
+                const MetaLog* /*meta_log*/) noexcept {
         return safety::cipher_tier::Hot<ContentHash>{ContentHash{}};
+    }
+
+    [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
+    publish_hot(const RegionNode* region, const MetaLog* meta_log) noexcept {
+        return publish_hot(content_addressed(region), meta_log);
     }
 
     // Cold-tier publish — Phase 5 STUB.
@@ -322,16 +445,29 @@ class CRUCIBLE_OWNER Cipher {
     // region into durable storage; no caller change required.
     [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
     publish_cold(OpenView const&,
-                 const RegionNode* /*region*/,
+                 ContentAddressedRegionPayload /*payload*/,
                  const MetaLog* /*meta_log*/) noexcept {
         // Phase 5: durable-storage PUT here.
         return safety::cipher_tier::Cold<ContentHash>{ContentHash{}};
     }
 
+    [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
+    publish_cold(OpenView const& view,
+                 const RegionNode* region,
+                 const MetaLog* meta_log) noexcept {
+        return publish_cold(view, content_addressed(region), meta_log);
+    }
+
     // Legacy-shape Cold publish.
     [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
-    publish_cold(const RegionNode* /*region*/, const MetaLog* /*meta_log*/) noexcept {
+    publish_cold(ContentAddressedRegionPayload /*payload*/,
+                 const MetaLog* /*meta_log*/) noexcept {
         return safety::cipher_tier::Cold<ContentHash>{ContentHash{}};
+    }
+
+    [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
+    publish_cold(const RegionNode* region, const MetaLog* meta_log) noexcept {
+        return publish_cold(content_addressed(region), meta_log);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -490,19 +626,29 @@ class CRUCIBLE_OWNER Cipher {
         crucible::safety::bounded_above<MAX_OBJECT_BYTES>, size_t>;
 
     // Typed: caller has proved Open.  const because deserialize does
-    // not mutate the Cipher (it only reads paths under root_).
+    // not mutate the durable Cipher state. The resident byte cache is
+    // mutable process-local acceleration for the ContentAddressed
+    // quotient: a cache hit materializes from bytes already observed
+    // under this hash and performs no filesystem fetch.
     //
-    // Source tag boundary: buf holds source::External bytes (disk, not
-    // yet validated).  deserialize_region IS the External→Sanitized
-    // transition — its bounds-checked Reader rejects truncated input,
-    // and Serialize's pre-flight size checks reject adversarial num_slots
-    // claims.  On success, the returned RegionNode* carries Sanitized
-    // contents (ndim ≤ 8 per-meta, num_ops ≤ CDAG_MAX_OPS, etc.).  On
-    // any failure along the way: nullptr, no state change, no partial
-    // arena growth (see Serialize.h pre-flight).
-    [[nodiscard]] RegionNode* load(OpenView const&, effects::Alloc a,
-                                   ContentHash content_hash, Arena& arena) const {
+    // Source tag boundary: disk bytes are source::External until
+    // deserialize_region validates their semantic structure. Cached
+    // bytes were previously accepted by the same serializer or
+    // deserializer path under the same ContentHash; deserialization
+    // remains the Sanitized transition for the returned RegionNode*.
+    [[nodiscard]] LoadedContentAddressedRegionPayload
+    load_content_addressed(OpenView const&, effects::Alloc a,
+                           ContentHash content_hash, Arena& arena) const {
         if (!content_hash) return nullptr;
+
+        const std::span<const uint8_t> cached = cached_bytes(content_hash);
+        if (!cached.empty()) {
+            RegionNode* region = deserialize_region(a, cached, arena);
+            if (region) {
+                return LoadedContentAddressedRegionPayload{region, true};
+            }
+        }
+
         const std::string path = obj_path(content_hash.raw());
         if (!std::filesystem::exists(path)) return nullptr;
 
@@ -530,7 +676,21 @@ class CRUCIBLE_OWNER Cipher {
                static_cast<std::streamsize>(validated_len.value()));
         if (!f) return nullptr;
 
-        return deserialize_region(a, std::span<const uint8_t>{buf}, arena);
+        RegionNode* region = deserialize_region(a, std::span<const uint8_t>{buf}, arena);
+        if (!region) return nullptr;
+        remember_cached_bytes(content_hash, std::span<const uint8_t>{buf});
+        return LoadedContentAddressedRegionPayload{region, false};
+    }
+
+    [[nodiscard]] LoadedContentAddressedRegionPayload
+    load_content_addressed(effects::Alloc a, ContentHash content_hash,
+                           Arena& arena) const {
+        return load_content_addressed(mint_open_view(), a, content_hash, arena);
+    }
+
+    [[nodiscard]] RegionNode* load(OpenView const& view, effects::Alloc a,
+                                   ContentHash content_hash, Arena& arena) const {
+        return load_content_addressed(view, a, content_hash, arena).get();
     }
 
     // Legacy: mints OpenView locally.  const because mint_open_view()
@@ -725,6 +885,14 @@ class CRUCIBLE_OWNER Cipher {
         uint64_t    ts_ns;
     };
 
+    struct CachedObjectBytes {
+        ContentHash          hash;
+        std::vector<uint8_t> bytes;
+    };
+
+    static constexpr size_t MAX_RESIDENT_CACHE_BYTES = size_t{8} << 20;
+    static constexpr size_t MAX_RESIDENT_CACHE_ENTRIES = 64;
+
     // Stateless projection used by OrderedAppendOnly below.  hash_at_step()
     // binary-searches the log on step_id; that search requires monotonic
     // non-decreasing step_id across the entire log.  Projecting step_id
@@ -756,11 +924,47 @@ class CRUCIBLE_OWNER Cipher {
     // type; .erase() / .clear() / out-of-order .append() all fail at
     // compile time (the first two) or contract-terminate (the third).
     crucible::safety::OrderedAppendOnly<LogEntry, LogEntryByStepId> log_;
+    mutable std::vector<CachedObjectBytes> resident_cache_;
+    mutable size_t resident_cache_bytes_ = 0;
 
     // Path: root_/objects/<first2hex>/<remaining14hex>
     std::string obj_path(uint64_t hash) const {
         auto hex = std::format("{:016x}", hash);
         return root_str() + "/objects/" + hex.substr(0, 2) + "/" + hex.substr(2);
+    }
+
+    [[nodiscard]] std::span<const uint8_t>
+    cached_bytes(ContentHash hash) const noexcept {
+        for (const CachedObjectBytes& entry : resident_cache_) {
+            if (entry.hash == hash) {
+                return std::span<const uint8_t>{entry.bytes};
+            }
+        }
+        return {};
+    }
+
+    void remember_cached_bytes(ContentHash hash,
+                               std::span<const uint8_t> bytes) const {
+        if (!hash || bytes.empty() || bytes.size() > MAX_RESIDENT_CACHE_BYTES) {
+            return;
+        }
+        for (const CachedObjectBytes& entry : resident_cache_) {
+            if (entry.hash == hash) return;
+        }
+
+        while (!resident_cache_.empty()
+               && (resident_cache_.size() >= MAX_RESIDENT_CACHE_ENTRIES
+                   || resident_cache_bytes_ + bytes.size()
+                          > MAX_RESIDENT_CACHE_BYTES)) {
+            resident_cache_bytes_ -= resident_cache_.front().bytes.size();
+            resident_cache_.erase(resident_cache_.begin());
+        }
+
+        resident_cache_bytes_ += bytes.size();
+        resident_cache_.push_back(CachedObjectBytes{
+            .hash = hash,
+            .bytes = std::vector<uint8_t>(bytes.begin(), bytes.end()),
+        });
     }
 
     // Parse a single uint64_t field via std::from_chars — exception-free
@@ -851,5 +1055,11 @@ class CRUCIBLE_OWNER Cipher {
 
 // Tier 2 opt-in: nothing inside Cipher may be a ScopedView.
 static_assert(crucible::safety::no_scoped_view_field_check<Cipher>());
+static_assert(sizeof(Cipher::ContentAddressedRegionPayload)
+              == sizeof(const RegionNode*));
+static_assert(crucible::safety::proto::is_content_addressed_v<
+    typename Cipher::ContentAddressedRegionPayload::payload_type>);
+static_assert(crucible::safety::proto::is_content_addressed_v<
+    typename Cipher::LoadedContentAddressedRegionPayload::payload_type>);
 
 } // namespace crucible

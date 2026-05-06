@@ -35,6 +35,8 @@
 //   T14 — runtime smoke test (header-defined fixture)
 //   T15 — view payload aliases input buffer (zero-copy semantics
 //         inherited from I08)
+//   T16 — content-addressed payload overload emits header-only hash
+//         announcement when receiver already has the hash
 
 #include <crucible/cipher/ComputationCacheFederation.h>
 #include <crucible/cipher/ComputationCache.h>
@@ -350,6 +352,50 @@ static void test_t15_payload_aliases_input() {
     std::printf("  T15 payload_aliases_input:                   PASSED\n");
 }
 
+// ─────────────────────────────────────────────────────────────────────
+// T16 — ContentAddressed federation payload.  The typed overload names
+// ContentAddressed<FederationEntryPayload<KeyTag>> at compile time and
+// keeps the runtime carrier span-sized.  hash_only() emits a header-only
+// entry: content_hash + row_hash cross the wire, payload bytes do not.
+
+static void test_t16_content_addressed_payload_elision() {
+    using Payload =
+        fed::ComputationCacheFederationContentAddressedPayload<
+            &t_unary, R0, int>;
+    static_assert(crucible::safety::proto::is_content_addressed_v<
+        typename Payload::payload_type>);
+    static_assert(sizeof(Payload) == sizeof(std::span<const std::uint8_t>));
+
+    const std::array<std::uint8_t, 16> body = {
+        0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7,
+        0xA8, 0xA9, 0xAA, 0xAB, 0xAC, 0xAD, 0xAE, 0xAF,
+    };
+
+    std::array<std::uint8_t, 64> full_buf{};
+    auto full_written = fed::serialize_computation_cache_federation_entry<
+        &t_unary, R0, int>(full_buf, Payload{body});
+    ASSERT_TRUE(full_written.has_value());
+    assert(*full_written == fed::FEDERATION_HEADER_BYTES + body.size());
+
+    std::array<std::uint8_t, 64> hash_only_buf{};
+    auto hash_only_written = fed::serialize_computation_cache_federation_entry<
+        &t_unary, R0, int>(hash_only_buf, Payload::hash_only());
+    ASSERT_TRUE(hash_only_written.has_value());
+    assert(*hash_only_written == fed::FEDERATION_HEADER_BYTES);
+
+    auto view = fed::deserialize_federation_entry(
+        std::span<const std::uint8_t>(hash_only_buf.data(), *hash_only_written),
+        static_cast<std::uint16_t>(eff::OsUniverse::cardinality));
+    ASSERT_TRUE(view.has_value());
+    assert(view->payload.empty());
+    assert((view->header.content_hash
+            == fed::federation_key<&t_unary, R0, int>().content_hash));
+    assert((view->header.row_hash
+            == fed::federation_key<&t_unary, R0, int>().row_hash));
+
+    std::printf("  T16 content_addressed_payload_elision:       PASSED\n");
+}
+
 // ═════════════════════════════════════════════════════════════════════
 // ── FOUND-F12-AUDIT — per-axis isolation + wire-byte fences ────────
 // ═════════════════════════════════════════════════════════════════════
@@ -612,11 +658,12 @@ int main() {
     test_t13_composes_with_f11_cache_key();
     test_t14_header_smoke_test();
     test_t15_payload_aliases_input();
+    test_t16_content_addressed_payload_elision();
     test_audit_a_content_axis_row_isolation();
     test_audit_b_wire_byte_offset_stability();
     test_audit_c_cross_universe_cardinality_rejection();
     test_audit_d_row_permutation_byte_invariance();
     test_audit_e_saturation_row_round_trip();
-    std::printf("test_computation_cache_federation: 20 groups, all passed\n");
+    std::printf("test_computation_cache_federation: 21 groups, all passed\n");
     return 0;
 }

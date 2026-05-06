@@ -7,6 +7,9 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <string>
+#include <type_traits>
 
 static crucible::effects::Test g_test;
 
@@ -46,6 +49,22 @@ static crucible::RegionNode* make_test_region(crucible::Arena& arena) {
     return region;
 }
 
+static std::string object_path(const char* dir, crucible::ContentHash hash) {
+    char hex[17];
+    std::snprintf(hex, sizeof(hex), "%016" PRIx64, hash.raw());
+    return std::string(dir) + "/objects/" + std::string(hex, 2) + "/" + (hex + 2);
+}
+
+static_assert(crucible::safety::proto::is_content_addressed_v<
+    typename crucible::Cipher::ContentAddressedRegionPayload::payload_type>);
+static_assert(crucible::safety::proto::is_content_addressed_v<
+    typename crucible::Cipher::LoadedContentAddressedRegionPayload::payload_type>);
+static_assert(crucible::safety::proto::is_subsort_v<
+    crucible::RegionNode,
+    typename crucible::Cipher::ContentAddressedRegionPayload::payload_type>);
+static_assert(sizeof(crucible::Cipher::ContentAddressedRegionPayload)
+              == sizeof(const crucible::RegionNode*));
+
 int main() {
     // Create a temporary directory for this test.
     char tmpdir[] = "/tmp/crucible_cipher_XXXXXX";
@@ -73,11 +92,7 @@ int main() {
         assert(stored_hash == expected_hash);
 
         // Object file must exist at the expected shard path.
-        char hex[17];
-        std::snprintf(hex, sizeof(hex), "%016" PRIx64, expected_hash.raw());
-        const std::string expected_path =
-            std::string(dir) + "/objects/" +
-            std::string(hex, 2) + "/" + (hex + 2);
+        const std::string expected_path = object_path(dir, expected_hash);
         assert(std::filesystem::exists(expected_path)
                && "serialized object file must exist after store()");
 
@@ -148,6 +163,77 @@ int main() {
         auto cipher = crucible::Cipher::open(dir);
         crucible::Arena arena3(1 << 16);
         assert(cipher.load(g_test.alloc, crucible::ContentHash{0xBADBADBADBADBAD0ULL}, arena3) == nullptr);
+    }
+
+    // ── ContentAddressed store/load: duplicate write and cache-hit read ─
+    {
+        char tmpl_ca[] = "/tmp/crucible_cipher_ca_XXXXXX";
+        char* dir_ca = mkdtemp(tmpl_ca);
+        assert(dir_ca != nullptr);
+
+        crucible::Arena ca_arena(1 << 16);
+        auto* ca_region = make_test_region(ca_arena);
+        const auto ca_payload = crucible::Cipher::content_addressed(ca_region);
+
+        auto cipher = crucible::Cipher::open(dir_ca);
+        const crucible::ContentHash hash = cipher.store(ca_payload, nullptr);
+        assert(hash == ca_region->content_hash);
+
+        const std::string path = object_path(dir_ca, hash);
+        assert(std::filesystem::exists(path));
+
+        {
+            std::ofstream f(path, std::ios::binary | std::ios::trunc);
+            f << "hash-only";
+        }
+        const auto corrupted_size = std::filesystem::file_size(path);
+
+        const crucible::ContentHash second = cipher.store(ca_payload, nullptr);
+        assert(second == hash);
+        assert(std::filesystem::file_size(path) == corrupted_size
+               && "duplicate ContentAddressed store must not rewrite bytes");
+
+        std::filesystem::remove(path);
+        crucible::Arena read_arena(1 << 16);
+        auto loaded = cipher.load_content_addressed(
+            g_test.alloc, hash, read_arena);
+        assert(loaded.cache_hit()
+               && "resident ContentAddressed bytes must avoid disk fetch");
+        assert(loaded.get() != nullptr);
+        assert(loaded.get()->content_hash == hash);
+
+        std::filesystem::remove_all(dir_ca);
+    }
+
+    // ── Two Cipher instances: receiver cache admits hash-only transfer ──
+    {
+        char sender_tmpl[] = "/tmp/crucible_cipher_sender_XXXXXX";
+        char receiver_tmpl[] = "/tmp/crucible_cipher_receiver_XXXXXX";
+        char* sender_dir = mkdtemp(sender_tmpl);
+        char* receiver_dir = mkdtemp(receiver_tmpl);
+        assert(sender_dir != nullptr);
+        assert(receiver_dir != nullptr);
+
+        crucible::Arena ca_arena(1 << 16);
+        auto* ca_region = make_test_region(ca_arena);
+        const auto ca_payload = crucible::Cipher::content_addressed(ca_region);
+
+        auto sender = crucible::Cipher::open(sender_dir);
+        auto receiver = crucible::Cipher::open(receiver_dir);
+        const crucible::ContentHash sender_hash = sender.store(ca_payload, nullptr);
+        const crucible::ContentHash receiver_hash = receiver.store(ca_payload, nullptr);
+        assert(sender_hash == receiver_hash);
+
+        std::filesystem::remove(object_path(receiver_dir, receiver_hash));
+        crucible::Arena read_arena(1 << 16);
+        auto loaded = receiver.load_content_addressed(
+            g_test.alloc, sender_hash, read_arena);
+        assert(loaded.cache_hit());
+        assert(loaded.get() != nullptr);
+        assert(loaded.get()->content_hash == sender_hash);
+
+        std::filesystem::remove_all(sender_dir);
+        std::filesystem::remove_all(receiver_dir);
     }
 
     // ── Closed→Open state machine ────────────────────────────────────

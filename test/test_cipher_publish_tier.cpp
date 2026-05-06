@@ -453,6 +453,35 @@ static void test_cannot_tighten_to_stronger_tier() {
     static_assert(!can_tighten<ColdT, CipherTierTag_v::Hot>);
 }
 
+// ── T18 — ContentAddressed payload overloads preserve tier surface ─
+static void test_content_addressed_publish_overloads(const char* dir) {
+    Arena arena(1 << 16);
+    auto* region = make_test_region(arena, 18);
+    const auto payload = Cipher::content_addressed(region);
+    auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
+
+    using Payload = decltype(payload);
+    static_assert(crucible::safety::proto::is_content_addressed_v<
+        typename Payload::payload_type>);
+
+    using WarmGot = decltype(cipher.publish_warm(view, payload, nullptr));
+    using HotGot = decltype(cipher.publish_hot(view, payload, nullptr));
+    using ColdGot = decltype(cipher.publish_cold(view, payload, nullptr));
+    static_assert(std::is_same_v<
+        WarmGot, CipherTier<CipherTierTag_v::Warm, ContentHash>>);
+    static_assert(std::is_same_v<
+        HotGot, CipherTier<CipherTierTag_v::Hot, ContentHash>>);
+    static_assert(std::is_same_v<
+        ColdGot, CipherTier<CipherTierTag_v::Cold, ContentHash>>);
+
+    ContentHash warm_hash =
+        std::move(cipher.publish_warm(view, payload, nullptr)).consume();
+    assert(static_cast<bool>(warm_hash));
+    (void)std::move(cipher.publish_hot(view, payload, nullptr)).consume();
+    (void)std::move(cipher.publish_cold(view, payload, nullptr)).consume();
+}
+
 int main() {
     char tmpdir[] = "/tmp/crucible_cipher_publish_XXXXXX";
     char* dir = mkdtemp(tmpdir);
@@ -475,6 +504,7 @@ int main() {
     test_replay_engine_admits_all_tiers(dir);
     test_sequential_three_tier_publish(dir);
     test_cannot_tighten_to_stronger_tier();
+    test_content_addressed_publish_overloads(dir);
 
     std::filesystem::remove_all(dir);
     std::puts("ok");
