@@ -893,6 +893,24 @@ crucible_neg_compile_session_test(neg_crashwatched_class_lattice_violation
 crucible_neg_compile_session_test(neg_crashwatched_stop_class_mismatch
     "CrashWatched_StopClass_Mismatch")
 
+# GAPS-066: NumericalTier Send covariance / Recv contravariance and
+# channel-boundary fixtures.  These pin the compile-time recipe-tier
+# discipline that feeds MIMIC §41: weak producers cannot satisfy strict
+# receivers, bare payloads cannot regain tier evidence, and loop
+# composition cannot hide a downgrade.
+crucible_neg_compile_session_test(neg_send_weaker_tier_to_recv_stronger
+    "NumericalTier_ChannelBoundary_ProducerTierTooWeak")
+crucible_neg_compile_session_test(neg_recv_promotes_unauthorized
+    "NumericalTier_RecvPromotion_RequiresTightening")
+crucible_neg_compile_session_test(neg_session_subtype_tier_mismatch
+    "NumericalTier_SendSubtype_ProducerTierTooWeak")
+crucible_neg_compile_session_test(neg_payload_unwrap_loses_tier
+    "NumericalTier_BarePayload_CannotGainTier")
+crucible_neg_compile_session_test(neg_default_recipe_to_strict_recv
+    "NumericalTier_DefaultRecipe_CannotSatisfyStrictRecv")
+crucible_neg_compile_session_test(neg_tier_compose_in_loop
+    "NumericalTier_LoopBody_TierDowngrade")
+
 # FOUND-B13 (#602): Met(X) negative-compile witnesses.  Three
 # fixtures probing the Subrow / IsEffect concept gates that enforce
 # the substitution principle for capability propagation.

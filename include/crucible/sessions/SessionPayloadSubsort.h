@@ -66,7 +66,20 @@
 //                                              producer may stand where an
 //                                              unordered/relaxed consumer is
 //                                              expected; the reverse is
-//                                              rejected.
+//                                              rejected.  SessionSubtype.h
+//                                              then lifts this one payload
+//                                              axiom through Send's covariance
+//                                              and Recv's contravariance:
+//
+//                                                Send<Tight, K> ⩽ Send<Loose, K>
+//                                                Recv<Loose, K> ⩽ Recv<Tight, K>
+//
+//                                              At a client/server boundary,
+//                                              CompatibleClient<Send<P>, Recv<C>>
+//                                              therefore holds exactly when
+//                                              P ⩽ C: the producer's pinned
+//                                              tier is at least as strict as
+//                                              the receiver's requirement.
 //
 //   *  T                        ⩽  Tagged<T, V>  DELIBERATELY ABSENT
 //                                              for every V — the
@@ -267,8 +280,15 @@ struct is_subsort<Refined<Pred, Tagged<T, V>>, Tagged<T, V>>
 // ═════════════════════════════════════════════════════════════════════
 //
 // ToleranceLattice orders loose ⊑ tight: a tighter producer guarantee
-// satisfies a looser consumer requirement.  Therefore the subsort
-// direction is ConsumerTier ⊑ ProducerTier.
+// satisfies a looser consumer requirement.  Therefore the value-level
+// subsort direction is ConsumerTier ⊑ ProducerTier.
+//
+// Do NOT add a protocol-shaped `is_subsort<Recv<...>, Recv<...>>`
+// axiom here.  Recv is a session combinator, not a payload wrapper;
+// its contravariance lives in SessionSubtype.h and consumes this
+// single payload axiom.  Keeping the layers separated prevents
+// higher-order protocol markers from accidentally flowing as ordinary
+// payload values.
 
 template <Tolerance ProducerTier, Tolerance ConsumerTier, typename P>
 struct is_subsort<NumericalTier<ProducerTier, P>,
@@ -413,6 +433,30 @@ static_assert( is_subtype_sync_v<
 static_assert(!is_subtype_sync_v<
     Recv<BitexactTile, End>,
     Recv<RelaxedTile, End>>);
+
+static_assert( CompatibleClient<
+    Send<BitexactTile, End>,
+    Recv<RelaxedTile, End>>);
+
+static_assert(!CompatibleClient<
+    Send<RelaxedTile, End>,
+    Recv<BitexactTile, End>>);
+
+static_assert( CompatibleServer<
+    Recv<RelaxedTile, End>,
+    Send<BitexactTile, End>>);
+
+static_assert(!CompatibleServer<
+    Recv<BitexactTile, End>,
+    Send<RelaxedTile, End>>);
+
+static_assert( CompatibleClient<
+    Loop<Send<BitexactTile, Continue>>,
+    Loop<Recv<RelaxedTile, Continue>>>);
+
+static_assert(!CompatibleClient<
+    Loop<Send<RelaxedTile, Continue>>,
+    Loop<Recv<BitexactTile, Continue>>>);
 
 // ── Different tags are unrelated ───────────────────────────────────
 
