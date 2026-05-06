@@ -713,6 +713,12 @@ crucible_test(test_session_payload_subsort)
 # protocol handles without firing the abandonment-check.
 crucible_test(test_machine_session_bridge)
 
+# Vigil mode bridge — production atomic-aware MachineSessionBridge
+# wiring over Vigil::ModeCell.  Verifies the live RECORDING <->
+# COMPILED mode cycle through a session handle without adding state to
+# Vigil or reviving stale REPLAYING/SERVING persistent modes.
+crucible_test(test_vigil_mode_bridge)
+
 # Non-consuming protocol-position views (#405, SAFEINT-B16).
 # Position-tagged ScopedView<SessionHandle, At*> borrows that let
 # external code inspect a handle's protocol position without
@@ -3728,6 +3734,10 @@ crucible_neg_compile_test(neg_publish_slot_copy_attempt
     "publication slot identity cannot be copied")
 crucible_neg_compile_test(neg_vigil_copy_attempt
     "Vigil owns the runtime organism; not copyable")
+crucible_neg_compile_test(neg_vigil_mode_bridge_illegal_transition
+    "VigilModeBridge_IllegalTransition|use of deleted function")
+crucible_neg_compile_test(neg_vigil_mode_bridge_branch_out_of_range
+    "Branch_Index_Out_Of_Range|branch index")
 
 # GAPS-044 — Permission inheritance is explicit and acyclic.  Crash-stop
 # recovery may mint survivor permissions only for declared inheritance

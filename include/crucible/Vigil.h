@@ -12,7 +12,13 @@
 // Vigil exposes three operational modes:
 //   RECORDING  → Vessel dispatches ops normally; every op calls record_op().
 //   COMPILED   → Active region is live; replay() drives execution.
-//   DIVERGED   → Guard mismatch during replay; fallback to RECORDING.
+//   DIVERGED   → transient replay status; persistent mode falls back to
+//                RECORDING after divergence handling.
+//
+// The persistent mode cell is also exposed as a single-party session via
+// mint_vigil_mode_bridge(vigil).  That bridge is for cold observers
+// (Augur/Keeper/test harnesses); the foreground dispatch path still reads
+// the status flag directly.
 //
 // The Vessel adapter (PyTorch CrucibleFallback) becomes ~200 lines:
 //   if (vigil.is_compiled()) { push_shadow_handles(); return; }
@@ -32,6 +38,7 @@
 #include <crucible/RegionCache.h>
 #include <crucible/TraceRing.h>
 #include <crucible/Transaction.h>
+#include <crucible/bridges/MachineSessionBridge.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/FxAliases.h>
 #include <crucible/handles/PublishOnce.h>
@@ -46,6 +53,7 @@
 #include <memory>
 #include <optional>
 #include <thread>
+#include <type_traits>
 #include <utility>  // std::unreachable
 
 namespace crucible {
@@ -58,19 +66,56 @@ class Vigil {
         DIVERGED,    // guard mismatch, fell back from COMPILED
     };
 
- private:
+    static consteval bool mode_transition_allowed(Mode from,
+                                                  Mode to) noexcept {
+        return (from == Mode::RECORDING && to == Mode::COMPILED)
+            || (from == Mode::COMPILED && to == Mode::RECORDING);
+    }
+
+    template <Mode From, Mode To>
+    struct ModeTransition {
+        static_assert(mode_transition_allowed(From, To),
+            "crucible::vigil::diagnostic "
+            "[VigilModeBridge_IllegalTransition]: persistent Vigil mode "
+            "transitions are RECORDING -> COMPILED and COMPILED -> "
+            "RECORDING only. DIVERGED is a replay status, not a persistent "
+            "mode; SERVING/REPLAYING are stale design-doc modes.");
+        static constexpr Mode from = From;
+        static constexpr Mode to = To;
+    };
+
+    using ModeRecordingToCompiled =
+        ModeTransition<Mode::RECORDING, Mode::COMPILED>;
+    using ModeCompiledToRecording =
+        ModeTransition<Mode::COMPILED, Mode::RECORDING>;
+
+    using ModeProtocol = safety::proto::Loop<safety::proto::Select<
+        safety::proto::Send<ModeRecordingToCompiled,
+                            safety::proto::Continue>,
+        safety::proto::Send<ModeCompiledToRecording,
+                            safety::proto::Continue>,
+        safety::proto::End>>;
+
+    static_assert(safety::proto::is_well_formed_v<ModeProtocol>);
+
     // GAPS-031 audit note: the task text originally suggested
     // AtomicMonotonic<ContextMode>. Vigil's lifecycle is intentionally
     // cyclic: RECORDING -> COMPILED -> RECORDING after divergence. A
     // monotonic wrapper would lie about that state machine. ModeCell keeps
     // the raw atomic private and exposes only the two named transitions the
-    // runtime actually performs. The pending region uses PublishSlot rather
-    // than PublishOnce for the same reason: divergence recovery can publish
-    // multiple latest-wins regions across one process lifetime.
+    // runtime actually performs. GAPS-080 layers an atomic-aware
+    // MachineSessionBridge view over the same cell; external observers use
+    // acquire/release through ModeProtocol while the foreground hot query
+    // keeps its relaxed status-flag load. The pending region uses
+    // PublishSlot rather than PublishOnce for the same reason: divergence
+    // recovery can publish multiple latest-wins regions across one process
+    // lifetime.
     class ModeCell {
         std::atomic<Mode> value_{Mode::RECORDING};
 
     public:
+        using state_type = Mode;
+
         constexpr ModeCell() noexcept = default;
 
         ModeCell(const ModeCell&)            = delete("Vigil mode cell is process-local state");
@@ -91,11 +136,33 @@ class Vigil {
         void publish_recording_after_divergence() noexcept {
             value_.store(Mode::RECORDING, std::memory_order_relaxed);
         }
+
+        bool publish_from_session(
+            ModeRecordingToCompiled,
+            std::memory_order order = std::memory_order_release) noexcept
+        {
+            value_.store(Mode::COMPILED, order);
+            return true;
+        }
+
+        bool publish_from_session(
+            ModeCompiledToRecording,
+            std::memory_order order = std::memory_order_release) noexcept
+        {
+            value_.store(Mode::RECORDING, order);
+            return true;
+        }
     };
 
     static_assert(sizeof(ModeCell) == sizeof(std::atomic<Mode>));
 
- public:
+    using ModeSessionHandle = decltype(
+        safety::atomic_session_from_machine<ModeProtocol>(
+            std::declval<const ModeCell&>()));
+
+    static_assert(std::is_same_v<
+        typename ModeSessionHandle::resource_type, const ModeCell*>);
+
     struct Config {
         int32_t     rank             = -1;
         int32_t     world_size       = 0;
@@ -369,6 +436,10 @@ class Vigil {
         return mode_.load(std::memory_order_relaxed);
     }
     [[nodiscard]] bool is_compiled() const noexcept { return mode() == Mode::COMPILED; }
+
+    [[nodiscard]] ModeSessionHandle mode_session() const noexcept {
+        return safety::atomic_session_from_machine<ModeProtocol>(mode_);
+    }
 
     [[nodiscard]] const RegionNode* active_region() const noexcept {
         return bg_.active_region.load(std::memory_order_acquire);
@@ -946,6 +1017,12 @@ class Vigil {
 
     BackgroundThread                bg_;  // MUST be declared last
 };
+
+[[nodiscard]] inline Vigil::ModeSessionHandle mint_vigil_mode_bridge(
+    const Vigil& vigil) noexcept
+{
+    return vigil.mode_session();
+}
 
 // Tier 2 opt-in: nothing inside Vigil may be a ScopedView.  The
 // reflection walk proves that neither Vigil nor any of its fields

@@ -97,6 +97,8 @@
 #include <crucible/safety/Pinned.h>
 #include <crucible/sessions/Session.h>
 
+#include <atomic>
+#include <concepts>
 #include <cstdint>
 #include <string_view>
 #include <type_traits>
@@ -242,6 +244,67 @@ public:
         return std::move(machine_).extract();
     }
 };
+
+// ═════════════════════════════════════════════════════════════════════
+// ── Atomic machine session view ─────────────────────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Some production state machines are intentionally stored in atomic
+// cells rather than safety::Machine<State>: their address is the
+// cross-thread publication identity, and reads/writes need explicit
+// acquire/release ordering.  The session view is still useful for
+// observation and replay, but it must borrow the atomic cell instead
+// of owning a Machine<State>.
+//
+// Cell contract:
+//   using state_type = ...;
+//   state_type load(std::memory_order) const noexcept;
+//
+// Transition writes remain cell-specific.  The bridge provides
+// publish_atomic_machine_transition as the canonical transport helper:
+// it calls `cell->publish_from_session(event, release)`, so each cell
+// owns its own legal transition set and can delete illegal events with
+// a named diagnostic.
+
+template <typename Cell>
+concept AtomicMachineCell =
+    requires(const std::remove_cvref_t<Cell>& cell,
+             std::memory_order order) {
+        typename std::remove_cvref_t<Cell>::state_type;
+        { cell.load(order) } ->
+            std::same_as<typename std::remove_cvref_t<Cell>::state_type>;
+    };
+
+template <typename Proto, typename Cell>
+    requires (AtomicMachineCell<Cell>
+              && safety::proto::is_well_formed_v<Proto>)
+[[nodiscard]] constexpr auto atomic_session_from_machine(Cell& cell) noexcept
+{
+    return safety::proto::mint_session_handle<Proto>(&cell);
+}
+
+template <typename Cell>
+    requires AtomicMachineCell<Cell>
+[[nodiscard]] constexpr typename std::remove_cvref_t<Cell>::state_type
+atomic_machine_state(
+    const Cell& cell,
+    std::memory_order order = std::memory_order_acquire) noexcept
+{
+    return cell.load(order);
+}
+
+template <typename Event, AtomicMachineCell Cell>
+constexpr void publish_atomic_machine_transition(Cell*& cell, Event&& event)
+    noexcept(noexcept(cell->publish_from_session(
+        std::forward<Event>(event), std::memory_order_release)))
+    requires requires {
+        cell->publish_from_session(
+            std::forward<Event>(event), std::memory_order_release);
+    }
+{
+    cell->publish_from_session(
+        std::forward<Event>(event), std::memory_order_release);
+}
 
 // ═════════════════════════════════════════════════════════════════════
 // ── machine_from_session — recover Machine* from a SessionHandle ────
