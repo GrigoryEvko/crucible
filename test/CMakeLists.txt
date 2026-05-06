@@ -758,7 +758,7 @@ crucible_test(test_session_sender_role)
 
 # OneShotFlag × runtime crash transport (#400, SAFEINT-A11).
 # Wires the type-level Stop/Crash semantics from SessionCrash.h into
-# a runtime wire: CrashWatchedHandle<Proto, R, PeerTag, LoopCtx, PS>
+# a runtime wire: CrashWatchedHandle<Proto, R, PeerTag, CrashClass C, LoopCtx, PS>
 # wraps a PermissionedSessionHandle with a OneShotFlag& and returns
 # std::expected<NextHandle, survivor-aware CrashEvent> from every
 # consumer method.
@@ -880,6 +880,18 @@ crucible_neg_compile_session_test(neg_delegate_compose_incompatible_crash_classe
 
 crucible_neg_compile_session_test(neg_delegate_recipient_crash_no_propagation_metafunction
     "DelegatedCrashPropagation_PrimaryTemplate|primary template fires")
+
+# GAPS-064: CrashWatchedHandle consumes Stop_g<CrashClass C>.
+# These fixtures pin the NoThrow rejection and the exact Stop_g grade
+# match at the watched crash boundary.
+crucible_neg_compile_session_test(neg_crashwatched_noThrow_with_unreliable_peer
+    "CrashWatched_NoThrow_Rejected")
+crucible_neg_compile_session_test(neg_crashwatched_strong_class_recovery_path_missing
+    "CrashWatched_StopClass_Mismatch")
+crucible_neg_compile_session_test(neg_crashwatched_class_lattice_violation
+    "CrashWatched_StopClass_Mismatch")
+crucible_neg_compile_session_test(neg_crashwatched_stop_class_mismatch
+    "CrashWatched_StopClass_Mismatch")
 
 # FOUND-B13 (#602): Met(X) negative-compile witnesses.  Three
 # fixtures probing the Subrow / IsEffect concept gates that enforce

@@ -1,9 +1,9 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-045: the PSH-aware CrashWatchedHandle constructor is typed by the
-// exact consumer-side PermSet.  A PermissionedSessionHandle carrying
-// EmptyPermSet cannot be inserted into a CrashWatchedHandle spelling
-// PermSet<WrongPerm>.
+// GAPS-064: an Abort-grade crash watcher must terminate in an
+// Abort-grade Stop_g when the protocol carries an explicit Stop
+// continuation.  A weaker Stop_g<Throw> means the strong recovery path
+// is not present at the protocol boundary.
 
 #include <crucible/bridges/CrashTransport.h>
 
@@ -14,7 +14,6 @@ using crucible::safety::OneShotFlag;
 
 struct DeadPeer {};
 struct Survivor {};
-struct WrongPerm {};
 struct Channel {};
 
 namespace crucible::permissions {
@@ -27,7 +26,7 @@ struct survivor_registry<DeadPeer> {
 }  // namespace crucible::permissions
 
 int main() {
-    using P = proto::Send<int, proto::End>;
+    using P = proto::Send<int, proto::Stop_g<proto::CrashClass::Throw>>;
 
     OneShotFlag flag;
     proto::PermissionedSessionHandle<P, proto::EmptyPermSet, Channel> psh{
@@ -37,9 +36,7 @@ int main() {
         P,
         Channel,
         DeadPeer,
-        proto::CrashClass::Abort,
-        void,
-        proto::PermSet<WrongPerm>> bad{std::move(psh), flag};
+        proto::CrashClass::Abort> bad{std::move(psh), flag};
     (void)bad;
     return 0;
 }

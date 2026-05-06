@@ -171,6 +171,7 @@ using ExpectedCrashWatched =
     proto::CrashWatchedHandle<ProdHead,
                                typename SmallSpsc::ProducerHandle*,
                                PeerA,
+                               proto::CrashClass::Abort,
                                ProdProto>;
 
 }  // namespace detail::endpoint_mint_self_test

@@ -112,6 +112,7 @@ template <typename Proto, typename Resource, typename LoopCtx = void>
 class RecordingSessionHandle;
 
 template <typename Proto, typename Resource, typename PeerTag,
+          CrashClass C = CrashClass::Abort,
           typename LoopCtx = void, typename PS = EmptyPermSet>
 class RecordingCrashWatchedHandle;
 
@@ -136,7 +137,7 @@ template <typename NextHandle>
         std::move(next), log, self_role, peer_role};
 }
 
-template <typename PeerTag, typename NextHandle>
+template <typename PeerTag, CrashClass C, typename NextHandle>
 [[nodiscard]] constexpr auto wrap_recording_crash_next_(
     NextHandle        next,
     SessionEventLog&  log,
@@ -148,7 +149,7 @@ template <typename PeerTag, typename NextHandle>
     using NextLoopCtx  = typename NextHandle::loop_ctx;
     using NextPS       = typename NextHandle::perm_set;
     return RecordingCrashWatchedHandle<
-        NextProto, NextResource, PeerTag, NextLoopCtx, NextPS>{
+        NextProto, NextResource, PeerTag, C, NextLoopCtx, NextPS>{
             std::move(next), log, self_role, peer_role};
 }
 
@@ -169,14 +170,15 @@ constexpr void record_crash_stop_(
 // ── RecordingCrashWatchedHandle<End, …> ────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
-template <typename Resource, typename PeerTag, typename LoopCtx, typename PS>
+template <typename Resource, typename PeerTag,
+          CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]]
-RecordingCrashWatchedHandle<End, Resource, PeerTag, LoopCtx, PS>
+RecordingCrashWatchedHandle<End, Resource, PeerTag, C, LoopCtx, PS>
     : public SessionHandleBase<
           End,
-          RecordingCrashWatchedHandle<End, Resource, PeerTag, LoopCtx, PS>>
+          RecordingCrashWatchedHandle<End, Resource, PeerTag, C, LoopCtx, PS>>
 {
-    CrashWatchedHandle<End, Resource, PeerTag, LoopCtx, PS> inner_;
+    CrashWatchedHandle<End, Resource, PeerTag, C, LoopCtx, PS> inner_;
     SessionEventLog* log_      = nullptr;
     RoleTagId        self_role_{};
     RoleTagId        peer_role_{};
@@ -187,7 +189,8 @@ public:
     using loop_ctx      = LoopCtx;
     using peer          = PeerTag;
     using perm_set      = PS;
-    using inner_type    = CrashWatchedHandle<End, Resource, PeerTag, LoopCtx, PS>;
+    using inner_type    = CrashWatchedHandle<End, Resource, PeerTag, C, LoopCtx, PS>;
+    static constexpr CrashClass crash_class = C;
 
     constexpr RecordingCrashWatchedHandle(
         inner_type inner,
@@ -197,7 +200,7 @@ public:
         std::source_location loc = std::source_location::current()) noexcept
         : SessionHandleBase<
               End,
-              RecordingCrashWatchedHandle<End, Resource, PeerTag, LoopCtx, PS>>{loc}
+              RecordingCrashWatchedHandle<End, Resource, PeerTag, C, LoopCtx, PS>>{loc}
         , inner_{std::move(inner)}, log_{&log},
           self_role_{self}, peer_role_{peer_role} {}
 
@@ -226,19 +229,83 @@ public:
 };
 
 // ═════════════════════════════════════════════════════════════════════
+// ── RecordingCrashWatchedHandle<Stop_g<C>, …> ──────────────────────
+// ═════════════════════════════════════════════════════════════════════
+
+template <CrashClass StopC, typename Resource, typename PeerTag,
+          CrashClass C, typename LoopCtx, typename PS>
+class [[nodiscard]]
+RecordingCrashWatchedHandle<Stop_g<StopC>, Resource, PeerTag, C, LoopCtx, PS>
+    : public SessionHandleBase<
+          Stop_g<StopC>,
+          RecordingCrashWatchedHandle<
+              Stop_g<StopC>, Resource, PeerTag, C, LoopCtx, PS>>
+{
+    CrashWatchedHandle<Stop_g<StopC>, Resource, PeerTag, C, LoopCtx, PS> inner_;
+    SessionEventLog* log_      = nullptr;
+    RoleTagId        self_role_{};
+    RoleTagId        peer_role_{};
+
+public:
+    using protocol      = Stop_g<StopC>;
+    using resource_type = Resource;
+    using loop_ctx      = LoopCtx;
+    using peer          = PeerTag;
+    using perm_set      = PS;
+    using inner_type =
+        CrashWatchedHandle<Stop_g<StopC>, Resource, PeerTag, C, LoopCtx, PS>;
+    static constexpr CrashClass crash_class = C;
+
+    constexpr RecordingCrashWatchedHandle(
+        inner_type inner,
+        SessionEventLog& log,
+        RoleTagId self,
+        RoleTagId peer_role,
+        std::source_location loc = std::source_location::current()) noexcept
+        : SessionHandleBase<
+              Stop_g<StopC>,
+              RecordingCrashWatchedHandle<
+                  Stop_g<StopC>, Resource, PeerTag, C, LoopCtx, PS>>{loc}
+        , inner_{std::move(inner)}, log_{&log},
+          self_role_{self}, peer_role_{peer_role} {}
+
+    constexpr RecordingCrashWatchedHandle(
+        RecordingCrashWatchedHandle&&) noexcept = default;
+    constexpr RecordingCrashWatchedHandle& operator=(
+        RecordingCrashWatchedHandle&&) noexcept = default;
+    ~RecordingCrashWatchedHandle() = default;
+
+    [[nodiscard]] constexpr Resource close(
+        StopReasonKind reason = StopReasonKind::PeerCrashed,
+        RecoveryPathHash recovery_path = {}) &&
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+    {
+        log_->append_event(SessionEvent::stop(
+            self_role_, peer_role_, peer_role_, reason, recovery_path));
+        this->mark_consumed_();
+        return std::move(inner_).close();
+    }
+
+    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return inner_.resource(); }
+    [[nodiscard]] constexpr OneShotFlag&    crash_flag() const  noexcept { return inner_.crash_flag(); }
+    [[nodiscard]] constexpr SessionEventLog& event_log() const noexcept { return *log_; }
+};
+
+// ═════════════════════════════════════════════════════════════════════
 // ── RecordingCrashWatchedHandle<Send<T, K>, …> ─────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename T, typename K, typename Resource,
-          typename PeerTag, typename LoopCtx, typename PS>
+          typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]]
-RecordingCrashWatchedHandle<Send<T, K>, Resource, PeerTag, LoopCtx, PS>
+RecordingCrashWatchedHandle<Send<T, K>, Resource, PeerTag, C, LoopCtx, PS>
     : public SessionHandleBase<
           Send<T, K>,
           RecordingCrashWatchedHandle<
-              Send<T, K>, Resource, PeerTag, LoopCtx, PS>>
+              Send<T, K>, Resource, PeerTag, C, LoopCtx, PS>>
 {
-    CrashWatchedHandle<Send<T, K>, Resource, PeerTag, LoopCtx, PS> inner_;
+    CrashWatchedHandle<Send<T, K>, Resource, PeerTag, C, LoopCtx, PS> inner_;
     SessionEventLog* log_      = nullptr;
     RoleTagId        self_role_{};
     RoleTagId        peer_role_{};
@@ -251,8 +318,9 @@ public:
     using loop_ctx      = LoopCtx;
     using peer          = PeerTag;
     using perm_set      = PS;
+    static constexpr CrashClass crash_class = C;
     using inner_type =
-        CrashWatchedHandle<Send<T, K>, Resource, PeerTag, LoopCtx, PS>;
+        CrashWatchedHandle<Send<T, K>, Resource, PeerTag, C, LoopCtx, PS>;
 
     constexpr RecordingCrashWatchedHandle(
         inner_type inner,
@@ -263,7 +331,7 @@ public:
         : SessionHandleBase<
               Send<T, K>,
               RecordingCrashWatchedHandle<
-                  Send<T, K>, Resource, PeerTag, LoopCtx, PS>>{loc}
+                  Send<T, K>, Resource, PeerTag, C, LoopCtx, PS>>{loc}
         , inner_{std::move(inner)}, log_{&log},
           self_role_{self}, peer_role_{peer_role} {}
 
@@ -291,7 +359,7 @@ public:
 
         using InnerNext = std::remove_cvref_t<decltype(*result)>;
         using Error = typename decltype(result)::error_type;
-        using WrappedNext = decltype(detail::wrap_recording_crash_next_<PeerTag>(
+        using WrappedNext = decltype(detail::wrap_recording_crash_next_<PeerTag, C>(
             std::declval<InnerNext>(),
             std::declval<SessionEventLog&>(),
             std::declval<RoleTagId>(),
@@ -304,7 +372,7 @@ public:
         }
 
         log_->append_event(event);
-        return Out{detail::wrap_recording_crash_next_<PeerTag>(
+        return Out{detail::wrap_recording_crash_next_<PeerTag, C>(
             std::move(*result), *log_, self_role_, peer_role_)};
     }
 
@@ -319,15 +387,15 @@ public:
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename T, typename K, typename Resource,
-          typename PeerTag, typename LoopCtx, typename PS>
+          typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]]
-RecordingCrashWatchedHandle<Recv<T, K>, Resource, PeerTag, LoopCtx, PS>
+RecordingCrashWatchedHandle<Recv<T, K>, Resource, PeerTag, C, LoopCtx, PS>
     : public SessionHandleBase<
           Recv<T, K>,
           RecordingCrashWatchedHandle<
-              Recv<T, K>, Resource, PeerTag, LoopCtx, PS>>
+              Recv<T, K>, Resource, PeerTag, C, LoopCtx, PS>>
 {
-    CrashWatchedHandle<Recv<T, K>, Resource, PeerTag, LoopCtx, PS> inner_;
+    CrashWatchedHandle<Recv<T, K>, Resource, PeerTag, C, LoopCtx, PS> inner_;
     SessionEventLog* log_      = nullptr;
     RoleTagId        self_role_{};
     RoleTagId        peer_role_{};
@@ -340,8 +408,9 @@ public:
     using loop_ctx      = LoopCtx;
     using peer          = PeerTag;
     using perm_set      = PS;
+    static constexpr CrashClass crash_class = C;
     using inner_type =
-        CrashWatchedHandle<Recv<T, K>, Resource, PeerTag, LoopCtx, PS>;
+        CrashWatchedHandle<Recv<T, K>, Resource, PeerTag, C, LoopCtx, PS>;
 
     constexpr RecordingCrashWatchedHandle(
         inner_type inner,
@@ -352,7 +421,7 @@ public:
         : SessionHandleBase<
               Recv<T, K>,
               RecordingCrashWatchedHandle<
-                  Recv<T, K>, Resource, PeerTag, LoopCtx, PS>>{loc}
+                  Recv<T, K>, Resource, PeerTag, C, LoopCtx, PS>>{loc}
         , inner_{std::move(inner)}, log_{&log},
           self_role_{self}, peer_role_{peer_role} {}
 
@@ -373,7 +442,7 @@ public:
         using InnerNext = std::remove_cvref_t<
             decltype(std::declval<InnerPair>().second)>;
         using Error = typename decltype(result)::error_type;
-        using WrappedNext = decltype(detail::wrap_recording_crash_next_<PeerTag>(
+        using WrappedNext = decltype(detail::wrap_recording_crash_next_<PeerTag, C>(
             std::declval<InnerNext>(),
             std::declval<SessionEventLog&>(),
             std::declval<RoleTagId>(),
@@ -395,7 +464,7 @@ public:
         });
         return Out{std::pair{
             std::move(value),
-            detail::wrap_recording_crash_next_<PeerTag>(
+            detail::wrap_recording_crash_next_<PeerTag, C>(
                 std::move(next), *log_, self_role_, peer_role_)}};
     }
 
@@ -410,15 +479,15 @@ public:
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename... Branches, typename Resource,
-          typename PeerTag, typename LoopCtx, typename PS>
+          typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]]
-RecordingCrashWatchedHandle<Select<Branches...>, Resource, PeerTag, LoopCtx, PS>
+RecordingCrashWatchedHandle<Select<Branches...>, Resource, PeerTag, C, LoopCtx, PS>
     : public SessionHandleBase<
           Select<Branches...>,
           RecordingCrashWatchedHandle<
-              Select<Branches...>, Resource, PeerTag, LoopCtx, PS>>
+              Select<Branches...>, Resource, PeerTag, C, LoopCtx, PS>>
 {
-    CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, LoopCtx, PS> inner_;
+    CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, C, LoopCtx, PS> inner_;
     SessionEventLog* log_      = nullptr;
     RoleTagId        self_role_{};
     RoleTagId        peer_role_{};
@@ -429,8 +498,9 @@ public:
     using loop_ctx      = LoopCtx;
     using peer          = PeerTag;
     using perm_set      = PS;
+    static constexpr CrashClass crash_class = C;
     using inner_type =
-        CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, LoopCtx, PS>;
+        CrashWatchedHandle<Select<Branches...>, Resource, PeerTag, C, LoopCtx, PS>;
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
     constexpr RecordingCrashWatchedHandle(
@@ -442,7 +512,7 @@ public:
         : SessionHandleBase<
               Select<Branches...>,
               RecordingCrashWatchedHandle<
-                  Select<Branches...>, Resource, PeerTag, LoopCtx, PS>>{loc}
+                  Select<Branches...>, Resource, PeerTag, C, LoopCtx, PS>>{loc}
         , inner_{std::move(inner)}, log_{&log},
           self_role_{self}, peer_role_{peer_role} {}
 
@@ -470,7 +540,7 @@ public:
 
         using InnerNext = std::remove_cvref_t<decltype(*result)>;
         using Error = typename decltype(result)::error_type;
-        using WrappedNext = decltype(detail::wrap_recording_crash_next_<PeerTag>(
+        using WrappedNext = decltype(detail::wrap_recording_crash_next_<PeerTag, C>(
             std::declval<InnerNext>(),
             std::declval<SessionEventLog&>(),
             std::declval<RoleTagId>(),
@@ -483,7 +553,7 @@ public:
         }
 
         log_->append_event(event);
-        return Out{detail::wrap_recording_crash_next_<PeerTag>(
+        return Out{detail::wrap_recording_crash_next_<PeerTag, C>(
             std::move(*result), *log_, self_role_, peer_role_)};
     }
 
@@ -503,7 +573,7 @@ public:
 
         using InnerNext = std::remove_cvref_t<decltype(*result)>;
         using Error = typename decltype(result)::error_type;
-        using WrappedNext = decltype(detail::wrap_recording_crash_next_<PeerTag>(
+        using WrappedNext = decltype(detail::wrap_recording_crash_next_<PeerTag, C>(
             std::declval<InnerNext>(),
             std::declval<SessionEventLog&>(),
             std::declval<RoleTagId>(),
@@ -516,7 +586,7 @@ public:
         }
 
         log_->append_event(event);
-        return Out{detail::wrap_recording_crash_next_<PeerTag>(
+        return Out{detail::wrap_recording_crash_next_<PeerTag, C>(
             std::move(*result), *log_, self_role_, peer_role_)};
     }
 
@@ -538,15 +608,15 @@ public:
 // ═════════════════════════════════════════════════════════════════════
 
 template <typename... Branches, typename Resource,
-          typename PeerTag, typename LoopCtx, typename PS>
+          typename PeerTag, CrashClass C, typename LoopCtx, typename PS>
 class [[nodiscard]]
-RecordingCrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, LoopCtx, PS>
+RecordingCrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, C, LoopCtx, PS>
     : public SessionHandleBase<
           Offer<Branches...>,
           RecordingCrashWatchedHandle<
-              Offer<Branches...>, Resource, PeerTag, LoopCtx, PS>>
+              Offer<Branches...>, Resource, PeerTag, C, LoopCtx, PS>>
 {
-    CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, LoopCtx, PS> inner_;
+    CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, C, LoopCtx, PS> inner_;
     SessionEventLog* log_      = nullptr;
     RoleTagId        self_role_{};
     RoleTagId        peer_role_{};
@@ -557,8 +627,9 @@ public:
     using loop_ctx      = LoopCtx;
     using peer          = PeerTag;
     using perm_set      = PS;
+    static constexpr CrashClass crash_class = C;
     using inner_type =
-        CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, LoopCtx, PS>;
+        CrashWatchedHandle<Offer<Branches...>, Resource, PeerTag, C, LoopCtx, PS>;
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
     constexpr RecordingCrashWatchedHandle(
@@ -570,7 +641,7 @@ public:
         : SessionHandleBase<
               Offer<Branches...>,
               RecordingCrashWatchedHandle<
-                  Offer<Branches...>, Resource, PeerTag, LoopCtx, PS>>{loc}
+                  Offer<Branches...>, Resource, PeerTag, C, LoopCtx, PS>>{loc}
         , inner_{std::move(inner)}, log_{&log},
           self_role_{self}, peer_role_{peer_role} {}
 
@@ -596,7 +667,7 @@ public:
 
         using InnerNext = std::remove_cvref_t<decltype(*result)>;
         using Error = typename decltype(result)::error_type;
-        using WrappedNext = decltype(detail::wrap_recording_crash_next_<PeerTag>(
+        using WrappedNext = decltype(detail::wrap_recording_crash_next_<PeerTag, C>(
             std::declval<InnerNext>(),
             std::declval<SessionEventLog&>(),
             std::declval<RoleTagId>(),
@@ -609,7 +680,7 @@ public:
         }
 
         log_->append_event(event);
-        return Out{detail::wrap_recording_crash_next_<PeerTag>(
+        return Out{detail::wrap_recording_crash_next_<PeerTag, C>(
             std::move(*result), *log_, self_role_, peer_role_)};
     }
 
@@ -1325,15 +1396,15 @@ template <typename Proto, typename Resource, typename LoopCtx>
 }
 
 template <typename Proto, typename Resource, typename PeerTag,
-          typename LoopCtx, typename PS>
+          CrashClass C, typename LoopCtx, typename PS>
 [[nodiscard]] constexpr auto mint_recording_session(
-    CrashWatchedHandle<Proto, Resource, PeerTag, LoopCtx, PS> inner,
+    CrashWatchedHandle<Proto, Resource, PeerTag, C, LoopCtx, PS> inner,
     SessionEventLog& log,
     RoleTagId self,
     RoleTagId peer) noexcept
 {
     return RecordingCrashWatchedHandle<
-        Proto, Resource, PeerTag, LoopCtx, PS>{
+        Proto, Resource, PeerTag, C, LoopCtx, PS>{
             std::move(inner), log, self, peer};
 }
 

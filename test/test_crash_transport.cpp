@@ -24,6 +24,7 @@
 #include <deque>
 #include <thread>
 #include <tuple>
+#include <type_traits>
 #include <utility>
 
 namespace {
@@ -74,8 +75,23 @@ static_assert( std::is_move_constructible_v<
 // "SessionHandle<...>" inheriting the same Proto.
 static_assert(std::is_base_of_v<
                   SessionHandleBase<End,
-                                    CrashWatchedHandle<End, Channel, ServerPeer, void>>,
+                                    CrashWatchedHandle<
+                                        End,
+                                        Channel,
+                                        ServerPeer,
+                                        CrashClass::Abort,
+                                        void>>,
                   CrashWatchedHandle<End, Channel, ServerPeer>>);
+
+static_assert(CrashWatchedHandle<End, Channel, ServerPeer>::crash_class
+              == CrashClass::Abort);
+static_assert(std::is_same_v<
+                  CrashWatchedHandle<
+                      Send<int, Stop_g<CrashClass::Throw>>,
+                      Channel,
+                      ServerPeer,
+                      CrashClass::Throw>::stop_type,
+                  Stop_g<CrashClass::Throw>>);
 
 // CrashEvent carries both PeerTag and Resource at compile time.
 static_assert(std::is_same_v<
@@ -205,6 +221,69 @@ int run_permissioned_crash_before_transferable_send() {
         decltype(survivor_permissions),
         std::tuple<Permission<ServerSurvivor>>>);
     (void)survivor_permissions;
+    return 0;
+}
+
+// ── Test: non-default CrashClass is preserved through Stop_g ─────
+
+int run_throw_grade_stop_terminal() {
+    using P = Send<int, Stop_g<CrashClass::Throw>>;
+
+    std::deque<int> wire;
+    OneShotFlag     flag;
+    Channel         ch{&wire, 23};
+
+    auto bare = mint_session_handle<P>(std::move(ch));
+    auto watched =
+        mint_crash_watched_session<ServerPeer, CrashClass::Throw>(
+            std::move(bare), flag);
+
+    static_assert(decltype(watched)::crash_class == CrashClass::Throw);
+
+    auto r = std::move(watched).send(
+        321, [](Channel& c, int v) noexcept { c.wire->push_back(v); });
+    if (!r)                                      return 1;
+    if (wire.size() != 1 || wire.front() != 321) return 2;
+
+    static_assert(std::remove_cvref_t<decltype(*r)>::crash_class
+                  == CrashClass::Throw);
+    static_assert(std::is_same_v<
+        typename std::remove_cvref_t<decltype(*r)>::protocol,
+        Stop_g<CrashClass::Throw>>);
+
+    auto recovered = std::move(*r).close();
+    if (recovered.session_id != 23)              return 3;
+    return 0;
+}
+
+// ── Test: ErrorReturn watcher keeps expected-return crash path ───
+
+int run_error_return_grade_crash_before_recv() {
+    using P = Recv<int, End>;
+
+    std::deque<int> wire;
+    OneShotFlag     flag;
+    Channel         ch{&wire, 31};
+
+    auto bare = mint_session_handle<P>(std::move(ch));
+    auto watched =
+        mint_crash_watched_session<ServerPeer, CrashClass::ErrorReturn>(
+            std::move(bare), flag);
+
+    static_assert(decltype(watched)::crash_class
+                  == CrashClass::ErrorReturn);
+
+    flag.signal();
+
+    auto r = std::move(watched).recv(
+        [](Channel& c) noexcept -> int {
+            int x = c.wire->front();
+            c.wire->pop_front();
+            return x;
+        });
+
+    if (r)                                       return 1;
+    if (r.error().resource.session_id != 31)     return 2;
     return 0;
 }
 
@@ -411,12 +490,15 @@ int main() {
     if (int rc = run_happy_path();                rc != 0) return rc;
     if (int rc = run_crash_before_send();         rc != 0) return 100 + rc;
     if (int rc = run_permissioned_crash_before_transferable_send(); rc != 0) return 150 + rc;
+    if (int rc = run_throw_grade_stop_terminal(); rc != 0) return 175 + rc;
+    if (int rc = run_error_return_grade_crash_before_recv(); rc != 0) return 185 + rc;
     if (int rc = run_crash_mid_protocol();        rc != 0) return 200 + rc;
     if (int rc = run_cross_thread_crash();        rc != 0) return 300 + rc;
     if (int rc = run_multi_peer_independent();    rc != 0) return 400 + rc;
     if (int rc = run_worked_example_cntp_pattern(); rc != 0) return 500 + rc;
 
     std::puts("crash_transport: happy + crash-before + permissioned-crash + "
-              "crash-mid + cross-thread + multi-peer + CNTP-pattern OK");
+              "graded-stop + error-return + crash-mid + cross-thread + "
+              "multi-peer + CNTP-pattern OK");
     return 0;
 }

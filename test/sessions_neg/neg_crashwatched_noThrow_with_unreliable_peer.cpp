@@ -1,9 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-045: the PSH-aware CrashWatchedHandle constructor is typed by the
-// exact consumer-side PermSet.  A PermissionedSessionHandle carrying
-// EmptyPermSet cannot be inserted into a CrashWatchedHandle spelling
-// PermSet<WrongPerm>.
+// GAPS-064: a CrashWatchedHandle watches an unreliable peer through a
+// OneShotFlag.  Declaring that same peer CrashClass::NoThrow is a type
+// contradiction and must be rejected at the handle boundary.
 
 #include <crucible/bridges/CrashTransport.h>
 
@@ -14,7 +13,6 @@ using crucible::safety::OneShotFlag;
 
 struct DeadPeer {};
 struct Survivor {};
-struct WrongPerm {};
 struct Channel {};
 
 namespace crucible::permissions {
@@ -37,9 +35,7 @@ int main() {
         P,
         Channel,
         DeadPeer,
-        proto::CrashClass::Abort,
-        void,
-        proto::PermSet<WrongPerm>> bad{std::move(psh), flag};
+        proto::CrashClass::NoThrow> bad{std::move(psh), flag};
     (void)bad;
     return 0;
 }
