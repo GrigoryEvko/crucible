@@ -1213,6 +1213,18 @@ static_assert(CtxAdmitsPermission<
 static_assert(!CtxAdmitsPermission<
     ::crucible::permissions::tag::DiskSpilledRegionTag,
     ::crucible::effects::BgCompileCtx>);
+static_assert(CtxAdmitsPermission<
+    ::crucible::permissions::tag::MmapRegionTag,
+    ::crucible::effects::BgCompileCtx>);
+static_assert(!CtxAdmitsPermission<
+    ::crucible::permissions::tag::MmapRegionTag,
+    ::crucible::effects::HotFgCtx>);
+static_assert(CtxAdmitsPermission<
+    ::crucible::permissions::tag::NetworkBufferTag,
+    ::crucible::effects::BgCompileCtx>);
+static_assert(!CtxAdmitsPermission<
+    ::crucible::permissions::tag::NetworkBufferTag,
+    ::crucible::effects::HotFgCtx>);
 
 // Permission is a 1-byte empty class; not movable across translation
 // units without copies but the move constructor is a noop.

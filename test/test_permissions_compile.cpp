@@ -120,14 +120,21 @@ void test_permission_row_compile() {
     using HugePage = perm::tag::HugePageTag;
     using DiskSpilled = perm::tag::DiskSpilledRegionTag;
     using GpuMemory = perm::tag::GpuMemoryTag;
+    using MmapRegion = perm::tag::MmapRegionTag;
+    using NetworkBuffer = perm::tag::NetworkBufferTag;
 
     static_assert(saf::permission_row_empty_v<InheritWorkerTag>);
     static_assert(saf::CtxAdmitsPermission<HugePage, eff::BgCompileCtx>);
     static_assert(!saf::CtxAdmitsPermission<HugePage, eff::HotFgCtx>);
+    static_assert(!saf::CtxAdmitsPermission<HugePage, eff::BgDrainCtx>);
     static_assert(saf::CtxAdmitsPermission<DiskSpilled, eff::TestRunnerCtx>);
     static_assert(!saf::CtxAdmitsPermission<DiskSpilled, eff::BgCompileCtx>);
     static_assert(saf::CtxAdmitsPermission<GpuMemory, eff::BgDrainCtx>);
     static_assert(!saf::CtxAdmitsPermission<GpuMemory, eff::HotFgCtx>);
+    static_assert(saf::CtxAdmitsPermission<MmapRegion, eff::BgCompileCtx>);
+    static_assert(!saf::CtxAdmitsPermission<MmapRegion, eff::HotFgCtx>);
+    static_assert(saf::CtxAdmitsPermission<NetworkBuffer, eff::BgCompileCtx>);
+    static_assert(!saf::CtxAdmitsPermission<NetworkBuffer, eff::HotFgCtx>);
 
     eff::BgCompileCtx bg_compile{};
     auto huge = saf::mint_permission_root<HugePage>(bg_compile);

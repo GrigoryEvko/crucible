@@ -3,7 +3,8 @@
 // GAPS-075: ctx-bound permission root mint requires the destination
 // ExecCtx to admit permission_row<Tag>.
 //
-// Violation: HugePageTag carries Row<IO>, while HotFgCtx carries Row<>.
+// Violation: DiskSpilledRegionTag carries Row<IO, Block>, while HotFgCtx
+// carries Row<>.
 // The mint_permission_root<Tag>(ctx) requires-clause must reject this
 // before any effectful permission can enter foreground code.
 //
@@ -16,9 +17,8 @@ int main() {
     namespace perm = ::crucible::permissions;
     namespace saf = ::crucible::safety;
 
-    auto p = saf::mint_permission_root<perm::tag::HugePageTag>(
+    auto p = saf::mint_permission_root<perm::tag::DiskSpilledRegionTag>(
         eff::HotFgCtx{});
     saf::permission_drop(std::move(p));
     return 0;
 }
-

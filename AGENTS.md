@@ -2288,6 +2288,12 @@ Each layer EBO-collapses if its grade is a type-level singleton (regime-1 or reg
 3. `Computation<R, T>` is the innermost member of every effect stack — it is the carrier; everything else is metadata about the carrier. The `row_hash_contribution<Computation<R, T>>` specialization (FOUND-I02-AUDIT) folds the row R "outer" and the payload T's contribution "inner".
 4. **Append-only Universe extension** (FOUND-I04 backlog): adding a new effect atom (e.g., `Effect::Refute`) is permitted only at the next free position; existing atom positions never change. This bounds cache invalidation to entries that actually mention the new atom — `Row<Effect::Bg>` keeps the same hash forever because `Effect::Bg`'s underlying value never changes.
 
+`Permission<Tag>` is not itself a `Graded` wrapper and does not enter the
+wrapper-nesting stack.  Effectful ownership is connected to Met(X) rows through
+`permission_row<Tag>` instead: pure ownership tags use the `Row<>` primary
+template, while row-bearing tags require ctx-bound mints, transfers, splits,
+shares, and pool borrows whose `ExecCtx::row_type` admits the tag row.
+
 **Currently shipped row_hash specializations (FOUND-I02 + FOUND-I02-AUDIT):**
 
 - `row_hash_contribution<effects::Row<Es...>>` — sort-fold over Effect underlying values, cardinality-seeded.

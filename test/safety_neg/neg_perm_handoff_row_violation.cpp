@@ -5,7 +5,8 @@
 //
 // Violation: DiskSpilledRegionTag carries Row<IO, Block>.  TestRunnerCtx
 // can mint it, but BgCompileCtx carries only Row<Bg, Alloc, IO>; it does
-// not admit Block.  permission_handoff must reject the transfer.
+// not admit the full permission row because Block is absent.
+// permission_handoff must reject the transfer.
 //
 // Expected diagnostic: CtxAdmitsPermission / constraints not satisfied.
 
@@ -24,4 +25,3 @@ int main() {
     saf::permission_drop(std::move(handed));
     return 0;
 }
-
