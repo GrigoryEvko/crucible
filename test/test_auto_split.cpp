@@ -101,7 +101,7 @@ static void test_uneven_shards_cover_once() {
     static_assert(plan.routing.completion ==
                   cc::AutoSplitCompletionMode::BlockingWait);
     static_assert(plan.grain_items == 251);
-    static_assert(plan.route.sharded);
+    static_assert(plan.route.uses_worker_fanout);
 
     std::vector<int> coverage(plan.total_items, 0);
     std::size_t cursor = 0;
@@ -223,6 +223,10 @@ static void test_dispatch_auto_split_covers_ranges() {
     static_assert(plan.shard_count == 1,
                   "break-even must demote light-compute workloads");
     static_assert(plan.runs_inline());
+    static_assert(!plan.route.uses_worker_fanout,
+                  "demoted plans must not retain a sharded route flag");
+    static_assert(plan.route.worker_fanout == 1,
+                  "demoted plans must normalize route fanout to one");
 }
 
 // Break-even gate AND efficiency gate together: when per_item_compute_ns
@@ -404,7 +408,7 @@ static void test_dispatch_auto_split_covers_ranges() {
     static_assert(forced_4.shard_count == 4);
     static_assert(forced_4.decision.kind ==
                   cc::ParallelismDecision::Kind::Parallel);
-    static_assert(forced_4.route.sharded);
+    static_assert(forced_4.route.uses_worker_fanout);
 
     // Factor capped by item_count when factor > items:
     constexpr cc::AutoSplitPlan capped = cc::auto_split_plan_at_factor(
@@ -424,7 +428,8 @@ static void test_dispatch_auto_split_covers_ranges() {
         1);
     static_assert(one.shard_count == 1);
     static_assert(one.runs_inline());
-    static_assert(!one.route.sharded);
+    static_assert(!one.route.uses_worker_fanout);
+    static_assert(one.route.worker_fanout == 1);
 
     // Factor=0 collapses to empty:
     constexpr cc::AutoSplitPlan empty = cc::auto_split_plan_at_factor(
@@ -785,6 +790,22 @@ static void test_shape_cache_concurrent_slot_overwrite_is_coherent() {
             "shape cache returned a factor from a different colliding key");
 }
 
+static void test_runtime_profile_refresh_and_reprobe() {
+    const cc::AutoSplitRuntimeProfile refreshed =
+        cc::auto_split_runtime_profile_refresh();
+    const cc::AutoSplitRuntimeProfile reprobed =
+        cc::auto_split_runtime_profile_reprobe();
+
+    require(refreshed.available_workers >= 1,
+            "refreshed profile must expose at least one worker");
+    require(reprobed.available_workers >= 1,
+            "reprobed profile must expose at least one worker");
+    require(refreshed.route.l2_per_core_bytes > 0,
+            "refreshed profile must expose nonzero L2");
+    require(reprobed.route.l2_per_core_bytes > 0,
+            "reprobed profile must expose nonzero L2");
+}
+
 static void test_cached_planner_matches_uncached_and_separates_shapes() {
     cc::AutoSplitRouterState state;
     constexpr cc::AutoSplitRuntimeProfile profile = synthetic_profile(16);
@@ -922,6 +943,7 @@ int main() {
     test_dispatch_at_factor_covers_ranges();
     test_shape_cache_promotes_after_repeated_hits();
     test_shape_cache_concurrent_slot_overwrite_is_coherent();
+    test_runtime_profile_refresh_and_reprobe();
     test_cached_planner_matches_uncached_and_separates_shapes();
     test_online_calibrator_updates_ewma();
     test_background_intent_demotes_under_pool_pressure();

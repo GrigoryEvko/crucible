@@ -359,10 +359,47 @@ public:
         Fallback,  // sysfs unavailable; using compile-time defaults
     };
 
+    struct Snapshot {
+        std::size_t l1d_per_core_bytes = 0;
+        std::size_t l1i_per_core_bytes = 0;
+        std::size_t l2_per_core_bytes = 0;
+        std::size_t l3_total_bytes = 0;
+        std::size_t cache_line_bytes = 0;
+        std::size_t num_cores = 0;
+        std::size_t num_smt_threads = 0;
+        std::size_t process_cpu_count = 0;
+        std::size_t page_size_bytes = 0;
+        std::size_t numa_nodes = 0;
+        bool hugepage_2mb_available = false;
+        Source source = Source::Fallback;
+    };
+
     // Singleton accessor.  C++11-thread-safe function-local static.
     [[nodiscard]] static const Topology& instance() noexcept {
         static const Topology inst{};
         return inst;
+    }
+
+    [[nodiscard]] static Snapshot reprobe_snapshot() noexcept {
+        const Topology fresh{};
+        return fresh.snapshot();
+    }
+
+    [[nodiscard]] Snapshot snapshot() const noexcept {
+        return Snapshot{
+            .l1d_per_core_bytes = l1d_,
+            .l1i_per_core_bytes = l1i_,
+            .l2_per_core_bytes = l2_,
+            .l3_total_bytes = l3_,
+            .cache_line_bytes = line_,
+            .num_cores = cores_,
+            .num_smt_threads = threads_,
+            .process_cpu_count = process_cpus_,
+            .page_size_bytes = page_size_,
+            .numa_nodes = numa_nodes(),
+            .hugepage_2mb_available = hugepage_2mb_,
+            .source = source_,
+        };
     }
 
     // ── Cache hierarchy ─────────────────────────────────────────────

@@ -6,6 +6,8 @@
 
 #include <crucible/concurrent/AutoRouter.h>
 
+#include <cstdio>
+#include <cstdlib>
 #include <type_traits>
 
 namespace cc = crucible::concurrent;
@@ -26,9 +28,9 @@ constexpr std::size_t Huge = 64 * MiB;
 // Ordered streams preserve FIFO topology even above the L2 cliff.
 static_assert(cc::auto_route_v<cc::RouteIntent::Stream, 1, 1, Large>.kind
               == cc::RouteKind::Spsc);
-static_assert(cc::auto_route_v<cc::RouteIntent::Stream, 1, 1, Large>.topology
+static_assert(cc::auto_route_v<cc::RouteIntent::Stream, 1, 1, Large>.channel_topology
               == cc::ChannelTopology::OneToOne);
-static_assert(!cc::auto_route_v<cc::RouteIntent::Stream, 1, 1, Large>.sharded);
+static_assert(!cc::auto_route_v<cc::RouteIntent::Stream, 1, 1, Large>.uses_worker_fanout);
 static_assert(std::is_same_v<
               cc::AutoRoute_t<cc::RouteIntent::Stream,
                               int,
@@ -94,7 +96,7 @@ static_assert(std::is_same_v<
 // Shardable below the cliff keeps the cardinality-derived stream route.
 static_assert(cc::auto_route_v<cc::RouteIntent::Shardable, 1, 1, Small>.kind
               == cc::RouteKind::Spsc);
-static_assert(cc::auto_route_v<cc::RouteIntent::Shardable, 1, 1, Small>.shard_factor
+static_assert(cc::auto_route_v<cc::RouteIntent::Shardable, 1, 1, Small>.worker_fanout
               == 1);
 static_assert(std::is_same_v<
               cc::AutoRoute_t<cc::RouteIntent::Shardable,
@@ -106,12 +108,18 @@ static_assert(std::is_same_v<
                               Small>,
               cc::PermissionedSpscChannel<int, 1024, ShardTag>>);
 
-// Shardable above the cliff opts into an MxN permissioned sharded grid.
+// Shardable above the cliff separates channel cardinality from worker fanout:
+// 1p1c remains a 1x1 permissioned channel, while worker_fanout records the
+// execution split the scheduler/autosplit layer may consume.
 static_assert(cc::auto_route_v<cc::RouteIntent::Shardable, 1, 1, Large>.kind
               == cc::RouteKind::ShardedGrid);
-static_assert(cc::auto_route_v<cc::RouteIntent::Shardable, 1, 1, Large>.sharded);
-static_assert(cc::auto_route_v<cc::RouteIntent::Shardable, 1, 1, Large>.shard_factor
+static_assert(cc::auto_route_v<cc::RouteIntent::Shardable, 1, 1, Large>.uses_worker_fanout);
+static_assert(cc::auto_route_v<cc::RouteIntent::Shardable, 1, 1, Large>.worker_fanout
               == 4);
+static_assert(cc::auto_route_v<cc::RouteIntent::Shardable, 1, 1, Large>.channel_producers
+              == 1);
+static_assert(cc::auto_route_v<cc::RouteIntent::Shardable, 1, 1, Large>.channel_consumers
+              == 1);
 static_assert(std::is_same_v<
               cc::AutoRoute_t<cc::RouteIntent::Shardable,
                               int,
@@ -120,9 +128,9 @@ static_assert(std::is_same_v<
                               1,
                               1,
                               Large>,
-              cc::PermissionedShardedGrid<int, 4, 4, 1024, ShardTag>>);
+              cc::PermissionedShardedGrid<int, 1, 1, 1024, ShardTag>>);
 
-static_assert(cc::auto_route_v<cc::RouteIntent::Shardable, 1, 1, Huge>.shard_factor
+static_assert(cc::auto_route_v<cc::RouteIntent::Shardable, 1, 1, Huge>.worker_fanout
               == 16);
 static_assert(std::is_same_v<
               cc::AutoRoute_t<cc::RouteIntent::Shardable,
@@ -132,10 +140,10 @@ static_assert(std::is_same_v<
                               1,
                               1,
                               Huge>,
-              cc::PermissionedShardedGrid<int, 16, 16, 1024, ShardTag>>);
+              cc::PermissionedShardedGrid<int, 1, 1, 1024, ShardTag>>);
 
 // MaxShards is a hard compile-time cap.
-static_assert(cc::auto_route_v<cc::RouteIntent::Shardable, 1, 1, Huge, 8>.shard_factor
+static_assert(cc::auto_route_v<cc::RouteIntent::Shardable, 1, 1, Huge, 8>.worker_fanout
               == 8);
 static_assert(std::is_same_v<
               cc::AutoRoute_t<cc::RouteIntent::Shardable,
@@ -146,7 +154,17 @@ static_assert(std::is_same_v<
                               1,
                               Huge,
                               8>,
-              cc::PermissionedShardedGrid<int, 8, 8, 1024, ShardTag>>);
+              cc::PermissionedShardedGrid<int, 1, 1, 1024, ShardTag>>);
+
+static_assert(std::is_same_v<
+              cc::AutoRoute_t<cc::RouteIntent::Shardable,
+                              int,
+                              1024,
+                              ShardTag,
+                              4,
+                              3,
+                              Huge>,
+              cc::PermissionedShardedGrid<int, 4, 3, 1024, ShardTag>>);
 
 // Alternate static implementation must match the current consteval route.
 static_assert(cc::static_auto_route_v<cc::RouteIntent::Shardable,
@@ -166,11 +184,11 @@ static_assert(cc::static_auto_route_v<cc::RouteIntent::Shardable,
                                       ShardTag,
                                       1,
                                       1,
-                                      Large>.shard_factor
+                                      Large>.worker_fanout
               == cc::auto_route_v<cc::RouteIntent::Shardable,
                                   1,
                                   1,
-                                  Large>.shard_factor);
+                                  Large>.worker_fanout);
 static_assert(std::is_same_v<
               cc::StaticAutoRoute_t<cc::RouteIntent::Shardable,
                                     int,
@@ -191,7 +209,9 @@ static_assert(std::is_same_v<
 constexpr auto runtime_large =
     cc::auto_route_decision_runtime(cc::RouteIntent::Shardable, 1, 1, Large);
 static_assert(runtime_large.kind == cc::RouteKind::ShardedGrid);
-static_assert(runtime_large.shard_factor == 4);
+static_assert(runtime_large.worker_fanout == 4);
+static_assert(runtime_large.channel_producers == 1);
+static_assert(runtime_large.channel_consumers == 1);
 
 constexpr auto runtime_profiled_small_l2 =
     cc::auto_route_decision_runtime(
@@ -206,5 +226,11 @@ static_assert(runtime_profiled_small_l2.kind == cc::RouteKind::ShardedGrid);
 }  // namespace
 
 int main() {
+    const auto refreshed = cc::auto_route_runtime_profile_refresh();
+    const auto reprobed = cc::auto_route_runtime_profile_reprobe();
+    if (refreshed.l2_per_core_bytes == 0 || reprobed.l2_per_core_bytes == 0) {
+        std::fprintf(stderr, "auto_router: runtime topology profile has zero L2\n");
+        std::abort();
+    }
     return 0;
 }

@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -267,7 +268,8 @@ public:
         return producer.has_value() && producer->try_push(item);
     }
 
-    [[nodiscard]] std::optional<T> try_pop() noexcept {
+    [[nodiscard]] std::optional<T> try_pop(std::size_t worker_index = 0) noexcept {
+        (void)worker_index;
         auto consumer = queue_.consumer();
         if (!consumer) return std::nullopt;
         return consumer->try_pop();
@@ -295,7 +297,9 @@ public:
         return producer.has_value() && producer->try_push(std::move(item));
     }
 
-    [[nodiscard]] std::optional<T> try_pop() noexcept {
+    [[nodiscard]] std::optional<T> try_pop(std::size_t worker_index = 0) noexcept {
+        (void)worker_index;
+        SpinGuard guard{consumer_lock_};
         return consumer_.try_pop();
     }
 
@@ -306,6 +310,7 @@ public:
 private:
     queue_type queue_{};
     typename queue_type::ConsumerHandle consumer_;
+    SpinLock consumer_lock_;
 };
 
 template <typename T, std::size_t Capacity, typename UserTag>
@@ -318,11 +323,17 @@ public:
               safety::mint_permission_root<typename queue_type::owner_tag>())} {}
 
     [[nodiscard]] bool try_push(T item) noexcept {
+        SpinGuard guard{owner_lock_};
         return owner_.try_push(std::move(item));
     }
 
-    [[nodiscard]] std::optional<T> try_pop() noexcept {
-        return owner_.try_pop();
+    [[nodiscard]] std::optional<T> try_pop(std::size_t worker_index = 0) noexcept {
+        if (worker_index == 0) {
+            SpinGuard guard{owner_lock_};
+            return owner_.try_pop();
+        }
+        auto thief = queue_.thief();
+        return thief ? thief->try_steal() : std::nullopt;
     }
 
     [[nodiscard]] std::size_t size_approx() const noexcept {
@@ -332,6 +343,7 @@ public:
 private:
     queue_type queue_{};
     typename queue_type::OwnerHandle owner_;
+    SpinLock owner_lock_;
 };
 
 template <typename T,
@@ -348,18 +360,21 @@ public:
         auto whole = safety::mint_permission_root<typename queue_type::whole_tag>();
         auto perms = safety::split_grid<typename queue_type::whole_tag, M, N>(
             std::move(whole));
-        producer_.emplace(queue_.template producer<0>(
-            std::move(std::get<0>(perms.producers))));
+        emplace_producers_(std::move(perms.producers),
+                           std::make_index_sequence<M>{});
         emplace_consumers_(std::move(perms.consumers),
                            std::make_index_sequence<N>{});
     }
 
     [[nodiscard]] bool try_push(const T& item) noexcept {
-        return producer_->try_push(item);
+        const std::size_t start =
+            next_producer_.fetch_add(1, std::memory_order_relaxed) % M;
+        return try_push_producers_(start, item, std::make_index_sequence<M>{});
     }
 
-    [[nodiscard]] std::optional<T> try_pop() noexcept {
-        return try_pop_consumers_(std::make_index_sequence<N>{});
+    [[nodiscard]] std::optional<T> try_pop(std::size_t worker_index = 0) noexcept {
+        const std::size_t start = worker_index % N;
+        return try_pop_consumers_(start, std::make_index_sequence<N>{});
     }
 
     [[nodiscard]] std::size_t size_approx() const noexcept {
@@ -376,8 +391,26 @@ private:
             typename queue_type::template ConsumerHandle<Js>...>;
     };
 
+    template <typename Seq>
+    struct producer_tuple_for;
+
+    template <std::size_t... Is>
+    struct producer_tuple_for<std::index_sequence<Is...>> {
+        using type = std::tuple<
+            typename queue_type::template ProducerHandle<Is>...>;
+    };
+
     using consumer_tuple_type =
         typename consumer_tuple_for<std::make_index_sequence<N>>::type;
+    using producer_tuple_type =
+        typename producer_tuple_for<std::make_index_sequence<M>>::type;
+
+    template <typename ProducerPerms, std::size_t... Is>
+    void emplace_producers_(ProducerPerms&& perms,
+                            std::index_sequence<Is...>) {
+        producers_.emplace(queue_.template producer<Is>(
+            std::move(std::get<Is>(perms)))...);
+    }
 
     template <typename ConsumerPerms, std::size_t... Js>
     void emplace_consumers_(ConsumerPerms&& perms,
@@ -386,18 +419,64 @@ private:
             std::move(std::get<Js>(perms)))...);
     }
 
+    template <std::size_t I>
+    [[nodiscard]] bool try_push_one_(const T& item) noexcept {
+        SpinGuard guard{producer_locks_[I]};
+        return std::get<I>(*producers_).try_push(item);
+    }
+
+    template <std::size_t... Is>
+    [[nodiscard]] bool try_push_index_(std::size_t index,
+                                       const T& item,
+                                       std::index_sequence<Is...>) noexcept {
+        bool pushed = false;
+        ((index == Is ? void(pushed = try_push_one_<Is>(item)) : void()), ...);
+        return pushed;
+    }
+
+    template <std::size_t... Is>
+    [[nodiscard]] bool try_push_producers_(std::size_t start,
+                                           const T& item,
+                                           std::index_sequence<Is...> seq) noexcept {
+        for (std::size_t offset = 0; offset < M; ++offset) {
+            if (try_push_index_((start + offset) % M, item, seq)) return true;
+        }
+        return false;
+    }
+
+    template <std::size_t J>
+    [[nodiscard]] std::optional<T> try_pop_one_() noexcept {
+        SpinGuard guard{consumer_locks_[J]};
+        return std::get<J>(*consumers_).try_pop();
+    }
+
     template <std::size_t... Js>
     [[nodiscard]] std::optional<T>
-    try_pop_consumers_(std::index_sequence<Js...>) noexcept {
+    try_pop_index_(std::size_t index,
+                   std::index_sequence<Js...>) noexcept {
         std::optional<T> result;
-        ((result ? void() : void(result = std::get<Js>(*consumers_).try_pop())),
-         ...);
+        ((index == Js ? void(result = try_pop_one_<Js>()) : void()), ...);
         return result;
     }
 
+    template <std::size_t... Js>
+    [[nodiscard]] std::optional<T>
+    try_pop_consumers_(std::size_t start,
+                       std::index_sequence<Js...> seq) noexcept {
+        for (std::size_t offset = 0; offset < N; ++offset) {
+            if (auto result = try_pop_index_((start + offset) % N, seq)) {
+                return result;
+            }
+        }
+        return std::nullopt;
+    }
+
     queue_type queue_{};
-    std::optional<typename queue_type::template ProducerHandle<0>> producer_;
+    std::optional<producer_tuple_type> producers_;
     std::optional<consumer_tuple_type> consumers_;
+    std::array<SpinLock, M> producer_locks_{};
+    std::array<SpinLock, N> consumer_locks_{};
+    std::atomic<std::size_t> next_producer_{0};
 };
 
 template <typename T,
@@ -417,16 +496,20 @@ public:
         auto whole = safety::mint_permission_root<typename queue_type::whole_tag>();
         auto perms = safety::split_grid<typename queue_type::whole_tag, M, 1>(
             std::move(whole));
-        producer_.emplace(queue_.template producer<0>(
-            std::move(std::get<0>(perms.producers))));
+        emplace_producers_(std::move(perms.producers),
+                           std::make_index_sequence<M>{});
         consumer_.emplace(queue_.consumer(std::move(std::get<0>(perms.consumers))));
     }
 
     [[nodiscard]] bool try_push(const T& item) noexcept {
-        return producer_->try_push(item);
+        const std::size_t start =
+            next_producer_.fetch_add(1, std::memory_order_relaxed) % M;
+        return try_push_producers_(start, item, std::make_index_sequence<M>{});
     }
 
-    [[nodiscard]] std::optional<T> try_pop() noexcept {
+    [[nodiscard]] std::optional<T> try_pop(std::size_t worker_index = 0) noexcept {
+        (void)worker_index;
+        SpinGuard guard{consumer_lock_};
         return consumer_->try_pop();
     }
 
@@ -435,9 +518,56 @@ public:
     }
 
 private:
+    template <typename Seq>
+    struct producer_tuple_for;
+
+    template <std::size_t... Is>
+    struct producer_tuple_for<std::index_sequence<Is...>> {
+        using type = std::tuple<
+            typename queue_type::template ProducerHandle<Is>...>;
+    };
+
+    using producer_tuple_type =
+        typename producer_tuple_for<std::make_index_sequence<M>>::type;
+
+    template <typename ProducerPerms, std::size_t... Is>
+    void emplace_producers_(ProducerPerms&& perms,
+                            std::index_sequence<Is...>) {
+        producers_.emplace(queue_.template producer<Is>(
+            std::move(std::get<Is>(perms)))...);
+    }
+
+    template <std::size_t I>
+    [[nodiscard]] bool try_push_one_(const T& item) noexcept {
+        SpinGuard guard{producer_locks_[I]};
+        return std::get<I>(*producers_).try_push(item);
+    }
+
+    template <std::size_t... Is>
+    [[nodiscard]] bool try_push_index_(std::size_t index,
+                                       const T& item,
+                                       std::index_sequence<Is...>) noexcept {
+        bool pushed = false;
+        ((index == Is ? void(pushed = try_push_one_<Is>(item)) : void()), ...);
+        return pushed;
+    }
+
+    template <std::size_t... Is>
+    [[nodiscard]] bool try_push_producers_(std::size_t start,
+                                           const T& item,
+                                           std::index_sequence<Is...> seq) noexcept {
+        for (std::size_t offset = 0; offset < M; ++offset) {
+            if (try_push_index_((start + offset) % M, item, seq)) return true;
+        }
+        return false;
+    }
+
     queue_type queue_{};
-    std::optional<typename queue_type::template ProducerHandle<0>> producer_;
+    std::optional<producer_tuple_type> producers_;
     std::optional<typename queue_type::ConsumerHandle> consumer_;
+    std::array<SpinLock, M> producer_locks_{};
+    SpinLock consumer_lock_;
+    std::atomic<std::size_t> next_producer_{0};
 };
 
 template <typename T,
@@ -459,18 +589,23 @@ public:
         auto whole = safety::mint_permission_root<typename queue_type::whole_tag>();
         auto perms = safety::split_grid<typename queue_type::whole_tag,
                                         NumShards, NumShards>(std::move(whole));
-        producer_.emplace(queue_.template producer<0>(
-            std::move(std::get<0>(perms.producers))));
-        consumer_.emplace(queue_.template consumer<0>(
-            std::move(std::get<0>(perms.consumers))));
+        emplace_producers_(std::move(perms.producers),
+                           std::make_index_sequence<NumShards>{});
+        emplace_consumers_(std::move(perms.consumers),
+                           std::make_index_sequence<NumShards>{});
     }
 
     [[nodiscard]] bool try_push(const T& item) noexcept {
-        return producer_->try_push(item);
+        const std::size_t start =
+            next_producer_.fetch_add(1, std::memory_order_relaxed) % NumShards;
+        return try_push_producers_(start, item,
+                                   std::make_index_sequence<NumShards>{});
     }
 
-    [[nodiscard]] std::optional<T> try_pop() noexcept {
-        return consumer_->try_pop();
+    [[nodiscard]] std::optional<T> try_pop(std::size_t worker_index = 0) noexcept {
+        const std::size_t start = worker_index % NumShards;
+        return try_pop_consumers_(start,
+                                  std::make_index_sequence<NumShards>{});
     }
 
     [[nodiscard]] std::size_t size_approx() const noexcept {
@@ -478,9 +613,105 @@ public:
     }
 
 private:
+    template <typename Seq>
+    struct producer_tuple_for;
+
+    template <std::size_t... Is>
+    struct producer_tuple_for<std::index_sequence<Is...>> {
+        using type = std::tuple<
+            typename queue_type::template ProducerHandle<Is>...>;
+    };
+
+    template <typename Seq>
+    struct consumer_tuple_for;
+
+    template <std::size_t... Is>
+    struct consumer_tuple_for<std::index_sequence<Is...>> {
+        using type = std::tuple<
+            typename queue_type::template ConsumerHandle<Is>...>;
+    };
+
+    using producer_tuple_type =
+        typename producer_tuple_for<std::make_index_sequence<NumShards>>::type;
+    using consumer_tuple_type =
+        typename consumer_tuple_for<std::make_index_sequence<NumShards>>::type;
+
+    template <typename ProducerPerms, std::size_t... Is>
+    void emplace_producers_(ProducerPerms&& perms,
+                            std::index_sequence<Is...>) {
+        producers_.emplace(queue_.template producer<Is>(
+            std::move(std::get<Is>(perms)))...);
+    }
+
+    template <typename ConsumerPerms, std::size_t... Is>
+    void emplace_consumers_(ConsumerPerms&& perms,
+                            std::index_sequence<Is...>) {
+        consumers_.emplace(queue_.template consumer<Is>(
+            std::move(std::get<Is>(perms)))...);
+    }
+
+    template <std::size_t I>
+    [[nodiscard]] bool try_push_one_(const T& item) noexcept {
+        SpinGuard guard{producer_locks_[I]};
+        return std::get<I>(*producers_).try_push(item);
+    }
+
+    template <std::size_t... Is>
+    [[nodiscard]] bool try_push_index_(std::size_t index,
+                                       const T& item,
+                                       std::index_sequence<Is...>) noexcept {
+        bool pushed = false;
+        ((index == Is ? void(pushed = try_push_one_<Is>(item)) : void()), ...);
+        return pushed;
+    }
+
+    template <std::size_t... Is>
+    [[nodiscard]] bool try_push_producers_(
+        std::size_t start,
+        const T& item,
+        std::index_sequence<Is...> seq) noexcept {
+        for (std::size_t offset = 0; offset < NumShards; ++offset) {
+            if (try_push_index_((start + offset) % NumShards, item, seq)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    template <std::size_t I>
+    [[nodiscard]] std::optional<T> try_pop_one_() noexcept {
+        SpinGuard guard{consumer_locks_[I]};
+        return std::get<I>(*consumers_).try_pop();
+    }
+
+    template <std::size_t... Is>
+    [[nodiscard]] std::optional<T> try_pop_index_(
+        std::size_t index,
+        std::index_sequence<Is...>) noexcept {
+        std::optional<T> result;
+        ((index == Is ? void(result = try_pop_one_<Is>()) : void()), ...);
+        return result;
+    }
+
+    template <std::size_t... Is>
+    [[nodiscard]] std::optional<T> try_pop_consumers_(
+        std::size_t start,
+        std::index_sequence<Is...> seq) noexcept {
+        for (std::size_t offset = 0; offset < NumShards; ++offset) {
+            if (auto result =
+                    try_pop_index_((start + offset) % NumShards, seq)) {
+                return result;
+            }
+        }
+        return std::nullopt;
+    }
+
     queue_type queue_{};
-    std::optional<typename queue_type::template ProducerHandle<0>> producer_;
-    std::optional<typename queue_type::template ConsumerHandle<0>> consumer_;
+    std::optional<producer_tuple_type> producers_;
+    std::optional<consumer_tuple_type> consumers_;
+    std::array<SpinLock, NumShards> producer_locks_{};
+    std::array<SpinLock, NumShards> consumer_locks_{};
+    std::atomic<std::size_t> next_producer_{0};
 };
 
 }  // namespace adaptive_detail
@@ -827,17 +1058,14 @@ private:
     }
 
     [[nodiscard]] bool try_enqueue_ticket_(ticket_type ticket) noexcept {
-        {
-            SpinGuard lock{queue_lock_};
-            if (!queue_.try_push(ticket)) return false;
-        }
+        if (!queue_.try_push(ticket)) return false;
         queued_tickets_.fetch_add(1, std::memory_order_release);
         return true;
     }
 
-    [[nodiscard]] std::optional<ticket_type> try_pop_ticket_() noexcept {
-        SpinGuard lock{queue_lock_};
-        auto ticket = queue_.try_pop();
+    [[nodiscard]] std::optional<ticket_type>
+    try_pop_ticket_(std::size_t worker_index) noexcept {
+        auto ticket = queue_.try_pop(worker_index);
         if (ticket) {
             queued_tickets_.fetch_sub(1, std::memory_order_acq_rel);
         }
@@ -893,21 +1121,6 @@ private:
 
     }
 
-    void return_ticket_(ticket_type ticket) {
-        while (!try_enqueue_ticket_(ticket)) {
-            CRUCIBLE_SPIN_PAUSE;
-        }
-    }
-
-    [[nodiscard]] std::optional<std::size_t>
-    worker_limit_for_(ticket_type ticket) const noexcept {
-        const auto& slot = slot_for_(ticket);
-        const std::uint64_t state =
-            slot.state.load(std::memory_order_acquire);
-        if (!slot_is_ready(state)) return std::nullopt;
-        return slot.task.worker_limit;
-    }
-
     [[nodiscard]] std::optional<Task> take_task_(ticket_type ticket) noexcept {
         auto& slot = slot_for_(ticket);
         std::uint64_t expected = slot.state.load(std::memory_order_acquire);
@@ -956,16 +1169,8 @@ private:
                 continue;
             }
 
-            auto ticket = try_pop_ticket_();
+            auto ticket = try_pop_ticket_(worker_index);
             if (!ticket) {
-                CRUCIBLE_SPIN_PAUSE;
-                continue;
-            }
-
-            auto worker_limit = worker_limit_for_(*ticket);
-            if (!worker_limit) continue;
-            if (worker_index >= *worker_limit) {
-                return_ticket_(*ticket);
                 CRUCIBLE_SPIN_PAUSE;
                 continue;
             }
@@ -1012,7 +1217,6 @@ private:
     }
 
     adaptive_detail::QueuePortal<policy_queue_type> queue_{};
-    mutable SpinLock                queue_lock_;
     std::unique_ptr<TaskSlot[]>     task_slots_;
     std::vector<int>                selected_cores_;
     std::atomic<std::uint64_t>      next_sequence_{0};

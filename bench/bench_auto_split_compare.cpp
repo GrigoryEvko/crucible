@@ -407,6 +407,10 @@ int main() {
 
     const cc::AutoSplitRuntimeProfile& profile =
         cc::auto_split_runtime_profile_once();
+    const cc::AutoSplitRuntimeProfile refreshed_profile =
+        cc::auto_split_runtime_profile_refresh();
+    const cc::AutoSplitRuntimeProfile reprobed_profile =
+        cc::auto_split_runtime_profile_reprobe();
     cc::Pool<cs::Fifo> pool{cc::CoreCount{8}};
 
     // 64 MiB arena covers the largest scenario (DRAM.compute = 16 MiB).
@@ -426,6 +430,11 @@ int main() {
                 profile.route.huge_bytes,
                 profile.available_workers,
                 static_cast<unsigned long long>(profile.dispatch_cost_ns));
+    std::printf("  refreshed_workers=%zu reprobed_workers=%zu refreshed_l2=%zu reprobed_l2=%zu\n",
+                refreshed_profile.available_workers,
+                reprobed_profile.available_workers,
+                refreshed_profile.route.l2_per_core_bytes,
+                reprobed_profile.route.l2_per_core_bytes);
     std::printf("  arena=%zu MiB  pool_workers=%zu\n\n",
                 arena_bytes / MiB, pool.worker_count());
 

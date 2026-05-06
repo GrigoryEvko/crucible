@@ -952,6 +952,55 @@ auto_split_runtime_profile_once() noexcept {
     return profile;
 }
 
+[[nodiscard]] inline AutoSplitRuntimeProfile
+auto_split_runtime_profile_from_topology(
+    const Topology& topology = Topology::instance()) noexcept {
+    return AutoSplitRuntimeProfile{
+        .route = auto_route_runtime_profile_from_topology(topology),
+        .available_workers = std::max<std::size_t>(
+            1, topology.process_cpu_count()),
+        .dispatch_cost_ns = 10'000,
+    };
+}
+
+[[nodiscard]] constexpr AutoSplitRuntimeProfile
+auto_split_runtime_profile_from_topology_snapshot(
+    Topology::Snapshot snapshot) noexcept {
+    return AutoSplitRuntimeProfile{
+        .route = auto_route_runtime_profile_from_topology_snapshot(snapshot),
+        .available_workers = std::max<std::size_t>(
+            1, snapshot.process_cpu_count),
+        .dispatch_cost_ns = 10'000,
+    };
+}
+
+[[nodiscard]] inline AutoSplitRuntimeProfile
+auto_split_runtime_profile_refresh() noexcept {
+    return auto_split_runtime_profile_from_topology_snapshot(
+        Topology::instance().snapshot());
+}
+
+[[nodiscard]] inline AutoSplitRuntimeProfile
+auto_split_runtime_profile_reprobe() noexcept {
+    return auto_split_runtime_profile_from_topology_snapshot(
+        Topology::reprobe_snapshot());
+}
+
+[[nodiscard]] constexpr AutoRouteDecision
+normalize_auto_split_route(AutoRouteDecision route,
+                           std::size_t shard_count) noexcept {
+    const std::size_t fanout = std::max<std::size_t>(1, shard_count);
+    route.worker_fanout = fanout;
+    route.uses_worker_fanout = shard_count > 1;
+    if (!route.uses_worker_fanout) {
+        route.kind = detail::route_kind_from_topology_runtime(
+            route.channel_topology);
+    } else {
+        route.kind = RouteKind::ShardedGrid;
+    }
+    return route;
+}
+
 [[nodiscard]] constexpr AutoSplitPlan
 auto_split_plan(AutoSplitRequest request,
                 AutoSplitRuntimeProfile profile = {}) noexcept {
@@ -992,7 +1041,7 @@ auto_split_plan(AutoSplitRequest request,
     const std::size_t l2_fit =
         total_bytes == 0 ? 1 : autosplit_detail::ceil_div(total_bytes, l2);
     const std::size_t route_factor =
-        route.sharded ? std::max(route.shard_factor, l2_fit) : 1;
+        route.uses_worker_fanout ? std::max(route.worker_fanout, l2_fit) : 1;
     const std::size_t item_cap =
         request.item_count == 0 ? 0 : std::max<std::size_t>(1, request.item_count);
     std::size_t shard_count =
@@ -1072,9 +1121,12 @@ auto_split_plan(AutoSplitRequest request,
                                                     : AutoSplitPlacementPolicy::PoolAny;
     }
 
+    const AutoRouteDecision normalized_route =
+        normalize_auto_split_route(route, shard_count);
+
     return AutoSplitPlan{
         .request = request,
-        .route = route,
+        .route = normalized_route,
         .decision = decision,
         .routing = routing,
         .shard_count = shard_count,
@@ -1113,15 +1165,18 @@ auto_split_plan_at_factor(AutoSplitRequest request,
         .kind           = shard_count > 1 ? RouteKind::ShardedGrid
                                            : RouteKind::Spsc,
         .intent         = RouteIntent::Shardable,
-        .topology       = shard_count > 1 ? ChannelTopology::ManyToMany
-                                           : ChannelTopology::OneToOne,
-        .producers      = autosplit_detail::sanitized(request.producers, 1),
-        .consumers      = autosplit_detail::sanitized(request.consumers, 1),
+        .channel_topology = detail::recommend_topology_runtime(
+            autosplit_detail::sanitized(request.producers, 1),
+            autosplit_detail::sanitized(request.consumers, 1),
+            false),
+        .channel_producers = autosplit_detail::sanitized(request.producers, 1),
+        .channel_consumers = autosplit_detail::sanitized(request.consumers, 1),
         .workload_bytes = total_bytes,
-        .shard_factor   = shard_count,
-        .sharded        = shard_count > 1,
+        .worker_fanout  = shard_count,
+        .uses_worker_fanout = shard_count > 1,
         .latest_only    = false,
     };
+    route = normalize_auto_split_route(route, shard_count);
 
     ParallelismDecision decision{};
     decision.kind = shard_count > 1 ? ParallelismDecision::Kind::Parallel

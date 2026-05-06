@@ -127,11 +127,11 @@ template <typename Body>
 route_digest_from_decision(cc::AutoRouteDecision decision) noexcept {
     return (static_cast<std::uint64_t>(decision.kind) << 56)
          ^ (static_cast<std::uint64_t>(decision.intent) << 48)
-         ^ (static_cast<std::uint64_t>(decision.topology) << 40)
-         ^ (static_cast<std::uint64_t>(decision.producers) << 32)
-         ^ (static_cast<std::uint64_t>(decision.consumers) << 24)
-         ^ (static_cast<std::uint64_t>(decision.shard_factor) << 16)
-         ^ (decision.sharded ? 0xA55AULL : 0ULL)
+         ^ (static_cast<std::uint64_t>(decision.channel_topology) << 40)
+         ^ (static_cast<std::uint64_t>(decision.channel_producers) << 32)
+         ^ (static_cast<std::uint64_t>(decision.channel_consumers) << 24)
+         ^ (static_cast<std::uint64_t>(decision.worker_fanout) << 16)
+         ^ (decision.uses_worker_fanout ? 0xA55AULL : 0ULL)
          ^ (decision.latest_only ? 0x5AA5ULL : 0ULL)
          ^ static_cast<std::uint64_t>(decision.workload_bytes & 0xFFFFULL);
 }
@@ -179,13 +179,14 @@ void consume_decision_fields() noexcept {
 
     auto kind = static_cast<std::uint8_t>(decision.kind);
     auto intent = static_cast<std::uint8_t>(decision.intent);
-    auto topology = static_cast<std::uint8_t>(decision.topology);
-    auto producers = decision.producers;
-    auto consumers = decision.consumers;
+    auto topology = static_cast<std::uint8_t>(decision.channel_topology);
+    auto producers = decision.channel_producers;
+    auto consumers = decision.channel_consumers;
     auto bytes = decision.workload_bytes;
-    auto shards = decision.shard_factor;
+    auto shards = decision.worker_fanout;
     auto flags = static_cast<std::uint8_t>(
-        (decision.sharded ? 0x1 : 0x0) | (decision.latest_only ? 0x2 : 0x0));
+        (decision.uses_worker_fanout ? 0x1 : 0x0) |
+        (decision.latest_only ? 0x2 : 0x0));
 
     bench::do_not_optimize(kind);
     bench::do_not_optimize(intent);
@@ -462,12 +463,9 @@ void add_digest_cases(std::vector<bench::Report>& reports) {
 void add_implementation_comparison(std::vector<bench::Report>& reports,
                                    const HardwareSnapshot& hw) {
     const cc::AutoRouteRuntimeProfile fixed_profile{};
-    const cc::AutoRouteRuntimeProfile hardware_profile{
-        .l2_per_core_bytes = hw.l2 != 0 ? hw.l2 : cc::conservative_cliff_l2_per_core,
-        .huge_bytes = 16 * MiB,
-        .medium_shards = 4,
-        .huge_shards = 16,
-    };
+    (void)hw;
+    const cc::AutoRouteRuntimeProfile hardware_profile =
+        cc::auto_route_runtime_profile_refresh();
 
     add_digest<cc::RouteIntent::Shardable, 4, 4, Large>(
         reports, "impl.consteval.digest.shardable.4p4c.large");
@@ -572,11 +570,11 @@ void add_type_cases(std::vector<bench::Report>& reports) {
     add_type<cc::AutoRoute_t<cc::RouteIntent::VariableCost, std::uint64_t, 2048, WorkTagB, 32, 32, Huge>>(reports, "type.work.u64.cap2048");
 
     add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, int, 64, ShardTag, 1, 1, Small>>(reports, "type.shardable.small.spsc");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, int, 64, ShardTag, 1, 1, Large>>(reports, "type.shardable.large.grid4");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, int, 64, ShardTag, 1, 1, Huge>>(reports, "type.shardable.huge.grid16");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, Payload64, 64, ShardTagB, 4, 4, Large>>(reports, "type.shardable.payload64.grid4");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, Payload256, 64, ShardTagB, 4, 4, Huge, 8>>(reports, "type.shardable.payload256.grid8");
-    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, Payload512, 64, ShardTagB, 4, 4, Huge, 16>>(reports, "type.shardable.payload512.grid16");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, int, 64, ShardTag, 1, 1, Large>>(reports, "type.shardable.large.chan1x1.fanout4");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, int, 64, ShardTag, 1, 1, Huge>>(reports, "type.shardable.huge.chan1x1.fanout16");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, Payload64, 64, ShardTagB, 4, 4, Large>>(reports, "type.shardable.payload64.chan4x4.fanout4");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, Payload256, 64, ShardTagB, 4, 4, Huge, 8>>(reports, "type.shardable.payload256.chan4x4.fanout8");
+    add_type<cc::AutoRoute_t<cc::RouteIntent::Shardable, Payload512, 64, ShardTagB, 4, 4, Huge, 16>>(reports, "type.shardable.payload512.chan4x4.fanout16");
 }
 
 }  // namespace

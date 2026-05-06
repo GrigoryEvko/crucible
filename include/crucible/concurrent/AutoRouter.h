@@ -22,6 +22,7 @@
 
 #include <crucible/concurrent/PermissionedShardedGrid.h>
 #include <crucible/concurrent/Substrate.h>
+#include <crucible/concurrent/Topology.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -47,12 +48,12 @@ enum class RouteKind : std::uint8_t {
 struct AutoRouteDecision {
     RouteKind       kind;
     RouteIntent     intent;
-    ChannelTopology topology;
-    std::size_t     producers;
-    std::size_t     consumers;
+    ChannelTopology channel_topology;
+    std::size_t     channel_producers;
+    std::size_t     channel_consumers;
     std::size_t     workload_bytes;
-    std::size_t     shard_factor;
-    bool            sharded;
+    std::size_t     worker_fanout;
+    bool            uses_worker_fanout;
     bool            latest_only;
 };
 
@@ -161,24 +162,24 @@ template <RouteIntent Intent,
         return AutoRouteDecision{
             .kind           = RouteKind::Snapshot,
             .intent         = Intent,
-            .topology       = ChannelTopology::OneToMany_Latest,
-            .producers      = Producers,
-            .consumers      = Consumers,
+            .channel_topology = ChannelTopology::OneToMany_Latest,
+            .channel_producers = Producers,
+            .channel_consumers = Consumers,
             .workload_bytes = WorkloadBytes,
-            .shard_factor   = 1,
-            .sharded        = false,
+            .worker_fanout  = 1,
+            .uses_worker_fanout = false,
             .latest_only    = true,
         };
     } else if constexpr (Intent == RouteIntent::VariableCost) {
         return AutoRouteDecision{
             .kind           = RouteKind::WorkStealing,
             .intent         = Intent,
-            .topology       = ChannelTopology::WorkStealing,
-            .producers      = Producers,
-            .consumers      = Consumers,
+            .channel_topology = ChannelTopology::WorkStealing,
+            .channel_producers = Producers,
+            .channel_consumers = Consumers,
             .workload_bytes = WorkloadBytes,
-            .shard_factor   = 1,
-            .sharded        = false,
+            .worker_fanout  = 1,
+            .uses_worker_fanout = false,
             .latest_only    = false,
         };
     } else if constexpr (Intent == RouteIntent::Shardable
@@ -186,12 +187,12 @@ template <RouteIntent Intent,
         return AutoRouteDecision{
             .kind           = RouteKind::ShardedGrid,
             .intent         = Intent,
-            .topology       = ChannelTopology::ManyToMany,
-            .producers      = Producers,
-            .consumers      = Consumers,
+            .channel_topology = recommend_topology(Producers, Consumers, false),
+            .channel_producers = Producers,
+            .channel_consumers = Consumers,
             .workload_bytes = WorkloadBytes,
-            .shard_factor   = auto_shard_factor<WorkloadBytes, MaxShards>(),
-            .sharded        = true,
+            .worker_fanout  = auto_shard_factor<WorkloadBytes, MaxShards>(),
+            .uses_worker_fanout = true,
             .latest_only    = false,
         };
     } else {
@@ -200,12 +201,12 @@ template <RouteIntent Intent,
         return AutoRouteDecision{
             .kind           = detail::route_kind_from_topology(topology),
             .intent         = Intent,
-            .topology       = topology,
-            .producers      = Producers,
-            .consumers      = Consumers,
+            .channel_topology = topology,
+            .channel_producers = Producers,
+            .channel_consumers = Consumers,
             .workload_bytes = WorkloadBytes,
-            .shard_factor   = 1,
-            .sharded        = false,
+            .worker_fanout  = 1,
+            .uses_worker_fanout = false,
             .latest_only    = false,
         };
     }
@@ -225,6 +226,35 @@ struct AutoRouteRuntimeProfile {
     std::size_t medium_shards = 4;
     std::size_t huge_shards = 16;
 };
+
+[[nodiscard]] constexpr AutoRouteRuntimeProfile
+auto_route_runtime_profile_from_topology_snapshot(
+    Topology::Snapshot snapshot) noexcept {
+    return AutoRouteRuntimeProfile{
+        .l2_per_core_bytes = snapshot.l2_per_core_bytes,
+        .huge_bytes = snapshot.l3_total_bytes,
+        .medium_shards = 4,
+        .huge_shards = 16,
+    };
+}
+
+[[nodiscard]] inline AutoRouteRuntimeProfile
+auto_route_runtime_profile_from_topology(
+    const Topology& topology = Topology::instance()) noexcept {
+    return auto_route_runtime_profile_from_topology_snapshot(
+        topology.snapshot());
+}
+
+[[nodiscard]] inline AutoRouteRuntimeProfile
+auto_route_runtime_profile_refresh() noexcept {
+    return auto_route_runtime_profile_from_topology(Topology::instance());
+}
+
+[[nodiscard]] inline AutoRouteRuntimeProfile
+auto_route_runtime_profile_reprobe() noexcept {
+    return auto_route_runtime_profile_from_topology_snapshot(
+        Topology::reprobe_snapshot());
+}
 
 [[nodiscard]] constexpr std::size_t auto_shard_factor_runtime(
     std::size_t workload_bytes,
@@ -261,12 +291,12 @@ struct AutoRouteRuntimeProfile {
         return AutoRouteDecision{
             .kind           = RouteKind::Snapshot,
             .intent         = intent,
-            .topology       = ChannelTopology::OneToMany_Latest,
-            .producers      = producers,
-            .consumers      = consumers,
+            .channel_topology = ChannelTopology::OneToMany_Latest,
+            .channel_producers = producers,
+            .channel_consumers = consumers,
             .workload_bytes = workload_bytes,
-            .shard_factor   = 1,
-            .sharded        = false,
+            .worker_fanout  = 1,
+            .uses_worker_fanout = false,
             .latest_only    = true,
         };
     }
@@ -274,12 +304,12 @@ struct AutoRouteRuntimeProfile {
         return AutoRouteDecision{
             .kind           = RouteKind::WorkStealing,
             .intent         = intent,
-            .topology       = ChannelTopology::WorkStealing,
-            .producers      = producers,
-            .consumers      = consumers,
+            .channel_topology = ChannelTopology::WorkStealing,
+            .channel_producers = producers,
+            .channel_consumers = consumers,
             .workload_bytes = workload_bytes,
-            .shard_factor   = 1,
-            .sharded        = false,
+            .worker_fanout  = 1,
+            .uses_worker_fanout = false,
             .latest_only    = false,
         };
     }
@@ -292,14 +322,15 @@ struct AutoRouteRuntimeProfile {
         return AutoRouteDecision{
             .kind           = RouteKind::ShardedGrid,
             .intent         = intent,
-            .topology       = ChannelTopology::ManyToMany,
-            .producers      = producers,
-            .consumers      = consumers,
+            .channel_topology = detail::recommend_topology_runtime(
+                producers, consumers, false),
+            .channel_producers = producers,
+            .channel_consumers = consumers,
             .workload_bytes = workload_bytes,
-            .shard_factor   = auto_shard_factor_runtime(workload_bytes,
+            .worker_fanout  = auto_shard_factor_runtime(workload_bytes,
                                                         max_shards,
                                                         profile),
-            .sharded        = true,
+            .uses_worker_fanout = true,
             .latest_only    = false,
         };
     }
@@ -309,12 +340,12 @@ struct AutoRouteRuntimeProfile {
     return AutoRouteDecision{
         .kind           = detail::route_kind_from_topology_runtime(topology),
         .intent         = intent,
-        .topology       = topology,
-        .producers      = producers,
-        .consumers      = consumers,
+        .channel_topology = topology,
+        .channel_producers = producers,
+        .channel_consumers = consumers,
         .workload_bytes = workload_bytes,
-        .shard_factor   = 1,
-        .sharded        = false,
+        .worker_fanout  = 1,
+        .uses_worker_fanout = false,
         .latest_only    = false,
     };
 }
@@ -332,12 +363,12 @@ struct StaticAutoRouteDecisionImpl {
     static constexpr AutoRouteDecision value = AutoRouteDecision{
         .kind           = route_kind_from_topology(topology),
         .intent         = Intent,
-        .topology       = topology,
-        .producers      = Producers,
-        .consumers      = Consumers,
+        .channel_topology = topology,
+        .channel_producers = Producers,
+        .channel_consumers = Consumers,
         .workload_bytes = WorkloadBytes,
-        .shard_factor   = 1,
-        .sharded        = false,
+        .worker_fanout  = 1,
+        .uses_worker_fanout = false,
         .latest_only    = false,
     };
 };
@@ -354,12 +385,12 @@ struct StaticAutoRouteDecisionImpl<RouteIntent::Latest,
     static constexpr AutoRouteDecision value = AutoRouteDecision{
         .kind           = RouteKind::Snapshot,
         .intent         = RouteIntent::Latest,
-        .topology       = ChannelTopology::OneToMany_Latest,
-        .producers      = Producers,
-        .consumers      = Consumers,
+        .channel_topology = ChannelTopology::OneToMany_Latest,
+        .channel_producers = Producers,
+        .channel_consumers = Consumers,
         .workload_bytes = WorkloadBytes,
-        .shard_factor   = 1,
-        .sharded        = false,
+        .worker_fanout  = 1,
+        .uses_worker_fanout = false,
         .latest_only    = true,
     };
 };
@@ -376,12 +407,12 @@ struct StaticAutoRouteDecisionImpl<RouteIntent::VariableCost,
     static constexpr AutoRouteDecision value = AutoRouteDecision{
         .kind           = RouteKind::WorkStealing,
         .intent         = RouteIntent::VariableCost,
-        .topology       = ChannelTopology::WorkStealing,
-        .producers      = Producers,
-        .consumers      = Consumers,
+        .channel_topology = ChannelTopology::WorkStealing,
+        .channel_producers = Producers,
+        .channel_consumers = Consumers,
         .workload_bytes = WorkloadBytes,
-        .shard_factor   = 1,
-        .sharded        = false,
+        .worker_fanout  = 1,
+        .uses_worker_fanout = false,
         .latest_only    = false,
     };
 };
@@ -410,12 +441,12 @@ struct StaticShardableDecisionImpl<true,
     static constexpr AutoRouteDecision value = AutoRouteDecision{
         .kind           = RouteKind::ShardedGrid,
         .intent         = RouteIntent::Shardable,
-        .topology       = ChannelTopology::ManyToMany,
-        .producers      = Producers,
-        .consumers      = Consumers,
+        .channel_topology = recommend_topology(Producers, Consumers, false),
+        .channel_producers = Producers,
+        .channel_consumers = Consumers,
         .workload_bytes = WorkloadBytes,
-        .shard_factor   = auto_shard_factor<WorkloadBytes, MaxShards>(),
-        .sharded        = true,
+        .worker_fanout  = auto_shard_factor<WorkloadBytes, MaxShards>(),
+        .uses_worker_fanout = true,
         .latest_only    = false,
     };
 };
@@ -498,10 +529,11 @@ struct ShardableRouteImpl<true,
     static_assert(SpscValue<T>,
                   "AutoRouter Shardable grid payload must satisfy SpscValue<T>");
 
-    static constexpr std::size_t factor =
-        auto_shard_factor<WorkloadBytes, MaxShards>();
-
-    using type = PermissionedShardedGrid<T, factor, factor, Capacity, UserTag>;
+    using type = PermissionedShardedGrid<T,
+                                         Producers,
+                                         Consumers,
+                                         Capacity,
+                                         UserTag>;
 };
 
 template <typename T,
