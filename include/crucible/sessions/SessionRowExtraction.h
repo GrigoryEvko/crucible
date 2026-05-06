@@ -18,6 +18,9 @@
 //   Tagged<T, S>           → payload_row<T>          (transparent unwrap)
 //   Linear<T>              → payload_row<T>          (transparent unwrap)
 //   Stale<T>               → payload_row<T>          (transparent unwrap)
+//   Transferable<T, X>     → payload_row<T>          (transparent unwrap)
+//   Borrowed<T, X>         → payload_row<T>          (transparent unwrap)
+//   Returned<T, X>         → payload_row<T>          (transparent unwrap)
 //
 // Composed payloads (Refined<P, Linear<Tagged<Computation<R, T>, S>>>)
 // unwrap transparently — every value-level wrapper that "passes
@@ -82,6 +85,7 @@
 #include <crucible/safety/Vendor.h>
 #include <crucible/safety/Wait.h>
 #include <crucible/sessions/SessionContentAddressed.h>
+#include <crucible/sessions/SessionPermPayloads.h>
 
 #include <type_traits>
 
@@ -146,6 +150,21 @@ struct payload_row<::crucible::safety::Stale<T>>
 // unwrap.
 template <class T>
 struct payload_row<ContentAddressed<T>>
+    : payload_row<T> {};
+
+// Permission-flow payload markers are transparent for row accounting:
+// the wrapper moves or borrows CSL authority, while the carried value T
+// is still the thing whose effect row must be admitted by the ctx.
+template <class T, class Tag>
+struct payload_row<Transferable<T, Tag>>
+    : payload_row<T> {};
+
+template <class T, class Tag>
+struct payload_row<Borrowed<T, Tag>>
+    : payload_row<T> {};
+
+template <class T, class Tag>
+struct payload_row<Returned<T, Tag>>
     : payload_row<T> {};
 
 // ── Single-axis policy wrappers (chain-lattice family) ─────────────

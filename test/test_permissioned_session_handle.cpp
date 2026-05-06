@@ -52,6 +52,7 @@
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <atomic>
 #include <cstdio>
@@ -63,6 +64,7 @@
 namespace {
 
 using namespace crucible::safety::proto;
+namespace eff = ::crucible::effects;
 using ::crucible::safety::Permission;
 using ::crucible::safety::mint_permission_root;
 
@@ -121,6 +123,12 @@ struct FakeChannel {
     int counter  = 0;  // monotonic per recv_transferable_int call
 };
 
+struct PinnedFakeChannel
+    : ::crucible::safety::Pinned<PinnedFakeChannel>
+{
+    int last_int = 0;
+};
+
 struct CarrierChannel {
     int delegated_last_int = 0;
     int carrier_int        = 0;
@@ -131,6 +139,11 @@ struct CarrierChannel {
 
 [[gnu::cold]]
 void send_int(FakeChannel& ch, int v) noexcept { ch.last_int = v; }
+
+[[gnu::cold]]
+void send_pinned_int(PinnedFakeChannel& ch, int v) noexcept {
+    ch.last_int = v;
+}
 
 // ── Transferable<int, WorkItem> Transports ────────────────────────
 //
@@ -288,6 +301,65 @@ void test_transferable_send_end() {
 
     FakeChannel out = std::move(h_after).close();
     CRUCIBLE_TEST_REQUIRE(out.last_int == 99);
+}
+
+void test_ctx_bound_permissioned_mint_transferable_send_end() {
+    using Proto = Send<Transferable<int, WorkItem>, End>;
+
+    eff::HotFgCtx ctx;
+    auto perm = mint_permission_root<WorkItem>();
+    auto h = mint_permissioned_session<Proto>(
+        ctx, FakeChannel{}, std::move(perm));
+
+    static_assert(std::is_same_v<typename decltype(h)::protocol, Proto>);
+    static_assert(std::is_same_v<typename decltype(h)::perm_set,
+                                 PermSet<WorkItem>>);
+
+    Transferable<int, WorkItem> payload{
+        101, mint_permission_root<WorkItem>()};
+    auto h_after = std::move(h).send(std::move(payload),
+                                     send_transferable_int);
+
+    static_assert(std::is_same_v<typename decltype(h_after)::perm_set,
+                                 EmptyPermSet>);
+
+    FakeChannel out = std::move(h_after).close();
+    CRUCIBLE_TEST_REQUIRE(out.last_int == 101);
+}
+
+void test_mint_session_empty_permset_shim() {
+    using Proto = Send<int, End>;
+
+    eff::HotFgCtx ctx;
+    auto h = mint_session<Proto>(ctx, FakeChannel{});
+
+    static_assert(std::is_same_v<typename decltype(h)::protocol, Proto>);
+    static_assert(std::is_same_v<typename decltype(h)::perm_set,
+                                 EmptyPermSet>);
+
+    auto h_after = std::move(h).send(55, send_int);
+    FakeChannel out = std::move(h_after).close();
+    CRUCIBLE_TEST_REQUIRE(out.last_int == 55);
+}
+
+void test_ctx_bound_permissioned_mint_preserves_pinned_ref() {
+    using Proto = Send<int, End>;
+
+    eff::HotFgCtx ctx;
+    PinnedFakeChannel ch;
+    auto h = mint_permissioned_session<Proto>(ctx, ch);
+
+    static_assert(std::is_same_v<typename decltype(h)::protocol, Proto>);
+    static_assert(std::is_same_v<typename decltype(h)::perm_set,
+                                 EmptyPermSet>);
+    static_assert(std::is_same_v<typename decltype(h)::resource_type,
+                                 PinnedFakeChannel&>);
+
+    auto h_after = std::move(h).send(88, send_pinned_int);
+    PinnedFakeChannel& out = std::move(h_after).close();
+
+    CRUCIBLE_TEST_REQUIRE(&out == &ch);
+    CRUCIBLE_TEST_REQUIRE(ch.last_int == 88);
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -755,6 +827,12 @@ int main() {
     run_test("end_round_trip",                  test_end_round_trip);
     run_test("plain_send_end",                  test_plain_send_end);
     run_test("transferable_send_end",           test_transferable_send_end);
+    run_test("ctx_bound_permissioned_mint_transferable_send_end",
+             test_ctx_bound_permissioned_mint_transferable_send_end);
+    run_test("mint_session_empty_permset_shim",
+             test_mint_session_empty_permset_shim);
+    run_test("ctx_bound_permissioned_mint_preserves_pinned_ref",
+             test_ctx_bound_permissioned_mint_preserves_pinned_ref);
     run_test("recv_transferable_send_returned", test_recv_transferable_send_returned);
     run_test("permissioned_delegate_accept_handoff",
              test_permissioned_delegate_accept_handoff);

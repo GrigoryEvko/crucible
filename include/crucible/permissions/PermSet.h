@@ -110,10 +110,34 @@
 
 namespace crucible::safety::proto {
 
+namespace detail {
+
+template <typename... Tags>
+struct perm_tags_unique_impl : std::true_type {};
+
+template <typename Head, typename... Tail>
+struct perm_tags_unique_impl<Head, Tail...>
+    : std::bool_constant<
+          ((!std::is_same_v<Head, Tail>) && ...)
+       && perm_tags_unique_impl<Tail...>::value> {};
+
+template <typename... Tags>
+inline constexpr bool perm_tags_unique_v =
+    perm_tags_unique_impl<Tags...>::value;
+
+}  // namespace detail
+
 // ── PermSet<Tags...> ─────────────────────────────────────────────────
 
 template <typename... Tags>
 struct PermSet {
+    static_assert(detail::perm_tags_unique_v<Tags...>,
+        "crucible::session::diagnostic [PermissionImbalance]: "
+        "PermSet<Tags...> requires unique Tags.  A duplicate permission "
+        "tag means the same CSL authority was inserted twice, usually by "
+        "passing the same Permission<Tag> token through a mint boundary "
+        "more than once.");
+
     static constexpr std::size_t size = sizeof...(Tags);
 };
 

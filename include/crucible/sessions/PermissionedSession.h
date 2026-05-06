@@ -1234,10 +1234,12 @@ private:
 // mint_session_handle does it.  Continue at the top level is
 // rejected — same diagnostic shape as bare framework.
 
-template <typename Proto, typename Resource, typename... InitPerms>
-[[nodiscard]] constexpr auto mint_permissioned_session(
+namespace detail {
+
+template <typename Proto, typename InitialPS, typename Resource>
+[[nodiscard]] constexpr auto mint_permissioned_session_with_loc(
     Resource r,
-    Permission<InitPerms>&&... perms) noexcept
+    std::source_location loc) noexcept
 {
     static_assert(is_well_formed_v<Proto>,
         "crucible::session::diagnostic [Protocol_Ill_Formed]: "
@@ -1251,6 +1253,28 @@ template <typename Proto, typename Resource, typename... InitPerms>
         "mint_permissioned_session<Proto, Resource>: Resource fails the "
         "pin-discipline.  See SessionResource concept in Session.h.");
 
+    if constexpr (is_loop_v<Proto>) {
+        using Body = typename Proto::body;
+        using Ctx  = LoopContext<Body, InitialPS>;
+        return step_to_next_permissioned<Body, InitialPS, Resource, Ctx>(
+            std::forward<Resource>(r), loc);
+    } else {
+        static_assert(!std::is_same_v<Proto, Continue>,
+            "crucible::session::diagnostic [Continue_Without_Loop]: "
+            "mint_permissioned_session<Continue>: Continue cannot be the "
+            "top-level protocol.");
+        return PermissionedSessionHandle<Proto, InitialPS, Resource,
+                                          void>{std::forward<Resource>(r), loc};
+    }
+}
+
+}  // namespace detail
+
+template <typename Proto, typename Resource, typename... InitPerms>
+[[nodiscard]] constexpr auto mint_permissioned_session(
+    Resource r,
+    Permission<InitPerms>&&... perms) noexcept
+{
     // Consume the Permission tokens — their tags become the initial PS.
     // The rvalue-ref binding moved the caller's tokens into the
     // function's parameter pack; the fold below silences
@@ -1260,20 +1284,8 @@ template <typename Proto, typename Resource, typename... InitPerms>
     using InitialPS = PermSet<InitPerms...>;
     ((void)perms, ...);
 
-    if constexpr (is_loop_v<Proto>) {
-        using Body = typename Proto::body;
-        using Ctx  = LoopContext<Body, InitialPS>;
-        return detail::step_to_next_permissioned<Body, InitialPS,
-                                                 Resource, Ctx>(
-            std::forward<Resource>(r));
-    } else {
-        static_assert(!std::is_same_v<Proto, Continue>,
-            "crucible::session::diagnostic [Continue_Without_Loop]: "
-            "mint_permissioned_session<Continue>: Continue cannot be the "
-            "top-level protocol.");
-        return PermissionedSessionHandle<Proto, InitialPS, Resource,
-                                          void>{std::forward<Resource>(r)};
-    }
+    return detail::mint_permissioned_session_with_loc<Proto, InitialPS, Resource>(
+        std::forward<Resource>(r), std::source_location::current());
 }
 
 // ═════════════════════════════════════════════════════════════════

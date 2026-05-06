@@ -2534,7 +2534,7 @@ The convention has TWO modes, distinguished by whether the mint threads ctx-driv
 - **Token mint** — synthesizes a fresh authoritative token whose authority derives from a parent token (or root authority). NO Ctx parameter; no `CtxFitsX` gate. Examples: `mint_permission_root<Tag>()`, `mint_permission_split<L,R>(parent)`, `mint_cap<E>(source)`, `mint_session_handle<Proto>(res)`.
   - Note that `mint_permission_split` and `mint_permission_combine` consume a parent token and produce fresh children/parent — the children/parent are authoritative tokens that didn't exist before the call. Mint applies even though the operation is shape-preserving decomposition/composition.
 
-- **Ctx-bound mint** — threads ctx-driven policy through the constructed type. Ctx is the FIRST parameter; the requires-clause is a single `CtxFitsX<X, Ctx>` concept. Examples: `mint_from_ctx<E>(ctx)`, `mint_session<Proto>(ctx, res)`, `mint_substrate_session<...>(ctx, handle)`, `mint_endpoint<...>(ctx, handle)`.
+- **Ctx-bound mint** — threads ctx-driven policy through the constructed type. Ctx is the FIRST parameter; the requires-clause is a single `CtxFitsX<X, Ctx>` concept. Examples: `mint_from_ctx<E>(ctx)`, `mint_session<Proto>(ctx, res)`, `mint_permissioned_session<Proto>(ctx, res, perms...)`, `mint_substrate_session<...>(ctx, handle)`, `mint_endpoint<...>(ctx, handle)`.
 
 ### The canonical mints (status legend: ✅ shipped • 🚧 planned • 🔮 future tier)
 
@@ -2554,7 +2554,8 @@ The convention has TWO modes, distinguished by whether the mint threads ctx-driv
 | ✅ | Session token | `mint_permissioned_session<Proto>(res, perms...)` | `is_well_formed_v<Proto>` | `PermissionedSessionHandle<Proto, PS, Res>` |
 | ✅ | Session token | `mint_producer_session<Channel>(handle)` | substrate-shape | `PSH<Loop<Send<T,Continue>>, ...>` |
 | ✅ | Session token | `mint_consumer_session<Channel>(handle)` | substrate-shape | `PSH<Loop<Recv<T,Continue>>, ...>` |
-| ✅ | Ctx-bound | `mint_session<Proto>(ctx, res)` | `CtxFitsProtocol<Proto, Ctx>` | `SessionHandle<Proto, Res>` |
+| ✅ | Ctx-bound | `mint_session<Proto>(ctx, res)` | `CtxFitsPermissionedProtocol<Proto, Ctx, EmptyPermSet>` | `PermissionedSessionHandle<Proto, EmptyPermSet, Res>` |
+| ✅ | Ctx-bound | `mint_permissioned_session<Proto>(ctx, res, perms...)` | `CtxFitsPermissionedProtocol<Proto, Ctx, PermSet<Perms...>>` | `PermissionedSessionHandle<Proto, PermSet<Perms...>, Res>` |
 | ✅ | Ctx-bound | `mint_substrate_session<Substr, Dir>(ctx, handle)` | `IsBridgeableDirection<Substr, Dir> ∧ SubstrateFitsCtxResidency<Substr, Ctx>` | `PSH<default_proto_for_t<...>, ...>` |
 | ✅ | Ctx-bound (Tier 2) | `mint_endpoint<Substr, Dir>(ctx, handle)` | `IsBridgeableDirection<Substr, Dir> ∧ SubstrateFitsCtxResidency<Substr, Ctx>` | `Endpoint<Substr, Dir, Ctx>` |
 | ✅ | Bridge wrap | `mint_recording_session(handle, log, self, peer)` | `IsSessionHandle<H>` | `RecordingSessionHandle<Proto, R, L>` |
@@ -2582,6 +2583,7 @@ The convention has TWO modes, distinguished by whether the mint threads ctx-driv
 - **Returned types are CONCRETE, not type-erased.** `mint_endpoint<...>(ctx, h)` returns `Endpoint<Substr, Dir, Ctx>`, not `auto`-erased-into-virtual. Concept-overloaded specialization downstream depends on the concrete type.
 - **Diagnostics route through `safety::diag::Category`.** A mint that fails its `requires` clause emits a category-tagged diagnostic so user-facing errors stay readable.
 - **Internal helpers do NOT use the `mint_` prefix.** The convention marks USER-FACING authorization points; internal detail-namespace helpers carry the trailing-underscore convention (e.g., `permission_fork_spawn_`, `permission_fork_rebuild_`) so `grep "mint_"` returns only the public surface.
+- **Session ctx-bound mints use the permissioned family.** `mint_session<Proto>(ctx, res)` is the empty-`PermSet` shim; `mint_permissioned_session<Proto>(ctx, res, perms...)` is the non-empty `PermSet` form. Both route through the same ctx row gate and local permission-flow closure gate.
 - **Every new mint factory MUST ship at least 2 negative-compile fixtures** demonstrating the `requires` clause fires on each kind of mismatch. See HS14.
 
 ### Anti-pattern: the runtime registry

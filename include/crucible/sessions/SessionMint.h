@@ -3,11 +3,10 @@
 // ── crucible::safety::proto::mint_session ──────────────────────────
 //
 // Eager whole-protocol ctx-check at session-mint time.  Walks Proto
-// recursively, asserts every Send/Recv payload's effect-row is
-// admitted by Ctx::row, and returns the existing unchanged
-// SessionHandle<Proto, Resource>.  Subsequent send/recv operations
-// run at full speed with no per-op check — the whole protocol was
-// certified at construction.
+// recursively, asserts every Send/Recv payload's effect-row is admitted
+// by Ctx::row, and returns a PermissionedSessionHandle with a concrete
+// PermSet.  Subsequent send/recv operations run at full speed with no
+// per-op ctx check — the whole protocol was certified at construction.
 //
 // This is the canonical session-side instance of the universal mint
 // pattern shipped across Tier 1: `mint_X(ctx, args...) → X`
@@ -21,15 +20,19 @@
 //                   call site.
 //                   InitSafe — pure metafunction during walk.
 //                   DetSafe — consteval throughout.
-//   Runtime cost:   zero.  The walker resolves at template
-//                   substitution; the returned SessionHandle is the
-//                   existing unchanged Session.h primitive.
+//   Runtime cost:   zero.  The walkers resolve at template
+//                   substitution; the returned PSH is the existing
+//                   PermissionedSession.h primitive.
 //
 // ── Concept and factory ─────────────────────────────────────────────
 //
-//   proto_row_admitted_by<Proto, Ctx>::value — recursive walker
-//   CtxFitsProtocol<Proto, Ctx>              — concept (= the walker)
-//   mint_session<Proto>(ctx, resource)        — factory; returns SessionHandle
+//   proto_row_admitted_by<Proto, Ctx>::value — recursive row walker
+//   CtxFitsProtocol<Proto, Ctx>              — row-admission concept
+//   CtxFitsPermissionedProtocol<Proto, Ctx,
+//                               PS>          — row + local PS closure
+//   mint_permissioned_session<Proto>(ctx,
+//       resource, perms...)                  — factory; returns PSH
+//   mint_session<Proto>(ctx, resource)        — empty-PS shim
 //
 // ── Walk shape ──────────────────────────────────────────────────────
 //
@@ -64,9 +67,10 @@
 //     // After:
 //     auto h = mint_session<Proto>(ctx, resource);
 //
-// The handle type is identical; only the construction boundary
-// changes.  The whole protocol's effect surface is now certified
-// against the surrounding Ctx.
+// The session surface is intentionally compatible for ordinary Send /
+// Recv / Select / Offer protocols, but the returned handle now carries
+// EmptyPermSet rather than being bare.  Production code that needs an
+// initial CSL token uses the ctx-bound mint_permissioned_session overload.
 
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
@@ -74,9 +78,12 @@
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>          // Stop terminator
 #include <crucible/sessions/SessionDelegate.h>       // Delegate / Accept
+#include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/SessionRowExtraction.h>
 
+#include <source_location>
 #include <type_traits>
+#include <utility>
 
 namespace crucible::safety::proto {
 
@@ -201,23 +208,131 @@ template <class Proto, class Ctx>
 concept CtxFitsProtocol = ::crucible::effects::IsExecCtx<Ctx>
                        && proto_row_admitted_by_v<Proto, Ctx>;
 
-// ── mint_session<Proto>(ctx, resource) ─────────────────────────────
+namespace detail::session_mint {
+
+template <class Proto, class PS, class LoopCtx = void>
+struct permission_flow_closes : std::false_type {};
+
+template <class PS, class LoopCtx>
+struct permission_flow_closes<End, PS, LoopCtx>
+    : std::bool_constant<perm_set_equal_v<PS, EmptyPermSet>> {};
+
+template <CrashClass C, class PS, class LoopCtx>
+struct permission_flow_closes<Stop_g<C>, PS, LoopCtx>
+    : std::bool_constant<perm_set_equal_v<PS, EmptyPermSet>> {};
+
+template <class PS, class LoopCtx, bool InLoop = !std::is_void_v<LoopCtx>>
+struct continue_permission_flow_branch : std::false_type {};
+
+template <class PS, class LoopCtx>
+struct continue_permission_flow_branch<PS, LoopCtx, true>
+    : std::bool_constant<perm_set_equal_v<PS, typename LoopCtx::entry_perm_set>> {};
+
+template <class PS, class LoopCtx>
+struct permission_flow_closes<Continue, PS, LoopCtx>
+    : continue_permission_flow_branch<PS, LoopCtx> {};
+
+template <class Proto, class PS, class LoopCtx, bool Sendable>
+struct send_permission_flow_branch : std::false_type {};
+
+template <class T, class K, class PS, class LoopCtx>
+struct send_permission_flow_branch<Send<T, K>, PS, LoopCtx, true>
+    : permission_flow_closes<K, compute_perm_set_after_send_t<PS, T>, LoopCtx> {};
+
+template <class T, class K, class PS, class LoopCtx>
+struct permission_flow_closes<Send<T, K>, PS, LoopCtx>
+    : send_permission_flow_branch<Send<T, K>, PS, LoopCtx, SendablePayload<T, PS>> {};
+
+template <class T, class K, class PS, class LoopCtx>
+struct permission_flow_closes<Recv<T, K>, PS, LoopCtx>
+    : permission_flow_closes<K, compute_perm_set_after_recv_t<PS, T>, LoopCtx> {};
+
+template <class Body, class PS, class LoopCtx>
+struct permission_flow_closes<Loop<Body>, PS, LoopCtx>
+    : permission_flow_closes<Body, PS, LoopContext<Body, PS>> {};
+
+template <class... Branches, class PS, class LoopCtx>
+struct permission_flow_closes<Select<Branches...>, PS, LoopCtx>
+    : std::bool_constant<
+          (permission_flow_closes<Branches, PS, LoopCtx>::value && ...)> {};
+
+template <class... Branches, class PS, class LoopCtx>
+struct permission_flow_closes<Offer<Branches...>, PS, LoopCtx>
+    : std::bool_constant<
+          (permission_flow_closes<Branches, PS, LoopCtx>::value && ...)> {};
+
+template <class Role, class... Branches, class PS, class LoopCtx>
+struct permission_flow_closes<Offer<Sender<Role>, Branches...>, PS, LoopCtx>
+    : std::bool_constant<
+          (permission_flow_closes<Branches, PS, LoopCtx>::value && ...)> {};
+
+template <class Base, class Rollback, class PS, class LoopCtx>
+struct permission_flow_closes<CheckpointedSession<Base, Rollback>, PS, LoopCtx>
+    : std::bool_constant<
+          permission_flow_closes<Base,     PS, LoopCtx>::value
+       && permission_flow_closes<Rollback, PS, LoopCtx>::value> {};
+
+template <class T, class K, class PS, class LoopCtx>
+struct permission_flow_closes<Delegate<T, K>, PS, LoopCtx>
+    : permission_flow_closes<K, PS, LoopCtx> {};
+
+template <class T, class K, class PS, class LoopCtx>
+struct permission_flow_closes<Accept<T, K>, PS, LoopCtx>
+    : permission_flow_closes<K, PS, LoopCtx> {};
+
+template <class Proto, class PS>
+inline constexpr bool permission_flow_closes_v =
+    permission_flow_closes<Proto, PS>::value;
+
+}  // namespace detail::session_mint
+
+template <class Proto, class Ctx, class InitialPS>
+concept CtxFitsPermissionedProtocol =
+    CtxFitsProtocol<Proto, Ctx>
+    && detail::session_mint::permission_flow_closes_v<Proto, InitialPS>;
+
+// ── mint_permissioned_session<Proto>(ctx, resource, perms...) ───────
 //
-// Factory.  Requires CtxFitsProtocol<Proto, Ctx>; returns the
-// existing mint_session_handle<Proto>(resource) result.  The
-// session machinery (Session.h's static_asserts on Proto well-
-// formedness, SessionResource pin discipline, etc.) all run as
-// before.  The added value is the protocol-vs-ctx check — every
-// Send/Recv payload in Proto is now certified against ctx's row.
+// Ctx-bound factory.  Requires row admission AND local permission-flow
+// closure at the construction boundary, then returns the concrete PSH.
+// The rvalue Permission parameters are consumed into InitialPS exactly
+// like the legacy token mint in PermissionedSession.h; this overload
+// adds the ctx gate and the local close-balance check.
+
+template <class Proto,
+          ::crucible::effects::IsExecCtx Ctx,
+          class Resource,
+          class... InitPerms>
+    requires CtxFitsPermissionedProtocol<Proto, Ctx, PermSet<InitPerms...>>
+[[nodiscard]] constexpr auto mint_permissioned_session(
+    Ctx const&,
+    Resource&& resource,
+    ::crucible::safety::Permission<InitPerms>&&... perms) noexcept
+{
+    using InitialPS = PermSet<InitPerms...>;
+    ((void)perms, ...);
+
+    return detail::mint_permissioned_session_with_loc<Proto, InitialPS, Resource>(
+        std::forward<Resource>(resource), std::source_location::current());
+}
+
+// ── mint_session<Proto>(ctx, resource) ──────────────────────────────
+//
+// Backward-compatible empty-PermSet shim.  The construction point now
+// uses the same PSH family as the permissioned overload, so production
+// code can migrate from row-only session mints to row+CSL mints without
+// learning a second construction discipline.
 
 template <class Proto, ::crucible::effects::IsExecCtx Ctx, class Resource>
-    requires CtxFitsProtocol<Proto, Ctx>
+    requires CtxFitsPermissionedProtocol<Proto, Ctx, EmptyPermSet>
 [[nodiscard]] constexpr auto mint_session(
     Ctx const&,
     Resource&& resource,
     std::source_location loc = std::source_location::current()) noexcept
 {
-    return mint_session_handle<Proto>(std::forward<Resource>(resource), loc);
+    using StoredResource = std::remove_cvref_t<Resource>;
+    return detail::mint_permissioned_session_with_loc<Proto, EmptyPermSet, StoredResource>(
+        std::forward<Resource>(resource), loc);
 }
 
 // ── Self-test block ─────────────────────────────────────────────────
@@ -282,6 +397,46 @@ static_assert( CtxFitsProtocol<SendInt,     eff::HotFgCtx>);
 static_assert(!CtxFitsProtocol<SendBgComp,  eff::HotFgCtx>);
 static_assert( CtxFitsProtocol<SendBgComp,  eff::BgDrainCtx>);
 static_assert(!CtxFitsProtocol<int,         eff::HotFgCtx>);  // int isn't a protocol → false_type primary
+
+struct WorkPerm {};
+struct FakeResource {};
+
+using SendTransfer = Send<Transferable<int, WorkPerm>, End>;
+static_assert( detail::session_mint::permission_flow_closes_v<
+    SendTransfer, PermSet<WorkPerm>>);
+static_assert(!detail::session_mint::permission_flow_closes_v<
+    SendTransfer, EmptyPermSet>);
+static_assert(!detail::session_mint::permission_flow_closes_v<
+    End, PermSet<WorkPerm>>);
+
+using RecvThenReturn = Recv<Transferable<int, WorkPerm>,
+                            Send<Returned<int, WorkPerm>, End>>;
+static_assert( detail::session_mint::permission_flow_closes_v<
+    RecvThenReturn, EmptyPermSet>);
+
+using TransferBgComp = Send<
+    Transferable<eff::Computation<eff::Row<eff::Effect::Bg>, int>, WorkPerm>,
+    End>;
+static_assert(!CtxFitsProtocol<TransferBgComp, eff::HotFgCtx>);
+static_assert( CtxFitsProtocol<TransferBgComp, eff::BgDrainCtx>);
+static_assert( CtxFitsPermissionedProtocol<
+    TransferBgComp, eff::BgDrainCtx, PermSet<WorkPerm>>);
+static_assert(!CtxFitsPermissionedProtocol<
+    TransferBgComp, eff::HotFgCtx, PermSet<WorkPerm>>);
+
+using CtxBoundPsh = decltype(mint_permissioned_session<SendTransfer>(
+    std::declval<eff::HotFgCtx const&>(),
+    std::declval<FakeResource>(),
+    std::declval<::crucible::safety::Permission<WorkPerm>&&>()));
+static_assert(std::is_same_v<typename CtxBoundPsh::protocol, SendTransfer>);
+static_assert(std::is_same_v<typename CtxBoundPsh::perm_set,
+                             PermSet<WorkPerm>>);
+
+using EmptyShim = decltype(mint_session<SendInt>(
+    std::declval<eff::HotFgCtx const&>(),
+    std::declval<FakeResource>()));
+static_assert(std::is_same_v<typename EmptyShim::protocol, SendInt>);
+static_assert(std::is_same_v<typename EmptyShim::perm_set, EmptyPermSet>);
 
 // ── Stop terminator (BSYZ22 crash-stop) ────────────────────────────
 static_assert( proto_row_admitted_by_v<Stop, eff::HotFgCtx>);

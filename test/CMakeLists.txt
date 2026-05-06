@@ -3845,3 +3845,19 @@ crucible_neg_compile_session_test(neg_psh_delegate_inner_proto_unbalanced
 
 crucible_neg_compile_session_test(neg_psh_delegate_to_self
     "ProtocolViolation_Self_Loop|self-loop")
+
+# GAPS-059: ctx-bound permissioned session mint.  These fixtures pin the
+# unified mint boundary: Ctx is mandatory, row admission sees through
+# permission payload wrappers, initial PermSet must locally close, and a
+# Permission<Tag> cannot be consumed twice.
+crucible_neg_compile_session_test(neg_mint_session_no_ctx
+    "no matching function|candidate expects|requires 2")
+
+crucible_neg_compile_session_test(neg_mint_session_ctx_no_admit_proto
+    "associated constraints are not satisfied|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+
+crucible_neg_compile_session_test(neg_mint_session_perms_unbalanced
+    "associated constraints are not satisfied|CtxFitsPermissionedProtocol|permission_flow_closes")
+
+crucible_neg_compile_session_test(neg_mint_session_perm_double_consume
+    "PermSet\\.h.*static assertion failed.*PermissionImbalance.*unique Tags")
