@@ -81,15 +81,16 @@
 //   returns; nullptr propagation tested by libbpf_errno's IS_ERR walk.
 // • MemSafe: no allocations.  Function-local statics own their memory
 //   (single global instance per inline-function rule).
-// • BorrowSafe: env-var caches written exactly once (call_once /
+// • BorrowSafe: env-var caches written exactly once (spin-once /
 //   function-local-static); reads thereafter are atomic-load-fast-path.
-// • ThreadSafe: install_libbpf_log_cb_once via std::call_once;
+// • ThreadSafe: install_libbpf_log_cb_once via safety::Once;
 //   env-var caches via standard inline-function-local-static
 //   (zero-overhead Itanium ABI guard after first init).
 // • LeakSafe: no resources owned by this header — facades hold the
 //   bpf_object* / mmap pointers; helpers only inspect/configure them.
 // • DetSafe: env_true reads are deterministic (same env → same bool).
 
+#include <crucible/handles/Once.h>
 #include <crucible/safety/Tagged.h>
 
 #include <bpf/bpf.h>
@@ -104,7 +105,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <mutex>
 #include <string>
 #include <string_view>
 
@@ -189,8 +189,8 @@ static_assert(sizeof(Fd)   == sizeof(int));
 // libbpf prints to stderr by default — verbose loader noise on
 // systems without CAP_BPF.  We gate every libbpf log line on the
 // CRUCIBLE_PERF_VERBOSE env var.  install_libbpf_log_cb_once() is
-// a one-shot install; std::call_once + inline-function-local
-// once_flag means a single global flag across all TUs.
+// a one-shot install; safety::Once avoids std::call_once's pthread
+// backing while preserving a single global flag across all TUs.
 
 inline int libbpf_log_cb(enum libbpf_print_level,
                          const char* fmt, va_list args) noexcept {
@@ -199,8 +199,8 @@ inline int libbpf_log_cb(enum libbpf_print_level,
 }
 
 inline void install_libbpf_log_cb_once() noexcept {
-    static std::once_flag once;
-    std::call_once(once, [] { libbpf_set_print(libbpf_log_cb); });
+    static ::crucible::safety::Once once;
+    once.call([] { libbpf_set_print(libbpf_log_cb); });
 }
 
 // ── Object discovery ──────────────────────────────────────────────────

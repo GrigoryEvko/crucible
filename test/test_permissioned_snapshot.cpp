@@ -266,7 +266,7 @@ void test_swmr_under_load() {
                 if (!r) {
                     // Exclusive mode active (shouldn't happen in this
                     // test); skip.
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                     continue;
                 }
                 const auto pair = r->load();

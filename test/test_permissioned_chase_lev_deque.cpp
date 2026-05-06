@@ -124,7 +124,7 @@ void test_owner_pushes_thieves_steal() {
                         && thief.empty_approx()) {
                         return;
                     }
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
         });
@@ -133,7 +133,7 @@ void test_owner_pushes_thieves_steal() {
     {
         auto owner = deque.owner(std::move(owner_perm));
         for (int i = 0; i < N_PUSHES; ++i) {
-            while (!owner.try_push(i)) std::this_thread::yield();
+            while (!owner.try_push(i)) CRUCIBLE_SPIN_PAUSE;
         }
         // Owner ALSO pops from bottom while thieves steal from top.
         while (auto v = owner.try_pop()) {

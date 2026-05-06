@@ -107,7 +107,6 @@
 #include <cstring>
 #include <latch>
 #include <memory>
-#include <mutex>
 #include <set>
 #include <thread>
 #include <tuple>
@@ -501,7 +500,7 @@ void test_mpsc_ring_exactly_once() {
                     }
                     break;
                 }
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
                 continue;
             }
             const auto& m = *opt;
@@ -522,7 +521,7 @@ void test_mpsc_ring_exactly_once() {
         producers.emplace_back([&, pid](std::stop_token) noexcept {
             for (std::uint32_t s = 1; s <= MSGS_PER_PRODUCER; ++s) {
                 while (!q.try_push(make_mpsc_msg_(pid, s))) {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
             producers_finished.fetch_add(1, std::memory_order_acq_rel);
@@ -580,7 +579,7 @@ void test_chaselev_deque_no_duplicate_steal() {
                 if (v) {
                     stolen[t].push_back(*v);
                 } else {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
         });
@@ -596,8 +595,10 @@ void test_chaselev_deque_no_duplicate_steal() {
     });
     owner.join();
 
-    // Give thieves a moment to drain.
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // Give thieves a bounded spin window to drain without parking.
+    for (uint32_t spin = 0; spin < 1'000'000; ++spin) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
     stop_thieves.store(true, std::memory_order_release);
     for (auto& t : thieves) t.join();
 
@@ -661,7 +662,7 @@ void test_spsc_ring_exactly_once() {
                 received_seqs.push_back(opt->seq);
                 received_count.fetch_add(1, std::memory_order_acq_rel);
             } else {
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
     });
@@ -669,7 +670,7 @@ void test_spsc_ring_exactly_once() {
     std::jthread producer([&](std::stop_token) noexcept {
         for (std::uint32_t i = 1; i <= NUM_MSGS; ++i) {
             while (!q.try_push(make_spsc_msg_(i))) {
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
     });
@@ -1010,7 +1011,7 @@ void test_raw_mpmc_ring_cookie_fuzzer() {
                 if (!opt) {
                     if (producers_done.load(std::memory_order_acquire) &&
                         total_received.load() >= EXPECTED_TOTAL) break;
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                     continue;
                 }
                 const auto& m = *opt;
@@ -1031,7 +1032,7 @@ void test_raw_mpmc_ring_cookie_fuzzer() {
         producers.emplace_back([&, pid](std::stop_token) noexcept {
             for (std::uint32_t s = 1; s <= MSGS_PER_PRODUCER; ++s) {
                 while (!q.try_push(make_mpsc_msg_(pid, s))) {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
             if (producers_finished.fetch_add(1, std::memory_order_acq_rel) + 1
@@ -1113,7 +1114,7 @@ void test_raw_sharded_grid_cookie_fuzzer() {
                 if (!opt) {
                     if (producers_done.load(std::memory_order_acquire) &&
                         total_received.load() >= EXPECTED_TOTAL) break;
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                     continue;
                 }
                 if (!verify_mpsc_msg_(*opt)) [[unlikely]] {
@@ -1135,7 +1136,7 @@ void test_raw_sharded_grid_cookie_fuzzer() {
             for (std::uint32_t s = 1; s <= MSGS_PER_PROD; ++s) {
                 while (!grid.try_push(pid,
                        make_mpsc_msg_(static_cast<std::uint32_t>(pid), s))) {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
             if (producers_finished.fetch_add(1, std::memory_order_acq_rel) + 1
@@ -1220,14 +1221,14 @@ void drive_pmpmc_cookie_(Channel& ch) {
                 if (!h_opt) {
                     if (producers_done.load() &&
                         total_received.load() >= EXPECTED_TOTAL) break;
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                     continue;
                 }
                 auto opt = h_opt->try_pop();
                 if (!opt) {
                     if (producers_done.load() &&
                         total_received.load() >= EXPECTED_TOTAL) break;
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                     continue;
                 }
                 if (!verify_mpsc_msg_(*opt)) [[unlikely]] {
@@ -1248,9 +1249,9 @@ void drive_pmpmc_cookie_(Channel& ch) {
             for (std::uint32_t s = 1; s <= MSGS_PER_PRODUCER; ++s) {
                 for (;;) {
                     auto h_opt = ch.producer();   // lend per-iter
-                    if (!h_opt) { std::this_thread::yield(); continue; }
+                    if (!h_opt) { CRUCIBLE_SPIN_PAUSE; continue; }
                     if (h_opt->try_push(make_mpsc_msg_(pid, s))) break;
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
             if (producers_finished.fetch_add(1, std::memory_order_acq_rel) + 1
@@ -1319,7 +1320,7 @@ void drive_pmpsc_cookie_(Channel& ch) {
             auto opt = consumer.try_pop();
             if (!opt) {
                 if (producers_done.load() && received >= EXPECTED_TOTAL) break;
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
                 continue;
             }
             if (!verify_mpsc_msg_(*opt)) [[unlikely]] {
@@ -1339,9 +1340,9 @@ void drive_pmpsc_cookie_(Channel& ch) {
             for (std::uint32_t s = 1; s <= MSGS_PER_PRODUCER; ++s) {
                 for (;;) {
                     auto h_opt = ch.producer();
-                    if (!h_opt) { std::this_thread::yield(); continue; }
+                    if (!h_opt) { CRUCIBLE_SPIN_PAUSE; continue; }
                     if (h_opt->try_push(make_mpsc_msg_(pid, s))) break;
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
             if (producers_finished.fetch_add(1, std::memory_order_acq_rel) + 1
@@ -1404,7 +1405,7 @@ void drive_pchase_lev_cookie_(Channel& deq) {
         thieves.emplace_back([&, t](std::stop_token) noexcept {
             while (!stop_thieves.load(std::memory_order_acquire)) {
                 auto h_opt = deq.thief();
-                if (!h_opt) { std::this_thread::yield(); continue; }
+                if (!h_opt) { CRUCIBLE_SPIN_PAUSE; continue; }
                 auto v = h_opt->try_steal();
                 if (v) {
                     if (!verify_lifo_msg_(*v)) [[unlikely]] {
@@ -1413,7 +1414,7 @@ void drive_pchase_lev_cookie_(Channel& deq) {
                     }
                     stolen[t].push_back(lifo_msg_seq_(*v));
                 } else {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
         });
@@ -1432,7 +1433,9 @@ void drive_pchase_lev_cookie_(Channel& deq) {
     });
     owner_t.join();
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    for (uint32_t spin = 0; spin < 1'000'000; ++spin) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
     stop_thieves.store(true, std::memory_order_release);
     for (auto& t : thieves) t.join();
 
@@ -1491,13 +1494,13 @@ void drive_psharded_grid_cookie_(Channel& grid) {
     std::atomic<std::uint32_t> producers_finished{0};
     std::atomic<std::uint64_t> total_received{0};
     std::atomic<std::uint64_t> total_torn{0};
-    std::vector<std::vector<std::uint32_t>> per_prod_collected(M);
-    std::mutex collected_mu;
+    auto seen_seq = std::make_unique<std::atomic<std::uint8_t>[]>(
+        M * (MSGS_PER_PROD + 1));
 
     auto run_producer = [&](auto& handle, std::uint32_t pid) {
         for (std::uint32_t s = 1; s <= MSGS_PER_PROD; ++s) {
             while (!handle.try_push(make_mpsc_msg_(pid, s))) {
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
         if (producers_finished.fetch_add(1, std::memory_order_acq_rel) + 1
@@ -1512,19 +1515,27 @@ void drive_psharded_grid_cookie_(Channel& grid) {
             if (!opt) {
                 if (producers_done.load() &&
                     total_received.load() >= EXPECTED_TOTAL) break;
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
                 continue;
             }
             if (!verify_mpsc_msg_(*opt)) [[unlikely]] {
                 total_torn.fetch_add(1, std::memory_order_acq_rel);
                 continue;
             }
-            if (opt->producer_id < M) {
-                {
-                    std::scoped_lock lk{collected_mu};
-                    per_prod_collected[opt->producer_id].push_back(opt->seq);
+            if (opt->producer_id < M &&
+                opt->seq >= 1 && opt->seq <= MSGS_PER_PROD) {
+                const std::uint64_t idx =
+                    static_cast<std::uint64_t>(opt->producer_id)
+                        * (MSGS_PER_PROD + 1) + opt->seq;
+                const auto prior =
+                    seen_seq[idx].fetch_add(1, std::memory_order_acq_rel);
+                if (prior != 0) {
+                    total_torn.fetch_add(1, std::memory_order_acq_rel);
+                    continue;
                 }
                 total_received.fetch_add(1, std::memory_order_acq_rel);
+            } else {
+                total_torn.fetch_add(1, std::memory_order_acq_rel);
             }
         }
     };
@@ -1545,11 +1556,12 @@ void drive_psharded_grid_cookie_(Channel& grid) {
     CRUCIBLE_TEST_REQUIRE(total_torn.load() == 0);
     CRUCIBLE_TEST_REQUIRE(total_received.load() == EXPECTED_TOTAL);
     for (std::uint32_t pid = 0; pid < M; ++pid) {
-        auto& seqs = per_prod_collected[pid];
-        CRUCIBLE_TEST_REQUIRE(seqs.size() == MSGS_PER_PROD);
-        std::sort(seqs.begin(), seqs.end());
-        for (std::uint32_t i = 0; i < MSGS_PER_PROD; ++i)
-            CRUCIBLE_TEST_REQUIRE(seqs[i] == i + 1);
+        for (std::uint32_t seq = 1; seq <= MSGS_PER_PROD; ++seq) {
+            const std::uint64_t idx =
+                static_cast<std::uint64_t>(pid) * (MSGS_PER_PROD + 1) + seq;
+            CRUCIBLE_TEST_REQUIRE(
+                seen_seq[idx].load(std::memory_order_relaxed) == 1);
+        }
     }
 }
 
@@ -1602,8 +1614,7 @@ void drive_pcalendar_cookie_(Channel& grid) {
     // Each (producer_id, seq) pair encodes to a unique payload index;
     // seen[idx] flips at most once (catches duplicates across the
     // bucket-clamp + scan path).
-    std::vector<bool> seen(EXPECTED_TOTAL, false);
-    std::mutex seen_mu;
+    auto seen = std::make_unique<std::atomic<std::uint8_t>[]>(EXPECTED_TOTAL);
 
     auto run_producer = [&](auto& handle, std::uint32_t pid) {
         // Spread keys across many buckets but stay well under
@@ -1613,7 +1624,7 @@ void drive_pcalendar_cookie_(Channel& grid) {
         for (std::uint32_t s = 1; s <= MSGS_PER_PROD; ++s) {
             key += 1000;
             while (!handle.try_push(make_priority_msg_(pid, s, key))) {
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
         if (producers_finished.fetch_add(1, std::memory_order_acq_rel) + 1
@@ -1633,7 +1644,7 @@ void drive_pcalendar_cookie_(Channel& grid) {
             if (!opt) {
                 if (producers_done.load() &&
                     total_received.load() >= EXPECTED_TOTAL) break;
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
                 continue;
             }
             if (!verify_priority_msg_(*opt)) [[unlikely]] {
@@ -1644,13 +1655,13 @@ void drive_pcalendar_cookie_(Channel& grid) {
                 opt->seq <= MSGS_PER_PROD) {
                 const std::uint32_t idx =
                     opt->producer_id * MSGS_PER_PROD + (opt->seq - 1);
-                std::scoped_lock lk{seen_mu};
-                if (seen[idx]) {
+                const auto prior =
+                    seen[idx].fetch_add(1, std::memory_order_acq_rel);
+                if (prior != 0) {
                     // Duplicate delivery — protocol violation.
                     total_torn.fetch_add(1, std::memory_order_acq_rel);
                     continue;
                 }
-                seen[idx] = true;
                 total_received.fetch_add(1, std::memory_order_acq_rel);
             }
         }
@@ -1664,7 +1675,7 @@ void drive_pcalendar_cookie_(Channel& grid) {
     CRUCIBLE_TEST_REQUIRE(total_received.load() == EXPECTED_TOTAL);
     // Exactly-once: every (pid, seq) appeared.
     for (std::uint32_t i = 0; i < EXPECTED_TOTAL; ++i) {
-        CRUCIBLE_TEST_REQUIRE(seen[i]);
+        CRUCIBLE_TEST_REQUIRE(seen[i].load(std::memory_order_relaxed) == 1);
     }
 }
 
@@ -1692,7 +1703,7 @@ void drive_pspsc_cookie_(Channel& ch) {
     std::jthread cons_t([&](std::stop_token) noexcept {
         while (received.load(std::memory_order_acquire) < NUM_MSGS) {
             auto opt = consumer.try_pop();
-            if (!opt) { std::this_thread::yield(); continue; }
+            if (!opt) { CRUCIBLE_SPIN_PAUSE; continue; }
             if (!verify_mpsc_msg_(*opt)) [[unlikely]] {
                 total_torn.fetch_add(1, std::memory_order_acq_rel);
                 continue;
@@ -1705,7 +1716,7 @@ void drive_pspsc_cookie_(Channel& ch) {
     std::jthread prod_t([&](std::stop_token) noexcept {
         for (std::uint32_t s = 1; s <= NUM_MSGS; ++s) {
             while (!producer.try_push(make_mpsc_msg_(/*pid=*/0, s))) {
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
     });

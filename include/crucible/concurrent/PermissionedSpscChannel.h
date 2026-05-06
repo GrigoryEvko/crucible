@@ -107,7 +107,7 @@
 //   std::jthread producer_thread{
 //       [p = std::move(producer)](auto) mutable {
 //           for (int i = 0; i < 1000; ++i) {
-//               while (!p.try_push(i)) std::this_thread::yield();
+//               while (!p.try_push(i)) CRUCIBLE_SPIN_PAUSE;
 //           }
 //       }
 //   };
@@ -116,7 +116,7 @@
 //       [c = std::move(consumer)](auto) mutable {
 //           for (;;) {
 //               if (auto v = c.try_pop()) { /* use *v */ }
-//               else                       std::this_thread::yield();
+//               else                       CRUCIBLE_SPIN_PAUSE;
 //           }
 //       }
 //   };

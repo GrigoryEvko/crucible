@@ -213,7 +213,7 @@ static void test_stress_one_owner_n_thieves() {
                 if (auto opt = dq.pop_bottom()) {
                     receive(*opt);
                 }
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
             // Periodically pop our own bottom — exercises the
             // owner-vs-thief race window on the LAST element.
@@ -320,7 +320,7 @@ static void test_stress_high_contention() {
                 if (auto opt = dq.pop_bottom()) {
                     receive(*opt);
                 }
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
         while (auto opt = dq.pop_bottom()) {

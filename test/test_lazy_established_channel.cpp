@@ -180,7 +180,7 @@ int run_worked_example_vessel_startup() {
             auto h = dispatch_channel.observe();
             if (!h) {
                 worker_fell_back.fetch_add(1, std::memory_order_relaxed);
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
                 continue;
             }
             // Drive one protocol cycle: pick Send, send, detach.

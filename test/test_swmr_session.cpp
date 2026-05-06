@@ -223,7 +223,7 @@ void test_async_interleaving_never_observes_torn_or_reversed_state() {
                     return;
                 }
                 last = observed.seq;
-                if ((idx & 1U) != 0U) std::this_thread::yield();
+                if ((idx & 1U) != 0U) CRUCIBLE_SPIN_PAUSE;
             }
             const SnapshotPayload tail = reader->load();
             if (!tail.valid() || tail.seq < last) {
@@ -237,7 +237,7 @@ void test_async_interleaving_never_observes_torn_or_reversed_state() {
     start.store(true, std::memory_order_release);
     for (std::uint64_t seq = 1; seq <= kPublishes; ++seq) {
         writer.publish(payload_at(seq));
-        if ((seq & 0x3fU) == 0U) std::this_thread::yield();
+        if ((seq & 0x3fU) == 0U) CRUCIBLE_SPIN_PAUSE;
     }
     done.store(true, std::memory_order_release);
 
@@ -332,7 +332,7 @@ void test_sixteen_readers_stress_latest_snapshot() {
                     return;
                 }
                 last = observed.seq;
-                if ((idx + iter) % 4096 == 0) std::this_thread::yield();
+                if ((idx + iter) % 4096 == 0) CRUCIBLE_SPIN_PAUSE;
                 if (done.load(std::memory_order_acquire) &&
                     observed.seq == kPublishes) {
                     break;

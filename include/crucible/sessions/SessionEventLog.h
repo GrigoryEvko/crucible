@@ -72,6 +72,7 @@
 #include <compare>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <span>
 #include <string_view>
 #include <type_traits>
@@ -666,11 +667,15 @@ public:
         // fast path on integral T + std::less<T>.
         for (;;) {
             const uint64_t prev = step_counter_.get();
+            if (prev == std::numeric_limits<uint64_t>::max()) [[unlikely]] {
+                std::abort();
+            }
             const uint64_t next = prev + 1;
             if (step_counter_.try_advance(next)) {
                 return StepId{next};
             }
             // Another thread bumped past us; retry from the new value.
+            CRUCIBLE_SPIN_PAUSE;
         }
     }
 

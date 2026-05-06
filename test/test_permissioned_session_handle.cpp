@@ -702,7 +702,7 @@ void client_send(SharedChan& ch, int v) noexcept {
 }
 bool client_recv(SharedChan& ch) noexcept {
     while (!ch.s2c_ready.load(std::memory_order_acquire)) {
-        std::this_thread::yield();
+        CRUCIBLE_SPIN_PAUSE;
     }
     return ch.s2c_value.load(std::memory_order_relaxed);
 }
@@ -710,7 +710,7 @@ bool client_recv(SharedChan& ch) noexcept {
 // Server transports.
 int server_recv(SharedChan& ch) noexcept {
     while (!ch.c2s_ready.load(std::memory_order_acquire)) {
-        std::this_thread::yield();
+        CRUCIBLE_SPIN_PAUSE;
     }
     return ch.c2s_value.load(std::memory_order_relaxed);
 }

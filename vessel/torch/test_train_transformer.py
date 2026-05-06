@@ -26,6 +26,12 @@ import torch.nn.functional as F
 from crucible_mode import CrucibleMode
 
 
+def _spin_for(seconds: float) -> None:
+    deadline = time.perf_counter() + seconds
+    while time.perf_counter() < deadline:
+        pass
+
+
 class TransformerBlock(nn.Module):
     """Single GPT-2-style transformer block."""
 
@@ -178,11 +184,11 @@ def main():
             # Give bg thread time to process after a few recording iters
             if i == 4:
                 mode.flush()
-                time.sleep(0.1)
+                _spin_for(0.1)
 
         print()
         mode.flush()
-        time.sleep(0.1)
+        _spin_for(0.1)
 
         # ── Phase 3: Report ──────────────────────────────────
         total_ops = mode._op_count

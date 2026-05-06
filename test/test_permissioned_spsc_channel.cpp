@@ -199,7 +199,7 @@ int run_cross_thread() {
         std::jthread producer_thread{
             [p = std::move(p), &produced]() mutable {
                 for (int i = 0; i < kCount; ++i) {
-                    while (!p.try_push(i)) std::this_thread::yield();
+                    while (!p.try_push(i)) CRUCIBLE_SPIN_PAUSE;
                     ++produced;
                 }
             }
@@ -213,7 +213,7 @@ int run_cross_thread() {
                         consumed_sum += *v;
                         ++n;
                     } else {
-                        std::this_thread::yield();
+                        CRUCIBLE_SPIN_PAUSE;
                     }
                 }
             }

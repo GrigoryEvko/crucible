@@ -173,7 +173,6 @@
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
 
-#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -238,10 +237,10 @@ mint_consumer_session(typename Channel::ConsumerHandle& handle) noexcept
 // copied a second time inside the helper — the only mandatory copy
 // is PSH::send's by-value parameter.
 //
-// blocking_push: yield-on-full retry loop.  Matches the canonical
+// blocking_push: spin-pause-on-full retry loop.  Matches the canonical
 // TraceRing recording fast path (CRUCIBLE.md §IV.2.3).
 //
-// blocking_pop:  yield-on-empty retry loop.  Matches the canonical
+// blocking_pop:  spin-pause-on-empty retry loop.  Matches the canonical
 // bg-drain pattern.  optional<T>::operator* returns T&; the auto
 // return type strips the reference, returning T by value (move where
 // possible).
@@ -252,14 +251,14 @@ mint_consumer_session(typename Channel::ConsumerHandle& handle) noexcept
 
 inline constexpr auto blocking_push = [](auto& hp, auto&& value) noexcept {
     while (!hp->try_push(std::forward<decltype(value)>(value))) {
-        std::this_thread::yield();
+        CRUCIBLE_SPIN_PAUSE;
     }
 };
 
 inline constexpr auto blocking_pop = [](auto& hp) noexcept {
     for (;;) {
         if (auto v = hp->try_pop()) return *v;
-        std::this_thread::yield();
+        CRUCIBLE_SPIN_PAUSE;
     }
 };
 

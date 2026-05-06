@@ -20,7 +20,6 @@
 
 #include <concepts>
 #include <optional>
-#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -107,7 +106,7 @@ using ConsumerSessionHandle = decltype(
 
 inline constexpr auto blocking_append = [](auto& hp, const MetaLogRecord& record) {
     while (!hp->try_append_one(record)) {
-        std::this_thread::yield();
+        CRUCIBLE_SPIN_PAUSE;
     }
 };
 
@@ -116,7 +115,7 @@ inline constexpr auto blocking_drain = [](auto& hp) {
         if (auto record = hp->try_drain_one()) {
             return *record;
         }
-        std::this_thread::yield();
+        CRUCIBLE_SPIN_PAUSE;
     }
 };
 

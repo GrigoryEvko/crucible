@@ -12,6 +12,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/ParallelismRule.h>
+#include <crucible/concurrent/SpinLock.h>
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/Topology.h>
 #include <crucible/concurrent/scheduler/Policies.h>
@@ -20,17 +21,15 @@
 #include <algorithm>
 #include <atomic>
 #include <concepts>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
-#include <deque>
-#include <functional>
-#include <mutex>
+#include <limits>
+#include <memory>
+#include <new>
 #include <optional>
 #include <thread>
 #include <tuple>
 #include <type_traits>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -100,10 +99,38 @@ struct DispatchWithWorkloadResult {
 
 namespace adaptive_detail {
 
-using ticket_type = std::uint64_t;
+struct ticket_type {
+    static constexpr unsigned slot_bits = 14;
+    static constexpr unsigned key_bits = 64 - slot_bits;
+    static constexpr std::uint64_t max_slots = std::uint64_t{1} << slot_bits;
+    static constexpr std::uint64_t key_mask =
+        (std::uint64_t{1} << key_bits) - 1;
+
+    std::uint64_t raw = 0;
+
+    [[nodiscard]] static constexpr ticket_type
+    pack(std::uint64_t key, std::size_t slot) noexcept {
+        return ticket_type{
+            .raw = (static_cast<std::uint64_t>(slot) << key_bits) |
+                   (key & key_mask),
+        };
+    }
+
+    [[nodiscard]] constexpr std::uint64_t key() const noexcept {
+        return raw & key_mask;
+    }
+
+    [[nodiscard]] constexpr std::size_t slot() const noexcept {
+        return raw >> key_bits;
+    }
+
+    [[nodiscard]] constexpr operator std::uint64_t() const noexcept {
+        return key();
+    }
+};
 
 struct ticket_key {
-    static std::uint64_t key(ticket_type t) noexcept { return t; }
+    static std::uint64_t key(ticket_type t) noexcept { return t.key(); }
 };
 
 template <typename Job>
@@ -134,6 +161,98 @@ template <typename Policy, typename Job>
 
 template <typename Policy>
 using policy_queue_t = typename Policy::template queue_template<ticket_type>;
+
+template <std::size_t Capacity = 512,
+          std::size_t Align = alignof(std::max_align_t)>
+class InlineTask {
+public:
+    InlineTask() noexcept = default;
+
+    template <typename Fn>
+        requires (sizeof(std::decay_t<Fn>) <= Capacity)
+              && (alignof(std::decay_t<Fn>) <= Align)
+              && std::is_nothrow_constructible_v<std::decay_t<Fn>, Fn&&>
+              && std::is_nothrow_move_constructible_v<std::decay_t<Fn>>
+              && std::is_invocable_r_v<bool, std::decay_t<Fn>&>
+    explicit InlineTask(Fn&& fn)
+        noexcept(std::is_nothrow_constructible_v<std::decay_t<Fn>, Fn&&>)
+    {
+        using F = std::decay_t<Fn>;
+        std::construct_at(reinterpret_cast<F*>(storage_), std::forward<Fn>(fn));
+        run_ = [](void* ptr) noexcept -> bool {
+            return (*std::launder(reinterpret_cast<F*>(ptr)))();
+        };
+        move_ = [](void* dst, void* src) noexcept {
+            F* from = std::launder(reinterpret_cast<F*>(src));
+            std::construct_at(reinterpret_cast<F*>(dst), std::move(*from));
+            std::destroy_at(from);
+        };
+        destroy_ = [](void* ptr) noexcept {
+            std::destroy_at(std::launder(reinterpret_cast<F*>(ptr)));
+        };
+    }
+
+    InlineTask(const InlineTask&) = delete;
+    InlineTask& operator=(const InlineTask&) = delete;
+
+    InlineTask(InlineTask&& other) noexcept {
+        move_from_(std::move(other));
+    }
+
+    InlineTask& operator=(InlineTask&& other) noexcept {
+        if (this != &other) {
+            reset_();
+            move_from_(std::move(other));
+        }
+        return *this;
+    }
+
+    ~InlineTask() noexcept {
+        reset_();
+    }
+
+    [[nodiscard]] bool operator()() noexcept {
+        return run_(storage_);
+    }
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return run_ != nullptr;
+    }
+
+    [[nodiscard]] static consteval std::size_t capacity() noexcept {
+        return Capacity;
+    }
+
+private:
+    using RunFn = bool (*)(void*) noexcept;
+    using MoveFn = void (*)(void*, void*) noexcept;
+    using DestroyFn = void (*)(void*) noexcept;
+
+    void reset_() noexcept {
+        if (destroy_ != nullptr) {
+            destroy_(storage_);
+        }
+        run_ = nullptr;
+        move_ = nullptr;
+        destroy_ = nullptr;
+    }
+
+    void move_from_(InlineTask&& other) noexcept {
+        if (other.run_ == nullptr) return;
+        other.move_(storage_, other.storage_);
+        run_ = other.run_;
+        move_ = other.move_;
+        destroy_ = other.destroy_;
+        other.run_ = nullptr;
+        other.move_ = nullptr;
+        other.destroy_ = nullptr;
+    }
+
+    alignas(Align) std::byte storage_[Capacity]{};
+    RunFn run_ = nullptr;
+    MoveFn move_ = nullptr;
+    DestroyFn destroy_ = nullptr;
+};
 
 template <typename Queue>
 class QueuePortal;
@@ -373,6 +492,15 @@ public:
     using policy_type = Policy;
     using ticket_type = adaptive_detail::ticket_type;
     using policy_queue_type = adaptive_detail::policy_queue_t<Policy>;
+    static constexpr std::size_t task_slot_count =
+        std::min<std::size_t>(policy_queue_type::capacity(),
+                              ticket_type::max_slots);
+
+    static_assert(task_slot_count > 0,
+                  "Pool<Policy> requires a non-empty policy queue");
+    static_assert(task_slot_count <=
+                      static_cast<std::size_t>(ticket_type::max_slots),
+                  "Pool<Policy> task slot table index must fit in ticket_type");
 
     explicit Pool(CoreCount cores = CoreCount::all_available(),
                   NumaNodeMask numa_mask = {}) {
@@ -386,6 +514,7 @@ public:
             select_topology_cores_(numa_mask);
         }
 
+        task_slots_ = std::make_unique<TaskSlot[]>(task_slot_count);
         workers_.reserve(worker_count_);
         for (std::size_t i = 0; i < worker_count_; ++i) {
             workers_.emplace_back([this, i](std::stop_token stop) {
@@ -397,13 +526,12 @@ public:
 
     ~Pool() {
         for (auto& worker : workers_) worker.request_stop();
-        ready_.notify_all();
     }
 
     Pool(const Pool&)            = delete("Pool owns worker jthreads and task queue");
     Pool& operator=(const Pool&) = delete("Pool owns worker jthreads and task queue");
-    Pool(Pool&&)                 = delete("Pool atomics and condition variable are identity");
-    Pool& operator=(Pool&&)      = delete("Pool atomics and condition variable are identity");
+    Pool(Pool&&)                 = delete("Pool atomics and worker queues are identity");
+    Pool& operator=(Pool&&)      = delete("Pool atomics and worker queues are identity");
 
     template <typename Job>
         requires std::is_invocable_r_v<void, Job&>
@@ -491,9 +619,13 @@ public:
     }
 
     [[nodiscard]] std::size_t pending_approx() const {
-        std::lock_guard lock{tasks_mutex_};
         std::size_t pending = 0;
-        for (const auto& [_, bucket] : tasks_) pending += bucket.size();
+        for (std::size_t i = 0; i < task_slot_count; ++i) {
+            if (task_slots_[i].state.load(std::memory_order_acquire) !=
+                slot_empty_state) {
+                ++pending;
+            }
+        }
         return pending;
     }
 
@@ -529,8 +661,59 @@ private:
     struct Task {
         std::uint64_t sequence = 0;
         std::size_t worker_limit = 1;
-        std::function<bool()> body;
+        adaptive_detail::InlineTask<> body;
     };
+
+    static constexpr std::uint64_t slot_state_mask = 0x3;
+    static constexpr std::uint64_t slot_generation_shift = 2;
+    static constexpr std::uint64_t slot_empty_state = 0;
+    static constexpr std::uint64_t slot_writing_state = 1;
+    static constexpr std::uint64_t slot_ready_tag = 2;
+    static constexpr std::uint64_t slot_running_tag = 3;
+
+    [[nodiscard]] static constexpr std::uint64_t
+    slot_state(std::uint32_t generation, std::uint64_t tag) noexcept {
+        return (static_cast<std::uint64_t>(generation)
+                << slot_generation_shift) | tag;
+    }
+
+    [[nodiscard]] static constexpr std::uint64_t
+    slot_ready_state(std::uint32_t generation) noexcept {
+        return slot_state(generation, slot_ready_tag);
+    }
+
+    [[nodiscard]] static constexpr std::uint64_t
+    slot_running_state(std::uint32_t generation) noexcept {
+        return slot_state(generation, slot_running_tag);
+    }
+
+    [[nodiscard]] static constexpr bool
+    slot_is_ready(std::uint64_t state) noexcept {
+        return (state & slot_state_mask) == slot_ready_tag;
+    }
+
+    [[nodiscard]] static constexpr ticket_type
+    pack_ticket_(std::uint64_t key, std::size_t slot_index) noexcept {
+        return ticket_type::pack(key, slot_index);
+    }
+
+    [[nodiscard]] static constexpr std::size_t
+    ticket_slot_(ticket_type ticket) noexcept {
+        return ticket.slot();
+    }
+
+    struct alignas(64) TaskSlot {
+        std::atomic<std::uint64_t> state{slot_empty_state};
+        Task task{};
+    };
+
+    [[nodiscard]] TaskSlot& slot_for_(ticket_type ticket) noexcept {
+        return task_slots_[ticket_slot_(ticket)];
+    }
+
+    [[nodiscard]] const TaskSlot& slot_for_(ticket_type ticket) const noexcept {
+        return task_slots_[ticket_slot_(ticket)];
+    }
 
     struct RunningWorkerGuard {
         std::atomic<std::size_t>& counter;
@@ -594,18 +777,19 @@ private:
     void enqueue_job_(Job&& job, std::size_t worker_limit) {
         const std::uint64_t sequence =
             next_sequence_.fetch_add(1, std::memory_order_relaxed);
-        const std::uint64_t ticket =
+        const std::uint64_t key =
             adaptive_detail::queue_key<Policy>(job, sequence);
+        if (key > ticket_type::key_mask) [[unlikely]] std::abort();
         Task task{
             .sequence = sequence,
             .worker_limit = std::max<std::size_t>(1, worker_limit),
-            .body = std::function<bool()>{
+            .body = adaptive_detail::InlineTask<>{
                 [fn = std::forward<Job>(job)]() mutable noexcept -> bool {
                     return run_body_(fn);
                 }},
         };
 
-        enqueue_task_(ticket, std::move(task), true);
+        enqueue_task_(sequence, key, std::move(task), true);
     }
 
     template <typename Job>
@@ -649,7 +833,7 @@ private:
 
     [[nodiscard]] bool try_enqueue_ticket_(ticket_type ticket) noexcept {
         {
-            std::lock_guard lock{queue_mutex_};
+            SpinGuard lock{queue_lock_};
             if (!queue_.try_push(ticket)) return false;
         }
         queued_tickets_.fetch_add(1, std::memory_order_release);
@@ -657,7 +841,7 @@ private:
     }
 
     [[nodiscard]] std::optional<ticket_type> try_pop_ticket_() noexcept {
-        std::lock_guard lock{queue_mutex_};
+        SpinGuard lock{queue_lock_};
         auto ticket = queue_.try_pop();
         if (ticket) {
             queued_tickets_.fetch_sub(1, std::memory_order_acq_rel);
@@ -665,45 +849,87 @@ private:
         return ticket;
     }
 
-    void enqueue_task_(ticket_type ticket, Task task, bool count_submit) {
-        {
-            std::lock_guard lock{tasks_mutex_};
-            tasks_[ticket].push_back(std::move(task));
+    [[nodiscard]] ticket_type
+    publish_task_slot_(std::uint64_t sequence,
+                       std::uint64_t key,
+                       Task task) noexcept {
+        const std::size_t slot_index = sequence % task_slot_count;
+        const std::uint64_t generation64 =
+            (sequence / task_slot_count) + 1;
+        if (generation64 >
+            std::numeric_limits<std::uint32_t>::max()) [[unlikely]] {
+            std::abort();
         }
+
+        auto& slot = task_slots_[slot_index];
+        std::uint64_t expected = slot_empty_state;
+        while (!slot.state.compare_exchange_weak(
+            expected, slot_writing_state,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire)) {
+            expected = slot_empty_state;
+            CRUCIBLE_SPIN_PAUSE;
+        }
+
+        slot.task = std::move(task);
+        const auto generation = static_cast<std::uint32_t>(generation64);
+        slot.state.store(slot_ready_state(generation),
+                         std::memory_order_release);
+        return pack_ticket_(key, slot_index);
+    }
+
+    void enqueue_task_(std::uint64_t sequence,
+                       std::uint64_t key,
+                       Task task,
+                       bool count_submit) {
+        const ticket_type ticket =
+            publish_task_slot_(sequence, key, std::move(task));
         if (count_submit) {
             submitted_.fetch_add(1, std::memory_order_release);
         }
 
         while (!try_enqueue_ticket_(ticket)) {
             CRUCIBLE_SPIN_PAUSE;
-            std::this_thread::yield();
         }
 
-        ready_.notify_all();
     }
 
-    void return_task_front_(ticket_type ticket, Task task) {
-        {
-            std::lock_guard lock{tasks_mutex_};
-            tasks_[ticket].push_front(std::move(task));
-        }
-
+    void return_ticket_(ticket_type ticket) {
         while (!try_enqueue_ticket_(ticket)) {
             CRUCIBLE_SPIN_PAUSE;
-            std::this_thread::yield();
         }
-        ready_.notify_all();
     }
 
-    [[nodiscard]] std::optional<Task> take_task_(ticket_type ticket) {
-        std::lock_guard lock{tasks_mutex_};
-        auto it = tasks_.find(ticket);
-        if (it == tasks_.end() || it->second.empty()) return std::nullopt;
+    [[nodiscard]] std::optional<std::size_t>
+    worker_limit_for_(ticket_type ticket) const noexcept {
+        const auto& slot = slot_for_(ticket);
+        const std::uint64_t state =
+            slot.state.load(std::memory_order_acquire);
+        if (!slot_is_ready(state)) return std::nullopt;
+        return slot.task.worker_limit;
+    }
 
-        Task task = std::move(it->second.front());
-        it->second.pop_front();
-        if (it->second.empty()) tasks_.erase(it);
+    [[nodiscard]] std::optional<Task> take_task_(ticket_type ticket) noexcept {
+        auto& slot = slot_for_(ticket);
+        std::uint64_t expected = slot.state.load(std::memory_order_acquire);
+        if (!slot_is_ready(expected)) return std::nullopt;
+        const std::uint64_t desired =
+            (expected & ~slot_state_mask) | slot_running_tag;
+        if (!slot.state.compare_exchange_strong(
+            expected, desired,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire)) {
+            return std::nullopt;
+        }
+
+        Task task = std::move(slot.task);
         return task;
+    }
+
+    void release_task_slot_(ticket_type ticket) noexcept {
+        auto& slot = slot_for_(ticket);
+        slot.task = Task{};
+        slot.state.store(slot_empty_state, std::memory_order_release);
     }
 
     void pin_worker_(std::size_t worker_index) noexcept {
@@ -726,30 +952,34 @@ private:
 
     void worker_loop_(std::stop_token stop, std::size_t worker_index) {
         while (!stop.stop_requested()) {
-            {
-                std::unique_lock lock{ready_mutex_};
-                ready_.wait(lock, stop, [this] {
-                    return queued_tickets_.load(std::memory_order_acquire) != 0;
-                });
-                if (stop.stop_requested()) break;
+            if (queued_tickets_.load(std::memory_order_acquire) == 0) {
+                CRUCIBLE_SPIN_PAUSE;
+                continue;
             }
 
             auto ticket = try_pop_ticket_();
-            if (!ticket) continue;
+            if (!ticket) {
+                CRUCIBLE_SPIN_PAUSE;
+                continue;
+            }
+
+            auto worker_limit = worker_limit_for_(*ticket);
+            if (!worker_limit) continue;
+            if (worker_index >= *worker_limit) {
+                return_ticket_(*ticket);
+                CRUCIBLE_SPIN_PAUSE;
+                continue;
+            }
 
             auto task = take_task_(*ticket);
             if (!task) continue;
-            if (worker_index >= task->worker_limit) {
-                return_task_front_(*ticket, std::move(*task));
-                std::this_thread::yield();
-                continue;
-            }
 
             bool ok = false;
             {
                 RunningWorkerGuard running{running_workers_};
                 ok = task->body();
             }
+            release_task_slot_(*ticket);
             if (!ok) {
                 failed_.fetch_add(1, std::memory_order_release);
             }
@@ -783,11 +1013,8 @@ private:
     }
 
     adaptive_detail::QueuePortal<policy_queue_type> queue_{};
-    mutable std::mutex              ready_mutex_;
-    mutable std::mutex              queue_mutex_;
-    mutable std::mutex              tasks_mutex_;
-    std::condition_variable_any     ready_;
-    std::unordered_map<ticket_type, std::deque<Task>> tasks_;
+    mutable SpinLock                queue_lock_;
+    std::unique_ptr<TaskSlot[]>     task_slots_;
     std::vector<int>                selected_cores_;
     std::atomic<std::uint64_t>      next_sequence_{0};
     std::atomic<std::uint64_t>      submitted_{0};
@@ -799,7 +1026,7 @@ private:
     std::size_t                     worker_count_ = 0;
     bool                            topology_consulted_ = false;
     // Last by declaration, first by destruction: jthread destructors
-    // join while every queue, mutex, task table, and atomic counter the
+    // join while every queue, spin gate, task table, and atomic counter the
     // workers may observe is still alive.
     std::vector<std::jthread>       workers_;
 };

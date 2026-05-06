@@ -16,10 +16,11 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 
+#include <concepts>
 #include <cstdint>
 #include <cstring>
-#include <functional>
 #include <span>
+#include <type_traits>
 #include <utility>
 
 namespace crucible {
@@ -481,12 +482,15 @@ inline Header read_header(Reader& r) {
 // Returns nullptr on parse error.
 // ═══════════════════════════════════════════════════════════════════
 
+template <typename Resolve>
+    requires std::is_invocable_r_v<TraceNode*, Resolve&, MerkleHash>
 [[nodiscard]] inline BranchNode* deserialize_branch(
     effects::Alloc                                 a,
     std::span<const uint8_t>                  buf,
     Arena&                                    arena CRUCIBLE_LIFETIMEBOUND,
-    std::function<TraceNode*(MerkleHash)>     resolve)
+    Resolve&&                                 resolve)
 {
+    Resolve resolver = std::forward<Resolve>(resolve);
     using namespace detail_ser;
     Reader r{.buf = buf.data(), .pos = 0, .len = buf.size()};
 
@@ -535,13 +539,24 @@ inline Header read_header(Reader& r) {
         for (uint32_t i = 0; i < num_arms; i++) {
             node->arms[i].value          = r.r<int64_t>();
             const MerkleHash target_h    = MerkleHash{r.r<uint64_t>()};
-            node->arms[i].target         = resolve ? resolve(target_h) : nullptr;
+            node->arms[i].target         = resolver(target_h);
         }
     } else {
         node->arms = nullptr;
     }
 
     return r.ok ? node : nullptr;
+}
+
+[[nodiscard]] inline BranchNode* deserialize_branch(
+    effects::Alloc                            a,
+    std::span<const uint8_t>                  buf,
+    Arena&                                    arena CRUCIBLE_LIFETIMEBOUND,
+    std::nullptr_t) {
+    return deserialize_branch(
+        a, buf, arena, [](MerkleHash) noexcept -> TraceNode* {
+            return nullptr;
+        });
 }
 
 } // namespace crucible

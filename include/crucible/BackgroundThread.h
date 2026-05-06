@@ -7,9 +7,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
-#include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <thread>
 #include <vector>
@@ -85,6 +83,21 @@ struct BackgroundThread {
   // invalidate the fg's cached copy of active_region.
   alignas(64) std::atomic<RegionNode*> active_region{nullptr};
 
+  struct RegionReadyCallback {
+    using Fn = void (*)(void*, RegionNode*);
+
+    void* ctx = nullptr;
+    Fn fn = nullptr;
+
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {
+      return fn != nullptr;
+    }
+
+    void operator()(RegionNode* region) const {
+      fn(ctx, region);
+    }
+  };
+
   // Optional callback invoked on the background thread whenever a new
   // RegionNode becomes available. Used by Vigil to update transactions
   // and trigger persistence without polling.
@@ -92,7 +105,7 @@ struct BackgroundThread {
   // Own cache line: bg-only state.  Separating it from active_region
   // (fg-touched) prevents fg's acquire load from dragging the callback
   // object into fg's L1 every iteration.
-  alignas(64) std::function<void(RegionNode*)> region_ready_cb;
+  alignas(64) RegionReadyCallback region_ready_cb;
 
   // Iteration detection.
   IterationDetector detector;
@@ -195,13 +208,6 @@ struct BackgroundThread {
     std::vector<CallsiteHash> callsite_hashes;
   };
 
-  struct BgRegionWork {
-    BackgroundThread* owner = nullptr;
-    bool commit_only = false;
-    uint32_t commit_count = 0;
-    TraceGraph* graph = nullptr;
-  };
-
   struct BgPipelineDone {};
   struct BgPipelineStart {
     BackgroundThread* owner = nullptr;
@@ -209,7 +215,6 @@ struct BackgroundThread {
   struct BgPipelineStartTag {};
   struct BgTraceBatchTag {};
   struct BgBuildWorkTag {};
-  struct BgRegionWorkTag {};
 
   using StartChannel =
       concurrent::PermissionedSpscChannel<BgPipelineStart, 1, BgPipelineStartTag>;
@@ -217,8 +222,6 @@ struct BackgroundThread {
       concurrent::PermissionedSpscChannel<BgTraceBatch*, 64, BgTraceBatchTag>;
   using BuildWorkChannel =
       concurrent::PermissionedSpscChannel<BgBuildWork*, 64, BgBuildWorkTag>;
-  using RegionWorkChannel =
-      concurrent::PermissionedSpscChannel<BgRegionWork*, 64, BgRegionWorkTag>;
 
   struct BgSinkProducerHandle {
     [[nodiscard]] bool try_push(BgPipelineDone* const& done) noexcept {
@@ -227,8 +230,6 @@ struct BackgroundThread {
     }
   };
 
-  std::mutex bg_pipeline_arena_mutex_;
-
   template <class Producer, class T>
   static void push_pipeline(Producer& producer, T const& value) {
     while (!producer.try_push(value)) {
@@ -236,16 +237,16 @@ struct BackgroundThread {
     }
   }
 
-  [[nodiscard]] BgBuildWork* make_commit_work(uint32_t count) {
-    auto* work = new BgBuildWork{};
-    work->owner = this;
-    work->commit_only = true;
-    work->commit_count = count;
-    return work;
+  void reserve_iteration_buffers_() {
+    constexpr uint32_t kInitialTraceCapacity = BATCH_SIZE * 2;
+    current_trace.reserve(kInitialTraceCapacity);
+    current_meta_starts.reserve(kInitialTraceCapacity);
+    current_scope_hashes.reserve(kInitialTraceCapacity);
+    current_callsite_hashes.reserve(kInitialTraceCapacity);
   }
 
-  [[nodiscard]] BgRegionWork* make_commit_region_work(uint32_t count) {
-    auto* work = new BgRegionWork{};
+  [[nodiscard]] BgBuildWork* make_commit_work(uint32_t count) {
+    auto* work = new BgBuildWork{};
     work->owner = this;
     work->commit_only = true;
     work->commit_count = count;
@@ -350,11 +351,12 @@ struct BackgroundThread {
       owner = start->owner;
     }
 
+    auto batch = std::make_unique<BgTraceBatch>();
+    batch->owner = owner;
+
     while (true) {
       if (owner->stop_requested.peek()) break;
 
-      auto batch = std::make_unique<BgTraceBatch>();
-      batch->owner = owner;
       batch->count = owner->ring.get().value()->try_pop_batch(
           batch->entries, batch->meta_starts, batch->scope_hashes,
           batch->callsite_hashes, BATCH_SIZE);
@@ -366,17 +368,17 @@ struct BackgroundThread {
 
       push_pipeline(out, batch.get());
       batch.release();
+      batch = std::make_unique<BgTraceBatch>();
+      batch->owner = owner;
     }
 
-    auto final_batch = std::make_unique<BgTraceBatch>();
-    final_batch->owner = owner;
-    final_batch->count = owner->ring.get().value()->try_pop_batch(
-        final_batch->entries, final_batch->meta_starts,
-        final_batch->scope_hashes, final_batch->callsite_hashes,
+    batch->count = owner->ring.get().value()->try_pop_batch(
+        batch->entries, batch->meta_starts,
+        batch->scope_hashes, batch->callsite_hashes,
         BATCH_SIZE);
-    if (final_batch->count > 0) {
-      push_pipeline(out, final_batch.get());
-      final_batch.release();
+    if (batch->count > 0) {
+      push_pipeline(out, batch.get());
+      batch.release();
     }
 
     BgTraceBatch* stop = nullptr;
@@ -437,8 +439,8 @@ struct BackgroundThread {
     }
   }
 
-  static void BuildTraceFn(typename BuildWorkChannel::ConsumerHandle&& in,
-                           typename RegionWorkChannel::ProducerHandle&& out) {
+  static void BuildRegionFn(typename BuildWorkChannel::ConsumerHandle&& in,
+                            BgSinkProducerHandle&& out) {
     effects::Bg bg;
 
     while (true) {
@@ -449,50 +451,6 @@ struct BackgroundThread {
       }
 
       std::unique_ptr<BgBuildWork> work{*maybe_work};
-      if (!work) {
-        BgRegionWork* stop = nullptr;
-        push_pipeline(out, stop);
-        return;
-      }
-
-      BackgroundThread* owner = work->owner;
-      if (work->commit_only) {
-        auto region_work = std::unique_ptr<BgRegionWork>(
-            owner->make_commit_region_work(work->commit_count));
-        push_pipeline(out, region_work.get());
-        region_work.release();
-        continue;
-      }
-
-      TraceGraph* graph = nullptr;
-      {
-        std::lock_guard lock(owner->bg_pipeline_arena_mutex_);
-        graph = owner->build_trace_from(
-            bg.alloc, work->completed_len,
-            work->trace.data(), work->meta_starts.data(),
-            work->scope_hashes.data(), work->callsite_hashes.data());
-      }
-
-      auto region_work = std::make_unique<BgRegionWork>();
-      region_work->owner = owner;
-      region_work->graph = graph;
-      push_pipeline(out, region_work.get());
-      region_work.release();
-    }
-  }
-
-  static void MakeRegionFn(typename RegionWorkChannel::ConsumerHandle&& in,
-                           BgSinkProducerHandle&& out) {
-    effects::Bg bg;
-
-    while (true) {
-      auto maybe_work = in.try_pop();
-      if (!maybe_work) {
-        CRUCIBLE_SPIN_PAUSE;
-        continue;
-      }
-
-      std::unique_ptr<BgRegionWork> work{*maybe_work};
       if (!work) {
         auto done = std::make_unique<BgPipelineDone>();
         push_pipeline(out, done.get());
@@ -506,10 +464,11 @@ struct BackgroundThread {
         continue;
       }
 
-      {
-        std::lock_guard lock(owner->bg_pipeline_arena_mutex_);
-        owner->publish_trace_graph(bg.alloc, work->graph);
-      }
+      TraceGraph* graph = owner->build_trace_from(
+          bg.alloc, work->completed_len,
+          work->trace.data(), work->meta_starts.data(),
+          work->scope_hashes.data(), work->callsite_hashes.data());
+      owner->publish_trace_graph(bg.alloc, graph);
     }
   }
 
@@ -534,6 +493,7 @@ struct BackgroundThread {
     rank = rank_;
     world_size = world_size_;
     device_capability = device_cap;
+    reserve_iteration_buffers_();
     stop_requested.reset_unsafe();
     pipeline_thread = std::jthread([this](std::stop_token) noexcept {
       run_in_row<run_required_row>();
@@ -560,6 +520,10 @@ struct BackgroundThread {
   BackgroundThread& operator=(const BackgroundThread&) = delete("BackgroundThread owns a pipeline jthread");
   BackgroundThread(BackgroundThread&&) = delete("BackgroundThread owns a pipeline jthread with captured this");
   BackgroundThread& operator=(BackgroundThread&&) = delete("BackgroundThread owns a pipeline jthread with captured this");
+
+  void set_region_ready_callback(void* ctx, RegionReadyCallback::Fn fn) noexcept {
+    region_ready_cb = RegionReadyCallback{.ctx = ctx, .fn = fn};
+  }
 
 #ifdef CRUCIBLE_BENCH
  public:  // Bench needs access to scratch buffers for isolated sub-phase timing.
@@ -868,7 +832,6 @@ struct BackgroundThread {
 
     TraceBatchChannel trace_batches;
     BuildWorkChannel build_work;
-    RegionWorkChannel region_work;
 
     StartChannel start;
     auto start_whole = saf::mint_permission_root<
@@ -892,21 +855,12 @@ struct BackgroundThread {
             spsc_tag::Producer<BgBuildWorkTag>,
             spsc_tag::Consumer<BgBuildWorkTag>>(std::move(build_whole));
 
-    auto region_whole = saf::mint_permission_root<
-        spsc_tag::Whole<BgRegionWorkTag>>();
-    auto [region_prod_perm, region_cons_perm] =
-        saf::mint_permission_split<
-            spsc_tag::Producer<BgRegionWorkTag>,
-            spsc_tag::Consumer<BgRegionWorkTag>>(std::move(region_whole));
-
     auto start_prod = start.producer(std::move(start_prod_perm));
     auto start_cons = start.consumer(std::move(start_cons_perm));
     auto trace_prod = trace_batches.producer(std::move(trace_prod_perm));
     auto trace_cons = trace_batches.consumer(std::move(trace_cons_perm));
     auto build_prod = build_work.producer(std::move(build_prod_perm));
     auto build_cons = build_work.consumer(std::move(build_cons_perm));
-    auto region_prod = region_work.producer(std::move(region_prod_perm));
-    auto region_cons = region_work.consumer(std::move(region_cons_perm));
 
     auto ctx = effects::BgDrainCtx{}.template in_row<run_required_row>();
     while (!start_prod.try_push(BgPipelineStart{this})) {
@@ -916,17 +870,14 @@ struct BackgroundThread {
         ctx, std::move(start_cons), std::move(trace_prod));
     auto detect_stage = concurrent::mint_stage<&DetectIterationFn>(
         ctx, std::move(trace_cons), std::move(build_prod));
-    auto build_stage = concurrent::mint_stage<&BuildTraceFn>(
-        ctx, std::move(build_cons), std::move(region_prod));
-    auto region_stage = concurrent::mint_stage<&MakeRegionFn>(
-        ctx, std::move(region_cons), BgSinkProducerHandle{});
+    auto build_stage = concurrent::mint_stage<&BuildRegionFn>(
+        ctx, std::move(build_cons), BgSinkProducerHandle{});
 
     auto pipeline = concurrent::mint_pipeline(
         ctx,
         std::move(drain_stage),
         std::move(detect_stage),
-        std::move(build_stage),
-        std::move(region_stage));
+        std::move(build_stage));
     std::move(pipeline).run();
   }
 

@@ -3,10 +3,8 @@
 #include <algorithm>
 #include <atomic>
 #include <array>
-#include <condition_variable>
 #include <cstdint>
 #include <cstdio>
-#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -25,6 +23,10 @@ using EevdfPolicy = cs::Eevdf<PriorityJobKey, 4, 64, 16, 1>;
 using DeadlinePerShardPolicy = cs::DeadlinePerShard<PriorityJobKey, 4, 64, 16, 1>;
 using CfsPerShardPolicy = cs::CfsPerShard<PriorityJobKey, 4, 64, 16, 1>;
 using EevdfPerShardPolicy = cs::EevdfPerShard<PriorityJobKey, 4, 64, 16, 1>;
+
+static_assert(cc::adaptive_detail::InlineTask<>::capacity() == 512);
+static_assert(std::is_move_constructible_v<cc::adaptive_detail::InlineTask<>>);
+static_assert(!std::is_copy_constructible_v<cc::adaptive_detail::InlineTask<>>);
 
 template <typename Policy>
 static void run_completion_smoke(const char* name) {
@@ -52,13 +54,11 @@ static void run_completion_smoke(const char* name) {
 
 static void test_fifo_order_single_worker() {
     cc::Pool<cs::Fifo> pool{cc::CoreCount{1}};
-    std::mutex mutex;
     std::vector<int> seen;
     seen.reserve(128);
 
     for (int i = 0; i < 128; ++i) {
-        cc::dispatch(pool, [i, &mutex, &seen] {
-            std::lock_guard lock{mutex};
+        cc::dispatch(pool, [i, &seen] {
             seen.push_back(i);
         });
     }
@@ -77,26 +77,23 @@ static void test_lifo_order_single_worker() {
     cc::Pool<cs::Lifo> pool{cc::CoreCount{1}};
     std::atomic<bool> first_started{false};
     std::atomic<bool> release_first{false};
-    std::mutex mutex;
     std::vector<int> seen;
     seen.reserve(17);
 
     cc::dispatch(pool, [&] {
         first_started.store(true, std::memory_order_release);
         while (!release_first.load(std::memory_order_acquire)) {
-            std::this_thread::yield();
+            CRUCIBLE_SPIN_PAUSE;
         }
-        std::lock_guard lock{mutex};
         seen.push_back(0);
     });
 
     while (!first_started.load(std::memory_order_acquire)) {
-        std::this_thread::yield();
+        CRUCIBLE_SPIN_PAUSE;
     }
 
     for (int i = 1; i <= 16; ++i) {
-        cc::dispatch(pool, [i, &mutex, &seen] {
-            std::lock_guard lock{mutex};
+        cc::dispatch(pool, [i, &seen] {
             seen.push_back(i);
         });
     }
@@ -119,7 +116,6 @@ static void test_priority_key_order_single_worker() {
         std::uint64_t key_value = 0;
         std::atomic<bool>* first_started = nullptr;
         std::atomic<bool>* release_first = nullptr;
-        std::mutex* mutex = nullptr;
         std::vector<int>* seen = nullptr;
         int value = 0;
 
@@ -131,10 +127,9 @@ static void test_priority_key_order_single_worker() {
             if (first_started != nullptr) {
                 first_started->store(true, std::memory_order_release);
                 while (!release_first->load(std::memory_order_acquire)) {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
-            std::lock_guard lock{*mutex};
             seen->push_back(value);
         }
     };
@@ -142,19 +137,18 @@ static void test_priority_key_order_single_worker() {
     cc::Pool<DeadlinePolicy> pool{cc::CoreCount{1}};
     std::atomic<bool> first_started{false};
     std::atomic<bool> release_first{false};
-    std::mutex mutex;
     std::vector<int> seen;
     seen.reserve(33);
 
     cc::dispatch(pool, KeyedJob{0, &first_started, &release_first,
-                                &mutex, &seen, 0});
+                                &seen, 0});
     while (!first_started.load(std::memory_order_acquire)) {
-        std::this_thread::yield();
+        CRUCIBLE_SPIN_PAUSE;
     }
 
     for (int i = 32; i >= 1; --i) {
         cc::dispatch(pool, KeyedJob{static_cast<std::uint64_t>(i),
-                                    nullptr, nullptr, &mutex, &seen, i});
+                                    nullptr, nullptr, &seen, i});
     }
     release_first.store(true, std::memory_order_release);
     pool.wait_idle();
@@ -332,8 +326,6 @@ static void test_dispatch_with_workload_l3_shards_numa_local() {
 
     std::array<std::atomic<int>, 4> seen{};
     std::atomic<int> total{0};
-    std::mutex mutex;
-    std::condition_variable cv;
 
     const auto result = cc::dispatch_with_workload(
         pool,
@@ -344,11 +336,7 @@ static void test_dispatch_with_workload_l3_shards_numa_local() {
             if (shard.numa != cc::NumaPolicy::NumaLocal) std::abort();
             if (shard.tier != cc::Tier::L3Resident) std::abort();
             seen[shard.index].fetch_add(1, std::memory_order_relaxed);
-            const int after = total.fetch_add(1, std::memory_order_acq_rel) + 1;
-            if (after == static_cast<int>(expected_worker_limit)) {
-                std::lock_guard lock{mutex};
-                cv.notify_one();
-            }
+            total.fetch_add(1, std::memory_order_acq_rel);
         });
 
     if (result.ran_inline || !result.queued) std::abort();
@@ -358,12 +346,9 @@ static void test_dispatch_with_workload_l3_shards_numa_local() {
     if (result.worker_limit != expected_worker_limit) std::abort();
     if (result.tasks_submitted != result.worker_limit) std::abort();
 
-    {
-        std::unique_lock lock{mutex};
-        cv.wait(lock, [&] {
-            return total.load(std::memory_order_acquire) ==
-                   static_cast<int>(result.tasks_submitted);
-        });
+    while (total.load(std::memory_order_acquire) !=
+           static_cast<int>(result.tasks_submitted)) {
+        CRUCIBLE_SPIN_PAUSE;
     }
     pool.wait_idle();
 
@@ -400,8 +385,6 @@ static void test_dispatch_with_workload_dram_shards_queue() {
 
     std::array<std::atomic<int>, 4> seen{};
     std::atomic<int> total{0};
-    std::mutex mutex;
-    std::condition_variable cv;
 
     const auto result = cc::dispatch_with_workload(
         pool,
@@ -412,11 +395,7 @@ static void test_dispatch_with_workload_dram_shards_queue() {
             if (shard.numa != profile.numa_preference) std::abort();
             if (shard.tier != cc::Tier::DRAMBound) std::abort();
             seen[shard.index].fetch_add(1, std::memory_order_relaxed);
-            const int after = total.fetch_add(1, std::memory_order_acq_rel) + 1;
-            if (after == static_cast<int>(expected_worker_limit)) {
-                std::lock_guard lock{mutex};
-                cv.notify_one();
-            }
+            total.fetch_add(1, std::memory_order_acq_rel);
         });
 
     if (result.decision.factor <= 1) {
@@ -431,12 +410,9 @@ static void test_dispatch_with_workload_dram_shards_queue() {
     if (result.worker_limit != expected_worker_limit) std::abort();
     if (result.tasks_submitted != result.worker_limit) std::abort();
 
-    {
-        std::unique_lock lock{mutex};
-        cv.wait(lock, [&] {
-            return total.load(std::memory_order_acquire) ==
-                   static_cast<int>(result.tasks_submitted);
-        });
+    while (total.load(std::memory_order_acquire) !=
+           static_cast<int>(result.tasks_submitted)) {
+        CRUCIBLE_SPIN_PAUSE;
     }
     pool.wait_idle();
 

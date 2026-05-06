@@ -16,7 +16,6 @@
 #include <crucible/sessions/Session.h>
 
 #include <concepts>
-#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -108,7 +107,7 @@ inline constexpr auto wait_transport = [](auto& hp) noexcept {
         if (hp->try_wait(signal)) {
             return signal;
         }
-        std::this_thread::yield();
+        CRUCIBLE_SPIN_PAUSE;
     }
 };
 

@@ -1396,7 +1396,7 @@ class Run {
         // sched_setaffinity, must be `target` on the next schedule
         // boundary. On short paths (no preemption between setaffinity
         // and getcpu) we might still report the previous CPU — accept
-        // that inaccuracy rather than calling sched_yield() and
+        // that inaccuracy rather than giving the kernel scheduler a vote and
         // burning a context switch inside every .measure().
         const int actual = sched_getcpu();
         return (actual >= 0) ? CpuId{actual} : CpuId{target};

@@ -990,7 +990,7 @@ Metrics metrics{};   // plain non-atomic
 while (running) {
     auto guard = pool.lend();
     if (!guard) {                      // writer is upgrading — wait or skip
-        std::this_thread::yield();
+        CRUCIBLE_SPIN_PAUSE;
         continue;
     }
     // Inside shared critical section.  The Pool's mode-transition CAS
@@ -1006,7 +1006,7 @@ while (running) {
 {
     auto upgrade = pool.try_upgrade();
     if (!upgrade) {                    // readers still holding shares
-        std::this_thread::yield();
+        CRUCIBLE_SPIN_PAUSE;
         continue;
     }
     metrics.requests++;
@@ -1043,7 +1043,7 @@ std::jthread consumer_thread{
         auto handle = queue.consumer_handle(std::move(c));
         while (!st.stop_requested()) {
             if (auto ev = handle.try_pop()) process(*ev);
-            else std::this_thread::yield();
+            else CRUCIBLE_SPIN_PAUSE;
         }
     }
 };

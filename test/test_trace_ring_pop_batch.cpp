@@ -315,7 +315,7 @@ static void test_spsc_stress() {
             while (!ring->try_append(make_entry(i), make_meta(i),
                                      make_scope(i), make_callsite(i))) {
                 // Ring full, wait briefly.
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
         producer_done.store(true, std::memory_order_release);
@@ -358,7 +358,7 @@ static void test_spsc_stress() {
                        && ring->size() == 0) {
                 break;
             } else {
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
     });

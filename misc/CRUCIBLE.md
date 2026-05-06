@@ -425,7 +425,7 @@ For these, we emit a **tiny scheduler CTA** embedded in the Plan that runs a pus
 __global__ void on_gpu_scheduler(GlobalTaskQueue* q, EventTensor* events) {
     while (!q->done) {
         Task* t = q->try_pop();
-        if (!t) { __nanosleep(100); continue; }
+        if (!t) { gpu_spin_pause(); continue; }
         switch (t->kind) {
           case EXPERT_TILE:  dispatch_expert_tile(t); break;
           case TREE_EXPAND:  dispatch_tree_node(t);   break;
@@ -3602,5 +3602,4 @@ Crucible is a different category of tool from the ML frameworks it replaces. Thi
 ---
 
 *End of Crucible runtime design document. Companion to FORGE.md (vendor-agnostic compiler) and MIMIC.md (per-vendor backend framework). Upstream overview in CLAUDE.md.*
-
 

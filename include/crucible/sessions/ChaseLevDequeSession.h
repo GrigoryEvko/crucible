@@ -32,7 +32,6 @@
 #include <concepts>
 #include <cstddef>
 #include <optional>
-#include <thread>
 #include <type_traits>
 #include <utility>
 
@@ -159,14 +158,14 @@ owner_session_try_pop(OwnerSessionHandle<Deque>& session) noexcept
 inline constexpr auto blocking_owner_push =
     [](auto& hp, auto&& value) noexcept {
         while (!hp->try_push(std::forward<decltype(value)>(value))) {
-            std::this_thread::yield();
+            CRUCIBLE_SPIN_PAUSE;
         }
     };
 
 inline constexpr auto blocking_owner_pop = [](auto& hp) noexcept {
     for (;;) {
         if (auto v = hp->try_pop()) return *v;
-        std::this_thread::yield();
+        CRUCIBLE_SPIN_PAUSE;
     }
 };
 
@@ -180,7 +179,7 @@ inline constexpr auto blocking_steal_borrowed = [](auto& hp) noexcept {
         if (auto v = hp->try_steal()) {
             return Borrowed<value_type, tag_type>{*v};
         }
-        std::this_thread::yield();
+        CRUCIBLE_SPIN_PAUSE;
     }
 };
 

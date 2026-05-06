@@ -61,12 +61,12 @@
 //   sudo ./build-bench/bench/bench_perf_loader
 
 #include <chrono>
-#include <condition_variable>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <mutex>
+#include <thread>
 #include <utility>
 
 #include <unistd.h>  // ::getpid (workload-shaped demo syscall driver)
@@ -636,7 +636,7 @@ int main() {
     //
     // Snapshots all 7 facades, runs a workload that should nudge every
     // metric (CPU spin → ctx_switches via timer interrupts; getpid loop
-    // → total_syscalls; brief mutex+CV → futex/lock_contention),
+    // → total_syscalls; short spin gate → contention-shaped CPU pressure),
     // snapshots again, and prints `post - pre` deltas.
     //
     // When CAP_BPF is missing the deltas are all zero — the print
@@ -662,8 +662,9 @@ int main() {
     if (const auto* h = s.syscall_tp_btf())  syt_pre = h->snapshot();
 
     // Workload: short CPU spin (timer-interrupt-driven ctx switches),
-    // syscall driver (raw_syscalls/sys_exit events), and a futex_wait
-    // (sys_enter_futex / sys_exit_futex events for lock_contention).
+    // syscall driver (raw_syscalls/sys_exit events), and an atomic-flag
+    // spin-contention phase.  No parked waits here: this bench should not
+    // teach production code to use futex/cv waits.
     // Sized for ~50 ms total wall-clock so the deltas are large enough
     // to be visible above noise floor on a quiet system.
     {
@@ -676,13 +677,18 @@ int main() {
             bench::do_not_optimize(spin_acc);
         }
         for (int i = 0; i < 200; ++i) (void)::getpid();
-        // Brief futex_wait via a timed cv.wait_for on a never-notified cv.
-        // 1 ms timeout is enough for sys_enter_futex / sys_exit_futex to
-        // both record without slowing the demo significantly.
-        std::mutex m;
-        std::condition_variable cv;
-        std::unique_lock<std::mutex> lk(m);
-        (void)cv.wait_for(lk, std::chrono::milliseconds(1));
+        std::atomic_flag gate = ATOMIC_FLAG_INIT;
+        gate.test_and_set(std::memory_order_release);
+        std::jthread releaser{[&gate] {
+            const auto release_at = steady::now() + std::chrono::milliseconds(1);
+            while (steady::now() < release_at) {
+                CRUCIBLE_SPIN_PAUSE;
+            }
+            gate.clear(std::memory_order_release);
+        }};
+        while (gate.test(std::memory_order_acquire)) {
+            CRUCIBLE_SPIN_PAUSE;
+        }
     }
 
     // Post snapshots

@@ -170,7 +170,7 @@ static void test_stress_m_producers_one_consumer() {
             for (uint64_t s = 0; s < N_PER_PRODUCER; ++s) {
                 const uint64_t item = encode(p, s);
                 while (!q.try_push(item)) {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
             producers_done.fetch_add(1, std::memory_order_release);
@@ -214,10 +214,10 @@ static void test_stress_m_producers_one_consumer() {
                     } else if (received == total) {
                         break;
                     } else {
-                        std::this_thread::yield();
+                        CRUCIBLE_SPIN_PAUSE;
                     }
                 } else {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
         }
@@ -282,7 +282,7 @@ static void test_stress_high_contention() {
         producers.emplace_back([&, p](std::stop_token /*st*/) {
             for (uint64_t s = 0; s < N_PER_PRODUCER; ++s) {
                 while (!q.try_push(encode(p, s))) {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
             producers_done.fetch_add(1, std::memory_order_release);
@@ -311,7 +311,7 @@ static void test_stress_high_contention() {
                 break;
             } else {
                 // Tiny pause to avoid pegging the CPU on empty polling.
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
     });
@@ -489,7 +489,7 @@ static void test_batched_multi_producer_stress() {
                     if (r > 0) {
                         pushed += r;
                     } else {
-                        std::this_thread::yield();
+                        CRUCIBLE_SPIN_PAUSE;
                     }
                 }
             }
@@ -502,7 +502,7 @@ static void test_batched_multi_producer_stress() {
         while (consumed.load(std::memory_order_relaxed) < TOTAL) {
             const size_t n = ring->try_pop_batch(std::span<uint64_t>(buf));
             if (n == 0) {
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
                 continue;
             }
             for (size_t i = 0; i < n; ++i) {

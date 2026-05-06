@@ -152,7 +152,7 @@ void test_multi_thread_drain() {
         for (int i = 0; i < PER_PRODUCER; ++i) {
             int payload = prod_id * PER_PRODUCER + i;
             while (!handle.try_push(payload)) {
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
             total_pushed.fetch_add(1, std::memory_order_relaxed);
         }
@@ -178,7 +178,7 @@ void test_multi_thread_drain() {
                     && total_popped.load() >= EXPECTED) {
                     return;
                 }
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
     };

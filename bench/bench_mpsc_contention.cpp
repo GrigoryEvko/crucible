@@ -62,12 +62,12 @@ struct SinglePushWorker {
 
     void operator()(std::stop_token) noexcept {
         while (!start.load(std::memory_order_acquire)) {
-            std::this_thread::yield();
+            CRUCIBLE_SPIN_PAUSE;
         }
         for (std::size_t i = 0; i < kPerProducer; ++i) {
             const Item value = base + static_cast<Item>(i);
             while (!ring.try_push(value)) {
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
     }
@@ -83,7 +83,7 @@ struct BatchedPushWorker {
 
     void operator()(std::stop_token) noexcept {
         while (!start.load(std::memory_order_acquire)) {
-            std::this_thread::yield();
+            CRUCIBLE_SPIN_PAUSE;
         }
         std::array<Item, BATCH> buf{};
         std::size_t pushed = 0;
@@ -100,7 +100,7 @@ struct BatchedPushWorker {
                 if (r > 0) {
                     in_batch += r;
                 } else {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
             pushed += n;
@@ -131,14 +131,14 @@ void run_cycle(std::size_t producer_count) {
     std::jthread consumer([&ring, &consumed, &start, total](
             std::stop_token) noexcept {
         while (!start.load(std::memory_order_acquire)) {
-            std::this_thread::yield();
+            CRUCIBLE_SPIN_PAUSE;
         }
         std::array<Item, 64> buf{};
         std::size_t local = 0;
         while (local < total) {
             const std::size_t n = ring.try_pop_batch(std::span<Item>(buf));
             if (n == 0) {
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
                 continue;
             }
             // Anti-DCE: keep the read alive.

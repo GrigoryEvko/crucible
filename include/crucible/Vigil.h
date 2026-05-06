@@ -156,7 +156,9 @@ class Vigil {
         }
 
         // Wire the background thread callback to our on_region_ready.
-        bg_.region_ready_cb = [this](RegionNode* region) { on_region_ready(region); };
+        bg_.set_region_ready_callback(this, [](void* self, RegionNode* region) {
+            static_cast<Vigil*>(self)->on_region_ready(region);
+        });
 
         // GAPS-004h follow-up: load Senses + construct DeadlineWatchdog
         // BEFORE bg_.start() so on_region_ready can call wd_->observe()

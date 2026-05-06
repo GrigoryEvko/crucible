@@ -121,7 +121,7 @@ void test_multi_producer_multi_consumer_drain() {
             auto p = std::move(*p_opt);
             for (int i = 0; i < PER_PRODUCER; ++i) {
                 while (!p.try_push(t * PER_PRODUCER + i)) {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
                 total_pushed.fetch_add(1, std::memory_order_relaxed);
             }
@@ -143,7 +143,7 @@ void test_multi_producer_multi_consumer_drain() {
                         && total_popped.load() >= EXPECTED) {
                         return;
                     }
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
         });

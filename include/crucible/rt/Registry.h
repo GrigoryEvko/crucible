@@ -9,7 +9,7 @@
 //
 // Components stay ignorant of `rt` — they just call the two free
 // functions below. No rt headers bleed into their interface. The
-// registry is thread-safe via a single coarse mutex; registration is
+// registry is thread-safe via fixed atomic slots; registration is
 // expected at init / teardown time, not in hot paths.
 //
 // Usage (component side):
@@ -24,11 +24,13 @@
 //
 // The registry itself has no opinion about whether mlock actually
 // runs — that's the Policy's job via `apply()`. Self-registration is
-// cheap (one mutex acquisition) and safe in every build configuration.
+// cheap (one slot CAS) and safe in every build configuration.
 
+#include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <mutex>
+#include <cstdlib>
 #include <vector>
 
 namespace crucible::rt {
@@ -55,6 +57,8 @@ struct HotRegion {
 
 class HotRegionRegistry {
  public:
+    static constexpr size_t max_regions = 256;
+
     [[nodiscard]] static HotRegionRegistry& instance() noexcept {
         static HotRegionRegistry r;
         return r;
@@ -65,35 +69,82 @@ class HotRegionRegistry {
     // Keeper's apply() sees exactly one entry per unique address.
     void register_region(void* addr, size_t len, bool huge_hint, const char* label) noexcept {
         if (addr == nullptr || len == 0) return;
-        std::scoped_lock lk{mu_};
-        for (auto& r : regions_) {
-            if (r.addr == addr) { r.len = len; r.huge_hint = huge_hint; r.label = label; return; }
+        for (;;) {
+            for (auto& slot : slots_) {
+                void* current = slot.addr.load(std::memory_order_acquire);
+                if (current != addr) continue;
+                if (slot.addr.compare_exchange_strong(
+                        current, claimed_addr(),
+                        std::memory_order_acq_rel,
+                        std::memory_order_acquire)) {
+                    slot.len.store(len, std::memory_order_relaxed);
+                    slot.huge_hint.store(huge_hint, std::memory_order_relaxed);
+                    slot.label.store(label, std::memory_order_relaxed);
+                    slot.addr.store(addr, std::memory_order_release);
+                    return;
+                }
+            }
+
+            for (auto& slot : slots_) {
+                void* expected = nullptr;
+                if (slot.addr.compare_exchange_strong(
+                        expected, claimed_addr(),
+                        std::memory_order_acq_rel,
+                        std::memory_order_acquire)) {
+                    slot.len.store(len, std::memory_order_relaxed);
+                    slot.huge_hint.store(huge_hint, std::memory_order_relaxed);
+                    slot.label.store(label, std::memory_order_relaxed);
+                    slot.addr.store(addr, std::memory_order_release);
+                    return;
+                }
+            }
+
+            std::abort();
         }
-        regions_.push_back({addr, len, huge_hint, label});
     }
 
     // Remove by address. Missing address is silently ignored (destructor
     // ordering relative to apply()/revert() is not guaranteed).
     void unregister_region(void* addr) noexcept {
         if (addr == nullptr) return;
-        std::scoped_lock lk{mu_};
-        for (auto it = regions_.begin(); it != regions_.end(); ++it) {
-            if (it->addr == addr) { regions_.erase(it); return; }
+        for (auto& slot : slots_) {
+            void* expected = addr;
+            if (slot.addr.compare_exchange_strong(
+                    expected, nullptr,
+                    std::memory_order_acq_rel,
+                    std::memory_order_acquire)) {
+                return;
+            }
         }
     }
 
     // Snapshot for apply(). Returns by value so the caller can iterate
-    // without holding the mutex while it hits mlock2 syscalls (each
-    // ~1 µs). New registrations during iteration are handled on the
-    // next apply() call.
+    // without coupling registry reads to mlock2 syscalls (each ~1 us).
+    // New registrations during iteration are handled on the next
+    // apply() call.
     [[nodiscard]] std::vector<HotRegion> snapshot() const noexcept {
-        std::scoped_lock lk{mu_};
-        return regions_;
+        std::vector<HotRegion> out;
+        out.reserve(size());
+        for (const auto& slot : slots_) {
+            void* addr = slot.addr.load(std::memory_order_acquire);
+            if (addr == nullptr || addr == claimed_addr()) continue;
+            out.push_back(HotRegion{
+                .addr = addr,
+                .len = slot.len.load(std::memory_order_relaxed),
+                .huge_hint = slot.huge_hint.load(std::memory_order_relaxed),
+                .label = slot.label.load(std::memory_order_relaxed),
+            });
+        }
+        return out;
     }
 
     [[nodiscard]] size_t size() const noexcept {
-        std::scoped_lock lk{mu_};
-        return regions_.size();
+        size_t count = 0;
+        for (const auto& slot : slots_) {
+            void* addr = slot.addr.load(std::memory_order_acquire);
+            if (addr != nullptr && addr != claimed_addr()) ++count;
+        }
+        return count;
     }
 
     HotRegionRegistry(const HotRegionRegistry&)            = delete("singleton — use instance()");
@@ -105,8 +156,18 @@ class HotRegionRegistry {
     HotRegionRegistry() = default;
     ~HotRegionRegistry() = default;
 
-    mutable std::mutex     mu_{};
-    std::vector<HotRegion> regions_{};
+    struct Slot {
+        std::atomic<void*> addr{nullptr};
+        std::atomic<size_t> len{0};
+        std::atomic<bool> huge_hint{false};
+        std::atomic<const char*> label{""};
+    };
+
+    [[nodiscard]] static void* claimed_addr() noexcept {
+        return reinterpret_cast<void*>(uintptr_t{1});
+    }
+
+    std::array<Slot, max_regions> slots_{};
 };
 
 // Convenience free functions. Prefer these at call sites — the class

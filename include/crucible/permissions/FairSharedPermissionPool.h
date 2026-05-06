@@ -84,7 +84,7 @@
 //           auto u2 = pool.try_upgrade_unchecked();
 //           if (u2) { /* exclusive section */; break; }
 //       }
-//       std::this_thread::yield();
+//       CRUCIBLE_SPIN_PAUSE;
 //   }
 //
 // ─── Bounded-overtaking proof sketch ───────────────────────────────

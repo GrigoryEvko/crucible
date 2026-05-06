@@ -337,7 +337,7 @@ int run_cross_thread_crash() {
     std::atomic<bool> ready{false};
     std::jthread producer([&]{
         while (!ready.load(std::memory_order_acquire)) {
-            std::this_thread::yield();
+            CRUCIBLE_SPIN_PAUSE;
         }
         flag.signal();
     });

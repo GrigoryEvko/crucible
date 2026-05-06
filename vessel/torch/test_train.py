@@ -23,6 +23,12 @@ import torch.nn.functional as F
 from crucible_mode import CrucibleMode
 
 
+def _spin_for(seconds: float) -> None:
+    deadline = time.perf_counter() + seconds
+    while time.perf_counter() < deadline:
+        pass
+
+
 def main():
     verbose = "--verbose" in sys.argv or "-v" in sys.argv
 
@@ -110,11 +116,11 @@ def main():
             # Flush after a few recording iters to help bg thread
             if i == 3:
                 mode.flush()
-                time.sleep(0.1)
+                _spin_for(0.1)
 
         print()
         mode.flush()
-        time.sleep(0.1)
+        _spin_for(0.1)
 
         # ── Phase 3: Report ───────────────────────────────────
         ops_per_iter = mode._op_count // 20

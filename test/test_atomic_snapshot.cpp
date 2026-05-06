@@ -228,7 +228,13 @@ static void test_stress_multithread() {
         });
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    constexpr uint64_t kMinStressLoads = 200'000;
+    const auto stress_deadline = std::chrono::steady_clock::now()
+                               + std::chrono::milliseconds(200);
+    while (total_loads.load(std::memory_order_acquire) < kMinStressLoads
+        && std::chrono::steady_clock::now() < stress_deadline) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
     stop.store(true, std::memory_order_release);
     // jthreads join in destructors; clear explicitly to flush.
     readers.clear();
@@ -334,7 +340,13 @@ static void test_try_load_rejects_in_progress() {
         }
     });
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    constexpr uint64_t kMinLargeLoads = 100'000;
+    const auto large_deadline = std::chrono::steady_clock::now()
+                              + std::chrono::milliseconds(100);
+    while (total.load(std::memory_order_acquire) < kMinLargeLoads
+        && std::chrono::steady_clock::now() < large_deadline) {
+        CRUCIBLE_SPIN_PAUSE;
+    }
     stop.store(true, std::memory_order_release);
     writer = std::jthread{};
     reader = std::jthread{};

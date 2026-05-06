@@ -99,7 +99,7 @@ static void test_spsc_ring_threaded() {
     std::jthread producer([&](std::stop_token /*st*/) {
         for (uint64_t i = 0; i < N; ++i) {
             while (!r.try_push(i)) {
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
         producer_done.store(true, std::memory_order_release);
@@ -114,7 +114,7 @@ static void test_spsc_ring_threaded() {
                        && r.empty_approx()) {
                 break;
             } else {
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
     });
@@ -298,7 +298,7 @@ static void test_grid_4x4_stress() {
         producers.emplace_back([&, p](std::stop_token /*st*/) {
             for (std::uint64_t s = 0; s < N_PER_PRODUCER; ++s) {
                 while (!grid.try_push(p, encode(p, s))) {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
             producers_done.fetch_add(1, std::memory_order_release);
@@ -331,7 +331,7 @@ static void test_grid_4x4_stress() {
                               == total_expected) {
                     break;
                 } else {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
         });

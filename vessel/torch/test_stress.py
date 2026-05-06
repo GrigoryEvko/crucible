@@ -25,6 +25,12 @@ import torch.nn.functional as F
 from crucible_mode import CrucibleMode
 
 
+def _spin_for(seconds: float) -> None:
+    deadline = time.perf_counter() + seconds
+    while time.perf_counter() < deadline:
+        pass
+
+
 # ── ResNet-18 (manual implementation) ────────────────────────────────
 
 class BasicBlock(nn.Module):
@@ -179,10 +185,10 @@ def run_test(name, model, optimizer, make_batch, n_iters, verbose):
 
             if i == 3:
                 mode.flush()
-                time.sleep(0.05)
+                _spin_for(0.05)
 
         mode.flush()
-        time.sleep(0.05)
+        _spin_for(0.05)
 
         # ── Results ──
         total_ops = mode._op_count

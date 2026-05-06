@@ -49,7 +49,6 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <format>
 #include <fstream>
 #include <span>
 #include <string>
@@ -658,7 +657,7 @@ class CRUCIBLE_OWNER Cipher {
         const std::span<const uint8_t> cached = cached_bytes(content_hash);
         if (!cached.empty()) {
             RegionNode* region = deserialize_region(a, cached, arena);
-            if (region) {
+            if (region && region->content_hash == content_hash) {
                 return LoadedContentAddressedRegionPayload{region, true};
             }
         }
@@ -727,7 +726,10 @@ class CRUCIBLE_OWNER Cipher {
         // Overwrite HEAD file (truncate to hex + newline).
         {
             std::ofstream hf(root_str() + "/HEAD");
-            hf << std::format("{:016x}", content_hash.raw()) << "\n";
+            char hex[16];
+            hex16_(content_hash.raw(), hex);
+            hf.write(hex, sizeof(hex));
+            hf.put('\n');
         }
 
         // Append log entry.
@@ -736,7 +738,14 @@ class CRUCIBLE_OWNER Cipher {
             safety::proto::StepId{step_id}, content_hash, ts));
         {
             std::ofstream lf(root_str() + "/log", std::ios::app);
-            lf << std::format("{},{:016x},{}", step_id, content_hash.raw(), ts) << "\n";
+            write_u64_dec_(lf, step_id);
+            lf.put(',');
+            char hex[16];
+            hex16_(content_hash.raw(), hex);
+            lf.write(hex, sizeof(hex));
+            lf.put(',');
+            write_u64_dec_(lf, ts);
+            lf.put('\n');
         }
     }
 
@@ -958,15 +967,29 @@ class CRUCIBLE_OWNER Cipher {
 
     // Path: root_/objects/<first2hex>/<remaining14hex>
     std::string obj_path(uint64_t hash) const {
-        auto hex = std::format("{:016x}", hash);
-        return root_str() + "/objects/" + hex.substr(0, 2) + "/" + hex.substr(2);
+        char hex[16];
+        hex16_(hash, hex);
+        std::string path{root_str()};
+        path.reserve(path.size() + 26);
+        path.append("/objects/");
+        path.append(hex, 2);
+        path.push_back('/');
+        path.append(hex + 2, 14);
+        return path;
     }
 
     [[nodiscard]] std::span<const uint8_t>
     cached_bytes(ContentHash hash) const noexcept {
-        for (const CachedObjectBytes& entry : resident_cache_) {
+        for (std::size_t i = 0; i < resident_cache_.size(); ++i) {
+            const CachedObjectBytes& entry = resident_cache_[i];
             if (entry.hash == hash) {
-                return std::span<const uint8_t>{entry.bytes};
+                if (i + 1 != resident_cache_.size()) {
+                    CachedObjectBytes hit = std::move(resident_cache_[i]);
+                    resident_cache_.erase(resident_cache_.begin()
+                                          + static_cast<std::ptrdiff_t>(i));
+                    resident_cache_.push_back(std::move(hit));
+                }
+                return std::span<const uint8_t>{resident_cache_.back().bytes};
             }
         }
         return {};
@@ -981,6 +1004,9 @@ class CRUCIBLE_OWNER Cipher {
             if (entry.hash == hash) return;
         }
 
+        if (resident_cache_.capacity() < MAX_RESIDENT_CACHE_ENTRIES) {
+            resident_cache_.reserve(MAX_RESIDENT_CACHE_ENTRIES);
+        }
         while (!resident_cache_.empty()
                && (resident_cache_.size() >= MAX_RESIDENT_CACHE_ENTRIES
                    || resident_cache_bytes_ + bytes.size()
@@ -994,6 +1020,22 @@ class CRUCIBLE_OWNER Cipher {
             .hash = hash,
             .bytes = std::vector<uint8_t>(bytes.begin(), bytes.end()),
         });
+    }
+
+    static void hex16_(uint64_t value, char (&out)[16]) noexcept {
+        static constexpr char kHex[] = "0123456789abcdef";
+        for (std::size_t i = 0; i < 16; ++i) {
+            out[15 - i] = kHex[value & 0x0FULL];
+            value >>= 4;
+        }
+    }
+
+    static void write_u64_dec_(std::ofstream& out, uint64_t value) {
+        char buf[20];
+        auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), value);
+        if (ec == std::errc{}) {
+            out.write(buf, ptr - buf);
+        }
     }
 
     // Parse a single uint64_t field via std::from_chars — exception-free

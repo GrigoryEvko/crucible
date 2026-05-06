@@ -271,13 +271,13 @@ void test_multi_producer_concurrent_stress() {
         return [&, p = std::move(p_handle), producer_id]
                (std::stop_token) mutable noexcept {
             while (!start.load(std::memory_order_acquire))
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             for (std::size_t i = 0; i < per_producer; ++i) {
                 Job j{};
                 // Spread deadlines across all 16 buckets.
                 j.deadline_ns = (i % 16) * 1'000'000;
                 j.payload     = producer_id * per_producer + i;
-                while (!p.try_push(j)) std::this_thread::yield();
+                while (!p.try_push(j)) CRUCIBLE_SPIN_PAUSE;
                 total_pushed.fetch_add(1, std::memory_order_relaxed);
             }
         };
@@ -307,7 +307,7 @@ void test_multi_producer_concurrent_stress() {
             seen[v->payload] = true;
             ++consumed;
         } else {
-            std::this_thread::yield();
+            CRUCIBLE_SPIN_PAUSE;
         }
     }
 

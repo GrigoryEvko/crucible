@@ -221,7 +221,7 @@ void test_lend_vs_upgrade_no_simultaneity() {
                         }
                         // Simulate work.
                         // Yield to widen the race window without volatile.
-                        std::this_thread::yield();
+                        CRUCIBLE_SPIN_PAUSE;
                         --in_exclusive_count;
                         pool.deposit_exclusive(std::move(*upgrade));
                     }
@@ -242,7 +242,7 @@ void test_lend_vs_upgrade_no_simultaneity() {
                         if (pool.is_exclusive_out()) {
                             violation.store(true, std::memory_order_release);
                         }
-                        std::this_thread::yield();
+                        CRUCIBLE_SPIN_PAUSE;
                         in_shared_count.fetch_sub(1, std::memory_order_acq_rel);
                         // guard's destructor decrements pool refcount.
                     }
@@ -320,7 +320,7 @@ void test_swmr_sees_consistent_state() {
                     pool.deposit_exclusive(std::move(*upgrade));
                     break;
                 }
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
         writer_done.store(true, std::memory_order_release);
@@ -360,7 +360,7 @@ void test_swmr_sees_consistent_state() {
                 if (do_one_iter()) {
                     ++local_iters;
                 } else {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
 
@@ -370,7 +370,7 @@ void test_swmr_sees_consistent_state() {
                 if (do_one_iter()) {
                     ++local_iters;
                 } else {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
 

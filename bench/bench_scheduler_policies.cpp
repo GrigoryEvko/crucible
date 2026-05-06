@@ -63,7 +63,6 @@
 #include <cstdint>
 #include <cstdio>
 #include <memory>
-#include <mutex>
 #include <span>
 #include <thread>
 #include <tuple>
@@ -335,7 +334,7 @@ struct PinningLayout {
 // any policy whose producers contend on a shared head (Fifo's single
 // MPMC ring): 4 producers + 4 consumers all at RT priority 50 spin
 // indefinitely against each other in the SCQ inner-CAS retry loop
-// because std::this_thread::yield() between RT threads of the same
+// because CRUCIBLE_SPIN_PAUSE between RT threads of the same
 // priority on different cores is a no-op — observed Fifo p99.9 going
 // 768 ns → 22 ms with RT enabled.  Decision: pinning alone, no RT.
 // The remaining tail outliers (RoundRobin's ~140 µs at p99.9) ARE
@@ -440,7 +439,7 @@ template <typename Channel>
                 const double      nspc = bench::Timer::ns_per_cycle();
                 const std::uint64_t ovh = bench::Timer::overhead_cycles();
                 while (!start.load(std::memory_order_acquire))
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 for (std::size_t s = 0; s < ITEMS_FIFO_PER_PROD; s += BATCH_PER_PROD) {
                     const std::size_t end = std::min<std::size_t>(
                         s + BATCH_PER_PROD, ITEMS_FIFO_PER_PROD);
@@ -448,7 +447,7 @@ template <typename Channel>
                     const auto t0 = bench::rdtsc_start();
                     for (std::size_t k = 0; k < cnt; ++k) {
                         SimpleJob j{static_cast<std::uint64_t>(pid << 32 | (s + k))};
-                        while (!handle.try_push(j)) std::this_thread::yield();
+                        while (!handle.try_push(j)) CRUCIBLE_SPIN_PAUSE;
                     }
                     const auto t1 = bench::rdtsc_end();
                     const std::uint64_t raw = t1 - t0;
@@ -470,7 +469,7 @@ template <typename Channel>
                         bench::do_not_optimize(opt->v);
                         consumed.fetch_add(1, std::memory_order_acq_rel);
                     } else {
-                        std::this_thread::yield();
+                        CRUCIBLE_SPIN_PAUSE;
                     }
                 }
             });
@@ -515,10 +514,10 @@ template <typename Channel>
                 producers.emplace_back([&, pid](std::stop_token) noexcept {
                     auto handle = must_lend_(ch.producer(), "fifo producer (thru)");
                     while (!start.load(std::memory_order_acquire))
-                        std::this_thread::yield();
+                        CRUCIBLE_SPIN_PAUSE;
                     for (std::size_t s = 0; s < ITEMS_FIFO_PER_PROD; ++s) {
                         SimpleJob j{static_cast<std::uint64_t>(pid << 32 | s)};
-                        while (!handle.try_push(j)) std::this_thread::yield();
+                        while (!handle.try_push(j)) CRUCIBLE_SPIN_PAUSE;
                     }
                 });
             }
@@ -531,7 +530,7 @@ template <typename Channel>
                             bench::do_not_optimize(opt->v);
                             consumed.fetch_add(1, std::memory_order_acq_rel);
                         } else {
-                            std::this_thread::yield();
+                            CRUCIBLE_SPIN_PAUSE;
                         }
                     }
                 });
@@ -590,7 +589,7 @@ template <typename Channel>
                 auto handle = must_lend_(ch.producer(), "rr producer (contended)");
                 const double      nspc = bench::Timer::ns_per_cycle();
                 const std::uint64_t ovh = bench::Timer::overhead_cycles();
-                while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+                while (!start.load(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;
                 for (std::size_t s = 0; s < ITEMS_FIFO_PER_PROD; s += BATCH_PER_PROD) {
                     const std::size_t end = std::min<std::size_t>(
                         s + BATCH_PER_PROD, ITEMS_FIFO_PER_PROD);
@@ -598,7 +597,7 @@ template <typename Channel>
                     const auto t0 = bench::rdtsc_start();
                     for (std::size_t k = 0; k < cnt; ++k) {
                         SimpleJob j{static_cast<std::uint64_t>(pid << 32 | (s + k))};
-                        while (!handle.try_push(j)) std::this_thread::yield();
+                        while (!handle.try_push(j)) CRUCIBLE_SPIN_PAUSE;
                     }
                     const auto t1 = bench::rdtsc_end();
                     const std::uint64_t raw = t1 - t0;
@@ -616,7 +615,7 @@ template <typename Channel>
                     bench::do_not_optimize(opt->v);
                     consumed.fetch_add(1, std::memory_order_acq_rel);
                 } else {
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 }
             }
         });
@@ -660,10 +659,10 @@ template <typename Channel>
             for (std::size_t pid = 0; pid < NUM_PRODUCERS; ++pid) {
                 producers.emplace_back([&, pid](std::stop_token) noexcept {
                     auto handle = must_lend_(ch.producer(), "rr producer (thru)");
-                    while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+                    while (!start.load(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;
                     for (std::size_t s = 0; s < ITEMS_FIFO_PER_PROD; ++s) {
                         SimpleJob j{static_cast<std::uint64_t>(pid << 32 | s)};
-                        while (!handle.try_push(j)) std::this_thread::yield();
+                        while (!handle.try_push(j)) CRUCIBLE_SPIN_PAUSE;
                     }
                 });
             }
@@ -672,7 +671,7 @@ template <typename Channel>
                     if (auto opt = consumer.try_pop()) {
                         bench::do_not_optimize(opt->v);
                         consumed.fetch_add(1, std::memory_order_acq_rel);
-                    } else { std::this_thread::yield(); }
+                    } else { CRUCIBLE_SPIN_PAUSE; }
                 }
             });
             start.store(true, std::memory_order_release);
@@ -739,13 +738,13 @@ template <typename Channel>
                 (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
                 auto handle = must_lend_(deq.thief(), "lifo thief (contended)");
                 while (!start_thieves.load(std::memory_order_acquire))
-                    std::this_thread::yield();
+                    CRUCIBLE_SPIN_PAUSE;
                 while (!stop_thieves.load(std::memory_order_acquire)) {
                     if (auto v = handle.try_steal()) {
                         bench::do_not_optimize(*v);
                         steal_count.fetch_add(1, std::memory_order_acq_rel);
                     } else {
-                        std::this_thread::yield();
+                        CRUCIBLE_SPIN_PAUSE;
                     }
                 }
             });
@@ -809,12 +808,12 @@ template <typename Channel>
                 thieves.emplace_back([&](std::stop_token) noexcept {
                     auto handle = must_lend_(deq.thief(), "lifo thief (thru)");
                     while (!start_thieves.load(std::memory_order_acquire))
-                        std::this_thread::yield();
+                        CRUCIBLE_SPIN_PAUSE;
                     while (!stop_thieves.load(std::memory_order_acquire)) {
                         if (auto v = handle.try_steal()) {
                             bench::do_not_optimize(*v);
                         } else {
-                            std::this_thread::yield();
+                            CRUCIBLE_SPIN_PAUSE;
                         }
                     }
                 });
@@ -896,7 +895,7 @@ template <typename Channel>
                 (void)pin_thread_to_cpu_(std::this_thread::get_id(), cpu);
                 const double      nspc = bench::Timer::ns_per_cycle();
                 const std::uint64_t ovh = bench::Timer::overhead_cycles();
-                while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+                while (!start.load(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;
                 for (std::size_t s = 0; s < ITEMS_FIFO_PER_PROD; s += BATCH_PER_PROD) {
                     const std::size_t end = std::min<std::size_t>(
                         s + BATCH_PER_PROD, ITEMS_FIFO_PER_PROD);
@@ -904,7 +903,7 @@ template <typename Channel>
                     const auto t0 = bench::rdtsc_start();
                     for (std::size_t k = 0; k < cnt; ++k) {
                         SimpleJob j{static_cast<std::uint64_t>(pid << 32 | (s + k))};
-                        while (!handle.try_push(j)) std::this_thread::yield();
+                        while (!handle.try_push(j)) CRUCIBLE_SPIN_PAUSE;
                     }
                     const auto t1 = bench::rdtsc_end();
                     const std::uint64_t raw = t1 - t0;
@@ -921,7 +920,7 @@ template <typename Channel>
                     if (auto opt = handle.try_pop()) {
                         bench::do_not_optimize(opt->v);
                         consumed.fetch_add(1, std::memory_order_acq_rel);
-                    } else { std::this_thread::yield(); }
+                    } else { CRUCIBLE_SPIN_PAUSE; }
                 }
             };
         };
@@ -979,10 +978,10 @@ template <typename Channel>
 
             auto run_producer = [&](auto& handle, std::size_t pid) {
                 return [&, pid](std::stop_token) noexcept {
-                    while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+                    while (!start.load(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;
                     for (std::size_t s = 0; s < ITEMS_FIFO_PER_PROD; ++s) {
                         SimpleJob j{static_cast<std::uint64_t>(pid << 32 | s)};
-                        while (!handle.try_push(j)) std::this_thread::yield();
+                        while (!handle.try_push(j)) CRUCIBLE_SPIN_PAUSE;
                     }
                 };
             };
@@ -992,7 +991,7 @@ template <typename Channel>
                         if (auto opt = handle.try_pop()) {
                             bench::do_not_optimize(opt->v);
                             consumed.fetch_add(1, std::memory_order_acq_rel);
-                        } else { std::this_thread::yield(); }
+                        } else { CRUCIBLE_SPIN_PAUSE; }
                     }
                 };
             };
@@ -1070,7 +1069,7 @@ template <typename Channel>
                 const double      nspc = bench::Timer::ns_per_cycle();
                 const std::uint64_t ovh = bench::Timer::overhead_cycles();
                 std::uint64_t key = pid * 100ULL;
-                while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+                while (!start.load(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;
                 for (std::uint32_t s = 1; s <= ITEMS_PRIORITY_PER_PROD;
                      s += BATCH_PER_PROD)
                 {
@@ -1081,7 +1080,7 @@ template <typename Channel>
                     for (std::uint32_t k = 0; k < batch_cnt; ++k) {
                         key += 1000;
                         PriorityJob j{pid, s + k, key};
-                        while (!handle.try_push(j)) std::this_thread::yield();
+                        while (!handle.try_push(j)) CRUCIBLE_SPIN_PAUSE;
                     }
                     const auto t1 = bench::rdtsc_end();
                     const std::uint64_t raw = t1 - t0;
@@ -1106,7 +1105,7 @@ template <typename Channel>
                 if (auto opt = cons.try_pop()) {
                     bench::do_not_optimize(opt->key);
                     consumed.fetch_add(1, std::memory_order_acq_rel);
-                } else { std::this_thread::yield(); }
+                } else { CRUCIBLE_SPIN_PAUSE; }
             }
         });
 
@@ -1152,11 +1151,11 @@ template <typename Channel>
             auto run_producer = [&](auto& handle, std::uint32_t pid) {
                 return [&, pid](std::stop_token) noexcept {
                     std::uint64_t key = pid * 100ULL;
-                    while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+                    while (!start.load(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;
                     for (std::uint32_t s = 1; s <= ITEMS_PRIORITY_PER_PROD; ++s) {
                         key += 1000;
                         PriorityJob j{pid, s, key};
-                        while (!handle.try_push(j)) std::this_thread::yield();
+                        while (!handle.try_push(j)) CRUCIBLE_SPIN_PAUSE;
                     }
                 };
             };
@@ -1170,7 +1169,7 @@ template <typename Channel>
                     if (auto opt = cons.try_pop()) {
                         bench::do_not_optimize(opt->key);
                         consumed.fetch_add(1, std::memory_order_acq_rel);
-                    } else { std::this_thread::yield(); }
+                    } else { CRUCIBLE_SPIN_PAUSE; }
                 }
             });
             start.store(true, std::memory_order_release);
@@ -1244,7 +1243,7 @@ template <typename Channel>
                 const double      nspc = bench::Timer::ns_per_cycle();
                 const std::uint64_t ovh = bench::Timer::overhead_cycles();
                 std::uint64_t key = pid * 100ULL;
-                while (!start.load(std::memory_order_acquire)) std::this_thread::yield();
+                while (!start.load(std::memory_order_acquire)) CRUCIBLE_SPIN_PAUSE;
                 for (std::uint32_t s = 1; s <= ITEMS_PRIORITY_PER_PROD;
                      s += BATCH_PER_PROD)
                 {
@@ -1255,7 +1254,7 @@ template <typename Channel>
                     for (std::uint32_t k = 0; k < batch_cnt; ++k) {
                         key += 1000;
                         PriorityJob j{pid, s + k, key};
-                        while (!handle.try_push(j)) std::this_thread::yield();
+                        while (!handle.try_push(j)) CRUCIBLE_SPIN_PAUSE;
                     }
                     const auto t1 = bench::rdtsc_end();
                     const std::uint64_t raw = t1 - t0;
@@ -1279,7 +1278,7 @@ template <typename Channel>
                         consumed_per_shard[shard_idx].fetch_add(
                             1, std::memory_order_acq_rel);
                     } else {
-                        std::this_thread::yield();
+                        CRUCIBLE_SPIN_PAUSE;
                     }
                 }
             };
@@ -1336,11 +1335,11 @@ template <typename Channel>
                 return [&, pid](std::stop_token) noexcept {
                     std::uint64_t key = pid * 100ULL;
                     while (!start.load(std::memory_order_acquire))
-                        std::this_thread::yield();
+                        CRUCIBLE_SPIN_PAUSE;
                     for (std::uint32_t s = 1; s <= ITEMS_PRIORITY_PER_PROD; ++s) {
                         key += 1000;
                         PriorityJob j{pid, s, key};
-                        while (!handle.try_push(j)) std::this_thread::yield();
+                        while (!handle.try_push(j)) CRUCIBLE_SPIN_PAUSE;
                     }
                 };
             };
@@ -1355,7 +1354,7 @@ template <typename Channel>
                             consumed_per_shard[shard_idx].fetch_add(
                                 1, std::memory_order_acq_rel);
                         } else {
-                            std::this_thread::yield();
+                            CRUCIBLE_SPIN_PAUSE;
                         }
                     }
                 };

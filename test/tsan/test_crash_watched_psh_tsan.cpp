@@ -54,7 +54,7 @@ void send_coord_transfer(Channel& channel,
 template <typename Flag>
 void signal_after_start(Flag& flag, std::atomic<bool>& start) noexcept {
     while (!start.load(std::memory_order_acquire)) {
-        std::this_thread::yield();
+        CRUCIBLE_SPIN_PAUSE;
     }
     flag.signal();
 }

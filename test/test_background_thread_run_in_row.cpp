@@ -551,7 +551,7 @@ static void test_audit_f_concurrent_spsc_drain() {
         while (!ring->try_append_pinned(
                   e, crucible::MetaIndex::none(),
                   crucible::ScopeHash{0}, crucible::CallsiteHash{0}).peek()) {
-            std::this_thread::yield();
+            CRUCIBLE_SPIN_PAUSE;
         }
     }
 
@@ -562,7 +562,7 @@ static void test_audit_f_concurrent_spsc_drain() {
                   + std::chrono::seconds(5);
     while (bt.total_processed.load() < N
         && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        CRUCIBLE_SPIN_PAUSE;
     }
     assert(bt.total_processed.load() >= N);
 
@@ -720,7 +720,7 @@ static void test_audit_i_large_batch_drain() {
                   e, crucible::MetaIndex::none(),
                   crucible::ScopeHash{0},
                   crucible::CallsiteHash{0}).peek()) {
-            std::this_thread::yield();
+            CRUCIBLE_SPIN_PAUSE;
         }
     }
 
@@ -729,7 +729,7 @@ static void test_audit_i_large_batch_drain() {
                   + std::chrono::seconds(5);
     while (bt.total_processed.load() < TOTAL
         && std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        CRUCIBLE_SPIN_PAUSE;
     }
     const uint64_t processed_after_push = bt.total_processed.load();
     assert(processed_after_push >= TOTAL);
@@ -790,7 +790,7 @@ static void test_audit_j_rearm_cycle() {
                       e, crucible::MetaIndex::none(),
                       crucible::ScopeHash{0},
                       crucible::CallsiteHash{0}).peek()) {
-                std::this_thread::yield();
+                CRUCIBLE_SPIN_PAUSE;
             }
         }
 
@@ -799,7 +799,7 @@ static void test_audit_j_rearm_cycle() {
                       + std::chrono::seconds(5);
         while (bt.total_processed.load() < target
             && std::chrono::steady_clock::now() < deadline) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            CRUCIBLE_SPIN_PAUSE;
         }
         assert(bt.total_processed.load() >= target);
 
