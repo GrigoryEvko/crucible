@@ -2548,7 +2548,7 @@ The convention has TWO modes, distinguished by whether the mint threads ctx-driv
 | ✅ | Permission token | `mint_permission_split_n<...>(parent)` | `splits_into_pack<...>` | `tuple<Permission<...>...>` |
 | ✅ | Permission token | `mint_permission_combine_n<P>(...)` | `splits_into_pack<...>` | `Permission<P>` |
 | ✅ | Permission token | `mint_permission_share<Tag>(p, pool)` | (none — fractional from pool) | `SharedPermission<Tag>` |
-| ✅ | Permission token | `mint_permission_fork<Children...>(parent, callables...)` | `splits_into_pack<...>` | `Permission<parent>` (after join) |
+| ✅ | Ctx-bound permission token | `mint_permission_fork<Children...>(ctx, parent, callables...)` | `CtxFitsPermissionFork<Ctx, P, Children...>` (`IsExecCtx` + `row_contains<Bg>` + `splits_into_pack`) | `Permission<parent>` (after inline run or join) |
 | ✅ | Capability token | `mint_cap<E>(source)` | `CanMintCap<E, S>` | `Capability<E, S>` |
 | ✅ | Ctx-bound | `mint_from_ctx<E>(ctx)` | `CtxCanMint<Ctx, E>` | `Capability<E, ctx_cap_t<Ctx>>` |
 | ✅ | Session token | `mint_session_handle<Proto>(res)` | `is_well_formed_v<Proto> ∧ SessionResource<Res>` | `SessionHandle<Proto, Res>` |

@@ -217,15 +217,27 @@ void test_fork_with_shared_read_view() {
     std::atomic<int> right_done{0};
 
     auto whole = mint_permission_root<fork_tags::Whole>();
+    const auto fork_decision =
+        ::crucible::concurrent::parallelism_decision_for<
+            ::crucible::effects::BgDrainCtx>();
+    CRUCIBLE_TEST_REQUIRE(
+        fork_decision.kind
+        == ::crucible::concurrent::ParallelismDecision::Kind::Sequential);
+
     auto rebuilt = mint_permission_fork<fork_tags::Left, fork_tags::Right>(
+        ::crucible::effects::BgDrainCtx{},
         std::move(whole),
-        [cv, &left_done](Permission<fork_tags::Left>) noexcept {
+        [cv, &left_done](
+            Permission<fork_tags::Left>,
+            ::crucible::effects::BgDrainCtx const&) noexcept {
             // Worker sees read view of config; type system confirms
             // it can only READ (no methods to mutate).
             (void)cv;
             left_done.store(1, std::memory_order_release);
         },
-        [cv, &right_done](Permission<fork_tags::Right>) noexcept {
+        [cv, &right_done](
+            Permission<fork_tags::Right>,
+            ::crucible::effects::BgDrainCtx const&) noexcept {
             (void)cv;
             right_done.store(1, std::memory_order_release);
         }

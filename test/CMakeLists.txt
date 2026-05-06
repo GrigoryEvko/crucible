@@ -3724,6 +3724,17 @@ crucible_neg_compile_test(neg_permission_inherit_without_specialization
 crucible_neg_compile_test(neg_permission_inherit_self_cycle
     "permission_inherit forbids circular inheritance")
 
+# GAPS-073 — permission_fork is now a ctx-bound mint.  These fixtures
+# pin the three load-bearing gates: ctx-aware callables cannot use the
+# legacy no-ctx shim, foreground rows cannot authorize Effect::Bg, and
+# spawned child bodies inherit the exact row-admitted Ctx type.
+crucible_neg_compile_test(neg_permission_fork_no_ctx
+    "no matching function|permission_fork_legacy_callables|constraints not satisfied")
+crucible_neg_compile_test(neg_permission_fork_ctx_no_bg
+    "CtxFitsPermissionFork|row_contains|constraints not satisfied")
+crucible_neg_compile_test(neg_permission_fork_child_ctx_mismatch
+    "permission_fork_ctx_callables|constraints not satisfied|no matching function")
+
 # ── METX-1 #473 — Computation::extract requires empty row ────────
 # Effect-row substrate (Tang-Lindley POPL 2026, 25_04_2026.md §3).
 # `extract()` on a Computation<R, T> requires `row_size_v<R> == 0` —

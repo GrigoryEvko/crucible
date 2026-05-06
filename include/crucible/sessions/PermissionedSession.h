@@ -2047,7 +2047,8 @@ template <typename G, typename Role, typename SharedChannel, typename Body>
     Body&& body) noexcept
 {
     return [&ch, body = std::forward<Body>(body)](
-               Permission<Role>&& role_perm) mutable noexcept {
+               Permission<Role>&& role_perm,
+               auto const&) mutable noexcept {
         using LocalProto = typename Project<G, Role>::type;
         // mint_permissioned_session consumes the per-role Permission and
         // produces the projected PSH whose Resource is the shared
@@ -2094,6 +2095,7 @@ template <typename G, typename Whole, typename... RolePerms,
     // one jthread per role, join via RAII array destructor, rebuild
     // Whole on return.
     return mint_permission_fork<RolePerms...>(
+        PermissionForkParallelCtx{},
         std::move(whole_perm),
         detail::session_fork_role_lambda<G, RolePerms, SharedChannel,
                                           Bodies>(
