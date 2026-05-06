@@ -927,6 +927,8 @@ crucible_neg_compile_session_test(neg_tier_compose_in_loop
 # AMD consumer.
 crucible_neg_compile_session_test(neg_vendor_ctx_nv_to_amd
     "PermissionedSession\\.h.*static assertion failed.*VendorCtx_Mismatch")
+crucible_neg_compile_session_test(neg_vendor_ctx_none_to_nv
+    "PermissionedSession\\.h.*static assertion failed.*VendorCtx_Mismatch")
 
 # GAPS-068: VendorCtx/VendorPinned admission at session mint,
 # substrate bridge, Delegate_seq, subtype, and payload boundaries.
