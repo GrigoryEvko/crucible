@@ -3870,6 +3870,16 @@ crucible_neg_compile_test(neg_diag_non_tag_accessor
 crucible_neg_compile_test(neg_diag_user_tag_not_in_catalog
     "Tag is not registered in the foundation Catalog")
 
+# ─── GAPS-094 audit follow-up — Vessel ABI Tagged direction fence ──
+#
+# from_typed() takes TypedHandle = Tagged<Vigil*, source::ABIBoundary>
+# only.  This fixture witnesses that calling it with any other source
+# tag (here: source::External) is rejected by the type system, so a
+# refactor "promoting" the helper to accept any Tagged<Vigil*, *> would
+# turn red here.  Closes the audit's GAPS-094 HS14 deficit.
+crucible_neg_compile_test(neg_vessel_typed_handle_wrong_tag
+    "no match for|cannot convert|no matching function|could not convert")
+
 # ─── FOUND-C Phase 7 — PermissionedSessionHandle neg-compile harness
 #
 # Ten fixtures probing permission-flow violations that the type system
