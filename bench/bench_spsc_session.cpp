@@ -148,7 +148,8 @@ bench::Report bench_typed_send_bare_pop(Channel::ProducerHandle& prod,
     namespace ses = ::crucible::safety::proto::spsc_session;
 
     drain_ring(cons);
-    auto psh = ses::mint_producer_session<Channel>(prod);
+    auto psh = ses::mint_producer_session<Channel>(
+        ::crucible::effects::HotFgCtx{}, prod);
     Item i = 0;
     auto report = bench::run("round-trip: typed PSH.send + bare pop",
         [&]{
@@ -176,7 +177,8 @@ bench::Report bench_bare_push_typed_recv(Channel::ProducerHandle& prod,
     namespace ses = ::crucible::safety::proto::spsc_session;
 
     drain_ring(cons);
-    auto psh = ses::mint_consumer_session<Channel>(cons);
+    auto psh = ses::mint_consumer_session<Channel>(
+        ::crucible::effects::HotFgCtx{}, cons);
     Item i = 0;
     auto report = bench::run("round-trip: bare push + typed PSH.recv",
         [&]{
@@ -197,8 +199,10 @@ bench::Report bench_typed_send_typed_recv(Channel::ProducerHandle& prod,
     namespace ses = ::crucible::safety::proto::spsc_session;
 
     drain_ring(cons);
-    auto prod_psh = ses::mint_producer_session<Channel>(prod);
-    auto cons_psh = ses::mint_consumer_session<Channel>(cons);
+    auto prod_psh = ses::mint_producer_session<Channel>(
+        ::crucible::effects::HotFgCtx{}, prod);
+    auto cons_psh = ses::mint_consumer_session<Channel>(
+        ::crucible::effects::HotFgCtx{}, cons);
     Item i = 0;
     auto report = bench::run("round-trip: typed PSH.send + typed PSH.recv",
         [&]{

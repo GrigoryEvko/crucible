@@ -25,6 +25,8 @@
 
 #include <crucible/sessions/PermissionedSession.h>
 
+#include <source_location>
+
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
 using ::crucible::safety::mint_permission_root;
@@ -40,8 +42,11 @@ void wire_send(FakeChannel& ch, Returned<int, HotPerm>&& r) noexcept {
 
 int main() {
     // Establish without HotPerm.
-    auto h = mint_permissioned_session<Send<Returned<int, HotPerm>, End>>(
-        FakeChannel{});
+    auto h = detail::mint_permissioned_session_with_loc<
+        Send<Returned<int, HotPerm>, End>,
+        EmptyPermSet,
+        FakeChannel>(
+        FakeChannel{}, std::source_location::current());
 
     // Try to "return" a permission the handle never held.
     Returned<int, HotPerm> payload{99, mint_permission_root<HotPerm>()};

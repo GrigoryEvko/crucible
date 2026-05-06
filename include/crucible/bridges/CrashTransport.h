@@ -28,8 +28,8 @@
 // `OneShotFlag&`.  `C` is the declared Stop_g crash grade observed by
 // this runtime watcher; the default is CrashClass::Abort for the
 // historical, strongest recovery path.  The public mint also accepts a bare
-// `SessionHandle<Proto, Resource, LoopCtx>` and adapts it to
-// `PS = EmptyPermSet` for backward-compatible non-permissioned callers.
+// `SessionHandle<Proto, Resource, LoopCtx>` and admits it into the
+// permissioned crash surface with `PS = EmptyPermSet`.
 // Each consumer method:
 //
 //   1. Peeks the flag (one relaxed load + branch — the spec's
@@ -143,6 +143,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#include <source_location>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -216,8 +217,7 @@ public:
     using permissions_type =
         std::tuple<::crucible::safety::Permission<SurvivorTags>...>;
 
-    // Public read-access — backward-compatible with handler code that
-    // reads `event.resource.field` directly (#430 keeps this open).
+    // Public read-access for handlers that inspect recovered resource state.
     Resource resource;
     [[no_unique_address]] permissions_type permissions;
 
@@ -1105,8 +1105,9 @@ template <typename PeerTag, CrashClass C = CrashClass::Abort,
     using PSLoopCtx =
         detail::permissioned_loop_ctx_from_bare_t<LoopCtx, EmptyPermSet>;
     return CrashWatchedHandle<Proto, Resource, PeerTag, C, PSLoopCtx, EmptyPermSet>{
-        PermissionedSessionHandle<Proto, EmptyPermSet, Resource, PSLoopCtx>{
-            std::move(recovered)},
+        detail::mint_permissioned_session_with_loc<
+            Proto, EmptyPermSet, Resource, PSLoopCtx>(
+            std::move(recovered), std::source_location::current()),
         flag};
 }
 

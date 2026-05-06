@@ -17,6 +17,7 @@
 #include <crucible/permissions/Permission.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <concepts>
 #include <optional>
@@ -78,30 +79,34 @@ template <MetaLogSessionSurface Log>
     return log.consumer(std::move(perm));
 }
 
-template <MetaLogSessionSurface Log>
+template <MetaLogSessionSurface Log, ::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] constexpr auto
-mint_metalog_producer_session(typename Log::ProducerHandle& handle) noexcept
+mint_metalog_producer_session(Ctx const& ctx,
+                              typename Log::ProducerHandle& handle) noexcept
 {
-    return mint_permissioned_session<ProducerProto,
-                                     typename Log::ProducerHandle*>(&handle);
+    return mint_permissioned_session<ProducerProto>(ctx, &handle);
 }
 
-template <MetaLogSessionSurface Log>
+template <MetaLogSessionSurface Log, ::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] constexpr auto
-mint_metalog_consumer_session(typename Log::ConsumerHandle& handle) noexcept
+mint_metalog_consumer_session(Ctx const& ctx,
+                              typename Log::ConsumerHandle& handle) noexcept
 {
-    return mint_permissioned_session<ConsumerProto,
-                                     typename Log::ConsumerHandle*>(&handle);
+    return mint_permissioned_session<ConsumerProto>(ctx, &handle);
 }
 
-template <MetaLogSessionSurface Log>
+template <MetaLogSessionSurface Log,
+          ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
 using ProducerSessionHandle = decltype(
     mint_metalog_producer_session<Log>(
+        std::declval<Ctx const&>(),
         std::declval<typename Log::ProducerHandle&>()));
 
-template <MetaLogSessionSurface Log>
+template <MetaLogSessionSurface Log,
+          ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
 using ConsumerSessionHandle = decltype(
     mint_metalog_consumer_session<Log>(
+        std::declval<Ctx const&>(),
         std::declval<typename Log::ConsumerHandle&>()));
 
 inline constexpr auto blocking_append = [](auto& hp, const MetaLogRecord& record) {

@@ -69,7 +69,8 @@ template <typename Body>
     auto deque = std::make_unique<Deque>();
     auto owner = mint_owner(*deque);
     auto* ownerp = &owner;
-    auto psh = ses::mint_owner_session<Deque>(owner);
+    auto psh = ses::mint_owner_session<Deque>(
+        ::crucible::effects::HotFgCtx{}, owner);
     Item seq = 0;
 
     auto report = measure("owner round-trip: typed hot push + raw pop", [&] {
@@ -88,7 +89,8 @@ template <typename Body>
     auto deque = std::make_unique<Deque>();
     auto owner = mint_owner(*deque);
     auto* ownerp = &owner;
-    auto psh = ses::mint_owner_session<Deque>(owner);
+    auto psh = ses::mint_owner_session<Deque>(
+        ::crucible::effects::HotFgCtx{}, owner);
     Item seq = 0;
 
     auto report = measure("owner round-trip: raw push + typed hot pop", [&] {
@@ -107,7 +109,8 @@ template <typename Body>
 
     auto deque = std::make_unique<Deque>();
     auto owner = mint_owner(*deque);
-    auto psh = ses::mint_owner_session<Deque>(owner);
+    auto psh = ses::mint_owner_session<Deque>(
+        ::crucible::effects::HotFgCtx{}, owner);
     Item seq = 0;
 
     auto report = measure("owner round-trip: typed hot push + typed hot pop",
@@ -146,7 +149,8 @@ template <typename Body>
     auto thief = ses::mint_chaselev_thief<Deque>(*deque);
     if (!thief) std::abort();
     auto* thiefp = &*thief;
-    auto owner_psh = ses::mint_owner_session<Deque>(owner);
+    auto owner_psh = ses::mint_owner_session<Deque>(
+        ::crucible::effects::HotFgCtx{}, owner);
     Item seq = 0;
 
     auto report = measure("steal round-trip: typed hot push + raw steal", [&] {
@@ -167,7 +171,8 @@ template <typename Body>
     auto* ownerp = &owner;
     auto thief = ses::mint_chaselev_thief<Deque>(*deque);
     if (!thief) std::abort();
-    auto thief_psh = ses::mint_thief_session<Deque>(*thief);
+    auto thief_psh = ses::mint_thief_session<Deque>(
+        ::crucible::effects::HotFgCtx{}, *thief);
     Item seq = 0;
 
     auto report = measure("steal round-trip: raw push + typed hot recv", [&] {
@@ -188,8 +193,10 @@ template <typename Body>
     auto owner = mint_owner(*deque);
     auto thief = ses::mint_chaselev_thief<Deque>(*deque);
     if (!thief) std::abort();
-    auto owner_psh = ses::mint_owner_session<Deque>(owner);
-    auto thief_psh = ses::mint_thief_session<Deque>(*thief);
+    auto owner_psh = ses::mint_owner_session<Deque>(
+        ::crucible::effects::HotFgCtx{}, owner);
+    auto thief_psh = ses::mint_thief_session<Deque>(
+        ::crucible::effects::HotFgCtx{}, *thief);
     Item seq = 0;
 
     auto report = measure("steal round-trip: typed hot push + typed hot recv",

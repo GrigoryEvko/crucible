@@ -39,6 +39,8 @@
 
 #include <crucible/sessions/PermissionedSession.h>
 
+#include <source_location>
+
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
 using ::crucible::safety::mint_permission_root;
@@ -69,7 +71,9 @@ using LoopProto = Loop<BodyProto>;
 }
 
 int main() {
-    auto h = mint_permissioned_session<LoopProto>(FakeChannel{});
+    auto h = detail::mint_permissioned_session_with_loc<
+        LoopProto, EmptyPermSet, FakeChannel>(
+        FakeChannel{}, std::source_location::current());
 
     // Step 1: recv X — PS becomes {X}.
     auto [val_x, h2] = std::move(h).recv(wire_recv_x);

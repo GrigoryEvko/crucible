@@ -6,10 +6,12 @@
 // PermSet<WrongPerm>.
 
 #include <crucible/bridges/CrashTransport.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <utility>
 
 namespace proto = crucible::safety::proto;
+namespace eff = crucible::effects;
 using crucible::safety::OneShotFlag;
 
 struct DeadPeer {};
@@ -29,9 +31,9 @@ struct survivor_registry<DeadPeer> {
 int main() {
     using P = proto::Send<int, proto::End>;
 
+    eff::HotFgCtx ctx{};
     OneShotFlag flag;
-    proto::PermissionedSessionHandle<P, proto::EmptyPermSet, Channel> psh{
-        Channel{}};
+    auto psh = proto::mint_permissioned_session<P>(ctx, Channel{});
 
     proto::CrashWatchedHandle<
         P,

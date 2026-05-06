@@ -25,6 +25,7 @@
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionContentAddressed.h>
+#include <crucible/sessions/SessionMint.h>
 #include <crucible/sessions/SessionPermPayloads.h>
 
 #include <cstdint>
@@ -216,40 +217,41 @@ template <SwmrSessionSurface Swmr>
     return session.reader();
 }
 
-template <SwmrSessionSurface Swmr>
+template <SwmrSessionSurface Swmr, ::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] constexpr auto
-mint_writer_session(typename Swmr::WriterHandle& handle) noexcept
+mint_writer_session(Ctx const& ctx,
+                    typename Swmr::WriterHandle& handle) noexcept
 {
     using T = typename Swmr::value_type;
-    return mint_permissioned_session<WriterProto<T>,
-                                     typename Swmr::WriterHandle*>(&handle);
+    return mint_permissioned_session<WriterProto<T>>(ctx, &handle);
 }
 
-template <SwmrSessionSurface Swmr>
+template <SwmrSessionSurface Swmr, ::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] constexpr auto
-mint_reader_session(typename Swmr::ReaderHandle& handle) noexcept
+mint_reader_session(Ctx const& ctx,
+                    typename Swmr::ReaderHandle& handle) noexcept
 {
     using T = typename Swmr::value_type;
-    return mint_permissioned_session<ReaderProto<T, typename Swmr::reader_tag>,
-                                     typename Swmr::ReaderHandle*>(&handle);
+    return mint_permissioned_session<ReaderProto<T, typename Swmr::reader_tag>>(
+        ctx, &handle);
 }
 
-template <SwmrSessionSurface Swmr>
+template <SwmrSessionSurface Swmr, ::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] constexpr auto
-mint_writer_runtime_session(typename Swmr::WriterHandle& handle) noexcept
+mint_writer_runtime_session(Ctx const& ctx,
+                            typename Swmr::WriterHandle& handle) noexcept
 {
     using T = typename Swmr::value_type;
-    return mint_permissioned_session<WriterRuntimeProto<T>,
-                                     typename Swmr::WriterHandle*>(&handle);
+    return mint_permissioned_session<WriterRuntimeProto<T>>(ctx, &handle);
 }
 
-template <SwmrSessionSurface Swmr>
+template <SwmrSessionSurface Swmr, ::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] constexpr auto
-mint_reader_runtime_session(typename Swmr::ReaderHandle& handle) noexcept
+mint_reader_runtime_session(Ctx const& ctx,
+                            typename Swmr::ReaderHandle& handle) noexcept
 {
     using T = typename Swmr::value_type;
-    return mint_permissioned_session<ReaderRuntimeProto<T>,
-                                     typename Swmr::ReaderHandle*>(&handle);
+    return mint_permissioned_session<ReaderRuntimeProto<T>>(ctx, &handle);
 }
 
 inline constexpr auto publish_value = [](auto& hp, auto&& value) noexcept {

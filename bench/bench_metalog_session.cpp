@@ -97,9 +97,9 @@ bench::Report bench_typed_send_recv(
 
     reset_log(log);
     auto prod_psh = ses::mint_metalog_producer_session<PermissionedLog>(
-        producer);
+        ::crucible::effects::HotFgCtx{}, producer);
     auto cons_psh = ses::mint_metalog_consumer_session<PermissionedLog>(
-        consumer);
+        ::crucible::effects::HotFgCtx{}, consumer);
     std::uint32_t i = 0;
     auto report = bench::run("round-trip: typed PSH.send + PSH.recv",
         [&]{

@@ -48,8 +48,10 @@ bench::Report bench_typed_one_shot(Edge::SignalerHandle& signaler,
     const SemaphoreSignal signal = signaler.expected_signal();
     auto report = bench::run("round-trip: typed one-shot send + recv",
         [&]{
-            auto sig_psh = ses::mint_chainedge_signaler_session<Edge>(signaler);
-            auto wait_psh = ses::mint_chainedge_waiter_session<Edge>(waiter);
+            auto sig_psh = ses::mint_chainedge_signaler_session<Edge>(
+                ::crucible::effects::HotFgCtx{}, signaler);
+            auto wait_psh = ses::mint_chainedge_waiter_session<Edge>(
+                ::crucible::effects::HotFgCtx{}, waiter);
             auto sig_end = std::move(sig_psh).send(signal, ses::signal_transport);
             auto [observed, wait_end] = std::move(wait_psh).recv(ses::wait_transport);
             bench::do_not_optimize(observed.value);

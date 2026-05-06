@@ -3992,10 +3992,9 @@ crucible_neg_compile_test(neg_diag_user_tag_not_in_catalog
 #     No fixture has dual failure modes that could mask which
 #     assertion actually fired.
 #
-#   - Each fixture's assert verified to come from the EXPECTED line
-#     in the EXPECTED header (PermissionedSession.h:184 / :319 / :474
-#     or PermSet.h:248).  No fixture accidentally fires from a
-#     different framework site.
+#   - Each fixture's assert is anchored to the EXPECTED header and
+#     framework-owned message.  No fixture should pass from a stale
+#     call-site overload error or unrelated compiler diagnostic.
 #
 #   - "Good twin" of fixture #1 (perm dropped before establish)
 #     verified to compile cleanly — proves the bad version fails for
@@ -4071,6 +4070,15 @@ crucible_neg_compile_session_test(neg_psh_delegate_to_self
 # Permission<Tag> cannot be consumed twice.
 crucible_neg_compile_session_test(neg_mint_session_no_ctx
     "mint_session<Proto>\\(resource\\) is removed")
+
+crucible_neg_compile_session_test(neg_mint_permissioned_session_no_ctx
+    "no matching function for call to.*mint_permissioned_session|candidate expects at least 2 arguments")
+
+crucible_neg_compile_session_test(neg_psh_direct_construct
+    "no matching function for call to.*PermissionedSessionHandle")
+
+crucible_neg_compile_session_test(neg_psh_fabricate_permset
+    "no matching function for call to.*PermissionedSessionHandle")
 
 crucible_neg_compile_session_test(neg_mint_session_ctx_no_admit_proto
     "associated constraints are not satisfied|CtxFitsPermissionedProtocol|CtxFitsProtocol")

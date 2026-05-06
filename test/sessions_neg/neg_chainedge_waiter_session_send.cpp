@@ -23,7 +23,8 @@ int main() {
         Edge::signaler_tag, Edge::waiter_tag>(std::move(whole));
     (void)sp;
     auto waiter = edge.waiter(std::move(wp));
-    auto psh = ses::mint_chainedge_waiter_session<Edge>(waiter);
+    auto psh = ses::mint_chainedge_waiter_session<Edge>(
+        ::crucible::effects::HotFgCtx{}, waiter);
     [[maybe_unused]] auto bad =
         std::move(psh).send(waiter.expected_signal(), ses::signal_transport);
     return 0;

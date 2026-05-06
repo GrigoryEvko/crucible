@@ -137,7 +137,7 @@ void test_typed_session_round_trip() {
     std::jthread prod_thread{
         [&producer, &producer_done](auto) mutable {
             auto psh = ses::mint_metalog_producer_session<PermissionedLog>(
-                producer);
+                ::crucible::effects::HotFgCtx{}, producer);
             for (int i = 0; i < kCount; ++i) {
                 auto next = std::move(psh).send(make_meta(i + 10),
                                                 ses::blocking_append);
@@ -151,7 +151,7 @@ void test_typed_session_round_trip() {
     std::jthread cons_thread{
         [&consumer, &received](auto) mutable {
             auto psh = ses::mint_metalog_consumer_session<PermissionedLog>(
-                consumer);
+                ::crucible::effects::HotFgCtx{}, consumer);
             for (int i = 0; i < kCount; ++i) {
                 auto [meta, next] = std::move(psh).recv(ses::blocking_drain);
                 received.push_back(meta);
@@ -180,9 +180,11 @@ void test_typed_session_immediate_detach() {
     auto [producer, consumer] = mint_handles(raw_log);
 
     auto prod_psh =
-        ses::mint_metalog_producer_session<PermissionedLog>(producer);
+        ses::mint_metalog_producer_session<PermissionedLog>(
+            ::crucible::effects::HotFgCtx{}, producer);
     auto cons_psh =
-        ses::mint_metalog_consumer_session<PermissionedLog>(consumer);
+        ses::mint_metalog_consumer_session<PermissionedLog>(
+            ::crucible::effects::HotFgCtx{}, consumer);
 
     std::move(prod_psh).detach(TestInstrumentation{});
     std::move(cons_psh).detach(TestInstrumentation{});

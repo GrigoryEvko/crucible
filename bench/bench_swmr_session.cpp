@@ -70,7 +70,8 @@ template <typename Body>
     Swmr swmr{payload_at(0)};
     auto perm = safety::mint_permission_root<Swmr::writer_tag>();
     auto writer = ses::mint_swmr_writer<Swmr>(swmr, std::move(perm));
-    auto psh = ses::mint_writer_session<Swmr>(writer);
+    auto psh = ses::mint_writer_session<Swmr>(
+        ::crucible::effects::HotFgCtx{}, writer);
     std::uint64_t seq = 0;
 
     auto report = measure("SwmrSession PSH.send(ContentAddressed<T>)", [&] {
@@ -109,7 +110,8 @@ template <typename Body>
     Swmr swmr{payload_at(123)};
     auto reader = ses::mint_swmr_reader<Swmr>(swmr);
     if (!reader) std::abort();
-    auto psh = ses::mint_reader_session<Swmr>(*reader);
+    auto psh = ses::mint_reader_session<Swmr>(
+        ::crucible::effects::HotFgCtx{}, *reader);
 
     auto report = measure("SwmrSession PSH.recv(Borrowed<T>)", [&] {
         auto [borrowed, next] = std::move(psh).recv(ses::load_borrowed_value);

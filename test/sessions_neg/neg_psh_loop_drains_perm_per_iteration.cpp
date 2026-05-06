@@ -28,6 +28,8 @@
 
 #include <crucible/sessions/PermissionedSession.h>
 
+#include <source_location>
+
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
 using ::crucible::safety::mint_permission_root;
@@ -46,8 +48,10 @@ using LoopProto = Loop<BodyProto>;
 
 int main() {
     auto perm = mint_permission_root<WorkItem>();
-    auto h = mint_permissioned_session<LoopProto>(FakeChannel{},
-                                                std::move(perm));
+    static_cast<void>(perm);
+    auto h = detail::mint_permissioned_session_with_loc<
+        LoopProto, PermSet<WorkItem>, FakeChannel>(
+        FakeChannel{}, std::source_location::current());
 
     Transferable<int, WorkItem> payload{1, mint_permission_root<WorkItem>()};
     // The send compiles (PS contains WorkItem at body entry); but the

@@ -28,6 +28,8 @@
 
 #include <crucible/sessions/PermissionedSession.h>
 
+#include <source_location>
+
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
 using ::crucible::safety::mint_permission_root;
@@ -43,8 +45,11 @@ void wire_send(FakeChannel& ch, Transferable<int, WorkItem>&& t) noexcept {
 
 int main() {
     // Establish without holding WorkItem — PS == EmptyPermSet.
-    auto h = mint_permissioned_session<Send<Transferable<int, WorkItem>, End>>(
-        FakeChannel{});
+    auto h = detail::mint_permissioned_session_with_loc<
+        Send<Transferable<int, WorkItem>, End>,
+        EmptyPermSet,
+        FakeChannel>(
+        FakeChannel{}, std::source_location::current());
 
     // User constructs payload inline using mint_permission_root —
     // looks like a valid Transferable, but the handle has no PS to

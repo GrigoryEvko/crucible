@@ -5,10 +5,12 @@
 // the recovered runtime state.
 
 #include <crucible/bridges/CrashTransport.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <utility>
 
 namespace proto = crucible::safety::proto;
+namespace eff = crucible::effects;
 
 struct DeadPeer {};
 struct Survivor {};
@@ -26,8 +28,8 @@ struct survivor_registry<DeadPeer> {
 
 int main() {
     using P = proto::Send<int, proto::End>;
-    proto::PermissionedSessionHandle<P, proto::EmptyPermSet, Channel> psh{
-        Channel{}};
+    eff::HotFgCtx ctx{};
+    auto psh = proto::mint_permissioned_session<P>(ctx, Channel{});
 
     auto bad = proto::wrap_crash_return<DeadPeer>(
         std::move(psh),

@@ -18,6 +18,7 @@
 //     via a synthesized replacement.
 
 #include <crucible/bridges/CrashTransport.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <atomic>
 #include <cstdio>
@@ -184,7 +185,9 @@ int run_permissioned_crash_before_transferable_send() {
     bool            transport_invoked = false;
 
     auto initial_perm = mint_permission_root<WorkerPerm>();
-    auto psh = mint_permissioned_session<P>(std::move(ch), std::move(initial_perm));
+    auto psh = mint_permissioned_session<P>(
+        ::crucible::effects::HotFgCtx{}, std::move(ch),
+        std::move(initial_perm));
     static_assert(std::is_same_v<typename decltype(psh)::perm_set,
                                  PermSet<WorkerPerm>>);
 

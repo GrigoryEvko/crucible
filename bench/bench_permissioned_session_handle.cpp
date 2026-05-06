@@ -102,6 +102,7 @@
 #include <crucible/permissions/Permission.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include "bench_harness.h"
 
@@ -129,6 +130,8 @@ using SendLoopProto = crucible::safety::proto::Loop<
     crucible::safety::proto::Send<Item,
                                     crucible::safety::proto::Continue>>;
 
+constexpr ::crucible::effects::HotFgCtx kSessionCtx{};
+
 // ─────────────────────────────────────────────────────────────────────
 // Pair 1 — bare SessionHandle.send vs PSH.send (Loop<Send<int, Continue>>)
 // ─────────────────────────────────────────────────────────────────────
@@ -150,7 +153,8 @@ bench::Report bare_send() {
 
 bench::Report psh_send() {
     using namespace crucible::safety::proto;
-    auto h = mint_permissioned_session<SendLoopProto>(FakeChannel{});
+    auto h = mint_permissioned_session<SendLoopProto>(
+        kSessionCtx, FakeChannel{});
     Item i = 0;
     auto report = bench::run("PermissionedSessionHandle.send (Loop<Send<int, Continue>>)",
         [&]{
@@ -184,7 +188,8 @@ bench::Report psh_close() {
     using namespace crucible::safety::proto;
     auto report = bench::run("PermissionedSessionHandle.close (End, EmptyPermSet)",
         [&]{
-            auto h = mint_permissioned_session<End>(FakeChannel{});
+            auto h = mint_permissioned_session<End>(
+                kSessionCtx, FakeChannel{});
             auto out = std::move(h).close();
             bench::do_not_optimize(out);
         });

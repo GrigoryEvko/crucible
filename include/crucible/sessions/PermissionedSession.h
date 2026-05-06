@@ -379,6 +379,26 @@ template <typename Proto,
           typename LoopCtx = void>
 class PermissionedSessionHandle;
 
+namespace detail {
+
+struct permissioned_session_construct_key {
+private:
+    constexpr permissioned_session_construct_key() noexcept = default;
+
+    template <typename R, typename PS2, typename Res, typename L>
+    friend constexpr auto step_to_next_permissioned(
+        Res, std::source_location) noexcept;
+
+    template <typename Proto, typename InitialPS, typename Res, typename L>
+    friend constexpr auto mint_permissioned_session_with_loc(
+        Res, std::source_location) noexcept;
+
+    template <typename P, typename PS2, typename Res, typename L>
+    friend class ::crucible::safety::proto::PermissionedSessionHandle;
+};
+
+}  // namespace detail
+
 template <typename ProviderHandle, typename ConsumerHandle>
 inline constexpr bool permissioned_session_vendor_compatible_v =
     loop_ctx_vendor_satisfies_v<typename ProviderHandle::loop_ctx,
@@ -468,7 +488,7 @@ template <typename R,
           typename LoopCtx>
 [[nodiscard]] constexpr auto step_to_next_permissioned(
     Resource r,
-    std::source_location loc = std::source_location::current()) noexcept
+    std::source_location loc) noexcept
 {
     if constexpr (std::is_same_v<R, Continue>) {
         using ActiveLoopCtx = loop_ctx_inner_t<LoopCtx>;
@@ -507,6 +527,7 @@ template <typename R,
 
         return PermissionedSessionHandle<LoopBody, LoopEntryPS,
                                          Resource, LoopCtx>{
+            permissioned_session_construct_key{},
             std::forward<Resource>(r), loc};
     } else if constexpr (is_loop_v<R>) {
         using InnerBody = typename R::body;
@@ -517,14 +538,26 @@ template <typename R,
         // gives nested Loops their own balance check.
         return PermissionedSessionHandle<InnerBody, PS,
                                          Resource, InnerCtx>{
+            permissioned_session_construct_key{},
             std::forward<Resource>(r), loc};
     } else {
         // Plain head (End / Stop / Send / Recv / Select / Offer).  Wrap
         // and continue.  No PS evolution at the wrap step itself —
         // evolution happens on the consumer call (send/recv/etc.).
         return PermissionedSessionHandle<R, PS, Resource, LoopCtx>{
+            permissioned_session_construct_key{},
             std::forward<Resource>(r), loc};
     }
+}
+
+template <typename R,
+          typename PS,
+          typename Resource,
+          typename LoopCtx>
+[[nodiscard]] constexpr auto step_to_next_permissioned(Resource r) noexcept
+{
+    return step_to_next_permissioned<R, PS, Resource, LoopCtx>(
+        std::forward<Resource>(r), std::source_location::current());
 }
 
 // ── Debug-mode abandonment enrichment (Decision D5 / Risk R3) ───
@@ -580,10 +613,6 @@ class [[nodiscard]] PermissionedSessionHandle<End, PS, Resource, LoopCtx>
     template <typename R, typename PS2, typename Res, typename L>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
-    template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto mint_permissioned_session(
-        Res, Permission<InitPerms>&&...) noexcept;
-
 public:
     using protocol      = End;
     using perm_set      = PS;
@@ -594,6 +623,7 @@ public:
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
+        detail::permissioned_session_construct_key,
         Resource r,
         std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
@@ -685,6 +715,7 @@ public:
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
+        detail::permissioned_session_construct_key,
         Resource r,
         std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
@@ -741,10 +772,6 @@ class [[nodiscard]] PermissionedSessionHandle<Send<T, R>, PS, Resource, LoopCtx>
     template <typename U, typename PS2, typename Res, typename L>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
-    template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto mint_permissioned_session(
-        Res, Permission<InitPerms>&&...) noexcept;
-
 public:
     using protocol      = Send<T, R>;
     using payload       = T;
@@ -757,6 +784,7 @@ public:
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
+        detail::permissioned_session_construct_key,
         Resource r,
         std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
@@ -842,10 +870,6 @@ class [[nodiscard]] PermissionedSessionHandle<Recv<T, R>, PS, Resource, LoopCtx>
     template <typename U, typename PS2, typename Res, typename L>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
-    template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto mint_permissioned_session(
-        Res, Permission<InitPerms>&&...) noexcept;
-
 public:
     using protocol      = Recv<T, R>;
     using payload       = T;
@@ -858,6 +882,7 @@ public:
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
+        detail::permissioned_session_construct_key,
         Resource r,
         std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
@@ -932,10 +957,6 @@ class [[nodiscard]] PermissionedSessionHandle<
     template <typename U, typename PS2, typename Res, typename L>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
-    template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto mint_permissioned_session(
-        Res, Permission<InitPerms>&&...) noexcept;
-
 public:
     using protocol        = Protocol;
     using delegated_proto = InnerProto;
@@ -950,6 +971,7 @@ public:
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
+        detail::permissioned_session_construct_key,
         Resource r,
         std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
@@ -1105,10 +1127,6 @@ class [[nodiscard]] PermissionedSessionHandle<
     template <typename U, typename PS2, typename Res, typename L>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
-    template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto mint_permissioned_session(
-        Res, Permission<InitPerms>&&...) noexcept;
-
     static_assert(session_loop_ctx_epoch_matches_v<
         LoopCtx, MinEpoch, MinGeneration>,
         "crucible::session::diagnostic [EpochCtx_StaleSender]: "
@@ -1134,6 +1152,7 @@ public:
     static constexpr std::uint64_t min_generation = MinGeneration;
 
     constexpr explicit PermissionedSessionHandle(
+        detail::permissioned_session_construct_key,
         Resource r,
         std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
@@ -1273,10 +1292,6 @@ class [[nodiscard]] PermissionedSessionHandle<
     template <typename U, typename PS2, typename Res, typename L>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
-    template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto mint_permissioned_session(
-        Res, Permission<InitPerms>&&...) noexcept;
-
 public:
     using protocol        = Protocol;
     using delegated_proto = InnerProto;
@@ -1291,6 +1306,7 @@ public:
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
+        detail::permissioned_session_construct_key,
         Resource r,
         std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
@@ -1338,6 +1354,7 @@ public:
         this->mark_consumed_();
         PermissionedSessionHandle<InnerProto, InnerPS,
                                   DelegatedResource, void> delegated_handle{
+            detail::permissioned_session_construct_key{},
             std::move(delegated_res)};
         auto continuation_handle =
             detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
@@ -1365,6 +1382,7 @@ public:
         this->mark_consumed_();
         PermissionedSessionHandle<InnerProto, InnerPS,
                                   DelegatedResource, void> delegated_handle{
+            detail::permissioned_session_construct_key{},
             std::move(delegated_res)};
         auto continuation_handle =
             detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
@@ -1411,10 +1429,6 @@ class [[nodiscard]] PermissionedSessionHandle<
     template <typename U, typename PS2, typename Res, typename L>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
-    template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto mint_permissioned_session(
-        Res, Permission<InitPerms>&&...) noexcept;
-
     static_assert(session_loop_ctx_epoch_satisfies_v<
         LoopCtx, MinEpoch, MinGeneration>,
         "crucible::session::diagnostic [EpochCtx_StaleRecipient]: "
@@ -1440,6 +1454,7 @@ public:
     static constexpr std::uint64_t min_generation = MinGeneration;
 
     constexpr explicit PermissionedSessionHandle(
+        detail::permissioned_session_construct_key,
         Resource r,
         std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
@@ -1485,6 +1500,7 @@ public:
         this->mark_consumed_();
         PermissionedSessionHandle<InnerProto, InnerPS,
                                   DelegatedResource, void> delegated_handle{
+            detail::permissioned_session_construct_key{},
             std::move(delegated_res)};
         auto continuation_handle =
             detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
@@ -1512,6 +1528,7 @@ public:
         this->mark_consumed_();
         PermissionedSessionHandle<InnerProto, InnerPS,
                                   DelegatedResource, void> delegated_handle{
+            detail::permissioned_session_construct_key{},
             std::move(delegated_res)};
         auto continuation_handle =
             detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
@@ -1548,10 +1565,6 @@ class [[nodiscard]] PermissionedSessionHandle<
     friend constexpr auto detail::step_to_next_permissioned(
         Res, std::source_location) noexcept;
 
-    template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto mint_permissioned_session(
-        Res, Permission<InitPerms>&&...) noexcept;
-
 public:
     using protocol          = CheckpointedSession<ProtoBase, ProtoRollback>;
     using base_protocol     = ProtoBase;
@@ -1564,6 +1577,7 @@ public:
     static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
+        detail::permissioned_session_construct_key,
         Resource r,
         std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
@@ -1641,10 +1655,6 @@ class [[nodiscard]] PermissionedSessionHandle<Select<Branches...>, PS,
     template <typename U, typename PS2, typename Res, typename L>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
-    template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto mint_permissioned_session(
-        Res, Permission<InitPerms>&&...) noexcept;
-
 public:
     using protocol      = Select<Branches...>;
     using perm_set      = PS;
@@ -1662,6 +1672,7 @@ public:
         "runnable handle on Select<> with zero branches.");
 
     constexpr explicit PermissionedSessionHandle(
+        detail::permissioned_session_construct_key,
         Resource r,
         std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
@@ -1760,10 +1771,6 @@ class [[nodiscard]] PermissionedSessionHandle<Offer<Branches...>, PS,
     template <typename U, typename PS2, typename Res, typename L>
     friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
 
-    template <typename Proto, typename Res, typename... InitPerms>
-    friend constexpr auto mint_permissioned_session(
-        Res, Permission<InitPerms>&&...) noexcept;
-
 public:
     using protocol      = Offer<Branches...>;
     using perm_set      = PS;
@@ -1781,6 +1788,7 @@ public:
         "runnable handle on Offer<> with zero branches.");
 
     constexpr explicit PermissionedSessionHandle(
+        detail::permissioned_session_construct_key,
         Resource r,
         std::source_location loc = std::source_location::current())
         noexcept(std::is_nothrow_move_constructible_v<Resource>)
@@ -1885,16 +1893,15 @@ private:
 };
 
 // ═════════════════════════════════════════════════════════════════
-// ── Factory: mint_permissioned_session<Proto, Resource, InitPerms…> ─
+// ── detail factory: mint_permissioned_session_with_loc ─────────────
 // ═════════════════════════════════════════════════════════════════
 //
-// Mints a PermissionedSessionHandle by consuming the supplied
-// Permission tokens and recording their tags in the initial PS.
-// The Permissions are CONSUMED (rvalue-ref binding) — the tags
-// transfer from the caller's value-level holdings to the handle's
-// type-level PS.  The resulting handle is the only path to those
-// permissions until they're surrendered via Send<Returned> or
-// dropped at End.
+// Internal construction hook used by SessionMint.h and by negative
+// fixtures that deliberately need to reach a lower PSH static_assert.
+// The public construction surface is ctx-bound:
+//   mint_permissioned_session<Proto>(ctx, resource, perms...)
+// and consumes Permission tokens before calling this detail layer with
+// the resulting InitialPS.
 //
 // Loop-prefixed protocols are unrolled the same way bare
 // mint_session_handle does it.  Continue at the top level is
@@ -1941,7 +1948,9 @@ template <typename Proto,
             "mint_permissioned_session<Continue>: Continue cannot be the "
             "top-level protocol.");
         return PermissionedSessionHandle<Proto, InitialPS, Resource,
-                                          LoopCtx>{std::forward<Resource>(r), loc};
+                                          LoopCtx>{
+            permissioned_session_construct_key{},
+            std::forward<Resource>(r), loc};
     }
 }
 
@@ -1956,24 +1965,6 @@ template <typename Proto, typename InitialPS, typename Resource>
 }
 
 }  // namespace detail
-
-template <typename Proto, typename Resource, typename... InitPerms>
-[[nodiscard]] constexpr auto mint_permissioned_session(
-    Resource r,
-    Permission<InitPerms>&&... perms) noexcept
-{
-    // Consume the Permission tokens — their tags become the initial PS.
-    // The rvalue-ref binding moved the caller's tokens into the
-    // function's parameter pack; the fold below silences
-    // -Wunused-parameter without taking another reference.  The tokens
-    // destruct at function exit (Permission's dtor is trivial), so
-    // ownership transfers from the caller to the type-level PS.
-    using InitialPS = PermSet<InitPerms...>;
-    ((void)perms, ...);
-
-    return detail::mint_permissioned_session_with_loc<Proto, InitialPS, Resource>(
-        std::forward<Resource>(r), std::source_location::current());
-}
 
 // ═════════════════════════════════════════════════════════════════
 // ── with_crash_check_or_detach — Phase 5 crash transport composition
@@ -2121,7 +2112,10 @@ template <typename PSH, typename Body>
 
 namespace detail {
 
-// Build the per-role lambda that mint_permissioned_session + invokes body.
+// Build the per-role lambda that detail-mints the role endpoint and
+// invokes body.  session_fork is already a checked construction
+// boundary; the public ctx-bound mint is intentionally not in this
+// header to avoid a SessionMint.h include cycle.
 // Pulled out so the parameter pack expansion at the call site stays
 // readable.
 template <typename G, typename Role, typename SharedChannel, typename Body>
@@ -2133,12 +2127,13 @@ template <typename G, typename Role, typename SharedChannel, typename Body>
                Permission<Role>&& role_perm,
                auto const&) mutable noexcept {
         using LocalProto = typename Project<G, Role>::type;
-        // mint_permissioned_session consumes the per-role Permission and
-        // produces the projected PSH whose Resource is the shared
-        // channel by reference.  LocalProto may begin with Loop —
-        // establish unrolls it.
-        auto handle = mint_permissioned_session<LocalProto, SharedChannel&,
-                                              Role>(ch, std::move(role_perm));
+        // The role Permission is consumed into the endpoint's initial
+        // PermSet.  LocalProto may begin with Loop; the detail mint
+        // unrolls it the same way as the public ctx-bound factory.
+        static_cast<void>(role_perm);
+        auto handle = mint_permissioned_session_with_loc<
+            LocalProto, PermSet<Role>, SharedChannel&, void>(
+            ch, std::source_location::current());
         std::move(body)(std::move(handle));
     };
 }
@@ -2369,22 +2364,24 @@ inline void runtime_smoke_test() noexcept {
     // End-handle close round-trip.
     {
         FakeChannel ch{42};
-        PermissionedSessionHandle<End, EmptyPermSet, FakeChannel> h{ch};
+        auto h = detail::mint_permissioned_session_with_loc<
+            End, EmptyPermSet, FakeChannel>(
+            ch, std::source_location::current());
         FakeChannel out = std::move(h).close();
         // Resource was moved through; identity preserved.
         if (out.last_sent != 42) std::abort();
     }
 
-    // mint_permissioned_session with a single Permission, then close at
-    // End — but PS would be PermSet<WorkPerm>, which fails the
-    // close() static_assert (PS must be empty).  So instead, mint a
-    // permission, drop it via permission_drop, then establish with no
-    // perms and close.
+    // The public mint is ctx-bound in SessionMint.h.  This embedded
+    // smoke uses the detail factory because this header cannot include
+    // SessionMint.h without a cycle.
     {
         auto perm = ::crucible::safety::mint_permission_root<WorkPerm>();
         ::crucible::safety::permission_drop(std::move(perm));
 
-        auto handle = mint_permissioned_session<End>(FakeChannel{7});
+        auto handle = detail::mint_permissioned_session_with_loc<
+            End, EmptyPermSet, FakeChannel>(
+            FakeChannel{7}, std::source_location::current());
         FakeChannel out = std::move(handle).close();
         if (out.last_sent != 7) std::abort();
     }
@@ -2415,7 +2412,9 @@ inline void runtime_smoke_test() noexcept {
     {
         using LoopProto = Loop<Send<int, Continue>>;  // plain int — no PS
         using LoopHandle =
-            decltype(mint_permissioned_session<LoopProto>(FakeChannel{}));
+            decltype(detail::mint_permissioned_session_with_loc<
+                     LoopProto, EmptyPermSet, FakeChannel>(
+                         FakeChannel{}, std::source_location::current()));
         static_assert(std::is_same_v<typename LoopHandle::protocol,
                                      Send<int, Continue>>);
         static_assert(std::is_same_v<typename LoopHandle::perm_set,

@@ -68,6 +68,8 @@ namespace eff = ::crucible::effects;
 using ::crucible::safety::Permission;
 using ::crucible::safety::mint_permission_root;
 
+constexpr eff::HotFgCtx kSessionCtx{};
+
 // ── Test boilerplate (matches existing test files' shape) ─────────
 
 struct TestFailure {};
@@ -226,7 +228,7 @@ int carrier_recv_int(CarrierChannel& carrier) noexcept {
 
 void test_end_round_trip() {
     FakeChannel ch{42};
-    auto h = mint_permissioned_session<End>(ch);
+    auto h = mint_permissioned_session<End>(kSessionCtx, std::move(ch));
 
     // Type-level checks at the establish boundary.
     static_assert(std::is_same_v<typename decltype(h)::protocol, End>);
@@ -247,7 +249,8 @@ void test_end_round_trip() {
 
 void test_plain_send_end() {
     FakeChannel ch{};
-    auto h = mint_permissioned_session<Send<int, End>>(ch);
+    auto h = mint_permissioned_session<Send<int, End>>(
+        kSessionCtx, std::move(ch));
     static_assert(std::is_same_v<typename decltype(h)::perm_set,
                                  EmptyPermSet>);
 
@@ -283,7 +286,7 @@ void test_transferable_send_end() {
     FakeChannel ch{};
     auto perm = mint_permission_root<WorkItem>();
     auto h = mint_permissioned_session<Send<Transferable<int, WorkItem>, End>>(
-        ch, std::move(perm));
+        kSessionCtx, std::move(ch), std::move(perm));
 
     static_assert(std::is_same_v<typename decltype(h)::perm_set,
                                  PermSet<WorkItem>>,
@@ -375,7 +378,8 @@ void test_recv_transferable_send_returned() {
     FakeChannel ch{};
     auto h = mint_permissioned_session<
         Recv<Transferable<int, WorkItem>,
-             Send<Returned<int, WorkItem>, End>>>(ch);
+             Send<Returned<int, WorkItem>, End>>>(
+                 kSessionCtx, std::move(ch));
 
     static_assert(std::is_same_v<typename decltype(h)::perm_set,
                                  EmptyPermSet>);
@@ -423,10 +427,11 @@ void test_permissioned_delegate_accept_handoff() {
 
     auto worker_perm = mint_permission_root<WorkItem>();
     auto inner = mint_permissioned_session<InnerProto>(
-        FakeChannel{.last_int = 314}, std::move(worker_perm));
+        kSessionCtx, FakeChannel{.last_int = 314}, std::move(worker_perm));
 
     CarrierChannel carrier{};
-    auto sender = mint_permissioned_session<SenderProto>(carrier);
+    auto sender = mint_permissioned_session<SenderProto>(
+        kSessionCtx, std::move(carrier));
 
     auto sender_after_delegate = std::move(sender).delegate(
         std::move(inner), delegate_worker_channel);
@@ -442,7 +447,8 @@ void test_permissioned_delegate_accept_handoff() {
     CRUCIBLE_TEST_REQUIRE(wire_state.delegated_last_int == 314);
     CRUCIBLE_TEST_REQUIRE(wire_state.carrier_int == 777);
 
-    auto accepter = mint_permissioned_session<AccepterProto>(wire_state);
+    auto accepter = mint_permissioned_session<AccepterProto>(
+        kSessionCtx, std::move(wire_state));
     auto [accepted_inner, accepter_after_accept] =
         std::move(accepter).accept(accept_worker_channel);
 
@@ -498,7 +504,7 @@ void test_loop_balanced_iteration() {
     using LoopProto = Loop<BodyProto>;
 
     FakeChannel ch{};
-    auto h = mint_permissioned_session<LoopProto>(ch);
+    auto h = mint_permissioned_session<LoopProto>(kSessionCtx, std::move(ch));
 
     static_assert(std::is_same_v<typename decltype(h)::protocol, BodyProto>);
     static_assert(std::is_same_v<typename decltype(h)::perm_set, EmptyPermSet>);
@@ -551,14 +557,16 @@ void test_loop_balanced_iteration() {
 void test_select_local_pick_branch() {
     {
         FakeChannel ch{1};
-        auto h = mint_permissioned_session<Select<End, Send<int, End>>>(ch);
+        auto h = mint_permissioned_session<Select<End, Send<int, End>>>(
+            kSessionCtx, std::move(ch));
         auto h_end = std::move(h).template select_local<0>();
         FakeChannel out = std::move(h_end).close();
         CRUCIBLE_TEST_REQUIRE(out.last_int == 1);  // unmodified
     }
     {
         FakeChannel ch{};
-        auto h = mint_permissioned_session<Select<End, Send<int, End>>>(ch);
+        auto h = mint_permissioned_session<Select<End, Send<int, End>>>(
+            kSessionCtx, std::move(ch));
         auto h_send = std::move(h).template select_local<1>();
         auto h_end  = std::move(h_send).send(123, send_int);
         FakeChannel out = std::move(h_end).close();
@@ -592,7 +600,7 @@ void test_crash_transport_happy_path() {
 
     FakeChannel ch{};
     ::crucible::safety::OneShotFlag flag;  // never set
-    auto h = mint_permissioned_session<LoopProto>(ch);
+    auto h = mint_permissioned_session<LoopProto>(kSessionCtx, std::move(ch));
 
     int sum = 0;
     constexpr int kIterations = 5;
@@ -618,7 +626,7 @@ void test_crash_transport_crash_path() {
 
     FakeChannel ch{};
     ::crucible::safety::OneShotFlag flag;
-    auto h = mint_permissioned_session<LoopProto>(ch);
+    auto h = mint_permissioned_session<LoopProto>(kSessionCtx, std::move(ch));
 
     int sum = 0;
     bool crash_observed = false;

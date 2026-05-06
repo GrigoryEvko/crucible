@@ -141,7 +141,8 @@ void test_typed_session_round_trip() {
 
     std::jthread producer{
         [&prod_handle, &producer_done](auto) mutable {
-            auto psh = ses::mint_producer_session<Channel>(prod_handle);
+            auto psh = ses::mint_producer_session<Channel>(
+                ::crucible::effects::HotFgCtx{}, prod_handle);
             for (int i = 0; i < kCount; ++i) {
                 auto next = std::move(psh).send(i, ses::blocking_push);
                 psh = std::move(next);
@@ -153,7 +154,8 @@ void test_typed_session_round_trip() {
 
     std::jthread consumer{
         [&cons_handle, &received](auto) mutable {
-            auto psh = ses::mint_consumer_session<Channel>(cons_handle);
+            auto psh = ses::mint_consumer_session<Channel>(
+                ::crucible::effects::HotFgCtx{}, cons_handle);
             for (int i = 0; i < kCount; ++i) {
                 auto [v, next] = std::move(psh).recv(ses::blocking_pop);
                 received.push_back(v);
@@ -195,8 +197,10 @@ void test_typed_session_immediate_detach() {
     auto prod_handle = ch.producer(std::move(pp));
     auto cons_handle = ch.consumer(std::move(cp));
 
-    auto prod_psh = ses::mint_producer_session<Channel>(prod_handle);
-    auto cons_psh = ses::mint_consumer_session<Channel>(cons_handle);
+    auto prod_psh = ses::mint_producer_session<Channel>(
+        ::crucible::effects::HotFgCtx{}, prod_handle);
+    auto cons_psh = ses::mint_consumer_session<Channel>(
+        ::crucible::effects::HotFgCtx{}, cons_handle);
 
     std::move(prod_psh).detach(TestInstrumentation{});
     std::move(cons_psh).detach(TestInstrumentation{});

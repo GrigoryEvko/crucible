@@ -14,6 +14,7 @@
 #include <crucible/permissions/Permission.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <concepts>
 #include <type_traits>
@@ -71,30 +72,34 @@ template <ChainEdgeSessionSurface Edge>
     return edge.waiter(std::move(perm));
 }
 
-template <ChainEdgeSessionSurface Edge>
+template <ChainEdgeSessionSurface Edge, ::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] constexpr auto
-mint_chainedge_signaler_session(typename Edge::SignalerHandle& handle) noexcept
+mint_chainedge_signaler_session(Ctx const& ctx,
+                                typename Edge::SignalerHandle& handle) noexcept
 {
-    return mint_permissioned_session<SignalerProto,
-                                     typename Edge::SignalerHandle*>(&handle);
+    return mint_permissioned_session<SignalerProto>(ctx, &handle);
 }
 
-template <ChainEdgeSessionSurface Edge>
+template <ChainEdgeSessionSurface Edge, ::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] constexpr auto
-mint_chainedge_waiter_session(typename Edge::WaiterHandle& handle) noexcept
+mint_chainedge_waiter_session(Ctx const& ctx,
+                              typename Edge::WaiterHandle& handle) noexcept
 {
-    return mint_permissioned_session<WaiterProto,
-                                     typename Edge::WaiterHandle*>(&handle);
+    return mint_permissioned_session<WaiterProto>(ctx, &handle);
 }
 
-template <ChainEdgeSessionSurface Edge>
+template <ChainEdgeSessionSurface Edge,
+          ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
 using SignalerSessionHandle = decltype(
     mint_chainedge_signaler_session<Edge>(
+        std::declval<Ctx const&>(),
         std::declval<typename Edge::SignalerHandle&>()));
 
-template <ChainEdgeSessionSurface Edge>
+template <ChainEdgeSessionSurface Edge,
+          ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
 using WaiterSessionHandle = decltype(
     mint_chainedge_waiter_session<Edge>(
+        std::declval<Ctx const&>(),
         std::declval<typename Edge::WaiterHandle&>()));
 
 inline constexpr auto signal_transport = [](auto& hp, const Signal& signal) noexcept {

@@ -5,6 +5,7 @@
 
 #include <crucible/sessions/PermissionedSession.h>
 
+#include <source_location>
 #include <utility>
 
 using namespace crucible::safety::proto;
@@ -28,8 +29,10 @@ WorkerResource wire_accept(CarrierResource&) noexcept {
 
 int main() {
     auto work = mint_permission_root<WorkItem>();
-    auto carrier = mint_permissioned_session<Carrier>(
-        CarrierResource{}, std::move(work));
+    static_cast<void>(work);
+    auto carrier = detail::mint_permissioned_session_with_loc<
+        Carrier, PermSet<WorkItem>, CarrierResource>(
+        CarrierResource{}, std::source_location::current());
 
     // Carrier PS already contains WorkItem.  Accepting Payload would
     // create a delegated inner PSH that also contains WorkItem.

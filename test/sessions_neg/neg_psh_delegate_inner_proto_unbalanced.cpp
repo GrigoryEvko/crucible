@@ -5,6 +5,7 @@
 
 #include <crucible/sessions/PermissionedSession.h>
 
+#include <source_location>
 #include <utility>
 
 using namespace crucible::safety::proto;
@@ -25,11 +26,15 @@ void wire_delegate(CarrierResource&, WorkerResource&&) noexcept {}
 }  // namespace
 
 int main() {
-    auto carrier = mint_permissioned_session<Carrier>(CarrierResource{});
+    auto carrier = detail::mint_permissioned_session_with_loc<
+        Carrier, EmptyPermSet, CarrierResource>(
+        CarrierResource{}, std::source_location::current());
 
     auto work = mint_permission_root<WorkItem>();
-    auto delegated = mint_permissioned_session<InnerProto>(
-        WorkerResource{}, std::move(work));
+    static_cast<void>(work);
+    auto delegated = detail::mint_permissioned_session_with_loc<
+        InnerProto, PermSet<WorkItem>, WorkerResource>(
+        WorkerResource{}, std::source_location::current());
 
     // The declared inner endpoint is already terminal but still owns
     // WorkItem, so the handoff would preserve a close-time leak.

@@ -6,6 +6,7 @@
 
 #include <crucible/sessions/PermissionedSession.h>
 
+#include <source_location>
 #include <utility>
 
 using namespace crucible::safety::proto;
@@ -25,12 +26,16 @@ void wire_delegate(CarrierResource&, WorkerResource&&) noexcept {}
 }  // namespace
 
 int main() {
-    auto carrier = mint_permissioned_session<Carrier>(CarrierResource{});
+    auto carrier = detail::mint_permissioned_session_with_loc<
+        Carrier, EmptyPermSet, CarrierResource>(
+        CarrierResource{}, std::source_location::current());
 
     // ActualInnerPS is EmptyPermSet, but Payload declares
     // InnerPS=PermSet<WorkItem>.  delegate() must reject the handoff
     // before transport can fabricate a permission-bearing endpoint.
-    auto delegated = mint_permissioned_session<InnerProto>(WorkerResource{});
+    auto delegated = detail::mint_permissioned_session_with_loc<
+        InnerProto, EmptyPermSet, WorkerResource>(
+        WorkerResource{}, std::source_location::current());
 
     [[maybe_unused]] auto next = std::move(carrier).delegate(
         std::move(delegated), wire_delegate);

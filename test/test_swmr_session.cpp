@@ -150,8 +150,10 @@ void test_typed_session_send_recv() {
     auto reader = ses::mint_swmr_reader<Swmr>(swmr);
     CRUCIBLE_REQUIRE(reader.has_value());
 
-    auto writer_psh = ses::mint_writer_session<Swmr>(writer);
-    auto reader_psh = ses::mint_reader_session<Swmr>(*reader);
+    auto writer_psh = ses::mint_writer_session<Swmr>(
+        ::crucible::effects::HotFgCtx{}, writer);
+    auto reader_psh = ses::mint_reader_session<Swmr>(
+        ::crucible::effects::HotFgCtx{}, *reader);
 
     auto next_writer = std::move(writer_psh).send(77, ses::publish_value);
     auto [borrowed, next_reader] =
@@ -362,8 +364,10 @@ void test_runtime_session_aliases_remain_available() {
     auto reader = ses::mint_swmr_reader<Swmr>(swmr);
     CRUCIBLE_REQUIRE(reader.has_value());
 
-    auto writer_psh = ses::mint_writer_runtime_session<Swmr>(writer);
-    auto reader_psh = ses::mint_reader_runtime_session<Swmr>(*reader);
+    auto writer_psh = ses::mint_writer_runtime_session<Swmr>(
+        ::crucible::effects::HotFgCtx{}, writer);
+    auto reader_psh = ses::mint_reader_runtime_session<Swmr>(
+        ::crucible::effects::HotFgCtx{}, *reader);
 
     auto next_writer = std::move(writer_psh).send(91, ses::publish_value);
     auto [value, next_reader] = std::move(reader_psh).recv(ses::load_value);

@@ -172,6 +172,7 @@
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <type_traits>
 #include <utility>
@@ -209,22 +210,22 @@ using ConsumerProto = Loop<Recv<T, Continue>>;
 // but is not the shape SPSC streaming channels need (no permissions
 // to transfer through the wire).
 
-template <typename Channel>
+template <typename Channel, ::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] constexpr auto
-mint_producer_session(typename Channel::ProducerHandle& handle) noexcept
+mint_producer_session(Ctx const& ctx,
+                      typename Channel::ProducerHandle& handle) noexcept
 {
     using T = typename Channel::value_type;
-    return mint_permissioned_session<ProducerProto<T>,
-                                   typename Channel::ProducerHandle*>(&handle);
+    return mint_permissioned_session<ProducerProto<T>>(ctx, &handle);
 }
 
-template <typename Channel>
+template <typename Channel, ::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] constexpr auto
-mint_consumer_session(typename Channel::ConsumerHandle& handle) noexcept
+mint_consumer_session(Ctx const& ctx,
+                      typename Channel::ConsumerHandle& handle) noexcept
 {
     using T = typename Channel::value_type;
-    return mint_permissioned_session<ConsumerProto<T>,
-                                   typename Channel::ConsumerHandle*>(&handle);
+    return mint_permissioned_session<ConsumerProto<T>>(ctx, &handle);
 }
 
 // ── Transport helpers ───────────────────────────────────────────────

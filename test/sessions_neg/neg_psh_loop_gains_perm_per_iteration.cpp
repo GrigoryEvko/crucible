@@ -25,6 +25,8 @@
 
 #include <crucible/sessions/PermissionedSession.h>
 
+#include <source_location>
+
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
 using ::crucible::safety::mint_permission_root;
@@ -44,7 +46,9 @@ using LoopProto = Loop<BodyProto>;
 
 int main() {
     // Establish with empty PS (entry is empty).
-    auto h = mint_permissioned_session<LoopProto>(FakeChannel{});
+    auto h = detail::mint_permissioned_session_with_loc<
+        LoopProto, EmptyPermSet, FakeChannel>(
+        FakeChannel{}, std::source_location::current());
 
     // recv adds WorkItem to PS; the resulting next-handle on
     // Continue fires the balance assert (PS at Continue = {WorkItem},

@@ -35,6 +35,8 @@
 
 #include <crucible/sessions/PermissionedSession.h>
 
+#include <source_location>
+
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
 using ::crucible::safety::mint_permission_root;
@@ -59,7 +61,9 @@ using OuterLoop  = Loop<OuterBody>;
 }
 
 int main() {
-    auto h = mint_permissioned_session<OuterLoop>(FakeChannel{});
+    auto h = detail::mint_permissioned_session_with_loc<
+        OuterLoop, EmptyPermSet, FakeChannel>(
+        FakeChannel{}, std::source_location::current());
 
     // Outer recv: PS becomes {WorkItem}.  Returned handle enters the
     // inner Loop, with InnerLoopCtx recording entry_perm_set = {X}.

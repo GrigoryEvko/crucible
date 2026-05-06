@@ -27,6 +27,8 @@
 
 #include <crucible/sessions/PermissionedSession.h>
 
+#include <source_location>
+
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
 using ::crucible::safety::mint_permission_root;
@@ -42,8 +44,11 @@ Transferable<int, WorkItem> wire_recv(FakeChannel& ch) noexcept {
 }
 
 int main() {
-    auto h = mint_permissioned_session<
-        Recv<Transferable<int, WorkItem>, End>>(FakeChannel{});
+    auto h = detail::mint_permissioned_session_with_loc<
+        Recv<Transferable<int, WorkItem>, End>,
+        EmptyPermSet,
+        FakeChannel>(
+        FakeChannel{}, std::source_location::current());
 
     auto [val, h2] = std::move(h).recv(wire_recv);
     (void)val;

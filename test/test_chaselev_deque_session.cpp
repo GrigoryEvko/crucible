@@ -113,7 +113,8 @@ void test_owner_session_push_pop() {
     auto owner_perm = safety::mint_permission_root<Deque::owner_tag>();
     auto owner = ses::mint_chaselev_owner<Deque>(
         deque, std::move(owner_perm));
-    auto psh = ses::mint_owner_session<Deque>(owner);
+    auto psh = ses::mint_owner_session<Deque>(
+        ::crucible::effects::HotFgCtx{}, owner);
 
     for (int i = 1; i <= 4; ++i) {
         auto push = std::move(psh).select_local<ses::owner_push_branch>();
@@ -143,7 +144,8 @@ void test_thief_session_receives_borrowed_work() {
 
     auto thief_opt = ses::mint_chaselev_thief<Deque>(deque);
     CRUCIBLE_REQUIRE(thief_opt.has_value());
-    auto thief_psh = ses::mint_thief_session<Deque>(*thief_opt);
+    auto thief_psh = ses::mint_thief_session<Deque>(
+        ::crucible::effects::HotFgCtx{}, *thief_opt);
 
     auto [borrowed, next] =
         std::move(thief_psh).recv(ses::blocking_steal_borrowed);
@@ -159,7 +161,8 @@ void test_fused_loop_hot_helpers_preserve_roles() {
     auto owner_perm = safety::mint_permission_root<Deque::owner_tag>();
     auto owner = ses::mint_chaselev_owner<Deque>(
         deque, std::move(owner_perm));
-    auto owner_psh = ses::mint_owner_session<Deque>(owner);
+    auto owner_psh = ses::mint_owner_session<Deque>(
+        ::crucible::effects::HotFgCtx{}, owner);
 
     CRUCIBLE_REQUIRE(ses::owner_session_try_push<Deque>(owner_psh, 11));
     CRUCIBLE_REQUIRE(ses::owner_session_try_push<Deque>(owner_psh, 22));
@@ -170,7 +173,8 @@ void test_fused_loop_hot_helpers_preserve_roles() {
 
     auto thief_opt = ses::mint_chaselev_thief<Deque>(deque);
     CRUCIBLE_REQUIRE(thief_opt.has_value());
-    auto thief_psh = ses::mint_thief_session<Deque>(*thief_opt);
+    auto thief_psh = ses::mint_thief_session<Deque>(
+        ::crucible::effects::HotFgCtx{}, *thief_opt);
     auto borrowed = ses::thief_session_steal_borrowed<Deque>(thief_psh);
     CRUCIBLE_REQUIRE(borrowed.value == 11);
 
@@ -206,7 +210,8 @@ void test_four_thief_sessions_steal_fixed_work() {
                 failed.store(true, std::memory_order_release);
                 return;
             }
-            auto psh = ses::mint_thief_session<MultiDeque>(*thief_opt);
+            auto psh = ses::mint_thief_session<MultiDeque>(
+                ::crucible::effects::HotFgCtx{}, *thief_opt);
             int local_sum = 0;
             for (int i = 0; i < kPerThief; ++i) {
                 auto [borrowed, next] =

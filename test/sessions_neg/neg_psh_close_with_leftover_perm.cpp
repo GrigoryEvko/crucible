@@ -25,6 +25,8 @@
 
 #include <crucible/sessions/PermissionedSession.h>
 
+#include <source_location>
+
 using namespace crucible::safety::proto;
 using ::crucible::safety::Permission;
 using ::crucible::safety::mint_permission_root;
@@ -36,8 +38,10 @@ struct FakeChannel { int last_int = 0; };
 
 int main() {
     auto perm = mint_permission_root<WorkItem>();
-    auto h = mint_permissioned_session<End>(FakeChannel{},
-                                          std::move(perm));
+    static_cast<void>(perm);
+    auto h = detail::mint_permissioned_session_with_loc<
+        End, PermSet<WorkItem>, FakeChannel>(
+        FakeChannel{}, std::source_location::current());
     // PS at this point: PermSet<WorkItem>.
     // close() requires PS == EmptyPermSet → fires.
     [[maybe_unused]] auto out = std::move(h).close();

@@ -6,6 +6,7 @@
 // repository TSAN suppressions.
 
 #include <crucible/bridges/CrashTransport.h>
+#include <crucible/sessions/SessionMint.h>
 #include "../test_assert.h"
 
 #include <atomic>
@@ -19,6 +20,8 @@ namespace {
 
 using namespace crucible::safety;
 using namespace crucible::safety::proto;
+
+constexpr ::crucible::effects::HotFgCtx kSessionCtx{};
 
 struct WorkerTag {};
 struct CoordTag {};
@@ -102,11 +105,14 @@ void verify_three_permissioned_peers(int iteration) {
     auto master_perm = mint_permission_root<MasterTag>();
 
     auto worker = mint_permissioned_session<End>(
-        Channel{&worker_wire, 1000 + iteration}, std::move(worker_perm));
+        kSessionCtx, Channel{&worker_wire, 1000 + iteration},
+        std::move(worker_perm));
     auto coord = mint_permissioned_session<End>(
-        Channel{&coord_wire, 2000 + iteration}, std::move(coord_perm));
+        kSessionCtx, Channel{&coord_wire, 2000 + iteration},
+        std::move(coord_perm));
     auto master = mint_permissioned_session<End>(
-        Channel{&master_wire, 3000 + iteration}, std::move(master_perm));
+        kSessionCtx, Channel{&master_wire, 3000 + iteration},
+        std::move(master_perm));
 
     static_assert(std::is_same_v<typename decltype(worker)::perm_set,
                                  PermSet<WorkerTag>>);
@@ -126,7 +132,8 @@ void scenario_clean_peer_death(int iteration) {
 
     SharedWire wire;
     OneShotFlag worker_dead;
-    auto coord = mint_permissioned_session<P>(Channel{&wire, iteration});
+    auto coord = mint_permissioned_session<P>(
+        kSessionCtx, Channel{&wire, iteration});
     auto watched = mint_crash_watched_session<WorkerTag>(
         std::move(coord), worker_dead);
 
@@ -146,7 +153,8 @@ void scenario_clean_peer_death(int iteration) {
     assert(result.error().resource.id == iteration);
 
     auto followup = mint_permissioned_session<Followup>(
-        Channel{&wire, 60'000 + iteration}, std::move(std::get<0>(permissions)));
+        kSessionCtx, Channel{&wire, 60'000 + iteration},
+        std::move(std::get<0>(permissions)));
     auto after = std::move(followup).send(
         Transferable<int, CoordTag>{99, mint_permission_root<CoordTag>()},
         send_coord_transfer);
@@ -164,7 +172,8 @@ void scenario_death_races_send(int iteration) {
 
     auto initial_perm = mint_permission_root<CoordTag>();
     auto coord = mint_permissioned_session<P>(
-        Channel{&wire, 10'000 + iteration}, std::move(initial_perm));
+        kSessionCtx, Channel{&wire, 10'000 + iteration},
+        std::move(initial_perm));
     auto watched = mint_crash_watched_session<WorkerTag>(
         std::move(coord), worker_dead);
 
@@ -205,10 +214,12 @@ void scenario_concurrent_peer_deaths(int iteration) {
     std::atomic<bool> start{false};
 
     auto master_worker_watch = mint_crash_watched_session<WorkerTag>(
-        mint_permissioned_session<P>(Channel{&worker_wire, 20'000 + iteration}),
+        mint_permissioned_session<P>(
+            kSessionCtx, Channel{&worker_wire, 20'000 + iteration}),
         worker_dead);
     auto master_coord_watch = mint_crash_watched_session<CoordTag>(
-        mint_permissioned_session<P>(Channel{&coord_wire, 30'000 + iteration}),
+        mint_permissioned_session<P>(
+            kSessionCtx, Channel{&coord_wire, 30'000 + iteration}),
         coord_dead);
 
     std::jthread worker_killer(signal_after_start<OneShotFlag>,
@@ -253,7 +264,8 @@ void scenario_fallback_survivor_observes(int iteration) {
     OneShotFlag worker_dead;
 
     auto coord = mint_crash_watched_session<WorkerFallbackTag>(
-        mint_permissioned_session<End>(Channel{&coord_wire, 40'000 + iteration}),
+        mint_permissioned_session<End>(
+            kSessionCtx, Channel{&coord_wire, 40'000 + iteration}),
         worker_dead);
     auto coord_channel = std::move(coord).close();
     assert(coord_channel.id == 40'000 + iteration);
@@ -261,7 +273,8 @@ void scenario_fallback_survivor_observes(int iteration) {
     worker_dead.signal();
 
     auto master = mint_crash_watched_session<WorkerFallbackTag>(
-        mint_permissioned_session<P>(Channel{&master_wire, 50'000 + iteration}),
+        mint_permissioned_session<P>(
+            kSessionCtx, Channel{&master_wire, 50'000 + iteration}),
         worker_dead);
     auto result = std::move(master).recv(recv_int);
 
@@ -274,6 +287,7 @@ void scenario_fallback_survivor_observes(int iteration) {
     assert(result.error().resource.id == 50'000 + iteration);
 
     auto followup = mint_permissioned_session<Followup>(
+        kSessionCtx,
         Channel{&master_wire, 70'000 + iteration},
         std::move(std::get<0>(permissions)));
     auto after = std::move(followup).send(

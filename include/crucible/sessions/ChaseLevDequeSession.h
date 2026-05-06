@@ -27,6 +27,7 @@
 #include <crucible/permissions/Permission.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionMint.h>
 #include <crucible/sessions/SessionPermPayloads.h>
 
 #include <concepts>
@@ -103,32 +104,36 @@ template <ChaseLevSessionSurface Deque>
     return deque.thief();
 }
 
-template <ChaseLevSessionSurface Deque>
+template <ChaseLevSessionSurface Deque, ::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] constexpr auto
-mint_owner_session(typename Deque::OwnerHandle& handle) noexcept
+mint_owner_session(Ctx const& ctx,
+                   typename Deque::OwnerHandle& handle) noexcept
 {
     using T = typename Deque::value_type;
-    return mint_permissioned_session<OwnerProto<T>,
-                                     typename Deque::OwnerHandle*>(&handle);
+    return mint_permissioned_session<OwnerProto<T>>(ctx, &handle);
 }
 
-template <ChaseLevSessionSurface Deque>
+template <ChaseLevSessionSurface Deque, ::crucible::effects::IsExecCtx Ctx>
 [[nodiscard]] constexpr auto
-mint_thief_session(typename Deque::ThiefHandle& handle) noexcept
+mint_thief_session(Ctx const& ctx,
+                   typename Deque::ThiefHandle& handle) noexcept
 {
     using T = typename Deque::value_type;
     using Tag = typename Deque::thief_tag;
-    return mint_permissioned_session<ThiefProto<T, Tag>,
-                                     typename Deque::ThiefHandle*>(&handle);
+    return mint_permissioned_session<ThiefProto<T, Tag>>(ctx, &handle);
 }
 
-template <ChaseLevSessionSurface Deque>
+template <ChaseLevSessionSurface Deque,
+          ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
 using OwnerSessionHandle = decltype(
-    mint_owner_session<Deque>(std::declval<typename Deque::OwnerHandle&>()));
+    mint_owner_session<Deque>(std::declval<Ctx const&>(),
+                              std::declval<typename Deque::OwnerHandle&>()));
 
-template <ChaseLevSessionSurface Deque>
+template <ChaseLevSessionSurface Deque,
+          ::crucible::effects::IsExecCtx Ctx = ::crucible::effects::HotFgCtx>
 using ThiefSessionHandle = decltype(
-    mint_thief_session<Deque>(std::declval<typename Deque::ThiefHandle&>()));
+    mint_thief_session<Deque>(std::declval<Ctx const&>(),
+                              std::declval<typename Deque::ThiefHandle&>()));
 
 // Fused one-iteration hot helpers for the infinite EmptyPermSet Loop
 // protocols above.  Each helper commits to one branch internally:
