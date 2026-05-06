@@ -34,6 +34,8 @@
 //   MetaLogSession.h        — typed-session wrapper for
 //                              PermissionedMetaLog over the production
 //                              TensorMeta side-channel.
+//   ChainEdgeSession.h      — one-shot semaphore signal/wait session
+//                              facade over PermissionedChainEdge.
 //   SwmrSession.h           — typed-session facade for SWMR latest-
 //                              value publication over AtomicSnapshot
 //                              + SharedPermissionPool.
@@ -67,5 +69,6 @@
 #include <crucible/sessions/SessionView.h>
 #include <crucible/sessions/SpscSession.h>
 #include <crucible/sessions/MetaLogSession.h>
+#include <crucible/sessions/ChainEdgeSession.h>
 #include <crucible/sessions/SwmrSession.h>
 #include <crucible/sessions/ChaseLevDequeSession.h>

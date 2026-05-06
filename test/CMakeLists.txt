@@ -555,6 +555,11 @@ crucible_test(test_spsc_session)
 # endpoints, typed-session round-trip, and immediate detach.
 crucible_test(test_metalog_session)
 
+# ChainEdgeSession.h (GAPS-062) — one-shot semaphore signal/wait facade
+# over PermissionedChainEdge.  Covers CPU oracle plus stubbed vendor
+# surfaces and the Send<SemaphoreSignal, End> / Recv<...> sessions.
+crucible_test(test_chainedge_session)
+
 # SwmrSession.h (GAPS-019 / GAPS-020) — typed-session facade for
 # AtomicSnapshot + SharedPermissionPool.  Covers writer publication,
 # multi-reader lifetime accounting, late-reader visibility, matching
@@ -3739,6 +3744,13 @@ crucible_neg_compile_test(neg_metalog_producer_drain
 crucible_neg_compile_test(neg_metalog_consumer_append
     "has no member named.*try_append")
 
+# ── GAPS-062 — PermissionedChainEdge role-discrimination tests ─────
+crucible_neg_compile_test(neg_chainedge_signaler_wait
+    "has no member named.*try_wait")
+
+crucible_neg_compile_test(neg_chainedge_waiter_signal
+    "has no member named.*signal")
+
 # ─── FOUND-E diagnostic infrastructure — neg-compile harness ──────
 #
 # Four fixtures probing diagnostic-misuse paths that the framework
@@ -3887,3 +3899,11 @@ crucible_neg_compile_session_test(neg_chaselev_thief_session_push
 
 crucible_neg_compile_session_test(neg_chaselev_owner_session_steal
     "try_steal|no matching function|constraints not satisfied")
+
+# GAPS-062: ChainEdge one-shot session facade.  SignalerProto is
+# Send-only; WaiterProto is Recv-only.
+crucible_neg_compile_session_test(neg_chainedge_waiter_session_send
+    "has no member named.*send")
+
+crucible_neg_compile_session_test(neg_chainedge_signaler_session_recv
+    "has no member named.*recv")
