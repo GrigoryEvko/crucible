@@ -3701,6 +3701,8 @@ crucible_neg_compile_test(neg_permission_copy_attempt
 # slots, so the copy constructor is deleted with an explicit reason.
 crucible_neg_compile_test(neg_publish_slot_copy_attempt
     "publication slot identity cannot be copied")
+crucible_neg_compile_test(neg_vigil_copy_attempt
+    "Vigil owns the runtime organism; not copyable")
 
 # GAPS-044 — Permission inheritance is explicit and acyclic.  Crash-stop
 # recovery may mint survivor permissions only for declared inheritance
