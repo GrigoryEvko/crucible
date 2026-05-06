@@ -82,8 +82,10 @@ void test_typed_session_round_trip() {
     auto signaler = ses::mint_chainedge_signaler<Edge>(edge, std::move(sp));
     auto waiter = ses::mint_chainedge_waiter<Edge>(edge, std::move(wp));
 
-    auto signaler_psh = ses::mint_chainedge_signaler_session<Edge>(signaler);
-    auto waiter_psh = ses::mint_chainedge_waiter_session<Edge>(waiter);
+    auto signaler_psh = ses::mint_chainedge_signaler_session<Edge>(
+        ::crucible::effects::HotFgCtx{}, signaler);
+    auto waiter_psh = ses::mint_chainedge_waiter_session<Edge>(
+        ::crucible::effects::HotFgCtx{}, waiter);
 
     const SemaphoreSignal signal = signaler.expected_signal();
     auto signaler_end =
@@ -96,6 +98,66 @@ void test_typed_session_round_trip() {
 
     CRUCIBLE_TEST_REQUIRE(observed == signal);
     CRUCIBLE_TEST_REQUIRE(waiter.current_value() == 6);
+}
+
+void test_signal_identity_rejects_wrong_fields() {
+    using namespace ::crucible::concurrent;
+    using ::crucible::safety::mint_permission_root;
+    using ::crucible::safety::mint_permission_split;
+
+    struct Tag {};
+    using Edge = PermissionedChainEdge<VendorBackend::CPU, Tag>;
+
+    Edge edge{PlanId{13}, PlanId{23}, ChainEdgeId{33}, 7};
+    auto whole = mint_permission_root<typename Edge::whole_tag>();
+    whole = edge.reset_under_quiescence(std::move(whole));
+    auto [sp, wp] = mint_permission_split<typename Edge::signaler_tag,
+                                          typename Edge::waiter_tag>(
+        std::move(whole));
+    auto signaler = edge.signaler(std::move(sp));
+    auto waiter = edge.waiter(std::move(wp));
+    const SemaphoreSignal expected = signaler.expected_signal();
+
+    auto require_signal_rejected = [&](SemaphoreSignal wrong) {
+        signaler.signal(wrong);
+        CRUCIBLE_TEST_REQUIRE(signaler.current_value() == 0);
+        CRUCIBLE_TEST_REQUIRE(!waiter.try_wait(expected));
+    };
+
+    SemaphoreSignal wrong_edge = expected;
+    wrong_edge.edge = ChainEdgeId{333};
+    require_signal_rejected(wrong_edge);
+
+    SemaphoreSignal wrong_upstream = expected;
+    wrong_upstream.upstream = PlanId{113};
+    require_signal_rejected(wrong_upstream);
+
+    SemaphoreSignal wrong_downstream = expected;
+    wrong_downstream.downstream = PlanId{123};
+    require_signal_rejected(wrong_downstream);
+
+    SemaphoreSignal wrong_backend = expected;
+    wrong_backend.backend = VendorBackend::AMD;
+    require_signal_rejected(wrong_backend);
+
+    SemaphoreSignal wrong_value = expected;
+    wrong_value.value = 1;
+    require_signal_rejected(wrong_value);
+
+    signaler.signal(expected);
+    CRUCIBLE_TEST_REQUIRE(waiter.try_wait(expected));
+    CRUCIBLE_TEST_REQUIRE(waiter.current_value() == 7);
+
+    auto require_wait_rejected = [&](const SemaphoreSignal& wrong) {
+        CRUCIBLE_TEST_REQUIRE(!waiter.try_wait(wrong));
+        CRUCIBLE_TEST_REQUIRE(waiter.try_wait(expected));
+    };
+
+    require_wait_rejected(wrong_edge);
+    require_wait_rejected(wrong_upstream);
+    require_wait_rejected(wrong_downstream);
+    require_wait_rejected(wrong_backend);
+    require_wait_rejected(wrong_value);
 }
 
 }  // namespace
@@ -120,6 +182,8 @@ int main() {
         test_permissioned_chainedge_backend<VendorBackend::TRN>();
     });
     run_test("typed_session_round_trip", test_typed_session_round_trip);
+    run_test("signal_identity_rejects_wrong_fields",
+             test_signal_identity_rejects_wrong_fields);
     std::fprintf(stderr, "\n%d passed, %d failed\n", total_passed, total_failed);
     return total_failed == 0 ? 0 : 1;
 }

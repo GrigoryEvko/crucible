@@ -598,8 +598,9 @@ class Vigil {
     // ─── Background thread callback ────────────────────────────────
     //
     // Called on the background thread when a new RegionNode is ready.
-    // Transitions the transaction to ACTIVE, updates the execution mode,
-    // and optionally pre-stores the object in the Cipher.
+    // Transitions the transaction to ACTIVE and updates the execution mode.
+    // It must not touch Cipher: Cipher owns mutable resident-cache/log state
+    // and is foreground-owned by persist()/load().
     [[gnu::cold]] void on_region_ready(RegionNode* region) {
         // step_ is a monotonic counter for tx_log sequencing.  bg thread
         // is the sole writer; fg/test readers see an approximate value
@@ -624,14 +625,6 @@ class Vigil {
         // see the direct mode transition even before dispatch_op().
         pending_region_.publish(region);
         mode_.publish_compiled();
-
-        // Pre-store the object (idempotent) so persist() is instant later.
-        if (cipher_.has_value()) {
-            auto open_view = cipher_->mint_open_view();
-            (void)cipher_->store(open_view,
-                                 Cipher::content_addressed(region),
-                                 meta_log_.get());
-        }
 
         // GAPS-004h follow-up: poll the deadline watchdog at the
         // iteration boundary (bg-thread cold path).  observe() reads

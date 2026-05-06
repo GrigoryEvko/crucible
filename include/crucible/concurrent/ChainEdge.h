@@ -146,17 +146,28 @@ private:
     friend class PermissionedChainEdge;
 
     void signal(detail::ChainEdgeAccess, const SemaphoreSignal& signal) noexcept {
+        if (!matches_expected_signal_(signal)) return;
         mimic::detail::semaphore_signal<Backend>(semaphore_, signal.value);
     }
 
     [[nodiscard]] bool wait(detail::ChainEdgeAccess,
                             const SemaphoreSignal& signal) const noexcept {
+        if (!matches_expected_signal_(signal)) return false;
         return mimic::detail::semaphore_wait<Backend>(semaphore_, signal.value);
     }
 
     void reset_under_quiescence(detail::ChainEdgeAccess,
                                 std::uint64_t value = 0) noexcept {
         value_.store(value, std::memory_order_release);
+    }
+
+    [[nodiscard]] constexpr bool
+    matches_expected_signal_(const SemaphoreSignal& signal) const noexcept {
+        return signal.edge == edge_
+            && signal.upstream == upstream_
+            && signal.downstream == downstream_
+            && signal.value == signal_value_
+            && signal.backend == Backend;
     }
 
     PlanId upstream_;

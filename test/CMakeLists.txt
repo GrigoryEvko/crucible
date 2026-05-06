@@ -306,6 +306,11 @@ crucible_test(test_serialize)
 crucible_test(test_cipher)
 crucible_test(test_transaction)
 crucible_test(test_vigil)
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+  # GCC 16 ICEs in LTO modref on this reflection-heavy TU; compile it
+  # as a regular object while still linking against the LTO-built libs.
+  target_compile_options(test_vigil PRIVATE -fno-lto)
+endif()
 crucible_test(test_ckernel)
 crucible_test(test_graph)
 crucible_test(test_lower)

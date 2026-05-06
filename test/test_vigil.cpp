@@ -1,9 +1,13 @@
 #include <crucible/Vigil.h>
 #include "test_harness.h"
 #include "test_assert.h"
+#include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <string>
 
 using crucible::SchemaHash;
 using crucible::ShapeHash;
@@ -32,6 +36,18 @@ static crucible::TensorMeta make_meta() {
     m.layout      = crucible::Layout::Strided;
     m.data_ptr    = nullptr;
     return m;
+}
+
+static std::filesystem::path object_path_for(const std::filesystem::path& root,
+                                             crucible::ContentHash hash) {
+    char hex[16];
+    uint64_t value = hash.raw();
+    static constexpr char kHex[] = "0123456789abcdef";
+    for (std::size_t i = 0; i < 16; ++i) {
+        hex[15 - i] = kHex[value & 0x0FULL];
+        value >>= 4;
+    }
+    return root / "objects" / std::string(hex, 2) / std::string(hex + 2, 14);
 }
 
 int main() {
@@ -80,11 +96,19 @@ int main() {
     assert(vigil.is_compiled());
     assert(vigil.active_region() != nullptr);
     assert(vigil.current_step() >= 1);
+    const crucible::RegionNode* active_region = vigil.active_region();
+    const auto object_path = object_path_for(dir, active_region->content_hash);
+    assert(!std::filesystem::exists(object_path)
+           && "background Vigil callback must not pre-store Cipher objects");
+    assert(!std::filesystem::exists(std::string(dir) + "/HEAD")
+           && "background Vigil callback must not advance Cipher HEAD");
 
     // ── persist() → Cipher HEAD must be non-zero ─────────────────────
     const bool persisted = vigil.persist();
     assert(persisted && "persist() must succeed with a cipher_path set");
     assert(static_cast<bool>(vigil.head_hash()) && "Cipher HEAD must be non-zero after persist()");
+    assert(std::filesystem::exists(object_path)
+           && "foreground persist() must be the direct Cipher object writer");
 
     // Verify the HEAD file was actually written to disk.
     std::ifstream hf(std::string(dir) + "/HEAD");
