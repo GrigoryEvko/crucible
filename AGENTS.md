@@ -2454,6 +2454,29 @@ time cardinality gates with two HS14 fixtures. Going forward, feature commits
 lead with `GAPS-NNN:`, follow-ups use `GAPS-NNN-fix:`, and claimed fixture
 counts land in the closing commit.
 
+Deferred audit backlog from the same review, tracked as trigger-based work:
+P3.A — revisit Cipher resident-cache FIFO→LRU and optional debug byte-compare
+after cache misses or cross-org federation become measured risks; add
+`Pool::wait_idle_for(duration)` when Keeper needs bounded drain; land the
+reflection-heavy `Is*.h` compile-time bench (#392) before compile latency drifts.
+P3.B — reconsider `mimic/Semaphore.h` placement when backend trees grow; collapse
+AGENTS/CLAUDE duplication when a rule update diverges; `bench/serve.html` stays a
+direct-open WebSocket viewer until it needs a launcher; document or consolidate
+negative fixture trees if reviewers misplace fixtures; keep `PublishSlot` and
+`ModeCell` local until a second production user justifies promotion.
+P3.C — split `test_session_patterns.cpp` once any pattern exceeds roughly 30
+semantic-test lines; every new mint/concept gets positive smoke coverage; CMake
+diffs stay audited for vendor imports, global-property churn, and permission
+escalation; qualitative coverage requests must be converted to counts.
+P3.D — Stop alias call sites remain subject to crash-class audit; `mint_session`
+is documented as the empty-PermSet migration shim; subtype-evolution fixtures
+carry intent comments; this guide plus nearby header comments are the audit trail.
+P3.E — add workstealing-named ChaseLev aliases at GAPS-081; add CPU-time and
+parallel-efficiency columns to AutoSplit compare benches; improve
+PermissionInherit missing-registration diagnostics; refactor
+RecordingSessionHandle dispatch only after variant count grows; audit
+CrashWatchedHandle examples when PS-templated transport touches examples again.
+
 **HS5.** Measure, don't guess. Run 10+ iterations, worst observed is the bound. Variance > 5% = throttling = results invalid.
 
 **HS6.** No `sed`/`awk`. Edit tool only. Every change visible in diff.

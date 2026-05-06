@@ -116,6 +116,9 @@ crucible_bench(bench_scheduler_policies)
 # ── Visualization tool ────────────────────────────────────────────────
 # Not a benchmark — a utility for rendering .crtrace traces as SVG.
 # Usage: ./render_trace <trace.crtrace> [-o output.svg] [--blocks-only]
+# bench/serve.html is the static live-trace WebSocket viewer.  It has no CMake
+# target because browsers open it directly; keep it here while it only serves
+# bench traces, promote to scripts/ only if a launcher/backend appears.
 add_executable(render_trace render_trace.cpp)
 target_link_libraries(render_trace PRIVATE crucible)
 target_compile_options(render_trace PRIVATE -O2)
