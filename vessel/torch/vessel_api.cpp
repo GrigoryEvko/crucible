@@ -5,6 +5,7 @@
 // reinterpret_cast'd to TensorMeta (binary-compatible by construction).
 
 #include "vessel_api.h"
+#include "vessel_api_typed.h"
 
 #include <crucible/SchemaTable.h>
 #include <crucible/TraceLoader.h>
@@ -55,8 +56,7 @@ static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
 // ── Handle validation ────────────────────────────────────────────────
 
 static crucible::Vigil* as_vigil(CrucibleHandle h) {
-    assert(h && "CrucibleHandle is null — did you call crucible_create()?");
-    return static_cast<crucible::Vigil*>(h);
+    return crucible::vessel::as_vigil_typed(h).value();
 }
 
 // ── FFI entry validation ─────────────────────────────────────────────
@@ -116,7 +116,7 @@ CrucibleHandle crucible_create(void) noexcept {
 }
 
 void crucible_destroy(CrucibleHandle h) noexcept {
-    delete static_cast<crucible::Vigil*>(h);
+    delete crucible::vessel::as_vigil_typed(h).value();
 }
 
 uint64_t crucible_hash_string(const char* s) noexcept {

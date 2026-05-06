@@ -11,7 +11,7 @@
 //
 // Tag namespaces provided:
 //   source::*  — provenance: FromUser, FromDb, FromConfig, FromInternal,
-//                External (untrusted input), Sanitized.
+//                External (untrusted input), ABIBoundary, Sanitized.
 //   trust::*   — verification status: Verified, Tested, Unverified,
 //                Assumed, External.
 //   access::*  — access mode (register / column / field semantics):
@@ -71,6 +71,7 @@ namespace source {
     struct FromConfig   {};
     struct FromInternal {};
     struct External     {};  // raw untrusted input (network, FFI)
+    struct ABIBoundary  {};  // opaque value crossing a C ABI / FFI boundary
     struct Sanitized    {};  // validated, safe to pass to sanitized-only APIs
     // Durable: loaded from on-disk state (Cipher, config, snapshots).
     // Computed: derived at startup / runtime from Durable + inputs.
