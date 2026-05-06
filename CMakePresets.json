@@ -17,6 +17,19 @@
       }
     },
     {
+      "name": "analyzer",
+      "inherits": "default",
+      "displayName": "GCC 16 + -fanalyzer (observational)",
+      "binaryDir": "${sourceDir}/build-analyzer",
+      "cacheVariables": {
+        "CRUCIBLE_ANALYZER": "ON",
+        "CRUCIBLE_SANITIZE": "OFF",
+        "CRUCIBLE_TSAN": "OFF",
+        "CRUCIBLE_BENCH": "OFF",
+        "CRUCIBLE_WERROR": "OFF"
+      }
+    },
+    {
       "name": "release",
       "inherits": "default",
       "displayName": "GCC 16 + libstdc++ 16 (C++26, Release)",
@@ -48,6 +61,7 @@
   ],
   "buildPresets": [
     { "name": "default", "configurePreset": "default" },
+    { "name": "analyzer", "configurePreset": "analyzer" },
     { "name": "release", "configurePreset": "release" },
     { "name": "bench",   "configurePreset": "bench" },
     { "name": "tsan",    "configurePreset": "tsan" }
@@ -64,6 +78,12 @@
       "configurePreset": "release",
       "output": { "outputOnFailure": true },
       "execution": { "jobs": 8 }
+    },
+    {
+      "name": "analyzer",
+      "configurePreset": "analyzer",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 16 }
     },
     {
       "name": "tsan",

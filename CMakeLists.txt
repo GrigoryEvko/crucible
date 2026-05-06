@@ -235,6 +235,15 @@ endif()
 # ╚═══════════════════════════════════════════════════════════════════╝
 
 option(CRUCIBLE_WERROR "Treat warnings as errors" OFF)
+option(CRUCIBLE_ANALYZER
+  "Enable GCC -fanalyzer for crucible and all targets that consume it (slow, opt-in)" OFF)
+
+if(CRUCIBLE_ANALYZER)
+  if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    message(FATAL_ERROR "CRUCIBLE_ANALYZER requires GCC because -fanalyzer is GCC-only")
+  endif()
+  message(STATUS "CRUCIBLE_ANALYZER=ON — GCC -fanalyzer enabled for crucible consumers")
+endif()
 
 # ── Asm dump (gitignored, opt-in) ──────────────────────────────────
 #
@@ -580,6 +589,73 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
       _GLIBCXX_SANITIZE_VECTOR=1        # 227  vector realloc poison
     >
   )
+
+  # ── 3.16  GCC static analyzer (opt-in, slow) ─────────────────
+  #
+  # Applied PUBLICly to `crucible` so the header-heavy runtime is
+  # analyzed through real consumers: tests, Vessel, examples, fuzzers,
+  # tools, and benches when those trees are enabled.  The analyzer
+  # preset disables sanitizers and benches by default; use it as a
+  # diagnostic pass, not as the normal fast edit/build loop.
+  if(CRUCIBLE_ANALYZER)
+    set(CRUCIBLE_ANALYZER_FLAGS
+      -fanalyzer
+      -Wanalyzer-double-free
+      -Wanalyzer-double-fclose
+      -Wanalyzer-free-of-non-heap
+      -Wanalyzer-null-dereference
+      -Wanalyzer-possible-null-dereference
+      -Wanalyzer-null-argument
+      -Wanalyzer-possible-null-argument
+      -Wanalyzer-use-after-free
+      -Wanalyzer-malloc-leak
+      -Wanalyzer-file-leak
+      -Wanalyzer-fd-leak
+      -Wanalyzer-fd-use-after-close
+      -Wanalyzer-fd-double-close
+      -Wanalyzer-fd-access-mode-mismatch
+      -Wanalyzer-fd-type-mismatch
+      -Wanalyzer-fd-phase-mismatch
+      -Wanalyzer-fd-use-without-check
+      -Wanalyzer-tainted-array-index
+      -Wanalyzer-tainted-allocation-size
+      -Wanalyzer-tainted-divisor
+      -Wanalyzer-tainted-offset
+      -Wanalyzer-tainted-size
+      -Wanalyzer-tainted-assertion
+      -Wanalyzer-shift-count-negative
+      -Wanalyzer-shift-count-overflow
+      -Wanalyzer-deref-before-check
+      -Wanalyzer-undefined-behavior-ptrdiff
+      -Wanalyzer-infinite-loop
+      -Wanalyzer-infinite-recursion
+      -Wanalyzer-va-arg-type-mismatch
+      -Wanalyzer-va-list-exhausted
+      -Wanalyzer-va-list-leak
+      -Wanalyzer-va-list-use-after-va-end
+      -Wanalyzer-out-of-bounds
+      -Wanalyzer-overlapping-buffers
+      -Wanalyzer-exposure-through-output-file
+      -Wanalyzer-exposure-through-uninit-copy
+      -Wanalyzer-write-to-const
+      -Wanalyzer-write-to-string-literal
+      -Wanalyzer-use-of-uninitialized-value
+      -Wanalyzer-use-of-pointer-in-stale-stack-frame
+      -Wanalyzer-mismatching-deallocation
+      -Wanalyzer-allocation-size
+      -Wanalyzer-stale-setjmp-buffer
+      -Wanalyzer-jump-through-null
+      -Wanalyzer-putenv-of-auto-var
+      -Wanalyzer-throw-of-unexpected-type
+      -Wanalyzer-unsafe-call-within-signal-handler
+      -Wanalyzer-imprecise-fp-arithmetic
+      -Wanalyzer-undefined-behavior-strtok
+    )
+    target_compile_options(crucible PUBLIC ${CRUCIBLE_ANALYZER_FLAGS})
+    if(TARGET crucible_perf)
+      target_compile_options(crucible_perf PRIVATE ${CRUCIBLE_ANALYZER_FLAGS})
+    endif()
+  endif()
 endif()
 
 # ═══════════════════════════════════════════════════════════════
