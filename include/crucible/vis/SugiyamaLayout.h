@@ -333,8 +333,12 @@ struct LayoutParams {
   }
   } // end if (params.use_network_simplex)
 
-  // Naive left-to-right placement (used when NS disabled or didn't converge)
-  if (total_width == 0) {
+  // Naive left-to-right placement (used when NS disabled or didn't converge).
+  // total_width is set to a positive value above on the NS-success path; the
+  // NS-failure / NS-disabled paths leave it at its 0.0f initializer, so a
+  // <=0 check is the safe sentinel for "still untouched" without tripping
+  // -Wfloat-equal.
+  if (total_width <= 0.0f) {
     std::vector<float> layer_widths(num_layers, 0);
     for (uint32_t l = 0; l < num_layers; l++) {
       float w = 0;

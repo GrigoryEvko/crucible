@@ -52,8 +52,8 @@ enum class OpFamily : uint8_t {
     case OpFamily::EMBED:  return "embed";
     case OpFamily::POOL:   return "pool";
     case OpFamily::OTHER:  return "other";
+    default:               std::unreachable();
   }
-  std::unreachable();
 }
 
 // Block kind: scope-based.
@@ -76,8 +76,8 @@ enum class BlockKind : uint8_t {
     case BlockKind::ROOT:       return "Root";
     case BlockKind::BRANCH:     return "Branch";
     case BlockKind::LOOP:       return "Loop";
+    default:                    std::unreachable();
   }
-  std::unreachable();
 }
 
 [[nodiscard]] constexpr const char* block_kind_icon(BlockKind k) {
@@ -89,8 +89,8 @@ enum class BlockKind : uint8_t {
     case BlockKind::ROOT:       return "\xe2\x94\x80";
     case BlockKind::BRANCH:     return "?";
     case BlockKind::LOOP:       return "@";
+    default:                    std::unreachable();
   }
-  std::unreachable();
 }
 
 enum class Phase : uint8_t { FORWARD, BACKWARD, OPTIMIZER };

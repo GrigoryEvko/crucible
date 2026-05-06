@@ -8,6 +8,7 @@
 //
 // Not hot path — std::string is appropriate.
 
+#include <bit>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -239,7 +240,11 @@ class SvgRenderer {
       buf_ += id;
       buf_ += "\"";
     }
-    if (tx != 0 || ty != 0) {
+    // Skip the transform attribute when both translations are zero.  Bit-
+    // exact compare via bit_cast to avoid -Wfloat-equal; literal 0.0f
+    // sentinels are the only intended skip-condition here.
+    if (std::bit_cast<std::uint32_t>(tx) != 0 ||
+        std::bit_cast<std::uint32_t>(ty) != 0) {
       buf_ += " transform=\"translate(" + ftoa(tx) + "," + ftoa(ty) + ")\"";
     }
     buf_ += ">\n";
@@ -441,7 +446,11 @@ class SvgRenderer {
   std::string buf_;
 
   [[nodiscard]] static std::string ftoa(float v) {
-    char buf[32];
+    // 64 bytes covers every finite double "%.1f" output (DBL_MAX writes
+    // ~312 chars in the worst case, but float values formatted via "%.1f"
+    // bound the integer part by float's max magnitude ~3.4e38 → ≤ 40 chars).
+    // Using 64 silences -Wformat-truncation without adding any runtime work.
+    char buf[64];
     std::snprintf(buf, sizeof(buf), "%.1f", static_cast<double>(v));
     return buf;
   }

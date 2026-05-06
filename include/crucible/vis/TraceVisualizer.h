@@ -346,8 +346,8 @@ struct NodeColors {
     case OpFamily::EMBED:  return {palette::NORM_FILL, palette::NORM_BORDER};
     case OpFamily::POOL:   return {palette::CONV_FILL, palette::CONV_BORDER};
     case OpFamily::OTHER:  return {palette::OTHER_FILL, palette::OTHER_BORDER};
+    default:               return {palette::OTHER_FILL, palette::OTHER_BORDER};
   }
-  return {palette::OTHER_FILL, palette::OTHER_BORDER};
 }
 
 [[nodiscard]] inline NodeColors colors_for_block(BlockKind k) {
@@ -364,8 +364,9 @@ struct NodeColors {
       return {palette::ATTN_FILL, palette::ATTN_BORDER};
     case BlockKind::LOOP:
       return {palette::CONV_FILL, palette::CONV_BORDER};
+    default:
+      return {palette::BLOCK_GENERIC, Color::hex(0x6B7280)};
   }
-  return {palette::BLOCK_GENERIC, Color::hex(0x6B7280)};
 }
 
 [[nodiscard]] inline Color color_for_dag_edge(DagEdgeKind kind) {
@@ -548,6 +549,7 @@ struct UShapeSplit {
       case Phase::FORWARD:  fwd_idx.push_back(i); break;
       case Phase::BACKWARD: bwd_idx.push_back(i); break;
       case Phase::OPTIMIZER: opt_idx.push_back(i); break;
+      default: break;
     }
   }
 
@@ -587,7 +589,7 @@ struct UShapeSplit {
           float lw = label_width(idx[r]);
           pos[idx[r]] = {
             .x = base_x + (SUB_COL_W - lw) / 2,
-            .y = HEADER + r * (ROW_H + ROW_GAP),
+            .y = HEADER + static_cast<float>(r) * (ROW_H + ROW_GAP),
             .w = lw, .h = ROW_H, .col = 0, .row = r,
           };
         }
@@ -606,7 +608,7 @@ struct UShapeSplit {
         float lw = label_width(idx[i]);
         pos[idx[i]] = {
           .x = base_x + (SUB_COL_W - lw) / 2,
-          .y = HEADER + i * (ROW_H + ROW_GAP),
+          .y = HEADER + static_cast<float>(i) * (ROW_H + ROW_GAP),
           .w = lw, .h = ROW_H, .col = 0, .row = i,
         };
       }
@@ -619,7 +621,7 @@ struct UShapeSplit {
         float lw = label_width(idx[block_i]);
         pos[idx[block_i]] = {
           .x = base_x + SUB_COL_W + SUB_GAP + (SUB_COL_W - lw) / 2,
-          .y = HEADER + i * (ROW_H + ROW_GAP),
+          .y = HEADER + static_cast<float>(i) * (ROW_H + ROW_GAP),
           .w = lw, .h = ROW_H, .col = 1, .row = i,
         };
       }
@@ -631,7 +633,7 @@ struct UShapeSplit {
         float lw = label_width(idx[i]);
         pos[idx[i]] = {
           .x = mid_center - lw / 2,
-          .y = HEADER + mid_row * (ROW_H + ROW_GAP),
+          .y = HEADER + static_cast<float>(mid_row) * (ROW_H + ROW_GAP),
           .w = lw, .h = ROW_H, .col = 0, .row = mid_row,
         };
         mid_row++;
@@ -651,7 +653,7 @@ struct UShapeSplit {
 
     // Optimizer: centered below everything
     uint32_t max_used_rows = std::max(fwd_rows, bwd_rows);
-    float opt_y = HEADER + max_used_rows * (ROW_H + ROW_GAP) + 20;
+    float opt_y = HEADER + static_cast<float>(max_used_rows) * (ROW_H + ROW_GAP) + 20;
     float total_w = 2 * (2 * SUB_COL_W + SUB_GAP) + PHASE_GAP;
     float center_x = PAD + total_w / 2;
     for (uint32_t r = 0; r < opt_idx.size(); r++) {
@@ -659,7 +661,7 @@ struct UShapeSplit {
       float lw = std::min(total_w, std::max(180.0f, label_width(bi)));
       pos[bi] = {
         .x = center_x - lw / 2,
-        .y = opt_y + r * (ROW_H + ROW_GAP),
+        .y = opt_y + static_cast<float>(r) * (ROW_H + ROW_GAP),
         .w = lw, .h = ROW_H, .col = 2, .row = 0,
       };
     }
@@ -678,7 +680,7 @@ struct UShapeSplit {
     float lw = label_width(fwd_idx[r]);
     pos[fwd_idx[r]] = {
       .x = PAD + (COL_WIDTH - lw) / 2,
-      .y = HEADER + r * (ROW_H + ROW_GAP),
+      .y = HEADER + static_cast<float>(r) * (ROW_H + ROW_GAP),
       .w = lw, .h = ROW_H, .col = 0, .row = r,
     };
   }
@@ -691,19 +693,19 @@ struct UShapeSplit {
     float lw = label_width(bwd_idx[r]);
     pos[bwd_idx[r]] = {
       .x = PAD + COL_WIDTH + COL_GAP + (COL_WIDTH - lw) / 2,
-      .y = HEADER + rev_r * (ROW_H + ROW_GAP),
+      .y = HEADER + static_cast<float>(rev_r) * (ROW_H + ROW_GAP),
       .w = lw, .h = ROW_H, .col = 1, .row = rev_r,
     };
   }
 
-  float opt_y = HEADER + max_rows * (ROW_H + ROW_GAP) + 16;
+  float opt_y = HEADER + static_cast<float>(max_rows) * (ROW_H + ROW_GAP) + 16;
   float center_x = PAD + COL_WIDTH + COL_GAP / 2;
   for (uint32_t r = 0; r < opt_idx.size(); r++) {
     uint32_t bi = opt_idx[r];
     float lw = std::min(COL_WIDTH * 2 + COL_GAP, std::max(180.0f, label_width(bi)));
     pos[bi] = {
       .x = center_x - lw / 2,
-      .y = opt_y + r * (ROW_H + ROW_GAP),
+      .y = opt_y + static_cast<float>(r) * (ROW_H + ROW_GAP),
       .w = lw, .h = ROW_H, .col = 2, .row = max_rows + r,
     };
   }
