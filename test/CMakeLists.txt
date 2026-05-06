@@ -811,6 +811,7 @@ crucible_test(test_crash_watched_psh_tsan
 # the payload-hash opt-in via default_payload_hash_fn specialisation,
 # and Offer branch dispatch capture.
 crucible_test(test_session_event_log)
+crucible_test(test_session_persistence)
 
 # CTPayload + ct::eq for crypto-payload sessions (#409, SAFEINT-C20).
 # CTPayload<T> raises constant-time-comparison discipline to the API
@@ -4119,6 +4120,15 @@ crucible_neg_compile_session_test(neg_mint_channel_capability_unauthorized_recei
 
 crucible_neg_compile_session_test(neg_mint_channel_requires_ctx
     "mint_channel<Proto>\\(resource_a, resource_b\\) is removed")
+
+crucible_neg_compile_session_test(neg_persisted_session_hot_ctx
+    "constraints not satisfied|template constraint failure|associated constraints|CtxAdmits")
+
+crucible_neg_compile_session_test(neg_persisted_session_no_ctx
+    "no matching function for call to.*mint_persisted_session|candidate expects")
+
+crucible_neg_compile_session_test(neg_persisted_session_detach_disabled
+    "PersistedSession_DetachDisabled|use of deleted function")
 
 crucible_neg_compile_session_test(neg_mint_session_perms_unbalanced
     "associated constraints are not satisfied|CtxFitsPermissionedProtocol|permission_flow_closes")

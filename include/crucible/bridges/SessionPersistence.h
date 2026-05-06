@@ -1,0 +1,609 @@
+#pragma once
+
+// ── crucible::bridges::SessionPersistence ──────────────────────────
+//
+// Cipher-backed persistence for RecordingSessionHandle.  The bridge
+// owns one SessionEventLog per persisted session and flushes only the
+// not-yet-persisted suffix into Cipher's session-event federation
+// format.  Session operation semantics stay delegated to
+// RecordingSessionHandle; this header adds durability and replay
+// loading without duplicating the session algebra.
+
+#include <crucible/Cipher.h>
+#include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/effects/ExecCtx.h>
+#include <crucible/safety/IsSessionHandle.h>
+
+#include <chrono>
+#include <cstdlib>
+#include <expected>
+#include <functional>
+#include <memory>
+#include <span>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
+namespace crucible::safety::proto {
+
+struct SessionPersistencePolicy {
+    std::size_t count_threshold = 1000;
+    std::chrono::steady_clock::duration time_threshold =
+        std::chrono::seconds{5};
+};
+
+template <typename CallerRow>
+class SessionPersistenceState {
+    Cipher& cipher_;
+    SessionEventLog log_;
+    std::size_t flushed_count_ = 0;
+    SessionPersistencePolicy policy_{};
+    std::chrono::steady_clock::time_point last_flush_{};
+
+public:
+    using caller_row = CallerRow;
+    using required_row = Cipher::persist_session_events_required_row;
+
+    static_assert(::crucible::effects::Subrow<required_row, CallerRow>,
+        "SessionPersistenceState<CallerRow>: CallerRow must contain "
+        "IO + Block because persistence writes Cipher files.");
+
+    SessionPersistenceState(Cipher& cipher,
+                            SessionTagId session,
+                            SessionPersistencePolicy policy) noexcept
+        : cipher_{cipher},
+          log_{session},
+          policy_{policy},
+          last_flush_{std::chrono::steady_clock::now()} {}
+
+    SessionPersistenceState(const SessionPersistenceState&) = delete;
+    SessionPersistenceState& operator=(const SessionPersistenceState&) = delete;
+    SessionPersistenceState(SessionPersistenceState&&) = delete;
+    SessionPersistenceState& operator=(SessionPersistenceState&&) = delete;
+    ~SessionPersistenceState() = default;
+
+    [[nodiscard]] SessionEventLog& log() noexcept { return log_; }
+    [[nodiscard]] const SessionEventLog& log() const noexcept { return log_; }
+    [[nodiscard]] std::size_t flushed_count() const noexcept {
+        return flushed_count_;
+    }
+
+    [[nodiscard]] std::size_t pending_count() const noexcept {
+        return log_.size() - flushed_count_;
+    }
+
+    void flush_if_due() {
+        const std::size_t pending = pending_count();
+        if (pending == 0) return;
+        if (policy_.count_threshold != 0
+            && pending >= policy_.count_threshold) {
+            static_cast<void>(flush_all());
+            return;
+        }
+        const auto time_threshold_ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                policy_.time_threshold).count();
+        if (time_threshold_ns > 0) {
+            const auto elapsed_ns =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - last_flush_).count();
+            if (elapsed_ns < time_threshold_ns) return;
+            static_cast<void>(flush_all());
+        }
+    }
+
+    [[nodiscard]] bool flush_all() {
+        const std::size_t pending = pending_count();
+        if (pending == 0) return true;
+
+        const SessionEvent* first = &log_[flushed_count_];
+        const auto events = std::span<const SessionEvent>{first, pending};
+        auto view = cipher_.mint_open_view();
+        const ContentHash hash =
+            cipher_.template persist_session_events<CallerRow>(view, events);
+        if (hash) {
+            flushed_count_ = log_.size();
+            last_flush_ = std::chrono::steady_clock::now();
+            return true;
+        }
+        return false;
+    }
+};
+
+template <typename Inner, typename CallerRow>
+class PersistedSessionHandle;
+
+namespace detail {
+
+template <typename T>
+struct is_expected : std::false_type {};
+
+template <typename T, typename E>
+struct is_expected<std::expected<T, E>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_expected_v =
+    is_expected<std::remove_cvref_t<T>>::value;
+
+template <typename T>
+struct is_pair : std::false_type {};
+
+template <typename A, typename B>
+struct is_pair<std::pair<A, B>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_pair_v =
+    is_pair<std::remove_cvref_t<T>>::value;
+
+template <typename T>
+struct is_persisted_session_handle : std::false_type {};
+
+template <typename Inner, typename CallerRow>
+struct is_persisted_session_handle<
+    PersistedSessionHandle<Inner, CallerRow>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool is_persisted_session_handle_v =
+    is_persisted_session_handle<std::remove_cvref_t<T>>::value;
+
+template <typename T, typename CallerRow>
+struct persisted_result;
+
+template <typename T, typename CallerRow>
+struct persisted_result {
+    using type = T;
+    static constexpr bool carries_handle = false;
+};
+
+template <typename T, typename CallerRow>
+    requires (::crucible::safety::extract::IsSessionHandle<T>
+              && !is_persisted_session_handle_v<T>)
+struct persisted_result<T, CallerRow> {
+    using type = PersistedSessionHandle<T, CallerRow>;
+    static constexpr bool carries_handle = true;
+};
+
+template <typename T, typename CallerRow>
+    requires is_persisted_session_handle_v<T>
+struct persisted_result<T, CallerRow> {
+    using type = T;
+    static constexpr bool carries_handle = true;
+};
+
+template <typename A, typename B, typename CallerRow>
+struct persisted_result<std::pair<A, B>, CallerRow> {
+    using wrapped_second = typename persisted_result<B, CallerRow>::type;
+    using type = std::pair<A, wrapped_second>;
+    static constexpr bool carries_handle =
+        persisted_result<B, CallerRow>::carries_handle;
+};
+
+template <typename T, typename E, typename CallerRow>
+struct persisted_result<std::expected<T, E>, CallerRow> {
+    using wrapped_value = typename persisted_result<T, CallerRow>::type;
+    using type = std::expected<wrapped_value, E>;
+    static constexpr bool carries_handle =
+        persisted_result<T, CallerRow>::carries_handle;
+};
+
+template <typename T, typename CallerRow>
+using persisted_result_t =
+    typename persisted_result<std::remove_cvref_t<T>, CallerRow>::type;
+
+template <typename T, typename CallerRow>
+inline constexpr bool persisted_result_carries_handle_v =
+    persisted_result<std::remove_cvref_t<T>, CallerRow>::carries_handle;
+
+template <typename CallerRow>
+struct StateCarrier {
+    std::unique_ptr<SessionPersistenceState<CallerRow>> owned{};
+    SessionPersistenceState<CallerRow>* state = nullptr;
+};
+
+template <typename T, typename CallerRow>
+[[nodiscard]] persisted_result_t<T, CallerRow> wrap_persisted_result(
+    T&& value,
+    StateCarrier<CallerRow> carrier);
+
+template <typename T, typename CallerRow>
+    requires (::crucible::safety::extract::IsSessionHandle<
+                  std::remove_cvref_t<T>>
+              && !is_persisted_session_handle_v<T>)
+[[nodiscard]] persisted_result_t<T, CallerRow> wrap_session_handle(
+    T&& value,
+    StateCarrier<CallerRow> carrier)
+{
+    return persisted_result_t<T, CallerRow>{
+        std::forward<T>(value), std::move(carrier.owned), carrier.state};
+}
+
+template <typename T, typename CallerRow>
+    requires is_persisted_session_handle_v<T>
+[[nodiscard]] persisted_result_t<T, CallerRow> wrap_session_handle(
+    T&& value,
+    StateCarrier<CallerRow>)
+{
+    return std::forward<T>(value);
+}
+
+template <typename A, typename B, typename CallerRow>
+[[nodiscard]] persisted_result_t<std::pair<A, B>, CallerRow>
+wrap_pair_result(std::pair<A, B>&& value, StateCarrier<CallerRow> carrier)
+{
+    return {
+        std::move(value.first),
+        wrap_persisted_result<B, CallerRow>(
+            std::move(value.second), std::move(carrier)),
+    };
+}
+
+template <typename T, typename E, typename CallerRow>
+[[nodiscard]] persisted_result_t<std::expected<T, E>, CallerRow>
+wrap_expected_result(std::expected<T, E>&& value,
+                     StateCarrier<CallerRow> carrier)
+{
+    using Out = persisted_result_t<std::expected<T, E>, CallerRow>;
+    if (!value) {
+        return Out{std::unexpected{std::move(value.error())}};
+    }
+    return Out{wrap_persisted_result<T, CallerRow>(
+        std::move(*value), std::move(carrier))};
+}
+
+template <typename T, typename CallerRow>
+[[nodiscard]] persisted_result_t<T, CallerRow> wrap_persisted_result(
+    T&& value,
+    StateCarrier<CallerRow> carrier)
+{
+    using Raw = std::remove_cvref_t<T>;
+    if constexpr (is_expected_v<Raw>) {
+        return wrap_expected_result(
+            std::forward<T>(value), std::move(carrier));
+    } else if constexpr (is_pair_v<Raw>) {
+        return wrap_pair_result(std::forward<T>(value), std::move(carrier));
+    } else if constexpr (
+        ::crucible::safety::extract::IsSessionHandle<Raw>) {
+        return wrap_session_handle(std::forward<T>(value), std::move(carrier));
+    } else {
+        return std::forward<T>(value);
+    }
+}
+
+}  // namespace detail
+
+template <typename Inner, typename CallerRow>
+class [[nodiscard]] PersistedSessionHandle
+    : public SessionHandleBase<
+          typename Inner::protocol,
+          PersistedSessionHandle<Inner, CallerRow>>
+{
+    Inner inner_;
+    std::unique_ptr<SessionPersistenceState<CallerRow>> owned_state_{};
+    SessionPersistenceState<CallerRow>* state_ = nullptr;
+
+    using Base = SessionHandleBase<
+        typename Inner::protocol,
+        PersistedSessionHandle<Inner, CallerRow>>;
+
+    [[nodiscard]] detail::StateCarrier<CallerRow> release_state_() noexcept {
+        return detail::StateCarrier<CallerRow>{
+            .owned = std::move(owned_state_),
+            .state = state_,
+        };
+    }
+
+    template <typename Result>
+    [[nodiscard]] auto finish_result_(Result&& result) && {
+        using Raw = std::remove_cvref_t<Result>;
+        [[assume(state_ != nullptr)]];
+        if constexpr (detail::is_expected_v<Raw>) {
+            if (!result) {
+                flush_all_or_abort_();
+                return detail::wrap_persisted_result<Result, CallerRow>(
+                    std::forward<Result>(result), {});
+            }
+        }
+        if constexpr (detail::persisted_result_carries_handle_v<
+                          Raw, CallerRow>) {
+            state_->flush_if_due();
+            return detail::wrap_persisted_result<Result, CallerRow>(
+                std::forward<Result>(result), release_state_());
+        } else {
+            flush_all_or_abort_();
+            return std::forward<Result>(result);
+        }
+    }
+
+    void flush_all_or_abort_() {
+        [[assume(state_ != nullptr)]];
+        if (!state_->flush_all()) [[unlikely]] {
+            std::abort();
+        }
+    }
+
+    template <typename F>
+    decltype(auto) finish_call_(F&& f) && {
+        this->mark_consumed_();
+        if constexpr (std::is_void_v<std::invoke_result_t<F>>) {
+            std::invoke(std::forward<F>(f));
+            flush_all_or_abort_();
+        } else {
+            auto result = std::invoke(std::forward<F>(f));
+            return std::move(*this).finish_result_(std::move(result));
+        }
+    }
+
+public:
+    using inner_type = Inner;
+    using protocol = typename Inner::protocol;
+    using resource_type = typename Inner::resource_type;
+    using loop_ctx = typename Inner::loop_ctx;
+    using caller_row = CallerRow;
+    using state_type = SessionPersistenceState<CallerRow>;
+
+    PersistedSessionHandle(
+        Inner inner,
+        std::unique_ptr<state_type> state,
+        std::source_location loc = std::source_location::current()) noexcept
+        : Base{loc},
+          inner_{std::move(inner)},
+          owned_state_{std::move(state)},
+          state_{owned_state_.get()} {}
+
+    PersistedSessionHandle(
+        Inner inner,
+        std::unique_ptr<state_type> state,
+        state_type* borrowed_state,
+        std::source_location loc = std::source_location::current()) noexcept
+        : Base{loc},
+          inner_{std::move(inner)},
+          owned_state_{std::move(state)},
+          state_{borrowed_state != nullptr ? borrowed_state
+                                           : owned_state_.get()} {}
+
+    PersistedSessionHandle(Inner inner,
+                           state_type& borrowed_state,
+                           std::source_location loc =
+                               std::source_location::current()) noexcept
+        : Base{loc},
+          inner_{std::move(inner)},
+          state_{&borrowed_state} {}
+
+    PersistedSessionHandle(PersistedSessionHandle&&) noexcept = default;
+    PersistedSessionHandle& operator=(PersistedSessionHandle&&) noexcept =
+        default;
+    ~PersistedSessionHandle() = default;
+
+    template <typename... Args>
+        requires requires(Inner&& inner, Args&&... args) {
+            std::move(inner).close(std::forward<Args>(args)...);
+        }
+    [[nodiscard]] decltype(auto) close(Args&&... args) && {
+        return std::move(*this).finish_call_([&]() -> decltype(auto) {
+            return std::move(inner_).close(std::forward<Args>(args)...);
+        });
+    }
+
+    template <typename... Args>
+        requires requires(Inner&& inner, Args&&... args) {
+            std::move(inner).send(std::forward<Args>(args)...);
+        }
+    [[nodiscard]] decltype(auto) send(Args&&... args) && {
+        return std::move(*this).finish_call_([&]() -> decltype(auto) {
+            return std::move(inner_).send(std::forward<Args>(args)...);
+        });
+    }
+
+    template <typename... Args>
+        requires requires(Inner&& inner, Args&&... args) {
+            std::move(inner).recv(std::forward<Args>(args)...);
+        }
+    [[nodiscard]] decltype(auto) recv(Args&&... args) && {
+        return std::move(*this).finish_call_([&]() -> decltype(auto) {
+            return std::move(inner_).recv(std::forward<Args>(args)...);
+        });
+    }
+
+    template <std::size_t I, typename... Args>
+        requires requires(Inner&& inner, Args&&... args) {
+            std::move(inner).template select<I>(std::forward<Args>(args)...);
+        }
+    [[nodiscard]] decltype(auto) select(Args&&... args) && {
+        return std::move(*this).finish_call_([&]() -> decltype(auto) {
+            return std::move(inner_).template select<I>(
+                std::forward<Args>(args)...);
+        });
+    }
+
+    template <std::size_t I>
+        requires requires(Inner&& inner) {
+            std::move(inner).template select_local<I>();
+        }
+    [[nodiscard]] decltype(auto) select_local() && {
+        return std::move(*this).finish_call_([&]() -> decltype(auto) {
+            return std::move(inner_).template select_local<I>();
+        });
+    }
+
+    template <std::size_t I>
+        requires requires(Inner&& inner) {
+            std::move(inner).template pick_local<I>();
+        }
+    [[nodiscard]] decltype(auto) pick_local() && {
+        return std::move(*this).finish_call_([&]() -> decltype(auto) {
+            return std::move(inner_).template pick_local<I>();
+        });
+    }
+
+    template <typename... Args>
+        requires requires(Inner&& inner, Args&&... args) {
+            std::move(inner).branch(std::forward<Args>(args)...);
+        }
+    decltype(auto) branch(Args&&... args) && {
+        return std::move(*this).finish_call_([&]() -> decltype(auto) {
+            return std::move(inner_).branch(std::forward<Args>(args)...);
+        });
+    }
+
+    template <typename... Args>
+        requires requires(Inner&& inner, Args&&... args) {
+            std::move(inner).base(std::forward<Args>(args)...);
+        }
+    [[nodiscard]] decltype(auto) base(Args&&... args) && {
+        return std::move(*this).finish_call_([&]() -> decltype(auto) {
+            return std::move(inner_).base(std::forward<Args>(args)...);
+        });
+    }
+
+    template <typename... Args>
+        requires requires(Inner&& inner, Args&&... args) {
+            std::move(inner).rollback(std::forward<Args>(args)...);
+        }
+    [[nodiscard]] decltype(auto) rollback(Args&&... args) && {
+        return std::move(*this).finish_call_([&]() -> decltype(auto) {
+            return std::move(inner_).rollback(std::forward<Args>(args)...);
+        });
+    }
+
+    template <typename... Args>
+        requires requires(Inner&& inner, Args&&... args) {
+            std::move(inner).delegate(std::forward<Args>(args)...);
+        }
+    [[nodiscard]] decltype(auto) delegate(Args&&... args) && {
+        return std::move(*this).finish_call_([&]() -> decltype(auto) {
+            return std::move(inner_).delegate(std::forward<Args>(args)...);
+        });
+    }
+
+    template <typename... Args>
+        requires requires(Inner&& inner, Args&&... args) {
+            std::move(inner).delegate_local(std::forward<Args>(args)...);
+        }
+    [[nodiscard]] decltype(auto) delegate_local(Args&&... args) && {
+        return std::move(*this).finish_call_([&]() -> decltype(auto) {
+            return std::move(inner_).delegate_local(
+                std::forward<Args>(args)...);
+        });
+    }
+
+    template <typename... Args>
+        requires requires(Inner&& inner, Args&&... args) {
+            std::move(inner).accept(std::forward<Args>(args)...);
+        }
+    [[nodiscard]] decltype(auto) accept(Args&&... args) && {
+        return std::move(*this).finish_call_([&]() -> decltype(auto) {
+            return std::move(inner_).accept(std::forward<Args>(args)...);
+        });
+    }
+
+    template <typename... Args>
+        requires requires(Inner&& inner, Args&&... args) {
+            std::move(inner).accept_with(std::forward<Args>(args)...);
+        }
+    [[nodiscard]] decltype(auto) accept_with(Args&&... args) && {
+        return std::move(*this).finish_call_([&]() -> decltype(auto) {
+            return std::move(inner_).accept_with(std::forward<Args>(args)...);
+        });
+    }
+
+    template <typename Reason>
+        requires DetachReason<Reason>
+    void detach(Reason) && = delete(
+        "[PersistedSession_DetachDisabled] PersistedSessionHandle does not "
+        "currently support detach().  The underlying RecordingSessionHandle "
+        "must grow a state-owning detach that consumes its wrapped inner "
+        "handle before persisted detach can be sound.  Drive the protocol to "
+        "End/Stop, or use a non-persisted session for intentional "
+        "abandonment.");
+
+    [[nodiscard]] bool flush() & {
+        [[assume(state_ != nullptr)]];
+        return state_->flush_all();
+    }
+
+    [[nodiscard]] std::size_t pending_persisted_events() const noexcept {
+        [[assume(state_ != nullptr)]];
+        return state_->pending_count();
+    }
+
+    [[nodiscard]] std::size_t flushed_persisted_events() const noexcept {
+        [[assume(state_ != nullptr)]];
+        return state_->flushed_count();
+    }
+
+    [[nodiscard]] SessionEventLog& event_log() const noexcept {
+        [[assume(state_ != nullptr)]];
+        return state_->log();
+    }
+
+    [[nodiscard]] resource_type& resource() & noexcept {
+        return inner_.resource();
+    }
+
+    [[nodiscard]] const resource_type& resource() const & noexcept {
+        return inner_.resource();
+    }
+
+    template <::crucible::effects::IsExecCtx Ctx>
+        requires ::crucible::effects::CtxAdmits<
+            Ctx, Cipher::persist_session_events_required_row>
+    [[nodiscard]] static std::vector<SessionEvent> replay(
+        Ctx const&,
+        Cipher& cipher,
+        SessionTagId session,
+        StepId from_step = {})
+    {
+        auto view = cipher.mint_open_view();
+        return cipher.load_session_events(view, session, from_step);
+    }
+};
+
+template <typename Proto,
+          ::crucible::effects::IsExecCtx Ctx,
+          typename Resource>
+    requires ::crucible::effects::CtxAdmits<
+        Ctx, Cipher::persist_session_events_required_row>
+[[nodiscard]] auto mint_persisted_session(
+    Ctx const&,
+    Cipher& cipher,
+    Resource&& resource,
+    SessionTagId session,
+    RoleTagId self,
+    RoleTagId peer,
+    SessionPersistencePolicy policy = {})
+{
+    using CallerRow = typename Ctx::row_type;
+    auto state = std::make_unique<SessionPersistenceState<CallerRow>>(
+        cipher, session, policy);
+    auto bare = mint_session_handle<Proto>(std::forward<Resource>(resource));
+    auto recording = mint_recording_session(
+        std::move(bare), state->log(), self, peer);
+    return PersistedSessionHandle<decltype(recording), CallerRow>{
+        std::move(recording), std::move(state)};
+}
+
+template <::crucible::effects::IsExecCtx Ctx,
+          typename Proto,
+          typename Resource,
+          typename LoopCtx>
+    requires ::crucible::effects::CtxAdmits<
+        Ctx, Cipher::persist_session_events_required_row>
+[[nodiscard]] auto mint_persisted_session(
+    Ctx const&,
+    SessionHandle<Proto, Resource, LoopCtx> inner,
+    Cipher& cipher,
+    SessionTagId session,
+    RoleTagId self,
+    RoleTagId peer,
+    SessionPersistencePolicy policy = {})
+{
+    using CallerRow = typename Ctx::row_type;
+    auto state = std::make_unique<SessionPersistenceState<CallerRow>>(
+        cipher, session, policy);
+    auto recording = mint_recording_session(
+        std::move(inner), state->log(), self, peer);
+    return PersistedSessionHandle<decltype(recording), CallerRow>{
+        std::move(recording), std::move(state)};
+}
+
+}  // namespace crucible::safety::proto

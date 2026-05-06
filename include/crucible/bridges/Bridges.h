@@ -5,6 +5,7 @@
 // Cross-substrate composition primitives:
 //   MachineSessionBridge    — Machine<State> ↔ Session<Proto, R>
 //   RecordingSessionHandle  — AppendOnly event log on a session handle
+//   SessionPersistence      — RecordingSessionHandle → Cipher event store
 //   CrashTransport          — OneShotFlag × runtime crash transport
 //
 // Bridges depend on multiple substrates (safety/ + sessions/ +
@@ -14,3 +15,4 @@
 #include <crucible/bridges/CrashTransport.h>
 #include <crucible/bridges/MachineSessionBridge.h>
 #include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/bridges/SessionPersistence.h>

@@ -31,8 +31,10 @@
 #include <crucible/MetaLog.h>
 #include <crucible/Serialize.h>
 #include <crucible/cipher/CipherTierPromotion.h>
+#include <crucible/cipher/FederationProtocol.h>
 #include <crucible/effects/EffectRow.h>           // FOUND-I09
 #include <crucible/handles/FileHandle.h>
+#include <crucible/safety/diag/RowHashFold.h>
 #include <crucible/safety/CipherTier.h>
 #include <crucible/safety/IsOpaqueLifetime.h>
 #include <crucible/safety/Mutation.h>
@@ -49,8 +51,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <span>
 #include <string>
 #include <system_error>
@@ -129,6 +133,24 @@ class CRUCIBLE_OWNER Cipher {
         cipher::ContentAddressedPayload<RegionNode>;
     using LoadedContentAddressedRegionPayload =
         cipher::LoadedContentAddressedPayload<RegionNode>;
+    using SessionEvent = safety::proto::SessionEvent;
+
+    using persist_session_events_required_row =
+        ::crucible::effects::Row<
+            ::crucible::effects::Effect::IO,
+            ::crucible::effects::Effect::Block>;
+
+    inline static constexpr RowHash SESSION_EVENT_FEDERATION_ROW_HASH{
+        ::crucible::safety::diag::row_hash_contribution_v<
+            persist_session_events_required_row>};
+
+    static_assert(static_cast<bool>(SESSION_EVENT_FEDERATION_ROW_HASH));
+    static_assert(sizeof(SessionEvent) == 56,
+        "Cipher session-event persistence is pinned to the SessionEvent "
+        "cold-tier wire size.");
+    static_assert(std::is_trivially_copyable_v<SessionEvent>,
+        "Cipher session-event persistence bulk-serializes SessionEvent "
+        "bytes and therefore requires a trivially-copyable payload.");
 
     [[nodiscard]] static constexpr ContentAddressedRegionPayload
     content_addressed(const RegionNode* region) noexcept {
@@ -690,6 +712,11 @@ class CRUCIBLE_OWNER Cipher {
         "record_event_required_row MUST contain Effect::Block — "
         "the fence's reason for existence (file writes block on "
         "the kernel).");
+    static_assert(std::is_same_v<
+        persist_session_events_required_row,
+        record_event_required_row>,
+        "Session-event persistence uses the same IO+Block row fence "
+        "as Cipher::record_event.");
 
     // Templated wrapper.  CallerRow is the row the caller declares
     // it holds; Subrow<required, CallerRow> checks
@@ -708,6 +735,178 @@ class CRUCIBLE_OWNER Cipher {
         pre (log_.empty() || step_id >= log_.back().step_id.value)
     {
         advance_head(view, content_hash, step_id);
+    }
+
+    template <typename CallerRow>
+        requires ::crucible::effects::Subrow<
+            persist_session_events_required_row, CallerRow>
+    [[nodiscard]] ContentHash persist_session_events(
+        OpenView const&,
+        std::span<const SessionEvent> events)
+    {
+        if (events.empty()) return ContentHash{};
+
+        if (events.size() > MAX_SESSION_EVENT_BATCH_EVENTS) {
+            return ContentHash{};
+        }
+
+        const safety::proto::SessionTagId session = events.front().session;
+        for (std::size_t i = 1; i < events.size(); ++i) {
+            if (events[i].session != session) [[unlikely]] {
+                return ContentHash{};
+            }
+            const uint64_t prev_step = events[i - 1].step_id.value;
+            if (prev_step == std::numeric_limits<uint64_t>::max()
+                || prev_step + 1 != events[i].step_id.value) [[unlikely]] {
+                return ContentHash{};
+            }
+        }
+
+        const std::size_t payload_bytes =
+            events.size() * sizeof(SessionEvent);
+        if (payload_bytes > MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES) {
+            return ContentHash{};
+        }
+
+        const auto payload = std::span<const std::uint8_t>{
+            reinterpret_cast<const std::uint8_t*>(events.data()),
+            payload_bytes};
+        const ContentHash hash = session_event_payload_hash_(payload);
+        const KernelCacheKey key{hash, SESSION_EVENT_FEDERATION_ROW_HASH};
+
+        std::vector<std::uint8_t> encoded(
+            cipher::federation::FEDERATION_HEADER_BYTES + payload.size());
+        const auto written = cipher::federation::serialize_federation_entry(
+            std::span<std::uint8_t>{encoded}, key, payload);
+        if (!written) return ContentHash{};
+        encoded.resize(*written);
+
+        const std::string dir = session_event_dir(session);
+        std::filesystem::create_directories(dir);
+        const std::string path = session_event_batch_path(session, hash);
+        if (!std::filesystem::exists(path)) {
+            std::ofstream out(path, std::ios::binary);
+            if (!out) return ContentHash{};
+            out.write(reinterpret_cast<const char*>(encoded.data()),
+                      static_cast<std::streamsize>(encoded.size()));
+            if (!out) return ContentHash{};
+        }
+
+        std::ofstream index(dir + "/index", std::ios::app);
+        if (!index) return ContentHash{};
+        write_u64_dec_(index, events.front().step_id.value);
+        index.put(',');
+        write_u64_dec_(index, events.back().step_id.value);
+        index.put(',');
+        write_u64_dec_(index, events.size());
+        index.put(',');
+        char hex[16];
+        hex16_(hash.raw(), hex);
+        index.write(hex, sizeof(hex));
+        index.put('\n');
+        if (!index) return ContentHash{};
+
+        return hash;
+    }
+
+    [[nodiscard]] std::vector<SessionEvent> load_session_events(
+        OpenView const&,
+        safety::proto::SessionTagId session,
+        safety::proto::StepId from_step = {}) const
+    {
+        std::vector<SessionEvent> out;
+        std::ifstream index(session_event_dir(session) + "/index");
+        if (!index) return out;
+
+        std::string line;
+        uint64_t highest_loaded = from_step.value;
+        bool have_loaded = false;
+        while (std::getline(index, line)) {
+            uint64_t first = 0;
+            uint64_t last = 0;
+            uint64_t count = 0;
+            uint64_t raw_hash = 0;
+            if (!parse_session_index_line_(line, first, last, count, raw_hash)) {
+                continue;
+            }
+            if (last < from_step.value) continue;
+            if (count == 0 || count > MAX_SESSION_EVENT_BATCH_EVENTS) continue;
+            if ((last - first + 1u) != count) continue;
+
+            const ContentHash hash{raw_hash};
+            const std::string path = session_event_batch_path(session, hash);
+            std::ifstream batch(path, std::ios::binary);
+            if (!batch) continue;
+
+            batch.seekg(0, std::ios::end);
+            const auto raw_len = batch.tellg();
+            if (raw_len < 0) continue;
+            const auto len = static_cast<std::size_t>(raw_len);
+            if (len < cipher::federation::FEDERATION_HEADER_BYTES
+                || len > cipher::federation::FEDERATION_HEADER_BYTES
+                        + MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES) {
+                continue;
+            }
+            batch.seekg(0, std::ios::beg);
+
+            std::vector<std::uint8_t> bytes(len);
+            batch.read(reinterpret_cast<char*>(bytes.data()),
+                       static_cast<std::streamsize>(bytes.size()));
+            if (!batch) continue;
+
+            auto view = cipher::federation::deserialize_untrusted_federation_entry(
+                std::span<const std::uint8_t>{bytes},
+                static_cast<std::uint16_t>(
+                    ::crucible::effects::OsUniverse::cardinality));
+            if (!view) continue;
+            if (view->header.content_hash != hash) continue;
+            if (view->header.row_hash != SESSION_EVENT_FEDERATION_ROW_HASH) {
+                continue;
+            }
+            if (session_event_payload_hash_(view->payload) != hash) continue;
+            if ((view->payload.size() % sizeof(SessionEvent)) != 0u) continue;
+
+            const std::size_t n =
+                view->payload.size() / sizeof(SessionEvent);
+            if (n != count) continue;
+
+            std::vector<SessionEvent> decoded(n);
+            std::memcpy(decoded.data(), view->payload.data(),
+                        view->payload.size());
+            if (decoded.front().step_id.value != first) continue;
+            if (decoded.back().step_id.value != last) continue;
+            bool valid_batch = true;
+            for (std::size_t i = 0; i < decoded.size(); ++i) {
+                if (decoded[i].session != session) {
+                    valid_batch = false;
+                    break;
+                }
+                if (i != 0) {
+                    const uint64_t prev_step = decoded[i - 1].step_id.value;
+                    if (prev_step == std::numeric_limits<uint64_t>::max()
+                        || prev_step + 1u != decoded[i].step_id.value) {
+                        valid_batch = false;
+                        break;
+                    }
+                }
+                if (have_loaded
+                    && decoded[i].step_id.value <= highest_loaded) {
+                    valid_batch = false;
+                    break;
+                }
+            }
+            if (!valid_batch) continue;
+
+            out.reserve(out.size() + decoded.size());
+            for (const SessionEvent& event : decoded) {
+                if (event.step_id.value >= from_step.value) {
+                    out.push_back(event);
+                    highest_loaded = event.step_id.value;
+                    have_loaded = true;
+                }
+            }
+        }
+        return out;
     }
 
     // ─── Time travel ────────────────────────────────────────────────
@@ -765,6 +964,10 @@ class CRUCIBLE_OWNER Cipher {
 
     static constexpr size_t MAX_RESIDENT_CACHE_BYTES = size_t{8} << 20;
     static constexpr size_t MAX_RESIDENT_CACHE_ENTRIES = 64;
+    static constexpr size_t MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES =
+        size_t{64} << 20;
+    static constexpr size_t MAX_SESSION_EVENT_BATCH_EVENTS =
+        MAX_SESSION_EVENT_BATCH_PAYLOAD_BYTES / sizeof(SessionEvent);
 
     using LogEntryByStepId = safety::proto::StepIdKeyFn;
     using LogEntryStepLess = safety::proto::StepIdLess;
@@ -818,6 +1021,30 @@ class CRUCIBLE_OWNER Cipher {
         path.append(hex, 2);
         path.push_back('/');
         path.append(hex + 2, 14);
+        return path;
+    }
+
+    std::string session_event_dir(
+        safety::proto::SessionTagId session) const {
+        char hex[16];
+        hex16_(session.value, hex);
+        const std::string& root = root_str();
+        std::string path{root};
+        path.reserve(root.size() + sizeof("/session_events/") - 1 + 16);
+        path.append("/session_events/");
+        path.append(hex, 16);
+        return path;
+    }
+
+    std::string session_event_batch_path(
+        safety::proto::SessionTagId session,
+        ContentHash hash) const {
+        char hex[16];
+        hex16_(hash.raw(), hex);
+        std::string path = session_event_dir(session);
+        path.push_back('/');
+        path.append(hex, 16);
+        path.append(".cfed");
         return path;
     }
 
@@ -881,6 +1108,25 @@ class CRUCIBLE_OWNER Cipher {
         }
     }
 
+    [[nodiscard]] static ContentHash session_event_payload_hash_(
+        std::span<const std::uint8_t> bytes) noexcept {
+        uint64_t h = 0xcbf29ce484222325ULL
+                   ^ 0x53455353494f4e45ULL
+                   ^ bytes.size();
+        for (std::uint8_t byte : bytes) {
+            h ^= static_cast<uint64_t>(byte);
+            h *= 0x100000001b3ULL;
+        }
+        h ^= h >> 33;
+        h *= 0xff51afd7ed558ccdULL;
+        h ^= h >> 33;
+        h *= 0xc4ceb9fe1a85ec53ULL;
+        h ^= h >> 33;
+        if (h == 0u) h = 0x53455353494f4e45ULL;
+        if (h == std::numeric_limits<uint64_t>::max()) --h;
+        return ContentHash{h};
+    }
+
     // Parse a single uint64_t field via std::from_chars — exception-free
     // (std::stoull throws on malformed input, which is UB under
     // -fno-exceptions).  Returns true iff the full [begin, end) range
@@ -891,6 +1137,28 @@ class CRUCIBLE_OWNER Cipher {
         if (begin >= end) return false;
         auto [p, ec] = std::from_chars(begin, end, out, base);
         return ec == std::errc{} && p == end;
+    }
+
+    [[nodiscard]] static bool parse_session_index_line_(
+        std::string_view line,
+        uint64_t& first,
+        uint64_t& last,
+        uint64_t& count,
+        uint64_t& hash) noexcept
+    {
+        const std::size_t p1 = line.find(',');
+        if (p1 == std::string_view::npos) return false;
+        const std::size_t p2 = line.find(',', p1 + 1);
+        if (p2 == std::string_view::npos) return false;
+        const std::size_t p3 = line.find(',', p2 + 1);
+        if (p3 == std::string_view::npos) return false;
+        const char* begin = line.data();
+        const char* end = begin + line.size();
+        if (!parse_u64(begin, begin + p1, 10, first)) return false;
+        if (!parse_u64(begin + p1 + 1, begin + p2, 10, last)) return false;
+        if (!parse_u64(begin + p2 + 1, begin + p3, 10, count)) return false;
+        if (!parse_u64(begin + p3 + 1, end, 16, hash)) return false;
+        return first <= last;
     }
 
     // Load the log file into memory.  Malformed lines (missing commas,
