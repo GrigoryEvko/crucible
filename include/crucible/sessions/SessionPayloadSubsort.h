@@ -60,6 +60,14 @@
 //                                              explicit declassify<P>
 //                                              at the trust boundary.
 //
+//   *  NumericalTier<Tight, T>  ⩽  NumericalTier<Loose, T>
+//                                              when ToleranceLattice says
+//                                              Loose ⊑ Tight.  A bit-exact
+//                                              producer may stand where an
+//                                              unordered/relaxed consumer is
+//                                              expected; the reverse is
+//                                              rejected.
+//
 //   *  T                        ⩽  Tagged<T, V>  DELIBERATELY ABSENT
 //                                              for every V — the
 //                                              opposite direction
@@ -113,6 +121,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/NumericalTier.h>
 #include <crucible/sessions/SessionSubtype.h>
 #include <crucible/safety/Tagged.h>
 
@@ -254,6 +263,19 @@ struct is_subsort<Refined<Pred, Tagged<T, V>>, Tagged<T, V>>
     : std::true_type {};
 
 // ═════════════════════════════════════════════════════════════════════
+// ── NumericalTier<Tight, P> ⩽ NumericalTier<Loose, P> ──────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// ToleranceLattice orders loose ⊑ tight: a tighter producer guarantee
+// satisfies a looser consumer requirement.  Therefore the subsort
+// direction is ConsumerTier ⊑ ProducerTier.
+
+template <Tolerance ProducerTier, Tolerance ConsumerTier, typename P>
+struct is_subsort<NumericalTier<ProducerTier, P>,
+                  NumericalTier<ConsumerTier, P>>
+    : std::bool_constant<ToleranceLattice::leq(ConsumerTier, ProducerTier)> {};
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Framework self-test static_asserts ─────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
@@ -272,6 +294,7 @@ namespace detail::payload_subsort_self_test {
 struct DispatchRequest { int op_id; };
 struct MemoryPlanByte  { unsigned char value; };
 struct ConfigEntry     { int field; };
+struct TensorTile      { float value[4]; };
 
 // ── Refined<P, T> ⩽ T positive cases ──────────────────────────────
 
@@ -361,6 +384,35 @@ static_assert(is_subsort_v<Tagged<int, source::Sanitized>,
 static_assert(is_subsort_v<Refined<positive, int>,
                             Refined<positive, int>>);
 static_assert(is_subsort_v<int, int>);
+
+// ── NumericalTier<Tight, P> ⩽ NumericalTier<Loose, P> ──────────────
+
+using BitexactTile = NumericalTier<Tolerance::BITEXACT, TensorTile>;
+using Fp32Tile     = NumericalTier<Tolerance::ULP_FP32, TensorTile>;
+using Fp16Tile     = NumericalTier<Tolerance::ULP_FP16, TensorTile>;
+using RelaxedTile  = NumericalTier<Tolerance::RELAXED, TensorTile>;
+
+static_assert( is_subsort_v<BitexactTile, RelaxedTile>);
+static_assert( is_subsort_v<BitexactTile, Fp16Tile>);
+static_assert( is_subsort_v<Fp32Tile,     Fp16Tile>);
+static_assert(!is_subsort_v<RelaxedTile,  BitexactTile>);
+static_assert(!is_subsort_v<Fp16Tile,     Fp32Tile>);
+
+static_assert( is_subtype_sync_v<
+    Send<BitexactTile, End>,
+    Send<RelaxedTile, End>>);
+
+static_assert(!is_subtype_sync_v<
+    Send<RelaxedTile, End>,
+    Send<BitexactTile, End>>);
+
+static_assert( is_subtype_sync_v<
+    Recv<RelaxedTile, End>,
+    Recv<BitexactTile, End>>);
+
+static_assert(!is_subtype_sync_v<
+    Recv<BitexactTile, End>,
+    Recv<RelaxedTile, End>>);
 
 // ── Different tags are unrelated ───────────────────────────────────
 

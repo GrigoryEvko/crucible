@@ -38,15 +38,16 @@
 //
 //   End                       → true (terminal)
 //   Continue                  → true (loop closes back; payloads checked at Loop)
-//   Send<T, K>                → payload_row_t<T> ⊆ Ctx::row  ∧  walk(K)
-//   Recv<T, K>                → payload_row_t<T> ⊆ Ctx::row  ∧  walk(K)
+//   Send<T, K>                → payload_effect_row_t<T> ⊆ Ctx::row ∧ walk(K)
+//   Recv<T, K>                → payload_effect_row_t<T> ⊆ Ctx::row ∧ walk(K)
 //   Loop<B>                   → walk(B)
 //   Select<Branches...>       → ∀ branch. walk(branch)
 //   Offer<Branches...>        → ∀ branch. walk(branch)
 //   Offer<Sender<R>, Bs...>   → ∀ branch. walk(branch)
 //
 // Composed payloads (Refined<P, Linear<Computation<R, T>>>) unwrap
-// transparently via payload_row_t — see SessionRowExtraction.h.
+// transparently via payload_effect_row_t while payload_row_t preserves
+// non-effect grades such as NumericalTier — see SessionRowExtraction.h.
 //
 // ── Why eager whole-protocol ────────────────────────────────────────
 //
@@ -110,13 +111,13 @@ struct proto_row_admitted_by<Stop, Ctx> : std::true_type {};
 template <class Ctx>
 struct proto_row_admitted_by<Continue, Ctx> : std::true_type {};
 
-// Send<T, K>: payload_row_t<T> must be a Subrow of Ctx's row, AND
+// Send<T, K>: payload_effect_row_t<T> must be a Subrow of Ctx's row, AND
 // the continuation K must be admitted.
 template <class T, class K, class Ctx>
 struct proto_row_admitted_by<Send<T, K>, Ctx>
     : std::bool_constant<
           ::crucible::effects::is_subrow_v<
-              payload_row_t<T>,
+              payload_effect_row_t<T>,
               typename Ctx::row_type>
        && proto_row_admitted_by<K, Ctx>::value>
 {};
@@ -128,7 +129,7 @@ template <class T, class K, class Ctx>
 struct proto_row_admitted_by<Recv<T, K>, Ctx>
     : std::bool_constant<
           ::crucible::effects::is_subrow_v<
-              payload_row_t<T>,
+              payload_effect_row_t<T>,
               typename Ctx::row_type>
        && proto_row_admitted_by<K, Ctx>::value>
 {};

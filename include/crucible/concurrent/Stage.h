@@ -141,7 +141,10 @@ namespace crucible::concurrent {
 //      static facts (residency_tier, cap_type, row_type, locality_hint).
 //
 //   3. StageInputRowAdmitted / StageOutputRowAdmitted — each payload
-//      row carried by the stage boundary is a Subrow of Ctx::row_type.
+//      effect row carried by the stage boundary is a Subrow of
+//      Ctx::row_type.  payload_row_t keeps non-effect grades (for
+//      example NumericalTier); payload_effect_row_t is the effect-only
+//      projection used for ctx admission.
 //
 // Substrate-level residency fit is NOT checked here — see header
 // docstring "SUBSTRATE-FIT NOT RE-VALIDATED HERE" for rationale.
@@ -153,7 +156,7 @@ concept StageInputRowAdmitted =
     ::crucible::safety::extract::PipelineStage<FnPtr>
  && ::crucible::effects::IsExecCtx<Ctx>
  && ::crucible::effects::Subrow<
-        ::crucible::safety::proto::payload_row_t<
+        ::crucible::safety::proto::payload_effect_row_t<
             ::crucible::safety::extract::pipeline_stage_input_value_t<FnPtr>>,
         typename Ctx::row_type>;
 
@@ -162,7 +165,7 @@ concept StageOutputRowAdmitted =
     ::crucible::safety::extract::PipelineStage<FnPtr>
  && ::crucible::effects::IsExecCtx<Ctx>
  && ::crucible::effects::Subrow<
-        ::crucible::safety::proto::payload_row_t<
+        ::crucible::safety::proto::payload_effect_row_t<
             ::crucible::safety::extract::pipeline_stage_output_value_t<FnPtr>>,
         typename Ctx::row_type>;
 
@@ -274,9 +277,9 @@ template <auto FnPtr, ::crucible::effects::IsExecCtx Ctx>
         ::crucible::safety::extract::param_type_t<FnPtr, 1>>&& out) noexcept
 {
     using ctx_row = typename Ctx::row_type;
-    using input_row = ::crucible::safety::proto::payload_row_t<
+    using input_row = ::crucible::safety::proto::payload_effect_row_t<
         ::crucible::safety::extract::pipeline_stage_input_value_t<FnPtr>>;
-    using output_row = ::crucible::safety::proto::payload_row_t<
+    using output_row = ::crucible::safety::proto::payload_effect_row_t<
         ::crucible::safety::extract::pipeline_stage_output_value_t<FnPtr>>;
     using input_offending_row =
         ::crucible::effects::row_difference_t<input_row, ctx_row>;

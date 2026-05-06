@@ -18,6 +18,8 @@
 //   Tagged<T, S>           → payload_row<T>          (transparent unwrap)
 //   Linear<T>              → payload_row<T>          (transparent unwrap)
 //   Stale<T>               → payload_row<T>          (transparent unwrap)
+//   NumericalTier<V, T>    → NumericalPayloadRow<V,
+//                              payload_row<T>>       (preserve grade)
 //   Transferable<T, X>     → payload_row<T>          (transparent unwrap)
 //   Borrowed<T, X>         → payload_row<T>          (transparent unwrap)
 //   Returned<T, X>         → payload_row<T>          (transparent unwrap)
@@ -25,7 +27,10 @@
 // Composed payloads (Refined<P, Linear<Tagged<Computation<R, T>, S>>>)
 // unwrap transparently — every value-level wrapper that "passes
 // through" effects specialises to recurse on its element type.  The
-// base case (bare T) yields Row<>.
+// base case (bare T) yields Row<>.  Consumers that need only the
+// effects::Row use payload_effect_row_t<T>; consumers that audit the
+// full payload contract use payload_row_t<T> and keep wrapper grades
+// such as NumericalTier's tolerance axis visible.
 //
 //   Axiom coverage: TypeSafe — pure metafunction; mismatches surface
 //                   at template-substitution.
@@ -90,6 +95,32 @@
 #include <type_traits>
 
 namespace crucible::safety::proto {
+
+// ── Payload-row wrappers ────────────────────────────────────────────
+//
+// Most payload rows are directly effects::Row<...>.  NumericalTier is
+// different: dropping its tolerance grade at the wire boundary loses
+// the MIMIC §41 numerical contract.  NumericalPayloadRow pairs the
+// tolerance grade with the inner payload row while payload_effect_row_t
+// still exposes the effects::Row needed by CtxFitsProtocol and Stage.
+
+template <::crucible::safety::Tolerance Tier, class InnerRow>
+struct NumericalPayloadRow {
+    using effect_row = InnerRow;
+    static constexpr ::crucible::safety::Tolerance tolerance = Tier;
+};
+
+template <class PayloadRow>
+struct payload_row_effect {
+    using type = PayloadRow;
+};
+
+template <::crucible::safety::Tolerance Tier, class InnerRow>
+struct payload_row_effect<NumericalPayloadRow<Tier, InnerRow>>
+    : payload_row_effect<InnerRow> {};
+
+template <class PayloadRow>
+using payload_row_effect_t = typename payload_row_effect<PayloadRow>::type;
 
 // ── payload_row<T> — primary trait + canonical specialisations ──────
 
@@ -205,8 +236,10 @@ struct payload_row<::crucible::safety::Wait<V, T>>           : payload_row<T> {}
 template <auto V, class T>
 struct payload_row<::crucible::safety::Progress<V, T>>       : payload_row<T> {};
 
-template <auto V, class T>
-struct payload_row<::crucible::safety::NumericalTier<V, T>>  : payload_row<T> {};
+template <::crucible::safety::Tolerance V, class T>
+struct payload_row<::crucible::safety::NumericalTier<V, T>> {
+    using type = NumericalPayloadRow<V, typename payload_row<T>::type>;
+};
 
 template <auto V, class T>
 struct payload_row<::crucible::safety::Vendor<V, T>>         : payload_row<T> {};
@@ -280,6 +313,9 @@ struct payload_row<::crucible::safety::TimeOrdered<T, N, Tag>>
 
 template <class T>
 using payload_row_t = typename payload_row<T>::type;
+
+template <class T>
+using payload_effect_row_t = payload_row_effect_t<payload_row_t<T>>;
 
 // ── Self-test block ─────────────────────────────────────────────────
 namespace detail::payload_row_self_test {
@@ -462,6 +498,19 @@ static_assert(std::is_same_v<payload_row_t<saf::Wait<saf::WaitStrategy_v::SpinPa
 static_assert(std::is_same_v<payload_row_t<saf::Progress<saf::ProgressClass_v::Terminating, BgComp>>,
                               eff::Row<eff::Effect::Bg>>);
 
+using BitexactBgRow =
+    payload_row_t<saf::NumericalTier<
+        ::crucible::algebra::lattices::Tolerance::BITEXACT, BgComp>>;
+static_assert(BitexactBgRow::tolerance
+              == ::crucible::algebra::lattices::Tolerance::BITEXACT);
+static_assert(std::is_same_v<typename BitexactBgRow::effect_row,
+                              eff::Row<eff::Effect::Bg>>);
+static_assert(std::is_same_v<
+    payload_effect_row_t<saf::NumericalTier<
+        ::crucible::algebra::lattices::Tolerance::BITEXACT, BgComp>>,
+    eff::Row<eff::Effect::Bg>>);
+static_assert(!std::is_same_v<BitexactBgRow, eff::Row<eff::Effect::Bg>>);
+
 static_assert(std::is_same_v<payload_row_t<saf::Vendor<saf::VendorBackend_v::CPU, BgComp>>,
                               eff::Row<eff::Effect::Bg>>);
 
@@ -497,7 +546,11 @@ using DeepStack =
             saf::NumericalTier<::crucible::algebra::lattices::Tolerance::BITEXACT,
                 saf::Refined<saf::positive,
                     eff::Computation<eff::Row<eff::Effect::Bg, eff::Effect::Alloc>, int>>>>>;
-static_assert(std::is_same_v<payload_row_t<DeepStack>,
+static_assert(payload_row_t<DeepStack>::tolerance
+              == ::crucible::algebra::lattices::Tolerance::BITEXACT);
+static_assert(std::is_same_v<typename payload_row_t<DeepStack>::effect_row,
+                              eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
+static_assert(std::is_same_v<payload_effect_row_t<DeepStack>,
                               eff::Row<eff::Effect::Bg, eff::Effect::Alloc>>);
 
 }  // namespace detail::payload_row_self_test
