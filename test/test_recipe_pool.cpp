@@ -70,7 +70,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
 } // namespace
 
-int main() {
+[[gnu::cold]] int main() {
   // ═══════════════════════════════════════════════════════════════════
   // 0. Compile-time axiom checks
   // ═══════════════════════════════════════════════════════════════════

@@ -43,7 +43,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     return m;
 }
 
-int main() {
+[[gnu::cold]] int main() {
     crucible::effects::Test test;
     crucible::Arena arena(1 << 16);
 

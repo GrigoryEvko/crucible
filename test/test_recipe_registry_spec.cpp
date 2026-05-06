@@ -117,7 +117,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
 }  // namespace
 
-int main() {
+[[gnu::cold]] int main() {
   // ═══════════════════════════════════════════════════════════════
   // T01 — recipe_family_of maps every ReductionAlgo to its category.
   //       Compile-time witnesses for the four named algorithms; the

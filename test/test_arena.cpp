@@ -8,7 +8,7 @@
 using crucible::safety::Positive;
 using crucible::safety::PowerOfTwo;
 
-int main() {
+[[gnu::cold]] int main() {
   crucible::effects::Test test;
 
   // Basic allocation

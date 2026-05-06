@@ -64,7 +64,7 @@ inline void mk_ops(TraceEntry (&buf)[kOpsCount]) noexcept {
 
 }  // namespace
 
-int main() {
+[[gnu::cold]] int main() {
   // ═══════════════════════════════════════════════════════════════════
   // Scenario 1 — Pool independence with hash identity
   //

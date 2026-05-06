@@ -18,7 +18,7 @@ namespace {
 
 } // namespace
 
-int main() {
+[[gnu::cold]] int main() {
   crucible::effects::Test test;
   crucible::Arena arena(1 << 16);
 

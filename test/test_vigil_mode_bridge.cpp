@@ -66,7 +66,7 @@ int run_atomic_mode_session_lifecycle() {
 
 }  // namespace
 
-int main() {
+[[gnu::cold]] int main() {
     if (int rc = run_vigil_mode_bridge_observes_vigil_cell(); rc != 0) return rc;
     if (int rc = run_atomic_mode_session_lifecycle(); rc != 0) return 100 + rc;
     std::puts("vigil_mode_bridge: atomic MachineSessionBridge view OK");

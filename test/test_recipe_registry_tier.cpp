@@ -69,7 +69,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
 }  // namespace
 
-int main() {
+[[gnu::cold]] int main() {
   // ═══════════════════════════════════════════════════════════════
   // T01 — tolerance_for_dtype maps every storage dtype to its 1-ULP
   //       class.  Conservative discipline: integer dtypes → ULP_INT8;

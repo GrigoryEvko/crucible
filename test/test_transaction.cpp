@@ -4,7 +4,7 @@
 #include <cstdio>
 #include <cstring>
 
-int main() {
+[[gnu::cold]] int main() {
     crucible::effects::Test test;
     crucible::TransactionLog<16> log;
     crucible::Arena arena(1 << 12);

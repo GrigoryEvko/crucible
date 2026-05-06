@@ -6,7 +6,7 @@
 #include <cstdio>
 #include <span>
 
-int main() {
+[[gnu::cold]] int main() {
     crucible::effects::Test test;
     crucible::ExprPool pool(test.alloc);
     crucible::Graph graph(test.alloc, &pool);

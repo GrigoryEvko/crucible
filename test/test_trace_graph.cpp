@@ -144,7 +144,7 @@ static void test_fanout_node_has_multiple_edges() {
     std::printf("  test_fanout:                    PASSED\n");
 }
 
-int main() {
+[[gnu::cold]] int main() {
     test_empty_graph();
     test_single_edge_fwd_rev();
     test_counting_sort_groups_by_src();

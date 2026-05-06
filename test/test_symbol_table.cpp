@@ -215,7 +215,7 @@ static void test_sym_flags_bits_typed_surface() {
     std::printf("  test_sym_flags_bits_typed_surface: PASSED\n");
 }
 
-int main() {
+[[gnu::cold]] int main() {
     test_add_assigns_monotonic_ids();
     test_default_ranges_by_kind();
     test_hint_set_clears_sentinel();
