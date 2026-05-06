@@ -911,6 +911,13 @@ crucible_neg_compile_session_test(neg_default_recipe_to_strict_recv
 crucible_neg_compile_session_test(neg_tier_compose_in_loop
     "NumericalTier_LoopBody_TierDowngrade")
 
+# GAPS-067: VendorCtx pins PermissionedSessionHandle chains to a
+# VendorLattice backend.  NV and AMD are mutually-incomparable, so the
+# framework-owned composition assertion rejects an NV provider for an
+# AMD consumer.
+crucible_neg_compile_session_test(neg_vendor_ctx_nv_to_amd
+    "PermissionedSession\\.h.*static assertion failed.*VendorCtx_Mismatch")
+
 # FOUND-B13 (#602): Met(X) negative-compile witnesses.  Three
 # fixtures probing the Subrow / IsEffect concept gates that enforce
 # the substitution principle for capability propagation.

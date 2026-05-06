@@ -454,6 +454,12 @@ struct permissioned_loop_ctx_from_bare<LoopContext<Body, EntryPS>, PS> {
     using type = LoopContext<Body, EntryPS>;
 };
 
+template <VendorBackend V, typename InnerLoopCtx, typename PS>
+struct permissioned_loop_ctx_from_bare<VendorCtx<V, InnerLoopCtx>, PS> {
+    using type = VendorCtx<V,
+        typename permissioned_loop_ctx_from_bare<InnerLoopCtx, PS>::type>;
+};
+
 template <typename LoopCtx, typename PS>
 using permissioned_loop_ctx_from_bare_t =
     typename permissioned_loop_ctx_from_bare<LoopCtx, PS>::type;

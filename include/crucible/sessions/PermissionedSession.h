@@ -42,7 +42,14 @@
 //        delta-fold over Γ's entries.  NOT conjuncted with is_safe_v
 //        (unshipped, Task #346 / wiring plan §11 bounded-LTS walk)
 //        per the Part IX honest-assessment discipline.
-//   D7 — Doc-update sweep is bundled with the implementation PR.
+//   D7 — VendorCtx<V, InnerLoopCtx> is the LoopCtx-axis extension
+//        for per-vendor session pinning (GAPS-067).  Existing raw
+//        LoopCtx values are interpreted as VendorCtx<Portable, LoopCtx>
+//        for backward compatibility; explicitly pinned handles compare
+//        with VendorLattice::leq(consumer_vendor, provider_vendor), so
+//        Portable providers can satisfy vendor-specific consumers while
+//        NV and AMD remain mutually incompatible.
+//   D8 — Doc-update sweep is bundled with the implementation PR.
 //
 // ─── Why CRTP over composition ─────────────────────────────────────
 //
@@ -145,6 +152,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
+#include <crucible/algebra/lattices/VendorLattice.h>
 #include <crucible/handles/OneShotFlag.h>
 #include <crucible/permissions/PermissionFork.h>
 #include <crucible/permissions/PermSet.h>
@@ -183,6 +191,84 @@ struct LoopContext {
 };
 
 // ═════════════════════════════════════════════════════════════════
+// ── VendorCtx<V, InnerLoopCtx> — per-vendor PSH pinning ─────────
+// ═════════════════════════════════════════════════════════════════
+//
+// VendorCtx is a zero-size LoopCtx wrapper that threads
+// VendorLattice through PermissionedSessionHandle without changing
+// the existing four-parameter public shape.  Existing handles with
+// LoopCtx = void or LoopContext<...> are treated as Portable by the
+// traits below, preserving source compatibility and the historical
+// exact loop_ctx typedefs.  New CNTP / collective protocols can opt
+// into VendorCtx<NV, ...>, VendorCtx<AMD, ...>, etc.
+//
+// Compatibility direction:
+//   provider satisfies consumer iff
+//     VendorLattice::leq(consumer_vendor, provider_vendor)
+//
+// That matches safety/Vendor.h's convention: Portable is the strongest
+// provider claim, specific vendors satisfy only themselves, and None
+// is an uninitialized sentinel rejected by the session-composition
+// helper rather than admitted through the lattice's bottom rule.
+
+using ::crucible::algebra::lattices::VendorBackend;
+using ::crucible::algebra::lattices::VendorLattice;
+
+template <VendorBackend V, typename InnerLoopCtx = void>
+struct VendorCtx {
+    using inner_loop_ctx = InnerLoopCtx;
+    static constexpr VendorBackend vendor_backend = V;
+};
+
+template <typename LoopCtx>
+struct loop_ctx_traits {
+    using inner_loop_ctx = LoopCtx;
+    static constexpr VendorBackend vendor_backend = VendorBackend::Portable;
+};
+
+template <VendorBackend V, typename InnerLoopCtx>
+struct loop_ctx_traits<VendorCtx<V, InnerLoopCtx>> {
+    using inner_loop_ctx = InnerLoopCtx;
+    static constexpr VendorBackend vendor_backend = V;
+};
+
+template <typename LoopCtx>
+using loop_ctx_inner_t = typename loop_ctx_traits<LoopCtx>::inner_loop_ctx;
+
+template <typename LoopCtx>
+inline constexpr VendorBackend loop_ctx_vendor_v =
+    loop_ctx_traits<LoopCtx>::vendor_backend;
+
+template <typename LoopCtx>
+using loop_ctx_as_vendor_ctx_t =
+    VendorCtx<loop_ctx_vendor_v<LoopCtx>, loop_ctx_inner_t<LoopCtx>>;
+
+template <typename LoopCtx, typename NewInnerLoopCtx>
+struct loop_ctx_rebind_inner {
+    using type = NewInnerLoopCtx;
+};
+
+template <VendorBackend V, typename InnerLoopCtx, typename NewInnerLoopCtx>
+struct loop_ctx_rebind_inner<VendorCtx<V, InnerLoopCtx>, NewInnerLoopCtx> {
+    using type = VendorCtx<V, NewInnerLoopCtx>;
+};
+
+template <typename LoopCtx, typename NewInnerLoopCtx>
+using loop_ctx_rebind_inner_t =
+    typename loop_ctx_rebind_inner<LoopCtx, NewInnerLoopCtx>::type;
+
+template <VendorBackend Provider, VendorBackend Consumer>
+inline constexpr bool session_vendor_satisfies_v =
+    Provider != VendorBackend::None &&
+    Consumer != VendorBackend::None &&
+    VendorLattice::leq(Consumer, Provider);
+
+template <typename ProviderLoopCtx, typename ConsumerLoopCtx>
+inline constexpr bool loop_ctx_vendor_satisfies_v =
+    session_vendor_satisfies_v<loop_ctx_vendor_v<ProviderLoopCtx>,
+                               loop_ctx_vendor_v<ConsumerLoopCtx>>;
+
+// ═════════════════════════════════════════════════════════════════
 // ── Forward declaration ──────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════
 //
@@ -195,6 +281,23 @@ template <typename Proto,
           typename Resource,
           typename LoopCtx = void>
 class PermissionedSessionHandle;
+
+template <typename ProviderHandle, typename ConsumerHandle>
+inline constexpr bool permissioned_session_vendor_compatible_v =
+    loop_ctx_vendor_satisfies_v<typename ProviderHandle::loop_ctx,
+                                typename ConsumerHandle::loop_ctx>;
+
+template <typename ProviderHandle, typename ConsumerHandle>
+consteval void assert_permissioned_session_vendor_compatible() {
+    static_assert(permissioned_session_vendor_compatible_v<ProviderHandle,
+                                                           ConsumerHandle>,
+        "crucible::session::diagnostic [VendorCtx_Mismatch]: "
+        "PermissionedSessionHandle vendor composition rejected.  "
+        "VendorLattice::leq(consumer_vendor, provider_vendor) is false "
+        "or one side is VendorCtx<None>.  Portable providers may satisfy "
+        "vendor-specific consumers; distinct vendor-specific providers "
+        "such as NV and AMD are intentionally incomparable.");
+}
 
 // Permission-aware delegation protocol marker.  `DelegatedSession` is
 // not a standalone protocol head, but Delegate/Accept treat it as the
@@ -241,18 +344,20 @@ template <typename R,
     std::source_location loc = std::source_location::current()) noexcept
 {
     if constexpr (std::is_same_v<R, Continue>) {
+        using ActiveLoopCtx = loop_ctx_inner_t<LoopCtx>;
+
         // Continue must have an enclosing Loop.  This is also enforced
         // by the bare framework's step_to_next, but checking here gives
         // a PSH-specific diagnostic that points at the right header.
-        static_assert(!std::is_void_v<LoopCtx>,
+        static_assert(!std::is_void_v<ActiveLoopCtx>,
             "crucible::session::diagnostic [Continue_Without_Loop]: "
             "PermissionedSessionHandle: Continue appears outside any "
             "enclosing Loop.  Wrap the protocol prefix containing "
             "Continue in Loop<Body>, or replace Continue with End to "
             "make the protocol one-shot.");
 
-        using LoopBody    = typename LoopCtx::body;
-        using LoopEntryPS = typename LoopCtx::entry_perm_set;
+        using LoopBody    = typename ActiveLoopCtx::body;
+        using LoopEntryPS = typename ActiveLoopCtx::entry_perm_set;
 
         // Decision D3 / Risk R1 — Loop body permission balance
         // enforcement.  Each iteration must leave the PS exactly as it
@@ -278,7 +383,8 @@ template <typename R,
             std::forward<Resource>(r), loc};
     } else if constexpr (is_loop_v<R>) {
         using InnerBody = typename R::body;
-        using InnerCtx  = LoopContext<InnerBody, PS>;
+        using InnerCtx  =
+            loop_ctx_rebind_inner_t<LoopCtx, LoopContext<InnerBody, PS>>;
         // Enter inner Loop: shadow LoopCtx with a fresh context whose
         // entry_perm_set captures the PS at Loop entry.  This is what
         // gives nested Loops their own balance check.
@@ -356,6 +462,9 @@ public:
     using perm_set      = PS;
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
+    using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx    = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
         Resource r,
@@ -443,7 +552,10 @@ public:
     using perm_set      = PS;
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
+    using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx    = loop_ctx_as_vendor_ctx_t<LoopCtx>;
     static constexpr CrashClass crash_class = C;
+    static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
         Resource r,
@@ -513,6 +625,9 @@ public:
     using perm_set      = PS;
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
+    using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx    = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
         Resource r,
@@ -611,6 +726,9 @@ public:
     using perm_set      = PS;
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
+    using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx    = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
         Resource r,
@@ -700,6 +818,9 @@ public:
     using perm_set        = PS;
     using resource_type   = Resource;
     using loop_ctx        = LoopCtx;
+    using inner_loop_ctx  = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx      = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
         Resource r,
@@ -859,6 +980,9 @@ public:
     using perm_set        = PS;
     using resource_type   = Resource;
     using loop_ctx        = LoopCtx;
+    using inner_loop_ctx  = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx      = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     constexpr explicit PermissionedSessionHandle(
         Resource r,
@@ -990,6 +1114,9 @@ public:
     using perm_set      = PS;
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
+    using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx    = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
@@ -1106,6 +1233,9 @@ public:
     using perm_set      = PS;
     using resource_type = Resource;
     using loop_ctx      = LoopCtx;
+    using inner_loop_ctx = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx    = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
 
     static constexpr std::size_t branch_count = sizeof...(Branches);
 
@@ -1592,6 +1722,54 @@ static_assert(sizeof(PermissionedSessionHandle<AcceptProto, EmptyPermSet,
                                                FakeChannel>)
               == sizeof(SessionHandle<AcceptProto, FakeChannel>));
 
+// ── VendorCtx<Backend, InnerLoopCtx> shape and composition ─────────
+
+using NvBareCtx   = VendorCtx<VendorBackend::NV>;
+using AmdBareCtx  = VendorCtx<VendorBackend::AMD>;
+using NvLoopCtx   = VendorCtx<VendorBackend::NV,
+                              LoopContext<Send<int, Continue>, EmptyPermSet>>;
+using NvEndHandle  = PermissionedSessionHandle<End, EmptyPermSet,
+                                                FakeChannel, NvBareCtx>;
+using AmdEndHandle = PermissionedSessionHandle<End, EmptyPermSet,
+                                                FakeChannel, AmdBareCtx>;
+using RawEndHandle = PermissionedSessionHandle<End, EmptyPermSet,
+                                                FakeChannel>;
+
+static_assert(std::is_empty_v<NvBareCtx>);
+static_assert(std::is_empty_v<NvLoopCtx>);
+static_assert(loop_ctx_vendor_v<void> == VendorBackend::Portable);
+static_assert(loop_ctx_vendor_v<LoopContext<Send<int, Continue>,
+                                           EmptyPermSet>>
+              == VendorBackend::Portable);
+static_assert(loop_ctx_vendor_v<NvBareCtx> == VendorBackend::NV);
+static_assert(std::is_same_v<loop_ctx_inner_t<NvBareCtx>, void>);
+static_assert(std::is_same_v<loop_ctx_inner_t<NvLoopCtx>,
+                             LoopContext<Send<int, Continue>,
+                                         EmptyPermSet>>);
+static_assert(std::is_same_v<loop_ctx_rebind_inner_t<
+                  NvBareCtx,
+                  LoopContext<Recv<int, Continue>, EmptyPermSet>>,
+              VendorCtx<VendorBackend::NV,
+                        LoopContext<Recv<int, Continue>, EmptyPermSet>>>);
+
+static_assert(std::is_same_v<typename RawEndHandle::loop_ctx, void>);
+static_assert(std::is_same_v<typename RawEndHandle::vendor_ctx,
+                             VendorCtx<VendorBackend::Portable, void>>);
+static_assert(RawEndHandle::vendor_backend == VendorBackend::Portable);
+static_assert(NvEndHandle::vendor_backend == VendorBackend::NV);
+static_assert(sizeof(NvEndHandle) == sizeof(SessionHandle<End, FakeChannel>));
+
+static_assert(permissioned_session_vendor_compatible_v<RawEndHandle,
+                                                       NvEndHandle>);
+static_assert(permissioned_session_vendor_compatible_v<NvEndHandle,
+                                                       NvEndHandle>);
+static_assert(!permissioned_session_vendor_compatible_v<NvEndHandle,
+                                                        AmdEndHandle>);
+static_assert(!permissioned_session_vendor_compatible_v<AmdEndHandle,
+                                                        NvEndHandle>);
+static_assert(!permissioned_session_vendor_compatible_v<NvEndHandle,
+                                                        RawEndHandle>);
+
 // ── runtime_smoke_test (per the discipline) ────────────────────────
 //
 // Construct a PSH on End with EmptyPermSet, close it, and observe the
@@ -1637,6 +1815,8 @@ inline void runtime_smoke_test() noexcept {
         using Ctx = LoopContext<Send<int, Continue>, EmptyPermSet>;
         static_assert(std::is_same_v<typename Ctx::body, Send<int, Continue>>);
         static_assert(std::is_same_v<typename Ctx::entry_perm_set, EmptyPermSet>);
+        using PinnedCtx = VendorCtx<VendorBackend::NV, Ctx>;
+        static_assert(std::is_same_v<loop_ctx_inner_t<PinnedCtx>, Ctx>);
     }
 
     // Establish Loop unrolls one iteration: top-level Loop<Body> with
@@ -1680,6 +1860,20 @@ inline void runtime_smoke_test() noexcept {
         static_assert(std::is_same_v<typename NextLoop::loop_ctx,
                                      LoopContext<Send<int, Continue>,
                                                  PermSet<WorkPerm>>>);
+    }
+
+    // step_to_next_permissioned: entering a loop from a pinned context
+    // preserves the vendor tag while replacing only the loop-balance
+    // inner context.
+    {
+        using PinnedLoop =
+            decltype(detail::step_to_next_permissioned<
+                Loop<Send<int, Continue>>, EmptyPermSet,
+                FakeChannel, VendorCtx<VendorBackend::NV>>(FakeChannel{}));
+        static_assert(std::is_same_v<typename PinnedLoop::loop_ctx,
+            VendorCtx<VendorBackend::NV,
+                      LoopContext<Send<int, Continue>, EmptyPermSet>>>);
+        static_assert(PinnedLoop::vendor_backend == VendorBackend::NV);
     }
 
     // detail::emit_leaked_permissions_debug compiles and is callable
