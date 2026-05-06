@@ -29,7 +29,10 @@
 //
 //   * `report_violation(Category, fn_name, detail)` — cold-path
 //     emitter.  Writes ONE LINE to stderr in machine-parseable form.
-//     Does NOT abort (caller decides).  noexcept.
+//     Does NOT abort (caller decides).  noexcept.  The default sink
+//     emits legacy text unless CRUCIBLE_DIAG_FORMAT=json is set, in
+//     which case it emits the JsonEmitter.h record consumed by IDE/LSP
+//     tooling.
 //
 //   * `report_violation_and_abort(...)` — convenience that emits
 //     and then std::abort()s.  Use for unrecoverable contract
@@ -45,13 +48,23 @@
 //
 //   crucible-violation: category=<Name> fn=<fn> detail=<detail>
 //
+// JSON mode:
+//
+//   CRUCIBLE_DIAG_FORMAT=json ./test_diag_runtime
+//
+// emits:
+//
+//   {"format_version":1,"source_position":{...},"error_code":"...",...}
+//
 // Example:
 //
 //   crucible-violation: category=RefinementViolation fn=mk_positive detail=value=-7 fails predicate `positive`
 //
-// Single-line, no embedded newlines, no embedded format characters.
-// Detail strings are caller-provided; the emitter does NOT escape
-// them (caller is responsible for sanitization at boundary sites).
+// Text mode keeps the historical single-line format.  JSON mode is
+// selected once, on the default sink's first emission, so set the env
+// var at process launch.  JSON mode escapes caller-provided strings
+// and includes source_position, error_code, goal/have/gap/suggestion,
+// and related_snippets fields.
 //
 // ═════════════════════════════════════════════════════════════════════
 // Cost
@@ -170,10 +183,10 @@ void report_violation_and_abort(Category cat,
 // without macro tricks.  Zero runtime cost over the explicit form
 // when the optimizer constant-folds the location's char* fields.
 //
-// Format (single line):
-//   crucible-violation: category=<Name> fn=<file:line@function> detail=<detail>
+// Format (text mode):
+//   crucible-violation: category=<Name> fn=<file:line:column@function> detail=<detail>
 //
-// Where `fn` is the source_location-derived "<file>:<line>@<function>"
+// Where `fn` is the source_location-derived "<file>:<line>:<column>@<function>"
 // composite — the parser script can split on `@` to recover the
 // function name + file/line.
 

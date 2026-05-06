@@ -55,6 +55,11 @@ target_compile_options(crucible PUBLIC
   -fcontracts
 )
 
+add_executable(crucible_diag_lsp
+  tools/lsp_code_action_plugin/crucible_diag_lsp.cpp
+)
+target_link_libraries(crucible_diag_lsp PRIVATE crucible)
+
 # ── eBPF observability substrate (crucible::perf::SenseHub etc.) ────
 #
 # Promoted from bench/ on 2026-05-03 (GAPS-004a).  When libbpf + a

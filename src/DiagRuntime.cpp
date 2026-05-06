@@ -1,8 +1,8 @@
 // safety/diag/Runtime.h implementation (FOUND-E06).
 //
-// Atomic-pointer sink storage; default fprintf-to-stderr emitter;
-// install/read API for production routing.  Cold path; the entire
-// TU compiles to <1 KB of code in release.
+// Atomic-pointer sink storage; default stderr emitter; install/read
+// API for production routing.  Cold path; kept out of foreground
+// dispatch by [[gnu::cold]] declarations in the public header.
 //
 // Thread-safety model:
 //   * Sink pointer lives in a single std::atomic<violation_sink_t>.
@@ -13,25 +13,60 @@
 //     every supported platform).
 //   * `report_violation` reads with `memory_order::acquire` so the
 //     callee sees a happens-before of the previous install.
-//   * Default-sink fprintf may interleave on stderr with concurrent
+//   * Default-sink stdio writes may interleave on stderr with concurrent
 //     writers; the foundation does NOT serialize stderr writes
 //     (production sinks ARE expected to do their own serialization).
 
 #include <crucible/safety/diag/Runtime.h>
+#include <crucible/safety/diag/JsonEmitter.h>
 
 #include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 namespace crucible::safety::diag {
+
+namespace {
+
+std::atomic<int> g_default_sink_format{0};
+
+[[nodiscard]] bool default_sink_wants_json() noexcept {
+    constexpr int unknown = 0;
+    constexpr int text = 1;
+    constexpr int json = 2;
+
+    const int cached = g_default_sink_format.load(std::memory_order_acquire);
+    if (cached != unknown) return cached == json;
+
+    const char* format = std::getenv("CRUCIBLE_DIAG_FORMAT");
+    const int selected =
+        format != nullptr && std::strcmp(format, "json") == 0 ? json : text;
+    int expected = unknown;
+    if (g_default_sink_format.compare_exchange_strong(
+            expected,
+            selected,
+            std::memory_order_acq_rel,
+            std::memory_order_acquire)) {
+        return selected == json;
+    }
+    return expected == json;
+}
+
+}  // namespace
 
 // ═════════════════════════════════════════════════════════════════════
 // ── default_violation_sink ──────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Single fprintf to stderr.  Format:
+// Single emission to stderr.  Default format:
 //
 //   crucible-violation: category=<Name> fn=<fn> detail=<detail>\n
+//
+// If CRUCIBLE_DIAG_FORMAT=json is set in the process environment at
+// first emission, emit one JSON record instead.  This is still a cold-
+// path sink; format selection is intentionally here rather than at
+// every call site, and the getenv result is cached once per process.
 //
 // Uses `%.*s` so caller-supplied string_views need NOT be NUL-
 // terminated.  fprintf is line-buffered on stderr by default; the
@@ -41,30 +76,11 @@ namespace crucible::safety::diag {
 void default_violation_sink(Category cat,
                             std::string_view fn,
                             std::string_view detail) noexcept {
-    // name_of returns a short stable string from Diagnostic.h's
-    // Category catalog; safe to embed unescaped (consteval-derived,
-    // never carries newlines or format chars).
-    const std::string_view cat_name = name_of(cat);
-
-    // Cast to int for `%.*s` format specifier (printf takes int).
-    // string_view::size() is size_t; cap at INT_MAX/4 defensively
-    // (any sane caller passes <KB sized strings).
-    constexpr int max_field_chars = 4096;
-    const int cat_n =
-        cat_name.size() > max_field_chars ? max_field_chars
-                                          : static_cast<int>(cat_name.size());
-    const int fn_n =
-        fn.size() > max_field_chars ? max_field_chars
-                                    : static_cast<int>(fn.size());
-    const int dt_n =
-        detail.size() > max_field_chars ? max_field_chars
-                                        : static_cast<int>(detail.size());
-
-    std::fprintf(stderr,
-                 "crucible-violation: category=%.*s fn=%.*s detail=%.*s\n",
-                 cat_n, cat_name.data(),
-                 fn_n,  fn.data(),
-                 dt_n,  detail.data());
+    if (default_sink_wants_json()) {
+        (void)emit_json_violation(stderr, cat, fn, detail);
+        return;
+    }
+    (void)emit_legacy_text_violation(stderr, cat, fn, detail);
 }
 
 namespace {
@@ -126,7 +142,7 @@ void report_violation_and_abort(Category cat,
 // ── report_violation_at ─────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 //
-// Format the source_location into a "file:line@function" composite
+// Format the source_location into a "file:line:column@function" composite
 // in a thread-local fixed buffer (no heap allocation on the cold
 // path, no shared mutex contention between concurrent emitters).
 // The buffer is sized for typical paths (<2KB) — pathological-long
@@ -142,15 +158,16 @@ namespace {
 constexpr std::size_t loc_buf_capacity = 2048;
 thread_local char tls_loc_buf[loc_buf_capacity];
 
-// Format "<file>:<line>@<function>" into the TLS buffer, return view.
+// Format "<file>:<line>:<column>@<function>" into the TLS buffer, return view.
 // Uses snprintf which is bounded; truncation on overflow is silent
 // (the parser can detect via missing '@' marker).
 std::string_view format_loc(std::source_location loc) noexcept {
     const int n = std::snprintf(
         tls_loc_buf, loc_buf_capacity,
-        "%s:%u@%s",
+        "%s:%u:%u@%s",
         loc.file_name(),
-        loc.line(),               // source_location::line() returns uint_least32_t
+        loc.line(),
+        loc.column(),
         loc.function_name());
     if (n < 0) {
         // snprintf encoding error — return an empty view rather than

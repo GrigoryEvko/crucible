@@ -119,7 +119,11 @@
 //               E07-E10: stable_name_of / stable_type_id /
 //                        stable_function_id / canonicalize_pack
 //               E16-E20: per-new-wrapper extensions, F* alias diag,
-//                        IDE/clangd integration
+//                        IDE/clangd integration.  Runtime JSON
+//                        emission lives in safety/diag/JsonEmitter.h:
+//                        set CRUCIBLE_DIAG_FORMAT=json to make the
+//                        default violation sink emit format-versioned
+//                        records for clangd/IDE consumers.
 
 #include <crucible/Platform.h>
 
