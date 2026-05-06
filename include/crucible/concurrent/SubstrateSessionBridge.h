@@ -16,9 +16,7 @@
 //
 //   Direction                — enum tag for the per-substrate role
 //                              (Producer / Consumer / SwmrWriter /
-//                              SwmrReader; ChaseLevDeque deferred to
-//                              v2 because its protocol is more complex
-//                              than a plain Loop<Send/Recv>).
+//                              SwmrReader / Owner / Thief).
 //
 //   handle_for<Substr, Dir>  — metafunction: substrate × direction →
 //                              the concrete handle type
@@ -73,10 +71,7 @@
 //
 // ── Status ──────────────────────────────────────────────────────────
 //
-// v1 covers: SPSC, MPSC, MPMC, Snapshot.
-// v2 deferred: ChaseLevDeque (owner can both push AND pop — protocol
-//              is `Loop<Select<Send<T, Continue>, Recv<T, Continue>>>`
-//              or split into two endpoints; needs a design call).
+// v1 covers: SPSC, MPSC, MPMC, Snapshot, ChaseLevDeque.
 // v2 deferred: ShardedGrid / CalendarGrid (multi-shard substrates
 //              need per-shard mint factories).
 
@@ -87,6 +82,7 @@
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/SubstrateCtxFit.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/sessions/ChaseLevDequeSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionMint.h>
 
@@ -107,7 +103,8 @@ enum class Direction : std::uint8_t {
     Consumer    = 1,   // SPSC/MPSC/MPMC: try_pop side
     SwmrWriter  = 2,   // Snapshot: publish side
     SwmrReader  = 3,   // Snapshot: load side
-    // Owner / Thief reserved for ChaseLevDeque (v2).
+    Owner       = 4,   // ChaseLevDeque: push_bottom + pop_bottom
+    Thief       = 5,   // ChaseLevDeque: steal_top only
 };
 
 // ── handle_for<Substr, Dir>: substrate × direction → handle ────────
@@ -158,6 +155,16 @@ struct handle_for<PermissionedSnapshot<T, UserTag>, Direction::SwmrWriter> {
 template <class T, class UserTag>
 struct handle_for<PermissionedSnapshot<T, UserTag>, Direction::SwmrReader> {
     using type = typename PermissionedSnapshot<T, UserTag>::ReaderHandle;
+};
+
+// ChaseLevDeque: OwnerHandle / ThiefHandle
+template <class T, std::size_t Cap, class UserTag>
+struct handle_for<PermissionedChaseLevDeque<T, Cap, UserTag>, Direction::Owner> {
+    using type = typename PermissionedChaseLevDeque<T, Cap, UserTag>::OwnerHandle;
+};
+template <class T, std::size_t Cap, class UserTag>
+struct handle_for<PermissionedChaseLevDeque<T, Cap, UserTag>, Direction::Thief> {
+    using type = typename PermissionedChaseLevDeque<T, Cap, UserTag>::ThiefHandle;
 };
 
 template <class Substr, Direction Dir>
@@ -232,6 +239,23 @@ struct default_proto_for<PermissionedSnapshot<T, UserTag>, Direction::SwmrReader
     using type = ::crucible::safety::proto::Loop<
         ::crucible::safety::proto::Recv<T,
             ::crucible::safety::proto::Continue>>;
+};
+
+// ChaseLev owner: local Select chooses push_bottom or pop_bottom.
+template <class T, std::size_t Cap, class UserTag>
+struct default_proto_for<PermissionedChaseLevDeque<T, Cap, UserTag>,
+                         Direction::Owner> {
+    using type =
+        ::crucible::safety::proto::chaselev_session::OwnerProto<T>;
+};
+
+// ChaseLev thief: Recv-only borrowed steal from top.
+template <class T, std::size_t Cap, class UserTag>
+struct default_proto_for<PermissionedChaseLevDeque<T, Cap, UserTag>,
+                         Direction::Thief> {
+    using type =
+        ::crucible::safety::proto::chaselev_session::ThiefProto<
+            T, typename PermissionedChaseLevDeque<T, Cap, UserTag>::thief_tag>;
 };
 
 template <class Substr, Direction Dir>
@@ -322,6 +346,7 @@ using Spsc      = PermissionedSpscChannel<int, 64, UserTag>;
 using Mpsc      = PermissionedMpscChannel<int, 64, UserTag>;
 using Mpmc      = PermissionedMpmcChannel<int, 64, UserTag>;
 using SnapT     = PermissionedSnapshot<int, UserTag>;
+using DequeT    = PermissionedChaseLevDeque<int, 64, UserTag>;
 using NvInt     = ::crucible::safety::Vendor<proto::VendorBackend::NV, int>;
 using AmdInt    = ::crucible::safety::Vendor<proto::VendorBackend::AMD, int>;
 using NvSpsc    = PermissionedSpscChannel<NvInt, 64, UserTag>;
@@ -343,6 +368,10 @@ static_assert(std::is_same_v<handle_for_t<SnapT, Direction::SwmrWriter>,
                               typename SnapT::WriterHandle>);
 static_assert(std::is_same_v<handle_for_t<SnapT, Direction::SwmrReader>,
                               typename SnapT::ReaderHandle>);
+static_assert(std::is_same_v<handle_for_t<DequeT, Direction::Owner>,
+                              typename DequeT::OwnerHandle>);
+static_assert(std::is_same_v<handle_for_t<DequeT, Direction::Thief>,
+                              typename DequeT::ThiefHandle>);
 
 // ── default_proto_for<> resolves to the canonical Loop<Send/Recv> ──
 
@@ -361,6 +390,12 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     default_proto_for_t<SnapT, Direction::SwmrWriter>,
     proto::Loop<proto::Send<int, proto::Continue>>>);
+static_assert(std::is_same_v<
+    default_proto_for_t<DequeT, Direction::Owner>,
+    proto::chaselev_session::OwnerProto<int>>);
+static_assert(std::is_same_v<
+    default_proto_for_t<DequeT, Direction::Thief>,
+    proto::chaselev_session::ThiefProto<int, DequeT::thief_tag>>);
 
 // ── IsBridgeableDirection concept ──────────────────────────────────
 
@@ -368,11 +403,16 @@ static_assert( IsBridgeableDirection<Spsc,  Direction::Producer>);
 static_assert( IsBridgeableDirection<Spsc,  Direction::Consumer>);
 static_assert( IsBridgeableDirection<SnapT, Direction::SwmrWriter>);
 static_assert( IsBridgeableDirection<SnapT, Direction::SwmrReader>);
+static_assert( IsBridgeableDirection<DequeT, Direction::Owner>);
+static_assert( IsBridgeableDirection<DequeT, Direction::Thief>);
 
 // SPSC has no SwmrWriter direction; the metafunction resolution fails.
 static_assert(!IsBridgeableDirection<Spsc, Direction::SwmrWriter>);
 // Snapshot has no Producer direction; the metafunction resolution fails.
 static_assert(!IsBridgeableDirection<SnapT, Direction::Producer>);
+// ChaseLevDeque has role-specific Owner/Thief directions only.
+static_assert(!IsBridgeableDirection<DequeT, Direction::Producer>);
+static_assert(!IsBridgeableDirection<DequeT, Direction::Consumer>);
 
 // Non-substrate types are rejected by IsSubstrate gate.
 static_assert(!IsBridgeableDirection<int, Direction::Producer>);
@@ -406,6 +446,24 @@ using NvProducerSession = decltype(mint_substrate_session<
         std::declval<eff::HotFgCtx const&>(),
         std::declval<handle_for_t<NvSpsc, Direction::Producer>&>()));
 static_assert(NvProducerSession::vendor_backend == proto::VendorBackend::NV);
+
+using DequeOwnerSession = decltype(mint_substrate_session<
+    DequeT,
+    Direction::Owner>(
+        std::declval<eff::HotFgCtx const&>(),
+        std::declval<handle_for_t<DequeT, Direction::Owner>&>()));
+using DequeThiefSession = decltype(mint_substrate_session<
+    DequeT,
+    Direction::Thief>(
+        std::declval<eff::HotFgCtx const&>(),
+        std::declval<handle_for_t<DequeT, Direction::Thief>&>()));
+static_assert(std::is_same_v<
+    typename DequeOwnerSession::protocol,
+    proto::Select<proto::Send<int, proto::Continue>,
+                  proto::Recv<int, proto::Continue>>>);
+static_assert(std::is_same_v<
+    typename DequeThiefSession::protocol,
+    proto::Recv<proto::Borrowed<int, DequeT::thief_tag>, proto::Continue>>);
 
 }  // namespace detail::substrate_session_bridge_self_test
 

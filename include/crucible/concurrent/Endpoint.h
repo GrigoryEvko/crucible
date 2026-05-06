@@ -107,8 +107,8 @@
 //
 // ── Status ──────────────────────────────────────────────────────────
 //
-// v1 covers SPSC / MPSC / MPMC (try_push / try_pop) and Snapshot
-// (publish / load).  ChaseLevDeque deferred to v2.
+// v1 covers SPSC / MPSC / MPMC (try_push / try_pop), Snapshot
+// (publish / load), and ChaseLevDeque (owner push/pop, thief steal).
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/SubstrateCtxFit.h>
@@ -372,8 +372,9 @@ public:
     // acquire-load + one release-store on isolated cache lines.
 
     // Producer-side direction (push-typed substrates: SPSC/MPSC/MPMC)
+    // plus ChaseLevDeque owner push_bottom.
     template <class T = value_type>
-        requires (Dir == Direction::Producer)
+        requires (Dir == Direction::Producer || Dir == Direction::Owner)
               && std::same_as<std::remove_cvref_t<T>, value_type>
     [[nodiscard, gnu::hot]] bool try_send(T const& v) noexcept {
         return handle_->try_push(v);
@@ -387,11 +388,18 @@ public:
         handle_->publish(v);
     }
 
-    // Consumer-side direction (pop-typed substrates)
+    // Consumer-side direction (pop-typed substrates), ChaseLevDeque
+    // owner pop_bottom, and ChaseLevDeque thief steal_top.
     template <Direction D = Dir>
-        requires (D == Direction::Consumer)
+        requires (D == Direction::Consumer
+               || D == Direction::Owner
+               || D == Direction::Thief)
     [[nodiscard, gnu::hot]] std::optional<value_type> try_recv() noexcept {
-        return handle_->try_pop();
+        if constexpr (D == Direction::Thief) {
+            return handle_->try_steal();
+        } else {
+            return handle_->try_pop();
+        }
     }
 
     // Snapshot-reader-side direction (loads the latest published value)
@@ -538,6 +546,9 @@ struct UserTag {};
 using SmallSpsc = PermissionedSpscChannel<int, 64, UserTag>;
 using ProdEp = Endpoint<SmallSpsc, Direction::Producer, eff::HotFgCtx>;
 using ConsEp = Endpoint<SmallSpsc, Direction::Consumer, eff::BgDrainCtx>;
+using SmallDeque = PermissionedChaseLevDeque<int, 64, UserTag>;
+using OwnerEp = Endpoint<SmallDeque, Direction::Owner, eff::HotFgCtx>;
+using ThiefEp = Endpoint<SmallDeque, Direction::Thief, eff::HotFgCtx>;
 using SmallOneToOneCtx = eff::ExecCtx<
     eff::ctx_cap::Fg,
     eff::ctx_numa::Local,
@@ -571,6 +582,15 @@ static_assert(std::is_same_v<typename ProdEp::value_type, int>);
 static_assert(std::is_same_v<typename ProdEp::ctx_type, eff::HotFgCtx>);
 static_assert(std::is_same_v<typename ProdEp::proto_type,
                               proto::Loop<proto::Send<int, proto::Continue>>>);
+static_assert(std::is_same_v<typename OwnerEp::handle_type,
+                              typename SmallDeque::OwnerHandle>);
+static_assert(std::is_same_v<typename ThiefEp::handle_type,
+                              typename SmallDeque::ThiefHandle>);
+static_assert(std::is_same_v<typename OwnerEp::proto_type,
+                              proto::chaselev_session::OwnerProto<int>>);
+static_assert(std::is_same_v<typename ThiefEp::proto_type,
+                              proto::chaselev_session::ThiefProto<
+                                  int, SmallDeque::thief_tag>>);
 
 // Ctx-derived static facts
 static_assert( ProdEp::ctx_is_hot);
@@ -642,6 +662,8 @@ static_assert(sizeof(ProdEp) == sizeof(void*),
     "Endpoint must collapse to pointer-size — Ctx EBO-collapse is "
     "load-bearing for the zero-runtime-cost claim.");
 static_assert(sizeof(ConsEp) == sizeof(void*));
+static_assert(sizeof(OwnerEp) == sizeof(void*));
+static_assert(sizeof(ThiefEp) == sizeof(void*));
 
 // ── Snapshot endpoint ──────────────────────────────────────────────
 struct SnapTag {};

@@ -446,6 +446,7 @@ crucible_test(test_permissioned_mpmc_channel)
 crucible_test(test_permissioned_sharded_grid)
 crucible_test(test_permissioned_chase_lev_deque)
 crucible_test(test_chaselev_deque_session)
+crucible_test(test_chaselev_substrate_session_bridge)
 crucible_test(test_permissioned_cross_primitive)
 crucible_test(test_permissioned_calendar_grid)
 crucible_test(test_scheduler_policies)
@@ -4157,6 +4158,15 @@ crucible_neg_compile_session_test(neg_chaselev_thief_session_push
 
 crucible_neg_compile_session_test(neg_chaselev_owner_session_steal
     "try_steal|no matching function|constraints not satisfied")
+
+# GAPS-081: generic SubstrateSessionBridge and Endpoint preserve the
+# Chase-Lev owner/thief protocol split.  The thief direction remains
+# Recv-only through both factories.
+crucible_neg_compile_session_test(neg_chaselev_substrate_thief_send
+    "has no member named.*send")
+
+crucible_neg_compile_session_test(neg_chaselev_endpoint_thief_try_send
+    "no matching function for call|constraints not satisfied|candidate")
 
 # GAPS-062: ChainEdge one-shot session facade.  SignalerProto is
 # Send-only; WaiterProto is Recv-only.
