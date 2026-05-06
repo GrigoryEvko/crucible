@@ -34,6 +34,7 @@
 #include <crucible/Transaction.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/FxAliases.h>
+#include <crucible/handles/PublishOnce.h>
 #include <crucible/perf/Senses.h>
 #include <crucible/rt/DeadlineWatchdog.h>
 #include <crucible/rt/Policy.h>
@@ -57,6 +58,36 @@ class Vigil {
         DIVERGED,    // guard mismatch, fell back from COMPILED
     };
 
+ private:
+    class ModeCell {
+        std::atomic<Mode> value_{Mode::RECORDING};
+
+    public:
+        constexpr ModeCell() noexcept = default;
+
+        ModeCell(const ModeCell&)            = delete("Vigil mode cell is process-local state");
+        ModeCell& operator=(const ModeCell&) = delete("Vigil mode cell is process-local state");
+        ModeCell(ModeCell&&)                 = delete("atomic mode cell is the channel identity");
+        ModeCell& operator=(ModeCell&&)      = delete("atomic mode cell is the channel identity");
+
+        [[nodiscard]] Mode load(std::memory_order order = std::memory_order_relaxed)
+            const noexcept
+        {
+            return value_.load(order);
+        }
+
+        void publish_compiled() noexcept {
+            value_.store(Mode::COMPILED, std::memory_order_relaxed);
+        }
+
+        void publish_recording_after_divergence() noexcept {
+            value_.store(Mode::RECORDING, std::memory_order_relaxed);
+        }
+    };
+
+    static_assert(sizeof(ModeCell) == sizeof(std::atomic<Mode>));
+
+ public:
     struct Config {
         int32_t     rank             = -1;
         int32_t     world_size       = 0;
@@ -188,7 +219,7 @@ class Vigil {
     //
     // RECORDING hot path:
     //   is_compiled() → pending check → record_op() → return result
-    //   Acquire load on pending_region_: must see the region data
+    //   Acquire observe on pending_region_: must see the region data
     //   stored by the bg thread (release pairing).  Free on x86 (same
     //   as relaxed for an aligned load); emits DMB ISH on ARM only
     //   when needed.  A relaxed load could miss the bg's store for
@@ -230,10 +261,10 @@ class Vigil {
 
         // ── RECORDING fast path (hot) ──
         //
-        // Acquire load matches the release store in on_region_ready
+        // Acquire observe matches the release publish in on_region_ready
         // (bg thread).  We must see every byte of the region (ops,
         // plan, hashes) the bg thread published before its store.
-        auto* pending = pending_region_.load(std::memory_order_acquire);
+        auto* pending = pending_region_.observe();
         if (pending || pending_activation_) [[unlikely]]
             return dispatch_transition_(entry, metas, n_metas,
                                         scope_hash, callsite_hash);
@@ -320,7 +351,7 @@ class Vigil {
 
     // Relaxed: mode_ is set and read primarily by fg thread. Tests spin
     // on it cross-thread but only need eventual visibility (relaxed
-    // guarantees this). The real synchronization is pending_region_ acquire.
+    // guarantees this). The real synchronization is pending_region_ observe().
     // Note: these cross-thread queries load atomics — not gnu::pure
     // (the atomic load is not side-effect-free from the optimizer's
     // POV; another thread may change the value between loads, so CSE
@@ -443,7 +474,7 @@ class Vigil {
         RegionNode* region = cipher_->load(open_view, a, cipher_->head(), load_arena_);
         if (!region) return false;
         bg_.active_region.store(region, std::memory_order_release);
-        mode_.store(Mode::COMPILED, std::memory_order_relaxed);
+        mode_.publish_compiled();
         // Activate per-op replay if the loaded region has a plan.
         if (ctx_.activate(region)) {
             register_externals_from_region_(region);
@@ -580,8 +611,8 @@ class Vigil {
         // fg thread picks it up in dispatch_op() via dispatch_transition_().
         // Also set mode_=COMPILED for backward compat — existing code/tests
         // poll is_compiled() without calling dispatch_op().
-        pending_region_.store(region, std::memory_order_release);
-        mode_.store(Mode::COMPILED, std::memory_order_relaxed);
+        pending_region_.publish(region);
+        mode_.publish_compiled();
 
         // Pre-store the object (idempotent) so persist() is instant later.
         if (cipher_.has_value()) {
@@ -658,7 +689,7 @@ class Vigil {
         if (ctx_.is_compiled())
             ctx_.deactivate();
 
-        mode_.store(Mode::RECORDING, std::memory_order_relaxed);
+        mode_.publish_recording_after_divergence();
         // Signal bg thread to reset its detector and accumulated trace.
         bg_.reset_requested.signal();
         // Don't record the divergent op — it poisons the bg thread's
@@ -683,7 +714,7 @@ class Vigil {
         // resets alignment_pos_ to 0. This is correct: the newer
         // region may have different ops (e.g. after a divergence
         // recovery cycle), so we must re-align from scratch.
-        if (pending_region_.load(std::memory_order_acquire))
+        if (pending_region_.observe())
             consume_pending_region_();
 
         if (pending_activation_) {
@@ -705,8 +736,7 @@ class Vigil {
     // Consume the bg→fg pending region into fg-only alignment state.
     // Does NOT activate CrucibleContext — alignment phase handles that.
     [[gnu::cold]] void consume_pending_region_() {
-        auto* region = pending_region_.exchange(nullptr,
-                                                std::memory_order_acq_rel);
+        auto* region = pending_region_.consume();
         if (!region) return;
         if (region->num_ops == 0) return;  // degenerate region
 
@@ -772,7 +802,7 @@ class Vigil {
                 (void)status;
             }
 
-            mode_.store(Mode::COMPILED, std::memory_order_relaxed);
+            mode_.publish_compiled();
             pending_activation_ = nullptr;
         }
     }
@@ -861,20 +891,24 @@ class Vigil {
     // dispatch.  In release builds the contract collapses under
     // semantic=ignore.
     std::atomic<std::thread::id>    producer_tid_{};
-    // mode_ is a status flag — real sync is pending_region_ acquire,
-    // relaxed ordering is sufficient here (fg-thread-primary).
+    // mode_ is a status flag — real sync is pending_region_ observe(),
+    // relaxed ordering is sufficient here (fg-thread-primary).  The
+    // wrapper removes raw store/load vocabulary from Vigil and leaves
+    // only named transitions matching the actual cyclic lifecycle.
     // step_ is a monotonic counter advanced by bg thread on each region
     // transition; AtomicMonotonic lifts the monotonicity invariant to
     // the type level (no decrement, no reset, no stale CAS).
-    std::atomic<Mode>               mode_{Mode::RECORDING};
+    ModeCell                        mode_;
     safety::AtomicMonotonic<uint64_t> step_{0};
     Arena                           load_arena_{1 << 20}; // for Cipher::load()
 
     // ─── Tier 1 dispatch state (fg thread only, except pending_region_) ─
 
     // NOT relaxed: bg→fg publish. bg writes region data, then
-    // store(release). fg's load(acquire) in dispatch_op must see it.
-    std::atomic<RegionNode*>        pending_region_{nullptr};
+    // publish(release). fg's observe/consume(acquire) in dispatch_op
+    // must see it.  This is reusable latest-wins publication, not
+    // PublishOnce: divergence recovery can publish multiple regions.
+    safety::PublishSlot<RegionNode> pending_region_;
     RegionNode*                     pending_activation_{nullptr}; // fg-only: waiting for alignment
     uint32_t                        alignment_pos_{0};  // consecutive matched ops from region start
     CrucibleContext                 ctx_;               // fg-only replay

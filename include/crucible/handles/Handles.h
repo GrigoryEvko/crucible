@@ -6,7 +6,8 @@
 //   FileHandle              — POSIX fd, std::expected<T, SyscallError>
 //   Once / Lazy<T>          — first-call-wins single init
 //   OneShotFlag             — single-bit release/acquire publication
-//   PublishOnce<T>          — async channel-resource publication
+//   PublishOnce<T>          — one-shot async channel-resource publication
+//   PublishSlot<T>          — reusable latest-wins pointer publication
 //   LazyEstablishedChannel  — PublishOnce-backed session establishment
 //
 // Hot-path TUs that only need a single primitive should include the

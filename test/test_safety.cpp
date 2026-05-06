@@ -20,6 +20,7 @@
 #include <latch>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <utility>
 
 // Weak default handle_contract_violation comes from libcrucible.a
@@ -895,6 +896,44 @@ static void test_not_inherited() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// PublishSlot<T>
+// ═══════════════════════════════════════════════════════════════════
+
+static void test_publish_slot() {
+    static_assert(sizeof(PublishSlot<int>) == sizeof(std::atomic<int*>),
+                  "PublishSlot<T> must be layout-equivalent to atomic<T*>");
+    static_assert(!std::is_copy_constructible_v<PublishSlot<int>>,
+                  "PublishSlot<T> is the identity of a publication cell");
+    static_assert(!std::is_move_constructible_v<PublishSlot<int>>,
+                  "PublishSlot<T> must not move its atomic cell");
+
+    int first = 1;
+    int second = 2;
+    PublishSlot<int> slot;
+
+    assert(slot.observe() == nullptr);
+    assert(slot.consume() == nullptr);
+
+    slot.publish(&first);
+    assert(slot.has_pending());
+    assert(slot.observe() == &first);
+    assert(slot.consume() == &first);
+    assert(!slot.has_pending());
+    assert(slot.observe() == nullptr);
+
+    // Latest-wins publication mirrors Vigil::pending_region_: a newer
+    // bg publication can replace an older unconsumed notification while
+    // the arena keeps both pointed-to objects alive.
+    slot.publish(&first);
+    slot.publish(&second);
+    assert(slot.observe() == &second);
+    assert(slot.consume() == &second);
+    assert(slot.consume() == nullptr);
+
+    std::printf("  PublishSlot:    ok\n");
+}
+
+// ═══════════════════════════════════════════════════════════════════
 
 int main() {
     std::printf("Safety wrappers smoke test:\n");
@@ -910,6 +949,7 @@ int main() {
     test_constant_time();
     test_assertion_triad();
     test_not_inherited();
+    test_publish_slot();
     std::printf("All safety wrappers compile and pass smoke test.\n");
     return 0;
 }

@@ -3625,6 +3625,12 @@ crucible_neg_compile_test(neg_linear_copy_attempt
 crucible_neg_compile_test(neg_permission_copy_attempt
     "linear")
 
+# PublishSlot<T> owns an atomic publication cell.  Copying it would
+# duplicate channel identity and split observers across two unrelated
+# slots, so the copy constructor is deleted with an explicit reason.
+crucible_neg_compile_test(neg_publish_slot_copy_attempt
+    "publication slot identity cannot be copied")
+
 # GAPS-044 — Permission inheritance is explicit and acyclic.  Crash-stop
 # recovery may mint survivor permissions only for declared inheritance
 # edges; a peer cannot inherit to itself.

@@ -1,13 +1,13 @@
 #pragma once
 
-// ── crucible::safety::PublishOnce<T*> ────────────────────────────────
+// ── crucible::safety::{PublishOnce<T>, PublishSlot<T>} ────────────────
 //
 // Single-publisher lock-free handoff of a pointer across threads.
 //
 //   Axiom coverage: ThreadSafe, LeakSafe, BorrowSafe.
 //   Runtime cost:   one aligned atomic store-release on publish,
 //                   one aligned atomic load-acquire on observe.
-//                   sizeof(PublishOnce<T*>) == sizeof(std::atomic<T*>).
+//                   sizeof(PublishOnce<T>) == sizeof(std::atomic<T*>).
 //
 // Semantics:
 //   - publish(p)   — store-release of p.  Contract fires on a second
@@ -27,6 +27,13 @@
 // Non-copyable and non-movable: the atomic is the identity of the
 // channel; copying would break the "one publisher" invariant by
 // duplicating state.
+//
+// PublishSlot<T> is the reusable latest-wins sibling for bg→fg
+// handoff slots that are consumed with exchange(nullptr) and then
+// republished.  Use PublishOnce when a field semantically transitions
+// null→value at most once; use PublishSlot when each publication is a
+// replaceable notification and the storage owner keeps old values
+// alive independently.
 
 #include <crucible/Platform.h>
 
@@ -83,7 +90,7 @@ public:
     // before publish.  Non-nullptr return synchronizes with the
     // publisher's store-release — the published object's contents
     // are visible to this thread.
-    [[nodiscard, gnu::pure]] CRUCIBLE_INLINE T* observe() const noexcept {
+    [[nodiscard]] CRUCIBLE_INLINE T* observe() const noexcept {
         return slot_.load(std::memory_order_acquire);
     }
 
@@ -101,5 +108,40 @@ public:
 // the type system.
 static_assert(sizeof(PublishOnce<int>)  == sizeof(std::atomic<int*>));
 static_assert(sizeof(PublishOnce<void>) == sizeof(std::atomic<void*>));
+
+template <typename T>
+class CRUCIBLE_OWNER PublishSlot {
+    alignas(alignof(std::atomic<T*>)) std::atomic<T*> slot_{nullptr};
+
+public:
+    constexpr PublishSlot() noexcept = default;
+    ~PublishSlot() = default;
+
+    PublishSlot(const PublishSlot&)            = delete("publication slot identity cannot be copied");
+    PublishSlot& operator=(const PublishSlot&) = delete("publication slot identity cannot be copied");
+    PublishSlot(PublishSlot&&)                 = delete("atomic slot is the channel identity");
+    PublishSlot& operator=(PublishSlot&&)      = delete("atomic slot is the channel identity");
+
+    CRUCIBLE_INLINE void publish(T* ptr) noexcept
+        pre (ptr != nullptr)
+    {
+        slot_.store(ptr, std::memory_order_release);
+    }
+
+    [[nodiscard]] CRUCIBLE_INLINE T* observe() const noexcept {
+        return slot_.load(std::memory_order_acquire);
+    }
+
+    [[nodiscard]] CRUCIBLE_INLINE T* consume() noexcept {
+        return slot_.exchange(nullptr, std::memory_order_acq_rel);
+    }
+
+    [[nodiscard]] CRUCIBLE_INLINE bool has_pending() const noexcept {
+        return slot_.load(std::memory_order_relaxed) != nullptr;
+    }
+};
+
+static_assert(sizeof(PublishSlot<int>)  == sizeof(std::atomic<int*>));
+static_assert(sizeof(PublishSlot<void>) == sizeof(std::atomic<void*>));
 
 } // namespace crucible::safety
