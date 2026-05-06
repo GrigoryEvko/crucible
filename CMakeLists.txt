@@ -417,7 +417,7 @@ endif()
 
 # ═══════════════════════════════════════════════════════════════
 # SECTION 2: GCC 16 — MAXIMUM PARANOIA
-#            200+ individual warning flags
+#            220+ individual warning / hardening flags
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   target_compile_options(crucible PUBLIC
@@ -549,13 +549,35 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     -fstrict-enums                      # 203  assume valid enum values
     -Wvolatile                          # 204  deprecated volatile use
     -Wvla-larger-than=0                 # 205  reject ALL VLAs
+
+    # ── 3.14  Source integrity / C++ template tripwires (20) ─────
+    -Wbidi-chars=any                    # 206  reject bidi-control source spoofing
+    -Wnormalized=nfkc                   # 207  Unicode identifiers normalize safely
+    -Winvalid-utf8                      # 208  malformed UTF-8 in source
+    -Wdate-time                         # 209  nondeterministic __DATE__/__TIME__
+    -Wmissing-requires                  # 210  likely missing requires keyword
+    -Wmissing-template-keyword          # 211  dependent template call ambiguity
+    -Wcomma-subscript                   # 212  deprecated comma in subscript
+    -Wdeprecated-enum-float-conversion  # 213  enum/float arithmetic drift
+    -Wconversion-null                   # 214  NULL converted to non-pointer
+    -Wdefaulted-function-deleted        # 215  defaulted function is deleted
+    -Wdelete-incomplete                 # 216  delete incomplete type
+    -Winit-list-lifetime                # 217  initializer_list lifetime hazards
+    -Winfinite-recursion                # 218  provable infinite recursion
+    -Winvalid-constexpr                 # 219  invalid constexpr path
+    -Wreorder                           # 220  ctor init order differs from members
+    -Wdangling-pointer=2                # 221  dangling pointer dataflow
+    -Waligned-new=all                   # 222  overaligned allocation mismatch
+    -Wmismatched-dealloc                # 223  malloc/free family mismatch
+    -Wmaybe-musttail-local-addr         # 224  musttail with local address hazard
+    -Wconditionally-supported           # 225  conditionally-supported C++ construct
   )
 
-  # ── 3.14  Library hardening — libstdc++ ────────────────────
+  # ── 3.15  Library hardening — libstdc++ ────────────────────
   target_compile_definitions(crucible PUBLIC
     $<$<CONFIG:Debug>:
-      _GLIBCXX_ASSERTIONS=1             # 206  vector[]/string[] bounds
-      _GLIBCXX_SANITIZE_VECTOR=1        # 207  vector realloc poison
+      _GLIBCXX_ASSERTIONS=1             # 226  vector[]/string[] bounds
+      _GLIBCXX_SANITIZE_VECTOR=1        # 227  vector realloc poison
     >
   )
 endif()
@@ -564,7 +586,7 @@ endif()
 # SECTION 4: FORTIFY_SOURCE + defines — both compilers
 # ═══════════════════════════════════════════════════════════════
 target_compile_definitions(crucible PUBLIC
-  _FORTIFY_SOURCE=3                     # 208  max glibc buffer checks
+  _FORTIFY_SOURCE=3                     # 228  max glibc buffer checks
 )
 
 # ═══════════════════════════════════════════════════════════════
@@ -572,8 +594,8 @@ target_compile_definitions(crucible PUBLIC
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
   target_compile_options(crucible PUBLIC
-    -ftrivial-auto-var-init=zero        # 210  zero-fill uninit stack (P2795R5)
-    -fharden-control-flow-redundancy    # 211  redundant CFG checks
+    -ftrivial-auto-var-init=zero        # 229  zero-fill uninit stack (P2795R5)
+    -fharden-control-flow-redundancy    # 230  redundant CFG checks
   )
 endif()
 
@@ -582,7 +604,7 @@ endif()
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_BUILD_TYPE MATCHES "Release")
   target_compile_options(crucible PUBLIC
-    -ftrivial-auto-var-init=zero        # 212  zero-fill (cheaper)
+    -ftrivial-auto-var-init=zero        # 231  zero-fill (cheaper)
     # Hot paths use contracts purely as invariant hints; release compiles
     # them to [[assume]] so the optimizer can exploit them without a
     # runtime check.  Boundary TUs that want enforcement flip this.
@@ -597,18 +619,18 @@ endif()
 # build-id for debuginfo, and more.
 # ═══════════════════════════════════════════════════════════════
 target_link_options(crucible PUBLIC
-  "LINKER:-z,relro"                     # 213  read-only relocations
-  "LINKER:-z,now"                       # 214  immediate symbol binding
-  "LINKER:-z,noexecstack"              # 215  non-executable stack
-  "LINKER:-z,separate-code"            # 216  separate code from data
-  "LINKER:--as-needed"                 # 217  only link needed libs
-  "LINKER:--no-copy-dt-needed-entries" # 218  no transitive deps
-  "LINKER:--hash-style=gnu"            # 219  GNU hash (faster lookup)
-  "LINKER:--build-id=sha1"             # 220  SHA-1 build ID
-  "LINKER:-z,pack-relative-relocs"     # 221  compact relocations
-  "LINKER:-z,nodump"                   # 222  prevent core dump of lib
-  "LINKER:--gc-sections"               # 223  garbage-collect sections
-  "LINKER:-z,defs"                     # 224  no undefined symbols
+  "LINKER:-z,relro"                     # 232  read-only relocations
+  "LINKER:-z,now"                       # 233  immediate symbol binding
+  "LINKER:-z,noexecstack"              # 234  non-executable stack
+  "LINKER:-z,separate-code"            # 235  separate code from data
+  "LINKER:--as-needed"                 # 236  only link needed libs
+  "LINKER:--no-copy-dt-needed-entries" # 237  no transitive deps
+  "LINKER:--hash-style=gnu"            # 238  GNU hash (faster lookup)
+  "LINKER:--build-id=sha1"             # 239  SHA-1 build ID
+  "LINKER:-z,pack-relative-relocs"     # 240  compact relocations
+  "LINKER:-z,nodump"                   # 241  prevent core dump of lib
+  "LINKER:--gc-sections"               # 242  garbage-collect sections
+  "LINKER:-z,defs"                     # 243  no undefined symbols
 )
 
 # Vessel adapter (shared library for Python/ctypes)

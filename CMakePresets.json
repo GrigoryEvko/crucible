@@ -12,6 +12,7 @@
         "CMAKE_EXE_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16/usr/lib64:$env{HOME}/.local/gcc16/lib64",
         "CMAKE_SHARED_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16/usr/lib64:$env{HOME}/.local/gcc16/lib64",
         "CMAKE_MODULE_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16/usr/lib64:$env{HOME}/.local/gcc16/lib64",
+        "CRUCIBLE_BENCH": "OFF",
         "CRUCIBLE_WERROR": "ON"
       }
     },
