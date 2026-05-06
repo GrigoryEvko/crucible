@@ -42,6 +42,7 @@
 #include <crucible/safety/Tagged.h>
 #include <crucible/safety/Wait.h>
 #include <crucible/sessions/SessionContentAddressed.h>
+#include <crucible/sessions/SessionEventLog.h>
 
 #include <charconv>
 #include <chrono>
@@ -169,8 +170,8 @@ class CRUCIBLE_OWNER Cipher {
                 }
             }
         }
-        if (!head_from_file && !c.log_.empty()) {
-            c.head_ = c.log_.back().hash;
+        if (!head_from_file) {
+            c.head_ = c.latest_committed_head();
         }
 
         return c;
@@ -719,7 +720,7 @@ class CRUCIBLE_OWNER Cipher {
     // Contract: step_id must not go backward — steps are documented as
     // monotonic for binary search in hash_at_step() to be correct.
     void advance_head(OpenView const&, ContentHash content_hash, uint64_t step_id)
-        pre (log_.empty() || step_id >= log_.back().step_id)
+        pre (log_.empty() || step_id >= log_.back().step_id.value)
     {
         head_ = content_hash;
 
@@ -731,7 +732,8 @@ class CRUCIBLE_OWNER Cipher {
 
         // Append log entry.
         const uint64_t ts = now_ns();
-        log_.emplace(LogEntry{.step_id = step_id, .hash = content_hash, .ts_ns = ts});
+        log_.emplace(LogEntry::cipher_store_committed(
+            safety::proto::StepId{step_id}, content_hash, ts));
         {
             std::ofstream lf(root_str() + "/log", std::ios::app);
             lf << std::format("{},{:016x},{}", step_id, content_hash.raw(), ts) << "\n";
@@ -848,7 +850,7 @@ class CRUCIBLE_OWNER Cipher {
     void record_event(OpenView const& view,
                       ContentHash content_hash,
                       uint64_t step_id)
-        pre (log_.empty() || step_id >= log_.back().step_id)
+        pre (log_.empty() || step_id >= log_.back().step_id.value)
     {
         advance_head(view, content_hash, step_id);
     }
@@ -859,21 +861,30 @@ class CRUCIBLE_OWNER Cipher {
     [[nodiscard]] ContentHash hash_at_step(OpenView const&, uint64_t step_id) const {
         if (log_.empty()) return ContentHash{};
 
-        // Find last entry with log_[mid].step_id <= step_id.
-        uint32_t lo = 0;
-        auto     hi = static_cast<uint32_t>(log_.size());
-        ContentHash result{};
+        // Find the first entry after step_id, then walk back to the
+        // latest event that actually commits the Cipher head.  Today
+        // Cipher writes only StoreCommitted events, but the unified
+        // SessionEvent record can also carry non-head session events.
+        std::size_t lo = 0;
+        std::size_t hi = log_.size();
 
         while (lo < hi) {
-            const uint32_t mid = lo + (hi - lo) / 2;
-            if (log_[mid].step_id <= step_id) {
-                result = log_[mid].hash;
+            const std::size_t mid = lo + (hi - lo) / 2;
+            if (log_[mid].step_id.value <= step_id) {
                 lo = mid + 1;
             } else {
                 hi = mid;
             }
         }
-        return result;
+
+        while (lo > 0) {
+            --lo;
+            const LogEntry& entry = log_[lo];
+            if (entry.commits_cipher_head()) {
+                return entry.cipher_content_hash();
+            }
+        }
+        return ContentHash{};
     }
 
     // Legacy: mints OpenView locally.  const because mint_open_view()
@@ -892,11 +903,11 @@ class CRUCIBLE_OWNER Cipher {
     [[nodiscard]] const std::string& root()  const CRUCIBLE_LIFETIMEBOUND { return root_str(); }
 
  private:
-    struct LogEntry {
-        uint64_t    step_id;
-        ContentHash hash;
-        uint64_t    ts_ns;
-    };
+    using LogEntry = safety::proto::SessionEvent;
+
+    static_assert(std::is_same_v<LogEntry, safety::proto::SessionEvent>);
+    static_assert(sizeof(LogEntry) == 56);
+    static_assert(std::is_trivially_copyable_v<LogEntry>);
 
     struct CachedObjectBytes {
         ContentHash          hash;
@@ -906,16 +917,8 @@ class CRUCIBLE_OWNER Cipher {
     static constexpr size_t MAX_RESIDENT_CACHE_BYTES = size_t{8} << 20;
     static constexpr size_t MAX_RESIDENT_CACHE_ENTRIES = 64;
 
-    // Stateless projection used by OrderedAppendOnly below.  hash_at_step()
-    // binary-searches the log on step_id; that search requires monotonic
-    // non-decreasing step_id across the entire log.  Projecting step_id
-    // through OrderedAppendOnly makes the ordering invariant structural
-    // (contract-fires at append time) rather than a doc comment.
-    struct LogEntryByStepId {
-        [[nodiscard]] constexpr uint64_t operator()(const LogEntry& e) const noexcept {
-            return e.step_id;
-        }
-    };
+    using LogEntryByStepId = safety::proto::StepIdKeyFn;
+    using LogEntryStepLess = safety::proto::StepIdLess;
 
     // root_ is write-once (set by open, never reassigned) and carries
     // the provenance tag source::Durable at the type level.  Reassigning
@@ -936,9 +939,22 @@ class CRUCIBLE_OWNER Cipher {
     // backward.  OrderedAppendOnly<> fuses both invariants into one
     // type; .erase() / .clear() / out-of-order .append() all fail at
     // compile time (the first two) or contract-terminate (the third).
-    crucible::safety::OrderedAppendOnly<LogEntry, LogEntryByStepId> log_;
+    crucible::safety::OrderedAppendOnly<
+        LogEntry, LogEntryByStepId, LogEntryStepLess> log_;
     mutable std::vector<CachedObjectBytes> resident_cache_;
     mutable size_t resident_cache_bytes_ = 0;
+
+    [[nodiscard]] ContentHash latest_committed_head() const noexcept {
+        std::size_t i = log_.size();
+        while (i > 0) {
+            --i;
+            const LogEntry& entry = log_[i];
+            if (entry.commits_cipher_head()) {
+                return entry.cipher_content_hash();
+            }
+        }
+        return ContentHash{};
+    }
 
     // Path: root_/objects/<first2hex>/<remaining14hex>
     std::string obj_path(uint64_t hash) const {
@@ -1015,9 +1031,8 @@ class CRUCIBLE_OWNER Cipher {
             if (!parse_u64(begin + p1 + 1, begin + p2, 16, raw_hash)) continue;
             if (!parse_u64(begin + p2 + 1, begin + line.size(), 10, ts_ns)) continue;
 
-            log_.emplace(LogEntry{.step_id = step_id,
-                                   .hash    = ContentHash{raw_hash},
-                                   .ts_ns   = ts_ns});
+            log_.emplace(LogEntry::cipher_store_committed(
+                safety::proto::StepId{step_id}, ContentHash{raw_hash}, ts_ns));
         }
     }
 

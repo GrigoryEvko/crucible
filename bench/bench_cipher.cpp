@@ -2,8 +2,8 @@
 //
 // store() hits disk idempotently (one write per content_hash, skipped
 // thereafter). load() opens + reads + deserializes. Bench measures
-// cold-write, warm-write (dedup skip), and cold-read paths at two
-// region sizes (16 and 256 ops).
+// cold-write, warm-write (dedup skip), unified-log record_event, and
+// cold-read paths at two region sizes (16 and 256 ops).
 //
 // Each sample creates a fresh Arena where required; the Cipher opens
 // a tmp dir that's cleaned on exit. Run is registered with BPF — the
@@ -76,6 +76,7 @@ int main() {
     std::size_t idx_256_cold = 0;
     std::size_t idx_256_warm = 0;
     std::size_t idx_256_ca_warm = 0;
+    std::size_t idx_256_record_event = 0;
 
     for (uint32_t num_ops : {16u, 256u}) {
         // Cipher + warm_region live in THIS scope, shared across the
@@ -94,14 +95,17 @@ int main() {
         // allocates its own arena + region, so state doesn't grow
         // unboundedly across batches.
         char label_cold[64], label_warm[64], label_ca_warm[64];
-        char label_read[64], label_ca_read[64];
+        char label_read[64], label_ca_read[64], label_record_event[64];
         std::snprintf(label_cold, sizeof(label_cold), "store cold  (%u ops, distinct)",     num_ops);
         std::snprintf(label_warm, sizeof(label_warm), "store warm  (%u ops, dedup hit)",    num_ops);
         std::snprintf(label_ca_warm, sizeof(label_ca_warm), "store CA    (%u ops, dedup hit)", num_ops);
         std::snprintf(label_read, sizeof(label_read), "load  cold  (%u ops)",               num_ops);
         std::snprintf(label_ca_read, sizeof(label_ca_read), "load  CA    (%u ops, cache hit)", num_ops);
+        std::snprintf(label_record_event, sizeof(label_record_event),
+                      "record event (%u ops, unified log)", num_ops);
 
         const std::size_t base_idx = reports.size();
+        uint64_t record_step = static_cast<uint64_t>(num_ops) << 32;
 
         reports.push_back([&]{
             uint64_t salt = static_cast<uint64_t>(num_ops) << 32;
@@ -136,10 +140,19 @@ int main() {
             bench::do_not_optimize(r.cache_hit());
         }));
 
+        reports.push_back(bench::run(label_record_event, [&]{
+            const uint64_t step = ++record_step;
+            const ContentHash event_hash{warm_h.raw() ^ step};
+            cipher.record_event<Cipher::record_event_required_row>(
+                cipher.mint_open_view(), event_hash, step);
+            bench::do_not_optimize(event_hash);
+        }));
+
         if (num_ops == 256u) {
             idx_256_cold = base_idx;
             idx_256_warm = base_idx + 1;
             idx_256_ca_warm = base_idx + 2;
+            idx_256_record_event = base_idx + 5;
         }
     }
 
@@ -153,6 +166,9 @@ int main() {
 
     std::printf("\n=== compare — ContentAddressed wrapper overhead (256 ops) ===\n  ");
     bench::compare(reports[idx_256_warm], reports[idx_256_ca_warm]).print_text(stdout);
+
+    std::printf("\n=== compare — unified log write vs warm store (256 ops) ===\n  ");
+    bench::compare(reports[idx_256_warm], reports[idx_256_record_event]).print_text(stdout);
 
     std::filesystem::remove_all(dir);
     std::printf("\n%s: cleaned\n", dir);

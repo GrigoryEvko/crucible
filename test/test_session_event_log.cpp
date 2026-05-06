@@ -43,6 +43,37 @@ static_assert(session_op_name(SessionOp::Delegate) ==
               std::string_view{"Delegate"});
 static_assert(session_op_name(SessionOp::Accept) ==
               std::string_view{"Accept"});
+static_assert(session_op_name(SessionOp::StorePending) ==
+              std::string_view{"StorePending"});
+static_assert(session_op_name(SessionOp::StoreCommitted) ==
+              std::string_view{"StoreCommitted"});
+static_assert(session_op_name(SessionOp::LoadFromTier) ==
+              std::string_view{"LoadFromTier"});
+static_assert(session_op_name(SessionOp::TierPromote) ==
+              std::string_view{"TierPromote"});
+static_assert(session_op_name(SessionOp::TierDemote) ==
+              std::string_view{"TierDemote"});
+static_assert(session_op_name(SessionOp::TierRestore) ==
+              std::string_view{"TierRestore"});
+static_assert(!session_op_is_cipher(SessionOp::Send));
+static_assert(session_op_is_cipher(SessionOp::StorePending));
+static_assert(session_op_is_cipher(SessionOp::TierRestore));
+static_assert(!session_op_commits_cipher_head(SessionOp::StorePending));
+static_assert(session_op_commits_cipher_head(SessionOp::StoreCommitted));
+static_assert(session_op_commits_cipher_head(SessionOp::TierPromote));
+static_assert(session_op_commits_cipher_head(SessionOp::TierDemote));
+static_assert(session_op_commits_cipher_head(SessionOp::TierRestore));
+
+constexpr auto kCipherEventWitness =
+    SessionEvent::cipher_tier_promote(
+        StepId{11}, crucible::ContentHash::from_raw(0x1234), 1, 2, 99);
+static_assert(kCipherEventWitness.is_cipher_event());
+static_assert(kCipherEventWitness.commits_cipher_head());
+static_assert(kCipherEventWitness.cipher_content_hash() ==
+              crucible::ContentHash::from_raw(0x1234));
+static_assert(kCipherEventWitness.cipher_timestamp_ns() == 99);
+static_assert(kCipherEventWitness.cipher_from_tier() == 1);
+static_assert(kCipherEventWitness.cipher_to_tier() == 2);
 
 static_assert(default_schema_hash<int>          != default_schema_hash<long>);
 static_assert(default_schema_hash<int>          == default_schema_hash<int>);
@@ -867,10 +898,12 @@ int run_all_session_ops_bit_exact_replay() {
         crucible::ContentHash::from_raw(0xE0111E0111E0111ULL);
     constexpr auto kSavedHash =
         crucible::ContentHash::from_raw(0xD0222D0222D0222ULL);
+    constexpr auto kCipherHash =
+        crucible::ContentHash::from_raw(0xC155EC155EC155EULL);
     constexpr InnerPermSetHash kPerms{0xA0333A0333A0333ULL};
     constexpr RecoveryPathHash kRecovery{0xB0444B0444B0444ULL};
 
-    const std::array<SessionEvent, 11> events{{
+    const std::array<SessionEvent, 17> events{{
         SessionEvent{
             .from_role      = kClient,
             .to_role        = kServer,
@@ -919,6 +952,18 @@ int run_all_session_ops_bit_exact_replay() {
             kClient, kServer, kProtoHash, kPerms),
         SessionEvent::accept_handoff(
             kServer, kClient, kProtoHash, kPerms),
+        SessionEvent::cipher_store_pending(
+            StepId{}, kCipherHash, 1001),
+        SessionEvent::cipher_store_committed(
+            StepId{}, kCipherHash, 1002),
+        SessionEvent::cipher_load_from_tier(
+            StepId{}, kCipherHash, 1, 1003),
+        SessionEvent::cipher_tier_promote(
+            StepId{}, kCipherHash, 1, 2, 1004),
+        SessionEvent::cipher_tier_demote(
+            StepId{}, kCipherHash, 2, 0, 1005),
+        SessionEvent::cipher_tier_restore(
+            StepId{}, kCipherHash, 0, 1, 1006),
     }};
 
     SessionEventLog log{SessionTagId{808}};
@@ -938,8 +983,82 @@ int run_all_session_ops_bit_exact_replay() {
         if (i > 0 && !(log[i - 1].step_id.value < log[i].step_id.value)) {
             return 50;
         }
+        if (log[i].is_cipher_event()
+            && log[i].cipher_content_hash() != kCipherHash) {
+            return 70;
+        }
     }
     if (it != replay.end())                                       return 60;
+
+    return 0;
+}
+
+// ── Worked: mixed session + Cipher events stay monotonic ───────────
+
+int run_mixed_session_cipher_events_ordered() {
+    constexpr auto kCipherHashBase =
+        crucible::ContentHash::from_raw(0xC1FEE00000000000ULL);
+    constexpr std::size_t kEventCount = 1000;
+
+    SessionEventLog log{SessionTagId{909}};
+    for (std::size_t i = 0; i < kEventCount; ++i) {
+        if ((i % 4) == 0) {
+            log.append_event(SessionEvent::cipher_store_pending(
+                StepId{},
+                crucible::ContentHash::from_raw(kCipherHashBase.raw() + i),
+                10'000 + i));
+        } else if ((i % 4) == 1) {
+            log.append_event(SessionEvent::cipher_store_committed(
+                StepId{},
+                crucible::ContentHash::from_raw(kCipherHashBase.raw() + i),
+                10'000 + i));
+        } else if ((i % 4) == 2) {
+            log.append_event(SessionEvent{
+                .from_role      = kClient,
+                .to_role        = kServer,
+                .payload_schema = default_schema_hash<int>,
+                .payload_hash   = PayloadHash{i},
+                .op             = SessionOp::Send,
+            });
+        } else {
+            log.append_event(SessionEvent{
+                .from_role      = kServer,
+                .to_role        = kClient,
+                .payload_schema = default_schema_hash<int>,
+                .payload_hash   = PayloadHash{i},
+                .op             = SessionOp::Recv,
+            });
+        }
+    }
+
+    if (log.size() != kEventCount) return 1;
+
+    std::size_t cipher_events = 0;
+    std::size_t session_events = 0;
+    std::size_t head_commits = 0;
+    for (std::size_t i = 0; i < log.size(); ++i) {
+        const SessionEvent& event = log[i];
+        if (event.session.value != 909u) return 10;
+        if (i > 0 && !(log[i - 1].step_id.value < event.step_id.value)) {
+            return 20;
+        }
+
+        if (event.is_cipher_event()) {
+            ++cipher_events;
+            if (event.cipher_timestamp_ns() != 10'000 + i) return 30;
+            if (event.cipher_content_hash() !=
+                crucible::ContentHash::from_raw(kCipherHashBase.raw() + i)) {
+                return 40;
+            }
+            if (event.commits_cipher_head()) ++head_commits;
+        } else {
+            ++session_events;
+        }
+    }
+
+    if (cipher_events != 500) return 50;
+    if (session_events != 500) return 60;
+    if (head_commits != 250) return 70;
 
     return 0;
 }
@@ -974,10 +1093,11 @@ int main() {
     if (int rc = run_delegate_event_replay_roundtrip(); rc != 0) return 1200 + rc;
     if (int rc = run_recording_delegate_accept_recorded(); rc != 0) return 1300 + rc;
     if (int rc = run_all_session_ops_bit_exact_replay(); rc != 0) return 1400 + rc;
+    if (int rc = run_mixed_session_cipher_events_ordered(); rc != 0) return 1500 + rc;
 
     std::puts("session_event_log: log primitive + RecordingSessionHandle "
               "wrapper + bilateral capture + replay-determinism + Offer "
               "branch capture + CrashWatched Stop capture + full "
-              "SessionOp replay OK");
+              "SessionOp replay + Cipher event replay OK");
     return 0;
 }

@@ -177,6 +177,12 @@ enum class SessionOp : uint8_t {
     Checkpoint_Rollback = 9,  // CheckpointedSession::rollback()
     Delegate = 10, // Delegate<T, K>::delegate()
     Accept   = 11, // Accept<T, K>::accept()
+    StorePending   = 12, // Cipher store observed before durable commit
+    StoreCommitted = 13, // Cipher HEAD/log commit
+    LoadFromTier   = 14, // Cipher load from hot/warm/cold tier
+    TierPromote    = 15, // Cipher tier promotion boundary
+    TierDemote     = 16, // Cipher tier demotion boundary
+    TierRestore    = 17, // Cipher cold restore into warm/hot tier
 };
 
 }  // namespace event_detail
@@ -196,7 +202,39 @@ using SessionOp = event_detail::SessionOp;
         case SessionOp::Checkpoint_Rollback: return "Checkpoint_Rollback";
         case SessionOp::Delegate: return "Delegate";
         case SessionOp::Accept:   return "Accept";
+        case SessionOp::StorePending:   return "StorePending";
+        case SessionOp::StoreCommitted: return "StoreCommitted";
+        case SessionOp::LoadFromTier:   return "LoadFromTier";
+        case SessionOp::TierPromote:    return "TierPromote";
+        case SessionOp::TierDemote:     return "TierDemote";
+        case SessionOp::TierRestore:    return "TierRestore";
         default:                return "?";
+    }
+}
+
+[[nodiscard]] constexpr bool session_op_is_cipher(SessionOp op) noexcept {
+    switch (op) {
+        case SessionOp::StorePending:
+        case SessionOp::StoreCommitted:
+        case SessionOp::LoadFromTier:
+        case SessionOp::TierPromote:
+        case SessionOp::TierDemote:
+        case SessionOp::TierRestore:
+            return true;
+        default:
+            return false;
+    }
+}
+
+[[nodiscard]] constexpr bool session_op_commits_cipher_head(SessionOp op) noexcept {
+    switch (op) {
+        case SessionOp::StoreCommitted:
+        case SessionOp::TierPromote:
+        case SessionOp::TierDemote:
+        case SessionOp::TierRestore:
+            return true;
+        default:
+            return false;
     }
 }
 
@@ -215,6 +253,16 @@ enum class StopReasonKind : uint8_t {
 enum class CheckpointChoice : uint8_t {
     Base     = 1,
     Rollback = 2,
+};
+
+// Cipher uses the same 56-byte SessionEvent record.  These payload
+// structs name the per-kind interpretation of the two 64-bit lanes and
+// two one-byte control lanes; they do not add storage to SessionEvent.
+struct CipherEventPayload {
+    ::crucible::ContentHash content_hash{};
+    uint64_t                timestamp_ns = 0;
+    uint8_t                 from_tier = 0;
+    uint8_t                 to_tier = 0;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -335,6 +383,86 @@ struct SessionEvent {
         };
     }
 
+    [[nodiscard]] static constexpr SessionEvent cipher_event(
+        SessionOp op,
+        StepId step,
+        ::crucible::ContentHash content_hash,
+        uint64_t timestamp_ns,
+        uint8_t from_tier = 0,
+        uint8_t to_tier = 0) noexcept
+    {
+        return SessionEvent{
+            .step_id        = step,
+            .session        = SessionTagId{0},
+            .payload_schema = SchemaHash{timestamp_ns},
+            .payload_hash   = PayloadHash{content_hash.raw()},
+            .op             = op,
+            .branch_index   = from_tier,
+            .reason_kind    = to_tier,
+        };
+    }
+
+    [[nodiscard]] static constexpr SessionEvent cipher_store_pending(
+        StepId step,
+        ::crucible::ContentHash content_hash,
+        uint64_t timestamp_ns = 0) noexcept
+    {
+        return cipher_event(SessionOp::StorePending, step, content_hash,
+                            timestamp_ns);
+    }
+
+    [[nodiscard]] static constexpr SessionEvent cipher_store_committed(
+        StepId step,
+        ::crucible::ContentHash content_hash,
+        uint64_t timestamp_ns = 0) noexcept
+    {
+        return cipher_event(SessionOp::StoreCommitted, step, content_hash,
+                            timestamp_ns);
+    }
+
+    [[nodiscard]] static constexpr SessionEvent cipher_load_from_tier(
+        StepId step,
+        ::crucible::ContentHash content_hash,
+        uint8_t from_tier,
+        uint64_t timestamp_ns = 0) noexcept
+    {
+        return cipher_event(SessionOp::LoadFromTier, step, content_hash,
+                            timestamp_ns, from_tier, from_tier);
+    }
+
+    [[nodiscard]] static constexpr SessionEvent cipher_tier_promote(
+        StepId step,
+        ::crucible::ContentHash content_hash,
+        uint8_t from_tier,
+        uint8_t to_tier,
+        uint64_t timestamp_ns = 0) noexcept
+    {
+        return cipher_event(SessionOp::TierPromote, step, content_hash,
+                            timestamp_ns, from_tier, to_tier);
+    }
+
+    [[nodiscard]] static constexpr SessionEvent cipher_tier_demote(
+        StepId step,
+        ::crucible::ContentHash content_hash,
+        uint8_t from_tier,
+        uint8_t to_tier,
+        uint64_t timestamp_ns = 0) noexcept
+    {
+        return cipher_event(SessionOp::TierDemote, step, content_hash,
+                            timestamp_ns, from_tier, to_tier);
+    }
+
+    [[nodiscard]] static constexpr SessionEvent cipher_tier_restore(
+        StepId step,
+        ::crucible::ContentHash content_hash,
+        uint8_t from_tier,
+        uint8_t to_tier,
+        uint64_t timestamp_ns = 0) noexcept
+    {
+        return cipher_event(SessionOp::TierRestore, step, content_hash,
+                            timestamp_ns, from_tier, to_tier);
+    }
+
     [[nodiscard]] constexpr RoleTagId stop_peer_tag() const noexcept {
         return RoleTagId{payload_schema.value};
     }
@@ -375,6 +503,40 @@ struct SessionEvent {
 
     [[nodiscard]] constexpr InnerPermSetHash inner_perm_set_hash() const noexcept {
         return InnerPermSetHash{payload_hash.value};
+    }
+
+    [[nodiscard]] constexpr bool is_cipher_event() const noexcept {
+        return session_op_is_cipher(op);
+    }
+
+    [[nodiscard]] constexpr bool commits_cipher_head() const noexcept {
+        return session_op_commits_cipher_head(op);
+    }
+
+    [[nodiscard]] constexpr ::crucible::ContentHash
+    cipher_content_hash() const noexcept {
+        return ::crucible::ContentHash::from_raw(payload_hash.value);
+    }
+
+    [[nodiscard]] constexpr uint64_t cipher_timestamp_ns() const noexcept {
+        return payload_schema.value;
+    }
+
+    [[nodiscard]] constexpr uint8_t cipher_from_tier() const noexcept {
+        return branch_index;
+    }
+
+    [[nodiscard]] constexpr uint8_t cipher_to_tier() const noexcept {
+        return reason_kind;
+    }
+
+    [[nodiscard]] constexpr CipherEventPayload cipher_payload() const noexcept {
+        return CipherEventPayload{
+            .content_hash = cipher_content_hash(),
+            .timestamp_ns = cipher_timestamp_ns(),
+            .from_tier = cipher_from_tier(),
+            .to_tier = cipher_to_tier(),
+        };
     }
 };
 
