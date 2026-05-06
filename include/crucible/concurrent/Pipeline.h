@@ -31,20 +31,24 @@
 //                                     pipeline_row_union_t<Stages...>
 //                                     admitted by Ctx::row_type.
 //
+//   aggregate_per_call_ws_v<...>    — sum of each stage's handle-level
+//                                     per-call working set.
+//
 //   Pipeline<Stages...>             — value-typed bundle of N stages,
 //                                     held in a std::tuple.
 //                                     Move-only.  &&-qualified .run()
-//                                     spawns one std::jthread per
-//                                     stage and joins via std::array
-//                                     destructor (the same RAII
-//                                     pattern as permission_fork).
+//                                     uses a cache-tier dispatch rule:
+//                                     inline only for explicitly
+//                                     inline-safe stages with aggregate
+//                                     WS ≤ private L2; otherwise one
+//                                     std::jthread per stage.
 //
 //   mint_pipeline<>(ctx, stages...) — Universal Mint Pattern factory;
 //                                     ctx-bound flavor; single-concept
 //                                     gate; [[nodiscard]] noexcept;
 //                                     consumes each stage by move.
 //
-// ── Why .run() must spawn threads ───────────────────────────────────
+// ── Why .run() usually spawns threads ────────────────────────────────
 //
 // Each Stage's body (the FnPtr the user wrote) IS the drain loop —
 // it spins on try_pop until upstream closes its channel, processes
@@ -53,14 +57,22 @@
 // waiting for stage_1 to consume from the channel between them, but
 // stage_1 hasn't started yet.
 //
-// Pipeline.run() therefore spawns N jthreads — one per stage — and
-// joins them via the std::array<jthread, N> destructor at fn epilogue.
-// This is identical in shape to permission_fork (safety/PermissionFork.h);
-// the only difference is what's being forked: there it's permissions
-// over disjoint regions, here it's already-bundled stages over already-
-// connected channels.
+// Pipeline.run() therefore keeps the thread-per-stage path as the
+// default.  A stage may opt into inline execution by specializing
+// stage_inline_safe<Stage>; this is for bounded micro-stages whose
+// body is a single finite call, NOT a channel drain loop.  Opt-in is
+// ignored unless both handles expose static per_call_working_set facts
+// and the aggregate working set fits in the probed private L2.
 //
-// Cost: N pthread_create + N pthread_join per Pipeline::run() call.
+// The spawned path joins via the std::array<jthread, N> destructor at
+// fn epilogue.  This is identical in shape to permission_fork
+// (safety/PermissionFork.h); the only difference is what's being
+// forked: there it's permissions over disjoint regions, here it's
+// already-bundled stages over already-connected channels.
+//
+// Cost:
+//   inline path: N direct FnPtr calls, no thread creation.
+//   spawned path: N pthread_create + N pthread_join per .run() call.
 // For long-lived pipelines (the typical Crucible shape — a Vigil's
 // background drain pipeline, a kernel-compile pool's stage chain) the
 // thread spawn cost amortizes to zero.
@@ -135,12 +147,15 @@
 #include <crucible/Platform.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/concurrent/Stage.h>
+#include <crucible/concurrent/Topology.h>
+#include <crucible/concurrent/WorkingSet.h>
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/diag/RowMismatch.h>
 
 #include <array>
+#include <cstdint>
 #include <thread>
 #include <tuple>
 #include <type_traits>
@@ -269,6 +284,84 @@ concept CtxFitsPipeline =
                                 typename Ctx::row_type>;
 
 // ═════════════════════════════════════════════════════════════════════
+// ── Pipeline working-set and inline-safety traits ──────────────────
+// ═════════════════════════════════════════════════════════════════════
+
+template <class Stage>
+struct stage_inline_safe : std::false_type {};
+
+template <class Stage>
+inline constexpr bool stage_inline_safe_v =
+    stage_inline_safe<std::remove_cvref_t<Stage>>::value;
+
+namespace detail {
+
+template <class Stage, bool = IsStage<Stage>>
+struct stage_working_set_traits {
+    static constexpr bool known = false;
+    static constexpr std::size_t value = unknown_per_call_working_set;
+};
+
+template <class Stage>
+struct stage_working_set_traits<Stage, true> {
+private:
+    using S = std::remove_cvref_t<Stage>;
+    using In = typename S::consumer_handle_type;
+    using Out = typename S::producer_handle_type;
+
+public:
+    static constexpr bool known =
+        has_static_per_call_working_set_v<In>
+     && has_static_per_call_working_set_v<Out>;
+
+    static constexpr std::size_t value = [] consteval {
+        if constexpr (known) {
+            return saturating_ws_add(
+                per_call_working_set_of_v<In>,
+                per_call_working_set_of_v<Out>);
+        } else {
+            return unknown_per_call_working_set;
+        }
+    }();
+};
+
+template <class... Stages>
+[[nodiscard]] consteval std::size_t aggregate_stage_ws() noexcept {
+    std::size_t total = 0;
+    ((total = saturating_ws_add(
+          total,
+          stage_working_set_traits<std::remove_cvref_t<Stages>>::value)), ...);
+    return total;
+}
+
+}  // namespace detail
+
+template <class Stage>
+inline constexpr bool stage_per_call_ws_known_v =
+    detail::stage_working_set_traits<std::remove_cvref_t<Stage>>::known;
+
+template <class Stage>
+inline constexpr std::size_t stage_per_call_ws_v =
+    detail::stage_working_set_traits<std::remove_cvref_t<Stage>>::value;
+
+template <class... Stages>
+inline constexpr bool aggregate_per_call_ws_known_v =
+    (stage_per_call_ws_known_v<Stages> && ...);
+
+template <class... Stages>
+inline constexpr std::size_t aggregate_per_call_ws_v =
+    detail::aggregate_stage_ws<std::remove_cvref_t<Stages>...>();
+
+template <class... Stages>
+inline constexpr bool pipeline_inline_safe_v =
+    (stage_inline_safe_v<Stages> && ...);
+
+enum class PipelineDispatchKind : std::uint8_t {
+    Inline,
+    ThreadPerStage,
+};
+
+// ═════════════════════════════════════════════════════════════════════
 // ── Pipeline<Stages...> ────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
 
@@ -277,6 +370,17 @@ template <class... Stages>
 class Pipeline {
 public:
     static constexpr std::size_t arity = sizeof...(Stages);
+    static constexpr std::size_t aggregate_per_call_working_set =
+        aggregate_per_call_ws_v<Stages...>;
+    static constexpr bool inline_safe =
+        pipeline_inline_safe_v<Stages...>;
+    static constexpr bool aggregate_working_set_known =
+        aggregate_per_call_ws_known_v<Stages...>;
+
+    static_assert(
+        ((!stage_inline_safe_v<Stages> || stage_per_call_ws_known_v<Stages>) && ...),
+        "Pipeline inline opt-in requires both stage handles to expose "
+        "static constexpr per_call_working_set");
 
     // ── Construction (used by mint_pipeline; not user-facing) ─────
     [[nodiscard]] explicit constexpr Pipeline(Stages&&... stages) noexcept
@@ -289,20 +393,37 @@ public:
     Pipeline(Pipeline&&) noexcept = default;
     Pipeline& operator=(Pipeline&&) noexcept = default;
 
-    // ── run() — spawns N jthreads, one per stage; joins via dtor ──
+    // ── run() — cache-tier dispatch, consuming the pipeline ───────
     //
-    // &&-qualified: running CONSUMES the Pipeline.  Each stage is
-    // moved into its own jthread's body, where `std::move(stage).run()`
-    // invokes the FnPtr.  The std::array<jthread, N>'s destructor
-    // joins all threads at fn epilogue, in reverse-of-construction
-    // order (immaterial — all bodies must complete before .run()
-    // returns).
-    //
-    // Identical RAII shape to permission_fork (safety/PermissionFork.h)
-    // but parameterized by N stages instead of N permission tags.
+    // Inline path is only available for finite, explicitly opted-in
+    // stages.  Default drain-loop stages stay on the jthread path.
 
     void run() && noexcept {
-        std::move(*this).run_impl_(std::index_sequence_for<Stages...>{});
+        if (will_run_inline()) {
+            std::move(*this).run_inline_impl_(
+                std::index_sequence_for<Stages...>{});
+        } else {
+            std::move(*this).run_threaded_impl_(
+                std::index_sequence_for<Stages...>{});
+        }
+    }
+
+    [[nodiscard]] static PipelineDispatchKind dispatch_kind() noexcept {
+        if constexpr (inline_safe && aggregate_working_set_known) {
+            const auto& topology = Topology::instance();
+            const std::size_t aggregate = aggregate_per_call_working_set;
+            if (aggregate <= topology.l1d_per_core_bytes()) {
+                return PipelineDispatchKind::Inline;
+            }
+            if (aggregate <= topology.l2_per_core_bytes()) {
+                return PipelineDispatchKind::Inline;
+            }
+        }
+        return PipelineDispatchKind::ThreadPerStage;
+    }
+
+    [[nodiscard]] static bool will_run_inline() noexcept {
+        return dispatch_kind() == PipelineDispatchKind::Inline;
     }
 
     // ── Accessor (introspection only — does not consume) ───────────
@@ -316,7 +437,12 @@ public:
 
 private:
     template <std::size_t... Is>
-    void run_impl_(std::index_sequence<Is...>) && noexcept {
+    void run_inline_impl_(std::index_sequence<Is...>) && noexcept {
+        ((void)std::move(std::get<Is>(stages_)).run(), ...);
+    }
+
+    template <std::size_t... Is>
+    void run_threaded_impl_(std::index_sequence<Is...>) && noexcept {
         // Build N jthreads in-place; each captures-by-move its stage
         // and invokes std::move(stage).run() in its body.  The array's
         // destructor (at this fn's epilogue) joins all threads.
@@ -450,6 +576,12 @@ using P3 = Pipeline<S_int_to_int, S_int_to_float, S_float_to_double>;
 static_assert(P1::arity == 1);
 static_assert(P2::arity == 2);
 static_assert(P3::arity == 3);
+static_assert(stage_per_call_ws_known_v<S_int_to_int>);
+static_assert(stage_per_call_ws_v<S_int_to_int> == 128);
+static_assert(aggregate_per_call_ws_v<S_int_to_int, S_int_to_int> == 256);
+static_assert(P3::aggregate_per_call_working_set == 384);
+static_assert(!stage_inline_safe_v<S_int_to_int>);
+static_assert(!P3::inline_safe);
 
 // Move-only enforcement.
 static_assert(!std::is_copy_constructible_v<P1>);

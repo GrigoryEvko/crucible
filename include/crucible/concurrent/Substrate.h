@@ -58,6 +58,7 @@
 #include <crucible/concurrent/PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
+#include <crucible/concurrent/WorkingSet.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -294,15 +295,14 @@ namespace detail {
 // alignas(64) discipline pervasive in the Permissioned* primitives
 // (CLAUDE.md §VIII — x86-64 + Graviton/Neoverse 64 B; Apple
 // Silicon's 128 B handled separately when it lands).
-inline constexpr std::size_t kHotPathCacheLineBytes = 64;
+inline constexpr std::size_t kHotPathCacheLineBytes =
+    ::crucible::concurrent::hot_path_cache_line_bytes;
 
 // Round sizeof(T) up to the nearest cache line.  A 4 B int still
 // occupies one full cache line under cell-aligned layout.
 [[nodiscard]] consteval std::size_t
 cell_line_footprint(std::size_t value_bytes) noexcept {
-    if (value_bytes == 0) return 0;
-    return ((value_bytes + kHotPathCacheLineBytes - 1)
-                / kHotPathCacheLineBytes) * kHotPathCacheLineBytes;
+    return ::crucible::concurrent::cell_line_footprint(value_bytes);
 }
 
 }  // namespace detail

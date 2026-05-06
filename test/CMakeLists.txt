@@ -438,6 +438,7 @@ crucible_test(test_permission_grid_generator)
 crucible_test(test_read_view)
 crucible_test(test_topology)
 crucible_test(test_parallelism_rule)
+crucible_test(test_pipeline_dispatch)
 crucible_test(test_permissioned_snapshot)
 crucible_test(test_auto_router)
 crucible_test(test_permissioned_mpsc_channel)
@@ -1234,6 +1235,8 @@ crucible_neg_compile_effects_test(neg_pipeline_run_on_lvalue
     "no matching function for call|cannot bind|passing.*as.*'this'|discards qualifiers")
 crucible_neg_compile_effects_test(neg_mint_pipeline_empty_pack
     "associated constraints are not satisfied|CtxFitsPipeline|pipeline_chain")
+crucible_neg_compile_effects_test(neg_pipeline_inline_opt_in_missing_ws
+    "Pipeline inline opt-in requires")
 
 # ─── #868: Endpoint↔Stage bridge gate fixtures ───────────────────────
 #

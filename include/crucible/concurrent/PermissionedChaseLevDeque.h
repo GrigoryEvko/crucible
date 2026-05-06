@@ -138,6 +138,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/ChaseLevDeque.h>
+#include <crucible/concurrent/WorkingSet.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Pinned.h>
 
@@ -209,6 +210,8 @@ public:
     public:
         using value_type = T;
         using tag_type   = owner_tag;
+        static constexpr std::size_t per_call_working_set =
+            lines_plus_cell_working_set_v<2, T>;
 
         OwnerHandle(const OwnerHandle&)
             = delete("OwnerHandle owns the linear Owner Permission — copy would duplicate the token, allowing two threads to race on push_bottom/pop_bottom (data race on bottom_)");
@@ -261,6 +264,8 @@ public:
     public:
         using value_type = T;
         using tag_type   = thief_tag;
+        static constexpr std::size_t per_call_working_set =
+            lines_plus_cell_working_set_v<2, T>;
 
         ThiefHandle(const ThiefHandle&)
             = delete("ThiefHandle owns a thief-pool refcount share — copy would double-count");

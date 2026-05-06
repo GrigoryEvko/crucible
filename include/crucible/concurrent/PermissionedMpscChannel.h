@@ -115,6 +115,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/MpscRing.h>
+#include <crucible/concurrent/WorkingSet.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Pinned.h>
 
@@ -192,6 +193,9 @@ public:
         friend class PermissionedMpscChannel;
 
     public:
+        static constexpr std::size_t per_call_working_set =
+            lines_plus_cell_working_set_v<3, T>;
+
         ProducerHandle(const ProducerHandle&)
             = delete("ProducerHandle owns a Pool refcount share — copy would double-count");
         ProducerHandle& operator=(const ProducerHandle&)
@@ -244,6 +248,9 @@ public:
         friend class PermissionedMpscChannel;
 
     public:
+        static constexpr std::size_t per_call_working_set =
+            lines_plus_cell_working_set_v<3, T>;
+
         ConsumerHandle(const ConsumerHandle&)
             = delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");
         ConsumerHandle& operator=(const ConsumerHandle&)

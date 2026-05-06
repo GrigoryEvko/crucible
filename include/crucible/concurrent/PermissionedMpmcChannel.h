@@ -122,6 +122,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/MpmcRing.h>
+#include <crucible/concurrent/WorkingSet.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Pinned.h>
 
@@ -211,6 +212,8 @@ public:
 
     public:
         using session_state = State;
+        static constexpr std::size_t per_call_working_set =
+            lines_plus_cell_working_set_v<3, T>;
 
         ProducerHandleT(const ProducerHandleT&)
             = delete("ProducerHandle owns a producer-pool refcount share — copy would double-count");
@@ -277,6 +280,8 @@ public:
 
     public:
         using session_state = State;
+        static constexpr std::size_t per_call_working_set =
+            lines_plus_cell_working_set_v<3, T>;
 
         ConsumerHandleT(const ConsumerHandleT&)
             = delete("ConsumerHandle owns a consumer-pool refcount share — copy would double-count");

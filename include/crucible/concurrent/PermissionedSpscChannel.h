@@ -135,6 +135,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
+#include <crucible/concurrent/WorkingSet.h>
 #include <crucible/concurrent/SpscRing.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Pinned.h>
@@ -212,6 +213,9 @@ public:
         friend class PermissionedSpscChannel;
 
     public:
+        static constexpr std::size_t per_call_working_set =
+            lines_plus_cell_working_set_v<2, T>;
+
         ProducerHandle(const ProducerHandle&)
             = delete("ProducerHandle owns the Producer Permission — copy would duplicate the linear token");
         ProducerHandle& operator=(const ProducerHandle&)
@@ -265,6 +269,9 @@ public:
         friend class PermissionedSpscChannel;
 
     public:
+        static constexpr std::size_t per_call_working_set =
+            lines_plus_cell_working_set_v<2, T>;
+
         ConsumerHandle(const ConsumerHandle&)
             = delete("ConsumerHandle owns the Consumer Permission — copy would duplicate the linear token");
         ConsumerHandle& operator=(const ConsumerHandle&)

@@ -121,6 +121,7 @@
 #include <crucible/safety/diag/RowMismatch.h>
 #include <crucible/sessions/SessionRowExtraction.h>
 
+#include <cstddef>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -195,7 +196,7 @@ public:
     using output_value_type    =
         ::crucible::safety::extract::pipeline_stage_output_value_t<FnPtr>;
 
-    static constexpr auto fn_ptr = FnPtr;
+    [[maybe_unused]] static constexpr auto fn_ptr = FnPtr;
 
     static constexpr bool is_value_preserving =
         ::crucible::safety::extract::pipeline_stage_is_value_preserving_v<FnPtr>;
@@ -324,11 +325,13 @@ namespace saf = ::crucible::safety::extract;
 
 template <typename T>
 struct FakeConsumer {
+    static constexpr std::size_t per_call_working_set = 64;
     [[nodiscard]] std::optional<T> try_pop() noexcept { return {}; }
 };
 
 template <typename T>
 struct FakeProducer {
+    static constexpr std::size_t per_call_working_set = 64;
     [[nodiscard]] bool try_push(T const&) noexcept { return false; }
 };
 

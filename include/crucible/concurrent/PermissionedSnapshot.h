@@ -72,6 +72,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/concurrent/AtomicSnapshot.h>
+#include <crucible/concurrent/WorkingSet.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Pinned.h>
 
@@ -141,6 +142,9 @@ public:
         friend class PermissionedSnapshot;
 
     public:
+        static constexpr std::size_t per_call_working_set =
+            hot_path_cache_line_bytes + cell_line_footprint(sizeof(T));
+
         WriterHandle(const WriterHandle&)
             = delete("WriterHandle owns the Writer Permission — copy would duplicate the linear token");
         WriterHandle& operator=(const WriterHandle&)
@@ -173,6 +177,9 @@ public:
         friend class PermissionedSnapshot;
 
     public:
+        static constexpr std::size_t per_call_working_set =
+            hot_path_cache_line_bytes + cell_line_footprint(sizeof(T));
+
         ReaderHandle(const ReaderHandle&)
             = delete("ReaderHandle owns a Pool refcount share — copy would double-count");
         ReaderHandle& operator=(const ReaderHandle&)
