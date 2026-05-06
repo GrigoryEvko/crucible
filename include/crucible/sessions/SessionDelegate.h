@@ -52,18 +52,21 @@
 // Layer 1 channel hands out Layer 2 (SWIM), Layer 3 (Raft), Layer 4
 // (collectives), or Layer 5 (NetworkOffload) endpoints via delegation:
 //
-//   using CntpLayer1 = Loop<Select<
-//       Delegate<SwimProto,         Continue>,
-//       Delegate<RaftProto,         Continue>,
-//       Delegate<CollectiveProto,   Continue>,
-//       Delegate<NetOffloadProto,   Continue>,
+//   using CntpLayer1 = VendorPinned<Portable, Loop<Select<
+//       Delegate<SwimProto,                   Continue>,
+//       Delegate<RaftProto,                   Continue>,
+//       Delegate<VendorPinned<NV, CollectiveProto>, Continue>,
+//       Delegate<VendorPinned<AMD, CollectiveProto>, Continue>,
+//       Delegate<NetOffloadProto,             Continue>,
 //       End
-//   >>;
+//   >>>;
 //
 // The Layer 1 transport hands out higher-layer endpoints to the
 // respective subsystems; each subsystem runs its OWN protocol on top.
-// Layer 1's type gives no hint of what Layer 2-5 carry — opacity at
-// the transport level, protocol integrity at the upper layers.
+// Layer 1's payload bytes stay opaque at the transport level, but
+// protocol integrity and per-vendor placement stay type-visible at the
+// upper layers via VendorPinned<V, P> and PermissionedSession's
+// VendorCtx<V> mint discipline.
 // Composed φ = (φ_Layer1 ∧ φ_Layer2 ∧ φ_Layer3 ∧ …) by the
 // compositionality theorem (§II.12.4).
 //
@@ -1083,25 +1086,38 @@ namespace cntp_cross_layer_example {
     struct RaftAck    {};
     using RaftProto = Loop<Recv<RaftAppend, Send<RaftAck, Continue>>>;
 
+    struct CollectiveChunk {};
+    struct CollectiveAck   {};
+    using CollectiveProto =
+        Loop<Send<CollectiveChunk, Recv<CollectiveAck, Continue>>>;
+    using NvCollectiveProto =
+        VendorPinned<VendorBackend::NV, CollectiveProto>;
+    using PortableCollectiveProto =
+        VendorPinned<VendorBackend::Portable, CollectiveProto>;
+
     // Layer 1's protocol: a loop that either delegates a SWIM endpoint
-    // OR delegates a Raft endpoint OR terminates.
-    using CntpLayer1 = Loop<Select<
+    // OR delegates a Raft endpoint OR delegates a vendor-pinned
+    // collective endpoint OR terminates.
+    using CntpLayer1 = VendorPinned<VendorBackend::Portable, Loop<Select<
         Delegate<SwimProto, Continue>,
         Delegate<RaftProto, Continue>,
+        Delegate<NvCollectiveProto, Continue>,
         End
-    >>;
+    >>>;
 
     static_assert(is_well_formed_v<CntpLayer1>);
+    static_assert(is_well_formed_v<PortableCollectiveProto>);
 
     // Dual is Offer<Accept<…>, Accept<…>, End> — the peer OFFERS to
     // accept whatever session the sender delegates.
     using CntpLayer1Peer = dual_of_t<CntpLayer1>;
     static_assert(std::is_same_v<CntpLayer1Peer,
-        Loop<Offer<
+        VendorPinned<VendorBackend::Portable, Loop<Offer<
             Accept<SwimProto, Continue>,
             Accept<RaftProto, Continue>,
+            Accept<NvCollectiveProto, Continue>,
             End
-        >>>);
+        >>>>);
     static_assert(is_well_formed_v<CntpLayer1Peer>);
 
     // Involution holds through the nested delegation structure.

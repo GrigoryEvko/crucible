@@ -9,7 +9,7 @@
 // Universal Mint Pattern (CLAUDE.md §XXI) for substrate-shaped
 // sessions:
 //
-//     mint_substrate_session<Substr, Dir>(ctx, channel, perm)
+//     mint_substrate_session<Substr, Dir, LoopCtx>(ctx, channel, perm)
 //                                                 → PSH<default_proto, ...>
 //
 // ── What this header ships ──────────────────────────────────────────
@@ -30,7 +30,7 @@
 //                              (Loop<Send<T, Continue>> /
 //                              Loop<Recv<T, Continue>>).
 //
-//   mint_substrate_session<Substr, Dir>(ctx, channel, perm)
+//   mint_substrate_session<Substr, Dir, LoopCtx>(ctx, channel, perm)
 //                            — factory.  Validates SubstrateFitsCtx
 //                              Residency at construction; returns the
 //                              standard PermissionedSessionHandle from
@@ -39,7 +39,10 @@
 //                              with EmptyPermSet (the substrate's
 //                              Permission discipline already enforces
 //                              single-producer-or-multi-producer
-//                              linearity at the handle layer).
+//                              linearity at the handle layer).  LoopCtx
+//                              defaults to void for vendor-free payloads;
+//                              vendor-pinned payloads require an explicit
+//                              proto::VendorCtx<V>.
 //
 // ── Why this extends SpscSession.h ─────────────────────────────────
 //
@@ -84,10 +87,11 @@
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/SubstrateCtxFit.h>
 #include <crucible/effects/ExecCtx.h>
-#include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <cstdint>
+#include <source_location>
 #include <type_traits>
 #include <utility>
 
@@ -255,7 +259,7 @@ concept IsBridgeableDirection =
  && detail::HasHandleFor<Substr, Dir>
  && detail::HasDefaultProtoFor<Substr, Dir>;
 
-// ── mint_substrate_session<Substr, Dir>(ctx, handle) ───────────────
+// ── mint_substrate_session<Substr, Dir, LoopCtx>(ctx, handle) ──────
 //
 // The Universal Mint factory.  Validates:
 //   * Substrate ↔ Ctx residency fit (SubstrateFitsCtxResidency).
@@ -266,6 +270,10 @@ concept IsBridgeableDirection =
 //     regardless of capacity).
 //   * Substrate × Direction is bridgeable (has handle_for and
 //     default_proto_for specializations)
+//   * default protocol's Vendor<T> payloads are admitted by LoopCtx.
+//     Raw LoopCtx = void is allowed only for vendor-free payloads.
+//     VendorCtx<Portable> is explicit cross-vendor; VendorCtx<None>
+//     is rejected as uninitialized.
 //
 // Takes the handle BY REFERENCE (the handle has a reference member to
 // its channel; can't be move-assigned, must be bound to enclosing
@@ -278,15 +286,26 @@ concept IsBridgeableDirection =
 // layer enforces single-producer-or-multi-producer semantics
 // independently of the wire-permission flow.
 
-template <class Substr, Direction Dir, ::crucible::effects::IsExecCtx Ctx>
+template <class Substr,
+          Direction Dir,
+          typename LoopCtx = void,
+          ::crucible::effects::IsExecCtx Ctx>
     requires IsBridgeableDirection<Substr, Dir>
           && SubstrateFitsCtxResidency<Substr, Ctx>
+          && ::crucible::safety::proto::CtxFitsPermissionedProtocol<
+                 default_proto_for_t<Substr, Dir>, Ctx,
+                 ::crucible::safety::proto::EmptyPermSet, LoopCtx>
 [[nodiscard]] constexpr auto
 mint_substrate_session(Ctx const&, handle_for_t<Substr, Dir>& handle) noexcept
 {
     using Proto = default_proto_for_t<Substr, Dir>;
     using Handle = handle_for_t<Substr, Dir>;
-    return ::crucible::safety::proto::mint_permissioned_session<Proto, Handle*>(&handle);
+    return ::crucible::safety::proto::detail::
+        mint_permissioned_session_with_loc<
+            Proto,
+            ::crucible::safety::proto::EmptyPermSet,
+            Handle*,
+            LoopCtx>(&handle, std::source_location::current());
 }
 
 // ── Self-test block ─────────────────────────────────────────────────
@@ -303,6 +322,10 @@ using Spsc      = PermissionedSpscChannel<int, 64, UserTag>;
 using Mpsc      = PermissionedMpscChannel<int, 64, UserTag>;
 using Mpmc      = PermissionedMpmcChannel<int, 64, UserTag>;
 using SnapT     = PermissionedSnapshot<int, UserTag>;
+using NvInt     = ::crucible::safety::Vendor<proto::VendorBackend::NV, int>;
+using AmdInt    = ::crucible::safety::Vendor<proto::VendorBackend::AMD, int>;
+using NvSpsc    = PermissionedSpscChannel<NvInt, 64, UserTag>;
+using AmdSpsc   = PermissionedSpscChannel<AmdInt, 64, UserTag>;
 
 static_assert(std::is_same_v<handle_for_t<Spsc,  Direction::Producer>,
                               typename Spsc::ProducerHandle>);
@@ -353,6 +376,36 @@ static_assert(!IsBridgeableDirection<SnapT, Direction::Producer>);
 
 // Non-substrate types are rejected by IsSubstrate gate.
 static_assert(!IsBridgeableDirection<int, Direction::Producer>);
+
+// ── VendorCtx admission for vendor-pinned payload substrates ───────
+
+static_assert(!proto::CtxFitsPermissionedProtocol<
+    default_proto_for_t<NvSpsc, Direction::Producer>,
+    eff::HotFgCtx,
+    proto::EmptyPermSet>);
+static_assert(proto::CtxFitsPermissionedProtocol<
+    default_proto_for_t<NvSpsc, Direction::Producer>,
+    eff::HotFgCtx,
+    proto::EmptyPermSet,
+    proto::VendorCtx<proto::VendorBackend::NV>>);
+static_assert(proto::CtxFitsPermissionedProtocol<
+    default_proto_for_t<NvSpsc, Direction::Producer>,
+    eff::HotFgCtx,
+    proto::EmptyPermSet,
+    proto::VendorCtx<proto::VendorBackend::Portable>>);
+static_assert(!proto::CtxFitsPermissionedProtocol<
+    default_proto_for_t<AmdSpsc, Direction::Consumer>,
+    eff::HotFgCtx,
+    proto::EmptyPermSet,
+    proto::VendorCtx<proto::VendorBackend::NV>>);
+
+using NvProducerSession = decltype(mint_substrate_session<
+    NvSpsc,
+    Direction::Producer,
+    proto::VendorCtx<proto::VendorBackend::NV>>(
+        std::declval<eff::HotFgCtx const&>(),
+        std::declval<handle_for_t<NvSpsc, Direction::Producer>&>()));
+static_assert(NvProducerSession::vendor_backend == proto::VendorBackend::NV);
 
 }  // namespace detail::substrate_session_bridge_self_test
 

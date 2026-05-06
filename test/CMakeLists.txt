@@ -918,6 +918,25 @@ crucible_neg_compile_session_test(neg_tier_compose_in_loop
 crucible_neg_compile_session_test(neg_vendor_ctx_nv_to_amd
     "PermissionedSession\\.h.*static assertion failed.*VendorCtx_Mismatch")
 
+# GAPS-068: VendorCtx/VendorPinned admission at session mint,
+# substrate bridge, Delegate_seq, subtype, and payload boundaries.
+crucible_neg_compile_session_test(neg_mint_substrate_nv_to_amd
+    "ProtocolVendorAdmittedByLoopCtx")
+crucible_neg_compile_session_test(neg_cntp_layer_vendor_mismatch
+    "ProtocolVendorAdmittedByLoopCtx")
+crucible_neg_compile_session_test(neg_collective_session_vendor_unspecified
+    "ProtocolVendorAdmittedByLoopCtx")
+crucible_neg_compile_session_test(neg_session_subtype_vendor_violation
+    "SessionSubtype\\.h.*static assertion failed.*VendorCtx_Mismatch")
+crucible_neg_compile_session_test(neg_session_compose_cross_vendor_no_portable
+    "PermissionedSession\\.h.*static assertion failed.*VendorCtx_Mismatch")
+crucible_neg_compile_session_test(neg_session_promote_to_portable_unauthorized
+    "PermissionedSession\\.h.*static assertion failed.*VendorCtx_Mismatch")
+crucible_neg_compile_session_test(neg_send_payload_vendor_in_pure_session
+    "ProtocolVendorAdmittedByLoopCtx")
+crucible_neg_compile_session_test(neg_recv_payload_unauthorized_vendor
+    "ProtocolVendorAdmittedByLoopCtx")
+
 # FOUND-B13 (#602): Met(X) negative-compile witnesses.  Three
 # fixtures probing the Subrow / IsEffect concept gates that enforce
 # the substitution principle for capability propagation.

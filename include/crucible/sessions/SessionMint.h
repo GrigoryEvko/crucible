@@ -28,8 +28,12 @@
 //
 //   proto_row_admitted_by<Proto, Ctx>::value — recursive row walker
 //   CtxFitsProtocol<Proto, Ctx>              — row-admission concept
+//   ProtocolVendorAdmittedByLoopCtx<Proto, L>
+//                                           — VendorPinned / Vendor<T>
+//                                             admission against LoopCtx
 //   CtxFitsPermissionedProtocol<Proto, Ctx,
-//                               PS>          — row + local PS closure
+//                               PS, L>      — row + local PS closure +
+//                                             vendor admission
 //   mint_permissioned_session<Proto>(ctx,
 //       resource, perms...)                  — factory; returns PSH
 //   mint_session<Proto>(ctx, resource)        — empty-PS shim
@@ -48,6 +52,10 @@
 // Composed payloads (Refined<P, Linear<Computation<R, T>>>) unwrap
 // transparently via payload_effect_row_t while payload_row_t preserves
 // non-effect grades such as NumericalTier — see SessionRowExtraction.h.
+// Vendor<T> payloads are different: their grade is a wire-placement
+// obligation, not an effect row.  GAPS-068 admits them only when the
+// surrounding session has an explicit VendorCtx and
+// VendorLattice::leq(payload_vendor, session_vendor) holds.
 //
 // ── Why eager whole-protocol ────────────────────────────────────────
 //
@@ -75,6 +83,7 @@
 
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/safety/IsVendor.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>          // Stop terminator
@@ -82,6 +91,7 @@
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/SessionRowExtraction.h>
 
+#include <cstddef>
 #include <source_location>
 #include <type_traits>
 #include <utility>
@@ -141,6 +151,11 @@ struct proto_row_admitted_by<Recv<T, K>, Ctx>
 template <class B, class Ctx>
 struct proto_row_admitted_by<Loop<B>, Ctx>
     : proto_row_admitted_by<B, Ctx>
+{};
+
+template <VendorBackend V, class P, class Ctx>
+struct proto_row_admitted_by<VendorPinned<V, P>, Ctx>
+    : proto_row_admitted_by<P, Ctx>
 {};
 
 // Select<Branches...>: every branch must be admitted (the proposer
@@ -211,6 +226,266 @@ concept CtxFitsProtocol = ::crucible::effects::IsExecCtx<Ctx>
 
 namespace detail::session_mint {
 
+template <class Proto, class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx;
+
+template <class Payload, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx : std::true_type {};
+
+template <VendorBackend PayloadVendor, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::Vendor<PayloadVendor, T>, LoopCtx>
+    : std::bool_constant<
+          loop_ctx_has_explicit_vendor_v<LoopCtx> &&
+          session_vendor_satisfies_v<loop_ctx_vendor_v<LoopCtx>,
+                                     PayloadVendor>
+      > {};
+
+template <class T, class Tag, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<Transferable<T, Tag>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, class Tag, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<Borrowed<T, Tag>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, class Tag, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<Returned<T, Tag>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class InnerProto, class InnerPS, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    DelegatedSession<InnerProto, InnerPS>, LoopCtx>
+    : protocol_vendor_admitted_by_loop_ctx<InnerProto, LoopCtx> {};
+
+template <class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<ContentAddressed<T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <auto Pred, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::Refined<Pred, T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <auto Pred, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::SealedRefined<Pred, T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, class Tag, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::Tagged<T, Tag>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::Linear<T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::Stale<T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <auto V, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::HotPath<V, T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <auto V, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::DetSafe<V, T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <auto V, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::AllocClass<V, T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <auto V, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::ResidencyHeat<V, T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <auto V, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::CipherTier<V, T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <auto V, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::MemOrder<V, T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <auto V, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::Wait<V, T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <auto V, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::Progress<V, T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <::crucible::safety::Tolerance V, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::NumericalTier<V, T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <auto V, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::Crash<V, T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <auto V, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::Consistency<V, T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <auto V, class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::OpaqueLifetime<V, T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::Secret<T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::Budgeted<T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::EpochVersioned<T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::NumaPlacement<T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::RecipeSpec<T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, class Cmp, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::Monotonic<T, Cmp>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, auto Max, class Cmp, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::BoundedMonotonic<T, Max, Cmp>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::WriteOnce<T>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, class Cmp, class LoopCtx>
+    requires std::is_trivially_copyable_v<T>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::AtomicMonotonic<T, Cmp>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, template <class...> class Storage, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::AppendOnly<T, Storage>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class T, std::size_t N, class Tag, class LoopCtx>
+struct payload_vendor_admitted_by_loop_ctx<
+    ::crucible::safety::TimeOrdered<T, N, Tag>, LoopCtx>
+    : payload_vendor_admitted_by_loop_ctx<T, LoopCtx> {};
+
+template <class Proto, class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx : std::false_type {};
+
+template <class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<End, LoopCtx> : std::true_type {};
+
+template <class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<Continue, LoopCtx> : std::true_type {};
+
+template <class T, class K, class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<Send<T, K>, LoopCtx>
+    : std::bool_constant<
+          payload_vendor_admitted_by_loop_ctx<T, LoopCtx>::value &&
+          protocol_vendor_admitted_by_loop_ctx<K, LoopCtx>::value
+      > {};
+
+template <class T, class K, class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<Recv<T, K>, LoopCtx>
+    : std::bool_constant<
+          payload_vendor_admitted_by_loop_ctx<T, LoopCtx>::value &&
+          protocol_vendor_admitted_by_loop_ctx<K, LoopCtx>::value
+      > {};
+
+template <class Body, class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<Loop<Body>, LoopCtx>
+    : protocol_vendor_admitted_by_loop_ctx<Body, LoopCtx> {};
+
+template <class... Branches, class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<Select<Branches...>, LoopCtx>
+    : std::bool_constant<
+          (protocol_vendor_admitted_by_loop_ctx<Branches, LoopCtx>::value && ...)
+      > {};
+
+template <class... Branches, class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<Offer<Branches...>, LoopCtx>
+    : std::bool_constant<
+          (protocol_vendor_admitted_by_loop_ctx<Branches, LoopCtx>::value && ...)
+      > {};
+
+template <class Role, class... Branches, class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<
+    Offer<Sender<Role>, Branches...>, LoopCtx>
+    : std::bool_constant<
+          (protocol_vendor_admitted_by_loop_ctx<Branches, LoopCtx>::value && ...)
+      > {};
+
+template <class Base, class Rollback, class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<
+    CheckpointedSession<Base, Rollback>, LoopCtx>
+    : std::bool_constant<
+          protocol_vendor_admitted_by_loop_ctx<Base, LoopCtx>::value &&
+          protocol_vendor_admitted_by_loop_ctx<Rollback, LoopCtx>::value
+      > {};
+
+template <class T, class K, class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<Delegate<T, K>, LoopCtx>
+    : std::bool_constant<
+          (!is_vendor_pinned_v<T> ||
+           (loop_ctx_has_explicit_vendor_v<LoopCtx> &&
+            session_vendor_satisfies_v<loop_ctx_vendor_v<LoopCtx>,
+                                       protocol_vendor_v<T>>)) &&
+          protocol_vendor_admitted_by_loop_ctx<T, LoopCtx>::value &&
+          protocol_vendor_admitted_by_loop_ctx<K, LoopCtx>::value
+      > {};
+
+template <class T, class K, class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<Accept<T, K>, LoopCtx>
+    : protocol_vendor_admitted_by_loop_ctx<Delegate<T, K>, LoopCtx> {};
+
+template <VendorBackend V, class P, class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<VendorPinned<V, P>, LoopCtx>
+    : std::bool_constant<
+          V != VendorBackend::None &&
+          (!loop_ctx_has_explicit_vendor_v<LoopCtx> ||
+           session_vendor_satisfies_v<loop_ctx_vendor_v<LoopCtx>, V>) &&
+          protocol_vendor_admitted_by_loop_ctx<
+              P, VendorCtx<V, loop_ctx_inner_t<LoopCtx>>>::value
+      > {};
+
+template <class Proto, class LoopCtx>
+inline constexpr bool protocol_vendor_admitted_by_loop_ctx_v =
+    protocol_vendor_admitted_by_loop_ctx<Proto, LoopCtx>::value;
+
 template <class Proto, class PS, class LoopCtx = void>
 struct permission_flow_closes : std::false_type {};
 
@@ -222,12 +497,15 @@ template <CrashClass C, class PS, class LoopCtx>
 struct permission_flow_closes<Stop_g<C>, PS, LoopCtx>
     : std::bool_constant<perm_set_equal_v<PS, EmptyPermSet>> {};
 
-template <class PS, class LoopCtx, bool InLoop = !std::is_void_v<LoopCtx>>
+template <class PS, class LoopCtx,
+          bool InLoop = !std::is_void_v<loop_ctx_inner_t<LoopCtx>>>
 struct continue_permission_flow_branch : std::false_type {};
 
 template <class PS, class LoopCtx>
 struct continue_permission_flow_branch<PS, LoopCtx, true>
-    : std::bool_constant<perm_set_equal_v<PS, typename LoopCtx::entry_perm_set>> {};
+    : std::bool_constant<
+          perm_set_equal_v<PS, typename loop_ctx_inner_t<LoopCtx>::entry_perm_set>
+      > {};
 
 template <class PS, class LoopCtx>
 struct permission_flow_closes<Continue, PS, LoopCtx>
@@ -250,7 +528,8 @@ struct permission_flow_closes<Recv<T, K>, PS, LoopCtx>
 
 template <class Body, class PS, class LoopCtx>
 struct permission_flow_closes<Loop<Body>, PS, LoopCtx>
-    : permission_flow_closes<Body, PS, LoopContext<Body, PS>> {};
+    : permission_flow_closes<
+          Body, PS, loop_ctx_rebind_inner_t<LoopCtx, LoopContext<Body, PS>>> {};
 
 template <class... Branches, class PS, class LoopCtx>
 struct permission_flow_closes<Select<Branches...>, PS, LoopCtx>
@@ -281,16 +560,27 @@ template <class T, class K, class PS, class LoopCtx>
 struct permission_flow_closes<Accept<T, K>, PS, LoopCtx>
     : permission_flow_closes<K, PS, LoopCtx> {};
 
-template <class Proto, class PS>
+template <VendorBackend V, class P, class PS, class LoopCtx>
+struct permission_flow_closes<VendorPinned<V, P>, PS, LoopCtx>
+    : permission_flow_closes<P, PS,
+          VendorCtx<V, loop_ctx_inner_t<LoopCtx>>> {};
+
+template <class Proto, class PS, class LoopCtx = void>
 inline constexpr bool permission_flow_closes_v =
-    permission_flow_closes<Proto, PS>::value;
+    permission_flow_closes<Proto, PS, LoopCtx>::value;
 
 }  // namespace detail::session_mint
 
-template <class Proto, class Ctx, class InitialPS>
+template <class Proto, class LoopCtx>
+concept ProtocolVendorAdmittedByLoopCtx =
+    detail::session_mint::protocol_vendor_admitted_by_loop_ctx_v<
+        Proto, LoopCtx>;
+
+template <class Proto, class Ctx, class InitialPS, class LoopCtx = void>
 concept CtxFitsPermissionedProtocol =
     CtxFitsProtocol<Proto, Ctx>
-    && detail::session_mint::permission_flow_closes_v<Proto, InitialPS>;
+    && detail::session_mint::permission_flow_closes_v<Proto, InitialPS, LoopCtx>
+    && ProtocolVendorAdmittedByLoopCtx<Proto, LoopCtx>;
 
 // ── mint_permissioned_session<Proto>(ctx, resource, perms...) ───────
 //
@@ -424,6 +714,64 @@ static_assert( CtxFitsPermissionedProtocol<
     TransferBgComp, eff::BgDrainCtx, PermSet<WorkPerm>>);
 static_assert(!CtxFitsPermissionedProtocol<
     TransferBgComp, eff::HotFgCtx, PermSet<WorkPerm>>);
+
+using NvIntPayload =
+    ::crucible::safety::Vendor<VendorBackend::NV, int>;
+using AmdIntPayload =
+    ::crucible::safety::Vendor<VendorBackend::AMD, int>;
+using PortableIntPayload =
+    ::crucible::safety::Vendor<VendorBackend::Portable, int>;
+using SendNvPayload = Send<NvIntPayload, End>;
+using RecvAmdPayload = Recv<AmdIntPayload, End>;
+using WrappedNvPayload = Transferable<
+    ::crucible::safety::NumericalTier<
+        ::crucible::safety::Tolerance::BITEXACT, NvIntPayload>,
+    WorkPerm>;
+
+static_assert(!ProtocolVendorAdmittedByLoopCtx<SendNvPayload, void>);
+static_assert( ProtocolVendorAdmittedByLoopCtx<
+    SendNvPayload, VendorCtx<VendorBackend::NV>>);
+static_assert( ProtocolVendorAdmittedByLoopCtx<
+    SendNvPayload, VendorCtx<VendorBackend::Portable>>);
+static_assert(!ProtocolVendorAdmittedByLoopCtx<
+    SendNvPayload, VendorCtx<VendorBackend::AMD>>);
+static_assert(!ProtocolVendorAdmittedByLoopCtx<
+    RecvAmdPayload, VendorCtx<VendorBackend::NV>>);
+static_assert(!ProtocolVendorAdmittedByLoopCtx<
+    Send<PortableIntPayload, End>, VendorCtx<VendorBackend::NV>>);
+static_assert(!ProtocolVendorAdmittedByLoopCtx<
+    Send<WrappedNvPayload, End>, void>);
+static_assert( ProtocolVendorAdmittedByLoopCtx<
+    Send<WrappedNvPayload, End>, VendorCtx<VendorBackend::NV>>);
+
+using PinnedNvSend = VendorPinned<VendorBackend::NV, SendNvPayload>;
+static_assert( CtxFitsPermissionedProtocol<
+    PinnedNvSend, eff::HotFgCtx, EmptyPermSet>);
+static_assert(!CtxFitsPermissionedProtocol<
+    SendNvPayload, eff::HotFgCtx, EmptyPermSet>);
+static_assert(!CtxFitsPermissionedProtocol<
+    VendorPinned<VendorBackend::None, End>, eff::HotFgCtx, EmptyPermSet>);
+static_assert( CtxFitsPermissionedProtocol<
+    SendNvPayload, eff::HotFgCtx, EmptyPermSet,
+    VendorCtx<VendorBackend::NV>>);
+static_assert(!CtxFitsPermissionedProtocol<
+    RecvAmdPayload, eff::HotFgCtx, EmptyPermSet,
+    VendorCtx<VendorBackend::NV>>);
+
+using NvCarrierDelegatesNv =
+    VendorPinned<VendorBackend::NV,
+                 Delegate<VendorPinned<VendorBackend::NV, End>, End>>;
+using NvCarrierDelegatesAmd =
+    VendorPinned<VendorBackend::NV,
+                 Delegate<VendorPinned<VendorBackend::AMD, End>, End>>;
+static_assert( CtxFitsPermissionedProtocol<
+    NvCarrierDelegatesNv, eff::HotFgCtx, EmptyPermSet>);
+static_assert(!CtxFitsPermissionedProtocol<
+    NvCarrierDelegatesAmd, eff::HotFgCtx, EmptyPermSet>);
+static_assert(!CtxFitsPermissionedProtocol<
+    VendorPinned<VendorBackend::NV,
+                 Select<VendorPinned<VendorBackend::AMD, End>, End>>,
+    eff::HotFgCtx, EmptyPermSet>);
 
 using CtxBoundPsh = decltype(mint_permissioned_session<SendTransfer>(
     std::declval<eff::HotFgCtx const&>(),

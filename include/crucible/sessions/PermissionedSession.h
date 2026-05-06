@@ -224,12 +224,14 @@ template <typename LoopCtx>
 struct loop_ctx_traits {
     using inner_loop_ctx = LoopCtx;
     static constexpr VendorBackend vendor_backend = VendorBackend::Portable;
+    static constexpr bool explicit_vendor = false;
 };
 
 template <VendorBackend V, typename InnerLoopCtx>
 struct loop_ctx_traits<VendorCtx<V, InnerLoopCtx>> {
     using inner_loop_ctx = InnerLoopCtx;
     static constexpr VendorBackend vendor_backend = V;
+    static constexpr bool explicit_vendor = true;
 };
 
 template <typename LoopCtx>
@@ -238,6 +240,10 @@ using loop_ctx_inner_t = typename loop_ctx_traits<LoopCtx>::inner_loop_ctx;
 template <typename LoopCtx>
 inline constexpr VendorBackend loop_ctx_vendor_v =
     loop_ctx_traits<LoopCtx>::vendor_backend;
+
+template <typename LoopCtx>
+inline constexpr bool loop_ctx_has_explicit_vendor_v =
+    loop_ctx_traits<LoopCtx>::explicit_vendor;
 
 template <typename LoopCtx>
 using loop_ctx_as_vendor_ctx_t =
@@ -1366,7 +1372,10 @@ private:
 
 namespace detail {
 
-template <typename Proto, typename InitialPS, typename Resource>
+template <typename Proto,
+          typename InitialPS,
+          typename Resource,
+          typename LoopCtx>
 [[nodiscard]] constexpr auto mint_permissioned_session_with_loc(
     Resource r,
     std::source_location loc) noexcept
@@ -1383,9 +1392,17 @@ template <typename Proto, typename InitialPS, typename Resource>
         "mint_permissioned_session<Proto, Resource>: Resource fails the "
         "pin-discipline.  See SessionResource concept in Session.h.");
 
-    if constexpr (is_loop_v<Proto>) {
+    if constexpr (is_vendor_pinned_v<Proto>) {
+        using InnerProto = protocol_inner_t<Proto>;
+        using VendorLoopCtx =
+            VendorCtx<protocol_vendor_v<Proto>, loop_ctx_inner_t<LoopCtx>>;
+        return mint_permissioned_session_with_loc<InnerProto, InitialPS,
+                                                  Resource, VendorLoopCtx>(
+            std::forward<Resource>(r), loc);
+    } else if constexpr (is_loop_v<Proto>) {
         using Body = typename Proto::body;
-        using Ctx  = LoopContext<Body, InitialPS>;
+        using Ctx  =
+            loop_ctx_rebind_inner_t<LoopCtx, LoopContext<Body, InitialPS>>;
         return step_to_next_permissioned<Body, InitialPS, Resource, Ctx>(
             std::forward<Resource>(r), loc);
     } else {
@@ -1394,8 +1411,18 @@ template <typename Proto, typename InitialPS, typename Resource>
             "mint_permissioned_session<Continue>: Continue cannot be the "
             "top-level protocol.");
         return PermissionedSessionHandle<Proto, InitialPS, Resource,
-                                          void>{std::forward<Resource>(r), loc};
+                                          LoopCtx>{std::forward<Resource>(r), loc};
     }
+}
+
+template <typename Proto, typename InitialPS, typename Resource>
+[[nodiscard]] constexpr auto mint_permissioned_session_with_loc(
+    Resource r,
+    std::source_location loc) noexcept
+{
+    return mint_permissioned_session_with_loc<Proto, InitialPS,
+                                              Resource, void>(
+        std::forward<Resource>(r), loc);
 }
 
 }  // namespace detail

@@ -144,6 +144,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
+#include <crucible/algebra/lattices/VendorLattice.h>
 #include <crucible/safety/Pinned.h>
 
 #include <concepts>
@@ -160,6 +161,9 @@
 #include <utility>
 
 namespace crucible::safety::proto {
+
+using ::crucible::algebra::lattices::VendorBackend;
+using ::crucible::algebra::lattices::VendorLattice;
 
 // ═════════════════════════════════════════════════════════════════
 // ── Combinator types ────────────────────────────────────────────
@@ -278,6 +282,15 @@ struct Continue {};
 // Terminal — protocol complete.  dual(End) = End.
 struct End {};
 
+// VendorPinned<V, P> — protocol-level vendor declaration for CNTP
+// upper-layer sessions.  The wrapper is transparent to structural
+// protocol operations but visible to mint/subtyping admission checks.
+template <VendorBackend V, typename Proto>
+struct VendorPinned : Proto {
+    using protocol = Proto;
+    static constexpr VendorBackend vendor_backend = V;
+};
+
 // ═════════════════════════════════════════════════════════════════
 // ── Shape traits (is_*_v) ───────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════
@@ -285,25 +298,50 @@ struct End {};
 template <typename P> struct is_send   : std::false_type {};
 template <typename T, typename R>
 struct is_send<Send<T, R>> : std::true_type {};
+template <VendorBackend V, typename P>
+struct is_send<VendorPinned<V, P>> : is_send<P> {};
 
 template <typename P> struct is_recv   : std::false_type {};
 template <typename T, typename R>
 struct is_recv<Recv<T, R>> : std::true_type {};
+template <VendorBackend V, typename P>
+struct is_recv<VendorPinned<V, P>> : is_recv<P> {};
 
 template <typename P> struct is_select : std::false_type {};
 template <typename... Bs>
 struct is_select<Select<Bs...>> : std::true_type {};
+template <VendorBackend V, typename P>
+struct is_select<VendorPinned<V, P>> : is_select<P> {};
 
 template <typename P> struct is_offer  : std::false_type {};
 template <typename... Bs>
 struct is_offer<Offer<Bs...>> : std::true_type {};
+template <VendorBackend V, typename P>
+struct is_offer<VendorPinned<V, P>> : is_offer<P> {};
 
 template <typename P> struct is_loop   : std::false_type {};
 template <typename B>
 struct is_loop<Loop<B>> : std::true_type {};
+template <VendorBackend V, typename P>
+struct is_loop<VendorPinned<V, P>> : is_loop<P> {};
 
 template <typename P> struct is_end      : std::bool_constant<std::is_same_v<P, End>>      {};
+template <VendorBackend V, typename P>
+struct is_end<VendorPinned<V, P>> : is_end<P> {};
+
 template <typename P> struct is_continue : std::bool_constant<std::is_same_v<P, Continue>> {};
+template <VendorBackend V, typename P>
+struct is_continue<VendorPinned<V, P>> : is_continue<P> {};
+
+template <typename P> struct is_vendor_pinned : std::false_type {
+    using protocol = P;
+    static constexpr VendorBackend vendor_backend = VendorBackend::Portable;
+};
+template <VendorBackend V, typename P>
+struct is_vendor_pinned<VendorPinned<V, P>> : std::true_type {
+    using protocol = P;
+    static constexpr VendorBackend vendor_backend = V;
+};
 
 template <typename P> inline constexpr bool is_send_v     = is_send<P>::value;
 template <typename P> inline constexpr bool is_recv_v     = is_recv<P>::value;
@@ -312,6 +350,13 @@ template <typename P> inline constexpr bool is_offer_v    = is_offer<P>::value;
 template <typename P> inline constexpr bool is_loop_v     = is_loop<P>::value;
 template <typename P> inline constexpr bool is_end_v      = is_end<P>::value;
 template <typename P> inline constexpr bool is_continue_v = is_continue<P>::value;
+template <typename P>
+inline constexpr bool is_vendor_pinned_v = is_vendor_pinned<P>::value;
+template <typename P>
+inline constexpr VendorBackend protocol_vendor_v =
+    is_vendor_pinned<P>::vendor_backend;
+template <typename P>
+using protocol_inner_t = typename is_vendor_pinned<P>::protocol;
 
 // ─── is_empty_choice<P> — detects empty Select<> / Offer<> (#364) ──
 //
@@ -351,6 +396,9 @@ template <> struct is_empty_choice<Offer<>>  : std::true_type {};
 // empty-choice guard would miss `Offer<Sender<Role>>`.
 template <typename Role>
 struct is_empty_choice<Offer<Sender<Role>>> : std::true_type {};
+
+template <VendorBackend V, typename P>
+struct is_empty_choice<VendorPinned<V, P>> : is_empty_choice<P> {};
 
 template <typename P>
 inline constexpr bool is_empty_choice_v = is_empty_choice<P>::value;
@@ -411,6 +459,11 @@ struct dual_of<Offer<Sender<Role>, Bs...>> {
 template <typename B>
 struct dual_of<Loop<B>> {
     using type = Loop<typename dual_of<B>::type>;
+};
+
+template <VendorBackend V, typename P>
+struct dual_of<VendorPinned<V, P>> {
+    using type = VendorPinned<V, typename dual_of<P>::type>;
 };
 
 template <typename P>
@@ -533,6 +586,11 @@ struct compose<Offer<Sender<Role>, Bs...>, Q> {
 template <typename B, typename Q>
 struct compose<Loop<B>, Q> {
     using type = Loop<typename compose<B, Q>::type>;
+};
+
+template <VendorBackend V, typename P, typename Q>
+struct compose<VendorPinned<V, P>, Q> {
+    using type = VendorPinned<V, typename compose<P, Q>::type>;
 };
 
 template <typename P, typename Q>
@@ -675,6 +733,11 @@ struct compose_at_branch<Loop<B>, I, Q> {
     using type = Loop<typename compose_at_branch<B, I, Q>::type>;
 };
 
+template <VendorBackend V, typename P, std::size_t I, typename Q>
+struct compose_at_branch<VendorPinned<V, P>, I, Q> {
+    using type = VendorPinned<V, typename compose_at_branch<P, I, Q>::type>;
+};
+
 // Reaching End / Continue / Stop / etc. WITHOUT having found a
 // Select or Offer means the spine has no choice to compose at —
 // named diagnostic.
@@ -751,6 +814,10 @@ struct is_well_formed<Loop<B>, LoopCtx>
     // Loop<B> introduces itself as the new LoopCtx for checking B.
     : is_well_formed<B, Loop<B>> {};
 
+template <VendorBackend V, typename P, typename LoopCtx>
+struct is_well_formed<VendorPinned<V, P>, LoopCtx>
+    : is_well_formed<P, LoopCtx> {};
+
 template <typename P>
 inline constexpr bool is_well_formed_v = is_well_formed<P>::value;
 
@@ -770,6 +837,9 @@ inline constexpr bool is_well_formed_v = is_well_formed<P>::value;
 
 template <typename P>
 struct is_terminal_state : std::bool_constant<std::is_same_v<P, End>> {};
+
+template <VendorBackend V, typename P>
+struct is_terminal_state<VendorPinned<V, P>> : is_terminal_state<P> {};
 
 template <typename P>
 inline constexpr bool is_terminal_state_v = is_terminal_state<P>::value;

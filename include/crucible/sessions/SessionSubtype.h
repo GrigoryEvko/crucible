@@ -209,6 +209,20 @@ template <typename B1, typename B2>
 struct is_subtype_sync<Loop<B1>, Loop<B2>>
     : is_subtype_sync<B1, B2> {};
 
+// [sub-vendor]  VendorPinned<V1, P1> ⩽ VendorPinned<V2, P2>
+// iff V1 satisfies V2 under VendorLattice and P1 ⩽ P2.  Direction
+// matches safety::Vendor::satisfies<Required>: a Portable protocol
+// can stand in for an NV-required one, but an NV-pinned protocol
+// cannot stand in for an AMD or Portable-required protocol.
+template <VendorBackend V1, typename P1, VendorBackend V2, typename P2>
+struct is_subtype_sync<VendorPinned<V1, P1>, VendorPinned<V2, P2>>
+    : std::bool_constant<
+          V1 != VendorBackend::None &&
+          V2 != VendorBackend::None &&
+          VendorLattice::leq(V2, V1) &&
+          is_subtype_sync<P1, P2>::value
+      > {};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Select / Offer: positional-prefix subtyping ────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -317,6 +331,20 @@ consteval void assert_subtype_sync() noexcept {
         "Offer branches); payload types not related via is_subsort "
         "specialisation.  Check the template-instantiation context "
         "for the failing T and U.");
+}
+
+template <typename T, typename U>
+consteval void assert_vendor_subtype_sync() noexcept {
+    static_assert(is_subtype_sync_v<T, U>,
+        "crucible::session::diagnostic [VendorCtx_Mismatch]: "
+        "assert_vendor_subtype_sync: T is not a vendor-compatible "
+        "synchronous subtype of U.  VendorPinned<V1, P1> may stand "
+        "where VendorPinned<V2, P2> is expected only when "
+        "VendorLattice::leq(V2, V1) holds and P1 is a synchronous "
+        "subtype of P2.  Distinct vendor-specific protocols such as "
+        "NV and AMD are intentionally incomparable; use "
+        "VendorPinned<Portable, P> only for genuinely cross-vendor "
+        "protocols.");
 }
 
 // ─── Protocol equivalence ──────────────────────────────────────────
@@ -496,6 +524,15 @@ static_assert(is_subtype_sync_v<Send<int, End>, Send<int, End>>);
 static_assert(is_subtype_sync_v<Recv<int, End>, Recv<int, End>>);
 static_assert(is_subtype_sync_v<Loop<Send<int, Continue>>,
                                  Loop<Send<int, Continue>>>);
+using NvSendInt = VendorPinned<VendorBackend::NV, Send<int, End>>;
+using AmdSendInt = VendorPinned<VendorBackend::AMD, Send<int, End>>;
+using PortableSendInt =
+    VendorPinned<VendorBackend::Portable, Send<int, End>>;
+static_assert(is_subtype_sync_v<NvSendInt, NvSendInt>);
+static_assert(is_subtype_sync_v<PortableSendInt, NvSendInt>);
+static_assert(!is_subtype_sync_v<NvSendInt, AmdSendInt>);
+static_assert(!is_subtype_sync_v<AmdSendInt, NvSendInt>);
+static_assert(!is_subtype_sync_v<NvSendInt, PortableSendInt>);
 static_assert(is_subtype_sync_v<
     Select<Send<int, End>, Recv<bool, End>>,
     Select<Send<int, End>, Recv<bool, End>>>);
