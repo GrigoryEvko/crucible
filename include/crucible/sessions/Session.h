@@ -144,11 +144,14 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/Platform.h>
+#include <crucible/algebra/lattices/EpochLattice.h>
+#include <crucible/algebra/lattices/GenerationLattice.h>
 #include <crucible/algebra/lattices/VendorLattice.h>
 #include <crucible/safety/Pinned.h>
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <functional>
@@ -164,6 +167,10 @@ namespace crucible::safety::proto {
 
 using ::crucible::algebra::lattices::VendorBackend;
 using ::crucible::algebra::lattices::VendorLattice;
+using ::crucible::algebra::lattices::Epoch;
+using ::crucible::algebra::lattices::EpochLattice;
+using ::crucible::algebra::lattices::Generation;
+using ::crucible::algebra::lattices::GenerationLattice;
 
 // ═════════════════════════════════════════════════════════════════
 // ── Combinator types ────────────────────────────────────────────
@@ -290,6 +297,101 @@ struct VendorPinned : Proto {
     using protocol = Proto;
     static constexpr VendorBackend vendor_backend = V;
 };
+
+// EpochCtx<E, G, InnerLoopCtx> — zero-size LoopCtx-axis wrapper for
+// protocols that need a compile-time proof of the peer's current
+// Canopy epoch and Relay generation.  The runtime values still live
+// in safety::EpochVersioned<T>; this context only carries admission
+// facts for session-combinator construction.
+template <std::uint64_t CurrentEpoch,
+          std::uint64_t CurrentGeneration,
+          typename InnerLoopCtx = void>
+struct EpochCtx {
+    using inner_loop_ctx = InnerLoopCtx;
+    static constexpr std::uint64_t current_epoch = CurrentEpoch;
+    static constexpr std::uint64_t current_generation = CurrentGeneration;
+};
+
+template <typename LoopCtx>
+struct session_loop_ctx_traits {
+    using inner_loop_ctx = LoopCtx;
+    static constexpr bool explicit_epoch = false;
+    static constexpr std::uint64_t current_epoch = 0;
+    static constexpr std::uint64_t current_generation = 0;
+};
+
+template <>
+struct session_loop_ctx_traits<void> {
+    using inner_loop_ctx = void;
+    static constexpr bool explicit_epoch = false;
+    static constexpr std::uint64_t current_epoch = 0;
+    static constexpr std::uint64_t current_generation = 0;
+};
+
+template <std::uint64_t CurrentEpoch,
+          std::uint64_t CurrentGeneration,
+          typename InnerLoopCtx>
+struct session_loop_ctx_traits<
+    EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>> {
+    using inner_loop_ctx =
+        typename session_loop_ctx_traits<InnerLoopCtx>::inner_loop_ctx;
+    static constexpr bool explicit_epoch = true;
+    static constexpr std::uint64_t current_epoch = CurrentEpoch;
+    static constexpr std::uint64_t current_generation = CurrentGeneration;
+};
+
+template <typename LoopCtx>
+using session_loop_ctx_inner_t =
+    typename session_loop_ctx_traits<LoopCtx>::inner_loop_ctx;
+
+template <typename LoopCtx>
+inline constexpr bool session_loop_ctx_has_explicit_epoch_v =
+    session_loop_ctx_traits<LoopCtx>::explicit_epoch;
+
+template <typename LoopCtx>
+inline constexpr std::uint64_t session_loop_ctx_epoch_v =
+    session_loop_ctx_traits<LoopCtx>::current_epoch;
+
+template <typename LoopCtx>
+inline constexpr std::uint64_t session_loop_ctx_generation_v =
+    session_loop_ctx_traits<LoopCtx>::current_generation;
+
+template <typename LoopCtx,
+          std::uint64_t MinEpoch,
+          std::uint64_t MinGeneration>
+inline constexpr bool session_loop_ctx_epoch_satisfies_v =
+    session_loop_ctx_has_explicit_epoch_v<LoopCtx> &&
+    EpochLattice::leq(Epoch{MinEpoch},
+                      Epoch{session_loop_ctx_epoch_v<LoopCtx>}) &&
+    GenerationLattice::leq(
+        Generation{MinGeneration},
+        Generation{session_loop_ctx_generation_v<LoopCtx>});
+
+template <typename LoopCtx, typename NewInnerLoopCtx>
+struct session_loop_ctx_rebind_inner {
+    using type = NewInnerLoopCtx;
+};
+
+template <std::uint64_t CurrentEpoch,
+          std::uint64_t CurrentGeneration,
+          typename InnerLoopCtx,
+          typename NewInnerLoopCtx>
+struct session_loop_ctx_rebind_inner<
+    EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>,
+    NewInnerLoopCtx> {
+    using type = EpochCtx<
+        CurrentEpoch,
+        CurrentGeneration,
+        typename session_loop_ctx_rebind_inner<
+            InnerLoopCtx,
+            NewInnerLoopCtx>::type>;
+};
+
+template <typename LoopCtx, typename NewInnerLoopCtx>
+using session_loop_ctx_rebind_inner_t =
+    typename session_loop_ctx_rebind_inner<
+        LoopCtx,
+        NewInnerLoopCtx>::type;
 
 // ═════════════════════════════════════════════════════════════════
 // ── Shape traits (is_*_v) ───────────────────────────────────────
@@ -784,7 +886,8 @@ struct is_well_formed<End, LoopCtx> : std::true_type {};
 
 template <typename LoopCtx>
 struct is_well_formed<Continue, LoopCtx>
-    : std::bool_constant<!std::is_void_v<LoopCtx>> {};
+    : std::bool_constant<!std::is_void_v<
+          session_loop_ctx_inner_t<LoopCtx>>> {};
 
 template <typename T, typename R, typename LoopCtx>
 struct is_well_formed<Send<T, R>, LoopCtx>
@@ -811,8 +914,10 @@ struct is_well_formed<Offer<Sender<Role>, Bs...>, LoopCtx>
 
 template <typename B, typename LoopCtx>
 struct is_well_formed<Loop<B>, LoopCtx>
-    // Loop<B> introduces itself as the new LoopCtx for checking B.
-    : is_well_formed<B, Loop<B>> {};
+    // Loop<B> introduces itself as the new inner LoopCtx for checking
+    // B while preserving any outer context-axis wrappers such as
+    // EpochCtx.
+    : is_well_formed<B, session_loop_ctx_rebind_inner_t<LoopCtx, Loop<B>>> {};
 
 template <VendorBackend V, typename P, typename LoopCtx>
 struct is_well_formed<VendorPinned<V, P>, LoopCtx>
@@ -1540,21 +1645,23 @@ template <typename R, typename Resource, typename LoopCtx>
     std::source_location loc = std::source_location::current()) noexcept
 {
     if constexpr (std::is_same_v<R, Continue>) {
-        static_assert(!std::is_void_v<LoopCtx>,
+        using ActiveLoopCtx = session_loop_ctx_inner_t<LoopCtx>;
+        static_assert(!std::is_void_v<ActiveLoopCtx>,
             "crucible::session::diagnostic [Continue_Without_Loop]: "
             "proto: Continue appears outside a Loop context.  "
             "Every Continue must have an enclosing Loop<Body>.");
-        using NextBody = typename LoopCtx::body;
+        using NextBody = typename ActiveLoopCtx::body;
         // NextBody may itself begin with Loop or Continue (unlikely but
         // syntactically legal) — recurse.  Forward `loc` so the
         // outermost producer's call site survives the recursion (#429).
         return step_to_next<NextBody, Resource, LoopCtx>(std::move(r), loc);
     } else if constexpr (is_loop_v<R>) {
         using InnerBody = typename R::body;
+        using InnerCtx = session_loop_ctx_rebind_inner_t<LoopCtx, R>;
         // Enter inner Loop: shadow LoopCtx with the new Loop.  Recurse
         // to handle the case where InnerBody begins with Continue
         // (which would already be ill-formed — caught by is_well_formed).
-        return step_to_next<InnerBody, Resource, R>(std::move(r), loc);
+        return step_to_next<InnerBody, Resource, InnerCtx>(std::move(r), loc);
     } else {
         static_assert(is_head_v<R>,
             "crucible::session::diagnostic [Protocol_Ill_Formed]: "

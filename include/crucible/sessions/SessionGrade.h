@@ -33,6 +33,7 @@
 #include <crucible/safety/Vendor.h>
 #include <crucible/sessions/Session.h>
 
+#include <cstdint>
 #include <string_view>
 #include <type_traits>
 
@@ -55,6 +56,12 @@ template <typename T, typename Tag> struct Returned;
 template <typename InnerProto, typename InnerPS> struct DelegatedSession;
 template <typename T, typename K> struct Delegate;
 template <typename T, typename K> struct Accept;
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct EpochedDelegate;
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct EpochedAccept;
 template <typename Base, typename Rollback> struct CheckpointedSession;
 template <CrashClass C> struct Stop_g;
 
@@ -480,6 +487,16 @@ struct protocol_grade<Delegate<T, K>> {
 
 template <typename T, typename K>
 struct protocol_grade<Accept<T, K>>
+    : protocol_grade<Delegate<T, K>> {};
+
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_grade<EpochedDelegate<T, K, MinEpoch, MinGeneration>>
+    : protocol_grade<Delegate<T, K>> {};
+
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_grade<EpochedAccept<T, K, MinEpoch, MinGeneration>>
     : protocol_grade<Delegate<T, K>> {};
 
 template <typename Base, typename Rollback>

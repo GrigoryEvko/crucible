@@ -70,6 +70,18 @@
 // Composed φ = (φ_Layer1 ∧ φ_Layer2 ∧ φ_Layer3 ∧ …) by the
 // compositionality theorem (§II.12.4).
 //
+// ─── Cross-Relay reshard with epoch versioning ─────────────────────
+//
+// Cipher reshard handoffs additionally need the Canopy membership
+// epoch and Relay generation to be visible at the delegation boundary.
+// EpochedDelegate<T, K, MinEpoch, MinGen> has the same ownership
+// semantics as Delegate<T, K>, but its peer-side dual is
+// EpochedAccept<T, dual(K), MinEpoch, MinGen>.  Constructing or using
+// the accept side requires a LoopCtx carrying EpochCtx<E, G> with
+// E >= MinEpoch and G >= MinGen.  This is a compile-time admission
+// fact; runtime per-value coordinates still live in
+// safety::EpochVersioned<T>.
+//
 // ─── When NOT to use Delegate ──────────────────────────────────────
 //
 // - For NON-first-class values (plain data types): use Send/Recv.
@@ -118,6 +130,7 @@
 #include <crucible/sessions/SessionEventLog.h>
 
 #include <concepts>
+#include <cstdint>
 #include <type_traits>
 #include <utility>
 
@@ -139,6 +152,33 @@ template <typename T, typename K>
 struct Accept {
     using delegated_proto = T;
     using next            = K;
+};
+
+// Send my endpoint of a T-typed channel; continue as K.  The peer's
+// matching EpochedAccept requires an EpochCtx whose compile-time
+// (epoch, generation) meets the declared minimum.
+template <typename T,
+          typename K,
+          std::uint64_t MinEpoch,
+          std::uint64_t MinGeneration>
+struct EpochedDelegate {
+    using delegated_proto = T;
+    using next            = K;
+    static constexpr std::uint64_t min_epoch = MinEpoch;
+    static constexpr std::uint64_t min_generation = MinGeneration;
+};
+
+// Receive an endpoint of a T-typed channel under an epoch/generation
+// freshness proof; continue as K.
+template <typename T,
+          typename K,
+          std::uint64_t MinEpoch,
+          std::uint64_t MinGeneration>
+struct EpochedAccept {
+    using delegated_proto = T;
+    using next            = K;
+    static constexpr std::uint64_t min_epoch = MinEpoch;
+    static constexpr std::uint64_t min_generation = MinGeneration;
 };
 
 }  // namespace crucible::safety::proto
@@ -297,6 +337,24 @@ template <typename T, typename K, typename RecipientTag, typename CarrierK>
 struct delegated_crash_propagation_impl<Accept<T, K>, RecipientTag, CarrierK>
     : delegated_crash_propagation_impl<K, RecipientTag, CarrierK> {};
 
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<
+    EpochedDelegate<T, K, MinEpoch, MinGeneration>,
+    RecipientTag,
+    CarrierK>
+    : carrier_crash_recovery<CarrierK, RecipientTag> {};
+
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename RecipientTag, typename CarrierK>
+struct delegated_crash_propagation_impl<
+    EpochedAccept<T, K, MinEpoch, MinGeneration>,
+    RecipientTag,
+    CarrierK>
+    : delegated_crash_propagation_impl<K, RecipientTag, CarrierK> {};
+
 }  // namespace detail::delegate_crash
 
 template <typename T, typename RecipientTag, typename CarrierK>
@@ -386,6 +444,25 @@ struct all_offers_have_crash_branch<Delegate<T, K>, PeerTag>
 
 template <typename T, typename K, typename PeerTag>
 struct all_offers_have_crash_branch<Accept<T, K>, PeerTag>
+    : all_offers_have_crash_branch<K, PeerTag> {};
+
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename PeerTag>
+struct all_offers_have_crash_branch<
+    EpochedDelegate<T, K, MinEpoch, MinGeneration>, PeerTag>
+    : std::bool_constant<
+          all_offers_have_crash_branch<K, PeerTag>::value &&
+          ::crucible::safety::proto::detail::delegate_crash::
+              propagation_is_recoverable_v<
+              delegated_crash_propagation_t<T, PeerTag, K>>
+      > {};
+
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename PeerTag>
+struct all_offers_have_crash_branch<
+    EpochedAccept<T, K, MinEpoch, MinGeneration>, PeerTag>
     : all_offers_have_crash_branch<K, PeerTag> {};
 
 }  // namespace crucible::safety::proto::detail::crash
@@ -478,10 +555,18 @@ using AcceptWithAck = Accept<T, Send<Ack, K>>;
 template <typename P> struct is_delegate : std::false_type {};
 template <typename T, typename K>
 struct is_delegate<Delegate<T, K>> : std::true_type {};
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct is_delegate<EpochedDelegate<T, K, MinEpoch, MinGeneration>>
+    : std::true_type {};
 
 template <typename P> struct is_accept : std::false_type {};
 template <typename T, typename K>
 struct is_accept<Accept<T, K>> : std::true_type {};
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct is_accept<EpochedAccept<T, K, MinEpoch, MinGeneration>>
+    : std::true_type {};
 
 template <typename P> inline constexpr bool is_delegate_v = is_delegate<P>::value;
 template <typename P> inline constexpr bool is_accept_v   = is_accept<P>::value;
@@ -509,6 +594,26 @@ struct dual_of<Delegate<T, K>> {
 template <typename T, typename K>
 struct dual_of<Accept<T, K>> {
     using type = Delegate<T, typename dual_of<K>::type>;
+};
+
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct dual_of<EpochedDelegate<T, K, MinEpoch, MinGeneration>> {
+    using type = EpochedAccept<
+        T,
+        typename dual_of<K>::type,
+        MinEpoch,
+        MinGeneration>;
+};
+
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct dual_of<EpochedAccept<T, K, MinEpoch, MinGeneration>> {
+    using type = EpochedDelegate<
+        T,
+        typename dual_of<K>::type,
+        MinEpoch,
+        MinGeneration>;
 };
 
 // ═════════════════════════════════════════════════════════════════════
@@ -547,6 +652,38 @@ struct compose<Accept<T, K>, Q> {
     using type = Accept<T, typename compose<K, Q>::type>;
 };
 
+template <typename T, typename K, typename Q,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct compose<EpochedDelegate<T, K, MinEpoch, MinGeneration>, Q> {
+    using type = EpochedDelegate<
+        T,
+        typename compose<K, Q>::type,
+        MinEpoch,
+        MinGeneration>;
+};
+
+template <CrashClass C, typename K, typename Q,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct compose<EpochedDelegate<Stop_g<C>, K, MinEpoch, MinGeneration>, Q> {
+    using type = typename compose<Stop_g<C>, Q>::type;
+};
+
+template <CrashClass C, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct compose<End, EpochedDelegate<Stop_g<C>, K, MinEpoch, MinGeneration>> {
+    using type = Stop_g<C>;
+};
+
+template <typename T, typename K, typename Q,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct compose<EpochedAccept<T, K, MinEpoch, MinGeneration>, Q> {
+    using type = EpochedAccept<
+        T,
+        typename compose<K, Q>::type,
+        MinEpoch,
+        MinGeneration>;
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Crash-stop subtyping for Delegate<Stop, K> ─────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -561,11 +698,63 @@ template <CrashClass C, typename K>
 struct is_subtype_sync_structural<Delegate<Stop_g<C>, K>, K>
     : std::true_type {};
 
+template <CrashClass C, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct is_subtype_sync_structural<
+    EpochedDelegate<Stop_g<C>, K, MinEpoch, MinGeneration>, K>
+    : std::true_type {};
+
+template <typename T1, typename K1, typename T2, typename K2,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct is_subtype_sync_structural<
+    EpochedDelegate<T1, K1, MinEpoch, MinGeneration>,
+    EpochedDelegate<T2, K2, MinEpoch, MinGeneration>>
+    : std::bool_constant<
+          is_subtype_sync_structural<T1, T2>::value &&
+          is_subtype_sync_structural<K1, K2>::value
+      > {};
+
+template <typename T1, typename K1, typename T2, typename K2,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct is_subtype_sync_structural<
+    EpochedAccept<T1, K1, MinEpoch, MinGeneration>,
+    EpochedAccept<T2, K2, MinEpoch, MinGeneration>>
+    : std::bool_constant<
+          is_subtype_sync_structural<T1, T2>::value &&
+          is_subtype_sync_structural<K1, K2>::value
+      > {};
+
 namespace detail::subtype {
 
 template <CrashClass C, typename K>
 struct protocol_grade_satisfies<Delegate<Stop_g<C>, K>, K>
     : std::true_type {};
+
+template <CrashClass C, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_grade_satisfies<
+    EpochedDelegate<Stop_g<C>, K, MinEpoch, MinGeneration>, K>
+    : std::true_type {};
+
+template <typename T1, typename K1, typename T2, typename K2,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_grade_satisfies<
+    EpochedDelegate<T1, K1, MinEpoch, MinGeneration>,
+    EpochedDelegate<T2, K2, MinEpoch, MinGeneration>>
+    : std::bool_constant<
+          protocol_grade_satisfies<T1, T2>::value &&
+          protocol_grade_satisfies<K1, K2>::value
+      > {};
+
+template <typename T1, typename K1, typename T2, typename K2,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_grade_satisfies<
+    EpochedAccept<T1, K1, MinEpoch, MinGeneration>,
+    EpochedAccept<T2, K2, MinEpoch, MinGeneration>>
+    : std::bool_constant<
+          protocol_grade_satisfies<T1, T2>::value &&
+          protocol_grade_satisfies<K1, K2>::value
+      > {};
 
 }  // namespace detail::subtype
 
@@ -597,6 +786,26 @@ struct is_well_formed<Accept<T, K>, LoopCtx>
     : std::bool_constant<
           is_well_formed<T, void>::value &&
           is_well_formed<K, LoopCtx>::value
+      > {};
+
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename LoopCtx>
+struct is_well_formed<EpochedDelegate<T, K, MinEpoch, MinGeneration>, LoopCtx>
+    : std::bool_constant<
+          is_well_formed<T, void>::value &&
+          is_well_formed<K, LoopCtx>::value
+      > {};
+
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename LoopCtx>
+struct is_well_formed<EpochedAccept<T, K, MinEpoch, MinGeneration>, LoopCtx>
+    : std::bool_constant<
+          is_well_formed<T, void>::value &&
+          is_well_formed<K, LoopCtx>::value &&
+          session_loop_ctx_epoch_satisfies_v<
+              LoopCtx, MinEpoch, MinGeneration>
       > {};
 
 // ═════════════════════════════════════════════════════════════════════
@@ -847,6 +1056,210 @@ public:
     [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
 };
 
+// ── SessionHandle<EpochedDelegate<T, K, MinEpoch, MinGen>, ...> ───
+//
+// Same runtime surface as Delegate<T, K>.  The epoch threshold is
+// consumed by the peer-side EpochedAccept; the sender-side handle
+// carries it so duality, event logs, and diagnostics keep the reshard
+// freshness requirement visible in the protocol type.
+
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename Resource, typename LoopCtx>
+class [[nodiscard]] SessionHandle<
+    EpochedDelegate<T, K, MinEpoch, MinGeneration>, Resource, LoopCtx>
+    : public SessionHandleBase<
+          EpochedDelegate<T, K, MinEpoch, MinGeneration>,
+          SessionHandle<
+              EpochedDelegate<T, K, MinEpoch, MinGeneration>,
+              Resource,
+              LoopCtx>>
+{
+    using Protocol = EpochedDelegate<T, K, MinEpoch, MinGeneration>;
+
+    Resource resource_;
+
+    template <typename P, typename Res, typename L> friend class SessionHandle;
+    template <typename P, typename Res>
+    friend constexpr auto mint_session_handle(Res) noexcept;
+    template <typename U, typename Res, typename L>
+    friend constexpr auto detail::step_to_next(Res) noexcept;
+
+public:
+    using protocol        = Protocol;
+    using delegated_proto = T;
+    using continuation    = K;
+    using resource_type   = Resource;
+    using loop_ctx        = LoopCtx;
+    static constexpr std::uint64_t min_epoch = MinEpoch;
+    static constexpr std::uint64_t min_generation = MinGeneration;
+
+    constexpr explicit SessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<
+              Protocol,
+              SessionHandle<Protocol, Resource, LoopCtx>>{loc}
+        , resource_{std::move(r)} {}
+
+    constexpr SessionHandle(SessionHandle&&) noexcept            = default;
+    constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
+    ~SessionHandle()                                             = default;
+
+    template <typename DelegatedResource, typename DelegatedLoopCtx,
+              typename Transport>
+        requires (!is_stop_v<T> &&
+                  std::is_invocable_v<Transport, Resource&, DelegatedResource&&>)
+    [[nodiscard]] constexpr auto delegate(
+        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated,
+        Transport transport) &&
+        noexcept(std::is_nothrow_invocable_v<Transport, Resource&, DelegatedResource&&>
+                 && std::is_nothrow_move_constructible_v<Resource>)
+    {
+        std::invoke(transport, resource_, std::move(delegated.resource_));
+        delegated.mark_consumed_();
+        this->mark_consumed_();
+        return detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
+    }
+
+    template <typename DelegatedResource, typename DelegatedLoopCtx,
+              typename Transport>
+        requires is_stop_v<T>
+    void delegate(
+        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&,
+        Transport) && = delete(
+        "[DelegateStop_NoContinuation] SessionHandle<EpochedDelegate<"
+        "Stop, K, MinEpoch, MinGeneration>> cannot delegate an already-"
+        "crashed endpoint and continue as K.  Handle Stop/crash before "
+        "this epoch-versioned handoff point.");
+
+    template <typename DelegatedResource, typename DelegatedLoopCtx>
+        requires (!is_stop_v<T>)
+    [[nodiscard]] constexpr auto delegate_local(
+        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&& delegated) &&
+        noexcept(std::is_nothrow_move_constructible_v<Resource>
+                 && std::is_nothrow_destructible_v<DelegatedResource>)
+    {
+        delegated.mark_consumed_();
+        (void)std::move(delegated);
+        this->mark_consumed_();
+        return detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
+    }
+
+    template <typename DelegatedResource, typename DelegatedLoopCtx>
+        requires is_stop_v<T>
+    void delegate_local(
+        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&) && = delete(
+        "[DelegateStop_NoContinuation] SessionHandle<EpochedDelegate<"
+        "Stop, K, MinEpoch, MinGeneration>> cannot locally delegate an "
+        "already-crashed endpoint and continue as K.");
+
+    template <typename DelegatedResource, typename DelegatedLoopCtx>
+    void delegate(
+        SessionHandle<T, DelegatedResource, DelegatedLoopCtx>&&) && = delete(
+        "[Wire_Variant_Required] SessionHandle<EpochedDelegate<T, K, "
+        "MinEpoch, MinGeneration>>::delegate(handle) without a transport "
+        "is not allowed.  Choose delegate(handle, transport) for wire "
+        "handoff or delegate_local(handle) for explicit in-memory tests.");
+
+    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
+};
+
+// ── SessionHandle<EpochedAccept<T, K, MinEpoch, MinGen>, ...> ──────
+//
+// Same runtime surface as Accept<T, K>, with one additional
+// compile-time admission fact: LoopCtx must carry EpochCtx<E, G> and
+// E/G must satisfy the declared threshold.
+
+template <typename T, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename Resource, typename LoopCtx>
+class [[nodiscard]] SessionHandle<
+    EpochedAccept<T, K, MinEpoch, MinGeneration>, Resource, LoopCtx>
+    : public SessionHandleBase<
+          EpochedAccept<T, K, MinEpoch, MinGeneration>,
+          SessionHandle<
+              EpochedAccept<T, K, MinEpoch, MinGeneration>,
+              Resource,
+              LoopCtx>>
+{
+    using Protocol = EpochedAccept<T, K, MinEpoch, MinGeneration>;
+
+    static_assert(session_loop_ctx_epoch_satisfies_v<
+        LoopCtx, MinEpoch, MinGeneration>,
+        "crucible::session::diagnostic [EpochCtx_StaleRecipient]: "
+        "SessionHandle<EpochedAccept<T, K, MinEpoch, MinGeneration>> "
+        "requires LoopCtx = EpochCtx<CurrentEpoch, CurrentGeneration, ...> "
+        "with CurrentEpoch >= MinEpoch and CurrentGeneration >= "
+        "MinGeneration.  A stale or unannotated recipient cannot accept "
+        "this delegated endpoint.");
+
+    Resource resource_;
+
+    template <typename P, typename Res, typename L> friend class SessionHandle;
+    template <typename P, typename Res>
+    friend constexpr auto mint_session_handle(Res) noexcept;
+    template <typename U, typename Res, typename L>
+    friend constexpr auto detail::step_to_next(Res) noexcept;
+
+public:
+    using protocol        = Protocol;
+    using delegated_proto = T;
+    using continuation    = K;
+    using resource_type   = Resource;
+    using loop_ctx        = LoopCtx;
+    static constexpr std::uint64_t min_epoch = MinEpoch;
+    static constexpr std::uint64_t min_generation = MinGeneration;
+
+    constexpr explicit SessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<
+              Protocol,
+              SessionHandle<Protocol, Resource, LoopCtx>>{loc}
+        , resource_{std::move(r)} {}
+
+    constexpr SessionHandle(SessionHandle&&) noexcept            = default;
+    constexpr SessionHandle& operator=(SessionHandle&&) noexcept = default;
+    ~SessionHandle()                                             = default;
+
+    template <typename Transport,
+              typename DelegatedResource = std::invoke_result_t<Transport, Resource&>>
+        requires std::is_invocable_v<Transport, Resource&>
+    [[nodiscard]] constexpr auto accept(Transport transport) &&
+        noexcept(std::is_nothrow_invocable_v<Transport, Resource&>
+                 && std::is_nothrow_move_constructible_v<Resource>
+                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
+    {
+        DelegatedResource delegated_res = std::invoke(transport, resource_);
+        this->mark_consumed_();
+        auto delegated_handle = mint_session_handle<T>(std::move(delegated_res));
+        auto continuation_handle =
+            detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
+        return std::pair{std::move(delegated_handle),
+                         std::move(continuation_handle)};
+    }
+
+    template <typename DelegatedResource>
+    [[nodiscard]] constexpr auto accept_with(DelegatedResource delegated_res) &&
+        noexcept(std::is_nothrow_move_constructible_v<Resource>
+                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
+    {
+        this->mark_consumed_();
+        auto delegated_handle = mint_session_handle<T>(std::move(delegated_res));
+        auto continuation_handle =
+            detail::step_to_next<K, Resource, LoopCtx>(std::move(resource_));
+        return std::pair{std::move(delegated_handle),
+                         std::move(continuation_handle)};
+    }
+
+    [[nodiscard]] constexpr Resource&       resource() &        noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const &  noexcept { return resource_; }
+};
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Ergonomic surface ──────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -988,6 +1401,21 @@ static_assert(std::is_same_v<
     dual_of_t<Delegate<DelegatedProto, Send<int, End>>>,
     Accept<DelegatedProto, Recv<int, End>>>);
 
+// Epoched delegation preserves T, dualises only K, and carries the
+// reshard freshness threshold to the peer-side accept state.
+using EpochedDelegator =
+    EpochedDelegate<DelegatedProto, Recv<Ack, End>, 5, 3>;
+using EpochedAcceptor =
+    EpochedAccept<DelegatedProto, Send<Ack, End>, 5, 3>;
+
+static_assert(std::is_same_v<dual_of_t<EpochedDelegator>, EpochedAcceptor>);
+static_assert(std::is_same_v<dual_of_t<EpochedAcceptor>, EpochedDelegator>);
+static_assert(std::is_same_v<
+    dual_of_t<dual_of_t<EpochedDelegator>>,
+    EpochedDelegator>);
+static_assert(EpochedDelegator::min_epoch == 5);
+static_assert(EpochedDelegator::min_generation == 3);
+
 // ── Composition ────────────────────────────────────────────────────
 
 // compose<Delegate<T, End>, Q> = Delegate<T, Q>
@@ -1006,6 +1434,13 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     compose_t<Accept<DelegatedAsymmetric, End>, End>,
     Accept<DelegatedAsymmetric, End>>);
+
+static_assert(std::is_same_v<
+    compose_t<EpochedDelegator, Send<int, End>>,
+    EpochedDelegate<DelegatedProto,
+                    Recv<Ack, Send<int, End>>,
+                    5,
+                    3>>);
 
 // Delegate<Stop, K> composition: the delegated endpoint is already
 // crashed, so the handoff does not enter K.
@@ -1050,6 +1485,17 @@ static_assert(is_subtype_sync_v<
 // Both Delegate and Accept are WF when T and K are WF.
 static_assert(is_well_formed_v<Delegate<DelegatedProto, End>>);
 static_assert(is_well_formed_v<Accept<DelegatedProto, End>>);
+static_assert(is_well_formed_v<EpochedDelegate<DelegatedProto, End, 5, 3>>);
+static_assert(is_well_formed<
+    EpochedAccept<DelegatedProto, End, 5, 3>,
+    EpochCtx<5, 3>>::value);
+static_assert(is_well_formed<
+    EpochedAccept<DelegatedProto, End, 5, 3>,
+    EpochCtx<6, 3>>::value);
+static_assert(!is_well_formed<
+    EpochedAccept<DelegatedProto, End, 5, 3>,
+    EpochCtx<4, 3>>::value);
+static_assert(!is_well_formed_v<EpochedAccept<DelegatedProto, End, 5, 3>>);
 
 // Nested delegation: Delegate<Delegate<A, End>, End> is well-formed.
 static_assert(is_well_formed_v<
@@ -1078,6 +1524,8 @@ static_assert(!is_accept_v<Delegate<DelegatedProto, End>>);
 
 static_assert(is_delegation_head_v<Delegate<DelegatedProto, End>>);
 static_assert(is_delegation_head_v<Accept<DelegatedProto, End>>);
+static_assert(is_delegation_head_v<EpochedDelegator>);
+static_assert(is_delegation_head_v<EpochedAcceptor>);
 static_assert(!is_delegation_head_v<Send<int, End>>);
 
 // ── Canonical CNTP cross-layer example (shape only) ───────────────
@@ -1156,6 +1604,8 @@ static_assert(DelegatesTo<Delegate<DelegatedProto, End>, DelegatedProto>);
 static_assert(!DelegatesTo<Delegate<DelegatedProto, End>, Send<int, End>>);  // wrong T
 static_assert(!DelegatesTo<Accept<DelegatedProto, End>, DelegatedProto>);    // wrong head
 static_assert(AcceptsFrom<Accept<DelegatedProto, End>, DelegatedProto>);
+static_assert(DelegatesTo<EpochedDelegator, DelegatedProto>);
+static_assert(AcceptsFrom<EpochedAcceptor, DelegatedProto>);
 
 consteval bool check_assert_delegates() {
     assert_delegates_to<Delegate<DelegatedProto, End>, DelegatedProto>();

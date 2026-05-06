@@ -46,8 +46,10 @@
 //     AtStop                            Stop      (from SessionCrash.h)
 //     AtTerminal                        End or Stop
 //     AtCheckpointed                    CheckpointedSession<B, R>
-//     AtDelegate                        Delegate<T, R>
-//     AtAccept                          Accept<T, R>
+//     AtDelegate                        Delegate<T, R> or
+//                                       EpochedDelegate<T, R, E, G>
+//     AtAccept                          Accept<T, R> or
+//                                       EpochedAccept<T, R, E, G>
 //
 // Per-spec tags exist for callers who need to dispatch on the exact
 // combinator; AtTerminal exists for callers who only care that the
@@ -108,6 +110,7 @@
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
 
+#include <cstdint>
 #include <type_traits>
 #include <utility>
 
@@ -205,10 +208,28 @@ template <typename T, typename R, typename Resource, typename LoopCtx>
 struct handle_is_at<SessionHandle<Delegate<T, R>, Resource, LoopCtx>, AtDelegate>
     : std::true_type {};
 
+template <typename T, typename R,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename Resource, typename LoopCtx>
+struct handle_is_at<
+    SessionHandle<EpochedDelegate<T, R, MinEpoch, MinGeneration>,
+                  Resource, LoopCtx>,
+    AtDelegate>
+    : std::true_type {};
+
 // ─── AtAccept ─────────────────────────────────────────────────────
 
 template <typename T, typename R, typename Resource, typename LoopCtx>
 struct handle_is_at<SessionHandle<Accept<T, R>, Resource, LoopCtx>, AtAccept>
+    : std::true_type {};
+
+template <typename T, typename R,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename Resource, typename LoopCtx>
+struct handle_is_at<
+    SessionHandle<EpochedAccept<T, R, MinEpoch, MinGeneration>,
+                  Resource, LoopCtx>,
+    AtAccept>
     : std::true_type {};
 
 // ─── Trait + concept aliases ──────────────────────────────────────

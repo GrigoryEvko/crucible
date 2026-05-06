@@ -12,6 +12,7 @@
 #include <deque>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -41,9 +42,13 @@ struct IntChannel {
 // The delegated session's protocol: simple request-response.
 struct PingReq { int payload; };
 struct PingAck { int echoed; };
+struct HotShardChunk { int shard_id; };
+struct ReshardAck { int epoch; int generation; };
 struct DelegatedRecipient {};
 using DelegatedProto = Send<PingReq, Recv<PingAck, End>>;
 using DelegatedOutboundProto = Send<PingReq, End>;
+using HotTierHandle = Send<HotShardChunk, End>;
+using RecvAck = Recv<ReshardAck, End>;
 
 using CarrierCrashRecovery = Offer<
     Recv<PingAck, End>,
@@ -60,6 +65,10 @@ using CarrierProto = Recv<std::string,
 // Peer (dual): send a name string, accept a DelegatedProto session, end.
 using CarrierPeer  = dual_of_t<CarrierProto>;
 // CarrierPeer is Send<std::string, Accept<DelegatedProto, End>>
+
+using EpochedReshardDelegate =
+    EpochedDelegate<HotTierHandle, RecvAck, 5, 3>;
+using EpochedReshardAccept = dual_of_t<EpochedReshardDelegate>;
 
 // ── Transports ─────────────────────────────────────────────────────
 
@@ -106,6 +115,27 @@ Crash<DelegatedRecipient> recv_delegated_crash(MockChannel&) noexcept {
 
 void send_int(IntChannel& res, int value) noexcept {
     res.last_int = value;
+}
+
+void send_hot_shard_chunk(MockChannel& res, HotShardChunk&& chunk) noexcept {
+    res.wire_bytes->push_back("HOT:" + std::to_string(chunk.shard_id));
+}
+
+void send_reshard_ack(MockChannel& res, ReshardAck&& ack) noexcept {
+    res.wire_bytes->push_back(
+        "RESHARD_ACK:" + std::to_string(ack.epoch) + ":" +
+        std::to_string(ack.generation));
+}
+
+ReshardAck recv_reshard_ack(MockChannel& res) {
+    std::string token = std::move(res.wire_bytes->front());
+    res.wire_bytes->pop_front();
+    constexpr std::string_view prefix = "RESHARD_ACK:";
+    const auto second_sep = token.find(':', prefix.size());
+    return ReshardAck{
+        .epoch = std::atoi(token.c_str() + prefix.size()),
+        .generation = std::atoi(token.c_str() + second_sep + 1)
+    };
 }
 
 // ── End-to-end exercise ────────────────────────────────────────────
@@ -306,9 +336,82 @@ int run_delegate_stop_composition() {
     return 0;
 }
 
+int run_epoched_delegate_reshard() {
+    std::deque<std::string> wire;
+
+    SessionHandle<EpochedReshardDelegate, MockChannel> sender{
+        MockChannel{.name = "reshard-sender", .wire_bytes = &wire}};
+
+    using FreshRecipientCtx = EpochCtx<5, 3>;
+    SessionHandle<EpochedReshardAccept, MockChannel, FreshRecipientCtx> recipient{
+        MockChannel{.name = "reshard-recipient", .wire_bytes = &wire}};
+
+    auto hot_handle = mint_session_handle<HotTierHandle>(
+        MockChannel{.name = "hot-tier-shard", .wire_bytes = &wire});
+
+    auto sender_waiting_for_ack = std::move(sender).delegate(
+        std::move(hot_handle),
+        transport_delegate);
+
+    auto [accepted_hot_handle, recipient_can_ack] =
+        std::move(recipient).accept(transport_accept);
+
+    std::deque<std::string> hot_wire;
+    accepted_hot_handle.resource().wire_bytes = &hot_wire;
+    auto accepted_hot_done = std::move(accepted_hot_handle).send(
+        HotShardChunk{.shard_id = 17},
+        send_hot_shard_chunk);
+    (void)std::move(accepted_hot_done).close();
+
+    auto recipient_done = std::move(recipient_can_ack).send(
+        ReshardAck{.epoch = 5, .generation = 3},
+        send_reshard_ack);
+    (void)std::move(recipient_done).close();
+
+    auto [ack, sender_done] =
+        std::move(sender_waiting_for_ack).recv(recv_reshard_ack);
+    if (ack.epoch != 5 || ack.generation != 3) {
+        std::fprintf(stderr,
+                     "epoched reshard ack mismatch: got epoch=%d gen=%d\n",
+                     ack.epoch,
+                     ack.generation);
+        return 1;
+    }
+    (void)std::move(sender_done).close();
+
+    const std::string expected_hot_chunk = "HOT:17";
+    if (hot_wire.empty() || hot_wire.front() != expected_hot_chunk) {
+        std::fprintf(stderr, "hot shard handoff did not run delegated protocol\n");
+        return 1;
+    }
+    hot_wire.pop_front();
+
+    return 0;
+}
+
 // ── Compile-time: DelegatesTo concept + assert_delegates_to helper ─
 static_assert(DelegatesTo<Delegate<DelegatedProto, End>, DelegatedProto>);
 static_assert(AcceptsFrom<Accept<DelegatedProto, End>,   DelegatedProto>);
+static_assert(DelegatesTo<EpochedReshardDelegate, HotTierHandle>);
+static_assert(AcceptsFrom<EpochedReshardAccept, HotTierHandle>);
+static_assert(std::is_same_v<
+    EpochedReshardAccept,
+    EpochedAccept<HotTierHandle, Send<ReshardAck, End>, 5, 3>>);
+static_assert(session_loop_ctx_epoch_satisfies_v<EpochCtx<5, 3>, 5, 3>);
+static_assert(session_loop_ctx_epoch_satisfies_v<EpochCtx<6, 3>, 5, 3>);
+static_assert(!session_loop_ctx_epoch_satisfies_v<EpochCtx<4, 3>, 5, 3>);
+static_assert(!session_loop_ctx_epoch_satisfies_v<EpochCtx<5, 2>, 5, 3>);
+static_assert(is_well_formed<
+    EpochedReshardAccept,
+    EpochCtx<5, 3>>::value);
+static_assert(!is_well_formed<
+    EpochedReshardAccept,
+    EpochCtx<4, 3>>::value);
+static_assert(std::is_same_v<
+    typename SessionHandle<EpochedReshardAccept,
+                           MockChannel,
+                           EpochCtx<5, 3>>::protocol,
+    EpochedReshardAccept>);
 
 static_assert(std::is_same_v<
     delegated_crash_propagation_t<
@@ -344,6 +447,7 @@ int main() {
         return rc;
     }
     if (int rc = run_delegate_stop_composition(); rc != 0) return rc;
+    if (int rc = run_epoched_delegate_reshard(); rc != 0) return rc;
     std::puts("session_delegate: delegation + delegated-endpoint-usage OK");
     return 0;
 }

@@ -164,6 +164,7 @@
 #include <crucible/sessions/SessionPermPayloads.h>
 #include <crucible/sessions/SessionSubtype.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <optional>
 #include <source_location>
@@ -220,18 +221,69 @@ struct VendorCtx {
     static constexpr VendorBackend vendor_backend = V;
 };
 
+template <VendorBackend V, typename InnerLoopCtx>
+struct session_loop_ctx_traits<VendorCtx<V, InnerLoopCtx>> {
+    using inner_loop_ctx =
+        typename session_loop_ctx_traits<InnerLoopCtx>::inner_loop_ctx;
+    static constexpr bool explicit_epoch =
+        session_loop_ctx_traits<InnerLoopCtx>::explicit_epoch;
+    static constexpr std::uint64_t current_epoch =
+        session_loop_ctx_traits<InnerLoopCtx>::current_epoch;
+    static constexpr std::uint64_t current_generation =
+        session_loop_ctx_traits<InnerLoopCtx>::current_generation;
+};
+
+template <VendorBackend V, typename InnerLoopCtx, typename NewInnerLoopCtx>
+struct session_loop_ctx_rebind_inner<
+    VendorCtx<V, InnerLoopCtx>,
+    NewInnerLoopCtx> {
+    using type = VendorCtx<
+        V,
+        typename session_loop_ctx_rebind_inner<
+            InnerLoopCtx,
+            NewInnerLoopCtx>::type>;
+};
+
 template <typename LoopCtx>
 struct loop_ctx_traits {
-    using inner_loop_ctx = LoopCtx;
+    using inner_loop_ctx = session_loop_ctx_inner_t<LoopCtx>;
     static constexpr VendorBackend vendor_backend = VendorBackend::Portable;
     static constexpr bool explicit_vendor = false;
+    static constexpr bool explicit_epoch =
+        session_loop_ctx_has_explicit_epoch_v<LoopCtx>;
+    static constexpr std::uint64_t current_epoch =
+        session_loop_ctx_epoch_v<LoopCtx>;
+    static constexpr std::uint64_t current_generation =
+        session_loop_ctx_generation_v<LoopCtx>;
+};
+
+template <std::uint64_t CurrentEpoch,
+          std::uint64_t CurrentGeneration,
+          typename InnerLoopCtx>
+struct loop_ctx_traits<EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>> {
+    using inner_loop_ctx =
+        typename loop_ctx_traits<InnerLoopCtx>::inner_loop_ctx;
+    static constexpr VendorBackend vendor_backend =
+        loop_ctx_traits<InnerLoopCtx>::vendor_backend;
+    static constexpr bool explicit_vendor =
+        loop_ctx_traits<InnerLoopCtx>::explicit_vendor;
+    static constexpr bool explicit_epoch = true;
+    static constexpr std::uint64_t current_epoch = CurrentEpoch;
+    static constexpr std::uint64_t current_generation = CurrentGeneration;
 };
 
 template <VendorBackend V, typename InnerLoopCtx>
 struct loop_ctx_traits<VendorCtx<V, InnerLoopCtx>> {
-    using inner_loop_ctx = InnerLoopCtx;
+    using inner_loop_ctx =
+        typename loop_ctx_traits<InnerLoopCtx>::inner_loop_ctx;
     static constexpr VendorBackend vendor_backend = V;
     static constexpr bool explicit_vendor = true;
+    static constexpr bool explicit_epoch =
+        loop_ctx_traits<InnerLoopCtx>::explicit_epoch;
+    static constexpr std::uint64_t current_epoch =
+        loop_ctx_traits<InnerLoopCtx>::current_epoch;
+    static constexpr std::uint64_t current_generation =
+        loop_ctx_traits<InnerLoopCtx>::current_generation;
 };
 
 template <typename LoopCtx>
@@ -246,6 +298,26 @@ inline constexpr bool loop_ctx_has_explicit_vendor_v =
     loop_ctx_traits<LoopCtx>::explicit_vendor;
 
 template <typename LoopCtx>
+inline constexpr bool loop_ctx_has_explicit_epoch_v =
+    loop_ctx_traits<LoopCtx>::explicit_epoch;
+
+template <typename LoopCtx>
+inline constexpr std::uint64_t loop_ctx_epoch_v =
+    loop_ctx_traits<LoopCtx>::current_epoch;
+
+template <typename LoopCtx>
+inline constexpr std::uint64_t loop_ctx_generation_v =
+    loop_ctx_traits<LoopCtx>::current_generation;
+
+template <typename LoopCtx,
+          std::uint64_t MinEpoch,
+          std::uint64_t MinGeneration>
+inline constexpr bool loop_ctx_epoch_satisfies_v =
+    loop_ctx_has_explicit_epoch_v<LoopCtx> &&
+    MinEpoch <= loop_ctx_epoch_v<LoopCtx> &&
+    MinGeneration <= loop_ctx_generation_v<LoopCtx>;
+
+template <typename LoopCtx>
 using loop_ctx_as_vendor_ctx_t =
     VendorCtx<loop_ctx_vendor_v<LoopCtx>, loop_ctx_inner_t<LoopCtx>>;
 
@@ -256,7 +328,26 @@ struct loop_ctx_rebind_inner {
 
 template <VendorBackend V, typename InnerLoopCtx, typename NewInnerLoopCtx>
 struct loop_ctx_rebind_inner<VendorCtx<V, InnerLoopCtx>, NewInnerLoopCtx> {
-    using type = VendorCtx<V, NewInnerLoopCtx>;
+    using type = VendorCtx<
+        V,
+        typename loop_ctx_rebind_inner<
+            InnerLoopCtx,
+            NewInnerLoopCtx>::type>;
+};
+
+template <std::uint64_t CurrentEpoch,
+          std::uint64_t CurrentGeneration,
+          typename InnerLoopCtx,
+          typename NewInnerLoopCtx>
+struct loop_ctx_rebind_inner<
+    EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>,
+    NewInnerLoopCtx> {
+    using type = EpochCtx<
+        CurrentEpoch,
+        CurrentGeneration,
+        typename loop_ctx_rebind_inner<
+            InnerLoopCtx,
+            NewInnerLoopCtx>::type>;
 };
 
 template <typename LoopCtx, typename NewInnerLoopCtx>
@@ -1753,6 +1844,9 @@ static_assert(sizeof(PermissionedSessionHandle<AcceptProto, EmptyPermSet,
 
 using NvBareCtx   = VendorCtx<VendorBackend::NV>;
 using AmdBareCtx  = VendorCtx<VendorBackend::AMD>;
+using EpochBareCtx = EpochCtx<5, 3>;
+using NvEpochCtx   = VendorCtx<VendorBackend::NV, EpochBareCtx>;
+using EpochNvCtx   = EpochCtx<5, 3, NvBareCtx>;
 using NvLoopCtx   = VendorCtx<VendorBackend::NV,
                               LoopContext<Send<int, Continue>, EmptyPermSet>>;
 using NvEndHandle  = PermissionedSessionHandle<End, EmptyPermSet,
@@ -1763,6 +1857,8 @@ using RawEndHandle = PermissionedSessionHandle<End, EmptyPermSet,
                                                 FakeChannel>;
 
 static_assert(std::is_empty_v<NvBareCtx>);
+static_assert(std::is_empty_v<EpochBareCtx>);
+static_assert(std::is_empty_v<NvEpochCtx>);
 static_assert(std::is_empty_v<NvLoopCtx>);
 static_assert(loop_ctx_vendor_v<void> == VendorBackend::Portable);
 static_assert(loop_ctx_vendor_v<LoopContext<Send<int, Continue>,
@@ -1773,11 +1869,36 @@ static_assert(std::is_same_v<loop_ctx_inner_t<NvBareCtx>, void>);
 static_assert(std::is_same_v<loop_ctx_inner_t<NvLoopCtx>,
                              LoopContext<Send<int, Continue>,
                                          EmptyPermSet>>);
+static_assert(loop_ctx_has_explicit_epoch_v<EpochBareCtx>);
+static_assert(loop_ctx_epoch_v<EpochBareCtx> == 5);
+static_assert(loop_ctx_generation_v<EpochBareCtx> == 3);
+static_assert(loop_ctx_epoch_satisfies_v<EpochBareCtx, 5, 3>);
+static_assert(!loop_ctx_epoch_satisfies_v<EpochBareCtx, 6, 3>);
+static_assert(loop_ctx_vendor_v<NvEpochCtx> == VendorBackend::NV);
+static_assert(loop_ctx_has_explicit_epoch_v<NvEpochCtx>);
+static_assert(session_loop_ctx_epoch_satisfies_v<NvEpochCtx, 5, 3>);
+static_assert(loop_ctx_vendor_v<EpochNvCtx> == VendorBackend::NV);
+static_assert(loop_ctx_has_explicit_epoch_v<EpochNvCtx>);
+static_assert(session_loop_ctx_epoch_satisfies_v<EpochNvCtx, 5, 3>);
+static_assert(!session_loop_ctx_epoch_satisfies_v<NvEpochCtx, 6, 3>);
 static_assert(std::is_same_v<loop_ctx_rebind_inner_t<
                   NvBareCtx,
                   LoopContext<Recv<int, Continue>, EmptyPermSet>>,
               VendorCtx<VendorBackend::NV,
                         LoopContext<Recv<int, Continue>, EmptyPermSet>>>);
+static_assert(std::is_same_v<loop_ctx_rebind_inner_t<
+                  NvEpochCtx,
+                  LoopContext<Recv<int, Continue>, EmptyPermSet>>,
+              VendorCtx<VendorBackend::NV,
+                        EpochCtx<5, 3,
+                                 LoopContext<Recv<int, Continue>,
+                                             EmptyPermSet>>>>);
+static_assert(std::is_same_v<session_loop_ctx_rebind_inner_t<
+                  NvEpochCtx,
+                  Loop<Recv<int, Continue>>>,
+              VendorCtx<VendorBackend::NV,
+                        EpochCtx<5, 3,
+                                 Loop<Recv<int, Continue>>>>>);
 
 static_assert(std::is_same_v<typename RawEndHandle::loop_ctx, void>);
 static_assert(std::is_same_v<typename RawEndHandle::vendor_ctx,

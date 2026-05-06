@@ -92,6 +92,7 @@
 #include <crucible/sessions/SessionRowExtraction.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <source_location>
 #include <type_traits>
 #include <utility>
@@ -208,6 +209,22 @@ struct proto_row_admitted_by<Delegate<T, K>, Ctx>
 template <class T, class K, class Ctx>
 struct proto_row_admitted_by<Accept<T, K>, Ctx>
     : proto_row_admitted_by<K, Ctx>
+{};
+
+template <class T, class K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          class Ctx>
+struct proto_row_admitted_by<
+    EpochedDelegate<T, K, MinEpoch, MinGeneration>, Ctx>
+    : proto_row_admitted_by<Delegate<T, K>, Ctx>
+{};
+
+template <class T, class K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          class Ctx>
+struct proto_row_admitted_by<
+    EpochedAccept<T, K, MinEpoch, MinGeneration>, Ctx>
+    : proto_row_admitted_by<Accept<T, K>, Ctx>
 {};
 
 template <class Proto, class Ctx>
@@ -472,6 +489,20 @@ template <class T, class K, class LoopCtx>
 struct protocol_vendor_admitted_by_loop_ctx<Accept<T, K>, LoopCtx>
     : protocol_vendor_admitted_by_loop_ctx<Delegate<T, K>, LoopCtx> {};
 
+template <class T, class K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<
+    EpochedDelegate<T, K, MinEpoch, MinGeneration>, LoopCtx>
+    : protocol_vendor_admitted_by_loop_ctx<Delegate<T, K>, LoopCtx> {};
+
+template <class T, class K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<
+    EpochedAccept<T, K, MinEpoch, MinGeneration>, LoopCtx>
+    : protocol_vendor_admitted_by_loop_ctx<Accept<T, K>, LoopCtx> {};
+
 template <VendorBackend V, class P, class LoopCtx>
 struct protocol_vendor_admitted_by_loop_ctx<VendorPinned<V, P>, LoopCtx>
     : std::bool_constant<
@@ -558,6 +589,20 @@ struct permission_flow_closes<Delegate<T, K>, PS, LoopCtx>
 
 template <class T, class K, class PS, class LoopCtx>
 struct permission_flow_closes<Accept<T, K>, PS, LoopCtx>
+    : permission_flow_closes<K, PS, LoopCtx> {};
+
+template <class T, class K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          class PS, class LoopCtx>
+struct permission_flow_closes<
+    EpochedDelegate<T, K, MinEpoch, MinGeneration>, PS, LoopCtx>
+    : permission_flow_closes<K, PS, LoopCtx> {};
+
+template <class T, class K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          class PS, class LoopCtx>
+struct permission_flow_closes<
+    EpochedAccept<T, K, MinEpoch, MinGeneration>, PS, LoopCtx>
     : permission_flow_closes<K, PS, LoopCtx> {};
 
 template <VendorBackend V, class P, class PS, class LoopCtx>

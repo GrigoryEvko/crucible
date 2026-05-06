@@ -141,6 +141,7 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <tuple>
 #include <type_traits>
@@ -323,6 +324,22 @@ struct stop_class_compatible<Accept<Inner, K>, C>
     : std::bool_constant<stop_class_compatible<Inner, C>::value &&
                          stop_class_compatible<K, C>::value> {};
 
+template <typename Inner, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          CrashClass C>
+struct stop_class_compatible<
+    EpochedDelegate<Inner, K, MinEpoch, MinGeneration>, C>
+    : std::bool_constant<stop_class_compatible<Inner, C>::value &&
+                         stop_class_compatible<K, C>::value> {};
+
+template <typename Inner, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          CrashClass C>
+struct stop_class_compatible<
+    EpochedAccept<Inner, K, MinEpoch, MinGeneration>, C>
+    : std::bool_constant<stop_class_compatible<Inner, C>::value &&
+                         stop_class_compatible<K, C>::value> {};
+
 template <typename Proto, CrashClass C>
 inline constexpr bool stop_class_compatible_v =
     stop_class_compatible<Proto, C>::value;
@@ -452,6 +469,19 @@ struct permissioned_loop_ctx_from_bare<Loop<Body>, PS> {
 template <typename Body, typename EntryPS, typename PS>
 struct permissioned_loop_ctx_from_bare<LoopContext<Body, EntryPS>, PS> {
     using type = LoopContext<Body, EntryPS>;
+};
+
+template <std::uint64_t CurrentEpoch,
+          std::uint64_t CurrentGeneration,
+          typename InnerLoopCtx,
+          typename PS>
+struct permissioned_loop_ctx_from_bare<
+    EpochCtx<CurrentEpoch, CurrentGeneration, InnerLoopCtx>,
+    PS> {
+    using type = EpochCtx<
+        CurrentEpoch,
+        CurrentGeneration,
+        typename permissioned_loop_ctx_from_bare<InnerLoopCtx, PS>::type>;
 };
 
 template <VendorBackend V, typename InnerLoopCtx, typename PS>

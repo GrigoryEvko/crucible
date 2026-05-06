@@ -44,21 +44,25 @@
 //                           on both axes.  Used by Keeper recovery
 //                           to reject pre-reshard checkpoints.
 //
-// ── Forward-progress discipline (NOT type-enforced) ────────────────
+// ── Forward-progress discipline ────────────────────────────────────
 //
 // The lattice direction (numeric ≤) admits both directions of
 // construction; the wrapper does NOT prevent constructing an older
 // (epoch, gen) pair after a newer one.  Forward progress is a
-// CALL-SITE discipline:
+// CALL-SITE discipline for ordinary values:
 //
 //   - Canopy publishes the new fleet epoch ONLY via Raft commit.
 //   - Each Relay advances its own generation ONLY at restart.
 //
 // Production callers should derive the (epoch, gen) pair from those
-// authoritative sources, not from arbitrary inputs.  A future task
-// could add a Monotonic<> wrapper layer over EpochVersioned to
-// type-fence the forward-progress invariant; until that task ships,
-// the call-site discipline is the only fence.
+// authoritative sources, not from arbitrary inputs.  Delegated session
+// handoffs now have an additional type-level fence:
+// sessions/SessionDelegate.h::EpochedDelegate<T, K, MinEpoch, MinGen>
+// carries the required minimum epoch/generation in the protocol type,
+// and its peer-side EpochedAccept can only be instantiated under an
+// EpochCtx<E, G> satisfying E >= MinEpoch and G >= MinGen.  That
+// compile-time fence covers cross-Relay reshard handoffs; per-value
+// admission still uses this wrapper's runtime is_at_least gate.
 //
 //   Axiom coverage:
 //     TypeSafe — Epoch and Generation are strong-typed uint64_t
