@@ -99,29 +99,29 @@ struct DispatchWithWorkloadResult {
 
 namespace adaptive_detail {
 
-struct ticket_type {
-    static constexpr unsigned slot_bits = 14;
-    static constexpr unsigned key_bits = 64 - slot_bits;
-    static constexpr std::uint64_t max_slots = std::uint64_t{1} << slot_bits;
-    static constexpr std::uint64_t key_mask =
-        (std::uint64_t{1} << key_bits) - 1;
+// Queue payload stays pointer-sized so every policy backend, including
+// Chase-Lev's atomic cells, remains lock-free. The pointed-to metadata
+// lives inside Pool::TaskSlot and is stable for the lifetime of the
+// queued ticket.
+struct ticket_metadata {
+    std::uint64_t key_value = 0;
+    std::size_t slot_index = 0;
+};
 
-    std::uint64_t raw = 0;
+struct ticket_type {
+    ticket_metadata* metadata = nullptr;
 
     [[nodiscard]] static constexpr ticket_type
-    pack(std::uint64_t key, std::size_t slot) noexcept {
-        return ticket_type{
-            .raw = (static_cast<std::uint64_t>(slot) << key_bits) |
-                   (key & key_mask),
-        };
+    pack(ticket_metadata& metadata) noexcept {
+        return ticket_type{.metadata = &metadata};
     }
 
     [[nodiscard]] constexpr std::uint64_t key() const noexcept {
-        return raw & key_mask;
+        return metadata->key_value;
     }
 
     [[nodiscard]] constexpr std::size_t slot() const noexcept {
-        return raw >> key_bits;
+        return metadata->slot_index;
     }
 
     [[nodiscard]] constexpr operator std::uint64_t() const noexcept {
@@ -492,15 +492,10 @@ public:
     using policy_type = Policy;
     using ticket_type = adaptive_detail::ticket_type;
     using policy_queue_type = adaptive_detail::policy_queue_t<Policy>;
-    static constexpr std::size_t task_slot_count =
-        std::min<std::size_t>(policy_queue_type::capacity(),
-                              ticket_type::max_slots);
+    static constexpr std::size_t task_slot_count = policy_queue_type::capacity();
 
     static_assert(task_slot_count > 0,
                   "Pool<Policy> requires a non-empty policy queue");
-    static_assert(task_slot_count <=
-                      static_cast<std::size_t>(ticket_type::max_slots),
-                  "Pool<Policy> task slot table index must fit in ticket_type");
 
     explicit Pool(CoreCount cores = CoreCount::all_available(),
                   NumaNodeMask numa_mask = {}) {
@@ -692,20 +687,21 @@ private:
         return (state & slot_state_mask) == slot_ready_tag;
     }
 
-    [[nodiscard]] static constexpr ticket_type
-    pack_ticket_(std::uint64_t key, std::size_t slot_index) noexcept {
-        return ticket_type::pack(key, slot_index);
-    }
-
     [[nodiscard]] static constexpr std::size_t
     ticket_slot_(ticket_type ticket) noexcept {
         return ticket.slot();
     }
 
     struct alignas(64) TaskSlot {
+        adaptive_detail::ticket_metadata ticket{};
         std::atomic<std::uint64_t> state{slot_empty_state};
         Task task{};
     };
+
+    [[nodiscard]] static constexpr ticket_type
+    pack_ticket_(TaskSlot& slot) noexcept {
+        return ticket_type::pack(slot.ticket);
+    }
 
     [[nodiscard]] TaskSlot& slot_for_(ticket_type ticket) noexcept {
         return task_slots_[ticket_slot_(ticket)];
@@ -779,7 +775,6 @@ private:
             next_sequence_.fetch_add(1, std::memory_order_relaxed);
         const std::uint64_t key =
             adaptive_detail::queue_key<Policy>(job, sequence);
-        if (key > ticket_type::key_mask) [[unlikely]] std::abort();
         Task task{
             .sequence = sequence,
             .worker_limit = std::max<std::size_t>(1, worker_limit),
@@ -871,11 +866,15 @@ private:
             CRUCIBLE_SPIN_PAUSE;
         }
 
+        slot.ticket = adaptive_detail::ticket_metadata{
+            .key_value = key,
+            .slot_index = slot_index,
+        };
         slot.task = std::move(task);
         const auto generation = static_cast<std::uint32_t>(generation64);
         slot.state.store(slot_ready_state(generation),
                          std::memory_order_release);
-        return pack_ticket_(key, slot_index);
+        return pack_ticket_(slot);
     }
 
     void enqueue_task_(std::uint64_t sequence,

@@ -5,7 +5,9 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <thread>
+#include <type_traits>
 #include <vector>
 
 namespace cc = crucible::concurrent;
@@ -27,6 +29,9 @@ using EevdfPerShardPolicy = cs::EevdfPerShard<PriorityJobKey, 4, 64, 16, 1>;
 static_assert(cc::adaptive_detail::InlineTask<>::capacity() == 512);
 static_assert(std::is_move_constructible_v<cc::adaptive_detail::InlineTask<>>);
 static_assert(!std::is_copy_constructible_v<cc::adaptive_detail::InlineTask<>>);
+static_assert(std::is_trivially_copyable_v<cc::adaptive_detail::ticket_type>);
+static_assert(std::is_trivially_destructible_v<cc::adaptive_detail::ticket_type>);
+static_assert(sizeof(cc::adaptive_detail::ticket_type) == sizeof(void*));
 
 template <typename Policy>
 static void run_completion_smoke(const char* name) {
@@ -161,6 +166,62 @@ static void test_priority_key_order_single_worker() {
             std::abort();
         }
     }
+}
+
+static void test_ticket_metadata_preserves_full_u64() {
+    cc::adaptive_detail::ticket_metadata metadata{
+        .key_value = std::numeric_limits<std::uint64_t>::max(),
+        .slot_index = 17,
+    };
+    const auto ticket = cc::adaptive_detail::ticket_type::pack(metadata);
+    if (ticket.key() != std::numeric_limits<std::uint64_t>::max() ||
+        ticket.slot() != 17) {
+        std::abort();
+    }
+}
+
+template <typename Policy>
+static void run_full_u64_priority_key_smoke(const char* name) {
+    struct KeyedJob {
+        std::uint64_t key_value = 0;
+        std::atomic<int>* count = nullptr;
+
+        [[nodiscard]] std::uint64_t scheduler_key() const noexcept {
+            return key_value;
+        }
+
+        void operator()() const noexcept {
+            count->fetch_add(1, std::memory_order_relaxed);
+        }
+    };
+
+    cc::Pool<Policy> pool{cc::CoreCount{1}};
+    std::atomic<int> count{0};
+
+    cc::dispatch(pool, KeyedJob{
+        .key_value = std::numeric_limits<std::uint64_t>::max(),
+        .count = &count,
+    });
+    pool.wait_idle();
+
+    if (count.load(std::memory_order_relaxed) != 1) {
+        std::fprintf(stderr, "%s full-u64 key job did not run\n", name);
+        std::abort();
+    }
+    if (pool.failed() != 0) {
+        std::fprintf(stderr, "%s full-u64 key job failed\n", name);
+        std::abort();
+    }
+}
+
+static void test_priority_key_accepts_full_u64() {
+    test_ticket_metadata_preserves_full_u64();
+    run_full_u64_priority_key_smoke<DeadlinePolicy>("Deadline");
+    run_full_u64_priority_key_smoke<CfsPolicy>("Cfs");
+    run_full_u64_priority_key_smoke<EevdfPolicy>("Eevdf");
+    run_full_u64_priority_key_smoke<DeadlinePerShardPolicy>("DeadlinePerShard");
+    run_full_u64_priority_key_smoke<CfsPerShardPolicy>("CfsPerShard");
+    run_full_u64_priority_key_smoke<EevdfPerShardPolicy>("EevdfPerShard");
 }
 
 static void test_topology_flag() {
@@ -439,6 +500,7 @@ int main() {
     test_fifo_order_single_worker();
     test_lifo_order_single_worker();
     test_priority_key_order_single_worker();
+    test_priority_key_accepts_full_u64();
     test_topology_flag();
     test_recommended_topology_bridge();
     test_workload_profile_payload_inference();
