@@ -44,8 +44,9 @@
 // payload AHEAD OF the federation call:
 //
 //     auto bytes = dispatcher_serialize(my_compiled_body);
+//     auto local = mint_permission_root<permissions::tag::LocalCipherTag>();
 //     auto written = serialize_computation_cache_federation_entry<
-//         &fn, Row<>, int>(out_buf, bytes);
+//         &fn, Row<>, int>(local, out_buf, bytes);
 //
 // The federation header pins the (FnPtr, Row, Args...) identity at
 // the wire level; the receiver's dispatcher_deserialize() reads the
@@ -72,6 +73,7 @@
 #include <crucible/Types.h>                          // KernelCacheKey, ContentHash, RowHash
 #include <crucible/cipher/ComputationCache.h>        // computation_cache_key_in_row, IsCacheableFunction, IsEffectRow
 #include <crucible/cipher/FederationProtocol.h>      // FederationEntryHeader, codec, FederationError
+#include <crucible/permissions/FederationPermission.h>
 #include <crucible/safety/diag/RowHashFold.h>        // row_hash_contribution_v
 #include <crucible/sessions/FederationProtocol.h>    // typed Sender/Receiver/Coord MPST facade
 
@@ -204,9 +206,12 @@ template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
 [[nodiscard]] inline std::expected<std::size_t, FederationError>
 serialize_computation_cache_federation_entry(
+    const ::crucible::permissions::LocalCipherPermission& local_permission,
     std::span<std::uint8_t> out_buf,
     ComputationCacheFederationContentAddressedPayload<
         FnPtr, Row, Args...> dispatcher_payload) noexcept {
+    (void)local_permission;
+
     return serialize_federation_entry(
         out_buf,
         federation_key<FnPtr, Row, Args...>(),
@@ -217,9 +222,11 @@ template <auto FnPtr, typename Row, typename... Args>
     requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
 [[nodiscard]] inline std::expected<std::size_t, FederationError>
 serialize_computation_cache_federation_entry(
+    const ::crucible::permissions::LocalCipherPermission& local_permission,
     std::span<std::uint8_t> out_buf,
     std::span<const std::uint8_t> dispatcher_payload) noexcept {
     return serialize_computation_cache_federation_entry<FnPtr, Row, Args...>(
+        local_permission,
         out_buf,
         ComputationCacheFederationContentAddressedPayload<
             FnPtr, Row, Args...>{dispatcher_payload});
@@ -235,6 +242,7 @@ serialize_computation_cache_federation_entry(
 // callers don't need to mix `cipher::federation::` and
 // `cipher::federation::serialize_computation_cache_*` styles.
 using ::crucible::cipher::federation::deserialize_federation_entry;
+using ::crucible::cipher::federation::deserialize_untrusted_federation_entry;
 using ::crucible::cipher::federation::deserialize_federation_header;
 
 // ═════════════════════════════════════════════════════════════════════
@@ -380,6 +388,9 @@ inline bool computation_cache_federation_smoke_test() noexcept {
     using namespace detail::computation_cache_federation_self_test;
 
     bool ok = true;
+    auto local_permission =
+        ::crucible::safety::mint_permission_root<
+            ::crucible::permissions::tag::LocalCipherTag>();
 
     // Encode an entry with EmptyRow and verify round-trip.
     {
@@ -387,11 +398,11 @@ inline bool computation_cache_federation_smoke_test() noexcept {
         const std::array<std::uint8_t, 4> body = {0x01, 0x02, 0x03, 0x04};
 
         auto written = serialize_computation_cache_federation_entry<
-            &f12_p_unary, EmptyR, int>(buf, body);
+            &f12_p_unary, EmptyR, int>(local_permission, buf, body);
         ok = ok && written.has_value();
         if (!written.has_value()) return false;
 
-        auto view = deserialize_federation_entry(
+        auto view = deserialize_untrusted_federation_entry(
             std::span<const std::uint8_t>(buf.data(), *written),
             static_cast<std::uint16_t>(
                 ::crucible::effects::OsUniverse::cardinality));
@@ -412,10 +423,10 @@ inline bool computation_cache_federation_smoke_test() noexcept {
         std::array<std::uint8_t, 32> buf_empty{};
         std::array<std::uint8_t, 32> buf_bg{};
         auto wa = serialize_computation_cache_federation_entry<
-            &f12_p_unary, EmptyR, int>(buf_empty,
+            &f12_p_unary, EmptyR, int>(local_permission, buf_empty,
                                         std::span<const std::uint8_t>{});
         auto wb = serialize_computation_cache_federation_entry<
-            &f12_p_unary, BgR, int>(buf_bg,
+            &f12_p_unary, BgR, int>(local_permission, buf_bg,
                                      std::span<const std::uint8_t>{});
         ok = ok && wa.has_value() && wb.has_value();
         if (!wa.has_value() || !wb.has_value()) return false;
@@ -435,7 +446,8 @@ inline bool computation_cache_federation_smoke_test() noexcept {
         using Payload = ComputationCacheFederationContentAddressedPayload<
             &f12_p_unary, EmptyR, int>;
         auto written = serialize_computation_cache_federation_entry<
-            &f12_p_unary, EmptyR, int>(buf, Payload::hash_only());
+            &f12_p_unary, EmptyR, int>(
+                local_permission, buf, Payload::hash_only());
         ok = ok && written.has_value();
         if (!written.has_value()) return false;
         ok = ok && (*written == FEDERATION_HEADER_BYTES);

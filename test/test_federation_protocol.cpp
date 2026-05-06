@@ -110,7 +110,7 @@ static void test_round_trip_basic() {
 
     const auto receiver_card =
         static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality);
-    auto view = fed::deserialize_federation_entry(
+    auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(buf.data(), *written),
         receiver_card);
     ASSERT_TRUE(view.has_value());
@@ -150,7 +150,7 @@ static void test_round_trip_empty_payload() {
     ASSERT_TRUE(written.has_value());
     assert(*written == fed::FEDERATION_HEADER_BYTES);  // header only
 
-    auto view = fed::deserialize_federation_entry(
+    auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(buf.data(), *written),
         static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
     ASSERT_TRUE(view.has_value());
@@ -226,12 +226,12 @@ static void test_serialize_rejects_undersized_buffer() {
 
 static void test_deserialize_rejects_truncated_header() {
     std::array<std::uint8_t, 16> tiny_buf{};
-    auto view = fed::deserialize_federation_entry(tiny_buf, 6);
+    auto view = fed::deserialize_untrusted_federation_entry(tiny_buf, 6);
     ASSERT_TRUE(!view.has_value());
     assert(view.error() == fed::FederationError::TruncatedHeader);
 
     // Empty span.
-    auto empty_view = fed::deserialize_federation_entry(
+    auto empty_view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>{}, 6);
     ASSERT_TRUE(!empty_view.has_value());
     assert(empty_view.error() == fed::FederationError::TruncatedHeader);
@@ -256,7 +256,7 @@ static void test_deserialize_rejects_bad_magic() {
     hdr.reserved     = 0u;
     std::memcpy(buf.data(), &hdr, sizeof(hdr));
 
-    auto view = fed::deserialize_federation_entry(buf, 6);
+    auto view = fed::deserialize_untrusted_federation_entry(buf, 6);
     ASSERT_TRUE(!view.has_value());
     assert(view.error() == fed::FederationError::BadMagic);
 
@@ -280,7 +280,7 @@ static void test_deserialize_rejects_unsupported_version() {
     hdr.reserved     = 0u;
     std::memcpy(buf.data(), &hdr, sizeof(hdr));
 
-    auto view = fed::deserialize_federation_entry(buf, 6);
+    auto view = fed::deserialize_untrusted_federation_entry(buf, 6);
     ASSERT_TRUE(!view.has_value());
     assert(view.error() == fed::FederationError::UnsupportedVersion);
 
@@ -304,7 +304,7 @@ static void test_deserialize_rejects_reserved_nonzero() {
     hdr.reserved     = 0xDEAD'BEEFu;  // V2 fields would live here
     std::memcpy(buf.data(), &hdr, sizeof(hdr));
 
-    auto view = fed::deserialize_federation_entry(buf, 6);
+    auto view = fed::deserialize_untrusted_federation_entry(buf, 6);
     ASSERT_TRUE(!view.has_value());
     assert(view.error() == fed::FederationError::ReservedNonZero);
 
@@ -340,7 +340,7 @@ static void test_universe_cardinality_acceptance() {
     {
         std::array<std::uint8_t, 32> buf{};
         encode_with_stamp(6, buf);
-        auto view = fed::deserialize_federation_entry(buf, 6);
+        auto view = fed::deserialize_untrusted_federation_entry(buf, 6);
         ASSERT_TRUE(view.has_value());
     }
 
@@ -348,7 +348,7 @@ static void test_universe_cardinality_acceptance() {
     {
         std::array<std::uint8_t, 32> buf{};
         encode_with_stamp(3, buf);
-        auto view = fed::deserialize_federation_entry(buf, 6);
+        auto view = fed::deserialize_untrusted_federation_entry(buf, 6);
         ASSERT_TRUE(view.has_value());
     }
 
@@ -356,7 +356,7 @@ static void test_universe_cardinality_acceptance() {
     {
         std::array<std::uint8_t, 32> buf{};
         encode_with_stamp(7, buf);
-        auto view = fed::deserialize_federation_entry(buf, 6);
+        auto view = fed::deserialize_untrusted_federation_entry(buf, 6);
         ASSERT_TRUE(!view.has_value());
         assert(view.error() ==
                fed::FederationError::UniverseCardinalityTooHigh);
@@ -366,7 +366,7 @@ static void test_universe_cardinality_acceptance() {
     {
         std::array<std::uint8_t, 32> buf{};
         encode_with_stamp(0, buf);
-        auto view = fed::deserialize_federation_entry(buf, 6);
+        auto view = fed::deserialize_untrusted_federation_entry(buf, 6);
         ASSERT_TRUE(view.has_value());
     }
 
@@ -412,7 +412,7 @@ static void test_deserialize_rejects_sentinel_and_zero() {
     {
         std::array<std::uint8_t, 32> buf{};
         encode_key(KernelCacheKey::sentinel(), buf);
-        auto view = fed::deserialize_federation_entry(buf, 6);
+        auto view = fed::deserialize_untrusted_federation_entry(buf, 6);
         ASSERT_TRUE(!view.has_value());
         assert(view.error() == fed::FederationError::SentinelKey);
     }
@@ -421,7 +421,7 @@ static void test_deserialize_rejects_sentinel_and_zero() {
     {
         std::array<std::uint8_t, 32> buf{};
         encode_key(KernelCacheKey{}, buf);
-        auto view = fed::deserialize_federation_entry(buf, 6);
+        auto view = fed::deserialize_untrusted_federation_entry(buf, 6);
         ASSERT_TRUE(!view.has_value());
         assert(view.error() == fed::FederationError::ZeroKey);
     }
@@ -446,7 +446,7 @@ static void test_deserialize_rejects_truncated_payload() {
     hdr.reserved     = 0u;
     std::memcpy(buf.data(), &hdr, sizeof(hdr));
 
-    auto view = fed::deserialize_federation_entry(buf, 6);
+    auto view = fed::deserialize_untrusted_federation_entry(buf, 6);
     ASSERT_TRUE(!view.has_value());
     assert(view.error() == fed::FederationError::TruncatedPayload);
 
@@ -480,7 +480,7 @@ static void test_serialize_is_deterministic() {
 
 // ─────────────────────────────────────────────────────────────────────
 // Group 17 — deserialize_federation_header is a strict subset of
-// deserialize_federation_entry.  Both must agree on rejection rules
+// deserialize_untrusted_federation_entry.  Both must agree on rejection rules
 // (the entry overload calls the header overload internally).
 
 static void test_header_overload_agreement() {
@@ -498,7 +498,7 @@ static void test_header_overload_agreement() {
         std::memcpy(buf.data(), &hdr, sizeof(hdr));
 
         auto h = fed::deserialize_federation_header(buf, 6);
-        auto e = fed::deserialize_federation_entry(buf, 6);
+        auto e = fed::deserialize_untrusted_federation_entry(buf, 6);
         ASSERT_TRUE(!h.has_value());
         ASSERT_TRUE(!e.has_value());
         assert(h.error() == e.error());
@@ -514,7 +514,7 @@ static void test_header_overload_agreement() {
         ASSERT_TRUE(written.has_value());
 
         auto h = fed::deserialize_federation_header(buf, 6);
-        auto e = fed::deserialize_federation_entry(buf, 6);
+        auto e = fed::deserialize_untrusted_federation_entry(buf, 6);
         ASSERT_TRUE(h.has_value());
         ASSERT_TRUE(e.has_value());
         assert(h->content_hash == e->header.content_hash);
@@ -570,7 +570,7 @@ static void test_round_trip_full_byte_range() {
     auto written = fed::serialize_federation_entry(buf, key, payload);
     ASSERT_TRUE(written.has_value());
 
-    auto view = fed::deserialize_federation_entry(
+    auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(buf.data(), *written),
         static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
     ASSERT_TRUE(view.has_value());
@@ -595,7 +595,7 @@ static void test_view_payload_aliases_input() {
     auto written = fed::serialize_federation_entry(buf, key, payload);
     ASSERT_TRUE(written.has_value());
 
-    auto view = fed::deserialize_federation_entry(
+    auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(buf.data(), *written),
         static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
     ASSERT_TRUE(view.has_value());
@@ -657,16 +657,16 @@ static void test_receiver_cardinality_is_explicit() {
     std::memcpy(buf.data(), &hdr, sizeof(hdr));
 
     // Receiver cardinality 5 → reject.
-    auto rej = fed::deserialize_federation_entry(buf, 5);
+    auto rej = fed::deserialize_untrusted_federation_entry(buf, 5);
     ASSERT_TRUE(!rej.has_value());
     assert(rej.error() == fed::FederationError::UniverseCardinalityTooHigh);
 
     // Receiver cardinality 10 → accept.
-    auto eq = fed::deserialize_federation_entry(buf, 10);
+    auto eq = fed::deserialize_untrusted_federation_entry(buf, 10);
     ASSERT_TRUE(eq.has_value());
 
     // Receiver cardinality 100 → accept.
-    auto big = fed::deserialize_federation_entry(buf, 100);
+    auto big = fed::deserialize_untrusted_federation_entry(buf, 100);
     ASSERT_TRUE(big.has_value());
 
     std::printf("  test_receiver_cardinality_is_explicit:          PASSED\n");
@@ -683,7 +683,7 @@ static void test_codec_is_noexcept() {
         buf, key, std::span<const std::uint8_t>{})));
     static_assert(noexcept(fed::deserialize_federation_header(
         std::span<const std::uint8_t>{}, std::uint16_t{6})));
-    static_assert(noexcept(fed::deserialize_federation_entry(
+    static_assert(noexcept(fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>{}, std::uint16_t{6})));
     static_assert(noexcept(fed::federation_accepts_cardinality(
         std::uint16_t{6}, std::uint16_t{6})));
@@ -722,13 +722,13 @@ static void test_audit_a_cardinality_boundary_uint16_max() {
     hdr.reserved     = 0u;
     std::memcpy(buf.data(), &hdr, sizeof(hdr));
 
-    auto accept = fed::deserialize_federation_entry(buf, MAX_CARD);
+    auto accept = fed::deserialize_untrusted_federation_entry(buf, MAX_CARD);
     ASSERT_TRUE(accept.has_value());
     assert(accept->header.universe_cardinality == MAX_CARD);
 
     // Equal-MAX-MAX boundary case (both ends).
     auto reject_one_below =
-        fed::deserialize_federation_entry(buf, MAX_CARD - 1u);
+        fed::deserialize_untrusted_federation_entry(buf, MAX_CARD - 1u);
     ASSERT_TRUE(!reject_one_below.has_value());
     assert(reject_one_below.error() ==
            fed::FederationError::UniverseCardinalityTooHigh);
@@ -781,7 +781,7 @@ static void test_audit_b_buffer_exactly_fits() {
 // Audit Group C — extra bytes at end are ignored (zero-copy aliasing
 // semantics witness).  A federation transport that batches multiple
 // entries into one byte buffer would pass a buffer with leftover
-// bytes after the first entry; deserialize_federation_entry must
+// bytes after the first entry; deserialize_untrusted_federation_entry must
 // return a payload span that caps at header.payload_size, NOT the
 // full remaining bytes.
 
@@ -803,7 +803,7 @@ static void test_audit_c_extra_bytes_at_end() {
 
     // Deserialize using the FULL 64-byte buffer (not just the 36
     // bytes we wrote).
-    auto view = fed::deserialize_federation_entry(
+    auto view = fed::deserialize_untrusted_federation_entry(
         buf, static_cast<std::uint16_t>(
             crucible::effects::OsUniverse::cardinality));
     ASSERT_TRUE(view.has_value());
@@ -842,7 +842,7 @@ static void test_audit_d_partial_sentinel_accepted() {
             buf, key, std::span<const std::uint8_t>{});
         ASSERT_TRUE(written.has_value());
 
-        auto view = fed::deserialize_federation_entry(
+        auto view = fed::deserialize_untrusted_federation_entry(
             buf, static_cast<std::uint16_t>(
                 crucible::effects::OsUniverse::cardinality));
         ASSERT_TRUE(view.has_value());
@@ -863,7 +863,7 @@ static void test_audit_d_partial_sentinel_accepted() {
             buf, key, std::span<const std::uint8_t>{});
         ASSERT_TRUE(written.has_value());
 
-        auto view = fed::deserialize_federation_entry(
+        auto view = fed::deserialize_untrusted_federation_entry(
             buf, static_cast<std::uint16_t>(
                 crucible::effects::OsUniverse::cardinality));
         ASSERT_TRUE(view.has_value());
@@ -906,7 +906,7 @@ static void test_audit_e_same_bit_pattern_axes() {
     auto written = fed::serialize_federation_entry(buf, key, payload);
     ASSERT_TRUE(written.has_value());
 
-    auto view = fed::deserialize_federation_entry(
+    auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(buf.data(), *written),
         static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
     ASSERT_TRUE(view.has_value());
@@ -1037,7 +1037,7 @@ static void test_audit_i_vector_buffer_roundtrip() {
     ASSERT_TRUE(written.has_value());
     assert(*written == buf.size());
 
-    auto view = fed::deserialize_federation_entry(
+    auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(buf.data(), *written),
         static_cast<std::uint16_t>(crucible::effects::OsUniverse::cardinality));
     ASSERT_TRUE(view.has_value());

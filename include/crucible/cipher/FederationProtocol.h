@@ -109,6 +109,8 @@
 
 #include <crucible/Types.h>
 #include <crucible/effects/OsUniverse.h>
+#include <crucible/permissions/FederationPermission.h>
+#include <crucible/safety/Tagged.h>
 
 #include <cstdint>
 #include <cstring>
@@ -451,8 +453,10 @@ struct FederationEntryView {
 };
 
 [[nodiscard]] inline std::expected<FederationEntryView, FederationError>
-deserialize_federation_entry(std::span<const std::uint8_t> in_buf,
-                             std::uint16_t receiver_cardinality) noexcept {
+deserialize_untrusted_federation_entry(
+    std::span<const std::uint8_t> in_buf,
+    std::uint16_t receiver_cardinality) noexcept
+{
     auto hdr_or_err =
         deserialize_federation_header(in_buf, receiver_cardinality);
     if (!hdr_or_err) {
@@ -466,6 +470,29 @@ deserialize_federation_entry(std::span<const std::uint8_t> in_buf,
         .header  = *hdr_or_err,
         .payload = in_buf.subspan(payload_offset, payload_size),
     };
+}
+
+template <typename Org>
+[[nodiscard]] inline std::expected<
+    ::crucible::safety::Tagged<
+        FederationEntryView,
+        ::crucible::safety::source::FederatedPeer<Org>>,
+    FederationError>
+deserialize_federation_entry(
+    const ::crucible::permissions::FederatedPeerPermission<Org>& peer_permission,
+    std::span<const std::uint8_t> in_buf,
+    std::uint16_t receiver_cardinality) noexcept
+{
+    (void)peer_permission;
+
+    auto view = deserialize_untrusted_federation_entry(
+        in_buf, receiver_cardinality);
+    if (!view) {
+        return std::unexpected(view.error());
+    }
+    return ::crucible::safety::Tagged<
+        FederationEntryView,
+        ::crucible::safety::source::FederatedPeer<Org>>{*view};
 }
 
 // ── Federation-acceptance predicate (helper) ────────────────────────

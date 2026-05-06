@@ -403,6 +403,7 @@ crucible_test(test_federation_protocol)
 crucible_test(test_cipher_record_event)
 crucible_test(test_background_thread_run_in_row)
 crucible_test(test_computation_cache_federation)
+crucible_test(test_federation_permission)
 crucible_test(test_fx_aliases)
 crucible_test(test_fx_alias_diagnostic)
 crucible_test(test_effect_row_lattice)
@@ -2745,6 +2746,8 @@ crucible_neg_compile_test(neg_computation_cache_federation_non_row
   "constraints not satisfied|template constraint failure|associated constraints")
 crucible_neg_compile_test(neg_computation_cache_federation_non_fn
   "constraints not satisfied|template constraint failure|associated constraints")
+crucible_neg_compile_test(neg_computation_cache_federation_without_local_permission
+  "no matching function|candidate expects")
 
 # ─── FOUND-I17 try_append_pure row-fence ────────────────────────────
 # MetaLog::try_append_pure<CallerRow> requires IsPure<CallerRow>
@@ -3517,6 +3520,10 @@ crucible_neg_compile_test(neg_federation_coord_non_coord_role
     "FederationCoord_NonCoordRole_Rejected")
 crucible_neg_compile_test(neg_federation_wrong_ack_key
     "FederationAck_ContentHashMismatch_Rejected")
+crucible_neg_compile_test(neg_federation_deserialize_without_permission
+    "no matching function|candidate expects")
+crucible_neg_compile_test(neg_federation_deserialize_wrong_org_permission
+    "no matching function|could not convert|invalid initialization")
 
 # Bare select<I>() / pick<I>() (no transport, no `_local` suffix) are
 # now `= delete`'d (#377) so the wire-vs-in-memory choice is forced

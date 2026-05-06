@@ -77,6 +77,14 @@ using RIOBg = eff::Row<eff::Effect::IO, eff::Effect::Bg>;
 using RFull = eff::Row<eff::Effect::Alloc, eff::Effect::IO,
                         eff::Effect::Block, eff::Effect::Bg,
                         eff::Effect::Init, eff::Effect::Test>;
+
+const crucible::permissions::LocalCipherPermission&
+local_cipher_permission() {
+    static const auto permission =
+        crucible::safety::mint_permission_root<
+            crucible::permissions::tag::LocalCipherTag>();
+    return permission;
+}
 }  // namespace
 
 // ─────────────────────────────────────────────────────────────────────
@@ -222,10 +230,10 @@ static void test_t10_codec_round_trip() {
 
     std::array<std::uint8_t, 64> buf{};
     auto written = fed::serialize_computation_cache_federation_entry<
-        &t_unary, R0, int>(buf, body);
+        &t_unary, R0, int>(local_cipher_permission(), buf, body);
     ASSERT_TRUE(written.has_value());
 
-    auto view = fed::deserialize_federation_entry(
+    auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(buf.data(), *written),
         static_cast<std::uint16_t>(eff::OsUniverse::cardinality));
     ASSERT_TRUE(view.has_value());
@@ -253,13 +261,13 @@ static void test_t11_cross_row_on_wire_distinct() {
     std::array<std::uint8_t, 32> buf_rbgio{};
 
     auto w0 = fed::serialize_computation_cache_federation_entry<
-        &t_unary, R0, int>(buf_r0, std::span<const std::uint8_t>{});
+        &t_unary, R0, int>(local_cipher_permission(), buf_r0, std::span<const std::uint8_t>{});
     auto wb = fed::serialize_computation_cache_federation_entry<
-        &t_unary, RBg, int>(buf_rbg, std::span<const std::uint8_t>{});
+        &t_unary, RBg, int>(local_cipher_permission(), buf_rbg, std::span<const std::uint8_t>{});
     auto wi = fed::serialize_computation_cache_federation_entry<
-        &t_unary, RIO, int>(buf_rio, std::span<const std::uint8_t>{});
+        &t_unary, RIO, int>(local_cipher_permission(), buf_rio, std::span<const std::uint8_t>{});
     auto wbi = fed::serialize_computation_cache_federation_entry<
-        &t_unary, RBgIO, int>(buf_rbgio, std::span<const std::uint8_t>{});
+        &t_unary, RBgIO, int>(local_cipher_permission(), buf_rbgio, std::span<const std::uint8_t>{});
     ASSERT_TRUE(w0.has_value());
     ASSERT_TRUE(wb.has_value());
     ASSERT_TRUE(wi.has_value());
@@ -340,10 +348,10 @@ static void test_t15_payload_aliases_input() {
     const std::array<std::uint8_t, 8> body = {1, 2, 3, 4, 5, 6, 7, 8};
     std::array<std::uint8_t, 64> buf{};
     auto written = fed::serialize_computation_cache_federation_entry<
-        &t_unary, R0, int>(buf, body);
+        &t_unary, R0, int>(local_cipher_permission(), buf, body);
     ASSERT_TRUE(written.has_value());
 
-    auto view = fed::deserialize_federation_entry(
+    auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(buf.data(), *written),
         static_cast<std::uint16_t>(eff::OsUniverse::cardinality));
     ASSERT_TRUE(view.has_value());
@@ -373,17 +381,17 @@ static void test_t16_content_addressed_payload_elision() {
 
     std::array<std::uint8_t, 64> full_buf{};
     auto full_written = fed::serialize_computation_cache_federation_entry<
-        &t_unary, R0, int>(full_buf, Payload{body});
+        &t_unary, R0, int>(local_cipher_permission(), full_buf, Payload{body});
     ASSERT_TRUE(full_written.has_value());
     assert(*full_written == fed::FEDERATION_HEADER_BYTES + body.size());
 
     std::array<std::uint8_t, 64> hash_only_buf{};
     auto hash_only_written = fed::serialize_computation_cache_federation_entry<
-        &t_unary, R0, int>(hash_only_buf, Payload::hash_only());
+        &t_unary, R0, int>(local_cipher_permission(), hash_only_buf, Payload::hash_only());
     ASSERT_TRUE(hash_only_written.has_value());
     assert(*hash_only_written == fed::FEDERATION_HEADER_BYTES);
 
-    auto view = fed::deserialize_federation_entry(
+    auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(hash_only_buf.data(), *hash_only_written),
         static_cast<std::uint16_t>(eff::OsUniverse::cardinality));
     ASSERT_TRUE(view.has_value());
@@ -475,7 +483,7 @@ static void test_audit_b_wire_byte_offset_stability() {
 
     std::array<std::uint8_t, 64> buf{};
     auto written = fed::serialize_computation_cache_federation_entry<
-        &t_unary, RBgIO, int>(buf, std::span<const std::uint8_t>{});
+        &t_unary, RBgIO, int>(local_cipher_permission(), buf, std::span<const std::uint8_t>{});
     ASSERT_TRUE(written.has_value());
     ASSERT_TRUE(*written == fed::FEDERATION_HEADER_BYTES);  // empty payload
 
@@ -534,12 +542,12 @@ static void test_audit_c_cross_universe_cardinality_rejection() {
     const std::array<std::uint8_t, 4> body = {0xAA, 0xBB, 0xCC, 0xDD};
 
     auto written = fed::serialize_computation_cache_federation_entry<
-        &t_unary, RFull, int>(buf, body);
+        &t_unary, RFull, int>(local_cipher_permission(), buf, body);
     ASSERT_TRUE(written.has_value());
 
     // Receiver at current cardinality — should accept.
     {
-        auto view = fed::deserialize_federation_entry(
+        auto view = fed::deserialize_untrusted_federation_entry(
             std::span<const std::uint8_t>(buf.data(), *written),
             current_cardinality);
         ASSERT_TRUE(view.has_value());
@@ -547,7 +555,7 @@ static void test_audit_c_cross_universe_cardinality_rejection() {
 
     // Receiver at cardinality - 1 — must reject.
     {
-        auto view = fed::deserialize_federation_entry(
+        auto view = fed::deserialize_untrusted_federation_entry(
             std::span<const std::uint8_t>(buf.data(), *written),
             static_cast<std::uint16_t>(current_cardinality - 1u));
         ASSERT_TRUE(!view.has_value());
@@ -579,9 +587,9 @@ static void test_audit_d_row_permutation_byte_invariance() {
     std::array<std::uint8_t, 64> buf_iobg{};
 
     auto wa = fed::serialize_computation_cache_federation_entry<
-        &t_unary, RBgIO, int>(buf_bgio, body);
+        &t_unary, RBgIO, int>(local_cipher_permission(), buf_bgio, body);
     auto wb = fed::serialize_computation_cache_federation_entry<
-        &t_unary, RIOBg, int>(buf_iobg, body);
+        &t_unary, RIOBg, int>(local_cipher_permission(), buf_iobg, body);
     ASSERT_TRUE(wa.has_value());
     ASSERT_TRUE(wb.has_value());
     assert(*wa == *wb);
@@ -624,10 +632,10 @@ static void test_audit_e_saturation_row_round_trip() {
                                                  0x01, 0x02, 0x03, 0x04};
     std::array<std::uint8_t, 64> buf{};
     auto written = fed::serialize_computation_cache_federation_entry<
-        &t_unary, RFull, int>(buf, body);
+        &t_unary, RFull, int>(local_cipher_permission(), buf, body);
     ASSERT_TRUE(written.has_value());
 
-    auto view = fed::deserialize_federation_entry(
+    auto view = fed::deserialize_untrusted_federation_entry(
         std::span<const std::uint8_t>(buf.data(), *written),
         static_cast<std::uint16_t>(eff::OsUniverse::cardinality));
     ASSERT_TRUE(view.has_value());
