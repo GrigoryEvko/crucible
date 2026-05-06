@@ -71,10 +71,11 @@
 //
 // ── Status ──────────────────────────────────────────────────────────
 //
-// v1 covers: SPSC, MPSC, MPMC, Snapshot, ChaseLevDeque, ShardedGrid.
-// v2 deferred: CalendarGrid / ShardedCalendarGrid (calendar substrates
-//              need priority-bucket-indexed mint factories).
+// v1 covers: SPSC, MPSC, MPMC, Snapshot, ChaseLevDeque, ShardedGrid,
+//            CalendarGrid.
+// v2 deferred: ShardedCalendarGrid.
 
+#include <crucible/concurrent/PermissionedCalendarGrid.h>
 #include <crucible/concurrent/PermissionedMpmcChannel.h>
 #include <crucible/concurrent/PermissionedMpscChannel.h>
 #include <crucible/concurrent/PermissionedSnapshot.h>
@@ -82,6 +83,7 @@
 #include <crucible/concurrent/Substrate.h>
 #include <crucible/concurrent/SubstrateCtxFit.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/sessions/CalendarGridSession.h>
 #include <crucible/sessions/ChaseLevDequeSession.h>
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionMint.h>
@@ -111,6 +113,15 @@ enum class Direction : std::uint8_t {
 template <std::size_t I>
 struct ShardId {
     static constexpr std::size_t value = I;
+};
+
+template <std::size_t P>
+struct CalendarProducerId {
+    static constexpr std::size_t value = P;
+};
+
+struct CalendarConsumerId {
+    static constexpr std::size_t value = 0;
 };
 
 // ── handle_for<Substr, Dir>: substrate × direction → handle ────────
@@ -209,6 +220,50 @@ struct handle_for<PermissionedShardedGrid<T, M, N, Cap, UserTag, Routing>,
         "must be less than N.");
     using type = typename PermissionedShardedGrid<
         T, M, N, Cap, UserTag, Routing>::template ConsumerHandle<J>;
+};
+
+// CalendarGrid: ProducerHandle<P> for each producer row plus one
+// ConsumerHandle for the whole priority-bucket calendar queue.  The
+// producer row is explicit in CalendarProducerId<P>; the consumer is a
+// singleton endpoint because PermissionedCalendarGrid has exactly one
+// drain consumer.
+template <class T,
+          std::size_t NumProducers,
+          std::size_t NumBuckets,
+          std::size_t BucketCap,
+          class KeyExtractor,
+          std::uint64_t QuantumNs,
+          class UserTag,
+          std::size_t P>
+struct handle_for<PermissionedCalendarGrid<T, NumProducers, NumBuckets,
+                                           BucketCap, KeyExtractor,
+                                           QuantumNs, UserTag>,
+                  Direction::Producer,
+                  CalendarProducerId<P>> {
+    static_assert(P < NumProducers,
+        "crucible::concurrent::diagnostic "
+        "[CalendarGridBridge_ProducerRowOutOfRange]: producer row P "
+        "must be less than NumProducers.");
+    using type = typename PermissionedCalendarGrid<
+        T, NumProducers, NumBuckets, BucketCap, KeyExtractor,
+        QuantumNs, UserTag>::template ProducerHandle<P>;
+};
+
+template <class T,
+          std::size_t NumProducers,
+          std::size_t NumBuckets,
+          std::size_t BucketCap,
+          class KeyExtractor,
+          std::uint64_t QuantumNs,
+          class UserTag>
+struct handle_for<PermissionedCalendarGrid<T, NumProducers, NumBuckets,
+                                           BucketCap, KeyExtractor,
+                                           QuantumNs, UserTag>,
+                  Direction::Consumer,
+                  CalendarConsumerId> {
+    using type = typename PermissionedCalendarGrid<
+        T, NumProducers, NumBuckets, BucketCap, KeyExtractor,
+        QuantumNs, UserTag>::ConsumerHandle;
 };
 
 template <class Substr, Direction Dir, class Shard = void>
@@ -340,6 +395,43 @@ struct default_proto_for<
         ::crucible::safety::proto::sharded_grid_session::ConsumerProto<T>;
 };
 
+template <class T,
+          std::size_t NumProducers,
+          std::size_t NumBuckets,
+          std::size_t BucketCap,
+          class KeyExtractor,
+          std::uint64_t QuantumNs,
+          class UserTag,
+          std::size_t P>
+struct default_proto_for<
+    PermissionedCalendarGrid<T, NumProducers, NumBuckets, BucketCap,
+                             KeyExtractor, QuantumNs, UserTag>,
+    Direction::Producer,
+    CalendarProducerId<P>> {
+    static_assert(P < NumProducers,
+        "crucible::concurrent::diagnostic "
+        "[CalendarGridBridge_ProducerRowOutOfRange]: producer row P "
+        "must be less than NumProducers.");
+    using type =
+        ::crucible::safety::proto::calendar_grid_session::ProducerProto<T>;
+};
+
+template <class T,
+          std::size_t NumProducers,
+          std::size_t NumBuckets,
+          std::size_t BucketCap,
+          class KeyExtractor,
+          std::uint64_t QuantumNs,
+          class UserTag>
+struct default_proto_for<
+    PermissionedCalendarGrid<T, NumProducers, NumBuckets, BucketCap,
+                             KeyExtractor, QuantumNs, UserTag>,
+    Direction::Consumer,
+    CalendarConsumerId> {
+    using type =
+        ::crucible::safety::proto::calendar_grid_session::ConsumerProto<T>;
+};
+
 template <class Substr, Direction Dir, class Shard = void>
 using default_proto_for_t = typename default_proto_for<Substr, Dir, Shard>::type;
 
@@ -364,6 +456,13 @@ concept HasShardHandleFor =
 template <class Substr, class Shard, Direction Dir>
 concept HasShardDefaultProtoFor =
     requires { typename default_proto_for<Substr, Dir, Shard>::type; };
+
+template <class Substr>
+concept HasIndexedSessionSurface =
+    ::crucible::safety::proto::sharded_grid_session::
+        ShardedGridSessionSurface<Substr>
+ || ::crucible::safety::proto::calendar_grid_session::
+        CalendarGridSessionSurface<Substr>;
 
 template <class Substr, class Shard, Direction Dir>
 struct shard_per_call_working_set;
@@ -402,6 +501,45 @@ struct shard_per_call_working_set<
         M * (2 * ::crucible::concurrent::detail::kHotPathCacheLineBytes + cell);
 };
 
+template <class T,
+          std::size_t NumProducers,
+          std::size_t NumBuckets,
+          std::size_t BucketCap,
+          class KeyExtractor,
+          std::uint64_t QuantumNs,
+          class UserTag,
+          std::size_t P>
+struct shard_per_call_working_set<
+    PermissionedCalendarGrid<T, NumProducers, NumBuckets, BucketCap,
+                             KeyExtractor, QuantumNs, UserTag>,
+    CalendarProducerId<P>,
+    Direction::Producer> {
+    static constexpr std::size_t cell =
+        ::crucible::concurrent::detail::cell_line_footprint(sizeof(T));
+    static constexpr std::size_t value =
+        3 * ::crucible::concurrent::detail::kHotPathCacheLineBytes + cell;
+};
+
+template <class T,
+          std::size_t NumProducers,
+          std::size_t NumBuckets,
+          std::size_t BucketCap,
+          class KeyExtractor,
+          std::uint64_t QuantumNs,
+          class UserTag>
+struct shard_per_call_working_set<
+    PermissionedCalendarGrid<T, NumProducers, NumBuckets, BucketCap,
+                             KeyExtractor, QuantumNs, UserTag>,
+    CalendarConsumerId,
+    Direction::Consumer> {
+    static constexpr std::size_t cell =
+        ::crucible::concurrent::detail::cell_line_footprint(sizeof(T));
+    static constexpr std::size_t value =
+        ::crucible::concurrent::detail::kHotPathCacheLineBytes
+      + NumBuckets * NumProducers
+      * (2 * ::crucible::concurrent::detail::kHotPathCacheLineBytes + cell);
+};
+
 }  // namespace detail
 
 template <class Substr, Direction Dir>
@@ -412,8 +550,7 @@ concept IsBridgeableDirection =
 
 template <class Substr, class Shard, Direction Dir>
 concept IsBridgeableShardDirection =
-    ::crucible::safety::proto::sharded_grid_session::
-        ShardedGridSessionSurface<Substr>
+    detail::HasIndexedSessionSurface<Substr>
  && detail::HasShardHandleFor<Substr, Shard, Dir>
  && detail::HasShardDefaultProtoFor<Substr, Shard, Dir>;
 
@@ -512,6 +649,13 @@ using Mpmc      = PermissionedMpmcChannel<int, 64, UserTag>;
 using SnapT     = PermissionedSnapshot<int, UserTag>;
 using DequeT    = PermissionedChaseLevDeque<int, 64, UserTag>;
 using GridT     = PermissionedShardedGrid<int, 4, 8, 64, UserTag>;
+struct CalendarKey {
+    static std::uint64_t key(int value) noexcept {
+        return static_cast<std::uint64_t>(value);
+    }
+};
+using CalendarT = PermissionedCalendarGrid<
+    int, 2, 64, 16, CalendarKey, 1ULL, UserTag>;
 using NvInt     = ::crucible::safety::Vendor<proto::VendorBackend::NV, int>;
 using AmdInt    = ::crucible::safety::Vendor<proto::VendorBackend::AMD, int>;
 using NvSpsc    = PermissionedSpscChannel<NvInt, 64, UserTag>;
@@ -541,6 +685,12 @@ static_assert(std::is_same_v<handle_for_t<GridT, Direction::Producer, ShardId<2>
                               typename GridT::template ProducerHandle<2>>);
 static_assert(std::is_same_v<handle_for_t<GridT, Direction::Consumer, ShardId<7>>,
                               typename GridT::template ConsumerHandle<7>>);
+static_assert(std::is_same_v<
+    handle_for_t<CalendarT, Direction::Producer, CalendarProducerId<1>>,
+    typename CalendarT::template ProducerHandle<1>>);
+static_assert(std::is_same_v<
+    handle_for_t<CalendarT, Direction::Consumer, CalendarConsumerId>,
+    typename CalendarT::ConsumerHandle>);
 
 // ── default_proto_for<> resolves to the canonical Loop<Send/Recv> ──
 
@@ -571,6 +721,12 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     default_proto_for_t<GridT, Direction::Consumer, ShardId<7>>,
     proto::sharded_grid_session::ConsumerProto<int>>);
+static_assert(std::is_same_v<
+    default_proto_for_t<CalendarT, Direction::Producer, CalendarProducerId<1>>,
+    proto::calendar_grid_session::ProducerProto<int>>);
+static_assert(std::is_same_v<
+    default_proto_for_t<CalendarT, Direction::Consumer, CalendarConsumerId>,
+    proto::calendar_grid_session::ConsumerProto<int>>);
 
 // ── IsBridgeableDirection concept ──────────────────────────────────
 
@@ -582,6 +738,10 @@ static_assert( IsBridgeableDirection<DequeT, Direction::Owner>);
 static_assert( IsBridgeableDirection<DequeT, Direction::Thief>);
 static_assert( IsBridgeableShardDirection<GridT, ShardId<0>, Direction::Producer>);
 static_assert( IsBridgeableShardDirection<GridT, ShardId<7>, Direction::Consumer>);
+static_assert( IsBridgeableShardDirection<CalendarT, CalendarProducerId<0>,
+                                          Direction::Producer>);
+static_assert( IsBridgeableShardDirection<CalendarT, CalendarConsumerId,
+                                          Direction::Consumer>);
 
 // SPSC has no SwmrWriter direction; the metafunction resolution fails.
 static_assert(!IsBridgeableDirection<Spsc, Direction::SwmrWriter>);
@@ -593,6 +753,10 @@ static_assert(!IsBridgeableDirection<DequeT, Direction::Consumer>);
 // ShardedGrid requires an explicit ShardId<I>; the non-indexed form is
 // intentionally not bridgeable.
 static_assert(!IsBridgeableDirection<GridT, Direction::Producer>);
+// CalendarGrid is also indexed through CalendarProducerId<P> plus the
+// singleton CalendarConsumerId, not the non-indexed bridge form.
+static_assert(!IsBridgeableDirection<CalendarT, Direction::Producer>);
+static_assert(!IsBridgeableDirection<CalendarT, Direction::Consumer>);
 
 // Non-substrate types are rejected by IsSubstrate gate.
 static_assert(!IsBridgeableDirection<int, Direction::Producer>);
@@ -662,6 +826,27 @@ static_assert(std::is_same_v<
     proto::Send<int, proto::Continue>>);
 static_assert(std::is_same_v<
     typename GridConsumerSession::protocol,
+    proto::Recv<int, proto::Continue>>);
+
+using CalendarProducerSession = decltype(mint_substrate_session<
+    CalendarT,
+    CalendarProducerId<1>,
+    Direction::Producer>(
+        std::declval<eff::HotFgCtx const&>(),
+        std::declval<handle_for_t<
+            CalendarT, Direction::Producer, CalendarProducerId<1>>&>()));
+using CalendarConsumerSession = decltype(mint_substrate_session<
+    CalendarT,
+    CalendarConsumerId,
+    Direction::Consumer>(
+        std::declval<eff::HotFgCtx const&>(),
+        std::declval<handle_for_t<
+            CalendarT, Direction::Consumer, CalendarConsumerId>&>()));
+static_assert(std::is_same_v<
+    typename CalendarProducerSession::protocol,
+    proto::Send<int, proto::Continue>>);
+static_assert(std::is_same_v<
+    typename CalendarConsumerSession::protocol,
     proto::Recv<int, proto::Continue>>);
 
 }  // namespace detail::substrate_session_bridge_self_test

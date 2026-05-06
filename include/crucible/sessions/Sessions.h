@@ -46,6 +46,9 @@
 //                              work-stealing roles.
 //   ShardedGridSession.h    — typed-session facade for statically
 //                              indexed PermissionedShardedGrid shards.
+//   CalendarGridSession.h   — typed-session facade for statically
+//                              indexed PermissionedCalendarGrid producer
+//                              rows plus its single drain consumer.
 //
 // Hot-path TUs needing a single piece include the targeted header.
 // PermissionedSession.h ships per FOUND-C v1
@@ -79,3 +82,4 @@
 #include <crucible/sessions/SwmrSession.h>
 #include <crucible/sessions/ChaseLevDequeSession.h>
 #include <crucible/sessions/ShardedGridSession.h>
+#include <crucible/sessions/CalendarGridSession.h>
