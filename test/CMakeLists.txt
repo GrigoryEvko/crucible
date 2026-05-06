@@ -4072,6 +4072,22 @@ crucible_neg_compile_session_test(neg_send_borrowed_io_payload_to_pure_ctx
 crucible_neg_compile_session_test(neg_send_returned_io_payload_to_pure_ctx
     "associated constraints are not satisfied|CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
+# GAPS-076: paired channel minting validates both local protocols.  Endpoint A
+# runs Proto; endpoint B runs dual(Proto).  These fixtures pin sender-side row
+# admission, receiver-side row admission, continuation drift, and Capability
+# payload rows.
+crucible_neg_compile_session_test(neg_mint_channel_receiver_no_admit
+    "associated constraints are not satisfied|CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+
+crucible_neg_compile_session_test(neg_mint_channel_sender_no_admit
+    "associated constraints are not satisfied|CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+
+crucible_neg_compile_session_test(neg_mint_channel_recv_row_drift
+    "associated constraints are not satisfied|CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+
+crucible_neg_compile_session_test(neg_mint_channel_capability_unauthorized_receiver
+    "associated constraints are not satisfied|CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
+
 crucible_neg_compile_session_test(neg_mint_session_perms_unbalanced
     "associated constraints are not satisfied|CtxFitsPermissionedProtocol|permission_flow_closes")
 

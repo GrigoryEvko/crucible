@@ -40,6 +40,9 @@
 //   mint_permissioned_session<Proto>(ctx,
 //       resource, perms...)                  — factory; returns PSH
 //   mint_session<Proto>(ctx, resource)        — empty-PS shim
+//   mint_channel<Proto>(ctxA, ctxB, rA, rB)  — paired endpoint mint;
+//                                             checks Proto against ctxA
+//                                             and dual(Proto) against ctxB
 //
 // ── Walk shape ──────────────────────────────────────────────────────
 //
@@ -810,6 +813,23 @@ concept CtxFitsPermissionedProtocol =
     && ProtocolVendorAdmittedByLoopCtx<Proto, LoopCtx>
     && ProtocolEpochAdmittedByLoopCtx<Proto, LoopCtx>;
 
+// ── CtxFitsChannel<Proto, CtxA, CtxB> ───────────────────────────────
+//
+// A channel has two local protocols: endpoint A runs Proto; endpoint B runs
+// dual(Proto).  Row admission must hold on BOTH sides, otherwise a sender can
+// legally transmit a payload whose receiver's surrounding Ctx has no authority
+// to hold.  The EmptyPermSet closure reuses the GAPS-002 permission-balance
+// machinery already carried by mint_session; channel-specific non-empty initial
+// PermSets remain a future extension because mint_channel has no permission
+// token parameters to consume.
+
+template <class Proto, class CtxA, class CtxB>
+concept CtxFitsChannel =
+    ::crucible::effects::IsExecCtx<CtxA>
+    && ::crucible::effects::IsExecCtx<CtxB>
+    && CtxFitsPermissionedProtocol<Proto, CtxA, EmptyPermSet>
+    && CtxFitsPermissionedProtocol<dual_of_t<Proto>, CtxB, EmptyPermSet>;
+
 // ── mint_permissioned_session<Proto>(ctx, resource, perms...) ───────
 //
 // Ctx-bound factory.  Requires row admission AND local permission-flow
@@ -858,6 +878,46 @@ template <class Proto, ::crucible::effects::IsExecCtx Ctx, class Resource>
     return detail::mint_permissioned_session_with_loc<
         Proto, EmptyPermSet, StoredResource, LoopCtx>(
         std::forward<Resource>(resource), loc);
+}
+
+// ── mint_channel<Proto>(ctx_a, ctx_b, resource_a, resource_b) ───────
+//
+// Paired ctx-bound channel mint.  The old structural two-argument
+// mint_channel in Session.h remains available for source compatibility; this
+// overload is the permissioned construction boundary for any protocol whose
+// payload rows matter.  Both endpoints are minted as PermissionedSessionHandle
+// instances with EmptyPermSet and with the row/vendor/epoch/permission closure
+// checks resolved entirely at template substitution.
+
+template <class Proto,
+          ::crucible::effects::IsExecCtx CtxA,
+          ::crucible::effects::IsExecCtx CtxB,
+          class ResourceA,
+          class ResourceB>
+    requires CtxFitsChannel<Proto, CtxA, CtxB>
+[[nodiscard]] constexpr auto mint_channel(
+    CtxA const& ctx_a,
+    CtxB const& ctx_b,
+    ResourceA&& resource_a,
+    ResourceB&& resource_b,
+    std::source_location loc = std::source_location::current()) noexcept
+{
+    static_cast<void>(ctx_a);
+    static_cast<void>(ctx_b);
+
+    using StoredResourceA = std::remove_cvref_t<ResourceA>;
+    using StoredResourceB = std::remove_cvref_t<ResourceB>;
+    using LoopCtxA = detail::session_mint::loop_ctx_from_exec_ctx_t<CtxA>;
+    using LoopCtxB = detail::session_mint::loop_ctx_from_exec_ctx_t<CtxB>;
+
+    return std::pair{
+        detail::mint_permissioned_session_with_loc<
+            Proto, EmptyPermSet, StoredResourceA, LoopCtxA>(
+            std::forward<ResourceA>(resource_a), loc),
+        detail::mint_permissioned_session_with_loc<
+            dual_of_t<Proto>, EmptyPermSet, StoredResourceB, LoopCtxB>(
+            std::forward<ResourceB>(resource_b), loc)
+    };
 }
 
 // ── Self-test block ─────────────────────────────────────────────────
@@ -923,6 +983,12 @@ static_assert(!CtxFitsProtocol<SendBgComp,  eff::HotFgCtx>);
 static_assert( CtxFitsProtocol<SendBgComp,  eff::BgDrainCtx>);
 static_assert(!CtxFitsProtocol<int,         eff::HotFgCtx>);  // int isn't a protocol → false_type primary
 
+// ── CtxFitsChannel concept ─────────────────────────────────────────
+static_assert( CtxFitsChannel<SendInt, eff::HotFgCtx, eff::HotFgCtx>);
+static_assert(!CtxFitsChannel<SendBgComp, eff::HotFgCtx, eff::BgDrainCtx>);
+static_assert(!CtxFitsChannel<SendBgComp, eff::BgDrainCtx, eff::HotFgCtx>);
+static_assert( CtxFitsChannel<SendBgComp, eff::BgDrainCtx, eff::BgDrainCtx>);
+
 struct WorkPerm {};
 struct FakeResource {};
 
@@ -965,6 +1031,14 @@ static_assert( CtxFitsPermissionedProtocol<
     BorrowedIoComp, eff::BgCompileCtx, EmptyPermSet>);
 static_assert( CtxFitsPermissionedProtocol<
     ReturnedIoComp, eff::BgCompileCtx, PermSet<WorkPerm>>);
+
+using SendIoComp = Send<IoComp, End>;
+using SendIoCap = Send<eff::Capability<eff::Effect::IO, eff::Bg>, End>;
+static_assert( CtxFitsChannel<SendIoComp, eff::BgCompileCtx, eff::BgCompileCtx>);
+static_assert(!CtxFitsChannel<SendIoComp, eff::BgCompileCtx, eff::HotFgCtx>);
+static_assert(!CtxFitsChannel<SendIoComp, eff::BgDrainCtx, eff::BgCompileCtx>);
+static_assert( CtxFitsChannel<SendIoCap, eff::BgCompileCtx, eff::BgCompileCtx>);
+static_assert(!CtxFitsChannel<SendIoCap, eff::BgCompileCtx, eff::HotFgCtx>);
 
 using NvIntPayload =
     ::crucible::safety::Vendor<VendorBackend::NV, int>;
@@ -1037,6 +1111,20 @@ using EmptyShim = decltype(mint_session<SendInt>(
     std::declval<FakeResource>()));
 static_assert(std::is_same_v<typename EmptyShim::protocol, SendInt>);
 static_assert(std::is_same_v<typename EmptyShim::perm_set, EmptyPermSet>);
+
+using CtxBoundChannel = decltype(mint_channel<SendInt>(
+    std::declval<eff::HotFgCtx const&>(),
+    std::declval<eff::HotFgCtx const&>(),
+    std::declval<FakeResource>(),
+    std::declval<FakeResource>()));
+static_assert(std::is_same_v<typename CtxBoundChannel::first_type::protocol,
+                             SendInt>);
+static_assert(std::is_same_v<typename CtxBoundChannel::second_type::protocol,
+                             dual_of_t<SendInt>>);
+static_assert(std::is_same_v<typename CtxBoundChannel::first_type::perm_set,
+                             EmptyPermSet>);
+static_assert(std::is_same_v<typename CtxBoundChannel::second_type::perm_set,
+                             EmptyPermSet>);
 
 using EpochFgCtx = EpochExecCtx<5, 3, eff::HotFgCtx>;
 using FreshEpochDelegate =
