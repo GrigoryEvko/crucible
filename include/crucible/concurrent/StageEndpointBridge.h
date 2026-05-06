@@ -31,6 +31,17 @@
 //                               IsConsumerEndpoint/IsProducerEndpoint
 //                               (which check shape only).
 //
+//   EndpointPack<Endpoints...>
+//                             — type-list wrapper for GAPS-085's
+//                               variadic handle matcher.
+//
+//   StageHandlesMatchEndpointsExtended<FnPtr, Inputs, Outputs>
+//                             — fan-in/fan-out gate over endpoint
+//                               packs.  Inputs must match FnPtr's
+//                               leading consumer-handle parameters;
+//                               Outputs must match the trailing
+//                               producer-handle parameters.
+//
 //   CtxFitsStageFromEndpoints<FnPtr, Ctx, ConsumerEp, ProducerEp>
 //                             — full single-concept gate for
 //                               mint_stage_from_endpoints.  Conjunction
@@ -105,6 +116,7 @@
 #include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/Stage.h>
 
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -163,6 +175,103 @@ concept StageHandlesMatchEndpoints =
         typename std::remove_cvref_t<ProducerEp>::handle_type,
         std::remove_reference_t<
             ::crucible::safety::extract::param_type_t<FnPtr, 1>>>;
+
+template <class... Endpoints>
+struct EndpointPack {};
+
+namespace detail {
+
+template <auto FnPtr, class Inputs, class Outputs>
+struct stage_handles_match_endpoints_extended : std::false_type {};
+
+template <auto FnPtr,
+          class... ConsumerEps,
+          class... ProducerEps>
+struct stage_handles_match_endpoints_extended<
+    FnPtr,
+    EndpointPack<ConsumerEps...>,
+    EndpointPack<ProducerEps...>> {
+private:
+    using extract = ::crucible::safety::extract::StageArity<FnPtr>;
+    using consumer_tuple = std::tuple<ConsumerEps...>;
+    using producer_tuple = std::tuple<ProducerEps...>;
+
+    template <class Endpoint, std::size_t I>
+    static consteval bool consumer_endpoint_matches_param() noexcept {
+        using endpoint = std::remove_cvref_t<Endpoint>;
+        if constexpr (I >= ::crucible::safety::extract::arity_v<FnPtr>) {
+            return false;
+        } else if constexpr (!IsEndpoint<endpoint>) {
+            return false;
+        } else if constexpr (is_endpoint<endpoint>::direction
+                             != Direction::Consumer) {
+            return false;
+        } else {
+            return std::is_same_v<
+                typename endpoint::handle_type,
+                std::remove_reference_t<
+                    ::crucible::safety::extract::param_type_t<
+                        FnPtr, I>>>;
+        }
+    }
+
+    template <class Endpoint, std::size_t I>
+    static consteval bool producer_endpoint_matches_param() noexcept {
+        using endpoint = std::remove_cvref_t<Endpoint>;
+        if constexpr (I >= ::crucible::safety::extract::arity_v<FnPtr>) {
+            return false;
+        } else if constexpr (!IsEndpoint<endpoint>) {
+            return false;
+        } else if constexpr (is_endpoint<endpoint>::direction
+                             != Direction::Producer) {
+            return false;
+        } else {
+            return std::is_same_v<
+                typename endpoint::handle_type,
+                std::remove_reference_t<
+                    ::crucible::safety::extract::param_type_t<
+                        FnPtr, I>>>;
+        }
+    }
+
+    template <std::size_t... Is>
+    static consteval bool input_types_match(std::index_sequence<Is...>) noexcept {
+        return (consumer_endpoint_matches_param<
+            std::tuple_element_t<Is, consumer_tuple>, Is>() && ...);
+    }
+
+    template <std::size_t... Is>
+    static consteval bool output_types_match(std::index_sequence<Is...>) noexcept {
+        constexpr std::size_t offset = extract::input_count;
+        return (producer_endpoint_matches_param<
+            std::tuple_element_t<Is, producer_tuple>, offset + Is>() && ...);
+    }
+
+    static consteval bool compute() noexcept {
+        if constexpr (!::crucible::safety::extract::VariadicPipelineStage<
+                          FnPtr>) {
+            return false;
+        } else if constexpr (extract::input_count != sizeof...(ConsumerEps)
+                          || extract::output_count != sizeof...(ProducerEps)) {
+            return false;
+        } else {
+            return input_types_match(
+                       std::make_index_sequence<sizeof...(ConsumerEps)>{})
+                && output_types_match(
+                       std::make_index_sequence<sizeof...(ProducerEps)>{});
+        }
+    }
+
+public:
+    static constexpr bool value = compute();
+};
+
+}  // namespace detail
+
+template <auto FnPtr, class Inputs, class Outputs>
+concept StageHandlesMatchEndpointsExtended =
+    detail::stage_handles_match_endpoints_extended<
+        FnPtr, Inputs, Outputs>::value;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── CtxFitsStageFromEndpoints — full soundness gate ────────────────
@@ -323,6 +432,47 @@ static_assert(!CtxFitsStageFromEndpoints<&int_stage_body, eff::HotFgCtx, ConsEp,
 // StageHandlesMatchEndpoints (positive control to avoid a false
 // "everything rejects" pathology).
 static_assert( StageHandlesMatchEndpoints<&int_stage_body, ConsEp, ProdEp>);
+
+inline void fan_in_body(typename Ch1::ConsumerHandle&&,
+                        typename Ch1::ConsumerHandle&&,
+                        typename Ch2::ProducerHandle&&) noexcept {}
+inline void fan_out_body(typename Ch1::ConsumerHandle&&,
+                         typename Ch2::ProducerHandle&&,
+                         typename Ch2::ProducerHandle&&) noexcept {}
+
+static_assert(saf::extract::VariadicPipelineStage<&fan_in_body>);
+static_assert(!saf::extract::PipelineStage<&fan_in_body>);
+static_assert(StageHandlesMatchEndpointsExtended<
+    &fan_in_body,
+    EndpointPack<ConsEp, ConsEp>,
+    EndpointPack<ProdEp>>);
+static_assert(!StageHandlesMatchEndpointsExtended<
+    &fan_in_body,
+    EndpointPack<ConsEp>,
+    EndpointPack<ProdEp>>);
+static_assert(!StageHandlesMatchEndpointsExtended<
+    &fan_in_body,
+    EndpointPack<ConsEp, ConsEp, ConsEp>,
+    EndpointPack<ProdEp>>);
+static_assert(!StageHandlesMatchEndpointsExtended<
+    &fan_in_body,
+    EndpointPack<ConsEp, int>,
+    EndpointPack<ProdEp>>);
+
+static_assert(saf::extract::VariadicPipelineStage<&fan_out_body>);
+static_assert(!saf::extract::PipelineStage<&fan_out_body>);
+static_assert(StageHandlesMatchEndpointsExtended<
+    &fan_out_body,
+    EndpointPack<ConsEp>,
+    EndpointPack<ProdEp, ProdEp>>);
+static_assert(!StageHandlesMatchEndpointsExtended<
+    &fan_out_body,
+    EndpointPack<ConsEp, ProdEp>,
+    EndpointPack<ProdEp>>);
+static_assert(!StageHandlesMatchEndpointsExtended<
+    &fan_out_body,
+    EndpointPack<ConsEp>,
+    EndpointPack<ProdEp, ProdEp, ProdEp>>);
 
 }  // namespace detail::stage_endpoint_bridge_self_test
 

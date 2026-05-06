@@ -198,6 +198,19 @@ void f_extras_handles(consumer_with_extras&&,
 void f_both_no_noexcept(consumer_int_no_noexcept&&,
                         producer_int_no_noexcept&&) noexcept;
 
+// Variadic stage bodies — admitted by VariadicPipelineStage but not by
+// the legacy 1-input / 1-output PipelineStage concept.
+void f_fan_in_3_to_1(consumer_int&&,
+                     consumer_int&&,
+                     consumer_float&&,
+                     producer_int&&) noexcept;
+void f_fan_out_1_to_2(consumer_int&&,
+                      producer_int&&,
+                      producer_float&&) noexcept;
+void f_variadic_interleaved(consumer_int&&,
+                            producer_int&&,
+                            consumer_float&&) noexcept;
+
 // ── Negative shapes ─────────────────────────────────────────────
 
 // Arity wrong.
@@ -438,6 +451,29 @@ void test_value_preserving_predicate() {
         &ps_test::f_transform_reverse>);
 }
 
+void test_variadic_stage_arity() {
+    static_assert(extract::VariadicPipelineStage<
+        &ps_test::f_fan_in_3_to_1>);
+    static_assert(!extract::PipelineStage<
+        &ps_test::f_fan_in_3_to_1>);
+    static_assert(extract::StageArity<
+        &ps_test::f_fan_in_3_to_1>::input_count == 3);
+    static_assert(extract::StageArity<
+        &ps_test::f_fan_in_3_to_1>::output_count == 1);
+
+    static_assert(extract::VariadicPipelineStage<
+        &ps_test::f_fan_out_1_to_2>);
+    static_assert(!extract::PipelineStage<
+        &ps_test::f_fan_out_1_to_2>);
+    static_assert(extract::StageArity<
+        &ps_test::f_fan_out_1_to_2>::input_count == 1);
+    static_assert(extract::StageArity<
+        &ps_test::f_fan_out_1_to_2>::output_count == 2);
+
+    static_assert(!extract::VariadicPipelineStage<
+        &ps_test::f_variadic_interleaved>);
+}
+
 void test_concept_form_in_constraints() {
     auto callable_with_pipeline = []<auto FnPtr>()
         requires extract::PipelineStage<FnPtr>
@@ -542,6 +578,8 @@ int main() {
              test_output_value_extraction);
     run_test("test_value_preserving_predicate",
              test_value_preserving_predicate);
+    run_test("test_variadic_stage_arity",
+             test_variadic_stage_arity);
     run_test("test_concept_form_in_constraints",
              test_concept_form_in_constraints);
     run_test("test_cross_shape_exclusion_full_matrix",
