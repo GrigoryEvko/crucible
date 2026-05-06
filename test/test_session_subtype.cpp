@@ -6,6 +6,7 @@
 // lifting is compile-time.
 
 #include <crucible/sessions/SessionSubtype.h>
+#include <crucible/sessions/SessionPayloadSubsort.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -67,6 +68,14 @@ static_assert(is_subtype_sync_v<ClientV1, ClientV2>,
 struct IntLike {};
 struct LongerIntLike {};
 
+struct TensorTile {};
+using BitexactTile = crucible::safety::NumericalTier<
+    crucible::algebra::lattices::Tolerance::BITEXACT,
+    TensorTile>;
+using RelaxedTile = crucible::safety::NumericalTier<
+    crucible::algebra::lattices::Tolerance::RELAXED,
+    TensorTile>;
+
 }  // anonymous namespace
 
 // Register the subsort relation in the proto namespace (users do this
@@ -89,6 +98,19 @@ static_assert(is_subtype_sync_v<Recv<LongerIntLike, End>,
                                  Recv<IntLike, End>>);
 static_assert(!is_subtype_sync_v<Recv<IntLike, End>,
                                   Recv<LongerIntLike, End>>);
+
+static_assert(is_subtype_sync_v<
+    Send<BitexactTile, End>,
+    Send<RelaxedTile, End>>);
+static_assert(!is_subtype_sync_v<
+    Send<RelaxedTile, End>,
+    Send<BitexactTile, End>>);
+static_assert(is_subtype_sync_v<
+    Recv<RelaxedTile, End>,
+    Recv<BitexactTile, End>>);
+static_assert(!is_subtype_sync_v<
+    Recv<BitexactTile, End>,
+    Recv<RelaxedTile, End>>);
 
 }  // anonymous namespace
 

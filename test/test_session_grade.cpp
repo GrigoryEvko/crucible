@@ -38,7 +38,9 @@ using MultiAxisExpected = alg::ProductLattice<
     alg::VendorLattice::At<alg::VendorBackend::NV>,
     alg::ToleranceLattice::At<alg::Tolerance::BITEXACT>,
     alg::CipherTierLattice::At<alg::CipherTierTag::Hot>,
-    alg::CrashLattice::At<alg::CrashClass::NoThrow>>;
+    alg::CrashLattice::At<alg::CrashClass::NoThrow>,
+    proto::detail::session_grade::PresenceLattice::At<false>,
+    proto::detail::session_grade::PresenceLattice::At<false>>;
 
 static_assert(std::is_same_v<
     proto::protocol_grade_t<MultiAxisProto>,
@@ -55,6 +57,12 @@ static_assert(std::is_same_v<
 static_assert(std::is_same_v<
     proto::protocol_crash_class_t<MultiAxisProto>,
     alg::CrashLattice::At<alg::CrashClass::NoThrow>>);
+static_assert(std::is_same_v<
+    proto::protocol_epoch_versioned_t<MultiAxisProto>,
+    proto::detail::session_grade::PresenceLattice::At<false>>);
+static_assert(std::is_same_v<
+    proto::protocol_numa_placement_t<MultiAxisProto>,
+    proto::detail::session_grade::PresenceLattice::At<false>>);
 
 static_assert(std::is_same_v<
     proto::grade_for_axis_t<proto::axis::Vendor, MultiAxisPayload>,
@@ -121,6 +129,20 @@ using Checkpointed = proto::CheckpointedSession<
         proto::End>>;
 static_assert(proto::protocol_grade_cipher_tier_v<Checkpointed>
               == alg::CipherTierTag::Warm);
+
+using RuntimeEvidenceProto = proto::Send<
+    saf::NumaPlacement<saf::EpochVersioned<MultiAxisPayload>>,
+    proto::End>;
+static_assert(proto::protocol_grade_epoch_versioned_v<RuntimeEvidenceProto>);
+static_assert(proto::protocol_grade_numa_placement_v<RuntimeEvidenceProto>);
+static_assert(proto::protocol_grade_vendor_v<RuntimeEvidenceProto>
+              == alg::VendorBackend::NV);
+static_assert(proto::protocol_grade_aggregate_satisfies_v<
+    RuntimeEvidenceProto,
+    MultiAxisProto>);
+static_assert(!proto::protocol_grade_aggregate_satisfies_v<
+    MultiAxisProto,
+    RuntimeEvidenceProto>);
 
 }  // namespace
 

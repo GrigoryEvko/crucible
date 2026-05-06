@@ -947,6 +947,31 @@ crucible_neg_compile_session_test(neg_send_payload_vendor_in_pure_session
 crucible_neg_compile_session_test(neg_recv_payload_unauthorized_vendor
     "ProtocolVendorAdmittedByLoopCtx")
 
+# GAPS-070: ProductLattice protocol-grade filter on synchronous
+# subtyping.  Each fixture installs a deliberately-too-permissive
+# local is_subsort axiom; the structural Gay-Hole relation would pass,
+# but the orthogonal grade filter must still reject.
+crucible_neg_compile_session_test(neg_session_grade_vendor_axis
+    "ProtocolGradeMismatch")
+crucible_neg_compile_session_test(neg_session_grade_numerical_axis
+    "ProtocolGradeMismatch")
+crucible_neg_compile_session_test(neg_session_grade_cipher_axis
+    "ProtocolGradeMismatch")
+crucible_neg_compile_session_test(neg_session_grade_epoch_axis
+    "ProtocolGradeMismatch")
+crucible_neg_compile_session_test(neg_session_grade_numa_axis
+    "ProtocolGradeMismatch")
+crucible_neg_compile_session_test(neg_session_grade_vendor_numerical_axes
+    "ProtocolGradeMismatch")
+crucible_neg_compile_session_test(neg_session_grade_vendor_cipher_axes
+    "ProtocolGradeMismatch")
+crucible_neg_compile_session_test(neg_session_grade_numerical_cipher_axes
+    "ProtocolGradeMismatch")
+crucible_neg_compile_session_test(neg_session_grade_evolution_weakens_numerical
+    "ProtocolGradeMismatch")
+crucible_neg_compile_session_test(neg_session_grade_evolution_changes_vendor
+    "ProtocolGradeMismatch")
+
 # FOUND-B13 (#602): Met(X) negative-compile witnesses.  Three
 # fixtures probing the Subrow / IsEffect concept gates that enforce
 # the substitution principle for capability propagation.

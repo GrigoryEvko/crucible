@@ -74,11 +74,15 @@
 // §IV.1–§IV.10 channels); use async subtyping for those where the
 // runtime is a bounded FIFO (MpmcRing, CNTP async collectives).
 //
-// GAPS-069 adds `sessions/SessionGrade.h`, which projects a protocol
-// into a compile-time ProductLattice tuple over Vendor / NumericalTier
-// / CipherTier / CrashClass payload grades.  This header intentionally
-// does NOT consult that tuple yet: GAPS-070 wires it in as an
-// orthogonal filter after the structural Gay-Hole rule succeeds.
+// GAPS-070 adds an orthogonal compile-time grade filter on top of the
+// structural Gay-Hole rule.  `sessions/SessionGrade.h` projects every
+// protocol into ProductLattice axes over Vendor / NumericalTier /
+// CipherTier / CrashClass / EpochVersioned-evidence /
+// NumaPlacement-evidence.  The filter is polarity-aware: Send compares
+// payload grades covariantly, Recv compares them contravariantly, and
+// continuations recurse structurally.  A raw aggregate grade(P) ≤
+// grade(Q) check would be wrong for Recv; the filter follows the same
+// variance as the session subtype rule.
 //
 // ─── Usage ───────────────────────────────────────────────────────────
 //
@@ -109,6 +113,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionGrade.h>
 
 #include <cstddef>
 #include <tuple>
@@ -162,14 +167,16 @@ inline constexpr bool is_subsort_v = is_subsort<T, U>::value;
 // ═════════════════════════════════════════════════════════════════════
 //
 // Primary template: cross-shape pairs default to false.  Matching-shape
-// specialisations override with the six Gay-Hole rules.
+// structural specialisations override with the six Gay-Hole rules.
+// The public `is_subtype_sync` below wraps this structural relation
+// with the GAPS-070 ProductLattice grade filter.
 
 template <typename T, typename U>
-struct is_subtype_sync : std::false_type {};
+struct is_subtype_sync_structural : std::false_type {};
 
 // [sub-end]  End ⩽ End
 template <>
-struct is_subtype_sync<End, End> : std::true_type {};
+struct is_subtype_sync_structural<End, End> : std::true_type {};
 
 // [sub-continue]  Continue ⩽ Continue
 //
@@ -179,17 +186,17 @@ struct is_subtype_sync<End, End> : std::true_type {};
 // respective enclosing Loop, which by hypothesis are related.  So
 // Continue ⩽ Continue is trivially true.
 template <>
-struct is_subtype_sync<Continue, Continue> : std::true_type {};
+struct is_subtype_sync_structural<Continue, Continue> : std::true_type {};
 
 // [sub-send]  Send<P₁, R₁> ⩽ Send<P₂, R₂>  ⇔  P₁ ⩽ P₂ ∧ R₁ ⩽ R₂
 //
 // Covariant in payload: "a smaller payload can stand where a larger
 // is expected."  Covariant in continuation.
 template <typename P1, typename R1, typename P2, typename R2>
-struct is_subtype_sync<Send<P1, R1>, Send<P2, R2>>
+struct is_subtype_sync_structural<Send<P1, R1>, Send<P2, R2>>
     : std::bool_constant<
           is_subsort_v<P1, P2> &&
-          is_subtype_sync<R1, R2>::value
+          is_subtype_sync_structural<R1, R2>::value
       > {};
 
 // [sub-recv]  Recv<P₁, R₁> ⩽ Recv<P₂, R₂>  ⇔  P₂ ⩽ P₁ ∧ R₁ ⩽ R₂
@@ -198,10 +205,10 @@ struct is_subtype_sync<Send<P1, R1>, Send<P2, R2>>
 // a smaller is expected" (the recipient can always downcast).
 // Covariant in continuation.
 template <typename P1, typename R1, typename P2, typename R2>
-struct is_subtype_sync<Recv<P1, R1>, Recv<P2, R2>>
+struct is_subtype_sync_structural<Recv<P1, R1>, Recv<P2, R2>>
     : std::bool_constant<
           is_subsort_v<P2, P1> &&
-          is_subtype_sync<R1, R2>::value
+          is_subtype_sync_structural<R1, R2>::value
       > {};
 
 // [sub-loop]  Loop<B₁> ⩽ Loop<B₂>  ⇔  B₁ ⩽ B₂  (coinductive)
@@ -212,8 +219,8 @@ struct is_subtype_sync<Recv<P1, R1>, Recv<P2, R2>>
 // rule above.  No explicit fixed-point tracking needed: the framework
 // metafunction recursion IS the coinductive proof.
 template <typename B1, typename B2>
-struct is_subtype_sync<Loop<B1>, Loop<B2>>
-    : is_subtype_sync<B1, B2> {};
+struct is_subtype_sync_structural<Loop<B1>, Loop<B2>>
+    : is_subtype_sync_structural<B1, B2> {};
 
 // [sub-vendor]  VendorPinned<V1, P1> ⩽ VendorPinned<V2, P2>
 // iff V1 satisfies V2 under VendorLattice and P1 ⩽ P2.  Direction
@@ -221,12 +228,13 @@ struct is_subtype_sync<Loop<B1>, Loop<B2>>
 // can stand in for an NV-required one, but an NV-pinned protocol
 // cannot stand in for an AMD or Portable-required protocol.
 template <VendorBackend V1, typename P1, VendorBackend V2, typename P2>
-struct is_subtype_sync<VendorPinned<V1, P1>, VendorPinned<V2, P2>>
+struct is_subtype_sync_structural<VendorPinned<V1, P1>,
+                                  VendorPinned<V2, P2>>
     : std::bool_constant<
           V1 != VendorBackend::None &&
           V2 != VendorBackend::None &&
           VendorLattice::leq(V2, V1) &&
-          is_subtype_sync<P1, P2>::value
+          is_subtype_sync_structural<P1, P2>::value
       > {};
 
 // ═════════════════════════════════════════════════════════════════════
@@ -240,7 +248,7 @@ namespace detail::subtype {
 template <typename BranchesA, typename BranchesB, std::size_t... Is>
 [[nodiscard]] constexpr bool prefix_subtypes(std::index_sequence<Is...>) noexcept
 {
-    return (is_subtype_sync<
+    return (is_subtype_sync_structural<
                 std::tuple_element_t<Is, BranchesA>,
                 std::tuple_element_t<Is, BranchesB>
             >::value && ...);
@@ -271,7 +279,7 @@ struct gated_prefix_check<true, PrefixLen, BranchesA, BranchesB>
 // are simply never exercised.  The subtype cannot pick a position
 // that doesn't exist in the supertype (the n ≤ m bound).
 template <typename... B1s, typename... B2s>
-struct is_subtype_sync<Select<B1s...>, Select<B2s...>>
+struct is_subtype_sync_structural<Select<B1s...>, Select<B2s...>>
     : detail::subtype::gated_prefix_check<
           (sizeof...(B1s) <= sizeof...(B2s)),
           sizeof...(B1s),
@@ -289,13 +297,114 @@ struct is_subtype_sync<Select<B1s...>, Select<B2s...>>
 // beyond position m are unreachable from a supertype-speaking peer
 // and are therefore safe.
 template <typename... B1s, typename... B2s>
-struct is_subtype_sync<Offer<B1s...>, Offer<B2s...>>
+struct is_subtype_sync_structural<Offer<B1s...>, Offer<B2s...>>
     : detail::subtype::gated_prefix_check<
           (sizeof...(B1s) >= sizeof...(B2s)),
           sizeof...(B2s),
           std::tuple<B1s...>,
           std::tuple<B2s...>
       > {};
+
+namespace detail::subtype {
+
+template <typename ProvidedPayload, typename RequiredPayload>
+inline constexpr bool payload_grade_satisfies_v =
+    ::crucible::safety::proto::detail::session_grade::satisfies_v<
+        payload_grade_t<ProvidedPayload>,
+        payload_grade_t<RequiredPayload>>;
+
+template <typename T, typename U>
+struct protocol_grade_satisfies : std::false_type {};
+
+template <>
+struct protocol_grade_satisfies<End, End> : std::true_type {};
+
+template <>
+struct protocol_grade_satisfies<Continue, Continue> : std::true_type {};
+
+template <typename P1, typename R1, typename P2, typename R2>
+struct protocol_grade_satisfies<Send<P1, R1>, Send<P2, R2>>
+    : std::bool_constant<
+          payload_grade_satisfies_v<P1, P2> &&
+          protocol_grade_satisfies<R1, R2>::value
+      > {};
+
+template <typename P1, typename R1, typename P2, typename R2>
+struct protocol_grade_satisfies<Recv<P1, R1>, Recv<P2, R2>>
+    : std::bool_constant<
+          payload_grade_satisfies_v<P2, P1> &&
+          protocol_grade_satisfies<R1, R2>::value
+      > {};
+
+template <typename B1, typename B2>
+struct protocol_grade_satisfies<Loop<B1>, Loop<B2>>
+    : protocol_grade_satisfies<B1, B2> {};
+
+template <VendorBackend V1, typename P1, VendorBackend V2, typename P2>
+struct protocol_grade_satisfies<VendorPinned<V1, P1>, VendorPinned<V2, P2>>
+    : std::bool_constant<
+          VendorLattice::leq(V2, V1) &&
+          protocol_grade_satisfies<P1, P2>::value
+      > {};
+
+template <typename BranchesA, typename BranchesB, std::size_t... Is>
+[[nodiscard]] constexpr bool prefix_grade_satisfies(
+    std::index_sequence<Is...>) noexcept
+{
+    return (protocol_grade_satisfies<
+                std::tuple_element_t<Is, BranchesA>,
+                std::tuple_element_t<Is, BranchesB>
+            >::value && ...);
+}
+
+template <bool SizeOK, std::size_t PrefixLen,
+          typename BranchesA, typename BranchesB>
+struct gated_grade_prefix_check : std::false_type {};
+
+template <std::size_t PrefixLen, typename BranchesA, typename BranchesB>
+struct gated_grade_prefix_check<true, PrefixLen, BranchesA, BranchesB>
+    : std::bool_constant<
+          prefix_grade_satisfies<BranchesA, BranchesB>(
+              std::make_index_sequence<PrefixLen>{})
+      > {};
+
+template <typename... B1s, typename... B2s>
+struct protocol_grade_satisfies<Select<B1s...>, Select<B2s...>>
+    : gated_grade_prefix_check<
+          (sizeof...(B1s) <= sizeof...(B2s)),
+          sizeof...(B1s),
+          std::tuple<B1s...>,
+          std::tuple<B2s...>
+      > {};
+
+template <typename... B1s, typename... B2s>
+struct protocol_grade_satisfies<Offer<B1s...>, Offer<B2s...>>
+    : gated_grade_prefix_check<
+          (sizeof...(B1s) >= sizeof...(B2s)),
+          sizeof...(B2s),
+          std::tuple<B1s...>,
+          std::tuple<B2s...>
+      > {};
+
+template <bool StructuralOK, typename T, typename U>
+struct grade_filtered_subtype : std::false_type {};
+
+template <typename T, typename U>
+struct grade_filtered_subtype<true, T, U>
+    : protocol_grade_satisfies<T, U> {};
+
+}  // namespace detail::subtype
+
+template <typename T, typename U>
+struct is_subtype_sync
+    : detail::subtype::grade_filtered_subtype<
+          is_subtype_sync_structural<T, U>::value,
+          T,
+          U> {};
+
+template <typename Provided, typename Required>
+inline constexpr bool protocol_grade_satisfies_v =
+    detail::subtype::protocol_grade_satisfies<Provided, Required>::value;
 
 // Public alias
 template <typename T, typename U>
@@ -335,8 +444,12 @@ consteval void assert_subtype_sync() noexcept {
         "(Send vs Recv, Select vs Offer); too many/too few branches "
         "(subtype has more Select branches than supertype, or fewer "
         "Offer branches); payload types not related via is_subsort "
-        "specialisation.  Check the template-instantiation context "
-        "for the failing T and U.");
+        "specialisation; [ProtocolGradeMismatch] the structural "
+        "payload relation was admitted but the ProductLattice grade "
+        "filter rejected at least one Vendor, NumericalTier, "
+        "CipherTier, CrashClass, EpochVersioned, or NumaPlacement "
+        "axis.  Check the template-instantiation context for the "
+        "failing T and U.");
 }
 
 template <typename T, typename U>
@@ -460,7 +573,9 @@ consteval void check_protocol_evolution() noexcept {
         "fewer branches), widen an Offer (handle more branches), or "
         "restrict a payload type via is_subsort specialisation.  It "
         "may NOT: add a Select branch, remove an Offer branch, change "
-        "Send<->Recv, or swap Select<->Offer.");
+        "Send<->Recv, swap Select<->Offer, or trigger "
+        "[ProtocolGradeMismatch] by weakening any ProductLattice "
+        "grade axis.");
 }
 
 // ─── Equivalence + compatibility assertion helpers ────────────────

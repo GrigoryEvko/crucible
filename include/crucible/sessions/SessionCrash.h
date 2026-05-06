@@ -235,11 +235,22 @@ struct is_well_formed<Stop_g<C>, LoopCtx> : std::true_type {};
 //     via this same spec with U=Stop.)
 
 template <CrashClass C, typename U>
-struct is_subtype_sync<Stop_g<C>, U> : std::true_type {};
+struct is_subtype_sync_structural<Stop_g<C>, U> : std::true_type {};
 
 template <CrashClass C1, CrashClass C2>
-struct is_subtype_sync<Stop_g<C1>, Stop_g<C2>>
+struct is_subtype_sync_structural<Stop_g<C1>, Stop_g<C2>>
     : std::bool_constant<CrashLattice::leq(C1, C2)> {};
+
+namespace detail::subtype {
+
+template <CrashClass C, typename U>
+struct protocol_grade_satisfies<Stop_g<C>, U> : std::true_type {};
+
+template <CrashClass C1, CrashClass C2>
+struct protocol_grade_satisfies<Stop_g<C1>, Stop_g<C2>>
+    : std::bool_constant<CrashLattice::leq(C1, C2)> {};
+
+}  // namespace detail::subtype
 
 // ═════════════════════════════════════════════════════════════════════
 // ── SessionHandle<Stop, Resource, LoopCtx> — terminal handle ───────

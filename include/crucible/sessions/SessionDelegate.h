@@ -558,7 +558,16 @@ struct compose<Accept<T, K>, Q> {
 // Delegate<Stop, K> state to manufacture a live K continuation.
 
 template <CrashClass C, typename K>
-struct is_subtype_sync<Delegate<Stop_g<C>, K>, K> : std::true_type {};
+struct is_subtype_sync_structural<Delegate<Stop_g<C>, K>, K>
+    : std::true_type {};
+
+namespace detail::subtype {
+
+template <CrashClass C, typename K>
+struct protocol_grade_satisfies<Delegate<Stop_g<C>, K>, K>
+    : std::true_type {};
+
+}  // namespace detail::subtype
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Well-formedness ────────────────────────────────────────────────

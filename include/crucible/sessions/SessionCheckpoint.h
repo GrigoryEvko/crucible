@@ -209,12 +209,24 @@ struct is_well_formed<CheckpointedSession<B, R>, LoopCtx>
 // narrower base + narrower rollback is a refinement of a wider pair.
 
 template <typename B1, typename R1, typename B2, typename R2>
-struct is_subtype_sync<CheckpointedSession<B1, R1>,
-                        CheckpointedSession<B2, R2>>
+struct is_subtype_sync_structural<CheckpointedSession<B1, R1>,
+                                  CheckpointedSession<B2, R2>>
     : std::bool_constant<
-          is_subtype_sync<B1, B2>::value &&
-          is_subtype_sync<R1, R2>::value
+          is_subtype_sync_structural<B1, B2>::value &&
+          is_subtype_sync_structural<R1, R2>::value
       > {};
+
+namespace detail::subtype {
+
+template <typename B1, typename R1, typename B2, typename R2>
+struct protocol_grade_satisfies<CheckpointedSession<B1, R1>,
+                                CheckpointedSession<B2, R2>>
+    : std::bool_constant<
+          protocol_grade_satisfies<B1, B2>::value &&
+          protocol_grade_satisfies<R1, R2>::value
+      > {};
+
+}  // namespace detail::subtype
 
 // ═════════════════════════════════════════════════════════════════════
 // ── SessionHandle<CheckpointedSession<P, R>, Res, LoopCtx> ─────────
