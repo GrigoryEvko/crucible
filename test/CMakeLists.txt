@@ -436,6 +436,7 @@ crucible_test(test_permissioned_mpsc_channel)
 crucible_test(test_permissioned_mpmc_channel)
 crucible_test(test_permissioned_sharded_grid)
 crucible_test(test_permissioned_chase_lev_deque)
+crucible_test(test_chaselev_deque_session)
 crucible_test(test_permissioned_cross_primitive)
 crucible_test(test_permissioned_calendar_grid)
 crucible_test(test_scheduler_policies)
@@ -3861,3 +3862,12 @@ crucible_neg_compile_session_test(neg_mint_session_perms_unbalanced
 
 crucible_neg_compile_session_test(neg_mint_session_perm_double_consume
     "PermSet\\.h.*static assertion failed.*PermissionImbalance.*unique Tags")
+
+# GAPS-060: Chase-Lev owner/thief typed-session facade.  The thief
+# protocol is Recv-only; the owner Recv branch is pop_bottom, not the
+# thief borrowed-steal transport.
+crucible_neg_compile_session_test(neg_chaselev_thief_session_push
+    "has no member named.*send")
+
+crucible_neg_compile_session_test(neg_chaselev_owner_session_steal
+    "try_steal|no matching function|constraints not satisfied")

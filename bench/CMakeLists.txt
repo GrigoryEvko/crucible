@@ -106,6 +106,8 @@ crucible_bench(bench_permissioned_zero_cost)
 crucible_bench(bench_permissioned_session_handle)
 crucible_bench(bench_spsc_session)
 crucible_bench(bench_swmr_session)
+crucible_bench(bench_chaselev_session)
+target_compile_definitions(bench_chaselev_session PRIVATE NDEBUG)
 crucible_bench(bench_scheduler_policies)
 
 # ── Visualization tool ────────────────────────────────────────────────

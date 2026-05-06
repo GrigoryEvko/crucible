@@ -34,6 +34,9 @@
 //   SwmrSession.h           — typed-session facade for SWMR latest-
 //                              value publication over AtomicSnapshot
 //                              + SharedPermissionPool.
+//   ChaseLevDequeSession.h  — typed-session facade for
+//                              PermissionedChaseLevDeque owner/thief
+//                              work-stealing roles.
 //
 // Hot-path TUs needing a single piece include the targeted header.
 // PermissionedSession.h ships per FOUND-C v1
@@ -59,4 +62,6 @@
 #include <crucible/sessions/SessionSubtype.h>
 #include <crucible/sessions/SessionSubtypeReason.h>
 #include <crucible/sessions/SessionView.h>
+#include <crucible/sessions/SpscSession.h>
 #include <crucible/sessions/SwmrSession.h>
+#include <crucible/sessions/ChaseLevDequeSession.h>

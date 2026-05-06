@@ -159,6 +159,10 @@ template <typename UserTag> struct Thief {};
 
 }  // namespace deque_tag
 
+// The session-typed facade for this tag tree lives in
+// <crucible/sessions/ChaseLevDequeSession.h>.  Keep it out of this
+// primitive header to avoid a concurrent/ -> sessions/ dependency cycle.
+
 // ── PermissionedChaseLevDeque<T, Capacity, UserTag> ────────────────
 
 template <DequeValue T, std::size_t Capacity, typename UserTag = void>
@@ -203,6 +207,9 @@ public:
         friend class PermissionedChaseLevDeque;
 
     public:
+        using value_type = T;
+        using tag_type   = owner_tag;
+
         OwnerHandle(const OwnerHandle&)
             = delete("OwnerHandle owns the linear Owner Permission — copy would duplicate the token, allowing two threads to race on push_bottom/pop_bottom (data race on bottom_)");
         OwnerHandle& operator=(const OwnerHandle&)
@@ -252,6 +259,9 @@ public:
         friend class PermissionedChaseLevDeque;
 
     public:
+        using value_type = T;
+        using tag_type   = thief_tag;
+
         ThiefHandle(const ThiefHandle&)
             = delete("ThiefHandle owns a thief-pool refcount share — copy would double-count");
         ThiefHandle& operator=(const ThiefHandle&)
@@ -274,6 +284,11 @@ public:
         }
         [[nodiscard]] static constexpr std::size_t capacity() noexcept {
             return Capacity;
+        }
+
+        [[nodiscard]] constexpr safety::SharedPermission<thief_tag>
+        token() const noexcept {
+            return guard_.token();
         }
     };
 

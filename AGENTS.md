@@ -2537,6 +2537,10 @@ The convention has TWO modes, distinguished by whether the mint threads ctx-driv
 | ✅ | Session token | `mint_permissioned_session<Proto>(res, perms...)` | `is_well_formed_v<Proto>` | `PermissionedSessionHandle<Proto, PS, Res>` |
 | ✅ | Session token | `mint_producer_session<Channel>(handle)` | substrate-shape | `PSH<Loop<Send<T,Continue>>, ...>` |
 | ✅ | Session token | `mint_consumer_session<Channel>(handle)` | substrate-shape | `PSH<Loop<Recv<T,Continue>>, ...>` |
+| ✅ | Session token | `mint_chaselev_owner<Deque>(deque, owner_perm)` | substrate-shape | `Deque::OwnerHandle` |
+| ✅ | Session token | `mint_chaselev_thief<Deque>(deque[, proof])` | substrate-shape / fractional proof | `optional<Deque::ThiefHandle>` |
+| ✅ | Session token | `mint_owner_session<Deque>(owner)` | substrate-shape | `PSH<Loop<Select<Send<T,Continue>,Recv<T,Continue>>>, ...>` |
+| ✅ | Session token | `mint_thief_session<Deque>(thief)` | substrate-shape | `PSH<Loop<Recv<Borrowed<T,ThiefTag>,Continue>>, ...>` |
 | ✅ | Ctx-bound | `mint_session<Proto>(ctx, res)` | `CtxFitsPermissionedProtocol<Proto, Ctx, EmptyPermSet>` | `PermissionedSessionHandle<Proto, EmptyPermSet, Res>` |
 | ✅ | Ctx-bound | `mint_permissioned_session<Proto>(ctx, res, perms...)` | `CtxFitsPermissionedProtocol<Proto, Ctx, PermSet<Perms...>>` | `PermissionedSessionHandle<Proto, PermSet<Perms...>, Res>` |
 | ✅ | Ctx-bound | `mint_substrate_session<Substr, Dir>(ctx, handle)` | `IsBridgeableDirection<Substr, Dir> ∧ SubstrateFitsCtxResidency<Substr, Ctx>` | `PSH<default_proto_for_t<...>, ...>` |
