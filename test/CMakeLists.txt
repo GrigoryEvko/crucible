@@ -3696,6 +3696,8 @@ crucible_neg_compile_test(neg_adaptive_scheduler_pool_copy_attempt
     "Pool owns worker jthreads and task queue")
 crucible_neg_compile_test(neg_adaptive_scheduler_non_policy
     "SchedulerPolicy|constraints not satisfied")
+crucible_neg_compile_test(neg_adaptive_scheduler_workload_non_invocable
+    "is_invocable_r_v|constraints not satisfied")
 
 # 2D (FOUND-A22): zero producers / zero consumers in the descriptor.
 crucible_neg_compile_test(neg_auto_split_grid_zero_m

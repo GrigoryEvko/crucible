@@ -199,6 +199,18 @@ static void test_workload_profile_payload_inference() {
     static_assert(profile.budget.read_bytes == 7 * sizeof(Payload));
     static_assert(profile.budget.write_bytes == 7 * sizeof(Payload));
     static_assert(profile.recommended_parallelism == 0);
+
+    constexpr auto explicit_profile = cc::WorkloadProfile::from_budget(
+        cc::WorkBudget{.read_bytes = 64, .write_bytes = 32, .item_count = 3},
+        2,
+        cc::NumaPolicy::NumaLocal,
+        17);
+    static_assert(explicit_profile.budget.read_bytes == 64);
+    static_assert(explicit_profile.budget.write_bytes == 32);
+    static_assert(explicit_profile.budget.item_count == 3);
+    static_assert(explicit_profile.recommended_parallelism == 2);
+    static_assert(explicit_profile.numa_preference == cc::NumaPolicy::NumaLocal);
+    static_assert(explicit_profile.per_job_compute_estimate == 17);
 }
 
 static void test_idle_workers_approx_tracks_running_work() {
@@ -270,6 +282,97 @@ static void test_dispatch_with_workload_l2_runs_inline() {
     if (pool.submitted() != 1 || pool.completed() != 1 || pool.failed() != 0) {
         std::abort();
     }
+    if (pool.running_workers_approx() != 0) std::abort();
+
+    std::thread::id shard_executed{};
+    cc::WorkShard observed_shard{};
+    const auto shard_result = cc::dispatch_with_workload(pool, profile,
+        [&](cc::WorkShard shard) {
+            shard_executed = std::this_thread::get_id();
+            observed_shard = shard;
+        });
+    if (!shard_result.ran_inline || shard_result.queued) std::abort();
+    if (shard_executed != caller) std::abort();
+    if (observed_shard.index != 0 || observed_shard.count != 1) std::abort();
+    if (observed_shard.numa != cc::NumaPolicy::NumaIgnore) std::abort();
+    if (observed_shard.tier != shard_result.decision.tier) std::abort();
+    if (pool.queued_approx() != 0 || pool.pending_approx() != 0) std::abort();
+    if (pool.running_workers_approx() != 0) std::abort();
+}
+
+static void test_dispatch_with_workload_l3_shards_numa_local() {
+    const auto& topo = cc::Topology::instance();
+    if (topo.process_cpu_count() < 2) return;
+    if (topo.l3_total_bytes() <= topo.l2_per_core_bytes() * 2) return;
+
+    const std::size_t wanted_workers =
+        std::min<std::size_t>(4, std::max<std::size_t>(2, topo.process_cpu_count()));
+    cc::Pool<cs::LocalityAware> pool{cc::CoreCount{wanted_workers}};
+
+    const std::size_t ws =
+        (topo.l2_per_core_bytes() + topo.l3_total_bytes()) / 2;
+    const cc::WorkloadProfile profile = cc::WorkloadProfile::from_budget(
+        cc::WorkBudget{
+            .read_bytes = ws / 2,
+            .write_bytes = ws / 2,
+            .item_count = ws / sizeof(std::uint64_t),
+        },
+        wanted_workers);
+    const auto expected_decision = cc::ParallelismRule::recommend(profile.budget);
+    if (expected_decision.kind != cc::ParallelismDecision::Kind::Parallel ||
+        expected_decision.factor <= 1 ||
+        expected_decision.tier != cc::Tier::L3Resident) {
+        return;
+    }
+    const std::size_t expected_worker_limit = std::min({
+        pool.worker_count(),
+        profile.recommended_parallelism,
+        expected_decision.factor,
+    });
+
+    std::array<std::atomic<int>, 4> seen{};
+    std::atomic<int> total{0};
+    std::mutex mutex;
+    std::condition_variable cv;
+
+    const auto result = cc::dispatch_with_workload(
+        pool,
+        profile,
+        [&](cc::WorkShard shard) {
+            if (shard.index >= seen.size()) std::abort();
+            if (shard.count != expected_worker_limit) std::abort();
+            if (shard.numa != cc::NumaPolicy::NumaLocal) std::abort();
+            if (shard.tier != cc::Tier::L3Resident) std::abort();
+            seen[shard.index].fetch_add(1, std::memory_order_relaxed);
+            const int after = total.fetch_add(1, std::memory_order_acq_rel) + 1;
+            if (after == static_cast<int>(expected_worker_limit)) {
+                std::lock_guard lock{mutex};
+                cv.notify_one();
+            }
+        });
+
+    if (result.ran_inline || !result.queued) std::abort();
+    if (!result.decision.is_parallel()) std::abort();
+    if (result.decision.numa != cc::NumaPolicy::NumaLocal) std::abort();
+    if (result.decision.tier != cc::Tier::L3Resident) std::abort();
+    if (result.worker_limit != expected_worker_limit) std::abort();
+    if (result.tasks_submitted != result.worker_limit) std::abort();
+
+    {
+        std::unique_lock lock{mutex};
+        cv.wait(lock, [&] {
+            return total.load(std::memory_order_acquire) ==
+                   static_cast<int>(result.tasks_submitted);
+        });
+    }
+    pool.wait_idle();
+
+    if (pool.completed() != result.tasks_submitted || pool.failed() != 0) {
+        std::abort();
+    }
+    for (std::size_t i = 0; i < result.worker_limit; ++i) {
+        if (seen[i].load(std::memory_order_relaxed) != 1) std::abort();
+    }
 }
 
 static void test_dispatch_with_workload_dram_shards_queue() {
@@ -306,6 +409,8 @@ static void test_dispatch_with_workload_dram_shards_queue() {
         [&](cc::WorkShard shard) {
             if (shard.index >= seen.size()) std::abort();
             if (shard.count != expected_worker_limit) std::abort();
+            if (shard.numa != profile.numa_preference) std::abort();
+            if (shard.tier != cc::Tier::DRAMBound) std::abort();
             seen[shard.index].fetch_add(1, std::memory_order_relaxed);
             const int after = total.fetch_add(1, std::memory_order_acq_rel) + 1;
             if (after == static_cast<int>(expected_worker_limit)) {
@@ -321,10 +426,9 @@ static void test_dispatch_with_workload_dram_shards_queue() {
 
     if (result.ran_inline || !result.queued) std::abort();
     if (!result.decision.is_parallel()) std::abort();
-    if (result.worker_limit !=
-        std::min(pool.worker_count(), profile.recommended_parallelism)) {
-        std::abort();
-    }
+    if (result.decision.numa != profile.numa_preference) std::abort();
+    if (result.decision.tier != cc::Tier::DRAMBound) std::abort();
+    if (result.worker_limit != expected_worker_limit) std::abort();
     if (result.tasks_submitted != result.worker_limit) std::abort();
 
     {
@@ -364,6 +468,7 @@ int main() {
     test_workload_profile_payload_inference();
     test_idle_workers_approx_tracks_running_work();
     test_dispatch_with_workload_l2_runs_inline();
+    test_dispatch_with_workload_l3_shards_numa_local();
     test_dispatch_with_workload_dram_shards_queue();
 
     std::puts("test_adaptive_scheduler: all tests passed");

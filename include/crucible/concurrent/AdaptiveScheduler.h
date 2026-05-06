@@ -61,11 +61,13 @@ struct WorkloadProfile {
     [[nodiscard]] static constexpr WorkloadProfile
     from_budget(WorkBudget work_budget,
                 std::size_t parallelism = 0,
-                NumaPolicy numa = NumaPolicy::NumaIgnore) noexcept {
+                NumaPolicy numa = NumaPolicy::NumaIgnore,
+                std::uint64_t per_job_compute = 0) noexcept {
         return WorkloadProfile{
             .budget = work_budget,
             .recommended_parallelism = parallelism,
             .numa_preference = numa,
+            .per_job_compute_estimate = per_job_compute,
         };
     }
 
