@@ -30,6 +30,7 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
 #include <crucible/Serialize.h>
+#include <crucible/cipher/CipherTierPromotion.h>
 #include <crucible/effects/EffectRow.h>           // FOUND-I09
 #include <crucible/handles/FileHandle.h>
 #include <crucible/safety/CipherTier.h>
@@ -416,7 +417,10 @@ class CRUCIBLE_OWNER Cipher {
         // the ContentHash of the replicated shard.  Until then, the
         // stub returns the none-hash — callers must check
         // `static_cast<bool>(h)` to detect "Hot tier not yet wired".
-        return safety::cipher_tier::Hot<ContentHash>{ContentHash{}};
+        return cipher::mint_promote<
+            safety::CipherTierTag_v::Cold,
+            safety::CipherTierTag_v::Hot>(
+            safety::cipher_tier::Cold<ContentHash>{ContentHash{}});
     }
 
     [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
@@ -430,7 +434,10 @@ class CRUCIBLE_OWNER Cipher {
     [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
     publish_hot(ContentAddressedRegionPayload /*payload*/,
                 const MetaLog* /*meta_log*/) noexcept {
-        return safety::cipher_tier::Hot<ContentHash>{ContentHash{}};
+        return cipher::mint_promote<
+            safety::CipherTierTag_v::Cold,
+            safety::CipherTierTag_v::Hot>(
+            safety::cipher_tier::Cold<ContentHash>{ContentHash{}});
     }
 
     [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
@@ -448,7 +455,10 @@ class CRUCIBLE_OWNER Cipher {
                  ContentAddressedRegionPayload /*payload*/,
                  const MetaLog* /*meta_log*/) noexcept {
         // Phase 5: durable-storage PUT here.
-        return safety::cipher_tier::Cold<ContentHash>{ContentHash{}};
+        return cipher::mint_demote<
+            safety::CipherTierTag_v::Hot,
+            safety::CipherTierTag_v::Cold>(
+            safety::cipher_tier::Hot<ContentHash>{ContentHash{}});
     }
 
     [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
@@ -462,7 +472,10 @@ class CRUCIBLE_OWNER Cipher {
     [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
     publish_cold(ContentAddressedRegionPayload /*payload*/,
                  const MetaLog* /*meta_log*/) noexcept {
-        return safety::cipher_tier::Cold<ContentHash>{ContentHash{}};
+        return cipher::mint_demote<
+            safety::CipherTierTag_v::Hot,
+            safety::CipherTierTag_v::Cold>(
+            safety::cipher_tier::Hot<ContentHash>{ContentHash{}});
     }
 
     [[nodiscard]] safety::cipher_tier::Cold<ContentHash>

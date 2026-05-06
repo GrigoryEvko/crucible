@@ -329,6 +329,7 @@ crucible_test(test_one_shot_flag_crash)
 crucible_test(test_atomic_snapshot_wait)
 crucible_test(test_cipher_wait)
 crucible_test(test_cipher_publish_tier)
+crucible_test(test_cipher_tier_promotion)
 crucible_test(test_kernel_cache_residency_heat)
 crucible_test(test_trace_ring_hot_path)
 crucible_test(test_cipher_commit_lifetime)
@@ -2943,6 +2944,13 @@ crucible_neg_compile_test(neg_cipher_tier_at_cross_tier_mixing
   "no match for|cannot convert|no matching function|invalid operands")
 crucible_neg_compile_test(neg_cipher_tier_lattice_cross_lattice_mixing
   "no match for|cannot convert|no matching function|invalid operands")
+
+# GAPS-041 — named CipherTier mint sites must preserve direction:
+# promote is upward-only, demote is downward-only.
+crucible_neg_compile_test(neg_cipher_tier_promote_hot_to_cold
+  "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_cipher_tier_demote_cold_to_hot
+  "constraints not satisfied|no matching function|associated constraints")
 
 # ─── FOUND-G51 ResidencyHeat negative-compile fixtures ──────────────
 #
