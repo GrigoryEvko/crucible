@@ -46,6 +46,7 @@
 #include <crucible/sessions/SessionContentAddressed.h>
 #include <crucible/sessions/SessionEventLog.h>
 
+#include <array>
 #include <charconv>
 #include <chrono>
 #include <cstddef>
@@ -784,7 +785,12 @@ class CRUCIBLE_OWNER Cipher {
         const std::string dir = session_event_dir(session);
         std::filesystem::create_directories(dir);
         const std::string path = session_event_batch_path(session, hash);
-        if (!std::filesystem::exists(path)) {
+        if (std::filesystem::exists(path)) {
+            if (!file_bytes_equal_(path, std::span<const std::uint8_t>{
+                    encoded.data(), encoded.size()})) {
+                return ContentHash{};
+            }
+        } else {
             std::ofstream out(path, std::ios::binary);
             if (!out) return ContentHash{};
             out.write(reinterpret_cast<const char*>(encoded.data()),
@@ -1106,6 +1112,37 @@ class CRUCIBLE_OWNER Cipher {
         if (ec == std::errc{}) {
             out.write(buf, ptr - buf);
         }
+    }
+
+    [[nodiscard]] static bool file_bytes_equal_(
+        const std::string& path,
+        std::span<const std::uint8_t> expected)
+    {
+        std::ifstream in(path, std::ios::binary);
+        if (!in) return false;
+        in.seekg(0, std::ios::end);
+        const auto raw = in.tellg();
+        if (raw < 0) return false;
+        const auto len = static_cast<std::size_t>(raw);
+        if (len != expected.size()) return false;
+        in.seekg(0, std::ios::beg);
+
+        std::array<std::uint8_t, 4096> actual{};
+        std::size_t offset = 0;
+        while (offset < expected.size()) {
+            const std::size_t remaining = expected.size() - offset;
+            const std::size_t n = remaining < actual.size()
+                ? remaining
+                : actual.size();
+            in.read(reinterpret_cast<char*>(actual.data()),
+                    static_cast<std::streamsize>(n));
+            if (in.gcount() != static_cast<std::streamsize>(n)) return false;
+            if (std::memcmp(actual.data(), expected.data() + offset, n) != 0) {
+                return false;
+            }
+            offset += n;
+        }
+        return true;
     }
 
     [[nodiscard]] static ContentHash session_event_payload_hash_(

@@ -4125,10 +4125,13 @@ crucible_neg_compile_session_test(neg_persisted_session_hot_ctx
     "constraints not satisfied|template constraint failure|associated constraints|CtxAdmits")
 
 crucible_neg_compile_session_test(neg_persisted_session_no_ctx
-    "no matching function for call to.*mint_persisted_session|candidate expects")
+    "PersistedSession_CtxRequired|use of deleted function")
 
 crucible_neg_compile_session_test(neg_persisted_session_detach_disabled
     "PersistedSession_DetachDisabled|use of deleted function")
+
+crucible_neg_compile_session_test(neg_persisted_session_no_open_view
+    "PersistedSession_OpenViewRequired|use of deleted function")
 
 crucible_neg_compile_session_test(neg_mint_session_perms_unbalanced
     "associated constraints are not satisfied|CtxFitsPermissionedProtocol|permission_flow_closes")

@@ -12,12 +12,14 @@ struct Resource {};
 
 int main() {
     auto cipher = crucible::Cipher::open("/tmp/crucible_neg_persist_hot");
+    auto view = cipher.mint_open_view();
     crucible::effects::HotFgCtx ctx{};
 
     [[maybe_unused]] auto h = proto::mint_persisted_session<
         proto::Send<int, proto::End>>(
             ctx,
             cipher,
+            view,
             Resource{},
             proto::SessionTagId{1},
             proto::RoleTagId{1},

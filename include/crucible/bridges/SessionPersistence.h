@@ -49,6 +49,7 @@ public:
         "IO + Block because persistence writes Cipher files.");
 
     SessionPersistenceState(Cipher& cipher,
+                            Cipher::OpenView const&,
                             SessionTagId session,
                             SessionPersistencePolicy policy) noexcept
         : cipher_{cipher},
@@ -72,13 +73,12 @@ public:
         return log_.size() - flushed_count_;
     }
 
-    void flush_if_due() {
+    [[nodiscard]] bool flush_if_due() {
         const std::size_t pending = pending_count();
-        if (pending == 0) return;
+        if (pending == 0) return true;
         if (policy_.count_threshold != 0
             && pending >= policy_.count_threshold) {
-            static_cast<void>(flush_all());
-            return;
+            return flush_all();
         }
         const auto time_threshold_ns =
             std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -87,9 +87,10 @@ public:
             const auto elapsed_ns =
                 std::chrono::duration_cast<std::chrono::nanoseconds>(
                     std::chrono::steady_clock::now() - last_flush_).count();
-            if (elapsed_ns < time_threshold_ns) return;
-            static_cast<void>(flush_all());
+            if (elapsed_ns < time_threshold_ns) return true;
+            return flush_all();
         }
+        return true;
     }
 
     [[nodiscard]] bool flush_all() {
@@ -305,7 +306,9 @@ class [[nodiscard]] PersistedSessionHandle
         }
         if constexpr (detail::persisted_result_carries_handle_v<
                           Raw, CallerRow>) {
-            state_->flush_if_due();
+            if (!state_->flush_if_due()) [[unlikely]] {
+                std::abort();
+            }
             return detail::wrap_persisted_result<Result, CallerRow>(
                 std::forward<Result>(result), release_state_());
         } else {
@@ -550,10 +553,10 @@ public:
     [[nodiscard]] static std::vector<SessionEvent> replay(
         Ctx const&,
         Cipher& cipher,
+        Cipher::OpenView const& view,
         SessionTagId session,
         StepId from_step = {})
     {
-        auto view = cipher.mint_open_view();
         return cipher.load_session_events(view, session, from_step);
     }
 };
@@ -566,6 +569,7 @@ template <typename Proto,
 [[nodiscard]] auto mint_persisted_session(
     Ctx const&,
     Cipher& cipher,
+    Cipher::OpenView const& view,
     Resource&& resource,
     SessionTagId session,
     RoleTagId self,
@@ -574,13 +578,41 @@ template <typename Proto,
 {
     using CallerRow = typename Ctx::row_type;
     auto state = std::make_unique<SessionPersistenceState<CallerRow>>(
-        cipher, session, policy);
+        cipher, view, session, policy);
     auto bare = mint_session_handle<Proto>(std::forward<Resource>(resource));
     auto recording = mint_recording_session(
         std::move(bare), state->log(), self, peer);
     return PersistedSessionHandle<decltype(recording), CallerRow>{
         std::move(recording), std::move(state)};
 }
+
+template <typename Proto, typename Resource>
+void mint_persisted_session(
+    Cipher&,
+    Cipher::OpenView const&,
+    Resource&&,
+    SessionTagId,
+    RoleTagId,
+    RoleTagId,
+    SessionPersistencePolicy = {})
+    = delete("[PersistedSession_CtxRequired] mint_persisted_session<Proto> "
+             "requires an execution context whose row admits Cipher "
+             "persistence effects.");
+
+template <typename Proto,
+          ::crucible::effects::IsExecCtx Ctx,
+          typename Resource>
+void mint_persisted_session(
+    Ctx const&,
+    Cipher&,
+    Resource&&,
+    SessionTagId,
+    RoleTagId,
+    RoleTagId,
+    SessionPersistencePolicy = {})
+    = delete("[PersistedSession_OpenViewRequired] "
+             "mint_persisted_session<Proto> requires Cipher::OpenView at "
+             "the mint boundary; pass cipher.mint_open_view() explicitly.");
 
 template <::crucible::effects::IsExecCtx Ctx,
           typename Proto,
@@ -592,6 +624,7 @@ template <::crucible::effects::IsExecCtx Ctx,
     Ctx const&,
     SessionHandle<Proto, Resource, LoopCtx> inner,
     Cipher& cipher,
+    Cipher::OpenView const& view,
     SessionTagId session,
     RoleTagId self,
     RoleTagId peer,
@@ -599,11 +632,28 @@ template <::crucible::effects::IsExecCtx Ctx,
 {
     using CallerRow = typename Ctx::row_type;
     auto state = std::make_unique<SessionPersistenceState<CallerRow>>(
-        cipher, session, policy);
+        cipher, view, session, policy);
     auto recording = mint_recording_session(
         std::move(inner), state->log(), self, peer);
     return PersistedSessionHandle<decltype(recording), CallerRow>{
         std::move(recording), std::move(state)};
 }
+
+template <::crucible::effects::IsExecCtx Ctx,
+          typename Proto,
+          typename Resource,
+          typename LoopCtx>
+void mint_persisted_session(
+    Ctx const&,
+    SessionHandle<Proto, Resource, LoopCtx>,
+    Cipher&,
+    SessionTagId,
+    RoleTagId,
+    RoleTagId,
+    SessionPersistencePolicy = {})
+    = delete("[PersistedSession_OpenViewRequired] "
+             "mint_persisted_session(ctx, handle, cipher, ...) requires "
+             "Cipher::OpenView at the mint boundary; pass "
+             "cipher.mint_open_view() explicitly.");
 
 }  // namespace crucible::safety::proto

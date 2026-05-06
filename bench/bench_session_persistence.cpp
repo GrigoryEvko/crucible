@@ -59,6 +59,7 @@ int main() {
                 dir.c_str());
 
     auto cipher = crucible::Cipher::open(dir.string());
+    auto view = cipher.mint_open_view();
     eff::TestRunnerCtx ctx{};
 
     proto::SessionPersistencePolicy no_midrun_flush{
@@ -85,6 +86,7 @@ int main() {
             auto h = proto::mint_persisted_session<PersistProto>(
                 ctx,
                 cipher,
+                view,
                 CounterResource{},
                 proto::SessionTagId{++session_counter},
                 kA,
@@ -99,6 +101,7 @@ int main() {
             auto h = proto::mint_persisted_session<PersistProto>(
                 ctx,
                 cipher,
+                view,
                 CounterResource{},
                 proto::SessionTagId{++session_counter},
                 kA,
