@@ -21,10 +21,12 @@
 #include "test_assert.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <functional>
+#include <memory>
 #include <simd>
 
 namespace simd = crucible::simd;
@@ -292,6 +294,29 @@ static void test_dim_hash_equivalence_handcoded() {
     // Negative strides (transpose / flip view).
     auto m_neg = make_meta({4, 8}, {-8, 1});
     assert(dim_hash_simd(m_neg) == dim_hash_scalar(m_neg));
+
+    // Trace-loader vectors and MetaLog buffers provide natural
+    // TensorMeta alignment, not guaranteed 64-byte vector alignment.
+    alignas(crucible::TensorMeta)
+    std::array<std::byte, sizeof(crucible::TensorMeta) + 64> storage{};
+    std::uintptr_t chosen = 0;
+    const std::uintptr_t base =
+        reinterpret_cast<std::uintptr_t>(storage.data());
+    for (std::size_t offset = 0; offset < 64; ++offset) {
+        const std::uintptr_t candidate = base + offset;
+        if (candidate % alignof(crucible::TensorMeta) == 0 &&
+            candidate % 64 != 0) {
+            chosen = candidate;
+            break;
+        }
+    }
+    assert(chosen != 0);
+    auto* unaligned = std::construct_at(
+        reinterpret_cast<crucible::TensorMeta*>(chosen),
+        make_meta({16, 32, 64}, {2048, 64, 1}));
+    assert(reinterpret_cast<std::uintptr_t>(unaligned->sizes) % 64 != 0);
+    assert(dim_hash_simd(*unaligned) == dim_hash_scalar(*unaligned));
+    std::destroy_at(unaligned);
 
     // Distinct meta produces DISTINCT hash with overwhelming probability.
     assert(dim_hash_scalar(m_1d) != dim_hash_scalar(m_2d));

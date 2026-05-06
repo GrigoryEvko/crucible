@@ -87,13 +87,14 @@ uint64_t dim_hash_simd(const TensorMeta& meta) noexcept {
   // past ndim per InitSafe + NSDMI in the struct definition), so a
   // plain vector load is in-bounds even when meta.ndim < 8.
   //
-  // std::simd::unchecked_load<V>(iter, count, flags) — the
-  // iterator + difference overload with vector-aligned flag, since
-  // TensorMeta::sizes/strides are 64-byte aligned in the struct.
+  // std::simd::unchecked_load<V>(iter, count) uses element-aligned
+  // loads.  TensorMeta itself is only naturally aligned in vectors and
+  // trace-loader buffers, so vector-aligned loads would be unsound even
+  // though the arrays are 64 bytes wide.
   auto sizes   = std::simd::unchecked_load<i64x8>(
-      meta.sizes,   i64x8::size(), std::simd::flag_aligned);
+      meta.sizes,   i64x8::size());
   auto strides = std::simd::unchecked_load<i64x8>(
-      meta.strides, i64x8::size(), std::simd::flag_aligned);
+      meta.strides, i64x8::size());
 
   // Load kDimMix halves: kDimMix[0..7] for sizes, kDimMix[8..15] for
   // strides.  element_aligned (== default) because the table is a

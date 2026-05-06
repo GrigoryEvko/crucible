@@ -27,10 +27,12 @@
 
 #include <array>
 #include "test_assert.h"
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <initializer_list>
+#include <memory>
 #include <random>
 
 using namespace crucible;
@@ -157,6 +159,36 @@ static void test_common_shapes() {
     check_equiv(m8d, "8D");
 
     std::printf("  test_common_shapes: PASSED\n");
+}
+
+// ── Alignment regression ──────────────────────────────────────────
+
+static void test_natural_tensor_meta_alignment() {
+    // Trace-loader vectors and MetaLog buffers guarantee natural
+    // TensorMeta alignment, not 64-byte vector alignment.  The SIMD
+    // path must therefore use element-aligned loads for meta fields.
+    alignas(TensorMeta) std::array<std::byte, sizeof(TensorMeta) + 64> storage{};
+    std::uintptr_t chosen = 0;
+    const std::uintptr_t base =
+        reinterpret_cast<std::uintptr_t>(storage.data());
+    for (std::size_t offset = 0; offset < 64; ++offset) {
+        const std::uintptr_t candidate = base + offset;
+        if (candidate % alignof(TensorMeta) == 0 &&
+            candidate % 64 != 0) {
+            chosen = candidate;
+            break;
+        }
+    }
+    assert(chosen != 0);
+
+    auto* meta = std::construct_at(
+        reinterpret_cast<TensorMeta*>(chosen),
+        make_meta({16, 32, 64}, {2048, 64, 1}));
+    assert(reinterpret_cast<std::uintptr_t>(meta->sizes) % 64 != 0);
+    check_equiv(*meta, "natural-align-not-vector-align");
+    std::destroy_at(meta);
+
+    std::printf("  test_natural_tensor_meta_alignment: PASSED\n");
 }
 
 // ── Negative strides (transpose / flip) ───────────────────────────
@@ -348,6 +380,7 @@ int main() {
     test_scalar_tensor();
     test_zero_size_tensor();
     test_common_shapes();
+    test_natural_tensor_meta_alignment();
     test_negative_strides();
     test_stride_zero();
     test_dtype_variations();

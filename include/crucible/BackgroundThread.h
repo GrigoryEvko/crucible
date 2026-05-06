@@ -535,7 +535,9 @@ struct BackgroundThread {
     world_size = world_size_;
     device_capability = device_cap;
     stop_requested.reset_unsafe();
-    pipeline_thread = std::jthread([this](std::stop_token) { run(); });
+    pipeline_thread = std::jthread([this](std::stop_token) noexcept {
+      run_in_row<run_required_row>();
+    });
   }
 
   // Signal the thread to stop and join.
@@ -748,7 +750,7 @@ struct BackgroundThread {
   //
   // FOUND-I20: row-typed compile-time fence for the bg-thread main loop.
   //
-  // The bg drain runs forever until `running` is cleared.  By construction
+  // The bg drain runs until stop_requested is signaled.  By construction
   // it performs:
   //   • Bg     — every line executes inside the bg-thread context tag.
   //   • Alloc  — `current_trace.push_back` grows; `on_iteration_boundary`

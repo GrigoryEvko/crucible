@@ -167,11 +167,13 @@ safety::Saturated<uint64_t> compute_storage_nbytes_scalar(const TensorMeta& meta
 bool storage_nbytes_simd_safe_(const TensorMeta& meta) noexcept {
   using simd::i64x8;
 
-  // Load sizes and strides.
+  // TensorMeta is naturally aligned, not guaranteed vector-aligned.
+  // Use element-aligned loads so trace-loader vectors and MetaLog
+  // buffers are valid inputs.
   auto sizes = std::simd::unchecked_load<i64x8>(
-      meta.sizes,   i64x8::size(), std::simd::flag_aligned);
+      meta.sizes,   i64x8::size());
   auto strides = std::simd::unchecked_load<i64x8>(
-      meta.strides, i64x8::size(), std::simd::flag_aligned);
+      meta.strides, i64x8::size());
 
   auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(meta.ndim));
 
@@ -218,7 +220,7 @@ bool storage_nbytes_simd_safe_(const TensorMeta& meta) noexcept {
 // Both paths return UINT64_MAX on detected overflow at any
 // arithmetic step.
 
-[[nodiscard, gnu::const]] CRUCIBLE_INLINE
+[[nodiscard, gnu::pure]] CRUCIBLE_INLINE
 safety::Saturated<uint64_t> compute_storage_nbytes_simd(const TensorMeta& meta) noexcept {
   using Sat = safety::Saturated<uint64_t>;
   // Edge case: scalar tensor.  Same as scalar path.
@@ -228,12 +230,12 @@ safety::Saturated<uint64_t> compute_storage_nbytes_simd(const TensorMeta& meta) 
 
   using simd::i64x8;
 
-  // Load sizes and strides via aligned SIMD load.  TensorMeta
-  // arrays are 64-byte aligned by struct layout.
+  // Load sizes and strides via element-aligned SIMD load.  TensorMeta
+  // arrays are 64 bytes wide but not guaranteed 64-byte aligned.
   auto sizes = std::simd::unchecked_load<i64x8>(
-      meta.sizes,   i64x8::size(), std::simd::flag_aligned);
+      meta.sizes,   i64x8::size());
   auto strides = std::simd::unchecked_load<i64x8>(
-      meta.strides, i64x8::size(), std::simd::flag_aligned);
+      meta.strides, i64x8::size());
 
   auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(meta.ndim));
 
