@@ -21,6 +21,7 @@
 //   SessionDeclassify.h     — Secret payload + DeclassifyOnSend
 //   SessionCT.h             — ConstantTime crypto-payload sessions
 //   SessionEventLog.h       — AppendOnly typed event log
+//   FederationProtocol.h    — MPST facade for Cipher federation
 //   SessionPayloadSubsort.h — Tagged/Refined subsort axioms
 //   SessionPermPayloads.h   — Transferable/Borrowed/Returned markers
 //   SessionPatterns.h       — RequestResponse, Pipeline, FanOut/FanIn, ...
@@ -58,6 +59,7 @@
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/SessionDiagnostic.h>
 #include <crucible/sessions/SessionEventLog.h>
+#include <crucible/sessions/FederationProtocol.h>
 #include <crucible/sessions/SessionGlobal.h>
 #include <crucible/sessions/PermissionedSession.h>
 #include <crucible/sessions/SessionPatterns.h>

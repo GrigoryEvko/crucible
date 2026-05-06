@@ -73,12 +73,38 @@
 #include <crucible/cipher/ComputationCache.h>        // computation_cache_key_in_row, IsCacheableFunction, IsEffectRow
 #include <crucible/cipher/FederationProtocol.h>      // FederationEntryHeader, codec, FederationError
 #include <crucible/safety/diag/RowHashFold.h>        // row_hash_contribution_v
+#include <crucible/sessions/FederationProtocol.h>    // typed Sender/Receiver/Coord MPST facade
 
 #include <cstdint>
 #include <expected>
 #include <span>
 
 namespace crucible::cipher::federation {
+
+template <auto FnPtr, typename Row, typename... Args>
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+struct ComputationCacheFederationKeyTag {
+    static constexpr auto fn = FnPtr;
+    using row_type = Row;
+};
+
+template <auto FnPtr, typename Row, typename... Args>
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+using ComputationCacheFederationSenderProto =
+    ::crucible::safety::proto::federation::SenderProto<
+        ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
+
+template <auto FnPtr, typename Row, typename... Args>
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+using ComputationCacheFederationReceiverProto =
+    ::crucible::safety::proto::federation::ReceiverProto<
+        ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
+
+template <auto FnPtr, typename Row, typename... Args>
+    requires IsCacheableFunction<FnPtr> && IsEffectRow<Row>
+using ComputationCacheFederationCoordProto =
+    ::crucible::safety::proto::federation::CoordProto<
+        ComputationCacheFederationKeyTag<FnPtr, Row, Args...>>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Per-axis projections ────────────────────────────────────────────
@@ -195,6 +221,16 @@ static_assert(!federation_key<&f12_p_unary, EmptyR, int>().is_zero(),
 static_assert(!federation_key<&f12_p_unary, EmptyR, int>().is_sentinel(),
     "F12: composite federation key must not be the UINT64_MAX-pair "
     "sentinel reserved for cache empty-slot probing.");
+static_assert(::crucible::safety::proto::is_well_formed_v<
+    ComputationCacheFederationSenderProto<&f12_p_unary, EmptyR, int>>);
+static_assert(::crucible::safety::proto::is_well_formed_v<
+    ComputationCacheFederationReceiverProto<&f12_p_unary, EmptyR, int>>);
+static_assert(::crucible::safety::proto::is_well_formed_v<
+    ComputationCacheFederationCoordProto<&f12_p_unary, EmptyR, int>>);
+static_assert(::crucible::safety::proto::federation::role_protocol_matches_v<
+    ::crucible::safety::proto::federation::SenderRole,
+    ComputationCacheFederationSenderProto<&f12_p_unary, EmptyR, int>,
+    ComputationCacheFederationKeyTag<&f12_p_unary, EmptyR, int>>);
 
 // ── Same (FnPtr, Row, Args...) → same key (deterministic) ─────────
 

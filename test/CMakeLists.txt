@@ -642,6 +642,11 @@ crucible_test(test_adaptive_scheduler)
 # prefix sharing, replay trace dedup.
 crucible_test(test_session_content_addressed)
 
+# Cipher federation MPST facade (GAPS-039) — projects the three-role
+# Sender/Receiver/Coord global protocol into typed local PSH handles.
+# Covers announce/ack and pull/payload loops plus role/protocol matching.
+crucible_test(test_federation_session)
+
 # SessionHandle lifetime mechanics (SEPLOG-I7, task #349) — the CRTP
 # SessionHandleBase<Proto> that adds abandoned-protocol detection to
 # every specialisation.  Debug destructor aborts when a non-terminal,
@@ -3491,6 +3496,19 @@ crucible_neg_compile_test(neg_session_pick_index_out_of_range
 # establishment site with [Dual_Mismatch].
 crucible_neg_compile_test(neg_session_dual_mismatch
     "Dual_Mismatch")
+
+# Cipher federation MPST order gates (GAPS-039).  These fixtures use
+# concept probes plus framework-controlled static_assert messages so
+# drift in method availability is surfaced without depending on GCC's
+# overload text.
+crucible_neg_compile_test(neg_federation_sender_recv_before_announce
+    "FederationSender_RecvBeforeAnnounce_Rejected")
+crucible_neg_compile_test(neg_federation_receiver_send_before_pull
+    "FederationReceiver_SendBeforePull_Rejected")
+crucible_neg_compile_test(neg_federation_coord_non_coord_role
+    "FederationCoord_NonCoordRole_Rejected")
+crucible_neg_compile_test(neg_federation_wrong_ack_key
+    "FederationAck_ContentHashMismatch_Rejected")
 
 # Bare select<I>() / pick<I>() (no transport, no `_local` suffix) are
 # now `= delete`'d (#377) so the wire-vs-in-memory choice is forced
