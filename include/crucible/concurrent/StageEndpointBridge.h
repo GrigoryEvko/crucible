@@ -42,6 +42,20 @@
 //                               Outputs must match the trailing
 //                               producer-handle parameters.
 //
+//   mint_mpmc_stage_from_endpoints<auto FnPtr>(ctx, endpoints...)
+//                             — variadic bridge factory.  The input /
+//                               output boundary is inferred from
+//                               StageArity<FnPtr>; leading endpoints
+//                               are consumers, trailing endpoints are
+//                               producers.
+//
+//   mint_swmr_stage<auto FnPtr>(ctx, in_ep, writer)
+//                             — snapshot publication bridge for the
+//                               1-input / SWMR-writer fan-out source
+//                               pattern.  Downstream graph consumers
+//                               read through the corresponding
+//                               snapshot reader handles.
+//
 //   CtxFitsStageFromEndpoints<FnPtr, Ctx, ConsumerEp, ProducerEp>
 //                             — full single-concept gate for
 //                               mint_stage_from_endpoints.  Conjunction
@@ -116,6 +130,7 @@
 #include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/Stage.h>
 
+#include <cstddef>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -273,6 +288,156 @@ concept StageHandlesMatchEndpointsExtended =
     detail::stage_handles_match_endpoints_extended<
         FnPtr, Inputs, Outputs>::value;
 
+namespace detail {
+
+template <class Tuple, class Seq>
+struct endpoint_pack_from_tuple_indices;
+
+template <class Tuple, std::size_t... Is>
+struct endpoint_pack_from_tuple_indices<Tuple, std::index_sequence<Is...>> {
+    using type = EndpointPack<std::tuple_element_t<Is, Tuple>...>;
+};
+
+template <std::size_t Offset, class Tuple, class Seq>
+struct endpoint_pack_from_tuple_offset_indices;
+
+template <std::size_t Offset, class Tuple, std::size_t... Is>
+struct endpoint_pack_from_tuple_offset_indices<
+    Offset,
+    Tuple,
+    std::index_sequence<Is...>> {
+    using type = EndpointPack<std::tuple_element_t<Offset + Is, Tuple>...>;
+};
+
+template <std::size_t N, class... Endpoints>
+using endpoint_take_pack_t =
+    typename endpoint_pack_from_tuple_indices<
+        std::tuple<Endpoints...>,
+        std::make_index_sequence<N>>::type;
+
+template <std::size_t N, class... Endpoints>
+using endpoint_drop_pack_t =
+    typename endpoint_pack_from_tuple_offset_indices<
+        N,
+        std::tuple<Endpoints...>,
+        std::make_index_sequence<sizeof...(Endpoints) - N>>::type;
+
+template <auto FnPtr, class Ctx, class... Endpoints>
+struct mpmc_stage_from_endpoints_gate {
+private:
+    using arity = ::crucible::safety::extract::StageArity<FnPtr>;
+
+    static consteval bool compute() noexcept {
+        if constexpr (!::crucible::safety::extract::VariadicPipelineStage<
+                          FnPtr>
+                   || !::crucible::effects::IsExecCtx<Ctx>
+                   || sizeof...(Endpoints)
+                        != ::crucible::safety::extract::arity_v<FnPtr>) {
+            return false;
+        } else {
+            using inputs = endpoint_take_pack_t<
+                arity::input_count,
+                Endpoints...>;
+            using outputs = endpoint_drop_pack_t<
+                arity::input_count,
+                Endpoints...>;
+            return CtxFitsVariadicStage<FnPtr, Ctx>
+                && StageHandlesMatchEndpointsExtended<FnPtr, inputs, outputs>;
+        }
+    }
+
+public:
+    static constexpr bool value = compute();
+};
+
+template <auto FnPtr, class Ctx, class Tuple, std::size_t... Is>
+[[nodiscard]] constexpr auto
+move_input_handles_from_endpoint_tuple(Tuple& endpoints,
+                                       std::index_sequence<Is...>) noexcept {
+    return std::tuple{
+        std::move(std::get<Is>(endpoints)).into_handle()...
+    };
+}
+
+template <auto FnPtr, class Ctx, class Tuple, std::size_t... Is>
+[[nodiscard]] constexpr auto
+move_output_handles_from_endpoint_tuple(Tuple& endpoints,
+                                        std::index_sequence<Is...>) noexcept {
+    constexpr std::size_t offset =
+        ::crucible::safety::extract::StageArity<FnPtr>::input_count;
+    return std::tuple{
+        std::move(std::get<offset + Is>(endpoints)).into_handle()...
+    };
+}
+
+template <auto FnPtr, class Ctx, class Tuple>
+[[nodiscard]] constexpr auto
+make_mpmc_stage_from_endpoint_tuple(Ctx const& ctx,
+                                    Tuple& endpoints) noexcept {
+    using arity = ::crucible::safety::extract::StageArity<FnPtr>;
+    auto inputs = move_input_handles_from_endpoint_tuple<FnPtr, Ctx>(
+        endpoints,
+        std::make_index_sequence<arity::input_count>{});
+    auto outputs = move_output_handles_from_endpoint_tuple<FnPtr, Ctx>(
+        endpoints,
+        std::make_index_sequence<arity::output_count>{});
+    using stage_type = MpmcStage<
+        FnPtr,
+        Ctx,
+        decltype(inputs),
+        decltype(outputs)>;
+    return stage_type{ctx, std::move(inputs), std::move(outputs)};
+}
+
+inline void mint_mpmc_stage_row_admission_anchor() noexcept {}
+inline void mint_swmr_stage_row_admission_anchor() noexcept {}
+
+template <auto FnPtr, class Ctx, class ConsumerEp, class Writer>
+struct swmr_stage_from_endpoint_gate {
+private:
+    static consteval bool compute() noexcept {
+        using consumer_ep = std::remove_cvref_t<ConsumerEp>;
+        using writer = std::remove_cvref_t<Writer>;
+        if constexpr (!CtxFitsSwmrPublishStage<FnPtr, Ctx>
+                   || !IsConsumerEndpoint<consumer_ep>
+                   || !::crucible::safety::extract::is_swmr_writer_v<
+                          writer>) {
+            return false;
+        } else {
+            return std::is_same_v<
+                    typename consumer_ep::handle_type,
+                    std::remove_reference_t<
+                        ::crucible::safety::extract::param_type_t<
+                            FnPtr, 0>>>
+                && std::is_same_v<
+                    writer,
+                    std::remove_reference_t<
+                        ::crucible::safety::extract::param_type_t<
+                            FnPtr, 1>>>;
+        }
+    }
+
+public:
+    static constexpr bool value = compute();
+};
+
+}  // namespace detail
+
+template <auto FnPtr, class Ctx, class... Endpoints>
+concept CtxFitsMpmcStageFromEndpoints =
+    detail::mpmc_stage_from_endpoints_gate<
+        FnPtr,
+        Ctx,
+        std::remove_cvref_t<Endpoints>...>::value;
+
+template <auto FnPtr, class Ctx, class ConsumerEp, class Writer>
+concept CtxFitsSwmrStageFromEndpoint =
+    detail::swmr_stage_from_endpoint_gate<
+        FnPtr,
+        Ctx,
+        ConsumerEp,
+        Writer>::value;
+
 // ═════════════════════════════════════════════════════════════════════
 // ── CtxFitsStageFromEndpoints — full soundness gate ────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -350,6 +515,68 @@ template <auto FnPtr,
         ctx,
         std::move(in_ep).into_handle(),
         std::move(out_ep).into_handle());
+}
+
+// ═════════════════════════════════════════════════════════════════════
+// ── mint_mpmc_stage_from_endpoints<auto FnPtr>(ctx, endpoints...) ──
+// ═════════════════════════════════════════════════════════════════════
+
+template <auto FnPtr,
+          ::crucible::effects::IsExecCtx Ctx,
+          class... Endpoints>
+    requires CtxFitsMpmcStageFromEndpoints<FnPtr, Ctx, Endpoints...>
+[[nodiscard]] constexpr auto mint_mpmc_stage_from_endpoints(
+    Ctx const& ctx,
+    Endpoints&&... endpoints) noexcept
+{
+    using ctx_row = typename Ctx::row_type;
+    using required_row = variadic_stage_row_union_t<FnPtr>;
+    using offending_row =
+        ::crucible::effects::row_difference_t<required_row, ctx_row>;
+
+    CRUCIBLE_ROW_MISMATCH_ASSERT(
+        (::crucible::effects::Subrow<required_row, ctx_row>),
+        EffectRowMismatch,
+        &::crucible::concurrent::detail::mint_mpmc_stage_row_admission_anchor,
+        ctx_row,
+        required_row,
+        offending_row);
+
+    std::tuple<std::remove_cvref_t<Endpoints>...> endpoint_tuple{
+        std::forward<Endpoints>(endpoints)...
+    };
+    return detail::make_mpmc_stage_from_endpoint_tuple<FnPtr>(
+        ctx,
+        endpoint_tuple);
+}
+
+template <auto FnPtr,
+          ::crucible::effects::IsExecCtx Ctx,
+          class ConsumerEp,
+          class Writer>
+    requires CtxFitsSwmrStageFromEndpoint<FnPtr, Ctx, ConsumerEp, Writer>
+[[nodiscard]] constexpr auto mint_swmr_stage(
+    Ctx const& ctx,
+    ConsumerEp&& in_ep,
+    Writer&& writer) noexcept
+{
+    using ctx_row = typename Ctx::row_type;
+    using required_row = swmr_stage_row_union_t<FnPtr>;
+    using offending_row =
+        ::crucible::effects::row_difference_t<required_row, ctx_row>;
+
+    CRUCIBLE_ROW_MISMATCH_ASSERT(
+        (::crucible::effects::Subrow<required_row, ctx_row>),
+        EffectRowMismatch,
+        &::crucible::concurrent::detail::mint_swmr_stage_row_admission_anchor,
+        ctx_row,
+        required_row,
+        offending_row);
+
+    return SwmrStage<FnPtr, Ctx>{
+        ctx,
+        std::move(in_ep).into_handle(),
+        std::forward<Writer>(writer)};
 }
 
 // ═════════════════════════════════════════════════════════════════════

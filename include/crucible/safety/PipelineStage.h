@@ -17,6 +17,11 @@
 //                          consumer-handle parameters; outputs are
 //                          the trailing producer-handle parameters.
 //
+//   pipeline_stage_input_value_at_t<FnPtr, I>
+//   pipeline_stage_output_value_at_t<FnPtr, I>
+//                          Variadic payload extractors for the I-th
+//                          consumer / producer port.
+//
 //   VariadicPipelineStage<auto FnPtr>
 //                          Concept satisfied iff FnPtr is a void
 //                          function whose parameters are one-or-more
@@ -216,16 +221,32 @@ inline constexpr bool is_pipeline_stage_v = PipelineStage<FnPtr>;
 // ═════════════════════════════════════════════════════════════════════
 
 // Input-side payload type (consumer handle's try_pop yields this).
+template <auto FnPtr, std::size_t I>
+    requires VariadicPipelineStage<FnPtr>
+          && (I < StageArity<FnPtr>::input_count)
+using pipeline_stage_input_value_at_t =
+    consumer_handle_value_t<param_type_t<FnPtr, I>>;
+
+// Output-side payload type (producer handle's try_push accepts this).
+template <auto FnPtr, std::size_t I>
+    requires VariadicPipelineStage<FnPtr>
+          && (I < StageArity<FnPtr>::output_count)
+using pipeline_stage_output_value_at_t =
+    producer_handle_value_t<param_type_t<
+        FnPtr,
+        StageArity<FnPtr>::input_count + I>>;
+
+// Legacy 1x1 aliases retained for Stage / Pipeline.
 template <auto FnPtr>
     requires PipelineStage<FnPtr>
 using pipeline_stage_input_value_t =
-    consumer_handle_value_t<param_type_t<FnPtr, 0>>;
+    pipeline_stage_input_value_at_t<FnPtr, 0>;
 
 // Output-side payload type (producer handle's try_push accepts this).
 template <auto FnPtr>
     requires PipelineStage<FnPtr>
 using pipeline_stage_output_value_t =
-    producer_handle_value_t<param_type_t<FnPtr, 1>>;
+    pipeline_stage_output_value_at_t<FnPtr, 0>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Value-preservation predicate ───────────────────────────────────
@@ -287,6 +308,12 @@ static_assert(VariadicPipelineStage<&f_three_to_one>);
 static_assert(!PipelineStage<&f_three_to_one>);
 static_assert(StageArity<&f_three_to_one>::input_count == 3);
 static_assert(StageArity<&f_three_to_one>::output_count == 1);
+static_assert(std::is_same_v<
+    pipeline_stage_input_value_at_t<&f_three_to_one, 2>,
+    float>);
+static_assert(std::is_same_v<
+    pipeline_stage_output_value_at_t<&f_three_to_one, 0>,
+    int>);
 
 inline void f_one_to_two(fake_consumer<int>&&,
                          fake_producer<int>&&,
@@ -295,6 +322,9 @@ static_assert(VariadicPipelineStage<&f_one_to_two>);
 static_assert(!PipelineStage<&f_one_to_two>);
 static_assert(StageArity<&f_one_to_two>::input_count == 1);
 static_assert(StageArity<&f_one_to_two>::output_count == 2);
+static_assert(std::is_same_v<
+    pipeline_stage_output_value_at_t<&f_one_to_two, 1>,
+    float>);
 
 inline void f_interleaved(fake_consumer<int>&&,
                           fake_producer<int>&&,

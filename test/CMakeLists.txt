@@ -439,6 +439,7 @@ crucible_test(test_read_view)
 crucible_test(test_topology)
 crucible_test(test_parallelism_rule)
 crucible_test(test_pipeline_dispatch)
+crucible_test(test_pipeline_dag)
 crucible_test(test_permissioned_snapshot)
 crucible_test(test_auto_router)
 crucible_test(test_permissioned_mpsc_channel)
@@ -1281,6 +1282,14 @@ crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_both_consumers
     "associated constraints are not satisfied|CtxFitsStageFromEndpoints|IsProducerEndpoint")
 crucible_neg_compile_effects_test(neg_mint_stage_from_endpoints_raw_handle
     "associated constraints are not satisfied|CtxFitsStageFromEndpoints|IsConsumerEndpoint|IsProducerEndpoint")
+
+# GAPS-086: variadic stage mint + PipelineDag graph-shape fixtures.
+crucible_neg_compile_effects_test(neg_mpmc_stage_arity_mismatch
+    "associated constraints are not satisfied|CtxFitsMpmcStageFromEndpoints|StageHandlesMatchEndpointsExtended")
+crucible_neg_compile_effects_test(neg_pipeline_dag_cycle
+    "template constraint failure|constraints not satisfied|StageGraphWellFormed")
+crucible_neg_compile_effects_test(neg_pipeline_dag_unreachable
+    "template constraint failure|constraints not satisfied|StageGraphWellFormed")
 
 # GAPS-004a-AUDIT (#1288): SenseHub::load() takes effects::Init by
 # value as its sole parameter.  The cap-typing gate is structural —

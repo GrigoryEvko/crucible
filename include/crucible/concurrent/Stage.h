@@ -114,9 +114,11 @@
 //   CLAUDE.md §XVIII HS14          — neg-compile fixture requirement
 
 #include <crucible/Platform.h>
+#include <crucible/concurrent/WorkingSet.h>
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/safety/PipelineStage.h>
+#include <crucible/safety/IsSwmrHandle.h>
 #include <crucible/safety/SignatureTraits.h>
 #include <crucible/safety/diag/RowMismatch.h>
 #include <crucible/sessions/SessionRowExtraction.h>
@@ -124,6 +126,7 @@
 #include <cstddef>
 #include <optional>
 #include <type_traits>
+#include <tuple>
 #include <utility>
 
 namespace crucible::concurrent {
@@ -176,6 +179,168 @@ concept CtxFitsStage =
  && ::crucible::effects::IsExecCtx<Ctx>
  && StageInputRowAdmitted<FnPtr, Ctx>
  && StageOutputRowAdmitted<FnPtr, Ctx>;
+
+namespace detail {
+
+template <typename... Rows>
+struct row_union_pack;
+
+template <>
+struct row_union_pack<> {
+    using type = ::crucible::effects::Row<>;
+};
+
+template <typename Row0, typename... Rest>
+struct row_union_pack<Row0, Rest...> {
+    using rest = typename row_union_pack<Rest...>::type;
+    using type = ::crucible::effects::row_union_t<Row0, rest>;
+};
+
+template <auto FnPtr, typename Is>
+struct variadic_input_row_union;
+
+template <auto FnPtr, std::size_t... Is>
+struct variadic_input_row_union<FnPtr, std::index_sequence<Is...>> {
+    using type = typename row_union_pack<
+        ::crucible::safety::proto::payload_effect_row_t<
+            ::crucible::safety::extract::pipeline_stage_input_value_at_t<
+                FnPtr, Is>>...>::type;
+};
+
+template <auto FnPtr, typename Is>
+struct variadic_output_row_union;
+
+template <auto FnPtr, std::size_t... Is>
+struct variadic_output_row_union<FnPtr, std::index_sequence<Is...>> {
+    using type = typename row_union_pack<
+        ::crucible::safety::proto::payload_effect_row_t<
+            ::crucible::safety::extract::pipeline_stage_output_value_at_t<
+                FnPtr, Is>>...>::type;
+};
+
+template <auto FnPtr>
+struct variadic_stage_row_union {
+private:
+    using arity = ::crucible::safety::extract::StageArity<FnPtr>;
+    using input_rows = typename variadic_input_row_union<
+        FnPtr,
+        std::make_index_sequence<arity::input_count>>::type;
+    using output_rows = typename variadic_output_row_union<
+        FnPtr,
+        std::make_index_sequence<arity::output_count>>::type;
+
+public:
+    using type = ::crucible::effects::row_union_t<input_rows, output_rows>;
+};
+
+template <auto FnPtr, class Ctx>
+consteval bool variadic_stage_rows_admitted() noexcept {
+    if constexpr (!::crucible::safety::extract::VariadicPipelineStage<FnPtr>
+               || !::crucible::effects::IsExecCtx<Ctx>) {
+        return false;
+    } else {
+        return ::crucible::effects::Subrow<
+            typename variadic_stage_row_union<FnPtr>::type,
+            typename Ctx::row_type>;
+    }
+}
+
+template <auto FnPtr, class Inputs, class Outputs>
+struct variadic_stage_handles_match : std::false_type {};
+
+template <auto FnPtr, class... Inputs, class... Outputs>
+struct variadic_stage_handles_match<
+    FnPtr,
+    std::tuple<Inputs...>,
+    std::tuple<Outputs...>> {
+private:
+    using extract = ::crucible::safety::extract::StageArity<FnPtr>;
+
+    template <std::size_t... Is>
+    static consteval bool inputs_match(std::index_sequence<Is...>) noexcept {
+        return ((std::is_same_v<
+            std::remove_cvref_t<Inputs>,
+            std::remove_reference_t<
+                ::crucible::safety::extract::param_type_t<FnPtr, Is>>>) && ...);
+    }
+
+    template <std::size_t... Is>
+    static consteval bool outputs_match(std::index_sequence<Is...>) noexcept {
+        constexpr std::size_t offset = extract::input_count;
+        return ((std::is_same_v<
+            std::remove_cvref_t<Outputs>,
+            std::remove_reference_t<
+                ::crucible::safety::extract::param_type_t<
+                    FnPtr, offset + Is>>>) && ...);
+    }
+
+    static consteval bool compute() noexcept {
+        if constexpr (!::crucible::safety::extract::VariadicPipelineStage<
+                          FnPtr>) {
+            return false;
+        } else if constexpr (extract::input_count != sizeof...(Inputs)
+                          || extract::output_count != sizeof...(Outputs)) {
+            return false;
+        } else {
+            return inputs_match(std::make_index_sequence<sizeof...(Inputs)>{})
+                && outputs_match(std::make_index_sequence<sizeof...(Outputs)>{});
+        }
+    }
+
+public:
+    static constexpr bool value = compute();
+};
+
+}  // namespace detail
+
+template <auto FnPtr>
+    requires ::crucible::safety::extract::VariadicPipelineStage<FnPtr>
+using variadic_stage_row_union_t =
+    typename detail::variadic_stage_row_union<FnPtr>::type;
+
+template <auto FnPtr, class Ctx>
+concept CtxFitsVariadicStage =
+    ::crucible::safety::extract::VariadicPipelineStage<FnPtr>
+ && ::crucible::effects::IsExecCtx<Ctx>
+ && detail::variadic_stage_rows_admitted<FnPtr, Ctx>();
+
+template <auto FnPtr, class Inputs, class Outputs>
+concept VariadicStageHandlesMatch =
+    detail::variadic_stage_handles_match<FnPtr, Inputs, Outputs>::value;
+
+template <auto FnPtr>
+concept SwmrPublishStageBody =
+    ::crucible::safety::extract::arity_v<FnPtr> == 2
+ && std::is_void_v<::crucible::safety::extract::return_type_t<FnPtr>>
+ && std::is_rvalue_reference_v<
+        ::crucible::safety::extract::param_type_t<FnPtr, 0>>
+ && !std::is_const_v<std::remove_reference_t<
+        ::crucible::safety::extract::param_type_t<FnPtr, 0>>>
+ && ::crucible::safety::extract::is_consumer_handle_v<
+        ::crucible::safety::extract::param_type_t<FnPtr, 0>>
+ && std::is_rvalue_reference_v<
+        ::crucible::safety::extract::param_type_t<FnPtr, 1>>
+ && !std::is_const_v<std::remove_reference_t<
+        ::crucible::safety::extract::param_type_t<FnPtr, 1>>>
+ && ::crucible::safety::extract::is_swmr_writer_v<
+        ::crucible::safety::extract::param_type_t<FnPtr, 1>>;
+
+template <auto FnPtr>
+    requires SwmrPublishStageBody<FnPtr>
+using swmr_stage_row_union_t = ::crucible::effects::row_union_t<
+    ::crucible::safety::proto::payload_effect_row_t<
+        ::crucible::safety::extract::consumer_handle_value_t<
+            ::crucible::safety::extract::param_type_t<FnPtr, 0>>>,
+    ::crucible::safety::proto::payload_effect_row_t<
+        ::crucible::safety::extract::swmr_writer_value_t<
+            ::crucible::safety::extract::param_type_t<FnPtr, 1>>>>;
+
+template <auto FnPtr, class Ctx>
+concept CtxFitsSwmrPublishStage =
+    SwmrPublishStageBody<FnPtr>
+ && ::crucible::effects::IsExecCtx<Ctx>
+ && ::crucible::effects::Subrow<swmr_stage_row_union_t<FnPtr>,
+                                typename Ctx::row_type>;
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Stage<auto FnPtr, Ctx> ─────────────────────────────────────────
@@ -251,6 +416,198 @@ private:
     [[no_unique_address]] Ctx     ctx_;
     consumer_handle_type           in_;
     producer_handle_type           out_;
+};
+
+// ═════════════════════════════════════════════════════════════════════
+// ── MpmcStage<auto FnPtr, Ctx, Inputs, Outputs> ────────────────────
+// ═════════════════════════════════════════════════════════════════════
+//
+// Variadic stage carrier for GAPS-086.  Inputs and Outputs are
+// std::tuple<Handle...> packs whose types match FnPtr's leading
+// consumer-handle and trailing producer-handle parameters exactly.
+
+template <auto FnPtr, class Ctx, class Inputs, class Outputs>
+    requires CtxFitsVariadicStage<FnPtr, Ctx>
+          && VariadicStageHandlesMatch<FnPtr, Inputs, Outputs>
+class MpmcStage;
+
+template <auto FnPtr, class Ctx, class... Inputs, class... Outputs>
+    requires CtxFitsVariadicStage<FnPtr, Ctx>
+          && VariadicStageHandlesMatch<
+                 FnPtr,
+                 std::tuple<Inputs...>,
+                 std::tuple<Outputs...>>
+class MpmcStage<FnPtr, Ctx, std::tuple<Inputs...>, std::tuple<Outputs...>> {
+public:
+    using ctx_type = Ctx;
+    using input_tuple_type = std::tuple<Inputs...>;
+    using output_tuple_type = std::tuple<Outputs...>;
+
+    static constexpr std::size_t input_count = sizeof...(Inputs);
+    static constexpr std::size_t output_count = sizeof...(Outputs);
+    static constexpr bool is_value_preserving = false;
+    [[maybe_unused]] static constexpr auto fn_ptr = FnPtr;
+
+    template <std::size_t I>
+        requires (I < input_count)
+    using input_handle_type = std::tuple_element_t<I, input_tuple_type>;
+
+    template <std::size_t I>
+        requires (I < output_count)
+    using output_handle_type = std::tuple_element_t<I, output_tuple_type>;
+
+    template <std::size_t I>
+        requires (I < input_count)
+    using input_value_type =
+        ::crucible::safety::extract::pipeline_stage_input_value_at_t<
+            FnPtr, I>;
+
+    template <std::size_t I>
+        requires (I < output_count)
+    using output_value_type =
+        ::crucible::safety::extract::pipeline_stage_output_value_at_t<
+            FnPtr, I>;
+
+    static constexpr bool aggregate_working_set_known =
+        ((::crucible::concurrent::has_static_per_call_working_set_v<
+              Inputs>) && ...)
+     && ((::crucible::concurrent::has_static_per_call_working_set_v<
+              Outputs>) && ...);
+
+    static constexpr std::size_t aggregate_per_call_working_set = [] consteval {
+        if constexpr (aggregate_working_set_known) {
+            std::size_t total = 0;
+            ((total = ::crucible::concurrent::saturating_ws_add(
+                  total,
+                  ::crucible::concurrent::per_call_working_set_of_v<Inputs>)), ...);
+            ((total = ::crucible::concurrent::saturating_ws_add(
+                  total,
+                  ::crucible::concurrent::per_call_working_set_of_v<Outputs>)), ...);
+            return total;
+        } else {
+            return ::crucible::concurrent::unknown_per_call_working_set;
+        }
+    }();
+
+    [[nodiscard]] explicit constexpr MpmcStage(
+        Ctx const& ctx,
+        input_tuple_type&& inputs,
+        output_tuple_type&& outputs) noexcept
+        : ctx_{ctx}
+        , inputs_{std::move(inputs)}
+        , outputs_{std::move(outputs)}
+    {}
+
+    MpmcStage(MpmcStage const&) = delete(
+        "MpmcStage holds linear or fractional endpoint handles");
+    MpmcStage& operator=(MpmcStage const&) = delete(
+        "MpmcStage holds linear or fractional endpoint handles");
+    MpmcStage(MpmcStage&&) noexcept = default;
+    MpmcStage& operator=(MpmcStage&&) noexcept = default;
+
+    void run() && noexcept {
+        std::move(*this).run_impl_(
+            std::make_index_sequence<input_count>{},
+            std::make_index_sequence<output_count>{});
+    }
+
+    [[nodiscard]] constexpr Ctx const& ctx() const noexcept { return ctx_; }
+
+    template <std::size_t I>
+        requires (I < input_count)
+    [[nodiscard]] constexpr auto& input() & noexcept {
+        return std::get<I>(inputs_);
+    }
+
+    template <std::size_t I>
+        requires (I < output_count)
+    [[nodiscard]] constexpr auto& output() & noexcept {
+        return std::get<I>(outputs_);
+    }
+
+private:
+    template <std::size_t... Is, std::size_t... Os>
+    void run_impl_(std::index_sequence<Is...>,
+                   std::index_sequence<Os...>) && noexcept {
+        FnPtr(std::move(std::get<Is>(inputs_))...,
+              std::move(std::get<Os>(outputs_))...);
+    }
+
+    [[no_unique_address]] Ctx ctx_;
+    input_tuple_type inputs_;
+    output_tuple_type outputs_;
+};
+
+template <auto FnPtr, class Ctx>
+    requires CtxFitsSwmrPublishStage<FnPtr, Ctx>
+class SwmrStage {
+public:
+    using ctx_type = Ctx;
+    using consumer_handle_type = std::remove_reference_t<
+        ::crucible::safety::extract::param_type_t<FnPtr, 0>>;
+    using writer_handle_type = std::remove_reference_t<
+        ::crucible::safety::extract::param_type_t<FnPtr, 1>>;
+    using input_value_type =
+        ::crucible::safety::extract::consumer_handle_value_t<
+            consumer_handle_type>;
+    using output_value_type =
+        ::crucible::safety::extract::swmr_writer_value_t<
+            writer_handle_type>;
+
+    static constexpr std::size_t input_count = 1;
+    static constexpr std::size_t output_count = 1;
+    static constexpr bool is_value_preserving =
+        std::is_same_v<input_value_type, output_value_type>;
+    [[maybe_unused]] static constexpr auto fn_ptr = FnPtr;
+
+    template <std::size_t I>
+        requires (I == 0)
+    using input_value_type_at = input_value_type;
+
+    template <std::size_t I>
+        requires (I == 0)
+    using output_value_type_at = output_value_type;
+
+    static constexpr bool aggregate_working_set_known =
+        has_static_per_call_working_set_v<consumer_handle_type>
+     && has_static_per_call_working_set_v<writer_handle_type>;
+
+    static constexpr std::size_t aggregate_per_call_working_set = [] consteval {
+        if constexpr (aggregate_working_set_known) {
+            return saturating_ws_add(
+                per_call_working_set_of_v<consumer_handle_type>,
+                per_call_working_set_of_v<writer_handle_type>);
+        } else {
+            return unknown_per_call_working_set;
+        }
+    }();
+
+    [[nodiscard]] explicit constexpr SwmrStage(
+        Ctx const& ctx,
+        consumer_handle_type&& in,
+        writer_handle_type&& writer) noexcept
+        : ctx_{ctx}
+        , in_{std::move(in)}
+        , writer_{std::move(writer)}
+    {}
+
+    SwmrStage(SwmrStage const&) = delete(
+        "SwmrStage owns endpoint handles");
+    SwmrStage& operator=(SwmrStage const&) = delete(
+        "SwmrStage owns endpoint handles");
+    SwmrStage(SwmrStage&&) noexcept = default;
+    SwmrStage& operator=(SwmrStage&&) noexcept = default;
+
+    void run() && noexcept {
+        FnPtr(std::move(in_), std::move(writer_));
+    }
+
+    [[nodiscard]] constexpr Ctx const& ctx() const noexcept { return ctx_; }
+
+private:
+    [[no_unique_address]] Ctx ctx_;
+    consumer_handle_type in_;
+    writer_handle_type writer_;
 };
 
 // ═════════════════════════════════════════════════════════════════════
