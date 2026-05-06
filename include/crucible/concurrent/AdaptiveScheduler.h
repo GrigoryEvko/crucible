@@ -787,7 +787,6 @@ private:
     std::condition_variable_any     ready_;
     std::unordered_map<ticket_type, std::deque<Task>> tasks_;
     std::vector<int>                selected_cores_;
-    std::vector<std::jthread>       workers_;
     std::atomic<std::uint64_t>      next_sequence_{0};
     std::atomic<std::uint64_t>      submitted_{0};
     std::atomic<std::uint64_t>      completed_{0};
@@ -797,6 +796,10 @@ private:
     std::atomic<std::size_t>        affinity_applied_{0};
     std::size_t                     worker_count_ = 0;
     bool                            topology_consulted_ = false;
+    // Last by declaration, first by destruction: jthread destructors
+    // join while every queue, mutex, task table, and atomic counter the
+    // workers may observe is still alive.
+    std::vector<std::jthread>       workers_;
 };
 
 template <typename Policy, typename Job>

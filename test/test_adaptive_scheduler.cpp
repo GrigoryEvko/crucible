@@ -346,6 +346,7 @@ static void test_dispatch_with_workload_dram_shards_queue() {
 
 int main() {
     run_completion_smoke<cs::Fifo>("Fifo");
+    run_completion_smoke<cs::Lifo>("Lifo");
     run_completion_smoke<cs::RoundRobin>("RoundRobin");
     run_completion_smoke<cs::LocalityAware>("LocalityAware");
     run_completion_smoke<DeadlinePolicy>("Deadline");
