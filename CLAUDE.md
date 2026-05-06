@@ -1571,6 +1571,16 @@ Crucible encodes **Concurrent Separation Logic** (O'Hearn 2007) as a family of z
 | Resource invariants (Brookes) | DEFERRED — needs `LockedResource<T, Inv>` | (future) | Mutex-protected shared state |
 | Logical atomicity (TaDA) | Implicit — every consume-and-return cycle | (free) | All Permission-typed operations |
 
+`permission_row<Tag>` binds CSL ownership to Met(X) effect rows. The primary
+template is `Row<>`; effectful ownership tags specialize it at the tag
+declaration site. Row-bearing tags must use ctx-bound factories and transfers
+(`mint_permission_root(ctx)`, split/combine, share, handoff,
+`SharedPermissionPool::lend/try_upgrade(ctx)`, and `permission_fork(ctx, ...)`);
+legacy no-ctx factories are only for `Row<>` tags. Canonical row-bearing tags:
+`DiskSpilledRegionTag -> Row<IO, Block>`, `HugePageTag -> Row<IO>`,
+`MmapRegionTag -> Row<IO>`, `GpuMemoryTag -> Row<Alloc>`,
+`NetworkBufferTag -> Row<IO>`.
+
 Backlog: SEPLOG-A1..E3 (#300–#319). Phase A primitives → Phase B worked examples → Phase C scheduler → Phase D Crucible integration → Phase E validation.
 
 #### "Just right amount of concurrency" — the cache-tier rule

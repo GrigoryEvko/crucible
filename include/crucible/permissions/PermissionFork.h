@@ -146,6 +146,8 @@ concept CtxFitsPermissionFork =
     && ::crucible::effects::row_contains_v<
         typename Ctx::row_type,
         ::crucible::effects::Effect::Bg>
+    && CtxAdmitsPermission<Parent, Ctx>
+    && (CtxAdmitsPermission<Children, Ctx> && ...)
     && splits_into_pack_v<Parent, Children...>;
 
 namespace detail {
@@ -304,7 +306,7 @@ template <typename... Children, typename Ctx, typename Parent, typename... Calla
 
     // Step 1: split the parent into disjoint child Permissions.
     auto child_perms =
-        mint_permission_split_n<Children...>(std::move(parent));
+        mint_permission_split_n<Children...>(ctx, std::move(parent));
 
     // Step 2: pack the callables for index_sequence-driven spawn.
     auto callable_pack = std::tuple<std::decay_t<Callables>...>{

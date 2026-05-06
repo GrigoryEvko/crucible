@@ -179,6 +179,16 @@ public:
         return try_upgrade_unchecked();
     }
 
+    template <::crucible::effects::IsExecCtx Ctx>
+        requires CtxAdmitsPermission<Tag, Ctx>
+    [[nodiscard, gnu::hot]] std::optional<Permission<Tag>>
+    try_upgrade(Ctx const& ctx) noexcept {
+        if (consecutive_writer_wins_.load(std::memory_order_acquire) >= BurstLimit) {
+            return std::nullopt;  // fairness gate
+        }
+        return try_upgrade_unchecked(ctx);
+    }
+
     // ── try_upgrade_unchecked — bypass the burst gate ──────────────
     //
     // Use AFTER detecting that no reader is contending (e.g., spin a
@@ -191,6 +201,17 @@ public:
     // one fetch_add on success.
     [[nodiscard, gnu::hot]] std::optional<Permission<Tag>> try_upgrade_unchecked() noexcept {
         auto upgrade = inner_.try_upgrade();
+        if (upgrade) {
+            consecutive_writer_wins_.fetch_add(1, std::memory_order_acq_rel);
+        }
+        return upgrade;
+    }
+
+    template <::crucible::effects::IsExecCtx Ctx>
+        requires CtxAdmitsPermission<Tag, Ctx>
+    [[nodiscard, gnu::hot]] std::optional<Permission<Tag>>
+    try_upgrade_unchecked(Ctx const& ctx) noexcept {
+        auto upgrade = inner_.try_upgrade(ctx);
         if (upgrade) {
             consecutive_writer_wins_.fetch_add(1, std::memory_order_acq_rel);
         }
@@ -218,6 +239,17 @@ public:
     // own cache line.
     [[nodiscard, gnu::hot]] std::optional<SharedPermissionGuard<Tag>> lend() noexcept {
         auto guard = inner_.lend();
+        if (guard) {
+            consecutive_writer_wins_.store(0, std::memory_order_release);
+        }
+        return guard;
+    }
+
+    template <::crucible::effects::IsExecCtx Ctx>
+        requires CtxAdmitsPermission<Tag, Ctx>
+    [[nodiscard, gnu::hot]] std::optional<SharedPermissionGuard<Tag>>
+    lend(Ctx const& ctx) noexcept {
+        auto guard = inner_.lend(ctx);
         if (guard) {
             consecutive_writer_wins_.store(0, std::memory_order_release);
         }
@@ -292,6 +324,24 @@ template <typename Tag, std::uint32_t K, typename Body>
     return std::optional{std::forward<Body>(body)(guard_opt->token())};
 }
 
+template <typename Tag, std::uint32_t K,
+          ::crucible::effects::IsExecCtx Ctx,
+          typename Body>
+    requires CtxAdmitsPermission<Tag, Ctx>
+          && std::is_invocable_v<Body, SharedPermission<Tag>>
+[[nodiscard]] auto with_shared_read(
+    Ctx const& ctx,
+    FairSharedPermissionPool<Tag, K>& pool,
+    Body&& body)
+    noexcept(std::is_nothrow_invocable_v<Body, SharedPermission<Tag>>)
+    -> std::optional<std::invoke_result_t<Body, SharedPermission<Tag>>>
+    requires (!std::is_void_v<std::invoke_result_t<Body, SharedPermission<Tag>>>)
+{
+    auto guard_opt = pool.lend(ctx);
+    if (!guard_opt) return std::nullopt;
+    return std::optional{std::forward<Body>(body)(guard_opt->token())};
+}
+
 template <typename Tag, std::uint32_t K, typename Body>
     requires std::is_invocable_v<Body, SharedPermission<Tag>>
           && std::is_void_v<std::invoke_result_t<Body, SharedPermission<Tag>>>
@@ -300,6 +350,24 @@ bool with_shared_read(
     noexcept(std::is_nothrow_invocable_v<Body, SharedPermission<Tag>>)
 {
     auto guard_opt = pool.lend();
+    if (!guard_opt) return false;
+    std::forward<Body>(body)(guard_opt->token());
+    return true;
+}
+
+template <typename Tag, std::uint32_t K,
+          ::crucible::effects::IsExecCtx Ctx,
+          typename Body>
+    requires CtxAdmitsPermission<Tag, Ctx>
+          && std::is_invocable_v<Body, SharedPermission<Tag>>
+          && std::is_void_v<std::invoke_result_t<Body, SharedPermission<Tag>>>
+bool with_shared_read(
+    Ctx const& ctx,
+    FairSharedPermissionPool<Tag, K>& pool,
+    Body&& body)
+    noexcept(std::is_nothrow_invocable_v<Body, SharedPermission<Tag>>)
+{
+    auto guard_opt = pool.lend(ctx);
     if (!guard_opt) return false;
     std::forward<Body>(body)(guard_opt->token());
     return true;

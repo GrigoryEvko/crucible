@@ -3735,6 +3735,18 @@ crucible_neg_compile_test(neg_permission_fork_ctx_no_bg
 crucible_neg_compile_test(neg_permission_fork_child_ctx_mismatch
     "permission_fork_ctx_callables|constraints not satisfied|no matching function")
 
+# GAPS-075 — permission rows bind effectful ownership to ExecCtx row
+# admission.  The pure permission APIs stay available for Row<> tags;
+# row-bearing tags must flow through a ctx that admits their effect row.
+crucible_neg_compile_test(neg_mint_perm_no_row_admission
+    "CtxAdmitsPermission|constraints not satisfied|no matching function")
+crucible_neg_compile_test(neg_perm_handoff_row_violation
+    "CtxAdmitsPermission|constraints not satisfied|no matching function")
+crucible_neg_compile_test(neg_perm_split_row_unifies_strict
+    "CtxAdmitsPermission|constraints not satisfied|no matching function")
+crucible_neg_compile_test(neg_perm_pool_lend_row_mismatch
+    "CtxAdmitsPermission|constraints not satisfied|no matching function")
+
 # ── METX-1 #473 — Computation::extract requires empty row ────────
 # Effect-row substrate (Tang-Lindley POPL 2026, 25_04_2026.md §3).
 # `extract()` on a Computation<R, T> requires `row_size_v<R> == 0` —
