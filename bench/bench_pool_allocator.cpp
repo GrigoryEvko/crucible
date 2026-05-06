@@ -216,7 +216,8 @@ int main() {
         MemoryPlan plan = make_uniform_plan(slots.data(), N, 256);
         PoolAllocator pool;
         pool.init(&plan);
-        void* const* tbl = pool.table();
+        auto pv = pool.mint_initialized_view();
+        void* const* tbl = pool.table(pv);
         bench::do_not_optimize(tbl);
         auto r = bench::run("table[sid] (100, captured raw)", [&]{
             for (uint32_t i = 0; i < N; i++)

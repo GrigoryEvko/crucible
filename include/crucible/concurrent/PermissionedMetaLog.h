@@ -1,9 +1,9 @@
 #pragma once
 
-// PermissionedMetaLog<UserTag> — role-typed facade over MetaLog.
+// PermissionedMetaLog<UserTag> — role-typed surface over MetaLog.
 //
 // MetaLog is already an SPSC buffer: foreground appends TensorMeta
-// records at head, background drains them at tail.  This adapter adds
+// records at head, background drains them at tail.  This surface adds
 // the same CSL role split used by PermissionedSpscChannel without
 // replacing MetaLog's storage or hot-path implementation:
 //
@@ -12,7 +12,7 @@
 //   * ConsumerHandle owns Permission<MetaLogConsumer<UserTag>>
 //     and exposes drain/read/tail-advance operations.
 //
-// The adapter itself stores only a MetaLog reference.  Handles store a
+// PermissionedMetaLog itself stores only a MetaLog reference.  Handles store a
 // MetaLog reference plus an empty Permission token, so release-mode
 // handle size remains one pointer.
 

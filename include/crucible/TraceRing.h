@@ -143,17 +143,6 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       }
     }
 
-    // Convenience: grad_enabled now lives as op_flags bit 5 rather
-    // than its own byte.  Keep the legacy setter/getter so existing
-    // call sites compile unchanged.  Once callers migrate to op_flag
-    // bit access directly, these can be deprecated.
-    [[nodiscard, gnu::pure]] bool grad_enabled() const noexcept {
-      return (op_flags & op_flag::GRAD_ENABLED) != 0;
-    }
-    void set_grad_enabled(bool v) noexcept {
-      if (v) op_flags = static_cast<uint8_t>(op_flags |  op_flag::GRAD_ENABLED);
-      else   op_flags = static_cast<uint8_t>(op_flags & static_cast<uint8_t>(~op_flag::GRAD_ENABLED));
-    }
   };
 
   static_assert(sizeof(Entry) == 64, "Entry must be exactly one cache line");

@@ -7,6 +7,7 @@
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/SessionMint.h>
 #include <crucible/sessions/SessionPatterns.h>
 
 #include <cstdio>
@@ -109,10 +110,11 @@ int run_projected_2pc() {
     std::deque<std::string> wire;
     Wire a{&wire};
     Wire b{&wire};
+    crucible::effects::HotFgCtx ctx{};
 
     // Establish the channel using the PROJECTED types (not hand-written).
     auto [coord, follower] =
-        mint_channel<CoordProto>(std::move(a), std::move(b));
+        mint_channel<CoordProto>(ctx, ctx, std::move(a), std::move(b));
 
     // Step 1: coord sends Prepare.
     auto coord2 = std::move(coord).send(Prepare{99}, send_prepare);

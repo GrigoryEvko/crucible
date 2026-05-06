@@ -88,7 +88,9 @@ int main() {
 
     {
         auto cipher = crucible::Cipher::open(dir);
-        const crucible::ContentHash stored_hash = cipher.store(region, nullptr);
+        auto ov = cipher.mint_open_view();
+        const crucible::ContentHash stored_hash =
+            cipher.store(ov, crucible::Cipher::content_addressed(region), nullptr);
         assert(stored_hash == expected_hash);
 
         // Object file must exist at the expected shard path.
@@ -97,15 +99,19 @@ int main() {
                && "serialized object file must exist after store()");
 
         // Idempotent: second store() must be a no-op (same hash).
-        const crucible::ContentHash second_hash = cipher.store(region, nullptr);
+        const crucible::ContentHash second_hash =
+            cipher.store(ov, crucible::Cipher::content_addressed(region), nullptr);
         assert(second_hash == expected_hash);
     }
 
     // ── load() round-trip ────────────────────────────────────────────
     {
         auto cipher = crucible::Cipher::open(dir);
+        auto ov = cipher.mint_open_view();
         crucible::Arena arena2(1 << 16);
-        auto* loaded = cipher.load(g_test.alloc, expected_hash, arena2);
+        auto loaded_ca = cipher.load_content_addressed(
+            ov, g_test.alloc, expected_hash, arena2);
+        auto* loaded = loaded_ca.get();
         assert(loaded != nullptr && "load() must succeed for a stored hash");
         assert(loaded->content_hash == expected_hash);
         assert(loaded->num_ops == region->num_ops);
@@ -114,9 +120,10 @@ int main() {
     // ── advance_head() × 2, verify HEAD file ─────────────────────────
     {
         auto cipher = crucible::Cipher::open(dir);
-        (void)cipher.store(region, nullptr);  // ensure object exists
+        auto ov = cipher.mint_open_view();
+        (void)cipher.store(ov, crucible::Cipher::content_addressed(region), nullptr);
 
-        cipher.advance_head(expected_hash, 10);
+        cipher.advance_head(ov, expected_hash, 10);
         assert(cipher.head() == expected_hash);
 
         // HEAD file must contain the hex string.
@@ -129,7 +136,7 @@ int main() {
 
         // Advance to a different (fake) hash.
         const crucible::ContentHash hash2{0xDEADBEEF12345678ULL};
-        cipher.advance_head(hash2, 50);
+        cipher.advance_head(ov, hash2, 50);
         assert(cipher.head() == hash2);
     }
 
@@ -137,32 +144,36 @@ int main() {
     {
         // Reopen to load the log from disk.
         auto cipher = crucible::Cipher::open(dir);
+        auto ov = cipher.mint_open_view();
 
         // The log has entries at step 10 (expected_hash) and 50 (hash2).
         const crucible::ContentHash hash2{0xDEADBEEF12345678ULL};
 
         // Step 0 is before any commit → default (0).
-        assert(!cipher.hash_at_step(0)
+        assert(!cipher.hash_at_step(ov, 0)
                && "hash_at_step before first commit must return default");
 
         // Step 10 → expected_hash.
-        assert(cipher.hash_at_step(10) == expected_hash);
+        assert(cipher.hash_at_step(ov, 10) == expected_hash);
 
         // Step 30 (between 10 and 50) → expected_hash (last at-or-before 30).
-        assert(cipher.hash_at_step(30) == expected_hash);
+        assert(cipher.hash_at_step(ov, 30) == expected_hash);
 
         // Step 50 → hash2.
-        assert(cipher.hash_at_step(50) == hash2);
+        assert(cipher.hash_at_step(ov, 50) == hash2);
 
         // Step 999 (beyond last) → hash2.
-        assert(cipher.hash_at_step(999) == hash2);
+        assert(cipher.hash_at_step(ov, 999) == hash2);
     }
 
     // ── load() on missing hash returns nullptr ────────────────────────
     {
         auto cipher = crucible::Cipher::open(dir);
+        auto ov = cipher.mint_open_view();
         crucible::Arena arena3(1 << 16);
-        assert(cipher.load(g_test.alloc, crucible::ContentHash{0xBADBADBADBADBAD0ULL}, arena3) == nullptr);
+        assert(cipher.load_content_addressed(
+            ov, g_test.alloc,
+            crucible::ContentHash{0xBADBADBADBADBAD0ULL}, arena3).get() == nullptr);
     }
 
     // ── ContentAddressed store/load: duplicate write and cache-hit read ─
@@ -176,7 +187,8 @@ int main() {
         const auto ca_payload = crucible::Cipher::content_addressed(ca_region);
 
         auto cipher = crucible::Cipher::open(dir_ca);
-        const crucible::ContentHash hash = cipher.store(ca_payload, nullptr);
+        auto ov = cipher.mint_open_view();
+        const crucible::ContentHash hash = cipher.store(ov, ca_payload, nullptr);
         assert(hash == ca_region->content_hash);
 
         const std::string path = object_path(dir_ca, hash);
@@ -188,7 +200,7 @@ int main() {
         }
         const auto corrupted_size = std::filesystem::file_size(path);
 
-        const crucible::ContentHash second = cipher.store(ca_payload, nullptr);
+        const crucible::ContentHash second = cipher.store(ov, ca_payload, nullptr);
         assert(second == hash);
         assert(std::filesystem::file_size(path) == corrupted_size
                && "duplicate ContentAddressed store must not rewrite bytes");
@@ -196,7 +208,7 @@ int main() {
         std::filesystem::remove(path);
         crucible::Arena read_arena(1 << 16);
         auto loaded = cipher.load_content_addressed(
-            g_test.alloc, hash, read_arena);
+            ov, g_test.alloc, hash, read_arena);
         assert(loaded.cache_hit()
                && "resident ContentAddressed bytes must avoid disk fetch");
         assert(loaded.get() != nullptr);
@@ -220,14 +232,18 @@ int main() {
 
         auto sender = crucible::Cipher::open(sender_dir);
         auto receiver = crucible::Cipher::open(receiver_dir);
-        const crucible::ContentHash sender_hash = sender.store(ca_payload, nullptr);
-        const crucible::ContentHash receiver_hash = receiver.store(ca_payload, nullptr);
+        auto sender_ov = sender.mint_open_view();
+        auto receiver_ov = receiver.mint_open_view();
+        const crucible::ContentHash sender_hash =
+            sender.store(sender_ov, ca_payload, nullptr);
+        const crucible::ContentHash receiver_hash =
+            receiver.store(receiver_ov, ca_payload, nullptr);
         assert(sender_hash == receiver_hash);
 
         std::filesystem::remove(object_path(receiver_dir, receiver_hash));
         crucible::Arena read_arena(1 << 16);
         auto loaded = receiver.load_content_addressed(
-            g_test.alloc, sender_hash, read_arena);
+            receiver_ov, g_test.alloc, sender_hash, read_arena);
         assert(loaded.cache_hit());
         assert(loaded.get() != nullptr);
         assert(loaded.get()->content_hash == sender_hash);
@@ -253,7 +269,8 @@ int main() {
         auto ov = cipher.mint_open_view();    // no contract violation
         // Typed overloads compile and work via the minted view.
         auto* region2 = make_test_region(arena);
-        const auto hash = cipher.store(ov, region2, nullptr);
+        const auto hash =
+            cipher.store(ov, crucible::Cipher::content_addressed(region2), nullptr);
         assert(static_cast<bool>(hash));
         cipher.advance_head(ov, hash, 100);
         assert(cipher.head() == hash);
@@ -295,12 +312,13 @@ int main() {
         }
 
         auto cipher = crucible::Cipher::open(dir2);
+        auto ov = cipher.mint_open_view();
         // Two valid entries should have parsed; corrupt lines skipped.
-        assert(cipher.hash_at_step(10) == crucible::ContentHash{0xdeadbeef00000001ULL});
-        assert(cipher.hash_at_step(40) == crucible::ContentHash{0xdeadbeef00000004ULL});
+        assert(cipher.hash_at_step(ov, 10) == crucible::ContentHash{0xdeadbeef00000001ULL});
+        assert(cipher.hash_at_step(ov, 40) == crucible::ContentHash{0xdeadbeef00000004ULL});
         // Step 30 is between the two valid entries — should resolve to step 10
         // (last entry with step_id <= 30).
-        assert(cipher.hash_at_step(30) == crucible::ContentHash{0xdeadbeef00000001ULL});
+        assert(cipher.hash_at_step(ov, 30) == crucible::ContentHash{0xdeadbeef00000001ULL});
 
         std::filesystem::remove_all(dir2);
     }

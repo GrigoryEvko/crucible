@@ -236,27 +236,6 @@ class CRUCIBLE_OWNER Cipher {
         return hash;
     }
 
-    // Raw RegionNode callers are the value-level counterpart of
-    // ContentAddressed<RegionNode>'s subsort-symmetry: existing call
-    // sites keep passing RegionNode*, while the canonical overload
-    // above records the dedup-eligible payload type.
-    [[nodiscard]] ContentHash store(OpenView const& view,
-                                    const RegionNode* region,
-                                    const MetaLog* meta_log) {
-        return store(view, content_addressed(region), meta_log);
-    }
-
-    // Legacy: mints OpenView locally; fires mint_open_view()'s pre()
-    // contract if the Cipher is Closed.
-    [[nodiscard]] ContentHash store(const RegionNode* region, const MetaLog* meta_log) {
-        return store(mint_open_view(), region, meta_log);
-    }
-
-    [[nodiscard]] ContentHash store(ContentAddressedRegionPayload payload,
-                                    const MetaLog* meta_log) {
-        return store(mint_open_view(), payload, meta_log);
-    }
-
     // ═══════════════════════════════════════════════════════════════
     // FOUND-G27: Wait-pinned production surface
     // ═══════════════════════════════════════════════════════════════
@@ -287,26 +266,6 @@ class CRUCIBLE_OWNER Cipher {
                  const MetaLog* meta_log) {
         return safety::Wait<safety::WaitStrategy_v::Block, ContentHash>{
             store(view, payload, meta_log)};
-    }
-
-    [[nodiscard]] safety::Wait<safety::WaitStrategy_v::Block, ContentHash>
-    store_pinned(OpenView const& view,
-                 const RegionNode* region,
-                 const MetaLog* meta_log) {
-        return store_pinned(view, content_addressed(region), meta_log);
-    }
-
-    // Legacy-shape pinned variant — mints view locally.
-    [[nodiscard]] safety::Wait<safety::WaitStrategy_v::Block, ContentHash>
-    store_pinned(const RegionNode* region, const MetaLog* meta_log) {
-        return safety::Wait<safety::WaitStrategy_v::Block, ContentHash>{
-            store(region, meta_log)};
-    }
-
-    [[nodiscard]] safety::Wait<safety::WaitStrategy_v::Block, ContentHash>
-    store_pinned(ContentAddressedRegionPayload payload, const MetaLog* meta_log) {
-        return safety::Wait<safety::WaitStrategy_v::Block, ContentHash>{
-            store(payload, meta_log)};
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -382,26 +341,6 @@ class CRUCIBLE_OWNER Cipher {
             store(view, payload, meta_log)};
     }
 
-    [[nodiscard]] safety::cipher_tier::Warm<ContentHash>
-    publish_warm(OpenView const& view,
-                 const RegionNode* region,
-                 const MetaLog* meta_log) {
-        return publish_warm(view, content_addressed(region), meta_log);
-    }
-
-    // Legacy-shape Warm publish — mints view locally.
-    [[nodiscard]] safety::cipher_tier::Warm<ContentHash>
-    publish_warm(const RegionNode* region, const MetaLog* meta_log) {
-        return safety::cipher_tier::Warm<ContentHash>{
-            store(region, meta_log)};
-    }
-
-    [[nodiscard]] safety::cipher_tier::Warm<ContentHash>
-    publish_warm(ContentAddressedRegionPayload payload, const MetaLog* meta_log) {
-        return safety::cipher_tier::Warm<ContentHash>{
-            store(payload, meta_log)};
-    }
-
     // Hot-tier publish — Phase 5 STUB.
     //
     // Today: returns CipherTier<Hot, ContentHash{}> — the type
@@ -423,28 +362,6 @@ class CRUCIBLE_OWNER Cipher {
             safety::cipher_tier::Cold<ContentHash>{ContentHash{}});
     }
 
-    [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
-    publish_hot(OpenView const& view,
-                const RegionNode* region,
-                const MetaLog* meta_log) noexcept {
-        return publish_hot(view, content_addressed(region), meta_log);
-    }
-
-    // Legacy-shape Hot publish.
-    [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
-    publish_hot(ContentAddressedRegionPayload /*payload*/,
-                const MetaLog* /*meta_log*/) noexcept {
-        return cipher::mint_promote<
-            safety::CipherTierTag_v::Cold,
-            safety::CipherTierTag_v::Hot>(
-            safety::cipher_tier::Cold<ContentHash>{ContentHash{}});
-    }
-
-    [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
-    publish_hot(const RegionNode* region, const MetaLog* meta_log) noexcept {
-        return publish_hot(content_addressed(region), meta_log);
-    }
-
     // Cold-tier publish — Phase 5 STUB.
     //
     // Today: returns CipherTier<Cold, ContentHash{}>.  When Phase 5
@@ -459,28 +376,6 @@ class CRUCIBLE_OWNER Cipher {
             safety::CipherTierTag_v::Hot,
             safety::CipherTierTag_v::Cold>(
             safety::cipher_tier::Hot<ContentHash>{ContentHash{}});
-    }
-
-    [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
-    publish_cold(OpenView const& view,
-                 const RegionNode* region,
-                 const MetaLog* meta_log) noexcept {
-        return publish_cold(view, content_addressed(region), meta_log);
-    }
-
-    // Legacy-shape Cold publish.
-    [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
-    publish_cold(ContentAddressedRegionPayload /*payload*/,
-                 const MetaLog* /*meta_log*/) noexcept {
-        return cipher::mint_demote<
-            safety::CipherTierTag_v::Hot,
-            safety::CipherTierTag_v::Cold>(
-            safety::cipher_tier::Hot<ContentHash>{ContentHash{}});
-    }
-
-    [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
-    publish_cold(const RegionNode* region, const MetaLog* meta_log) noexcept {
-        return publish_cold(content_addressed(region), meta_log);
     }
 
     // ═══════════════════════════════════════════════════════════════
@@ -549,19 +444,7 @@ class CRUCIBLE_OWNER Cipher {
         // RegionNode*; route to the existing publish_hot path.
         const RegionNode* region =
             std::move(lifetime_pinned_region).consume();
-        return publish_hot(view, region, meta_log);
-    }
-
-    // Legacy-shape PER_REQUEST commit — mints view locally.
-    template <typename W>
-        requires (safety::extract::is_opaque_lifetime_v<W>
-                  && W::template satisfies<safety::Lifetime_v::PER_REQUEST>)
-    [[nodiscard]] safety::cipher_tier::Hot<ContentHash>
-    commit_per_request(W lifetime_pinned_region,
-                       const MetaLog* meta_log) noexcept {
-        const RegionNode* region =
-            std::move(lifetime_pinned_region).consume();
-        return publish_hot(region, meta_log);
+        return publish_hot(view, content_addressed(region), meta_log);
     }
 
     // PER_PROGRAM commit — accepts PER_PROGRAM and PER_FLEET (wider).
@@ -576,19 +459,7 @@ class CRUCIBLE_OWNER Cipher {
                        const MetaLog* meta_log) {
         const RegionNode* region =
             std::move(lifetime_pinned_region).consume();
-        return publish_warm(view, region, meta_log);
-    }
-
-    // Legacy-shape PER_PROGRAM commit — mints view locally.
-    template <typename W>
-        requires (safety::extract::is_opaque_lifetime_v<W>
-                  && W::template satisfies<safety::Lifetime_v::PER_PROGRAM>)
-    [[nodiscard]] safety::cipher_tier::Warm<ContentHash>
-    commit_per_program(W lifetime_pinned_region,
-                       const MetaLog* meta_log) {
-        const RegionNode* region =
-            std::move(lifetime_pinned_region).consume();
-        return publish_warm(region, meta_log);
+        return publish_warm(view, content_addressed(region), meta_log);
     }
 
     // PER_FLEET commit — accepts ONLY PER_FLEET-pinned input.
@@ -605,19 +476,7 @@ class CRUCIBLE_OWNER Cipher {
                      const MetaLog* meta_log) noexcept {
         const RegionNode* region =
             std::move(lifetime_pinned_region).consume();
-        return publish_cold(view, region, meta_log);
-    }
-
-    // Legacy-shape PER_FLEET commit — mints view locally.
-    template <typename W>
-        requires (safety::extract::is_opaque_lifetime_v<W>
-                  && W::template satisfies<safety::Lifetime_v::PER_FLEET>)
-    [[nodiscard]] safety::cipher_tier::Cold<ContentHash>
-    commit_per_fleet(W lifetime_pinned_region,
-                     const MetaLog* meta_log) noexcept {
-        const RegionNode* region =
-            std::move(lifetime_pinned_region).consume();
-        return publish_cold(region, meta_log);
+        return publish_cold(view, content_addressed(region), meta_log);
     }
 
     // ─── Load ───────────────────────────────────────────────────────
@@ -695,24 +554,6 @@ class CRUCIBLE_OWNER Cipher {
         return LoadedContentAddressedRegionPayload{region, false};
     }
 
-    [[nodiscard]] LoadedContentAddressedRegionPayload
-    load_content_addressed(effects::Alloc a, ContentHash content_hash,
-                           Arena& arena) const {
-        return load_content_addressed(mint_open_view(), a, content_hash, arena);
-    }
-
-    [[nodiscard]] RegionNode* load(OpenView const& view, effects::Alloc a,
-                                   ContentHash content_hash, Arena& arena) const {
-        return load_content_addressed(view, a, content_hash, arena).get();
-    }
-
-    // Legacy: mints OpenView locally.  const because mint_open_view()
-    // is now const-callable (ScopedView stores Carrier const*, so
-    // view minting works through a const reference).
-    [[nodiscard]] RegionNode* load(effects::Alloc a, ContentHash content_hash, Arena& arena) const {
-        return load(mint_open_view(), a, content_hash, arena);
-    }
-
     // ─── HEAD management ────────────────────────────────────────────
 
     // Typed: caller has proved Open.
@@ -747,11 +588,6 @@ class CRUCIBLE_OWNER Cipher {
             write_u64_dec_(lf, ts);
             lf.put('\n');
         }
-    }
-
-    // Legacy: mints OpenView locally.
-    void advance_head(ContentHash content_hash, uint64_t step_id) {
-        advance_head(mint_open_view(), content_hash, step_id);
     }
 
     // ─── Row-typed event recording (FOUND-I09) ──────────────────────
@@ -894,12 +730,6 @@ class CRUCIBLE_OWNER Cipher {
             }
         }
         return ContentHash{};
-    }
-
-    // Legacy: mints OpenView locally.  const because mint_open_view()
-    // is const-callable — same rationale as load() above.
-    [[nodiscard]] ContentHash hash_at_step(uint64_t step_id) const {
-        return hash_at_step(mint_open_view(), step_id);
     }
 
     // ─── Queries ────────────────────────────────────────────────────

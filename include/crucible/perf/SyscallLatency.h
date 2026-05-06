@@ -203,8 +203,7 @@ class SyscallLatency {
     //
     //     auto h = crucible::perf::SyscallLatency::load(crucible::effects::Init{});
     //
-    // Diagnostic line printed to stderr unless CRUCIBLE_PERF_QUIET=1
-    // (or the legacy CRUCIBLE_BENCH_BPF_QUIET=1) is set.
+    // Diagnostic line printed to stderr unless CRUCIBLE_PERF_QUIET=1 is set.
     // CRUCIBLE_PERF_VERBOSE=1 forwards libbpf's INFO/WARN messages.
     [[nodiscard]] static std::optional<SyscallLatency>
         load(::crucible::effects::Init) noexcept;

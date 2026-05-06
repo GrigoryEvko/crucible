@@ -70,9 +70,9 @@ struct SensesMask {
 1. **Coverage discoverability**: `Senses::coverage()` answers "what
    does this kernel give us?" in one place — vs. trying to load each
    sub-program individually and aggregating failure messages.
-2. **Bench-harness simplification**: today's `bench_harness.h` has
-   one alias `bench::bpf =` and per-facade hand-loading. After
-   `Senses` lands, one `Senses::load_all(Init{})` replaces it all.
+2. **Bench-harness simplification**: `bench_harness.h` consumes
+   `crucible::perf::Senses` directly instead of hand-loading every
+   facade at the call site.
 3. **Augur integration point**: Augur consumes telemetry across
    many programs.  A single `Senses` handle is a cleaner API than
    threading 30 sub-program pointers everywhere.
@@ -95,10 +95,8 @@ in <1 ms total.
 2. Author `include/crucible/perf/Senses.h` + `src/perf/Senses.cpp`.
 3. Sentinel `test/test_perf_senses_smoke.cpp` verifying load_all +
    coverage + per-program accessor behavior.
-4. Migrate `bench_harness.h` from per-facade hand-loading to
-   `Senses::load_all(Init{})`.
-5. Remove the legacy `bench::bpf =` namespace alias once Senses is
-   the canonical name.
+4. Keep `bench_harness.h` on the canonical `crucible::perf::Senses`
+   path as new facades are added.
 
 ## Sibling refs
 

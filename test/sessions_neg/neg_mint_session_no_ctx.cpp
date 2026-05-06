@@ -1,9 +1,9 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// GAPS-059 fixture #1 — mint_session is a ctx-bound mint.  Calling it
-// without Ctx must be rejected at overload resolution; callers that do
-// not want row admission use the lower-level mint_session_handle token
-// mint explicitly.
+// GAPS-059 fixture #1 — mint_session is no longer a live construction
+// surface.  Stale no-Ctx call sites must hard-fail and move to
+// mint_permissioned_session(ctx, resource, perms...) or, for tests of
+// bare mechanics, mint_session_handle(resource).
 
 #include <crucible/sessions/SessionMint.h>
 

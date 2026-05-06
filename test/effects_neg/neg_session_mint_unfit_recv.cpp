@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Session integration B (#860): mint_session<Proto>(ctx, res) rejects
+// Session integration B (#860): mint_permissioned_session<Proto>(ctx, res) rejects
 // a Recv whose payload's effect row exceeds the Ctx's row.
 //
 // Violation: HotFgCtx (Row<>) cannot receive a payload that conveys
@@ -27,7 +27,7 @@ int main() {
 
     eff::HotFgCtx fg;
     DummyResource res;
-    auto bad = proto::mint_session<RecvAlloc>(fg, res);  // CtxFitsProtocol fails
+    auto bad = proto::mint_permissioned_session<RecvAlloc>(fg, res); // CtxFitsProtocol fails
     (void)bad;
     return 0;
 }

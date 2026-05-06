@@ -299,8 +299,8 @@ crucible_test(test_iteration_detector)
 crucible_test(test_arena)
 crucible_test(test_trace_ring)
 crucible_test(test_merkle_dag)
-crucible_test(test_merkle_dag_adapter)
-set_target_properties(test_merkle_dag_adapter PROPERTIES CRUCIBLE_NO_WERROR TRUE)
+crucible_test(test_merkle_dag_visualizer)
+set_target_properties(test_merkle_dag_visualizer PROPERTIES CRUCIBLE_NO_WERROR TRUE)
 crucible_test(test_memory_plan)
 crucible_test(test_serialize)
 crucible_test(test_cipher)
@@ -1306,8 +1306,8 @@ crucible_neg_compile_effects_test(neg_perf_senses_load_no_cap
     "too few arguments|no matching function|candidate expects 1 argument")
 
 # GAPS-004f (#1282): SchedTpBtf::load() + SyscallTpBtf::load() cap-tag
-# gates.  Same Init-by-value discipline as the legacy facades they
-# parallel — hot-path frames hold no Init token, so structurally
+# gates.  Same Init-by-value discipline as the raw tracepoint facades
+# they parallel — hot-path frames hold no Init token, so structurally
 # can't reach the BTF loaders either.
 crucible_neg_compile_effects_test(neg_perf_sched_tp_btf_load_wrong_cap
     "could not convert|no matching function|cannot convert|expected.*Init")
@@ -2736,7 +2736,7 @@ crucible_neg_compile_test(neg_computation_cache_in_row_non_row_param
 # on the row-aware path.  The `_in_row` template carries TWO
 # constraints (`IsCacheableFunction<FnPtr> && IsEffectRow<Row>`); the
 # row-blind neg fixtures cover the IsCacheableFunction half on the
-# legacy path and `neg_computation_cache_in_row_non_row_param` covers
+# row-blind path and `neg_computation_cache_in_row_non_row_param` covers
 # the IsEffectRow half on the row-aware path — this fixture closes
 # the matrix on the row-aware × IsCacheableFunction cell.
 crucible_neg_compile_test(neg_computation_cache_in_row_non_function_nttp
@@ -3097,7 +3097,7 @@ crucible_neg_compile_test(neg_vendor_lattice_cross_lattice_mixing
 # clause guarding relax<>() — specifically, a slip from
 # `CrashLattice::leq(WeakerClass, Class)` to a permissive form —
 # would silently allow an Abort-tier value to claim NoThrow
-# compatibility.  Today caught only by the Keeper noticing process
+# conformance.  Today caught only by the Keeper noticing process
 # state inconsistency at recovery time; with the wrapper, becomes
 # a compile error.
 #
@@ -3420,15 +3420,13 @@ crucible_neg_compile_test(neg_heap_allocate
 # of register_name / register_op — the only typed registration path
 # requires proof that the table is in the Mutable phase.
 #
-# [GCC-WRAPPER-TEXT] Production-side overload-set rejection.  Converting
-# requires refactoring schema/ckernel registration to use a
-# concept-checked dispatch that emits a framework static_assert; out of
-# scope for #371.  Accept the GCC-text dependency; revisit if the
-# framework gains a routed-error helper for production overload sets.
+# [GCC-WRAPPER-TEXT] Production-side typed-view rejection.  The direct
+# signature requires MutableView; SealedView reaches GCC's conversion
+# diagnostic before any runtime path can exist.
 crucible_neg_compile_test(neg_schema_register_with_sealed_view
-  "no matching function for call to.*register_name")
+  "cannot convert.*Sealed.*MutableView")
 crucible_neg_compile_test(neg_ckernel_register_with_sealed_view
-  "no matching function for call to.*register_op")
+  "cannot convert.*Sealed.*MutableView")
 
 # [GCC-WRAPPER-TEXT] Same class as schema/ckernel above — production-
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
@@ -3725,11 +3723,11 @@ crucible_neg_compile_test(neg_permission_inherit_self_cycle
     "permission_inherit forbids circular inheritance")
 
 # GAPS-073 — permission_fork is now a ctx-bound mint.  These fixtures
-# pin the three load-bearing gates: ctx-aware callables cannot use the
-# legacy no-ctx shim, foreground rows cannot authorize Effect::Bg, and
-# spawned child bodies inherit the exact row-admitted Ctx type.
+# pin the three load-bearing gates: ctx-aware callables must provide a
+# Ctx, foreground rows cannot authorize Effect::Bg, and spawned child
+# bodies inherit the exact row-admitted Ctx type.
 crucible_neg_compile_test(neg_permission_fork_no_ctx
-    "no matching function|permission_fork_legacy_callables|constraints not satisfied")
+    "no matching function|candidate expects|constraints not satisfied")
 crucible_neg_compile_test(neg_permission_fork_ctx_no_bg
     "CtxFitsPermissionFork|row_contains|constraints not satisfied")
 crucible_neg_compile_test(neg_permission_fork_child_ctx_mismatch
@@ -4067,7 +4065,7 @@ crucible_neg_compile_session_test(neg_psh_delegate_to_self
 # permission payload wrappers, initial PermSet must locally close, and a
 # Permission<Tag> cannot be consumed twice.
 crucible_neg_compile_session_test(neg_mint_session_no_ctx
-    "no matching function|candidate expects|requires 2")
+    "mint_session<Proto>\\(resource\\) is removed")
 
 crucible_neg_compile_session_test(neg_mint_session_ctx_no_admit_proto
     "associated constraints are not satisfied|CtxFitsPermissionedProtocol|CtxFitsProtocol")
@@ -4097,8 +4095,8 @@ crucible_neg_compile_session_test(neg_mint_channel_recv_row_drift
 crucible_neg_compile_session_test(neg_mint_channel_capability_unauthorized_receiver
     "associated constraints are not satisfied|CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
-crucible_neg_compile_session_test(neg_mint_channel_default_ctx_rejects_io
-    "CtxFitsChannel_DefaultCtx|mint_channel<Proto>\\(resource_a, resource_b\\) uses HotFgCtx")
+crucible_neg_compile_session_test(neg_mint_channel_requires_ctx
+    "mint_channel<Proto>\\(resource_a, resource_b\\) is removed")
 
 crucible_neg_compile_session_test(neg_mint_session_perms_unbalanced
     "associated constraints are not satisfied|CtxFitsPermissionedProtocol|permission_flow_closes")

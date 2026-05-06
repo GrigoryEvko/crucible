@@ -8,7 +8,8 @@ struct ExpectedKey {};
 struct WrongKey {};
 struct Endpoint {};
 
-using SenderHandle = decltype(fp::mint_sender<ExpectedKey>(Endpoint{}));
+using SenderHandle = decltype(fp::mint_sender<ExpectedKey>(
+    std::declval<crucible::effects::HotFgCtx const&>(), Endpoint{}));
 using AfterAnnounce = decltype(
     std::declval<SenderHandle&&>().send(
         fp::HeaderPayload<ExpectedKey>{},

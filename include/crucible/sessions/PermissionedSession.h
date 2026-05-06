@@ -43,10 +43,10 @@
 //        (unshipped, Task #346 / wiring plan §11 bounded-LTS walk)
 //        per the Part IX honest-assessment discipline.
 //   D7 — VendorCtx<V, InnerLoopCtx> is the LoopCtx-axis extension
-//        for per-vendor session pinning (GAPS-067).  Existing raw
-//        LoopCtx values are interpreted as VendorCtx<Portable, LoopCtx>
-//        for backward compatibility; explicitly pinned handles compare
-//        with VendorLattice::leq(consumer_vendor, provider_vendor), so
+//        for per-vendor session pinning (GAPS-067).  Unpinned LoopCtx
+//        values are interpreted as VendorCtx<Portable, LoopCtx>;
+//        explicitly pinned handles compare with
+//        VendorLattice::leq(consumer_vendor, provider_vendor), so
 //        Portable providers can satisfy vendor-specific consumers while
 //        NV and AMD remain mutually incompatible.
 //   D8 — Doc-update sweep is bundled with the implementation PR.
@@ -158,6 +158,7 @@
 #include <crucible/permissions/PermSet.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/sessions/Session.h>
+#include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
 #include <crucible/sessions/SessionGlobal.h>
@@ -196,14 +197,13 @@ struct LoopContext {
 // ═════════════════════════════════════════════════════════════════
 //
 // VendorCtx is a zero-size LoopCtx wrapper that threads
-// VendorLattice through PermissionedSessionHandle without changing
-// the existing four-parameter public shape.  Existing handles with
-// LoopCtx = void or LoopContext<...> are treated as Portable by the
-// traits below, preserving source compatibility and the historical
-// exact loop_ctx typedefs.  New CNTP / collective protocols can opt
-// into VendorCtx<NV, ...>, VendorCtx<AMD, ...>, etc.
+// VendorLattice through PermissionedSessionHandle without adding a
+// fifth top-level template parameter.  Handles with LoopCtx = void or
+// LoopContext<...> are treated as Portable by the traits below.  CNTP /
+// collective protocols opt into VendorCtx<NV, ...>, VendorCtx<AMD, ...>,
+// etc.
 //
-// Compatibility direction:
+// Admittance direction:
 //   provider satisfies consumer iff
 //     VendorLattice::leq(consumer_vendor, provider_vendor)
 //
@@ -1525,6 +1525,89 @@ public:
 };
 
 // ═════════════════════════════════════════════════════════════════
+// ── PermissionedSessionHandle<CheckpointedSession<B, R>, PS, ...>
+// ═════════════════════════════════════════════════════════════════
+
+template <typename ProtoBase, typename ProtoRollback, typename PS,
+          typename Resource, typename LoopCtx>
+class [[nodiscard]] PermissionedSessionHandle<
+        CheckpointedSession<ProtoBase, ProtoRollback>, PS, Resource, LoopCtx>
+    : public SessionHandleBase<
+          CheckpointedSession<ProtoBase, ProtoRollback>,
+          PermissionedSessionHandle<
+              CheckpointedSession<ProtoBase, ProtoRollback>, PS,
+              Resource, LoopCtx>>
+{
+    Resource                           resource_;
+    [[no_unique_address]] PS           perm_set_;
+
+    template <typename P, typename PS2, typename R2, typename L2>
+    friend class PermissionedSessionHandle;
+
+    template <typename U, typename PS2, typename Res, typename L>
+    friend constexpr auto detail::step_to_next_permissioned(
+        Res, std::source_location) noexcept;
+
+    template <typename Proto, typename Res, typename... InitPerms>
+    friend constexpr auto mint_permissioned_session(
+        Res, Permission<InitPerms>&&...) noexcept;
+
+public:
+    using protocol          = CheckpointedSession<ProtoBase, ProtoRollback>;
+    using base_protocol     = ProtoBase;
+    using rollback_protocol = ProtoRollback;
+    using perm_set          = PS;
+    using resource_type     = Resource;
+    using loop_ctx          = LoopCtx;
+    using inner_loop_ctx    = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx        = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
+
+    constexpr explicit PermissionedSessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<
+              CheckpointedSession<ProtoBase, ProtoRollback>,
+              PermissionedSessionHandle<
+                  CheckpointedSession<ProtoBase, ProtoRollback>, PS,
+                  Resource, LoopCtx>>{loc}
+        , resource_{std::forward<Resource>(r)} {}
+
+    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
+    constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
+
+    ~PermissionedSessionHandle() {
+#ifndef NDEBUG
+        if (!this->is_consumed_()) {
+            detail::emit_leaked_permissions_debug<PS>();
+        }
+#endif
+    }
+
+    [[nodiscard]] constexpr auto base() &&
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+    {
+        this->mark_consumed_();
+        return detail::step_to_next_permissioned<ProtoBase, PS,
+                                                 Resource, LoopCtx>(
+            std::forward<Resource>(resource_));
+    }
+
+    [[nodiscard]] constexpr auto rollback() &&
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+    {
+        this->mark_consumed_();
+        return detail::step_to_next_permissioned<ProtoRollback, PS,
+                                                 Resource, LoopCtx>(
+            std::forward<Resource>(resource_));
+    }
+
+    [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const & noexcept { return resource_; }
+};
+
+// ═════════════════════════════════════════════════════════════════
 // ── PermissionedSessionHandle<Select<Bs…>, PS, Resource, LoopCtx>
 // ═════════════════════════════════════════════════════════════════
 //
@@ -2095,7 +2178,7 @@ template <typename G, typename Whole, typename... RolePerms,
     // one jthread per role, join via RAII array destructor, rebuild
     // Whole on return.
     return mint_permission_fork<RolePerms...>(
-        PermissionForkParallelCtx{},
+        PermissionForkSpawnCtx{},
         std::move(whole_perm),
         detail::session_fork_role_lambda<G, RolePerms, SharedChannel,
                                           Bodies>(

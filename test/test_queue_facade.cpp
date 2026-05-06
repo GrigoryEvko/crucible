@@ -623,12 +623,12 @@ void test_spsc_mint_permission_fork() {
     auto rebuilt = mint_permission_fork<
         Producer<permissioned_test::SpscChannel>,
         Consumer<permissioned_test::SpscChannel>>(
-        ::crucible::safety::PermissionForkParallelCtx{},
+        ::crucible::safety::PermissionForkSpawnCtx{},
         std::move(whole),
         // Producer body — consumes its child Permission.
         [&q](
             Permission<Producer<permissioned_test::SpscChannel>>&& p,
-            ::crucible::safety::PermissionForkParallelCtx const&) noexcept {
+            ::crucible::safety::PermissionForkSpawnCtx const&) noexcept {
             // The handle takes ownership of the Permission; lifetime
             // mirrors the lambda body's scope.  No way to construct a
             // second handle for this UserTag — the Permission is gone
@@ -645,7 +645,7 @@ void test_spsc_mint_permission_fork() {
         // Consumer body — consumes its child Permission.
         [&q, &received_sum, &received_count]
         (Permission<Consumer<permissioned_test::SpscChannel>>&& c,
-         ::crucible::safety::PermissionForkParallelCtx const&) noexcept {
+         ::crucible::safety::PermissionForkSpawnCtx const&) noexcept {
             auto handle = q.consumer_handle(std::move(c));
             std::uint64_t local_sum   = 0;
             std::uint64_t local_count = 0;

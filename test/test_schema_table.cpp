@@ -30,9 +30,10 @@ static void test_empty_lookup_returns_nullptr() {
 
 static void test_register_and_lookup() {
     SchemaTable t;
-    t.register_name(H(0x100), S("aten::mm"));
-    t.register_name(H(0x200), S("aten::add.Tensor"));
-    t.register_name(H(0x300), S("aten::linear"));
+    auto mv = t.mint_mutable_view();
+    t.register_name(mv, H(0x100), S("aten::mm"));
+    t.register_name(mv, H(0x200), S("aten::add.Tensor"));
+    t.register_name(mv, H(0x300), S("aten::linear"));
 
     assert(std::strcmp(t.lookup(H(0x100)), "aten::mm") == 0);
     assert(std::strcmp(t.lookup(H(0x200)), "aten::add.Tensor") == 0);
@@ -43,9 +44,10 @@ static void test_register_and_lookup() {
 
 static void test_short_name_strips_aten_prefix() {
     SchemaTable t;
-    t.register_name(H(0x100), S("aten::mm"));
-    t.register_name(H(0x200), S("aten::scaled_dot_product_attention"));
-    t.register_name(H(0x300), S("prim::TupleConstruct"));   // non-aten
+    auto mv = t.mint_mutable_view();
+    t.register_name(mv, H(0x100), S("aten::mm"));
+    t.register_name(mv, H(0x200), S("aten::scaled_dot_product_attention"));
+    t.register_name(mv, H(0x300), S("prim::TupleConstruct"));   // non-aten
 
     assert(std::strcmp(t.short_name(H(0x100)), "mm") == 0);
     assert(std::strcmp(t.short_name(H(0x200)),
@@ -57,9 +59,10 @@ static void test_short_name_strips_aten_prefix() {
 
 static void test_idempotent_re_register() {
     SchemaTable t;
-    t.register_name(H(0x42), S("first"));
+    auto mv = t.mint_mutable_view();
+    t.register_name(mv, H(0x42), S("first"));
     assert(t.count() == 1);
-    t.register_name(H(0x42), S("updated"));  // same hash, new name
+    t.register_name(mv, H(0x42), S("updated"));  // same hash, new name
     assert(t.count() == 1);  // no duplicate
     assert(std::strcmp(t.lookup(H(0x42)), "updated") == 0);
     std::printf("  test_re_register:               PASSED\n");
@@ -67,13 +70,14 @@ static void test_idempotent_re_register() {
 
 static void test_binary_search_across_many() {
     SchemaTable t;
+    auto mv = t.mint_mutable_view();
     constexpr uint32_t N = 256;
     char names[N][16];
     for (uint32_t i = 0; i < N; ++i) {
         std::snprintf(names[i], sizeof(names[i]), "op_%u", i);
         // Deterministic but shuffled — test sort-on-insert.
         const uint64_t key = 0x9E3779B97F4A7C15ULL * (i + 1);
-        t.register_name(SchemaHash{key}, S(names[i]));
+        t.register_name(mv, SchemaHash{key}, S(names[i]));
     }
     assert(t.count() == N);
     // Every registered hash resolves.
@@ -90,7 +94,8 @@ static void test_binary_search_across_many() {
 
 static void test_global_table_convenience() {
     global_schema_table().clear();  // isolation
-    register_schema_name(H(0xAA), S("aten::relu"));
+    auto gv = global_schema_table().mint_mutable_view();
+    register_schema_name(gv, H(0xAA), S("aten::relu"));
     assert(std::strcmp(schema_name(H(0xAA)), "aten::relu") == 0);
     assert(std::strcmp(schema_short_name(H(0xAA)), "relu") == 0);
     assert(schema_name(H(0xBB)) == nullptr);
@@ -100,7 +105,8 @@ static void test_global_table_convenience() {
 
 static void test_null_name_is_noop() {
     SchemaTable t;
-    t.register_name(H(0x77), S(nullptr));  // must not crash or corrupt
+    auto mv = t.mint_mutable_view();
+    t.register_name(mv, H(0x77), S(nullptr));  // must not crash or corrupt
     assert(t.count() == 0);
     assert(t.lookup(H(0x77)) == nullptr);
     std::printf("  test_null_name:                 PASSED\n");
@@ -119,7 +125,8 @@ static void test_default_is_mutable_and_seal_flips() {
 
 static void test_clear_resets_seal() {
     SchemaTable t;
-    t.register_name(H(0xAB), S("aten::matmul"));
+    auto mv = t.mint_mutable_view();
+    t.register_name(mv, H(0xAB), S("aten::matmul"));
     t.seal();
     assert(t.is_sealed());
     assert(t.count() == 1);
@@ -128,16 +135,14 @@ static void test_clear_resets_seal() {
     assert(!t.is_sealed());
     assert(t.count() == 0);
     // After clear, the table is Mutable again — register works.
-    t.register_name(H(0xCD), S("aten::add"));
+    auto mv_after_clear = t.mint_mutable_view();
+    t.register_name(mv_after_clear, H(0xCD), S("aten::add"));
     assert(t.count() == 1);
     assert(std::strcmp(t.lookup(H(0xCD)), "aten::add") == 0);
     std::printf("  test_clear_resets_seal:         PASSED\n");
 }
 
 static void test_typed_register_with_mutable_view() {
-    // The MutableView overload proves Mutable at compile time; the
-    // runtime path (register_name(hash, name)) mints the same view
-    // internally, so both reach identical behavior.
     SchemaTable t;
     auto mv = t.mint_mutable_view();
     t.register_name(mv, H(0xBEEF), S("aten::conv2d"));
@@ -149,8 +154,9 @@ static void test_lookup_works_post_seal() {
     // Readers are unaffected by the phase — lookup is the bg-thread path
     // that MUST keep working after seal().
     SchemaTable t;
-    t.register_name(H(0x111), S("aten::sum"));
-    t.register_name(H(0x222), S("aten::mean"));
+    auto mv = t.mint_mutable_view();
+    t.register_name(mv, H(0x111), S("aten::sum"));
+    t.register_name(mv, H(0x222), S("aten::mean"));
     t.seal();
 
     assert(std::strcmp(t.lookup(H(0x111)), "aten::sum") == 0);

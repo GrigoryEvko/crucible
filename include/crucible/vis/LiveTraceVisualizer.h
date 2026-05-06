@@ -1,13 +1,12 @@
 #pragma once
 
-// LiveTraceVisualizer: thin live wrapper around the Merkle DAG SVG adapter.
+// LiveTraceVisualizer: thin live wrapper around the Merkle DAG SVG renderer.
 //
 // GAPS-092 originally named `MerkleDag&` and `AugurMetrics::Snapshot&`, but
 // the current runtime exposes TraceNode / RegionNode roots and
 // augur::AugurMetricsSample. This header binds to those real surfaces.
 
 #include <crucible/augur/Metrics.h>
-#include <crucible/vis/MerkleDagAdapter.h>
 #include <crucible/vis/TraceVisualizer.h>
 
 #include <string>

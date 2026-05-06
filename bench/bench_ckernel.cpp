@@ -25,13 +25,14 @@ int main() {
     // Shared across all three Runs; holds stable for their lifetime.
     constexpr uint32_t N = 200;
     CKernelTable table{};
+    auto mutable_view = table.mint_mutable_view();
     SchemaHash hit_hashes[N];
     for (uint32_t i = 0; i < N; i++) {
         const uint64_t h = 0x9E3779B97F4A7C15ULL * (i + 1);
         hit_hashes[i] = SchemaHash{h};
         const auto id = static_cast<CKernelId>(
             1 + (i % (static_cast<uint32_t>(CKernelId::NUM_KERNELS) - 1)));
-        table.register_op(hit_hashes[i], id);
+        table.register_op(mutable_view, hit_hashes[i], id);
     }
 
     std::printf("=== ckernel ===\n");

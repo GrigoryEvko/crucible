@@ -1,6 +1,6 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
-// Session integration B (#860): mint_session<CheckpointedSession<B,
+// Session integration B (#860): mint_permissioned_session<CheckpointedSession<B,
 // R>>(ctx, res) walks BOTH branches.  An admitted Base + an
 // inadmissible Rollback fails the whole check — rollback IS reachable
 // on checkpoint failure, so its row counts.
@@ -31,7 +31,7 @@ int main() {
 
     eff::HotFgCtx fg;
     DummyResource res;
-    auto bad = proto::mint_session<Ckpt>(fg, res);          // Rollback unfit on Fg
+    auto bad = proto::mint_permissioned_session<Ckpt>(fg, res); // Rollback unfit on Fg
     (void)bad;
     return 0;
 }

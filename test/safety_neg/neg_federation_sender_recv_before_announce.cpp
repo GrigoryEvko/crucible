@@ -14,7 +14,8 @@ concept CanRecvBeforeAnnounce = requires(Handle h) {
     });
 };
 
-using SenderHandle = decltype(fp::mint_sender<Key>(Endpoint{}));
+using SenderHandle = decltype(fp::mint_sender<Key>(
+    std::declval<crucible::effects::HotFgCtx const&>(), Endpoint{}));
 
 static_assert(CanRecvBeforeAnnounce<SenderHandle>,
     "FederationSender_RecvBeforeAnnounce_Rejected");

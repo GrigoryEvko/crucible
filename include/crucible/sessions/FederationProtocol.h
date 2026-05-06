@@ -121,15 +121,7 @@ template <typename KeyTag = AnyFederationKey,
 [[nodiscard]] constexpr auto mint_sender(
     Ctx const& ctx,
     SenderEndpoint&& sender_endpoint) noexcept {
-    return ::crucible::safety::proto::mint_session<SenderProto<KeyTag>>(
-        ctx, std::forward<SenderEndpoint>(sender_endpoint));
-}
-
-template <typename KeyTag = AnyFederationKey, typename SenderEndpoint>
-[[nodiscard]] constexpr auto mint_sender(
-    SenderEndpoint&& sender_endpoint) noexcept {
-    const ::crucible::effects::HotFgCtx ctx{};
-    return mint_sender<KeyTag>(
+    return ::crucible::safety::proto::mint_permissioned_session<SenderProto<KeyTag>>(
         ctx, std::forward<SenderEndpoint>(sender_endpoint));
 }
 
@@ -139,15 +131,7 @@ template <typename KeyTag = AnyFederationKey,
 [[nodiscard]] constexpr auto mint_receiver(
     Ctx const& ctx,
     ReceiverEndpoint&& receiver_endpoint) noexcept {
-    return ::crucible::safety::proto::mint_session<ReceiverProto<KeyTag>>(
-        ctx, std::forward<ReceiverEndpoint>(receiver_endpoint));
-}
-
-template <typename KeyTag = AnyFederationKey, typename ReceiverEndpoint>
-[[nodiscard]] constexpr auto mint_receiver(
-    ReceiverEndpoint&& receiver_endpoint) noexcept {
-    const ::crucible::effects::HotFgCtx ctx{};
-    return mint_receiver<KeyTag>(
+    return ::crucible::safety::proto::mint_permissioned_session<ReceiverProto<KeyTag>>(
         ctx, std::forward<ReceiverEndpoint>(receiver_endpoint));
 }
 
@@ -168,32 +152,12 @@ template <typename KeyTag = AnyFederationKey,
 }
 
 template <typename KeyTag = AnyFederationKey,
-          typename SenderEndpoint,
-          typename ReceiverEndpoint>
-[[nodiscard]] constexpr auto mint_channel(
-    SenderEndpoint&& sender_endpoint,
-    ReceiverEndpoint&& receiver_endpoint) noexcept {
-    const ::crucible::effects::HotFgCtx ctx{};
-    return mint_channel<KeyTag>(
-        ctx,
-        std::forward<SenderEndpoint>(sender_endpoint),
-        std::forward<ReceiverEndpoint>(receiver_endpoint));
-}
-
-template <typename KeyTag = AnyFederationKey,
           ::crucible::effects::IsExecCtx Ctx,
           typename CoordEndpoint>
 [[nodiscard]] constexpr auto mint_coord(
     Ctx const& ctx,
     CoordEndpoint&& coord_endpoint) noexcept {
-    return ::crucible::safety::proto::mint_session<CoordProto<KeyTag>>(
-        ctx, std::forward<CoordEndpoint>(coord_endpoint));
-}
-
-template <typename KeyTag = AnyFederationKey, typename CoordEndpoint>
-[[nodiscard]] constexpr auto mint_coord(CoordEndpoint&& coord_endpoint) noexcept {
-    const ::crucible::effects::HotFgCtx ctx{};
-    return mint_coord<KeyTag>(
+    return ::crucible::safety::proto::mint_permissioned_session<CoordProto<KeyTag>>(
         ctx, std::forward<CoordEndpoint>(coord_endpoint));
 }
 

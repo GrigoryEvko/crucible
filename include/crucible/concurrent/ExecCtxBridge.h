@@ -2,9 +2,9 @@
 
 // ── crucible::concurrent::ExecCtxBridge — ExecCtx ↔ concurrent/ ─────
 //
-// Composition glue between effects::ExecCtx (the universal context
-// carrier) and concurrent::ParallelismRule's WorkBudget / NumaPolicy
-// / Tier vocabulary.  Every metafunction in this header is a
+// Typed composition boundary between effects::ExecCtx (the universal
+// context carrier) and concurrent::ParallelismRule's WorkBudget /
+// NumaPolicy / Tier vocabulary.  Every metafunction in this header is a
 // consteval lookup: zero runtime cost, cleanly composable.
 //
 //   Axiom coverage: TypeSafe — each bridge is a 1-1 / 4-1 mapping

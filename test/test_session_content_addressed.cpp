@@ -7,6 +7,7 @@
 
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionContentAddressed.h>
+#include <crucible/sessions/SessionMint.h>
 #include <crucible/sessions/SessionSubtype.h>
 
 #include <cstdio>
@@ -69,8 +70,9 @@ int run_content_addressed_loop() {
     std::deque<std::string> wire;
     Wire p{&wire};
     Wire s{&wire};
+    crucible::effects::HotFgCtx ctx{};
 
-    auto [pub, sub] = mint_channel<CaPublisher>(std::move(p), std::move(s));
+    auto [pub, sub] = mint_channel<CaPublisher>(ctx, ctx, std::move(p), std::move(s));
 
     // Publish three kernel entries; subscriber receives all three.
     auto p1 = std::move(pub).send(ContentAddressed<KernelEntry>{}, send_ca_entry);
@@ -100,8 +102,9 @@ int run_raw_loop() {
     std::deque<std::string> wire;
     Wire p{&wire};
     Wire s{&wire};
+    crucible::effects::HotFgCtx ctx{};
 
-    auto [pub, sub] = mint_channel<RawPublisher>(std::move(p), std::move(s));
+    auto [pub, sub] = mint_channel<RawPublisher>(ctx, ctx, std::move(p), std::move(s));
 
     auto p1 = std::move(pub).send(KernelEntry{100}, send_entry);
     auto p2 = std::move(p1).send(KernelEntry{200}, send_entry);

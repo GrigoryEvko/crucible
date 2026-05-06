@@ -17,7 +17,7 @@ using NvTile = safe::Vendor<proto::VendorBackend::NV, Tile>;
 using CollectiveProto = proto::Loop<
     proto::Send<NvTile, proto::Continue>>;
 
-using BadMint = decltype(proto::mint_session<CollectiveProto>(
+using BadMint = decltype(proto::mint_permissioned_session<CollectiveProto>(
     std::declval<eff::HotFgCtx const&>(),
     std::declval<Wire>()));
 

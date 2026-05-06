@@ -93,15 +93,15 @@ int main() {
       crucible::augur::AugurMetrics{.ntk_alpha_drift = 0.125}, 4);
   crucible::vis::LiveTraceVisualizer live{
       static_cast<const crucible::TraceNode&>(*branch), metrics};
-  const std::string svg = live.render_svg("adapter-test");
+  const std::string svg = live.render_svg("visualizer-test");
 
   assert(contains(svg, "<svg"));
-  assert(contains(svg, "adapter-test"));
+  assert(contains(svg, "visualizer-test"));
   assert(contains(svg, "guard=0"));
   assert(contains(svg, "guard=1"));
   assert(contains(svg, "feedback"));
   assert(contains(svg, "loop x3"));
 
-  std::printf("test_merkle_dag_adapter: all tests passed\n");
+  std::printf("test_merkle_dag_visualizer: all tests passed\n");
   return 0;
 }

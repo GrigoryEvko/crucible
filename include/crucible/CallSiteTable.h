@@ -87,23 +87,6 @@ struct CallSiteTable {
     }
   }
 
-  // Backward-compat overload: constructs the NonZeroHash at the boundary
-  // and forwards.  Callers that already filter the sentinel outside can
-  // use this without wrapping; the Refined ctor fires a contract on zero
-  // so the behavior is "crash the caller" rather than silent drop.
-  void insert(
-      CallsiteHash hash,
-      std::string filename,
-      std::string funcname,
-      int32_t lineno) {
-    if (!hash) return;  // tolerate sentinel for callers that haven't
-                        // migrated — do NOT construct NonZeroHash, which
-                        // would fire a contract.  Once all call sites
-                        // pass NonZeroHash explicitly, this overload
-                        // can be removed.
-    insert(NonZeroHash{hash}, std::move(filename), std::move(funcname), lineno);
-  }
-
   // ── Source-tagged variants ─────────────────────────────────────────
   //
   // Python frame metadata arriving via Vessel FFI is source::External

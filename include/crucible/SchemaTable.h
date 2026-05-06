@@ -16,9 +16,8 @@
 // BackgroundThread::start() seals the global SchemaTable automatically
 // so the documented invariant — "all registrations complete before
 // bg thread starts" — is now a contract-enforced structural rule.  The
-// runtime guard catches FFI callers; the typed register_name(MutableView,
-// ...) overload is available for code that wants to prove the Mutable
-// state at compile time (see ScopedView.h discipline).
+// the typed register_name(MutableView, ...) surface makes callers prove
+// the Mutable state at the mutation boundary (see ScopedView.h discipline).
 //
 // Used by:
 //   - TraceVisualizer for DOT graph labels
@@ -150,13 +149,6 @@ struct SchemaTable {
                       {}, &SchemaEntry::hash);
   }
 
-  // Legacy overload — mints the view locally, runtime-guarded through
-  // mint_mutable_view()'s pre() contract.  Kept for distant call sites
-  // (FFI, TraceLoader) that can't easily thread a view through.
-  void register_name(SchemaHash hash, SanitizedName name_tag) {
-    register_name(mint_mutable_view(), hash, name_tag);
-  }
-
   // Lookup: returns nullptr for unknown hashes. O(log n) binary search.
   // Safe in either phase — reads only.
   [[nodiscard]] const char* lookup(SchemaHash hash) const {
@@ -211,9 +203,8 @@ static_assert(crucible::safety::no_scoped_view_field_check<SchemaTable>());
 //
 // Thread safety is enforced by the Mutable→Sealed phase.
 // BackgroundThread::start() calls seal() on this global before spawning
-// the bg worker, so any register_name() attempted after that point is
-// caught by the mint_mutable_view() contract rather than racing with
-// the bg thread's lookups.
+// the bg worker, so callers must mint a MutableView before that point
+// and thread it through every registration.
 [[nodiscard]] inline SchemaTable& global_schema_table() {
   static SchemaTable table;
   return table;
@@ -222,9 +213,10 @@ static_assert(crucible::safety::no_scoped_view_field_check<SchemaTable>());
 // Convenience: register hash → name in the global table.  The free
 // function takes Tagged<Sanitized> so the trust boundary is uniform
 // with SchemaTable::register_name above.
-inline void register_schema_name(SchemaHash hash,
+inline void register_schema_name(SchemaTable::MutableView const& view,
+                                 SchemaHash hash,
                                  SchemaTable::SanitizedName name) {
-  global_schema_table().register_name(hash, name);
+  global_schema_table().register_name(view, hash, name);
 }
 
 // Convenience: lookup name for hash in the global table.

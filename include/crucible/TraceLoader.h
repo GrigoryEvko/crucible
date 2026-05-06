@@ -19,7 +19,7 @@
 //
 //   Meta records (num_metas × 168B):
 //     Raw TensorMeta structs (sizes, strides, data_ptr, ndim, dtype, etc.)
-//     Auto-detects legacy 144B and 160B formats for backward compat.
+//     Current readers accept the historical 144B and 160B writer layouts.
 //
 //   Schema name table (optional, present if file has trailing data):
 //     uint32   num_names
@@ -144,9 +144,8 @@ static_assert(std::endian::native == std::endian::little,
     return nullptr;
   }
 
-  // Read meta records.  Auto-detect 144B (legacy v1), 160B (v2), and
-  // 168B (current) formats by checking remaining file size after op
-  // records.
+  // Read meta records. Detect 144B, 160B, and 168B layouts by checking
+  // remaining file size after op records.
   const long meta_start_pos = std::ftell(trace_file);
   std::fseek(trace_file, 0, SEEK_END);
   const long file_size = std::ftell(trace_file);
@@ -163,13 +162,13 @@ static_assert(std::endian::native == std::endian::little,
     else if (remaining >= meta_bytes_160) meta_record_size = 160;
     else if (remaining >= meta_bytes_144) meta_record_size = 144;
   }
-  const bool legacy_144 = (meta_record_size == 144);
-  const bool legacy_160 = (meta_record_size == 160);
+  const bool historical_144 = (meta_record_size == 144);
+  const bool historical_160 = (meta_record_size == 160);
 
   std::vector<TensorMeta> metas(num_metas);
   if (num_metas > 0) {
-    if (legacy_144 || legacy_160) {
-      // Legacy format: read each meta at its original size, zero-init rest.
+    if (historical_144 || historical_160) {
+      // Historical format: read each meta at its original size, zero-init rest.
       for (uint32_t i = 0; i < num_metas; i++) {
         if (std::fread(&metas[i], meta_record_size, 1, trace_file) != 1) {
           std::fprintf(stderr, "load_trace: truncated meta records in %s\n", path);
@@ -210,14 +209,14 @@ static_assert(std::endian::native == std::endian::little,
   }
 
   // Read optional schema name table (trailing data after metas).
-  // Name length bound: matches register_schema_name's FFI contract
-  // (schema_name length ≤ 256).  Any wire value outside [1, 256] breaks
-  // the loop — detection at the parse boundary, never downstream.
+  // Name length bound: schema_name length ≤ 256. Any wire value outside
+  // [1, 256] breaks the loop at the parse boundary, never downstream.
   static constexpr uint16_t MIN_SCHEMA_NAME_LEN = 1;
   static constexpr uint16_t MAX_SCHEMA_NAME_LEN = 256;
   uint32_t num_names = 0;
   if (std::fread(&num_names, 4, 1, trace_file) == 1 && num_names > 0 &&
       num_names <= SCHEMA_TABLE_CAP) {
+    auto schema_table_view = global_schema_table().mint_mutable_view();
     for (uint32_t i = 0; i < num_names; i++) {
       uint64_t schema_hash_raw = 0;
       uint16_t name_len = 0;
@@ -236,6 +235,7 @@ static_assert(std::endian::native == std::endian::little,
       // null-terminated.  Retag from External (file source) → Sanitized so
       // the schema table can accept them.
       register_schema_name(
+          schema_table_view,
           SchemaHash{schema_hash_raw},
           SchemaTable::SanitizedName{static_cast<const char*>(name_buf)});
     }
@@ -264,8 +264,14 @@ static_assert(std::endian::native == std::endian::little,
     entry.num_inputs      = op_record.num_inputs;
     entry.num_outputs     = op_record.num_outputs;
     entry.num_scalar_args = op_record.num_scalars;
-    entry.set_grad_enabled(op_record.grad_enabled != 0);
     entry.op_flags        = op_record.inference_mode;  // on-disk byte carries all op_flag bits
+    if (op_record.grad_enabled != 0) {
+      entry.op_flags = static_cast<uint8_t>(
+          entry.op_flags | op_flag::GRAD_ENABLED);
+    } else {
+      entry.op_flags = static_cast<uint8_t>(
+          entry.op_flags & static_cast<uint8_t>(~op_flag::GRAD_ENABLED));
+    }
     const uint16_t num_inline_scalars = op_record.num_scalars < 5 ? op_record.num_scalars : 5;
     for (uint16_t j = 0; j < num_inline_scalars; j++)
       entry.scalar_values[j] = op_record.scalar_values[j];

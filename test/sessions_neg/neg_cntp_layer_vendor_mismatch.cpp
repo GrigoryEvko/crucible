@@ -15,7 +15,7 @@ using NvCntpCarrier = proto::VendorPinned<
     proto::VendorBackend::NV,
     proto::Delegate_seq<AmdUpperLayer, proto::End>>;
 
-using BadMint = decltype(proto::mint_session<NvCntpCarrier>(
+using BadMint = decltype(proto::mint_permissioned_session<NvCntpCarrier>(
     std::declval<eff::HotFgCtx const&>(),
     std::declval<Wire>()));
 

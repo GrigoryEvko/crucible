@@ -16,7 +16,7 @@ struct Tile {};
 using NvTile = safe::Vendor<proto::VendorBackend::NV, Tile>;
 using PureProto = proto::Send<NvTile, proto::End>;
 
-using BadMint = decltype(proto::mint_session<PureProto>(
+using BadMint = decltype(proto::mint_permissioned_session<PureProto>(
     std::declval<eff::HotFgCtx const&>(),
     std::declval<Wire>()));
 

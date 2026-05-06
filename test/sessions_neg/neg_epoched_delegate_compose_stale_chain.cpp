@@ -24,6 +24,7 @@ int main() {
     using Composed = proto::compose_t<Fresh, StaleContinuation>;
 
     CurrentCtx ctx{};
-    [[maybe_unused]] auto h = proto::mint_session<Composed>(ctx, FakeChannel{});
+    [[maybe_unused]] auto h =
+        proto::mint_permissioned_session<Composed>(ctx, FakeChannel{});
     return 0;
 }

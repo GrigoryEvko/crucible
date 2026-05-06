@@ -14,8 +14,7 @@ int main() {
     auto sv = t.mint_sealed_view();
 
     // No register_op(SealedView, ...) overload exists.  The typed
-    // overload takes MutableView; the legacy 2-arg overload mismatches
-    // arity.  Diagnostic cites "no matching function for call to".
+    // overload takes MutableView, and Sealed cannot convert to Mutable.
     t.register_op(sv,
                   crucible::SchemaHash{0x42},
                   crucible::CKernelId::GEMM_MM);

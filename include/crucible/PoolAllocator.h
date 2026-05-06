@@ -263,11 +263,6 @@ struct CRUCIBLE_OWNER PoolAllocator {
   // pool is initialized — established by init() and posted by
   // is_initialized() being the view's predicate), callers receive a
   // statically-non-null table pointer with no runtime check.
-  //
-  // The legacy overload (no view) is preserved to avoid breaking
-  // existing code paths but is marked [[deprecated]] to direct new
-  // callers to the typed form; in this codebase ReplayEngine is the
-  // only consumer and threads the view through.
   [[nodiscard, gnu::pure, gnu::returns_nonnull]] CRUCIBLE_INLINE
   void* const* table(InitializedView const&) const noexcept
       CRUCIBLE_LIFETIMEBOUND
@@ -276,19 +271,6 @@ struct CRUCIBLE_OWNER PoolAllocator {
     // ptr_table_ != nullptr; the [[assume]] propagates that fact for
     // downstream callers and matches the gnu::returns_nonnull promise.
     [[assume(ptr_table_ != nullptr)]];
-    return ptr_table_;
-  }
-
-  // Legacy overload — accepts no view.  Returns nullptr when the
-  // pool is not yet initialized, so it lacks the gnu::returns_nonnull
-  // promise of the typed form.  Prefer the InitializedView overload
-  // above in new code.
-  //
-  // (Kept un-deprecated for now since the project's -Werror policy
-  // would flag every transitively-affected test; migrate callers in
-  // a follow-up sweep if the deprecation diagnostic is desired.)
-  [[nodiscard, gnu::pure]] CRUCIBLE_INLINE
-  void* const* table() const noexcept CRUCIBLE_LIFETIMEBOUND {
     return ptr_table_;
   }
 

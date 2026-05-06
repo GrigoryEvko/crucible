@@ -26,7 +26,7 @@
 //   • Provenance source tags: Kernel / BpfMap
 //   • Tagged typedefs: Tgid / Tid / Fd (+ sizeof asserts)
 //   • Kernel-syscall wrappers: current_tgid / current_tid / map_fd
-//   • Env-var caches: env_true / env_true_either / quiet / verbose
+//   • Env-var caches: env_true / quiet / verbose
 //   • libbpf log control: libbpf_log_cb / install_libbpf_log_cb_once
 //   • Object discovery: find_rodata / tracepoint_exists
 //   • Loader phases: disable_unavailable_programs / libbpf_errno
@@ -153,7 +153,7 @@ static_assert(sizeof(Fd)   == sizeof(int));
 
 // ── Env-var caches (function-local-static = single global instance) ──
 //
-// The cache trap: `static const bool kQuiet = env_true_either(...)`
+// The cache trap: `static const bool kQuiet = env_true(...)`
 // decides FOREVER at the first call.  setenv() AFTER first call has
 // no effect.  Pre-extraction, each .cpp had its own cache, so the
 // "first call" was per-TU and behaviour could diverge between
@@ -167,20 +167,13 @@ static_assert(sizeof(Fd)   == sizeof(int));
     return v != nullptr && v[0] == '1';
 }
 
-[[nodiscard]] inline bool env_true_either(const char* canonical,
-                                          const char* legacy) noexcept {
-    return env_true(canonical) || env_true(legacy);
-}
-
 [[nodiscard]] inline bool quiet() noexcept {
-    static const bool kQuiet =
-        env_true_either("CRUCIBLE_PERF_QUIET", "CRUCIBLE_BENCH_BPF_QUIET");
+    static const bool kQuiet = env_true("CRUCIBLE_PERF_QUIET");
     return kQuiet;
 }
 
 [[nodiscard]] inline bool verbose() noexcept {
-    static const bool kVerbose =
-        env_true_either("CRUCIBLE_PERF_VERBOSE", "CRUCIBLE_BENCH_BPF_VERBOSE");
+    static const bool kVerbose = env_true("CRUCIBLE_PERF_VERBOSE");
     return kVerbose;
 }
 

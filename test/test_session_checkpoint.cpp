@@ -5,6 +5,7 @@
 
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCheckpoint.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <cstdio>
 #include <deque>
@@ -86,9 +87,10 @@ int run_commit_path() {
     std::deque<std::string> wire;
     Wire c{&wire};
     Wire s{&wire};
+    crucible::effects::HotFgCtx ctx{};
 
     auto [client, server] =
-        mint_channel<ClientProto>(std::move(c), std::move(s));
+        mint_channel<ClientProto>(ctx, ctx, std::move(c), std::move(s));
 
     // Client decides to COMMIT — take the base path.
     auto client_base = std::move(client).base();
@@ -117,9 +119,10 @@ int run_rollback_path() {
     std::deque<std::string> wire;
     Wire c{&wire};
     Wire s{&wire};
+    crucible::effects::HotFgCtx ctx{};
 
     auto [client, server] =
-        mint_channel<ClientProto>(std::move(c), std::move(s));
+        mint_channel<ClientProto>(ctx, ctx, std::move(c), std::move(s));
 
     // Client decides to ROLLBACK — take the rollback path.
     // (In practice: application-level logic detected verify-reject

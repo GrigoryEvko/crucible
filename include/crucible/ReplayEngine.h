@@ -84,7 +84,7 @@ struct ReplayEngine {
 
   // ── Init: bind to a compiled region + pool ──
   //
-  // Preconditions lift the legacy asserts into contracts.  Under
+  // Preconditions lift the previous asserts into contracts.  Under
   // semantic=enforce (debug, CI) each fires at the entry; under
   // semantic=ignore (release hot TUs) they propagate as [[assume]]
   // facts to the optimizer, removing the runtime asserts entirely
@@ -267,12 +267,6 @@ struct ReplayEngine {
   diverged_op_index_tagged() const {
     return crucible::safety::Tagged<OpIndex, op_role::Diverged>{
         OpIndex{static_cast<uint32_t>(cursor_ - ops_)}};
-  }
-
-  // Untyped legacy accessor — kept for error-message producers that
-  // format the index into a string and don't need the bound.
-  [[nodiscard]] OpIndex diverged_op_index() const {
-    return OpIndex{static_cast<uint32_t>(cursor_ - ops_)};
   }
 
   [[nodiscard]] uint32_t ops_matched() const {

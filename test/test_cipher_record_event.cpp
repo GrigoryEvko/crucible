@@ -141,14 +141,16 @@ static void test_t04_record_event_matches_advance_head(const char* base_dir) {
 
     auto cipher_a = Cipher::open(dir_a);
     auto cipher_b = Cipher::open(dir_b);
+    auto view_a = cipher_a.mint_open_view();
+    auto view_b = cipher_b.mint_open_view();
 
     constexpr ContentHash kHash{0xC0FFEE'BA'12345678ULL};
     constexpr std::uint64_t kStep = 42u;
 
-    cipher_a.advance_head(kHash, kStep);
+    cipher_a.advance_head(view_a, kHash, kStep);
     cipher_b.record_event<
         eff::Row<eff::Effect::IO, eff::Effect::Block>>(
-        cipher_b.mint_open_view(), kHash, kStep);
+        view_b, kHash, kStep);
 
     // HEAD content identical (file format: 16-hex + newline).
     auto read_head = [](const std::string& dir) {
@@ -174,19 +176,20 @@ static void test_t05_round_trip(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t05";
     std::filesystem::create_directories(dir);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
 
     constexpr ContentHash kHash{0xDEAD'BEEF'CAFE'BABEULL};
     constexpr std::uint64_t kStep = 7u;
 
     cipher.record_event<
         eff::Row<eff::Effect::IO, eff::Effect::Block>>(
-        cipher.mint_open_view(), kHash, kStep);
+        view, kHash, kStep);
 
     assert(cipher.head() == kHash);
-    assert(cipher.hash_at_step(kStep) == kHash);
+    assert(cipher.hash_at_step(view, kStep) == kHash);
 
     // Future steps return the most recent ≤ step_id.
-    assert(cipher.hash_at_step(kStep + 100) == kHash);
+    assert(cipher.hash_at_step(view, kStep + 100) == kHash);
 
     std::printf("  T05 round_trip:                          PASSED\n");
 }
@@ -200,12 +203,13 @@ static void test_t06_bg_superset_row(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t06";
     std::filesystem::create_directories(dir);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
 
     using BgRow = eff::Row<eff::Effect::Alloc, eff::Effect::IO,
                             eff::Effect::Block, eff::Effect::Bg>;
 
     constexpr ContentHash kHash{0x1234'5678'9ABC'DEF0ULL};
-    cipher.record_event<BgRow>(cipher.mint_open_view(), kHash, 1u);
+    cipher.record_event<BgRow>(view, kHash, 1u);
 
     assert(cipher.head() == kHash);
     std::printf("  T06 bg_superset_row:                     PASSED\n");
@@ -218,13 +222,14 @@ static void test_t07_full_universe_row(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t07";
     std::filesystem::create_directories(dir);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
 
     using UniverseRow = eff::Row<
         eff::Effect::Alloc, eff::Effect::IO, eff::Effect::Block,
         eff::Effect::Bg,    eff::Effect::Init, eff::Effect::Test>;
 
     constexpr ContentHash kHash{0xFEDC'BA98'7654'3210ULL};
-    cipher.record_event<UniverseRow>(cipher.mint_open_view(), kHash, 1u);
+    cipher.record_event<UniverseRow>(view, kHash, 1u);
 
     assert(cipher.head() == kHash);
     std::printf("  T07 full_universe_row:                   PASSED\n");
@@ -240,25 +245,23 @@ static void test_t08_monotonic_steps(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t08";
     std::filesystem::create_directories(dir);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
 
     using R = eff::Row<eff::Effect::IO, eff::Effect::Block>;
 
-    cipher.record_event<R>(cipher.mint_open_view(),
-        ContentHash{0xAA}, 1u);
-    cipher.record_event<R>(cipher.mint_open_view(),
-        ContentHash{0xBB}, 5u);
-    cipher.record_event<R>(cipher.mint_open_view(),
-        ContentHash{0xCC}, 10u);
+    cipher.record_event<R>(view, ContentHash{0xAA}, 1u);
+    cipher.record_event<R>(view, ContentHash{0xBB}, 5u);
+    cipher.record_event<R>(view, ContentHash{0xCC}, 10u);
 
     // hash_at_step binary searches the log for last entry with
     // step_id ≤ key.
-    assert(cipher.hash_at_step(0u)  == ContentHash{});       // before all
-    assert(cipher.hash_at_step(1u)  == ContentHash{0xAA});
-    assert(cipher.hash_at_step(3u)  == ContentHash{0xAA});   // gap
-    assert(cipher.hash_at_step(5u)  == ContentHash{0xBB});
-    assert(cipher.hash_at_step(7u)  == ContentHash{0xBB});   // gap
-    assert(cipher.hash_at_step(10u) == ContentHash{0xCC});
-    assert(cipher.hash_at_step(99u) == ContentHash{0xCC});   // future
+    assert(cipher.hash_at_step(view, 0u)  == ContentHash{});       // before all
+    assert(cipher.hash_at_step(view, 1u)  == ContentHash{0xAA});
+    assert(cipher.hash_at_step(view, 3u)  == ContentHash{0xAA});   // gap
+    assert(cipher.hash_at_step(view, 5u)  == ContentHash{0xBB});
+    assert(cipher.hash_at_step(view, 7u)  == ContentHash{0xBB});   // gap
+    assert(cipher.hash_at_step(view, 10u) == ContentHash{0xCC});
+    assert(cipher.hash_at_step(view, 99u) == ContentHash{0xCC});   // future
 
     std::printf("  T08 monotonic_steps:                     PASSED\n");
 }
@@ -272,13 +275,14 @@ static void test_t09_multiple_events_monotonic(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t09";
     std::filesystem::create_directories(dir);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
 
     using R = eff::Row<eff::Effect::IO, eff::Effect::Block>;
 
     constexpr int N = 32;
     for (int i = 0; i < N; ++i) {
         cipher.record_event<R>(
-            cipher.mint_open_view(),
+            view,
             ContentHash{std::uint64_t{0x1000u} + static_cast<std::uint64_t>(i)},
             static_cast<std::uint64_t>(i));
     }
@@ -288,7 +292,7 @@ static void test_t09_multiple_events_monotonic(const char* base_dir) {
 
     // Spot-check the binary search.
     for (int i = 0; i < N; ++i) {
-        const auto h = cipher.hash_at_step(static_cast<std::uint64_t>(i));
+        const auto h = cipher.hash_at_step(view, static_cast<std::uint64_t>(i));
         assert(h == ContentHash{std::uint64_t{0x1000u} + static_cast<std::uint64_t>(i)});
     }
 
@@ -305,12 +309,13 @@ static void test_t10_api_surface_pinned(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/t10";
     std::filesystem::create_directories(dir);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
 
     using R = eff::Row<eff::Effect::IO, eff::Effect::Block>;
 
     // record_event<R>(view, hash, step) is callable and returns void.
     using Result = decltype(cipher.record_event<R>(
-        cipher.mint_open_view(),
+        view,
         ContentHash{1u},
         std::uint64_t{1u}));
     static_assert(std::is_same_v<Result, void>);
@@ -320,13 +325,13 @@ static void test_t10_api_surface_pinned(const char* base_dir) {
     // (OpenView, ContentHash, uint64_t) — no extra row tag.
     static_assert(std::is_invocable_r_v<
         void,
-        decltype([](Cipher& c, ContentHash h, std::uint64_t s) {
-            c.record_event<R>(c.mint_open_view(), h, s);
+        decltype([](Cipher& c, Cipher::OpenView const& v,
+                    ContentHash h, std::uint64_t s) {
+            c.record_event<R>(v, h, s);
         }),
-        Cipher&, ContentHash, std::uint64_t>);
+        Cipher&, Cipher::OpenView const&, ContentHash, std::uint64_t>);
 
-    cipher.record_event<R>(cipher.mint_open_view(),
-                            ContentHash{42u}, 0u);
+    cipher.record_event<R>(view, ContentHash{42u}, 0u);
     assert(cipher.head() == ContentHash{42u});
 
     std::printf("  T10 api_surface_pinned:                  PASSED\n");
@@ -381,6 +386,8 @@ static void test_audit_b_multi_event_byte_equivalence(const char* base_dir) {
 
     auto cipher_a = Cipher::open(dir_a);
     auto cipher_b = Cipher::open(dir_b);
+    auto view_a = cipher_a.mint_open_view();
+    auto view_b = cipher_b.mint_open_view();
 
     using R = eff::Row<eff::Effect::IO, eff::Effect::Block>;
 
@@ -399,10 +406,11 @@ static void test_audit_b_multi_event_byte_equivalence(const char* base_dir) {
 
     for (int i = 0; i < N; ++i) {
         cipher_a.advance_head(
+            view_a,
             ContentHash{kHashes[i]},
             static_cast<std::uint64_t>(i));
         cipher_b.record_event<R>(
-            cipher_b.mint_open_view(),
+            view_b,
             ContentHash{kHashes[i]},
             static_cast<std::uint64_t>(i));
     }
@@ -441,8 +449,8 @@ static void test_audit_b_multi_event_byte_equivalence(const char* base_dir) {
 
     // hash_at_step queries are byte-identical across both Ciphers.
     for (int i = 0; i < N; ++i) {
-        assert(cipher_a.hash_at_step(static_cast<std::uint64_t>(i))
-               == cipher_b.hash_at_step(static_cast<std::uint64_t>(i)));
+        assert(cipher_a.hash_at_step(view_a, static_cast<std::uint64_t>(i))
+               == cipher_b.hash_at_step(view_b, static_cast<std::uint64_t>(i)));
     }
 
     std::printf("  [AUDIT-B] multi_event_byte_equivalence: PASSED\n");
@@ -481,24 +489,25 @@ static void test_audit_d_canonical_row_acceptance(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/aud_d";
     std::filesystem::create_directories(dir);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
 
     // Pass via the typedef itself.
     cipher.record_event<Cipher::record_event_required_row>(
-        cipher.mint_open_view(),
+        view,
         ContentHash{0xAAAA},
         1u);
     assert(cipher.head() == ContentHash{0xAAAA});
 
     // Pass via a literal that should be type-identical.
     cipher.record_event<eff::Row<eff::Effect::IO, eff::Effect::Block>>(
-        cipher.mint_open_view(),
+        view,
         ContentHash{0xBBBB},
         2u);
     assert(cipher.head() == ContentHash{0xBBBB});
 
     // Pass via permuted atoms — Subrow is set-membership-based.
     cipher.record_event<eff::Row<eff::Effect::Block, eff::Effect::IO>>(
-        cipher.mint_open_view(),
+        view,
         ContentHash{0xCCCC},
         3u);
     assert(cipher.head() == ContentHash{0xCCCC});
@@ -520,19 +529,20 @@ static void test_audit_e_pre_clause_orthogonal(const char* base_dir) {
     const std::string dir = std::string(base_dir) + "/aud_e";
     std::filesystem::create_directories(dir);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
 
     using R = eff::Row<eff::Effect::IO, eff::Effect::Block>;
 
     // Steps in monotonic order — pre-clause satisfied.
-    cipher.record_event<R>(cipher.mint_open_view(), ContentHash{1u}, 0u);
-    cipher.record_event<R>(cipher.mint_open_view(), ContentHash{2u}, 1u);
-    cipher.record_event<R>(cipher.mint_open_view(), ContentHash{3u}, 1u); // equal OK
-    cipher.record_event<R>(cipher.mint_open_view(), ContentHash{4u}, 5u);
+    cipher.record_event<R>(view, ContentHash{1u}, 0u);
+    cipher.record_event<R>(view, ContentHash{2u}, 1u);
+    cipher.record_event<R>(view, ContentHash{3u}, 1u); // equal OK
+    cipher.record_event<R>(view, ContentHash{4u}, 5u);
 
     assert(cipher.head() == ContentHash{4u});
-    assert(cipher.hash_at_step(0u) == ContentHash{1u});
-    assert(cipher.hash_at_step(1u) == ContentHash{3u});  // last with step ≤ 1
-    assert(cipher.hash_at_step(5u) == ContentHash{4u});
+    assert(cipher.hash_at_step(view, 0u) == ContentHash{1u});
+    assert(cipher.hash_at_step(view, 1u) == ContentHash{3u});  // last with step ≤ 1
+    assert(cipher.hash_at_step(view, 5u) == ContentHash{4u});
 
     std::printf("  [AUDIT-E] pre_clause_orthogonal:        PASSED\n");
 }

@@ -59,13 +59,15 @@ using CarrierSurvivesRecipientCrash =
     Delegate<DelegatedOutboundProto, CarrierCrashRecovery>;
 
 // The outer (carrier) session's protocol: receive a name string,
-// delegate a DelegatedProto-typed session, end.
-using CarrierProto = Recv<std::string,
-                          Delegate<DelegatedProto, End>>;
+    // delegate a permissioned DelegatedProto-typed session, end.
+    using CarrierProto = Recv<std::string,
+                              Delegate<DelegatedSession<DelegatedProto,
+                                                        EmptyPermSet>, End>>;
 
 // Peer (dual): send a name string, accept a DelegatedProto session, end.
 using CarrierPeer  = dual_of_t<CarrierProto>;
-// CarrierPeer is Send<std::string, Accept<DelegatedProto, End>>
+    // CarrierPeer is Send<std::string,
+    //     Accept<DelegatedSession<DelegatedProto, EmptyPermSet>, End>>
 
 using EpochedReshardDelegate =
     EpochedDelegate<HotTierHandle, RecvAck, 5, 3>;
@@ -154,11 +156,12 @@ int run_carrier() {
     // Carrier resources
     MockChannel carrier_alice{.name = "carrier-alice", .wire_bytes = &wire};
     MockChannel carrier_bob  {.name = "carrier-bob",   .wire_bytes = &wire};
+    crucible::effects::HotFgCtx ctx{};
 
     // Establish carrier channel
     auto [alice_h, bob_h] =
-        mint_channel<CarrierProto>(std::move(carrier_alice),
-                                         std::move(carrier_bob));
+        mint_channel<CarrierProto>(
+            ctx, ctx, std::move(carrier_alice), std::move(carrier_bob));
 
     // Bob initiates by sending the delegated-endpoint's name as a
     // label string.  (In a real transport the label would be a
@@ -180,7 +183,8 @@ int run_carrier() {
     MockChannel delegated_src{.name = "src-channel-for-ping",
                                .wire_bytes = &wire};
     auto delegated_handle =
-        mint_session_handle<DelegatedProto>(std::move(delegated_src));
+        mint_permissioned_session<DelegatedProto>(
+            ctx, std::move(delegated_src));
 
     // Alice delegates: alice_h2 is Delegate<DelegatedProto, End>.
     // After delegate(), alice_h3 is End.
@@ -217,8 +221,8 @@ int run_carrier() {
     }
 
     // PROOF OF FIRST-CLASS-NESS: Bob actually USES the delegated
-    // handle — it's a real SessionHandle<DelegatedProto, MockChannel>
-    // that he can step through.  DelegatedProto is
+    // handle — it's a real PermissionedSessionHandle<DelegatedProto,
+    // EmptyPermSet, MockChannel> that he can step through.  DelegatedProto is
     // Send<PingReq, Recv<PingAck, End>>, so Bob's handle is at Send.
     //
     // To actually drive send + recv through the delegated channel we
@@ -232,8 +236,8 @@ int run_carrier() {
     // at the other end of the delegated channel is connected.
     bob_delegated.resource().wire_bytes = &delegated_wire;
     auto delegated_peer_h =
-        mint_session_handle<dual_of_t<DelegatedProto>>(
-            std::move(delegated_peer_res));
+        mint_permissioned_session<dual_of_t<DelegatedProto>>(
+            ctx, std::move(delegated_peer_res));
 
     // Bob sends a PingReq through his delegated handle.  (Transport
     // lambdas marked noexcept: test harness accepts std::terminate
@@ -434,13 +438,13 @@ int run_epoched_delegate_mint_reshard() {
     Epoch6Ctx epoch6{};
     std::deque<std::string> wire;
 
-    auto sender = mint_session<EpochedReshardDelegatePsh>(
+    auto sender = mint_permissioned_session<EpochedReshardDelegatePsh>(
         epoch6,
         MockChannel{.name = "epoch6-reshard-sender", .wire_bytes = &wire});
-    auto recipient = mint_session<EpochedReshardAcceptPsh>(
+    auto recipient = mint_permissioned_session<EpochedReshardAcceptPsh>(
         epoch6,
         MockChannel{.name = "epoch6-reshard-recipient", .wire_bytes = &wire});
-    auto hot_handle = mint_session<HotTierHandle>(
+    auto hot_handle = mint_permissioned_session<HotTierHandle>(
         epoch6,
         MockChannel{.name = "epoch6-hot-tier-shard", .wire_bytes = &wire});
 

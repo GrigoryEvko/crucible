@@ -257,9 +257,8 @@ class Vigil {
         // Mint a ScopedView once per dispatch so the advance() call
         // below uses the typed overload — type-system guarantee that
         // the engine transition is only reachable from this branch.
-        // View construction is a single pointer-copy in release (contract
-        // check in debug builds); the typed advance() overload is
-        // otherwise identical to the legacy one.
+        // View construction is a single pointer-copy in release; debug
+        // builds keep the contract check at the call boundary.
         if (ctx_.is_compiled()) [[likely]] {
             auto compiled_view = ctx_.mint_compiled_view();
             auto status = ctx_.advance(entry.schema_hash, entry.shape_hash, compiled_view);
@@ -469,7 +468,8 @@ class Vigil {
         // Mint the view once and thread it through both typed calls —
         // one acquire load instead of two redundant mints.
         auto open_view = cipher_->mint_open_view();
-        const ContentHash hash = cipher_->store(open_view, region, meta_log_.get());
+        const ContentHash hash = cipher_->store(
+            open_view, Cipher::content_addressed(region), meta_log_.get());
         if (!hash) return false;
         cipher_->advance_head(open_view, hash, step_.get());
         return true;
@@ -481,7 +481,8 @@ class Vigil {
     [[nodiscard, gnu::cold]] bool load(effects::Alloc a) {
         if (!cipher_.has_value() || cipher_->empty()) return false;
         auto open_view = cipher_->mint_open_view();
-        RegionNode* region = cipher_->load(open_view, a, cipher_->head(), load_arena_);
+        RegionNode* region = cipher_->load_content_addressed(
+            open_view, a, cipher_->head(), load_arena_).get();
         if (!region) return false;
         bg_.active_region.store(region, std::memory_order_release);
         mode_.publish_compiled();
@@ -619,15 +620,17 @@ class Vigil {
 
         // Signal fg thread: a region with a MemoryPlan is available.
         // fg thread picks it up in dispatch_op() via dispatch_transition_().
-        // Also set mode_=COMPILED for backward compat — existing code/tests
-        // poll is_compiled() without calling dispatch_op().
+        // Also set mode_=COMPILED so observers polling is_compiled()
+        // see the direct mode transition even before dispatch_op().
         pending_region_.publish(region);
         mode_.publish_compiled();
 
         // Pre-store the object (idempotent) so persist() is instant later.
         if (cipher_.has_value()) {
             auto open_view = cipher_->mint_open_view();
-            (void)cipher_->store(open_view, region, meta_log_.get());
+            (void)cipher_->store(open_view,
+                                 Cipher::content_addressed(region),
+                                 meta_log_.get());
         }
 
         // GAPS-004h follow-up: poll the deadline watchdog at the
@@ -853,7 +856,7 @@ class Vigil {
 
     // ─── Region switching (divergence recovery via cache) ────────
     //
-    // Verifies prefix compatibility, then delegates to
+    // Verifies prefix match, then delegates to
     // CrucibleContext::switch_region() which handles pool detach,
     // selective slot migration, and engine advancement.
     //
@@ -863,7 +866,7 @@ class Vigil {
     {
         if (!alt->plan) return false;
 
-        // For div_pos>0, verify prefix compatibility: ops 0..div_pos-1
+        // For div_pos>0, verify prefix match: ops 0..div_pos-1
         // must have identical schema+shape in both regions.
         if (div_pos > 0) {
             const auto* old_region = ctx_.active_region();

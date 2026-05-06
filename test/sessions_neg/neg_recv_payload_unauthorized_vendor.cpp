@@ -18,7 +18,7 @@ using NvSession = proto::VendorPinned<
     proto::VendorBackend::NV,
     proto::Recv<AmdTile, proto::End>>;
 
-using BadMint = decltype(proto::mint_session<NvSession>(
+using BadMint = decltype(proto::mint_permissioned_session<NvSession>(
     std::declval<eff::HotFgCtx const&>(),
     std::declval<Wire>()));
 

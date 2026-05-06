@@ -7,11 +7,11 @@
 // class documented in OpaqueLifetime.h docblock + 25_04_2026.md §16.
 //
 // API surface:
-//   Cipher::commit_per_request(OpaqueLifetime<PER_REQUEST or wider, *>, ...)
+//   Cipher::commit_per_request(OpenView, OpaqueLifetime<PER_REQUEST or wider, *>, ...)
 //       → CipherTier<Hot,  ContentHash>
-//   Cipher::commit_per_program(OpaqueLifetime<PER_PROGRAM or wider, *>, ...)
+//   Cipher::commit_per_program(OpenView, OpaqueLifetime<PER_PROGRAM or wider, *>, ...)
 //       → CipherTier<Warm, ContentHash>
-//   Cipher::commit_per_fleet  (OpaqueLifetime<PER_FLEET, *>, ...)
+//   Cipher::commit_per_fleet  (OpenView, OpaqueLifetime<PER_FLEET, *>, ...)
 //       → CipherTier<Cold, ContentHash>
 //
 // Lattice rule (LifetimeLattice.h):
@@ -27,7 +27,7 @@
 //   T05 — wider satisfies narrower (PER_FLEET passes commit_per_program)
 //   T06 — wider satisfies narrower (PER_PROGRAM passes commit_per_request)
 //   T07 — same-scope match (PER_PROGRAM passes commit_per_program)
-//   T08 — legacy-shape (mints view) returns same tier types
+//   T08 — one OpenView gates all lifetime commit scopes
 //   T09 — round-trip: commit_per_program writes, load reads back
 //   T10 — null-region pass-through: commit_per_program with null returns
 //         valid empty Warm{} (no UB — mirrors publish_warm semantics)
@@ -236,10 +236,11 @@ static void test_program_self_match() {
     std::filesystem::remove_all(tmp);
 }
 
-// ── T08 — Legacy-shape (no view) returns same tier types ────────
-static void test_legacy_shape_type_identity() {
+// ── T08 — One OpenView gates all lifetime commit scopes ─────────
+static void test_single_open_view_type_identity() {
     auto tmp = tmp_root_for("t08");
     Cipher c = Cipher::open(tmp.string());
+    auto view = c.mint_open_view();
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 8);
@@ -249,13 +250,13 @@ static void test_legacy_shape_type_identity() {
     OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*> w_request{region};
 
     static_assert(std::is_same_v<
-        decltype(c.commit_per_fleet  (std::move(w_fleet),   &log)),
+        decltype(c.commit_per_fleet(view, std::move(w_fleet), &log)),
         Cold<ContentHash>>);
     static_assert(std::is_same_v<
-        decltype(c.commit_per_program(std::move(w_program), &log)),
+        decltype(c.commit_per_program(view, std::move(w_program), &log)),
         Warm<ContentHash>>);
     static_assert(std::is_same_v<
-        decltype(c.commit_per_request(std::move(w_request), &log)),
+        decltype(c.commit_per_request(view, std::move(w_request), &log)),
         Hot<ContentHash>>);
     std::filesystem::remove_all(tmp);
 }
@@ -268,17 +269,19 @@ static void test_round_trip_via_program_commit() {
     MetaLog log;
     auto* region = mint_region(arena, 9);
     ContentHash original_hash = region->content_hash;
+    auto view = c.mint_open_view();
 
     OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*> wrapped{region};
-    auto pinned = c.commit_per_program(c.mint_open_view(),
-                                       std::move(wrapped), &log);
+    auto pinned = c.commit_per_program(view, std::move(wrapped), &log);
     ContentHash written = std::move(pinned).consume();
     assert(written == original_hash);
 
-    // The Warm path is the real implementation — load() should find
-    // the file we just wrote.
+    // The Warm path is the real implementation, so the content-addressed
+    // load should find the file we just wrote.
     Arena loader_arena;
-    auto* loaded = c.load(g_test.alloc, written, loader_arena);
+    auto loaded_payload = c.load_content_addressed(
+        view, g_test.alloc, written, loader_arena);
+    auto* loaded = loaded_payload.get();
     assert(loaded != nullptr);
     assert(loaded->content_hash == original_hash);
     std::filesystem::remove_all(tmp);
@@ -474,10 +477,9 @@ static void test_move_only_witness() {
 
 // ── T20 — API completeness matrix ────────────────────────────────
 //
-// All six commit_per_* overloads (3 scopes × 2 shapes: view-mint
-// vs legacy) must exist with matching CipherTier output types.
-// A regression that drops one overload would silently fall back
-// to the publish_* layer at unprepared call sites.
+// All three commit_per_* overloads must exist with matching CipherTier
+// output types. A regression that drops one would force callers around
+// the lifetime fence and re-open the cross-request leak class.
 static void test_api_completeness_matrix() {
     auto tmp = tmp_root_for("t20");
     Cipher c = Cipher::open(tmp.string());
@@ -488,45 +490,24 @@ static void test_api_completeness_matrix() {
     using PR = OpaqueLifetime<Lifetime_v::PER_REQUEST, const RegionNode*>;
     using PP = OpaqueLifetime<Lifetime_v::PER_PROGRAM, const RegionNode*>;
     using PF = OpaqueLifetime<Lifetime_v::PER_FLEET,   const RegionNode*>;
+    auto view = c.mint_open_view();
 
-    // View-shape — three.
     static_assert(std::is_same_v<
-        decltype(c.commit_per_request(c.mint_open_view(),
-                                      std::declval<PR&&>(), &log)),
+        decltype(c.commit_per_request(view, std::declval<PR&&>(), &log)),
         Hot<ContentHash>>);
     static_assert(std::is_same_v<
-        decltype(c.commit_per_program(c.mint_open_view(),
-                                      std::declval<PP&&>(), &log)),
+        decltype(c.commit_per_program(view, std::declval<PP&&>(), &log)),
         Warm<ContentHash>>);
     static_assert(std::is_same_v<
-        decltype(c.commit_per_fleet(c.mint_open_view(),
-                                    std::declval<PF&&>(), &log)),
+        decltype(c.commit_per_fleet(view, std::declval<PF&&>(), &log)),
         Cold<ContentHash>>);
 
-    // Legacy-shape — three.
-    static_assert(std::is_same_v<
-        decltype(c.commit_per_request(std::declval<PR&&>(), &log)),
-        Hot<ContentHash>>);
-    static_assert(std::is_same_v<
-        decltype(c.commit_per_program(std::declval<PP&&>(), &log)),
-        Warm<ContentHash>>);
-    static_assert(std::is_same_v<
-        decltype(c.commit_per_fleet(std::declval<PF&&>(), &log)),
-        Cold<ContentHash>>);
-
-    // Smoke: invoke all six (consume the return).
-    auto a = c.commit_per_request(c.mint_open_view(), PR{region}, &log);
-    auto b = c.commit_per_program(c.mint_open_view(), PP{region}, &log);
-    auto d = c.commit_per_fleet  (c.mint_open_view(), PF{region}, &log);
-    auto e = c.commit_per_request(PR{region}, &log);
-    auto f = c.commit_per_program(PP{region}, &log);
-    auto g = c.commit_per_fleet  (PF{region}, &log);
+    auto a = c.commit_per_request(view, PR{region}, &log);
+    auto b = c.commit_per_program(view, PP{region}, &log);
+    auto d = c.commit_per_fleet  (view, PF{region}, &log);
     (void)std::move(a).consume();
     (void)std::move(b).consume();
     (void)std::move(d).consume();
-    (void)std::move(e).consume();
-    (void)std::move(f).consume();
-    (void)std::move(g).consume();
     std::filesystem::remove_all(tmp);
 }
 
@@ -537,7 +518,9 @@ static void test_content_hash_equality_across_overlay() {
     Arena arena;
     MetaLog log;
     auto* region = mint_region(arena, 0xCAFEBABEULL);
-    ContentHash bare_hash = c.store(c.mint_open_view(), region, &log);
+    auto view = c.mint_open_view();
+    ContentHash bare_hash = c.store(
+        view, Cipher::content_addressed(region), &log);
 
     // Fresh Cipher in a different dir — committing the same region via
     // commit_per_program produces the same ContentHash.  Mirrors the
@@ -564,7 +547,7 @@ int main() {
     test_fleet_satisfies_program();
     test_program_satisfies_request();
     test_program_self_match();
-    test_legacy_shape_type_identity();
+    test_single_open_view_type_identity();
     test_round_trip_via_program_commit();
     test_null_region_pass_through();
     test_per_request_cannot_satisfy_per_fleet();

@@ -1,6 +1,6 @@
 #pragma once
 
-// ── crucible::safety::proto::mint_session ──────────────────────────
+// ── crucible::safety::proto::mint_permissioned_session ─────────────
 //
 // Eager whole-protocol ctx-check at session-mint time.  Walks Proto
 // recursively, asserts every Send/Recv payload's effect-row is admitted
@@ -39,7 +39,6 @@
 //                                             vendor + epoch admission
 //   mint_permissioned_session<Proto>(ctx,
 //       resource, perms...)                  — factory; returns PSH
-//   mint_session<Proto>(ctx, resource)        — empty-PS shim
 //   mint_channel<Proto>(ctxA, ctxB, rA, rB)  — paired endpoint mint;
 //                                             checks Proto against ctxA
 //                                             and dual(Proto) against ctxB
@@ -78,20 +77,13 @@
 // construction; the resulting handle is the existing unchanged
 // primitive.  Zero session-side disturbance.
 //
-// ── Migration ───────────────────────────────────────────────────────
+// Call sites construct through the canonical factory even when the initial
+// PermSet is empty:
 //
-// Production code that calls mint_session_handle<Proto>(resource)
-// directly today opts in by replacing one line:
+//     auto h = mint_permissioned_session<Proto>(ctx, resource);
 //
-//     // Before:
-//     auto h = mint_session_handle<Proto>(resource);
-//     // After:
-//     auto h = mint_session<Proto>(ctx, resource);
-//
-// The session surface is intentionally compatible for ordinary Send /
-// Recv / Select / Offer protocols, but the returned handle now carries
-// EmptyPermSet rather than being bare.  Production code that needs an
-// initial CSL token uses the ctx-bound mint_permissioned_session overload.
+// Lower-level wrappers that intentionally test bare SessionHandle mechanics
+// may still call mint_session_handle<Proto>(resource) directly.
 
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
@@ -265,8 +257,8 @@ struct proto_row_admitted_by<Delegate<T, K>, Ctx>
 // the SENDER had to validate T against their own Ctx.  We walk only
 // K because we don't execute T's protocol — we hand it off further
 // or store it.  If the receiver actually wants to RUN the accepted
-// session, they call mint_session<T>(ctx, accepted_resource) at that
-// point, which re-runs the row check against their Ctx.
+// session, they call mint_permissioned_session<T>(ctx, accepted_resource) at
+// that point, which re-runs the row check against their Ctx.
 template <class T, class K, class Ctx>
 struct proto_row_admitted_by<Accept<T, K>, Ctx>
     : proto_row_admitted_by<K, Ctx>
@@ -294,7 +286,7 @@ inline constexpr bool proto_row_admitted_by_v =
 
 // ── CtxFitsProtocol<Proto, Ctx> ────────────────────────────────────
 //
-// User-facing concept: `mint_session<Proto>(ctx, res) requires
+// User-facing concept: `mint_permissioned_session<Proto>(ctx, res) requires
 // CtxFitsProtocol<Proto, Ctx>`.  The constraint also gates Tier 3
 // Stage's body-row check (which composes pipelined sessions).
 
@@ -926,8 +918,8 @@ concept CtxFitsChannel =
 // Ctx-bound factory.  Requires row admission AND local permission-flow
 // closure at the construction boundary, then returns the concrete PSH.
 // The rvalue Permission parameters are consumed into InitialPS exactly
-// like the legacy token mint in PermissionedSession.h; this overload
-// adds the ctx gate and the local close-balance check.
+// like the resource-consuming token mint in PermissionedSession.h; this
+// overload adds the ctx gate and the local close-balance check.
 
 template <class Proto,
           ::crucible::effects::IsExecCtx Ctx,
@@ -948,37 +940,34 @@ template <class Proto,
         std::forward<Resource>(resource), std::source_location::current());
 }
 
-// ── mint_session<Proto>(ctx, resource) ──────────────────────────────
+// ── Removed mint_session spellings ──────────────────────────────────
 //
-// Backward-compatible empty-PermSet shim. The construction point now uses the
-// same PSH family as the permissioned overload, so production code can migrate
-// from row-only session mints to row+CSL mints without learning a second
-// construction discipline. New code that owns or transfers initial CSL
-// permissions should call mint_permissioned_session; mint_session remains the
-// source-compatible row-only form for protocols whose initial PermSet is empty.
+// The live construction surface is mint_permissioned_session<Proto>(ctx,
+// resource, perms...).  These deleted declarations keep stale call sites
+// failing with the intended diagnostic instead of drifting into unrelated
+// overload-resolution text.
 
 template <class Proto, ::crucible::effects::IsExecCtx Ctx, class Resource>
-    requires CtxFitsPermissionedProtocol<Proto, Ctx, EmptyPermSet>
-[[nodiscard]] constexpr auto mint_session(
+void mint_session(
     Ctx const&,
-    Resource&& resource,
-    std::source_location loc = std::source_location::current()) noexcept
-{
-    using StoredResource = std::remove_cvref_t<Resource>;
-    using LoopCtx = detail::session_mint::loop_ctx_from_exec_ctx_t<Ctx>;
-    return detail::mint_permissioned_session_with_loc<
-        Proto, EmptyPermSet, StoredResource, LoopCtx>(
-        std::forward<Resource>(resource), loc);
-}
+    Resource&&,
+    std::source_location = std::source_location::current()) noexcept
+    = delete("mint_session<Proto>(ctx, resource) is removed; use "
+             "mint_permissioned_session<Proto>(ctx, resource, perms...)");
+
+template <class Proto, class Resource>
+void mint_session(Resource&&) noexcept
+    = delete("mint_session<Proto>(resource) is removed; use "
+             "mint_permissioned_session<Proto>(ctx, resource, perms...)");
 
 // ── mint_channel<Proto>(ctx_a, ctx_b, resource_a, resource_b) ───────
 //
-// Paired ctx-bound channel mint.  The old structural two-argument
-// mint_channel in Session.h remains available for source compatibility; this
-// overload is the permissioned construction boundary for any protocol whose
-// payload rows matter.  Both endpoints are minted as PermissionedSessionHandle
-// instances with EmptyPermSet and with the row/vendor/epoch/permission closure
-// checks resolved entirely at template substitution.
+// Paired ctx-bound channel mint.  This is the only channel construction
+// surface: both local protocols must be admitted by their own execution
+// contexts before endpoint handles exist.  Both endpoints are minted as
+// PermissionedSessionHandle instances with EmptyPermSet and with the
+// row/vendor/epoch/permission closure checks resolved entirely at template
+// substitution.
 
 template <class Proto,
           ::crucible::effects::IsExecCtx CtxA,
@@ -1010,58 +999,6 @@ template <class Proto,
             std::forward<ResourceB>(resource_b), loc)
     };
 }
-
-namespace detail {
-
-template <class Proto, class ResourceA, class ResourceB>
-    requires CtxFitsChannel<
-        Proto, ::crucible::effects::HotFgCtx, ::crucible::effects::HotFgCtx>
-struct default_ctx_channel_mint<Proto, ResourceA, ResourceB> {
-    static constexpr bool available = true;
-
-    [[nodiscard]] static constexpr auto mint(
-        ResourceA resource_a,
-        ResourceB resource_b,
-        std::source_location loc) noexcept
-    {
-        const ::crucible::effects::HotFgCtx ctx{};
-        return ::crucible::safety::proto::mint_channel<Proto>(
-            ctx, ctx, std::move(resource_a), std::move(resource_b), loc);
-    }
-};
-
-template <class Proto, class ResourceA, class ResourceB>
-    requires (
-        ProtocolPermissionedRunnable<Proto>
-        && ProtocolPermissionedRunnable<dual_of_t<Proto>>
-        && !CtxFitsChannel<
-            Proto,
-            ::crucible::effects::HotFgCtx,
-            ::crucible::effects::HotFgCtx>)
-struct default_ctx_channel_mint<Proto, ResourceA, ResourceB> {
-    static constexpr bool available = true;
-
-    [[nodiscard]] static constexpr auto mint(
-        ResourceA,
-        ResourceB,
-        std::source_location) noexcept
-    {
-        static_assert(
-            CtxFitsChannel<
-                Proto,
-                ::crucible::effects::HotFgCtx,
-                ::crucible::effects::HotFgCtx>,
-            "crucible::session::diagnostic [CtxFitsChannel_DefaultCtx]: "
-            "mint_channel<Proto>(resource_a, resource_b) uses HotFgCtx for "
-            "both endpoints when SessionMint.h is visible.  This protocol is "
-            "permissioned-runnable, but at least one endpoint carries a row "
-            "that HotFgCtx cannot admit.  Call mint_channel<Proto>(ctx_a, "
-            "ctx_b, resource_a, resource_b) with explicit row-admitting "
-            "execution contexts.");
-    }
-};
-
-}  // namespace detail
 
 // ── Self-test block ─────────────────────────────────────────────────
 namespace detail::session_mint_self_test {
@@ -1254,11 +1191,11 @@ static_assert(std::is_same_v<typename CtxBoundPsh::protocol, SendTransfer>);
 static_assert(std::is_same_v<typename CtxBoundPsh::perm_set,
                              PermSet<WorkPerm>>);
 
-using EmptyShim = decltype(mint_session<SendInt>(
+using EmptyMint = decltype(mint_permissioned_session<SendInt>(
     std::declval<eff::HotFgCtx const&>(),
     std::declval<FakeResource>()));
-static_assert(std::is_same_v<typename EmptyShim::protocol, SendInt>);
-static_assert(std::is_same_v<typename EmptyShim::perm_set, EmptyPermSet>);
+static_assert(std::is_same_v<typename EmptyMint::protocol, SendInt>);
+static_assert(std::is_same_v<typename EmptyMint::perm_set, EmptyPermSet>);
 
 using CtxBoundChannel = decltype(mint_channel<SendInt>(
     std::declval<eff::HotFgCtx const&>(),
@@ -1272,18 +1209,6 @@ static_assert(std::is_same_v<typename CtxBoundChannel::second_type::protocol,
 static_assert(std::is_same_v<typename CtxBoundChannel::first_type::perm_set,
                              EmptyPermSet>);
 static_assert(std::is_same_v<typename CtxBoundChannel::second_type::perm_set,
-                             EmptyPermSet>);
-
-using DefaultCtxChannel = decltype(mint_channel<SendInt>(
-    std::declval<FakeResource>(),
-    std::declval<FakeResource>()));
-static_assert(std::is_same_v<typename DefaultCtxChannel::first_type::protocol,
-                             SendInt>);
-static_assert(std::is_same_v<typename DefaultCtxChannel::second_type::protocol,
-                             dual_of_t<SendInt>>);
-static_assert(std::is_same_v<typename DefaultCtxChannel::first_type::perm_set,
-                             EmptyPermSet>);
-static_assert(std::is_same_v<typename DefaultCtxChannel::second_type::perm_set,
                              EmptyPermSet>);
 
 using EpochFgCtx = EpochExecCtx<5, 3, eff::HotFgCtx>;
@@ -1306,12 +1231,12 @@ static_assert(!CtxFitsPermissionedProtocol<
 static_assert(!CtxFitsPermissionedProtocol<
     WeakenedGenerationDelegate, EpochFgCtx, EmptyPermSet>);
 
-using EpochShim = decltype(mint_session<FreshEpochDelegate>(
+using EpochMint = decltype(mint_permissioned_session<FreshEpochDelegate>(
     std::declval<EpochFgCtx const&>(),
     std::declval<FakeResource>()));
-static_assert(std::is_same_v<typename EpochShim::protocol,
+static_assert(std::is_same_v<typename EpochMint::protocol,
                              FreshEpochDelegate>);
-static_assert(std::is_same_v<typename EpochShim::loop_ctx,
+static_assert(std::is_same_v<typename EpochMint::loop_ctx,
                              EpochCtx<5, 3>>);
 
 // ── Stop terminator (BSYZ22 crash-stop) ────────────────────────────
@@ -1344,7 +1269,7 @@ static_assert( proto_row_admitted_by_v<CkptBgRollback, eff::BgDrainCtx>); // bot
 // The delegated/accepted protocol T is the PEER'S problem.  Only the
 // continuation K matters for our row-fit.  This means a Hot-fg ctx
 // CAN delegate a Bg-effect channel — the recipient validates T at
-// their own mint_session<T>(...) site.
+// their own mint_permissioned_session<T>(...) site.
 
 using DelegateBgChannel = Delegate<
     Loop<Send<eff::Computation<eff::Row<eff::Effect::Bg>, int>, Continue>>,  // T (recipient's row)
@@ -1383,13 +1308,13 @@ static_assert( proto_row_admitted_by_v<SendCaBg, eff::BgDrainCtx>);
 [[gnu::cold]] inline void runtime_smoke_test_session_mint() noexcept {
     namespace eff = ::crucible::effects;
 
-    // ── mint_session against HotFgCtx for a bare-T protocol ─────────
+    // ── Empty-PS mint against HotFgCtx for a bare-T protocol ────────
     //
     // The protocol Loop<Send<int, Continue>> sends bare ints
     // (Row<>); admitted by any Ctx including HotFgCtx.  We don't
     // actually instantiate a real session here (the Resource type
     // would need a Pinned channel); the static_asserts confirm
-    // mint_session is *callable* with the right concept gate.
+    // mint_permissioned_session is *callable* with the right concept gate.
 
     using PureLoop = Loop<Send<int, Continue>>;
     eff::HotFgCtx fg;

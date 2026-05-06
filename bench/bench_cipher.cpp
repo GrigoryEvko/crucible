@@ -83,11 +83,12 @@ int main() {
         // three benches for this num_ops.  Distinct 'salt' per size
         // avoids collisions in the dedup hash space.
         auto cipher = Cipher::open(dir);
+        auto open_view = cipher.mint_open_view();
 
         Arena warm_arena{1 << 18};
         auto* warm_region = synth_region(warm_arena, num_ops, 0xC0FFEE + num_ops);
-        (void)cipher.store(warm_region, nullptr);   // prime the warm path
         const auto warm_payload = Cipher::content_addressed(warm_region);
+        (void)cipher.store(open_view, warm_payload, nullptr);   // prime the warm path
         const ContentHash warm_h = warm_region->content_hash;
 
         // Cold write: distinct content_hash per iteration, so every
@@ -112,30 +113,31 @@ int main() {
             return bench::run(label_cold, [&]{
                 Arena region_arena{1 << 18};
                 auto* r = synth_region(region_arena, num_ops, ++salt);
-                auto h = cipher.store(r, nullptr);
+                auto h = cipher.store(open_view, Cipher::content_addressed(r), nullptr);
                 bench::do_not_optimize(h);
             });
         }());
 
         reports.push_back(bench::run(label_warm, [&]{
-            auto h = cipher.store(warm_region, nullptr);
+            auto h = cipher.store(open_view, warm_payload, nullptr);
             bench::do_not_optimize(h);
         }));
 
         reports.push_back(bench::run(label_ca_warm, [&]{
-            auto h = cipher.store(warm_payload, nullptr);
+            auto h = cipher.store(open_view, warm_payload, nullptr);
             bench::do_not_optimize(h);
         }));
 
         reports.push_back(bench::run(label_read, [&]{
             Arena read_arena{1 << 18};
-            auto* r = cipher.load(A, warm_h, read_arena);
-            bench::do_not_optimize(r);
+            auto r = cipher.load_content_addressed(open_view, A, warm_h, read_arena);
+            auto* region = r.get();
+            bench::do_not_optimize(region);
         }));
 
         reports.push_back(bench::run(label_ca_read, [&]{
             Arena read_arena{1 << 18};
-            auto r = cipher.load_content_addressed(A, warm_h, read_arena);
+            auto r = cipher.load_content_addressed(open_view, A, warm_h, read_arena);
             bench::do_not_optimize(r.get());
             bench::do_not_optimize(r.cache_hit());
         }));
@@ -144,7 +146,7 @@ int main() {
             const uint64_t step = ++record_step;
             const ContentHash event_hash{warm_h.raw() ^ step};
             cipher.record_event<Cipher::record_event_required_row>(
-                cipher.mint_open_view(), event_hash, step);
+                open_view, event_hash, step);
             bench::do_not_optimize(event_hash);
         }));
 

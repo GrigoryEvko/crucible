@@ -142,12 +142,12 @@ static void test_schema_divergence() {
 
   // Op 1: wrong schema_hash (expected 101, got 999).
   assert(engine.advance(SchemaHash{999}, ShapeHash{200}, av) == ReplayStatus::DIVERGED);
-  assert(engine.diverged_op_index() == OpIndex{1});
+  assert(engine.diverged_op_index_tagged().value() == OpIndex{1});
   assert(engine.ops_matched() == 1);
 
   // Position stays at the diverged op — subsequent advance still diverges.
   assert(engine.advance(SchemaHash{999}, ShapeHash{200}, av) == ReplayStatus::DIVERGED);
-  assert(engine.diverged_op_index() == OpIndex{1});
+  assert(engine.diverged_op_index_tagged().value() == OpIndex{1});
 
   std::printf("  test_schema_divergence: PASSED\n");
 }
@@ -182,7 +182,7 @@ static void test_shape_divergence() {
 
   // Op 1: correct schema, wrong shape.
   assert(engine.advance(SchemaHash{101}, ShapeHash{999}, av) == ReplayStatus::DIVERGED);
-  assert(engine.diverged_op_index() == OpIndex{1});
+  assert(engine.diverged_op_index_tagged().value() == OpIndex{1});
 
   std::printf("  test_shape_divergence: PASSED\n");
 }

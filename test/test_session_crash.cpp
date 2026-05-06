@@ -5,6 +5,7 @@
 
 #include <crucible/sessions/Session.h>
 #include <crucible/sessions/SessionCrash.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <cstdio>
 #include <deque>
@@ -99,9 +100,10 @@ int run_crash_success_path() {
     std::deque<std::string> wire;
     Wire a{&wire};
     Wire b{&wire};
+    crucible::effects::HotFgCtx ctx{};
 
     auto [client, server] =
-        mint_channel<CrashHandledClient>(std::move(a), std::move(b));
+        mint_channel<CrashHandledClient>(ctx, ctx, std::move(a), std::move(b));
 
     // Client sends request.
     auto client2 = std::move(client).send(Request{"hello"}, send_req);
@@ -157,9 +159,10 @@ int run_crash_recovery_path() {
     std::deque<std::string> wire;
     Wire a{&wire};
     Wire b{&wire};
+    crucible::effects::HotFgCtx ctx{};
 
     auto [client, server] =
-        mint_channel<CrashHandledClient>(std::move(a), std::move(b));
+        mint_channel<CrashHandledClient>(ctx, ctx, std::move(a), std::move(b));
 
     auto client2 = std::move(client).send(Request{"hello"}, send_req);
 

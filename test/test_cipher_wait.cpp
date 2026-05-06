@@ -1,8 +1,8 @@
 // FOUND-G27-AUDIT — Cipher Wait-pinned production surface.
 //
-// Verifies the store_pinned() variants added to Cipher:
-//   - store_pinned(OpenView, region, meta_log) → Wait<Block, ContentHash>
-//   - store_pinned(region, meta_log)            → Wait<Block, ContentHash>
+// Verifies the store_pinned() surface added to Cipher:
+//   - store_pinned(OpenView, ContentAddressedRegionPayload, meta_log)
+//       → Wait<Block, ContentHash>
 //
 // The blocking f.write() on the warm-tier NVMe shard is Block-class —
 // it may invoke kernel writeback, taking tens-of-μs to milliseconds.
@@ -67,12 +67,11 @@ static void test_store_pinned_bit_equality(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 1);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
-    // Raw store + pinned store on the same region must yield the
-    // same ContentHash (idempotent — second call hits the
-    // already-exists fast path).
-    ContentHash raw = cipher.store(region, nullptr);
-    auto pinned = cipher.store_pinned(region, nullptr);
+    ContentHash raw = cipher.store(view, payload, nullptr);
+    auto pinned = cipher.store_pinned(view, payload, nullptr);
     ContentHash via_wrapper = std::move(pinned).consume();
     assert(raw == via_wrapper);
 }
@@ -82,30 +81,33 @@ static void test_store_pinned_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 2);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
-    using Got = decltype(cipher.store_pinned(region, nullptr));
+    using Got = decltype(cipher.store_pinned(view, payload, nullptr));
     using Want = Wait<WaitStrategy_v::Block, ContentHash>;
     static_assert(std::is_same_v<Got, Want>,
         "store_pinned must return Wait<Block, ContentHash>");
     static_assert(Got::strategy == WaitStrategy_v::Block);
 
     // Consume so the value isn't discarded.
-    auto p = cipher.store_pinned(region, nullptr);
+    auto p = cipher.store_pinned(view, payload, nullptr);
     (void)std::move(p).consume();
 }
 
-// ── T03 — typed-view variant returns same Wait-pinned type ──────
-static void test_store_pinned_view_overload(const char* dir) {
+// ── T03 — typed payload route returns the Wait-pinned type ───────
+static void test_store_pinned_payload_route(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 3);
     auto cipher = Cipher::open(dir);
 
     auto view = cipher.mint_open_view();
-    using Got = decltype(cipher.store_pinned(view, region, nullptr));
+    auto payload = Cipher::content_addressed(region);
+    using Got = decltype(cipher.store_pinned(view, payload, nullptr));
     using Want = Wait<WaitStrategy_v::Block, ContentHash>;
     static_assert(std::is_same_v<Got, Want>);
 
-    auto p = cipher.store_pinned(view, region, nullptr);
+    auto p = cipher.store_pinned(view, payload, nullptr);
     ContentHash h = std::move(p).consume();
     assert(static_cast<bool>(h));
 }
@@ -140,8 +142,10 @@ static void test_e2e_block_fence_consumer(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 4);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
-    auto pinned = cipher.store_pinned(region, nullptr);
+    auto pinned = cipher.store_pinned(view, payload, nullptr);
     ContentHash h = block_fence_consumer(std::move(pinned));
     assert(static_cast<bool>(h));
 }
@@ -153,7 +157,7 @@ int main() {
 
     test_store_pinned_bit_equality(dir);
     test_store_pinned_type_identity(dir);
-    test_store_pinned_view_overload(dir);
+    test_store_pinned_payload_route(dir);
     test_block_fence_simulation();
     test_layout_invariant();
     test_e2e_block_fence_consumer(dir);

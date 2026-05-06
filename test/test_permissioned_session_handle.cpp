@@ -327,11 +327,11 @@ void test_ctx_bound_permissioned_mint_transferable_send_end() {
     CRUCIBLE_TEST_REQUIRE(out.last_int == 101);
 }
 
-void test_mint_session_empty_permset_shim() {
+void test_mint_permissioned_session_empty_permset() {
     using Proto = Send<int, End>;
 
     eff::HotFgCtx ctx;
-    auto h = mint_session<Proto>(ctx, FakeChannel{});
+    auto h = mint_permissioned_session<Proto>(ctx, FakeChannel{});
 
     static_assert(std::is_same_v<typename decltype(h)::protocol, Proto>);
     static_assert(std::is_same_v<typename decltype(h)::perm_set,
@@ -829,8 +829,8 @@ int main() {
     run_test("transferable_send_end",           test_transferable_send_end);
     run_test("ctx_bound_permissioned_mint_transferable_send_end",
              test_ctx_bound_permissioned_mint_transferable_send_end);
-    run_test("mint_session_empty_permset_shim",
-             test_mint_session_empty_permset_shim);
+    run_test("mint_permissioned_session_empty_permset",
+             test_mint_permissioned_session_empty_permset);
     run_test("ctx_bound_permissioned_mint_preserves_pinned_ref",
              test_ctx_bound_permissioned_mint_preserves_pinned_ref);
     run_test("recv_transferable_send_returned", test_recv_transferable_send_returned);

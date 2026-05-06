@@ -21,6 +21,6 @@ int main() {
 
     eff::HotFgCtx fg;
     [[maybe_unused]] auto handle =
-        proto::mint_session<Proto>(fg, Resource{});
+        proto::mint_permissioned_session<Proto>(fg, Resource{});
     return 0;
 }

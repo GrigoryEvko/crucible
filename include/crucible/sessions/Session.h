@@ -1023,8 +1023,8 @@ class consumed_tracker {
     bool flag_ = false;
     // Source location captured at the handle's CONSTRUCTION SITE
     // (#429 improvement C).  Default-constructs to "unknown source"
-    // for handles minted without an explicit loc argument (e.g.,
-    // legacy code paths or programmatic construction).  Stored ONLY
+    // for handles minted without an explicit loc argument (for example,
+    // programmatic construction in tests).  Stored ONLY
     // in DEBUG builds — the release-mode tracker is empty and EBO-
     // collapses to zero bytes.
     std::source_location loc_{};
@@ -1142,9 +1142,8 @@ constexpr std::string_view type_name() noexcept {
 //   "crucible::safety::proto: SessionHandle<Recv<int, End>>
 //    abandoned ..."  (was it the wrapper?  the inner?  who knows)
 //
-// `Derived` may be `void` (the SessionHandleBase default — used when
-// a derived class doesn't pass itself for backward compatibility);
-// callers handle that case with `if constexpr (!std::is_void_v<...>)`.
+// `Derived` may be `void` (the SessionHandleBase default); callers handle
+// that case with `if constexpr (!std::is_void_v<...>)`.
 //
 // For non-template types (e.g., a hand-rolled wrapper without
 // template parameters), the function returns the unqualified
@@ -1400,11 +1399,9 @@ public:
     //   * Manual inspection: handle.wrapper_name() returns "CrashWatchedHandle"
     //     even when `decltype(handle)::protocol_name()` returns just the Proto
     //
-    // When the derived class hasn't passed itself as the Derived
-    // template argument (legacy inheritance sites — kept for
-    // backward compatibility), wrapper_name() returns the literal
-    // string "SessionHandle" — matching the historical fallback in
-    // the destructor diagnostic.
+    // When the derived class has not passed itself as the Derived
+    // template argument, wrapper_name() returns the literal string
+    // "SessionHandle" for a stable destructor diagnostic.
     [[nodiscard]] static constexpr std::string_view wrapper_name() noexcept {
         if constexpr (!std::is_void_v<Derived>) {
             return detail::wrapper_class_name<Derived>();
@@ -1429,8 +1426,8 @@ public:
     // derived type name carrying every template argument
     // (Resource, PeerTag, LoopCtx, ...).  protocol_name() returns
     // ONLY Proto; full_handle_type_name() returns the WRAPPER's
-    // full instantiation.  When `Derived` is `void` (legacy site),
-    // returns the empty string; callers fall back to wrapper_name().
+    // full instantiation.  When `Derived` is `void`, returns the empty
+    // string; callers fall back to wrapper_name().
     [[nodiscard]] static constexpr std::string_view
     full_handle_type_name() noexcept {
         if constexpr (!std::is_void_v<Derived>) {
@@ -1560,9 +1557,8 @@ public:
             const auto loc_line  = loc.line();
             const auto loc_col   = loc.column();
             // file_name() returns "" when the location is default-
-            // constructed (handle minted without an explicit loc — a
-            // legacy code path).  Render a sentinel in that case so
-            // the diagnostic stays unambiguous.
+            // constructed (handle minted without an explicit loc).  Render
+            // a sentinel in that case so the diagnostic stays unambiguous.
             const bool have_loc = loc_file != nullptr && loc_file[0] != '\0';
 
             if constexpr (!std::is_void_v<Derived>) {
@@ -2316,59 +2312,16 @@ template <typename Proto, typename Resource>
 }
 
 // ═════════════════════════════════════════════════════════════════
-// ── mint_channel<Proto>(resA, resB) ────────────────────────
+// ── mint_channel<Proto>(ctxA, ctxB, resA, resB) ─────────────
 // ═════════════════════════════════════════════════════════════════
 //
-// Construct two endpoints of a channel with dual protocols.  The
-// duality check is static_assert-enforced: dual(dual(P)) must equal P
-// (involution), which verifies the dual_of machinery is correctly
-// applied throughout P.
-
-namespace detail {
+// Channel construction must carry both endpoint execution contexts so
+// row/vendor/epoch/permission gates are checked on both local protocols.
+// Include SessionMint.h and call the ctx-bound overload.
 
 template <typename Proto, typename ResourceA, typename ResourceB>
-struct default_ctx_channel_mint {
-    static constexpr bool available = false;
-};
-
-}  // namespace detail
-
-template <typename Proto, typename ResourceA, typename ResourceB>
-[[nodiscard]] constexpr auto mint_channel(ResourceA ra, ResourceB rb) noexcept
-{
-    if constexpr (detail::default_ctx_channel_mint<
-                      Proto, ResourceA, ResourceB>::available) {
-        return detail::default_ctx_channel_mint<
-            Proto, ResourceA, ResourceB>::mint(
-            std::move(ra), std::move(rb), std::source_location::current());
-    } else {
-        static_assert(is_well_formed_v<Proto>,
-            "crucible::session::diagnostic [Protocol_Ill_Formed]: "
-            "proto: protocol is ill-formed.");
-        static_assert(is_well_formed_v<dual_of_t<Proto>>,
-            "proto: dual protocol is ill-formed — this is a framework bug "
-            "(dual_of must preserve well-formedness).");
-        static_assert(std::is_same_v<Proto, dual_of_t<dual_of_t<Proto>>>,
-            "proto: duality must be involutive (dual(dual(P)) == P).  "
-            "If this fires, the framework's dual_of computation is broken.");
-
-        static_assert(SessionResource<ResourceA>,
-            "crucible::session::diagnostic [SessionResource_NotPinned]: "
-            "mint_channel<Proto, ResourceA, ResourceB>: ResourceA "
-            "fails the pin-discipline.  See the SessionResource concept "
-            "documentation in Session.h for the allowed shapes.");
-        static_assert(SessionResource<ResourceB>,
-            "crucible::session::diagnostic [SessionResource_NotPinned]: "
-            "mint_channel<Proto, ResourceA, ResourceB>: ResourceB "
-            "fails the pin-discipline.  See the SessionResource concept "
-            "documentation in Session.h for the allowed shapes.");
-
-        return std::pair{
-            mint_session_handle<Proto>(std::move(ra)),
-            mint_session_handle<dual_of_t<Proto>>(std::move(rb))
-        };
-    }
-}
+void mint_channel(ResourceA, ResourceB) noexcept
+    = delete("mint_channel<Proto>(resource_a, resource_b) is removed.  Include SessionMint.h and call mint_channel<Proto>(ctx_a, ctx_b, resource_a, resource_b) so both endpoints are row-admitted.");
 
 // ═════════════════════════════════════════════════════════════════
 // ── Framework self-test static_asserts ──────────────────────────

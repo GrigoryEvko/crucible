@@ -413,12 +413,6 @@ struct CKernelTable {
                           {}, &CKernelEntry::schema_hash);
     }
 
-    // Legacy overload — mints MutableView locally; runtime-guarded via
-    // mint_mutable_view()'s pre() contract. Matches SchemaTable.
-    void register_op(SchemaHash schema_hash, CKernelId id) {
-        register_op(mint_mutable_view(), schema_hash, id);
-    }
-
     // Binary search over the sorted entries[] array.  gnu::pure: depends
     // only on the argument + the table contents (read via implicit this).
     // Called on the hot path by Vigil::record_op for every op — the
@@ -474,7 +468,8 @@ inline void register_schema_hash(
                              crucible::safety::source::External> schema_hash,
     CKernelId id)
 {
-    global_ckernel_table().register_op(schema_hash.value(), id);
+    CKernelTable& table = global_ckernel_table();
+    table.register_op(table.mint_mutable_view(), schema_hash.value(), id);
 }
 
 [[nodiscard, gnu::pure]] inline CKernelId classify_kernel(SchemaHash schema_hash) noexcept {

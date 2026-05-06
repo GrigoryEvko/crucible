@@ -13,7 +13,8 @@ concept CanSendBeforePull = requires(Handle h) {
                       [](Endpoint&, fp::BodyPayload<Key>&&) noexcept {});
 };
 
-using ReceiverHandle = decltype(fp::mint_receiver<Key>(Endpoint{}));
+using ReceiverHandle = decltype(fp::mint_receiver<Key>(
+    std::declval<crucible::effects::HotFgCtx const&>(), Endpoint{}));
 
 static_assert(CanSendBeforePull<ReceiverHandle>,
     "FederationReceiver_SendBeforePull_Rejected");

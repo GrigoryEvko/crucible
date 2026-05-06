@@ -191,7 +191,7 @@ struct DetectionResult {
     op.family = classify_family(op.name ? std::string_view{op.name} : "");
     op.n_in = e.num_inputs;
     op.n_out = e.num_outputs;
-    op.grad_enabled = e.grad_enabled();
+    op.grad_enabled = (e.op_flags & op_flag::GRAD_ENABLED) != 0;
 
     const auto mi = trace.meta_starts[i];
     if (mi.is_valid()) {

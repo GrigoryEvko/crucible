@@ -5,6 +5,7 @@
 // not just a type alias that type-checks in isolation.
 
 #include <crucible/sessions/SessionPatterns.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <cstdio>
 #include <deque>
@@ -61,9 +62,11 @@ int run_request_response_once() {
     std::deque<std::string> wire;
     Wire a{&wire};
     Wire b{&wire};
+    crucible::effects::HotFgCtx ctx{};
 
     auto [client, server] =
-        mint_channel<RequestResponseOnce_Client<Req, Resp>>(std::move(a), std::move(b));
+        mint_channel<RequestResponseOnce_Client<Req, Resp>>(
+            ctx, ctx, std::move(a), std::move(b));
 
     auto client2 = std::move(client).send(Req{"hello"}, send_req);
     auto [got_req, server2] = std::move(server).recv(recv_req);
@@ -113,10 +116,11 @@ int run_scatter_gather() {
     std::deque<std::string> wire;
     Wire client_res{&wire};
     Wire server_res{&wire};
+    crucible::effects::HotFgCtx ctx{};
 
     auto [coord, worker] =
-        mint_channel<ScatterGather<N, Req, Resp>>(std::move(client_res),
-                                                       std::move(server_res));
+        mint_channel<ScatterGather<N, Req, Resp>>(
+            ctx, ctx, std::move(client_res), std::move(server_res));
 
     // Coordinator sends N tasks.
     auto c1 = std::move(coord).send(Req{"t0"}, send_req);
@@ -181,9 +185,11 @@ int run_two_phase_commit() {
     std::deque<std::string> wire;
     Wire a{&wire};
     Wire b{&wire};
+    crucible::effects::HotFgCtx ctx{};
 
     using Proto = TwoPhaseCommit_Coord<Prepare, Vote, Commit, Abort>;
-    auto [coord, follower] = mint_channel<Proto>(std::move(a), std::move(b));
+    auto [coord, follower] = mint_channel<Proto>(
+        ctx, ctx, std::move(a), std::move(b));
 
     // Coordinator → follower: Prepare
     auto coord2 = std::move(coord).send(Prepare{42}, send_prepare);

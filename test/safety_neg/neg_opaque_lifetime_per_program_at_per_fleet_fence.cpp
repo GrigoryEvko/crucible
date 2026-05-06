@@ -54,6 +54,7 @@ using crucible::safety::Lifetime_v;
 
 int main() {
     Cipher c;
+    auto view = c.mint_open_view();
     Arena arena;
     MetaLog log;
     auto* region = arena.alloc_obj<RegionNode>(
@@ -68,6 +69,6 @@ int main() {
     // is FALSE → the constraint fails.  Captures the "indiscriminate
     // checkpoint to S3" regression class — program-instance state
     // silently shared across the fleet (canary contamination).
-    auto pinned = c.commit_per_fleet(std::move(program_scoped), &log);
+    auto pinned = c.commit_per_fleet(view, std::move(program_scoped), &log);
     return static_cast<int>(static_cast<bool>(std::move(pinned).consume()));
 }

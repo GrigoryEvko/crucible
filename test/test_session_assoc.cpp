@@ -9,6 +9,7 @@
 #include <crucible/sessions/SessionAssoc.h>
 #include <crucible/sessions/SessionContext.h>
 #include <crucible/sessions/SessionGlobal.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <cstdio>
 #include <deque>
@@ -76,6 +77,7 @@ int run_trace_via_context_lookup() {
     // G, one Γ, every role's handle type falls out of lookup.
     using ProducerLocal = lookup_context_t<ReflexiveGamma, TraceSession, Producer>;
     using ConsumerLocal = lookup_context_t<ReflexiveGamma, TraceSession, Consumer>;
+    crucible::effects::HotFgCtx ctx{};
 
     // Demonstrate the binary-duality invariant: for a two-role Γ
     // associated with a binary G, looking up one role gives the
@@ -83,7 +85,7 @@ int run_trace_via_context_lookup() {
     static_assert(std::is_same_v<dual_of_t<ProducerLocal>, ConsumerLocal>);
 
     auto [prod, cons] =
-        mint_channel<ProducerLocal>(std::move(p_res), std::move(c_res));
+        mint_channel<ProducerLocal>(ctx, ctx, std::move(p_res), std::move(c_res));
 
     // Producer sends three Events through the looping Send<Event,
     // Continue>; Consumer receives each in order.

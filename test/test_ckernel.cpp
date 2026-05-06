@@ -86,9 +86,10 @@ int main() {
     {
         CKernelTable t;
         assert(!t.is_sealed());
+        auto mv = t.mint_mutable_view();
 
         // Populate before seal().
-        t.register_op(SchemaHash{0x1}, CKernelId::GEMM_MM);
+        t.register_op(mv, SchemaHash{0x1}, CKernelId::GEMM_MM);
         assert(t.count() == 1);
 
         t.seal();
@@ -103,7 +104,8 @@ int main() {
         assert(t.count() == 0);
 
         // Post-clear: register works again.
-        t.register_op(SchemaHash{0x2}, CKernelId::SDPA);
+        auto mv_after_clear = t.mint_mutable_view();
+        t.register_op(mv_after_clear, SchemaHash{0x2}, CKernelId::SDPA);
         assert(t.classify(SchemaHash{0x2}) == CKernelId::SDPA);
     }
 
@@ -118,8 +120,9 @@ int main() {
     // ── Classify works post-seal (bg-thread read path) ──────────────────
     {
         CKernelTable t;
-        t.register_op(SchemaHash{0x111}, CKernelId::GEMM_MM);
-        t.register_op(SchemaHash{0x222}, CKernelId::LAYER_NORM);
+        auto mv = t.mint_mutable_view();
+        t.register_op(mv, SchemaHash{0x111}, CKernelId::GEMM_MM);
+        t.register_op(mv, SchemaHash{0x222}, CKernelId::LAYER_NORM);
         t.seal();
         assert(t.classify(SchemaHash{0x111}) == CKernelId::GEMM_MM);
         assert(t.classify(SchemaHash{0x222}) == CKernelId::LAYER_NORM);

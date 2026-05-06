@@ -20,8 +20,7 @@
 // disable for unavailable tracepoints, partial-coverage diagnostics,
 // PIMPL'd state, RAII destructor — and conceptually belongs to
 // Augur (the L15 prediction/monitoring layer) rather than to bench.
-// Bench remains a consumer via a one-line `namespace bench::bpf =
-// crucible::perf;` alias; the canonical API is `crucible::perf::*`.
+// Bench and production code use the canonical `crucible::perf::*` API.
 //
 // ─── Two-tier observability design ─────────────────────────────────
 //
@@ -246,8 +245,7 @@ class SenseHub {
     // static so the load cost is paid exactly once.
     //
     // The diagnostic line (if any) is printed to stderr unless
-    // CRUCIBLE_PERF_QUIET=1 (or the legacy CRUCIBLE_BENCH_BPF_QUIET=1)
-    // is set in the environment.
+    // CRUCIBLE_PERF_QUIET=1 is set in the environment.
     [[nodiscard]] static std::optional<SenseHub>
         load(::crucible::effects::Init) noexcept;
 
@@ -282,8 +280,7 @@ class SenseHub {
     // NULL or an ERR_PTR).  Same `bounded_above<64>` envelope as
     // attached_programs() — both counters originate from the same
     // bounded program-iteration loop.  Non-zero means some
-    // subsystems are dark; set CRUCIBLE_PERF_VERBOSE=1 (or the
-    // legacy CRUCIBLE_BENCH_BPF_VERBOSE=1) to see which ones.
+    // subsystems are dark; set CRUCIBLE_PERF_VERBOSE=1 to see which ones.
     [[nodiscard]] safety::Refined<safety::bounded_above<64>, std::size_t>
         attach_failures() const noexcept;
 

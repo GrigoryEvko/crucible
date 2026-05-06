@@ -65,7 +65,8 @@ using crucible::safety::Lifetime_v;
 
 int main() {
     Cipher c;     // Closed Cipher — commit_per_fleet's requires-clause
-                  // rejects BEFORE we'd hit any runtime contract.
+                  // rejects before the OpenView precondition could run.
+    auto view = c.mint_open_view();
     Arena arena;
     MetaLog log;
     auto* region = arena.alloc_obj<RegionNode>();
@@ -88,6 +89,6 @@ int main() {
     // PdaState would silently flow into S3 cold storage as a fleet-
     // durable artifact — and reappear as input contamination on a
     // sibling request the next time anyone replays from cold.
-    auto pinned = c.commit_per_fleet(std::move(request_scoped), &log);
+    auto pinned = c.commit_per_fleet(view, std::move(request_scoped), &log);
     return static_cast<int>(static_cast<bool>(std::move(pinned).consume()));
 }

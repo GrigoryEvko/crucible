@@ -22,6 +22,7 @@ int main() {
         3>;
 
     StaleRecipientCtx ctx{};
-    [[maybe_unused]] auto h = proto::mint_session<Proto>(ctx, FakeChannel{});
+    [[maybe_unused]] auto h =
+        proto::mint_permissioned_session<Proto>(ctx, FakeChannel{});
     return 0;
 }

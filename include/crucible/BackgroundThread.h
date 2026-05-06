@@ -475,11 +475,11 @@ struct BackgroundThread {
   // Start the background thread. ring/meta_log must be set first.
   //
   // Seals the global registration tables as part of start(): after this
-  // point, register_schema_name() / register_schema_hash() abort via the
-  // mint_mutable_view() contract rather than racing with the lookups the
-  // bg worker performs on this thread.  This matches the documented
-  // lifecycle — all registrations complete before bg starts — and turns
-  // it into a load-bearing rule.
+  // point, schema / kernel registrations require already-minted mutable
+  // views, so late mutation is rejected by the typed-table contracts
+  // rather than racing with the lookups the bg worker performs on this
+  // thread. This matches the documented lifecycle — all registrations
+  // complete before bg starts — and turns it into a load-bearing rule.
   void start(TraceRing* ring_ptr, MetaLog* meta_log_ptr,
              int32_t rank_ = -1, int32_t world_size_ = 0,
              uint64_t device_cap = 0) CRUCIBLE_NO_THREAD_SAFETY {
@@ -1103,7 +1103,7 @@ struct BackgroundThread {
       te.callsite_hash = callsite_data[i];
       te.num_inputs = re.num_inputs;
       te.num_outputs = re.num_outputs;
-      te.grad_enabled = re.grad_enabled();
+      te.grad_enabled = (re.op_flags & op_flag::GRAD_ENABLED) != 0;
       te.kernel_id = classify_kernel(re.schema_hash);
 
       // Unpack op_flags: 5 bits set by the Vessel fallback at dispatch time.

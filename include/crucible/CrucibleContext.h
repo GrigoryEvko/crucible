@@ -191,18 +191,6 @@ struct CrucibleContext {
     return engine_.input_ptr(j);
   }
 
-  // ── Register external slot pointer ──
-  //
-  // Untyped legacy entry point — routes through the typed overload
-  // below by minting the CompiledView locally.  pool_'s register_external
-  // has no legacy untyped overload any more, so this one-liner is the
-  // bridge for callers that haven't been migrated to pass a view.
-  void register_external(SlotId sid, crucible::safety::NonNull<void*> ptr)
-      pre (mode_ == ContextMode::COMPILED)
-  {
-    register_external(sid, ptr, mint_compiled_view());
-  }
-
   // ── Switch to a different compiled region (mid-iteration safe) ──
   [[nodiscard]] bool switch_region(const RegionNode* alt, uint32_t div_pos)
       CRUCIBLE_NO_THREAD_SAFETY
@@ -303,8 +291,8 @@ struct CrucibleContext {
   [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, CompiledView const&) const
       CRUCIBLE_LIFETIMEBOUND
   {
-    // mint_active_view is const; previous const_cast removal was a
-    // legacy artefact from a pre-const factory.
+    // mint_active_view is const, so the typed active view is available
+    // directly from compiled output accessors.
     auto av = engine_.mint_active_view();
     return engine_.output_ptr(j, av);
   }
@@ -353,7 +341,7 @@ struct CrucibleContext {
       pre (old_region->plan != nullptr)
       pre (alt->plan        != nullptr)
       // The migration bitset is fixed-size; reject plans the bitset
-      // can't track.  Lifted from the legacy runtime assert.
+      // cannot track before any slot copy begins.
       pre (alt->plan->num_slots <= MIGRATION_MAX_SLOTS)
   {
     const auto* old_plan = old_region->plan;

@@ -39,14 +39,6 @@
 #include "bench_harness.h"
 #include <crucible/perf/SenseHub.h>
 
-// Promoted on 2026-05-03 (GAPS-004a): test code uses `bench::bpf::*`
-// historically; the alias re-roots them at the canonical
-// crucible::perf:: namespace at zero runtime cost.  Namespace
-// aliases must be declared INSIDE an opening `namespace bench {}`
-// — C++ does not parse `namespace bench::bpf = ...` as a nested
-// alias declaration.
-namespace bench { namespace bpf = ::crucible::perf; }
-
 namespace {
 
 // ── Named constants — no magic numbers in the test body ─────────────
@@ -369,8 +361,8 @@ void test_compare() {
 // wrapping to ~2^64 and without zeroing the whole vector. Monotonic
 // counters (post ≥ pre) must still read exact element-wise deltas.
 void test_snapshot_subtract() {
-    using bench::bpf::Snapshot;
-    using bench::bpf::NUM_COUNTERS;
+    using ::crucible::perf::Snapshot;
+    using ::crucible::perf::NUM_COUNTERS;
 
     // ── post > pre at every index → element-wise difference ──
     {
@@ -438,10 +430,10 @@ void test_snapshot_subtract() {
     // ── operator[] returns the counters[] entry ──
     {
         Snapshot s{};
-        s.counters[bench::bpf::SCHED_CTX_VOL]       = 12345u;
-        s.counters[bench::bpf::MEM_PAGE_FAULTS_MIN] = 67u;
-        CHECK(s[bench::bpf::SCHED_CTX_VOL] == 12345u);
-        CHECK(s[bench::bpf::MEM_PAGE_FAULTS_MIN] == 67u);
+        s.counters[::crucible::perf::SCHED_CTX_VOL]       = 12345u;
+        s.counters[::crucible::perf::MEM_PAGE_FAULTS_MIN] = 67u;
+        CHECK(s[::crucible::perf::SCHED_CTX_VOL] == 12345u);
+        CHECK(s[::crucible::perf::MEM_PAGE_FAULTS_MIN] == 67u);
     }
 }
 

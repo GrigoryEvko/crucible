@@ -17,7 +17,7 @@
 //   T02 — publish_warm type-identity
 //   T03 — publish_hot type-identity (stub returns none-hash)
 //   T04 — publish_cold type-identity (stub returns none-hash)
-//   T05 — typed-view variant + legacy variant return same type
+//   T05 — typed view + content-addressed payload route
 //   T06 — fence-acceptance simulation: Hot subsumes Warm/Cold
 //   T07 — fence-acceptance simulation: Warm rejected at Hot fence
 //   T08 — fence-acceptance simulation: Cold rejected at Warm/Hot fences
@@ -83,12 +83,14 @@ static void test_publish_warm_bit_equality(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 1);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
     // Raw store + publish_warm on the same region must yield the
     // same ContentHash (idempotent — second call hits the
     // already-exists fast path).
-    ContentHash raw = cipher.store(region, nullptr);
-    auto warm = cipher.publish_warm(region, nullptr);
+    ContentHash raw = cipher.store(view, payload, nullptr);
+    auto warm = cipher.publish_warm(view, payload, nullptr);
     ContentHash via_wrapper = std::move(warm).consume();
     assert(raw == via_wrapper);
     assert(static_cast<bool>(raw));
@@ -99,15 +101,17 @@ static void test_publish_warm_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 2);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
-    using Got  = decltype(cipher.publish_warm(region, nullptr));
+    using Got  = decltype(cipher.publish_warm(view, payload, nullptr));
     using Want = CipherTier<CipherTierTag_v::Warm, ContentHash>;
     static_assert(std::is_same_v<Got, Want>,
         "publish_warm must return CipherTier<Warm, ContentHash>");
     static_assert(Got::tier == CipherTierTag_v::Warm);
 
     // Consume so the value isn't discarded.
-    auto p = cipher.publish_warm(region, nullptr);
+    auto p = cipher.publish_warm(view, payload, nullptr);
     (void)std::move(p).consume();
 }
 
@@ -116,15 +120,17 @@ static void test_publish_hot_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 3);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
-    using Got  = decltype(cipher.publish_hot(region, nullptr));
+    using Got  = decltype(cipher.publish_hot(view, payload, nullptr));
     using Want = CipherTier<CipherTierTag_v::Hot, ContentHash>;
     static_assert(std::is_same_v<Got, Want>,
         "publish_hot must return CipherTier<Hot, ContentHash>");
     static_assert(Got::tier == CipherTierTag_v::Hot);
 
     // Phase 5 stub: returns none-hash today.
-    auto p = cipher.publish_hot(region, nullptr);
+    auto p = cipher.publish_hot(view, payload, nullptr);
     ContentHash h = std::move(p).consume();
     assert(!static_cast<bool>(h));   // Phase 5 stub semantics
 }
@@ -134,46 +140,46 @@ static void test_publish_cold_type_identity(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 4);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
-    using Got  = decltype(cipher.publish_cold(region, nullptr));
+    using Got  = decltype(cipher.publish_cold(view, payload, nullptr));
     using Want = CipherTier<CipherTierTag_v::Cold, ContentHash>;
     static_assert(std::is_same_v<Got, Want>,
         "publish_cold must return CipherTier<Cold, ContentHash>");
     static_assert(Got::tier == CipherTierTag_v::Cold);
 
     // Phase 5 stub: returns none-hash today.
-    auto p = cipher.publish_cold(region, nullptr);
+    auto p = cipher.publish_cold(view, payload, nullptr);
     ContentHash h = std::move(p).consume();
     assert(!static_cast<bool>(h));   // Phase 5 stub semantics
 }
 
-// ── T05 — typed-view variant + legacy variant return same type ──
-static void test_view_and_legacy_overload_parity(const char* dir) {
+// ── T05 — typed view + content-addressed payload route ──────────
+static void test_view_and_payload_route(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 5);
     auto cipher = Cipher::open(dir);
 
     auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
-    // publish_warm: both shapes return Warm-pinned.
-    using WarmGot1 = decltype(cipher.publish_warm(view, region, nullptr));
-    using WarmGot2 = decltype(cipher.publish_warm(region, nullptr));
-    static_assert(std::is_same_v<WarmGot1, WarmGot2>);
+    using WarmGot = decltype(cipher.publish_warm(view, payload, nullptr));
+    static_assert(std::is_same_v<
+        WarmGot, CipherTier<CipherTierTag_v::Warm, ContentHash>>);
 
-    // publish_hot: both shapes return Hot-pinned.
-    using HotGot1 = decltype(cipher.publish_hot(view, region, nullptr));
-    using HotGot2 = decltype(cipher.publish_hot(region, nullptr));
-    static_assert(std::is_same_v<HotGot1, HotGot2>);
+    using HotGot = decltype(cipher.publish_hot(view, payload, nullptr));
+    static_assert(std::is_same_v<
+        HotGot, CipherTier<CipherTierTag_v::Hot, ContentHash>>);
 
-    // publish_cold: both shapes return Cold-pinned.
-    using ColdGot1 = decltype(cipher.publish_cold(view, region, nullptr));
-    using ColdGot2 = decltype(cipher.publish_cold(region, nullptr));
-    static_assert(std::is_same_v<ColdGot1, ColdGot2>);
+    using ColdGot = decltype(cipher.publish_cold(view, payload, nullptr));
+    static_assert(std::is_same_v<
+        ColdGot, CipherTier<CipherTierTag_v::Cold, ContentHash>>);
 
     // Consume each so values aren't dropped on the floor.
-    (void)std::move(cipher.publish_warm(view, region, nullptr)).consume();
-    (void)std::move(cipher.publish_hot(view,  region, nullptr)).consume();
-    (void)std::move(cipher.publish_cold(view, region, nullptr)).consume();
+    (void)std::move(cipher.publish_warm(view, payload, nullptr)).consume();
+    (void)std::move(cipher.publish_hot(view, payload, nullptr)).consume();
+    (void)std::move(cipher.publish_cold(view, payload, nullptr)).consume();
 }
 
 // ── T06 — fence-acceptance: Hot subsumes Warm and Cold ──────────
@@ -212,9 +218,11 @@ static void test_relax_to_weaker_tiers(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 9);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
     // Hot → Warm → Cold chain.  Each relax preserves the value bytes.
-    auto hot = cipher.publish_hot(region, nullptr);
+    auto hot = cipher.publish_hot(view, payload, nullptr);
     auto warm = std::move(hot).relax<CipherTierTag_v::Warm>();
     static_assert(std::is_same_v<decltype(warm),
         CipherTier<CipherTierTag_v::Warm, ContentHash>>);
@@ -252,8 +260,10 @@ static void test_e2e_hot_fence_consumer(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 11);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
-    auto pinned = cipher.publish_hot(region, nullptr);
+    auto pinned = cipher.publish_hot(view, payload, nullptr);
     ContentHash h = hot_reshard_consumer(std::move(pinned));
     // Phase 5 stub: returns none-hash; type passed the gate.
     assert(!static_cast<bool>(h));
@@ -270,14 +280,16 @@ static void test_e2e_warm_fence_admits_hot_and_warm(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 12);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
     // publish_warm value passes the Warm gate (self-admission).
-    auto warm_val = cipher.publish_warm(region, nullptr);
+    auto warm_val = cipher.publish_warm(view, payload, nullptr);
     ContentHash h_warm = warm_publish_consumer(std::move(warm_val));
     assert(static_cast<bool>(h_warm));   // real NVMe write happened
 
     // publish_hot value also passes the Warm gate (subsumption).
-    auto hot_val = cipher.publish_hot(region, nullptr);
+    auto hot_val = cipher.publish_hot(view, payload, nullptr);
     ContentHash h_hot = warm_publish_consumer(std::move(hot_val));
     (void)h_hot;   // Phase 5 stub returns none-hash; type passed
 }
@@ -287,17 +299,19 @@ static void test_phase5_stub_semantics(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 13);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
     // The stubs are noexcept-callable — Phase 5 doesn't touch the
     // hot path at all.
-    static_assert(noexcept(cipher.publish_hot(region, nullptr)));
-    static_assert(noexcept(cipher.publish_cold(region, nullptr)));
+    static_assert(noexcept(cipher.publish_hot(view, payload, nullptr)));
+    static_assert(noexcept(cipher.publish_cold(view, payload, nullptr)));
 
     // Both stubs return none-hash today.  When Phase 5 ships real
     // backends, this test must be updated — the stub-detection
     // contract is then no longer testable from here.
-    auto hot  = cipher.publish_hot(region,  nullptr);
-    auto cold = cipher.publish_cold(region, nullptr);
+    auto hot  = cipher.publish_hot(view, payload, nullptr);
+    auto cold = cipher.publish_cold(view, payload, nullptr);
     ContentHash h_hot  = std::move(hot).consume();
     ContentHash h_cold = std::move(cold).consume();
     assert(!static_cast<bool>(h_hot));
@@ -324,15 +338,17 @@ static void test_augur_tier_reader_pattern(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 14);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
     // The static `tier` accessor permits zero-runtime-cost dispatch
     // on the publication tier.  Augur uses this to label drift
     // residuals against the appropriate baseline (Hot-tier
     // residuals attribute to single-node-failure recovery latency;
     // Cold-tier residuals attribute to S3 GET P99).
-    auto warm_v = cipher.publish_warm(region, nullptr);
-    auto hot_v  = cipher.publish_hot(region, nullptr);
-    auto cold_v = cipher.publish_cold(region, nullptr);
+    auto warm_v = cipher.publish_warm(view, payload, nullptr);
+    auto hot_v  = cipher.publish_hot(view, payload, nullptr);
+    auto cold_v = cipher.publish_cold(view, payload, nullptr);
 
     static_assert(classify_tier_for_drift_attribution<decltype(warm_v)>() == 2);
     static_assert(classify_tier_for_drift_attribution<decltype(hot_v)>()  == 1);
@@ -364,18 +380,20 @@ static void test_replay_engine_admits_all_tiers(const char* dir) {
     Arena arena(1 << 16);
     auto* region = make_test_region(arena, 15);
     auto cipher = Cipher::open(dir);
+    auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
     // Cold gate admits Cold (self).
-    auto cold = cipher.publish_cold(region, nullptr);
+    auto cold = cipher.publish_cold(view, payload, nullptr);
     (void)replay_consumer(std::move(cold));
 
     // Cold gate admits Warm (subsumption — Warm is stronger).
-    auto warm = cipher.publish_warm(region, nullptr);
+    auto warm = cipher.publish_warm(view, payload, nullptr);
     ContentHash h = replay_consumer(std::move(warm));
     assert(static_cast<bool>(h));   // real NVMe write happened
 
     // Cold gate admits Hot (subsumption — Hot is strongest).
-    auto hot = cipher.publish_hot(region, nullptr);
+    auto hot = cipher.publish_hot(view, payload, nullptr);
     (void)replay_consumer(std::move(hot));
 }
 
@@ -392,14 +410,15 @@ static void test_sequential_three_tier_publish(const char* dir) {
     auto cipher = Cipher::open(dir);
 
     auto view = cipher.mint_open_view();
+    auto payload = Cipher::content_addressed(region);
 
     // Order matters per CRUCIBLE.md L13: Hot first (peer RAM),
     // then Warm (local NVMe), then Cold (durable).  Compile-time
     // type identity demonstrates the three values cannot be
     // accidentally interchanged at the type level.
-    auto h_pub = cipher.publish_hot(view,  region, nullptr);
-    auto w_pub = cipher.publish_warm(view, region, nullptr);
-    auto c_pub = cipher.publish_cold(view, region, nullptr);
+    auto h_pub = cipher.publish_hot(view, payload, nullptr);
+    auto w_pub = cipher.publish_warm(view, payload, nullptr);
+    auto c_pub = cipher.publish_cold(view, payload, nullptr);
 
     static_assert(!std::is_same_v<decltype(h_pub), decltype(w_pub)>);
     static_assert(!std::is_same_v<decltype(w_pub), decltype(c_pub)>);
@@ -491,7 +510,7 @@ int main() {
     test_publish_warm_type_identity(dir);
     test_publish_hot_type_identity(dir);
     test_publish_cold_type_identity(dir);
-    test_view_and_legacy_overload_parity(dir);
+    test_view_and_payload_route(dir);
     test_hot_satisfies_weaker_tiers();
     test_warm_rejected_at_hot_fence();
     test_cold_rejected_at_higher_fences();

@@ -206,13 +206,12 @@ int run_request_reply_recorded() {
     WireBuf s_wire{&wire};
 
     using ClientProto = Send<ReqMsg, Recv<RepMsg, End>>;
-    // ServerProto = dual_of_t<ClientProto> — implicit, used inside
-    // mint_channel; not named here to keep -Werror=unused-local-typedefs happy.
+    using ServerProto = dual_of_t<ClientProto>;
 
     SessionEventLog log{SessionTagId{2026}};
 
-    auto [client_bare, server_bare] =
-        mint_channel<ClientProto>(std::move(c_wire), std::move(s_wire));
+    auto client_bare = mint_session_handle<ClientProto>(std::move(c_wire));
+    auto server_bare = mint_session_handle<ServerProto>(std::move(s_wire));
 
     auto client = mint_recording_session(std::move(client_bare), log, kClient, kServer);
     auto server = mint_recording_session(std::move(server_bare), log, kServer, kClient);
@@ -395,9 +394,8 @@ int run_offer_branch_recorded() {
     std::deque<int> wire;
     WireBuf c_wire{&wire};
     WireBuf s_wire{&wire};
-
-    auto [sel_bare, off_bare] =
-        mint_channel<SelectProto>(std::move(c_wire), std::move(s_wire));
+    auto sel_bare = mint_session_handle<SelectProto>(std::move(c_wire));
+    auto off_bare = mint_session_handle<OfferProto>(std::move(s_wire));
 
     auto sel = mint_recording_session(std::move(sel_bare), log, kClient, kServer);
     auto off = mint_recording_session(std::move(off_bare), log, kServer, kClient);

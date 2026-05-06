@@ -14,9 +14,7 @@ int main() {
     auto sv = t.mint_sealed_view();
 
     // No register_name(SealedView, ...) overload exists.  The typed
-    // overload takes MutableView, and Sealed → Mutable is not a
-    // convertible type substitution.  Diagnostic cites "no matching
-    // function for call to".
+    // overload takes MutableView, and Sealed cannot convert to Mutable.
     t.register_name(sv,
                     crucible::SchemaHash{0x42},
                     crucible::SchemaTable::SanitizedName{"aten::mm"});

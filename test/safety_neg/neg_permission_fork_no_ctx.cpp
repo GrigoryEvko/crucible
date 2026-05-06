@@ -2,13 +2,11 @@
 //
 // GAPS-073: ctx-aware permission_fork bodies require the ctx-bound mint.
 //
-// Violation: the caller supplies child bodies with the new
+// Violation: the caller supplies child bodies with the
 // Callable_i(Permission<Child_i>, ChildCtx_i) shape but omits the Ctx
-// argument.  The deprecated compatibility shim only accepts legacy
-// one-argument child bodies, so this ctx-aware use has no viable overload.
+// argument.  There is no no-ctx mint_permission_fork overload.
 //
-// Expected diagnostic: no matching mint_permission_fork overload, with the
-// legacy shim's permission_fork_legacy_callables constraint unsatisfied.
+// Expected diagnostic: no matching mint_permission_fork overload.
 
 #include <crucible/permissions/PermissionFork.h>
 

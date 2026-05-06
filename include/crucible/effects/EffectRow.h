@@ -28,13 +28,11 @@
 //   row_difference_t<R₁, R₂> — R₁ \ R₂
 //   row_intersection_t<R₁, R₂> — R₁ ∩ R₂
 //
-// STATUS: stub.  Class type is COMPLETE so that Computation<Row, T>
-// and the METX-4 compat shim can name it.  Set operations land in
-// METX-2 (#474); calling them before that ships fails to compile with
-// the implementation-task pointer.
+// STATUS: class type is COMPLETE so that Computation<Row, T> and
+// type-level row descriptors can name it.  Set operations live below;
+// invalid early use fails at the exact requested operation.
 //
-// See Capabilities.h (atoms), Computation.h (carrier), compat/Fx.h
-// (backward-compat aliases).
+// See Capabilities.h (atoms) and Computation.h (carrier).
 //
 // ── See also: typed-set triad (misc/typed_sets.md) ─────────────────
 //

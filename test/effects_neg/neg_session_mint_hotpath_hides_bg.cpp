@@ -37,7 +37,7 @@ int main() {
 
     eff::HotFgCtx fg;
     DummyResource res;
-    auto bad = proto::mint_session<BadProto>(fg, res);  // CtxFitsProtocol fails — HotPath sees through to Bg
+    auto bad = proto::mint_permissioned_session<BadProto>(fg, res); // CtxFitsProtocol fails — HotPath sees through to Bg
     (void)bad;
     return 0;
 }

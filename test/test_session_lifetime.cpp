@@ -18,6 +18,7 @@
 #include <crucible/sessions/SessionCheckpoint.h>
 #include <crucible/sessions/SessionCrash.h>
 #include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <cstdio>
 #include <deque>
@@ -106,9 +107,10 @@ int run_consume_via_chain() {
     std::deque<std::string> wire;
     Wire a{&wire};
     Wire b{&wire};
+    crucible::effects::HotFgCtx ctx{};
 
     auto [client, server] =
-        mint_channel<PingPongClient>(std::move(a), std::move(b));
+        mint_channel<PingPongClient>(ctx, ctx, std::move(a), std::move(b));
 
     auto c1 = std::move(client).send(Ping{42}, send_ping);
     auto [got_ping, s1] = std::move(server).recv(recv_ping);

@@ -52,6 +52,7 @@ using crucible::safety::Lifetime_v;
 
 int main() {
     Cipher c;
+    auto view = c.mint_open_view();
     Arena arena;
     MetaLog log;
     auto* region = arena.alloc_obj<RegionNode>(
@@ -66,6 +67,6 @@ int main() {
     // is FALSE → the constraint fails.  Without this fence, request-
     // scoped data leaks across program restart via the Warm-tier
     // recovery path.
-    auto pinned = c.commit_per_program(std::move(request_scoped), &log);
+    auto pinned = c.commit_per_program(view, std::move(request_scoped), &log);
     return static_cast<int>(static_cast<bool>(std::move(pinned).consume()));
 }

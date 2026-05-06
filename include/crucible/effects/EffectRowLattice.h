@@ -2,7 +2,7 @@
 
 // ── crucible::effects::EffectRowLattice ─────────────────────────────
 //
-// FOUND-H01.  Bounded distributive lattice adapter making `Row<Es...>`
+// FOUND-H01.  Bounded distributive lattice implementation making `Row<Es...>`
 // a first-class `crucible::algebra::Lattice` instance per the §H series
 // migration plan.
 //
@@ -67,8 +67,8 @@
 // `using lattice = EffectRowLattice;` and the canonical Effect-enum
 // binding.  H03 then ships `Computation<R, T>` as a thin
 // `Graded<Modality::Relative, EffectRowLattice, T>` alias whose grade
-// is the row's bitmask.  H04 is the migration shim.  H05 verifies
-// backward compatibility against test_effects.cpp's existing surface.
+// is the row's bitmask.  H04 migrates callers onto that row-bitmask
+// carrier.  H05 verifies the canonical effect tests against it.
 //
 // This header lands ONLY the lattice + bridge.  No Graded<>
 // instantiation here — that's H03's job.

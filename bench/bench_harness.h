@@ -64,13 +64,7 @@
 #endif
 
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-  // Promoted on 2026-05-03 (GAPS-004a) from bench-local bpf_senses.h
-  // to the production observability substrate at
-  // include/crucible/perf/SenseHub.h.  The namespace alias below
-  // keeps every existing `bench::bpf::*` reference compiling at
-  // zero runtime cost (alias is a compile-time symlink); a future
-  // mechanical rename can drop the alias and replace
-  // `bench::bpf::` with `crucible::perf::` everywhere in one sweep.
+  // Bench BPF sensing uses the production observability substrate directly.
   #include <crucible/perf/SenseHub.h>
   #include <crucible/perf/SchedSwitch.h>
   // Senses aggregator — single entry point for senses_instance() below.
@@ -84,14 +78,6 @@
 #include <crucible/rt/Policy.h>
 
 namespace bench {
-
-#if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-// Backwards-compatible alias: every legacy `bench::bpf::Snapshot`,
-// `bench::bpf::SCHED_CTX_INVOL`, `bench::bpf::SenseHub::load()` etc.
-// resolves to the canonical crucible::perf:: symbol post-promotion.
-namespace bpf = ::crucible::perf;
-#endif
-
 
 // ── CpuId strong type (TypeSafe axiom) ─────────────────────────────
 //
@@ -531,7 +517,7 @@ struct Report {
     // difference is meaningless; callers wanting those instantaneous
     // values should pull them from the post snapshot directly.
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
-    bench::bpf::Snapshot bpf_delta{};
+    ::crucible::perf::Snapshot bpf_delta{};
     size_t               bpf_attached = 0;  // # programs the kernel accepted
 
     // SchedSwitch off-CPU drill-down for the bench window.  Pre/post
@@ -726,7 +712,7 @@ struct Report {
 
     struct Field {
         const char*       label;
-        bench::bpf::Idx   idx;
+        ::crucible::perf::Idx   idx;
         Unit              unit;
     };
 
@@ -735,72 +721,72 @@ struct Report {
     // touched (memory → sync → I/O → thread mgmt), finally reliability.
     static constexpr Field kAll[] = {
         // Scheduling interference.
-        {"preempt",   bench::bpf::SCHED_CTX_INVOL,        Unit::Count},
-        {"yield",     bench::bpf::SCHED_CTX_VOL,          Unit::Count},
-        {"migrate",   bench::bpf::SCHED_MIGRATIONS,       Unit::Count},
-        {"runtime",   bench::bpf::SCHED_RUNTIME_NS,       Unit::Ns},
-        {"wait",      bench::bpf::SCHED_WAIT_NS,          Unit::Ns},
-        {"sleep",     bench::bpf::SCHED_SLEEP_NS,         Unit::Ns},
-        {"iowait",    bench::bpf::SCHED_IOWAIT_NS,        Unit::Ns},
-        {"blocked",   bench::bpf::SCHED_BLOCKED_NS,       Unit::Ns},
-        {"softirq",   bench::bpf::SOFTIRQ_STOLEN_NS,      Unit::Ns},
-        {"wake_rx",   bench::bpf::WAKEUPS_RECEIVED,       Unit::Count},
-        {"wake_tx",   bench::bpf::WAKEUPS_SENT,           Unit::Count},
-        {"freq_chg",  bench::bpf::CPU_FREQ_CHANGES,       Unit::Count},
-        {"tid_new",   bench::bpf::THREADS_CREATED,        Unit::Count},
-        {"tid_end",   bench::bpf::THREADS_EXITED,         Unit::Count},
+        {"preempt",   ::crucible::perf::SCHED_CTX_INVOL,        Unit::Count},
+        {"yield",     ::crucible::perf::SCHED_CTX_VOL,          Unit::Count},
+        {"migrate",   ::crucible::perf::SCHED_MIGRATIONS,       Unit::Count},
+        {"runtime",   ::crucible::perf::SCHED_RUNTIME_NS,       Unit::Ns},
+        {"wait",      ::crucible::perf::SCHED_WAIT_NS,          Unit::Ns},
+        {"sleep",     ::crucible::perf::SCHED_SLEEP_NS,         Unit::Ns},
+        {"iowait",    ::crucible::perf::SCHED_IOWAIT_NS,        Unit::Ns},
+        {"blocked",   ::crucible::perf::SCHED_BLOCKED_NS,       Unit::Ns},
+        {"softirq",   ::crucible::perf::SOFTIRQ_STOLEN_NS,      Unit::Ns},
+        {"wake_rx",   ::crucible::perf::WAKEUPS_RECEIVED,       Unit::Count},
+        {"wake_tx",   ::crucible::perf::WAKEUPS_SENT,           Unit::Count},
+        {"freq_chg",  ::crucible::perf::CPU_FREQ_CHANGES,       Unit::Count},
+        {"tid_new",   ::crucible::perf::THREADS_CREATED,        Unit::Count},
+        {"tid_end",   ::crucible::perf::THREADS_EXITED,         Unit::Count},
 
         // Memory.
-        {"pgfault",   bench::bpf::MEM_PAGE_FAULTS_MIN,    Unit::Count},
-        {"majfault",  bench::bpf::MEM_PAGE_FAULTS_MAJ,    Unit::Count},
-        {"mmap",      bench::bpf::MEM_MMAP_COUNT,         Unit::Count},
-        {"munmap",    bench::bpf::MEM_MUNMAP_COUNT,       Unit::Count},
-        {"brk",       bench::bpf::MEM_BRK_CALLS,          Unit::Count},
-        {"reclaim_n", bench::bpf::DIRECT_RECLAIM_COUNT,   Unit::Count},
-        {"reclaim_t", bench::bpf::DIRECT_RECLAIM_NS,      Unit::Ns},
-        {"swap_out",  bench::bpf::SWAP_OUT_PAGES,         Unit::Count},
-        {"thp_ok",    bench::bpf::THP_COLLAPSE_OK,        Unit::Count},
-        {"thp_fail",  bench::bpf::THP_COLLAPSE_FAIL,      Unit::Count},
-        {"numa",      bench::bpf::NUMA_MIGRATE_PAGES,     Unit::Count},
-        {"compact",   bench::bpf::COMPACTION_STALLS,      Unit::Count},
-        {"extfrag",   bench::bpf::EXTFRAG_EVENTS,         Unit::Count},
+        {"pgfault",   ::crucible::perf::MEM_PAGE_FAULTS_MIN,    Unit::Count},
+        {"majfault",  ::crucible::perf::MEM_PAGE_FAULTS_MAJ,    Unit::Count},
+        {"mmap",      ::crucible::perf::MEM_MMAP_COUNT,         Unit::Count},
+        {"munmap",    ::crucible::perf::MEM_MUNMAP_COUNT,       Unit::Count},
+        {"brk",       ::crucible::perf::MEM_BRK_CALLS,          Unit::Count},
+        {"reclaim_n", ::crucible::perf::DIRECT_RECLAIM_COUNT,   Unit::Count},
+        {"reclaim_t", ::crucible::perf::DIRECT_RECLAIM_NS,      Unit::Ns},
+        {"swap_out",  ::crucible::perf::SWAP_OUT_PAGES,         Unit::Count},
+        {"thp_ok",    ::crucible::perf::THP_COLLAPSE_OK,        Unit::Count},
+        {"thp_fail",  ::crucible::perf::THP_COLLAPSE_FAIL,      Unit::Count},
+        {"numa",      ::crucible::perf::NUMA_MIGRATE_PAGES,     Unit::Count},
+        {"compact",   ::crucible::perf::COMPACTION_STALLS,      Unit::Count},
+        {"extfrag",   ::crucible::perf::EXTFRAG_EVENTS,         Unit::Count},
 
         // Sync contention.
-        {"futex",     bench::bpf::FUTEX_WAIT_COUNT,       Unit::Count},
-        {"futex_t",   bench::bpf::FUTEX_WAIT_NS,          Unit::Ns},
-        {"klock",     bench::bpf::KERNEL_LOCK_COUNT,      Unit::Count},
-        {"klock_t",   bench::bpf::KERNEL_LOCK_NS,         Unit::Ns},
+        {"futex",     ::crucible::perf::FUTEX_WAIT_COUNT,       Unit::Count},
+        {"futex_t",   ::crucible::perf::FUTEX_WAIT_NS,          Unit::Ns},
+        {"klock",     ::crucible::perf::KERNEL_LOCK_COUNT,      Unit::Count},
+        {"klock_t",   ::crucible::perf::KERNEL_LOCK_NS,         Unit::Ns},
 
         // I/O (syscall-level).
-        {"read",      bench::bpf::IO_READ_BYTES,          Unit::Bytes},
-        {"write",     bench::bpf::IO_WRITE_BYTES,         Unit::Bytes},
-        {"r_ops",     bench::bpf::IO_READ_OPS,            Unit::Count},
-        {"w_ops",     bench::bpf::IO_WRITE_OPS,           Unit::Count},
-        {"fd_open",   bench::bpf::FD_OPEN_OPS,            Unit::Count},
+        {"read",      ::crucible::perf::IO_READ_BYTES,          Unit::Bytes},
+        {"write",     ::crucible::perf::IO_WRITE_BYTES,         Unit::Bytes},
+        {"r_ops",     ::crucible::perf::IO_READ_OPS,            Unit::Count},
+        {"w_ops",     ::crucible::perf::IO_WRITE_OPS,           Unit::Count},
+        {"fd_open",   ::crucible::perf::FD_OPEN_OPS,            Unit::Count},
 
         // Block I/O (device-level).
-        {"disk_r",    bench::bpf::DISK_READ_BYTES,        Unit::Bytes},
-        {"disk_w",    bench::bpf::DISK_WRITE_BYTES,       Unit::Bytes},
-        {"disk_t",    bench::bpf::DISK_IO_LATENCY_NS,     Unit::Ns},
-        {"disk_n",    bench::bpf::DISK_IO_COUNT,          Unit::Count},
-        {"pg_miss",   bench::bpf::PAGE_CACHE_MISSES,      Unit::Count},
-        {"readahead", bench::bpf::READAHEAD_PAGES,        Unit::Count},
-        {"unplug",    bench::bpf::IO_UNPLUG_COUNT,        Unit::Count},
-        {"throttle",  bench::bpf::WRITE_THROTTLE_JIFFIES, Unit::Count},
+        {"disk_r",    ::crucible::perf::DISK_READ_BYTES,        Unit::Bytes},
+        {"disk_w",    ::crucible::perf::DISK_WRITE_BYTES,       Unit::Bytes},
+        {"disk_t",    ::crucible::perf::DISK_IO_LATENCY_NS,     Unit::Ns},
+        {"disk_n",    ::crucible::perf::DISK_IO_COUNT,          Unit::Count},
+        {"pg_miss",   ::crucible::perf::PAGE_CACHE_MISSES,      Unit::Count},
+        {"readahead", ::crucible::perf::READAHEAD_PAGES,        Unit::Count},
+        {"unplug",    ::crucible::perf::IO_UNPLUG_COUNT,        Unit::Count},
+        {"throttle",  ::crucible::perf::WRITE_THROTTLE_JIFFIES, Unit::Count},
 
         // Network.
-        {"tx",        bench::bpf::NET_TX_BYTES,           Unit::Bytes},
-        {"rx",        bench::bpf::NET_RX_BYTES,           Unit::Bytes},
-        {"retrans",   bench::bpf::TCP_RETRANSMIT_COUNT,   Unit::Count},
-        {"rst",       bench::bpf::TCP_RST_SENT,           Unit::Count},
-        {"sk_err",    bench::bpf::TCP_ERROR_COUNT,        Unit::Count},
-        {"skb_drop",  bench::bpf::SKB_DROP_COUNT,         Unit::Count},
-        {"cng_loss",  bench::bpf::TCP_CONG_LOSS,          Unit::Count},
+        {"tx",        ::crucible::perf::NET_TX_BYTES,           Unit::Bytes},
+        {"rx",        ::crucible::perf::NET_RX_BYTES,           Unit::Bytes},
+        {"retrans",   ::crucible::perf::TCP_RETRANSMIT_COUNT,   Unit::Count},
+        {"rst",       ::crucible::perf::TCP_RST_SENT,           Unit::Count},
+        {"sk_err",    ::crucible::perf::TCP_ERROR_COUNT,        Unit::Count},
+        {"skb_drop",  ::crucible::perf::SKB_DROP_COUNT,         Unit::Count},
+        {"cng_loss",  ::crucible::perf::TCP_CONG_LOSS,          Unit::Count},
 
         // Reliability (delta-meaningful signals only).
-        {"sig_fatal", bench::bpf::SIGNAL_FATAL_COUNT,     Unit::Count},
-        {"oom_kills", bench::bpf::OOM_KILLS_SYSTEM,       Unit::Count},
-        {"mce",       bench::bpf::MCE_COUNT,              Unit::Count},
+        {"sig_fatal", ::crucible::perf::SIGNAL_FATAL_COUNT,     Unit::Count},
+        {"oom_kills", ::crucible::perf::OOM_KILLS_SYSTEM,       Unit::Count},
+        {"mce",       ::crucible::perf::MCE_COUNT,              Unit::Count},
     };
 
     static void print_scaled_(FILE* out, uint64_t v, Unit u) noexcept {
@@ -1008,14 +994,14 @@ class Run {
 
     // Apply a `crucible::rt::Policy` to the measuring thread for the
     // duration of the Run. When set, the policy's `hot_core` selector
-    // drives pinning and our legacy pin_() path is skipped entirely —
+    // drives pinning and the direct pin_() path is skipped entirely —
     // so `.hardening(p)` unconditionally wins over any prior or
     // subsequent `.core(N)` / `.no_pin()` in the same builder chain.
     // The RAII guard returned by crucible::rt::apply() reverts sched
     // class, affinity, mlock'd regions, and THP flag when measure()
     // returns.
     //
-    // Default: no hardening (have_hardening_ == false → legacy pin_()).
+    // Default: no hardening (have_hardening_ == false -> direct pin_()).
     [[nodiscard("builder chain result is discarded — did you forget .measure(...)?")]]
     Run& hardening(const crucible::rt::Policy& p) noexcept {
         hardening_ = p;
@@ -1051,7 +1037,7 @@ class Run {
     [[nodiscard]] Report measure(Body&& body) const {
         // Resolve the policy: explicit .hardening() wins, else env var
         // CRUCIBLE_BENCH_HARDENING=production|cloud_vm|dev_quiet|none, else the
-        // legacy pin_() path.
+        // direct pin_() path.
         crucible::rt::AppliedPolicy hardening_guard;
         CpuId pinned_cpu;
         if (have_hardening_) {
@@ -1096,8 +1082,8 @@ class Run {
 #if defined(CRUCIBLE_HAVE_BPF) && CRUCIBLE_HAVE_BPF
         const ::crucible::perf::Senses*       senses = detail::senses_instance();
         const ::crucible::perf::SenseHub*     hub    = senses->sense_hub();
-        bench::bpf::Snapshot                  bpf_pre{};
-        bench::bpf::Snapshot                  bpf_post{};
+        ::crucible::perf::Snapshot                  bpf_pre{};
+        ::crucible::perf::Snapshot                  bpf_post{};
         // SchedSwitch — see detail::senses_instance() docblock for cost
         // analysis.  Pre/post are ~1 ns volatile loads each; the walk
         // happens at print time on bg thread, never per-iteration.
@@ -1320,7 +1306,7 @@ class Run {
 
     // CRUCIBLE_BENCH_HARDENING=production|cloud_vm|dev_quiet|none —
     // applies the named profile to every Run that doesn't call
-    // .hardening() itself. Unset → fall through to legacy pin_() (no
+    // .hardening() itself. Unset -> fall through to direct pin_() (no
     // hardening).
     [[nodiscard]] static std::optional<crucible::rt::Policy> env_hardening_() noexcept {
         const char* s = std::getenv("CRUCIBLE_BENCH_HARDENING");
@@ -1509,12 +1495,12 @@ inline void print_system_info(FILE* out = stdout) {
     } else if (cov.attached_count() > 0) {
         std::fprintf(out,
             "  BPF senses: harness subset partial — %zu/2 facades attached "
-            "(sense_hub failed; set CRUCIBLE_BENCH_BPF_VERBOSE=1 "
+            "(sense_hub failed; set CRUCIBLE_PERF_VERBOSE=1 "
             "for libbpf logs)\n",
             cov.attached_count());
     } else {
         std::fprintf(out,
-            "  BPF senses: UNAVAILABLE — set CRUCIBLE_BENCH_BPF_VERBOSE=1 for libbpf logs;\n"
+            "  BPF senses: UNAVAILABLE — set CRUCIBLE_PERF_VERBOSE=1 for libbpf logs;\n"
             "              typical fix: sudo sysctl kernel.unprivileged_bpf_disabled=0\n"
             "              or `cmake --build --preset bench --target bench-caps`\n");
     }

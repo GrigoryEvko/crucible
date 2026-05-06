@@ -43,8 +43,9 @@ static_assert(!fp::role_protocol_matches_v<
 
 int test_sender_receiver_views() {
     std::vector<int> events;
+    crucible::effects::HotFgCtx ctx{};
     auto [sender, receiver] =
-        fp::mint_channel<TraceKey>(Endpoint{&events}, Endpoint{&events});
+        fp::mint_channel<TraceKey>(ctx, Endpoint{&events}, Endpoint{&events});
 
     auto send_header = [](Endpoint& ep,
                           fp::HeaderPayload<TraceKey>&&) noexcept {
@@ -79,7 +80,8 @@ int test_sender_receiver_views() {
 
 int test_coord_view() {
     std::vector<int> events;
-    auto coord = fp::mint_coord<TraceKey>(Endpoint{&events});
+    crucible::effects::HotFgCtx ctx{};
+    auto coord = fp::mint_coord<TraceKey>(ctx, Endpoint{&events});
 
     auto recv_header = [](Endpoint& ep) noexcept -> fp::HeaderPayload<TraceKey> {
         ep.events->push_back(10);

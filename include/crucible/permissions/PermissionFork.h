@@ -97,12 +97,12 @@
 //   auto whole = mint_permission_root<work::Whole>();
 //
 //   auto returned_whole = mint_permission_fork<work::Left, work::Right>(
-//       PermissionForkParallelCtx{},
+//       PermissionForkSpawnCtx{},
 //       std::move(whole),
-//       [](Permission<work::Left>, PermissionForkParallelCtx const&) noexcept {
+//       [](Permission<work::Left>, PermissionForkSpawnCtx const&) noexcept {
 //           /* mutate left region */
 //       },
-//       [](Permission<work::Right>, PermissionForkParallelCtx const&) noexcept {
+//       [](Permission<work::Right>, PermissionForkSpawnCtx const&) noexcept {
 //           /* mutate right region */
 //       }
 //   );
@@ -125,11 +125,11 @@
 
 namespace crucible::safety {
 
-// Compatibility context for legacy no-ctx callers.  The explicit 16 MiB
-// budget keeps historical fork/join behavior under the cache-tier rule;
-// callers that want sequential degradation should pass a smaller ctx such
-// as effects::BgDrainCtx explicitly.
-using PermissionForkParallelCtx = ::crucible::effects::ExecCtx<
+// Default spawn-oriented fork context.  The explicit 16 MiB budget routes
+// through the cache-tier rule as a DRAM-sized background workload; callers
+// that want sequential degradation pass a smaller ctx such as
+// effects::BgDrainCtx explicitly.
+using PermissionForkSpawnCtx = ::crucible::effects::ExecCtx<
     ::crucible::effects::Bg,
     ::crucible::effects::ctx_numa::Local,
     ::crucible::effects::ctx_alloc::Arena,
@@ -157,11 +157,6 @@ concept PermissionForkCtxCallable =
     std::is_invocable_v<Callable, Permission<Child>, Ctx const&>
     && std::is_nothrow_invocable_v<Callable, Permission<Child>, Ctx const&>;
 
-template <typename Callable, typename Child>
-concept PermissionForkLegacyCallable =
-    std::is_invocable_v<Callable, Permission<Child>>
-    && std::is_nothrow_invocable_v<Callable, Permission<Child>>;
-
 template <typename Ctx, typename ChildrenTuple, typename CallablesTuple>
 struct permission_fork_ctx_callables;
 
@@ -182,26 +177,6 @@ struct permission_fork_ctx_callables<
 template <typename Ctx, typename ChildrenTuple, typename CallablesTuple>
 inline constexpr bool permission_fork_ctx_callables_v =
     permission_fork_ctx_callables<Ctx, ChildrenTuple, CallablesTuple>::value();
-
-template <typename ChildrenTuple, typename CallablesTuple>
-struct permission_fork_legacy_callables;
-
-template <typename... Children, typename... Callables>
-struct permission_fork_legacy_callables<
-    std::tuple<Children...>,
-    std::tuple<Callables...>> {
-    static consteval bool value() noexcept {
-        if constexpr (sizeof...(Children) != sizeof...(Callables)) {
-            return false;
-        } else {
-            return (PermissionForkLegacyCallable<Callables, Children> && ...);
-        }
-    }
-};
-
-template <typename ChildrenTuple, typename CallablesTuple>
-inline constexpr bool permission_fork_legacy_callables_v =
-    permission_fork_legacy_callables<ChildrenTuple, CallablesTuple>::value();
 
 template <typename Ctx>
 [[nodiscard]] consteval bool permission_fork_zero_budget_v() noexcept {
@@ -252,17 +227,6 @@ void permission_fork_inline_(Ctx const& ctx,
     (std::get<Is>(std::forward<Callables>(callables))(
          std::move(std::get<Is>(std::forward<Children>(children))),
          ctx), ...);
-}
-
-template <typename Child, typename Callable>
-[[nodiscard]] constexpr auto permission_fork_legacy_adapter(
-    Callable&& callable) noexcept
-{
-    return [callable = std::forward<Callable>(callable)](
-               Permission<Child>&& child_perm,
-               PermissionForkParallelCtx const&) mutable noexcept {
-        callable(std::move(child_perm));
-    };
 }
 
 }  // namespace detail
@@ -348,29 +312,6 @@ template <typename... Children, typename Ctx, typename Parent, typename... Calla
     // safety/Permission.h about why this is sound under the
     // linearity/no-exceptions invariants.
     return permission_fork_rebuild_<Parent>();
-}
-
-// ── Deprecated compatibility shim ─────────────────────────────────────
-//
-// Historical callers supplied only one-argument child bodies.  Keep that
-// source shape temporarily, but route it through the ctx-bound overload
-// with PermissionForkParallelCtx so old call sites retain fork/join
-// behavior under the cache-tier rule.  New code must pass Ctx explicitly.
-
-template <typename... Children, typename Parent, typename... Callables>
-    requires detail::permission_fork_legacy_callables_v<
-        std::tuple<Children...>,
-        std::tuple<Callables...>>
-[[deprecated("Prefer mint_permission_fork(ctx, parent, callables...) so Effect::Bg row admission and cache-tier routing are explicit.")]]
-[[nodiscard]] Permission<Parent> mint_permission_fork(
-    Permission<Parent>&& parent,
-    Callables&&... callables) noexcept
-{
-    return mint_permission_fork<Children...>(
-        PermissionForkParallelCtx{},
-        std::move(parent),
-        detail::permission_fork_legacy_adapter<Children>(
-            std::forward<Callables>(callables))...);
 }
 
 }  // namespace crucible::safety
