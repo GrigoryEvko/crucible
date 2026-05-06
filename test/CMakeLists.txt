@@ -2982,8 +2982,16 @@ crucible_neg_compile_test(neg_cipher_tier_lattice_cross_lattice_mixing
 # promote is upward-only, demote is downward-only.
 crucible_neg_compile_test(neg_cipher_tier_promote_hot_to_cold
   "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_cipher_tier_promote_unmovable_payload
+  "PromotableTier|constraints not satisfied|no matching function|associated constraints")
 crucible_neg_compile_test(neg_cipher_tier_demote_cold_to_hot
   "constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_cipher_tier_demote_unmovable_payload
+  "DemotableTier|constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_cipher_tier_restore_unmovable_payload
+  "RestorableTier|constraints not satisfied|no matching function|associated constraints")
+crucible_neg_compile_test(neg_cipher_tier_restore_wrong_value_type
+  "no matching function|could not convert|cannot convert|no viable")
 
 # ─── FOUND-G51 ResidencyHeat negative-compile fixtures ──────────────
 #

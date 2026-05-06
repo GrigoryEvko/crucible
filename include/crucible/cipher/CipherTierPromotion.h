@@ -46,6 +46,9 @@ template <CipherTierTag_v From, CipherTierTag_v To, typename T>
 concept DemotableTier =
     can_demote_tier_v<From, To> && std::move_constructible<T>;
 
+template <typename T>
+concept RestorableTier = std::move_constructible<T>;
+
 template <CipherTierTag_v From, CipherTierTag_v To, typename T>
     requires PromotableTier<From, To, T>
 [[nodiscard]] constexpr CipherTier<To, T>
@@ -91,7 +94,7 @@ template <typename T>
 using HotTierHandle = ::crucible::safety::cipher_tier::Hot<T>;
 
 template <typename T>
-    requires std::move_constructible<T>
+    requires RestorableTier<T>
 [[nodiscard]] constexpr std::expected<WarmTierHandle<T>, RestoreError>
 mint_restore(ColdTierHandle<T> cold_handle, ContentHash content_hash)
     noexcept(std::is_nothrow_move_constructible_v<T>)
