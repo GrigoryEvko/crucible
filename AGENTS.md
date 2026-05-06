@@ -2440,6 +2440,20 @@ Every PR passes all hard stops or is rejected.
 
 **HS4.** No destructive git — no `checkout`/`reset`/`clean`/`stash` without explicit permission. No `--no-verify`. Atomic commits.
 
+Post-audit provenance note: local history before this rule tightened contains a
+few non-atomic closures that must be read as task clusters, not as precedent.
+`cc11141` is the load-bearing landing for the GAPS-032 AdaptiveScheduler pool,
+GAPS-033 BackgroundThread row-gated pipeline integration, and GAPS-034
+cache-tier AutoRouter rule; `e7292c9` only closes the GAPS-032 worker
+destruction-order edge case and adds its neg fixtures. `0c0fd4a` closes the
+GAPS-033 row-fence wrapper around `BackgroundThread::run()` and also carries
+unrelated DimHash / StorageNbytes / SIMD test cleanup that should have been a
+separate commit. `507845c` did not move AutoRouter cardinality assertions; it
+removed silent runtime normalization and pinned the already-existing compile
+time cardinality gates with two HS14 fixtures. Going forward, feature commits
+lead with `GAPS-NNN:`, follow-ups use `GAPS-NNN-fix:`, and claimed fixture
+counts land in the closing commit.
+
 **HS5.** Measure, don't guess. Run 10+ iterations, worst observed is the bound. Variance > 5% = throttling = results invalid.
 
 **HS6.** No `sed`/`awk`. Edit tool only. Every change visible in diff.
@@ -2518,6 +2532,10 @@ The convention has TWO modes, distinguished by whether the mint threads ctx-driv
 
 - **Token mint** — synthesizes a fresh authoritative token whose authority derives from a parent token (or root authority). NO Ctx parameter; no `CtxFitsX` gate. Examples: `mint_permission_root<Tag>()`, `mint_permission_split<L,R>(parent)`, `mint_cap<E>(source)`, `mint_session_handle<Proto>(res)`.
   - Note that `mint_permission_split` and `mint_permission_combine` consume a parent token and produce fresh children/parent — the children/parent are authoritative tokens that didn't exist before the call. Mint applies even though the operation is shape-preserving decomposition/composition.
+  - `permission_inherit` is the stable non-`mint_` exception in the permission
+    recovery family. It is still a token mint by discipline; new public
+    authorization points use `mint_`, but this crash-stop recovery name is not
+    renamed solely for convention churn.
 
 - **Ctx-bound mint** — threads ctx-driven policy through the constructed type. Ctx is the FIRST parameter; the requires-clause is a single `CtxFitsX<X, Ctx>` concept. Examples: `mint_from_ctx<E>(ctx)`, `mint_session<Proto>(ctx, res)`, `mint_permissioned_session<Proto>(ctx, res, perms...)`, `mint_substrate_session<...>(ctx, handle)`, `mint_endpoint<...>(ctx, handle)`.
 
@@ -2574,6 +2592,16 @@ The convention has TWO modes, distinguished by whether the mint threads ctx-driv
 - **Internal helpers do NOT use the `mint_` prefix.** The convention marks USER-FACING authorization points; internal detail-namespace helpers carry the trailing-underscore convention (e.g., `permission_fork_spawn_`, `permission_fork_rebuild_`) so `grep "mint_"` returns only the public surface.
 - **Session ctx-bound mints use the permissioned family.** `mint_session<Proto>(ctx, res)` is the empty-`PermSet` shim; `mint_permissioned_session<Proto>(ctx, res, perms...)` is the non-empty `PermSet` form. Both route through the same ctx row gate and local permission-flow closure gate.
 - **Every new mint factory MUST ship at least 2 negative-compile fixtures** demonstrating the `requires` clause fires on each kind of mismatch. See HS14.
+- **Every new mint/concept gate gets a positive smoke as well as negative
+  fixtures.** A too-strict requires clause is still a bug if it rejects the
+  intended construction path.
+- **Coverage requirements are quantified at task closure.** Prefer "N positive
+  instantiations spanning M switch arms" over qualitative "test coverage"
+  wording, so the closing commit can be audited mechanically.
+- **ChaseLev work-stealing names stay source-compatible until GAPS-081.**
+  `mint_chaselev_owner` / `mint_chaselev_thief` remain the concrete substrate
+  names. The work-stealing bridge may add workstealing-named aliases at
+  GAPS-081 without breaking existing callers.
 
 ### Anti-pattern: the runtime registry
 

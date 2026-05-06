@@ -59,6 +59,14 @@ class Vigil {
     };
 
  private:
+    // GAPS-031 audit note: the task text originally suggested
+    // AtomicMonotonic<ContextMode>. Vigil's lifecycle is intentionally
+    // cyclic: RECORDING -> COMPILED -> RECORDING after divergence. A
+    // monotonic wrapper would lie about that state machine. ModeCell keeps
+    // the raw atomic private and exposes only the two named transitions the
+    // runtime actually performs. The pending region uses PublishSlot rather
+    // than PublishOnce for the same reason: divergence recovery can publish
+    // multiple latest-wins regions across one process lifetime.
     class ModeCell {
         std::atomic<Mode> value_{Mode::RECORDING};
 

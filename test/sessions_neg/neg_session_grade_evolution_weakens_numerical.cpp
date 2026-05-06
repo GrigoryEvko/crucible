@@ -2,6 +2,11 @@
 
 #include <type_traits>
 
+// GAPS-070 evolution fixture: protocol evolution means an old local session
+// type is being replaced by a new one. Even if a local is_subsort axiom claims
+// the payload transition is acceptable, the ProductLattice grade filter must
+// continue to fire when the new protocol weakens the numerical determinism axis.
+
 namespace alg = crucible::algebra::lattices;
 namespace proto = crucible::safety::proto;
 namespace saf = crucible::safety;

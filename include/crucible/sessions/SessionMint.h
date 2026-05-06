@@ -654,10 +654,12 @@ template <class Proto,
 
 // ── mint_session<Proto>(ctx, resource) ──────────────────────────────
 //
-// Backward-compatible empty-PermSet shim.  The construction point now
-// uses the same PSH family as the permissioned overload, so production
-// code can migrate from row-only session mints to row+CSL mints without
-// learning a second construction discipline.
+// Backward-compatible empty-PermSet shim. The construction point now uses the
+// same PSH family as the permissioned overload, so production code can migrate
+// from row-only session mints to row+CSL mints without learning a second
+// construction discipline. New code that owns or transfers initial CSL
+// permissions should call mint_permissioned_session; mint_session remains the
+// source-compatible row-only form for protocols whose initial PermSet is empty.
 
 template <class Proto, ::crucible::effects::IsExecCtx Ctx, class Resource>
     requires CtxFitsPermissionedProtocol<Proto, Ctx, EmptyPermSet>

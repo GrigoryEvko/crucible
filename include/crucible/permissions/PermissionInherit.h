@@ -18,6 +18,14 @@
 //   * permission_inherit<DeadTag, SurvivorTags...>() mints exactly
 //     the survivor Permission tokens, subject to compile-time gates.
 //
+// This is a registry-backed whitelist, not an algebraic lattice. There is no
+// bottom/top, join/meet, monotonicity witness, or runtime provenance carrier.
+// The inheritance relation is exactly the survivor_registry<DeadTag>
+// specialization authored next to the peer/region tag declaration. Soundness
+// depends on that specialization being reviewed as the crash-stop authority
+// transfer map. Carrying runtime provenance inside Permission<Tag> would break
+// the EBO-collapsed token discipline this layer protects.
+//
 // The design choice is misc/03_05_2026.md §8.1 option 1: per-tag
 // opt-in.  It matches the existing CSL discipline: every region is a
 // type, and ownership decisions for that region live next to its tag
