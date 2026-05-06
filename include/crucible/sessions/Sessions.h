@@ -31,6 +31,9 @@
 //                              first production-shape wiring; covers
 //                              TraceRing / MetaLog / CNTP-style
 //                              streaming SPSC channels).
+//   MetaLogSession.h        — typed-session wrapper for
+//                              PermissionedMetaLog over the production
+//                              TensorMeta side-channel.
 //   SwmrSession.h           — typed-session facade for SWMR latest-
 //                              value publication over AtomicSnapshot
 //                              + SharedPermissionPool.
@@ -63,5 +66,6 @@
 #include <crucible/sessions/SessionSubtypeReason.h>
 #include <crucible/sessions/SessionView.h>
 #include <crucible/sessions/SpscSession.h>
+#include <crucible/sessions/MetaLogSession.h>
 #include <crucible/sessions/SwmrSession.h>
 #include <crucible/sessions/ChaseLevDequeSession.h>

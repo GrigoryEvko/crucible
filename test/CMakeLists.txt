@@ -550,6 +550,11 @@ crucible_test(test_permissioned_session_handle)
 # the framework's first wired-in end-to-end exercise.
 crucible_test(test_spsc_session)
 
+# MetaLogSession.h (GAPS-061) — typed-session facade over the production
+# MetaLog TensorMeta side-channel.  Covers permissioned producer/consumer
+# endpoints, typed-session round-trip, and immediate detach.
+crucible_test(test_metalog_session)
+
 # SwmrSession.h (GAPS-019 / GAPS-020) — typed-session facade for
 # AtomicSnapshot + SharedPermissionPool.  Covers writer publication,
 # multi-reader lifetime accounting, late-reader visibility, matching
@@ -3722,6 +3727,17 @@ crucible_neg_compile_test(neg_deque_owner_try_steal
 #     FRAMEWORK-CONTROLLED via the = delete reason string.
 crucible_neg_compile_test(neg_deque_owner_copy
     "OwnerHandle owns the linear Owner Permission")
+
+# ── GAPS-061 — PermissionedMetaLog role-discrimination tests ───────
+#
+# MetaLog is append-only on the foreground side and drain-only on the
+# background side.  The permissioned facade makes that distinction
+# structural rather than convention-based.
+crucible_neg_compile_test(neg_metalog_producer_drain
+    "has no member named.*try_drain_one")
+
+crucible_neg_compile_test(neg_metalog_consumer_append
+    "has no member named.*try_append")
 
 # ─── FOUND-E diagnostic infrastructure — neg-compile harness ──────
 #
