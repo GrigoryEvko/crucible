@@ -520,6 +520,9 @@ crucible_test(test_safety_view)
 # this test adds a small runtime harness for ctest integration.
 crucible_test(test_session_subtype)
 
+# GAPS-069 protocol ProductLattice grade projection.
+crucible_test(test_session_grade)
+
 # Session delegation — Honda 1998 throw/catch higher-order sessions
 # (SEPLOG-H2a+delegate, task #337).  Exercises Delegate<T, K> /
 # Accept<T, K> runtime via an in-memory mock transport.

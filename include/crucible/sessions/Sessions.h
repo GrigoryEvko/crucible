@@ -13,6 +13,7 @@
 //   SessionGlobal.h         — global types G + projection (L4)
 //   SessionAssoc.h          — Δ ⊑_s G association invariant (L5)
 //   SessionSubtype.h        — Gay-Hole 2005 subtyping (L6)
+//   SessionGrade.h          — ProductLattice grade projection
 //   SessionSubtypeReason.h  — subtype_rejection_reason_t diagnostics
 //   SessionCrash.h          — crash-stop primitives (L8)
 //   SessionDelegate.h       — Honda 1998 throw/catch
@@ -66,6 +67,7 @@
 #include <crucible/sessions/SessionPayloadSubsort.h>
 #include <crucible/sessions/SessionPermPayloads.h>
 #include <crucible/sessions/SessionQueue.h>
+#include <crucible/sessions/SessionGrade.h>
 #include <crucible/sessions/SessionSubtype.h>
 #include <crucible/sessions/SessionSubtypeReason.h>
 #include <crucible/sessions/SessionView.h>

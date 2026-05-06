@@ -74,6 +74,12 @@
 // §IV.1–§IV.10 channels); use async subtyping for those where the
 // runtime is a bounded FIFO (MpmcRing, CNTP async collectives).
 //
+// GAPS-069 adds `sessions/SessionGrade.h`, which projects a protocol
+// into a compile-time ProductLattice tuple over Vendor / NumericalTier
+// / CipherTier / CrashClass payload grades.  This header intentionally
+// does NOT consult that tuple yet: GAPS-070 wires it in as an
+// orthogonal filter after the structural Gay-Hole rule succeeds.
+//
 // ─── Usage ───────────────────────────────────────────────────────────
 //
 //   using ProtoV1 = Loop<Select<Send<PingReq,  End>,
