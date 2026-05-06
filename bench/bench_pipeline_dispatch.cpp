@@ -52,9 +52,13 @@ static_assert(alignof(SinkCell) == 64);
 std::array<SinkCell, kLargeStages> large_sinks{};
 
 static void touch_words(std::span<const std::uint64_t> words) noexcept {
-    std::uint64_t acc = 0;
+    std::uint64_t acc = 0x9E3779B97F4A7C15ULL;
     for (std::uint64_t v : words) {
-        acc += (v * 0x9E3779B97F4A7C15ULL) ^ (acc >> 7);
+        std::uint64_t x = v ^ acc;
+        for (std::size_t r = 0; r < 4; ++r) {
+            x = (x * 0xD1B54A32D192ED03ULL) ^ (x >> 27);
+        }
+        acc ^= x + 0x94D049BB133111EBULL;
     }
     small_sink ^= acc;
     bench::do_not_optimize(small_sink);
@@ -121,9 +125,13 @@ using Large3 = cc::Stage<&large_3, eff::HotFgCtx>;
 using Large4 = cc::Stage<&large_4, eff::HotFgCtx>;
 
 static void run_small_direct() noexcept {
-    small_a(Consumer<1 * KiB>{}, Producer<1 * KiB>{});
-    small_b(Consumer<1536>{}, Producer<1536>{});
-    small_c(Consumer<1536>{}, Producer<1536>{});
+    eff::HotFgCtx ctx{};
+    auto s0 = cc::mint_stage<&small_a>(ctx, Consumer<1 * KiB>{}, Producer<1 * KiB>{});
+    auto s1 = cc::mint_stage<&small_b>(ctx, Consumer<1536>{}, Producer<1536>{});
+    auto s2 = cc::mint_stage<&small_c>(ctx, Consumer<1536>{}, Producer<1536>{});
+    std::move(s0).run();
+    std::move(s1).run();
+    std::move(s2).run();
 }
 
 static void run_large_direct() noexcept {

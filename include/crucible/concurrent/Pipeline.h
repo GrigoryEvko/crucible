@@ -72,7 +72,9 @@
 //
 // Cost:
 //   inline path: N direct FnPtr calls, no thread creation.
-//   spawned path: N pthread_create + N pthread_join per .run() call.
+//   spawned path: N pthread_create + N pthread_join per .run() call;
+//                 each worker is best-effort pinned to one probed
+//                 L3/cache cluster to keep the pipeline NUMA-local.
 // For long-lived pipelines (the typical Crucible shape — a Vigil's
 // background drain pipeline, a kernel-compile pool's stage chain) the
 // thread spawn cost amortizes to zero.
@@ -160,6 +162,14 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+
+#if __has_include(<pthread.h>) && __has_include(<sched.h>)
+  #include <pthread.h>
+  #include <sched.h>
+  #define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 1
+#else
+  #define CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY 0
+#endif
 
 namespace crucible::concurrent {
 
@@ -361,6 +371,60 @@ enum class PipelineDispatchKind : std::uint8_t {
     ThreadPerStage,
 };
 
+namespace detail {
+
+[[nodiscard]] inline int
+pipeline_affinity_cpu_(const Topology& topology,
+                       std::size_t worker_index) noexcept {
+    auto clusters = topology.cache_clusters();
+    if (!clusters.empty()) {
+        const std::vector<int>* best = &clusters.front();
+        for (auto const& cluster : clusters) {
+            if (cluster.size() > best->size()) best = &cluster;
+        }
+        if (!best->empty()) {
+            return (*best)[worker_index % best->size()];
+        }
+    }
+
+    auto node0 = topology.cores_on_node(0);
+    if (!node0.empty()) {
+        return node0[worker_index % node0.size()];
+    }
+
+    return -1;
+}
+
+template <std::size_t N>
+[[nodiscard]] inline const std::array<int, N>&
+pipeline_affinity_cpus_() noexcept {
+    static const std::array<int, N> cpus = [] {
+        std::array<int, N> out{};
+        out.fill(-1);
+
+        const auto& topology = Topology::instance();
+        for (std::size_t i = 0; i < N; ++i) {
+            out[i] = pipeline_affinity_cpu_(topology, i);
+        }
+        return out;
+    }();
+    return cpus;
+}
+
+inline void pin_current_pipeline_thread_(int cpu) noexcept {
+#if CRUCIBLE_PIPELINE_HAS_PTHREAD_AFFINITY
+    if (cpu < 0) return;
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(static_cast<std::size_t>(cpu), &set);
+    (void)::pthread_setaffinity_np(::pthread_self(), sizeof(set), &set);
+#else
+    (void)cpu;
+#endif
+}
+
+}  // namespace detail
+
 // ═════════════════════════════════════════════════════════════════════
 // ── Pipeline<Stages...> ────────────────────────────────────────────
 // ═════════════════════════════════════════════════════════════════════
@@ -409,17 +473,8 @@ public:
     }
 
     [[nodiscard]] static PipelineDispatchKind dispatch_kind() noexcept {
-        if constexpr (inline_safe && aggregate_working_set_known) {
-            const auto& topology = Topology::instance();
-            const std::size_t aggregate = aggregate_per_call_working_set;
-            if (aggregate <= topology.l1d_per_core_bytes()) {
-                return PipelineDispatchKind::Inline;
-            }
-            if (aggregate <= topology.l2_per_core_bytes()) {
-                return PipelineDispatchKind::Inline;
-            }
-        }
-        return PipelineDispatchKind::ThreadPerStage;
+        static const PipelineDispatchKind kind = compute_dispatch_kind_();
+        return kind;
     }
 
     [[nodiscard]] static bool will_run_inline() noexcept {
@@ -436,6 +491,19 @@ public:
     [[nodiscard]] constexpr auto const& stage() const &  noexcept { return std::get<I>(stages_); }
 
 private:
+    [[nodiscard]] static PipelineDispatchKind compute_dispatch_kind_() noexcept {
+        if constexpr (inline_safe && aggregate_working_set_known) {
+            const auto& topology = Topology::instance();
+            const std::size_t aggregate = aggregate_per_call_working_set;
+            if (aggregate <= topology.l1d_per_core_bytes()) {
+                return PipelineDispatchKind::Inline;
+            }
+            if (aggregate <= topology.l2_per_core_bytes()) {
+                return PipelineDispatchKind::Inline;
+            }
+        }
+        return PipelineDispatchKind::ThreadPerStage;
+    }
     template <std::size_t... Is>
     void run_inline_impl_(std::index_sequence<Is...>) && noexcept {
         ((void)std::move(std::get<Is>(stages_)).run(), ...);
@@ -443,13 +511,18 @@ private:
 
     template <std::size_t... Is>
     void run_threaded_impl_(std::index_sequence<Is...>) && noexcept {
+        const auto& affinity_cpus =
+            detail::pipeline_affinity_cpus_<sizeof...(Is)>();
+
         // Build N jthreads in-place; each captures-by-move its stage
         // and invokes std::move(stage).run() in its body.  The array's
         // destructor (at this fn's epilogue) joins all threads.
         [[maybe_unused]] std::array<std::jthread, sizeof...(Is)> threads = {
             std::jthread{
-                [stage = std::move(std::get<Is>(stages_))]
+                [stage = std::move(std::get<Is>(stages_)),
+                 cpu = affinity_cpus[Is]]
                 (std::stop_token) mutable noexcept {
+                    detail::pin_current_pipeline_thread_(cpu);
                     std::move(stage).run();
                 }
             }...
