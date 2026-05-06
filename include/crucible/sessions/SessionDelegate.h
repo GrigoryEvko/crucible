@@ -793,8 +793,11 @@ template <typename T, typename K,
           typename LoopCtx>
 struct is_well_formed<EpochedDelegate<T, K, MinEpoch, MinGeneration>, LoopCtx>
     : std::bool_constant<
+          session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration> &&
           is_well_formed<T, void>::value &&
-          is_well_formed<K, LoopCtx>::value
+          is_well_formed<K, LoopCtx>::value &&
+          (!session_loop_ctx_has_explicit_epoch_v<LoopCtx> ||
+           session_loop_ctx_epoch_matches_v<LoopCtx, MinEpoch, MinGeneration>)
       > {};
 
 template <typename T, typename K,
@@ -802,6 +805,7 @@ template <typename T, typename K,
           typename LoopCtx>
 struct is_well_formed<EpochedAccept<T, K, MinEpoch, MinGeneration>, LoopCtx>
     : std::bool_constant<
+          session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration> &&
           is_well_formed<T, void>::value &&
           is_well_formed<K, LoopCtx>::value &&
           session_loop_ctx_epoch_satisfies_v<
@@ -1486,6 +1490,12 @@ static_assert(is_subtype_sync_v<
 static_assert(is_well_formed_v<Delegate<DelegatedProto, End>>);
 static_assert(is_well_formed_v<Accept<DelegatedProto, End>>);
 static_assert(is_well_formed_v<EpochedDelegate<DelegatedProto, End, 5, 3>>);
+static_assert(is_well_formed<
+    EpochedDelegate<DelegatedProto, End, 5, 3>,
+    EpochCtx<5, 3>>::value);
+static_assert(!is_well_formed<
+    EpochedDelegate<DelegatedProto, End, 5, 3>,
+    EpochCtx<5, 2>>::value);
 static_assert(is_well_formed<
     EpochedAccept<DelegatedProto, End, 5, 3>,
     EpochCtx<5, 3>>::value);

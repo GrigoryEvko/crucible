@@ -416,6 +416,36 @@ struct is_well_formed<Accept<DelegatedSession<InnerProto, InnerPS>, K>,
           is_well_formed<K, LoopCtx>::value
       > {};
 
+template <typename InnerProto, typename InnerPS, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename LoopCtx>
+struct is_well_formed<
+    EpochedDelegate<DelegatedSession<InnerProto, InnerPS>, K,
+                    MinEpoch, MinGeneration>,
+    LoopCtx>
+    : std::bool_constant<
+          session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration> &&
+          is_well_formed<InnerProto, void>::value &&
+          is_well_formed<K, LoopCtx>::value &&
+          (!session_loop_ctx_has_explicit_epoch_v<LoopCtx> ||
+           session_loop_ctx_epoch_matches_v<LoopCtx, MinEpoch, MinGeneration>)
+      > {};
+
+template <typename InnerProto, typename InnerPS, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename LoopCtx>
+struct is_well_formed<
+    EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K,
+                  MinEpoch, MinGeneration>,
+    LoopCtx>
+    : std::bool_constant<
+          session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration> &&
+          is_well_formed<InnerProto, void>::value &&
+          is_well_formed<K, LoopCtx>::value &&
+          session_loop_ctx_epoch_satisfies_v<
+              LoopCtx, MinEpoch, MinGeneration>
+      > {};
+
 // ═════════════════════════════════════════════════════════════════
 // ── detail::step_to_next_permissioned ────────────────────────────
 // ═════════════════════════════════════════════════════════════════
@@ -1039,6 +1069,185 @@ public:
 };
 
 // ═════════════════════════════════════════════════════════════════
+// ── PermissionedSessionHandle<EpochedDelegate<DelegatedSession<...>>>
+// ═════════════════════════════════════════════════════════════════
+//
+// Epoch-versioned permission-aware delegation reuses the ordinary
+// DelegatedSession transfer implementation, but its construction is
+// gated by an exact sender epoch/generation match.  The exact match
+// prevents a sender at (E,G) from weakening the handoff by declaring
+// a lower minimum that stale peers could satisfy.
+
+template <typename InnerProto, typename InnerPS, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename PS, typename Resource, typename LoopCtx>
+class [[nodiscard]] PermissionedSessionHandle<
+    EpochedDelegate<DelegatedSession<InnerProto, InnerPS>, K,
+                    MinEpoch, MinGeneration>,
+    PS, Resource, LoopCtx>
+    : public SessionHandleBase<
+          EpochedDelegate<DelegatedSession<InnerProto, InnerPS>, K,
+                          MinEpoch, MinGeneration>,
+          PermissionedSessionHandle<
+              EpochedDelegate<DelegatedSession<InnerProto, InnerPS>, K,
+                              MinEpoch, MinGeneration>,
+              PS, Resource, LoopCtx>>
+{
+    using Protocol = EpochedDelegate<
+        DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>;
+
+    Resource                           resource_;
+    [[no_unique_address]] PS           perm_set_;
+
+    template <typename P, typename PS2, typename R2, typename L2>
+    friend class PermissionedSessionHandle;
+
+    template <typename U, typename PS2, typename Res, typename L>
+    friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
+
+    template <typename Proto, typename Res, typename... InitPerms>
+    friend constexpr auto mint_permissioned_session(
+        Res, Permission<InitPerms>&&...) noexcept;
+
+    static_assert(session_loop_ctx_epoch_matches_v<
+        LoopCtx, MinEpoch, MinGeneration>,
+        "crucible::session::diagnostic [EpochCtx_StaleSender]: "
+        "PermissionedSessionHandle<EpochedDelegate<...>> requires "
+        "LoopCtx = EpochCtx<CurrentEpoch, CurrentGeneration, ...> with "
+        "CurrentEpoch == MinEpoch and CurrentGeneration == MinGeneration. "
+        "A sender cannot mint a reshard handoff from a stale or weakened "
+        "epoch context.");
+
+public:
+    using protocol          = Protocol;
+    using delegated_proto   = InnerProto;
+    using delegated_payload = DelegatedSession<InnerProto, InnerPS>;
+    using inner_perm_set    = InnerPS;
+    using continuation      = K;
+    using perm_set          = PS;
+    using resource_type     = Resource;
+    using loop_ctx          = LoopCtx;
+    using inner_loop_ctx    = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx        = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
+    static constexpr std::uint64_t min_epoch = MinEpoch;
+    static constexpr std::uint64_t min_generation = MinGeneration;
+
+    constexpr explicit PermissionedSessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Protocol,
+                            PermissionedSessionHandle<Protocol, PS,
+                                                      Resource, LoopCtx>>{loc}
+        , resource_{std::forward<Resource>(r)} {}
+
+    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
+    constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
+
+    ~PermissionedSessionHandle() {
+#ifndef NDEBUG
+        if (!this->is_consumed_() && !is_terminal_state_v<Protocol>) {
+            detail::emit_leaked_permissions_debug<PS>();
+        }
+#endif
+    }
+
+    template <typename ActualInnerPS, typename DelegatedResource,
+              typename DelegatedLoopCtx, typename Transport>
+        requires (!is_stop_v<InnerProto> &&
+                  std::is_invocable_v<Transport, Resource&, DelegatedResource&&>)
+    [[nodiscard]] constexpr auto delegate(
+        PermissionedSessionHandle<InnerProto, ActualInnerPS,
+                                  DelegatedResource, DelegatedLoopCtx>&& delegated,
+        Transport transport) &&
+        noexcept(std::is_nothrow_invocable_v<Transport, Resource&, DelegatedResource&&>
+                 && std::is_nothrow_move_constructible_v<Resource>)
+    {
+        static_assert(perm_set_equal_v<ActualInnerPS, InnerPS>,
+            "crucible::session::diagnostic [PermissionImbalance]: "
+            "PermissionedSessionHandle::delegate: PermSet does not "
+            "contain inner_ps tokens declared by DelegatedSession<P, "
+            "InnerPS>.");
+        static_assert(perm_set_disjoint_v<PS, InnerPS>,
+            "crucible::session::diagnostic [PermissionImbalance]: "
+            "PermissionedSessionHandle::delegate: PermSet conflict -- "
+            "inner_ps already owned by the carrier handle.");
+        static_assert(!is_terminal_state_v<InnerProto> ||
+                      perm_set_equal_v<InnerPS, EmptyPermSet>,
+            "crucible::session::diagnostic [PermissionImbalance]: "
+            "PermissionedSessionHandle::delegate: "
+            "is_permission_balanced_v<InnerProto> against InnerPS "
+            "rejects.");
+
+        std::invoke(transport, resource_, std::move(delegated.resource_));
+        delegated.mark_consumed_();
+        this->mark_consumed_();
+        return detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
+            std::forward<Resource>(resource_));
+    }
+
+    template <typename ActualInnerPS, typename DelegatedResource,
+              typename DelegatedLoopCtx, typename Transport>
+        requires is_stop_v<InnerProto>
+    void delegate(
+        PermissionedSessionHandle<InnerProto, ActualInnerPS,
+                                  DelegatedResource, DelegatedLoopCtx>&&,
+        Transport) && = delete(
+        "[DelegateStop_NoContinuation] PermissionedSessionHandle<"
+        "EpochedDelegate<DelegatedSession<Stop, InnerPS>, K, "
+        "MinEpoch, MinGeneration>> cannot delegate an already-crashed "
+        "endpoint and continue as K.  Handle Stop/crash before this "
+        "epoch-versioned permissioned handoff point.");
+
+    template <typename ActualInnerPS, typename DelegatedResource,
+              typename DelegatedLoopCtx>
+        requires (!is_stop_v<InnerProto>)
+    [[nodiscard]] constexpr auto delegate_local(
+        PermissionedSessionHandle<InnerProto, ActualInnerPS,
+                                  DelegatedResource, DelegatedLoopCtx>&& delegated) &&
+        noexcept(std::is_nothrow_move_constructible_v<Resource>
+                 && std::is_nothrow_destructible_v<DelegatedResource>)
+    {
+        static_assert(perm_set_equal_v<ActualInnerPS, InnerPS>,
+            "crucible::session::diagnostic [PermissionImbalance]: "
+            "PermissionedSessionHandle::delegate_local: PermSet does "
+            "not contain inner_ps tokens declared by DelegatedSession"
+            "<P, InnerPS>.");
+        static_assert(perm_set_disjoint_v<PS, InnerPS>,
+            "crucible::session::diagnostic [PermissionImbalance]: "
+            "PermissionedSessionHandle::delegate_local: PermSet "
+            "conflict -- inner_ps already owned by the carrier handle.");
+        static_assert(!is_terminal_state_v<InnerProto> ||
+                      perm_set_equal_v<InnerPS, EmptyPermSet>,
+            "crucible::session::diagnostic [PermissionImbalance]: "
+            "PermissionedSessionHandle::delegate_local: "
+            "is_permission_balanced_v<InnerProto> against InnerPS "
+            "rejects.");
+
+        delegated.mark_consumed_();
+        (void)std::move(delegated);
+        this->mark_consumed_();
+        return detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
+            std::forward<Resource>(resource_));
+    }
+
+    template <typename ActualInnerPS, typename DelegatedResource,
+              typename DelegatedLoopCtx>
+    void delegate(
+        PermissionedSessionHandle<InnerProto, ActualInnerPS,
+                                  DelegatedResource, DelegatedLoopCtx>&&) && = delete(
+        "[Wire_Variant_Required] PermissionedSessionHandle<EpochedDelegate<"
+        "DelegatedSession<P, InnerPS>, K, MinEpoch, MinGeneration>>::"
+        "delegate(handle) without a transport is not allowed.  Choose "
+        "delegate(handle, transport) for wire handoff or delegate_local"
+        "(handle) for explicit in-memory tests.");
+
+    [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const & noexcept { return resource_; }
+};
+
+// ═════════════════════════════════════════════════════════════════
 // ── PermissionedSessionHandle<Accept<DelegatedSession<P, IPS>, K>>
 // ═════════════════════════════════════════════════════════════════
 
@@ -1117,6 +1326,153 @@ public:
             "permission token; split the authority into distinct tags "
             "or remove the overlapping carrier permission before "
             "accepting the endpoint.");
+        static_assert(!is_terminal_state_v<InnerProto> ||
+                      perm_set_equal_v<InnerPS, EmptyPermSet>,
+            "crucible::session::diagnostic [PermissionImbalance]: "
+            "PermissionedSessionHandle::accept: "
+            "is_permission_balanced_v<InnerProto> against InnerPS "
+            "rejects.  A terminal delegated protocol cannot carry a "
+            "non-empty inner_ps.");
+
+        DelegatedResource delegated_res = std::invoke(transport, resource_);
+        this->mark_consumed_();
+        PermissionedSessionHandle<InnerProto, InnerPS,
+                                  DelegatedResource, void> delegated_handle{
+            std::move(delegated_res)};
+        auto continuation_handle =
+            detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
+                std::forward<Resource>(resource_));
+        return std::pair{std::move(delegated_handle),
+                         std::move(continuation_handle)};
+    }
+
+    template <typename DelegatedResource>
+    [[nodiscard]] constexpr auto accept_with(DelegatedResource delegated_res) &&
+        noexcept(std::is_nothrow_move_constructible_v<Resource>
+                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
+    {
+        static_assert(perm_set_disjoint_v<PS, InnerPS>,
+            "crucible::session::diagnostic [PermissionImbalance]: "
+            "PermissionedSessionHandle::accept_with: PermSet conflict "
+            "-- inner_ps already owned by the carrier handle.");
+        static_assert(!is_terminal_state_v<InnerProto> ||
+                      perm_set_equal_v<InnerPS, EmptyPermSet>,
+            "crucible::session::diagnostic [PermissionImbalance]: "
+            "PermissionedSessionHandle::accept_with: "
+            "is_permission_balanced_v<InnerProto> against InnerPS "
+            "rejects.");
+
+        this->mark_consumed_();
+        PermissionedSessionHandle<InnerProto, InnerPS,
+                                  DelegatedResource, void> delegated_handle{
+            std::move(delegated_res)};
+        auto continuation_handle =
+            detail::step_to_next_permissioned<K, PS, Resource, LoopCtx>(
+                std::forward<Resource>(resource_));
+        return std::pair{std::move(delegated_handle),
+                         std::move(continuation_handle)};
+    }
+
+    [[nodiscard]] constexpr Resource&       resource() &       noexcept { return resource_; }
+    [[nodiscard]] constexpr const Resource& resource() const & noexcept { return resource_; }
+};
+
+// ═════════════════════════════════════════════════════════════════
+// ── PermissionedSessionHandle<EpochedAccept<DelegatedSession<...>>>
+// ═════════════════════════════════════════════════════════════════
+//
+// The recipient side may be newer than the declared minimum, but it
+// must not be stale or unannotated.
+
+template <typename InnerProto, typename InnerPS, typename K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          typename PS, typename Resource, typename LoopCtx>
+class [[nodiscard]] PermissionedSessionHandle<
+    EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K,
+                  MinEpoch, MinGeneration>,
+    PS, Resource, LoopCtx>
+    : public SessionHandleBase<
+          EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K,
+                        MinEpoch, MinGeneration>,
+          PermissionedSessionHandle<
+              EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K,
+                            MinEpoch, MinGeneration>,
+              PS, Resource, LoopCtx>>
+{
+    using Protocol = EpochedAccept<
+        DelegatedSession<InnerProto, InnerPS>, K, MinEpoch, MinGeneration>;
+
+    Resource                           resource_;
+    [[no_unique_address]] PS           perm_set_;
+
+    template <typename P, typename PS2, typename R2, typename L2>
+    friend class PermissionedSessionHandle;
+
+    template <typename U, typename PS2, typename Res, typename L>
+    friend constexpr auto detail::step_to_next_permissioned(Res, std::source_location) noexcept;
+
+    template <typename Proto, typename Res, typename... InitPerms>
+    friend constexpr auto mint_permissioned_session(
+        Res, Permission<InitPerms>&&...) noexcept;
+
+    static_assert(session_loop_ctx_epoch_satisfies_v<
+        LoopCtx, MinEpoch, MinGeneration>,
+        "crucible::session::diagnostic [EpochCtx_StaleRecipient]: "
+        "PermissionedSessionHandle<EpochedAccept<...>> requires "
+        "LoopCtx = EpochCtx<CurrentEpoch, CurrentGeneration, ...> with "
+        "CurrentEpoch >= MinEpoch and CurrentGeneration >= MinGeneration. "
+        "A stale or unannotated recipient cannot accept this delegated "
+        "reshard endpoint.");
+
+public:
+    using protocol          = Protocol;
+    using delegated_proto   = InnerProto;
+    using delegated_payload = DelegatedSession<InnerProto, InnerPS>;
+    using inner_perm_set    = InnerPS;
+    using continuation      = K;
+    using perm_set          = PS;
+    using resource_type     = Resource;
+    using loop_ctx          = LoopCtx;
+    using inner_loop_ctx    = loop_ctx_inner_t<LoopCtx>;
+    using vendor_ctx        = loop_ctx_as_vendor_ctx_t<LoopCtx>;
+    static constexpr VendorBackend vendor_backend = loop_ctx_vendor_v<LoopCtx>;
+    static constexpr std::uint64_t min_epoch = MinEpoch;
+    static constexpr std::uint64_t min_generation = MinGeneration;
+
+    constexpr explicit PermissionedSessionHandle(
+        Resource r,
+        std::source_location loc = std::source_location::current())
+        noexcept(std::is_nothrow_move_constructible_v<Resource>)
+        : SessionHandleBase<Protocol,
+                            PermissionedSessionHandle<Protocol, PS,
+                                                      Resource, LoopCtx>>{loc}
+        , resource_{std::forward<Resource>(r)} {}
+
+    constexpr PermissionedSessionHandle(PermissionedSessionHandle&&) noexcept            = default;
+    constexpr PermissionedSessionHandle& operator=(PermissionedSessionHandle&&) noexcept = default;
+
+    ~PermissionedSessionHandle() {
+#ifndef NDEBUG
+        if (!this->is_consumed_() && !is_terminal_state_v<Protocol>) {
+            detail::emit_leaked_permissions_debug<PS>();
+        }
+#endif
+    }
+
+    template <typename Transport,
+              typename DelegatedResource = std::invoke_result_t<Transport, Resource&>>
+        requires std::is_invocable_v<Transport, Resource&>
+    [[nodiscard]] constexpr auto accept(Transport transport) &&
+        noexcept(std::is_nothrow_invocable_v<Transport, Resource&>
+                 && std::is_nothrow_move_constructible_v<Resource>
+                 && std::is_nothrow_move_constructible_v<DelegatedResource>)
+    {
+        static_assert(perm_set_disjoint_v<PS, InnerPS>,
+            "crucible::session::diagnostic [PermissionImbalance]: "
+            "PermissionedSessionHandle::accept: PermSet conflict -- "
+            "inner_ps already owned by the carrier handle.  Accepting "
+            "DelegatedSession<P, InnerPS> would duplicate a CSL "
+            "permission token.");
         static_assert(!is_terminal_state_v<InnerProto> ||
                       perm_set_equal_v<InnerPS, EmptyPermSet>,
             "crucible::session::diagnostic [PermissionImbalance]: "
@@ -1471,7 +1827,7 @@ template <typename Proto,
     Resource r,
     std::source_location loc) noexcept
 {
-    static_assert(is_well_formed_v<Proto>,
+    static_assert(is_well_formed<Proto, LoopCtx>::value,
         "crucible::session::diagnostic [Protocol_Ill_Formed]: "
         "mint_permissioned_session<Proto>: protocol is ill-formed.");
     static_assert(!is_empty_choice_v<Proto>,

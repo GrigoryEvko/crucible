@@ -905,6 +905,12 @@ When membership changes (node joins, node dies, cluster grows/shrinks), Raft com
 3. At iteration boundary:
    - Recompute DP/TP/PP partitioning (Phase K of Forge, triggered again)
    - Redistribute shards per new partition
+   - Cross-Relay handoffs that carry live Cipher hot-tier state use
+     `EpochedDelegate<DelegatedSession<...>, K, E+1, generation>` so
+     the sender cannot weaken the declared epoch/generation and stale
+     recipients cannot accept the delegated endpoint.  FOUND-G70 (#739)
+     consumes this type-level fence at the production Canopy
+     collective/reshard call sites.
    - Continue from step T+1 on new topology
 
 If a node died mid-step with data we needed, we roll back to the last Cipher checkpoint and replay (see §10). Bounded cost: N steps of recompute (N = checkpoint interval).
@@ -1865,7 +1871,9 @@ Next step uses new partition; old state redistributed via RDMA
 1. Keeper announces `leaving` via gossip
 2. Finishes current step if one is in progress
 3. Transfers unique state (hot-tier Cipher entries that don't exist on warm/cold) to a surviving peer
-4. Raft commits new membership
+4. Raft commits new membership; any live endpoint handoff is typed as an
+   `EpochedDelegate` at the committed epoch/generation, not as an unversioned
+   `Delegate`
 5. Reshard if needed
 
 **Node dies (unexpected)**:
@@ -3594,7 +3602,5 @@ Crucible is a different category of tool from the ML frameworks it replaces. Thi
 ---
 
 *End of Crucible runtime design document. Companion to FORGE.md (vendor-agnostic compiler) and MIMIC.md (per-vendor backend framework). Upstream overview in CLAUDE.md.*
-
-
 
 

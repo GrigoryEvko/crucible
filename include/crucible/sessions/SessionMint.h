@@ -31,9 +31,12 @@
 //   ProtocolVendorAdmittedByLoopCtx<Proto, L>
 //                                           — VendorPinned / Vendor<T>
 //                                             admission against LoopCtx
+//   ProtocolEpochAdmittedByLoopCtx<Proto, L>
+//                                           — EpochedDelegate / Accept
+//                                             admission against LoopCtx
 //   CtxFitsPermissionedProtocol<Proto, Ctx,
 //                               PS, L>      — row + local PS closure +
-//                                             vendor admission
+//                                             vendor + epoch admission
 //   mint_permissioned_session<Proto>(ctx,
 //       resource, perms...)                  — factory; returns PSH
 //   mint_session<Proto>(ctx, resource)        — empty-PS shim
@@ -56,6 +59,12 @@
 // obligation, not an effect row.  GAPS-068 admits them only when the
 // surrounding session has an explicit VendorCtx and
 // VendorLattice::leq(payload_vendor, session_vendor) holds.
+//
+// EpochedDelegate / EpochedAccept add a second LoopCtx-side admission
+// gate for cross-Relay reshard handoffs.  Sender-side delegate mints
+// require an exact (CurrentEpoch, CurrentGeneration) match so a fresh
+// sender cannot weaken the handoff threshold; recipient-side accepts
+// allow any context at or above the declared threshold.
 //
 // ── Why eager whole-protocol ────────────────────────────────────────
 //
@@ -96,6 +105,55 @@
 #include <source_location>
 #include <type_traits>
 #include <utility>
+
+namespace crucible::safety::proto {
+
+// EpochExecCtx<E, G, InnerCtx> is the ctx-bound mint bridge for
+// EpochedDelegate / EpochedAccept.  The ordinary effects::ExecCtx
+// axes still come from InnerCtx; this wrapper adds only the
+// compile-time Canopy epoch + Relay generation used to seed the
+// returned PermissionedSessionHandle's LoopCtx.
+template <std::uint64_t CurrentEpoch,
+          std::uint64_t CurrentGeneration,
+          ::crucible::effects::IsExecCtx InnerCtx>
+struct [[nodiscard]] EpochExecCtx {
+    using inner_ctx     = InnerCtx;
+    using cap_type      = typename InnerCtx::cap_type;
+    using numa_policy   = typename InnerCtx::numa_policy;
+    using alloc_class   = typename InnerCtx::alloc_class;
+    using hot_path_tier = typename InnerCtx::hot_path_tier;
+    using residency     = typename InnerCtx::residency;
+    using row_type      = typename InnerCtx::row_type;
+    using workload_hint = typename InnerCtx::workload_hint;
+
+    static constexpr std::uint64_t current_epoch = CurrentEpoch;
+    static constexpr std::uint64_t current_generation = CurrentGeneration;
+
+    [[no_unique_address]] InnerCtx inner{};
+};
+
+template <std::uint64_t CurrentEpoch,
+          std::uint64_t CurrentGeneration,
+          ::crucible::effects::IsExecCtx InnerCtx>
+[[nodiscard]] consteval auto with_session_epoch(InnerCtx const&) noexcept
+    -> EpochExecCtx<CurrentEpoch, CurrentGeneration, InnerCtx>
+{
+    return {};
+}
+
+}  // namespace crucible::safety::proto
+
+namespace crucible::effects {
+
+template <std::uint64_t CurrentEpoch,
+          std::uint64_t CurrentGeneration,
+          class InnerCtx>
+struct is_exec_ctx<
+    ::crucible::safety::proto::EpochExecCtx<
+        CurrentEpoch, CurrentGeneration, InnerCtx>>
+    : is_exec_ctx<InnerCtx> {};
+
+}  // namespace crucible::effects
 
 namespace crucible::safety::proto {
 
@@ -474,6 +532,11 @@ struct protocol_vendor_admitted_by_loop_ctx<
           protocol_vendor_admitted_by_loop_ctx<Rollback, LoopCtx>::value
       > {};
 
+template <class InnerProto, class InnerPS, class LoopCtx>
+struct protocol_vendor_admitted_by_loop_ctx<
+    DelegatedSession<InnerProto, InnerPS>, LoopCtx>
+    : protocol_vendor_admitted_by_loop_ctx<InnerProto, LoopCtx> {};
+
 template <class T, class K, class LoopCtx>
 struct protocol_vendor_admitted_by_loop_ctx<Delegate<T, K>, LoopCtx>
     : std::bool_constant<
@@ -516,6 +579,116 @@ struct protocol_vendor_admitted_by_loop_ctx<VendorPinned<V, P>, LoopCtx>
 template <class Proto, class LoopCtx>
 inline constexpr bool protocol_vendor_admitted_by_loop_ctx_v =
     protocol_vendor_admitted_by_loop_ctx<Proto, LoopCtx>::value;
+
+template <class Ctx>
+struct loop_ctx_from_exec_ctx {
+    using type = void;
+};
+
+template <std::uint64_t CurrentEpoch,
+          std::uint64_t CurrentGeneration,
+          class InnerCtx>
+struct loop_ctx_from_exec_ctx<
+    EpochExecCtx<CurrentEpoch, CurrentGeneration, InnerCtx>> {
+    using type = EpochCtx<CurrentEpoch, CurrentGeneration>;
+};
+
+template <class Ctx>
+using loop_ctx_from_exec_ctx_t =
+    typename loop_ctx_from_exec_ctx<std::remove_cvref_t<Ctx>>::type;
+
+template <class Proto, class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx : std::false_type {};
+
+template <class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<End, LoopCtx> : std::true_type {};
+
+template <CrashClass C, class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<Stop_g<C>, LoopCtx> : std::true_type {};
+
+template <class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<Continue, LoopCtx> : std::true_type {};
+
+template <class T, class K, class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<Send<T, K>, LoopCtx>
+    : protocol_epoch_admitted_by_loop_ctx<K, LoopCtx> {};
+
+template <class T, class K, class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<Recv<T, K>, LoopCtx>
+    : protocol_epoch_admitted_by_loop_ctx<K, LoopCtx> {};
+
+template <class Body, class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<Loop<Body>, LoopCtx>
+    : protocol_epoch_admitted_by_loop_ctx<
+          Body, loop_ctx_rebind_inner_t<LoopCtx, Loop<Body>>> {};
+
+template <class... Branches, class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<Select<Branches...>, LoopCtx>
+    : std::bool_constant<
+          (protocol_epoch_admitted_by_loop_ctx<Branches, LoopCtx>::value && ...)
+      > {};
+
+template <class... Branches, class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<Offer<Branches...>, LoopCtx>
+    : std::bool_constant<
+          (protocol_epoch_admitted_by_loop_ctx<Branches, LoopCtx>::value && ...)
+      > {};
+
+template <class Role, class... Branches, class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<
+    Offer<Sender<Role>, Branches...>, LoopCtx>
+    : std::bool_constant<
+          (protocol_epoch_admitted_by_loop_ctx<Branches, LoopCtx>::value && ...)
+      > {};
+
+template <class Base, class Rollback, class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<
+    CheckpointedSession<Base, Rollback>, LoopCtx>
+    : std::bool_constant<
+          protocol_epoch_admitted_by_loop_ctx<Base, LoopCtx>::value &&
+          protocol_epoch_admitted_by_loop_ctx<Rollback, LoopCtx>::value
+      > {};
+
+template <class InnerProto, class InnerPS, class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<
+    DelegatedSession<InnerProto, InnerPS>, LoopCtx>
+    : protocol_epoch_admitted_by_loop_ctx<InnerProto, LoopCtx> {};
+
+template <class T, class K, class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<Delegate<T, K>, LoopCtx>
+    : protocol_epoch_admitted_by_loop_ctx<K, LoopCtx> {};
+
+template <class T, class K, class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<Accept<T, K>, LoopCtx>
+    : protocol_epoch_admitted_by_loop_ctx<K, LoopCtx> {};
+
+template <class T, class K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<
+    EpochedDelegate<T, K, MinEpoch, MinGeneration>, LoopCtx>
+    : std::bool_constant<
+          session_loop_ctx_epoch_matches_v<LoopCtx, MinEpoch, MinGeneration> &&
+          protocol_epoch_admitted_by_loop_ctx<K, LoopCtx>::value
+      > {};
+
+template <class T, class K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration,
+          class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<
+    EpochedAccept<T, K, MinEpoch, MinGeneration>, LoopCtx>
+    : std::bool_constant<
+          session_loop_ctx_epoch_satisfies_v<LoopCtx, MinEpoch, MinGeneration> &&
+          protocol_epoch_admitted_by_loop_ctx<K, LoopCtx>::value
+      > {};
+
+template <VendorBackend V, class P, class LoopCtx>
+struct protocol_epoch_admitted_by_loop_ctx<VendorPinned<V, P>, LoopCtx>
+    : protocol_epoch_admitted_by_loop_ctx<P, LoopCtx> {};
+
+template <class Proto, class LoopCtx>
+inline constexpr bool protocol_epoch_admitted_by_loop_ctx_v =
+    protocol_epoch_admitted_by_loop_ctx<Proto, LoopCtx>::value;
 
 template <class Proto, class PS, class LoopCtx = void>
 struct permission_flow_closes : std::false_type {};
@@ -621,11 +794,21 @@ concept ProtocolVendorAdmittedByLoopCtx =
     detail::session_mint::protocol_vendor_admitted_by_loop_ctx_v<
         Proto, LoopCtx>;
 
-template <class Proto, class Ctx, class InitialPS, class LoopCtx = void>
+template <class Proto, class LoopCtx>
+concept ProtocolEpochAdmittedByLoopCtx =
+    detail::session_mint::protocol_epoch_admitted_by_loop_ctx_v<
+        Proto, LoopCtx>;
+
+template <class Proto,
+          class Ctx,
+          class InitialPS,
+          class LoopCtx =
+              detail::session_mint::loop_ctx_from_exec_ctx_t<Ctx>>
 concept CtxFitsPermissionedProtocol =
     CtxFitsProtocol<Proto, Ctx>
     && detail::session_mint::permission_flow_closes_v<Proto, InitialPS, LoopCtx>
-    && ProtocolVendorAdmittedByLoopCtx<Proto, LoopCtx>;
+    && ProtocolVendorAdmittedByLoopCtx<Proto, LoopCtx>
+    && ProtocolEpochAdmittedByLoopCtx<Proto, LoopCtx>;
 
 // ── mint_permissioned_session<Proto>(ctx, resource, perms...) ───────
 //
@@ -646,9 +829,11 @@ template <class Proto,
     ::crucible::safety::Permission<InitPerms>&&... perms) noexcept
 {
     using InitialPS = PermSet<InitPerms...>;
+    using LoopCtx = detail::session_mint::loop_ctx_from_exec_ctx_t<Ctx>;
     ((void)perms, ...);
 
-    return detail::mint_permissioned_session_with_loc<Proto, InitialPS, Resource>(
+    return detail::mint_permissioned_session_with_loc<
+        Proto, InitialPS, Resource, LoopCtx>(
         std::forward<Resource>(resource), std::source_location::current());
 }
 
@@ -669,7 +854,9 @@ template <class Proto, ::crucible::effects::IsExecCtx Ctx, class Resource>
     std::source_location loc = std::source_location::current()) noexcept
 {
     using StoredResource = std::remove_cvref_t<Resource>;
-    return detail::mint_permissioned_session_with_loc<Proto, EmptyPermSet, StoredResource>(
+    using LoopCtx = detail::session_mint::loop_ctx_from_exec_ctx_t<Ctx>;
+    return detail::mint_permissioned_session_with_loc<
+        Proto, EmptyPermSet, StoredResource, LoopCtx>(
         std::forward<Resource>(resource), loc);
 }
 
@@ -833,6 +1020,34 @@ using EmptyShim = decltype(mint_session<SendInt>(
     std::declval<FakeResource>()));
 static_assert(std::is_same_v<typename EmptyShim::protocol, SendInt>);
 static_assert(std::is_same_v<typename EmptyShim::perm_set, EmptyPermSet>);
+
+using EpochFgCtx = EpochExecCtx<5, 3, eff::HotFgCtx>;
+using FreshEpochDelegate =
+    EpochedDelegate<DelegatedSession<End, EmptyPermSet>, End, 5, 3>;
+using WeakenedGenerationDelegate =
+    EpochedDelegate<DelegatedSession<End, EmptyPermSet>, End, 5, 2>;
+static_assert(::crucible::effects::IsExecCtx<EpochFgCtx>);
+static_assert(sizeof(EpochFgCtx) == sizeof(eff::HotFgCtx));
+static_assert(ProtocolEpochAdmittedByLoopCtx<
+    FreshEpochDelegate, EpochCtx<5, 3>>);
+static_assert(!ProtocolEpochAdmittedByLoopCtx<
+    FreshEpochDelegate, EpochCtx<4, 3>>);
+static_assert(!ProtocolEpochAdmittedByLoopCtx<
+    WeakenedGenerationDelegate, EpochCtx<5, 3>>);
+static_assert( CtxFitsPermissionedProtocol<
+    FreshEpochDelegate, EpochFgCtx, EmptyPermSet>);
+static_assert(!CtxFitsPermissionedProtocol<
+    FreshEpochDelegate, eff::HotFgCtx, EmptyPermSet>);
+static_assert(!CtxFitsPermissionedProtocol<
+    WeakenedGenerationDelegate, EpochFgCtx, EmptyPermSet>);
+
+using EpochShim = decltype(mint_session<FreshEpochDelegate>(
+    std::declval<EpochFgCtx const&>(),
+    std::declval<FakeResource>()));
+static_assert(std::is_same_v<typename EpochShim::protocol,
+                             FreshEpochDelegate>);
+static_assert(std::is_same_v<typename EpochShim::loop_ctx,
+                             EpochCtx<5, 3>>);
 
 // ── Stop terminator (BSYZ22 crash-stop) ────────────────────────────
 static_assert( proto_row_admitted_by_v<Stop, eff::HotFgCtx>);

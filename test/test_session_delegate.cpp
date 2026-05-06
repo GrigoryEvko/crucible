@@ -5,6 +5,7 @@
 // test into ctest.
 
 #include <crucible/sessions/SessionDelegate.h>
+#include <crucible/sessions/SessionMint.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -69,6 +70,13 @@ using CarrierPeer  = dual_of_t<CarrierProto>;
 using EpochedReshardDelegate =
     EpochedDelegate<HotTierHandle, RecvAck, 5, 3>;
 using EpochedReshardAccept = dual_of_t<EpochedReshardDelegate>;
+
+using EpochedReshardDelegatePsh =
+    EpochedDelegate<DelegatedSession<HotTierHandle, EmptyPermSet>,
+                    RecvAck,
+                    6,
+                    3>;
+using EpochedReshardAcceptPsh = dual_of_t<EpochedReshardDelegatePsh>;
 
 // ── Transports ─────────────────────────────────────────────────────
 
@@ -389,6 +397,93 @@ int run_epoched_delegate_reshard() {
     return 0;
 }
 
+int run_epoched_delegate_mint_reshard() {
+    using Epoch6Ctx =
+        EpochExecCtx<6, 3, ::crucible::effects::HotFgCtx>;
+
+    struct RelayState {
+        const char* name;
+        int         epoch;
+        int         generation;
+        bool        alive;
+    };
+
+    const RelayState fleet[] = {
+        {"relay-a", 5, 3, true},
+        {"relay-b", 5, 3, true},
+        {"relay-c", 5, 3, false},
+        {"relay-d", 5, 3, true},
+    };
+    int live_relays = 0;
+    for (RelayState const& relay : fleet) {
+        if (relay.epoch != 5 || relay.generation != 3) {
+            std::fprintf(stderr,
+                         "unexpected pre-reshard coordinate for %s\n",
+                         relay.name);
+            return 1;
+        }
+        if (relay.alive) {
+            ++live_relays;
+        }
+    }
+    if (live_relays != 3) {
+        std::fprintf(stderr, "expected three surviving relays after failure\n");
+        return 1;
+    }
+
+    Epoch6Ctx epoch6{};
+    std::deque<std::string> wire;
+
+    auto sender = mint_session<EpochedReshardDelegatePsh>(
+        epoch6,
+        MockChannel{.name = "epoch6-reshard-sender", .wire_bytes = &wire});
+    auto recipient = mint_session<EpochedReshardAcceptPsh>(
+        epoch6,
+        MockChannel{.name = "epoch6-reshard-recipient", .wire_bytes = &wire});
+    auto hot_handle = mint_session<HotTierHandle>(
+        epoch6,
+        MockChannel{.name = "epoch6-hot-tier-shard", .wire_bytes = &wire});
+
+    auto sender_waiting_for_ack = std::move(sender).delegate(
+        std::move(hot_handle),
+        transport_delegate);
+    auto [accepted_hot_handle, recipient_can_ack] =
+        std::move(recipient).accept(transport_accept);
+
+    std::deque<std::string> hot_wire;
+    accepted_hot_handle.resource().wire_bytes = &hot_wire;
+    auto accepted_hot_done = std::move(accepted_hot_handle).send(
+        HotShardChunk{.shard_id = 23},
+        send_hot_shard_chunk);
+    (void)std::move(accepted_hot_done).close();
+
+    auto recipient_done = std::move(recipient_can_ack).send(
+        ReshardAck{.epoch = 6, .generation = 3},
+        send_reshard_ack);
+    (void)std::move(recipient_done).close();
+
+    auto [ack, sender_done] =
+        std::move(sender_waiting_for_ack).recv(recv_reshard_ack);
+    if (ack.epoch != 6 || ack.generation != 3) {
+        std::fprintf(stderr,
+                     "minted epoched reshard ack mismatch: got epoch=%d gen=%d\n",
+                     ack.epoch,
+                     ack.generation);
+        return 1;
+    }
+    (void)std::move(sender_done).close();
+
+    const std::string expected_hot_chunk = "HOT:23";
+    if (hot_wire.empty() || hot_wire.front() != expected_hot_chunk) {
+        std::fprintf(stderr,
+                     "minted hot shard handoff did not run delegated protocol\n");
+        return 1;
+    }
+    hot_wire.pop_front();
+
+    return 0;
+}
+
 // ── Compile-time: DelegatesTo concept + assert_delegates_to helper ─
 static_assert(DelegatesTo<Delegate<DelegatedProto, End>, DelegatedProto>);
 static_assert(AcceptsFrom<Accept<DelegatedProto, End>,   DelegatedProto>);
@@ -397,10 +492,66 @@ static_assert(AcceptsFrom<EpochedReshardAccept, HotTierHandle>);
 static_assert(std::is_same_v<
     EpochedReshardAccept,
     EpochedAccept<HotTierHandle, Send<ReshardAck, End>, 5, 3>>);
+static_assert(std::is_same_v<
+    EpochedReshardAcceptPsh,
+    EpochedAccept<DelegatedSession<HotTierHandle, EmptyPermSet>,
+                  Send<ReshardAck, End>,
+                  6,
+                  3>>);
+static_assert(PermissionedSessionHandle<
+    EpochedReshardDelegatePsh,
+    EmptyPermSet,
+    MockChannel,
+    EpochCtx<6, 3>>::protocol_name().contains("EpochedDelegate"));
+static_assert(PermissionedSessionHandle<
+    EpochedReshardAcceptPsh,
+    EmptyPermSet,
+    MockChannel,
+    EpochCtx<6, 3>>::protocol_name().contains("EpochedAccept"));
 static_assert(session_loop_ctx_epoch_satisfies_v<EpochCtx<5, 3>, 5, 3>);
 static_assert(session_loop_ctx_epoch_satisfies_v<EpochCtx<6, 3>, 5, 3>);
 static_assert(!session_loop_ctx_epoch_satisfies_v<EpochCtx<4, 3>, 5, 3>);
 static_assert(!session_loop_ctx_epoch_satisfies_v<EpochCtx<5, 2>, 5, 3>);
+static_assert(session_loop_ctx_epoch_matches_v<EpochCtx<6, 3>, 6, 3>);
+static_assert(!session_loop_ctx_epoch_matches_v<EpochCtx<6, 3>, 6, 2>);
+using OldRelayCtx = EpochExecCtx<5, 3, ::crucible::effects::HotFgCtx>;
+using NewRelayCtx = EpochExecCtx<6, 3, ::crucible::effects::HotFgCtx>;
+using NewerRelayCtx = EpochExecCtx<7, 3, ::crucible::effects::HotFgCtx>;
+using RelayAOldCtx = EpochExecCtx<5, 3, ::crucible::effects::HotFgCtx>;
+using RelayBOldCtx = EpochExecCtx<5, 3, ::crucible::effects::HotFgCtx>;
+using RelayDOldCtx = EpochExecCtx<5, 3, ::crucible::effects::HotFgCtx>;
+using RelayANewCtx = EpochExecCtx<6, 3, ::crucible::effects::HotFgCtx>;
+using RelayBNewCtx = EpochExecCtx<6, 3, ::crucible::effects::HotFgCtx>;
+using RelayDNewCtx = EpochExecCtx<6, 3, ::crucible::effects::HotFgCtx>;
+using WeakenedGenerationPsh =
+    EpochedDelegate<DelegatedSession<HotTierHandle, EmptyPermSet>,
+                    RecvAck,
+                    6,
+                    2>;
+static_assert(CtxFitsPermissionedProtocol<
+    EpochedReshardDelegatePsh, NewRelayCtx, EmptyPermSet>);
+static_assert(!CtxFitsPermissionedProtocol<
+    EpochedReshardDelegatePsh, OldRelayCtx, EmptyPermSet>);
+static_assert(!CtxFitsPermissionedProtocol<
+    WeakenedGenerationPsh, NewRelayCtx, EmptyPermSet>);
+static_assert(!CtxFitsPermissionedProtocol<
+    EpochedReshardDelegatePsh, RelayAOldCtx, EmptyPermSet>);
+static_assert(!CtxFitsPermissionedProtocol<
+    EpochedReshardDelegatePsh, RelayBOldCtx, EmptyPermSet>);
+static_assert(!CtxFitsPermissionedProtocol<
+    EpochedReshardDelegatePsh, RelayDOldCtx, EmptyPermSet>);
+static_assert(CtxFitsPermissionedProtocol<
+    EpochedReshardDelegatePsh, RelayANewCtx, EmptyPermSet>);
+static_assert(CtxFitsPermissionedProtocol<
+    EpochedReshardAcceptPsh, NewRelayCtx, EmptyPermSet>);
+static_assert(CtxFitsPermissionedProtocol<
+    EpochedReshardAcceptPsh, NewerRelayCtx, EmptyPermSet>);
+static_assert(!CtxFitsPermissionedProtocol<
+    EpochedReshardAcceptPsh, OldRelayCtx, EmptyPermSet>);
+static_assert(CtxFitsPermissionedProtocol<
+    EpochedReshardAcceptPsh, RelayBNewCtx, EmptyPermSet>);
+static_assert(CtxFitsPermissionedProtocol<
+    EpochedReshardAcceptPsh, RelayDNewCtx, EmptyPermSet>);
 static_assert(is_well_formed<
     EpochedReshardAccept,
     EpochCtx<5, 3>>::value);
@@ -448,6 +599,7 @@ int main() {
     }
     if (int rc = run_delegate_stop_composition(); rc != 0) return rc;
     if (int rc = run_epoched_delegate_reshard(); rc != 0) return rc;
+    if (int rc = run_epoched_delegate_mint_reshard(); rc != 0) return rc;
     std::puts("session_delegate: delegation + delegated-endpoint-usage OK");
     return 0;
 }

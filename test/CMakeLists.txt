@@ -974,6 +974,18 @@ crucible_neg_compile_session_test(neg_session_grade_evolution_weakens_numerical
 crucible_neg_compile_session_test(neg_session_grade_evolution_changes_vendor
     "ProtocolGradeMismatch")
 
+# GAPS-072: EpochedDelegate ctx-bound minting pins cross-Relay reshard
+# handoffs to the current sender epoch/generation while EpochedAccept
+# rejects stale recipients.
+crucible_neg_compile_session_test(neg_epoched_delegate_stale_epoch_send
+    "ProtocolEpochAdmittedByLoopCtx|CtxFitsPermissionedProtocol|EpochCtx_StaleSender")
+crucible_neg_compile_session_test(neg_epoched_delegate_recipient_stale_recv
+    "ProtocolEpochAdmittedByLoopCtx|CtxFitsPermissionedProtocol|EpochCtx_StaleRecipient")
+crucible_neg_compile_session_test(neg_epoched_delegate_generation_decrease
+    "ProtocolEpochAdmittedByLoopCtx|CtxFitsPermissionedProtocol|EpochCtx_StaleSender")
+crucible_neg_compile_session_test(neg_epoched_delegate_compose_stale_chain
+    "ProtocolEpochAdmittedByLoopCtx|CtxFitsPermissionedProtocol|EpochCtx_StaleSender")
+
 # FOUND-B13 (#602): Met(X) negative-compile witnesses.  Three
 # fixtures probing the Subrow / IsEffect concept gates that enforce
 # the substitution principle for capability propagation.

@@ -359,13 +359,32 @@ inline constexpr std::uint64_t session_loop_ctx_generation_v =
 template <typename LoopCtx,
           std::uint64_t MinEpoch,
           std::uint64_t MinGeneration>
+inline constexpr bool session_epoch_threshold_valid_v =
+    EpochLattice::leq(Epoch{0}, Epoch{MinEpoch}) &&
+    GenerationLattice::leq(Generation{0}, Generation{MinGeneration});
+
+template <typename LoopCtx,
+          std::uint64_t MinEpoch,
+          std::uint64_t MinGeneration>
 inline constexpr bool session_loop_ctx_epoch_satisfies_v =
+    session_epoch_threshold_valid_v<LoopCtx, MinEpoch, MinGeneration> &&
     session_loop_ctx_has_explicit_epoch_v<LoopCtx> &&
     EpochLattice::leq(Epoch{MinEpoch},
                       Epoch{session_loop_ctx_epoch_v<LoopCtx>}) &&
     GenerationLattice::leq(
         Generation{MinGeneration},
         Generation{session_loop_ctx_generation_v<LoopCtx>});
+
+template <typename LoopCtx,
+          std::uint64_t MinEpoch,
+          std::uint64_t MinGeneration>
+inline constexpr bool session_loop_ctx_epoch_matches_v =
+    session_loop_ctx_epoch_satisfies_v<LoopCtx, MinEpoch, MinGeneration> &&
+    EpochLattice::leq(Epoch{session_loop_ctx_epoch_v<LoopCtx>},
+                      Epoch{MinEpoch}) &&
+    GenerationLattice::leq(
+        Generation{session_loop_ctx_generation_v<LoopCtx>},
+        Generation{MinGeneration});
 
 template <typename LoopCtx, typename NewInnerLoopCtx>
 struct session_loop_ctx_rebind_inner {
