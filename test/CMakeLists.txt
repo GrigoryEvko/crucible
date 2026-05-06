@@ -449,6 +449,7 @@ crucible_test(test_chaselev_deque_session)
 crucible_test(test_chaselev_substrate_session_bridge)
 crucible_test(test_sharded_grid_substrate_session_bridge)
 crucible_test(test_calendar_grid_substrate_session_bridge)
+crucible_test(test_sharded_calendar_grid_substrate_session_bridge)
 crucible_test(test_permissioned_cross_primitive)
 crucible_test(test_permissioned_calendar_grid)
 crucible_test(test_scheduler_policies)
@@ -4193,6 +4194,18 @@ crucible_neg_compile_session_test(neg_calendar_grid_substrate_producer_recv
 
 crucible_neg_compile_session_test(neg_calendar_grid_bridge_producer_row_oob
     "CalendarGridBridge_ProducerRowOutOfRange|producer row P")
+
+# GAPS-084: indexed ShardedCalendarGrid substrate sessions.  ShardId<S>
+# selects the shard-local producer/consumer calendar handle; role misuse
+# and out-of-range shard IDs remain compile-time failures.
+crucible_neg_compile_session_test(neg_sharded_calendar_grid_substrate_consumer_send
+    "has no member named.*send")
+
+crucible_neg_compile_session_test(neg_sharded_calendar_grid_substrate_producer_recv
+    "has no member named.*recv")
+
+crucible_neg_compile_session_test(neg_sharded_calendar_grid_bridge_shard_oob
+    "ShardedCalendarGridBridge_ShardOutOfRange|shard S")
 
 # GAPS-062: ChainEdge one-shot session facade.  SignalerProto is
 # Send-only; WaiterProto is Recv-only.
