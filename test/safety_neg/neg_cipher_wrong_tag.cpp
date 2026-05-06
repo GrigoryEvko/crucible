@@ -22,8 +22,9 @@ int main() {
                           // the typed store() body anyway: compilation
                           // fails at the overload resolution step.
 
-    // No matching Cipher::store overload: st_view's carrier is
-    // SchemaTable, the typed store() expects ScopedView<Cipher, Open>.
+    // Cipher::store requires an OpenView over Cipher.  st_view is a
+    // sealed SchemaTable view, so GCC rejects the call before the typed
+    // store() body is reachable.
     (void)c.store(st_view, nullptr, nullptr);
     return 0;
 }

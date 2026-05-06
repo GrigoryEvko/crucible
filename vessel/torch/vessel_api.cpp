@@ -210,10 +210,10 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
     entry.num_inputs = num_inputs;
     entry.num_outputs = num_outputs;
     entry.num_scalar_args = num_scalars;
-    entry.set_grad_enabled(grad_enabled != 0);
-    // C API doesn't set op_flags bits beyond inference_mode.
-    // Native C++ fallback (crucible_fallback.cpp) sets all 5 bits directly.
-    entry.op_flags = inference_mode != 0 ? crucible::op_flag::INFERENCE_MODE : 0;
+    uint8_t flags = 0;
+    if (inference_mode != 0) flags |= crucible::op_flag::INFERENCE_MODE;
+    if (grad_enabled != 0)   flags |= crucible::op_flag::GRAD_ENABLED;
+    entry.op_flags = flags;
 
     uint16_t n = num_scalars < 5 ? num_scalars : 5;
     if (scalar_values) {
@@ -285,7 +285,11 @@ void crucible_register_schema_name(uint64_t schema_hash, const char* name) noexc
     if (name == nullptr) return;
     const size_t len = ::strnlen(name, MAX_NAME + 1);
     if (len == 0 || len > MAX_NAME) return;
-    crucible::register_schema_name(crucible::SchemaHash{schema_hash},
+
+    auto& table = crucible::global_schema_table();
+    if (table.is_sealed()) return;
+    auto view = table.mint_mutable_view();
+    crucible::register_schema_name(view, crucible::SchemaHash{schema_hash},
         crucible::SchemaTable::SanitizedName{name});
 }
 

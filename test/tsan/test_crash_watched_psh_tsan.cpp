@@ -48,10 +48,16 @@ int recv_int(Channel& channel) noexcept {
     return channel.wire->last_value.load(std::memory_order_relaxed);
 }
 
-void send_coord_transfer(Channel& channel,
-                         Transferable<int, CoordTag>&& value) noexcept {
+template <typename Tag>
+void send_transfer(Channel& channel,
+                   Transferable<int, Tag>&& value) noexcept {
     channel.wire->last_value.store(value.value, std::memory_order_relaxed);
     channel.wire->delivered.fetch_add(1, std::memory_order_relaxed);
+}
+
+void send_coord_transfer(Channel& channel,
+                         Transferable<int, CoordTag>&& value) noexcept {
+    send_transfer<CoordTag>(channel, std::move(value));
 }
 
 template <typename Flag>
@@ -96,6 +102,10 @@ static_assert(std::is_same_v<
     CrashEvent<WorkerFallbackTag, Channel, MasterTag>>);
 
 void verify_three_permissioned_peers(int iteration) {
+    using WorkerProto = Send<Transferable<int, WorkerTag>, End>;
+    using CoordProto = Send<Transferable<int, CoordTag>, End>;
+    using MasterProto = Send<Transferable<int, MasterTag>, End>;
+
     SharedWire worker_wire;
     SharedWire coord_wire;
     SharedWire master_wire;
@@ -104,13 +114,13 @@ void verify_three_permissioned_peers(int iteration) {
     auto coord_perm = mint_permission_root<CoordTag>();
     auto master_perm = mint_permission_root<MasterTag>();
 
-    auto worker = mint_permissioned_session<End>(
+    auto worker = mint_permissioned_session<WorkerProto>(
         kSessionCtx, Channel{&worker_wire, 1000 + iteration},
         std::move(worker_perm));
-    auto coord = mint_permissioned_session<End>(
+    auto coord = mint_permissioned_session<CoordProto>(
         kSessionCtx, Channel{&coord_wire, 2000 + iteration},
         std::move(coord_perm));
-    auto master = mint_permissioned_session<End>(
+    auto master = mint_permissioned_session<MasterProto>(
         kSessionCtx, Channel{&master_wire, 3000 + iteration},
         std::move(master_perm));
 
@@ -121,9 +131,32 @@ void verify_three_permissioned_peers(int iteration) {
     static_assert(std::is_same_v<typename decltype(master)::perm_set,
                                  PermSet<MasterTag>>);
 
-    std::move(worker).detach(detach_reason::TestInstrumentation{});
-    std::move(coord).detach(detach_reason::TestInstrumentation{});
-    std::move(master).detach(detach_reason::TestInstrumentation{});
+    auto worker_end = std::move(worker).send(
+        Transferable<int, WorkerTag>{11, mint_permission_root<WorkerTag>()},
+        send_transfer<WorkerTag>);
+    auto coord_end = std::move(coord).send(
+        Transferable<int, CoordTag>{22, mint_permission_root<CoordTag>()},
+        send_transfer<CoordTag>);
+    auto master_end = std::move(master).send(
+        Transferable<int, MasterTag>{33, mint_permission_root<MasterTag>()},
+        send_transfer<MasterTag>);
+
+    static_assert(std::is_same_v<typename decltype(worker_end)::perm_set,
+                                 EmptyPermSet>);
+    static_assert(std::is_same_v<typename decltype(coord_end)::perm_set,
+                                 EmptyPermSet>);
+    static_assert(std::is_same_v<typename decltype(master_end)::perm_set,
+                                 EmptyPermSet>);
+
+    auto worker_channel = std::move(worker_end).close();
+    auto coord_channel = std::move(coord_end).close();
+    auto master_channel = std::move(master_end).close();
+    assert(worker_channel.id == 1000 + iteration);
+    assert(coord_channel.id == 2000 + iteration);
+    assert(master_channel.id == 3000 + iteration);
+    assert(worker_wire.delivered.load(std::memory_order_relaxed) == 1);
+    assert(coord_wire.delivered.load(std::memory_order_relaxed) == 1);
+    assert(master_wire.delivered.load(std::memory_order_relaxed) == 1);
 }
 
 void scenario_clean_peer_death(int iteration) {

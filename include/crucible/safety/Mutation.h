@@ -594,6 +594,13 @@ public:
         return *value_;
     }
 
+    // Read at sites that already carry a separate proof that the slot is set.
+    // No runtime check; misuse is the caller's invariant violation.
+    [[nodiscard]] constexpr const T& get_assuming_set() const noexcept {
+        [[assume(value_.has_value())]];
+        return *value_;
+    }
+
     [[nodiscard]] constexpr bool has_value() const noexcept { return value_.has_value(); }
     [[nodiscard]] constexpr explicit operator bool() const noexcept { return value_.has_value(); }
 };

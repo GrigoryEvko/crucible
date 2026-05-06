@@ -252,6 +252,12 @@ function(crucible_test name)
 
   add_executable(${name} ${CRUCIBLE_TEST_SOURCES})
   target_link_libraries(${name} PRIVATE crucible)
+  # Test binaries must keep their assertions in Release too.  CMake's
+  # Release defaults inject -DNDEBUG, and some standard headers may
+  # redefine assert() after test_assert.h in a TU.  Force the test TU
+  # itself back into assertion-enabled mode while linked libraries
+  # still use the selected build type.
+  target_compile_options(${name} PRIVATE -UNDEBUG)
 
   # Sanitizers — test targets only (not the shared library).
   if(CRUCIBLE_SAN_COMPILE_FLAGS)
@@ -306,11 +312,6 @@ crucible_test(test_serialize)
 crucible_test(test_cipher)
 crucible_test(test_transaction)
 crucible_test(test_vigil)
-if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  # GCC 16 ICEs in LTO modref on this reflection-heavy TU; compile it
-  # as a regular object while still linking against the LTO-built libs.
-  target_compile_options(test_vigil PRIVATE -fno-lto)
-endif()
 crucible_test(test_ckernel)
 crucible_test(test_graph)
 crucible_test(test_lower)
@@ -3284,7 +3285,7 @@ crucible_neg_compile_test(neg_recipe_spec_lattice_cross_lattice_mixing
 # regex matches the most stable substring across G16 contract
 # implementations: "contract" + the failing clause's textual form.
 crucible_neg_compile_test(neg_affinity_mask_core_out_of_bounds
-  "contract|pre.*core|condition.*kMaxCore|core <= kMaxCore|in.*constant.*expression")
+  "contract|pre.*core|condition.*kMaxCore|core <= kMaxCore|in.*constant.*expression|array subscript.*outside the bounds")
 
 # ─── ALGEBRA-15 N-ary ProductLattice neg-compiles ───────────────────
 #
@@ -3442,7 +3443,7 @@ crucible_neg_compile_test(neg_ckernel_register_with_sealed_view
 # side overload-set rejection in Cipher.  Same accepted-intrinsic
 # rationale.
 crucible_neg_compile_test(neg_cipher_wrong_tag
-  "no matching function for call to.*store")
+  "cannot convert.*SchemaTable.*Sealed.*Cipher::OpenView")
 
 # ─── Session-type negative-compile tests (SEPLOG-J4, task #354) ───
 #

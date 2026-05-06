@@ -46,6 +46,10 @@ namespace names = crucible::recipe_names;
 crucible::effects::Test g_test{};
 inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
+[[nodiscard]] CompiledKernel* kernel_ptr(void* p) noexcept {
+  return static_cast<CompiledKernel*>(p);
+}
+
 // Build a small but distinctive op trace; hash inputs are deterministic
 // so cross-process / cross-pool comparisons remain stable.
 //
@@ -292,10 +296,10 @@ int main() {
     struct FakeKernel { const char* tag; };
     FakeKernel kernel_tc{"f16_tc-compiled"};
     auto ins = cache.insert(region_tc->content_hash, RowHash{0},
-        reinterpret_cast<CompiledKernel*>(&kernel_tc));
+        kernel_ptr(&kernel_tc));
     assert(ins.has_value());
     assert(cache.lookup(region_tc->content_hash, RowHash{0}) ==
-           reinterpret_cast<CompiledKernel*>(&kernel_tc));
+           kernel_ptr(&kernel_tc));
 
     // "Switch to f16_ordered" — lookup under that recipe's
     // content_hash MUST miss the f16_tc-compiled kernel.  Without
@@ -308,7 +312,7 @@ int main() {
 
     // "Switch back to f16_tc" — original kernel still served.
     assert(cache.lookup(region_tc->content_hash, RowHash{0}) ==
-           reinterpret_cast<CompiledKernel*>(&kernel_tc));
+           kernel_ptr(&kernel_tc));
 
     // Insert a separate kernel under f16_ordered's content_hash,
     // verify both kernels coexist.  Demonstrates that recipe-
@@ -316,12 +320,12 @@ int main() {
     // no aliasing across recipes.
     FakeKernel kernel_ord{"f16_ordered-compiled"};
     auto ins2 = cache.insert(region_ord->content_hash, RowHash{0},
-        reinterpret_cast<CompiledKernel*>(&kernel_ord));
+        kernel_ptr(&kernel_ord));
     assert(ins2.has_value());
     assert(cache.lookup(region_tc->content_hash, RowHash{0}) ==
-           reinterpret_cast<CompiledKernel*>(&kernel_tc));
+           kernel_ptr(&kernel_tc));
     assert(cache.lookup(region_ord->content_hash, RowHash{0}) ==
-           reinterpret_cast<CompiledKernel*>(&kernel_ord));
+           kernel_ptr(&kernel_ord));
     // No cross-pollution.
     assert(cache.lookup(region_bf16_tc->content_hash, RowHash{0}) == nullptr);
   }

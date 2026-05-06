@@ -53,11 +53,10 @@ using crucible::safety::ResidencyHeatTag_v;
 // Stand-in for the real CompiledKernel (test-local type punning).
 struct FakeKernel { int x; };
 
-// Reinterpret a FakeKernel* as a CompiledKernel*.  Mirrors the
-// pattern in test_merkle_dag.cpp — the cache treats CompiledKernel*
-// opaquely.
+// Treat a FakeKernel allocation as an opaque CompiledKernel handle. The cache
+// never dereferences the pointer, so the test only needs stable identity.
 static CompiledKernel* fk_ptr(FakeKernel* fk) noexcept {
-    return reinterpret_cast<CompiledKernel*>(fk);
+    return static_cast<CompiledKernel*>(static_cast<void*>(fk));
 }
 
 // ── T01 — lookup_l1 round-trip vs raw lookup ────────────────────

@@ -15,8 +15,8 @@
 //
 // cached_tail_ lives on the producer's cache line and holds the last-read
 // tail. Stale cache is conservative (reports less free space than reality),
-// so the producer only touches the consumer's atomic only on the rare path
-// where the cached view shows the ring full.
+// so the producer only touches the consumer's atomic on the rare path where
+// the cached view shows the ring full.
 
 #include <algorithm>
 #include <atomic>
@@ -197,6 +197,13 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   // path; consumer reads its own tail via peek_relaxed.
   alignas(64) crucible::safety::AtomicMonotonic<uint64_t> tail{0};
 
+  // Consumer-owned hot cursor. The consumer is the only reader/writer, so
+  // drain paths use this plain value and publish the new value to tail only
+  // after the copied slots are complete. That removes a useless relaxed
+  // atomic load from every drain while leaving the producer-visible tail
+  // publication unchanged.
+  uint64_t consumer_tail_ = 0;
+
   // Producer-local shadow of tail. Never read by the consumer. Own cache
   // line to avoid sharing with head (each line owned by exactly one thread).
   // Invariant: cached_tail_ <= tail.load(). Stale is conservative — it
@@ -370,11 +377,12 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY
       pre (max_count == 0 || out != nullptr)
   {
+    if (max_count == 0) [[unlikely]] return 0;
+
     // get(): acquire on head — pair with producer's release in advance()
     // to observe entry writes.
     const uint64_t h = head.get();
-    // peek_relaxed: consumer reads its own tail — no cross-thread sync needed.
-    const uint64_t t = tail.peek_relaxed();
+    const uint64_t t = consumer_tail_;
 
     const uint32_t available = static_cast<uint32_t>(h - t);
     const uint32_t count     = std::min(available, max_count);
@@ -406,7 +414,9 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // advance: publish "slots [t, t+count) are free"; producer's get()
     // acquire load of tail on the full-ring path observes this before
     // overwriting.  count > 0 guaranteed above ⟹ t+count > t ⟹ pre OK.
-    tail.advance(t + count);
+    const uint64_t next_tail = t + count;
+    consumer_tail_ = next_tail;
+    tail.advance(next_tail);
     return count;
   }
 
@@ -503,10 +513,11 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
             out_scope_hashes != nullptr &&
             out_callsite_hashes != nullptr))
   {
+    if (max_count == 0) [[unlikely]] return 0;
+
     // get(): acquire on head — pair with producer's release in advance().
     const uint64_t h = head.get();
-    // peek_relaxed: consumer reads its own tail — no cross-thread sync needed.
-    const uint64_t t = tail.peek_relaxed();
+    const uint64_t t = consumer_tail_;
 
     const uint32_t available = static_cast<uint32_t>(h - t);
     const uint32_t count     = std::min(available, max_count);
@@ -535,7 +546,9 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
 
     // advance: publish "slots [t, t+count) are free"; count > 0 above
     // guarantees the monotonicity precondition holds.
-    tail.advance(t + count);
+    const uint64_t next_tail = t + count;
+    consumer_tail_ = next_tail;
+    tail.advance(next_tail);
     return count;
   }
 
@@ -562,10 +575,12 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
   void reset() noexcept CRUCIBLE_NO_THREAD_SAFETY
       post (head.get() == 0)
       post (tail.get() == 0)
+      post (consumer_tail_ == 0)
       post (cached_tail_.get() == 0)
   {
     head.reset_under_quiescence();
     tail.reset_under_quiescence();
+    consumer_tail_ = 0;
     // cached_tail_ goes "backward" to 0, which would fire Monotonic's
     // pre() if we advanced.  Valid here because both threads are
     // quiescent — reconstruct the Monotonic in place to reset cleanly.

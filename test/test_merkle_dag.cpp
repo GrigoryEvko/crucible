@@ -10,6 +10,14 @@ using crucible::SchemaHash;
 using crucible::ContentHash;
 using crucible::MerkleHash;
 
+namespace {
+
+[[nodiscard]] crucible::CompiledKernel* kernel_ptr(void* p) noexcept {
+  return static_cast<crucible::CompiledKernel*>(p);
+}
+
+} // namespace
+
 int main() {
   crucible::effects::Test test;
   crucible::Arena arena(1 << 16);
@@ -104,15 +112,15 @@ int main() {
   struct FakeKernel { int x; };
   FakeKernel fk{42};
   assert(cache.insert(ContentHash{0x1234}, RowHash{0},
-                      reinterpret_cast<crucible::CompiledKernel*>(&fk)).has_value());
+                      kernel_ptr(&fk)).has_value());
   assert(cache.lookup(ContentHash{0x1234}, RowHash{0})
-      == reinterpret_cast<crucible::CompiledKernel*>(&fk));
+      == kernel_ptr(&fk));
   // Duplicate insert: overwrites to newer variant under the same row.
   FakeKernel fk2{99};
   assert(cache.insert(ContentHash{0x1234}, RowHash{0},
-                      reinterpret_cast<crucible::CompiledKernel*>(&fk2)).has_value());
+                      kernel_ptr(&fk2)).has_value());
   assert(cache.lookup(ContentHash{0x1234}, RowHash{0})
-      == reinterpret_cast<crucible::CompiledKernel*>(&fk2));
+      == kernel_ptr(&fk2));
 
   // FOUND-I05 row-discrimination: identical content_hash with a
   // distinct row_hash MUST cache to a different slot.  Prove that
@@ -120,12 +128,12 @@ int main() {
   FakeKernel fk_row{777};
   assert(cache.lookup(ContentHash{0x1234}, RowHash{0xAA}) == nullptr);
   assert(cache.insert(ContentHash{0x1234}, RowHash{0xAA},
-                      reinterpret_cast<crucible::CompiledKernel*>(&fk_row)).has_value());
+                      kernel_ptr(&fk_row)).has_value());
   assert(cache.lookup(ContentHash{0x1234}, RowHash{0xAA})
-      == reinterpret_cast<crucible::CompiledKernel*>(&fk_row));
+      == kernel_ptr(&fk_row));
   // Original row=0 entry is preserved — no cross-row pollution.
   assert(cache.lookup(ContentHash{0x1234}, RowHash{0})
-      == reinterpret_cast<crucible::CompiledKernel*>(&fk2));
+      == kernel_ptr(&fk2));
   // A third row queries cleanly to a distinct empty slot.
   assert(cache.lookup(ContentHash{0x1234}, RowHash{0xBB}) == nullptr);
 
@@ -135,20 +143,20 @@ int main() {
   // probe correctly distinguishes variant update from sibling row.
   FakeKernel fk_row_v2{888};
   assert(cache.insert(ContentHash{0x1234}, RowHash{0xAA},
-                      reinterpret_cast<crucible::CompiledKernel*>(&fk_row_v2)).has_value());
+                      kernel_ptr(&fk_row_v2)).has_value());
   assert(cache.lookup(ContentHash{0x1234}, RowHash{0xAA})
-      == reinterpret_cast<crucible::CompiledKernel*>(&fk_row_v2));   // updated
+      == kernel_ptr(&fk_row_v2));   // updated
   assert(cache.lookup(ContentHash{0x1234}, RowHash{0})
-      == reinterpret_cast<crucible::CompiledKernel*>(&fk2));         // unchanged
+      == kernel_ptr(&fk2));         // unchanged
 
   // Sibling-row insertion under DIFFERENT content_hash also lands
   // in its own slot (sanity check that the row-discrimination is
   // not somehow bound to a specific content_hash slot index).
   FakeKernel fk_other{555};
   assert(cache.insert(ContentHash{0x9999}, RowHash{0xAA},
-                      reinterpret_cast<crucible::CompiledKernel*>(&fk_other)).has_value());
+                      kernel_ptr(&fk_other)).has_value());
   assert(cache.lookup(ContentHash{0x9999}, RowHash{0xAA})
-      == reinterpret_cast<crucible::CompiledKernel*>(&fk_other));
+      == kernel_ptr(&fk_other));
   // Cross-content-cross-row queries are clean misses.
   assert(cache.lookup(ContentHash{0x9999}, RowHash{0})    == nullptr);
   assert(cache.lookup(ContentHash{0x1234}, RowHash{0xCC}) == nullptr);
@@ -164,14 +172,14 @@ int main() {
   FakeKernel fk_sentinel{0xFEED};
   assert(cache.lookup(ContentHash{0x1234}, RowHash::sentinel()) == nullptr);
   assert(cache.insert(ContentHash{0x1234}, RowHash::sentinel(),
-                      reinterpret_cast<crucible::CompiledKernel*>(&fk_sentinel)).has_value());
+                      kernel_ptr(&fk_sentinel)).has_value());
   assert(cache.lookup(ContentHash{0x1234}, RowHash::sentinel())
-      == reinterpret_cast<crucible::CompiledKernel*>(&fk_sentinel));
+      == kernel_ptr(&fk_sentinel));
   // Sentinel-row entry does NOT alias any other (C, R).
   assert(cache.lookup(ContentHash{0x1234}, RowHash{0})
-      == reinterpret_cast<crucible::CompiledKernel*>(&fk2));         // unchanged
+      == kernel_ptr(&fk2));         // unchanged
   assert(cache.lookup(ContentHash{0x1234}, RowHash{0xAA})
-      == reinterpret_cast<crucible::CompiledKernel*>(&fk_row_v2));   // unchanged
+      == kernel_ptr(&fk_row_v2));   // unchanged
 
   // Many rows under same content_hash — exercises probe-chain
   // wraparound under row pressure.  Insert N distinct rows
@@ -186,11 +194,11 @@ int main() {
       assert(row_pressure_cache.insert(
           ContentHash{0xABCDEF},                          // ALL share one content
           RowHash{0x100 + i},                             // distinct rows
-          reinterpret_cast<crucible::CompiledKernel*>(&row_kernels[i])).has_value());
+          kernel_ptr(&row_kernels[i])).has_value());
     }
     for (uint32_t i = 0; i < N; ++i) {
       auto* k = row_pressure_cache.lookup(ContentHash{0xABCDEF}, RowHash{0x100 + i});
-      assert(k == reinterpret_cast<crucible::CompiledKernel*>(&row_kernels[i]));
+      assert(k == kernel_ptr(&row_kernels[i]));
     }
     // A row not in the set queries cleanly to nullptr — proves
     // the probe correctly terminates without false-positive on
@@ -208,7 +216,7 @@ int main() {
       assert(tiny_cache.insert(
           ContentHash{0x42},
           RowHash{0xA00 + i},
-          reinterpret_cast<crucible::CompiledKernel*>(&small_kernels[i])).has_value());
+          kernel_ptr(&small_kernels[i])).has_value());
     }
     // Fifth insert finds NO empty slot (all 4 occupied by
     // (0x42, R_i) pairs with R_i != lookup_row); returns TableFull.
@@ -216,7 +224,7 @@ int main() {
     auto fifth = tiny_cache.insert(
         ContentHash{0x42},
         RowHash{0xA04},                                   // novel row
-        reinterpret_cast<crucible::CompiledKernel*>(&small_kernels[4]));
+        kernel_ptr(&small_kernels[4]));
     assert(!fifth.has_value());
     assert(fifth.error() == crucible::KernelCache::InsertError::TableFull);
     // Variant update of an existing slot still succeeds — TableFull
@@ -225,10 +233,10 @@ int main() {
     auto variant = tiny_cache.insert(
         ContentHash{0x42},
         RowHash{0xA00},                                   // existing row
-        reinterpret_cast<crucible::CompiledKernel*>(&variant_replacement));
+        kernel_ptr(&variant_replacement));
     assert(variant.has_value());
     assert(tiny_cache.lookup(ContentHash{0x42}, RowHash{0xA00})
-        == reinterpret_cast<crucible::CompiledKernel*>(&variant_replacement));
+        == kernel_ptr(&variant_replacement));
   }
 
   // ── FOUND-I05-AUDIT-2 — RowHash{0} is a first-class lookup target ──
@@ -252,33 +260,33 @@ int main() {
 
     // Step 1: insert (C, 0, K1).
     assert(audit2_cache.insert(ContentHash{0x55AA}, RowHash{0},
-        reinterpret_cast<crucible::CompiledKernel*>(&k_row0_v1)).has_value());
+        kernel_ptr(&k_row0_v1)).has_value());
 
     // Step 2: insert (C, 0xBEEF, K2) — distinct row, must land at
     // a different slot than the (C, 0) slot.
     assert(audit2_cache.insert(ContentHash{0x55AA}, RowHash{0xBEEF},
-        reinterpret_cast<crucible::CompiledKernel*>(&k_rowR_v1)).has_value());
+        kernel_ptr(&k_rowR_v1)).has_value());
 
     // Both lookups return the slot-specific kernel.
     assert(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0})
-        == reinterpret_cast<crucible::CompiledKernel*>(&k_row0_v1));
+        == kernel_ptr(&k_row0_v1));
     assert(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0xBEEF})
-        == reinterpret_cast<crucible::CompiledKernel*>(&k_rowR_v1));
+        == kernel_ptr(&k_rowR_v1));
 
     // Step 3: variant-update the (C, 0) slot with K3.  The kernel
     // at the (C, 0) slot must change; the (C, 0xBEEF) slot must
     // be untouched.
     assert(audit2_cache.insert(ContentHash{0x55AA}, RowHash{0},
-        reinterpret_cast<crucible::CompiledKernel*>(&k_row0_v2)).has_value());
+        kernel_ptr(&k_row0_v2)).has_value());
 
     // Post-condition: (C, 0) → K3, (C, 0xBEEF) → K2.  If the
     // pre-fix code had instead spun on row_hash and mistakenly
     // landed on the (C, 0xBEEF) slot under a hypothetical
     // CLAIMED-state observation, this assertion would fail.
     assert(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0})
-        == reinterpret_cast<crucible::CompiledKernel*>(&k_row0_v2));
+        == kernel_ptr(&k_row0_v2));
     assert(audit2_cache.lookup(ContentHash{0x55AA}, RowHash{0xBEEF})
-        == reinterpret_cast<crucible::CompiledKernel*>(&k_rowR_v1));
+        == kernel_ptr(&k_rowR_v1));
   }
 
   // Test element_size — returns ElementBytes strong type (#129).
@@ -566,10 +574,10 @@ int main() {
     FakeRecipeKernel tc_kernel{1};
     using crucible::RowHash;
     assert(rcache.insert(r_tc->content_hash, RowHash{0},
-                         reinterpret_cast<crucible::CompiledKernel*>(&tc_kernel))
+                         kernel_ptr(&tc_kernel))
                .has_value());
     assert(rcache.lookup(r_tc->content_hash, RowHash{0}) ==
-           reinterpret_cast<crucible::CompiledKernel*>(&tc_kernel));
+           kernel_ptr(&tc_kernel));
     // Critical: lookup under the different-recipe content_hash MUST miss.
     assert(rcache.lookup(r_strict->content_hash, RowHash{0}) == nullptr);
     // Lookup under the no-recipe content_hash ALSO misses.

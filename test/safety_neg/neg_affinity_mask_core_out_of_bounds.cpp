@@ -7,17 +7,17 @@
 // a uint64_t by an out-of-range bit position is C++ undefined
 // behavior — the producer would silently emit garbage at the
 // production NumaThreadPool worker-binding site.  The contract
-// `pre(core <= kMaxCore)` makes the violation a compile-time
-// error when the call is consteval-evaluated (this fixture's
-// pattern), and a runtime contract-violation under the `enforce`
-// semantic.
+// `pre(core <= kMaxCore)` states the public invariant.  In this
+// release preset contracts are compiled with the ignore semantic, so
+// the consteval path is rejected by GCC's constexpr array-bounds
+// diagnostic before the invalid mask can form.
 //
 // This fixture is the FIRST contract-violation neg-fixture in
 // the wrapper family — establishes the pattern for future
 // per-axis contract fences (e.g., a future BitsBudget overflow
 // guard, or an Epoch monotonicity check).
 //
-// [GCC-CONTRACTS-TEXT] — pre-condition rejection at consteval.
+// [GCC-CONSTEXPR-BOUNDS] — out-of-range core rejected at consteval.
 
 #include <crucible/algebra/lattices/AffinityLattice.h>
 

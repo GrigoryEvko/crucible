@@ -156,8 +156,14 @@ struct SchemaInfo {
     }
     // PyTorch's Operator schema is trusted by source — compiled into
     // the libtorch binary.  Construct Sanitized directly.
-    crucible::register_schema_name(schema_hash,
-        crucible::SchemaTable::SanitizedName{full_name.c_str()});
+    auto& schema_table = crucible::global_schema_table();
+    if (!schema_table.is_sealed()) {
+        auto schema_table_view = schema_table.mint_mutable_view();
+        crucible::register_schema_name(
+            schema_table_view,
+            schema_hash,
+            crucible::SchemaTable::SanitizedName{full_name.c_str()});
+    }
 
     // Authoritative mutability from schema alias annotations.
     // Catches both in-place ops (add_.Tensor: self(a!)) and out= variants
@@ -495,12 +501,13 @@ void crucibleFallback(
     entry.num_inputs      = counts.inputs;
     entry.num_outputs     = counts.outputs;
     entry.num_scalar_args = scalars.count;
-    entry.set_grad_enabled(c10::GradMode::is_enabled());
 
     // Pack op_flags: 5 bits of per-op context.
     uint8_t flags = 0;
     if (c10::InferenceMode::is_enabled())
         flags |= crucible::op_flag::INFERENCE_MODE;
+    if (c10::GradMode::is_enabled())
+        flags |= crucible::op_flag::GRAD_ENABLED;
     if (is_mutable)
         flags |= crucible::op_flag::IS_MUTABLE;
     flags |= (s_training_phase & 0x3) << crucible::op_flag::PHASE_SHIFT;

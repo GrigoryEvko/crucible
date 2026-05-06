@@ -28,7 +28,7 @@ struct FakeKernel {
 };
 
 [[nodiscard]] CompiledKernel* fk_ptr(FakeKernel& kernel) noexcept {
-    return reinterpret_cast<CompiledKernel*>(&kernel);
+    return static_cast<CompiledKernel*>(static_cast<void*>(&kernel));
 }
 
 class RawKernelCache {

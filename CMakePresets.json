@@ -19,9 +19,10 @@
       "name": "release",
       "inherits": "default",
       "displayName": "GCC 16 + libstdc++ 16 (C++26, Release)",
+      "binaryDir": "${sourceDir}/build-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_FLAGS": "-O3 -march=native -DNDEBUG -g -flto=auto"
+        "CMAKE_CXX_FLAGS": "-O3 -march=native -DNDEBUG -g"
       }
     },
     {

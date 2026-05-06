@@ -48,6 +48,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <span>
@@ -120,6 +121,10 @@ namespace cipher_state {
 
 class CRUCIBLE_OWNER Cipher {
  public:
+    static constexpr std::size_t MAX_ROOT_PATH_BYTES = 4096;
+    static constexpr std::size_t OBJECT_PATH_SUFFIX_BYTES =
+        sizeof("/objects/") - 1 + 2 + 1 + 14;
+
     using ContentAddressedRegionPayload =
         cipher::ContentAddressedPayload<RegionNode>;
     using LoadedContentAddressedRegionPayload =
@@ -135,13 +140,18 @@ class CRUCIBLE_OWNER Cipher {
     // gnu::cold: startup-only path, never on the op-dispatch hot path.
     [[gnu::cold]] static Cipher open(const std::string& root) {
         Cipher c;
+        if (root.empty() || root.size() > MAX_ROOT_PATH_BYTES) {
+            return c;
+        }
         // root_ is WriteOnce<Tagged<std::string, source::Durable>>:
         // set exactly once here (WriteOnce), tagged at the type level as
         // loaded from on-disk state (Tagged).  A second attempt to set
         // (e.g. calling open on a Cipher that already has a root) would
         // contract-fire; reassignment via `=` is a compile error.
-        c.root_.set(crucible::safety::Tagged<std::string,
-                                             crucible::safety::source::Durable>{root});
+        [[maybe_unused]] const bool root_set = c.root_.try_set(
+            crucible::safety::Tagged<std::string,
+                                     crucible::safety::source::Durable>{root});
+        [[assume(root_set)]];
         std::filesystem::create_directories(root + "/objects");
 
         // Load the log first to populate in-memory state.
@@ -769,10 +779,9 @@ class CRUCIBLE_OWNER Cipher {
     ContentHash                              head_{};
 
     // Internal unwrap — single point that peels both layers.
-    [[nodiscard]] const std::string& root_str() const noexcept
-        pre (root_.has_value())
-    {
-        return root_.get().value();
+    [[nodiscard]] const std::string& root_str() const noexcept {
+        [[assume(root_.has_value())]];
+        return root_.get_assuming_set().value();
     }
     // log_ grows append-only AND each entry's step_id must not go
     // backward.  OrderedAppendOnly<> fuses both invariants into one
@@ -799,8 +808,12 @@ class CRUCIBLE_OWNER Cipher {
     std::string obj_path(uint64_t hash) const {
         char hex[16];
         hex16_(hash, hex);
-        std::string path{root_str()};
-        path.reserve(path.size() + 26);
+        const std::string& root = root_str();
+        if (root.size() > MAX_ROOT_PATH_BYTES) {
+            std::abort();
+        }
+        std::string path{root};
+        path.reserve(root.size() + OBJECT_PATH_SUFFIX_BYTES);
         path.append("/objects/");
         path.append(hex, 2);
         path.push_back('/');
