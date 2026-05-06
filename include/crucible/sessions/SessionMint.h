@@ -790,6 +790,91 @@ template <class Proto, class PS, class LoopCtx = void>
 inline constexpr bool permission_flow_closes_v =
     permission_flow_closes<Proto, PS, LoopCtx>::value;
 
+template <class Proto>
+struct protocol_permissioned_runnable : std::false_type {};
+
+template <>
+struct protocol_permissioned_runnable<End> : std::true_type {};
+
+template <CrashClass C>
+struct protocol_permissioned_runnable<Stop_g<C>> : std::true_type {};
+
+template <>
+struct protocol_permissioned_runnable<Continue> : std::true_type {};
+
+template <class T, class K>
+struct protocol_permissioned_runnable<Send<T, K>>
+    : protocol_permissioned_runnable<K> {};
+
+template <class T, class K>
+struct protocol_permissioned_runnable<Recv<T, K>>
+    : protocol_permissioned_runnable<K> {};
+
+template <class B>
+struct protocol_permissioned_runnable<Loop<B>>
+    : protocol_permissioned_runnable<B> {};
+
+template <VendorBackend V, class P>
+struct protocol_permissioned_runnable<VendorPinned<V, P>>
+    : protocol_permissioned_runnable<P> {};
+
+template <class... Branches>
+struct protocol_permissioned_runnable<Select<Branches...>>
+    : std::bool_constant<
+          (protocol_permissioned_runnable<Branches>::value && ...)> {};
+
+template <class... Branches>
+struct protocol_permissioned_runnable<Offer<Branches...>>
+    : std::bool_constant<
+          (protocol_permissioned_runnable<Branches>::value && ...)> {};
+
+template <class Role, class... Branches>
+struct protocol_permissioned_runnable<Offer<Sender<Role>, Branches...>>
+    : std::bool_constant<
+          (protocol_permissioned_runnable<Branches>::value && ...)> {};
+
+template <class Base, class Rollback>
+struct protocol_permissioned_runnable<CheckpointedSession<Base, Rollback>>
+    : std::bool_constant<
+          protocol_permissioned_runnable<Base>::value
+       && protocol_permissioned_runnable<Rollback>::value> {};
+
+template <class InnerProto, class InnerPS, class K>
+struct protocol_permissioned_runnable<
+    Delegate<DelegatedSession<InnerProto, InnerPS>, K>>
+    : std::bool_constant<
+          protocol_permissioned_runnable<InnerProto>::value
+       && protocol_permissioned_runnable<K>::value> {};
+
+template <class InnerProto, class InnerPS, class K>
+struct protocol_permissioned_runnable<
+    Accept<DelegatedSession<InnerProto, InnerPS>, K>>
+    : std::bool_constant<
+          protocol_permissioned_runnable<InnerProto>::value
+       && protocol_permissioned_runnable<K>::value> {};
+
+template <class InnerProto, class InnerPS, class K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_permissioned_runnable<
+    EpochedDelegate<DelegatedSession<InnerProto, InnerPS>, K,
+                    MinEpoch, MinGeneration>>
+    : std::bool_constant<
+          protocol_permissioned_runnable<InnerProto>::value
+       && protocol_permissioned_runnable<K>::value> {};
+
+template <class InnerProto, class InnerPS, class K,
+          std::uint64_t MinEpoch, std::uint64_t MinGeneration>
+struct protocol_permissioned_runnable<
+    EpochedAccept<DelegatedSession<InnerProto, InnerPS>, K,
+                  MinEpoch, MinGeneration>>
+    : std::bool_constant<
+          protocol_permissioned_runnable<InnerProto>::value
+       && protocol_permissioned_runnable<K>::value> {};
+
+template <class Proto>
+inline constexpr bool protocol_permissioned_runnable_v =
+    protocol_permissioned_runnable<Proto>::value;
+
 }  // namespace detail::session_mint
 
 template <class Proto, class LoopCtx>
@@ -801,6 +886,10 @@ template <class Proto, class LoopCtx>
 concept ProtocolEpochAdmittedByLoopCtx =
     detail::session_mint::protocol_epoch_admitted_by_loop_ctx_v<
         Proto, LoopCtx>;
+
+template <class Proto>
+concept ProtocolPermissionedRunnable =
+    detail::session_mint::protocol_permissioned_runnable_v<Proto>;
 
 template <class Proto,
           class Ctx,
@@ -827,6 +916,8 @@ template <class Proto, class CtxA, class CtxB>
 concept CtxFitsChannel =
     ::crucible::effects::IsExecCtx<CtxA>
     && ::crucible::effects::IsExecCtx<CtxB>
+    && ProtocolPermissionedRunnable<Proto>
+    && ProtocolPermissionedRunnable<dual_of_t<Proto>>
     && CtxFitsPermissionedProtocol<Proto, CtxA, EmptyPermSet>
     && CtxFitsPermissionedProtocol<dual_of_t<Proto>, CtxB, EmptyPermSet>;
 
@@ -920,6 +1011,58 @@ template <class Proto,
     };
 }
 
+namespace detail {
+
+template <class Proto, class ResourceA, class ResourceB>
+    requires CtxFitsChannel<
+        Proto, ::crucible::effects::HotFgCtx, ::crucible::effects::HotFgCtx>
+struct default_ctx_channel_mint<Proto, ResourceA, ResourceB> {
+    static constexpr bool available = true;
+
+    [[nodiscard]] static constexpr auto mint(
+        ResourceA resource_a,
+        ResourceB resource_b,
+        std::source_location loc) noexcept
+    {
+        const ::crucible::effects::HotFgCtx ctx{};
+        return ::crucible::safety::proto::mint_channel<Proto>(
+            ctx, ctx, std::move(resource_a), std::move(resource_b), loc);
+    }
+};
+
+template <class Proto, class ResourceA, class ResourceB>
+    requires (
+        ProtocolPermissionedRunnable<Proto>
+        && ProtocolPermissionedRunnable<dual_of_t<Proto>>
+        && !CtxFitsChannel<
+            Proto,
+            ::crucible::effects::HotFgCtx,
+            ::crucible::effects::HotFgCtx>)
+struct default_ctx_channel_mint<Proto, ResourceA, ResourceB> {
+    static constexpr bool available = true;
+
+    [[nodiscard]] static constexpr auto mint(
+        ResourceA,
+        ResourceB,
+        std::source_location) noexcept
+    {
+        static_assert(
+            CtxFitsChannel<
+                Proto,
+                ::crucible::effects::HotFgCtx,
+                ::crucible::effects::HotFgCtx>,
+            "crucible::session::diagnostic [CtxFitsChannel_DefaultCtx]: "
+            "mint_channel<Proto>(resource_a, resource_b) uses HotFgCtx for "
+            "both endpoints when SessionMint.h is visible.  This protocol is "
+            "permissioned-runnable, but at least one endpoint carries a row "
+            "that HotFgCtx cannot admit.  Call mint_channel<Proto>(ctx_a, "
+            "ctx_b, resource_a, resource_b) with explicit row-admitting "
+            "execution contexts.");
+    }
+};
+
+}  // namespace detail
+
 // ── Self-test block ─────────────────────────────────────────────────
 namespace detail::session_mint_self_test {
 
@@ -999,6 +1142,11 @@ static_assert(!detail::session_mint::permission_flow_closes_v<
     SendTransfer, EmptyPermSet>);
 static_assert(!detail::session_mint::permission_flow_closes_v<
     End, PermSet<WorkPerm>>);
+static_assert( ProtocolPermissionedRunnable<SendInt>);
+static_assert(!ProtocolPermissionedRunnable<
+    Delegate<SendInt, End>>);
+static_assert( ProtocolPermissionedRunnable<
+    Delegate<DelegatedSession<SendInt, EmptyPermSet>, End>>);
 
 using RecvThenReturn = Recv<Transferable<int, WorkPerm>,
                             Send<Returned<int, WorkPerm>, End>>;
@@ -1124,6 +1272,18 @@ static_assert(std::is_same_v<typename CtxBoundChannel::second_type::protocol,
 static_assert(std::is_same_v<typename CtxBoundChannel::first_type::perm_set,
                              EmptyPermSet>);
 static_assert(std::is_same_v<typename CtxBoundChannel::second_type::perm_set,
+                             EmptyPermSet>);
+
+using DefaultCtxChannel = decltype(mint_channel<SendInt>(
+    std::declval<FakeResource>(),
+    std::declval<FakeResource>()));
+static_assert(std::is_same_v<typename DefaultCtxChannel::first_type::protocol,
+                             SendInt>);
+static_assert(std::is_same_v<typename DefaultCtxChannel::second_type::protocol,
+                             dual_of_t<SendInt>>);
+static_assert(std::is_same_v<typename DefaultCtxChannel::first_type::perm_set,
+                             EmptyPermSet>);
+static_assert(std::is_same_v<typename DefaultCtxChannel::second_type::perm_set,
                              EmptyPermSet>);
 
 using EpochFgCtx = EpochExecCtx<5, 3, eff::HotFgCtx>;

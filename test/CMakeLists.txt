@@ -4088,6 +4088,9 @@ crucible_neg_compile_session_test(neg_mint_channel_recv_row_drift
 crucible_neg_compile_session_test(neg_mint_channel_capability_unauthorized_receiver
     "associated constraints are not satisfied|CtxFitsChannel|CtxFitsPermissionedProtocol|CtxFitsProtocol")
 
+crucible_neg_compile_session_test(neg_mint_channel_default_ctx_rejects_io
+    "CtxFitsChannel_DefaultCtx|mint_channel<Proto>\\(resource_a, resource_b\\) uses HotFgCtx")
+
 crucible_neg_compile_session_test(neg_mint_session_perms_unbalanced
     "associated constraints are not satisfied|CtxFitsPermissionedProtocol|permission_flow_closes")
 

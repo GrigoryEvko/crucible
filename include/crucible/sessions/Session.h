@@ -2324,34 +2324,50 @@ template <typename Proto, typename Resource>
 // (involution), which verifies the dual_of machinery is correctly
 // applied throughout P.
 
+namespace detail {
+
+template <typename Proto, typename ResourceA, typename ResourceB>
+struct default_ctx_channel_mint {
+    static constexpr bool available = false;
+};
+
+}  // namespace detail
+
 template <typename Proto, typename ResourceA, typename ResourceB>
 [[nodiscard]] constexpr auto mint_channel(ResourceA ra, ResourceB rb) noexcept
 {
-    static_assert(is_well_formed_v<Proto>,
-        "crucible::session::diagnostic [Protocol_Ill_Formed]: "
-        "proto: protocol is ill-formed.");
-    static_assert(is_well_formed_v<dual_of_t<Proto>>,
-        "proto: dual protocol is ill-formed — this is a framework bug "
-        "(dual_of must preserve well-formedness).");
-    static_assert(std::is_same_v<Proto, dual_of_t<dual_of_t<Proto>>>,
-        "proto: duality must be involutive (dual(dual(P)) == P).  "
-        "If this fires, the framework's dual_of computation is broken.");
+    if constexpr (detail::default_ctx_channel_mint<
+                      Proto, ResourceA, ResourceB>::available) {
+        return detail::default_ctx_channel_mint<
+            Proto, ResourceA, ResourceB>::mint(
+            std::move(ra), std::move(rb), std::source_location::current());
+    } else {
+        static_assert(is_well_formed_v<Proto>,
+            "crucible::session::diagnostic [Protocol_Ill_Formed]: "
+            "proto: protocol is ill-formed.");
+        static_assert(is_well_formed_v<dual_of_t<Proto>>,
+            "proto: dual protocol is ill-formed — this is a framework bug "
+            "(dual_of must preserve well-formedness).");
+        static_assert(std::is_same_v<Proto, dual_of_t<dual_of_t<Proto>>>,
+            "proto: duality must be involutive (dual(dual(P)) == P).  "
+            "If this fires, the framework's dual_of computation is broken.");
 
-    static_assert(SessionResource<ResourceA>,
-        "crucible::session::diagnostic [SessionResource_NotPinned]: "
-        "mint_channel<Proto, ResourceA, ResourceB>: ResourceA "
-        "fails the pin-discipline.  See the SessionResource concept "
-        "documentation in Session.h for the allowed shapes.");
-    static_assert(SessionResource<ResourceB>,
-        "crucible::session::diagnostic [SessionResource_NotPinned]: "
-        "mint_channel<Proto, ResourceA, ResourceB>: ResourceB "
-        "fails the pin-discipline.  See the SessionResource concept "
-        "documentation in Session.h for the allowed shapes.");
+        static_assert(SessionResource<ResourceA>,
+            "crucible::session::diagnostic [SessionResource_NotPinned]: "
+            "mint_channel<Proto, ResourceA, ResourceB>: ResourceA "
+            "fails the pin-discipline.  See the SessionResource concept "
+            "documentation in Session.h for the allowed shapes.");
+        static_assert(SessionResource<ResourceB>,
+            "crucible::session::diagnostic [SessionResource_NotPinned]: "
+            "mint_channel<Proto, ResourceA, ResourceB>: ResourceB "
+            "fails the pin-discipline.  See the SessionResource concept "
+            "documentation in Session.h for the allowed shapes.");
 
-    return std::pair{
-        mint_session_handle<Proto>(std::move(ra)),
-        mint_session_handle<dual_of_t<Proto>>(std::move(rb))
-    };
+        return std::pair{
+            mint_session_handle<Proto>(std::move(ra)),
+            mint_session_handle<dual_of_t<Proto>>(std::move(rb))
+        };
+    }
 }
 
 // ═════════════════════════════════════════════════════════════════
