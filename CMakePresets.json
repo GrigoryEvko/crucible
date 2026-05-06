@@ -21,7 +21,7 @@
       "displayName": "GCC 16 + libstdc++ 16 (C++26, Release)",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_FLAGS": "-O3 -march=native -DNDEBUG -g"
+        "CMAKE_CXX_FLAGS": "-O3 -march=native -DNDEBUG -g -flto=auto"
       }
     },
     {
@@ -42,24 +42,13 @@
         "CRUCIBLE_SANITIZE": "OFF",
         "CRUCIBLE_TSAN": "ON"
       }
-    },
-    {
-      "name": "verify",
-      "inherits": "default",
-      "displayName": "GCC 16 + internal-SMT verify (deferred — interim: contracts-only)",
-      "binaryDir": "${sourceDir}/build-verify",
-      "cacheVariables": {
-        "CRUCIBLE_VERIFY": "ON",
-        "CRUCIBLE_SANITIZE": "OFF"
-      }
     }
   ],
   "buildPresets": [
     { "name": "default", "configurePreset": "default" },
     { "name": "release", "configurePreset": "release" },
     { "name": "bench",   "configurePreset": "bench" },
-    { "name": "tsan",    "configurePreset": "tsan" },
-    { "name": "verify",  "configurePreset": "verify" }
+    { "name": "tsan",    "configurePreset": "tsan" }
   ],
   "testPresets": [
     {
@@ -77,12 +66,6 @@
     {
       "name": "tsan",
       "configurePreset": "tsan",
-      "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8 }
-    },
-    {
-      "name": "verify",
-      "configurePreset": "verify",
       "output": { "outputOnFailure": true },
       "execution": { "jobs": 8 }
     },

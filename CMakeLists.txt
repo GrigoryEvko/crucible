@@ -132,6 +132,7 @@ option(CRUCIBLE_SENSE_HUB_EXTENDED
 if (CRUCIBLE_SENSE_HUB_V2)
   if (CRUCIBLE_SENSE_HUB_EXTENDED)
     set(_CRUCIBLE_SENSE_HUB_V2_FLAGS "-DCRUCIBLE_SENSE_HUB_EXTENDED=1")
+    target_compile_definitions(crucible PUBLIC CRUCIBLE_SENSE_HUB_EXTENDED=1)
   else()
     set(_CRUCIBLE_SENSE_HUB_V2_FLAGS "")
   endif()
@@ -186,6 +187,9 @@ if (CRUCIBLE_HAVE_BPF)
     -fcontracts
     -fcontract-evaluation-semantic=ignore
   )
+  if (CRUCIBLE_SENSE_HUB_V2 AND CRUCIBLE_SENSE_HUB_EXTENDED)
+    target_compile_definitions(crucible_perf PRIVATE CRUCIBLE_SENSE_HUB_EXTENDED=1)
+  endif()
   # crucible_perf inherits crucible's PUBLIC -freflection/-fcontracts
   # via the link below, but its sources don't NEED them — the loader
   # is a thin C++ shim around the C libbpf API.  Belt-and-braces:
@@ -605,12 +609,11 @@ target_link_options(crucible PUBLIC
 # Vessel adapter (shared library for Python/ctypes)
 add_subdirectory(vessel/torch)
 
-# Tests — assert-heavy, only built in Debug.  Release/bench builds
-# strip assert(), which would leave "set but not used" variables.
+# Tests — built for Debug and Release. Release catches codegen,
+# optimizer, and NDEBUG-only drift; tests that need assert() must use
+# explicit checks instead.
 enable_testing()
-if(CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL "")
-  add_subdirectory(test)
-endif()
+add_subdirectory(test)
 
 # Examples — worked production-shape demonstrations of substrate
 # concepts (Phase 0 P0-5 ships examples/fn/* for the Fn<...>
@@ -618,8 +621,7 @@ endif()
 # regression smoke tests for the substrate's public surface; opt-out
 # via -DCRUCIBLE_EXAMPLES=OFF for minimal builds.
 option(CRUCIBLE_EXAMPLES "Build worked examples of substrate concepts" ON)
-if(CRUCIBLE_EXAMPLES AND
-   (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL ""))
+if(CRUCIBLE_EXAMPLES)
   add_subdirectory(examples)
 endif()
 
@@ -627,12 +629,6 @@ endif()
 option(CRUCIBLE_BENCH "Build benchmark executables" OFF)
 if(CRUCIBLE_BENCH)
   add_subdirectory(bench)
-endif()
-
-# Formal verification (opt-in: requires Z3 SMT solver)
-option(CRUCIBLE_VERIFY "Build Z3 formal verification suite (Axiom)" OFF)
-if(CRUCIBLE_VERIFY)
-  add_subdirectory(verify)
 endif()
 
 # Fuzz infrastructure (opt-in: property-based stress + adversarial

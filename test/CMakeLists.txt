@@ -478,6 +478,11 @@ crucible_test(test_rt_policy)
 # symbol is link-reachable (return value is don't-care; depends on
 # the running kernel's caps, see test docstring).
 crucible_test(test_perf_sense_hub_smoke)
+crucible_test(test_perf_sense_hub_v2_layout)
+if(CRUCIBLE_SENSE_HUB_V2 AND CRUCIBLE_SENSE_HUB_EXTENDED)
+  target_compile_definitions(test_perf_sense_hub_v2_layout PRIVATE
+    CRUCIBLE_EXPECT_SENSE_HUB_EXTENDED=1)
+endif()
 crucible_test(test_perf_sched_switch_smoke)
 crucible_test(test_perf_pmu_sample_smoke)
 crucible_test(test_perf_lock_contention_smoke)

@@ -72,7 +72,7 @@ Plus `WriteOnce<T>` / `WriteOnceNonNull<T*>` / `BoundedMonotonic<T, Max>` / `Ord
 
 **Soundness via measurement, not proof.** Numerical correctness lives in the cross-vendor CI matrix (MIMIC.md §41): every IR002 kernel × recipe × backend runs on real silicon, outputs are compared pairwise against a CPU scalar-FMA oracle, tolerance enforced per the recipe's declared `ReductionDeterminism` tier (UNORDERED / ORDERED / BITEXACT_TC / BITEXACT_STRICT). A backend that violates tolerance fails the build.
 
-**No external SMT dependency.** Crucible ships no Z3, no CVC5, no third-party SMT solver. The `verify` CMake preset is reserved for an internal small-SMT solver (deferred — interim: contract-only enforcement at boundaries) that will discharge residual integer / Presburger obligations only — bounds, divisibility, modular arithmetic, the same narrow scope TVM Analyzer (PR #1367) uses. Default budget 5 ms per query; not on the hot path. Out of scope (and never planned): kernel-optimality proofs, floating-point reasoning, cost-model decidability. Those are measurement problems handled by the cross-vendor CI harness (MIMIC.md §41), not theorem proving.
+**No external SMT dependency.** Crucible ships no Z3, no CVC5, no third-party SMT solver. There is no active `verify` CMake preset; the internal small-SMT suite is deferred until a real `verify/` implementation exists. The intended future scope remains residual integer / Presburger obligations only — bounds, divisibility, modular arithmetic, the same narrow scope TVM Analyzer (PR #1367) uses. Out of scope (and never planned): kernel-optimality proofs, floating-point reasoning, cost-model decidability. Those are measurement problems handled by the cross-vendor CI harness (MIMIC.md §41), not theorem proving.
 
 **Capability tags (post-FOUND-B07 / METX-5 sweep).** `effects::Alloc / effects::IO / effects::Block` (the `cap::*` tags re-exported into the top-level `effects::` namespace) and `effects::Bg / effects::Init / effects::Test` context structs — capability tags on function signatures, zero runtime cost (one byte per cap, EBO-collapsed within contexts via `[[no_unique_address]]`). All defined in `effects/Capabilities.h`. These are NOT F\*X proof obligations; they are C++-level capabilities enforced at compile time. The legacy `fx::*` tree in `crucible/Effects.h` and the `compat/Fx.h` shim are deleted; production call sites use `effects::*` exclusively.
 
@@ -488,7 +488,7 @@ Goal: complete the L0 structural-guarantee layer — axioms, safety wrappers, se
 - **CSL permissions** (THREADING.md) — `Permission<Tag>`, `SharedPermission` + pool, `permission_fork` (CSL parallel rule as RAII fork-join), cache-tier cost model (L1/L2 → sequential, L3/DRAM → parallel).
 - **Production refactors**: Vigil → Machine + Session, TraceRing → PermissionedSpscChannel, KernelCache → SwmrSession + ContentAddressed, Cipher tiers → Delegate + Tagged, CNTP layers → Session over Session. ~70 tracked tasks in the backlog.
 - **Lean proofs** (Phase 5 of safety-integration plan): PermissionFlow, AssociationPreservation, StreamSessionLifetime, CrashFlow, SecretFlow. `lean/Crucible/` already has 36 modules / 1,312 theorems / zero sorry covering L0-L17.
-- **`verify` preset (internal small SMT — deferred)** reserved for residual integer-arithmetic proof obligations only — scope matches TVM Analyzer PR #1367: bounds, divisibility, modular. No external solver dependency. Interim mode: contract enforcement only. Not a kernel-optimality engine.
+- **Internal small-SMT verification (deferred)** has no active CMake preset until a real `verify/` implementation exists. Future scope remains residual integer-arithmetic proof obligations only: bounds, divisibility, modular constraints. Not a kernel-optimality engine.
 
 **Phase 2b: Forge + Mimic Core (IN PARALLEL)**
 
@@ -590,7 +590,6 @@ Design intent: **the lowest foreground recording and shadow-dispatch latency the
 | `release` | GCC 16.0.1            | Production. `-O3 -march=native -flto=auto -DNDEBUG` |
 | `bench`   | GCC 16.0.1            | Release + `CRUCIBLE_BENCH=ON`                 |
 | `tsan`    | GCC 16.0.1            | ThreadSanitizer (mutually exclusive with ASan)|
-| `verify`  | GCC 16.0.1            | + internal small-SMT verification suite (deferred — interim: contracts-only, no external solver) |
 
 **GCC 16 is the only supported compiler.** Crucible's safety axioms structurally depend on features that exist only there:
 
@@ -2045,11 +2044,9 @@ ctest --preset stress
 # Release: perf-bound tests, catches release-only codegen bugs
 cmake --preset release && cmake --build --preset release && ctest --preset release
 
-# Verify: contract enforcement + internal small-SMT (deferred)
-cmake --preset verify && cmake --build --preset verify && ctest --preset verify
 ```
 
-Pre-merge gate: `default` + `tsan` + `release`. Release gate: all four + `verify`.
+Pre-merge gate: `default` + `tsan` + `release`. Release gate: `default` + `tsan` + `release`.
 
 ### Property-based + fuzz
 
@@ -2364,11 +2361,11 @@ template for (constexpr auto m : members) { ... }
 
 ### What the wrappers do not cover
 
-- **Flow-sensitive refinement propagation.** GCC does not prove a `Refined<>` invariant holds across multiple function boundaries. The wrapper checks at construction; the body inside the function trusts the invariant. Chaining requires either re-wrapping at each boundary or an SMT-discharged proof via the `verify` preset (§I).
+- **Flow-sensitive refinement propagation.** GCC does not prove a `Refined<>` invariant holds across multiple function boundaries. The wrapper checks at construction; the body inside the function trusts the invariant. Chaining requires re-wrapping at each boundary until the deferred internal small-SMT suite exists.
 - **Alias analysis.** `Linear<>` catches double-consume on a single value but not two pointers to the same underlying object created through unsafe channels. Review + `-fsanitize=address` + the axioms from §II are the line of defense.
 - **Compile-time information flow.** Branching on a `Secret<>` value is not rejected at compile time. `ct::*` primitives and the constant-time discipline (§III opt-out of `memory_order::consume`, crypto paths using `ct::select`) are opt-in.
 
-For those properties, the `verify` preset reserves space for an internal small-SMT solver (deferred — interim: contract enforcement only); see §I. No external solver dependency.
+For those properties, the deferred internal small-SMT solver is the intended future path; there is no active CMake preset until the implementation exists. No external solver dependency.
 
 ---
 

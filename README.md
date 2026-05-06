@@ -32,7 +32,6 @@ ctest --preset default          # full suite, parallel
 
 cmake --preset release          # -O3 -march=native -DNDEBUG -flto=auto
 cmake --preset tsan             # ThreadSanitizer
-cmake --preset verify           # + Z3 SMT solver
 ```
 
 Build with `-j8` maximum — heaviest TUs peak ~1GB cc1plus RSS each (template + reflection + contracts); `-j$(nproc)` on multi-core boxes hits ~35GB and starts swapping.
