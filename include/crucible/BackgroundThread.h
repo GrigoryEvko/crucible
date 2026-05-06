@@ -1409,8 +1409,18 @@ struct BackgroundThread {
     }
 
     // Prefix sum → offsets.
+    // num_ops = max_op + 1 ≥ 1 here by construction (max_op was set from
+    // death_op + 1 of at least one internal slot above; num_internal > 0
+    // is guaranteed by the early-return at line 1393).  num_ops + 1 cannot
+    // wrap because num_ops < UINT32_MAX (death_op is uint32_t and we just
+    // computed +1, so max_op ≤ UINT32_MAX - 1, hence num_ops ≤ UINT32_MAX).
+    // The asserts inform the analyzer which can't see the chain.
+    [[assume(num_ops > 0)]];
+    [[assume(num_ops < UINT32_MAX)]];
     auto* birth_off = arena.alloc_array<uint32_t>(a, num_ops + 1);
     auto* death_off = arena.alloc_array<uint32_t>(a, num_ops + 1);
+    [[assume(birth_off != nullptr)]];
+    [[assume(death_off != nullptr)]];
     birth_off[0] = 0;
     death_off[0] = 0;
     for (uint32_t o = 0; o < num_ops; o++) {
