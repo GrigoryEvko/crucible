@@ -237,6 +237,7 @@ crucible_test(test_resources)
 crucible_test(test_concurrent)
 crucible_test(test_cog_identity)
 crucible_test(test_target_caps)
+crucible_test(test_opcode_latency_table)
 crucible_test(test_concurrent_compile)
 crucible_test(test_auto_split)
 crucible_test(test_diagnostic_compile)
@@ -1078,6 +1079,23 @@ crucible_neg_compile_cog_test(neg_target_caps_caps_for_rejects_psu_rail
     "constraint|constraints not satisfied|HasCaps|lookup_caps|PsuRail|GAPS-186")
 crucible_neg_compile_cog_test(neg_target_caps_warp_size_not_power_of_two
     "static assertion|contract|precondition|power_of_two|non-constant|Refined|PowerOfTwoLane|GAPS-186")
+
+# ─── GAPS-187 OpcodeLatencyTable HS14 fixtures ────────────────────
+#
+# Two fixtures, distinct mismatch classes:
+#   * Concept gate (HasOpcodeTable<K>) — refuses non-substrate Cogs
+#     (PsuRail) at template substitution.  Mirrors the GAPS-186 Caps
+#     concept gate; double-rejection on HasCaps + opcodes_for-defined.
+#   * Data-invariant gate (OrderedLatencyQuantiles) — refuses non-
+#     monotone p50/p99/p999 triples at Refined construction.  This is
+#     THE structural soundness gate that protects every downstream
+#     consumer (Mimic MAP-Elites pruning, partition optimiser, FitsCog
+#     throughput envelope) from disk-corrupted / federation-mismatched
+#     / hostile-preset percentile measurements.
+crucible_neg_compile_cog_test(neg_opcode_latency_rejects_psu_rail
+    "constraint|constraints not satisfied|HasOpcodeTable|lookup_opcodes|PsuRail|GAPS-187")
+crucible_neg_compile_cog_test(neg_opcode_latency_quantiles_misordered
+    "static assertion|contract|precondition|quantile_ordered|non-constant|Refined|OrderedLatencyQuantiles|GAPS-187")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #
