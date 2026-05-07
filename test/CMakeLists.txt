@@ -233,6 +233,7 @@ crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
 crucible_test(test_bridges_compile)
 crucible_test(test_effects_compile)
+crucible_test(test_resources)
 crucible_test(test_concurrent_compile)
 crucible_test(test_auto_split)
 crucible_test(test_diagnostic_compile)
@@ -992,6 +993,17 @@ crucible_neg_compile_effects_test(neg_alloc_class_from_unbound_ctx
     "static assertion failed|AllocClassFromCtx|Unbound")
 crucible_neg_compile_effects_test(neg_ctx_dispatch_wrong_tier
     "associated constraints are not satisfied|IsL1ResidentCtx")
+
+# ─── GAPS-189 (#1214): effects/Resources.h ResourceTag concept ─────
+#
+# Two HS14 fixtures locking the ResourceTag soundness gate:
+# bare-scalar rejection (no kind/value/name members) and
+# bogus-kind rejection (canonical triple but kind escapes the
+# IsResourceKind 0..22 atom range — the FOUND-I04 forgery defense).
+crucible_neg_compile_effects_test(neg_resources_concept_rejects_bare_scalar
+    "static assertion failed|ResourceTag|constraint|GAPS-189")
+crucible_neg_compile_effects_test(neg_resources_concept_rejects_bogus_kind
+    "static assertion failed|ResourceTag|IsResourceKind|GAPS-189")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #

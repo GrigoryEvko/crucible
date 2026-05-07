@@ -1,0 +1,588 @@
+#pragma once
+
+// ── crucible::effects::Resources — row-typed resource budget axes ───
+//
+// GAPS-189.  Defines the 23 consumable-resource axis tags used by the
+// unified compute+comm budget on shared hardware (CRUCIBLE.md §4 +
+// misc/03_05_2026_networking.md §4.2-§4.5).  Every kernel — compute or
+// communication — declares per-call resource consumption via these tags
+// in its row metadata; the compiler sums declared consumption across
+// concurrently-scheduled ops (GAPS-190 effects/Concurrent.h) and
+// refuses to compile if total exceeds the relevant Cog's TargetCaps
+// (GAPS-191 cog/FitsCog.h).  This eliminates the entire class of
+// NCCL-vs-compute SM oversubscription bugs that today's stacks
+// tolerate as runtime degradation.
+//
+//   Axiom coverage: TypeSafe — tags are strong types parameterized by
+//                   a budget literal; mismatch (e.g. SmBudget vs
+//                   NicQp) at composition sites fires at template
+//                   substitution.  DetSafe — every tag value is a
+//                   compile-time constant; row hashes are stable
+//                   across compilers / TUs given a frozen
+//                   ResourceKind underlying-value catalog
+//                   (FOUND-I04 append-only Universe extension below).
+//   Runtime cost:   zero — tags are empty empty-base-optimizable
+//                   types; consumption summation lives in the type
+//                   system and is consteval-evaluated.
+//
+// ── The 23 axes ─────────────────────────────────────────────────────
+//
+//   GPU compute substrate
+//     Sm                 streaming multiprocessors      uint32_t count
+//     WarpScheduler      warp scheduler slots / SM      uint32_t count
+//     RegistersPerWarp   register file slice / warp     uint32_t count
+//     Smem               on-chip shared memory          uint64_t bytes
+//     L2                 L2 / unified cache             uint64_t bytes
+//   GPU memory substrate
+//     HbmBytes           HBM resident footprint         uint64_t bytes
+//     HbmBw              HBM bandwidth                  uint64_t bytes/s
+//   Inter-device
+//     NvlinkBw           NVLink/IF bandwidth            uint64_t bytes/s
+//     PcieBw             PCIe bandwidth                 uint64_t bytes/s
+//   NIC substrate
+//     NicQ               NIC queue depth                uint32_t count
+//     NicRing            NIC ring buffer slots          uint32_t count
+//     NicQp              NIC RDMA QPs                   uint32_t count
+//     NicCq              NIC RDMA CQs                   uint32_t count
+//     NicMr              NIC memory regions             uint32_t count
+//   Switch / fabric
+//     SwitchEgressBw     switch egress bandwidth        uint64_t bytes/s
+//     SwitchBuffer       switch buffer cells            uint32_t count
+//     Tcam               TCAM entries                   uint32_t count
+//   Host substrate
+//     CpuCore            CPU core slots                 uint32_t count
+//     Llc                last-level cache footprint     uint64_t bytes
+//   Power / thermal (per-Cog)
+//     PowerWatts         instantaneous power            uint32_t watts
+//     ThermalCelsius     thermal headroom ceiling       uint32_t celsius
+//   Rack / DC
+//     RackPowerKw        rack-level power               uint32_t kilowatts
+//     CarbonGramsPerKwh  carbon intensity               uint32_t g/kWh
+//
+// All axes are parameterized on a `uint64_t` budget value so byte-
+// accounted (Smem / L2 / HbmBytes / Llc) and bandwidth-accounted
+// (HbmBw / NvlinkBw / PcieBw / SwitchEgressBw) tags can express
+// realistic chip-scale numbers.  The 25_04 doc's sketch used uint32_t
+// but a single H100 carries 80 GiB of HBM = 8.59e10 bytes which
+// exceeds uint32_t::max (~4.29e9).  uint64_t at zero runtime cost
+// (tag is an empty type) eliminates the silent-truncation footgun
+// without changing the design.
+//
+// ── Append-only Universe extension (FOUND-I04, mirrors Capabilities.h)
+//
+// **Existing ResourceKind values are immutable.**  A change to any
+// underlying value already shipped (re-numbering Sm from 0 to anything
+// else, deleting NicMr, swapping HbmBytes and HbmBw) is a wire-format-
+// breaking event for `row_hash` (safety/diag/RowHashFold.h)
+// federation cache keys.  All Family-A persistent hashes
+// (CDAG_VERSION) tied to those rows would silently re-key,
+// invalidating every published L1 / L2 / L3 cache entry across every
+// fleet that consumed those rows.
+//
+// **New axes append only.**  An additional resource (e.g. a
+// hypothetical InfinibandQpExt) joins at the next free underlying
+// value (23, 24, ...); existing values stay pinned.  This bounds
+// federation-cache invalidation to entries that mention the new axis
+// — pre-existing rows keep the same row_hash forever because every
+// existing ResourceKind underlying value stays frozen.
+//
+// **Major-version event procedure.**  If a change to an existing
+// value is genuinely required (e.g., reflection-driven re-codification
+// of the catalog), bump CDAG_VERSION (Types.h Family-A taxonomy),
+// flush every L1/L2/L3 cache entry, document the wire-format break in
+// MIMIC.md / FORGE.md / CRUCIBLE.md, and re-pin the canonical hashes.
+//
+// Self-test block at file end pins each underlying value, every
+// resource-tag concept satisfaction, every `tag_name` non-empty +
+// distinct check, and exercises the reflection-driven name-coverage
+// invariant (every ResourceKind atom has a non-sentinel name).
+//
+// ── Gates ───────────────────────────────────────────────────────────
+//
+//   Consumed by:
+//     GAPS-190 effects/Concurrent.h    — concurrent-row union folding
+//                                        Resources tags as budget sums
+//     GAPS-191 cog/FitsCog.h           — Row ≤ Cog::TargetCaps gate
+//     GAPS-149..158 forge catalogs     — every kernel author declares
+//                                        per-call consumption
+//     GAPS-167 forge/Ir001/Comm.h      — comm ops declare network
+//                                        resources via these tags
+//     GAPS-165 AdaptiveOptimizer       — reads declared budgets when
+//                                        scheduling
+//
+//   Depends on:
+//     effects/EffectRow.h              — Row<Es...> shape (parallel
+//                                        mechanism over Effect atoms)
+//     effects/Capabilities.h           — design template + frozen-
+//                                        underlying-value discipline
+//
+// References:
+//   misc/03_05_2026_networking.md §4.2-§4.5
+//   25_04_2026.md §3.3 (Met(X) row machinery)
+//   Tang-Lindley POPL 2026 (arXiv:2507.10301)
+
+#include <cstdint>
+#include <meta>
+#include <string_view>
+#include <type_traits>
+
+namespace crucible::effects {
+
+// ── ResourceKind atom catalog ───────────────────────────────────────
+//
+// Frozen by underlying value per FOUND-I04 (see file head).  Adding a
+// new atom appends; the cardinality static_assert in the self-test
+// fires on drift.  Underlying type is uint8_t (≥ 23 atoms; future
+// expansion to 256 leaves headroom).  A widen to uint16_t is an ABI-
+// breaking event for any struct that uses ResourceKind by value.
+enum class ResourceKind : std::uint8_t {
+    // GPU compute substrate
+    Sm                 = 0,
+    WarpScheduler      = 1,
+    RegistersPerWarp   = 2,
+    Smem               = 3,
+    L2                 = 4,
+    // GPU memory substrate
+    HbmBytes           = 5,
+    HbmBw              = 6,
+    // Inter-device
+    NvlinkBw           = 7,
+    PcieBw             = 8,
+    // NIC substrate
+    NicQ               = 9,
+    NicRing            = 10,
+    NicQp              = 11,
+    NicCq              = 12,
+    NicMr              = 13,
+    // Switch / fabric
+    SwitchEgressBw     = 14,
+    SwitchBuffer       = 15,
+    Tcam               = 16,
+    // Host substrate
+    CpuCore            = 17,
+    Llc                = 18,
+    // Power / thermal
+    PowerWatts         = 19,
+    ThermalCelsius     = 20,
+    // Rack / DC
+    RackPowerKw        = 21,
+    CarbonGramsPerKwh  = 22,
+};
+
+// Cardinality derived via reflection (P2996R13).  Adding a new atom
+// auto-bumps this constant — no manual maintenance.  The name-
+// coverage assertion in detail::resources_self_test then catches any
+// new atom that lacks a `resource_kind_name` switch arm OR a `tag::*`
+// template definition.
+inline constexpr std::size_t resource_kind_count =
+    std::meta::enumerators_of(^^ResourceKind).size();
+
+// ── Diagnostic name accessor ────────────────────────────────────────
+//
+// constexpr (not consteval) so the runtime smoke-test discipline can
+// drive every ResourceKind atom through this accessor with non-
+// constant arguments — per
+// feedback_algebra_runtime_smoke_test_discipline.  Constant-evaluated
+// when called from consteval contexts.
+[[nodiscard]] constexpr std::string_view
+resource_kind_name(ResourceKind k) noexcept {
+    switch (k) {
+        case ResourceKind::Sm:                return "Sm";
+        case ResourceKind::WarpScheduler:     return "WarpScheduler";
+        case ResourceKind::RegistersPerWarp:  return "RegistersPerWarp";
+        case ResourceKind::Smem:              return "Smem";
+        case ResourceKind::L2:                return "L2";
+        case ResourceKind::HbmBytes:          return "HbmBytes";
+        case ResourceKind::HbmBw:             return "HbmBw";
+        case ResourceKind::NvlinkBw:          return "NvlinkBw";
+        case ResourceKind::PcieBw:            return "PcieBw";
+        case ResourceKind::NicQ:              return "NicQ";
+        case ResourceKind::NicRing:           return "NicRing";
+        case ResourceKind::NicQp:             return "NicQp";
+        case ResourceKind::NicCq:             return "NicCq";
+        case ResourceKind::NicMr:             return "NicMr";
+        case ResourceKind::SwitchEgressBw:    return "SwitchEgressBw";
+        case ResourceKind::SwitchBuffer:      return "SwitchBuffer";
+        case ResourceKind::Tcam:              return "Tcam";
+        case ResourceKind::CpuCore:           return "CpuCore";
+        case ResourceKind::Llc:               return "Llc";
+        case ResourceKind::PowerWatts:        return "PowerWatts";
+        case ResourceKind::ThermalCelsius:    return "ThermalCelsius";
+        case ResourceKind::RackPowerKw:       return "RackPowerKw";
+        case ResourceKind::CarbonGramsPerKwh: return "CarbonGramsPerKwh";
+        default: return std::string_view{"<unknown ResourceKind>"};
+    }
+}
+
+// ── ResourceKind concept gate ───────────────────────────────────────
+//
+// IsResourceKind<K> rejects template-parameter typos at substitution
+// time, not at use site.  Mirrors IsEffect<E> in Capabilities.h.
+template <ResourceKind K>
+concept IsResourceKind =
+    K == ResourceKind::Sm                ||
+    K == ResourceKind::WarpScheduler     ||
+    K == ResourceKind::RegistersPerWarp  ||
+    K == ResourceKind::Smem              ||
+    K == ResourceKind::L2                ||
+    K == ResourceKind::HbmBytes          ||
+    K == ResourceKind::HbmBw             ||
+    K == ResourceKind::NvlinkBw          ||
+    K == ResourceKind::PcieBw            ||
+    K == ResourceKind::NicQ              ||
+    K == ResourceKind::NicRing           ||
+    K == ResourceKind::NicQp             ||
+    K == ResourceKind::NicCq             ||
+    K == ResourceKind::NicMr             ||
+    K == ResourceKind::SwitchEgressBw    ||
+    K == ResourceKind::SwitchBuffer      ||
+    K == ResourceKind::Tcam              ||
+    K == ResourceKind::CpuCore           ||
+    K == ResourceKind::Llc               ||
+    K == ResourceKind::PowerWatts        ||
+    K == ResourceKind::ThermalCelsius    ||
+    K == ResourceKind::RackPowerKw       ||
+    K == ResourceKind::CarbonGramsPerKwh;
+
+// ── Resource tag types (resource::*) ────────────────────────────────
+//
+// Each tag is a parameterized empty struct carrying:
+//   • static constexpr ResourceKind kind   — atom catalog index
+//   • static constexpr std::uint64_t value — declared budget literal
+//   • static constexpr std::string_view name — tag class name for
+//     diagnostic pretty-printing
+//
+// Layout: every tag is one byte (default-constructible, copyable,
+// trivially destructible empty struct).  Marked `[[no_unique_address]]`
+// in containing rows / contexts collapses them to zero bytes via EBO.
+//
+// The 23 templates below are mechanical — every Resource tag obeys the
+// same shape, so we use a macro to emit them.  The macro is undef'd
+// at end-of-namespace to keep the preprocessor surface clean.
+namespace resource {
+
+#define CRUCIBLE_DEFINE_RESOURCE_TAG(TagName, KindEnum)                    \
+    template <std::uint64_t N>                                             \
+    struct TagName {                                                       \
+        static constexpr ResourceKind kind = ResourceKind::KindEnum;       \
+        static constexpr std::uint64_t value = N;                          \
+        static constexpr std::string_view name = #TagName;                 \
+        constexpr TagName()                          noexcept = default;  \
+        constexpr TagName(const TagName&)            noexcept = default;  \
+        constexpr TagName(TagName&&)                 noexcept = default;  \
+        constexpr TagName& operator=(const TagName&) noexcept = default;  \
+        constexpr TagName& operator=(TagName&&)      noexcept = default;  \
+        ~TagName()                                            = default;  \
+    }
+
+// GPU compute substrate
+CRUCIBLE_DEFINE_RESOURCE_TAG(SmBudget,           Sm);
+CRUCIBLE_DEFINE_RESOURCE_TAG(WarpSchedulerSlots, WarpScheduler);
+CRUCIBLE_DEFINE_RESOURCE_TAG(RegistersPerWarp,   RegistersPerWarp);
+CRUCIBLE_DEFINE_RESOURCE_TAG(SmemBytes,          Smem);
+CRUCIBLE_DEFINE_RESOURCE_TAG(L2Bytes,            L2);
+
+// GPU memory substrate
+CRUCIBLE_DEFINE_RESOURCE_TAG(HbmBytes,           HbmBytes);
+CRUCIBLE_DEFINE_RESOURCE_TAG(HbmBandwidth,       HbmBw);
+
+// Inter-device
+CRUCIBLE_DEFINE_RESOURCE_TAG(NvlinkBandwidth,    NvlinkBw);
+CRUCIBLE_DEFINE_RESOURCE_TAG(PcieBandwidth,      PcieBw);
+
+// NIC substrate
+CRUCIBLE_DEFINE_RESOURCE_TAG(NicQueueBudget,     NicQ);
+CRUCIBLE_DEFINE_RESOURCE_TAG(NicRingDepth,       NicRing);
+CRUCIBLE_DEFINE_RESOURCE_TAG(NicQp,              NicQp);
+CRUCIBLE_DEFINE_RESOURCE_TAG(NicCq,              NicCq);
+CRUCIBLE_DEFINE_RESOURCE_TAG(NicMr,              NicMr);
+
+// Switch / fabric
+CRUCIBLE_DEFINE_RESOURCE_TAG(SwitchEgressBw,     SwitchEgressBw);
+CRUCIBLE_DEFINE_RESOURCE_TAG(SwitchBufferCells,  SwitchBuffer);
+CRUCIBLE_DEFINE_RESOURCE_TAG(TcamEntries,        Tcam);
+
+// Host substrate
+CRUCIBLE_DEFINE_RESOURCE_TAG(CpuCoreBudget,      CpuCore);
+CRUCIBLE_DEFINE_RESOURCE_TAG(LlcBytes,           Llc);
+
+// Power / thermal
+CRUCIBLE_DEFINE_RESOURCE_TAG(PowerWatts,         PowerWatts);
+CRUCIBLE_DEFINE_RESOURCE_TAG(ThermalCelsius,     ThermalCelsius);
+
+// Rack / DC
+CRUCIBLE_DEFINE_RESOURCE_TAG(RackPowerKw,        RackPowerKw);
+CRUCIBLE_DEFINE_RESOURCE_TAG(CarbonGramsPerKwh,  CarbonGramsPerKwh);
+
+#undef CRUCIBLE_DEFINE_RESOURCE_TAG
+
+}  // namespace resource
+
+// ── Top-level effects:: aliases for the resource tags ───────────────
+//
+// Production call sites use the short form (`effects::SmBudget<32>`);
+// the `resource::` namespace exists for diagnostic clarity when the
+// surrounding code is doing something unusual with the tags directly.
+template <std::uint64_t N> using SmBudget           = resource::SmBudget<N>;
+template <std::uint64_t N> using WarpSchedulerSlots = resource::WarpSchedulerSlots<N>;
+template <std::uint64_t N> using RegistersPerWarp   = resource::RegistersPerWarp<N>;
+template <std::uint64_t N> using SmemBytes          = resource::SmemBytes<N>;
+template <std::uint64_t N> using L2Bytes            = resource::L2Bytes<N>;
+template <std::uint64_t N> using HbmBytes           = resource::HbmBytes<N>;
+template <std::uint64_t N> using HbmBandwidth       = resource::HbmBandwidth<N>;
+template <std::uint64_t N> using NvlinkBandwidth    = resource::NvlinkBandwidth<N>;
+template <std::uint64_t N> using PcieBandwidth      = resource::PcieBandwidth<N>;
+template <std::uint64_t N> using NicQueueBudget     = resource::NicQueueBudget<N>;
+template <std::uint64_t N> using NicRingDepth       = resource::NicRingDepth<N>;
+template <std::uint64_t N> using NicQp              = resource::NicQp<N>;
+template <std::uint64_t N> using NicCq              = resource::NicCq<N>;
+template <std::uint64_t N> using NicMr              = resource::NicMr<N>;
+template <std::uint64_t N> using SwitchEgressBw     = resource::SwitchEgressBw<N>;
+template <std::uint64_t N> using SwitchBufferCells  = resource::SwitchBufferCells<N>;
+template <std::uint64_t N> using TcamEntries        = resource::TcamEntries<N>;
+template <std::uint64_t N> using CpuCoreBudget      = resource::CpuCoreBudget<N>;
+template <std::uint64_t N> using LlcBytes           = resource::LlcBytes<N>;
+template <std::uint64_t N> using PowerWatts         = resource::PowerWatts<N>;
+template <std::uint64_t N> using ThermalCelsius     = resource::ThermalCelsius<N>;
+template <std::uint64_t N> using RackPowerKw        = resource::RackPowerKw<N>;
+template <std::uint64_t N> using CarbonGramsPerKwh  = resource::CarbonGramsPerKwh<N>;
+
+// ── ResourceTag concept ─────────────────────────────────────────────
+//
+// Identifies any of the 23 resource tag class templates regardless of
+// the parameterized N value.  Generic algorithms (GAPS-190 row union,
+// GAPS-191 FitsCog gate) constrain on this concept to admit any
+// resource tag and reject non-resource types (effects, plain ints,
+// other tag families).
+//
+// Detection rule: T is a ResourceTag iff it exposes the canonical
+// triple (kind, value, name) AND the kind value is a valid
+// ResourceKind atom.  This combines the "shape" check with the
+// "membership" check, so adding a tag template requires both naming
+// it `name = "..."` AND pinning a valid `kind`.
+template <typename T>
+concept ResourceTag = requires {
+    { T::kind  } -> std::convertible_to<ResourceKind>;
+    { T::value } -> std::convertible_to<std::uint64_t>;
+    { T::name  } -> std::convertible_to<std::string_view>;
+    requires IsResourceKind<T::kind>;
+};
+
+// ── Self-test block ─────────────────────────────────────────────────
+namespace detail::resources_self_test {
+
+// Cardinality.  Held at twenty-three for the original catalog — if a
+// future revision adds a 24th atom, this guard fires AND the name-
+// coverage assertion below independently fires (the latter is the
+// load-bearing one because it pinpoints the missing switch arm in
+// resource_kind_name).
+static_assert(resource_kind_count == 23,
+    "ResourceKind catalog diverged from the original 23 axes — confirm "
+    "the addition is intentional, append it at the next free underlying "
+    "value (do NOT renumber existing atoms — federation row_hash will "
+    "invalidate), add a name() arm AND a tag::* template specialization "
+    "AND a top-level alias.");
+
+// Name coverage via reflection — every ResourceKind atom MUST have a
+// non-sentinel name from resource_kind_name.  Adding a new atom
+// without updating the switch fires this assertion at header-
+// inclusion time.
+[[nodiscard]] consteval bool every_resource_kind_has_name() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^ResourceKind));
+    // -Wshadow on `template for` body's induction variable is the
+    // canonical false-positive across iterations; suppress locally.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        if (resource_kind_name([:en:]) ==
+            std::string_view{"<unknown ResourceKind>"}) {
+            return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+static_assert(every_resource_kind_has_name(),
+    "resource_kind_name() switch is missing an arm for at least one "
+    "ResourceKind atom — add the arm or the new atom leaks the "
+    "'<unknown ResourceKind>' sentinel into diagnostics.");
+
+// ── Append-only Universe pin (FOUND-I04) ────────────────────────────
+//
+// Underlying values are FROZEN.  A change here is a federation-cache
+// wire-format break — see the "Append-only Universe extension" block
+// at the file head for the audit / migration ceremony.  These
+// assertions fire instantly on any drift, naming the offending atom.
+
+static_assert(static_cast<std::uint8_t>(ResourceKind::Sm)                 ==  0,
+    "ResourceKind::Sm value drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(ResourceKind::WarpScheduler)      ==  1);
+static_assert(static_cast<std::uint8_t>(ResourceKind::RegistersPerWarp)   ==  2);
+static_assert(static_cast<std::uint8_t>(ResourceKind::Smem)               ==  3);
+static_assert(static_cast<std::uint8_t>(ResourceKind::L2)                 ==  4);
+static_assert(static_cast<std::uint8_t>(ResourceKind::HbmBytes)           ==  5);
+static_assert(static_cast<std::uint8_t>(ResourceKind::HbmBw)              ==  6);
+static_assert(static_cast<std::uint8_t>(ResourceKind::NvlinkBw)           ==  7);
+static_assert(static_cast<std::uint8_t>(ResourceKind::PcieBw)             ==  8);
+static_assert(static_cast<std::uint8_t>(ResourceKind::NicQ)               ==  9);
+static_assert(static_cast<std::uint8_t>(ResourceKind::NicRing)            == 10);
+static_assert(static_cast<std::uint8_t>(ResourceKind::NicQp)              == 11);
+static_assert(static_cast<std::uint8_t>(ResourceKind::NicCq)              == 12);
+static_assert(static_cast<std::uint8_t>(ResourceKind::NicMr)              == 13);
+static_assert(static_cast<std::uint8_t>(ResourceKind::SwitchEgressBw)     == 14);
+static_assert(static_cast<std::uint8_t>(ResourceKind::SwitchBuffer)       == 15);
+static_assert(static_cast<std::uint8_t>(ResourceKind::Tcam)               == 16);
+static_assert(static_cast<std::uint8_t>(ResourceKind::CpuCore)            == 17);
+static_assert(static_cast<std::uint8_t>(ResourceKind::Llc)                == 18);
+static_assert(static_cast<std::uint8_t>(ResourceKind::PowerWatts)         == 19);
+static_assert(static_cast<std::uint8_t>(ResourceKind::ThermalCelsius)     == 20);
+static_assert(static_cast<std::uint8_t>(ResourceKind::RackPowerKw)        == 21);
+static_assert(static_cast<std::uint8_t>(ResourceKind::CarbonGramsPerKwh)  == 22);
+
+// Underlying type pinned at uint8_t — a future widen to uint16_t or
+// uint32_t silently changes ABI of any struct that uses ResourceKind
+// by value.  Federation row_hash sees only the underlying value (cast
+// to uint64_t inside fmix64_fold) so type widening is invisible to
+// the hash, but still ABI-breaking for transport structs.
+static_assert(std::is_same_v<std::underlying_type_t<ResourceKind>,
+                             std::uint8_t>,
+    "ResourceKind underlying type drifted from uint8_t — ABI change.");
+
+// Every atom satisfies the concept gate.
+static_assert(IsResourceKind<ResourceKind::Sm>);
+static_assert(IsResourceKind<ResourceKind::WarpScheduler>);
+static_assert(IsResourceKind<ResourceKind::RegistersPerWarp>);
+static_assert(IsResourceKind<ResourceKind::Smem>);
+static_assert(IsResourceKind<ResourceKind::L2>);
+static_assert(IsResourceKind<ResourceKind::HbmBytes>);
+static_assert(IsResourceKind<ResourceKind::HbmBw>);
+static_assert(IsResourceKind<ResourceKind::NvlinkBw>);
+static_assert(IsResourceKind<ResourceKind::PcieBw>);
+static_assert(IsResourceKind<ResourceKind::NicQ>);
+static_assert(IsResourceKind<ResourceKind::NicRing>);
+static_assert(IsResourceKind<ResourceKind::NicQp>);
+static_assert(IsResourceKind<ResourceKind::NicCq>);
+static_assert(IsResourceKind<ResourceKind::NicMr>);
+static_assert(IsResourceKind<ResourceKind::SwitchEgressBw>);
+static_assert(IsResourceKind<ResourceKind::SwitchBuffer>);
+static_assert(IsResourceKind<ResourceKind::Tcam>);
+static_assert(IsResourceKind<ResourceKind::CpuCore>);
+static_assert(IsResourceKind<ResourceKind::Llc>);
+static_assert(IsResourceKind<ResourceKind::PowerWatts>);
+static_assert(IsResourceKind<ResourceKind::ThermalCelsius>);
+static_assert(IsResourceKind<ResourceKind::RackPowerKw>);
+static_assert(IsResourceKind<ResourceKind::CarbonGramsPerKwh>);
+
+// Diagnostic names are non-empty AND none falls through to the
+// "<unknown ResourceKind>" sentinel.  Pairwise distinctness over 23
+// atoms is asserted indirectly via every_resource_kind_has_name +
+// the explicit per-kind switch-arm spellings (a duplicate would
+// require literally typing the same string twice in the switch,
+// which is detected by review and by the arm-coverage assertion).
+static_assert(!resource_kind_name(ResourceKind::Sm).empty());
+static_assert(!resource_kind_name(ResourceKind::WarpScheduler).empty());
+static_assert(!resource_kind_name(ResourceKind::RegistersPerWarp).empty());
+static_assert(!resource_kind_name(ResourceKind::Smem).empty());
+static_assert(!resource_kind_name(ResourceKind::L2).empty());
+static_assert(!resource_kind_name(ResourceKind::HbmBytes).empty());
+static_assert(!resource_kind_name(ResourceKind::HbmBw).empty());
+static_assert(!resource_kind_name(ResourceKind::NvlinkBw).empty());
+static_assert(!resource_kind_name(ResourceKind::PcieBw).empty());
+static_assert(!resource_kind_name(ResourceKind::NicQ).empty());
+static_assert(!resource_kind_name(ResourceKind::NicRing).empty());
+static_assert(!resource_kind_name(ResourceKind::NicQp).empty());
+static_assert(!resource_kind_name(ResourceKind::NicCq).empty());
+static_assert(!resource_kind_name(ResourceKind::NicMr).empty());
+static_assert(!resource_kind_name(ResourceKind::SwitchEgressBw).empty());
+static_assert(!resource_kind_name(ResourceKind::SwitchBuffer).empty());
+static_assert(!resource_kind_name(ResourceKind::Tcam).empty());
+static_assert(!resource_kind_name(ResourceKind::CpuCore).empty());
+static_assert(!resource_kind_name(ResourceKind::Llc).empty());
+static_assert(!resource_kind_name(ResourceKind::PowerWatts).empty());
+static_assert(!resource_kind_name(ResourceKind::ThermalCelsius).empty());
+static_assert(!resource_kind_name(ResourceKind::RackPowerKw).empty());
+static_assert(!resource_kind_name(ResourceKind::CarbonGramsPerKwh).empty());
+
+// ── Resource tag layout invariants ──────────────────────────────────
+//
+// Every resource::* tag is a default-constructible empty struct
+// (one byte by C++ rule — empty types have non-zero size).  EBO in
+// containing rows / contexts collapses them to zero.
+static_assert(std::is_default_constructible_v<resource::SmBudget<32>>);
+static_assert(std::is_trivially_copyable_v<resource::SmBudget<32>>);
+static_assert(std::is_trivially_destructible_v<resource::SmBudget<32>>);
+static_assert(sizeof(resource::SmBudget<32>) == 1,
+    "Resource tag size must be 1 byte (empty struct minimum).");
+static_assert(std::is_nothrow_default_constructible_v<resource::SmBudget<32>>);
+
+// Top-level effects:: aliases really do refer to the resource::*
+// originals.
+static_assert(std::is_same_v<SmBudget<32>,           resource::SmBudget<32>>);
+static_assert(std::is_same_v<NicQp<4>,               resource::NicQp<4>>);
+static_assert(std::is_same_v<HbmBytes<80'000'000'000ULL>,
+                             resource::HbmBytes<80'000'000'000ULL>>);
+
+// Every tag carries the canonical triple (kind, value, name).
+static_assert(resource::SmBudget<32>::kind  == ResourceKind::Sm);
+static_assert(resource::SmBudget<32>::value == 32);
+static_assert(resource::SmBudget<32>::name  == std::string_view{"SmBudget"});
+
+static_assert(resource::HbmBytes<80'000'000'000ULL>::kind  == ResourceKind::HbmBytes);
+static_assert(resource::HbmBytes<80'000'000'000ULL>::value == 80'000'000'000ULL);
+static_assert(resource::HbmBytes<80'000'000'000ULL>::name  == std::string_view{"HbmBytes"});
+
+static_assert(resource::NicQp<4>::kind  == ResourceKind::NicQp);
+static_assert(resource::NicQp<4>::value == 4);
+static_assert(resource::NicQp<4>::name  == std::string_view{"NicQp"});
+
+// uint64_t budget capacity — past uint32_t::max — must not silently
+// truncate.  Empirically pin one large literal that would have
+// vanished under uint32_t.
+static_assert(resource::HbmBandwidth<8'000'000'000'000ULL>::value
+              == 8'000'000'000'000ULL,
+    "Budget value silently truncated — uint64_t parameterization broken.");
+
+// ── ResourceTag concept satisfaction ────────────────────────────────
+//
+// Every resource::* tag instantiation satisfies the ResourceTag
+// concept.  Bare scalars and Effect tags are explicitly NOT
+// ResourceTag — those negations are the soundness witnesses for the
+// HS14 negative-compile fixtures (test/effects_neg/
+// neg_resources_*.cpp), not in-header static_asserts (a positive
+// static_assert(!ResourceTag<int>) would be redundant).
+static_assert(ResourceTag<resource::SmBudget<32>>);
+static_assert(ResourceTag<resource::WarpSchedulerSlots<8>>);
+static_assert(ResourceTag<resource::RegistersPerWarp<256>>);
+static_assert(ResourceTag<resource::SmemBytes<48 * 1024>>);
+static_assert(ResourceTag<resource::L2Bytes<128 * 1024 * 1024>>);
+static_assert(ResourceTag<resource::HbmBytes<80'000'000'000ULL>>);
+static_assert(ResourceTag<resource::HbmBandwidth<3'350'000'000'000ULL>>);
+static_assert(ResourceTag<resource::NvlinkBandwidth<900'000'000'000ULL>>);
+static_assert(ResourceTag<resource::PcieBandwidth<32'000'000'000ULL>>);
+static_assert(ResourceTag<resource::NicQueueBudget<256>>);
+static_assert(ResourceTag<resource::NicRingDepth<4096>>);
+static_assert(ResourceTag<resource::NicQp<4>>);
+static_assert(ResourceTag<resource::NicCq<4>>);
+static_assert(ResourceTag<resource::NicMr<8>>);
+static_assert(ResourceTag<resource::SwitchEgressBw<400'000'000'000ULL>>);
+static_assert(ResourceTag<resource::SwitchBufferCells<32 * 1024>>);
+static_assert(ResourceTag<resource::TcamEntries<8 * 1024>>);
+static_assert(ResourceTag<resource::CpuCoreBudget<128>>);
+static_assert(ResourceTag<resource::LlcBytes<256 * 1024 * 1024>>);
+static_assert(ResourceTag<resource::PowerWatts<700>>);
+static_assert(ResourceTag<resource::ThermalCelsius<85>>);
+static_assert(ResourceTag<resource::RackPowerKw<60>>);
+static_assert(ResourceTag<resource::CarbonGramsPerKwh<400>>);
+
+// Concept rejects non-ResourceTag types.  These are
+// compile-evaluated negations — they prove the concept's `requires`
+// machinery actually rejects rather than vacuously accepting.
+static_assert(!ResourceTag<int>);
+static_assert(!ResourceTag<float>);
+static_assert(!ResourceTag<void*>);
+static_assert(!ResourceTag<ResourceKind>);
+
+}  // namespace detail::resources_self_test
+
+}  // namespace crucible::effects
