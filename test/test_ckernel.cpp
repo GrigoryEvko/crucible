@@ -82,6 +82,54 @@ int main() {
         assert(name != nullptr && name[0] != '<' && "all known ids must have proper names");
     }
 
+    // ── WRAP-CKernel-4 (#892): make_ckernel_id widens validated bytes ───
+    //
+    // The neg-compile fixtures in test/safety_neg/neg_ckernel_id_raw_*
+    // pin the upper-bound rejection.  This block exercises the positive
+    // path: every byte in [0, NUM_KERNELS) constructs a
+    // ValidCKernelIdRaw without firing the contract, and make_ckernel_id
+    // widens it to the matching CKernelId enumerator (verified by
+    // round-trip vs unchecked static_cast).
+    //
+    // Boundaries exercised:
+    //   * 0                      — OPAQUE (lowest valid).
+    //   * NUM_KERNELS - 1        — last valid (currently COMM_BARRIER).
+    //   * Several mid-range ids  — keeps coverage non-trivial.
+    //
+    // Also pins the zero-cost claim with a static_assert: the wrapper
+    // is regime-1 EBO collapse — sizeof must equal sizeof(uint8_t).
+    {
+        static_assert(sizeof(ValidCKernelIdRaw) == sizeof(uint8_t),
+            "ValidCKernelIdRaw must collapse to bare uint8_t (regime-1 EBO)");
+
+        // OPAQUE — the lowest valid value (NSDMI default of kernel_id).
+        {
+            ValidCKernelIdRaw raw{uint8_t{0}};
+            assert(make_ckernel_id(raw) == CKernelId::OPAQUE);
+        }
+
+        // Last valid value — COMM_BARRIER, == NUM_KERNELS - 1.
+        {
+            constexpr uint8_t LAST = static_cast<uint8_t>(
+                CKernelId::NUM_KERNELS) - uint8_t{1};
+            ValidCKernelIdRaw raw{LAST};
+            assert(make_ckernel_id(raw) == CKernelId::COMM_BARRIER);
+            assert(static_cast<uint8_t>(make_ckernel_id(raw)) == LAST);
+        }
+
+        // Mid-range sample — verifies the widening preserves the
+        // underlying byte across the full valid range.
+        for (uint8_t v : {uint8_t{1}, uint8_t{42}, uint8_t{100},
+                          static_cast<uint8_t>(CKernelId::SDPA),
+                          static_cast<uint8_t>(CKernelId::CONV2D),
+                          static_cast<uint8_t>(CKernelId::ACT_RELU)}) {
+            ValidCKernelIdRaw raw{v};
+            const CKernelId id = make_ckernel_id(raw);
+            assert(static_cast<uint8_t>(id) == v
+                && "make_ckernel_id must preserve underlying byte");
+        }
+    }
+
     // ── Seal lifecycle: default Mutable, seal() flips, clear() resets ────
     {
         CKernelTable t;
