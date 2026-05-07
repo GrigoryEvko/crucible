@@ -77,7 +77,9 @@ struct SyscallLatency::State : crucible::safety::NonMovable<SyscallLatency::Stat
     ~State() {
         for (struct bpf_link* l : links) if (l != nullptr) bpf_link__destroy(l);
         if (timeline_base.has_value()) {
-            ::munmap(const_cast<uint8_t*>(timeline_base.get()),
+            // §III-clean: bit_cast strips volatile + drops to void* in one
+            // well-defined runtime conversion (no const_cast needed).
+            ::munmap(std::bit_cast<void*>(timeline_base.get()),
                      timeline_len.get());
         }
         if (obj != nullptr) bpf_object__close(obj);

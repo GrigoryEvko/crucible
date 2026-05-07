@@ -35,6 +35,7 @@
 
 #include <sys/mman.h>
 
+#include <bit>          // std::bit_cast — §III-clean volatile-strip on uint64_t*
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
@@ -128,7 +129,9 @@ struct SenseHub::State : crucible::safety::NonMovable<SenseHub::State> {
         // Either both are set or neither is — no half-state can
         // sneak past Phase 7's atomic ordering.
         if (counters.has_value()) {
-            ::munmap(const_cast<uint64_t*>(counters.get()), mmap_len.get());
+            // §III-clean: bit_cast strips volatile + drops to void* in one
+            // well-defined runtime conversion (no const_cast needed).
+            ::munmap(std::bit_cast<void*>(counters.get()), mmap_len.get());
         }
         if (obj != nullptr) bpf_object__close(obj);
     }

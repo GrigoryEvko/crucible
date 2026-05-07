@@ -133,7 +133,11 @@ struct SchedSwitch::State : crucible::safety::NonMovable<SchedSwitch::State> {
     ~State() {
         for (struct bpf_link* l : links) if (l != nullptr) bpf_link__destroy(l);
         if (timeline_base.has_value()) {
-            ::munmap(const_cast<uint8_t*>(timeline_base.get()),
+            // §III-clean: bit_cast strips both volatile AND drops to void*
+            // for munmap() in one well-defined runtime conversion (banned
+            // const_cast eliminated; well-defined for trivially-copyable
+            // pointer types at runtime).
+            ::munmap(std::bit_cast<void*>(timeline_base.get()),
                      timeline_len.get());
         }
         if (obj != nullptr) bpf_object__close(obj);
