@@ -57,7 +57,7 @@ using crucible::SoftmaxRecurrence;
   r.out_dtype    = out;
   r.determinism  = det;
   r.scale_policy = scale;
-  r.flags        = flags;
+  r.flags        = ::crucible::safety::Bits<::crucible::RecipeFlags>::from_raw(flags);
   return r;
 }
 

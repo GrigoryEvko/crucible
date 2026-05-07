@@ -472,7 +472,7 @@ namespace {
             .scale_policy   = crucible::ScalePolicy::NONE,
             .softmax        = crucible::SoftmaxRecurrence::ONLINE_LSE,
             .determinism    = crucible::ReductionDeterminism::BITEXACT_TC,
-            .flags          = 0,
+            .flags          = {},
             .hash           = {},
         });
     constexpr crucible::NumericalRecipe recipe_strict = crucible::hashed(
@@ -484,7 +484,7 @@ namespace {
             .scale_policy   = crucible::ScalePolicy::NONE,
             .softmax        = crucible::SoftmaxRecurrence::ONLINE_LSE,
             .determinism    = crucible::ReductionDeterminism::BITEXACT_STRICT,
-            .flags          = 0,
+            .flags          = {},
             .hash           = {},
         });
     assert(recipe_tc.hash != recipe_strict.hash);

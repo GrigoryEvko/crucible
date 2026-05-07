@@ -24,6 +24,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
+#include <crucible/safety/Bits.h>
 
 #include <bit>
 #include <cstdint>
@@ -124,6 +125,43 @@ enum class ReductionDeterminism : uint8_t {
   BITEXACT_STRICT,
 };
 
+// ─── RecipeFlags (#950 WRAP-NumRecipe-1) ───────────────────────────
+//
+// Per-recipe Boolean knobs that don't deserve a full enum field of
+// their own.  Each constant corresponds to one bit of the 1-byte
+// `NumericalRecipe::flags` slot.  Values are explicit `1 << N` powers
+// of two so the enum doubles as a typed bitmask.
+//
+//   FLUSH_TO_ZERO            — clamp denormals to zero in the
+//                              accumulator.  Required on backends
+//                              whose tensor cores cannot represent
+//                              denormals at FP32 accum.
+//   SPLIT_K_ATOMIC_OK        — split-K reductions across CTAs may
+//                              use atomic adds.  Forbidden under
+//                              BITEXACT_STRICT; permitted under
+//                              ORDERED with per-recipe
+//                              tolerance bound.
+//   ALLOW_DENORMAL           — allow denormalized inputs (vs
+//                              requiring upstream clamp).  Tradeoff:
+//                              correctness for tiny activations vs
+//                              vendor-dependent latency.
+//   ATTN_MASK_ADD_IN_FP32    — promote the attention mask add to
+//                              FP32 even when accum is BF16 / FP16.
+//                              Eliminates the masked-region
+//                              underflow that breaks long-context
+//                              softmax.
+//
+// Bits 4-7 reserved.  Add new flags as additional `1 << N` constants
+// without disturbing the existing bits — the recipe hash folds the
+// raw byte through fmix64, so reserved bits MUST stay zero in
+// existing recipes for hash stability.
+enum class RecipeFlags : uint8_t {
+  FLUSH_TO_ZERO         = 1 << 0,
+  SPLIT_K_ATOMIC_OK     = 1 << 1,
+  ALLOW_DENORMAL        = 1 << 2,
+  ATTN_MASK_ADD_IN_FP32 = 1 << 3,
+};
+
 // ─── NumericalRecipe — the 16-byte pinned contract ─────────────────
 //
 // Every IR002 KernelNode references an interned `const NumericalRecipe*`.
@@ -140,10 +178,16 @@ struct alignas(16) NumericalRecipe {
   ScalePolicy          scale_policy   = ScalePolicy::NONE;              // 1B
   SoftmaxRecurrence    softmax        = SoftmaxRecurrence::ONLINE_LSE;  // 1B
   ReductionDeterminism determinism    = ReductionDeterminism::ORDERED;  // 1B
-  // flags: bit 0 = flush_to_zero, bit 1 = split_k_atomic_ok,
-  //        bit 2 = allow_denormal, bit 3 = attn_mask_add_in_fp32,
-  //        bits 4-7 reserved.
-  uint8_t              flags          = 0;                              // 1B
+  // Boolean per-recipe flags — one bit per RecipeFlags constant.  See
+  // the RecipeFlags enum above for the bit assignment + invariants.
+  // Bits<RecipeFlags> is regime-1 EBO-collapsed to exactly 1 byte so
+  // the 16-byte recipe layout is preserved (verified by the
+  // static_assert below the struct).  Cross-enum mixing (e.g.
+  // assigning a NodeFlags or SymFlags constant into this field) is a
+  // compile error: Bits<NodeFlags> and Bits<RecipeFlags> are distinct
+  // template instantiations and the friend operators only match the
+  // same instantiation.
+  safety::Bits<RecipeFlags> flags{};                                    // 1B
   // hash is Family-A (persistent) per Types.h taxonomy.  Computed at
   // intern time in the RecipePool.  Drives Phase E recipe picker,
   // kernel CSE, and L1 cache keys.
@@ -247,7 +291,7 @@ namespace detail_recipe {
         | (uint64_t(enum_byte(r.scale_policy))   << 32)
         | (uint64_t(enum_byte(r.softmax))        << 40)
         | (uint64_t(enum_byte(r.determinism))    << 48)
-        | (uint64_t(r.flags)                     << 56);
+        | (uint64_t(r.flags.raw())               << 56);
     return RecipeHash{detail_recipe::fmix64(packed)};
 }
 

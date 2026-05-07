@@ -21,6 +21,7 @@
 
 int main() {
     using crucible::NumericalRecipe;
+    using crucible::RecipeFlags;
     using crucible::ReductionAlgo;
     using crucible::ReductionDeterminism;
     using crucible::RoundingMode;
@@ -54,7 +55,7 @@ int main() {
         assert(r.scale_policy   == ScalePolicy::NONE);
         assert(r.softmax        == SoftmaxRecurrence::ONLINE_LSE);
         assert(r.determinism    == ReductionDeterminism::ORDERED);
-        assert(r.flags          == 0);
+        assert(r.flags.none());
         assert(r.hash.raw()     == 0);  // unhashed until RecipePool interns
     }
 
@@ -88,11 +89,16 @@ int main() {
     {
         NumericalRecipe r{};
         r.determinism = ReductionDeterminism::BITEXACT_STRICT;
-        r.flags       = 0x05;  // flush_to_zero | allow_denormal
+        // flush_to_zero | allow_denormal — bit 0 + bit 2 = 0x05.  Post
+        // #950 WRAP-NumRecipe-1 the field is safety::Bits<RecipeFlags>;
+        // setting two flags via the typed surface is equivalent to the
+        // pre-migration `r.flags = 0x05` and pins the bit assignment.
+        r.flags.set(RecipeFlags::FLUSH_TO_ZERO);
+        r.flags.set(RecipeFlags::ALLOW_DENORMAL);
         // accum_dtype unchanged
         assert(r.accum_dtype == ScalarType::Float);
         assert(r.determinism == ReductionDeterminism::BITEXACT_STRICT);
-        assert(r.flags       == 0x05);
+        assert(r.flags.raw() == 0x05);
     }
 
     // ── Hash idempotence ────────────────────────────────────────────
@@ -150,7 +156,7 @@ int main() {
                 .scale_policy   = ScalePolicy::NONE,
                 .softmax        = SoftmaxRecurrence::ONLINE_LSE,
                 .determinism    = ReductionDeterminism::BITEXACT_STRICT,
-                .flags          = 0,
+                .flags          = {},
                 .hash           = {},
             });
         constexpr NumericalRecipe r_f16_tc =
@@ -162,7 +168,7 @@ int main() {
                 .scale_policy   = ScalePolicy::NONE,
                 .softmax        = SoftmaxRecurrence::ONLINE_LSE,
                 .determinism    = ReductionDeterminism::BITEXACT_TC,
-                .flags          = 0,
+                .flags          = {},
                 .hash           = {},
             });
         constexpr NumericalRecipe r_fp8_mx =
@@ -174,7 +180,7 @@ int main() {
                 .scale_policy   = ScalePolicy::PER_BLOCK_MX,
                 .softmax        = SoftmaxRecurrence::NAIVE,
                 .determinism    = ReductionDeterminism::ORDERED,
-                .flags          = 0,
+                .flags          = {},
                 .hash           = {},
             });
 
