@@ -1575,6 +1575,34 @@ crucible_neg_compile_test(neg_schema_table_size_above_cap
 crucible_neg_compile_test(neg_schema_table_size_uint32_max
   "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
 
+# WRAP-Transaction-5 (#1064) — TransactionLog<N>::CountCounter =
+# BoundedMonotonic<uint32_t, N>; constructing it with an out-of-range
+# initial value fires the BoundedMonotonic ctor's pre-clause
+# `!(T(Max) < initial)` in constant evaluation.  Pins the count
+# counter as monotonic-and-capped at the type level — begin_tx's
+# saturating gate `if (count_.get() < N) count_.bump();` becomes
+# defense-in-depth (the if-check preserves the original
+# saturate-don't-abort semantic so the BoundedMonotonic gate fires
+# only on bug-in-bug regressions where someone bumps unconditionally).
+# Two fixtures per HS14:
+#   * _above_cap     — boundary edge (= N + 1 = 17 for default N=16,
+#     off-by-two).  Catches drift where the bound widens from
+#     `BoundedMonotonic<..., N>` to `BoundedMonotonic<..., N + K>`
+#     for any K >= 1, silently admitting count values past the
+#     ring's capacity and breaking previous()'s backward-walk
+#     invariant `(head_ - 1 - i) & MASK`.
+#   * _uint32_max    — wide miss (= UINT32_MAX).  Catches "drop the
+#     bound entirely" regression where CountCounter degenerates from
+#     BoundedMonotonic into plain Monotonic<uint32_t> or raw uint32_t;
+#     under that drift the if-check inside begin_tx is the only
+#     defense and the compile-time witness — which also fires on
+#     aggregate-init / memcpy / aliasing paths that bypass begin_tx
+#     entirely — disappears.
+crucible_neg_compile_test(neg_transaction_log_count_above_cap
+  "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_transaction_log_count_uint32_max
+  "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

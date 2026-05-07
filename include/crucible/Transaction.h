@@ -17,6 +17,7 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
+#include <crucible/safety/Mutation.h>
 
 #include <cassert>
 #include <chrono>
@@ -71,6 +72,23 @@ class TransactionLog {
     static constexpr uint32_t MASK = N - 1;
 
  public:
+    // ── count counter wrapper (#1064 WRAP-Transaction-5) ──────────────
+    // count_ is structurally append-only-up-to-N: begin_tx pushes one
+    // entry per call (advancing count_), saturates at N (the ring's
+    // capacity), and rewinds only on TransactionLog destruction (which
+    // is move/copy-deleted, so there is no clear() lifecycle to wrap).
+    //
+    // BoundedMonotonic<uint32_t, N> pins both invariants at the type
+    // level: monotonic forward progress (no accidental backward write
+    // via raw assignment) AND the upper bound (no accidental
+    // count_ > N via aliasing or memcpy).  Same pattern as
+    // SchemaTable::SizeCounter (WRAP-SchemaTab-1 #1003) and
+    // CKernelTable::SizeCounter (WRAP-CKernel-2 #890).
+    //
+    // Zero-cost: regime-2 collapse — sizeof(CountCounter) ==
+    // sizeof(uint32_t) == 4 B; TransactionLog layout preserved.
+    using CountCounter = ::crucible::safety::BoundedMonotonic<uint32_t, N>;
+
     TransactionLog() = default;
     TransactionLog(const TransactionLog&)            = delete("TransactionLog holds ring-internal pointers");
     TransactionLog& operator=(const TransactionLog&) = delete("TransactionLog holds ring-internal pointers");
@@ -84,7 +102,13 @@ class TransactionLog {
         tx->step_id = step_id;
         tx->ts_ns   = now_ns();
         head_++;
-        if (count_ < N) count_++;
+        // count_ saturates at N: only bump while below the cap.  The
+        // explicit if-check is defense-in-depth — BoundedMonotonic::bump's
+        // pre-clause `inner_.get() < T(Max)` would fire on the (N+1)th
+        // call without it; the if preserves the original
+        // saturate-don't-abort semantic so the type-system gate fires
+        // only on bug-in-bug regressions (e.g. an unconditional bump).
+        if (count_.get() < N) count_.bump();
         return tx;
     }
 
@@ -154,14 +178,14 @@ class TransactionLog {
 
     [[nodiscard]] Transaction* previous() CRUCIBLE_LIFETIMEBOUND {
         // Walk the ring backward from head to find the most recent SUPERSEDED entry.
-        for (uint32_t i = 0; i < count_; i++) {
+        for (uint32_t i = 0; i < count_.get(); i++) {
             Transaction* e = &entries_[(head_ - 1 - i) & MASK];
             if (e->status == TxStatus::SUPERSEDED) return e;
         }
         return nullptr;
     }
 
-    [[nodiscard]] uint32_t size() const { return count_; }
+    [[nodiscard]] uint32_t size() const { return count_.get(); }
 
  private:
     // Nanosecond timestamp from the monotonic clock.
@@ -174,7 +198,7 @@ class TransactionLog {
 
     Transaction  entries_[N]{};
     uint32_t     head_{0};       // next write slot (mod N)
-    uint32_t     count_{0};      // number of filled entries (0..N)
+    CountCounter count_{0u};     // number of filled entries (0..N), bounded
     Transaction* active_tx_{nullptr};
 };
 
