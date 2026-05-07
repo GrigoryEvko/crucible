@@ -238,6 +238,7 @@ crucible_test(test_concurrent)
 crucible_test(test_cog_identity)
 crucible_test(test_target_caps)
 crucible_test(test_opcode_latency_table)
+crucible_test(test_fits_cog)
 crucible_test(test_concurrent_compile)
 crucible_test(test_auto_split)
 crucible_test(test_diagnostic_compile)
@@ -1096,6 +1097,28 @@ crucible_neg_compile_cog_test(neg_opcode_latency_rejects_psu_rail
     "constraint|constraints not satisfied|HasOpcodeTable|lookup_opcodes|PsuRail|GAPS-187")
 crucible_neg_compile_cog_test(neg_opcode_latency_quantiles_misordered
     "static assertion|contract|precondition|quantile_ordered|non-constant|Refined|OrderedLatencyQuantiles|GAPS-187")
+
+# ─── GAPS-191 cog/FitsCog.h soundness gates (HS14) ────────────────
+#
+# Two fixtures, two distinct mismatch classes:
+# * neg_fits_cog_oversubscribed — QUANTITY gate.  FitsCog refuses a
+#   Row whose declared demand exceeds the substrate's compile-time
+#   per-axis ceiling.  Witness: 999 SMs > 320 (max GPU SM count any
+#   shipped silicon has).  Distinct class: numeric exceedance on a
+#   SUBSTRATE-EXPOSED axis.  Without this gate, oversubscribed
+#   schedules silently degrade in the runtime scheduler or fail late
+#   inside vendor backends.
+# * neg_fits_cog_non_substrate — SUBSTRATE-VALIDITY gate.
+#   HasCogCapacity refuses non-substrate CogKind atoms (PsuRail /
+#   BmcSensor / aggregates) at template substitution.  Distinct
+#   class: structural binding failure ("this Cog has no budget axes
+#   at all").  Without this gate, future mint_cog_mimic factories
+#   would silently bind to PsuRail and produce no-op stubs that
+#   drop scheduled work.
+crucible_neg_compile_cog_test(neg_fits_cog_oversubscribed
+    "constraint|constraints not satisfied|FitsCog|schedule_kernel|row_fits_cog|999|GAPS-191")
+crucible_neg_compile_cog_test(neg_fits_cog_non_substrate
+    "constraint|constraints not satisfied|FitsCog|HasCogCapacity|schedule_kernel|PsuRail|GAPS-191")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #
