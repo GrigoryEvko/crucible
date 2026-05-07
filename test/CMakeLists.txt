@@ -234,6 +234,7 @@ crucible_test(test_sessions_compile)
 crucible_test(test_bridges_compile)
 crucible_test(test_effects_compile)
 crucible_test(test_resources)
+crucible_test(test_concurrent)
 crucible_test(test_concurrent_compile)
 crucible_test(test_auto_split)
 crucible_test(test_diagnostic_compile)
@@ -1004,6 +1005,22 @@ crucible_neg_compile_effects_test(neg_resources_concept_rejects_bare_scalar
     "static assertion failed|ResourceTag|constraint|GAPS-189")
 crucible_neg_compile_effects_test(neg_resources_concept_rejects_bogus_kind
     "static assertion failed|ResourceTag|IsResourceKind|GAPS-189")
+
+# ─── GAPS-190 (#1215): effects/Concurrent.h ConcurrentlySchedulable ─
+#
+# Two HS14 fixtures locking the dual concept gates:
+# * overflow rejection — pairwise sum on a ResourceKind wraps
+#   uint64_t (HbmBytes<UINT64_MAX> + HbmBytes<1>).  Witnesses that
+#   the no-overflow guard inside ConcurrentlySchedulable's body
+#   actually fires.
+# * carrier-shape rejection — non-ResourceTag in the
+#   ConcurrentRow<...> pack fails the parameter constraint
+#   (`template <ResourceTag... Tags>`).  Witnesses that the
+#   carrier concept gate rejects up front.
+crucible_neg_compile_effects_test(neg_concurrent_row_overflow_rejected
+    "static assertion failed|ConcurrentlySchedulable|constraint|GAPS-190")
+crucible_neg_compile_effects_test(neg_concurrent_row_non_resource_tag
+    "constraint|constraints not satisfied|ResourceTag|ConcurrentRow|GAPS-190")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #
