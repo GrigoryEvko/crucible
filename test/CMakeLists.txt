@@ -4767,3 +4767,28 @@ crucible_neg_compile_session_test(neg_chainedge_waiter_session_send
 
 crucible_neg_compile_session_test(neg_chainedge_signaler_session_recv
     "has no member named.*recv")
+
+# ─── HS14 fixtures #1 + #2 for safety::PublishCommitCell ────────────
+#
+# GAPS-FLUSH-RACE harness — see safety/PublishCommit.h.  The cell's
+# write surface (bump_by, bump) is friend-gated so only the listed
+# WriteAuth type can advance the counter.  Two fixtures, each a
+# distinct mismatch class:
+#
+#   * #1 UNAUTHORIZED-BUMP — code outside WriteAuth's body cannot
+#     call bump_by.  An attempt is rejected with the standard
+#     "private member" diagnostic.  Without this gate, the
+#     pre-fix BackgroundThread regression — bumping
+#     total_processed from BuildTraceFn (stage 3) instead of
+#     MakeRegionFn (stage 4) — was structurally invisible.
+#
+#   * #2 CELL-COPY — PublishCommitCell deletes both copy and move
+#     with explicit reasons.  Copying would duplicate the channel
+#     identity (two atomic counters racing under one foreground
+#     reader).  Moving would invalidate the reference held by the
+#     foreground.  Both are rejected at compile time.
+crucible_neg_compile_test(neg_publish_commit_unauthorized_bump
+    "is private within this context|private within this context|private member")
+
+crucible_neg_compile_test(neg_publish_commit_cell_move
+    "use of deleted function|deleted function|PublishCommitCell")

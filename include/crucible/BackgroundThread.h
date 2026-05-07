@@ -26,6 +26,7 @@
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/handles/OneShotFlag.h>
+#include <crucible/safety/PublishCommit.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Tagged.h>
 #include <crucible/TraceGraph.h>
@@ -159,12 +160,20 @@ struct BackgroundThread {
   alignas(64) crucible::safety::OneShotFlag stop_requested;
   std::jthread pipeline_thread;
 
-  // Total entries fully processed by the bg thread.  AtomicMonotonic
-  // lifts the counter's monotonicity into the type system: no decrement,
-  // no reset, no stale CAS.  bump_by(drained_count) uses acq_rel — one
-  // extra ARM dmb per drain batch (BATCH_SIZE = 4096) compared to the
-  // pre-migration release-only fetch_add.  Cost amortized across the
-  // batch is far below measurement noise.
+  // Total entries fully processed by the bg thread.  AtomicMonotonic-
+  // shaped acquire-load API; the WRITE surface is friend-gated to a
+  // single nested authority type (BackgroundThread::PublishStageAuth)
+  // so only MakeRegionFn — the publishing stage — can advance the
+  // counter.
+  //
+  // GAPS-FLUSH-RACE history: an earlier shape allowed BuildTraceFn
+  // (stage 3) to bump this counter for commit-only markers, racing
+  // with the publish callback in MakeRegionFn (stage 4).  The fix
+  // forwards commit markers downstream so bumping happens in
+  // MakeRegionFn; the type-level harness here pins the discipline
+  // structurally — a future refactor that tries to bump from any
+  // other stage gets a "private member" diagnostic naming the missing
+  // friend declaration.
   //
   // Synchronization: fg must see all prior bg writes (pending_region_,
   // active_region, region data) when flush()'s acquire load sees the
@@ -172,7 +181,12 @@ struct BackgroundThread {
   //
   // Own cache line: fg reads via flush()/flush_complete(), bg writes
   // here.  Without alignas(64) the line would ping-pong on every drain.
-  alignas(64) safety::AtomicMonotonic<uint64_t> total_processed{0};
+  // The cell type itself carries alignas(64) on its atomic.
+  struct PublishStageAuth;  // friend-only authority; defined below.
+  struct PublishStageTag {};
+  using TotalProcessedCell =
+      safety::PublishCommitCell<PublishStageTag, PublishStageAuth>;
+  TotalProcessedCell total_processed;
 
   // Divergence signal: fg thread signals this when compiled replay
   // diverges.  bg thread checks at the start of each drain cycle and
@@ -229,9 +243,27 @@ struct BackgroundThread {
   // unique_ptr after publish_trace_graph() consumes the graph.  The
   // graph itself is arena-allocated by build_trace_from() and outlives
   // the BgGraphPublish wrapper (its lifetime is tied to the bg arena).
+  //
+  // Two shapes flow through this channel:
+  //   (a) graph != nullptr, commit_only == false — a real iteration
+  //       region to publish via on_region_ready.
+  //   (b) graph == nullptr, commit_only == true — a commit marker
+  //       carrying the entry count for total_processed bookkeeping.
+  //
+  // The commit marker MUST flow downstream through MakeRegionFn so that
+  // total_processed only advances after every region produced UPSTREAM
+  // of it has been published (publish_trace_graph + on_region_ready
+  // fully executed).  Bumping total_processed inline at stage 3 races
+  // with stage 4: flush() can return while a region is still queued in
+  // graph_publish, leaving callers to observe (mode_=COMPILED ∧
+  // pending_region_=null) or worse (active_region pointing at a region
+  // whose plan hasn't finished computing).  Forwarding commit markers
+  // through stage 4 closes that gap by construction.
   struct BgGraphPublish {
     BackgroundThread* owner = nullptr;
     TraceGraph* graph = nullptr;
+    bool commit_only = false;
+    uint32_t commit_count = 0;
   };
 
   struct BgPipelineStartTag {};
@@ -494,7 +526,30 @@ struct BackgroundThread {
 
       BackgroundThread* owner = work->owner;
       if (work->commit_only) {
-        (void)owner->total_processed.bump_by(work->commit_count);
+        // Forward commit marker to stage 4 so total_processed only
+        // advances AFTER every preceding graph has been published.
+        // Bumping inline here would race with publish_trace_graph: the
+        // foreground thread can observe total_processed catching up,
+        // call dispatch_op, and find pending_region_ empty (or
+        // active_region pointing at a half-finished region).  Two-test
+        // failure modes traceable to this race:
+        //   * test_vigil_dispatch align_and_activate(17) — mode_ flips
+        //     COMPILED via on_region_ready, but a NEW region published
+        //     mid-alignment resets alignment_pos_ to 0; with the inline
+        //     bump, flush() can return before any pending_region_ is
+        //     visible.
+        //   * test_end_to_end test_pipeline_basic — wait_processed
+        //     returns, then active_region.load() is null.
+        // The single-region test scenarios pass without this fix because
+        // their N-op feed has only one boundary; the multi-region cases
+        // fail every time under load.
+        auto publish = std::make_unique<BgGraphPublish>();
+        publish->owner = owner;
+        publish->graph = nullptr;
+        publish->commit_only = true;
+        publish->commit_count = work->commit_count;
+        push_pipeline(out, publish.get());
+        publish.release();
         continue;
       }
 
@@ -511,6 +566,8 @@ struct BackgroundThread {
       auto publish = std::make_unique<BgGraphPublish>();
       publish->owner = owner;
       publish->graph = graph;
+      publish->commit_only = false;
+      publish->commit_count = 0;
       push_pipeline(out, publish.get());
       publish.release();
     }
@@ -524,6 +581,17 @@ struct BackgroundThread {
   // RecordingSessionHandle wrapping: the publish-side delegate doesn't see
   // the build-side machinery, so a crash-stop on publish (e.g. cipher
   // freeze, callback throw) doesn't taint build's owner pointer.
+  //
+  // GAPS-FLUSH-RACE (this fix): commit_only markers ride the same
+  // channel and bump total_processed AFTER any region(s) ahead of them
+  // in the stream have been fully published.  The order guarantee is
+  // structural: the channel is SPSC FIFO, so a commit_count for a
+  // batch can only land here after every region produced from that
+  // batch (and from preceding batches) has gone through
+  // publish_trace_graph.  flush() returning therefore implies "all
+  // regions published, mode_ = COMPILED, pending_region_ holds the
+  // latest one" — the precondition every test depended on but the
+  // pre-fix pipeline could violate by 5–500 µs under load.
   static void MakeRegionFn(typename GraphPublishChannel::ConsumerHandle&& in,
                            BgSinkProducerHandle&& out) {
     effects::Bg bg;
@@ -544,9 +612,44 @@ struct BackgroundThread {
       }
 
       BackgroundThread* owner = publish->owner;
+      if (publish->commit_only) {
+        // FIFO ordering on graph_publish: the commit marker sits
+        // strictly AFTER every BgGraphPublish from the same and earlier
+        // batches.  Bumping here therefore happens-after every
+        // publish_trace_graph above; the release on total_processed
+        // pairs with flush()'s acquire load on the foreground.
+        //
+        // Bump goes through PublishStageAuth::commit, the only legal
+        // bumper of total_processed (friend-gated by the cell type).
+        // A future regression that tries to bump from BuildTraceFn or
+        // any other stage will get a "private member" diagnostic
+        // pointing at this site — the structural fence against the
+        // GAPS-FLUSH-RACE bug class.
+        (void)PublishStageAuth::commit(owner->total_processed,
+                                        publish->commit_count);
+        continue;
+      }
       owner->publish_trace_graph(bg.alloc, publish->graph);
     }
   }
+
+  // ─── PublishStageAuth — sole authority for total_processed writes ─
+  //
+  // Befriended by TotalProcessedCell.  The static commit method is
+  // the ONLY legal site that can call bump_by on total_processed.
+  // MakeRegionFn invokes PublishStageAuth::commit; any other call
+  // site fails to compile (private bump_by inaccessible).
+  //
+  // Definition LATE in the class body so the friend declaration in
+  // total_processed sees the forward-declared name above.  The
+  // method is a thin friend-side forwarder; the call elides
+  // completely under -O3.
+  struct PublishStageAuth {
+    [[nodiscard]] static uint64_t commit(TotalProcessedCell& cell,
+                                          uint64_t delta) noexcept {
+      return cell.bump_by(delta);
+    }
+  };
 
   // Start the background thread. ring/meta_log must be set first.
   //
