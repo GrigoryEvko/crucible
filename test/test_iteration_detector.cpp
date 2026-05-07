@@ -31,9 +31,9 @@ static void test_signature_build_requires_K_ops() {
     assert(!d.check(H(2)));
     assert(!d.check(H(3)));
     assert(!d.check(H(4)));
-    assert(d.signature_len == 4);
+    assert(d.signature_len.get() == 4);
     assert(!d.check(H(5)));
-    assert(d.signature_len == 5);
+    assert(d.signature_len.get() == 5);
     std::printf("  test_signature_build:         PASSED\n");
 }
 
@@ -124,13 +124,13 @@ static void test_reset_clears_everything() {
 
     d.reset();
     assert(!d.confirmed);
-    assert(d.signature_len == 0);
+    assert(d.signature_len.get() == 0);
     assert(d.boundaries_detected.get() == 0);
     assert(d.ops_since_boundary == 0);
     assert(d.last_completed_len == 0);
     // Detector is fresh: must rebuild signature.
     for (uint32_t i = 0; i < 4; i++) assert(!d.check(H(100 + i)));
-    assert(d.signature_len == 4);
+    assert(d.signature_len.get() == 4);
     std::printf("  test_reset:                   PASSED\n");
 }
 

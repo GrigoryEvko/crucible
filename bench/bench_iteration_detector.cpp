@@ -160,7 +160,7 @@ int main() {
             warmup_detector(d);
             return bench::run("reset()", [&]{
                 d.reset();
-                bench::do_not_optimize(d.signature_len);
+                bench::do_not_optimize(d.signature_len.get());
             });
         }(),
 

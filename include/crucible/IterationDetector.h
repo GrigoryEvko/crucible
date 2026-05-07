@@ -9,6 +9,8 @@
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Refined.h>
 
+#include <memory>
+
 namespace crucible {
 
 // Detects iteration boundaries in a continuous stream of op schema hashes.
@@ -55,6 +57,30 @@ struct IterationDetector {
   using MatchPos = ::crucible::safety::Refined<
       ::crucible::safety::bounded_above<MATCH_POS_MAX>, uint8_t>;
 
+  // Refinement+monotonicity type for signature_len's storage (#928
+  // WRAP-IterDet-2).  signature_len's behavior:
+  //   - starts at 0
+  //   - bumped exactly K times during signature build (0→1→…→K)
+  //   - never advances past K — the `if (signature_len < K)` guard at
+  //     the top of check() routes the K-th-onward calls to phase 2,
+  //     which never mutates signature_len.
+  //   - reset to 0 only by reset() (non-monotonic re-construct).
+  //
+  // BoundedMonotonic<uint32_t, K> nests Monotonic<uint32_t> inside a
+  // bound-checked façade: every advance() / bump() carries
+  // pre(new_value <= K), AND inner Monotonic carries pre(new_value
+  // >= current).  Combined, the type rejects "skip ahead" and
+  // "rewind" at the call site.  A future regression that increments
+  // beyond K (via bump() at signature_len == K) fires a contract
+  // violation; constexpr witness fixtures pin the bound check.
+  //
+  // Zero-cost: Monotonic<uint32_t, less<>> is regime-2 (T==element
+  // type collapse), so sizeof(BoundedMonotonic<uint32_t, K>) ==
+  // sizeof(uint32_t) == 4B — line-0 layout (offset 56 + 4B pad)
+  // preserved by structural guarantee.
+  using SignatureLen =
+      ::crucible::safety::BoundedMonotonic<uint32_t, K>;
+
   // ── Cache line 0: hot path data (touched every call) ─────────
   // Expected next hash VALUE (not pointer). One L1d load, zero pointer chase.
   // In steady state (match_pos_.value()==0), this equals signature[0].
@@ -78,8 +104,11 @@ struct IterationDetector {
   uint32_t ops_since_boundary = 0;                    // offset 52, 4B
 
   // Number of hashes collected during signature build (0..K).
-  // After build completes, stays at K permanently.
-  uint32_t signature_len = 0;                         // offset 56, 4B
+  // After build completes, stays at K permanently — a structural
+  // invariant pinned by SignatureLen (#928 WRAP-IterDet-2).  bump()
+  // at signature_len.get()==K fires a contract violation; reset()
+  // re-constructs in place to rewind for the next epoch.
+  SignatureLen signature_len{0u};                     // offset 56, 4B
 
   uint8_t pad1_[4]{};                                 // offset 60, 4B
   // ── End cache line 0 (64 bytes) ──────────────────────────────
@@ -109,8 +138,11 @@ struct IterationDetector {
     ops_since_boundary++;
 
     // Phase 1: building signature from first K ops.
-    // Entered exactly K times total, then never again.
-    if (signature_len < K) [[unlikely]] {
+    // Entered exactly K times total, then never again — invariant
+    // pinned by SignatureLen's bump() bound (a K-th bump fires a
+    // contract violation, so re-entering build_signature_ when
+    // signature_len.get()==K would be structurally rejected).
+    if (signature_len.get() < K) [[unlikely]] {
       return build_signature_(schema_hash);
     }
 
@@ -154,10 +186,12 @@ struct IterationDetector {
     match_pos_ = MatchPos{uint8_t{0}};
     confirmed = false;
     ops_since_boundary = 0;
-    signature_len = 0;
     // reset() is not a monotonic operation — it deliberately rewinds
-    // the counter on test/teardown.  Re-construct the Monotonic so the
-    // invariant is established afresh from value 0.
+    // the BoundedMonotonic counters on test/teardown.  Re-construct
+    // each so the bound + monotonicity invariants are established
+    // afresh from value 0.  Same pattern as boundaries_detected
+    // below.
+    std::construct_at(&signature_len, SignatureLen{0u});
     std::construct_at(&boundaries_detected,
                       crucible::safety::Monotonic<uint32_t>{0});
     last_completed_len = 0;
@@ -165,11 +199,14 @@ struct IterationDetector {
 
  private:
   // Signature build: collect first K hashes. Called exactly K times.
+  // The check() guard `signature_len.get() < K` admits this only
+  // when bump() is in-bounds (current <= K-1), so the contract on
+  // SignatureLen::bump (pre: current < K) holds by control flow.
   [[nodiscard]] bool build_signature_(SchemaHash schema_hash) {
-    signature[signature_len] = schema_hash;
-    signature_len++;
+    signature[signature_len.get()] = schema_hash;
+    signature_len.bump();
 
-    if (signature_len == K) [[unlikely]] {
+    if (signature_len.get() == K) [[unlikely]] {
       // Signature complete. Prime the sequential matcher.
       expected_hash_ = signature[0];
       match_pos_ = MatchPos{uint8_t{0}};

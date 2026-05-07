@@ -1478,6 +1478,20 @@ crucible_neg_compile_test(neg_call_site_lineno_negative
 crucible_neg_compile_test(neg_call_site_lineno_int_min
   "contract|non_negative|not a constant|non-constant|constexpr")
 
+# WRAP-IterDet-2 (#928) — IterationDetector::SignatureLen = safety::
+# BoundedMonotonic<uint32_t, K=5>; constructing SignatureLen{> K} in
+# constexpr context drives the `pre(!(T(Max) < initial))` clause
+# through constant evaluation.  Two fixtures per HS14:
+#   * _above_k     — boundary edge (6 = K+1), catches off-by-one drift
+#     in the bound (e.g. `bounded_above<K-1>` vs `bounded_above<K>`).
+#   * _uint32_max  — wide miss (UINT32_MAX), catches "drop the upper
+#     bound" regression where BoundedMonotonic is replaced by plain
+#     Monotonic and the Max disappears entirely.
+crucible_neg_compile_test(neg_iter_det_signature_len_above_k
+  "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_iter_det_signature_len_uint32_max
+  "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices
