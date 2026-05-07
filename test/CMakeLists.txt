@@ -1849,6 +1849,38 @@ crucible_neg_compile_test(neg_costmodel_regs_per_thread_overflow
 crucible_neg_compile_test(neg_costmodel_regs_per_thread_max_uint16
   "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
 
+# ─── #896 WRAP-CostModel-2 neg-compile tests ────────────────────────
+#
+# Per #896, ValidWarpSize is
+# safety::Refined<safety::all_of<safety::power_of_two,
+#                                 safety::bounded_above<uint16_t{128}>>,
+#                  uint16_t> and pins HardwareProfile::warp_size at the
+# type level.  Every shipped GPU backend (NVIDIA Volta-and-later: 32
+# threads, AMD GCN/CDNA/RDNA: 64 threads) emits warps in power-of-two
+# widths ≤ 128.
+#
+# Two fixtures per HS14 mandate, demonstrating distinct mismatch
+# classes for the COMPOSITE predicate:
+#   * neg_costmodel_warp_size_not_power_of_two — fails the
+#     power_of_two predicate (33).  Catches off-by-one drift in
+#     callers that compute warp_size = nominal + 1, or stub fence-
+#     padding schemes that treat warp_size as an opaque count.
+#   * neg_costmodel_warp_size_too_large — fails the bounded_above<128>
+#     predicate (256, power-of-two but past the ceiling).  Catches
+#     drift where a future architecture is rumoured to widen
+#     wavefronts and a deserialiser accepts the rumour, or where a
+#     hostile cost-model snapshot inflates warp_size to push every
+#     real kernel into a single MAP-Elites cell.
+#
+# Defense-in-depth: there is no runtime warp_size cap inside
+# validate_config — the structural ceiling is a property of the
+# silicon, not a per-config knob.  ValidWarpSize catches the value at
+# construction time, which is the only meaningful enforcement point.
+crucible_neg_compile_test(neg_costmodel_warp_size_not_power_of_two
+  "contract|Refined|power_of_two|all_of|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_costmodel_warp_size_too_large
+  "contract|Refined|bounded_above|all_of|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

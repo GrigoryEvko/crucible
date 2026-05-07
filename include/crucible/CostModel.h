@@ -25,6 +25,7 @@
 
 #include <crucible/Types.h>
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/RefinedAlgebra.h>
 
 #include <algorithm>
 #include <cmath>
@@ -63,6 +64,60 @@ static_assert(sizeof(ValidRegsPerThread) == sizeof(uint16_t),
     "Refined<bounded_above<255>, uint16_t> is regime-1, the BoolLattice "
     "has empty element_type so the wrapper carries no extra storage.");
 
+// ── Validated warp / wavefront size (#896 WRAP-CostModel-2) ─────────────
+//
+// `warp_size` is the number of threads in a hardware-dispatched warp
+// (NVIDIA Volta-and-later: 32 threads), wavefront (AMD GCN/CDNA/RDNA:
+// 64 threads), or sub-group (Intel Xe: 8/16/32).  The structural
+// invariants on EVERY shipped GPU backend Crucible targets are:
+//
+//   * `power_of_two(warp_size)` — hardware schedulers fan out warps via
+//     bit-mask shifts on per-lane predicate registers; non-power-of-two
+//     widths are not representable in any documented ISA. Composite
+//     SIMD widths the project encounters: 8/16/32 (NVIDIA + Intel),
+//     64 (AMD).
+//
+//   * `bounded_above<128>(warp_size)` — the max sub-group / wavefront
+//     width across all currently-shipped silicon is 64 (AMD CDNA3+).
+//     128 is set as the type-level ceiling with one bit of headroom
+//     for forward compatibility (a future architecture might widen
+//     wavefronts to 128, but not beyond — past 128 the per-warp
+//     register pressure is intractable on any plausible silicon).
+//
+// `ValidWarpSize` pins both invariants at the type level via
+// `safety::all_of<power_of_two, bounded_above<128>>`. Construction of
+// the field with `warp_size = 33` (non-power-of-two) or `warp_size =
+// 256` (power-of-two but past the hardware ceiling) is rejected at the
+// type-system boundary: under semantic=enforce → contract violation
+// → handle_contract_violation (logged + std::abort), in constexpr
+// context → not a constant expression per P1494R5 (ill-formed).  See
+// HS14 fixtures
+// test/safety_neg/neg_costmodel_warp_size_not_power_of_two.cpp and
+// test/safety_neg/neg_costmodel_warp_size_too_large.cpp for the
+// witnesses that the type system rejects each mismatch class.
+//
+// EBO collapse: `Refined<all_of<...>, uint16_t>` is regime-1 ⇒
+// sizeof(ValidWarpSize) == sizeof(uint16_t) == 2 B.  HardwareProfile
+// layout is unchanged.
+//
+// Consumer sites consuming the field (all in CostModel.h):
+//   * HardwareProfile::max_threads_per_sm()  — multiplies with max_warps_per_sm
+//   * validate_config (C4)                   — `cfg.warps_per_block * hw.warp_size > 1024`
+//   * wave_efficiency()                      — `tpw = num_sms * warp_size`
+//   * sm_occupancy()                         — warp-granularity round-down + tpb computation
+// All access via `.value()` on the field; the layout-bounding gate
+// pin the structural invariant at every preset writer
+// (blackwell_b200 / hopper_h100 / mi300x / ampere_a100).
+using ValidWarpSize = safety::Refined<
+    safety::all_of<safety::power_of_two,
+                   safety::bounded_above<uint16_t{128}>>,
+    uint16_t>;
+static_assert(sizeof(ValidWarpSize) == sizeof(uint16_t),
+    "ValidWarpSize must EBO-collapse to sizeof(uint16_t) — "
+    "Refined<all_of<power_of_two, bounded_above<128>>, uint16_t> is "
+    "regime-1, the BoolLattice over the AllOf predicate has empty "
+    "element_type so the wrapper carries no extra storage.");
+
 // ═══════════════════════════════════════════════════════════════════
 // HardwareProfile: Measurable hardware specifications (Z3 axioms)
 //
@@ -78,7 +133,11 @@ struct HardwareProfile {
   // ── Compute fabric ─────────────────────────────────────────────
   // Z3: (define-const num_sms Int 128)
   uint32_t num_sms = 0;             // Streaming multiprocessors (NVIDIA) or CUs (AMD)
-  uint16_t warp_size = 32;          // Threads per warp (32 NVIDIA) or wavefront (64 AMD)
+  // Threads per warp (32 NVIDIA) or wavefront (64 AMD).  Bounded at the
+  // type level by `power_of_two ∧ ≤ 128` (#896 WRAP-CostModel-2) — see
+  // ValidWarpSize comment block above for the per-vendor ceiling
+  // discussion and the EBO collapse static_assert.
+  ValidWarpSize warp_size{uint16_t{32}};
   uint16_t max_warps_per_sm = 64;   // Max concurrent warps per SM
 
   // ── Register file (per SM) ─────────────────────────────────────
@@ -143,7 +202,7 @@ struct HardwareProfile {
   // ── Derived quantities (not Z3 axioms — computed from axioms) ──
 
   [[nodiscard]] constexpr uint32_t max_threads_per_sm() const {
-    return static_cast<uint32_t>(warp_size) * max_warps_per_sm;
+    return static_cast<uint32_t>(warp_size.value()) * max_warps_per_sm;
   }
 
   [[nodiscard]] constexpr uint64_t total_threads() const {
@@ -193,7 +252,7 @@ struct HardwareProfile {
 [[nodiscard]] constexpr HardwareProfile blackwell_b200() {
   HardwareProfile hw{};
   hw.num_sms = 128;
-  hw.warp_size = 32;
+  hw.warp_size = ValidWarpSize{uint16_t{32}};
   hw.max_warps_per_sm = 64;
   hw.regs_per_sm = 65536;
   hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
@@ -225,7 +284,7 @@ struct HardwareProfile {
 [[nodiscard]] constexpr HardwareProfile hopper_h100() {
   HardwareProfile hw{};
   hw.num_sms = 132;
-  hw.warp_size = 32;
+  hw.warp_size = ValidWarpSize{uint16_t{32}};
   hw.max_warps_per_sm = 64;
   hw.regs_per_sm = 65536;
   hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
@@ -257,7 +316,7 @@ struct HardwareProfile {
 [[nodiscard]] constexpr HardwareProfile mi300x() {
   HardwareProfile hw{};
   hw.num_sms = 304;               // Compute Units
-  hw.warp_size = 64;              // Wavefront size
+  hw.warp_size = ValidWarpSize{uint16_t{64}};  // Wavefront size
   hw.max_warps_per_sm = 32;       // Max wavefronts per CU
   hw.regs_per_sm = 65536;         // 256KB VGPR per CU
   hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
@@ -289,7 +348,7 @@ struct HardwareProfile {
 [[nodiscard]] constexpr HardwareProfile ampere_a100() {
   HardwareProfile hw{};
   hw.num_sms = 108;
-  hw.warp_size = 32;
+  hw.warp_size = ValidWarpSize{uint16_t{32}};
   hw.max_warps_per_sm = 64;
   hw.regs_per_sm = 65536;
   hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
@@ -368,7 +427,7 @@ struct KernelConfig {
   // C3: at least one warp per block
   if (cfg.warps_per_block == 0) return false;
   // C4: threads per block ≤ hardware max (1024 on NVIDIA, 1024 on AMD)
-  if (static_cast<uint32_t>(cfg.warps_per_block) * hw.warp_size > 1024) return false;
+  if (static_cast<uint32_t>(cfg.warps_per_block) * hw.warp_size.value() > 1024) return false;
   // C5-C7: tile sizes are positive
   if (cfg.tile_m == 0 || cfg.tile_n == 0 || cfg.tile_k == 0) return false;
   // C8: pipeline stages in valid range
@@ -423,7 +482,7 @@ struct CostBreakdown {
 
 [[nodiscard]] constexpr float wave_efficiency(
     uint64_t elements, const HardwareProfile& hw) {
-  uint64_t tpw = static_cast<uint64_t>(hw.num_sms) * hw.warp_size;
+  uint64_t tpw = static_cast<uint64_t>(hw.num_sms) * hw.warp_size.value();
   if (tpw == 0 || elements == 0) return 0.0f;
   uint64_t waves = (elements + tpw - 1) / tpw;
   return static_cast<float>(elements) / static_cast<float>(waves * tpw);
@@ -453,7 +512,12 @@ struct CostBreakdown {
 [[nodiscard]] constexpr float sm_occupancy(
     ValidRegsPerThread regs_per_thread, uint32_t smem_per_block,
     uint16_t warps_per_block, const HardwareProfile& hw) {
-  uint32_t max_threads = static_cast<uint32_t>(hw.warp_size) * hw.max_warps_per_sm;
+  // Hoist warp_size unwrap to a single .value() call — the field is
+  // type-bounded to a power-of-two ≤ 128 by ValidWarpSize (#896), so
+  // every consumer below sees a uint16_t in the trusted range without
+  // re-checking the predicate.
+  const uint16_t warp_v = hw.warp_size.value();
+  uint32_t max_threads = static_cast<uint32_t>(warp_v) * hw.max_warps_per_sm;
   if (max_threads == 0) return 0.0f;
 
   // Register-limited: how many threads can fit in the register file.
@@ -466,14 +530,14 @@ struct CostBreakdown {
   uint32_t reg_limited = max_threads;
   if (regs_v > 0) {
     reg_limited = hw.regs_per_sm / regs_v;
-    reg_limited = (reg_limited / hw.warp_size) * hw.warp_size; // warp granularity
+    reg_limited = (reg_limited / warp_v) * warp_v; // warp granularity
   }
 
   // Shared-memory-limited: how many blocks fit, × threads per block
   uint32_t smem_limited = max_threads;
   if (smem_per_block > 0) {
     uint32_t blocks = hw.smem_per_sm / smem_per_block;
-    uint32_t tpb = static_cast<uint32_t>(warps_per_block) * hw.warp_size;
+    uint32_t tpb = static_cast<uint32_t>(warps_per_block) * warp_v;
     smem_limited = blocks * tpb;
   }
 

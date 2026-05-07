@@ -26,7 +26,7 @@ static bool approx(float actual, float expected, float tol = 0.01f) {
 static void test_preset_sanity() {
     auto b200 = blackwell_b200();
     assert(b200.num_sms == 128);
-    assert(b200.warp_size == 32);
+    assert(b200.warp_size.value() == 32);
     assert(b200.max_warps_per_sm == 64);
     assert(b200.max_threads_per_sm() == 32 * 64);
     assert(b200.total_threads() == 128ULL * 32 * 64);
@@ -40,7 +40,7 @@ static void test_preset_sanity() {
     assert(h100.sm_version == 90);
 
     auto mi300 = mi300x();
-    assert(mi300.warp_size == 64);  // AMD wavefront
+    assert(mi300.warp_size.value() == 64);  // AMD wavefront
     assert(approx(mi300.peak_fp16, 1300.0f));
 
     auto a100 = ampere_a100();
@@ -68,7 +68,7 @@ static void test_ridge_point() {
 
 static void test_wave_efficiency() {
     auto hw = blackwell_b200();
-    const uint64_t tpw = hw.num_sms * hw.warp_size;  // 128 × 32 = 4096
+    const uint64_t tpw = hw.num_sms * hw.warp_size.value();  // 128 × 32 = 4096
 
     // Zero elements → 0.
     assert(approx(wave_efficiency(0, hw), 0.0f));
