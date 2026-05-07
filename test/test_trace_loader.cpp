@@ -6,6 +6,7 @@
 // and the happy path round-trip.
 
 #include <crucible/TraceLoader.h>
+#include <crucible/SchemaTable.h>
 
 #include "test_assert.h"
 #include <cstdint>
@@ -14,6 +15,7 @@
 #include <cstring>
 #include <string>
 #include <unistd.h>
+#include <vector>
 
 using namespace crucible;
 
@@ -150,6 +152,163 @@ static void test_round_trip_single_op() {
     std::printf("  test_round_trip_single_op:      PASSED\n");
 }
 
+// ── Schema-name table round-trip + corruption resistance ───────────
+//
+// WRAP-TraceLoader-3 (#1051) introduces ValidSchemaNameLen — the
+// Refined<in_range<1, 256>, uint16_t> gate at the .crtrace name-length
+// boundary.  These tests close the audit gap left by that change: the
+// existing 9 tests cover header / op-record / meta paths but never
+// exercise the *trailing* schema-name section where the gate sits.
+//
+// Each test calls global_schema_table().clear() for state isolation
+// (clear() resets sealed_ to false, so mint_mutable_view() succeeds).
+//
+// The corruption tests prove the if-break + Refined gate are the
+// defense-in-depth pair: the runtime guard never reaches the Refined
+// ctor with an out-of-range value (so the contract pre-clause holds),
+// AND the Refined gate stops aggregate-init / future-reader paths that
+// might bypass load_trace entirely.
+
+// Append little-endian bytes of a trivially-copyable scalar.
+template <typename T>
+static void append_le(std::vector<unsigned char>& buf, T v) {
+    static_assert(std::is_trivially_copyable_v<T>);
+    const auto* p = reinterpret_cast<const unsigned char*>(&v);
+    buf.insert(buf.end(), p, p + sizeof(T));
+}
+
+// Build a .crtrace prefix: 16 B header with n_ops=0, n_metas=0.
+// Returns the buffer ready for a name-table append.
+static std::vector<unsigned char> make_zero_op_header() {
+    std::vector<unsigned char> buf;
+    buf.reserve(16);
+    const char magic[4] = {'C','R','T','R'};
+    buf.insert(buf.end(),
+               reinterpret_cast<const unsigned char*>(magic),
+               reinterpret_cast<const unsigned char*>(magic) + 4);
+    append_le<uint32_t>(buf, 1);   // version
+    append_le<uint32_t>(buf, 0);   // n_ops
+    append_le<uint32_t>(buf, 0);   // n_metas
+    return buf;
+}
+
+static void test_schema_name_table_round_trip() {
+    global_schema_table().clear();
+
+    auto buf = make_zero_op_header();
+    append_le<uint32_t>(buf, 3);  // num_names
+
+    auto append_entry = [&](uint64_t hash, const char* name) {
+        const uint16_t len = static_cast<uint16_t>(std::strlen(name));
+        append_le<uint64_t>(buf, hash);
+        append_le<uint16_t>(buf, len);
+        buf.insert(buf.end(),
+                   reinterpret_cast<const unsigned char*>(name),
+                   reinterpret_cast<const unsigned char*>(name) + len);
+    };
+    append_entry(0xAAAA'1111'2222'3333ULL, "aten::add");
+    append_entry(0xBBBB'4444'5555'6666ULL, "aten::mul");
+    append_entry(0xCCCC'7777'8888'9999ULL, "aten::matmul");
+
+    std::string path = write_tmp(buf.data(), buf.size());
+    auto t = load_trace(path.c_str());
+    std::remove(path.c_str());
+
+    assert(t);
+    assert(t->num_ops == 0);
+    assert(t->num_metas == 0);
+
+    const char* n1 = global_schema_table().lookup(
+        SchemaHash{0xAAAA'1111'2222'3333ULL});
+    const char* n2 = global_schema_table().lookup(
+        SchemaHash{0xBBBB'4444'5555'6666ULL});
+    const char* n3 = global_schema_table().lookup(
+        SchemaHash{0xCCCC'7777'8888'9999ULL});
+    assert(n1 && std::strcmp(n1, "aten::add") == 0);
+    assert(n2 && std::strcmp(n2, "aten::mul") == 0);
+    assert(n3 && std::strcmp(n3, "aten::matmul") == 0);
+
+    // Unknown hash returns nullptr.
+    assert(global_schema_table().lookup(SchemaHash{0xDEAD'BEEFULL}) == nullptr);
+
+    global_schema_table().clear();
+    std::printf("  test_schema_name_table_round_trip: PASSED\n");
+}
+
+static void test_schema_name_table_corrupt_zero_len() {
+    // Lower-bound corruption: name_len = 0.  Without the
+    // SCHEMA_NAME_LEN_MIN gate, this would associate the schema_hash
+    // with the empty string ("\0" via name_buf zero-init), poisoning
+    // every later lookup of that hash with a useless empty name.
+    global_schema_table().clear();
+
+    auto buf = make_zero_op_header();
+    append_le<uint32_t>(buf, 1);                                // num_names
+    append_le<uint64_t>(buf, 0xDEAD'BEEF'CAFE'BABEULL);         // schema_hash
+    append_le<uint16_t>(buf, 0);                                // CORRUPT name_len
+
+    std::string path = write_tmp(buf.data(), buf.size());
+    auto t = load_trace(path.c_str());
+    std::remove(path.c_str());
+
+    // Loader still returns a valid LoadedTrace (header + ops parsed
+    // cleanly; name-table partial-failure breaks the loop without
+    // tearing down the rest of the trace).
+    assert(t);
+    assert(t->num_ops == 0);
+
+    // The hash was NOT registered — the if-break fired before the
+    // register_schema_name call.
+    assert(global_schema_table().lookup(
+        SchemaHash{0xDEAD'BEEF'CAFE'BABEULL}) == nullptr);
+    assert(global_schema_table().count() == 0);
+
+    global_schema_table().clear();
+    std::printf("  test_schema_name_table_corrupt_zero_len: PASSED\n");
+}
+
+static void test_schema_name_table_corrupt_oversize_len() {
+    // Upper-bound corruption: name_len = 300 > SCHEMA_NAME_LEN_MAX (256).
+    // Without the upper-bound gate, the fread would attempt to read
+    // 300 bytes into the 257-byte name_buf and the trailing
+    // `name_buf[name_len] = '\0'` would write past the buffer's end —
+    // heap-buffer-overflow under ASan, silent stack corruption
+    // otherwise.  The if-break MUST fire before the Refined ctor and
+    // before the fread.
+    //
+    // We pad with 300 bytes of plausible name data so that, if the
+    // bound were silently dropped, the fread would succeed and the
+    // overrun would actually happen.  The bound's contract is "stop
+    // before reading", so the test verifies the read NEVER occurred.
+    global_schema_table().clear();
+
+    auto buf = make_zero_op_header();
+    append_le<uint32_t>(buf, 1);                                // num_names
+    append_le<uint64_t>(buf, 0xFEED'FACE'BAAD'F00DULL);         // schema_hash
+    append_le<uint16_t>(buf, 300);                              // CORRUPT name_len
+    // 300 bytes of padding — would-be-name-data if the bound were
+    // bypassed.  Use a recognizable byte so a future debugger can spot
+    // it in a buffer that shouldn't contain it.
+    buf.insert(buf.end(), 300, static_cast<unsigned char>(0x5A));
+
+    std::string path = write_tmp(buf.data(), buf.size());
+    auto t = load_trace(path.c_str());
+    std::remove(path.c_str());
+
+    assert(t);
+    assert(t->num_ops == 0);
+
+    // The hash was NOT registered — the if-break fired before the
+    // make_schema_name_len call (which would otherwise hit the Refined
+    // ctor's pre clause and abort under contracts=enforce).
+    assert(global_schema_table().lookup(
+        SchemaHash{0xFEED'FACE'BAAD'F00DULL}) == nullptr);
+    assert(global_schema_table().count() == 0);
+
+    global_schema_table().clear();
+    std::printf("  test_schema_name_table_corrupt_oversize_len: PASSED\n");
+}
+
 int main() {
     test_missing_file();
     test_empty_file();
@@ -160,6 +319,9 @@ int main() {
     test_happy_path_zero_ops();
     test_adversarial_num_ops_rejected();
     test_round_trip_single_op();
-    std::printf("test_trace_loader: 8 groups, all passed\n");
+    test_schema_name_table_round_trip();
+    test_schema_name_table_corrupt_zero_len();
+    test_schema_name_table_corrupt_oversize_len();
+    std::printf("test_trace_loader: 12 groups, all passed\n");
     return 0;
 }
