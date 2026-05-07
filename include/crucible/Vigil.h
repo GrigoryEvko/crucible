@@ -445,6 +445,16 @@ class Vigil {
         return bg_.active_region.load(std::memory_order_acquire);
     }
 
+    // Mutable overload of active_region().  The underlying storage in
+    // bg_.active_region is non-const RegionNode* (the bg thread published
+    // a writable region); the const accessor above is for introspection
+    // paths.  replay() needs the writable view because the user-supplied
+    // RegionExec lambda mutates the region (executes kernels writing
+    // outputs).  Eliminates the §III-banned const_cast at the callsite.
+    [[nodiscard]] RegionNode* active_region_mut() noexcept {
+        return bg_.active_region.load(std::memory_order_acquire);
+    }
+
     // Monotonic counter advanced exclusively by the bg thread on each
     // region transition (see on_region_ready).  AtomicMonotonic's get()
     // is acquire — strictly stronger than the pre-migration relaxed
@@ -516,12 +526,15 @@ class Vigil {
     // Returns true if replay completed without guard mismatches.
     template <typename GuardEval, typename RegionExec>
     [[nodiscard]] bool replay(GuardEval&& eval_guard, RegionExec&& exec_region) {
-        const RegionNode* region = active_region();
+        // active_region_mut() returns the writable RegionNode* directly —
+        // no §III-banned const_cast.  The bg thread published a writable
+        // pointer; the user lambda exec_region(RegionNode*) mutates it.
+        RegionNode* region = active_region_mut();
         if (!region) return false;
         // crucible::replay() is defined in MerkleDag.h.
         // RegionNode : TraceNode, so the pointer upcast is implicit.
         return crucible::replay(
-            const_cast<RegionNode*>(region),
+            region,
             std::forward<GuardEval>(eval_guard),
             std::forward<RegionExec>(exec_region));
     }
@@ -573,13 +586,19 @@ class Vigil {
     // the view's pre() check confirms the precondition the public API
     // documents.  Compiles to the same machine code as the untyped path.
     [[nodiscard]] void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
-        auto compiled_view = const_cast<CrucibleContext&>(ctx_).mint_compiled_view();
+        // mint_compiled_view() is `const noexcept` (CrucibleContext.h:256)
+        // — works on const refs.  The previous const_cast<CrucibleContext&>
+        // was a no-op the author appears to have added under the false
+        // impression the mint required non-const; removed per §III.
+        auto compiled_view = ctx_.mint_compiled_view();
         return ctx_.output_ptr(j, compiled_view);
     }
 
     // Pre-allocated input pointer for input j of the current op.
     [[nodiscard]] void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND {
-        auto compiled_view = const_cast<CrucibleContext&>(ctx_).mint_compiled_view();
+        // See output_ptr above — mint_compiled_view() is const-callable;
+        // const_cast<CrucibleContext&> was a no-op, removed per §III.
+        auto compiled_view = ctx_.mint_compiled_view();
         return ctx_.input_ptr(j, compiled_view);
     }
 
