@@ -27,6 +27,7 @@
 #include <crucible/safety/Mutation.h>
 #include <crucible/handles/OneShotFlag.h>
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/Tagged.h>
 #include <crucible/TraceGraph.h>
 
 namespace crucible {
@@ -42,6 +43,10 @@ namespace crucible {
 //   - Scratch buffers (PtrMap, SlotInfo, Edge) are allocated ONCE
 //     and reused across iterations. Zero per-call allocation.
 //   - PtrMap uses a generation counter: no memset between calls.
+//   - PtrMap keys are typed `Tagged<void*, source::External>` (regime-1
+//     EBO collapse to sizeof(void*)) — a foreign-provenance witness on
+//     every observed tensor data_ptr that prevents the address from
+//     being routed into internal-trust APIs without an explicit retag.
 //   - MetaLog access is true zero-copy: pointers reach directly into
 //     the MetaLog buffer. No arena alloc, no memcpy (contiguous case).
 //   - Content hash is fused into the main loop (streaming accumulator),
@@ -548,9 +553,23 @@ struct BackgroundThread {
   // Generation counter eliminates memset: a slot is "empty" if
   // slot.gen != map_gen_. Bumping map_gen_ clears the entire table
   // in O(1). Every 255 calls, wrap-around triggers a real memset.
+  //
+  // GAPS-097: the key is a Tagged<void*, source::External> — every
+  // PtrMap key originates as a tensor data_ptr observed by the fg
+  // thread inside a TraceEntry, i.e. a foreign address whose lifetime
+  // and aliasing semantics are owned by PyTorch.  The bg thread treats
+  // it as an opaque cookie (hash + equality only); the External tag
+  // forbids it being passed to internal-trust APIs (PoolAllocator
+  // slot tables, KernelCache patch sites) without an explicit retag,
+  // catching any future refactor that tries to launder external
+  // pointers as internal-pool offsets.  Regime-1 EBO collapse
+  // preserves sizeof(PtrSlot) == 24.
+
+  using PtrMapKey = ::crucible::safety::Tagged<void*,
+                       ::crucible::safety::source::External>;
 
   struct PtrSlot {
-    void* key = nullptr;      // 8B
+    PtrMapKey key{nullptr};   // 8B (Tagged regime-1 EBO collapse)
     OpIndex op_index;          // 4B — default = none (UINT32_MAX)
     SlotId slot_id;            // 4B — default = none (UINT32_MAX)
     uint8_t port = 0;         // 1B
@@ -559,6 +578,9 @@ struct BackgroundThread {
   };
 
   static_assert(sizeof(PtrSlot) == 24, "PtrSlot should be 24 bytes");
+  static_assert(sizeof(PtrMapKey) == sizeof(void*),
+                "Tagged<void*,External> must collapse to sizeof(void*) "
+                "(regime-1 EBO) so PtrSlot stays at 24 bytes");
 
   // ── SlotInfo: compact per-slot metadata for liveness tracking ─────
 
@@ -669,14 +691,18 @@ struct BackgroundThread {
       auto& slot = map[(bucket_idx + probe) & mask];
       if (slot.gen != gen) {
         // Stale generation → empty slot. Claim it.
-        slot.key = key;
+        // GAPS-097: tag the foreign data_ptr as External provenance
+        // at the moment of storage; downstream code reading slot.key
+        // sees a Tagged value and cannot accidentally route it into
+        // internal-trust APIs.
+        slot.key = PtrMapKey{key};
         slot.op_index = op_index;
         slot.port = port;
         slot.slot_id = slot_id;
         slot.gen = gen;
         return {.slot = &slot, .was_alias = false, .old_op = {}, .old_port = 0, .old_slot = {}};
       }
-      if (slot.key == key) {
+      if (slot.key.value() == key) {
         // Existing entry. Alias if op differs.
         InsertResult result{.slot = &slot, .was_alias = (slot.op_index != op_index),
                             .old_op = slot.op_index, .old_port = slot.port, .old_slot = slot.slot_id};
@@ -701,7 +727,7 @@ struct BackgroundThread {
     uint32_t bucket_idx = hash_ptr(key) & mask;
     for (uint32_t probe = 0; probe <= mask; probe++) {
       auto& slot = map[(bucket_idx + probe) & mask];
-      if (slot.gen == gen && slot.key == key)
+      if (slot.gen == gen && slot.key.value() == key)
         return {.op_index = slot.op_index, .slot_id = slot.slot_id, .port = slot.port};
       if (slot.gen != gen)
         return {.op_index = OpIndex{}, .slot_id = SlotId{}, .port = 0}; // empty → miss
