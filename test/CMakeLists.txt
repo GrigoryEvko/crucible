@@ -1785,6 +1785,40 @@ crucible_neg_compile_test(neg_tensor_meta_ndim_above_max
 crucible_neg_compile_test(neg_tensor_meta_ndim_uint8_max
   "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
 
+# ─── #884 WRAP-Cipher-1 — non-zero head invariant on advance_head ───
+#
+# Per #884, ValidCipherHead is safety::Refined<safety::non_zero,
+# ContentHash> and gates the parameter to Cipher::advance_head.
+# ContentHash{0} is the structural sentinel for "no commit yet" —
+# advancing HEAD to it would corrupt the log invariant (a step with
+# hash=0 is indistinguishable from "before first commit"), break
+# hash_at_step()'s binary search, and lose the federation round-trip
+# key for that step.
+#
+# Two fixtures per HS14 mandate, demonstrating distinct mismatch
+# classes:
+#   * neg_cipher_head_zero_literal — explicit-literal mismatch
+#     (= ContentHash{uint64_t{0}}).  Catches drift where a caller
+#     silently passes a zero-init value from a corrupt-source path.
+#   * neg_cipher_head_default_construct — NSDMI-default wide miss
+#     (= ContentHash{}).  Catches drift where a caller forgets to
+#     initialize a local ContentHash variable and forwards it
+#     directly to advance_head (whose old signature took bare
+#     ContentHash and silently accepted the default).
+#
+# The two failure modes look identical at the byte level (raw == 0)
+# but originate from different source-level mistakes; rejecting both
+# makes the gate watertight.
+#
+# Defense-in-depth: the existing runtime check inside advance_head's
+# body is retained.  ValidCipherHead catches the value at the call
+# site at compile-time via the typed alias path; the existing body
+# guard catches it at runtime if a caller bypasses the typed path.
+crucible_neg_compile_test(neg_cipher_head_zero_literal
+  "contract|Refined|non_zero|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_cipher_head_default_construct
+  "contract|Refined|non_zero|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

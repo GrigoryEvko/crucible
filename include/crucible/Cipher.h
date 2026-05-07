@@ -596,8 +596,24 @@ class CRUCIBLE_OWNER Cipher {
     // Typed: caller has proved Open.
     // Contract: step_id must not go backward — steps are documented as
     // monotonic for binary search in hash_at_step() to be correct.
+    //
+    // Soundness gate (#884 WRAP-Cipher-1): content_hash MUST be non-zero.
+    // Zero is the structural sentinel for "no content / empty Cipher" —
+    // advancing HEAD to it would corrupt the log invariant (a step with
+    // hash=0 is indistinguishable from "before first commit"), break
+    // hash_at_step()'s binary search, and lose the federation
+    // round-trip key for that step.  Every production caller derives
+    // content_hash from a RegionNode (where 0 has already been guarded
+    // against in store()'s `if (!hash) return ContentHash{};` early
+    // return), so the contract is defense-in-depth: under
+    // semantic=enforce a future caller that bypasses the early return
+    // aborts here, under semantic=ignore the [[assume]] hint pins the
+    // invariant for downstream optimizers (binary search + log append
+    // can speculate on hash != 0 without re-checking).  Companion
+    // typed witness: ValidCipherHead below.
     void advance_head(OpenView const&, ContentHash content_hash, uint64_t step_id)
         pre (log_.empty() || step_id >= log_.back().step_id.value)
+        pre (content_hash.raw() != 0)
     {
         head_ = content_hash;
 
@@ -1284,6 +1300,43 @@ class CRUCIBLE_OWNER Cipher {
                 tp.time_since_epoch()).count());
     }
 };
+
+// ── Validated head witness (#884 WRAP-Cipher-1) ────────────────────
+//
+// The hash a caller commits to advance_head MUST be non-zero — zero is
+// the structural sentinel for "no commit yet" and propagating it would
+// silently corrupt hash_at_step()'s log binary search (a "before first
+// commit" marker indistinguishable from a real step).  ValidCipherHead
+// is the type-level witness that the caller has validated the hash at
+// its source (typically from a RegionNode where compute_content_hash
+// guarantees non-zero output for any non-empty region).  Construction
+// is gated by Refined<>'s `pre(non_zero(v))` clause; under
+// semantic=enforce the runtime path is contract violation ->
+// handle_contract_violation (logged + abort), under semantic=ignore
+// the optimizer treats `hash.raw() != 0` as `[[assume]]` and the
+// downstream binary search / log append speculate without re-checking.
+//
+// `make_cipher_head` is a [[gnu::const]] factory that lifts the
+// witness back to a bare ContentHash for the advance_head signature —
+// preserving the existing 6 caller signatures + the 1313-byte Cipher
+// layout while routing every external write through the
+// ValidCipherHead ctor when callers opt in.
+//
+// Defense-in-depth: advance_head's `pre(content_hash.raw() != 0)`
+// clause (see line 599) is retained as the runtime gate.
+// ValidCipherHead catches the value at the call site; the pre clause
+// catches it at the function boundary.  Both layers must reject for
+// the type-level invariant and the runtime path to disagree.
+//
+// Cost: regime-1 EBO collapse — sizeof(ValidCipherHead) ==
+// sizeof(ContentHash) == sizeof(uint64_t) == 8 B.
+using ValidCipherHead = ::crucible::safety::Refined<
+    ::crucible::safety::non_zero, ContentHash>;
+
+[[nodiscard, gnu::const]] inline constexpr
+ContentHash make_cipher_head(ValidCipherHead raw) noexcept {
+    return raw.value();
+}
 
 // Tier 2 opt-in: nothing inside Cipher may be a ScopedView.
 static_assert(crucible::safety::no_scoped_view_field_check<Cipher>());
