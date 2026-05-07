@@ -1749,6 +1749,42 @@ crucible_neg_compile_test(neg_trace_ring_drain_count_above_max
 crucible_neg_compile_test(neg_trace_ring_drain_count_uint32_max
   "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
 
+# ─── PROD-WRAP-5 (#534) ndim Refined<bounded_above<8>> typed gate ────
+#
+# TensorMeta::ndim is structurally bounded by the inline sizes[8] /
+# strides[8] arrays — values past 8 cannot be expressed without
+# overrunning the inline storage.  The deserialize boundary in
+# Serialize.h::read_meta() previously read a raw uint8_t and assigned
+# it directly to m.ndim, with no bounds check; a corrupt or
+# adversarial Cipher payload could deliver a byte in [9, 255] that
+# slipped through to compute_storage_nbytes (where the
+# `pre(meta.ndim <= 8)` contract would terminate the program under
+# enforce semantics, OR invoke `[[assume]]`-driven UB under ignore on
+# hot-path TUs).
+#
+# ValidNDim is Refined<bounded_above<kMaxTensorNDim>, uint8_t>; its
+# ctor pre-clause `bounded_above<8>(v)` rejects any byte past 8 via
+# P1494R5 partial-program correctness — the deserialize path then
+# routes through handle_contract_violation (logged + std::abort).
+#
+# Two fixtures per HS14 mandate:
+#   * neg_tensor_meta_ndim_above_max — boundary edge (kMaxTensorNDim+1
+#     = 9) catches drift where the bound widens by any K ≥ 1, silently
+#     admitting an ndim that overruns sizes[8] / strides[8].
+#   * neg_tensor_meta_ndim_uint8_max — wide miss (UINT8_MAX = 0xFF)
+#     catches "drop the bound entirely" regression where ValidNDim
+#     degenerates from Refined<bounded_above<8>> into a plain uint8_t
+#     typedef.
+#
+# Defense-in-depth: TraceLoader.h:321 `if (metas[i].ndim > 8)
+# [[unlikely]] return nullptr` runtime guard is retained.  ValidNDim
+# catches the byte at deserialize entry; the loader guard catches it
+# at iteration entry.  Both layers must agree.
+crucible_neg_compile_test(neg_tensor_meta_ndim_above_max
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_tensor_meta_ndim_uint8_max
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

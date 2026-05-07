@@ -134,7 +134,16 @@ inline TensorMeta read_meta(Reader& r) {
     r.read_bytes(m.strides, sizeof(m.strides));
     (void)r.r<uint64_t>(); // data_ptr (discarded)
     m.data_ptr   = nullptr;
-    m.ndim       = r.r<uint8_t>();
+    // ── PROD-WRAP-5 (#534) — typed widening at deserialize boundary ──
+    // The byte on disk could be in [9, 255] under corruption or
+    // version skew (a uint8_t carries no inherent bound, but ndim is
+    // structurally bounded by sizes[8]/strides[8] = kMaxTensorNDim =
+    // 8).  ValidNDim's ctor pre-clause rejects any byte past 8 via
+    // P1494R5 partial-program correctness — the deserialize path then
+    // handles the contract violation through the standard
+    // handle_contract_violation path (logged, terminated).  TraceLoader's
+    // ndim > 8 guard at line 321 is retained as defense-in-depth.
+    m.ndim       = make_ndim(ValidNDim{r.r<uint8_t>()});
     m.dtype      = r.r<ScalarType>();
     m.device_type = r.r<DeviceType>();
     m.device_idx  = r.r<int8_t>();

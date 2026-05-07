@@ -15,16 +15,27 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
+#include <crucible/safety/Refined.h>
 
 #include <cstdint>
 
 namespace crucible {
 
+// ── Maximum tensor dimensionality (#534 PROD-WRAP-5) ───────────────
+//
+// The TensorMeta layout inlines sizes[8] and strides[8].  Any tensor
+// with ndim > 8 cannot be expressed without out-of-bounds reads on
+// the inline arrays — the structural bound is 8 per definition,
+// independent of any runtime configuration.  `kMaxTensorNDim` names
+// the bound at the type level so call sites can reference it without
+// re-deriving the constant from the array sizeof.
+inline constexpr uint8_t kMaxTensorNDim = 8;
+
 struct TensorMeta {
   int64_t sizes[8]{};        // 64B — zero-init prevents hash instability
   int64_t strides[8]{};      // 64B
   void* data_ptr = nullptr;  // 8B — tensor data pointer (for dataflow tracking)
-  uint8_t ndim = 0;          // 1B — dimensions used (0-8)
+  uint8_t ndim = 0;          // 1B — dimensions used (0..kMaxTensorNDim)
   ScalarType dtype = ScalarType::Undefined; // 1B
   DeviceType device_type = DeviceType::CPU; // 1B
   int8_t device_idx = -1;   // 1B — -1 = CPU, 0+ = device index
@@ -53,5 +64,50 @@ struct TensorMeta {
 
 static_assert(sizeof(TensorMeta) == 168, "TensorMeta layout check");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorMeta);
+
+// ── Validated ndim carrier (#534 PROD-WRAP-5) ──────────────────────
+//
+// `TensorMeta::ndim` is structurally bounded by 8 (the inline
+// sizes[]/strides[] array length).  Reading a uint8_t from disk / FFI
+// / external trace can deliver ANY byte in [0, 255]; values in [9,
+// 255] are corrupt or adversarial and would, if propagated, produce:
+//
+//   * out-of-bounds reads on `sizes[d]` and `strides[d]` for d up to
+//     ndim (the inline arrays only hold 8 slots);
+//   * silent contract violation in compute_storage_nbytes (which
+//     carries `pre(meta.ndim <= kMaxTensorNDim)` and would terminate
+//     under semantic=enforce, or invoke [[assume]] UB under
+//     semantic=ignore on hot-path TUs);
+//   * incorrect SIMD strides in DimHash (which reads sizes[ndim]
+//     indices speculatively to fold the dim hash).
+//
+// `ValidNDim` is the type-level witness that ndim has been validated
+// at the boundary it crossed.  Construction is gated by Refined<>'s
+// `pre(bounded_above<8>(v))` clause; under semantic=enforce the
+// runtime path is contract violation -> handle_contract_violation
+// (logged + std::abort), under semantic=ignore the optimizer treats
+// the bound as `[[assume]]` and downstream loops vectorize on the
+// trip-count knowledge.
+//
+// `make_ndim` is a [[gnu::const]] factory that lifts the witness back
+// to a bare uint8_t for storage in the TensorMeta::ndim field —
+// preserving the 168-byte layout lock + trivially-relocatable
+// classification while routing every external write through the
+// ValidNDim ctor.
+//
+// Defense-in-depth: TraceLoader's existing `if (metas[i].ndim > 8)
+// [[unlikely]] return nullptr` runtime guard at line 321 is retained.
+// ValidNDim catches the byte at deserialize entry; the loader guard
+// catches it at iteration entry.  Both layers must reject for the
+// type-level bound and the runtime path to disagree.
+//
+// Cost: regime-1 EBO collapse — sizeof(ValidNDim) == sizeof(uint8_t).
+using ValidNDim = ::crucible::safety::Refined<
+    ::crucible::safety::bounded_above<kMaxTensorNDim>, uint8_t>;
+
+[[nodiscard, gnu::const]] inline constexpr
+uint8_t make_ndim(ValidNDim raw) noexcept {
+    return raw.value();
+}
 
 }  // namespace crucible
