@@ -1627,6 +1627,38 @@ crucible_neg_compile_test(neg_trace_node_kind_above_terminal
 crucible_neg_compile_test(neg_trace_node_kind_uint8_max
   "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
 
+# WRAP-TraceLoader-3 (#1051) — ValidSchemaNameLen =
+#   safety::Refined<safety::in_range<SCHEMA_NAME_LEN_MIN,
+#                                    SCHEMA_NAME_LEN_MAX>, uint16_t>
+# pinning the typed gate at every uint16_t → schema-name-length
+# widening site (TraceLoader::load_trace is the canonical example;
+# the .crtrace optional schema-name table feeds a 257-byte stack
+# buffer, so admitting any value outside [1, 256] is either an empty-
+# name SchemaTable poison entry (lower) or a stack-buffer overflow
+# (upper)).  HS14 mandate: ≥2 negative-compile fixtures per soundness
+# gate, each demonstrating a distinct mismatch class.
+#
+#   * neg_schema_name_len_below_min.cpp — lower-bound edge (= 0).
+#     Catches drift where `in_range<1, 256>` widens to
+#     `in_range<0, 256>` and silently admits a zero-length name.
+#     The trailing `name_buf[name_len] = '\0'` would associate the
+#     SchemaHash with the empty string in the global SchemaTable —
+#     every subsequent lookup() would return the empty entry instead
+#     of the real one.
+#   * neg_schema_name_len_above_max.cpp — wide miss (= UINT16_MAX).
+#     Catches "drop the bound entirely" regression where
+#     ValidSchemaNameLen degenerates from
+#     `Refined<in_range<1, 256>, uint16_t>` into a plain `uint16_t`
+#     typedef; under that drift any 16-bit value is silently accepted
+#     at construction and the only remaining defense is the
+#     per-call-site `raw_name_len > SCHEMA_NAME_LEN_MAX` comparison
+#     inside load_trace — losing the type-system gate that fires
+#     BEFORE any fread call ever lands.
+crucible_neg_compile_test(neg_schema_name_len_below_min
+  "contract|Refined|in_range|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_schema_name_len_above_max
+  "contract|Refined|in_range|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

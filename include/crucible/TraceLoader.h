@@ -43,8 +43,55 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/SchemaTable.h>
 #include <crucible/TraceRing.h>
+#include <crucible/safety/Refined.h>
 
 namespace crucible {
+
+// ── Schema-name length bounds (file-format invariant) ────────────────
+//
+// The .crtrace optional schema-name table stores each name's length as
+// a uint16_t.  By format definition the length is in [1, 256] — names
+// must be non-empty (a zero-length name pairs with no schema_hash) and
+// fit in the loader's fixed 257-byte stack buffer (256 chars + the null
+// terminator written by load_trace).
+//
+// `name_len` arrives at the loader as raw bytes from disk — every value
+// in [0, UINT16_MAX] is reachable on a corrupted or version-skewed
+// file.  The defense-in-depth gate is documented in the WRAP-TraceLoader-3
+// (#1051) block below; ValidSchemaNameLen pins the bound at the type
+// system and the 2 HS14 negative-compile fixtures
+// (test/safety_neg/neg_schema_name_len_*) wedge the bound into place.
+inline constexpr uint16_t SCHEMA_NAME_LEN_MIN = 1;
+inline constexpr uint16_t SCHEMA_NAME_LEN_MAX = 256;
+
+// Validated schema-name length carrier.  Per WRAP-TraceLoader-3 (#1051),
+// ValidSchemaNameLen is safety::Refined<safety::in_range<MIN,MAX>, uint16_t>
+// — the typed gate at every uint16_t → schema-name-length widening
+// site (currently only TraceLoader::load_trace, but future readers
+// of the .crtrace name table inherit the same gate by construction).
+//
+// The bound `[SCHEMA_NAME_LEN_MIN, SCHEMA_NAME_LEN_MAX]` admits the
+// closed interval [1, 256]; values outside that interval cause the
+// constructor's pre clause to fail in constexpr context (P1494R5
+// non-constant expression → ill-formed) and to terminate via the
+// project contract handler at runtime.  Defense-in-depth: existing
+// explicit `if (name_len < MIN || name_len > MAX) break;` runtime
+// guard + checked Refined ctor fired BEFORE the fread/null-terminator
+// writes consume the value.  Either layer alone catches the bug;
+// together the structural guarantee is doubled and the type-level
+// proof rides into every future call site.
+using ValidSchemaNameLen = ::crucible::safety::Refined<
+    ::crucible::safety::in_range<SCHEMA_NAME_LEN_MIN, SCHEMA_NAME_LEN_MAX>,
+    uint16_t>;
+
+// Widening factory for ValidSchemaNameLen → uint16_t in production
+// hot-path code.  `gnu::const` documents that the result depends only
+// on the argument and has no side effects; the optimizer can CSE / DCE
+// the call freely under -O3.
+[[nodiscard, gnu::const]] inline constexpr
+uint16_t make_schema_name_len(ValidSchemaNameLen raw) noexcept {
+    return raw.value();
+}
 
 // ── On-disk record layout (80 bytes) ─────────────────────────────────
 
@@ -209,25 +256,39 @@ static_assert(std::endian::native == std::endian::little,
   }
 
   // Read optional schema name table (trailing data after metas).
-  // Name length bound: schema_name length ≤ 256. Any wire value outside
-  // [1, 256] breaks the loop at the parse boundary, never downstream.
-  static constexpr uint16_t MIN_SCHEMA_NAME_LEN = 1;
-  static constexpr uint16_t MAX_SCHEMA_NAME_LEN = 256;
+  // Name-length bound: SCHEMA_NAME_LEN_MIN ≤ name_len ≤ SCHEMA_NAME_LEN_MAX
+  // (1..256 inclusive). Any wire value outside [1, 256] breaks the
+  // loop at the parse boundary, never downstream.  The validated
+  // length feeds ValidSchemaNameLen — the type-level witness propagates
+  // the bound to the optimizer (the Refined ctor's pre clause is the
+  // [[assume]] that used to live here, scoped to the validated
+  // variable rather than open-coded at every call site).  See
+  // WRAP-TraceLoader-3 (#1051) and the negative-compile fixtures
+  // test/safety_neg/neg_schema_name_len_below_min.cpp +
+  // test/safety_neg/neg_schema_name_len_above_max.cpp.
   uint32_t num_names = 0;
   if (std::fread(&num_names, 4, 1, trace_file) == 1 && num_names > 0 &&
       num_names <= SCHEMA_TABLE_CAP) {
     auto schema_table_view = global_schema_table().mint_mutable_view();
     for (uint32_t i = 0; i < num_names; i++) {
       uint64_t schema_hash_raw = 0;
-      uint16_t name_len = 0;
+      uint16_t raw_name_len = 0;
       if (std::fread(&schema_hash_raw, 8, 1, trace_file) != 1) break;
-      if (std::fread(&name_len, 2, 1, trace_file) != 1) break;
-      if (name_len < MIN_SCHEMA_NAME_LEN || name_len > MAX_SCHEMA_NAME_LEN) break;
-      // Propagate the validated bound to the optimizer so the fread
-      // and the terminating null write both compile without bounds
-      // repredicating (name_buf has fixed 257-byte storage; name_len's
-      // range is fully resolved by the guard above).
-      [[assume(name_len >= MIN_SCHEMA_NAME_LEN && name_len <= MAX_SCHEMA_NAME_LEN)]];
+      if (std::fread(&raw_name_len, 2, 1, trace_file) != 1) break;
+      if (raw_name_len < SCHEMA_NAME_LEN_MIN ||
+          raw_name_len > SCHEMA_NAME_LEN_MAX) break;
+      // Validated uint16_t → schema-name-length widening
+      // (#1051 WRAP-TraceLoader-3).  The if-break above already
+      // returns nullptr-equivalent (loop exit; the partial table is
+      // the deserialize-error policy this function uses), and the
+      // checked Refined ctor stands as a defense-in-depth re-check —
+      // the bound is established by the if-break, so the ctor's pre
+      // clause holds and never aborts on this path.  The neg-compile
+      // fixtures pin the structural guarantee at the type level: a
+      // constexpr ValidSchemaNameLen{0} or {>= 257} is ill-formed
+      // regardless of what callers do.
+      const uint16_t name_len = make_schema_name_len(
+          ValidSchemaNameLen{raw_name_len});
       char name_buf[257]{};
       if (std::fread(name_buf, 1, name_len, trace_file) != name_len) break;
       name_buf[name_len] = '\0';
