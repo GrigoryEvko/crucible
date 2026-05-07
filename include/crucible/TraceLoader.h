@@ -47,6 +47,69 @@
 
 namespace crucible {
 
+// ── Header count caps (file-format invariant) ────────────────────────
+//
+// .crtrace headers carry three uint32_t counts read from disk:
+//   * num_ops    — number of TraceOpRecord entries (each 80 B)
+//   * num_metas  — number of TensorMeta entries (each 168 B)
+//   * num_names  — number of (schema_hash, name) pairs in the optional
+//                  trailing table
+//
+// Real traces top out at ~10^5 ops; we cap each count well above any
+// plausible-trace value but well below the adversarial wire value that
+// would request a multi-GB allocation before discovering truncation.
+//
+//   MAX_OPS         = 1 << 22  (4 M ops      ≈ 320 MB)
+//   MAX_METAS       = 1 << 24  (16 M metas   ≈ 2.7 GB)
+//   SCHEMA_TABLE_CAP   from SchemaTable.h    (currently 512)
+//
+// `num_ops`, `num_metas`, and `num_names` arrive as raw bytes from disk
+// — every uint32_t value is reachable on a corrupted or version-skewed
+// file.  Per WRAP-TraceLoader-2 (#1050), the runtime if-checks at the
+// header / name-table boundaries each pair with a typed Refined ctor
+// downstream that pins the bound at the type system.  Both layers fire
+// before any std::vector allocation or for-loop with the count as
+// upper bound; either alone catches the bug; together the structural
+// guarantee is doubled and the type-level proof rides into every
+// future call site.  The 6 HS14 negative-compile fixtures
+// (test/safety_neg/neg_trace_num_*) wedge each bound into place.
+//
+// Sized small (uint32_t headroom for hard caps).  `inline constexpr`
+// promotes them to file-scope so the Refined alias and the runtime
+// guard read the same constants.
+inline constexpr uint32_t MAX_OPS   = 1u << 22;   // 4 M ops
+inline constexpr uint32_t MAX_METAS = 1u << 24;   // 16 M metas
+
+// Validated count carriers.  `bounded_above<MAX>` admits `v ≤ MAX`
+// (zero is admissible — empty traces are well-formed).  Regime-1 EBO
+// collapse keeps each wrapper zero-cost: sizeof == sizeof(uint32_t).
+using ValidTraceNumOps = ::crucible::safety::Refined<
+    ::crucible::safety::bounded_above<MAX_OPS>, uint32_t>;
+
+using ValidTraceNumMetas = ::crucible::safety::Refined<
+    ::crucible::safety::bounded_above<MAX_METAS>, uint32_t>;
+
+using ValidTraceNumNames = ::crucible::safety::Refined<
+    ::crucible::safety::bounded_above<SCHEMA_TABLE_CAP>, uint32_t>;
+
+// Widening factories.  `gnu::const` documents that the result depends
+// only on the argument and has no side effects; the optimizer can CSE /
+// DCE the call freely under -O3.
+[[nodiscard, gnu::const]] inline constexpr
+uint32_t make_trace_num_ops(ValidTraceNumOps raw) noexcept {
+    return raw.value();
+}
+
+[[nodiscard, gnu::const]] inline constexpr
+uint32_t make_trace_num_metas(ValidTraceNumMetas raw) noexcept {
+    return raw.value();
+}
+
+[[nodiscard, gnu::const]] inline constexpr
+uint32_t make_trace_num_names(ValidTraceNumNames raw) noexcept {
+    return raw.value();
+}
+
 // ── Schema-name length bounds (file-format invariant) ────────────────
 //
 // The .crtrace optional schema-name table stores each name's length as
@@ -171,9 +234,9 @@ static_assert(std::endian::native == std::endian::little,
 
   // Hard caps: real traces top out at 10^5 ops; reject adversarial
   // headers that would allocate >8 GB of records before discovering
-  // truncation.
-  static constexpr uint32_t MAX_OPS   = 1u << 22;   // 4 M ops
-  static constexpr uint32_t MAX_METAS = 1u << 24;   // 16 M metas
+  // truncation.  MAX_OPS / MAX_METAS are file-scope `inline constexpr`
+  // (see top of header) so the runtime guard and the typed gate below
+  // read the same constants.
   if (num_ops > MAX_OPS || num_metas > MAX_METAS) {
     std::fprintf(stderr, "load_trace: header counts exceed cap in %s "
                          "(num_ops=%u num_metas=%u)\n",
@@ -181,6 +244,17 @@ static_assert(std::endian::native == std::endian::little,
     std::fclose(trace_file);
     return nullptr;
   }
+  // Defense-in-depth typed witnesses (#1050 WRAP-TraceLoader-2).  The
+  // if-check above already returns nullptr-equivalent for out-of-range
+  // values, so the Refined ctor's pre clause holds and never aborts on
+  // this path.  The reassignment is structurally a no-op (same value,
+  // same type) but makes every downstream `num_ops` / `num_metas` read
+  // inherit the bound witness from the gate.  The neg-compile fixtures
+  // pin the structural guarantee at the type level: a constexpr
+  // ValidTraceNumOps{> MAX_OPS} or ValidTraceNumMetas{> MAX_METAS} is
+  // ill-formed regardless of what callers do.
+  num_ops   = make_trace_num_ops(ValidTraceNumOps{num_ops});
+  num_metas = make_trace_num_metas(ValidTraceNumMetas{num_metas});
 
   // Read op records.
   std::vector<TraceOpRecord> records(num_ops);
@@ -269,6 +343,12 @@ static_assert(std::endian::native == std::endian::little,
   uint32_t num_names = 0;
   if (std::fread(&num_names, 4, 1, trace_file) == 1 && num_names > 0 &&
       num_names <= SCHEMA_TABLE_CAP) {
+    // Defense-in-depth typed witness (#1050 WRAP-TraceLoader-2).  The
+    // condition on the if above ensures `num_names` lies in (0,
+    // SCHEMA_TABLE_CAP], so the Refined ctor's pre clause holds and
+    // never aborts.  Reassigning makes the loop bound below inherit
+    // the bound witness.
+    num_names = make_trace_num_names(ValidTraceNumNames{num_names});
     auto schema_table_view = global_schema_table().mint_mutable_view();
     for (uint32_t i = 0; i < num_names; i++) {
       uint64_t schema_hash_raw = 0;

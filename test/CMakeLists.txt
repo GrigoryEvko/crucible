@@ -1659,6 +1659,38 @@ crucible_neg_compile_test(neg_schema_name_len_below_min
 crucible_neg_compile_test(neg_schema_name_len_above_max
   "contract|Refined|in_range|not a constant|non-constant|constexpr")
 
+# ─── WRAP-TraceLoader-2 (#1050) ValidTraceNum* neg-compile fixtures ──
+#
+# Three uint32_t header-count widening sites in load_trace gain typed
+# Refined gates: ValidTraceNumOps (cap MAX_OPS = 1<<22 = 4 M ops),
+# ValidTraceNumMetas (cap MAX_METAS = 1<<24 = 16 M metas), and
+# ValidTraceNumNames (cap SCHEMA_TABLE_CAP = 512 schema-name entries).
+# Each gate gets two fixtures per HS14 mandate: a boundary-edge one
+# (cap + 1) catching "bound widens to admit one more" drift, and a
+# wide-miss one (UINT32_MAX) catching "drop the bound entirely"
+# regression that would degenerate the alias into a plain uint32_t
+# typedef.  Six fixtures, three gates, one PR.
+#
+# Without these gates a corrupted .crtrace header could request multi-
+# GB allocations (320 MB for num_ops × 80B; 2.7 GB for num_metas ×
+# 168B; or — in the silent-truncation case — drive the schema-name
+# loop past the SchemaTable's fixed-size entries[] array).  The
+# runtime if-checks in load_trace catch the first wave; the typed
+# gates catch the rest, and the fixtures wedge each bound at the type
+# system so future readers / aggregate-init paths inherit the gate.
+crucible_neg_compile_test(neg_trace_num_ops_above_max
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_trace_num_ops_uint32_max
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_trace_num_metas_above_max
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_trace_num_metas_uint32_max
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_trace_num_names_above_max
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_trace_num_names_uint32_max
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices
