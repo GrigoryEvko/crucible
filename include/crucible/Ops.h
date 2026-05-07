@@ -103,6 +103,15 @@ enum class Op : uint8_t {
   NUM_OPS // sentinel — must be last
 };
 
+// Structural bound: Op's underlying type is uint8_t (max 256 distinct values
+// including the NUM_OPS sentinel). Lookup tables sized [NUM_OPS] and any code
+// that round-trips Op through a uint8_t (TraceEntry, serialization, hash mix)
+// rely on this invariant. If the enum grows past 256, widen the underlying
+// type AND audit every uint8_t-sized site (Expr.h op_ field, ExprPool entries,
+// CKernel taxonomy crossref).
+static_assert(static_cast<unsigned>(Op::NUM_OPS) <= 256,
+              "Op underlying type is uint8_t — NUM_OPS must fit");
+
 // Flags bitfield for Expr::flags.
 // Encodes type/assumption properties as bits for O(1) queries.
 struct ExprFlags {
