@@ -236,6 +236,7 @@ crucible_test(test_effects_compile)
 crucible_test(test_resources)
 crucible_test(test_concurrent)
 crucible_test(test_cog_identity)
+crucible_test(test_target_caps)
 crucible_test(test_concurrent_compile)
 crucible_test(test_auto_split)
 crucible_test(test_diagnostic_compile)
@@ -1059,6 +1060,24 @@ crucible_neg_compile_cog_test(neg_cog_identity_content_hash_zero_uuid
     "static assertion|contract|precondition|content_hash|is_zero|non-constant|GAPS-185")
 crucible_neg_compile_cog_test(neg_cog_identity_compute_kind_rejects_nic
     "constraint|constraints not satisfied|IsComputeKind|kernel_count_for|GAPS-185")
+
+# ─── GAPS-186 cog/TargetCaps.h soundness gates (HS14) ──────────────
+#
+# Two fixtures, two distinct mismatch classes:
+# * neg_target_caps_caps_for_rejects_psu_rail — CONCEPT gate.  HasCaps
+#   refuses non-substrate CogKind atoms (PsuRail / BmcSensor /
+#   aggregates) at template substitution time.  Witnesses the gate
+#   that prevents future mint_cog_mimic / FitsCog / OpcodeLatencyTable
+#   factories from binding to non-schedulable Cogs.
+# * neg_target_caps_warp_size_not_power_of_two — DATA-INVARIANT gate.
+#   PowerOfTwoLane Refined refuses non-power-of-two construction at
+#   the precondition contract.  Witnesses the gate that prevents
+#   GpuTargetCaps::warp_size = 33 from corrupting downstream occupancy
+#   / wave-efficiency math.
+crucible_neg_compile_cog_test(neg_target_caps_caps_for_rejects_psu_rail
+    "constraint|constraints not satisfied|HasCaps|lookup_caps|PsuRail|GAPS-186")
+crucible_neg_compile_cog_test(neg_target_caps_warp_size_not_power_of_two
+    "static assertion|contract|precondition|power_of_two|non-constant|Refined|PowerOfTwoLane|GAPS-186")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #
