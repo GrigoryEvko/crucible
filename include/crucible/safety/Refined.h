@@ -52,6 +52,7 @@
 #include <crucible/algebra/lattices/BoolLattice.h>
 #include <crucible/safety/Linear.h>
 
+#include <bit>
 #include <compare>
 #include <cstdint>
 #include <string_view>
@@ -123,7 +124,7 @@ inline constexpr auto non_empty = [](const auto& c) constexpr noexcept {
 template <std::size_t Alignment>
 struct Aligned {
     constexpr bool operator()(auto* p) const noexcept {
-        return (reinterpret_cast<std::uintptr_t>(p) & (Alignment - 1)) == 0;
+        return (std::bit_cast<std::uintptr_t>(p) & (Alignment - 1)) == 0;
     }
 };
 

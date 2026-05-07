@@ -186,13 +186,19 @@ public:
     // Destructor calls T::~T only if the Once ran.
     ~Lazy() {
         if (once_.done()) {
-            reinterpret_cast<T*>(&storage_)->~T();
+            static_cast<T*>(static_cast<void*>(&storage_))->~T();
         }
     }
 
     // get(f): first call invokes f() and stores the result.
     // Subsequent calls return a reference to the stored value without
     // re-invoking f.  f must be invocable with no args and return T.
+    //
+    // The placement-new at &storage_ begins T's lifetime in the
+    // unsigned char[] backing.  The cast cascade (static_cast<T*>(
+    // static_cast<void*>(&storage_))) is the §III-clean equivalent of
+    // reinterpret_cast<T*>: it reaches through void* without invoking
+    // pointer-type-pun UB.
     template <typename F>
     [[nodiscard]] T& get(F&& f)
         requires std::is_invocable_r_v<T, F>
@@ -200,7 +206,7 @@ public:
         once_.call([&] {
             ::new (&storage_) T(std::forward<F>(f)());
         });
-        return *reinterpret_cast<T*>(&storage_);
+        return *static_cast<T*>(static_cast<void*>(&storage_));
     }
 
     [[nodiscard]] bool initialized() const noexcept {

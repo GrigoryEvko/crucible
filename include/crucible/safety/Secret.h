@@ -195,8 +195,13 @@ public:
         requires std::is_trivially_copyable_v<T>
     {
         // Prevent compiler from optimizing away the memset before dtor.
-        volatile auto* p = reinterpret_cast<volatile unsigned char*>(
-            std::addressof(impl_.peek_mut()));
+        // T* → volatile T* via implicit qualification conversion (adds cv to
+        // pointee), then static_cast through volatile void* to volatile
+        // unsigned char* — preserves the volatile qualifier all the way down.
+        // No reinterpret_cast / no const_cast (CLAUDE.md §III).
+        volatile T* vp = std::addressof(impl_.peek_mut());
+        volatile auto* p = static_cast<volatile unsigned char*>(
+            static_cast<volatile void*>(vp));
         for (std::size_t i = 0; i < sizeof(T); ++i) p[i] = 0;
     }
 

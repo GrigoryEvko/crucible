@@ -111,6 +111,7 @@
 #include <crucible/Platform.h>
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <meta>
@@ -524,7 +525,7 @@ inline void runtime_smoke_test_stable_name() noexcept {
     // stable_function_id from a real function pointer at runtime.
     auto const fn_ptr = +[](int) noexcept -> int { return 0; };
     volatile std::uint64_t fid_sink = stable_function_id<+[](int) noexcept -> int { return 0; }>;
-    fid_sink ^= reinterpret_cast<std::uintptr_t>(fn_ptr);
+    fid_sink ^= std::bit_cast<std::uintptr_t>(fn_ptr);
     (void)fid_sink;
 }
 

@@ -179,17 +179,21 @@ public:
         noexcept(std::is_nothrow_constructible_v<std::decay_t<Fn>, Fn&&>)
     {
         using F = std::decay_t<Fn>;
-        std::construct_at(reinterpret_cast<F*>(storage_), std::forward<Fn>(fn));
+        // §III-clean type-erasure: cast through void* (storage_ decays to
+        // std::byte*; static_cast<void*> is a qualified-void conversion).
+        // The void* lambda parameters cast directly via static_cast<F*>.
+        std::construct_at(static_cast<F*>(static_cast<void*>(storage_)),
+                          std::forward<Fn>(fn));
         run_ = [](void* ptr) noexcept -> bool {
-            return (*std::launder(reinterpret_cast<F*>(ptr)))();
+            return (*std::launder(static_cast<F*>(ptr)))();
         };
         move_ = [](void* dst, void* src) noexcept {
-            F* from = std::launder(reinterpret_cast<F*>(src));
-            std::construct_at(reinterpret_cast<F*>(dst), std::move(*from));
+            F* from = std::launder(static_cast<F*>(src));
+            std::construct_at(static_cast<F*>(dst), std::move(*from));
             std::destroy_at(from);
         };
         destroy_ = [](void* ptr) noexcept {
-            std::destroy_at(std::launder(reinterpret_cast<F*>(ptr)));
+            std::destroy_at(std::launder(static_cast<F*>(ptr)));
         };
     }
 

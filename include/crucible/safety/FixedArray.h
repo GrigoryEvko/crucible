@@ -123,6 +123,7 @@
 
 #include <algorithm>
 #include <array>           // for is_same_v with std::array in self-test
+#include <bit>
 #include <compare>
 #include <concepts>
 #include <cstddef>
@@ -666,7 +667,7 @@ inline void runtime_smoke_test() {
     // hence data_ to offset 0 = 64-byte aligned.  Matches the
     // SIMD-aligned StorageNbytes case (#1019).
     alignas(64) FixedArray<int64_t, 8> aligned_buf{};
-    if (reinterpret_cast<std::uintptr_t>(aligned_buf.data()) % 64 != 0) {
+    if (std::bit_cast<std::uintptr_t>(aligned_buf.data()) % 64 != 0) {
         std::abort();
     }
 
