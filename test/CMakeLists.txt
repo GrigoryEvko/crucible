@@ -1720,6 +1720,35 @@ crucible_neg_compile_test(neg_metalog_append_count_above_max
 crucible_neg_compile_test(neg_metalog_append_count_uint32_max
   "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
 
+# ─── WRAP-TraceRing-3 (#1055) ValidDrainCount neg-compile fixtures ──
+#
+# TraceRing::drain's `max_count` parameter (also drain_pinned,
+# drain_pure, try_pop_batch) gains a typed Refined gate capped at
+# TraceRing::CAPACITY (1<<16 = 65 536 entries, ~5.25 MB ring).
+# `max_count > CAPACITY` is meaningless because the inner
+# std::min(available, max_count) clamps to available <= CAPACITY,
+# but the silent clamp masks call-site arithmetic bugs (UINT32_MAX
+# leaked through from disk/env/FFI parsing, oversized buffer-size
+# math).  The typed witness pins the bound at the type system so
+# any caller that constructs ValidDrainCount with an out-of-range
+# count is rejected at the constructor's pre-clause.
+#
+# Two fixtures per HS14 mandate:
+#   * neg_trace_ring_drain_count_above_max — boundary edge
+#     (CAPACITY+1) catches "bound widens to admit one more" drift.
+#   * neg_trace_ring_drain_count_uint32_max — wide miss (UINT32_MAX)
+#     catches "drop the bound entirely" regression that would
+#     degenerate the alias into a plain uint32_t typedef.
+#
+# Defense-in-depth: existing `count = std::min(available, max_count)`
+# runtime clamp plus the new `pre (max_count <= CAPACITY)` clause
+# plus the typed witness all fire at the boundary, exposing the
+# silent clamp at enforce semantics.
+crucible_neg_compile_test(neg_trace_ring_drain_count_above_max
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_trace_ring_drain_count_uint32_max
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

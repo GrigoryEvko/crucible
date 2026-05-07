@@ -47,6 +47,7 @@
 #include <crucible/rt/Registry.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/Refined.h>
 #include <crucible/safety/Tagged.h>
 
 namespace crucible {
@@ -392,6 +393,7 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       MetaIndex*    out_meta_starts     = nullptr,
       ScopeHash*    out_scope_hashes    = nullptr,
       CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY
+      pre (max_count <= CAPACITY)
       pre (max_count == 0 || out != nullptr)
   {
     if (max_count == 0) [[unlikely]] return 0;
@@ -457,6 +459,7 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       MetaIndex*    out_meta_starts     = nullptr,
       ScopeHash*    out_scope_hashes    = nullptr,
       CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY
+      pre (max_count <= CAPACITY)
       pre (max_count == 0 || out != nullptr)
   {
     return crucible::safety::HotPath<crucible::safety::HotPathTier_v::Warm, uint32_t>{
@@ -495,6 +498,7 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       MetaIndex*    out_meta_starts     = nullptr,
       ScopeHash*    out_scope_hashes    = nullptr,
       CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY
+      pre (max_count <= CAPACITY)
       pre (max_count == 0 || out != nullptr)
   {
     return drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes);
@@ -524,6 +528,7 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       ScopeHash*    out_scope_hashes,
       CallsiteHash* out_callsite_hashes,
       uint32_t      max_count) noexcept CRUCIBLE_NO_THREAD_SAFETY
+      pre (max_count <= CAPACITY)
       pre (max_count == 0 ||
            (out_entries != nullptr &&
             out_meta_starts != nullptr &&
@@ -609,6 +614,47 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
 static_assert(sizeof(TraceRing) >= (5u * 1024u * 1024u) &&
               sizeof(TraceRing) <= (6u * 1024u * 1024u),
               "TraceRing footprint outside 5-6 MB envelope — layout changed");
+
+// ── Validated drain max-count carrier (#1055 WRAP-TraceRing-3) ──────
+//
+// `max_count` parameter on drain / drain_pinned / drain_pure /
+// try_pop_batch is structurally bounded by TraceRing::CAPACITY (1<<16
+// = 65 536 entries).  Asking the consumer to drain more than the ring
+// can hold is meaningless — the inner `std::min(available, max_count)`
+// silently clamps it — but the silent clamp masks two real call-site
+// bugs:
+//
+//   1. Caller derived `max_count` from a uint32_t loaded from disk /
+//      env / FFI without bounds-checking; UINT32_MAX slips through and
+//      becomes a no-op clamp at the inner surface, with no diagnostic.
+//
+//   2. Caller's `out` buffer was sized for some smaller K but a
+//      mistake in size-arithmetic produced max_count > CAPACITY; even
+//      though the inner clamp prevents memcpy overrun (available is
+//      bounded by CAPACITY), the caller's expectation of "max_count
+//      slots written" is silently violated by the available-clamp
+//      regardless.
+//
+// `pre (max_count <= CAPACITY)` on every drain entry point makes the
+// boundary explicit at enforce semantic; the typed alias gives future
+// callers a witness they can carry across boundaries instead of
+// re-validating the bare uint32_t at every layer.
+//
+// In constexpr context (constant evaluation) the Refined ctor's pre
+// clause `bounded_above<CAPACITY>(v)` (v ≤ CAPACITY) makes a
+// violating construction non-constant per P1494R5 — using it where a
+// constant is required is ill-formed.
+//
+// Cost claim: regime-1 EBO collapse — Refined<bounded_above<N>,
+// uint32_t> erases to a bare uint32_t in -O3 codegen.  The
+// gnu::const factory lifts to a single register move.
+using ValidDrainCount = ::crucible::safety::Refined<
+    ::crucible::safety::bounded_above<TraceRing::CAPACITY>, uint32_t>;
+
+[[nodiscard, gnu::const]] inline constexpr
+uint32_t make_drain_count(ValidDrainCount raw) noexcept {
+    return raw.value();
+}
 
 // ── vouch(): internal-certification factory for ValidatedEntryPtr ──
 //
