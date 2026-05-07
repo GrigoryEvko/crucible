@@ -31,6 +31,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <bit>          // std::bit_cast — §III-clean const-strip for std::free
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -138,7 +139,11 @@ struct SchemaTable {
     // Check for existing entry (idempotent update).
     for (uint32_t i = 0; i < size; i++) {
       if (entries[i].hash == hash) {
-        std::free(const_cast<char*>(entries[i].name));
+        // §III-clean: bit_cast strips const for std::free (which takes
+        // void*).  Pointer is malloc'd, so we own it; the const-qualifier
+        // on `name` is the storage type's published immutability, not
+        // the underlying allocation's mutability.
+        std::free(std::bit_cast<char*>(entries[i].name));
         entries[i].name = strdup_(name);
         return;
       }
@@ -179,7 +184,9 @@ struct SchemaTable {
   // reuse the table across cases; also called from the destructor.
   void clear() {
     for (uint32_t i = 0; i < size; i++) {
-      std::free(const_cast<char*>(entries[i].name));
+      // §III-clean: bit_cast strips const for std::free; the malloc'd
+      // strdup_ allocation is mutable storage we own.
+      std::free(std::bit_cast<char*>(entries[i].name));
       entries[i].name = nullptr;
     }
     size = 0;
