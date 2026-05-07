@@ -240,6 +240,7 @@ crucible_test(test_target_caps)
 crucible_test(test_opcode_latency_table)
 crucible_test(test_fits_cog)
 crucible_test(test_cog_mimic)
+crucible_test(test_topology_graph)
 crucible_test(test_concurrent_compile)
 crucible_test(test_auto_split)
 crucible_test(test_diagnostic_compile)
@@ -795,6 +796,24 @@ function(crucible_neg_compile_cog_test name expected_diag)
     PASS_REGULAR_EXPRESSION "${expected_diag}")
 endfunction()
 
+# Sister harness for topology_neg/.  Mirrors cog_neg / safety_neg /
+# sessions_neg / effects_neg.  Topology-side neg-compile tests live in
+# test/topology_neg/ so the per-graph soundness gates
+# (CtxFitsTopologyGraph IsExecCtx conjunct, row-contains-Init conjunct,
+# future link-layer partition assertions) sit adjacent to the topology/
+# headers they probe.
+function(crucible_neg_compile_topology_test name expected_diag)
+  add_executable(${name} EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/topology_neg/${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  add_test(NAME ${name}
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+            --target ${name} --config $<CONFIG>)
+  set_tests_properties(${name} PROPERTIES
+    LABELS "topology_neg"
+    PASS_REGULAR_EXPRESSION "${expected_diag}")
+endfunction()
+
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
 # delegated-protocol case at the consteval assertion boundary.
@@ -1145,6 +1164,28 @@ crucible_neg_compile_cog_test(neg_cog_mimic_non_substrate
     "constraint|constraints not satisfied|CogMimic|IsMimicSubstrate|CtxFitsCogMimic|PsuRail|GAPS-188")
 crucible_neg_compile_cog_test(neg_cog_mimic_ctx_row_missing
     "constraint|constraints not satisfied|CogMimic|CtxFitsCogMimic|row_contains|Init|Bg|Test|GAPS-188")
+
+# ─── HS14 fixtures #1 + #2 for topology::TopologyGraph (GAPS-110 #1209) ──
+#
+# Two fixtures per the HS14 mandate, each a distinct mismatch class:
+#
+#   * #1 IsExecCtx CONJUNCT — CtxFitsTopologyGraph refuses a bare
+#     `int` (or any non-ExecCtx type) at the first conjunct.  Without
+#     this gate, mint_topology_graph(0, ...) would either deduce
+#     Ctx=int and produce a deep-template error inside the body, or
+#     silently construct a graph with a garbage row tag, polluting
+#     federation row_hash slots.
+#
+#   * #2 ROW-CONTAINS-INIT CONJUNCT — CtxFitsTopologyGraph refuses
+#     contexts whose effect row carries neither Init nor (in this
+#     immutable carrier's case) ANY non-Init effect.  The Test-row
+#     ctx fixture witnesses rejection.  Without this gate, a unit-test
+#     mock could mint a TopologyGraph with a Test-tagged row, polluting
+#     any cross-test federation cache slot.
+crucible_neg_compile_topology_test(neg_topology_graph_non_ctx_first_arg
+    "constraint|constraints not satisfied|CtxFitsTopologyGraph|IsExecCtx|GAPS-110")
+crucible_neg_compile_topology_test(neg_topology_graph_test_ctx_refused
+    "constraint|constraints not satisfied|CtxFitsTopologyGraph|row_contains|Init|Test|GAPS-110")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #
