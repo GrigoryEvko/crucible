@@ -87,16 +87,27 @@ static void test_sm_occupancy() {
     auto hw = blackwell_b200();
 
     // 32 regs/thread → 65536 / 32 = 2048 threads = full occupancy.
-    assert(approx(sm_occupancy(32, 0, 8, hw), 1.0f));
+    assert(approx(sm_occupancy(ValidRegsPerThread{uint16_t{32}}, 0, 8, hw), 1.0f));
     // 64 regs/thread → 1024 threads = 50% occupancy.
-    assert(approx(sm_occupancy(64, 0, 8, hw), 0.5f));
+    assert(approx(sm_occupancy(ValidRegsPerThread{uint16_t{64}}, 0, 8, hw), 0.5f));
     // 128 regs/thread → 512 threads = 25% occupancy.
-    assert(approx(sm_occupancy(128, 0, 8, hw), 0.25f));
-    // 256 regs/thread exceeds max_regs_per_thread (255), clamps to
-    // the hardware-limited full occupancy: the function just divides
-    // regs_per_sm by regs_per_thread and rounds to warp granularity.
-    // 65536 / 256 = 256 threads = 8 warps = 12.5%.
-    assert(approx(sm_occupancy(256, 0, 8, hw), 0.125f));
+    assert(approx(sm_occupancy(ValidRegsPerThread{uint16_t{128}}, 0, 8, hw), 0.25f));
+    // Boundary edge: 255 = ValidRegsPerThread cap, computes
+    // 65536 / 255 = 257.0… → 256 threads after warp-granularity
+    // round-down (32-thread warp width).  Confirms the type-system
+    // ceiling is reachable without contract violation and that the
+    // arithmetic at the edge produces the expected occupancy.
+    assert(approx(sm_occupancy(ValidRegsPerThread{uint16_t{255}}, 0, 8, hw), 0.125f));
+
+    // Per WRAP-CostModel-3 (#897 + audit follow-up), the formerly tested
+    // case `sm_occupancy(256, ...)` is structurally impossible — the
+    // ValidRegsPerThread ctor's `pre(bounded_above<255>(v))` rejects 256
+    // at construction (semantic=enforce → handle_contract_violation; in
+    // constexpr → ill-formed per P1494R5).  See companion HS14 fixtures
+    // test/safety_neg/neg_costmodel_regs_per_thread_overflow.cpp and
+    // test/safety_neg/neg_costmodel_regs_per_thread_max_uint16.cpp for
+    // the witnesses that the type system rejects 256 and UINT16_MAX
+    // respectively.
 
     std::printf("  test_sm_occupancy:              PASSED\n");
 }

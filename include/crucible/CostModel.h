@@ -438,15 +438,21 @@ struct CostBreakdown {
 // ═══════════════════════════════════════════════════════════════════
 
 [[nodiscard]] constexpr float sm_occupancy(
-    uint16_t regs_per_thread, uint32_t smem_per_block,
+    ValidRegsPerThread regs_per_thread, uint32_t smem_per_block,
     uint16_t warps_per_block, const HardwareProfile& hw) {
   uint32_t max_threads = static_cast<uint32_t>(hw.warp_size) * hw.max_warps_per_sm;
   if (max_threads == 0) return 0.0f;
 
-  // Register-limited: how many threads can fit in the register file
+  // Register-limited: how many threads can fit in the register file.
+  // regs_per_thread is type-bounded to [0, 255] by ValidRegsPerThread —
+  // any caller passing > 255 is rejected at construction (semantic=enforce
+  // → contract violation handler; constexpr context → ill-formed per
+  // P1494R5).  The function body therefore only needs to handle the
+  // 0..255 range, with the 0 case explicitly guarded below.
+  const uint16_t regs_v = regs_per_thread.value();
   uint32_t reg_limited = max_threads;
-  if (regs_per_thread > 0) {
-    reg_limited = hw.regs_per_sm / regs_per_thread;
+  if (regs_v > 0) {
+    reg_limited = hw.regs_per_sm / regs_v;
     reg_limited = (reg_limited / hw.warp_size) * hw.warp_size; // warp granularity
   }
 
@@ -496,8 +502,10 @@ struct CostBreakdown {
   // Wave efficiency
   cb.wave_efficiency = wave_efficiency(elements, hw);
 
-  // SM occupancy
-  cb.occupancy = sm_occupancy(cfg.regs_per_thread.value(), cfg.smem_bytes,
+  // SM occupancy.  Pass the typed regs_per_thread directly — sm_occupancy
+  // now consumes ValidRegsPerThread, so the caller cannot smuggle an
+  // out-of-range raw uint16_t past the function boundary.
+  cb.occupancy = sm_occupancy(cfg.regs_per_thread, cfg.smem_bytes,
                                cfg.warps_per_block, hw);
 
   // Compute time: flops / (effective throughput)
