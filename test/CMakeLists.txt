@@ -1531,6 +1531,27 @@ crucible_neg_compile_test(neg_ckernel_id_raw_at_sentinel
 crucible_neg_compile_test(neg_ckernel_id_raw_uint8_max
   "contract|bounded_above|not a constant|non-constant|constexpr")
 
+# WRAP-CKernel-2 (#890) — CKernelTable::SizeCounter =
+# BoundedMonotonic<uint32_t, CKERNEL_TABLE_CAP=256>; constructing it
+# with an out-of-range initial value fires the BoundedMonotonic ctor's
+# pre-clause `!(T(Max) < initial)` in constant evaluation.  Pins the
+# size counter as monotonic-and-capped at the type level — register_op's
+# explicit `if (size >= CAP) std::abort()` becomes defense-in-depth.
+# Two fixtures per HS14:
+#   * _above_cap     — boundary edge (= CAP + 1 = 257, off-by-two).
+#     Catches drift where the bound widens from
+#     `BoundedMonotonic<..., CKERNEL_TABLE_CAP>` to
+#     `BoundedMonotonic<..., CKERNEL_TABLE_CAP + N>` for any N >= 1.
+#   * _uint32_max    — wide miss (= UINT32_MAX).  Catches "drop the
+#     bound entirely" regression where SizeCounter degenerates from
+#     BoundedMonotonic into a plain Monotonic<uint32_t>; under that
+#     drift register_op's runtime check is the only defense and the
+#     compile-time witness disappears.
+crucible_neg_compile_test(neg_ckernel_table_size_above_cap
+  "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_ckernel_table_size_uint32_max
+  "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

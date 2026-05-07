@@ -31,6 +31,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
+#include <crucible/safety/Mutation.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Tagged.h>
@@ -40,6 +41,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <span>
 #include <type_traits>
 
@@ -383,8 +385,29 @@ namespace ckernel_state {
 }
 
 struct CKernelTable {
+    // ── size counter wrapper (#890 WRAP-CKernel-2) ─────────────────────
+    // The entries[] array is structurally append-only: register_op
+    // pushes one entry per call, never erases or reorders.  size is
+    // bounded above by CKERNEL_TABLE_CAP (the existing `if (size >=
+    // CAP) std::abort()` is the user-facing diagnostic for overflow)
+    // and rewinds to 0 only via clear() (test/teardown).
+    //
+    // BoundedMonotonic<uint32_t, CKERNEL_TABLE_CAP> pins both
+    // invariants at the type level: monotonic forward progress (no
+    // accidental backward write via raw assignment) AND the upper
+    // bound (no accidental size > CAP via aliasing or memcpy).  The
+    // clear() rewind is the only legitimate non-monotonic mutation
+    // and uses std::construct_at to re-establish the invariant from
+    // a known floor (0u) — same pattern as IterationDetector's
+    // boundaries_detected / signature_len / ops_since_boundary.
+    //
+    // Zero-cost: regime-2 collapse — sizeof(SizeCounter) ==
+    // sizeof(uint32_t) == 4 B; CKernelTable layout preserved.
+    using SizeCounter = ::crucible::safety::BoundedMonotonic<
+        uint32_t, CKERNEL_TABLE_CAP>;
+
     CKernelEntry entries[CKERNEL_TABLE_CAP]{};
-    uint32_t     size{0};
+    SizeCounter  size{0u};
 
     // Seal gate. Release-store in seal() pairs with acquire-load in
     // is_sealed() so any bg-thread classify() reader observing Sealed
@@ -444,21 +467,25 @@ struct CKernelTable {
     // schema hash.  Abort at registration is the early, loud failure.
     void register_op(MutableView const&, SchemaHash schema_hash, CKernelId id) {
         // Check for existing entry first (idempotent / alias update).
-        for (uint32_t i = 0; i < size; i++) {
+        for (uint32_t i = 0; i < size.get(); i++) {
             if (entries[i].schema_hash == schema_hash) {
                 entries[i].id = id;
                 return;
             }
         }
-        if (size >= CKERNEL_TABLE_CAP) [[unlikely]] {
+        if (size.get() >= CKERNEL_TABLE_CAP) [[unlikely]] {
             std::fprintf(stderr,
                 "crucible: CKernelTable full (%u/%u entries); bump "
                 "CKERNEL_TABLE_CAP or audit Vessel schema registrations\n",
-                size, CKERNEL_TABLE_CAP);
+                size.get(), CKERNEL_TABLE_CAP);
             std::abort();
         }
-        entries[size++] = {.schema_hash = schema_hash, .id = id};
-        std::ranges::sort(std::span{entries, size},
+        // Append + bump.  Two-step instead of `entries[size++]` because
+        // BoundedMonotonic's bump() is a separate mutation; the index
+        // .get() and the bump() bracket the store.
+        entries[size.get()] = {.schema_hash = schema_hash, .id = id};
+        size.bump();   // monotonic +1; bound-checked at CKERNEL_TABLE_CAP
+        std::ranges::sort(std::span{entries, size.get()},
                           {}, &CKernelEntry::schema_hash);
     }
 
@@ -469,7 +496,7 @@ struct CKernelTable {
     // block as long as no register_op() intervenes.  The table is sealed
     // before bg start(), so hot-path calls can assume stable contents.
     [[nodiscard, gnu::pure]] CKernelId classify(SchemaHash schema_hash) const noexcept {
-        uint32_t lo = 0, hi = size;
+        uint32_t lo = 0, hi = size.get();
         while (lo < hi) {
             const uint32_t mid = lo + (hi - lo) / 2;
             if (entries[mid].schema_hash == schema_hash) return entries[mid].id;
@@ -479,12 +506,19 @@ struct CKernelTable {
         return CKernelId::OPAQUE;
     }
 
-    [[nodiscard]] uint32_t count() const noexcept { return size; }
+    [[nodiscard]] uint32_t count() const noexcept { return size.get(); }
 
     // Reset to empty Mutable state.  Unseals so tests can reuse the
     // table across cases.
+    //
+    // clear() is not a monotonic operation — it deliberately rewinds
+    // size from N back to 0.  Re-construct the BoundedMonotonic in
+    // place so the bound + monotonicity invariants are established
+    // afresh from the known floor.  Same pattern as IterationDetector's
+    // reset() rewinds for boundaries_detected / signature_len /
+    // ops_since_boundary.
     void clear() noexcept {
-        size = 0;
+        std::construct_at(&size, SizeCounter{0u});
         sealed_.store(false, std::memory_order_release);
     }
 };
