@@ -26,6 +26,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
+#include <crucible/safety/Mutation.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Tagged.h>
 
@@ -35,6 +36,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <memory>       // std::construct_at — for clear()'s SizeCounter rewind
 #include <span>
 #include <type_traits>
 
@@ -61,8 +63,33 @@ namespace schema_state {
 }
 
 struct SchemaTable {
+  // ── size counter wrapper (#1003 WRAP-SchemaTab-1) ──────────────────
+  // The entries[] array is structurally append-only: register_name
+  // pushes one entry per call (or updates the existing one in place
+  // for idempotent re-registration), never erases or reorders.  size
+  // is bounded above by SCHEMA_TABLE_CAP (the existing
+  // `if (size >= CAP) return;` is the user-visible silent-truncation
+  // diagnostic — see #1009 WRAP-SchemaTab-7 for the abort upgrade)
+  // and rewinds to 0 only via clear() (called from the destructor and
+  // for test isolation).
+  //
+  // BoundedMonotonic<uint32_t, SCHEMA_TABLE_CAP> pins both invariants
+  // at the type level: monotonic forward progress (no accidental
+  // backward write via raw assignment) AND the upper bound (no
+  // accidental size > CAP via aliasing or memcpy).  The clear()
+  // rewind is the only legitimate non-monotonic mutation and uses
+  // std::construct_at to re-establish the invariant from a known
+  // floor (0u) — same pattern as CKernelTable (WRAP-CKernel-2 #890)
+  // and IterationDetector's boundaries_detected / signature_len /
+  // ops_since_boundary.
+  //
+  // Zero-cost: regime-2 collapse — sizeof(SizeCounter) ==
+  // sizeof(uint32_t) == 4 B; SchemaTable layout preserved.
+  using SizeCounter = ::crucible::safety::BoundedMonotonic<
+      uint32_t, SCHEMA_TABLE_CAP>;
+
   SchemaEntry entries[SCHEMA_TABLE_CAP]{};
-  uint32_t size = 0;
+  SizeCounter size{0u};
 
   // Seal gate. false = Mutable, true = Sealed. Release-store pairs
   // with the acquire-load in is_sealed(): once seal() commits, any
@@ -137,7 +164,7 @@ struct SchemaTable {
     if (!name) return;
 
     // Check for existing entry (idempotent update).
-    for (uint32_t i = 0; i < size; i++) {
+    for (uint32_t i = 0; i < size.get(); i++) {
       if (entries[i].hash == hash) {
         // §III-clean: bit_cast strips const for std::free (which takes
         // void*).  Pointer is malloc'd, so we own it; the const-qualifier
@@ -148,16 +175,20 @@ struct SchemaTable {
         return;
       }
     }
-    if (size >= SCHEMA_TABLE_CAP) return;
-    entries[size++] = {.hash = hash, .name = strdup_(name)};
-    std::ranges::sort(std::span<SchemaEntry>{entries, size},
+    if (size.get() >= SCHEMA_TABLE_CAP) return;
+    // Append + bump.  Two-step instead of `entries[size++]` because
+    // BoundedMonotonic's bump() is a separate mutation; the index
+    // .get() and the bump() bracket the store.
+    entries[size.get()] = {.hash = hash, .name = strdup_(name)};
+    size.bump();   // monotonic +1; bound-checked at SCHEMA_TABLE_CAP
+    std::ranges::sort(std::span<SchemaEntry>{entries, size.get()},
                       {}, &SchemaEntry::hash);
   }
 
   // Lookup: returns nullptr for unknown hashes. O(log n) binary search.
   // Safe in either phase — reads only.
   [[nodiscard]] const char* lookup(SchemaHash hash) const {
-    uint32_t lo = 0, hi = size;
+    uint32_t lo = 0, hi = size.get();
     while (lo < hi) {
       const uint32_t mid = lo + (hi - lo) / 2;
       if (entries[mid].hash == hash) return entries[mid].name;
@@ -178,18 +209,25 @@ struct SchemaTable {
     return full;
   }
 
-  [[nodiscard]] uint32_t count() const { return size; }
+  [[nodiscard]] uint32_t count() const { return size.get(); }
 
   // Reset to empty Mutable state.  Resets the seal gate so tests can
   // reuse the table across cases; also called from the destructor.
+  //
+  // clear() is not a monotonic operation — it deliberately rewinds
+  // size from N back to 0 after freeing every owned name string.
+  // Re-construct the BoundedMonotonic in place so the bound +
+  // monotonicity invariants are established afresh from the known
+  // floor.  Same pattern as CKernelTable::clear() (WRAP-CKernel-2)
+  // and IterationDetector's reset() rewinds.
   void clear() {
-    for (uint32_t i = 0; i < size; i++) {
+    for (uint32_t i = 0; i < size.get(); i++) {
       // §III-clean: bit_cast strips const for std::free; the malloc'd
       // strdup_ allocation is mutable storage we own.
       std::free(std::bit_cast<char*>(entries[i].name));
       entries[i].name = nullptr;
     }
-    size = 0;
+    std::construct_at(&size, SizeCounter{0u});
     sealed_.store(false, std::memory_order_release);
   }
 
