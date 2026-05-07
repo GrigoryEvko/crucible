@@ -568,7 +568,20 @@ struct OpcodeLatencyEntry {
 //     wall-clock seconds since the calibration measurement; staleness
 //     grade τ tracks update-cycle staleness.  Augur's drift detector
 //     bumps τ via Stale::advance_by; recalibration is triggered when
-//     τ exceeds the policy threshold.
+//     τ exceeds the policy threshold OR when τ is infinite.
+//
+// Default-constructed Stale semantics: A default-constructed
+// OpcodeLatencyTable<K> has NEVER been calibrated.  The semantically
+// correct staleness for "never measured" is τ=∞ (genuinely unbounded
+// lag — unknown when, if ever, this Cog was calibrated), NOT τ=0
+// (which would mean "calibrated 0 update cycles ago = freshly
+// measured").  Mis-defaulting to τ=0 would silently fool Augur's
+// drift detector into believing the table is fresh and never
+// triggering the recalibration pass — a pre-production data-loss
+// risk caught during the GAPS-187 audit follow-up.  The default
+// initializer below uses Stale<double>::at_infinity(0.0) explicitly;
+// the value field defaults to 0.0 (semantically irrelevant for
+// τ=∞).
 //
 // Query helpers operate on the borrowed span — O(N) linear scan over
 // a typical table size of 50-200 entries.  Kept linear-not-hashed
@@ -584,7 +597,10 @@ struct OpcodeLatencyTable {
     safety::Tagged<std::span<const Entry>, safety::source::Calibrated>
         entries{std::span<const Entry>{}};
 
-    safety::Stale<double> calibration_age_seconds{};
+    // Default τ=∞ marks "never calibrated".  See storage-strategy
+    // doc-block above for the GAPS-187 audit rationale.
+    safety::Stale<double> calibration_age_seconds =
+        safety::Stale<double>::at_infinity(0.0);
 
     // ── Query helpers ──────────────────────────────────────────────
 

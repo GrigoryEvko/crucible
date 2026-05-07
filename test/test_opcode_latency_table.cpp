@@ -348,6 +348,28 @@ static void test_gpu_opcode_table_construction() {
     assert(empty_table.size() == 0);
     assert(!empty_table.lookup_by_opcode(cog::GpuOpcode::GemmPlain).has_value());
 
+    // GAPS-187 audit follow-up: default-constructed table MUST report
+    // infinite calibration staleness (τ=∞).  The semantically correct
+    // signal for "never calibrated" is at_infinity, NOT fresh.  If
+    // this assertion fails, Augur's drift detector reads τ=0 on a
+    // never-calibrated Cog and silently never triggers the
+    // recalibration pass — pre-production data-loss risk.
+    volatile bool default_is_infinite =
+        empty_table.calibration_age_seconds.is_infinite();
+    assert(default_is_infinite);
+    volatile bool default_is_finite =
+        empty_table.calibration_age_seconds.is_finite();
+    assert(!default_is_finite);
+
+    // GAPS-187 audit follow-up: sample_count=0 is the boundary
+    // sentinel marking an uncalibrated row.  Default-constructed
+    // Entry MUST report sample_count == 0 so downstream consumers
+    // can rely on the discipline "trust no other field unless
+    // sample_count > 0".
+    cog::OpcodeLatencyEntry<cog::CogKind::Gpu> default_entry{};
+    volatile auto default_sample_count = default_entry.sample_count.value();
+    assert(default_sample_count == 0);
+
     std::printf("  test_gpu_opcode_table_construction:   PASSED\n");
 }
 
