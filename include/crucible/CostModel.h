@@ -119,6 +119,50 @@ static_assert(sizeof(ValidWarpSize) == sizeof(uint16_t),
     "element_type so the wrapper carries no extra storage.");
 
 // ═══════════════════════════════════════════════════════════════════
+// ValidUtilization: structural [0, 1] dimensionless ratio
+//
+// `wave_efficiency()` returns elements / (waves × tpw) where
+// `waves × tpw ≥ elements ≥ 0` (waves is `ceil(elements/tpw)` so the
+// product is the smallest tile-aligned upper bound).  IEEE 754
+// round-to-nearest is monotonic on non-negative inputs, so the float
+// quotient lands in [0.0f, 1.0f] exactly.  `sm_occupancy()` returns
+// `min(reg_limited, smem_limited, max_threads) / max_threads`, with
+// the numerator clamped above by the denominator by construction —
+// same float-monotonicity argument applies.  Both functions guard
+// every division-by-zero path with an early `return ValidUtilization{0.0f}`,
+// so NaN and Inf are unreachable under documented inputs.
+//
+// Per #898 WRAP-CostModel-4, the [0, 1] bound is pinned at the type
+// level so:
+//   1. consumers never need to re-validate (`if (eff > 1.0f) clamp;`
+//      branches disappear); the Refined ctor's
+//      `pre(in_range<0.0f, 1.0f>(v))` is the SINGLE gate.  Once
+//      wrapped, every reader treats the bound as `[[assume]]`.
+//   2. mismatches that escape the formula are caught at the
+//      construction site instead of silently corrupting downstream
+//      MAP-Elites bucketization (`actual / max_threads > 1` would
+//      classify the kernel into a non-existent occupancy cell, and
+//      `wave_efficiency > 1` would inflate `compute_ns` past the
+//      hardware peak — both shape-changing failures).
+//
+// Symmetric receiver: `CostBreakdown::wave_efficiency` and
+// `CostBreakdown::occupancy` adopt the same Refined type so the
+// invariant survives storage; passing the result by value to a
+// downstream consumer that takes `ValidUtilization` is a no-op.
+//
+// sizeof(ValidUtilization) == sizeof(float) == 4 B.  Refined is
+// regime-1: the BoolLattice over InRange has empty element_type and
+// the wrapper carries no extra storage.  HardwareProfile and
+// CostBreakdown layouts are unchanged.
+// ═══════════════════════════════════════════════════════════════════
+using ValidUtilization = safety::Refined<safety::in_range<0.0f, 1.0f>, float>;
+static_assert(sizeof(ValidUtilization) == sizeof(float),
+    "ValidUtilization must EBO-collapse to sizeof(float) — "
+    "Refined<in_range<0.0f, 1.0f>, float> is regime-1, the BoolLattice "
+    "over InRange has empty element_type so the wrapper carries no "
+    "extra storage.");
+
+// ═══════════════════════════════════════════════════════════════════
 // HardwareProfile: Measurable hardware specifications (Z3 axioms)
 //
 // Every field is directly benchmarkable or available in vendor specs.
@@ -452,8 +496,16 @@ struct CostBreakdown {
   uint64_t bytes = 0;             // Total memory traffic (at bottleneck level)
 
   float arithmetic_intensity = 0;  // FLOP/byte (roofline X-axis)
-  float wave_efficiency = 0;       // Thread utilization [0,1]
-  float occupancy = 0;             // SM occupancy [0,1]
+  // Per #898 WRAP-CostModel-4, the symmetric receiver fields adopt
+  // the same Refined type as the producer functions wave_efficiency()
+  // and sm_occupancy().  ValidUtilization pins the [0, 1] bound at
+  // the type level so MAP-Elites bucketization and bottleneck
+  // classification (UNDERUTIL when wave_efficiency < 0.1f below)
+  // operate on values that are guaranteed in-range without per-read
+  // sanity checks.  Both default-constructed to ValidUtilization{0.0f}
+  // — the value 0.0f satisfies in_range<0.0f, 1.0f> trivially.
+  ValidUtilization wave_efficiency{0.0f}; // Thread utilization [0,1]
+  ValidUtilization occupancy{0.0f};       // SM occupancy [0,1]
 
   enum class Bottleneck : uint8_t {
     COMPUTE,     // compute_ns > memory_ns (GPU doing useful work)
@@ -480,12 +532,20 @@ struct CostBreakdown {
 //            (* (to_real (ceil_div elems tpw)) (to_real tpw)))))
 // ═══════════════════════════════════════════════════════════════════
 
-[[nodiscard]] constexpr float wave_efficiency(
+[[nodiscard]] constexpr ValidUtilization wave_efficiency(
     uint64_t elements, const HardwareProfile& hw) {
   uint64_t tpw = static_cast<uint64_t>(hw.num_sms) * hw.warp_size.value();
-  if (tpw == 0 || elements == 0) return 0.0f;
+  if (tpw == 0 || elements == 0) return ValidUtilization{0.0f};
   uint64_t waves = (elements + tpw - 1) / tpw;
-  return static_cast<float>(elements) / static_cast<float>(waves * tpw);
+  // waves × tpw ≥ elements by construction (ceil-div upper bound),
+  // and IEEE 754 round-to-nearest is monotonic on non-negative
+  // inputs, so the quotient lands in [0.0f, 1.0f] exactly.  The
+  // Refined ctor's `pre(in_range<0.0f, 1.0f>(v))` therefore never
+  // fires under documented inputs; it is the soundness witness that
+  // catches any caller-introduced inversion (numerator/denominator
+  // swap, off-by-one tile width).
+  return ValidUtilization{
+      static_cast<float>(elements) / static_cast<float>(waves * tpw)};
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -509,7 +569,7 @@ struct CostBreakdown {
 //         (/ (to_real (min reg_limited smem_limited max_t)) (to_real max_t))))
 // ═══════════════════════════════════════════════════════════════════
 
-[[nodiscard]] constexpr float sm_occupancy(
+[[nodiscard]] constexpr ValidUtilization sm_occupancy(
     ValidRegsPerThread regs_per_thread, uint32_t smem_per_block,
     uint16_t warps_per_block, const HardwareProfile& hw) {
   // Hoist warp_size unwrap to a single .value() call — the field is
@@ -518,7 +578,7 @@ struct CostBreakdown {
   // re-checking the predicate.
   const uint16_t warp_v = hw.warp_size.value();
   uint32_t max_threads = static_cast<uint32_t>(warp_v) * hw.max_warps_per_sm;
-  if (max_threads == 0) return 0.0f;
+  if (max_threads == 0) return ValidUtilization{0.0f};
 
   // Register-limited: how many threads can fit in the register file.
   // regs_per_thread is type-bounded to [0, 255] by ValidRegsPerThread —
@@ -542,7 +602,15 @@ struct CostBreakdown {
   }
 
   uint32_t actual = std::min({reg_limited, smem_limited, max_threads});
-  return static_cast<float>(actual) / static_cast<float>(max_threads);
+  // `actual ≤ max_threads` by construction (std::min third operand).
+  // IEEE 754 round-to-nearest is monotonic on non-negative inputs, so
+  // the float quotient is in [0.0f, 1.0f] exactly.  The Refined ctor's
+  // `pre(in_range<0.0f, 1.0f>(v))` is the soundness witness that
+  // catches any future caller-introduced inversion (e.g. a regression
+  // where reg_limited is computed without the warp-granularity round-
+  // down and exceeds max_threads).
+  return ValidUtilization{
+      static_cast<float>(actual) / static_cast<float>(max_threads)};
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -588,10 +656,15 @@ struct CostBreakdown {
   // Compute time: flops / (effective throughput)
   // peak_tflops × 1e3 converts TFLOPS → FLOPS/ns
   float peak = hw.peak_tflops(dtype);
-  if (peak > 0 && cb.wave_efficiency > 0 && cb.occupancy > 0) {
+  // ValidUtilization unwraps via .value() — the [0, 1] bound is type-
+  // pinned (#898 WRAP-CostModel-4), so the > 0 checks below filter
+  // exactly the structural-zero cases (no waves filled / max_threads
+  // == 0) without any extra runtime sanity branch.
+  if (peak > 0 && cb.wave_efficiency.value() > 0
+               && cb.occupancy.value() > 0) {
     double effective = static_cast<double>(peak) * 1e3
-                     * static_cast<double>(cb.wave_efficiency)
-                     * static_cast<double>(cb.occupancy);
+                     * static_cast<double>(cb.wave_efficiency.value())
+                     * static_cast<double>(cb.occupancy.value());
     cb.compute_ns = static_cast<double>(flops) / effective;
   }
 
@@ -609,7 +682,7 @@ struct CostBreakdown {
   // Classify bottleneck
   if (cb.launch_ns > std::max(cb.compute_ns, cb.memory_ns) * 2.0)
     cb.bottleneck = CostBreakdown::Bottleneck::LAUNCH;
-  else if (cb.wave_efficiency < 0.1f)
+  else if (cb.wave_efficiency.value() < 0.1f)
     cb.bottleneck = CostBreakdown::Bottleneck::UNDERUTIL;
   else if (cb.compute_ns > cb.memory_ns)
     cb.bottleneck = CostBreakdown::Bottleneck::COMPUTE;

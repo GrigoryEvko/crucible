@@ -1881,6 +1881,39 @@ crucible_neg_compile_test(neg_costmodel_warp_size_not_power_of_two
 crucible_neg_compile_test(neg_costmodel_warp_size_too_large
   "contract|Refined|bounded_above|all_of|not a constant|non-constant|constexpr")
 
+# ─── #898 WRAP-CostModel-4 neg-compile tests ────────────────────────
+#
+# Per #898, ValidUtilization is
+# safety::Refined<safety::in_range<0.0f, 1.0f>, float> and pins the
+# return types of wave_efficiency() / sm_occupancy() and the symmetric
+# receiver fields CostBreakdown::wave_efficiency / occupancy at the
+# type level.  Both functions structurally produce values in [0, 1]
+# under IEEE 754 round-to-nearest (waves × tpw ≥ elements; min(...)
+# ≤ max_threads), so the pre clause never fires under documented
+# inputs — it is the soundness witness that catches future caller-
+# introduced inversions or sign flips.
+#
+# Two fixtures per HS14 mandate, demonstrating distinct mismatch
+# classes for the InRange<0.0f, 1.0f> predicate:
+#   * neg_costmodel_utilization_above_one — fails the upper bound
+#     (1.5f).  Catches numerator/denominator inversion in a future
+#     wave_efficiency rewrite and off-by-one drift where the formula
+#     divides by a rounded-down denominator.
+#   * neg_costmodel_utilization_negative — fails the lower bound
+#     (-0.5f).  Catches sign flips, signed loop counters wrapping
+#     past zero before float conversion, and signed-difference
+#     formulations that produce negative ratios.
+#
+# Defense-in-depth: there is no runtime [0, 1] clamp anywhere in
+# evaluate_cost — the structural bound is a property of the formulas
+# themselves, not a per-call knob.  ValidUtilization catches the
+# value at construction time, which is the only meaningful
+# enforcement point.
+crucible_neg_compile_test(neg_costmodel_utilization_above_one
+  "contract|Refined|in_range|InRange|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_costmodel_utilization_negative
+  "contract|Refined|in_range|InRange|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

@@ -70,34 +70,50 @@ static void test_wave_efficiency() {
     auto hw = blackwell_b200();
     const uint64_t tpw = hw.num_sms * hw.warp_size.value();  // 128 × 32 = 4096
 
+    // Per #898 WRAP-CostModel-4, wave_efficiency() returns
+    // ValidUtilization (Refined<in_range<0.0f, 1.0f>, float>); each
+    // .value() call below threads the [0, 1] structural invariant
+    // through to approx() unchanged.  Construction of every return
+    // value also exercises the Refined ctor's
+    // pre(in_range<0.0f, 1.0f>(v)) — if the formula ever produces a
+    // value outside [0, 1] under documented inputs, every test below
+    // fires the contract violation handler and the suite aborts.
     // Zero elements → 0.
-    assert(approx(wave_efficiency(0, hw), 0.0f));
+    assert(approx(wave_efficiency(0, hw).value(), 0.0f));
     // Exactly one wave filled → 1.0.
-    assert(approx(wave_efficiency(tpw, hw), 1.0f));
+    assert(approx(wave_efficiency(tpw, hw).value(), 1.0f));
     // Half a wave → 0.5.
-    assert(approx(wave_efficiency(tpw / 2, hw), 0.5f));
+    assert(approx(wave_efficiency(tpw / 2, hw).value(), 0.5f));
     // N + 1 elements → (N+1) / (2 × tpw).
     const float expect = static_cast<float>(tpw + 1)
                        / static_cast<float>(2 * tpw);
-    assert(approx(wave_efficiency(tpw + 1, hw), expect));
+    assert(approx(wave_efficiency(tpw + 1, hw).value(), expect));
     std::printf("  test_wave_efficiency:           PASSED\n");
 }
 
 static void test_sm_occupancy() {
     auto hw = blackwell_b200();
 
+    // Per #898 WRAP-CostModel-4, sm_occupancy() returns
+    // ValidUtilization; each .value() call below unwraps the type-
+    // pinned [0, 1] occupancy ratio.  The Refined ctor's pre clause
+    // is the soundness witness — any future regression where the
+    // numerator (min(reg_limited, smem_limited, max_threads)) escapes
+    // the max_threads upper bound fires the contract violation
+    // handler at the construction site, not in MAP-Elites bucketing.
+    //
     // 32 regs/thread → 65536 / 32 = 2048 threads = full occupancy.
-    assert(approx(sm_occupancy(ValidRegsPerThread{uint16_t{32}}, 0, 8, hw), 1.0f));
+    assert(approx(sm_occupancy(ValidRegsPerThread{uint16_t{32}}, 0, 8, hw).value(), 1.0f));
     // 64 regs/thread → 1024 threads = 50% occupancy.
-    assert(approx(sm_occupancy(ValidRegsPerThread{uint16_t{64}}, 0, 8, hw), 0.5f));
+    assert(approx(sm_occupancy(ValidRegsPerThread{uint16_t{64}}, 0, 8, hw).value(), 0.5f));
     // 128 regs/thread → 512 threads = 25% occupancy.
-    assert(approx(sm_occupancy(ValidRegsPerThread{uint16_t{128}}, 0, 8, hw), 0.25f));
+    assert(approx(sm_occupancy(ValidRegsPerThread{uint16_t{128}}, 0, 8, hw).value(), 0.25f));
     // Boundary edge: 255 = ValidRegsPerThread cap, computes
     // 65536 / 255 = 257.0… → 256 threads after warp-granularity
     // round-down (32-thread warp width).  Confirms the type-system
     // ceiling is reachable without contract violation and that the
     // arithmetic at the edge produces the expected occupancy.
-    assert(approx(sm_occupancy(ValidRegsPerThread{uint16_t{255}}, 0, 8, hw), 0.125f));
+    assert(approx(sm_occupancy(ValidRegsPerThread{uint16_t{255}}, 0, 8, hw).value(), 0.125f));
 
     // Per WRAP-CostModel-3 (#897 + audit follow-up), the formerly tested
     // case `sm_occupancy(256, ...)` is structurally impossible — the
