@@ -1449,6 +1449,20 @@ crucible_neg_compile_test(neg_refined_predicate_not_invocable
 crucible_neg_compile_test(neg_element_bytes_above_max
   "contract|bounded_above|not a constant|non-constant|constexpr")
 
+# WRAP-IterDet-1 (#927) — IterationDetector::match_pos_ wraps Refined<
+# bounded_above<MATCH_POS_MAX=K-1=4>, uint8_t>; constructing MatchPos{>4}
+# in constexpr context drives the bounded_above<4>(v) pre-clause through
+# constant evaluation.  Two fixtures cover distinct forbidden-value
+# classes per HS14:
+#   * _above_max — boundary edge (5 = K = smallest forbidden), catches
+#     off-by-one drift in MATCH_POS_MAX.
+#   * _uint8_max — wide miss (255 = uint8_t max), catches "lost narrowing"
+#     where a wider intermediate is truncated to uint8_t pre-assignment.
+crucible_neg_compile_test(neg_iter_det_match_pos_above_max
+  "contract|bounded_above|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_iter_det_match_pos_uint8_max
+  "contract|bounded_above|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

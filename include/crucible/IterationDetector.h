@@ -7,6 +7,7 @@
 #include <crucible/Saturate.h>
 #include <crucible/Types.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/Refined.h>
 
 namespace crucible {
 
@@ -36,9 +37,27 @@ namespace crucible {
 struct IterationDetector {
   static constexpr uint32_t K = 5;
 
+  // Structural upper bound on match_pos_'s STORED value (#927 WRAP-
+  // IterDet-1).  Storage range is [0, K-1] — at the K-th match the
+  // hot path goes through on_match_() which resets match_pos_ to 0
+  // before any further write, so the value K is never STORED in the
+  // field.  bounded_above<K-1> is the tightest correct invariant.
+  static constexpr uint8_t MATCH_POS_MAX = static_cast<uint8_t>(K - 1);
+
+  // Refinement type for match_pos_'s storage.  Wraps uint8_t with
+  // bounded_above<MATCH_POS_MAX> at the type level so a value > K-1
+  // is a contract violation at construction (constexpr context: hard
+  // compile error per P1494R5; runtime under semantic=enforce: abort).
+  // BoolLattice<bounded_above<...>> EBO-collapses; sizeof(MatchPos)
+  // == sizeof(uint8_t) == 1B — cache layout (line 0 = 64B) preserved
+  // by structural guarantee, not by hand.  See the static_assert at
+  // the bottom of the struct for the layout invariant.
+  using MatchPos = ::crucible::safety::Refined<
+      ::crucible::safety::bounded_above<MATCH_POS_MAX>, uint8_t>;
+
   // ── Cache line 0: hot path data (touched every call) ─────────
   // Expected next hash VALUE (not pointer). One L1d load, zero pointer chase.
-  // In steady state (match_pos_==0), this equals signature[0].
+  // In steady state (match_pos_.value()==0), this equals signature[0].
   SchemaHash expected_hash_{};                        // offset 0,  8B
 
   // The K-element signature: first K schema hashes of the iteration.
@@ -47,8 +66,9 @@ struct IterationDetector {
   SchemaHash signature[K]{};                          // offset 8,  40B
 
   // Position in sequential match (0..K-1). 0 = waiting for signature[0].
-  // Using uint8_t since K=5 fits trivially, saving 3 bytes for packing.
-  uint8_t match_pos_ = 0;                            // offset 48, 1B
+  // MatchPos = Refined<bounded_above<K-1>, uint8_t> — the type carries
+  // the invariant.  EBO-collapsed to 1B, saving 3 bytes for packing.
+  MatchPos match_pos_{uint8_t{0}};                   // offset 48, 1B
 
   // True after first full K-match (candidate). Second match returns true.
   bool confirmed = false;                             // offset 49, 1B
@@ -75,16 +95,16 @@ struct IterationDetector {
 
   // Hot path: called once per drained op on the background thread.
   //
-  // Steady-state fast path (no match, match_pos_==0): ~1ns.
+  // Steady-state fast path (no match, match_pos_.value()==0): ~1ns.
   //   - 1 increment (ops_since_boundary, parallel with everything)
   //   - 1 comparison (schema_hash vs expected_hash_, one L1d load)
   //   - 1 branch (well-predicted: mismatch)
   //   - 0 writes beyond the increment (expected_hash_ unchanged)
   //
-  // Mid-match path (match_pos_>0, advancing through signature): ~1.5ns.
+  // Mid-match path (match_pos_.value()>0, advancing through signature): ~1.5ns.
   //   - 1 comparison (match) + 1 write (match_pos_, expected_hash_)
   //
-  // Boundary path (match_pos_ reaches K): ~50ns (memcpy + reset, rare).
+  // Boundary path (match_pos_ reaches K-1+1 = K): ~50ns (memcpy + reset, rare).
   [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool check(SchemaHash schema_hash) noexcept {
     ops_since_boundary++;
 
@@ -97,18 +117,18 @@ struct IterationDetector {
     // Phase 2: sequential matching.
     // Compare incoming hash against the expected next value.
     if (schema_hash != expected_hash_) [[likely]] {
-      // Mismatch. Only do work if we were mid-match (match_pos_ > 0).
-      // When match_pos_==0, expected_hash_ is already signature[0] and
-      // match_pos_ is already 0 — zero writes needed.
-      if (match_pos_ != 0) [[unlikely]] {
+      // Mismatch. Only do work if we were mid-match (match_pos_.value() > 0).
+      // When match_pos_.value()==0, expected_hash_ is already signature[0] and
+      // match_pos_ is already MatchPos{0} — zero writes needed.
+      if (match_pos_.value() != 0) [[unlikely]] {
         // Mid-match broke. Reset to start.
         // Also check: does this hash start a NEW match?
         // (handles overlapping patterns at boundary transitions)
         if (schema_hash == signature[0]) [[unlikely]] {
-          match_pos_ = 1;
+          match_pos_ = MatchPos{uint8_t{1}};
           expected_hash_ = signature[1];
         } else {
-          match_pos_ = 0;
+          match_pos_ = MatchPos{uint8_t{0}};
           expected_hash_ = signature[0];
         }
       }
@@ -116,11 +136,14 @@ struct IterationDetector {
     }
 
     // Match — advance to next position in signature.
-    const auto next = static_cast<uint8_t>(match_pos_ + 1);
+    const auto next = static_cast<uint8_t>(match_pos_.value() + 1);
     if (next >= K) [[unlikely]] {
       return on_match_();
     }
-    match_pos_ = next;
+    // next < K here, so next ≤ K-1 = MATCH_POS_MAX — the construction
+    // contract holds by control flow.  Hot-path TUs compile this to
+    // [[assume(next <= MATCH_POS_MAX)]], propagating the bound forward.
+    match_pos_ = MatchPos{next};
     expected_hash_ = signature[next];
     return false;
   }
@@ -128,7 +151,7 @@ struct IterationDetector {
   void reset() {
     expected_hash_ = SchemaHash{};
     for (auto& h : signature) h = SchemaHash{};
-    match_pos_ = 0;
+    match_pos_ = MatchPos{uint8_t{0}};
     confirmed = false;
     ops_since_boundary = 0;
     signature_len = 0;
@@ -149,7 +172,7 @@ struct IterationDetector {
     if (signature_len == K) [[unlikely]] {
       // Signature complete. Prime the sequential matcher.
       expected_hash_ = signature[0];
-      match_pos_ = 0;
+      match_pos_ = MatchPos{uint8_t{0}};
     }
     return false;
   }
@@ -158,7 +181,7 @@ struct IterationDetector {
   // Called when K consecutive hashes matched the signature.
   [[nodiscard]] bool on_match_() {
     // Reset sequential matcher for next iteration.
-    match_pos_ = 0;
+    match_pos_ = MatchPos{uint8_t{0}};
     expected_hash_ = signature[0];
 
     if (!confirmed) [[unlikely]] {
