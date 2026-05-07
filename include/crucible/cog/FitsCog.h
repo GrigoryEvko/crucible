@@ -187,8 +187,12 @@ struct cog_max_capacity;  // primary INTENTIONALLY undefined
 //
 // Ceilings span Hopper (H100/H200, 132/144 SMs, 80/141 GB HBM, 3.35
 // TB/s HBM bw), Blackwell (B100/B200, 192/256 SMs, 192 GB HBM, 8 TB/s
-// HBM bw), AMD MI300X (304 CUs, 192 GB HBM, 5.3 TB/s), and headroom
-// for next-gen.  Ceiling = MAX across the family + 25% headroom.
+// HBM bw), AMD CDNA3+ (MI300X 304 CUs / 192 GB HBM3, MI325X 304 CUs /
+// 288 GB HBM3E / 6 TB/s), and headroom for next-gen (B300, MI400X).
+// Ceiling = MAX across the family + ~30% headroom.  Per the
+// append-only-ceiling discipline at the top of this header, raising
+// these ceilings is non-breaking (raises admission); LOWERING any
+// ceiling is a wire-format break for any Row that previously fit.
 template <>
 struct cog_max_capacity<CogKind::Gpu> {
     // constexpr (NOT consteval) so the runtime smoke-test discipline
@@ -208,11 +212,22 @@ struct cog_max_capacity<CogKind::Gpu> {
             case ResourceKind::Smem:              return 320ULL * 256ULL * 1024;       // sm * 256 KB
             case ResourceKind::L2:                return 100ULL * 1024 * 1024;         // 100 MB (B200)
             // GPU memory substrate
-            case ResourceKind::HbmBytes:          return 256ULL * 1024 * 1024 * 1024;  // 256 GB
+            case ResourceKind::HbmBytes:          return 384ULL * 1024 * 1024 * 1024;  // 384 GB (MI325X=288GB+headroom)
             case ResourceKind::HbmBw:             return 9ULL * 1024 * 1024 * 1024 * 1024;  // 9 TB/s
             // Inter-device
             case ResourceKind::NvlinkBw:          return 1'800ULL * 1024 * 1024 * 1024;  // 1.8 TB/s (NVL5)
-            case ResourceKind::PcieBw:            return 256ULL * 1024 * 1024 * 1024;  // PCIe 5 x16
+            // PcieBw deliberately = 0 here.  PCIe bandwidth is computed
+            // from caps.pcie_gen + caps.pcie_lanes; no derived field
+            // ships in TargetCaps yet.  Setting the compile-time
+            // ceiling = 0 keeps the runtime overload (which also
+            // returns 0 from caps_runtime_capacity::for_kind for
+            // PcieBw) consistent with the compile-time gate — both
+            // reject any PcieBw demand.  When cog/Calibrate.h ships
+            // the derived `pcie_bw_bytes_per_sec` field, bump this
+            // ceiling to PCIe6 x16 raw rate and update the runtime
+            // mapping to read the derived field.  Until then,
+            // refusing PcieBw demand is conservatively-correct.
+            case ResourceKind::PcieBw:            return 0ULL;
             // Power / thermal
             case ResourceKind::PowerWatts:        return 1'500ULL;                     // B200 = 1000W, headroom
             case ResourceKind::ThermalCelsius:    return 95ULL;                        // common throttle
@@ -233,8 +248,11 @@ struct cog_max_capacity<CogKind::NicPort> {
     static constexpr std::uint64_t for_kind(effects::ResourceKind k) noexcept {
         using effects::ResourceKind;
         switch (k) {
-            // Inter-device
-            case ResourceKind::PcieBw:            return 256ULL * 1024 * 1024 * 1024;  // PCIe 5 x16
+            // PcieBw deliberately = 0 — see GpuTargetCaps comment for
+            // rationale.  Both compile-time ceiling and runtime helper
+            // refuse PcieBw demand consistently until Calibrate.h
+            // ships the derived field.
+            case ResourceKind::PcieBw:            return 0ULL;
             // NIC substrate
             case ResourceKind::NicQ:              return 256ULL;                        // tx+rx queues
             case ResourceKind::NicRing:           return 64ULL * 1024;                  // ring slots
@@ -644,6 +662,40 @@ static_assert(HasCaps<CogKind::NvSwitch> == HasCogCapacity<CogKind::NvSwitch>);
 static_assert(HasCaps<CogKind::DramChannel> == HasCogCapacity<CogKind::DramChannel>);
 static_assert(HasCaps<CogKind::PsuRail> == HasCogCapacity<CogKind::PsuRail>);
 
+// ── caps_runtime_capacity lockstep with cog_max_capacity ───────────
+//
+// The runtime overload `fits_cog_caps_runtime<Row, K>(caps)` calls
+// `caps_runtime_capacity<K>::for_kind(...)`.  If a future
+// contributor adds a `cog_max_capacity<K>` specialisation but
+// forgets the matching `caps_runtime_capacity<K>` specialisation,
+// the substitution failure surfaces only when someone first calls
+// `fits_cog_caps_runtime<..., K>` — far from the omission site.
+// These static_asserts catch the omission HERE, in the same TU as
+// the binding tables, so the diagnostic points at the missing
+// specialisation rather than a remote consumer's call site.
+//
+// Witness "specialised" by proving for_kind is callable on
+// caps_for_t<K>.  A new substrate that ships cog_max_capacity but
+// forgets caps_runtime_capacity trips the static_asserts below
+// (false witness on a substrate we expect to ship).  A non-
+// substrate K fails because caps_for_t<K> doesn't resolve.
+template <CogKind K>
+inline constexpr bool has_caps_runtime_capacity_v = requires(caps_for_t<K> const& caps,
+                                                              effects::ResourceKind axis) {
+    { detail::caps_runtime_capacity<K>::for_kind(caps, axis) }
+        -> std::same_as<std::uint64_t>;
+};
+static_assert(has_caps_runtime_capacity_v<CogKind::Gpu>);
+static_assert(has_caps_runtime_capacity_v<CogKind::NicPort>);
+static_assert(has_caps_runtime_capacity_v<CogKind::NvSwitch>);
+static_assert(has_caps_runtime_capacity_v<CogKind::CpuCore>);
+static_assert(has_caps_runtime_capacity_v<CogKind::CpuSocket>);
+static_assert(has_caps_runtime_capacity_v<CogKind::DramChannel>);
+// Non-substrate Cogs reject (no caps_for_t<K> specialization).
+static_assert(!has_caps_runtime_capacity_v<CogKind::PsuRail>);
+static_assert(!has_caps_runtime_capacity_v<CogKind::BmcSensor>);
+static_assert(!has_caps_runtime_capacity_v<CogKind::Datacenter>);
+
 // ── Per-substrate ceiling sanity — spot-check non-zero on at least
 //    ONE axis the substrate exposes ───────────────────────────────
 //
@@ -718,7 +770,7 @@ static_assert(!FitsCog<OversubscribedSmRow, CogKind::Gpu>);
 
 // HBM > ceiling.
 using OversubscribedHbmRow = effects::ConcurrentRow<
-    effects::HbmBytes<512ULL * 1024 * 1024 * 1024>>;  // 512 GB > 256 GB ceiling
+    effects::HbmBytes<512ULL * 1024 * 1024 * 1024>>;  // 512 GB > 384 GB ceiling
 static_assert(!FitsCog<OversubscribedHbmRow, CogKind::Gpu>);
 
 // Two summed budgets that together exceed ceiling: SmBudget<200> +
@@ -778,7 +830,7 @@ using SaturateGpuSm = effects::ConcurrentRow<effects::SmBudget<320>>;
 static_assert(FitsCog<SaturateGpuSm, CogKind::Gpu>);
 
 using SaturateGpuHbm = effects::ConcurrentRow<
-    effects::HbmBytes<256ULL * 1024 * 1024 * 1024>>;
+    effects::HbmBytes<384ULL * 1024 * 1024 * 1024>>;
 static_assert(FitsCog<SaturateGpuHbm, CogKind::Gpu>);
 
 // ── Boundary: demand = ceiling + 1 fails ───────────────────────────

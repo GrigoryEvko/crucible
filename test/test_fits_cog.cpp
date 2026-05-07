@@ -75,7 +75,20 @@ static void test_gpu_ceilings_runtime() {
     axis = ResourceKind::HbmBytes;
     auto hbm = cog_max_capacity<CogKind::Gpu>::for_kind(
         const_cast<ResourceKind&>(axis));
-    assert(hbm == 256ULL * 1024 * 1024 * 1024);
+    // Audit follow-up (2026-05-07): bumped 256GB → 384GB to cover
+    // MI325X's 288GB HBM3E + headroom for next-gen.  Setting
+    // ceiling lower than the largest shipped chip would falsely
+    // reject Rows that fit real silicon.
+    assert(hbm == 384ULL * 1024 * 1024 * 1024);
+
+    // PcieBw deliberately = 0 in the compile-time ceiling — the
+    // runtime helper also returns 0 (no derived field yet in
+    // TargetCaps).  Both layers reject PcieBw demand consistently
+    // until cog/Calibrate.h ships pcie_bw_bytes_per_sec.
+    axis = ResourceKind::PcieBw;
+    auto pcie_on_gpu = cog_max_capacity<CogKind::Gpu>::for_kind(
+        const_cast<ResourceKind&>(axis));
+    assert(pcie_on_gpu == 0ULL);
 
     // Axes the substrate doesn't expose return 0.
     axis = ResourceKind::NicQp;
@@ -206,21 +219,32 @@ static void test_fits_cog_concurrent_sum_overflow() {
 // ── Group 9: Boundary — demand == ceiling admits ──────────────────
 static void test_fits_cog_boundary_saturate() {
     // Exact-saturate cases admit (comparison is strict >, not >=).
+    // HbmBytes ceiling = 384 GB (post-audit, MI325X coverage).
     using Sat = effects::ConcurrentRow<
         effects::SmBudget<320>,
-        effects::HbmBytes<256ULL * 1024 * 1024 * 1024>>;
+        effects::HbmBytes<384ULL * 1024 * 1024 * 1024>>;
     static_assert(cog::FitsCog<Sat, cog::CogKind::Gpu>);
 
     // One-over fails on ANY axis.
     using OneOverSm = effects::ConcurrentRow<
         effects::SmBudget<321>,
-        effects::HbmBytes<256ULL * 1024 * 1024 * 1024>>;
+        effects::HbmBytes<384ULL * 1024 * 1024 * 1024>>;
     static_assert(!cog::FitsCog<OneOverSm, cog::CogKind::Gpu>);
 
     using OneOverHbm = effects::ConcurrentRow<
         effects::SmBudget<320>,
-        effects::HbmBytes<256ULL * 1024 * 1024 * 1024 + 1>>;
+        effects::HbmBytes<384ULL * 1024 * 1024 * 1024 + 1>>;
     static_assert(!cog::FitsCog<OneOverHbm, cog::CogKind::Gpu>);
+
+    // MI325X shipped 2024 with 288 GB HBM3E — must admit on
+    // CogKind::Gpu.  This is the regression witness for the audit
+    // fix that bumped GPU HbmBytes ceiling from 256GB → 384GB.
+    // A 288GB Row failed the old (256GB) ceiling — the audit
+    // tightens the spec to actual silicon, not paper "max + 25%
+    // headroom" arithmetic that under-counted.
+    using MI325XHbm = effects::ConcurrentRow<
+        effects::HbmBytes<288ULL * 1024 * 1024 * 1024>>;
+    static_assert(cog::FitsCog<MI325XHbm, cog::CogKind::Gpu>);
 }
 
 // ── Group 10: fits_cog_caps_runtime — runtime caps integration ────
@@ -270,7 +294,7 @@ static void test_fits_cog_caps_runtime_h100() {
         cog::fits_cog_caps_runtime<OverSm, cog::CogKind::Gpu>(h100);
     assert(!runtime_over);
 
-    // HBM > h100's 80 GB but under family ceiling 256 GB —
+    // HBM > h100's 80 GB but under family ceiling 384 GB —
     // same compile-time-admits / runtime-rejects pattern.
     using OverHbm = effects::ConcurrentRow<
         effects::HbmBytes<200ULL * 1024 * 1024 * 1024>>;
