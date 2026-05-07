@@ -235,6 +235,7 @@ crucible_test(test_bridges_compile)
 crucible_test(test_effects_compile)
 crucible_test(test_resources)
 crucible_test(test_concurrent)
+crucible_test(test_cog_identity)
 crucible_test(test_concurrent_compile)
 crucible_test(test_auto_split)
 crucible_test(test_diagnostic_compile)
@@ -771,6 +772,25 @@ function(crucible_neg_compile_effects_test name expected_diag)
     PASS_REGULAR_EXPRESSION "${expected_diag}")
 endfunction()
 
+# Sister harness for cog_neg/.  Mirrors the safety_neg / sessions_neg
+# / effects_neg pattern — only the source directory and label differ.
+# Cog-side neg-compile tests (GAPS-185 onward) live in test/cog_neg/
+# rather than test/effects_neg/ so the per-Cog soundness gates
+# (content_hash precondition, IsComputeKind concept, FOUND-I04 frozen
+# positions on CogLevel/CogKind, future TargetCaps fits) sit
+# adjacent to the cog/ headers they probe.
+function(crucible_neg_compile_cog_test name expected_diag)
+  add_executable(${name} EXCLUDE_FROM_ALL
+    ${CMAKE_CURRENT_SOURCE_DIR}/cog_neg/${name}.cpp)
+  target_link_libraries(${name} PRIVATE crucible)
+  add_test(NAME ${name}
+    COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR}
+            --target ${name} --config $<CONFIG>)
+  set_tests_properties(${name} PROPERTIES
+    LABELS "cog_neg"
+    PASS_REGULAR_EXPRESSION "${expected_diag}")
+endfunction()
+
 # GAPS-047: Delegate<T, K> now bonds recipient-crash propagation into
 # the public crash walker.  This fixture pins the unrecovered outbound
 # delegated-protocol case at the consteval assertion boundary.
@@ -1021,6 +1041,24 @@ crucible_neg_compile_effects_test(neg_concurrent_row_overflow_rejected
     "static assertion failed|ConcurrentlySchedulable|constraint|GAPS-190")
 crucible_neg_compile_effects_test(neg_concurrent_row_non_resource_tag
     "constraint|constraints not satisfied|ResourceTag|ConcurrentRow|GAPS-190")
+
+# ─── GAPS-185 (#1210): cog/CogIdentity.h soundness gates ───────────
+#
+# Two HS14 fixtures locking the dual gates on CogIdentity:
+# * zero-uuid rejection — content_hash's pre clause refuses
+#   default-constructed (uuid.is_zero() true) CogIdentity at
+#   precondition contract evaluation.  Witnesses the data-invariant
+#   gate that prevents KernelCache slot aliasing across uninitialized
+#   Cogs.
+# * non-compute kind rejection — IsComputeKind<K> concept refuses
+#   non-compute CogKind atoms (NicPort, NvSwitch, ...) at template
+#   substitution time.  Witnesses the concept gate that prevents
+#   future per-Cog Mimic factories from accepting non-compute Cogs
+#   as compute targets.
+crucible_neg_compile_cog_test(neg_cog_identity_content_hash_zero_uuid
+    "static assertion|contract|precondition|content_hash|is_zero|non-constant|GAPS-185")
+crucible_neg_compile_cog_test(neg_cog_identity_compute_kind_rejects_nic
+    "constraint|constraints not satisfied|IsComputeKind|kernel_count_for|GAPS-185")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #

@@ -80,6 +80,27 @@ namespace source {
     // mixes both and a reviewer needs to see which is load-bearing.
     struct Durable      {};
     struct Computed     {};
+    // Vendor: hardware-vendor-supplied attributes — model strings,
+    // firmware/BIOS revisions, microarchitecture identifiers reported
+    // by the device itself (PCIe config space, BMC, SMBIOS, vendor
+    // ioctl).  Distinct from FromConfig (operator-supplied) and
+    // FromInternal (computed locally) because vendor truth needs its
+    // own provenance lane: it can be wrong (vendor bug, counterfeit
+    // hardware), it lags the wire (firmware updates change behavior
+    // before the metadata advertises it), and it crosses a real trust
+    // boundary (driver / firmware code path Crucible doesn't own).
+    // Cog identity (cog/CogIdentity.h, GAPS-185) is the canonical
+    // consumer.
+    struct Vendor       {};
+    // Calibrated: measured at startup or runtime by Crucible's own
+    // calibration pass against real silicon — cross-checked against
+    // Vendor truth and used as the authoritative source when the two
+    // disagree (e.g. Vendor reports tflops_fp16 from datasheet,
+    // Calibrated reports the actual achieved number on this die at
+    // this thermal headroom).  Per-Cog TargetCaps (GAPS-186) split
+    // into Vendor-tagged vs Calibrated-tagged subsets so the planner
+    // can refuse to schedule against unverified vendor claims.
+    struct Calibrated   {};
 }
 
 namespace trust {
