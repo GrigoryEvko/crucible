@@ -173,7 +173,14 @@ inline Header read_header(Reader& r) {
     Header h{};
     h.magic   = r.r<uint32_t>();
     h.version = r.r<uint32_t>();
-    h.kind    = static_cast<TraceNodeKind>(r.r<uint8_t>());
+    // ── WRAP-Serialize-6 (#1015) — typed widening at deserialize boundary ──
+    // The byte on disk could be in [4, 255] under corruption or version
+    // skew.  ValidTraceNodeKindRaw's ctor pre-clause rejects any byte
+    // past TERMINAL via P1494R5 partial-program correctness — the
+    // deserialize path then handles the contract violation through the
+    // standard handle_contract_violation path (logged, terminated).
+    h.kind    = make_trace_node_kind(
+                    ValidTraceNodeKindRaw{r.r<uint8_t>()});
     uint8_t pad7[7]{};
     r.read_bytes(pad7, 7);
     h.merkle_hash  = MerkleHash{r.r<uint64_t>()};

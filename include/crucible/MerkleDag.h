@@ -349,6 +349,53 @@ enum class TraceNodeKind : uint8_t {
   TERMINAL,  // End of trace
 };
 
+// ── Validated TraceNodeKind raw byte (#1015 WRAP-Serialize-6) ──────────────
+//
+// Cipher deserialize and TraceLoader paths recover a TraceNodeKind's
+// underlying byte from disk and must widen it back into the enum.  An
+// unguarded `static_cast<TraceNodeKind>(byte)` is unsound: a corrupted
+// .crtrace file or version skew could deliver a byte in [4, 255], and
+// the resulting "invalid TraceNodeKind enumerator" cascades into the
+// exhaustive `switch` at recompute_merkle (§I-axiom InitSafe ceiling
+// vanishes), into walk_and_recompute_merkle's kind comparisons (silent
+// wrong-control-flow when none of the cases match), and into iterate
+// loops that branch on REGION/BRANCH/LOOP/TERMINAL (the unmatched byte
+// is treated as if it were *some* valid kind by every comparison that
+// happens to fail equality and fall through).
+//
+// `ValidTraceNodeKindRaw` is the type-system gate at that boundary.
+// Refined<bounded_above<TERMINAL>, uint8_t> admits 0 (REGION) through
+// static_cast<uint8_t>(TERMINAL) (currently 3) and rejects every byte
+// past TERMINAL.  The ctor's `pre(bounded_above<TERMINAL>(v))` clause
+// fires on out-of-range bytes; in constexpr context it's rejected as a
+// non-constant expression per P1494R5 (the neg-compile fixtures drive
+// both directions of drift — boundary edge at TERMINAL+1, and wide
+// miss at UINT8_MAX).
+//
+// Zero-cost: regime-1 EBO collapse — sizeof(ValidTraceNodeKindRaw) ==
+// sizeof(uint8_t) == 1B.  The wrapper exists for the construction-time
+// invariant; downstream readers immediately widen back to the enum.
+//
+// Use:
+//   h.kind = make_trace_node_kind(ValidTraceNodeKindRaw{byte_from_disk});
+// at every uint8_t → TraceNodeKind widening site.  `make_trace_node_kind`
+// is the only well-typed widening API; it consumes the proof-of-bound
+// in the ValidTraceNodeKindRaw value.
+using ValidTraceNodeKindRaw = ::crucible::safety::Refined<
+    ::crucible::safety::bounded_above<
+        static_cast<uint8_t>(TraceNodeKind::TERMINAL)>,
+    uint8_t>;
+
+// Construct a TraceNodeKind from a validated byte.  The Refined<>
+// argument *is* the proof that the value is in [0, TERMINAL].
+// `gnu::const`: depends only on the argument, no global state.
+// `noexcept`: the predicate is already established at the Refined ctor;
+// this widening cannot fail.
+[[nodiscard, gnu::const]] inline constexpr
+TraceNodeKind make_trace_node_kind(ValidTraceNodeKindRaw raw) noexcept {
+    return static_cast<TraceNodeKind>(raw.value());
+}
+
 // Base node in the Merkle DAG. Arena-allocated, never freed individually.
 struct TraceNode {
   TraceNodeKind kind{};     // 1B

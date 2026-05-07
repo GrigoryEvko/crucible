@@ -1603,6 +1603,30 @@ crucible_neg_compile_test(neg_transaction_log_count_above_cap
 crucible_neg_compile_test(neg_transaction_log_count_uint32_max
   "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
 
+# WRAP-Serialize-6 (#1015) — ValidTraceNodeKindRaw =
+#   safety::Refined<safety::bounded_above<TraceNodeKind::TERMINAL>, uint8_t>
+# pinning the typed gate at every uint8_t → TraceNodeKind widening
+# site (Cipher deserialize via Serialize::read_header is the canonical
+# example).  HS14 mandate: ≥2 negative-compile fixtures per soundness
+# gate, each demonstrating a distinct mismatch class.
+#
+#   * neg_trace_node_kind_above_terminal.cpp — boundary edge
+#     (= TERMINAL + 1, off-by-one).  Catches drift where the bound
+#     widens from `bounded_above<TERMINAL>` to `bounded_above<TERMINAL+K>`
+#     for some K >= 1, silently admitting a byte that names no valid
+#     TraceNodeKind enumerator.
+#   * neg_trace_node_kind_uint8_max.cpp — wide miss (= UINT8_MAX).
+#     Catches "drop the bound entirely" regression where
+#     ValidTraceNodeKindRaw degenerates from
+#     `Refined<bounded_above<TERMINAL>, uint8_t>` into a plain
+#     `uint8_t` typedef; under that drift any byte is silently accepted
+#     at construction and the type-system gate that fires before any
+#     DAG traversal call ever lands disappears.
+crucible_neg_compile_test(neg_trace_node_kind_above_terminal
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_trace_node_kind_uint8_max
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices
