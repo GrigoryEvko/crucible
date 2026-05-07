@@ -84,7 +84,20 @@ struct HardwareProfile {
   // ── Register file (per SM) ─────────────────────────────────────
   // Z3: (define-const regs_per_sm Int 65536)
   uint32_t regs_per_sm = 65536;     // 32-bit registers per SM (256KB = 65536 × 4B)
-  uint16_t max_regs_per_thread = 255; // Hardware cap on registers per thread
+
+  // The hardware cap on registers per thread.  255 on every shipped
+  // backend (NVIDIA Hopper / Blackwell SM_VERSION ≥ 80, AMD CDNA3+/
+  // RDNA3+).  Reuses the `ValidRegsPerThread` alias defined for
+  // KernelConfig::regs_per_thread (#897) — both fields obey the same
+  // structural constraint (≤ 255) and share the same ctor gate, so
+  // re-typing the cap closes the *receiving* end of the validate_config
+  // C2 check (`cfg.regs_per_thread.value() ≤ hw.max_regs_per_thread`):
+  // a hostile preset writer or deserialised snapshot setting this
+  // field to 999 or UINT16_MAX is structurally rejected at the
+  // type-system boundary, just like the kernel-side counterpart.
+  // Layout: regime-1 EBO collapse keeps sizeof == sizeof(uint16_t),
+  // preserving the trailing `pad0` slot.
+  ValidRegsPerThread max_regs_per_thread{uint16_t{255}};
   uint16_t pad0 = 0;
 
   // ── On-chip memory (bytes per SM) ──────────────────────────────
@@ -183,7 +196,7 @@ struct HardwareProfile {
   hw.warp_size = 32;
   hw.max_warps_per_sm = 64;
   hw.regs_per_sm = 65536;
-  hw.max_regs_per_thread = 255;
+  hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
   hw.smem_per_sm = 233472;        // 228KB
   hw.tmem_per_sm = 65536;         // 64KB tensor memory
   hw.l1_per_sm = 262144;          // 256KB
@@ -215,7 +228,7 @@ struct HardwareProfile {
   hw.warp_size = 32;
   hw.max_warps_per_sm = 64;
   hw.regs_per_sm = 65536;
-  hw.max_regs_per_thread = 255;
+  hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
   hw.smem_per_sm = 233472;        // 228KB
   hw.tmem_per_sm = 0;             // No tensor memory
   hw.l1_per_sm = 262144;          // 256KB
@@ -247,7 +260,7 @@ struct HardwareProfile {
   hw.warp_size = 64;              // Wavefront size
   hw.max_warps_per_sm = 32;       // Max wavefronts per CU
   hw.regs_per_sm = 65536;         // 256KB VGPR per CU
-  hw.max_regs_per_thread = 255;
+  hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
   hw.smem_per_sm = 65536;         // 64KB LDS per CU
   hw.tmem_per_sm = 0;
   hw.l1_per_sm = 131072;          // 128KB L1 vector cache per CU
@@ -279,7 +292,7 @@ struct HardwareProfile {
   hw.warp_size = 32;
   hw.max_warps_per_sm = 64;
   hw.regs_per_sm = 65536;
-  hw.max_regs_per_thread = 255;
+  hw.max_regs_per_thread = ValidRegsPerThread{uint16_t{255}};
   hw.smem_per_sm = 167936;        // 164KB
   hw.tmem_per_sm = 0;
   hw.l1_per_sm = 196608;          // 192KB
@@ -351,7 +364,7 @@ struct KernelConfig {
   // C1: shared memory fits in per-SM budget
   if (cfg.smem_bytes > hw.smem_per_sm) return false;
   // C2: register count within hardware limit
-  if (cfg.regs_per_thread.value() > hw.max_regs_per_thread) return false;
+  if (cfg.regs_per_thread.value() > hw.max_regs_per_thread.value()) return false;
   // C3: at least one warp per block
   if (cfg.warps_per_block == 0) return false;
   // C4: threads per block ≤ hardware max (1024 on NVIDIA, 1024 on AMD)
