@@ -6,6 +6,37 @@
 //
 // CrucibleMeta is binary-compatible with crucible::TensorMeta (168 bytes).
 // All enum types use the same int8_t ordinals as c10::ScalarType etc.
+//
+// ── Typed-boundary discipline (GAPS-094..096) ────────────────────────
+//
+// The C ABI fields below remain raw (`void*`, `const char*`) because
+// ctypes consumers cannot interpret C++ wrapper types.  Inside C++,
+// every value crossing this boundary is immediately re-typed via the
+// helpers in vessel_api_typed.h:
+//
+//   * CrucibleHandle          → Tagged<Vigil*, source::ABIBoundary>
+//                               via `as_vigil_typed(h)` (GAPS-094).
+//   * const CrucibleMeta*     → Tagged<const TensorMeta*, ABIBoundary>
+//                               via `as_meta_typed(metas, n)` (GAPS-095).
+//   * CrucibleMeta::data_ptr  → Tagged<void*, source::External>
+//                               via `data_ptr_typed(typed_meta, i)`
+//                               (GAPS-096) — provenance threads into
+//                               TensorMeta-consuming code without
+//                               changing the wire-struct layout.
+//   * schema name lookup      → Tagged<const char*, source::Sanitized>
+//                               via `schema_name_typed(schema_hash)`
+//                               (GAPS-096) — distinguishes the
+//                               post-validation pointer from raw FFI
+//                               input.
+//
+// ── ABI version stamp ────────────────────────────────────────────────
+//
+// `crucible_abi_version()` returns a uint64_t that identifies the wire
+// layout of CrucibleMeta + CrucibleDispatchResult + the function
+// signatures below.  Python loaders compare the value against the
+// constant baked into crucible_native.py at startup; mismatched .so
+// vs .py refuses to construct the controller.  Bump the constant when
+// adding/removing functions or changing struct layout.
 
 #pragma once
 
@@ -65,6 +96,24 @@ typedef struct {
     uint8_t pad[2];
     uint32_t op_index;
 } CrucibleDispatchResult;
+
+// ── ABI version (GAPS-096) ───────────────────────────────────────────
+
+// CRUCIBLE_VESSEL_ABI_VERSION — identifies the wire layout of every
+// extern "C" symbol declared in this header AND the byte layout of
+// CrucibleMeta / CrucibleDispatchResult.  Increment on any of:
+//   * Adding / removing / renaming a function.
+//   * Changing argument types or counts.
+//   * Re-laying-out CrucibleMeta or CrucibleDispatchResult.
+// Python ctypes consumers cross-check via crucible_abi_version() at
+// load.  The constant is also exposed as a #define so C consumers can
+// bake it into their own startup checks.
+#define CRUCIBLE_VESSEL_ABI_VERSION 1ULL
+
+// Returns CRUCIBLE_VESSEL_ABI_VERSION as compiled into the loaded .so.
+// Never aborts — pure constant return.  Used by crucible_native.py
+// __init__ to guard against .so/.py drift.
+CRUCIBLE_VESSEL_API uint64_t crucible_abi_version(void) CRUCIBLE_VESSEL_NOEXCEPT;
 
 // ── Lifecycle ────────────────────────────────────────────────────────
 

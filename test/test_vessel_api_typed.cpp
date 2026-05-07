@@ -15,8 +15,10 @@
 
 namespace {
 
+using crucible::vessel::TypedDataPtr;
 using crucible::vessel::TypedHandle;
 using crucible::vessel::TypedMeta;
+using crucible::vessel::TypedSchemaName;
 
 // ── Type-shape pins (compile-time invariants) ──────────────────────
 //
@@ -53,6 +55,46 @@ static_assert(!std::is_convertible_v<
 static_assert(!std::is_convertible_v<
     crucible::safety::Tagged<const crucible::TensorMeta*, crucible::safety::source::External>,
     TypedMeta>);
+
+// ── GAPS-096 type-shape pins ──────────────────────────────────────
+//
+// data_ptr_typed and schema_name_typed must EBO-collapse to the bare
+// pointer width — same regime-1 guarantee that vessel_api_typed.h
+// makes for TypedHandle and TypedMeta.  Strong-distinction pins
+// witness that the wrong-tag direction (External vs Sanitized vs
+// ABIBoundary) refuses implicit conversion at the type level —
+// these are the load-bearing properties the neg-compile fixtures
+// rely on.
+
+static_assert(std::is_same_v<
+    TypedDataPtr,
+    crucible::safety::Tagged<void*, crucible::safety::source::External>>);
+static_assert(sizeof(TypedDataPtr) == sizeof(void*));
+static_assert(alignof(TypedDataPtr) == alignof(void*));
+static_assert(std::is_trivially_copy_constructible_v<TypedDataPtr>);
+
+static_assert(std::is_same_v<
+    TypedSchemaName,
+    crucible::safety::Tagged<const char*, crucible::safety::source::Sanitized>>);
+static_assert(sizeof(TypedSchemaName) == sizeof(const char*));
+static_assert(alignof(TypedSchemaName) == alignof(const char*));
+static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
+
+// data_ptr provenance distinct from ABIBoundary (the typed-meta
+// container's tag): a value with the wrong tag cannot launder into
+// the typed-data-ptr slot.
+static_assert(!std::is_convertible_v<
+    crucible::safety::Tagged<void*, crucible::safety::source::ABIBoundary>,
+    TypedDataPtr>);
+static_assert(!std::is_convertible_v<
+    crucible::safety::Tagged<void*, crucible::safety::source::Sanitized>,
+    TypedDataPtr>);
+
+// schema_name provenance distinct from External: validated names
+// cannot be confused with raw FFI input.
+static_assert(!std::is_convertible_v<
+    crucible::safety::Tagged<const char*, crucible::safety::source::External>,
+    TypedSchemaName>);
 
 // ── Runtime smoke harness ──────────────────────────────────────────
 
@@ -171,6 +213,98 @@ void test_meta_zero_n_with_null() {
            "metas_from_typed of null typed view must round-trip to nullptr");
 }
 
+void test_data_ptr_typed() {
+    // Build a meta array and verify data_ptr_typed reads the same
+    // bits the wire struct holds, just with provenance-tagging.
+    CrucibleMeta arr[3]{};
+    arr[0].data_ptr = reinterpret_cast<void*>(static_cast<std::uintptr_t>(0xAAAA0000));
+    arr[1].data_ptr = reinterpret_cast<void*>(static_cast<std::uintptr_t>(0xBBBB0000));
+    arr[2].data_ptr = reinterpret_cast<void*>(static_cast<std::uintptr_t>(0xCCCC0000));
+
+    auto typed_arr = crucible::vessel::as_meta_typed(arr, 3);
+
+    auto p0 = crucible::vessel::data_ptr_typed(typed_arr, 0);
+    auto p1 = crucible::vessel::data_ptr_typed(typed_arr, 1);
+    auto p2 = crucible::vessel::data_ptr_typed(typed_arr, 2);
+
+    EXPECT(p0.value() == arr[0].data_ptr,
+           "data_ptr_typed[0] must read the wire pointer");
+    EXPECT(p1.value() == arr[1].data_ptr,
+           "data_ptr_typed[1] must read the wire pointer");
+    EXPECT(p2.value() == arr[2].data_ptr,
+           "data_ptr_typed[2] must read the wire pointer");
+
+    // Distinct inputs → distinct typed values, no caching/aliasing.
+    EXPECT(p0.value() != p1.value(),
+           "distinct meta data_ptrs must yield distinct typed values");
+    EXPECT(p1.value() != p2.value(),
+           "distinct meta data_ptrs must yield distinct typed values");
+
+    // Layout invariant: the typed wrapper holds the same bytes as
+    // the bare void* — regime-1 EBO collapse claim.
+    std::array<std::byte, sizeof(TypedDataPtr)> typed_bytes{};
+    std::memcpy(typed_bytes.data(), &p0, sizeof(p0));
+    std::array<std::byte, sizeof(void*)> raw_bytes{};
+    std::memcpy(raw_bytes.data(), &arr[0].data_ptr, sizeof(void*));
+    EXPECT(typed_bytes == raw_bytes,
+           "TypedDataPtr layout must be byte-identical to void*");
+}
+
+void test_schema_name_typed() {
+    // Register a name through the C++-side API (the test target links
+    // libcrucible, not libcrucible_vessel — so we drive the typed
+    // helper through the same global SchemaTable the C-ABI thunk
+    // would use).  Verifies schema_name_typed wraps the raw lookup
+    // result with source::Sanitized provenance.
+    constexpr uint64_t hash_a = 0xA1A2A3A4A5A6A7A8ULL;
+    constexpr uint64_t hash_b = 0xB1B2B3B4B5B6B7B8ULL;
+
+    auto& table = crucible::global_schema_table();
+    if (!table.is_sealed()) {
+        auto view = table.mint_mutable_view();
+        crucible::register_schema_name(
+            view,
+            crucible::SchemaHash{hash_a},
+            crucible::SchemaTable::SanitizedName{"aten::test_op_a"});
+        crucible::register_schema_name(
+            view,
+            crucible::SchemaHash{hash_b},
+            crucible::SchemaTable::SanitizedName{"aten::test_op_b"});
+    }
+
+    auto a = crucible::vessel::schema_name_typed(crucible::SchemaHash{hash_a});
+    auto b = crucible::vessel::schema_name_typed(crucible::SchemaHash{hash_b});
+
+    EXPECT(a.value() != nullptr, "registered name a must lookup");
+    EXPECT(b.value() != nullptr, "registered name b must lookup");
+    EXPECT(a.value() != b.value(),
+           "distinct schema hashes must yield distinct name pointers");
+
+    // Idempotent re-lookup.
+    auto a2 = crucible::vessel::schema_name_typed(crucible::SchemaHash{hash_a});
+    EXPECT(a2.value() == a.value(),
+           "repeated lookup must return same interned pointer (stability)");
+
+    // Unknown hash returns null typed view — caller branches on
+    // .value() == nullptr exactly as on the raw API.
+    auto missing = crucible::vessel::schema_name_typed(
+        crucible::SchemaHash{0xDEADC0DEDEADC0DEULL});
+    EXPECT(missing.value() == nullptr,
+           "unknown schema hash must return null typed view");
+}
+
+void test_abi_version_constant() {
+    // The C ABI version stamp must be a non-zero compile-time constant.
+    // The .so-side `crucible_abi_version()` function returns this same
+    // macro, so verifying the macro here is sufficient at TU level —
+    // a runtime cross-check of the .so is what
+    // crucible_native.py::_check_abi performs at load time.
+    static_assert(CRUCIBLE_VESSEL_ABI_VERSION != 0,
+                  "ABI version must be non-zero (zero is reserved)");
+    EXPECT(CRUCIBLE_VESSEL_ABI_VERSION >= 1,
+           "ABI version must be a positive integer");
+}
+
 void test_handle_distinct_pointers() {
     // Two distinct Vigil-shaped storage blocks produce distinct
     // typed handles whose `.value()` differs — verifies the wrapper
@@ -197,6 +331,9 @@ int main() {
     test_handle_roundtrip();
     test_meta_roundtrip();
     test_meta_zero_n_with_null();
+    test_data_ptr_typed();
+    test_schema_name_typed();
+    test_abi_version_constant();
     test_handle_distinct_pointers();
 
     if (g_failures != 0) {

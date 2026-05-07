@@ -100,6 +100,15 @@ static bool validate_ffi_metas(const CrucibleMeta* metas, uint32_t n_metas) noex
 
 extern "C" {
 
+uint64_t crucible_abi_version(void) noexcept {
+    // ABI version stamp (GAPS-096) — mirrors the constant declared in
+    // vessel_api.h.  Python `crucible_native.py` calls this at load
+    // and refuses to construct the controller on mismatch.  Bump the
+    // header constant when the C ABI surface changes; the Python side
+    // ships the same constant in EXPECTED_ABI_VERSION.
+    return CRUCIBLE_VESSEL_ABI_VERSION;
+}
+
 CrucibleHandle crucible_create(void) noexcept {
     return new crucible::Vigil();
 }

@@ -28,6 +28,7 @@
 #include <crucible/TraceRing.h>
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
+#include <crucible/safety/Tagged.h>
 
 #include "vessel_api_typed.h"
 
@@ -106,10 +107,24 @@ struct ScalarArgs {
 // SchemaHash (16B slot) + is_mutable parallel array (1B) = 34KB total.
 // Fits comfortably in L1d (48KB Zen 4). The parallel array avoids
 // bloating slots to 24B which would spill L1d.
+//
+// `key` carries the c10::OperatorHandle pointer that PyTorch handed
+// to us across the boxed-fallback ABI.  GAPS-096 wraps it in
+// `Tagged<const void*, source::External>` to thread the FFI
+// provenance into the type system: the pointer is owned by ATen's
+// schema registry, never freed for the program's lifetime, and treated
+// as identity-only here (compared, never dereferenced).  The wrapper
+// is regime-1 EBO collapse, so the slot stays at 16B and the cache
+// stays L1-resident.
 struct SchemaHashSlot {
-    const void*          key  = nullptr;
-    crucible::SchemaHash hash;
+    safety::Tagged<const void*, safety::source::External> key{nullptr};
+    crucible::SchemaHash                                  hash;
 };
+
+static_assert(sizeof(SchemaHashSlot) == 16,
+              "SchemaHashSlot must remain 16B for the L1d cache budget — "
+              "Tagged<const void*, source::External> is regime-1 EBO collapse "
+              "so its sizeof equals sizeof(const void*).");
 
 static constexpr uint32_t SCHEMA_CACHE_CAP  = 2048;
 static constexpr uint32_t SCHEMA_CACHE_MASK = SCHEMA_CACHE_CAP - 1;
@@ -128,7 +143,7 @@ struct SchemaInfo {
     const auto idx = (reinterpret_cast<uintptr_t>(&op) >> 4)
                      & SCHEMA_CACHE_MASK;
     auto& slot = schema_cache[idx];
-    if (slot.key == &op) [[likely]]
+    if (slot.key.value() == &op) [[likely]]
         return {slot.hash, schema_is_mutable[idx]};
 
     // Cache miss: compute FNV-1a over "namespace::name.overload".
@@ -173,7 +188,12 @@ struct SchemaInfo {
     // argument has AliasInfo with isWrite() == true.
     const bool mutable_op = schema.is_mutable();
 
-    slot.key  = &op;
+    // Re-tag at the FFI source: the OperatorHandle pointer just
+    // crossed the boxed-fallback boundary, so it carries source::External
+    // until something downstream proves otherwise.  Construction is
+    // explicit per safety::Tagged's API; the wrapper is move-assigned
+    // into the slot at zero runtime cost.
+    slot.key  = safety::Tagged<const void*, safety::source::External>{&op};
     slot.hash = schema_hash;
     schema_is_mutable[idx] = mutable_op;
     return {schema_hash, mutable_op};

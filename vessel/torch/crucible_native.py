@@ -46,6 +46,28 @@ _FNV_PRIME  = 0x100000001B3
 _MASK64     = (1 << 64) - 1
 
 
+# =====================================================================
+# C ABI version stamp (GAPS-096)
+# =====================================================================
+#
+# Mirrors `CRUCIBLE_VESSEL_ABI_VERSION` in vessel/torch/vessel_api.h.
+# Bumped together with the C ABI surface; the loader compares this
+# constant against the value returned by `crucible_abi_version()` on
+# the loaded .so and refuses construction on mismatch.  Catches the
+# ".py was redeployed but libcrucible_vessel.so is stale" failure
+# before any dispatch runs.
+
+EXPECTED_ABI_VERSION = 1
+
+
+class CrucibleAbiMismatchError(RuntimeError):
+    """Raised when the loaded libcrucible_vessel.so reports a
+    crucible_abi_version() value that disagrees with this Python
+    module's EXPECTED_ABI_VERSION constant.  Usually means the .so
+    needs rebuilding (or the .py is stale).  Includes both observed
+    and expected values for debugging."""
+
+
 def _fnv1a(data: bytes) -> int:
     """FNV-1a 64-bit hash, identical to C++ fnv1a_bytes()."""
     h = _FNV_OFFSET
@@ -83,9 +105,30 @@ class _VesselLib:
                 "  cmake --preset default && cmake --build --preset default")
         self._lib = ctypes.CDLL(path)
         self._setup()
+        self._check_abi(path)
+
+    def _check_abi(self, path: str):
+        """Verify the loaded .so's CRUCIBLE_VESSEL_ABI_VERSION matches
+        EXPECTED_ABI_VERSION.  Raises CrucibleAbiMismatchError on
+        drift — usually means the .so was rebuilt with a different
+        ABI than this .py knows about.  Runs immediately after
+        argtypes are declared so the call signature is well-formed."""
+        observed = int(self._lib.crucible_abi_version())
+        if observed != EXPECTED_ABI_VERSION:
+            raise CrucibleAbiMismatchError(
+                f"libcrucible_vessel.so ABI mismatch:\n"
+                f"  loaded from   : {path}\n"
+                f"  observed ABI  : {observed}\n"
+                f"  expected ABI  : {EXPECTED_ABI_VERSION}\n"
+                f"Rebuild Crucible after a vessel_api.h change:\n"
+                f"  cmake --build --preset default")
 
     def _setup(self):
         L = self._lib
+
+        # ABI version (declared first so _check_abi can call it).
+        L.crucible_abi_version.restype = ctypes.c_uint64
+        L.crucible_abi_version.argtypes = []
 
         # Lifecycle
         L.crucible_create.restype = ctypes.c_void_p

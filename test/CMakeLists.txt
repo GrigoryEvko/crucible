@@ -3890,6 +3890,22 @@ crucible_neg_compile_test(neg_vessel_typed_handle_wrong_tag
 crucible_neg_compile_test(neg_vessel_typed_meta_wrong_tag
     "no match for|cannot convert|no matching function|could not convert")
 
+# ─── GAPS-096 — Vessel typed-accessor provenance fences ────────────
+#
+# data_ptr_typed returns Tagged<void*, source::External>; refusing
+# implicit conversion into Tagged<void*, source::Sanitized> stops a
+# refactor from laundering raw-FFI bytes into the trust-validated
+# slot the dispatch path expects.  schema_name_typed returns
+# Tagged<const char*, source::Sanitized>; refusing the converse
+# (Sanitized → External) keeps validated names and unsanitized FFI
+# input distinguishable at the type level.  Two fixtures, two
+# directions of the wrong-tag axis, so neither retag direction can
+# silently launder.
+crucible_neg_compile_test(neg_data_ptr_typed_wrong_tag
+    "conversion from|cannot convert|could not convert|no match for|no matching function")
+crucible_neg_compile_test(neg_schema_name_typed_wrong_tag
+    "conversion from|cannot convert|could not convert|no match for|no matching function")
+
 # ─── FOUND-C Phase 7 — PermissionedSessionHandle neg-compile harness
 #
 # Ten fixtures probing permission-flow violations that the type system

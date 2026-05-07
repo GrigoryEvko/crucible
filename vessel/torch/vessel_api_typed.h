@@ -19,6 +19,12 @@
 //   as_meta_typed(metas)      : const CrucibleMeta*      -> TypedMeta
 //   metas_from_typed(typed)   : TypedMeta                -> const CrucibleMeta*
 //
+//   TypedDataPtr              := Tagged<void*, source::External>
+//   data_ptr_typed(typed, i)  : TypedMeta, std::size_t   -> TypedDataPtr
+//
+//   TypedSchemaName           := Tagged<const char*, source::Sanitized>
+//   schema_name_typed(hash)   : SchemaHash               -> TypedSchemaName
+//
 // ── ABI invariant ──────────────────────────────────────────────────
 //
 // CrucibleMeta is layout-compatible with crucible::TensorMeta by
@@ -49,7 +55,9 @@
 #include "vessel_api.h"
 
 #include <crucible/Platform.h>
+#include <crucible/SchemaTable.h>
 #include <crucible/TensorMeta.h>
+#include <crucible/Types.h>
 #include <crucible/Vigil.h>
 #include <crucible/safety/Tagged.h>
 
@@ -176,6 +184,67 @@ inline void assert_plausible_meta_array(const CrucibleMeta* metas,
     TypedMeta typed) noexcept
 {
     return reinterpret_cast<const CrucibleMeta*>(typed.value());
+}
+
+// ── Per-meta data_ptr typed accessor (GAPS-096) ────────────────────
+//
+// Crucible's TensorMeta::data_ptr is a `void*` whose provenance is
+// "data pages PyTorch handed to us — externally-owned, lifetime
+// controlled by the autograd / caching-allocator graph on the Python
+// side".  Wrap it as `Tagged<void*, source::External>` so downstream
+// consumers (memory-plan recording, pool-shadow-handle binding, Cipher
+// snapshot serializer) carry the provenance into their own type-level
+// reasoning.  The wire-struct layout is unchanged — this helper is a
+// pure read-and-tag operation.
+//
+// `i` MUST be a valid index in the typed meta array (caller is the
+// authority on the array length, which travels via `n_metas` through
+// the C ABI).  Debug builds tighten this with a contract.
+
+using TypedDataPtr =
+    safety::Tagged<void*, safety::source::External>;
+
+static_assert(sizeof(TypedDataPtr) == sizeof(void*));
+static_assert(alignof(TypedDataPtr) == alignof(void*));
+static_assert(std::is_trivially_copy_constructible_v<TypedDataPtr>);
+
+[[nodiscard]] CRUCIBLE_HOT TypedDataPtr data_ptr_typed(
+    TypedMeta typed,
+    std::size_t i) noexcept
+{
+    const TensorMeta* metas = typed.value();
+    CRUCIBLE_DEBUG_ASSERT(metas != nullptr);
+    return TypedDataPtr{metas[i].data_ptr};
+}
+
+// ── Schema-name typed lookup (GAPS-096) ────────────────────────────
+//
+// `crucible::schema_name(SchemaHash)` returns a `const char*` borrowed
+// from the global SchemaTable's interned-name storage.  Names are
+// SanitizedName-validated at registration (length-bounded, NUL-walked,
+// stripped of "aten::" prefix as appropriate), so the returned
+// pointer's provenance is `source::Sanitized` — distinct from the raw
+// FFI input (`source::External`) that crucible_register_schema_name
+// receives.  Wrapping the lookup result in Tagged makes the boundary
+// crossing visible to downstream consumers (visualizer label
+// emission, structured-diagnostic builders, trace-export writers).
+//
+// Returns a typed nullptr when the hash is unknown — callers must
+// branch on `.value() == nullptr` exactly as they would on the raw
+// API.  Lifetime: borrowed from the SchemaTable; valid for the
+// lifetime of the program once registered.
+
+using TypedSchemaName =
+    safety::Tagged<const char*, safety::source::Sanitized>;
+
+static_assert(sizeof(TypedSchemaName) == sizeof(const char*));
+static_assert(alignof(TypedSchemaName) == alignof(const char*));
+static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
+
+[[nodiscard]] CRUCIBLE_HOT TypedSchemaName schema_name_typed(
+    crucible::SchemaHash schema_hash) noexcept
+{
+    return TypedSchemaName{crucible::schema_name(schema_hash)};
 }
 
 } // namespace crucible::vessel
