@@ -6224,6 +6224,7 @@ If team is smaller, timeline scales linearly. If hardware is limited, cross-vend
 - §35 Worked example: federated train across DCs
 - §36 Sequencing + risk register
 - §37 Cross-reference index + closing (this section)
+- §38 Plain Crucible-over-MRC integration
 
 ## §37.2 GAPS task index
 
@@ -6422,7 +6423,777 @@ That's defensible. Doesn't oversell. Maps to a concrete 12-month plan.
 ═══════════════════════════════════════════════════════════════════════
 ═══════════════════════════════════════════════════════════════════════
 
-**END OF DOCUMENT (§0–§37).**
+# §38. Plain Crucible-over-MRC Integration
+
+## §38.1 Scope and reading order
+
+OCP-MRC v1.0 was published 2026-03-21 (six-vendor authorship: AMD, Avago/Broadcom, Intel, Microsoft, NVIDIA, OpenAI). It standardizes a multipath-RDMA wire transport over best-effort Ethernet — restricted to RDMA Write + WriteIMM, packet spraying, separated reliability/transport ACKs, sender-based NSCC congestion control, dynamic MPR negotiation, source-routing via Structured EV or SRv6.
+
+This section documents the **plain integration**: Crucible's typed-session and permission stack composes ABOVE MRC as the L1 transport. MRC handles wire bytes + per-packet adaptation; Crucible adds compile-time protocol shape verification, peer-crash recovery, federation MPST, and per-vendor compile-time pinning.
+
+Two more ambitious regimes are NOT covered here and live in companion design notes:
+- **ESFC** (Episodically Static Fabric Config) — quiet MRC's per-packet adaptation; compile fabric config at Forge phase F; per-K-iteration recompile.
+- **CFTP** (Compiled Fabric Transport Protocol) — replace MRC's wire entirely with a Crucible-native format that exploits content-addressed plans, recipe-pinned reduction order, permission-typed paths.
+
+The plain integration is the deployable baseline. ESFC and CFTP are extension points to consider once the plain integration is in production. They are NOT prerequisites — plain integration completes independently and is sufficient for federation across MRC-equipped clusters and production training with MRC's empirical guarantees inherited.
+
+## §38.2 The composition layering
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                       User / Fixy DSL                         │
+│   fixy::all_reduce<topology = Topology::Ring, recipe = ...>   │
+└─────────────────────────┬────────────────────────────────────┘
+                          │
+┌─────────────────────────▼────────────────────────────────────┐
+│           Crucible typed session DSL                          │
+│   Loop<Send<RdmaWrite<T>, Recv<MrcSack, Continue>>>           │
+└─────────────────────────┬────────────────────────────────────┘
+                          │
+┌─────────────────────────▼────────────────────────────────────┐
+│           PermissionedSessionHandle                           │
+│   PermSet evolution + EpochedDelegate + VendorPinned          │
+└─────────────────────────┬────────────────────────────────────┘
+                          │
+┌─────────────────────────▼────────────────────────────────────┐
+│           Endpoint<MrcRdmaQp, Direction::Requestor, Ctx>      │
+│   into_session / into_recording_session / into_crash_watched  │
+└─────────────────────────┬────────────────────────────────────┘
+                          │
+┌─────────────────────────▼────────────────────────────────────┐
+│           cntp/MrcRdmaQp.h substrate (NEW)                    │
+│   ProducerHandle::try_push  → libmrc post_send                │
+│   ConsumerHandle::try_pop   → libmrc poll_cq                  │
+└─────────────────────────┬────────────────────────────────────┘
+                          │
+┌─────────────────────────▼────────────────────────────────────┐
+│           libmrc.h + libmrc_ctl.h (MRC verb-shaped API)       │
+└─────────────────────────┬────────────────────────────────────┘
+                          │
+┌─────────────────────────▼────────────────────────────────────┐
+│           MRC wire format (BTH + TSETH + METH + RETH +        │
+│                            payload, EV-spread)                │
+└─────────────────────────┬────────────────────────────────────┘
+                          │
+┌─────────────────────────▼────────────────────────────────────┐
+│           NIC firmware + switch fabric (per-vendor)           │
+└──────────────────────────────────────────────────────────────┘
+```
+
+The cntp/MrcRdmaQp.h layer is the only architectural delta — it's the Permissioned\* analog of `PermissionedSpscChannel` where the substrate is a NIC QP rather than shared-memory atomics. Everything above the substrate is existing Crucible machinery.
+
+## §38.3 MRC concept → Crucible primitive mapping
+
+| MRC spec concept | Crucible primitive | Binding |
+|---|---|---|
+| MRC QP (QP + Permission discipline) | `PermissionedMrcRdmaQp<T, EvUniverse, UserTag>` | New substrate; mirrors `PermissionedSpscChannel` shape |
+| Opcode taxonomy (0xC6-0xCB writes, 0xD1 ACK, 0xDC SACK, 0xDD NACK, 0xDE PROBE) | `Send<MrcWrite<T>, K>` / `Recv<MrcSack, K>` payload variants | Wire-level codec maps payload type ↔ opcode |
+| Reliability SACK separated from Transport ACK | Two parallel sessions: data-path + reliability-control | `Delegate<ReliabilityProto, K>` for the control channel |
+| EV state machine (GOOD/SKIP/ASSUMED_BAD/DENIED) | `safety::Machine<EvState>` per EV | `MachineSessionBridge` (GAPS-080, shipped) wires SACK m-bit signals to Machine transitions |
+| Dynamic MPR negotiation | `EpochedDelegate<MrcSession, K, MinMpr, MinGen>` | MPR change = epoch increment; sessions admitted at `MinEpoch ≤ peer.current_epoch` (GAPS-071, shipped) |
+| NACK reason codes (TRIMMED / NO_BITMAP / NO_PKT_BUFFER / NO_RESOURCE / PSN_OOR_WINDOW / UNEXP_EVENT) | `Stop_g<CrashClass>` graded variants + `detach_reason::*` | Per-reason routing — see §38.8 |
+| Trim NACK (optional) | `Stop_g<CrashClass::Trimmed>` (GAPS-063, shipped) | Wire DSCP_TRIMMED reception to graded Stop |
+| Reliability/EV probes | `cntp/MrcProbe.h` (new) — connectionless typed request/response | Endpoint Operations pattern (BTH.QPN=0x2 reserved) |
+| Port Status Update bitmap | `safety::Bits<PortFlags>` over `Refined<bounded_above<NumPorts>>` | Bits primitive shipped (GAPS-1079) |
+| Per-vendor RoCE behavior | `VendorPinned<VendorBackend::NV_Hopper, MrcRequestorProto<T>>` | GAPS-067/068 vendor-leq check shipped (8 neg-compile fixtures) |
+| max_psn_range bitmap | `cntp/MrcPsnWindow.h` (new) — atomic 64-bit bitmap with `Refined<bounded_above<MaxRange>, uint32_t>` PSN | New primitive; closest existing analog is AtomicSnapshot's seqlock |
+| NSCC sender-based CC (5-event interface) | `template <typename Policy> class CongestionControlled<MrcQp>` | New template; concept gate enumerates OnACK/OnNACK/OnInferredLoss/OnNewData/OnSend |
+| Capability negotiation per QP | `EpochCtx<E, G>` capability assertion at handshake | Already shipped (Session.h:307-313) |
+| BTH.QPN reserved value 0x2 (Endpoint Operations) | Connectionless typed bus; not on session-typed path | New cntp/MrcEndpointBus.h |
+| mTLS/kTLS for federation | `cntp/MtlsTransport.h` (GAPS-126) wraps MRC verb posting | Existing session-CT machinery (`sessions/SessionCT.h`) ships |
+| Federation across orgs | `FederationProtocol<KeyTag>` 3-party MPST + `FederatedPermission<Org>` | Both shipped (GAPS-039, GAPS-043) — see §38.9 |
+| Crash on peer death (NAK_REMOTE_OPERATIONAL_ERROR) | `CrashWatchedHandle::OneShotFlag` + `permission_inherit` | GAPS-044/045 shipped — wire NIC IB_WC_RETRY_EXC_ERR to OneShotFlag |
+
+## §38.4 Operational preconditions
+
+Before M0 of plain MRC integration begins, a checklist of fabric-side, per-NIC, and software-side conditions must hold. None are Crucible-internal; all are external dependencies that gate the whole effort.
+
+**Fabric-side:**
+
+- **PFC + ECN configured** per GAPS-1257 (`cntp/RoceConfig.h`). MRC over RoCEv2 without PFC + DCQCN tuning collapses on first congestion event — Microsoft's published Azure RDMA work cites this as the #1 outage cause for hyperscale RDMA fabrics. The PFC priority (typically 3) must be honored end-to-end across switches.
+- **Switch fabric routing model** — ECMP (default), Structured EV (per MRC §9.3.2), or SRv6 (per MRC §9.3.5). Each implies different switch configuration; SRv6 specifically requires SRv6-capable switches (Tomahawk 5, Spectrum-4, etc.). The MRC paper §2.3 documents OpenAI/Microsoft's deployed choice (static SRv6 with disabled dynamic routing) as the reference deployment.
+
+**Per-NIC:**
+
+- **NIC firmware version** — MRC v1.0 features require specific minimum firmware. Per the MRC paper Table 1 the validated NICs are NVIDIA CX-8, AMD Pollara (400 Gbps), and Broadcom Thor Ultra. Each has a minimum firmware version that supports MRC v1.0 verb extensions. Crucible refuses session establishment if the version is below the supported floor — encoded as `Tagged<uint64_t, source::FirmwareRevision>` with per-vendor refinement bounds.
+- **GPUDirect MR registration capability** if using GPU-resident buffers — vendor-specific kernel modules (`nvidia-peermem` for NVIDIA, `rocm-peermem` for AMD), per GAPS-1258. Refused at MR registration time if absent.
+- **NUMA-NIC pinning** — packets cross-socket on misconfigured fleets degrade dramatically. Per GAPS-1256 (`cog/NumaNic.h`).
+
+**Software-side:**
+
+- **libmrc reference implementation** — at `github.com/opencomputeproject/OCP-Multipath-Reliable-Connection` per MRC §12.2. Crucible's `cntp/Mrc*.h` headers depend on libmrc's verb-shaped API (`mrc.h` + `mrc_ctl.h`). The libmrc version supported by Crucible is pinned in `cmake/libmrc.cmake`; mismatch is a build failure.
+- **CAP_NET_ADMIN** for the controller daemon (per MRC §10.2). User application processes use libmrc's application API; per-NIC EV / CC profile configuration requires the privileged controller. Crucible's controller daemon runs as a separate process with the capability granted.
+- **Linux kernel** — Linux 5.4+ for AF_XDP fallback paths (per GAPS-131). MRC itself is verb-based; AF_XDP is only relevant for non-MRC fallback flows.
+
+The §38.17 phasing M0 step (calibration substrate) ASSUMES all of these hold. If any fails, M0 is blocked. This subsection exists so readers know what to verify before starting.
+
+## §38.5 Substrate file layout (cntp/Mrc*.h)
+
+The greenfield surface for plain MRC integration. All files in `include/crucible/cntp/`:
+
+```
+MrcRdmaQp.h         The Permissioned* substrate.  Wraps a libmrc QP context
+                    in ProducerHandle (try_push → post_send) + ConsumerHandle
+                    (try_pop → poll_cq).  Pinned (QP context lives in NIC-
+                    mapped memory).  Permission tag tree per §38.6.
+                    ~1500 LOC.
+
+MrcSack.h           Reliability SACK channel as PermissionedSpscChannel<MrcSack>.
+                    Receiver-side SACK generation; sender-side ack-clock.
+                    ~400 LOC.
+
+MrcEvProfile.h      EV Profile + per-EV state Machine.  EvProfile<N> with
+                    Active set tracking; per-EV safety::Machine<GOOD/SKIP/
+                    ASSUMED_BAD/DENIED>; EV-rotation policy types (Default /
+                    Explicit / Generated per MRC §9.4).
+                    ~600 LOC.
+
+MrcConfig.h         Capability negotiation + static config: handshake
+                    protocol (per §38.9), MPR, retry timer, DSCP class,
+                    vendor codec selection, version checks.
+                    ~600 LOC.
+
+MrcPsnWindow.h      max_psn_range responder-side bitmap.  Atomic 64-bit per
+                    QP; Refined<bounded_above<MaxRange>, uint32_t> PSN type;
+                    try_accept(psn) / try_advance(new_ack).  Modular PSN
+                    arithmetic helpers — see §38.5.1.
+                    ~400 LOC.
+
+MrcMr.h             Memory Region wrapper.  Linear<ScopedMr> RAII over
+                    ibv_reg_mr; vendor-specific GPUDirect path; Refined<>
+                    bounds on length + Bits<MrAccessFlags> on access.
+                    See §38.5.2.
+                    ~400 LOC.
+
+MrcProbe.h          Reliability + EV probes.  Connectionless typed request/
+                    response (BTH.QPN=0x2).  Match by probe_id; do not
+                    consume PSN.  ~250 LOC.
+
+MrcEndpointBus.h    Endpoint Operations dispatch.  Multiplexes EV Probe + Port
+                    Status Update onto BTH.QPN=0x2 reserved connection-less
+                    flow.  ~200 LOC.
+
+MrcCongestion.h     CongestionControlled<Qp> template.  Concept gate for the
+                    5-event NSCC interface (OnACK / OnNACK / OnInferredLoss /
+                    OnNewData / OnSend).  NscCcPolicy + custom policy hooks.
+                    ~400 LOC.
+```
+
+Per-vendor codecs in `include/crucible/mimic/{nv,am,broadcom,intel,mellanox}/network/`:
+
+```
+MrcCodec.h          Per-vendor wire codec — NV-Hopper TMA-aware framing,
+                    AM-CDNA3-aware framing, Broadcom-Tomahawk5 specific bits,
+                    Intel-E810 iWARP variant, Mellanox-ConnectX RoCEv2 +
+                    SHARP integration.  Each backend: ~800 LOC.
+```
+
+Per-Cog calibration + drift detection:
+
+```
+cog/MrcCalibrate.h  Per-NIC fabric calibration: line rate, RTT distribution,
+                    per-EV path latency variance via Clustermapper-style
+                    probes.  Output: calibrated fabric model fed to Forge.
+                    ~500 LOC.
+
+augur/MrcDrift.h    Drift detection: P95 residual > 10% for 100+ samples
+                    triggers FabricRecompile.  Per the §5 multi-timescale
+                    loop; fabric drift is the per-K-step / per-event signal.
+                    ~300 LOC.
+```
+
+Total greenfield: ~10,150 LOC for full cross-vendor plain integration. Materially smaller than the broader §27 GAPS-110..184 estimate of ~30,500 LOC because plain MRC integration is largely composition of existing Crucible machinery — sessions, permissions, effects, bridges, and the Endpoint→Stage→Pipeline triad all reuse unchanged.
+
+### §38.5.1 PSN / MSN / RQMSN / ProbeId typing
+
+MRC's three sequence-number namespaces map to Crucible's refinement primitives:
+
+```cpp
+namespace crucible::cntp::mrc {
+
+// PSN — RoCE Packet Sequence Number, 24 bits, unsigned modulo 2^24.
+// Carried in BTH.PSN.  Wraparound is normal; comparisons MUST use
+// modular arithmetic per MRC §7.5.
+using Psn = ::crucible::safety::Refined<
+    ::crucible::safety::bounded_above<(1u << 24)>, uint32_t>;
+
+// MSN — Requestor Message Sequence Number, 16 bits.  Tracks logical
+// message boundaries per QP.  Carried in METH.MSN.
+using Msn = ::crucible::safety::Refined<
+    ::crucible::safety::bounded_above<(1u << 16)>, uint32_t>;
+
+// RQMSN — Receive-Queue MSN, 16 bits.  Incremented per WriteIMM only.
+// Carried in METH.RQMSN.  RQMSN ≠ MSN in the general case.
+using Rqmsn = ::crucible::safety::Refined<
+    ::crucible::safety::bounded_above<(1u << 16)>, uint32_t>;
+
+// ProbeId — 16-bit requestor-private identifier carried in BTH.PSN[15:0]
+// for connectionless Endpoint Operations.  Tagged to prevent confusion
+// with regular PSN.
+using ProbeId = ::crucible::safety::Tagged<
+    ::crucible::safety::Refined<
+        ::crucible::safety::bounded_above<(1u << 16)>, uint16_t>,
+    source::ProbeId>;
+
+// Modular PSN-window math.  Helpers guard against the wraparound-bug
+// class (off-by-one when cack_psn approaches 2^24) — every IBTA RC
+// implementation eventually hits this; Refined<> bounds + helpers
+// catch the classic mistakes at compile time or contract time.
+constexpr bool psn_in_window(Psn psn, Psn cack_psn,
+                             std::uint32_t mpr) noexcept;
+constexpr Psn  psn_advance(Psn psn, std::uint32_t delta) noexcept;
+constexpr int  psn_compare(Psn a, Psn b) noexcept;  // -1/0/+1 modulo
+
+}  // namespace crucible::cntp::mrc
+```
+
+### §38.5.2 MR registration pattern
+
+MRC's RETH semantics differ from standard IBTA: the `va` field is updated per-packet (incremented by PMTU), while `r_key` and `dmalen` are constant across all packets of a given message (per MRC §6.2.2.2). MR registration happens at QP setup; the lifetime is governed by RAII.
+
+```cpp
+namespace crucible::cntp::mrc {
+
+class ScopedMr : ::crucible::safety::Pinned {
+    void*                                       base_;
+    ::crucible::safety::Refined<
+        ::crucible::safety::positive, uint64_t> length_;
+    ::crucible::safety::Bits<MrAccessFlags>     access_;
+    LocalKey                                    l_key_;
+    RemoteKey                                   r_key_;
+
+public:
+    ScopedMr(::crucible::effects::Init,
+             const cog::CogIdentity& nic_cog,
+             void* base,
+             ::crucible::safety::Refined<
+                 ::crucible::safety::positive, uint64_t> length,
+             ::crucible::safety::Bits<MrAccessFlags> access);
+    ~ScopedMr();  // ibv_dereg_mr
+};
+
+using LinearMr = ::crucible::safety::Linear<ScopedMr>;
+
+// Permission tag for MR access — composes with the MRC tag tree:
+namespace mr_tag {
+template <typename UserTag, typename MrTag> struct MrAccess {};
+struct Local  {};   // l_key authority — for own-side post_send
+struct Remote {};   // r_key authority — handed to peer for RDMA Write
+}
+
+[[nodiscard]] auto mint_mr(::crucible::effects::Init init,
+                          const cog::CogIdentity& nic_cog,
+                          void* base,
+                          uint64_t length_bytes,
+                          ::crucible::safety::Bits<MrAccessFlags> access)
+    noexcept -> std::expected<LinearMr, MrcError>;
+
+}  // namespace crucible::cntp::mrc
+```
+
+For GPUDirect MR (per GAPS-1258 `cntp/GpuDirect.h`), the registration happens via vendor-specific kernel modules (`nvidia-peermem`, `rocm-peermem`); the wrapping types are the same. Plain MRC integration only needs Local + Remote-Write (MRC restricts to Write + WriteIMM); Remote-Read and Atomic flags are unused.
+
+The per-message `va` update rule is enforced at the substrate level: `ProducerHandle::try_push` computes `va_for_packet = mr.base + msg_offset + (packet_index × pmtu)` and never accepts a user-supplied `va`.
+
+## §38.6 Permission tag tree extension
+
+Plain extension of the SPSC tag tree pattern (per `concurrent/PermissionedSpscChannel.h`):
+
+```cpp
+namespace crucible::cntp::mrc_tag {
+
+template <typename UserTag> struct Whole       {};
+template <typename UserTag> struct Requestor   {};
+template <typename UserTag> struct Responder   {};
+template <typename UserTag, std::size_t N> struct EvSet {};   // EV universe
+template <typename UserTag, std::size_t I> struct Ev    {};   // single EV
+
+}  // namespace mrc_tag
+
+// Splits manifest:
+template <typename U, std::size_t N>
+struct splits_into_pack<
+    mrc_tag::Whole<U>,
+    mrc_tag::Requestor<U>,
+    mrc_tag::Responder<U>,
+    mrc_tag::EvSet<U, N>>
+        : std::true_type {};
+
+template <typename U, std::size_t N, std::size_t... Is>
+struct splits_into_pack<
+    mrc_tag::EvSet<U, N>,
+    mrc_tag::Ev<U, Is>...>
+        : std::bool_constant<sizeof...(Is) == N> {};
+```
+
+Effect-bearing specialization:
+
+```cpp
+template <typename U>
+struct permission_row<mrc_tag::Requestor<U>> {
+    using type = ::crucible::effects::Row<
+        ::crucible::effects::Effect::IO,
+        ::crucible::effects::Effect::Block>;
+};
+```
+
+Composes with the existing `NetworkBufferTag → Row<IO>` (already shipped, see `permissions/Permission.h:285`). The CSL frame rule prevents two iterations from accidentally claiming the same EV — at most one entity holds `Permission<mrc_tag::Ev<U, 7>>` at any time.
+
+## §38.7 EV state machine via safety::Machine
+
+Per-EV state Machine, one instance per EV in the Active set:
+
+```cpp
+namespace crucible::cntp::mrc {
+
+enum class EvState : uint8_t {
+    Good,
+    Skip,         // recently ECN-marked; SHOULD skip until timeout
+    AssumedBad,   // confirmed bad path; recovery via probe
+    Denied        // operator-disabled
+};
+
+using EvMachine = safety::Machine<EvState>;
+
+// Allowed transitions encoded structurally:
+//   Good       → Skip (on SACK m=skip)
+//   Good       → AssumedBad (on NACK !LH or sustained loss)
+//   Good       → Denied (on operator action)
+//   Skip       → Good (implementation-defined timeout)
+//   AssumedBad → Good (probe response confirms healthy)
+//   Denied     → Good (operator re-enable)
+
+}  // namespace mrc
+```
+
+The bridge to the data session uses the existing `bridges/MachineSessionBridge.h` machinery (GAPS-080, shipped — `mint_vigil_mode_bridge` is the production precedent):
+
+```cpp
+auto ev_machine_bridge = bridges::mint_machine_session_bridge<
+    EvMachine, MrcRequestorSessionProto>(ev_machine, requestor_session);
+
+// Wire signal handlers update the Machine:
+on_sack_m_skip(ev_index)       { ev_machines_[ev_index].transition_to(Skip); }
+on_nack_not_lasthop(ev_index)  { ev_machines_[ev_index].transition_to(AssumedBad); }
+on_probe_response_ok(ev_index) { ev_machines_[ev_index].transition_to(Good); }
+```
+
+Sender-side EV selection respects the Machine state — only Good EVs are eligible for new packets; Skip EVs are tested at low rate via probes; AssumedBad EVs require explicit probe revival.
+
+## §38.8 Dynamic MPR via EpochedDelegate
+
+MRC §7.5.4 spec: responder advertises max_psn_range in every SACK; both peers must support the capability via SW-modified QP attribute. MPR change mid-session requires the requestor to pause new transmission until the invariant `pkt.psn ≤ cack_psn + new_mpr` is met.
+
+Crucible binding: `EpochedDelegate<MrcSession, K, MinMpr, MinGen>` (GAPS-071, shipped). Each SACK with a different `mpr` field corresponds to an epoch increment in `EpochCtx<MprEpoch, Generation>`. Sessions are admitted only at `MinMpr ≤ peer.current_mpr`. The compile-time invariant Crucible already ships is **more rigorous** than the runtime negotiation MRC describes in prose — at the type level, you cannot use a session minted at MPR-epoch N with a peer at epoch < N.
+
+Wiring at SACK reception:
+
+```cpp
+if (sack.mpr != current_mpr_) {
+    epoch_ctx_.mpr_epoch += 1;
+    current_mpr_ = sack.mpr;
+    // Sessions established under old mpr_epoch remain valid for in-flight
+    // packets but cannot establish new ones; new sessions require
+    // EpochedDelegate at >= current mpr_epoch.
+}
+```
+
+The runtime carrier `EpochVersioned<MrcConfig>` persists in Cipher cold tier — survives reboot, replay-deterministic.
+
+## §38.9 Capability handshake protocol
+
+MRC §10.2 + Table 10-1 specify five per-QP attributes that must be exchanged at QP setup. Plain integration encodes the handshake itself as a typed session, so a capability mismatch fires both at compile time (when peers disagree on what's required) and at handshake time (when the peer's advertised capability doesn't meet our minimum).
+
+```cpp
+namespace crucible::cntp::mrc {
+
+// The five MRC-spec QP attributes (Table 10-1):
+struct MrcCapabilities {
+    // Max in-flight WriteIMM operations supported by responder
+    // (advertised by responder, consumed by requestor).
+    ::crucible::safety::Refined<
+        ::crucible::safety::bounded_above<32>, uint8_t> max_wimm_inflight;
+
+    // Max PSN range (in 128-packet units) supported by responder.
+    ::crucible::safety::Refined<
+        ::crucible::safety::bounded_above<32>, uint8_t> max_mpr;
+
+    // Capability bits — Dynamic MPR (bidirectional), TRIM NACK
+    // generation (unidirectional), Service Time (unidirectional).
+    ::crucible::safety::Bits<MrcDeviceCaps>            device_caps;
+
+    // Identity:
+    ::crucible::safety::Tagged<uint64_t,
+                                source::FirmwareRevision> firmware;
+    ::crucible::algebra::lattices::VendorBackend         vendor;
+};
+
+// Typed handshake — both peers exchange capabilities; the peer's
+// Send is our Recv, so dual_of_t<HandshakeProto> is the peer's
+// protocol automatically.
+using HandshakeProto =
+    Send<MrcCapabilities,
+    Recv<MrcCapabilities,
+    Send<MrcConfigDelta,                // negotiated reduction
+    Recv<MrcAck, End>>>>;
+
+[[nodiscard]] auto mint_handshake_session(
+    ::crucible::effects::Init init,
+    const cog::CogIdentity& nic_cog,
+    auto& libmrc_handshake_transport) noexcept
+    -> ::crucible::safety::proto::SessionHandle<
+           HandshakeProto, decltype(libmrc_handshake_transport)>;
+
+// After both peers run the handshake, the result is the negotiated
+// MrcConfig — what the actual QP will operate under.  Carries into
+// mint_qp() as the static config.
+struct MrcConfig {
+    Refined<bounded_above<32>, uint8_t> negotiated_max_wimm_inflight;
+    Refined<bounded_above<32>, uint8_t> negotiated_max_mpr;
+    Bits<MrcDeviceCaps>                 negotiated_caps;
+    // ... DSCP class, retry timer, vendor codec selection ...
+};
+
+}  // namespace crucible::cntp::mrc
+```
+
+The handshake protocol is itself a Crucible session — replay-deterministic at the session-event level, recordable via `RecordingSessionHandle`, audit-loggable in `Cipher` cold tier. After the handshake completes, the resulting `MrcConfig` flows into `mint_mrc_qp(ctx, config, perm)` as the immutable substrate of the data session.
+
+Capability mismatch is detected at the typed handshake layer:
+- **Peer doesn't support Dynamic MPR but we require it** → handshake recv detects `Bits<MrcDeviceCaps>::has(DynamicMpr) == false`, fires `safety::diag::Category::MrcCapability` diagnostic, refuses to issue `MrcConfigDelta`, transitions to `Stop_g<CrashClass::CapabilityMismatch>`.
+- **Firmware below supported floor** → similar; per-vendor refinement bounds catch this.
+- **Vendor mismatch with VendorPinned** → compile error (per §38.13) before the handshake runs.
+
+## §38.10 NACK reason → detach_reason mapping + failure-mode taxonomy
+
+The MRC NACK reason codes (Table 7-3) are one slice of the broader failure surface plain integration must handle:
+
+| Failure class | MRC manifestation | Crucible binding |
+|---|---|---|
+| **NACK reason codes** (per-packet) | Table 7-3: TRIMMED / NO_BITMAP / NO_PKT_BUFFER / NO_RESOURCE / PSN_OOR_WINDOW / UNEXP_EVENT | Per-reason routing per the table below |
+| **Partial peer crash** (one of N QPs to a peer fails) | Single QP enters ERROR state; other QPs to same peer continue | CrashWatchedHandle on the affected QP only; per-peer Permission survives until ALL its QPs detach |
+| **Network partition** (both peers alive, mutually unreachable) | Reliability Probes time out in both directions; data NACKs return | Detected via probe timeout aggregator; transitions to `Stop_g<CrashClass::NetworkPartition>`; recovery is reconnection (NOT permission_inherit, since the original peer's tokens may still be live elsewhere) |
+| **Asymmetric failure** (A→B works, B→A doesn't) | Outbound data delivered, return SACKs missing | GAPS-127 AsymmetricFailure.h's multi-vantage detection; surfaces as `safety::diag::Category::MrcWire::AsymmetricLoss` |
+| **Slow consumer** (responder bitmap pressure) | `rcv_cwnd_pen` non-zero in SACK | Modeled as `Stale<RcvCwndPen>` telemetry feeding AdaptiveScheduler back-pressure decisions; NOT session-level fatal |
+| **Stuck retry loop** (linear+exp exhausted) | Retry Counter Exceeded — QP enters ERROR state | `detach_reason::TransportClosedOutOfBand`; `Stop_g<CrashClass::RetryExhausted>`; permission_inherit on survivors |
+| **Capability negotiation failure** | Handshake mismatch detected | `Stop_g<CrashClass::CapabilityMismatch>` per §38.9 |
+
+NACK reason routing:
+
+| MRC NACK reason | Action | Crucible binding |
+|---|---|---|
+| TRIMMED | Retry on different EV (do NOT detach) | EvMachine: current EV → Skip; pick next Good EV |
+| TRIMMED_LASTHOP | Same as TRIMMED but stronger signal | EvMachine: current EV → Skip; reduce send rate |
+| NO_BITMAP | Responder bitmap exhausted; throttle | NSCC OnNACK; reduce cwnd; if persistent, detach |
+| NO_PKT_BUFFER | Responder buffer exhausted; throttle | NSCC OnNACK; reduce cwnd; if persistent, detach |
+| NO_RESOURCE | Implementation-specific resource shortage | Throttle; if persistent (>3 retries), detach with `detach_reason::TransportClosedOutOfBand` |
+| PSN_OOR_WINDOW | Responder rejected — PSN outside tracking window | **Fatal**: detach immediately with `detach_reason::TransportClosedOutOfBand`; signal session crash via `Stop_g<CrashClass::ProtocolError>` (GAPS-063) |
+| UNEXP_EVENT | Implementation-specific unexpected event | Detach with `detach_reason::TransportClosedOutOfBand` |
+
+Fatal NACKs trigger `CrashWatchedHandle::OneShotFlag` (GAPS-045, shipped); per-peer survivors `permission_inherit` from the dead session's Permission tokens (GAPS-044, shipped); surviving sessions on healthy peers continue uninterrupted.
+
+The existing `detach_reason::TransportClosedOutOfBand` tag (Session.h:1259) was anticipated for exactly this wiring — name + comment match MRC's "QP enters ERROR state on Retry Counter Exceeded" semantics one-to-one.
+
+## §38.11 Diagnostic category taxonomy
+
+MRC integration plugs into Crucible's `safety::Diagnostic.h` Catalog (per FOUND-E01). Three new diagnostic categories cover the failure surface cleanly:
+
+```cpp
+namespace crucible::safety::diag {
+
+enum class Category : uint16_t {
+    // ... existing categories ...
+
+    // MRC wire-level errors — bytes don't parse correctly, iCRC
+    // mismatch, DSCP class mismatch, packet truncated below header
+    // boundary, RoCE BTH opcode unknown.
+    MrcWire,
+
+    // MRC protocol-shape errors — NAK reason routed to detach,
+    // retry exhaustion, PSN out-of-window, sequence violation that
+    // shouldn't happen in a sound implementation.
+    MrcSemantic,
+
+    // MRC capability negotiation errors — peer doesn't support
+    // Dynamic MPR, firmware below supported floor, vendor codec
+    // mismatch detected at handshake, MR registration size exceeds
+    // peer's max_mr_size.
+    MrcCapability,
+};
+
+}  // namespace crucible::safety::diag
+```
+
+Each MRC error site uses structured-diagnostic emission per FOUND-E01:
+
+```cpp
+::crucible::safety::diag::emit<
+    Category::MrcWire,
+    MrcWireDiagnostic::ICrcMismatch>(
+    "Packet from peer %s: iCRC %x, computed %x",
+    peer_id.render(), packet_icrc, computed_icrc);
+```
+
+This composes into Augur's drift-attribution machinery — a sustained spike in `MrcWire::ICrcMismatch` per peer is a per-link health signal that should trigger an EvMachine transition to ASSUMED_BAD without waiting for the retry counter.
+
+## §38.12 Federation over MRC
+
+Cross-organization training requires confidentiality + authentication of cross-org wire transport. **MRC v1.0 does not integrate TLS at the QP layer.** Two options for federation-over-MRC, neither of which is "wrap MRC in mTLS at the QP level":
+
+**Option A — Out-of-band mTLS handshake + plain MRC for data.** Federation peers complete an mTLS handshake over a separate control channel (typically an HTTPS endpoint) BEFORE MRC QP setup. The handshake exchanges MRC connection coordinates (peer GIDs, QP numbers, capability advertisements) plus Ed25519-signed attestations. Once attested, MRC QPs are established and run unencrypted at the wire level — confidentiality is via fabric isolation (private VLAN, dedicated WAN tunnel). Simpler but requires fabric-level confidentiality.
+
+**Option B — kTLS hardware offload (GAPS-1248) encrypting MRC packets at NIC level.** kTLS is enabled per-socket; the NIC encrypts payloads with AES-GCM in hardware. Works on ConnectX-6+, Intel E810 (with appropriate firmware), Broadcom Thor Ultra. Crucible's `cntp/KtlsOffload.h` (GAPS-1248) sets `setsockopt(SOL_TLS, TLS_TX, ...)` after libmrc QP setup; the resulting flow is MRC-over-kTLS-over-RDMA. Confidentiality without fabric-level isolation.
+
+Plain integration's canonical recommendation: **Option A for intra-trust-domain, Option B for cross-trust-domain.** GAPS-107 (federation peer trust model decision) chooses between them per-deployment.
+
+The existing 3-party MPST (`sessions/FederationProtocol.h`, GAPS-039 shipped) lifts unchanged on top of either option:
+
+```cpp
+// Existing 3-party global type (sessions/FederationProtocol.h):
+using FederationGlobal = Rec_G<
+    Transmission<SenderRole, CoordRole, HeaderPayload<KeyTag>,
+    Transmission<CoordRole, SenderRole, Ack<KeyTag>,
+    Transmission<CoordRole, ReceiverRole, PullRequest<KeyTag>,
+    Transmission<ReceiverRole, CoordRole, BodyPayload<KeyTag>,
+    Var_G>>>>>;
+
+// Federation over MRC (Option A — out-of-band mTLS attestation):
+auto attestation = cipher::ed25519_verify(
+    peer_pubkey, attested_capabilities);
+auto federation_qp = mrc::mint_qp<FederationTag>(
+    federation_ctx, mrc_config_from_attestation(attestation),
+    std::move(requestor_perm));
+
+// Each cross-org QP wrapped in CrashWatchedHandle:
+auto crash_watched = bridges::mint_crash_watched_session<PeerOrg>(
+    mint_sender_session(federation_ctx, federation_qp.requestor()));
+```
+
+`FederatedPermission<Org>` per-org tag (GAPS-043 shipped) composes with the EvSet permissions: each org's Requestor session holds `Permission<FederatedPeer<OrgA>>` AND `Permission<EvSet<orgA_paths, N>>`. The CSL frame rule prevents OrgB's session from accidentally spraying on OrgA's paths.
+
+For Option A the attestation is signed via `cipher::ed25519_sign(attested_capabilities)`; the agreement is cryptographically auditable post-hoc — replay any iteration against the recorded plan, verify the plan matches the signed attestation. Audit log via `RecordingSessionHandle` + Cipher cold tier captures every cross-org transmission.
+
+## §38.13 Per-vendor codec via VendorPinned
+
+`VendorPinned<V, P>` (Session.h:295-299) + GAPS-067/068 vendor-leq checks (8 neg-compile fixtures, shipped) handle per-vendor wire format selection at compile time:
+
+```cpp
+using NvRequestorProto = VendorPinned<
+    VendorBackend::NV_Hopper,
+    Loop<Send<MrcWrite<T>, Recv<MrcSack, Continue>>>>;
+
+using AmRequestorProto = VendorPinned<
+    VendorBackend::AM_CDNA3,
+    Loop<Send<MrcWrite<T>, Recv<MrcSack, Continue>>>>;
+
+// Trying to mint AmRequestorProto over an NV-pinned endpoint =
+// compile error with named diagnostic.
+```
+
+Per-vendor codec backends in `mimic/{nv,am,broadcom,intel,mellanox}/network/MrcCodec.h` emit:
+- **NV**: Hopper-TMA-aware payload framing (epilogue stores → NIC TX directly via TMA), CX-8-specific completion polling
+- **AM**: CDNA3-aware framing, Pollara NIC's RoCE-standard completion path
+- **Broadcom**: Thor Ultra's specific control-packet handling
+- **Intel**: E810 iWARP variant (note: MRC over iWARP is a deployment option distinct from RoCEv2)
+- **Mellanox**: ConnectX-{6,7,8} RoCEv2 + SHARP integration (GAPS-133)
+
+Cross-vendor numerics CI (GAPS-175, NetworkCrossVendorCi.h) extends to MRC: every (CollectiveKind × NumericalRecipe × VendorBackend × PeerSet) cell verified pairwise against CPU oracle. Under matching recipe, cross-vendor outputs are bit-equivalent — but only at the recipe-tier guarantee level (BITEXACT_TC: ≤1 ULP per element; BITEXACT_STRICT: 0 bytes diff). MRC's empirical guarantees are inherited; the bit-equivalence-at-the-iteration-layer property requires ESFC/CFTP follow-on (see §38.18).
+
+## §38.14 Worked example — end-to-end mint flow
+
+Concrete C++26 sketch tying together every piece in §38.4–§38.13 for a single MRC requestor QP:
+
+```cpp
+#include <crucible/cntp/mrc/MrcRdmaQp.h>
+#include <crucible/cntp/mrc/MrcConfig.h>
+#include <crucible/cntp/mrc/MrcMr.h>
+#include <crucible/bridges/CrashTransport.h>
+#include <crucible/bridges/RecordingSessionHandle.h>
+#include <crucible/permissions/Permission.h>
+#include <crucible/sessions/PermissionedSession.h>
+
+namespace mrc = ::crucible::cntp::mrc;
+namespace eff = ::crucible::effects;
+namespace bridges = ::crucible::bridges;
+namespace safety = ::crucible::safety;
+
+// User tag identifying this logical channel:
+struct GradientChannelTag {};
+
+// 1) Mint root permission and split into the MRC tag tree
+//    (per §38.6).
+auto whole = safety::mint_permission_root<
+    mrc::mrc_tag::Whole<GradientChannelTag>>(init_ctx);
+auto [requestor_perm, responder_perm, ev_set_perm] =
+    safety::mint_permission_split_n<
+        mrc::mrc_tag::Requestor<GradientChannelTag>,
+        mrc::mrc_tag::Responder<GradientChannelTag>,
+        mrc::mrc_tag::EvSet<GradientChannelTag, 64>>(
+            init_ctx, std::move(whole));
+
+// 2) Run the typed capability handshake with the peer (per §38.9).
+//    Returns the negotiated MrcConfig.  Compile-time + handshake-time
+//    errors surface as Stop_g<CrashClass::CapabilityMismatch>.
+auto handshake = mrc::mint_handshake_session(
+    init_ctx, libmrc_handshake_transport);
+auto config_or_err = std::move(handshake).run();
+if (!config_or_err) {
+    safety::diag::emit<
+        safety::diag::Category::MrcCapability,
+        mrc::HandshakeError::IncompatibleCapabilities>(
+        "MRC handshake with peer %s: %s",
+        peer_id.render(), config_or_err.error().what());
+    return std::unexpected(config_or_err.error());
+}
+auto config = std::move(*config_or_err);
+
+// 3) Register the MR for this channel (Linear<ScopedMr> RAII per §38.5.2).
+auto mr_or_err = mrc::mint_mr(
+    init_ctx, gpu_cog,
+    /*base=*/grad_buffer.data(),
+    /*length=*/safety::Refined<safety::positive, uint64_t>{
+        grad_buffer.size_bytes()},
+    /*access=*/safety::Bits<mrc::MrAccessFlags>{
+        mrc::MrAccess::LocalRead | mrc::MrAccess::RemoteWrite});
+if (!mr_or_err) return std::unexpected(mr_or_err.error());
+auto mr = std::move(*mr_or_err);
+
+// 4) Mint the MrcQp from negotiated config + permissions + MR.
+auto qp = mrc::mint_qp<GradientChannelTag>(
+    bg_ctx, config, std::move(requestor_perm),
+    std::move(ev_set_perm), mr.l_key());
+
+// 5) Wrap in CrashWatchedHandle for peer-death detection (per §38.10).
+safety::OneShotFlag peer_alive;
+auto crash_watched = bridges::mint_crash_watched_session<RemotePeerTag>(
+    qp.requestor_session(), peer_alive);
+
+// 6) Wrap in RecordingSessionHandle for audit + replay (per §38.18).
+auto recorded = bridges::mint_recording_session(
+    crash_watched, session_event_log_, my_id, peer_id);
+
+// 7) Run the protocol — typed, replay-deterministic at the
+//    session-event level.
+for (auto&& msg : iteration_messages) {
+    recorded = std::move(recorded)
+        .send(msg, mrc::transport_post_send)  // → libmrc post_send
+        .run();
+}
+
+// 8) On clean shutdown, detach with sanctioned reason.
+std::move(recorded).detach(
+    safety::proto::detach_reason::InfiniteLoopProtocol{});
+```
+
+The `mr`, `qp`, `crash_watched`, `recorded` handles all carry their Permission tokens linearly; the C++ type system rejects double-use, copy, and protocol-shape violations at compile time. `peer_alive` going false (set by libmrc completion error → IB_WC_RETRY_EXC_ERR) triggers `Stop_g<CrashClass::Network>`; the protocol structurally transitions to its detach branch; `permission_inherit<RequestorTag, ResponderTag>` re-issues survivor tokens to any other sessions sharing the failed peer.
+
+The bench harness `bench/bench_mrc_session.cpp` (parallel to `bench/bench_permissioned_session_handle.cpp`) validates head-to-head: bare libmrc post_send/poll_cq vs PermissionedSessionHandle wrapping MrcQp. Acceptance criterion: identical machine code, identical p50 / p99 / p99.9 latency, no measurable throughput regression. Without this, the "zero-cost overlay" claim is unbacked.
+
+## §38.15 Inventory: shipped vs greenfield
+
+**Ships unchanged (composes directly with MRC):**
+
+- All session DSL combinators (Send/Recv/Select/Offer/Loop/Delegate/Stop_g) — `sessions/Session.h`, `SessionCrash.h`
+- PermissionedSession + PermSet evolution — `sessions/PermissionedSession.h`, `permissions/PermSet.h`
+- FederationProtocol 3-party MPST — `sessions/FederationProtocol.h`
+- EpochedDelegate combinator (GAPS-071) — `sessions/SessionDelegate.h`
+- VendorPinned + GAPS-068 vendor-leq check — `sessions/Session.h:295-299`
+- Stop_g graded crash variants (GAPS-063) — `sessions/SessionCrash.h`
+- detach_reason::TransportClosedOutOfBand (audit-class taxonomy) — `sessions/Session.h:1259`
+- CrashWatchedHandle + permission_inherit (GAPS-044/045) — `bridges/CrashTransport.h`, `permissions/PermissionInherit.h`
+- FederatedPermission<Org> per-org tags (GAPS-043) — `permissions/FederationPermission.h`
+- safety::Machine<States> + MachineSessionBridge (GAPS-080) — `safety/Machine.h`, `bridges/MachineSessionBridge.h`
+- Endpoint<Substr, Direction, Ctx> keystone — `concurrent/Endpoint.h`
+- Stage / Pipeline composition (GAPS-025/026) — `concurrent/Stage.h`, `Pipeline.h`
+- AdaptiveScheduler with cache-tier rule (GAPS-032..035) — `concurrent/AdaptiveScheduler.h`
+- RecordingSessionHandle + SessionEventLog — `bridges/RecordingSessionHandle.h`, `sessions/SessionEventLog.h`
+- Cipher cold-tier persistence (GAPS-079) — `bridges/SessionPersistence.h`
+- ContentAddressed<T> quotient combinator (GAPS-040) — `sessions/SessionContentAddressed.h`
+- Bits<E> + Refined<bounded_above<N>> typed-set machinery — `safety/Bits.h`, `safety/Refined.h`
+- Linear<ScopedFd> for verb-tool ioctls — `safety/Linear.h`
+
+**Net new (greenfield) for plain MRC integration:**
+
+- cntp/MrcRdmaQp.h substrate (~1500 LOC)
+- cntp/MrcSack.h reliability channel (~400 LOC)
+- cntp/MrcEvProfile.h EV state machinery (~600 LOC)
+- cntp/MrcConfig.h handshake + capability config (~600 LOC, includes the typed handshake protocol per §38.9)
+- cntp/MrcPsnWindow.h responder bitmap (~400 LOC)
+- cntp/MrcMr.h MR registration wrapper (~400 LOC, per §38.5.2)
+- cntp/MrcProbe.h connectionless probes (~250 LOC)
+- cntp/MrcEndpointBus.h Endpoint Operations dispatch (~200 LOC)
+- cntp/MrcCongestion.h CC policy template (~400 LOC)
+- mimic/{nv,am,broadcom,intel,mellanox}/network/MrcCodec.h (~800 LOC each, ~4000 total)
+- cog/MrcCalibrate.h fabric calibration (~500 LOC)
+- augur/MrcDrift.h drift detection (~300 LOC)
+- bench/bench_mrc_session.cpp head-to-head harness (~300 LOC, validates zero-cost overlay claim per §38.14)
+- test/cross_vendor_mrc/ pairwise CI harness (~600 LOC)
+- safety/diag/MrcCategories.h diagnostic taxonomy (~150 LOC, per §38.11)
+
+Total: ~10,600 LOC.
+
+## §38.16 GAPS task chain with MRC binding
+
+Existing GAPS tasks that gain explicit MRC binding (no renumbering; the binding is a refinement of the task's substrate):
+
+- **GAPS-110 / 111 / 113** TopologyGraph + Discovery + Health → feed MrcCalibrate
+- **GAPS-125** RoceConfig (PFC / ECN / DCQCN) → prerequisite for MRC over RoCEv2
+- **GAPS-132** GpuDirect → MRC's GPUDirect RDMA path; CX-8 / Pollara / Thor Ultra all support
+- **GAPS-149** CollectiveCatalog → ring/tree/SHARP all-reduce all use MRC as transport
+- **GAPS-167 / 168 / 169** NetworkIr001 + NetworkForge + NetworkMimic → comm-through-IR over MRC; per-vendor backends emit MRC wire bytes
+- **GAPS-175** NetworkCrossVendorCi → MRC interop verification across NV/AM/Broadcom/Intel/Mellanox NICs
+- **GAPS-184** NetworkBenchSuite → MRC perf bench harness
+
+New MRC-specific tasks (numbers proposed below — require allocation by maintainer per the §03_05_2026 doc's GAPS-numbering discipline; current frontier is GAPS-215, so these placeholders start at GAPS-216):
+
+- **GAPS-216** cntp/MrcRdmaQp.h substrate (single-vendor first: NV+CX-8 end-to-end)
+- **GAPS-217** cntp/MrcSack.h reliability channel
+- **GAPS-218** cntp/MrcEvProfile.h + EV state Machine
+- **GAPS-219** cntp/MrcConfig.h + handshake + EpochedDelegate wiring
+- **GAPS-220** cntp/MrcPsnWindow.h responder bitmap
+- **GAPS-221** cntp/MrcCongestion.h NSCC policy template
+- **GAPS-222** cntp/MrcProbe.h + cntp/MrcEndpointBus.h
+- **GAPS-223** mimic/nv/network/MrcCodec.h (NV-Hopper TMA-aware framing)
+- **GAPS-224** mimic/am/network/MrcCodec.h (AM-CDNA3 framing)
+- **GAPS-225** mimic/broadcom/network/MrcCodec.h (Thor Ultra)
+- **GAPS-226** mimic/intel/network/MrcCodec.h (E810 iWARP variant)
+- **GAPS-227** mimic/mellanox/network/MrcCodec.h (ConnectX RoCEv2 + SHARP)
+- **GAPS-228** cog/MrcCalibrate.h fabric calibration
+- **GAPS-229** augur/MrcDrift.h drift detection
+- **GAPS-230** test/cross_vendor_mrc/ pairwise CI harness
+
+## §38.17 Phasing — minimum viable plain MRC integration
+
+**M0 (Months 1-2): Calibration substrate.** Build `cog/MrcCalibrate.h` + fabric measurement infrastructure. Output: per-NIC RTT distribution, BDP, line rate, per-EV path latency variance via Clustermapper-style probes. Extends GAPS-110 / 111 / 196.
+
+**M1 (Months 2-4): Single-vendor cntp/MrcRdmaQp.h substrate.** NV+CX-8 only, end-to-end. PermissionedMrcRdmaQp wraps libmrc QP; Permission tag tree + EpochedDelegate wiring; basic SACK channel. No cross-vendor; no federation; no ESFC/CFTP. Validates the typed-overlay-on-MRC zero-cost claim against `bench/bench_permissioned_session_handle.cpp`.
+
+**M2 (Months 4-6): Federation over MRC.** Wire FederationProtocol's 3-party MPST onto mTLS-wrapped MRC. Cross-org sessions established with signed FabricConfig. Cipher cold-tier persistence. Replay-deterministic federation step.
+
+**M3 (Months 6-8): Cross-vendor codec backends.** AM+Pollara, Broadcom+Thor Ultra, Intel+E810, Mellanox+ConnectX. Each codec backend ~800 LOC. VendorPinned static_asserts prevent accidental cross-vendor pairing.
+
+**M4 (Months 8-10): Cross-vendor MRC interop CI.** GAPS-175 extended: every (Collective × Recipe × VendorBackend × PeerSet) cell verified pairwise against CPU oracle. Bit-equivalence under matching recipe at the recipe-tier guarantee level (≤1 ULP for BITEXACT_TC).
+
+**M5 (Months 10-12): Production wiring.** Compute-side IR ops (GAPS-167-169) lower comm operations to MrcRdmaQp. Forge Phase F generates MRC-targeted FabricConfigs. Augur drift triggers FabricRecompile at per-K-iteration cadence.
+
+12-month plan for plain MRC integration with one engineer-team unit. Self-contained — completes independently of ESFC/CFTP follow-on work.
+
+## §38.18 What this regime does NOT do
+
+The plain integration deliberately accepts MRC's runtime adaptive layer as-is. The NIC's NSCC + EV state machine + dynamic MPR all run normally; Crucible composes above without quieting them. Two specific properties remain unachievable in this regime:
+
+1. **Replay-deterministic wire bytes.** MRC's NSCC is non-deterministic by design (CC convergence path varies); SACK coalescing varies; NIC reorders packets on retransmit. The same iteration replayed produces different wire bytes. Crucible's compute-side replay-determinism (Philox + recipe-tier) does NOT extend to fabric in plain integration.
+
+2. **Cross-vendor bit-equivalence at the iteration layer.** MRC promises wire-byte interop; it does not promise that 8-way all-reduce on NV+CX-8 produces bit-identical reductions to 8-way on AM+Pollara, because per-NIC SACK timing differs and reduction order shifts with arrival order. Plain integration inherits this limitation — recipe-tier guarantees still hold (≤1 ULP under BITEXACT_TC), but exact byte equivalence does not.
+
+Both properties are achievable via **ESFC** (quiet the NIC adaptation; static cwnd + EV plan; reduction order pinned by recipe) and even more strongly via **CFTP** (replace MRC's wire entirely; plan-merkle handshake; recipe-pinned reduction at the wire level). Companion design notes describe each regime; both are extension points to consider once plain integration ships.
+
+The plain integration is the deployable baseline — sufficient for federation across MRC-equipped clusters, sufficient for production training with MRC's empirical guarantees inherited, sufficient to validate Crucible's typed-overlay-on-MRC discipline. The stronger structural guarantees (replay-deterministic wire, cross-vendor bit-exact at iteration layer, plan-signed federation byte-equivalence) require the follow-on regimes.
+
+═══════════════════════════════════════════════════════════════════════
+═══════════════════════════════════════════════════════════════════════
+
+**END OF DOCUMENT (§0–§38).**
 
 Companion documents and existing infrastructure references:
 - `CLAUDE.md` — substrate disciplines (8 axioms, Universal Mint Pattern, Cog framing)
