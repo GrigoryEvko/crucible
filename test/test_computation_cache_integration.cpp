@@ -39,6 +39,7 @@
 #include "test_assert.h"
 
 #include <array>
+#include <bit>
 #include <cstdint>
 #include <cstdio>
 
@@ -90,7 +91,7 @@ inline void  ic_hotloop (int)             noexcept {}
 
 // Bit-pattern stub bodies — never dereferenced by the cache.
 inline cipher::CompiledBody* mk_body(std::uintptr_t v) noexcept {
-    return reinterpret_cast<cipher::CompiledBody*>(v);
+    return std::bit_cast<cipher::CompiledBody*>(v);
 }
 
 // Variadic ASSERT — wraps test_assert.h's macro pattern but accepts

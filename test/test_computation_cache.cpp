@@ -24,6 +24,7 @@
 
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cstdio>
 #include <cstdint>
 #include <cstdlib>
@@ -122,7 +123,7 @@ inline int  cr_contention_fn(int) noexcept { return 0; }
 // dereferenced by the cache itself, so we use bit-pattern stubs.
 
 cipher::CompiledBody* make_stub(std::uintptr_t v) noexcept {
-    return reinterpret_cast<cipher::CompiledBody*>(v);
+    return std::bit_cast<cipher::CompiledBody*>(v);
 }
 
 }  // namespace

@@ -112,7 +112,7 @@ int g_failures = 0;
 void test_handle_roundtrip() {
     alignas(crucible::Vigil) std::array<std::byte, sizeof(crucible::Vigil)>
         storage{};
-    auto* vigil_ptr = reinterpret_cast<crucible::Vigil*>(storage.data());
+    auto* vigil_ptr = std::bit_cast<crucible::Vigil*>(storage.data());
     CrucibleHandle raw = static_cast<CrucibleHandle>(vigil_ptr);
 
     auto typed = crucible::vessel::as_vigil_typed(raw);
@@ -168,7 +168,7 @@ void test_meta_roundtrip() {
 
     // Multi-meta path with n_metas argument.
     auto typed_multi = crucible::vessel::as_meta_typed(arr, 2);
-    EXPECT(typed_multi.value() == reinterpret_cast<const crucible::TensorMeta*>(arr),
+    EXPECT(typed_multi.value() == std::bit_cast<const crucible::TensorMeta*>(&arr[0]),
            "as_meta_typed pointer must match raw pointer (layout-compat reinterpret)");
 
     // Field-equivalence: read the same field through TensorMeta — the
@@ -193,7 +193,7 @@ void test_meta_roundtrip() {
     // the raw pointer it wraps.
     std::array<std::byte, sizeof(TypedMeta)> typed_bytes{};
     std::memcpy(typed_bytes.data(), &typed_multi, sizeof(typed_multi));
-    const crucible::TensorMeta* raw_ptr = reinterpret_cast<const crucible::TensorMeta*>(arr);
+    const crucible::TensorMeta* raw_ptr = std::bit_cast<const crucible::TensorMeta*>(&arr[0]);
     std::array<std::byte, sizeof(const crucible::TensorMeta*)> raw_bytes{};
     std::memcpy(raw_bytes.data(), &raw_ptr, sizeof(raw_ptr));
     EXPECT(typed_bytes == raw_bytes,
@@ -314,8 +314,8 @@ void test_handle_distinct_pointers() {
         storage_a{};
     alignas(crucible::Vigil) std::array<std::byte, sizeof(crucible::Vigil)>
         storage_b{};
-    auto* a = reinterpret_cast<crucible::Vigil*>(storage_a.data());
-    auto* b = reinterpret_cast<crucible::Vigil*>(storage_b.data());
+    auto* a = std::bit_cast<crucible::Vigil*>(storage_a.data());
+    auto* b = std::bit_cast<crucible::Vigil*>(storage_b.data());
     EXPECT(a != b, "test setup: distinct storage must yield distinct pointers");
 
     auto ta = crucible::vessel::as_vigil_typed(static_cast<CrucibleHandle>(a));

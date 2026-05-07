@@ -183,7 +183,7 @@ static void test_natural_tensor_meta_alignment() {
     assert(chosen != 0);
 
     auto* meta = std::construct_at(
-        reinterpret_cast<TensorMeta*>(chosen),
+        std::bit_cast<TensorMeta*>(chosen),
         make_meta({16, 32, 64}, {2048, 64, 1}));
     assert(std::bit_cast<std::uintptr_t>(&meta->sizes[0]) % 64 != 0);
     check_equiv(*meta, "natural-align-not-vector-align");

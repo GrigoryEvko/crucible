@@ -15,13 +15,16 @@
 
 #include <crucible/cipher/ComputationCache.h>
 
+#include <bit>
+#include <cstdint>
+
 inline int data_global = 42;  // Plain data, not a function.
 
 int main() {
     // &data_global is `int*` — IsCacheableFunction must reject:
     // is_function_v<int> is false.
     crucible::cipher::insert_computation_cache<&data_global>(
-        reinterpret_cast<crucible::cipher::CompiledBody*>(
+        std::bit_cast<crucible::cipher::CompiledBody*>(
             static_cast<std::uintptr_t>(0x1)));
     return 0;
 }

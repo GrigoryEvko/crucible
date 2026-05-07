@@ -313,7 +313,7 @@ static void test_dim_hash_equivalence_handcoded() {
     }
     assert(chosen != 0);
     auto* unaligned = std::construct_at(
-        reinterpret_cast<crucible::TensorMeta*>(chosen),
+        std::bit_cast<crucible::TensorMeta*>(chosen),
         make_meta({16, 32, 64}, {2048, 64, 1}));
     assert(std::bit_cast<std::uintptr_t>(&unaligned->sizes[0]) % 64 != 0);
     assert(dim_hash_simd(*unaligned) == dim_hash_scalar(*unaligned));
