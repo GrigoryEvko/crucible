@@ -1,6 +1,7 @@
 #pragma once
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Refined.h>
 
 #include <compare>
 #include <cstddef>
@@ -20,25 +21,39 @@ namespace crucible {
 // silent conflation at TypeSafe call sites.
 //
 // Value domain: 0 (ScalarType::Undefined) plus {1, 2, 4, 8, 16}
-// (real dtypes).  Underlying storage is `uint8_t` — 16 is the
-// maximum real element size (ComplexDouble).
+// (real dtypes).  Underlying storage is `Refined<bounded_above<16>,
+// uint8_t>` (#1067 WRAP-Types-1) — the storage type carries the upper-
+// bound invariant structurally, so `ElementBytes{17}` is a contract
+// violation at construction (compile error in constexpr context, abort
+// at runtime under semantic=enforce).  The Refined wrapper is empty-
+// lattice-EBO-collapsed; sizeof is preserved via the BoolLattice
+// substrate from MIGRATE-2 (#462).
 //
-// The type is layout-identical to uint8_t under `[[no_unique_address]]`
-// + the member struct has a single uint8_t field → `sizeof(ElementBytes)
-// == sizeof(uint8_t) == 1`.
+// The type is layout-identical to uint8_t — `sizeof(ElementBytes) ==
+// sizeof(uint8_t) == 1`.
 struct ElementBytes {
-    uint8_t value_ = 0;
+    // Refined<bounded_above<16>, uint8_t>: value_.value() ≤ 16 by
+    // construction.  Default-init to 0 (matches ScalarType::Undefined
+    // semantics; bounded_above<16>(0) = true so the NSDMI does not
+    // trip the construction predicate).
+    safety::Refined<safety::bounded_above<uint8_t{16}>, uint8_t>
+        value_{uint8_t{0}};
 
     constexpr ElementBytes() noexcept = default;
+    // Construction routes through Refined's checked ctor, which fires
+    // `pre(bounded_above<16>(v))`; v > 16 is a contract violation at
+    // construction.  Existing call sites pass {0,1,2,4,8,16} only.
     explicit constexpr ElementBytes(uint8_t v) noexcept : value_{v} {}
 
-    [[nodiscard]] constexpr uint8_t raw()     const noexcept { return value_; }
-    [[nodiscard]] constexpr bool    is_zero() const noexcept { return value_ == 0; }
+    [[nodiscard]] constexpr uint8_t raw()     const noexcept { return value_.value(); }
+    [[nodiscard]] constexpr bool    is_zero() const noexcept { return value_.value() == 0; }
 
     // Comparison is defined between ElementBytes values only — raw
     // integer literals DON'T implicitly convert (the ctor is
     // `explicit`).  Tests and call sites write `ElementBytes{4}` when
     // they want to compare against a literal, surfacing the unit.
+    // Defaulted member-wise <=> dispatches through Refined's friend
+    // operator<=>, which compares the underlying uint8_t values.
     auto operator<=>(const ElementBytes&) const = default;
 
     // Common operation: multiply by a count to obtain total bytes.
@@ -48,11 +63,12 @@ struct ElementBytes {
     // `safe_mul<std::size_t, ...>` or the `safe_array_bytes<T, N>`
     // helper family (#134).
     [[nodiscard]] constexpr std::size_t times(std::size_t n) const noexcept {
-        return std::size_t{value_} * n;
+        return std::size_t{value_.value()} * n;
     }
 };
 static_assert(sizeof(ElementBytes) == sizeof(uint8_t),
-    "ElementBytes must be layout-identical to uint8_t (#129).");
+    "ElementBytes must be layout-identical to uint8_t (#129/#1067) — "
+    "Refined<bounded_above<16>, uint8_t> must EBO-collapse to sizeof(uint8_t).");
 
 // Mirror c10::ScalarType ordinals exactly so int8_t casts are compatible
 // between the standalone library and the PyTorch Vessel adapter.

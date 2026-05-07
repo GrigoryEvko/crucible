@@ -1440,6 +1440,15 @@ crucible_neg_compile_test(neg_graded_inject_on_comonad
 crucible_neg_compile_test(neg_refined_predicate_not_invocable
   "constraints not satisfied|PredicateInvocableOn")
 
+# WRAP-Types-1 (#1067) — ElementBytes::value_ wraps Refined<bounded_above<16>,
+# uint8_t>; constructing ElementBytes{17} in constexpr context drives the
+# bounded_above<16>(17) pre-clause through constant evaluation.  The contract
+# violation is rejected as a non-constant expression (P1494R5 + P2900R14),
+# pinning the structural bound at the storage type rather than relying on
+# the source dtype enum being well-formed.
+crucible_neg_compile_test(neg_element_bytes_above_max
+  "contract|bounded_above|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices
