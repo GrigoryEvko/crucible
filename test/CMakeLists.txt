@@ -1463,6 +1463,21 @@ crucible_neg_compile_test(neg_iter_det_match_pos_above_max
 crucible_neg_compile_test(neg_iter_det_match_pos_uint8_max
   "contract|bounded_above|not a constant|non-constant|constexpr")
 
+# WRAP-CallSite-2 (#880) — CallSiteTable::Lineno = NonNegative<int32_t>
+# = Refined<non_negative, int32_t>; constructing Lineno{< 0} in
+# constexpr context drives the non_negative(v) pre-clause through
+# constant evaluation.  Two fixtures per HS14:
+#   * _negative — boundary edge (-1 = 0 - 1), catches off-by-one drift
+#     ("positive" instead of "non_negative", admits -1 if comparison
+#     becomes "x > -1").
+#   * _int_min — wide miss (INT32_MIN), catches "lost sign-bit" where
+#     unsigned counter narrows to int32_t and predicate is too narrow
+#     (e.g., `x != -1` instead of `x >= 0`).
+crucible_neg_compile_test(neg_call_site_lineno_negative
+  "contract|non_negative|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_call_site_lineno_int_min
+  "contract|non_negative|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

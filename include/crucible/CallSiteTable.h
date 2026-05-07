@@ -23,11 +23,28 @@ namespace crucible {
 // Typical training loop has ~50-200 unique call sites, so the table
 // stays small. After the first iteration, has() always returns true.
 struct CallSiteTable {
+  // Refinement type for `lineno` storage (#880 WRAP-CallSite-2).
+  // Python source line numbers are non-negative: 0 is the canonical
+  // "unset / unknown / <frozen importlib>" sentinel, ≥1 is a real
+  // line per PEP 8.  Negative values come only from corrupted FFI or
+  // bit-flipped data and are structurally invalid.
+  //
+  // `non_negative` (≥ 0), NOT `positive` (> 0): zero is admissible
+  // because it is the NSDMI default and the unset sentinel.  Refined<
+  // non_negative, int32_t> is regime-1 EBO collapse — sizeof(Lineno)
+  // == sizeof(int32_t) == 4B; Entry's layout is preserved.
+  //
+  // The ctor's `pre(non_negative(v))` clause fires at construction
+  // time inside insert() — a corrupted FFI lineno of -1 aborts under
+  // semantic=enforce; in constexpr context (the neg-compile fixtures)
+  // it is rejected as a non-constant expression per P1494R5.
+  using Lineno = ::crucible::safety::NonNegative<int32_t>;
+
   struct Entry {
     CallsiteHash hash;           // strong-typed callsite identity
     std::string filename;
     std::string funcname;
-    int32_t lineno = 0;
+    Lineno lineno{int32_t{0}};   // Refined<non_negative, int32_t>; default 0
   };
 
   // The seen[] array is 32 KiB (4096 × 8 B CallsiteHash); the entries
@@ -81,7 +98,11 @@ struct CallSiteTable {
       auto& h = seen[(idx + p) & SET_MASK];
       if (h == CallsiteHash{}) {
         h = hash;
-        entries.emplace(hash, std::move(filename), std::move(funcname), lineno);
+        // Construct the Refined Lineno HERE — the ctor's pre clause
+        // fires the contract on negative input.  Storage carries the
+        // invariant; downstream readers can rely on lineno >= 0.
+        entries.emplace(hash, std::move(filename), std::move(funcname),
+                        Lineno{lineno});
         return;
       }
     }
