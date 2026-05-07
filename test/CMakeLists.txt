@@ -1510,6 +1510,27 @@ crucible_neg_compile_test(neg_iter_det_ops_since_boundary_regression
 crucible_neg_compile_test(neg_iter_det_ops_since_boundary_overflow
   "contract|max|Monotonic|not a constant|non-constant|constexpr")
 
+# WRAP-CKernel-4 (#892) — ValidCKernelIdRaw =
+# Refined<bounded_above<NUM_KERNELS - 1>, uint8_t>; constructing the
+# Refined with an out-of-range byte fires the predicate's pre-clause
+# in constant evaluation.  This is the type-system gate for every
+# uint8_t → CKernelId widening at FFI / deserialize boundaries
+# (Cipher.deserialize_region in particular — Serialize.h:385).
+# Two fixtures per HS14:
+#   * _at_sentinel — boundary edge (= NUM_KERNELS, off-by-one).
+#     Catches drift where the bound widens from `NUM_KERNELS - 1` to
+#     `NUM_KERNELS`, silently admitting the count sentinel as a real
+#     opcode (cascades into classify() returning sentinel and switch
+#     fallthrough to UB).
+#   * _uint8_max  — wide miss (= UINT8_MAX).  Catches "drop the bound
+#     entirely" regression where ValidCKernelIdRaw degenerates into a
+#     plain uint8_t typedef and admits any byte from a corrupted
+#     Cipher file.
+crucible_neg_compile_test(neg_ckernel_id_raw_at_sentinel
+  "contract|bounded_above|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_ckernel_id_raw_uint8_max
+  "contract|bounded_above|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

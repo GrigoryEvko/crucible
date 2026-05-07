@@ -31,6 +31,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
+#include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Tagged.h>
 
@@ -305,6 +306,54 @@ enum class CKernelId : uint8_t {
 
     NUM_KERNELS     // sentinel — must be last; value == 147
 };
+
+// ── Validated FFI/deserialize boundary: uint8_t → CKernelId ─────────
+//
+// Internal callers pass CKernelId values directly from enumerator
+// literals (CKernelId::GEMM_LINEAR, CKernelId::SDPA, ...) and never
+// synthesise an out-of-range CKernelId; for them a raw enum-class
+// argument is already type-safe.
+//
+// External callers — Cipher deserialize, TraceLoader, FFI bridges,
+// version-skew scenarios — recover a CKernelId's underlying byte
+// from disk or wire and must widen it back into the enum type.
+// `static_cast<CKernelId>(raw)` is unguarded: a corrupted byte
+// (e.g. a v9 file replayed by a v8 reader, or a bit-flipped page)
+// silently produces an invalid CKernelId in [NUM_KERNELS, 255], which
+// classify() / replay readers then propagate as an unknown opcode.
+//
+// `ValidCKernelIdRaw` is the type-system gate at that boundary.
+// Refined<bounded_above<NUM_KERNELS - 1>, uint8_t> admits 0
+// (OPAQUE) through static_cast<uint8_t>(COMM_BARRIER) and rejects
+// the NUM_KERNELS sentinel and every value above it.  The ctor's
+// `pre(bounded_above<NUM_KERNELS - 1>(v))` clause fires on
+// out-of-range bytes; in constexpr context it's rejected as a
+// non-constant expression per P1494R5 (the neg-compile fixtures
+// drive both directions of drift).
+//
+// Zero-cost: regime-1 EBO collapse — sizeof(ValidCKernelIdRaw) ==
+// sizeof(uint8_t) == 1B.  The wrapper exists for the construction-
+// time invariant; downstream readers .value() into a plain uint8_t.
+//
+// Use:
+//   te.kernel_id = make_ckernel_id(ValidCKernelIdRaw{byte_from_disk});
+// at every uint8_t → CKernelId widening site.  `make_ckernel_id` is
+// the only well-typed widening API; it consumes the proof-of-bound
+// in the ValidCKernelIdRaw value.
+using ValidCKernelIdRaw = ::crucible::safety::Refined<
+    ::crucible::safety::bounded_above<
+        static_cast<uint8_t>(CKernelId::NUM_KERNELS) - uint8_t{1}>,
+    uint8_t>;
+
+// Construct a CKernelId from a validated byte.  The Refined<>
+// argument *is* the proof that the value is in
+// [0, NUM_KERNELS).  `gnu::const`: depends only on the argument,
+// no global state.  `noexcept`: the predicate is already established
+// at the Refined ctor; this widening cannot fail.
+[[nodiscard, gnu::const]] inline constexpr
+CKernelId make_ckernel_id(ValidCKernelIdRaw raw) noexcept {
+    return static_cast<CKernelId>(raw.value());
+}
 
 // ── Registration table ──────────────────────────────────────────────────────
 //

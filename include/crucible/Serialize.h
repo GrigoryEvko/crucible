@@ -382,7 +382,26 @@ inline Header read_header(Reader& r) {
                 (flags & op_flag::PHASE_MASK) >> op_flag::PHASE_SHIFT);
             te.torch_function  = (flags & op_flag::TORCH_FUNCTION) != 0;
         }
-        te.kernel_id        = static_cast<CKernelId>(r.r<uint8_t>());
+        // Validated uint8_t → CKernelId widening (#892 WRAP-CKernel-4).
+        // A corrupted Cipher file or version-skew can deliver a byte
+        // in [NUM_KERNELS, 255]; the explicit bound check returns
+        // nullptr (matches the deserialize-error policy used for
+        // num_inputs / num_outputs / num_scalar_args above), and the
+        // checked Refined ctor stands as a defense-in-depth re-check
+        // — the bound is established by the if-return, so the ctor's
+        // pre clause holds and never aborts on this path.  The neg-
+        // compile fixtures pin the structural guarantee at the type
+        // level: a constexpr ValidCKernelIdRaw{>= NUM_KERNELS} is
+        // ill-formed regardless of what callers do.
+        {
+            const uint8_t raw_kernel_id = r.r<uint8_t>();
+            if (raw_kernel_id >= static_cast<uint8_t>(
+                    CKernelId::NUM_KERNELS)) [[unlikely]] {
+                return nullptr;
+            }
+            te.kernel_id = make_ckernel_id(
+                ValidCKernelIdRaw{raw_kernel_id});
+        }
 
         te.input_metas = (te.num_inputs > 0)
             ? arena.alloc_array<TensorMeta>(a, te.num_inputs) : nullptr;
