@@ -1691,6 +1691,35 @@ crucible_neg_compile_test(neg_trace_num_names_above_max
 crucible_neg_compile_test(neg_trace_num_names_uint32_max
   "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
 
+# ─── WRAP-MetaLog-2 (#945) ValidMetaAppendCount neg-compile fixtures ──
+#
+# MetaLog::try_append's `n` count parameter gains a typed Refined gate
+# capped at MetaLog::CAPACITY (1<<20 = 1'048'576 entries, 168 MB).
+# `n > CAPACITY` is structurally non-sensical (a single append larger
+# than the entire ring can never succeed); the typed witness pins
+# the bound at the type system so any caller that constructs
+# ValidMetaAppendCount with an out-of-range count is rejected at the
+# constructor's pre-clause.
+#
+# Two fixtures per HS14 mandate:
+#   * neg_metalog_append_count_above_max — boundary edge (CAPACITY+1)
+#     catches "bound widens to admit one more" drift.
+#   * neg_metalog_append_count_uint32_max — wide miss (UINT32_MAX)
+#     catches "drop the bound entirely" regression that would
+#     degenerate the alias into a plain uint32_t typedef.
+#
+# Without the gate, a caller passing n > CAPACITY would either spin
+# forever in try_append's overflow check (graceful failure but mute)
+# or — on any path that bypassed the runtime check — drive a memcpy
+# of n*144B beyond the ring buffer.  Defense-in-depth: the existing
+# `if (h - cached_tail + n > CAPACITY)` runtime guard plus the new
+# `pre (n <= CAPACITY)` clause plus the typed witness all fire
+# BEFORE any memcpy or head publish.
+crucible_neg_compile_test(neg_metalog_append_count_above_max
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_metalog_append_count_uint32_max
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

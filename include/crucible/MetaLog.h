@@ -12,6 +12,7 @@
 #include <crucible/rt/Registry.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/Refined.h>
 
 namespace crucible {
 
@@ -145,6 +146,7 @@ struct CRUCIBLE_OWNER MetaLog {
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append(const TensorMeta* metas, uint32_t n)
       CRUCIBLE_NO_THREAD_SAFETY
+      pre (n <= CAPACITY)
       pre (n == 0 || metas != nullptr)
   {
     if (n == 0) [[unlikely]] return MetaIndex::none();
@@ -348,5 +350,47 @@ struct CRUCIBLE_OWNER MetaLog {
     cached_tail_ = crucible::safety::Monotonic<uint32_t>{0};
   }
 };
+
+// ── Validated append-count carrier (#945 WRAP-MetaLog-2) ─────────────
+//
+// `try_append` accepts an `n` parameter — the number of TensorMeta
+// records to append from the caller's buffer.  Any `n > CAPACITY`
+// is structurally non-sensical: the buffer holds at most CAPACITY
+// records total, so a single call asking for more can never succeed
+// (every fast-path retry would observe the same overflow against the
+// real tail and return MetaIndex::none() forever).  Without a
+// type-level gate, the only protection was the runtime check at the
+// top of try_append's body — fine for graceful failure but mute about
+// the structural bound at the type system.
+//
+// `ValidMetaAppendCount` is the typed witness.  Production callers
+// who hold an `n` from a trusted source can construct a
+// `ValidMetaAppendCount{n}` once at the boundary; downstream code
+// that takes a `ValidMetaAppendCount` parameter inherits the bound
+// without re-checking.  The Refined ctor's pre clause
+// `bounded_above<MetaLog::CAPACITY>(v)` (i.e. v ≤ CAPACITY) makes
+// any out-of-bound construction a non-constant expression in
+// constexpr context (P1494R5 → ill-formed) and aborts via the
+// project contract handler at runtime.
+//
+// `try_append` itself carries `pre (n <= CAPACITY)` so both the
+// existing untyped surface and the typed widening factory enforce
+// the same structural bound.  Defense-in-depth: existing
+// `if (h - cached_tail + n > CAPACITY)` runtime guard plus the new
+// type-level witness fire BEFORE any memcpy or head publish.
+//
+// Regime-1 EBO collapse keeps the wrapper zero-cost:
+// `sizeof(ValidMetaAppendCount) == sizeof(uint32_t) == 4`.
+using ValidMetaAppendCount = ::crucible::safety::Refined<
+    ::crucible::safety::bounded_above<MetaLog::CAPACITY>, uint32_t>;
+
+// Widening factory for `ValidMetaAppendCount → uint32_t` at production
+// hot-path call sites.  `gnu::const` documents that the result depends
+// only on the argument and has no side effects; the optimizer can CSE
+// / DCE the call freely under -O3.
+[[nodiscard, gnu::const]] inline constexpr
+uint32_t make_meta_append_count(ValidMetaAppendCount raw) noexcept {
+    return raw.value();
+}
 
 } // namespace crucible
