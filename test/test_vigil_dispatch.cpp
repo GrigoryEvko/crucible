@@ -14,6 +14,8 @@
 #include <crucible/effects/FxAliases.h>
 #include "test_harness.h"
 #include "test_assert.h"
+#include <bit>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
@@ -36,8 +38,8 @@ static constexpr ShapeHash SHAPE[NUM_OPS] = {
 // ── Helpers ──────────────────────────────────────────────────────────
 
 static void* fake_ptr(uint32_t iter, uint32_t op) {
-    return reinterpret_cast<void*>(
-        static_cast<uintptr_t>((iter + 1) * 0x100000 + (op + 1) * 0x1000));
+    return std::bit_cast<void*>(
+        static_cast<std::uintptr_t>((iter + 1) * 0x100000 + (op + 1) * 0x1000));
 }
 
 static TensorMeta make_meta(void* data_ptr) {

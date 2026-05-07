@@ -16,6 +16,7 @@
 #include <crucible/rt/Registry.h>
 #include "test_assert.h"
 
+#include <bit>
 #include <cstdint>
 #include <cstring>
 #include <type_traits>
@@ -205,7 +206,7 @@ static void test_pool_base_pinned_small_pool() {
   assert(raw != nullptr);
 
   // 256B (PoolAllocator::ALIGNMENT) at minimum.
-  assert(reinterpret_cast<uintptr_t>(raw) % PoolAllocator::ALIGNMENT == 0);
+  assert(std::bit_cast<uintptr_t>(raw) % PoolAllocator::ALIGNMENT == 0);
 
   pool.destroy();
 }
@@ -233,7 +234,7 @@ static void test_pool_base_huge_pinned() {
   assert(wrapped == raw);
   assert(raw != nullptr);
   // 2MB-aligned (HugePage promise).
-  assert(reinterpret_cast<uintptr_t>(raw) % HP == 0);
+  assert(std::bit_cast<uintptr_t>(raw) % HP == 0);
 
   pool.destroy();
 }
@@ -283,7 +284,7 @@ template <typename Slot>
     requires (Slot::template satisfies<AllocClassTag_v::Pool>)
 static uintptr_t pool_consumer(Slot slot) {
   void* p = std::move(slot).consume();
-  return reinterpret_cast<uintptr_t>(p);
+  return std::bit_cast<uintptr_t>(p);
 }
 
 static void test_e2e_fence_checked_consumer() {
@@ -331,7 +332,7 @@ static void test_pool_base_pinned_with_huge_alignment() {
   void* p1 = std::move(pool_pinned).consume();
   void* p2 = std::move(huge_pinned).consume();
   assert(p1 == p2);
-  assert(reinterpret_cast<uintptr_t>(p1) % HP == 0);
+  assert(std::bit_cast<uintptr_t>(p1) % HP == 0);
 
   pool.destroy();
 }

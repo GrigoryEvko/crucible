@@ -6,6 +6,7 @@
 
 #include "test_assert.h"
 
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -193,8 +194,8 @@ static void test_sym_flags_bits_typed_surface() {
     static_assert(sizeof(SymbolEntry) == 32);
     static_assert(offsetof(SymbolEntry, sym_flags) == 25);
     SymbolEntry probe{};
-    assert(reinterpret_cast<const char*>(&probe.sym_flags) -
-           reinterpret_cast<const char*>(&probe) == 25);
+    assert(std::bit_cast<std::uintptr_t>(&probe.sym_flags) -
+           std::bit_cast<std::uintptr_t>(&probe) == 25);
 
     // ── (4) Reflection-driven diagnostic surface ──────────────────
     // bits_to_string<SymFlags> over the multi-flag entry.  Output

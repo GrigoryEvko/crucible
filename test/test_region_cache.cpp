@@ -12,6 +12,8 @@
 #include <crucible/effects/Capabilities.h>
 #include "test_harness.h"
 #include "test_assert.h"
+#include <bit>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
@@ -46,8 +48,8 @@ static constexpr ShapeHash SHAPE_B[NUM_OPS] = {
 // ── Helpers ────────────────────────────────────────────────────────
 
 static void* fake_ptr(uint32_t variant, uint32_t iter, uint32_t op) {
-    return reinterpret_cast<void*>(
-        static_cast<uintptr_t>(
+    return std::bit_cast<void*>(
+        static_cast<std::uintptr_t>(
             (variant + 1) * 0x10000000ULL +
             (iter + 1) * 0x100000 + (op + 1) * 0x1000));
 }

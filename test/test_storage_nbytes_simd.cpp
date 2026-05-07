@@ -27,6 +27,7 @@
 
 #include <array>
 #include "test_assert.h"
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -170,7 +171,7 @@ static void test_natural_tensor_meta_alignment() {
     alignas(TensorMeta) std::array<std::byte, sizeof(TensorMeta) + 64> storage{};
     std::uintptr_t chosen = 0;
     const std::uintptr_t base =
-        reinterpret_cast<std::uintptr_t>(storage.data());
+        std::bit_cast<std::uintptr_t>(storage.data());
     for (std::size_t offset = 0; offset < 64; ++offset) {
         const std::uintptr_t candidate = base + offset;
         if (candidate % alignof(TensorMeta) == 0 &&
@@ -184,7 +185,7 @@ static void test_natural_tensor_meta_alignment() {
     auto* meta = std::construct_at(
         reinterpret_cast<TensorMeta*>(chosen),
         make_meta({16, 32, 64}, {2048, 64, 1}));
-    assert(reinterpret_cast<std::uintptr_t>(meta->sizes) % 64 != 0);
+    assert(std::bit_cast<std::uintptr_t>(&meta->sizes[0]) % 64 != 0);
     check_equiv(*meta, "natural-align-not-vector-align");
     std::destroy_at(meta);
 

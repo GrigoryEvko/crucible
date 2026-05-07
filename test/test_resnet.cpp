@@ -10,6 +10,8 @@
 #include <crucible/Vigil.h>
 #include "test_harness.h"
 #include "test_assert.h"
+#include <bit>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -186,13 +188,14 @@ struct ResNet50 {
 // ═══════════════════════════════════════════════════════════════════
 
 static void* param_ptr(uint16_t idx) {
-    return reinterpret_cast<void*>(uint64_t(idx + 1) * 0x10000);
+    return std::bit_cast<void*>(
+        static_cast<std::uintptr_t>(idx + 1) * 0x10000);
 }
 
 static void* act_ptr(uint32_t iter, uint16_t idx) {
-    return reinterpret_cast<void*>(
-        uintptr_t(uint64_t(iter + 1) * 0x10000000ULL +
-                  uint64_t(idx + 1) * 0x10000));
+    return std::bit_cast<void*>(
+        static_cast<std::uintptr_t>(iter + 1) * 0x10000000ULL +
+        static_cast<std::uintptr_t>(idx + 1) * 0x10000);
 }
 
 static TensorMeta make_meta(const TRef& s, uint32_t iter) {

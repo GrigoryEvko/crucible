@@ -1,6 +1,7 @@
 #include <crucible/Arena.h>
 #include <crucible/effects/Capabilities.h>
 #include "test_assert.h"
+#include <bit>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -24,7 +25,7 @@ using crucible::safety::PowerOfTwo;
 
   // Alignment: 16-byte aligned allocation (max_align_t guarantee)
   void* aligned = arena.alloc(test.alloc, Positive<size_t>{128}, PowerOfTwo<size_t>{16});
-  assert(reinterpret_cast<uintptr_t>(aligned) % 16 == 0);
+  assert(std::bit_cast<uintptr_t>(aligned) % 16 == 0);
 
   // Cross-block allocation (force new block)
   crucible::Arena small_arena(64);
@@ -109,7 +110,7 @@ using crucible::safety::PowerOfTwo;
     crucible::Arena align_arena(1 << 16);
     for (size_t align : {1u, 2u, 4u, 8u, 16u, 32u, 64u, 128u, 256u}) {
       void* p = align_arena.alloc(test.alloc, Positive<size_t>{8}, PowerOfTwo<size_t>{align});
-      assert(reinterpret_cast<uintptr_t>(p) % align == 0);
+      assert(std::bit_cast<uintptr_t>(p) % align == 0);
     }
   }
 

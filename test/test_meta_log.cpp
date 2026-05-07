@@ -14,6 +14,7 @@
 #include "test_assert.h"
 
 #include <atomic>
+#include <bit>
 #include <cstdint>
 #include <cstdio>
 #include <thread>
@@ -45,7 +46,7 @@ static void test_empty_state() {
 
 static void test_single_append_returns_index_zero() {
     MetaLog log;
-    TensorMeta m = make_meta(reinterpret_cast<void*>(0x1000));
+    TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x1000)));
     auto idx = log.try_append(&m, 1);
     assert(idx.is_valid());
     assert(idx.raw() == 0);
@@ -62,7 +63,7 @@ static void test_batch_append_and_monotonic() {
     MetaLog log;
     std::vector<TensorMeta> batch;
     for (int i = 0; i < 8; ++i) {
-        batch.push_back(make_meta(reinterpret_cast<void*>(0x1000 + i * 16)));
+        batch.push_back(make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x1000 + i * 16))));
     }
     auto idx1 = log.try_append(batch.data(), 3);
     auto idx2 = log.try_append(batch.data() + 3, 5);
@@ -82,7 +83,7 @@ static void test_batch_append_and_monotonic() {
 
 static void test_tail_advance_frees_capacity() {
     MetaLog log;
-    TensorMeta m = make_meta(reinterpret_cast<void*>(0x2000));
+    TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x2000)));
     auto idx = log.try_append(&m, 1);
     assert(log.size() == 1);
     log.advance_tail(idx.raw() + 1);
@@ -96,7 +97,7 @@ static void test_tail_advance_frees_capacity() {
 
 static void test_reset_zeroes_both_pointers() {
     MetaLog log;
-    TensorMeta m = make_meta(reinterpret_cast<void*>(0x3000));
+    TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x3000)));
     for (int i = 0; i < 10; ++i) (void)log.try_append(&m, 1);
     log.advance_tail(5);
     log.reset();
@@ -112,7 +113,7 @@ static void test_try_contiguous_wrap_returns_null() {
     // Drive head close to the wrap boundary.  Append then drain so the
     // next append starts near the end.
     const uint32_t near_end = MetaLog::CAPACITY - 3;
-    TensorMeta m = make_meta(reinterpret_cast<void*>(0x4000));
+    TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0x4000)));
     // Fast-forward head by appending a big batch with sentinel data.
     std::vector<TensorMeta> junk(near_end, m);
     (void)log.try_append(junk.data(), near_end);
@@ -163,7 +164,7 @@ static void test_spsc_concurrent_integrity() {
     std::thread producer{[&]{
         for (uint32_t i = 0; i < N; /* advance only on success */) {
             TensorMeta m = make_meta(
-                reinterpret_cast<void*>(static_cast<uintptr_t>(i + 1) << 16));
+                std::bit_cast<void*>(static_cast<std::uintptr_t>(i + 1) << 16));
             auto idx = log.try_append(&m, 1);
             if (idx.is_valid()) [[likely]] {
                 ++i;
@@ -194,7 +195,7 @@ static void test_spsc_concurrent_integrity() {
                 const TensorMeta& m = log.at(next + k);
                 const uintptr_t expected =
                     static_cast<uintptr_t>(next + k + 1) << 16;
-                assert(reinterpret_cast<uintptr_t>(m.data_ptr) == expected);
+                assert(std::bit_cast<uintptr_t>(m.data_ptr) == expected);
                 // Spot-check non-pointer fields to catch torn reads.
                 assert(m.sizes[0]    == 128);
                 assert(m.sizes[1]    == 256);
@@ -237,7 +238,7 @@ static void test_try_append_pure_FOUND_I17() {
     // (a) — default template arg.
     {
         MetaLog log;
-        TensorMeta m = make_meta(reinterpret_cast<void*>(0xA0));
+        TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xA0)));
         auto idx = log.try_append_pure(&m, 1);
         assert(idx.is_valid());
         assert(idx.raw() == 0);
@@ -249,8 +250,8 @@ static void test_try_append_pure_FOUND_I17() {
     // (b) — explicit Row<> template arg.
     {
         MetaLog log;
-        TensorMeta m1 = make_meta(reinterpret_cast<void*>(0xB0));
-        TensorMeta m2 = make_meta(reinterpret_cast<void*>(0xC0));
+        TensorMeta m1 = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xB0)));
+        TensorMeta m2 = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xC0)));
         auto idx1 = log.try_append_pure<eff::Row<>>(&m1, 1);
         auto idx2 = log.try_append_pure<eff::Row<>>(&m2, 1);
         assert(idx1.is_valid() && idx2.is_valid());
@@ -264,7 +265,7 @@ static void test_try_append_pure_FOUND_I17() {
     //       the facade is a forwarder (not a parallel storage path).
     {
         MetaLog log;
-        TensorMeta m = make_meta(reinterpret_cast<void*>(0xD0));
+        TensorMeta m = make_meta(std::bit_cast<void*>(static_cast<std::uintptr_t>(0xD0)));
         auto i0 = log.try_append(&m, 1);            // index 0
         auto i1 = log.try_append_pure(&m, 1);       // index 1
         auto i2 = log.try_append(&m, 1);            // index 2
@@ -320,7 +321,7 @@ static void test_try_append_pure_concurrent_FOUND_I17_AUDIT() {
     std::thread producer{[&]{
         for (uint32_t i = 0; i < N; /* advance only on success */) {
             TensorMeta m = make_meta(
-                reinterpret_cast<void*>(static_cast<uintptr_t>(i + 1) << 16));
+                std::bit_cast<void*>(static_cast<std::uintptr_t>(i + 1) << 16));
             // FOUND-I17: row-typed facade with default Row<>.
             auto idx = log.try_append_pure(&m, 1);
             if (idx.is_valid()) [[likely]] {
@@ -349,7 +350,7 @@ static void test_try_append_pure_concurrent_FOUND_I17_AUDIT() {
                 const TensorMeta& m = log.at(next + k);
                 const uintptr_t expected =
                     static_cast<uintptr_t>(next + k + 1) << 16;
-                assert(reinterpret_cast<uintptr_t>(m.data_ptr) == expected);
+                assert(std::bit_cast<uintptr_t>(m.data_ptr) == expected);
                 assert(m.sizes[0]    == 128);
                 assert(m.sizes[1]    == 256);
                 assert(m.dtype       == ScalarType::Float);

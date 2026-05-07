@@ -21,6 +21,7 @@
 #include "test_assert.h"
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -301,7 +302,7 @@ static void test_dim_hash_equivalence_handcoded() {
     std::array<std::byte, sizeof(crucible::TensorMeta) + 64> storage{};
     std::uintptr_t chosen = 0;
     const std::uintptr_t base =
-        reinterpret_cast<std::uintptr_t>(storage.data());
+        std::bit_cast<std::uintptr_t>(storage.data());
     for (std::size_t offset = 0; offset < 64; ++offset) {
         const std::uintptr_t candidate = base + offset;
         if (candidate % alignof(crucible::TensorMeta) == 0 &&
@@ -314,7 +315,7 @@ static void test_dim_hash_equivalence_handcoded() {
     auto* unaligned = std::construct_at(
         reinterpret_cast<crucible::TensorMeta*>(chosen),
         make_meta({16, 32, 64}, {2048, 64, 1}));
-    assert(reinterpret_cast<std::uintptr_t>(unaligned->sizes) % 64 != 0);
+    assert(std::bit_cast<std::uintptr_t>(&unaligned->sizes[0]) % 64 != 0);
     assert(dim_hash_simd(*unaligned) == dim_hash_scalar(*unaligned));
     std::destroy_at(unaligned);
 

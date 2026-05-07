@@ -2,6 +2,7 @@
 #include <crucible/BackgroundThread.h>
 #include <crucible/effects/Capabilities.h>
 #include "test_assert.h"
+#include <bit>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -63,7 +64,7 @@ static void test_basic_init() {
   // Pool is allocated and 256-byte aligned.
   assert(pool.is_initialized());
   assert(pool.pool_base() != nullptr);
-  assert(reinterpret_cast<uintptr_t>(pool.pool_base()) % PoolAllocator::ALIGNMENT == 0);
+  assert(std::bit_cast<uintptr_t>(pool.pool_base()) % PoolAllocator::ALIGNMENT == 0);
   assert(pool.pool_bytes() == 3072);
   assert(pool.num_slots() == 3);
   assert(pool.num_external() == 1);
@@ -75,8 +76,8 @@ static void test_basic_init() {
 
   // Internal slot pointers are 256-aligned (offsets are 256-aligned multiples
   // or 0, and base is 256-aligned, so base+0 and base+1024 are both aligned).
-  assert(reinterpret_cast<uintptr_t>(pool.slot_ptr(SlotId{0}, pv)) % 256 == 0);
-  assert(reinterpret_cast<uintptr_t>(pool.slot_ptr(SlotId{1}, pv)) % 256 == 0);
+  assert(std::bit_cast<uintptr_t>(pool.slot_ptr(SlotId{0}, pv)) % 256 == 0);
+  assert(std::bit_cast<uintptr_t>(pool.slot_ptr(SlotId{1}, pv)) % 256 == 0);
 
   // External slot is nullptr before registration.
   assert(pool.slot_ptr(SlotId{2}, pv) == nullptr);

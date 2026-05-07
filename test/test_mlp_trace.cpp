@@ -27,7 +27,9 @@
 #include <crucible/Vigil.h>
 #include "test_harness.h"
 #include "test_assert.h"
+#include <bit>
 #include <cstdio>
+#include <cstdint>
 #include <cstring>
 
 using namespace crucible;
@@ -113,16 +115,16 @@ static TensorMeta make_1d(void* ptr, int64_t n) {
 // ═══════════════════════════════════════════════════════════════════
 
 // Parameter pointers (stable across iterations — these are "external" to the pool)
-static void* const W1_PTR = reinterpret_cast<void*>(uintptr_t(0x10000));
-static void* const B1_PTR = reinterpret_cast<void*>(uintptr_t(0x20000));
-static void* const W2_PTR = reinterpret_cast<void*>(uintptr_t(0x30000));
-static void* const B2_PTR = reinterpret_cast<void*>(uintptr_t(0x40000));
-static void* const X_PTR  = reinterpret_cast<void*>(uintptr_t(0x50000)); // input batch
+static void* const W1_PTR = std::bit_cast<void*>(static_cast<std::uintptr_t>(0x10000));
+static void* const B1_PTR = std::bit_cast<void*>(static_cast<std::uintptr_t>(0x20000));
+static void* const W2_PTR = std::bit_cast<void*>(static_cast<std::uintptr_t>(0x30000));
+static void* const B2_PTR = std::bit_cast<void*>(static_cast<std::uintptr_t>(0x40000));
+static void* const X_PTR  = std::bit_cast<void*>(static_cast<std::uintptr_t>(0x50000)); // input batch
 
 // Activation pointer: unique per (iteration, tensor_id)
 static void* act_ptr(uint32_t iter, uint32_t tensor_id) {
-    return reinterpret_cast<void*>(
-        uintptr_t((iter + 1) * 0x1000000 + (tensor_id + 1) * 0x10000));
+    return std::bit_cast<void*>(
+        static_cast<std::uintptr_t>((iter + 1) * 0x1000000 + (tensor_id + 1) * 0x10000));
 }
 
 // Activation tensor IDs (intermediates created during forward/backward)

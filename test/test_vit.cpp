@@ -18,6 +18,8 @@
 #include <crucible/Vigil.h>
 #include "test_harness.h"
 #include "test_assert.h"
+#include <bit>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
@@ -159,13 +161,13 @@ static_assert(NUM_OPS == 30, "ViT: 19 forward + 11 backward");
 // ═══════════════════════════════════════════════════════════════════
 
 static void* param_ptr(uint8_t idx) {
-    return reinterpret_cast<void*>(uintptr_t((idx + 1) * 0x10000));
+    return std::bit_cast<void*>(static_cast<std::uintptr_t>((idx + 1) * 0x10000));
 }
 
 static void* act_ptr(uint32_t iter, uint8_t idx) {
-    return reinterpret_cast<void*>(
-        (static_cast<uint64_t>(iter) + 1) * 0x1000000ULL
-        + (static_cast<uint64_t>(idx) + 1) * 0x10000);
+    return std::bit_cast<void*>(
+        (static_cast<std::uintptr_t>(iter) + 1) * 0x1000000ULL
+        + (static_cast<std::uintptr_t>(idx) + 1) * 0x10000);
 }
 
 static TensorMeta make_meta(const TSpec& s, uint32_t iter) {

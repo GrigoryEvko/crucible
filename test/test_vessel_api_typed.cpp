@@ -6,6 +6,7 @@
 #include <crucible/safety/Tagged.h>
 
 #include <array>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -141,7 +142,7 @@ void test_meta_roundtrip() {
     meta.strides[0] = 128;
     meta.strides[1] = 16;
     meta.strides[2] = 1;
-    meta.data_ptr = reinterpret_cast<void*>(static_cast<std::uintptr_t>(0xCAFEBABE));
+    meta.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xCAFEBABE));
     meta.ndim = 3;
     meta.dtype = static_cast<int8_t>(crucible::ScalarType::Float);
     meta.device_type = static_cast<int8_t>(crucible::DeviceType::CUDA);
@@ -217,9 +218,9 @@ void test_data_ptr_typed() {
     // Build a meta array and verify data_ptr_typed reads the same
     // bits the wire struct holds, just with provenance-tagging.
     CrucibleMeta arr[3]{};
-    arr[0].data_ptr = reinterpret_cast<void*>(static_cast<std::uintptr_t>(0xAAAA0000));
-    arr[1].data_ptr = reinterpret_cast<void*>(static_cast<std::uintptr_t>(0xBBBB0000));
-    arr[2].data_ptr = reinterpret_cast<void*>(static_cast<std::uintptr_t>(0xCCCC0000));
+    arr[0].data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xAAAA0000));
+    arr[1].data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xBBBB0000));
+    arr[2].data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xCCCC0000));
 
     auto typed_arr = crucible::vessel::as_meta_typed(arr, 3);
 

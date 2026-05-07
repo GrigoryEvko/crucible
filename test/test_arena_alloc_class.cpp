@@ -37,6 +37,7 @@
 #include "test_assert.h"
 
 #include <array>
+#include <bit>
 #include <cstdio>
 #include <cstdint>
 #include <type_traits>
@@ -88,7 +89,7 @@ static void test_alloc_obj_pinned_returns_arena_pointer() {
     assert(unwrapped->d == 4);
 
     // 64-byte alignment must be honored.
-    auto addr = reinterpret_cast<uintptr_t>(unwrapped);
+    auto addr = std::bit_cast<uintptr_t>(unwrapped);
     assert((addr & (alignof(HotPathStruct) - 1)) == 0);
 }
 
@@ -543,10 +544,10 @@ static void test_sequential_allocations_distinct() {
 
     // Bump-pointer arena: each next allocation is at a higher address
     // (within a block).  Verify ordering.
-    assert(reinterpret_cast<uintptr_t>(w1.peek())
-           < reinterpret_cast<uintptr_t>(w2.peek()));
-    assert(reinterpret_cast<uintptr_t>(w2.peek())
-           < reinterpret_cast<uintptr_t>(w3.peek()));
+    assert(std::bit_cast<uintptr_t>(w1.peek())
+           < std::bit_cast<uintptr_t>(w2.peek()));
+    assert(std::bit_cast<uintptr_t>(w2.peek())
+           < std::bit_cast<uintptr_t>(w3.peek()));
 }
 
 // ── Main ───────────────────────────────────────────────────────────

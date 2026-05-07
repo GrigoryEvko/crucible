@@ -1,7 +1,9 @@
 #include <crucible/Serialize.h>
 #include <crucible/effects/Capabilities.h>
 #include "test_assert.h"
+#include <bit>
 #include <cinttypes>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <vector>
@@ -39,7 +41,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     m.device_type = crucible::DeviceType::CPU;
     m.device_idx  = -1;
     m.layout      = crucible::Layout::Strided;
-    m.data_ptr    = reinterpret_cast<void*>(0xDEADBEEF); // must become null on reload
+    m.data_ptr    = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xDEADBEEF)); // must become null on reload
     return m;
 }
 
