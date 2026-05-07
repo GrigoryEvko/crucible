@@ -1819,6 +1819,36 @@ crucible_neg_compile_test(neg_cipher_head_zero_literal
 crucible_neg_compile_test(neg_cipher_head_default_construct
   "contract|Refined|non_zero|not a constant|non-constant|constexpr")
 
+# ─── #897 WRAP-CostModel-3 neg-compile tests ────────────────────────
+#
+# Per #897, ValidRegsPerThread is
+# safety::Refined<safety::bounded_above<uint16_t{255}>, uint16_t> and
+# pins KernelConfig::regs_per_thread at the type level.  255 is the
+# hardware ceiling on every shipped backend (NVIDIA Hopper / Blackwell
+# SM_VERSION ≥ 80, AMD CDNA3+/RDNA3+); the corresponding
+# HardwareProfile::max_regs_per_thread defaults to 255 in every preset.
+#
+# Two fixtures per HS14 mandate, demonstrating distinct mismatch
+# classes:
+#   * neg_costmodel_regs_per_thread_overflow — boundary edge (256,
+#     exactly one past the ceiling).  Catches off-by-one drift in
+#     callers that compute regs_per_thread = something + 1.
+#   * neg_costmodel_regs_per_thread_max_uint16 — wide miss (UINT16_MAX
+#     = 65535).  Catches drift where a caller passes
+#     std::numeric_limits<uint16_t>::max(), uninitialised stack
+#     garbage that happens to read as max, or a corrupt cost-model
+#     snapshot deserialiser.
+#
+# Defense-in-depth: the existing runtime check inside validate_config
+# (constraint C2: cfg.regs_per_thread > hw.max_regs_per_thread) is
+# retained.  ValidRegsPerThread catches the value at construction
+# time via the typed alias path; the C2 body check catches per-
+# hardware ceilings that may be < 255 on future silicon.
+crucible_neg_compile_test(neg_costmodel_regs_per_thread_overflow
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_costmodel_regs_per_thread_max_uint16
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

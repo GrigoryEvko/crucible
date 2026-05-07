@@ -107,7 +107,7 @@ static void test_validate_config() {
     KernelConfig ok{};
     ok.tile_m = 128; ok.tile_n = 128; ok.tile_k = 32;
     ok.pipeline_stages = 3; ok.warps_per_block = 8;
-    ok.smem_bytes = 64 * 1024; ok.regs_per_thread = 64; ok.vec_width = 4;
+    ok.smem_bytes = 64 * 1024; ok.regs_per_thread = ValidRegsPerThread{uint16_t{64}}; ok.vec_width = 4;
     assert(validate_config(ok, hw));
 
     // C1: smem too large.

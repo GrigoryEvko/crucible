@@ -24,12 +24,44 @@
 // The cost model exposes this: launch_ns >> compute_ns for small ops.
 
 #include <crucible/Types.h>
+#include <crucible/safety/Refined.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 
 namespace crucible {
+
+// ── Validated registers-per-thread (#897 WRAP-CostModel-3) ─────────────
+//
+// `regs_per_thread` is the per-thread register estimate that the
+// optimizer feeds to `sm_occupancy` and to `validate_config`'s
+// constraint C2 (cfg.regs_per_thread ≤ hw.max_regs_per_thread).  The
+// hardware ceiling is 255 on every shipped backend (NVIDIA Hopper /
+// Blackwell SM_VERSION ≥ 80, AMD CDNA3+/RDNA3+); the corresponding
+// `HardwareProfile::max_regs_per_thread` defaults to 255 in every
+// preset (preset_h100 / preset_a100 / preset_b200 / preset_mi300x).
+//
+// The `Refined<bounded_above<255>, uint16_t>` gate pins the structural
+// bound at the type level so a `KernelConfig{ .regs_per_thread = 999 }`
+// is rejected at construction time — under semantic=enforce the runtime
+// abort fires immediately, in constexpr context the value is a non-
+// constant expression per P1494R5 (the neg-compile fixtures drive both
+// the boundary edge at 256 and the wide miss at UINT16_MAX).  The
+// runtime check at validate_config still validates against the
+// per-hardware ceiling (which can be < 255 on future silicon); the
+// type-level gate is the upper-bound coverage that closes "uint16_t
+// fields can hold 999" structurally.
+//
+// EBO collapse: `Refined<bounded_above<255>, uint16_t>` is regime-1 ⇒
+// sizeof(ValidRegsPerThread) == sizeof(uint16_t) == 2 B.  The
+// KernelConfig field layout is unchanged.
+using ValidRegsPerThread =
+    safety::Refined<safety::bounded_above<uint16_t{255}>, uint16_t>;
+static_assert(sizeof(ValidRegsPerThread) == sizeof(uint16_t),
+    "ValidRegsPerThread must EBO-collapse to sizeof(uint16_t) — "
+    "Refined<bounded_above<255>, uint16_t> is regime-1, the BoolLattice "
+    "has empty element_type so the wrapper carries no extra storage.");
 
 // ═══════════════════════════════════════════════════════════════════
 // HardwareProfile: Measurable hardware specifications (Z3 axioms)
@@ -288,7 +320,11 @@ struct KernelConfig {
   uint8_t pipeline_stages = 3;     // Async copy pipeline depth (1-7)
   uint8_t warps_per_block = 8;     // Warps per threadblock (1-32)
   uint32_t smem_bytes = 0;         // Shared memory allocation (bytes)
-  uint16_t regs_per_thread = 64;   // Estimated registers per thread
+  // Estimated registers per thread.  Bounded above by 255 at the type
+  // level (#897 WRAP-CostModel-3) — see ValidRegsPerThread above the
+  // KernelConfig comment block for the per-hardware ceiling discussion
+  // and the EBO collapse static_assert.
+  ValidRegsPerThread regs_per_thread{uint16_t{64}};
   uint8_t vec_width = 4;           // Elements per vectorized load/store
   uint8_t pad0 = 0;
 };
@@ -315,7 +351,7 @@ struct KernelConfig {
   // C1: shared memory fits in per-SM budget
   if (cfg.smem_bytes > hw.smem_per_sm) return false;
   // C2: register count within hardware limit
-  if (cfg.regs_per_thread > hw.max_regs_per_thread) return false;
+  if (cfg.regs_per_thread.value() > hw.max_regs_per_thread) return false;
   // C3: at least one warp per block
   if (cfg.warps_per_block == 0) return false;
   // C4: threads per block ≤ hardware max (1024 on NVIDIA, 1024 on AMD)
@@ -461,7 +497,7 @@ struct CostBreakdown {
   cb.wave_efficiency = wave_efficiency(elements, hw);
 
   // SM occupancy
-  cb.occupancy = sm_occupancy(cfg.regs_per_thread, cfg.smem_bytes,
+  cb.occupancy = sm_occupancy(cfg.regs_per_thread.value(), cfg.smem_bytes,
                                cfg.warps_per_block, hw);
 
   // Compute time: flops / (effective throughput)
