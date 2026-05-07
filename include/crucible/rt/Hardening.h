@@ -25,6 +25,7 @@
 #include "Registry.h"
 #include "Topology.h"
 
+#include <bit>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
@@ -379,7 +380,7 @@ class Hardening {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
 
-        const uintptr_t raw       = reinterpret_cast<uintptr_t>(addr);
+        const uintptr_t raw       = std::bit_cast<uintptr_t>(addr);
         const uintptr_t aligned   = (raw + kHugePageBytes - 1)
                                   & ~(kHugePageBytes - 1);
         const size_t    lost_head = aligned - raw;
@@ -388,7 +389,7 @@ class Hardening {
         const size_t aligned_len = usable & ~(kHugePageBytes - 1);
         if (aligned_len == 0) return false;
 
-        void* const target = reinterpret_cast<void*>(aligned);
+        void* const target = std::bit_cast<void*>(aligned);
         if (::madvise(target, aligned_len, MADV_HUGEPAGE) == 0) return true;
         detail::warn("madvise(MADV_HUGEPAGE)", errno);
         return false;
@@ -404,7 +405,7 @@ class Hardening {
 #ifdef __linux__
         if (addr == nullptr || len == 0) return false;
 
-        const uintptr_t raw       = reinterpret_cast<uintptr_t>(addr);
+        const uintptr_t raw       = std::bit_cast<uintptr_t>(addr);
         const uintptr_t aligned   = (raw + kHugePageBytes - 1)
                                   & ~(kHugePageBytes - 1);
         const size_t    lost_head = aligned - raw;
@@ -413,7 +414,7 @@ class Hardening {
         const size_t aligned_len = usable & ~(kHugePageBytes - 1);
         if (aligned_len == 0) return false;
 
-        void* const target = reinterpret_cast<void*>(aligned);
+        void* const target = std::bit_cast<void*>(aligned);
         if (::madvise(target, aligned_len, MADV_COLLAPSE) == 0) return true;
         // ENOSYS / EINVAL on older kernels — silent.
         if (errno != ENOSYS && errno != EINVAL) {

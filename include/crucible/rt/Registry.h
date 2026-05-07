@@ -28,6 +28,7 @@
 
 #include <array>
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -164,7 +165,7 @@ class HotRegionRegistry {
     };
 
     [[nodiscard]] static void* claimed_addr() noexcept {
-        return reinterpret_cast<void*>(uintptr_t{1});
+        return std::bit_cast<void*>(uintptr_t{1});
     }
 
     std::array<Slot, max_regions> slots_{};

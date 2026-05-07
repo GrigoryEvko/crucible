@@ -751,7 +751,7 @@ struct BackgroundThread {
   // gnu::const: depends only on the pointer value, no memory access.
   [[nodiscard, gnu::const]] static uint32_t hash_ptr(void* ptr) noexcept {
     return static_cast<uint32_t>(
-        reinterpret_cast<uintptr_t>(ptr) * 0x9E3779B97F4A7C15ULL >> 32);
+        std::bit_cast<uintptr_t>(ptr) * 0x9E3779B97F4A7C15ULL >> 32);
   }
 
   [[nodiscard]] static InsertResult ptr_map_insert(
@@ -1253,15 +1253,22 @@ struct BackgroundThread {
         te.input_metas = meta_base + meta_offset;
         te.output_metas = meta_base + meta_offset + n_in;
 
-        // Aux pointers: cursor advance into bulk block.
+        // Aux pointers: cursor advance into bulk block. Each section
+        // begins lifetime as a typed array via std::start_lifetime_as_array
+        // (P2590R2) — the bulk arena memcpy elsewhere then writes into the
+        // typed objects without UB.
         te.scalar_args = (n_scalars > 0) ?
-            reinterpret_cast<int64_t*>(aux_cursor) : nullptr;
+            std::start_lifetime_as_array<int64_t>(aux_cursor, n_scalars) :
+            nullptr;
         aux_cursor += n_scalars * sizeof(int64_t);
-        te.input_trace_indices = reinterpret_cast<OpIndex*>(aux_cursor);
+        te.input_trace_indices =
+            std::start_lifetime_as_array<OpIndex>(aux_cursor, n_in);
         aux_cursor += n_in * sizeof(OpIndex);
-        te.input_slot_ids = reinterpret_cast<SlotId*>(aux_cursor);
+        te.input_slot_ids =
+            std::start_lifetime_as_array<SlotId>(aux_cursor, n_in);
         aux_cursor += n_in * sizeof(SlotId);
-        te.output_slot_ids = reinterpret_cast<SlotId*>(aux_cursor);
+        te.output_slot_ids =
+            std::start_lifetime_as_array<SlotId>(aux_cursor, n_out);
         aux_cursor += n_out * sizeof(SlotId);
 
         if (n_scalars > 0)

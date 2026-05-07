@@ -7,11 +7,13 @@
 #include <crucible/SwissTable.h>
 
 #include <algorithm>
+#include <bit>
 #include <cassert>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <ranges>
 #include <span>
 #include <utility>
@@ -25,7 +27,7 @@ namespace detail {
 // (since children are themselves interned), so we hash their addresses.
 //
 // ─── Family-B (process-local) per Types.h taxonomy ─────────────────
-// The returned value embeds `reinterpret_cast<uintptr_t>(args[i])` for
+// The returned value embeds `std::bit_cast<uintptr_t>(args[i])` for
 // compound nodes — arena pointers are ASLR-randomized per process, so
 // the SAME structural input produces DIFFERENT bits in different
 // processes.  This is INTENTIONAL: the Swiss-table intern path only
@@ -91,15 +93,15 @@ namespace detail {
     case 0:
       break;
     case 1:
-      mixed_hash = wymix(mixed_hash, reinterpret_cast<uintptr_t>(args[0]));
+      mixed_hash = wymix(mixed_hash, std::bit_cast<uintptr_t>(args[0]));
       break;
     case 2:
-      mixed_hash = wymix(mixed_hash ^ reinterpret_cast<uintptr_t>(args[0]),
-                         reinterpret_cast<uintptr_t>(args[1]));
+      mixed_hash = wymix(mixed_hash ^ std::bit_cast<uintptr_t>(args[0]),
+                         std::bit_cast<uintptr_t>(args[1]));
       break;
     default:
       for (uint8_t i = 0; i < nargs; ++i)
-        mixed_hash = wymix(mixed_hash, reinterpret_cast<uintptr_t>(args[i]));
+        mixed_hash = wymix(mixed_hash, std::bit_cast<uintptr_t>(args[i]));
       break;
   }
   return mixed_hash;
@@ -1563,8 +1565,8 @@ class CRUCIBLE_OWNER ExprPool {
     if (!backing_) [[unlikely]] std::abort();
 
     ctrl_  = static_cast<int8_t*>(backing_);
-    slots_ = reinterpret_cast<const Expr**>(
-        static_cast<char*>(backing_) + cap);
+    slots_ = std::start_lifetime_as_array<const Expr*>(
+        static_cast<char*>(backing_) + cap, cap);
     std::memset(ctrl_, 0x80, cap);          // kEmpty = 0x80
     std::memset(slots_, 0, slot_bytes);     // null-init slot pointers
   }

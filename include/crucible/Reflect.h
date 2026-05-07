@@ -25,7 +25,7 @@ namespace crucible {
 // fmix64, and combines via multiplicative mixing. Handles:
 //   - Integral types + enums → static_cast<uint64_t>
 //   - Floating point → bit_cast to uint of same size
-//   - Pointers → reinterpret_cast<uintptr_t>
+//   - Pointers → std::bit_cast<uintptr_t>
 //   - C arrays → hash each element
 //   - Nested structs → recursive reflect_hash
 //
@@ -70,7 +70,7 @@ template <typename T>
     else
       return detail::fmix64(std::bit_cast<uint64_t>(val));
   } else if constexpr (std::is_pointer_v<T>) {
-    return detail::fmix64(reinterpret_cast<uintptr_t>(val));
+    return detail::fmix64(std::bit_cast<uintptr_t>(val));
   } else if constexpr (std::is_array_v<T>) {
     uint64_t h = 0;
     for (size_t i = 0; i < std::extent_v<T>; i++)
@@ -191,7 +191,7 @@ template <typename T>
     else
       return std::bit_cast<uint64_t>(val);
   } else if constexpr (std::is_pointer_v<T>) {
-    return reinterpret_cast<uintptr_t>(val);
+    return std::bit_cast<uintptr_t>(val);
   } else if constexpr (std::is_class_v<T>) {
     return reflect_hash(val);  // recursive
   } else {

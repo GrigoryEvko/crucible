@@ -17,6 +17,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/Bits.h>
 
+#include <bit>
 #include <cassert>
 #include <cstdint>
 #include <cstring>
@@ -243,7 +244,7 @@ struct ComputeBody {
   uint16_t pad = 0;
   int64_t* aux = nullptr;   // Per-instruction auxiliary data (arena-allocated).
                              // Non-zero for: CONSTANT (value), TO_DTYPE (target),
-                             // INDEX_EXPR (reinterpret_cast<int64_t>(Expr*)).
+                             // INDEX_EXPR (std::bit_cast<int64_t>(Expr*)).
                              // nullptr until first CONSTANT/TO_DTYPE/INDEX_EXPR.
 };
 
@@ -839,7 +840,7 @@ class CRUCIBLE_OWNER Graph {
           static_cast<uint64_t>(static_cast<uint8_t>(current_node->device_idx)) |
           (static_cast<uint64_t>(current_node->ndim) << 8));
       for (uint8_t d = 0; d < current_node->ndim; ++d)
-        node_group_hash = detail::wymix(node_group_hash, reinterpret_cast<uint64_t>(current_node->size[d]));
+        node_group_hash = detail::wymix(node_group_hash, std::bit_cast<uint64_t>(current_node->size[d]));
       current_node->group_hash = static_cast<uint32_t>(node_group_hash);
     }
 
@@ -1021,8 +1022,8 @@ class CRUCIBLE_OWNER Graph {
   // without physically rewriting pointers during the pass.
   //
   // ─── Family-B (process-local) per Types.h taxonomy ─────────────
-  // Mixes `reinterpret_cast<uintptr_t>(canonical[...])` and
-  // `reinterpret_cast<uintptr_t>(n->size[d])` (interned Expr*) as
+  // Mixes `std::bit_cast<uintptr_t>(canonical[...])` and
+  // `std::bit_cast<uintptr_t>(n->size[d])` (interned Expr*) as
   // entropy sources — arena pointers are ASLR-randomized per process,
   // so the output is NOT cross-process stable.  This is fine for its
   // single purpose: CSE probing within one compile pass on the bg
@@ -1059,12 +1060,12 @@ class CRUCIBLE_OWNER Graph {
     // Size expressions (interned → pointer identity)
     const auto total_dims = static_cast<uint8_t>(node->ndim + node->nred);
     for (uint8_t d = 0; d < total_dims; ++d)
-      structural_hash = detail::wymix(structural_hash, reinterpret_cast<uint64_t>(node->size[d]));
+      structural_hash = detail::wymix(structural_hash, std::bit_cast<uint64_t>(node->size[d]));
 
     // Inputs via canonical map (not raw pointers)
     for (uint16_t j = 0; j < node->num_inputs; ++j)
       structural_hash = detail::wymix(structural_hash,
-          reinterpret_cast<uint64_t>(canonical[node->inputs[j]->id.raw()]));
+          std::bit_cast<uint64_t>(canonical[node->inputs[j]->id.raw()]));
 
     // Body ops (POINTWISE/REDUCTION): pack each Inst into 8 bytes
     if ((node->kind == NodeKind::POINTWISE || node->kind == NodeKind::REDUCTION) && node->body) {
