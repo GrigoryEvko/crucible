@@ -26,10 +26,12 @@
 
 #include <sys/mman.h>
 
+#include <bit>          // std::bit_cast — §III-clean volatile-drop on uint8_t*
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>       // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
 
 #include <inplace_vector>
 
@@ -247,8 +249,16 @@ SyscallTpBtf::timeline_view() const noexcept {
         return safety::Borrowed<const TimelineSyscallEvent, SyscallTpBtf>{};
     }
     auto* base = state_->timeline_base.get();
-    auto* events = reinterpret_cast<const TimelineSyscallEvent*>(
-        const_cast<const uint8_t*>(base + sizeof(TimelineHeader)));
+    // §III-clean: bit_cast strips volatile from the byte pointer (well-defined at
+    // runtime; forbidden only in constant expressions), then start_lifetime_as_array
+    // (P2590R2) begins implicit-lifetime TimelineSyscallEvent storage in-place.
+    // _Tp is non-const; the const-void* overload of start_lifetime_as_array
+    // returns const _Tp* — adding const to _Tp itself trips libstdc++ 16's
+    // internal asm clobber "=m"(*__s) which writes through a const-qualified
+    // location and fails to compile.
+    auto* events = std::start_lifetime_as_array<TimelineSyscallEvent>(
+        std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)),
+        TIMELINE_CAPACITY);
     return safety::Borrowed<const TimelineSyscallEvent, SyscallTpBtf>{
         events, TIMELINE_CAPACITY};
 }
@@ -256,7 +266,11 @@ SyscallTpBtf::timeline_view() const noexcept {
 uint64_t SyscallTpBtf::timeline_write_index() const noexcept {
     if (state_ == nullptr || !state_->timeline_base) return 0;
     auto* base = state_->timeline_base.get();
-    auto* hdr  = reinterpret_cast<const volatile TimelineHeader*>(base);
+    // §III-clean: implicit qualification add (volatile T* → const volatile T*)
+    // is a permitted conversion; start_lifetime_as<TimelineHeader> begins
+    // implicit-lifetime header storage at the mmap base.
+    const volatile uint8_t* qbase = base;
+    auto* hdr = std::start_lifetime_as<TimelineHeader>(qbase);
     return hdr->write_idx;
 }
 

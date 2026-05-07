@@ -53,10 +53,12 @@
 
 #include <sys/mman.h>
 
+#include <bit>          // std::bit_cast — §III-clean volatile-drop on uint8_t*
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>       // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
 
 // 8 slots — sched_switch.bpf.c contains exactly one program today,
 // but the cap stays at the inplace_vector<...,8> shape used by
@@ -342,17 +344,24 @@ SchedSwitch::timeline_view() const noexcept {
     // The mmap'd region starts with the 64-byte header, then
     // TIMELINE_CAPACITY events.  Hand out a span of just the
     // events portion — the header is accessed separately via
-    // timeline_write_index().  We bit_cast'd `const_cast`-style
-    // to drop volatile because std::span<const volatile T> is
-    // unimplementable for non-scalar T in libstdc++ today (the
-    // span impl instantiates element copy/move ctors that fail
-    // under volatile); consumers are expected to do volatile /
-    // atomic loads at the field-access site (see header docblock
-    // for the canonical __atomic_load_n(&events[slot].ts_ns,
-    // __ATOMIC_ACQUIRE) idiom).
+    // timeline_write_index().  bit_cast handles the volatile→
+    // non-volatile pointer reinterp atomically (no const_cast
+    // required) — std::span<const volatile T> is unimplementable
+    // for non-scalar T in libstdc++ today (the span impl
+    // instantiates element copy/move ctors that fail under
+    // volatile); consumers are expected to do volatile / atomic
+    // loads at the field-access site (see header docblock for
+    // the canonical __atomic_load_n(&events[slot].ts_ns,
+    // __ATOMIC_ACQUIRE) idiom).  start_lifetime_as_array begins
+    // the typed array's lifetime in the BPF mmap'd byte storage
+    // (CLAUDE.md §III sanctioned alternative to reinterpret_cast).
     auto* base = state_->timeline_base.get();
-    auto* events = reinterpret_cast<const TimelineSchedEvent*>(
-        const_cast<const uint8_t*>(base + sizeof(TimelineHeader)));
+    // _Tp non-const: const-void* overload returns const _Tp*; passing
+    // const _Tp triggers libstdc++ 16's asm clobber "=m"(*__s) writing
+    // through a const-qualified array location.
+    auto* events = std::start_lifetime_as_array<TimelineSchedEvent>(
+        std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)),
+        TIMELINE_CAPACITY);
     return safety::Borrowed<const TimelineSchedEvent, SchedSwitch>{
         events, TIMELINE_CAPACITY};
 }
@@ -360,7 +369,11 @@ SchedSwitch::timeline_view() const noexcept {
 uint64_t SchedSwitch::timeline_write_index() const noexcept {
     if (state_ == nullptr || !state_->timeline_base) return 0;
     auto* base = state_->timeline_base.get();
-    auto* hdr  = reinterpret_cast<const volatile TimelineHeader*>(base);
+    // §III-clean: implicit qualification adds const to the volatile uint8_t*
+    // pointee (volatile→const volatile is a permitted qualification convert);
+    // start_lifetime_as<H>(const volatile void*) returns const volatile H*.
+    const volatile uint8_t* qbase = base;
+    auto* hdr = std::start_lifetime_as<TimelineHeader>(qbase);
     // Volatile load of write_idx — the BPF program updates it via
     // __sync_fetch_and_add (a full memory barrier on x86 / a
     // release on aarch64 via STLXR), so a plain volatile load on

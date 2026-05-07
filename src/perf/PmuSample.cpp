@@ -33,12 +33,14 @@
 #include <sys/mman.h>
 #include <sys/syscall.h>          // SYS_perf_event_open (PMU-specific)
 
+#include <bit>                    // std::bit_cast — §III-clean volatile-drop on uint8_t*
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>                // strtoull (PMU-specific env_period parser)
 #include <cstring>
 #include <fstream>                // read_dynamic_pmu_type ifstream
+#include <memory>                 // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
 
 #include <inplace_vector>
 
@@ -499,8 +501,15 @@ PmuSample::timeline_view() const noexcept {
         return safety::Borrowed<const PmuSampleEvent, PmuSample>{};
     }
     auto* base = state_->timeline_base.get();
-    auto* events = reinterpret_cast<const PmuSampleEvent*>(
-        const_cast<const uint8_t*>(base + sizeof(PmuSampleHeader)));
+    // §III-clean: bit_cast strips volatile from the byte pointer (well-defined at
+    // runtime; forbidden only in constant expressions), then start_lifetime_as_array
+    // (P2590R2) begins implicit-lifetime PmuSampleEvent storage in-place.
+    // _Tp non-const: const-void* overload returns const _Tp*; passing
+    // const _Tp triggers libstdc++ 16's asm clobber "=m"(*__s) writing
+    // through a const-qualified array location.
+    auto* events = std::start_lifetime_as_array<PmuSampleEvent>(
+        std::bit_cast<const uint8_t*>(base + sizeof(PmuSampleHeader)),
+        PMU_SAMPLE_CAPACITY);
     return safety::Borrowed<const PmuSampleEvent, PmuSample>{
         events, PMU_SAMPLE_CAPACITY};
 }
@@ -508,7 +517,11 @@ PmuSample::timeline_view() const noexcept {
 uint64_t PmuSample::timeline_write_index() const noexcept {
     if (state_ == nullptr || !state_->timeline_base) return 0;
     auto* base = state_->timeline_base.get();
-    auto* hdr  = reinterpret_cast<const volatile PmuSampleHeader*>(base);
+    // §III-clean: implicit qualification add (volatile T* → const volatile T*)
+    // is a permitted conversion; start_lifetime_as<PmuSampleHeader> begins
+    // implicit-lifetime header storage at the mmap base.
+    const volatile uint8_t* qbase = base;
+    auto* hdr = std::start_lifetime_as<PmuSampleHeader>(qbase);
     return hdr->write_idx;
 }
 

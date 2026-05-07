@@ -27,10 +27,12 @@
 
 #include <sys/mman.h>
 
+#include <bit>          // std::bit_cast — §III-clean volatile-drop on uint8_t*
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>       // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
 
 #include <inplace_vector>
 
@@ -256,9 +258,16 @@ SyscallLatency::timeline_view() const noexcept {
     if (state_ == nullptr || !state_->timeline_base) {
         return safety::Borrowed<const TimelineSyscallEvent, SyscallLatency>{};
     }
+    // §III-clean: bit_cast handles volatile-drop, start_lifetime_as_array
+    // begins typed-array lifetime in the BPF mmap'd byte storage.  See
+    // SchedSwitch.cpp::timeline_view for the full rationale.
     auto* base = state_->timeline_base.get();
-    auto* events = reinterpret_cast<const TimelineSyscallEvent*>(
-        const_cast<const uint8_t*>(base + sizeof(TimelineHeader)));
+    // _Tp non-const: const-void* overload returns const _Tp*; passing
+    // const _Tp triggers libstdc++ 16's asm clobber "=m"(*__s) writing
+    // through a const-qualified array location.
+    auto* events = std::start_lifetime_as_array<TimelineSyscallEvent>(
+        std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)),
+        TIMELINE_CAPACITY);
     return safety::Borrowed<const TimelineSyscallEvent, SyscallLatency>{
         events, TIMELINE_CAPACITY};
 }
@@ -266,7 +275,9 @@ SyscallLatency::timeline_view() const noexcept {
 uint64_t SyscallLatency::timeline_write_index() const noexcept {
     if (state_ == nullptr || !state_->timeline_base) return 0;
     auto* base = state_->timeline_base.get();
-    auto* hdr  = reinterpret_cast<const volatile TimelineHeader*>(base);
+    // §III-clean: implicit qualification adds const to the volatile pointee.
+    const volatile uint8_t* qbase = base;
+    auto* hdr = std::start_lifetime_as<TimelineHeader>(qbase);
     return hdr->write_idx;
 }
 

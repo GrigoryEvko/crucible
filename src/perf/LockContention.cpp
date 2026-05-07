@@ -34,10 +34,12 @@
 
 #include <sys/mman.h>
 
+#include <bit>          // std::bit_cast — §III-clean volatile-drop on uint8_t*
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <memory>       // std::start_lifetime_as / start_lifetime_as_array (P2590R2)
 
 #include <inplace_vector>
 
@@ -271,8 +273,15 @@ LockContention::timeline_view() const noexcept {
         return safety::Borrowed<const TimelineLockEvent, LockContention>{};
     }
     auto* base = state_->timeline_base.get();
-    auto* events = reinterpret_cast<const TimelineLockEvent*>(
-        const_cast<const uint8_t*>(base + sizeof(TimelineHeader)));
+    // §III-clean: bit_cast strips volatile from the byte pointer (well-defined at
+    // runtime; forbidden only in constant expressions), then start_lifetime_as_array
+    // (P2590R2) begins implicit-lifetime TimelineLockEvent storage in-place.
+    // _Tp non-const: const-void* overload returns const _Tp*; passing
+    // const _Tp triggers libstdc++ 16's asm clobber "=m"(*__s) writing
+    // through a const-qualified array location.
+    auto* events = std::start_lifetime_as_array<TimelineLockEvent>(
+        std::bit_cast<const uint8_t*>(base + sizeof(TimelineHeader)),
+        TIMELINE_CAPACITY);
     return safety::Borrowed<const TimelineLockEvent, LockContention>{
         events, TIMELINE_CAPACITY};
 }
@@ -280,7 +289,11 @@ LockContention::timeline_view() const noexcept {
 uint64_t LockContention::timeline_write_index() const noexcept {
     if (state_ == nullptr || !state_->timeline_base) return 0;
     auto* base = state_->timeline_base.get();
-    auto* hdr  = reinterpret_cast<const volatile TimelineHeader*>(base);
+    // §III-clean: implicit qualification add (volatile T* → const volatile T*)
+    // is a permitted conversion; start_lifetime_as<TimelineHeader> begins
+    // implicit-lifetime header storage at the mmap base.
+    const volatile uint8_t* qbase = base;
+    auto* hdr = std::start_lifetime_as<TimelineHeader>(qbase);
     return hdr->write_idx;
 }
 
