@@ -464,12 +464,16 @@ class CRUCIBLE_OWNER Graph {
     n->size = arena_.alloc_array<const Expr*>(a, total);
     // memcpy(nullptr, ..., 0) is UB; guard by size.  alloc_array(0)
     // yields nullptr and ranges.data() is nullptr for an empty span.
+    // n->size is `const Expr**` (pointer to pointer-to-const-Expr); the
+    // outermost indirection is not const-qualified, so memcpy's `void*`
+    // first parameter accepts it via implicit pointer-to-void conversion.
+    // The previous const_cast<const Expr**>(...) was a no-op (source and
+    // target types identical) and is removed per CLAUDE.md §III.
     if (!ranges.empty()) {
-      std::memcpy(const_cast<const Expr**>(n->size), ranges.data(),
-                  ranges.size_bytes());
+      std::memcpy(n->size, ranges.data(), ranges.size_bytes());
     }
     if (!red_ranges.empty()) {
-      std::memcpy(const_cast<const Expr**>(n->size) + n->ndim,
+      std::memcpy(n->size + n->ndim,
                   red_ranges.data(), red_ranges.size_bytes());
     }
     n->body = body;
