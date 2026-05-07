@@ -81,6 +81,22 @@ struct IterationDetector {
   using SignatureLen =
       ::crucible::safety::BoundedMonotonic<uint32_t, K>;
 
+  // Monotonic-with-reset wrapper for ops_since_boundary's storage
+  // (#929 WRAP-IterDet-3).  Within a single iteration epoch the
+  // counter is strictly monotonic — every check() does +1 — so
+  // safety::Monotonic<uint32_t> is the natural type.  Across epoch
+  // boundaries (reset() and on_match_()'s "ops_since_boundary = K"
+  // sites) the counter rewinds; those rewinds use std::construct_at
+  // to re-establish the invariant from a known floor, mirroring the
+  // boundaries_detected pattern below.  Any future code path that
+  // tries to assign a backward value via .advance() fires a contract
+  // violation; .bump() is overflow-checked at UINT32_MAX.
+  //
+  // Zero-cost: Graded's regime-2 (T==element_type) collapse pins
+  // sizeof(Monotonic<uint32_t>) == sizeof(uint32_t) == 4B; layout
+  // (offset 52) preserved by structural guarantee.
+  using OpsSinceBoundary = ::crucible::safety::Monotonic<uint32_t>;
+
   // ── Cache line 0: hot path data (touched every call) ─────────
   // Expected next hash VALUE (not pointer). One L1d load, zero pointer chase.
   // In steady state (match_pos_.value()==0), this equals signature[0].
@@ -101,7 +117,11 @@ struct IterationDetector {
 
   uint8_t pad0_[2]{};                                 // offset 50, 2B
 
-  uint32_t ops_since_boundary = 0;                    // offset 52, 4B
+  // Monotonic-with-reset counter (#929 WRAP-IterDet-3).  Strictly
+  // increases via .bump() within an epoch; explicit rewinds
+  // (reset() and on_match_()) use std::construct_at to reinstall the
+  // invariant from a known floor.
+  OpsSinceBoundary ops_since_boundary{0u};            // offset 52, 4B
 
   // Number of hashes collected during signature build (0..K).
   // After build completes, stays at K permanently — a structural
@@ -135,7 +155,7 @@ struct IterationDetector {
   //
   // Boundary path (match_pos_ reaches K-1+1 = K): ~50ns (memcpy + reset, rare).
   [[nodiscard, gnu::hot]] CRUCIBLE_INLINE bool check(SchemaHash schema_hash) noexcept {
-    ops_since_boundary++;
+    ops_since_boundary.bump();  // monotonic +1; pre at UINT32_MAX
 
     // Phase 1: building signature from first K ops.
     // Entered exactly K times total, then never again — invariant
@@ -185,12 +205,11 @@ struct IterationDetector {
     for (auto& h : signature) h = SchemaHash{};
     match_pos_ = MatchPos{uint8_t{0}};
     confirmed = false;
-    ops_since_boundary = 0;
     // reset() is not a monotonic operation — it deliberately rewinds
-    // the BoundedMonotonic counters on test/teardown.  Re-construct
+    // the (Bounded)Monotonic counters on test/teardown.  Re-construct
     // each so the bound + monotonicity invariants are established
-    // afresh from value 0.  Same pattern as boundaries_detected
-    // below.
+    // afresh from value 0.
+    std::construct_at(&ops_since_boundary, OpsSinceBoundary{0u});
     std::construct_at(&signature_len, SignatureLen{0u});
     std::construct_at(&boundaries_detected,
                       crucible::safety::Monotonic<uint32_t>{0});
@@ -222,15 +241,21 @@ struct IterationDetector {
     expected_hash_ = signature[0];
 
     if (!confirmed) [[unlikely]] {
-      // First match — candidate, not yet confirmed.
+      // First match — candidate, not yet confirmed.  Re-anchor the
+      // counter at K (the K matched ops form this iteration's
+      // signature, so they're K ops into the next epoch).  This is a
+      // deliberate rewind from an arbitrary >= K value, so we use
+      // construct_at to bypass Monotonic's monotonicity contract —
+      // same pattern as reset() above.
       confirmed = true;
-      ops_since_boundary = K;
+      std::construct_at(&ops_since_boundary, OpsSinceBoundary{K});
       return false;
     }
 
     // Second+ match — confirmed iteration boundary.
-    last_completed_len = crucible::sat::sub_sat(ops_since_boundary, K);
-    ops_since_boundary = K;
+    last_completed_len =
+        crucible::sat::sub_sat(ops_since_boundary.get(), K);
+    std::construct_at(&ops_since_boundary, OpsSinceBoundary{K});
     boundaries_detected.bump();   // monotonicity-checked +1
     return true;
   }

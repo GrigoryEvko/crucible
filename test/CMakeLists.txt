@@ -1492,6 +1492,24 @@ crucible_neg_compile_test(neg_iter_det_signature_len_above_k
 crucible_neg_compile_test(neg_iter_det_signature_len_uint32_max
   "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
 
+# WRAP-IterDet-3 (#929) — IterationDetector::OpsSinceBoundary =
+# safety::Monotonic<uint32_t>; advance(smaller) and bump() at
+# numeric_limits::max() drive the dual contracts (monotonicity +
+# overflow) through constant evaluation.  Two fixtures per HS14:
+#   * _regression — boundary edge (advance(5) from 10), catches
+#     drift where Monotonic's `>=` predicate weakens to `>`, silently
+#     admitting equal-value advances and (post-regression) backward
+#     writes.
+#   * _overflow   — wide miss (bump() at UINT32_MAX), catches
+#     "drop the overflow contract" regression where bump() loses its
+#     != max() check and silently wraps to 0.
+# The two fixtures together pin BOTH Monotonic mutation contracts at
+# the field's call-sites in IterationDetector.
+crucible_neg_compile_test(neg_iter_det_ops_since_boundary_regression
+  "contract|leq|Monotonic|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_iter_det_ops_since_boundary_overflow
+  "contract|max|Monotonic|not a constant|non-constant|constexpr")
+
 # ─── ALGEBRA-13/14 lattice neg-compile tests (this session) ─────────
 #
 # Six tests pinning the structural invariants of the four new lattices

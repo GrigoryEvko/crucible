@@ -126,7 +126,7 @@ static void test_reset_clears_everything() {
     assert(!d.confirmed);
     assert(d.signature_len.get() == 0);
     assert(d.boundaries_detected.get() == 0);
-    assert(d.ops_since_boundary == 0);
+    assert(d.ops_since_boundary.get() == 0);
     assert(d.last_completed_len == 0);
     // Detector is fresh: must rebuild signature.
     for (uint32_t i = 0; i < 4; i++) assert(!d.check(H(100 + i)));
@@ -140,14 +140,14 @@ static void test_ops_since_boundary_counts_correctly() {
     for (auto h : sig) (void)d.check(h);
     for (auto h : sig) (void)d.check(h);   // candidate
     // After candidate confirmation, counter reset to K.
-    assert(d.ops_since_boundary == IterationDetector::K);
+    assert(d.ops_since_boundary.get() == IterationDetector::K);
     // Feed 10 more ops, then boundary fires.
     for (uint64_t i = 0; i < 10; i++) (void)d.check(H(1000 + i));
-    assert(d.ops_since_boundary == IterationDetector::K + 10);
+    assert(d.ops_since_boundary.get() == IterationDetector::K + 10);
     // Trigger second match — last_completed_len = ops_since_boundary - K
     // at fire time (= iteration length including the K signature ops).
     for (auto h : sig) (void)d.check(h);
-    assert(d.ops_since_boundary == IterationDetector::K);
+    assert(d.ops_since_boundary.get() == IterationDetector::K);
     assert(d.last_completed_len == 10 + IterationDetector::K);
     std::printf("  test_ops_since_boundary:      PASSED\n");
 }
