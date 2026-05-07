@@ -562,8 +562,17 @@ void crucibleFallback(
     // every field (schema_hash, shape_hash, counts, scalar_values,
     // op_flags, grad_enabled) comes from either the dispatcher-trusted
     // schema or the live c10 query surface.  Vouch at the typed boundary.
-    (void)vigil->dispatch_op(crucible::vouch(entry), inline_metas, counts.total(),
-                             scope_hash);
+    //
+    // dispatch_op_pure<>() (FOUND-I19): the row-typed facade pinning the
+    // PyTorch fallback handler as a `Pure` caller — the ATen dispatcher
+    // hands control here on the foreground producer thread, with no I/O,
+    // Block, Bg, Init, Test, or Alloc effect in scope.  Migrating from
+    // dispatch_op() to dispatch_op_pure<>() is zero-cost at runtime
+    // (thin forwarder, default CallerRow = Row<>) and gives the
+    // compile-time guarantee that this foreground hot path cannot
+    // silently drift into a non-Pure context.
+    (void)vigil->dispatch_op_pure(crucible::vouch(entry), inline_metas, counts.total(),
+                                  scope_hash);
 }
 
 // =====================================================================

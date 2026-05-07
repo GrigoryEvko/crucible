@@ -174,8 +174,16 @@ CrucibleDispatchResult crucible_dispatch_op(
     // Entry fields are now validated; vouch at the typed dispatch boundary.
     // metas crosses the FFI as `CrucibleMeta*` and is laundered through
     // the typed-meta helper for layout-compat reinterpret + provenance.
+    //
+    // dispatch_op_pure<>() (FOUND-I19): the row-typed facade pinning this
+    // FFI extern "C" entry as a `Pure` caller — i.e. no I/O / Block / Bg
+    // / Init / Test / Alloc context.  Migrating the call from dispatch_op
+    // to dispatch_op_pure<>() (default CallerRow = Row<>) is zero-cost at
+    // runtime (thin forwarder under -O3) and gives the compile-time
+    // guarantee that the foreground extern "C" boundary cannot drift
+    // into a non-Pure context without the row mismatch firing.
     auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
-    auto result = vigil_typed.value()->dispatch_op(
+    auto result = vigil_typed.value()->dispatch_op_pure(
         crucible::vouch(entry),
         metas_typed.value(),
         n_metas);
@@ -226,8 +234,11 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
     // Entry fields validated above; vouch at the typed dispatch boundary.
     // metas crosses the FFI as `CrucibleMeta*` and is laundered through
     // the typed-meta helper for layout-compat reinterpret + provenance.
+    //
+    // dispatch_op_pure<>() — row-typed facade (FOUND-I19); see the
+    // sister site in crucible_dispatch_op for the rationale.
     auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
-    auto result = vigil_typed.value()->dispatch_op(
+    auto result = vigil_typed.value()->dispatch_op_pure(
         crucible::vouch(entry),
         metas_typed.value(),
         n_metas);

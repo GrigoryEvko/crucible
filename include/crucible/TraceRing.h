@@ -17,6 +17,23 @@
 // tail. Stale cache is conservative (reports less free space than reality),
 // so the producer only touches the consumer's atomic on the rare path where
 // the cached view shows the ring full.
+//
+// ── API tiers ──────────────────────────────────────────────────────────
+//
+// Three additive surfaces share the same body:
+//   • try_append() / drain()           — base API, untyped return.
+//   • try_append_pinned() / drain_pinned() — HotPath<Hot|Warm, T> wrap
+//                                            (FOUND-G22).
+//   • try_append_pure<CallerRow>() / drain_pure<CallerRow>() — row-typed
+//                                            wrap, IsPure<CallerRow>
+//                                            constraint (FOUND-I16).
+//
+// New production call sites SHOULD use the row-typed `_pure` facades.
+// They are zero-cost at runtime (thin forwarders, default CallerRow =
+// Row<>) and give a compile-time gate that rejects any caller in an
+// {IO, Block, Bg, Init, Test, Alloc} context.  The non-pure variants
+// remain for ABI compatibility, internal forwarders, and call sites
+// that intentionally accept callers from non-Pure contexts.
 
 #include <algorithm>
 #include <atomic>

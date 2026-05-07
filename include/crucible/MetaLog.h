@@ -28,6 +28,23 @@ namespace crucible {
 //   - Overflow → MetaIndex::none() (entry still works for
 //     iteration detection; background skips DAG building for that op)
 //
+// ── API tiers ──────────────────────────────────────────────────────────
+//
+// Three additive surfaces share the same body:
+//   • try_append()                         — base API, untyped return.
+//   • try_append_pinned()                  — HotPath<Hot, MetaIndex> wrap
+//                                            (FOUND-G22).
+//   • try_append_pure<CallerRow>()         — row-typed wrap, IsPure
+//                                            constraint (FOUND-I17).
+//
+// New production call sites SHOULD use the row-typed `_pure` facade.
+// It is zero-cost at runtime (thin forwarder, default CallerRow =
+// Row<>) and gives a compile-time gate that rejects any caller in a
+// non-Pure context (IO / Block / Bg / Init / Test / Alloc).  The
+// non-pure variants remain for ABI compatibility, internal forwarders,
+// and call sites that intentionally accept callers from non-Pure
+// contexts.
+//
 // Structural properties (orthogonal to any specific timing):
 //   1. Cached tail: producer caches last-seen tail locally. The tail atomic
 //      lives on the consumer's cache line; reading it from the producer
