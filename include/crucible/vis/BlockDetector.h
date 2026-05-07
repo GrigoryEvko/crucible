@@ -20,6 +20,7 @@
 #include <crucible/TraceLoader.h>
 
 #include <algorithm>
+#include <bit>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -198,12 +199,12 @@ struct DetectionResult {
       const uint32_t base = mi.raw();
       for (uint16_t j = 0; j < e.num_inputs && j < 8; j++)
         if (base + j < trace.num_metas)
-          op.data_ptr_in[j] = reinterpret_cast<uint64_t>(
+          op.data_ptr_in[j] = std::bit_cast<uint64_t>(
               trace.metas[base + j].data_ptr);
       for (uint16_t j = 0; j < e.num_outputs && j < 4; j++) {
         uint32_t mi_out = base + e.num_inputs + j;
         if (mi_out < trace.num_metas) {
-          op.data_ptr_out[j] = reinterpret_cast<uint64_t>(
+          op.data_ptr_out[j] = std::bit_cast<uint64_t>(
               trace.metas[mi_out].data_ptr);
           if (j == 0) {
             const auto& m = trace.metas[mi_out];
