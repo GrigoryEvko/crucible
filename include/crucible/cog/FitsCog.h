@@ -381,8 +381,14 @@ namespace detail {
 // cog_max_capacity specialisations need the new case OR the new atom
 // gets ceiling=0 and any non-zero demand fails on every Cog —
 // conservatively-correct default).
+//
+// Naming: "evaluate" is the verb (the action this consteval performs);
+// the previous name `row_fits_cog_compute` conflated the verb with
+// CogFamily::Compute — the function actually evaluates row-vs-Cog fit
+// for any substrate K (Compute / Network / Memory / Bus families) per
+// the broader IsMimicSubstrate gate.
 template <typename Row, CogKind K>
-[[nodiscard]] consteval bool row_fits_cog_compute() noexcept {
+[[nodiscard]] consteval bool evaluate_row_fits_cog() noexcept {
     static constexpr auto enumerators =
         std::define_static_array(std::meta::enumerators_of(^^effects::ResourceKind));
 #pragma GCC diagnostic push
@@ -402,7 +408,7 @@ template <typename Row, CogKind K>
 }
 
 template <typename Row, CogKind K>
-inline constexpr bool row_fits_cog_v = row_fits_cog_compute<Row, K>();
+inline constexpr bool row_fits_cog_v = evaluate_row_fits_cog<Row, K>();
 
 }  // namespace detail
 

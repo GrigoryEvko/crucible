@@ -99,7 +99,7 @@
 //     GAPS-196 cog/Calibrate.h          — startup measurement writer
 //
 //   Depends on:
-//     cog/CogIdentity.h     — CogKind atoms + IsComputeKind partition
+//     cog/CogIdentity.h     — CogKind atoms + CogFamily classification
 //     cog/TargetCaps.h      — HasCaps<K> structural prerequisite
 //     safety/Refined.h      — quantile-ordering invariant
 //     safety/Tagged.h       — source::Calibrated provenance

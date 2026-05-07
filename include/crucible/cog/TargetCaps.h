@@ -94,7 +94,7 @@
 //                                          ceilings (sm_count, smem_per_sm)
 //
 //   Depends on:
-//     cog/CogIdentity.h     — CogKind atoms + IsComputeKind partition
+//     cog/CogIdentity.h     — CogKind atoms + CogFamily classification
 //     safety/Refined.h      — Refined<Pred, T> structural invariants
 //     safety/RefinedAlgebra.h — predicate composition (all_of, in_range)
 //     safety/Tagged.h       — source::Vendor + source::Calibrated tags

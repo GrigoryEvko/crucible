@@ -239,6 +239,7 @@ crucible_test(test_cog_identity)
 crucible_test(test_target_caps)
 crucible_test(test_opcode_latency_table)
 crucible_test(test_fits_cog)
+crucible_test(test_cog_mimic)
 crucible_test(test_concurrent_compile)
 crucible_test(test_auto_split)
 crucible_test(test_diagnostic_compile)
@@ -1119,6 +1120,31 @@ crucible_neg_compile_cog_test(neg_fits_cog_oversubscribed
     "constraint|constraints not satisfied|FitsCog|schedule_kernel|row_fits_cog|999|GAPS-191")
 crucible_neg_compile_cog_test(neg_fits_cog_non_substrate
     "constraint|constraints not satisfied|FitsCog|HasCogCapacity|schedule_kernel|PsuRail|GAPS-191")
+
+# ─── HS14 fixtures #1 + #2 for mimic::CogMimic (GAPS-188 #1213) ──
+#
+# Two fixtures per the HS14 mandate, each demonstrating a distinct
+# mismatch class:
+#
+#   * #1 SUBSTRATE-FAMILY gate — IsMimicSubstrate refuses Power /
+#     Sensor / Container CogKind atoms (PsuRail / BmcSensor /
+#     Datacenter / ...) at the CtxFitsCogMimic requires-clause.
+#     Without this gate, a future GAPS-196 calibrate pass or
+#     GAPS-810 partition optimiser would silently bind a Mimic
+#     instance to a non-substrate Cog and produce either a deep
+#     substitution failure or a stub bound to a Cog with no
+#     emit-shape.
+#
+#   * #2 CTX-ROW gate — CtxFitsCogMimic refuses contexts whose
+#     effect row carries neither Effect::Init nor Effect::Bg.
+#     Without this gate, a Test-context worker (or a foreground
+#     hot-path call site) could mint a CogMimic instance bound to
+#     a transient arena, producing a dangling identity pointer at
+#     teardown.
+crucible_neg_compile_cog_test(neg_cog_mimic_non_substrate
+    "constraint|constraints not satisfied|CogMimic|IsMimicSubstrate|CtxFitsCogMimic|PsuRail|GAPS-188")
+crucible_neg_compile_cog_test(neg_cog_mimic_ctx_row_missing
+    "constraint|constraints not satisfied|CogMimic|CtxFitsCogMimic|row_contains|Init|Bg|Test|GAPS-188")
 
 # ─── Tier 1 #4 (#857): Substrate metafunction gates ───────────────
 #

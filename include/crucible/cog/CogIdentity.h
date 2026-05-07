@@ -245,24 +245,161 @@ cog_kind_name(CogKind K) noexcept {
     }
 }
 
-// ── Compute-Cog classification concept ──────────────────────────────
+// ── CogFamily: role-orthogonal classification ───────────────────────
 //
-// Concept-level partitioning of the 21-atom CogKind universe into
-// "compute Cogs" (per-Cog Mimic instance ownership, GAPS-188) and the
-// rest.  Downstream factories that bind a Mimic instance to a Cog
-// identity (e.g., a future `mint_cog_mimic<CogKind K>(...)` factory)
-// constrain on this concept; passing a non-compute CogKind fires the
-// concept gate at the call site instead of producing a zero-vtable
-// Mimic stub at runtime.
+// The 21-atom CogKind universe partitions into 7 functional families
+// orthogonal to the L0..L7 hierarchy.  CogFamily classifies each kind
+// by what it DOES rather than where in the hierarchy it sits:
 //
-// Compute kinds: Gpu, CpuCore, GpuPackage, CpuSocket.  Everything else
-// (NicPort, NvSwitch, RackPsu, ...) is non-compute.
+//   Compute   — executes user-visible compute (kernels, vector ops,
+//               tensor-core MMA).  Mimic emits compiled binaries
+//               (cubin / HSACO / NEFF / TPU exec / native ELF).
+//               L0 atoms: Gpu, CpuCore.  L1 aggregates: GpuPackage,
+//               CpuSocket.  Future: FPGA, NPU, TpuCore, NeuronCore.
+//   Network   — moves bytes between Cogs.  Mimic emits RDMA verb
+//               sequences, AF_XDP packet templates, eBPF programs,
+//               SHARP aggregation trees, multicast routing tables.
+//               L0 atoms: NicPort, NvSwitch, OpticalTransceiver.
+//               L1 aggregates: NicCard.  Future: DPU, P4 switch.
+//   Memory    — stores bytes.  Mimic emits prefetch / refresh
+//               schedules, DMA descriptor chains, page-fault hints.
+//               L0 atoms: DramChannel, NvmeNamespace.  L1 aggregates:
+//               NvmeDrive.  Future: CXL.mem, HBM stack as first-class.
+//   Bus       — host/device/peer interconnect.  Mimic emits PCIe
+//               config-space writes, link-training schedules, lane-
+//               bonding maps.  L0 atoms: PcieLaneGroup.  L1 aggregates:
+//               PcieRoot.  Future: CXL switch, UCIe link.
+//   Power     — electrical power source/distribution.  No Mimic instance
+//               (non-schedulable; observability target only).  L0 atoms:
+//               PsuRail.  L1 aggregates: RackPsu.
+//   Sensor    — observability source.  No Mimic instance.  L0 atoms:
+//               BmcSensor.
+//   Container — L2+ enclosure (Server / Rack / Row / Hall / Datacenter).
+//               No Mimic instance — the contained L0/L1 Cogs each have
+//               their own.  Container Cogs aggregate health/membership;
+//               their substance lives in their children.
+//
+// ── Why orthogonal to CogLevel ──────────────────────────────────────
+//
+// (Level, Family) form a 2D matrix.  Level says "where in the hierarchy
+// does this Cog sit?" — an atom (L0), a component (L1), an enclosure
+// (L2+).  Family says "what role does this Cog play?".  An L0 GPU die
+// (Level=L0, Family=Compute) and an L1 GPU package (Level=L1, Family=
+// Compute) share family but differ in level; an L0 GPU die and an L0
+// NIC port share level but differ in family.
+//
+// ── Append-only Universe extension (FOUND-I04) ──────────────────────
+//
+// Existing (kind → family) mappings are FROZEN.  Renumbering CogFamily
+// values OR re-mapping an existing CogKind to a different family is a
+// federation-cache-key drift event — every Cipher checkpoint and
+// federation-shared archive that mentioned the affected kind silently
+// re-keys.  An attempt to renumber is caught by the static_assert pin
+// block at the foot of this file (mirrors the discipline for CogLevel
+// and CogKind ordinals).  A new family atom (e.g., CogFamily::Quantum
+// for future quantum-coprocessor substrates) MUST land at the next
+// free underlying value (7, 8, ...) without disturbing existing pins.
+//
+// ── Concept gates ────────────────────────────────────────────────────
+//
+// `IsMimicSubstrate<K>` — K's family is one of {Compute, Network,
+// Memory, Bus}, i.e., K hosts a per-Cog Mimic instance per §3.7 of
+// misc/03_05_2026_networking.md.  This is the broad gate that
+// CogMimic<K> (GAPS-188) consumes.  Subset of substrate kinds that
+// have caps_for + opcodes_for shipped today: {Gpu, CpuCore, CpuSocket,
+// NicPort, NvSwitch, DramChannel}.  IsMimicSubstrate also admits
+// kinds that haven't yet shipped caps_for (e.g., PcieLaneGroup,
+// NvmeNamespace) — the operational `HasCaps<K> && HasOpcodeTable<K>`
+// conjunction in CogMimic's requires-clause filters those out until
+// their schemas land.  Defense in depth: intent gate + operational
+// gate.
+//
+// `IsComputeKind<K>` — STRICT SUBSET of IsMimicSubstrate restricted to
+// the Compute family.  Used by downstream code that genuinely only
+// schedules compute kernels (e.g., MAP-Elites kernel search; partition
+// optimizer's compute-tile placement).  NOT the gate for CogMimic —
+// CogMimic admits the broader IsMimicSubstrate, since per §3.7 every
+// substrate Cog (network / memory / bus included) gets its own Mimic
+// instance with its own substrate-specific emit shape.
+
+enum class CogFamily : std::uint8_t {
+    Compute   = 0,
+    Network   = 1,
+    Memory    = 2,
+    Bus       = 3,
+    Power     = 4,
+    Sensor    = 5,
+    Container = 6,
+};
+
+inline constexpr std::size_t cog_family_count = 7;
+
+[[nodiscard]] constexpr std::string_view
+cog_family_name(CogFamily F) noexcept {
+    switch (F) {
+        case CogFamily::Compute:   return "Compute";
+        case CogFamily::Network:   return "Network";
+        case CogFamily::Memory:    return "Memory";
+        case CogFamily::Bus:       return "Bus";
+        case CogFamily::Power:     return "Power";
+        case CogFamily::Sensor:    return "Sensor";
+        case CogFamily::Container: return "Container";
+        default: return std::string_view{"<unknown CogFamily>"};
+    }
+}
+
+// Primary template — INTENTIONALLY UNDEFINED.  Reaching here means a
+// CogKind atom was added without updating its family mapping.  Compile
+// error names the offending atom.
 template <CogKind K>
-concept IsComputeKind =
-       (K == CogKind::Gpu)
-    || (K == CogKind::CpuCore)
-    || (K == CogKind::GpuPackage)
-    || (K == CogKind::CpuSocket);
+struct cog_family_for;
+
+// L0 atoms (CogKind ordinals 0..9)
+template <> struct cog_family_for<CogKind::Gpu>                { static constexpr CogFamily value = CogFamily::Compute; };
+template <> struct cog_family_for<CogKind::NicPort>            { static constexpr CogFamily value = CogFamily::Network; };
+template <> struct cog_family_for<CogKind::CpuCore>            { static constexpr CogFamily value = CogFamily::Compute; };
+template <> struct cog_family_for<CogKind::DramChannel>        { static constexpr CogFamily value = CogFamily::Memory;  };
+template <> struct cog_family_for<CogKind::NvmeNamespace>      { static constexpr CogFamily value = CogFamily::Memory;  };
+template <> struct cog_family_for<CogKind::NvSwitch>           { static constexpr CogFamily value = CogFamily::Network; };
+template <> struct cog_family_for<CogKind::OpticalTransceiver> { static constexpr CogFamily value = CogFamily::Network; };
+template <> struct cog_family_for<CogKind::PsuRail>            { static constexpr CogFamily value = CogFamily::Power;   };
+template <> struct cog_family_for<CogKind::PcieLaneGroup>      { static constexpr CogFamily value = CogFamily::Bus;     };
+template <> struct cog_family_for<CogKind::BmcSensor>          { static constexpr CogFamily value = CogFamily::Sensor;  };
+// L1 aggregates (CogKind ordinals 10..15)
+template <> struct cog_family_for<CogKind::GpuPackage>         { static constexpr CogFamily value = CogFamily::Compute; };
+template <> struct cog_family_for<CogKind::CpuSocket>          { static constexpr CogFamily value = CogFamily::Compute; };
+template <> struct cog_family_for<CogKind::NicCard>            { static constexpr CogFamily value = CogFamily::Network; };
+template <> struct cog_family_for<CogKind::NvmeDrive>          { static constexpr CogFamily value = CogFamily::Memory;  };
+template <> struct cog_family_for<CogKind::RackPsu>            { static constexpr CogFamily value = CogFamily::Power;   };
+template <> struct cog_family_for<CogKind::PcieRoot>           { static constexpr CogFamily value = CogFamily::Bus;     };
+// L2..L7 enclosures (CogKind ordinals 16..20)
+template <> struct cog_family_for<CogKind::Server>             { static constexpr CogFamily value = CogFamily::Container; };
+template <> struct cog_family_for<CogKind::Rack>               { static constexpr CogFamily value = CogFamily::Container; };
+template <> struct cog_family_for<CogKind::Row>                { static constexpr CogFamily value = CogFamily::Container; };
+template <> struct cog_family_for<CogKind::Hall>               { static constexpr CogFamily value = CogFamily::Container; };
+template <> struct cog_family_for<CogKind::Datacenter>         { static constexpr CogFamily value = CogFamily::Container; };
+
+template <CogKind K>
+inline constexpr CogFamily cog_family_v = cog_family_for<K>::value;
+
+// IsMimicSubstrate<K> — K hosts a per-Cog Mimic instance per §3.7.
+// Family is one of {Compute, Network, Memory, Bus}.  Power / Sensor /
+// Container kinds are non-substrate; CogMimic<K> refuses them at the
+// requires-clause.
+template <CogKind K>
+concept IsMimicSubstrate =
+       cog_family_v<K> == CogFamily::Compute
+    || cog_family_v<K> == CogFamily::Network
+    || cog_family_v<K> == CogFamily::Memory
+    || cog_family_v<K> == CogFamily::Bus;
+
+// IsComputeKind<K> — strict subset of IsMimicSubstrate restricted to
+// the Compute family.  Used by code that genuinely only schedules
+// compute kernels (MAP-Elites kernel search, partition optimizer
+// compute-tile placement).  NOT the gate for CogMimic — see the
+// CogFamily doc-block above.
+template <CogKind K>
+concept IsComputeKind = cog_family_v<K> == CogFamily::Compute;
 
 // ── CogIdentity: the carrier ────────────────────────────────────────
 //
@@ -439,7 +576,7 @@ static_assert(std::is_same_v<std::underlying_type_t<CogLevel>, std::uint8_t>,
 static_assert(std::is_same_v<std::underlying_type_t<CogKind>, std::uint8_t>,
     "CogKind underlying type drifted from uint8_t — ABI change.");
 
-// IsComputeKind smoke — exactly four atoms qualify.
+// IsComputeKind smoke — exactly four atoms qualify (Compute family).
 static_assert( IsComputeKind<CogKind::Gpu>);
 static_assert( IsComputeKind<CogKind::CpuCore>);
 static_assert( IsComputeKind<CogKind::GpuPackage>);
@@ -461,6 +598,54 @@ static_assert(!IsComputeKind<CogKind::Rack>);
 static_assert(!IsComputeKind<CogKind::Row>);
 static_assert(!IsComputeKind<CogKind::Hall>);
 static_assert(!IsComputeKind<CogKind::Datacenter>);
+
+// IsMimicSubstrate smoke — Compute ∪ Network ∪ Memory ∪ Bus admit.
+// Power / Sensor / Container kinds REFUSE.  This is the broad gate
+// CogMimic<K> (GAPS-188) consumes; the §3.7 networking.md vision puts
+// every substrate Cog under per-Cog Mimic ownership, not just compute.
+static_assert( IsMimicSubstrate<CogKind::Gpu>);
+static_assert( IsMimicSubstrate<CogKind::CpuCore>);
+static_assert( IsMimicSubstrate<CogKind::GpuPackage>);
+static_assert( IsMimicSubstrate<CogKind::CpuSocket>);
+static_assert( IsMimicSubstrate<CogKind::NicPort>);
+static_assert( IsMimicSubstrate<CogKind::NvSwitch>);
+static_assert( IsMimicSubstrate<CogKind::OpticalTransceiver>);
+static_assert( IsMimicSubstrate<CogKind::NicCard>);
+static_assert( IsMimicSubstrate<CogKind::DramChannel>);
+static_assert( IsMimicSubstrate<CogKind::NvmeNamespace>);
+static_assert( IsMimicSubstrate<CogKind::NvmeDrive>);
+static_assert( IsMimicSubstrate<CogKind::PcieLaneGroup>);
+static_assert( IsMimicSubstrate<CogKind::PcieRoot>);
+static_assert(!IsMimicSubstrate<CogKind::PsuRail>);
+static_assert(!IsMimicSubstrate<CogKind::RackPsu>);
+static_assert(!IsMimicSubstrate<CogKind::BmcSensor>);
+static_assert(!IsMimicSubstrate<CogKind::Server>);
+static_assert(!IsMimicSubstrate<CogKind::Rack>);
+static_assert(!IsMimicSubstrate<CogKind::Row>);
+static_assert(!IsMimicSubstrate<CogKind::Hall>);
+static_assert(!IsMimicSubstrate<CogKind::Datacenter>);
+
+// CogFamily cardinality + name coverage.
+static_assert(cog_family_count == 7,
+    "CogFamily cardinality drifted from 7 — confirm the new family is "
+    "intentional and update the FOUND-I04 pin block.");
+
+[[nodiscard]] consteval bool every_cog_family_has_name() noexcept {
+    static constexpr auto enumerators =
+        std::define_static_array(std::meta::enumerators_of(^^CogFamily));
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wshadow"
+    template for (constexpr auto en : enumerators) {
+        if (cog_family_name([:en:]) == std::string_view{"<unknown CogFamily>"}) {
+            return false;
+        }
+    }
+#pragma GCC diagnostic pop
+    return true;
+}
+static_assert(every_cog_family_has_name(),
+    "cog_family_name() switch is missing an arm for at least one "
+    "CogFamily atom.");
 
 // content_hash determinism — same triple → same hash.
 static_assert([] {
@@ -557,6 +742,49 @@ static_assert(static_cast<std::uint8_t>(CogKind::Rack)               == 17);
 static_assert(static_cast<std::uint8_t>(CogKind::Row)                == 18);
 static_assert(static_cast<std::uint8_t>(CogKind::Hall)               == 19);
 static_assert(static_cast<std::uint8_t>(CogKind::Datacenter)         == 20);
+
+// CogFamily ordinal pins (7 atoms).  Frozen by FOUND-I04 — federation
+// row_hash drift is silent if a value changes; downstream consumers
+// of cog_family_v<K> would fold to a different bit pattern.
+static_assert(static_cast<std::uint8_t>(CogFamily::Compute)   == 0,
+    "CogFamily::Compute drifted — federation row_hash invalidated.");
+static_assert(static_cast<std::uint8_t>(CogFamily::Network)   == 1);
+static_assert(static_cast<std::uint8_t>(CogFamily::Memory)    == 2);
+static_assert(static_cast<std::uint8_t>(CogFamily::Bus)       == 3);
+static_assert(static_cast<std::uint8_t>(CogFamily::Power)     == 4);
+static_assert(static_cast<std::uint8_t>(CogFamily::Sensor)    == 5);
+static_assert(static_cast<std::uint8_t>(CogFamily::Container) == 6);
+
+static_assert(std::is_same_v<std::underlying_type_t<CogFamily>, std::uint8_t>,
+    "CogFamily underlying type drifted from uint8_t — ABI change.");
+
+// CogKind → CogFamily mapping pins (21 atoms).  Frozen by FOUND-I04.
+// A failure here means someone re-assigned an existing kind to a
+// different family — federation row_hash silently re-keys; every
+// Cipher checkpoint and shared archive that mentions this kind would
+// invalidate.  Re-mapping requires a major-version bump, not a silent
+// edit.
+static_assert(cog_family_v<CogKind::Gpu>                == CogFamily::Compute);
+static_assert(cog_family_v<CogKind::NicPort>            == CogFamily::Network);
+static_assert(cog_family_v<CogKind::CpuCore>            == CogFamily::Compute);
+static_assert(cog_family_v<CogKind::DramChannel>        == CogFamily::Memory);
+static_assert(cog_family_v<CogKind::NvmeNamespace>      == CogFamily::Memory);
+static_assert(cog_family_v<CogKind::NvSwitch>           == CogFamily::Network);
+static_assert(cog_family_v<CogKind::OpticalTransceiver> == CogFamily::Network);
+static_assert(cog_family_v<CogKind::PsuRail>            == CogFamily::Power);
+static_assert(cog_family_v<CogKind::PcieLaneGroup>      == CogFamily::Bus);
+static_assert(cog_family_v<CogKind::BmcSensor>          == CogFamily::Sensor);
+static_assert(cog_family_v<CogKind::GpuPackage>         == CogFamily::Compute);
+static_assert(cog_family_v<CogKind::CpuSocket>          == CogFamily::Compute);
+static_assert(cog_family_v<CogKind::NicCard>            == CogFamily::Network);
+static_assert(cog_family_v<CogKind::NvmeDrive>          == CogFamily::Memory);
+static_assert(cog_family_v<CogKind::RackPsu>            == CogFamily::Power);
+static_assert(cog_family_v<CogKind::PcieRoot>           == CogFamily::Bus);
+static_assert(cog_family_v<CogKind::Server>             == CogFamily::Container);
+static_assert(cog_family_v<CogKind::Rack>               == CogFamily::Container);
+static_assert(cog_family_v<CogKind::Row>                == CogFamily::Container);
+static_assert(cog_family_v<CogKind::Hall>               == CogFamily::Container);
+static_assert(cog_family_v<CogKind::Datacenter>         == CogFamily::Container);
 
 } // namespace detail::cog_identity_self_test
 
