@@ -217,9 +217,27 @@ struct BackgroundThread {
   struct BgPipelineStart {
     BackgroundThread* owner = nullptr;
   };
+
+  // GAPS-099: 4-stage pipeline message — handed from BuildTraceFn to
+  // MakeRegionFn.  Carries the freshly-built TraceGraph* plus the owner
+  // pointer (same pattern as BgTraceBatch / BgBuildWork) so the
+  // downstream stage can call back into the per-Vigil publish path
+  // without depending on a captured BackgroundThread*.
+  //
+  // Lifetime: owned by the producer (BuildTraceFn) until pushed; from
+  // there owned by the consumer (MakeRegionFn) which deletes via
+  // unique_ptr after publish_trace_graph() consumes the graph.  The
+  // graph itself is arena-allocated by build_trace_from() and outlives
+  // the BgGraphPublish wrapper (its lifetime is tied to the bg arena).
+  struct BgGraphPublish {
+    BackgroundThread* owner = nullptr;
+    TraceGraph* graph = nullptr;
+  };
+
   struct BgPipelineStartTag {};
   struct BgTraceBatchTag {};
   struct BgBuildWorkTag {};
+  struct BgGraphPublishTag {};
 
   using StartChannel =
       concurrent::PermissionedSpscChannel<BgPipelineStart, 1, BgPipelineStartTag>;
@@ -227,6 +245,12 @@ struct BackgroundThread {
       concurrent::PermissionedSpscChannel<BgTraceBatch*, 64, BgTraceBatchTag>;
   using BuildWorkChannel =
       concurrent::PermissionedSpscChannel<BgBuildWork*, 64, BgBuildWorkTag>;
+  // GAPS-099: stage-3→stage-4 channel.  Build-trace stage produces fresh
+  // TraceGraph*, MakeRegion stage consumes and publishes them.  Capacity 64
+  // matches the upstream channels — backpressure happens at the build step
+  // when the publisher falls behind.
+  using GraphPublishChannel =
+      concurrent::PermissionedSpscChannel<BgGraphPublish*, 64, BgGraphPublishTag>;
 
   struct BgSinkProducerHandle {
     [[nodiscard]] bool try_push(BgPipelineDone* const& done) noexcept {
@@ -444,8 +468,14 @@ struct BackgroundThread {
     }
   }
 
-  static void BuildRegionFn(typename BuildWorkChannel::ConsumerHandle&& in,
-                            BgSinkProducerHandle&& out) {
+  // GAPS-099 Phase 1 — stage 3 of 4.  Consumes BgBuildWork (commit-only or
+  // real iteration work).  Commit-only work bumps total_processed inline
+  // and never produces downstream output (commit messages don't advance
+  // the publish stream).  Real iteration work calls build_trace_from and
+  // hands the resulting TraceGraph* to the next stage via BgGraphPublish.
+  // Stop sentinel (null BgBuildWork*) is forwarded as null BgGraphPublish*.
+  static void BuildTraceFn(typename BuildWorkChannel::ConsumerHandle&& in,
+                           typename GraphPublishChannel::ProducerHandle&& out) {
     effects::Bg bg;
 
     while (true) {
@@ -457,9 +487,8 @@ struct BackgroundThread {
 
       std::unique_ptr<BgBuildWork> work{*maybe_work};
       if (!work) {
-        auto done = std::make_unique<BgPipelineDone>();
-        push_pipeline(out, done.get());
-        done.release();
+        BgGraphPublish* stop = nullptr;
+        push_pipeline(out, stop);
         return;
       }
 
@@ -473,7 +502,49 @@ struct BackgroundThread {
           bg.alloc, work->completed_len,
           work->trace.data(), work->meta_starts.data(),
           work->scope_hashes.data(), work->callsite_hashes.data());
-      owner->publish_trace_graph(bg.alloc, graph);
+
+      // build_trace_from returns nullptr on edge cases (zero-op iteration);
+      // forward only well-formed graphs downstream so MakeRegion's
+      // contract stays "graph != nullptr ⇒ publishable".
+      if (!graph) continue;
+
+      auto publish = std::make_unique<BgGraphPublish>();
+      publish->owner = owner;
+      publish->graph = graph;
+      push_pipeline(out, publish.get());
+      publish.release();
+    }
+  }
+
+  // GAPS-099 Phase 1 — stage 4 of 4.  Consumes BgGraphPublish*, calls
+  // publish_trace_graph (iteration_graphs.append, make_region, memory plan,
+  // merkle hash, region_ready_cb).  Forwards stop sentinel (null
+  // BgGraphPublish*) as BgPipelineDone to the sink.  Owning this stage
+  // separately is the structural prerequisite for FOUND-F03's
+  // RecordingSessionHandle wrapping: the publish-side delegate doesn't see
+  // the build-side machinery, so a crash-stop on publish (e.g. cipher
+  // freeze, callback throw) doesn't taint build's owner pointer.
+  static void MakeRegionFn(typename GraphPublishChannel::ConsumerHandle&& in,
+                           BgSinkProducerHandle&& out) {
+    effects::Bg bg;
+
+    while (true) {
+      auto maybe_publish = in.try_pop();
+      if (!maybe_publish) {
+        CRUCIBLE_SPIN_PAUSE;
+        continue;
+      }
+
+      std::unique_ptr<BgGraphPublish> publish{*maybe_publish};
+      if (!publish) {
+        auto done = std::make_unique<BgPipelineDone>();
+        push_pipeline(out, done.get());
+        done.release();
+        return;
+      }
+
+      BackgroundThread* owner = publish->owner;
+      owner->publish_trace_graph(bg.alloc, publish->graph);
     }
   }
 
@@ -856,8 +927,17 @@ struct BackgroundThread {
     using namespace crucible::concurrent;
     namespace saf = crucible::safety;
 
+    // GAPS-099 Phase 1: 4-stage pipeline.  Channel flow is
+    //   Start → DrainTraceRing → TraceBatch → DetectIteration →
+    //          BuildWork → BuildTrace → GraphPublish → MakeRegion → Sink
+    // Each adjacent pair is a typed PermissionedSpscChannel; each stage's
+    // permission proof is minted by splitting a fresh root permission for
+    // its tag.  Capacity 64 on every internal channel — backpressure
+    // accumulates at the slowest stage rather than at any single fixed
+    // bottleneck.
     TraceBatchChannel trace_batches;
     BuildWorkChannel build_work;
+    GraphPublishChannel graph_publish;
 
     StartChannel start;
     auto start_whole = saf::mint_permission_root<
@@ -881,12 +961,21 @@ struct BackgroundThread {
             spsc_tag::Producer<BgBuildWorkTag>,
             spsc_tag::Consumer<BgBuildWorkTag>>(std::move(build_whole));
 
+    auto publish_whole = saf::mint_permission_root<
+        spsc_tag::Whole<BgGraphPublishTag>>();
+    auto [publish_prod_perm, publish_cons_perm] =
+        saf::mint_permission_split<
+            spsc_tag::Producer<BgGraphPublishTag>,
+            spsc_tag::Consumer<BgGraphPublishTag>>(std::move(publish_whole));
+
     auto start_prod = start.producer(std::move(start_prod_perm));
     auto start_cons = start.consumer(std::move(start_cons_perm));
     auto trace_prod = trace_batches.producer(std::move(trace_prod_perm));
     auto trace_cons = trace_batches.consumer(std::move(trace_cons_perm));
     auto build_prod = build_work.producer(std::move(build_prod_perm));
     auto build_cons = build_work.consumer(std::move(build_cons_perm));
+    auto publish_prod = graph_publish.producer(std::move(publish_prod_perm));
+    auto publish_cons = graph_publish.consumer(std::move(publish_cons_perm));
 
     auto ctx = effects::BgDrainCtx{}.template in_row<run_required_row>();
     while (!start_prod.try_push(BgPipelineStart{this})) {
@@ -896,14 +985,17 @@ struct BackgroundThread {
         ctx, std::move(start_cons), std::move(trace_prod));
     auto detect_stage = concurrent::mint_stage<&DetectIterationFn>(
         ctx, std::move(trace_cons), std::move(build_prod));
-    auto build_stage = concurrent::mint_stage<&BuildRegionFn>(
-        ctx, std::move(build_cons), BgSinkProducerHandle{});
+    auto build_stage = concurrent::mint_stage<&BuildTraceFn>(
+        ctx, std::move(build_cons), std::move(publish_prod));
+    auto publish_stage = concurrent::mint_stage<&MakeRegionFn>(
+        ctx, std::move(publish_cons), BgSinkProducerHandle{});
 
     auto pipeline = concurrent::mint_pipeline(
         ctx,
         std::move(drain_stage),
         std::move(detect_stage),
-        std::move(build_stage));
+        std::move(build_stage),
+        std::move(publish_stage));
     std::move(pipeline).run();
   }
 
