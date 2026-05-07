@@ -132,6 +132,7 @@
 #include <crucible/effects/EffectRow.h>        // effects::Row<Es...> (FOUND-H02 / F11)
 
 #include <atomic>
+#include <bit>                                 // std::bit_cast (synthetic-pointer cookies)
 #include <chrono>
 #include <cstdint>
 #include <meta>                                // std::meta::reflect_constant
@@ -802,9 +803,13 @@ inline bool computation_cache_smoke_test() noexcept {
 
     // Stub bodies — never dereferenced; the cache stores pointers
     // opaquely.  Different non-null addresses suffice.
-    auto* body_a = reinterpret_cast<CompiledBody*>(
+    // Synthetic-pointer-cookie cookies (Class B): the cache stores raw
+    // pointers opaquely and never dereferences these stub values; we only
+    // need distinct non-null bit-patterns.  std::bit_cast is the §III-clean
+    // integer→pointer conversion for runtime code.
+    auto* body_a = std::bit_cast<CompiledBody*>(
         static_cast<std::uintptr_t>(0x1));
-    auto* body_b = reinterpret_cast<CompiledBody*>(
+    auto* body_b = std::bit_cast<CompiledBody*>(
         static_cast<std::uintptr_t>(0x2));
 
     bool ok = true;
@@ -848,7 +853,7 @@ inline bool computation_cache_smoke_test() noexcept {
     // miss/insert/hit cycle behaves identically with no Args, and
     // that the empty-pack instantiation didn't accidentally collapse
     // to a non-template overload.
-    auto* body_c = reinterpret_cast<CompiledBody*>(
+    auto* body_c = std::bit_cast<CompiledBody*>(
         static_cast<std::uintptr_t>(0x3));
     ok = ok && (::crucible::cipher::lookup_computation_cache<&p_void>()
                 == nullptr);                      // miss before insert
@@ -866,7 +871,7 @@ inline bool computation_cache_smoke_test() noexcept {
     // Insert into the throwing slot only; verify the noexcept slot
     // still misses.  If the inline-atomic deduplication ever broke
     // such that throwing and noexcept aliased, this would fail.
-    auto* body_d = reinterpret_cast<CompiledBody*>(
+    auto* body_d = std::bit_cast<CompiledBody*>(
         static_cast<std::uintptr_t>(0x4));
     ok = ok && (::crucible::cipher::lookup_computation_cache<&p_throwing, int>()
                 == nullptr);                      // throwing miss

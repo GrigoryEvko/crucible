@@ -115,7 +115,12 @@ struct CtrlGroup {
   __m512i ctrl;
 
   [[nodiscard]] CRUCIBLE_INLINE static CtrlGroup load(const int8_t* pos) {
-    return {_mm512_loadu_si512(reinterpret_cast<const __m512i*>(pos))};
+    // §III-clean pointer cast cascade: int8_t* → void* → __m512i*.
+    // The unaligned-load intrinsic prototype demands pointer-to-vector-type,
+    // and __m512i is GCC-attribute may_alias so the actual byte read is
+    // well-defined regardless of declared pointee type.
+    return {_mm512_loadu_si512(
+        static_cast<const __m512i*>(static_cast<const void*>(pos)))};
   }
 
   [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {
@@ -133,7 +138,9 @@ struct CtrlGroup {
   __m256i ctrl;
 
   [[nodiscard]] CRUCIBLE_INLINE static CtrlGroup load(const int8_t* pos) {
-    return {_mm256_loadu_si256(reinterpret_cast<const __m256i*>(pos))};
+    // §III-clean cast cascade: int8_t* → void* → __m256i*.  See AVX-512 arm.
+    return {_mm256_loadu_si256(
+        static_cast<const __m256i*>(static_cast<const void*>(pos)))};
   }
 
   [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {
@@ -156,7 +163,9 @@ struct CtrlGroup {
   __m128i ctrl;
 
   [[nodiscard]] CRUCIBLE_INLINE static CtrlGroup load(const int8_t* pos) {
-    return {_mm_loadu_si128(reinterpret_cast<const __m128i*>(pos))};
+    // §III-clean cast cascade: int8_t* → void* → __m128i*.  See AVX-512 arm.
+    return {_mm_loadu_si128(
+        static_cast<const __m128i*>(static_cast<const void*>(pos)))};
   }
 
   [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {

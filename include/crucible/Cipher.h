@@ -262,7 +262,10 @@ class CRUCIBLE_OWNER Cipher {
 
         std::ofstream f(path, std::ios::binary);
         if (!f) return ContentHash{};
-        f.write(reinterpret_cast<const char*>(buf.data()),
+        // §III-clean cast cascade: uint8_t* → void* → char*.  std::ofstream::
+        // write demands char*; the byte buffer is plain trivially-copyable
+        // storage so the cascade has no aliasing impact.
+        f.write(static_cast<const char*>(static_cast<const void*>(buf.data())),
                 static_cast<std::streamsize>(n));
         if (!f) return ContentHash{};
         remember_cached_bytes(hash, std::span<const uint8_t>{buf.data(), n});
@@ -577,7 +580,8 @@ class CRUCIBLE_OWNER Cipher {
         // validates their semantic structure.  The BYTE-COUNT is
         // already validated by construction of validated_len above.
         std::vector<uint8_t> buf(validated_len.value());
-        f.read(reinterpret_cast<char*>(buf.data()),
+        // §III-clean cast cascade: uint8_t* → void* → char* for ifstream::read.
+        f.read(static_cast<char*>(static_cast<void*>(buf.data())),
                static_cast<std::streamsize>(validated_len.value()));
         if (!f) return nullptr;
 
@@ -769,8 +773,14 @@ class CRUCIBLE_OWNER Cipher {
             return ContentHash{};
         }
 
+        // §III-clean cast cascade: SessionEvent* → void* → uint8_t*.  The
+        // SessionEvent struct is trivially-copyable / standard-layout, so a
+        // byte view is permitted under C++ object-model rules.  No actual
+        // uint8_t-array lifetime is started — the span is read-only and the
+        // hash function consumes bytes structurally.
         const auto payload = std::span<const std::uint8_t>{
-            reinterpret_cast<const std::uint8_t*>(events.data()),
+            static_cast<const std::uint8_t*>(
+                static_cast<const void*>(events.data())),
             payload_bytes};
         const ContentHash hash = session_event_payload_hash_(payload);
         const KernelCacheKey key{hash, SESSION_EVENT_FEDERATION_ROW_HASH};
@@ -793,7 +803,9 @@ class CRUCIBLE_OWNER Cipher {
         } else {
             std::ofstream out(path, std::ios::binary);
             if (!out) return ContentHash{};
-            out.write(reinterpret_cast<const char*>(encoded.data()),
+            // §III-clean cascade: uint8_t* → void* → char* for ofstream::write.
+            out.write(static_cast<const char*>(
+                          static_cast<const void*>(encoded.data())),
                       static_cast<std::streamsize>(encoded.size()));
             if (!out) return ContentHash{};
         }
@@ -856,7 +868,8 @@ class CRUCIBLE_OWNER Cipher {
             batch.seekg(0, std::ios::beg);
 
             std::vector<std::uint8_t> bytes(len);
-            batch.read(reinterpret_cast<char*>(bytes.data()),
+            // §III-clean cascade: uint8_t* → void* → char* for ifstream::read.
+            batch.read(static_cast<char*>(static_cast<void*>(bytes.data())),
                        static_cast<std::streamsize>(bytes.size()));
             if (!batch) continue;
 
@@ -1134,7 +1147,8 @@ class CRUCIBLE_OWNER Cipher {
             const std::size_t n = remaining < actual.size()
                 ? remaining
                 : actual.size();
-            in.read(reinterpret_cast<char*>(actual.data()),
+            // §III-clean cascade: uint8_t* → void* → char* for ifstream::read.
+            in.read(static_cast<char*>(static_cast<void*>(actual.data())),
                     static_cast<std::streamsize>(n));
             if (in.gcount() != static_cast<std::streamsize>(n)) return false;
             if (std::memcmp(actual.data(), expected.data() + offset, n) != 0) {

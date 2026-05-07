@@ -172,7 +172,9 @@ struct ReplayEngine {
 
     // Prefetch current entry's second cache line (output_slot_ids at
     // offset 88). The caller will almost certainly call output_ptr().
-    __builtin_prefetch(reinterpret_cast<const char*>(cursor_) + 64, 0, 3);
+    // §III-clean cast cascade: TraceEntry* → void* → char* for byte offset.
+    __builtin_prefetch(static_cast<const char*>(
+        static_cast<const void*>(cursor_)) + 64, 0, 3);
 
     // Advance cursor to next entry. Single add (vs old lea+shl+lea).
     ++cursor_;

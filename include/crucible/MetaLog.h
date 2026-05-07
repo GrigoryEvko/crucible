@@ -193,7 +193,11 @@ struct CRUCIBLE_OWNER MetaLog {
     // prefetcher typically handles the sequential continuation.
     {
       uint32_t next_pos = (h + n) & MASK;
-      const char* next_ptr = reinterpret_cast<const char*>(&entries[next_pos]);
+      // §III-clean cast cascade: TensorMeta* → void* → char*.  Used purely for
+      // byte-offset arithmetic into the prefetch builtin (which itself takes
+      // const void*); no actual char-array lifetime is started.
+      const char* next_ptr = static_cast<const char*>(
+          static_cast<const void*>(&entries[next_pos]));
       __builtin_prefetch(next_ptr,       1 /*write*/, 3 /*high locality*/);
       __builtin_prefetch(next_ptr + 64,  1 /*write*/, 3 /*high locality*/);
       __builtin_prefetch(next_ptr + 128, 1 /*write*/, 3 /*high locality*/);
