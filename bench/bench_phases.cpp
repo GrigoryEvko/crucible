@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 #include <vector>
 
 using namespace crucible;
@@ -511,16 +512,18 @@ void bench_phase2_subparts(
                 te.input_metas  = meta_base + meta_offset;
                 te.output_metas = meta_base + meta_offset + n_in;
                 te.scalar_args  = (n_scalars > 0)
-                    ? reinterpret_cast<int64_t*>(aux_cursor) : nullptr;
+                    ? std::start_lifetime_as_array<int64_t>(
+                          aux_cursor, n_scalars)
+                    : nullptr;
                 aux_cursor += n_scalars * sizeof(int64_t);
                 te.input_trace_indices =
-                    reinterpret_cast<OpIndex*>(aux_cursor);
+                    std::start_lifetime_as_array<OpIndex>(aux_cursor, n_in);
                 aux_cursor += n_in * sizeof(OpIndex);
                 te.input_slot_ids =
-                    reinterpret_cast<SlotId*>(aux_cursor);
+                    std::start_lifetime_as_array<SlotId>(aux_cursor, n_in);
                 aux_cursor += n_in * sizeof(SlotId);
                 te.output_slot_ids =
-                    reinterpret_cast<SlotId*>(aux_cursor);
+                    std::start_lifetime_as_array<SlotId>(aux_cursor, n_out);
                 aux_cursor += n_out * sizeof(SlotId);
                 if (n_scalars > 0)
                     std::memcpy(te.scalar_args, re.scalar_values,

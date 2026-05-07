@@ -21,7 +21,9 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/Vigil.h>
 
+#include <bit>
 #include <cassert>
+#include <cstdint>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -48,8 +50,8 @@ constexpr ShapeHash SHAPE[NUM_OPS] = {
 // ── Helpers ────────────────────────────────────────────────────────
 
 void* fake_ptr(uint32_t iter, uint32_t op) noexcept {
-    return reinterpret_cast<void*>(
-        static_cast<uintptr_t>((iter + 1) * 0x100000 + (op + 1) * 0x1000));
+    return std::bit_cast<void*>(
+        static_cast<std::uintptr_t>((iter + 1) * 0x100000 + (op + 1) * 0x1000));
 }
 
 TensorMeta make_meta(void* data_ptr) noexcept {

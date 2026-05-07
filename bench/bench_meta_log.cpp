@@ -16,6 +16,8 @@
 //   ./build-bench/bench/bench_meta_log
 //   CRUCIBLE_BENCH_HARDENING=production ./build-bench/bench/bench_meta_log
 
+#include <bit>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -40,7 +42,8 @@ using crucible::TensorMeta;
     m.dtype       = ScalarType::Float;
     m.device_type = DeviceType::CUDA;
     m.device_idx  = 0;
-    m.data_ptr    = reinterpret_cast<void*>(0xDEAD'BEEF'0000ULL);
+    m.data_ptr    = std::bit_cast<void*>(static_cast<std::uintptr_t>(
+                        0xDEAD'BEEF'0000ULL));
     return m;
 }
 
@@ -56,7 +59,8 @@ using crucible::TensorMeta;
     m.dtype       = ScalarType::Float;
     m.device_type = DeviceType::CUDA;
     m.device_idx  = 0;
-    m.data_ptr    = reinterpret_cast<void*>(0xCAFE'BABE'0000ULL);
+    m.data_ptr    = std::bit_cast<void*>(static_cast<std::uintptr_t>(
+                        0xCAFE'BABE'0000ULL));
     return m;
 }
 

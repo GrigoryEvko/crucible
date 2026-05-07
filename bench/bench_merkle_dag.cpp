@@ -11,6 +11,7 @@
 //
 // Simulates ResNet-18 (481 ops) and GPT-style (1110 ops) iteration sizes.
 
+#include <bit>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -67,8 +68,8 @@ TraceEntry make_synthetic_entry(effects::Alloc a, Arena& arena,
                 m.sizes[d]   = static_cast<int64_t>(32 + (bench_rand() % 256));
                 m.strides[d] = static_cast<int64_t>(1 + (bench_rand() % 64));
             }
-            m.data_ptr = reinterpret_cast<void*>(
-                0x7f0000000000ULL + bench_rand() % 0x100000);
+            m.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(
+                0x7f0000000000ULL + bench_rand() % 0x100000));
         }
     }
     if (n_out > 0) {
@@ -83,8 +84,8 @@ TraceEntry make_synthetic_entry(effects::Alloc a, Arena& arena,
                 m.sizes[d]   = static_cast<int64_t>(32 + (bench_rand() % 256));
                 m.strides[d] = static_cast<int64_t>(1 + (bench_rand() % 64));
             }
-            m.data_ptr = reinterpret_cast<void*>(
-                0x7f0000000000ULL + bench_rand() % 0x100000);
+            m.data_ptr = std::bit_cast<void*>(static_cast<std::uintptr_t>(
+                0x7f0000000000ULL + bench_rand() % 0x100000));
         }
     }
     if (n_scalar > 0) {
@@ -279,8 +280,9 @@ int main(int argc, char* argv[]) {
                     metas[j].sizes[d]   = static_cast<int64_t>(32 + (bench_rand() % 256));
                     metas[j].strides[d] = static_cast<int64_t>(1 + (bench_rand() % 64));
                 }
-                metas[j].data_ptr = reinterpret_cast<void*>(
-                    0x7f0000000000ULL + (i * 8 + j) * 0x1000);
+                metas[j].data_ptr = std::bit_cast<void*>(
+                    static_cast<std::uintptr_t>(
+                        0x7f0000000000ULL + (i * 8 + j) * 0x1000));
             }
             MetaIndex meta_start = meta_log.try_append(metas, total_metas);
             ring.try_append(e, meta_start,
@@ -321,8 +323,9 @@ int main(int argc, char* argv[]) {
                     metas[j].ndim        = 4;
                     metas[j].dtype       = ScalarType::Float;
                     metas[j].device_type = DeviceType::CUDA;
-                    metas[j].data_ptr = reinterpret_cast<void*>(
-                        0x7f0000000000ULL + (i * 8 + j) * 0x1000);
+                    metas[j].data_ptr = std::bit_cast<void*>(
+                        static_cast<std::uintptr_t>(
+                            0x7f0000000000ULL + (i * 8 + j) * 0x1000));
                 }
                 meta_log.try_append(metas, total_metas);
             }
