@@ -3880,6 +3880,16 @@ crucible_neg_compile_test(neg_diag_user_tag_not_in_catalog
 crucible_neg_compile_test(neg_vessel_typed_handle_wrong_tag
     "no match for|cannot convert|no matching function|could not convert")
 
+# ─── GAPS-095 — Vessel ABI typed-meta direction fence ─────────────
+#
+# The matching neg-compile witness for as_meta_typed / metas_from_typed
+# (the second helper added by GAPS-095 to migrate the TensorMeta cast
+# alongside the Vigil handle).  Pins that wrong-tag values cannot
+# launder as ABIBoundary-tagged metas — same architectural rationale
+# as the handle fence above, applied to the meta-array entry point.
+crucible_neg_compile_test(neg_vessel_typed_meta_wrong_tag
+    "no match for|cannot convert|no matching function|could not convert")
+
 # ─── FOUND-C Phase 7 — PermissionedSessionHandle neg-compile harness
 #
 # Ten fixtures probing permission-flow violations that the type system

@@ -1,8 +1,24 @@
 // Crucible Vessel C API — implementation.
 //
-// Thin wrapper: each extern "C" function casts the opaque handle to
-// crucible::Vigil* and forwards to the C++ method. CrucibleMeta is
-// reinterpret_cast'd to TensorMeta (binary-compatible by construction).
+// Every C-ABI thunk crosses the FFI boundary through the typed helpers
+// in vessel_api_typed.h:
+//   * `vessel::as_vigil_typed(h)` materializes a
+//     `Tagged<Vigil*, source::ABIBoundary>` from the opaque handle.
+//   * `vessel::as_meta_typed(metas)` materializes a
+//     `Tagged<const TensorMeta*, source::ABIBoundary>` from the
+//     CrucibleMeta array (layout-compat reinterpret pinned by the
+//     static_asserts in the typed-helper header).
+// The Tagged value is unwrapped (`.value()`) just before the actual
+// Vigil method invocation, so provenance is type-visible across the
+// entire thunk while the runtime cost stays at zero (regime-1 EBO
+// collapse on `Tagged<T, Tag>`).
+//
+// Review-enforced rule: no raw `static_cast<Vigil*>(h)` /
+// `reinterpret_cast<TensorMeta*>(metas)` is permitted in this file —
+// grep for `as_vigil_typed` / `as_meta_typed` to find every ABI-
+// crossing site in O(1).  The CrucibleMeta ↔ TensorMeta layout
+// invariants live in vessel_api_typed.h so the proof and the cast
+// are co-located.
 
 #include "vessel_api.h"
 #include "vessel_api_typed.h"
@@ -15,29 +31,8 @@
 #include <cstdio>
 #include <cstring>
 
-// ── Layout compatibility verification ────────────────────────────────
-//
-// CrucibleMeta (C struct) must be identical to crucible::TensorMeta.
-// If any of these fire, the C API is passing garbage to the C++ code.
-static_assert(sizeof(CrucibleMeta) == sizeof(crucible::TensorMeta),
-              "CrucibleMeta size must match TensorMeta");
-static_assert(sizeof(CrucibleMeta) == 168);
-static_assert(offsetof(CrucibleMeta, sizes) == 0);
-static_assert(offsetof(CrucibleMeta, strides) == 64);
-static_assert(offsetof(CrucibleMeta, data_ptr) == 128);
-static_assert(offsetof(CrucibleMeta, ndim) == 136);
-static_assert(offsetof(CrucibleMeta, dtype) == 137);
-static_assert(offsetof(CrucibleMeta, device_type) == 138);
-static_assert(offsetof(CrucibleMeta, device_idx) == 139);
-static_assert(offsetof(CrucibleMeta, layout) == 140);
-static_assert(offsetof(CrucibleMeta, requires_grad) == 141);
-static_assert(offsetof(CrucibleMeta, flags) == 142);
-static_assert(offsetof(CrucibleMeta, output_nr) == 143);
-static_assert(offsetof(CrucibleMeta, storage_offset) == 144);
-static_assert(offsetof(CrucibleMeta, version) == 152);
-static_assert(offsetof(CrucibleMeta, storage_nbytes) == 156);
-static_assert(offsetof(CrucibleMeta, grad_fn_hash) == 160);
-
+// CrucibleDispatchResult is a small POD; size-pin is local to this
+// file because the struct is only consumed at this boundary.
 static_assert(sizeof(CrucibleDispatchResult) == 8);
 
 // ── FNV-1a 64-bit ────────────────────────────────────────────────────
@@ -52,12 +47,6 @@ static uint64_t fnv1a_bytes(const void* data, size_t len, uint64_t h) {
 }
 
 static constexpr uint64_t FNV_OFFSET = 0xcbf29ce484222325ULL;
-
-// ── Handle validation ────────────────────────────────────────────────
-
-static crucible::Vigil* as_vigil(CrucibleHandle h) {
-    return crucible::vessel::as_vigil_typed(h).value();
-}
 
 // ── FFI entry validation ─────────────────────────────────────────────
 //
@@ -116,7 +105,8 @@ CrucibleHandle crucible_create(void) noexcept {
 }
 
 void crucible_destroy(CrucibleHandle h) noexcept {
-    delete crucible::vessel::as_vigil_typed(h).value();
+    auto handle = crucible::vessel::as_vigil_typed(h);
+    delete handle.value();
 }
 
 uint64_t crucible_hash_string(const char* s) noexcept {
@@ -151,7 +141,7 @@ CrucibleDispatchResult crucible_dispatch_op(
     uint16_t num_inputs, uint16_t num_outputs,
     const CrucibleMeta* metas, uint32_t n_metas) noexcept
 {
-    auto* vigil = as_vigil(handle);
+    auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
 
     // Validate FFI inputs before constructing an Entry — see
     // validate_ffi_entry / validate_ffi_metas for rules.  Failure
@@ -173,9 +163,12 @@ CrucibleDispatchResult crucible_dispatch_op(
     entry.num_outputs = num_outputs;
 
     // Entry fields are now validated; vouch at the typed dispatch boundary.
-    auto result = vigil->dispatch_op(
+    // metas crosses the FFI as `CrucibleMeta*` and is laundered through
+    // the typed-meta helper for layout-compat reinterpret + provenance.
+    auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
+    auto result = vigil_typed.value()->dispatch_op(
         crucible::vouch(entry),
-        reinterpret_cast<const crucible::TensorMeta*>(metas),
+        metas_typed.value(),
         n_metas);
 
     CrucibleDispatchResult cr{};
@@ -193,7 +186,7 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
     const int64_t* scalar_values, uint16_t num_scalars,
     uint8_t grad_enabled, uint8_t inference_mode) noexcept
 {
-    auto* vigil = as_vigil(handle);
+    auto vigil_typed = crucible::vessel::as_vigil_typed(handle);
 
     // Validate FFI inputs before constructing an Entry.
     if (!validate_ffi_entry(schema_hash, num_inputs, num_outputs, num_scalars)) {
@@ -222,9 +215,12 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
     }
 
     // Entry fields validated above; vouch at the typed dispatch boundary.
-    auto result = vigil->dispatch_op(
+    // metas crosses the FFI as `CrucibleMeta*` and is laundered through
+    // the typed-meta helper for layout-compat reinterpret + provenance.
+    auto metas_typed = crucible::vessel::as_meta_typed(metas, n_metas);
+    auto result = vigil_typed.value()->dispatch_op(
         crucible::vouch(entry),
-        reinterpret_cast<const crucible::TensorMeta*>(metas),
+        metas_typed.value(),
         n_metas);
 
     CrucibleDispatchResult cr{};
@@ -235,39 +231,39 @@ CrucibleDispatchResult crucible_dispatch_op_ex(
 }
 
 void crucible_flush(CrucibleHandle h) noexcept {
-    as_vigil(h)->flush();
+    crucible::vessel::as_vigil_typed(h).value()->flush();
 }
 
 int crucible_is_compiled(CrucibleHandle h) noexcept {
-    return as_vigil(h)->is_compiled() ? 1 : 0;
+    return crucible::vessel::as_vigil_typed(h).value()->is_compiled() ? 1 : 0;
 }
 
 uint32_t crucible_compiled_iterations(CrucibleHandle h) noexcept {
-    return as_vigil(h)->compiled_iterations();
+    return crucible::vessel::as_vigil_typed(h).value()->compiled_iterations();
 }
 
 uint32_t crucible_diverged_count(CrucibleHandle h) noexcept {
-    return as_vigil(h)->diverged_count();
+    return crucible::vessel::as_vigil_typed(h).value()->diverged_count();
 }
 
 uint32_t crucible_bg_iterations(CrucibleHandle h) noexcept {
-    return as_vigil(h)->bg_iterations_completed();
+    return crucible::vessel::as_vigil_typed(h).value()->bg_iterations_completed();
 }
 
 uint32_t crucible_ring_size(CrucibleHandle h) noexcept {
-    return as_vigil(h)->ring().size();
+    return crucible::vessel::as_vigil_typed(h).value()->ring().size();
 }
 
 uint32_t crucible_metalog_size(CrucibleHandle h) noexcept {
-    return as_vigil(h)->meta_log().size();
+    return crucible::vessel::as_vigil_typed(h).value()->meta_log().size();
 }
 
 void* crucible_output_ptr(CrucibleHandle h, uint16_t j) noexcept {
-    return as_vigil(h)->output_ptr(j);
+    return crucible::vessel::as_vigil_typed(h).value()->output_ptr(j);
 }
 
 void* crucible_input_ptr(CrucibleHandle h, uint16_t j) noexcept {
-    return as_vigil(h)->input_ptr(j);
+    return crucible::vessel::as_vigil_typed(h).value()->input_ptr(j);
 }
 
 void crucible_register_schema_name(uint64_t schema_hash, const char* name) noexcept {
@@ -309,7 +305,8 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     const size_t path_len = ::strnlen(path, MAX_PATH_LEN + 1);
     if (path_len == 0 || path_len > MAX_PATH_LEN) return 0;
 
-    auto* vigil = as_vigil(h);
+    auto vigil_typed = crucible::vessel::as_vigil_typed(h);
+    auto* vigil = vigil_typed.value();
     vigil->flush();
 
     const auto* region = vigil->active_region();
@@ -393,8 +390,8 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
 }
 
 uint32_t crucible_active_num_ops(CrucibleHandle h) noexcept {
-    auto* vigil = as_vigil(h);
-    const auto* region = vigil->active_region();
+    auto vigil_typed = crucible::vessel::as_vigil_typed(h);
+    const auto* region = vigil_typed.value()->active_region();
     return region ? region->num_ops : 0;
 }
 

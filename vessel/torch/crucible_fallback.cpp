@@ -29,6 +29,8 @@
 #include <crucible/Types.h>
 #include <crucible/Vigil.h>
 
+#include "vessel_api_typed.h"
+
 #include <bit>
 #include <cstdint>
 #include <cstring>
@@ -462,11 +464,22 @@ void crucibleFallback(
     }
 
     // -- Get Vigil from TLS context -----------------------------------
-    auto* vigil = static_cast<crucible::Vigil*>(state.context());
-    if (!vigil) [[unlikely]] {
+    //
+    // state.context() crosses the same ABI boundary as CrucibleHandle —
+    // a `void*` registered by the Vessel-side Python binding into
+    // PyTorch's CrucibleState TLS.  Route through `as_vigil_typed` so
+    // the TLS-stored Vigil pointer carries `source::ABIBoundary`
+    // provenance just like a freshly-handed-in CrucibleHandle does.
+    // The plausibility-check inside the typed helper is debug-only and
+    // skipped when state.context() is null (caller branches below).
+    void* tls_ctx = state.context();
+    if (!tls_ctx) [[unlikely]] {
         op.redispatchBoxed(dispatch_keys & AFTER_CRUCIBLE_KEYSET, stack);
         return;
     }
+    auto vigil_typed = crucible::vessel::as_vigil_typed(
+        static_cast<CrucibleHandle>(tls_ctx));
+    auto* vigil = vigil_typed.value();
 
     const auto& schema = op.schema();
 
