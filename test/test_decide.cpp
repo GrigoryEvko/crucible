@@ -1703,6 +1703,63 @@ static_assert(safe_count_to_size(1024) == 1031);
 static_assert(safe_count_to_size(std::numeric_limits<std::int32_t>::max() - 7)
               == std::numeric_limits<std::int32_t>::max());
 
+// ── valid_span witnesses ───────────────────────────────────────────
+//
+// CONTRACT-055 — the canonical `count == 0 || ptr != nullptr`
+// span-shape predicate.  Both halves of the disjunction are load-
+// bearing: empty span permits sentinel nullptr, non-empty span
+// requires real backing storage.
+//
+// Static-storage materializations (constexpr globals) so we have
+// stable non-null pointers to use as witnesses inside consteval.
+
+constexpr int valid_span_witness_storage = 0;
+constexpr const int* valid_span_witness_real_ptr = &valid_span_witness_storage;
+
+// count == 0 admits unconditionally — both null and non-null permitted
+static_assert( dc::valid_span(std::uint32_t{0}, nullptr));
+static_assert( dc::valid_span(std::uint32_t{0}, valid_span_witness_real_ptr));
+static_assert( dc::valid_span(std::size_t{0},   nullptr));
+static_assert( dc::valid_span(std::int32_t{0},  nullptr));
+static_assert( dc::valid_span(std::uint8_t{0},  nullptr));
+
+// count > 0 requires non-null ptr
+static_assert(!dc::valid_span(std::uint32_t{1},   nullptr));
+static_assert(!dc::valid_span(std::uint32_t{5},   nullptr));
+static_assert(!dc::valid_span(std::uint32_t{256}, nullptr));   // boundary: low byte = 0
+static_assert(!dc::valid_span(std::size_t{1024},  nullptr));
+static_assert(!dc::valid_span(std::int32_t{1},    nullptr));
+static_assert( dc::valid_span(std::uint32_t{1},   valid_span_witness_real_ptr));
+static_assert( dc::valid_span(std::uint32_t{42},  valid_span_witness_real_ptr));
+static_assert( dc::valid_span(std::size_t{4096},  valid_span_witness_real_ptr));
+
+// Saturation — UINT32_MAX with non-null real ptr admits, with null rejects.
+static_assert( dc::valid_span(std::numeric_limits<std::uint32_t>::max(),
+                              valid_span_witness_real_ptr));
+static_assert(!dc::valid_span(std::numeric_limits<std::uint32_t>::max(),
+                              nullptr));
+
+// ── Composition with CRUCIBLE_PRE — the production usage shape ─────
+//
+// Mirrors the canonical TraceRing::drain / MetaLog::try_append cite
+// shape (uint32_t count parameter, T* output buffer).  A planted
+// (count > 0, ptr = nullptr) witness rejects at consteval; the
+// fixture pins in test/safety_neg/ catch buggy impls that silently
+// admit unpaired (count, nullptr) tuples.
+
+[[nodiscard]] constexpr std::uint32_t safe_drain(int* out, std::uint32_t max_count) noexcept {
+    CRUCIBLE_PRE(dc::valid_span(max_count, out));
+    // Body trusts that whenever max_count > 0, out points to writable
+    // storage.  The empty-span fast path returns immediately on 0.
+    return max_count == 0u ? 0u : max_count;
+}
+
+// Both halves of the disjunction admitted — consteval-clean.
+static_assert(safe_drain(nullptr, 0u) == 0u);
+static_assert(safe_drain(const_cast<int*>(valid_span_witness_real_ptr), 0u) == 0u);
+static_assert(safe_drain(const_cast<int*>(valid_span_witness_real_ptr), 5u) == 5u);
+static_assert(safe_drain(const_cast<int*>(valid_span_witness_real_ptr), 1024u) == 1024u);
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -2703,6 +2760,94 @@ int main() {
         // Exercise the CRUCIBLE_PRE composition shape at runtime.
         std::int32_t volatile cnt_nn = 5;
         sink += safe_count_to_size(static_cast<std::int32_t>(cnt_nn));  // 12
+    }
+
+    // ── valid_span runtime witnesses ────────────────────────────────
+    //
+    // Routes both halves of the disjunction through volatile sinks
+    // so the optimizer cannot fold the predicate at compile time —
+    // the !NDEBUG runtime path of CRUCIBLE_PRE must execute and
+    // succeed on legitimate (count, ptr) shapes (consteval may have
+    // failed silently if the predicate had been wrong; runtime
+    // surfacing makes the smoke-test load-bearing).
+
+    {
+        // Stable non-null pointer to use as runtime witness.
+        int storage_vs = 42;
+        int* volatile real_ptr_vs = &storage_vs;
+        int* volatile null_ptr_vs = nullptr;
+
+        std::uint32_t volatile zero_u32_vs = 0u;
+        std::uint32_t volatile pos_u32_vs  = 5u;
+        std::uint32_t volatile big_u32_vs  = 256u;     // low-byte-zero
+        std::size_t   volatile pos_sz_vs   = 1024u;
+
+        // Empty-span case: count == 0 admits unconditionally.
+        if (!dc::valid_span(static_cast<std::uint32_t>(zero_u32_vs),
+                            static_cast<const void*>(real_ptr_vs))) {
+            std::fprintf(stderr,
+                "test_decide: valid_span(0u, &storage) WRONGLY rejected "
+                "(empty span with real ptr is the canonical fast path)\n");
+            return 1;
+        }
+        if (!dc::valid_span(static_cast<std::uint32_t>(zero_u32_vs),
+                            static_cast<const void*>(null_ptr_vs))) {
+            std::fprintf(stderr,
+                "test_decide: valid_span(0u, nullptr) WRONGLY rejected "
+                "(empty span with sentinel nullptr is the canonical "
+                "drain(nullptr, 0) idiom)\n");
+            return 1;
+        }
+
+        // Non-empty + real ptr: admits.
+        if (!dc::valid_span(static_cast<std::uint32_t>(pos_u32_vs),
+                            static_cast<const void*>(real_ptr_vs))) {
+            std::fprintf(stderr,
+                "test_decide: valid_span(5u, &storage) WRONGLY rejected\n");
+            return 1;
+        }
+        if (!dc::valid_span(static_cast<std::size_t>(pos_sz_vs),
+                            static_cast<const void*>(real_ptr_vs))) {
+            std::fprintf(stderr,
+                "test_decide: valid_span(1024u, &storage) WRONGLY rejected\n");
+            return 1;
+        }
+
+        // Non-empty + null ptr: rejects (the canonical bug shape).
+        if (dc::valid_span(static_cast<std::uint32_t>(pos_u32_vs),
+                           static_cast<const void*>(null_ptr_vs))) {
+            std::fprintf(stderr,
+                "test_decide: valid_span(5u, nullptr) WRONGLY accepted "
+                "(non-empty span with null ptr is unconditional UB)\n");
+            return 1;
+        }
+        // Width-narrowing magnitude: catches uint8_t-truncation bugs.
+        if (dc::valid_span(static_cast<std::uint32_t>(big_u32_vs),
+                           static_cast<const void*>(null_ptr_vs))) {
+            std::fprintf(stderr,
+                "test_decide: valid_span(256u, nullptr) WRONGLY accepted "
+                "(low-byte-zero magnitude must reject — catches truncation "
+                "bugs that small-magnitude witnesses cannot)\n");
+            return 1;
+        }
+
+        sink += static_cast<int>(dc::valid_span(
+                    static_cast<std::uint32_t>(zero_u32_vs),
+                    static_cast<const void*>(null_ptr_vs)))
+              + static_cast<int>(dc::valid_span(
+                    static_cast<std::uint32_t>(pos_u32_vs),
+                    static_cast<const void*>(real_ptr_vs)))
+              - static_cast<int>(dc::valid_span(
+                    static_cast<std::uint32_t>(pos_u32_vs),
+                    static_cast<const void*>(null_ptr_vs)))
+              - static_cast<int>(dc::valid_span(
+                    static_cast<std::uint32_t>(big_u32_vs),
+                    static_cast<const void*>(null_ptr_vs)));
+
+        // Exercise the CRUCIBLE_PRE composition shape at runtime.
+        std::uint32_t volatile cnt_vs = 7u;
+        sink += static_cast<int>(safe_drain(real_ptr_vs,
+                                            static_cast<std::uint32_t>(cnt_vs)));
     }
 
     if (sink == 0) {

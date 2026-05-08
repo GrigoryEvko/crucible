@@ -2146,6 +2146,157 @@ constexpr bool non_negative(T x) noexcept {
     return T{0} <= x;
 }
 
+// ─── valid_span ────────────────────────────────────────────────────
+//
+// Returns true iff a `(count, ptr)` pair would form a non-UB
+// std::span — that is, the two halves of an unpaired-pointer-and-
+// length API agree on their representation of "empty".  Exactly:
+// either `count` is zero (the pointer is allowed to be anything,
+// including nullptr, because the span is empty) OR the pointer is
+// non-null (so reading `count` elements through it is well-defined).
+//
+// ───────────────────────────────────────────────────────────────────
+// PREDICATE DEFINITION
+// ───────────────────────────────────────────────────────────────────
+//
+//   ∀ C integral.  ∀ count : C.  ∀ ptr : const void*.
+//     valid_span(count, ptr) ⟺ count = C{0}  ∨  ptr ≠ nullptr.
+//
+// `count` is integral so the predicate works uniformly across the
+// dozen distinct count types Crucible passes through unpaired-
+// pointer-and-length APIs (`uint32_t` for TraceRing/MetaLog/MerkleDag
+// drains, `std::size_t` for Reflected, `std::uint16_t` for callsite
+// scratch, etc.).  `ptr` is `const void*` so any `T*` / `const T*`
+// argument decays implicitly without a per-T template instantiation
+// at every cite — the predicate is span-shape, not span-element-
+// type, so there is no benefit to parameterizing over the element T.
+//
+// `valid_span` IS the structural shape `std::span<T>(ptr, count)`
+// requires for non-UB construction.  The exact invariant std::span
+// admits as well-formed:
+//
+//     span(ptr, n) is non-UB ⟺ n == 0 ∨ ptr ≠ nullptr.
+//
+// `valid_span(count, ptr)` is the predicate-form of that invariant,
+// citable at every CRUCIBLE_PRE / pre site that owns an unpaired
+// (count, ptr) parameter pair.
+//
+// ───────────────────────────────────────────────────────────────────
+// USAGE
+// ───────────────────────────────────────────────────────────────────
+//
+//   uint32_t drain(TraceRingEntry* out, uint32_t max_count) noexcept
+//       pre (::crucible::decide::valid_span(max_count, out))
+//   {
+//       if (max_count == 0) return 0;
+//       // Body may safely write [out, out + max_count) — the
+//       // contract guarantees that whenever max_count > 0, out is
+//       // non-null and points to writable storage.  The empty-span
+//       // case is handled at the head; the contract permits
+//       // (max_count = 0, out = nullptr) without trapping.
+//       ...
+//   }
+//
+// The shape captures BOTH the producer and the consumer disciplines
+// in one named cite:
+//
+//   * Producer (caller) discipline: don't pass `(n, nullptr)` when
+//     n > 0.  The span has no backing storage; `(n, nullptr)` is a
+//     malformed empty-span that masks an upstream bug as a runtime
+//     crash on first dereference.
+//   * Consumer (callee) discipline: when `count == 0`, do not
+//     dereference `ptr`.  The contract permits the caller to pass
+//     a sentinel pointer (nullptr or otherwise) for empty spans.
+//
+// Both halves are cited in one place — `valid_span` IS the named
+// invariant.  Migrations from anonymous `pre (n == 0 || p != nullptr)`
+// to `pre (decide::valid_span(n, p))` preserve the predicate exactly
+// while making every such cite grep-discoverable.
+//
+// ───────────────────────────────────────────────────────────────────
+// PRODUCTION CITES
+// ───────────────────────────────────────────────────────────────────
+//
+//   * TraceRing::drain                   — uint32_t × TraceRingEntry*
+//   * TraceRing::drain (3 overloads)     — uint32_t × {SoA arrays}
+//   * MetaLog::try_append                — uint32_t × const TensorMeta*
+//   * MetaLog::try_contiguous (×2)       — uint32_t × const TensorMeta*
+//   * MerkleDag region builders (×3)     — uint32_t × const Op*
+//   * MerkleDag LoopNode builder         — uint32_t × const FeedbackEdge*
+//   * ReplayEngine::reset                — uint32_t × const TraceEntry*
+//   * Reflected::reflect_print           — std::size_t × const T*
+//
+// Every cite shares the same `count == 0 || ptr != nullptr` shape
+// and the same intent (empty-span permission for null pointer).
+// Naming the predicate at the catalog deletes 11 distinct anonymous
+// disjunctions; future hardening (lifting `(count, ptr)` parameter
+// pairs to `Borrowed<T>` / `std::span<const T>` at function-signature
+// boundaries — see WRAP-* tasks) propagates through the predicate
+// name once.
+//
+// ───────────────────────────────────────────────────────────────────
+// ANTI-PATTERN CATALOG
+// ───────────────────────────────────────────────────────────────────
+//
+//   pre (ptr != nullptr)
+//     // OVER-RESTRICTIVE — rejects the legitimate empty-span case.
+//     // For (count = 0, ptr = nullptr) the correct predicate admits
+//     // (no backing storage needed for zero elements), but this
+//     // anti-shape rejects.  Fails at every cite that calls drain()
+//     // with max_count = 0 (a common idiom for "size hint of nothing").
+//
+//   pre (count == 0 && ptr != nullptr)
+//     // CONJUNCTION-NOT-DISJUNCTION — admits ONLY (count=0, ptr=non-null),
+//     // the impossible-by-design intersection.  Rejects every legitimate
+//     // span shape including non-empty data and legitimate empty-with-
+//     // sentinel.  Catastrophic over-rejection; the && / || flip is the
+//     // canonical "wrong logical-connective" review-reject shape.
+//
+//   pre (count != 0 || ptr != nullptr)
+//     // OR-WITH-WRONG-COUNT-CLAUSE — admits everything except
+//     // (count = 0, ptr = nullptr), which is exactly the well-formed
+//     // empty-span we should ADMIT.  The bug fires at the legitimate
+//     // empty-span case (TraceRing::drain(nullptr, 0) idiom).
+//
+//   pre (count >= 0 && (count == 0 || ptr != nullptr))
+//     // REDUNDANT — count is unsigned in every Crucible cite; the
+//     // `count >= 0` clause is a tautology that adds noise without
+//     // catching anything.  For signed count types the proper cite
+//     // is `decide::non_negative(count) && decide::valid_span(count, ptr)`,
+//     // composed via `decide::conjunction`.
+//
+//   pre (count == 0 || ptr)
+//     // BOOL-CONVERSION-IMPLICIT — relies on the implicit pointer-
+//     // to-bool conversion.  Functionally equivalent to the correct
+//     // form; rejected on style grounds (review-discoverability of
+//     // the named cite trumps the 7-character savings).
+//
+// ───────────────────────────────────────────────────────────────────
+// EDGE CASES
+// ───────────────────────────────────────────────────────────────────
+//
+//   - valid_span(0u, nullptr)        == true   (empty span, sentinel ptr)
+//   - valid_span(0u, &x)             == true   (empty span, real ptr)
+//   - valid_span(5u, &x)             == true   (non-empty, real ptr)
+//   - valid_span(5u, nullptr)        == false  (non-empty, null ptr — UB)
+//   - valid_span(UINT32_MAX, ptr)    == (ptr != nullptr)   (saturation)
+//   - valid_span(0u, garbage_ptr)   == true   (empty span: ptr unread)
+//   - valid_span(int8_t{0}, nullptr) == true   (signed zero is structural)
+//
+// VC DISCHARGE: pinning `valid_span` at the boundary discharges the
+// std::span well-formedness obligation.  The body of the protected
+// function may then construct std::span(ptr, count) without the
+// optimizer adding null-check stubs — the contract guarantees the
+// ptr is dereferenceable for every iteration in [0, count).  Under
+// `-fcontract-evaluation-semantic=ignore` the predicate folds into
+// `[[assume(...)]]`; downstream code is hoisted as if the disjunction
+// were proven.
+template <std::integral C>
+[[nodiscard, gnu::const]]
+constexpr bool valid_span(C count, const void* ptr) noexcept {
+    return count == C{0} || ptr != nullptr;
+}
+
 // ─── is_non_zero ───────────────────────────────────────────────────
 //
 // Returns true iff `x != T{}`, i.e. iff `x` is not equal to the

@@ -5580,3 +5580,57 @@ crucible_neg_compile_test(neg_decide_non_negative_minus_one
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_non_negative_int_min
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-055: crucible::decide::valid_span — span-shape disjunction
+# predicate (count == C{0} || ptr != nullptr).  TWO HS14 fixtures
+# pinning the OVER-ADMISSION bug classes via ORTHOGONAL (count, ptr)
+# witnesses spanning both small-magnitude and width-narrowing:
+#
+#   * neg_decide_valid_span_count_only — witness (uint32_t{1},
+#     nullptr).  Catches ALWAYS-ACCEPT (returns true) /
+#     INVERTED-SENSE (`count != 0 && ptr == nullptr` admits exactly
+#     the UB tuples this predicate exists to reject) /
+#     OFF-BY-ONE-IN-COUNT-CLAUSE (`count <= 1 || ptr != nullptr`
+#     admits (1, nullptr)) / OR-WITH-WRONG-COUNT-CLAUSE
+#     (`count != 0 || ptr != nullptr` admits everything except the
+#     legitimate empty-span case (0, nullptr)).  All four impls
+#     silently admit the canonical "non-empty span backed by null
+#     storage" UB shape at every count-and-pointer cite (TraceRing::
+#     drain(out=nullptr, max_count=N>0) → SIGSEGV on first store;
+#     MerkleDag region builder with (num_ops>0, ops=nullptr) →
+#     arena corruption that persists past the SIGSEGV).
+#   * neg_decide_valid_span_truncation — witness (uint32_t{256},
+#     nullptr).  UNIQUELY catches WIDTH-NARROWING-TRUNCATION
+#     (`uint8_t(count) == 0 || ptr != nullptr` admits (256, nullptr)
+#     because uint8_t(256) = 0) and BIT-MASK-INSTEAD-OF-EQUALITY
+#     (`(count & 0xFF) == 0 || ptr != nullptr` same root cause).
+#     Defense-in-depth on always-accept and inverted-sense (covered).
+#
+# Pair-by-pair orthogonality:
+#   - count_only fixture catches always-accept + inverted-sense +
+#     off-by-one + or-with-wrong-count (small-magnitude family);
+#     cannot detect uint8_t-truncation because uint8_t(1) = 1
+#     (non-zero, doesn't trigger the truncation short-circuit).
+#   - truncation fixture catches uint8_t-truncation + bit-mask
+#     (low-byte-zero family) + always-accept + inverted-sense
+#     (covered).
+#   - Together the two fixtures span both small-magnitude and
+#     low-byte-zero over-admission classes.  Two-fixture discipline
+#     is mandatory: a buggy uint8_t-truncated impl behaves
+#     correctly on count=1 (admits with non-null ptr, rejects with
+#     null ptr) but admits (256, nullptr); the low-byte-zero
+#     witness is the only way to catch this at consteval.
+#
+# Note: HS14 fixtures only catch OVER-admission (predicate admits
+# something it should reject).  The over-restrictive bug class
+# (`ptr != nullptr` only — drops the count==0 admission clause) is
+# UNDER-admission and is caught at production call sites
+# (TraceRing::drain(nullptr, 0) starts spuriously failing the
+# pre-clause), not at this fixture pair.  Companion valid_span
+# static_asserts in test_decide.cpp pin the empty-span (count=0)
+# admission explicitly so the under-admission case is structurally
+# rejected at consteval too.
+crucible_neg_compile_test(neg_decide_valid_span_count_only
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_valid_span_truncation
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
