@@ -29,6 +29,7 @@
 #include <crucible/handles/PublishOnce.h>
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Borrowed.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/safety/Saturated.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
@@ -151,9 +152,29 @@ CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(MemoryPlan);
 // byte tensor from an overflow sentinel; Saturated<T> forces the
 // observation to be either propagated (`.value()`) or acted upon
 // (`.was_clamped()`) at every call site.
+//
+// CONTRACT-105: the overflow chain corresponds 1-to-1 with the named
+// predicates in the decide:: catalog — `decide::no_overflow_mul`
+// (CONTRACT-030) for the dim-extent and final element-bytes products,
+// `decide::no_overflow_sum` (CONTRACT-031) for the max_offset /
+// min_offset / span accumulations.  The body uses `__builtin_*_overflow`
+// (which both detects AND records the overflow flag) rather than a
+// `pre()` cite because overflow is recovered into the Saturated<T>
+// path, not assumed away — but the named predicates remain the
+// authoritative formal description of "this arithmetic does not
+// overflow", and a future audit that wants to count "operations
+// guarded against integer overflow" finds compute_storage_nbytes via
+// the cross-reference here.
+//
+// The `pre` bound on ndim discharges through `decide::in_range`
+// (CONTRACT-102): closed interval `[0, 8]` for the `<uint8_t>`
+// instantiation — TensorMeta carries `int64_t sizes[8]`, so ndim==8
+// is the inclusive maximum and ndim==0 is the well-formed scalar
+// case (handled by the `if (meta.ndim == 0)` early return below).
 [[nodiscard]] constexpr safety::Saturated<uint64_t>
 compute_storage_nbytes(const TensorMeta& meta)
-    pre (meta.ndim <= 8)
+    pre (::crucible::decide::in_range<std::uint8_t>(
+        meta.ndim, std::uint8_t{0}, std::uint8_t{8}))
 {
   using Sat = safety::Saturated<uint64_t>;
   if (meta.ndim == 0)
