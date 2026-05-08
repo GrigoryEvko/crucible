@@ -31,6 +31,7 @@
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Post.h>
+#include <crucible/safety/Pre.h>
 #include <crucible/safety/Saturated.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
@@ -1699,10 +1700,22 @@ class CRUCIBLE_OWNER KernelCache {
   // Returns `Empty` for an unused slot, `Claimed` for a transient
   // (hash set but kernel null) slot, `Published` for a fully-committed
   // entry. Not a hot-path primitive — tests and perf counters only.
+  //
+  // CONTRACT-129: anonymous bare-`<` precondition migrates to named
+  // cite via `decide::in_range<uint32_t>(slot_index, 0u, capacity_ - 1u)`.
+  // The predicate references `this->capacity_` member, so it's in the
+  // GCC 16.1.1 consteval-bypass family — vanilla P2900 `pre()` would
+  // silently bypass at consteval for foldable-body call sites; the
+  // CRUCIBLE_PRE shim's `__builtin_trap()` poisons the consteval call
+  // instead.  Companion guard `capacity_ > 0u` defends against the
+  // `capacity_ - 1u` underflow that would otherwise wrap to UINT32_MAX
+  // when capacity_ == 0 (an unconstructed cache).
   [[nodiscard]] SlotState diag_slot_state(uint32_t slot_index) const noexcept
       CRUCIBLE_NO_THREAD_SAFETY
-      pre (slot_index < capacity_)
   {
+    CRUCIBLE_PRE(capacity_ > 0u);
+    CRUCIBLE_PRE(::crucible::decide::in_range<uint32_t>(
+        slot_index, 0u, capacity_ - 1u));
     const KernelCacheSlot& entry = table_[slot_index];
     return classify_(entry.content_hash_.load(std::memory_order_acquire),
                      entry.kernel_.load(std::memory_order_acquire));
