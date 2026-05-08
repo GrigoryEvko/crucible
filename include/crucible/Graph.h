@@ -16,6 +16,7 @@
 #include <crucible/Expr.h>
 #include <crucible/Platform.h>
 #include <crucible/safety/Bits.h>
+#include <crucible/safety/Post.h>
 
 #include <bit>
 #include <cassert>
@@ -562,6 +563,28 @@ class CRUCIBLE_OWNER Graph {
     if (slots.empty()) { input_slots_[node_id.raw()] = nullptr; return; }
     input_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(a, slots.size());
     std::memcpy(input_slots_[node_id.raw()], slots.data(), slots.size_bytes());
+
+    // CONTRACT-Graph-SetInputSlots-POST: state-mutation post.  The fall-
+    // through path arrived here because slots was non-empty (the empty
+    // branch returns above), so input_slots_[node_id.raw()] MUST be the
+    // arena-allocated non-null pointer just installed.  Catches a
+    // refactor that drops the assignment (e.g. accidental local copy
+    // shadowing the array slot) — a regression that would silently
+    // leave the slot at whatever value it held before, breaking every
+    // downstream `input_slots(node_id)` reader.
+    //
+    // The empty-input branch's post (slot == nullptr) is enforced by
+    // the explicit assignment + early return; no separate POST needed
+    // since the foldable-true assignment is structurally enforced by
+    // the return statement immediately after.
+    //
+    // Sibling discipline cite: CONTRACT-WriteOnceNonNull-Set-POST
+    // (commit 98d0ff8) — same "after assignment, the slot equals the
+    // input" framing.  The patched g++-16p §13.6 foldable-body bypass
+    // would silently pass `post(input_slots_[id] != nullptr)` under
+    // P2900 form for the non-empty branch; CRUCIBLE_POST is the
+    // discharge form.
+    CRUCIBLE_POST(0, input_slots_[node_id.raw()] != nullptr);
   }
 
   void set_output_slots(effects::Alloc a, NodeId node_id, std::span<const SlotId> slots)
@@ -570,6 +593,15 @@ class CRUCIBLE_OWNER Graph {
     if (slots.empty()) { output_slots_[node_id.raw()] = nullptr; return; }
     output_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(a, slots.size());
     std::memcpy(output_slots_[node_id.raw()], slots.data(), slots.size_bytes());
+
+    // CONTRACT-Graph-SetOutputSlots-POST: mirror of
+    // CONTRACT-Graph-SetInputSlots-POST above.  Same framing: non-
+    // empty-input branch must produce a non-null arena allocation in
+    // output_slots_[node_id.raw()].  Downstream MemoryPlan + Mimic
+    // emit code reads output_slots(node_id); a refactor that drops
+    // the assignment here would silently propagate stale (or null,
+    // pre-init) data through the entire compile pipeline.
+    CRUCIBLE_POST(0, output_slots_[node_id.raw()] != nullptr);
   }
 
   [[nodiscard]] const SlotId* input_slots(NodeId node_id) const CRUCIBLE_LIFETIMEBOUND
