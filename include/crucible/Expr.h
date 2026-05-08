@@ -84,7 +84,8 @@ struct Expr {
       uint64_t     hash_,
       int64_t      payload_,
       const Expr* const* args_) noexcept
-      pre (::crucible::decide::implies(nargs_ > 0, args_ != nullptr))
+      pre (::crucible::decide::implies(::crucible::decide::positive(nargs_),
+                                       args_ != nullptr))
       : op(op_)
       , nargs(nargs_)
       , flags(flags_)

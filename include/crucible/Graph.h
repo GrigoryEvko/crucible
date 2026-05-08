@@ -333,9 +333,9 @@ struct GraphNode {
   }
 
   // Reduction range expressions (valid only for REDUCTION kind).
-  // pre(nred > 0) ensures the size + ndim offset points into the
-  // reduction-range tail rather than past the array end for a
-  // non-reducing node.
+  // pre(decide::positive(nred)) ensures the size + ndim offset
+  // points into the reduction-range tail rather than past the
+  // array end for a non-reducing node.
   [[nodiscard]] const Expr** reduction_ranges() const CRUCIBLE_LIFETIMEBOUND
       pre (kind == NodeKind::REDUCTION)
       pre (::crucible::decide::positive(nred))
