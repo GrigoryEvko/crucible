@@ -43,6 +43,7 @@
 #include <crucible/algebra/lattices/MonotoneLattice.h>
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>
 #include <crucible/safety/Pinned.h>
+#include <crucible/safety/Post.h>
 
 #include <atomic>
 #include <chrono>
@@ -438,7 +439,24 @@ public:
         requires std::integral<T>
         pre(impl_.peek() != std::numeric_limits<T>::max())
     {
-        impl_ = graded_type{impl_.peek() + T{1}};
+        // CONTRACT-Monotonic-Bump-POST: state-mutation post (CRUCIBLE_POST
+        // taxonomy class 1).  Capturing prior is free for std::integral<T>
+        // (the requires-clause restricts T to integers — copy is one MOV).
+        // Pre rules out wraparound: peek() != max ⇒ peek() + 1 fits in T.
+        // The post catches a refactor that loses the increment (e.g. an
+        // accidental `impl_ = graded_type{impl_.peek()};` typo dropping the
+        // +1) — the patched g++-16p §13.6 foldable-body bypass would
+        // silently pass `post(impl_.peek() == prior + 1)` if expressed via
+        // P2900, so CRUCIBLE_POST is the discharge form.
+        //
+        // Sibling discipline cites: CONTRACT-WrapTransaction-5 count_
+        // Monotonic post family / CONTRACT-Vigil-5 step_ Monotonic post
+        // family — both use this primitive's bump() in production hot
+        // paths.  Hardening here propagates safety to every call site
+        // through the [[assume]] hint without per-site work.
+        T const prior = impl_.peek();
+        impl_ = graded_type{prior + T{1}};
+        CRUCIBLE_POST(0, impl_.peek() == static_cast<T>(prior + T{1}));
     }
 
     // ── Diagnostic names (forwarded from Graded substrate) ─────────
@@ -578,13 +596,46 @@ public:
         pre(!value_.has_value())
     {
         value_.emplace(std::move(v));
+        // CONTRACT-WriteOnce-Set-POST: state-mutation post (CRUCIBLE_POST
+        // taxonomy class 1).  The body's emplace() unconditionally
+        // populates value_ — a foldable-true post that the patched
+        // g++-16p §13.6 always-true regression would silently bypass
+        // under P2900 form (cf. feedback_patched_gcc16_toolchain.md
+        // 2026-05-08, SwissTable.h h2_tag post removed for the same
+        // class).  CRUCIBLE_POST routes through __builtin_trap on
+        // consteval and contract_failed at runtime — fires regardless
+        // of the optimizer folding the body to a no-op.
+        //
+        // Catches a refactor that drops the emplace() call (e.g. an
+        // accidental short-circuit `if (!v) return;`) which would
+        // leave value_ empty and break every downstream get()/operator
+        // bool() call.  Because every get_assuming_set() carries an
+        // [[assume(value_.has_value())]], the corruption would
+        // propagate as miscompiled code, not as a contract fire.
+        // Hardening at the producer site is the only place to catch it.
+        CRUCIBLE_POST(0, value_.has_value());
     }
 
     // Try-set — returns true iff this was the first set.
     constexpr bool try_set(T v) noexcept(std::is_nothrow_move_constructible_v<T>) {
-        if (value_) return false;
-        value_.emplace(std::move(v));
-        return true;
+        // Refactored to single-return so the post fires on both paths.
+        // Semantics preserved: if value_ already set, return false; else
+        // emplace and return true.
+        bool const claimed = !value_.has_value();
+        if (claimed) {
+            value_.emplace(std::move(v));
+        }
+        // CONTRACT-WriteOnce-TrySet-POST: result-shape post + lifecycle
+        // witness (CRUCIBLE_POST taxonomy class 2).  The unconditional
+        // post `value_.has_value()` captures the lifecycle invariant:
+        // try_set() leaves the slot in a "set" state regardless of
+        // whether THIS call did the setting.  If claimed==true, the
+        // emplace above did it; if claimed==false, a prior set/try_set
+        // had already done it (otherwise the !has_value() check would
+        // have evaluated true and claimed would be true).  Catches the
+        // refactor that drops the emplace under claimed==true.
+        CRUCIBLE_POST(claimed, value_.has_value());
+        return claimed;
     }
 
     // Read the set value.  Contract-fails if not yet set.
@@ -672,15 +723,46 @@ public:
         pre (ptr_ == nullptr)
     {
         ptr_ = p;
+        // CONTRACT-WriteOnceNonNull-Set-POST: state-mutation post.
+        // Tighter than WriteOnce::set's `value_.has_value()` because
+        // here we can name the exact pointer the slot must hold (the
+        // pre rules out double-set and null input, leaving only the
+        // assignment ptr_ = p as the legal mutation).  Catches a
+        // refactor that publishes a different pointer (e.g. accidental
+        // `ptr_ = q;` from an outer scope, or a moved-from local).
+        // The patched g++-16p §13.6 foldable-body bypass would silently
+        // pass `post(ptr_ == p)` under P2900 form — CRUCIBLE_POST is
+        // the discharge.  Sibling: CONTRACT-PublishOnce-Publish-POST
+        // (handles/PublishOnce.h slot_.load == ptr witness) — same
+        // "the published pointer is exactly the one the caller passed"
+        // discipline, just with non-atomic storage here.
+        CRUCIBLE_POST(0, ptr_ == p);
     }
 
     // Try-set — returns true iff this was the first non-null set.
     // No contract fire; null input and double-set both become no-ops
     // returning false.
     [[nodiscard]] constexpr bool try_set(T* p) noexcept {
-        if (ptr_ != nullptr || p == nullptr) return false;
-        ptr_ = p;
-        return true;
+        // Refactored to single-return so the post fires on every path.
+        // Semantics preserved: claim iff slot was empty AND p is non-
+        // null.  Null input and double-set both yield claimed=false.
+        bool const claimed = (ptr_ == nullptr) && (p != nullptr);
+        if (claimed) {
+            ptr_ = p;
+        }
+        // CONTRACT-WriteOnceNonNull-TrySet-POST: result-shape +
+        // lifecycle invariant.  Three cases:
+        //   1. claimed==true  ⇒ ptr_ == p (we just set it).
+        //   2. claimed==false, p==nullptr ⇒ no change; ptr_ unchanged.
+        //   3. claimed==false, ptr_ already non-null ⇒ slot was set by
+        //      a prior call; ptr_ remains non-null.
+        // The unified post `p == nullptr || ptr_ != nullptr` captures
+        // case 1 (ptr_ == p != nullptr → ptr_ != nullptr), case 2
+        // (lhs holds), and case 3 (ptr_ != nullptr).  Witnesses the
+        // lifecycle invariant: after any non-null try_set call returns,
+        // the slot is set with SOMETHING.
+        CRUCIBLE_POST(claimed, p == nullptr || ptr_ != nullptr);
+        return claimed;
     }
 
     // Read the set pointer.  Contract fires if not yet set.

@@ -36,6 +36,7 @@
 // alive independently.
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Post.h>
 
 #include <atomic>
 #include <type_traits>
@@ -84,6 +85,29 @@ public:
             std::memory_order_release,
             std::memory_order_relaxed);
         contract_assert(claimed);
+
+        // CONTRACT-PublishOnce-Publish-POST: state-mutation post
+        // (CRUCIBLE_POST taxonomy class 1, sibling of CKernelTable
+        // register_op state-mutation post family / CrucibleContext
+        // activate post-pair commit 0cf7c20).  The CAS succeeded
+        // (contract_assert above) and PublishOnce is single-publisher
+        // by class invariant — no other thread can mutate slot_ after
+        // a successful CAS, so the post is well-defined (NOT racy:
+        // a second publish() from any thread would fail CAS and abort
+        // BEFORE reaching this line).
+        //
+        // The relaxed load suffices: we just stored ptr in the same
+        // thread, no cross-thread synchronization is needed for
+        // post-witness.  This catches a refactor that moves the CAS
+        // logic but accidentally publishes a different pointer (e.g.
+        // off-by-one in a loop body, or a moved-from local).
+        //
+        // PublishSlot::publish does NOT get the symmetric post —
+        // PublishSlot is multi-publisher / consumer-resettable, so
+        // re-reading slot_ races with other publishers / consume()
+        // calls.  Skipped per the "racy" rationale class in
+        // feedback_pre_post_dual_discipline.md.
+        CRUCIBLE_POST(0, slot_.load(std::memory_order_relaxed) == ptr);
     }
 
     // Observe.  Returns the published pointer (acquire) or nullptr
