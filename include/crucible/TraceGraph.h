@@ -7,6 +7,7 @@
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
 
 namespace crucible {
@@ -47,8 +48,29 @@ struct Edge {
   // Validating setters: fire on port ≥ 64.  The binary-search
   // edge assembly paths that populate Edge pairs should route
   // through these rather than writing the fields directly.
-  void set_src_port(uint8_t p) noexcept pre (p <= kMaxPort) { src_port = p; }
-  void set_dst_port(uint8_t p) noexcept pre (p <= kMaxPort) { dst_port = p; }
+  void set_src_port(uint8_t p) noexcept pre (p <= kMaxPort) {
+    src_port = p;
+    // CONTRACT-Edge-SetSrcPort-POST: state-mutation post.  Pre rules
+    // out p > kMaxPort, leaving `src_port = p` as the only legal
+    // mutation; post catches a refactor that publishes a different
+    // value (e.g. accidental `src_port = dst_port` typo, or an
+    // out-of-scope local shadow).  Sibling of
+    // CONTRACT-WriteOnceNonNull-Set-POST (commit 98d0ff8) and
+    // CONTRACT-Graph-SetInputSlots-POST (commit d38089c) — same
+    // "after assignment, the field equals the input" framing.
+    // Edge is a non-template POD struct; set_src_port is a non-
+    // template member — single instantiation per libcrucible TU,
+    // no function-template POST poison risk (cf. Pre.h §"Function-
+    // template POST poison" trap, commit 9e818c7).
+    CRUCIBLE_POST(0, src_port == p);
+  }
+  void set_dst_port(uint8_t p) noexcept pre (p <= kMaxPort) {
+    dst_port = p;
+    // CONTRACT-Edge-SetDstPort-POST: mirror of
+    // CONTRACT-Edge-SetSrcPort-POST above.  Catches the same
+    // accidental-shadow-or-typo class on the dst side.
+    CRUCIBLE_POST(0, dst_port == p);
+  }
 };
 
 static_assert(sizeof(Edge) == 12, "Edge must be 12 bytes");
