@@ -105,8 +105,6 @@ struct ReplayEngine {
       // Region bounds: num_ops==0 is legitimate (empty region), but if
       // num_ops>0 then ops must be non-null.
       pre (region->num_ops == 0 || region->ops != nullptr)
-      post (cursor_ == ops_)
-      post (slot_table_ != nullptr)
   {
     ops_ = region->ops;
     end_ = region->ops + region->num_ops;
@@ -128,6 +126,29 @@ struct ReplayEngine {
       expected_schema_ = SchemaHash{};
       expected_shape_ = ShapeHash{};
     }
+
+    // CONTRACT-ReplayEngine-Init-POST: lifecycle-init post-pair
+    // (CRUCIBLE_POST taxonomy class 3, sibling of IterDet::reset
+    // 6-post family / PoolAllocator::destroy 5-post family / KernelCache
+    // ctor 3-post family / CrucibleContext::activate 2-post pair).
+    //
+    // Migration from P2900 `post()` form to CRUCIBLE_POST: both
+    // post-equalities (cursor_ == ops_, slot_table_ != nullptr) are
+    // foldable-true on the patched g++-16p build (the body literally
+    // assigns `cursor_ = ops_;` and `slot_table_` is set from a
+    // gnu::returns_nonnull function), which means the §13.6 regression
+    // (CLAUDE.md feedback_patched_gcc16_toolchain.md, removed h2_tag
+    // post for the same reason) silently passes them.  CRUCIBLE_POST
+    // routes through __builtin_trap on consteval and contract_failed at
+    // runtime — fires on both paths, foldable or not.
+    //
+    // The end_ == ops_ + num_ops post catches the bounds-pair refactor
+    // (someone reorders the assignments and end_ ends up off-by-one or
+    // pointing at a stale region).  num_ops==0 is legitimate (empty
+    // region) and the post still holds (end_ == ops_ + 0 == ops_).
+    CRUCIBLE_POST(0, cursor_ == ops_);
+    CRUCIBLE_POST(0, slot_table_ != nullptr);
+    CRUCIBLE_POST(0, end_ == ops_ + region->num_ops);
   }
 
   // ── Reset: rewind cursor to first op for the next iteration ──
@@ -141,6 +162,18 @@ struct ReplayEngine {
       expected_schema_ = ops_[0].schema_hash;
       expected_shape_ = ops_[0].shape_hash;
     }
+
+    // CONTRACT-ReplayEngine-Reset-POST: lifecycle-reset post; mirrors
+    // CONTRACT-ReplayEngine-Init-POST cursor_ == ops_ above.  The whole
+    // point of reset() is to rewind cursor_ to ops_ for the next
+    // iteration; failure to do so leaves the engine in a state where
+    // the next advance() call resumes mid-region instead of replaying
+    // from the start, silently breaking iteration determinism.  Note
+    // that current_ is NOT in the post — the docstring above explicitly
+    // says current_ survives reset to keep output_ptr/input_ptr valid.
+    // Sibling: IterDet::reset 6-post family (the most analogous reset
+    // primitive in the codebase), CrucibleContext::deactivate post-pair.
+    CRUCIBLE_POST(0, cursor_ == ops_);
   }
 
   // ── Hot path: advance one op ──
