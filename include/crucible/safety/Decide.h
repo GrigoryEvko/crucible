@@ -1747,4 +1747,124 @@ constexpr bool aligned_in_range(std::uint64_t value,
         && (value % alignment) == 0u;
 }
 
+// ─── is_non_zero ───────────────────────────────────────────────────
+//
+// Returns true iff `x != T{}`, i.e. iff `x` is not equal to the
+// default-constructed (structural-zero) value of its type.  The
+// canonical "this struct is initialized" guard.
+//
+// ───────────────────────────────────────────────────────────────────
+// PREDICATE DEFINITION
+// ───────────────────────────────────────────────────────────────────
+//
+//   ∀ T equality-comparable.  ∀ x : T.  is_non_zero(x) ⟺ x ≠ T{}
+//
+// `T{}` is the structural-zero of T.  For built-in integral T this
+// is the literal 0.  For aggregate T (Uuid, ContentHash, MerkleHash,
+// etc.) it is the all-fields-default-constructed instance.  T MUST
+// be equality-comparable; the predicate uses `operator!=` directly.
+//
+// The predicate is the natural Decide cite for the recurring idiom
+// "this value is not in its post-default-construction state":
+//
+//   * `cog::content_hash` and `CogMimic::cog_kernel_cache_key`
+//     guard against zero-Uuid CogIdentity values (Uuid{0,0} is the
+//     reserved sentinel for "uninitialized Cog").
+//   * `KernelCache::publish` and `Cipher::store` guard against zero
+//     ContentHash sentinels (0 means "slot empty").
+//   * `RegionNode` ctor guards against zero merkle_hash, content_hash.
+//
+// ───────────────────────────────────────────────────────────────────
+// USAGE
+// ───────────────────────────────────────────────────────────────────
+//
+//   constexpr std::uint64_t content_hash(CogIdentity const& c) noexcept
+//   {
+//       CRUCIBLE_PRE(decide::is_non_zero(c.uuid));
+//       // c.uuid is now provably non-zero; safe to mix into the
+//       // hash without producing the reserved zero-sentinel hash
+//       // for an uninitialized Cog.
+//       ...
+//   }
+//
+// The template parameter is deduced from the argument; callers
+// write `decide::is_non_zero(x)` not `decide::is_non_zero<T>(x)`.
+//
+// ───────────────────────────────────────────────────────────────────
+// PRODUCTION CITES
+// ───────────────────────────────────────────────────────────────────
+//
+//   * cog::content_hash                  — Uuid non-zero guard
+//   * CogMimic::cog_kernel_cache_key     — Uuid non-zero guard
+//
+// Future cites planned in CONTRACT-106 / CONTRACT-115:
+//
+//   * KernelCache::publish               — ContentHash non-zero
+//                                          (currently `pre (h != 0)`).
+//   * Cipher::store                      — head_ ContentHash advance.
+//   * Several `Refined<non_zero, ...>`   — value-construction sites.
+//
+// Where the value-level invariant lives in the type via
+// `Refined<non_zero, T>` (the wrapper carries the proof at the type
+// level), the cite at the consumer is unnecessary; the cite is for
+// the FRONTIER between raw `T` and `Refined<non_zero, T>`, where
+// `decide::is_non_zero` is the proof-of-fitness predicate.
+//
+// ───────────────────────────────────────────────────────────────────
+// ANTI-PATTERN CATALOG
+// ───────────────────────────────────────────────────────────────────
+//
+//   pre (x.field_a != 0)
+//     // FIELD-MYOPIC — checks one structural slot, ignores the rest.
+//     // For Uuid{hi, lo} a `pre (uuid.hi != 0)` admits Uuid{0, k}
+//     // for any k≠0, which is non-default-constructed but the test
+//     // only covers half the bits.  Always check via `T{}` equality.
+//
+//   pre (!x.is_zero())
+//     // UNDISCIPLINED — works only for types that ship `is_zero()`,
+//     // and means the predicate is duplicated at every call site
+//     // rather than living in the catalog.  `decide::is_non_zero`
+//     // unifies the spelling.
+//
+//   pre (x != static_cast<T>(0))
+//     // INTEGRAL-ONLY — fails to compile for aggregate T.  Use the
+//     // generic `T{}` form via this procedure.
+//
+// ───────────────────────────────────────────────────────────────────
+// EDGE CASES
+// ───────────────────────────────────────────────────────────────────
+//
+//   - is_non_zero(int{0}) == false                  (structural zero)
+//   - is_non_zero(int{1}) == true
+//   - is_non_zero(int{-1}) == true                  (signed: any ≠ 0)
+//   - is_non_zero(Uuid{0, 0}) == false              (aggregate zero)
+//   - is_non_zero(Uuid{0, 1}) == true               (any field ≠ 0)
+//   - is_non_zero(SchemaHash{0}) == false           (strong-id zero)
+//
+// VC DISCHARGE: this procedure pins the structural-zero invariant
+// at the citation site.  It does NOT prove that `T{}` itself is the
+// caller's intended sentinel — that is a per-type design decision,
+// documented at the type definition site.
+template <typename T>
+    requires requires (T const& a, T const& b) {
+        { a != b } -> std::convertible_to<bool>;
+    }
+[[nodiscard, gnu::pure]]
+constexpr bool is_non_zero(T const& x) noexcept(noexcept(T{} != x)) {
+    // Materialize the structural zero into a named local rather than
+    // a `T{}` rvalue temporary in the comparison expression.  The
+    // body is semantically `x != T{}`, but GCC 16.1.1's consteval
+    // evaluator misreports an aggregate `T{}` rvalue as having
+    // uninitialized members when the predicate is re-evaluated
+    // inside the `[[assume(cond)]]` hint of CRUCIBLE_PRE under
+    // static_assert (witnessed at cog::Uuid call sites under
+    // CogIdentity self-tests).  Materializing into a `T const zero{}`
+    // local forces explicit value-initialization through the user-
+    // declared `constexpr T() = default` constructor and side-steps
+    // the consteval bug while preserving `noexcept` propagation and
+    // the predicate's semantic meaning.
+    T const zero{};
+    return zero != x;
+}
+
 }  // namespace crucible::decide

@@ -177,6 +177,7 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/safety/Pre.h>
 #include <crucible/safety/Tagged.h>
 
@@ -455,8 +456,19 @@ struct CogMimic {
         // this method is called from a consteval context (see safety/
         // Pre.h for the diagnosis).  The macro fires at consteval AND
         // (debug-only) runtime, zero-cost in NDEBUG.
+        //
+        // The structural-non-zero clause cites the named
+        // `decide::is_non_zero` predicate rather than the hand-rolled
+        // `!identity->uuid.is_zero()` form.  Cohort-discharged HS14
+        // fixtures (neg_decide_is_non_zero_{integer,aggregate}_zero)
+        // pin ALWAYS-ACCEPT / INVERTED-SENSE / FIELD-MYOPIC bug classes
+        // once for the whole codebase; the local cite reads as a single
+        // verification-condition discharge.  The null-check stays as
+        // its own CRUCIBLE_PRE because pointer-non-null and structural-
+        // non-zero are orthogonal: a non-null pointer to a zero-UUID
+        // is a different bug from a null pointer.
         CRUCIBLE_PRE(identity != nullptr);
-        CRUCIBLE_PRE(!identity->uuid.is_zero());
+        CRUCIBLE_PRE(crucible::decide::is_non_zero(identity->uuid));
         std::uint64_t federation = target_caps_class_hash();
         std::uint64_t cog_local  = cog::content_hash(*identity);
         return detail::cog_mimic_fmix64(federation ^ cog_local);
@@ -520,17 +532,30 @@ concept CtxFitsCogMimic =
 // requires-clause — every multi-conjunct check lives inside the
 // concept, leaving the call-site signature one line.
 //
-// Contracts (P2900R14):
-//   pre (!identity.uuid.is_zero())  — refuses zero-UUID at construct
+// Contracts (CRUCIBLE_PRE rather than P2900 `pre()` clauses — same
+// GCC 16.1.1 by-const-ref-struct consteval-bypass that affects
+// cog::content_hash, see safety/Pre.h):
+//
+//   CRUCIBLE_PRE(decide::is_non_zero(identity.uuid))
+//                                    — refuses zero-UUID at construct
 //                                      time so cog_kernel_cache_key
 //                                      cannot be called on a hashable
-//                                      garbage Cog.
-//   pre (identity.kind == K)        — refuses identity-kind / template-
+//                                      garbage Cog.  Cites the named
+//                                      decide:: predicate; HS14
+//                                      fixtures pin orthogonal bug-
+//                                      class buckets cohort-wide.
+//   CRUCIBLE_PRE(identity.kind == K)
+//                                    — refuses identity-kind / template-
 //                                      kind mismatch.  A future bug
 //                                      where calibrate.cpp passes a
 //                                      Gpu identity to mint_cog_mimic
 //                                      <CpuSocket> fires here, not
-//                                      150 lines downstream.
+//                                      150 lines downstream.  No
+//                                      dedicated decide:: predicate
+//                                      yet — kind-equality is a single-
+//                                      use comparison without recurring
+//                                      structural shape across the
+//                                      codebase.
 //
 // Returns CogMimic<K> by value — concrete type, no auto-erasure, no
 // std::variant tag.  Concept-overloaded specialisation downstream
@@ -542,9 +567,9 @@ mint_cog_mimic(Ctx const& /* ctx */,
                cog::CogIdentity const&            identity,
                cog::caps_for_t<K>                 calibrated_caps,
                cog::OpcodeLatencyTable<K>         opcodes) noexcept
-    pre (!identity.uuid.is_zero())
-    pre (identity.kind == K)
 {
+    CRUCIBLE_PRE(crucible::decide::is_non_zero(identity.uuid));
+    CRUCIBLE_PRE(identity.kind == K);
     return CogMimic<K>{
         &identity,
         safety::Tagged<cog::caps_for_t<K>, safety::source::Calibrated>{

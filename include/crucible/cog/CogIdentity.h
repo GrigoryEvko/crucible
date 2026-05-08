@@ -79,6 +79,7 @@
 //                   function over POD-equivalent fields.
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/safety/Pre.h>
 #include <crucible/safety/Tagged.h>
 
@@ -508,7 +509,16 @@ content_hash(CogIdentity const& c) noexcept
     // fixtures pass when they should fail.  CRUCIBLE_PRE fires at both
     // consteval and (debug-only) runtime.  Production NDEBUG builds
     // pay zero cycles (collapses to [[assume]]).
-    CRUCIBLE_PRE(!c.uuid.is_zero());
+    //
+    // Cite the named `decide::is_non_zero` predicate rather than the
+    // hand-rolled `!c.uuid.is_zero()` form: the named predicate is the
+    // single VC-discharge surface for "structural non-zero" across the
+    // codebase (KernelCache::publish, Cipher::store, Refined<non_zero,
+    // ...> all share this oracle), and the cohort's HS14 fixtures
+    // (neg_decide_is_non_zero_{integer,aggregate}_zero) pin the
+    // ALWAYS-ACCEPT / INVERTED-SENSE / FIELD-MYOPIC bug classes once,
+    // not per call site.
+    CRUCIBLE_PRE(crucible::decide::is_non_zero(c.uuid));
     constexpr auto fmix = [](std::uint64_t h) constexpr noexcept {
         h ^= h >> 33;
         h *= 0xFF51AFD7ED558CCDULL;

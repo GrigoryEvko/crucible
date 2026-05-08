@@ -5389,3 +5389,38 @@ crucible_neg_compile_test(neg_decide_aligned_in_range_misaligned
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_aligned_in_range_out_of_range
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-100: crucible::decide::is_non_zero — structural-non-zero
+# predicate over any type with `operator!=`.  TWO HS14 fixtures
+# pinning ORTHOGONAL bug-class buckets:
+#
+#   * neg_decide_is_non_zero_integer_zero — witness
+#     `std::uint64_t{0}` (the canonical built-in integer zero).
+#     Catches ALWAYS-ACCEPT / INVERTED-SENSE buggy impls that
+#     would silently admit the reserved zero sentinel at every
+#     production cite (KernelCache slot-empty marker, Cipher
+#     log-head sentinel, MerkleDag uninitialized RegionNode).
+#   * neg_decide_is_non_zero_aggregate_zero — witness
+#     `Aggregate{0, 0}` (mirror of cog::Uuid layout: two
+#     defaulted-uint64 fields with operator<=>).  Catches
+#     FIELD-MYOPIC / aggregate-comparison-broken impls that
+#     handle the integer case correctly but drop fields on
+#     multi-field aggregates (admits `Uuid{0, k}` for k≠0,
+#     causing all such half-uninitialized Cogs to route to the
+#     same KernelCache slot).
+#
+# Pair-by-pair orthogonality:
+#   - integer-zero catches always-accept (`return true;`) and
+#     inverted-sense (`return x == T{};`); a field-myopic impl
+#     would also be caught (T{0} fails on the first field).
+#   - aggregate-zero catches field-myopic (`return u.hi != 0;`)
+#     and conjunction-of-fields (`return u.hi != 0 && u.lo != 0;`).
+#     An always-accept impl would also be caught.
+#   - The COMPANION positive `is_non_zero(AggregateZero{0, 1}) ==
+#     true` static_assert in test_decide.cpp pins the OTHER
+#     direction (half-zero MUST accept), catching a field-myopic
+#     impl that correctly rejects {0,0} but wrongly rejects {0,1}.
+crucible_neg_compile_test(neg_decide_is_non_zero_integer_zero
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_is_non_zero_aggregate_zero
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")

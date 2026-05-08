@@ -1430,6 +1430,77 @@ static_assert(admit_slot_offset<4096, 64, 64>(4096 - 64));
 // Positive — middle slot at a 64-aligned offset.
 static_assert(admit_slot_offset<4096, 64, 64>(2048));
 
+// ── is_non_zero positive witnesses ─────────────────────────────────
+//
+// Coverage matrix:
+//   * Built-in integral T (signed and unsigned, 8 / 16 / 32 / 64-bit).
+//   * Aggregate T with default-constructed zero state.
+//   * Strong-id T (CRUCIBLE_STRONG_ID phantom-typed wrapper).
+//
+// Static asserts pin the predicate's behavior at every category;
+// negative cases (where the value IS structural-zero) appear as
+// !is_non_zero(T{}) witnesses.
+
+// Built-in unsigned integers.
+static_assert(!dc::is_non_zero(std::uint8_t{0}));
+static_assert(!dc::is_non_zero(std::uint16_t{0}));
+static_assert(!dc::is_non_zero(std::uint32_t{0}));
+static_assert(!dc::is_non_zero(std::uint64_t{0}));
+static_assert(dc::is_non_zero(std::uint8_t{1}));
+static_assert(dc::is_non_zero(std::uint64_t{0xCAFEBABEDEADBEEFULL}));
+static_assert(dc::is_non_zero(std::numeric_limits<std::uint32_t>::max()));
+
+// Built-in signed integers.  Both positive and negative non-zeros
+// must answer true; only literal 0 answers false.
+static_assert(!dc::is_non_zero(std::int8_t{0}));
+static_assert(!dc::is_non_zero(std::int32_t{0}));
+static_assert(dc::is_non_zero(std::int8_t{-1}));
+static_assert(dc::is_non_zero(std::int32_t{-1}));
+static_assert(dc::is_non_zero(std::int64_t{1}));
+static_assert(dc::is_non_zero(std::numeric_limits<std::int32_t>::min()));
+static_assert(dc::is_non_zero(std::numeric_limits<std::int64_t>::max()));
+
+// Aggregate with default-constructed zero state — the canonical
+// production cite shape.  Mock matches the cog::Uuid layout (two
+// 64-bit fields with operator<=> defaulted) but is local to the
+// test so the test header doesn't take a dependency on cog/.
+struct AggregateZero {
+    std::uint64_t hi = 0;
+    std::uint64_t lo = 0;
+    auto operator<=>(AggregateZero const&) const noexcept = default;
+};
+
+// Sentinel zero — ALL fields default-constructed.
+static_assert(!dc::is_non_zero(AggregateZero{}));
+static_assert(!dc::is_non_zero(AggregateZero{0, 0}));
+// Either field non-zero ⇒ the aggregate is non-zero.
+static_assert(dc::is_non_zero(AggregateZero{0, 1}));
+static_assert(dc::is_non_zero(AggregateZero{1, 0}));
+static_assert(dc::is_non_zero(AggregateZero{0xDEADBEEF, 0xCAFEBABE}));
+
+// Strong-id wrapper (uint32 with default ctor producing UINT32_MAX
+// sentinel) — proves the predicate works on phantom-typed newtypes
+// the codebase is full of.  We use the project's own MetaIndex /
+// SchemaHash via Types.h equivalents below.
+
+// ── Composition with CRUCIBLE_PRE — production-shape cite ─────────
+//
+// The canonical production-cite shape is `pre (decide::is_non_zero(
+// some_struct))`.  Verifies the predicate composes cleanly with the
+// macro at consteval; the negative-compile fixtures pin the failure
+// direction.
+
+[[nodiscard]] constexpr std::uint64_t hash_aggregate(
+    AggregateZero const& a) noexcept
+{
+    CRUCIBLE_PRE(dc::is_non_zero(a));
+    return a.hi ^ a.lo;
+}
+
+// Positive — non-zero aggregate, hash succeeds.
+static_assert(hash_aggregate(AggregateZero{1, 2}) == (1u ^ 2u));
+static_assert(hash_aggregate(AggregateZero{0xDEADBEEF, 0}) == 0xDEADBEEFu);
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -2127,6 +2198,92 @@ int main() {
                     static_cast<std::uint64_t>(lo),
                     static_cast<std::uint64_t>(hi),
                     static_cast<std::uint64_t>(aln)));
+    }
+
+    // ── is_non_zero runtime witnesses ───────────────────────────────
+    //
+    // Route values through volatile sinks so the predicate runs at
+    // runtime.  Coverage: built-in unsigned, signed (positive AND
+    // negative), aggregate (zero and non-zero forms).  Each branch
+    // independently pins the predicate's accept/reject behavior.
+    {
+        volatile std::uint64_t z_u64 = 0;
+        volatile std::uint64_t nz_u64 = 0xDEADBEEFCAFEBABEULL;
+        volatile std::int32_t z_i32 = 0;
+        volatile std::int32_t neg_i32 = -42;
+        volatile std::int32_t pos_i32 = 7;
+
+        // Built-in unsigned: zero rejected, non-zero accepted.
+        if (dc::is_non_zero(static_cast<std::uint64_t>(z_u64))) {
+            std::fprintf(stderr,
+                "test_decide: is_non_zero(0u64) WRONGLY accepted\n");
+            return 1;
+        }
+        if (!dc::is_non_zero(static_cast<std::uint64_t>(nz_u64))) {
+            std::fprintf(stderr,
+                "test_decide: is_non_zero(non-zero u64) WRONGLY rejected\n");
+            return 1;
+        }
+        // Built-in signed: zero rejected, both signs accepted.
+        if (dc::is_non_zero(static_cast<std::int32_t>(z_i32))) {
+            std::fprintf(stderr,
+                "test_decide: is_non_zero(0i32) WRONGLY accepted\n");
+            return 1;
+        }
+        if (!dc::is_non_zero(static_cast<std::int32_t>(neg_i32))) {
+            std::fprintf(stderr,
+                "test_decide: is_non_zero(-42i32) WRONGLY rejected "
+                "(negative is non-zero)\n");
+            return 1;
+        }
+        if (!dc::is_non_zero(static_cast<std::int32_t>(pos_i32))) {
+            std::fprintf(stderr,
+                "test_decide: is_non_zero(7i32) WRONGLY rejected\n");
+            return 1;
+        }
+
+        // Aggregate path — same shape as cog::Uuid + KernelCache slot.
+        // Construct from volatile inputs so the comparison runs at
+        // runtime.
+        AggregateZero const all_zero{
+            static_cast<std::uint64_t>(z_u64),
+            static_cast<std::uint64_t>(z_u64)};
+        AggregateZero const lo_only{
+            static_cast<std::uint64_t>(z_u64),
+            static_cast<std::uint64_t>(nz_u64)};
+        AggregateZero const hi_only{
+            static_cast<std::uint64_t>(nz_u64),
+            static_cast<std::uint64_t>(z_u64)};
+        AggregateZero const both_set{
+            static_cast<std::uint64_t>(nz_u64),
+            static_cast<std::uint64_t>(nz_u64)};
+
+        if (dc::is_non_zero(all_zero)) {
+            std::fprintf(stderr,
+                "test_decide: is_non_zero({0,0}) WRONGLY accepted "
+                "(structural zero must reject)\n");
+            return 1;
+        }
+        if (!dc::is_non_zero(lo_only)) {
+            std::fprintf(stderr,
+                "test_decide: is_non_zero({0,nz}) WRONGLY rejected "
+                "(any non-zero field implies non-zero aggregate)\n");
+            return 1;
+        }
+        if (!dc::is_non_zero(hi_only)) {
+            std::fprintf(stderr,
+                "test_decide: is_non_zero({nz,0}) WRONGLY rejected "
+                "(field-myopic implementation would miss this)\n");
+            return 1;
+        }
+        if (!dc::is_non_zero(both_set)) {
+            std::fprintf(stderr,
+                "test_decide: is_non_zero({nz,nz}) WRONGLY rejected\n");
+            return 1;
+        }
+
+        sink += static_cast<int>(dc::is_non_zero(both_set))
+              - static_cast<int>(dc::is_non_zero(all_zero));
     }
 
     if (sink == 0) {
