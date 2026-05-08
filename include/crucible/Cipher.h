@@ -36,6 +36,7 @@
 #include <crucible/handles/FileHandle.h>
 #include <crucible/safety/diag/RowHashFold.h>
 #include <crucible/safety/CipherTier.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/safety/IsOpaqueLifetime.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/OpaqueLifetime.h>
@@ -613,7 +614,14 @@ class CRUCIBLE_OWNER Cipher {
     // typed witness: ValidCipherHead below.
     void advance_head(OpenView const&, ContentHash content_hash, uint64_t step_id)
         pre (log_.empty() || step_id >= log_.back().step_id.value)
-        pre (content_hash.raw() != 0)
+        // CONTRACT-106: non-zero hash sentinel discharges through
+        // decide::is_non_zero (CONTRACT-072 / -080 catalog).  ContentHash
+        // is a strong hash type whose default-constructed value is 0
+        // (CRUCIBLE_STRONG_HASH NSDMI), so is_non_zero(h) ⟺ h.raw() != 0.
+        // The cite is grep-discoverable: future hardening to non-zero
+        // sentinel handling propagates to every advance_head / publish /
+        // lookup site through one predicate.
+        pre (::crucible::decide::is_non_zero(content_hash))
     {
         head_ = content_hash;
 

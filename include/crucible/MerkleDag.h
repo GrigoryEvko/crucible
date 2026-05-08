@@ -442,7 +442,14 @@ struct TraceNode {
   [[nodiscard]] crucible::safety::Refined<
       crucible::safety::non_zero, MerkleHash>
   computed_merkle_hash() const noexcept
-      pre (merkle_hash.raw() != 0)
+      // CONTRACT-106: non-zero hash sentinel via decide::is_non_zero
+      // (CONTRACT-072 catalog).  MerkleHash{} default-constructs to
+      // value 0, so is_non_zero(h) ⟺ h.raw() != 0.  The cite mirrors
+      // the KernelCacheSlot discharge — fresh nodes carry merkle_hash
+      // == 0 until recompute_merkle is called; admitting a fresh node
+      // through this accessor would silently produce a Refined<>
+      // contract violation downstream.
+      pre (::crucible::decide::is_non_zero(merkle_hash))
   {
     return crucible::safety::Refined<
         crucible::safety::non_zero, MerkleHash>{merkle_hash};
@@ -513,12 +520,13 @@ struct RegionNode : TraceNode {
     return variant_id != 0;
   }
 
-  // Set the active variant.  pre(new_id != 0) rejects the zero
-  // sentinel (which means "no variant" — overwriting a real variant
-  // with the sentinel is a bug).  If a future policy allows reverting
-  // to "no variant", add an explicit clear_variant() method.
+  // Set the active variant.  CONTRACT-106 routes the non-zero sentinel
+  // through `decide::is_non_zero` (CONTRACT-072 catalog) — value 0 is
+  // the "no variant" sentinel, and overwriting a real variant with it
+  // is a bug.  If a future policy allows reverting to "no variant",
+  // add an explicit clear_variant() method.
   void set_variant(uint32_t new_id) noexcept
-      pre (new_id != 0)
+      pre (::crucible::decide::is_non_zero(new_id))
   {
     variant_id = new_id;
   }
@@ -763,7 +771,12 @@ CRUCIBLE_PURE inline uint64_t loopterm_hash(const LoopNode& ln) noexcept {
 [[nodiscard, gnu::pure]] inline ContentHash compute_content_hash(
     std::span<const TraceEntry> ops,
     const NumericalRecipe* recipe = nullptr) noexcept
-    pre (recipe == nullptr || recipe->hash.raw() != 0)
+    // CONTRACT-106: non-zero hash sentinel through `decide::is_non_zero`
+    // (CONTRACT-072 catalog).  RecipeHash{} default-constructs to zero,
+    // so is_non_zero(recipe->hash) ⟺ raw() != 0.  The disjunction
+    // permits a null recipe (no recipe pinning) while rejecting a
+    // recipe whose hash hasn't been computed yet.
+    pre (recipe == nullptr || ::crucible::decide::is_non_zero(recipe->hash))
     pre (recipe == nullptr || !recipe->hash.is_sentinel())
 {
   // XOR-fold content hash: for each tensor, fold all dimensions into a
@@ -1028,6 +1041,26 @@ class CRUCIBLE_OWNER KernelCache {
   // layout and exposes SWMR-shaped endpoints over it.  The hot lookup
   // path can still read the individual fields in probe order, while
   // tests and dispatcher-side concepts see a typed writer/reader surface.
+  // CONTRACT-106: every KernelCacheSlot endpoint that takes a
+  // ContentHash threads its non-zero-sentinel pre() clause through
+  // the named predicate `crucible::decide::is_non_zero` (Decide.h
+  // §is_non_zero / CONTRACT-072 catalog).  Zero is the slot-EMPTY
+  // sentinel for the open-addressing probe path; admitting a zero
+  // hash to claim_or_match / publish / lookup would silently
+  // collide with the EMPTY marker and either:
+  //   - corrupt the probe table (wrong CAS target on claim)
+  //   - mis-publish a kernel under the EMPTY slot (silent
+  //     overwrite of any subsequent valid claim)
+  //   - return a stale kernel pointer to a fresh lookup (silent
+  //     wrong result)
+  //
+  // ContentHash is a CRUCIBLE_STRONG_HASH whose default-constructed
+  // value is 0, so `is_non_zero(h)` is structurally equivalent to
+  // `h.raw() != 0` — the cite is purely the grep-discoverable
+  // single-predicate target for future hardening (e.g., adding
+  // diagnostic enrichment for which slot was misused, or wrapping
+  // ContentHash in `Refined<non_zero, ContentHash>` per #535 to
+  // turn the cite into a proper compile-time witness).
   class KernelCacheSlot {
     friend class KernelCache;
 
@@ -1060,7 +1093,7 @@ class CRUCIBLE_OWNER KernelCache {
       constexpr WriterHandle& operator=(WriterHandle&&) noexcept = default;
 
       void publish(snapshot_type const& snapshot) noexcept
-          pre (snapshot.content_hash != 0)
+          pre (::crucible::decide::is_non_zero(snapshot.content_hash))
           pre (snapshot.kernel != nullptr)
       {
         // content_hash is claimed by CAS before this writer endpoint is
@@ -1144,7 +1177,7 @@ class CRUCIBLE_OWNER KernelCache {
 
     [[nodiscard]] CRUCIBLE_INLINE bool try_claim_content_hash(
         uint64_t& expected, uint64_t desired) noexcept
-        pre (desired != 0)
+        pre (::crucible::decide::is_non_zero(desired))
     {
       return content_hash_.compare_exchange_strong(
           expected, desired, std::memory_order_acq_rel);
@@ -1241,7 +1274,7 @@ class CRUCIBLE_OWNER KernelCache {
   [[nodiscard, gnu::hot]] CompiledKernel* lookup(
       ContentHash content_hash, RowHash row_hash) const noexcept
       CRUCIBLE_NO_THREAD_SAFETY
-      pre (content_hash.raw() != 0)
+      pre (::crucible::decide::is_non_zero(content_hash))
   {
     [[assume(content_hash.raw() != 0)]];
     // Hoist .raw() once: the optimizer would CSE under -O3 anyway, but
@@ -1335,7 +1368,7 @@ class CRUCIBLE_OWNER KernelCache {
   [[nodiscard]] std::expected<void, InsertError>
   insert(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel)
       CRUCIBLE_NO_THREAD_SAFETY
-      pre (content_hash.raw() != 0)  // zero is the sentinel for empty slots
+      pre (::crucible::decide::is_non_zero(content_hash))  // zero is the slot-empty sentinel; see KernelCacheSlot doc-block
       pre (kernel != nullptr)
   {
     // Hoist .raw() once for both the probe seed and the CAS
@@ -1485,7 +1518,7 @@ class CRUCIBLE_OWNER KernelCache {
   [[nodiscard, gnu::hot]] safety::residency_heat::Hot<CompiledKernel*>
   lookup_l1(ContentHash content_hash, RowHash row_hash) const noexcept
       CRUCIBLE_NO_THREAD_SAFETY
-      pre (content_hash.raw() != 0)
+      pre (::crucible::decide::is_non_zero(content_hash))
   {
     return safety::residency_heat::Hot<CompiledKernel*>{
         lookup(content_hash, row_hash)};
@@ -1508,7 +1541,7 @@ class CRUCIBLE_OWNER KernelCache {
   [[nodiscard]] safety::residency_heat::Warm<CompiledKernel*>
   lookup_l2(ContentHash content_hash, RowHash /*row_hash*/) const noexcept
       CRUCIBLE_NO_THREAD_SAFETY
-      pre (content_hash.raw() != 0)
+      pre (::crucible::decide::is_non_zero(content_hash))
   {
     (void)content_hash;
     return safety::residency_heat::Warm<CompiledKernel*>{nullptr};
@@ -1524,7 +1557,7 @@ class CRUCIBLE_OWNER KernelCache {
   [[nodiscard]] safety::residency_heat::Cold<CompiledKernel*>
   lookup_l3(ContentHash content_hash, RowHash /*row_hash*/) const noexcept
       CRUCIBLE_NO_THREAD_SAFETY
-      pre (content_hash.raw() != 0)
+      pre (::crucible::decide::is_non_zero(content_hash))
   {
     (void)content_hash;
     return safety::residency_heat::Cold<CompiledKernel*>{nullptr};
@@ -1551,7 +1584,7 @@ class CRUCIBLE_OWNER KernelCache {
   safety::residency_heat::Hot<std::expected<void, InsertError>>
   publish_l1(ContentHash content_hash, RowHash row_hash, CompiledKernel* kernel)
       CRUCIBLE_NO_THREAD_SAFETY
-      pre (content_hash.raw() != 0)
+      pre (::crucible::decide::is_non_zero(content_hash))
       pre (kernel != nullptr)
   {
     return safety::residency_heat::Hot<std::expected<void, InsertError>>{
@@ -1577,7 +1610,7 @@ class CRUCIBLE_OWNER KernelCache {
   safety::residency_heat::Warm<std::expected<void, InsertError>>
   publish_l2(ContentHash content_hash, RowHash /*row_hash*/,
              CompiledKernel* kernel) noexcept
-      pre (content_hash.raw() != 0)
+      pre (::crucible::decide::is_non_zero(content_hash))
       pre (kernel != nullptr)
   {
     (void)content_hash;
@@ -1598,7 +1631,7 @@ class CRUCIBLE_OWNER KernelCache {
   safety::residency_heat::Cold<std::expected<void, InsertError>>
   publish_l3(ContentHash content_hash, RowHash /*row_hash*/,
              CompiledKernel* kernel) noexcept
-      pre (content_hash.raw() != 0)
+      pre (::crucible::decide::is_non_zero(content_hash))
       pre (kernel != nullptr)
   {
     (void)content_hash;
@@ -1728,11 +1761,13 @@ class CRUCIBLE_OWNER KernelCache {
     uint32_t num_ops,
     ContentHash precomputed_hash) noexcept
     pre (num_ops == 0 || ops != nullptr)
-    // Precomputed hash must be the actual hash, not the zero sentinel.
-    // compute_content_hash may legitimately return 0 for a degenerate
-    // input, but the precomputed-hash path is for callers that already
-    // ran the hash computation; supplying 0 is a caller bug.
-    pre (precomputed_hash.raw() != 0 || num_ops == 0)
+    // CONTRACT-106: non-zero hash sentinel through `decide::is_non_zero`
+    // (CONTRACT-072 catalog).  Precomputed hash must be the actual
+    // hash, not the zero sentinel.  compute_content_hash may
+    // legitimately return 0 for a degenerate (num_ops == 0) input,
+    // but the precomputed-hash path is for callers that already ran
+    // the hash computation; supplying 0 with num_ops > 0 is a caller bug.
+    pre (::crucible::decide::is_non_zero(precomputed_hash) || num_ops == 0)
 {
   auto* node = new (arena.alloc_obj<RegionNode>(a))
       RegionNode{};
@@ -1780,7 +1815,9 @@ class CRUCIBLE_OWNER KernelCache {
     const NumericalRecipe* recipe) noexcept
     pre (num_ops == 0 || ops != nullptr)
     pre (recipe != nullptr)
-    pre (recipe->hash.raw() != 0)
+    // CONTRACT-106: non-zero hash sentinel through `decide::is_non_zero`
+    // (CONTRACT-072 catalog).
+    pre (::crucible::decide::is_non_zero(recipe->hash))
     pre (!recipe->hash.is_sentinel())
 {
   auto* node = new (arena.alloc_obj<RegionNode>(a))
