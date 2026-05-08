@@ -7,6 +7,7 @@
 #include <crucible/Saturate.h>
 #include <crucible/Types.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/Post.h>
 #include <crucible/safety/Refined.h>
 
 #include <memory>
@@ -214,6 +215,34 @@ struct IterationDetector {
     std::construct_at(&boundaries_detected,
                       crucible::safety::Monotonic<uint32_t>{0});
     last_completed_len = 0;
+    // CONTRACT-IterDet-Reset-POST: state-machine reset invariant —
+    // after reset(), every observable field is back to its
+    // default-constructed value, restoring the Building-state-from-zero
+    // initial condition.  This is the structural witness that #930
+    // (WRAP-IterDet-4 reset() ScopedView state transition) eventually
+    // codifies via type-state; until then, the post pins the same
+    // invariants the ScopedView would enforce by construction.
+    //   (1) match_pos_ raw == 0      — sequential matcher rewound to head
+    //   (2) signature_len.get() == 0 — Building-state phase 1 (signature
+    //                                   collection restarts from scratch)
+    //   (3) ops_since_boundary.get() == 0 — counter at origin
+    //   (4) boundaries_detected.get() == 0 — boundary-count history wiped
+    //   (5) confirmed == false       — second-match witness reset
+    //   (6) last_completed_len == 0  — no boundary completion recorded
+    // Routes through CRUCIBLE_POST because every predicate references a
+    // class member through `this->` — same GCC 16.1.1 consteval-bypass
+    // family as CONTRACT-100..108-POST + 116..127-POST + Tx-*-POST +
+    // Arena/AddBranch/MakeRegion factory POSTs.  Under NDEBUG these
+    // collapse to `[[assume]]`, so the next check() call's hot path
+    // can speculate that signature_len.bump() pre is satisfied
+    // (current < K trivially when current == 0).  Void return: first
+    // CRUCIBLE_POST arg is the conventional sentinel `0`.
+    CRUCIBLE_POST(0, match_pos_.value() == 0u);
+    CRUCIBLE_POST(0, signature_len.get() == 0u);
+    CRUCIBLE_POST(0, ops_since_boundary.get() == 0u);
+    CRUCIBLE_POST(0, boundaries_detected.get() == 0u);
+    CRUCIBLE_POST(0, !confirmed);
+    CRUCIBLE_POST(0, last_completed_len == 0u);
   }
 
  private:
