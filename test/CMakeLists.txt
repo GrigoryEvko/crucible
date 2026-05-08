@@ -4865,6 +4865,29 @@ crucible_neg_compile_session_test(neg_chainedge_waiter_session_send
 crucible_neg_compile_session_test(neg_chainedge_signaler_session_recv
     "has no member named.*recv")
 
+# SEPLOG-H2: MpmcChannelSession typed-session facade for the fractional
+# × fractional cell of the channel-permission family.  Four fixtures
+# pin the four canonical mismatch classes:
+#
+#   #1 ConsumerSession.send()   — Recv-protocol cannot send.
+#   #2 ProducerSession.recv()   — Send-protocol cannot recv.
+#   #3 surface concept rejects partial-shape "almost-channel".
+#   #4 handle copy rejected at channel layer (pool refcount discipline).
+#
+# Together these satisfy HS14 (≥ 2 fixtures per new mint factory) for
+# both mint_mpmc_producer_session and mint_mpmc_consumer_session.
+crucible_neg_compile_session_test(neg_mpmc_session_consumer_session_send
+    "has no member named.*send")
+
+crucible_neg_compile_session_test(neg_mpmc_session_producer_session_recv
+    "has no member named.*recv")
+
+crucible_neg_compile_session_test(neg_mpmc_session_surface_rejects_non_channel
+    "MpmcChannelSessionSurface|constraints not satisfied|no type named|the required expression")
+
+crucible_neg_compile_session_test(neg_mpmc_session_handle_copy
+    "ProducerHandle owns a producer-pool refcount share")
+
 # ─── HS14 fixtures #1 + #2 for safety::PublishCommitCell ────────────
 #
 # GAPS-FLUSH-RACE harness — see safety/PublishCommit.h.  The cell's
