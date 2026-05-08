@@ -5263,3 +5263,29 @@ crucible_neg_compile_test(neg_decide_row_subset_extra_effect
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_row_subset_disjoint_axis
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-072: crucible::decide::fmix_preserves_non_zero — xxHash /
+# Murmur fmix64 finalizer non-zero-preservation invariant.  TWO HS14
+# fixtures pinning ORTHOGONAL bug-class buckets:
+#
+#   * neg_decide_fmix_preserves_non_zero_zero_seed — fires on
+#     `(seed = 0, mix_output = 0)`.  The canonical seed-zero bug:
+#     a content_hash of 0 collides with the "not yet computed"
+#     sentinel in KernelCache and Cipher head_, leading to false
+#     cache hits on subsequent lookups.  Catches OUTPUT-ONLY-style
+#     buggy implementations (`pre (mix != 0)` would also reject
+#     this case but miss the companion fixture).
+#   * neg_decide_fmix_preserves_non_zero_mix_zero — fires on
+#     `(seed = 0xDEADBEEF, mix_output = 0)`.  A hypothetical
+#     bijection-violating hash family that collapses non-zero
+#     inputs to zero; the predicate's second clause catches the
+#     collision at the publish gate.  Catches SEED-ONLY-style
+#     buggy implementations (`pre (seed != 0)` would also reject
+#     the companion but miss this case).
+#
+# A correct implementation passes both; a buggy seed-only impl
+# passes #1 fails #2; a buggy mix-only impl passes #2 fails #1.
+crucible_neg_compile_test(neg_decide_fmix_preserves_non_zero_zero_seed
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_fmix_preserves_non_zero_mix_zero
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")

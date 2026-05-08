@@ -17,6 +17,7 @@
 // fixtures, per the HS14 mandate adapted for predicate libraries:
 // each fixture demonstrates a distinct mismatch class.
 
+#include <crucible/Expr.h>  // for crucible::detail::fmix64 in fmix_* witnesses
 #include <crucible/algebra/lattices/CipherTierLattice.h>
 #include <crucible/algebra/lattices/DetSafeLattice.h>
 #include <crucible/algebra/lattices/HotPathLattice.h>
@@ -1130,6 +1131,75 @@ static_assert(admit_payload<R_alloc,    R_alloc_io>());
 static_assert(admit_payload<R_alloc_io, R_full>());
 static_assert(admit_payload<R_full,     R_full>());
 
+// ── fmix_preserves_non_zero positive witnesses ─────────────────────
+//
+// `crucible::detail::fmix64` is the Murmur3 / xxHash64 finalizer
+// (Expr.h:153).  It is a bijection on `uint64_t` with f(0)=0; we
+// pin the procedure's "seed≠0 ∧ mix≠0" semantics with several
+// concrete witnesses computed at consteval.
+
+// Bijection-witness corpus: fmix64 on each of these non-zero seeds
+// must produce a non-zero output.  The procedure accepts (seed, mix)
+// pairs and should return true for every one.
+static_assert( dc::fmix_preserves_non_zero(1,
+                  crucible::detail::fmix64(1)));
+static_assert( dc::fmix_preserves_non_zero(0xDEADBEEF'CAFEBABEULL,
+                  crucible::detail::fmix64(0xDEADBEEF'CAFEBABEULL)));
+static_assert( dc::fmix_preserves_non_zero(0x9E3779B97F4A7C15ULL,
+                  crucible::detail::fmix64(0x9E3779B97F4A7C15ULL)));
+static_assert( dc::fmix_preserves_non_zero(0xFFFFFFFFFFFFFFFFULL,
+                  crucible::detail::fmix64(0xFFFFFFFFFFFFFFFFULL)));
+static_assert( dc::fmix_preserves_non_zero(42,
+                  crucible::detail::fmix64(42)));
+
+// Negative-domain witnesses: BOTH clauses fail when seed=0
+// (and the mix output is independently zero — fmix64(0)==0).
+static_assert(!dc::fmix_preserves_non_zero(0,
+                  crucible::detail::fmix64(0)));
+static_assert(!dc::fmix_preserves_non_zero(0, 0));
+
+// Independence-of-clauses witnesses: each clause fires independently.
+// Clause 1 (seed!=0) fails with seed=0 even when mix is artificially
+// non-zero.
+static_assert(!dc::fmix_preserves_non_zero(0, 0xDEADBEEFULL));
+// Clause 2 (mix!=0) fails with non-zero seed but mix=0 (a buggy
+// non-bijective hash family hypothetical).
+static_assert(!dc::fmix_preserves_non_zero(42, 0));
+
+// Bijection theorem direct: fmix64(0)==0 and fmix64(non-zero)!=0,
+// confirming the carrier function actually has the property the
+// predicate names.  This pins the THEOREM at compile time alongside
+// the predicate's structural check.
+static_assert(crucible::detail::fmix64(0) == 0);
+static_assert(crucible::detail::fmix64(1) != 0);
+static_assert(crucible::detail::fmix64(0xDEADBEEFULL) != 0);
+static_assert(crucible::detail::fmix64(0xFFFFFFFFFFFFFFFFULL) != 0);
+
+// ── Composition with CRUCIBLE_PRE — non-zero hash sentinel shape ───
+//
+// Production cite shape (KernelCache::publish, Cipher::store,
+// MerkleDag content_hash, RegionNode merkle_hash): seed mixes a
+// structural fingerprint, fmix64 finalizes, the result is published
+// as a `Refined<non_zero, ContentHash>`.  The cite reads:
+//
+//   const auto h = ::crucible::detail::fmix64(seed);
+//   CRUCIBLE_PRE(decide::fmix_preserves_non_zero(seed, h));
+//
+// `make_non_zero_hash` previews the shape at consteval; the seed
+// argument must be non-zero or the predicate traps.
+
+[[nodiscard]] constexpr std::uint64_t make_non_zero_hash(
+        std::uint64_t seed) noexcept {
+    const std::uint64_t h = crucible::detail::fmix64(seed);
+    CRUCIBLE_PRE(dc::fmix_preserves_non_zero(seed, h));
+    return h;
+}
+
+static_assert(make_non_zero_hash(1) != 0);
+static_assert(make_non_zero_hash(0xDEADBEEFCAFEBABEULL) != 0);
+static_assert(make_non_zero_hash(0x9E3779B97F4A7C15ULL) != 0);
+static_assert(make_non_zero_hash(0xFFFFFFFFFFFFFFFFULL) != 0);
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -1558,6 +1628,62 @@ int main() {
               + static_cast<int>(ok_empty)
               - static_cast<int>(bad_extra)
               - static_cast<int>(bad_disjoint);
+    }
+
+    // ── fmix_preserves_non_zero runtime witnesses ──────────────────
+    //
+    // Route seed and pre-computed mix output through volatile uint64_t
+    // sinks before calling the predicate, so the optimizer cannot
+    // constant-fold the call away.  The runtime branch of CRUCIBLE_PRE
+    // (`if (!(cond))`) actually executes against opaque-to-the-
+    // optimizer values — exactly the production cite pattern.
+    {
+        // Positive — non-zero seed produces non-zero mix; both clauses true.
+        volatile std::uint64_t seed_nz = 0xDEADBEEF'CAFEBABEULL;
+        const std::uint64_t mix_nz =
+            crucible::detail::fmix64(static_cast<std::uint64_t>(seed_nz));
+        volatile std::uint64_t mix_nz_v = mix_nz;
+        if (!dc::fmix_preserves_non_zero(
+                static_cast<std::uint64_t>(seed_nz),
+                static_cast<std::uint64_t>(mix_nz_v))) {
+            std::fprintf(stderr,
+                "test_decide: fmix_preserves_non_zero(non-zero seed, fmix(seed)) "
+                "WRONGLY rejected\n");
+            return 1;
+        }
+        // Bijection-witness check at runtime: fmix64(0) == 0 must hold,
+        // and fmix64(non-zero) != 0 must hold.
+        volatile std::uint64_t zero_seed = 0;
+        const std::uint64_t mix_of_zero =
+            crucible::detail::fmix64(static_cast<std::uint64_t>(zero_seed));
+        if (mix_of_zero != 0) {
+            std::fprintf(stderr,
+                "test_decide: fmix64(0) returned non-zero — bijection "
+                "theorem violated\n");
+            return 1;
+        }
+        // Negative — zero seed.  Predicate must reject.
+        if (dc::fmix_preserves_non_zero(
+                static_cast<std::uint64_t>(zero_seed),
+                static_cast<std::uint64_t>(mix_nz_v))) {
+            std::fprintf(stderr,
+                "test_decide: fmix_preserves_non_zero(0, non-zero) "
+                "WRONGLY accepted (seed-zero violator)\n");
+            return 1;
+        }
+        // Negative — non-zero seed but mix output artificially zero.
+        // Predicate must reject this as well; pins the second clause.
+        volatile std::uint64_t mix_zero_v = 0;
+        if (dc::fmix_preserves_non_zero(
+                static_cast<std::uint64_t>(seed_nz),
+                static_cast<std::uint64_t>(mix_zero_v))) {
+            std::fprintf(stderr,
+                "test_decide: fmix_preserves_non_zero(non-zero, 0) "
+                "WRONGLY accepted (mix-zero collision violator)\n");
+            return 1;
+        }
+        sink += static_cast<int>(mix_nz != 0)
+              - static_cast<int>(mix_of_zero != 0);
     }
 
     if (sink == 0) {

@@ -112,6 +112,7 @@
 
 #include <concepts>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 #include <span>
 #include <type_traits>
@@ -1320,6 +1321,123 @@ template <typename Payload, typename Ctx>
 [[nodiscard, gnu::const]]
 constexpr bool row_subset() noexcept {
     return effects::is_subrow_v<Payload, Ctx>;
+}
+
+// ─── fmix_preserves_non_zero ───────────────────────────────────────
+//
+// Returns true iff `seed != 0 && mix_output != 0`, i.e. iff the
+// invocation `mix_output = detail::fmix64(seed)` carried the
+// non-zero-preservation invariant that the xxHash / Murmur fmix64
+// bijection promises.
+//
+// ───────────────────────────────────────────────────────────────────
+// THE BIJECTION THEOREM
+// ───────────────────────────────────────────────────────────────────
+//
+// `crucible::detail::fmix64` (Expr.h:153, identical to the Murmur3
+// finalizer used by xxHash64) is the composition
+//
+//   k ^= k >> 33;                          // bijective on uint64_t
+//                                          // (XOR-shift is its own
+//                                          //  inverse over Z/2^64)
+//   k *= 0xff51afd7ed558ccdULL;            // bijective on uint64_t
+//                                          // (multiplier is odd ⇒
+//                                          //  invertible mod 2^64)
+//   k ^= k >> 33;                          // bijective
+//   k *= 0xc4ceb9fe1a85ec53ULL;            // bijective (also odd)
+//   k ^= k >> 33;                          // bijective
+//   return k;
+//
+// Composition of bijections is a bijection.  Direct evaluation
+// confirms `fmix64(0) == 0`.  Therefore the inverse image of 0 is
+// exactly `{0}`, i.e.
+//
+//   ∀ seed ∈ uint64_t.  fmix64(seed) == 0  ⟺  seed == 0
+//
+// Equivalently — the form this predicate pins:
+//
+//   ∀ seed ∈ uint64_t.  seed ≠ 0  ⟹  fmix64(seed) ≠ 0
+//
+// ───────────────────────────────────────────────────────────────────
+// USAGE
+// ───────────────────────────────────────────────────────────────────
+//
+// At sites that must publish a hash with the `0 = sentinel,
+// non-0 = valid` discipline (KernelCache slots, Cipher head_,
+// MerkleDag content_hash, RegionNode merkle_hash):
+//
+//   const uint64_t h = ::crucible::detail::fmix64(seed);
+//   CRUCIBLE_PRE(decide::fmix_preserves_non_zero(seed, h));
+//   // h is now provably non-zero; safe to construct
+//   // Refined<non_zero, ContentHash>{h}.
+//
+// The predicate pins TWO independent invariants:
+//
+//   1. `seed != 0` — caller's responsibility (typically: seed mixes
+//      a non-zero structural fingerprint with content, or seed is
+//      built via `non_zero_seed_xor(constant, ...)`).
+//
+//   2. `mix_output != 0` — runtime witness that fmix64's bijection
+//      property held for this particular seed.  If a future change
+//      replaces fmix64 with a non-bijective mixer, this clause
+//      catches collisions to zero at the use site rather than
+//      silently letting a `0` hash slip through to KernelCache as a
+//      "not yet computed" sentinel.
+//
+// ───────────────────────────────────────────────────────────────────
+// PRODUCTION CITES (planned — CONTRACT-106)
+// ───────────────────────────────────────────────────────────────────
+//
+//   * KernelCache::publish        — content_hash result of fmix
+//                                   over (kernel_kind, recipe,
+//                                   tile, target_caps).
+//   * Cipher::store               — head_ ContentHash advance.
+//   * MerkleDag::compute_merkle   — merkle_hash recursion.
+//   * RegionNode ctor             — content_hash field initialization.
+//   * Forge Phase H emit          — IR003 fingerprint publication.
+//
+// Currently spelled per-site as `pre (h != 0)` (3 sites) or as a
+// runtime `if (h == 0) std::abort()` (2 sites).  CONTRACT-106
+// migration replaces all five spellings with this procedure cite.
+//
+// ───────────────────────────────────────────────────────────────────
+// ANTI-PATTERN CATALOG
+// ───────────────────────────────────────────────────────────────────
+//
+//   pre (seed != 0)
+//     // SEED-ONLY — does not witness the bijection at runtime.  If
+//     // the hash family is later replaced with a non-bijective
+//     // mixer (e.g. CRC-style, or a buggy custom hash that
+//     // collapses certain non-zero inputs to 0), zero hashes pass
+//     // through silently as "not yet computed" sentinels.  Always
+//     // pass BOTH seed and the mix output.
+//
+//   pre (h != 0)
+//     // OUTPUT-ONLY — does not witness that the seed itself was
+//     // non-zero.  If the caller forgot to check, fmix64(0) == 0
+//     // gets through as a "valid hash."  Always pass BOTH.
+//
+//   pre (seed != 0 || h != 0)
+//     // DISJUNCTION — false only when BOTH are zero.  Allows the
+//     // dangerous case `(seed=0, h=0)` to be flagged but admits
+//     // `(seed=anything, h=0)` and `(seed=0, h=anything)`, neither
+//     // of which is sound.  Use conjunction.
+//
+// CARRIER NOTE: this predicate does NOT recompute fmix64 internally.
+// The caller passes the already-computed mix output, which costs
+// zero (the value is in a register from the immediately-preceding
+// fmix64 call).  Avoiding the recompute matters: the cite is meant
+// for hot paths (KernelCache::publish, Cipher::store).
+//
+// VC DISCHARGE: this procedure pins the bijection theorem at the
+// citation site without proving it.  The theorem itself lives in
+// the comment above and in `bench/bench_fmix_bijection.cpp`
+// (CONTRACT-090 fuzzer pinning fmix bijection over ~10^9 random
+// uint64_t inputs against a slow reference oracle).
+[[nodiscard, gnu::const]]
+constexpr bool fmix_preserves_non_zero(std::uint64_t seed,
+                                       std::uint64_t mix_output) noexcept {
+    return seed != 0 && mix_output != 0;
 }
 
 }  // namespace crucible::decide
