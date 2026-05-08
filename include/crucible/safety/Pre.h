@@ -150,7 +150,7 @@
 // status assignment.  See feedback_pre_post_dual_discipline.md
 // for the full pattern.
 //
-// Two known traps codified by the discipline:
+// Three known traps codified by the discipline:
 //   * Disjunction-vs-implies for null-guarded post (deref-safe
 //     post pattern): `decide::implies(p != nullptr, p->status ==
 //     X)` evaluates BOTH args eagerly under C++ function-call
@@ -162,6 +162,22 @@
 //     P2900 `pre()` / `post (r:...)` referencing class members
 //     through `this->` silently bypasses at consteval for foldable
 //     bodies.  Migrate to in-body CRUCIBLE_PRE / CRUCIBLE_POST.
+//   * Function-template POST poison: CRUCIBLE_PRE/POST inside a
+//     FUNCTION TEMPLATE that takes a call-site-deduced parameter
+//     (e.g. `template <typename F> void Once::call(F&& f)`) pulls
+//     `crucible::detail::contract_failed` into every consumer TU
+//     where the template is instantiated.  Static libs that consume
+//     such templates without linking libcrucible's contract handler
+//     (cf. feedback_loader_tu_contract_semantic.md) fail to link.
+//     Discipline: CRUCIBLE_PRE/POST is safe in CLASS-template member
+//     functions where T is fixed at class instantiation (PublishOnce
+//     <T>::publish, WriteOnce<T>::set), but not in FREE function
+//     templates with call-site type deduction (Once::call).  When in
+//     doubt, document the state-machine invariant inline rather than
+//     asserting it.  Discovered 2026-05-08 in commit 524569e
+//     (Once::call POST removed; SetOnce::set/try_set/reset kept —
+//     SetOnce is a class template whose member functions instantiate
+//     once per pointer-type-T, well-bounded).
 //
 // ───────────────────────────────────────────────────────────────────
 // CRUCIBLE AXIOMS
