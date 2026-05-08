@@ -64,6 +64,7 @@
 
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/Lattice.h>
+#include <crucible/safety/Decide.h>
 
 #include <array>
 #include <compare>
@@ -100,8 +101,14 @@ struct AffinityMask {
     // CONTRACT: core ≤ kMaxCore.  Without this fence a caller passing
     // core ≥ kBits would silently produce zero (or, on platforms
     // where the array bounds are checked at runtime, abort).
+    // CONTRACT-Affinity-Single-PRE (cite migration 2026-05-08): bare
+    // `core <= kMaxCore` promoted to `decide::in_range<uint16_t>(core,
+    // 0, kMaxCore)`.  Parameter-only, vanilla P2900 retained.  Future
+    // hardening lifts the per-NUMA core enumerator to
+    // `Refined<bounded_above<kMaxCore>, uint16_t>` and the predicate
+    // name carries through one place.
     [[nodiscard]] static constexpr AffinityMask single(std::uint16_t core) noexcept
-        pre (core <= kMaxCore)
+        pre (::crucible::decide::in_range<std::uint16_t>(core, 0, kMaxCore))
     {
         AffinityMask m{};
         m.words[core / 64] = std::uint64_t{1} << (core % 64);
@@ -111,8 +118,14 @@ struct AffinityMask {
     // Test whether core is admitted by this affinity.
     //
     // CONTRACT: core ≤ kMaxCore.  Same UB rationale as `single`.
+    // CONTRACT-Affinity-Contains-PRE (cite migration 2026-05-08):
+    // mirror of `single` — bare `<=` promoted to in_range cite for
+    // grep discoverability.  Note: `core` is a parameter, but the
+    // method is `const` and the body reads `this->words[…]`; the
+    // predicate itself remains parameter-only, so vanilla P2900
+    // `pre()` is consteval-safe.
     [[nodiscard]] constexpr bool contains(std::uint16_t core) const noexcept
-        pre (core <= kMaxCore)
+        pre (::crucible::decide::in_range<std::uint16_t>(core, 0, kMaxCore))
     {
         return (words[core / 64] & (std::uint64_t{1} << (core % 64))) != 0;
     }
@@ -132,10 +145,19 @@ struct AffinityMask {
     // a per-NUMA-node core range.
     //
     // CONTRACT: first_core ≤ last_core ≤ kMaxCore.
+    // CONTRACT-Affinity-Range-PRE (cite migration 2026-05-08):
+    // the upper-bound clause `last_core <= kMaxCore` joins its
+    // `single`/`contains` siblings on the cite path; the relational
+    // `first_core <= last_core` clause stays bare — it's a pure
+    // ordering predicate over two parameters, no integer-bound
+    // catalog procedure fits cleanly (would require a hypothetical
+    // `decide::ordered<T>(a, b)`, deferred until a second cite
+    // appears in the codebase per the bottom-up growth discipline
+    // documented in the Decide.h skeleton's authoring rules).
     [[nodiscard]] static constexpr AffinityMask range(std::uint16_t first_core,
                                                        std::uint16_t last_core) noexcept
         pre (first_core <= last_core)
-        pre (last_core  <= kMaxCore)
+        pre (::crucible::decide::in_range<std::uint16_t>(last_core, 0, kMaxCore))
     {
         AffinityMask m{};
         for (std::uint16_t c = first_core; c <= last_core; ++c) {
