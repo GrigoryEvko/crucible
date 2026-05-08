@@ -167,6 +167,17 @@ endfunction()
 crucible_test(test_safety)
 crucible_test(test_pre_post)
 crucible_test(test_decide)
+
+# ── CONTRACT-090 + CONTRACT-091 — property-based fuzz harness ────
+#
+# For every fuzzable Decide procedure, the harness runs the production
+# fast path against a deliberately SLOW reference oracle (different
+# algorithm) on Philox4x32-10–derived random inputs.  10K iterations
+# × 11 procedures = 110K equality checks; mismatch fails the test
+# with a reproducible (counter, key) tuple.  Oracles live in
+# include/crucible/safety/DecideOracle.h.
+crucible_test(test_decide_fuzz)
+
 crucible_test(test_simd)
 
 # ── CONTRACT-008: NDEBUG zero-cost sentinel for CRUCIBLE_PRE ─────
