@@ -103,6 +103,67 @@
 // invariants, and cross-build portability.
 //
 // ───────────────────────────────────────────────────────────────────
+// VC DISCHARGE FRAMING
+// ───────────────────────────────────────────────────────────────────
+// CRUCIBLE_PRE / CRUCIBLE_POST are the production-level discharge
+// mechanism for verification conditions (VCs) that the type system
+// cannot statically prove.  Every callsite of a Refined / Tagged /
+// Linear / Monotonic / Bits / Permission wrapper has a mathematical
+// pre/postcondition; CRUCIBLE_PRE is the syntactic surface where
+// that obligation is discharged at the boundary.  Three layers
+// stack:
+//
+//   1. Type-level proof (always-discharge):
+//      `Refined<bounded_above<8>, uint8_t>` proves at construction
+//      that the wrapped value is in [0, 8].  Downstream functions
+//      that take `Refined<...>` need NO pre clause — the type IS
+//      the proof.  This is the cheapest, most preferred form.
+//
+//   2. Named predicate cite (catalog discharge):
+//      `CRUCIBLE_PRE(decide::in_range<uint8_t>(idx, 0, 7))` —
+//      one of 14 named predicates in safety/Decide.h (CONTRACT-020
+//      catalog).  Names are grep-discoverable; future hardening
+//      (lifting `idx` to `Refined`) propagates through the predicate
+//      name once.  Cite-discipline migrations follow CONTRACT-100..
+//      127 commit-message tags.
+//
+//   3. Anonymous predicate (one-off discharge):
+//      `CRUCIBLE_PRE(p != nullptr && p->ready)` — direct expression,
+//      no catalog cite.  Acceptable when the predicate is genuinely
+//      bespoke (mid-body invariant on transient state) but the
+//      CONTRACT-* migration sweep prefers (2) so audits can count
+//      "operations guarded against integer overflow" via
+//      `grep decide::no_overflow_sum`.
+//
+// Postconditions follow the same layering: every load-bearing
+// state-mutation gets a `CRUCIBLE_POST` cite, and the dual-side
+// discipline (CONTRACT-100..108-POST + 116..127-POST + Tx + IterDet
+// + CKernel sweeps) requires that EVERY new CONTRACT-* migration
+// audit BOTH pre and post, skipping post only with documented
+// rationale (tautological / racy / structurally-not-guaranteed).
+//
+// The dual-side discipline catches a class of bug that pre-only
+// migrations miss: state-mutating operations whose post-state
+// invariant has no pre-state witness.  E.g., commit() takes a tx
+// pointer (pre-validated non-null) but produces tx->status ==
+// COMMITTED — a post that catches a future refactor dropping the
+// status assignment.  See feedback_pre_post_dual_discipline.md
+// for the full pattern.
+//
+// Two known traps codified by the discipline:
+//   * Disjunction-vs-implies for null-guarded post (deref-safe
+//     post pattern): `decide::implies(p != nullptr, p->status ==
+//     X)` evaluates BOTH args eagerly under C++ function-call
+//     semantics — `p->status` derefs null when p is null.  Use
+//     short-circuit `||` form (`p == nullptr || p->status == X`)
+//     when the consequent dereferences a witnessed non-null
+//     pointer.  See feedback_decide_implies_eager_eval.md.
+//   * Consteval-bypass on `this->` member predicates (GCC 16.1.1):
+//     P2900 `pre()` / `post (r:...)` referencing class members
+//     through `this->` silently bypasses at consteval for foldable
+//     bodies.  Migrate to in-body CRUCIBLE_PRE / CRUCIBLE_POST.
+//
+// ───────────────────────────────────────────────────────────────────
 // CRUCIBLE AXIOMS
 // ───────────────────────────────────────────────────────────────────
 // InitSafe, TypeSafe — predicate is a bare C++ expression; same

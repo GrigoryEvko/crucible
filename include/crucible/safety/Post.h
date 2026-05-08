@@ -67,6 +67,43 @@
 // pre-checks.
 //
 // ───────────────────────────────────────────────────────────────────
+// VC DISCHARGE FRAMING (see Pre.h for full version)
+// ───────────────────────────────────────────────────────────────────
+// CRUCIBLE_POST is the postcondition half of the dual-side discipline
+// codified in feedback_pre_post_dual_discipline.md: every CONTRACT-*
+// migration audits BOTH CRUCIBLE_PRE and CRUCIBLE_POST.  Skip post
+// only with documented rationale:
+//
+//   * tautological — body IS the post (e.g. accessor that returns
+//     `entries[id]`; post `result == entries[id]` is restatement)
+//   * racy — atomic CAS succeeds; re-reading the atomic for the post
+//     opens a TOCTOU race window
+//   * structurally-not-guaranteed — corner case (e.g. XOR-collision
+//     on two-input hash) makes the invariant statistically rare
+//     but not provable
+//
+// Three classes of post seen across the seven migrated headers:
+//
+//   1. State-mutation: `state == new_value` after a setter.  Catches
+//      dropped assignments.  Examples: set_variant, register_external,
+//      advance_head, register_op.
+//   2. Result-shape: returned value satisfies a structural invariant.
+//      Catches dropped guards.  Examples: output_ptr returns nullptr
+//      || sid.is_valid(); add_branch returns 2-arm BranchNode;
+//      try_append returns MetaIndex::none() || result.raw() < CAPACITY.
+//   3. Lifecycle reset: ctor/init/clear/destroy returns the structure
+//      to a documented invariant.  Multi-field: each field gets one
+//      post.  Examples: KernelCache ctor (3 posts), PoolAllocator
+//      destroy (5 posts), IterDet reset (6 posts), CKernel clear (2),
+//      Tx begin (3 posts), Arena ctor (4 posts).
+//
+// Deref-safe disjunction trap: posts where the consequent
+// dereferences a witnessed non-null pointer must use C++ short-
+// circuit `||`, not `decide::implies` (which evaluates both args
+// eagerly).  See feedback_decide_implies_eager_eval.md for the UBSan-
+// caught regression and the fix pattern (Tx::activate, 9a0fc58).
+//
+// ───────────────────────────────────────────────────────────────────
 // CRUCIBLE AXIOMS
 // ───────────────────────────────────────────────────────────────────
 // Same as Pre.h — see that header for the per-axiom analysis.
