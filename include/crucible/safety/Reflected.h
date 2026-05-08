@@ -109,6 +109,7 @@
 //   crucible/Reflect.h   — sister reflection surface for struct fields
 
 #include <crucible/safety/Bits.h>
+#include <crucible/safety/Decide.h>
 
 #include <bit>
 #include <cstdint>
@@ -233,7 +234,7 @@ template <ScopedEnum E>
 
 template <ScopedEnum E>
 [[nodiscard]] constexpr size_t bits_to_string(Bits<E> b, char* out, size_t cap) noexcept
-    pre (cap == 0 || out != nullptr)
+    pre (::crucible::decide::valid_span(cap, out))
 {
     size_t needed = 0;   // chars that would be written, excluding NUL
     bool   first  = true;

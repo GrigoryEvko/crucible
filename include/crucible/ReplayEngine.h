@@ -103,8 +103,9 @@ struct ReplayEngine {
       pre (pool   != nullptr)
       pre (pool->is_initialized())
       // Region bounds: num_ops==0 is legitimate (empty region), but if
-      // num_ops>0 then ops must be non-null.
-      pre (region->num_ops == 0 || region->ops != nullptr)
+      // num_ops>0 then ops must be non-null.  CONTRACT-055 valid_span
+      // cite — the std::span well-formedness predicate over (count, ptr).
+      pre (::crucible::decide::valid_span(region->num_ops, region->ops))
   {
     ops_ = region->ops;
     end_ = region->ops + region->num_ops;

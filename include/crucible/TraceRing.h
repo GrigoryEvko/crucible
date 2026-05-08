@@ -414,7 +414,7 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       // drain entry point.
       pre (::crucible::decide::in_range<std::uint32_t>(
           max_count, std::uint32_t{0}, CAPACITY))
-      pre (max_count == 0 || out != nullptr)
+      pre (::crucible::decide::valid_span(max_count, out))
   {
     if (max_count == 0) [[unlikely]] return 0;
 
@@ -492,7 +492,7 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY
       pre (::crucible::decide::in_range<std::uint32_t>(
           max_count, std::uint32_t{0}, CAPACITY))
-      pre (max_count == 0 || out != nullptr)
+      pre (::crucible::decide::valid_span(max_count, out))
   {
     return crucible::safety::HotPath<crucible::safety::HotPathTier_v::Warm, uint32_t>{
         drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes)};
@@ -532,7 +532,7 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY
       pre (::crucible::decide::in_range<std::uint32_t>(
           max_count, std::uint32_t{0}, CAPACITY))
-      pre (max_count == 0 || out != nullptr)
+      pre (::crucible::decide::valid_span(max_count, out))
   {
     return drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes);
   }

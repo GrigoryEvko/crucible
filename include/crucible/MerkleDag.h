@@ -1797,7 +1797,7 @@ class CRUCIBLE_OWNER KernelCache {
     Arena& arena CRUCIBLE_LIFETIMEBOUND,
     TraceEntry* ops,
     uint32_t num_ops) noexcept
-    pre (num_ops == 0 || ops != nullptr)
+    pre (::crucible::decide::valid_span(num_ops, ops))
 {
   auto* node = new (arena.alloc_obj<RegionNode>(a))
       RegionNode{};
@@ -1854,7 +1854,7 @@ class CRUCIBLE_OWNER KernelCache {
     TraceEntry* ops,
     uint32_t num_ops,
     ContentHash precomputed_hash) noexcept
-    pre (num_ops == 0 || ops != nullptr)
+    pre (::crucible::decide::valid_span(num_ops, ops))
     // CONTRACT-106: non-zero hash sentinel through `decide::is_non_zero`
     // (CONTRACT-072 catalog).  Precomputed hash must be the actual
     // hash, not the zero sentinel.  compute_content_hash may
@@ -1919,7 +1919,7 @@ class CRUCIBLE_OWNER KernelCache {
     TraceEntry* ops,
     uint32_t num_ops,
     const NumericalRecipe* recipe) noexcept
-    pre (num_ops == 0 || ops != nullptr)
+    pre (::crucible::decide::valid_span(num_ops, ops))
     pre (recipe != nullptr)
     // CONTRACT-106: non-zero hash sentinel through `decide::is_non_zero`
     // (CONTRACT-072 catalog).
@@ -1983,7 +1983,7 @@ class CRUCIBLE_OWNER KernelCache {
     float epsilon = 0.0f) noexcept
     // Pointer / pair validity.
     pre (body != nullptr)
-    pre (num_feedback == 0 || feedback != nullptr)
+    pre (::crucible::decide::valid_span(num_feedback, feedback))
     // Semantic validity on the numeric parameters:
     //   epsilon must be non-negative.  Negative thresholds are
     //     meaningless (a convergence distance can't be negative), and

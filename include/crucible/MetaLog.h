@@ -158,7 +158,7 @@ struct CRUCIBLE_OWNER MetaLog {
       // try_append entry point.
       pre (::crucible::decide::in_range<std::uint32_t>(
           n, std::uint32_t{0}, CAPACITY))
-      pre (n == 0 || metas != nullptr)
+      pre (::crucible::decide::valid_span(n, metas))
   {
     if (n == 0) [[unlikely]] return MetaIndex::none();
 
@@ -257,7 +257,7 @@ struct CRUCIBLE_OWNER MetaLog {
   crucible::safety::HotPath<crucible::safety::HotPathTier_v::Hot, MetaIndex>
   try_append_pinned(const TensorMeta* metas, uint32_t n)
       CRUCIBLE_NO_THREAD_SAFETY
-      pre (n == 0 || metas != nullptr)
+      pre (::crucible::decide::valid_span(n, metas))
   {
     return crucible::safety::HotPath<crucible::safety::HotPathTier_v::Hot, MetaIndex>{
         try_append(metas, n)};
@@ -301,7 +301,7 @@ struct CRUCIBLE_OWNER MetaLog {
   [[nodiscard]] CRUCIBLE_INLINE MetaIndex
   try_append_pure(const TensorMeta* metas, uint32_t n)
       CRUCIBLE_NO_THREAD_SAFETY
-      pre (n == 0 || metas != nullptr)
+      pre (::crucible::decide::valid_span(n, metas))
   {
     return try_append(metas, n);
   }
