@@ -177,6 +177,7 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
+#include <crucible/safety/Pre.h>
 #include <crucible/safety/Tagged.h>
 
 #include <cstdint>
@@ -447,9 +448,15 @@ struct CogMimic {
     // not a silent UB ride through a null-pointer dereference.
     [[nodiscard]] constexpr std::uint64_t
     cog_kernel_cache_key() const noexcept
-        pre (identity != nullptr)
-        pre (!identity->uuid.is_zero())
     {
+        // CRUCIBLE_PRE rather than P2900 `pre()` clauses: the pre on
+        // !identity->uuid.is_zero() needs a deref through the struct
+        // pointer, which GCC 16.1.1 cannot constant-fold cleanly when
+        // this method is called from a consteval context (see safety/
+        // Pre.h for the diagnosis).  The macro fires at consteval AND
+        // (debug-only) runtime, zero-cost in NDEBUG.
+        CRUCIBLE_PRE(identity != nullptr);
+        CRUCIBLE_PRE(!identity->uuid.is_zero());
         std::uint64_t federation = target_caps_class_hash();
         std::uint64_t cog_local  = cog::content_hash(*identity);
         return detail::cog_mimic_fmix64(federation ^ cog_local);

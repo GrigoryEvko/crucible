@@ -190,6 +190,25 @@ if (CRUCIBLE_HAVE_BPF)
   target_compile_options(crucible_perf PRIVATE
     -freflection
     -fcontracts
+    # NOTE: under default `=enforce`, every WriteOnce::set / .get / etc.
+    # contract emits a reference to `handle_contract_violation`.  That
+    # symbol is defined in `src/ContractHandler.cpp` (compiled into
+    # libcrucible.a).  The consumer link order is `libcrucible.a
+    # libcrucible_perf.a libbpf.so`; ld scans left-to-right and picks
+    # up only what the test exec directly references, so by the time
+    # it reaches libcrucible_perf.a the handle_contract_violation
+    # object from libcrucible.a has been discarded.
+    #
+    # Two viable fixes:
+    #   (a) `-fcontract-evaluation-semantic=ignore` here — type-level
+    #       discipline (WriteOnce nodiscard/move semantics) survives;
+    #       runtime handler call is elided in this TU only.
+    #   (b) Force re-resolution at the binary link via `-u
+    #       handle_contract_violation` on every test executable that
+    #       links libcrucible_perf.a.
+    # We use (a) because it keeps the link line unchanged across ~40
+    # consumer test execs and the runtime-enforce property is already
+    # exercised in the main crucible TUs.
     -fcontract-evaluation-semantic=ignore
   )
   if (CRUCIBLE_SENSE_HUB_V2 AND CRUCIBLE_SENSE_HUB_EXTENDED)

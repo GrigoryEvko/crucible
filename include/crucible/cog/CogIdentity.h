@@ -79,6 +79,7 @@
 //                   function over POD-equivalent fields.
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Pre.h>
 #include <crucible/safety/Tagged.h>
 
 #include <cstddef>
@@ -500,8 +501,14 @@ static_assert(std::is_standard_layout_v<CogIdentity>,
 // intrinsic.
 [[nodiscard]] constexpr std::uint64_t
 content_hash(CogIdentity const& c) noexcept
-    pre (!c.uuid.is_zero())
 {
+    // CRUCIBLE_PRE rather than P2900 `pre()` clause: GCC 16.1.1 silently
+    // bypasses pre()-on-struct-const-ref at consteval (see safety/Pre.h
+    // for the full diagnosis), which would let neg_cog_identity_*
+    // fixtures pass when they should fail.  CRUCIBLE_PRE fires at both
+    // consteval and (debug-only) runtime.  Production NDEBUG builds
+    // pay zero cycles (collapses to [[assume]]).
+    CRUCIBLE_PRE(!c.uuid.is_zero());
     constexpr auto fmix = [](std::uint64_t h) constexpr noexcept {
         h ^= h >> 33;
         h *= 0xFF51AFD7ED558CCDULL;
