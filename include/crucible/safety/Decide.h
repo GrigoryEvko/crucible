@@ -271,8 +271,16 @@ constexpr bool no_overflow_sum(T a, T b) noexcept {
 //
 // PRODUCTION CITES (update on adoption per CONTRACT-125)
 // ------------------------------------------------------
-//   (none yet — first migration batch lands with CONTRACT-109:
-//    RecipePool / ExprPool / SwissCtrl power-of-two arithmetic)
+//   (no production cite yet.  CONTRACT-109 was originally tagged
+//   here as the first migration batch but actually shipped using
+//   `decide::is_power_of_two_le` for RecipePool / ExprPool /
+//   SwissCtrl capacity invariants — a structurally different
+//   predicate.  The pow2-shift overflow predicate awaits a real
+//   consumer; plausible future cite sites are bit-shift width
+//   guards in Bits.h, ProbeSequence stride amplification, and
+//   any `(a << b)` site whose `b` is not statically bounded by
+//   `bitwidth(T)`.  If no consumer materializes by 6mo, this
+//   predicate is a candidate for CONTRACT-126 trim.)
 //
 // ANTI-PATTERNS (review-rejected)
 // -------------------------------
@@ -348,8 +356,16 @@ constexpr bool no_overflow_pow2_shift(T a, T b) noexcept {
 //
 // PRODUCTION CITES (update on adoption per CONTRACT-125)
 // ------------------------------------------------------
-//   (none yet — first migration batch lands with CONTRACT-102:
-//    SymbolTable + TraceGraph indexed access bounds chains)
+//   (no production cite yet.  CONTRACT-102 was originally tagged
+//   here but actually shipped using single-element `decide::in_range`
+//   on per-call indexed access — the predicate the code already
+//   needed at the boundary, not the whole-span variant.  The
+//   `all_in_range` predicate awaits a batch-validation consumer;
+//   plausible future cite sites are TensorMeta sizes[] / strides[]
+//   non-negative-and-bounded gates (WRAP-TensorMeta-1 #1034) and
+//   TraceGraph counter SoA validation (WRAP-TraceGraph-3 #1044).
+//   If no consumer materializes by 6mo, this predicate is a
+//   candidate for CONTRACT-126 trim.)
 //
 // ANTI-PATTERNS (review-rejected)
 // -------------------------------
@@ -415,9 +431,19 @@ constexpr bool all_in_range(std::span<const T> xs, T lo, T hi) noexcept {
 //
 // PRODUCTION CITES (update on adoption per CONTRACT-125)
 // ------------------------------------------------------
-//   (none yet — first migration batch lands with CONTRACT-107:
-//    Cipher::store step_id sequence + CONTRACT-114 Transaction
-//    count_ / Vigil step_ Monotonic discipline)
+//   (no production cite yet.  CONTRACT-107 was originally tagged
+//   here but actually shipped using `decide::weakly_increasing`
+//   (Cipher.h:647 step_id sequence — repeats permitted on idempotent
+//   replay).  CONTRACT-114 shipped using the `Monotonic` /
+//   `BoundedMonotonic` value-level wrappers (Transaction count_ /
+//   Vigil step_) — the type carries the proof at the field level,
+//   so a span-wise predicate cite was unnecessary.  The strict
+//   variant awaits a real consumer; plausible future cite sites
+//   are MerkleDag BranchNode arms in sorted-by-ArmByValue order
+//   (#939 WRAP-MerkleDag-3) and any sorted-key span where strict
+//   uniqueness must be proven across the entire sequence.  If no
+//   consumer materializes by 6mo, this predicate is a candidate
+//   for CONTRACT-126 trim.)
 //
 // ANTI-PATTERNS (review-rejected)
 // -------------------------------
@@ -762,9 +788,18 @@ constexpr bool factorization_eq(std::span<const T> factors, T total) noexcept {
 //
 // PRODUCTION CITES (update on adoption per CONTRACT-125)
 // ------------------------------------------------------
-//   (none yet — first migration batch lands with CONTRACT-109:
-//    Swiss-table double-hashing secondary stride, Philox stride
-//    constants, RecipePool secondary-probe parameter validation)
+//   (no production cite yet.  CONTRACT-109 was originally tagged
+//   here but actually shipped using `decide::is_power_of_two_le`
+//   for RecipePool / ExprPool / SwissCtrl capacity invariants —
+//   a separate predicate.  Crucible's SwissTable does not use
+//   double-hashing (linear probe over 16-byte SIMD groups), so
+//   the originally-anticipated probe-stride coprime guard does
+//   not apply.  The coprime predicate awaits a real consumer;
+//   plausible future cite sites are Philox stride-key validation
+//   for cross-counter independence and any open-addressing hash
+//   variant that ever does adopt double-hashing.  If no consumer
+//   materializes by 6mo, this predicate is a candidate for
+//   CONTRACT-126 trim.)
 //
 // IMPLEMENTATION NOTE
 // -------------------
@@ -1422,16 +1457,30 @@ constexpr bool row_subset() noexcept {
 //      "not yet computed" sentinel.
 //
 // ───────────────────────────────────────────────────────────────────
-// PRODUCTION CITES (planned — CONTRACT-106)
+// PRODUCTION CITES (no production cite yet)
 // ───────────────────────────────────────────────────────────────────
+//
+// CONTRACT-106 was originally tagged here but actually shipped
+// using the simpler `decide::is_non_zero` predicate at the
+// non-zero-hash FRONTIER (Cipher.h:625, MerkleDag.h:454/531/793/
+// 1110/1194 — see is_non_zero PRODUCTION CITES below).  The
+// preservation-style predicate `fmix_preserves_non_zero` is a
+// stronger structural property — "this xxHash mixing step takes
+// a non-zero seed to a non-zero output for every non-zero mix
+// constant" — which would gate the BODY of the mixing helper, not
+// the output of the chain.  Plausible future cite sites:
 //
 //   * KernelCache::publish        — content_hash result of fmix
 //                                   over (kernel_kind, recipe,
 //                                   tile, target_caps).
-//   * Cipher::store               — head_ ContentHash advance.
 //   * MerkleDag::compute_merkle   — merkle_hash recursion.
 //   * RegionNode ctor             — content_hash field initialization.
 //   * Forge Phase H emit          — IR003 fingerprint publication.
+//
+// Adoption requires the per-mix-constant analysis to be lifted
+// into a per-call gate (cheap at consteval, free at runtime).
+// If no consumer materializes by 6mo, this predicate is a
+// candidate for CONTRACT-126 trim.
 //
 // Currently spelled per-site as `pre (h != 0)` (3 sites) or as a
 // runtime `if (h == 0) std::abort()` (2 sites).  CONTRACT-106
@@ -1525,8 +1574,21 @@ constexpr bool fmix_preserves_non_zero(std::uint64_t seed,
 //      with one fuzzer each, vs N call-site-specific fuzzers.
 //
 // ───────────────────────────────────────────────────────────────────
-// PRODUCTION CITES (planned — CONTRACT-114, CONTRACT-127)
+// PRODUCTION CITES (no production cite yet)
 // ───────────────────────────────────────────────────────────────────
+//
+// CONTRACT-113 (IterationDetector::reset multi-field invariant)
+// shipped with SIX separate `CRUCIBLE_POST(0, ...)` clauses —
+// IterationDetector.h:240-245 — instead of one
+// `CRUCIBLE_POST(0, decide::conjunction({...}))`.  This is a
+// deliberate diagnostic-locality decision: per-clause posts
+// identify exactly WHICH invariant broke, while a single
+// conjunction loses the per-clause attribution at violation
+// time.  CONTRACT-127 (PoolAllocator::is_initialized) shipped
+// using `decide::no_overflow_sum` for the end_offset chain,
+// not the conjunction predicate.
+//
+// Plausible future cite sites for the span-based form:
 //
 //   * IterationDetector::reset            — multi-field invariant
 //     conjunction (signature_len + match_pos + ops_since_boundary
