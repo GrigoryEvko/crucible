@@ -418,4 +418,92 @@ constexpr bool strictly_increasing(std::span<const T> xs) noexcept {
     return true;
 }
 
+// ─── weakly_increasing ─────────────────────────────────────────────
+//
+// Returns true iff `xs[i-1] <= xs[i]` for every consecutive pair
+// (i ∈ [1, xs.size())).  Empty span and single-element span return
+// true vacuously — same vacuous-truth treatment as strictly_increasing.
+//
+// The `<=` shape: duplicates ARE permitted between consecutive
+// elements.  Counterpart to strictly_increasing for production sites
+// where stalling is acceptable but regression is not — e.g. file
+// offsets where the same offset may legitimately repeat (multiple
+// records at the same starting address with explicit length disambig),
+// or histogram bin upper bounds where touching the next bin's low
+// edge is the canonical transition.
+//
+// SEMANTIC NOTE
+// -------------
+// "Weak" means `<=`, not `<`.  Equal consecutive elements PASS the
+// predicate.  Strict regression (`xs[i-1] > xs[i]`) FAILS.  This is
+// the std::is_sorted's exact semantics — but giving it a named home
+// in Decide consolidates the discharge across production sites and
+// makes the contrast with strictly_increasing visible at the call
+// site (review reads `decide::weakly_increasing(xs)` and knows the
+// caller chose to accept duplicates intentionally).
+//
+// The strict-vs-weak choice is load-bearing for event-sourced systems
+// (CONTRACT-107).  Cipher::store demands strictly_increasing because
+// duplicate step_id breaks idempotence.  StorageSlot::offsets across
+// concatenated tensors demands weakly_increasing because two adjacent
+// zero-length records share the same offset.  The wrong choice
+// silently corrupts replay; the right choice is enforced by cite.
+//
+// Vacuous truth: ∀i ∈ [1, n). P(i)  is true when n < 2.
+//
+// USAGE PATTERN
+// -------------
+//
+//   // CONTRACT-110 production usage shape: TraceGraph edge offsets
+//   // are weakly increasing (zero-length edges legitimately share
+//   // their predecessor's terminal offset).
+//   constexpr bool valid_edge_offsets(std::span<const uint32_t> offs) noexcept {
+//       CRUCIBLE_PRE(crucible::decide::weakly_increasing(offs));
+//       return true;
+//   }
+//
+//   // At consteval, planted regression fails compilation:
+//   //   constexpr uint32_t arr[] = {0, 5, 3, 7};  // 5 > 3 regression
+//   //   static_assert(valid_edge_offsets(arr));
+//   //                 ↑ rejected: "non-constant condition"
+//
+//   // Equal pair PASSES — duplicates allowed:
+//   //   constexpr uint32_t arr[] = {0, 5, 5, 7};
+//   //   static_assert(valid_edge_offsets(arr));   // ok
+//
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ------------------------------------------------------
+//   (none yet — first migration batch lands with CONTRACT-110:
+//    TraceGraph CSR row-pointer offsets + StorageSlot offset chains)
+//
+// CONTRAST WITH strictly_increasing (CONTRACT-041)
+// ------------------------------------------------
+//   * Same shape, same vacuous-truth treatment.
+//   * Differs only in `<=` vs `<` at the consecutive-pair test.
+//   * Choice between them is a SEMANTIC DECISION about whether
+//     duplicates are admissible.  Reviewers question every cite of
+//     weakly_increasing where strictly_increasing would also satisfy
+//     the production data — the looser predicate must be a deliberate
+//     choice motivated by an admissible-duplicate scenario.
+//
+// ANTI-PATTERNS (review-rejected)
+// -------------------------------
+//   * `pre (xs.front() <= xs.back())` — endpoint-only; misses any
+//     interior strict regression.
+//   * `pre (xs[i] >= xs[i-1])` checked only at one chosen i —
+//     ad-hoc point check, not a quantified property.
+//   * Citing `strictly_increasing` where duplicates are admissible —
+//     forces production code to manually filter duplicates before
+//     the contract check, defeating the predicate's purpose.
+template <std::integral T>
+[[nodiscard, gnu::pure]]
+constexpr bool weakly_increasing(std::span<const T> xs) noexcept {
+    for (std::size_t i = 1; i < xs.size(); ++i) {
+        if (xs[i - 1] > xs[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace crucible::decide

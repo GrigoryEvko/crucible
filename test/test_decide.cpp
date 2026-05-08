@@ -353,6 +353,83 @@ static_assert(dc::strictly_increasing<int64_t>(signed_strict));
 
 static_assert(safe_last_step(step_ids) == 999'999'999ull);
 
+// ── weakly_increasing positive witnesses ───────────────────────────
+//
+// The `<=` shape: duplicates ARE permitted between consecutive
+// elements; only STRICT regression (xs[i-1] > xs[i]) is rejected.
+//
+// Coverage matrix mirrors strictly_increasing's shape, but inverts
+// the equal-pair witnesses: where strictly_increasing rejects them,
+// weakly_increasing accepts them.  This is the load-bearing
+// distinction — same shape, looser predicate, distinct semantic
+// commitment about admissible duplicates.
+
+// Vacuous truth — empty and singleton spans satisfy the predicate.
+static_assert(dc::weakly_increasing<int32_t>(std::span<const int32_t>{}));
+constexpr int32_t weakly_single[] = {42};
+static_assert(dc::weakly_increasing<int32_t>(weakly_single));
+
+// 2-element witnesses — equal pair PASSES (vs. strictly_increasing).
+constexpr int32_t weakly_two_strict[] = {1, 2};
+constexpr int32_t weakly_two_equal[] = {7, 7};       // duplicate — weak ACCEPTS
+constexpr int32_t weakly_two_decr[] = {3, 1};
+static_assert(dc::weakly_increasing<int32_t>(weakly_two_strict));
+static_assert(dc::weakly_increasing<int32_t>(weakly_two_equal));
+static_assert(!dc::weakly_increasing<int32_t>(weakly_two_decr));
+
+// 3-element witnesses — duplicates at first / last / middle positions
+// all PASS; only strict regression rejects.
+constexpr int32_t weakly_three_first_eq[] = {7, 7, 9};
+constexpr int32_t weakly_three_last_eq[] = {1, 5, 5};
+constexpr int32_t weakly_three_middle_eq[] = {1, 5, 5};
+constexpr int32_t weakly_three_regress[] = {1, 5, 3};
+static_assert(dc::weakly_increasing<int32_t>(weakly_three_first_eq));
+static_assert(dc::weakly_increasing<int32_t>(weakly_three_last_eq));
+static_assert(dc::weakly_increasing<int32_t>(weakly_three_middle_eq));
+static_assert(!dc::weakly_increasing<int32_t>(weakly_three_regress));
+
+// All-equal sequence — extreme case where every pair stalls.  Strict
+// would reject all of these; weak accepts every length.
+constexpr uint32_t all_zeros[] = {0u, 0u, 0u, 0u, 0u};
+static_assert(dc::weakly_increasing<uint32_t>(all_zeros));
+constexpr uint32_t all_max[] = {std::numeric_limits<uint32_t>::max(),
+                                std::numeric_limits<uint32_t>::max()};
+static_assert(dc::weakly_increasing<uint32_t>(all_max));
+
+// CONTRACT-110 production preview — TraceGraph CSR row-pointer
+// offsets where two adjacent rows of length zero share their start
+// offset.  This is the canonical scenario where weakly_increasing
+// is the RIGHT cite (vs. strictly_increasing which would force a
+// pre-filter for empty rows).
+constexpr uint32_t row_offsets[] = {0u, 5u, 5u, 5u, 12u, 12u, 20u};
+static_assert(dc::weakly_increasing<uint32_t>(row_offsets));
+
+// Endpoint-shortcut counterexample: a sequence whose front <= back
+// but contains an INTERIOR strict regression must be rejected.
+constexpr uint32_t middle_regress_witness[] = {0u, 5u, 3u, 7u};
+static_assert(!dc::weakly_increasing<uint32_t>(middle_regress_witness));
+
+// First-K-pairs counterexample: all but the final pair are weakly
+// increasing; partial-scan would silently accept.
+constexpr uint32_t tail_regress_witness[] = {1u, 2u, 3u, 5u, 4u};
+static_assert(!dc::weakly_increasing<uint32_t>(tail_regress_witness));
+
+// int64_t with negative bounds — weak ordering across sign flip,
+// with duplicates admitted at -50 and 0.
+constexpr int64_t weakly_signed[] = {-100, -50, -50, 0, 0, 50};
+static_assert(dc::weakly_increasing<int64_t>(weakly_signed));
+
+// ── Composition with CRUCIBLE_PRE — sequence-quantified production shape ─
+
+[[nodiscard]] constexpr uint32_t safe_last_offset(std::span<const uint32_t> offs) noexcept {
+    CRUCIBLE_PRE(dc::weakly_increasing(offs));
+    CRUCIBLE_PRE(!offs.empty());
+    return offs.back();
+}
+
+static_assert(safe_last_offset(row_offsets) == 20u);
+static_assert(safe_last_offset(all_zeros) == 0u);
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -475,6 +552,33 @@ int main() {
     constexpr int64_t regressed[] = {10, 5};
     if (dc::strictly_increasing<int64_t>(regressed)) {
         std::fprintf(stderr, "test_decide: regression NOT detected\n");
+        return 1;
+    }
+
+    // weakly_increasing runtime witnesses — the equal-pair case is
+    // the load-bearing distinction vs. strictly_increasing.
+    uint32_t volatile sa_offs[5] = {0, 5, 5, 12, 20};
+    uint32_t offs_copy[5] = {sa_offs[0], sa_offs[1], sa_offs[2], sa_offs[3], sa_offs[4]};
+    sink += static_cast<int>(dc::weakly_increasing<uint32_t>(
+        std::span<const uint32_t>{offs_copy, 5}));   // 1 — equal pair OK
+
+    if (!dc::weakly_increasing<int32_t>(std::span<const int32_t>{})) {
+        std::fprintf(stderr, "test_decide: weakly empty NOT vacuously true\n");
+        return 1;
+    }
+    constexpr uint32_t weakly_stalled_ok[] = {1, 2, 2, 3};
+    if (!dc::weakly_increasing<uint32_t>(weakly_stalled_ok)) {
+        std::fprintf(stderr, "test_decide: weakly stalled-pair (2,2) WRONGLY rejected\n");
+        return 1;
+    }
+    constexpr uint32_t weakly_middle_regress[] = {0, 5, 3, 7};
+    if (dc::weakly_increasing<uint32_t>(weakly_middle_regress)) {
+        std::fprintf(stderr, "test_decide: weakly middle regress NOT detected\n");
+        return 1;
+    }
+    constexpr uint32_t weakly_tail_regress[] = {1, 2, 3, 5, 4};
+    if (dc::weakly_increasing<uint32_t>(weakly_tail_regress)) {
+        std::fprintf(stderr, "test_decide: weakly tail regress NOT detected\n");
         return 1;
     }
 

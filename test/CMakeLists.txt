@@ -5036,3 +5036,30 @@ crucible_neg_compile_test(neg_decide_strictly_increasing_equal_pair
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_strictly_increasing_middle_regress
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-042: HS14 fixture pair pinning that decide::weakly_increasing
+# correctly fires inside CRUCIBLE_PRE at consteval when called with
+# a sequence containing a strict consecutive-pair regression (the
+# ONLY bug class weakly_increasing rejects — equal pairs PASS, which
+# is the load-bearing distinction vs strictly_increasing's `<` shape).
+# Mismatch classes:
+#
+#   * neg_decide_weakly_increasing_middle_regress — INTERIOR regression
+#     {0, 5, 3, 7}.  Endpoints (0, 7) satisfy `front <= back`; the
+#     `pre(front() <= back())` endpoint-shortcut would silently
+#     accept.  Catches the front-back endpoint anti-pattern.
+#   * neg_decide_weakly_increasing_tail_regress — TAIL regression
+#     {1, 2, 3, 5, 4}.  All but the final pair are weakly increasing;
+#     a partial-scan / first-K-pairs / "every prefix is weakly
+#     increasing therefore the whole sequence is" induction would
+#     silently accept.  Catches the partial-scan anti-pattern that
+#     a per-append predicate call invites.
+#
+# The two fixtures target ORTHOGONAL anti-patterns (endpoint shortcut
+# vs. partial scan) — together they pin every common ad-hoc check
+# shape that an engineer might reach for in lieu of citing the
+# Decide procedure.
+crucible_neg_compile_test(neg_decide_weakly_increasing_middle_regress
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_weakly_increasing_tail_regress
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
