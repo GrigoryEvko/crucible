@@ -141,7 +141,14 @@ namespace crucible::decide {
 //
 // PRODUCTION CITES (update on adoption per CONTRACT-125)
 // ------------------------------------------------------
-//   (none yet — first production migration lands with CONTRACT-105)
+//   * MerkleDag.h:159  — compute_storage_nbytes design-doc cite.
+//                        The body uses `__builtin_mul_overflow` to
+//                        recover into the Saturated<T> path rather
+//                        than assume away overflow via `pre()`,
+//                        but the named predicate remains the
+//                        authoritative formal description so
+//                        `grep decide::no_overflow_mul` finds the
+//                        protected arithmetic site (CONTRACT-105).
 //
 // ANTI-PATTERNS (review-rejected)
 // -------------------------------
@@ -188,8 +195,19 @@ constexpr bool no_overflow_mul(T a, T b) noexcept {
 //
 // PRODUCTION CITES (update on adoption per CONTRACT-125)
 // ------------------------------------------------------
-//   (none yet — first migration batch lands with CONTRACT-104:
-//    StorageNbytes.h and MerkleDag.h max_offset/min_offset accumulation)
+//   * MerkleDag.h:161         — compute_storage_nbytes max_offset /
+//                                min_offset / span accumulation chain.
+//                                Body uses `__builtin_add_overflow` /
+//                                `__builtin_sub_overflow` and recovers
+//                                into Saturated<T>; the predicate is
+//                                the formal cite for "this addition
+//                                does not overflow" (CONTRACT-105).
+//   * PoolAllocator.h:138,176 — pool_bytes_ + page_align-1 alignment
+//                                round-up + end_offset chain.  Body
+//                                uses page_align bookkeeping inside
+//                                contracts; the predicate is the
+//                                formal cite for the addition site
+//                                (CONTRACT-127).
 //
 // ANTI-PATTERNS (review-rejected)
 // -------------------------------
@@ -2363,15 +2381,21 @@ constexpr bool valid_span(C count, const void* ptr) noexcept {
 // PRODUCTION CITES
 // ───────────────────────────────────────────────────────────────────
 //
-//   * cog::content_hash                  — Uuid non-zero guard
-//   * CogMimic::cog_kernel_cache_key     — Uuid non-zero guard
-//
-// Future cites planned in CONTRACT-106 / CONTRACT-115:
-//
-//   * KernelCache::publish               — ContentHash non-zero
-//                                          (currently `pre (h != 0)`).
-//   * Cipher::store                      — head_ ContentHash advance.
-//   * Several `Refined<non_zero, ...>`   — value-construction sites.
+//   * cog::content_hash                       — Uuid non-zero guard
+//   * CogMimic::cog_kernel_cache_key          — Uuid non-zero guard
+//   * Cipher::store                           — Cipher.h:625
+//                                               head_ ContentHash advance
+//                                               (CONTRACT-106).
+//   * KernelCache::publish merkle_hash gate   — MerkleDag.h:454
+//                                               (CONTRACT-106).
+//   * RegionNode::set_variant_id              — MerkleDag.h:531
+//                                               (CONTRACT-106).
+//   * make_region recipe->hash gate           — MerkleDag.h:793
+//                                               (CONTRACT-106).
+//   * KernelCache::lookup snapshot            — MerkleDag.h:1110
+//                                               (CONTRACT-106).
+//   * KernelCache CAS desired hash            — MerkleDag.h:1194
+//                                               (CONTRACT-106).
 //
 // Where the value-level invariant lives in the type via
 // `Refined<non_zero, T>` (the wrapper carries the proof at the type
