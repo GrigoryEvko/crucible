@@ -155,6 +155,72 @@ static_assert(safe_add_i32(-100, 50) == -50);
 static_assert(safe_add_i32(std::numeric_limits<int32_t>::max() - 1, 1)
               == std::numeric_limits<int32_t>::max());
 
+// ── no_overflow_pow2_shift positive witnesses ──────────────────────
+//
+// Coverage matrix (shift = b; bitwidth = W):
+//
+//   uint8_t       | a=0,b=0     | a=1,b=7 (top bit ok)  | b=8 (UB)         | a=128,b=1 (overflow)
+//   uint32_t      | a=1,b=0     | a=1,b=31 (top bit ok) | b=32 (UB)        | a=UINT32_MAX,b=1 (overflow)
+//   int32_t       | a=1,b=30 ok | a=1,b=31 (sign-bit UB)| b=-1 (UB)        | a=-1,b=1 (UB neg-shift)
+//   int64_t       | a=42,b=0    | b=63 ok if a<=0       | b=64 (UB)        | a=INT64_MAX,b=1 (overflow)
+//
+// Predicate is total over all (a, b): no UB at the predicate itself.
+
+// Trivial: anything << 0 doesn't overflow (no change).
+static_assert(dc::no_overflow_pow2_shift<uint32_t>(0, 0));
+static_assert(dc::no_overflow_pow2_shift<uint32_t>(std::numeric_limits<uint32_t>::max(), 0));
+static_assert(dc::no_overflow_pow2_shift<int32_t>(std::numeric_limits<int32_t>::max(), 0));
+static_assert(dc::no_overflow_pow2_shift<int32_t>(0, 31));   // 0 shifted is still 0
+
+// Shift count out of range — UB at the operator, predicate rejects.
+static_assert(!dc::no_overflow_pow2_shift<uint8_t>(1, 8));
+static_assert(!dc::no_overflow_pow2_shift<uint32_t>(1, 32));
+static_assert(!dc::no_overflow_pow2_shift<uint64_t>(1, 64));
+static_assert(!dc::no_overflow_pow2_shift<int32_t>(1, 32));
+
+// Negative shift count — UB on signed b at the operator.
+static_assert(!dc::no_overflow_pow2_shift<int32_t>(1, -1));
+static_assert(!dc::no_overflow_pow2_shift<int64_t>(42, -10));
+
+// Negative left-operand — UB on signed T at the operator.
+static_assert(!dc::no_overflow_pow2_shift<int32_t>(-1, 1));
+static_assert(!dc::no_overflow_pow2_shift<int32_t>(std::numeric_limits<int32_t>::min(), 0));
+
+// Boundary: exact-max representable shifts.
+static_assert(dc::no_overflow_pow2_shift<uint8_t>(1, 7));                                     // 0x80, fits
+static_assert(!dc::no_overflow_pow2_shift<uint8_t>(2, 7));                                    // 0x100, overflow
+static_assert(dc::no_overflow_pow2_shift<uint32_t>(1, 31));                                   // 0x80000000, fits unsigned
+static_assert(!dc::no_overflow_pow2_shift<uint32_t>(2, 31));                                  // 0x100000000, overflow
+static_assert(dc::no_overflow_pow2_shift<int32_t>(1, 30));                                    // 0x40000000, fits signed
+static_assert(!dc::no_overflow_pow2_shift<int32_t>(1, 31));                                   // 0x80000000, would set sign bit
+static_assert(!dc::no_overflow_pow2_shift<int32_t>(std::numeric_limits<int32_t>::max(), 1));  // INT32_MAX << 1 wraps
+
+// Unsigned wraparound — defined behavior at the C++ level, but
+// predicate still detects information loss (top bit shifted out).
+static_assert(!dc::no_overflow_pow2_shift<uint32_t>(std::numeric_limits<uint32_t>::max(), 1));
+
+// 64-bit witnesses.
+static_assert(dc::no_overflow_pow2_shift<uint64_t>(1ull, 63));
+static_assert(!dc::no_overflow_pow2_shift<uint64_t>(2ull, 63));
+static_assert(!dc::no_overflow_pow2_shift<int64_t>(std::numeric_limits<int64_t>::max(), 1));
+
+// ── Composition with CRUCIBLE_PRE — shift wrapper ─────────────────
+
+[[nodiscard]] constexpr uint32_t safe_shl_u32(uint32_t a, uint32_t b) noexcept {
+    CRUCIBLE_PRE(dc::no_overflow_pow2_shift(a, b));
+    return a << b;
+}
+
+[[nodiscard]] constexpr int32_t safe_shl_i32(int32_t a, int32_t b) noexcept {
+    CRUCIBLE_PRE(dc::no_overflow_pow2_shift(a, b));
+    return a << b;
+}
+
+static_assert(safe_shl_u32(7, 3) == 56);
+static_assert(safe_shl_u32(1, 31) == 0x8000'0000u);
+static_assert(safe_shl_i32(1, 30) == 0x4000'0000);
+static_assert(safe_shl_i32(0, 31) == 0);
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -211,6 +277,33 @@ int main() {
     }
     if (dc::no_overflow_sum<int32_t>(std::numeric_limits<int32_t>::min(), -1)) {
         std::fprintf(stderr, "test_decide: INT32_MIN+(-1) NOT flagged as overflow\n");
+        return 1;
+    }
+
+    // no_overflow_pow2_shift runtime witnesses.
+    uint32_t volatile sa_shl = 7;
+    uint32_t volatile sb_shl = 3;
+    sink += static_cast<int>(safe_shl_u32(sa_shl, sb_shl));   // 56
+
+    int32_t volatile si_shl = 1;
+    int32_t volatile sj_shl = 30;
+    sink += safe_shl_i32(si_shl, sj_shl) / 100'000'000;       // 10
+
+    // Direct predicate calls covering the four UB classes.
+    if (!dc::no_overflow_pow2_shift<uint32_t>(1u, 31u)) {
+        std::fprintf(stderr, "test_decide: 1u<<31 flagged as overflow\n");
+        return 1;
+    }
+    if (dc::no_overflow_pow2_shift<uint32_t>(1u, 32u)) {
+        std::fprintf(stderr, "test_decide: shift-count-32 NOT flagged\n");
+        return 1;
+    }
+    if (dc::no_overflow_pow2_shift<int32_t>(int32_t{-1}, int32_t{1})) {
+        std::fprintf(stderr, "test_decide: signed-negative-shift NOT flagged\n");
+        return 1;
+    }
+    if (dc::no_overflow_pow2_shift<int32_t>(int32_t{1}, int32_t{31})) {
+        std::fprintf(stderr, "test_decide: 1<<31 (signed) NOT flagged as sign-bit overflow\n");
         return 1;
     }
 

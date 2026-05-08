@@ -109,6 +109,7 @@
 #pragma once
 
 #include <concepts>
+#include <limits>
 #include <type_traits>
 
 namespace crucible::decide {
@@ -198,6 +199,87 @@ template <std::integral T>
 constexpr bool no_overflow_sum(T a, T b) noexcept {
     T r{};
     return !__builtin_add_overflow(a, b, &r);
+}
+
+// ─── no_overflow_pow2_shift ────────────────────────────────────────
+//
+// Returns true iff `a << b` is well-defined AND the mathematical
+// result `a * 2^b` is representable in type T.  Handles every UB
+// class the C++ left-shift operator imposes:
+//
+//   1. b < 0  (signed T only — "negative shift count")
+//   2. b >= bitwidth(T)  ("shift count out of range")
+//   3. a < 0  (signed T only — "left-shift of negative value")
+//   4. mathematical(a * 2^b) > std::numeric_limits<T>::max()
+//      ("shifts information into the sign bit" / unsigned wrap)
+//
+// The four cases together are the complete failure surface of
+// `a << b` per [expr.shift]; classes 1-3 are UB at the operator
+// itself, class 4 is wraparound (defined for unsigned, UB for signed).
+//
+// SEMANTIC NOTE
+// -------------
+// Equivalent reading: `a << b == a * pow(2, b)`.  This procedure is
+// the saturation predicate for that multiplication, but specialized
+// because C++ shift cannot reuse __builtin_mul_overflow directly —
+// classes 1, 2, 3 must be detected BEFORE evaluating any expression
+// involving `<<`.  The implementation uses arithmetic comparison
+// against `MAX >> b`, which is well-defined as long as `b in [0, W)`
+// (verified first), and avoids constructing `T{1} << b` (would be
+// UB at b == W-1 for signed T).
+//
+// The shift count parameter is the same type T as the value, matching
+// the no_overflow_mul / no_overflow_sum signature shape.  Production
+// callers that have a non-T shift count should cast or use a
+// per-call-site Refined<bounded_below<0> ∧ bounded_above<W>, int>
+// aliased predicate.
+//
+// USAGE PATTERN
+// -------------
+//
+//   constexpr uint32_t safe_shl_u32(uint32_t a, uint32_t b) noexcept {
+//       CRUCIBLE_PRE(crucible::decide::no_overflow_pow2_shift(a, b));
+//       return a << b;
+//   }
+//
+//   // Both consteval witnesses fire CRUCIBLE_PRE's __builtin_trap():
+//   //   static_assert(safe_shl_u32(1u, 32u) == 0);  // shift count UB
+//   //   static_assert(safe_shl_u32(0xFFFFFFFFu, 1u) == 0);  // wrap
+//
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ------------------------------------------------------
+//   (none yet — first migration batch lands with CONTRACT-109:
+//    RecipePool / ExprPool / SwissCtrl power-of-two arithmetic)
+//
+// ANTI-PATTERNS (review-rejected)
+// -------------------------------
+//   * `pre (b < 64)` — width-hardcoded; wrong for any T other than
+//     uint64_t / int64_t.  Always reference `bitwidth(T)`.
+//   * `pre (a << b > a)` — circular: uses the very operation we're
+//     guarding.  UB if b >= W; the comparison is meaningless on UB.
+//   * `pre (b < sizeof(T) * 8)` — misses the negative-shift case for
+//     signed b (b == -1 silently passes a uint8_t-cast bug).
+//   * `pre ((a >> (W - 1 - b)) == 0)` — fragile around boundaries
+//     (`W - 1 - b` can underflow for hostile b).  Always cite this
+//     procedure instead.
+template <std::integral T>
+[[nodiscard, gnu::const]]
+constexpr bool no_overflow_pow2_shift(T a, T b) noexcept {
+    constexpr T W = static_cast<T>(sizeof(T) * 8);
+    if constexpr (std::is_signed_v<T>) {
+        if (b < T{0} || b >= W) {
+            return false;
+        }
+        if (a < T{0}) {
+            return false;
+        }
+        return a <= (std::numeric_limits<T>::max() >> b);
+    } else {
+        if (b >= W) {
+            return false;
+        }
+        return a <= (std::numeric_limits<T>::max() >> b);
+    }
 }
 
 }  // namespace crucible::decide

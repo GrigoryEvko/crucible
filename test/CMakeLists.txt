@@ -4966,3 +4966,23 @@ crucible_neg_compile_test(neg_decide_no_overflow_sum_unsigned
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_no_overflow_sum_signed
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-032: HS14 fixture pair pinning that
+# decide::no_overflow_pow2_shift correctly fires inside CRUCIBLE_PRE
+# at consteval when called with operands that would invoke any of the
+# four [expr.shift] UB / overflow classes.  Mismatch classes:
+#
+#   * neg_decide_no_overflow_pow2_shift_count_oor — SHIFT COUNT OUT
+#     OF RANGE (b == bitwidth(T)).  Fires the predicate's first
+#     short-circuit branch (`b >= W`).  Distinct from sum/mul because
+#     this UB class exists ONLY at the shift operator.
+#   * neg_decide_no_overflow_pow2_shift_signed_negative — LEFT-SHIFT
+#     OF SIGNED NEGATIVE VALUE (a == -1, b == 1).  Fires the third
+#     branch (`a < 0` for signed T) AFTER both range checks pass.
+#     This bug class survives any shift-count check and cannot be
+#     caught by sum/mul/range predicates — unique to the pow2_shift
+#     family.
+crucible_neg_compile_test(neg_decide_no_overflow_pow2_shift_count_oor
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_no_overflow_pow2_shift_signed_negative
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
