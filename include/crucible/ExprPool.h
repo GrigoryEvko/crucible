@@ -318,6 +318,18 @@ class CRUCIBLE_OWNER ExprPool {
   // networks) while staying at a clean mmap-backed allocation size.
   static constexpr size_t kDefaultInitialCapacity = 16384;
 
+  // CONTRACT-109: pin the structural pow2 invariant at the constant's
+  // definition site through `decide::is_power_of_two_le` (CONTRACT-050).
+  // 16384 = 2^14 is the measured sweet spot; the cite is the discipline
+  // gate ensuring future edits to the constant preserve the Swiss-table
+  // probe invariant (capacity_ - 1 = slot_mask requires pow2).  Upper
+  // bound 1 << 30 (~1 G slots, ~8 GB pointer table) is the structural
+  // ceiling — past that the single mmap allocation no longer fits in the
+  // address-space budget the rest of Crucible reserves.
+  static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(
+                    kDefaultInitialCapacity, std::size_t{1} << 30),
+                "kDefaultInitialCapacity must be a power of two ≤ 1<<30");
+
   explicit ExprPool(effects::Alloc a,
                     size_t initial_capacity = kDefaultInitialCapacity) : arena_() {
     // Round up to power of 2, minimum one full SIMD group
@@ -1013,6 +1025,20 @@ class CRUCIBLE_OWNER ExprPool {
   static constexpr size_t kIntCacheSize =
       static_cast<size_t>(kIntCacheHigh - kIntCacheLow + 1);
 
+  // CONTRACT-109: kIntCacheSize = 256 = 2^8.  The pow2 cite is structural
+  // (the kIntCacheLow / kIntCacheHigh range is inclusive on both ends, so
+  // the `+ 1` produces 256), but if either bound shifts by an odd offset
+  // the pow2 property silently breaks and direct-index lookups
+  // (`int_cache_[val - kIntCacheLow]`) get sloppy bounds.  The
+  // `decide::is_power_of_two_le` cite (CONTRACT-050) pins the invariant
+  // at the constant's definition site so future edits to the bounds trip
+  // the static_assert.  Upper bound 1024 leaves room for a 4× expansion
+  // without requiring a re-audit; past that the cache table itself stops
+  // fitting cleanly in two cache lines.
+  static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(
+                    kIntCacheSize, std::size_t{1024}),
+                "kIntCacheSize must be a power of two ≤ 1024");
+
   const Expr* make_integer(effects::Alloc a, int64_t val) {
     return intern_node(
         a, Op::INTEGER, nullptr, 0, detail::integer_flags(val), SymbolId{}, val);
@@ -1579,8 +1605,24 @@ class CRUCIBLE_OWNER ExprPool {
   // by rehash() (implicit doubling at 87.5% load) and reserve() (caller-
   // directed pre-growth). new_capacity must be a power of 2 and a
   // multiple of kGroupWidth — the public entrypoints enforce that.
+  //
+  // CONTRACT-109: discharge the pow2 invariant through the named
+  // `decide::is_power_of_two_le` cite (CONTRACT-050 catalog) plus an
+  // explicit `>= kGroupWidth` lower bound.  The downstream SIMD probe
+  // depends on `(slot_mask = capacity_ - 1) & probe_index`, which
+  // requires both invariants to hold: a non-pow2 capacity corrupts the
+  // mask; a sub-kGroupWidth capacity walks the SIMD load past the
+  // allocated control-byte buffer.  Both call sites preserve the
+  // invariants (rehash doubles a pow2; reserve ratchets up from
+  // kGroupWidth via `<<= 1`); the precondition is the grep-discoverable
+  // VC-discharge anchor for any future caller addition.  Upper bound
+  // 1 << 30 matches the kDefaultInitialCapacity ceiling above.
   CRUCIBLE_UNSAFE_BUFFER_USAGE
-  void grow_to_(size_t new_capacity) {
+  void grow_to_(size_t new_capacity)
+      pre (::crucible::decide::is_power_of_two_le<std::size_t>(
+              new_capacity, std::size_t{1} << 30))
+      pre (new_capacity >= detail::kGroupWidth)
+  {
     size_t old_capacity = capacity_;
     int8_t* old_ctrl = ctrl_;
     const Expr** old_slots = slots_;
