@@ -27,6 +27,7 @@
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/Post.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Tagged.h>
 
@@ -113,7 +114,19 @@ struct SchemaTable {
   // Irreversible (within one Mutable→Sealed phase); clear() resets.
   // Release-store: any subsequent acquire-load observing Sealed also
   // observes every entry registered before the seal.
-  void seal() noexcept { sealed_.store(true, std::memory_order_release); }
+  void seal() noexcept {
+    sealed_.store(true, std::memory_order_release);
+    // CONTRACT-SchemaTable-Seal-POST: one-way Mutable → Sealed transition.
+    // After seal(), is_sealed() must observe true on the same thread (the
+    // release-store has happens-before with our acquire-load via the same
+    // sealed_ atomic).  Mirrors CONTRACT-CKernel-Seal-POST (CKernel.h).
+    // Catches a future refactor that drops the store or weakens the
+    // memory order — bg-thread readers depend on the release semantics
+    // for seeing all preceding entries[] writes.  Routes through
+    // CRUCIBLE_POST per the GCC 16.1.1 consteval-bypass family.  Void
+    // return: first arg `0` is the conventional sentinel.
+    CRUCIBLE_POST(0, sealed_.load(std::memory_order_acquire));
+  }
 
   [[nodiscard]] bool is_sealed() const noexcept {
     return sealed_.load(std::memory_order_acquire);
@@ -172,6 +185,16 @@ struct SchemaTable {
         // the underlying allocation's mutability.
         std::free(std::bit_cast<char*>(entries[i].name));
         entries[i].name = strdup_(name);
+        // CONTRACT-SchemaTable-RegisterName-POST (alias-update path):
+        // entries[i].name is a freshly strdup'd copy of `name` — i.e.,
+        // entries[i].name == name byte-for-byte (strcmp == 0) but at a
+        // different address (we just freed the old allocation and
+        // duplicated the input).  The post pins the lookup-equivalent
+        // invariant: a subsequent lookup(hash) finds entries[i].name.
+        // Mirrors CONTRACT-CKernel-RegisterOp-POST alias-update path.
+        // The `name != nullptr` post check is structurally guaranteed
+        // by the early return on line 177 (`if (!name) return`).
+        CRUCIBLE_POST(0, lookup(hash) != nullptr);
         return;
       }
     }
@@ -183,6 +206,24 @@ struct SchemaTable {
     size.bump();   // monotonic +1; bound-checked at SCHEMA_TABLE_CAP
     std::ranges::sort(std::span<SchemaEntry>{entries, size.get()},
                       {}, &SchemaEntry::hash);
+    // CONTRACT-SchemaTable-RegisterName-POST (insert path):
+    //   (1) lookup(hash) != nullptr — the freshly-registered schema is
+    //       findable.  This is the load-bearing contract: a registration
+    //       that doesn't make the schema findable would silently fall
+    //       through to the OPAQUE fallback at every subsequent dispatch
+    //       (slow path), defeating the whole registration phase.  After
+    //       ranges::sort the entry is at its sorted position; lookup's
+    //       binary search finds it.  Mirrors CKernel-RegisterOp insert
+    //       path POST.
+    //   (2) size.get() <= SCHEMA_TABLE_CAP — bound preserved by
+    //       BoundedMonotonic but pinned because BoundedMonotonic's bump()
+    //       pre is `current < Max`; post-bump current ≤ Max.
+    // Routes through CRUCIBLE_POST per the GCC 16.1.1 consteval-bypass
+    // family.  Catches a refactor that drops the sort (binary search
+    // would fail to find the inserted entry) or that breaks the
+    // bounded-monotonic counter contract.
+    CRUCIBLE_POST(0, lookup(hash) != nullptr);
+    CRUCIBLE_POST(0, size.get() <= SCHEMA_TABLE_CAP);
   }
 
   // Lookup: returns nullptr for unknown hashes. O(log n) binary search.

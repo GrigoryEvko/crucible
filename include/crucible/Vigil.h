@@ -46,6 +46,7 @@
 #include <crucible/rt/DeadlineWatchdog.h>
 #include <crucible/rt/Policy.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/Post.h>
 
 #include <atomic>
 #include <chrono>
@@ -966,6 +967,31 @@ class Vigil {
 
         if (!ctx_.switch_region(alt, div_pos)) return false;
         register_externals_from_region_(alt);
+        // CONTRACT-Vigil-SwitchRegion-POST: success-path invariant.  After
+        // try_switch_region_ returns true, the foreground dispatch state
+        // satisfies the structural contract that downstream readers rely on:
+        //   (1) ctx_.active_region() == alt — the new region is live in
+        //       the dispatch state.  ctx_.switch_region() does the
+        //       publication; the post pins it so a future refactor that
+        //       skips the publish step (or publishes the wrong RegionNode)
+        //       fails the contract instead of silently dispatching against
+        //       the stale region.  Mirrors CONTRACT-Tx-Activate-POST
+        //       active_tx_ == tx pin (Transaction.h:228, 9a0fc58).
+        //   (2) alt != nullptr — pre-condition pinned by the function's
+        //       `pre (alt != nullptr)` clause; restated here so the
+        //       success-path invariant `active_region() == alt` is
+        //       legible without reading the header.
+        // Routes through CRUCIBLE_POST because the consequent dereferences
+        // the freshly-published `alt` indirectly through ctx_.active_region()
+        // — same GCC 16.1.1 consteval-bypass family as every prior POST
+        // commit in this session-pair.  Under NDEBUG these collapse to
+        // `[[assume]]` so the next dispatch_op() call's hot path can
+        // speculate that ctx_.active_region() is non-null and equals alt.
+        // The first failure return on line 950 holds vacuously: the
+        // post is only checked on the success path because we return
+        // before reaching this line otherwise.
+        CRUCIBLE_POST(0, alt != nullptr);
+        CRUCIBLE_POST(0, ctx_.active_region() == alt);
         return true;
     }
 
