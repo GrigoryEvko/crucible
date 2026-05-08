@@ -32,6 +32,8 @@
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
 #include <crucible/PoolAllocator.h>
+#include <crucible/safety/Decide.h>
+#include <crucible/safety/Pre.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Tagged.h>
@@ -201,9 +203,31 @@ struct ReplayEngine {
   // as advance(); keep in .text.hot alongside it.
   [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
       pre (current_ != nullptr)
-      pre (j < current_->num_outputs)
       pre (current_->output_slot_ids != nullptr)
+      // CONTRACT-108 (port-bounds): the j-bounds pre below moves from
+      // P2900 `pre()` to in-body CRUCIBLE_PRE because P2900 `pre()`
+      // referencing a class member's pointee through `this->current_->...`
+      // is silently bypassed at consteval in GCC 16.1.1 (same gotcha
+      // family as CONTRACT-100 / -101 / -102 / -103 / -106 / -107).
+      // CRUCIBLE_PRE fires symmetrically at consteval, runtime, and as
+      // `[[assume]]` for the optimizer.  Pure-pointer null checks above
+      // stay as P2900 pre() — they don't reference a pointee field, so
+      // no consteval-bypass exposure.
   {
+    // CONTRACT-108: output port index discharges through
+    // `decide::in_range` (CONTRACT-102 catalog).  Closed interval
+    // `[0, num_outputs - 1]` is reviewable as a single citation
+    // rather than a bare `<` (which conflates exclusive count with
+    // inclusive max — see decide.h anti-patterns).  Companion guard
+    // `num_outputs > 0u` is paired because `num_outputs - 1u`
+    // underflows to UINT16_MAX when num_outputs == 0, which would
+    // make `in_range(j, 0, UINT16_MAX)` accept every value; production
+    // never calls output_ptr() on a zero-output op (no valid `j` can
+    // exist for such an op) but defense-in-depth catches a future
+    // refactor that exposes this path.
+    CRUCIBLE_PRE(current_->num_outputs > 0u);
+    CRUCIBLE_PRE(::crucible::decide::in_range<std::uint16_t>(
+        j, 0u, static_cast<std::uint16_t>(current_->num_outputs - 1u)));
     SlotId sid = current_->output_slot_ids[j];
     return sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
   }
@@ -211,9 +235,15 @@ struct ReplayEngine {
   // ── Input pointer for input j of the last matched op ──
   [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j) const CRUCIBLE_LIFETIMEBOUND
       pre (current_ != nullptr)
-      pre (j < current_->num_inputs)
       pre (current_->input_slot_ids != nullptr)
+      // CONTRACT-108: see output_ptr above for the consteval-bypass
+      // rationale; same shape applies here for the input port index.
   {
+    // CONTRACT-108: see output_ptr above for the discharge framing;
+    // mirror predicate over num_inputs.
+    CRUCIBLE_PRE(current_->num_inputs > 0u);
+    CRUCIBLE_PRE(::crucible::decide::in_range<std::uint16_t>(
+        j, 0u, static_cast<std::uint16_t>(current_->num_inputs - 1u)));
     SlotId sid = current_->input_slot_ids[j];
     return sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
   }
@@ -324,19 +354,23 @@ struct ReplayEngine {
 
   [[nodiscard]] CRUCIBLE_HOT void* output_ptr(uint16_t j, ActiveView const&) const
       CRUCIBLE_LIFETIMEBOUND
-      pre (current_ != nullptr)
-      pre (j < current_->num_outputs)
-      pre (current_->output_slot_ids != nullptr)
   {
+    // CONTRACT-108: typed delegate forwards to the untyped overload,
+    // whose CRUCIBLE_PRE pair (current_ non-null, output_slot_ids
+    // non-null, num_outputs > 0, decide::in_range over j) is the
+    // single discharge point.  Removing the duplicate pre clauses here
+    // mirrors CONTRACT-107's record_event pattern: forwarders carry
+    // no separate pre because (a) the predicate would be a duplicate
+    // and (b) class-member access via this->current_->X in P2900 pre()
+    // is consteval-bypass-vulnerable on GCC 16.1.1.
     return output_ptr(j);
   }
 
   [[nodiscard]] CRUCIBLE_HOT void* input_ptr(uint16_t j, ActiveView const&) const
       CRUCIBLE_LIFETIMEBOUND
-      pre (current_ != nullptr)
-      pre (j < current_->num_inputs)
-      pre (current_->input_slot_ids != nullptr)
   {
+    // CONTRACT-108: see output_ptr typed delegate above for forwarder
+    // discharge framing.
     return input_ptr(j);
   }
 
