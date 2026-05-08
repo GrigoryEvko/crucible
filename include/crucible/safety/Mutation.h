@@ -42,6 +42,7 @@
 #include <crucible/algebra/GradedTrait.h>
 #include <crucible/algebra/lattices/MonotoneLattice.h>
 #include <crucible/algebra/lattices/SeqPrefixLattice.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/safety/Pinned.h>
 #include <crucible/safety/Post.h>
 
@@ -931,7 +932,7 @@ public:
     // backwards (against Cmp) and violate monotonicity.
     [[nodiscard]] T bump_by(T delta) noexcept
         requires std::integral<T> && (kIsLess || kIsGreater)
-        pre (!(delta < T{0}))
+        pre (::crucible::decide::non_negative(delta))
     {
         if constexpr (kIsLess) {
             return value_.fetch_add(delta, std::memory_order_acq_rel);

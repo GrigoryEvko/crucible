@@ -22,6 +22,8 @@
 //     fallback when /proc/self/status is unreadable — chroots, exotic
 //     filesystems). Moves the body out of the hot icache.
 
+#include <crucible/safety/Decide.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -347,7 +349,7 @@ struct CoreSelector {
 // including the hot CPU itself). Empty on failure.
 [[nodiscard]] inline std::vector<int> select_warm_cpus(int hot_cpu,
                                                        int count) noexcept
-    pre (count >= 0)
+    pre (::crucible::decide::non_negative(count))
 {
     const auto allowed = allowed_cpus();
     const int hot_numa = (hot_cpu >= 0) ? numa_node_of(hot_cpu) : -1;
