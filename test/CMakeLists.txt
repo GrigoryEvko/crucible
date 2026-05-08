@@ -5063,3 +5063,30 @@ crucible_neg_compile_test(neg_decide_weakly_increasing_middle_regress
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_weakly_increasing_tail_regress
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-050: HS14 fixture pair pinning that decide::is_power_of_two_le
+# correctly fires inside CRUCIBLE_PRE at consteval when called with
+# a value that violates EITHER of the predicate's two conjuncts:
+# "x is a power of two" AND "x <= bound".  Mismatch classes pin
+# orthogonal anti-patterns at the call site.
+# Mismatch classes:
+#
+#   * neg_decide_is_power_of_two_le_non_pow2 — value WITHIN bound
+#     but with multiple set bits (48 = 32 + 16, bound = 64).
+#     Catches the `pre(x % 2 == 0)` / `pre((x & 1) == 0)` modulo
+#     anti-patterns that misread "power of two" as "even number".
+#   * neg_decide_is_power_of_two_le_above_bound — value IS a power
+#     of two (128 = 2^7, popcount == 1) but ABOVE bound (bound = 64).
+#     Catches the `pre(__builtin_popcount(x) == 1)` /
+#     `pre(std::has_single_bit(x))` / shift-only anti-patterns that
+#     correctly identify the bit pattern but omit the capacity
+#     ceiling.
+#
+# Together the two fixtures pin BOTH conjuncts: a reviewer who
+# satisfies one must satisfy the other.  is_power_of_two_le is the
+# single discharge that protects both bug classes (capacity overrun
+# AND bit-mask invalidation downstream).
+crucible_neg_compile_test(neg_decide_is_power_of_two_le_non_pow2
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_is_power_of_two_le_above_bound
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")

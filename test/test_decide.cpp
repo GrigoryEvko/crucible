@@ -25,6 +25,7 @@
 #include <cstdio>
 #include <limits>
 #include <span>
+#include <utility>
 
 namespace {
 
@@ -430,6 +431,89 @@ static_assert(dc::weakly_increasing<int64_t>(weakly_signed));
 static_assert(safe_last_offset(row_offsets) == 20u);
 static_assert(safe_last_offset(all_zeros) == 0u);
 
+// ── is_power_of_two_le positive witnesses ──────────────────────────
+//
+// Conjunction predicate: x ∈ {1, 2, 4, 8, ...} ∩ [1, bound].
+// Coverage matrix exercises BOTH conjuncts independently:
+//
+//   power-of-two       │ within bound │ result
+//   ───────────────────┼──────────────┼────────
+//   yes (1, 2, 4, 16)  │ yes          │ TRUE
+//   yes (256)          │ no           │ FALSE  (above bound)
+//   no  (3, 5, 6, 12)  │ yes          │ FALSE  (not power-of-two)
+//   no  (0)            │ vacuously    │ FALSE  (zero rejected)
+//   no  (-1, INT_MIN)  │ n/a (signed) │ FALSE  (negative rejected)
+
+// Power-of-two cases within bound — accepted.
+static_assert(dc::is_power_of_two_le<uint32_t>(1u, 64u));
+static_assert(dc::is_power_of_two_le<uint32_t>(2u, 64u));
+static_assert(dc::is_power_of_two_le<uint32_t>(4u, 64u));
+static_assert(dc::is_power_of_two_le<uint32_t>(8u, 64u));
+static_assert(dc::is_power_of_two_le<uint32_t>(16u, 64u));
+static_assert(dc::is_power_of_two_le<uint32_t>(32u, 64u));
+static_assert(dc::is_power_of_two_le<uint32_t>(64u, 64u));     // x == bound ok
+
+// Power-of-two cases ABOVE bound — rejected (one conjunct fires).
+static_assert(!dc::is_power_of_two_le<uint32_t>(128u, 64u));
+static_assert(!dc::is_power_of_two_le<uint32_t>(256u, 64u));
+static_assert(!dc::is_power_of_two_le<uint64_t>(
+    uint64_t{1} << 32, uint64_t{1} << 30));
+
+// Non-power-of-two values within bound — rejected (other conjunct fires).
+static_assert(!dc::is_power_of_two_le<uint32_t>(3u, 64u));
+static_assert(!dc::is_power_of_two_le<uint32_t>(5u, 64u));
+static_assert(!dc::is_power_of_two_le<uint32_t>(6u, 64u));     // even but not power-of-two
+static_assert(!dc::is_power_of_two_le<uint32_t>(7u, 64u));
+static_assert(!dc::is_power_of_two_le<uint32_t>(10u, 64u));
+static_assert(!dc::is_power_of_two_le<uint32_t>(12u, 64u));    // 8 + 4
+static_assert(!dc::is_power_of_two_le<uint32_t>(48u, 64u));    // 32 + 16, MISTAKEN as "even and ≤ bound"
+
+// Zero — REJECTED (canonical "0 is not a power of two" convention).
+static_assert(!dc::is_power_of_two_le<uint32_t>(0u, 64u));
+static_assert(!dc::is_power_of_two_le<uint64_t>(0ull, 1024ull));
+
+// Negative values on signed T — REJECTED.
+static_assert(!dc::is_power_of_two_le<int32_t>(-1, 64));
+static_assert(!dc::is_power_of_two_le<int32_t>(-128, 64));
+static_assert(!dc::is_power_of_two_le<int32_t>(
+    std::numeric_limits<int32_t>::min(), 64));   // INT_MIN — would UB on (x-1) without the x<=0 guard
+
+// Signed positive cases — same shape as unsigned.
+static_assert(dc::is_power_of_two_le<int32_t>(1, 64));
+static_assert(dc::is_power_of_two_le<int32_t>(64, 64));
+static_assert(!dc::is_power_of_two_le<int32_t>(48, 64));
+static_assert(!dc::is_power_of_two_le<int32_t>(128, 64));
+
+// Empty / degenerate bound — every input rejected.
+static_assert(!dc::is_power_of_two_le<uint32_t>(1u, 0u));        // bound = 0
+static_assert(!dc::is_power_of_two_le<int32_t>(1, -1));          // bound < 0
+
+// Boundary at uint64 max range.
+static_assert(dc::is_power_of_two_le<uint64_t>(
+    uint64_t{1} << 63, std::numeric_limits<uint64_t>::max()));
+
+// CONTRACT-109 production preview — SwissCtrl kGroupWidth shape.
+// kGroupWidth ∈ {16, 32, 64} (one of three SIMD widths); valid
+// values must satisfy is_power_of_two_le(w, 64).
+constexpr std::size_t valid_widths[] = {16, 32, 64};
+template <std::size_t... Is>
+constexpr bool all_valid_widths(std::index_sequence<Is...>) noexcept {
+    return (... && dc::is_power_of_two_le<std::size_t>(valid_widths[Is], 64));
+}
+static_assert(all_valid_widths(std::make_index_sequence<3>{}));
+
+// ── Composition with CRUCIBLE_PRE — capacity-validation production shape ─
+
+[[nodiscard]] constexpr std::size_t
+safe_table_capacity(std::size_t w) noexcept {
+    CRUCIBLE_PRE(dc::is_power_of_two_le<std::size_t>(w, 64));
+    return w;
+}
+
+static_assert(safe_table_capacity(16) == 16);
+static_assert(safe_table_capacity(32) == 32);
+static_assert(safe_table_capacity(64) == 64);
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -579,6 +663,35 @@ int main() {
     constexpr uint32_t weakly_tail_regress[] = {1, 2, 3, 5, 4};
     if (dc::weakly_increasing<uint32_t>(weakly_tail_regress)) {
         std::fprintf(stderr, "test_decide: weakly tail regress NOT detected\n");
+        return 1;
+    }
+
+    // is_power_of_two_le runtime witnesses.
+    std::size_t volatile sa_w = 32;
+    sink += static_cast<int>(safe_table_capacity(static_cast<std::size_t>(sa_w)));   // 32
+
+    if (!dc::is_power_of_two_le<uint32_t>(16u, 64u)) {
+        std::fprintf(stderr, "test_decide: 16 ≤ 64 (power of 2) WRONGLY rejected\n");
+        return 1;
+    }
+    if (dc::is_power_of_two_le<uint32_t>(48u, 64u)) {
+        std::fprintf(stderr, "test_decide: 48 (= 32+16, not pow2) WRONGLY accepted\n");
+        return 1;
+    }
+    if (dc::is_power_of_two_le<uint32_t>(128u, 64u)) {
+        std::fprintf(stderr, "test_decide: 128 > 64 WRONGLY accepted\n");
+        return 1;
+    }
+    if (dc::is_power_of_two_le<uint32_t>(0u, 64u)) {
+        std::fprintf(stderr, "test_decide: 0 WRONGLY accepted as power of 2\n");
+        return 1;
+    }
+    if (dc::is_power_of_two_le<int32_t>(-1, 64)) {
+        std::fprintf(stderr, "test_decide: -1 WRONGLY accepted as power of 2\n");
+        return 1;
+    }
+    if (dc::is_power_of_two_le<int32_t>(std::numeric_limits<int32_t>::min(), 64)) {
+        std::fprintf(stderr, "test_decide: INT_MIN WRONGLY accepted (UB-on-x-1 risk)\n");
         return 1;
     }
 

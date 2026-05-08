@@ -506,4 +506,92 @@ constexpr bool weakly_increasing(std::span<const T> xs) noexcept {
     return true;
 }
 
+// ─── is_power_of_two_le ────────────────────────────────────────────
+//
+// Returns true iff `x` is a positive power of two AND `x <= bound`.
+// Equivalently: x ∈ {1, 2, 4, 8, ...} ∩ [1, bound].  Rejects zero,
+// rejects negatives (on signed T), rejects values exceeding bound,
+// rejects values within bound that have more than one set bit.
+//
+// The conjunction structure — "power of two" AND "bounded above" —
+// is the canonical capacity-validation shape across hash tables
+// (RecipePool, ExprPool, SwissCtrl), bitmask-shaped masks (Cyclic
+// counters, ring sizes), aligned allocator tiers, and SIMD lane
+// counts.  Production code that hand-rolls "x is a power of two
+// at most K" has TWO bug surfaces (the bit test AND the comparison)
+// and HISTORICALLY ships with one or the other half-correct.
+//
+// SEMANTIC NOTE
+// -------------
+// Zero is REJECTED.  This matches std::has_single_bit (C++20) and
+// std::bit_floor / std::bit_ceil semantics: 0 is not a power of two.
+// Some legacy hardware conventions ("power of two of 2^∞") treat
+// 0 as power-of-two; safety-critical code must reject zero here
+// because downstream code that uses `mask = x - 1` would silently
+// produce mask = UINT_MAX for x = 0, which would index out-of-bounds.
+//
+// Negative values on signed T are REJECTED.  Two's-complement
+// representation guarantees any negative value has multiple set
+// bits.  The predicate's body short-circuits on `x <= 0` to avoid
+// the (x & (x-1)) computation underflowing for INT_MIN.
+//
+// `bound <= 0` is permitted: the predicate returns false for every
+// possible x (no positive power of two fits in the empty interval
+// [1, bound]).  Equivalent to vacuous-rejection on empty domain.
+//
+// USAGE PATTERN
+// -------------
+//
+//   // CONTRACT-109 production usage shape: SwissCtrl group width
+//   // must be a power of two ≤ 64 (the AVX-512 byte-vector limit).
+//   constexpr bool valid_group_width(std::size_t w) noexcept {
+//       CRUCIBLE_PRE(crucible::decide::is_power_of_two_le<std::size_t>(w, 64));
+//       return true;
+//   }
+//
+//   // At consteval, planted non-power-of-two fails compilation:
+//   //   static_assert(valid_group_width(48));  // 48 has bits set in 32+16
+//   //                 ↑ rejected: "non-constant condition"
+//   // And planted over-bound fails too:
+//   //   static_assert(valid_group_width(128));  // 128 > 64
+//   //                 ↑ rejected: "non-constant condition"
+//
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ------------------------------------------------------
+//   (none yet — first migration batch lands with CONTRACT-109:
+//    RecipePool::capacity_, ExprPool::capacity_, SwissCtrl::kGroupWidth,
+//    PoolAllocator::ptr_table_size, TraceRing::CAPACITY validation)
+//
+// ANTI-PATTERNS (review-rejected)
+// -------------------------------
+//   * `pre (x % 2 == 0)` — accepts 6, 10, 12 (any even number).
+//     Misunderstands "power of two" as "divisible by two".
+//   * `pre ((x & 1) == 0)` — same as `% 2 == 0`, rejects only odd.
+//   * `pre (__builtin_popcount(x) == 1)` — correct power-of-two
+//     test, but no bound; misses overflow/oversize cases.
+//   * `pre (std::has_single_bit(x))` — same as popcount==1 above;
+//     C++20 idiom, still no bound.  Cite this procedure to bind
+//     the conjunction.
+//   * `pre (x <= K)` alone — bound check without power-of-two
+//     enforcement; downstream code that does `x & (x - 1)` to
+//     compute a mask silently breaks.
+//   * `pre (x > 0 && (x & (x - 1)) == 0 && x <= K)` — correct,
+//     but spelled out at every call site; three places to drift,
+//     three places to forget the "x > 0" guard against UB on
+//     signed T (INT_MIN - 1 is UB).  Always cite this procedure.
+template <std::integral T>
+[[nodiscard, gnu::const]]
+constexpr bool is_power_of_two_le(T x, T bound) noexcept {
+    if (x <= T{0}) {
+        return false;  // rejects zero and (for signed T) negatives
+    }
+    if (x > bound) {
+        return false;
+    }
+    // x > 0 implies x - 1 is well-defined for both signed and
+    // unsigned T (no underflow / no UB).  Power-of-two test:
+    // exactly one bit set ↔ (x & (x - 1)) == 0 for positive x.
+    return (x & (x - T{1})) == T{0};
+}
+
 }  // namespace crucible::decide
