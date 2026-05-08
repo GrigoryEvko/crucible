@@ -1901,7 +1901,7 @@ const auto& ck = *r;  // happy path
 
 `std::expected` is a union + discriminator tag (≤ 24 B for most errors). Can't be silently ignored (`[[nodiscard]]`). No heap, no exception tables.
 
-### Assertion macro triad
+### Assertion macro quartet
 
 ```cpp
 // ── CRUCIBLE_ASSERT ────────────────────────────────────────────
@@ -1937,12 +1937,47 @@ const auto& ck = *r;  // happy path
       }                                                                 \
   } while (0)
 #endif
+
+// ── CRUCIBLE_PRE / CRUCIBLE_POST ───────────────────────────────
+// Boundary pre/postcondition that fires at consteval AND runtime,
+// regardless of return-type shape or whether the predicate
+// references `this->` members. Closes the GCC 16.1.1 consteval-
+// bypass hole that vanilla P2900 `pre()` / `post (r:...)` leave
+// for foldable-bodied functions whose predicates touch class
+// members through `this->` (silently bypassed at consteval —
+// `[[assume]]`-only in NDEBUG with no neg-compile fixture protection).
+//
+// The quartet's "always-fire" rail. NDEBUG cost is zero — the
+// clause collapses to `[[assume(cond)]]` for the optimizer; with
+// `-fcontract-evaluation-semantic=enforce` it `std::abort()`s on
+// violation; under static_assert/consteval it triggers
+// `__builtin_trap()` which is non-constexpr and poisons the
+// surrounding consteval call.
+#define CRUCIBLE_PRE(cond)         /* see safety/Pre.h */
+#define CRUCIBLE_POST(retvar, cond) /* see safety/Post.h */
 ```
 
 **When to use which:**
 - `CRUCIBLE_ASSERT` — public API entry. Contracts handle it.
 - `CRUCIBLE_DEBUG_ASSERT` — SPSC ring bounds, arena bump sanity, RNG counter — hot path, can't afford a branch.
 - `CRUCIBLE_INVARIANT` — loop trip counts, alignment, range bounds. The optimizer uses it.
+- `CRUCIBLE_PRE` / `CRUCIBLE_POST` — boundary pre/postcondition where the predicate references `this->` members or the return value's pointee. Mandatory replacement for vanilla P2900 `pre()` / `post (r:...)` whenever the consteval-bypass family applies. CONTRACT-100..127 sweep (Decide-cite-discipline) plus the dual-side pre+post audit rule run through this rail.
+
+#### VC discharge framing — three layers stack
+
+`CRUCIBLE_PRE` / `CRUCIBLE_POST` are the production-level discharge mechanism for verification conditions (VCs) that the type system cannot statically prove. Three layers stack from cheapest to most expensive:
+
+1. **Type-level proof (always-discharge):** `Refined<bounded_above<8>, uint8_t>` proves at construction that the wrapped value is in [0, 8]. Downstream functions that take `Refined<...>` need NO pre clause — the type IS the proof. Cheapest, most preferred form.
+2. **Named predicate cite (catalog discharge):** `CRUCIBLE_PRE(decide::in_range<uint8_t>(idx, 0, 7))` — one of 14 named predicates in `safety/Decide.h` (CONTRACT-020 catalog). Names are grep-discoverable; future hardening (lifting `idx` to `Refined`) propagates through the predicate name once. Cite-discipline migrations follow `CONTRACT-100..127` commit-message tags.
+3. **Anonymous predicate (one-off discharge):** `CRUCIBLE_PRE(p != nullptr && p->ready)` — direct expression, no catalog cite. Acceptable for genuinely bespoke mid-body invariants, but the CONTRACT-* migration sweep prefers (2) so audits can count "operations guarded against integer overflow" via `grep decide::no_overflow_sum`.
+
+**Dual-side discipline:** every CONTRACT-* migration audits BOTH `CRUCIBLE_PRE` and `CRUCIBLE_POST`. Skip post only with documented rationale: tautological (body IS the post), racy (atomic CAS re-read opens TOCTOU), or structurally-not-guaranteed (XOR-collision corner case). See `feedback_pre_post_dual_discipline.md` for the pattern. Three classes of post recur: state-mutation (`state == new_value` after a setter), result-shape (returned value satisfies a structural invariant), lifecycle reset (ctor/init/clear/destroy returns the structure to a documented invariant).
+
+**Two known traps:**
+- **Disjunction-vs-implies for null-guarded post:** `decide::implies(p != nullptr, p->status == X)` evaluates BOTH args eagerly under C++ function-call semantics — `p->status` derefs null when p is null. Use C++ short-circuit `||` (`p == nullptr || p->status == X`) when the consequent dereferences a witnessed non-null pointer. See `feedback_decide_implies_eager_eval.md` (UBSan-caught regression on `Tx::activate`, fixed in `9a0fc58`).
+- **Consteval-bypass on `this->` member predicates (GCC 16.1.1):** vanilla P2900 `pre()` / `post (r:...)` referencing class members through `this->` silently bypasses at consteval for foldable bodies. Migrate to in-body `CRUCIBLE_PRE` / `CRUCIBLE_POST`. The shim macros use `__builtin_trap()` (non-constexpr) to poison the surrounding consteval call.
+
+Full per-axiom enforcement story for `CRUCIBLE_PRE` / `CRUCIBLE_POST` lives in `include/crucible/safety/Pre.h` and `include/crucible/safety/Post.h` docstrings.
 
 ### Abort path
 
