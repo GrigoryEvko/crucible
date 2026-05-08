@@ -17,7 +17,9 @@
 
 #include <crucible/MerkleDag.h>
 #include <crucible/Platform.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/Post.h>
 
 #include <cassert>
 #include <chrono>
@@ -109,6 +111,28 @@ class TransactionLog {
         // saturate-don't-abort semantic so the type-system gate fires
         // only on bug-in-bug regressions (e.g. an unconditional bump).
         if (count_.get() < N) count_.bump();
+        // CONTRACT-Tx-Begin-POST: factory result-shape contract — every
+        // begin_tx returns a non-null Transaction in the RECORDING state
+        // with the caller's step_id stamped.  Catches a future refactor
+        // that moves the head_++ before the *tx assignment (would return
+        // a pointer into uninitialized ring slot) or that bumps count_
+        // unconditionally past the N saturation point.
+        //   (1) tx != nullptr — entries_[head_ & MASK] is always a valid
+        //       slot in the bounded ring; the address arithmetic cannot
+        //       produce nullptr unless entries_ itself is null, which
+        //       NSDMI initialization rules out.
+        //   (2) tx->status == RECORDING — value-init via TxStatus's
+        //       NSDMI default (RECORDING is the first enumerator and the
+        //       NSDMI on the field).
+        //   (3) tx->step_id == step_id — caller's step_id stamped above.
+        // Routes through CRUCIBLE_POST: the predicates dereference the
+        // freshly-acquired `tx` pointer; same GCC 16.1.1 consteval-bypass
+        // family as CONTRACT-100..108-POST and all sibling POSTs in this
+        // session.  Under NDEBUG these collapse to `[[assume]]` so the
+        // commit() path can speculate on RECORDING without re-checking.
+        CRUCIBLE_POST(tx, tx != nullptr);
+        CRUCIBLE_POST(tx, tx->status == TxStatus::RECORDING);
+        CRUCIBLE_POST(tx, tx->step_id == step_id);
         return tx;
     }
 
@@ -118,10 +142,20 @@ class TransactionLog {
                 ContentHash content_hash, MerkleHash merkle_root) noexcept
         pre (tx != nullptr)
         pre (region != nullptr)
-        post (r: !r || tx->status == TxStatus::COMMITTED)
     {
         if (tx->status != TxStatus::RECORDING
             && tx->status != TxStatus::CLOSED) {
+            // CONTRACT-Tx-Commit-POST: failure path — false return.
+            // The implication post r → COMMITTED holds vacuously.
+            // Migrated from P2900 post(r: ...) to in-body CRUCIBLE_POST
+            // because P2900 post(r:...) referencing a parameter pointee
+            // (`tx->status`) is silently bypassed at consteval in GCC
+            // 16.1.1 — same family as CONTRACT-100..108-POST and all
+            // sibling Tx posts in this session.  The clause below is
+            // re-stated identically so the predicate fires under
+            // semantic=enforce and propagates as `[[assume]]` under
+            // NDEBUG.
+            CRUCIBLE_POST(0, !false || tx->status == TxStatus::COMMITTED);
             return false;
         }
         tx->region       = region;
@@ -129,6 +163,23 @@ class TransactionLog {
         tx->merkle_root  = merkle_root;
         tx->status       = TxStatus::COMMITTED;
         tx->ts_ns        = now_ns();
+        // CONTRACT-Tx-Commit-POST: success path — strengthen the
+        // returned-true case.  After a successful commit:
+        //   (1) tx->status == COMMITTED (set above)
+        //   (2) tx->region == region   (set above; catches a refactor
+        //                                that drops the assignment, which
+        //                                would leave region == nullptr
+        //                                from begin_tx's value-init)
+        //   (3) tx->content_hash == content_hash (caller's hash echoed)
+        //   (4) tx->merkle_root  == merkle_root  (caller's root echoed)
+        // The pre-existing P2900 post (r: !r || COMMITTED) collapses to
+        // (true → COMMITTED) on this path, which (1) covers — the three
+        // additional posts strengthen the contract without changing
+        // semantics.  Same consteval-bypass framing as the failure path.
+        CRUCIBLE_POST(true, tx->status == TxStatus::COMMITTED);
+        CRUCIBLE_POST(true, tx->region == region);
+        CRUCIBLE_POST(true, tx->content_hash == content_hash);
+        CRUCIBLE_POST(true, tx->merkle_root == merkle_root);
         return true;
     }
 
@@ -137,9 +188,18 @@ class TransactionLog {
     // if no previous ACTIVE existed.
     [[nodiscard]] Transaction* activate(Transaction* const tx) noexcept
         pre (tx != nullptr)
-        post (r: r == nullptr || tx->status == TxStatus::ACTIVE)
     {
-        if (tx->status != TxStatus::COMMITTED) return nullptr;
+        if (tx->status != TxStatus::COMMITTED) {
+            // CONTRACT-Tx-Activate-POST: rejected-promotion path.
+            // The original P2900 post (r: r == nullptr || ACTIVE) holds
+            // because nullptr-return makes the disjunction true
+            // vacuously.  Migrated to CRUCIBLE_POST for the same
+            // GCC 16.1.1 consteval-bypass-vulnerable parameter-pointee
+            // reason as commit() above.
+            CRUCIBLE_POST(static_cast<Transaction*>(nullptr),
+                          true || tx->status == TxStatus::ACTIVE);
+            return nullptr;
+        }
 
         // Demote the current active transaction.
         Transaction* prev = nullptr;
@@ -152,6 +212,35 @@ class TransactionLog {
         tx->status = TxStatus::ACTIVE;
         tx->ts_ns  = now_ns();
         active_tx_ = tx;
+        // CONTRACT-Tx-Activate-POST: successful-promotion path —
+        // strengthen invariants for the success case:
+        //   (1) tx->status == ACTIVE          (set above)
+        //   (2) active_tx_ == tx              (set above; pins the
+        //                                       SWMR observation that
+        //                                       fg dispatch-path
+        //                                       readers see)
+        //   (3) prev == nullptr || prev->status == SUPERSEDED
+        //                                      (the demoted previous
+        //                                       active is now in the
+        //                                       SUPERSEDED state, ready
+        //                                       for rollback() to find;
+        //                                       discharges via implies).
+        // Routes through CRUCIBLE_POST for the consteval-bypass-vulnerable
+        // parameter-pointee + class-member predicates.  The third post
+        // is the C++ `||` disjunction form rather than `decide::implies`
+        // because `decide::implies(antecedent, consequent)` evaluates
+        // both arguments eagerly (function-call semantics) — when
+        // `prev == nullptr`, the consequent `prev->status` would
+        // null-deref before the predicate folds.  C++ `||` is
+        // short-circuit, so the consequent is only evaluated when
+        // prev != nullptr — semantically equivalent to the implies
+        // catalog predicate, deref-safe.  This is documented as the
+        // CRUCIBLE_PRE/POST disjunction pattern where the consequent
+        // dereferences the antecedent's witnessed non-null pointer.
+        CRUCIBLE_POST(prev, tx->status == TxStatus::ACTIVE);
+        CRUCIBLE_POST(prev, active_tx_ == tx);
+        CRUCIBLE_POST(prev, prev == nullptr ||
+                            prev->status == TxStatus::SUPERSEDED);
         return prev;
     }
 
