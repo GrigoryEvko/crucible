@@ -48,7 +48,17 @@ struct Edge {
   // Validating setters: fire on port ≥ 64.  The binary-search
   // edge assembly paths that populate Edge pairs should route
   // through these rather than writing the fields directly.
-  void set_src_port(uint8_t p) noexcept pre (p <= kMaxPort) {
+  // CONTRACT-Edge-SetSrcPort-PRE / CONTRACT-Edge-SetDstPort-PRE
+  // (cite migration 2026-05-08): the bare `p <= kMaxPort` clause
+  // is promoted to `decide::in_range<uint8_t>(p, 0, kMaxPort)`.
+  // Parameter-only predicate (no `this->`-member access) — vanilla
+  // P2900 `pre()` is consteval-safe; the win is the named
+  // predicate so future hardening (lifting `p` callers to
+  // `Refined<bounded_above<kMaxPort>, uint8_t>`) propagates by
+  // name, and `grep decide::in_range` discovers this gate.
+  void set_src_port(uint8_t p) noexcept
+      pre (::crucible::decide::in_range<uint8_t>(p, 0, kMaxPort))
+  {
     src_port = p;
     // CONTRACT-Edge-SetSrcPort-POST: state-mutation post.  Pre rules
     // out p > kMaxPort, leaving `src_port = p` as the only legal
@@ -64,7 +74,9 @@ struct Edge {
     // template POST poison" trap, commit 9e818c7).
     CRUCIBLE_POST(0, src_port == p);
   }
-  void set_dst_port(uint8_t p) noexcept pre (p <= kMaxPort) {
+  void set_dst_port(uint8_t p) noexcept
+      pre (::crucible::decide::in_range<uint8_t>(p, 0, kMaxPort))
+  {
     dst_port = p;
     // CONTRACT-Edge-SetDstPort-POST: mirror of
     // CONTRACT-Edge-SetSrcPort-POST above.  Catches the same
