@@ -6,6 +6,8 @@
 
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
+#include <crucible/safety/Decide.h>
+#include <crucible/safety/Pre.h>
 
 namespace crucible {
 
@@ -100,45 +102,76 @@ struct TraceGraph {
   // calls with the same argument within a basic block.
   //
   // TypeSafe: OpIndex parameter rejects accidental SlotId / NodeId /
-  // raw uint32_t mixing.  pre() guards the bounds so the indexed load
-  // compiles without a runtime check under release semantic=ignore.
+  // raw uint32_t mixing.  The bounds gate discharges through the
+  // named predicate `crucible::decide::in_range` (CONTRACT-102):
+  // closed interval `[0, num_ops - 1]` is reviewable as a single
+  // citation rather than a bare `<` (which conflates exclusive
+  // count with inclusive max — see decide.h anti-patterns).
+  //
+  // The `num_ops > 0` companion guard is paired because
+  // `num_ops - 1u` underflows to UINT32_MAX when num_ops==0, which
+  // would make `in_range(i, 0, UINT32_MAX)` accept every value;
+  // production never calls these accessors on an empty graph (no
+  // valid OpIndex can exist for a zero-op TraceGraph) but defense-
+  // in-depth catches a future refactor that exposes this path.
+  //
+  // The pre clauses move from P2900 `pre()` to in-body
+  // CRUCIBLE_PRE because P2900 `pre()` referencing a class member
+  // through `this->` (`num_ops`) is silently bypassed at consteval
+  // in GCC 16.1.1 (same gotcha that forced CONTRACT-100 /
+  // CONTRACT-101 to migrate).  CRUCIBLE_PRE fires symmetrically at
+  // consteval, runtime, and as `[[assume]]` for the optimizer.
   [[nodiscard, gnu::pure]] const Edge* fwd_begin(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
-      pre (i.raw() < num_ops)
   {
+    CRUCIBLE_PRE(num_ops > 0u);
+    CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
+        i.raw(), 0u, num_ops - 1u));
     return fwd_edges + fwd_offsets[i.raw()];
   }
   [[nodiscard, gnu::pure]] const Edge* fwd_end(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
-      pre (i.raw() < num_ops)
   {
+    CRUCIBLE_PRE(num_ops > 0u);
+    CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
+        i.raw(), 0u, num_ops - 1u));
     return fwd_edges + fwd_offsets[i.raw() + 1];
   }
   [[nodiscard, gnu::pure]] uint32_t out_degree(OpIndex i) const noexcept
-      pre (i.raw() < num_ops)
   {
+    CRUCIBLE_PRE(num_ops > 0u);
+    CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
+        i.raw(), 0u, num_ops - 1u));
     return fwd_offsets[i.raw() + 1] - fwd_offsets[i.raw()];
   }
 
   // ── Reverse queries (dst → src): "who produces op i's inputs?" ──
   [[nodiscard, gnu::pure]] const Edge* rev_begin(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
-      pre (i.raw() < num_ops)
   {
+    CRUCIBLE_PRE(num_ops > 0u);
+    CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
+        i.raw(), 0u, num_ops - 1u));
     return rev_edges + rev_offsets[i.raw()];
   }
   [[nodiscard, gnu::pure]] const Edge* rev_end(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
-      pre (i.raw() < num_ops)
   {
+    CRUCIBLE_PRE(num_ops > 0u);
+    CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
+        i.raw(), 0u, num_ops - 1u));
     return rev_edges + rev_offsets[i.raw() + 1];
   }
   [[nodiscard, gnu::pure]] uint32_t in_degree(OpIndex i) const noexcept
-      pre (i.raw() < num_ops)
   {
+    CRUCIBLE_PRE(num_ops > 0u);
+    CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
+        i.raw(), 0u, num_ops - 1u));
     return rev_offsets[i.raw() + 1] - rev_offsets[i.raw()];
   }
 
   // ── Node access ──
   [[nodiscard, gnu::pure]] const TraceEntry& op(OpIndex i) const noexcept CRUCIBLE_LIFETIMEBOUND
-      pre (i.raw() < num_ops)
   {
+    CRUCIBLE_PRE(num_ops > 0u);
+    CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
+        i.raw(), 0u, num_ops - 1u));
     return ops[i.raw()];
   }
 };

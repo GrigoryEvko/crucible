@@ -12,8 +12,11 @@
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <crucible/safety/Bits.h>
+#include <crucible/safety/Decide.h>
+#include <crucible/safety/Pre.h>
 
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <utility>
@@ -231,13 +234,29 @@ class CRUCIBLE_OWNER SymbolTable {
   //       symbols.  Without this guard, reading `expr.symbol_id` on
   //       a non-symbol Expr and feeding it to any query function
   //       below would dereference `entries_[UINT32_MAX]` — silent
-  //       catastrophic OOB before #114.
+  //       catastrophic OOB before #114.  This clause stays as a
+  //       P2900 `pre()` because it references the parameter only
+  //       (no class-member dereference at consteval-bypass risk).
   //
   //   (b) the raw index is within the current vector size.  The
   //       three mutators already asserted this; the queries did not,
   //       leaving a TypeSafe hole where a stale SymbolId from a
   //       different SymbolTable (or from a serialized snapshot
-  //       loaded at different time) silently OOB-read.
+  //       loaded at different time) silently OOB-read.  This clause
+  //       moves to in-body CRUCIBLE_PRE because P2900 `pre()` on
+  //       member functions referencing a class member through `this`
+  //       (`entries_.size()`) is silently bypassed at consteval in
+  //       GCC 16.1.1 — same gotcha that forced CONTRACT-100 /
+  //       CONTRACT-101 to migrate.
+  //
+  // The bounds check discharges through the named predicate
+  // `crucible::decide::in_range` (CONTRACT-102) — closed-interval
+  // bounds.  The `!entries_.empty()` guard is paired because
+  // `entries_.size() - 1` underflows when size==0 to SIZE_MAX,
+  // which would make `in_range(id, 0, SIZE_MAX)` accept everything;
+  // production never calls these accessors on an empty table (no
+  // valid SymbolId can exist for a zero-entry table) but defense-
+  // in-depth catches a future refactor that exposes this path.
   //
   // Consolidating into one pair of helpers means future audits that
   // want to log / instrument / harden access have exactly two
@@ -245,15 +264,23 @@ class CRUCIBLE_OWNER SymbolTable {
 
   [[nodiscard, gnu::pure]] const SymbolEntry& entry_at(SymbolId id) const noexcept
       pre (id.is_valid())
-      pre (id.raw() < entries_.size())
   {
+    CRUCIBLE_PRE(!entries_.empty());
+    CRUCIBLE_PRE(::crucible::decide::in_range<std::size_t>(
+        static_cast<std::size_t>(id.raw()),
+        std::size_t{0},
+        entries_.size() - std::size_t{1}));
     return entries_[id.raw()];
   }
 
   [[nodiscard]] SymbolEntry& entry_at_mut(SymbolId id) noexcept
       pre (id.is_valid())
-      pre (id.raw() < entries_.size())
   {
+    CRUCIBLE_PRE(!entries_.empty());
+    CRUCIBLE_PRE(::crucible::decide::in_range<std::size_t>(
+        static_cast<std::size_t>(id.raw()),
+        std::size_t{0},
+        entries_.size() - std::size_t{1}));
     return entries_[id.raw()];
   }
 

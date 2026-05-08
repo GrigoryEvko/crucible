@@ -1430,6 +1430,75 @@ static_assert(admit_slot_offset<4096, 64, 64>(4096 - 64));
 // Positive — middle slot at a 64-aligned offset.
 static_assert(admit_slot_offset<4096, 64, 64>(2048));
 
+// ── in_range positive witnesses ────────────────────────────────────
+//
+// Coverage matrix:
+//   * Both endpoints (closed interval includes them).
+//   * Interior values across signed/unsigned/8/16/32/64-bit T.
+//   * Singleton interval [x, x] — one and only one accepting value.
+//   * Empty interval (lo > hi) — rejects everything.
+
+// Singleton interval — exactly one acceptor.
+static_assert( dc::in_range(7, 7, 7));
+static_assert(!dc::in_range(6, 7, 7));
+static_assert(!dc::in_range(8, 7, 7));
+
+// Closed-interval endpoint witness — both endpoints accept.
+static_assert( dc::in_range(0, 0, 10));
+static_assert( dc::in_range(10, 0, 10));
+// One-past-each-end — closed interval excludes them.
+static_assert(!dc::in_range(11, 0, 10));
+// Note: under-low witness for unsigned T uses non-zero lo (0 - 1
+// would wrap on uint), so we use signed T or shift the interval.
+static_assert(!dc::in_range(0, 1, 10));
+
+// Interior values across the integer-type matrix.
+static_assert( dc::in_range<std::uint8_t>(64, 0, 255));
+static_assert( dc::in_range<std::uint16_t>(1024, 0, 65535));
+static_assert( dc::in_range<std::uint32_t>(0xCAFEBABE, 0, 0xFFFFFFFF));
+static_assert( dc::in_range<std::uint64_t>(
+    0xDEADBEEFCAFEBABEULL, 0ULL,
+    std::numeric_limits<std::uint64_t>::max()));
+
+// Signed witnesses — negative low / interior / high crossings.
+static_assert( dc::in_range<std::int32_t>(0, -100, 100));
+static_assert( dc::in_range<std::int32_t>(-100, -100, 100));
+static_assert( dc::in_range<std::int32_t>(100, -100, 100));
+static_assert(!dc::in_range<std::int32_t>(-101, -100, 100));
+static_assert(!dc::in_range<std::int32_t>(101, -100, 100));
+
+// Empty interval (lo > hi) — predicate is total; returns false for
+// every x including the would-be endpoints.
+static_assert(!dc::in_range(5, 10, 0));
+static_assert(!dc::in_range(10, 10, 0));   // x == lo, but lo > hi
+static_assert(!dc::in_range(0, 10, 0));    // x == hi, but lo > hi
+
+// Full unsigned-domain interval — accepts everything.
+static_assert( dc::in_range<std::uint64_t>(
+    0ULL, 0ULL, std::numeric_limits<std::uint64_t>::max()));
+static_assert( dc::in_range<std::uint64_t>(
+    std::numeric_limits<std::uint64_t>::max(), 0ULL,
+    std::numeric_limits<std::uint64_t>::max()));
+
+// ── in_range production-shape preview ──────────────────────────────
+//
+// Models the SymbolTable / TraceGraph indexed-access call-site shape
+// that CONTRACT-102 adopts.  Templated capacity simulates the runtime
+// `entries_.size()` / `num_ops` bound.
+
+template <std::size_t Capacity>
+[[nodiscard]] constexpr bool admit_index(std::size_t i) noexcept {
+    static_assert(Capacity > 0, "test setup invariant: cap > 0");
+    CRUCIBLE_PRE(dc::in_range(i, std::size_t{0}, Capacity - 1));
+    return true;
+}
+// Positive — first index.
+static_assert(admit_index<8>(0));
+// Positive — last index.
+static_assert(admit_index<8>(7));
+// Positive — interior.
+static_assert(admit_index<8>(4));
+
 // ── is_non_zero positive witnesses ─────────────────────────────────
 //
 // Coverage matrix:
@@ -2114,6 +2183,91 @@ int main() {
                     static_cast<bool>(ant_t), static_cast<bool>(cons_t)))
               - static_cast<int>(dc::implies(
                     static_cast<bool>(ant_t), static_cast<bool>(cons_f)));
+    }
+
+    // ── in_range runtime witnesses ──────────────────────────────────
+    //
+    // Route inputs through volatile sinks so the predicate is invoked
+    // at runtime.  Cover both endpoints / interior / out-of-range
+    // above + below + empty-interval to pin every clause of the
+    // closed-interval characteristic function.
+    {
+        volatile std::uint32_t x_lo = 0;
+        volatile std::uint32_t x_hi = 10;
+        volatile std::uint32_t x_mid = 5;
+        volatile std::uint32_t x_above = 11;
+        volatile std::uint32_t lo = 0;
+        volatile std::uint32_t hi = 10;
+
+        if (!dc::in_range<std::uint32_t>(
+                static_cast<std::uint32_t>(x_lo),
+                static_cast<std::uint32_t>(lo),
+                static_cast<std::uint32_t>(hi))) {
+            std::fprintf(stderr,
+                "test_decide: in_range(0, 0, 10) WRONGLY rejected "
+                "(closed lower endpoint)\n");
+            return 1;
+        }
+        if (!dc::in_range<std::uint32_t>(
+                static_cast<std::uint32_t>(x_hi),
+                static_cast<std::uint32_t>(lo),
+                static_cast<std::uint32_t>(hi))) {
+            std::fprintf(stderr,
+                "test_decide: in_range(10, 0, 10) WRONGLY rejected "
+                "(closed upper endpoint)\n");
+            return 1;
+        }
+        if (!dc::in_range<std::uint32_t>(
+                static_cast<std::uint32_t>(x_mid),
+                static_cast<std::uint32_t>(lo),
+                static_cast<std::uint32_t>(hi))) {
+            std::fprintf(stderr,
+                "test_decide: in_range(5, 0, 10) WRONGLY rejected\n");
+            return 1;
+        }
+        if (dc::in_range<std::uint32_t>(
+                static_cast<std::uint32_t>(x_above),
+                static_cast<std::uint32_t>(lo),
+                static_cast<std::uint32_t>(hi))) {
+            std::fprintf(stderr,
+                "test_decide: in_range(11, 0, 10) WRONGLY accepted "
+                "(above-high violator)\n");
+            return 1;
+        }
+
+        // Below-low — shifted interval [1, 10] excludes 0.
+        volatile std::uint32_t lo_one = 1;
+        if (dc::in_range<std::uint32_t>(
+                static_cast<std::uint32_t>(x_lo),  // 0
+                static_cast<std::uint32_t>(lo_one),
+                static_cast<std::uint32_t>(hi))) {
+            std::fprintf(stderr,
+                "test_decide: in_range(0, 1, 10) WRONGLY accepted "
+                "(below-low violator)\n");
+            return 1;
+        }
+
+        // Empty interval (lo > hi) — total predicate, returns false.
+        volatile std::uint32_t lo_inv = 10;
+        volatile std::uint32_t hi_inv = 0;
+        if (dc::in_range<std::uint32_t>(
+                static_cast<std::uint32_t>(x_mid),
+                static_cast<std::uint32_t>(lo_inv),
+                static_cast<std::uint32_t>(hi_inv))) {
+            std::fprintf(stderr,
+                "test_decide: in_range(5, 10, 0) WRONGLY accepted "
+                "(empty interval admits)\n");
+            return 1;
+        }
+
+        sink += static_cast<int>(dc::in_range<std::uint32_t>(
+                    static_cast<std::uint32_t>(x_mid),
+                    static_cast<std::uint32_t>(lo),
+                    static_cast<std::uint32_t>(hi)))
+              - static_cast<int>(dc::in_range<std::uint32_t>(
+                    static_cast<std::uint32_t>(x_above),
+                    static_cast<std::uint32_t>(lo),
+                    static_cast<std::uint32_t>(hi)));
     }
 
     // ── aligned_in_range runtime witnesses ──────────────────────────

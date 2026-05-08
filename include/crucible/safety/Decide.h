@@ -1747,6 +1747,111 @@ constexpr bool aligned_in_range(std::uint64_t value,
         && (value % alignment) == 0u;
 }
 
+// ─── in_range ──────────────────────────────────────────────────────
+//
+// Returns true iff `lo <= x && x <= hi`, i.e. iff `x` lies in the
+// closed interval `[lo, hi]`.  The scalar peer of `all_in_range`
+// (span-quantified) and `aligned_in_range` (scalar with alignment).
+//
+// The catalog's bread-and-butter bounds check.  Every "validated
+// index into a sized array" pre-condition in the codebase reduces
+// to this shape: SymbolTable indexed access (entry_at(SymbolId)),
+// TraceGraph CSR queries (fwd_begin/end, rev_begin/end, op_at),
+// PoolAllocator slot dereference, ReplayEngine cursor advance,
+// MemoryPlan offset assignment.  Citing the named procedure rather
+// than hand-rolling `lo <= x && x <= hi` at every call site:
+//
+//   * gives reviewers a single grep target ("decide::in_range")
+//     for "every bounds check in the codebase"; future hardening
+//     (instrumentation, diagnostic enrichment, sanitizer wiring)
+//     has ONE touchpoint instead of dozens;
+//   * names the obligation in the source.  A reviewer reading
+//     `CRUCIBLE_PRE(decide::in_range(i, 0u, num_ops - 1u))` knows
+//     immediately what is being asserted; reading `pre (i < num_ops)`
+//     requires reconstructing intent (closed vs half-open? signed
+//     overflow? zero-element edge case?);
+//   * eliminates the boundary-confusion bug class.  The predicate
+//     is canonically CLOSED: `[lo, hi]` includes both endpoints.
+//     Half-open call sites write `decide::in_range(x, lo, hi - 1)`
+//     so the conversion is VISIBLE at the cite.  No more silent
+//     `<` vs `<=` typos.
+//
+// SEMANTIC NOTE
+// -------------
+// `lo > hi` is permitted: the predicate returns `false` for any
+// `x` (empty interval rejects everything) — same convention as
+// `all_in_range` over an empty span.  This is intentional per
+// CONTRACT-020 design principle #3 (predicates are TOTAL over
+// their argument domain).  Callers that want a stricter "valid
+// range bounds" check should compose with a separate cite.
+//
+// USAGE PATTERN
+// -------------
+//
+//   // Production usage shape (CONTRACT-102 SymbolTable migration):
+//   const SymbolEntry& entry_at(SymbolId id) const noexcept {
+//       CRUCIBLE_PRE(id.is_valid());
+//       CRUCIBLE_PRE(crucible::decide::in_range(
+//           static_cast<std::size_t>(id.raw()),
+//           std::size_t{0},
+//           entries_.size() - 1));
+//       return entries_[id.raw()];
+//   }
+//
+//   // Production usage shape (CONTRACT-102 TraceGraph migration):
+//   const Edge* fwd_begin(OpIndex i) const noexcept {
+//       CRUCIBLE_PRE(crucible::decide::in_range(
+//           i.raw(), std::uint32_t{0}, num_ops - 1u));
+//       return fwd_edges + fwd_offsets[i.raw()];
+//   }
+//
+//   // At consteval, a planted out-of-range value fails compilation:
+//   //   constexpr auto witness = gate(11u);  // gate uses in_range(x, 0, 10)
+//   //                 ↑ rejected: "non-constant condition" / __builtin_trap.
+//
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ------------------------------------------------------
+//   * SymbolTable::entry_at / entry_at_mut    (CONTRACT-102)
+//   * TraceGraph::fwd_begin/end/out_degree    (CONTRACT-102)
+//   * TraceGraph::rev_begin/end/in_degree     (CONTRACT-102)
+//   * TraceGraph::op (node access)            (CONTRACT-102)
+//
+// Future cites planned across CONTRACT-103 / CONTRACT-108 /
+// CONTRACT-112 and the wider `pre (i < cap)` sweep.
+//
+// ANTI-PATTERNS (review-rejected)
+// -------------------------------
+//   * `pre (lo < x && x < hi)` — open interval where the catalog
+//     is closed.  Off-by-one bug surface: a buggy impl that uses
+//     `<` instead of `<=` at one boundary admits values in the
+//     wrong half-cell.  Cite `decide::in_range(x, lo, hi)` and
+//     adjust by `hi - 1` if half-open is intended.
+//   * `pre (lo <= x && x <= hi)` — hand-rolled at every call site.
+//     Three places to drift, three places to forget the boundary
+//     convention.  Cite the named procedure.
+//   * `pre (x < cap)` — CAP-FORM that conflates "cap" with "hi";
+//     reviewer can't tell whether the bound is exclusive (cap is
+//     a count) or inclusive (cap is a max).  Cite
+//     `decide::in_range(x, 0, cap - 1)` to make the conversion
+//     visible; the `cap - 1` is half the bug-detection signal.
+//   * `pre (decide::all_in_range(std::span(&x, 1), lo, hi))` —
+//     SPAN-OF-1 noise.  All_in_range is for ELEMENTWISE checks
+//     over a sequence; cite the scalar peer for a single value.
+//
+// PROPERTIES (verified by test_decide.cpp)
+// ----------------------------------------
+//   - in_range(x, x, x) == true ∀x         (singleton interval).
+//   - in_range(lo, lo, hi) == (lo <= hi)   (lower endpoint).
+//   - in_range(hi, lo, hi) == (lo <= hi)   (upper endpoint).
+//   - in_range(x, lo, hi) == false  if lo > hi  (empty interval).
+//   - For lo <= hi: { x : in_range(x, lo, hi) } = [lo, hi]
+//     (predicate IS the closed-interval characteristic function).
+template <std::integral T>
+[[nodiscard, gnu::const]]
+constexpr bool in_range(T x, T lo, T hi) noexcept {
+    return lo <= x && x <= hi;
+}
+
 // ─── is_non_zero ───────────────────────────────────────────────────
 //
 // Returns true iff `x != T{}`, i.e. iff `x` is not equal to the

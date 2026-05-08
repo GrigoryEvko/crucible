@@ -5424,3 +5424,34 @@ crucible_neg_compile_test(neg_decide_is_non_zero_integer_zero
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_is_non_zero_aggregate_zero
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-102: crucible::decide::in_range — scalar closed-interval
+# bounds-check predicate.  TWO HS14 fixtures pinning ORTHOGONAL
+# bound-clause bug-class buckets:
+#
+#   * neg_decide_in_range_above_high — witness `(11, 0, 10)`.
+#     Catches ALWAYS-ACCEPT / IGNORED-HI (drop-upper-clause) /
+#     DISJUNCTION (wrong logical connective) impls that would
+#     silently admit out-of-range values past the upper endpoint.
+#   * neg_decide_in_range_below_low — witness `(0, 1, 10)` with
+#     deliberate non-zero `lo`.  Catches ALWAYS-ACCEPT (already
+#     covered) / IGNORED-LO (drop-lower-clause) / WRONG-DEFAULT-LOW
+#     (hardcodes `lo=0`, ignoring the parameter) / DISJUNCTION
+#     (already covered).  IGNORED-LO and WRONG-DEFAULT-LOW are
+#     UNIQUELY caught by this fixture; the companion fixture's
+#     witness uses lo=0 and so cannot detect a hardcoded-zero
+#     impl.
+#
+# Pair-by-pair orthogonality:
+#   - above-high catches drop-high + always-accept + disjunction.
+#   - below-low catches drop-low + always-accept (covered) +
+#     hardcoded-low + disjunction (covered).
+#   - The COMPANION positive static_asserts in test_decide.cpp
+#     (`in_range(10, 0, 10) == true`, `in_range(0, 0, 10) == true`)
+#     pin the closed-interval endpoints, catching off-by-one
+#     impls (`x < hi` instead of `x <= hi`) that this fixture
+#     pair does not catch directly.
+crucible_neg_compile_test(neg_decide_in_range_above_high
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_in_range_below_low
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
