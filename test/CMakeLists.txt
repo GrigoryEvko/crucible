@@ -5332,3 +5332,49 @@ crucible_neg_compile_test(neg_decide_disjunction_empty_span
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_disjunction_all_false_multi
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-081: crucible::decide::implies + ::aligned_in_range —
+# material implication + composed bounds-and-alignment predicate.
+# FOUR HS14 fixtures, TWO per procedure, each pair pinning
+# ORTHOGONAL bug-class buckets:
+#
+# Material implication (p → q ≡ ¬p ∨ q):
+#   * neg_decide_implies_true_false — fires on `(true, false)`.
+#     The unique rejecting cell of the implication truth table.
+#     Catches "always-true" / wrong-direction (converse) /
+#     constant-true bug classes.
+#   * neg_decide_implies_computed_antecedent — fires on
+#     `(decide::is_power_of_two_le(8u, 64u), false)`.  Antecedent
+#     is computed from another `decide::*` predicate; pins
+#     compositional VC discharge (the canonical production-cite
+#     shape) in addition to the rejecting-direction.
+#
+# Composed bounds + alignment (CLOSED interval [low, high] AND
+# multiple of alignment):
+#   * neg_decide_aligned_in_range_misaligned — fires on
+#     `(value=100, low=0, high=200, alignment=8)`.  Value in
+#     range but 100 % 8 = 4 ≠ 0.  Catches BOUNDS-ONLY-style
+#     buggy impls that drop the alignment clause.
+#   * neg_decide_aligned_in_range_out_of_range — fires on
+#     `(value=512, low=0, high=256, alignment=64)`.  Value
+#     correctly aligned (512 % 64 == 0) but exceeds high (=256).
+#     Catches ALIGNMENT-ONLY-style buggy impls that drop the
+#     upper-bound clause.
+#
+# Pair-by-pair orthogonality:
+#   - implies pair: (T, F) literal vs (computed_T, F).  Both
+#     reject under correct impl; an always-true impl accepts
+#     both.  A pure-literal-only evaluator (pathological) would
+#     pass #1 fail #2.
+#   - aligned_in_range pair: in-range/misaligned vs aligned/
+#     out-of-range.  A bounds-only impl passes #2 fails #1; an
+#     alignment-only impl passes #1 fails #2.  Distinct mismatch
+#     classes per HS14.
+crucible_neg_compile_test(neg_decide_implies_true_false
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_implies_computed_antecedent
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_aligned_in_range_misaligned
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_aligned_in_range_out_of_range
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")

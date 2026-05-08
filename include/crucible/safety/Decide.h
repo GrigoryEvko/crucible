@@ -1576,4 +1576,175 @@ constexpr bool disjunction(std::span<const bool> xs) noexcept {
     return false;
 }
 
+// ──────────────────────────────────────────────────────────────────
+// implies — material implication `antecedent → consequent`
+// (CONTRACT-081)
+// ──────────────────────────────────────────────────────────────────
+//
+// PROCEDURE: returns `!antecedent || consequent`, the standard
+// material-implication operator from classical propositional logic.
+// Truth table (the only false case is the second row):
+//
+//     antecedent | consequent | implies
+//     -----------+------------+--------
+//         T      |     T      |    T
+//         T      |     F      |    F   ← only false case
+//         F      |     T      |    T
+//         F      |     F      |    T
+//
+// USED BY:
+//   - Production migration batches encoding "if X then Y" guarded
+//     invariants:
+//       * "if region.sealed then region.content_hash != 0"  (Cipher
+//         publish gate; CONTRACT-106).
+//       * "if recipe.tier == BITEXACT_TC then recipe.tc_shape_hint
+//         is set"  (Forge Phase E.RecipeSelect; CONTRACT-111).
+//       * "if Cipher.tier == HOT then Cipher.warm_path == nullopt"
+//         (Cipher state-machine invariant; CONTRACT-119).
+//   - VC discharge for any `pre (X ? Y : true)` ternary-shaped
+//     precondition.  The ternary is structurally equivalent to
+//     `implies(X, Y)` and the named predicate makes the
+//     conditional-invariant obligation grep-discoverable.
+//
+// VC DISCHARGE: the binary form is the canonical encoding; the
+// span-based "all clauses imply each other" form is intentionally
+// NOT supplied because:
+//
+//   1. There is no associative monoid for chained implication
+//      (`(A → B) → C` ≠ `A → (B → C)` in general), so a fold has
+//      no canonical reduction.
+//   2. Real-world chained implication is invariably better
+//      expressed as `decide::conjunction({implies(A, B),
+//      implies(B, C)})` — explicit transitivity at the call site,
+//      which makes the proof obligation legible to readers and
+//      enables independent VC discharge of each step.
+//
+// ANTI-PATTERNS this predicate replaces:
+//
+//   pre (!region.sealed || region.content_hash != 0)
+//     // Reads as "either region is unsealed OR the hash is
+//     // non-zero", which buries the *conditional invariant* —
+//     // the actual obligation is "sealed regions have non-zero
+//     // hashes".  Replace with:
+//     pre (decide::implies(region.sealed, region.content_hash != 0))
+//
+//   pre (region.sealed ? region.content_hash != 0 : true)
+//     // Same conditional invariant, ternary-shaped.  The trailing
+//     // `: true` is dead syntax.  Replace with the implies cite.
+//
+//   pre (region.content_hash != 0 || !region.sealed)
+//     // De Morgan equivalent of the first form; same legibility
+//     // problem.
+//
+//   bool ok = !ant || cons;
+//   contract_assert(ok);
+//     // Open-coded; loses the named-predicate cite.  Replace with
+//     // implies cite at the assert site.
+//
+// PROPERTIES (verified by test_decide.cpp):
+//   - implies(T, T) == T, implies(T, F) == F.
+//   - implies(F, T) == T, implies(F, F) == T (vacuous truth on
+//     false antecedent).
+//   - !implies(p, q) ⇔ (p && !q)  (negation of implication).
+//   - implies(p, q) ⇔ disjunction({!p, q})  (De Morgan / definition).
+//   - implies(p, true) == true ∀p  (right-absorbing constant true).
+//   - implies(false, q) == true ∀q  (left-absorbing constant false).
+//   - Modus ponens: implies(p, q) && p → q.
+[[nodiscard, gnu::const]]
+constexpr bool implies(bool antecedent, bool consequent) noexcept {
+    return !antecedent || consequent;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// aligned_in_range — composed bounds + alignment predicate
+// (CONTRACT-081)
+// ──────────────────────────────────────────────────────────────────
+//
+// PROCEDURE: returns `true` iff `value` lies in the closed
+// interval `[low, high]` AND is a multiple of `alignment`.
+// `alignment == 0` is rejected (returns `false`) because it does
+// not represent any sensible alignment constraint and arithmetic
+// `value % 0` is undefined.
+//
+// Defined as:
+//
+//     alignment != 0
+//       && low <= value
+//       && value <= high
+//       && (value % alignment) == 0
+//
+// All four clauses must hold; the predicate is the structural AND
+// of bounds (CONTRACT-040 `all_in_range` analog over a single
+// element) and alignment (a freestanding modular-arithmetic
+// invariant).  The predicate INCLUDES the `alignment != 0` guard
+// rather than requiring callers to supply a separate
+// `pre (alignment != 0)` because:
+//
+//   1. Every production cite has the same guard verbatim — DRY.
+//   2. A buggy zero-alignment-passes implementation is a
+//      classical "it compiled and silently overflows" bug class
+//      that a defense-in-depth check catches at the predicate
+//      site.
+//
+// USED BY:
+//   - Memory plan offset assignment: `pre (decide::aligned_in_range(
+//       offset, 0, pool_bytes - slot_size, slot_alignment))`
+//     (CONTRACT-112 MemoryPlan migration).
+//   - PoolAllocator slot pointer derivation: `pre (decide::
+//     aligned_in_range(slot_offset, 0, capacity_bytes,
+//     ELEMENT_ALIGNMENT))` (CONTRACT-103 PoolAllocator migration).
+//   - Arena bump-allocator post-condition: `post (r:
+//     decide::aligned_in_range(reinterpret_cast<uintptr_t>(r),
+//     base, base + capacity, alignment))` (CONTRACT-101 Arena
+//     migration).
+//
+// ANTI-PATTERNS this predicate replaces:
+//
+//   pre (offset >= 0 && offset <= max_offset && (offset & 0xF) == 0)
+//     // Hard-coded alignment as bit-mask.  Loses the alignment
+//     // value at the call site (is it 16? 32? read the magic
+//     // number).  Replace with explicit alignment parameter:
+//     pre (decide::aligned_in_range(offset, 0, max_offset, 16))
+//
+//   pre (offset % alignment == 0)
+//     // ALIGNMENT-ONLY — drops the bounds check.  A buggy or
+//     // overflow-prone offset still passes.  Catches at runtime
+//     // as out-of-bounds memory access; should catch at predicate
+//     // site.
+//
+//   pre (low <= offset && offset <= high)
+//     // BOUNDS-ONLY — drops the alignment check.  A misaligned
+//     // pointer in-range still passes.  Catches at runtime as
+//     // crash-on-aligned-load (SIGBUS / partial-fault); should
+//     // catch at predicate site.
+//
+//   pre (offset >= low && offset < high && offset % alignment == 0)
+//     // OFF-BY-ONE on the upper bound — the predicate uses CLOSED
+//     // interval `[low, high]`.  If the call site needs half-open
+//     // `[low, high)`, write `aligned_in_range(offset, low,
+//     // high - 1, alignment)` explicitly so the off-by-one is
+//     // visible.
+//
+// PROPERTIES (verified by test_decide.cpp):
+//   - aligned_in_range(0, 0, 0, 1) == true   (degenerate identity).
+//   - aligned_in_range(v, 0, MAX, 1) == (v <= MAX) ∀v  (alignment 1
+//     reduces to plain bounds).
+//   - aligned_in_range(v, low, high, A) == false ∀v  if low > high
+//     (empty interval rejects everything, including aligned values).
+//   - aligned_in_range(v, low, high, 0) == false ∀v  (zero
+//     alignment is rejected by the guard clause).
+//   - For any A > 0: { v : aligned_in_range(v, low, high, A) } is
+//     the set { v ∈ [low, high] : A | v }, i.e. multiples of A in
+//     the interval.
+[[nodiscard, gnu::const]]
+constexpr bool aligned_in_range(std::uint64_t value,
+                                std::uint64_t low,
+                                std::uint64_t high,
+                                std::uint64_t alignment) noexcept {
+    return alignment != 0u
+        && low <= value
+        && value <= high
+        && (value % alignment) == 0u;
+}
+
 }  // namespace crucible::decide

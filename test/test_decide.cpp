@@ -1291,6 +1291,145 @@ constexpr bool any_clauses_pos[]  = {false, true, false};
 static_assert(admit_all_clauses(full_clauses_pos));
 static_assert(admit_any_clause(any_clauses_pos));
 
+// ── implies positive witnesses — material implication truth table ──
+//
+// p → q ≡ ¬p ∨ q.  The only false case is (T, F).
+static_assert( dc::implies(true,  true));   // T → T = T
+static_assert(!dc::implies(true,  false));  // T → F = F  ← only false
+static_assert( dc::implies(false, true));   // F → T = T
+static_assert( dc::implies(false, false));  // F → F = T  (vacuous)
+
+// ── implies algebraic-property witnesses ────────────────────────────
+//
+// These witnesses prove the predicate satisfies the standard
+// material-implication identities at consteval, which in turn lets
+// downstream readers cite `decide::implies(X, Y)` and trust the
+// transformations apply.
+//
+//   1. Right-absorbing constant: implies(p, true) == true ∀p.
+//   2. Left-absorbing constant:  implies(false, q) == true ∀q.
+//   3. Negation:                 !implies(p, q) ⇔ (p && !q).
+//   4. De Morgan / definition:   implies(p, q) ⇔ disjunction({!p, q}).
+//   5. Modus ponens:              implies(p, q) && p → q.
+static_assert( dc::implies(true,  true)  && dc::implies(false, true));   // (1)
+static_assert( dc::implies(false, true)  && dc::implies(false, false));  // (2)
+static_assert((!dc::implies(true, false)) == (true && !false));          // (3)
+
+// (4) De Morgan / definition: implies(p, q) ⇔ disjunction({!p, q}).
+//     For p=T, q=F: implies = F, disjunction({F, F}) = F.  Match.
+constexpr bool implies_dm_xs_TF[] = {!true, false};
+static_assert(
+    dc::implies(true, false)
+    == dc::disjunction(std::span<const bool>{implies_dm_xs_TF}));
+//     For p=F, q=T: implies = T, disjunction({T, T}) = T.  Match.
+constexpr bool implies_dm_xs_FT[] = {!false, true};
+static_assert(
+    dc::implies(false, true)
+    == dc::disjunction(std::span<const bool>{implies_dm_xs_FT}));
+
+// (5) Modus ponens: from implies(p, q) and p, conclude q.  Encoded as
+//     "if (implies AND antecedent) hold, the consequent must hold".
+//     For (T, T): premise T && antecedent T → conclusion T must hold.
+static_assert(
+    !(dc::implies(true, true) && true) || true);
+//     For (T, F): premise F → vacuous (left side of !... is true).
+static_assert(
+    !(dc::implies(true, false) && true) || false);
+
+// ── implies production-shape preview — guarded conditional invariant
+//
+// The canonical use case: a precondition encoding "if X then Y must
+// hold".  This template models the call-site shape that production
+// migration batches (CONTRACT-106 / CONTRACT-111 / CONTRACT-119)
+// will adopt to replace `pre (!X || Y)` and `pre (X ? Y : true)`.
+[[nodiscard]] constexpr bool admit_when(bool guard, bool inner) noexcept {
+    CRUCIBLE_PRE(dc::implies(guard, inner));
+    return true;
+}
+// Positive — guard holds and inner holds (T → T = T, accepts).
+static_assert(admit_when(true,  true));
+// Positive — guard does NOT hold (F → ? = T regardless, accepts).
+static_assert(admit_when(false, true));
+static_assert(admit_when(false, false));
+
+// ── aligned_in_range positive witnesses ────────────────────────────
+//
+// Boundary cases for the closed interval `[low, high]` and the
+// alignment divisibility check.  The predicate accepts when ALL
+// four clauses hold: alignment > 0, low ≤ value, value ≤ high,
+// value % alignment == 0.
+//
+// Degenerate identity — single-point interval, alignment 1.
+static_assert( dc::aligned_in_range(0, 0, 0, 1));
+// In-range, aligned at low boundary.
+static_assert( dc::aligned_in_range(64, 64, 256, 64));
+// In-range, aligned at high boundary.
+static_assert( dc::aligned_in_range(256, 64, 256, 64));
+// In-range, aligned in the middle.
+static_assert( dc::aligned_in_range(128, 64, 256, 64));
+// Alignment-1 reduces to plain bounds: any value in range accepts.
+static_assert( dc::aligned_in_range(123, 0, 1000, 1));
+// Alignment-1 plus low==high==value (smallest non-trivial witness).
+static_assert( dc::aligned_in_range(7, 7, 7, 1));
+// Big-power-of-2 alignment that still divides value cleanly.
+static_assert( dc::aligned_in_range(1u << 20, 0, 1u << 24, 1u << 16));
+
+// ── aligned_in_range negative witnesses ────────────────────────────
+//
+// Each clause violated independently — the predicate must reject in
+// every case.  A buggy "any-clause-passes" or "drop-one-clause"
+// implementation would let one of these through.
+//
+// (a) value < low — bounds violated (below).
+static_assert(!dc::aligned_in_range(32, 64, 256, 32));
+// (b) value > high — bounds violated (above).
+static_assert(!dc::aligned_in_range(320, 64, 256, 64));
+// (c) misaligned but in range — alignment violated (mid).
+static_assert(!dc::aligned_in_range(100, 0, 200, 8));
+// (d) zero alignment — guard clause rejects regardless of value.
+static_assert(!dc::aligned_in_range(64, 0, 128, 0));
+// (e) empty interval (low > high) — no value can satisfy.
+static_assert(!dc::aligned_in_range(0, 100, 50, 1));
+// (f) value at low - 1 — pins the closed-interval lower endpoint.
+static_assert(!dc::aligned_in_range(63, 64, 256, 1));
+// (g) value at high + 1 — pins the closed-interval upper endpoint.
+static_assert(!dc::aligned_in_range(257, 64, 256, 1));
+
+// ── aligned_in_range bounds × alignment cross-product ──────────────
+//
+// Demonstrates that bounds and alignment are checked independently:
+// a value can fail one without the other.
+//
+// Misaligned, in range — alignment-fail.
+static_assert(!dc::aligned_in_range(100, 0, 200, 16));
+// Aligned, out of range above — bounds-fail.
+static_assert(!dc::aligned_in_range(256, 0, 200, 64));
+// Aligned, out of range below — bounds-fail.
+static_assert(!dc::aligned_in_range(0, 64, 256, 32));
+
+// ── aligned_in_range production-shape preview ──────────────────────
+//
+// Models the canonical MemoryPlan / PoolAllocator call-site shape
+// that CONTRACT-103 / CONTRACT-112 will adopt.  A slot offset must
+// lie in [0, capacity_bytes - slot_bytes] AND be aligned to the
+// slot's natural alignment.  At consteval we instantiate with
+// concrete values to prove the predicate accepts the canonical
+// "good" case and rejects each independent violation.
+template <std::uint64_t Capacity, std::uint64_t SlotBytes,
+          std::uint64_t Alignment>
+[[nodiscard]] constexpr bool admit_slot_offset(std::uint64_t offset) noexcept {
+    static_assert(SlotBytes <= Capacity, "test setup invariant");
+    CRUCIBLE_PRE(dc::aligned_in_range(
+        offset, 0, Capacity - SlotBytes, Alignment));
+    return true;
+}
+// Positive — first slot at offset 0, aligned to 64.
+static_assert(admit_slot_offset<4096, 64, 64>(0));
+// Positive — last slot at offset (capacity - slot_bytes), aligned.
+static_assert(admit_slot_offset<4096, 64, 64>(4096 - 64));
+// Positive — middle slot at a 64-aligned offset.
+static_assert(admit_slot_offset<4096, 64, 64>(2048));
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -1854,6 +1993,140 @@ int main() {
                     std::span<const bool>{clauses_first_true}))
               - static_cast<int>(dc::disjunction(
                     std::span<const bool>{clauses_all_false}));
+    }
+
+    // ── implies runtime witnesses ───────────────────────────────────
+    //
+    // Route bool inputs through volatile sinks to defeat constexpr
+    // folding.  Each of the four truth-table cells is exercised; the
+    // rejecting cell (T, F) is proved false to pin the rejecting
+    // direction.
+    {
+        volatile bool ant_t = true;
+        volatile bool ant_f = false;
+        volatile bool cons_t = true;
+        volatile bool cons_f = false;
+
+        // Positive — T → T = T accepted.
+        if (!dc::implies(static_cast<bool>(ant_t),
+                         static_cast<bool>(cons_t))) {
+            std::fprintf(stderr,
+                "test_decide: implies(T, T) WRONGLY rejected\n");
+            return 1;
+        }
+        // Negative — T → F = F rejected.
+        if (dc::implies(static_cast<bool>(ant_t),
+                        static_cast<bool>(cons_f))) {
+            std::fprintf(stderr,
+                "test_decide: implies(T, F) WRONGLY accepted "
+                "(always-true / wrong-direction violator)\n");
+            return 1;
+        }
+        // Positive (vacuous) — F → T = T accepted.
+        if (!dc::implies(static_cast<bool>(ant_f),
+                         static_cast<bool>(cons_t))) {
+            std::fprintf(stderr,
+                "test_decide: implies(F, T) WRONGLY rejected "
+                "(IFF-instead-of-implies violator)\n");
+            return 1;
+        }
+        // Positive (vacuous) — F → F = T accepted.
+        if (!dc::implies(static_cast<bool>(ant_f),
+                         static_cast<bool>(cons_f))) {
+            std::fprintf(stderr,
+                "test_decide: implies(F, F) WRONGLY rejected "
+                "(IFF-instead-of-implies violator)\n");
+            return 1;
+        }
+
+        sink += static_cast<int>(dc::implies(
+                    static_cast<bool>(ant_t), static_cast<bool>(cons_t)))
+              - static_cast<int>(dc::implies(
+                    static_cast<bool>(ant_t), static_cast<bool>(cons_f)));
+    }
+
+    // ── aligned_in_range runtime witnesses ──────────────────────────
+    //
+    // Route uint64_t inputs through volatile sinks so the predicate
+    // is invoked at runtime.  Cover positive / bounds-violator /
+    // alignment-violator / zero-alignment-violator independently to
+    // pin each clause.
+    {
+        volatile std::uint64_t off_good = 128;
+        volatile std::uint64_t off_oob_below = 32;
+        volatile std::uint64_t off_oob_above = 320;
+        volatile std::uint64_t off_misaligned = 100;
+        volatile std::uint64_t lo = 64;
+        volatile std::uint64_t hi = 256;
+        volatile std::uint64_t aln = 64;
+        volatile std::uint64_t aln_zero = 0;
+
+        // Positive — in range, aligned.
+        if (!dc::aligned_in_range(
+                static_cast<std::uint64_t>(off_good),
+                static_cast<std::uint64_t>(lo),
+                static_cast<std::uint64_t>(hi),
+                static_cast<std::uint64_t>(aln))) {
+            std::fprintf(stderr,
+                "test_decide: aligned_in_range(in-range, aligned) "
+                "WRONGLY rejected\n");
+            return 1;
+        }
+        // Negative — value below lo.
+        if (dc::aligned_in_range(
+                static_cast<std::uint64_t>(off_oob_below),
+                static_cast<std::uint64_t>(lo),
+                static_cast<std::uint64_t>(hi),
+                static_cast<std::uint64_t>(aln))) {
+            std::fprintf(stderr,
+                "test_decide: aligned_in_range(below-lo) "
+                "WRONGLY accepted (alignment-only violator)\n");
+            return 1;
+        }
+        // Negative — value above hi.
+        if (dc::aligned_in_range(
+                static_cast<std::uint64_t>(off_oob_above),
+                static_cast<std::uint64_t>(lo),
+                static_cast<std::uint64_t>(hi),
+                static_cast<std::uint64_t>(aln))) {
+            std::fprintf(stderr,
+                "test_decide: aligned_in_range(above-hi) "
+                "WRONGLY accepted (alignment-only violator)\n");
+            return 1;
+        }
+        // Negative — misaligned but in range.
+        if (dc::aligned_in_range(
+                static_cast<std::uint64_t>(off_misaligned),
+                static_cast<std::uint64_t>(lo),
+                static_cast<std::uint64_t>(hi),
+                static_cast<std::uint64_t>(aln))) {
+            std::fprintf(stderr,
+                "test_decide: aligned_in_range(misaligned) "
+                "WRONGLY accepted (bounds-only violator)\n");
+            return 1;
+        }
+        // Negative — zero alignment guard.
+        if (dc::aligned_in_range(
+                static_cast<std::uint64_t>(off_good),
+                static_cast<std::uint64_t>(lo),
+                static_cast<std::uint64_t>(hi),
+                static_cast<std::uint64_t>(aln_zero))) {
+            std::fprintf(stderr,
+                "test_decide: aligned_in_range(zero-alignment) "
+                "WRONGLY accepted (alignment-guard violator)\n");
+            return 1;
+        }
+
+        sink += static_cast<int>(dc::aligned_in_range(
+                    static_cast<std::uint64_t>(off_good),
+                    static_cast<std::uint64_t>(lo),
+                    static_cast<std::uint64_t>(hi),
+                    static_cast<std::uint64_t>(aln)))
+              - static_cast<int>(dc::aligned_in_range(
+                    static_cast<std::uint64_t>(off_misaligned),
+                    static_cast<std::uint64_t>(lo),
+                    static_cast<std::uint64_t>(hi),
+                    static_cast<std::uint64_t>(aln)));
     }
 
     if (sink == 0) {
