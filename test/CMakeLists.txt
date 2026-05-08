@@ -5090,3 +5090,32 @@ crucible_neg_compile_test(neg_decide_is_power_of_two_le_non_pow2
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_is_power_of_two_le_above_bound
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-051: HS14 fixture pair pinning that decide::factorization_eq
+# correctly fires inside CRUCIBLE_PRE at consteval.  First multi-
+# factor MULTIPLICATIVE predicate in the spine (vs. additive
+# no_overflow_sum and elementwise all_in_range).  Production
+# usage: 5D parallelism config where TP × DP × PP × EP × CP must
+# equal world_size; partition optimizer in Meridian.  Two distinct
+# mismatch classes:
+#
+#   * neg_decide_factorization_eq_wrong_product — value-mismatch
+#     class.  Factors {8, 2, 4, 1, 2} multiply to 128 within
+#     uint32_t range, but expected total is 64.  Catches the
+#     transcription bug class where an engineer writes the wrong
+#     dimension (TP=8 instead of TP=4).  No overflow involved.
+#   * neg_decide_factorization_eq_overflow — overflow class.
+#     Factors {65536, 65536} multiply to 2^32 which wraps to 0
+#     in uint32_t arithmetic; total is also 0.  A naive
+#     std::accumulate-with-multiplies<> implementation would
+#     silently accept (wrapped product == total).  Catches the
+#     untrusted-input / range-validation bug class.
+#
+# Together the two fixtures pin BOTH failure modes the predicate
+# detects: mathematical-product mismatch AND running-product
+# overflow.  Either produces a false return; only factorization_eq
+# rejects both at the boundary.
+crucible_neg_compile_test(neg_decide_factorization_eq_wrong_product
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_factorization_eq_overflow
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")

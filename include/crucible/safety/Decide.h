@@ -594,4 +594,91 @@ constexpr bool is_power_of_two_le(T x, T bound) noexcept {
     return (x & (x - T{1})) == T{0};
 }
 
+// ─── factorization_eq ──────────────────────────────────────────────
+//
+// Returns true iff `prod(factors) == total` AND the running
+// product never overflows T during the multiplication.  Empty
+// span returns `total == 1` (vacuous: empty product is the
+// multiplicative identity).
+//
+// The shape: span-quantified MULTIPLICATIVE check.  Distinct from
+// the additive shape (no_overflow_sum is binary; this is n-ary)
+// AND distinct from the elementwise-quantified shape (all_in_range
+// is per-element; this aggregates).  Production usage: 5D
+// parallelism config (TP × DP × PP × EP × CP == world_size),
+// memory plan total_bytes = sum(slot_sizes) — wait, that's
+// additive.  This is the multiplicative branch: any place where
+// a product MUST equal a known total.
+//
+// SEMANTIC NOTE
+// -------------
+// Overflow during the running product is REJECTED.  Even if the
+// wrapped value happens to coincide with `total`, the predicate
+// returns false because the mathematical product (in arbitrary-
+// precision arithmetic) does NOT equal `total`.  This is the
+// canonical "saturating predicate" semantics — Decide procedures
+// detect overflow and reject; callers cannot accidentally rely on
+// modular arithmetic.
+//
+// The check uses `__builtin_mul_overflow` per-step, identical to
+// the discipline in `no_overflow_mul`.  Total cost: O(n) muls,
+// each branch-free (the overflow flag is a CPU register read).
+//
+// Empty span returns `total == 1`:  ∏_{f ∈ ∅} f = 1 (empty product).
+// So `factorization_eq([], 1) == true` and `factorization_eq([], 0)`
+// or `factorization_eq([], 5)` is false.  This matches the
+// mathematical convention; callers that prefer to reject empty
+// span outright should compose with `pre(!factors.empty())`.
+//
+// Factor of 0 forces the product to 0; equality with `total` then
+// requires `total == 0`.  Factor of 1 is the multiplicative
+// identity (no effect).  Negative factors on signed T are
+// permitted; the running product reflects sign-flip semantics.
+//
+// USAGE PATTERN
+// -------------
+//
+//   // CONTRACT-110 production usage shape: 5D parallelism factor
+//   // decomposition must multiply to world_size.
+//   constexpr bool valid_5d_partition(std::span<const uint32_t> dims,
+//                                     uint32_t world_size) noexcept {
+//       CRUCIBLE_PRE(crucible::decide::factorization_eq(dims, world_size));
+//       return true;
+//   }
+//
+//   // At consteval, planted off-by-factor fails compilation:
+//   //   constexpr uint32_t bad_dims[] = {8, 2, 4, 1, 2};  // 128
+//   //   static_assert(valid_5d_partition(bad_dims, 64));   // 64 != 128
+//   //                 ↑ rejected: "non-constant condition"
+//
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ------------------------------------------------------
+//   (none yet — first migration batch lands with CONTRACT-110:
+//    5D parallelism config validation in Distribution layer +
+//    discrete-search partition optimizer in Meridian)
+//
+// ANTI-PATTERNS (review-rejected)
+// -------------------------------
+//   * `pre (TP * DP * PP * EP * CP == world_size)` — written
+//     out at every call site; misses overflow at the literal
+//     multiplication level (the comparison sees a wrapped value
+//     and may silently accept).
+//   * `pre (std::accumulate(begin, end, 1, multiplies<>) == total)`
+//     — same overflow blindness; std::accumulate uses bare `*`.
+//   * `pre (factors.size() == 5)` — checks dimensionality but not
+//     product; admits a 5-tuple with nonsensical product.
+//   * `pre (no_overflow_mul(...) && ...)` chained — verbose and
+//     drifts.  Always cite this procedure for the n-ary case.
+template <std::integral T>
+[[nodiscard, gnu::pure]]
+constexpr bool factorization_eq(std::span<const T> factors, T total) noexcept {
+    T product{1};
+    for (T const& f : factors) {
+        if (__builtin_mul_overflow(product, f, &product)) {
+            return false;  // overflow — cannot represent the true product
+        }
+    }
+    return product == total;
+}
+
 }  // namespace crucible::decide

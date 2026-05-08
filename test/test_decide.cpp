@@ -514,6 +514,87 @@ static_assert(safe_table_capacity(16) == 16);
 static_assert(safe_table_capacity(32) == 32);
 static_assert(safe_table_capacity(64) == 64);
 
+// ── factorization_eq positive witnesses ────────────────────────────
+//
+// Span-quantified MULTIPLICATIVE check (vs. the additive
+// no_overflow_sum and elementwise all_in_range).  Detects:
+//   * factor product matches total           — accept
+//   * factor product mismatches total        — reject
+//   * factor product overflows during scan   — reject (saturating)
+//
+// Empty span: empty product = 1 (multiplicative identity).
+// `factorization_eq([], 1) == true`, others false.
+
+// Empty span — empty product is 1.
+static_assert(dc::factorization_eq<uint32_t>(std::span<const uint32_t>{}, 1u));
+static_assert(!dc::factorization_eq<uint32_t>(std::span<const uint32_t>{}, 0u));
+static_assert(!dc::factorization_eq<uint32_t>(std::span<const uint32_t>{}, 5u));
+
+// Singleton spans — product equals the lone factor.
+constexpr uint32_t single_two[] = {2u};
+static_assert(dc::factorization_eq<uint32_t>(single_two, 2u));
+static_assert(!dc::factorization_eq<uint32_t>(single_two, 4u));
+
+// Trivial 2-factor cases.
+constexpr uint32_t two_three[] = {2u, 3u};
+static_assert(dc::factorization_eq<uint32_t>(two_three, 6u));
+static_assert(!dc::factorization_eq<uint32_t>(two_three, 5u));
+static_assert(!dc::factorization_eq<uint32_t>(two_three, 7u));
+
+// Multiplicative identity factors — order doesn't matter, 1s ignored.
+constexpr uint32_t with_ones[] = {1u, 4u, 1u, 2u, 1u};
+static_assert(dc::factorization_eq<uint32_t>(with_ones, 8u));
+static_assert(!dc::factorization_eq<uint32_t>(with_ones, 4u));
+
+// Zero factor — product collapses to zero.
+constexpr uint32_t with_zero[] = {2u, 0u, 5u};
+static_assert(dc::factorization_eq<uint32_t>(with_zero, 0u));
+static_assert(!dc::factorization_eq<uint32_t>(with_zero, 10u));
+
+// CONTRACT-110 production preview — 5D parallelism factor
+// decomposition.  TP × DP × PP × EP × CP must equal world_size.
+constexpr uint32_t partition_64[] = {2u, 4u, 4u, 1u, 2u};   // 64
+static_assert(dc::factorization_eq<uint32_t>(partition_64, 64u));
+static_assert(!dc::factorization_eq<uint32_t>(partition_64, 32u));
+static_assert(!dc::factorization_eq<uint32_t>(partition_64, 128u));
+
+// 5D partition where TP = 1 (no tensor parallelism) — degenerate
+// but valid; product still must equal world_size.
+constexpr uint32_t partition_no_tp[] = {1u, 8u, 4u, 1u, 2u};   // 64
+static_assert(dc::factorization_eq<uint32_t>(partition_no_tp, 64u));
+
+// Overflow detection — running product overflows uint32_t.
+constexpr uint32_t overflowing[] = {65536u, 65536u, 2u};   // 2^33
+static_assert(!dc::factorization_eq<uint32_t>(overflowing, 0u));
+static_assert(!dc::factorization_eq<uint32_t>(overflowing, 8589934592ull
+                                              & 0xFFFFFFFFu));    // wrapped value
+
+// Even if the wrapped product happens to coincide with `total`
+// numerically, the predicate REJECTS — overflow is a categorical
+// failure, not a value-equality check.
+constexpr uint32_t hits_zero_via_wrap[] = {65536u, 65536u};   // 2^32 wraps to 0
+static_assert(!dc::factorization_eq<uint32_t>(hits_zero_via_wrap, 0u));
+
+// uint64_t — large factorizations stay in range.
+constexpr uint64_t partition_1m[] = {16ull, 16ull, 16ull, 16ull, 16ull};  // 16^5 = 2^20
+static_assert(dc::factorization_eq<uint64_t>(partition_1m, 1ull << 20));
+
+// Signed T — negative factors flip sign.
+constexpr int32_t signed_factors[] = {-2, 3, -4};   // (-2)*3*(-4) = 24
+static_assert(dc::factorization_eq<int32_t>(signed_factors, 24));
+static_assert(!dc::factorization_eq<int32_t>(signed_factors, -24));
+
+// ── Composition with CRUCIBLE_PRE — partition-validation production shape ─
+
+[[nodiscard]] constexpr uint32_t
+safe_partition_world_size(std::span<const uint32_t> dims, uint32_t world) noexcept {
+    CRUCIBLE_PRE(dc::factorization_eq(dims, world));
+    return world;
+}
+
+static_assert(safe_partition_world_size(partition_64, 64u) == 64u);
+static_assert(safe_partition_world_size(partition_no_tp, 64u) == 64u);
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -692,6 +773,31 @@ int main() {
     }
     if (dc::is_power_of_two_le<int32_t>(std::numeric_limits<int32_t>::min(), 64)) {
         std::fprintf(stderr, "test_decide: INT_MIN WRONGLY accepted (UB-on-x-1 risk)\n");
+        return 1;
+    }
+
+    // factorization_eq runtime witnesses.
+    uint32_t volatile sa_dims[5] = {2, 4, 4, 1, 2};
+    uint32_t dims_copy[5] = {sa_dims[0], sa_dims[1], sa_dims[2], sa_dims[3], sa_dims[4]};
+    sink += static_cast<int>(safe_partition_world_size(
+        std::span<const uint32_t>{dims_copy, 5}, 64u));   // 64
+
+    if (!dc::factorization_eq<uint32_t>(std::span<const uint32_t>{}, 1u)) {
+        std::fprintf(stderr, "test_decide: empty product != 1\n");
+        return 1;
+    }
+    if (dc::factorization_eq<uint32_t>(std::span<const uint32_t>{}, 0u)) {
+        std::fprintf(stderr, "test_decide: empty product WRONGLY equals 0\n");
+        return 1;
+    }
+    constexpr uint32_t bad_partition[] = {8u, 2u, 4u, 1u, 2u};   // product = 128
+    if (dc::factorization_eq<uint32_t>(bad_partition, 64u)) {
+        std::fprintf(stderr, "test_decide: 128 != 64 WRONGLY accepted\n");
+        return 1;
+    }
+    constexpr uint32_t overflow_factors[] = {65536u, 65536u};   // 2^32, wraps to 0
+    if (dc::factorization_eq<uint32_t>(overflow_factors, 0u)) {
+        std::fprintf(stderr, "test_decide: overflow-wrap WRONGLY accepted\n");
         return 1;
     }
 
