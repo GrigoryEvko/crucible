@@ -917,4 +917,163 @@ constexpr bool intervals_pairwise_disjoint(
     return true;
 }
 
+// ─── intervals_cover_unit ──────────────────────────────────────────
+//
+// Returns true iff the input intervals form an EXACT PARTITION of
+// the half-open unit range `[0, total)`:
+//
+//   1. each interval is well-formed (`lo <= hi`),
+//   2. each interval is non-empty (`lo < hi`),
+//   3. each interval is contained in `[0, total)`,
+//   4. all pairs are disjoint (no overlaps),
+//   5. the sum of widths equals `total` (no gaps).
+//
+// (4) AND (5) AND (3) together imply EXACT coverage: pairwise-
+// disjoint subintervals each contained in `[0, total)` whose
+// widths sum to the unit's width must by pigeonhole cover every
+// integer in `[0, total)` exactly once.
+//
+// Distinct from `intervals_pairwise_disjoint`:
+//   * `intervals_pairwise_disjoint` allows GAPS between intervals
+//     (just forbids overlap).  Use when slots may have unused
+//     bytes between them.
+//   * `intervals_cover_unit` (this procedure) FORBIDS GAPS as
+//     well as overlaps.  Use when the family must EXACTLY tile
+//     a target range — e.g., a partition of compute work, a
+//     Cipher cold-tier blob layout that must be hole-free, a
+//     5D parallelism shard cover.
+//
+// SEMANTIC NOTES
+// --------------
+// 1. Empty span + `total == 0` returns true (vacuous: the empty
+//    family partitions the empty range).  Empty span +
+//    `total > 0` returns false (cannot cover a nonempty range
+//    with no intervals).
+//
+// 2. Empty intervals (`lo == hi`) are REJECTED.  Mathematically
+//    they don't contribute to coverage, but their presence in a
+//    "partition" almost always indicates a caller bug (a slot
+//    that took zero space, an empty shard).  Surfacing them at
+//    construction time prevents downstream confusion.  Callers
+//    that genuinely want to allow degenerate empties must filter
+//    before calling.
+//
+// 3. Negative `total` (signed T) returns false.  No partition
+//    of an inverted range is well-defined.
+//
+// 4. Negative `lo` (signed T) on any subinterval returns false
+//    (out-of-bounds below).  Vacuously true for unsigned T.
+//
+// 5. Overflow.  The width sum is bounded above by `total` because
+//    each interval is contained in `[0, total)` and they are
+//    pairwise disjoint.  But to be safe under adversarial input
+//    where the bounds check might be evaded by a clever caller
+//    (it can't, but defensive coding), the sum uses
+//    `__builtin_add_overflow` and returns false on overflow.
+//
+// 6. Algorithm.  O(n²) brute-force pairwise compare in pass 3
+//    (matching `intervals_pairwise_disjoint`).  For typical
+//    production sizes (tens of slots), consteval-cheap.
+//
+// USAGE PATTERN
+// -------------
+//
+//   // CONTRACT-119 production usage shape: Cipher cold-tier blob
+//   // layout — slots must EXACTLY tile the blob's byte range.
+//   constexpr bool valid_blob_layout(
+//       std::span<const crucible::decide::Interval<uint64_t>> slots,
+//       uint64_t blob_bytes
+//   ) noexcept {
+//       CRUCIBLE_PRE(crucible::decide::intervals_cover_unit(slots, blob_bytes));
+//       return true;
+//   }
+//
+//   // At consteval, planted gap fails compilation:
+//   //   constexpr Interval<uint64_t> bad[] = {{0, 50}, {60, 100}};
+//   //   static_assert(valid_blob_layout(bad, 100));
+//   //                 ↑ rejected: gap at [50, 60)
+//
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ------------------------------------------------------
+//   (none yet — first migration batch lands with CONTRACT-119:
+//    Cipher cold-tier blob layout in Cipher.h, where slots must
+//    hole-free tile the on-disk blob; AND CONTRACT-110: 5D
+//    parallelism shard cover where TP × DP × PP × EP × CP shards
+//    must exactly partition each tensor dim.)
+//
+// ANTI-PATTERNS (review-rejected)
+// -------------------------------
+//   * `pre (intervals_pairwise_disjoint(slots) &&
+//           all_in_range(slot_los, 0, total))` — disjoint plus
+//     contained does NOT imply cover.  Misses the gap class:
+//     `{[0, 30), [50, 100)}` is disjoint and contained in
+//     `[0, 100)` but does NOT cover.
+//   * `pre (sum(widths) == total)` — ignores overlap.  Two
+//     overlapping intervals with the right widths sum to total
+//     while leaving holes elsewhere.
+//   * `pre (sort && for-adjacent: hi[i] == lo[i+1] &&
+//           hi[n-1] == total)` — written out at every call site;
+//     duplicates the partition logic; drifts.  Always cite this
+//     procedure for the n-ary partition case.
+//   * `pre (max(hi_i) == total && min(lo_i) == 0)` —
+//     boundary-only check, blind to interior gaps and overlaps.
+template <std::integral T, std::size_t N = std::dynamic_extent>
+[[nodiscard, gnu::pure]]
+constexpr bool intervals_cover_unit(
+    std::span<const Interval<T>, N> ivs,
+    T total
+) noexcept {
+    // Negative or trivial total: only the empty span partitions
+    // an empty range; a negative total has no valid partition.
+    if (total < T{0}) {
+        return false;
+    }
+    if (total == T{0}) {
+        return ivs.empty();
+    }
+    // Pass 1: per-interval validation (well-formedness, non-
+    // emptiness, containment in [0, total)).
+    for (Interval<T> const& iv : ivs) {
+        if (iv.lo > iv.hi) {
+            return false;  // malformed
+        }
+        if (iv.lo == iv.hi) {
+            return false;  // empty interval — see semantic note 2
+        }
+        if (iv.lo < T{0}) {
+            return false;  // out-of-bounds below (signed T only)
+        }
+        if (iv.hi > total) {
+            return false;  // out-of-bounds above
+        }
+    }
+    // Pass 2: pairwise disjoint (matches intervals_pairwise_disjoint
+    // pass 2 semantics).  We don't call the sibling predicate
+    // because we'd lose the early-exit benefits of fusing pass 1
+    // and pass 3 with this scan.
+    for (std::size_t i = 0; i < ivs.size(); ++i) {
+        for (std::size_t j = i + 1; j < ivs.size(); ++j) {
+            const bool a_left_of_b = ivs[i].hi <= ivs[j].lo;
+            const bool b_left_of_a = ivs[j].hi <= ivs[i].lo;
+            if (!a_left_of_b && !b_left_of_a) {
+                return false;
+            }
+        }
+    }
+    // Pass 3: sum of widths.  Each (hi - lo) is non-negative
+    // because pass 1 enforced lo < hi.  The running sum is
+    // bounded above by `total` thanks to pairwise disjointness +
+    // containment (passes 1, 2), but we still use overflow-
+    // detecting add for defense-in-depth.  Equality with `total`
+    // is the no-gaps witness.
+    T width_sum{0};
+    for (Interval<T> const& iv : ivs) {
+        const T width = static_cast<T>(iv.hi - iv.lo);
+        if (__builtin_add_overflow(width_sum, width, &width_sum)) {
+            return false;
+        }
+    }
+    return width_sum == total;
+}
+
 }  // namespace crucible::decide

@@ -5168,3 +5168,30 @@ crucible_neg_compile_test(neg_decide_intervals_pairwise_disjoint_overlap
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_intervals_pairwise_disjoint_inverted
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-061 fixtures — pin Decide::intervals_cover_unit:
+# EXACT partition of `[0, total)` — pairwise disjoint AND each
+# contained in `[0, total)` AND each non-empty AND widths sum to
+# `total`.  Strictly stronger than intervals_pairwise_disjoint
+# (which permits gaps).  Production cite: Cipher cold-tier blob
+# layout (must hole-free tile the on-disk blob); 5D parallelism
+# shard cover where TP×DP×PP×EP×CP shards must exactly partition
+# the global tensor dim.  Two distinct mismatch classes:
+#
+#   * neg_decide_intervals_cover_unit_gap — fires on `{[0, 30),
+#     [50, 100)}` with total=100.  Pairwise disjoint AND each in
+#     bounds, but the sum of widths (80) != total (100): a 20-
+#     byte gap at [30, 50).  Catches the missing-completeness
+#     bug class.
+#   * neg_decide_intervals_cover_unit_overshoot — fires on
+#     `{[0, 50), [50, 110)}` with total=100.  Pairwise disjoint,
+#     first interval in bounds, but the second has hi=110 >
+#     total=100.  Pass-1 per-interval bounds check rejects.
+#     Catches the missing-bounds-check bug class.
+#
+# Together the two fixtures pin BOTH the "incomplete partition"
+# bug (gap) AND the "out-of-bounds shard" bug (overshoot).
+crucible_neg_compile_test(neg_decide_intervals_cover_unit_gap
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_intervals_cover_unit_overshoot
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")

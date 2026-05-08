@@ -824,6 +824,102 @@ constexpr dc::Interval<int32_t> two_slots_disjoint_life[] = {
 static_assert(slots_have_disjoint_lifetimes(
     std::span<const dc::Interval<int32_t>>{two_slots_disjoint_life}));
 
+// ── intervals_cover_unit ───────────────────────────────────────────
+// EXACT partition of `[0, total)` — no gaps, no overlaps, all
+// non-empty, all contained.  Production cite: Cipher cold-tier
+// blob layout (must hole-free tile the on-disk blob); 5D
+// parallelism shard cover.
+
+// Empty span + total=0 — vacuous true.
+static_assert(dc::intervals_cover_unit(
+    std::span<const dc::Interval<uint64_t>>{}, uint64_t{0}));
+
+// Empty span + nonzero total — false (nothing covers anything).
+static_assert(!dc::intervals_cover_unit(
+    std::span<const dc::Interval<uint64_t>>{}, uint64_t{100}));
+
+// Single interval covering [0, total).
+constexpr dc::Interval<uint64_t> whole_one[] = {{0, 100}};
+static_assert(dc::intervals_cover_unit(std::span{whole_one}, uint64_t{100}));
+
+// Two-piece partition.
+constexpr dc::Interval<uint64_t> two_piece[] = {{0, 40}, {40, 100}};
+static_assert(dc::intervals_cover_unit(std::span{two_piece}, uint64_t{100}));
+
+// Multi-piece partition (5 contiguous slots, packed).
+constexpr dc::Interval<uint64_t> five_packed[] = {
+    {0, 20}, {20, 50}, {50, 64}, {64, 90}, {90, 128},
+};
+static_assert(dc::intervals_cover_unit(std::span{five_packed}, uint64_t{128}));
+
+// Out-of-order partition — predicate is order-independent.
+constexpr dc::Interval<uint64_t> reordered[] = {{40, 100}, {0, 40}};
+static_assert(dc::intervals_cover_unit(std::span{reordered}, uint64_t{100}));
+
+// ── Negative cases ─────────────────────────────────────────────────
+
+// Gap — pairwise disjoint, all in bounds, but holes left.
+constexpr dc::Interval<uint64_t> gap_left_unfilled[] = {{10, 50}, {50, 100}};
+static_assert(!dc::intervals_cover_unit(std::span{gap_left_unfilled}, uint64_t{100}));
+// (gap [0, 10) is uncovered)
+
+constexpr dc::Interval<uint64_t> gap_middle[] = {{0, 30}, {50, 100}};
+static_assert(!dc::intervals_cover_unit(std::span{gap_middle}, uint64_t{100}));
+
+constexpr dc::Interval<uint64_t> gap_right[] = {{0, 50}, {50, 90}};
+static_assert(!dc::intervals_cover_unit(std::span{gap_right}, uint64_t{100}));
+
+// Overlap — sums and bounds may match by coincidence but the
+// pairwise-disjoint check rejects.
+constexpr dc::Interval<uint64_t> overlap_in_bounds[] = {{0, 60}, {40, 100}};
+static_assert(!dc::intervals_cover_unit(std::span{overlap_in_bounds}, uint64_t{100}));
+
+// Out-of-bounds (above) — interval extends past total.
+constexpr dc::Interval<uint64_t> overshoot[] = {{0, 50}, {50, 110}};
+static_assert(!dc::intervals_cover_unit(std::span{overshoot}, uint64_t{100}));
+
+// Empty interval rejected (semantic note 2).
+constexpr dc::Interval<uint64_t> with_empty_iv[] = {{0, 50}, {50, 50}, {50, 100}};
+static_assert(!dc::intervals_cover_unit(std::span{with_empty_iv}, uint64_t{100}));
+
+// Inverted (malformed) interval rejected (pass 1 well-formedness).
+constexpr dc::Interval<uint64_t> with_inverted[] = {{0, 50}, {80, 60}, {60, 100}};
+static_assert(!dc::intervals_cover_unit(std::span{with_inverted}, uint64_t{100}));
+
+// Signed integer support — out-of-bounds below (negative lo).
+constexpr dc::Interval<int32_t> neg_lo[] = {{-5, 50}, {50, 100}};
+static_assert(!dc::intervals_cover_unit(std::span{neg_lo}, int32_t{100}));
+
+// Negative total rejected unconditionally.
+constexpr dc::Interval<int32_t> well_formed[] = {{0, 50}, {50, 100}};
+static_assert(!dc::intervals_cover_unit(std::span{well_formed}, int32_t{-100}));
+
+// Production-shape preview: Cipher cold-tier blob layout.
+[[nodiscard]] constexpr bool valid_blob_layout(
+    std::span<const dc::Interval<uint64_t>> slots,
+    uint64_t blob_bytes
+) noexcept {
+    CRUCIBLE_PRE(dc::intervals_cover_unit(slots, blob_bytes));
+    return true;
+}
+
+constexpr dc::Interval<uint64_t> blob_partition[] = {
+    {0, 1024}, {1024, 4096}, {4096, 8192},
+};
+static_assert(valid_blob_layout(std::span{blob_partition}, uint64_t{8192}));
+
+// Production-shape preview: 5D parallelism shard cover (one dim).
+[[nodiscard]] constexpr bool valid_shard_cover(
+    std::span<const dc::Interval<int32_t>> shards,
+    int32_t global_dim
+) noexcept {
+    CRUCIBLE_PRE(dc::intervals_cover_unit(shards, global_dim));
+    return true;
+}
+
+constexpr dc::Interval<int32_t> shards_2way[] = {{0, 32}, {32, 64}};
+static_assert(valid_shard_cover(std::span{shards_2way}, int32_t{64}));
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -1102,6 +1198,54 @@ int main() {
             std::span<const dc::Interval<uint64_t>>{bad})) {
         std::fprintf(stderr,
             "test_decide: inverted interval WRONGLY accepted\n");
+        return 1;
+    }
+
+    // intervals_cover_unit runtime witnesses.  Defeat constexpr
+    // folding through volatile scalar sinks.
+    uint64_t volatile cv_lo0 = 0, cv_hi0 = 40;
+    uint64_t volatile cv_lo1 = 40, cv_hi1 = 100;
+    uint64_t volatile cv_total = 100;
+    dc::Interval<uint64_t> cv_partition[2] = {
+        {static_cast<uint64_t>(cv_lo0), static_cast<uint64_t>(cv_hi0)},
+        {static_cast<uint64_t>(cv_lo1), static_cast<uint64_t>(cv_hi1)},
+    };
+    if (!dc::intervals_cover_unit(
+            std::span<const dc::Interval<uint64_t>>{cv_partition},
+            static_cast<uint64_t>(cv_total))) {
+        std::fprintf(stderr,
+            "test_decide: cover_unit valid partition WRONGLY rejected\n");
+        return 1;
+    }
+    sink += static_cast<int>(cv_partition[1].hi);
+
+    // Gap anti-pattern witness.
+    uint64_t volatile gap_lo0 = 0, gap_hi0 = 30;
+    uint64_t volatile gap_lo1 = 50, gap_hi1 = 100;
+    dc::Interval<uint64_t> gap_ivs[2] = {
+        {static_cast<uint64_t>(gap_lo0), static_cast<uint64_t>(gap_hi0)},
+        {static_cast<uint64_t>(gap_lo1), static_cast<uint64_t>(gap_hi1)},
+    };
+    if (dc::intervals_cover_unit(
+            std::span<const dc::Interval<uint64_t>>{gap_ivs},
+            static_cast<uint64_t>(cv_total))) {
+        std::fprintf(stderr,
+            "test_decide: cover_unit gap WRONGLY accepted\n");
+        return 1;
+    }
+
+    // Overshoot anti-pattern witness.
+    uint64_t volatile ov_lo0_c = 0, ov_hi0_c = 50;
+    uint64_t volatile ov_lo1_c = 50, ov_hi1_c = 110;
+    dc::Interval<uint64_t> ov_ivs[2] = {
+        {static_cast<uint64_t>(ov_lo0_c), static_cast<uint64_t>(ov_hi0_c)},
+        {static_cast<uint64_t>(ov_lo1_c), static_cast<uint64_t>(ov_hi1_c)},
+    };
+    if (dc::intervals_cover_unit(
+            std::span<const dc::Interval<uint64_t>>{ov_ivs},
+            static_cast<uint64_t>(cv_total))) {
+        std::fprintf(stderr,
+            "test_decide: cover_unit overshoot WRONGLY accepted\n");
         return 1;
     }
 
