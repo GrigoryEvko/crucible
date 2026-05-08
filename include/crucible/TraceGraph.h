@@ -208,6 +208,39 @@ struct TraceGraph {
         i.raw(), 0u, num_ops - 1u));
     return ops[i.raw()];
   }
+
+  // ── Content hash (post-build) ──
+  //
+  // PROD-WRAP-6 (#535) / WRAP-TraceGraph-6 (#1047) accessor: lift the
+  // raw `content_hash` field to `Refined<non_zero, ContentHash>` for
+  // callers that require the non-zero invariant typed at the boundary.
+  // Mirror of the sibling accessors on RegionNode and LoopNode (see
+  // RegionNode::computed_content_hash, LoopNode::computed_body_content_hash).
+  //
+  // Lifecycle: TraceGraph is default-constructed with content_hash == 0
+  // and the build_trace fold streams a non-zero hash into the field
+  // before consumers (BackgroundThread.h:386 / 1142 forward to
+  // make_region's precomputed_hash overload — which already gates on
+  // `decide::is_non_zero(precomputed_hash) || num_ops == 0`).  This
+  // accessor lets the producer typecheck at the build boundary instead
+  // of the consumer.
+  //
+  // The accessor's pre-clause refuses the degenerate empty-graph case
+  // (num_ops == 0, content_hash == 0 — the streaming fold legitimately
+  // produces zero on an empty op list).  Callers that legitimately
+  // tolerate the zero-hash sentinel should branch on num_ops first or
+  // read the raw `content_hash` field.
+  //
+  // CONTRACT-106 cite — non-zero hash sentinel via decide::is_non_zero
+  // (CONTRACT-072 catalog).
+  [[nodiscard]] crucible::safety::Refined<
+      crucible::safety::non_zero, ContentHash>
+  computed_content_hash() const noexcept
+      pre (::crucible::decide::is_non_zero(content_hash))
+  {
+    return crucible::safety::Refined<
+        crucible::safety::non_zero, ContentHash>{content_hash};
+  }
 };
 
 // ═══════════════════════════════════════════════════════════════════
