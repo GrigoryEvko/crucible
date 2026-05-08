@@ -306,11 +306,23 @@ endfunction()
 # ═══════════════════════════════════════════════════════════════
 # SECTION 0: Debug optimization override
 #
-# -Og instead of -O0: enables _FORTIFY_SOURCE, better sanitizer
-# coverage, still fully debuggable (variables visible, sane stepping).
+# -O1 over -Og or -O0:
+#   * inlining is enabled (`-finline-functions`).  This is load-
+#     bearing for the safety-wrapper substrate — Linear / Refined /
+#     Tagged / Stale / Graded only collapse to zero cost when their
+#     accessor templates inline.  At -Og only `-finline-functions-
+#     called-once` is on, leaving the wrappers as real function
+#     calls; runtime tests that exercise wrapper-heavy paths run
+#     2-5× slower for the same compile cost.
+#   * compile time is within a few percent of -Og — the project's
+#     bottleneck is template instantiation in the C++ frontend, not
+#     codegen, so the optimization-level dial barely moves it.
+#   * sanitizers (ASan, UBSan, TSan) and contracts (P2900R14) are
+#     unaffected by -O level.
+#   * _FORTIFY_SOURCE=3 still fires at -O1 (it requires any -O>=1).
 # ═══════════════════════════════════════════════════════════════
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
-  set(CMAKE_CXX_FLAGS_DEBUG "-g -Og" CACHE STRING "" FORCE)
+  set(CMAKE_CXX_FLAGS_DEBUG "-g -O1" CACHE STRING "" FORCE)
 endif()
 
 # ═══════════════════════════════════════════════════════════════

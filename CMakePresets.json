@@ -6,6 +6,7 @@
       "name": "default",
       "displayName": "GCC 16 + libstdc++ 16 (C++26)",
       "binaryDir": "${sourceDir}/build",
+      "generator": "Ninja",
       "cacheVariables": {
         "CMAKE_CXX_COMPILER": "$env{HOME}/.local/gcc16/usr/bin/g++",
         "CMAKE_BUILD_TYPE": "Debug",
@@ -36,7 +37,7 @@
       "binaryDir": "${sourceDir}/build-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_CXX_FLAGS": "-O3 -march=native -DNDEBUG -g"
+        "CMAKE_CXX_FLAGS": "-O1 -march=native -DNDEBUG -g"
       }
     },
     {
@@ -71,25 +72,25 @@
       "name": "default",
       "configurePreset": "default",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8 }
+      "execution": { "jobs": 24 }
     },
     {
       "name": "release",
       "configurePreset": "release",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8 }
+      "execution": { "jobs": 24 }
     },
     {
       "name": "analyzer",
       "configurePreset": "analyzer",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 16 }
+      "execution": { "jobs": 24 }
     },
     {
       "name": "tsan",
       "configurePreset": "tsan",
       "output": { "outputOnFailure": true },
-      "execution": { "jobs": 8 }
+      "execution": { "jobs": 24 }
     },
     {
       "name": "stress",
