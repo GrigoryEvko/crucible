@@ -2096,6 +2096,30 @@ inline void recompute_merkle(TraceNode* node) {
   // 6. Recompute Merkle hashes bottom-up
   recompute_merkle(branch);
 
+  // CONTRACT-AddBranch-POST: result-shape contract — every successful
+  // add_branch returns a non-null BranchNode with the canonical
+  // 2-arm shape required by the replay() guard-evaluation path:
+  //   (1) branch != nullptr — arena.alloc_obj<BranchNode> never
+  //       returns null (OOM aborts via arena std::abort).
+  //   (2) branch->kind == TraceNodeKind::BRANCH — set above; catches
+  //       a future refactor that forgets the kind tag, which would
+  //       silently mis-dispatch through the REGION/LOOP arms of
+  //       replay()'s switch.
+  //   (3) branch->num_arms == 2 — every divergence call site creates
+  //       exactly two arms (existing + new); replay()'s binary search
+  //       in arms[] depends on this structural invariant.
+  //   (4) branch->arms != nullptr — arena allocation guaranteed
+  //       above; OOM aborts.
+  // Routes through CRUCIBLE_POST because the predicates dereference
+  // the freshly allocated `branch` pointer — same consteval-bypass
+  // family as CONTRACT-100..108-POST + 116..127-POST.  Under NDEBUG
+  // these collapse to `[[assume]]`, so downstream replay() can
+  // speculate that the binary-search loop terminates within
+  // log2(2)=1 iteration.
+  CRUCIBLE_POST(branch, branch != nullptr);
+  CRUCIBLE_POST(branch, branch->kind == TraceNodeKind::BRANCH);
+  CRUCIBLE_POST(branch, branch->num_arms == 2u);
+  CRUCIBLE_POST(branch, branch->arms != nullptr);
   return branch;
 }
 
