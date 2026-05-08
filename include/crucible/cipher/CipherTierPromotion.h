@@ -17,6 +17,7 @@
 
 #include <crucible/Types.h>
 #include <crucible/safety/CipherTier.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/sessions/SessionDelegate.h>
 
 #include <concepts>
@@ -30,13 +31,27 @@ using ::crucible::safety::CipherTier;
 using ::crucible::safety::CipherTierLattice;
 using ::crucible::safety::CipherTierTag_v;
 
+// CONTRACT-117 (Cipher tier-transition cite): promote/demote admission VC
+// is discharged via `decide::tier_replaces(stronger, weaker)` —
+// "stronger candidate is at-least-as-strong as the weaker required tier."
+// CipherTierLattice's chain ordinal convention (Cold=0 < Warm=1 < Hot=2,
+// per algebra/lattices/CipherTierLattice.h §"Direction convention") makes
+// this a single integer compare on the underlying type.
+//
+// Promote (From → stronger To): "To replaces From" ≡ tier_replaces(To, From).
+// Demote (From → weaker To):    "From replaces To" ≡ tier_replaces(From, To).
+//
+// Cite-pair contributed under the project-wide convention so a single
+// review-discoverable VC discharges every chain-lattice replacement
+// (KernelCache promote, Cipher publish_hot/warm/cold, Forge Phase E
+// recipe admission, BackgroundThread phase promotion).
 template <CipherTierTag_v From, CipherTierTag_v To>
 inline constexpr bool can_promote_tier_v =
-    CipherTierLattice::leq(From, To);
+    ::crucible::decide::tier_replaces(To, From);
 
 template <CipherTierTag_v From, CipherTierTag_v To>
 inline constexpr bool can_demote_tier_v =
-    CipherTierLattice::leq(To, From);
+    ::crucible::decide::tier_replaces(From, To);
 
 template <CipherTierTag_v From, CipherTierTag_v To, typename T>
 concept PromotableTier =

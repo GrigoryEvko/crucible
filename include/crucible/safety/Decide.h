@@ -1152,9 +1152,13 @@ constexpr bool intervals_cover_unit(
 //
 // PRODUCTION CITES (update on adoption per CONTRACT-125)
 // ------------------------------------------------------
-//   (none yet — first migration batches land with CONTRACT-117
-//    [BackgroundThread phase promotion gates] and an upcoming
-//    Forge Phase E recipe-admission rebrand.)
+//   * cipher/CipherTierPromotion.h:can_promote_tier_v /
+//     can_demote_tier_v — admission gates for mint_promote /
+//     mint_demote / mint_restore + 8 lattice-direction static_asserts
+//     (CONTRACT-117 Cipher tier-transition cite, landed first).
+//   * Pending: BackgroundThread phase promotion gates, Forge Phase E
+//     RecipeSelect admission, KernelCache hot↔warm↔cold gates,
+//     Augur drift attribution dispatch.
 //
 // ANTI-PATTERNS (review-rejected)
 // -------------------------------
