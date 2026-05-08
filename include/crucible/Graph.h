@@ -16,6 +16,7 @@
 #include <crucible/Expr.h>
 #include <crucible/Platform.h>
 #include <crucible/safety/Bits.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
 
@@ -337,7 +338,7 @@ struct GraphNode {
   // non-reducing node.
   [[nodiscard]] const Expr** reduction_ranges() const CRUCIBLE_LIFETIMEBOUND
       pre (kind == NodeKind::REDUCTION)
-      pre (nred > 0)
+      pre (::crucible::decide::positive(nred))
   {
     return size + ndim;
   }

@@ -36,7 +36,7 @@ class CRUCIBLE_OWNER Arena {
   // block_size: default bump-block size (must be > 0). Individual allocations
   // larger than block_size get their own dedicated block.
   explicit Arena(size_t block_size = size_t{1} << 20)
-      pre (block_size > 0)
+      pre (::crucible::decide::positive(block_size))
       : block_size_{block_size} {
     alloc_new_block_(block_size_);
     // CONTRACT-Arena-CTOR-POST: construction-state invariant — after
@@ -180,7 +180,7 @@ class CRUCIBLE_OWNER Arena {
   template <typename T>
   [[nodiscard, gnu::returns_nonnull]] CRUCIBLE_INLINE
   T* alloc_array_nonzero(effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND
-      pre (n > 0)
+      pre (::crucible::decide::positive(n))
   {
     [[assume(n > 0)]];
     const size_t nbytes = crucible::sat::mul_sat(n, sizeof(T));
@@ -250,7 +250,7 @@ class CRUCIBLE_OWNER Arena {
   [[nodiscard]] CRUCIBLE_INLINE
   safety::AllocClass<safety::AllocClassTag_v::Arena, T*>
   alloc_array_nonzero_pinned(effects::Alloc a, size_t n) noexcept CRUCIBLE_LIFETIMEBOUND
-      pre (n > 0)
+      pre (::crucible::decide::positive(n))
   {
     return safety::AllocClass<safety::AllocClassTag_v::Arena, T*>{
         alloc_array_nonzero<T>(a, n)};
@@ -343,7 +343,7 @@ class CRUCIBLE_OWNER Arena {
   // Updates cached hot fields and the running byte-count total.
   [[gnu::cold]]
   void alloc_new_block_(size_t nbytes)
-      pre (nbytes > 0)
+      pre (::crucible::decide::positive(nbytes))
   {
     auto* p = static_cast<char*>(std::malloc(nbytes));
     if (p == nullptr) [[unlikely]] std::abort();
