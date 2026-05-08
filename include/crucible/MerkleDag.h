@@ -522,6 +522,40 @@ struct RegionNode : TraceNode {
     return variant_id != 0;
   }
 
+  // PROD-WRAP-6 (#535) accessor: lift the raw `content_hash` field to
+  // `Refined<non_zero, ContentHash>` for callers that require the
+  // non-zero invariant at the type level.  Mirror of
+  // TraceNode::computed_merkle_hash(): the field stays as a bare
+  // ContentHash (RegionNode layout is locked at 80 bytes —
+  // static_assert(sizeof(RegionNode) == 80) — so wrapping the field
+  // would break the on-disk format that Cipher / Serialize re-read
+  // by raw byte layout).  The accessor is the type-system gate.
+  //
+  // Use at sites that ALREADY assume content_hash is non-zero
+  // (KernelCache::publish_l*, Cipher::store, Vigil::publish): pull the
+  // proof up to the call boundary so downstream code can speculate on
+  // the invariant under NDEBUG via `[[assume]]`.  Sites that legitimately
+  // tolerate a zero content_hash (the degenerate empty-region case
+  // produced by `make_region(arena, ops, /*num_ops=*/0)`, which carries
+  // a zero hash by design — see CONTRACT-MakeRegion-POST line 1845)
+  // should continue reading `content_hash` directly.
+  //
+  // CONTRACT-106 cite — non-zero hash sentinel via decide::is_non_zero
+  // (CONTRACT-072 catalog).  ContentHash{} default-constructs to the
+  // zero sentinel; the make_region post-condition guarantees the field
+  // is non-zero whenever num_ops > 0, so calling computed_content_hash()
+  // on a region whose num_ops > 0 cannot fire the precondition.
+  // The accessor's pre-clause refuses the degenerate empty-region case
+  // — those callers should branch on num_ops first or use the raw field.
+  [[nodiscard]] crucible::safety::Refined<
+      crucible::safety::non_zero, ContentHash>
+  computed_content_hash() const noexcept
+      pre (::crucible::decide::is_non_zero(content_hash))
+  {
+    return crucible::safety::Refined<
+        crucible::safety::non_zero, ContentHash>{content_hash};
+  }
+
   // Set the active variant.  CONTRACT-106 routes the non-zero sentinel
   // through `decide::is_non_zero` (CONTRACT-072 catalog) — value 0 is
   // the "no variant" sentinel, and overwriting a real variant with it
@@ -654,6 +688,33 @@ struct LoopNode : TraceNode {
   [[nodiscard]] std::span<const FeedbackEdge> feedback_span() const CRUCIBLE_LIFETIMEBOUND {
     return feedback_edges ? std::span{feedback_edges, num_feedback}
                           : std::span<const FeedbackEdge>{};
+  }
+
+  // PROD-WRAP-6 (#535) accessor: parallel of RegionNode::computed_content_hash()
+  // for the loop body's content identity.  The body sub-DAG's content
+  // hash is folded by compute_body_content_hash at make_loop time and
+  // is the cache key the LoopNode contributes to the parent merkle hash
+  // (see compute_merkle_hash line 880, where body_content_hash.raw() is
+  // XOR-mixed with kLoopSalt).
+  //
+  // The accessor lifts the raw field to Refined<non_zero, ContentHash>
+  // for downstream consumers that require the non-zero invariant.  A
+  // zero body_content_hash signals "loop body never populated" — a
+  // construction bug, not a degenerate-but-legal state, because
+  // make_loop is the only public LoopNode factory and it always folds
+  // a non-empty body chain.  Layout stays locked at 64 bytes per the
+  // adjacent static_assert(sizeof(LoopNode) == 64).
+  //
+  // CONTRACT-106 cite — non-zero hash sentinel via decide::is_non_zero
+  // (CONTRACT-072 catalog).  Mirror of RegionNode::computed_content_hash
+  // and TraceNode::computed_merkle_hash.
+  [[nodiscard]] crucible::safety::Refined<
+      crucible::safety::non_zero, ContentHash>
+  computed_body_content_hash() const noexcept
+      pre (::crucible::decide::is_non_zero(body_content_hash))
+  {
+    return crucible::safety::Refined<
+        crucible::safety::non_zero, ContentHash>{body_content_hash};
   }
 };
 
