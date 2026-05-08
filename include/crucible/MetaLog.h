@@ -341,10 +341,35 @@ struct CRUCIBLE_OWNER MetaLog {
   [[nodiscard]] TensorMeta* try_contiguous(uint32_t start, uint32_t count) const
       CRUCIBLE_LIFETIMEBOUND CRUCIBLE_NO_THREAD_SAFETY {
     if (count == 0) [[unlikely]] return nullptr;
-    uint32_t start_pos = start & MASK;
-    if (start_pos + count <= CAPACITY) [[likely]]
-      return &entries[start_pos];
-    return nullptr; // wraps — caller must copy
+    uint32_t const start_pos = start & MASK;
+    TensorMeta* const result = (start_pos + count <= CAPACITY)
+        ? &entries[start_pos]
+        : nullptr;
+    // CONTRACT-MetaLog-TryContiguous-POST: result-shape post (CRUCIBLE_POST
+    // taxonomy class 2).  Three cases unified:
+    //   1. count == 0          ⇒ early return nullptr above (excluded
+    //                              from this path).
+    //   2. start_pos+count > CAP ⇒ wraps; result == nullptr.
+    //   3. start_pos+count ≤ CAP ⇒ result == &entries[start_pos].
+    // The unified post captures: "either the bg consumer must copy
+    // (nullptr return — wrap detected) OR the returned pointer aliases
+    // the buffer's contiguous slice starting at start & MASK".
+    // Catches a refactor that returns a pointer to the wrong slot
+    // (e.g. forgetting the MASK, or off-by-one) which would silently
+    // propagate bad memory to the bg DAG-build path.  Sibling
+    // discipline: same result-shape framing as CONTRACT-108-POST
+    // (ReplayEngine output_ptr / input_ptr — `result == nullptr ||
+    // sid.is_valid()`).  Routes through CRUCIBLE_POST for the GCC
+    // 16.1.1 consteval-bypass foldable-body class — `result` is a
+    // local but the predicate references `entries` (a class member),
+    // exactly the bypass-vulnerable shape.
+    //
+    // `entries` is a `TensorMeta*` pointer member (line 105), not a
+    // C array — in this const method the pointer is const but the
+    // pointee remains non-const, so `&entries[start_pos]` is plain
+    // `TensorMeta*` (no const_cast required).
+    CRUCIBLE_POST(result, result == nullptr || result == &entries[start_pos]);
+    return result;
   }
 
   // Background thread only (SPSC consumer): advance tail past consumed
