@@ -4950,3 +4950,19 @@ crucible_neg_compile_test(neg_decide_no_overflow_mul_unsigned
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_no_overflow_mul_signed
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-031: HS14 fixture pair pinning that decide::no_overflow_sum
+# correctly fires inside CRUCIBLE_PRE at consteval when called with
+# overflowing operands.  Mismatch classes:
+#
+#   * neg_decide_no_overflow_sum_unsigned — UNSIGNED wrap-around
+#     (UINT64_MAX + 1).  Tests __builtin_add_overflow's unsigned path.
+#   * neg_decide_no_overflow_sum_signed   — SIGNED asymmetric range
+#     at the negative extreme (INT64_MIN + (-1)).  Distinct from the
+#     mul fixture's INT64_MIN × -1 path: addition's overflow detection
+#     branches on sign-bit + carry-out, not on width-doubled product
+#     range, so this is a genuinely different bug class.
+crucible_neg_compile_test(neg_decide_no_overflow_sum_unsigned
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_no_overflow_sum_signed
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")

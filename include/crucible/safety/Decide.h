@@ -151,4 +151,53 @@ constexpr bool no_overflow_mul(T a, T b) noexcept {
     return !__builtin_mul_overflow(a, b, &r);
 }
 
+// ─── no_overflow_sum ───────────────────────────────────────────────
+//
+// Returns true iff `a + b` does not overflow type T.  T may be any
+// signed or unsigned integral type; signed overflow at BOTH extremes
+// (INT_MAX + 1 → wrap to INT_MIN, INT_MIN + (-1) → wrap to INT_MAX)
+// is detected via `__builtin_add_overflow`.  The procedure is total:
+// every (a, b) input pair returns a defined bool, no UB on adversarial
+// values.
+//
+// SEMANTIC NOTE
+// -------------
+// For unsigned T: returns false iff `a + b > std::numeric_limits<T>::
+// max()`.  For signed T: returns false iff the mathematical sum lies
+// outside [std::numeric_limits<T>::min(), std::numeric_limits<T>::max()].
+// The carry-out / sign-bit detection inside __builtin_add_overflow is
+// width- and signedness-aware.
+//
+// USAGE PATTERN
+// -------------
+//
+//   constexpr int32_t safe_add_i32(int32_t a, int32_t b) noexcept {
+//       CRUCIBLE_PRE(crucible::decide::no_overflow_sum(a, b));
+//       return a + b;
+//   }
+//
+//   // Consteval witness fires CRUCIBLE_PRE's __builtin_trap():
+//   //   static_assert(safe_add_i32(INT32_MAX, 1) == 0);
+//   //                 ↑ rejected: "non-constant condition"
+//
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ------------------------------------------------------
+//   (none yet — first migration batch lands with CONTRACT-104:
+//    StorageNbytes.h and MerkleDag.h max_offset/min_offset accumulation)
+//
+// ANTI-PATTERNS (review-rejected)
+// -------------------------------
+//   * `pre (a + b >= a)` — wrong for signed overflow (UB at the +,
+//     not after) AND for negative b on unsigned types.
+//   * `pre (a < INT_MAX - b)` — wrong for `b == INT_MIN` on signed T
+//     (`INT_MAX - INT_MIN` overflows itself).
+//   * `pre (a < 0 == (b < 0) || (a + b) < 0 == ...)` — error-prone
+//     XOR sign tricks; always cite this procedure instead.
+template <std::integral T>
+[[nodiscard, gnu::const]]
+constexpr bool no_overflow_sum(T a, T b) noexcept {
+    T r{};
+    return !__builtin_add_overflow(a, b, &r);
+}
+
 }  // namespace crucible::decide

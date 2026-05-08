@@ -96,6 +96,65 @@ static_assert(safe_mul_u64(7, 6) == 42);
 static_assert(safe_mul_i32(-5, 3) == -15);
 static_assert(safe_mul_i32(46340, 46340) == 2'147'395'600);
 
+// ── no_overflow_sum positive witnesses ─────────────────────────────
+//
+// Coverage matrix (sum is symmetric in operands; we vary
+// width × signedness × {zero, one, max-1, exact-max, beyond-max}):
+//
+//   uint8_t       | 0+0=0  | 1+254=255 (UINT8_MAX) | 255+1 (overflow)
+//   uint32_t      | typical safe          | UINT32_MAX+1 (overflow)
+//   uint64_t      | UINT64_MAX-1 + 1 = max | UINT64_MAX+1 (overflow)
+//   int32_t       | INT32_MAX-1 + 1 = max | INT32_MAX+1 (overflow positive)
+//   int32_t       | INT32_MIN+1 + (-1) = min | INT32_MIN+(-1) (overflow negative)
+//   int64_t       | INT64_MIN+1 + (-1) = min | INT64_MIN+(-1) (overflow negative)
+//
+// The witnesses below cover the "true" cases at consteval; the
+// "false" (overflowing) cases are pinned by neg-compile fixtures
+// (one for each of unsigned-wrap and signed-asymmetric, mirroring
+// the no_overflow_mul HS14 discipline).
+
+// Trivial: 0 + 0 cannot overflow any signed or unsigned type.
+static_assert(dc::no_overflow_sum<uint32_t>(0, 0));
+static_assert(dc::no_overflow_sum<int32_t>(0, 0));
+
+// Boundary — exact max: x + (MAX - x) = MAX is representable.
+static_assert(dc::no_overflow_sum<uint8_t>(1, 254));                   // 255 = UINT8_MAX
+static_assert(!dc::no_overflow_sum<uint8_t>(1, 255));                  // 256 — overflow
+static_assert(dc::no_overflow_sum<uint32_t>(0xFFFF'FFFEu, 1u));        // UINT32_MAX
+static_assert(!dc::no_overflow_sum<uint32_t>(std::numeric_limits<uint32_t>::max(), 1u));
+
+// Boundary — exact min for signed.
+static_assert(dc::no_overflow_sum<int32_t>(std::numeric_limits<int32_t>::max() - 1, 1));
+static_assert(!dc::no_overflow_sum<int32_t>(std::numeric_limits<int32_t>::max(), 1));     // INT32_MAX+1
+static_assert(dc::no_overflow_sum<int32_t>(std::numeric_limits<int32_t>::min() + 1, -1));
+static_assert(!dc::no_overflow_sum<int32_t>(std::numeric_limits<int32_t>::min(), -1));    // INT32_MIN-1
+
+// Negative + positive — sum could land anywhere; safe at all interior points.
+static_assert(dc::no_overflow_sum<int32_t>(-100, 50));
+static_assert(dc::no_overflow_sum<int32_t>(std::numeric_limits<int32_t>::min(), std::numeric_limits<int32_t>::max()));  // -1, fits
+
+// 64-bit witnesses.
+static_assert(dc::no_overflow_sum<uint64_t>(0xFFFF'FFFF'FFFF'FFFEull, 1ull));
+static_assert(!dc::no_overflow_sum<uint64_t>(std::numeric_limits<uint64_t>::max(), 1ull));
+static_assert(!dc::no_overflow_sum<int64_t>(std::numeric_limits<int64_t>::min(), -1));   // INT64_MIN-1
+
+// ── Composition with CRUCIBLE_PRE — production usage shape for sum ─
+
+[[nodiscard]] constexpr uint64_t safe_add_u64(uint64_t a, uint64_t b) noexcept {
+    CRUCIBLE_PRE(dc::no_overflow_sum(a, b));
+    return a + b;
+}
+
+[[nodiscard]] constexpr int32_t safe_add_i32(int32_t a, int32_t b) noexcept {
+    CRUCIBLE_PRE(dc::no_overflow_sum(a, b));
+    return a + b;
+}
+
+static_assert(safe_add_u64(40, 2) == 42);
+static_assert(safe_add_i32(-100, 50) == -50);
+static_assert(safe_add_i32(std::numeric_limits<int32_t>::max() - 1, 1)
+              == std::numeric_limits<int32_t>::max());
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -130,6 +189,28 @@ int main() {
     }
     if (dc::no_overflow_mul<uint32_t>(std::numeric_limits<uint32_t>::max(), 2u)) {
         std::fprintf(stderr, "test_decide: UINT32_MAX*2 NOT flagged as overflow\n");
+        return 1;
+    }
+
+    // no_overflow_sum runtime witnesses — same shape as mul above.
+    uint64_t volatile sa = 1000;
+    uint64_t volatile sb = 2000;
+    sink += static_cast<int>(safe_add_u64(sa, sb));         // 3000
+
+    int32_t volatile si = -7;
+    int32_t volatile sj = 12;
+    sink += safe_add_i32(si, sj);                            // 5
+
+    if (!dc::no_overflow_sum<uint32_t>(100u, 200u)) {
+        std::fprintf(stderr, "test_decide: 100u+200u flagged as overflow\n");
+        return 1;
+    }
+    if (dc::no_overflow_sum<uint32_t>(std::numeric_limits<uint32_t>::max(), 1u)) {
+        std::fprintf(stderr, "test_decide: UINT32_MAX+1 NOT flagged as overflow\n");
+        return 1;
+    }
+    if (dc::no_overflow_sum<int32_t>(std::numeric_limits<int32_t>::min(), -1)) {
+        std::fprintf(stderr, "test_decide: INT32_MIN+(-1) NOT flagged as overflow\n");
         return 1;
     }
 
