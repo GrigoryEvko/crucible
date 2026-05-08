@@ -45,6 +45,7 @@
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/FxAliases.h>
 #include <crucible/rt/Registry.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Refined.h>
@@ -393,7 +394,16 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       MetaIndex*    out_meta_starts     = nullptr,
       ScopeHash*    out_scope_hashes    = nullptr,
       CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY
-      pre (max_count <= CAPACITY)
+      // CONTRACT-104: bound check discharges through decide::in_range
+      // (closed-interval [0, CAPACITY], unsigned natural lower bound).
+      // Pure parameter ref + static constexpr CAPACITY — not subject to
+      // the GCC 16.1.1 consteval-bypass that forced CONTRACT-100..103
+      // to migrate to in-body CRUCIBLE_PRE; P2900 pre() is sufficient
+      // here.  The cite is for grep-discipline consistency: a single
+      // hardening change to the in_range predicate propagates to every
+      // drain entry point.
+      pre (::crucible::decide::in_range<std::uint32_t>(
+          max_count, std::uint32_t{0}, CAPACITY))
       pre (max_count == 0 || out != nullptr)
   {
     if (max_count == 0) [[unlikely]] return 0;
@@ -459,7 +469,8 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       MetaIndex*    out_meta_starts     = nullptr,
       ScopeHash*    out_scope_hashes    = nullptr,
       CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY
-      pre (max_count <= CAPACITY)
+      pre (::crucible::decide::in_range<std::uint32_t>(
+          max_count, std::uint32_t{0}, CAPACITY))
       pre (max_count == 0 || out != nullptr)
   {
     return crucible::safety::HotPath<crucible::safety::HotPathTier_v::Warm, uint32_t>{
@@ -498,7 +509,8 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       MetaIndex*    out_meta_starts     = nullptr,
       ScopeHash*    out_scope_hashes    = nullptr,
       CallsiteHash* out_callsite_hashes = nullptr) noexcept CRUCIBLE_NO_THREAD_SAFETY
-      pre (max_count <= CAPACITY)
+      pre (::crucible::decide::in_range<std::uint32_t>(
+          max_count, std::uint32_t{0}, CAPACITY))
       pre (max_count == 0 || out != nullptr)
   {
     return drain(out, max_count, out_meta_starts, out_scope_hashes, out_callsite_hashes);
@@ -528,7 +540,8 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
       ScopeHash*    out_scope_hashes,
       CallsiteHash* out_callsite_hashes,
       uint32_t      max_count) noexcept CRUCIBLE_NO_THREAD_SAFETY
-      pre (max_count <= CAPACITY)
+      pre (::crucible::decide::in_range<std::uint32_t>(
+          max_count, std::uint32_t{0}, CAPACITY))
       pre (max_count == 0 ||
            (out_entries != nullptr &&
             out_meta_starts != nullptr &&
@@ -635,10 +648,12 @@ static_assert(sizeof(TraceRing) >= (5u * 1024u * 1024u) &&
 //      slots written" is silently violated by the available-clamp
 //      regardless.
 //
-// `pre (max_count <= CAPACITY)` on every drain entry point makes the
-// boundary explicit at enforce semantic; the typed alias gives future
-// callers a witness they can carry across boundaries instead of
-// re-validating the bare uint32_t at every layer.
+// `pre (decide::in_range<uint32_t>(max_count, 0, CAPACITY))` on every
+// drain entry point (CONTRACT-104) makes the boundary explicit at
+// enforce semantic and routes the bound-check through the named
+// predicate so future hardening propagates to every site; the typed
+// alias gives future callers a witness they can carry across
+// boundaries instead of re-validating the bare uint32_t at every layer.
 //
 // In constexpr context (constant evaluation) the Refined ctor's pre
 // clause `bounded_above<CAPACITY>(v)` (v ≤ CAPACITY) makes a

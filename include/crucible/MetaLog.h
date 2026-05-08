@@ -10,6 +10,7 @@
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/FxAliases.h>
 #include <crucible/rt/Registry.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Refined.h>
@@ -146,7 +147,16 @@ struct CRUCIBLE_OWNER MetaLog {
   CRUCIBLE_UNSAFE_BUFFER_USAGE
   [[nodiscard]] CRUCIBLE_INLINE MetaIndex try_append(const TensorMeta* metas, uint32_t n)
       CRUCIBLE_NO_THREAD_SAFETY
-      pre (n <= CAPACITY)
+      // CONTRACT-104: bound check discharges through decide::in_range
+      // (closed-interval [0, CAPACITY], unsigned natural lower bound).
+      // Pure parameter ref + static constexpr CAPACITY — not subject to
+      // the GCC 16.1.1 consteval-bypass that forced CONTRACT-100..103
+      // to migrate to in-body CRUCIBLE_PRE; P2900 pre() is sufficient
+      // here.  The cite is for grep-discipline consistency: a single
+      // hardening change to the in_range predicate propagates to every
+      // try_append entry point.
+      pre (::crucible::decide::in_range<std::uint32_t>(
+          n, std::uint32_t{0}, CAPACITY))
       pre (n == 0 || metas != nullptr)
   {
     if (n == 0) [[unlikely]] return MetaIndex::none();
@@ -373,9 +383,11 @@ struct CRUCIBLE_OWNER MetaLog {
 // constexpr context (P1494R5 → ill-formed) and aborts via the
 // project contract handler at runtime.
 //
-// `try_append` itself carries `pre (n <= CAPACITY)` so both the
-// existing untyped surface and the typed widening factory enforce
-// the same structural bound.  Defense-in-depth: existing
+// `try_append` itself carries
+// `pre (decide::in_range<uint32_t>(n, 0, CAPACITY))`
+// (CONTRACT-104) so both the existing untyped surface and the typed
+// widening factory enforce the same structural bound through the
+// named predicate; future hardening propagates to every site.  Defense-in-depth: existing
 // `if (h - cached_tail + n > CAPACITY)` runtime guard plus the new
 // type-level witness fire BEFORE any memcpy or head publish.
 //
