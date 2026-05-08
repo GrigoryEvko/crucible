@@ -138,8 +138,17 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // Extract/install the 2-bit type tag for slot `i` (0..4).
     // Packed across scalar_types byte (slots 0..3) and op_flags bits
     // 6-7 (slot 4).  Hot path: both reads compile to a shift+mask.
+    // CONTRACT-128 cite: `i < 5` migrates from anonymous bare-< to
+    // named `decide::in_range<uint32_t>(i, 0u, 4u)`.  Predicate references
+    // a parameter only (no `this->` member), so vanilla P2900 `pre()` is
+    // safe at consteval — the consteval-bypass family applies only to
+    // foldable bodies whose predicate touches `this->` members through
+    // the implicit object parameter.  Cite is the soundness witness:
+    // the scalar-args inline buffer is a 5-element array (slots 0..4
+    // aliased across `scalar_types[3:0]` + `op_flags[7:6]`), grep'able
+    // via `decide::in_range` for any future scalar-buffer resize.
     [[nodiscard, gnu::pure]] ScalarType2 get_scalar_type(uint32_t i) const noexcept
-        pre (i < 5)
+        pre (::crucible::decide::in_range<uint32_t>(i, 0u, 4u))
     {
       if (i < 4) {
         return static_cast<ScalarType2>((scalar_types >> (i * 2)) & 0x3);
@@ -149,7 +158,7 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     }
 
     void set_scalar_type(uint32_t i, ScalarType2 t) noexcept
-        pre (i < 5)
+        pre (::crucible::decide::in_range<uint32_t>(i, 0u, 4u))
     {
       const uint8_t bits = static_cast<uint8_t>(t) & 0x3;
       if (i < 4) {
