@@ -14,6 +14,7 @@
 #include <crucible/PoolAllocator.h>
 #include <crucible/ReplayEngine.h>
 #include <crucible/Types.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/ScopedView.h>
@@ -385,8 +386,13 @@ struct CrucibleContext {
       pre (old_region->plan != nullptr)
       pre (alt->plan        != nullptr)
       // The migration bitset is fixed-size; reject plans the bitset
-      // cannot track before any slot copy begins.
-      pre (alt->plan->num_slots <= MIGRATION_MAX_SLOTS)
+      // cannot track before any slot copy begins.  Cite migration:
+      // CONTRACT-CCtx-1 promotes the bare `<=` to a named integer-bound
+      // predicate so future hardening (lifting `num_slots` to
+      // `Refined<bounded_above<MIGRATION_MAX_SLOTS>>`) propagates here
+      // by name.
+      pre (::crucible::decide::in_range<uint32_t>(
+          alt->plan->num_slots, 0u, MIGRATION_MAX_SLOTS))
   {
     const auto* old_plan = old_region->plan;
     const auto* new_plan = alt->plan;
