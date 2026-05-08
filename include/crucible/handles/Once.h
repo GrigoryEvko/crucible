@@ -34,6 +34,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Pinned.h>
+#include <crucible/safety/Post.h>
 
 #include <atomic>
 #include <type_traits>
@@ -74,14 +75,35 @@ public:
         pre (ptr_ == nullptr)
     {
         ptr_ = p;
+        // CONTRACT-SetOnce-Set-POST: state-mutation post.  Sibling of
+        // CONTRACT-WriteOnceNonNull-Set-POST (safety/Mutation.h, commit
+        // 98d0ff8) — same "pre rules out double-set and null input,
+        // leaving ptr_ = p as the only legal mutation" framing.  The
+        // patched g++-16p §13.6 foldable-body bypass would silently
+        // pass `post(ptr_ == p)` under P2900 form; CRUCIBLE_POST is
+        // the discharge form (cf. feedback_patched_gcc16_toolchain.md
+        // 2026-05-08).  Catches a refactor that publishes a different
+        // pointer (off-by-one, moved-from local).
+        CRUCIBLE_POST(0, ptr_ == p);
     }
 
     // Try-set — returns true iff this was the first non-null set.
     // Unlike set(), accepts null input as a no-op (returns false).
     [[nodiscard]] CRUCIBLE_INLINE bool try_set(T* p) noexcept {
-        if (ptr_ != nullptr || p == nullptr) return false;
-        ptr_ = p;
-        return true;
+        // Refactored to single-return so the post fires on every path.
+        // Semantics preserved: claim iff slot was empty AND p is non-
+        // null.  Null input and double-set both yield claimed=false.
+        bool const claimed = (ptr_ == nullptr) && (p != nullptr);
+        if (claimed) {
+            ptr_ = p;
+        }
+        // CONTRACT-SetOnce-TrySet-POST: lifecycle-witness post mirror of
+        // CONTRACT-WriteOnceNonNull-TrySet-POST.  Three cases unified:
+        //   1. claimed=true            ⇒ ptr_ == p ≠ nullptr ⇒ ptr_ != nullptr
+        //   2. claimed=false, p=null   ⇒ no change; lhs holds
+        //   3. claimed=false, ptr_ set ⇒ ptr_ remains non-null; rhs holds
+        CRUCIBLE_POST(claimed, p == nullptr || ptr_ != nullptr);
+        return claimed;
     }
 
     [[nodiscard]] CRUCIBLE_INLINE T* get() const noexcept { return ptr_; }
@@ -96,6 +118,16 @@ public:
         pre (has_value())
     {
         ptr_ = nullptr;
+        // CONTRACT-SetOnce-Reset-POST: lifecycle-reset post (CRUCIBLE_POST
+        // taxonomy class 3).  After reset() returns, the slot must be
+        // back in the unset state — failure to clear ptr_ would leave
+        // the next set() pre-check `ptr_ == nullptr` immediately false,
+        // tripping the contract from a stale value rather than from a
+        // legitimate double-set.  Sibling of IterDet::reset 6-post
+        // family / CrucibleContext::deactivate post-pair (commit
+        // 0cf7c20) — same "lifecycle returns the structure to a
+        // documented ground state" framing.
+        CRUCIBLE_POST(0, ptr_ == nullptr);
     }
 };
 
@@ -155,6 +187,16 @@ public:
         while (state_.load(std::memory_order_acquire) != 2) {
             CRUCIBLE_SPIN_PAUSE;
         }
+        // Note: Once::call is a function template instantiated in every
+        // TU that uses it (e.g. crucible_perf libbpf-log-cb installation).
+        // Adding CRUCIBLE_POST here pulls in crucible::detail::
+        // contract_failed at every instantiation site, breaking link in
+        // static libs not bundled with libcrucible's contract handler
+        // (feedback_loader_tu_contract_semantic.md).  The state-machine
+        // post `state_.load(acquire) == 2` is therefore enforced by the
+        // class invariant + spin-wait structure itself, not by a post.
+        // The non-template SetOnce primitives below DO get posts — they
+        // instantiate exactly once per pointer-type, well-bounded.
     }
 
     [[nodiscard]] bool done() const noexcept {
