@@ -15,6 +15,7 @@
 #include <crucible/ReplayEngine.h>
 #include <crucible/Types.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/Post.h>
 #include <crucible/safety/ScopedView.h>
 
 #include <cassert>
@@ -121,6 +122,20 @@ struct CrucibleContext {
     engine_.init(region, &pool_);
     active_region_ = region;
     mode_ = ContextMode::COMPILED;
+
+    // CONTRACT-CrucibleContext-Activate-POST: the (mode_, active_region_)
+    // state-pair is the precondition every COMPILED-mode hot-path method
+    // depends on (advance / output_ptr / input_ptr / register_external all
+    // pre(mode_ == COMPILED), and downstream engine/pool reads dereference
+    // active_region_->plan).  Catches a refactor that publishes one
+    // without the other, or sets active_region_ to anything other than
+    // the requested region.  Mirrors CONTRACT-Tx-Activate-POST
+    // (Transaction.h:228, commit 9a0fc58: post(active_tx_ == tx)) and
+    // CONTRACT-Vigil-SwitchRegion-POST (Vigil.h, commit f913224) — same
+    // state-mutation class, same "mutation-and-publication step took
+    // effect" framing.
+    CRUCIBLE_POST(0, mode_ == ContextMode::COMPILED);
+    CRUCIBLE_POST(0, active_region_ == region);
     return true;
   }
 
@@ -129,6 +144,18 @@ struct CrucibleContext {
     mode_ = ContextMode::RECORD;
     pool_.destroy();
     active_region_ = nullptr;
+
+    // CONTRACT-CrucibleContext-Deactivate-POST: lifecycle-reset post
+    // (CRUCIBLE_POST taxonomy class 3, sibling of IterDet::reset 6-post
+    // family / PoolAllocator::destroy 5-post family / KernelCache ctor
+    // 3-post family).  After deactivate(), the context must be in the
+    // RECORD ground state with no live region pointer — this is the
+    // dual of CONTRACT-CrucibleContext-Activate-POST and catches the
+    // partial-deactivation refactor (clearing mode_ but leaving a stale
+    // active_region_ dangling, or vice-versa) that would silently
+    // re-enter COMPILED on the next switch_region() prefix-replay.
+    CRUCIBLE_POST(0, mode_ == ContextMode::RECORD);
+    CRUCIBLE_POST(0, active_region_ == nullptr);
   }
 
   // ── Per-op advance (COMPILED mode hot path) ──
@@ -230,6 +257,23 @@ struct CrucibleContext {
       (void)s;
     }
 
+    // CONTRACT-CrucibleContext-SwitchRegion-POST: success-path state-
+    // mutation post.  div_pos > 0 path detaches the old pool, inits a new
+    // pool against alt->plan, migrates prefix slots, re-inits the engine
+    // against alt, and prefix-replays div_pos ops.  Failure to update
+    // active_region_ to alt would leave the engine pointing at alt while
+    // active_region_ still names the old region — a torn (mode_,
+    // active_region_) pair that's structurally invalid.  Mirrors
+    // CONTRACT-Vigil-SwitchRegion-POST (Vigil.h ctx_.active_region() ==
+    // alt, commit f913224) and CONTRACT-CrucibleContext-Activate-POST
+    // above.  mode_ is unchanged (already COMPILED per pre(); no need
+    // to re-cite); active_region_ is the substantive mutation.
+    //
+    // The div_pos == 0 short-circuit at the top of the function delegates
+    // to activate() and thus already discharges this post via activate's
+    // own (mode_ == COMPILED, active_region_ == region) post-pair.
+    CRUCIBLE_POST(0, active_region_ == alt);
+    CRUCIBLE_POST(0, mode_ == ContextMode::COMPILED);
     return true;
   }
 
