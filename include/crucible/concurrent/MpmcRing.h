@@ -35,10 +35,12 @@
 //
 // Every cell carries an atomic 64-bit state word:
 //
-//     bits[63]     IsSafe      (SCQ §5.2 "IsSafe" bit)
-//     bits[62]     Occupied    (our variant of Index = ⊥)
-//     bits[61:0]   Cycle       (62-bit cycle counter; wraparound
-//                                impossible in practice at 10⁹ cycles/sec)
+//     bits[63]     IsSafe         (SCQ §5.2 "IsSafe" bit)
+//     bits[62]     Occupied       (our variant of Index = ⊥)
+//     bits[61]     DataPublished  (cell.data fully written by producer)
+//     bits[60:0]   Cycle          (61-bit cycle counter; wraparound
+//                                   impossible in practice — at 10⁹
+//                                   cycles/sec, wraps every 73 years)
 //
 // Note: paper stores an Index field used for the two-queue indirection
 // design (aq holds indices into separate data[] array).  We inline the
@@ -46,6 +48,28 @@
 // flag.  Trade: slightly more memory per cell vs simpler one-queue
 // layout.  For our thread-pool use case (16-byte Job payloads),
 // inline is fine.
+//
+// Why DataPublished is needed (vs paper's bare two-bit state).  In
+// paper's indirection design, eidx points into a separate data[]
+// array; the producer owns eidx exclusively (via free-index pool) so
+// the data write happens before the eidx ever appears in any cell
+// — no race possible.  In our INLINE variant, two producers at
+// DIFFERENT cycles (T_a at cycle C, T_b = T_a + 2n at cycle C+1) can
+// load the same pre-CAS ent and BOTH execute `cell.data = item;`
+// before either CAS succeeds; the writes race at the byte level.
+// The CAS-loser may have written cell.data LAST in real time, so the
+// CAS-winner publishes a state pointing at the CAS-loser's data.
+// Effect: a successfully-pushed message gets popped TWICE (once at
+// the bogus cycle, once at the producer's retry cycle) while another
+// producer's message is silently lost.  Caught by Crucible's
+// cookie-fingerprint fuzzer (test_concurrency_collision_fuzzer §8) +
+// TSan data race at MpmcRing.h:269 (writer/writer on cell.data).
+// Fix: enqueue is now THREE atomic steps — (1) CAS-reserve the cell
+// with DataPublished=0, (2) write data (now sole writer), (3) fetch_or
+// the DataPublished bit with release.  Consumer's branch-1 spin-waits
+// for DataPublished before reading data.  Cost: +1 atomic OR per push,
+// +1 conditional branch per pop, +1 spin in the rare reserved-but-
+// unpublished window (microseconds in worst case).
 //
 // ─── Per-call atomic shape ──────────────────────────────────────────
 //
@@ -137,16 +161,19 @@ public:
 
 private:
     // ── Cell state bit layout ──────────────────────────────────────
-    static constexpr std::uint64_t kIsSafeBit   = std::uint64_t{1} << 63;
-    static constexpr std::uint64_t kOccupiedBit = std::uint64_t{1} << 62;
-    static constexpr std::uint64_t kCycleMask   = (std::uint64_t{1} << 62) - 1;
+    static constexpr std::uint64_t kIsSafeBit        = std::uint64_t{1} << 63;
+    static constexpr std::uint64_t kOccupiedBit      = std::uint64_t{1} << 62;
+    static constexpr std::uint64_t kDataPublishedBit = std::uint64_t{1} << 61;
+    static constexpr std::uint64_t kCycleMask        = (std::uint64_t{1} << 61) - 1;
 
     // ── Pack/unpack helpers ────────────────────────────────────────
 
     [[nodiscard, gnu::const]] static constexpr std::uint64_t
-    pack_state(std::uint64_t cycle, bool safe, bool occupied) noexcept {
-        return (safe     ? kIsSafeBit   : 0)
-             | (occupied ? kOccupiedBit : 0)
+    pack_state(std::uint64_t cycle, bool safe, bool occupied,
+               bool published = false) noexcept {
+        return (safe      ? kIsSafeBit        : 0)
+             | (occupied  ? kOccupiedBit      : 0)
+             | (published ? kDataPublishedBit : 0)
              | (cycle & kCycleMask);
     }
 
@@ -156,6 +183,10 @@ private:
     is_safe(std::uint64_t s)  noexcept { return (s & kIsSafeBit)   != 0; }
     [[nodiscard, gnu::const]] static constexpr bool
     is_occupied(std::uint64_t s) noexcept { return (s & kOccupiedBit) != 0; }
+    [[nodiscard, gnu::const]] static constexpr bool
+    is_data_published(std::uint64_t s) noexcept {
+        return (s & kDataPublishedBit) != 0;
+    }
 
     // ── Cell — 64-byte aligned to prevent adjacent-cell false share ─
     //
@@ -217,11 +248,15 @@ public:
     // Ordering:
     //   * tail_.fetch_add(1, acq_rel): synchronizes with other
     //     producers' FAA; each producer gets a unique ticket.
-    //   * cell.state CAS(acq_rel on success): produces release edge
-    //     for consumer's acquire on successful dequeue.
-    //   * Write to cell.data happens BEFORE the successful CAS; the
-    //     CAS's release-store publishes both the state transition
-    //     and the data write together.
+    //   * cell.state CAS(acq_rel on success): reserves the cell with
+    //     DataPublished=0; produces an acquire-release edge but does
+    //     NOT publish the data yet.
+    //   * cell.data = item: non-atomic write; safe because the CAS
+    //     above made this producer the sole owner of the cell for
+    //     this cycle.
+    //   * cell.state.fetch_or(kDataPublishedBit, release): release-
+    //     edge that publishes the data write to consumers.  Paired
+    //     with the consumer's acquire-load of cell.state.
     [[nodiscard, gnu::hot]] bool try_push(const T& item) noexcept {
         // Fast-path full check: if T - H ≥ 2n, queue buffer is
         // fully occupied (SCQ §5.4 Figure 10 pattern).  Don't FAA;
@@ -264,29 +299,52 @@ public:
                     !is_occupied(ent) &&
                     (is_safe(ent) || head_.get() <= T_)) {
 
-                    // Write data BEFORE publishing cell state.
-                    // The successful CAS release-publishes both.
-                    cell.data = item;
+                    // Two-phase publish.  Phase 1: CAS-reserve the
+                    // cell with DataPublished=0.  Only ONE producer
+                    // can win this CAS for any given (cycle_T, j) —
+                    // the loser's CAS fails and they re-FAA.  After
+                    // the CAS, this producer is the SOLE writer of
+                    // cell.data for this cycle.  Inline-data SCQ
+                    // requires this; without it, two producers at
+                    // different cycles targeting the same cell can
+                    // race on cell.data (caught by TSan + cookie
+                    // fuzzer; see header doc-block above).
+                    const std::uint64_t reserved_ent =
+                        pack_state(cycle_T,
+                                   /*safe*/ true,
+                                   /*occupied*/ true,
+                                   /*published*/ false);
 
-                    const std::uint64_t new_ent =
-                        pack_state(cycle_T, /*safe*/ true, /*occupied*/ true);
-
-                    if (cell.state.compare_exchange_strong(
-                            ent, new_ent,
+                    if (!cell.state.compare_exchange_strong(
+                            ent, reserved_ent,
                             std::memory_order_acq_rel,
                             std::memory_order_acquire)) {
-                        // Paper Fig 8 Lines 20-21: update Threshold
-                        // on successful enqueue.
-                        if (threshold_.load(std::memory_order_acquire) !=
-                            kThresholdHi) {
-                            threshold_.store(kThresholdHi,
-                                             std::memory_order_release);
-                        }
-                        return true;
+                        // CAS failed; ent updated.  Re-check.
+                        continue;
                     }
-                    // CAS failed; ent was updated with new state.
-                    // Re-check condition.
-                    continue;
+
+                    // Phase 2: we own the cell.  Write data with
+                    // non-atomic stores; no other producer can
+                    // observe this cell as available now.
+                    cell.data = item;
+
+                    // Phase 3: publish.  fetch_or sets DataPublished
+                    // atomically without disturbing IsSafe/Occupied/
+                    // Cycle bits — important because a consumer at
+                    // higher cycle may have CAS'd the IsSafe bit off
+                    // (branch-2 occupied path) between our reserve
+                    // and our publish.
+                    (void)cell.state.fetch_or(kDataPublishedBit,
+                                              std::memory_order_release);
+
+                    // Paper Fig 8 Lines 20-21: update Threshold
+                    // on successful enqueue.
+                    if (threshold_.load(std::memory_order_acquire) !=
+                        kThresholdHi) {
+                        threshold_.store(kThresholdHi,
+                                         std::memory_order_release);
+                    }
+                    return true;
                 }
                 // Condition failed — need a new ticket.
                 (void)enqueue_ticket_waste_.bump_by(1);
@@ -324,23 +382,32 @@ public:
 
                 if (ent_cycle == cycle_H) {
                     // Paper Fig 8 Lines 30-32: cell belongs to our
-                    // cycle.  Invalidate via atomic OR (sets
-                    // Occupied=0 implicitly by ORing the "⊥" pattern;
-                    // in our variant, we OR-clear the Occupied bit —
-                    // equivalently CAS to a cleared state).
-                    //
-                    // Since we encode Occupied as a single bit, the
-                    // "OR ⊥" from paper becomes "AND NOT Occupied".
-                    // GCC provides atomic fetch_and, but not
-                    // straightforwardly — use fetch_and.
-                    //
-                    // Clear Occupied + clear IsSafe (Line 31: mark
-                    // safe, clear index).  Keep Cycle.
+                    // cycle.  Two-phase publish (see try_push doc-
+                    // block) means the producer may have CAS-reserved
+                    // the cell but not yet OR'd the DataPublished
+                    // bit.  Spin-wait for DataPublished before reading
+                    // cell.data — without this, the consumer reads
+                    // garbage from the gap between phase 1 and phase
+                    // 3 of the producer's enqueue.  Worst-case wait
+                    // is microseconds (the producer is mid-write,
+                    // possibly descheduled).  Ticket uniqueness
+                    // guarantees only one consumer claims this head
+                    // ticket so the spin is on a single producer's
+                    // publish, not arbitrarily-many writers.
+                    while (!is_data_published(ent)) [[unlikely]] {
+                        CRUCIBLE_SPIN_PAUSE;
+                        ent = cell.state.load(std::memory_order_acquire);
+                    }
 
                     // Read the data FIRST (before OR publish).
                     T result = cell.data;
-                    // Mask to clear Occupied bit (keep Cycle + IsSafe).
-                    const std::uint64_t clear_mask = ~kOccupiedBit;
+                    // Clear Occupied + DataPublished bits (keep Cycle
+                    // + IsSafe).  The DataPublished bit must be
+                    // cleared so the next producer's two-phase
+                    // protocol starts from a clean slate at this
+                    // cell's next cycle.
+                    const std::uint64_t clear_mask =
+                        ~(kOccupiedBit | kDataPublishedBit);
                     (void)cell.state.fetch_and(clear_mask,
                                                 std::memory_order_acq_rel);
                     return result;
@@ -360,13 +427,23 @@ public:
                     std::uint64_t new_ent;
                     if (!is_occupied(ent)) {
                         // Index = ⊥: advance cycle to our cycle_H,
-                        // preserve IsSafe, keep Occupied=0.
+                        // preserve IsSafe, keep Occupied=0.  Reset
+                        // DataPublished to 0 — the cell now
+                        // represents a fresh-cycle empty slot, no
+                        // producer at cycle_H has reserved it yet.
                         new_ent = pack_state(cycle_H, is_safe(ent),
-                                              false);
+                                              false, /*published*/ false);
                     } else {
                         // Index ≠ ⊥: leave cycle, clear IsSafe
-                        // (mark unsafe).
-                        new_ent = pack_state(ent_cycle, false, true);
+                        // (mark unsafe).  Preserve DataPublished —
+                        // the producer at ent_cycle may have already
+                        // published, and the matching consumer at
+                        // ticket H_match = ent_cycle*2n+j (which is
+                        // strictly less than our current H_) will
+                        // need to read the data once it claims its
+                        // ticket.
+                        new_ent = pack_state(ent_cycle, false, true,
+                                              is_data_published(ent));
                     }
 
                     if (cell.state.compare_exchange_strong(
