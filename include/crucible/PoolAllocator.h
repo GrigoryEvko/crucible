@@ -92,6 +92,25 @@ struct CRUCIBLE_OWNER PoolAllocator {
   static constexpr uint32_t kMaxNumSlots = 1u << 20;          // 1 M
   static constexpr uint64_t kMaxPoolBytes = uint64_t{256} << 30;  // 256 GB
 
+  // CONTRACT-132: integer-bound pre clauses migrate from anonymous
+  // bare-`<=` to named `decide::in_range` cite.  Predicates reference
+  // a parameter pointer's members (plan->) rather than `this->`-
+  // members, so vanilla P2900 `pre()` is consteval-safe — the
+  // consteval-bypass family applies only to predicates touching the
+  // implicit object parameter.  Cite is purely about predicate-name
+  // grep-discoverability through the `decide::` catalog: any future
+  // adjustment to the bounds (e.g. raising kMaxPoolBytes) propagates
+  // through `decide::in_range` once instead of touching every site.
+  //
+  // The third clause (`plan->num_external <= plan->num_slots`)
+  // expresses a relational invariant between two same-instance
+  // members — no integer-bound cite fits, since the upper bound
+  // is a runtime value rather than a static constant.  Bare form
+  // is preserved.
+  //
+  // Cold init() path; semantic=enforce on the boundary TU is fine
+  // — the runtime cost is irrelevant on a once-per-allocator-init
+  // call site.
   [[gnu::cold, gnu::noinline]]
   void init(const MemoryPlan* plan) noexcept CRUCIBLE_NO_THREAD_SAFETY
       pre (plan        != nullptr)
@@ -100,8 +119,10 @@ struct CRUCIBLE_OWNER PoolAllocator {
       // Refined bounds on plan dimensions — propagates as [[assume]]
       // under release semantic=ignore so downstream uses of num_slots_
       // and pool_bytes_ reason about bounded values.
-      pre (plan->num_slots  <= kMaxNumSlots)
-      pre (plan->pool_bytes <= kMaxPoolBytes)
+      pre (::crucible::decide::in_range<uint32_t>(
+          plan->num_slots, 0u, kMaxNumSlots))
+      pre (::crucible::decide::in_range<uint64_t>(
+          plan->pool_bytes, 0u, kMaxPoolBytes))
       pre (plan->num_external <= plan->num_slots)
   {
     num_slots_    = plan->num_slots;
