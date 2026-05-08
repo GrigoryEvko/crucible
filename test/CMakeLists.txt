@@ -5144,3 +5144,27 @@ crucible_neg_compile_test(neg_decide_coprime_shared_factor
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_coprime_zero_pair
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-060 fixtures — pin Decide::intervals_pairwise_disjoint:
+# `[lo, hi)` half-open intervals, well-formedness (lo <= hi) AND
+# pairwise non-overlap; production usage: MemoryPlan slot offset
+# assignment must produce non-overlapping byte intervals among
+# slots that are simultaneously live.  Two distinct mismatch classes:
+#
+#   * neg_decide_intervals_pairwise_disjoint_overlap — fires on
+#     `{[0, 100), [50, 150)}`.  Both well-formed individually;
+#     pass-1 succeeds; pass-2 pairwise rejects.  Catches the
+#     boundary-arithmetic bug class — sweep-line offset assignment
+#     forgets to bump `next_offset` past previous slot's nbytes.
+#   * neg_decide_intervals_pairwise_disjoint_inverted — fires on
+#     a SINGLE inverted interval `[50, 30)`.  Pass-1 well-
+#     formedness rejects before pass-2 runs.  Catches the missing-
+#     validity-check bug class — forgot to verify `lo <= hi` (or
+#     `offset + nbytes` underflowed silently).
+#
+# Together the two fixtures pin BOTH the canonical sweep-line bug
+# (adjacent overlap) AND the malformed-input bug (inverted slot).
+crucible_neg_compile_test(neg_decide_intervals_pairwise_disjoint_overlap
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_intervals_pairwise_disjoint_inverted
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")

@@ -774,4 +774,147 @@ constexpr bool coprime(T a, T b) noexcept {
     return au == U{1};
 }
 
+// ─── Interval<T> + intervals_pairwise_disjoint ─────────────────────
+//
+// `Interval<T>` is the canonical half-open interval value type for
+// the predicate library: `[lo, hi)` — `lo` inclusive, `hi`
+// exclusive.  The empty interval `[k, k)` is well-formed (it
+// trivially does not intersect anything).  `lo > hi` is malformed
+// (no integer x satisfies `lo <= x < hi`); the predicate rejects
+// it.
+//
+// `intervals_pairwise_disjoint` returns true iff:
+//   * every interval is well-formed (`lo <= hi`), AND
+//   * for every distinct pair (i, j), the intervals do not
+//     overlap, i.e., `I_i.hi <= I_j.lo` OR `I_j.hi <= I_i.lo`.
+//
+// The shape: span-quantified PAIRWISE-RELATIONAL check.  Distinct
+// from the elementwise shape (`all_in_range` is per-element),
+// distinct from the consecutive-pair shape (`strictly_increasing`
+// only relates element i to element i+1), and distinct from the
+// n-ary aggregate (`factorization_eq` reduces).  Pairwise
+// quantification is its own algorithmic class — O(n²) brute pair
+// compare.
+//
+// SEMANTIC NOTES
+// --------------
+// 1. Half-open convention.  `[a, b)` matches the dominant C / C++
+//    range convention (`std::span`, iterators, byte-offset+size,
+//    `[begin, end)`).  A byte slot of `nbytes` at `offset` occupies
+//    `[offset, offset + nbytes)` — this exactly matches.
+//
+// 2. Empty intervals (`lo == hi`) are accepted as well-formed and
+//    trivially disjoint from every other interval (the open
+//    half-open empty interval contains no integer).  Callers that
+//    want to reject empty intervals must compose with an
+//    additional predicate at the call site.
+//
+// 3. Overflow safety.  The predicate compares `lo` and `hi`
+//    directly (no addition, no multiplication).  No overflow path
+//    exists.  Callers that derive `hi = offset + nbytes` MUST
+//    cite `no_overflow_sum(offset, nbytes)` separately to gate the
+//    derivation BEFORE building the `Interval<T>` — otherwise the
+//    overflow happens at the call site, not inside this predicate.
+//
+// 4. Algorithm.  Two-pass: pass 1 checks well-formedness in O(n);
+//    pass 2 brute-force pair compare in O(n²).  For small n
+//    (production cite: dozens to a few hundred memory-plan slots),
+//    O(n²) is consteval-cheap and avoids the sort copy that an
+//    O(n log n) implementation would need (sorting in place is
+//    impossible — the input is `std::span<const Interval<T>>`).
+//    Total is branch-light: each inner step is two comparisons +
+//    one OR + one `if` → optimizer-friendly.
+//
+// 5. Total over inputs.  Empty span trivially returns true (zero
+//    pairs to check, zero intervals to validate — the empty
+//    family of intervals IS pairwise disjoint).  Single-element
+//    span returns true iff that one interval is well-formed.
+//
+// USAGE PATTERN
+// -------------
+//
+//   // CONTRACT-112 production usage shape: MemoryPlan slot
+//   // offset assignment must produce non-overlapping byte
+//   // intervals among slots that are simultaneously live.
+//   constexpr bool valid_memory_plan(
+//       std::span<const crucible::decide::Interval<uint64_t>> byte_ivs
+//   ) noexcept {
+//       CRUCIBLE_PRE(crucible::decide::intervals_pairwise_disjoint(byte_ivs));
+//       return true;
+//   }
+//
+//   // At consteval, planted overlap fails compilation:
+//   //   constexpr Interval<uint64_t> bad[] = {{0, 64}, {32, 96}};
+//   //   static_assert(valid_memory_plan(bad));
+//   //                 ↑ rejected: "non-constant condition"
+//
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ------------------------------------------------------
+//   (none yet — first migration batch lands with CONTRACT-112:
+//    MemoryPlan slot offset assignment in MerkleDag.h, and the
+//    same predicate cited again on the op-index live ranges
+//    `[birth_op, death_op + 1)` for the simultaneously-live
+//    test that gates whether two slots even need byte-disjoint
+//    offsets)
+//
+// ANTI-PATTERNS (review-rejected)
+// -------------------------------
+//   * `pre (forall i, slots[i].hi <= pool_bytes)` — checks each
+//     slot fits in the pool but not pairwise disjointness.  Two
+//     slots can both fit and still overlap each other.
+//   * `pre (forall i, slots[i].hi <= slots[i+1].lo)` — adjacent-
+//     only check.  Misses any overlap with a non-adjacent slot.
+//     Common in code that "relies on the slots being sorted" but
+//     does not separately verify the sort.
+//   * `pre (sum(nbytes) <= pool_bytes)` — capacity check, not
+//     overlap check.  A 100-byte pool with two 60-byte slots at
+//     offset 0 and 30 fits the capacity (sum = 120 > 100 in this
+//     example, but the bug class is broader: a passing capacity
+//     check tells you nothing about overlap).
+//   * `pre (std::set<uint64_t>(offsets).size() == n_slots)` —
+//     uniqueness of LO endpoint only.  Misses `[0, 100)` vs
+//     `[50, 150)` (distinct los, overlapping intervals).
+//   * `pre (sort && for-adjacent)` written out at every call site
+//     — duplicates the sort + scan logic; drifts.  Always cite
+//     this procedure for the n-ary pairwise case.
+template <std::integral T>
+struct Interval {
+    T lo{};
+    T hi{};
+};
+
+template <std::integral T>
+[[nodiscard]]
+constexpr bool operator==(Interval<T> const& a, Interval<T> const& b) noexcept {
+    return a.lo == b.lo && a.hi == b.hi;
+}
+
+template <std::integral T, std::size_t N = std::dynamic_extent>
+[[nodiscard, gnu::pure]]
+constexpr bool intervals_pairwise_disjoint(
+    std::span<const Interval<T>, N> ivs
+) noexcept {
+    // Pass 1: well-formedness (lo <= hi).  An inverted interval
+    // is malformed; no integer x satisfies lo <= x < hi.
+    for (Interval<T> const& iv : ivs) {
+        if (iv.lo > iv.hi) {
+            return false;
+        }
+    }
+    // Pass 2: pairwise overlap test.  For distinct (i, j),
+    // intervals are disjoint iff one lies entirely to the left of
+    // the other in the half-open sense:
+    //     I_i ∩ I_j = ∅  ⇔  hi_i <= lo_j  ∨  hi_j <= lo_i.
+    for (std::size_t i = 0; i < ivs.size(); ++i) {
+        for (std::size_t j = i + 1; j < ivs.size(); ++j) {
+            const bool a_left_of_b = ivs[i].hi <= ivs[j].lo;
+            const bool b_left_of_a = ivs[j].hi <= ivs[i].lo;
+            if (!a_left_of_b && !b_left_of_a) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 }  // namespace crucible::decide
