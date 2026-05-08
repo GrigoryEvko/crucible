@@ -167,6 +167,37 @@ endfunction()
 crucible_test(test_safety)
 crucible_test(test_pre_post)
 crucible_test(test_simd)
+
+# ── CONTRACT-008: NDEBUG zero-cost sentinel for CRUCIBLE_PRE ─────
+#
+# Special test target: built with `-O3 -DNDEBUG` instead of the
+# preset's `-Og -g`.  The factory `crucible_test()` injects
+# `-UNDEBUG` so every other test keeps assertions live; this test
+# specifically requires NDEBUG to be DEFINED so it can verify the
+# zero-cost claim of CRUCIBLE_PRE under production flags.
+#
+# Implementation: two probe functions with identical bodies — one
+# routed through CRUCIBLE_PRE, the other through bare `[[assume]]`
+# — must compile to byte-identical machine code.  The test
+# compares ELF section sizes via `__start_/__stop_` linker
+# symbols.  See test/test_pre_post_cost.cpp for the full design.
+add_executable(test_pre_post_cost test_pre_post_cost.cpp)
+target_link_libraries(test_pre_post_cost PRIVATE crucible)
+target_compile_options(test_pre_post_cost PRIVATE
+    # Override the preset's debug flags.  We want production codegen
+    # so the cost-model claim is measured under the same conditions
+    # users will run release binaries.
+    -O3
+    # Each function in its own section so __start_/__stop_ symbols
+    # land at the right boundaries.  Also lets `-fgc-sections` work
+    # cleanly, though we use volatile-sink references to keep the
+    # probe functions live regardless.
+    -ffunction-sections
+)
+target_compile_definitions(test_pre_post_cost PRIVATE NDEBUG)
+add_test(NAME test_pre_post_cost COMMAND test_pre_post_cost)
+crucible_dump_asm(test_pre_post_cost)
+
 crucible_test(test_types)
 crucible_test(test_kernel_cache_key)
 crucible_test(test_row_hash_fold)
