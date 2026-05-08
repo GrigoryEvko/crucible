@@ -190,10 +190,25 @@ struct ReplayEngine {
   // toward always-inline even across TU boundaries.  This is the
   // single most-called function in COMPILED mode — every ATen op
   // dispatched goes through it exactly once.
+  // CONTRACT-131: cursor_ < end_ pre migrated from anonymous P2900
+  // `pre()` to in-body CRUCIBLE_PRE because the predicate references
+  // `this->cursor_` AND `this->end_` through the implicit object
+  // parameter.  P2900 `pre()` referencing `this->`-member predicates
+  // is in the GCC 16.1.1 consteval-bypass family — silently bypassed
+  // at consteval for foldable bodies; CRUCIBLE_PRE's `__builtin_trap()`
+  // poison closes the hole.  No decide:: cite available — pointer
+  // ordering doesn't have a named predicate in the catalog (the
+  // catalog is integer-bounded only).  Bare `cursor_ < end_` remains
+  // the most precise expression of the invariant.
+  //
+  // Hot-path cost: under hot-path TU `semantic=ignore`, CRUCIBLE_PRE
+  // collapses to `[[assume(cursor_ < end_)]]` — zero runtime cost
+  // and the optimizer uses the bound forward (e.g. eliminates dead-
+  // branch checks downstream).
   [[nodiscard]] CRUCIBLE_HOT ReplayStatus
   advance(SchemaHash schema_hash, ShapeHash shape_hash)
-      pre (cursor_ < end_)
   {
+    CRUCIBLE_PRE(cursor_ < end_);
 
     // Guard 1: op identity. L1d load at offset 0.
     if (schema_hash != expected_schema_) [[unlikely]]
@@ -396,11 +411,14 @@ struct ReplayEngine {
   // in the other was real (happened once during the view migration —
   // an unlikely branch hint was added to one but not the other).
   // Single source of truth removes that risk.
+  // CONTRACT-131 (sibling overload): same migration as the unguarded
+  // overload above — `cursor_ < end_` references `this->`-members,
+  // moves to in-body CRUCIBLE_PRE.
   [[nodiscard]] CRUCIBLE_HOT ReplayStatus
   advance(SchemaHash schema_hash, ShapeHash shape_hash,
           ActiveView const&)
-      pre (cursor_ < end_)
   {
+    CRUCIBLE_PRE(cursor_ < end_);
     return advance(schema_hash, shape_hash);
   }
 
