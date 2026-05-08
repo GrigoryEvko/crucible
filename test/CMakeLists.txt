@@ -165,6 +165,7 @@ function(crucible_test name)
 endfunction()
 
 crucible_test(test_safety)
+crucible_test(test_pre_post)
 crucible_test(test_simd)
 crucible_test(test_types)
 crucible_test(test_kernel_cache_key)
@@ -4837,3 +4838,59 @@ crucible_neg_compile_test(neg_publish_commit_unauthorized_bump
 
 crucible_neg_compile_test(neg_publish_commit_cell_move
     "use of deleted function|deleted function|PublishCommitCell")
+
+# ─── safety/Pre.h + safety/Post.h consteval-firing witnesses ────────
+#
+# CONTRACT-001 / CONTRACT-002: HS14 fixture pair pinning the consteval-
+# enforcement guarantee of CRUCIBLE_PRE and CRUCIBLE_POST.  The two
+# fixtures cover distinct mismatch classes:
+#
+#   * neg_pre_macro_consteval_struct_ref — CRUCIBLE_PRE on `T const&`
+#     input (Shape #2 in the empirical probe table; was bypassed by
+#     P2900 `pre()`).
+#   * neg_post_macro_consteval_scalar_return — CRUCIBLE_POST on scalar
+#     return (Shape #6 in the probe; was bypassed by P2900 `post()`).
+#
+# Both rely on the if-consteval-trap pattern in safety/Pre.h: the
+# `__builtin_trap()` planted under `if consteval` is not a constant
+# expression, so the consteval evaluator fails with "non-constant
+# condition" — exactly the diagnostic shape we expect.  The PASS
+# regex below matches that diagnostic family.
+#
+# See misc/08_05_2026_harness.md §4 + §7.2 for the full rationale.
+crucible_neg_compile_test(neg_pre_macro_consteval_struct_ref
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_post_macro_consteval_scalar_return
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-007: HS14 fixture-corpus expansion.  Five additional
+# fixtures pinning the remaining Probe shapes that bypass on the
+# un-patched distro GCC 16.1.1 May-1 build.  Together with the two
+# above, this gives full 7-shape coverage of the empirical probe in
+# misc/08_05_2026_harness.md §4.5 — every shape that EVER bypassed
+# native pre()/post() on any supported build is pinned by an HS14
+# fixture proving CRUCIBLE_PRE/POST catches it.
+#
+# Distinct mismatch classes:
+#   * neg_pre_macro_consteval_scalar_byval — Probe Shape #1 (scalar
+#     by-value).  Simplest possible parameter shape.
+#   * neg_pre_macro_consteval_struct_cval — Probe Shape #3 (struct
+#     const-by-value).  Const-qualified copy.
+#   * neg_pre_macro_consteval_struct_byval — Probe Shape #4 (struct
+#     by-value).  Mutable copy.
+#   * neg_pre_macro_consteval_struct_cptr — Probe Shape #5 (struct
+#     const-pointer).  Compound predicate (non-null AND data check);
+#     pins firing on the SECOND conjunct, not just nullptr.
+#   * neg_post_macro_consteval_struct_field — Probe Shape #7 (struct
+#     return with field-projecting post).  Dominant shape for PoD-
+#     aggregate invariants.
+crucible_neg_compile_test(neg_pre_macro_consteval_scalar_byval
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_pre_macro_consteval_struct_cval
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_pre_macro_consteval_struct_byval
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_pre_macro_consteval_struct_cptr
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_post_macro_consteval_struct_field
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")

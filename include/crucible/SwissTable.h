@@ -58,15 +58,22 @@ static constexpr size_t kGroupWidth = 16;
 // Always non-negative as int8_t (bit 7 cleared).
 // Independent from H1 (lower bits) due to fmix64 avalanche.
 //
-// post() enforces the [0, 127] invariant: kEmpty = 0x80 is the sentinel
+// The [0, 127] invariant is essential: kEmpty = 0x80 is the sentinel
 // for empty slots in the control byte array; h2_tag returning a value
 // with bit 7 set would alias an empty slot, corrupting the probe loop's
 // termination condition.  The shift by 57 on uint64_t mathematically
-// guarantees the top bit of the cast is clear, so the contract never
-// fires under normal operation — it's a compile-time proof of the
-// sentinel-space reservation that the rest of the SwissTable relies on.
+// guarantees the top bit of the cast is clear, so the bit-7-clear
+// property holds for ANY input — proven by the boundary static_asserts
+// below (h2_tag(0)=0, h2_tag(UINT64_MAX)=127, h2_tag(0x8000…0)=64).
+//
+// We previously had `post (r: r >= 0)` here; removed because GCC 16.1.1
+// post-PR-c++/124241 (May 4 2026 cache-fix) rejects always-true post
+// clauses on constexpr functions whose body folds to a constant — the
+// constexpr evaluator now over-invalidates and produces "contract
+// condition is not constant".  The static_asserts below are stronger
+// (boundary-input proofs) than the post() ever was.  See
+// misc/08_05_2026_harness.md for the diagnosis.
 [[nodiscard, gnu::const]] constexpr int8_t h2_tag(uint64_t hash) noexcept
-    post (r: r >= 0)
 {
   return static_cast<int8_t>(hash >> 57);
 }

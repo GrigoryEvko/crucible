@@ -4,15 +4,19 @@
   "configurePresets": [
     {
       "name": "default",
-      "displayName": "GCC 16 + libstdc++ 16 (C++26)",
+      "displayName": "GCC 16.1.1 patched (PR c++/124241 cherry-picked) + libstdc++ 16 (C++26)",
       "binaryDir": "${sourceDir}/build",
       "generator": "Ninja",
       "cacheVariables": {
-        "CMAKE_CXX_COMPILER": "$env{HOME}/.local/gcc16/usr/bin/g++",
+        "CMAKE_C_COMPILER": "$env{HOME}/.local/gcc16-patched/usr/bin/gcc-16p",
+        "CMAKE_CXX_COMPILER": "$env{HOME}/.local/gcc16-patched/usr/bin/g++-16p",
+        "CMAKE_AR": "$env{HOME}/.local/gcc16-patched/usr/bin/gcc-ar-16p",
+        "CMAKE_NM": "$env{HOME}/.local/gcc16-patched/usr/bin/gcc-nm-16p",
+        "CMAKE_RANLIB": "$env{HOME}/.local/gcc16-patched/usr/bin/gcc-ranlib-16p",
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXE_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16/usr/lib64:$env{HOME}/.local/gcc16/lib64",
-        "CMAKE_SHARED_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16/usr/lib64:$env{HOME}/.local/gcc16/lib64",
-        "CMAKE_MODULE_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16/usr/lib64:$env{HOME}/.local/gcc16/lib64",
+        "CMAKE_EXE_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16-patched/usr/lib64:$env{HOME}/.local/gcc16-patched/lib64",
+        "CMAKE_SHARED_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16-patched/usr/lib64:$env{HOME}/.local/gcc16-patched/lib64",
+        "CMAKE_MODULE_LINKER_FLAGS": "-Wl,-rpath,$env{HOME}/.local/gcc16-patched/usr/lib64:$env{HOME}/.local/gcc16-patched/lib64",
         "CRUCIBLE_BENCH": "OFF",
         "CRUCIBLE_WERROR": "ON"
       }

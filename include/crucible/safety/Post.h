@@ -8,10 +8,14 @@
 // WHY THIS HEADER EXISTS
 // ───────────────────────────────────────────────────────────────────
 // Sister header to `safety/Pre.h`.  Same GCC 16.1.1 consteval-bypass
-// limitation applies to `post(r: ...)` clauses as it does to `pre()`:
-// 6 of 7 parameter/return shapes silently bypass at consteval, only
-// the literal-pointer-comparison shape fires.  See `Pre.h` for the
-// detailed rationale and probe results.
+// limitation applied to `post(r: ...)` clauses on the un-patched
+// distro build (6 of 7 shapes bypassed; only literal-pointer-comparison
+// fired).  Closed on the patched build (PR c++/124241 cherry-pick;
+// see misc/08_05_2026_harness.md §0) — but the patched build introduces
+// the §13.6 foldable-body always-true post regression that CRUCIBLE_POST
+// is immune to.  Shipped as defense-in-depth across both builds.
+// See `Pre.h` for the detailed rationale, probe results, and the
+// patched-vs-distro behavior matrix.
 //
 // CRUCIBLE_POST is the macro-based replacement that:
 //   * fires at consteval for every return shape (witnessed via
@@ -70,6 +74,8 @@
 #pragma once
 
 #include <crucible/safety/Pre.h>   // CRUCIBLE_PRE — the actual check
+                                   // (also brings crucible::detail::contract_failed
+                                   // declaration for the runtime path)
 
 // ─── CRUCIBLE_POST ─────────────────────────────────────────────────
 //
@@ -83,4 +89,34 @@
     do {                                                                \
         (void)(retvar);                                                 \
         CRUCIBLE_PRE(cond);                                             \
+    } while (0)
+
+// ─── CRUCIBLE_POST_FAST ────────────────────────────────────────────
+//
+// Symmetric to CRUCIBLE_PRE_FAST: skips the diagnostic-emitting
+// `crucible::detail::contract_failed` shim and traps directly on
+// violation.  Use on hot return paths where the ~µs of stderr-flush
+// + breakpoint-hook overhead matters.  Diagnostic loss is acceptable;
+// production debugging falls back to the core dump's stack trace.
+#define CRUCIBLE_POST_FAST(retvar, cond)                                \
+    do {                                                                \
+        (void)(retvar);                                                 \
+        CRUCIBLE_PRE_FAST(cond);                                        \
+    } while (0)
+
+// ─── CRUCIBLE_POST_MSG ─────────────────────────────────────────────
+//
+// Annotated post variant — adds a "note: <msg>" diagnostic line on
+// violation.  Use when the postcondition predicate alone is cryptic:
+//
+//   CRUCIBLE_POST_MSG(r, r.lo != 0,
+//                     "compute_storage_nbytes must never return zero "
+//                     "for a well-formed TensorMeta");
+//
+// At consteval the message is unused; the macro behaves identically
+// to CRUCIBLE_POST for static_assert-fired neg-compile fixtures.
+#define CRUCIBLE_POST_MSG(retvar, cond, msg)                            \
+    do {                                                                \
+        (void)(retvar);                                                 \
+        CRUCIBLE_PRE_MSG(cond, msg);                                    \
     } while (0)

@@ -231,6 +231,15 @@ else()
   target_compile_definitions(crucible PUBLIC CRUCIBLE_HAVE_BPF=0)
 endif()
 
+# `<stacktrace>` (C++23, libstdc++ 16) — used by src/ContractHandler.cpp
+# to emit a 16-frame stack trace on contract violations.  The header
+# pulls symbols from `libstdc++exp.a` (libstdc++'s experimental archive,
+# which also hosts contracts runtime + observable_checkpoint + a few
+# other C++26 lib features).  Propagated PUBLIC so every consumer
+# (test binaries, vessel adapters, bench TUs) auto-links it without
+# an extra target_link_libraries call.
+target_link_libraries(crucible PUBLIC stdc++exp)
+
 # Re `-fno-ipa-modref`: we considered it as a workaround for a GCC 16
 # miscompile where `asm volatile("" : "+m,r"(ptr) : : "memory")` applied
 # to a non-const pointer-to-class-with-pre()-contract-method, captured
