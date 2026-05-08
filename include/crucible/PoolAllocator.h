@@ -113,6 +113,16 @@ struct CRUCIBLE_OWNER PoolAllocator {
       const size_t page_align =
           (pool_bytes_ >= crucible::rt::kHugePageBytes)
               ? crucible::rt::kHugePageBytes : ALIGNMENT;
+      // CONTRACT-127: the page-padding sum discharges through
+      // `decide::no_overflow_sum` over {pool_bytes_, page_align-1}.
+      // Pre-clauses on init() pin pool_bytes_ <= kMaxPoolBytes (256 GB)
+      // and page_align <= kHugePageBytes (2 MB), so the sum is always
+      // representable in uint64_t (well under 2^64).  saturating_add
+      // is defense-in-depth — it never actually saturates in production
+      // — but the cite makes the formal-VC link explicit so a future
+      // audit that re-derives the bound tightening (e.g., kMaxPoolBytes
+      // bumped to 1 TB) can verify the predicate stays true through
+      // the same grep target.
       const uint64_t padded     = safety::saturating_add<uint64_t>(
           pool_bytes_, page_align - 1);
       const uint64_t alloc_size = padded & ~(page_align - 1);
@@ -140,6 +150,24 @@ struct CRUCIBLE_OWNER PoolAllocator {
       // allocator's metadata.  __builtin_add_overflow catches the wrap
       // deterministically; the subsequent <= check then compares a real
       // end offset.
+      //
+      // CONTRACT-127: the per-slot overflow-then-bound chain
+      // discharges formally through `decide::no_overflow_sum`
+      // (CONTRACT-031 catalog) over the 2-element span
+      // {slot.offset_bytes, slot.nbytes}: the predicate is true iff
+      // their running sum stays within uint64_t.  We do NOT replace
+      // the runtime `__builtin_add_overflow` with a `CRUCIBLE_PRE`
+      // because plan->slots[] is constructed by the build_trace bg
+      // thread from untrusted PyTorch shape input — the post-alloc
+      // recovery path (abort with diagnostic) is load-bearing for
+      // OOM-class corruption that the user-trust-boundary cannot
+      // structurally exclude.  The cite is purely the grep-discoverable
+      // VC discharge surface: a future audit that wants to count
+      // "operations guarded against integer-sum overflow" finds this
+      // site through one named predicate.  Future hardening
+      // (PROD-WRAP-7 lifting slot.{offset_bytes,nbytes} to
+      // Refined<bounded_above<kMaxPoolBytes>>) will tighten the
+      // structural invariant without changing the cite.
       auto* base = static_cast<char*>(pool_);
       for (uint32_t s = 0; s < num_slots_; ++s) {
         const auto& slot = plan->slots[s];
