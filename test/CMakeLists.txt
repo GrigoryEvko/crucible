@@ -5010,3 +5010,29 @@ crucible_neg_compile_test(neg_decide_all_in_range_element_below_lo
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_all_in_range_element_above_hi
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-041: HS14 fixture pair pinning that decide::strictly_increasing
+# correctly fires inside CRUCIBLE_PRE at consteval when called with
+# a sequence whose consecutive-pair monotonicity is violated.
+# Mismatch classes:
+#
+#   * neg_decide_strictly_increasing_equal_pair — duplicate consecutive
+#     pair {1, 5, 5, 9}.  THE strict-vs-weak distinguishing class:
+#     std::is_sorted (uses <=) silently passes; only strictly_increasing
+#     rejects.  Catches the "stalled counter" bug class in
+#     event-sourced systems where a duplicate record persists without
+#     advancing step_id.
+#   * neg_decide_strictly_increasing_middle_regress — middle-pair
+#     regression {1, 9, 5, 10}.  Different bug class: counter going
+#     backward, distinct from stalling.  Production consequence:
+#     event-sourced replay sees out-of-order record, breaks causal
+#     ordering.
+#
+# Both fixtures place the violating pair at the middle (index 1->2)
+# of a 4-element span — pins the "endpoint shortcut"
+# pre(front() < back()) anti-pattern that misses any interior
+# violation by construction.
+crucible_neg_compile_test(neg_decide_strictly_increasing_equal_pair
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_strictly_increasing_middle_regress
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")

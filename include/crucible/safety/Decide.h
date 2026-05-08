@@ -109,6 +109,7 @@
 #pragma once
 
 #include <concepts>
+#include <cstddef>
 #include <limits>
 #include <span>
 #include <type_traits>
@@ -343,6 +344,74 @@ template <std::integral T>
 constexpr bool all_in_range(std::span<const T> xs, T lo, T hi) noexcept {
     for (T const& x : xs) {
         if (x < lo || x > hi) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// ─── strictly_increasing ───────────────────────────────────────────
+//
+// Returns true iff `xs[i-1] < xs[i]` for every consecutive pair
+// (i ∈ [1, xs.size())).  Empty span and single-element span return
+// true vacuously — there are no consecutive pairs to violate the
+// ordering, so the universally-quantified predicate is trivially
+// satisfied.
+//
+// The CONSECUTIVE-PAIR-QUANTIFIED shape — distinct from the per-
+// element shape of all_in_range.  The procedure walks adjacent
+// (i-1, i) pairs and enforces strict less-than.  Production usage:
+// step_id sequences (Cipher event log per CONTRACT-107), monotonic
+// timestamps, generation counters, sorted index arrays where
+// duplicates are forbidden.
+//
+// SEMANTIC NOTE
+// -------------
+// "Strict" means `<`, not `<=`.  Equal consecutive elements
+// (`xs[i-1] == xs[i]`) FAIL the predicate.  This is the bug class
+// where a counter stalls on the same value across two reads — a
+// known failure mode in event-sourced systems where a duplicate
+// record can be persisted without advancing the sequence number.
+// For the `<=` shape (duplicates allowed) cite weakly_increasing
+// (CONTRACT-042) instead.
+//
+// Vacuous truth: ∀i ∈ [1, n). P(i)  is true when n < 2.
+//
+// USAGE PATTERN
+// -------------
+//
+//   // CONTRACT-107 production usage shape: Cipher::store enforces
+//   // strictly-increasing step_id across persisted events.
+//   constexpr bool valid_step_sequence(std::span<const uint64_t> ids) noexcept {
+//       CRUCIBLE_PRE(crucible::decide::strictly_increasing(ids));
+//       return true;
+//   }
+//
+//   // At consteval, planted equal-pair fails compilation:
+//   //   constexpr uint64_t arr[] = {1, 2, 2, 3};  // i=2 violation
+//   //   static_assert(valid_step_sequence(arr));
+//   //                 ↑ rejected: "non-constant condition"
+//
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ------------------------------------------------------
+//   (none yet — first migration batch lands with CONTRACT-107:
+//    Cipher::store step_id sequence + CONTRACT-114 Transaction
+//    count_ / Vigil step_ Monotonic discipline)
+//
+// ANTI-PATTERNS (review-rejected)
+// -------------------------------
+//   * `pre (xs.front() < xs.back())` — endpoint-only; misses any
+//     non-monotonic interior pair.
+//   * `pre (std::is_sorted(begin, end))` — uses `<=` semantics
+//     (allows duplicates); a monotonically-stalling counter would
+//     silently pass.
+//   * `pre (xs[i] > xs[i-1])` checked only at one chosen i —
+//     ad-hoc point check, not a quantified property.
+template <std::integral T>
+[[nodiscard, gnu::pure]]
+constexpr bool strictly_increasing(std::span<const T> xs) noexcept {
+    for (std::size_t i = 1; i < xs.size(); ++i) {
+        if (!(xs[i - 1] < xs[i])) {
             return false;
         }
     }

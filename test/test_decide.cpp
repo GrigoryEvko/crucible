@@ -296,6 +296,63 @@ static_assert(safe_lookup_i32(three_in, 0, 100, 0) == 10);
 static_assert(safe_lookup_i32(three_in, 0, 100, 1) == 50);
 static_assert(safe_lookup_i32(three_in, 0, 100, 2) == 90);
 
+// ── strictly_increasing positive witnesses ─────────────────────────
+//
+// Coverage matrix (cardinality × monotonicity-type × locality of violation):
+//
+//   empty span                     | true (vacuous, no pairs)
+//   1 element                      | true (vacuous, no pairs)
+//   2 strict                       | true
+//   2 equal (duplicate)            | false  ← strict semantic
+//   2 decreasing                   | false
+//   3 strict                       | true
+//   3 with first-pair equal        | false
+//   3 with last-pair equal         | false  ← endpoint-only would miss
+//   3 with regression              | false
+//   uint64_t step_id sequence      | full-range monotonic
+//   int64_t with negative bounds   | unified handling
+
+constexpr int32_t empty_int32[] = {0};
+constexpr int32_t single_int32[] = {42};
+static_assert(dc::strictly_increasing<int32_t>(std::span<const int32_t>(empty_int32, 0)));
+static_assert(dc::strictly_increasing<int32_t>(single_int32));
+
+// 2-element witnesses.
+constexpr int32_t two_strict[] = {1, 2};
+constexpr int32_t two_equal[] = {7, 7};        // duplicate — strict rejects
+constexpr int32_t two_decr[] = {3, 1};
+static_assert(dc::strictly_increasing<int32_t>(two_strict));
+static_assert(!dc::strictly_increasing<int32_t>(two_equal));
+static_assert(!dc::strictly_increasing<int32_t>(two_decr));
+
+// 3-element witnesses — duplicate at first / last / middle positions.
+constexpr int32_t three_strict[] = {1, 2, 3};
+constexpr int32_t three_first_eq[] = {7, 7, 9};
+constexpr int32_t three_last_eq[] = {1, 5, 5};       // endpoint-shortcut would miss this
+constexpr int32_t three_regress[] = {1, 5, 3};
+static_assert(dc::strictly_increasing<int32_t>(three_strict));
+static_assert(!dc::strictly_increasing<int32_t>(three_first_eq));
+static_assert(!dc::strictly_increasing<int32_t>(three_last_eq));
+static_assert(!dc::strictly_increasing<int32_t>(three_regress));
+
+// uint64_t step_id sequence (CONTRACT-107 production shape preview).
+constexpr uint64_t step_ids[] = {1ull, 100ull, 10'000ull, 999'999'999ull};
+static_assert(dc::strictly_increasing<uint64_t>(step_ids));
+
+// int64_t with negative bounds — strict ordering holds across sign flip.
+constexpr int64_t signed_strict[] = {-100, -50, 0, 50, 100};
+static_assert(dc::strictly_increasing<int64_t>(signed_strict));
+
+// ── Composition with CRUCIBLE_PRE — sequence-quantified production shape ─
+
+[[nodiscard]] constexpr uint64_t safe_last_step(std::span<const uint64_t> ids) noexcept {
+    CRUCIBLE_PRE(dc::strictly_increasing(ids));
+    CRUCIBLE_PRE(!ids.empty());
+    return ids.back();
+}
+
+static_assert(safe_last_step(step_ids) == 999'999'999ull);
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -397,6 +454,27 @@ int main() {
     constexpr int32_t middle_violator[] = {10, 200, 90};
     if (dc::all_in_range<int32_t>(middle_violator, 0, 100)) {
         std::fprintf(stderr, "test_decide: middle-violator NOT detected\n");
+        return 1;
+    }
+
+    // strictly_increasing runtime witnesses.
+    uint64_t volatile sa_seq[4] = {1, 2, 3, 4};
+    uint64_t seq_copy[4] = {sa_seq[0], sa_seq[1], sa_seq[2], sa_seq[3]};
+    sink += static_cast<int>(dc::strictly_increasing<uint64_t>(
+        std::span<const uint64_t>{seq_copy, 4}));   // 1
+
+    if (!dc::strictly_increasing<int32_t>(std::span<const int32_t>{})) {
+        std::fprintf(stderr, "test_decide: empty-span NOT vacuously increasing\n");
+        return 1;
+    }
+    constexpr uint64_t stalled[] = {1, 2, 2, 3};
+    if (dc::strictly_increasing<uint64_t>(stalled)) {
+        std::fprintf(stderr, "test_decide: stalled-pair (2,2) NOT detected\n");
+        return 1;
+    }
+    constexpr int64_t regressed[] = {10, 5};
+    if (dc::strictly_increasing<int64_t>(regressed)) {
+        std::fprintf(stderr, "test_decide: regression NOT detected\n");
         return 1;
     }
 
