@@ -39,6 +39,34 @@ class CRUCIBLE_OWNER Arena {
       pre (block_size > 0)
       : block_size_{block_size} {
     alloc_new_block_(block_size_);
+    // CONTRACT-Arena-CTOR-POST: construction-state invariant — after
+    // ctor, the four load-bearing fields agree with the supplied
+    // block_size:
+    //   (1) block_size_ matches the caller's requested block_size
+    //       (set via member-init list above; post catches a future
+    //       refactor that rounds up internally).
+    //   (2) cur_block_ != nullptr — alloc_new_block_ on the OOM path
+    //       std::abort()s, so post-ctor reaching this point implies
+    //       success.  Mirrors KernelCache and PoolAllocator post-init
+    //       discipline.
+    //   (3) offset_ == 0 — alloc_new_block_ sets fresh-block offset
+    //       to zero.  Catches a future refactor that pre-allocates
+    //       header bytes during ctor without bumping offset_.
+    //   (4) end_offset_ == block_size_ — alloc_new_block_ sets the
+    //       end of the bump region to the requested allocation size.
+    //       Together with (3) implies the full block is available
+    //       for the first alloc().
+    // Routes through CRUCIBLE_POST because every predicate references
+    // a class member through `this->` — P2900 `post (r:...)` is
+    // consteval-bypass-vulnerable per the GCC 16.1.1 family (same
+    // gotcha that drove CONTRACT-100..108-POST and 116..127-POST).
+    // Void return: first arg `0` is the conventional sentinel.  Under
+    // NDEBUG these collapse to `[[assume]]` for downstream alloc()
+    // optimizer.
+    CRUCIBLE_POST(0, block_size_ == block_size);
+    CRUCIBLE_POST(0, cur_block_ != nullptr);
+    CRUCIBLE_POST(0, offset_ == 0u);
+    CRUCIBLE_POST(0, end_offset_ == block_size_);
   }
 
   ~Arena() {
@@ -331,6 +359,24 @@ class CRUCIBLE_OWNER Arena {
     // holds by construction.
     total_block_bytes_.advance(
         crucible::sat::add_sat(total_block_bytes_.get(), nbytes));
+    // CONTRACT-Arena-AllocBlock-POST: post-allocation invariant — after
+    // alloc_new_block_:
+    //   (1) cur_block_ == p — the freshly malloc'd block is the active
+    //       bump region (set above; post catches a future refactor that
+    //       does the registration but forgets the cur_block_ assignment,
+    //       which would silently leak the new block out of the bump path).
+    //   (2) offset_ == 0 — the new block starts at the head; the previous
+    //       block's offset state is replaced.
+    //   (3) end_offset_ == nbytes — the bump region's end matches the
+    //       caller's allocation request.
+    // Routes through CRUCIBLE_POST: the predicates reference `this->`
+    // members + the local `p`, hitting the GCC 16.1.1 consteval-bypass
+    // surface.  Under NDEBUG these collapse to `[[assume]]` so the next
+    // call to alloc()/alloc_slow_() can speculate that cur_block_ is
+    // non-null and offset_/end_offset_ have known values.
+    CRUCIBLE_POST(0, cur_block_ == p);
+    CRUCIBLE_POST(0, offset_ == 0u);
+    CRUCIBLE_POST(0, end_offset_ == nbytes);
   }
 
   // Hot fields (one cache line, touched on every alloc).
