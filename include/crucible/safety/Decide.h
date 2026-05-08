@@ -681,4 +681,97 @@ constexpr bool factorization_eq(std::span<const T> factors, T total) noexcept {
     return product == total;
 }
 
+// ─── coprime ───────────────────────────────────────────────────────
+//
+// Returns true iff gcd(|a|, |b|) == 1, i.e. `a` and `b` share no
+// common factor other than 1.  Computed via Euclidean algorithm
+// over unsigned absolute values; total over inputs (no UB on
+// signed extremes including INT_MIN).
+//
+// SEMANTIC NOTE
+// -------------
+// Coprimality is a property of the absolute values: coprime(-15, 25)
+// returns the same as coprime(15, 25).  Sign is irrelevant.
+//
+// Edge cases pinned by definition:
+//   * coprime(0, 0)   → false  (gcd(0, 0) is conventionally 0)
+//   * coprime(0, 1)   → true   (gcd(0, 1) == 1)
+//   * coprime(0, n>1) → false  (gcd(0, n) == n)
+//   * coprime(1, n)   → true   (1 is the multiplicative identity)
+//   * coprime(n, n)   → (n == 1)  (every n>1 shares itself as factor)
+//
+// The (0, 0) case is the load-bearing edge: gcd(0, 0) is not 1,
+// so coprime(0, 0) is false.  Production code that hand-rolls
+// "gcd(a, b) == 1" without a zero guard often crashes (division
+// by zero in the Euclidean step) or returns garbage; the predicate
+// short-circuits and returns a defined false.
+//
+// USAGE PATTERN
+// -------------
+//
+//   // CONTRACT-109 production usage shape: hash table double-
+//   // probing requires the secondary stride to be coprime to
+//   // the table capacity (otherwise probe sequence cycles
+//   // through a strict subset of slots and lookups can fail
+//   // even when free slots exist).
+//   constexpr bool valid_secondary_stride(std::size_t stride,
+//                                         std::size_t capacity) noexcept {
+//       CRUCIBLE_PRE(crucible::decide::coprime<std::size_t>(stride, capacity));
+//       return true;
+//   }
+//
+//   // At consteval, planted shared-factor fails compilation:
+//   //   static_assert(valid_secondary_stride(15, 25));   // gcd 5
+//   //                 ↑ rejected: "non-constant condition"
+//
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ------------------------------------------------------
+//   (none yet — first migration batch lands with CONTRACT-109:
+//    Swiss-table double-hashing secondary stride, Philox stride
+//    constants, RecipePool secondary-probe parameter validation)
+//
+// IMPLEMENTATION NOTE
+// -------------------
+// The Euclidean algorithm is iterative (no recursion → no stack
+// growth at consteval), runs in O(log min(a, b)) modular steps,
+// and uses `std::make_unsigned_t<T>` for the running values so
+// that signed T inputs (including INT_MIN) convert to a defined
+// magnitude without UB.  The unary minus on the unsigned cast
+// of a negative signed value is well-defined modular arithmetic
+// and yields exactly the unsigned representation of |a|.
+//
+// ANTI-PATTERNS (review-rejected)
+// -------------------------------
+//   * `pre (a % b != 0 && b % a != 0)` — checks divisibility ONE
+//     way, misses cases like coprime(6, 9): 6 % 9 == 6 (nonzero),
+//     9 % 6 == 3 (nonzero), but gcd(6, 9) == 3.
+//   * `pre (std::gcd(a, b) == 1)` — correct for non-negative inputs
+//     but std::gcd has implementation-defined behavior on signed
+//     extremes (libstdc++ contract violation on INT_MIN).
+//   * `pre ((a & 1) || (b & 1))` — only checks they aren't both
+//     even; misses every other shared prime factor.
+//   * `pre (a != b)` — checks inequality but coprime(6, 9) is
+//     false despite 6 != 9.
+template <std::integral T>
+[[nodiscard, gnu::const]]
+constexpr bool coprime(T a, T b) noexcept {
+    if (a == T{0} && b == T{0}) {
+        return false;  // gcd(0, 0) is 0, not 1
+    }
+    using U = std::make_unsigned_t<T>;
+    // Unsigned absolute value: well-defined for all signed T,
+    // including INT_MIN (where -INT_MIN as a signed value would
+    // be UB but the unsigned cast wraps to the correct magnitude).
+    U au = (a < T{0}) ? static_cast<U>(0) - static_cast<U>(a)
+                      : static_cast<U>(a);
+    U bu = (b < T{0}) ? static_cast<U>(0) - static_cast<U>(b)
+                      : static_cast<U>(b);
+    while (bu != U{0}) {
+        U t = au % bu;
+        au = bu;
+        bu = t;
+    }
+    return au == U{1};
+}
+
 }  // namespace crucible::decide

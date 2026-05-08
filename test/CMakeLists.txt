@@ -5119,3 +5119,28 @@ crucible_neg_compile_test(neg_decide_factorization_eq_wrong_product
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_factorization_eq_overflow
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-052: HS14 fixture pair pinning that decide::coprime
+# correctly fires inside CRUCIBLE_PRE at consteval.  Coprimality
+# via Euclidean algorithm; production usage: hash-table double-
+# probing secondary stride must be coprime to capacity; Philox
+# stride constants; LCG period guarantees.  Two distinct mismatch
+# classes:
+#
+#   * neg_decide_coprime_shared_factor — fires on `(6, 9)` with
+#     gcd 3.  THE classical one-sided-modulo anti-pattern bait:
+#     6 % 9 != 0 AND 9 % 6 != 0, but the pair shares factor 3.
+#     A `pre(a % b != 0 && b % a != 0)` check accepts; only the
+#     full Euclidean walk rejects.
+#   * neg_decide_coprime_zero_pair — fires on `(0, 0)`.  Degenerate
+#     input where gcd is 0 (not 1).  Without the predicate's
+#     explicit zero short-circuit, hand-rolled Euclidean would UB
+#     on `0 % 0`; std::gcd returns 0 silently.  Catches the
+#     missing-zero-guard / uninitialized-config bug class.
+#
+# Together the two fixtures pin BOTH the most common mistake
+# (one-sided modulo) AND the corner-case input (degenerate zero).
+crucible_neg_compile_test(neg_decide_coprime_shared_factor
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_coprime_zero_pair
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")

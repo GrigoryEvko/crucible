@@ -595,6 +595,101 @@ safe_partition_world_size(std::span<const uint32_t> dims, uint32_t world) noexce
 static_assert(safe_partition_world_size(partition_64, 64u) == 64u);
 static_assert(safe_partition_world_size(partition_no_tp, 64u) == 64u);
 
+// ── coprime positive witnesses ─────────────────────────────────────
+//
+// Coprimality test via Euclidean algorithm.  Edge cases:
+//   * (0, 0)   → false (gcd is 0)
+//   * (0, 1)   → true  (gcd is 1)
+//   * (1, n)   → true  (1 coprime to everything)
+//   * (n, n)   → true iff n == 1
+//   * (-a, b)  → same as (|a|, |b|)
+//
+// Coverage matrix:
+//   shared prime factor      → false (15, 25 share 5)
+//   no shared factor         → true  (8, 9 are coprime)
+//   one is 1                 → true
+//   identical non-1          → false (7, 7 share 7)
+//   zero edge cases pinned   → various
+
+// Trivial cases.
+static_assert(dc::coprime<uint32_t>(1u, 1u));
+static_assert(dc::coprime<uint32_t>(1u, 999u));
+static_assert(dc::coprime<uint32_t>(999u, 1u));
+
+// (0, 0) — false by definition (gcd(0,0) = 0).
+static_assert(!dc::coprime<uint32_t>(0u, 0u));
+static_assert(!dc::coprime<int32_t>(0, 0));
+
+// (0, n) — gcd(0, n) = n; coprime iff n == 1.
+static_assert(dc::coprime<uint32_t>(0u, 1u));
+static_assert(dc::coprime<uint32_t>(1u, 0u));
+static_assert(!dc::coprime<uint32_t>(0u, 2u));
+static_assert(!dc::coprime<uint32_t>(0u, 999u));
+
+// (n, n) — share self as factor; coprime iff n == 1.
+static_assert(!dc::coprime<uint32_t>(2u, 2u));
+static_assert(!dc::coprime<uint32_t>(7u, 7u));
+static_assert(!dc::coprime<uint32_t>(999u, 999u));
+
+// Coprime pairs — no shared prime factor.
+static_assert(dc::coprime<uint32_t>(2u, 3u));
+static_assert(dc::coprime<uint32_t>(3u, 5u));
+static_assert(dc::coprime<uint32_t>(8u, 9u));         // 2^3 vs 3^2
+static_assert(dc::coprime<uint32_t>(7u, 11u));
+static_assert(dc::coprime<uint32_t>(35u, 64u));       // 5*7 vs 2^6
+static_assert(dc::coprime<uint32_t>(13u, 21u));       // 13 vs 3*7
+
+// Non-coprime pairs — shared prime factor.
+static_assert(!dc::coprime<uint32_t>(6u, 8u));        // gcd 2
+static_assert(!dc::coprime<uint32_t>(15u, 25u));      // gcd 5
+static_assert(!dc::coprime<uint32_t>(77u, 91u));      // gcd 7 (7*11 vs 7*13)
+static_assert(!dc::coprime<uint32_t>(12u, 18u));      // gcd 6
+static_assert(!dc::coprime<uint32_t>(100u, 30u));     // gcd 10
+
+// Anti-pattern witness: 6 % 9 != 0 AND 9 % 6 != 0, but NOT coprime.
+// `pre(a % b != 0 && b % a != 0)` would silently accept this.
+static_assert(!dc::coprime<uint32_t>(6u, 9u));        // gcd 3
+
+// Signed T — sign doesn't affect coprimality.
+static_assert(dc::coprime<int32_t>(8, 9));
+static_assert(dc::coprime<int32_t>(-8, 9));
+static_assert(dc::coprime<int32_t>(8, -9));
+static_assert(dc::coprime<int32_t>(-8, -9));
+static_assert(!dc::coprime<int32_t>(15, -25));
+static_assert(!dc::coprime<int32_t>(-15, 25));
+
+// INT_MIN — predicate must be total despite the |INT_MIN| > INT_MAX
+// edge case.  INT_MIN = -2^31; |INT_MIN| as unsigned is 2^31.
+// gcd(2^31, 1) == 1, so coprime(INT_MIN, 1) == true.  gcd(2^31, 2) == 2,
+// so coprime(INT_MIN, 2) == false.
+static_assert(dc::coprime<int32_t>(std::numeric_limits<int32_t>::min(), 1));
+static_assert(!dc::coprime<int32_t>(std::numeric_limits<int32_t>::min(), 2));
+static_assert(!dc::coprime<int32_t>(std::numeric_limits<int32_t>::min(),
+                                    std::numeric_limits<int32_t>::min()));
+
+// uint64_t large primes — coprime by construction.
+static_assert(dc::coprime<uint64_t>(982451653ull, 982451707ull));   // two distinct primes
+
+// CONTRACT-109 production preview — Swiss-table double-hashing
+// secondary stride must be coprime to table capacity for the
+// probe sequence to visit every slot.  Capacity 64 = 2^6, so
+// any odd stride is coprime; any even stride shares factor 2.
+static_assert(dc::coprime<uint32_t>(7u, 64u));        // 7 odd, coprime to 2^6
+static_assert(dc::coprime<uint32_t>(13u, 64u));
+static_assert(!dc::coprime<uint32_t>(8u, 64u));       // gcd 8
+static_assert(!dc::coprime<uint32_t>(48u, 64u));      // gcd 16
+
+// ── Composition with CRUCIBLE_PRE — secondary-stride production shape ─
+
+[[nodiscard]] constexpr uint32_t
+safe_secondary_stride(uint32_t stride, uint32_t capacity) noexcept {
+    CRUCIBLE_PRE(dc::coprime<uint32_t>(stride, capacity));
+    return stride;
+}
+
+static_assert(safe_secondary_stride(7u, 64u) == 7u);
+static_assert(safe_secondary_stride(13u, 100u) == 13u);
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -798,6 +893,36 @@ int main() {
     constexpr uint32_t overflow_factors[] = {65536u, 65536u};   // 2^32, wraps to 0
     if (dc::factorization_eq<uint32_t>(overflow_factors, 0u)) {
         std::fprintf(stderr, "test_decide: overflow-wrap WRONGLY accepted\n");
+        return 1;
+    }
+
+    // coprime runtime witnesses.
+    uint32_t volatile sa_stride = 7;
+    uint32_t volatile sa_cap = 64;
+    sink += static_cast<int>(safe_secondary_stride(
+        static_cast<uint32_t>(sa_stride), static_cast<uint32_t>(sa_cap)));   // 7
+
+    if (!dc::coprime<uint32_t>(8u, 9u)) {
+        std::fprintf(stderr, "test_decide: coprime(8,9) WRONGLY rejected\n");
+        return 1;
+    }
+    if (dc::coprime<uint32_t>(15u, 25u)) {
+        std::fprintf(stderr, "test_decide: coprime(15,25) WRONGLY accepted\n");
+        return 1;
+    }
+    if (dc::coprime<uint32_t>(0u, 0u)) {
+        std::fprintf(stderr, "test_decide: coprime(0,0) WRONGLY accepted\n");
+        return 1;
+    }
+    // Anti-pattern witness: pre(a%b != 0 && b%a != 0) accepts (6,9).
+    // The full Euclidean predicate rejects.
+    if (dc::coprime<uint32_t>(6u, 9u)) {
+        std::fprintf(stderr, "test_decide: coprime(6,9) WRONGLY accepted (one-sided modulo bug)\n");
+        return 1;
+    }
+    // INT_MIN must not UB.
+    if (dc::coprime<int32_t>(std::numeric_limits<int32_t>::min(), 2)) {
+        std::fprintf(stderr, "test_decide: coprime(INT_MIN, 2) WRONGLY accepted\n");
         return 1;
     }
 
