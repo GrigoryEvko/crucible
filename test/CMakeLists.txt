@@ -4466,8 +4466,12 @@ crucible_neg_compile_test(neg_grid_consumer_try_push
     "has no member named.*try_push")
 
 # (b) ProducerHandle<I> cannot recv.  GCC-WRAPPER-TEXT.
+# Fixture source calls `p.try_pop()` — the recv-side queue API name —
+# so GCC reports `has no member named 'try_pop'`.  Regex matches that.
+# The fixture name keeps the conceptual "try_recv" label for grep
+# discoverability with the producer/consumer symmetry test pair above.
 crucible_neg_compile_test(neg_grid_producer_try_recv
-    "has no member named.*try_recv")
+    "has no member named.*try_pop")
 
 # (c) producer<I>() with I >= M is a hard compile error at the
 #     factory boundary — even if the caller constructs the type,

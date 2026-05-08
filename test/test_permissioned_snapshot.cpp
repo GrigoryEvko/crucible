@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <latch>
 #include <thread>
 #include <type_traits>
 #include <vector>
@@ -238,11 +239,29 @@ void test_swmr_under_load() {
     std::atomic<int>          torn_reads_observed{0};
     std::atomic<std::uint64_t> total_loads{0};
 
+    // Synchronized startup gate.  Without this barrier, under host
+    // contention (j24 ctest, busy box) the writer's jthread can run
+    // its full 10K publish loop before any reader's jthread has even
+    // entered its main loop — readers then see writer_done==true on
+    // first check, exit immediately, and `total_loads == 0` fails the
+    // post-condition.  std::latch{N+1} is the project-canonical
+    // starting-line gate (mirrors test_permission_shared,
+    // test_fair_permission_shared, test_concurrency_collision_fuzzer,
+    // test_safety).  All N readers + the writer rendezvous before
+    // any work happens; this guarantees ≥1 reader load is concurrent
+    // with ≥1 publish.  PermissionedSnapshot's seqlock provides the
+    // (orthogonal) atomicity guarantee — the latch only synchronises
+    // start-of-life; correctness during the loop comes entirely from
+    // the Pool refcount + AtomicSnapshot retry.
+    std::latch start_gate{NUM_READERS + 1};
+
     // Writer thread — publishes (i, i) repeatedly; lo and hi must
     // move together.
-    std::jthread writer_t([&snap, &writer_perm, &publishes_done, &writer_done]
+    std::jthread writer_t([&snap, &writer_perm, &publishes_done,
+                           &writer_done, &start_gate]
                           (std::stop_token) noexcept {
         auto handle = snap.writer(std::move(writer_perm));
+        start_gate.arrive_and_wait();
         for (int i = 1; i <= NUM_PUBLISHES; ++i) {
             const std::uint64_t v = static_cast<std::uint64_t>(i);
             handle.publish(CounterPair{v, v});
@@ -257,8 +276,10 @@ void test_swmr_under_load() {
     std::vector<std::jthread> readers;
     for (int i = 0; i < NUM_READERS; ++i) {
         readers.emplace_back([&snap, &writer_done,
-                              &torn_reads_observed, &total_loads]
+                              &torn_reads_observed, &total_loads,
+                              &start_gate]
                              (std::stop_token) noexcept {
+            start_gate.arrive_and_wait();
             while (!writer_done.load(std::memory_order_acquire)) {
                 total_loads.fetch_add(1, std::memory_order_relaxed);
 
