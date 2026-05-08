@@ -2,6 +2,7 @@
 
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/Types.h>
 
 #include <bit>
@@ -60,6 +61,20 @@ struct Expr {
   // ExprPool::make_ uses this via placement-new into arena storage.
   // hash_ and payload_ may legitimately be 0 (zero integer, zero-valued
   // flag set).  args_ may be null iff nargs_ == 0.
+  //
+  // CONTRACT-115: the args-vs-nargs companionship discharges through
+  // the named predicate `crucible::decide::implies` (CONTRACT-081
+  // catalog) — `nargs_ > 0 ⇒ args_ != nullptr`.  Equivalent forms
+  // (`nargs_ == 0 || args_ != nullptr`, `args_ != nullptr || nargs_
+  // == 0`) are not used because the implication form is the natural
+  // mathematical reading of the doc-comment "args_ may be null iff
+  // nargs_ == 0".  Pure parameter ref — not consteval-bypass-vulnerable
+  // — so P2900 pre() is sufficient.  ExprPool::intern_node and the
+  // bool/int singleton paths are the only callers; neither passes
+  // nargs_ > 0 with args_ == nullptr in production, but the cite
+  // catches a future refactor that constructs an Expr from a partial
+  // arg-list initialization sequence (e.g., args_ = staging buffer
+  // before the staging is filled).
   constexpr Expr(
       Op           op_,
       uint8_t      nargs_,
@@ -68,6 +83,7 @@ struct Expr {
       uint64_t     hash_,
       int64_t      payload_,
       const Expr* const* args_) noexcept
+      pre (::crucible::decide::implies(nargs_ > 0, args_ != nullptr))
       : op(op_)
       , nargs(nargs_)
       , flags(flags_)
