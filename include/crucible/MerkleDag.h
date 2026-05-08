@@ -1241,7 +1241,20 @@ class CRUCIBLE_OWNER KernelCache {
     Published = 2,  // h != 0, k != nullptr
   };
 
-  explicit KernelCache(uint32_t capacity = 4096) : capacity_(capacity) {
+  explicit KernelCache(uint32_t capacity = 4096)
+      // CONTRACT-116: capacity must be pow2 (so `(slot + probe) & mask`
+      // works as the open-addressing wrap-around) and ≤ 2^31 (so the
+      // probe loop's `slot_index + probe` doesn't overflow uint32_t
+      // for the worst-case capacity).  Both conditions discharge
+      // through the named predicate `decide::is_power_of_two_le`
+      // (CONTRACT-050 catalog).  Pure-parameter — no class member
+      // access — so P2900 pre() is sufficient.  The runtime assert()
+      // below is retained as documentation for assert-enabled debug
+      // builds; the pre clause fires at consteval AND under
+      // semantic=enforce.
+      pre (::crucible::decide::is_power_of_two_le<std::uint32_t>(
+          capacity, std::uint32_t{1u << 31}))
+      : capacity_(capacity) {
     assert(capacity != 0 && (capacity & (capacity - 1)) == 0
            && "capacity must be a non-zero power of 2");
     table_ = allocate_table_(capacity_);
