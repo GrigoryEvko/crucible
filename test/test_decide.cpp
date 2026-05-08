@@ -1570,6 +1570,65 @@ static_assert(dc::is_non_zero(AggregateZero{0xDEADBEEF, 0xCAFEBABE}));
 static_assert(hash_aggregate(AggregateZero{1, 2}) == (1u ^ 2u));
 static_assert(hash_aggregate(AggregateZero{0xDEADBEEF, 0}) == 0xDEADBEEFu);
 
+// ── positive witnesses ─────────────────────────────────────────────
+//
+// Coverage matrix:
+//   * Built-in unsigned T: rejects zero, accepts every non-zero.
+//   * Built-in signed T: rejects zero AND every negative; accepts
+//     every strictly-positive value including INT_MAX.
+//   * Saturated boundaries (T::min, T::max) on both signedness sides.
+//
+// Static asserts pin the predicate's behavior at every category;
+// negative-compile fixtures (positive_zero, positive_negative)
+// catch the mismatch classes in the !consteval / runtime path.
+
+// Built-in unsigned integers — strict-positive collapses to x != 0.
+static_assert(!dc::positive(std::uint8_t{0}));
+static_assert(!dc::positive(std::uint16_t{0}));
+static_assert(!dc::positive(std::uint32_t{0}));
+static_assert(!dc::positive(std::uint64_t{0}));
+static_assert( dc::positive(std::uint8_t{1}));
+static_assert( dc::positive(std::uint32_t{42}));
+static_assert( dc::positive(std::uint64_t{0xCAFEBABEDEADBEEFULL}));
+static_assert( dc::positive(std::numeric_limits<std::uint8_t>::max()));
+static_assert( dc::positive(std::numeric_limits<std::uint64_t>::max()));
+
+// Built-in signed integers — STRICTLY positive: rejects zero AND
+// every negative.  This is the discipline that distinguishes
+// `decide::positive` from `decide::is_non_zero` (the latter accepts
+// negatives for signed T).
+static_assert(!dc::positive(std::int8_t{0}));
+static_assert(!dc::positive(std::int32_t{0}));
+static_assert(!dc::positive(std::int64_t{0}));
+static_assert(!dc::positive(std::int8_t{-1}));
+static_assert(!dc::positive(std::int32_t{-1}));
+static_assert(!dc::positive(std::int64_t{-1}));
+static_assert(!dc::positive(std::numeric_limits<std::int8_t>::min()));
+static_assert(!dc::positive(std::numeric_limits<std::int32_t>::min()));
+static_assert(!dc::positive(std::numeric_limits<std::int64_t>::min()));
+static_assert( dc::positive(std::int8_t{1}));
+static_assert( dc::positive(std::int32_t{1}));
+static_assert( dc::positive(std::int64_t{1}));
+static_assert( dc::positive(std::numeric_limits<std::int8_t>::max()));
+static_assert( dc::positive(std::numeric_limits<std::int64_t>::max()));
+
+// ── Composition with CRUCIBLE_PRE — the production usage shape ─────
+//
+// Mirrors the canonical Arena cite shape (alloc_obj / alloc_array /
+// reserve_block / raw_alloc).  A planted-zero witness rejects at
+// consteval; the fixture pin in test/safety_neg/ catches buggy
+// impls that silently admit zero.
+
+[[nodiscard]] constexpr std::size_t safe_alloc_size(std::size_t n) noexcept {
+    CRUCIBLE_PRE(dc::positive(n));
+    return n * sizeof(int);
+}
+
+// Positive — non-zero count, sizing succeeds at consteval.
+static_assert(safe_alloc_size(1) == sizeof(int));
+static_assert(safe_alloc_size(64) == 64 * sizeof(int));
+static_assert(safe_alloc_size(1024) == 1024 * sizeof(int));
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -2438,6 +2497,56 @@ int main() {
 
         sink += static_cast<int>(dc::is_non_zero(both_set))
               - static_cast<int>(dc::is_non_zero(all_zero));
+    }
+
+    // ── positive runtime witnesses ──────────────────────────────────
+    //
+    // Route values through volatile sinks so the predicate runs at
+    // runtime.  Coverage: built-in unsigned (zero / nonzero), signed
+    // (zero / negative / positive).  The signed-negative branch is
+    // load-bearing — `decide::positive` differs from `is_non_zero`
+    // ONLY for negative signed values, so this is the unique witness.
+    {
+        volatile std::uint64_t z_u64 = 0;
+        volatile std::uint64_t pos_u64 = 0xDEADBEEF;
+        volatile std::int32_t z_i32 = 0;
+        volatile std::int32_t neg_i32 = -42;
+        volatile std::int32_t pos_i32 = 7;
+
+        if (dc::positive(static_cast<std::uint64_t>(z_u64))) {
+            std::fprintf(stderr,
+                "test_decide: positive(0u64) WRONGLY accepted\n");
+            return 1;
+        }
+        if (!dc::positive(static_cast<std::uint64_t>(pos_u64))) {
+            std::fprintf(stderr,
+                "test_decide: positive(non-zero u64) WRONGLY rejected\n");
+            return 1;
+        }
+        if (dc::positive(static_cast<std::int32_t>(z_i32))) {
+            std::fprintf(stderr,
+                "test_decide: positive(0i32) WRONGLY accepted\n");
+            return 1;
+        }
+        // The discipline-distinguishing branch: signed negative is
+        // NOT positive (would be is_non_zero=true if we used the
+        // wrong cite).
+        if (dc::positive(static_cast<std::int32_t>(neg_i32))) {
+            std::fprintf(stderr,
+                "test_decide: positive(-42i32) WRONGLY accepted "
+                "(strict-positive must reject negatives)\n");
+            return 1;
+        }
+        if (!dc::positive(static_cast<std::int32_t>(pos_i32))) {
+            std::fprintf(stderr,
+                "test_decide: positive(7i32) WRONGLY rejected\n");
+            return 1;
+        }
+
+        sink += static_cast<int>(dc::positive(
+                    static_cast<std::int32_t>(pos_i32)))
+              - static_cast<int>(dc::positive(
+                    static_cast<std::int32_t>(neg_i32)));
     }
 
     if (sink == 0) {

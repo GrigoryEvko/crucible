@@ -1852,6 +1852,141 @@ constexpr bool in_range(T x, T lo, T hi) noexcept {
     return lo <= x && x <= hi;
 }
 
+// ─── positive ──────────────────────────────────────────────────────
+//
+// Returns true iff `x > T{0}`, i.e. iff `x` is STRICTLY POSITIVE.
+// Zero answers FALSE; for signed T, negative values answer FALSE.
+//
+// The canonical "non-empty count" / "non-zero size" guard.  Where
+// `in_range(x, 1, MAX)` would express the same predicate awkwardly
+// (carrying a runtime-unknown upper bound the predicate doesn't
+// actually constrain), `positive(x)` says exactly what the
+// production site means: "this count must be > 0 to make progress".
+//
+// ───────────────────────────────────────────────────────────────────
+// PREDICATE DEFINITION
+// ───────────────────────────────────────────────────────────────────
+//
+//   ∀ T integral.  ∀ x : T.  positive(x) ⟺ x > 0
+//
+// For unsigned T this collapses to `x != 0`.  For signed T this
+// rejects BOTH zero AND every negative value — `positive(0) = false`,
+// `positive(-1) = false`, `positive(1) = true`.  The strict-positive
+// semantics are deliberate: callers wanting `x >= 0` (zero-OK
+// non-negative) cite a different procedure (or `in_range(x, 0, MAX)`).
+//
+// ───────────────────────────────────────────────────────────────────
+// WHY THIS PROCEDURE EXISTS (per CONTRACT-020 design principles)
+// ───────────────────────────────────────────────────────────────────
+//
+// Five-plus call sites in the codebase write the same `pre (x > 0)`
+// shape against arena/pool/region SIZE counters.  Each is a load-
+// bearing structural invariant: `Arena::reserve(block_size > 0)`,
+// `Arena::alloc_obj(n > 0)`, `Arena::alloc_array(n > 0)`,
+// `Arena::raw_alloc(nbytes > 0)`, `Graph::reduction_body(nred > 0)`.
+// Without a named cite each is a hand-rolled comparison that drifts
+// independently — review can't grep "every count-must-be-positive
+// invariant in the codebase" without knowing what spelling each
+// author chose (`> 0` vs `>= 1` vs `!= 0` vs `bool(n)`).
+//
+// The cite gives us:
+//
+//   * grep target: `decide::positive` finds every such invariant
+//     simultaneously.  Future hardening (instrumentation, sanitizer
+//     wiring, SMT discharge of "size > 0" obligations) has ONE
+//     touchpoint instead of dozens.
+//   * intent in the source.  `CRUCIBLE_PRE(decide::positive(n))`
+//     reads as "the count is positive"; `pre (n > 0)` reads as a
+//     comparison whose semantic interpretation depends on T's
+//     signedness convention.
+//   * lift path: when the production caller hardens `n` to
+//     `Refined<crucible::safety::positive_<size_t>, size_t>`, the
+//     predicate name on both sides matches by string equality —
+//     trivially-mechanical refactor, no semantic ambiguity.
+//
+// ───────────────────────────────────────────────────────────────────
+// USAGE PATTERN
+// ───────────────────────────────────────────────────────────────────
+//
+//   // Production usage shape (Arena cite — the canonical case):
+//   void* alloc_obj(crucible::effects::Alloc, std::size_t n) noexcept
+//       pre (::crucible::decide::positive(n))
+//   {
+//       // body trusts n > 0 via [[assume]] under semantic=ignore;
+//       // the bump pointer math below assumes n is a real allocation
+//       // request, not a no-op.
+//       ...
+//   }
+//
+//   // Production usage shape (Graph::reduction_body — sized-count
+//   // structural invariant):
+//   GraphNode* reduction_body(std::uint32_t nred, ...)
+//       pre (::crucible::decide::positive(nred))
+//   {
+//       // The reduction has at least one input (nred=0 is meaningless
+//       // — there's nothing to reduce).
+//       ...
+//   }
+//
+//   // At consteval, a planted nonsense witness fails compilation:
+//   //   constexpr auto witness = wrap(0u);  // wrap uses positive(n)
+//   //                 ↑ rejected: "non-constant condition" /
+//   //                 __builtin_trap.
+//
+// ───────────────────────────────────────────────────────────────────
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ───────────────────────────────────────────────────────────────────
+//
+// First adoption batch lands with this commit:
+//   * Arena::reserve_block (block_size)            — Arena.h:39
+//   * Arena::alloc_obj (n)                         — Arena.h:183
+//   * Arena::alloc_array (n)                       — Arena.h:253
+//   * Arena::raw_alloc (nbytes)                    — Arena.h:346
+//   * Graph::reduction_body (nred)                 — Graph.h:340
+//
+// Future cites planned across the wider `pre (x > 0)` sweep —
+// any size/count parameter that must be non-empty for the body
+// to do meaningful work.
+//
+// ───────────────────────────────────────────────────────────────────
+// ANTI-PATTERNS (review-rejected)
+// ───────────────────────────────────────────────────────────────────
+//
+//   * `pre (x > 0)` — hand-rolled comparison.  Loses the semantic
+//     name; reviewers can't grep "all positivity invariants".
+//     Cite `decide::positive`.
+//   * `pre (x != 0)` — equivalent for unsigned T but DIFFERENT for
+//     signed T (admits negatives).  Either deliberately accepts
+//     negatives (in which case cite `decide::is_non_zero`) or has
+//     a hidden bug (cite `decide::positive` to make the discipline
+//     visible).
+//   * `pre (decide::in_range(x, 1, std::numeric_limits<T>::max()))` —
+//     awkward and carries a meaningless upper bound.  The upper
+//     bound is forced by `in_range`'s closed-interval shape but
+//     conveys no structural constraint.  Cite the named procedure.
+//   * `pre (bool(x))` — uses implicit numeric-to-bool conversion.
+//     Unsigned-friendly (0 → false) but coupling the count's truth
+//     value to a structural invariant is the bug class
+//     `is_non_zero` is for; for "must be positive" the named cite
+//     reads cleanly.
+//
+// ───────────────────────────────────────────────────────────────────
+// PROPERTIES (verified by test_decide.cpp)
+// ───────────────────────────────────────────────────────────────────
+//
+//   - positive(T{0}) == false                ∀ integral T.
+//   - positive(T{1}) == true                 ∀ integral T.
+//   - positive(std::numeric_limits<T>::max()) == true.
+//   - For signed T: positive(T{-1}) == false.
+//   - For signed T: positive(std::numeric_limits<T>::min()) == false.
+//   - { x : positive(x) } = { x : x > 0 }    (predicate IS the
+//     strict-positive characteristic function).
+template <std::integral T>
+[[nodiscard, gnu::const]]
+constexpr bool positive(T x) noexcept {
+    return x > T{0};
+}
+
 // ─── is_non_zero ───────────────────────────────────────────────────
 //
 // Returns true iff `x != T{}`, i.e. iff `x` is not equal to the

@@ -5486,3 +5486,45 @@ crucible_neg_compile_test(neg_decide_in_range_above_high
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_in_range_below_low
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-103: crucible::decide::positive — strict-positive lower-
+# bound predicate (T{0} < x).  TWO HS14 fixtures pinning the FOUR
+# named bug-class buckets via ORTHOGONAL witnesses:
+#
+#   * neg_decide_positive_zero — witness `0u` for unsigned T.
+#     Catches ALWAYS-ACCEPT (returns true) / OFF-BY-ONE-INCLUSIVE
+#     (`>= 0` admits zero) / INVERTED-SENSE (`<= 0` admits zero,
+#     and every negative for signed T).  All three impls would
+#     silently admit the canonical "no progress possible" sentinel
+#     at every Arena cite (block_size=0 / n=0 / nbytes=0) and
+#     Graph::reduction_body (nred=0).
+#   * neg_decide_positive_negative — witness `int32_t{-1}` for
+#     signed T.  UNIQUELY catches WRONG-CITE-TO-IS_NON_ZERO
+#     (`x != T{0}` admits -1; agrees with positive on unsigned but
+#     diverges on signed-negative inputs).  This is the most
+#     insidious of the bug classes: a CONTRACT-* refactor that
+#     accidentally renames the cite from `positive` to `is_non_zero`
+#     passes the zero fixture, passes every unsigned production
+#     cite at runtime, and silently admits negatives at signed
+#     cites.
+#
+# Pair-by-pair orthogonality:
+#   - zero fixture catches always-accept + off-by-one-inclusive +
+#     inverted-sense (3 of 4 buckets); cannot detect wrong-cite
+#     because is_non_zero(0) and positive(0) agree.
+#   - negative fixture catches wrong-cite-to-is_non_zero (the 4th
+#     bucket) + inverted-sense (covered).
+#   - Together the two fixtures span all four named bug-class
+#     buckets.  Two-fixture discipline is mandatory because a
+#     single witness cannot distinguish wrong-cite from off-by-
+#     one-inclusive (both behaviors agree on -1 OR on 0, never
+#     on both).
+#
+# Companion positive static_asserts in test_decide.cpp pin the
+# strict-zero rejection via runtime smoke-test routing through
+# volatile sinks (zero-int / int-min-of-int8 / int-min-of-int16 /
+# explicit-negative for safety::Tagged on signed T).
+crucible_neg_compile_test(neg_decide_positive_zero
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_positive_negative
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
