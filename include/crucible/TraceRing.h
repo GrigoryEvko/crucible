@@ -48,6 +48,7 @@
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/Post.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/Tagged.h>
 
@@ -446,6 +447,17 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     const uint64_t next_tail = t + count;
     consumer_tail_ = next_tail;
     tail.advance(next_tail);
+    // CONTRACT-104-POST: result-bound contract — the count returned
+    // is at most max_count.  The available-clamp `std::min(available,
+    // max_count)` above guarantees this; the post catches a future
+    // refactor that drops the clamp (e.g., returns `available`
+    // directly when callers seem to "always pass max_count >=
+    // available") which would silently overrun the caller's `out`
+    // buffer.  Routes through CRUCIBLE_POST because P2900 `post (r:...)`
+    // referencing the parameter is bypass-resistant but the cite is
+    // grep-discipline consistent with the in-body pre on this file.
+    // Early returns of 0 above trivially satisfy `0 <= max_count`.
+    CRUCIBLE_POST(count, count <= max_count);
     return count;
   }
 
@@ -584,6 +596,11 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     const uint64_t next_tail = t + count;
     consumer_tail_ = next_tail;
     tail.advance(next_tail);
+    // CONTRACT-104-POST: result-bound contract — same shape as
+    // drain() above; try_pop_batch's available-clamp guarantees
+    // count <= max_count.  Sibling cite to drain() — both the
+    // optional-output and all-required forms ship the post.
+    CRUCIBLE_POST(count, count <= max_count);
     return count;
   }
 

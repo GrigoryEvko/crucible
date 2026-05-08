@@ -16,6 +16,7 @@
 #include "safety/AllocClass.h"
 #include "safety/Decide.h"
 #include "safety/Mutation.h"
+#include "safety/Post.h"
 #include "safety/Pre.h"
 #include "safety/Refined.h"
 
@@ -267,13 +268,21 @@ class CRUCIBLE_OWNER Arena {
   // Post-condition: result <= total_block_bytes_.get() — total
   // allocated never exceeds the running byte total.  The optimizer
   // can drop redundant capacity guards in callers that compare
-  // total_allocated() against a known upper bound.
+  // total_allocated() against a known upper bound.  CONTRACT-101-POST:
+  // the post moves from P2900 `post (r: ...)` to in-body
+  // CRUCIBLE_POST because P2900 `post (r: ...)` referencing a class
+  // member through `this->` (`total_block_bytes_`) is silently
+  // bypassed at consteval in GCC 16.1.1 — same family as the in-body
+  // pre above.  Capturing the return into a named local `result`
+  // gives CRUCIBLE_POST a referent without disturbing codegen
+  // (gnu::pure + always_inline in callers + -O3 elides it).
   [[nodiscard, gnu::pure]] size_t total_allocated() const noexcept
-      post (r: r <= total_block_bytes_.get())
   {
     const std::array<size_t, 3> chain = {offset_, end_offset_, total_block_bytes_.get()};
     CRUCIBLE_PRE(::crucible::decide::weakly_increasing(std::span<const size_t>(chain)));
-    return total_block_bytes_.get() - (end_offset_ - offset_);
+    const size_t result = total_block_bytes_.get() - (end_offset_ - offset_);
+    CRUCIBLE_POST(result, result <= total_block_bytes_.get());
+    return result;
   }
 
   // Number of blocks currently held. Diagnostic only.

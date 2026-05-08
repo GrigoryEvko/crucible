@@ -13,6 +13,7 @@
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/Post.h>
 #include <crucible/safety/Refined.h>
 
 namespace crucible {
@@ -220,7 +221,20 @@ struct CRUCIBLE_OWNER MetaLog {
     // contract semantics; body is the same store(release) as before.
     // n > 0 guaranteed by the early return at the top.
     head.advance(h + n);
-    return MetaIndex{h};
+    const MetaIndex result{h};
+    // CONTRACT-104-POST: result-shape contract — the returned
+    // MetaIndex is either MetaIndex::none() (n==0 or table-full
+    // early returns above) OR an in-bounds index `h` that was the
+    // pre-advance head value.  Since `h = head.peek_relaxed()` and
+    // the SPSC ring's invariant maintains `0 <= head < 2^64`, but
+    // entries[] is indexed by `h & MASK` where MASK = CAPACITY-1,
+    // the consumer always finds the appended block at
+    // `entries[result.raw() & MASK]`.  Catches a future refactor
+    // that returns `MetaIndex{h + n}` (post-advance) by mistake,
+    // which would skip the just-appended block on read.  Routes
+    // through CRUCIBLE_POST for grep-discipline consistency.
+    CRUCIBLE_POST(result, !result.is_valid() || result.raw() == h);
+    return result;
   }
 
   // ═══════════════════════════════════════════════════════════════

@@ -20,6 +20,7 @@
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/Checked.h>
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
@@ -268,6 +269,18 @@ struct CRUCIBLE_OWNER PoolAllocator {
     CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
         sid.raw(), 0u, num_slots_ - 1u));
     ptr_table_[sid.raw()] = ptr.value();
+    // CONTRACT-103-POST: state-mutation contract — after register_external
+    // returns, ptr_table_[sid.raw()] reflects the freshly-registered
+    // pointer.  Catches a future refactor that drops the assignment
+    // (or writes to the wrong slot index, e.g. via an off-by-one
+    // refactor on sid.raw()).  Routes through CRUCIBLE_POST because
+    // P2900 `post (r: ...)` referencing a class member through
+    // `this->` (`ptr_table_`) is silently bypassed at consteval in
+    // GCC 16.1.1 — same family as the in-body pre above.  Void
+    // function: first arg is the conventional sentinel `0`.  Under
+    // NDEBUG collapses to `[[assume(...)]]` — downstream slot_ptr()
+    // readers can speculate on the just-written value.
+    CRUCIBLE_POST(0, ptr_table_[sid.raw()] == ptr.value());
   }
 
   // Raw table for inner loops that want to hoist the indirection:
