@@ -476,10 +476,14 @@ constexpr bool strictly_increasing(std::span<const T> xs) noexcept {
 //
 // PRODUCTION CITES (update on adoption per CONTRACT-125)
 // ------------------------------------------------------
-//   (none yet — first migration batch lands with CONTRACT-110:
-//    TraceGraph CSR row-pointer offsets + StorageSlot offset chains)
+//   * Arena::epoch_chain monotonicity guard         — Arena.h:310
+//     (consecutive epoch-counter span; duplicates admissible across
+//     the no-mutation between two ticks of the same value)
+//   * Cipher::recovery step-id sequence             — Cipher.h:647
+//     (event-log replay step ordering; CONTRACT-114 cite-pair)
 //
-// CONTRAST WITH strictly_increasing (CONTRACT-041)
+// Future cites planned for CONTRACT-110 (TraceGraph CSR row-pointer
+// offsets) and StorageSlot offset chains.
 // ------------------------------------------------
 //   * Same shape, same vacuous-truth treatment.
 //   * Differs only in `<=` vs `<` at the consecutive-pair test.
@@ -561,9 +565,20 @@ constexpr bool weakly_increasing(std::span<const T> xs) noexcept {
 //
 // PRODUCTION CITES (update on adoption per CONTRACT-125)
 // ------------------------------------------------------
-//   (none yet — first migration batch lands with CONTRACT-109:
-//    RecipePool::capacity_, ExprPool::capacity_, SwissCtrl::kGroupWidth,
-//    PoolAllocator::ptr_table_size, TraceRing::CAPACITY validation)
+//   * SwissCtrl::kGroupWidth                       — SwissTable.h:79
+//     (static_assert; SIMD-group-width 16/32/64 enforcement)
+//   * RecipePool ctor — initial_capacity            — RecipePool.h:82
+//     (Swiss-table backing store sizing; CONTRACT-109)
+//   * ExprPool kDefaultInitialCapacity              — ExprPool.h:329
+//     (interner initial-capacity static_assert; CONTRACT-109)
+//   * ExprPool kIntCacheSize                        — ExprPool.h:1038
+//     (small-int interning cache static_assert; CONTRACT-109)
+//   * KernelCache slots-table ctor                  — MerkleDag.h:1256
+//     (lock-free open-addressing slot count; CONTRACT-116)
+//
+// All five sites use the explicit-T form to lock the bound type
+// width.  Future cites planned for PoolAllocator::ptr_table_size
+// and TraceRing::CAPACITY validation under wider sweeps.
 //
 // ANTI-PATTERNS (review-rejected)
 // -------------------------------
