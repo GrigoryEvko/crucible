@@ -339,6 +339,22 @@ public:
 
                     // Paper Fig 8 Lines 20-21: update Threshold
                     // on successful enqueue.
+                    //
+                    // Lesson learned (do NOT add a post here): the
+                    // intuitive post `threshold_.load() == kThresholdHi`
+                    // is INCORRECT for MPMC lock-free primitives.
+                    // Between our `threshold_.store(kThresholdHi)` and
+                    // any subsequent observation, concurrent consumers
+                    // can `fetch_sub(1)` arbitrarily many times — the
+                    // value is racy by design.  The algorithm guarantee
+                    // is a TEMPORAL property ("threshold_ was at
+                    // kThresholdHi at some point during this call"),
+                    // not a sequential POST property.  This is why
+                    // CSL/separation-logic-with-frame-rules is the
+                    // right discipline for MPMC primitives — and why
+                    // SEPLOG-H2 (PermissionedMpmcRing wrapper with
+                    // typed Producer/Consumer sessions) is the
+                    // tracked design path, not bare pre/post.
                     if (threshold_.load(std::memory_order_acquire) !=
                         kThresholdHi) {
                         threshold_.store(kThresholdHi,
