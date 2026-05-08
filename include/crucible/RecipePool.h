@@ -44,6 +44,9 @@
 #include <crucible/effects/Capabilities.h>
 #include <crucible/NumericalRecipe.h>
 #include <crucible/Platform.h>
+#include <crucible/safety/Decide.h>
+#include <crucible/safety/Post.h>
+#include <crucible/safety/Pre.h>
 
 #include <bit>
 #include <cstddef>
@@ -64,8 +67,20 @@ class CRUCIBLE_OWNER RecipePool {
                                     effects::Alloc a,
                                     uint32_t initial_capacity = 32)
       noexcept
+      // CONTRACT-109: pow2 invariant discharges through the named
+      // predicate `crucible::decide::is_power_of_two_le` (CONTRACT-050
+      // catalog) — checks `initial_capacity` is a power of two AND
+      // `≤ UINT32_MAX` (the latter trivially true for uint32_t but
+      // pinned via the same predicate for cite-discipline consistency
+      // with future width-parametric pool variants).  The `>= 8`
+      // lower-bound stays as a separate pre because it's an
+      // application-level minimum (load-factor sanity) not a
+      // structural invariant the catalog covers.  Both pre clauses
+      // are pure-parameter — no class member access — so P2900 pre()
+      // is sufficient (no consteval-bypass exposure).
       pre (initial_capacity >= 8)
-      pre (std::has_single_bit(initial_capacity))
+      pre (::crucible::decide::is_power_of_two_le<std::uint32_t>(
+          initial_capacity, UINT32_MAX))
       : arena_{&arena}
       , capacity_{initial_capacity}
   {
@@ -73,6 +88,26 @@ class CRUCIBLE_OWNER RecipePool {
     for (uint32_t i = 0; i < initial_capacity; ++i) {
       slots_[i] = Slot{};  // NSDMI: recipe=nullptr
     }
+    // CONTRACT-109-POST: construction-state invariant — after the
+    // ctor runs, the three load-bearing fields agree:
+    //   (1) capacity_ matches the requested initial_capacity (set
+    //       via member-init list above; post catches a future
+    //       refactor that rounds up internally — ExprPool does this
+    //       and would need a different shape).
+    //   (2) slots_ is non-null (alloc_array_nonzero guarantees this
+    //       for a non-zero count, and pre asserts initial_capacity
+    //       >= 8).
+    //   (3) size_ is zero (NSDMI in the field declaration; post
+    //       catches a future refactor that pre-populates entries).
+    // Routes through CRUCIBLE_POST because the predicates reference
+    // class members through `this->`; P2900 `post (r:...)` is
+    // consteval-bypass-vulnerable per the GCC 16.1.1 family.  Void
+    // return: first arg `0` is the conventional sentinel.  Under
+    // NDEBUG these collapse to `[[assume]]` for downstream intern()
+    // optimizer.
+    CRUCIBLE_POST(0, capacity_ == initial_capacity);
+    CRUCIBLE_POST(0, slots_ != nullptr);
+    CRUCIBLE_POST(0, size_ == 0);
   }
 
   // Interior pointers into arena_ would dangle if this pool moved.

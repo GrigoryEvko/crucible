@@ -26,6 +26,7 @@
 // This saves 2 instructions on every probe step — ~0.5ns per probe.
 
 #include <crucible/Platform.h>
+#include <crucible/safety/Decide.h>
 
 #include <bit>
 #include <cstdint>
@@ -53,6 +54,31 @@ static constexpr size_t kGroupWidth = 32;
 #else
 static constexpr size_t kGroupWidth = 16;
 #endif
+
+// CONTRACT-109: kGroupWidth is structurally a power of two — the SIMD
+// path selection above hardcodes 16/32/64.  The static_assert pins the
+// invariant at the definition site through the named predicate
+// `decide::is_power_of_two_le<size_t>(kGroupWidth, 64)`:
+//
+//   * is_power_of_two_le verifies pow2 AND `≤ 64` — the inclusive upper
+//     bound is the AVX-512 group width, which is the widest path the
+//     Swiss-table dispatch supports.  A future add-of-AVX10 path that
+//     bumps kGroupWidth to 128 would trip this assert and force an
+//     audit of the BitMask types (currently uint64_t mask = 64 bits)
+//     and the H2 tag distribution (currently 7-bit tag, plenty for
+//     kGroupWidth=128).
+//
+//   * The cite is the grep-discoverable VC-discharge surface.  Future
+//     hardening (e.g., RecipePool / ExprPool capacity invariants
+//     wanting "kGroupWidth divides table_size") routes through the
+//     same predicate name.
+//
+// CRUCIBLE_PRE not used here — kGroupWidth is a constant evaluated at
+// translation-unit load time, so a plain static_assert binds the same
+// VC obligation at compile time without runtime cost.
+static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(
+                  kGroupWidth, std::size_t{64}),
+              "kGroupWidth must be a power of two ≤ 64 (AVX-512 width)");
 
 // H2 tag: top 7 bits of hash -> [0, 127].
 // Always non-negative as int8_t (bit 7 cleared).
