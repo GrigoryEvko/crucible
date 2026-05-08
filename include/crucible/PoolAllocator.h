@@ -19,6 +19,8 @@
 #include <crucible/rt/Registry.h>
 #include <crucible/safety/AllocClass.h>
 #include <crucible/safety/Checked.h>
+#include <crucible/safety/Decide.h>
+#include <crucible/safety/Pre.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
 
@@ -231,11 +233,28 @@ struct CRUCIBLE_OWNER PoolAllocator {
     gnu::assume_aligned(ALIGNMENT)]]
   inline void* slot_ptr(SlotId sid, InitializedView const&) const noexcept
       CRUCIBLE_LIFETIMEBOUND
-      pre (sid.raw() < num_slots_)
   {
-    // Contract guarantees the bound; propagate to the optimizer so the
-    // indexed load below compiles to a single MOV with no runtime check.
-    [[assume(sid.raw() < num_slots_)]];
+    // CONTRACT-103: bounds gate discharges through decide::in_range
+    // (closed-interval scalar bounds-check predicate).  The
+    // `num_slots_ > 0u` companion guard is paired because
+    // `num_slots_ - 1u` underflows to UINT32_MAX when num_slots_==0,
+    // which would make `in_range(sid, 0, UINT32_MAX)` accept every
+    // value; production never calls slot_ptr on an uninitialized
+    // pool (InitializedView proves init() ran, which sets num_slots_
+    // > 0 from a non-null plan), but defense-in-depth catches a
+    // future refactor that exposes this path.
+    //
+    // In-body CRUCIBLE_PRE rather than P2900 `pre()` because pre()
+    // referencing class member `num_slots_` through `this->` is
+    // silently bypassed at consteval in GCC 16.1.1 — same gotcha
+    // as CONTRACT-100 / 101 / 102.
+    //
+    // Hot-path codegen unchanged: under NDEBUG, CRUCIBLE_PRE is
+    // exactly `[[assume(cond)]]` (Pre.h §NDEBUG branch), so the
+    // optimizer sees the same single-MOV target it always did.
+    CRUCIBLE_PRE(num_slots_ > 0u);
+    CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
+        sid.raw(), 0u, num_slots_ - 1u));
     return ptr_table_[sid.raw()];
   }
 
@@ -244,8 +263,10 @@ struct CRUCIBLE_OWNER PoolAllocator {
       SlotId sid,
       crucible::safety::NonNull<void*> ptr,
       InitializedView const&) noexcept
-      pre (sid.raw() < num_slots_)
   {
+    CRUCIBLE_PRE(num_slots_ > 0u);
+    CRUCIBLE_PRE(::crucible::decide::in_range<std::uint32_t>(
+        sid.raw(), 0u, num_slots_ - 1u));
     ptr_table_[sid.raw()] = ptr.value();
   }
 
@@ -318,8 +339,11 @@ struct CRUCIBLE_OWNER PoolAllocator {
   inline safety::AllocClass<safety::AllocClassTag_v::Pool, void*>
   slot_ptr_pinned(SlotId sid, InitializedView const& view) const noexcept
       CRUCIBLE_LIFETIMEBOUND
-      pre (sid.raw() < num_slots_)
   {
+    // The bounds gate is enforced at the inner slot_ptr call below
+    // (CONTRACT-103 cite); slot_ptr_pinned is a thin wrapper that
+    // adds the AllocClass<Pool, void*> EBO-collapsed pin.  No
+    // duplicate cite — the inner CRUCIBLE_PRE pair fires once.
     return safety::AllocClass<safety::AllocClassTag_v::Pool, void*>{
         slot_ptr(sid, view)};
   }
