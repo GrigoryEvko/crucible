@@ -1798,6 +1798,38 @@ class CRUCIBLE_OWNER KernelCache {
   contract_assert(node->content_hash.raw() == 0);
   node->content_hash = compute_content_hash(std::span{ops, num_ops});
   node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
+  // CONTRACT-MakeRegion-POST: factory result-shape contract — the
+  // returned RegionNode has the canonical layout that downstream
+  // collect_regions / replay / compute_content_hash all assume:
+  //   (1) node != nullptr — arena.alloc_obj never returns null (OOM
+  //       aborts via std::abort).  Mirrors the AddBranch-POST and
+  //       KernelCache CTOR-POST discipline.
+  //   (2) node->kind == REGION — set above; catches a future refactor
+  //       that forgets the kind tag, which would silently mis-dispatch
+  //       through the BRANCH/LOOP/TERMINAL arms of replay()'s switch.
+  //   (3) node->ops == ops — caller's pointer is stored verbatim;
+  //       catches a refactor that copies into an internal buffer
+  //       (which would break the lifetime contract that ops outlives
+  //       the RegionNode).
+  //   (4) node->num_ops == num_ops — caller's count stored verbatim.
+  //   (5) decide::implies(num_ops > 0, content_hash != 0) — for any
+  //       non-degenerate region the computed hash is non-zero (the
+  //       zero-hash sentinel is the EMPTY slot marker per
+  //       CONTRACT-106).  num_ops == 0 may legitimately produce a
+  //       zero hash (degenerate).  Discharges through `decide::implies`
+  //       (CONTRACT-081 catalog).
+  // Routes through CRUCIBLE_POST because the predicates dereference
+  // the freshly allocated `node` pointer — same GCC 16.1.1 consteval
+  // -bypass family as CONTRACT-100..108-POST + 116..127-POST +
+  // Arena-CTOR-POST + AddBranch-POST.  Under NDEBUG these collapse
+  // to `[[assume]]`, so downstream replay() can speculate that
+  // RegionNode dispatch is valid.
+  CRUCIBLE_POST(node, node != nullptr);
+  CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
+  CRUCIBLE_POST(node, node->ops == ops);
+  CRUCIBLE_POST(node, node->num_ops == num_ops);
+  CRUCIBLE_POST(node, ::crucible::decide::implies(
+                          num_ops > 0u, node->content_hash.raw() != 0));
   return node;
 }
 
@@ -1826,6 +1858,18 @@ class CRUCIBLE_OWNER KernelCache {
   contract_assert(node->content_hash.raw() == 0);
   node->content_hash = precomputed_hash;
   node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
+  // CONTRACT-MakeRegion-POST: precomputed-hash overload — same shape
+  // contract as the no-recipe overload above, plus the strict
+  // node->content_hash == precomputed_hash invariant (callers rely
+  // on the pool re-using the cached hash without recomputing).
+  // See the no-recipe overload's post block for the full discharge
+  // framing; this overload mirrors it 1:1 with one extra cite for
+  // the hash-equality invariant.
+  CRUCIBLE_POST(node, node != nullptr);
+  CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
+  CRUCIBLE_POST(node, node->ops == ops);
+  CRUCIBLE_POST(node, node->num_ops == num_ops);
+  CRUCIBLE_POST(node, node->content_hash == precomputed_hash);
   return node;
 }
 
@@ -1877,6 +1921,21 @@ class CRUCIBLE_OWNER KernelCache {
   contract_assert(node->content_hash.raw() == 0);
   node->content_hash = compute_content_hash(std::span{ops, num_ops}, recipe);
   node->first_op_schema = (num_ops > 0) ? ops[0].schema_hash : SchemaHash{};
+  // CONTRACT-MakeRegion-POST: recipe-aware overload — same shape
+  // contract as the no-recipe overload, with the recipe-disambiguation
+  // invariant: pre asserted recipe->hash != 0, so the computed
+  // content_hash mixes a non-zero recipe hash and is itself non-zero
+  // for non-degenerate regions.  The decide::implies cite covers
+  // num_ops == 0 (degenerate scalar input case where the hash may
+  // still be zero) — production never calls this overload with
+  // num_ops == 0 (the no-recipe overload is used for that path) but
+  // defense-in-depth pins the same predicate semantics.
+  CRUCIBLE_POST(node, node != nullptr);
+  CRUCIBLE_POST(node, node->kind == TraceNodeKind::REGION);
+  CRUCIBLE_POST(node, node->ops == ops);
+  CRUCIBLE_POST(node, node->num_ops == num_ops);
+  CRUCIBLE_POST(node, ::crucible::decide::implies(
+                          num_ops > 0u, node->content_hash.raw() != 0));
   return node;
 }
 
@@ -1885,6 +1944,15 @@ class CRUCIBLE_OWNER KernelCache {
   auto* node = new (arena.alloc_obj<TraceNode>(a))
       TraceNode{};
   node->kind = TraceNodeKind::TERMINAL;
+  // CONTRACT-MakeTerminal-POST: factory result-shape contract — every
+  // successful make_terminal returns a non-null TraceNode tagged
+  // TERMINAL.  The replay() switch on kind dispatches TERMINAL to the
+  // "stop iterating" path; a refactor that drops the kind tag would
+  // silently fall through to REGION (mis-execute zero ops as a region)
+  // or BRANCH (segfault on null arms).  Routes through CRUCIBLE_POST
+  // for the same consteval-bypass framing as siblings.
+  CRUCIBLE_POST(node, node != nullptr);
+  CRUCIBLE_POST(node, node->kind == TraceNodeKind::TERMINAL);
   return node;
 }
 
@@ -1929,6 +1997,24 @@ class CRUCIBLE_OWNER KernelCache {
   node->term_kind = term_kind;
   node->repeat_count = repeat_count;
   node->epsilon = epsilon;
+  // CONTRACT-MakeLoop-POST: factory result-shape contract — every
+  // successful make_loop returns a non-null LoopNode wired to the
+  // caller's body + feedback edges.  Catches a refactor that
+  // forgets the kind tag (would mis-dispatch through replay()'s
+  // BRANCH/REGION/TERMINAL arms) or drops the body assignment
+  // (would null-deref the loop iteration in replay()).  The 7
+  // member-equality posts pin every loaded value exactly as the
+  // caller passed it — replay()'s loop machinery depends on each
+  // matching the origin exactly (term_kind selects REPEAT-vs-UNTIL,
+  // repeat_count and epsilon are the loop bounds, feedback_edges
+  // is consumed verbatim by the iteration scheduler).
+  CRUCIBLE_POST(node, node != nullptr);
+  CRUCIBLE_POST(node, node->kind == TraceNodeKind::LOOP);
+  CRUCIBLE_POST(node, node->body == body);
+  CRUCIBLE_POST(node, node->feedback_edges == feedback);
+  CRUCIBLE_POST(node, node->num_feedback == num_feedback);
+  CRUCIBLE_POST(node, node->term_kind == term_kind);
+  CRUCIBLE_POST(node, node->repeat_count == repeat_count);
   return node;
 }
 
