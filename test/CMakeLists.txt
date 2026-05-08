@@ -5195,3 +5195,37 @@ crucible_neg_compile_test(neg_decide_intervals_cover_unit_gap
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_intervals_cover_unit_overshoot
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-070 fixtures — pin Decide::tier_replaces: chain-lattice-
+# agnostic admission predicate over the project's chain-tier scoped
+# enums (CipherTierTag, DetSafeTier, HotPathTier, NumericalTier, …).
+# Convention: stronger guarantee = HIGHER ordinal (see
+# algebra/lattices/CipherTierLattice.h §"Direction convention");
+# `tier_replaces(c, r)` ≡ `to_underlying(c) >= to_underlying(r)`.
+# Two distinct mismatch classes — the SAME structural rule (correct
+# comparator direction on chain ordering) exercised on TWO DIFFERENT
+# production bug families spanning DIFFERENT lattice cardinalities
+# (3 vs 7), demonstrating the predicate's lattice-agnosticism:
+#
+#   * neg_decide_tier_replaces_storage_downgrade — fires on
+#     `(CipherTierTag::Cold, CipherTierTag::Hot)`.  Strictly-weaker
+#     storage-residency provider replacing a strictly-stronger
+#     requirement.  Production consequence: KernelCache slot
+#     expecting Hot-tier persistence (μs RAID-replicated recovery)
+#     silently admits a cold-tier S3 blob; SLA recovery target
+#     downgrades from μs to minutes.
+#   * neg_decide_tier_replaces_determinism_downgrade — fires on
+#     `(DetSafeTier::EntropyRead, DetSafeTier::Pure)`.  Strictly-
+#     weaker determinism-budget provider replacing a Pure
+#     requirement.  Production consequence: bit_exact_replay_
+#     invariant CI test reddens; cross_vendor_step_invariant CI
+#     fails; Augur drift-attribution loses its ground truth.
+#
+# A regression in tier_replaces (sign reversed; identity-only;
+# strict-instead-of-non-strict) breaks BOTH fixtures.  A reviewer
+# satisfying one must verify the other still holds — the
+# storage-axis bug and the determinism-axis bug share one fix.
+crucible_neg_compile_test(neg_decide_tier_replaces_storage_downgrade
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_tier_replaces_determinism_downgrade
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")

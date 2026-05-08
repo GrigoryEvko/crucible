@@ -1076,4 +1076,119 @@ constexpr bool intervals_cover_unit(
     return width_sum == total;
 }
 
+// ─── tier_replaces ─────────────────────────────────────────────────
+//
+// Returns true iff `candidate` is at least as strong as `required`
+// in Crucible's chain-tier ordering convention — equivalently,
+// "a candidate of tier `candidate` may stand in for a slot demanding
+// tier `required`."  Lattice-agnostic: works across every chain-tier
+// scoped enum following the project convention.
+//
+// SEMANTIC NOTE
+// -------------
+// All of Crucible's chain-tier enums (CipherTierTag, DetSafeTier,
+// HotPathTier, NumericalTier, ResidencyHeatTier, ProgressClass, …)
+// share ONE convention: STRONGER GUARANTEE = HIGHER ordinal.  The
+// canonical statement lives in algebra/lattices/CipherTierLattice.h
+// docstring lines 60-77 ("Stronger guarantee = HIGHER in the lattice")
+// and is repeated verbatim in HotPathLattice.h, DetSafeLattice.h, and
+// the sister chain lattices.  Bottom = weakest claim (most permissive
+// admission); top = strongest claim (admissible everywhere — safe to
+// substitute into any slot).
+//
+// Under that convention, `replace(candidate, required)` simply asks
+// "is the candidate ≥ the requirement in the strength order?"  This
+// procedure spells exactly that, lattice-agnostically, via a single
+// integer compare on the enum's underlying type.  No SFINAE games,
+// no tag dispatch, no per-lattice template specializations: the
+// project convention is uniform precisely so a single procedure
+// discharges every chain-lattice replacement VC.
+//
+// CONVENTION GUARD
+// ----------------
+// A new chain-tier enum that violates "stronger = higher" is a
+// project-convention violation, not a `tier_replaces` bug — the
+// review-time guard is the docstring discipline at the lattice's
+// declaration site (see e.g. CipherTierLattice.h §"Direction
+// convention" block).  Adding a new chain enum without that
+// docblock is a code-review reject.
+//
+// CALLED ONCE PER REPLACEMENT GATE
+// --------------------------------
+// Every tier-pinned production boundary discharges its admission VC
+// via this procedure: KernelCache hot↔warm↔cold promotion gates;
+// Cipher::publish_hot vs publish_warm vs flush_cold tier transitions;
+// Forge Phase E.RecipeSelect's NumericalRecipe admission against the
+// kernel's declared recipe tier; BackgroundThread phase promotion
+// gates (CONTRACT-117); Augur's drift-attribution dispatch
+// distinguishing "Cold-tier S3 latency" from "Hot-path issue".  All
+// of these can spell their VC as `tier_replaces(candidate, required)`
+// and unify on this procedure.
+//
+// USAGE PATTERN
+// -------------
+//
+//   constexpr CompiledKernel const& select(
+//       CompiledKernel const& candidate,
+//       CipherTierTag         required
+//   ) noexcept {
+//       CRUCIBLE_PRE(crucible::decide::tier_replaces(
+//           candidate.storage_tier(), required));
+//       return candidate;
+//   }
+//
+//   // Witness, consteval (positive):
+//   //   static_assert(crucible::decide::tier_replaces(
+//   //       CipherTierTag::Hot, CipherTierTag::Warm));        // ✓
+//   //   static_assert(crucible::decide::tier_replaces(
+//   //       CipherTierTag::Hot, CipherTierTag::Hot));         // ✓
+//   //
+//   // Witness, consteval (negative — fixture territory):
+//   //   static_assert(!crucible::decide::tier_replaces(
+//   //       CipherTierTag::Cold, CipherTierTag::Hot));        // ✓
+//
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ------------------------------------------------------
+//   (none yet — first migration batches land with CONTRACT-117
+//    [BackgroundThread phase promotion gates] and an upcoming
+//    Forge Phase E recipe-admission rebrand.)
+//
+// ANTI-PATTERNS (review-rejected)
+// -------------------------------
+//   * `pre (static_cast<int>(candidate) <= static_cast<int>(required))`
+//     — SIGN REVERSED.  Falsely admits a strictly-weaker provider
+//     for a stronger requirement.  Catches: Cipher cold-tier blob
+//     served to a code path expecting Hot — recovery target silently
+//     shifts from μs (RAID redundancy) to minutes (S3 download).
+//     Always cite this procedure instead.
+//   * `pre (candidate == required)` — IDENTITY-ONLY.  Refuses every
+//     legal upgrade.  A Hot-tier candidate (admissible everywhere)
+//     cannot satisfy a Warm-tier slot under this rule, defeating the
+//     whole point of the chain-lattice convention.
+//   * `pre (candidate > required)` — STRICT INEQUALITY.  Refuses
+//     identity-replacement (Hot can't replace Hot).  Off-by-one in
+//     the opposite direction; equally wrong.
+//   * `pre (candidate.satisfies<required>())`-style lattice methods
+//     scattered across call sites — does not unify across the
+//     sister chain lattices.  Cite this procedure instead so a
+//     single review-discoverable VC discharges every chain-lattice
+//     replacement.  When grep finds three different spellings of
+//     "candidate ≥ required" across the codebase, you've lost the
+//     opportunity for cite-deduplication.
+//   * `pre (!is_strict_downgrade(c, r))` — defines the negative case
+//     and double-negates.  Hard to read at a glance; flips polarity
+//     under refactor.  Always state the positive admission.
+//
+// LATTICE-AGNOSTIC: works across every chain-tier enum following the
+// project convention.  The predicate is total (every input pair
+// returns a defined bool), pure, and zero-cost — compiles to a
+// single `cmp + setge` pair on x86-64 and AArch64 alike.
+template <typename TierTag>
+    requires std::is_enum_v<TierTag>
+[[nodiscard, gnu::const]]
+constexpr bool tier_replaces(TierTag candidate, TierTag required) noexcept {
+    using U = std::underlying_type_t<TierTag>;
+    return static_cast<U>(candidate) >= static_cast<U>(required);
+}
+
 }  // namespace crucible::decide

@@ -17,6 +17,9 @@
 // fixtures, per the HS14 mandate adapted for predicate libraries:
 // each fixture demonstrates a distinct mismatch class.
 
+#include <crucible/algebra/lattices/CipherTierLattice.h>
+#include <crucible/algebra/lattices/DetSafeLattice.h>
+#include <crucible/algebra/lattices/HotPathLattice.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pre.h>
 
@@ -920,6 +923,126 @@ static_assert(valid_blob_layout(std::span{blob_partition}, uint64_t{8192}));
 constexpr dc::Interval<int32_t> shards_2way[] = {{0, 32}, {32, 64}};
 static_assert(valid_shard_cover(std::span{shards_2way}, int32_t{64}));
 
+// ── tier_replaces ──────────────────────────────────────────────────
+//
+// Coverage matrix: cross-lattice exhaustion of the chain ordering.
+// Three project chain-tier lattices follow the SAME convention
+// (stronger=higher ordinal); we exercise tier_replaces against
+// CipherTierTag (3 elements), HotPathTier (3 elements), and
+// DetSafeTier (7 elements) to demonstrate lattice-agnosticism.
+
+namespace cl = crucible::algebra::lattices;
+
+// CipherTierTag — 3 × 3 = 9 ordered pairs, 6 directly stated.
+//   Cold ⊑ Warm ⊑ Hot.
+//
+// Replacement is reflexive: every tier replaces itself.
+static_assert( dc::tier_replaces(cl::CipherTierTag::Cold, cl::CipherTierTag::Cold));
+static_assert( dc::tier_replaces(cl::CipherTierTag::Warm, cl::CipherTierTag::Warm));
+static_assert( dc::tier_replaces(cl::CipherTierTag::Hot,  cl::CipherTierTag::Hot));
+
+// Replacement admits upgrades — stronger candidate satisfies weaker
+// requirement.
+static_assert( dc::tier_replaces(cl::CipherTierTag::Warm, cl::CipherTierTag::Cold));
+static_assert( dc::tier_replaces(cl::CipherTierTag::Hot,  cl::CipherTierTag::Cold));
+static_assert( dc::tier_replaces(cl::CipherTierTag::Hot,  cl::CipherTierTag::Warm));
+
+// Replacement rejects downgrades — weaker candidate cannot satisfy
+// stronger requirement.
+static_assert(!dc::tier_replaces(cl::CipherTierTag::Cold, cl::CipherTierTag::Warm));
+static_assert(!dc::tier_replaces(cl::CipherTierTag::Cold, cl::CipherTierTag::Hot));
+static_assert(!dc::tier_replaces(cl::CipherTierTag::Warm, cl::CipherTierTag::Hot));
+
+// HotPathTier — same 3-tier shape; exercises the parallel-structure
+// claim.  Cold ⊑ Warm ⊑ Hot in execution-budget axis (Cold tolerates
+// blocking, Hot forbids it).  Replacement: Hot can run in any
+// budget, Cold cannot run on a hot path.
+static_assert( dc::tier_replaces(cl::HotPathTier::Hot,  cl::HotPathTier::Cold));
+static_assert( dc::tier_replaces(cl::HotPathTier::Hot,  cl::HotPathTier::Hot));
+static_assert(!dc::tier_replaces(cl::HotPathTier::Cold, cl::HotPathTier::Hot));
+static_assert(!dc::tier_replaces(cl::HotPathTier::Warm, cl::HotPathTier::Hot));
+static_assert(!dc::tier_replaces(cl::HotPathTier::Cold, cl::HotPathTier::Warm));
+
+// DetSafeTier — 7-element chain.  Pure (top) replaces every
+// determinism budget; a non-deterministic syscall (bottom) replaces
+// only itself.
+static_assert( dc::tier_replaces(cl::DetSafeTier::Pure,
+                                 cl::DetSafeTier::NonDeterministicSyscall));
+static_assert( dc::tier_replaces(cl::DetSafeTier::Pure, cl::DetSafeTier::PhiloxRng));
+static_assert( dc::tier_replaces(cl::DetSafeTier::Pure, cl::DetSafeTier::Pure));
+static_assert( dc::tier_replaces(cl::DetSafeTier::PhiloxRng,
+                                 cl::DetSafeTier::MonotonicClockRead));
+static_assert( dc::tier_replaces(cl::DetSafeTier::MonotonicClockRead,
+                                 cl::DetSafeTier::WallClockRead));
+
+// Critical determinism downgrades — replay-discipline killers.
+//
+//   * EntropyRead replacing Pure  — /dev/urandom in a Pure context,
+//     bit_exact_replay_invariant CI test reddens.
+//   * WallClockRead replacing PhiloxRng — system_clock::now() reads
+//     leak across replay boundaries.
+//   * MonotonicClockRead replacing Pure — steady_clock bound within a
+//     single run but not deterministic across replays.
+static_assert(!dc::tier_replaces(cl::DetSafeTier::EntropyRead, cl::DetSafeTier::Pure));
+static_assert(!dc::tier_replaces(cl::DetSafeTier::WallClockRead,
+                                 cl::DetSafeTier::PhiloxRng));
+static_assert(!dc::tier_replaces(cl::DetSafeTier::MonotonicClockRead,
+                                 cl::DetSafeTier::Pure));
+static_assert(!dc::tier_replaces(cl::DetSafeTier::NonDeterministicSyscall,
+                                 cl::DetSafeTier::FilesystemMtime));
+
+// Reflexivity is total — every tier in the 7-element chain replaces
+// itself.  An identity-only or strict-greater predicate would fail
+// this swath of static_asserts.
+static_assert( dc::tier_replaces(cl::DetSafeTier::NonDeterministicSyscall,
+                                 cl::DetSafeTier::NonDeterministicSyscall));
+static_assert( dc::tier_replaces(cl::DetSafeTier::FilesystemMtime,
+                                 cl::DetSafeTier::FilesystemMtime));
+static_assert( dc::tier_replaces(cl::DetSafeTier::EntropyRead,
+                                 cl::DetSafeTier::EntropyRead));
+static_assert( dc::tier_replaces(cl::DetSafeTier::WallClockRead,
+                                 cl::DetSafeTier::WallClockRead));
+static_assert( dc::tier_replaces(cl::DetSafeTier::MonotonicClockRead,
+                                 cl::DetSafeTier::MonotonicClockRead));
+static_assert( dc::tier_replaces(cl::DetSafeTier::PhiloxRng,
+                                 cl::DetSafeTier::PhiloxRng));
+
+// ── Composition with CRUCIBLE_PRE — tier-pinned production shape ───
+//
+// Production cite shape (CONTRACT-117 BackgroundThread phase
+// promotion gates): a candidate kernel from KernelCache replaces the
+// slot's required tier iff its declared storage tier ≥ requirement.
+
+[[nodiscard]] constexpr bool admit_kernel_storage(
+    cl::CipherTierTag candidate_storage,
+    cl::CipherTierTag required_storage
+) noexcept {
+    CRUCIBLE_PRE(dc::tier_replaces(candidate_storage, required_storage));
+    return true;
+}
+
+static_assert(admit_kernel_storage(cl::CipherTierTag::Hot,  cl::CipherTierTag::Hot));
+static_assert(admit_kernel_storage(cl::CipherTierTag::Hot,  cl::CipherTierTag::Cold));
+static_assert(admit_kernel_storage(cl::CipherTierTag::Warm, cl::CipherTierTag::Cold));
+
+// Production cite shape (Forge Phase E.RecipeSelect): a candidate
+// recipe satisfies the kernel-declared minimum determinism tier iff
+// its DetSafeTier ≥ the kernel's requirement.
+
+[[nodiscard]] constexpr bool admit_kernel_determinism(
+    cl::DetSafeTier candidate,
+    cl::DetSafeTier required
+) noexcept {
+    CRUCIBLE_PRE(dc::tier_replaces(candidate, required));
+    return true;
+}
+
+static_assert(admit_kernel_determinism(cl::DetSafeTier::Pure,
+                                       cl::DetSafeTier::PhiloxRng));
+static_assert(admit_kernel_determinism(cl::DetSafeTier::Pure, cl::DetSafeTier::Pure));
+static_assert(admit_kernel_determinism(cl::DetSafeTier::PhiloxRng,
+                                       cl::DetSafeTier::WallClockRead));
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -1247,6 +1370,62 @@ int main() {
         std::fprintf(stderr,
             "test_decide: cover_unit overshoot WRONGLY accepted\n");
         return 1;
+    }
+
+    // ── tier_replaces runtime witnesses ────────────────────────────
+    //
+    // Route tier-tag selection through a volatile uint8_t sink so the
+    // optimizer can't constant-fold the predicate at -O3 — the
+    // !NDEBUG runtime path actually executes.
+    {
+        std::uint8_t volatile cold_v = 0;  // CipherTierTag::Cold
+        std::uint8_t volatile warm_v = 1;
+        std::uint8_t volatile hot_v  = 2;
+        auto C = static_cast<cl::CipherTierTag>(cold_v);
+        auto W = static_cast<cl::CipherTierTag>(warm_v);
+        auto H = static_cast<cl::CipherTierTag>(hot_v);
+
+        if (!dc::tier_replaces(H, C)) {
+            std::fprintf(stderr,
+                "test_decide: tier_replaces Hot→Cold WRONGLY rejected\n");
+            return 1;
+        }
+        if (!dc::tier_replaces(H, H)) {
+            std::fprintf(stderr,
+                "test_decide: tier_replaces Hot→Hot reflexivity broken\n");
+            return 1;
+        }
+        if (dc::tier_replaces(C, H)) {
+            std::fprintf(stderr,
+                "test_decide: tier_replaces Cold→Hot downgrade WRONGLY accepted\n");
+            return 1;
+        }
+        if (dc::tier_replaces(W, H)) {
+            std::fprintf(stderr,
+                "test_decide: tier_replaces Warm→Hot adjacent-downgrade WRONGLY accepted\n");
+            return 1;
+        }
+        sink += static_cast<int>(cold_v) + static_cast<int>(warm_v)
+              + static_cast<int>(hot_v);
+    }
+    {
+        std::uint8_t volatile pure_v    = 6;  // DetSafeTier::Pure
+        std::uint8_t volatile entropy_v = 2;  // DetSafeTier::EntropyRead
+        auto P = static_cast<cl::DetSafeTier>(pure_v);
+        auto E = static_cast<cl::DetSafeTier>(entropy_v);
+
+        if (!dc::tier_replaces(P, E)) {
+            std::fprintf(stderr,
+                "test_decide: tier_replaces Pure→EntropyRead WRONGLY rejected\n");
+            return 1;
+        }
+        if (dc::tier_replaces(E, P)) {
+            std::fprintf(stderr,
+                "test_decide: tier_replaces EntropyRead→Pure downgrade "
+                "WRONGLY accepted (replay-determinism violator)\n");
+            return 1;
+        }
+        sink += static_cast<int>(pure_v) - static_cast<int>(entropy_v);
     }
 
     if (sink == 0) {
