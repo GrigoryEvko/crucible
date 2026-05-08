@@ -3,6 +3,7 @@
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/Pre.h>
 #include <crucible/Types.h>
 
 #include <bit>
@@ -152,9 +153,39 @@ struct Expr {
   // ---- Child access ----
 
   [[nodiscard]] const Expr* arg(uint8_t i) const CRUCIBLE_LIFETIMEBOUND
-      pre (i < nargs)
-      pre (args != nullptr)
   {
+    // CONTRACT-115: child-access bounds discharge through the named
+    // predicate `crucible::decide::in_range` (CONTRACT-102 catalog).
+    // The closed interval `[0, nargs - 1]` is reviewable as a single
+    // citation rather than a bare `<` (which conflates exclusive count
+    // with inclusive max — see decide.h anti-patterns).  Mirrors the
+    // ReplayEngine output_ptr / input_ptr migration pattern
+    // (CONTRACT-108, ReplayEngine.h:229-231 / 259-261).
+    //
+    // The `nargs > 0u` companion guard is paired because
+    // `nargs - 1u` underflows to UINT8_MAX when nargs == 0, which
+    // would make `in_range(i, 0, UINT8_MAX)` accept every value;
+    // production never calls arg() on a zero-arg Expr (no valid
+    // index can exist) but defense-in-depth catches a future
+    // refactor that exposes this path (e.g. an iterator that walks
+    // children without first checking is_atom()).
+    //
+    // The pre clauses move from P2900 `pre()` to in-body CRUCIBLE_PRE
+    // because P2900 `pre()` referencing class members through `this->`
+    // (here: `this->nargs` and `this->args`) is silently bypassed at
+    // consteval in GCC 16.1.1 (same gotcha that drove
+    // CONTRACT-100..108-POST and the ReplayEngine port migration).
+    // CRUCIBLE_PRE fires symmetrically at consteval, runtime, and as
+    // `[[assume]]` for the optimizer.  The args != nullptr check
+    // remains as a separate clause: `nargs > 0u` companions only
+    // prevent the `nargs - 1u` underflow; the actual non-null
+    // dereference of args[] is the orthogonal NullSafe obligation
+    // that the constructor's `decide::implies(nargs_ > 0, args_ !=
+    // nullptr)` pre witnesses on every Expr construction.
+    CRUCIBLE_PRE(nargs > 0u);
+    CRUCIBLE_PRE(::crucible::decide::in_range<std::uint8_t>(
+        i, 0u, static_cast<std::uint8_t>(nargs - 1u)));
+    CRUCIBLE_PRE(args != nullptr);
     return args[i];
   }
 };
