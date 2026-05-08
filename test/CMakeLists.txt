@@ -166,6 +166,7 @@ endfunction()
 
 crucible_test(test_safety)
 crucible_test(test_pre_post)
+crucible_test(test_decide)
 crucible_test(test_simd)
 
 # ── CONTRACT-008: NDEBUG zero-cost sentinel for CRUCIBLE_PRE ─────
@@ -4924,4 +4925,28 @@ crucible_neg_compile_test(neg_pre_macro_consteval_struct_byval
 crucible_neg_compile_test(neg_pre_macro_consteval_struct_cptr
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_post_macro_consteval_struct_field
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# ─── crucible::decide::* predicate library — HS14 fixtures ──────────
+#
+# CONTRACT-030: HS14 fixture pair pinning that decide::no_overflow_mul
+# correctly fires inside CRUCIBLE_PRE at consteval when called with
+# overflowing operands.  The two fixtures cover distinct mismatch
+# classes:
+#
+#   * neg_decide_no_overflow_mul_unsigned — UNSIGNED wrap-around
+#     (UINT64_MAX × 2).  Tests __builtin_mul_overflow's unsigned
+#     overflow detection branch.
+#   * neg_decide_no_overflow_mul_signed   — SIGNED asymmetric range
+#     (INT64_MIN × -1).  Tests __builtin_mul_overflow's signed
+#     branch, which catches a bug class the unsigned path misses.
+#
+# Together these prove the predicate composes correctly with
+# CRUCIBLE_PRE's if-consteval-trap pattern and the GCC 16.1.1
+# __builtin_mul_overflow constexpr evaluator.  Discipline scales
+# linearly: every new decide::* procedure ships with ≥2 fixtures
+# pinning its consteval-firing surface.
+crucible_neg_compile_test(neg_decide_no_overflow_mul_unsigned
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_no_overflow_mul_signed
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
