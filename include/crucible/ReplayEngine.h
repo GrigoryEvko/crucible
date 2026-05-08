@@ -33,6 +33,7 @@
 #include <crucible/Platform.h>
 #include <crucible/PoolAllocator.h>
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
@@ -228,8 +229,22 @@ struct ReplayEngine {
     CRUCIBLE_PRE(current_->num_outputs > 0u);
     CRUCIBLE_PRE(::crucible::decide::in_range<std::uint16_t>(
         j, 0u, static_cast<std::uint16_t>(current_->num_outputs - 1u)));
-    SlotId sid = current_->output_slot_ids[j];
-    return sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
+    SlotId const sid = current_->output_slot_ids[j];
+    void* const result = sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
+    // CONTRACT-108-POST: result-shape contract — the returned pointer
+    // is either nullptr (when sid is invalid) or a slot_table_ entry
+    // selected by a valid SlotId.  The post catches a future refactor
+    // that drops the is_valid() guard and indexes slot_table_ with an
+    // invalid SlotId raw value (which would either return a stale slot
+    // pointer or read past the table end, depending on how SlotId's
+    // is_valid sentinel is encoded).  CRUCIBLE_POST routes around the
+    // GCC 16.1.1 consteval bypass on `post (r: ...)` referencing local
+    // variables and class-member-pointee state, mirroring the in-body
+    // pre framing above.  Under NDEBUG this collapses to `[[assume]]`
+    // and lets downstream Vessel adapter code speculate that every
+    // non-null result is a valid-SlotId-derived pool pointer.
+    CRUCIBLE_POST(result, result == nullptr || sid.is_valid());
+    return result;
   }
 
   // ── Input pointer for input j of the last matched op ──
@@ -244,8 +259,12 @@ struct ReplayEngine {
     CRUCIBLE_PRE(current_->num_inputs > 0u);
     CRUCIBLE_PRE(::crucible::decide::in_range<std::uint16_t>(
         j, 0u, static_cast<std::uint16_t>(current_->num_inputs - 1u)));
-    SlotId sid = current_->input_slot_ids[j];
-    return sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
+    SlotId const sid = current_->input_slot_ids[j];
+    void* const result = sid.is_valid() ? slot_table_[sid.raw()] : nullptr;
+    // CONTRACT-108-POST: see output_ptr above for the result-shape
+    // contract framing; mirror over input_slot_ids.
+    CRUCIBLE_POST(result, result == nullptr || sid.is_valid());
+    return result;
   }
 
   // ── Queries ──

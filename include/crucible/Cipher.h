@@ -40,6 +40,7 @@
 #include <crucible/safety/IsOpaqueLifetime.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/OpaqueLifetime.h>
+#include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
@@ -672,6 +673,45 @@ class CRUCIBLE_OWNER Cipher {
             write_u64_dec_(lf, ts);
             lf.put('\n');
         }
+
+        // CONTRACT-107-POST: state-mutation contract — after advance_head
+        // returns, three observable invariants must hold:
+        //
+        //   (1) head_ == content_hash      — the cached HEAD pointer
+        //                                    reflects the freshly committed
+        //                                    content_hash.  Downstream
+        //                                    head() / empty() readers (and
+        //                                    binary search in
+        //                                    hash_at_step()) speculate on
+        //                                    this without re-loading from
+        //                                    disk.
+        //
+        //   (2) !log_.empty()              — log_ now has at least one
+        //                                    entry (we just emplaced).
+        //                                    latest_committed_head() and
+        //                                    binary search in hash_at_step
+        //                                    rely on this for the
+        //                                    just-committed-step path.
+        //
+        //   (3) log_.back().step_id.value  — the back entry's step_id is
+        //                                    the step we just committed
+        //       == step_id                  (OrderedAppendOnly preserves
+        //                                    insertion order; this catches
+        //                                    a future refactor that
+        //                                    accidentally appends a
+        //                                    different step before
+        //                                    advancing head).
+        //
+        // Routes through CRUCIBLE_POST (forwards to CRUCIBLE_PRE) because
+        // P2900 `post (r: ...)` referencing class members through `this->`
+        // is silently bypassed at consteval in GCC 16.1.1 (same gotcha
+        // family as the in-body pre).  Void function: first arg of
+        // CRUCIBLE_POST is the conventional sentinel `0`.  Under NDEBUG
+        // each CRUCIBLE_POST collapses to `[[assume(cond)]]`, zero-cost
+        // and propagates the invariant to every downstream optimizer.
+        CRUCIBLE_POST(0, head_ == content_hash);
+        CRUCIBLE_POST(0, !log_.empty());
+        CRUCIBLE_POST(0, log_.back().step_id.value == step_id);
     }
 
     // ─── Row-typed event recording (FOUND-I09) ──────────────────────

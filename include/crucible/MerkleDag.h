@@ -30,6 +30,7 @@
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/Post.h>
 #include <crucible/safety/Saturated.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ResidencyHeat.h>
@@ -529,6 +530,18 @@ struct RegionNode : TraceNode {
       pre (::crucible::decide::is_non_zero(new_id))
   {
     variant_id = new_id;
+    // CONTRACT-106-POST: state-mutation contract — after set_variant
+    // returns, variant_id reflects the freshly-supplied new_id.  Routes
+    // through CRUCIBLE_POST (forwards to CRUCIBLE_PRE) because P2900
+    // `post (r: ...)` referencing a class member field through `this->`
+    // is silently bypassed at consteval in GCC 16.1.1 (same gotcha
+    // family as CONTRACT-100 / -101 / -102 / -103 / -106..108
+    // pre-migrations).  CRUCIBLE_POST fires symmetrically at consteval,
+    // runtime, and as `[[assume(variant_id == new_id)]]` for the
+    // optimizer — downstream has_variant() / variant_id reads can
+    // speculate on the new value without re-checking.  Void function:
+    // first arg of CRUCIBLE_POST is the conventional sentinel `0`.
+    CRUCIBLE_POST(0, variant_id == new_id);
   }
 };
 
