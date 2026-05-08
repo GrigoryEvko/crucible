@@ -1440,4 +1440,140 @@ constexpr bool fmix_preserves_non_zero(std::uint64_t seed,
     return seed != 0 && mix_output != 0;
 }
 
+// ─── conjunction / disjunction ─────────────────────────────────────
+//
+// `conjunction(xs)` returns true iff every element of `xs` is true.
+// `disjunction(xs)` returns true iff at least one element is true.
+//
+// Both follow the standard mathematical convention: the empty-domain
+// fold is the identity of the operator.
+//
+//   conjunction({}) ≡ true   (vacuous AND, identity of ∧)
+//   disjunction({}) ≡ false  (vacuous OR,  identity of ∨)
+//
+// ───────────────────────────────────────────────────────────────────
+// WHY A FOLD IS NAMED
+// ───────────────────────────────────────────────────────────────────
+//
+// At sites that compose multiple INDEPENDENT decide::* clauses into
+// a single CRUCIBLE_PRE precondition, the natural spelling is one
+// of:
+//
+//   pre (decide::no_overflow_mul(a, b)
+//     && decide::all_in_range(xs, lo, hi)
+//     && decide::strictly_increasing(seq)
+//     && seed != 0)
+//
+// or
+//
+//   const bool clauses[] = {
+//       decide::no_overflow_mul(a, b),
+//       decide::all_in_range(xs, lo, hi),
+//       decide::strictly_increasing(seq),
+//       seed != 0,
+//   };
+//   pre (decide::conjunction(clauses))
+//
+// Both are sound; the named-fold spelling adds:
+//
+//   1. Per-clause introspection — CONTRACT-005's diagnostic machinery
+//      can report the INDEX of the failing clause (e.g.
+//      "conjunction failed at index 2: strictly_increasing(seq)").
+//      The `&&`-chained spelling reports only "the precondition
+//      failed."
+//   2. Symmetry with `disjunction` — alternative-path admission
+//      ("any of these conditions is sufficient") gets the same
+//      structural treatment.
+//   3. Fuzz target — CONTRACT-090 covers `conjunction` + `disjunction`
+//      with one fuzzer each, vs N call-site-specific fuzzers.
+//
+// ───────────────────────────────────────────────────────────────────
+// PRODUCTION CITES (planned — CONTRACT-114, CONTRACT-127)
+// ───────────────────────────────────────────────────────────────────
+//
+//   * IterationDetector::reset            — multi-field invariant
+//     conjunction (signature_len + match_pos + ops_since_boundary
+//     all in valid post-reset state).
+//   * PoolAllocator::is_initialized       — base + size + offset
+//     invariant conjunction.
+//   * Vigil mode-transition gate          — alternative-path
+//     disjunction (current mode in any of {Recording, Replaying,
+//     Aligning}).
+//   * Forge Phase H emit_kernel admission — disjunction over
+//     vendor-supports flags.
+//
+// ───────────────────────────────────────────────────────────────────
+// ANTI-PATTERN CATALOG
+// ───────────────────────────────────────────────────────────────────
+//
+// `conjunction`:
+//
+//   pre (xs[0] && xs[1] && xs[2] && ...)
+//     // HARD-CODED INDEX FOLD — silently truncates if N grows.
+//     // Always cite the procedure with `std::span<const bool>`.
+//
+//   pre (xs.size() == N)  with all-N-checked elsewhere
+//     // PROXY CHECK — passes when all clauses are evaluated, but
+//     // doesn't witness their truth values.  Wrong relation.
+//
+//   pre (std::ranges::any_of(xs, std::identity{}))
+//     // OR-INSTEAD-OF-AND — the obvious typo.  any_of is
+//     // disjunction; for conjunction use all_of or the named
+//     // procedure here.
+//
+//   bool conjunction(span xs) { return true; }
+//     // ALWAYS-TRUE buggy implementation — wraps a no-op.  Caught
+//     // by the single-element-false HS14 fixture.
+//
+// `disjunction`:
+//
+//   pre (!xs.empty())
+//     // EMPTY-CHECK — admits any non-empty span regardless of
+//     // contents.  Catches the "empty-domain" bug class but not
+//     // "all-false."
+//
+//   pre (std::ranges::all_of(xs, std::identity{}))
+//     // AND-INSTEAD-OF-OR — the inverse typo.  all_of is
+//     // conjunction; for disjunction use any_of or the named
+//     // procedure.
+//
+//   bool disjunction(span xs) { return !xs.empty(); }
+//     // EMPTY-VACUOUS-TRUE bug — confuses "non-empty" with "some
+//     // true."  Caught by the empty-span fixture (correct impl
+//     // rejects empty; this impl wrongly accepts non-empty
+//     // all-false).
+//
+//   bool disjunction(span xs) { return true; }
+//     // ALWAYS-TRUE buggy implementation.  Caught by the
+//     // all-false-multi-element HS14 fixture.
+//
+// CARRIER NOTE: both procedures short-circuit; the `bool` payload
+// is read at most once per element and stops on the first
+// disqualifying value.  Cost is O(N) worst case, O(1) common case.
+// `gnu::pure` (not `gnu::const`) because the procedure reads
+// memory through the span; the optimizer may CSE adjacent calls
+// over the same span but cannot hoist past intervening writes to
+// it.
+//
+// VC DISCHARGE: the procedure body uses a hand-rolled loop rather
+// than `std::ranges::all_of` / `any_of` because the project's
+// no-`<ranges>`-on-hot-path discipline (CLAUDE.md §IV opt-out)
+// applies to predicate libraries that may end up cited from hot
+// paths via macro expansion under `semantic=enforce`.
+[[nodiscard, gnu::pure]]
+constexpr bool conjunction(std::span<const bool> xs) noexcept {
+    for (bool b : xs) {
+        if (!b) return false;
+    }
+    return true;
+}
+
+[[nodiscard, gnu::pure]]
+constexpr bool disjunction(std::span<const bool> xs) noexcept {
+    for (bool b : xs) {
+        if (b) return true;
+    }
+    return false;
+}
+
 }  // namespace crucible::decide

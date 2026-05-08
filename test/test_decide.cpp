@@ -1200,6 +1200,97 @@ static_assert(make_non_zero_hash(0xDEADBEEFCAFEBABEULL) != 0);
 static_assert(make_non_zero_hash(0x9E3779B97F4A7C15ULL) != 0);
 static_assert(make_non_zero_hash(0xFFFFFFFFFFFFFFFFULL) != 0);
 
+// ── conjunction / disjunction positive witnesses ───────────────────
+//
+// Standard mathematical conventions:
+//   conjunction({}) ≡ true   (vacuous AND)
+//   disjunction({}) ≡ false  (vacuous OR)
+// Both fold over std::span<const bool>; cite at compile time via
+// constexpr arrays decayed to span.
+
+// Positive — vacuous identity.
+static_assert( dc::conjunction(std::span<const bool>{}));
+static_assert(!dc::disjunction(std::span<const bool>{}));
+
+// Positive — single element.
+constexpr bool one_true[]  = {true};
+constexpr bool one_false[] = {false};
+static_assert( dc::conjunction(std::span<const bool>{one_true}));
+static_assert(!dc::conjunction(std::span<const bool>{one_false}));
+static_assert( dc::disjunction(std::span<const bool>{one_true}));
+static_assert(!dc::disjunction(std::span<const bool>{one_false}));
+
+// Positive — all-true / all-false multi-element.
+constexpr bool all_true_4[]  = {true, true, true, true};
+constexpr bool all_false_4[] = {false, false, false, false};
+static_assert( dc::conjunction(std::span<const bool>{all_true_4}));
+static_assert(!dc::conjunction(std::span<const bool>{all_false_4}));
+static_assert( dc::disjunction(std::span<const bool>{all_true_4}));
+static_assert(!dc::disjunction(std::span<const bool>{all_false_4}));
+
+// Positive — mixed elements at every position to pin short-circuit
+// AND OR-vs-AND distinguishers.
+constexpr bool mix_first_false[] = {false, true, true, true};
+constexpr bool mix_last_false[]  = {true, true, true, false};
+constexpr bool mix_mid_false[]   = {true, false, true, true};
+static_assert(!dc::conjunction(std::span<const bool>{mix_first_false}));
+static_assert(!dc::conjunction(std::span<const bool>{mix_last_false}));
+static_assert(!dc::conjunction(std::span<const bool>{mix_mid_false}));
+static_assert( dc::disjunction(std::span<const bool>{mix_first_false}));
+static_assert( dc::disjunction(std::span<const bool>{mix_last_false}));
+static_assert( dc::disjunction(std::span<const bool>{mix_mid_false}));
+
+constexpr bool mix_first_true[] = {true, false, false, false};
+constexpr bool mix_last_true[]  = {false, false, false, true};
+constexpr bool mix_mid_true[]   = {false, true, false, false};
+static_assert(!dc::conjunction(std::span<const bool>{mix_first_true}));
+static_assert(!dc::conjunction(std::span<const bool>{mix_last_true}));
+static_assert(!dc::conjunction(std::span<const bool>{mix_mid_true}));
+static_assert( dc::disjunction(std::span<const bool>{mix_first_true}));
+static_assert( dc::disjunction(std::span<const bool>{mix_last_true}));
+static_assert( dc::disjunction(std::span<const bool>{mix_mid_true}));
+
+// De Morgan witness — !conjunction(xs) ≡ disjunction(¬xs).
+constexpr bool dm_xs[] = {true, false, true, false};
+constexpr bool dm_neg_xs[] = {false, true, false, true};
+static_assert(
+    !dc::conjunction(std::span<const bool>{dm_xs})
+    == dc::disjunction(std::span<const bool>{dm_neg_xs}));
+
+// Distinguisher: AND/OR diverge on mixed spans.
+static_assert(
+    dc::conjunction(std::span<const bool>{mix_last_false})
+    != dc::disjunction(std::span<const bool>{mix_last_false}));
+static_assert(
+    dc::conjunction(std::span<const bool>{mix_first_true})
+    != dc::disjunction(std::span<const bool>{mix_first_true}));
+
+// ── Composition with CRUCIBLE_PRE — multi-clause precondition shape ─
+//
+// Production cite shape: a function with several independent
+// invariants composes them into one named conjunction-fold.  At
+// runtime the call expands to a short-circuit walk over the
+// pre-computed clauses; CRUCIBLE_PRE traps on any failing clause.
+
+template <std::size_t N>
+[[nodiscard]] constexpr bool admit_all_clauses(
+        bool const (&clauses)[N]) noexcept {
+    CRUCIBLE_PRE(dc::conjunction(std::span<const bool>{clauses}));
+    return true;
+}
+
+template <std::size_t N>
+[[nodiscard]] constexpr bool admit_any_clause(
+        bool const (&clauses)[N]) noexcept {
+    CRUCIBLE_PRE(dc::disjunction(std::span<const bool>{clauses}));
+    return true;
+}
+
+constexpr bool full_clauses_pos[] = {true, true, true};
+constexpr bool any_clauses_pos[]  = {false, true, false};
+static_assert(admit_all_clauses(full_clauses_pos));
+static_assert(admit_any_clause(any_clauses_pos));
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -1684,6 +1775,85 @@ int main() {
         }
         sink += static_cast<int>(mix_nz != 0)
               - static_cast<int>(mix_of_zero != 0);
+    }
+
+    // ── conjunction / disjunction runtime witnesses ────────────────
+    //
+    // Build bool arrays via volatile sinks so the optimizer cannot
+    // constant-fold the predicate calls.  Each direction (true /
+    // false) is observed at every position to pin short-circuit
+    // correctness.
+    {
+        volatile bool clause_true_v  = true;
+        volatile bool clause_false_v = false;
+        bool clauses_all_true[]   = {static_cast<bool>(clause_true_v),
+                                     static_cast<bool>(clause_true_v),
+                                     static_cast<bool>(clause_true_v),
+                                     static_cast<bool>(clause_true_v)};
+        bool clauses_all_false[]  = {static_cast<bool>(clause_false_v),
+                                     static_cast<bool>(clause_false_v),
+                                     static_cast<bool>(clause_false_v),
+                                     static_cast<bool>(clause_false_v)};
+        bool clauses_last_false[] = {static_cast<bool>(clause_true_v),
+                                     static_cast<bool>(clause_true_v),
+                                     static_cast<bool>(clause_true_v),
+                                     static_cast<bool>(clause_false_v)};
+        bool clauses_first_true[] = {static_cast<bool>(clause_true_v),
+                                     static_cast<bool>(clause_false_v),
+                                     static_cast<bool>(clause_false_v),
+                                     static_cast<bool>(clause_false_v)};
+
+        // conjunction positive — all-true span accepted.
+        if (!dc::conjunction(std::span<const bool>{clauses_all_true})) {
+            std::fprintf(stderr,
+                "test_decide: conjunction(all-true) WRONGLY rejected\n");
+            return 1;
+        }
+        // conjunction negative — last-element-false rejected.
+        // Catches OR-instead-of-AND bug (OR over this is true).
+        if (dc::conjunction(std::span<const bool>{clauses_last_false})) {
+            std::fprintf(stderr,
+                "test_decide: conjunction(last-false) WRONGLY accepted "
+                "(OR-instead-of-AND violator)\n");
+            return 1;
+        }
+        // conjunction empty — vacuous-true accepted.
+        if (!dc::conjunction(std::span<const bool>{})) {
+            std::fprintf(stderr,
+                "test_decide: conjunction(empty) WRONGLY rejected "
+                "(vacuous-AND violator)\n");
+            return 1;
+        }
+
+        // disjunction positive — first-element-true accepted.
+        if (!dc::disjunction(std::span<const bool>{clauses_first_true})) {
+            std::fprintf(stderr,
+                "test_decide: disjunction(first-true) WRONGLY rejected\n");
+            return 1;
+        }
+        // disjunction negative — all-false rejected.
+        if (dc::disjunction(std::span<const bool>{clauses_all_false})) {
+            std::fprintf(stderr,
+                "test_decide: disjunction(all-false) WRONGLY accepted "
+                "(always-true violator)\n");
+            return 1;
+        }
+        // disjunction empty — vacuous-false rejected.
+        if (dc::disjunction(std::span<const bool>{})) {
+            std::fprintf(stderr,
+                "test_decide: disjunction(empty) WRONGLY accepted "
+                "(empty-vacuous-true violator)\n");
+            return 1;
+        }
+
+        sink += static_cast<int>(dc::conjunction(
+                    std::span<const bool>{clauses_all_true}))
+              - static_cast<int>(dc::conjunction(
+                    std::span<const bool>{clauses_last_false}))
+              + static_cast<int>(dc::disjunction(
+                    std::span<const bool>{clauses_first_true}))
+              - static_cast<int>(dc::disjunction(
+                    std::span<const bool>{clauses_all_false}));
     }
 
     if (sink == 0) {

@@ -5289,3 +5289,46 @@ crucible_neg_compile_test(neg_decide_fmix_preserves_non_zero_zero_seed
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_fmix_preserves_non_zero_mix_zero
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-080: crucible::decide::conjunction + ::disjunction —
+# span-based fold predicates over `bool` clauses.  FOUR HS14
+# fixtures, TWO per procedure, each pair pinning ORTHOGONAL bug-
+# class buckets:
+#
+# Conjunction (∧, identity = true on empty):
+#   * neg_decide_conjunction_single_false — fires on `xs = {false}`.
+#     Single-element-false witness.  Catches "always-true" / no-op-
+#     impl bug class (a buggy `return true;` would COMPILE this
+#     fixture; the correct impl rejects).  This is the smallest
+#     possible witness.
+#   * neg_decide_conjunction_or_instead_of_and — fires on
+#     `xs = {true, true, true, false}`.  Last-element-false in a
+#     multi-element span.  Catches "OR-instead-of-AND" bug class
+#     (a buggy `any_of`/disjunction-fold short-circuits on the
+#     first true and WRONGLY accepts; the correct impl rejects).
+#     Also catches "first-element-only" bugs (`return xs[0]`).
+#
+# Disjunction (∨, identity = false on empty):
+#   * neg_decide_disjunction_empty_span — fires on `xs = {}`.
+#     Empty-span witness.  Catches "vacuous-truth" / WRONG-
+#     IDENTITY bug class (a buggy impl that returns `true` on
+#     empty input would COMPILE this fixture; the correct impl
+#     rejects per `∨ ∅ = ⊥`).
+#   * neg_decide_disjunction_all_false_multi — fires on
+#     `xs = {false, false, false, false}`.  Multi-element all-
+#     false witness.  Catches "always-true" / "non-empty-as-true"
+#     bug class (a buggy `return true;` or `return !xs.empty();`
+#     would COMPILE this fixture; the correct impl rejects).
+#
+# A correct implementation passes all four; each buggy variant
+# fails at least one fixture in its procedure's pair, with the
+# pair-mate catching the orthogonal bug class.  Distinct mismatch
+# classes per HS14.
+crucible_neg_compile_test(neg_decide_conjunction_single_false
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_conjunction_or_instead_of_and
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_disjunction_empty_span
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_disjunction_all_false_multi
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
