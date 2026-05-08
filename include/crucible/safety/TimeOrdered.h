@@ -70,6 +70,7 @@
 #include <crucible/Platform.h>
 #include <crucible/algebra/Graded.h>
 #include <crucible/algebra/lattices/HappensBefore.h>
+#include <crucible/safety/Decide.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -277,12 +278,23 @@ public:
         return impl_.grade();
     }
 
+    // CONTRACT-TimeOrdered-Slot-PRE (cite migration 2026-05-09): all
+    // six `pre (p < N)` / `pre (me < N)` integer-bound clauses on
+    // slot-accessor / advance_at / tick / merge promote to
+    // `decide::in_range<std::size_t>(idx, 0, N - 1)`.  N > 0 is
+    // statically asserted (line 118) so the `N - 1` upper endpoint
+    // never underflows.  Parameter-only predicates (no `this->`-
+    // member access), so vanilla P2900 `pre()` is consteval-safe;
+    // the win is the named predicate so future hardening lifting
+    // process-id callers to `Refined<bounded_above<N - 1>, std::size_t>`
+    // propagates through the cite by name.
+    //
     // Slot accessor — read-only.  The vector_clock_t's bounds-checked
     // operator[] is forwarded.  Used in patterns like
     // `evt.vector_clock_at(my_process)` to ask "what's my view of the
     // sender's events at the moment THIS event was produced?".
     [[nodiscard]] constexpr std::uint64_t vector_clock_at(std::size_t p) const noexcept
-        pre (p < N)
+        pre (::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
     {
         return impl_.grade()[p];
     }
@@ -345,14 +357,14 @@ public:
     [[nodiscard]] constexpr TimeOrdered advance_at(std::size_t p) const&
         noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
-        pre (p < N)
+        pre (::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
     {
         return TimeOrdered{this->peek(), lattice_type::successor_at(this->vector_clock(), p)};
     }
 
     [[nodiscard]] constexpr TimeOrdered advance_at(std::size_t p) &&
         noexcept(std::is_nothrow_move_constructible_v<T>)
-        pre (p < N)
+        pre (::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
     {
         vector_clock_t advanced = lattice_type::successor_at(this->vector_clock(), p);
         return TimeOrdered{std::move(impl_).consume(), advanced};
@@ -365,14 +377,14 @@ public:
     [[nodiscard]] constexpr TimeOrdered tick(std::size_t p) const&
         noexcept(std::is_nothrow_copy_constructible_v<T>)
         requires std::copy_constructible<T>
-        pre (p < N)
+        pre (::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
     {
         return advance_at(p);
     }
 
     [[nodiscard]] constexpr TimeOrdered tick(std::size_t p) &&
         noexcept(std::is_nothrow_move_constructible_v<T>)
-        pre (p < N)
+        pre (::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
     {
         return std::move(*this).advance_at(p);
     }
@@ -412,7 +424,7 @@ public:
     [[nodiscard]] constexpr TimeOrdered merge(
         T received_value, vector_clock_t received_vector_clock, std::size_t me) const noexcept(
         std::is_nothrow_move_constructible_v<T>)
-        pre (me < N)
+        pre (::crucible::decide::in_range<std::size_t>(me, 0, N - 1))
     {
         vector_clock_t merged = lattice_type::causal_merge(this->vector_clock(), received_vector_clock, me);
         return TimeOrdered{std::move(received_value), merged};
