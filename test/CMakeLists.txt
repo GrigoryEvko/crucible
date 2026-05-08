@@ -5229,3 +5229,37 @@ crucible_neg_compile_test(neg_decide_tier_replaces_storage_downgrade
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_tier_replaces_determinism_downgrade
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-071 fixtures — pin Decide::row_subset: payload-row ⊆
+# Ctx-row substitution principle for Met(X) effect rows.  This is
+# the THIN VC-discharge facade over effects::is_subrow_v, the
+# canonical CRUCIBLE_PRE-callable spelling at every payload-row
+# admission boundary (Stage::CtxFitsStage, Pipeline::CtxFitsPipeline,
+# mint_endpoint substrate-row check, Cipher federation row
+# intersection).  Two distinct mismatch classes — DIFFERENT bug
+# families that map to NON-OVERLAPPING buggy implementations:
+#
+#   * neg_decide_row_subset_extra_effect — fires on
+#     `(Row<Alloc, IO>, Row<Alloc>)`.  |Payload| > |Ctx|, atoms
+#     partially overlap.  Production consequence: a kernel
+#     declaring it may emit IO is admitted into an alloc-only
+#     ExecCtx; Augur drift-attribution mis-classifies the I/O
+#     latency spike.  Catches the "direction-reversed" and
+#     "structural-equality" bug classes.
+#   * neg_decide_row_subset_disjoint_axis — fires on
+#     `(Row<Block>, Row<Alloc>)`.  |Payload| == |Ctx|, atoms
+#     disjoint.  Production consequence: blocking syscall
+#     embedded in a hot-path Stage; throughput collapse with no
+#     row-level signal.  Catches the "cardinality-only" and
+#     "any-overlap-passes" bug classes — which extra-effect
+#     would NOT catch (size-only correctly rejects when
+#     |Payload| > |Ctx|).
+#
+# A correct implementation passes both; a buggy size-only impl
+# passes #1 and fails #2; a buggy direction-reversed impl passes
+# #2 and fails #1.  Together the two fixtures cover the bug-class
+# space.
+crucible_neg_compile_test(neg_decide_row_subset_extra_effect
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_row_subset_disjoint_axis
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")

@@ -108,6 +108,8 @@
 
 #pragma once
 
+#include <crucible/effects/EffectRow.h>
+
 #include <concepts>
 #include <cstddef>
 #include <limits>
@@ -1189,6 +1191,135 @@ template <typename TierTag>
 constexpr bool tier_replaces(TierTag candidate, TierTag required) noexcept {
     using U = std::underlying_type_t<TierTag>;
     return static_cast<U>(candidate) >= static_cast<U>(required);
+}
+
+// ─── row_subset ────────────────────────────────────────────────────
+//
+// Returns true iff effect-row `Payload` is a subset of effect-row
+// `Ctx` — every Effect atom in Payload is also present in Ctx.  This
+// is the substitution principle for capability propagation: a value
+// declared `Computation<Payload, T>` may be lifted into a
+// `Computation<Ctx, T>` slot iff `row_subset<Payload, Ctx>()`.
+//
+// SEMANTIC NOTE
+// -------------
+// Crucible's Met(X) effect-row infrastructure (effects/EffectRow.h)
+// already ships `is_subrow_v<R1, R2>` and the matching `Subrow`
+// concept; both are consteval-only and serve every CtxFitsStage /
+// CtxFitsPipeline / CtxFitsPermissionedProtocol gate via concept-
+// constrained templates at the type-system layer.  This procedure
+// is the THIN VC-discharge facade — the canonical CRUCIBLE_PRE-
+// callable spelling that lives in `decide::*` alongside every
+// other admission predicate.
+//
+// Rationale for the facade (vs naked `is_subrow_v`):
+//
+//   1. Discoverability — `git grep "decide::"` is the single
+//      review-time index into every VC discharge in the codebase.
+//      A naked `is_subrow_v<...>` inside CRUCIBLE_PRE doesn't show
+//      up in that grep.
+//   2. Uniformity — every Decide procedure has the same shape
+//      `decide::<predicate>(args)`.  Reviewers learn one shape;
+//      apply it everywhere.  When grep finds three different
+//      spellings of the same VC across the codebase, you've lost
+//      the opportunity for cite-deduplication.
+//   3. Documentation home — the production-cite block, anti-pattern
+//      catalog, and migration cross-reference live HERE, in one
+//      place.
+//   4. Future-proofing — when CONTRACT-005's diagnostic
+//      enrichment lands richer messages (predicate text + source
+//      location), every cite gets the upgrade for free.
+//
+// ROW SHAPE
+// ---------
+// Both type parameters must be `effects::Row<Es...>` instantiations
+// (any pack of `Effect` atoms).  The procedure delegates to
+// `effects::is_subrow_v<Payload, Ctx>`, which compares semantically
+// (not structurally) — `Row<Alloc, IO>` and `Row<IO, Alloc>` are
+// Subrow-equal under this relation, regardless of the per-call
+// canonicalization (METX-2 #474, see EffectRow.h §"Set algebra"
+// comment block).
+//
+// CALLED ONCE PER ROW-ADMISSION GATE
+// ----------------------------------
+// Every payload-row admission VC discharges via this procedure:
+// Stage's CtxFitsStage payload-row admission (Computation's
+// declared row vs ExecCtx's row); Pipeline's CtxFitsPipeline
+// row-union check (every stage's declared row vs the pipeline-
+// level Ctx row); mint_endpoint substrate-row admission;
+// Cipher federation's row-intersection at fleet-join (FOUND-K07);
+// Forge Phase E.RecipeSelect row constraints (FOUND-J06).  All of
+// these can spell their VC as
+// `decide::row_subset<PayloadRow, CtxRow>()` and unify on this
+// procedure.
+//
+// USAGE PATTERN
+// -------------
+//
+//   template <typename Payload, typename Ctx>
+//   constexpr void process(
+//       effects::Computation<Payload, T> const& v
+//   ) noexcept {
+//       CRUCIBLE_PRE(crucible::decide::row_subset<Payload, Ctx>());
+//       // body trusts that every effect Payload may emit is
+//       // declared in Ctx; a downstream consumer carrying Ctx
+//       // can absorb v's effects without surprise.
+//   }
+//
+//   // Witness, consteval (positive):
+//   //   static_assert(crucible::decide::row_subset<
+//   //       effects::Row<effects::Effect::Alloc>,
+//   //       effects::Row<effects::Effect::Alloc, effects::Effect::IO>
+//   //   >());                                                  // ✓
+//   //
+//   // Witness, consteval (negative — fixture territory):
+//   //   static_assert(!crucible::decide::row_subset<
+//   //       effects::Row<effects::Effect::IO>,
+//   //       effects::Row<effects::Effect::Alloc>
+//   //   >());                                                  // ✓
+//
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ------------------------------------------------------
+//   (none yet — first migration batches land with CONTRACT-111
+//    [Forge Phase L row admission rebrand] and an upcoming
+//    Stage / Pipeline cite-pass that converts inline Subrow
+//    static_asserts into VC-discharged decide::row_subset cites.)
+//
+// ANTI-PATTERNS (review-rejected)
+// -------------------------------
+//   * `pre (effects::row_size_v<Payload> <= effects::row_size_v<Ctx>)`
+//     — CARDINALITY-ONLY.  Falsely admits any same-size row, even
+//     when the atoms are disjoint (`Row<Block> ⊆ Row<Alloc>` would
+//     pass).  The set-membership check is the ONLY correct
+//     formulation.
+//   * `pre (std::is_same_v<Payload, Ctx>)` — STRUCTURAL EQUALITY.
+//     Refuses every legal upgrade (e.g. `Row<Alloc>` admitted into
+//     `Row<Alloc, IO>` slot).  Defeats the substitution principle
+//     entirely.
+//   * `pre (effects::is_subrow_v<Ctx, Payload>)` — DIRECTION
+//     REVERSED.  Reads as "Ctx ⊆ Payload" — a Payload row that
+//     emits MORE effects than the Ctx admits is the bug we're
+//     trying to catch.  Off-by-direction is fatal.
+//   * `pre (effects::is_subrow_v<Payload, Ctx>)` direct — works
+//     correctly but doesn't appear in `git grep decide::` and
+//     duplicates the call-site spelling.  Cite this procedure
+//     instead.
+//   * Inline `static_assert(Subrow<Payload, Ctx>)` at every
+//     production boundary — works for type-system enforcement but
+//     can't compose with CRUCIBLE_PRE's debug-mode runtime branch.
+//     For the consteval-only path, prefer the concept; for the
+//     full quartet (consteval + runtime + [[assume]] + diag),
+//     cite this procedure.
+//
+// CARRIER NOTE: rows have no runtime state — every `row_subset<...>()`
+// call resolves at compile time to a single `bool` constant via
+// `is_subrow_v`.  The function is `constexpr` (not `consteval`) so
+// CRUCIBLE_PRE's debug-mode runtime branch (`if (!(cond))`) accepts
+// it; the compiler folds away the call entirely under -O1+.
+template <typename Payload, typename Ctx>
+[[nodiscard, gnu::const]]
+constexpr bool row_subset() noexcept {
+    return effects::is_subrow_v<Payload, Ctx>;
 }
 
 }  // namespace crucible::decide

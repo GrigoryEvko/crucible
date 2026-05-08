@@ -1043,6 +1043,93 @@ static_assert(admit_kernel_determinism(cl::DetSafeTier::Pure, cl::DetSafeTier::P
 static_assert(admit_kernel_determinism(cl::DetSafeTier::PhiloxRng,
                                        cl::DetSafeTier::WallClockRead));
 
+// ── row_subset ─────────────────────────────────────────────────────
+//
+// Exercises every shape on the Met(X) effect-row lattice — empty,
+// singleton, multi-atom, full-universe — and the four orthogonal
+// containment classes (reflexivity, proper subset, equal but
+// disjoint, strict superset).
+
+namespace fx = crucible::effects;
+
+using R_empty       = fx::Row<>;
+using R_alloc       = fx::Row<fx::Effect::Alloc>;
+using R_io          = fx::Row<fx::Effect::IO>;
+using R_block       = fx::Row<fx::Effect::Block>;
+using R_alloc_io    = fx::Row<fx::Effect::Alloc, fx::Effect::IO>;
+using R_alloc_io_bg = fx::Row<fx::Effect::Alloc, fx::Effect::IO, fx::Effect::Bg>;
+using R_full        = fx::Row<fx::Effect::Alloc, fx::Effect::IO, fx::Effect::Block,
+                              fx::Effect::Bg, fx::Effect::Init, fx::Effect::Test>;
+
+// Reflexivity — every row is a subset of itself.
+static_assert( dc::row_subset<R_empty,       R_empty>());
+static_assert( dc::row_subset<R_alloc,       R_alloc>());
+static_assert( dc::row_subset<R_alloc_io,    R_alloc_io>());
+static_assert( dc::row_subset<R_full,        R_full>());
+
+// Empty-row admission — ∅ ⊆ R for every R.
+static_assert( dc::row_subset<R_empty,       R_alloc>());
+static_assert( dc::row_subset<R_empty,       R_alloc_io>());
+static_assert( dc::row_subset<R_empty,       R_full>());
+
+// Proper-subset upgrades — strictly stronger Ctx admits weaker
+// Payload.
+static_assert( dc::row_subset<R_alloc,       R_alloc_io>());
+static_assert( dc::row_subset<R_io,          R_alloc_io>());
+static_assert( dc::row_subset<R_alloc_io,    R_alloc_io_bg>());
+static_assert( dc::row_subset<R_alloc,       R_full>());
+static_assert( dc::row_subset<R_alloc_io_bg, R_full>());
+
+// Order-insensitivity — Subrow compares semantically (METX-2 #474).
+// `Row<IO, Alloc>` is Subrow-equal to `Row<Alloc, IO>` regardless of
+// the per-call structural canonicalization.
+using R_io_alloc = fx::Row<fx::Effect::IO, fx::Effect::Alloc>;
+static_assert( dc::row_subset<R_alloc_io, R_io_alloc>());
+static_assert( dc::row_subset<R_io_alloc, R_alloc_io>());
+static_assert( dc::row_subset<R_alloc,    R_io_alloc>());
+
+// Containment violations — strict superset.
+static_assert(!dc::row_subset<R_alloc_io,    R_alloc>());
+static_assert(!dc::row_subset<R_alloc_io_bg, R_alloc_io>());
+static_assert(!dc::row_subset<R_full,        R_alloc_io_bg>());
+
+// Disjoint atoms (cardinalities equal, no shared elements) — the
+// payload's atoms simply aren't in the Ctx universe.
+static_assert(!dc::row_subset<R_io,          R_alloc>());
+static_assert(!dc::row_subset<R_block,       R_alloc>());
+static_assert(!dc::row_subset<R_block,       R_io>());
+
+// Partial overlap — payload has SOME atoms in Ctx but not all.
+// E.g. `Row<Alloc, Block>` ⊆ `Row<Alloc, IO>` would require Block ∈
+// {Alloc, IO}, which is false; reject.
+using R_alloc_block = fx::Row<fx::Effect::Alloc, fx::Effect::Block>;
+static_assert(!dc::row_subset<R_alloc_block, R_alloc_io>());
+static_assert(!dc::row_subset<R_alloc_io,    R_alloc_block>());
+
+// Empty Ctx — only the empty payload qualifies.
+static_assert( dc::row_subset<R_empty, R_empty>());
+static_assert(!dc::row_subset<R_alloc, R_empty>());
+static_assert(!dc::row_subset<R_full,  R_empty>());
+
+// ── Composition with CRUCIBLE_PRE — payload-row admission shape ────
+//
+// Production cite shape (Stage / Pipeline payload-row admission):
+// a callable carrying `Computation<Payload, T>` may run inside an
+// ExecCtx whose row is `Ctx` iff every effect in Payload is also
+// declared in Ctx.
+
+template <typename Payload, typename Ctx>
+[[nodiscard]] constexpr bool admit_payload() noexcept {
+    CRUCIBLE_PRE((dc::row_subset<Payload, Ctx>()));
+    return true;
+}
+
+static_assert(admit_payload<R_empty,    R_empty>());
+static_assert(admit_payload<R_empty,    R_full>());
+static_assert(admit_payload<R_alloc,    R_alloc_io>());
+static_assert(admit_payload<R_alloc_io, R_full>());
+static_assert(admit_payload<R_full,     R_full>());
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -1426,6 +1513,51 @@ int main() {
             return 1;
         }
         sink += static_cast<int>(pure_v) - static_cast<int>(entropy_v);
+    }
+
+    // ── row_subset runtime witnesses ───────────────────────────────
+    //
+    // Effect rows are pure type-level; every `row_subset<R1,R2>()`
+    // call resolves to a `bool` constant at compile time.  Route the
+    // result through a volatile bool sink so the optimizer cannot
+    // dead-strip the call — the !NDEBUG runtime branch of CRUCIBLE_PRE
+    // (`if (!(cond))`) actually executes against a constant-folded
+    // bool.
+    {
+        volatile bool ok_legal_subset =
+            dc::row_subset<R_alloc, R_alloc_io>();
+        if (!ok_legal_subset) {
+            std::fprintf(stderr,
+                "test_decide: row_subset {Alloc} ⊆ {Alloc,IO} WRONGLY rejected\n");
+            return 1;
+        }
+        volatile bool ok_empty =
+            dc::row_subset<R_empty, R_full>();
+        if (!ok_empty) {
+            std::fprintf(stderr,
+                "test_decide: row_subset ∅ ⊆ R_full WRONGLY rejected\n");
+            return 1;
+        }
+        volatile bool bad_extra =
+            dc::row_subset<R_alloc_io, R_alloc>();
+        if (bad_extra) {
+            std::fprintf(stderr,
+                "test_decide: row_subset {Alloc,IO} ⊆ {Alloc} extra-effect "
+                "WRONGLY accepted\n");
+            return 1;
+        }
+        volatile bool bad_disjoint =
+            dc::row_subset<R_block, R_alloc>();
+        if (bad_disjoint) {
+            std::fprintf(stderr,
+                "test_decide: row_subset {Block} ⊆ {Alloc} disjoint-axis "
+                "WRONGLY accepted\n");
+            return 1;
+        }
+        sink += static_cast<int>(ok_legal_subset)
+              + static_cast<int>(ok_empty)
+              - static_cast<int>(bad_extra)
+              - static_cast<int>(bad_disjoint);
     }
 
     if (sink == 0) {
