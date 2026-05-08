@@ -40,6 +40,7 @@
 #include <crucible/safety/IsOpaqueLifetime.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/OpaqueLifetime.h>
+#include <crucible/safety/Pre.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Tagged.h>
@@ -613,7 +614,6 @@ class CRUCIBLE_OWNER Cipher {
     // can speculate on hash != 0 without re-checking).  Companion
     // typed witness: ValidCipherHead below.
     void advance_head(OpenView const&, ContentHash content_hash, uint64_t step_id)
-        pre (log_.empty() || step_id >= log_.back().step_id.value)
         // CONTRACT-106: non-zero hash sentinel discharges through
         // decide::is_non_zero (CONTRACT-072 / -080 catalog).  ContentHash
         // is a strong hash type whose default-constructed value is 0
@@ -622,7 +622,30 @@ class CRUCIBLE_OWNER Cipher {
         // sentinel handling propagates to every advance_head / publish /
         // lookup site through one predicate.
         pre (::crucible::decide::is_non_zero(content_hash))
+        // CONTRACT-107 (step_id-vs-log invariant): the step_id-ordering
+        // pre below moves from P2900 `pre()` to in-body CRUCIBLE_PRE
+        // because P2900 `pre()` referencing a class member through
+        // `this->` (`log_`) is silently bypassed at consteval in GCC
+        // 16.1.1 (the same gotcha that forced CONTRACT-100 / -101 / -102
+        // / -103 / -106-Cipher to migrate).  CRUCIBLE_PRE fires
+        // symmetrically at consteval, runtime, and as `[[assume]]` for
+        // the optimizer.
     {
+        // CONTRACT-107: step_id non-regression discharges through
+        // `decide::weakly_increasing` (CONTRACT-042 catalog) over a
+        // two-element span [back.step_id, candidate].  The `<=` shape is
+        // intentional — Cipher accepts duplicate step_ids at this gate
+        // (the strict-consecutive-by-1 check happens deeper, at the log
+        // append-only event-vector invariant near line 787) — so the
+        // weakly-increasing cite matches the predicate semantic exactly.
+        // Future hardening (PROD-WRAP-* lifting `step_id` to
+        // Monotonic<uint64_t>) propagates uniformly through this cite.
+        if (!log_.empty()) {
+            uint64_t const ordering[2] = {
+                log_.back().step_id.value, step_id};
+            CRUCIBLE_PRE(::crucible::decide::weakly_increasing<std::uint64_t>(
+                std::span<const std::uint64_t>{ordering, 2}));
+        }
         head_ = content_hash;
 
         // Overwrite HEAD file (truncate to hex + newline).
@@ -761,8 +784,14 @@ class CRUCIBLE_OWNER Cipher {
     void record_event(OpenView const& view,
                       ContentHash content_hash,
                       uint64_t step_id)
-        pre (log_.empty() || step_id >= log_.back().step_id.value)
     {
+        // CONTRACT-107: record_event forwards to advance_head, whose
+        // in-body CRUCIBLE_PRE enforces the step_id-vs-log weakly-
+        // increasing invariant via decide::weakly_increasing
+        // (CONTRACT-042 catalog).  The forwarder declaration carries
+        // no separate pre because the predicate would be a duplicate
+        // (and consteval-bypass-vulnerable, per CONTRACT-100..103) —
+        // the discharge happens once at the receiver.
         advance_head(view, content_hash, step_id);
     }
 
