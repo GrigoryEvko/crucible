@@ -125,6 +125,7 @@
 
 #include <crucible/algebra/Lattice.h>
 #include <crucible/Platform.h>
+#include <crucible/safety/Decide.h>
 
 #include <array>
 #include <compare>       // std::partial_ordering for operator<=>
@@ -213,8 +214,20 @@ struct HappensBeforeLattice {
         // compiles to `[[assume(p < N)]]` per CLAUDE.md §XII, giving
         // the optimizer the bound for free.  Same discipline as
         // ProductLattice's pointwise accessors.
+        //
+        // CONTRACT-HappensBefore-PRE (cite migration 2026-05-09):
+        // the three integer-bound clauses on operator[] / successor_at
+        // / causal_merge promote from bare `<` to the named integer-
+        // bound predicate `decide::in_range<size_t>(idx, 0, N - 1)`
+        // (N > 0 statically asserted at line 146 — N=0 is a hard
+        // build error with documented reason — so `N - 1` never
+        // underflows).  Parameter-only predicates, vanilla P2900
+        // retained.  Sibling cite of CONTRACT-TimeOrdered-Slot-PRE
+        // (commit cdbfe3b) on the wrapper layer.  Future hardening
+        // lifts process-id callers to `Refined<bounded_above<N - 1>,
+        // size_t>` and the predicate name carries through.
         [[nodiscard]] constexpr std::uint64_t operator[](std::size_t p) const noexcept
-            pre (p < N)
+            pre (::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
         {
             return clock[p];
         }
@@ -326,7 +339,14 @@ struct HappensBeforeLattice {
     //      undefined-behavior territory.
     [[nodiscard]] static constexpr element_type successor_at(
         element_type v, std::size_t p) noexcept
-        pre (p < N)
+        pre (::crucible::decide::in_range<std::size_t>(p, 0, N - 1))
+        // The overflow-guard clause is preserved BARE: it is a
+        // structural non-saturation predicate over a member of `v`,
+        // not an integer-bound on a parameter.  No catalog procedure
+        // covers `array_slot_not_at_uintmax<N>(arr, idx)`; once a
+        // second cite emerges in the codebase the predicate becomes
+        // a candidate for `decide::not_saturated<T>(arr, idx)` per
+        // the bottom-up growth discipline (Decide.h skeleton rules).
         pre (v.clock[p] != std::numeric_limits<std::uint64_t>::max())
     {
         v.clock[p] += 1;
@@ -363,7 +383,7 @@ struct HappensBeforeLattice {
     // computed slot at zero additional cost.  Single source of truth.
     [[nodiscard]] static constexpr element_type causal_merge(
         element_type local, element_type received, std::size_t me) noexcept
-        pre (me < N)
+        pre (::crucible::decide::in_range<std::size_t>(me, 0, N - 1))
     {
         return successor_at(join(local, received), me);
     }
