@@ -1629,6 +1629,80 @@ static_assert(safe_alloc_size(1) == sizeof(int));
 static_assert(safe_alloc_size(64) == 64 * sizeof(int));
 static_assert(safe_alloc_size(1024) == 1024 * sizeof(int));
 
+// ── non_negative witnesses ─────────────────────────────────────────
+//
+// Coverage matrix:
+//   * Built-in unsigned T: tautologically TRUE for every value
+//     including 0 (the predicate degenerates structurally — the
+//     comparison `T{0} <= x` admits everything in unsigned range).
+//   * Built-in signed T: admits 0 AND every strictly-positive value;
+//     rejects every signed-negative value including INT_MIN.
+//   * Saturated boundaries (T::min, T::max) on both signedness sides.
+//
+// Static asserts pin the predicate's behavior at every category;
+// negative-compile fixtures (non_negative_minus_one,
+// non_negative_int_min) catch the mismatch classes in the
+// !consteval / runtime path.
+
+// Built-in unsigned integers — tautological under std::integral.  The
+// predicate compiles, runs, and answers TRUE for every value; the
+// production value is the named-cite discipline (grep target +
+// reviewer signal), not a runtime check.
+static_assert(dc::non_negative(std::uint8_t{0}));
+static_assert(dc::non_negative(std::uint16_t{0}));
+static_assert(dc::non_negative(std::uint32_t{0}));
+static_assert(dc::non_negative(std::uint64_t{0}));
+static_assert(dc::non_negative(std::uint8_t{1}));
+static_assert(dc::non_negative(std::uint32_t{42}));
+static_assert(dc::non_negative(std::uint64_t{0xCAFEBABEDEADBEEFULL}));
+static_assert(dc::non_negative(std::numeric_limits<std::uint8_t>::max()));
+static_assert(dc::non_negative(std::numeric_limits<std::uint64_t>::max()));
+
+// Built-in signed integers — non-strict zero-inclusive: ADMITS zero
+// AND every strictly-positive value, REJECTS every signed negative
+// including the saturated min boundary.  This is the discipline that
+// distinguishes `decide::non_negative` from BOTH `decide::positive`
+// (which rejects zero) AND `decide::is_non_zero` (which admits
+// negatives for signed T).
+static_assert( dc::non_negative(std::int8_t{0}));
+static_assert( dc::non_negative(std::int32_t{0}));
+static_assert( dc::non_negative(std::int64_t{0}));
+static_assert(!dc::non_negative(std::int8_t{-1}));
+static_assert(!dc::non_negative(std::int32_t{-1}));
+static_assert(!dc::non_negative(std::int64_t{-1}));
+static_assert(!dc::non_negative(std::numeric_limits<std::int8_t>::min()));
+static_assert(!dc::non_negative(std::numeric_limits<std::int32_t>::min()));
+static_assert(!dc::non_negative(std::numeric_limits<std::int64_t>::min()));
+static_assert( dc::non_negative(std::int8_t{1}));
+static_assert( dc::non_negative(std::int32_t{1}));
+static_assert( dc::non_negative(std::int64_t{1}));
+static_assert( dc::non_negative(std::numeric_limits<std::int8_t>::max()));
+static_assert( dc::non_negative(std::numeric_limits<std::int32_t>::max()));
+static_assert( dc::non_negative(std::numeric_limits<std::int64_t>::max()));
+
+// ── Composition with CRUCIBLE_PRE — the production usage shape ─────
+//
+// Mirrors the canonical Topology::select_warm_cpus cite shape
+// (signed-int count parameter; zero is meaningful, negative is
+// nonsense).  A planted-negative witness rejects at consteval;
+// fixture pins in test/safety_neg/ catch buggy impls that silently
+// admit signed-negatives.
+
+[[nodiscard]] constexpr std::int32_t safe_count_to_size(std::int32_t count) noexcept {
+    CRUCIBLE_PRE(dc::non_negative(count));
+    // Body trusts count >= 0 — the implicit-conversion to size_t
+    // would underflow if count were negative.  Mirrors how
+    // select_warm_cpus uses count downstream.
+    return count + 7;
+}
+
+// Non-negative — zero is admitted, sizing succeeds at consteval.
+static_assert(safe_count_to_size(0) == 7);
+static_assert(safe_count_to_size(1) == 8);
+static_assert(safe_count_to_size(1024) == 1031);
+static_assert(safe_count_to_size(std::numeric_limits<std::int32_t>::max() - 7)
+              == std::numeric_limits<std::int32_t>::max());
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -2547,6 +2621,88 @@ int main() {
                     static_cast<std::int32_t>(pos_i32)))
               - static_cast<int>(dc::positive(
                     static_cast<std::int32_t>(neg_i32)));
+    }
+
+    // ── non_negative runtime witnesses ──────────────────────────────
+    //
+    // Route values through volatile sinks so the predicate runs at
+    // runtime.  Coverage: built-in unsigned (zero / nonzero —
+    // tautologically true), signed (zero / negative / positive /
+    // INT_MIN).  The signed-negative branch and the INT_MIN branch
+    // are both load-bearing — `decide::non_negative` differs from
+    // `is_non_zero` at zero (admit-vs-admit, both true) and at
+    // negatives (reject-vs-admit), and a buggy abs-based impl
+    // diverges from the correct one specifically at INT_MIN.
+    {
+        volatile std::uint64_t z_u64_nn = 0;
+        volatile std::uint64_t pos_u64_nn = 0xDEADBEEF;
+        volatile std::int32_t z_i32_nn = 0;
+        volatile std::int32_t neg_i32_nn = -42;
+        volatile std::int32_t pos_i32_nn = 7;
+        volatile std::int32_t int_min_i32 = std::numeric_limits<std::int32_t>::min();
+
+        // Unsigned branch — tautologically true.
+        if (!dc::non_negative(static_cast<std::uint64_t>(z_u64_nn))) {
+            std::fprintf(stderr,
+                "test_decide: non_negative(0u64) WRONGLY rejected "
+                "(unsigned tautology violation)\n");
+            return 1;
+        }
+        if (!dc::non_negative(static_cast<std::uint64_t>(pos_u64_nn))) {
+            std::fprintf(stderr,
+                "test_decide: non_negative(non-zero u64) WRONGLY rejected\n");
+            return 1;
+        }
+
+        // Signed zero — must be ADMITTED (the discipline that
+        // distinguishes non_negative from positive).
+        if (!dc::non_negative(static_cast<std::int32_t>(z_i32_nn))) {
+            std::fprintf(stderr,
+                "test_decide: non_negative(0i32) WRONGLY rejected "
+                "(zero-inclusive discipline violation)\n");
+            return 1;
+        }
+
+        // Signed positive — admitted.
+        if (!dc::non_negative(static_cast<std::int32_t>(pos_i32_nn))) {
+            std::fprintf(stderr,
+                "test_decide: non_negative(7i32) WRONGLY rejected\n");
+            return 1;
+        }
+
+        // The discipline-distinguishing branch (small-magnitude
+        // negative): non-negative must REJECT, but a buggy
+        // collapse to is_non_zero would admit (-42 != 0).
+        if (dc::non_negative(static_cast<std::int32_t>(neg_i32_nn))) {
+            std::fprintf(stderr,
+                "test_decide: non_negative(-42i32) WRONGLY accepted "
+                "(must reject signed-negative)\n");
+            return 1;
+        }
+
+        // The discipline-distinguishing branch (boundary-magnitude
+        // negative): non-negative must REJECT INT_MIN, but a buggy
+        // abs-based impl (`std::abs(x) == x`) would admit since
+        // abs(INT_MIN) is undefined and typically yields INT_MIN.
+        if (dc::non_negative(static_cast<std::int32_t>(int_min_i32))) {
+            std::fprintf(stderr,
+                "test_decide: non_negative(INT_MIN) WRONGLY accepted "
+                "(boundary signed-negative must be rejected)\n");
+            return 1;
+        }
+
+        sink += static_cast<int>(dc::non_negative(
+                    static_cast<std::int32_t>(pos_i32_nn)))
+              + static_cast<int>(dc::non_negative(
+                    static_cast<std::int32_t>(z_i32_nn)))
+              - static_cast<int>(dc::non_negative(
+                    static_cast<std::int32_t>(neg_i32_nn)))
+              - static_cast<int>(dc::non_negative(
+                    static_cast<std::int32_t>(int_min_i32)));
+
+        // Exercise the CRUCIBLE_PRE composition shape at runtime.
+        std::int32_t volatile cnt_nn = 5;
+        sink += safe_count_to_size(static_cast<std::int32_t>(cnt_nn));  // 12
     }
 
     if (sink == 0) {

@@ -1987,6 +1987,165 @@ constexpr bool positive(T x) noexcept {
     return x > T{0};
 }
 
+// ─── non_negative ──────────────────────────────────────────────────
+//
+// Returns true iff `T{0} <= x`, i.e. iff `x` is greater-than-or-
+// equal-to zero.  Zero answers TRUE; for signed T, every negative
+// value answers FALSE.
+//
+// The canonical "count or capacity" guard where zero is a meaningful
+// "nothing to do, but legal" value (a writer that issued zero
+// outputs, a buffer of zero requested CPUs, a delta-counter that
+// hasn't yet advanced).  Distinct from `positive` (which rejects
+// zero) and from `is_non_zero` (which admits negatives for signed T).
+//
+// ───────────────────────────────────────────────────────────────────
+// PREDICATE DEFINITION
+// ───────────────────────────────────────────────────────────────────
+//
+//   ∀ T integral.  ∀ x : T.  non_negative(x) ⟺ T{0} ≤ x
+//
+// For unsigned T this collapses to `true` (every unsigned value is
+// non-negative — the predicate is structurally tautological).  For
+// signed T this rejects every value below zero — `non_negative(-1)
+// = false`, `non_negative(INT_MIN) = false`, `non_negative(0) =
+// true`, `non_negative(1) = true`.  The non-strict (closed-at-zero)
+// semantics are deliberate: callers wanting `x > 0` (strict
+// positivity, zero rejected) cite `decide::positive` instead.
+//
+// ───────────────────────────────────────────────────────────────────
+// WHY THIS PROCEDURE EXISTS (per CONTRACT-020 design principles)
+// ───────────────────────────────────────────────────────────────────
+//
+// Two distinct cite shapes in the codebase express "x is non-
+// negative" without a named procedure:
+//
+//   * `pre (count >= 0)` — the obvious shape on `int` parameters
+//     where zero is admitted (Topology.h::select_warm_cpus).
+//   * `pre (!(delta < T{0}))` — the NaN-permissive shape on
+//     std::integral T template parameters where zero is admitted
+//     (Mutation.h::Monotonic::bump_by).
+//
+// The two shapes have DIFFERENT bug surfaces.  `count >= 0` is
+// straightforwardly inverted-sense-vulnerable; `!(x < T{0})` was
+// chosen historically to keep float NaN out of the truth set
+// (a side-discipline this procedure does NOT inherit, since
+// `std::integral` excludes float entirely).  Both shapes mean the
+// same thing semantically; without a named cite they drift
+// independently and reviewers cannot grep "every must-be-non-negative
+// invariant in the codebase" without knowing each author's chosen
+// spelling.
+//
+// The cite gives us:
+//
+//   * grep target: `decide::non_negative` finds every such invariant
+//     simultaneously.  Contrast: `>= 0` matches mathematical comments
+//     and other unrelated comparisons throughout the tree.
+//   * intent in the source.  `CRUCIBLE_PRE(decide::non_negative(c))`
+//     reads as "the count is non-negative"; `pre (c >= 0)` reads as
+//     a comparison whose semantic interpretation depends on T's
+//     signedness convention.
+//   * structural distinguishment.  At every signed cite, this
+//     procedure is the canonical disambiguation between three
+//     pointwise-different predicates:
+//       - `positive(x)`     ⟺  x > 0       (rejects 0)
+//       - `non_negative(x)` ⟺  0 ≤ x       (admits 0, rejects negs)
+//       - `is_non_zero(x)`  ⟺  x ≠ 0       (admits negs, rejects 0)
+//     The named cite makes the choice visible in the diff window.
+//
+// ───────────────────────────────────────────────────────────────────
+// USAGE PATTERN
+// ───────────────────────────────────────────────────────────────────
+//
+//   // Production usage shape (Topology cite — signed-int param):
+//   std::vector<int> select_warm_cpus(int hot_cpu, int count) noexcept
+//       pre (::crucible::decide::non_negative(count))
+//   {
+//       // body trusts count >= 0 via [[assume]] under
+//       // semantic=ignore; an empty result is meaningful (no warm
+//       // threads requested), but a negative count would underflow
+//       // size_t arithmetic downstream.
+//       ...
+//   }
+//
+//   // Production usage shape (Mutation cite — std::integral T
+//   // template parameter):
+//   template <std::integral T, ...>
+//   T bump_by(T delta) noexcept
+//       pre (::crucible::decide::non_negative(delta))
+//   {
+//       // The counter advances by delta; delta=0 is meaningful
+//       // (no-op atomic load), but a negative delta would step
+//       // the counter backwards and violate the wrapper's
+//       // monotonicity invariant.
+//       ...
+//   }
+//
+//   // At consteval, a planted negative witness fails compilation:
+//   //   constexpr auto witness = wrap(int32_t{-1});
+//   //                 ↑ rejected: "non-constant condition" /
+//   //                 __builtin_trap.
+//
+// ───────────────────────────────────────────────────────────────────
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ───────────────────────────────────────────────────────────────────
+//
+// First adoption batch lands with this commit:
+//   * Topology::select_warm_cpus (count)              — Topology.h:350
+//   * Monotonic::bump_by (delta)                       — Mutation.h:934
+//
+// Future cites planned across the wider `>= 0` / `!(x < T{0})` sweep —
+// any size/count/delta parameter that admits zero but must reject
+// signed negatives.
+//
+// ───────────────────────────────────────────────────────────────────
+// ANTI-PATTERNS (review-rejected)
+// ───────────────────────────────────────────────────────────────────
+//
+//   * `pre (x >= 0)` — hand-rolled comparison.  Loses the semantic
+//     name; tautological for unsigned T (the comparison still
+//     compiles but the optimizer cannot use it as a discharge).
+//     Cite `decide::non_negative`.
+//   * `pre (!(x < T{0}))` — NaN-permissive idiom from float-domain
+//     code.  Semantically equivalent for std::integral T but
+//     reviewers must recognize the NaN-rejection is dead code under
+//     the integral constraint.  Cite the named procedure to remove
+//     the pretense of NaN handling.
+//   * `pre (x == 0 || decide::positive(x))` — disjunctive
+//     decomposition of non_negative into "zero or strictly positive".
+//     Functionally correct but obscures the structural meaning;
+//     reviewers see "either-or" not "non-negative".  Cite the named
+//     unified procedure.
+//   * `pre (decide::in_range(x, 0, std::numeric_limits<T>::max()))` —
+//     awkward and carries a runtime-trivial upper bound.  The
+//     upper bound is forced by `in_range`'s closed-interval shape
+//     but conveys no structural constraint.  Cite the named
+//     procedure.
+//   * `pre (static_cast<unsigned>(x) == x)` — wrong-cast confusion.
+//     For x in [0, INT_MAX] the round-trip preserves value; for
+//     negative x the cast wraps to a huge unsigned value that
+//     compares false to the original.  CORRECT result, but the
+//     intent is opaque and the implementation is brittle (depends
+//     on integer-promotion rules).  Cite `decide::non_negative`.
+//
+// ───────────────────────────────────────────────────────────────────
+// PROPERTIES (verified by test_decide.cpp)
+// ───────────────────────────────────────────────────────────────────
+//
+//   - non_negative(T{0}) == true                 ∀ integral T.
+//   - non_negative(T{1}) == true                 ∀ integral T.
+//   - non_negative(std::numeric_limits<T>::max()) == true.
+//   - For signed T: non_negative(T{-1}) == false.
+//   - For signed T: non_negative(std::numeric_limits<T>::min()) == false.
+//   - For unsigned T: non_negative(x) == true     ∀ x : T (tautology).
+//   - { x : non_negative(x) } = { x : T{0} ≤ x } (predicate IS the
+//     non-strict-positive characteristic function).
+template <std::integral T>
+[[nodiscard, gnu::const]]
+constexpr bool non_negative(T x) noexcept {
+    return T{0} <= x;
+}
+
 // ─── is_non_zero ───────────────────────────────────────────────────
 //
 // Returns true iff `x != T{}`, i.e. iff `x` is not equal to the

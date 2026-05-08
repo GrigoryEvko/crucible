@@ -5528,3 +5528,55 @@ crucible_neg_compile_test(neg_decide_positive_zero
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_positive_negative
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-054: crucible::decide::non_negative — non-strict-positive
+# lower-bound predicate (T{0} <= x).  TWO HS14 fixtures pinning the
+# OVER-ADMISSION bug classes via ORTHOGONAL signed-negative witnesses:
+#
+#   * neg_decide_non_negative_minus_one — witness `int32_t{-1}`,
+#     small-magnitude signed negative.  Catches ALWAYS-ACCEPT
+#     (returns true) / INVERTED-SENSE (`T{0} >= x` admits negatives
+#     and zero) / STRICT-INVERSE (`x < T{0}` admits negatives only) /
+#     WRONG-CITE-TO-IS-NON-ZERO (`x != T{0}` admits -1 since
+#     -1 != 0 is true).  All four impls silently admit the canonical
+#     "caller error" sentinel at signed-int cites (Topology::
+#     select_warm_cpus(count<0) → size_t underflow → SIGSEGV;
+#     Monotonic::bump_by(delta<0) → counter steps backwards →
+#     monotonicity invariant broken).
+#   * neg_decide_non_negative_int_min — witness `INT32_MIN`,
+#     boundary-magnitude signed negative.  UNIQUELY catches abs-
+#     based-confusion (`std::abs(x) == x` admits INT_MIN due to
+#     negation overflow), width-narrowing-truncation
+#     (`uint8_t(x) <= INT8_MAX` admits INT_MIN due to low-byte zero),
+#     and similar boundary-only bug shapes.  Defense-in-depth on
+#     the bugs the minus_one fixture also catches (always-accept,
+#     strict-inverse).
+#
+# Pair-by-pair orthogonality:
+#   - minus_one fixture catches always-accept + inverted-sense +
+#     strict-inverse + wrong-cite-to-is_non_zero (small-magnitude
+#     family); cannot detect abs-based confusion (abs(-1)=1, !=-1,
+#     correct rejection) or width-narrowing truncation (uint8_t(-1)
+#     =255, > 127, correct rejection).
+#   - int_min fixture catches abs-based + width-narrowing
+#     (boundary-magnitude family) + always-accept + strict-inverse
+#     (covered).
+#   - Together the two fixtures span both small-magnitude and
+#     boundary-magnitude over-admission classes.  Two-fixture
+#     discipline is mandatory: a buggy abs-based impl behaves
+#     correctly on -1 (rejecting it) but admits INT_MIN; the
+#     boundary witness is the only way to catch this at consteval.
+#
+# Note: HS14 fixtures only catch OVER-admission (predicate admits
+# something it should reject).  The strict-positive bug class
+# (`positive` collapse, `> 0` instead of `>= 0` rejecting zero) is
+# UNDER-admission and is caught at production call sites
+# (Topology::select_warm_cpus(count=0) starts spuriously failing the
+# pre-clause), not at this fixture pair.  Companion non_negative
+# static_asserts in test_decide.cpp pin the zero-inclusive admission
+# explicitly so the under-admission case is structurally rejected
+# at consteval too.
+crucible_neg_compile_test(neg_decide_non_negative_minus_one
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_non_negative_int_min
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
