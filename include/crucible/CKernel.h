@@ -32,6 +32,7 @@
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <crucible/safety/Mutation.h>
+#include <crucible/safety/Post.h>
 #include <crucible/safety/Refined.h>
 #include <crucible/safety/ScopedView.h>
 #include <crucible/safety/Tagged.h>
@@ -424,7 +425,22 @@ struct CKernelTable {
     CKernelTable& operator=(CKernelTable&&)      = delete("table is a global registration singleton; no moves");
 
     // ── Seal transition ────────────────────────────────────────────
-    void seal() noexcept { sealed_.store(true, std::memory_order_release); }
+    void seal() noexcept {
+        sealed_.store(true, std::memory_order_release);
+        // CONTRACT-CKernel-Seal-POST: one-way state transition — after
+        // seal() the table is sealed, period.  Catches a future refactor
+        // that drops the store or uses the wrong memory order (relaxed
+        // would let bg thread observe Mutable post-seal, breaking the
+        // sealed-before-classify discipline documented in the file
+        // banner).  acquire-load on the post mirrors the discipline:
+        // every legitimate reader uses acquire, so this post pins the
+        // happens-before edge that the seal-store half-establishes.
+        // Routes through CRUCIBLE_POST because the predicate references
+        // `this->sealed_` — same GCC 16.1.1 consteval-bypass family as
+        // every prior POST commit in this session.  Void return: first
+        // arg `0` is the conventional sentinel.
+        CRUCIBLE_POST(0, sealed_.load(std::memory_order_acquire));
+    }
 
     [[nodiscard]] bool is_sealed() const noexcept {
         return sealed_.load(std::memory_order_acquire);
@@ -470,6 +486,14 @@ struct CKernelTable {
         for (uint32_t i = 0; i < size.get(); i++) {
             if (entries[i].schema_hash == schema_hash) {
                 entries[i].id = id;
+                // CONTRACT-CKernel-RegisterOp-POST (alias-update path):
+                // the existing entry's id is now `id`; classify(schema_hash)
+                // must return `id`.  Pinned via the binary-search semantics
+                // of classify (defined just below) — entries[i] is still
+                // sorted (only id mutated), so classify(schema_hash) finds
+                // index i and returns entries[i].id == id.  Routes through
+                // CRUCIBLE_POST per the GCC 16.1.1 consteval-bypass family.
+                CRUCIBLE_POST(0, classify(schema_hash) == id);
                 return;
             }
         }
@@ -487,6 +511,22 @@ struct CKernelTable {
         size.bump();   // monotonic +1; bound-checked at CKERNEL_TABLE_CAP
         std::ranges::sort(std::span{entries, size.get()},
                           {}, &CKernelEntry::schema_hash);
+        // CONTRACT-CKernel-RegisterOp-POST (insert path):
+        //   (1) classify(schema_hash) == id  — the freshly registered
+        //       schema is now findable.  This is the load-bearing
+        //       contract: a registration that doesn't make the schema
+        //       findable would silently dispatch through the OPAQUE
+        //       fallback (slow path), defeating the whole registration
+        //       phase.  After ranges::sort the entry is at its sorted
+        //       position; classify's binary search finds it.
+        //   (2) size.get() <= CKERNEL_TABLE_CAP — bound preserved by
+        //       BoundedMonotonic but pinned here because BoundedMonotonic's
+        //       bump() pre is `current < Max`; post-bump current ≤ Max.
+        // Catches a future refactor that drops the sort (binary search
+        // would fail to find the inserted entry) or that breaks the
+        // bounded-monotonic counter contract.
+        CRUCIBLE_POST(0, classify(schema_hash) == id);
+        CRUCIBLE_POST(0, size.get() <= CKERNEL_TABLE_CAP);
     }
 
     // Binary search over the sorted entries[] array.  gnu::pure: depends
@@ -520,6 +560,24 @@ struct CKernelTable {
     void clear() noexcept {
         std::construct_at(&size, SizeCounter{0u});
         sealed_.store(false, std::memory_order_release);
+        // CONTRACT-CKernel-Clear-POST: state-machine reset invariant —
+        // after clear() the table returns to the Mutable-with-zero-entries
+        // initial condition:
+        //   (1) size.get() == 0 — counter rewound via construct_at
+        //       (BoundedMonotonic doesn't permit backward writes; the
+        //       in-place reconstruction is the deliberate exception
+        //       documented in the field comment above).
+        //   (2) !is_sealed() — relaxed-load on the post mirrors the
+        //       release-store; same-thread reads-our-own-write applies.
+        // Routes through CRUCIBLE_POST per the GCC 16.1.1 consteval-bypass
+        // family.  Catches a future refactor that drops the sealed_ store
+        // (clear() would leak a sealed table to subsequent Mutable test
+        // cases, which would then trip mint_mutable_view's pre-clause).
+        // Mirrors IterDet::reset's CONTRACT-IterDet-Reset-POST and
+        // PoolAllocator::destroy's CONTRACT-127-POST (lifecycle reset
+        // pattern).
+        CRUCIBLE_POST(0, size.get() == 0u);
+        CRUCIBLE_POST(0, !is_sealed());
     }
 };
 
