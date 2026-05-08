@@ -515,6 +515,14 @@ crucible_test(test_metalog_session)
 # surfaces and the Send<SemaphoreSignal, End> / Recv<...> sessions.
 crucible_test(test_chainedge_session)
 
+# MpmcChannelSession.h (SEPLOG-H2 / #326) — typed-session facade over
+# PermissionedMpmcChannel (Nikolaev SCQ).  Covers single-producer
+# round-trip, multi-producer × multi-consumer concurrent stream
+# (set-equality drain), immediate-detach, and endpoint forwarder
+# helpers.  The fractional × fractional cell of the channel-permission
+# family — last of the four cells to receive a session-typed facade.
+crucible_test(test_mpmc_channel_session)
+
 # SwmrSession.h (GAPS-019 / GAPS-020) — typed-session facade for
 # AtomicSnapshot + SharedPermissionPool.  Covers writer publication,
 # multi-reader lifetime accounting, late-reader visibility, matching
