@@ -4986,3 +4986,27 @@ crucible_neg_compile_test(neg_decide_no_overflow_pow2_shift_count_oor
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 crucible_neg_compile_test(neg_decide_no_overflow_pow2_shift_signed_negative
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+
+# CONTRACT-040: HS14 fixture pair pinning that decide::all_in_range
+# correctly fires inside CRUCIBLE_PRE at consteval when called with
+# a span containing any element outside [lo, hi].  Mismatch classes
+# correspond to the predicate's two short-circuit branches:
+#
+#   * neg_decide_all_in_range_element_below_lo — element < lo at
+#     index 1 (middle).  Exercises signed-comparison: a negative
+#     element vs non-negative lo bound.  Catches the bug class
+#     where a -1 sentinel slips through a uint→int reinterpretation.
+#   * neg_decide_all_in_range_element_above_hi — element > hi at
+#     index 1 (middle).  Exercises unsigned upper-bound: a
+#     deserialized counter past MAX_KERNELS = 146 drifts.  Distinct
+#     branch from below-lo because most production manual checks
+#     (`if (idx < n)`) catch upper-bound cleanly but the lower-bound
+#     side is where signed/unsigned drift hides.
+#
+# Both fixtures place the violating element at index 1 (NOT the
+# endpoints) — pins the "endpoint-only manual check" anti-pattern
+# the procedure exists to eliminate.
+crucible_neg_compile_test(neg_decide_all_in_range_element_below_lo
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
+crucible_neg_compile_test(neg_decide_all_in_range_element_above_hi
+    "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")

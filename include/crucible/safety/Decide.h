@@ -110,6 +110,7 @@
 
 #include <concepts>
 #include <limits>
+#include <span>
 #include <type_traits>
 
 namespace crucible::decide {
@@ -280,6 +281,72 @@ constexpr bool no_overflow_pow2_shift(T a, T b) noexcept {
         }
         return a <= (std::numeric_limits<T>::max() >> b);
     }
+}
+
+// ─── all_in_range ──────────────────────────────────────────────────
+//
+// Returns true iff every element of `xs` satisfies `lo <= x && x <= hi`.
+// Empty span returns true vacuously (a property of universally-
+// quantified predicates over empty domains — `∀x ∈ ∅. P(x)` is `true`).
+//
+// Bridges from elementwise to range-quantified predicates.  The
+// previous Decide procedures were pointwise binary (a, b → bool);
+// this one is the canonical span-quantified shape:
+//   `(span<T>, T, T) → bool` — quantifies a binary predicate over
+// every element of a sequence.  Production code that hand-rolls
+// "for every i in [0, n): assert(arr[i] >= lo && arr[i] <= hi)"
+// has TWO bug surfaces (the loop index AND the comparison) that
+// this procedure flattens to one.
+//
+// SEMANTIC NOTE
+// -------------
+// `lo > hi` is permitted: the predicate returns `xs.empty()` in
+// that case (vacuous truth on empty span; rejection on any element
+// otherwise).  This is different from a precondition `pre(lo <= hi)`
+// — the predicate is intentionally TOTAL over (xs, lo, hi) per
+// CONTRACT-020 design principle #3.  Callers that want a stricter
+// "valid range bounds" check should compose with a separate cite.
+//
+// USAGE PATTERN
+// -------------
+//
+//   // CONTRACT-102 production usage shape: SymbolTable indexed
+//   // access where every SlotId must be < num_slots.
+//   constexpr bool all_slots_in_pool(std::span<const SlotId> ids,
+//                                    SlotId lo,
+//                                    SlotId hi) noexcept {
+//       CRUCIBLE_PRE(crucible::decide::all_in_range(ids, lo, hi));
+//       return true;
+//   }
+//
+//   // At consteval, an out-of-range planted element fails compilation:
+//   //   constexpr SlotId arr[] = {1, 2, 99};  // 99 > MAX
+//   //   static_assert(all_slots_in_pool(arr, 0, 50));
+//   //                 ↑ rejected: "non-constant condition"
+//
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ------------------------------------------------------
+//   (none yet — first migration batch lands with CONTRACT-102:
+//    SymbolTable + TraceGraph indexed access bounds chains)
+//
+// ANTI-PATTERNS (review-rejected)
+// -------------------------------
+//   * `pre (n > 0 && arr[0] >= lo && arr[n-1] <= hi)` — only checks
+//     endpoints; misses an out-of-range element in the middle.
+//   * `pre (lo <= *std::min_element(begin, end))` — TWO scans over
+//     the data + double-bounds-check overhead; cite this procedure
+//     for ONE pass.
+//   * Loop hand-rolled at every call site — three places to drift,
+//     three places to forget the `<=` vs `<` boundary.
+template <std::integral T>
+[[nodiscard, gnu::pure]]
+constexpr bool all_in_range(std::span<const T> xs, T lo, T hi) noexcept {
+    for (T const& x : xs) {
+        if (x < lo || x > hi) {
+            return false;
+        }
+    }
+    return true;
 }
 
 }  // namespace crucible::decide

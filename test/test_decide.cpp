@@ -20,9 +20,11 @@
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pre.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <limits>
+#include <span>
 
 namespace {
 
@@ -221,6 +223,79 @@ static_assert(safe_shl_u32(1, 31) == 0x8000'0000u);
 static_assert(safe_shl_i32(1, 30) == 0x4000'0000);
 static_assert(safe_shl_i32(0, 31) == 0);
 
+// ── all_in_range positive witnesses ────────────────────────────────
+//
+// Coverage matrix (signedness × cardinality × locality of violation):
+//
+//   empty span                         | true (vacuous)
+//   1 element, in range                | true
+//   1 element, below lo                | false
+//   1 element, above hi                | false
+//   3 elements, all in range           | true
+//   3 elements, first out of range     | false
+//   3 elements, middle out of range    | false  ← anti-pattern catch
+//   3 elements, last out of range      | false
+//   degenerate range (lo == hi)        | element-equality test
+//   inverted range (lo > hi)           | empty=true, non-empty=false
+//   signed: negative bounds            | uniformly handled
+//   uint64: full-range width           | no overflow inside predicate
+
+// Empty span: vacuous truth.
+constexpr int32_t empty_arr[] = {0};  // sentinel, span is built with size=0
+static_assert(dc::all_in_range<int32_t>(std::span<const int32_t>(empty_arr, 0), 0, 100));
+static_assert(dc::all_in_range<int32_t>(std::span<const int32_t>(empty_arr, 0), 100, 0));  // inverted, still vacuous
+
+// Single element witnesses.
+constexpr int32_t one_in[] = {42};
+constexpr int32_t one_below[] = {-1};
+constexpr int32_t one_above[] = {101};
+static_assert(dc::all_in_range<int32_t>(one_in, 0, 100));
+static_assert(!dc::all_in_range<int32_t>(one_below, 0, 100));
+static_assert(!dc::all_in_range<int32_t>(one_above, 0, 100));
+
+// Three-element witnesses — tests the "middle violation" anti-pattern catch.
+constexpr int32_t three_in[] = {10, 50, 90};
+constexpr int32_t three_first_oor[] = {-1, 50, 90};
+constexpr int32_t three_middle_oor[] = {10, 200, 90};
+constexpr int32_t three_last_oor[] = {10, 50, 200};
+static_assert(dc::all_in_range<int32_t>(three_in, 0, 100));
+static_assert(!dc::all_in_range<int32_t>(three_first_oor, 0, 100));
+static_assert(!dc::all_in_range<int32_t>(three_middle_oor, 0, 100));   // would slip past endpoint-only check
+static_assert(!dc::all_in_range<int32_t>(three_last_oor, 0, 100));
+
+// Boundary: degenerate range (lo == hi) acts as "all elements equal lo".
+constexpr int32_t three_eq[] = {7, 7, 7};
+constexpr int32_t three_neq[] = {7, 8, 7};
+static_assert(dc::all_in_range<int32_t>(three_eq, 7, 7));
+static_assert(!dc::all_in_range<int32_t>(three_neq, 7, 7));
+
+// Inverted range (lo > hi): empty span is vacuously true; any non-empty fails.
+static_assert(!dc::all_in_range<int32_t>(three_in, 100, 0));
+
+// Signed with negative bounds.
+constexpr int32_t signed_in[] = {-50, 0, 50};
+constexpr int32_t signed_oor[] = {-50, 0, 200};
+static_assert(dc::all_in_range<int32_t>(signed_in, -100, 100));
+static_assert(!dc::all_in_range<int32_t>(signed_oor, -100, 100));
+
+// uint64_t full-range edge.
+constexpr uint64_t u64_full[] = {0ull, 1ull, std::numeric_limits<uint64_t>::max()};
+static_assert(dc::all_in_range<uint64_t>(u64_full, 0ull, std::numeric_limits<uint64_t>::max()));
+
+// ── Composition with CRUCIBLE_PRE — span-quantified production shape ─
+
+[[nodiscard]] constexpr int32_t safe_lookup_i32(std::span<const int32_t> ids,
+                                                int32_t lo, int32_t hi,
+                                                std::size_t idx) noexcept {
+    CRUCIBLE_PRE(dc::all_in_range(ids, lo, hi));
+    CRUCIBLE_PRE(idx < ids.size());
+    return ids[idx];
+}
+
+static_assert(safe_lookup_i32(three_in, 0, 100, 0) == 10);
+static_assert(safe_lookup_i32(three_in, 0, 100, 1) == 50);
+static_assert(safe_lookup_i32(three_in, 0, 100, 2) == 90);
+
 }  // namespace
 
 // ── Runtime smoke test ─────────────────────────────────────────────
@@ -304,6 +379,24 @@ int main() {
     }
     if (dc::no_overflow_pow2_shift<int32_t>(int32_t{1}, int32_t{31})) {
         std::fprintf(stderr, "test_decide: 1<<31 (signed) NOT flagged as sign-bit overflow\n");
+        return 1;
+    }
+
+    // all_in_range runtime witnesses: routed through volatile sinks
+    // to defeat constant-folding of the span construction.
+    int32_t volatile sink_arr[3] = {10, 50, 90};
+    int32_t arr_copy[3] = {sink_arr[0], sink_arr[1], sink_arr[2]};
+    std::span<const int32_t> arr_span{arr_copy, 3};
+    sink += static_cast<int>(dc::all_in_range<int32_t>(arr_span, 0, 100));   // 1
+    sink += static_cast<int>(dc::all_in_range<int32_t>(arr_span, 0, 50));    // 0 (90 > 50)
+
+    if (!dc::all_in_range<uint32_t>(std::span<const uint32_t>{}, 0u, 0u)) {
+        std::fprintf(stderr, "test_decide: empty span NOT vacuously true\n");
+        return 1;
+    }
+    constexpr int32_t middle_violator[] = {10, 200, 90};
+    if (dc::all_in_range<int32_t>(middle_violator, 0, 100)) {
+        std::fprintf(stderr, "test_decide: middle-violator NOT detected\n");
         return 1;
     }
 
