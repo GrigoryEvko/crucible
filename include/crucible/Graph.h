@@ -17,6 +17,7 @@
 #include <crucible/Platform.h>
 #include <crucible/safety/Bits.h>
 #include <crucible/safety/Post.h>
+#include <crucible/safety/Pre.h>
 
 #include <bit>
 #include <cassert>
@@ -557,9 +558,33 @@ class CRUCIBLE_OWNER Graph {
   // only accessed during buffer allocation and code emission, not
   // during hot graph traversals like DCE or topological sort).
 
+  // CONTRACT-Graph-NodeIndex-PRE (cite migration 2026-05-09): the six
+  // `pre (idx < num_nodes_.get())` clauses on set_input_slots /
+  // set_output_slots / input_slots / output_slots / node(NodeId) /
+  // node(uint32_t) all promote from vanilla P2900 `pre()` to
+  // `CRUCIBLE_PRE` (in-body, first line).  The predicate dereferences
+  // `this->num_nodes_` (Monotonic-typed member); per
+  // feedback_crucible_pre_post_macros.md, GCC 16.1.1's foldable-body
+  // consteval-bypass family silently skips vanilla P2900 for the
+  // single-subscript-return read accessors (input_slots / output_slots
+  // / node).  Two `node()` overloads previously carried manual
+  // `[[assume(idx < num_nodes_.get())]]` lines as the
+  // optimization-recovery workaround for that same bypass; CRUCIBLE_PRE
+  // subsumes both — its NDEBUG branch is `[[assume(cond)]]`, and its
+  // debug branch fires consteval AND runtime regardless of body shape
+  // (`__builtin_trap()` poisons the consteval call, contract_failed
+  // aborts at runtime).  No decide:: cite added: the bound
+  // `num_nodes_.get()` is a runtime member value, not a fixed
+  // constant, so `decide::in_range<uint32_t>(idx, 0, N - 1)` would
+  // need a `num_nodes_ > 0` companion guard to avoid underflow when
+  // the graph is empty — cleaner to keep the bare relational form and
+  // wait until a `decide::less_than_runtime<T>(idx, bound)` cite-pair
+  // accumulates per the bottom-up growth discipline (Decide.h skeleton
+  // authoring rules).  Sibling discipline cite: CONTRACT-WriteOnceNonNull-
+  // Set-POST + CONTRACT-Graph-Set{Input,Output}Slots-POST.
   void set_input_slots(effects::Alloc a, NodeId node_id, std::span<const SlotId> slots)
-      pre (node_id.raw() < num_nodes_.get())
   {
+    CRUCIBLE_PRE(node_id.raw() < num_nodes_.get());
     if (slots.empty()) { input_slots_[node_id.raw()] = nullptr; return; }
     input_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(a, slots.size());
     std::memcpy(input_slots_[node_id.raw()], slots.data(), slots.size_bytes());
@@ -588,8 +613,8 @@ class CRUCIBLE_OWNER Graph {
   }
 
   void set_output_slots(effects::Alloc a, NodeId node_id, std::span<const SlotId> slots)
-      pre (node_id.raw() < num_nodes_.get())
   {
+    CRUCIBLE_PRE(node_id.raw() < num_nodes_.get());
     if (slots.empty()) { output_slots_[node_id.raw()] = nullptr; return; }
     output_slots_[node_id.raw()] = arena_.alloc_array<SlotId>(a, slots.size());
     std::memcpy(output_slots_[node_id.raw()], slots.data(), slots.size_bytes());
@@ -605,14 +630,14 @@ class CRUCIBLE_OWNER Graph {
   }
 
   [[nodiscard]] const SlotId* input_slots(NodeId node_id) const CRUCIBLE_LIFETIMEBOUND
-      pre (node_id.raw() < num_nodes_.get())
   {
+    CRUCIBLE_PRE(node_id.raw() < num_nodes_.get());
     return input_slots_[node_id.raw()];
   }
 
   [[nodiscard]] const SlotId* output_slots(NodeId node_id) const CRUCIBLE_LIFETIMEBOUND
-      pre (node_id.raw() < num_nodes_.get())
   {
+    CRUCIBLE_PRE(node_id.raw() < num_nodes_.get());
     return output_slots_[node_id.raw()];
   }
 
@@ -935,16 +960,19 @@ class CRUCIBLE_OWNER Graph {
   // ── Accessors ──────────────────────────────────────────────────
 
   [[nodiscard, gnu::pure]] GraphNode* node(NodeId id) const noexcept CRUCIBLE_LIFETIMEBOUND
-      pre (id.raw() < num_nodes_.get())
   {
-    [[assume(id.raw() < num_nodes_.get())]];
+    // CRUCIBLE_PRE subsumes the previously-redundant manual
+    // `[[assume(id.raw() < num_nodes_.get())]]` workaround — its
+    // NDEBUG branch IS `[[assume(cond)]]`, recovering the optimizer
+    // hint that vanilla P2900 lost on this foldable single-subscript-
+    // return body.
+    CRUCIBLE_PRE(id.raw() < num_nodes_.get());
     return nodes_[id.raw()];
   }
 
   [[nodiscard, gnu::pure]] GraphNode* node(uint32_t id) const noexcept CRUCIBLE_LIFETIMEBOUND
-      pre (id < num_nodes_.get())
   {
-    [[assume(id < num_nodes_.get())]];
+    CRUCIBLE_PRE(id < num_nodes_.get());
     return nodes_[id];
   }
 
