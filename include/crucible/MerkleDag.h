@@ -1260,6 +1260,29 @@ class CRUCIBLE_OWNER KernelCache {
     table_ = allocate_table_(capacity_);
     if (!table_) [[unlikely]] std::abort(); // OOM is unrecoverable
     size_.store(0, std::memory_order_relaxed);
+    // CONTRACT-116-POST: construction-state invariant — after ctor:
+    //   (1) capacity_ matches the caller's requested capacity.  Caught
+    //       via member-init list above; post catches a future refactor
+    //       that rounds up internally (RecipePool ctor would need this
+    //       same guard if its caller relied on strict equality).
+    //   (2) table_ is non-null.  allocate_table_() on the OOM path
+    //       std::abort()s, so reaching the post implies success — the
+    //       cite makes the structural invariant grep-discoverable for
+    //       a future audit that wants to count "lock-free tables that
+    //       successfully allocated their slots".
+    //   (3) size_ relaxed-loaded as 0.  We just stored zero with
+    //       relaxed semantics; the ctor is single-threaded by
+    //       construction (no other thread holds a reference yet), so
+    //       the relaxed load reads-our-own-write.  Catches a future
+    //       refactor that pre-populates entries during construction.
+    // Routes through CRUCIBLE_POST because the predicates reference
+    // class members through `this->`; P2900 `post (r:...)` is
+    // consteval-bypass-vulnerable per the GCC 16.1.1 family (same
+    // gotcha that drove CONTRACT-100..108-POST).  Void return: first
+    // arg `0` is the conventional sentinel.
+    CRUCIBLE_POST(0, capacity_ == capacity);
+    CRUCIBLE_POST(0, table_ != nullptr);
+    CRUCIBLE_POST(0, size_.load(std::memory_order_relaxed) == 0);
   }
 
   ~KernelCache() { destroy_table_(table_, capacity_); }

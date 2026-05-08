@@ -191,15 +191,37 @@ struct CRUCIBLE_OWNER PoolAllocator {
         }
       }
     }
+    // CONTRACT-127-POST: post-init lifecycle invariant — after init()
+    // succeeds, the four load-bearing fields agree with the supplied
+    // plan AND the heap allocations either succeeded or were skipped:
+    //   (1) num_slots_ matches plan->num_slots (member assignment
+    //       above; post catches a future refactor that adds an internal
+    //       round-up the same way RecipePool ctor's CONTRACT-109-POST
+    //       protects against — strict equality is the contract).
+    //   (2) pool_bytes_ matches plan->pool_bytes.
+    //   (3) pool_bytes_ > 0 ⇒ pool_ != nullptr (aligned_alloc on the
+    //       OOM path std::abort()s, so post-init reaching this point
+    //       implies success — the cite makes the structural invariant
+    //       grep-discoverable, mirroring KernelCache ctor).
+    //   (4) num_slots_ > 0 ⇒ ptr_table_ != nullptr (calloc on the OOM
+    //       path std::abort()s; same rationale as (3)).
+    // Routes through CRUCIBLE_POST because the predicates reference
+    // class members through `this->` and a `plan->` pointee — P2900
+    // `post (r:...)` is consteval-bypass-vulnerable per the GCC 16.1.1
+    // family.  Void return: first arg `0` is the conventional sentinel.
+    // `decide::implies` discharges the conditional-non-null shape
+    // (CONTRACT-081 catalog) — same predicate that armed CONTRACT-115's
+    // Expr ctor args/nargs companionship.
+    CRUCIBLE_POST(0, num_slots_ == plan->num_slots);
+    CRUCIBLE_POST(0, pool_bytes_ == plan->pool_bytes);
+    CRUCIBLE_POST(0, ::crucible::decide::implies(
+                          pool_bytes_ > 0u, pool_ != nullptr));
+    CRUCIBLE_POST(0, ::crucible::decide::implies(
+                          num_slots_ > 0u, ptr_table_ != nullptr));
   }
 
   [[gnu::cold]]
   void destroy() noexcept
-      post (pool_       == nullptr)
-      post (ptr_table_  == nullptr)
-      post (pool_bytes_ == 0)
-      post (num_slots_  == 0)
-      post (num_external_ == 0)
   {
     if (pool_) crucible::rt::unregister_hot_region(pool_);
     std::free(pool_);
@@ -209,6 +231,22 @@ struct CRUCIBLE_OWNER PoolAllocator {
     pool_bytes_   = 0;
     num_slots_    = 0;
     num_external_ = 0;
+    // CONTRACT-127-POST: lifecycle reset — after destroy() the pool
+    // returns to its default-constructed shape so a subsequent init()
+    // sees the same pre()-pinned `ptr_table_ == nullptr && pool_ ==
+    // nullptr` invariants that gate first-time construction.  These 5
+    // posts moved from P2900 `post (...)` to in-body CRUCIBLE_POST
+    // because every clause references a class member through `this->`
+    // — the same consteval-bypass surface that drove CONTRACT-100..108
+    // -POST (and CONTRACT-116-POST + the CONTRACT-127-POST init()
+    // shape above).  Under NDEBUG these collapse to `[[assume]]` —
+    // downstream `is_initialized()` readers can speculate on the just
+    // -cleared fields.
+    CRUCIBLE_POST(0, pool_       == nullptr);
+    CRUCIBLE_POST(0, ptr_table_  == nullptr);
+    CRUCIBLE_POST(0, pool_bytes_ == 0u);
+    CRUCIBLE_POST(0, num_slots_  == 0u);
+    CRUCIBLE_POST(0, num_external_ == 0u);
   }
 
   // ── ScopedView-typed overloads ──────────────────────────────────────
