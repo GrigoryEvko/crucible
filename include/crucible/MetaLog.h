@@ -12,6 +12,7 @@
 #include <crucible/rt/Registry.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/HotPath.h>
+#include <crucible/safety/HugePageBuffer.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Refined.h>
@@ -102,8 +103,17 @@ struct CRUCIBLE_OWNER MetaLog {
   // forward, so each acquire-load observes ≥ the prior observation; any
   // reverse motion would be an acquire-semantics bug worth catching.
   crucible::safety::Monotonic<uint32_t> cached_tail_{0};  // 4B
-  TensorMeta* entries = nullptr;                // 8B — producer-only read
-  // 48B padding to fill cache line (implicitly provided by alignas on tail)
+  // #944 WRAP-MetaLog-1: the hugepage-aligned `TensorMeta[CAPACITY]`
+  // backing was raw `aligned_alloc + register_hot_region + free` —
+  // producer-side ctor / dtor pair manually balanced a malloc with a
+  // free, with no type-system protection against a leaked-on-throw or
+  // double-free regression.  HugePageBuffer<TensorMeta> wraps the
+  // alloc lifetime in move-only RAII; `entries` is now a raw pointer
+  // projection cached from `entries_buffer_.data()` so the hot path
+  // (entries[h & MASK]) keeps its single load with no indirection.
+  crucible::safety::HugePageBuffer<TensorMeta> entries_buffer_;  // owner
+  TensorMeta* entries = nullptr;                // 8B — producer-only read; aliases entries_buffer_.data()
+  // padding to fill cache line (implicitly provided by alignas on tail)
 
   // ── Consumer cache line ──
   // tail lives alone on its own cache line to prevent false sharing with
@@ -112,20 +122,22 @@ struct CRUCIBLE_OWNER MetaLog {
   // the rare full-path.
   alignas(64) crucible::safety::AtomicMonotonic<uint32_t> tail{0};   // 4B
 
-  MetaLog() {
-    // PMD alignment: kernel 5.8+ EINVALs MADV_HUGEPAGE on non-2-MB addrs.
-    static constexpr size_t RAW_BYTES   = CAPACITY * sizeof(TensorMeta);
-    static constexpr size_t ALLOC_BYTES = crucible::rt::round_up_huge(RAW_BYTES);
-    entries = static_cast<TensorMeta*>(
-        std::aligned_alloc(crucible::rt::kHugePageBytes, ALLOC_BYTES));
-    if (!entries) [[unlikely]] std::abort();
-    crucible::rt::register_hot_region(entries, ALLOC_BYTES,
+  MetaLog()
+      : entries_buffer_{crucible::safety::HugePageBuffer<TensorMeta>::allocate(CAPACITY)},
+        entries{entries_buffer_.data()} {
+    // PMD alignment: HugePageBuffer::allocate uses the same kHugePageBytes
+    // alignment + round_up_huge byte count, so MADV_HUGEPAGE in the
+    // hot-region registration (kernel 5.8+ rejects on non-2-MB addrs)
+    // works identically to the prior raw aligned_alloc path.
+    crucible::rt::register_hot_region(entries, entries_buffer_.bytes(),
         /*huge=*/true, "MetaLog.entries");
   }
 
   ~MetaLog() {
-    crucible::rt::unregister_hot_region(entries);
-    std::free(entries);
+    if (entries != nullptr) {
+      crucible::rt::unregister_hot_region(entries);
+    }
+    // entries_buffer_ dtor (HugePageBuffer move-only RAII) frees storage.
   }
 
   MetaLog(const MetaLog&) = delete("SPSC buffer is pinned to producer/consumer thread pair");
