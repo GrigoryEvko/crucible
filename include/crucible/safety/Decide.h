@@ -1224,9 +1224,20 @@ constexpr bool intervals_cover_unit(
 //     can_demote_tier_v — admission gates for mint_promote /
 //     mint_demote / mint_restore + 8 lattice-direction static_asserts
 //     (CONTRACT-117 Cipher tier-transition cite, landed first).
-//   * Pending: BackgroundThread phase promotion gates, Forge Phase E
-//     RecipeSelect admission, KernelCache hot↔warm↔cold gates,
-//     Augur drift attribution dispatch.
+//   * Pending: Forge Phase E RecipeSelect admission, KernelCache
+//     hot↔warm↔cold gates, Augur drift attribution dispatch.
+//   * Closed-with-rationale (no runtime cite): BackgroundThread phase
+//     promotion gates.  Originally proposed as a `tier_replaces` cite
+//     (Drain → Detect → BuildTrace → MakeRegion).  Post-GAPS-099 the
+//     bg-pipeline is `mint_pipeline<...>` over four typed
+//     `PermissionedSpscChannel` stages; phase ordering is enforced
+//     structurally by the Pipeline typestate (each stage's output
+//     channel is the next stage's input channel, checked at compile
+//     time by `pipeline_chain<S_i, S_{i+1}>`).  There is no runtime
+//     ordinal comparison between phases left to gate, hence no place
+//     for a runtime `tier_replaces` cite — the type system already
+//     discharges the VC.  See BackgroundThread.h:1087-1102 for the
+//     `mint_stage` / `mint_pipeline` chain.
 //
 // ANTI-PATTERNS (review-rejected)
 // -------------------------------
