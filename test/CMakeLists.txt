@@ -272,6 +272,16 @@ crucible_test(test_migration_verification)
 crucible_test(test_concept_cheat_probe)
 add_test(NAME trait_guard
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-trait-injection.sh)
+# CONTRACT-131: contracts-infra adoption regression guard.  --check
+# diffs the live tree against a committed baseline snapshot; counter
+# increases are silent (adoption growth is good), counter decreases
+# fail CI (regression).  Run `scripts/audit-pre-callsite-count.sh
+# --baseline scripts/contracts-baseline.json` to refresh after a
+# deliberate removal — the regression is then explained and the
+# baseline owns the new counts.
+add_test(NAME contract_cite_regression
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/audit-pre-callsite-count.sh
+          --check ${CMAKE_SOURCE_DIR}/scripts/contracts-baseline.json)
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
