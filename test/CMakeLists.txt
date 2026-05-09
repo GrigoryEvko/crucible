@@ -282,6 +282,19 @@ add_test(NAME trait_guard
 add_test(NAME contract_cite_regression
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/audit-pre-callsite-count.sh
           --check ${CMAKE_SOURCE_DIR}/scripts/contracts-baseline.json)
+# CONTRACT-125: per-procedure cite-ratio policy enforcer.  For every
+# decide::* procedure in the catalog, asks "≥ 2 production cites
+# within 180 days of introduction?".  Recently-introduced procedures
+# in the GRACE bucket are informational; only procedures past the
+# grace window with < 2 cites count as VIOLATIONs and fail CI.
+# The audit runs the sibling --json producer and joins per-procedure
+# cite counts with `git log -S` introduction dates.
+# Catalog grows bottom-up (citing site first, name second per
+# feedback_decide_catalog.md); this test enforces the bottom-up
+# discipline doesn't decay over time.  CONTRACT-126 trims procedures
+# this audit flags.
+add_test(NAME contract_decide_cite_ratio
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/audit-decide-cite-ratio.sh)
 # CONTRACT-120: Layer-C subsumption guard.  Catches double-enforcement
 # of a Refined<Pred, T> parameter via in-body CRUCIBLE_PRE that re-tests
 # the same predicate on the same parameter — the type-level proof
