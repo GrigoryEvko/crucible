@@ -27,8 +27,10 @@ static void test_single_insert_then_has() {
     assert(t.has(H(42)));
     assert(t.size() == 1);
     assert(t.entries[0].lineno.value() == 10);
-    assert(t.entries[0].filename == "foo.py");
-    assert(t.entries[0].funcname == "main");
+    // Tagged<std::string, source::Sanitized>: read via .value() to
+    // get const std::string& (#881 WRAP-CallSite-3).
+    assert(t.entries[0].filename.value() == "foo.py");
+    assert(t.entries[0].funcname.value() == "main");
     std::printf("  test_single_insert:             PASSED\n");
 }
 
@@ -39,7 +41,7 @@ static void test_duplicate_insert_is_noop() {
     t.insert(NZ(42), "different.py", "other", 99);
     assert(t.size() == 1);  // second + third calls were deduped
     assert(t.entries[0].lineno.value() == 10);
-    assert(t.entries[0].filename == "foo.py");
+    assert(t.entries[0].filename.value() == "foo.py");
     std::printf("  test_duplicate_noop:            PASSED\n");
 }
 

@@ -40,10 +40,29 @@ struct CallSiteTable {
   // it is rejected as a non-constant expression per P1494R5.
   using Lineno = ::crucible::safety::NonNegative<int32_t>;
 
+  // Provenance newtype for the stored filename / funcname strings
+  // (#881 WRAP-CallSite-3).  After insert() validates and stores, the
+  // strings are post-validation: they came in via the External /
+  // FromInternal overloads (or the legacy raw std::string overload)
+  // and the table treats them uniformly as Sanitized at storage.
+  // Consumers reading Entry::filename / funcname get a typed Tagged<>
+  // they cannot accidentally pass back to a function expecting raw
+  // External — the explicit-only Tagged ctor + lack of implicit
+  // Tagged<T,A> → Tagged<T,B> conversion close both directions.
+  //
+  // Tagged<std::string, source::Sanitized> is regime-1 EBO collapse —
+  // TrustLattice<Sanitized>::element_type is empty and `[[no_unique
+  // _address]]`-collapsed in the Graded substrate, so sizeof(
+  // SanitizedName) == sizeof(std::string) and Entry's layout +
+  // CallSiteTable's footprint static_asserts (lines 155-158) are
+  // preserved.
+  using SanitizedName = ::crucible::safety::Tagged<
+      std::string, ::crucible::safety::source::Sanitized>;
+
   struct Entry {
     CallsiteHash hash;           // strong-typed callsite identity
-    std::string filename;
-    std::string funcname;
+    SanitizedName filename;      // Tagged<std::string, source::Sanitized>
+    SanitizedName funcname;      // Tagged<std::string, source::Sanitized>
     Lineno lineno{int32_t{0}};   // Refined<non_negative, int32_t>; default 0
   };
 
@@ -98,10 +117,14 @@ struct CallSiteTable {
       auto& h = seen[(idx + p) & SET_MASK];
       if (h == CallsiteHash{}) {
         h = hash;
-        // Construct the Refined Lineno HERE — the ctor's pre clause
-        // fires the contract on negative input.  Storage carries the
-        // invariant; downstream readers can rely on lineno >= 0.
-        entries.emplace(hash, std::move(filename), std::move(funcname),
+        // Construct the typed wrappers HERE.  Lineno's ctor's pre
+        // clause fires the contract on negative input.  SanitizedName
+        // wraps std::string in source::Sanitized — storage carries
+        // the post-validation provenance; downstream readers cannot
+        // accidentally retag as External (#881 WRAP-CallSite-3).
+        entries.emplace(hash,
+                        SanitizedName{std::move(filename)},
+                        SanitizedName{std::move(funcname)},
                         Lineno{lineno});
         return;
       }

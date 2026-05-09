@@ -1760,6 +1760,22 @@ crucible_neg_compile_test(neg_call_site_lineno_negative
 crucible_neg_compile_test(neg_call_site_lineno_int_min
   "contract|non_negative|not a constant|non-constant|constexpr")
 
+# WRAP-CallSite-3 (#881) — CallSiteTable::Entry::filename / funcname
+# migrated from raw std::string to safety::Tagged<std::string,
+# source::Sanitized>.  Two HS14 fixtures cover the soundness gate's
+# two directions:
+#   * neg_call_site_filename_raw_string — WRITE-side gate (Tagged's
+#     `explicit Tagged(T)` ctor rejects aggregate-init from a raw
+#     std::string).
+#   * neg_call_site_filename_external_passback — READ-side gate
+#     (Tagged<T,Sanitized> does not implicitly convert to
+#     Tagged<T,External>; the trust-elevation is one-way through
+#     insert()).
+crucible_neg_compile_test(neg_call_site_filename_raw_string
+  "no match for|cannot convert|no viable|could not convert|narrowing|Tagged|explicit")
+crucible_neg_compile_test(neg_call_site_filename_external_passback
+  "no match for|cannot convert|no viable|could not convert|Tagged|External|Sanitized")
+
 # WRAP-IterDet-2 (#928) — IterationDetector::SignatureLen = safety::
 # BoundedMonotonic<uint32_t, K=5>; constructing SignatureLen{> K} in
 # constexpr context drives the `pre(!(T(Max) < initial))` clause
