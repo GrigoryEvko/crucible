@@ -14,11 +14,21 @@
     ops[0].schema_hash = crucible::SchemaHash{0xFEED};
     auto* region1 = crucible::make_region(test.alloc, arena, ops, 1);
     assert(region1 != nullptr);
+    // #937 WRAP-MerkleDag-1: TX::commit's `pre(merkle_root.raw() != 0)`
+    // gate (defense-in-depth for ValidMerkleRoot) requires every
+    // committed region to carry a populated merkle_hash.  Production
+    // BgThread::on_region_ready calls recompute_merkle before
+    // Vigil::commit; the test mirrors that ordering instead of
+    // synthesizing a fake hash so the discharge path stays representative.
+    crucible::recompute_merkle(region1);
+    assert(region1->merkle_hash.raw() != 0);
 
     crucible::TraceEntry ops2[1]{};
     ops2[0].schema_hash = crucible::SchemaHash{0xBEEF};
     auto* region2 = crucible::make_region(test.alloc, arena, ops2, 1);
     assert(region2 != nullptr);
+    crucible::recompute_merkle(region2);
+    assert(region2->merkle_hash.raw() != 0);
 
     // ── begin_tx(1) → RECORDING ─────────────────────────────────────
     assert(log.size() == 0);
@@ -90,6 +100,10 @@
         crucible::TraceEntry e{};
         e.schema_hash = crucible::SchemaHash{static_cast<uint64_t>(i)};
         auto* r = crucible::make_region(test.alloc, arena, &e, 1);
+        // #937 WRAP-MerkleDag-1: populate r->merkle_hash before
+        // commit (matches production BgThread::on_region_ready
+        // ordering and discharges TX::commit's non-zero gate).
+        crucible::recompute_merkle(r);
         assert(log.commit(tx, r, r->content_hash, r->merkle_hash));
         (void)log.activate(tx);
     }

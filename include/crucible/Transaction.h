@@ -138,10 +138,30 @@ class TransactionLog {
 
     // Transition RECORDING (or CLOSED) → COMMITTED, attach region.
     // Returns false if tx is not in a committable state (logic error).
+    //
+    // Soundness gate (#937 WRAP-MerkleDag-1): merkle_root MUST be
+    // non-zero.  Zero is the structural sentinel for "subtree not yet
+    // computed" — committing it would (1) corrupt the tx_log's
+    // step-by-merkle invariant (a fresh Transaction's default value is
+    // also MerkleHash{}, so binary search on (step_id, merkle_root)
+    // becomes ambiguous), (2) silently mark the federation round-trip
+    // key as a no-op, and (3) mask divergence-recovery cases where the
+    // bg thread races to commit before recompute_merkle ran.  Every
+    // production caller derives merkle_root through
+    // `region->computed_merkle_hash()` (which itself fires on zero),
+    // so this clause is defense-in-depth: under semantic=enforce a
+    // future caller bypassing the accessor aborts here, under
+    // semantic=ignore the [[assume]] hint pins the invariant for
+    // downstream code (rollback / activate / hash_at_step() can
+    // speculate that any committed entry has a non-zero root without
+    // re-checking).  Companion typed witness: ValidMerkleRoot
+    // (MerkleDag.h) — callers that hold a ValidMerkleRoot can pass
+    // `make_merkle_root(witness)` to surface the proof at the call site.
     [[nodiscard]] bool commit(Transaction* const tx, RegionNode* const region,
                 ContentHash content_hash, MerkleHash merkle_root) noexcept
         pre (tx != nullptr)
         pre (region != nullptr)
+        pre (::crucible::decide::is_non_zero(merkle_root))
     {
         if (tx->status != TxStatus::RECORDING
             && tx->status != TxStatus::CLOSED) {

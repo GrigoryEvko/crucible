@@ -2149,6 +2149,37 @@ crucible_neg_compile_test(neg_cipher_head_zero_literal
 crucible_neg_compile_test(neg_cipher_head_default_construct
   "contract|Refined|non_zero|not a constant|non-constant|constexpr")
 
+# ─── #937 WRAP-MerkleDag-1 neg-compile tests ────────────────────────
+#
+# Per #937, ValidMerkleRoot is safety::Refined<safety::non_zero,
+# MerkleHash> and gates the parameter to Tx::commit (defense-in-depth
+# alongside computed_merkle_hash() accessor).  MerkleHash{0} is the
+# structural sentinel for "subtree never built" — committing it
+# would (1) corrupt tx_log's step-by-merkle invariant (a fresh
+# Transaction's merkle_root field is also MerkleHash{}), (2) collide
+# with TERMINAL leaves in dag_diff equality short-circuits, and (3)
+# propagate as a no-op replay key into federation round-trip flows.
+#
+# Two fixtures per HS14 mandate, demonstrating distinct mismatch
+# classes (mirroring the WRAP-Cipher-1 pattern above):
+#   * neg_merkle_root_zero_literal — explicit-literal mismatch
+#     (= MerkleHash{uint64_t{0}}).  Catches drift where a caller
+#     hand-spells a zero MerkleHash literal.
+#   * neg_merkle_root_default_construct — NSDMI-default wide miss
+#     (= MerkleHash{}).  Catches the realistic mode: a freshly
+#     allocated RegionNode whose merkle_hash is default-zero and
+#     hasn't yet been populated by recompute_merkle.
+#
+# Defense-in-depth: the runtime gate `pre(merkle_root.raw() != 0)`
+# inside Tx::commit is retained — ValidMerkleRoot catches the value
+# at the call site at compile-time via the typed alias path; the
+# existing pre clause catches it at runtime if a caller bypasses the
+# typed path.
+crucible_neg_compile_test(neg_merkle_root_zero_literal
+  "contract|Refined|non_zero|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_merkle_root_default_construct
+  "contract|Refined|non_zero|not a constant|non-constant|constexpr")
+
 # ─── #897 WRAP-CostModel-3 neg-compile tests ────────────────────────
 #
 # Per #897, ValidRegsPerThread is

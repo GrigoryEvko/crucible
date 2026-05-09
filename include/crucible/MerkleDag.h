@@ -505,14 +505,18 @@ struct TraceNode {
   TraceNode* next = nullptr; // 8B — continuation (null for TERMINAL)
 
   // Accessor for callers that require merkle_hash to be populated.
-  // Returns Refined<non_zero, MerkleHash> — caller must have called
-  // recompute_merkle on this node (or its ancestor) before invoking,
-  // or the Refined ctor's contract fires.
+  // Returns ValidMerkleRoot (= Refined<non_zero, MerkleHash>) — caller
+  // must have called recompute_merkle on this node (or its ancestor)
+  // before invoking, or the Refined ctor's contract fires.
   //
   // Rationale: freshly-constructed nodes have merkle_hash == 0.
   // Comparing a fresh node's hash to a stored one gives a spurious
   // mismatch.  Routing through this accessor makes "the hash has been
   // computed" a load-bearing precondition at the type level.
+  //
+  // The typed alias is declared after TraceNode (forward-decl ordering
+  // forced by Refined's reliance on the MerkleHash strong-id type
+  // already being complete); see ValidMerkleRoot below.
   [[nodiscard]] crucible::safety::Refined<
       crucible::safety::non_zero, MerkleHash>
   computed_merkle_hash() const noexcept
@@ -532,6 +536,54 @@ struct TraceNode {
 
 static_assert(sizeof(TraceNode) == 24, "TraceNode must be 24 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(TraceNode);
+
+// ── Validated MerkleHash root witness (#937 WRAP-MerkleDag-1) ─────────────
+//
+// The MerkleHash a caller commits to a transaction or persists into the
+// Cipher MUST be non-zero — zero is the structural sentinel for "this
+// subtree was never built" (TERMINAL nodes legitimately carry
+// MerkleHash{}, but they are sentinel leaves, not roots).  Propagating
+// zero into a Tx::commit / persist path silently corrupts:
+//   (1) tx_log binary search by step_id (a step-with-merkle-zero is
+//       indistinguishable from a fresh transaction's default value);
+//   (2) DAG diff (`dag_diff` short-circuits on equal merkle_hash;
+//       comparing two never-built subtrees would falsely report
+//       IDENTICAL when neither has been computed yet);
+//   (3) federation round-trip key (an ancestor-marshalled "all zero"
+//       root is a no-op replay key — the receiving Relay would accept
+//       it as proof-of-equivalence with any other unbuilt subtree).
+//
+// `ValidMerkleRoot` is the type-level witness that the caller has
+// validated the hash at its source (typically through
+// `recompute_merkle` on the parent node, which seeds non-zero starting
+// from any non-empty content).  Construction is gated by Refined<>'s
+// `pre(non_zero(v))` clause; under semantic=enforce the runtime path
+// is contract violation -> handle_contract_violation (logged + abort),
+// under semantic=ignore the optimizer treats `merkle_root.raw() != 0`
+// as `[[assume]]` and downstream binary searches / log appends
+// speculate without re-checking.
+//
+// `make_merkle_root` is a [[gnu::const]] factory that lifts the
+// witness back to a bare MerkleHash for legacy callers that took a
+// raw MerkleHash parameter — preserving the existing `Tx::commit` and
+// `region->merkle_hash` reads while routing every external write
+// through the ValidMerkleRoot ctor when callers opt in.
+//
+// Defense-in-depth: `Tx::commit`'s `pre(merkle_root.raw() != 0)`
+// (Transaction.h) is retained as the runtime gate.  ValidMerkleRoot
+// catches the value at the call site; the pre clause catches it at
+// the function boundary.  Both layers must reject for the type-level
+// invariant and the runtime path to disagree.
+//
+// Cost: regime-1 EBO collapse — sizeof(ValidMerkleRoot) ==
+// sizeof(MerkleHash) == 8 B.
+using ValidMerkleRoot = ::crucible::safety::Refined<
+    ::crucible::safety::non_zero, MerkleHash>;
+
+[[nodiscard, gnu::const]] inline constexpr
+MerkleHash make_merkle_root(ValidMerkleRoot raw) noexcept {
+    return raw.value();
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // RegionNode: A compilable sequence of ops

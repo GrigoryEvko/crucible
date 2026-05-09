@@ -738,9 +738,17 @@ class Vigil {
         auto* tx = tx_log_.begin_tx(step);
         // commit is nodiscard — bg-thread fast path cannot recover
         // from a state-machine logic error here.  Cast away.
+        //
+        // #937 WRAP-MerkleDag-1: route the merkle_root through
+        // `region->computed_merkle_hash()` so the type system witnesses
+        // the non-zero invariant at the production call site (the
+        // accessor's `pre(is_non_zero(merkle_hash))` fires here if
+        // recompute_merkle hasn't run; commit's runtime gate at
+        // Transaction.h is the second line of defense).
         (void)tx_log_.commit(tx, region,
                              region->content_hash,
-                             region->merkle_hash);
+                             ::crucible::make_merkle_root(
+                                 region->computed_merkle_hash()));
         (void)tx_log_.activate(tx);
 
         // Signal fg thread: a region with a MemoryPlan is available.
