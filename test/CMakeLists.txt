@@ -2938,6 +2938,24 @@ crucible_neg_compile_test(neg_tracering_scalar_values_at_oob
 crucible_neg_compile_test(neg_tracering_scalar_values_in_place_wrong_arity
   "no matching function|constraints not satisfied|associated constraints|cannot convert|too many initializers")
 
+# WRAP-Foundation 2026-05-09: length-coupled raw-array primitives.
+# Three new safety wrappers (AlignedBuffer, HugePageBuffer,
+# SwissTableBuffer), each with HS14 fixtures (≥2 per primitive)
+# covering both COPY-CTOR-side (init-time copy) and COPY-ASSIGN-side
+# (assignment-time copy) gates of the move-only RAII discipline.
+crucible_neg_compile_test(neg_aligned_buffer_copy
+  "use of deleted function|deleted function|move-only")
+crucible_neg_compile_test(neg_aligned_buffer_use_after_move
+  "use of deleted function|deleted function|move-only")
+crucible_neg_compile_test(neg_huge_page_buffer_copy
+  "use of deleted function|deleted function|move-only")
+crucible_neg_compile_test(neg_huge_page_buffer_use_after_move
+  "use of deleted function|deleted function|move-only")
+crucible_neg_compile_test(neg_swiss_table_buffer_copy
+  "use of deleted function|deleted function|move-only")
+crucible_neg_compile_test(neg_swiss_table_buffer_use_after_move
+  "use of deleted function|deleted function|move-only")
+
 # safety::Saturated<T> structural-wrapper — HS14 fixtures (#1084 piece):
 #   * neg_saturated_non_arithmetic   Saturated<MyStruct> must fail
 #                                    (the std::is_arithmetic_v<T>
