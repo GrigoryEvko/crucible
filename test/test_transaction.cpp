@@ -37,7 +37,7 @@
 
     auto* tx1 = log.begin_tx(1);
     assert(tx1 != nullptr);
-    assert(tx1->step_id == 1);
+    assert(tx1->step_id.get() == 1);
     assert(tx1->status  == crucible::TxStatus::RECORDING);
     assert(log.size() == 1);
 
@@ -65,7 +65,7 @@
     // ── begin_tx(2), commit, activate → tx2 ACTIVE, tx1 SUPERSEDED ─
     auto* tx2 = log.begin_tx(2);
     assert(tx2 != nullptr);
-    assert(tx2->step_id == 2);
+    assert(tx2->step_id.get() == 2);
     assert(tx2->status  == crucible::TxStatus::RECORDING);
     assert(log.size() == 2);
 
@@ -109,7 +109,7 @@
     }
     // The active tx must be the last one (step_id == 32).
     assert(log.active() != nullptr);
-    assert(log.active()->step_id == 32);
+    assert(log.active()->step_id.get() == 32);
 
     std::printf("test_transaction: all tests passed\n");
     return 0;

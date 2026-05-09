@@ -1933,6 +1933,20 @@ crucible_neg_compile_test(neg_transaction_log_count_above_cap
 crucible_neg_compile_test(neg_transaction_log_count_uint32_max
   "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
 
+# WRAP-Transaction-1 (#1060) — Transaction::step_id raw uint64_t →
+# safety::Monotonic<uint64_t>.  HS14 mandate: ≥2 negative-compile
+# fixtures per soundness gate, each demonstrating a distinct mismatch
+# class:
+#   * neg_transaction_step_id_assign_from_raw — WRITE-side gate (no
+#     operator=(uint64_t) on Monotonic; raw assignment rejected).
+#   * neg_transaction_step_id_advance_retrograde — ADVANCE-side gate
+#     (advance(smaller) violates lattice_type::leq pre-clause at
+#     consteval, poisoning the surrounding constant evaluation).
+crucible_neg_compile_test(neg_transaction_step_id_assign_from_raw
+  "no match for|cannot convert|no viable|deleted|operator=")
+crucible_neg_compile_test(neg_transaction_step_id_advance_retrograde
+  "contract|Monotonic|not a constant|non-constant|constexpr|leq")
+
 # WRAP-Serialize-6 (#1015) — ValidTraceNodeKindRaw =
 #   safety::Refined<safety::bounded_above<TraceNodeKind::TERMINAL>, uint8_t>
 # pinning the typed gate at every uint8_t → TraceNodeKind widening

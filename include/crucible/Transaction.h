@@ -50,7 +50,19 @@ enum class TxStatus : uint8_t {
 //                      total 48B
 
 struct Transaction {
-    uint64_t     step_id = 0;         // monotonically increasing
+    // ── step_id (#1060 WRAP-Transaction-1) ─────────────────────────
+    // Monotonic<uint64_t> rejects retrograde / wrap-around assignment
+    // at the type level.  Per CLAUDE.md §II DetSafe, step_id is
+    // load-bearing for replay-determinism — every write goes through
+    // advance(), every read through .get().  Layout: regime-2 collapse,
+    // sizeof(Monotonic<uint64_t>) == 8B; the 48B Transaction layout is
+    // preserved (static_assert below).  Reset semantics: begin_tx()
+    // recycles a slot via `*tx = Transaction{}` which restores
+    // step_id == 0 before the new advance(step_id) — the per-tx
+    // monotonicity is reset deliberately at slot recycling, the global
+    // monotonicity is enforced by TransactionLog::count_'s
+    // BoundedMonotonic gate (#1064 WRAP-Transaction-5).
+    ::crucible::safety::Monotonic<uint64_t> step_id{0};
     ContentHash  content_hash;        // default (0) until COMMITTED
     MerkleHash   merkle_root;         // default (0) until COMMITTED
     RegionNode*  region = nullptr;    // null until COMMITTED; arena-owned
@@ -101,7 +113,11 @@ class TransactionLog {
     [[nodiscard, gnu::cold]] Transaction* begin_tx(uint64_t step_id) noexcept {
         auto* tx   = &entries_[head_ & MASK];
         *tx = Transaction{};   // value-init via NSDMI defaults (no memset on non-trivial type)
-        tx->step_id = step_id;
+        // step_id is Monotonic<uint64_t>{0} after the reset; advance()
+        // pre-clause `0 <= step_id` holds for any uint64_t.  Bypassing
+        // raw-assignment forecloses a future refactor that re-introduces
+        // a retrograde write under bug-in-bug regression.
+        tx->step_id.advance(step_id);
         tx->ts_ns   = now_ns();
         head_++;
         // count_ saturates at N: only bump while below the cap.  The
@@ -132,7 +148,7 @@ class TransactionLog {
         // commit() path can speculate on RECORDING without re-checking.
         CRUCIBLE_POST(tx, tx != nullptr);
         CRUCIBLE_POST(tx, tx->status == TxStatus::RECORDING);
-        CRUCIBLE_POST(tx, tx->step_id == step_id);
+        CRUCIBLE_POST(tx, tx->step_id.get() == step_id);
         return tx;
     }
 
