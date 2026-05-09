@@ -1,5 +1,38 @@
 # Crucible C++26 Code Rules
 
+> **LEGACY — superseded by CLAUDE.md.**
+>
+> This file predates the GCC-16-only toolchain consolidation (its
+> Toolchain table still claims a Clang 22 + GCC 15 + GCC 16 trio with
+> a "baseline = intersection of all three" rule).  The canonical
+> source of truth for Crucible's coding rules is the **Code Guide**
+> in `/CLAUDE.md`, which covers:
+>
+>   * §I    Toolchain (GCC 16 only, no Clang fallback)
+>   * §II   The Eight Safety Axioms (this file lists Four)
+>   * §III  C++26 language features — opt matrix
+>   * §IV   Library types — opt matrix
+>   * §XII  **Error handling and the assertion quartet**
+>            (`CRUCIBLE_ASSERT` / `CRUCIBLE_DEBUG_ASSERT` /
+>             `CRUCIBLE_INVARIANT` / `CRUCIBLE_PRE` + `CRUCIBLE_POST`)
+>            with the three-layer VC discharge framing
+>            (type-level proof / named cite / anonymous predicate).
+>   * §XVI  Safety wrappers
+>   * §XVII Identifier discipline
+>   * §XVIII Hard stops (review checklist)
+>   * §XX   Cost hierarchy (Correctness > Determinism > Security > Latency)
+>   * §XXI  The Universal Mint Pattern
+>
+> Cross-reference for the assertion quartet: §XII of CLAUDE.md plus
+> `include/crucible/safety/Pre.h` and `safety/Post.h` docstrings, plus
+> the named-predicate catalog in `safety/Decide.h`.
+>
+> The content below is preserved for historical reference — it is
+> still substantively correct on the Four Axioms, performance rules,
+> and anti-patterns, but **toolchain claims, the C++26 feature map,
+> and the §XII-relevant assertion machinery are out of date**.  Do
+> not cite this file in new work; cite CLAUDE.md.
+
 *Performance is non-negotiable. Safety is structural, not aspirational.*
 
 Crucible is a symbiotic runtime organism where the foreground hot path
