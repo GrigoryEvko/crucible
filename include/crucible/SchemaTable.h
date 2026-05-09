@@ -35,6 +35,7 @@
 #include <atomic>
 #include <bit>          // std::bit_cast — §III-clean const-strip for std::free
 #include <cstdint>
+#include <cstdio>       // std::fprintf — overflow diagnostic on cap exhaustion
 #include <cstdlib>
 #include <cstring>
 #include <memory>       // std::construct_at — for clear()'s SizeCounter rewind
@@ -68,11 +69,13 @@ struct SchemaTable {
   // The entries[] array is structurally append-only: register_name
   // pushes one entry per call (or updates the existing one in place
   // for idempotent re-registration), never erases or reorders.  size
-  // is bounded above by SCHEMA_TABLE_CAP (the existing
-  // `if (size >= CAP) return;` is the user-visible silent-truncation
-  // diagnostic — see #1009 WRAP-SchemaTab-7 for the abort upgrade)
-  // and rewinds to 0 only via clear() (called from the destructor and
-  // for test isolation).
+  // is bounded above by SCHEMA_TABLE_CAP and rewinds to 0 only via
+  // clear() (called from the destructor and for test isolation).
+  // Overflow at SCHEMA_TABLE_CAP is a loud abort with a stderr
+  // diagnostic — same discipline as CKernelTable (#1009 WRAP-SchemaTab-7
+  // upgraded the prior silent-truncate behavior to match CKernel).
+  // Hitting the cap means the cap is wrong; raise SCHEMA_TABLE_CAP or
+  // audit Vessel schema registrations.
   //
   // BoundedMonotonic<uint32_t, SCHEMA_TABLE_CAP> pins both invariants
   // at the type level: monotonic forward progress (no accidental
@@ -198,7 +201,21 @@ struct SchemaTable {
         return;
       }
     }
-    if (size.get() >= SCHEMA_TABLE_CAP) return;
+    // Overflow on the FFI / Vessel registration boundary is a loud
+    // abort, not a silent truncate.  A silent return would dispatch
+    // every subsequent unregistered schema as OPAQUE (slow path) at
+    // the build_trace boundary, with the bug surfacing far from the
+    // missed registration.  Same discipline as CKernelTable
+    // (CKernel.h:500-506) — hitting the cap means the cap is wrong;
+    // bump SCHEMA_TABLE_CAP or audit the Vessel schema registrations
+    // that exhausted it.  WRAP-SchemaTab-7 (#1009).
+    if (size.get() >= SCHEMA_TABLE_CAP) [[unlikely]] {
+      std::fprintf(stderr,
+        "crucible: SchemaTable full (%u/%u entries); bump "
+        "SCHEMA_TABLE_CAP or audit Vessel schema registrations\n",
+        size.get(), SCHEMA_TABLE_CAP);
+      std::abort();
+    }
     // Append + bump.  Two-step instead of `entries[size++]` because
     // BoundedMonotonic's bump() is a separate mutation; the index
     // .get() and the bump() bracket the store.
