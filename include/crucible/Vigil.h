@@ -47,6 +47,7 @@
 #include <crucible/rt/Policy.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
+#include <crucible/safety/Refined.h>
 
 #include <atomic>
 #include <chrono>
@@ -206,6 +207,38 @@ class Vigil {
     // Number of consecutive op matches required to confirm an iteration
     // boundary before activating CrucibleContext.  Matches IterationDetector::K.
     static constexpr uint32_t ALIGNMENT_K = 5;
+
+    // ── alignment_pos_ refinement (#1077 WRAP-Vigil-7) ─────────────
+    //
+    // Structural upper bound on alignment_pos_'s STORED value.  The
+    // alignment phase advances alignment_pos_ from 0 toward
+    // `threshold = min(region->num_ops, ALIGNMENT_K)` (see try_align_).
+    // After the increment that brings alignment_pos_ to threshold, the
+    // `>= threshold` check fires and pending_activation_ is reset to
+    // nullptr — at which point alignment_pos_ holds the value
+    // `threshold ≤ ALIGNMENT_K`.  The next consume_pending_region_
+    // resets alignment_pos_ back to 0.  No code path ever stores a
+    // value > ALIGNMENT_K in alignment_pos_, so the type-level bound
+    // matches.
+    //
+    // Refined<bounded_above<ALIGNMENT_K>, uint8_t> admits 0..K=5.
+    // Mirrors IterationDetector::MatchPos (#927 WRAP-IterDet-1) — the
+    // wrapper carries the invariant in the type system; the
+    // construction-time pre fires on out-of-range writes (P2900R14 +
+    // Refined ctor).
+    //
+    // Zero-cost: regime-1 EBO collapse — sizeof(AlignmentPos) ==
+    // sizeof(uint8_t) == 1 B.  Vigil's layout is unchanged (the field
+    // sat in 4 B padding before; now 1 B + 3 B trailing padding).
+    //
+    // Public so HS14 negative-compile fixtures can construct
+    // AlignmentPos values in constexpr context to fire the pre.
+    static constexpr uint8_t ALIGNMENT_POS_MAX = static_cast<uint8_t>(ALIGNMENT_K);
+    static_assert(ALIGNMENT_K <= UINT8_MAX,
+        "ALIGNMENT_POS_MAX must fit in uint8_t — bump AlignmentPos's "
+        "underlying type if ALIGNMENT_K is ever raised past 255");
+    using AlignmentPos = ::crucible::safety::Refined<
+        ::crucible::safety::bounded_above<ALIGNMENT_POS_MAX>, uint8_t>;
 
     // ─── Construction / Destruction ────────────────────────────────
 
@@ -839,7 +872,7 @@ class Vigil {
 
         // Start alignment phase: scan for iteration boundary.
         pending_activation_ = region;
-        alignment_pos_ = 0;
+        alignment_pos_ = AlignmentPos{uint8_t{0}};
     }
 
     // Alignment phase: sliding window match against region ops[0..K-1].
@@ -857,18 +890,24 @@ class Vigil {
         const auto* region = pending_activation_;
 
         // Check if current op matches the expected alignment position.
-        if (schema == region->ops[alignment_pos_].schema_hash &&
-            shape  == region->ops[alignment_pos_].shape_hash)
+        const uint8_t pos = alignment_pos_.value();
+        if (schema == region->ops[pos].schema_hash &&
+            shape  == region->ops[pos].shape_hash)
         {
-            alignment_pos_++;
+            // Increment via fresh AlignmentPos construction — Refined's
+            // ctor pre fires if (pos + 1) > ALIGNMENT_K; control-flow
+            // reaches here only after the prior iteration's `>= threshold`
+            // check would have RESET pending_activation_ to nullptr (so
+            // try_align_ wouldn't be called again past threshold).
+            alignment_pos_ = AlignmentPos{static_cast<uint8_t>(pos + uint8_t{1})};
         } else {
             // Mismatch — reset. But check if this op could be a new start (op 0).
-            alignment_pos_ = 0;
+            alignment_pos_ = AlignmentPos{uint8_t{0}};
             if (region->num_ops > 0 &&
                 schema == region->ops[0].schema_hash &&
                 shape  == region->ops[0].shape_hash)
             {
-                alignment_pos_ = 1;
+                alignment_pos_ = AlignmentPos{uint8_t{1}};
             }
         }
 
@@ -877,7 +916,7 @@ class Vigil {
         const uint32_t threshold = (region->num_ops < ALIGNMENT_K)
                                  ? region->num_ops : ALIGNMENT_K;
 
-        if (alignment_pos_ >= threshold) {
+        if (uint32_t{alignment_pos_.value()} >= threshold) {
             if (!ctx_.activate(region)) {
                 // No plan → can't compile. Clear pending state.
                 pending_activation_ = nullptr;
@@ -891,7 +930,7 @@ class Vigil {
             // alignment. These ops executed eagerly; the engine needs to
             // be at position alignment_pos_ so the NEXT op checks against
             // the correct region op.
-            for (uint32_t i = 0; i < alignment_pos_; i++) {
+            for (uint32_t i = 0; i < uint32_t{alignment_pos_.value()}; i++) {
                 auto status = ctx_.advance(region->ops[i].schema_hash,
                                            region->ops[i].shape_hash);
                 // Must match — we verified these during alignment.
@@ -1032,7 +1071,7 @@ class Vigil {
     // PublishOnce: divergence recovery can publish multiple regions.
     safety::PublishSlot<RegionNode> pending_region_;
     RegionNode*                     pending_activation_{nullptr}; // fg-only: waiting for alignment
-    uint32_t                        alignment_pos_{0};  // consecutive matched ops from region start
+    AlignmentPos                    alignment_pos_{uint8_t{0}};   // consecutive matched ops from region start (#1077)
     CrucibleContext                 ctx_;               // fg-only replay
     RegionCache                     region_cache_;      // fg-only: cached alternate regions
 

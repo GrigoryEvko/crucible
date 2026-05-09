@@ -4437,6 +4437,24 @@ crucible_neg_compile_test(neg_vigil_mode_bridge_illegal_transition
 crucible_neg_compile_test(neg_vigil_mode_bridge_branch_out_of_range
     "Branch_Index_Out_Of_Range|branch index")
 
+# WRAP-Vigil-7 (#1077) — Vigil::AlignmentPos = safety::Refined<safety::
+# bounded_above<ALIGNMENT_POS_MAX=ALIGNMENT_K=5>, uint8_t>; constructing
+# AlignmentPos{> 5} in constexpr context drives the bounded_above
+# pre-clause through constant evaluation.  Two fixtures per HS14:
+#   * _above_max  — boundary edge (6 = ALIGNMENT_K+1, the off-by-one
+#     past the threshold check at try_align_'s `>= threshold` branch),
+#     catches drift in ALIGNMENT_POS_MAX (e.g., a refactor that lowers
+#     the bound to ALIGNMENT_K - 1 silently passes the wide-miss
+#     fixture but fails this one).
+#   * _uint8_max  — wide miss (255 = uint8_t max), catches "lost
+#     narrowing" where a wider intermediate is truncated to uint8_t
+#     before being assigned (the migration risk if a future
+#     refactor drops the Refined wrap and admits raw byte writes).
+crucible_neg_compile_test(neg_vigil_alignment_pos_above_max
+    "contract|bounded_above|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_vigil_alignment_pos_uint8_max
+    "contract|bounded_above|not a constant|non-constant|constexpr")
+
 # GAPS-044 — Permission inheritance is explicit and acyclic.  Crash-stop
 # recovery may mint survivor permissions only for declared inheritance
 # edges; a peer cannot inherit to itself.
