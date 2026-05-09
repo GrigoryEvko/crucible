@@ -1760,6 +1760,34 @@ constexpr bool disjunction(std::span<const bool> xs) noexcept {
 //   - implies(p, true) == true ∀p  (right-absorbing constant true).
 //   - implies(false, q) == true ∀q  (left-absorbing constant false).
 //   - Modus ponens: implies(p, q) && p → q.
+//
+// PRODUCTION CITES (update on adoption per CONTRACT-125)
+// ------------------------------------------------------
+//   * Expr.h:87           — constructor pre: `positive(nargs_)
+//                            → args_ != nullptr`.  The conditional
+//                            non-null obligation on the args
+//                            pointer when nargs > 0 (CONTRACT-115).
+//   * MerkleDag.h:2024,
+//     MerkleDag.h:2130    — RegionNode + make_region posts:
+//                            `(num_ops > 0 || non-degenerate) →
+//                            content_hash != 0`.  Conditional
+//                            non-zero-hash invariant for sealed
+//                            regions (CONTRACT-106).
+//   * PoolAllocator.h:238,
+//     PoolAllocator.h:240 — slot_ptr posts: conditional non-null
+//                            shape `(slot has been initialized) →
+//                            (returned pointer is non-null)`
+//                            (CONTRACT-103).
+//
+// Both arguments are evaluated eagerly under C++ function-call
+// semantics — for a guarded null-deref shape `p != nullptr →
+// p->field == X`, do NOT use `decide::implies(p != nullptr,
+// p->field == X)` because the consequent dereferences null when p
+// is null.  Use C++ short-circuit `||`: `p == nullptr || p->field
+// == X`.  See feedback_decide_implies_eager_eval.md and the
+// Tx::activate UBSan regression at commit 9a0fc58 for the canonical
+// cautionary tale.  Pure-operand cases (no null deref in either
+// argument) are the safe domain for `decide::implies`.
 [[nodiscard, gnu::const]]
 constexpr bool implies(bool antecedent, bool consequent) noexcept {
     return !antecedent || consequent;
@@ -1846,6 +1874,34 @@ constexpr bool implies(bool antecedent, bool consequent) noexcept {
 //   - For any A > 0: { v : aligned_in_range(v, low, high, A) } is
 //     the set { v ∈ [low, high] : A | v }, i.e. multiples of A in
 //     the interval.
+//
+// PRODUCTION CITES (no production cite yet)
+// -----------------------------------------
+// The "USED BY" block above describes EXPECTED cite sites
+// (MemoryPlan offset assignment, PoolAllocator slot pointer
+// derivation, Arena bump-allocator post-condition).  The actual
+// migrations (CONTRACT-101 / CONTRACT-103 / CONTRACT-112) shipped
+// using the simpler component predicates:
+//
+//   * CONTRACT-112 MemoryPlan migration uses
+//     `decide::intervals_pairwise_disjoint` over byte-slot intervals
+//     (4 cites today) — alignment is enforced separately by the
+//     slot's Refined<aligned_to<N>, T> wrapper at construction, so
+//     the in-body predicate doesn't re-bundle alignment + bounds.
+//   * CONTRACT-103 PoolAllocator + CONTRACT-101 Arena use
+//     `decide::no_overflow_sum` (6 cites total) for offset/end
+//     arithmetic, with alignment carried by Refined types on the
+//     allocator's `aligned_alignment` parameter.
+//
+// Reserved for: a hot-path predicate site where (a) alignment is
+// dynamically chosen at runtime so it can't be a Refined template
+// parameter, (b) the bounds and alignment must be checked in one
+// atomic predicate evaluation (e.g. inside a single CRUCIBLE_PRE on
+// a function whose body does the unaligned access).  No such site
+// exists in the production tree as of CONTRACT-127.  If no consumer
+// materializes by the 6-month grace window, this predicate becomes
+// a CONTRACT-126 trim candidate; until then it stays as documented
+// availability for the dynamic-alignment case.
 [[nodiscard, gnu::const]]
 constexpr bool aligned_in_range(std::uint64_t value,
                                 std::uint64_t low,
