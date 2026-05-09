@@ -19,6 +19,7 @@
 #include <concepts>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <span>
 #include <type_traits>
 #include <utility>
@@ -220,7 +221,11 @@ inline Header read_header(Reader& r) {
     w.w(region->num_ops);
     w.w(region->first_op_schema.raw());
     w.w(region->measured_ms);
-    w.w(region->variant_id);
+    // #942 WRAP-MerkleDag-6: variant_id is safety::Monotonic<uint32_t>
+    // (regime-2 collapse to sizeof(uint32_t)=4B; on-disk format
+    // unchanged).  .get() projects the underlying uint32_t for the
+    // raw byte writer.
+    w.w(region->variant_id.get());
 
     // MemoryPlan (optional)
     const bool has_plan = (region->plan != nullptr);
@@ -468,7 +473,19 @@ inline Header read_header(Reader& r) {
     node->num_ops         = num_ops;
     node->first_op_schema = first_op_schema;
     node->measured_ms     = measured_ms;
-    node->variant_id      = variant_id;
+    // #942 WRAP-MerkleDag-6: variant_id is safety::Monotonic<uint32_t>.
+    // The field was already default-constructed to {0u} by the
+    // RegionNode{} placement-new above; re-establish the invariant
+    // from the disk-supplied value via std::construct_at so the
+    // wrapper's Monotonic ctor runs on the new value.  Bypassing
+    // .advance() is deliberate here — the disk value may be 0 (region
+    // never had a variant selected when serialized), which advance's
+    // outer set_variant gate would reject (CONTRACT-106 non-zero).
+    // Same construct_at re-anchor pattern as CKernelTable::clear() and
+    // IterationDetector::reset() — load from a known floor on the
+    // wrapper's terms.
+    std::construct_at(&node->variant_id,
+                      RegionNode::VariantCounter{variant_id});
     node->plan            = plan;
     // node->compiled is a PublishOnce<CompiledKernel> — default-
     // constructed nullptr is the correct "not yet published" state.

@@ -30,6 +30,7 @@
 #include <crucible/permissions/Permission.h>
 #include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/Pre.h>
 #include <crucible/safety/Saturated.h>
@@ -498,7 +499,46 @@ struct RegionNode : TraceNode {
   // variant_id selects which CompiledKernel variant was observed at
   // this region's content_hash.  Zero is the sentinel meaning "no
   // variant selected yet" (fresh region, never executed).
-  uint32_t variant_id = 0;   // 4B — which compiled variant is active
+  //
+  // ── #942 WRAP-MerkleDag-6: variant_id is monotonic-forward ────────
+  //
+  // The variant lifecycle is single-direction: 0 (unselected) → some
+  // non-zero N on first set_variant; subsequent set_variant calls may
+  // upgrade to a higher-numbered variant (KernelCache slots are
+  // populated in registration order, so a "newer" variant always has
+  // a strictly larger id), but never DOWNGRADE to a smaller non-zero
+  // value and never RESET to 0.  The original `set_variant`
+  // implementation enforced only the non-zero gate (CONTRACT-106 cite
+  // — `decide::is_non_zero(new_id)`); the monotonic-forward direction
+  // was a design intent in the field's doc comment ("If a future
+  // policy allows reverting to 'no variant', add an explicit
+  // clear_variant() method") but had no type-level witness.
+  //
+  // Migrating to safety::Monotonic<uint32_t> pins the
+  // weakly-increasing invariant at the type level.  Monotonic::advance
+  // carries `pre(lattice_type::leq(peek(), new_value))` — i.e.
+  // new_value >= current; any caller attempting a downgrade fires the
+  // contract at the wrapper boundary, propagating up to set_variant's
+  // call site.  Same pattern as WRAP-CKernel-2, WRAP-SchemaTab-1,
+  // WRAP-Transaction-5, WRAP-IterDet-3 — Crucible's canonical "field
+  // is structurally append-only" wrap.
+  //
+  // Why not BoundedMonotonic<uint32_t, MAX>: variant_id has no fixed
+  // upper bound — it is bounded only by the runtime population of the
+  // KernelCache, not a compile-time table cap.  Plain Monotonic
+  // captures the monotonic invariant without imposing a synthetic
+  // ceiling.  bump() also enforces the UINT32_MAX overflow guard.
+  //
+  // Layout preserved: Monotonic<uint32_t> regime-2 collapses to
+  // sizeof(uint32_t)=4B per Mutation.h's static_assert; RegionNode
+  // layout invariant (== 80 B) untouched.  Default-init `{0u}`
+  // matches the original NSDMI semantics.
+  //
+  // CONTRACT-106 cite continues to apply at set_variant's outer
+  // pre-clause (non-zero gate); the type-level wrapper now carries
+  // the monotonic-ordering gate as well.
+  using VariantCounter = ::crucible::safety::Monotonic<uint32_t>;
+  VariantCounter variant_id{0u};   // 4B — which compiled variant is active
 
   MemoryPlan* plan = nullptr; // 8B — liveness analysis result (null until computed)
 
@@ -519,7 +559,7 @@ struct RegionNode : TraceNode {
   }
 
   [[nodiscard, gnu::pure]] bool has_variant() const noexcept {
-    return variant_id != 0;
+    return variant_id.get() != 0u;
   }
 
   // PROD-WRAP-6 (#535) accessor: lift the raw `content_hash` field to
@@ -561,10 +601,18 @@ struct RegionNode : TraceNode {
   // the "no variant" sentinel, and overwriting a real variant with it
   // is a bug.  If a future policy allows reverting to "no variant",
   // add an explicit clear_variant() method.
+  //
+  // ── #942 WRAP-MerkleDag-6 ─────────────────────────────────────────
+  // The body delegates to `variant_id.advance(new_id)`, whose own
+  // pre-clause `lattice_type::leq(peek(), new_value)` (i.e. new_id >=
+  // current) carries the monotonic-forward invariant at the type
+  // level.  The outer non-zero gate stays at this boundary so the
+  // user-facing contract violation reports `set_variant` (not
+  // `Monotonic::advance`) when callers pass 0.
   void set_variant(uint32_t new_id) noexcept
       pre (::crucible::decide::is_non_zero(new_id))
   {
-    variant_id = new_id;
+    variant_id.advance(new_id);
     // CONTRACT-106-POST: state-mutation contract — after set_variant
     // returns, variant_id reflects the freshly-supplied new_id.  Routes
     // through CRUCIBLE_POST (forwards to CRUCIBLE_PRE) because P2900
@@ -572,11 +620,11 @@ struct RegionNode : TraceNode {
     // is silently bypassed at consteval in GCC 16.1.1 (same gotcha
     // family as CONTRACT-100 / -101 / -102 / -103 / -106..108
     // pre-migrations).  CRUCIBLE_POST fires symmetrically at consteval,
-    // runtime, and as `[[assume(variant_id == new_id)]]` for the
+    // runtime, and as `[[assume(variant_id.get() == new_id)]]` for the
     // optimizer — downstream has_variant() / variant_id reads can
     // speculate on the new value without re-checking.  Void function:
     // first arg of CRUCIBLE_POST is the conventional sentinel `0`.
-    CRUCIBLE_POST(0, variant_id == new_id);
+    CRUCIBLE_POST(0, variant_id.get() == new_id);
   }
 };
 

@@ -1756,6 +1756,29 @@ crucible_neg_compile_test(neg_iter_det_ops_since_boundary_regression
 crucible_neg_compile_test(neg_iter_det_ops_since_boundary_overflow
   "contract|max|Monotonic|not a constant|non-constant|constexpr")
 
+# WRAP-MerkleDag-6 (#942) — RegionNode::VariantCounter =
+# safety::Monotonic<uint32_t>; the field's structurally
+# monotonic-forward lifecycle (0 → some non-zero N; subsequent
+# set_variant calls must monotonically advance) is now witnessed at
+# the type level.  Same companion-pair shape as the IterDet trio
+# above (#927/#928/#929) and CKernel-2 (#890):
+#   * _regression — boundary edge (current=10, advance(5) → 5 < 10).
+#     Catches off-by-one drift in Monotonic's leq predicate (e.g. a
+#     refactor that uses `>` instead of `>=`, silently admitting a
+#     downgrade from variant 10 to variant 9).
+#   * _overflow   — wide miss (bump() at UINT32_MAX), catches
+#     "drop the overflow contract" regression where bump() loses its
+#     != max() check and silently wraps 4294967295 → 0 (which would
+#     also break the monotonic invariant; the bump() contract is the
+#     only type-level defense).
+# The two fixtures together pin BOTH Monotonic mutation contracts at
+# RegionNode::variant_id's call-sites — the WRAP-MerkleDag-6 promise
+# that variant selection cannot go backward at the type level.
+crucible_neg_compile_test(neg_merkle_dag_variant_id_regression
+  "contract|leq|Monotonic|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_merkle_dag_variant_id_overflow
+  "contract|max|Monotonic|not a constant|non-constant|constexpr")
+
 # WRAP-CKernel-4 (#892) — ValidCKernelIdRaw =
 # Refined<bounded_above<NUM_KERNELS - 1>, uint8_t>; constructing the
 # Refined with an out-of-range byte fires the predicate's pre-clause
