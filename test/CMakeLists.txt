@@ -282,6 +282,19 @@ add_test(NAME trait_guard
 add_test(NAME contract_cite_regression
   COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/audit-pre-callsite-count.sh
           --check ${CMAKE_SOURCE_DIR}/scripts/contracts-baseline.json)
+# CONTRACT-120: Layer-C subsumption guard.  Catches double-enforcement
+# of a Refined<Pred, T> parameter via in-body CRUCIBLE_PRE that re-tests
+# the same predicate on the same parameter — the type-level proof
+# already discharges the predicate at construction.  See harness §10.1.
+# Self-test mode is wired separately so a regex regression (e.g. a
+# ripgrep upgrade altering backreference semantics) fails CI on its own
+# diagnostic rather than silently letting the production scan pass
+# because it never matches anything.
+add_test(NAME refined_pre_subsumption_self_test
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-refined-pre-subsumption.sh
+          --self-test)
+add_test(NAME refined_pre_subsumption
+  COMMAND bash ${CMAKE_SOURCE_DIR}/scripts/check-refined-pre-subsumption.sh)
 crucible_test(test_permissions_compile)
 crucible_test(test_handles_compile)
 crucible_test(test_sessions_compile)
