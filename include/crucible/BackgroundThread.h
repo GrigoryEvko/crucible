@@ -24,6 +24,7 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/effects/FxAliases.h>
 #include <crucible/permissions/Permission.h>
+#include <crucible/safety/AlignedBuffer.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/handles/OneShotFlag.h>
 #include <crucible/safety/PublishCommit.h>
@@ -689,9 +690,8 @@ struct BackgroundThread {
 
   ~BackgroundThread() CRUCIBLE_NO_THREAD_SAFETY {
     stop();
-    std::free(scratch_map_);
-    std::free(scratch_slots_);
-    std::free(scratch_edges_);
+    // #876 WRAP-BgThread-5: scratch buffers are AlignedBuffer-owned;
+    // their dtors run on member destruction.  No explicit free needed.
   }
 
   BackgroundThread() = default;
@@ -787,10 +787,19 @@ struct BackgroundThread {
   };
 
   // ── Scratch buffers (dynamically sized, grown as needed) ──────────
+  //
+  // #876 WRAP-BgThread-5: each raw `T* scratch_*_ = nullptr` paired
+  // with a manual std::calloc + std::free is wrapped in
+  // safety::AlignedBuffer<T> for move-only RAII.  The hot drain path
+  // continues to read raw pointers via `local_map = scratch_map_.data()`
+  // / `scratch_slots_.data()` / `scratch_edges_.data()` — same single-
+  // load shape, no indirection.  Replacement on growth is a buffer move
+  // (AlignedBuffer::allocate); the old buffer's dtor frees the prior
+  // allocation, eliminating the explicit std::free pairs.
 
-  PtrSlot* scratch_map_ = nullptr;
-  SlotInfo* scratch_slots_ = nullptr;
-  Edge* scratch_edges_ = nullptr;
+  ::crucible::safety::AlignedBuffer<PtrSlot>  scratch_map_;
+  ::crucible::safety::AlignedBuffer<SlotInfo> scratch_slots_;
+  ::crucible::safety::AlignedBuffer<Edge>     scratch_edges_;
   uint8_t map_gen_ = 0;
 
   // Current capacities (0 = not yet allocated).  The three *_cap_max_
@@ -823,29 +832,24 @@ struct BackgroundThread {
         crucible::sat::add_sat(total_inputs, total_outputs));
 
     if (needed_map > map_cap_.get()) {
-      std::free(scratch_map_);
+      // #876 WRAP-BgThread-5: allocate_zeroed replaces the manual
+      // calloc + abort + free pair.  Previous buffer's dtor (move-
+      // assigned-into) frees the prior alloc; new buffer is zeroed
+      // (calloc-equivalent) for the gen-counter reset path below.
       map_cap_.advance(needed_map);
       ptr_mask_ = map_cap_.get() - 1;
-      scratch_map_ = static_cast<PtrSlot*>(
-          std::calloc(map_cap_.get(), sizeof(PtrSlot)));
-      if (!scratch_map_) [[unlikely]] std::abort();
+      scratch_map_ = ::crucible::safety::AlignedBuffer<PtrSlot>::allocate_zeroed(map_cap_.get());
       map_gen_ = 0; // fresh buffer, reset gen
     }
 
     if (needed_slots > slot_cap_max_.get()) {
-      std::free(scratch_slots_);
       slot_cap_max_.advance(needed_slots);
-      scratch_slots_ = static_cast<SlotInfo*>(
-          std::calloc(slot_cap_max_.get(), sizeof(SlotInfo)));
-      if (!scratch_slots_) [[unlikely]] std::abort();
+      scratch_slots_ = ::crucible::safety::AlignedBuffer<SlotInfo>::allocate_zeroed(slot_cap_max_.get());
     }
 
     if (needed_edges > edge_cap_max_.get()) {
-      std::free(scratch_edges_);
       edge_cap_max_.advance(needed_edges);
-      scratch_edges_ = static_cast<Edge*>(
-          std::calloc(edge_cap_max_.get(), sizeof(Edge)));
-      if (!scratch_edges_) [[unlikely]] std::abort();
+      scratch_edges_ = ::crucible::safety::AlignedBuffer<Edge>::allocate_zeroed(edge_cap_max_.get());
     }
   }
 
@@ -1280,7 +1284,7 @@ struct BackgroundThread {
     map_gen_++;
     if (map_gen_ == 0) [[unlikely]] {
       // Wrap-around every 255 calls: full reset.
-      std::fill_n(scratch_map_, map_cap_.get(), PtrSlot{});
+      std::fill_n(scratch_map_.data(), map_cap_.get(), PtrSlot{});
       map_gen_ = 1;
     }
 
@@ -1288,7 +1292,7 @@ struct BackgroundThread {
 
     uint32_t slot_cap = std::min(slot_cap_max_.get(),
         std::max(uint32_t{256}, total_inputs + total_outputs));
-    std::fill_n(scratch_slots_, slot_cap, SlotInfo{});
+    std::fill_n(scratch_slots_.data(), slot_cap, SlotInfo{});
     uint32_t next_slot_raw = 0;
 
     // ── Edge buffer: scratch, no init needed ──
@@ -1301,9 +1305,9 @@ struct BackgroundThread {
     // reloads scratch_map_/scratch_slots_/scratch_edges_/map_gen_
     // from this->member on every access because it can't prove arena
     // writes don't alias *this.  Local copies → register-resident.
-    PtrSlot* const local_map = scratch_map_;
-    SlotInfo* const local_slots = scratch_slots_;
-    Edge* const local_edges = scratch_edges_;
+    PtrSlot* const local_map = scratch_map_.data();
+    SlotInfo* const local_slots = scratch_slots_.data();
+    Edge* const local_edges = scratch_edges_.data();
     const uint8_t local_gen = map_gen_;
     const uint32_t local_mask = ptr_mask_;
 
