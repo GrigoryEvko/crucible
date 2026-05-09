@@ -5,6 +5,7 @@
 #include <crucible/Ops.h>
 #include <crucible/Platform.h>
 #include <crucible/SwissTable.h>
+#include <crucible/safety/SwissTableBuffer.h>
 
 #include <algorithm>
 #include <bit>
@@ -350,9 +351,7 @@ class CRUCIBLE_OWNER ExprPool {
       int_cache_[static_cast<size_t>(i - kIntCacheLow)] = make_integer(a, i);
   }
 
-  ~ExprPool() {
-    std::free(backing_);
-  }
+  ~ExprPool() = default;  // backing_ owns the alloc via SwissTableBuffer RAII (#915 WRAP-ExprPool-1)
 
   ExprPool(const ExprPool&) = delete("ExprPool owns arena + Swiss table with interior pointers");
   ExprPool& operator=(const ExprPool&) = delete("ExprPool owns arena + Swiss table with interior pointers");
@@ -1574,25 +1573,21 @@ class CRUCIBLE_OWNER ExprPool {
     }
   }
 
-  // Allocate `ctrl_` + `slots_` in a single contiguous backing buffer.
-  // Layout:
+  // Allocate `ctrl_` + `slots_` in a single contiguous backing buffer
+  // via safety::SwissTableBuffer<const Expr*> (#915 WRAP-ExprPool-1).
+  // The wrapper owns the aligned_alloc lifetime as move-only RAII;
+  // ctrl_ and slots_ remain raw projections cached on the hot probe
+  // path so SwissTable::CtrlGroup::load(&ctrl_[i]) and slots_[i] keep
+  // their single-load shape with no indirection.
+  // Layout (preserved):
   //   [ctrl_: `cap` bytes] [slots_: `cap * 8` bytes]
   // slots_ starts at offset `cap`, which is always a multiple of
   // kGroupWidth (≥ 16) → trivially 8-byte aligned for the pointer array.
-  // Merging the two saves one malloc/free pair per ctor/rehash, reduces
-  // fragmentation, and typically keeps ctrl_ and the first slots on
-  // adjacent cache lines (better prefetch behavior on the insert path).
   void alloc_tables_(size_t cap) {
     const size_t slot_bytes = cap * sizeof(const Expr*);
-    const size_t total      = cap + slot_bytes;
-    // aligned_alloc requires size to be a multiple of alignment.
-    const size_t rounded    = (total + 63) & ~size_t(63);
-    backing_ = std::aligned_alloc(64, rounded);
-    if (!backing_) [[unlikely]] std::abort();
-
-    ctrl_  = static_cast<int8_t*>(backing_);
-    slots_ = std::start_lifetime_as_array<const Expr*>(
-        static_cast<char*>(backing_) + cap, cap);
+    backing_ = ::crucible::safety::SwissTableBuffer<const Expr*>::allocate(cap);
+    ctrl_  = backing_.ctrl();
+    slots_ = backing_.slots();
     std::memset(ctrl_, 0x80, cap);          // kEmpty = 0x80
     std::memset(slots_, 0, slot_bytes);     // null-init slot pointers
   }
@@ -1624,9 +1619,12 @@ class CRUCIBLE_OWNER ExprPool {
       pre (new_capacity >= detail::kGroupWidth)
   {
     size_t old_capacity = capacity_;
-    int8_t* old_ctrl = ctrl_;
-    const Expr** old_slots = slots_;
-    void* old_backing = backing_;
+    // #915 WRAP-ExprPool-1: move the old SwissTableBuffer into a local;
+    // its dtor frees the backing alloc when this function returns,
+    // replacing the explicit std::free(old_backing) at the bottom.
+    auto old_backing = std::move(backing_);
+    int8_t* old_ctrl = old_backing.ctrl();
+    const Expr** old_slots = old_backing.slots();
 
     capacity_ = new_capacity;
     alloc_tables_(capacity_);
@@ -1659,11 +1657,15 @@ class CRUCIBLE_OWNER ExprPool {
             (probe_base_slot + probe_iteration * detail::kGroupWidth) & slot_mask;
       }
     }
-    std::free(old_backing);
+    // old_backing.~SwissTableBuffer() frees old alloc via RAII.
   }
 
   Arena arena_;
-  void*   backing_ = nullptr;   // One aligned buffer holds ctrl_ + slots_.
+  // #915 WRAP-ExprPool-1: SwissTableBuffer owns the aligned coupled
+  // ctrl+slots backing as move-only RAII.  ctrl_/slots_ remain raw
+  // projections cached on the hot probe path so SIMD probes keep
+  // their single-load shape.
+  ::crucible::safety::SwissTableBuffer<const Expr*> backing_;
   int8_t* ctrl_;                // Points into backing_ at offset 0.
   const Expr** slots_;          // Points into backing_ at offset capacity_.
   size_t capacity_;             // Total slots (always power of 2, multiple of kGroupWidth)
