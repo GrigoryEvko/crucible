@@ -1375,7 +1375,9 @@ struct BackgroundThread {
         aux_cursor += n_out * sizeof(SlotId);
 
         if (n_scalars > 0)
-          std::memcpy(te.scalar_args, re.scalar_values,
+          // #1057 WRAP-TraceRing-5: re.scalar_values is FixedArray<int64_t, 5>;
+          // .data() recovers the contiguous int64_t* for the bulk memcpy.
+          std::memcpy(te.scalar_args, re.scalar_values.data(),
                       n_scalars * sizeof(int64_t));
 
         // ── Streaming content hash: XOR-fold dimensions ──

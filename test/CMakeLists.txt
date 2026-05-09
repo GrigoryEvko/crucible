@@ -2888,6 +2888,26 @@ crucible_neg_compile_test(neg_fixed_array_in_place_wrong_arity
 crucible_neg_compile_test(neg_fixed_array_at_template_oob
   "no matching function|constraints not satisfied|associated constraints")
 
+# #1057 WRAP-TraceRing-5: Entry::scalar_values raw int64_t[5] →
+# safety::FixedArray<int64_t, 5>.  HS14 mandates ≥2 negative-compile
+# fixtures for the new soundness gate (the typed inline-scalar buffer):
+#   * neg_tracering_scalar_values_at_oob              ACCESS-side gate —
+#                                                     compile-time-known
+#                                                     index ≥ N rejected
+#                                                     by at<I>()'s
+#                                                     `requires (I < N)`.
+#   * neg_tracering_scalar_values_in_place_wrong_arity CONSTRUCTION-side
+#                                                     gate — variadic
+#                                                     ctor's
+#                                                     `sizeof...(Args)
+#                                                     == N` rejection
+#                                                     on a 6-arg
+#                                                     brace-init.
+crucible_neg_compile_test(neg_tracering_scalar_values_at_oob
+  "no matching function|constraints not satisfied|associated constraints")
+crucible_neg_compile_test(neg_tracering_scalar_values_in_place_wrong_arity
+  "no matching function|constraints not satisfied|associated constraints|cannot convert|too many initializers")
+
 # safety::Saturated<T> structural-wrapper — HS14 fixtures (#1084 piece):
 #   * neg_saturated_non_arithmetic   Saturated<MyStruct> must fail
 #                                    (the std::is_arithmetic_v<T>

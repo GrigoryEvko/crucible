@@ -46,6 +46,7 @@
 #include <crucible/effects/FxAliases.h>
 #include <crucible/rt/Registry.h>
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/FixedArray.h>
 #include <crucible/safety/HotPath.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
@@ -131,7 +132,13 @@ struct alignas(crucible::rt::kHugePageBytes) CRUCIBLE_OWNER TraceRing {
     // Use the get_scalar_type(i) / set_scalar_type(i, t) helpers rather
     // than reading scalar_values[i] blind — the type tag disambiguates
     // float 1.5 (bit_cast(0x3FF8000000000000)) from int 0x3FF8000000000000.
-    int64_t    scalar_values[5]{};
+    //
+    // #1057 WRAP-TraceRing-5: the raw `int64_t[5]` is wrapped in
+    // safety::FixedArray<int64_t, 5> so callers cannot index past the
+    // structural bound without dropping to .data() + raw arithmetic.
+    // sizeof(FixedArray<int64_t, 5>) == sizeof(int64_t[5]) — Entry stays
+    // exactly one 64-B cache line; ABI / serialize layout unchanged.
+    ::crucible::safety::FixedArray<int64_t, 5> scalar_values{};
 
     // ── Scalar type accessors ──────────────────────────────────────
     //
