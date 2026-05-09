@@ -48,6 +48,19 @@ add_library(crucible STATIC
 target_include_directories(crucible PUBLIC include/)
 set_target_properties(crucible PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# ContractHandler.cpp pulls in <stacktrace>, which inlines libstdc++'s
+# `std::stacktrace_entry::_Info::_S_set` — that helper materializes a
+# string from a SIZE_MAX-bound allocator at compile time.  At -O1+ the
+# allocator's `__n * sizeof(_Tp)` argument is constant-propagated and
+# the global `-Walloc-size-larger-than=1073741824` flag (set by the
+# crucible warning sweep) fires as an error.  The bench/release/
+# tsan presets all build with -O1+; default's -O0 hides it because
+# inlining doesn't propagate the constant.  Disable the warning ONLY
+# for this TU — the stacktrace machinery is library code we don't own
+# and the SIZE_MAX is a sentinel value that never executes at runtime.
+set_source_files_properties(src/ContractHandler.cpp
+  PROPERTIES COMPILE_OPTIONS "-Wno-alloc-size-larger-than")
+
 # C++26-only flags — applied at target level where -std=c++26 is active
 # (applying them in CMAKE_CXX_FLAGS would poison CMake's compiler-probe).
 target_compile_options(crucible PUBLIC
