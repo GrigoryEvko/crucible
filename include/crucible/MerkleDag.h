@@ -39,6 +39,7 @@
 
 #include <crucible/Types.h>
 
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <cmath>
@@ -134,6 +135,76 @@ struct MemoryPlan {
 static_assert(sizeof(MemoryPlan) == 48,
               "MemoryPlan size changed — update serializer and on-disk format");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(MemoryPlan);
+
+// ═══════════════════════════════════════════════════════════════════
+// CONTRACT-112: live-set byte-interval pairwise disjointness check.
+//
+// At every op boundary `t`, the set of TensorSlots with
+// `birth_op <= t <= death_op` (the "simultaneously live" set) must
+// have non-overlapping byte ranges `[offset_bytes, offset_bytes +
+// nbytes)`.  Two slots that were dead-and-reused (one died before
+// the other was born) MAY share offsets — that is the whole point
+// of the planner.  Two slots whose live ranges intersect MUST NOT.
+//
+// External slots (`is_external == true`) are excluded — they keep
+// their existing allocations, do not participate in the pool, and
+// their `offset_bytes` is meaningless for the disjointness story.
+//
+// Algorithm
+// ---------
+// O(n) sweep over `slots` to filter to the live set at op `t`,
+// then `decide::intervals_pairwise_disjoint` (O(k²) for k live)
+// over the filtered byte intervals.  k <= MaxLive — the template
+// parameter caps stack scratch.  When k > MaxLive at runtime the
+// function returns false (the caller's bound is too tight, which
+// is itself a useful failure signal).
+//
+// Overflow safety
+// ---------------
+// The half-open interval upper bound is `offset_bytes + nbytes`,
+// each `uint64_t`.  Production values (≤ ~1 TB pools) cannot
+// overflow, but the function guards via `decide::no_overflow_sum`
+// per the docstring contract on `decide::intervals_pairwise_disjoint`
+// (Decide.h:883-888).  An overflowing interval returns false — a
+// disjoint-claim that depends on UB-corrupted endpoints is no
+// claim at all.
+//
+// Cite shape (CONTRACT-112 production)
+// ------------------------------------
+//   for (uint32_t t = 0; t <= max_op; ++t) {
+//       CRUCIBLE_PRE(crucible::live_intervals_disjoint_at<MaxLive>(
+//           {plan->slots, plan->num_slots}, OpIndex{t}));
+//   }
+//
+// Distinct from `decide::intervals_pairwise_disjoint` — that
+// predicate is the n-ary pairwise quantifier over a pre-filtered
+// span; this helper is the LIVE-SET FILTER + PREDICATE COMPOSITION
+// at a specific op boundary.  Filter bug is the bug class this
+// helper catches — predicate alone misses it because the predicate
+// trusts the input span.
+template <std::size_t MaxLive>
+[[nodiscard]] constexpr bool live_intervals_disjoint_at(
+    std::span<const TensorSlot> slots,
+    OpIndex op
+) noexcept {
+    std::array<decide::Interval<std::uint64_t>, MaxLive> live{};
+    std::size_t n = 0;
+    const std::uint32_t t = op.raw();
+    for (TensorSlot const& s : slots) {
+        if (s.is_external) continue;
+        const std::uint32_t birth = s.birth_op.raw();
+        const std::uint32_t death = s.death_op.raw();
+        if (birth <= t && t <= death) {
+            if (n >= MaxLive) return false;
+            if (!decide::no_overflow_sum(s.offset_bytes, s.nbytes)) return false;
+            live[n] = {.lo = s.offset_bytes,
+                       .hi = s.offset_bytes + s.nbytes};
+            ++n;
+        }
+    }
+    return decide::intervals_pairwise_disjoint(
+        std::span<const decide::Interval<std::uint64_t>>(live.data(), n));
+}
 
 // Compute storage size in bytes from TensorMeta.
 //

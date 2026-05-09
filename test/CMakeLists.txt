@@ -5244,6 +5244,30 @@ crucible_neg_compile_test(neg_decide_intervals_pairwise_disjoint_overlap
 crucible_neg_compile_test(neg_decide_intervals_pairwise_disjoint_inverted
     "non-constant condition|not a constant expression|__builtin_trap|call to non-.constexpr. function")
 
+# CONTRACT-112 fixtures — pin crucible::live_intervals_disjoint_at<MaxLive>,
+# the production cite that lifts decide::intervals_pairwise_disjoint to
+# the MemoryPlan invariant: at every op boundary `t`, the simultaneously-
+# live TensorSlots must have non-overlapping byte ranges.  Two distinct
+# mismatch classes:
+#
+#   * neg_memory_plan_live_intervals_overlap — two internal slots whose
+#     live ranges intersect (both alive at op 3) AND whose byte intervals
+#     `[0, 128)` and `[64, 192)` overlap on `[64, 128)`.  Catches the
+#     sweep-line offset-assignment bug where the planner forgets to bump
+#     past the previous live slot's nbytes.  In production this is a
+#     silent corruption bug: writes from one slot trample reads from
+#     the other.
+#   * neg_memory_plan_live_intervals_max_overflow — three internal slots
+#     all simultaneously live at op 1, but the caller's MaxLive=2 cap is
+#     too tight.  Predicate must return false (cannot safely build a
+#     live-set span without overflowing the stack array).  Catches the
+#     misuse class where production code hardcodes too-small MaxLive
+#     and silently mis-validates plans on larger live sets.
+crucible_neg_compile_test(neg_memory_plan_live_intervals_overlap
+    "static assertion failed|non-constant condition|not a constant expression|__builtin_trap")
+crucible_neg_compile_test(neg_memory_plan_live_intervals_max_overflow
+    "static assertion failed|non-constant condition|not a constant expression|__builtin_trap")
+
 # CONTRACT-061 fixtures — pin Decide::intervals_cover_unit:
 # EXACT partition of `[0, total)` — pairwise disjoint AND each
 # contained in `[0, total)` AND each non-empty AND widths sum to

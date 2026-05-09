@@ -55,14 +55,21 @@ int main() {
   uint64_t total_internal = 1024 + 2048 + 1024;
   assert(plan->pool_bytes < total_internal);
 
-  // No overlapping live ranges should have overlapping offsets.
-  // Slots 0 and 1 are both alive at op 1, so they must not overlap.
-  uint64_t s0_end = slots[0].offset_bytes + 1024;
-  uint64_t s1_start = slots[1].offset_bytes;
-  uint64_t s1_end = slots[1].offset_bytes + 2048;
-  uint64_t s0_start = slots[0].offset_bytes;
-  bool no_overlap_01 = (s0_end <= s1_start) || (s1_end <= s0_start);
-  assert(no_overlap_01);
+  // CONTRACT-112: at every op boundary, simultaneously-live slots
+  // must have pairwise-disjoint byte intervals.  This replaces the
+  // earlier ad-hoc single-pair check (slots 0 ⊥ slots 1 at op 1) —
+  // the new form quantifies over the FULL live set at every op,
+  // catching multi-way overlaps the single-pair form misses.
+  //
+  // The witness here: max death_op = 7 (slot 2 / slot 3 die at op 7),
+  // so iterate t in [0, 7].  Only the internal live set (slot 3 is
+  // external, excluded by the helper) is checked.
+  using crucible::live_intervals_disjoint_at;
+  std::span<const crucible::TensorSlot> slot_span{slots, N};
+  for (uint32_t t = 0; t <= 7; ++t) {
+    bool disjoint = live_intervals_disjoint_at<4>(slot_span, OpIndex{t});
+    assert(disjoint);
+  }
 
   std::printf("test_memory_plan: all tests passed\n");
   std::printf("  pool_bytes: %lu\n", static_cast<unsigned long>(plan->pool_bytes));
