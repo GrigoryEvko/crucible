@@ -1792,6 +1792,31 @@ crucible_neg_compile_test(neg_iter_det_ops_since_boundary_regression
 crucible_neg_compile_test(neg_iter_det_ops_since_boundary_overflow
   "contract|max|Monotonic|not a constant|non-constant|constexpr")
 
+# WRAP-IterDet-4 (#930) — IterationDetector typestate codification
+# via ScopedView.  iter_det_state::{Building, Steady} tags +
+# view_ok overloads encode signature_len.get()'s phase at the type
+# level so callers can witness state at compile time.  Two fixtures
+# per HS14 — distinct mismatch classes:
+#   * _view_steady_on_building — value-level pre at MINT TIME.
+#     Fires mint_view's `pre(view_ok(d, Steady))` on a Building-
+#     state detector at constexpr.  Catches drift where view_ok's
+#     Steady overload weakens to admit non-K signature_len, or where
+#     a caller mints a Steady view assuming the detector progressed
+#     past Building when in fact it hadn't.
+#   * _view_in_field — structural Tier-2 audit at FIELD AUDIT TIME.
+#     Fires no_scoped_view_field_check on a struct that embeds a
+#     ScopedView<IterationDetector, Steady> as a member.  Catches
+#     drift in contains_scoped_view's recursive wrapper-unwrap (a
+#     new container shape that escapes the audit), or a refactor
+#     that adds a "cached state proof" field somewhere.
+# The two fixtures together pin BOTH the value-level mint gate AND
+# the structural field-storage gate of WRAP-IterDet-4 — the
+# typestate's two distinct soundness witnesses.
+crucible_neg_compile_test(neg_iter_det_view_steady_on_building
+  "contract|view_ok|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_iter_det_view_in_field
+  "ScopedView|contains_scoped_view|no_scoped_view|static assertion")
+
 # WRAP-MerkleDag-6 (#942) — RegionNode::VariantCounter =
 # safety::Monotonic<uint32_t>; the field's structurally
 # monotonic-forward lifecycle (0 → some non-zero N; subsequent

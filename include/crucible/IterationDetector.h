@@ -219,9 +219,14 @@ struct IterationDetector {
     // after reset(), every observable field is back to its
     // default-constructed value, restoring the Building-state-from-zero
     // initial condition.  This is the structural witness that #930
-    // (WRAP-IterDet-4 reset() ScopedView state transition) eventually
-    // codifies via type-state; until then, the post pins the same
-    // invariants the ScopedView would enforce by construction.
+    // (WRAP-IterDet-4 reset() ScopedView state transition) codifies
+    // at the type level: include/crucible/IterationDetectorState.h
+    // ships the iter_det_state::{Building,Steady} tags + view_ok
+    // overloads, so a caller can mint
+    // `safety::ScopedView<IterationDetector, iter_det_state::Building>`
+    // immediately after reset() and pass that proof downstream.  The
+    // POSTs below back the typestate's value-level invariants; the
+    // typestate is the compile-time witness that callers can carry.
     //   (1) match_pos_ raw == 0      — sequential matcher rewound to head
     //   (2) signature_len.get() == 0 — Building-state phase 1 (signature
     //                                   collection restarts from scratch)

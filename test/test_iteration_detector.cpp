@@ -4,6 +4,8 @@
 // signature build) deserve explicit coverage.
 
 #include <crucible/IterationDetector.h>
+#include <crucible/IterationDetectorState.h>
+#include <crucible/safety/ScopedView.h>
 
 #include "test_assert.h"
 #include <cstdint>
@@ -152,6 +154,52 @@ static void test_ops_since_boundary_counts_correctly() {
     std::printf("  test_ops_since_boundary:      PASSED\n");
 }
 
+static void test_typestate_witness_minting() {
+    // WRAP-IterDet-4 (#930) — positive-case witness minting at the use
+    // site.  Walks Building → Steady → reset → Building and mints a
+    // ScopedView<IterationDetector, Tag> at each phase.  Each mint
+    // pays one `view_ok` precondition check; success at -O3 lowers
+    // to a single uint32_t comparison against IterationDetector::K.
+    //
+    // The neg-compile fixtures
+    //   neg_iter_det_view_steady_on_building.cpp  (mint-time pre fire)
+    //   neg_iter_det_view_in_field.cpp            (Tier-2 audit fire)
+    // pin the WRONG-state cases.  This test pins the RIGHT-state
+    // cases — together they bracket WRAP-IterDet-4's soundness gates.
+    using crucible::iter_det_state::Building;
+    using crucible::iter_det_state::Steady;
+    using crucible::safety::mint_view;
+
+    IterationDetector d;
+    // Default-construct → signature_len.get() == 0 < K → Building.
+    assert(d.signature_len.get() == 0);
+    {
+        auto building_view = mint_view<Building>(d);
+        assert(&building_view.carrier() == &d);
+        assert(building_view->signature_len.get() == 0);
+    }
+
+    // Feed K=5 hashes → signature_len.get() == K → Steady.
+    SchemaHash sig[5] = {H(11), H(22), H(33), H(44), H(55)};
+    for (auto h : sig) (void)d.check(h);
+    assert(d.signature_len.get() == IterationDetector::K);
+    {
+        auto steady_view = mint_view<Steady>(d);
+        assert(&steady_view.carrier() == &d);
+        assert(steady_view->signature_len.get() == IterationDetector::K);
+    }
+
+    // reset() rewinds → Building again.
+    d.reset();
+    assert(d.signature_len.get() == 0);
+    {
+        auto rebuilt_view = mint_view<Building>(d);
+        assert(&rebuilt_view.carrier() == &d);
+        assert(rebuilt_view->signature_len.get() == 0);
+    }
+    std::printf("  test_typestate_witness:       PASSED\n");
+}
+
 static void test_cache_line_layout_is_stable() {
     // Load-bearing claim: IterationDetector is exactly 2 cache lines,
     // hot fields on line 0.  Codegen tests would break silently
@@ -173,7 +221,8 @@ int main() {
     test_overlap_at_boundary();
     test_reset_clears_everything();
     test_ops_since_boundary_counts_correctly();
+    test_typestate_witness_minting();
     test_cache_line_layout_is_stable();
-    std::printf("test_iteration_detector: 8 groups, all passed\n");
+    std::printf("test_iteration_detector: 9 groups, all passed\n");
     return 0;
 }
