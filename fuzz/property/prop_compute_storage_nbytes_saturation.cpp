@@ -85,11 +85,13 @@ int main(int argc, char** argv) {
             // After #1018: returns safety::Saturated<uint64_t>;
             // determinism check uses the defaulted operator==
             // (compares value AND clamped flag).
-            const auto r1 = compute_storage_nbytes(*mp);
+            const auto r1 = compute_storage_nbytes(external_tensor_meta(*mp));
 
             // Property 3: determinism.  Same input, repeated calls.
             for (int k = 0; k < 4; ++k) {
-                if (compute_storage_nbytes(*mp) != r1) return false;
+                if (compute_storage_nbytes(external_tensor_meta(*mp)) != r1) {
+                    return false;
+                }
             }
 
             // Property 4: clamped=true is the saturation sentinel

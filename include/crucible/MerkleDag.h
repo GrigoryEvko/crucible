@@ -246,21 +246,22 @@ template <std::size_t MaxLive>
 // is the inclusive maximum and ndim==0 is the well-formed scalar
 // case (handled by the `if (meta.ndim == 0)` early return below).
 [[nodiscard]] constexpr safety::Saturated<uint64_t>
-compute_storage_nbytes(const TensorMeta& meta)
+compute_storage_nbytes(ExternalTensorMeta meta)
     pre (::crucible::decide::in_range<std::uint8_t>(
-        meta.ndim, std::uint8_t{0}, std::uint8_t{8}))
+        meta.value().ndim, std::uint8_t{0}, std::uint8_t{8}))
 {
   using Sat = safety::Saturated<uint64_t>;
-  if (meta.ndim == 0)
-    return Sat{element_size(meta.dtype).raw()};
+  const TensorMeta& raw = meta.value();
+  if (raw.ndim == 0)
+    return Sat{element_size(raw.dtype).raw()};
   int64_t max_offset = 0;
   int64_t min_offset = 0;
-  for (uint8_t d = 0; d < meta.ndim; d++) {
-    if (meta.sizes[d] == 0) return Sat{uint64_t{0}}; // zero-size tensor
+  for (uint8_t d = 0; d < raw.ndim; d++) {
+    if (raw.sizes[d] == 0) return Sat{uint64_t{0}}; // zero-size tensor
     int64_t dim_extent_bytes;
     // (sizes[d] - 1) * strides[d] can overflow for huge dims.
     // sizes[d] is positive, so the subtraction never overflows.
-    if (__builtin_mul_overflow(meta.sizes[d] - 1, meta.strides[d],
+    if (__builtin_mul_overflow(raw.sizes[d] - 1, raw.strides[d],
                                &dim_extent_bytes)) [[unlikely]]
       return Sat{UINT64_MAX, true};
     if (dim_extent_bytes > 0) {
@@ -281,7 +282,7 @@ compute_storage_nbytes(const TensorMeta& meta)
   // span is non-negative here (max >= 0 >= min, so max - min >= 0).
   uint64_t total_bytes;
   if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed),
-                             static_cast<uint64_t>(element_size(meta.dtype).raw()),
+                             static_cast<uint64_t>(element_size(raw.dtype).raw()),
                              &total_bytes)) [[unlikely]]
     return Sat{UINT64_MAX, true};
   return Sat{total_bytes};

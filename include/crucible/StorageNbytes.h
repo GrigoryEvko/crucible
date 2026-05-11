@@ -97,19 +97,20 @@ namespace crucible::detail {
 // AND update the equivalence fuzzer.
 
 [[nodiscard, gnu::const]] CRUCIBLE_INLINE
-safety::Saturated<uint64_t> compute_storage_nbytes_scalar(const TensorMeta& meta) noexcept {
+safety::Saturated<uint64_t> compute_storage_nbytes_scalar(ExternalTensorMeta meta) noexcept {
   using Sat = safety::Saturated<uint64_t>;
-  if (meta.ndim == 0) {
-    return Sat{element_size(meta.dtype).raw()};
+  const TensorMeta& raw = meta.value();
+  if (raw.ndim == 0) {
+    return Sat{element_size(raw.dtype).raw()};
   }
   int64_t max_offset = 0;
   int64_t min_offset = 0;
-  for (uint8_t d = 0; d < meta.ndim; ++d) {
-    if (meta.sizes[d] == 0) return Sat{uint64_t{0}};  // zero-size tensor
+  for (uint8_t d = 0; d < raw.ndim; ++d) {
+    if (raw.sizes[d] == 0) return Sat{uint64_t{0}};  // zero-size tensor
     int64_t dim_extent_bytes;
     // (sizes[d] - 1) * strides[d] can overflow int64 for huge dims.
     // sizes[d] is positive, so the subtraction never underflows.
-    if (__builtin_mul_overflow(meta.sizes[d] - 1, meta.strides[d],
+    if (__builtin_mul_overflow(raw.sizes[d] - 1, raw.strides[d],
                                &dim_extent_bytes)) [[unlikely]] {
       return Sat{UINT64_MAX, true};
     }
@@ -139,7 +140,7 @@ safety::Saturated<uint64_t> compute_storage_nbytes_scalar(const TensorMeta& meta
   // span is non-negative (max >= 0 >= min, so max - min >= 0).
   uint64_t total_bytes;
   if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed),
-                             static_cast<uint64_t>(element_size(meta.dtype).raw()),
+                             static_cast<uint64_t>(element_size(raw.dtype).raw()),
                              &total_bytes)) [[unlikely]] {
     return Sat{UINT64_MAX, true};
   }
@@ -164,18 +165,19 @@ safety::Saturated<uint64_t> compute_storage_nbytes_scalar(const TensorMeta& meta
 // so the per-lane SIMD multiply cannot overflow.
 
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE
-bool storage_nbytes_simd_safe_(const TensorMeta& meta) noexcept {
+bool storage_nbytes_simd_safe_(ExternalTensorMeta meta) noexcept {
   using simd::i64x8;
+  const TensorMeta& raw = meta.value();
 
   // TensorMeta is naturally aligned, not guaranteed vector-aligned.
   // Use element-aligned loads so trace-loader vectors and MetaLog
   // buffers are valid inputs.
   auto sizes = std::simd::unchecked_load<i64x8>(
-      meta.sizes,   i64x8::size());
+      raw.sizes,   i64x8::size());
   auto strides = std::simd::unchecked_load<i64x8>(
-      meta.strides, i64x8::size());
+      raw.strides, i64x8::size());
 
-  auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(meta.ndim));
+  auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
 
   // sizes[d] - 1 for valid lanes, 0 for invalid.  Sizes are
   // non-negative by TensorMeta invariant; (size - 1) for size == 0
@@ -221,11 +223,12 @@ bool storage_nbytes_simd_safe_(const TensorMeta& meta) noexcept {
 // arithmetic step.
 
 [[nodiscard, gnu::pure]] CRUCIBLE_INLINE
-safety::Saturated<uint64_t> compute_storage_nbytes_simd(const TensorMeta& meta) noexcept {
+safety::Saturated<uint64_t> compute_storage_nbytes_simd(ExternalTensorMeta meta) noexcept {
   using Sat = safety::Saturated<uint64_t>;
+  const TensorMeta& raw = meta.value();
   // Edge case: scalar tensor.  Same as scalar path.
-  if (meta.ndim == 0) {
-    return Sat{element_size(meta.dtype).raw()};
+  if (raw.ndim == 0) {
+    return Sat{element_size(raw.dtype).raw()};
   }
 
   using simd::i64x8;
@@ -233,11 +236,11 @@ safety::Saturated<uint64_t> compute_storage_nbytes_simd(const TensorMeta& meta) 
   // Load sizes and strides via element-aligned SIMD load.  TensorMeta
   // arrays are 64 bytes wide but not guaranteed 64-byte aligned.
   auto sizes = std::simd::unchecked_load<i64x8>(
-      meta.sizes,   i64x8::size());
+      raw.sizes,   i64x8::size());
   auto strides = std::simd::unchecked_load<i64x8>(
-      meta.strides, i64x8::size());
+      raw.strides, i64x8::size());
 
-  auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(meta.ndim));
+  auto valid_mask = simd::prefix_mask<i64x8>(static_cast<int>(raw.ndim));
 
   // Zero-size short-circuit: if any valid dim has size 0, total
   // is 0.  Cheap SIMD check via masked equality + any_of.
@@ -283,7 +286,7 @@ safety::Saturated<uint64_t> compute_storage_nbytes_simd(const TensorMeta& meta) 
   // mul_overflow re-check needed.
   int64_t max_offset = 0;
   int64_t min_offset = 0;
-  for (uint8_t d = 0; d < meta.ndim; ++d) {
+  for (uint8_t d = 0; d < raw.ndim; ++d) {
     const int64_t e = extents_buf[d];
     if (e > 0) {
       if (__builtin_add_overflow(max_offset, e,
@@ -310,7 +313,7 @@ safety::Saturated<uint64_t> compute_storage_nbytes_simd(const TensorMeta& meta) 
   }
   uint64_t total_bytes;
   if (__builtin_mul_overflow(static_cast<uint64_t>(span_signed),
-                             static_cast<uint64_t>(element_size(meta.dtype).raw()),
+                             static_cast<uint64_t>(element_size(raw.dtype).raw()),
                              &total_bytes)) [[unlikely]] {
     return Sat{UINT64_MAX, true};
   }

@@ -62,6 +62,10 @@ using namespace crucible::detail;
     return meta;
 }
 
+[[nodiscard]] static ExternalTensorMeta external_meta(const TensorMeta& meta) noexcept {
+    return external_tensor_meta(meta);
+}
+
 // ── Assertion helper: SIMD == scalar ──────────────────────────────
 
 static void check_equiv(const TensorMeta& meta, const char* what) noexcept {
@@ -70,8 +74,9 @@ static void check_equiv(const TensorMeta& meta, const char* what) noexcept {
     // and SIMD agree on both — a divergence in the clamp flag would
     // mean one path silently saturated while the other returned a real
     // byte count.  #1018 preserves the contract verbatim.
-    const auto scalar = compute_storage_nbytes_scalar(meta);
-    const auto simd_v = compute_storage_nbytes_simd(meta);
+    const auto external = external_meta(meta);
+    const auto scalar = compute_storage_nbytes_scalar(external);
+    const auto simd_v = compute_storage_nbytes_simd(external);
     if (scalar != simd_v) {
         std::fprintf(stderr,
             "[%s] MISMATCH: scalar=%llu(clamped=%d) simd=%llu(clamped=%d)\n"
@@ -106,7 +111,8 @@ static void test_scalar_tensor() {
     meta.ndim = 0;
     meta.dtype = ScalarType::Float;
     check_equiv(meta, "scalar-float");
-    assert(compute_storage_nbytes_simd(meta) == element_size(ScalarType::Float).raw());
+    assert(compute_storage_nbytes_simd(external_meta(meta))
+        == element_size(ScalarType::Float).raw());
 
     meta.dtype = ScalarType::Double;
     check_equiv(meta, "scalar-double");
@@ -122,15 +128,15 @@ static void test_scalar_tensor() {
 static void test_zero_size_tensor() {
     // Zero in any dim → total bytes = 0.
     auto m1 = make_meta({0}, {1});
-    assert(compute_storage_nbytes_simd(m1) == 0);
+    assert(compute_storage_nbytes_simd(external_meta(m1)) == 0);
     check_equiv(m1, "zero-1d");
 
     auto m2 = make_meta({3, 0, 5}, {1, 1, 1});
-    assert(compute_storage_nbytes_simd(m2) == 0);
+    assert(compute_storage_nbytes_simd(external_meta(m2)) == 0);
     check_equiv(m2, "zero-mid-3d");
 
     auto m3 = make_meta({3, 4, 0}, {1, 1, 1});
-    assert(compute_storage_nbytes_simd(m3) == 0);
+    assert(compute_storage_nbytes_simd(external_meta(m3)) == 0);
     check_equiv(m3, "zero-trailing-3d");
 
     std::printf("  test_zero_size_tensor: PASSED\n");
@@ -142,12 +148,12 @@ static void test_common_shapes() {
     // 1D contiguous float [4096] → 4096 × 4 = 16384 bytes.
     auto m1d = make_meta({4096}, {1});
     check_equiv(m1d, "1D-contig");
-    assert(compute_storage_nbytes_simd(m1d) == 16384);
+    assert(compute_storage_nbytes_simd(external_meta(m1d)) == 16384);
 
     // 2D matrix [128, 256] strides [256, 1] → 128*256 = 32768 elems × 4 = 131072 bytes.
     auto m2d = make_meta({128, 256}, {256, 1});
     check_equiv(m2d, "2D-matrix");
-    assert(compute_storage_nbytes_simd(m2d) == 131072);
+    assert(compute_storage_nbytes_simd(external_meta(m2d)) == 131072);
 
     // 4D NCHW [32, 64, 224, 224]
     auto mnchw = make_meta({32, 64, 224, 224},
@@ -247,7 +253,7 @@ static void test_dtype_variations() {
         m.dtype = dt;
         check_equiv(m, "dtype-variation");
         const uint64_t expected = element_size(dt).times(uint64_t{12});
-        assert(compute_storage_nbytes_simd(m) == expected);
+        assert(compute_storage_nbytes_simd(external_meta(m)) == expected);
     }
 
     std::printf("  test_dtype_variations: PASSED\n");
@@ -266,12 +272,12 @@ static void test_overflow_multiply() {
     // Saturation result: value=UINT64_MAX AND clamped=true.  The
     // defaulted Saturated::operator== requires BOTH to match.
     {
-        const auto sc = compute_storage_nbytes_scalar(m1);
+        const auto sc = compute_storage_nbytes_scalar(external_meta(m1));
         assert(sc.value() == UINT64_MAX);
         assert(sc.was_clamped());
     }
     {
-        const auto sv = compute_storage_nbytes_simd(m1);
+        const auto sv = compute_storage_nbytes_simd(external_meta(m1));
         assert(sv.value() == UINT64_MAX);
         assert(sv.was_clamped());
     }

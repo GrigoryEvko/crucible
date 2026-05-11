@@ -94,8 +94,9 @@ int main(int argc, char** argv) {
             // paths must agree on whether saturation occurred, not just
             // the surface value, or the SIMD path silently masks an
             // overflow the scalar oracle catches (or vice-versa).
-            const auto scalar = compute_storage_nbytes_scalar(meta);
-            const auto simd_v = compute_storage_nbytes_simd(meta);
+            const auto external = external_tensor_meta(meta);
+            const auto scalar = compute_storage_nbytes_scalar(external);
+            const auto simd_v = compute_storage_nbytes_simd(external);
 
             if (scalar != simd_v) {
                 std::fprintf(stderr,

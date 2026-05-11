@@ -32,7 +32,8 @@ namespace {
   m.dtype = crucible::ScalarType::Float;
   // compute_storage_nbytes returns Saturated<uint64_t> (#1018).  Happy
   // path: clamp flag is false, value matches the bare-arithmetic answer.
-  auto nbytes = crucible::compute_storage_nbytes(m);
+  auto nbytes = crucible::compute_storage_nbytes(
+      crucible::external_tensor_meta(m));
   // (31*64 + 63*1 + 1) * 4 = 2048 * 4 = 8192 (= 32 * 64 * sizeof(float))
   assert(nbytes.value() == 8192);
   assert(!nbytes.was_clamped() && "well-formed tensor must not saturate");
@@ -50,7 +51,8 @@ namespace {
     huge.sizes[1]   = 1;
     huge.strides[1] = 1;
     huge.dtype = crucible::ScalarType::Float;
-    auto nb = crucible::compute_storage_nbytes(huge);
+    auto nb = crucible::compute_storage_nbytes(
+        crucible::external_tensor_meta(huge));
     assert(nb.value() == UINT64_MAX && "huge tensor must saturate value to UINT64_MAX");
     assert(nb.was_clamped() && "huge tensor must carry clamped=true");
   }

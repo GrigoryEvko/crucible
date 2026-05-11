@@ -16,6 +16,7 @@
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
 #include <crucible/safety/Refined.h>
+#include <crucible/safety/Tagged.h>
 
 #include <cstdint>
 
@@ -64,6 +65,19 @@ struct TensorMeta {
 
 static_assert(sizeof(TensorMeta) == 168, "TensorMeta layout check");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorMeta);
+
+// WRAP-StorageNbytes-5 (#1022): storage-span computation is an
+// adversarial-defense boundary over TensorMeta values read from
+// Vessel / traces / disk.  Callers must now explicitly mark the input
+// as source::External before compute_storage_nbytes* consumes it.
+// Reference payload keeps the 168-byte TensorMeta layout untouched.
+using ExternalTensorMeta = ::crucible::safety::Tagged<
+    const TensorMeta&, ::crucible::safety::source::External>;
+
+[[nodiscard]] inline constexpr ExternalTensorMeta
+external_tensor_meta(const TensorMeta& meta) noexcept {
+  return ExternalTensorMeta{meta};
+}
 
 // ── Validated ndim carrier (#534 PROD-WRAP-5) ──────────────────────
 //

@@ -2145,6 +2145,18 @@ crucible_neg_compile_test(neg_tensor_meta_ndim_above_max
 crucible_neg_compile_test(neg_tensor_meta_ndim_uint8_max
   "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
 
+# WRAP-StorageNbytes-5 (#1022) — compute_storage_nbytes* now accepts
+# ExternalTensorMeta = Tagged<const TensorMeta&, source::External>.
+# Two HS14 fixtures cover the provenance gate's two directions:
+#   * neg_storage_nbytes_raw_tensor_meta — raw TensorMeta cannot bind
+#     implicitly to the explicit Tagged boundary.
+#   * neg_storage_nbytes_cross_tag — Tagged<const TensorMeta&,
+#     source::Sanitized> cannot pass as source::External.
+crucible_neg_compile_test(neg_storage_nbytes_raw_tensor_meta
+  "no match for|cannot convert|no viable|could not convert|Tagged|ExternalTensorMeta|explicit")
+crucible_neg_compile_test(neg_storage_nbytes_cross_tag
+  "no match for|cannot convert|no viable|could not convert|Tagged|External|Sanitized")
+
 # ─── #884 WRAP-Cipher-1 — non-zero head invariant on advance_head ───
 #
 # Per #884, ValidCipherHead is safety::Refined<safety::non_zero,
