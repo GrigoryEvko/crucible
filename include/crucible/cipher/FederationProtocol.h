@@ -110,8 +110,12 @@
 #include <crucible/Types.h>
 #include <crucible/effects/OsUniverse.h>
 #include <crucible/permissions/FederationPermission.h>
+#include <crucible/safety/Decide.h>
+#include <crucible/safety/Pre.h>
 #include <crucible/safety/Tagged.h>
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <expected>
@@ -179,6 +183,59 @@ static_assert(offsetof(FederationEntryHeader, reserved)             == 28);
 // ── Header byte-size constant ───────────────────────────────────────
 inline constexpr std::size_t FEDERATION_HEADER_BYTES =
     sizeof(FederationEntryHeader);
+
+// ── Cold blob byte-region layout predicate ─────────────────────────
+//
+// CONTRACT-119 production cite.  Federation entries are the cold-tier
+// byte blob Cipher writes today: a fixed header region followed by an
+// opaque payload region.  The codec used to rely on the manual offset
+// chain (`header bytes`, then `payload bytes`) staying non-overlapping
+// by inspection.  Route that invariant through Decide.h so every cold
+// blob layout validation cites the same pairwise-disjoint predicate as
+// MemoryPlan's live-byte layout.
+
+struct ColdBlobRegion {
+    std::size_t offset_bytes = 0;
+    std::size_t nbytes = 0;
+};
+
+template <std::size_t MaxRegions>
+[[nodiscard]] constexpr bool cold_blob_regions_pairwise_disjoint(
+    std::span<const ColdBlobRegion> regions) noexcept
+{
+    if (regions.size() > MaxRegions) return false;
+
+    std::array<decide::Interval<std::size_t>, MaxRegions> intervals{};
+    for (std::size_t i = 0; i < regions.size(); ++i) {
+        const ColdBlobRegion region = regions[i];
+        if (!decide::no_overflow_sum(region.offset_bytes, region.nbytes)) {
+            return false;
+        }
+        intervals[i] = {
+            .lo = region.offset_bytes,
+            .hi = region.offset_bytes + region.nbytes,
+        };
+    }
+    return decide::intervals_pairwise_disjoint(
+        std::span<const decide::Interval<std::size_t>>{
+            intervals.data(), regions.size()});
+}
+
+[[nodiscard]] constexpr bool federation_entry_blob_layout_disjoint(
+    std::size_t payload_bytes) noexcept
+{
+    if (!decide::no_overflow_sum(FEDERATION_HEADER_BYTES, payload_bytes)) {
+        return false;
+    }
+    const std::size_t payload_end = FEDERATION_HEADER_BYTES + payload_bytes;
+    const std::array<ColdBlobRegion, 2> regions{{
+        {.offset_bytes = 0, .nbytes = FEDERATION_HEADER_BYTES},
+        {.offset_bytes = FEDERATION_HEADER_BYTES, .nbytes = payload_bytes},
+    }};
+    return payload_end >= FEDERATION_HEADER_BYTES
+        && cold_blob_regions_pairwise_disjoint<regions.size()>(
+            std::span<const ColdBlobRegion>{regions});
+}
 
 // ── Magic byte order witness ────────────────────────────────────────
 //
@@ -332,6 +389,7 @@ serialize_federation_entry(std::span<std::uint8_t> out_buf,
     if (payload.size() > std::numeric_limits<std::uint32_t>::max()) {
         return std::unexpected(FederationError::OutputBufferTooSmall);
     }
+    CRUCIBLE_PRE(federation_entry_blob_layout_disjoint(payload.size()));
 
     // Total bytes required = 32 (header) + payload.size().
     const std::size_t total_bytes =
@@ -433,6 +491,7 @@ deserialize_federation_header(std::span<const std::uint8_t> in_buf,
     // Truncated payload: declared size > bytes remaining after header.
     const std::size_t bytes_after_header =
         in_buf.size() - FEDERATION_HEADER_BYTES;
+    CRUCIBLE_PRE(federation_entry_blob_layout_disjoint(hdr.payload_size));
     if (static_cast<std::size_t>(hdr.payload_size) > bytes_after_header) {
         return std::unexpected(FederationError::TruncatedPayload);
     }

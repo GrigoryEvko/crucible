@@ -921,12 +921,13 @@ constexpr bool coprime(T a, T b) noexcept {
 //
 // PRODUCTION CITES (update on adoption per CONTRACT-125)
 // ------------------------------------------------------
-//   (none yet — first migration batch lands with CONTRACT-112:
-//    MemoryPlan slot offset assignment in MerkleDag.h, and the
-//    same predicate cited again on the op-index live ranges
-//    `[birth_op, death_op + 1)` for the simultaneously-live
-//    test that gates whether two slots even need byte-disjoint
-//    offsets)
+//   * MerkleDag.h:live_intervals_disjoint_at — MemoryPlan live
+//     TensorSlots must have pairwise-disjoint byte ranges at every
+//     op boundary (CONTRACT-112).
+//   * cipher/FederationProtocol.h:cold_blob_regions_pairwise_disjoint
+//     — Cipher cold-tier federation blob regions (header + payload)
+//     must not overlap before the entry is written or accepted
+//     (CONTRACT-119).
 //
 // ANTI-PATTERNS (review-rejected)
 // -------------------------------

@@ -67,6 +67,50 @@ static void test_header_layout_invariants() {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Group 1b — CONTRACT-119 cold blob layout cites Decide.h pairwise
+// disjointness.  The production codec validates the two live regions
+// it writes today (header + payload); the 256-region consteval witness
+// pins the intended cold-tier scale without adding runtime work.
+
+static void test_cold_blob_layout_predicate() {
+    static_assert(fed::federation_entry_blob_layout_disjoint(0));
+    static_assert(fed::federation_entry_blob_layout_disjoint(1024));
+
+    constexpr std::array<fed::ColdBlobRegion, 4> ok_regions{{
+        {.offset_bytes = 0, .nbytes = 32},
+        {.offset_bytes = 32, .nbytes = 64},
+        {.offset_bytes = 128, .nbytes = 16},
+        {.offset_bytes = 256, .nbytes = 0},
+    }};
+    static_assert(fed::cold_blob_regions_pairwise_disjoint<4>(
+        std::span<const fed::ColdBlobRegion>{ok_regions}));
+
+    constexpr std::array<fed::ColdBlobRegion, 3> overlap{{
+        {.offset_bytes = 0, .nbytes = 64},
+        {.offset_bytes = 32, .nbytes = 32},
+        {.offset_bytes = 96, .nbytes = 16},
+    }};
+    static_assert(!fed::cold_blob_regions_pairwise_disjoint<3>(
+        std::span<const fed::ColdBlobRegion>{overlap}));
+
+    constexpr auto build_256_region_layout = [] {
+        std::array<fed::ColdBlobRegion, 256> regions{};
+        for (std::size_t i = 0; i < regions.size(); ++i) {
+            regions[i] = {
+                .offset_bytes = i * std::size_t{64},
+                .nbytes = 64,
+            };
+        }
+        return regions;
+    };
+    constexpr auto regions_256 = build_256_region_layout();
+    static_assert(fed::cold_blob_regions_pairwise_disjoint<256>(
+        std::span<const fed::ColdBlobRegion>{regions_256}));
+
+    std::printf("  test_cold_blob_layout_predicate:                PASSED\n");
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Group 2 — magic byte order.  The bytes 'C','F','E','D' must appear
 // in increasing memory address order, which on a little-endian load
 // means the uint32_t magic constant has the spelling 0x44454643.
@@ -1052,6 +1096,7 @@ static void test_audit_i_vector_buffer_roundtrip() {
 int main() {
     std::printf("test_federation_protocol — FOUND-I08 wire-format witness\n");
     test_header_layout_invariants();
+    test_cold_blob_layout_predicate();
     test_magic_byte_order();
     test_round_trip_basic();
     test_round_trip_empty_payload();
@@ -1084,6 +1129,6 @@ int main() {
     test_audit_g_magic_collision_with_cdag();
     test_audit_h_field_width_pins();
     test_audit_i_vector_buffer_roundtrip();
-    std::printf("test_federation_protocol: 23 + 9 audit groups, all passed\n");
+    std::printf("test_federation_protocol: 24 + 9 audit groups, all passed\n");
     return 0;
 }
