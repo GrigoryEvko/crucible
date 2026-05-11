@@ -61,6 +61,11 @@ int main() {
     assert(gset_full_a.contains(1));
     assert(!gset_full_a.contains(2));
     assert(!gset_full_a.contains(3));
+    auto malformed_gset_state = gset_full_b.state();
+    malformed_gset_state.count = 3;
+    assert(!gset_full_a.merge(
+        typename GSet<int, 2>::gossiped_state_type{malformed_gset_state}));
+    assert(gset_full_a.size().value() == 1);
     auto gset_static_overflow =
         GSet<int, 2>::merge(gset_full_a.state(), gset_full_b.state());
     assert(gset_static_overflow.contains(1));
@@ -87,6 +92,14 @@ int main() {
     assert(orset_full_b.add(LocalWrite<OrSetAdd<int, std::uint64_t>>{
         {.value = 3, .tag = 3}}));
     assert(!orset_full_a.merge(orset_full_b));
+    assert(orset_full_a.contains(1));
+    assert(!orset_full_a.contains(2));
+    assert(!orset_full_a.contains(3));
+    auto malformed_orset_state = orset_full_b.state();
+    malformed_orset_state.count = 3;
+    assert(!orset_full_a.merge(
+        typename OrSet<int, std::uint64_t, 2>::gossiped_state_type{
+            malformed_orset_state}));
     assert(orset_full_a.contains(1));
     assert(!orset_full_a.contains(2));
     assert(!orset_full_a.contains(3));
@@ -160,16 +173,52 @@ int main() {
         {.value = 30, .clock = Snap{std::in_place, 0, 0, 1, 0}}}));
     assert(!mv_full_a.merge(mv_full_b));
     assert(mv_full_a.size().value() == 2);
-    assert(mv_full_a.state().versions[0].value == 10);
-    assert(mv_full_a.state().versions[1].value == 20);
+    assert(mv_full_a.state().versions[0].value == 20);
+    assert(mv_full_a.state().versions[1].value == 10);
     auto mv_static_overflow =
         MVRegister<int, 2, 4, ClockTag>::merge(
             mv_full_a.state(),
             mv_full_b.state());
     assert(mv_static_overflow.count == 2);
-    assert(mv_static_overflow.versions[0].value == 10);
-    assert(mv_static_overflow.versions[1].value == 20);
+    assert(mv_static_overflow.versions[0].value == 20);
+    assert(mv_static_overflow.versions[1].value == 10);
 
+    MVRegister<int, 4, 4, ClockTag> mv_order_a;
+    MVRegister<int, 4, 4, ClockTag> mv_order_b;
+    assert(mv_order_a.assign(LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{
+        {.value = 2, .clock = Snap{std::in_place, 0, 1, 0, 0}}}));
+    assert(mv_order_b.assign(LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{
+        {.value = 1, .clock = Snap{std::in_place, 1, 0, 0, 0}}}));
+    assert(mv_order_a.merge(mv_order_b));
+    assert(mv_order_b.merge(mv_order_a));
+    assert(mv_order_a.state().count == 2);
+    assert(mv_order_b.state().count == 2);
+    assert(mv_order_a.state().versions[0].value == 2);
+    assert(mv_order_a.state().versions[1].value == 1);
+    assert(mv_order_b.state().versions[0].value == 2);
+    assert(mv_order_b.state().versions[1].value == 1);
+
+    MVRegister<int, 4, 4, ClockTag> mv_equal_clock_a;
+    MVRegister<int, 4, 4, ClockTag> mv_equal_clock_b;
+    assert(mv_equal_clock_a.assign(
+        LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{
+            {.value = 40, .clock = Snap{std::in_place, 1, 1, 0, 0}}}));
+    assert(mv_equal_clock_b.assign(
+        LocalWrite<MVRegisterVersion<int, 4, ClockTag>>{
+            {.value = 20, .clock = Snap{std::in_place, 1, 1, 0, 0}}}));
+    assert(mv_equal_clock_a.merge(mv_equal_clock_b));
+    assert(mv_equal_clock_b.merge(mv_equal_clock_a));
+    assert(mv_equal_clock_a.state().versions[0].value == 20);
+    assert(mv_equal_clock_a.state().versions[1].value == 40);
+    assert(mv_equal_clock_b.state().versions[0].value == 20);
+    assert(mv_equal_clock_b.state().versions[1].value == 40);
+
+    auto malformed_mv_state = mv_full_b.state();
+    malformed_mv_state.count = 3;
+    assert(!mv_full_a.merge(
+        typename MVRegister<int, 2, 4, ClockTag>::gossiped_state_type{
+            malformed_mv_state}));
+    assert(mv_full_a.size().value() == 2);
     RgaList<int, std::uint64_t, 8> rga_a;
     RgaList<int, std::uint64_t, 8> rga_b;
     assert(rga_a.insert_after(LocalWrite<RgaInsert<std::uint64_t, int>>{
@@ -208,6 +257,14 @@ int main() {
         {.id = 3, .after = 2, .value = 3}}));
     assert(!rga_full_a.merge(rga_full_b));
     auto rga_full_materialized = rga_full_a.materialize();
+    assert(rga_full_materialized.count == 1);
+    assert(rga_full_materialized.values[0] == 1);
+    auto malformed_rga_state = rga_full_b.state();
+    malformed_rga_state.count = 3;
+    assert(!rga_full_a.merge(
+        typename RgaList<int, std::uint64_t, 2>::gossiped_state_type{
+            malformed_rga_state}));
+    rga_full_materialized = rga_full_a.materialize();
     assert(rga_full_materialized.count == 1);
     assert(rga_full_materialized.values[0] == 1);
     auto rga_static_overflow =

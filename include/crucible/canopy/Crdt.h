@@ -91,6 +91,14 @@ struct BoundedHashSetState {
             typename CrdtCount<Capacity>::Trusted{}};
     }
 
+    [[nodiscard]] bool well_formed() const noexcept {
+        std::size_t occupied = 0;
+        for (std::size_t i = 0; i < Capacity; ++i) {
+            occupied += slots[i].occupied ? std::size_t{1} : std::size_t{0};
+        }
+        return occupied == count;
+    }
+
     [[nodiscard]] bool contains(T const& value) const {
         const std::size_t start = std::hash<T>{}(value) % Capacity;
         for (std::size_t n = 0; n < Capacity; ++n) {
@@ -126,6 +134,9 @@ struct BoundedHashSetState {
     }
 
     [[nodiscard]] bool merge(BoundedHashSetState const& other) {
+        if (!other.well_formed()) {
+            return false;
+        }
         for (std::size_t i = 0; i < Capacity; ++i) {
             if (other.slots[i].occupied && !insert(other.slots[i].value)) {
                 return false;
@@ -161,6 +172,10 @@ struct BoundedTaggedState {
             typename CrdtCount<Capacity>::Trusted{}};
     }
 
+    [[nodiscard]] constexpr bool well_formed() const noexcept {
+        return count <= Capacity;
+    }
+
 };
 
 }  // namespace detail
@@ -178,7 +193,7 @@ public:
         return state_.insert(value.value());
     }
 
-    [[nodiscard]] bool merge(gossiped_state_type other) {
+    [[nodiscard]] bool merge(gossiped_state_type const& other) {
         state_type staged = state_;
         if (!staged.merge(other.value())) {
             return false;
@@ -276,7 +291,7 @@ public:
         return false;
     }
 
-    [[nodiscard]] bool merge(gossiped_state_type other) {
+    [[nodiscard]] bool merge(gossiped_state_type const& other) {
         state_type staged = state_;
         if (!merge_state_into_(staged, other.value())) {
             return false;
@@ -337,6 +352,9 @@ private:
     [[nodiscard]] bool merge_state_into_(
         state_type& target,
         state_type const& other) const {
+        if (!other.well_formed()) {
+            return false;
+        }
         for (std::uint16_t i = 0; i < other.count; ++i) {
             if (!upsert_into_(target, other.entries[i])) {
                 return false;
@@ -389,7 +407,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] bool merge(gossiped_state_type other) noexcept {
+    [[nodiscard]] bool merge(gossiped_state_type const& other) noexcept {
         state_ = merge(state_, other.value());
         return true;
     }
@@ -465,7 +483,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] bool merge(gossiped_state_type other) noexcept {
+    [[nodiscard]] bool merge(gossiped_state_type const& other) noexcept {
         state_ = merge(state_, other.value());
         return true;
     }
@@ -535,7 +553,7 @@ public:
         return true;
     }
 
-    [[nodiscard]] bool merge(gossiped_state_type other) noexcept {
+    [[nodiscard]] bool merge(gossiped_state_type const& other) noexcept {
         state_ = merge(state_, other.value());
         return true;
     }
@@ -599,7 +617,7 @@ template <typename V, std::size_t MaxNodes, typename ClockTag = void>
     requires CrdtCapacity<MaxNodes> &&
              std::default_initializable<V> &&
              std::copyable<V> &&
-             std::equality_comparable<V>
+             std::totally_ordered<V>
 struct MVRegisterVersion {
     V value{};
     VectorClockSnapshot<MaxNodes, ClockTag> clock{};
@@ -623,7 +641,7 @@ template <
              CrdtCapacity<MaxNodes> &&
              std::default_initializable<V> &&
              std::copyable<V> &&
-             std::equality_comparable<V>
+             std::totally_ordered<V>
 class MVRegister
     : public safety::Pinned<MVRegister<V, MaxVersions, MaxNodes, ClockTag>> {
 public:
@@ -636,7 +654,7 @@ public:
         return insert_version_(version.value());
     }
 
-    [[nodiscard]] bool merge(gossiped_state_type other) {
+    [[nodiscard]] bool merge(gossiped_state_type const& other) {
         state_type staged = state_;
         if (!merge_state_into_(staged, other.value())) {
             return false;
@@ -677,9 +695,48 @@ private:
         return a.value == b.value && a.clock == b.clock;
     }
 
+    [[nodiscard]] static bool clock_less_(
+        version_type const& a,
+        version_type const& b) noexcept {
+        for (std::size_t i = 0; i < MaxNodes; ++i) {
+            if (a.clock.entries[i] != b.clock.entries[i]) {
+                return a.clock.entries[i] < b.clock.entries[i];
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] static bool version_less_(
+        version_type const& a,
+        version_type const& b) {
+        if (clock_less_(a, b)) {
+            return true;
+        }
+        if (clock_less_(b, a)) {
+            return false;
+        }
+        return a.value < b.value;
+    }
+
+    static void canonicalize_(state_type& state) {
+        const std::size_t n = state.count;
+        for (std::size_t i = 1; i < n; ++i) {
+            version_type key = state.versions[i];
+            std::size_t j = i;
+            while (j > 0 && version_less_(key, state.versions[j - 1])) {
+                state.versions[j] = state.versions[j - 1];
+                --j;
+            }
+            state.versions[j] = key;
+        }
+    }
+
     [[nodiscard]] static bool insert_version_into_(
         state_type& state,
         version_type incoming) {
+        if (state.count > MaxVersions) {
+            return false;
+        }
         std::uint16_t out = 0;
         safety::FixedArray<version_type, MaxVersions> kept{};
         for (std::uint16_t i = 0; i < state.count; ++i) {
@@ -702,6 +759,7 @@ private:
         ++out;
         state.versions = kept;
         state.count = out;
+        canonicalize_(state);
         return true;
     }
 
@@ -712,6 +770,9 @@ private:
     [[nodiscard]] static bool merge_state_into_(
         state_type& target,
         state_type const& other) {
+        if (other.count > MaxVersions) {
+            return false;
+        }
         for (std::uint16_t i = 0; i < other.count; ++i) {
             if (!insert_version_into_(target, other.versions[i])) {
                 return false;
@@ -786,7 +847,7 @@ public:
         return false;
     }
 
-    [[nodiscard]] bool merge(gossiped_state_type other) {
+    [[nodiscard]] bool merge(gossiped_state_type const& other) {
         state_type staged = state_;
         if (!merge_state_into_(staged, other.value())) {
             return false;
@@ -869,6 +930,9 @@ private:
     [[nodiscard]] static bool merge_state_into_(
         state_type& target,
         state_type const& other) {
+        if (!other.well_formed()) {
+            return false;
+        }
         for (std::uint16_t i = 0; i < other.count; ++i) {
             if (!upsert_into_(target, other.entries[i])) {
                 return false;

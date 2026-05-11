@@ -2260,6 +2260,8 @@ crucible_neg_compile_test(neg_vector_clock_cross_n_snapshot
 #     for source::Gossiped state at merge.
 #   * neg_crdt_lww_partial_clock: LWW clocks must be total-order clocks,
 #     not vector clocks with unordered concurrency.
+#   * neg_crdt_mv_register_unordered_value: MV-register values must be
+#     totally ordered so concurrent versions have byte-stable order.
 crucible_neg_compile_test(neg_crdt_gset_raw_add
   "cannot convert|no matching function|could not convert|Tagged|Local")
 crucible_neg_compile_test(neg_crdt_merge_raw_state
@@ -2268,6 +2270,8 @@ crucible_neg_compile_test(neg_crdt_merge_local_state
   "cannot convert|no matching function|could not convert|Local|Gossiped")
 crucible_neg_compile_test(neg_crdt_lww_partial_clock
   "constraints not satisfied|three_way_comparable|strong_ordering|partial_ordering")
+crucible_neg_compile_test(neg_crdt_mv_register_unordered_value
+  "constraints not satisfied|totally_ordered|three_way_comparable|operator<")
 
 # WRAP-StorageNbytes-5 (#1022) — compute_storage_nbytes* now accepts
 # ExternalTensorMeta = Tagged<const TensorMeta&, source::External>.
