@@ -51,7 +51,7 @@ static TensorMeta make_meta(void* data_ptr) {
     m.device_type = DeviceType::CPU;
     m.device_idx = 0;
     m.layout = Layout::Strided;
-    m.data_ptr = data_ptr;
+    m.data_ptr = external_data_ptr(data_ptr);
     return m;
 }
 

@@ -202,12 +202,12 @@ struct DetectionResult {
       for (uint16_t j = 0; j < e.num_inputs && j < 8; j++)
         if (base + j < trace.num_metas)
           op.data_ptr_in[j] = std::bit_cast<uint64_t>(
-              trace.metas[base + j].data_ptr);
+              raw_data_ptr(trace.metas[base + j]));
       for (uint16_t j = 0; j < e.num_outputs && j < 4; j++) {
         uint32_t mi_out = base + e.num_inputs + j;
         if (mi_out < trace.num_metas) {
           op.data_ptr_out[j] = std::bit_cast<uint64_t>(
-              trace.metas[mi_out].data_ptr);
+              raw_data_ptr(trace.metas[mi_out]));
           if (j == 0) {
             const auto& m = trace.metas[mi_out];
             op.out_ndim = m.ndim;

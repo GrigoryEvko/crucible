@@ -1460,12 +1460,14 @@ struct BackgroundThread {
           uint32_t next_off = next_ms.raw() - first_meta;
           const auto& next_re = trace_data[i + 1];
           if (next_re.num_inputs > 0) {
-            uint32_t bucket_idx = hash_ptr(meta_base[next_off].data_ptr) & local_mask;
+            uint32_t bucket_idx =
+                hash_ptr(raw_data_ptr(meta_base[next_off])) & local_mask;
             __builtin_prefetch(&local_map[bucket_idx], 0, 1);
           }
           if (next_re.num_outputs > 0) {
             uint32_t out_off = next_off + next_re.num_inputs;
-            uint32_t bucket_idx = hash_ptr(meta_base[out_off].data_ptr) & local_mask;
+            uint32_t bucket_idx =
+                hash_ptr(raw_data_ptr(meta_base[out_off])) & local_mask;
             __builtin_prefetch(&local_map[bucket_idx], 1, 1);
           }
         }
@@ -1474,7 +1476,7 @@ struct BackgroundThread {
       // ── DFG edges + input slot tracking ──
 
       for (uint16_t j = 0; j < te.num_inputs; j++) {
-        void* input_ptr = te.input_metas[j].data_ptr;
+        void* input_ptr = raw_data_ptr(te.input_metas[j]);
         auto lookup = ptr_map_lookup(local_map, local_gen, local_mask, input_ptr);
         te.input_trace_indices[j] = lookup.op_index;
         if (lookup.op_index.is_valid()) {
@@ -1517,7 +1519,7 @@ struct BackgroundThread {
       // ── Output slot tracking + alias detection ──
 
       for (uint16_t j = 0; j < te.num_outputs; j++) {
-        void* output_ptr = te.output_metas[j].data_ptr;
+        void* output_ptr = raw_data_ptr(te.output_metas[j]);
         if (!output_ptr) {
           te.output_slot_ids[j] = SlotId{};
           continue;

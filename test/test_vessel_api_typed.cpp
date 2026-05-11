@@ -248,7 +248,8 @@ void test_data_ptr_typed() {
     std::array<std::byte, sizeof(TypedDataPtr)> typed_bytes{};
     std::memcpy(typed_bytes.data(), &p0, sizeof(p0));
     std::array<std::byte, sizeof(void*)> raw_bytes{};
-    std::memcpy(raw_bytes.data(), &arr[0].data_ptr, sizeof(void*));
+    void* raw0 = arr[0].data_ptr;
+    std::memcpy(raw_bytes.data(), &raw0, sizeof(raw0));
     EXPECT(typed_bytes == raw_bytes,
            "TypedDataPtr layout must be byte-identical to void*");
 }

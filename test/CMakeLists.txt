@@ -2199,6 +2199,18 @@ crucible_neg_compile_test(neg_tensor_meta_ndim_above_max
 crucible_neg_compile_test(neg_tensor_meta_ndim_uint8_max
   "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
 
+# WRAP-TensorMeta-2 (#1035) — TensorMeta::data_ptr now stores
+# ExternalDataPtr = Tagged<void*, source::External>.  Two HS14
+# fixtures cover the provenance gate's two field-write directions:
+#   * neg_tensor_meta_data_ptr_raw_pointer — raw void* cannot assign
+#     directly to the explicit Tagged field.
+#   * neg_tensor_meta_data_ptr_cross_tag — Tagged<void*, Sanitized>
+#     cannot pass as source::External.
+crucible_neg_compile_test(neg_tensor_meta_data_ptr_raw_pointer
+  "no match for|cannot convert|no viable|could not convert|operator=|Tagged|ExternalDataPtr")
+crucible_neg_compile_test(neg_tensor_meta_data_ptr_cross_tag
+  "no match for|cannot convert|no viable|could not convert|operator=|Tagged|External|Sanitized")
+
 # WRAP-StorageNbytes-5 (#1022) — compute_storage_nbytes* now accepts
 # ExternalTensorMeta = Tagged<const TensorMeta&, source::External>.
 # Two HS14 fixtures cover the provenance gate's two directions:

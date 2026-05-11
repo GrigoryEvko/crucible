@@ -412,8 +412,8 @@ void bench_phase2_subparts(
         bg.ensure_scratch_buffers(total_inputs, total_outputs);
         const uint32_t slot_cap = std::min(bg.slot_cap_max_.get(),
             std::max(uint32_t{256}, total_inputs + total_outputs));
-        std::memset(bg.scratch_slots_, 0,
-                    slot_cap * sizeof(BackgroundThread::SlotInfo));
+        std::fill_n(bg.scratch_slots_.data(), slot_cap,
+                    BackgroundThread::SlotInfo{});
 
         const uint64_t t1 = bench::rdtsc_end();
 
@@ -526,7 +526,7 @@ void bench_phase2_subparts(
                     std::start_lifetime_as_array<SlotId>(aux_cursor, n_out);
                 aux_cursor += n_out * sizeof(SlotId);
                 if (n_scalars > 0)
-                    std::memcpy(te.scalar_args, re.scalar_values,
+                    std::memcpy(te.scalar_args, re.scalar_values.data(),
                                 n_scalars * sizeof(int64_t));
             }
         }
@@ -616,19 +616,18 @@ void bench_phase2_subparts(
         for (uint32_t iter = 0; iter < iters; iter++) {
             bg.map_gen_++;
             if (bg.map_gen_ == 0) {
-                std::memset(bg.scratch_map_, 0,
-                            bg.map_cap_.get()
-                                * sizeof(BackgroundThread::PtrSlot));
+                std::fill_n(bg.scratch_map_.data(), bg.map_cap_.get(),
+                            BackgroundThread::PtrSlot{});
                 bg.map_gen_ = 1;
             }
-            auto*          local_map  = bg.scratch_map_;
+            auto*          local_map  = bg.scratch_map_.data();
             const uint8_t  local_gen  = bg.map_gen_;
             const uint32_t local_mask = bg.ptr_mask_;
 
             for (uint32_t i = 0; i < count; i++) {
                 const auto& te = ref_ops[i];
                 for (uint16_t j = 0; j < te.num_outputs; j++) {
-                    void* ptr = te.output_metas[j].data_ptr;
+                    void* ptr = raw_data_ptr(te.output_metas[j]);
                     if (ptr)
                         (void)BackgroundThread::ptr_map_insert(
                             local_map, local_gen, local_mask, ptr,
@@ -643,7 +642,7 @@ void bench_phase2_subparts(
             for (uint32_t i = 0; i < count; i++) {
                 const auto& te = ref_ops[i];
                 for (uint16_t j = 0; j < te.num_inputs; j++) {
-                    void* ptr = te.input_metas[j].data_ptr;
+                    void* ptr = raw_data_ptr(te.input_metas[j]);
                     auto  lookup = BackgroundThread::ptr_map_lookup(
                         local_map, local_gen, local_mask, ptr);
                     if (lookup.op_index.is_valid()) dummy_edges++;
@@ -676,12 +675,11 @@ void bench_phase2_subparts(
         for (uint32_t iter = 0; iter < iters; iter++) {
             bg.map_gen_++;
             if (bg.map_gen_ == 0) {
-                std::memset(bg.scratch_map_, 0,
-                            bg.map_cap_.get()
-                                * sizeof(BackgroundThread::PtrSlot));
+                std::fill_n(bg.scratch_map_.data(), bg.map_cap_.get(),
+                            BackgroundThread::PtrSlot{});
                 bg.map_gen_ = 1;
             }
-            auto*          local_map  = bg.scratch_map_;
+            auto*          local_map  = bg.scratch_map_.data();
             const uint8_t  local_gen  = bg.map_gen_;
             const uint32_t local_mask = bg.ptr_mask_;
 
@@ -691,7 +689,7 @@ void bench_phase2_subparts(
             for (uint32_t i = 0; i < count; i++) {
                 const auto& te = ref_ops[i];
                 for (uint16_t j = 0; j < te.num_outputs; j++) {
-                    void* ptr = te.output_metas[j].data_ptr;
+                    void* ptr = raw_data_ptr(te.output_metas[j]);
                     if (!ptr) continue;
                     auto result = BackgroundThread::ptr_map_insert(
                         local_map, local_gen, local_mask, ptr,
@@ -724,10 +722,10 @@ void bench_phase2_subparts(
         const uint32_t num_slots = ref_graph->num_slots;
 
         std::vector<BackgroundThread::SlotInfo> saved_slots(
-            bg.scratch_slots_, bg.scratch_slots_ + num_slots);
+            bg.scratch_slots_.data(), bg.scratch_slots_.data() + num_slots);
 
         for (uint32_t iter = 0; iter < iters; iter++) {
-            std::memcpy(bg.scratch_slots_, saved_slots.data(),
+            std::memcpy(bg.scratch_slots_.data(), saved_slots.data(),
                         num_slots * sizeof(BackgroundThread::SlotInfo));
             bg.arena.~Arena();
             new (&bg.arena) Arena{arena_bytes};

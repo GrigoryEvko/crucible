@@ -969,7 +969,7 @@ class Vigil {
                 if (!te.input_slot_ids) continue;
                 for (uint16_t j = 0; j < te.num_inputs; j++) {
                     if (te.input_slot_ids[j] == target) {
-                        ptr = te.input_metas[j].data_ptr;
+                        ptr = raw_data_ptr(te.input_metas[j]);
                         break;
                     }
                 }

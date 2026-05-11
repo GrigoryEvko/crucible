@@ -90,7 +90,7 @@ static TensorMeta make_2d(void* ptr, int64_t r, int64_t c) {
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CPU;
     m.device_idx = 0;
-    m.data_ptr = ptr;
+    m.data_ptr = external_data_ptr(ptr);
     return m;
 }
 
@@ -102,7 +102,7 @@ static TensorMeta make_1d(void* ptr, int64_t n) {
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CPU;
     m.device_idx = 0;
-    m.data_ptr = ptr;
+    m.data_ptr = external_data_ptr(ptr);
     return m;
 }
 

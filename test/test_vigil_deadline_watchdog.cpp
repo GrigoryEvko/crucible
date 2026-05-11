@@ -84,7 +84,7 @@ crucible::TensorMeta make_meta() {
     m.device_type = crucible::DeviceType::CPU;
     m.device_idx  = -1;
     m.layout      = crucible::Layout::Strided;
-    m.data_ptr    = nullptr;
+    m.data_ptr    = crucible::external_data_ptr(nullptr);
     return m;
 }
 

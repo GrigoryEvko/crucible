@@ -325,7 +325,7 @@ static_assert(std::endian::native == std::endian::little,
         std::fclose(trace_file);
         return nullptr;
       }
-      metas[i].data_ptr = nullptr;
+      metas[i].data_ptr = external_data_ptr(nullptr);
     }
   }
 

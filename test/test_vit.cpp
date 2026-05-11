@@ -172,7 +172,8 @@ static void* act_ptr(uint32_t iter, uint8_t idx) {
 
 static TensorMeta make_meta(const TSpec& s, uint32_t iter) {
     TensorMeta m{};
-    m.data_ptr = (s.ref & P) ? param_ptr(s.ref & 0x7F) : act_ptr(iter, s.ref);
+    m.data_ptr = external_data_ptr(
+        (s.ref & P) ? param_ptr(s.ref & 0x7F) : act_ptr(iter, s.ref));
     m.dtype = ScalarType::Float;
     m.device_type = DeviceType::CPU;
     m.ndim = s.ndim;

@@ -41,7 +41,8 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     m.device_type = crucible::DeviceType::CPU;
     m.device_idx  = -1;
     m.layout      = crucible::Layout::Strided;
-    m.data_ptr    = std::bit_cast<void*>(static_cast<std::uintptr_t>(0xDEADBEEF)); // must become null on reload
+    m.data_ptr    = crucible::external_data_ptr(std::bit_cast<void*>(
+        static_cast<std::uintptr_t>(0xDEADBEEF))); // must become null on reload
     return m;
 }
 
@@ -141,7 +142,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 
         // data_ptr MUST be null after deserialization (not a meaningful address).
         for (uint16_t j = 0; j < ops[i].num_inputs; j++) {
-            assert(loaded->ops[i].input_metas[j].data_ptr == nullptr
+            assert(crucible::raw_data_ptr(loaded->ops[i].input_metas[j]) == nullptr
                    && "data_ptr must be null after deserialization");
             assert(loaded->ops[i].input_metas[j].ndim     == ops[i].input_metas[j].ndim);
             assert(loaded->ops[i].input_metas[j].dtype    == ops[i].input_metas[j].dtype);
@@ -151,7 +152,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
             assert(loaded->ops[i].input_metas[j].strides[1] == ops[i].input_metas[j].strides[1]);
         }
         for (uint16_t j = 0; j < ops[i].num_outputs; j++) {
-            assert(loaded->ops[i].output_metas[j].data_ptr == nullptr);
+            assert(crucible::raw_data_ptr(loaded->ops[i].output_metas[j]) == nullptr);
         }
 
         // Scalar args round-trip.

@@ -19,6 +19,7 @@
 #include <crucible/safety/Tagged.h>
 
 #include <cstdint>
+#include <type_traits>
 
 namespace crucible {
 
@@ -32,10 +33,23 @@ namespace crucible {
 // re-deriving the constant from the array sizeof.
 inline constexpr uint8_t kMaxTensorNDim = 8;
 
+// WRAP-TensorMeta-2 (#1035): Tensor storage addresses enter Crucible
+// from PyTorch / trace / disk boundaries.  The runtime only hashes and
+// compares them as opaque external cookies until a later validator
+// explicitly retags them.
+using ExternalDataPtr = ::crucible::safety::Tagged<
+    void*, ::crucible::safety::source::External>;
+
+static_assert(sizeof(ExternalDataPtr) == sizeof(void*),
+    "Tagged<void*, source::External> must EBO-collapse so TensorMeta "
+    "stays layout-stable");
+static_assert(std::is_trivially_copyable_v<ExternalDataPtr>);
+static_assert(std::is_standard_layout_v<ExternalDataPtr>);
+
 struct TensorMeta {
   int64_t sizes[8]{};        // 64B — zero-init prevents hash instability
   int64_t strides[8]{};      // 64B
-  void* data_ptr = nullptr;  // 8B — tensor data pointer (for dataflow tracking)
+  ExternalDataPtr data_ptr{nullptr}; // 8B — external tensor pointer cookie
   uint8_t ndim = 0;          // 1B — dimensions used (0..kMaxTensorNDim)
   ScalarType dtype = ScalarType::Undefined; // 1B
   DeviceType device_type = DeviceType::CPU; // 1B
@@ -65,6 +79,21 @@ struct TensorMeta {
 
 static_assert(sizeof(TensorMeta) == 168, "TensorMeta layout check");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE_STRICT(TensorMeta);
+
+[[nodiscard]] inline constexpr ExternalDataPtr
+external_data_ptr(void* ptr) noexcept {
+  return ExternalDataPtr{ptr};
+}
+
+[[nodiscard]] inline constexpr void*
+raw_data_ptr(ExternalDataPtr ptr) noexcept {
+  return ptr.value();
+}
+
+[[nodiscard]] inline constexpr void*
+raw_data_ptr(const TensorMeta& meta) noexcept {
+  return raw_data_ptr(meta.data_ptr);
+}
 
 // WRAP-StorageNbytes-5 (#1022): storage-span computation is an
 // adversarial-defense boundary over TensorMeta values read from

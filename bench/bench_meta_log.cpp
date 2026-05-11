@@ -27,6 +27,7 @@
 #include "bench_harness.h"
 
 using crucible::DeviceType;
+using crucible::external_data_ptr;
 using crucible::MetaLog;
 using crucible::ScalarType;
 using crucible::TensorMeta;
@@ -42,8 +43,8 @@ using crucible::TensorMeta;
     m.dtype       = ScalarType::Float;
     m.device_type = DeviceType::CUDA;
     m.device_idx  = 0;
-    m.data_ptr    = std::bit_cast<void*>(static_cast<std::uintptr_t>(
-                        0xDEAD'BEEF'0000ULL));
+    m.data_ptr    = external_data_ptr(std::bit_cast<void*>(
+                        static_cast<std::uintptr_t>(0xDEAD'BEEF'0000ULL)));
     return m;
 }
 
@@ -59,8 +60,8 @@ using crucible::TensorMeta;
     m.dtype       = ScalarType::Float;
     m.device_type = DeviceType::CUDA;
     m.device_idx  = 0;
-    m.data_ptr    = std::bit_cast<void*>(static_cast<std::uintptr_t>(
-                        0xCAFE'BABE'0000ULL));
+    m.data_ptr    = external_data_ptr(std::bit_cast<void*>(
+                        static_cast<std::uintptr_t>(0xCAFE'BABE'0000ULL)));
     return m;
 }
 

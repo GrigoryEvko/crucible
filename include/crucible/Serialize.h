@@ -146,7 +146,7 @@ inline TensorMeta read_meta(Reader& r) {
     r.read_bytes(m.sizes,   sizeof(m.sizes));
     r.read_bytes(m.strides, sizeof(m.strides));
     (void)r.r<uint64_t>(); // data_ptr (discarded)
-    m.data_ptr   = nullptr;
+    m.data_ptr   = external_data_ptr(nullptr);
     // ── PROD-WRAP-5 (#534) — typed widening at deserialize boundary ──
     // The byte on disk could be in [9, 255] under corruption or
     // version skew (a uint8_t carries no inherent bound, but ndim is

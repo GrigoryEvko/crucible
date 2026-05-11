@@ -24,7 +24,7 @@ using namespace crucible;
 
 static TensorMeta make_meta(void* ptr, int64_t d0 = 128, int64_t d1 = 256) {
     TensorMeta m{};
-    m.data_ptr = ptr;
+    m.data_ptr = external_data_ptr(ptr);
     m.ndim = 2;
     m.sizes[0] = d0;
     m.sizes[1] = d1;
@@ -53,7 +53,7 @@ static void test_single_append_returns_index_zero() {
     assert(log.size() == 1);
     // Read back the stored meta.
     const auto& got = log.at(0);
-    assert(got.data_ptr == m.data_ptr);
+    assert(raw_data_ptr(got) == raw_data_ptr(m));
     assert(got.sizes[0] == 128);
     assert(got.sizes[1] == 256);
     std::printf("  test_single_append:             PASSED\n");
@@ -76,7 +76,8 @@ static void test_batch_append_and_monotonic() {
     const TensorMeta* span = log.try_contiguous(0, 8);
     assert(span != nullptr);
     for (int i = 0; i < 8; ++i) {
-        assert(span[i].data_ptr == batch[static_cast<size_t>(i)].data_ptr);
+        assert(raw_data_ptr(span[i])
+            == raw_data_ptr(batch[static_cast<size_t>(i)]));
     }
     std::printf("  test_batch_monotonic:           PASSED\n");
 }
@@ -195,7 +196,7 @@ static void test_spsc_concurrent_integrity() {
                 const TensorMeta& m = log.at(next + k);
                 const uintptr_t expected =
                     static_cast<uintptr_t>(next + k + 1) << 16;
-                assert(std::bit_cast<uintptr_t>(m.data_ptr) == expected);
+                assert(std::bit_cast<uintptr_t>(raw_data_ptr(m)) == expected);
                 // Spot-check non-pointer fields to catch torn reads.
                 assert(m.sizes[0]    == 128);
                 assert(m.sizes[1]    == 256);
@@ -244,7 +245,7 @@ static void test_try_append_pure_FOUND_I17() {
         assert(idx.raw() == 0);
         assert(log.size() == 1);
         const auto& got = log.at(idx);
-        assert(got.data_ptr == m.data_ptr);
+        assert(raw_data_ptr(got) == raw_data_ptr(m));
     }
 
     // (b) — explicit Row<> template arg.
@@ -350,7 +351,7 @@ static void test_try_append_pure_concurrent_FOUND_I17_AUDIT() {
                 const TensorMeta& m = log.at(next + k);
                 const uintptr_t expected =
                     static_cast<uintptr_t>(next + k + 1) << 16;
-                assert(std::bit_cast<uintptr_t>(m.data_ptr) == expected);
+                assert(std::bit_cast<uintptr_t>(raw_data_ptr(m)) == expected);
                 assert(m.sizes[0]    == 128);
                 assert(m.sizes[1]    == 256);
                 assert(m.dtype       == ScalarType::Float);
