@@ -177,6 +177,7 @@ crucible_test(test_decide)
 # with a reproducible (counter, key) tuple.  Oracles live in
 # include/crucible/safety/DecideOracle.h.
 crucible_test(test_decide_fuzz)
+crucible_test(test_hdr_histogram)
 
 crucible_test(test_simd)
 
@@ -2210,6 +2211,17 @@ crucible_neg_compile_test(neg_tensor_meta_data_ptr_raw_pointer
   "no match for|cannot convert|no viable|could not convert|operator=|Tagged|ExternalDataPtr")
 crucible_neg_compile_test(neg_tensor_meta_data_ptr_cross_tag
   "no match for|cannot convert|no viable|could not convert|operator=|Tagged|External|Sanitized")
+
+# GAPS-135 — observe/HdrHistogram.h keeps the recording boundary typed
+# and the merge geometry exact:
+#   * neg_hdr_histogram_record_raw_uint64 — raw external samples cannot
+#     bypass Refined<in_range<1, MaxValue>, uint64_t>.
+#   * neg_hdr_histogram_merge_cross_config — histograms with different
+#     significant-digit layouts cannot be merged.
+crucible_neg_compile_test(neg_hdr_histogram_record_raw_uint64
+  "cannot convert|no matching function|could not convert|Refined|in_range|value_type")
+crucible_neg_compile_test(neg_hdr_histogram_merge_cross_config
+  "cannot convert|no matching function|could not convert|HdrHistogram")
 
 # WRAP-StorageNbytes-5 (#1022) — compute_storage_nbytes* now accepts
 # ExternalTensorMeta = Tagged<const TensorMeta&, source::External>.

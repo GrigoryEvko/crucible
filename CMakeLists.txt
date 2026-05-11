@@ -44,6 +44,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 add_library(crucible STATIC
   src/ContractHandler.cpp
   src/DiagRuntime.cpp
+  src/observe/HdrHistogram.cpp
 )
 target_include_directories(crucible PUBLIC include/)
 set_target_properties(crucible PROPERTIES POSITION_INDEPENDENT_CODE ON)
