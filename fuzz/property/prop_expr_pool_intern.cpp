@@ -67,12 +67,12 @@
 
 #include "property_runner.h"
 
-#include <crucible/Effects.h>
 #include <crucible/Expr.h>
 #include <crucible/ExprPool.h>
 #include <crucible/Ops.h>
 #include <crucible/SymbolTable.h>
 #include <crucible/Types.h>
+#include <crucible/effects/Capabilities.h>
 
 #include <algorithm>
 #include <array>
@@ -233,7 +233,7 @@ struct Resolved {
 // comment for the full rationale).
 [[nodiscard]] bool check_plan(const Plan& p) noexcept {
     using namespace crucible;
-    fx::Test test{};
+    effects::Test test{};
     // Smallest legal capacity forces the pool to rehash while interning
     // even a tiny user set (the ~258 preseeded int singletons already
     // push the table past its 87.5% load factor).  Rehash-during-insert
@@ -249,7 +249,7 @@ struct Resolved {
     char name_buf[2] = {'a', 0};
     for (uint8_t i = 0; i < p.nsyms; ++i) {
         sym_ids[i] = syms.add(
-            SymKind::SIZE, ExprFlags::IS_INTEGER, /*is_backed=*/true);
+            SymKind::SIZE, ExprFlags::IS_INTEGER, /*is_backed=*/true).value();
     }
 
     std::array<const Expr*, kNumExprs> ptrs{};

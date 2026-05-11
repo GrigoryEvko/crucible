@@ -14,6 +14,7 @@
 #include <crucible/safety/Bits.h>
 #include <crucible/safety/Decide.h>
 #include <crucible/safety/Pre.h>
+#include <crucible/safety/Tagged.h>
 
 #include <bit>
 #include <cstddef>
@@ -59,6 +60,13 @@ struct SymbolEntry {
 static_assert(sizeof(SymbolEntry) == 32, "SymbolEntry should be 32 bytes");
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SymbolEntry);
 
+// WRAP-SymTab-4 (#1032): IDs freshly minted by SymbolTable::add()
+// carry internal provenance.  Serialized / FFI SymbolIds must cross a
+// separate source::External validation lane before indexing entries_.
+using InternalSymbolId = ::crucible::safety::Tagged<
+    SymbolId, ::crucible::safety::source::FromInternal>;
+static_assert(sizeof(InternalSymbolId) == sizeof(SymbolId));
+
 class CRUCIBLE_OWNER SymbolTable {
  public:
   // Sentinel values for integer ranges.
@@ -72,7 +80,8 @@ class CRUCIBLE_OWNER SymbolTable {
   // Register a new symbol. Returns the assigned ID.
   // Caller provides assumptions as ExprFlags bits (IS_INTEGER, IS_POSITIVE, etc).
   // gnu::cold: startup-only, invoked once per symbol at DAG build time.
-  [[nodiscard, gnu::cold]] SymbolId add(SymKind kind, uint16_t expr_flags, bool is_backed = true) {
+  [[nodiscard, gnu::cold]] InternalSymbolId add(
+      SymKind kind, uint16_t expr_flags, bool is_backed = true) {
     auto id = SymbolId{static_cast<uint32_t>(entries_.size())};
     SymbolEntry e{};
     e.hint = kNoHint;
@@ -104,7 +113,7 @@ class CRUCIBLE_OWNER SymbolTable {
     }
 
     entries_.push_back(e);
-    return id;  // SymbolId
+    return InternalSymbolId{id};
   }
 
   // Set the concrete hint for a backed symbol.

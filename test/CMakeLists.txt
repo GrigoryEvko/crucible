@@ -1921,6 +1921,18 @@ crucible_neg_compile_test(neg_schema_table_size_above_cap
 crucible_neg_compile_test(neg_schema_table_size_uint32_max
   "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
 
+# WRAP-SymTab-4 (#1032) — SymbolTable::add() returns
+# InternalSymbolId = Tagged<SymbolId, source::FromInternal>.  Two HS14
+# fixtures cover the mint boundary's two soundness directions:
+#   * neg_symbol_table_add_raw_symbol_id — internal Tagged value cannot
+#     decay to raw SymbolId without explicit .value().
+#   * neg_symbol_table_add_cross_tag — internal provenance cannot pass
+#     as source::External.
+crucible_neg_compile_test(neg_symbol_table_add_raw_symbol_id
+  "no match for|cannot convert|no viable|could not convert|Tagged|SymbolId|FromInternal")
+crucible_neg_compile_test(neg_symbol_table_add_cross_tag
+  "no match for|cannot convert|no viable|could not convert|Tagged|External|FromInternal")
+
 # WRAP-Transaction-5 (#1064) — TransactionLog<N>::CountCounter =
 # BoundedMonotonic<uint32_t, N>; constructing it with an out-of-range
 # initial value fires the BoundedMonotonic ctor's pre-clause
