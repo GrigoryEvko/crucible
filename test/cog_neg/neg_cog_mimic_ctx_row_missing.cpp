@@ -4,8 +4,8 @@
 //
 // Premise: CtxFitsCogMimic<Ctx, K> conjuncts on six gates including
 //
-//   row_contains_v<Ctx::row_type, Effect::Init>
-//     OR row_contains_v<Ctx::row_type, Effect::Bg>
+//   decide::row_subset<Row<Effect::Init>, Ctx::row_type>()
+//     OR decide::row_subset<Row<Effect::Bg>, Ctx::row_type>()
 //
 // — minting a CogMimic instance is permitted only in calibration-time
 // setup contexts (Effect::Init) or background recalibration contexts
@@ -35,7 +35,7 @@
 //     requires-clause.  Distinct mismatch class (structural family-
 //     membership failure: "this Cog has no Mimic instance to mint").
 //   * This one tests rejection at the CTX-ROW gate — the disjunctive
-//     row_contains_v conjunct refuses contexts whose effect row
+//     row_subset conjunct refuses contexts whose effect row
 //     carries neither Init nor Bg.  Distinct mismatch class (effect-
 //     row admission failure on a TEMPORALLY-INAPPROPRIATE context).
 //
@@ -43,7 +43,7 @@
 // demonstrating a distinct mismatch class.
 //
 // Expected diagnostic: "constraint not satisfied" / "constraints not
-// satisfied" / "CogMimic" / "CtxFitsCogMimic" / "row_contains" /
+// satisfied" / "CogMimic" / "CtxFitsCogMimic" / "row_subset" /
 // "Effect::Init" / "Effect::Bg" / "Test" / "GAPS-188" pointing at the
 // call site below.
 
@@ -66,7 +66,7 @@ template <effects::IsExecCtx Ctx, cog::CogKind K>
 constexpr int prepare_cog_mimic_for_test() noexcept { return 1; }
 
 // TestCtx — Effect::Test row.  Neither Init nor Bg appears.  The
-// disjunctive row_contains_v conjunct in CtxFitsCogMimic refuses
+// disjunctive row_subset predicate in CtxFitsCogMimic refuses
 // substitution.
 using TestCtx = effects::ExecCtx<
     effects::Test,

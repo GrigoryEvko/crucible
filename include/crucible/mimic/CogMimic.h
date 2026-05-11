@@ -504,8 +504,8 @@ struct CogMimic {
 //   4. `HasOpcodeTable<K>`          — K publishes opcodes.
 //   5. `has_cog_mimic_projection_v` — K admits a federation-fold
 //                                     specialisation.
-//   6. Ctx::row_type contains       — minting a CogMimic instance is
-//      Effect::Init OR Effect::Bg.    either calibration-time (Init)
+//   6. Ctx::row_type admits         — minting a CogMimic instance is
+//      Row<Init> OR Row<Bg>.          either calibration-time (Init)
 //                                     or background recalibration
 //                                     during fleet operation (Bg).
 //                                     Pure / Test / Fg contexts
@@ -519,10 +519,12 @@ concept CtxFitsCogMimic =
     && cog::HasCaps<K>
     && cog::HasOpcodeTable<K>
     && detail::has_cog_mimic_projection_v<K>
-    && (effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                                effects::Effect::Init>
-       || effects::row_contains_v<effects::row_type_of_t<Ctx>,
-                                  effects::Effect::Bg>);
+    && (crucible::decide::row_subset<
+            effects::Row<effects::Effect::Init>,
+            effects::row_type_of_t<Ctx>>()
+       || crucible::decide::row_subset<
+            effects::Row<effects::Effect::Bg>,
+            effects::row_type_of_t<Ctx>>());
 
 // ────────────────────────────────────────────────────────────────────
 // mint_cog_mimic<K>(ctx, identity, caps, opcodes)

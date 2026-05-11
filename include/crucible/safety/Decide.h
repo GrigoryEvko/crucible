@@ -1365,10 +1365,12 @@ constexpr bool tier_replaces(TierTag candidate, TierTag required) noexcept {
 //
 // PRODUCTION CITES (update on adoption per CONTRACT-125)
 // ------------------------------------------------------
-//   (none yet — first migration batches land with CONTRACT-111
-//    [Forge Phase L row admission rebrand] and an upcoming
-//    Stage / Pipeline cite-pass that converts inline Subrow
-//    static_asserts into VC-discharged decide::row_subset cites.)
+//   * mimic/CogMimic.h:516 — CtxFitsCogMimic admits Init/Bg context
+//                             rows for Mimic substrate minting
+//                             (CONTRACT-118).
+//   * Future: Forge Phase L row admission rebrand and Stage /
+//             Pipeline cite-pass convert inline Subrow static_asserts
+//             into VC-discharged decide::row_subset cites.
 //
 // ANTI-PATTERNS (review-rejected)
 // -------------------------------

@@ -1252,7 +1252,7 @@ crucible_neg_compile_cog_test(neg_fits_cog_non_substrate
 crucible_neg_compile_cog_test(neg_cog_mimic_non_substrate
     "constraint|constraints not satisfied|CogMimic|IsMimicSubstrate|CtxFitsCogMimic|PsuRail|GAPS-188")
 crucible_neg_compile_cog_test(neg_cog_mimic_ctx_row_missing
-    "constraint|constraints not satisfied|CogMimic|CtxFitsCogMimic|row_contains|Init|Bg|Test|GAPS-188")
+    "constraint|constraints not satisfied|CogMimic|CtxFitsCogMimic|row_subset|Init|Bg|Test|GAPS-188")
 
 # ─── HS14 fixtures #1 + #2 for topology::TopologyGraph (GAPS-110 #1209) ──
 #
