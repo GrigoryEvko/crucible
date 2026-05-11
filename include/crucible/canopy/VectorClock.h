@@ -96,10 +96,19 @@ public:
         if (value == 0) {
             return true;
         }
+        const std::uint16_t node_id = node.value();
+        for (std::uint16_t i = 0; i < count_; ++i) {
+            if (node_ids[i] == node_id) {
+                if (values[i] < value) {
+                    values[i] = value;
+                }
+                return true;
+            }
+        }
         if (count_ == MaxNodes) {
             return false;
         }
-        node_ids[count_] = node.value();
+        node_ids[count_] = node_id;
         values[count_] = value;
         ++count_;
         return true;

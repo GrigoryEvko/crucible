@@ -46,6 +46,12 @@ int main() {
     static_assert(delta.raw_count() == 2);
     static_assert(Snapshot::from_sparse_delta(delta) == b);
 
+    auto duplicate_delta = Clock::delta_type{};
+    assert(duplicate_delta.push(n0, 10));
+    assert(duplicate_delta.push(n0, 1));
+    assert(duplicate_delta.raw_count() == 1);
+    assert(Snapshot::from_sparse_delta(duplicate_delta).at(n0) == 10);
+
     auto c0 = crucible::canopy::mint_vector_clock<4, ReplayClockTag>(
         crucible::effects::Init{},
         0);
