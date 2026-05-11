@@ -20,6 +20,7 @@
 #include <crucible/SchemaTable.h>
 #include <crucible/concurrent/PermissionedSpscChannel.h>
 #include <crucible/concurrent/Pipeline.h>
+#include <crucible/concurrent/SpinLock.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/effects/FxAliases.h>
@@ -140,6 +141,13 @@ struct BackgroundThread {
 
   // Arena for DAG allocations (TraceEntry, TensorMeta arrays,
   // edges, CSR structures, RegionNodes).
+  //
+  // BuildTraceFn and MakeRegionFn are separate pipeline threads.  Arena
+  // storage is append-only, so already-returned graph pointers remain
+  // stable, but the bump cursor itself is mutable.  This spin-only gate
+  // serializes owner->arena allocation windows without parking in the
+  // kernel or weakening the permissioned SPSC stage topology.
+  alignas(64) concurrent::SpinLock arena_alloc_gate_;
   Arena arena{1 << 20}; // 1MB blocks
 
   // Regions created but not yet compiled.  Pure push-only — drained
@@ -554,10 +562,14 @@ struct BackgroundThread {
         continue;
       }
 
-      TraceGraph* graph = owner->build_trace_from(
-          bg.alloc, work->completed_len,
-          work->trace.data(), work->meta_starts.data(),
-          work->scope_hashes.data(), work->callsite_hashes.data());
+      TraceGraph* graph = nullptr;
+      {
+        concurrent::SpinGuard guard{owner->arena_alloc_gate_};
+        graph = owner->build_trace_from(
+            bg.alloc, work->completed_len,
+            work->trace.data(), work->meta_starts.data(),
+            work->scope_hashes.data(), work->callsite_hashes.data());
+      }
 
       // build_trace_from returns nullptr on edge cases (zero-op iteration);
       // forward only well-formed graphs downstream so MakeRegion's
@@ -630,7 +642,10 @@ struct BackgroundThread {
                                         publish->commit_count);
         continue;
       }
-      owner->publish_trace_graph(bg.alloc, publish->graph);
+      {
+        concurrent::SpinGuard guard{owner->arena_alloc_gate_};
+        owner->publish_trace_graph(bg.alloc, publish->graph);
+      }
     }
   }
 
