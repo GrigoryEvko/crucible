@@ -1921,6 +1921,18 @@ crucible_neg_compile_test(neg_schema_table_size_above_cap
 crucible_neg_compile_test(neg_schema_table_size_uint32_max
   "contract|BoundedMonotonic|not a constant|non-constant|constexpr")
 
+# WRAP-SchemaTab-5 (#1007) — SchemaTable::lookup() returns
+# LookupName = Tagged<Borrowed<const char, SchemaTable>, source::Sanitized>.
+# Two HS14 fixtures cover the lookup boundary's two soundness directions:
+#   * neg_schema_table_lookup_raw_const_char — typed borrow cannot
+#     decay to raw const char* without explicit .value().data().
+#   * neg_schema_table_lookup_cross_tag — sanitized provenance cannot
+#     pass as source::External.
+crucible_neg_compile_test(neg_schema_table_lookup_raw_const_char
+  "no match for|cannot convert|no viable|could not convert|Tagged|const char")
+crucible_neg_compile_test(neg_schema_table_lookup_cross_tag
+  "no match for|cannot convert|no viable|could not convert|Tagged|External|Sanitized")
+
 # WRAP-SymTab-4 (#1032) — SymbolTable::add() returns
 # InternalSymbolId = Tagged<SymbolId, source::FromInternal>.  Two HS14
 # fixtures cover the mint boundary's two soundness directions:
@@ -4845,11 +4857,11 @@ crucible_neg_compile_test(neg_vessel_typed_meta_wrong_tag
 # implicit conversion into Tagged<void*, source::Sanitized> stops a
 # refactor from laundering raw-FFI bytes into the trust-validated
 # slot the dispatch path expects.  schema_name_typed returns
-# Tagged<const char*, source::Sanitized>; refusing the converse
-# (Sanitized → External) keeps validated names and unsanitized FFI
-# input distinguishable at the type level.  Two fixtures, two
-# directions of the wrong-tag axis, so neither retag direction can
-# silently launder.
+# Tagged<Borrowed<const char, SchemaTable>, source::Sanitized>;
+# refusing the converse (Sanitized → External) keeps validated names
+# and unsanitized FFI input distinguishable at the type level.  Two
+# fixtures, two directions of the wrong-tag axis, so neither retag
+# direction can silently launder.
 crucible_neg_compile_test(neg_data_ptr_typed_wrong_tag
     "conversion from|cannot convert|could not convert|no match for|no matching function")
 crucible_neg_compile_test(neg_schema_name_typed_wrong_tag

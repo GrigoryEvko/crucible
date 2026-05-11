@@ -19,6 +19,14 @@
 
 using namespace crucible;
 
+static const char* C(SchemaTable::LookupName name) {
+    return name.value().data();
+}
+
+static bool missing(SchemaTable::LookupName name) {
+    return name.value().data() == nullptr;
+}
+
 // Write raw bytes to a temp file; caller removes when done.
 // Unique path via getpid + a monotonic counter — tmpnam() is deprecated
 // and GCC warns warn_unused_result on the fallback signature.
@@ -218,18 +226,18 @@ static void test_schema_name_table_round_trip() {
     assert(t->num_ops == 0);
     assert(t->num_metas == 0);
 
-    const char* n1 = global_schema_table().lookup(
-        SchemaHash{0xAAAA'1111'2222'3333ULL});
-    const char* n2 = global_schema_table().lookup(
-        SchemaHash{0xBBBB'4444'5555'6666ULL});
-    const char* n3 = global_schema_table().lookup(
-        SchemaHash{0xCCCC'7777'8888'9999ULL});
+    const char* n1 = C(global_schema_table().lookup(
+        SchemaHash{0xAAAA'1111'2222'3333ULL}));
+    const char* n2 = C(global_schema_table().lookup(
+        SchemaHash{0xBBBB'4444'5555'6666ULL}));
+    const char* n3 = C(global_schema_table().lookup(
+        SchemaHash{0xCCCC'7777'8888'9999ULL}));
     assert(n1 && std::strcmp(n1, "aten::add") == 0);
     assert(n2 && std::strcmp(n2, "aten::mul") == 0);
     assert(n3 && std::strcmp(n3, "aten::matmul") == 0);
 
     // Unknown hash returns nullptr.
-    assert(global_schema_table().lookup(SchemaHash{0xDEAD'BEEFULL}) == nullptr);
+    assert(missing(global_schema_table().lookup(SchemaHash{0xDEAD'BEEFULL})));
 
     global_schema_table().clear();
     std::printf("  test_schema_name_table_round_trip: PASSED\n");
@@ -259,8 +267,8 @@ static void test_schema_name_table_corrupt_zero_len() {
 
     // The hash was NOT registered — the if-break fired before the
     // register_schema_name call.
-    assert(global_schema_table().lookup(
-        SchemaHash{0xDEAD'BEEF'CAFE'BABEULL}) == nullptr);
+    assert(missing(global_schema_table().lookup(
+        SchemaHash{0xDEAD'BEEF'CAFE'BABEULL})));
     assert(global_schema_table().count() == 0);
 
     global_schema_table().clear();
@@ -301,8 +309,8 @@ static void test_schema_name_table_corrupt_oversize_len() {
     // The hash was NOT registered — the if-break fired before the
     // make_schema_name_len call (which would otherwise hit the Refined
     // ctor's pre clause and abort under contracts=enforce).
-    assert(global_schema_table().lookup(
-        SchemaHash{0xFEED'FACE'BAAD'F00DULL}) == nullptr);
+    assert(missing(global_schema_table().lookup(
+        SchemaHash{0xFEED'FACE'BAAD'F00DULL})));
     assert(global_schema_table().count() == 0);
 
     global_schema_table().clear();

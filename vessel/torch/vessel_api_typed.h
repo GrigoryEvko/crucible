@@ -22,7 +22,7 @@
 //   TypedDataPtr              := Tagged<void*, source::External>
 //   data_ptr_typed(typed, i)  : TypedMeta, std::size_t   -> TypedDataPtr
 //
-//   TypedSchemaName           := Tagged<const char*, source::Sanitized>
+//   TypedSchemaName           := SchemaTable::LookupName
 //   schema_name_typed(hash)   : SchemaHash               -> TypedSchemaName
 //
 // ── ABI invariant ──────────────────────────────────────────────────
@@ -219,32 +219,29 @@ static_assert(std::is_trivially_copy_constructible_v<TypedDataPtr>);
 
 // ── Schema-name typed lookup (GAPS-096) ────────────────────────────
 //
-// `crucible::schema_name(SchemaHash)` returns a `const char*` borrowed
-// from the global SchemaTable's interned-name storage.  Names are
+// `crucible::schema_name(SchemaHash)` returns a typed borrow from the
+// global SchemaTable's interned-name storage.  Names are
 // SanitizedName-validated at registration (length-bounded, NUL-walked,
 // stripped of "aten::" prefix as appropriate), so the returned
-// pointer's provenance is `source::Sanitized` — distinct from the raw
+// borrow's provenance is `source::Sanitized` — distinct from the raw
 // FFI input (`source::External`) that crucible_register_schema_name
-// receives.  Wrapping the lookup result in Tagged makes the boundary
-// crossing visible to downstream consumers (visualizer label
-// emission, structured-diagnostic builders, trace-export writers).
+// receives.  The Borrowed<..., SchemaTable> payload also keeps the
+// owner lifetime visible to downstream consumers.
 //
-// Returns a typed nullptr when the hash is unknown — callers must
-// branch on `.value() == nullptr` exactly as they would on the raw
-// API.  Lifetime: borrowed from the SchemaTable; valid for the
-// lifetime of the program once registered.
+// Returns an empty typed borrow when the hash is unknown — callers
+// branch on `.value().data() == nullptr`.  Lifetime: borrowed from the
+// SchemaTable; valid for the lifetime of the program once registered.
 
-using TypedSchemaName =
-    safety::Tagged<const char*, safety::source::Sanitized>;
+using TypedSchemaName = crucible::SchemaTable::LookupName;
 
-static_assert(sizeof(TypedSchemaName) == sizeof(const char*));
-static_assert(alignof(TypedSchemaName) == alignof(const char*));
+static_assert(sizeof(TypedSchemaName) == sizeof(crucible::SchemaTable::BorrowedName));
+static_assert(alignof(TypedSchemaName) == alignof(crucible::SchemaTable::BorrowedName));
 static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
 
 [[nodiscard]] CRUCIBLE_HOT TypedSchemaName schema_name_typed(
     crucible::SchemaHash schema_hash) noexcept
 {
-    return TypedSchemaName{crucible::schema_name(schema_hash)};
+    return crucible::schema_name(schema_hash);
 }
 
 } // namespace crucible::vessel

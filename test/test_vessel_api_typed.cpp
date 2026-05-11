@@ -59,13 +59,13 @@ static_assert(!std::is_convertible_v<
 
 // ── GAPS-096 type-shape pins ──────────────────────────────────────
 //
-// data_ptr_typed and schema_name_typed must EBO-collapse to the bare
-// pointer width — same regime-1 guarantee that vessel_api_typed.h
-// makes for TypedHandle and TypedMeta.  Strong-distinction pins
-// witness that the wrong-tag direction (External vs Sanitized vs
-// ABIBoundary) refuses implicit conversion at the type level —
-// these are the load-bearing properties the neg-compile fixtures
-// rely on.
+// data_ptr_typed EBO-collapses to the bare pointer width.  Schema
+// names are a typed Borrowed span from SchemaTable: Tagged still
+// EBO-collapses around the Borrowed payload, while the payload keeps
+// the owner lifetime and byte length visible.  Strong-distinction
+// pins witness that the wrong-tag direction (External vs Sanitized vs
+// ABIBoundary) refuses implicit conversion at the type level — these
+// are the load-bearing properties the neg-compile fixtures rely on.
 
 static_assert(std::is_same_v<
     TypedDataPtr,
@@ -76,9 +76,9 @@ static_assert(std::is_trivially_copy_constructible_v<TypedDataPtr>);
 
 static_assert(std::is_same_v<
     TypedSchemaName,
-    crucible::safety::Tagged<const char*, crucible::safety::source::Sanitized>>);
-static_assert(sizeof(TypedSchemaName) == sizeof(const char*));
-static_assert(alignof(TypedSchemaName) == alignof(const char*));
+    crucible::SchemaTable::LookupName>);
+static_assert(sizeof(TypedSchemaName) == sizeof(crucible::SchemaTable::BorrowedName));
+static_assert(alignof(TypedSchemaName) == alignof(crucible::SchemaTable::BorrowedName));
 static_assert(std::is_trivially_copy_constructible_v<TypedSchemaName>);
 
 // data_ptr provenance distinct from ABIBoundary (the typed-meta
@@ -94,7 +94,9 @@ static_assert(!std::is_convertible_v<
 // schema_name provenance distinct from External: validated names
 // cannot be confused with raw FFI input.
 static_assert(!std::is_convertible_v<
-    crucible::safety::Tagged<const char*, crucible::safety::source::External>,
+    crucible::safety::Tagged<
+        crucible::SchemaTable::BorrowedName,
+        crucible::safety::source::External>,
     TypedSchemaName>);
 
 // ── Runtime smoke harness ──────────────────────────────────────────
@@ -255,8 +257,8 @@ void test_schema_name_typed() {
     // Register a name through the C++-side API (the test target links
     // libcrucible, not libcrucible_vessel — so we drive the typed
     // helper through the same global SchemaTable the C-ABI thunk
-    // would use).  Verifies schema_name_typed wraps the raw lookup
-    // result with source::Sanitized provenance.
+    // would use).  Verifies schema_name_typed returns the
+    // SchemaTable-owned typed borrow with source::Sanitized provenance.
     constexpr uint64_t hash_a = 0xA1A2A3A4A5A6A7A8ULL;
     constexpr uint64_t hash_b = 0xB1B2B3B4B5B6B7B8ULL;
 
@@ -276,21 +278,25 @@ void test_schema_name_typed() {
     auto a = crucible::vessel::schema_name_typed(crucible::SchemaHash{hash_a});
     auto b = crucible::vessel::schema_name_typed(crucible::SchemaHash{hash_b});
 
-    EXPECT(a.value() != nullptr, "registered name a must lookup");
-    EXPECT(b.value() != nullptr, "registered name b must lookup");
-    EXPECT(a.value() != b.value(),
+    EXPECT(a.value().data() != nullptr, "registered name a must lookup");
+    EXPECT(b.value().data() != nullptr, "registered name b must lookup");
+    EXPECT(a.value().data() != b.value().data(),
            "distinct schema hashes must yield distinct name pointers");
+    EXPECT(a.value().size() == std::strlen("aten::test_op_a"),
+           "typed schema name must preserve byte length");
 
     // Idempotent re-lookup.
     auto a2 = crucible::vessel::schema_name_typed(crucible::SchemaHash{hash_a});
-    EXPECT(a2.value() == a.value(),
+    EXPECT(a2.value().data() == a.value().data(),
            "repeated lookup must return same interned pointer (stability)");
+    EXPECT(a2.value().size() == a.value().size(),
+           "repeated lookup must preserve same interned span length");
 
-    // Unknown hash returns null typed view — caller branches on
-    // .value() == nullptr exactly as on the raw API.
+    // Unknown hash returns an empty typed view — caller branches on
+    // .value().data() == nullptr at the C interop boundary.
     auto missing = crucible::vessel::schema_name_typed(
         crucible::SchemaHash{0xDEADC0DEDEADC0DEULL});
-    EXPECT(missing.value() == nullptr,
+    EXPECT(missing.value().data() == nullptr,
            "unknown schema hash must return null typed view");
 }
 

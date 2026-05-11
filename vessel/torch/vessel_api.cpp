@@ -310,7 +310,7 @@ void crucible_register_schema_name(uint64_t schema_hash, const char* name) noexc
 }
 
 const char* crucible_schema_name(uint64_t schema_hash) noexcept {
-    return crucible::schema_name(crucible::SchemaHash{schema_hash});
+    return crucible::schema_name(crucible::SchemaHash{schema_hash}).value().data();
 }
 
 int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
@@ -399,7 +399,7 @@ int crucible_export_crtrace(CrucibleHandle h, const char* path) noexcept {
     for (uint32_t i = 0; i < num_names; i++) {
         uint64_t sh = table.entries[i].hash.raw();
         const char* name = table.entries[i].name;
-        auto name_len = static_cast<uint16_t>(std::strlen(name));
+        auto name_len = static_cast<uint16_t>(table.entries[i].name_len);
         w(&sh, 8, 1);
         w(&name_len, 2, 1);
         w(name, 1, name_len);

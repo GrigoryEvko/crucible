@@ -42,7 +42,7 @@ int main() {
             return bench::run("lookup hit  (250-entry table)", [&]{
                 const auto h = hashes[idx];
                 idx = (idx + 1) % N;
-                const char* n = table.lookup(h);
+                const char* n = table.lookup(h).value().data();
                 bench::do_not_optimize(n);
             });
         }(),
@@ -51,14 +51,14 @@ int main() {
             return bench::run("lookup miss (returns nullptr)", [&]{
                 miss_key = miss_key * 6364136223846793005ULL
                          + 1442695040888963407ULL;
-                const char* n = table.lookup(SchemaHash{miss_key});
+                const char* n = table.lookup(SchemaHash{miss_key}).value().data();
                 bench::do_not_optimize(n);
             });
         }(),
         [&]{
             const auto hot = hashes[N / 2];
             return bench::run("short_name(strip aten::)", [&]{
-                const char* n = table.short_name(hot);
+                const char* n = table.short_name(hot).value().data();
                 bench::do_not_optimize(n);
             });
         }(),

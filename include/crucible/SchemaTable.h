@@ -26,6 +26,7 @@
 
 #include <crucible/Platform.h>
 #include <crucible/Types.h>
+#include <crucible/safety/Borrowed.h>
 #include <crucible/safety/Mutation.h>
 #include <crucible/safety/Post.h>
 #include <crucible/safety/ScopedView.h>
@@ -38,6 +39,7 @@
 #include <cstdio>       // std::fprintf — overflow diagnostic on cap exhaustion
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>       // std::construct_at — for clear()'s SizeCounter rewind
 #include <span>
 #include <type_traits>
@@ -49,6 +51,7 @@ static constexpr uint32_t SCHEMA_TABLE_CAP = 512;
 struct SchemaEntry {
   SchemaHash hash;
   const char* name = nullptr;  // owned: malloc'd copy, freed in clear()
+  uint32_t name_len = 0;       // cached byte length; excludes trailing NUL
 };
 
 CRUCIBLE_ASSERT_TRIVIALLY_RELOCATABLE(SchemaEntry);
@@ -172,6 +175,12 @@ struct SchemaTable {
   // directly; the TraceLoader retags after its length-bounded validation.
   using SanitizedName = crucible::safety::Tagged<const char*,
                                                  crucible::safety::source::Sanitized>;
+  using BorrowedName = crucible::safety::Borrowed<const char, SchemaTable>;
+  using LookupName = crucible::safety::Tagged<
+      BorrowedName, crucible::safety::source::Sanitized>;
+
+  static_assert(sizeof(LookupName) == sizeof(BorrowedName));
+  static_assert(std::is_trivially_copy_constructible_v<LookupName>);
 
   // Typed overload — requires MutableView proof.  Zero runtime phase
   // check: the proof is carried by the view parameter.
@@ -182,22 +191,20 @@ struct SchemaTable {
     // Check for existing entry (idempotent update).
     for (uint32_t i = 0; i < size.get(); i++) {
       if (entries[i].hash == hash) {
-        // §III-clean: bit_cast strips const for std::free (which takes
-        // void*).  Pointer is malloc'd, so we own it; the const-qualifier
-        // on `name` is the storage type's published immutability, not
-        // the underlying allocation's mutability.
-        std::free(std::bit_cast<char*>(entries[i].name));
-        entries[i].name = strdup_(name);
         // CONTRACT-SchemaTable-RegisterName-POST (alias-update path):
         // entries[i].name is a freshly strdup'd copy of `name` — i.e.,
         // entries[i].name == name byte-for-byte (strcmp == 0) but at a
         // different address (we just freed the old allocation and
         // duplicated the input).  The post pins the lookup-equivalent
-        // invariant: a subsequent lookup(hash) finds entries[i].name.
+        // invariant: a subsequent lookup_raw_(hash) finds entries[i].name.
         // Mirrors CONTRACT-CKernel-RegisterOp-POST alias-update path.
         // The `name != nullptr` post check is structurally guaranteed
         // by the early return on line 177 (`if (!name) return`).
-        CRUCIBLE_POST(0, lookup(hash) != nullptr);
+        const auto dup = duplicate_name_(name);
+        std::free(std::bit_cast<char*>(entries[i].name));
+        entries[i].name = dup.name;
+        entries[i].name_len = dup.name_len;
+        CRUCIBLE_POST(0, lookup_raw_(hash) != nullptr);
         return;
       }
     }
@@ -219,12 +226,17 @@ struct SchemaTable {
     // Append + bump.  Two-step instead of `entries[size++]` because
     // BoundedMonotonic's bump() is a separate mutation; the index
     // .get() and the bump() bracket the store.
-    entries[size.get()] = {.hash = hash, .name = strdup_(name)};
+    const auto dup = duplicate_name_(name);
+    entries[size.get()] = {
+        .hash = hash,
+        .name = dup.name,
+        .name_len = dup.name_len,
+    };
     size.bump();   // monotonic +1; bound-checked at SCHEMA_TABLE_CAP
     std::ranges::sort(std::span<SchemaEntry>{entries, size.get()},
                       {}, &SchemaEntry::hash);
     // CONTRACT-SchemaTable-RegisterName-POST (insert path):
-    //   (1) lookup(hash) != nullptr — the freshly-registered schema is
+    //   (1) lookup_raw_(hash) != nullptr — the freshly-registered schema is
     //       findable.  This is the load-bearing contract: a registration
     //       that doesn't make the schema findable would silently fall
     //       through to the OPAQUE fallback at every subsequent dispatch
@@ -239,31 +251,60 @@ struct SchemaTable {
     // family.  Catches a refactor that drops the sort (binary search
     // would fail to find the inserted entry) or that breaks the
     // bounded-monotonic counter contract.
-    CRUCIBLE_POST(0, lookup(hash) != nullptr);
+    CRUCIBLE_POST(0, lookup_raw_(hash) != nullptr);
     CRUCIBLE_POST(0, size.get() <= SCHEMA_TABLE_CAP);
   }
 
-  // Lookup: returns nullptr for unknown hashes. O(log n) binary search.
-  // Safe in either phase — reads only.
-  [[nodiscard]] const char* lookup(SchemaHash hash) const {
+  // Lookup: returns an empty typed borrow for unknown hashes. O(log n)
+  // binary search, with no repeated string scan: SchemaEntry caches
+  // name_len at registration time so the Borrowed span is formed in
+  // constant time after the binary-search hit.
+  //
+  // Safe in either phase for short-lived inspection. Production
+  // long-lived readers can use the SealedView overload below to make
+  // the post-registration lifetime proof explicit at the call site.
+  [[nodiscard]] LookupName lookup(SchemaHash hash) const noexcept {
+    return lookup_from_entry_(lookup_entry_(hash));
+  }
+
+  [[nodiscard]] LookupName lookup(SealedView const&, SchemaHash hash) const noexcept {
+    return lookup(hash);
+  }
+
+ private:
+  [[nodiscard]] const char* lookup_raw_(SchemaHash hash) const noexcept {
+    const SchemaEntry* entry = lookup_entry_(hash);
+    return entry ? entry->name : nullptr;
+  }
+
+  [[nodiscard]] const SchemaEntry* lookup_entry_(SchemaHash hash) const noexcept {
     uint32_t lo = 0, hi = size.get();
     while (lo < hi) {
       const uint32_t mid = lo + (hi - lo) / 2;
-      if (entries[mid].hash == hash) return entries[mid].name;
+      if (entries[mid].hash == hash) return &entries[mid];
       if (entries[mid].hash < hash) lo = mid + 1;
       else                          hi = mid;
     }
     return nullptr;
   }
 
+  [[nodiscard]] static LookupName lookup_from_entry_(const SchemaEntry* entry) noexcept {
+    if (!entry || !entry->name) return LookupName{BorrowedName{}};
+    return LookupName{BorrowedName{entry->name, entry->name_len}};
+  }
+
+ public:
   // Short name: strip "aten::" prefix if present, return suffix.
-  // Returns static hex string for unknown hashes.
-  [[nodiscard]] const char* short_name(SchemaHash hash) const {
-    const char* full = lookup(hash);
-    if (!full) return nullptr;
-    // Strip "aten::" prefix
-    if (std::strncmp(full, "aten::", 6) == 0)
-      return full + 6;
+  // Returns an empty typed borrow for unknown hashes.
+  [[nodiscard]] LookupName short_name(SchemaHash hash) const noexcept {
+    LookupName full = lookup(hash);
+    const BorrowedName& view = full.value();
+    constexpr char prefix[] = "aten::";
+    constexpr uint32_t prefix_len = 6;
+    if (view.size() >= prefix_len
+        && std::memcmp(view.data(), prefix, prefix_len) == 0) {
+      return LookupName{view.subview(prefix_len, view.size() - prefix_len)};
+    }
     return full;
   }
 
@@ -284,18 +325,28 @@ struct SchemaTable {
       // strdup_ allocation is mutable storage we own.
       std::free(std::bit_cast<char*>(entries[i].name));
       entries[i].name = nullptr;
+      entries[i].name_len = 0;
     }
     std::construct_at(&size, SizeCounter{0u});
     sealed_.store(false, std::memory_order_release);
   }
 
  private:
-  [[nodiscard]] static char* strdup_(const char* s) {
+  struct DuplicatedName {
+    const char* name = nullptr;
+    uint32_t name_len = 0;
+  };
+
+  [[nodiscard]] static DuplicatedName duplicate_name_(const char* s) {
     const auto len = std::strlen(s);
+    if (len > std::numeric_limits<uint32_t>::max()) [[unlikely]] std::abort();
     auto* p = static_cast<char*>(std::malloc(len + 1));
     if (!p) [[unlikely]] std::abort();
     std::memcpy(p, s, len + 1);
-    return p;
+    return DuplicatedName{
+        .name = p,
+        .name_len = static_cast<uint32_t>(len),
+    };
   }
 };
 
@@ -322,13 +373,13 @@ inline void register_schema_name(SchemaTable::MutableView const& view,
   global_schema_table().register_name(view, hash, name);
 }
 
-// Convenience: lookup name for hash in the global table.
-[[nodiscard]] inline const char* schema_name(SchemaHash hash) {
+// Convenience: typed lookup name for hash in the global table.
+[[nodiscard]] inline SchemaTable::LookupName schema_name(SchemaHash hash) {
   return global_schema_table().lookup(hash);
 }
 
-// Convenience: short name (stripped prefix) from global table.
-[[nodiscard]] inline const char* schema_short_name(SchemaHash hash) {
+// Convenience: typed short name (stripped prefix) from global table.
+[[nodiscard]] inline SchemaTable::LookupName schema_short_name(SchemaHash hash) {
   return global_schema_table().short_name(hash);
 }
 

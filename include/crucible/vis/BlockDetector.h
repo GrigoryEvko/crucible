@@ -185,10 +185,12 @@ struct DetectionResult {
     op.idx = i;
     op.schema = e.schema_hash;
     op.scope = trace.scope_hashes[i];
-    op.name = schema_short_name(e.schema_hash);
+    op.name = schema_short_name(e.schema_hash).value().data();
     // Scope names registered in SchemaTable under their hash value
-    op.scope_name = global_schema_table().lookup(
-        SchemaHash{trace.scope_hashes[i].raw()});
+    op.scope_name = global_schema_table()
+        .lookup(SchemaHash{trace.scope_hashes[i].raw()})
+        .value()
+        .data();
     op.family = classify_family(op.name ? std::string_view{op.name} : "");
     op.n_in = e.num_inputs;
     op.n_out = e.num_outputs;

@@ -1,8 +1,8 @@
 // NEGATIVE-COMPILE TEST.  This file MUST FAIL TO COMPILE.
 //
 // Violation: assigning the result of `schema_name_typed(...)`, which
-// is `Tagged<const char*, source::Sanitized>`, into a slot expecting
-// `Tagged<const char*, source::External>`.
+// is `Tagged<Borrowed<const char, SchemaTable>, source::Sanitized>`,
+// into a slot expecting the same borrow with source::External.
 //
 // The Sanitized tag witnesses that the SchemaTable's interned name
 // has been validated at registration (length-bounded, NUL-walked,
@@ -26,12 +26,12 @@ using crucible::safety::Tagged;
 using crucible::safety::source::External;
 
 int main() {
-    // schema_name_typed returns Tagged<const char*, source::Sanitized>.
-    // Should FAIL: the conversion target Tagged<const char*,
-    // source::External> is a DIFFERENT class instantiation; no
-    // implicit retag from Sanitized → External exists (and the
-    // converse direction is also rejected — see GAPS-094 fixture).
-    Tagged<const char*, External> wrong =
+// schema_name_typed returns Tagged<Borrowed<const char, SchemaTable>,
+// source::Sanitized>. Should FAIL: the conversion target with
+// source::External is a DIFFERENT class instantiation; no implicit
+// retag from Sanitized → External exists (and the converse direction
+// is also rejected — see GAPS-094 fixture).
+    Tagged<crucible::SchemaTable::BorrowedName, External> wrong =
         crucible::vessel::schema_name_typed(crucible::SchemaHash{0});
-    return wrong.value() == nullptr ? 0 : 1;
+    return wrong.value().data() == nullptr ? 0 : 1;
 }

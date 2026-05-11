@@ -23,7 +23,7 @@
 //                               (GAPS-096) — provenance threads into
 //                               TensorMeta-consuming code without
 //                               changing the wire-struct layout.
-//   * schema name lookup      → Tagged<const char*, source::Sanitized>
+//   * schema name lookup      → SchemaTable::LookupName
 //                               via `schema_name_typed(schema_hash)`
 //                               (GAPS-096) — distinguishes the
 //                               post-validation pointer from raw FFI
