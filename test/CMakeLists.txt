@@ -222,6 +222,7 @@ crucible_test(test_swiss_table)
 crucible_test(test_meta_log)
 crucible_test(test_symbol_table)
 crucible_test(test_hlc)
+crucible_test(test_vector_clock)
 crucible_test(test_trace_graph)
 crucible_test(test_trace_loader)
 crucible_test(test_schema_table)
@@ -2236,6 +2237,20 @@ crucible_neg_compile_test(neg_hlc_cross_source_timestamp
   "cannot convert|no matching function|could not convert|Tagged|External|Hlc")
 crucible_neg_compile_effects_test(neg_hlc_mint_test_context
   "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+
+# GAPS-215 — canopy/VectorClock.h operational vector clock.
+#   * neg_vector_clock_zero_nodes: MaxNodes=0 is rejected at the
+#     mint concept gate.
+#   * neg_vector_clock_mint_test_context: Init-only mint factory
+#     rejects Test.
+#   * neg_vector_clock_cross_n_snapshot: snapshots with different N
+#     cannot cross a fixed-size API boundary.
+crucible_neg_compile_test(neg_vector_clock_zero_nodes
+  "constraints not satisfied|VectorClockNodeBound|no matching function|MaxNodes")
+crucible_neg_compile_effects_test(neg_vector_clock_mint_test_context
+  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
+crucible_neg_compile_test(neg_vector_clock_cross_n_snapshot
+  "cannot convert|no matching function|could not convert|VectorClockSnapshot")
 
 # WRAP-StorageNbytes-5 (#1022) — compute_storage_nbytes* now accepts
 # ExternalTensorMeta = Tagged<const TensorMeta&, source::External>.
