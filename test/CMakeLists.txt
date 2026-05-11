@@ -224,6 +224,7 @@ crucible_test(test_symbol_table)
 crucible_test(test_hlc)
 crucible_test(test_vector_clock)
 crucible_test(test_crdt)
+crucible_test(test_swim)
 crucible_test(test_trace_graph)
 crucible_test(test_trace_loader)
 crucible_test(test_schema_table)
@@ -2272,6 +2273,21 @@ crucible_neg_compile_test(neg_crdt_lww_partial_clock
   "constraints not satisfied|three_way_comparable|strong_ordering|partial_ordering")
 crucible_neg_compile_test(neg_crdt_mv_register_unordered_value
   "constraints not satisfied|totally_ordered|three_way_comparable|operator<")
+
+# GAPS-114 — canopy/Swim.h bounded SWIM membership substrate.
+#   * neg_swim_zero_max_peers: MaxPeers=0 is rejected structurally.
+#   * neg_swim_raw_peer_add: add_peer requires source::SwimMember.
+#   * neg_swim_external_peer_add: source::External cannot substitute
+#     for source::SwimMember.
+#   * neg_swim_mint_test_context: Init-only mint factory rejects Test.
+crucible_neg_compile_test(neg_swim_zero_max_peers
+  "constraints not satisfied|SwimCapacity|MaxPeers")
+crucible_neg_compile_test(neg_swim_raw_peer_add
+  "cannot convert|no matching function|could not convert|SwimPeer|Tagged")
+crucible_neg_compile_test(neg_swim_external_peer_add
+  "cannot convert|no matching function|could not convert|External|SwimMember")
+crucible_neg_compile_effects_test(neg_swim_mint_test_context
+  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
 
 # WRAP-StorageNbytes-5 (#1022) — compute_storage_nbytes* now accepts
 # ExternalTensorMeta = Tagged<const TensorMeta&, source::External>.

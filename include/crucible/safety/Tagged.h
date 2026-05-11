@@ -114,6 +114,10 @@ namespace source {
     // merge boundary.
     struct Local        {};
     struct Gossiped     {};
+    // SwimMember: CogIdentity admitted into the SWIM membership view.
+    // Raw discovery output must be admitted explicitly before it can
+    // drive peer-health or gossip fanout decisions.
+    struct SwimMember   {};
 }
 
 namespace trust {
