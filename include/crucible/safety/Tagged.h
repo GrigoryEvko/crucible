@@ -103,6 +103,11 @@ namespace source {
     // into Vendor-tagged vs Calibrated-tagged subsets so the planner
     // can refuse to schedule against unverified vendor claims.
     struct Calibrated   {};
+    // Hlc: timestamps minted by canopy/Hybrid Logical Clock state.
+    // Distinct from External timestamps received from peers: received
+    // bytes must be admitted explicitly before they can drive CRDT /
+    // Cipher ordering decisions.
+    struct Hlc          {};
 }
 
 namespace trust {

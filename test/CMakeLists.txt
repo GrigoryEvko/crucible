@@ -221,6 +221,7 @@ crucible_test(test_call_site_table)
 crucible_test(test_swiss_table)
 crucible_test(test_meta_log)
 crucible_test(test_symbol_table)
+crucible_test(test_hlc)
 crucible_test(test_trace_graph)
 crucible_test(test_trace_loader)
 crucible_test(test_schema_table)
@@ -2222,6 +2223,19 @@ crucible_neg_compile_test(neg_hdr_histogram_record_raw_uint64
   "cannot convert|no matching function|could not convert|Refined|in_range|value_type")
 crucible_neg_compile_test(neg_hdr_histogram_merge_cross_config
   "cannot convert|no matching function|could not convert|HdrHistogram")
+
+# GAPS-138 — canopy/Hlc.h Hybrid Logical Clock primitive.
+#   * neg_hlc_raw_timestamp_to_tagged: raw HlcTimestamp cannot enter
+#     APIs requiring source::Hlc provenance.
+#   * neg_hlc_cross_source_timestamp: source::External timestamps do
+#     not implicitly convert to source::Hlc.
+#   * neg_hlc_mint_test_context: Init-only mint factory rejects Test.
+crucible_neg_compile_test(neg_hlc_raw_timestamp_to_tagged
+  "cannot convert|no matching function|could not convert|Tagged|HlcTimestamp")
+crucible_neg_compile_test(neg_hlc_cross_source_timestamp
+  "cannot convert|no matching function|could not convert|Tagged|External|Hlc")
+crucible_neg_compile_effects_test(neg_hlc_mint_test_context
+  "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
 
 # WRAP-StorageNbytes-5 (#1022) — compute_storage_nbytes* now accepts
 # ExternalTensorMeta = Tagged<const TensorMeta&, source::External>.
