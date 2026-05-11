@@ -223,6 +223,7 @@ crucible_test(test_meta_log)
 crucible_test(test_symbol_table)
 crucible_test(test_hlc)
 crucible_test(test_vector_clock)
+crucible_test(test_crdt)
 crucible_test(test_trace_graph)
 crucible_test(test_trace_loader)
 crucible_test(test_schema_table)
@@ -2251,6 +2252,22 @@ crucible_neg_compile_effects_test(neg_vector_clock_mint_test_context
   "could not convert|no matching function|cannot convert|effects::Test|effects::Init")
 crucible_neg_compile_test(neg_vector_clock_cross_n_snapshot
   "cannot convert|no matching function|could not convert|VectorClockSnapshot")
+
+# GAPS-214 — canopy/Crdt.h state-based CRDT substrate.
+#   * neg_crdt_gset_raw_add: local updates require source::Local.
+#   * neg_crdt_merge_raw_state: received state requires source::Gossiped.
+#   * neg_crdt_merge_local_state: source::Local state cannot substitute
+#     for source::Gossiped state at merge.
+#   * neg_crdt_lww_partial_clock: LWW clocks must be total-order clocks,
+#     not vector clocks with unordered concurrency.
+crucible_neg_compile_test(neg_crdt_gset_raw_add
+  "cannot convert|no matching function|could not convert|Tagged|Local")
+crucible_neg_compile_test(neg_crdt_merge_raw_state
+  "cannot convert|no matching function|could not convert|Gossiped|state_type")
+crucible_neg_compile_test(neg_crdt_merge_local_state
+  "cannot convert|no matching function|could not convert|Local|Gossiped")
+crucible_neg_compile_test(neg_crdt_lww_partial_clock
+  "constraints not satisfied|three_way_comparable|strong_ordering|partial_ordering")
 
 # WRAP-StorageNbytes-5 (#1022) — compute_storage_nbytes* now accepts
 # ExternalTensorMeta = Tagged<const TensorMeta&, source::External>.

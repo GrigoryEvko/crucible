@@ -108,6 +108,12 @@ namespace source {
     // bytes must be admitted explicitly before they can drive CRDT /
     // Cipher ordering decisions.
     struct Hlc          {};
+    // Local / Gossiped: CRDT provenance lanes.  Local marks writes
+    // authored by this replica; Gossiped marks state received from
+    // anti-entropy / Scuttlebutt exchange and admitted at the CRDT
+    // merge boundary.
+    struct Local        {};
+    struct Gossiped     {};
 }
 
 namespace trust {
