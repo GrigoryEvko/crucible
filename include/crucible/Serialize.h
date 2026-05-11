@@ -30,6 +30,9 @@ namespace crucible {
 static constexpr uint32_t CDAG_MAGIC   = 0x43444147u; // 'GDAG' LE
 using CdagFormatVersion = safety::Tagged<uint32_t, safety::source::FormatVersion>;
 using ExternalCdagVersion = safety::Tagged<uint32_t, safety::source::External>;
+using LoadedRegionNode = safety::Tagged<RegionNode*, safety::source::Loaded>;
+static_assert(sizeof(LoadedRegionNode) == sizeof(RegionNode*));
+static_assert(std::is_trivially_copy_constructible_v<LoadedRegionNode>);
 static constexpr CdagFormatVersion CDAG_VERSION{8u};   // v8: Guard::hash reflection-based (full-field fold incl. pad); v7 hashes invalid
 
 [[nodiscard]] constexpr bool cdag_version_matches(
@@ -312,11 +315,11 @@ inline Header read_header(Reader& r) {
 
 // ═══════════════════════════════════════════════════════════════════
 // deserialize_region
-// Returns nullptr on parse error or version mismatch.
+// Returns a Loaded-tagged null pointer on parse error or version mismatch.
 // All structures are arena-allocated; data_ptr is always null.
 // ═══════════════════════════════════════════════════════════════════
 
-[[nodiscard]] inline RegionNode* deserialize_region(
+[[nodiscard]] inline LoadedRegionNode deserialize_region(
     effects::Alloc                a,
     std::span<const uint8_t> buf,
     Arena&                   arena)
@@ -329,11 +332,11 @@ inline Header read_header(Reader& r) {
         || hdr.magic   != CDAG_MAGIC
         || !cdag_version_matches(hdr.version)
         || hdr.kind    != TraceNodeKind::REGION) {
-        return nullptr;
+        return LoadedRegionNode{nullptr};
     }
 
     const uint32_t   num_ops         = r.r<uint32_t>();
-    if (num_ops > CDAG_MAX_OPS) return nullptr;
+    if (num_ops > CDAG_MAX_OPS) return LoadedRegionNode{nullptr};
     const SchemaHash first_op_schema = SchemaHash{r.r<uint64_t>()};
     const float      measured_ms     = r.r<float>();
     const uint32_t   variant_id      = r.r<uint32_t>();
@@ -345,7 +348,7 @@ inline Header read_header(Reader& r) {
         plan                   = arena.alloc_obj<MemoryPlan>(a);
         plan->pool_bytes        = r.r<uint64_t>();
         plan->num_slots         = r.r<uint32_t>();
-        if (plan->num_slots > CDAG_MAX_SLOTS) return nullptr;
+        if (plan->num_slots > CDAG_MAX_SLOTS) return LoadedRegionNode{nullptr};
         plan->num_external      = r.r<uint32_t>();
         plan->device_type       = r.r<DeviceType>();
         plan->device_idx        = r.r<int8_t>();
@@ -365,7 +368,7 @@ inline Header read_header(Reader& r) {
             // uint64_t.
             const uint64_t slot_bytes =
                 static_cast<uint64_t>(plan->num_slots) * sizeof(TensorSlot);
-            if (r.pos + slot_bytes > r.len) return nullptr;
+            if (r.pos + slot_bytes > r.len) return LoadedRegionNode{nullptr};
             plan->slots = arena.alloc_array<TensorSlot>(a, plan->num_slots);
             for (uint32_t s = 0; s < plan->num_slots; s++) {
                 r.read_bytes(&plan->slots[s], sizeof(TensorSlot));
@@ -385,7 +388,7 @@ inline Header read_header(Reader& r) {
     if (num_ops > 0 &&
         r.remaining() < static_cast<size_t>(num_ops) * kTraceEntryMinWireBytes)
     {
-        return nullptr;
+        return LoadedRegionNode{nullptr};
     }
     TraceEntry* ops = (num_ops > 0)
         ? arena.alloc_array<TraceEntry>(a, num_ops) : nullptr;
@@ -399,9 +402,9 @@ inline Header read_header(Reader& r) {
         te.num_inputs       = r.r<uint16_t>();
         te.num_outputs      = r.r<uint16_t>();
         te.num_scalar_args  = r.r<uint16_t>();
-        if (te.num_inputs       > CDAG_MAX_INPUTS)      return nullptr;
-        if (te.num_outputs      > CDAG_MAX_OUTPUTS)     return nullptr;
-        if (te.num_scalar_args  > CDAG_MAX_SCALAR_ARGS) return nullptr;
+        if (te.num_inputs       > CDAG_MAX_INPUTS)      return LoadedRegionNode{nullptr};
+        if (te.num_outputs      > CDAG_MAX_OUTPUTS)     return LoadedRegionNode{nullptr};
+        if (te.num_scalar_args  > CDAG_MAX_SCALAR_ARGS) return LoadedRegionNode{nullptr};
         te.grad_enabled     = r.r<bool>();
         // Unpack op_flags byte (same layout as TraceRing::Entry::op_flags).
         {
@@ -427,7 +430,7 @@ inline Header read_header(Reader& r) {
             const uint8_t raw_kernel_id = r.r<uint8_t>();
             if (raw_kernel_id >= static_cast<uint8_t>(
                     CKernelId::NUM_KERNELS)) [[unlikely]] {
-                return nullptr;
+                return LoadedRegionNode{nullptr};
             }
             te.kernel_id = make_ckernel_id(
                 ValidCKernelIdRaw{raw_kernel_id});
@@ -470,7 +473,7 @@ inline Header read_header(Reader& r) {
         }
     }
 
-    if (!r.ok) return nullptr;
+    if (!r.ok) return LoadedRegionNode{nullptr};
 
     // Construct RegionNode in arena (atomic field requires placement new).
     auto* node = new (arena.alloc_obj<RegionNode>(a)) RegionNode{};
@@ -499,7 +502,7 @@ inline Header read_header(Reader& r) {
     // node->compiled is a PublishOnce<CompiledKernel> — default-
     // constructed nullptr is the correct "not yet published" state.
     // No explicit store needed.
-    return node;
+    return LoadedRegionNode{node};
 }
 
 // ═══════════════════════════════════════════════════════════════════

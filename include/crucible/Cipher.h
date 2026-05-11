@@ -554,7 +554,9 @@ class CRUCIBLE_OWNER Cipher {
 
         const std::span<const uint8_t> cached = cached_bytes(content_hash);
         if (!cached.empty()) {
-            RegionNode* region = deserialize_region(a, cached, arena);
+            const LoadedRegionNode loaded_region =
+                deserialize_region(a, cached, arena);
+            RegionNode* region = loaded_region.value();
             if (region && region->content_hash == content_hash) {
                 return LoadedContentAddressedRegionPayload{region, true};
             }
@@ -588,7 +590,9 @@ class CRUCIBLE_OWNER Cipher {
                static_cast<std::streamsize>(validated_len.value()));
         if (!f) return nullptr;
 
-        RegionNode* region = deserialize_region(a, std::span<const uint8_t>{buf}, arena);
+        const LoadedRegionNode loaded_region =
+            deserialize_region(a, std::span<const uint8_t>{buf}, arena);
+        RegionNode* region = loaded_region.value();
         if (!region) return nullptr;
         remember_cached_bytes(content_hash, std::span<const uint8_t>{buf});
         return LoadedContentAddressedRegionPayload{region, false};

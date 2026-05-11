@@ -2027,6 +2027,20 @@ crucible_neg_compile_test(neg_cdag_version_raw_uint32
 crucible_neg_compile_test(neg_cdag_version_external_cross_tag
   "conversion from|cannot convert|could not convert|no match for|Tagged|External|FormatVersion")
 
+# WRAP-Serialize-8 (#1017) — deserialize_region() returns
+#   safety::Tagged<RegionNode*, source::Loaded>.  The raw RegionNode*
+# only appears after explicit `.value()` at call sites that still need
+# pointer interop.  HS14 fixtures pin the two escape directions.
+#
+#   * neg_deserialize_region_raw_region_ptr.cpp — implicit raw pointer
+#     extraction rejected.
+#   * neg_deserialize_region_cross_tag.cpp — Loaded provenance cannot
+#     pass as source::External.
+crucible_neg_compile_test(neg_deserialize_region_raw_region_ptr
+  "conversion from|cannot convert|could not convert|no match for|Tagged|RegionNode")
+crucible_neg_compile_test(neg_deserialize_region_cross_tag
+  "conversion from|cannot convert|could not convert|no match for|Tagged|External|Loaded")
+
 # WRAP-TraceLoader-3 (#1051) — ValidSchemaNameLen =
 #   safety::Refined<safety::in_range<SCHEMA_NAME_LEN_MIN,
 #                                    SCHEMA_NAME_LEN_MAX>, uint16_t>

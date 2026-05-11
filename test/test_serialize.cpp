@@ -112,7 +112,9 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 
     // ── Deserialize into a fresh arena ──────────────────────────────
     crucible::Arena arena2(1 << 16);
-    crucible::RegionNode* loaded = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{buf, n}, arena2);
+    auto loaded_region = crucible::deserialize_region(
+        test.alloc, std::span<const uint8_t>{buf, n}, arena2);
+    crucible::RegionNode* loaded = loaded_region.value();
     assert(loaded != nullptr && "deserialize_region returned nullptr");
 
     // ── Verify round-trip ───────────────────────────────────────────
@@ -242,7 +244,9 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
 
     // ── Corrupt-data safety: truncated buffer for deserialize ───────
     crucible::Arena arena3(1 << 16);
-    crucible::RegionNode* bad = crucible::deserialize_region(test.alloc, std::span<const uint8_t>{buf, 10}, arena3);
+    auto bad_region = crucible::deserialize_region(
+        test.alloc, std::span<const uint8_t>{buf, 10}, arena3);
+    crucible::RegionNode* bad = bad_region.value();
     assert(bad == nullptr && "deserialize_region must return nullptr on truncated input");
 
     // ── Adversarial-header caps: reject before any giant allocation ──
@@ -264,9 +268,10 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         std::memcpy(adv.data() + 32, &bogus_num_ops, 4);
 
         crucible::Arena arena4(1 << 16);
-        crucible::RegionNode* r = crucible::deserialize_region(
+        auto adversarial_region = crucible::deserialize_region(
             test.alloc, std::span<const uint8_t>{adv.data(), adv.size()},
             arena4);
+        crucible::RegionNode* r = adversarial_region.value();
         assert(r == nullptr
                && "deserialize_region must reject num_ops > CDAG_MAX_OPS");
     }

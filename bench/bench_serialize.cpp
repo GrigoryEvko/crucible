@@ -114,8 +114,9 @@ int main() {
 
         reports.push_back(bench::run(label_des, [&, serial_len]{
             Arena read_arena{1 << 20};
-            auto* r = deserialize_region(
+            const auto loaded_region = deserialize_region(
                 A, std::span<const uint8_t>{buf.data(), serial_len}, read_arena);
+            auto* r = loaded_region.value();
             bench::do_not_optimize(r);
         }));
 
