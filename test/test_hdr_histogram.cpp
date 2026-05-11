@@ -1,6 +1,7 @@
 #include <crucible/observe/HdrHistogram.h>
 
 #include <atomic>
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <thread>
@@ -35,6 +36,23 @@ int main() {
     });
     assert(nonzero >= 3);
     assert(exported_count == h.total_count());
+
+    std::array<Hist::LogEncodedBucket, 2> partial_export{};
+    const auto partial_result = h.serialize_log_into(partial_export);
+    assert(partial_result.written == partial_export.size());
+    assert(partial_result.required == nonzero);
+    assert(!partial_result.complete());
+
+    std::array<Hist::LogEncodedBucket, Hist::bucket_slots> full_export{};
+    const auto full_result = h.serialize_log_into(full_export);
+    assert(full_result.complete());
+    assert(full_result.written == nonzero);
+    std::uint64_t serialized_count = 0;
+    for (std::size_t i = 0; i < full_result.written; ++i) {
+        assert(full_export[i].count > 0);
+        serialized_count += full_export[i].count;
+    }
+    assert(serialized_count == h.total_count());
 
     Hist delta;
     delta.record(Hist::checked_value(20));

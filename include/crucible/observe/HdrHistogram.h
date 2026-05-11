@@ -17,6 +17,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <type_traits>
 #include <utility>
 
@@ -67,6 +68,9 @@ struct HdrLayout {
 
     [[nodiscard]] static constexpr std::size_t counts_index(std::uint64_t value) noexcept {
         const std::uint32_t bucket = bucket_index(value);
+        if (bucket == 0) {
+            return static_cast<std::size_t>(value);
+        }
         const std::uint64_t sub_bucket = value >> bucket;
         const std::uint64_t offset = sub_bucket - sub_bucket_half_count;
         return (static_cast<std::size_t>(bucket + 1) *
@@ -106,9 +110,25 @@ public:
         std::uint64_t count;
     };
 
+    struct LogEncodedBucket {
+        std::uint32_t index;
+        std::uint64_t count;
+    };
+
+    struct SerializeResult {
+        std::size_t written;
+        std::size_t required;
+
+        [[nodiscard]] constexpr bool complete() const noexcept {
+            return written == required;
+        }
+    };
+
     static constexpr std::uint8_t significant_digits = Significant;
     static constexpr std::uint64_t max_trackable_value = MaxValue;
     static constexpr std::size_t bucket_slots = layout_type::counts_len;
+    static_assert(layout_type::counts_index(std::uint64_t{1}) < bucket_slots);
+    static_assert(layout_type::counts_index(MaxValue) < bucket_slots);
 
     HdrHistogram() = default;
     HdrHistogram(const HdrHistogram&) = delete;
@@ -121,11 +141,11 @@ public:
     CRUCIBLE_HOT void record(value_type value) noexcept {
         const std::size_t index = layout_type::counts_index(value.value());
         counts_[index].fetch_add(1, std::memory_order_relaxed);
-        total_count_.fetch_add(1, std::memory_order_relaxed);
+        total_count_.fetch_add(1, std::memory_order_release);
     }
 
     [[nodiscard]] std::uint64_t total_count() const noexcept {
-        return total_count_.load(std::memory_order_relaxed);
+        return total_count_.load(std::memory_order_acquire);
     }
 
     [[nodiscard]] std::uint64_t percentile(double pct) const noexcept {
@@ -200,7 +220,7 @@ public:
                 counts_[i].fetch_add(count, std::memory_order_relaxed);
             }
         }
-        total_count_.fetch_add(other.total_count(), std::memory_order_relaxed);
+        total_count_.fetch_add(other.total_count(), std::memory_order_release);
     }
 
     void add_from(const HdrHistogram& other) noexcept {
@@ -214,7 +234,7 @@ public:
                 saturating_sub(counts_[i], count);
             }
         }
-        saturating_sub(total_count_, other.total_count());
+        saturating_sub(total_count_, other.total_count(), std::memory_order_acq_rel);
     }
 
     void reset() noexcept {
@@ -241,15 +261,36 @@ public:
         return emitted;
     }
 
+    SerializeResult serialize_log_into(std::span<LogEncodedBucket> out) const noexcept {
+        SerializeResult result{.written = 0, .required = 0};
+        for (std::size_t i = 0; i < counts_.size(); ++i) {
+            const std::uint64_t count = counts_[i].load(std::memory_order_relaxed);
+            if (count == 0) {
+                continue;
+            }
+            if (result.written < out.size()) {
+                out[result.written] = LogEncodedBucket{
+                    .index = static_cast<std::uint32_t>(i),
+                    .count = count,
+                };
+                ++result.written;
+            }
+            ++result.required;
+        }
+        return result;
+    }
+
 private:
     static void saturating_sub(std::atomic<std::uint64_t>& dst,
-                               std::uint64_t amount) noexcept {
+                               std::uint64_t amount,
+                               std::memory_order success =
+                                   std::memory_order_relaxed) noexcept {
         std::uint64_t observed = dst.load(std::memory_order_relaxed);
         while (true) {
             const std::uint64_t desired = observed > amount ? observed - amount : 0;
             if (dst.compare_exchange_weak(
                     observed, desired,
-                    std::memory_order_relaxed,
+                    success,
                     std::memory_order_relaxed)) {
                 return;
             }
@@ -304,14 +345,14 @@ public:
     }
 
 private:
-    [[nodiscard]] std::size_t thread_shard() noexcept {
+    [[nodiscard]] static std::size_t thread_shard() noexcept {
         thread_local const std::size_t shard =
-            next_shard_.fetch_add(1, std::memory_order_relaxed) % ShardCount;
+            next_thread_shard_.fetch_add(1, std::memory_order_relaxed) % ShardCount;
         return shard;
     }
 
     alignas(64) std::array<histogram_type, ShardCount> shards_{};
-    alignas(64) std::atomic<std::uint64_t> next_shard_{0};
+    alignas(64) inline static std::atomic<std::uint64_t> next_thread_shard_{0};
 };
 
 template <typename H>
