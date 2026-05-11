@@ -1349,20 +1349,20 @@ crucible_neg_compile_effects_test(neg_substrate_session_non_bridgeable
 #   (b) Ctx that is not an ExecCtx (bare int) →
 #       IsExecCtx<Ctx> conjunct fires.
 #   (c-f) input/output payload row mismatch cases, including
-#       Capability<E, S> payload propagation, prove the Subrow gate
-#       fires for both stage boundaries.
+#       Capability<E, S> payload propagation, prove the row_subset
+#       admission gate fires for both stage boundaries.
 crucible_neg_compile_effects_test(neg_mint_stage_non_pipeline_stage
     "associated constraints are not satisfied|CtxFitsStage|PipelineStage")
 crucible_neg_compile_effects_test(neg_mint_stage_non_exec_ctx
     "associated constraints are not satisfied|CtxFitsStage|IsExecCtx")
 crucible_neg_compile_effects_test(neg_mint_stage_input_row_mismatch
-    "EffectRowMismatch|StageInputRowAdmitted|Subrow")
+    "EffectRowMismatch|StageInputRowAdmitted|row_subset|Subrow")
 crucible_neg_compile_effects_test(neg_mint_stage_output_row_mismatch
-    "EffectRowMismatch|StageOutputRowAdmitted|Subrow")
+    "EffectRowMismatch|StageOutputRowAdmitted|row_subset|Subrow")
 crucible_neg_compile_effects_test(neg_mint_stage_both_rows_mismatch
-    "EffectRowMismatch|StageInputRowAdmitted|StageOutputRowAdmitted|Subrow")
+    "EffectRowMismatch|StageInputRowAdmitted|StageOutputRowAdmitted|row_subset|Subrow")
 crucible_neg_compile_effects_test(neg_mint_stage_capability_payload_no_admit
-    "EffectRowMismatch|StageInputRowAdmitted|Subrow")
+    "EffectRowMismatch|StageInputRowAdmitted|row_subset|Subrow")
 
 # Audit round 2 (#864): three additional fixtures hardening Stage's
 # soundness gates beyond the 2-fixture HS14 minimum:
@@ -1397,11 +1397,11 @@ crucible_neg_compile_effects_test(neg_mint_pipeline_non_stage
 crucible_neg_compile_effects_test(neg_mint_pipeline_non_exec_ctx
     "associated constraints are not satisfied|CtxFitsPipeline|IsExecCtx")
 crucible_neg_compile_effects_test(neg_mint_pipeline_row_union_exceeds_ctx
-    "EffectRowMismatch|pipeline_row_union_t|Subrow")
+    "EffectRowMismatch|pipeline_row_union_t|row_subset|Subrow")
 crucible_neg_compile_effects_test(neg_mint_pipeline_chain_payload_compat_ok_row_mismatch
-    "EffectRowMismatch|pipeline_row_union_t|Subrow")
+    "EffectRowMismatch|pipeline_row_union_t|row_subset|Subrow")
 crucible_neg_compile_effects_test(neg_mint_pipeline_capability_propagation
-    "EffectRowMismatch|pipeline_row_union_t|Subrow")
+    "EffectRowMismatch|pipeline_row_union_t|row_subset|Subrow")
 
 # Pipeline.h audit round 2 (#866): three additional fixtures hardening
 # Pipeline's soundness gates beyond the 3-fixture concept-gate set:

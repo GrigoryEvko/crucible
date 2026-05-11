@@ -109,7 +109,7 @@
 // SubstrateFitsCtxResidency.  Pipeline's remaining jobs are:
 //   * verify the CHAIN invariant (output_i ≡ input_{i+1}); and
 //   * verify coordinator row admission.  The union of all stage rows,
-//     pipeline_row_union_t<Stages...>, must be a Subrow of the
+//     pipeline_row_union_t<Stages...>, must be admitted by the
 //     coordinator Ctx::row_type.
 //
 // The row-union gate is pinned by
@@ -175,6 +175,7 @@
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/effects/EffectRow.h>
 #include <crucible/permissions/Permission.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/safety/diag/RowMismatch.h>
 
 #include <array>
@@ -388,8 +389,8 @@ template <class Ctx, class... Stages>
 concept CtxFitsPipeline =
     ::crucible::effects::IsExecCtx<Ctx>
  && pipeline_chain<Stages...>
- && ::crucible::effects::Subrow<pipeline_row_union_t<Stages...>,
-                                typename Ctx::row_type>;
+ && ::crucible::decide::row_subset<pipeline_row_union_t<Stages...>,
+                                   typename Ctx::row_type>();
 
 // ═════════════════════════════════════════════════════════════════════
 // ── StageGraph / PipelineDag — GAPS-086 non-linear composition ─────
@@ -582,8 +583,8 @@ template <class Ctx, class Graph>
 concept CtxFitsPipelineDag =
     ::crucible::effects::IsExecCtx<Ctx>
  && StageGraphWellFormed<Graph>
- && ::crucible::effects::Subrow<stage_graph_row_union_t<Graph>,
-                                typename Ctx::row_type>;
+ && ::crucible::decide::row_subset<stage_graph_row_union_t<Graph>,
+                                   typename Ctx::row_type>();
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Pipeline working-set and inline-safety traits ──────────────────
@@ -957,7 +958,7 @@ template <::crucible::effects::IsExecCtx Ctx, class... Stages>
         ::crucible::effects::row_difference_t<required_row, ctx_row>;
 
     CRUCIBLE_ROW_MISMATCH_ASSERT(
-        (::crucible::effects::Subrow<required_row, ctx_row>),
+        (::crucible::decide::row_subset<required_row, ctx_row>()),
         EffectRowMismatch,
         &::crucible::concurrent::detail::mint_pipeline_row_admission_anchor,
         ctx_row,
@@ -1009,7 +1010,7 @@ template <::crucible::effects::IsExecCtx Ctx, class Graph, class... Stages>
         ::crucible::effects::row_difference_t<required_row, ctx_row>;
 
     CRUCIBLE_ROW_MISMATCH_ASSERT(
-        (::crucible::effects::Subrow<required_row, ctx_row>),
+        (::crucible::decide::row_subset<required_row, ctx_row>()),
         EffectRowMismatch,
         &::crucible::concurrent::detail::mint_pipeline_dag_row_admission_anchor,
         ctx_row,

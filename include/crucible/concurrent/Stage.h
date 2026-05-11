@@ -117,6 +117,7 @@
 #include <crucible/concurrent/WorkingSet.h>
 #include <crucible/effects/ExecCtx.h>
 #include <crucible/effects/EffectRow.h>
+#include <crucible/safety/Decide.h>
 #include <crucible/safety/PipelineStage.h>
 #include <crucible/safety/IsSwmrHandle.h>
 #include <crucible/safety/SignatureTraits.h>
@@ -145,7 +146,7 @@ namespace crucible::concurrent {
 //      static facts (residency_tier, cap_type, row_type, locality_hint).
 //
 //   3. StageInputRowAdmitted / StageOutputRowAdmitted — each payload
-//      effect row carried by the stage boundary is a Subrow of
+//      effect row carried by the stage boundary is admitted by
 //      Ctx::row_type.  payload_row_t keeps non-effect grades (for
 //      example NumericalTier); payload_effect_row_t is the effect-only
 //      projection used for ctx admission.
@@ -159,19 +160,19 @@ template <auto FnPtr, class Ctx>
 concept StageInputRowAdmitted =
     ::crucible::safety::extract::PipelineStage<FnPtr>
  && ::crucible::effects::IsExecCtx<Ctx>
- && ::crucible::effects::Subrow<
+ && ::crucible::decide::row_subset<
         ::crucible::safety::proto::payload_effect_row_t<
             ::crucible::safety::extract::pipeline_stage_input_value_t<FnPtr>>,
-        typename Ctx::row_type>;
+        typename Ctx::row_type>();
 
 template <auto FnPtr, class Ctx>
 concept StageOutputRowAdmitted =
     ::crucible::safety::extract::PipelineStage<FnPtr>
  && ::crucible::effects::IsExecCtx<Ctx>
- && ::crucible::effects::Subrow<
+ && ::crucible::decide::row_subset<
         ::crucible::safety::proto::payload_effect_row_t<
             ::crucible::safety::extract::pipeline_stage_output_value_t<FnPtr>>,
-        typename Ctx::row_type>;
+        typename Ctx::row_type>();
 
 template <auto FnPtr, class Ctx>
 concept CtxFitsStage =
@@ -239,9 +240,9 @@ consteval bool variadic_stage_rows_admitted() noexcept {
                || !::crucible::effects::IsExecCtx<Ctx>) {
         return false;
     } else {
-        return ::crucible::effects::Subrow<
+        return ::crucible::decide::row_subset<
             typename variadic_stage_row_union<FnPtr>::type,
-            typename Ctx::row_type>;
+            typename Ctx::row_type>();
     }
 }
 
@@ -339,8 +340,8 @@ template <auto FnPtr, class Ctx>
 concept CtxFitsSwmrPublishStage =
     SwmrPublishStageBody<FnPtr>
  && ::crucible::effects::IsExecCtx<Ctx>
- && ::crucible::effects::Subrow<swmr_stage_row_union_t<FnPtr>,
-                                typename Ctx::row_type>;
+ && ::crucible::decide::row_subset<swmr_stage_row_union_t<FnPtr>,
+                                   typename Ctx::row_type>();
 
 // ═════════════════════════════════════════════════════════════════════
 // ── Stage<auto FnPtr, Ctx> ─────────────────────────────────────────
@@ -645,7 +646,7 @@ template <auto FnPtr, ::crucible::effects::IsExecCtx Ctx>
         ::crucible::effects::row_difference_t<output_row, ctx_row>;
 
     CRUCIBLE_ROW_MISMATCH_ASSERT(
-        (::crucible::effects::Subrow<input_row, ctx_row>),
+        (::crucible::decide::row_subset<input_row, ctx_row>()),
         EffectRowMismatch,
         FnPtr,
         ctx_row,
@@ -653,7 +654,7 @@ template <auto FnPtr, ::crucible::effects::IsExecCtx Ctx>
         input_offending_row);
 
     CRUCIBLE_ROW_MISMATCH_ASSERT(
-        (::crucible::effects::Subrow<output_row, ctx_row>),
+        (::crucible::decide::row_subset<output_row, ctx_row>()),
         EffectRowMismatch,
         FnPtr,
         ctx_row,

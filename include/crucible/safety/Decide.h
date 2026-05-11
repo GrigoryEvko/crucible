@@ -1368,9 +1368,16 @@ constexpr bool tier_replaces(TierTag candidate, TierTag required) noexcept {
 //   * mimic/CogMimic.h:516 — CtxFitsCogMimic admits Init/Bg context
 //                             rows for Mimic substrate minting
 //                             (CONTRACT-118).
-//   * Future: Forge Phase L row admission rebrand and Stage /
-//             Pipeline cite-pass convert inline Subrow static_asserts
-//             into VC-discharged decide::row_subset cites.
+//   * concurrent/Stage.h — Stage input/output payload-row admission
+//                          and SWMR publish-stage row admission
+//                          (CONTRACT-111).
+//   * concurrent/StageEndpointBridge.h — endpoint-bridged MPMC/SWMR
+//                                        stage row admission
+//                                        (CONTRACT-111).
+//   * concurrent/Pipeline.h — pipeline and pipeline-DAG coordinator
+//                             row admission (CONTRACT-111).
+//   * Future: Forge Phase L row admission can use the same cite shape
+//             when the forge/ tree lands.
 //
 // ANTI-PATTERNS (review-rejected)
 // -------------------------------

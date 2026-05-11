@@ -129,6 +129,7 @@
 #include <crucible/Platform.h>
 #include <crucible/concurrent/Endpoint.h>
 #include <crucible/concurrent/Stage.h>
+#include <crucible/safety/Decide.h>
 
 #include <cstddef>
 #include <tuple>
@@ -535,7 +536,7 @@ template <auto FnPtr,
         ::crucible::effects::row_difference_t<required_row, ctx_row>;
 
     CRUCIBLE_ROW_MISMATCH_ASSERT(
-        (::crucible::effects::Subrow<required_row, ctx_row>),
+        (::crucible::decide::row_subset<required_row, ctx_row>()),
         EffectRowMismatch,
         &::crucible::concurrent::detail::mint_mpmc_stage_row_admission_anchor,
         ctx_row,
@@ -566,7 +567,7 @@ template <auto FnPtr,
         ::crucible::effects::row_difference_t<required_row, ctx_row>;
 
     CRUCIBLE_ROW_MISMATCH_ASSERT(
-        (::crucible::effects::Subrow<required_row, ctx_row>),
+        (::crucible::decide::row_subset<required_row, ctx_row>()),
         EffectRowMismatch,
         &::crucible::concurrent::detail::mint_swmr_stage_row_admission_anchor,
         ctx_row,
