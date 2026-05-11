@@ -15,6 +15,7 @@
 #include <crucible/Arena.h>
 #include <crucible/MerkleDag.h>
 #include <crucible/MetaLog.h>
+#include <crucible/safety/Tagged.h>
 
 #include <concepts>
 #include <cstdint>
@@ -27,7 +28,15 @@
 namespace crucible {
 
 static constexpr uint32_t CDAG_MAGIC   = 0x43444147u; // 'GDAG' LE
-static constexpr uint32_t CDAG_VERSION = 8u;           // v8: Guard::hash reflection-based (full-field fold incl. pad); v7 hashes invalid
+using CdagFormatVersion = safety::Tagged<uint32_t, safety::source::FormatVersion>;
+using ExternalCdagVersion = safety::Tagged<uint32_t, safety::source::External>;
+static constexpr CdagFormatVersion CDAG_VERSION{8u};   // v8: Guard::hash reflection-based (full-field fold incl. pad); v7 hashes invalid
+
+[[nodiscard]] constexpr bool cdag_version_matches(
+    ExternalCdagVersion disk_version) noexcept
+{
+    return disk_version.value() == CDAG_VERSION.value();
+}
 
 // Hard caps on header-declared counts.  Real traces top out around
 // 10^5 ops / 10 inputs per op; the extra order of magnitude is slack.
@@ -163,7 +172,7 @@ inline TensorMeta read_meta(Reader& r) {
 inline void write_header(Writer& w, TraceNodeKind kind,
                          MerkleHash merkle_hash, ContentHash content_hash) {
     w.w(CDAG_MAGIC);
-    w.w(CDAG_VERSION);
+    w.w(CDAG_VERSION.value());
     w.w(std::to_underlying(kind));
     const uint8_t pad7[7] = {};
     w.write_bytes(pad7, 7);
@@ -173,7 +182,7 @@ inline void write_header(Writer& w, TraceNodeKind kind,
 
 struct Header {
     uint32_t      magic = 0;
-    uint32_t      version = 0;
+    ExternalCdagVersion version{0};
     TraceNodeKind kind{};            // strong-typed (was raw uint8_t)
     MerkleHash    merkle_hash;
     ContentHash   content_hash;
@@ -182,7 +191,7 @@ struct Header {
 inline Header read_header(Reader& r) {
     Header h{};
     h.magic   = r.r<uint32_t>();
-    h.version = r.r<uint32_t>();
+    h.version = ExternalCdagVersion{r.r<uint32_t>()};
     // ── WRAP-Serialize-6 (#1015) — typed widening at deserialize boundary ──
     // The byte on disk could be in [4, 255] under corruption or version
     // skew.  ValidTraceNodeKindRaw's ctor pre-clause rejects any byte
@@ -318,7 +327,7 @@ inline Header read_header(Reader& r) {
     const Header hdr = read_header(r);
     if (!r.ok
         || hdr.magic   != CDAG_MAGIC
-        || hdr.version != CDAG_VERSION
+        || !cdag_version_matches(hdr.version)
         || hdr.kind    != TraceNodeKind::REGION) {
         return nullptr;
     }
@@ -549,7 +558,7 @@ template <typename Resolve>
     const Header hdr = read_header(r);
     if (!r.ok
         || hdr.magic   != CDAG_MAGIC
-        || hdr.version != CDAG_VERSION
+        || !cdag_version_matches(hdr.version)
         || hdr.kind    != TraceNodeKind::BRANCH) {
         return nullptr;
     }

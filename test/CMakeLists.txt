@@ -2011,6 +2011,22 @@ crucible_neg_compile_test(neg_trace_node_kind_above_terminal
 crucible_neg_compile_test(neg_trace_node_kind_uint8_max
   "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
 
+# WRAP-Serialize-4 (#1013) — CDAG_VERSION =
+#   safety::Tagged<uint32_t, source::FormatVersion>.  Disk-read
+# header versions enter as source::External and must be explicitly
+# checked against the in-process format constant before the wire body
+# is trusted.  HS14 fixtures pin both escape directions.
+#
+#   * neg_cdag_version_raw_uint32.cpp — read-side raw extraction
+#     rejected; byte writers must spell `.value()` at the boundary.
+#   * neg_cdag_version_external_cross_tag.cpp — cross-tag assignment
+#     rejected; source::FormatVersion cannot masquerade as
+#     source::External.
+crucible_neg_compile_test(neg_cdag_version_raw_uint32
+  "conversion from|cannot convert|could not convert|no match for|Tagged")
+crucible_neg_compile_test(neg_cdag_version_external_cross_tag
+  "conversion from|cannot convert|could not convert|no match for|Tagged|External|FormatVersion")
+
 # WRAP-TraceLoader-3 (#1051) — ValidSchemaNameLen =
 #   safety::Refined<safety::in_range<SCHEMA_NAME_LEN_MIN,
 #                                    SCHEMA_NAME_LEN_MAX>, uint16_t>

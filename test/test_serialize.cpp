@@ -206,7 +206,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     // a byte-stable size).  Both are anchored to CDAG_VERSION=8.
     {
         static constexpr uint32_t EXPECTED_CDAG_VERSION = 8;
-        static_assert(crucible::CDAG_VERSION == EXPECTED_CDAG_VERSION,
+        static_assert(crucible::CDAG_VERSION.value() == EXPECTED_CDAG_VERSION,
             "CDAG_VERSION bump detected — update wire-byte golden below "
             "after confirming the new bytes hash to the expected value.");
 
@@ -254,7 +254,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         // 16..23 merkle; 24..31 content; 32..35 num_ops.  See Serialize.h.
         std::vector<uint8_t> adv(128, 0);
         const uint32_t magic = crucible::CDAG_MAGIC;
-        const uint32_t version = crucible::CDAG_VERSION;
+        const uint32_t version = crucible::CDAG_VERSION.value();
         const uint8_t  kind = static_cast<uint8_t>(crucible::TraceNodeKind::REGION);
         std::memcpy(adv.data() +  0, &magic,   4);
         std::memcpy(adv.data() +  4, &version, 4);

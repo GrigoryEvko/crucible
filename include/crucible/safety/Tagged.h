@@ -73,6 +73,7 @@ namespace source {
     struct External     {};  // raw untrusted input (network, FFI)
     struct ABIBoundary  {};  // opaque value crossing a C ABI / FFI boundary
     struct Sanitized    {};  // validated, safe to pass to sanitized-only APIs
+    struct FormatVersion {}; // in-process format/version constant
     // Durable: loaded from on-disk state (Cipher, config, snapshots).
     // Computed: derived at startup / runtime from Durable + inputs.
     // The pair lets a reader distinguish "this came from disk" from "this
