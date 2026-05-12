@@ -43,6 +43,7 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
     m.layout      = crucible::Layout::Strided;
     m.data_ptr    = crucible::external_data_ptr(std::bit_cast<void*>(
         static_cast<std::uintptr_t>(0xDEADBEEF))); // must become null on reload
+    m.grad_fn_hash = crucible::grad_fn_hash(0xA11C'E000'BADD'F00DULL);
     return m;
 }
 
@@ -144,6 +145,10 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         for (uint16_t j = 0; j < ops[i].num_inputs; j++) {
             assert(crucible::raw_data_ptr(loaded->ops[i].input_metas[j]) == nullptr
                    && "data_ptr must be null after deserialization");
+            assert(crucible::raw_grad_fn_hash(ops[i].input_metas[j]) != 0
+                   && "test fixture must exercise non-zero Family-B input");
+            assert(crucible::raw_grad_fn_hash(loaded->ops[i].input_metas[j]) == 0
+                   && "grad_fn_hash must be zero after deserialization");
             assert(loaded->ops[i].input_metas[j].ndim     == ops[i].input_metas[j].ndim);
             assert(loaded->ops[i].input_metas[j].dtype    == ops[i].input_metas[j].dtype);
             assert(loaded->ops[i].input_metas[j].sizes[0] == ops[i].input_metas[j].sizes[0]);
@@ -153,6 +158,8 @@ static crucible::TensorMeta make_meta(int64_t size0, int64_t size1 = 0) {
         }
         for (uint16_t j = 0; j < ops[i].num_outputs; j++) {
             assert(crucible::raw_data_ptr(loaded->ops[i].output_metas[j]) == nullptr);
+            assert(crucible::raw_grad_fn_hash(ops[i].output_metas[j]) != 0);
+            assert(crucible::raw_grad_fn_hash(loaded->ops[i].output_metas[j]) == 0);
         }
 
         // Scalar args round-trip.

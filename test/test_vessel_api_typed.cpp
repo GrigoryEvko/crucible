@@ -181,7 +181,7 @@ void test_meta_roundtrip() {
     EXPECT(tm[0].sizes[0] == 4, "TensorMeta::sizes[0] must read 4 from CrucibleMeta");
     EXPECT(tm[0].sizes[1] == 8, "TensorMeta::sizes[1] must read 8 from CrucibleMeta");
     EXPECT(tm[0].ndim == 3, "TensorMeta::ndim must read 3");
-    EXPECT(tm[0].grad_fn_hash == 0x0123456789ABCDEFULL,
+    EXPECT(crucible::raw_grad_fn_hash(tm[0]) == 0x0123456789ABCDEFULL,
            "TensorMeta::grad_fn_hash must read all 64 bits intact");
     EXPECT(tm[1].storage_nbytes == 4 * 8 * 16 * 4,
            "Second-element storage_nbytes must read intact (no array stride bug)");

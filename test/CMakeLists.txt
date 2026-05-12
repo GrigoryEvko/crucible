@@ -2220,6 +2220,18 @@ crucible_neg_compile_test(neg_tensor_meta_data_ptr_raw_pointer
 crucible_neg_compile_test(neg_tensor_meta_data_ptr_cross_tag
   "no match for|cannot convert|no viable|could not convert|operator=|Tagged|External|Sanitized")
 
+# WRAP-TensorMeta-7 (#1040) — TensorMeta::grad_fn_hash now stores
+# GradFnHash = Tagged<uint64_t, hash_family::FamilyB>.  Two HS14
+# fixtures cover the Family-B gate's two field-write directions:
+#   * neg_tensor_meta_grad_fn_hash_raw_uint64 — raw uint64_t cannot
+#     assign directly to the explicit Tagged field.
+#   * neg_tensor_meta_grad_fn_hash_cross_family — Family-A persistent
+#     hashes cannot pass as process-local Family-B hashes.
+crucible_neg_compile_test(neg_tensor_meta_grad_fn_hash_raw_uint64
+  "no match for|cannot convert|no viable|could not convert|operator=|Tagged|GradFnHash")
+crucible_neg_compile_test(neg_tensor_meta_grad_fn_hash_cross_family
+  "no match for|cannot convert|no viable|could not convert|operator=|Tagged|FamilyA|FamilyB")
+
 # GAPS-135 — observe/HdrHistogram.h keeps the recording boundary typed
 # and the merge geometry exact:
 #   * neg_hdr_histogram_record_raw_uint64 — raw external samples cannot

@@ -278,11 +278,17 @@ CRUCIBLE_STRONG_HASH(RowHash);       // effect-row content identity — fmix64 f
 
 #undef CRUCIBLE_STRONG_HASH
 
+namespace hash_family {
+struct FamilyA {};
+struct FamilyB {};
+} // namespace hash_family
+
 // ═══════════════════════════════════════════════════════════════════
 // Hash taxonomy — TWO DISJOINT FAMILIES with different persistence
-// semantics.  The type system does not yet enforce the split (future
-// work — see the `InternHash` note below); until it does, this
-// comment block is the contract every new hash site must honor.
+// semantics.  Hash-producing fields should use `safety::Tagged<...,
+// hash_family::FamilyA>` or `safety::Tagged<..., hash_family::FamilyB>`
+// where layout permits; legacy strong-hash IDs remain bare newtypes
+// until their call-site migrations land.
 //
 // ── Family A: PERSISTENT hashes ────────────────────────────────────
 //

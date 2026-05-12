@@ -118,7 +118,9 @@ struct Reader {
     }
 };
 
-// Write TensorMeta with data_ptr zeroed (runtime address is not meaningful).
+// Write TensorMeta with process-local fields zeroed. data_ptr is a
+// runtime address; grad_fn_hash is a Family-B autograd identity. Neither
+// is meaningful after reload and neither may enter persistent bytes.
 // Pad bytes are written as zero for deterministic serialization.
 inline void write_meta(Writer& w, const TensorMeta& m) {
     w.write_bytes(m.sizes,   sizeof(m.sizes));
@@ -137,10 +139,12 @@ inline void write_meta(Writer& w, const TensorMeta& m) {
     w.w(m.storage_offset);
     w.w(m.version);
     w.w(m.storage_nbytes);
-    w.w(m.grad_fn_hash);
+    const uint64_t zero_grad_fn_hash = 0;
+    w.w(zero_grad_fn_hash);
 }
 
-// Read TensorMeta: data_ptr is always null after deserialization.
+// Read TensorMeta: process-local fields are always null/zero after
+// deserialization, even if older or corrupt bytes carry non-zero values.
 inline TensorMeta read_meta(Reader& r) {
     TensorMeta m{};
     r.read_bytes(m.sizes,   sizeof(m.sizes));
@@ -167,7 +171,8 @@ inline TensorMeta read_meta(Reader& r) {
     m.storage_offset  = r.r<int64_t>();
     m.version         = r.r<uint32_t>();
     m.storage_nbytes  = r.r<uint32_t>();
-    m.grad_fn_hash    = r.r<uint64_t>();
+    (void)r.r<uint64_t>(); // grad_fn_hash (Family-B, discarded)
+    m.grad_fn_hash    = grad_fn_hash(0);
     return m;
 }
 

@@ -46,6 +46,19 @@ static_assert(sizeof(ExternalDataPtr) == sizeof(void*),
 static_assert(std::is_trivially_copyable_v<ExternalDataPtr>);
 static_assert(std::is_standard_layout_v<ExternalDataPtr>);
 
+// WRAP-TensorMeta-7 (#1040): PyTorch grad_fn identity is process-local.
+// The value may depend on autograd object identity and must never be
+// treated as a persistent Family-A key.  Tagged keeps the 8-byte layout
+// but forces every consumer to acknowledge the Family-B lane.
+using GradFnHash = ::crucible::safety::Tagged<
+    uint64_t, ::crucible::hash_family::FamilyB>;
+
+static_assert(sizeof(GradFnHash) == sizeof(uint64_t),
+    "Tagged<uint64_t, hash_family::FamilyB> must EBO-collapse so "
+    "TensorMeta stays layout-stable");
+static_assert(std::is_trivially_copyable_v<GradFnHash>);
+static_assert(std::is_standard_layout_v<GradFnHash>);
+
 struct TensorMeta {
   int64_t sizes[8]{};        // 64B — zero-init prevents hash instability
   int64_t strides[8]{};      // 64B
@@ -73,8 +86,8 @@ struct TensorMeta {
   int64_t storage_offset = 0; // 8B — offset into underlying storage (view chains)
   uint32_t version = 0;      // 4B — tensor data version counter (in-place mutation detection)
   uint32_t storage_nbytes = 0; // 4B — actual storage size in bytes (may differ from view)
-  uint64_t grad_fn_hash = 0;  // 8B — FNV-1a hash of grad_fn class name (e.g. "AddmmBackward0")
-                               //      0 = no grad_fn (leaf tensor or no autograd)
+  GradFnHash grad_fn_hash{0}; // 8B — Family-B FNV-1a grad_fn class-name hash
+                              //      0 = no grad_fn (leaf tensor or no autograd)
 };
 
 static_assert(sizeof(TensorMeta) == 168, "TensorMeta layout check");
@@ -93,6 +106,21 @@ raw_data_ptr(ExternalDataPtr ptr) noexcept {
 [[nodiscard]] inline constexpr void*
 raw_data_ptr(const TensorMeta& meta) noexcept {
   return raw_data_ptr(meta.data_ptr);
+}
+
+[[nodiscard]] inline constexpr GradFnHash
+grad_fn_hash(uint64_t hash) noexcept {
+  return GradFnHash{hash};
+}
+
+[[nodiscard]] inline constexpr uint64_t
+raw_grad_fn_hash(GradFnHash hash) noexcept {
+  return hash.value();
+}
+
+[[nodiscard]] inline constexpr uint64_t
+raw_grad_fn_hash(const TensorMeta& meta) noexcept {
+  return raw_grad_fn_hash(meta.grad_fn_hash);
 }
 
 // WRAP-StorageNbytes-5 (#1022): storage-span computation is an
