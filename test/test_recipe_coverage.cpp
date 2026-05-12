@@ -79,6 +79,10 @@ namespace names = crucible::recipe_names;
 crucible::effects::Test g_test{};
 inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
+[[nodiscard]] inline auto entries_view(const RecipeRegistry& reg) noexcept {
+  return reg.entries().value();
+}
+
 // ─── Recipe-relevance taxonomy ─────────────────────────────────────
 //
 // Each CKernelId is classified into exactly one category.  The
@@ -511,7 +515,7 @@ int main() {
         // Negative: no starter recipe should have this exact
         // (out_dtype, determinism) combo.  Catches the case where
         // a new recipe was added but the gap row wasn't updated.
-        for (const auto& entry : registry.entries()) {
+        for (const auto& entry : entries_view(registry)) {
           if (entry.recipe->out_dtype == cell.out_dtype &&
               entry.recipe->determinism == cell.det)
           {

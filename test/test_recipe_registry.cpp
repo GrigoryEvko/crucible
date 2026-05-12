@@ -22,6 +22,7 @@
 #include "test_assert.h"
 #include <cinttypes>
 #include <cstdio>
+#include <span>
 #include <string_view>
 #include <type_traits>
 #include <unordered_set>
@@ -45,6 +46,10 @@ namespace names = crucible::recipe_names;
 crucible::effects::Test g_test{};
 inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
+[[nodiscard]] inline auto entries_view(const RecipeRegistry& reg) noexcept {
+  return reg.entries().value();
+}
+
 } // namespace
 
 [[gnu::cold]] int main() {
@@ -62,6 +67,15 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
     // TypeSafe: starter count is a static compile-time constant.
     static_assert(RecipeRegistry::STARTER_COUNT == 8);
     static_assert(RecipeRegistry::size() == 8);
+    static_assert(std::is_same_v<
+        RecipeRegistry::Entries,
+        crucible::safety::Tagged<
+            std::span<const RecipeRegistry::Entry>,
+            crucible::safety::source::JsonRegistry>>);
+    static_assert(sizeof(RecipeRegistry::Entries)
+                  == sizeof(std::span<const RecipeRegistry::Entry>));
+    static_assert(!std::is_convertible_v<
+        std::span<const RecipeRegistry::Entry>, RecipeRegistry::Entries>);
 
     // Starter specs fully specified at compile time.
     static_assert(
@@ -78,10 +92,10 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
     RecipePool pool{arena, alloc_cap()};
     RecipeRegistry reg{pool, alloc_cap()};
 
-    assert(reg.entries().size() == RecipeRegistry::STARTER_COUNT);
+    assert(entries_view(reg).size() == RecipeRegistry::STARTER_COUNT);
     assert(pool.size() == RecipeRegistry::STARTER_COUNT);
 
-    for (const auto& e : reg.entries()) {
+    for (const auto& e : entries_view(reg)) {
       assert(!e.name.empty());
       assert(e.recipe != nullptr);
       // Every interned recipe has a populated Family-A hash.
@@ -103,7 +117,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
     // Collect expected (name → recipe*) from entries().
     std::unordered_set<const NumericalRecipe*> entry_ptrs;
-    for (const auto& e : reg.entries()) {
+    for (const auto& e : entries_view(reg)) {
       entry_ptrs.insert(e.recipe);
     }
     assert(entry_ptrs.size() == RecipeRegistry::STARTER_COUNT);
@@ -247,7 +261,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
     RecipeRegistry reg{pool, alloc_cap()};
 
     std::unordered_set<std::string_view> seen;
-    for (const auto& e : reg.entries()) {
+    for (const auto& e : entries_view(reg)) {
       const auto [it, inserted] = seen.insert(e.name);
       assert(inserted && "starter recipe name collision");
     }
@@ -271,7 +285,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
     std::unordered_set<const NumericalRecipe*> ptrs;
     std::unordered_set<uint64_t> hashes;
 
-    for (const auto& e : reg.entries()) {
+    for (const auto& e : entries_view(reg)) {
       const auto [it_p, inserted_p] = ptrs.insert(e.recipe);
       assert(inserted_p && "two starter recipes intern to the same pointer");
       const auto [it_h, inserted_h] = hashes.insert(e.recipe->hash.raw());
@@ -392,7 +406,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
     // (a) Every starter's hash resolves via by_hash to the same
     //     canonical pointer as by_name.
-    for (const auto& entry : reg.entries()) {
+    for (const auto& entry : entries_view(reg)) {
       auto via_hash = reg.by_hash(entry.recipe->hash);
       assert(via_hash.has_value());
       assert(*via_hash == entry.recipe);

@@ -2948,6 +2948,14 @@ crucible_neg_compile_test(neg_recipe_registry_spec_assigned_to_pinned_expected
 crucible_neg_compile_test(neg_recipe_registry_pinned_assigned_to_spec_expected
   "conversion from|could not convert|cannot convert|no viable conversion|non-scalar type")
 
+# WRAP-RecipeReg-3 — entries() span carries source::JsonRegistry
+# provenance. Raw spans and differently tagged spans must not reach a
+# registry-entry consumer without an explicit trusted unwrap.
+crucible_neg_compile_test(neg_recipe_registry_entries_raw_span
+  "could not convert|cannot convert|no viable conversion|conversion from")
+crucible_neg_compile_test(neg_recipe_registry_entries_cross_tag
+  "conversion from|could not convert|cannot convert|no viable conversion")
+
 # ─── FOUND-G26 Wait wrapper neg-compiles (6 fixtures: 4+2) ──────────
 #
 # 4 wrapper-surface fixtures (mirrors HotPath / DetSafe pattern):

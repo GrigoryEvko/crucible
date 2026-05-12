@@ -123,6 +123,12 @@ namespace source {
     // has been recomputed and matched at the receiver.  Raw wire bytes
     // and merely gossiped payloads cannot substitute for this tag.
     struct IntegrityVerified {};
+    // JsonRegistry: recipe/catalog rows admitted from Crucible's
+    // embedded or loaded JSON registry. Distinct from FromConfig
+    // because registry-origin values drive deterministic recipe
+    // selection and must not be substituted by arbitrary user strings
+    // or ad-hoc diagnostic spans.
+    struct JsonRegistry {};
 }
 
 namespace trust {

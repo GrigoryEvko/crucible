@@ -115,6 +115,10 @@ namespace names = crucible::recipe_names;
 crucible::effects::Test g_test{};
 inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
+[[nodiscard]] inline auto entries_view(const RecipeRegistry& reg) noexcept {
+  return reg.entries().value();
+}
+
 }  // namespace
 
 [[gnu::cold]] int main() {
@@ -176,7 +180,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   //       lookup-then-pair, no transformation.
   // ═══════════════════════════════════════════════════════════════
   {
-    for (const auto& entry : reg.entries()) {
+    for (const auto& entry : entries_view(reg)) {
       auto spec = reg.by_name_spec(entry.name);
       assert(spec.has_value());
       assert(spec->peek()           == entry.recipe);
@@ -234,7 +238,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   //       behavior than the live registry (name lookup).
   // ═══════════════════════════════════════════════════════════════
   {
-    for (const auto& entry : reg.entries()) {
+    for (const auto& entry : entries_view(reg)) {
       auto by_n = reg.by_name_spec(entry.name);
       auto by_h = reg.by_hash_spec(entry.recipe->hash);
       assert(by_n.has_value());
@@ -468,7 +472,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
     };
 
     int total_decisions = 0;
-    for (const auto& entry : reg.entries()) {
+    for (const auto& entry : entries_view(reg)) {
       auto spec = reg.by_name_spec(entry.name).value();
       const auto spec_tier = spec.tolerance();
       const auto spec_fam  = spec.recipe_family();
@@ -618,7 +622,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
     // Snapshot every starter's hash.
     std::array<RecipeHash, RecipeRegistry::STARTER_COUNT> persisted{};
     for (std::size_t i = 0; i < RecipeRegistry::STARTER_COUNT; ++i) {
-      persisted[i] = reg.entries()[i].recipe->hash;
+      persisted[i] = entries_view(reg)[i].recipe->hash;
     }
 
     // Re-construct on a fresh pool / arena — simulates Cipher
@@ -628,7 +632,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
     RecipeRegistry reg2{pool2, alloc_cap()};
 
     for (std::size_t i = 0; i < RecipeRegistry::STARTER_COUNT; ++i) {
-      auto live_spec = reg.by_name_spec(reg.entries()[i].name).value();
+      auto live_spec = reg.by_name_spec(entries_view(reg)[i].name).value();
       auto recovered = reg2.by_hash_spec(persisted[i]).value();
 
       // Same axes — admission must agree on every probe.
@@ -726,7 +730,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
     // admits None and rejects Any (at any tier the spec admits).
     int none_admits = 0;
     int any_rejects = 0;
-    for (const auto& entry : reg.entries()) {
+    for (const auto& entry : entries_view(reg)) {
       auto spec = reg.by_name_spec(entry.name).value();
       // The spec's own tier is the tightest tier admitted, so use
       // it for both the None-admit and Any-reject probes.

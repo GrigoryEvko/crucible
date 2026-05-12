@@ -60,6 +60,7 @@
 #include <crucible/Types.h>
 #include <crucible/safety/NumericalTier.h>
 #include <crucible/safety/RecipeSpec.h>
+#include <crucible/safety/Tagged.h>
 
 #include <array>
 #include <cstddef>
@@ -224,6 +225,9 @@ class CRUCIBLE_OWNER RecipeRegistry {
     const NumericalRecipe* recipe = nullptr;
   };
 
+  using Entries = safety::Tagged<
+      std::span<const Entry>, safety::source::JsonRegistry>;
+
   // Fixed starter-set size.  New starter recipes bump this; tests
   // assert entries().size() == STARTER_COUNT so a forgotten update
   // fires immediately.
@@ -293,10 +297,10 @@ class CRUCIBLE_OWNER RecipeRegistry {
   // Used by tests (to sweep every starter recipe), Meridian probes
   // (to emit native_on bitmaps per chip — future), and diagnostic
   // dumps (`crucible-top --recipes`).
-  [[nodiscard, gnu::pure]] std::span<const Entry> entries() const noexcept
+  [[nodiscard, gnu::pure]] Entries entries() const noexcept
       CRUCIBLE_LIFETIMEBOUND
   {
-    return {entries_.data(), STARTER_COUNT};
+    return Entries{std::span<const Entry>{entries_.data(), STARTER_COUNT}};
   }
 
   // Convenience: the count of starter recipes, independent of the

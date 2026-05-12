@@ -67,6 +67,10 @@ namespace names = crucible::recipe_names;
 crucible::effects::Test g_test{};
 inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
 
+[[nodiscard]] inline auto entries_view(const RecipeRegistry& reg) noexcept {
+  return reg.entries().value();
+}
+
 }  // namespace
 
 [[gnu::cold]] int main() {
@@ -257,7 +261,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   //           determinism is BITEXACT_STRICT.
   // ═══════════════════════════════════════════════════════════════
   {
-    for (const auto& entry : reg.entries()) {
+    for (const auto& entry : entries_view(reg)) {
       // RELAXED is the lattice bottom — every recipe satisfies it.
       auto relaxed_pin =
           reg.by_name_pinned<safety_Tolerance::RELAXED>(entry.name);
@@ -279,7 +283,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════
   {
     int admits = 0;
-    for (const auto& entry : reg.entries()) {
+    for (const auto& entry : entries_view(reg)) {
       auto pinned =
           reg.by_name_pinned<safety_Tolerance::RELAXED>(entry.name);
       if (pinned.has_value()) ++admits;
@@ -293,7 +297,7 @@ inline crucible::effects::Alloc alloc_cap() noexcept { return g_test.alloc; }
   // ═══════════════════════════════════════════════════════════════
   {
     int strict_admits = 0;
-    for (const auto& entry : reg.entries()) {
+    for (const auto& entry : entries_view(reg)) {
       auto pinned =
           reg.by_name_pinned<safety_Tolerance::BITEXACT>(entry.name);
       if (pinned.has_value()) ++strict_admits;
