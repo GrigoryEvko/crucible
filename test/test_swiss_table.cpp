@@ -36,10 +36,14 @@ static void test_h2_tag_range() {
 }
 
 static void test_bitmask_iteration() {
-    BitMask m{.mask = 0};
-    assert(!static_cast<bool>(m));
+    static_assert(sizeof(BitMask) == sizeof(uint64_t));
+    static_assert(sizeof(BitMask::Mask) == sizeof(uint64_t));
 
-    BitMask m2{.mask = 0b10110u};
+    BitMask m{0};
+    assert(!static_cast<bool>(m));
+    assert(m.raw() == 0);
+
+    BitMask m2{0b10110u};
     assert(static_cast<bool>(m2));
     assert(m2.lowest() == 1);
     m2.clear_lowest();
@@ -50,7 +54,7 @@ static void test_bitmask_iteration() {
     assert(!static_cast<bool>(m2));
 
     // Iteration pattern from the Swiss table hot path.
-    BitMask m3{.mask = 0xF0F0u};  // 8 bits set at positions 4,5,6,7,12,13,14,15
+    BitMask m3{0xF0F0u};  // 8 bits set at positions 4,5,6,7,12,13,14,15
     uint32_t count = 0;
     uint32_t last = 0;
     while (m3) {

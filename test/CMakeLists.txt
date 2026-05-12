@@ -3237,6 +3237,17 @@ crucible_neg_compile_test(neg_swiss_table_buffer_copy
 crucible_neg_compile_test(neg_swiss_table_buffer_use_after_move
   "use of deleted function|deleted function|move-only")
 
+# WRAP-SwissTab-2 (#1024) — BitMask stores a Refined group-width
+# bitset.  The mask is bounded by the numeric ceiling
+# ((1 << kGroupWidth) - 1), not by kGroupWidth itself: a valid
+# kGroupWidth=16 mask can be 0xF0F0.  The two fixtures pin the
+# boundary edge and a wide miss on the default AVX2/SSE/portable
+# widths used by the local preset.
+crucible_neg_compile_test(neg_swiss_bitmask_one_past_group_mask
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+crucible_neg_compile_test(neg_swiss_bitmask_wide_miss
+  "contract|Refined|bounded_above|not a constant|non-constant|constexpr")
+
 # WRAP-ExprPool-4 (#918) — int_cache_ access is routed through
 # IntCacheLiteral = Refined<in_range<-128, 127>, int64_t>.  Two HS14
 # fixtures pin both ends of the closed interval:

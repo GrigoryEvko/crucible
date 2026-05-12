@@ -27,10 +27,13 @@
 
 #include <crucible/Platform.h>
 #include <crucible/safety/Decide.h>
+#include <crucible/safety/Refined.h>
 
 #include <bit>
 #include <cstdint>
 #include <cstring>
+#include <limits>
+#include <type_traits>
 
 #if defined(__AVX512BW__)
 #include <immintrin.h>
@@ -80,6 +83,13 @@ static_assert(::crucible::decide::is_power_of_two_le<std::size_t>(
                   kGroupWidth, std::size_t{64}),
               "kGroupWidth must be a power of two ≤ 64 (AVX-512 width)");
 
+[[nodiscard]] consteval uint64_t group_mask_ceiling(std::size_t width) noexcept {
+  return width == 64 ? std::numeric_limits<uint64_t>::max()
+                     : ((uint64_t{1} << width) - uint64_t{1});
+}
+
+static constexpr uint64_t kGroupMaskCeiling = group_mask_ceiling(kGroupWidth);
+
 // H2 tag: top 7 bits of hash -> [0, 127].
 // Always non-negative as int8_t (bit 7 cleared).
 // Independent from H1 (lower bits) due to fmix64 avalanche.
@@ -121,21 +131,38 @@ static_assert(h2_tag(0x8000000000000000ULL) == 64,
 // Each set bit corresponds to a slot offset (0..kGroupWidth-1).
 // Iterate: while (m) { use m.lowest(); m.clear_lowest(); }
 struct BitMask {
-  uint64_t mask = 0;
+  using Mask = ::crucible::safety::Refined<
+      ::crucible::safety::bounded_above<kGroupMaskCeiling>, uint64_t>;
+
+  static_assert(sizeof(Mask) == sizeof(uint64_t));
+  static_assert(std::is_trivially_copyable_v<Mask>);
+  static_assert(std::is_standard_layout_v<Mask>);
+
+  constexpr BitMask() noexcept = default;
+  constexpr explicit BitMask(uint64_t raw_mask) noexcept : mask_(raw_mask) {}
+  constexpr explicit BitMask(Mask mask) noexcept : mask_(mask) {}
+
+  [[nodiscard]] constexpr uint64_t raw() const noexcept {
+    return mask_.value();
+  }
 
   [[nodiscard]] CRUCIBLE_INLINE explicit operator bool() const {
-    return mask != 0;
+    return raw() != 0;
   }
 
   // Index of lowest set bit. Undefined if mask == 0.
   [[nodiscard]] CRUCIBLE_INLINE uint32_t lowest() const {
-    return static_cast<uint32_t>(std::countr_zero(mask));
+    return static_cast<uint32_t>(std::countr_zero(raw()));
   }
 
   // Clear lowest set bit (branchless: Blsr on x86).
   CRUCIBLE_INLINE void clear_lowest() {
-    mask &= mask - 1;
+    const uint64_t m = raw();
+    mask_ = Mask{m & (m - uint64_t{1})};
   }
+
+ private:
+  Mask mask_{uint64_t{0}};
 };
 
 // SIMD group: compare kGroupWidth control bytes in parallel.
@@ -157,14 +184,15 @@ struct CtrlGroup {
   }
 
   [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {
-    return {_mm512_cmpeq_epi8_mask(ctrl, _mm512_set1_epi8(h2))};
+    return BitMask{
+        static_cast<uint64_t>(_mm512_cmpeq_epi8_mask(ctrl, _mm512_set1_epi8(h2)))};
   }
 
   // kEmpty = 0x80 is the ONLY control byte with bit 7 set.
   // _mm512_movepi8_mask extracts bit 7 of each byte directly.
   // Saves: _mm512_set1_epi8(kEmpty) + _mm512_cmpeq_epi8_mask.
   [[nodiscard]] CRUCIBLE_INLINE BitMask match_empty() const {
-    return {_mm512_movepi8_mask(ctrl)};
+    return BitMask{static_cast<uint64_t>(_mm512_movepi8_mask(ctrl))};
   }
 
 #elif defined(__AVX2__)
@@ -179,7 +207,7 @@ struct CtrlGroup {
   [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {
     auto cmp = _mm256_cmpeq_epi8(ctrl, _mm256_set1_epi8(h2));
     // Double-cast prevents sign-extension of negative int
-    return {static_cast<uint64_t>(
+    return BitMask{static_cast<uint64_t>(
         static_cast<uint32_t>(_mm256_movemask_epi8(cmp)))};
   }
 
@@ -188,7 +216,7 @@ struct CtrlGroup {
   // which is 1 for kEmpty (0x80) and 0 for all H2 tags (0x00..0x7F).
   // Saves: _mm256_set1_epi8(kEmpty) + _mm256_cmpeq_epi8.
   [[nodiscard]] CRUCIBLE_INLINE BitMask match_empty() const {
-    return {static_cast<uint64_t>(
+    return BitMask{static_cast<uint64_t>(
         static_cast<uint32_t>(_mm256_movemask_epi8(ctrl)))};
   }
 
@@ -203,14 +231,14 @@ struct CtrlGroup {
 
   [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {
     auto cmp = _mm_cmpeq_epi8(ctrl, _mm_set1_epi8(h2));
-    return {static_cast<uint64_t>(
+    return BitMask{static_cast<uint64_t>(
         static_cast<uint32_t>(_mm_movemask_epi8(cmp)))};
   }
 
   // kEmpty = 0x80: bit 7 set. movemask extracts bit 7 directly.
   // Saves: _mm_set1_epi8(kEmpty) + _mm_cmpeq_epi8.
   [[nodiscard]] CRUCIBLE_INLINE BitMask match_empty() const {
-    return {static_cast<uint64_t>(
+    return BitMask{static_cast<uint64_t>(
         static_cast<uint32_t>(_mm_movemask_epi8(ctrl)))};
   }
 
@@ -226,7 +254,7 @@ struct CtrlGroup {
 
   [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {
     uint8x16_t cmp = vceqq_s8(ctrl, vdupq_n_s8(h2));
-    return {neon_movemask(cmp)};
+    return BitMask{neon_movemask(cmp)};
   }
 
   // kEmpty = 0x80 is the ONLY negative int8_t in the control byte encoding.
@@ -234,7 +262,7 @@ struct CtrlGroup {
   [[nodiscard]] CRUCIBLE_INLINE BitMask match_empty() const {
     uint8x16_t neg = vreinterpretq_u8_s8(
         vcltzq_s8(ctrl));
-    return {neon_movemask(neg)};
+    return BitMask{neon_movemask(neg)};
   }
 
   // Synthesize movemask on NEON using shrn (shift-right-narrow) approach.
@@ -288,7 +316,7 @@ struct CtrlGroup {
   }
 
   [[nodiscard]] CRUCIBLE_INLINE BitMask match(int8_t h2) const {
-    return {swar_match(h2)};
+    return BitMask{swar_match(h2)};
   }
 
   // kEmpty = 0x80: bit 7 set. No valid H2 tag has bit 7 set.
@@ -300,7 +328,7 @@ struct CtrlGroup {
     // Bit 7 of each byte is 1 iff byte is kEmpty (0x80).
     // Extract bit 7 from each byte into a packed bitmask.
     uint64_t mask = extract_highbits(lo) | (extract_highbits(hi) << 8);
-    return {mask};
+    return BitMask{mask};
   }
 
  private:
