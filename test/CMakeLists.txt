@@ -3419,6 +3419,14 @@ crucible_neg_compile_test(neg_saturated_non_arithmetic
 crucible_neg_compile_test(neg_saturated_implicit_to_t
   "cannot convert|no matching function|conversion from|invalid conversion")
 
+# WRAP-Saturate-3 (#1001) — *_sat_det returns
+# DetSafe<Pure, Saturated<T>>. Raw Saturated consumers and implicit
+# cross-tier DetSafe consumers must fail.
+crucible_neg_compile_test(neg_saturate_det_raw_result_escape
+  "cannot convert|conversion from|no matching function|non-scalar type")
+crucible_neg_compile_test(neg_saturate_det_cross_tier_assignment
+  "cannot convert|conversion from|no matching function|non-scalar type")
+
 # FairSharedPermissionPool fairness wrapper — audit fixtures (#861-followup):
 #   * BurstLimit=0 fires the static_assert ("must be > 0").
 #   * Copying the Pinned wrapper fires the deleted-copy diagnostic.

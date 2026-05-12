@@ -19,6 +19,8 @@
 // ~1 cycle) plus a branchless clamp.  Constexpr-capable.
 
 #include <crucible/Platform.h>
+#include <crucible/safety/DetSafe.h>
+#include <crucible/safety/Saturated.h>
 #include <version>
 
 #include <concepts>
@@ -26,6 +28,11 @@
 #include <type_traits>
 
 namespace crucible::sat {
+
+template <std::integral T>
+using DetSatPure = ::crucible::safety::DetSafe<
+    ::crucible::safety::DetSafeTier_v::Pure,
+    ::crucible::safety::Saturated<T>>;
 
 // gnu::const: takes two values, no memory access, no side effects.
 // Optimizer may CSE freely across statements (no aliasing concerns).
@@ -80,6 +87,21 @@ CRUCIBLE_CONST constexpr T mul_sat(T a, T b) noexcept {
         }
     }
     return r;
+}
+
+template <std::integral T>
+CRUCIBLE_CONST constexpr DetSatPure<T> add_sat_det(T a, T b) noexcept {
+    return DetSatPure<T>{::crucible::safety::add_sat_checked(a, b)};
+}
+
+template <std::integral T>
+CRUCIBLE_CONST constexpr DetSatPure<T> sub_sat_det(T a, T b) noexcept {
+    return DetSatPure<T>{::crucible::safety::sub_sat_checked(a, b)};
+}
+
+template <std::integral T>
+CRUCIBLE_CONST constexpr DetSatPure<T> mul_sat_det(T a, T b) noexcept {
+    return DetSatPure<T>{::crucible::safety::mul_sat_checked(a, b)};
 }
 
 } // namespace crucible::sat

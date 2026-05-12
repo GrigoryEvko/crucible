@@ -10,10 +10,14 @@
 #include <cstdint>
 #include <cstdio>
 #include <limits>
+#include <type_traits>
 
 using crucible::sat::add_sat;
+using crucible::sat::add_sat_det;
 using crucible::sat::sub_sat;
+using crucible::sat::sub_sat_det;
 using crucible::sat::mul_sat;
+using crucible::sat::mul_sat_det;
 
 // Helper: alias the numeric_limits bounds.
 template <typename T> constexpr T MIN = std::numeric_limits<T>::min();
@@ -141,6 +145,37 @@ static void test_constexpr_usable() {
     static_assert(add_sat<int32_t>(MAX<int32_t>, 1) == MAX<int32_t>);
     static_assert(sub_sat<int32_t>(MIN<int32_t>, 1) == MIN<int32_t>);
     static_assert(mul_sat<int32_t>(MIN<int32_t>, -1) == MAX<int32_t>);
+    static_assert(std::is_same_v<
+        decltype(add_sat_det<uint32_t>(1u, 2u)),
+        crucible::sat::DetSatPure<uint32_t>>);
+    static_assert(sizeof(crucible::sat::DetSatPure<uint64_t>)
+                  == sizeof(crucible::safety::Saturated<uint64_t>));
+    static_assert(add_sat_det<uint8_t>(200, 100).peek().value()
+                  == MAX<uint8_t>);
+    static_assert(add_sat_det<uint8_t>(200, 100).peek().was_clamped());
+    static_assert(!sub_sat_det<uint32_t>(5, 3).peek().was_clamped());
+    static_assert(mul_sat_det<int32_t>(MIN<int32_t>, -1).peek().value()
+                  == MAX<int32_t>);
+    static_assert(decltype(mul_sat_det<int32_t>(MIN<int32_t>, -1))
+                      ::template satisfies<
+                          crucible::safety::DetSafeTier_v::Pure>);
+}
+
+static void test_det_wrappers() {
+    auto add = add_sat_det<uint32_t>(MAX<uint32_t>, 1u);
+    assert(add.peek().value() == MAX<uint32_t>);
+    assert(add.peek().was_clamped());
+
+    auto sub = sub_sat_det<uint32_t>(10u, 3u);
+    assert(sub.peek().value() == 7u);
+    assert(!sub.peek().was_clamped());
+
+    auto mul = mul_sat_det<int32_t>(MIN<int32_t>, -1);
+    assert(mul.peek().value() == MAX<int32_t>);
+    assert(mul.peek().was_clamped());
+
+    auto relaxed = mul.relax<crucible::safety::DetSafeTier_v::PhiloxRng>();
+    assert(relaxed.peek().value() == MAX<int32_t>);
 }
 
 int main() {
@@ -151,6 +186,7 @@ int main() {
     test_mul_unsigned();
     test_mul_signed();
     test_constexpr_usable();
-    std::printf("test_saturate: all 7 groups passed\n");
+    test_det_wrappers();
+    std::printf("test_saturate: all 8 groups passed\n");
     return 0;
 }
